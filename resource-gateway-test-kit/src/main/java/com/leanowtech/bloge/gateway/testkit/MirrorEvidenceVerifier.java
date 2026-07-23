@@ -28,14 +28,17 @@ public final class MirrorEvidenceVerifier {
     public static final int MAXIMUM_RESOLUTION_BYTES = 20 * 1024 * 1024;
     /** Maximum canonical bytes admitted for one run-evidence value. */
     public static final int MAXIMUM_EVIDENCE_BYTES = 64 * 1024 * 1024;
+    /** Maximum canonical bytes admitted for one nested state-evidence value. */
+    public static final int MAXIMUM_STATE_EVIDENCE_BYTES = 32 * 1024 * 1024;
     /** Maximum canonical bytes admitted for one portable bundle. */
     public static final int MAXIMUM_BUNDLE_BYTES = 72 * 1024 * 1024;
     private static final int MAXIMUM_SIGNATURE_MATERIAL_BYTES = 8 * 1024;
     private static final String SIGNATURE_DOMAIN_V1 = "RESOURCE_GATEWAY_MIRROR_EVIDENCE_V1";
     private static final String SIGNATURE_DOMAIN_V2 = "RESOURCE_GATEWAY_MIRROR_EVIDENCE_V2";
+    private static final String SIGNATURE_DOMAIN_V3 = "RESOURCE_GATEWAY_MIRROR_EVIDENCE_V3";
     private static final ObjectMapper JSON = new ObjectMapper();
 
-    /** Creates a stateless offline mirror evidence verifier. */
+    /** Creates an offline verifier for stateless and Session-backed mirror evidence. */
     public MirrorEvidenceVerifier() {
     }
 
@@ -226,13 +229,20 @@ public final class MirrorEvidenceVerifier {
                 MirrorEvidenceVerifier::resolutionCoordinate,
                 "MIRROR_RESOLUTION_ORDER_INVALID");
         Set<String> actualResolutionCoordinates = new HashSet<>();
+        Map<String, JsonNode> resolutionByCoordinate =
+                new HashMap<>();
         for (JsonNode resolution : resolutions) {
             verifyResolution(evidence, resolution, bindingBySite, expectedAttempts);
-            actualResolutionCoordinates.add(resolutionCoordinate(resolution));
+            String coordinate = resolutionCoordinate(resolution);
+            actualResolutionCoordinates.add(coordinate);
+            resolutionByCoordinate.put(coordinate, resolution);
         }
         if (!actualResolutionCoordinates.equals(expectedAttempts.keySet())) {
             fail("MIRROR_RESOLUTION_CLOSURE_INCOMPLETE");
         }
+        verifyStateEvidence(
+                evidence, bindingBySite, expectedAttempts,
+                resolutionByCoordinate);
 
         requireStringOrder(evidence.path("limitations"), "MIRROR_LIMITATION_ORDER_INVALID");
         JsonNode isolation = evidence.path("isolation");
@@ -253,8 +263,12 @@ public final class MirrorEvidenceVerifier {
             Instant startedAt,
             Instant completedAt,
             Instant signedAt) {
-        boolean current = CapabilityMirrorProtocol.MIRROR_RUN_EVIDENCE_V2.equals(
-                evidence.path("schemaVersion").asText());
+        String version = evidence.path("schemaVersion").asText();
+        boolean current =
+                CapabilityMirrorProtocol.MIRROR_RUN_EVIDENCE_V2.equals(
+                        version)
+                        || CapabilityMirrorProtocol.MIRROR_RUN_EVIDENCE_V3
+                        .equals(version);
         JsonNode binding = isolation.path("deploymentTrustBinding");
         if (!current) {
             if (!binding.isMissingNode()) {
@@ -338,6 +352,178 @@ public final class MirrorEvidenceVerifier {
         }
     }
 
+    private static void verifyStateEvidence(
+            JsonNode evidence,
+            Map<String, JsonNode> bindingBySite,
+            Map<String, JsonNode> expectedAttempts,
+            Map<String, JsonNode> resolutionByCoordinate) {
+        boolean stateful =
+                CapabilityMirrorProtocol.MIRROR_RUN_EVIDENCE_V3.equals(
+                        evidence.path("schemaVersion").asText());
+        JsonNode state = evidence.path("stateEvidence");
+        if (!stateful) {
+            if (!state.isMissingNode()) {
+                fail("MIRROR_STATE_EVIDENCE_VERSION_INVALID");
+            }
+            return;
+        }
+        if (!evidence.path("runId").asText()
+                .equals(state.path("runId").asText())
+                || !evidence.path("planFingerprint").asText()
+                .equals(state.path("planFingerprint").asText())
+                || state.path("sessionStateRef").path("revision").asLong()
+                != state.path("stateRevision").asLong() + 1) {
+            fail("MIRROR_STATE_EVIDENCE_IDENTITY_INVALID");
+        }
+        ObjectNode material = ((ObjectNode) state).deepCopy();
+        String attached =
+                material.path("stateEvidenceFingerprint").asText();
+        material.put("stateEvidenceFingerprint", "");
+        if (!EvidenceVerificationSupport.sha256Bounded(
+                material, MAXIMUM_STATE_EVIDENCE_BYTES)
+                .equals(attached)) {
+            fail("MIRROR_STATE_EVIDENCE_FINGERPRINT_INVALID");
+        }
+
+        JsonNode stateBindings = state.path("statefulBindings");
+        requireOrdered(
+                stateBindings,
+                MirrorEvidenceVerifier::compareStateBinding,
+                value -> value.path("invocationSiteId").asText(),
+                "MIRROR_STATE_BINDING_ORDER_INVALID");
+        Map<String, JsonNode> stateBindingBySite =
+                new HashMap<>();
+        for (JsonNode stateBinding : stateBindings) {
+            String site =
+                    stateBinding.path("invocationSiteId").asText();
+            JsonNode binding = bindingBySite.get(site);
+            if (binding == null
+                    || !binding.path("graphPath").equals(
+                    stateBinding.path("graphPath"))
+                    || !binding.path("capabilityRef").equals(
+                    stateBinding.path("capabilityRef"))
+                    || stateBindingBySite.put(site, stateBinding)
+                    != null) {
+                fail("MIRROR_STATE_BINDING_CLOSURE_INVALID");
+            }
+        }
+
+        Map<String, JsonNode> expectedStateAttempts =
+                new HashMap<>();
+        expectedAttempts.forEach((coordinate, attempt) -> {
+            String site = coordinate.substring(
+                    0, coordinate.indexOf('\0'));
+            if (stateBindingBySite.containsKey(site)) {
+                expectedStateAttempts.put(coordinate, attempt);
+            }
+        });
+        JsonNode accesses = state.path("accesses");
+        requireOrdered(
+                accesses,
+                MirrorEvidenceVerifier::compareStateAccess,
+                MirrorEvidenceVerifier::stateAccessCoordinate,
+                "MIRROR_STATE_ACCESS_ORDER_INVALID");
+        Map<String, JsonNode> accessByCoordinate =
+                new HashMap<>();
+        for (JsonNode access : accesses) {
+            String coordinate = stateAccessCoordinate(access);
+            JsonNode stateBinding = stateBindingBySite.get(
+                    access.path("invocationSiteId").asText());
+            JsonNode attempt = expectedStateAttempts.get(coordinate);
+            JsonNode resolution =
+                    resolutionByCoordinate.get(coordinate);
+            if (stateBinding == null || attempt == null
+                    || resolution == null
+                    || !stateBinding.path("graphPath").equals(
+                    access.path("graphPath"))
+                    || !stateBinding.path("capabilityRef").equals(
+                    access.path("capabilityRef"))
+                    || !stateBinding.path("stateReadSpecRef").equals(
+                    access.path("stateReadSpecRef"))
+                    || !access.path("requestFingerprint").equals(
+                    attempt.path("inputFingerprint"))
+                    || !access.path("requestFingerprint").equals(
+                    resolution.path("requestFingerprint"))
+                    || accessByCoordinate.put(coordinate, access)
+                    != null) {
+                fail("MIRROR_STATE_ACCESS_CLOSURE_INVALID");
+            }
+            verifyStateOutcome(state, access, attempt, resolution);
+        }
+        if (!accessByCoordinate.keySet().equals(
+                expectedStateAttempts.keySet())) {
+            fail("MIRROR_STATE_ACCESS_CLOSURE_INCOMPLETE");
+        }
+        requireStringOrder(
+                state.path("limitations"),
+                "MIRROR_STATE_LIMITATION_ORDER_INVALID");
+    }
+
+    private static void verifyStateOutcome(
+            JsonNode state,
+            JsonNode access,
+            JsonNode attempt,
+            JsonNode resolution) {
+        String outcome = access.path("outcome").asText();
+        String source = resolution.path("source").asText();
+        switch (outcome) {
+            case "LIVE_ENTITY" -> {
+                if (!"SESSION_STATE".equals(source)
+                        || !access.path(
+                        "projectedOutputFingerprint").equals(
+                        attempt.path("outputFingerprint"))
+                        || !access.path(
+                        "projectedOutputFingerprint").equals(
+                        resolution.path("outputFingerprint"))
+                        || !containsArtifact(
+                        resolution.path("matchedArtifactRefs"),
+                        state.path("sessionStateRef"))
+                        || !containsArtifact(
+                        resolution.path("matchedArtifactRefs"),
+                        state.path("stateModelRef"))
+                        || !containsArtifact(
+                        resolution.path("matchedArtifactRefs"),
+                        access.path("stateReadSpecRef"))) {
+                    fail("MIRROR_STATE_LIVE_RESOLUTION_INVALID");
+                }
+            }
+            case "TOMBSTONED" -> {
+                if (!"SESSION_STATE".equals(source)
+                        || !"RG.MIRROR.STATE.ENTITY_TOMBSTONED"
+                        .equals(access.path("errorCode").asText())
+                        || !access.path("errorCode").equals(
+                        resolution.path("error").path("code"))
+                        || !containsArtifact(
+                        resolution.path("matchedArtifactRefs"),
+                        state.path("sessionStateRef"))
+                        || !containsArtifact(
+                        resolution.path("matchedArtifactRefs"),
+                        state.path("stateModelRef"))
+                        || !containsArtifact(
+                        resolution.path("matchedArtifactRefs"),
+                        access.path("stateReadSpecRef"))) {
+                    fail("MIRROR_STATE_TOMBSTONE_RESOLUTION_INVALID");
+                }
+            }
+            case "ABSENT" -> {
+                if ("SESSION_STATE".equals(source)) {
+                    fail("MIRROR_STATE_ABSENT_RESOLUTION_INVALID");
+                }
+            }
+            default -> fail("MIRROR_STATE_OUTCOME_INVALID");
+        }
+    }
+
+    private static boolean containsArtifact(
+            JsonNode values, JsonNode expected) {
+        for (JsonNode value : values) {
+            if (value.equals(expected)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
     private static void requireArtifactRefOrder(JsonNode values) {
         requireOrdered(values, MirrorEvidenceVerifier::compareArtifactRef,
                 value -> value.path("kind").asText() + '\0' + value.path("id").asText()
@@ -401,6 +587,34 @@ public final class MirrorEvidenceVerifier {
                 .compare(left, right);
     }
 
+    private static int compareStateBinding(
+            JsonNode left, JsonNode right) {
+        return Comparator.comparing(
+                (JsonNode value) -> value.path(
+                        "invocationSiteId").asText())
+                .thenComparing(value ->
+                        value.path("graphPath").asText())
+                .thenComparing(value ->
+                        value.path("capabilityRef").path("id").asText())
+                .thenComparing(value ->
+                        value.path("stateReadSpecRef").path("id").asText())
+                .compare(left, right);
+    }
+
+    private static int compareStateAccess(
+            JsonNode left, JsonNode right) {
+        return Comparator.comparing(
+                (JsonNode value) -> value.path(
+                        "invocationSiteId").asText())
+                .thenComparing(value ->
+                        value.path("correlationKey").asText())
+                .thenComparingInt(value ->
+                        value.path("occurrence").asInt())
+                .thenComparingInt(value ->
+                        value.path("attempt").asInt())
+                .compare(left, right);
+    }
+
     private static int compareArtifactRef(JsonNode left, JsonNode right) {
         return Comparator.comparing((JsonNode value) -> value.path("kind").asText())
                 .thenComparing(value -> value.path("id").asText())
@@ -442,11 +656,28 @@ public final class MirrorEvidenceVerifier {
                 + resolution.path("attempt").asInt();
     }
 
+    private static String stateAccessCoordinate(
+            JsonNode access) {
+        return access.path("invocationSiteId").asText() + '\0'
+                + access.path("correlationKey").asText() + '\0'
+                + access.path("occurrence").asInt() + '\0'
+                + access.path("attempt").asInt();
+    }
+
     private static ObjectNode signatureMaterial(JsonNode attestation) {
         ObjectNode material = JSON.createObjectNode();
         String version = attestation.path("schemaVersion").asText();
-        material.put("domain", CapabilityMirrorProtocol.MIRROR_EVIDENCE_ATTESTATION_V1
-                .equals(version) ? SIGNATURE_DOMAIN_V1 : SIGNATURE_DOMAIN_V2);
+        String domain = switch (version) {
+            case CapabilityMirrorProtocol.MIRROR_EVIDENCE_ATTESTATION_V1 ->
+                    SIGNATURE_DOMAIN_V1;
+            case CapabilityMirrorProtocol.MIRROR_EVIDENCE_ATTESTATION_V2 ->
+                    SIGNATURE_DOMAIN_V2;
+            case CapabilityMirrorProtocol.MIRROR_EVIDENCE_ATTESTATION_V3 ->
+                    SIGNATURE_DOMAIN_V3;
+            default -> throw new IllegalArgumentException(
+                    "unsupported mirror evidence attestation version");
+        };
+        material.put("domain", domain);
         material.put("schemaVersion", version);
         material.put("runId", attestation.path("runId").asText());
         material.put("planFingerprint", attestation.path("planFingerprint").asText());
@@ -462,6 +693,9 @@ public final class MirrorEvidenceVerifier {
         }
         if (CapabilityMirrorProtocol.MIRROR_EVIDENCE_BUNDLE_V2.equals(version)) {
             return CapabilityMirrorProtocol.MIRROR_EVIDENCE_BUNDLE_V2_SCHEMA_RESOURCE;
+        }
+        if (CapabilityMirrorProtocol.MIRROR_EVIDENCE_BUNDLE_V3.equals(version)) {
+            return CapabilityMirrorProtocol.MIRROR_EVIDENCE_BUNDLE_V3_SCHEMA_RESOURCE;
         }
         return "";
     }

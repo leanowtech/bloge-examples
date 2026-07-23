@@ -3,6 +3,7 @@ package com.leanowtech.bloge.gateway.integration;
 import com.leanowtech.bloge.gateway.integration.mirror.MirrorEvidenceBundle;
 import com.leanowtech.bloge.gateway.integration.mirror.MirrorRunIntegrationService;
 import com.leanowtech.bloge.gateway.integration.mirror.MirrorRunSummary;
+import com.leanowtech.bloge.gateway.integration.mirror.MirrorStateWorkbookSeed;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.context.annotation.Profile;
 import org.springframework.http.HttpHeaders;
@@ -71,7 +72,23 @@ public class MirrorRunIntegrationController {
             @RequestHeader HttpHeaders headers) {
         IntegrationRequestContext identity = authenticator.authenticate(
                 headers, IntegrationOperation.MIRROR_EVIDENCE_READ);
+        MirrorEvidenceBundle bundle =
+                service.evidence(runId, identity);
         return IntegrationEnvelope.of("MIRROR_EVIDENCE_BUNDLE",
-                MirrorEvidenceBundle.SCHEMA_VERSION, service.evidence(runId, identity));
+                bundle.schemaVersion(), bundle);
+    }
+
+    /** Reads one deterministic payload-free ANEKE workbook seed for a stateful run. */
+    @GetMapping("/runs/{runId}/state-workbook-seed")
+    public IntegrationEnvelope<MirrorStateWorkbookSeed>
+    stateWorkbookSeed(
+            @PathVariable String runId,
+            @RequestHeader HttpHeaders headers) {
+        IntegrationRequestContext identity = authenticator.authenticate(
+                headers, IntegrationOperation.MIRROR_EVIDENCE_READ);
+        return IntegrationEnvelope.of(
+                "MIRROR_STATE_WORKBOOK_SEED",
+                MirrorStateWorkbookSeed.SCHEMA_VERSION,
+                service.stateWorkbookSeed(runId, identity));
     }
 }

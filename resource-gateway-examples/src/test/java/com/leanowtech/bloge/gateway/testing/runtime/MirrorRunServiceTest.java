@@ -29,12 +29,17 @@ import com.leanowtech.bloge.gateway.integration.mirror.MirrorDeploymentIsolation
 import com.leanowtech.bloge.gateway.integration.mirror.MirrorDeploymentIsolationAuthorityKeySetPublication;
 import com.leanowtech.bloge.gateway.integration.mirror.MirrorDeploymentIsolationRunTrust;
 import com.leanowtech.bloge.gateway.integration.mirror.MirrorDeploymentIsolationRunTrustAuthority;
+import com.leanowtech.bloge.gateway.integration.mirror.MirrorEvidenceAttestation;
+import com.leanowtech.bloge.gateway.integration.mirror.MirrorEvidenceBundle;
 import com.leanowtech.bloge.gateway.integration.mirror.MirrorEvidenceIntegrityService;
 import com.leanowtech.bloge.gateway.integration.mirror.MirrorPlan;
 import com.leanowtech.bloge.gateway.integration.mirror.MirrorResolution;
 import com.leanowtech.bloge.gateway.integration.mirror.MirrorResolutionIntegrity;
 import com.leanowtech.bloge.gateway.integration.mirror.MirrorSessionPayload;
 import com.leanowtech.bloge.gateway.integration.mirror.MirrorSessionProtocolIntegrity;
+import com.leanowtech.bloge.gateway.integration.mirror.MirrorStateRunEvidence;
+import com.leanowtech.bloge.gateway.integration.mirror.MirrorStateRunEvidenceIntegrity;
+import com.leanowtech.bloge.gateway.integration.mirror.MirrorStateWorkbookSeed;
 import com.leanowtech.bloge.gateway.integration.mirror.MirrorServingGenerationAuthority;
 import com.leanowtech.bloge.gateway.integration.mirror.MirrorServingGenerationIntegrity;
 import com.leanowtech.bloge.gateway.integration.mirror.MirrorServingGenerationToken;
@@ -270,6 +275,17 @@ class MirrorRunServiceTest {
 
         assertThat(result.passed()).isTrue();
         assertThat(externalCalls).hasValue(0);
+        assertThat(result.evidenceBundle().schemaVersion())
+                .isEqualTo(
+                        MirrorEvidenceBundle.STATEFUL_SCHEMA_VERSION);
+        assertThat(result.evidenceBundle().attestation()
+                .schemaVersion()).isEqualTo(
+                MirrorEvidenceAttestation
+                        .STATEFUL_SCHEMA_VERSION);
+        assertThat(result.evidenceBundle().evidence()
+                .schemaVersion()).isEqualTo(
+                com.leanowtech.bloge.gateway.integration.mirror
+                        .MirrorRunEvidence.STATEFUL_SCHEMA_VERSION);
         assertThat(result.execution().evidence().nodeTrace())
                 .filteredOn(trace -> trace.invocationSiteId()
                         .equals("/root/loadCustomer#PRIMARY"))
@@ -286,7 +302,7 @@ class MirrorRunServiceTest {
                 .satisfies(resolution -> {
                     assertThat(resolution.source())
                             .isEqualTo(
-                                    MirrorPlan.MirrorSource
+                            MirrorPlan.MirrorSource
                                             .SESSION_STATE);
                     assertThat(resolution.matchedArtifactRefs())
                             .extracting(MirrorArtifactRef::kind)
@@ -298,6 +314,81 @@ class MirrorRunServiceTest {
                             .anyMatch(ref -> ref.startsWith(
                                     "state-read-spec:query-customer:"));
                 });
+        MirrorStateRunEvidence stateEvidence =
+                result.evidenceBundle().evidence().stateEvidence();
+        assertThat(stateEvidence).isNotNull();
+        MirrorStateRunEvidenceIntegrity.verify(
+                mapper, stateEvidence);
+        assertThat(stateEvidence.runId())
+                .isEqualTo(result.execution().evidence().runId());
+        assertThat(stateEvidence.planFingerprint())
+                .isEqualTo(compiled.plan().planFingerprint());
+        assertThat(stateEvidence.sessionStateRef().fingerprint())
+                .isEqualTo(state.fingerprint());
+        assertThat(stateEvidence.stateModelRef())
+                .isEqualTo(modelRef);
+        assertThat(stateEvidence.stateRevision()).isZero();
+        assertThat(stateEvidence.worldFingerprint())
+                .isEqualTo(state.worldFingerprint());
+        assertThat(stateEvidence.logicalClock())
+                .isEqualTo(state.logicalClock());
+        assertThat(stateEvidence.statefulBindings())
+                .singleElement()
+                .satisfies(binding -> {
+                    assertThat(binding.capabilityRef())
+                            .isEqualTo(queryCapability);
+                    assertThat(binding.stateReadSpecRef())
+                            .isEqualTo(
+                                    StateReadSpecIntegrity.reference(
+                                            readSpec));
+                });
+        assertThat(stateEvidence.accesses())
+                .singleElement()
+                .satisfies(access -> {
+                    assertThat(access.outcome()).isEqualTo(
+                            MirrorStateRunEvidence.AccessOutcome
+                                    .LIVE_ENTITY);
+                    assertThat(access.requestFingerprint())
+                            .isEqualTo(ProtocolFingerprint.of(
+                                    mapper,
+                                    Map.of("customerId", "C-1")));
+                    assertThat(access.projectedOutputFingerprint())
+                            .isEqualTo(ProtocolFingerprint.of(
+                                    mapper,
+                                    Map.of(
+                                            "customerId", "C-1",
+                                            "name", "Session Alice",
+                                            "segment", "ENTERPRISE")));
+                });
+        assertThat(mapper.valueToTree(
+                result.evidenceBundle()).toString())
+                .doesNotContain("Session Alice")
+                .doesNotContain("\"C-1\"");
+        MirrorStateWorkbookSeed seed =
+                MirrorStateWorkbookSeed.project(
+                        mapper, result.evidenceBundle());
+        seed.verify(mapper);
+        assertThat(seed.runId()).isEqualTo(
+                result.execution().evidence().runId());
+        assertThat(seed.evidenceBundleFingerprint())
+                .isEqualTo(result.evidenceBundle()
+                        .bundleFingerprint());
+        assertThat(seed.stateEvidenceRef().fingerprint())
+                .isEqualTo(
+                        stateEvidence.stateEvidenceFingerprint());
+        assertThat(seed.bindingCount()).isOne();
+        assertThat(seed.accessCount()).isOne();
+        assertThat(seed.liveEntityCount()).isOne();
+        assertThat(seed.absentCount()).isZero();
+        assertThat(seed.tombstonedCount()).isZero();
+        assertThat(seed.gateReady()).isFalse();
+        assertThat(seed.blockers()).containsExactly(
+                "EVIDENCE_NOT_CERTIFIABLE",
+                "RUN_EVIDENCE_LIMITED");
+        assertThatThrownBy(() -> seed.withFingerprint(
+                fingerprint('f')).verify(mapper))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("fingerprint mismatch");
     }
 
     @Test

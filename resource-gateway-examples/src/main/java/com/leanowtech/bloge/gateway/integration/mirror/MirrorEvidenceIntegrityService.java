@@ -30,6 +30,7 @@ public final class MirrorEvidenceIntegrityService {
     private static final int MAXIMUM_SIGNATURE_MATERIAL_BYTES = 8 * 1024;
     private static final String SIGNATURE_DOMAIN_V1 = "RESOURCE_GATEWAY_MIRROR_EVIDENCE_V1";
     private static final String SIGNATURE_DOMAIN_V2 = "RESOURCE_GATEWAY_MIRROR_EVIDENCE_V2";
+    private static final String SIGNATURE_DOMAIN_V3 = "RESOURCE_GATEWAY_MIRROR_EVIDENCE_V3";
 
     private final ObjectMapper mapper;
     private final VisualEvidenceSigner signer;
@@ -76,17 +77,13 @@ public final class MirrorEvidenceIntegrityService {
             if (Instant.EPOCH.equals(signedAt) || signedAt.isBefore(snapshot.completedAt())) {
                 return SealResult.failed(snapshot, unavailable, MATERIAL_INVALID);
             }
-            String attestationVersion = MirrorRunEvidence.SCHEMA_VERSION_V1.equals(
-                    snapshot.schemaVersion())
-                    ? MirrorEvidenceAttestation.SCHEMA_VERSION_V1
-                    : MirrorEvidenceAttestation.SCHEMA_VERSION;
+            String attestationVersion = attestationVersion(
+                    snapshot.schemaVersion());
             String materialFingerprint = signatureMaterialFingerprint(attestationVersion,
                     snapshot.runId(), snapshot.planFingerprint(), evidenceFingerprint, signedAt);
             VisualRunEvidenceSeal seal = signer.seal(materialFingerprint);
-            String bundleVersion = MirrorRunEvidence.SCHEMA_VERSION_V1.equals(
-                    snapshot.schemaVersion())
-                    ? MirrorEvidenceBundle.SCHEMA_VERSION_V1
-                    : MirrorEvidenceBundle.SCHEMA_VERSION;
+            String bundleVersion = bundleVersion(
+                    snapshot.schemaVersion());
             MirrorEvidenceAttestation attestation = new MirrorEvidenceAttestation(
                     attestationVersion,
                     MirrorEvidenceAttestation.SignatureStatus.VERIFIED,
@@ -118,7 +115,9 @@ public final class MirrorEvidenceIntegrityService {
      */
     public Verification verify(MirrorEvidenceBundle bundle) {
         if (bundle == null || !MirrorEvidenceBundle.SCHEMA_VERSION.equals(bundle.schemaVersion())
-                && !MirrorEvidenceBundle.SCHEMA_VERSION_V1.equals(bundle.schemaVersion())) {
+                && !MirrorEvidenceBundle.SCHEMA_VERSION_V1.equals(bundle.schemaVersion())
+                && !MirrorEvidenceBundle.STATEFUL_SCHEMA_VERSION.equals(
+                bundle.schemaVersion())) {
             return Verification.INVALID;
         }
         try {
@@ -167,6 +166,10 @@ public final class MirrorEvidenceIntegrityService {
         for (MirrorResolution resolution : evidence.resolutions()) {
             MirrorResolutionIntegrity.verify(mapper, resolution);
         }
+        if (evidence.stateEvidence() != null) {
+            MirrorStateRunEvidenceIntegrity.verify(
+                    mapper, evidence.stateEvidence());
+        }
     }
 
     private boolean verifyAttestation(MirrorEvidenceAttestation attestation) {
@@ -192,11 +195,43 @@ public final class MirrorEvidenceIntegrityService {
             String planFingerprint,
             String evidenceFingerprint,
             Instant signedAt) {
-        String domain = MirrorEvidenceAttestation.SCHEMA_VERSION_V1.equals(
-                schemaVersion) ? SIGNATURE_DOMAIN_V1 : SIGNATURE_DOMAIN_V2;
+        String domain = switch (schemaVersion) {
+            case MirrorEvidenceAttestation.SCHEMA_VERSION_V1 -> SIGNATURE_DOMAIN_V1;
+            case MirrorEvidenceAttestation.STATEFUL_SCHEMA_VERSION -> SIGNATURE_DOMAIN_V3;
+            case MirrorEvidenceAttestation.SCHEMA_VERSION -> SIGNATURE_DOMAIN_V2;
+            default -> throw new IllegalArgumentException(
+                    "unsupported mirror evidence attestation version");
+        };
         return fingerprint(new SignatureMaterial(domain,
                 schemaVersion, runId, planFingerprint,
                 evidenceFingerprint, signedAt), MAXIMUM_SIGNATURE_MATERIAL_BYTES);
+    }
+
+    private static String attestationVersion(
+            String evidenceVersion) {
+        return switch (evidenceVersion) {
+            case MirrorRunEvidence.SCHEMA_VERSION_V1 ->
+                    MirrorEvidenceAttestation.SCHEMA_VERSION_V1;
+            case MirrorRunEvidence.STATEFUL_SCHEMA_VERSION ->
+                    MirrorEvidenceAttestation.STATEFUL_SCHEMA_VERSION;
+            case MirrorRunEvidence.SCHEMA_VERSION ->
+                    MirrorEvidenceAttestation.SCHEMA_VERSION;
+            default -> throw new IllegalArgumentException(
+                    "unsupported mirror run evidence version");
+        };
+    }
+
+    private static String bundleVersion(String evidenceVersion) {
+        return switch (evidenceVersion) {
+            case MirrorRunEvidence.SCHEMA_VERSION_V1 ->
+                    MirrorEvidenceBundle.SCHEMA_VERSION_V1;
+            case MirrorRunEvidence.STATEFUL_SCHEMA_VERSION ->
+                    MirrorEvidenceBundle.STATEFUL_SCHEMA_VERSION;
+            case MirrorRunEvidence.SCHEMA_VERSION ->
+                    MirrorEvidenceBundle.SCHEMA_VERSION;
+            default -> throw new IllegalArgumentException(
+                    "unsupported mirror run evidence version");
+        };
     }
 
     private String fingerprint(Object value, int maximumBytes) {

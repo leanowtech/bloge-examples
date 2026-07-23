@@ -24,6 +24,7 @@ import java.util.Base64;
 import java.util.Optional;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 class MirrorEvidenceProtocolSchemaTest {
     private static final String PLAN = fingerprint('1');
@@ -115,6 +116,84 @@ class MirrorEvidenceProtocolSchemaTest {
         assertThat(evidence.at("/$defs/isolation/properties/deploymentTrustBinding/$ref")
                 .asText()).isEqualTo(
                         "mirror-deployment-isolation-run-trust-v1.schema.json");
+    }
+
+    @Test
+    void statefulSchemasCloseServerV3EvidenceAndWorkbookSeedFields()
+            throws Exception {
+        MirrorPlan plan = MirrorPersistenceTestFixtures.plan(
+                mapper,
+                MirrorPersistenceTestFixtures.scope("org-a"),
+                "stateful-schema-plan", 'c');
+        MirrorEvidenceBundle bundle =
+                MirrorPersistenceTestFixtures.statefulEvidence(
+                        mapper,
+                        new InMemoryVisualEvidenceSigner(),
+                        plan, "stateful-schema-run", 'd');
+        MirrorStateWorkbookSeed seed =
+                MirrorStateWorkbookSeed.project(mapper, bundle);
+        JsonNode bundleValue = mapper.valueToTree(bundle);
+        JsonNode evidenceValue =
+                bundleValue.path("evidence");
+        JsonNode stateValue =
+                evidenceValue.path("stateEvidence");
+        JsonNode seedValue = mapper.valueToTree(seed);
+        JsonNode bundleSchema = schema(
+                "mirror-evidence-bundle-v3.schema.json");
+        JsonNode evidenceSchema = schema(
+                "mirror-run-evidence-v3.schema.json");
+        JsonNode attestationSchema = schema(
+                "mirror-evidence-attestation-v3.schema.json");
+        JsonNode stateSchema = schema(
+                "mirror-state-run-evidence-v1.schema.json");
+        JsonNode seedSchema = schema(
+                "mirror-state-workbook-seed-v1.schema.json");
+
+        assertProperties(
+                bundleValue, bundleSchema.path("properties"));
+        assertProperties(
+                evidenceValue, evidenceSchema.path("properties"));
+        assertProperties(
+                bundleValue.path("attestation"),
+                attestationSchema.path("properties"));
+        assertProperties(
+                stateValue, stateSchema.path("properties"));
+        assertProperties(
+                stateValue.path("statefulBindings").get(0),
+                stateSchema.at(
+                        "/$defs/statefulBinding/properties"));
+        assertProperties(
+                seedValue, seedSchema.path("properties"));
+        assertThat(bundleSchema.at(
+                "/properties/evidence/$ref").asText())
+                .isEqualTo(
+                        "mirror-run-evidence-v3.schema.json");
+        assertThat(evidenceSchema.at(
+                "/properties/stateEvidence/$ref").asText())
+                .isEqualTo(
+                        "mirror-state-run-evidence-v1.schema.json");
+        assertThat(stateSchema.path(
+                "additionalProperties").asBoolean()).isFalse();
+        assertThat(stateSchema.at(
+                "/$defs/stateAccess/additionalProperties")
+                .asBoolean()).isFalse();
+        assertThat(seedSchema.path(
+                "additionalProperties").asBoolean()).isFalse();
+        seed.verify(mapper);
+        assertThatThrownBy(() -> new MirrorStateWorkbookSeed(
+                seed.schemaVersion(), seed.seedFingerprint(),
+                seed.runId(), seed.planFingerprint(),
+                seed.evidenceBundleFingerprint(),
+                seed.stateEvidenceRef(), seed.sessionStateRef(),
+                seed.stateModelRef(), seed.stateRevision(),
+                seed.worldFingerprint(), seed.logicalClock(),
+                seed.mode(), seed.runStatus(), seed.evidenceClass(),
+                seed.bindingCount(),
+                MirrorStateWorkbookSeed.MAXIMUM_ACCESSES + 1,
+                MirrorStateWorkbookSeed.MAXIMUM_ACCESSES + 1,
+                0, 0, seed.gateReady(), seed.blockers()))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("counts are inconsistent");
     }
 
     @Test

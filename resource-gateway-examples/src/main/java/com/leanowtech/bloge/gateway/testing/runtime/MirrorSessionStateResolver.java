@@ -8,6 +8,7 @@ import com.leanowtech.bloge.gateway.integration.mirror.MirrorArtifactRef;
 import com.leanowtech.bloge.gateway.integration.mirror.MirrorPlan;
 import com.leanowtech.bloge.gateway.integration.mirror.MirrorSessionPayload;
 import com.leanowtech.bloge.gateway.integration.mirror.MirrorSessionProtocolIntegrity;
+import com.leanowtech.bloge.gateway.integration.mirror.MirrorStateRunEvidence;
 import com.leanowtech.bloge.gateway.integration.mirror.SessionStateSpace;
 import com.leanowtech.bloge.gateway.integration.mirror.SessionStateSpaceIntegrity;
 import com.leanowtech.bloge.gateway.integration.mirror.StateModelIntegrity;
@@ -15,6 +16,7 @@ import com.leanowtech.bloge.gateway.integration.mirror.StateReadSpec;
 import com.leanowtech.bloge.gateway.integration.mirror.StateReadSpecIntegrity;
 import com.leanowtech.bloge.gateway.testing.domain.FixtureRule;
 import com.leanowtech.bloge.gateway.testing.domain.ProtocolJsonValue;
+import com.leanowtech.bloge.gateway.testing.evidence.ProtocolFingerprint;
 
 import java.math.BigDecimal;
 import java.util.Collection;
@@ -36,7 +38,10 @@ import java.util.Optional;
 public final class MirrorSessionStateResolver implements MirrorResolver {
     /** Stable terminal error emitted when an exact session key is tombstoned. */
     public static final String ENTITY_TOMBSTONED =
-            "RG.MIRROR.STATE.ENTITY_TOMBSTONED";
+            MirrorStateRunEvidence.MirrorSessionStateError
+                    .ENTITY_TOMBSTONED;
+    private static final int MAXIMUM_PROJECTED_OUTPUT_BYTES =
+            16 * 1024 * 1024;
     private static final ArtifactProvenance.Confidence EXACT_STATE_CONFIDENCE =
             new ArtifactProvenance.Confidence(1, 1, 1, "SESSION_STATE_EXACT_V1");
     private static final FixtureRule.Consumption UNBOUNDED =
@@ -123,6 +128,10 @@ public final class MirrorSessionStateResolver implements MirrorResolver {
                                 keyFingerprint))
                         .findFirst();
         if (indexed.isEmpty()) {
+            request.stateAccessObserver().observed(
+                    request, spec, keyFingerprint,
+                    MirrorStateRunEvidence.AccessOutcome.ABSENT,
+                    "", "");
             return Optional.empty();
         }
         SessionStateSpace.EntityKey entityKey = indexed.orElseThrow().entityKey();
@@ -153,18 +162,31 @@ public final class MirrorSessionStateResolver implements MirrorResolver {
                         "MIRROR_SESSION_PROJECTION_INVALID",
                         "State read response projection could not be evaluated.");
             }
+            String outputFingerprint = ProtocolFingerprint.ofBounded(
+                    mapper, output, MAXIMUM_PROJECTED_OUTPUT_BYTES);
+            request.stateAccessObserver().observed(
+                    request, spec, keyFingerprint,
+                    MirrorStateRunEvidence.AccessOutcome.LIVE_ENTITY,
+                    entity.orElseThrow().fingerprint(),
+                    outputFingerprint);
             return Optional.of(new Match(
                     rule(spec, state, FixtureRule.Behavior.returning(output)),
                     EXACT_STATE_CONFIDENCE, 1, List.of(),
                     artifacts, ruleRefs));
         }
-        boolean tombstoned = state.tombstones().stream()
-                .anyMatch(value -> value.key().equals(entityKey));
-        if (!tombstoned) {
+        Optional<SessionStateSpace.EntityTombstone> tombstone =
+                state.tombstones().stream()
+                        .filter(value -> value.key().equals(entityKey))
+                        .findFirst();
+        if (tombstone.isEmpty()) {
             throw rejected(
                     "MIRROR_SESSION_INDEX_CORRUPT",
                     "State business-key index targets no live entity or tombstone.");
         }
+        request.stateAccessObserver().observed(
+                request, spec, keyFingerprint,
+                MirrorStateRunEvidence.AccessOutcome.TOMBSTONED,
+                tombstone.orElseThrow().fingerprint(), "");
         return Optional.of(new Match(
                 rule(spec, state, FixtureRule.Behavior.throwing(
                         ENTITY_TOMBSTONED, "NOT_FOUND",

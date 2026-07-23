@@ -129,6 +129,39 @@ class MirrorRunIntegrationServiceTest {
     }
 
     @Test
+    void projectsAStateWorkbookSeedOnlyFromScopedStatefulEvidence() {
+        MirrorEvidenceBundle stateful =
+                MirrorPersistenceTestFixtures.statefulEvidence(
+                        mapper, new InMemoryVisualEvidenceSigner(),
+                        plan, "run-state-1", 'c');
+        when(evidence.find(SCOPE, "run-state-1"))
+                .thenReturn(Optional.of(stateful));
+
+        MirrorStateWorkbookSeed seed =
+                service.stateWorkbookSeed(
+                        "run-state-1", identity());
+
+        seed.verify(mapper);
+        assertThat(seed.runId()).isEqualTo("run-state-1");
+        assertThat(seed.evidenceBundleFingerprint())
+                .isEqualTo(stateful.bundleFingerprint());
+        assertThat(seed.accessCount()).isZero();
+        assertThat(seed.gateReady()).isFalse();
+        assertThat(seed.blockers()).containsExactly(
+                "EVIDENCE_NOT_CERTIFIABLE",
+                "RUN_EVIDENCE_LIMITED");
+
+        when(evidence.find(SCOPE, "run-1"))
+                .thenReturn(Optional.of(bundle));
+        assertProblem(
+                () -> service.stateWorkbookSeed(
+                        "run-1", identity()),
+                409,
+                "RG.MIRROR.STATE_WORKBOOK_SEED_UNAVAILABLE",
+                false);
+    }
+
+    @Test
     void freezesOneAuthenticatedSessionSnapshotAndPassesItToTheWholeRun() {
         MirrorArtifactRef stateModelRef = new MirrorArtifactRef(
                 "STATE_MODEL", "order-world", 1,

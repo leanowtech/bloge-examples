@@ -186,15 +186,38 @@ public class TestRunService {
             CompiledExecutionControl compiled,
             MirrorResolutionObserver mirrorObserver,
             MirrorInvocationBudget invocationBudget) {
+        return executeCompiled(
+                request, compiled, mirrorObserver, invocationBudget,
+                MirrorStateAccessObserver.noop());
+    }
+
+    /**
+     * Executes one compiled mirror generation with payload-free Session state observations.
+     *
+     * @param request exact graph, context, fixture, purpose, and evidence provenance
+     * @param compiled exact previously compiled execution control
+     * @param mirrorObserver observer used only by mirror controls
+     * @param invocationBudget mirror-only whole-run occurrence budget, or {@code null}
+     * @param stateAccessObserver state access sink, or the no-op observer for stateless runs
+     * @return effective plan, graph result, and terminal evidence
+     */
+    public TestExecutionResult executeCompiled(
+            TestExecutionRequest request,
+            CompiledExecutionControl compiled,
+            MirrorResolutionObserver mirrorObserver,
+            MirrorInvocationBudget invocationBudget,
+            MirrorStateAccessObserver stateAccessObserver) {
         Objects.requireNonNull(request, "request");
         Objects.requireNonNull(compiled, "compiled");
         Objects.requireNonNull(mirrorObserver, "mirrorObserver");
+        Objects.requireNonNull(
+                stateAccessObserver, "stateAccessObserver");
         validateCompiledBinding(request, compiled);
         String runId = "test-run-" + UUID.randomUUID();
         Instant startedAt = Instant.now();
         try (AdmissionGuard admission = noAdmissionGuard()) {
             return runCompiled(request, runId, startedAt, compiled, admission, mirrorObserver,
-                    invocationBudget);
+                    invocationBudget, stateAccessObserver);
         }
     }
 
@@ -230,7 +253,8 @@ public class TestRunService {
         try (AdmissionGuard admission = Objects.requireNonNull(
                 admissionFactory.admit(compiled), "admission guard")) {
             return runCompiled(request, runId, startedAt, compiled, admission,
-                    MirrorResolutionObserver.noop(), null);
+                    MirrorResolutionObserver.noop(), null,
+                    MirrorStateAccessObserver.noop());
         }
     }
 
@@ -241,7 +265,8 @@ public class TestRunService {
             CompiledExecutionControl compiled,
             AdmissionGuard admission,
             MirrorResolutionObserver mirrorObserver,
-            MirrorInvocationBudget invocationBudget) {
+            MirrorInvocationBudget invocationBudget,
+            MirrorStateAccessObserver stateAccessObserver) {
         InvocationRecorder recorder = new InvocationRecorder(objectMapper);
         GraphResult graphResult = null;
         List<String> diagnostics = new ArrayList<>();
@@ -252,7 +277,7 @@ public class TestRunService {
         try {
             ExecutionOptions options = runtimeOptions.options(
                     compiled, recorder, mirrorObserver, invocationBudget,
-                    request.mirrorSessionContext());
+                    request.mirrorSessionContext(), stateAccessObserver);
             graphResult = engine.execute(request.graph(), executionContext, options);
         } catch (RuntimeException ex) {
             diagnostics.add(bounded("Test engine failed before producing GraphResult: " + ex.getMessage()));

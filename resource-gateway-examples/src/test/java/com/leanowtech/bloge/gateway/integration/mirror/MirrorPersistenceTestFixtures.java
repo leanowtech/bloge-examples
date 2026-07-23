@@ -131,6 +131,72 @@ final class MirrorPersistenceTestFixtures {
                 Clock.fixed(startedAt.plusSeconds(2), ZoneOffset.UTC)).seal(run).bundle();
     }
 
+    static MirrorEvidenceBundle statefulEvidence(
+            ObjectMapper mapper,
+            VisualEvidenceSigner signer,
+            MirrorPlan plan,
+            String runId,
+            char semanticMaterial) {
+        Instant startedAt = COMPILED_AT.plusSeconds(10);
+        MirrorArtifactRef capability =
+                plan.externalBindings().getFirst().capabilityRef();
+        MirrorArtifactRef stateRef = new MirrorArtifactRef(
+                "SESSION_STATE", "customer-session-1", 1,
+                fingerprint('3'));
+        MirrorArtifactRef modelRef = new MirrorArtifactRef(
+                "STATE_MODEL", "customer-state", 1,
+                fingerprint('4'));
+        MirrorArtifactRef readSpecRef = new MirrorArtifactRef(
+                "STATE_READ_SPEC", "query-customer", 1,
+                fingerprint('5'));
+        MirrorStateRunEvidence stateEvidence =
+                MirrorStateRunEvidenceIntegrity.seal(
+                        mapper, new MirrorStateRunEvidence(
+                                MirrorStateRunEvidence.SCHEMA_VERSION,
+                                "", runId, plan.planFingerprint(),
+                                stateRef, modelRef, 0,
+                                fingerprint('6'), startedAt,
+                                MirrorStateRunEvidence.Mode
+                                        .READ_ONLY_SNAPSHOT,
+                                List.of(
+                                        new MirrorStateRunEvidence
+                                                .StatefulBinding(
+                                                "/root/loadCustomer#RESOURCE",
+                                                "/root", capability,
+                                                readSpecRef)),
+                                List.of(), List.of()));
+        MirrorRunEvidence run = new MirrorRunEvidence(
+                MirrorRunEvidence.STATEFUL_SCHEMA_VERSION,
+                runId, "request-" + runId, fingerprint('1'),
+                plan.planId(), plan.planFingerprint(),
+                plan.capabilityClosureFingerprint(),
+                plan.executionControlFingerprint(),
+                plan.rootCapability(), plan.fixtureBundleRef(),
+                List.of(new MirrorRunEvidence.ExternalBinding(
+                        plan.rootCapability(), "loadCustomer",
+                        capability,
+                        "/root/loadCustomer#RESOURCE", "/root")),
+                plan.scope(), PURPOSE,
+                MirrorRunEvidence.Status.PASSED,
+                MirrorRunEvidence.EvidenceClass.EXPLORATORY,
+                fingerprint(semanticMaterial), startedAt,
+                startedAt.plusSeconds(1), List.of(), List.of(),
+                List.of(), stateEvidence,
+                new MirrorRunEvidence.IsolationFacts(
+                        MirrorRunEvidence.IsolationFacts.EngineMode
+                                .INDEPENDENT_TEST_ENGINE,
+                        List.of(), List.of("InvocationRecorder"),
+                        false, false, false, false, false,
+                        false, false, null,
+                        List.of(
+                                "DEPLOYMENT_EGRESS_NOT_ATTESTED")),
+                List.of("DEPLOYMENT_EGRESS_NOT_ATTESTED"));
+        return new MirrorEvidenceIntegrityService(
+                mapper, signer,
+                Clock.fixed(startedAt.plusSeconds(2),
+                        ZoneOffset.UTC)).seal(run).bundle();
+    }
+
     static MirrorEvidenceBundle certifiableEvidence(
             ObjectMapper mapper,
             VisualEvidenceSigner signer,

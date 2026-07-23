@@ -293,6 +293,43 @@ class MirrorEvidenceIntegrityServiceTest {
     }
 
     @Test
+    void sealsStatefulV3InItsOwnSignatureDomainAndRejectsNestedStateTampering() {
+        MirrorEvidenceIntegrityService.SealResult sealed =
+                service.seal(statefulEvidence());
+
+        assertThat(sealed.verified()).isTrue();
+        assertThat(sealed.bundle().schemaVersion())
+                .isEqualTo(
+                        MirrorEvidenceBundle.STATEFUL_SCHEMA_VERSION);
+        assertThat(sealed.attestation().schemaVersion())
+                .isEqualTo(
+                        MirrorEvidenceAttestation.STATEFUL_SCHEMA_VERSION);
+        assertThat(sealed.evidence().schemaVersion())
+                .isEqualTo(
+                        MirrorRunEvidence.STATEFUL_SCHEMA_VERSION);
+        assertThat(service.verify(sealed.bundle()))
+                .isEqualTo(
+                        MirrorEvidenceIntegrityService.Verification.VERIFIED);
+
+        MirrorStateRunEvidence alteredState =
+                sealed.evidence().stateEvidence()
+                        .withFingerprint(fingerprint('f'));
+        MirrorRunEvidence alteredEvidence =
+                copyEvidenceWithState(
+                        sealed.evidence(), alteredState);
+        MirrorEvidenceBundle alteredBundle =
+                new MirrorEvidenceBundle(
+                        sealed.bundle().schemaVersion(),
+                        sealed.bundle().bundleFingerprint(),
+                        sealed.bundle().payloadPolicy(),
+                        sealed.attestation(), alteredEvidence);
+
+        assertThat(service.verify(alteredBundle))
+                .isEqualTo(
+                        MirrorEvidenceIntegrityService.Verification.INVALID);
+    }
+
+    @Test
     void recursivelyDetachesCallerOwnedCollectionsBeforeSigning() {
         ArrayList<String> isolationLimitations = new ArrayList<>(
                 List.of("DEPLOYMENT_EGRESS_NOT_ATTESTED"));
@@ -333,6 +370,74 @@ class MirrorEvidenceIntegrityServiceTest {
                 started.plusSeconds(1), List.of(node(OUTPUT)), List.of(edge()),
                 List.of(sealedResolution()), isolation,
                 List.of("DEPLOYMENT_EGRESS_NOT_ATTESTED"));
+    }
+
+    private MirrorRunEvidence statefulEvidence() {
+        MirrorRunEvidence base = evidence();
+        MirrorArtifactRef stateRef = new MirrorArtifactRef(
+                "SESSION_STATE", "session-1", 1, fingerprint('b'));
+        MirrorArtifactRef modelRef = new MirrorArtifactRef(
+                "STATE_MODEL", "customer-state", 1, fingerprint('c'));
+        MirrorArtifactRef readSpecRef = new MirrorArtifactRef(
+                "STATE_READ_SPEC", "query-customer", 1, fingerprint('d'));
+        MirrorStateRunEvidence stateEvidence =
+                MirrorStateRunEvidenceIntegrity.seal(
+                        mapper, new MirrorStateRunEvidence(
+                                MirrorStateRunEvidence.SCHEMA_VERSION,
+                                "", RUN_ID, PLAN, stateRef, modelRef,
+                                0, fingerprint('e'),
+                                Instant.parse("2026-07-22T00:00:00Z"),
+                                MirrorStateRunEvidence.Mode
+                                        .READ_ONLY_SNAPSHOT,
+                                List.of(
+                                        new MirrorStateRunEvidence
+                                                .StatefulBinding(
+                                                "/root/loadCustomer#PRIMARY",
+                                                "/root", EXTERNAL,
+                                                readSpecRef)),
+                                List.of(
+                                        new MirrorStateRunEvidence
+                                                .StateAccess(
+                                                "/root/loadCustomer#PRIMARY",
+                                                "/root", "C-1", 1, 1,
+                                                EXTERNAL, readSpecRef,
+                                                REQUEST, fingerprint('0'),
+                                                MirrorStateRunEvidence
+                                                        .AccessOutcome
+                                                        .LIVE_ENTITY,
+                                                fingerprint('1'), OUTPUT,
+                                                "")),
+                                List.of()));
+        MirrorResolution stateResolution =
+                MirrorResolutionIntegrity.seal(
+                        mapper, new MirrorResolution(
+                                "", "", RUN_ID, PLAN, EXTERNAL,
+                                "/root/loadCustomer#PRIMARY", "/root",
+                                "C-1", 1, 1, REQUEST,
+                                MirrorResolution.Status.RESOLVED,
+                                MirrorPlan.MirrorSource.SESSION_STATE,
+                                MirrorResolution.PayloadVisibility.HASH_ONLY,
+                                false, null, OUTPUT, null,
+                                List.of(stateRef, modelRef, readSpecRef),
+                                List.of("state-read-spec:query-customer:1"),
+                                new ArtifactProvenance.Confidence(
+                                        1, 1, 1, "state-read-v1"),
+                                1, List.of("PAYLOAD_HASH_ONLY")));
+        return new MirrorRunEvidence(
+                MirrorRunEvidence.STATEFUL_SCHEMA_VERSION,
+                base.runId(), base.requestId(),
+                base.requestContextFingerprint(), base.planId(),
+                base.planFingerprint(),
+                base.capabilityClosureFingerprint(),
+                base.executionControlFingerprint(),
+                base.rootCapability(), base.fixtureBundleRef(),
+                base.externalBindings(), base.scope(),
+                base.authorizedPurpose(), base.status(),
+                base.evidenceClass(),
+                base.semanticResultFingerprint(), base.startedAt(),
+                base.completedAt(), base.nodeTraces(),
+                base.edgeTraces(), List.of(stateResolution),
+                stateEvidence, base.isolation(), base.limitations());
     }
 
     private MirrorRunEvidence.NodeTrace node(String outputFingerprint) {
@@ -388,6 +493,27 @@ class MirrorEvidenceIntegrityServiceTest {
                 source.semanticResultFingerprint(), source.startedAt(), source.completedAt(),
                 selectedNodes, source.edgeTraces(),
                 resolutions == null ? source.resolutions() : resolutions,
+                source.isolation(), source.limitations());
+    }
+
+    private static MirrorRunEvidence copyEvidenceWithState(
+            MirrorRunEvidence source,
+            MirrorStateRunEvidence stateEvidence) {
+        return new MirrorRunEvidence(
+                source.schemaVersion(), source.runId(),
+                source.requestId(),
+                source.requestContextFingerprint(), source.planId(),
+                source.planFingerprint(),
+                source.capabilityClosureFingerprint(),
+                source.executionControlFingerprint(),
+                source.rootCapability(), source.fixtureBundleRef(),
+                source.externalBindings(), source.scope(),
+                source.authorizedPurpose(), source.status(),
+                source.evidenceClass(),
+                source.semanticResultFingerprint(),
+                source.startedAt(), source.completedAt(),
+                source.nodeTraces(), source.edgeTraces(),
+                source.resolutions(), stateEvidence,
                 source.isolation(), source.limitations());
     }
 

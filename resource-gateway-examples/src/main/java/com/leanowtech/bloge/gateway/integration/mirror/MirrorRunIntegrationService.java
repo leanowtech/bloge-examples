@@ -417,6 +417,41 @@ public class MirrorRunIntegrationService {
         return bundle;
     }
 
+    /**
+     * Projects one verified stateful run into a deterministic ANEKE workbook seed.
+     *
+     * @param runId terminal stateful mirror run identity
+     * @param identity authenticated enterprise identity and mirror purpose
+     * @return payload-free seed bound to the signed evidence bundle and Session state head
+     */
+    public MirrorStateWorkbookSeed stateWorkbookSeed(
+            String runId, IntegrationRequestContext identity) {
+        MirrorOperationObservability.Observation observation =
+                observations.start(
+                        MirrorOperationAuditEvent.Operation.EVIDENCE_READ,
+                        identity, "", "", runId);
+        try {
+            MirrorStateWorkbookSeed seed =
+                    MirrorStateWorkbookSeed.project(
+                            mapper, requireEvidence(runId, identity));
+            observation.succeeded(seed.runId());
+            return seed;
+        } catch (IntegrationProblemException expected) {
+            throw observation.failed(expected);
+        } catch (IllegalArgumentException invalid) {
+            throw observation.failed(conflict(
+                    identity,
+                    "RG.MIRROR.STATE_WORKBOOK_SEED_UNAVAILABLE",
+                    "The run does not contain a complete stateful evidence closure.",
+                    Map.of()));
+        } catch (RuntimeException unavailable) {
+            throw observation.failed(serviceUnavailable(
+                    identity,
+                    "RG.MIRROR.STATE_WORKBOOK_SEED_UNAVAILABLE",
+                    "The state workbook seed could not be projected safely."));
+        }
+    }
+
     private MirrorRunRequestRepository.Claim claim(
             MirrorRunRequestRepository.Registration registration,
             MirrorDeploymentIsolationRunTrust.Admission trustAdmission,
@@ -551,6 +586,7 @@ public class MirrorRunIntegrationService {
                  "RG.MIRROR.EVIDENCE_INTEGRITY_REJECTED",
                  "RG.MIRROR.RUN_EVIDENCE_REJECTED",
                  "RG.MIRROR.RESOLUTION_EVIDENCE_REJECTED",
+                 "RG.MIRROR.STATE_EVIDENCE_REJECTED",
                  "RG.MIRROR.DEPLOYMENT_TRUST_REQUIRED",
                  "RG.MIRROR.DEPLOYMENT_TRUST_CHANGED" ->
                     serviceUnavailable(identity, rejected.code(),

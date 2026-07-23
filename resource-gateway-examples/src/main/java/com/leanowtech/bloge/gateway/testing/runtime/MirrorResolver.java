@@ -46,6 +46,7 @@ public interface MirrorResolver {
      * @param matchedRules preflight-ordered rules whose selectors match this invocation
      * @param recordedExactCorpus optional site-bound immutable corpus generation
      * @param sessionContext optional frozen stateful-run snapshot and site capability bindings
+     * @param stateAccessObserver payload-free Session state access sink
      */
     record Request(
             InvocationSite site,
@@ -55,7 +56,8 @@ public interface MirrorResolver {
             Object input,
             List<FixtureRule> matchedRules,
             ResolvedCorpusPayloads.CapabilityCorpus recordedExactCorpus,
-            SessionContext sessionContext
+            SessionContext sessionContext,
+            MirrorStateAccessObserver stateAccessObserver
     ) {
         /** Validates exact coordinates and detaches the candidate list. */
         public Request {
@@ -69,6 +71,8 @@ public interface MirrorResolver {
                         "requestFingerprint must be a canonical SHA-256 value");
             }
             matchedRules = matchedRules == null ? List.of() : List.copyOf(matchedRules);
+            stateAccessObserver = stateAccessObserver == null
+                    ? MirrorStateAccessObserver.noop() : stateAccessObserver;
         }
 
         /** Backward-compatible request without a site-bound recorded corpus. */
@@ -80,7 +84,8 @@ public interface MirrorResolver {
                 Object input,
                 List<FixtureRule> matchedRules) {
             this(site, occurrence, attempt, requestFingerprint,
-                    input, matchedRules, null, null);
+                    input, matchedRules, null, null,
+                    MirrorStateAccessObserver.noop());
         }
 
         /** Backward-compatible request carrying recorded corpus but no stateful session. */
@@ -93,7 +98,23 @@ public interface MirrorResolver {
                 List<FixtureRule> matchedRules,
                 ResolvedCorpusPayloads.CapabilityCorpus recordedExactCorpus) {
             this(site, occurrence, attempt, requestFingerprint,
-                    input, matchedRules, recordedExactCorpus, null);
+                    input, matchedRules, recordedExactCorpus, null,
+                    MirrorStateAccessObserver.noop());
+        }
+
+        /** Backward-compatible request carrying Session state without evidence collection. */
+        public Request(
+                InvocationSite site,
+                int occurrence,
+                int attempt,
+                String requestFingerprint,
+                Object input,
+                List<FixtureRule> matchedRules,
+                ResolvedCorpusPayloads.CapabilityCorpus recordedExactCorpus,
+                SessionContext sessionContext) {
+            this(site, occurrence, attempt, requestFingerprint,
+                    input, matchedRules, recordedExactCorpus, sessionContext,
+                    MirrorStateAccessObserver.noop());
         }
 
         /** Prevents ephemeral business input from entering ordinary logs. */
@@ -105,7 +126,10 @@ public interface MirrorResolver {
                     + ", requestFingerprint=" + requestFingerprint
                     + ", matchedRules=" + matchedRules.size()
                     + ", recordedExactCorpus=" + (recordedExactCorpus != null)
-                    + ", sessionContext=" + (sessionContext != null) + "]";
+                    + ", sessionContext=" + (sessionContext != null)
+                    + ", stateAccessObserver="
+                    + (stateAccessObserver != MirrorStateAccessObserver.noop())
+                    + "]";
         }
     }
 

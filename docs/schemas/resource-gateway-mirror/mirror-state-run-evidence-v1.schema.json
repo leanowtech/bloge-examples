@@ -1,0 +1,161 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://bloge.dev/schemas/resource-gateway-mirror/mirror-state-run-evidence-v1.schema.json",
+  "title": "Resource Gateway Mirror State Run Evidence v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion", "stateEvidenceFingerprint", "runId", "planFingerprint",
+    "sessionStateRef", "stateModelRef", "stateRevision", "worldFingerprint",
+    "logicalClock", "mode", "statefulBindings", "accesses", "limitations"
+  ],
+  "properties": {
+    "schemaVersion": { "const": "resourceGateway.mirrorStateRunEvidence.v1" },
+    "stateEvidenceFingerprint": { "$ref": "#/$defs/fingerprint" },
+    "runId": { "type": "string", "minLength": 1, "maxLength": 512 },
+    "planFingerprint": { "$ref": "#/$defs/fingerprint" },
+    "sessionStateRef": {
+      "allOf": [
+        { "$ref": "mirror-run-evidence-v1.schema.json#/$defs/artifactRef" },
+        { "properties": { "kind": { "const": "SESSION_STATE" } } }
+      ]
+    },
+    "stateModelRef": {
+      "allOf": [
+        { "$ref": "mirror-run-evidence-v1.schema.json#/$defs/artifactRef" },
+        { "properties": { "kind": { "const": "STATE_MODEL" } } }
+      ]
+    },
+    "stateRevision": { "type": "integer", "minimum": 0 },
+    "worldFingerprint": { "$ref": "#/$defs/fingerprint" },
+    "logicalClock": { "type": "string", "format": "date-time" },
+    "mode": { "const": "READ_ONLY_SNAPSHOT" },
+    "statefulBindings": {
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 10000,
+      "items": { "$ref": "#/$defs/statefulBinding" }
+    },
+    "accesses": {
+      "type": "array",
+      "maxItems": 100000,
+      "items": { "$ref": "#/$defs/stateAccess" }
+    },
+    "limitations": {
+      "type": "array",
+      "maxItems": 64,
+      "uniqueItems": true,
+      "items": { "type": "string", "minLength": 1, "maxLength": 512 }
+    }
+  },
+  "$defs": {
+    "fingerprint": {
+      "type": "string",
+      "pattern": "^sha256:[a-f0-9]{64}$"
+    },
+    "optionalFingerprint": {
+      "oneOf": [
+        { "const": "" },
+        { "$ref": "#/$defs/fingerprint" }
+      ]
+    },
+    "statefulBinding": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "invocationSiteId", "graphPath", "capabilityRef", "stateReadSpecRef"
+      ],
+      "properties": {
+        "invocationSiteId": {
+          "type": "string", "minLength": 1, "maxLength": 2048
+        },
+        "graphPath": {
+          "type": "string", "pattern": "^/.*", "maxLength": 2048
+        },
+        "capabilityRef": {
+          "allOf": [
+            { "$ref": "mirror-run-evidence-v1.schema.json#/$defs/artifactRef" },
+            { "properties": { "kind": { "const": "CAPABILITY" } } }
+          ]
+        },
+        "stateReadSpecRef": {
+          "allOf": [
+            { "$ref": "mirror-run-evidence-v1.schema.json#/$defs/artifactRef" },
+            { "properties": { "kind": { "const": "STATE_READ_SPEC" } } }
+          ]
+        }
+      }
+    },
+    "stateAccess": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "invocationSiteId", "graphPath", "correlationKey", "occurrence",
+        "attempt", "capabilityRef", "stateReadSpecRef", "requestFingerprint",
+        "businessKeyFingerprint", "outcome", "stateRecordFingerprint",
+        "projectedOutputFingerprint", "errorCode"
+      ],
+      "properties": {
+        "invocationSiteId": {
+          "type": "string", "minLength": 1, "maxLength": 2048
+        },
+        "graphPath": {
+          "type": "string", "pattern": "^/.*", "maxLength": 2048
+        },
+        "correlationKey": { "type": "string", "maxLength": 1024 },
+        "occurrence": { "type": "integer", "minimum": 1 },
+        "attempt": { "type": "integer", "minimum": 1 },
+        "capabilityRef": {
+          "allOf": [
+            { "$ref": "mirror-run-evidence-v1.schema.json#/$defs/artifactRef" },
+            { "properties": { "kind": { "const": "CAPABILITY" } } }
+          ]
+        },
+        "stateReadSpecRef": {
+          "allOf": [
+            { "$ref": "mirror-run-evidence-v1.schema.json#/$defs/artifactRef" },
+            { "properties": { "kind": { "const": "STATE_READ_SPEC" } } }
+          ]
+        },
+        "requestFingerprint": { "$ref": "#/$defs/fingerprint" },
+        "businessKeyFingerprint": { "$ref": "#/$defs/fingerprint" },
+        "outcome": { "enum": ["LIVE_ENTITY", "ABSENT", "TOMBSTONED"] },
+        "stateRecordFingerprint": { "$ref": "#/$defs/optionalFingerprint" },
+        "projectedOutputFingerprint": { "$ref": "#/$defs/optionalFingerprint" },
+        "errorCode": { "type": "string", "maxLength": 256 }
+      },
+      "allOf": [
+        {
+          "if": { "properties": { "outcome": { "const": "LIVE_ENTITY" } } },
+          "then": {
+            "properties": {
+              "stateRecordFingerprint": { "$ref": "#/$defs/fingerprint" },
+              "projectedOutputFingerprint": { "$ref": "#/$defs/fingerprint" },
+              "errorCode": { "const": "" }
+            }
+          }
+        },
+        {
+          "if": { "properties": { "outcome": { "const": "ABSENT" } } },
+          "then": {
+            "properties": {
+              "stateRecordFingerprint": { "const": "" },
+              "projectedOutputFingerprint": { "const": "" },
+              "errorCode": { "const": "" }
+            }
+          }
+        },
+        {
+          "if": { "properties": { "outcome": { "const": "TOMBSTONED" } } },
+          "then": {
+            "properties": {
+              "stateRecordFingerprint": { "$ref": "#/$defs/fingerprint" },
+              "projectedOutputFingerprint": { "const": "" },
+              "errorCode": { "const": "RG.MIRROR.STATE.ENTITY_TOMBSTONED" }
+            }
+          }
+        }
+      ]
+    }
+  }
+}

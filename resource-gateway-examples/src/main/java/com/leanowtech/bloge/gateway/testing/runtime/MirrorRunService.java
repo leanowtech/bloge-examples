@@ -13,6 +13,7 @@ import com.leanowtech.bloge.gateway.integration.mirror.MirrorPlan;
 import com.leanowtech.bloge.gateway.integration.mirror.MirrorPlanIntegrity;
 import com.leanowtech.bloge.gateway.integration.mirror.MirrorResolution;
 import com.leanowtech.bloge.gateway.integration.mirror.MirrorRunEvidence;
+import com.leanowtech.bloge.gateway.integration.mirror.MirrorStateRunEvidence;
 import com.leanowtech.bloge.gateway.testing.domain.EffectiveExecutionPlan;
 import com.leanowtech.bloge.gateway.testing.evidence.ProtocolFingerprint;
 import com.leanowtech.bloge.gateway.testing.planning.CompiledExecutionControl;
@@ -31,14 +32,15 @@ import java.util.Objects;
 import java.util.Set;
 
 /**
- * Admits and executes a self-contained stateless mirror generation without recompilation.
+ * Admits and executes one self-contained mirror generation without recompilation.
  *
  * <p>The service verifies the public seal, authenticated scope and purpose, hard expiry, exact
- * graph/fixture/control identities, external-only control coverage, and the static invocation
- * floor before creating the independent BLOGE engine. The execution context receives the plan's
- * logical deadline budget, while a separate resolver-side occurrence budget fails dynamic
- * foreach, loop, nested, streaming, or compensation expansion before operator execution;
- * production credentials, interceptors, context carriers, and durable stores are never attached.</p>
+ * graph/fixture/control identities, external-only control coverage, the static invocation floor,
+ * and any frozen Session state head before creating the independent BLOGE engine. The execution
+ * context receives the plan's logical deadline budget, while separate resolver-side occurrence
+ * and state-access journals fail dynamic expansion and bind state reads to exact payload-free
+ * evidence before signing; production credentials, interceptors, context carriers, and durable
+ * stores are never attached.</p>
  *
  * <p>The class itself is framework-neutral. Resource Gateway exposes it only when the isolated
  * test/staging composition has also assembled protected API admission, durable request fencing,
@@ -286,9 +288,14 @@ public class MirrorRunService {
                 mapper, plan, compiled.executionControl().replayPayloads());
         MirrorInvocationBudget invocationBudget = new MirrorInvocationBudget(
                 plan.policy().maximumInvocations());
+        MirrorStateAccessJournal stateJournal = request.sessionContext() == null
+                ? null : new MirrorStateAccessJournal(
+                mapper, plan, request.sessionContext());
         try {
             execution = testRunService.executeCompiled(executionRequest,
-                    compiled.executionControl(), resolutionJournal, invocationBudget);
+                    compiled.executionControl(), resolutionJournal, invocationBudget,
+                    stateJournal == null
+                            ? MirrorStateAccessObserver.noop() : stateJournal);
         } catch (RuntimeException failure) {
             throw reject("RG.MIRROR.RUNTIME_GENERATION_REJECTED",
                     "Compiled mirror generation failed shared-kernel admission.");
@@ -305,17 +312,30 @@ public class MirrorRunService {
             throw reject("RG.MIRROR.RESOLUTION_EVIDENCE_REJECTED",
                     "Mirror resolution evidence could not be sealed for this run.");
         }
+        MirrorStateRunEvidence stateEvidence;
+        try {
+            stateEvidence = stateJournal == null ? null
+                    : stateJournal.complete(
+                    execution.evidence().runId());
+        } catch (RuntimeException failure) {
+            throw reject("RG.MIRROR.STATE_EVIDENCE_REJECTED",
+                    "Session state evidence could not be sealed for this run.");
+        }
         MirrorRunEvidence evidence;
         try {
             MirrorDeploymentIsolationRunTrust.Binding trustBinding =
                     request.deploymentTrust() == null ? null : deploymentTrust.confirm(
                             request.deploymentTrust(), execution.evidence().startedAt(),
                             execution.evidence().completedAt());
-            evidence = trustBinding == null
+            evidence = stateEvidence == null
+                    ? (trustBinding == null
                     ? evidenceProjector.project(request, execution, resolutions,
                     engineConfiguration(), invocationBudget.snapshot())
                     : evidenceProjector.project(request, execution, resolutions,
-                    engineConfiguration(), invocationBudget.snapshot(), trustBinding);
+                    engineConfiguration(), invocationBudget.snapshot(), trustBinding))
+                    : evidenceProjector.projectStateful(
+                    request, execution, resolutions, engineConfiguration(),
+                    invocationBudget.snapshot(), trustBinding, stateEvidence);
         } catch (MirrorDeploymentIsolationRunTrustAuthority.TrustException failure) {
             throw reject("RG.MIRROR.DEPLOYMENT_TRUST_CHANGED",
                     "Deployment isolation trust changed before evidence confirmation.");

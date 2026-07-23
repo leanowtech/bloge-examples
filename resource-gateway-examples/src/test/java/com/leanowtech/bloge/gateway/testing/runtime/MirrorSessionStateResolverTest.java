@@ -8,6 +8,7 @@ import com.leanowtech.bloge.gateway.integration.mirror.MirrorArtifactRef;
 import com.leanowtech.bloge.gateway.integration.mirror.MirrorPlan;
 import com.leanowtech.bloge.gateway.integration.mirror.MirrorSessionPayload;
 import com.leanowtech.bloge.gateway.integration.mirror.MirrorSessionProtocolIntegrity;
+import com.leanowtech.bloge.gateway.integration.mirror.MirrorStateRunEvidence;
 import com.leanowtech.bloge.gateway.integration.mirror.SessionStateSpace;
 import com.leanowtech.bloge.gateway.integration.mirror.SessionStateSpaceIntegrity;
 import com.leanowtech.bloge.gateway.integration.mirror.StateModel;
@@ -27,6 +28,7 @@ import java.math.BigDecimal;
 import java.time.Clock;
 import java.time.Instant;
 import java.time.ZoneOffset;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 
@@ -76,7 +78,11 @@ class MirrorSessionStateResolverTest {
 
     @Test
     void resolvesLiveEntityFromOneFrozenSessionSnapshot() {
-        MirrorResolver.Match match = resolver.resolve(request(payload(initialState())))
+        List<StateObservation> observations = new ArrayList<>();
+        MirrorResolver.Match match = resolver.resolve(observedRequest(
+                        payload(initialState()),
+                        Map.of("orderId", "O-100"),
+                        observations))
                 .orElseThrow();
 
         assertThat(match.rule().behavior().kind())
@@ -93,14 +99,39 @@ class MirrorSessionStateResolverTest {
                 "state-business-key:order-id:"
                         + initialState().businessKeyIndex().getFirst().valueFingerprint(),
                 "state-read-spec:query-order:1");
+        assertThat(observations).singleElement()
+                .satisfies(observation -> {
+                    assertThat(observation.outcome()).isEqualTo(
+                            MirrorStateRunEvidence.AccessOutcome
+                                    .LIVE_ENTITY);
+                    assertThat(observation.businessKeyFingerprint())
+                            .startsWith("sha256:");
+                    assertThat(observation.stateRecordFingerprint())
+                            .startsWith("sha256:");
+                    assertThat(observation.projectedOutputFingerprint())
+                            .startsWith("sha256:");
+                });
     }
 
     @Test
     void absentEntityAbstainsSoLowerSourcesMayResolve() {
-        MirrorResolver.Request request = request(payload(initialState()), Map.of(
-                "orderId", "O-404"));
+        List<StateObservation> observations = new ArrayList<>();
+        MirrorResolver.Request request = observedRequest(
+                payload(initialState()),
+                Map.of("orderId", "O-404"), observations);
 
         assertThat(resolver.resolve(request)).isEmpty();
+        assertThat(observations).singleElement()
+                .satisfies(observation -> {
+                    assertThat(observation.outcome()).isEqualTo(
+                            MirrorStateRunEvidence.AccessOutcome.ABSENT);
+                    assertThat(observation.businessKeyFingerprint())
+                            .startsWith("sha256:");
+                    assertThat(observation.stateRecordFingerprint())
+                            .isEmpty();
+                    assertThat(observation.projectedOutputFingerprint())
+                            .isEmpty();
+                });
     }
 
     @Test
@@ -132,7 +163,11 @@ class MirrorSessionStateResolverTest {
 
         MirrorSessionPayload deleted = payload(
                 engine.snapshot(), List.of(refund, delete));
-        MirrorResolver.Match match = resolver.resolve(request(deleted)).orElseThrow();
+        List<StateObservation> observations = new ArrayList<>();
+        MirrorResolver.Match match = resolver.resolve(
+                observedRequest(
+                        deleted, Map.of("orderId", "O-100"),
+                        observations)).orElseThrow();
 
         assertThat(match.rule().behavior().kind())
                 .isEqualTo(FixtureRule.BehaviorKind.THROW);
@@ -142,6 +177,16 @@ class MirrorSessionStateResolverTest {
         assertThat(engine.snapshot().businessKeyIndex())
                 .extracting(SessionStateSpace.BusinessKeyBinding::entityKey)
                 .containsExactly(new SessionStateSpace.EntityKey("order", "O-100"));
+        assertThat(observations).singleElement()
+                .satisfies(observation -> {
+                    assertThat(observation.outcome()).isEqualTo(
+                            MirrorStateRunEvidence.AccessOutcome
+                                    .TOMBSTONED);
+                    assertThat(observation.stateRecordFingerprint())
+                            .startsWith("sha256:");
+                    assertThat(observation.projectedOutputFingerprint())
+                            .isEmpty();
+                });
     }
 
     @Test
@@ -211,6 +256,25 @@ class MirrorSessionStateResolverTest {
                 input, List.of(), null, sessionContext(payload));
     }
 
+    private MirrorResolver.Request observedRequest(
+            MirrorSessionPayload payload,
+            Map<String, Object> input,
+            List<StateObservation> observations) {
+        return new MirrorResolver.Request(
+                SITE, 1, 1,
+                MirrorResolutionJournal.requestFingerprint(
+                        mapper, input),
+                input, List.of(), null,
+                sessionContext(payload),
+                (request, spec, businessKeyFingerprint,
+                 outcome, stateRecordFingerprint,
+                 projectedOutputFingerprint) ->
+                        observations.add(new StateObservation(
+                                outcome, businessKeyFingerprint,
+                                stateRecordFingerprint,
+                                projectedOutputFingerprint)));
+    }
+
     private MirrorResolver.SessionContext sessionContext(
             MirrorSessionPayload payload) {
         return new MirrorResolver.SessionContext(
@@ -277,5 +341,13 @@ class MirrorSessionStateResolverTest {
                 StatefulMirrorProtocolTest.ownerProvenance(),
                 CapabilitySnapshot.Lifecycle.ACTIVE,
                 Instant.parse("2026-07-24T02:00:00Z")));
+    }
+
+    private record StateObservation(
+            MirrorStateRunEvidence.AccessOutcome outcome,
+            String businessKeyFingerprint,
+            String stateRecordFingerprint,
+            String projectedOutputFingerprint
+    ) {
     }
 }

@@ -103,7 +103,7 @@ public class TestDoubleFactory {
         Operator<Object, Object> controlled = new ControlledOperator(node, binding, rules,
                 (Operator<Object, Object>) typed, implicitDeny, recorder, replayPayloads,
                 null, ResolvedCorpusPayloads.empty(), MirrorResolutionObserver.noop(),
-                null);
+                null, MirrorStateAccessObserver.noop());
         return observed(node, binding, controlled, recorder);
     }
 
@@ -138,7 +138,8 @@ public class TestDoubleFactory {
                 node, binding, requiredControl.rules(), (Operator<Object, Object>) typed,
                 requiredControl.implicitDeny(), recorder, replayPayloads, requiredControl,
                 ResolvedCorpusPayloads.empty(),
-                Objects.requireNonNull(mirrorObserver, "mirrorObserver"), null);
+                Objects.requireNonNull(mirrorObserver, "mirrorObserver"), null,
+                MirrorStateAccessObserver.noop());
         return observed(node, binding, controlled, recorder);
     }
 
@@ -166,7 +167,8 @@ public class TestDoubleFactory {
             ResolvedCorpusPayloads corpusPayloads,
             MirrorResolutionObserver mirrorObserver) {
         return create(node, binding, control, realOperator, recorder,
-                replayPayloads, corpusPayloads, mirrorObserver, null);
+                replayPayloads, corpusPayloads, mirrorObserver, null,
+                MirrorStateAccessObserver.noop());
     }
 
     /**
@@ -194,6 +196,38 @@ public class TestDoubleFactory {
             ResolvedCorpusPayloads corpusPayloads,
             MirrorResolutionObserver mirrorObserver,
             MirrorResolver.SessionContext sessionContext) {
+        return create(node, binding, control, realOperator, recorder,
+                replayPayloads, corpusPayloads, mirrorObserver,
+                sessionContext, MirrorStateAccessObserver.noop());
+    }
+
+    /**
+     * Creates a state-evidenced mirror control over one immutable Session state head.
+     *
+     * @param node frozen node specification
+     * @param binding occurrence-specific invocation coordinates
+     * @param control exact compiled site control
+     * @param realOperator frozen real binding
+     * @param recorder shared test evidence recorder
+     * @param replayPayloads exact governed replay closure
+     * @param corpusPayloads exact governed recorded corpus closure
+     * @param mirrorObserver mirror provenance sink
+     * @param sessionContext immutable Session state head, or {@code null}
+     * @param stateAccessObserver payload-free Session state access sink
+     * @return isolated controlled operator
+     */
+    @SuppressWarnings("unchecked")
+    public Operator<Object, Object> create(
+            NodeSpec node,
+            InvocationRecorder.InvocationBinding binding,
+            CompiledExecutionControl.ResolvedControl control,
+            Object realOperator,
+            InvocationRecorder recorder,
+            ResolvedReplayPayloads replayPayloads,
+            ResolvedCorpusPayloads corpusPayloads,
+            MirrorResolutionObserver mirrorObserver,
+            MirrorResolver.SessionContext sessionContext,
+            MirrorStateAccessObserver stateAccessObserver) {
         if (!(realOperator instanceof Operator<?, ?> typed)) {
             throw new IllegalArgumentException("Node '" + node.id()
                     + "' is not a synchronous Operator and cannot use v1 execution control.");
@@ -205,7 +239,9 @@ public class TestDoubleFactory {
                 requiredControl.implicitDeny(), recorder, replayPayloads, requiredControl,
                 corpusPayloads,
                 Objects.requireNonNull(mirrorObserver, "mirrorObserver"),
-                sessionContext);
+                sessionContext,
+                Objects.requireNonNull(
+                        stateAccessObserver, "stateAccessObserver"));
         return observed(node, binding, controlled, recorder);
     }
 
@@ -250,6 +286,7 @@ public class TestDoubleFactory {
         private final ResolvedCorpusPayloads corpusPayloads;
         private final MirrorResolutionObserver mirrorObserver;
         private final MirrorResolver.SessionContext sessionContext;
+        private final MirrorStateAccessObserver stateAccessObserver;
 
         private ControlledOperator(NodeSpec node, InvocationRecorder.InvocationBinding binding,
                                    List<FixtureRule> rules,
@@ -259,7 +296,8 @@ public class TestDoubleFactory {
                                    CompiledExecutionControl.ResolvedControl compiledControl,
                                    ResolvedCorpusPayloads corpusPayloads,
                                    MirrorResolutionObserver mirrorObserver,
-                                   MirrorResolver.SessionContext sessionContext) {
+                                   MirrorResolver.SessionContext sessionContext,
+                                   MirrorStateAccessObserver stateAccessObserver) {
             this.node = node;
             this.binding = Objects.requireNonNull(binding, "binding");
             this.site = binding.site();
@@ -274,6 +312,8 @@ public class TestDoubleFactory {
                     ? ResolvedCorpusPayloads.empty() : corpusPayloads;
             this.mirrorObserver = Objects.requireNonNull(mirrorObserver, "mirrorObserver");
             this.sessionContext = sessionContext;
+            this.stateAccessObserver = Objects.requireNonNull(
+                    stateAccessObserver, "stateAccessObserver");
         }
 
         @Override
@@ -335,7 +375,7 @@ public class TestDoubleFactory {
             MirrorResolver.Request request = new MirrorResolver.Request(
                     site, binding.occurrence(), attempt, requestFingerprint, input, matched,
                     corpusPayloads.forSite(site.invocationSiteId()).orElse(null),
-                    sessionContext);
+                    sessionContext, stateAccessObserver);
             MirrorResolverChain.Decision decision = mirrorResolverChain.resolve(
                     compiledControl, request);
             if (decision.abstained()) {

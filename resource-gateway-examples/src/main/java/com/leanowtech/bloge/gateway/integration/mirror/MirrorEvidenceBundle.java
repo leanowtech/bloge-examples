@@ -27,6 +27,9 @@ public record MirrorEvidenceBundle(
     public static final String SCHEMA_VERSION_V1 = "resourceGateway.mirrorEvidenceBundle.v1";
     /** Current portable mirror evidence bundle version. */
     public static final String SCHEMA_VERSION = "resourceGateway.mirrorEvidenceBundle.v2";
+    /** Stateful portable mirror evidence bundle version. */
+    public static final String STATEFUL_SCHEMA_VERSION =
+            "resourceGateway.mirrorEvidenceBundle.v3";
     private static final Pattern FINGERPRINT = Pattern.compile("sha256:[a-f0-9]{64}");
 
     /** Business payload handling for every supported bundle version. */
@@ -44,7 +47,8 @@ public record MirrorEvidenceBundle(
         evidence = Objects.requireNonNull(evidence, "evidence");
         boolean v2 = SCHEMA_VERSION.equals(schemaVersion);
         boolean v1 = SCHEMA_VERSION_V1.equals(schemaVersion);
-        if ((!v1 && !v2)
+        boolean v3 = STATEFUL_SCHEMA_VERSION.equals(schemaVersion);
+        if ((!v1 && !v2 && !v3)
                 || !FINGERPRINT.matcher(bundleFingerprint).matches()
                 || !attestation.independentlyVerifiable()
                 || !evidence.runId().equals(attestation.runId())
@@ -55,6 +59,10 @@ public record MirrorEvidenceBundle(
                 || v1 && (!MirrorRunEvidence.SCHEMA_VERSION_V1.equals(
                 evidence.schemaVersion())
                 || !MirrorEvidenceAttestation.SCHEMA_VERSION_V1.equals(
+                attestation.schemaVersion()))
+                || v3 && (!MirrorRunEvidence.STATEFUL_SCHEMA_VERSION.equals(
+                evidence.schemaVersion())
+                || !MirrorEvidenceAttestation.STATEFUL_SCHEMA_VERSION.equals(
                 attestation.schemaVersion()))) {
             throw new IllegalArgumentException("portable mirror evidence bundle is incomplete");
         }

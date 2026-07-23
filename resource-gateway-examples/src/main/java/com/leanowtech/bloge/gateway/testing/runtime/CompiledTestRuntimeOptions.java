@@ -76,7 +76,7 @@ public class CompiledTestRuntimeOptions {
             MirrorResolutionObserver mirrorObserver,
             MirrorInvocationBudget invocationBudget) {
         return options(compiled, recorder, mirrorObserver,
-                invocationBudget, null);
+                invocationBudget, null, MirrorStateAccessObserver.noop());
     }
 
     /**
@@ -95,15 +95,42 @@ public class CompiledTestRuntimeOptions {
             MirrorResolutionObserver mirrorObserver,
             MirrorInvocationBudget invocationBudget,
             MirrorResolver.SessionContext sessionContext) {
+        return options(compiled, recorder, mirrorObserver,
+                invocationBudget, sessionContext,
+                MirrorStateAccessObserver.noop());
+    }
+
+    /**
+     * Binds state access evidence collection to every Session resolver occurrence.
+     *
+     * @param compiled exact compiled execution control
+     * @param recorder run-scoped fixture cursor and trace recorder
+     * @param mirrorObserver run-scoped mirror provenance sink
+     * @param invocationBudget mirror-only whole-run occurrence budget, or {@code null}
+     * @param sessionContext immutable Session state head, or {@code null}
+     * @param stateAccessObserver payload-free state access sink
+     * @return isolated execution options
+     */
+    public ExecutionOptions options(
+            CompiledExecutionControl compiled,
+            InvocationRecorder recorder,
+            MirrorResolutionObserver mirrorObserver,
+            MirrorInvocationBudget invocationBudget,
+            MirrorResolver.SessionContext sessionContext,
+            MirrorStateAccessObserver stateAccessObserver) {
         CompiledExecutionControl requiredControl = Objects.requireNonNull(
                 compiled, "compiled");
         InvocationRecorder requiredRecorder = Objects.requireNonNull(recorder, "recorder");
         MirrorResolutionObserver requiredObserver = Objects.requireNonNull(
                 mirrorObserver, "mirrorObserver");
+        MirrorStateAccessObserver requiredStateObserver =
+                Objects.requireNonNull(
+                        stateAccessObserver, "stateAccessObserver");
         return ExecutionOptions.builder()
                 .operatorResolver(resolution -> resolveOperator(
                         resolution, requiredControl, requiredRecorder, requiredObserver,
-                        invocationBudget, sessionContext))
+                        invocationBudget, sessionContext,
+                        requiredStateObserver))
                 .executionServices(requiredControl.executionServices().services())
                 .build();
     }
@@ -114,7 +141,8 @@ public class CompiledTestRuntimeOptions {
             InvocationRecorder recorder,
             MirrorResolutionObserver mirrorObserver,
             MirrorInvocationBudget invocationBudget,
-            MirrorResolver.SessionContext sessionContext) {
+            MirrorResolver.SessionContext sessionContext,
+            MirrorStateAccessObserver stateAccessObserver) {
         InvocationInventory.Entry entry = compiled.inventory().byEngineStructuralId()
                 .get(resolution.site().structuralId());
         if (entry == null || entry.graph() != resolution.graph()) {
@@ -140,6 +168,7 @@ public class CompiledTestRuntimeOptions {
         }
         return doubleFactory.create(entry.node(), binding, control,
                 entry.frozenOperator(), recorder, compiled.replayPayloads(),
-                compiled.corpusPayloads(), mirrorObserver, sessionContext);
+                compiled.corpusPayloads(), mirrorObserver, sessionContext,
+                stateAccessObserver);
     }
 }

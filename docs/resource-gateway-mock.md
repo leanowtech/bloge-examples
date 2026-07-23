@@ -7,7 +7,7 @@
 
 | 文档属性 | 内容 |
 |---|---|
-| 状态 | Accepted / In implementation；Stage 0 仓库内工程退出门禁已通过；Stage 1 compiler、resolver provenance、payload-free evidence 签发/独立复验、scope-isolated durable store、受保护 Plan/Run/Evidence API、durable request fencing、动态 occurrence budget、payload-free operation audit、固定基数指标、部署隔离证明协议/离线验真、M-of-N authority key-set trusted distribution、full-scope attestation ingest/current-only distribution/irreversible revocation、deployment agent pinned mTLS/atomic cache、execution admission/evidence commit 运行时双重绑定已完成；Stage 2 已完成签名 observation 准入/隔离、immutable review/candidate/publication、test/staging `RECORDED_EXACT` serving、explicit owner-reviewed retry trajectory publication、`RECORDED_TRAJECTORY` runtime serving、governed `RECORDED_CLUSTER` publication、identity-safe runtime serving、显式 compiled-generation 生命周期和 signed production serving-generation fence 九个纵切；Stage 3 已完成 StateModel/StateReadSpec/WriteEffectSpec/SessionStateSpace 与 Session 协议、退款 read/write fixture、独立 verifier/sealer/client、事务内核、受保护 Session API、独立 AES-GCM JDBC 数据面、lease/fence/CAS、TTL/destroy、数据库权威容量 admission、副本背压、过期擦除、固定基数 telemetry、单次固定 Session 快照和 `SESSION_STATE` DAG read resolver；生产 payload authority、TEE/KMS、图内虚拟写/state evidence/recovery、容量与目标数据库认证、HA/DR、漂移/删除证明、跨语言 canonicalization 和环境 certification 门禁继续实施 |
+| 状态 | Accepted / In implementation；Stage 0 仓库内工程退出门禁已通过；Stage 1 compiler、resolver provenance、payload-free evidence 签发/独立复验、scope-isolated durable store、受保护 Plan/Run/Evidence API、durable request fencing、动态 occurrence budget、payload-free operation audit、固定基数指标、部署隔离证明协议/离线验真、M-of-N authority key-set trusted distribution、full-scope attestation ingest/current-only distribution/irreversible revocation、deployment agent pinned mTLS/atomic cache、execution admission/evidence commit 运行时双重绑定已完成；Stage 2 已完成签名 observation 准入/隔离、immutable review/candidate/publication、test/staging `RECORDED_EXACT` serving、explicit owner-reviewed retry trajectory publication、`RECORDED_TRAJECTORY` runtime serving、governed `RECORDED_CLUSTER` publication、identity-safe runtime serving、显式 compiled-generation 生命周期和 signed production serving-generation fence 九个纵切；Stage 3 已完成 StateModel/StateReadSpec/WriteEffectSpec/SessionStateSpace 与 Session 协议、退款 read/write fixture、独立 verifier/sealer/client、事务内核、受保护 Session API、独立 AES-GCM JDBC 数据面、lease/fence/CAS、TTL/destroy、数据库权威容量 admission、副本背压、过期擦除、固定基数 telemetry、单次固定 Session 快照、`SESSION_STATE` DAG read resolver、payload-free state run evidence v1、signed mirror evidence v3、独立离线闭包验证与 ANEKE workbook seed v1；生产 payload authority、TEE/KMS、图内虚拟写、checkpoint/recovery、容量与目标数据库认证、HA/DR、漂移/删除证明、跨语言 canonicalization 和环境 certification 门禁继续实施 |
 | 目标读者 | Resource Gateway、BLOGE Runtime、ANEKE、TEE/数据平台、QA、SRE、安全与业务运营团队 |
 | 设计范围 | external/composed 能力建模、镜像运行、保真语料、有状态世界、场景演练、证据、保真度与结果校准 |
 | 非目标 | 不重做 ANEKE 的资产治理和发布门禁；不允许测试控制进入生产业务请求；不把观测频率直接当成业务正确性 |
@@ -443,11 +443,18 @@
   API/store ready。execution request v2 以 plan/state fingerprint 双 fence 绑定 Session，单次运行只读取一次
   固定 snapshot；`SESSION_STATE` 成为 state-model-backed read site 的首位 resolver，live entity 返回 exact
   projection、absent 才允许受控回退、tombstone 终态禁止复活。probe 只在 execution/API/store 全部健康时报告
-  resolver ready；图内虚拟写、checkpoint/recovery、state evidence、TEE/KMS、HA/DR 与目标数据库容量认证尚未
-  完成，因此整体 runtime readiness 必须为 false。接入边界和后续 ticket 见
+  resolver ready。Session-backed run 现在额外生成 `resourceGateway.mirrorStateRunEvidence.v1`，把 exact Session
+  head、StateModel、revision、world fingerprint、logical clock、stateful binding，以及每次 `LIVE_ENTITY`、
+  `ABSENT`、`TOMBSTONED` 访问与对应 node attempt/resolution 做 payload-free exact closure；stateful run 使用独立
+  签名域的 mirror evidence/attestation/bundle v3，v1/v2 stateless 读写与签名语义保持不变。test-kit 可离线验证
+  v3 的 Schema、nested seal、签名和 state closure，并从 verified bundle 本地生成确定性
+  `resourceGateway.mirrorStateWorkbookSeed.v1`；服务端也提供 scope-isolated
+  `GET /api/mirror/runs/{runId}/state-workbook-seed`。seed 只给 ANEKE 稳定坐标、访问计数和保守 blocker，不接管
+  workbook/publish gate。图内虚拟写、checkpoint/recovery、TEE/KMS、HA/DR 与目标数据库容量认证尚未
+  完成，因此整体 runtime readiness 仍必须为 false。接入边界和后续 ticket 见
   [Stateful Mirror 事务内核与工业接入指南](resource-gateway-stateful-mirror-kernel.md)。本增量 Resource
-  Gateway 完整门禁 `4885` 项测试零失败、零错误（另有 3 项条件跳过），可执行 Boot JAR 成功生成；独立
-  test-kit 最近门禁 `317/317` 全绿。
+  Gateway 完整门禁 `4893` 项测试零失败、零错误（另有 35 项条件跳过），可执行 Boot JAR 成功生成；独立
+  test-kit 最近门禁 `320/320` 行为测试全绿，且普通/阴影 JAR 与公开 JavaDoc 均通过构建。
 
 ---
 
@@ -536,10 +543,10 @@ Resource Gateway 已有的工业底座应直接复用：
 |---|---:|---|
 | Resource/Graph/Schema | 95% | Capability/Effect/Closure、7 张内置图和 3 张画布示例投影、生命周期仓储、scope-bound closure API、共享 compatibility fixture 与独立离线 verifier 已落地；nested graph exact child closure 进入 Stage 1 MirrorPlan |
 | 确定性测试控制 | 80% | 缺镜像来源、匹配可信度和领域状态控制 |
-| Evidence/Replay | 90% | payload-free signed mirror evidence、deployment trust 双重绑定和独立复验已落地；缺业务 state trace、fidelity observation 聚合和 outcome lineage |
+| Evidence/Replay | 92% | payload-free signed mirror evidence、deployment trust 双重绑定、state read trace v1/v3 和独立复验已落地；缺虚拟写 transition trace、fidelity observation 聚合和 outcome lineage |
 | 递归 DAG 测试 | 85% | MirrorPlan/closure/runtime inventory/fixture control 已统一；缺 contract-mock 展开治理和状态世界 |
 | 日志蒸馏与语料 | 82% | payload-free signed observation、准入/隔离、immutable review、candidate/publication/trajectory/cluster 独立 lineage、元数据风险门禁、fixture exact/trajectory/cluster binding、在线 revalidation、test/staging `RECORDED_EXACT`/`RECORDED_TRAJECTORY`/`RECORDED_CLUSTER`、BLOGE 原生 retry loop、identity-safe projection、Wilson confidence、Session state read 与独立 verifier 已落地；缺生产 payload authority、漂移、偏差、outcome 校准和删除证明 |
-| 有状态业务世界 | 65% | 协议、read/write 退款 fixture、独立 verifier/sealer/client、事务内核、受保护 Session API、独立 AES-GCM 数据面、lease/fence/CAS、TTL/destroy、全局/scope 容量、保留字节、命令背压、过期擦除、固定快照和 state read resolver 已落地；缺 TEE/KMS、图内虚拟写、evidence、checkpoint/recovery、目标数据库容量认证和 HA/DR certification |
+| 有状态业务世界 | 72% | 协议、read/write 退款 fixture、独立 verifier/sealer/client、事务内核、受保护 Session API、独立 AES-GCM 数据面、lease/fence/CAS、TTL/destroy、全局/scope 容量、保留字节、命令背压、过期擦除、固定快照、state read resolver、payload-free state evidence 与 ANEKE seed 已落地；缺 TEE/KMS、图内虚拟写 transition、checkpoint/recovery、目标数据库容量认证和 HA/DR certification |
 | Scenario/Rehearsal | 10% | 缺场景、写效果、处置断言和状态演练协议 |
 | Fidelity/Outcome | 5% | 缺保真向量、shadow、权威结果归因和校准闭环 |
 | 业务运营工作台 | 10% | Author Canvas 尚未成为案例驱动的镜像运营工作台 |
@@ -930,7 +937,7 @@ provider message 或 stack trace。
  -> cluster fixture binding + online revalidation + identity-safe RECORDED_CLUSTER generation
  -> exact StateReadSpec + one frozen Session snapshot
  -> SESSION_STATE spec missing fail-closed / live hit / entity absent abstain / tombstone terminal
- -> graph-embedded virtual write 与 state evidence（后续阶段）
+ -> graph-embedded virtual write 与 state transition evidence（后续阶段；read evidence 已实现）
 ```
 
 确定的 policy、capability、integrity、grant、window 或 payload-reference 拒绝进入隔离队列，不得部分进入 serving
@@ -1218,11 +1225,15 @@ session 重放造成重复状态、运行时依赖漂移。
 | `POST /api/mirror/capability-snapshots` | 从现有资产生成并持久化不可变投影 | source fingerprint 幂等 | 待 projection API 与持久化编排 |
 | `POST /api/mirror/plans` | 权威解析 Graph/Closure/Fixture/Replay 并编译 exact MirrorPlan | scope + planId + complete compile fingerprint 幂等 | 已实现（test/staging + 显式开关） |
 | `GET /api/mirror/plans/{planId}` | 读取完整 scope 下的 verified payload-free MirrorPlan | 只读 | 已实现（test/staging + 显式开关） |
-| `POST /api/mirror/sessions` | 创建隔离状态世界 | idempotency key | 待实现 |
-| `POST /api/mirror/executions` | 同步运行一个 sealed stateless capability generation | full scope + requestId + plan/context fingerprint；并发 lease + epoch fencing | 已实现（test/staging + 显式开关） |
+| `POST /api/mirror/sessions` | 创建 encrypted isolated state world | full scope + requestId + sealed payload fingerprint；exact replay | 已实现（test/staging + stateful 开关） |
+| `GET /api/mirror/sessions/{sessionId}` | 读取 payload-free Session descriptor | 只读、完整 scope 隔离 | 已实现（test/staging + stateful 开关） |
+| `POST /api/mirror/sessions/{sessionId}/commands` | 原子执行 admitted virtual write effect | effect-defined idempotency key + expected-state fence | 已实现（test/staging + stateful 开关） |
+| `DELETE /api/mirror/sessions/{sessionId}` | 终态销毁 Session 密文 | 终态幂等 | 已实现（test/staging + stateful 开关） |
+| `POST /api/mirror/executions` | 同步运行一个 sealed stateless 或 exact Session-bound capability generation | full scope + requestId + plan/context/state fingerprint；并发 lease + epoch fencing | 已实现（test/staging + 显式开关） |
 | `POST /api/mirror/rehearsal-jobs` | 提交批量长任务 | job request fingerprint | 待实现 |
 | `GET /api/mirror/runs/{runId}` | 查询 verified payload-free 运行摘要 | 只读、完整 scope 隔离 | 已实现（test/staging + 显式开关） |
 | `GET /api/mirror/runs/{runId}/evidence` | 导出 independently verified `HASH_ONLY` signed evidence | 只读、完整 scope 隔离 | 已实现（test/staging + 显式开关） |
+| `GET /api/mirror/runs/{runId}/state-workbook-seed` | 从 verified stateful v3 bundle 导出 payload-free ANEKE seed | 只读、完整 scope 隔离；同 bundle 确定性相同 | 已实现（仅 stateful run） |
 | `POST /api/mirror/trust/deployment-isolation/authority-key-sets` | 本地信任复验并原子追加 authority key-set generation | full scope + deployment + keySet + generation/fingerprint；同代同指纹幂等 | 已实现（test/staging + `MIRROR_TRUST_ADMIN`） |
 | `GET /api/mirror/trust/deployment-isolation/authority-key-sets/{keySetId}/latest` | 重新复验并分发 current durable floor | 只读、完整 scope + `deploymentScopeId` 隔离 | 已实现（test/staging） |
 | `GET /api/mirror/trust/deployment-isolation/authority-key-sets/{keySetId}/generations/{generation}` | 按内容地址读取，但仅当地址仍等于 current floor | `generation + publicationFingerprint` exact current match | 已实现（test/staging） |
@@ -1585,8 +1596,9 @@ exact 状态读 lowering、两实体退款写效果、
 服务、原子 expected-head commit boundary、journal/fingerprint 闭包、固定兼容 fixture、独立 verifier/sealer/
 client、受保护 Session API、独立 AES-GCM JDBC 数据面、lease/fence/CAS、TTL/destroy、数据库权威
 全局/scope 配额、命令背压、过期擦除、固定基数 telemetry、execution request v2、固定 Session snapshot、
-`SESSION_STATE` resolver 与真实 BLOGE 读链。尚未提供 TEE/KMS、图内虚拟写、
-checkpoint/recovery、state evidence、目标数据库容量/锁认证、HA/DR 认证和画布交互。
+`SESSION_STATE` resolver 与真实 BLOGE 读链、payload-free state run evidence、signed evidence v3、独立
+state closure verifier 和 ANEKE workbook seed。尚未提供 TEE/KMS、图内虚拟写 transition evidence、
+checkpoint/recovery、目标数据库容量/锁认证、HA/DR 认证和画布交互。
 
 | Ticket | 状态 | 已实现 | 剩余工业门禁 |
 |---|---|---|---|
@@ -1598,8 +1610,8 @@ checkpoint/recovery、state evidence、目标数据库容量/锁认证、HA/DR �
 | RG-MIR-STATE-006 | 完成 | StateReadSpec、独立 verifier、execution v2 Session binding、plan/state 双 fence、单次固定快照、`SESSION_STATE` 首位 resolver、live/absent/tombstone 语义、真实 BLOGE 运行测试 | 保持兼容；跨语言客户端与高并发运行期 snapshot soak 纳入 certification |
 | RG-MIR-STATE-007 | 部分完成 | create-refund 两实体原子事务和真实 delete 已验证 | query-order/create-refund/query-refund 真实 DAG 读写读、外部写逃逸对抗 |
 | RG-MIR-STATE-008 | 内核完成 | exact baseline source/kind/identity/schema/key closure | corpus/owner fixture authority adapter、scope/grant/retention/content-address 在线复验 |
-| RG-MIR-STATE-009 | 部分完成 | probe 已拆分 protocol/API/store/resolver/runtime；resolver 仅在 execution/API/store 同时 ready 时动态为 true | 图内写/evidence/端到端环境门禁通过后才推进完整 runtime readiness |
-| RG-MIR-STATE-010 | 待实现 | event/receipt/world fingerprint 已闭包 | state evidence projection、ANEKE workbook seed、离线联合复验 |
+| RG-MIR-STATE-009 | 部分完成 | probe 已拆分 protocol/API/store/resolver/state-evidence/workbook-seed/runtime；resolver、state evidence 与 seed readiness 只按各自真实依赖动态报告 | 图内写/checkpoint/recovery/端到端环境门禁通过后才推进完整 runtime readiness |
+| RG-MIR-STATE-010 | 完成 | `mirrorStateRunEvidence.v1`、stateful mirror evidence/attestation/bundle v3、Session head/model/revision/world/logical-clock binding、stateful binding 与每次 live/absent/tombstone access、attempt/resolution exact closure、JDBC 重启复验、test-kit 独立 verifier、确定性 ANEKE seed 和受保护导出 API | 保持 v1/v2 stateless 兼容；跨语言 v3 固定签名 fixture 与 consumer certification 纳入后续生产门禁 |
 | RG-MIR-STATE-011 | 待实现 | immutable session snapshot 可作为 checkpoint material | 签名 checkpoint、dependency/store generation fence、恢复一致性 |
 | RG-MIR-STATE-012 | 部分完成 | commit failure、commit 前取消、commit 后迟到中断、DB lease/CAS 和双 replica 路由已测试 | 真实 timeout、进程 crash、网络分区、恢复矩阵 |
 | RG-MIR-STATE-013 | 部分完成 | expiry terminalization、显式 destroy 与密文清除已实现 | KMS cryptographic erasure、legal hold、deletion proof 和销毁后证据语义 |
@@ -1609,7 +1621,7 @@ checkpoint/recovery、state evidence、目标数据库容量/锁认证、HA/DR �
 - StateModel、WriteEffectSpec、SessionStateSpace 和 transaction journal；
 - serializable mutation、idempotency、copy-on-write、tombstone、checkpoint/recovery；
 - query/create/update/query 完整退款场景；
-- state trace、最终 fingerprint 和可重放 evidence；
+- payload-free state read trace、最终 world fingerprint、签名 evidence 与 ANEKE workbook seed；
 - 外部写逃逸主动对抗测试。
 
 **退出门禁**：退款纵向场景全部通过；重复、timeout、cancel、baseline 缺失和 state store 故障行为符合矩阵；
@@ -1690,10 +1702,10 @@ SRE runbook 和生产认证包。
 | RG-MIR-003 | 实现 transitive EffectContract 汇总 | `gateway/integration/mirror` | read/write/mixed/unknown、递归环和声明冲突测试齐全 |
 | RG-MIR-004 | 冻结 provenance 与 lifecycle 状态机 | mirror schema + repository interface | 非法跃迁拒绝；stale/revoke 行为有协议测试 |
 | RG-MIR-005 | 增加 capability snapshot API 与 capability probe | integration controller/capability service | scope/identity 校验；功能未闭合时 feature flag 为 false |
-| RG-MIR-006 | 建立 `MirrorPlanCompiler` 骨架 | `gateway/testing/planning` | 已完成 compiler/run kernel、exact closure/runtime inventory 对账、external-only 控制、resolver provenance、generation/TTL/scope 准入、静态 + 动态 occurrence budget、payload-free durable store、受保护 Plan/Run/Evidence API、durable request fencing、fail-closed operation observability、deployment-attestation 协议/离线验真、authority key-set trusted distribution/durable floor、attestation ingest/status/revocation/current-only 分发、agent pinned mTLS/non-TOFU/atomic cache，以及 admission/confirmation/transaction commit 的 runtime trust binding；待非 Java v2 固定 fixture 与环境级多副本认证 |
+| RG-MIR-006 | 建立 `MirrorPlanCompiler` 骨架 | `gateway/testing/planning` | 已完成 compiler/run kernel、exact closure/runtime inventory 对账、external-only 控制、resolver provenance、generation/TTL/scope 准入、静态 + 动态 occurrence budget、payload-free durable store、受保护 Plan/Run/Evidence/StateWorkbookSeed API、durable request fencing、fail-closed operation observability、deployment-attestation 协议/离线验真、authority key-set trusted distribution/durable floor、attestation ingest/status/revocation/current-only 分发、agent pinned mTLS/non-TOFU/atomic cache、admission/confirmation/transaction commit runtime trust binding，以及 stateful v3 evidence closure；待非 Java v2/v3 固定 fixture 与环境级多副本认证 |
 | RG-MIR-007 | 复用 FixtureBundle 的 mirror adapter ADR | `docs/adr/ADR-004-mirror-plan-reuses-fixture-bundle.md` + `compileMirror` | 已完成；不新增平行 fixture 主模型；映射损失和暂不支持项显式报告 |
-| RG-MIR-008 | 建立生产隔离架构测试 | production composition tests | bean/profile 双栅栏、普通请求控制字段拒绝、Mirror route 在 production/mixed profile 物理不存在、deployment trust runtime 双重绑定已完成；待客户环境外部签发/分发认证、非 Java v2 compatibility 和 pre-materialization ingress 门禁 |
-| RG-MIR-009 | 增加 test-kit 协议模型与 compatibility fixtures | `resource-gateway-test-kit` | 已完成 Snapshot/Closure、MirrorEvidence、DeploymentIsolationAttestation/Authority、CapabilityObservation、Corpus/Trajectory/Cluster 独立复验；共享 fixture 均不携带私钥或业务 payload；不依赖 server/Spring |
+| RG-MIR-008 | 建立生产隔离架构测试 | production composition tests | bean/profile 双栅栏、普通请求控制字段拒绝、Mirror route 在 production/mixed profile 物理不存在、deployment trust runtime 双重绑定已完成；待客户环境外部签发/分发认证、非 Java v2/v3 compatibility 和 pre-materialization ingress 门禁 |
+| RG-MIR-009 | 增加 test-kit 协议模型与 compatibility fixtures | `resource-gateway-test-kit` | 已完成 Snapshot/Closure、MirrorEvidence v1/v2/v3、StateEvidence/WorkbookSeed、DeploymentIsolationAttestation/Authority、CapabilityObservation、Corpus/Trajectory/Cluster 独立复验；共享 fixture 均不携带私钥或业务 payload；不依赖 server/Spring；v3 固定签名 fixture 仍待补 |
 | RG-MIR-010 | 建立退款域资产清单 | `docs/examples/resource-gateway-mirror/refund/` | capability closure、entity、baseline read、write effect、outcome owner 完整 |
 | RG-MIR-011 | 增加协议版本与错误码注册表 | mirror protocol docs | 每个拒绝路径有稳定 code、HTTP 语义和重试分类 |
 | RG-MIR-012 | 建立 Stage 0 CI 门禁 | Maven/schema/doc verification | projection、schema、compatibility、production isolation 在 PR 必跑 |
@@ -1714,7 +1726,7 @@ full-scope append-only trusted distribution API 与 durable floor CAS，以及 f
 SPKI-pinned/identity-bound mTLS、strict vendor/envelope、operator-pinned bootstrap floor、连续状态机、denial-first revocation、
 hard freshness fence 与 crash-safe atomic cache，以及 certification-required plan 的 pre-claim admission、稳定 decision
 幂等绑定、lease-local TrustAttempt、terminal re-observation、v2 evidence 双 snapshot binding、transaction-lifetime commit
-permit、v1/v2 双读和独立 test-kit 语义复验；非 Java v2 固定 bundle/snapshot fixture、语言中立数字 canonicalization
+permit、v1/v2/v3 双向兼容读取和独立 test-kit 语义复验；非 Java v2/v3 固定 bundle/snapshot fixture、语言中立数字 canonicalization
 和生产部署门禁未闭合，仍在 Stage 1 主链；008/010/011/012 继续补齐生产隔离、退款资产、
 错误码注册与持续 CI。
 企业客户准入仍必须关闭第 22.2 节的环境级开放决策。

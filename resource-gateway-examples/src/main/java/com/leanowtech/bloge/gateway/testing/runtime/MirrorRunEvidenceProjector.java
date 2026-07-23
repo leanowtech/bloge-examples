@@ -5,6 +5,10 @@ import com.leanowtech.bloge.gateway.integration.mirror.MirrorPlan;
 import com.leanowtech.bloge.gateway.integration.mirror.MirrorResolution;
 import com.leanowtech.bloge.gateway.integration.mirror.MirrorRunEvidence;
 import com.leanowtech.bloge.gateway.integration.mirror.MirrorDeploymentIsolationRunTrust;
+import com.leanowtech.bloge.gateway.integration.mirror.MirrorStateRunEvidence;
+import com.leanowtech.bloge.gateway.integration.mirror.MirrorStateRunEvidenceIntegrity;
+import com.leanowtech.bloge.gateway.integration.mirror.StateModelIntegrity;
+import com.leanowtech.bloge.gateway.integration.mirror.StateReadSpecIntegrity;
 import com.leanowtech.bloge.gateway.testing.domain.TestRunEvidence;
 import com.leanowtech.bloge.gateway.testing.evidence.ProtocolFingerprint;
 import com.leanowtech.bloge.gateway.testing.evidence.TestSemanticResultFingerprint;
@@ -68,7 +72,9 @@ public final class MirrorRunEvidenceProjector {
             throw new IllegalArgumentException(
                     "runtime invocation budget snapshot is required for budgeted mirror evidence");
         }
-        return projectInternal(request, execution, resolutions, engineConfiguration, null, null);
+        return projectInternal(
+                request, execution, resolutions, engineConfiguration,
+                null, null, null);
     }
 
     /**
@@ -88,7 +94,8 @@ public final class MirrorRunEvidenceProjector {
             IndependentTestEngineFactory.Configuration engineConfiguration,
             MirrorInvocationBudget.Snapshot invocationBudget) {
         return projectInternal(request, execution, resolutions, engineConfiguration,
-                Objects.requireNonNull(invocationBudget, "invocationBudget"), null);
+                Objects.requireNonNull(invocationBudget, "invocationBudget"),
+                null, null);
     }
 
     /**
@@ -111,7 +118,35 @@ public final class MirrorRunEvidenceProjector {
             MirrorDeploymentIsolationRunTrust.Binding deploymentTrust) {
         return projectInternal(request, execution, resolutions, engineConfiguration,
                 Objects.requireNonNull(invocationBudget, "invocationBudget"),
-                Objects.requireNonNull(deploymentTrust, "deploymentTrust"));
+                Objects.requireNonNull(deploymentTrust, "deploymentTrust"),
+                null);
+    }
+
+    /**
+     * Creates v3 portable evidence with one complete payload-free Session access closure.
+     *
+     * @param request exact authenticated stateful mirror request
+     * @param execution terminal shared-kernel result
+     * @param resolutions sealed resolver provenance
+     * @param engineConfiguration structural independent-engine facts
+     * @param invocationBudget payload-free runtime occurrence counters
+     * @param deploymentTrust exact trust binding confirmed after execution, or {@code null}
+     * @param stateEvidence sealed payload-free Session state evidence
+     * @return unsigned v3 evidence ready for the integrity boundary
+     */
+    public MirrorRunEvidence projectStateful(
+            MirrorRunRequest request,
+            TestExecutionResult execution,
+            List<MirrorResolution> resolutions,
+            IndependentTestEngineFactory.Configuration engineConfiguration,
+            MirrorInvocationBudget.Snapshot invocationBudget,
+            MirrorDeploymentIsolationRunTrust.Binding deploymentTrust,
+            MirrorStateRunEvidence stateEvidence) {
+        return projectInternal(
+                request, execution, resolutions, engineConfiguration,
+                Objects.requireNonNull(invocationBudget, "invocationBudget"),
+                deploymentTrust,
+                Objects.requireNonNull(stateEvidence, "stateEvidence"));
     }
 
     private MirrorRunEvidence projectInternal(
@@ -120,7 +155,8 @@ public final class MirrorRunEvidenceProjector {
             List<MirrorResolution> resolutions,
             IndependentTestEngineFactory.Configuration engineConfiguration,
             MirrorInvocationBudget.Snapshot invocationBudget,
-            MirrorDeploymentIsolationRunTrust.Binding deploymentTrust) {
+            MirrorDeploymentIsolationRunTrust.Binding deploymentTrust,
+            MirrorStateRunEvidence stateEvidence) {
         Objects.requireNonNull(request, "request");
         Objects.requireNonNull(execution, "execution");
         TestRunEvidence source = Objects.requireNonNull(execution.evidence(), "execution.evidence");
@@ -132,6 +168,9 @@ public final class MirrorRunEvidenceProjector {
         List<MirrorResolution> exactResolutions = resolutions == null
                 ? List.of() : List.copyOf(resolutions);
         validateResolutionClosure(plan, source.nodeTrace(), exactResolutions);
+        validateStateClosure(
+                request, source.nodeTrace(), exactResolutions,
+                stateEvidence);
         IndependentTestEngineFactory.Configuration configuration = Objects.requireNonNull(
                 engineConfiguration, "engineConfiguration");
 
@@ -158,7 +197,10 @@ public final class MirrorRunEvidenceProjector {
                 && source.evidenceClass() == TestRunEvidence.EvidenceClass.CERTIFIABLE
                 ? MirrorRunEvidence.EvidenceClass.CERTIFIABLE
                 : MirrorRunEvidence.EvidenceClass.EXPLORATORY;
-        return new MirrorRunEvidence("", source.runId(), request.requestId(),
+        String schemaVersion = stateEvidence == null
+                ? MirrorRunEvidence.SCHEMA_VERSION
+                : MirrorRunEvidence.STATEFUL_SCHEMA_VERSION;
+        return new MirrorRunEvidence(schemaVersion, source.runId(), request.requestId(),
                 fingerprint(request.context().asMap()), plan.planId(), plan.planFingerprint(),
                 plan.capabilityClosureFingerprint(), plan.executionControlFingerprint(),
                 plan.rootCapability(), plan.fixtureBundleRef(), projectBindings(plan), plan.scope(),
@@ -166,7 +208,185 @@ public final class MirrorRunEvidenceProjector {
                 evidenceClass,
                 source.semanticResultFingerprint(), source.startedAt(), source.completedAt(),
                 projectNodes(source.nodeTrace()), projectEdges(source.edgeTrace()), exactResolutions,
-                isolation, List.copyOf(limitations));
+                stateEvidence, isolation, List.copyOf(limitations));
+    }
+
+    private void validateStateClosure(
+            MirrorRunRequest request,
+            List<TestRunEvidence.NodeTrace> nodes,
+            List<MirrorResolution> resolutions,
+            MirrorStateRunEvidence stateEvidence) {
+        if (stateEvidence == null) {
+            if (request.sessionContext() != null) {
+                throw new IllegalArgumentException(
+                        "Session-backed execution requires state evidence");
+            }
+            return;
+        }
+        MirrorResolver.SessionContext context =
+                Objects.requireNonNull(
+                        request.sessionContext(), "sessionContext");
+        MirrorStateRunEvidenceIntegrity.verify(mapper, stateEvidence);
+        var state = context.payload().state();
+        if (!request.compiledPlan().plan().planFingerprint()
+                .equals(stateEvidence.planFingerprint())
+                || !state.fingerprint().equals(
+                stateEvidence.sessionStateRef().fingerprint())
+                || state.stateRevision() != stateEvidence.stateRevision()
+                || !state.worldFingerprint().equals(
+                stateEvidence.worldFingerprint())
+                || !state.logicalClock().equals(
+                stateEvidence.logicalClock())
+                || !StateModelIntegrity.reference(
+                context.payload().stateModel()).equals(
+                stateEvidence.stateModelRef())) {
+            throw new IllegalArgumentException(
+                    "state evidence differs from the frozen Session head");
+        }
+
+        Map<String, MirrorStateRunEvidence.StatefulBinding>
+                stateBindings = new LinkedHashMap<>();
+        stateEvidence.statefulBindings().forEach(binding ->
+                stateBindings.put(binding.invocationSiteId(), binding));
+        Map<String, MirrorPlan.ExternalBinding> expectedBindings =
+                new LinkedHashMap<>();
+        for (MirrorPlan.ExternalBinding binding
+                : request.compiledPlan().plan().externalBindings()) {
+            if (binding.resolverOrder().contains(
+                    MirrorPlan.MirrorSource.SESSION_STATE)) {
+                expectedBindings.put(
+                        binding.invocationSiteId(), binding);
+            }
+        }
+        if (!expectedBindings.keySet().equals(
+                stateBindings.keySet())) {
+            throw new IllegalArgumentException(
+                    "state evidence binding closure differs from the plan");
+        }
+        expectedBindings.forEach((site, binding) -> {
+            MirrorStateRunEvidence.StatefulBinding stateBinding =
+                    stateBindings.get(site);
+            if (!binding.capabilityRef().equals(
+                    stateBinding.capabilityRef())
+                    || !binding.graphPath().equals(
+                    stateBinding.graphPath())
+                    || context.payload().stateReadSpecs().stream()
+                    .filter(spec -> spec.targetCapabilityRef().equals(
+                            binding.capabilityRef()))
+                    .map(StateReadSpecIntegrity::reference)
+                    .noneMatch(stateBinding.stateReadSpecRef()::equals)) {
+                throw new IllegalArgumentException(
+                        "state evidence binding differs from its exact read spec");
+            }
+        });
+
+        Map<Coordinate, AttemptProjection> statefulAttempts =
+                new LinkedHashMap<>();
+        for (TestRunEvidence.NodeTrace node : nodes) {
+            if (!stateBindings.containsKey(
+                    node.invocationSiteId())) {
+                continue;
+            }
+            for (TestRunEvidence.AttemptTrace attempt
+                    : node.attempts()) {
+                Coordinate coordinate = new Coordinate(
+                        node.invocationSiteId(),
+                        node.correlationKey(),
+                        node.occurrence(), attempt.attempt());
+                statefulAttempts.put(coordinate,
+                        new AttemptProjection(
+                                expectedBindings.get(
+                                        node.invocationSiteId()),
+                                fingerprint(attempt.input()),
+                                fingerprint(attempt.output())));
+            }
+        }
+        Map<Coordinate, MirrorResolution> resolutionByCoordinate =
+                new LinkedHashMap<>();
+        resolutions.forEach(resolution ->
+                resolutionByCoordinate.put(
+                        Coordinate.from(resolution), resolution));
+        Map<Coordinate, MirrorStateRunEvidence.StateAccess>
+                accessByCoordinate = new LinkedHashMap<>();
+        stateEvidence.accesses().forEach(access -> {
+            Coordinate coordinate = new Coordinate(
+                    access.invocationSiteId(),
+                    access.correlationKey(),
+                    access.occurrence(), access.attempt());
+            if (accessByCoordinate.put(coordinate, access)
+                    != null) {
+                throw new IllegalArgumentException(
+                        "state evidence contains duplicate access coordinates");
+            }
+        });
+        if (!statefulAttempts.keySet().equals(
+                accessByCoordinate.keySet())) {
+            throw new IllegalArgumentException(
+                    "state evidence access closure differs from executed stateful attempts");
+        }
+        statefulAttempts.forEach((coordinate, attempt) -> {
+            MirrorStateRunEvidence.StateAccess access =
+                    accessByCoordinate.get(coordinate);
+            MirrorResolution resolution =
+                    resolutionByCoordinate.get(coordinate);
+            if (resolution == null
+                    || !attempt.requestFingerprint().equals(
+                    access.requestFingerprint())
+                    || !access.requestFingerprint().equals(
+                    resolution.requestFingerprint())) {
+                throw new IllegalArgumentException(
+                        "state access request differs from its delegate attempt");
+            }
+            switch (access.outcome()) {
+                case LIVE_ENTITY -> {
+                    if (resolution.source()
+                            != MirrorPlan.MirrorSource.SESSION_STATE
+                            || !access.projectedOutputFingerprint().equals(
+                            resolution.outputFingerprint())
+                            || !attempt.outputFingerprint().equals(
+                            access.projectedOutputFingerprint())) {
+                        throw new IllegalArgumentException(
+                                "live state access differs from its final resolution");
+                    }
+                    requireStateArtifacts(
+                            stateEvidence, access, resolution);
+                }
+                case TOMBSTONED -> {
+                    if (resolution.source()
+                            != MirrorPlan.MirrorSource.SESSION_STATE
+                            || resolution.error() == null
+                            || !access.errorCode().equals(
+                            resolution.error().code())) {
+                        throw new IllegalArgumentException(
+                                "tombstoned state access differs from its terminal resolution");
+                    }
+                    requireStateArtifacts(
+                            stateEvidence, access, resolution);
+                }
+                case ABSENT -> {
+                    if (resolution.source()
+                            == MirrorPlan.MirrorSource.SESSION_STATE) {
+                        throw new IllegalArgumentException(
+                                "absent state access cannot select the Session resolver");
+                    }
+                }
+            }
+        });
+    }
+
+    private static void requireStateArtifacts(
+            MirrorStateRunEvidence stateEvidence,
+            MirrorStateRunEvidence.StateAccess access,
+            MirrorResolution resolution) {
+        if (!resolution.matchedArtifactRefs().contains(
+                stateEvidence.sessionStateRef())
+                || !resolution.matchedArtifactRefs().contains(
+                stateEvidence.stateModelRef())
+                || !resolution.matchedArtifactRefs().contains(
+                access.stateReadSpecRef())) {
+            throw new IllegalArgumentException(
+                    "Session state resolution lacks exact state provenance");
+        }
     }
 
     private static void validateInvocationBudget(

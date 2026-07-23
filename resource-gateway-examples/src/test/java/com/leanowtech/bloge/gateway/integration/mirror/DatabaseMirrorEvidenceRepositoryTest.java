@@ -57,6 +57,39 @@ class DatabaseMirrorEvidenceRepositoryTest {
     }
 
     @Test
+    void persistsAndReverifiesStatefulV3EvidenceAcrossRepositoryInstances() {
+        MirrorPlan plan = plan(
+                mapper, scope("org-a"), "plan-state", 'a');
+        MirrorEvidenceBundle bundle =
+                MirrorPersistenceTestFixtures.statefulEvidence(
+                        mapper, signer, plan, "run-state", 'c');
+
+        repository.create(bundle);
+        DatabaseMirrorEvidenceRepository restarted =
+                repository(signer);
+        restarted.init();
+
+        assertThat(restarted.find(
+                plan.scope(), "run-state")).contains(bundle);
+        MirrorStateWorkbookSeed seed =
+                MirrorStateWorkbookSeed.project(
+                        mapper, restarted.find(
+                                plan.scope(), "run-state")
+                                .orElseThrow());
+        seed.verify(mapper);
+        assertThat(seed.stateEvidenceRef().fingerprint())
+                .isEqualTo(bundle.evidence().stateEvidence()
+                        .stateEvidenceFingerprint());
+        assertThat(jdbc.queryForObject(
+                "SELECT schema_version FROM mirror_run_evidence "
+                        + "WHERE run_id = ?",
+                String.class, "run-state"))
+                .isEqualTo(
+                        MirrorEvidenceBundle
+                                .STATEFUL_SCHEMA_VERSION);
+    }
+
+    @Test
     void isolatesIdenticalRunIdsByCompleteEnterpriseScope() {
         MirrorPlan orgA = plan(mapper, scope("org-a"), "plan-a", 'a');
         MirrorPlan orgB = plan(mapper, scope("org-b"), "plan-b", 'a');

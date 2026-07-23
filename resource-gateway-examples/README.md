@@ -31,7 +31,7 @@ integration something the business flow can see, reason about, test, and change.
 | Governed capability closures | Sealed Resource/Operator/Graph projections, exact cycle-checked closure for all seven shipped graphs, nested foreach/loop boundary inventory, full enterprise scope, append-only lifecycle revisions, classification-aware reads, and honest mirror readiness flags |
 | Governed capability observations | Signed payload-free invocation facts, operator-owned admission policy, external vault/proof verification, durable admitted-or-quarantined decisions, full-scope idempotency, and independent offline verification |
 | Governed capability corpora | Immutable quarantine review, exact admitted-source candidates, metadata risk gates, independent owner-reviewed publication lineage, second source-authority verification, and honest resolver readiness |
-| Stateful mirror sessions | Versioned entity/write/session/API protocols, atomic multi-entity mutations, exact replay, AES-GCM isolated persistence, lease/fence/CAS concurrency, TTL/destroy, and independently verified clients |
+| Stateful mirror sessions | Versioned entity/write/session/API protocols, atomic multi-entity mutations, exact replay, AES-GCM isolated persistence, lease/fence/CAS concurrency, TTL/destroy, payload-free signed state-read evidence, ANEKE workbook seeds, and independently verified clients |
 | Governed replay payloads | Payload values detached from immutable evidence, classification ABAC, selective retention, legal hold, bounded expiry, and signed deletion proof |
 | Workbook and gate evidence loop | Deterministic sanitized workbook seeds, exact suite/run evidence refs, versioned gate decision basis, stale detection, and transactional gate events |
 | Operational controls | Cache, tenant rate limit, circuit breaker, run history, golden cases, and publication history |
@@ -109,6 +109,7 @@ dedicated local data plane.
 | `POST http://localhost:8080/api/mirror/executions` | Run one sealed mirror generation under durable request-id fencing and return a payload-free summary |
 | `GET http://localhost:8080/api/mirror/runs/{runId}` | Read a verified payload-free terminal mirror summary in the complete scope |
 | `GET http://localhost:8080/api/mirror/runs/{runId}/evidence` | Export the independently verified signed `HASH_ONLY` evidence bundle |
+| `GET http://localhost:8080/api/mirror/runs/{runId}/state-workbook-seed` | Export a deterministic payload-free ANEKE seed from one verified stateful v3 bundle |
 | `POST http://localhost:8080/api/mirror/trust/deployment-isolation/authority-key-sets` | Verify and append one current isolation-authority key-set generation |
 | `GET http://localhost:8080/api/mirror/trust/deployment-isolation/authority-key-sets/{keySetId}/latest` | Distribute the re-verified current authority floor |
 | `POST http://localhost:8080/api/mirror/trust/deployment-isolation/attestations` | Verify and append an operator-pinned attestation bootstrap or continuous successor |
@@ -301,12 +302,35 @@ cannot fall through to corpus, fixture, or a real resource. The fixed refund
 fixture and standalone test kit include and independently verify the
 `query-order` read lowering.
 
+Every Session-backed run now emits a nested
+`resourceGateway.mirrorStateRunEvidence.v1`. It binds the exact Session head,
+state model, revision, world fingerprint, logical clock, and every state-backed
+invocation site. Each `LIVE_ENTITY`, `ABSENT`, or `TOMBSTONED` access is
+fingerprinted without retaining an entity or business key, then closed against
+the matching node delegate attempt and `MirrorResolution`. Stateful runs use
+mirror run evidence, attestation, and bundle v3 under a separate signature
+domain; existing stateless v1/v2 bundles remain readable and keep their
+original signature semantics. Repository reads after restart re-verify both
+the nested state seal and detached signature.
+
+The standalone test kit independently verifies that v3 state closure and can
+derive `resourceGateway.mirrorStateWorkbookSeed.v1` from the verified bundle.
+The protected
+`GET /api/mirror/runs/{runId}/state-workbook-seed` route returns the same
+deterministic payload-free projection in the authenticated scope. A seed names
+the exact bundle, state evidence, Session head, model, revision, access counts,
+and conservative blockers; it does not replace the signed bundle or let
+Resource Gateway make ANEKE's workbook, owner-approval, or publish-gate
+decision.
+
 This is not yet a production-certified stateful runtime: TEE/KMS custody,
-graph-embedded virtual writes, state evidence, signed checkpoint/recovery,
+graph-embedded virtual writes and their transition evidence, signed checkpoint/recovery,
 cryptographic deletion proof, target-database capacity/lock certification and
 HA/DR certification remain. The probe reports `mirrorStatefulResolverReady`
 only when mirror execution, the Session API, and the encrypted state store are
-all ready; `mirrorStatefulRuntimeReady` remains false until write/evidence
+all ready. It separately reports `mirrorStateRunEvidenceReady`,
+`mirrorStateWorkbookSeedApi`, and `mirrorStateWorkbookSeedReady`;
+`mirrorStatefulRuntimeReady` remains false until graph-write and recovery
 closure is complete. Startup, request v2 usage, Java usage, capacity
 configuration, stable errors, and remaining industrial work packages are in the
 [stateful mirror kernel guide](../docs/resource-gateway-stateful-mirror-kernel.md).
@@ -449,12 +473,20 @@ curl -sS http://localhost:8080/api/mirror/runs/REPLACE_WITH_RUN_ID \
 curl -sS http://localhost:8080/api/mirror/runs/REPLACE_WITH_RUN_ID/evidence \
   -H 'Authorization: Bearer bloge-aneke-demo-token' \
   -H 'X-Purpose: MIRROR_REHEARSAL'
+
+# Stateful v3 runs only
+curl -sS http://localhost:8080/api/mirror/runs/REPLACE_WITH_RUN_ID/state-workbook-seed \
+  -H 'Authorization: Bearer bloge-aneke-demo-token' \
+  -H 'X-Purpose: MIRROR_REHEARSAL'
 ```
 
 Do not place `bloge.tenantId`, `bloge.namespace`, or `__nodeOutput:` keys in `context`; the service derives scope
 from the authenticated identity and rejects internal engine-state injection. Run summaries expose only identities,
 fingerprints, timestamps, status/trust class, and trace counts. Use the evidence endpoint for signed hash-only
 node/edge/resolution facts; neither response returns business payload values.
+The state-workbook route rejects stateless or incomplete runs with
+`RG.MIRROR.STATE_WORKBOOK_SEED_UNAVAILABLE`; it never manufactures an empty
+state workbook.
 
 The strict `resourceGateway.mirrorResolution.v1` protocol is also frozen. It binds every future resolver outcome to
 the exact run, plan, capability and invocation attempt; separates resolved null, visible/redacted output, hash-only
@@ -476,8 +508,12 @@ fingerprints; owner and replay results retain exact artifact provenance; busines
 remain distinct. Ordinary tests keep their previous selection path. The probe advertises interception only when
 the protected plan adapter is assembled, and advertises serving only when the complete run/evidence chain is assembled.
 
-The portable evidence protocol is now frozen as `resourceGateway.mirrorRunEvidence.v1`,
-`resourceGateway.mirrorEvidenceAttestation.v1`, and `resourceGateway.mirrorEvidenceBundle.v1`. It signs only a
+The portable evidence protocol supports the frozen v1 and v2 stateless
+generations plus a v3 stateful generation. V3 requires nested
+`resourceGateway.mirrorStateRunEvidence.v1` and uses distinct
+`resourceGateway.mirrorRunEvidence.v3`,
+`resourceGateway.mirrorEvidenceAttestation.v3`, and
+`resourceGateway.mirrorEvidenceBundle.v3` schemas and signature domain. Every generation signs only a
 `HASH_ONLY` projection that binds request context, plan, capability closure, execution control, fixture revision,
 semantic result, ordered node/edge traces, every sealed resolution, and explicit isolation facts. Newly produced
 Ed25519 signatures and the complete bundle fingerprint are verified immediately. The internal run kernel now
@@ -489,6 +525,12 @@ complete; run/evidence serving is also complete for isolated test/staging use. A
 terminal confirmation, v2 evidence binding, and transaction commit fencing are complete. Pre-materialization
 ingress controls, non-Java v2 fixtures, cross-language canonicalization, and environment certification remain
 production gates.
+V3 additionally closes one immutable Session head and every state access
+against the existing node-attempt/resolution trace. The independent test kit
+verifies v1/v2/v3, rejects mixed generations, and can derive the state workbook
+seed only after v3 verification. A local exploratory demo will normally return
+`gateReady=false` with blockers such as `EVIDENCE_NOT_CERTIFIABLE` and
+`RUN_EVIDENCE_LIMITED`; that is an honest trust result, not a transport failure.
 The Spring kernel now has
 profile/property isolation and
 ordinary business run APIs reject nested mirror, replay, replacement, and scenario controls before DTO binding,
@@ -623,6 +665,10 @@ Useful variants:
 ./scripts/visual-canvas-demo.sh restart
 ./scripts/stop-visual-canvas-demo.sh
 ```
+
+`--stateful` starts the Session data plane, state resolver, v3 evidence
+projection, and workbook-seed route in the same service. No extra sidecar is
+required for the local demonstration; use the ordinary stop script above.
 
 `--stateful` uses conservative local defaults: 1,000 global and 100 per-scope
 active sessions, 4 GiB global and 512 MiB per-scope retained canonical payload,

@@ -1,0 +1,88 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://bloge.dev/schemas/resource-gateway-mirror/mirror-state-workbook-seed-v1.schema.json",
+  "title": "Resource Gateway Mirror State Workbook Seed v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion", "seedFingerprint", "runId", "planFingerprint",
+    "evidenceBundleFingerprint", "stateEvidenceRef", "sessionStateRef",
+    "stateModelRef", "stateRevision", "worldFingerprint", "logicalClock",
+    "mode", "runStatus", "evidenceClass", "bindingCount", "accessCount",
+    "liveEntityCount", "absentCount", "tombstonedCount", "gateReady", "blockers"
+  ],
+  "properties": {
+    "schemaVersion": { "const": "resourceGateway.mirrorStateWorkbookSeed.v1" },
+    "seedFingerprint": { "$ref": "#/$defs/fingerprint" },
+    "runId": { "type": "string", "minLength": 1, "maxLength": 512 },
+    "planFingerprint": { "$ref": "#/$defs/fingerprint" },
+    "evidenceBundleFingerprint": { "$ref": "#/$defs/fingerprint" },
+    "stateEvidenceRef": {
+      "allOf": [
+        { "$ref": "mirror-run-evidence-v1.schema.json#/$defs/artifactRef" },
+        { "properties": { "kind": { "const": "MIRROR_STATE_RUN_EVIDENCE" } } }
+      ]
+    },
+    "sessionStateRef": {
+      "allOf": [
+        { "$ref": "mirror-run-evidence-v1.schema.json#/$defs/artifactRef" },
+        { "properties": { "kind": { "const": "SESSION_STATE" } } }
+      ]
+    },
+    "stateModelRef": {
+      "allOf": [
+        { "$ref": "mirror-run-evidence-v1.schema.json#/$defs/artifactRef" },
+        { "properties": { "kind": { "const": "STATE_MODEL" } } }
+      ]
+    },
+    "stateRevision": { "type": "integer", "minimum": 0 },
+    "worldFingerprint": { "$ref": "#/$defs/fingerprint" },
+    "logicalClock": { "type": "string", "format": "date-time" },
+    "mode": { "const": "READ_ONLY_SNAPSHOT" },
+    "runStatus": {
+      "enum": [
+        "PASSED", "ASSERTION_FAILED", "EXECUTION_FAILED", "CONTROL_PLAN_REJECTED",
+        "FIXTURE_UNMATCHED", "FIXTURE_UNUSED", "CONTROL_PLAN_UNAVAILABLE",
+        "EVIDENCE_INCOMPLETE", "CANCELLED", "TIMED_OUT"
+      ]
+    },
+    "evidenceClass": { "enum": ["EXPLORATORY", "CERTIFIABLE"] },
+    "bindingCount": { "type": "integer", "minimum": 1, "maximum": 10000 },
+    "accessCount": { "type": "integer", "minimum": 0, "maximum": 100000 },
+    "liveEntityCount": { "type": "integer", "minimum": 0, "maximum": 100000 },
+    "absentCount": { "type": "integer", "minimum": 0, "maximum": 100000 },
+    "tombstonedCount": { "type": "integer", "minimum": 0, "maximum": 100000 },
+    "gateReady": { "type": "boolean" },
+    "blockers": {
+      "type": "array",
+      "maxItems": 16,
+      "uniqueItems": true,
+      "items": {
+        "type": "string",
+        "pattern": "^[A-Z][A-Z0-9_.-]{0,255}$"
+      }
+    }
+  },
+  "allOf": [
+    {
+      "if": { "properties": { "gateReady": { "const": true } } },
+      "then": {
+        "properties": {
+          "runStatus": { "const": "PASSED" },
+          "evidenceClass": { "const": "CERTIFIABLE" },
+          "blockers": { "maxItems": 0 }
+        }
+      }
+    },
+    {
+      "if": { "properties": { "gateReady": { "const": false } } },
+      "then": { "properties": { "blockers": { "minItems": 1 } } }
+    }
+  ],
+  "$defs": {
+    "fingerprint": {
+      "type": "string",
+      "pattern": "^sha256:[a-f0-9]{64}$"
+    }
+  }
+}

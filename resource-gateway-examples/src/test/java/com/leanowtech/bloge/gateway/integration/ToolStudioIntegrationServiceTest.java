@@ -312,7 +312,12 @@ class ToolStudioIntegrationServiceTest {
                 .containsEntry("mirrorPlanCompilation", true)
                 .containsEntry("mirrorExternalLeafInterception", true)
                 .containsEntry("mirrorOperationObservability", true)
-                .containsEntry("mirrorServing", true);
+                .containsEntry("mirrorServing", true)
+                .containsEntry("mirrorStateRunEvidenceProtocol", true)
+                .containsEntry("mirrorStateWorkbookSeedProtocol", true)
+                .containsEntry("mirrorStateRunEvidenceReady", false)
+                .containsEntry("mirrorStateWorkbookSeedApi", true)
+                .containsEntry("mirrorStateWorkbookSeedReady", false);
         assertThat(enabledCapabilities.supportedObjects())
                 .containsEntry("mirrorPlanCreateRequest", List.of(
                         com.leanowtech.bloge.gateway.integration.mirror
@@ -329,22 +334,35 @@ class ToolStudioIntegrationServiceTest {
                         com.leanowtech.bloge.gateway.integration.mirror
                                 .MirrorEvidenceBundle.SCHEMA_VERSION_V1,
                         com.leanowtech.bloge.gateway.integration.mirror
-                                .MirrorEvidenceBundle.SCHEMA_VERSION))
+                                .MirrorEvidenceBundle.SCHEMA_VERSION,
+                        com.leanowtech.bloge.gateway.integration.mirror
+                                .MirrorEvidenceBundle.STATEFUL_SCHEMA_VERSION))
                 .containsEntry("mirrorRunEvidence", List.of(
                         com.leanowtech.bloge.gateway.integration.mirror
                                 .MirrorRunEvidence.SCHEMA_VERSION_V1,
                         com.leanowtech.bloge.gateway.integration.mirror
-                                .MirrorRunEvidence.SCHEMA_VERSION))
+                                .MirrorRunEvidence.SCHEMA_VERSION,
+                        com.leanowtech.bloge.gateway.integration.mirror
+                                .MirrorRunEvidence.STATEFUL_SCHEMA_VERSION))
                 .containsEntry("mirrorEvidenceAttestation", List.of(
                         com.leanowtech.bloge.gateway.integration.mirror
                                 .MirrorEvidenceAttestation.SCHEMA_VERSION_V1,
                         com.leanowtech.bloge.gateway.integration.mirror
-                                .MirrorEvidenceAttestation.SCHEMA_VERSION));
+                                .MirrorEvidenceAttestation.SCHEMA_VERSION,
+                        com.leanowtech.bloge.gateway.integration.mirror
+                                .MirrorEvidenceAttestation.STATEFUL_SCHEMA_VERSION))
+                .containsEntry("mirrorStateRunEvidence", List.of(
+                        com.leanowtech.bloge.gateway.integration.mirror
+                                .MirrorStateRunEvidence.SCHEMA_VERSION))
+                .containsEntry("mirrorStateWorkbookSeed", List.of(
+                        com.leanowtech.bloge.gateway.integration.mirror
+                                .MirrorStateWorkbookSeed.SCHEMA_VERSION));
         assertThat(enabledCapabilities.endpoints())
                 .extracting(endpoint -> endpoint.method() + " " + endpoint.path())
                 .contains("POST /api/mirror/plans", "GET /api/mirror/plans/{planId}",
                         "POST /api/mirror/executions", "GET /api/mirror/runs/{runId}",
-                        "GET /api/mirror/runs/{runId}/evidence");
+                        "GET /api/mirror/runs/{runId}/evidence",
+                        "GET /api/mirror/runs/{runId}/state-workbook-seed");
     }
 
     @Test

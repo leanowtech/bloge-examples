@@ -41,6 +41,7 @@ import java.util.regex.Pattern;
  * @param nodeTraces payload-free node and delegate-attempt facts
  * @param edgeTraces payload-free edge transfer facts
  * @param resolutions sealed resolver provenance for every external delegate attempt
+ * @param stateEvidence payload-free Session state closure for stateful v3 runs
  * @param isolation structural and deployment isolation facts observed for this run
  * @param limitations bounded reasons the evidence cannot claim higher fidelity or certification
  */
@@ -66,6 +67,8 @@ public record MirrorRunEvidence(
         List<NodeTrace> nodeTraces,
         List<EdgeTrace> edgeTraces,
         List<MirrorResolution> resolutions,
+        @JsonInclude(JsonInclude.Include.NON_NULL)
+        MirrorStateRunEvidence stateEvidence,
         IsolationFacts isolation,
         List<String> limitations
 ) {
@@ -73,6 +76,9 @@ public record MirrorRunEvidence(
     public static final String SCHEMA_VERSION_V1 = "resourceGateway.mirrorRunEvidence.v1";
     /** Current evidence version carrying double-observed deployment trust. */
     public static final String SCHEMA_VERSION = "resourceGateway.mirrorRunEvidence.v2";
+    /** Stateful evidence version carrying one complete Session access closure. */
+    public static final String STATEFUL_SCHEMA_VERSION =
+            "resourceGateway.mirrorRunEvidence.v3";
     /** Maximum nodes or edges admitted to one portable bundle. */
     public static final int MAXIMUM_TRACE_ITEMS = 100_000;
     /** Maximum external resolver outcomes admitted to one portable bundle. */
@@ -137,9 +143,25 @@ public record MirrorRunEvidence(
         edgeTraces = orderedEdges(edgeTraces);
         resolutions = orderedResolutions(resolutions, runId, planFingerprint);
         validateResolutionBindings(externalBindings, resolutions);
+        boolean statefulVersion =
+                STATEFUL_SCHEMA_VERSION.equals(schemaVersion);
+        if (statefulVersion) {
+            stateEvidence = Objects.requireNonNull(
+                    stateEvidence, "stateEvidence");
+            if (!runId.equals(stateEvidence.runId())
+                    || !planFingerprint.equals(
+                    stateEvidence.planFingerprint())
+                    || stateEvidence.stateEvidenceFingerprint().isBlank()) {
+                throw new IllegalArgumentException(
+                        "stateful mirror evidence requires one sealed exact state closure");
+            }
+        } else if (stateEvidence != null) {
+            throw new IllegalArgumentException(
+                    "legacy mirror evidence cannot carry state evidence");
+        }
         isolation = Objects.requireNonNull(isolation, "isolation");
         limitations = orderedStrings(limitations, "limitations", MAXIMUM_LIMITATIONS, 512);
-        if (SCHEMA_VERSION.equals(schemaVersion)
+        if ((SCHEMA_VERSION.equals(schemaVersion) || statefulVersion)
                 && isolation.deploymentEgressEnforced()
                 != (isolation.deploymentTrustBinding() != null)) {
             throw new IllegalArgumentException(
@@ -148,7 +170,7 @@ public record MirrorRunEvidence(
         if (evidenceClass == EvidenceClass.CERTIFIABLE
                 && (!isolation.deploymentEgressEnforced() || !isolation.limitations().isEmpty()
                 || !limitations.isEmpty()
-                || SCHEMA_VERSION.equals(schemaVersion)
+                || (SCHEMA_VERSION.equals(schemaVersion) || statefulVersion)
                 && isolation.deploymentTrustBinding() == null)) {
             throw new IllegalArgumentException(
                     "certifiable mirror evidence requires proven egress isolation and no limitations");
@@ -158,6 +180,47 @@ public record MirrorRunEvidence(
             throw new IllegalArgumentException(
                     "v1 mirror evidence cannot claim deployment run trust");
         }
+    }
+
+    /**
+     * Compatibility constructor for stateless v1 and v2 evidence.
+     *
+     * <p>Stateful evidence must use the canonical constructor and
+     * {@link #STATEFUL_SCHEMA_VERSION}; this overload cannot attach a Session closure.</p>
+     */
+    public MirrorRunEvidence(
+            String schemaVersion,
+            String runId,
+            String requestId,
+            String requestContextFingerprint,
+            String planId,
+            String planFingerprint,
+            String capabilityClosureFingerprint,
+            String executionControlFingerprint,
+            MirrorArtifactRef rootCapability,
+            MirrorArtifactRef fixtureBundleRef,
+            List<ExternalBinding> externalBindings,
+            CapabilitySnapshot.Scope scope,
+            String authorizedPurpose,
+            Status status,
+            EvidenceClass evidenceClass,
+            String semanticResultFingerprint,
+            Instant startedAt,
+            Instant completedAt,
+            List<NodeTrace> nodeTraces,
+            List<EdgeTrace> edgeTraces,
+            List<MirrorResolution> resolutions,
+            IsolationFacts isolation,
+            List<String> limitations) {
+        this(schemaVersion, runId, requestId,
+                requestContextFingerprint, planId, planFingerprint,
+                capabilityClosureFingerprint,
+                executionControlFingerprint, rootCapability,
+                fixtureBundleRef, externalBindings, scope,
+                authorizedPurpose, status, evidenceClass,
+                semanticResultFingerprint, startedAt, completedAt,
+                nodeTraces, edgeTraces, resolutions, null, isolation,
+                limitations);
     }
 
     /**
@@ -418,7 +481,8 @@ public record MirrorRunEvidence(
         return "MirrorRunEvidence[runId=" + runId + ", planFingerprint=" + planFingerprint
                 + ", status=" + status + ", evidenceClass=" + evidenceClass
                 + ", nodeCount=" + nodeTraces.size() + ", edgeCount=" + edgeTraces.size()
-                + ", resolutionCount=" + resolutions.size() + "]";
+                + ", resolutionCount=" + resolutions.size()
+                + ", stateEvidence=" + (stateEvidence != null) + "]";
     }
 
     private static List<NodeTrace> orderedNodes(List<NodeTrace> values) {
@@ -565,7 +629,9 @@ public record MirrorRunEvidence(
 
     private static String version(String value) {
         String normalized = value == null || value.isBlank() ? SCHEMA_VERSION : value.trim();
-        if (!SCHEMA_VERSION.equals(normalized) && !SCHEMA_VERSION_V1.equals(normalized)) {
+        if (!SCHEMA_VERSION.equals(normalized)
+                && !SCHEMA_VERSION_V1.equals(normalized)
+                && !STATEFUL_SCHEMA_VERSION.equals(normalized)) {
             throw new IllegalArgumentException("unsupported mirror run-evidence schemaVersion");
         }
         return normalized;
