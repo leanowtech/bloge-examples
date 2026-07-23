@@ -22,15 +22,26 @@ import com.leanowtech.bloge.gateway.integration.mirror.EffectContract;
 import com.leanowtech.bloge.gateway.integration.mirror.MirrorArtifactRef;
 import com.leanowtech.bloge.gateway.integration.mirror.MirrorPlan;
 import com.leanowtech.bloge.gateway.integration.mirror.MirrorPlanIntegrity;
+import com.leanowtech.bloge.gateway.integration.mirror.MirrorServingGenerationAuthority;
+import com.leanowtech.bloge.gateway.integration.mirror.MirrorServingGenerationIntegrity;
+import com.leanowtech.bloge.gateway.integration.mirror.MirrorServingGenerationToken;
+import com.leanowtech.bloge.gateway.integration.mirror.MirrorServingGenerationTrustProvider;
 import com.leanowtech.bloge.gateway.testing.domain.FixtureBundle;
 import com.leanowtech.bloge.gateway.testing.domain.FixtureRule;
+import com.leanowtech.bloge.gateway.testing.evidence.ProtocolFingerprint;
+import com.leanowtech.bloge.gateway.testing.runtime.MirrorServingGenerationFence;
+import com.leanowtech.bloge.gateway.testing.runtime.ResolvedCorpusPayloads;
 import com.leanowtech.bloge.gateway.testing.runtime.ResolvedReplayPayloads;
 import com.leanowtech.bloge.gateway.visual.model.SchemaEnvelope;
+import com.leanowtech.bloge.gateway.visual.runtime.InMemoryVisualEvidenceSigner;
+import com.leanowtech.bloge.gateway.visual.runtime.VisualEvidenceSigner;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
 import java.time.Duration;
 import java.time.Instant;
+import java.time.Clock;
+import java.time.ZoneOffset;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -84,6 +95,101 @@ class MirrorPlanCompilerTest {
         assertThat(first.executionControl().controls().get("/root/loadCustomer#PRIMARY")
                 .rules().getFirst().behavior().value()).isEqualTo(
                 Map.of("customerName", "sensitive-fixture-value"));
+    }
+
+    @Test
+    void bindsRecordedCorpusToAMirrorPlanV2ServingGeneration() {
+        registry.register("customer.lookup", new ReadOnlyOperator());
+        Graph graph = graph(
+                "customerView", Map.of("loadCustomer", "customer.lookup"));
+        CapabilityClosure closure = directClosure(
+                "customerView", "loadCustomer", "customer.lookup",
+                TARGET, readOnlyEffect(), null);
+        MirrorArtifactRef capabilityRef = closure.snapshots().stream()
+                .filter(snapshot ->
+                        snapshot.kind() == CapabilitySnapshot.Kind.EXTERNAL)
+                .map(CapabilityClosureIntegrity::reference)
+                .findFirst().orElseThrow();
+        Instant issuedAt = COMPILED_AT;
+        ResolvedCorpusPayloads unbound = corpus(capabilityRef, issuedAt);
+
+        assertRejected(() -> compiler.compile(
+                        requestWithCorpus(
+                                graph, closure, unbound, issuedAt)),
+                "RG.MIRROR.SERVING_GENERATION_REQUIRED");
+
+        ResolvedCorpusPayloads governed = corpus(capabilityRef, issuedAt);
+        VisualEvidenceSigner signer = InMemoryVisualEvidenceSigner.usingClock(
+                Clock.fixed(issuedAt, ZoneOffset.UTC));
+        MirrorServingGenerationIntegrity generationIntegrity =
+                new MirrorServingGenerationIntegrity(mapper);
+        String dependencyFingerprint = ProtocolFingerprint.of(
+                mapper, governed.generationDependencies());
+        MirrorServingGenerationToken token = generationIntegrity.seal(
+                new MirrorServingGenerationToken.Material(
+                        "support-corpus", 3, fingerprint('8'), SCOPE,
+                        PURPOSE, dependencyFingerprint, 17, issuedAt,
+                        issuedAt.plus(Duration.ofHours(1)),
+                        Duration.ofSeconds(5)),
+                "corpus-authority-a", signer);
+        VisualEvidenceSigner.VerificationKey key = signer.key(
+                token.seal().keyId()).orElseThrow();
+        MirrorServingGenerationTrustProvider trust =
+                MirrorServingGenerationTrustProvider.fixed(
+                        new MirrorServingGenerationTrustProvider.AuthorityKey(
+                                token.seal().authorityId(), key.keyId(),
+                                key.algorithm(), key.encodedPublicKey(),
+                                issuedAt.minus(Duration.ofHours(1)),
+                                issuedAt.plus(Duration.ofHours(2)),
+                                MirrorServingGenerationTrustProvider.KeyState.ACTIVE));
+        MirrorServingGenerationAuthority authority =
+                currentAuthority(token);
+        governed = governed.withServingGeneration(
+                new MirrorServingGenerationFence(
+                        token, authority, trust, generationIntegrity,
+                        Clock.fixed(issuedAt, ZoneOffset.UTC)));
+
+        ResolvedCorpusPayloads mismatched = corpus(
+                capabilityRef, issuedAt);
+        MirrorServingGenerationToken wrongDependency =
+                generationIntegrity.seal(
+                        new MirrorServingGenerationToken.Material(
+                                "support-corpus-wrong", 1, "", SCOPE,
+                                PURPOSE, fingerprint('f'), 18, issuedAt,
+                                issuedAt.plus(Duration.ofHours(1)),
+                                Duration.ofSeconds(5)),
+                        "corpus-authority-a", signer);
+        mismatched = mismatched.withServingGeneration(
+                new MirrorServingGenerationFence(
+                        wrongDependency,
+                        currentAuthority(wrongDependency),
+                        trust,
+                        generationIntegrity,
+                        Clock.fixed(issuedAt, ZoneOffset.UTC)));
+        ResolvedCorpusPayloads mismatchedDependencies = mismatched;
+        assertRejected(
+                () -> compiler.compile(requestWithCorpus(
+                        graph, closure, mismatchedDependencies, issuedAt)),
+                "RG.MIRROR.SERVING_GENERATION_DEPENDENCY_MISMATCH");
+
+        try (CompiledMirrorPlan compiled = compiler.compile(
+                requestWithCorpus(graph, closure, governed, issuedAt))) {
+            assertThat(compiled.plan().schemaVersion())
+                    .isEqualTo(MirrorPlan.SCHEMA_VERSION);
+            assertThat(compiled.plan().servingGeneration())
+                    .isEqualTo(token);
+            assertThat(compiled.plan().externalBindings())
+                    .singleElement()
+                    .satisfies(binding -> assertThat(binding.resolverOrder())
+                            .contains(MirrorPlan.MirrorSource.RECORDED_EXACT));
+            MirrorPlanIntegrity.verify(mapper, compiled.plan());
+            assertThat(mapper.valueToTree(compiled.plan())
+                    .has("servingGeneration")).isTrue();
+        } finally {
+            unbound.close();
+            governed.close();
+            mismatched.close();
+        }
     }
 
     @Test
@@ -267,6 +373,64 @@ class MirrorPlanCompilerTest {
         return new MirrorPlanCompilationRequest("plan-customer-view", graph, target, closure,
                 retarget(fixture, target), ResolvedReplayPayloads.empty(), policy, scenario,
                 COMPILED_AT, COMPILED_AT.plus(Duration.ofHours(1)));
+    }
+
+    private MirrorPlanCompilationRequest requestWithCorpus(
+            Graph graph,
+            CapabilityClosure closure,
+            ResolvedCorpusPayloads corpus,
+            Instant compiledAt) {
+        return new MirrorPlanCompilationRequest(
+                "plan-customer-view", graph, TARGET, closure,
+                retarget(fixture(), TARGET), ResolvedReplayPayloads.empty(),
+                corpus, policy(), null, compiledAt,
+                compiledAt.plus(Duration.ofMinutes(30)));
+    }
+
+    private ResolvedCorpusPayloads corpus(
+            MirrorArtifactRef capabilityRef, Instant materializedAt) {
+        ResolvedCorpusPayloads.Sample sample =
+                ResolvedCorpusPayloads.Sample.response(
+                        fingerprint('1'),
+                        "{\"customerId\":\"C-1\"}".getBytes(
+                                java.nio.charset.StandardCharsets.UTF_8),
+                        List.of(
+                                ref("CAPABILITY_CORPUS_PUBLICATION",
+                                        "customer-publication", '2'),
+                                ref("CAPABILITY_CORPUS_REVISION",
+                                        "customer-corpus", '3'),
+                                ref("SANITIZED_PAYLOAD", "response", '4')),
+                        List.of("observation-a"), 1, List.of());
+        return ResolvedCorpusPayloads.of(List.of(
+                new ResolvedCorpusPayloads.CapabilityCorpus(
+                        capabilityRef,
+                        ref("CAPABILITY_CORPUS_PUBLICATION",
+                                "customer-publication", '2'),
+                        ref("CAPABILITY_CORPUS_REVISION",
+                                "customer-corpus", '3'),
+                        materializedAt,
+                        materializedAt.plus(Duration.ofHours(1)),
+                        List.of(sample))));
+    }
+
+    private static MirrorServingGenerationAuthority currentAuthority(
+            MirrorServingGenerationToken token) {
+        return new MirrorServingGenerationAuthority() {
+            @Override
+            public boolean available() {
+                return true;
+            }
+
+            @Override
+            public Resolution admit(AdmissionRequest request) {
+                return Resolution.current(token);
+            }
+
+            @Override
+            public Resolution currentFloor(FloorRequest request) {
+                return Resolution.current(token);
+            }
+        };
     }
 
     private static FixtureBundle retarget(FixtureBundle fixture, String target) {

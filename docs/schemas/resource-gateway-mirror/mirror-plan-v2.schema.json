@@ -1,0 +1,76 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://bloge.dev/schemas/resource-gateway-mirror/mirror-plan-v2.schema.json",
+  "title": "Resource Gateway Mirror Plan v2",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion", "planId", "planFingerprint", "rootCapability",
+    "capabilityClosureFingerprint", "capabilityClosure", "scope", "fixtureBundleRef",
+    "executionControlFingerprint", "servingGeneration", "externalBindings",
+    "scenarioPackRef", "stateModelRefs", "executionServices", "policy",
+    "compiledAt", "expiresAt"
+  ],
+  "properties": {
+    "schemaVersion": { "const": "resourceGateway.mirrorPlan.v2" },
+    "planId": { "type": "string", "minLength": 1, "maxLength": 512 },
+    "planFingerprint": {
+      "$ref": "mirror-plan-v1.schema.json#/$defs/fingerprint"
+    },
+    "rootCapability": {
+      "$ref": "mirror-plan-v1.schema.json#/$defs/capabilityRef"
+    },
+    "capabilityClosureFingerprint": {
+      "$ref": "mirror-plan-v1.schema.json#/$defs/fingerprint"
+    },
+    "capabilityClosure": {
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 10001,
+      "items": { "$ref": "capability-snapshot-v1.schema.json" }
+    },
+    "scope": {
+      "$ref": "mirror-plan-v1.schema.json#/$defs/scope"
+    },
+    "fixtureBundleRef": {
+      "$ref": "mirror-plan-v1.schema.json#/$defs/fixtureBundleRef"
+    },
+    "executionControlFingerprint": {
+      "$ref": "mirror-plan-v1.schema.json#/$defs/fingerprint"
+    },
+    "servingGeneration": {
+      "$ref": "mirror-serving-generation-token-v1.schema.json"
+    },
+    "externalBindings": {
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 10000,
+      "items": {
+        "$ref": "mirror-plan-v1.schema.json#/$defs/externalBinding"
+      }
+    },
+    "scenarioPackRef": {
+      "oneOf": [
+        { "type": "null" },
+        {
+          "$ref": "mirror-plan-v1.schema.json#/$defs/scenarioPackRef"
+        }
+      ]
+    },
+    "stateModelRefs": {
+      "type": "array",
+      "maxItems": 10000,
+      "items": {
+        "$ref": "mirror-plan-v1.schema.json#/$defs/stateModelRef"
+      }
+    },
+    "executionServices": {
+      "$ref": "mirror-plan-v1.schema.json#/$defs/executionServices"
+    },
+    "policy": {
+      "$ref": "mirror-plan-v1.schema.json#/$defs/policy"
+    },
+    "compiledAt": { "type": "string", "format": "date-time" },
+    "expiresAt": { "type": "string", "format": "date-time" }
+  }
+}

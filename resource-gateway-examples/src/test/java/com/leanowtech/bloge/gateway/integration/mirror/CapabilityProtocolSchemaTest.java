@@ -3,6 +3,7 @@ package com.leanowtech.bloge.gateway.integration.mirror;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.leanowtech.bloge.gateway.visual.model.SchemaEnvelope;
+import com.leanowtech.bloge.gateway.visual.runtime.InMemoryVisualEvidenceSigner;
 
 import org.junit.jupiter.api.Test;
 
@@ -10,6 +11,8 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.Duration;
 import java.time.Instant;
+import java.time.Clock;
+import java.time.ZoneOffset;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
@@ -98,6 +101,57 @@ class CapabilityProtocolSchemaTest {
         assertThat(snapshotValue.at("/contract/slo/timeout").asText()).isEqualTo("PT3S");
     }
 
+    @Test
+    void servingGenerationAndMirrorPlanV2SchemasMatchSerializedFields()
+            throws Exception {
+        CapabilitySnapshot snapshot =
+                CapabilitySnapshotIntegrity.seal(mapper, snapshot());
+        CapabilitySnapshot root = CapabilitySnapshotIntegrity.seal(
+                mapper, composedRoot(snapshot));
+        CapabilityClosure closure = CapabilityClosureIntegrity.seal(
+                mapper, new CapabilityClosure(
+                        "", CapabilityClosureIntegrity.reference(root),
+                        List.of(root, snapshot), ""));
+        Instant issuedAt = Instant.parse("2026-07-22T00:00:00Z");
+        InMemoryVisualEvidenceSigner signer =
+                InMemoryVisualEvidenceSigner.usingClock(
+                        Clock.fixed(issuedAt, ZoneOffset.UTC));
+        MirrorServingGenerationToken token =
+                new MirrorServingGenerationIntegrity(mapper).seal(
+                        new MirrorServingGenerationToken.Material(
+                                "orders-serving", 2,
+                                "sha256:" + "7".repeat(64),
+                                root.scope(), "MIRROR_REHEARSAL",
+                                "sha256:" + "8".repeat(64), 14,
+                                issuedAt, issuedAt.plus(Duration.ofHours(2)),
+                                Duration.ofSeconds(5)),
+                        "corpus-authority-a", signer);
+        MirrorPlan plan = mirrorPlanV2(closure, token);
+        JsonNode tokenValue = mapper.valueToTree(token);
+        JsonNode tokenSchema = schema(
+                "mirror-serving-generation-token-v1.schema.json");
+        JsonNode planValue = mapper.valueToTree(plan);
+        JsonNode planSchema = schema("mirror-plan-v2.schema.json");
+
+        assertProperties(tokenValue, tokenSchema.path("properties"));
+        assertProperties(
+                tokenValue.path("material"),
+                tokenSchema.at("/$defs/material/properties"));
+        assertProperties(
+                tokenValue.path("seal"),
+                tokenSchema.at("/$defs/seal/properties"));
+        assertProperties(planValue, planSchema.path("properties"));
+        assertThat(tokenSchema.path("additionalProperties").asBoolean())
+                .isFalse();
+        assertThat(planSchema.path("additionalProperties").asBoolean())
+                .isFalse();
+        assertThat(planValue.path("schemaVersion").asText())
+                .isEqualTo(MirrorPlan.SCHEMA_VERSION);
+        assertThat(planValue.path("servingGeneration")
+                .path("tokenFingerprint").asText())
+                .isEqualTo(token.tokenFingerprint());
+    }
+
     private MirrorResolution mirrorResolution(MirrorPlan plan) {
         MirrorPlan.ExternalBinding binding = plan.externalBindings().getFirst();
         return MirrorResolutionIntegrity.seal(mapper, new MirrorResolution("", "", "run-orders-1",
@@ -128,7 +182,7 @@ class CapabilityProtocolSchemaTest {
                 closure.rootRef(), closure.fingerprint(), closure.snapshots(), root.scope(),
                 new MirrorArtifactRef("FIXTURE_BUNDLE", "orders-fixture", 1,
                         "sha256:" + "e".repeat(64)), "sha256:" + "9".repeat(64),
-                List.of(binding), null, List.of(),
+                null, List.of(binding), null, List.of(),
                 new MirrorPlan.ExecutionServices(Instant.parse("2026-07-22T00:00:00Z"),
                         42L, null, null),
                 new MirrorPlan.ExecutionPolicy("MIRROR_REHEARSAL", false, false, false,
@@ -137,6 +191,42 @@ class CapabilityProtocolSchemaTest {
                         List.of("sg"), List.of(CapabilitySnapshot.Lifecycle.ACTIVE)),
                 Instant.parse("2026-07-22T00:00:00Z"),
                 Instant.parse("2026-07-22T01:00:00Z")));
+    }
+
+    private MirrorPlan mirrorPlanV2(
+            CapabilityClosure closure,
+            MirrorServingGenerationToken token) {
+        MirrorPlan baseline = mirrorPlan(closure);
+        MirrorPlan.ExternalBinding previous =
+                baseline.externalBindings().getFirst();
+        MirrorPlan.ExternalBinding recorded =
+                new MirrorPlan.ExternalBinding(
+                        previous.parentCapabilityRef(),
+                        previous.dependencyNodeId(),
+                        previous.capabilityRef(),
+                        previous.invocationSiteId(),
+                        previous.graphPath(),
+                        previous.sourceKind(),
+                        previous.sourceRef(),
+                        List.of(
+                                MirrorPlan.MirrorSource.RECORDED_EXACT,
+                                MirrorPlan.MirrorSource.ABSTAINED),
+                        List.of());
+        return MirrorPlanIntegrity.seal(
+                mapper, new MirrorPlan(
+                        "", baseline.planId(), "",
+                        baseline.rootCapability(),
+                        baseline.capabilityClosureFingerprint(),
+                        baseline.capabilityClosure(), baseline.scope(),
+                        baseline.fixtureBundleRef(),
+                        baseline.executionControlFingerprint(),
+                        token, List.of(recorded),
+                        baseline.scenarioPackRef(),
+                        baseline.stateModelRefs(),
+                        baseline.executionServices(),
+                        baseline.policy(),
+                        baseline.compiledAt(),
+                        baseline.expiresAt()));
     }
 
     @Test

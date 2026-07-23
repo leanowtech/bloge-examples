@@ -32,6 +32,10 @@ import com.leanowtech.bloge.gateway.integration.mirror.MirrorEvidenceIntegritySe
 import com.leanowtech.bloge.gateway.integration.mirror.MirrorPlan;
 import com.leanowtech.bloge.gateway.integration.mirror.MirrorResolution;
 import com.leanowtech.bloge.gateway.integration.mirror.MirrorResolutionIntegrity;
+import com.leanowtech.bloge.gateway.integration.mirror.MirrorServingGenerationAuthority;
+import com.leanowtech.bloge.gateway.integration.mirror.MirrorServingGenerationIntegrity;
+import com.leanowtech.bloge.gateway.integration.mirror.MirrorServingGenerationToken;
+import com.leanowtech.bloge.gateway.integration.mirror.MirrorServingGenerationTrustProvider;
 import com.leanowtech.bloge.gateway.testing.domain.FixtureBundle;
 import com.leanowtech.bloge.gateway.testing.domain.FixtureRule;
 import com.leanowtech.bloge.gateway.testing.evidence.ProtocolFingerprint;
@@ -49,6 +53,7 @@ import org.junit.jupiter.api.Test;
 import java.time.Clock;
 import java.time.Duration;
 import java.time.Instant;
+import java.time.ZoneId;
 import java.time.ZoneOffset;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -187,6 +192,7 @@ class MirrorRunServiceTest {
                                 requestFingerprint, responseJson,
                                 List.of(publicationRef, revisionRef, observationRef),
                                 List.of(observationRef.id()), 0.95, List.of())))));
+        corpus = governedCorpus(corpus).payloads();
         CompiledMirrorPlan compiled = compiler.compile(new MirrorPlanCompilationRequest(
                 "plan-customer-corpus", graph, TARGET, closure, fixture(),
                 ResolvedReplayPayloads.empty(), corpus, policy(), null,
@@ -269,6 +275,7 @@ class MirrorRunServiceTest {
                                 List.of(observationRef.id()),
                                 0.9,
                                 List.of())))));
+        corpus = governedCorpus(corpus).payloads();
         CompiledMirrorPlan compiled = compiler.compile(
                 new MirrorPlanCompilationRequest(
                         "plan-customer-error-corpus",
@@ -302,6 +309,61 @@ class MirrorRunServiceTest {
                     .containsExactlyInAnyOrder(
                             publicationRef, revisionRef, observationRef);
         });
+    }
+
+    @Test
+    void stopsBeforeTheFirstOperatorWhenFloorAdvancesAfterRunAdmission()
+            throws Exception {
+        MirrorArtifactRef capabilityRef = closure.snapshots().stream()
+                .filter(snapshot ->
+                        snapshot.kind() == CapabilitySnapshot.Kind.EXTERNAL)
+                .map(CapabilityClosureIntegrity::reference)
+                .findFirst().orElseThrow();
+        MirrorArtifactRef publicationRef = new MirrorArtifactRef(
+                "CAPABILITY_CORPUS_PUBLICATION",
+                "customer-race-corpus", 1, fingerprint('2'));
+        MirrorArtifactRef revisionRef = new MirrorArtifactRef(
+                "CAPABILITY_CORPUS_REVISION",
+                "customer-race-corpus", 1, fingerprint('3'));
+        ResolvedCorpusPayloads raw = ResolvedCorpusPayloads.of(List.of(
+                new ResolvedCorpusPayloads.CapabilityCorpus(
+                        capabilityRef, publicationRef, revisionRef,
+                        COMPILED_AT,
+                        COMPILED_AT.plus(Duration.ofHours(2)),
+                        List.of(ResolvedCorpusPayloads.Sample.response(
+                                ProtocolFingerprint.of(mapper, null),
+                                mapper.writeValueAsBytes(
+                                        Map.of("customerId", "C-recorded")),
+                                List.of(publicationRef, revisionRef),
+                                List.of("recorded-race"),
+                                0.95, List.of())))));
+        GovernedCorpus governed = governedCorpus(
+                raw,
+                Duration.ofNanos(1),
+                new TickingClock(
+                        COMPILED_AT.plusSeconds(1),
+                        Duration.ofSeconds(1)));
+        CompiledMirrorPlan compiled = compiler.compile(
+                new MirrorPlanCompilationRequest(
+                        "plan-serving-generation-race", graph, TARGET,
+                        closure, fixture(), ResolvedReplayPayloads.empty(),
+                        governed.payloads(), policy(), null,
+                        COMPILED_AT,
+                        COMPILED_AT.plus(Duration.ofHours(1))));
+        governed.authority().advanceAfterFirstRead =
+                successor(governed);
+
+        MirrorRunResult result = runtime.execute(
+                request(compiled, SCOPE, PURPOSE));
+
+        assertThat(result.passed()).isFalse();
+        assertThat(governed.authority().floorReads).isGreaterThanOrEqualTo(2);
+        assertThat(externalCalls).hasValue(0);
+        assertThat(internalCalls).hasValue(0);
+        assertThat(result.execution().evidence().nodeTrace())
+                .anySatisfy(trace -> assertThat(trace.errorCode())
+                        .isEqualTo(
+                                "MIRROR_SERVING_GENERATION_STALE"));
     }
 
     @Test
@@ -412,6 +474,7 @@ class MirrorRunServiceTest {
                                                         "customer-timeout-retry@1:attempt:2"),
                                                 0.9,
                                                 List.of())))))));
+        corpus = governedCorpus(corpus).payloads();
         CompiledMirrorPlan compiled = compiler.compile(
                 new MirrorPlanCompilationRequest(
                         "plan-customer-trajectory",
@@ -879,6 +942,80 @@ class MirrorRunServiceTest {
                 COMPILED_AT, COMPILED_AT.plus(Duration.ofHours(1))));
     }
 
+    private GovernedCorpus governedCorpus(ResolvedCorpusPayloads payloads) {
+        return governedCorpus(
+                payloads,
+                Duration.ofSeconds(5),
+                Clock.fixed(
+                        COMPILED_AT.plusSeconds(1),
+                        ZoneOffset.UTC));
+    }
+
+    private GovernedCorpus governedCorpus(
+            ResolvedCorpusPayloads payloads,
+            Duration maximumStaleness,
+            Clock fenceClock) {
+        Clock authorityClock = Clock.fixed(
+                COMPILED_AT, ZoneOffset.UTC);
+        InMemoryVisualEvidenceSigner signer =
+                InMemoryVisualEvidenceSigner.usingClock(authorityClock);
+        MirrorServingGenerationIntegrity integrity =
+                new MirrorServingGenerationIntegrity(mapper);
+        MirrorServingGenerationToken token = integrity.seal(
+                new MirrorServingGenerationToken.Material(
+                        "customer-corpus-serving", 1, "", SCOPE,
+                        PURPOSE,
+                        ProtocolFingerprint.of(
+                                mapper,
+                                payloads.generationDependencies()),
+                        1, COMPILED_AT,
+                        COMPILED_AT.plus(Duration.ofHours(2)),
+                        maximumStaleness),
+                "test-corpus-authority", signer);
+        VisualEvidenceSigner.VerificationKey key = signer.key(
+                token.seal().keyId()).orElseThrow();
+        MirrorServingGenerationTrustProvider trust =
+                MirrorServingGenerationTrustProvider.fixed(
+                        new MirrorServingGenerationTrustProvider.AuthorityKey(
+                                token.seal().authorityId(),
+                                key.keyId(), key.algorithm(),
+                                key.encodedPublicKey(),
+                                COMPILED_AT.minus(Duration.ofHours(1)),
+                                COMPILED_AT.plus(Duration.ofHours(3)),
+                                MirrorServingGenerationTrustProvider
+                                        .KeyState.ACTIVE));
+        FixedGenerationAuthority authority =
+                new FixedGenerationAuthority(token);
+        ResolvedCorpusPayloads governed =
+                payloads.withServingGeneration(
+                        new MirrorServingGenerationFence(
+                                token, authority, trust, integrity,
+                                fenceClock));
+        return new GovernedCorpus(
+                governed, authority, token, signer, integrity);
+    }
+
+    private MirrorServingGenerationToken successor(
+            GovernedCorpus governed) {
+        MirrorServingGenerationToken previous = governed.token();
+        MirrorServingGenerationToken.Material material =
+                previous.material();
+        return governed.integrity().seal(
+                new MirrorServingGenerationToken.Material(
+                        material.streamId(),
+                        material.generation() + 1,
+                        previous.tokenFingerprint(),
+                        material.scope(),
+                        material.authorizedPurpose(),
+                        material.dependencyClosureFingerprint(),
+                        material.revocationCursor() + 1,
+                        material.issuedAt(),
+                        material.expiresAt(),
+                        material.maximumStaleness()),
+                previous.seal().authorityId(),
+                governed.signer());
+    }
+
     private static ResolvedReplayPayloads replayPayloads() {
         return new ResolvedReplayPayloads(Map.of(REPLAY_REF,
                 new ResolvedReplayPayloads.Payload(
@@ -1050,6 +1187,81 @@ class MirrorRunServiceTest {
         assertThatThrownBy(action::run)
                 .isInstanceOfSatisfying(MirrorRunRejectedException.class,
                         failure -> assertThat(failure.code()).isEqualTo(code));
+    }
+
+    private record GovernedCorpus(
+            ResolvedCorpusPayloads payloads,
+            FixedGenerationAuthority authority,
+            MirrorServingGenerationToken token,
+            InMemoryVisualEvidenceSigner signer,
+            MirrorServingGenerationIntegrity integrity
+    ) {
+    }
+
+    private static final class FixedGenerationAuthority
+            implements MirrorServingGenerationAuthority {
+        private MirrorServingGenerationToken current;
+        private boolean available = true;
+        private int floorReads;
+        private MirrorServingGenerationToken advanceAfterFirstRead;
+
+        private FixedGenerationAuthority(
+                MirrorServingGenerationToken current) {
+            this.current = current;
+        }
+
+        @Override
+        public boolean available() {
+            return available;
+        }
+
+        @Override
+        public Resolution admit(AdmissionRequest request) {
+            return available
+                    ? Resolution.current(current)
+                    : Resolution.unavailable("TEST_AUTHORITY_UNAVAILABLE");
+        }
+
+        @Override
+        public Resolution currentFloor(FloorRequest request) {
+            floorReads++;
+            if (!available) {
+                return Resolution.unavailable(
+                        "TEST_AUTHORITY_UNAVAILABLE");
+            }
+            MirrorServingGenerationToken returned = current;
+            if (floorReads == 1 && advanceAfterFirstRead != null) {
+                current = advanceAfterFirstRead;
+            }
+            return Resolution.current(returned);
+        }
+    }
+
+    private static final class TickingClock extends Clock {
+        private Instant current;
+        private final Duration step;
+
+        private TickingClock(Instant current, Duration step) {
+            this.current = current;
+            this.step = step;
+        }
+
+        @Override
+        public ZoneId getZone() {
+            return ZoneOffset.UTC;
+        }
+
+        @Override
+        public Clock withZone(ZoneId zone) {
+            return this;
+        }
+
+        @Override
+        public Instant instant() {
+            Instant value = current;
+            current = current.plus(step);
+            return value;
+        }
     }
 
     private static final class TestTrustAuthority

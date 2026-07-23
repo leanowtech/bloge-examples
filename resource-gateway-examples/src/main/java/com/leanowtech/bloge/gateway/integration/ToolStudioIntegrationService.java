@@ -413,6 +413,10 @@ public class ToolStudioIntegrationService {
                 mirrorRuntimeAvailability.corpusClusterReady());
         features.put("mirrorCorpusResolverReady",
                 mirrorRuntimeAvailability.corpusResolverReady());
+        features.put("mirrorServingGenerationFencing",
+                mirrorRuntimeAvailability.corpusResolverReady());
+        features.put("mirrorServingGenerationAuthorityReady",
+                mirrorRuntimeAvailability.corpusResolverReady());
         features.put("mirrorCorpusTrajectoryResolverReady",
                 mirrorRuntimeAvailability.corpusTrajectoryResolverReady());
         features.put("mirrorCorpusClusterResolverReady",

@@ -477,6 +477,18 @@ public class ExecutionControlCompiler {
                 "bindingFingerprint", entry.site().runtimeBindingFingerprint())).toList());
         fingerprintMaterial.put("sites", sites);
         fingerprintMaterial.put("replayDependencies", resolvedReplays.planDependencies());
+        resolvedCorpus.servingGenerationToken().ifPresent(token ->
+                fingerprintMaterial.put("mirrorServingGeneration", Map.of(
+                        "streamId", token.material().streamId(),
+                        "generation", token.material().generation(),
+                        "tokenFingerprint", token.tokenFingerprint(),
+                        "dependencyClosureFingerprint",
+                        token.material().dependencyClosureFingerprint(),
+                        "revocationCursor",
+                        token.material().revocationCursor(),
+                        "expiresAt", token.material().expiresAt(),
+                        "maximumStaleness",
+                        token.material().maximumStaleness())));
         fingerprintMaterial.put("executionServiceBindings", executionServices.bindings());
         if (mirrorCompilation) {
             fingerprintMaterial.put("mandatoryMirrorExternalSites", mandatoryExternalSites);

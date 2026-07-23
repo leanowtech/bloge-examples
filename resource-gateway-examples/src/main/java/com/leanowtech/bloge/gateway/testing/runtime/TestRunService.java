@@ -464,8 +464,25 @@ public class TestRunService {
 
     private static void graphDiagnostics(GraphResult result, List<String> diagnostics) {
         if (result == null) return;
-        result.errors().forEach(error -> diagnostics.add(bounded(
-                error.nodeId() + ": " + error.exception().getMessage())));
+        result.errors().forEach(error -> {
+            String code = controlledCode(error.exception());
+            diagnostics.add(bounded(
+                    error.nodeId() + ": "
+                            + (code.isBlank()
+                            ? error.exception().getMessage()
+                            : code)));
+        });
+    }
+
+    private static String controlledCode(Throwable failure) {
+        Throwable current = failure;
+        while (current != null) {
+            if (current instanceof TestOutcomeFailure controlled) {
+                return controlled.code();
+            }
+            current = current.getCause();
+        }
+        return "";
     }
 
     private static void consumptionDiagnostics(List<TestRunEvidence.FixtureConsumption> consumptions,

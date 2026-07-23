@@ -141,7 +141,8 @@ closure projection request carries only the portable draft, positive target revi
 and a classification no higher than the caller's clearance. Tenant, organization, project, environment, region,
 purpose, ownership, and `DRAFT` lifecycle are server-derived. The capability probe reports snapshot/closure
 protocol, projection, seven built-in graph closures, visual draft closure projection, API, lifecycle, and the
-sealed `resourceGateway.mirrorPlan.v1` wire model as available. Protocol availability is deliberately separate from
+sealed `resourceGateway.mirrorPlan.v1` and recorded-corpus `resourceGateway.mirrorPlan.v2` wire models plus
+`resourceGateway.mirrorServingGenerationToken.v1` as available. Protocol availability is deliberately separate from
 runtime readiness. With the mirror switch disabled, every mirror runtime flag remains false and no `/api/mirror/**`
 route exists. With `RG_MIRROR_RUNTIME_ENABLED=true` under `test` or `staging`, the protected plan adapter now reports
 `mirrorPlanCompilation=true` and `mirrorExternalLeafInterception=true`; the fully assembled durable run/evidence
@@ -175,9 +176,13 @@ external source-lifecycle authority to be currently available. The defaults are 
 `fixtureBundle.metadata.mirrorCorpus` bindings and the fixed
 `OWNER_SPECIFIED -> RECORDED_EXACT -> RECORDED_TRAJECTORY -> RECORDED_CLUSTER ->
 GOVERNED_REPLAY -> ABSTAINED` chain.
-`mirrorCorpusResolverReady=true` is stronger: the policy provider, source-lifecycle authority, and
-regional `CapabilityCorpusPayloadAuthority` must all be currently usable. The default payload
-authority is unavailable, so enabling the mirror profile never invents payload-vault trust.
+`mirrorCorpusResolverReady=true` is stronger: the policy provider, source-lifecycle authority,
+regional `CapabilityCorpusPayloadAuthority`, shared `MirrorServingGenerationAuthority`, and
+operator-owned `MirrorServingGenerationTrustProvider` must all be currently usable. The default
+payload, generation, and trust authorities are unavailable, so enabling the mirror profile never
+invents payload-vault or generation trust. The probe also reports
+`mirrorServingGenerationFencing` and `mirrorServingGenerationAuthorityReady` from this complete
+dynamic chain.
 Governance workloads require `MIRROR_CORPUS_GOVERNANCE`; plan/run workloads continue to require
 `MIRROR_REHEARSAL`.
 
@@ -522,6 +527,27 @@ The protected HTTP run endpoint already applies this lifecycle and requires no c
 Production certification still requires the planned forked-JVM heap-residue scan, asynchronous
 cancellation/crash injection, fixed-cardinality leak telemetry, and a production payload authority
 that minimizes heap plaintext with a direct-memory or sidecar-handle implementation.
+
+### Mirror serving-generation fencing
+
+Every non-empty recorded exact, trajectory, or cluster payload generation must now obtain a signed
+current-floor token before compilation. The token binds the full enterprise scope, purpose,
+payload-free materialized dependency closure, monotonic generation/predecessor, revocation cursor,
+expiry, and signed maximum floor-cache staleness. The compiler emits `mirrorPlan.v2`; plans without
+recorded corpus remain v1-compatible.
+
+Every new run forces a shared authority floor read. Operator occurrences may reuse that verified
+floor only inside the signed staleness window. A newer floor lets already admitted occurrence work
+finish but rejects later occurrences before fixture selection, resolver use, or business operator
+execution. Authority outage after the cache boundary, rollback, expiry, key failure, token drift,
+and stale generation all fail closed with stable evidence codes. Metrics use only bounded
+`check` and `outcome` tags.
+
+Deployments must replace the default unavailable `MirrorServingGenerationAuthority` and
+`MirrorServingGenerationTrustProvider`; Resource Gateway never treats an authority response or
+locally generated key as a trust root. Wiring requirements, stable failures, metrics, rollout
+checks, and revocation drills are documented in the
+[serving-generation guide](../docs/resource-gateway-mirror-serving-generation.md).
 
 Useful variants:
 

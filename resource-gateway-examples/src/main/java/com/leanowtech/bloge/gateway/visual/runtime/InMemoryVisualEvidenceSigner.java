@@ -3,6 +3,7 @@ package com.leanowtech.bloge.gateway.visual.runtime;
 import java.security.GeneralSecurityException;
 import java.security.KeyPair;
 import java.security.KeyPairGenerator;
+import java.time.Clock;
 import java.time.Instant;
 import java.util.Map;
 import java.util.Optional;
@@ -12,15 +13,37 @@ import java.util.UUID;
 public final class InMemoryVisualEvidenceSigner implements VisualEvidenceSigner {
     private final VisualEvidenceSigner delegate;
 
+    /** Creates an ephemeral signer using the system UTC clock. */
     public InMemoryVisualEvidenceSigner() {
-        this.delegate = create();
+        this.delegate = create(Clock.systemUTC());
     }
 
-    private static VisualEvidenceSigner create() {
+    /**
+     * Creates an ephemeral signer with a caller-controlled signing clock.
+     *
+     * <p>The overload is useful for deterministic protocol and replay tests. Production signing
+     * authorities should use managed key custody and a trusted clock rather than this in-memory
+     * implementation.</p>
+     *
+     * @param clock clock used for key creation and signature timestamps
+     * @return deterministic ephemeral signer
+     */
+    public static InMemoryVisualEvidenceSigner usingClock(Clock clock) {
+        return new InMemoryVisualEvidenceSigner(
+                java.util.Objects.requireNonNull(clock, "clock"));
+    }
+
+    private InMemoryVisualEvidenceSigner(Clock clock) {
+        this.delegate = create(java.util.Objects.requireNonNull(clock, "clock"));
+    }
+
+    private static VisualEvidenceSigner create(Clock clock) {
         try {
             KeyPair keyPair = KeyPairGenerator.getInstance("Ed25519").generateKeyPair();
-            return new Ed25519VisualEvidenceSigner(keyPair, "memory-ed25519:" + UUID.randomUUID(), Instant.now(),
-                    "IN_MEMORY", Map.of());
+            Instant createdAt = clock.instant();
+            return new Ed25519VisualEvidenceSigner(keyPair,
+                    "memory-ed25519:" + UUID.randomUUID(), createdAt,
+                    "IN_MEMORY", Map.of(), clock);
         } catch (GeneralSecurityException exception) {
             throw new IllegalStateException("Unable to initialize in-memory evidence signer", exception);
         }

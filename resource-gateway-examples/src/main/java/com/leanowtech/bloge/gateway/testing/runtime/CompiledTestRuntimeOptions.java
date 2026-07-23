@@ -102,6 +102,7 @@ public class CompiledTestRuntimeOptions {
                     "Runtime invocation was absent from the frozen inventory: "
                             + resolution.site().structuralId());
         }
+        compiled.corpusPayloads().admitOccurrence();
         if (invocationBudget != null) {
             invocationBudget.admit();
         }

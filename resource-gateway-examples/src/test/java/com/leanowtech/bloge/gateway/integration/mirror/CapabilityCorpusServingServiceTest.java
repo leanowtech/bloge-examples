@@ -48,6 +48,7 @@ class CapabilityCorpusServingServiceTest {
     private MutableClusterValidationAuthority clusterValidations;
     private MutableSourceVerifier sourceVerifier;
     private MutablePayloadAuthority payloadAuthority;
+    private MutableServingGenerationAuthority servingGenerationAuthority;
     private CapabilityCorpusServingService service;
     private CapabilitySnapshot.Scope scope;
     private CapabilityObservationRepository.StoredObservation source;
@@ -98,11 +99,35 @@ class CapabilityCorpusServingServiceTest {
                 mapper, revision, 1, null, now.minusSeconds(1));
         corpora.appendRevision(revision);
         corpora.appendPublication(publication);
+        Clock clock = Clock.fixed(now, ZoneOffset.UTC);
+        InMemoryVisualEvidenceSigner generationSigner =
+                InMemoryVisualEvidenceSigner.usingClock(clock);
+        MirrorServingGenerationIntegrity generationIntegrity =
+                new MirrorServingGenerationIntegrity(mapper);
+        servingGenerationAuthority =
+                new MutableServingGenerationAuthority(
+                        generationIntegrity, generationSigner, now);
+        var generationKey = generationSigner.resolveKeySet()
+                .keySet().keys().getFirst();
+        MirrorServingGenerationTrustProvider generationTrust =
+                MirrorServingGenerationTrustProvider.fixed(
+                        new MirrorServingGenerationTrustProvider.AuthorityKey(
+                                MutableServingGenerationAuthority.AUTHORITY_ID,
+                                generationKey.keyId(),
+                                generationKey.algorithm(),
+                                generationKey.encodedPublicKey(),
+                                now.minus(Duration.ofMinutes(1)),
+                                now.plus(Duration.ofHours(2)),
+                                MirrorServingGenerationTrustProvider.KeyState.ACTIVE));
+        MirrorServingGenerationService generationService =
+                new MirrorServingGenerationService(
+                        servingGenerationAuthority, generationTrust,
+                        generationIntegrity, mapper, clock);
         service = new CapabilityCorpusServingService(
                 corpora, observations, trajectories, clusters,
                 policies, retryPolicies, clusterPolicies, clusterValidations,
-                sourceVerifier, payloadAuthority, corpusIntegrity, mapper,
-                Clock.fixed(now, ZoneOffset.UTC));
+                sourceVerifier, payloadAuthority, corpusIntegrity,
+                generationService, mapper, clock);
     }
 
     @AfterEach
@@ -138,6 +163,8 @@ class CapabilityCorpusServingServiceTest {
                 source.envelope().material().dataUseGrant().grantRef());
         assertThat(resolved.toString()).doesNotContain("C-recorded");
         assertThat(sample.toString()).doesNotContain("C-recorded");
+        assertThat(resolved.servingGenerationToken()).isPresent();
+        resolved.admitRun();
         assertThat(service.ready()).isTrue();
         assertThatThrownBy(payloadAuthority.lastMaterialization::canonicalJson)
                 .isInstanceOf(IllegalStateException.class);
@@ -166,6 +193,28 @@ class CapabilityCorpusServingServiceTest {
         assertThat(service.ready()).isFalse();
         assertThat(service.trajectoryReady()).isFalse();
         assertThat(service.clusterReady()).isFalse();
+    }
+
+    @Test
+    void servingGenerationAuthorityRejectionAndOutageFailClosed() {
+        servingGenerationAuthority.reject = true;
+
+        assertProblem(
+                () -> service.resolve(
+                        fixture(publication), scope, executionPolicy(),
+                        now.plus(Duration.ofHours(1)), identity()),
+                409, "RG.MIRROR.SERVING_GENERATION_REJECTED");
+
+        servingGenerationAuthority.reject = false;
+        servingGenerationAuthority.available = false;
+
+        assertThat(service.ready()).isFalse();
+        assertProblem(
+                () -> service.resolve(
+                        fixture(publication), scope, executionPolicy(),
+                        now.plus(Duration.ofHours(1)), identity()),
+                503,
+                "RG.MIRROR.SERVING_GENERATION_AUTHORITY_UNAVAILABLE");
     }
 
     @Test
@@ -1300,6 +1349,62 @@ class CapabilityCorpusServingServiceTest {
                     && validation.scope().equals(scope)
                     && validation.artifactRef().equals(validationRef)
                     ? Optional.of(validation) : Optional.empty();
+        }
+    }
+
+    private static final class MutableServingGenerationAuthority
+            implements MirrorServingGenerationAuthority {
+        private static final String AUTHORITY_ID =
+                "test-corpus-serving-authority";
+
+        private final MirrorServingGenerationIntegrity integrity;
+        private final InMemoryVisualEvidenceSigner signer;
+        private final Instant issuedAt;
+        private boolean available = true;
+        private boolean reject;
+        private MirrorServingGenerationToken current;
+
+        private MutableServingGenerationAuthority(
+                MirrorServingGenerationIntegrity integrity,
+                InMemoryVisualEvidenceSigner signer,
+                Instant issuedAt) {
+            this.integrity = integrity;
+            this.signer = signer;
+            this.issuedAt = issuedAt;
+        }
+
+        @Override
+        public boolean available() {
+            return available;
+        }
+
+        @Override
+        public Resolution admit(AdmissionRequest request) {
+            if (!available) {
+                return Resolution.unavailable("TEST_AUTHORITY_UNAVAILABLE");
+            }
+            if (reject) {
+                return Resolution.rejected("TEST_POLICY_REJECTED");
+            }
+            current = integrity.seal(
+                    new MirrorServingGenerationToken.Material(
+                            "support-corpus-serving", 1, "",
+                            request.scope(), request.authorizedPurpose(),
+                            request.dependencyClosureFingerprint(), 1,
+                            issuedAt, request.requiredUntil().plusSeconds(30),
+                            Duration.ofSeconds(5)),
+                    AUTHORITY_ID, signer);
+            return Resolution.current(current);
+        }
+
+        @Override
+        public Resolution currentFloor(FloorRequest request) {
+            if (!available) {
+                return Resolution.unavailable("TEST_AUTHORITY_UNAVAILABLE");
+            }
+            return current == null
+                    ? Resolution.rejected("TEST_FLOOR_NOT_FOUND")
+                    : Resolution.current(current);
         }
     }
 

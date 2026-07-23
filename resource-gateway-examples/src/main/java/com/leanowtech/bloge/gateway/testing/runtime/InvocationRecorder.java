@@ -594,6 +594,12 @@ public class InvocationRecorder implements ExecutionListener {
         }
         var observed = output.stream().map(TestRunEvidence.NodeTrace::invocationSiteId)
                 .collect(java.util.stream.Collectors.toSet());
+        Map<String, String> errorCodes = result.errors().stream()
+                .collect(java.util.stream.Collectors.toMap(
+                        error -> error.nodeId(),
+                        error -> errorCode(error.exception()),
+                        (first, ignored) -> first,
+                        LinkedHashMap::new));
         for (InvocationInventory.Entry entry : inventory.entries()) {
             InvocationSite site = entry.site();
             if (entry.graph() != graph || !"/root".equals(site.graphPath())
@@ -607,7 +613,8 @@ public class InvocationRecorder implements ExecutionListener {
             }
             output.add(new TestRunEvidence.NodeTrace(site.nodeId(), site.operatorRef(),
                     normalized(status), "REAL", null,
-                    result.findOutput(site.nodeId(), Object.class).orElse(null), "",
+                    result.findOutput(site.nodeId(), Object.class).orElse(null),
+                    errorCodes.getOrDefault(site.nodeId(), ""),
                     millis(result.nodeTimings().get(site.nodeId())), site.invocationSiteId(),
                     site.graphPath(), "", 1, 1, List.of()));
         }

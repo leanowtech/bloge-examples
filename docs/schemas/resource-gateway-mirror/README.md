@@ -13,7 +13,9 @@ offline artifact verification live in the independent `resource-gateway-test-kit
 | `capability-contract-v1.schema.json` | `CapabilityContract` | Input/output/error/effect/idempotency/security/SLO contract |
 | `capability-snapshot-v1.schema.json` | `CapabilitySnapshot` | Immutable Resource/Operator/Graph projection consumed by mirror planning |
 | `capability-closure-v1.schema.json` | `CapabilityClosure` | Exact root plus every transitively reachable snapshot for registry-free planning |
-| `mirror-plan-v1.schema.json` | `MirrorPlan` | Sealed payload-free execution generation with exact external-edge bindings and isolation policy |
+| `mirror-plan-v1.schema.json` | `MirrorPlan` | Legacy sealed payload-free execution generation without recorded-corpus serving data |
+| `mirror-plan-v2.schema.json` | `MirrorPlan` | Current sealed plan; requires a signed serving generation whenever recorded corpus resolvers are present |
+| `mirror-serving-generation-token-v1.schema.json` | `MirrorServingGenerationToken` | Signed scope/purpose/dependency-bound generation, revocation cursor, expiry, and floor-cache staleness authority |
 | `mirror-plan-create-request-v1.schema.json` | `MirrorPlanCreateRequest` | Payload-free protected compile command containing only reviewed artifact identities and bounded requested budgets |
 | `mirror-execution-request-v1.schema.json` | `MirrorExecutionRequest` | Strict execution command containing only request/plan identity, reviewed plan fingerprint, and business context |
 | `mirror-run-summary-v1.schema.json` | `MirrorRunSummary` | Compact payload-free terminal projection derived from verified evidence |
@@ -247,6 +249,15 @@ lifecycle allowlist, credential policy, or fixture/replay value. The authenticat
 An exact retry reuses the original `compiledAt` and returns the existing fingerprint. A changed graph, closure,
 fixture, timeout, budget, certification flag, expiry, scope, or policy under the same `planId` returns an idempotency
 conflict. Stage 1 caps timeout at 15 minutes, invocation budget at 100,000, and plan lifetime at 24 hours.
+
+Plans without recorded corpus continue to serialize as `resourceGateway.mirrorPlan.v1` and omit
+`servingGeneration`. Any plan selecting `RECORDED_EXACT`, `RECORDED_TRAJECTORY`, or
+`RECORDED_CLUSTER` must serialize as `resourceGateway.mirrorPlan.v2` and carry one independently
+verified `resourceGateway.mirrorServingGenerationToken.v1`. The token binds the payload-free
+materialized dependency closure, scope, purpose, generation, predecessor, revocation cursor,
+expiry, and maximum floor-cache staleness. The protected API envelope uses the returned plan's
+actual schema version. See the
+[serving-generation guide](../../resource-gateway-mirror-serving-generation.md).
 
 `maximumInvocations` is enforced twice. Compilation rejects a value below the complete recursive
 static inventory with `RG.MIRROR.INVOCATION_BUDGET_TOO_SMALL`. Execution then atomically consumes

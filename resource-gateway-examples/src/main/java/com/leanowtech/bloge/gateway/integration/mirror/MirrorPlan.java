@@ -1,6 +1,7 @@
 package com.leanowtech.bloge.gateway.integration.mirror;
 
 import com.fasterxml.jackson.annotation.JsonFormat;
+import com.fasterxml.jackson.annotation.JsonInclude;
 
 import java.time.Duration;
 import java.time.Instant;
@@ -30,6 +31,8 @@ import java.util.regex.Pattern;
  * @param scope exact enterprise namespace in which every artifact is authorized
  * @param fixtureBundleRef exact existing FixtureBundle revision adapted by the compiler
  * @param executionControlFingerprint exact EffectiveExecutionPlan generation executed by BLOGE
+ * @param servingGeneration signed current authority generation for recorded corpus sources;
+ *                          absent in v1 plans without recorded corpus data
  * @param externalBindings one binding for every external dependency edge
  * @param scenarioPackRef optional exact scenario pack
  * @param stateModelRefs exact state models required by capability contracts
@@ -48,6 +51,8 @@ public record MirrorPlan(
         CapabilitySnapshot.Scope scope,
         MirrorArtifactRef fixtureBundleRef,
         String executionControlFingerprint,
+        @JsonInclude(JsonInclude.Include.NON_NULL)
+        MirrorServingGenerationToken servingGeneration,
         List<ExternalBinding> externalBindings,
         MirrorArtifactRef scenarioPackRef,
         List<MirrorArtifactRef> stateModelRefs,
@@ -56,8 +61,12 @@ public record MirrorPlan(
         Instant compiledAt,
         Instant expiresAt
 ) {
-    /** Current mirror-plan protocol version. */
-    public static final String SCHEMA_VERSION = "resourceGateway.mirrorPlan.v1";
+    /** Original plan protocol for generations without governed recorded corpus data. */
+    public static final String SCHEMA_VERSION_V1 =
+            "resourceGateway.mirrorPlan.v1";
+    /** Current protocol with a signed serving-generation binding. */
+    public static final String SCHEMA_VERSION =
+            "resourceGateway.mirrorPlan.v2";
     /** Maximum external dependency edges admitted by v1. */
     public static final int MAXIMUM_EXTERNAL_BINDINGS = 10_000;
     private static final Pattern FINGERPRINT = Pattern.compile("sha256:[a-f0-9]{64}");
@@ -68,7 +77,7 @@ public record MirrorPlan(
      * {@link MirrorPlanIntegrity}.
      */
     public MirrorPlan {
-        schemaVersion = version(schemaVersion);
+        schemaVersion = version(schemaVersion, servingGeneration);
         planId = required(planId, "planId");
         planFingerprint = normalized(planFingerprint);
         if (!planFingerprint.isBlank() && !FINGERPRINT.matcher(planFingerprint).matches()) {
@@ -92,6 +101,11 @@ public record MirrorPlan(
         fixtureBundleRef = requireKind(fixtureBundleRef, "FIXTURE_BUNDLE", "fixtureBundleRef");
         executionControlFingerprint = fingerprint(executionControlFingerprint,
                 "executionControlFingerprint");
+        if (SCHEMA_VERSION_V1.equals(schemaVersion)
+                != (servingGeneration == null)) {
+            throw new IllegalArgumentException(
+                    "mirror plan v1 must omit and v2 must carry servingGeneration");
+        }
         externalBindings = externalBindings == null ? List.of() : externalBindings.stream()
                 .sorted(Comparator.comparing(ExternalBinding::invocationSiteId)
                         .thenComparing(ExternalBinding::dependencyNodeId))
@@ -118,7 +132,8 @@ public record MirrorPlan(
     public MirrorPlan withFingerprint(String value) {
         return new MirrorPlan(schemaVersion, planId, value, rootCapability,
                 capabilityClosureFingerprint, capabilityClosure, scope, fixtureBundleRef,
-                executionControlFingerprint, externalBindings, scenarioPackRef, stateModelRefs,
+                executionControlFingerprint, servingGeneration, externalBindings,
+                scenarioPackRef, stateModelRefs,
                 executionServices, policy,
                 compiledAt, expiresAt);
     }
@@ -354,9 +369,13 @@ public record MirrorPlan(
         return result;
     }
 
-    private static String version(String value) {
-        String normalized = value == null || value.isBlank() ? SCHEMA_VERSION : value.trim();
-        if (!SCHEMA_VERSION.equals(normalized)) {
+    private static String version(
+            String value, MirrorServingGenerationToken servingGeneration) {
+        String normalized = value == null || value.isBlank()
+                ? servingGeneration == null ? SCHEMA_VERSION_V1 : SCHEMA_VERSION
+                : value.trim();
+        if (!SCHEMA_VERSION.equals(normalized)
+                && !SCHEMA_VERSION_V1.equals(normalized)) {
             throw new IllegalArgumentException("unsupported mirror plan schemaVersion");
         }
         return normalized;

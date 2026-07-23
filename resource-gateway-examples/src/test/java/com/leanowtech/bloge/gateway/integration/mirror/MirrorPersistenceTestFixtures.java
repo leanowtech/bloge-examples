@@ -83,7 +83,7 @@ final class MirrorPersistenceTestFixtures {
                 closure.fingerprint(), closure.snapshots(), scope,
                 new MirrorArtifactRef("FIXTURE_BUNDLE", "customer-fixture", 1,
                         fingerprint('e')),
-                fingerprint(material), List.of(binding), null, List.of(),
+                fingerprint(material), null, List.of(binding), null, List.of(),
                 new MirrorPlan.ExecutionServices(COMPILED_AT, material, null, null),
                 new MirrorPlan.ExecutionPolicy(PURPOSE, false, false, false,
                         false, false, MirrorPlan.UnmatchedResolution.ABSTAINED,

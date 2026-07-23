@@ -59,6 +59,11 @@ import com.leanowtech.bloge.gateway.integration.mirror.MirrorDeploymentIsolation
 import com.leanowtech.bloge.gateway.integration.mirror.MirrorDeploymentIsolationTrustAgent;
 import com.leanowtech.bloge.gateway.integration.mirror.MirrorRunIntegrationService;
 import com.leanowtech.bloge.gateway.integration.mirror.MirrorRunRequestRepository;
+import com.leanowtech.bloge.gateway.integration.mirror.MirrorServingGenerationAuthority;
+import com.leanowtech.bloge.gateway.integration.mirror.MirrorServingGenerationIntegrity;
+import com.leanowtech.bloge.gateway.integration.mirror.MirrorServingGenerationService;
+import com.leanowtech.bloge.gateway.integration.mirror.MirrorServingGenerationTelemetry;
+import com.leanowtech.bloge.gateway.integration.mirror.MirrorServingGenerationTrustProvider;
 import com.leanowtech.bloge.gateway.integration.MirrorRuntimeAvailability;
 import com.leanowtech.bloge.gateway.resource.ResourceRegistry;
 import com.leanowtech.bloge.gateway.testing.planning.MirrorPlanCompiler;
@@ -448,6 +453,78 @@ public class MirrorRuntimeConfiguration {
     @ConditionalOnMissingBean
     public CapabilityCorpusPayloadAuthority capabilityCorpusPayloadAuthority() {
         return CapabilityCorpusPayloadAuthority.unavailable();
+    }
+
+    /**
+     * Installs a fail-closed placeholder until a shared current-generation authority is supplied.
+     *
+     * @return unavailable authority that cannot mint or refresh a serving floor
+     */
+    @Bean
+    @ConditionalOnMissingBean
+    public MirrorServingGenerationAuthority mirrorServingGenerationAuthority() {
+        return MirrorServingGenerationAuthority.unavailable();
+    }
+
+    /**
+     * Installs a fail-closed placeholder until operator-owned authority keys are supplied.
+     *
+     * @return unavailable local trust policy
+     */
+    @Bean
+    @ConditionalOnMissingBean
+    public MirrorServingGenerationTrustProvider
+            mirrorServingGenerationTrustProvider() {
+        return MirrorServingGenerationTrustProvider.unavailable();
+    }
+
+    /**
+     * Creates the canonical content-addressing and independent Ed25519 verification boundary.
+     *
+     * @param objectMapper canonical protocol mapper
+     * @return serving-generation integrity kernel
+     */
+    @Bean
+    @ConditionalOnMissingBean
+    public MirrorServingGenerationIntegrity mirrorServingGenerationIntegrity(
+            ObjectMapper objectMapper) {
+        return new MirrorServingGenerationIntegrity(objectMapper);
+    }
+
+    /**
+     * Creates the corpus-generation admission service shared by materialization and runtime.
+     *
+     * @param authority shared current-floor authority
+     * @param trust operator-owned pinned authority key policy
+     * @param integrity independent token verifier
+     * @param objectMapper canonical protocol mapper
+     * @return fail-closed serving-generation binder
+     */
+    @Bean
+    @ConditionalOnMissingBean
+    public MirrorServingGenerationService mirrorServingGenerationService(
+            MirrorServingGenerationAuthority authority,
+            MirrorServingGenerationTrustProvider trust,
+            MirrorServingGenerationIntegrity integrity,
+            ObjectMapper objectMapper,
+            MirrorServingGenerationTelemetry telemetry) {
+        return new MirrorServingGenerationService(
+                authority, trust, integrity, objectMapper,
+                Clock.systemUTC(), telemetry);
+    }
+
+    /**
+     * Registers bounded serving-generation admission and floor-check counters.
+     *
+     * @param registries optional deployment meter registry
+     * @return fixed-cardinality telemetry adapter
+     */
+    @Bean
+    @ConditionalOnMissingBean
+    public MirrorServingGenerationTelemetry mirrorServingGenerationTelemetry(
+            ObjectProvider<MeterRegistry> registries) {
+        return new MirrorServingGenerationTelemetry(
+                registries.getIfAvailable(SimpleMeterRegistry::new));
     }
 
     /**

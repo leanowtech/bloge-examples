@@ -47,6 +47,13 @@ public record CompiledMirrorPlan(
             throw new IllegalArgumentException(
                     "mirror plan, fixture, and execution control identities must match");
         }
+        if (!Objects.equals(
+                plan.servingGeneration(),
+                executionControl.corpusPayloads()
+                        .servingGenerationToken().orElse(null))) {
+            throw new IllegalArgumentException(
+                    "mirror plan and corpus serving generations must match");
+        }
     }
 
     /**

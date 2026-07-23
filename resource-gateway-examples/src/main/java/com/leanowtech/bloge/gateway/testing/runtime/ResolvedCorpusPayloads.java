@@ -7,6 +7,7 @@ import com.fasterxml.jackson.databind.node.ObjectNode;
 import com.leanowtech.bloge.gateway.integration.mirror.ArtifactProvenance;
 import com.leanowtech.bloge.gateway.integration.mirror.CapabilityCorpusClusterValidation;
 import com.leanowtech.bloge.gateway.integration.mirror.MirrorArtifactRef;
+import com.leanowtech.bloge.gateway.integration.mirror.MirrorServingGenerationToken;
 import com.leanowtech.bloge.gateway.testing.domain.FixtureRule;
 
 import java.io.IOException;
@@ -50,22 +51,24 @@ public final class ResolvedCorpusPayloads implements AutoCloseable {
 
     private static final ResolvedCorpusPayloads EMPTY =
             new ResolvedCorpusPayloads(
-                    Map.of(), Map.of(), LifecycleController.immortal());
+                    Map.of(), Map.of(), LifecycleController.immortal(), null);
 
     private final Map<MirrorArtifactRef, CapabilityCorpus> byCapability;
     private final Map<String, CapabilityCorpus> bySite;
     private final LifecycleController lifecycle;
+    private final MirrorServingGenerationFence servingGenerationFence;
 
     private ResolvedCorpusPayloads(
             Map<MirrorArtifactRef, CapabilityCorpus> byCapability,
             Map<String, CapabilityCorpus> bySite) {
-        this(byCapability, bySite, null);
+        this(byCapability, bySite, null, null);
     }
 
     private ResolvedCorpusPayloads(
             Map<MirrorArtifactRef, CapabilityCorpus> byCapability,
             Map<String, CapabilityCorpus> bySite,
-            LifecycleController lifecycle) {
+            LifecycleController lifecycle,
+            MirrorServingGenerationFence servingGenerationFence) {
         this.byCapability = immutableCapabilities(byCapability);
         this.bySite = Collections.unmodifiableMap(new java.util.TreeMap<>(
                 bySite == null ? Map.of() : bySite));
@@ -91,6 +94,7 @@ public final class ResolvedCorpusPayloads implements AutoCloseable {
                 ? new LifecycleController(
                         bytes, this::destroyOwnedPayloads, false)
                 : lifecycle;
+        this.servingGenerationFence = servingGenerationFence;
         if (lifecycle == null) {
             try {
                 this.byCapability.values().stream()
@@ -172,7 +176,95 @@ public final class ResolvedCorpusPayloads implements AutoCloseable {
                     });
         }
         return sites.isEmpty() && bySite.isEmpty()
-                ? this : new ResolvedCorpusPayloads(byCapability, sites, lifecycle);
+                ? this : new ResolvedCorpusPayloads(
+                byCapability, sites, lifecycle, servingGenerationFence);
+    }
+
+    /**
+     * Binds this payload owner to one independently verified authority generation.
+     *
+     * <p>The returned view shares the same lifecycle controller and sensitive byte ownership. It
+     * therefore cannot outlive, duplicate, or close independently from the unbound view. A
+     * generation may be bound exactly once and only when it contains governed corpus data.</p>
+     *
+     * @param fence verified current-floor admission fence
+     * @return same payload generation with a serving authority binding
+     */
+    public ResolvedCorpusPayloads withServingGeneration(
+            MirrorServingGenerationFence fence) {
+        lifecycle.requireAccessible();
+        MirrorServingGenerationFence exact =
+                Objects.requireNonNull(fence, "fence");
+        if (byCapability.isEmpty()) {
+            throw new IllegalArgumentException(
+                    "empty corpus generation cannot carry a serving-generation token");
+        }
+        if (servingGenerationFence != null) {
+            throw new IllegalStateException(
+                    "corpus generation already has a serving-generation token");
+        }
+        return new ResolvedCorpusPayloads(
+                byCapability, bySite, lifecycle, exact);
+    }
+
+    /**
+     * Returns the signed authority token bound to this generation.
+     *
+     * @return exact payload-free token, or empty for a generation without recorded corpus data
+     */
+    public Optional<MirrorServingGenerationToken> servingGenerationToken() {
+        lifecycle.requireAccessible();
+        return servingGenerationFence == null
+                ? Optional.empty() : Optional.of(servingGenerationFence.token());
+    }
+
+    /**
+     * Forces a shared-authority current-floor check for a newly admitted mirror run.
+     *
+     * <p>Generations without recorded corpus data require no serving authority and return
+     * immediately.</p>
+     */
+    public void admitRun() {
+        lifecycle.requireAccessible();
+        if (servingGenerationFence != null) {
+            servingGenerationFence.admitRun();
+        }
+    }
+
+    /**
+     * Checks current-floor freshness before one operator occurrence receives an implementation.
+     *
+     * <p>The fence may reuse a verified floor only inside its signed maximum-staleness window.
+     * Generations without recorded corpus data return immediately.</p>
+     */
+    public void admitOccurrence() {
+        lifecycle.requireAccessible();
+        if (servingGenerationFence != null) {
+            servingGenerationFence.admitOccurrence();
+        }
+    }
+
+    /**
+     * Builds the deterministic payload-free dependency closure signed by the generation authority.
+     *
+     * <p>Payload references already carry content fingerprints, so the closure identifies request
+     * and response content without exposing bytes. Trajectory and cluster publication fingerprints
+     * bind ordering, match policy, identity projection, and validation decisions.</p>
+     *
+     * @return canonical capability-ordered dependency closure
+     */
+    public List<GenerationDependency> generationDependencies() {
+        lifecycle.requireAccessible();
+        return byCapability.values().stream()
+                .map(CapabilityCorpus::generationDependency)
+                .sorted(Comparator.comparing(
+                                (GenerationDependency value) ->
+                                        value.capabilityRef().id())
+                        .thenComparingLong(value ->
+                                value.capabilityRef().revision())
+                        .thenComparing(value ->
+                                value.capabilityRef().fingerprint()))
+                .toList();
     }
 
     /**
@@ -313,6 +405,41 @@ public final class ResolvedCorpusPayloads implements AutoCloseable {
                 throw new IllegalArgumentException(
                         "generation lifecycle counters must not be negative");
             }
+        }
+    }
+
+    /**
+     * One payload-free capability slice of the signed generation dependency closure.
+     *
+     * @param capabilityRef exact external capability
+     * @param publicationRef exact current corpus publication
+     * @param corpusRevisionRef exact published corpus revision
+     * @param artifactRefs sorted unique governance, payload-reference, proof, schema, grant,
+     *                     trajectory, cluster, validation, and policy artifacts
+     * @param ruleRefs sorted unique payload-free source rule identities
+     */
+    public record GenerationDependency(
+            MirrorArtifactRef capabilityRef,
+            MirrorArtifactRef publicationRef,
+            MirrorArtifactRef corpusRevisionRef,
+            List<MirrorArtifactRef> artifactRefs,
+            List<String> ruleRefs
+    ) {
+        /** Enforces a canonical, bounded, payload-free closure. */
+        public GenerationDependency {
+            capabilityRef = ref(
+                    capabilityRef, "CAPABILITY", "capabilityRef");
+            publicationRef = ref(
+                    publicationRef,
+                    "CAPABILITY_CORPUS_PUBLICATION",
+                    "publicationRef");
+            corpusRevisionRef = ref(
+                    corpusRevisionRef,
+                    "CAPABILITY_CORPUS_REVISION",
+                    "corpusRevisionRef");
+            artifactRefs = ResolvedCorpusPayloads.artifactRefs(
+                    artifactRefs);
+            ruleRefs = strings(ruleRefs, "ruleRefs", 12_000);
         }
     }
 
@@ -631,6 +758,40 @@ public final class ResolvedCorpusPayloads implements AutoCloseable {
         /** @return payload-safe reviewed cluster descriptors */
         public List<Cluster> clusters() {
             return clusters;
+        }
+
+        private GenerationDependency generationDependency() {
+            LinkedHashSet<MirrorArtifactRef> artifacts =
+                    new LinkedHashSet<>();
+            artifacts.add(publicationRef);
+            artifacts.add(corpusRevisionRef);
+            LinkedHashSet<String> rules = new LinkedHashSet<>();
+            byRequestFingerprint.values().forEach(sample -> {
+                artifacts.addAll(sample.artifactRefs());
+                rules.addAll(sample.ruleRefs());
+            });
+            trajectoryByRequestFingerprint.values().forEach(trajectory -> {
+                artifacts.add(trajectory.publicationRef());
+                trajectory.attempts().forEach(attempt -> {
+                    artifacts.addAll(attempt.artifactRefs());
+                    rules.addAll(attempt.ruleRefs());
+                });
+            });
+            clusters.forEach(cluster -> {
+                artifacts.add(cluster.publicationRef());
+                artifacts.addAll(cluster.artifactRefs());
+                rules.addAll(cluster.ruleRefs());
+            });
+            List<MirrorArtifactRef> orderedArtifacts = artifacts.stream()
+                    .sorted(Comparator.comparing(MirrorArtifactRef::kind)
+                            .thenComparing(MirrorArtifactRef::id)
+                            .thenComparingLong(MirrorArtifactRef::revision)
+                            .thenComparing(MirrorArtifactRef::fingerprint))
+                    .toList();
+            List<String> orderedRules = rules.stream().sorted().toList();
+            return new GenerationDependency(
+                    capabilityRef, publicationRef, corpusRevisionRef,
+                    orderedArtifacts, orderedRules);
         }
 
         /**

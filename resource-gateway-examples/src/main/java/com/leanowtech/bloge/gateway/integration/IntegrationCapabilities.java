@@ -282,7 +282,11 @@ public record IntegrationCapabilities(
         objects.put("capabilityClosure", List.of(
                 com.leanowtech.bloge.gateway.integration.mirror.CapabilityClosure.SCHEMA_VERSION));
         objects.put("mirrorPlan", List.of(
+                com.leanowtech.bloge.gateway.integration.mirror.MirrorPlan.SCHEMA_VERSION_V1,
                 com.leanowtech.bloge.gateway.integration.mirror.MirrorPlan.SCHEMA_VERSION));
+        objects.put("mirrorServingGenerationToken", List.of(
+                com.leanowtech.bloge.gateway.integration.mirror
+                        .MirrorServingGenerationToken.SCHEMA_VERSION));
         objects.put("mirrorDeploymentIsolationAuthorityKeySetPublication", List.of(
                 com.leanowtech.bloge.gateway.integration.mirror
                         .MirrorDeploymentIsolationAuthorityKeySetPublication.SCHEMA_VERSION));

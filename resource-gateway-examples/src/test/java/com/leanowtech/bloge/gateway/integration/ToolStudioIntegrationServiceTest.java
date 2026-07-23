@@ -170,6 +170,9 @@ class ToolStudioIntegrationServiceTest {
                 .containsEntry(
                         "mirrorCorpusTrajectoryPublicationReady", false)
                 .containsEntry("mirrorCorpusResolverReady", false)
+                .containsEntry("mirrorServingGenerationFencing", false)
+                .containsEntry(
+                        "mirrorServingGenerationAuthorityReady", false)
                 .containsEntry("runEvidenceBundle", true)
                 .containsEntry("structuredExecutionFacts", true)
                 .containsEntry("graphDeadline", true)
@@ -222,9 +225,19 @@ class ToolStudioIntegrationServiceTest {
                 .containsEntry("webhook", false);
         assertThat(envelope.payload().supportedObjects())
                 .containsKeys("capabilitySnapshot", "capabilityClosure", "mirrorPlan",
+                        "mirrorServingGenerationToken",
                         "capabilityContract", "effectContract",
                         "artifactProvenance", "capabilityLifecycleTransition",
                         "capabilityClosureProjectionRequest");
+        assertThat(envelope.payload().supportedObjects())
+                .containsEntry("mirrorPlan", List.of(
+                        com.leanowtech.bloge.gateway.integration.mirror
+                                .MirrorPlan.SCHEMA_VERSION_V1,
+                        com.leanowtech.bloge.gateway.integration.mirror
+                                .MirrorPlan.SCHEMA_VERSION))
+                .containsEntry("mirrorServingGenerationToken", List.of(
+                        com.leanowtech.bloge.gateway.integration.mirror
+                                .MirrorServingGenerationToken.SCHEMA_VERSION));
         assertThat(envelope.payload().endpoints())
                 .extracting(endpoint -> endpoint.method() + " " + endpoint.path())
                 .containsExactlyInAnyOrder(
@@ -524,6 +537,9 @@ class ToolStudioIntegrationServiceTest {
                 .containsEntry(
                         "mirrorCorpusClusterPublicationReady", false)
                 .containsEntry("mirrorCorpusResolverReady", false)
+                .containsEntry("mirrorServingGenerationFencing", false)
+                .containsEntry(
+                        "mirrorServingGenerationAuthorityReady", false)
                 .containsEntry(
                         "mirrorCorpusTrajectoryResolverReady", false)
                 .containsEntry(
@@ -560,6 +576,9 @@ class ToolStudioIntegrationServiceTest {
                 .containsEntry(
                         "mirrorCorpusClusterPublicationReady", false)
                 .containsEntry("mirrorCorpusResolverReady", false)
+                .containsEntry("mirrorServingGenerationFencing", false)
+                .containsEntry(
+                        "mirrorServingGenerationAuthorityReady", false)
                 .containsEntry(
                         "mirrorCorpusTrajectoryResolverReady", false)
                 .containsEntry(
@@ -568,6 +587,9 @@ class ToolStudioIntegrationServiceTest {
                 .containsEntry(
                         "mirrorCorpusClusterPublicationReady", true)
                 .containsEntry("mirrorCorpusResolverReady", false)
+                .containsEntry("mirrorServingGenerationFencing", false)
+                .containsEntry(
+                        "mirrorServingGenerationAuthorityReady", false)
                 .containsEntry(
                         "mirrorCorpusTrajectoryResolverReady", false)
                 .containsEntry(
@@ -575,6 +597,9 @@ class ToolStudioIntegrationServiceTest {
         assertThat(exactResolverAvailable.features())
                 .containsEntry("mirrorCorpusGovernanceReady", true)
                 .containsEntry("mirrorCorpusResolverReady", true)
+                .containsEntry("mirrorServingGenerationFencing", true)
+                .containsEntry(
+                        "mirrorServingGenerationAuthorityReady", true)
                 .containsEntry(
                         "mirrorCorpusTrajectoryResolverReady", false)
                 .containsEntry(
@@ -582,6 +607,9 @@ class ToolStudioIntegrationServiceTest {
         assertThat(fullyAvailable.features())
                 .containsEntry("mirrorCorpusGovernanceReady", true)
                 .containsEntry("mirrorCorpusResolverReady", true)
+                .containsEntry("mirrorServingGenerationFencing", true)
+                .containsEntry(
+                        "mirrorServingGenerationAuthorityReady", true)
                 .containsEntry(
                         "mirrorCorpusTrajectoryResolverReady", true)
                 .containsEntry(
@@ -605,6 +633,9 @@ class ToolStudioIntegrationServiceTest {
                 .containsEntry(
                         "mirrorCorpusTrajectoryPublicationReady", false)
                 .containsEntry("mirrorCorpusResolverReady", true)
+                .containsEntry("mirrorServingGenerationFencing", true)
+                .containsEntry(
+                        "mirrorServingGenerationAuthorityReady", true)
                 .containsEntry(
                         "mirrorCorpusTrajectoryResolverReady", true);
     }

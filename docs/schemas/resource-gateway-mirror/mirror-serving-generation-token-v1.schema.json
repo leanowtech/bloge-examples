@@ -1,0 +1,102 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://bloge.dev/schemas/resource-gateway-mirror/mirror-serving-generation-token-v1.schema.json",
+  "title": "Resource Gateway Mirror Serving Generation Token v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion", "tokenFingerprint", "materialFingerprint", "material", "seal"
+  ],
+  "properties": {
+    "schemaVersion": {
+      "const": "resourceGateway.mirrorServingGenerationToken.v1"
+    },
+    "tokenFingerprint": { "$ref": "#/$defs/fingerprint" },
+    "materialFingerprint": { "$ref": "#/$defs/fingerprint" },
+    "material": { "$ref": "#/$defs/material" },
+    "seal": { "$ref": "#/$defs/seal" }
+  },
+  "$defs": {
+    "fingerprint": {
+      "type": "string",
+      "pattern": "^sha256:[a-f0-9]{64}$"
+    },
+    "identifier": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 512,
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9@._:/#-]*$"
+    },
+    "material": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "streamId", "generation", "previousTokenFingerprint", "scope",
+        "authorizedPurpose", "dependencyClosureFingerprint", "revocationCursor",
+        "issuedAt", "expiresAt", "maximumStaleness"
+      ],
+      "properties": {
+        "streamId": { "$ref": "#/$defs/identifier" },
+        "generation": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "previousTokenFingerprint": {
+          "oneOf": [
+            { "const": "" },
+            { "$ref": "#/$defs/fingerprint" }
+          ]
+        },
+        "scope": {
+          "$ref": "mirror-plan-v1.schema.json#/$defs/scope"
+        },
+        "authorizedPurpose": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 256
+        },
+        "dependencyClosureFingerprint": {
+          "$ref": "#/$defs/fingerprint"
+        },
+        "revocationCursor": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "issuedAt": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "expiresAt": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "maximumStaleness": {
+          "type": "string",
+          "format": "duration",
+          "minLength": 3,
+          "maxLength": 64
+        }
+      }
+    },
+    "seal": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "authorityId", "keyId", "algorithm", "signedAt", "signature"
+      ],
+      "properties": {
+        "authorityId": { "$ref": "#/$defs/identifier" },
+        "keyId": { "$ref": "#/$defs/identifier" },
+        "algorithm": { "const": "Ed25519" },
+        "signedAt": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "signature": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9+/]{86}==$"
+        }
+      }
+    }
+  }
+}

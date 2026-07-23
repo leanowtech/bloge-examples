@@ -133,7 +133,9 @@ public class MirrorPlanCompiler {
                 .map(edge -> externalBinding(edge, control)).toList();
         MirrorPlan plan = new MirrorPlan("", request.planId(), "", closure.rootRef(),
                 closure.fingerprint(), closure.snapshots(), root.scope(), fixtureRef,
-                control.effectivePlan().planFingerprint(), bindings, request.scenarioPackRef(),
+                control.effectivePlan().planFingerprint(),
+                corpusPayloads.servingGenerationToken().orElse(null),
+                bindings, request.scenarioPackRef(),
                 stateModels, services, request.policy(), request.compiledAt(), request.expiresAt());
         try {
             return new CompiledMirrorPlan(MirrorPlanIntegrity.seal(mapper, plan),
@@ -373,11 +375,27 @@ public class MirrorPlanCompiler {
                 resolved.resolverOrder(), rules.stream().map(FixtureRule::ruleId).toList());
     }
 
-    private static ResolvedCorpusPayloads bindCorpusPayloads(
+    private ResolvedCorpusPayloads bindCorpusPayloads(
             ResolvedCorpusPayloads corpusPayloads,
             List<ResolvedExternalEdge> edges) {
         ResolvedCorpusPayloads exact = corpusPayloads == null
                 ? ResolvedCorpusPayloads.empty() : corpusPayloads;
+        if (!exact.isEmpty()
+                && exact.servingGenerationToken().isEmpty()) {
+            throw reject(
+                    "RG.MIRROR.SERVING_GENERATION_REQUIRED",
+                    "Recorded corpus payloads require a signed current serving generation.");
+        }
+        exact.servingGenerationToken().ifPresent(token -> {
+            String dependencies = ProtocolFingerprint.of(
+                    mapper, exact.generationDependencies());
+            if (!dependencies.equals(
+                    token.material().dependencyClosureFingerprint())) {
+                throw reject(
+                        "RG.MIRROR.SERVING_GENERATION_DEPENDENCY_MISMATCH",
+                        "Serving-generation token does not bind the materialized corpus dependencies.");
+            }
+        });
         Set<MirrorArtifactRef> externalCapabilities = edges.stream()
                 .map(edge -> edge.dependency().capabilityRef())
                 .collect(java.util.stream.Collectors.toSet());

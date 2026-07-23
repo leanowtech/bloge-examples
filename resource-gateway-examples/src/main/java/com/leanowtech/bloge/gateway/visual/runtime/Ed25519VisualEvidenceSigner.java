@@ -4,6 +4,7 @@ import java.nio.charset.StandardCharsets;
 import java.security.GeneralSecurityException;
 import java.security.KeyPair;
 import java.security.Signature;
+import java.time.Clock;
 import java.time.Instant;
 import java.util.Base64;
 import java.util.Comparator;
@@ -23,18 +24,30 @@ final class Ed25519VisualEvidenceSigner implements VisualEvidenceSigner {
     private final KeyPair activeKeyPair;
     private final VerificationKey activeKey;
     private final Map<String, VerificationMaterial> verificationKeys;
+    private final Clock clock;
 
     Ed25519VisualEvidenceSigner(KeyPair activeKeyPair,
                                 String keyId,
                                 Instant createdAt,
                                 String provider,
                                 Map<String, VerificationMaterial> verificationKeys) {
+        this(activeKeyPair, keyId, createdAt, provider, verificationKeys,
+                Clock.systemUTC());
+    }
+
+    Ed25519VisualEvidenceSigner(KeyPair activeKeyPair,
+                                String keyId,
+                                Instant createdAt,
+                                String provider,
+                                Map<String, VerificationMaterial> verificationKeys,
+                                Clock clock) {
         this.activeKeyPair = activeKeyPair;
         this.activeKey = new VerificationKey("", keyId, ALGORITHM,
                 Base64.getEncoder().encodeToString(activeKeyPair.getPublic().getEncoded()), createdAt,
                 "ACTIVE", provider);
         this.verificationKeys = new LinkedHashMap<>(verificationKeys == null ? Map.of() : verificationKeys);
         this.verificationKeys.putIfAbsent(keyId, new VerificationMaterial(activeKey, activeKeyPair.getPublic()));
+        this.clock = java.util.Objects.requireNonNull(clock, "clock");
     }
 
     @Override
@@ -43,7 +56,8 @@ final class Ed25519VisualEvidenceSigner implements VisualEvidenceSigner {
             Signature signer = Signature.getInstance(ALGORITHM);
             signer.initSign(activeKeyPair.getPrivate());
             signer.update(bytes(materialFingerprint));
-            return new VisualRunEvidenceSeal("", materialFingerprint, ALGORITHM, activeKey.keyId(), Instant.now(),
+            return new VisualRunEvidenceSeal("", materialFingerprint, ALGORITHM,
+                    activeKey.keyId(), clock.instant(),
                     Base64.getEncoder().encodeToString(signer.sign()));
         } catch (GeneralSecurityException exception) {
             throw new IllegalStateException("Unable to sign visual run evidence", exception);

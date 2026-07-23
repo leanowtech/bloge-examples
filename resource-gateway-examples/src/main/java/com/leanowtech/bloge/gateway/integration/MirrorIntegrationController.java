@@ -49,8 +49,10 @@ public class MirrorIntegrationController {
             @RequestHeader HttpHeaders headers) {
         IntegrationRequestContext identity = authenticator.authenticate(
                 headers, IntegrationOperation.MIRROR_PLAN_COMPILE);
-        return IntegrationEnvelope.of("MIRROR_PLAN", MirrorPlan.SCHEMA_VERSION,
-                service.create(decoder.decode(request, identity), identity));
+        MirrorPlan plan = service.create(
+                decoder.decode(request, identity), identity);
+        return IntegrationEnvelope.of(
+                "MIRROR_PLAN", plan.schemaVersion(), plan);
     }
 
     /** Reads one verified payload-free plan in the authenticated enterprise scope. */
@@ -60,7 +62,8 @@ public class MirrorIntegrationController {
             @RequestHeader HttpHeaders headers) {
         IntegrationRequestContext identity = authenticator.authenticate(
                 headers, IntegrationOperation.MIRROR_PLAN_READ);
-        return IntegrationEnvelope.of("MIRROR_PLAN", MirrorPlan.SCHEMA_VERSION,
-                service.find(planId, identity));
+        MirrorPlan plan = service.find(planId, identity);
+        return IntegrationEnvelope.of(
+                "MIRROR_PLAN", plan.schemaVersion(), plan);
     }
 }

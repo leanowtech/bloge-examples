@@ -7,7 +7,7 @@
 
 | 文档属性 | 内容 |
 |---|---|
-| 状态 | Accepted / In implementation；Stage 0 仓库内工程退出门禁已通过；Stage 1 compiler、resolver provenance、payload-free evidence 签发/独立复验、scope-isolated durable store、受保护 Plan/Run/Evidence API、durable request fencing、动态 occurrence budget、payload-free operation audit、固定基数指标、部署隔离证明协议/离线验真、M-of-N authority key-set trusted distribution、full-scope attestation ingest/current-only distribution/irreversible revocation、deployment agent pinned mTLS/atomic cache、execution admission/evidence commit 运行时双重绑定已完成；Stage 2 已完成签名 observation 准入/隔离、immutable review/candidate/publication、test/staging `RECORDED_EXACT` serving、explicit owner-reviewed retry trajectory publication、`RECORDED_TRAJECTORY` runtime serving、governed `RECORDED_CLUSTER` publication、identity-safe runtime serving和显式 compiled-generation 生命周期八个纵切；生产 payload authority、stateful runtime、漂移/删除证明、多副本 generation、跨语言 canonicalization 和环境 certification 门禁继续实施 |
+| 状态 | Accepted / In implementation；Stage 0 仓库内工程退出门禁已通过；Stage 1 compiler、resolver provenance、payload-free evidence 签发/独立复验、scope-isolated durable store、受保护 Plan/Run/Evidence API、durable request fencing、动态 occurrence budget、payload-free operation audit、固定基数指标、部署隔离证明协议/离线验真、M-of-N authority key-set trusted distribution、full-scope attestation ingest/current-only distribution/irreversible revocation、deployment agent pinned mTLS/atomic cache、execution admission/evidence commit 运行时双重绑定已完成；Stage 2 已完成签名 observation 准入/隔离、immutable review/candidate/publication、test/staging `RECORDED_EXACT` serving、explicit owner-reviewed retry trajectory publication、`RECORDED_TRAJECTORY` runtime serving、governed `RECORDED_CLUSTER` publication、identity-safe runtime serving、显式 compiled-generation 生命周期和 signed production serving-generation fence 九个纵切；生产 payload authority、共享 authority 部署适配器与跨区域认证、stateful runtime、漂移/删除证明、跨语言 canonicalization 和环境 certification 门禁继续实施 |
 | 目标读者 | Resource Gateway、BLOGE Runtime、ANEKE、TEE/数据平台、QA、SRE、安全与业务运营团队 |
 | 设计范围 | external/composed 能力建模、镜像运行、保真语料、有状态世界、场景演练、证据、保真度与结果校准 |
 | 非目标 | 不重做 ANEKE 的资产治理和发布门禁；不允许测试控制进入生产业务请求；不把观测频率直接当成业务正确性 |
@@ -1460,7 +1460,7 @@ effect unknown 和递归环会失败关闭；旧协议无破坏。
 
 ### Stage 2：受治理语料，4 个 sprint，P0/P1
 
-**当前状态**：前八个纵切已完成。第一纵切冻结签名 payload-free observation、operator-owned admission policy、
+**当前状态**：前九个纵切已完成。第一纵切冻结签名 payload-free observation、operator-owned admission policy、
 external payload-reference verification SPI、admitted/quarantined 终态、full-scope append-only store、受保护 API、
 honest capability probe、mandatory audit 原子性和独立 test-kit verifier。第二纵切完成 terminal quarantine review、
 non-serving corpus candidate、policy-independent risk statistics、owner-reviewed serving publication、candidate/publication
@@ -1481,8 +1481,11 @@ provenance/evidence 与独立 resolver readiness。
 buffer 同步清零、关闭后的逃逸引用 fail-closed、计划编译临时对象和 run/evidence terminal `finally` 释放；
 并补齐 authority materialization、校验副本、部分聚合失败、cluster 临时投影响应的确定性清零，以及 attached
 子对象不能绕过 generation owner 提前销毁的所有权门禁。
-尚未完成生产 payload vault/authority、stateful resolver、
-poisoning/drift/bias、retention/deletion proof、outcome calibration 和多副本 serving generation 运维，因此 Stage 2
+第九纵切完成 signed authority generation token、payload-free dependency closure、MirrorPlan v2 binding、
+revocation cursor、每个新 run 强制 current-floor read、operator occurrence signed max-staleness、rollback/stale/
+expiry/outage fail-closed、固定基数 telemetry、严格 Schema 与端到端 TOCTOU 测试。
+尚未完成生产 payload vault/authority、共享 generation authority 的部署适配器和跨区域 SLO 认证、stateful resolver、
+poisoning/drift/bias、retention/deletion proof 与 outcome calibration，因此 Stage 2
 仍不能标记完成。
 
 **第七纵切实现核对：`RECORDED_CLUSTER` runtime**
@@ -1493,7 +1496,7 @@ poisoning/drift/bias、retention/deletion proof、outcome calibration 和多副�
 | RG-MIR-CL-002 | 内核完成 | authority 短时物化 member request/representative response、内容地址复验、只读 generation、256 MiB 总预算、显式 owner/lease/zeroize | 生产 vault、forked JVM 残留扫描与容量压测 |
 | RG-MIR-CL-003 | 完成 | 结构化 JSON Pointer 两阶段 projection；A 的代表响应在 B 请求下只产生 B 身份 | 持续 property/adversarial corpus |
 | RG-MIR-CL-004 | 核心完成 | exact path/value matching、缺口 abstain、多 cluster 歧义失败 | numeric/null/deep JSON fuzz 与 1000-member 性能门禁 |
-| RG-MIR-CL-005 | 内核完成 | 每代重验 current heads/policies/validation/source/grant/horizon/content address | 多副本撤销传播 SLO 与 generation token |
+| RG-MIR-CL-005 | 内核完成 | 每代重验 current heads/policies/validation/source/grant/horizon/content address；signed generation token 与运行围栏已接线 | 共享 authority 部署与多副本撤销传播 SLO 认证 |
 | RG-MIR-CL-006 | 完成 | fixed precedence、Wilson confidence、limitations 与 refs 进入 compiler/resolver | 无 |
 | RG-MIR-CL-007 | 完成 | resolution/evidence 使用完整 payload-free provenance closure | 离线 evidence-to-publication 联合审计工具 |
 | RG-MIR-CL-008 | 部分完成 | validation outage、stale head、身份串号、歧义、真实 H2 serving 与 Spring probe 测试 | 并发、vault drift、GC/清零、恶意 JSON、容量和生产隔离压力测试 |
@@ -1510,13 +1513,27 @@ poisoning/drift/bias、retention/deletion proof、outcome calibration 和多副�
 | RG-MIR-PROD-002F | 完成 | authority 返回值、SourceOutcome、accumulator、cluster request/response 临时 `byte[]` 在 transfer/failure 后立即覆盖 | 生产 vault adapter 应优先使用受控 direct-memory/sidecar handle，减少 JVM heap 明文窗口 |
 | RG-MIR-PROD-002G | 完成 | capability、trajectory、cluster、whole-generation 构造失败关闭全部已转入子对象；cluster 投影响应及其序列化临时数组在 resolver lowering 后立即清零；歧义候选先全部销毁再 fail-closed；attach/destroy 使用同一 process-local owner token，禁止直接或跨父对象、跨 generation 绕过 owner 清理 | 用 forked heap-dump 验证 Jackson 临时树和 JVM 复制残留 |
 
-**下一纵切可直接开工：production serving generation**
+**第九纵切实现核对：production serving generation**
+
+| Ticket | 状态 | 已实现 | 剩余工业门禁 |
+|---|---|---|---|
+| RG-MIR-PROD-003A | 完成 | token 精确绑定 stream/generation/predecessor/scope/purpose/dependency/cursor/TTL/max-staleness | 非 Java 固定签名 fixture |
+| RG-MIR-PROD-003B | 完成 | domain-separated Ed25519、双 fingerprint、本地独立 trust/key/window/lifecycle 验证 | KMS/HSM 与动态 trust distribution adapter |
+| RG-MIR-PROD-003C | 完成 | 非空 corpus 无 token 编译失败；Plan v2 与 effective control fingerprint 绑定完整 token；v1 无 corpus 兼容 | 混合版本跨服务滚动升级认证 |
+| RG-MIR-PROD-003D | 完成 | 新 run 强制 current floor；occurrence 仅在 signed staleness 内使用缓存；旧代不接新 occurrence | 真实跨 region authority latency/partition 压测 |
+| RG-MIR-PROD-003E | 完成 | stale/rollback/expired/outage/invalid fail closed；resolver 前失败保留稳定 node/evidence code | 告警路由和组织级事故演练 |
+| RG-MIR-PROD-003F | 完成 | materialization/run/occurrence 固定基数 metrics；两副本、边界时间、outage 与真实 runtime TOCTOU 测试 | fleet 级撤销传播 SLO 认证 |
+
+完整协议、SPI 接入、错误码、指标和上线演练见
+[Mirror Serving Generation 生产代际围栏](resource-gateway-mirror-serving-generation.md)。
+
+**后续生产化工作包**
 
 | Ticket | 病根 | 工程任务 | 退出门禁 |
 |---|---|---|---|
 | RG-MIR-PROD-001 | SPI 存在但没有生产数据权威 | 实现 regional payload/proof/grant/retention/tombstone adapter；mTLS、workload identity、purpose binding、双重超时、熔断和固定基数 telemetry | 跨 region/tenant/purpose 为 0 命中；authority outage 不产生 generation；payload 不入日志/DB |
 | RG-MIR-PROD-002 | 进程内核已完成；JVM 残留证明仍缺 | 增加 forked JVM heap-dump secret scan、异步取消/崩溃注入、direct-memory/sidecar handle 和固定基数 leak telemetry | heap dump、异常路径和取消测试证明 generation 关闭后不可达；重复 close 幂等 |
-| RG-MIR-PROD-003 | 多副本会观察不同撤销时刻 | 引入 signed authority generation token、plan binding、revocation cursor 和 max-staleness；新运行只接受 current floor | policy/validation/grant 撤销在 SLO 内阻断全部副本；旧代只完成已准入工作，不接新 occurrence |
+| RG-MIR-PROD-003 | 内核已完成，缺部署侧共享权威与环境证明 | 实现 durable linearizable regional authority、动态 key trust distribution、跨区域撤销传播与 mixed-version rollout | policy/validation/grant 撤销在 SLO 内阻断全部副本；rollback/fork 为 0；旧代只完成已准入 occurrence |
 | RG-MIR-PROD-004 | 单例正确不代表容量下正确 | 建立 2/100/1000-member、16 MiB payload、256 MiB generation、并发 compile/run、恶意深层 JSON 和 vault latency 矩阵 | 无 OOM/真实 egress/部分结果；p95/p99、拒绝率和 breaker 行为满足 SLO |
 | RG-MIR-PROD-005 | cluster 会随客户业务变化失真 | 持续 holdout、drift/poison/producer-concentration/bias 检测；自动降级 publication，owner 重新审批后升回 | 低于 confidence/freshness 门槛自动 deny；不能用旧 publication stale-while-serve |
 | RG-MIR-PROD-006 | stateless cluster 无法拟合状态机 | 选择一个退款域实现 Stage 3 stateful world：业务键隔离、状态转移、tombstone、时间和并发冲突模型 | 跨 session/tenant 状态泄漏为 0；trajectory/cluster 无法解释的案例明确 abstain 并进入 stateful resolver |

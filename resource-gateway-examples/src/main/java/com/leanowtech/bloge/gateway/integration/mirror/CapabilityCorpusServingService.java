@@ -59,6 +59,7 @@ public class CapabilityCorpusServingService {
     private final CapabilityCorpusSourceVerifier sourceVerifier;
     private final CapabilityCorpusPayloadAuthority payloadAuthority;
     private final CapabilityCorpusIntegrity integrity;
+    private final MirrorServingGenerationService servingGenerations;
     private final ObjectMapper mapper;
     private final Clock clock;
 
@@ -76,6 +77,7 @@ public class CapabilityCorpusServingService {
      * @param sourceVerifier external deletion, proof, retention, and grant verifier
      * @param payloadAuthority regional short-lived sanitized payload authority
      * @param integrity corpus content-address and trace integrity helper
+     * @param servingGenerations signed current-generation admission and runtime-fence boundary
      * @param mapper canonical protocol mapper
      */
     @Autowired
@@ -91,10 +93,12 @@ public class CapabilityCorpusServingService {
             CapabilityCorpusSourceVerifier sourceVerifier,
             CapabilityCorpusPayloadAuthority payloadAuthority,
             CapabilityCorpusIntegrity integrity,
+            MirrorServingGenerationService servingGenerations,
             ObjectMapper mapper) {
         this(corpora, observations, trajectories, clusters, policies,
                 retryPolicies, clusterPolicies, clusterValidations,
-                sourceVerifier, payloadAuthority, integrity, mapper,
+                sourceVerifier, payloadAuthority, integrity,
+                servingGenerations, mapper,
                 Clock.systemUTC());
     }
 
@@ -112,6 +116,7 @@ public class CapabilityCorpusServingService {
      * @param sourceVerifier external deletion, proof, retention, and grant verifier
      * @param payloadAuthority regional short-lived sanitized payload authority
      * @param integrity corpus content-address and trace integrity helper
+     * @param servingGenerations signed current-generation admission and runtime-fence boundary
      * @param mapper canonical protocol mapper
      * @param clock trusted materialization clock
      */
@@ -127,6 +132,7 @@ public class CapabilityCorpusServingService {
             CapabilityCorpusSourceVerifier sourceVerifier,
             CapabilityCorpusPayloadAuthority payloadAuthority,
             CapabilityCorpusIntegrity integrity,
+            MirrorServingGenerationService servingGenerations,
             ObjectMapper mapper,
             Clock clock) {
         this.corpora = Objects.requireNonNull(corpora, "corpora");
@@ -143,6 +149,8 @@ public class CapabilityCorpusServingService {
         this.sourceVerifier = Objects.requireNonNull(sourceVerifier, "sourceVerifier");
         this.payloadAuthority = Objects.requireNonNull(payloadAuthority, "payloadAuthority");
         this.integrity = Objects.requireNonNull(integrity, "integrity");
+        this.servingGenerations = Objects.requireNonNull(
+                servingGenerations, "servingGenerations");
         this.mapper = Objects.requireNonNull(mapper, "mapper");
         this.clock = Objects.requireNonNull(clock, "clock");
     }
@@ -165,7 +173,8 @@ public class CapabilityCorpusServingService {
                 policies, retryPolicies,
                 CapabilityCorpusClusterPolicyProvider.unavailable(),
                 CapabilityCorpusClusterValidationAuthority.unavailable(),
-                sourceVerifier, payloadAuthority, integrity, mapper, clock);
+                sourceVerifier, payloadAuthority, integrity,
+                unavailableServingGenerations(mapper, clock), mapper, clock);
     }
 
     /**
@@ -259,12 +268,39 @@ public class CapabilityCorpusServingService {
             resolved.forEach(ResolvedCorpusPayloads.CapabilityCorpus::close);
             throw failure;
         }
+        ResolvedCorpusPayloads materialized;
         try {
-            return ResolvedCorpusPayloads.of(resolved);
+            materialized = ResolvedCorpusPayloads.of(resolved);
         } catch (IllegalArgumentException invalid) {
             resolved.forEach(ResolvedCorpusPayloads.CapabilityCorpus::close);
             throw conflict(identity, "RG.MIRROR.CORPUS_GENERATION_INVALID",
                     "Resolved corpus publications cannot form one deterministic generation.");
+        }
+        try {
+            return servingGenerations.bind(
+                    materialized, scope, policy.authorizedPurpose(),
+                    requiredUntil);
+        } catch (MirrorServingGenerationService.AdmissionException denied) {
+            materialized.close();
+            if ("SERVING_GENERATION_REJECTED".equals(denied.code())) {
+                throw conflict(
+                        identity,
+                        "RG.MIRROR.SERVING_GENERATION_REJECTED",
+                        "The serving-generation authority rejected this corpus generation.");
+            }
+            String code = "SERVING_GENERATION_TOKEN_INVALID".equals(
+                    denied.code())
+                    ? "RG.MIRROR.SERVING_GENERATION_TOKEN_INVALID"
+                    : "RG.MIRROR.SERVING_GENERATION_AUTHORITY_UNAVAILABLE";
+            throw unavailable(
+                    identity, code,
+                    "The serving-generation authority cannot authorize this corpus generation.");
+        } catch (RuntimeException failure) {
+            materialized.close();
+            throw unavailable(
+                    identity,
+                    "RG.MIRROR.SERVING_GENERATION_AUTHORITY_UNAVAILABLE",
+                    "The serving-generation authority cannot authorize this corpus generation.");
         }
     }
 
@@ -272,7 +308,8 @@ public class CapabilityCorpusServingService {
     public boolean ready() {
         try {
             return policies.available() && sourceVerifier.available()
-                    && payloadAuthority.available();
+                    && payloadAuthority.available()
+                    && servingGenerations.ready();
         } catch (RuntimeException unavailable) {
             return false;
         }
@@ -1723,6 +1760,16 @@ public class CapabilityCorpusServingService {
                 return java.util.Optional.empty();
             }
         };
+    }
+
+    private static MirrorServingGenerationService
+            unavailableServingGenerations(
+            ObjectMapper mapper, Clock clock) {
+        return new MirrorServingGenerationService(
+                MirrorServingGenerationAuthority.unavailable(),
+                MirrorServingGenerationTrustProvider.unavailable(),
+                new MirrorServingGenerationIntegrity(mapper),
+                mapper, clock);
     }
 
     private record ResolvedCapability(

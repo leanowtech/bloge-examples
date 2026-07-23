@@ -72,6 +72,7 @@ public final class MirrorPlanIntegrity {
         validateCapabilities(plan, snapshots.values());
         validateStateModels(plan, snapshots.values());
         validateExternalBindings(plan, snapshots);
+        validateServingGeneration(mapper, plan);
     }
 
     private static void validateTime(MirrorPlan plan) {
@@ -202,6 +203,42 @@ public final class MirrorPlanIntegrity {
         if (!expected.equals(actual)) {
             throw new IllegalArgumentException(
                     "externalBindings must exactly cover every external capability dependency edge");
+        }
+    }
+
+    private static void validateServingGeneration(
+            ObjectMapper mapper, MirrorPlan plan) {
+        boolean recordedCorpus = plan.externalBindings().stream()
+                .flatMap(binding -> binding.resolverOrder().stream())
+                .anyMatch(source ->
+                        source == MirrorPlan.MirrorSource.RECORDED_EXACT
+                                || source == MirrorPlan.MirrorSource.RECORDED_TRAJECTORY
+                                || source == MirrorPlan.MirrorSource.RECORDED_CLUSTER);
+        MirrorServingGenerationToken token = plan.servingGeneration();
+        if (recordedCorpus != (token != null)) {
+            throw new IllegalArgumentException(
+                    "recorded corpus resolvers require exactly one servingGeneration");
+        }
+        if (token == null) {
+            return;
+        }
+        new MirrorServingGenerationIntegrity(mapper).verifyContent(token);
+        if (!plan.scope().equals(token.material().scope())) {
+            throw new IllegalArgumentException(
+                    "servingGeneration scope must match the mirror plan");
+        }
+        if (!plan.policy().authorizedPurpose().equals(
+                token.material().authorizedPurpose())) {
+            throw new IllegalArgumentException(
+                    "servingGeneration purpose must match the mirror plan");
+        }
+        if (token.material().issuedAt().isAfter(plan.compiledAt())) {
+            throw new IllegalArgumentException(
+                    "mirror plan cannot predate servingGeneration issuance");
+        }
+        if (token.material().expiresAt().isBefore(plan.expiresAt())) {
+            throw new IllegalArgumentException(
+                    "mirror plan outlives servingGeneration authority");
         }
     }
 

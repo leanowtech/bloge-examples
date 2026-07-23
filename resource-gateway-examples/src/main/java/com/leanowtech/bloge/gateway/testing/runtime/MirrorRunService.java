@@ -220,8 +220,37 @@ public class MirrorRunService {
             throw closed;
         }
         try (lease) {
+            try {
+                request.compiledPlan().executionControl()
+                        .corpusPayloads().admitRun();
+            } catch (TestControlException rejected) {
+                throw generationRejected(rejected);
+            }
             return executeLeased(request);
         }
+    }
+
+    private static MirrorRunRejectedException generationRejected(
+            TestControlException failure) {
+        return switch (failure.code()) {
+            case "MIRROR_SERVING_GENERATION_STALE" ->
+                    reject("RG.MIRROR.SERVING_GENERATION_STALE",
+                            "Recorded corpus serving generation is no longer current.");
+            case "MIRROR_SERVING_GENERATION_ROLLBACK" ->
+                    reject("RG.MIRROR.SERVING_GENERATION_ROLLBACK",
+                            "Recorded corpus authority floor moved backwards.");
+            case "MIRROR_SERVING_GENERATION_EXPIRED" ->
+                    reject("RG.MIRROR.SERVING_GENERATION_EXPIRED",
+                            "Recorded corpus serving generation has expired.");
+            case "MIRROR_SERVING_GENERATION_TOKEN_INVALID" ->
+                    reject("RG.MIRROR.SERVING_GENERATION_TOKEN_INVALID",
+                            "Recorded corpus authority floor failed local verification.");
+            case "MIRROR_SERVING_GENERATION_AUTHORITY_UNAVAILABLE" ->
+                    reject("RG.MIRROR.SERVING_GENERATION_AUTHORITY_UNAVAILABLE",
+                            "Recorded corpus serving authority is unavailable.");
+            default -> reject("RG.MIRROR.RUNTIME_GENERATION_REJECTED",
+                    "Compiled mirror generation failed shared-kernel admission.");
+        };
     }
 
     private MirrorRunResult executeLeased(MirrorRunRequest request) {

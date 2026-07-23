@@ -355,7 +355,8 @@ class MirrorRunIntegrationServiceTest {
         return MirrorPlanIntegrity.seal(mapper, new MirrorPlan("", source.planId(), "",
                 source.rootCapability(), source.capabilityClosureFingerprint(),
                 source.capabilityClosure(), source.scope(), source.fixtureBundleRef(),
-                source.executionControlFingerprint(), source.externalBindings(),
+                source.executionControlFingerprint(), source.servingGeneration(),
+                source.externalBindings(),
                 source.scenarioPackRef(), source.stateModelRefs(), source.executionServices(),
                 certification, source.compiledAt(), source.expiresAt()));
     }
