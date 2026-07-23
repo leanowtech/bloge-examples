@@ -7,7 +7,7 @@
 
 | 文档属性 | 内容 |
 |---|---|
-| 状态 | Accepted / In implementation；Stage 0 仓库内工程退出门禁已通过；Stage 1 compiler、resolver provenance、payload-free evidence 签发/独立复验、scope-isolated durable store、受保护 Plan/Run/Evidence API、durable request fencing、动态 occurrence budget、payload-free operation audit、固定基数指标、部署隔离证明协议/离线验真与 M-of-N authority key-set 可信发布协议已完成；动态刷新与 durable trust floor、运行时绑定、ingress 预解析防护、跨语言 canonicalization 与 certification 门禁继续实施 |
+| 状态 | Accepted / In implementation；Stage 0 仓库内工程退出门禁已通过；Stage 1 compiler、resolver provenance、payload-free evidence 签发/独立复验、scope-isolated durable store、受保护 Plan/Run/Evidence API、durable request fencing、动态 occurrence budget、payload-free operation audit、固定基数指标、部署隔离证明协议/离线验真、M-of-N authority key-set 发布协议及其 full-scope append-only trusted distribution API/durable floor CAS 已完成；deployment agent 安全刷新、attestation ingest、运行时双重绑定、跨语言 canonicalization 与 certification 门禁继续实施 |
 | 目标读者 | Resource Gateway、BLOGE Runtime、ANEKE、TEE/数据平台、QA、SRE、安全与业务运营团队 |
 | 设计范围 | external/composed 能力建模、镜像运行、保真语料、有状态世界、场景演练、证据、保真度与结果校准 |
 | 非目标 | 不重做 ANEKE 的资产治理和发布门禁；不允许测试控制进入生产业务请求；不把观测频率直接当成业务正确性 |
@@ -272,6 +272,24 @@
   可验证发行格式和纯函数验真内核；HTTPS/mTLS refresh、
   full-scope append-only repository/API、durable floor CAS、部署 agent 原子缓存、attestation ingest 与 run admission/evidence
   commit binding 仍未实现，所以 capability 和 trust class 继续失败关闭。
+- Stage 1 第十九增量把 authority key-set 从“可验文件”推进成 full-scope trusted distribution control plane。
+  `MirrorDeploymentIsolationAuthorityTrustPolicyProvider` 强制 expected binding、accepted policy、M-of-N threshold 与
+  bootstrap roots 来自 operator-owned 本地信任源；默认 provider 不可用，HTTP 请求不能上传或选择 trust roots。
+  `mirror_isolation_authority_publications` 只追加 canonical publication，
+  `mirror_isolation_authority_trusted_floors` 钉死完整 enterprise scope、immutable deployment 和当前
+  `(generation, publicationFingerprint)`；正文 insert、`SELECT ... FOR UPDATE` 后的 floor CAS 与成功 audit 在同一事务
+  提交。exact retry 幂等，bootstrap 非第一代、rollback、fork、gap、predecessor mismatch、deployment drift、损坏的
+  index/JSON/head 和跨 scope 读取全部失败关闭；双副本竞争同一 successor 只允许一个胜出。三条受保护 API 分别用
+  `MIRROR_TRUST_ADMIN` 和 `MIRROR_TRUST_DISTRIBUTION`/`MIRROR_REHEARSAL` 鉴权，POST 在密码学工作前拒绝 duplicate
+  key、unknown field、2 MiB/32-depth/10000-node 越界；GET 每次重新解析本地 policy、复验签名/有效期，且 exact
+  generation 只有仍等于 current floor 才返回，不能成为历史降级入口。probe 分开报告 protocol、API assembly 与
+  trust-provider readiness；新增 23 个场景，authority 联合回归 `66/66` 全绿。七个 authority 公共类型经
+  `javadoc --release 25 -Werror -Xdoclint:all` 校验为 0 warnings、0 errors；Resource Gateway 全量门禁
+  `4565/4565`（另有 3 条条件跳过）、独立 test-kit `269/269` 全绿，真实 Chrome、普通 JAR、可执行 Boot JAR
+  和 test-kit 双 JAR/schema 打包均通过。该增量仍不宣称 deployment isolation ready：
+  agent mTLS/HTTPS refresh 与 atomic cache、attestation repository/API、revocation propagation、execution admission 和
+  evidence commit 同代绑定尚未完成，运行继续保持 `EXPLORATORY`。操作与接线见
+  [trusted distribution guide](resource-gateway-mirror-authority-trusted-distribution.md)。
 
 ---
 
@@ -949,7 +967,8 @@ Outcome 分为：
 “存在一个合法 JSON”不等于“部署控制真实生效”。生产链必须由 Resource Gateway 之外的 SRE/security
 authority 从 scheduler、network policy、service identity 和 image registry 的权威状态生成证明；Resource
 Gateway 只接受独立信任通道分发的 key set，并用本机不可变坐标匹配。证明过期、吊销、身份漂移、刷新失败或
-运行窗口越界必须在执行前/提交前失败关闭。可信分发、刷新原子性、回滚/吊销时延和运行时绑定仍未实现。
+运行窗口越界必须在执行前/提交前失败关闭。authority key-set 的服务端可信准入、不可变正文、数据库防回滚
+floor 和 current-only 分发已经实现；deployment agent 刷新原子性、attestation 吊销传播与运行时绑定仍未实现。
 
 ### 12.2 权限
 
@@ -992,6 +1011,9 @@ session 重放造成重复状态、运行时依赖漂移。
 | `POST /api/mirror/rehearsal-jobs` | 提交批量长任务 | job request fingerprint | 待实现 |
 | `GET /api/mirror/runs/{runId}` | 查询 verified payload-free 运行摘要 | 只读、完整 scope 隔离 | 已实现（test/staging + 显式开关） |
 | `GET /api/mirror/runs/{runId}/evidence` | 导出 independently verified `HASH_ONLY` signed evidence | 只读、完整 scope 隔离 | 已实现（test/staging + 显式开关） |
+| `POST /api/mirror/trust/deployment-isolation/authority-key-sets` | 本地信任复验并原子追加 authority key-set generation | full scope + deployment + keySet + generation/fingerprint；同代同指纹幂等 | 已实现（test/staging + `MIRROR_TRUST_ADMIN`） |
+| `GET /api/mirror/trust/deployment-isolation/authority-key-sets/{keySetId}/latest` | 重新复验并分发 current durable floor | 只读、完整 scope + `deploymentScopeId` 隔离 | 已实现（test/staging） |
+| `GET /api/mirror/trust/deployment-isolation/authority-key-sets/{keySetId}/generations/{generation}` | 按内容地址读取，但仅当地址仍等于 current floor | `generation + publicationFingerprint` exact current match | 已实现（test/staging） |
 | `POST /api/mirror/observations` | 接收签名 observation metadata | observationId 幂等 | 待实现 |
 | `POST /api/mirror/corpus-candidates` | 触发受治理归纳 | source snapshot 幂等 | 待实现 |
 | `POST /api/mirror/shadow-jobs` | 提交 shadow comparison | job fingerprint 幂等 | 待实现 |
@@ -999,11 +1021,12 @@ session 重放造成重复状态、运行时依赖漂移。
 | `POST /api/mirror/outcomes` | 回填 outcome | outcome identity 幂等 | 待实现 |
 
 部署隔离证明与 authority key-set publication 已有 strict artifact protocol、双层 canonical fingerprint、M-of-N
-bootstrap-root 验签和独立 test-kit verifier，但仍没有 ingest/read endpoint，也没有持久化 anti-rollback floor。
-下一增量应实现 authority key-set 与 attestation 的 full-scope、append-only、content-addressed repository/API，使用
-数据库 CAS 原子推进 `(keySetId, generation, publicationFingerprint)` floor，再让 deployment agent 经 mTLS/HTTPS
-刷新并原子替换只读缓存；随后接入 execution admission 和 evidence commit 的同代双重校验。在这些边界闭合前，
-不得仅凭调用方上传 publication/attestation 或进程内临时 floor 提升 trust class。
+bootstrap-root 验签和独立 test-kit verifier。authority key-set 现在还有 full-scope、append-only、content-addressed
+repository/API，并在同一数据库事务中原子追加正文、CAS 推进 `(keySetId, generation,
+publicationFingerprint)` durable floor、提交成功 audit；local binding/roots 只来自 operator-owned SPI。服务端只分发
+current floor，过期或本地复验失败会停止服务。下一增量应补齐 attestation 的 full-scope repository/API，让 deployment
+agent 经 mTLS/HTTPS 刷新并原子替换只读缓存，再接入 execution admission 和 evidence commit 的同代双重校验。在这些
+边界闭合前，不得仅凭 publication 分发成功、调用方上传 attestation 或进程内缓存提升 trust class。
 
 外部集成协议扩展 `ToolStudioResourceGatewayProtocol`，新增能力快照、镜像证据和保真度 feature flags；
 旧 GraphDraft/RunEvidence 协议保持兼容，不在 v1 中删除。
@@ -1025,6 +1048,11 @@ mirror_run_evidence(scope, run_id, plan_id, plan_fingerprint,
 mirror_operation_audit(sequence, occurred_at, scope, correlation_id, actor_type, actor_id,
                        operation, outcome, reason, reason_code, request_id, plan_id, run_id,
                        duration_millis)
+mirror_isolation_authority_publication(scope, deployment_scope_id, key_set_id, generation,
+                       publication_fingerprint, material_fingerprint, signed_public_json)
+mirror_isolation_authority_trusted_floor(scope, deployment_scope_id, key_set_id,
+                       immutable_deployment_coordinates, floor_generation,
+                       floor_publication_fingerprint)
 artifact_revision(artifact_type, artifact_id, revision, fingerprint, state,
                   provenance_json, payload_ref, created_at)
 contract_mock_grant(grant_id, subtool_ref, consumer_scope, max_ratio, state,
@@ -1305,7 +1333,7 @@ SRE runbook 和生产认证包。
 | RG-MIR-003 | 实现 transitive EffectContract 汇总 | `gateway/integration/mirror` | read/write/mixed/unknown、递归环和声明冲突测试齐全 |
 | RG-MIR-004 | 冻结 provenance 与 lifecycle 状态机 | mirror schema + repository interface | 非法跃迁拒绝；stale/revoke 行为有协议测试 |
 | RG-MIR-005 | 增加 capability snapshot API 与 capability probe | integration controller/capability service | scope/identity 校验；功能未闭合时 feature flag 为 false |
-| RG-MIR-006 | 建立 `MirrorPlanCompiler` 骨架 | `gateway/testing/planning` | 已完成 compiler/run kernel、exact closure/runtime inventory 对账、external-only 控制、resolver provenance、generation/TTL/scope 准入、静态 + 动态 occurrence budget、payload-free durable store、受保护 Plan/Run/Evidence API、durable request fencing、fail-closed operation observability 与 deployment-attestation 协议/离线验真；待可信分发和 runtime binding |
+| RG-MIR-006 | 建立 `MirrorPlanCompiler` 骨架 | `gateway/testing/planning` | 已完成 compiler/run kernel、exact closure/runtime inventory 对账、external-only 控制、resolver provenance、generation/TTL/scope 准入、静态 + 动态 occurrence budget、payload-free durable store、受保护 Plan/Run/Evidence API、durable request fencing、fail-closed operation observability、deployment-attestation 协议/离线验真与 authority key-set trusted distribution/durable floor；待 agent refresh、attestation ingest 和 runtime binding |
 | RG-MIR-007 | 复用 FixtureBundle 的 mirror adapter ADR | `docs/adr/ADR-004-mirror-plan-reuses-fixture-bundle.md` + `compileMirror` | 已完成；不新增平行 fixture 主模型；映射损失和暂不支持项显式报告 |
 | RG-MIR-008 | 建立生产隔离架构测试 | production composition tests | bean/profile 双栅栏、普通请求控制字段拒绝及 Plan/Run/Evidence route 在 production/mixed profile 物理不存在已完成；deployment-attestation strict protocol/producer/verifier 已完成；待外部签发/分发、运行时 egress 证明绑定和 pre-materialization ingress 门禁 |
 | RG-MIR-009 | 增加 test-kit 协议模型与 compatibility fixtures | `resource-gateway-test-kit` | 已完成 Snapshot/Closure、MirrorEvidence 与 DeploymentIsolationAttestation 独立复验；三份共享 fixture（含两份 signed fixture）；不依赖 server/Spring |
@@ -1323,8 +1351,9 @@ run kernel；E3 已完成 payload-free evidence/attestation/bundle 协议、真�
 external attempt/resolution exact closure、Java test-kit independent verifier、共享 signed fixture 与 full-scope
 append-only plan/evidence 仓储、受保护 Plan/Run/Evidence API、payload-free durable request coordination 与
 fenced atomic commit、静态/动态 occurrence budget、同事务成功审计、跨回滚失败审计、固定基数指标，以及
-deployment-isolation strict protocol、producer integrity、共享 signed fixture 与独立 verifier；可信 key/attestation
-分发、运行时 binding、语言中立数字 canonicalization 和生产部署门禁未闭合，仍在 Stage 1 主链；008/010/011/012 继续补齐生产隔离、退款资产、
+deployment-isolation strict protocol、producer integrity、共享 signed fixture、独立 verifier、authority key-set
+full-scope append-only trusted distribution API 与 durable floor CAS；deployment agent 安全刷新、attestation ingest、
+运行时 binding、语言中立数字 canonicalization 和生产部署门禁未闭合，仍在 Stage 1 主链；008/010/011/012 继续补齐生产隔离、退款资产、
 错误码注册与持续 CI。
 企业客户准入仍必须关闭第 22.2 节的环境级开放决策。
 

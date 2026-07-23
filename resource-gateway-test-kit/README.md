@@ -201,6 +201,14 @@ mismatch, threshold downgrade, and unknown or revoked extra roots fail closed. T
 and advance the trusted floor durably; an in-memory floor is insufficient for production rollback
 protection.
 
+Resource Gateway now exposes a protected current-only trusted-distribution API backed by its own
+full-scope append-only log and database CAS floor. A deployment agent may fetch `latest` or an exact
+current content address, but it must still use this independent verifier with its own immutable
+binding, pinned roots, trusted clock, and durable local floor before replacing its cache. Server
+acceptance is not transitive client trust, and the API intentionally does not serve historical
+generations as a downgrade mechanism. See the
+[trusted-distribution guide](../docs/resource-gateway-mirror-authority-trusted-distribution.md).
+
 Run the second packaged fixed fixture during dependency upgrades and startup probes:
 
 ```java

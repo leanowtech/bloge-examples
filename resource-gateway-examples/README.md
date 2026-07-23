@@ -157,8 +157,10 @@ skew cannot change execution authority. Signed evidence and terminal request sta
 cannot publish even before takeover, and authority-row locking occurs before time sampling so lock wait cannot bypass
 expiry. H2 time is sampled through an independent short connection after locking because its transaction timestamp is
 frozen; configure the datasource with capacity for the transaction connection plus the clock connection. The
-deployment-egress proof and M-of-N authority key-set publication protocols are frozen, but durable trusted
-distribution, refresh, and runtime binding remain open, so evidence stays exploratory. The fixture reuse decision is in
+deployment-egress proof and M-of-N authority key-set publication protocols are frozen. Authority publications now
+have full-scope append-only trusted distribution, a durable database CAS floor, strict protected APIs, and read-time
+local re-verification. Deployment-agent refresh, attestation ingest, and runtime binding remain open, so evidence stays
+exploratory. The fixture reuse decision is in
 [ADR-004](../docs/adr/ADR-004-mirror-plan-reuses-fixture-bundle.md).
 
 ### Mirror dynamic occurrence budget
@@ -186,7 +188,7 @@ and the occurrence budget protect different resources and must all remain enable
 
 ### Mirror operation observability
 
-Every protected Plan, Run, and Evidence operation now reaches exactly one terminal observer before its service
+Every protected Plan, Run, Evidence, and isolation-authority publication operation now reaches exactly one terminal observer before its service
 result is returned. The observer pre-registers a fixed set of Micrometer series; no tenant, organization, actor,
 correlation, request, plan, run, exception, or business value can become a tag.
 
@@ -196,9 +198,10 @@ correlation, request, plan, run, exception, or business value can become a tag.
 | `resource.gateway.mirror.duration` | `operation`, `outcome` | Terminal service duration timer |
 | `resource.gateway.mirror.failures` | `operation`, `reason` | Rejected/failed count by bounded reason class |
 
-The closed `operation` vocabulary is `plan_create`, `plan_read`, `run_create`, `run_read`, and `evidence_read`.
+The closed `operation` vocabulary is `plan_create`, `plan_read`, `run_create`, `run_read`, `evidence_read`,
+`authority_key_set_publish`, and `authority_key_set_read`.
 Outcomes are `succeeded`, `rejected`, and `failed`; failure reasons are `invalid_request`, `forbidden`, `not_found`,
-`conflict`, `expired`, `capacity`, `unavailable`, `audit_unavailable`, and `unexpected`. This produces 75 bounded
+`conflict`, `expired`, `capacity`, `unavailable`, `audit_unavailable`, and `unexpected`. This produces 105 bounded
 series in total. Registry exporters may rename timer units according to their normal conventions.
 
 The append-only `mirror_operation_audit` table is the durable authority. Each row contains database sequence/time,
@@ -326,12 +329,20 @@ rejects the whole publication even after the threshold is met.
 downgrade, rollback, fork, skipped generation, and predecessor mismatch, then exposes only verified public
 attestation keys. The standalone test-kit implements the same checks and packages a public-only two-root fixture.
 
-This is a protocol and verification increment, not a runtime-readiness claim. There is not yet an
-attestation or authority-publication repository/API, durable trusted-floor CAS, deployment-agent mTLS/HTTPS refresh
-and atomic cache path, or binding into execution admission and `MirrorRunEvidenceProjector`; consequently current
-runs remain `EXPLORATORY` and
-the capability probe does not advertise deployment isolation as ready. See the
+Authority publications now pass through a full-scope repository and protected trusted-distribution API. The
+operator-owned `MirrorDeploymentIsolationAuthorityTrustPolicyProvider` supplies local binding and bootstrap roots;
+the default is unavailable and request bodies cannot select trust. Immutable publication insertion, per-stream
+`SELECT ... FOR UPDATE` floor CAS, and success audit commit together. Reads re-resolve local policy, re-verify the
+current publication, and never serve a historical generation as trusted. The capability probe separately reports
+protocol support, route assembly, and trust-provider readiness.
+
+This is still not a deployment-isolation runtime-readiness claim. There is not yet an attestation repository/API,
+deployment-agent mTLS/HTTPS refresh and atomic cache path, revocation propagation, or binding into execution admission
+and `MirrorRunEvidenceProjector`; consequently current runs remain `EXPLORATORY` and the capability probe does not
+advertise deployment isolation as certified. See the
 [mirror schema guide](../docs/schemas/resource-gateway-mirror/README.md#deployment-isolation-attestation-boundary).
+Operational wiring, endpoint semantics, stable failures, and rollout checks are in the
+[authority trusted-distribution guide](../docs/resource-gateway-mirror-authority-trusted-distribution.md).
 
 Useful variants:
 

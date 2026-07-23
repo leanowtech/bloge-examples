@@ -8,6 +8,8 @@ import com.leanowtech.bloge.gateway.integration.IntegrationEnvelope;
 import com.leanowtech.bloge.gateway.integration.MirrorIntegrationController;
 import com.leanowtech.bloge.gateway.integration.MirrorRunIntegrationController;
 import com.leanowtech.bloge.gateway.integration.MirrorRuntimeAvailability;
+import com.leanowtech.bloge.gateway.integration.MirrorDeploymentIsolationAuthorityPublicationController;
+import com.leanowtech.bloge.gateway.integration.mirror.MirrorDeploymentIsolationAuthorityPublicationService;
 import com.leanowtech.bloge.gateway.integration.mirror.MirrorPlanIntegrationService;
 import com.leanowtech.bloge.gateway.integration.mirror.MirrorRunCommitService;
 import com.leanowtech.bloge.gateway.integration.mirror.MirrorRunIntegrationService;
@@ -92,14 +94,20 @@ class TestRuntimeApplicationIntegrationTest {
         assertThat(context.getBeansOfType(TestExecutionController.class)).hasSize(1);
         assertThat(context.getBeansOfType(MirrorIntegrationController.class)).hasSize(1);
         assertThat(context.getBeansOfType(MirrorRunIntegrationController.class)).hasSize(1);
+        assertThat(context.getBeansOfType(
+                MirrorDeploymentIsolationAuthorityPublicationController.class)).hasSize(1);
         assertThat(context.getBeansOfType(MirrorPlanIntegrationService.class)).hasSize(1);
         assertThat(context.getBeansOfType(MirrorRunIntegrationService.class)).hasSize(1);
+        assertThat(context.getBeansOfType(
+                MirrorDeploymentIsolationAuthorityPublicationService.class)).hasSize(1);
         assertThat(context.getBeansOfType(MirrorRunCommitService.class)).hasSize(1);
         assertThat(context.getBeansOfType(MirrorRunRequestRepository.class)).hasSize(1);
         assertThat(context.getBeansOfType(MirrorRuntimeAvailability.class)).hasSize(1);
         assertThat(context.getBean(MirrorRuntimeAvailability.class)).satisfies(availability -> {
             assertThat(availability.planCompilationApi()).isTrue();
             assertThat(availability.executionApi()).isTrue();
+            assertThat(availability.authorityDistributionApi()).isTrue();
+            assertThat(availability.authorityDistributionReady()).isFalse();
         });
         assertThat(context.getBeansOfType(TestRunRepository.class)).hasSize(1);
         assertThat(context.getBeansOfType(TestSuiteRunRepository.class)).hasSize(1);
@@ -151,7 +159,10 @@ class TestRuntimeApplicationIntegrationTest {
                 .containsEntry("bootstrapRootRecoveryFleetReady", false)
                 .containsEntry("mirrorPlanCompilation", true)
                 .containsEntry("mirrorExternalLeafInterception", true)
-                .containsEntry("mirrorServing", true);
+                .containsEntry("mirrorServing", true)
+                .containsEntry("mirrorIsolationAuthorityPublicationProtocol", true)
+                .containsEntry("mirrorIsolationAuthorityDistributionApi", true)
+                .containsEntry("mirrorIsolationAuthorityDistributionReady", false);
         assertThat(capabilities.getBody().payload().endpoints()).anyMatch(endpoint ->
                 endpoint.method().equals("POST")
                         && endpoint.path().equals("/api/mirror/plans"));
@@ -161,6 +172,10 @@ class TestRuntimeApplicationIntegrationTest {
         assertThat(capabilities.getBody().payload().endpoints()).anyMatch(endpoint ->
                 endpoint.method().equals("GET")
                         && endpoint.path().equals("/api/mirror/runs/{runId}/evidence"));
+        assertThat(capabilities.getBody().payload().endpoints()).anyMatch(endpoint ->
+                endpoint.method().equals("POST")
+                        && endpoint.path().equals(
+                        "/api/mirror/trust/deployment-isolation/authority-key-sets"));
         assertThat(capabilities.getBody().payload().endpoints()).anyMatch(endpoint ->
                 endpoint.path().equals("/api/testing/targets/graphs/{graphName}"));
         assertThat(capabilities.getBody().payload().endpoints()).anyMatch(endpoint ->

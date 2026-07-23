@@ -151,6 +151,9 @@ class ToolStudioIntegrationServiceTest {
                 .containsEntry("mirrorExternalLeafInterception", false)
                 .containsEntry("mirrorOperationObservability", false)
                 .containsEntry("mirrorServing", false)
+                .containsEntry("mirrorIsolationAuthorityPublicationProtocol", true)
+                .containsEntry("mirrorIsolationAuthorityDistributionApi", false)
+                .containsEntry("mirrorIsolationAuthorityDistributionReady", false)
                 .containsEntry("runEvidenceBundle", true)
                 .containsEntry("structuredExecutionFacts", true)
                 .containsEntry("graphDeadline", true)
@@ -305,6 +308,38 @@ class ToolStudioIntegrationServiceTest {
         assertThat(available.endpoints())
                 .anyMatch(endpoint -> endpoint.path().equals("/api/mirror/executions"));
         assertThat(available.supportedObjects()).containsKey("mirrorExecutionRequest");
+    }
+
+    @Test
+    void capabilitiesSeparateAuthorityDistributionRouteAssemblyFromTrustReadiness() {
+        ToolStudioIntegrationService service = service(null, null, null, null);
+        java.util.concurrent.atomic.AtomicBoolean trustReady =
+                new java.util.concurrent.atomic.AtomicBoolean(false);
+        service.configureMirrorRuntime(new MirrorRuntimeAvailability(
+                true, true, () -> true, true, trustReady::get));
+
+        IntegrationCapabilities unavailable = service.capabilities().payload();
+        trustReady.set(true);
+        IntegrationCapabilities available = service.capabilities().payload();
+
+        assertThat(unavailable.features())
+                .containsEntry("mirrorIsolationAuthorityPublicationProtocol", true)
+                .containsEntry("mirrorIsolationAuthorityDistributionApi", true)
+                .containsEntry("mirrorIsolationAuthorityDistributionReady", false);
+        assertThat(unavailable.supportedObjects())
+                .containsEntry("mirrorDeploymentIsolationAuthorityKeySetPublication", List.of(
+                        com.leanowtech.bloge.gateway.integration.mirror
+                                .MirrorDeploymentIsolationAuthorityKeySetPublication
+                                .SCHEMA_VERSION));
+        assertThat(unavailable.endpoints())
+                .extracting(endpoint -> endpoint.method() + " " + endpoint.path())
+                .contains(
+                        "POST /api/mirror/trust/deployment-isolation/authority-key-sets",
+                        "GET /api/mirror/trust/deployment-isolation/authority-key-sets/{keySetId}/latest",
+                        "GET /api/mirror/trust/deployment-isolation/authority-key-sets/{keySetId}/generations/{generation}");
+        assertThat(available.features())
+                .containsEntry("mirrorIsolationAuthorityDistributionApi", true)
+                .containsEntry("mirrorIsolationAuthorityDistributionReady", true);
     }
 
     @Test

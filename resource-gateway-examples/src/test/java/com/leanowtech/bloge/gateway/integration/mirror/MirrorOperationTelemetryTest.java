@@ -38,7 +38,13 @@ class MirrorOperationTelemetryTest {
         assertThat(meters.get("resource.gateway.mirror.failures")
                 .tags("operation", "plan_read", "reason", "not_found")
                 .counter().count()).isEqualTo(1);
-        assertThat(meters.getMeters()).hasSize(75);
+        int expectedSeries = MirrorOperationAuditEvent.Operation.values().length
+                * (MirrorOperationAuditEvent.Outcome.values().length * 2
+                + MirrorOperationAuditEvent.Reason.values().length - 1);
+        assertThat(meters.getMeters()).hasSize(expectedSeries);
+        assertThat(meters.get("resource.gateway.mirror.operations")
+                .tags("operation", "authority_key_set_publish", "outcome", "succeeded")
+                .counter().count()).isZero();
     }
 
     @Test

@@ -81,9 +81,9 @@ public final class MirrorOperationObservability {
      *
      * @param operation protected operation being served
      * @param identity authenticated enterprise identity and trace coordinates
-     * @param requestId execution request id when known, otherwise blank
-     * @param planId plan id when known, otherwise blank
-     * @param runId terminal run id when known, otherwise blank
+     * @param requestId execution request id or authority key-set id, otherwise blank
+     * @param planId plan id or authority deployment-scope id, otherwise blank
+     * @param runId terminal run id or authority publication fingerprint, otherwise blank
      * @return single-use terminal observation token
      */
     public Observation start(

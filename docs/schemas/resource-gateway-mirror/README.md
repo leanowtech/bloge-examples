@@ -91,9 +91,12 @@ reverification is allowed, while rollback, fork, skipped generation, and predece
 closed.
 
 These increments freeze both artifacts, strict Schemas, producer integrity kernels, independent
-test-kit verifiers, and shared signed compatibility fixtures. They do **not** yet provide an
-attestation/publication repository or API, durable trusted-floor CAS, deployment-agent mTLS/HTTPS
-refresh and atomic cache replacement, or execution-admission/evidence-projector binding. Current
+test-kit verifiers, and shared signed compatibility fixtures. Authority publications now have a
+full-scope append-only repository, protected publish/latest/current API, operator-owned local trust
+SPI, and atomic durable-floor CAS. Current-only reads re-verify local binding, roots, validity, and
+floor; historical generations are not served as trusted distribution. They do **not** yet provide an
+attestation repository/API, deployment-agent mTLS/HTTPS refresh and atomic cache replacement,
+revocation propagation, or execution-admission/evidence-projector binding. Current
 mirror runs therefore remain
 `EXPLORATORY` with `DEPLOYMENT_EGRESS_NOT_ATTESTED`; protocol availability alone must not produce
 `CERTIFIABLE` evidence.
@@ -365,6 +368,9 @@ The protected Tool Studio integration surface exposes:
 | `POST /api/mirror/executions` | Execute one exact plan under durable request fencing | `MIRROR_REHEARSAL` |
 | `GET /api/mirror/runs/{runId}` | Read one verified payload-free run summary | `MIRROR_REHEARSAL` |
 | `GET /api/mirror/runs/{runId}/evidence` | Read one verified signed `HASH_ONLY` bundle | `MIRROR_REHEARSAL` |
+| `POST /api/mirror/trust/deployment-isolation/authority-key-sets` | Verify local trust and append one generation plus durable floor | `MIRROR_TRUST_ADMIN` |
+| `GET /api/mirror/trust/deployment-isolation/authority-key-sets/{keySetId}/latest` | Re-verify and read the current floor | `MIRROR_TRUST_DISTRIBUTION` or `MIRROR_REHEARSAL` |
+| `GET /api/mirror/trust/deployment-isolation/authority-key-sets/{keySetId}/generations/{generation}` | Read an exact address only while it remains current | `MIRROR_TRUST_DISTRIBUTION` or `MIRROR_REHEARSAL` |
 
 All endpoints derive scope, actor, and clearance from the verified workload identity. Absent,
 cross-scope, and above-clearance reads deliberately share `404 RG.MIRROR.SNAPSHOT_NOT_FOUND` so the API does

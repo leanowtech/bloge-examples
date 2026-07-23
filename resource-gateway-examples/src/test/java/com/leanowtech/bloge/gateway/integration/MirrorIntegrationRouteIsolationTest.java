@@ -2,6 +2,7 @@ package com.leanowtech.bloge.gateway.integration;
 
 import com.leanowtech.bloge.gateway.integration.mirror.MirrorPlanIntegrationService;
 import com.leanowtech.bloge.gateway.integration.mirror.MirrorRunIntegrationService;
+import com.leanowtech.bloge.gateway.integration.mirror.MirrorDeploymentIsolationAuthorityPublicationService;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.junit.jupiter.api.Test;
 import org.springframework.context.ApplicationContext;
@@ -30,13 +31,19 @@ class MirrorIntegrationRouteIsolationTest {
                     "GET /api/mirror/plans/{planId}",
                     "POST /api/mirror/executions",
                     "GET /api/mirror/runs/{runId}",
-                    "GET /api/mirror/runs/{runId}/evidence");
+                    "GET /api/mirror/runs/{runId}/evidence",
+                    "POST /api/mirror/trust/deployment-isolation/authority-key-sets",
+                    "GET /api/mirror/trust/deployment-isolation/authority-key-sets/{keySetId}/latest",
+                    "GET /api/mirror/trust/deployment-isolation/authority-key-sets/{keySetId}/generations/{generation}");
             assertThat(routes(staging)).contains(
                     "POST /api/mirror/plans",
                     "GET /api/mirror/plans/{planId}",
                     "POST /api/mirror/executions",
                     "GET /api/mirror/runs/{runId}",
-                    "GET /api/mirror/runs/{runId}/evidence");
+                    "GET /api/mirror/runs/{runId}/evidence",
+                    "POST /api/mirror/trust/deployment-isolation/authority-key-sets",
+                    "GET /api/mirror/trust/deployment-isolation/authority-key-sets/{keySetId}/latest",
+                    "GET /api/mirror/trust/deployment-isolation/authority-key-sets/{keySetId}/generations/{generation}");
             assertThat(routes(disabled)).noneMatch(route -> route.contains("/api/mirror/"));
         }
     }
@@ -51,6 +58,10 @@ class MirrorIntegrationRouteIsolationTest {
             assertThat(mixed.getBeansOfType(MirrorIntegrationController.class)).isEmpty();
             assertThat(production.getBeansOfType(MirrorRunIntegrationController.class)).isEmpty();
             assertThat(mixed.getBeansOfType(MirrorRunIntegrationController.class)).isEmpty();
+            assertThat(production.getBeansOfType(
+                    MirrorDeploymentIsolationAuthorityPublicationController.class)).isEmpty();
+            assertThat(mixed.getBeansOfType(
+                    MirrorDeploymentIsolationAuthorityPublicationController.class)).isEmpty();
         }
     }
 
@@ -64,7 +75,8 @@ class MirrorIntegrationRouteIsolationTest {
                 "mirror-route-test", Map.of(
                 "gateway.testing.mirror.enabled", Boolean.toString(enabled))));
         context.register(WebConfiguration.class, MirrorIntegrationController.class,
-                MirrorRunIntegrationController.class);
+                MirrorRunIntegrationController.class,
+                MirrorDeploymentIsolationAuthorityPublicationController.class);
         context.refresh();
         return context;
     }
@@ -94,6 +106,12 @@ class MirrorIntegrationRouteIsolationTest {
         }
 
         @Bean
+        MirrorDeploymentIsolationAuthorityPublicationService
+        mirrorDeploymentIsolationAuthorityPublicationService() {
+            return mock(MirrorDeploymentIsolationAuthorityPublicationService.class);
+        }
+
+        @Bean
         IntegrationRequestAuthenticator integrationRequestAuthenticator() {
             return mock(IntegrationRequestAuthenticator.class);
         }
@@ -107,6 +125,13 @@ class MirrorIntegrationRouteIsolationTest {
         @Bean
         MirrorExecutionRequestDecoder mirrorExecutionRequestDecoder() {
             return new MirrorExecutionRequestDecoder(
+                    new ObjectMapper().findAndRegisterModules());
+        }
+
+        @Bean
+        MirrorDeploymentIsolationAuthorityPublicationDecoder
+        mirrorDeploymentIsolationAuthorityPublicationDecoder() {
+            return new MirrorDeploymentIsolationAuthorityPublicationDecoder(
                     new ObjectMapper().findAndRegisterModules());
         }
     }

@@ -98,6 +98,32 @@ public final class MirrorDeploymentIsolationAuthorityKeySetIntegrity {
     }
 
     /**
+     * Recomputes both canonical fingerprints without consulting any caller-selected trust input.
+     *
+     * <p>This check proves content addressing only. It does not establish scope authority,
+     * bootstrap-root trust, validity time, or monotonic freshness; callers admitting a
+     * publication must still invoke {@link #verify} with local binding, roots, and floor.</p>
+     *
+     * @param publication untrusted decoded publication
+     * @return true only when material and complete-publication fingerprints are exact
+     */
+    public boolean canonicalFingerprintVerified(
+            MirrorDeploymentIsolationAuthorityKeySetPublication publication) {
+        if (publication == null) {
+            return false;
+        }
+        try {
+            return publication.materialFingerprint().equals(
+                    materialFingerprint(publication.material()))
+                    && publication.publicationFingerprint().equals(publicationFingerprint(
+                    publication.materialFingerprint(), publication.material(),
+                    publication.signatures()));
+        } catch (RuntimeException invalid) {
+            return false;
+        }
+    }
+
+    /**
      * Verifies one publication before exposing any advertised isolation-attestation key.
      *
      * @param publication untrusted decoded publication

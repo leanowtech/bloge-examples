@@ -14,10 +14,12 @@ public final class MirrorRuntimeAvailability {
     private final boolean planCompilationApi;
     private final boolean executionApi;
     private final BooleanSupplier executionReadiness;
+    private final boolean authorityDistributionApi;
+    private final BooleanSupplier authorityDistributionReadiness;
 
     /** Creates a marker with static readiness, primarily for disabled composition and tests. */
     public MirrorRuntimeAvailability(boolean planCompilationApi, boolean executionApi) {
-        this(planCompilationApi, executionApi, () -> executionApi);
+        this(planCompilationApi, executionApi, () -> executionApi, false, () -> false);
     }
 
     /**
@@ -31,10 +33,31 @@ public final class MirrorRuntimeAvailability {
             boolean planCompilationApi,
             boolean executionApi,
             BooleanSupplier executionReadiness) {
+        this(planCompilationApi, executionApi, executionReadiness, false, () -> false);
+    }
+
+    /**
+     * Creates a marker that independently probes execution and authority-distribution readiness.
+     *
+     * @param planCompilationApi protected plan compile/read routes are assembled
+     * @param executionApi protected run/evidence routes are assembled
+     * @param executionReadiness dynamic run/evidence and signing-authority readiness
+     * @param authorityDistributionApi protected authority publication routes are assembled
+     * @param authorityDistributionReadiness dynamic local trust-policy readiness
+     */
+    public MirrorRuntimeAvailability(
+            boolean planCompilationApi,
+            boolean executionApi,
+            BooleanSupplier executionReadiness,
+            boolean authorityDistributionApi,
+            BooleanSupplier authorityDistributionReadiness) {
         this.planCompilationApi = planCompilationApi;
         this.executionApi = executionApi;
         this.executionReadiness = Objects.requireNonNull(
                 executionReadiness, "executionReadiness");
+        this.authorityDistributionApi = authorityDistributionApi;
+        this.authorityDistributionReadiness = Objects.requireNonNull(
+                authorityDistributionReadiness, "authorityDistributionReadiness");
     }
 
     /** @return whether protected plan compile/read routes are physically assembled */
@@ -54,6 +77,23 @@ public final class MirrorRuntimeAvailability {
         }
         try {
             return executionReadiness.getAsBoolean();
+        } catch (RuntimeException unavailable) {
+            return false;
+        }
+    }
+
+    /** @return whether protected authority publish/read routes are physically assembled */
+    public boolean authorityDistributionApi() {
+        return authorityDistributionApi;
+    }
+
+    /** @return whether assembled authority routes have a usable local trust-policy source */
+    public boolean authorityDistributionReady() {
+        if (!authorityDistributionApi) {
+            return false;
+        }
+        try {
+            return authorityDistributionReadiness.getAsBoolean();
         } catch (RuntimeException unavailable) {
             return false;
         }

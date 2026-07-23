@@ -383,6 +383,10 @@ public class ToolStudioIntegrationService {
         features.put("mirrorExternalLeafInterception", mirrorPlanReady);
         features.put("mirrorServing", mirrorExecutionReady);
         features.put("mirrorOperationObservability", mirrorPlanReady && mirrorExecutionApi);
+        features.put("mirrorIsolationAuthorityDistributionApi",
+                mirrorRuntimeAvailability.authorityDistributionApi());
+        features.put("mirrorIsolationAuthorityDistributionReady",
+                mirrorRuntimeAvailability.authorityDistributionReady());
         ExternalAnchorTrustState suiteAnchorTrust = currentSuiteStabilityAnchorTrust();
         features.put("managedSuiteStabilityExternalNotaryTrust",
                 testExecutionEndpointEnabled && suiteAnchorTrust.managed());
@@ -741,6 +745,14 @@ public class ToolStudioIntegrationService {
             endpoints.add(new IntegrationCapabilities.Endpoint("GET", "/api/mirror/runs/{runId}"));
             endpoints.add(new IntegrationCapabilities.Endpoint(
                     "GET", "/api/mirror/runs/{runId}/evidence"));
+        }
+        if (mirrorRuntimeAvailability.authorityDistributionApi()) {
+            endpoints.add(new IntegrationCapabilities.Endpoint("POST",
+                    "/api/mirror/trust/deployment-isolation/authority-key-sets"));
+            endpoints.add(new IntegrationCapabilities.Endpoint("GET",
+                    "/api/mirror/trust/deployment-isolation/authority-key-sets/{keySetId}/latest"));
+            endpoints.add(new IntegrationCapabilities.Endpoint("GET",
+                    "/api/mirror/trust/deployment-isolation/authority-key-sets/{keySetId}/generations/{generation}"));
         }
         IntegrationCapabilities augmented = new IntegrationCapabilities(
                 current.schemaVersion(), current.protocol(), current.protocolVersion(),

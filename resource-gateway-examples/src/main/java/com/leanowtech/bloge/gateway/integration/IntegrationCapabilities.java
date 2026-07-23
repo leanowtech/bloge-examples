@@ -283,6 +283,9 @@ public record IntegrationCapabilities(
                 com.leanowtech.bloge.gateway.integration.mirror.CapabilityClosure.SCHEMA_VERSION));
         objects.put("mirrorPlan", List.of(
                 com.leanowtech.bloge.gateway.integration.mirror.MirrorPlan.SCHEMA_VERSION));
+        objects.put("mirrorDeploymentIsolationAuthorityKeySetPublication", List.of(
+                com.leanowtech.bloge.gateway.integration.mirror
+                        .MirrorDeploymentIsolationAuthorityKeySetPublication.SCHEMA_VERSION));
         objects.put("capabilityClosureProjectionRequest", List.of(
                 com.leanowtech.bloge.gateway.integration.mirror
                         .CapabilityClosureProjectionRequest.SCHEMA_VERSION));
@@ -716,6 +719,9 @@ public record IntegrationCapabilities(
         features.put("mirrorExternalLeafInterception", false);
         features.put("mirrorServing", false);
         features.put("mirrorOperationObservability", false);
+        features.put("mirrorIsolationAuthorityPublicationProtocol", true);
+        features.put("mirrorIsolationAuthorityDistributionApi", false);
+        features.put("mirrorIsolationAuthorityDistributionReady", false);
         features.put("runEvidenceBundle", true);
         features.put("structuredExecutionFacts", true);
         features.put("graphDeadline", true);

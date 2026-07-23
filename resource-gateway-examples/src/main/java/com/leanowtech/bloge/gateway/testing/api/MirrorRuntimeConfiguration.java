@@ -7,6 +7,7 @@ import com.leanowtech.bloge.gateway.integration.mirror.DatabaseMirrorEvidenceRep
 import com.leanowtech.bloge.gateway.integration.mirror.DatabaseMirrorFixtureScopeRepository;
 import com.leanowtech.bloge.gateway.integration.mirror.DatabaseMirrorOperationAuditRepository;
 import com.leanowtech.bloge.gateway.integration.mirror.DatabaseMirrorPlanRepository;
+import com.leanowtech.bloge.gateway.integration.mirror.DatabaseMirrorDeploymentIsolationAuthorityPublicationRepository;
 import com.leanowtech.bloge.gateway.integration.mirror.DatabaseMirrorRunRequestRepository;
 import com.leanowtech.bloge.gateway.integration.mirror.MirrorEvidenceIntegrityService;
 import com.leanowtech.bloge.gateway.integration.mirror.MirrorEvidenceRepository;
@@ -17,6 +18,10 @@ import com.leanowtech.bloge.gateway.integration.mirror.MirrorOperationObservabil
 import com.leanowtech.bloge.gateway.integration.mirror.MirrorOperationTelemetry;
 import com.leanowtech.bloge.gateway.integration.mirror.MirrorPlanRepository;
 import com.leanowtech.bloge.gateway.integration.mirror.MirrorPlanIntegrationService;
+import com.leanowtech.bloge.gateway.integration.mirror.MirrorDeploymentIsolationAuthorityKeySetIntegrity;
+import com.leanowtech.bloge.gateway.integration.mirror.MirrorDeploymentIsolationAuthorityPublicationRepository;
+import com.leanowtech.bloge.gateway.integration.mirror.MirrorDeploymentIsolationAuthorityTrustPolicyProvider;
+import com.leanowtech.bloge.gateway.integration.mirror.MirrorDeploymentIsolationAuthorityPublicationService;
 import com.leanowtech.bloge.gateway.integration.mirror.MirrorRunIntegrationService;
 import com.leanowtech.bloge.gateway.integration.mirror.MirrorRunRequestRepository;
 import com.leanowtech.bloge.gateway.integration.MirrorRuntimeAvailability;
@@ -129,6 +134,52 @@ public class MirrorRuntimeConfiguration {
     }
 
     /**
+     * Creates the canonical isolation-authority publication integrity boundary.
+     *
+     * @param objectMapper canonical protocol mapper
+     * @return content-addressing and threshold-signature verifier
+     */
+    @Bean
+    @ConditionalOnMissingBean
+    public MirrorDeploymentIsolationAuthorityKeySetIntegrity
+    mirrorDeploymentIsolationAuthorityKeySetIntegrity(ObjectMapper objectMapper) {
+        return new MirrorDeploymentIsolationAuthorityKeySetIntegrity(objectMapper);
+    }
+
+    /**
+     * Installs a fail-closed placeholder until the deployment supplies governed local trust.
+     *
+     * @return unavailable provider that cannot accept caller-selected roots or policy
+     */
+    @Bean
+    @ConditionalOnMissingBean
+    public MirrorDeploymentIsolationAuthorityTrustPolicyProvider
+    mirrorDeploymentIsolationAuthorityTrustPolicyProvider() {
+        return MirrorDeploymentIsolationAuthorityTrustPolicyProvider.unavailable();
+    }
+
+    /**
+     * Creates the append-only authority publication store and durable CAS floor.
+     *
+     * @param jdbc transaction-aware application JDBC boundary
+     * @param objectMapper canonical protocol mapper
+     * @param integrity publication content-addressing verifier
+     * @param transactionManager transaction manager shared by Mirror persistence
+     * @return full-scope trusted-distribution repository
+     */
+    @Bean
+    @ConditionalOnMissingBean
+    public MirrorDeploymentIsolationAuthorityPublicationRepository
+    mirrorDeploymentIsolationAuthorityPublicationRepository(
+            JdbcTemplate jdbc,
+            ObjectMapper objectMapper,
+            MirrorDeploymentIsolationAuthorityKeySetIntegrity integrity,
+            PlatformTransactionManager transactionManager) {
+        return new DatabaseMirrorDeploymentIsolationAuthorityPublicationRepository(
+                jdbc, objectMapper, integrity, transactionManager);
+    }
+
+    /**
      * Creates the append-only full-enterprise-scope fixture authorization index.
      *
      * @param jdbc application JDBC boundary
@@ -237,7 +288,19 @@ public class MirrorRuntimeConfiguration {
      */
     @Bean
     @ConditionalOnMissingBean
-    @ConditionalOnBean({MirrorPlanIntegrationService.class, MirrorRunIntegrationService.class})
+    @ConditionalOnBean({MirrorPlanIntegrationService.class, MirrorRunIntegrationService.class,
+            MirrorDeploymentIsolationAuthorityPublicationService.class})
+    public MirrorRuntimeAvailability mirrorRuntimeAvailability(
+            MirrorPlanIntegrationService planService,
+            MirrorRunIntegrationService runService,
+            VisualEvidenceSigner evidenceSigner,
+            MirrorDeploymentIsolationAuthorityPublicationService authorityService,
+            MirrorDeploymentIsolationAuthorityTrustPolicyProvider trustPolicies) {
+        return new MirrorRuntimeAvailability(true, true, evidenceSigner::available,
+                true, trustPolicies::available);
+    }
+
+    /** Compatibility factory retained for focused readiness tests outside Spring composition. */
     public MirrorRuntimeAvailability mirrorRuntimeAvailability(
             MirrorPlanIntegrationService planService,
             MirrorRunIntegrationService runService,

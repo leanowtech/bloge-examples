@@ -26,9 +26,9 @@ import java.util.regex.Pattern;
  * @param outcome closed terminal outcome
  * @param reason low-cardinality failure class, or {@link Reason#NONE} on success
  * @param reasonCode exact stable failure code, blank on success
- * @param requestId mirror execution request id when available
- * @param planId mirror plan id when available
- * @param runId terminal run id when available
+ * @param requestId execution request id or authority key-set id when available
+ * @param planId mirror plan id or authority deployment-scope id when available
+ * @param runId terminal run id or authority publication fingerprint when available
  * @param durationMillis bounded operation duration observed by the serving process
  */
 public record MirrorOperationAuditEvent(
@@ -64,7 +64,11 @@ public record MirrorOperationAuditEvent(
         /** Read one payload-free terminal Mirror Run summary. */
         RUN_READ,
         /** Read one independently verified signed Mirror evidence bundle. */
-        EVIDENCE_READ
+        EVIDENCE_READ,
+        /** Verify and append one deployment-isolation authority key-set generation. */
+        AUTHORITY_KEY_SET_PUBLISH,
+        /** Read and re-verify the current deployment-isolation authority key-set floor. */
+        AUTHORITY_KEY_SET_READ
     }
 
     /** Terminal operation outcomes. */
