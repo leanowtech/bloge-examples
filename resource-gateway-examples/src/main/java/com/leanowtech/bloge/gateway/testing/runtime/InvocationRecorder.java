@@ -624,7 +624,7 @@ public class InvocationRecorder implements ExecutionListener {
     private static String errorCode(Throwable error) {
         Throwable current = error;
         while (current != null) {
-            if (current instanceof TestControlException controlled) {
+            if (current instanceof TestOutcomeFailure controlled) {
                 return controlled.code();
             }
             current = current.getCause();

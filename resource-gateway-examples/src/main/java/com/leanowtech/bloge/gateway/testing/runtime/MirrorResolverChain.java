@@ -26,6 +26,8 @@ public final class MirrorResolverChain {
             new ArtifactProvenance.Confidence(1, 1, 1, "EXACT_FIXTURE_RULE_V1");
     private static final ArtifactProvenance.Confidence RECORDED_EXACT_CONFIDENCE =
             new ArtifactProvenance.Confidence(1, 1, 1, "RECORDED_EXACT_V1");
+    private static final ArtifactProvenance.Confidence RECORDED_TRAJECTORY_CONFIDENCE =
+            new ArtifactProvenance.Confidence(1, 1, 1, "RECORDED_TRAJECTORY_V1");
 
     private final Map<MirrorPlan.MirrorSource, MirrorResolver> resolvers;
 
@@ -70,6 +72,7 @@ public final class MirrorResolverChain {
         return new MirrorResolverChain(List.of(
                 new ExactRuleResolver(MirrorPlan.MirrorSource.OWNER_SPECIFIED, false),
                 new RecordedExactResolver(Objects.requireNonNull(mapper, "mapper")),
+                new RecordedTrajectoryResolver(mapper),
                 new ExactRuleResolver(MirrorPlan.MirrorSource.GOVERNED_REPLAY, true)));
     }
 
@@ -198,6 +201,47 @@ public final class MirrorResolverChain {
                             sample.artifactRefs(),
                             sample.ruleRefs(),
                             sample.errorDetailsFingerprint()));
+        }
+    }
+
+    private record RecordedTrajectoryResolver(ObjectMapper mapper)
+            implements MirrorResolver {
+        private RecordedTrajectoryResolver {
+            Objects.requireNonNull(mapper, "mapper");
+        }
+
+        @Override
+        public MirrorPlan.MirrorSource source() {
+            return MirrorPlan.MirrorSource.RECORDED_TRAJECTORY;
+        }
+
+        @Override
+        public Optional<Match> resolve(Request request) {
+            if (request.recordedExactCorpus() == null) {
+                return Optional.empty();
+            }
+            Optional<ResolvedCorpusPayloads.Trajectory> selected =
+                    request.recordedExactCorpus().findTrajectory(
+                            request.requestFingerprint());
+            if (selected.isEmpty()) {
+                return Optional.empty();
+            }
+            ResolvedCorpusPayloads.Sample sample = selected.get()
+                    .attempt(request.attempt())
+                    .orElseThrow(() -> new TestControlException(
+                            "MIRROR_TRAJECTORY_ATTEMPT_EXHAUSTED",
+                            "MIRROR_RESOLUTION",
+                            "The governed recorded trajectory has no outcome "
+                                    + "for the current retry attempt."));
+            return Optional.of(new Match(
+                    sample.toRule(mapper),
+                    RECORDED_TRAJECTORY_CONFIDENCE,
+                    sample.freshness(),
+                    sample.limitations(),
+                    sample.artifactRefs(),
+                    sample.ruleRefs(),
+                    sample.errorDetailsFingerprint(),
+                    sample.retryableError()));
         }
     }
 }

@@ -139,6 +139,9 @@ public final class CapabilityMirrorProtocol {
     /** Fixture metadata contract selecting exact corpus serving publications. */
     public static final String FIXTURE_MIRROR_CORPUS_BINDINGS_V1 =
             "resourceGateway.fixtureMirrorCorpusBindings.v1";
+    /** Fixture metadata contract selecting exact reviewed retry trajectories. */
+    public static final String FIXTURE_MIRROR_TRAJECTORY_BINDINGS_V1 =
+            "resourceGateway.fixtureMirrorTrajectoryBindings.v1";
 
     /** Classpath root containing the authoritative mirror schemas and fixtures. */
     public static final String SCHEMA_RESOURCE_ROOT = "/schemas/resource-gateway-mirror/";
@@ -165,6 +168,11 @@ public final class CapabilityMirrorProtocol {
     public static final String FIXTURE_MIRROR_CORPUS_BINDINGS_FIXTURE_RESOURCE =
             SCHEMA_RESOURCE_ROOT
                     + "fixture-mirror-corpus-bindings-v1.fixture.json";
+    /** Packaged fixed fixture-level trajectory-binding example. */
+    public static final String
+    FIXTURE_MIRROR_TRAJECTORY_BINDINGS_FIXTURE_RESOURCE =
+            SCHEMA_RESOURCE_ROOT
+                    + "fixture-mirror-trajectory-bindings-v1.fixture.json";
     /** Packaged compatibility fixture schema. */
     public static final String COMPATIBILITY_SCHEMA_RESOURCE =
             SCHEMA_RESOURCE_ROOT + "capability-mirror-compatibility-v1.schema.json";
@@ -274,6 +282,11 @@ public final class CapabilityMirrorProtocol {
     public static final String FIXTURE_MIRROR_CORPUS_BINDINGS_SCHEMA_RESOURCE =
             SCHEMA_RESOURCE_ROOT
                     + "fixture-mirror-corpus-bindings-v1.schema.json";
+    /** Packaged strict fixture-level trajectory-binding schema. */
+    public static final String
+    FIXTURE_MIRROR_TRAJECTORY_BINDINGS_SCHEMA_RESOURCE =
+            SCHEMA_RESOURCE_ROOT
+                    + "fixture-mirror-trajectory-bindings-v1.schema.json";
 
     private static final ObjectMapper JSON = new ObjectMapper();
 

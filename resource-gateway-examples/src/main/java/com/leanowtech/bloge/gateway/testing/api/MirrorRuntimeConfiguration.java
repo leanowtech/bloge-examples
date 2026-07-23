@@ -633,7 +633,8 @@ public class MirrorRuntimeConfiguration {
                 () -> corpusPolicies.available()
                         && retryPolicies.available()
                         && corpusSources.available(),
-                corpusServing::ready);
+                corpusServing::ready,
+                corpusServing::trajectoryReady);
     }
 
     /** Compatibility factory retained for focused readiness tests outside Spring composition. */

@@ -291,6 +291,177 @@ class MirrorRunServiceTest {
     }
 
     @Test
+    void executesRecordedTrajectoryThroughTheRealBlogeRetryLoop()
+            throws Exception {
+        Map<String, NodeSpec> retryNodes = new LinkedHashMap<>();
+        retryNodes.put(
+                "loadCustomer",
+                new NodeSpec(
+                        "loadCustomer",
+                        "customer.lookup",
+                        null,
+                        ResilienceConfig.builder(1)
+                                .retryBackoff(Duration.ZERO)
+                                .build(),
+                        Map.of(),
+                        OpaqueSchema.INSTANCE,
+                        OpaqueSchema.INSTANCE));
+        retryNodes.put(
+                "formatCustomer",
+                node("formatCustomer", "customer.format"));
+        Graph retryGraph = new Graph(
+                "customerView",
+                retryNodes,
+                List.of(),
+                Set.copyOf(retryNodes.keySet()),
+                Set.copyOf(retryNodes.keySet()),
+                SchemaValidationLevel.OFF);
+        MirrorArtifactRef capabilityRef = closure.snapshots().stream()
+                .filter(snapshot -> snapshot.kind()
+                        == CapabilitySnapshot.Kind.EXTERNAL)
+                .map(CapabilityClosureIntegrity::reference)
+                .findFirst()
+                .orElseThrow();
+        MirrorArtifactRef corpusPublication = new MirrorArtifactRef(
+                "CAPABILITY_CORPUS_PUBLICATION",
+                "customer-retry-corpus",
+                1,
+                fingerprint('2'));
+        MirrorArtifactRef corpusRevision = new MirrorArtifactRef(
+                "CAPABILITY_CORPUS_REVISION",
+                "customer-retry-corpus",
+                1,
+                fingerprint('3'));
+        MirrorArtifactRef trajectoryPublication = new MirrorArtifactRef(
+                "CAPABILITY_CORPUS_TRAJECTORY_PUBLICATION",
+                "customer-timeout-retry",
+                1,
+                fingerprint('4'));
+        MirrorArtifactRef retryPolicy = new MirrorArtifactRef(
+                "RETRY_POLICY",
+                "customer-retry-policy",
+                3,
+                fingerprint('5'));
+        MirrorArtifactRef firstObservation = new MirrorArtifactRef(
+                "CAPABILITY_OBSERVATION",
+                "customer-attempt-1",
+                1,
+                fingerprint('6'));
+        MirrorArtifactRef secondObservation = new MirrorArtifactRef(
+                "CAPABILITY_OBSERVATION",
+                "customer-attempt-2",
+                1,
+                fingerprint('7'));
+        String requestFingerprint = ProtocolFingerprint.of(mapper, null);
+        List<MirrorArtifactRef> common = List.of(
+                corpusPublication,
+                corpusRevision,
+                trajectoryPublication,
+                retryPolicy);
+        List<MirrorArtifactRef> firstArtifacts =
+                new java.util.ArrayList<>(common);
+        firstArtifacts.add(firstObservation);
+        List<MirrorArtifactRef> secondArtifacts =
+                new java.util.ArrayList<>(common);
+        secondArtifacts.add(secondObservation);
+        ResolvedCorpusPayloads corpus = ResolvedCorpusPayloads.of(List.of(
+                new ResolvedCorpusPayloads.CapabilityCorpus(
+                        capabilityRef,
+                        corpusPublication,
+                        corpusRevision,
+                        COMPILED_AT,
+                        COMPILED_AT.plus(Duration.ofHours(2)),
+                        List.of(),
+                        List.of(new ResolvedCorpusPayloads.Trajectory(
+                                requestFingerprint,
+                                trajectoryPublication,
+                                List.of(
+                                        ResolvedCorpusPayloads.Sample.error(
+                                                requestFingerprint,
+                                                "UPSTREAM_TIMEOUT",
+                                                "TRANSIENT",
+                                                true,
+                                                fingerprint('8'),
+                                                firstArtifacts,
+                                                List.of(
+                                                        "customer-timeout-retry@1:attempt:1"),
+                                                0.9,
+                                                List.of()),
+                                        ResolvedCorpusPayloads.Sample.response(
+                                                requestFingerprint,
+                                                mapper.writeValueAsBytes(
+                                                        Map.of(
+                                                                "customerId",
+                                                                "C-recovered")),
+                                                secondArtifacts,
+                                                List.of(
+                                                        "customer-timeout-retry@1:attempt:2"),
+                                                0.9,
+                                                List.of())))))));
+        CompiledMirrorPlan compiled = compiler.compile(
+                new MirrorPlanCompilationRequest(
+                        "plan-customer-trajectory",
+                        retryGraph,
+                        TARGET,
+                        closure,
+                        fixture(),
+                        ResolvedReplayPayloads.empty(),
+                        corpus,
+                        policy(2),
+                        null,
+                        COMPILED_AT,
+                        COMPILED_AT.plus(Duration.ofHours(1))));
+
+        MirrorRunResult result =
+                runtime.execute(request(compiled, SCOPE, PURPOSE));
+
+        assertThat(result.passed()).isTrue();
+        assertThat(externalCalls).hasValue(0);
+        assertThat(internalCalls).hasValue(1);
+        assertThat(compiled.plan().externalBindings()).singleElement()
+                .satisfies(binding -> assertThat(binding.resolverOrder())
+                        .containsExactly(
+                                MirrorPlan.MirrorSource.RECORDED_TRAJECTORY,
+                                MirrorPlan.MirrorSource.ABSTAINED));
+        assertThat(result.resolutions()).hasSize(2)
+                .allSatisfy(resolution -> {
+                    assertThat(resolution.source()).isEqualTo(
+                            MirrorPlan.MirrorSource.RECORDED_TRAJECTORY);
+                    assertThat(resolution.confidence().method())
+                            .isEqualTo("RECORDED_TRAJECTORY_V1");
+                    assertThat(resolution.matchedArtifactRefs())
+                            .contains(
+                                    trajectoryPublication,
+                                    retryPolicy);
+                });
+        assertThat(result.resolutions())
+                .extracting(
+                        MirrorResolution::attempt,
+                        MirrorResolution::status)
+                .containsExactly(
+                        org.assertj.core.groups.Tuple.tuple(
+                                1,
+                                MirrorResolution.Status.RESOLVED),
+                        org.assertj.core.groups.Tuple.tuple(
+                                2,
+                                MirrorResolution.Status.RESOLVED));
+        assertThat(result.resolutions().getFirst().error().code())
+                .isEqualTo("UPSTREAM_TIMEOUT");
+        assertThat(result.execution().evidence().nodeTrace())
+                .filteredOn(trace -> trace.invocationSiteId().equals(
+                        "/root/loadCustomer#PRIMARY"))
+                .singleElement()
+                .satisfies(trace -> assertThat(trace.output())
+                        .isEqualTo(Map.of(
+                                "customerId", "C-recovered")));
+        assertThat(mapper.writeValueAsString(result.evidenceBundle()))
+                .doesNotContain("C-recovered")
+                .contains(
+                        com.leanowtech.bloge.gateway.integration.mirror
+                                .MirrorEvidenceBundle.PayloadPolicy.HASH_ONLY.name());
+    }
+
+    @Test
     void producesCertifiableV2EvidenceOnlyAfterDoubleObservedDeploymentTrust() {
         CompiledMirrorPlan compiled = compileCertification(fixture(rule(
                 "customer-response", "loadCustomer",

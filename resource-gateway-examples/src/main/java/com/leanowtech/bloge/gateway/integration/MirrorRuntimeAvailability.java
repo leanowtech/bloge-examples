@@ -26,6 +26,7 @@ public final class MirrorRuntimeAvailability {
     private final boolean corpusTrajectoryApi;
     private final BooleanSupplier corpusTrajectoryReadiness;
     private final BooleanSupplier corpusResolverReadiness;
+    private final BooleanSupplier corpusTrajectoryResolverReadiness;
 
     /**
      * Creates a marker with static readiness, primarily for disabled composition and tests.
@@ -273,6 +274,57 @@ public final class MirrorRuntimeAvailability {
             boolean corpusTrajectoryApi,
             BooleanSupplier corpusTrajectoryReadiness,
             BooleanSupplier corpusResolverReadiness) {
+        this(planCompilationApi, executionApi, executionReadiness,
+                authorityDistributionApi, authorityDistributionReadiness,
+                attestationDistributionApi, attestationDistributionReadiness,
+                certificationReadiness, observationAdmissionApi,
+                observationAdmissionReadiness, corpusGovernanceApi,
+                corpusGovernanceReadiness, corpusTrajectoryApi,
+                corpusTrajectoryReadiness, corpusResolverReadiness,
+                () -> corpusTrajectoryReadiness.getAsBoolean()
+                        && corpusResolverReadiness.getAsBoolean());
+    }
+
+    /**
+     * Creates a marker with independent publication, exact-serving, and trajectory-serving probes.
+     *
+     * <p>This overload is the composition-root contract for deployments that permit read-only
+     * trajectory execution while disabling mutation/publication routes.</p>
+     *
+     * @param planCompilationApi plan routes are assembled
+     * @param executionApi execution routes are assembled
+     * @param executionReadiness dynamic execution readiness
+     * @param authorityDistributionApi authority routes are assembled
+     * @param authorityDistributionReadiness dynamic authority readiness
+     * @param attestationDistributionApi attestation routes are assembled
+     * @param attestationDistributionReadiness dynamic attestation readiness
+     * @param certificationReadiness dynamic certification readiness
+     * @param observationAdmissionApi observation route is assembled
+     * @param observationAdmissionReadiness dynamic observation readiness
+     * @param corpusGovernanceApi corpus governance routes are assembled
+     * @param corpusGovernanceReadiness dynamic corpus governance readiness
+     * @param corpusTrajectoryApi trajectory publication route is assembled
+     * @param corpusTrajectoryReadiness dynamic trajectory publication readiness
+     * @param corpusResolverReadiness dynamic exact corpus serving readiness
+     * @param corpusTrajectoryResolverReadiness dynamic trajectory serving readiness
+     */
+    public MirrorRuntimeAvailability(
+            boolean planCompilationApi,
+            boolean executionApi,
+            BooleanSupplier executionReadiness,
+            boolean authorityDistributionApi,
+            BooleanSupplier authorityDistributionReadiness,
+            boolean attestationDistributionApi,
+            BooleanSupplier attestationDistributionReadiness,
+            BooleanSupplier certificationReadiness,
+            boolean observationAdmissionApi,
+            BooleanSupplier observationAdmissionReadiness,
+            boolean corpusGovernanceApi,
+            BooleanSupplier corpusGovernanceReadiness,
+            boolean corpusTrajectoryApi,
+            BooleanSupplier corpusTrajectoryReadiness,
+            BooleanSupplier corpusResolverReadiness,
+            BooleanSupplier corpusTrajectoryResolverReadiness) {
         this.planCompilationApi = planCompilationApi;
         this.executionApi = executionApi;
         this.executionReadiness = Objects.requireNonNull(
@@ -296,6 +348,9 @@ public final class MirrorRuntimeAvailability {
                 corpusTrajectoryReadiness, "corpusTrajectoryReadiness");
         this.corpusResolverReadiness = Objects.requireNonNull(
                 corpusResolverReadiness, "corpusResolverReadiness");
+        this.corpusTrajectoryResolverReadiness = Objects.requireNonNull(
+                corpusTrajectoryResolverReadiness,
+                "corpusTrajectoryResolverReadiness");
     }
 
     /**
@@ -484,6 +539,22 @@ public final class MirrorRuntimeAvailability {
         }
         try {
             return corpusResolverReadiness.getAsBoolean();
+        } catch (RuntimeException unavailable) {
+            return false;
+        }
+    }
+
+    /**
+     * Probes the complete reviewed-trajectory serving chain independently of publication.
+     *
+     * @return whether a trajectory-bound plan can currently be materialized and executed
+     */
+    public boolean corpusTrajectoryResolverReady() {
+        if (!planCompilationApi || !executionApi) {
+            return false;
+        }
+        try {
+            return corpusTrajectoryResolverReadiness.getAsBoolean();
         } catch (RuntimeException unavailable) {
             return false;
         }

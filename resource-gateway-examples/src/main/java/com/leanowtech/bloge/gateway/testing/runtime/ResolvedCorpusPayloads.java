@@ -18,12 +18,15 @@ import java.util.Optional;
 import java.util.Set;
 
 /**
- * Ephemeral, run-generation snapshot of governed exact corpus outcomes.
+ * Ephemeral, run-generation snapshot of governed exact and retry-trajectory outcomes.
  *
  * <p>Instances are assembled only after publication, policy, retention, grant, deletion, region,
  * classification, and content-address checks pass. Response JSON remains private byte material and
  * is exposed only as a declarative {@link FixtureRule} at invocation time. Text rendering,
- * evidence, plans, and public accessors expose only payload-free references and fingerprints.</p>
+ * evidence, plans, and public accessors expose only payload-free references and fingerprints.
+ * Constructors model an already-authorized in-memory snapshot; they do not confer governance
+ * authority. The integration path can inject a snapshot into compilation only through the
+ * package-private compiler boundary after online serving revalidation.</p>
  */
 public final class ResolvedCorpusPayloads {
     /** Whole-generation in-memory payload bound. */
@@ -42,8 +45,7 @@ public final class ResolvedCorpusPayloads {
         this.bySite = Collections.unmodifiableMap(new java.util.TreeMap<>(
                 bySite == null ? Map.of() : bySite));
         long bytes = this.byCapability.values().stream()
-                .flatMap(value -> value.samples().stream())
-                .mapToLong(Sample::payloadBytes)
+                .mapToLong(CapabilityCorpus::payloadBytes)
                 .sum();
         if (bytes > MAXIMUM_TOTAL_BYTES) {
             throw new IllegalArgumentException(
@@ -126,9 +128,25 @@ public final class ResolvedCorpusPayloads {
         return Optional.ofNullable(bySite.get(invocationSiteId));
     }
 
-    /** @return deterministic invocation sites backed by recorded exact corpus data */
+    /** @return deterministic invocation sites backed by any recorded corpus data */
     public Set<String> siteIds() {
         return bySite.keySet();
+    }
+
+    /** @return deterministic sites with at least one standalone recorded-exact sample */
+    public Set<String> exactSiteIds() {
+        return bySite.entrySet().stream()
+                .filter(entry -> !entry.getValue().samples().isEmpty())
+                .map(Map.Entry::getKey)
+                .collect(java.util.stream.Collectors.toUnmodifiableSet());
+    }
+
+    /** @return deterministic sites with at least one governed retry trajectory */
+    public Set<String> trajectorySiteIds() {
+        return bySite.entrySet().stream()
+                .filter(entry -> !entry.getValue().trajectories().isEmpty())
+                .map(Map.Entry::getKey)
+                .collect(java.util.stream.Collectors.toUnmodifiableSet());
     }
 
     /** Prevents response material from entering logs. */
@@ -137,6 +155,9 @@ public final class ResolvedCorpusPayloads {
         return "ResolvedCorpusPayloads[capabilities=" + byCapability.size()
                 + ", sites=" + bySite.size() + ", samples="
                 + byCapability.values().stream().mapToInt(value -> value.samples().size()).sum()
+                + ", trajectories="
+                + byCapability.values().stream()
+                .mapToInt(value -> value.trajectories().size()).sum()
                 + "]";
     }
 
@@ -150,6 +171,7 @@ public final class ResolvedCorpusPayloads {
         private final Instant materializedAt;
         private final Instant usableUntil;
         private final Map<String, Sample> byRequestFingerprint;
+        private final Map<String, Trajectory> trajectoryByRequestFingerprint;
 
         /**
          * Creates one conflict-free capability corpus.
@@ -168,6 +190,29 @@ public final class ResolvedCorpusPayloads {
                 Instant materializedAt,
                 Instant usableUntil,
                 List<Sample> samples) {
+            this(capabilityRef, publicationRef, corpusRevisionRef,
+                    materializedAt, usableUntil, samples, List.of());
+        }
+
+        /**
+         * Creates one capability corpus with independent exact and trajectory indexes.
+         *
+         * @param capabilityRef exact capability
+         * @param publicationRef exact latest serving publication
+         * @param corpusRevisionRef exact published revision
+         * @param materializedAt frozen serving instant
+         * @param usableUntil exclusive serving horizon
+         * @param samples unique standalone exact request outcomes
+         * @param trajectories unique reviewed retry sequences by request fingerprint
+         */
+        public CapabilityCorpus(
+                MirrorArtifactRef capabilityRef,
+                MirrorArtifactRef publicationRef,
+                MirrorArtifactRef corpusRevisionRef,
+                Instant materializedAt,
+                Instant usableUntil,
+                List<Sample> samples,
+                List<Trajectory> trajectories) {
             this.capabilityRef = ref(capabilityRef, "CAPABILITY", "capabilityRef");
             this.publicationRef = ref(publicationRef,
                     "CAPABILITY_CORPUS_PUBLICATION", "publicationRef");
@@ -178,12 +223,20 @@ public final class ResolvedCorpusPayloads {
             if (!usableUntil.isAfter(materializedAt)) {
                 throw new IllegalArgumentException("usableUntil must follow materializedAt");
             }
-            if (samples == null || samples.isEmpty() || samples.size() > 1_000) {
+            List<Sample> exactSamples =
+                    samples == null ? List.of() : List.copyOf(samples);
+            List<Trajectory> exactTrajectories =
+                    trajectories == null ? List.of() : List.copyOf(trajectories);
+            if (exactSamples.isEmpty() && exactTrajectories.isEmpty()) {
                 throw new IllegalArgumentException(
-                        "capability corpus requires between 1 and 1000 samples");
+                        "capability corpus requires an exact sample or trajectory");
+            }
+            if (exactSamples.size() > 1_000 || exactTrajectories.size() > 1_000) {
+                throw new IllegalArgumentException(
+                        "capability corpus outcome indexes exceed their item bounds");
             }
             Map<String, Sample> indexed = new java.util.TreeMap<>();
-            for (Sample sample : samples) {
+            for (Sample sample : exactSamples) {
                 Sample exact = Objects.requireNonNull(sample, "sample");
                 if (indexed.putIfAbsent(exact.requestFingerprint(), exact) != null) {
                     throw new IllegalArgumentException(
@@ -191,6 +244,18 @@ public final class ResolvedCorpusPayloads {
                 }
             }
             this.byRequestFingerprint = Collections.unmodifiableMap(indexed);
+            Map<String, Trajectory> trajectoryIndex = new java.util.TreeMap<>();
+            for (Trajectory trajectory : exactTrajectories) {
+                Trajectory exact = Objects.requireNonNull(
+                        trajectory, "trajectory");
+                if (trajectoryIndex.putIfAbsent(
+                        exact.requestFingerprint(), exact) != null) {
+                    throw new IllegalArgumentException(
+                            "capability corpus contains ambiguous trajectories");
+                }
+            }
+            this.trajectoryByRequestFingerprint =
+                    Collections.unmodifiableMap(trajectoryIndex);
         }
 
         /** @return exact capability */
@@ -228,6 +293,26 @@ public final class ResolvedCorpusPayloads {
             return Optional.ofNullable(byRequestFingerprint.get(requestFingerprint));
         }
 
+        /** @return payload-safe reviewed retry trajectories */
+        public List<Trajectory> trajectories() {
+            return List.copyOf(trajectoryByRequestFingerprint.values());
+        }
+
+        /** @return reviewed retry trajectory for one canonical request fingerprint */
+        public Optional<Trajectory> findTrajectory(String requestFingerprint) {
+            return Optional.ofNullable(
+                    trajectoryByRequestFingerprint.get(requestFingerprint));
+        }
+
+        private long payloadBytes() {
+            return byRequestFingerprint.values().stream()
+                    .mapToLong(Sample::payloadBytes)
+                    .sum()
+                    + trajectoryByRequestFingerprint.values().stream()
+                    .mapToLong(Trajectory::payloadBytes)
+                    .sum();
+        }
+
         /** Prevents nested payload material from entering logs. */
         @Override
         public String toString() {
@@ -236,7 +321,100 @@ public final class ResolvedCorpusPayloads {
                     + ", corpusRevisionRef=" + corpusRevisionRef
                     + ", materializedAt=" + materializedAt
                     + ", usableUntil=" + usableUntil
-                    + ", samples=" + byRequestFingerprint.size() + "]";
+                    + ", samples=" + byRequestFingerprint.size()
+                    + ", trajectories="
+                    + trajectoryByRequestFingerprint.size() + "]";
+        }
+    }
+
+    /**
+     * One reviewed, ordered retry sequence selected by canonical request fingerprint.
+     */
+    public static final class Trajectory {
+        private final String requestFingerprint;
+        private final MirrorArtifactRef publicationRef;
+        private final List<Sample> attempts;
+
+        /**
+         * Creates one bounded trajectory whose attempts all share one exact request.
+         *
+         * @param requestFingerprint canonical request fingerprint
+         * @param publicationRef exact reviewed trajectory publication
+         * @param attempts ordered attempt outcomes, numbered from one by list position
+         */
+        public Trajectory(
+                String requestFingerprint,
+                MirrorArtifactRef publicationRef,
+                List<Sample> attempts) {
+            this.requestFingerprint = fingerprint(requestFingerprint);
+            this.publicationRef = ref(
+                    publicationRef,
+                    "CAPABILITY_CORPUS_TRAJECTORY_PUBLICATION",
+                    "trajectoryPublicationRef");
+            this.attempts = attempts == null ? List.of() : List.copyOf(attempts);
+            if (this.attempts.size() < 2 || this.attempts.size() > 32) {
+                throw new IllegalArgumentException(
+                        "trajectory requires between 2 and 32 attempts");
+            }
+            if (this.attempts.stream().anyMatch(
+                    attempt -> attempt == null
+                            || !this.requestFingerprint.equals(
+                            attempt.requestFingerprint()))) {
+                throw new IllegalArgumentException(
+                        "trajectory attempts must share the trajectory request fingerprint");
+            }
+            for (int index = 0; index < this.attempts.size() - 1; index++) {
+                if (!this.attempts.get(index).retryableError()) {
+                    throw new IllegalArgumentException(
+                            "trajectory intermediate attempts must be retryable errors");
+                }
+            }
+            if (this.attempts.getLast().retryableError()) {
+                throw new IllegalArgumentException(
+                        "trajectory final attempt must be terminal");
+            }
+        }
+
+        /** @return canonical request fingerprint */
+        public String requestFingerprint() {
+            return requestFingerprint;
+        }
+
+        /** @return exact reviewed trajectory publication */
+        public MirrorArtifactRef publicationRef() {
+            return publicationRef;
+        }
+
+        /** @return ordered payload-safe attempt outcomes */
+        public List<Sample> attempts() {
+            return attempts;
+        }
+
+        /**
+         * Returns one one-based attempt outcome.
+         *
+         * @param attempt one-based delegate attempt
+         * @return matching outcome, or empty when the sequence is exhausted
+         */
+        public Optional<Sample> attempt(int attempt) {
+            if (attempt < 1) {
+                throw new IllegalArgumentException("attempt must be positive");
+            }
+            return attempt > attempts.size()
+                    ? Optional.empty() : Optional.of(attempts.get(attempt - 1));
+        }
+
+        private long payloadBytes() {
+            return attempts.stream().mapToLong(Sample::payloadBytes).sum();
+        }
+
+        /** Prevents nested response JSON from entering logs. */
+        @Override
+        public String toString() {
+            return "Trajectory[requestFingerprint=" + requestFingerprint
+                    + ", publicationRef=" + publicationRef
+                    + ", attempts=" + attempts.size()
+                    + ", payloadBytes=" + payloadBytes() + "]";
         }
     }
 
@@ -315,6 +493,11 @@ public final class ResolvedCorpusPayloads {
         /** @return whether the exact observation produced a normalized error */
         public boolean error() {
             return error != null;
+        }
+
+        /** Used only after the serving boundary authorized this observed retry label. */
+        boolean retryableError() {
+            return error != null && error.retryable();
         }
 
         /** @return exact normalized error-details fingerprint, or blank for responses */

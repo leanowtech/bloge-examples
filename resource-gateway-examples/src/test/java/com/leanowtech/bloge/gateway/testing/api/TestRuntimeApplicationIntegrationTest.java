@@ -194,7 +194,9 @@ class TestRuntimeApplicationIntegrationTest {
                 .containsEntry("mirrorCorpusGovernanceProtocol", true)
                 .containsEntry("mirrorCorpusGovernanceApi", true)
                 .containsEntry("mirrorCorpusGovernanceReady", false)
-                .containsEntry("mirrorCorpusResolverReady", false);
+                .containsEntry("mirrorCorpusResolverReady", false)
+                .containsEntry(
+                        "mirrorCorpusTrajectoryResolverReady", false);
         assertThat(capabilities.getBody().payload().endpoints()).anyMatch(endpoint ->
                 endpoint.method().equals("POST")
                         && endpoint.path().equals("/api/mirror/plans"));

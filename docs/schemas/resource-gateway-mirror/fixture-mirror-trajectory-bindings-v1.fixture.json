@@ -1,0 +1,45 @@
+{
+  "schemaVersion": "resourceGateway.fixtureMirrorTrajectoryBindings.v1",
+  "trajectories": [
+    {
+      "capabilityRef": {
+        "kind": "CAPABILITY",
+        "id": "operator:customer.lookup",
+        "revision": 3,
+        "fingerprint": "sha256:1111111111111111111111111111111111111111111111111111111111111111"
+      },
+      "corpusPublicationRef": {
+        "kind": "CAPABILITY_CORPUS_PUBLICATION",
+        "id": "customer-lookup-corpus",
+        "revision": 7,
+        "fingerprint": "sha256:2222222222222222222222222222222222222222222222222222222222222222"
+      },
+      "trajectoryPublicationRef": {
+        "kind": "CAPABILITY_CORPUS_TRAJECTORY_PUBLICATION",
+        "id": "customer-lookup-rate-limit-retry",
+        "revision": 2,
+        "fingerprint": "sha256:3333333333333333333333333333333333333333333333333333333333333333"
+      }
+    },
+    {
+      "capabilityRef": {
+        "kind": "CAPABILITY",
+        "id": "operator:customer.lookup",
+        "revision": 3,
+        "fingerprint": "sha256:1111111111111111111111111111111111111111111111111111111111111111"
+      },
+      "corpusPublicationRef": {
+        "kind": "CAPABILITY_CORPUS_PUBLICATION",
+        "id": "customer-lookup-corpus",
+        "revision": 7,
+        "fingerprint": "sha256:2222222222222222222222222222222222222222222222222222222222222222"
+      },
+      "trajectoryPublicationRef": {
+        "kind": "CAPABILITY_CORPUS_TRAJECTORY_PUBLICATION",
+        "id": "customer-lookup-timeout-retry",
+        "revision": 10,
+        "fingerprint": "sha256:4444444444444444444444444444444444444444444444444444444444444444"
+      }
+    }
+  ]
+}

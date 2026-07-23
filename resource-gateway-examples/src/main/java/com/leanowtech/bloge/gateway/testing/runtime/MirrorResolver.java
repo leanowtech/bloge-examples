@@ -100,6 +100,7 @@ public interface MirrorResolver {
      * @param artifactRefs exact governed artifacts used by this source
      * @param ruleRefs exact source-local rule identities used by this source
      * @param errorDetailsFingerprint exact normalized error-details identity, or blank
+     * @param retryableOutcome whether this governed source authorizes BLOGE retry progression
      */
     record Match(
             FixtureRule rule,
@@ -108,7 +109,8 @@ public interface MirrorResolver {
             List<String> limitations,
             List<com.leanowtech.bloge.gateway.integration.mirror.MirrorArtifactRef> artifactRefs,
             List<String> ruleRefs,
-            String errorDetailsFingerprint
+            String errorDetailsFingerprint,
+            boolean retryableOutcome
     ) {
         /** Validates the claim without inferring absent governance facts. */
         public Match {
@@ -149,6 +151,12 @@ public interface MirrorResolver {
                 throw new IllegalArgumentException(
                         "errorDetailsFingerprint must be blank or canonical SHA-256");
             }
+            if (retryableOutcome
+                    && rule.behavior().kind()
+                    != FixtureRule.BehaviorKind.THROW) {
+                throw new IllegalArgumentException(
+                        "only a normalized THROW outcome may advance BLOGE retry");
+            }
         }
 
         /** Backward-compatible exact match whose provenance is derived from its fixture rule. */
@@ -158,7 +166,7 @@ public interface MirrorResolver {
                 double freshness,
                 List<String> limitations) {
             this(rule, confidence, freshness, limitations,
-                    List.of(), List.of(), "");
+                    List.of(), List.of(), "", false);
         }
 
         /** Backward-compatible source match without normalized error-detail provenance. */
@@ -171,7 +179,21 @@ public interface MirrorResolver {
                         artifactRefs,
                 List<String> ruleRefs) {
             this(rule, confidence, freshness, limitations,
-                    artifactRefs, ruleRefs, "");
+                    artifactRefs, ruleRefs, "", false);
+        }
+
+        /** Source match with normalized error provenance and no retry authority. */
+        public Match(
+                FixtureRule rule,
+                ArtifactProvenance.Confidence confidence,
+                double freshness,
+                List<String> limitations,
+                List<com.leanowtech.bloge.gateway.integration.mirror.MirrorArtifactRef>
+                        artifactRefs,
+                List<String> ruleRefs,
+                String errorDetailsFingerprint) {
+            this(rule, confidence, freshness, limitations,
+                    artifactRefs, ruleRefs, errorDetailsFingerprint, false);
         }
 
         /** Prevents a resolved rule's response value or diagnostic text from entering logs. */
@@ -184,7 +206,8 @@ public interface MirrorResolver {
                     + ", limitations=" + limitations.size()
                     + ", artifactRefs=" + artifactRefs.size()
                     + ", ruleRefs=" + ruleRefs.size()
-                    + ", errorDetailsFingerprint=" + errorDetailsFingerprint + "]";
+                    + ", errorDetailsFingerprint=" + errorDetailsFingerprint
+                    + ", retryableOutcome=" + retryableOutcome + "]";
         }
     }
 

@@ -409,6 +409,8 @@ public class ToolStudioIntegrationService {
                 mirrorRuntimeAvailability.corpusTrajectoryReady());
         features.put("mirrorCorpusResolverReady",
                 mirrorRuntimeAvailability.corpusResolverReady());
+        features.put("mirrorCorpusTrajectoryResolverReady",
+                mirrorRuntimeAvailability.corpusTrajectoryResolverReady());
         ExternalAnchorTrustState suiteAnchorTrust = currentSuiteStabilityAnchorTrust();
         features.put("managedSuiteStabilityExternalNotaryTrust",
                 testExecutionEndpointEnabled && suiteAnchorTrust.managed());

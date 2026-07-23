@@ -3,7 +3,8 @@ package com.leanowtech.bloge.gateway.testing.runtime;
 import com.leanowtech.bloge.core.exception.NonRetryableException;
 
 /** A standardized, non-retryable failure emitted by an approved test-control behavior. */
-public class TestControlException extends NonRetryableException {
+public class TestControlException extends NonRetryableException
+        implements TestOutcomeFailure {
 
     private final String code;
     private final String errorType;

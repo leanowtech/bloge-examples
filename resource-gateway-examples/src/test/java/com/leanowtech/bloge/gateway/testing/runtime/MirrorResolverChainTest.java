@@ -188,6 +188,123 @@ class MirrorResolverChainTest {
     }
 
     @Test
+    void recordedTrajectoryUsesTheRealRetryAttemptAndFailsClosedWhenExhausted()
+            throws Exception {
+        ObjectMapper mapper = new ObjectMapper().findAndRegisterModules();
+        MirrorArtifactRef capability = ref("CAPABILITY", "operator:subject", '1');
+        MirrorArtifactRef publication = ref(
+                "CAPABILITY_CORPUS_PUBLICATION", "subject-corpus", '2');
+        MirrorArtifactRef revision = ref(
+                "CAPABILITY_CORPUS_REVISION", "subject-corpus", '3');
+        MirrorArtifactRef trajectoryPublication = ref(
+                "CAPABILITY_CORPUS_TRAJECTORY_PUBLICATION",
+                "subject-retry", '4');
+        MirrorArtifactRef firstObservation = ref(
+                "CAPABILITY_OBSERVATION", "subject-attempt-1", '5');
+        MirrorArtifactRef secondObservation = ref(
+                "CAPABILITY_OBSERVATION", "subject-attempt-2", '6');
+        ResolvedCorpusPayloads.Trajectory trajectory =
+                new ResolvedCorpusPayloads.Trajectory(
+                        REQUEST_FINGERPRINT,
+                        trajectoryPublication,
+                        List.of(
+                                ResolvedCorpusPayloads.Sample.error(
+                                        REQUEST_FINGERPRINT,
+                                        "UPSTREAM_TIMEOUT",
+                                        "TRANSIENT",
+                                        true,
+                                        "sha256:" + "e".repeat(64),
+                                        List.of(trajectoryPublication, firstObservation),
+                                        List.of("subject-retry:attempt:1"),
+                                        0.8,
+                                        List.of()),
+                                ResolvedCorpusPayloads.Sample.response(
+                                        REQUEST_FINGERPRINT,
+                                        mapper.writeValueAsBytes(
+                                                Map.of("source", "recorded-retry")),
+                                        List.of(trajectoryPublication, secondObservation),
+                                        List.of("subject-retry:attempt:2"),
+                                        0.8,
+                                        List.of())));
+        ResolvedCorpusPayloads.CapabilityCorpus corpus =
+                new ResolvedCorpusPayloads.CapabilityCorpus(
+                        capability, publication, revision,
+                        java.time.Instant.parse("2026-07-23T08:00:00Z"),
+                        java.time.Instant.parse("2026-07-24T08:00:00Z"),
+                        List.of(), List.of(trajectory));
+        var control = mirrorControl(List.of(), List.of(
+                MirrorPlan.MirrorSource.RECORDED_TRAJECTORY,
+                MirrorPlan.MirrorSource.ABSTAINED));
+
+        MirrorResolverChain.Decision first = MirrorResolverChain.standard(mapper)
+                .resolve(control, new MirrorResolver.Request(
+                        SITE, 1, 1, REQUEST_FINGERPRINT,
+                        Map.of("customerId", "c-1"), List.of(), corpus));
+        MirrorResolverChain.Decision second = MirrorResolverChain.standard(mapper)
+                .resolve(control, new MirrorResolver.Request(
+                        SITE, 1, 2, REQUEST_FINGERPRINT,
+                        Map.of("customerId", "c-1"), List.of(), corpus));
+
+        assertThat(first.source())
+                .isEqualTo(MirrorPlan.MirrorSource.RECORDED_TRAJECTORY);
+        assertThat(first.match().rule().behavior().errorCode())
+                .isEqualTo("UPSTREAM_TIMEOUT");
+        assertThat(second.match().rule().behavior().value())
+                .isEqualTo(Map.of("source", "recorded-retry"));
+        assertThat(second.match().confidence().method())
+                .isEqualTo("RECORDED_TRAJECTORY_V1");
+        assertThatThrownBy(() -> MirrorResolverChain.standard(mapper)
+                .resolve(control, new MirrorResolver.Request(
+                        SITE, 1, 3, REQUEST_FINGERPRINT,
+                        Map.of("customerId", "c-1"), List.of(), corpus)))
+                .isInstanceOfSatisfying(TestControlException.class, failure ->
+                        assertThat(failure.code())
+                                .isEqualTo("MIRROR_TRAJECTORY_ATTEMPT_EXHAUSTED"));
+    }
+
+    @Test
+    void recordedTrajectoryRequiresRetryableIntermediateAndTerminalFinalOutcomes()
+            throws Exception {
+        ObjectMapper mapper = new ObjectMapper();
+        MirrorArtifactRef publication = ref(
+                "CAPABILITY_CORPUS_TRAJECTORY_PUBLICATION",
+                "subject-retry",
+                '1');
+        ResolvedCorpusPayloads.Sample response =
+                ResolvedCorpusPayloads.Sample.response(
+                        REQUEST_FINGERPRINT,
+                        mapper.writeValueAsBytes("ok"),
+                        List.of(publication),
+                        List.of("attempt"),
+                        1,
+                        List.of());
+        ResolvedCorpusPayloads.Sample retryable =
+                ResolvedCorpusPayloads.Sample.error(
+                        REQUEST_FINGERPRINT,
+                        "UPSTREAM_TIMEOUT",
+                        "TRANSIENT",
+                        true,
+                        "sha256:" + "e".repeat(64),
+                        List.of(publication),
+                        List.of("attempt"),
+                        1,
+                        List.of());
+
+        assertThatThrownBy(() -> new ResolvedCorpusPayloads.Trajectory(
+                REQUEST_FINGERPRINT,
+                publication,
+                List.of(response, response)))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("intermediate attempts");
+        assertThatThrownBy(() -> new ResolvedCorpusPayloads.Trajectory(
+                REQUEST_FINGERPRINT,
+                publication,
+                List.of(retryable, retryable)))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("final attempt");
+    }
+
+    @Test
     void ordinaryControlCannotEnterMirrorResolverChain() {
         var control = new CompiledExecutionControl.ResolvedControl(SITE, List.of(), false);
 

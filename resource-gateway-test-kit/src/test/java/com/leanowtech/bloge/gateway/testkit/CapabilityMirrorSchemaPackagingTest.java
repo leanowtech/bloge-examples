@@ -119,6 +119,14 @@ class CapabilityMirrorSchemaPackagingTest {
         assertThat(CapabilityMirrorProtocol
                 .FIXTURE_MIRROR_CORPUS_BINDINGS_FIXTURE_RESOURCE)
                 .endsWith("fixture-mirror-corpus-bindings-v1.fixture.json");
+        assertThat(CapabilityMirrorProtocol
+                .FIXTURE_MIRROR_TRAJECTORY_BINDINGS_SCHEMA_RESOURCE)
+                .endsWith(
+                        "fixture-mirror-trajectory-bindings-v1.schema.json");
+        assertThat(CapabilityMirrorProtocol
+                .FIXTURE_MIRROR_TRAJECTORY_BINDINGS_FIXTURE_RESOURCE)
+                .endsWith(
+                        "fixture-mirror-trajectory-bindings-v1.fixture.json");
 
         JsonNode baseline = CapabilityMirrorProtocol.compatibilityBaseline();
         assertThat(baseline.path("schemaVersion").asText())

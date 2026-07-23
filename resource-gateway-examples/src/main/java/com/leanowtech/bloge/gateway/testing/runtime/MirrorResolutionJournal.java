@@ -225,7 +225,7 @@ public final class MirrorResolutionJournal implements MirrorResolutionObserver {
             return failure instanceof OperatorTimeoutException;
         }
         if (behavior.kind() != FixtureRule.BehaviorKind.THROW
-                || !(failure instanceof TestControlException controlled)) {
+                || !(failure instanceof TestOutcomeFailure controlled)) {
             return false;
         }
         String expectedCode = behavior.errorCode().isBlank()
@@ -248,7 +248,7 @@ public final class MirrorResolutionJournal implements MirrorResolutionObserver {
             return new MirrorResolution.MirrorError(
                     code, type, match.errorDetailsFingerprint());
         }
-        if (failure instanceof TestControlException controlled) {
+        if (failure instanceof TestOutcomeFailure controlled) {
             return new MirrorResolution.MirrorError(
                     controlled.code(), controlled.errorType(), "");
         }

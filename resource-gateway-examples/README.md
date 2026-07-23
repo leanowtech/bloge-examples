@@ -171,7 +171,7 @@ the review/candidate/publication wire objects and strict Schemas are supported;
 external source-lifecycle authority to be currently available. The defaults are unavailable.
 `mirrorCorpusExactResolverProtocol=true` means the runtime understands strict
 `fixtureBundle.metadata.mirrorCorpus` bindings and the fixed
-`OWNER_SPECIFIED -> RECORDED_EXACT -> GOVERNED_REPLAY -> ABSTAINED` chain.
+`OWNER_SPECIFIED -> RECORDED_EXACT -> RECORDED_TRAJECTORY -> GOVERNED_REPLAY -> ABSTAINED` chain.
 `mirrorCorpusResolverReady=true` is stronger: the policy provider, source-lifecycle authority, and
 regional `CapabilityCorpusPayloadAuthority` must all be currently usable. The default payload
 authority is unavailable, so enabling the mirror profile never invents payload-vault trust.
@@ -186,16 +186,30 @@ source-lifecycle authorities. `POST /api/mirror/corpus-trajectories` accepts onl
 owner-reviewed 2..32-attempt sequence from the exact latest corpus publication. The service
 revalidates source membership, grants, one request fingerprint, trace/span ordering, current retry
 policy, retryable intermediate failures, and a terminal final attempt before appending the
-payload-free artifact. It never infers retries from nearby observations. Runtime
-`RECORDED_TRAJECTORY` serving remains a subsequent increment.
+payload-free artifact. It never infers retries from nearby observations.
+
+`mirrorCorpusTrajectoryResolverProtocol=true` means the runtime also accepts strict
+`fixtureBundle.metadata.mirrorTrajectories` bindings. Every binding must repeat the exact
+capability and corpus publication selected in `mirrorCorpus`; materialization rechecks the current
+trajectory head, current retry policy, source lifecycle, grants, trace/order, and response content
+addresses. `mirrorCorpusTrajectoryResolverReady=true` additionally requires exact-corpus serving
+authorities and the retry-policy authority to be live; it is probed independently from the
+trajectory publication route so a read-only serving deployment can report its real capability.
+The binding parser rejects raw values that the strict Schema rejects instead of normalizing
+lowercase kinds, padded/oversized identifiers, or non-64-bit revisions. The frozen sequence is
+indexed separately from standalone exact samples and is consumed by the real BLOGE one-based retry
+loop. A plan is rejected before execution when a trajectory needs more attempts than the node's
+`retryAttempts + 1`; sequence exhaustion never repeats the final sample or falls through to a real
+external call.
 
 The binding selects an exact latest publication for one exact external capability revision. Plan
 creation and every runtime materialization recheck the publication head, current policy, source
 lineage, exact-replay grant, retention, classification, region, tombstone state, and response
 content address before freezing response JSON in the in-memory run generation. Payload bytes are
 not written to the public plan, database, HTTP response, evidence, audit, metrics, or logs.
-Single retryable-error observations fail closed until the trajectory resolver can preserve an
-explicitly governed full attempt sequence. The immutable fact model, fixture binding, provider contracts, request
+Single retryable-error observations still fail closed; only an explicitly published and
+fixture-bound full attempt sequence can produce retryable runtime behavior. The immutable fact
+model, fixture bindings, provider contracts, request
 examples, errors, startup commands and remaining production gates are in the
 [capability corpus governance guide](../docs/resource-gateway-capability-corpus-governance.md).
 

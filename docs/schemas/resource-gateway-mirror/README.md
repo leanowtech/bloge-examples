@@ -43,6 +43,7 @@ offline artifact verification live in the independent `resource-gateway-test-kit
 | `capability-corpus-trajectory-publish-request-v1.schema.json` | `CapabilityCorpusTrajectoryPublishRequest` | Explicit owner-reviewed retry sequence bound to exact published sources and current retry policy |
 | `capability-corpus-trajectory-publication-v1.schema.json` | `CapabilityCorpusTrajectoryPublication` | Immutable payload-free serving artifact for one governed recorded retry trajectory |
 | `fixture-mirror-corpus-bindings-v1.schema.json` | `FixtureMirrorCorpusBindings` | Strict immutable fixture metadata selecting one exact latest publication per external capability |
+| `fixture-mirror-trajectory-bindings-v1.schema.json` | `FixtureMirrorTrajectoryBindings` | Strict immutable fixture metadata selecting reviewed trajectories under an exact selected corpus publication |
 | `capability-lifecycle-transition-v1.schema.json` | `CapabilityLifecycleTransitionRequest` | Optimistically fenced governance transition for one exact revision |
 | `capability-mirror-compatibility-v1.schema.json` | `CapabilityMirrorCompatibility` | Minimum protocol/object/feature baseline a mirror consumer can negotiate |
 
@@ -111,8 +112,19 @@ than allowing consumers to infer retries from observation proximity. The indepen
 `CapabilityCorpusTrajectoryVerifier` recomputes command/publication and referenced corpus
 content addresses, exact source membership, consecutive numbering, common request fingerprint,
 lineage, and horizons. Current retry policy, retryable outcomes, trace ordering, grants,
-retention, tombstones, and payload bytes remain online authority decisions. Runtime
-`RECORDED_TRAJECTORY` serving is not implied by publication protocol support.
+retention, tombstones, and payload bytes remain online authority decisions.
+
+`fixture-mirror-trajectory-bindings-v1.fixture.json` is the fixed payload-free trajectory
+selection fixture. The server parser cross-checks every capability and corpus publication against
+the same fixture's `mirrorCorpus` selection before online materialization. The independent
+`FixtureMirrorTrajectoryBindingsVerifier` proves strict schema closure, canonical
+capability/trajectory order, and unique exact trajectory coordinates. It intentionally cannot see
+the sibling `mirrorCorpus` object or prove current heads, policies, grants, source lifecycle,
+payload authority, or node retry capacity. Those remain fail-closed server checks. A successfully
+materialized trajectory is consumed by the real BLOGE one-based retry loop through
+`RECORDED_TRAJECTORY`; protocol support alone never implies dynamic readiness. The producer parser
+does not normalize invalid wire values: artifact kind is case-sensitive, identifiers must already
+match the bounded wire pattern, and revisions must be positive integers within signed 64-bit range.
 
 ## Deployment isolation attestation boundary
 

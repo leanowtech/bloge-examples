@@ -245,6 +245,26 @@ artifact kinds, canonical capability ordering, and unique capability/publication
 does not claim that a publication remains the current head or that live policy, grant, retention,
 tombstone, regional vault, or resolver readiness checks pass.
 
+Validate the sibling `fixtureBundle.metadata.mirrorTrajectories` object separately:
+
+```java
+JsonNode trajectoryBindings = objectMapper.readTree(trajectoryBindingsJson);
+FixtureMirrorTrajectoryBindingsVerifier.VerificationResult verified =
+        new FixtureMirrorTrajectoryBindingsVerifier().verify(trajectoryBindings);
+if (!verified.verified()) {
+    throw new IllegalStateException(verified.reasonCode());
+}
+```
+
+The packaged fixed input is
+`CapabilityMirrorProtocol.FIXTURE_MIRROR_TRAJECTORY_BINDINGS_FIXTURE_RESOURCE`; its strict Schema
+is `FIXTURE_MIRROR_TRAJECTORY_BINDINGS_SCHEMA_RESOURCE`. The verifier proves closed fields,
+artifact kinds, canonical capability/trajectory order, and exact trajectory-coordinate
+uniqueness. Because it receives only the nested trajectory object, it cannot prove equality with
+the same fixture's `mirrorCorpus` selection. Current trajectory/corpus heads, retry policy,
+source/grant/retention/tombstone authorities, payload materialization, and graph retry capacity are
+online Resource Gateway checks.
+
 Deployment isolation uses separate bootstrap-root, isolation-attestation, and mirror-evidence
 authorities. Never reuse keys between those roles or trust deployment coordinates copied from an
 untrusted publication. Verify the authority key-set against immutable local binding, locally pinned

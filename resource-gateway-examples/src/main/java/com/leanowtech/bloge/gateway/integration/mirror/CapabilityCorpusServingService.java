@@ -28,14 +28,16 @@ import java.util.Objects;
 import java.util.Set;
 
 /**
- * Fail-closed serving boundary from reviewed corpus publications to exact mirror outcomes.
+ * Fail-closed serving boundary from reviewed corpus publications to exact mirror outcomes and
+ * owner-approved retry trajectories.
  *
- * <p>The service revalidates the latest publication, current operator policy, exact source
- * lineage, data-use grant, retention, classification, region, tombstone state, and response
- * content address before constructing an in-memory execution snapshot. It never persists or
- * returns request/response payloads through an HTTP contract. Duplicate request fingerprints are
- * collapsed only when their normalized outcomes are identical; conflicting outcomes reject the
- * entire generation rather than introducing nondeterministic business behavior.</p>
+ * <p>The service revalidates current publication heads, operator governance and retry policies,
+ * exact source lineage, data-use grants, retention, classification, region, tombstone state, and
+ * response content addresses before constructing an in-memory execution snapshot. It never
+ * persists or returns request/response payloads through an HTTP contract. Standalone duplicate
+ * request fingerprints are collapsed only when their normalized outcomes are identical; retry
+ * attempts remain an explicitly reviewed ordered trajectory. Any conflict rejects the entire
+ * generation rather than introducing nondeterministic business behavior.</p>
  */
 @Service
 @Profile("!production & (test | staging)")
@@ -46,7 +48,9 @@ import java.util.Set;
 public class CapabilityCorpusServingService {
     private final CapabilityCorpusRepository corpora;
     private final CapabilityObservationRepository observations;
+    private final CapabilityCorpusTrajectoryRepository trajectories;
     private final CapabilityCorpusGovernancePolicyProvider policies;
+    private final CapabilityRetryPolicyProvider retryPolicies;
     private final CapabilityCorpusSourceVerifier sourceVerifier;
     private final CapabilityCorpusPayloadAuthority payloadAuthority;
     private final CapabilityCorpusIntegrity integrity;
@@ -58,7 +62,9 @@ public class CapabilityCorpusServingService {
      *
      * @param corpora append-only corpus revision and publication store
      * @param observations exact observation and admission store
+     * @param trajectories append-only reviewed trajectory store
      * @param policies current operator-owned corpus policy
+     * @param retryPolicies current operator-owned retry policy
      * @param sourceVerifier external deletion, proof, retention, and grant verifier
      * @param payloadAuthority regional short-lived sanitized payload authority
      * @param integrity corpus content-address and trace integrity helper
@@ -68,13 +74,16 @@ public class CapabilityCorpusServingService {
     public CapabilityCorpusServingService(
             CapabilityCorpusRepository corpora,
             CapabilityObservationRepository observations,
+            CapabilityCorpusTrajectoryRepository trajectories,
             CapabilityCorpusGovernancePolicyProvider policies,
+            CapabilityRetryPolicyProvider retryPolicies,
             CapabilityCorpusSourceVerifier sourceVerifier,
             CapabilityCorpusPayloadAuthority payloadAuthority,
             CapabilityCorpusIntegrity integrity,
             ObjectMapper mapper) {
-        this(corpora, observations, policies, sourceVerifier, payloadAuthority,
-                integrity, mapper, Clock.systemUTC());
+        this(corpora, observations, trajectories, policies, retryPolicies,
+                sourceVerifier, payloadAuthority, integrity, mapper,
+                Clock.systemUTC());
     }
 
     /**
@@ -82,7 +91,9 @@ public class CapabilityCorpusServingService {
      *
      * @param corpora append-only corpus revision and publication store
      * @param observations exact observation and admission store
+     * @param trajectories append-only reviewed trajectory store
      * @param policies current operator-owned corpus policy
+     * @param retryPolicies current operator-owned retry policy
      * @param sourceVerifier external deletion, proof, retention, and grant verifier
      * @param payloadAuthority regional short-lived sanitized payload authority
      * @param integrity corpus content-address and trace integrity helper
@@ -92,7 +103,9 @@ public class CapabilityCorpusServingService {
     public CapabilityCorpusServingService(
             CapabilityCorpusRepository corpora,
             CapabilityObservationRepository observations,
+            CapabilityCorpusTrajectoryRepository trajectories,
             CapabilityCorpusGovernancePolicyProvider policies,
+            CapabilityRetryPolicyProvider retryPolicies,
             CapabilityCorpusSourceVerifier sourceVerifier,
             CapabilityCorpusPayloadAuthority payloadAuthority,
             CapabilityCorpusIntegrity integrity,
@@ -100,7 +113,10 @@ public class CapabilityCorpusServingService {
             Clock clock) {
         this.corpora = Objects.requireNonNull(corpora, "corpora");
         this.observations = Objects.requireNonNull(observations, "observations");
+        this.trajectories = Objects.requireNonNull(trajectories, "trajectories");
         this.policies = Objects.requireNonNull(policies, "policies");
+        this.retryPolicies = Objects.requireNonNull(
+                retryPolicies, "retryPolicies");
         this.sourceVerifier = Objects.requireNonNull(sourceVerifier, "sourceVerifier");
         this.payloadAuthority = Objects.requireNonNull(payloadAuthority, "payloadAuthority");
         this.integrity = Objects.requireNonNull(integrity, "integrity");
@@ -116,7 +132,7 @@ public class CapabilityCorpusServingService {
      * @param policy server-minted mirror execution policy
      * @param requiredUntil hard plan expiry that every source must cover
      * @param identity authenticated workload identity used only for authorization and errors
-     * @return empty or fully revalidated capability-keyed exact outcomes
+     * @return empty or fully revalidated capability-keyed exact and trajectory outcomes
      */
     public ResolvedCorpusPayloads resolve(
             FixtureBundle fixture,
@@ -131,8 +147,11 @@ public class CapabilityCorpusServingService {
         Objects.requireNonNull(identity, "identity");
 
         FixtureMirrorCorpusBindings bindings;
+        FixtureMirrorTrajectoryBindings trajectoryBindings;
         try {
             bindings = FixtureMirrorCorpusBindings.from(fixture);
+            trajectoryBindings = FixtureMirrorTrajectoryBindings.from(
+                    fixture, bindings);
         } catch (IllegalArgumentException malformed) {
             throw badRequest(identity, "RG.MIRROR.CORPUS_BINDING_INVALID",
                     "Fixture mirror-corpus bindings are invalid.");
@@ -145,15 +164,27 @@ public class CapabilityCorpusServingService {
             throw conflict(identity, "RG.MIRROR.CORPUS_HORIZON_INVALID",
                     "Mirror corpus materialization requires a future plan horizon.");
         }
-        requireAuthorities(identity);
+        requireAuthorities(identity, trajectoryBindings.configured());
 
         List<ResolvedCorpusPayloads.CapabilityCorpus> resolved =
                 new ArrayList<>(bindings.publications().size());
+        Map<MirrorArtifactRef,
+                List<FixtureMirrorTrajectoryBindings.TrajectoryBinding>>
+                trajectoriesByCapability = new LinkedHashMap<>();
+        for (FixtureMirrorTrajectoryBindings.TrajectoryBinding trajectory
+                : trajectoryBindings.trajectories()) {
+            trajectoriesByCapability.computeIfAbsent(
+                    trajectory.capabilityRef(), ignored -> new ArrayList<>())
+                    .add(trajectory);
+        }
         long totalPayloadBytes = 0;
         for (FixtureMirrorCorpusBindings.PublicationBinding binding
                 : bindings.publications()) {
             ResolvedCapability value = resolveCapability(
-                    binding, scope, policy, now, requiredUntil, identity);
+                    binding,
+                    trajectoriesByCapability.getOrDefault(
+                            binding.capabilityRef(), List.of()),
+                    scope, policy, now, requiredUntil, identity);
             totalPayloadBytes += value.payloadBytes();
             if (totalPayloadBytes > ResolvedCorpusPayloads.MAXIMUM_TOTAL_BYTES) {
                 throw conflict(identity, "RG.MIRROR.CORPUS_PAYLOAD_BUDGET_EXCEEDED",
@@ -179,8 +210,23 @@ public class CapabilityCorpusServingService {
         }
     }
 
+    /**
+     * Reports whether exact serving plus the additional retry-policy authority are usable.
+     *
+     * @return true only while reviewed trajectories can be revalidated and materialized
+     */
+    public boolean trajectoryReady() {
+        try {
+            return ready() && retryPolicies.available();
+        } catch (RuntimeException unavailable) {
+            return false;
+        }
+    }
+
     private ResolvedCapability resolveCapability(
             FixtureMirrorCorpusBindings.PublicationBinding binding,
+            List<FixtureMirrorTrajectoryBindings.TrajectoryBinding>
+                    trajectoryBindings,
             CapabilitySnapshot.Scope scope,
             MirrorPlan.ExecutionPolicy executionPolicy,
             Instant now,
@@ -208,16 +254,46 @@ public class CapabilityCorpusServingService {
                     "Published corpus revision is not eligible for serving.");
         }
 
-        Map<String, SampleAccumulator> samples = new LinkedHashMap<>();
+        Map<MirrorArtifactRef, CapabilityCorpusRevision.SourceObservation>
+                members = corpusMembers(revision);
+        List<ResolvedCorpusPayloads.Trajectory> resolvedTrajectories =
+                new ArrayList<>(trajectoryBindings.size());
+        Set<MirrorArtifactRef> trajectorySources = new LinkedHashSet<>();
         long payloadBytes = 0;
+        Instant usableUntil = earliest(
+                publication.usableUntil(), revision.usableUntil());
+        for (FixtureMirrorTrajectoryBindings.TrajectoryBinding
+                trajectoryBinding : trajectoryBindings) {
+            ResolvedTrajectory resolvedTrajectory = resolveTrajectory(
+                    trajectoryBinding, publication, revision, governance,
+                    members, executionPolicy, scope, now, requiredUntil, identity);
+            for (MirrorArtifactRef source : resolvedTrajectory.sourceRefs()) {
+                if (!trajectorySources.add(source)) {
+                    throw conflict(
+                            identity,
+                            "RG.MIRROR.CORPUS_TRAJECTORY_SOURCE_REUSED",
+                            "One observation cannot serve more than one bound trajectory.");
+                }
+            }
+            resolvedTrajectories.add(resolvedTrajectory.trajectory());
+            payloadBytes += resolvedTrajectory.payloadBytes();
+            usableUntil = earliest(
+                    usableUntil, resolvedTrajectory.usableUntil());
+        }
+
+        Map<String, SampleAccumulator> samples = new LinkedHashMap<>();
         for (CapabilityCorpusRevision.SourceObservation source : revision.sources()) {
+            if (trajectorySources.contains(source.observationRef())) {
+                continue;
+            }
             CapabilityObservationRepository.StoredObservation stored =
                     exactObservation(scope, binding.capabilityRef(), source, identity);
-            verifyRuntimePolicy(stored, executionPolicy, now, requiredUntil, identity);
+            verifyRuntimePolicy(
+                    stored, executionPolicy, now, requiredUntil, false, identity);
             verifyExternalSource(stored, governance, now, identity);
             SourceOutcome outcome = sourceOutcome(
                     publication, revision, stored, source, executionPolicy,
-                    now, requiredUntil, identity);
+                    now, requiredUntil, false, List.of(), List.of(), identity);
             SampleAccumulator previous = samples.get(outcome.requestFingerprint());
             if (previous == null) {
                 samples.put(outcome.requestFingerprint(),
@@ -232,8 +308,7 @@ public class CapabilityCorpusServingService {
         return new ResolvedCapability(new ResolvedCorpusPayloads.CapabilityCorpus(
                 binding.capabilityRef(), publication.artifactRef(),
                 revision.artifactRef(), now,
-                earliest(publication.usableUntil(), revision.usableUntil()),
-                frozen), payloadBytes);
+                usableUntil, frozen, resolvedTrajectories), payloadBytes);
     }
 
     private CapabilityCorpusPublication exactPublication(
@@ -294,6 +369,237 @@ public class CapabilityCorpusServingService {
             throw unavailable(identity, "RG.MIRROR.CORPUS_STORE_UNAVAILABLE",
                     "Capability corpus storage is unavailable.");
         }
+    }
+
+    private ResolvedTrajectory resolveTrajectory(
+            FixtureMirrorTrajectoryBindings.TrajectoryBinding binding,
+            CapabilityCorpusPublication corpusPublication,
+            CapabilityCorpusRevision corpusRevision,
+            CapabilityCorpusGovernancePolicyProvider.GovernancePolicy governance,
+            Map<MirrorArtifactRef, CapabilityCorpusRevision.SourceObservation>
+                    corpusMembers,
+            MirrorPlan.ExecutionPolicy executionPolicy,
+            CapabilitySnapshot.Scope scope,
+            Instant now,
+            Instant requiredUntil,
+            IntegrationRequestContext identity) {
+        CapabilityCorpusTrajectoryPublication publication = exactTrajectory(
+                binding, scope, identity);
+        if (!scope.equals(publication.scope())
+                || !binding.capabilityRef().equals(publication.capabilityRef())
+                || !binding.corpusPublicationRef().equals(
+                publication.corpusPublicationRef())
+                || !corpusPublication.artifactRef().equals(
+                publication.corpusPublicationRef())
+                || !corpusRevision.artifactRef().equals(
+                publication.corpusRevisionRef())
+                || !corpusPublication.publicationPolicyRef().equals(
+                publication.publicationPolicyRef())
+                || !governance.publicationPolicyRef().equals(
+                publication.publicationPolicyRef())
+                || publication.publishedAt().isAfter(now)) {
+            throw unavailable(
+                    identity,
+                    "RG.MIRROR.CORPUS_TRAJECTORY_INTEGRITY_INVALID",
+                    "Reviewed trajectory failed exact corpus and policy identity checks.");
+        }
+        requireHorizon(
+                publication.usableUntil(),
+                requiredUntil,
+                identity,
+                "RG.MIRROR.CORPUS_TRAJECTORY_EXPIRES_EARLY");
+        CapabilityRetryPolicyProvider.RetryPolicy retryPolicy =
+                currentRetryPolicy(scope, binding.capabilityRef(), identity);
+        if (!retryPolicy.policyRef().equals(publication.retryPolicyRef())) {
+            throw conflict(
+                    identity,
+                    "RG.MIRROR.CORPUS_TRAJECTORY_RETRY_POLICY_DRIFT",
+                    "Reviewed trajectory no longer matches current retry policy.");
+        }
+        if (publication.attempts().size() > retryPolicy.maximumAttempts()) {
+            throw conflict(
+                    identity,
+                    "RG.MIRROR.CORPUS_TRAJECTORY_ATTEMPT_LIMIT_EXCEEDED",
+                    "Reviewed trajectory exceeds the current retry attempt limit.");
+        }
+
+        List<ResolvedCorpusPayloads.Sample> attempts =
+                new ArrayList<>(publication.attempts().size());
+        Set<MirrorArtifactRef> sourceRefs = new LinkedHashSet<>();
+        Set<String> spanIds = new LinkedHashSet<>();
+        String traceId = "";
+        long previousSequence = -1;
+        Instant previousOccurrence = null;
+        long payloadBytes = 0;
+        for (int index = 0; index < publication.attempts().size(); index++) {
+            CapabilityCorpusTrajectoryPublishRequest.AttemptSource attempt =
+                    publication.attempts().get(index);
+            CapabilityCorpusRevision.SourceObservation member =
+                    corpusMembers.get(attempt.observationRef());
+            if (member == null
+                    || !member.admissionRef().equals(attempt.admissionRef())) {
+                throw unavailable(
+                        identity,
+                        "RG.MIRROR.CORPUS_TRAJECTORY_SOURCE_INTEGRITY_INVALID",
+                        "Reviewed trajectory source is absent from its exact corpus revision.");
+            }
+            CapabilityObservationRepository.StoredObservation stored =
+                    exactObservation(
+                            scope, binding.capabilityRef(), member, identity);
+            CapabilityObservationEnvelope.Material material =
+                    stored.envelope().material();
+            verifyRuntimePolicy(
+                    stored,
+                    executionPolicy,
+                    now,
+                    requiredUntil,
+                    true,
+                    identity);
+            verifyExternalSource(stored, governance, now, identity);
+            if (!publication.requestFingerprint().equals(
+                    material.request().payloadRef().fingerprint())) {
+                throw unavailable(
+                        identity,
+                        "RG.MIRROR.CORPUS_TRAJECTORY_REQUEST_INTEGRITY_INVALID",
+                        "Reviewed trajectory request fingerprint has drifted.");
+            }
+            if (traceId.isEmpty()) {
+                traceId = material.trace().traceId();
+            }
+            if (!traceId.equals(material.trace().traceId())
+                    || !spanIds.add(material.trace().spanId())
+                    || material.trace().sequence() <= previousSequence
+                    || previousOccurrence != null
+                    && material.occurredAt().isBefore(previousOccurrence)) {
+                throw unavailable(
+                        identity,
+                        "RG.MIRROR.CORPUS_TRAJECTORY_ORDER_INTEGRITY_INVALID",
+                        "Reviewed trajectory no longer forms one ordered trace.");
+            }
+            boolean finalAttempt =
+                    index == publication.attempts().size() - 1;
+            if (!finalAttempt && (material.error() == null
+                    || !retryPolicy.permits(material.error()))) {
+                throw conflict(
+                        identity,
+                        "RG.MIRROR.CORPUS_TRAJECTORY_RETRY_INVALID",
+                        "An intermediate trajectory attempt is no longer retryable.");
+            }
+            if (finalAttempt && material.error() != null
+                    && material.error().retryable()) {
+                throw conflict(
+                        identity,
+                        "RG.MIRROR.CORPUS_TRAJECTORY_TERMINAL_INVALID",
+                        "The final trajectory attempt is not terminal.");
+            }
+            String trajectoryRule = publication.trajectoryId()
+                    + "@" + publication.revision()
+                    + ":attempt:" + attempt.attempt();
+            SourceOutcome outcome = sourceOutcome(
+                    corpusPublication,
+                    corpusRevision,
+                    stored,
+                    member,
+                    executionPolicy,
+                    now,
+                    requiredUntil,
+                    true,
+                    List.of(
+                            publication.artifactRef(),
+                            publication.retryPolicyRef(),
+                            publication.reviewTicketRef()),
+                    List.of(trajectoryRule),
+                    identity);
+            attempts.add(new SampleAccumulator(outcome).freeze());
+            payloadBytes += outcome.responseJson().length;
+            sourceRefs.add(attempt.observationRef());
+            previousSequence = material.trace().sequence();
+            previousOccurrence = material.occurredAt();
+        }
+        return new ResolvedTrajectory(
+                new ResolvedCorpusPayloads.Trajectory(
+                        publication.requestFingerprint(),
+                        publication.artifactRef(),
+                        attempts),
+                sourceRefs,
+                payloadBytes,
+                publication.usableUntil());
+    }
+
+    private CapabilityCorpusTrajectoryPublication exactTrajectory(
+            FixtureMirrorTrajectoryBindings.TrajectoryBinding binding,
+            CapabilitySnapshot.Scope scope,
+            IntegrationRequestContext identity) {
+        try {
+            MirrorArtifactRef ref = binding.trajectoryPublicationRef();
+            CapabilityCorpusTrajectoryPublication exact = trajectories.find(
+                            scope, ref.id(), ref.revision())
+                    .filter(value -> value.artifactRef().equals(ref))
+                    .orElseThrow(() -> notFound(
+                            identity,
+                            "RG.MIRROR.CORPUS_TRAJECTORY_NOT_FOUND",
+                            "Reviewed corpus trajectory was not found in the authorized scope."));
+            CapabilityCorpusTrajectoryPublication latest =
+                    trajectories.findLatest(scope, ref.id())
+                            .orElseThrow(() -> notFound(
+                                    identity,
+                                    "RG.MIRROR.CORPUS_TRAJECTORY_NOT_FOUND",
+                                    "Reviewed corpus trajectory was not found in the authorized scope."));
+            if (!latest.artifactRef().equals(exact.artifactRef())) {
+                throw conflict(
+                        identity,
+                        "RG.MIRROR.CORPUS_TRAJECTORY_STALE",
+                        "Fixture trajectory binding is not the current reviewed head.");
+            }
+            return exact;
+        } catch (IntegrationProblemException expected) {
+            throw expected;
+        } catch (RuntimeException unavailable) {
+            throw unavailable(
+                    identity,
+                    "RG.MIRROR.CORPUS_TRAJECTORY_STORE_UNAVAILABLE",
+                    "Capability trajectory storage is unavailable.");
+        }
+    }
+
+    private CapabilityRetryPolicyProvider.RetryPolicy currentRetryPolicy(
+            CapabilitySnapshot.Scope scope,
+            MirrorArtifactRef capabilityRef,
+            IntegrationRequestContext identity) {
+        try {
+            if (!retryPolicies.available()) {
+                throw unavailable(
+                        identity,
+                        "RG.MIRROR.CORPUS_TRAJECTORY_RETRY_POLICY_UNAVAILABLE",
+                        "Retry policy authority is unavailable.");
+            }
+            return retryPolicies.resolve(scope, capabilityRef)
+                    .filter(value -> scope.equals(value.scope())
+                            && capabilityRef.equals(value.capabilityRef()))
+                    .orElseThrow(() -> conflict(
+                            identity,
+                            "RG.MIRROR.CORPUS_TRAJECTORY_RETRY_POLICY_NOT_FOUND",
+                            "No current retry policy authorizes this trajectory."));
+        } catch (IntegrationProblemException expected) {
+            throw expected;
+        } catch (RuntimeException unavailable) {
+            throw unavailable(
+                    identity,
+                    "RG.MIRROR.CORPUS_TRAJECTORY_RETRY_POLICY_UNAVAILABLE",
+                    "Retry policy authority is unavailable.");
+        }
+    }
+
+    private static Map<MirrorArtifactRef,
+            CapabilityCorpusRevision.SourceObservation> corpusMembers(
+            CapabilityCorpusRevision revision) {
+        Map<MirrorArtifactRef, CapabilityCorpusRevision.SourceObservation>
+                members = new LinkedHashMap<>();
+        for (CapabilityCorpusRevision.SourceObservation source
+                : revision.sources()) {
+            members.put(source.observationRef(), source);
+        }
+        return Map.copyOf(members);
     }
 
     private CapabilityCorpusGovernancePolicyProvider.GovernancePolicy currentPolicy(
@@ -361,6 +667,7 @@ public class CapabilityCorpusServingService {
             MirrorPlan.ExecutionPolicy policy,
             Instant now,
             Instant requiredUntil,
+            boolean trajectory,
             IntegrationRequestContext identity) {
         CapabilityObservationEnvelope.Material material = stored.envelope().material();
         CapabilityObservationEnvelope.DataUseGrant grant = material.dataUseGrant();
@@ -370,6 +677,13 @@ public class CapabilityCorpusServingService {
                 || grant.expiresAt().isBefore(requiredUntil)) {
             throw conflict(identity, "RG.MIRROR.CORPUS_EXACT_REPLAY_NOT_AUTHORIZED",
                     "Corpus source is not authorized for exact replay over the plan horizon.");
+        }
+        if (trajectory && !grant.allowedUses().contains(
+                CapabilityObservationEnvelope.AllowedUse.TRAJECTORY_MODELING)) {
+            throw conflict(
+                    identity,
+                    "RG.MIRROR.CORPUS_TRAJECTORY_USE_NOT_AUTHORIZED",
+                    "Trajectory source is not authorized for trajectory modeling.");
         }
         requirePayloadPolicy(material.request(), policy, requiredUntil, identity);
         if (material.response() != null) {
@@ -428,11 +742,16 @@ public class CapabilityCorpusServingService {
             MirrorPlan.ExecutionPolicy policy,
             Instant now,
             Instant requiredUntil,
+            boolean allowRetryableError,
+            List<MirrorArtifactRef> additionalArtifactRefs,
+            List<String> additionalRuleRefs,
             IntegrationRequestContext identity) {
         CapabilityObservationEnvelope.Material material = stored.envelope().material();
         String requestFingerprint = source.requestPayloadRef().fingerprint();
         byte[] responseJson = new byte[0];
-        if (material.error() != null && material.error().retryable()) {
+        if (!allowRetryableError
+                && material.error() != null
+                && material.error().retryable()) {
             throw conflict(identity, "RG.MIRROR.CORPUS_RETRYABLE_ERROR_UNSUPPORTED",
                     "Retryable observations require a governed attempt-trajectory corpus.");
         }
@@ -465,13 +784,20 @@ public class CapabilityCorpusServingService {
             }
             responseJson = verifiedJson(result.canonicalJson(), material.response(), identity);
         }
+        LinkedHashSet<MirrorArtifactRef> artifactRefs =
+                new LinkedHashSet<>(artifacts(
+                        publication, revision, stored, source));
+        artifactRefs.addAll(additionalArtifactRefs);
+        LinkedHashSet<String> ruleRefs = new LinkedHashSet<>();
+        ruleRefs.add(source.observationRef().id());
+        ruleRefs.addAll(additionalRuleRefs);
         return new SourceOutcome(
                 requestFingerprint,
                 outcomeKey(material),
                 responseJson,
                 material.error(),
-                artifacts(publication, revision, stored, source),
-                List.of(source.observationRef().id()),
+                List.copyOf(artifactRefs),
+                List.copyOf(ruleRefs),
                 freshness(material.occurredAt(), source.usableUntil(), now));
     }
 
@@ -595,7 +921,9 @@ public class CapabilityCorpusServingService {
         };
     }
 
-    private void requireAuthorities(IntegrationRequestContext identity) {
+    private void requireAuthorities(
+            IntegrationRequestContext identity,
+            boolean trajectoryServing) {
         try {
             if (!policies.available()) {
                 throw unavailable(identity, "RG.MIRROR.CORPUS_POLICY_UNAVAILABLE",
@@ -608,6 +936,12 @@ public class CapabilityCorpusServingService {
             if (!payloadAuthority.available()) {
                 throw unavailable(identity, "RG.MIRROR.CORPUS_PAYLOAD_AUTHORITY_UNAVAILABLE",
                         "Corpus payload authority is unavailable.");
+            }
+            if (trajectoryServing && !retryPolicies.available()) {
+                throw unavailable(
+                        identity,
+                        "RG.MIRROR.CORPUS_TRAJECTORY_RETRY_POLICY_UNAVAILABLE",
+                        "Retry policy authority is unavailable.");
             }
         } catch (IntegrationProblemException expected) {
             throw expected;
@@ -666,6 +1000,24 @@ public class CapabilityCorpusServingService {
             ResolvedCorpusPayloads.CapabilityCorpus corpus,
             long payloadBytes
     ) {
+    }
+
+    private record ResolvedTrajectory(
+            ResolvedCorpusPayloads.Trajectory trajectory,
+            Set<MirrorArtifactRef> sourceRefs,
+            long payloadBytes,
+            Instant usableUntil
+    ) {
+        private ResolvedTrajectory {
+            trajectory = Objects.requireNonNull(trajectory, "trajectory");
+            sourceRefs = Set.copyOf(sourceRefs);
+            if (payloadBytes < 0) {
+                throw new IllegalArgumentException(
+                        "trajectory payloadBytes must not be negative");
+            }
+            usableUntil = Objects.requireNonNull(
+                    usableUntil, "usableUntil");
+        }
     }
 
     private record SourceOutcome(

@@ -319,13 +319,31 @@ public class TestDoubleFactory {
                 throw exhausted;
             }
             try {
-                Object output = apply(rule, input, context);
+                Object output = applyMirror(
+                        decision.match(), input, context);
                 mirrorObserver.resolved(binding, attempt, requestFingerprint, decision, output);
                 return output;
             } catch (Exception failure) {
                 mirrorObserver.failed(binding, attempt, requestFingerprint, decision, failure);
                 throw failure;
             }
+        }
+
+        private Object applyMirror(
+                MirrorResolver.Match match,
+                Object input,
+                OperatorContext context) throws Exception {
+            FixtureRule rule = match.rule();
+            if (!match.retryableOutcome()) {
+                return apply(rule, input, context);
+            }
+            FixtureRule.Behavior behavior = rule.behavior();
+            recorder.markFidelity(site, "OUTPUT_LEVEL");
+            recorder.markControlMode(site, behavior.kind().name());
+            throw new TestRetryableOutcomeException(
+                    behavior.errorCode(),
+                    behavior.errorType(),
+                    behavior.errorMessage());
         }
 
         private Object apply(FixtureRule rule, Object input, OperatorContext context) throws Exception {

@@ -8,12 +8,14 @@ import com.leanowtech.bloge.core.operator.OperatorContext;
 import com.leanowtech.bloge.core.operator.SideEffectType;
 import com.leanowtech.bloge.core.spi.DefaultOperatorRegistry;
 import com.leanowtech.bloge.gateway.integration.mirror.MirrorPlan;
+import com.leanowtech.bloge.gateway.integration.mirror.MirrorArtifactRef;
 import com.leanowtech.bloge.gateway.testing.domain.EffectiveExecutionPlan;
 import com.leanowtech.bloge.gateway.testing.domain.ExecutionServiceStateSnapshot;
 import com.leanowtech.bloge.gateway.testing.domain.FixtureBundle;
 import com.leanowtech.bloge.gateway.testing.domain.FixtureRule;
 import com.leanowtech.bloge.gateway.testing.domain.InvocationSite;
 import com.leanowtech.bloge.gateway.testing.runtime.ResolvedReplayPayloads;
+import com.leanowtech.bloge.gateway.testing.runtime.ResolvedCorpusPayloads;
 
 import org.junit.jupiter.api.Test;
 
@@ -33,8 +35,9 @@ class ExecutionControlCompilerTest {
     private static final String REPLAY_REF = "bloge-replay:approved-order@7#sha256:"
             + "c".repeat(64);
     private final DefaultOperatorRegistry registry = new DefaultOperatorRegistry();
+    private final ObjectMapper objectMapper = new ObjectMapper();
     private final ExecutionControlCompiler compiler = new ExecutionControlCompiler(
-            registry, new ObjectMapper());
+            registry, objectMapper);
 
     @Test
     void exactNodeSelectorProducesFrozenTestDoubleResolution() {
@@ -261,6 +264,143 @@ class ExecutionControlCompilerTest {
     }
 
     @Test
+    void mirrorCompilationFreezesExactBeforeTrajectoryForTheSameSite()
+            throws Exception {
+        registry.register("mirror-binding", new ReadOnlyOperator());
+        Graph graph = registryGraph("mirror-binding", 1);
+        InvocationInventory frozen =
+                new InvocationInventoryBuilder(registry).build(graph, TARGET);
+        MirrorArtifactRef capability =
+                ref("CAPABILITY", "operator:subject", '1');
+        MirrorArtifactRef publication = ref(
+                "CAPABILITY_CORPUS_PUBLICATION", "subject-corpus", '2');
+        MirrorArtifactRef revision = ref(
+                "CAPABILITY_CORPUS_REVISION", "subject-corpus", '3');
+        MirrorArtifactRef trajectoryPublication = ref(
+                "CAPABILITY_CORPUS_TRAJECTORY_PUBLICATION",
+                "subject-retry", '4');
+        String exactRequest = fingerprint('5');
+        String trajectoryRequest = fingerprint('6');
+        ResolvedCorpusPayloads payloads = ResolvedCorpusPayloads.of(List.of(
+                        new ResolvedCorpusPayloads.CapabilityCorpus(
+                                capability, publication, revision,
+                                Instant.parse("2026-07-23T08:00:00Z"),
+                                Instant.parse("2026-07-24T08:00:00Z"),
+                                List.of(ResolvedCorpusPayloads.Sample.response(
+                                        exactRequest,
+                                        objectMapper.writeValueAsBytes("exact"),
+                                        List.of(publication),
+                                        List.of("exact"),
+                                        1,
+                                        List.of())),
+                                List.of(new ResolvedCorpusPayloads.Trajectory(
+                                        trajectoryRequest,
+                                        trajectoryPublication,
+                                        List.of(
+                                                ResolvedCorpusPayloads.Sample.error(
+                                                        trajectoryRequest,
+                                                        "RETRY",
+                                                        "TRANSIENT",
+                                                        true,
+                                                        fingerprint('7'),
+                                                        List.of(
+                                                                trajectoryPublication),
+                                                        List.of("attempt-1"),
+                                                        1,
+                                                        List.of()),
+                                                ResolvedCorpusPayloads.Sample.response(
+                                                        trajectoryRequest,
+                                                        objectMapper.writeValueAsBytes(
+                                                                "recovered"),
+                                                        List.of(
+                                                                trajectoryPublication),
+                                                        List.of("attempt-2"),
+                                                        1,
+                                                        List.of())))))))
+                .bindSites(Map.of("/root/subject#PRIMARY", capability));
+
+        CompiledExecutionControl compiled = compiler.compileMirrorFromInventory(
+                graph, logicalBundle(), "MIRROR_REHEARSAL", TARGET,
+                ResolvedReplayPayloads.empty(), Set.of("/root/subject#PRIMARY"),
+                frozen, payloads);
+
+        assertThat(compiled.controls().get("/root/subject#PRIMARY")
+                .resolverOrder()).containsExactly(
+                MirrorPlan.MirrorSource.RECORDED_EXACT,
+                MirrorPlan.MirrorSource.RECORDED_TRAJECTORY,
+                MirrorPlan.MirrorSource.ABSTAINED);
+        assertThat(compiled.effectivePlan().resolvedSites()).singleElement()
+                .satisfies(site -> assertThat(site.fidelity())
+                        .isEqualTo("RECORDED_EXACT+TRAJECTORY"));
+    }
+
+    @Test
+    void mirrorCompilationRejectsTrajectoryLongerThanNodeRetryCapacity()
+            throws Exception {
+        registry.register("mirror-binding", new ReadOnlyOperator());
+        Graph graph = registryGraph("mirror-binding");
+        InvocationInventory frozen =
+                new InvocationInventoryBuilder(registry).build(graph, TARGET);
+        MirrorArtifactRef capability =
+                ref("CAPABILITY", "operator:subject", '1');
+        MirrorArtifactRef publication = ref(
+                "CAPABILITY_CORPUS_PUBLICATION", "subject-corpus", '2');
+        MirrorArtifactRef revision = ref(
+                "CAPABILITY_CORPUS_REVISION", "subject-corpus", '3');
+        MirrorArtifactRef trajectoryPublication = ref(
+                "CAPABILITY_CORPUS_TRAJECTORY_PUBLICATION",
+                "subject-retry", '4');
+        String requestFingerprint = fingerprint('5');
+        ResolvedCorpusPayloads payloads = ResolvedCorpusPayloads.of(List.of(
+                        new ResolvedCorpusPayloads.CapabilityCorpus(
+                                capability,
+                                publication,
+                                revision,
+                                Instant.parse("2026-07-23T08:00:00Z"),
+                                Instant.parse("2026-07-24T08:00:00Z"),
+                                List.of(),
+                                List.of(new ResolvedCorpusPayloads.Trajectory(
+                                        requestFingerprint,
+                                        trajectoryPublication,
+                                        List.of(
+                                                ResolvedCorpusPayloads.Sample.error(
+                                                        requestFingerprint,
+                                                        "RETRY",
+                                                        "TRANSIENT",
+                                                        true,
+                                                        fingerprint('6'),
+                                                        List.of(
+                                                                trajectoryPublication),
+                                                        List.of("attempt-1"),
+                                                        1,
+                                                        List.of()),
+                                                ResolvedCorpusPayloads.Sample.response(
+                                                        requestFingerprint,
+                                                        objectMapper.writeValueAsBytes(
+                                                                "recovered"),
+                                                        List.of(
+                                                                trajectoryPublication),
+                                                        List.of("attempt-2"),
+                                                        1,
+                                                        List.of())))))))
+                .bindSites(Map.of("/root/subject#PRIMARY", capability));
+
+        assertThatThrownBy(() -> compiler.compileMirrorFromInventory(
+                graph,
+                logicalBundle(),
+                "MIRROR_REHEARSAL",
+                TARGET,
+                ResolvedReplayPayloads.empty(),
+                Set.of("/root/subject#PRIMARY"),
+                frozen,
+                payloads))
+                .isInstanceOfSatisfying(
+                        ControlPlanRejectedException.class,
+                        failure -> assertThat(failure.code()).isEqualTo(
+                                "CONTROL_PLAN_TRAJECTORY_RETRY_INCOMPATIBLE"));
+    }
+
+    @Test
     void mirrorModeIsFingerprintVisibleEvenWhenItsExternalSiteSetIsEmpty() {
         Graph graph = graph(new ReadOnlyOperator());
         FixtureBundle fixture = logicalBundle();
@@ -478,7 +618,14 @@ class ExecutionControlCompilerTest {
     }
 
     private static Graph registryGraph(String operatorRef) {
-        Graph embedded = graph(new ReadOnlyOperator());
+        return registryGraph(operatorRef, 0);
+    }
+
+    private static Graph registryGraph(String operatorRef, int retryAttempts) {
+        Graph embedded = new GraphBuilder("subject-graph")
+                .node("subject", new ReadOnlyOperator())
+                .retry(retryAttempts)
+                .build();
         var node = embedded.nodes().get("subject").toBuilder().operatorRef(operatorRef).build();
         return new Graph(embedded.name(), Map.of("subject", node), embedded.edges(),
                 embedded.sourceNodes(), embedded.terminalNodes(), embedded.schemaValidationLevel(),
@@ -518,6 +665,17 @@ class ExecutionControlCompilerTest {
                 "decision", 1, "sha256:" + "d".repeat(64), "sha256:" + "e".repeat(64),
                 Instant.parse("2030-01-01T00:00:00Z"), certificationEligible,
                 certificationEligible ? List.of() : List.of("SOURCE_NOT_CERTIFIABLE"))));
+    }
+
+    private static MirrorArtifactRef ref(
+            String kind, String id, char fingerprint) {
+        return new MirrorArtifactRef(
+                kind, id, 1,
+                fingerprint(fingerprint));
+    }
+
+    private static String fingerprint(char value) {
+        return "sha256:" + String.valueOf(value).repeat(64);
     }
 
     private static class ReadOnlyOperator implements Operator<Object, Object> {

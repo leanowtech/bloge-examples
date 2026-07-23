@@ -210,7 +210,10 @@ public class ExecutionControlCompiler {
     }
 
     /**
-     * Compiles mirror controls with an already-authorized, site-bound exact corpus snapshot.
+     * Compiles mirror controls with an already-authorized, site-bound recorded corpus snapshot.
+     *
+     * <p>Standalone exact samples and reviewed retry trajectories remain separate source indexes;
+     * the compiler freezes each available source explicitly into the plan.</p>
      */
     CompiledExecutionControl compileMirrorFromInventory(
             Graph graph,
@@ -345,11 +348,16 @@ public class ExecutionControlCompiler {
                 ? inventoryBuilder.build(graph, targetFingerprint) : frozenInventory;
         boolean mirrorCompilation = mandatoryExternalSiteIds != null;
         Set<String> mandatoryExternalSites = normalizedSites(mandatoryExternalSiteIds);
-        Set<String> recordedExactSites = normalizedSites(resolvedCorpus.siteIds());
-        if (!mandatoryExternalSites.containsAll(recordedExactSites)) {
+        Set<String> recordedCorpusSites =
+                normalizedSites(resolvedCorpus.siteIds());
+        Set<String> recordedExactSites =
+                normalizedSites(resolvedCorpus.exactSiteIds());
+        Set<String> recordedTrajectorySites =
+                normalizedSites(resolvedCorpus.trajectorySiteIds());
+        if (!mandatoryExternalSites.containsAll(recordedCorpusSites)) {
             throw new ControlPlanRejectedException(
                     "CONTROL_PLAN_CORPUS_SITE_NOT_EXTERNAL", List.of(
-                    "Recorded exact corpus sites must belong to the external capability closure."));
+                    "Recorded corpus sites must belong to the external capability closure."));
         }
         List<String> missingMirrorSites = mandatoryExternalSites.stream()
                 .filter(siteId -> !inventory.byInvocationSiteId().containsKey(siteId)).toList();
@@ -358,6 +366,8 @@ public class ExecutionControlCompiler {
                     "Capability-derived mirror invocation sites are absent from the frozen graph: "
                             + missingMirrorSites));
         }
+        rejectTrajectoryRetryIncompatibility(
+                inventory, resolvedCorpus, recordedTrajectorySites);
         GovernedExecutionServices executionServices = GovernedExecutionServices.prepare(
                 objectMapper, fixtureBundle, inventory, resolvedSecrets);
         Map<String, CompiledExecutionControl.ResolvedControl> controls = new LinkedHashMap<>(
@@ -386,6 +396,16 @@ public class ExecutionControlCompiler {
             }
             return control.withMirrorSource(MirrorPlan.MirrorSource.RECORDED_EXACT);
         }));
+        recordedTrajectorySites.forEach(
+                siteId -> controls.compute(siteId, (ignored, control) -> {
+                    if (control == null) {
+                        throw new ControlPlanRejectedException(
+                                "CONTROL_PLAN_CORPUS_SITE_UNRESOLVED", List.of(
+                                "Recorded trajectory corpus site has no mirror control."));
+                    }
+                    return control.withMirrorSource(
+                            MirrorPlan.MirrorSource.RECORDED_TRAJECTORY);
+                }));
         rejectUnsupportedControlledBindings(inventory, controls);
         rejectUnsafeExternalReal(inventory, controls, mandatoryExternalSites);
 
@@ -400,9 +420,12 @@ public class ExecutionControlCompiler {
                         FixtureRule.DoubleBoundary.NODE, List.of(), "REAL"));
             } else {
                 FixtureRule first = control.rules().getFirst();
-                boolean corpusOnly = control.implicitDeny()
-                        && control.resolverOrder().contains(
+                boolean recordedExact = control.resolverOrder().contains(
                         MirrorPlan.MirrorSource.RECORDED_EXACT);
+                boolean recordedTrajectory = control.resolverOrder().contains(
+                        MirrorPlan.MirrorSource.RECORDED_TRAJECTORY);
+                boolean corpusOnly = control.implicitDeny()
+                        && (recordedExact || recordedTrajectory);
                 FixtureRule.BehaviorKind kind = corpusOnly
                         ? FixtureRule.BehaviorKind.REPLAY : first.behavior().kind();
                 sites.add(new EffectiveExecutionPlan.ResolvedSite(control.site().invocationSiteId(),
@@ -411,7 +434,10 @@ public class ExecutionControlCompiler {
                         kind, first.behavior().boundary(),
                         corpusOnly ? List.of()
                                 : control.rules().stream().map(FixtureRule::ruleId).toList(),
-                        corpusOnly ? "RECORDED_EXACT" : fidelity(control)));
+                        corpusOnly
+                                ? recordedFidelity(
+                                recordedExact, recordedTrajectory)
+                                : fidelity(control)));
             }
         }
         Map<String, String> defaults = new LinkedHashMap<>();
@@ -470,6 +496,44 @@ public class ExecutionControlCompiler {
                 List.of());
         return new CompiledExecutionControl(effectivePlan, controls, fixtureBundle.rules(), inventory,
                 resolvedReplays, resolvedCorpus, executionServices);
+    }
+
+    /**
+     * Rejects governed trajectories that the frozen BLOGE node can never finish.
+     *
+     * <p>A trajectory contains the initial delegate call plus every governed retry. BLOGE models
+     * only retries in {@code retryAttempts}, so the node's total capacity is
+     * {@code retryAttempts + 1}. Checking this during compilation prevents a valid publication
+     * from degrading into an attempt-exhausted runtime failure merely because the selected graph
+     * has a weaker resilience policy.</p>
+     */
+    private static void rejectTrajectoryRetryIncompatibility(
+            InvocationInventory inventory,
+            ResolvedCorpusPayloads resolvedCorpus,
+            Set<String> recordedTrajectorySites) {
+        List<String> incompatible = new ArrayList<>();
+        for (String siteId : recordedTrajectorySites) {
+            InvocationInventory.Entry entry =
+                    inventory.byInvocationSiteId().get(siteId);
+            ResolvedCorpusPayloads.CapabilityCorpus corpus =
+                    resolvedCorpus.forSite(siteId)
+                            .orElseThrow(() -> new ControlPlanRejectedException(
+                                    "CONTROL_PLAN_CORPUS_SITE_UNRESOLVED",
+                                    List.of("Recorded trajectory corpus site has no bound corpus.")));
+            int requiredAttempts = corpus.trajectories().stream()
+                    .mapToInt(trajectory -> trajectory.attempts().size())
+                    .max()
+                    .orElse(0);
+            int availableAttempts = entry.node().resilience().retryAttempts() + 1;
+            if (requiredAttempts > availableAttempts) {
+                incompatible.add(siteId + " requires " + requiredAttempts
+                        + " attempts but node capacity is " + availableAttempts);
+            }
+        }
+        if (!incompatible.isEmpty()) {
+            throw new ControlPlanRejectedException(
+                    "CONTROL_PLAN_TRAJECTORY_RETRY_INCOMPATIBLE", incompatible);
+        }
     }
 
     private boolean externalEffect(InvocationInventory.Entry entry) {
@@ -606,6 +670,14 @@ public class ExecutionControlCompiler {
                     ? "TRANSPORT_LEVEL" : "PROTOCOL_DERIVED";
         }
         return "OUTPUT_LEVEL";
+    }
+
+    private static String recordedFidelity(
+            boolean exact, boolean trajectory) {
+        if (exact && trajectory) {
+            return "RECORDED_EXACT+TRAJECTORY";
+        }
+        return exact ? "RECORDED_EXACT" : "RECORDED_TRAJECTORY";
     }
 
     private static final class SetLike {

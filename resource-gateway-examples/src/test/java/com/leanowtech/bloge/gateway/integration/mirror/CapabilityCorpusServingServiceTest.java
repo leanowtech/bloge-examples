@@ -40,7 +40,9 @@ class CapabilityCorpusServingServiceTest {
     private EmbeddedDatabase database;
     private DatabaseCapabilityObservationRepository observations;
     private DatabaseCapabilityCorpusRepository corpora;
+    private DatabaseCapabilityCorpusTrajectoryRepository trajectories;
     private MutablePolicyProvider policies;
+    private MutableRetryPolicyProvider retryPolicies;
     private MutableSourceVerifier sourceVerifier;
     private MutablePayloadAuthority payloadAuthority;
     private CapabilityCorpusServingService service;
@@ -63,6 +65,9 @@ class CapabilityCorpusServingServiceTest {
         corpora = new DatabaseCapabilityCorpusRepository(
                 jdbc, mapper, corpusIntegrity);
         corpora.init();
+        trajectories = new DatabaseCapabilityCorpusTrajectoryRepository(
+                jdbc, mapper, corpusIntegrity);
+        trajectories.init();
         scope = CapabilityObservationTestFixtures.scope("org-a");
         source = observation(
                 "observation-exact", Map.of("customerId", "C-1"),
@@ -71,6 +76,8 @@ class CapabilityCorpusServingServiceTest {
         now = source.admission().decidedAt().plusSeconds(2);
         policies = new MutablePolicyProvider(
                 CapabilityCorpusTestFixtures.policy(source, 1, 10_000, 1));
+        retryPolicies = new MutableRetryPolicyProvider(
+                retryPolicy(source.envelope().material().capabilityRef(), 1));
         sourceVerifier = new MutableSourceVerifier(
                 CapabilityCorpusSourceVerifier.VerificationResult.verified());
         payloadAuthority = new MutablePayloadAuthority();
@@ -83,8 +90,9 @@ class CapabilityCorpusServingServiceTest {
         corpora.appendRevision(revision);
         corpora.appendPublication(publication);
         service = new CapabilityCorpusServingService(
-                corpora, observations, policies, sourceVerifier, payloadAuthority,
-                corpusIntegrity, mapper, Clock.fixed(now, ZoneOffset.UTC));
+                corpora, observations, trajectories, policies, retryPolicies,
+                sourceVerifier, payloadAuthority, corpusIntegrity, mapper,
+                Clock.fixed(now, ZoneOffset.UTC));
     }
 
     @AfterEach
@@ -121,6 +129,22 @@ class CapabilityCorpusServingServiceTest {
         assertThat(resolved.toString()).doesNotContain("C-recorded");
         assertThat(sample.toString()).doesNotContain("C-recorded");
         assertThat(service.ready()).isTrue();
+    }
+
+    @Test
+    void exactAndTrajectoryReadinessExposeIndependentAuthorityFailures() {
+        assertThat(service.ready()).isTrue();
+        assertThat(service.trajectoryReady()).isTrue();
+
+        retryPolicies.available = false;
+
+        assertThat(service.ready()).isTrue();
+        assertThat(service.trajectoryReady()).isFalse();
+
+        policies.available = false;
+
+        assertThat(service.ready()).isFalse();
+        assertThat(service.trajectoryReady()).isFalse();
     }
 
     @Test
@@ -281,6 +305,153 @@ class CapabilityCorpusServingServiceTest {
     }
 
     @Test
+    void resolvesGovernedRetryTrajectoryAndRechecksCurrentRetryPolicy()
+            throws Exception {
+        Object request = Map.of("customerId", "C-retry");
+        Instant firstAt = Instant.now().minusSeconds(1);
+        CapabilityObservationRepository.StoredObservation first =
+                trajectoryObservation(
+                        "observation-retry-1",
+                        request,
+                        null,
+                        new CapabilityObservationEnvelope.NormalizedError(
+                                "TRANSIENT",
+                                "UPSTREAM_TIMEOUT",
+                                true,
+                                "sha256:" + "d".repeat(64)),
+                        "trace-retry",
+                        "span-retry-1",
+                        1,
+                        firstAt);
+        CapabilityObservationRepository.StoredObservation second =
+                trajectoryObservation(
+                        "observation-retry-2",
+                        request,
+                        Map.of("customerId", "C-recovered"),
+                        null,
+                        "trace-retry",
+                        "span-retry-2",
+                        2,
+                        firstAt.plusMillis(10));
+        observations.append(first);
+        observations.append(second);
+        payloadAuthority.payloads.put(
+                second.envelope().material().response().payloadRef(),
+                mapper.writeValueAsBytes(
+                        Map.of("customerId", "C-recovered")));
+        CapabilityCorpusRevision retryRevision = revision(
+                "retry-corpus", List.of(first, second));
+        CapabilityCorpusPublication retryPublication =
+                CapabilityCorpusTestFixtures.publication(
+                        mapper, retryRevision, 1, null, now.minusSeconds(1));
+        corpora.appendRevision(retryRevision);
+        corpora.appendPublication(retryPublication);
+        CapabilityCorpusTrajectoryPublishRequest requestCommand =
+                CapabilityCorpusTestFixtures.trajectoryRequest(
+                        retryPublication,
+                        List.of(first, second),
+                        retryPolicies.policy.policyRef());
+        CapabilityCorpusTrajectoryPublication trajectory =
+                CapabilityCorpusTestFixtures.trajectoryPublication(
+                        mapper,
+                        retryPublication,
+                        retryRevision,
+                        requestCommand,
+                        null,
+                        now.minusMillis(500));
+        trajectories.append(trajectory);
+
+        ResolvedCorpusPayloads.CapabilityCorpus resolved = service.resolve(
+                        fixture(retryPublication, trajectory),
+                        scope,
+                        executionPolicy(),
+                        now.plus(Duration.ofHours(1)),
+                        identity())
+                .bindSites(Map.of(
+                        "/root/loadCustomer#PRIMARY",
+                        first.envelope().material().capabilityRef()))
+                .forSite("/root/loadCustomer#PRIMARY")
+                .orElseThrow();
+
+        assertThat(resolved.samples()).isEmpty();
+        assertThat(resolved.trajectories()).singleElement()
+                .satisfies(value -> {
+                    assertThat(value.publicationRef())
+                            .isEqualTo(trajectory.artifactRef());
+                    assertThat(value.attempts()).hasSize(2);
+                    assertThat(value.attempt(1).orElseThrow().error()).isTrue();
+                    assertThat(value.attempt(2).orElseThrow().toRule(mapper)
+                            .behavior().value())
+                            .isEqualTo(Map.of(
+                                    "customerId", "C-recovered"));
+                    assertThat(value.attempt(2).orElseThrow().artifactRefs())
+                            .contains(
+                                    trajectory.artifactRef(),
+                                    trajectory.retryPolicyRef(),
+                                    trajectory.reviewTicketRef(),
+                                    second.envelope().artifactRef());
+                });
+        assertThat(payloadAuthority.calls).hasValue(1);
+
+        retryPolicies.policy = retryPolicy(
+                first.envelope().material().capabilityRef(), 2);
+        payloadAuthority.calls.set(0);
+        assertProblem(() -> service.resolve(
+                        fixture(retryPublication, trajectory),
+                        scope,
+                        executionPolicy(),
+                        now.plus(Duration.ofHours(1)),
+                        identity()),
+                409, "RG.MIRROR.CORPUS_TRAJECTORY_RETRY_POLICY_DRIFT");
+        assertThat(payloadAuthority.calls).hasValue(0);
+
+        retryPolicies.policy = retryPolicy(
+                first.envelope().material().capabilityRef(), 1);
+        CapabilityCorpusTrajectoryPublishRequest successorCommand =
+                new CapabilityCorpusTrajectoryPublishRequest(
+                        "",
+                        requestCommand.trajectoryId(),
+                        2,
+                        trajectory.artifactRef(),
+                        requestCommand.capabilityRef(),
+                        requestCommand.corpusPublicationRef(),
+                        requestCommand.retryPolicyRef(),
+                        requestCommand.attempts(),
+                        requestCommand.reviewTicketRef(),
+                        requestCommand.reasonCode());
+        CapabilityCorpusTrajectoryPublication successor =
+                CapabilityCorpusTestFixtures.trajectoryPublication(
+                        mapper,
+                        retryPublication,
+                        retryRevision,
+                        successorCommand,
+                        trajectory.artifactRef(),
+                        now.minusMillis(250));
+        trajectories.append(successor);
+
+        assertProblem(() -> service.resolve(
+                        fixture(retryPublication, trajectory),
+                        scope,
+                        executionPolicy(),
+                        now.plus(Duration.ofHours(1)),
+                        identity()),
+                409, "RG.MIRROR.CORPUS_TRAJECTORY_STALE");
+        assertThat(payloadAuthority.calls).hasValue(0);
+
+        sourceVerifier.result =
+                CapabilityCorpusSourceVerifier.VerificationResult.rejected(
+                        "GRANT_REVOKED");
+        assertProblem(() -> service.resolve(
+                        fixture(retryPublication, successor),
+                        scope,
+                        executionPolicy(),
+                        now.plus(Duration.ofHours(1)),
+                        identity()),
+                409, "RG.MIRROR.CORPUS_SOURCE_UNUSABLE");
+        assertThat(payloadAuthority.calls).hasValue(0);
+    }
+
+    @Test
     void regionClassificationAndPlanHorizonAreEnforcedBeforeMaterialization() {
         MirrorPlan.ExecutionPolicy wrongRegion = new MirrorPlan.ExecutionPolicy(
                 MirrorPlanIntegrationService.AUTHORIZED_PURPOSE,
@@ -421,6 +592,89 @@ class CapabilityCorpusServingServiceTest {
                 envelope, admission);
     }
 
+    private CapabilityObservationRepository.StoredObservation trajectoryObservation(
+            String observationId,
+            Object requestValue,
+            Object responseValue,
+            CapabilityObservationEnvelope.NormalizedError error,
+            String traceId,
+            String spanId,
+            long sequence,
+            Instant occurredAt) throws Exception {
+        CapabilitySnapshot capability =
+                CapabilityObservationTestFixtures.capability(mapper, scope);
+        byte[] requestJson = mapper.writeValueAsBytes(requestValue);
+        CapabilityObservationEnvelope.PayloadReference request = payload(
+                "request-" + observationId,
+                requestJson,
+                occurredAt.plus(Duration.ofDays(30)));
+        CapabilityObservationEnvelope.PayloadReference response =
+                responseValue == null ? null : payload(
+                        "response-" + observationId,
+                        mapper.writeValueAsBytes(responseValue),
+                        occurredAt.plus(Duration.ofDays(30)));
+        CapabilityObservationEnvelope.DataUseGrant grant =
+                new CapabilityObservationEnvelope.DataUseGrant(
+                        CapabilityObservationTestFixtures.ref(
+                                "DATA_USE_GRANT",
+                                "grant-" + observationId,
+                                1,
+                                '8'),
+                        CapabilityObservationAdmissionService.AUTHORIZED_PURPOSE,
+                        List.of(
+                                CapabilityObservationEnvelope.AllowedUse
+                                        .CORPUS_CURATION,
+                                CapabilityObservationEnvelope.AllowedUse
+                                        .EXACT_REPLAY,
+                                CapabilityObservationEnvelope.AllowedUse
+                                        .TRAJECTORY_MODELING),
+                        occurredAt.minus(Duration.ofDays(1)),
+                        occurredAt.plus(Duration.ofDays(20)));
+        CapabilityObservationEnvelope.Material material =
+                new CapabilityObservationEnvelope.Material(
+                        observationId,
+                        scope,
+                        new MirrorArtifactRef(
+                                "CAPABILITY",
+                                capability.capabilityId(),
+                                capability.revision(),
+                                capability.fingerprint()),
+                        occurredAt,
+                        new CapabilityObservationEnvelope.TraceCoordinates(
+                                traceId, spanId, sequence),
+                        request,
+                        response,
+                        error,
+                        42,
+                        null,
+                        null,
+                        grant);
+        InMemoryVisualEvidenceSigner signer =
+                new InMemoryVisualEvidenceSigner();
+        CapabilityObservationEnvelope envelope = observationIntegrity.seal(
+                material,
+                signer,
+                CapabilityObservationTestFixtures.ISSUER);
+        CapabilityObservationIntegrity.AuthorityKey authority =
+                CapabilityObservationTestFixtures.authorityKey(
+                        envelope,
+                        signer,
+                        CapabilityObservationIntegrity.KeyState.ACTIVE);
+        Instant decidedAt = envelope.seal().signedAt().plusSeconds(1);
+        CapabilityObservationAdmission admission = admissionIntegrity.admitted(
+                envelope,
+                CapabilityObservationTestFixtures.ref(
+                        "OBSERVATION_ADMISSION_POLICY",
+                        "support-admission-policy",
+                        3,
+                        'f'),
+                authority.keyRef(),
+                decidedAt,
+                decidedAt.plus(Duration.ofDays(10)));
+        return new CapabilityObservationRepository.StoredObservation(
+                envelope, admission);
+    }
+
     private CapabilityObservationEnvelope.PayloadReference payload(
             String id,
             byte[] json,
@@ -525,6 +779,46 @@ class CapabilityCorpusServingServiceTest {
                 Map.of(FixtureMirrorCorpusBindings.METADATA_KEY, mirrorCorpus));
     }
 
+    private FixtureBundle fixture(
+            CapabilityCorpusPublication value,
+            CapabilityCorpusTrajectoryPublication trajectory) {
+        MirrorArtifactRef capabilityRef =
+                trajectory.capabilityRef();
+        Map<String, Object> corpusBinding = Map.of(
+                "capabilityRef", wire(capabilityRef),
+                "publicationRef", wire(value.artifactRef()));
+        Map<String, Object> trajectoryBinding = Map.of(
+                "capabilityRef", wire(capabilityRef),
+                "corpusPublicationRef", wire(value.artifactRef()),
+                "trajectoryPublicationRef", wire(trajectory.artifactRef()));
+        Map<String, Object> metadata = new HashMap<>();
+        metadata.put(
+                FixtureMirrorCorpusBindings.METADATA_KEY,
+                Map.of(
+                        "schemaVersion",
+                        FixtureMirrorCorpusBindings.SCHEMA_VERSION,
+                        "publications",
+                        List.of(corpusBinding)));
+        metadata.put(
+                FixtureMirrorTrajectoryBindings.METADATA_KEY,
+                Map.of(
+                        "schemaVersion",
+                        FixtureMirrorTrajectoryBindings.SCHEMA_VERSION,
+                        "trajectories",
+                        List.of(trajectoryBinding)));
+        return new FixtureBundle(
+                "",
+                "fixture-corpus-trajectory",
+                1,
+                "sha256:" + "d".repeat(64),
+                "CONFIDENTIAL",
+                now,
+                42L,
+                List.of(),
+                List.of(),
+                metadata);
+    }
+
     private static Map<String, Object> wire(MirrorArtifactRef ref) {
         return Map.of(
                 "kind", ref.kind(),
@@ -580,6 +874,47 @@ class CapabilityCorpusServingServiceTest {
 
         @Override
         public Optional<GovernancePolicy> resolve(
+                CapabilitySnapshot.Scope scope,
+                MirrorArtifactRef capabilityRef) {
+            return available
+                    && policy.scope().equals(scope)
+                    && policy.capabilityRef().equals(capabilityRef)
+                    ? Optional.of(policy) : Optional.empty();
+        }
+    }
+
+    private CapabilityRetryPolicyProvider.RetryPolicy retryPolicy(
+            MirrorArtifactRef capabilityRef,
+            long revision) {
+        return new CapabilityRetryPolicyProvider.RetryPolicy(
+                scope,
+                capabilityRef,
+                CapabilityObservationTestFixtures.ref(
+                        "RETRY_POLICY",
+                        "customer-retry-policy",
+                        revision,
+                        revision == 1 ? '5' : '6'),
+                3,
+                Set.of("TRANSIENT"),
+                Set.of("UPSTREAM_TIMEOUT"));
+    }
+
+    private static final class MutableRetryPolicyProvider
+            implements CapabilityRetryPolicyProvider {
+        private RetryPolicy policy;
+        private boolean available = true;
+
+        private MutableRetryPolicyProvider(RetryPolicy policy) {
+            this.policy = policy;
+        }
+
+        @Override
+        public boolean available() {
+            return available;
+        }
+
+        @Override
+        public Optional<RetryPolicy> resolve(
                 CapabilitySnapshot.Scope scope,
                 MirrorArtifactRef capabilityRef) {
             return available
