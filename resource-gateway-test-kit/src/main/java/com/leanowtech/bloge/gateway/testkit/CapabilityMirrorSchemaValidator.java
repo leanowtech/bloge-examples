@@ -54,6 +54,9 @@ final class CapabilityMirrorSchemaValidator {
             "capability-corpus-publication-v1.schema.json",
             "capability-corpus-trajectory-publish-request-v1.schema.json",
             "capability-corpus-trajectory-publication-v1.schema.json",
+            "capability-corpus-cluster-validation-v1.schema.json",
+            "capability-corpus-cluster-publish-request-v1.schema.json",
+            "capability-corpus-cluster-publication-v1.schema.json",
             "fixture-mirror-corpus-bindings-v1.schema.json",
             "fixture-mirror-trajectory-bindings-v1.schema.json");
     private static final Map<String, String> RESOURCE_TO_ID = resourceIds();

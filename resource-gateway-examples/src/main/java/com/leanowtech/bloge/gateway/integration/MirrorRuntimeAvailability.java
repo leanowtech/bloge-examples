@@ -27,6 +27,8 @@ public final class MirrorRuntimeAvailability {
     private final BooleanSupplier corpusTrajectoryReadiness;
     private final BooleanSupplier corpusResolverReadiness;
     private final BooleanSupplier corpusTrajectoryResolverReadiness;
+    private final boolean corpusClusterApi;
+    private final BooleanSupplier corpusClusterReadiness;
 
     /**
      * Creates a marker with static readiness, primarily for disabled composition and tests.
@@ -325,6 +327,57 @@ public final class MirrorRuntimeAvailability {
             BooleanSupplier corpusTrajectoryReadiness,
             BooleanSupplier corpusResolverReadiness,
             BooleanSupplier corpusTrajectoryResolverReadiness) {
+        this(planCompilationApi, executionApi, executionReadiness,
+                authorityDistributionApi, authorityDistributionReadiness,
+                attestationDistributionApi, attestationDistributionReadiness,
+                certificationReadiness, observationAdmissionApi,
+                observationAdmissionReadiness, corpusGovernanceApi,
+                corpusGovernanceReadiness, corpusTrajectoryApi,
+                corpusTrajectoryReadiness, corpusResolverReadiness,
+                corpusTrajectoryResolverReadiness, false, () -> false);
+    }
+
+    /**
+     * Creates a marker that also exposes independently governed cluster publication readiness.
+     *
+     * @param planCompilationApi plan routes are assembled
+     * @param executionApi execution routes are assembled
+     * @param executionReadiness dynamic execution readiness
+     * @param authorityDistributionApi authority routes are assembled
+     * @param authorityDistributionReadiness dynamic authority readiness
+     * @param attestationDistributionApi attestation routes are assembled
+     * @param attestationDistributionReadiness dynamic attestation readiness
+     * @param certificationReadiness dynamic certification readiness
+     * @param observationAdmissionApi observation route is assembled
+     * @param observationAdmissionReadiness dynamic observation readiness
+     * @param corpusGovernanceApi corpus governance routes are assembled
+     * @param corpusGovernanceReadiness dynamic corpus governance readiness
+     * @param corpusTrajectoryApi trajectory publication route is assembled
+     * @param corpusTrajectoryReadiness dynamic trajectory publication readiness
+     * @param corpusResolverReadiness dynamic exact corpus serving readiness
+     * @param corpusTrajectoryResolverReadiness dynamic trajectory serving readiness
+     * @param corpusClusterApi cluster publication route is assembled
+     * @param corpusClusterReadiness dynamic cluster policy, validation, and source readiness
+     */
+    public MirrorRuntimeAvailability(
+            boolean planCompilationApi,
+            boolean executionApi,
+            BooleanSupplier executionReadiness,
+            boolean authorityDistributionApi,
+            BooleanSupplier authorityDistributionReadiness,
+            boolean attestationDistributionApi,
+            BooleanSupplier attestationDistributionReadiness,
+            BooleanSupplier certificationReadiness,
+            boolean observationAdmissionApi,
+            BooleanSupplier observationAdmissionReadiness,
+            boolean corpusGovernanceApi,
+            BooleanSupplier corpusGovernanceReadiness,
+            boolean corpusTrajectoryApi,
+            BooleanSupplier corpusTrajectoryReadiness,
+            BooleanSupplier corpusResolverReadiness,
+            BooleanSupplier corpusTrajectoryResolverReadiness,
+            boolean corpusClusterApi,
+            BooleanSupplier corpusClusterReadiness) {
         this.planCompilationApi = planCompilationApi;
         this.executionApi = executionApi;
         this.executionReadiness = Objects.requireNonNull(
@@ -351,6 +404,9 @@ public final class MirrorRuntimeAvailability {
         this.corpusTrajectoryResolverReadiness = Objects.requireNonNull(
                 corpusTrajectoryResolverReadiness,
                 "corpusTrajectoryResolverReadiness");
+        this.corpusClusterApi = corpusClusterApi;
+        this.corpusClusterReadiness = Objects.requireNonNull(
+                corpusClusterReadiness, "corpusClusterReadiness");
     }
 
     /**
@@ -555,6 +611,31 @@ public final class MirrorRuntimeAvailability {
         }
         try {
             return corpusTrajectoryResolverReadiness.getAsBoolean();
+        } catch (RuntimeException unavailable) {
+            return false;
+        }
+    }
+
+    /**
+     * Reports protected recorded-cluster publication route assembly.
+     *
+     * @return whether cluster governance is physically assembled
+     */
+    public boolean corpusClusterApi() {
+        return corpusClusterApi;
+    }
+
+    /**
+     * Probes current corpus, cluster-policy, validation, and source authorities.
+     *
+     * @return whether the assembled route can publish a governed cluster now
+     */
+    public boolean corpusClusterReady() {
+        if (!corpusClusterApi) {
+            return false;
+        }
+        try {
+            return corpusClusterReadiness.getAsBoolean();
         } catch (RuntimeException unavailable) {
             return false;
         }

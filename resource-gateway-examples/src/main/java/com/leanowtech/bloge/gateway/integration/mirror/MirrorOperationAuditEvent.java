@@ -84,7 +84,9 @@ public record MirrorOperationAuditEvent(
         /** Publish one exact reviewed corpus revision as the serving head. */
         CORPUS_PUBLISH,
         /** Publish one exact owner-reviewed recorded retry trajectory. */
-        CORPUS_TRAJECTORY_PUBLISH
+        CORPUS_TRAJECTORY_PUBLISH,
+        /** Publish one exact externally validated recorded cluster. */
+        CORPUS_CLUSTER_PUBLISH
     }
 
     /** Terminal operation outcomes. */

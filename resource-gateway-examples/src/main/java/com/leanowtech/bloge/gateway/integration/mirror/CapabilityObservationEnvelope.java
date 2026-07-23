@@ -307,7 +307,9 @@ public record CapabilityObservationEnvelope(
         /** Calibrate result distributions and confidence. */
         OUTCOME_CALIBRATION,
         /** Learn multi-step state transitions for the tenant. */
-        TRAJECTORY_MODELING
+        TRAJECTORY_MODELING,
+        /** Validate and serve owner-governed request clusters. */
+        CLUSTER_MODELING
     }
 
     /**

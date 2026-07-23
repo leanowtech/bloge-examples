@@ -11,9 +11,11 @@ import com.leanowtech.bloge.gateway.integration.MirrorRuntimeAvailability;
 import com.leanowtech.bloge.gateway.integration.MirrorDeploymentIsolationAuthorityPublicationController;
 import com.leanowtech.bloge.gateway.integration.CapabilityObservationController;
 import com.leanowtech.bloge.gateway.integration.CapabilityCorpusGovernanceController;
+import com.leanowtech.bloge.gateway.integration.CapabilityCorpusClusterController;
 import com.leanowtech.bloge.gateway.integration.mirror.CapabilityObservationAdmissionService;
 import com.leanowtech.bloge.gateway.integration.mirror.CapabilityObservationRepository;
 import com.leanowtech.bloge.gateway.integration.mirror.CapabilityCorpusGovernanceService;
+import com.leanowtech.bloge.gateway.integration.mirror.CapabilityCorpusClusterGovernanceService;
 import com.leanowtech.bloge.gateway.integration.mirror.CapabilityCorpusRepository;
 import com.leanowtech.bloge.gateway.integration.mirror.CapabilityObservationReviewRepository;
 import com.leanowtech.bloge.gateway.integration.mirror.MirrorDeploymentIsolationAuthorityPublicationService;
@@ -107,12 +109,16 @@ class TestRuntimeApplicationIntegrationTest {
                 CapabilityObservationController.class)).hasSize(1);
         assertThat(context.getBeansOfType(
                 CapabilityCorpusGovernanceController.class)).hasSize(1);
+        assertThat(context.getBeansOfType(
+                CapabilityCorpusClusterController.class)).hasSize(1);
         assertThat(context.getBeansOfType(MirrorPlanIntegrationService.class)).hasSize(1);
         assertThat(context.getBeansOfType(MirrorRunIntegrationService.class)).hasSize(1);
         assertThat(context.getBeansOfType(
                 MirrorDeploymentIsolationAuthorityPublicationService.class)).hasSize(1);
         assertThat(context.getBeansOfType(
                 CapabilityObservationAdmissionService.class)).hasSize(1);
+        assertThat(context.getBeansOfType(
+                CapabilityCorpusClusterGovernanceService.class)).hasSize(1);
         assertThat(context.getBeansOfType(
                 CapabilityObservationRepository.class)).hasSize(1);
         assertThat(context.getBeansOfType(
@@ -133,6 +139,8 @@ class TestRuntimeApplicationIntegrationTest {
             assertThat(availability.observationAdmissionReady()).isFalse();
             assertThat(availability.corpusGovernanceApi()).isTrue();
             assertThat(availability.corpusGovernanceReady()).isFalse();
+            assertThat(availability.corpusClusterApi()).isTrue();
+            assertThat(availability.corpusClusterReady()).isFalse();
         });
         assertThat(context.getBeansOfType(TestRunRepository.class)).hasSize(1);
         assertThat(context.getBeansOfType(TestSuiteRunRepository.class)).hasSize(1);
@@ -194,6 +202,12 @@ class TestRuntimeApplicationIntegrationTest {
                 .containsEntry("mirrorCorpusGovernanceProtocol", true)
                 .containsEntry("mirrorCorpusGovernanceApi", true)
                 .containsEntry("mirrorCorpusGovernanceReady", false)
+                .containsEntry(
+                        "mirrorCorpusClusterPublicationProtocol", true)
+                .containsEntry(
+                        "mirrorCorpusClusterPublicationApi", true)
+                .containsEntry(
+                        "mirrorCorpusClusterPublicationReady", false)
                 .containsEntry("mirrorCorpusResolverReady", false)
                 .containsEntry(
                         "mirrorCorpusTrajectoryResolverReady", false);
@@ -220,6 +234,9 @@ class TestRuntimeApplicationIntegrationTest {
         assertThat(capabilities.getBody().payload().endpoints()).anyMatch(endpoint ->
                 endpoint.method().equals("POST")
                         && endpoint.path().equals("/api/mirror/corpus-publications"));
+        assertThat(capabilities.getBody().payload().endpoints()).anyMatch(endpoint ->
+                endpoint.method().equals("POST")
+                        && endpoint.path().equals("/api/mirror/corpus-clusters"));
         assertThat(capabilities.getBody().payload().endpoints()).anyMatch(endpoint ->
                 endpoint.path().equals("/api/testing/targets/graphs/{graphName}"));
         assertThat(capabilities.getBody().payload().endpoints()).anyMatch(endpoint ->

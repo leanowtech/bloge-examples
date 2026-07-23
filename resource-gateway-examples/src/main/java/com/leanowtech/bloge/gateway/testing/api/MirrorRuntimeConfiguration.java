@@ -20,6 +20,10 @@ import com.leanowtech.bloge.gateway.integration.mirror.DatabaseCapabilityObserva
 import com.leanowtech.bloge.gateway.integration.mirror.CapabilityCorpusGovernancePolicyProvider;
 import com.leanowtech.bloge.gateway.integration.mirror.CapabilityCorpusGovernanceService;
 import com.leanowtech.bloge.gateway.integration.mirror.CapabilityCorpusServingService;
+import com.leanowtech.bloge.gateway.integration.mirror.CapabilityCorpusClusterGovernanceService;
+import com.leanowtech.bloge.gateway.integration.mirror.CapabilityCorpusClusterPolicyProvider;
+import com.leanowtech.bloge.gateway.integration.mirror.CapabilityCorpusClusterRepository;
+import com.leanowtech.bloge.gateway.integration.mirror.CapabilityCorpusClusterValidationAuthority;
 import com.leanowtech.bloge.gateway.integration.mirror.CapabilityCorpusTrajectoryGovernanceService;
 import com.leanowtech.bloge.gateway.integration.mirror.CapabilityCorpusTrajectoryRepository;
 import com.leanowtech.bloge.gateway.integration.mirror.CapabilityRetryPolicyProvider;
@@ -29,6 +33,7 @@ import com.leanowtech.bloge.gateway.integration.mirror.CapabilityCorpusSourceVer
 import com.leanowtech.bloge.gateway.integration.mirror.CapabilityCorpusPayloadAuthority;
 import com.leanowtech.bloge.gateway.integration.mirror.CapabilityObservationReviewRepository;
 import com.leanowtech.bloge.gateway.integration.mirror.DatabaseCapabilityCorpusRepository;
+import com.leanowtech.bloge.gateway.integration.mirror.DatabaseCapabilityCorpusClusterRepository;
 import com.leanowtech.bloge.gateway.integration.mirror.DatabaseCapabilityCorpusTrajectoryRepository;
 import com.leanowtech.bloge.gateway.integration.mirror.DatabaseCapabilityObservationReviewRepository;
 import com.leanowtech.bloge.gateway.integration.mirror.AgentBackedMirrorDeploymentIsolationRunTrustAuthority;
@@ -400,6 +405,30 @@ public class MirrorRuntimeConfiguration {
     }
 
     /**
+     * Installs a fail-closed placeholder until operator-owned cluster policy is supplied.
+     *
+     * @return unavailable cluster policy authority
+     */
+    @Bean
+    @ConditionalOnMissingBean
+    public CapabilityCorpusClusterPolicyProvider
+            capabilityCorpusClusterPolicyProvider() {
+        return CapabilityCorpusClusterPolicyProvider.unavailable();
+    }
+
+    /**
+     * Installs a fail-closed placeholder until a data-plane cluster validator is supplied.
+     *
+     * @return unavailable cluster validation authority
+     */
+    @Bean
+    @ConditionalOnMissingBean
+    public CapabilityCorpusClusterValidationAuthority
+            capabilityCorpusClusterValidationAuthority() {
+        return CapabilityCorpusClusterValidationAuthority.unavailable();
+    }
+
+    /**
      * Installs a fail-closed placeholder until external source lifecycle checks are supplied.
      *
      * @return unavailable metadata-only corpus source verifier
@@ -474,6 +503,25 @@ public class MirrorRuntimeConfiguration {
             ObjectMapper objectMapper,
             CapabilityCorpusIntegrity integrity) {
         return new DatabaseCapabilityCorpusTrajectoryRepository(
+                jdbc, objectMapper, integrity);
+    }
+
+    /**
+     * Creates the independent owner-reviewed cluster publication lineage.
+     *
+     * @param jdbc transaction-aware application JDBC boundary
+     * @param objectMapper canonical protocol mapper
+     * @param integrity corpus and cluster integrity boundary
+     * @return full-scope append-only cluster repository
+     */
+    @Bean
+    @ConditionalOnMissingBean
+    public CapabilityCorpusClusterRepository
+            capabilityCorpusClusterRepository(
+            JdbcTemplate jdbc,
+            ObjectMapper objectMapper,
+            CapabilityCorpusIntegrity integrity) {
+        return new DatabaseCapabilityCorpusClusterRepository(
                 jdbc, objectMapper, integrity);
     }
 
@@ -604,7 +652,8 @@ public class MirrorRuntimeConfiguration {
             MirrorDeploymentIsolationAttestationService.class,
             CapabilityObservationAdmissionService.class,
             CapabilityCorpusGovernanceService.class,
-            CapabilityCorpusTrajectoryGovernanceService.class})
+            CapabilityCorpusTrajectoryGovernanceService.class,
+            CapabilityCorpusClusterGovernanceService.class})
     public MirrorRuntimeAvailability mirrorRuntimeAvailability(
             MirrorPlanIntegrationService planService,
             MirrorRunIntegrationService runService,
@@ -620,6 +669,8 @@ public class MirrorRuntimeConfiguration {
             CapabilityCorpusGovernanceService corpusService,
             CapabilityCorpusGovernancePolicyProvider corpusPolicies,
             CapabilityRetryPolicyProvider retryPolicies,
+            CapabilityCorpusClusterPolicyProvider clusterPolicies,
+            CapabilityCorpusClusterValidationAuthority clusterValidations,
             CapabilityCorpusSourceVerifier corpusSources,
             CapabilityCorpusServingService corpusServing) {
         return new MirrorRuntimeAvailability(true, true, evidenceSigner::available,
@@ -634,7 +685,12 @@ public class MirrorRuntimeConfiguration {
                         && retryPolicies.available()
                         && corpusSources.available(),
                 corpusServing::ready,
-                corpusServing::trajectoryReady);
+                corpusServing::trajectoryReady,
+                true,
+                () -> corpusPolicies.available()
+                        && clusterPolicies.available()
+                        && clusterValidations.available()
+                        && corpusSources.available());
     }
 
     /** Compatibility factory retained for focused readiness tests outside Spring composition. */

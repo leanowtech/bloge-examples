@@ -7,7 +7,7 @@
 
 | 文档属性 | 内容 |
 |---|---|
-| 状态 | Accepted / In implementation；Stage 0 仓库内工程退出门禁已通过；Stage 1 compiler、resolver provenance、payload-free evidence 签发/独立复验、scope-isolated durable store、受保护 Plan/Run/Evidence API、durable request fencing、动态 occurrence budget、payload-free operation audit、固定基数指标、部署隔离证明协议/离线验真、M-of-N authority key-set trusted distribution、full-scope attestation ingest/current-only distribution/irreversible revocation、deployment agent pinned mTLS/atomic cache、execution admission/evidence commit 运行时双重绑定已完成；Stage 2 已完成签名 observation 准入/隔离、immutable review/candidate/publication、test/staging `RECORDED_EXACT` serving、explicit owner-reviewed retry trajectory publication 和 `RECORDED_TRAJECTORY` runtime serving 五个纵切；生产 payload authority、stateful/cluster resolver、漂移/删除证明、跨语言 canonicalization 和环境 certification 门禁继续实施 |
+| 状态 | Accepted / In implementation；Stage 0 仓库内工程退出门禁已通过；Stage 1 compiler、resolver provenance、payload-free evidence 签发/独立复验、scope-isolated durable store、受保护 Plan/Run/Evidence API、durable request fencing、动态 occurrence budget、payload-free operation audit、固定基数指标、部署隔离证明协议/离线验真、M-of-N authority key-set trusted distribution、full-scope attestation ingest/current-only distribution/irreversible revocation、deployment agent pinned mTLS/atomic cache、execution admission/evidence commit 运行时双重绑定已完成；Stage 2 已完成签名 observation 准入/隔离、immutable review/candidate/publication、test/staging `RECORDED_EXACT` serving、explicit owner-reviewed retry trajectory publication、`RECORDED_TRAJECTORY` runtime serving和 governed `RECORDED_CLUSTER` publication 六个纵切；生产 payload authority、stateful/cluster runtime resolver、漂移/删除证明、跨语言 canonicalization 和环境 certification 门禁继续实施 |
 | 目标读者 | Resource Gateway、BLOGE Runtime、ANEKE、TEE/数据平台、QA、SRE、安全与业务运营团队 |
 | 设计范围 | external/composed 能力建模、镜像运行、保真语料、有状态世界、场景演练、证据、保真度与结果校准 |
 | 非目标 | 不重做 ANEKE 的资产治理和发布门禁；不允许测试控制进入生产业务请求；不把观测频率直接当成业务正确性 |
@@ -401,6 +401,20 @@
   仍只包含逐值 fingerprint 与 `HASH_ONLY` policy。最终 Resource Gateway 干净全量门禁 `4725` 项测试零失败、
   零错误（另有 3 项条件跳过），独立 test-kit `296/296` 全绿；真实 Chrome、可执行 Boot JAR、strict Schema
   packaging、shaded CLI 和公共 JavaDoc 同时验证。
+- Stage 2 第六增量冻结 governed `RECORDED_CLUSTER` 的发布边界。外部 data-plane validation authority 提交
+  payload-free proof，精确绑定 current corpus publication/revision、2..1000 个有序成员、代表 source、request
+  match JSON Pointer、identity mode/projection、distinct identity、独立 holdout 计数和可重算的
+  `WILSON_PRECISION_95_V1` 区间。Resource Gateway 不接触 payload，只在 owner policy 下重验 current corpus/policy/
+  validation、source membership/schema、`EXACT_REPLAY + CLUSTER_MODELING` grant、retention/horizon、publisher、
+  最小 support/identity/holdout、最大 false-positive basis points、最低 confidence lower bound 和 owner-approved
+  path policy，然后通过 `POST /api/mirror/corpus-clusters` 追加独立 full-scope lineage。首版/后继 predecessor、
+  command/content address、canonical JSON 与冗余数据库索引会在每次读写时复验；exact retry 在任何 mutable
+  authority 查询前恢复原结果。`IDENTITY_FREE_RESPONSE` 禁止 projection；`REQUEST_PROJECTION` 必须将请求身份
+  确定性写入互不重叠的响应路径，任何缺口、父子路径重叠、通配或伪造置信区间都失败关闭。strict Schema、固定
+  payload-free fixture、独立 test-kit verifier、能力探针和真实 Spring Boot 装配测试已落地。该增量只形成可审计
+  publication，不宣称 cluster fixture binding、payload materialization 或 runtime resolver 已完成。最新 Resource
+  Gateway 完整门禁 `4742` 项测试零失败、零错误（另有 3 项条件跳过），独立 test-kit `302/302` 全绿；真实
+  Chrome、可执行 Boot JAR、strict Schema packaging、shaded CLI 和公共 JavaDoc 同时验证。
 
 ---
 
@@ -491,7 +505,7 @@ Resource Gateway 已有的工业底座应直接复用：
 | 确定性测试控制 | 80% | 缺镜像来源、匹配可信度和领域状态控制 |
 | Evidence/Replay | 90% | payload-free signed mirror evidence、deployment trust 双重绑定和独立复验已落地；缺业务 state trace、fidelity observation 聚合和 outcome lineage |
 | 递归 DAG 测试 | 85% | MirrorPlan/closure/runtime inventory/fixture control 已统一；缺 contract-mock 展开治理和状态世界 |
-| 日志蒸馏与语料 | 68% | payload-free signed observation、准入/隔离、immutable review、candidate/publication/trajectory 独立 lineage、元数据风险门禁、fixture exact/trajectory binding、在线 revalidation、test/staging `RECORDED_EXACT`/`RECORDED_TRAJECTORY`、BLOGE 原生 retry loop 与独立 verifier 已落地；缺生产 payload authority、stateful/cluster resolver、漂移、偏差、outcome 校准和删除证明 |
+| 日志蒸馏与语料 | 74% | payload-free signed observation、准入/隔离、immutable review、candidate/publication/trajectory/cluster 独立 lineage、元数据风险门禁、fixture exact/trajectory binding、在线 revalidation、test/staging `RECORDED_EXACT`/`RECORDED_TRAJECTORY`、BLOGE 原生 retry loop、cluster holdout/Wilson/identity-safety publication 与独立 verifier 已落地；缺生产 payload authority、stateful/cluster runtime resolver、漂移、偏差、outcome 校准和删除证明 |
 | 有状态业务世界 | 5% | 执行 checkpoint 不等于业务实体与事务状态模型 |
 | Scenario/Rehearsal | 10% | 缺场景、写效果、处置断言和状态演练协议 |
 | Fidelity/Outcome | 5% | 缺保真向量、shadow、权威结果归因和校准闭环 |
@@ -759,6 +773,17 @@ type MirrorSource =
 - 返回的是同一业务键的轨迹样本；
 - 否则拒绝匹配。
 
+当前第六纵切已经把前两项的**发布前证明**协议化，但尚未把 cluster 接入 runtime。validation 必须引用 exact
+current corpus publication/revision，并冻结有序成员、代表 source、精确 request match paths、身份模式、身份
+projection、独立 holdout 和 Wilson precision 区间。发布服务重新证明所有成员属于同一 corpus、响应 Schema 相同、
+grant 包含 `CLUSTER_MODELING`，并要求：
+
+- `IDENTITY_FREE_RESPONSE` 时 projection 为空；
+- `REQUEST_PROJECTION` 时每个 request JSON Pointer 显式映射到一个或多个 response JSON Pointer；
+- response paths 全局互不重复、互不为父子路径，不接受通配符和非法 escape；
+- data-plane 必须声明 identity coverage complete，owner policy 仍可进一步收紧允许路径；
+- 任何一项无法证明都不发布，不能通过“低风险”或人工备注绕过。
+
 ### 7.5 Resolver 置信度与拒答
 
 ```ts
@@ -797,6 +822,12 @@ interface MirrorResolution {
 `outputIncluded` 用于区分“合法返回 null”和“payload 未进入证据”。`HASH_ONLY` 必须有 output fingerprint 且
 不能携带 payload；`ABSTAINED` 不得携带 output、error、match 或非零置信度；`REJECTED` 必须携带 payload-free
 错误。低置信度不是 warning 后继续，而是由 capability risk policy 决定降级或拒答。
+
+cluster publication 只接受精确可重算的 `WILSON_PRECISION_95_V1`。point、lowerBound、upperBound 必须与
+`correctCount / acceptedCount` 和 95% Wilson 区间一致；policy 使用 lower bound，而不是样本内 point estimate，
+并同时约束最小 support、最小 distinct identity、最小 holdout accepted 与最大 false-positive basis points。
+验证机构不可用、proof 过期/撤销、policy 漂移或任一阈值不满足时，当前行为是拒绝发布；未来 runtime 对已发布
+cluster 也必须重新检查这些 authority，失败时 `ABSTAINED`，不能 stale-while-serve。
 
 ## 8. 语料蒸馏与数据治理
 
@@ -856,7 +887,10 @@ provider message 或 stack trace。
  -> latest head + current policy/source/grant/retention/tombstone recheck
  -> external payload authority materialization + content-address verification
  -> frozen test/staging RECORDED_EXACT generation
- -> trajectory/stateful/cluster resolver（后续增量）
+ -> explicit trajectory publication + fixture binding + RECORDED_TRAJECTORY generation
+ -> external holdout/identity validation + owner-reviewed cluster publication
+ -> cluster fixture binding/materialization/runtime resolver（下一纵切）
+ -> stateful resolver（后续阶段）
 ```
 
 确定的 policy、capability、integrity、grant、window 或 payload-reference 拒绝进入隔离队列，不得部分进入 serving
@@ -1161,6 +1195,7 @@ session 重放造成重复状态、运行时依赖漂移。
 | `POST /api/mirror/corpus-candidates` | 冻结 exact admitted sources 并计算 non-serving metadata risk | full scope + corpusId + revision + command fingerprint；predecessor fence | 已实现（test/staging + `MIRROR_CORPUS_GOVERNANCE`；默认 policy/source authority 未就绪） |
 | `POST /api/mirror/corpus-publications` | owner-reviewed 发布当前 eligible candidate | 独立 publication revision + predecessor fence + exact command fingerprint | 已实现（test/staging + `MIRROR_CORPUS_GOVERNANCE`；fixture 显式绑定后可被 exact/trajectory resolver 消费） |
 | `POST /api/mirror/corpus-trajectories` | 显式发布 current corpus 中 owner-reviewed retry attempt sequence | full scope + trajectory revision/predecessor + command fingerprint；exact retry 先恢复 | 已实现（test/staging + `MIRROR_CORPUS_GOVERNANCE`；fixture binding、在线重验与 runtime resolver 已接线） |
+| `POST /api/mirror/corpus-clusters` | 发布 externally validated、owner-reviewed recorded cluster，不接触 payload | full scope + cluster revision/predecessor + command/content fingerprint；exact retry 在 mutable authority 前恢复 | 已实现（test/staging + `MIRROR_CORPUS_GOVERNANCE`；默认 cluster policy/validation authority 未就绪；runtime resolver 尚未接线） |
 | `POST /api/mirror/shadow-jobs` | 提交 shadow comparison | job fingerprint 幂等 | 待实现 |
 | `GET /api/mirror/fidelity/domains/{domainId}` | 查询 fidelity profile | 只读 | 待实现 |
 | `POST /api/mirror/outcomes` | 回填 outcome | outcome identity 幂等 | 待实现 |
@@ -1214,6 +1249,13 @@ mirror_isolation_attestation_head(scope, deployment_scope_id, key_set_id, attest
                        immutable_deployment_coordinates, floor_revision,
                        floor_attestation_fingerprint, authority_generation,
                        authority_publication_fingerprint, status_revision, status_fingerprint)
+mirror_capability_corpus_clusters(scope, cluster_id, revision, cluster_fingerprint,
+                       command_fingerprint, predecessor_fingerprint, capability_ref,
+                       corpus_publication_ref, corpus_revision_ref, publication_policy_ref,
+                       cluster_policy_ref, validation_ref, member_count,
+                       distinct_identity_count, holdout_accepted_count,
+                       holdout_false_positive_count, confidence_lower_bound,
+                       reviewed_by, published_at, usable_until, payload_free_cluster_json)
 artifact_revision(artifact_type, artifact_id, revision, fingerprint, state,
                   provenance_json, payload_ref, created_at)
 contract_mock_grant(grant_id, subtool_ref, consumer_scope, max_ratio, state,
@@ -1402,7 +1444,7 @@ effect unknown 和递归环会失败关闭；旧协议无破坏。
 
 ### Stage 2：受治理语料，4 个 sprint，P0/P1
 
-**当前状态**：前五个纵切已完成。第一纵切冻结签名 payload-free observation、operator-owned admission policy、
+**当前状态**：前六个纵切已完成。第一纵切冻结签名 payload-free observation、operator-owned admission policy、
 external payload-reference verification SPI、admitted/quarantined 终态、full-scope append-only store、受保护 API、
 honest capability probe、mandatory audit 原子性和独立 test-kit verifier。第二纵切完成 terminal quarantine review、
 non-serving corpus candidate、policy-independent risk statistics、owner-reviewed serving publication、candidate/publication
@@ -1413,9 +1455,29 @@ honest readiness 和独立 binding verifier。第四纵切完成 explicit owner-
 retry-policy authority、independent trajectory publication lineage、strict Schema、API/readiness 与 offline verifier，
 第五纵切完成 trajectory fixture binding、与 exact corpus 的交叉对账、current-head/retry-policy/source/grant/
 retention/payload 在线复验、独立 generation index、BLOGE 原生 retry loop、retry-capacity preflight、strict binding
-Schema、独立 verifier 与 resolver readiness。尚未完成生产 payload vault/authority、stateful/cluster resolver、
+Schema、独立 verifier 与 resolver readiness。第六纵切完成 externally validated cluster proof、owner-owned
+threshold/path policy、identity-free/request-projection 安全约束、holdout/Wilson precision 重算、
+current corpus/source/grant/retention/horizon 在线复验、独立 cluster lineage、strict Schema、API/readiness 和
+offline verifier。尚未完成 cluster fixture binding/materialization/runtime resolver、生产 payload vault/authority、stateful resolver、
 poisoning/drift/bias、retention/deletion proof、outcome calibration 和多副本 serving generation 运维，因此 Stage 2
 仍不能标记完成。
+
+**下一纵切可直接开工：`RECORDED_CLUSTER` runtime**
+
+| Ticket | 根问题 | 实现边界 | 验收条件 |
+|---|---|---|---|
+| RG-MIR-CL-001 | fixture 无法选择 exact cluster publication | 新增 strict `fixtureMirrorClusterBindings`，绑定 capability、corpus publication、cluster publication；parser 与 test-kit 独立 verifier | unknown/重复/乱序/跨 corpus/head fork 全部失败关闭 |
+| RG-MIR-CL-002 | control plane 不能且不应读取 payload | 在 `CapabilityCorpusPayloadAuthority` 旁增加 generation-local cluster materializer，只短时读取 representative response 和必要 member request projections；验证 content address 后冻结只读内存对象 | database/plan/HTTP/evidence/log 无 payload；失败后内存引用清除；总量仍受 256 MiB generation budget |
+| RG-MIR-CL-003 | 跨实体复用会产生身份串号 | 实现结构化 JSON Pointer projection kernel：先删除/拒绝所有 owner-declared identity response paths，再仅从当前 request 回填；禁止字符串替换、通配、父子路径重叠和部分回填 | A 的 representative response 在 B 请求下只能产生 B 身份；任一缺口 `ABSTAINED` |
+| RG-MIR-CL-004 | 未见请求的匹配容易虚假泛化 | resolver 只对 validation 冻结的 `matchRequestPointers` 做 canonical exact equality；缺字段、类型不同、多候选同优先级、cluster head/policy/validation/source/grant/horizon 漂移均拒答 | property/fuzz 覆盖 numeric/string/null/array/object、缺字段和恶意深层 JSON；0 次真实 external 调用 |
+| RG-MIR-CL-005 | runtime 可能把 publication 当永久授权 | 每次 materialize 重验 current corpus/cluster head、policy、validation authority、source lifecycle、grant/retention/tombstone、payload content address；generation 内固定 authority token | authority 在 compile 前失效拒绝；运行中 generation 不撕裂；下一次运行观察撤销 |
+| RG-MIR-CL-006 | 低置信度可能被当 warning | compiler 将 cluster source、policy/validation refs、Wilson lower bound、limitations 和 precedence 封入 execution control；resolver 只返回 policy 已接受的 publication | `OWNER_SPECIFIED -> RECORDED_EXACT -> RECORDED_TRAJECTORY -> RECORDED_CLUSTER -> GOVERNED_REPLAY -> ABSTAINED` 指纹稳定 |
+| RG-MIR-CL-007 | 可视化命中却无法审计 | `MirrorResolution` 加完整 cluster/corpus/validation/representative/member/policy refs 与 frozen confidence；evidence 只保留 request/output hash 和 refs | 离线 verifier 可证明 source/置信度/provenance closure，不能看到 payload |
+| RG-MIR-CL-008 | 单副本 happy path 不等于工业可用 | 增加并发 materialization、撤销传播、validation outage、vault drift、内存预算、GC/清零、恶意 JSON、1000-member 上限和真实 Spring/生产隔离测试 | 聚焦、全量、test-kit、JavaDoc、可执行 JAR 全绿；probe 分开报告 protocol/API/publication-ready/runtime-ready |
+
+这一纵切的停止条件也必须前置：若身份字段无法被 owner 完整枚举，或 response 语义依赖未建模的实体状态，
+不得继续增强启发式匹配，应转入 `ABSTAINED`、同业务键 trajectory 或 Stage 3 stateful world。可视化价值不能成为
+返回错误客户数据的理由。
 
 **交付物**：
 
@@ -1516,7 +1578,7 @@ SRE runbook 和生产认证包。
 | RG-MIR-006 | 建立 `MirrorPlanCompiler` 骨架 | `gateway/testing/planning` | 已完成 compiler/run kernel、exact closure/runtime inventory 对账、external-only 控制、resolver provenance、generation/TTL/scope 准入、静态 + 动态 occurrence budget、payload-free durable store、受保护 Plan/Run/Evidence API、durable request fencing、fail-closed operation observability、deployment-attestation 协议/离线验真、authority key-set trusted distribution/durable floor、attestation ingest/status/revocation/current-only 分发、agent pinned mTLS/non-TOFU/atomic cache，以及 admission/confirmation/transaction commit 的 runtime trust binding；待非 Java v2 固定 fixture 与环境级多副本认证 |
 | RG-MIR-007 | 复用 FixtureBundle 的 mirror adapter ADR | `docs/adr/ADR-004-mirror-plan-reuses-fixture-bundle.md` + `compileMirror` | 已完成；不新增平行 fixture 主模型；映射损失和暂不支持项显式报告 |
 | RG-MIR-008 | 建立生产隔离架构测试 | production composition tests | bean/profile 双栅栏、普通请求控制字段拒绝、Mirror route 在 production/mixed profile 物理不存在、deployment trust runtime 双重绑定已完成；待客户环境外部签发/分发认证、非 Java v2 compatibility 和 pre-materialization ingress 门禁 |
-| RG-MIR-009 | 增加 test-kit 协议模型与 compatibility fixtures | `resource-gateway-test-kit` | 已完成 Snapshot/Closure、MirrorEvidence、DeploymentIsolationAttestation/Authority 与 CapabilityObservation 独立复验；五份共享 fixture 均不携带私钥或业务 payload；不依赖 server/Spring |
+| RG-MIR-009 | 增加 test-kit 协议模型与 compatibility fixtures | `resource-gateway-test-kit` | 已完成 Snapshot/Closure、MirrorEvidence、DeploymentIsolationAttestation/Authority、CapabilityObservation、Corpus/Trajectory/Cluster 独立复验；共享 fixture 均不携带私钥或业务 payload；不依赖 server/Spring |
 | RG-MIR-010 | 建立退款域资产清单 | `docs/examples/resource-gateway-mirror/refund/` | capability closure、entity、baseline read、write effect、outcome owner 完整 |
 | RG-MIR-011 | 增加协议版本与错误码注册表 | mirror protocol docs | 每个拒绝路径有稳定 code、HTTP 语义和重试分类 |
 | RG-MIR-012 | 建立 Stage 0 CI 门禁 | Maven/schema/doc verification | projection、schema、compatibility、production isolation 在 PR 必跑 |

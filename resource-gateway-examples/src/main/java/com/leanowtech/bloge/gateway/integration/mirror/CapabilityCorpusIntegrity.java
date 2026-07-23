@@ -323,6 +323,173 @@ public final class CapabilityCorpusIntegrity {
         }
     }
 
+    /**
+     * Seals one externally produced payload-free cluster validation.
+     *
+     * @param candidate validation carrying a placeholder fingerprint
+     * @return content-addressed cluster validation
+     */
+    public CapabilityCorpusClusterValidation sealClusterValidation(
+            CapabilityCorpusClusterValidation candidate) {
+        CapabilityCorpusClusterValidation exact =
+                Objects.requireNonNull(candidate, "candidate");
+        CapabilityCorpusClusterValidation blank =
+                new CapabilityCorpusClusterValidation(
+                        exact.schemaVersion(),
+                        ZERO_FINGERPRINT,
+                        exact.scope(),
+                        exact.validationId(),
+                        exact.revision(),
+                        exact.capabilityRef(),
+                        exact.corpusPublicationRef(),
+                        exact.corpusRevisionRef(),
+                        exact.representativeSource(),
+                        exact.members(),
+                        exact.matchRequestPointers(),
+                        exact.identityMode(),
+                        exact.identityProjections(),
+                        exact.distinctIdentityCount(),
+                        exact.holdout(),
+                        exact.confidence(),
+                        exact.identityCoverageComplete(),
+                        exact.validatedBy(),
+                        exact.validatedAt(),
+                        exact.expiresAt());
+        return new CapabilityCorpusClusterValidation(
+                blank.schemaVersion(),
+                fingerprint(blank),
+                blank.scope(),
+                blank.validationId(),
+                blank.revision(),
+                blank.capabilityRef(),
+                blank.corpusPublicationRef(),
+                blank.corpusRevisionRef(),
+                blank.representativeSource(),
+                blank.members(),
+                blank.matchRequestPointers(),
+                blank.identityMode(),
+                blank.identityProjections(),
+                blank.distinctIdentityCount(),
+                blank.holdout(),
+                blank.confidence(),
+                blank.identityCoverageComplete(),
+                blank.validatedBy(),
+                blank.validatedAt(),
+                blank.expiresAt());
+    }
+
+    /**
+     * Verifies an externally resolved cluster-validation content address.
+     *
+     * @param validation untrusted cluster validation
+     * @return true only for exact canonical content
+     */
+    public boolean clusterValidationVerified(
+            CapabilityCorpusClusterValidation validation) {
+        try {
+            return validation != null
+                    && validation.validationFingerprint().equals(
+                    sealClusterValidation(validation).validationFingerprint());
+        } catch (RuntimeException invalid) {
+            return false;
+        }
+    }
+
+    /**
+     * Computes the canonical cluster-publication command identity.
+     *
+     * @param request exact owner-reviewed cluster command
+     * @return canonical SHA-256 fingerprint
+     */
+    public String clusterCommandFingerprint(
+            CapabilityCorpusClusterPublishRequest request) {
+        return fingerprint(Objects.requireNonNull(request, "request"));
+    }
+
+    /**
+     * Seals one immutable cluster publication.
+     *
+     * @param candidate publication carrying a placeholder fingerprint
+     * @return content-addressed cluster publication
+     */
+    public CapabilityCorpusClusterPublication sealCluster(
+            CapabilityCorpusClusterPublication candidate) {
+        CapabilityCorpusClusterPublication exact =
+                Objects.requireNonNull(candidate, "candidate");
+        CapabilityCorpusClusterPublication blank =
+                new CapabilityCorpusClusterPublication(
+                        exact.schemaVersion(),
+                        ZERO_FINGERPRINT,
+                        exact.sourceCommandFingerprint(),
+                        exact.scope(),
+                        exact.clusterId(),
+                        exact.revision(),
+                        exact.predecessorRef(),
+                        exact.capabilityRef(),
+                        exact.corpusPublicationRef(),
+                        exact.corpusRevisionRef(),
+                        exact.publicationPolicyRef(),
+                        exact.clusterPolicyRef(),
+                        exact.validationRef(),
+                        exact.representativeSource(),
+                        exact.members(),
+                        exact.matchRequestPointers(),
+                        exact.identityMode(),
+                        exact.identityProjections(),
+                        exact.distinctIdentityCount(),
+                        exact.holdout(),
+                        exact.confidence(),
+                        exact.reviewTicketRef(),
+                        exact.reasonCode(),
+                        exact.reviewedBy(),
+                        exact.publishedAt(),
+                        exact.usableUntil());
+        return new CapabilityCorpusClusterPublication(
+                blank.schemaVersion(),
+                fingerprint(blank),
+                blank.sourceCommandFingerprint(),
+                blank.scope(),
+                blank.clusterId(),
+                blank.revision(),
+                blank.predecessorRef(),
+                blank.capabilityRef(),
+                blank.corpusPublicationRef(),
+                blank.corpusRevisionRef(),
+                blank.publicationPolicyRef(),
+                blank.clusterPolicyRef(),
+                blank.validationRef(),
+                blank.representativeSource(),
+                blank.members(),
+                blank.matchRequestPointers(),
+                blank.identityMode(),
+                blank.identityProjections(),
+                blank.distinctIdentityCount(),
+                blank.holdout(),
+                blank.confidence(),
+                blank.reviewTicketRef(),
+                blank.reasonCode(),
+                blank.reviewedBy(),
+                blank.publishedAt(),
+                blank.usableUntil());
+    }
+
+    /**
+     * Verifies a persisted cluster publication fingerprint.
+     *
+     * @param publication untrusted cluster publication
+     * @return true only for exact canonical content
+     */
+    public boolean clusterVerified(
+            CapabilityCorpusClusterPublication publication) {
+        try {
+            return publication != null
+                    && publication.clusterFingerprint().equals(
+                    sealCluster(publication).clusterFingerprint());
+        } catch (RuntimeException invalid) {
+            return false;
+        }
+    }
+
     private String fingerprint(Object value) {
         return VisualBundleFingerprint.fromCanonicalValue(
                 mapper, value, MAXIMUM_CANONICAL_BYTES);

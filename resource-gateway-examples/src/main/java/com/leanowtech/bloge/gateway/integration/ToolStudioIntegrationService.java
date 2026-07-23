@@ -407,6 +407,10 @@ public class ToolStudioIntegrationService {
                 mirrorRuntimeAvailability.corpusTrajectoryApi());
         features.put("mirrorCorpusTrajectoryPublicationReady",
                 mirrorRuntimeAvailability.corpusTrajectoryReady());
+        features.put("mirrorCorpusClusterPublicationApi",
+                mirrorRuntimeAvailability.corpusClusterApi());
+        features.put("mirrorCorpusClusterPublicationReady",
+                mirrorRuntimeAvailability.corpusClusterReady());
         features.put("mirrorCorpusResolverReady",
                 mirrorRuntimeAvailability.corpusResolverReady());
         features.put("mirrorCorpusTrajectoryResolverReady",
@@ -815,6 +819,10 @@ public class ToolStudioIntegrationService {
         if (mirrorRuntimeAvailability.corpusTrajectoryApi()) {
             endpoints.add(new IntegrationCapabilities.Endpoint(
                     "POST", "/api/mirror/corpus-trajectories"));
+        }
+        if (mirrorRuntimeAvailability.corpusClusterApi()) {
+            endpoints.add(new IntegrationCapabilities.Endpoint(
+                    "POST", "/api/mirror/corpus-clusters"));
         }
         IntegrationCapabilities augmented = new IntegrationCapabilities(
                 current.schemaVersion(), current.protocol(), current.protocolVersion(),

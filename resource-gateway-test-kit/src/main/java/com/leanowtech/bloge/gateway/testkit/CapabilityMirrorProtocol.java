@@ -133,6 +133,18 @@ public final class CapabilityMirrorProtocol {
     /** Immutable recorded-trajectory publication wire version. */
     public static final String CAPABILITY_CORPUS_TRAJECTORY_PUBLICATION_V1 =
             "resourceGateway.capabilityCorpusTrajectoryPublication.v1";
+    /** Externally verified payload-free cluster-validation wire version. */
+    public static final String CAPABILITY_CORPUS_CLUSTER_VALIDATION_V1 =
+            "resourceGateway.capabilityCorpusClusterValidation.v1";
+    /** Owner-reviewed recorded-cluster publication command wire version. */
+    public static final String CAPABILITY_CORPUS_CLUSTER_PUBLISH_REQUEST_V1 =
+            "resourceGateway.capabilityCorpusClusterPublishRequest.v1";
+    /** Immutable recorded-cluster publication wire version. */
+    public static final String CAPABILITY_CORPUS_CLUSTER_PUBLICATION_V1 =
+            "resourceGateway.capabilityCorpusClusterPublication.v1";
+    /** Fixed recorded-cluster compatibility-fixture wire version. */
+    public static final String CAPABILITY_CORPUS_CLUSTER_COMPATIBILITY_V1 =
+            "resourceGateway.capabilityCorpusClusterStage2Fixture.v1";
     /** Fixed corpus-governance compatibility-fixture wire version. */
     public static final String CAPABILITY_CORPUS_COMPATIBILITY_V1 =
             "resourceGateway.capabilityCorpusCompatibility.v1";
@@ -164,6 +176,10 @@ public final class CapabilityMirrorProtocol {
     /** Packaged payload-free corpus-governance compatibility fixture. */
     public static final String CAPABILITY_CORPUS_FIXTURE_RESOURCE =
             SCHEMA_RESOURCE_ROOT + "capability-corpus-stage2-v1.fixture.json";
+    /** Packaged payload-free recorded-cluster compatibility fixture. */
+    public static final String CAPABILITY_CORPUS_CLUSTER_FIXTURE_RESOURCE =
+            SCHEMA_RESOURCE_ROOT
+                    + "capability-corpus-cluster-stage2-v1.fixture.json";
     /** Packaged fixed fixture-level corpus-binding example. */
     public static final String FIXTURE_MIRROR_CORPUS_BINDINGS_FIXTURE_RESOURCE =
             SCHEMA_RESOURCE_ROOT
@@ -278,6 +294,21 @@ public final class CapabilityMirrorProtocol {
     CAPABILITY_CORPUS_TRAJECTORY_PUBLICATION_SCHEMA_RESOURCE =
             SCHEMA_RESOURCE_ROOT
                     + "capability-corpus-trajectory-publication-v1.schema.json";
+    /** Packaged externally verified cluster-validation schema. */
+    public static final String
+    CAPABILITY_CORPUS_CLUSTER_VALIDATION_SCHEMA_RESOURCE =
+            SCHEMA_RESOURCE_ROOT
+                    + "capability-corpus-cluster-validation-v1.schema.json";
+    /** Packaged owner-reviewed recorded-cluster command schema. */
+    public static final String
+    CAPABILITY_CORPUS_CLUSTER_PUBLISH_REQUEST_SCHEMA_RESOURCE =
+            SCHEMA_RESOURCE_ROOT
+                    + "capability-corpus-cluster-publish-request-v1.schema.json";
+    /** Packaged immutable recorded-cluster publication schema. */
+    public static final String
+    CAPABILITY_CORPUS_CLUSTER_PUBLICATION_SCHEMA_RESOURCE =
+            SCHEMA_RESOURCE_ROOT
+                    + "capability-corpus-cluster-publication-v1.schema.json";
     /** Packaged strict fixture-level corpus-binding schema. */
     public static final String FIXTURE_MIRROR_CORPUS_BINDINGS_SCHEMA_RESOURCE =
             SCHEMA_RESOURCE_ROOT
@@ -379,6 +410,21 @@ public final class CapabilityMirrorProtocol {
     public static CapabilityCorpusCompatibilityFixture
             capabilityCorpusCompatibilityFixture() {
         return CorpusFixtureHolder.FIXTURE.detachedCopy();
+    }
+
+    /**
+     * Returns the fixed independently verified recorded-cluster fixture.
+     *
+     * <p>The fixture proves strict schemas, canonical fingerprints, exact corpus membership,
+     * identity-safe projection structure, holdout arithmetic, and Wilson precision confidence
+     * without linking Resource Gateway or contacting a payload vault.</p>
+     *
+     * @return detached payload-free cluster publication lifecycle
+     * @throws IllegalStateException when the packaged fixture is absent or unverifiable
+     */
+    public static CapabilityCorpusClusterCompatibilityFixture
+            capabilityCorpusClusterCompatibilityFixture() {
+        return ClusterFixtureHolder.FIXTURE.detachedCopy();
     }
 
     private static final class BaselineHolder {
@@ -644,6 +690,58 @@ public final class CapabilityMirrorProtocol {
             } catch (IOException | RuntimeException failure) {
                 throw new IllegalStateException(
                         "RG.MIRROR.CLIENT.DEPLOYMENT_ISOLATION_AUTHORITY_FIXTURE_UNAVAILABLE",
+                        failure);
+            }
+        }
+
+        private static Set<String> fieldNames(JsonNode value) {
+            java.util.HashSet<String> names = new java.util.HashSet<>();
+            value.fieldNames().forEachRemaining(names::add);
+            return Set.copyOf(names);
+        }
+    }
+
+    private static final class ClusterFixtureHolder {
+        private static final CapabilityCorpusClusterCompatibilityFixture
+                FIXTURE = load();
+
+        private static CapabilityCorpusClusterCompatibilityFixture load() {
+            try (InputStream input =
+                         CapabilityMirrorProtocol.class.getResourceAsStream(
+                                 CAPABILITY_CORPUS_CLUSTER_FIXTURE_RESOURCE)) {
+                if (input == null) {
+                    throw new IOException(
+                            "Capability corpus cluster fixture is absent");
+                }
+                JsonNode value = JSON.readTree(input);
+                if (!value.isObject() || value.size() != 8
+                        || !Set.of(
+                        "schemaVersion",
+                        "verificationTime",
+                        "expectedScope",
+                        "corpusRevision",
+                        "corpusPublication",
+                        "validation",
+                        "publishRequest",
+                        "publication").equals(fieldNames(value))
+                        || !CAPABILITY_CORPUS_CLUSTER_COMPATIBILITY_V1.equals(
+                        value.path("schemaVersion").asText())) {
+                    throw new IOException(
+                            "Capability corpus cluster fixture envelope is invalid");
+                }
+                CapabilityCorpusClusterCompatibilityFixture fixture =
+                        CapabilityCorpusClusterCompatibilityFixture.from(value);
+                CapabilityCorpusClusterVerifier.VerificationResult result =
+                        new CapabilityCorpusClusterVerifier().verify(fixture);
+                if (!result.verified()) {
+                    throw new IOException(
+                            "Capability corpus cluster fixture verification failed: "
+                                    + result.reasonCode());
+                }
+                return fixture;
+            } catch (IOException | RuntimeException failure) {
+                throw new IllegalStateException(
+                        "RG.MIRROR.CLIENT.CORPUS_CLUSTER_FIXTURE_UNAVAILABLE",
                         failure);
             }
         }

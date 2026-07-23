@@ -42,6 +42,9 @@ offline artifact verification live in the independent `resource-gateway-test-kit
 | `capability-corpus-publication-v1.schema.json` | `CapabilityCorpusPublication` | Immutable serving-publication fact for one exact eligible candidate |
 | `capability-corpus-trajectory-publish-request-v1.schema.json` | `CapabilityCorpusTrajectoryPublishRequest` | Explicit owner-reviewed retry sequence bound to exact published sources and current retry policy |
 | `capability-corpus-trajectory-publication-v1.schema.json` | `CapabilityCorpusTrajectoryPublication` | Immutable payload-free serving artifact for one governed recorded retry trajectory |
+| `capability-corpus-cluster-validation-v1.schema.json` | `CapabilityCorpusClusterValidation` | Externally verified payload-free membership, match-path, identity-projection, holdout, and Wilson-confidence proof |
+| `capability-corpus-cluster-publish-request-v1.schema.json` | `CapabilityCorpusClusterPublishRequest` | Owner-reviewed, predecessor-fenced command referencing one current corpus, cluster policy, and validation proof |
+| `capability-corpus-cluster-publication-v1.schema.json` | `CapabilityCorpusClusterPublication` | Immutable payload-free recorded-cluster publication with exact support, identity safety, confidence, policy, and lineage |
 | `fixture-mirror-corpus-bindings-v1.schema.json` | `FixtureMirrorCorpusBindings` | Strict immutable fixture metadata selecting one exact latest publication per external capability |
 | `fixture-mirror-trajectory-bindings-v1.schema.json` | `FixtureMirrorTrajectoryBindings` | Strict immutable fixture metadata selecting reviewed trajectories under an exact selected corpus publication |
 | `capability-lifecycle-transition-v1.schema.json` | `CapabilityLifecycleTransitionRequest` | Optimistically fenced governance transition for one exact revision |
@@ -113,6 +116,16 @@ than allowing consumers to infer retries from observation proximity. The indepen
 content addresses, exact source membership, consecutive numbering, common request fingerprint,
 lineage, and horizons. Current retry policy, retryable outcomes, trace ordering, grants,
 retention, tombstones, and payload bytes remain online authority decisions.
+
+`capability-corpus-cluster-stage2-v1.fixture.json` is the fixed payload-free recorded-cluster
+compatibility fixture. It closes one exact corpus revision/publication, external validation,
+owner command, and immutable cluster publication. The server producer and independent
+`CapabilityCorpusClusterVerifier` re-derive all content addresses, exact corpus/command/validation
+lineage, member and representative membership, common response Schema, JSON Pointer topology,
+holdout counts, and the 95% Wilson precision interval. A successful offline result deliberately
+retains limitations for current cluster policy, validation authority, grant/retention, source
+lifecycle, and payload authority. It proves that a publication is structurally safe to consider;
+it does not prove runtime materialization or `RECORDED_CLUSTER` serving is installed.
 
 `fixture-mirror-trajectory-bindings-v1.fixture.json` is the fixed payload-free trajectory
 selection fixture. The server parser cross-checks every capability and corpus publication against
@@ -387,12 +400,18 @@ Problem details never contain request context, fixture/replay values, node/edge 
   artifact fails closed.
 - Revision one must be `DRAFT`; later revisions are contiguous, append-only, and accepted only through the
   lifecycle transition matrix. `REVOKED` is terminal.
+- A recorded-cluster publication binds one exact current corpus and externally verified support
+  set. `IDENTITY_FREE_RESPONSE` permits no identity projection; `REQUEST_PROJECTION` requires
+  owner-approved request-to-response JSON Pointer mappings whose response paths are globally
+  disjoint and non-overlapping. Holdout precision is recomputed from counts with
+  `WILSON_PRECISION_95_V1`; low point estimates, lower bounds, support, identity diversity, or
+  false-positive thresholds cannot be waived by the command. Publication is not runtime serving.
 
 ## Independent client admission
 
 The test-kit packages the Stage 0 schemas, protected plan/execution commands, payload-free run
-summary, Stage 1 evidence and deployment-isolation schemas, and all four shared compatibility
-fixtures in its JAR. A Stage 0 consumer first
+summary, Stage 1 evidence and deployment-isolation schemas, and the shared observation, corpus,
+trajectory, cluster, and binding compatibility fixtures in its JAR. A Stage 0 consumer first
 calls `CapabilityMirrorCompatibility.assess(capabilityPayload)` and requires a compatible result.
 It then calls `CapabilityMirrorVerifier.verifySnapshot(value)` or `verifyClosure(value)` before
 persisting or compiling the artifact. A mirror evidence consumer resolves the attestation key id and calls
@@ -467,6 +486,8 @@ The protected Tool Studio integration surface exposes:
 | `POST /api/mirror/observations/{observationId}/reviews` | Append one terminal review without changing the quarantine admission | `MIRROR_CORPUS_GOVERNANCE` |
 | `POST /api/mirror/corpus-candidates` | Freeze ordered admitted sources into a non-serving candidate revision | `MIRROR_CORPUS_GOVERNANCE` |
 | `POST /api/mirror/corpus-publications` | Publish one current eligible candidate after owner and source rechecks | `MIRROR_CORPUS_GOVERNANCE` |
+| `POST /api/mirror/corpus-trajectories` | Publish one explicit owner-reviewed retry trajectory | `MIRROR_CORPUS_GOVERNANCE` |
+| `POST /api/mirror/corpus-clusters` | Publish one externally validated, owner-reviewed recorded cluster | `MIRROR_CORPUS_GOVERNANCE` |
 
 All authority/attestation GET routes additionally require the exact
 `application/vnd.bloge.mirror-deployment-isolation-trust.v1+json` media type and
@@ -481,10 +502,10 @@ The Stage 0 baseline verifies all seven shipped resource graphs plus all three f
 MirrorPlan protocol increment adds nine semantic integrity cases and extends the strict protocol-field test. Its
 focused protocol and probe suite passes 32 tests with no failures, errors, or skips. After adding the Stage 1
 compiler, internal mirror runtime kernel, MirrorResolution protocol, governed observation admission, and governed
-corpus publication increments, the latest complete Resource Gateway gate passes 4681 tests with no failures or
+corpus publication increments, the latest complete Resource Gateway gate passes 4742 tests with no failures or
 errors and 3 conditional frontend skips, exercises the real browser workflow, and successfully rebuilds the
-executable Spring Boot JAR. The independent test-kit gate passes 285 tests with no failures, errors, or skips,
-packages all 40 mirror protocol resources, and rebuilds its ordinary/shaded JAR plus public Javadocs.
+executable Spring Boot JAR. The independent test-kit gate passes 302 tests with no failures, errors, or skips,
+packages all 50 mirror protocol resources, and rebuilds its ordinary/shaded JAR plus public Javadocs.
 
 The Stage 1 `MirrorPlan` protocol presence alone does not make mirror execution available. Capability discovery
 always reports `mirrorPlanProtocol=true`. It reports `mirrorPlanCompilation` and

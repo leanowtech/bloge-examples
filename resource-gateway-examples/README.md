@@ -114,6 +114,8 @@ to demonstrate that the testing beans and endpoints are structurally absent.
 | `POST http://localhost:8080/api/mirror/observations/{observationId}/reviews` | Append one terminal quarantine review without changing the original admission |
 | `POST http://localhost:8080/api/mirror/corpus-candidates` | Freeze ordered admitted observations into a non-serving corpus candidate and compute metadata risk |
 | `POST http://localhost:8080/api/mirror/corpus-publications` | Publish one current eligible candidate after owner authorization and a second source-authority check |
+| `POST http://localhost:8080/api/mirror/corpus-trajectories` | Publish one explicit owner-reviewed retry sequence from the exact current corpus |
+| `POST http://localhost:8080/api/mirror/corpus-clusters` | Publish one externally validated, owner-reviewed recorded cluster without moving payload into Resource Gateway |
 
 Deployment-agent authority/attestation GETs require vendor negotiation in addition to normal
 `MIRROR_TRUST_DISTRIBUTION` or `MIRROR_REHEARSAL` authentication:
@@ -202,6 +204,24 @@ loop. A plan is rejected before execution when a trajectory needs more attempts 
 `retryAttempts + 1`; sequence exhaustion never repeats the final sample or falls through to a real
 external call.
 
+Recorded clusters have a separate publication boundary.
+`mirrorCorpusClusterPublicationProtocol=true` means the validation, command, and publication v1
+objects plus strict Schemas are supported.
+`mirrorCorpusClusterPublicationApi=true` means `POST /api/mirror/corpus-clusters` is assembled,
+while `mirrorCorpusClusterPublicationReady=true` additionally requires live operator-owned
+`CapabilityCorpusClusterPolicyProvider`, external
+`CapabilityCorpusClusterValidationAuthority`, corpus policy, and source-lifecycle authority. The
+default cluster policy and validation providers are unavailable.
+
+Publication rechecks the current corpus and policy, exact source membership, common response
+Schema, `EXACT_REPLAY + CLUSTER_MODELING` grants, retention/horizon, holdout counts, false-positive
+rate, and the independently recomputed 95% Wilson precision interval. Identity-free clusters
+cannot declare projections; request-projection clusters must map current request identity into
+globally disjoint response JSON Pointer paths. The publication route never reads payload. There is
+intentionally no cluster-resolver readiness claim yet: fixture binding, generation
+materialization, identity-safe response transformation, and runtime `RECORDED_CLUSTER` resolution
+are the next vertical slice. API presence must not be interpreted as cluster serving.
+
 The binding selects an exact latest publication for one exact external capability revision. Plan
 creation and every runtime materialization recheck the publication head, current policy, source
 lineage, exact-replay grant, retention, classification, region, tombstone state, and response
@@ -275,8 +295,9 @@ and the occurrence budget protect different resources and must all remain enable
 
 ### Mirror operation observability
 
-Every protected Plan, Run, Evidence, and isolation-authority publication operation now reaches exactly one terminal observer before its service
-result is returned. The observer pre-registers a fixed set of Micrometer series; no tenant, organization, actor,
+Every protected Plan, Run, Evidence, deployment-trust, observation, corpus, trajectory, and cluster
+operation reaches exactly one terminal observer before its service result is returned. The observer
+pre-registers a fixed set of Micrometer series; no tenant, organization, actor,
 correlation, request, plan, run, exception, or business value can become a tag.
 
 | Metric | Tags | Meaning |
@@ -285,10 +306,14 @@ correlation, request, plan, run, exception, or business value can become a tag.
 | `resource.gateway.mirror.duration` | `operation`, `outcome` | Terminal service duration timer |
 | `resource.gateway.mirror.failures` | `operation`, `reason` | Rejected/failed count by bounded reason class |
 
-The closed `operation` vocabulary is `plan_create`, `plan_read`, `run_create`, `run_read`, `evidence_read`,
-`authority_key_set_publish`, and `authority_key_set_read`.
+The closed `operation` vocabulary is `plan_create`, `plan_read`, `run_create`, `run_read`,
+`evidence_read`, `authority_key_set_publish`, `authority_key_set_read`,
+`isolation_attestation_ingest`, `isolation_attestation_read`,
+`isolation_attestation_revoke`, `observation_ingest`, `observation_review`,
+`corpus_candidate_create`, `corpus_publish`, `corpus_trajectory_publish`, and
+`corpus_cluster_publish`.
 Outcomes are `succeeded`, `rejected`, and `failed`; failure reasons are `invalid_request`, `forbidden`, `not_found`,
-`conflict`, `expired`, `capacity`, `unavailable`, `audit_unavailable`, and `unexpected`. This produces 105 bounded
+`conflict`, `expired`, `capacity`, `unavailable`, `audit_unavailable`, and `unexpected`. This produces 240 bounded
 series in total. Registry exporters may rename timer units according to their normal conventions.
 
 The append-only `mirror_operation_audit` table is the durable authority. Each row contains database sequence/time,

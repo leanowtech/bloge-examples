@@ -1,0 +1,561 @@
+{
+  "schemaVersion": "resourceGateway.capabilityCorpusClusterStage2Fixture.v1",
+  "verificationTime": "2030-01-04T00:00:00Z",
+  "expectedScope": {
+    "tenantId": "tenant-a",
+    "organizationId": "org-support",
+    "projectId": "support-platform",
+    "environmentId": "staging",
+    "region": "sg"
+  },
+  "corpusRevision": {
+    "schemaVersion": "resourceGateway.capabilityCorpusRevision.v1",
+    "revisionFingerprint": "sha256:ab8cc4c1f1f209d2480e84cf2ece3efe4b94044d7e202e8de2b7174f9f9d9bb1",
+    "sourceCommandFingerprint": "sha256:9999999999999999999999999999999999999999999999999999999999999999",
+    "scope": {
+      "tenantId": "tenant-a",
+      "organizationId": "org-support",
+      "projectId": "support-platform",
+      "environmentId": "staging",
+      "region": "sg"
+    },
+    "corpusId": "support-cluster-corpus",
+    "revision": 1,
+    "predecessorRef": null,
+    "capabilityRef": {
+      "kind": "CAPABILITY",
+      "id": "graph:support-refund",
+      "revision": 7,
+      "fingerprint": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+    },
+    "governancePolicyRef": {
+      "kind": "CORPUS_GOVERNANCE_POLICY",
+      "id": "support-corpus-policy",
+      "revision": 2,
+      "fingerprint": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+    },
+    "sources": [
+      {
+        "observationRef": {
+          "kind": "CAPABILITY_OBSERVATION",
+          "id": "support-cluster-observation-0001",
+          "revision": 1,
+          "fingerprint": "sha256:1111111111111111111111111111111111111111111111111111111111111111"
+        },
+        "admissionRef": {
+          "kind": "CAPABILITY_OBSERVATION_ADMISSION",
+          "id": "support-cluster-observation-0001:admission",
+          "revision": 1,
+          "fingerprint": "sha256:4444444444444444444444444444444444444444444444444444444444444444"
+        },
+        "requestPayloadRef": {
+          "kind": "SANITIZED_PAYLOAD",
+          "id": "cluster-request-1",
+          "revision": 1,
+          "fingerprint": "sha256:7777777777777777777777777777777777777777777777777777777777777777"
+        },
+        "requestProofRef": {
+          "kind": "PAYLOAD_SANITIZATION_PROOF",
+          "id": "cluster-request-1-proof",
+          "revision": 1,
+          "fingerprint": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+        },
+        "requestSchemaRef": {
+          "kind": "JSON_SCHEMA",
+          "id": "support-refund-request",
+          "revision": 5,
+          "fingerprint": "sha256:dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd"
+        },
+        "responsePayloadRef": {
+          "kind": "SANITIZED_PAYLOAD",
+          "id": "cluster-response-1",
+          "revision": 1,
+          "fingerprint": "sha256:eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee"
+        },
+        "responseProofRef": {
+          "kind": "PAYLOAD_SANITIZATION_PROOF",
+          "id": "cluster-response-1-proof",
+          "revision": 1,
+          "fingerprint": "sha256:1111111111111111111111111111111111111111111111111111111111111111"
+        },
+        "responseSchemaRef": {
+          "kind": "JSON_SCHEMA",
+          "id": "support-refund-response",
+          "revision": 5,
+          "fingerprint": "sha256:4444444444444444444444444444444444444444444444444444444444444444"
+        },
+        "normalizedErrorCode": "",
+        "traceFingerprint": "sha256:5555555555555555555555555555555555555555555555555555555555555555",
+        "authorityKeyRef": {
+          "kind": "OBSERVATION_AUTHORITY_KEY",
+          "id": "support-observation-key-2030",
+          "revision": 1,
+          "fingerprint": "sha256:8888888888888888888888888888888888888888888888888888888888888888"
+        },
+        "occurredAt": "2030-01-02T03:04:05Z",
+        "usableUntil": "2030-02-01T00:00:00Z"
+      },
+      {
+        "observationRef": {
+          "kind": "CAPABILITY_OBSERVATION",
+          "id": "support-cluster-observation-0002",
+          "revision": 1,
+          "fingerprint": "sha256:2222222222222222222222222222222222222222222222222222222222222222"
+        },
+        "admissionRef": {
+          "kind": "CAPABILITY_OBSERVATION_ADMISSION",
+          "id": "support-cluster-observation-0002:admission",
+          "revision": 1,
+          "fingerprint": "sha256:5555555555555555555555555555555555555555555555555555555555555555"
+        },
+        "requestPayloadRef": {
+          "kind": "SANITIZED_PAYLOAD",
+          "id": "cluster-request-2",
+          "revision": 1,
+          "fingerprint": "sha256:8888888888888888888888888888888888888888888888888888888888888888"
+        },
+        "requestProofRef": {
+          "kind": "PAYLOAD_SANITIZATION_PROOF",
+          "id": "cluster-request-2-proof",
+          "revision": 1,
+          "fingerprint": "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+        },
+        "requestSchemaRef": {
+          "kind": "JSON_SCHEMA",
+          "id": "support-refund-request",
+          "revision": 5,
+          "fingerprint": "sha256:dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd"
+        },
+        "responsePayloadRef": {
+          "kind": "SANITIZED_PAYLOAD",
+          "id": "cluster-response-2",
+          "revision": 1,
+          "fingerprint": "sha256:ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff"
+        },
+        "responseProofRef": {
+          "kind": "PAYLOAD_SANITIZATION_PROOF",
+          "id": "cluster-response-2-proof",
+          "revision": 1,
+          "fingerprint": "sha256:2222222222222222222222222222222222222222222222222222222222222222"
+        },
+        "responseSchemaRef": {
+          "kind": "JSON_SCHEMA",
+          "id": "support-refund-response",
+          "revision": 5,
+          "fingerprint": "sha256:4444444444444444444444444444444444444444444444444444444444444444"
+        },
+        "normalizedErrorCode": "",
+        "traceFingerprint": "sha256:6666666666666666666666666666666666666666666666666666666666666666",
+        "authorityKeyRef": {
+          "kind": "OBSERVATION_AUTHORITY_KEY",
+          "id": "support-observation-key-2030",
+          "revision": 1,
+          "fingerprint": "sha256:8888888888888888888888888888888888888888888888888888888888888888"
+        },
+        "occurredAt": "2030-01-02T03:04:06Z",
+        "usableUntil": "2030-02-01T00:00:00Z"
+      },
+      {
+        "observationRef": {
+          "kind": "CAPABILITY_OBSERVATION",
+          "id": "support-cluster-observation-0003",
+          "revision": 1,
+          "fingerprint": "sha256:3333333333333333333333333333333333333333333333333333333333333333"
+        },
+        "admissionRef": {
+          "kind": "CAPABILITY_OBSERVATION_ADMISSION",
+          "id": "support-cluster-observation-0003:admission",
+          "revision": 1,
+          "fingerprint": "sha256:6666666666666666666666666666666666666666666666666666666666666666"
+        },
+        "requestPayloadRef": {
+          "kind": "SANITIZED_PAYLOAD",
+          "id": "cluster-request-3",
+          "revision": 1,
+          "fingerprint": "sha256:9999999999999999999999999999999999999999999999999999999999999999"
+        },
+        "requestProofRef": {
+          "kind": "PAYLOAD_SANITIZATION_PROOF",
+          "id": "cluster-request-3-proof",
+          "revision": 1,
+          "fingerprint": "sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"
+        },
+        "requestSchemaRef": {
+          "kind": "JSON_SCHEMA",
+          "id": "support-refund-request",
+          "revision": 5,
+          "fingerprint": "sha256:dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd"
+        },
+        "responsePayloadRef": {
+          "kind": "SANITIZED_PAYLOAD",
+          "id": "cluster-response-3",
+          "revision": 1,
+          "fingerprint": "sha256:0000000000000000000000000000000000000000000000000000000000000000"
+        },
+        "responseProofRef": {
+          "kind": "PAYLOAD_SANITIZATION_PROOF",
+          "id": "cluster-response-3-proof",
+          "revision": 1,
+          "fingerprint": "sha256:3333333333333333333333333333333333333333333333333333333333333333"
+        },
+        "responseSchemaRef": {
+          "kind": "JSON_SCHEMA",
+          "id": "support-refund-response",
+          "revision": 5,
+          "fingerprint": "sha256:4444444444444444444444444444444444444444444444444444444444444444"
+        },
+        "normalizedErrorCode": "",
+        "traceFingerprint": "sha256:7777777777777777777777777777777777777777777777777777777777777777",
+        "authorityKeyRef": {
+          "kind": "OBSERVATION_AUTHORITY_KEY",
+          "id": "support-observation-key-2030",
+          "revision": 1,
+          "fingerprint": "sha256:8888888888888888888888888888888888888888888888888888888888888888"
+        },
+        "occurredAt": "2030-01-02T03:04:07Z",
+        "usableUntil": "2030-02-01T00:00:00Z"
+      }
+    ],
+    "riskSummary": {
+      "sampleCount": 3,
+      "uniqueRequestCount": 3,
+      "duplicateRequestCount": 0,
+      "maximumRequestMultiplicity": 1,
+      "producerKeyCount": 1,
+      "duplicateBasisPoints": 0,
+      "eligibility": "ELIGIBLE",
+      "reasons": []
+    },
+    "createdBy": "support-corpus-curator",
+    "createdAt": "2030-01-03T00:00:30Z",
+    "usableUntil": "2030-02-01T00:00:00Z"
+  },
+  "corpusPublication": {
+    "schemaVersion": "resourceGateway.capabilityCorpusPublication.v1",
+    "publicationFingerprint": "sha256:4344469a83b4d6a6b6b7eb07b657ac0ad3e249032ec2426fe6a1a4310ebb0b47",
+    "sourceCommandFingerprint": "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+    "scope": {
+      "tenantId": "tenant-a",
+      "organizationId": "org-support",
+      "projectId": "support-platform",
+      "environmentId": "staging",
+      "region": "sg"
+    },
+    "corpusId": "support-cluster-corpus",
+    "revision": 1,
+    "predecessorRef": null,
+    "corpusRevisionRef": {
+      "kind": "CAPABILITY_CORPUS_REVISION",
+      "id": "support-cluster-corpus",
+      "revision": 1,
+      "fingerprint": "sha256:ab8cc4c1f1f209d2480e84cf2ece3efe4b94044d7e202e8de2b7174f9f9d9bb1"
+    },
+    "publicationPolicyRef": {
+      "kind": "CORPUS_PUBLICATION_POLICY",
+      "id": "support-publication-policy",
+      "revision": 4,
+      "fingerprint": "sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"
+    },
+    "reviewTicketRef": {
+      "kind": "GOVERNANCE_REVIEW_TICKET",
+      "id": "GOV-2030-CLUSTER-CORPUS",
+      "revision": 1,
+      "fingerprint": "sha256:dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd"
+    },
+    "reasonCode": "OWNER_APPROVED",
+    "reviewedBy": "support-corpus-owner",
+    "publishedAt": "2030-01-03T00:01:00Z",
+    "usableUntil": "2030-02-01T00:00:00Z"
+  },
+  "validation": {
+    "schemaVersion": "resourceGateway.capabilityCorpusClusterValidation.v1",
+    "validationFingerprint": "sha256:bdaf93f506d15d1dbe9c6a4750a775a45c2028453cc3d3d8ca37cb5dccdc8fc0",
+    "scope": {
+      "tenantId": "tenant-a",
+      "organizationId": "org-support",
+      "projectId": "support-platform",
+      "environmentId": "staging",
+      "region": "sg"
+    },
+    "validationId": "support-refund-customer-cluster-validation",
+    "revision": 1,
+    "capabilityRef": {
+      "kind": "CAPABILITY",
+      "id": "graph:support-refund",
+      "revision": 7,
+      "fingerprint": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+    },
+    "corpusPublicationRef": {
+      "kind": "CAPABILITY_CORPUS_PUBLICATION",
+      "id": "support-cluster-corpus",
+      "revision": 1,
+      "fingerprint": "sha256:4344469a83b4d6a6b6b7eb07b657ac0ad3e249032ec2426fe6a1a4310ebb0b47"
+    },
+    "corpusRevisionRef": {
+      "kind": "CAPABILITY_CORPUS_REVISION",
+      "id": "support-cluster-corpus",
+      "revision": 1,
+      "fingerprint": "sha256:ab8cc4c1f1f209d2480e84cf2ece3efe4b94044d7e202e8de2b7174f9f9d9bb1"
+    },
+    "representativeSource": {
+      "observationRef": {
+        "kind": "CAPABILITY_OBSERVATION",
+        "id": "support-cluster-observation-0001",
+        "revision": 1,
+        "fingerprint": "sha256:1111111111111111111111111111111111111111111111111111111111111111"
+      },
+      "admissionRef": {
+        "kind": "CAPABILITY_OBSERVATION_ADMISSION",
+        "id": "support-cluster-observation-0001:admission",
+        "revision": 1,
+        "fingerprint": "sha256:4444444444444444444444444444444444444444444444444444444444444444"
+      }
+    },
+    "members": [
+      {
+        "observationRef": {
+          "kind": "CAPABILITY_OBSERVATION",
+          "id": "support-cluster-observation-0001",
+          "revision": 1,
+          "fingerprint": "sha256:1111111111111111111111111111111111111111111111111111111111111111"
+        },
+        "admissionRef": {
+          "kind": "CAPABILITY_OBSERVATION_ADMISSION",
+          "id": "support-cluster-observation-0001:admission",
+          "revision": 1,
+          "fingerprint": "sha256:4444444444444444444444444444444444444444444444444444444444444444"
+        }
+      },
+      {
+        "observationRef": {
+          "kind": "CAPABILITY_OBSERVATION",
+          "id": "support-cluster-observation-0002",
+          "revision": 1,
+          "fingerprint": "sha256:2222222222222222222222222222222222222222222222222222222222222222"
+        },
+        "admissionRef": {
+          "kind": "CAPABILITY_OBSERVATION_ADMISSION",
+          "id": "support-cluster-observation-0002:admission",
+          "revision": 1,
+          "fingerprint": "sha256:5555555555555555555555555555555555555555555555555555555555555555"
+        }
+      },
+      {
+        "observationRef": {
+          "kind": "CAPABILITY_OBSERVATION",
+          "id": "support-cluster-observation-0003",
+          "revision": 1,
+          "fingerprint": "sha256:3333333333333333333333333333333333333333333333333333333333333333"
+        },
+        "admissionRef": {
+          "kind": "CAPABILITY_OBSERVATION_ADMISSION",
+          "id": "support-cluster-observation-0003:admission",
+          "revision": 1,
+          "fingerprint": "sha256:6666666666666666666666666666666666666666666666666666666666666666"
+        }
+      }
+    ],
+    "matchRequestPointers": ["/channel", "/operation"],
+    "identityMode": "REQUEST_PROJECTION",
+    "identityProjections": [
+      {
+        "requestPointer": "/customerId",
+        "responsePointers": ["/customer/id"]
+      }
+    ],
+    "distinctIdentityCount": 3,
+    "holdout": {
+      "sampleCount": 100,
+      "acceptedCount": 50,
+      "correctCount": 49,
+      "falsePositiveCount": 1
+    },
+    "confidence": {
+      "point": 0.98,
+      "lowerBound": 0.895045564103622,
+      "upperBound": 0.9964607407283539,
+      "method": "WILSON_PRECISION_95_V1"
+    },
+    "identityCoverageComplete": true,
+    "validatedBy": "tee-cluster-validator",
+    "validatedAt": "2030-01-03T00:02:00Z",
+    "expiresAt": "2030-02-01T00:00:00Z"
+  },
+  "publishRequest": {
+    "schemaVersion": "resourceGateway.capabilityCorpusClusterPublishRequest.v1",
+    "clusterId": "support-refund-customer-cluster",
+    "revision": 1,
+    "expectedPredecessorRef": null,
+    "capabilityRef": {
+      "kind": "CAPABILITY",
+      "id": "graph:support-refund",
+      "revision": 7,
+      "fingerprint": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+    },
+    "corpusPublicationRef": {
+      "kind": "CAPABILITY_CORPUS_PUBLICATION",
+      "id": "support-cluster-corpus",
+      "revision": 1,
+      "fingerprint": "sha256:4344469a83b4d6a6b6b7eb07b657ac0ad3e249032ec2426fe6a1a4310ebb0b47"
+    },
+    "clusterPolicyRef": {
+      "kind": "CORPUS_CLUSTER_POLICY",
+      "id": "support-cluster-policy",
+      "revision": 3,
+      "fingerprint": "sha256:eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee"
+    },
+    "validationRef": {
+      "kind": "CAPABILITY_CORPUS_CLUSTER_VALIDATION",
+      "id": "support-refund-customer-cluster-validation",
+      "revision": 1,
+      "fingerprint": "sha256:bdaf93f506d15d1dbe9c6a4750a775a45c2028453cc3d3d8ca37cb5dccdc8fc0"
+    },
+    "reviewTicketRef": {
+      "kind": "GOVERNANCE_REVIEW_TICKET",
+      "id": "GOV-2030-CLUSTER-001",
+      "revision": 1,
+      "fingerprint": "sha256:ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff"
+    },
+    "reasonCode": "OWNER_APPROVED_RECORDED_CLUSTER"
+  },
+  "publication": {
+    "schemaVersion": "resourceGateway.capabilityCorpusClusterPublication.v1",
+    "clusterFingerprint": "sha256:46e6ff957a87883140053c85e25cab0bf515e09c0fc2c6651c0f363ce1e193ea",
+    "sourceCommandFingerprint": "sha256:9d440b4b703c287098556d2a366ca8b9db8dd95762cd4c505cf9dcd9c67c8f0a",
+    "scope": {
+      "tenantId": "tenant-a",
+      "organizationId": "org-support",
+      "projectId": "support-platform",
+      "environmentId": "staging",
+      "region": "sg"
+    },
+    "clusterId": "support-refund-customer-cluster",
+    "revision": 1,
+    "predecessorRef": null,
+    "capabilityRef": {
+      "kind": "CAPABILITY",
+      "id": "graph:support-refund",
+      "revision": 7,
+      "fingerprint": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+    },
+    "corpusPublicationRef": {
+      "kind": "CAPABILITY_CORPUS_PUBLICATION",
+      "id": "support-cluster-corpus",
+      "revision": 1,
+      "fingerprint": "sha256:4344469a83b4d6a6b6b7eb07b657ac0ad3e249032ec2426fe6a1a4310ebb0b47"
+    },
+    "corpusRevisionRef": {
+      "kind": "CAPABILITY_CORPUS_REVISION",
+      "id": "support-cluster-corpus",
+      "revision": 1,
+      "fingerprint": "sha256:ab8cc4c1f1f209d2480e84cf2ece3efe4b94044d7e202e8de2b7174f9f9d9bb1"
+    },
+    "publicationPolicyRef": {
+      "kind": "CORPUS_PUBLICATION_POLICY",
+      "id": "support-publication-policy",
+      "revision": 4,
+      "fingerprint": "sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"
+    },
+    "clusterPolicyRef": {
+      "kind": "CORPUS_CLUSTER_POLICY",
+      "id": "support-cluster-policy",
+      "revision": 3,
+      "fingerprint": "sha256:eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee"
+    },
+    "validationRef": {
+      "kind": "CAPABILITY_CORPUS_CLUSTER_VALIDATION",
+      "id": "support-refund-customer-cluster-validation",
+      "revision": 1,
+      "fingerprint": "sha256:bdaf93f506d15d1dbe9c6a4750a775a45c2028453cc3d3d8ca37cb5dccdc8fc0"
+    },
+    "representativeSource": {
+      "observationRef": {
+        "kind": "CAPABILITY_OBSERVATION",
+        "id": "support-cluster-observation-0001",
+        "revision": 1,
+        "fingerprint": "sha256:1111111111111111111111111111111111111111111111111111111111111111"
+      },
+      "admissionRef": {
+        "kind": "CAPABILITY_OBSERVATION_ADMISSION",
+        "id": "support-cluster-observation-0001:admission",
+        "revision": 1,
+        "fingerprint": "sha256:4444444444444444444444444444444444444444444444444444444444444444"
+      }
+    },
+    "members": [
+      {
+        "observationRef": {
+          "kind": "CAPABILITY_OBSERVATION",
+          "id": "support-cluster-observation-0001",
+          "revision": 1,
+          "fingerprint": "sha256:1111111111111111111111111111111111111111111111111111111111111111"
+        },
+        "admissionRef": {
+          "kind": "CAPABILITY_OBSERVATION_ADMISSION",
+          "id": "support-cluster-observation-0001:admission",
+          "revision": 1,
+          "fingerprint": "sha256:4444444444444444444444444444444444444444444444444444444444444444"
+        }
+      },
+      {
+        "observationRef": {
+          "kind": "CAPABILITY_OBSERVATION",
+          "id": "support-cluster-observation-0002",
+          "revision": 1,
+          "fingerprint": "sha256:2222222222222222222222222222222222222222222222222222222222222222"
+        },
+        "admissionRef": {
+          "kind": "CAPABILITY_OBSERVATION_ADMISSION",
+          "id": "support-cluster-observation-0002:admission",
+          "revision": 1,
+          "fingerprint": "sha256:5555555555555555555555555555555555555555555555555555555555555555"
+        }
+      },
+      {
+        "observationRef": {
+          "kind": "CAPABILITY_OBSERVATION",
+          "id": "support-cluster-observation-0003",
+          "revision": 1,
+          "fingerprint": "sha256:3333333333333333333333333333333333333333333333333333333333333333"
+        },
+        "admissionRef": {
+          "kind": "CAPABILITY_OBSERVATION_ADMISSION",
+          "id": "support-cluster-observation-0003:admission",
+          "revision": 1,
+          "fingerprint": "sha256:6666666666666666666666666666666666666666666666666666666666666666"
+        }
+      }
+    ],
+    "matchRequestPointers": ["/channel", "/operation"],
+    "identityMode": "REQUEST_PROJECTION",
+    "identityProjections": [
+      {
+        "requestPointer": "/customerId",
+        "responsePointers": ["/customer/id"]
+      }
+    ],
+    "distinctIdentityCount": 3,
+    "holdout": {
+      "sampleCount": 100,
+      "acceptedCount": 50,
+      "correctCount": 49,
+      "falsePositiveCount": 1
+    },
+    "confidence": {
+      "point": 0.98,
+      "lowerBound": 0.895045564103622,
+      "upperBound": 0.9964607407283539,
+      "method": "WILSON_PRECISION_95_V1"
+    },
+    "reviewTicketRef": {
+      "kind": "GOVERNANCE_REVIEW_TICKET",
+      "id": "GOV-2030-CLUSTER-001",
+      "revision": 1,
+      "fingerprint": "sha256:ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff"
+    },
+    "reasonCode": "OWNER_APPROVED_RECORDED_CLUSTER",
+    "reviewedBy": "support-corpus-owner",
+    "publishedAt": "2030-01-03T00:03:00Z",
+    "usableUntil": "2030-01-31T00:00:00Z"
+  }
+}

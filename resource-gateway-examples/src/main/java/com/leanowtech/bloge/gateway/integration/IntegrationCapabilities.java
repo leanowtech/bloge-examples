@@ -337,6 +337,15 @@ public record IntegrationCapabilities(
         objects.put("capabilityCorpusTrajectoryPublication", List.of(
                 com.leanowtech.bloge.gateway.integration.mirror
                         .CapabilityCorpusTrajectoryPublication.SCHEMA_VERSION));
+        objects.put("capabilityCorpusClusterValidation", List.of(
+                com.leanowtech.bloge.gateway.integration.mirror
+                        .CapabilityCorpusClusterValidation.SCHEMA_VERSION));
+        objects.put("capabilityCorpusClusterPublishRequest", List.of(
+                com.leanowtech.bloge.gateway.integration.mirror
+                        .CapabilityCorpusClusterPublishRequest.SCHEMA_VERSION));
+        objects.put("capabilityCorpusClusterPublication", List.of(
+                com.leanowtech.bloge.gateway.integration.mirror
+                        .CapabilityCorpusClusterPublication.SCHEMA_VERSION));
         objects.put("fixtureMirrorCorpusBindings", List.of(
                 com.leanowtech.bloge.gateway.integration.mirror
                         .FixtureMirrorCorpusBindings.SCHEMA_VERSION));
@@ -793,10 +802,13 @@ public record IntegrationCapabilities(
         features.put("mirrorCorpusExactResolverProtocol", true);
         features.put("mirrorCorpusTrajectoryResolverProtocol", true);
         features.put("mirrorCorpusTrajectoryPublicationProtocol", true);
+        features.put("mirrorCorpusClusterPublicationProtocol", true);
         features.put("mirrorCorpusGovernanceApi", false);
         features.put("mirrorCorpusGovernanceReady", false);
         features.put("mirrorCorpusTrajectoryPublicationApi", false);
         features.put("mirrorCorpusTrajectoryPublicationReady", false);
+        features.put("mirrorCorpusClusterPublicationApi", false);
+        features.put("mirrorCorpusClusterPublicationReady", false);
         features.put("mirrorCorpusResolverReady", false);
         features.put("mirrorCorpusTrajectoryResolverReady", false);
         features.put("runEvidenceBundle", true);

@@ -188,6 +188,106 @@ final class CapabilityCorpusTestFixtures {
                 envelope, admission);
     }
 
+    static CapabilityObservationRepository.StoredObservation clusterObservation(
+            ObjectMapper mapper,
+            InMemoryVisualEvidenceSigner signer,
+            CapabilitySnapshot capability,
+            String observationId,
+            Instant occurredAt,
+            boolean clusterUse) {
+        CapabilityObservationEnvelope.DataUseGrant grant =
+                new CapabilityObservationEnvelope.DataUseGrant(
+                        CapabilityObservationTestFixtures.ref(
+                                "DATA_USE_GRANT", "grant-cluster", 1, 'a'),
+                        CapabilityObservationAdmissionService.AUTHORIZED_PURPOSE,
+                        clusterUse
+                                ? List.of(
+                                CapabilityObservationEnvelope.AllowedUse
+                                        .CLUSTER_MODELING,
+                                CapabilityObservationEnvelope.AllowedUse
+                                        .CORPUS_CURATION,
+                                CapabilityObservationEnvelope.AllowedUse
+                                        .EXACT_REPLAY)
+                                : List.of(
+                                CapabilityObservationEnvelope.AllowedUse
+                                        .CORPUS_CURATION,
+                                CapabilityObservationEnvelope.AllowedUse
+                                        .EXACT_REPLAY),
+                        occurredAt.minus(Duration.ofDays(1)),
+                        occurredAt.plus(Duration.ofDays(20)));
+        char material = (char) ('1' + Math.floorMod(
+                observationId.hashCode(), 5));
+        CapabilityObservationEnvelope.PayloadReference request =
+                CapabilityObservationTestFixtures.payload(
+                        observationId + "-request",
+                        material,
+                        occurredAt.plus(Duration.ofDays(30)));
+        CapabilityObservationEnvelope.PayloadReference generatedResponse =
+                CapabilityObservationTestFixtures.payload(
+                        observationId + "-response",
+                        (char) ('a' + Math.floorMod(
+                                observationId.hashCode(), 4)),
+                        occurredAt.plus(Duration.ofDays(30)));
+        CapabilityObservationEnvelope.PayloadReference response =
+                new CapabilityObservationEnvelope.PayloadReference(
+                        generatedResponse.payloadRef(),
+                        generatedResponse.sanitizationProofRef(),
+                        CapabilityObservationTestFixtures.ref(
+                                "JSON_SCHEMA",
+                                "cluster-response-schema",
+                                2,
+                                'e'),
+                        generatedResponse.sizeBytes(),
+                        generatedResponse.mediaType(),
+                        generatedResponse.classification(),
+                        generatedResponse.vaultRegion(),
+                        generatedResponse.retentionUntil());
+        CapabilityObservationEnvelope.Material materialValue =
+                new CapabilityObservationEnvelope.Material(
+                        observationId,
+                        capability.scope(),
+                        new MirrorArtifactRef(
+                                "CAPABILITY",
+                                capability.capabilityId(),
+                                capability.revision(),
+                                capability.fingerprint()),
+                        occurredAt,
+                        new CapabilityObservationEnvelope.TraceCoordinates(
+                                "trace-" + observationId,
+                                "span-" + observationId,
+                                1),
+                        request,
+                        response,
+                        null,
+                        42,
+                        null,
+                        null,
+                        grant);
+        CapabilityObservationEnvelope envelope =
+                new CapabilityObservationIntegrity(mapper).seal(
+                        materialValue,
+                        signer,
+                        CapabilityObservationTestFixtures.ISSUER);
+        CapabilityObservationAdmissionIntegrity admissions =
+                new CapabilityObservationAdmissionIntegrity(mapper);
+        Instant decidedAt = envelope.seal().signedAt().plusSeconds(1);
+        CapabilityObservationAdmission admission = admissions.admitted(
+                envelope,
+                CapabilityObservationTestFixtures.ref(
+                        "OBSERVATION_ADMISSION_POLICY",
+                        "support-admission-policy",
+                        3,
+                        'f'),
+                CapabilityObservationTestFixtures.authorityKey(
+                        envelope,
+                        signer,
+                        CapabilityObservationIntegrity.KeyState.ACTIVE).keyRef(),
+                decidedAt,
+                decidedAt.plus(Duration.ofDays(10)));
+        return new CapabilityObservationRepository.StoredObservation(
+                envelope, admission);
+    }
+
     static CapabilityCorpusGovernancePolicyProvider.GovernancePolicy policy(
             CapabilityObservationRepository.StoredObservation source,
             int minimumSamples,
@@ -436,6 +536,121 @@ final class CapabilityCorpusTestFixtures {
                         corpusPublication.usableUntil()));
     }
 
+    static CapabilityCorpusClusterValidation clusterValidation(
+            ObjectMapper mapper,
+            CapabilityCorpusPublication publication,
+            CapabilityCorpusRevision revision,
+            List<CapabilityObservationRepository.StoredObservation> sources,
+            Instant validatedAt) {
+        List<CapabilityCorpusClusterValidation.SourceCoordinate> members =
+                sources.stream()
+                        .sorted((left, right) -> left.envelope().material()
+                                .observationId().compareTo(
+                                        right.envelope().material()
+                                                .observationId()))
+                        .map(source ->
+                                new CapabilityCorpusClusterValidation
+                                        .SourceCoordinate(
+                                        source.envelope().artifactRef(),
+                                        source.admission().artifactRef()))
+                        .toList();
+        CapabilityCorpusClusterValidation.HoldoutAssessment holdout =
+                new CapabilityCorpusClusterValidation.HoldoutAssessment(
+                        100, 50, 49, 1);
+        ArtifactProvenance.Confidence confidence = wilson(holdout);
+        return new CapabilityCorpusIntegrity(mapper).sealClusterValidation(
+                new CapabilityCorpusClusterValidation(
+                        "",
+                        ZERO_FINGERPRINT,
+                        publication.scope(),
+                        "validation-support-cluster",
+                        1,
+                        revision.capabilityRef(),
+                        publication.artifactRef(),
+                        revision.artifactRef(),
+                        members.getFirst(),
+                        members,
+                        List.of("/channel", "/operation"),
+                        CapabilityCorpusClusterValidation.IdentityMode
+                                .REQUEST_PROJECTION,
+                        List.of(
+                                new CapabilityCorpusClusterValidation
+                                        .IdentityProjection(
+                                        "/customerId",
+                                        List.of("/customer/id"))),
+                        members.size(),
+                        holdout,
+                        confidence,
+                        true,
+                        "tee-cluster-validator",
+                        validatedAt,
+                        validatedAt.plus(Duration.ofHours(12))));
+    }
+
+    static CapabilityCorpusClusterPublishRequest clusterRequest(
+            CapabilityCorpusPublication publication,
+            CapabilityCorpusClusterValidation validation) {
+        return new CapabilityCorpusClusterPublishRequest(
+                "",
+                "support-customer-cluster",
+                1,
+                null,
+                validation.capabilityRef(),
+                publication.artifactRef(),
+                CapabilityObservationTestFixtures.ref(
+                        "CORPUS_CLUSTER_POLICY",
+                        "support-cluster-policy",
+                        3,
+                        'b'),
+                validation.artifactRef(),
+                CapabilityObservationTestFixtures.ref(
+                        "GOVERNANCE_REVIEW_TICKET",
+                        "ticket-cluster",
+                        1,
+                        'c'),
+                "OWNER_APPROVED_RECORDED_CLUSTER");
+    }
+
+    static CapabilityCorpusClusterPublication clusterPublication(
+            ObjectMapper mapper,
+            CapabilityCorpusPublication corpusPublication,
+            CapabilityCorpusRevision corpusRevision,
+            CapabilityCorpusClusterValidation validation,
+            CapabilityCorpusClusterPublishRequest request,
+            MirrorArtifactRef predecessor,
+            Instant publishedAt) {
+        CapabilityCorpusIntegrity integrity =
+                new CapabilityCorpusIntegrity(mapper);
+        return integrity.sealCluster(
+                new CapabilityCorpusClusterPublication(
+                        "",
+                        ZERO_FINGERPRINT,
+                        integrity.clusterCommandFingerprint(request),
+                        corpusPublication.scope(),
+                        request.clusterId(),
+                        request.revision(),
+                        predecessor,
+                        request.capabilityRef(),
+                        corpusPublication.artifactRef(),
+                        corpusRevision.artifactRef(),
+                        corpusPublication.publicationPolicyRef(),
+                        request.clusterPolicyRef(),
+                        validation.artifactRef(),
+                        validation.representativeSource(),
+                        validation.members(),
+                        validation.matchRequestPointers(),
+                        validation.identityMode(),
+                        validation.identityProjections(),
+                        validation.distinctIdentityCount(),
+                        validation.holdout(),
+                        validation.confidence(),
+                        request.reviewTicketRef(),
+                        request.reasonCode(),
+                        "corpus-curator",
+                        publishedAt,
+                        publishedAt.plus(Duration.ofHours(1))));
+    }
+
     static CapabilityCorpusPublication publication(
             ObjectMapper mapper,
             CapabilityCorpusRevision revision,
@@ -474,5 +689,26 @@ final class CapabilityCorpusTestFixtures {
                 "corpus-curator",
                 publishedAt,
                 revision.usableUntil()));
+    }
+
+    private static ArtifactProvenance.Confidence wilson(
+            CapabilityCorpusClusterValidation.HoldoutAssessment holdout) {
+        double point = (double) holdout.correctCount()
+                / holdout.acceptedCount();
+        double z = 1.959963984540054d;
+        double denominator = 1.0d
+                + z * z / holdout.acceptedCount();
+        double center = point
+                + z * z / (2.0d * holdout.acceptedCount());
+        double spread = z * Math.sqrt(
+                point * (1.0d - point) / holdout.acceptedCount()
+                        + z * z
+                        / (4.0d * holdout.acceptedCount()
+                        * holdout.acceptedCount()));
+        return new ArtifactProvenance.Confidence(
+                point,
+                Math.max(0.0d, (center - spread) / denominator),
+                Math.min(1.0d, (center + spread) / denominator),
+                CapabilityCorpusClusterValidation.CONFIDENCE_METHOD);
     }
 }

@@ -206,6 +206,81 @@ class CapabilityCorpusGovernanceTransactionTest {
         }
     }
 
+    @Test
+    void mandatoryAuditFailureRollsBackClusterPublication() {
+        try (var context = context()) {
+            ObjectMapper mapper = context.getBean(ObjectMapper.class);
+            CapabilityObservationRepository observations =
+                    context.getBean(CapabilityObservationRepository.class);
+            CapabilitySnapshot.Scope scope =
+                    CapabilityObservationTestFixtures.scope("org-a");
+            CapabilitySnapshot capability =
+                    CapabilityObservationTestFixtures.capability(mapper, scope);
+            InMemoryVisualEvidenceSigner signer =
+                    new InMemoryVisualEvidenceSigner();
+            java.time.Instant occurredAt =
+                    java.time.Instant.now().minusSeconds(5);
+            List<CapabilityObservationRepository.StoredObservation> sources =
+                    List.of(
+                            CapabilityCorpusTestFixtures.clusterObservation(
+                                    mapper, signer, capability,
+                                    "transaction-cluster-001",
+                                    occurredAt, true),
+                            CapabilityCorpusTestFixtures.clusterObservation(
+                                    mapper, signer, capability,
+                                    "transaction-cluster-002",
+                                    occurredAt.plusMillis(100), true),
+                            CapabilityCorpusTestFixtures.clusterObservation(
+                                    mapper, signer, capability,
+                                    "transaction-cluster-003",
+                                    occurredAt.plusMillis(200), true));
+            sources.forEach(observations::append);
+            CapabilityCorpusRevision revision =
+                    CapabilityCorpusTestFixtures.revision(
+                            mapper,
+                            sources,
+                            "transaction-cluster-corpus",
+                            java.time.Instant.now().minusSeconds(2));
+            CapabilityCorpusPublication publication =
+                    CapabilityCorpusTestFixtures.publication(
+                            mapper,
+                            revision,
+                            1,
+                            null,
+                            java.time.Instant.now().minusSeconds(1));
+            CapabilityCorpusRepository corpora =
+                    context.getBean(CapabilityCorpusRepository.class);
+            corpora.appendRevision(revision);
+            corpora.appendPublication(publication);
+            CapabilityCorpusClusterValidation validation =
+                    CapabilityCorpusTestFixtures.clusterValidation(
+                            mapper,
+                            publication,
+                            revision,
+                            sources,
+                            java.time.Instant.now().minusMillis(500));
+            context.getBean(MutableClusterValidationAuthority.class)
+                    .validation = validation;
+
+            assertAuditFailure(() -> context.getBean(
+                    CapabilityCorpusClusterGovernanceService.class).publish(
+                    CapabilityCorpusTestFixtures.clusterRequest(
+                            publication, validation),
+                    identity(Set.of("corpus-publishers"))));
+
+            JdbcTemplate jdbc = context.getBean(JdbcTemplate.class);
+            assertThat(count(
+                    jdbc,
+                    "mirror_capability_corpus_clusters")).isZero();
+            assertThat(count(
+                    jdbc,
+                    "mirror_capability_corpus_publications")).isOne();
+            assertThat(count(
+                    jdbc,
+                    "mirror_capability_corpus_revisions")).isOne();
+        }
+    }
+
     private static AnnotationConfigApplicationContext context() {
         var context = new AnnotationConfigApplicationContext(
                 ConfigurationUnderTest.class);
@@ -213,6 +288,8 @@ class CapabilityCorpusGovernanceTransactionTest {
                 CapabilityCorpusGovernanceService.class))).isTrue();
         assertThat(AopUtils.isAopProxy(context.getBean(
                 CapabilityCorpusTrajectoryGovernanceService.class))).isTrue();
+        assertThat(AopUtils.isAopProxy(context.getBean(
+                CapabilityCorpusClusterGovernanceService.class))).isTrue();
         return context;
     }
 
@@ -320,6 +397,15 @@ class CapabilityCorpusGovernanceTransactionTest {
         }
 
         @Bean
+        CapabilityCorpusClusterRepository clusters(
+                JdbcTemplate jdbc,
+                ObjectMapper mapper,
+                CapabilityCorpusIntegrity integrity) {
+            return new DatabaseCapabilityCorpusClusterRepository(
+                    jdbc, mapper, integrity);
+        }
+
+        @Bean
         CapabilityCorpusGovernancePolicyProvider policies() {
             return new CapabilityCorpusGovernancePolicyProvider() {
                 @Override
@@ -402,6 +488,44 @@ class CapabilityCorpusGovernanceTransactionTest {
         }
 
         @Bean
+        CapabilityCorpusClusterPolicyProvider clusterPolicies() {
+            return new CapabilityCorpusClusterPolicyProvider() {
+                @Override
+                public boolean available() {
+                    return true;
+                }
+
+                @Override
+                public Optional<ClusterPolicy> resolve(
+                        CapabilitySnapshot.Scope scope,
+                        MirrorArtifactRef capabilityRef) {
+                    return Optional.of(new ClusterPolicy(
+                            scope,
+                            capabilityRef,
+                            CapabilityObservationTestFixtures.ref(
+                                    "CORPUS_CLUSTER_POLICY",
+                                    "support-cluster-policy",
+                                    3,
+                                    'b'),
+                            3,
+                            3,
+                            20,
+                            500,
+                            0.85d,
+                            java.time.Duration.ofHours(1),
+                            identity -> identity.groups().contains(
+                                    "corpus-publishers"),
+                            validation -> true));
+                }
+            };
+        }
+
+        @Bean
+        MutableClusterValidationAuthority clusterValidations() {
+            return new MutableClusterValidationAuthority();
+        }
+
+        @Bean
         MirrorOperationAuditRepository failingAudit() {
             return new MirrorOperationAuditRepository() {
                 @Override
@@ -466,6 +590,49 @@ class CapabilityCorpusGovernanceTransactionTest {
                     integrity,
                     observability,
                     Clock.systemUTC());
+        }
+
+        @Bean
+        CapabilityCorpusClusterGovernanceService clusterService(
+                CapabilityObservationRepository observations,
+                CapabilityCorpusRepository corpora,
+                CapabilityCorpusClusterRepository clusters,
+                CapabilityCorpusGovernancePolicyProvider policies,
+                CapabilityCorpusClusterPolicyProvider clusterPolicies,
+                MutableClusterValidationAuthority clusterValidations,
+                CapabilityCorpusSourceVerifier sourceVerifier,
+                CapabilityCorpusIntegrity integrity,
+                MirrorOperationObservability observability) {
+            return new CapabilityCorpusClusterGovernanceService(
+                    observations,
+                    corpora,
+                    clusters,
+                    policies,
+                    clusterPolicies,
+                    clusterValidations,
+                    sourceVerifier,
+                    integrity,
+                    observability,
+                    Clock.systemUTC());
+        }
+    }
+
+    static final class MutableClusterValidationAuthority
+            implements CapabilityCorpusClusterValidationAuthority {
+        private volatile CapabilityCorpusClusterValidation validation;
+
+        @Override
+        public boolean available() {
+            return validation != null;
+        }
+
+        @Override
+        public Optional<CapabilityCorpusClusterValidation> resolve(
+                CapabilitySnapshot.Scope scope,
+                MirrorArtifactRef validationRef) {
+            return Optional.ofNullable(validation)
+                    .filter(value -> value.scope().equals(scope)
+                            && value.artifactRef().equals(validationRef));
         }
     }
 }

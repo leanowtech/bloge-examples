@@ -52,6 +52,9 @@ class CapabilityMirrorSchemaPackagingTest {
                 "capability-corpus-publication-v1.schema.json",
                 "capability-corpus-trajectory-publish-request-v1.schema.json",
                 "capability-corpus-trajectory-publication-v1.schema.json",
+                "capability-corpus-cluster-validation-v1.schema.json",
+                "capability-corpus-cluster-publish-request-v1.schema.json",
+                "capability-corpus-cluster-publication-v1.schema.json",
                 "fixture-mirror-corpus-bindings-v1.schema.json")) {
             String resource = CapabilityMirrorProtocol.SCHEMA_RESOURCE_ROOT + name;
             try (InputStream input = getClass().getResourceAsStream(resource)) {
@@ -113,6 +116,22 @@ class CapabilityMirrorSchemaPackagingTest {
                 .CAPABILITY_CORPUS_TRAJECTORY_PUBLICATION_SCHEMA_RESOURCE)
                 .endsWith(
                         "capability-corpus-trajectory-publication-v1.schema.json");
+        assertThat(CapabilityMirrorProtocol
+                .CAPABILITY_CORPUS_CLUSTER_VALIDATION_SCHEMA_RESOURCE)
+                .endsWith(
+                        "capability-corpus-cluster-validation-v1.schema.json");
+        assertThat(CapabilityMirrorProtocol
+                .CAPABILITY_CORPUS_CLUSTER_PUBLISH_REQUEST_SCHEMA_RESOURCE)
+                .endsWith(
+                        "capability-corpus-cluster-publish-request-v1.schema.json");
+        assertThat(CapabilityMirrorProtocol
+                .CAPABILITY_CORPUS_CLUSTER_PUBLICATION_SCHEMA_RESOURCE)
+                .endsWith(
+                        "capability-corpus-cluster-publication-v1.schema.json");
+        assertThat(CapabilityMirrorProtocol
+                .CAPABILITY_CORPUS_CLUSTER_FIXTURE_RESOURCE)
+                .endsWith(
+                        "capability-corpus-cluster-stage2-v1.fixture.json");
         assertThat(CapabilityMirrorProtocol
                 .FIXTURE_MIRROR_CORPUS_BINDINGS_SCHEMA_RESOURCE)
                 .endsWith("fixture-mirror-corpus-bindings-v1.schema.json");
@@ -260,6 +279,24 @@ class CapabilityMirrorSchemaPackagingTest {
         assertThat(CapabilityMirrorProtocol
                 .CAPABILITY_CORPUS_FIXTURE_RESOURCE)
                 .endsWith("capability-corpus-stage2-v1.fixture.json");
+    }
+
+    @Test
+    void packagesOneFixedPayloadFreeRecordedClusterFixture() {
+        CapabilityCorpusClusterCompatibilityFixture fixture =
+                CapabilityMirrorProtocol
+                        .capabilityCorpusClusterCompatibilityFixture();
+
+        CapabilityCorpusClusterVerifier.VerificationResult verified =
+                new CapabilityCorpusClusterVerifier().verify(fixture);
+
+        assertThat(verified.verified()).isTrue();
+        assertThat(verified.clusterId())
+                .isEqualTo("support-refund-customer-cluster");
+        assertThat(fixture.publication().toString())
+                .doesNotContain("customer-123")
+                .doesNotContain("requestBody")
+                .doesNotContain("responseBody");
     }
 
     @Test

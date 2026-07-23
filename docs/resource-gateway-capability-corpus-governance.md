@@ -1,14 +1,15 @@
-# Resource Gateway Capability Corpus 治理、轨迹发布与精确服务指南
+# Resource Gateway Capability Corpus 治理、轨迹/分簇发布与精确服务指南
 
 > 本增量把可信 observation 变成可审查、可冻结、可发布的 payload-free 治理事实。
 > 第四纵切允许 owner 从 reviewed publication 中显式发布 recorded retry trajectory；当前第五纵切进一步
 > 允许 fixture 精确绑定这些 trajectory，在 plan generation 创建时完成在线复验、短时 payload 物化，
-> 并通过 BLOGE 原生重试循环按 attempt 解析为 `RECORDED_TRAJECTORY`。它仍不是生产 payload vault，
-> 也不把相邻 observation 猜成重试、session state 或有状态世界。
+> 并通过 BLOGE 原生重试循环按 attempt 解析为 `RECORDED_TRAJECTORY`。第六纵切新增 externally validated、
+> owner-reviewed recorded-cluster publication，但尚未接入 runtime。它仍不是生产 payload vault，
+> 也不把相邻 observation 猜成重试、把分簇发布冒充可服务结果、session state 或有状态世界。
 
 ## 1. 能力边界
 
-本阶段解决六个问题：
+本阶段解决七个问题：
 
 1. 对终态 `QUARANTINED` observation 记录一次不可变人工审查，但不篡改原准入事实。
 2. 把一组 exact `ADMITTED` observation 冻结成不可变 corpus candidate revision，并计算确定性的元数据风险。
@@ -20,18 +21,22 @@
 6. 由同一 fixture 同时绑定 exact corpus publication 与 reviewed trajectory publication；每次 materialize
    重验 current head、retry policy、source authority 和 payload，再将 attempt sequence 冻结进单次 generation，
    由真实 BLOGE retry loop 驱动，不另造一套重试引擎。
+7. 接收外部数据面生成的 payload-free cluster validation，在 owner policy 下重新验证 exact corpus、support、
+   identity safety、holdout/Wilson confidence、grant、retention 和 lineage，再追加独立 recorded-cluster
+   publication；发布过程不读取 payload，也不提前声称 runtime serving。
 
 以下能力仍不在本阶段：
 
 - 不在数据库、HTTP、plan、evidence 或普通日志中保存、读取或返回 request/response payload。
 - 不内建生产 payload vault、proof service、retention service 或 tombstone authority；只提供部署实现的 SPI。
-- 不实现 cluster、session-state 或 stateful runtime resolver；`RECORDED_TRAJECTORY` 只表达显式发布的单节点重试序列。
+- 不实现 cluster、session-state 或 stateful runtime resolver；当前 cluster 只到 governance publication，
+  `RECORDED_TRAJECTORY` 只表达显式发布的单节点重试序列。
 - 不把 candidate revision 直接当作 serving 数据。
 - 不证明当前策略、组织授权或外部 payload 在离线验证后仍然有效。
 - 不完成 poisoning、drift、bias、outcome calibration 和删除证明。
 - 不把 retryable 单点错误或时间相邻 observation 当作精确重试行为；只有 owner 显式发布的 trajectory 才可进入后续 resolver。
 
-## 2. 六个不可破坏的不变量
+## 2. 不可破坏的不变量
 
 ### 2.1 审查不是改判
 
@@ -103,6 +108,26 @@ Resource Gateway 只把 authority 返回的响应 JSON 冻结在当前 `Compiled
 - payload 不进入 public `MirrorPlan`、database、evidence、metrics、audit 或 `toString()`；
 - 运行期间不再回读 mutable vault，避免同一 generation 内出现撕裂行为。
 
+### 2.6 分簇验证不等于跨实体复制
+
+`CapabilityCorpusClusterValidation` 必须由外部 data-plane authority 产生并保持 payload-free。它绑定 exact
+current corpus publication/revision、2..1000 个有序 source、代表 source、request match JSON Pointer、identity
+mode/projection、distinct identity count、独立 holdout 和可重算的 95% Wilson precision interval。
+
+Resource Gateway 的 publication service 仍会独立证明：
+
+- validation content address、scope、capability、corpus 和 authority currentness 完全一致；
+- 每个 member/representative 都属于 exact corpus，响应 Schema 相同，且 grant 同时允许
+  `EXACT_REPLAY` 与 `CLUSTER_MODELING`；
+- owner policy 的 minimum support/identity/holdout、maximum false-positive basis points、
+  minimum confidence lower bound、publisher 和 path policy 全部满足；
+- `IDENTITY_FREE_RESPONSE` 没有 projection；`REQUEST_PROJECTION` 的 request/response paths 合法、有序，
+  response paths 全局不重复且互不为父子路径，identity coverage 明确 complete；
+- publication horizon 不越过 corpus、validation、source retention 或 owner policy 的任一上界。
+
+不能证明身份字段完整覆盖时必须拒绝发布，未来 runtime 也必须 `ABSTAINED`。绝不允许把实体 A 的完整响应直接
+返回给实体 B，也不允许用字符串替换伪装结构化身份 projection。
+
 ## 3. 生命周期
 
 ```text
@@ -118,24 +143,27 @@ signed observation
                            + every source authority recheck
                                          v
                                   serving publication
-                                    /            \
-        explicit attempts + current retry       fixture exact binding
-             policy + owner review                       |
-                       v                                  |
-             trajectory publication                      |
-                       \                                  /
-                   fixture trajectory binding
-                              |
-          online head/policy/retry/source/payload revalidation
-                              |
-       frozen RECORDED_EXACT + RECORDED_TRAJECTORY generation
-                              |
-                    BLOGE native retry loop
+                       /                   |                    \
+          exact fixture binding           |              external holdout +
+                       |         explicit attempts +      identity validation
+                       |         current retry policy             |
+                       |          + owner review                   v
+                       |                 v                cluster publication
+                       |       trajectory publication        (governance only)
+                       |                 |
+                       |       fixture trajectory binding
+                       \                 /
+                online head/policy/retry/source/payload revalidation
+                                  |
+           frozen RECORDED_EXACT + RECORDED_TRAJECTORY generation
+                                  |
+                        BLOGE native retry loop
 ```
 
-`ObservationReview`、`CorpusRevision`、`CorpusPublication`、`CorpusTrajectoryPublication` 是四条不同的事实线。
-review 以 observation 为唯一终态坐标；candidate、publication 与 trajectory publication 各自拥有独立、连续、
-乐观栅栏保护的 revision lineage。
+`ObservationReview`、`CorpusRevision`、`CorpusPublication`、`CorpusTrajectoryPublication`、
+`CapabilityCorpusClusterPublication` 是不同的事实线。review 以 observation 为唯一终态坐标；candidate、
+publication、trajectory publication 与 cluster publication 各自拥有独立、连续、乐观栅栏保护的 revision
+lineage。cluster publication 当前止于治理事实，不进入图中已实现的 exact/trajectory generation。
 
 ## 4. 协议对象
 
@@ -151,6 +179,9 @@ review 以 observation 为唯一终态坐标；candidate、publication 与 traje
 | Publication fact | `capability-corpus-publication-v1.schema.json` | serving lineage、policy、reviewer、horizon |
 | Trajectory command | `capability-corpus-trajectory-publish-request-v1.schema.json` | exact publication/retry policy、2..32 explicit attempt sources、lineage fence |
 | Trajectory fact | `capability-corpus-trajectory-publication-v1.schema.json` | canonical request、corpus/retry policy、reviewer、attempts、serving horizon |
+| Cluster validation | `capability-corpus-cluster-validation-v1.schema.json` | external support、match paths、identity projection、holdout 与 Wilson confidence proof |
+| Cluster command | `capability-corpus-cluster-publish-request-v1.schema.json` | exact corpus/policy/validation、owner ticket 与 cluster lineage fence |
+| Cluster fact | `capability-corpus-cluster-publication-v1.schema.json` | payload-free support、identity safety、confidence、reviewer 与 serving horizon |
 | Fixture serving binding | `fixture-mirror-corpus-bindings-v1.schema.json` | immutable capability 到 exact latest publication 的选择 |
 | Fixture trajectory binding | `fixture-mirror-trajectory-bindings-v1.schema.json` | 同一 fixture 在已选 corpus 下选择 reviewed trajectory |
 
@@ -177,6 +208,12 @@ Trajectory binding 的固定样本是
 `docs/schemas/resource-gateway-mirror/fixture-mirror-trajectory-bindings-v1.fixture.json`。服务端还会把每个
 trajectory 与同一 fixture 的 `mirrorCorpus` 选择做 exact equality 对账；独立 verifier 只验证 strict Schema、
 canonical capability/trajectory order 和 trajectory coordinate 唯一性，不冒充在线治理权威。
+
+Cluster publication 的固定样本是
+`docs/schemas/resource-gateway-mirror/capability-corpus-cluster-stage2-v1.fixture.json`。服务端和独立
+`CapabilityCorpusClusterVerifier` 会重算 corpus/validation/command/publication content address、member/
+representative membership、共同 response Schema、identity path topology、holdout 计数和 Wilson 区间。成功结果
+仍明确保留 current policy、validation authority、grant/retention、source/payload authority 等在线限制。
 
 ### 4.1 Fixture 绑定示例
 
@@ -248,7 +285,7 @@ trajectory 复用同一 source 都会失败关闭。
 
 ## 5. 受保护 API
 
-三条路由只在以下条件同时满足时装配：
+五条治理路由只在以下条件同时满足时装配：
 
 ```text
 active profile in {test, staging}
@@ -266,6 +303,7 @@ AND gateway.testing.mirror.enabled=true
 | `POST /api/mirror/corpus-candidates` | 冻结一版 non-serving corpus candidate |
 | `POST /api/mirror/corpus-publications` | 发布一版 owner-reviewed serving fact |
 | `POST /api/mirror/corpus-trajectories` | 从 exact current publication 发布一版 owner-reviewed retry trajectory |
+| `POST /api/mirror/corpus-clusters` | 从 exact current publication 发布一版 externally validated、owner-reviewed recorded cluster |
 
 ### 5.1 Review 示例
 
@@ -358,15 +396,66 @@ source 必须按 `observationRef.id` 严格升序、无重复，数量为 `1..10
 publish 只接受当前 candidate head。candidate 创建后若又追加了新 revision，旧 candidate 即使 eligible 也不能再
 发布。
 
+### 5.4 Cluster publication 示例
+
+调用方只提交 reference-only owner command，不提交 validation 正文或 payload：
+
+```json
+{
+  "schemaVersion": "resourceGateway.capabilityCorpusClusterPublishRequest.v1",
+  "clusterId": "support-refund-customer-cluster",
+  "revision": 1,
+  "expectedPredecessorRef": null,
+  "capabilityRef": {
+    "kind": "CAPABILITY",
+    "id": "graph:support-refund",
+    "revision": 7,
+    "fingerprint": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+  },
+  "corpusPublicationRef": {
+    "kind": "CAPABILITY_CORPUS_PUBLICATION",
+    "id": "support-cluster-corpus",
+    "revision": 1,
+    "fingerprint": "sha256:4344469a83b4d6a6b6b7eb07b657ac0ad3e249032ec2426fe6a1a4310ebb0b47"
+  },
+  "clusterPolicyRef": {
+    "kind": "CORPUS_CLUSTER_POLICY",
+    "id": "support-cluster-policy",
+    "revision": 3,
+    "fingerprint": "sha256:eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee"
+  },
+  "validationRef": {
+    "kind": "CAPABILITY_CORPUS_CLUSTER_VALIDATION",
+    "id": "support-refund-customer-cluster-validation",
+    "revision": 1,
+    "fingerprint": "sha256:bdaf93f506d15d1dbe9c6a4750a775a45c2028453cc3d3d8ca37cb5dccdc8fc0"
+  },
+  "reviewTicketRef": {
+    "kind": "GOVERNANCE_REVIEW_TICKET",
+    "id": "GOV-2030-CLUSTER-001",
+    "revision": 1,
+    "fingerprint": "sha256:ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff"
+  },
+  "reasonCode": "OWNER_APPROVED_RECORDED_CLUSTER"
+}
+```
+
+服务端用 `validationRef` 从 `CapabilityCorpusClusterValidationAuthority` 读取 exact current proof，并重算
+fingerprint。调用方不能通过请求体自报 members、confidence、identity projection 或 usable horizon。
+
 ## 6. Operator-owned 接线
 
-默认组合根会安装三个 unavailable provider，防止演示配置被误当成信任：
+默认组合根会安装五个 unavailable provider，防止演示配置被误当成信任：
 
 - `CapabilityCorpusGovernancePolicyProvider`
 - `CapabilityCorpusSourceVerifier`
 - `CapabilityCorpusPayloadAuthority`
+- `CapabilityCorpusClusterPolicyProvider`
+- `CapabilityCorpusClusterValidationAuthority`
 
 企业环境需要提供自己的 Spring bean。`@ConditionalOnMissingBean` 会让部署实现替换默认 placeholder。
+cluster publication 只依赖前四类治理/验证 authority，不读取 payload；未来 cluster runtime 才会额外依赖
+payload authority。
 
 ### 6.1 Governance policy provider
 
@@ -489,8 +578,9 @@ publish 还要求：
 - exact retry 先读取已提交事实，再访问 mutable policy/source provider。
 - 同坐标、同 command fingerprint 返回原事实。
 - 同坐标、不同 command fingerprint 返回 `409`。
-- candidate、publication 和 trajectory publication 使用三套独立 predecessor fence。
-- review、candidate、publication、trajectory publication 的正文写入与 mandatory success audit 位于同一数据库事务。
+- candidate、publication、trajectory publication 和 cluster publication 使用四套独立 predecessor fence。
+- review、candidate、publication、trajectory publication、cluster publication 的正文写入与 mandatory success
+  audit 位于同一数据库事务。
 - audit 失败返回 `503 RG.MIRROR.OPERATION_AUDIT_UNAVAILABLE`，本次治理写入回滚。
 - 失败 audit 使用独立事务保存；业务 payload 不进入 audit。
 
@@ -500,6 +590,7 @@ H2 表只保存完整 scope、索引元数据和 canonical payload-free JSON：
 - `mirror_capability_corpus_revisions`
 - `mirror_capability_corpus_publications`
 - `mirror_capability_corpus_trajectories`
+- `mirror_capability_corpus_clusters`
 
 每次读取同时复验 JSON fingerprint 与冗余索引列，索引漂移不能改变治理结果。
 
@@ -517,11 +608,14 @@ curl -sS http://localhost:8080/api/integration/capabilities
 |---|---|
 | `mirrorCorpusGovernanceProtocol` | review/candidate/publication v1 wire object 与 strict Schema 已支持 |
 | `mirrorCorpusExactResolverProtocol` | fixture binding 与 `RECORDED_EXACT` 运行协议已支持 |
-| `mirrorCorpusGovernanceApi` | 三条 test/staging route 已装配 |
+| `mirrorCorpusGovernanceApi` | review/candidate/publication 三条基础 test/staging route 已装配 |
 | `mirrorCorpusGovernanceReady` | policy provider 与 source verifier 当前都可用 |
 | `mirrorCorpusTrajectoryPublicationProtocol` | trajectory command/fact、fingerprint 和 strict Schema 已支持 |
 | `mirrorCorpusTrajectoryPublicationApi` | `POST /api/mirror/corpus-trajectories` 已装配 |
 | `mirrorCorpusTrajectoryPublicationReady` | corpus policy、retry policy、source authority 当前都可用 |
+| `mirrorCorpusClusterPublicationProtocol` | cluster validation/command/publication、identity safety、holdout/Wilson fingerprint 与 strict Schema 已支持 |
+| `mirrorCorpusClusterPublicationApi` | `POST /api/mirror/corpus-clusters` 已装配 |
+| `mirrorCorpusClusterPublicationReady` | corpus policy、cluster policy、external validation authority 与 source authority 当前都可用 |
 | `mirrorCorpusResolverReady` | policy、source lifecycle、payload authority 当前都可用 |
 | `mirrorCorpusTrajectoryResolverProtocol` | fixture trajectory binding 与 `RECORDED_TRAJECTORY` 运行协议已支持 |
 | `mirrorCorpusTrajectoryResolverReady` | trajectory serving 的 policy、source lifecycle、payload 与 retry-policy authorities 当前都可用；独立于 publication route |
@@ -533,6 +627,11 @@ curl -sS http://localhost:8080/api/integration/capabilities
 `GovernanceReady=true` 推导 resolver 已可物化 payload。反向也不成立：只读执行部署可以令
 `mirrorCorpusTrajectoryPublicationApi=false`，同时在 serving authorities 完整时令
 `mirrorCorpusTrajectoryResolverReady=true`。
+
+`supportedObjects.capabilityCorpusClusterValidation`、
+`supportedObjects.capabilityCorpusClusterPublishRequest` 和
+`supportedObjects.capabilityCorpusClusterPublication` 必须分别为对应 v1 wire version。当前没有
+`mirrorCorpusClusterResolverReady`；缺少这个 flag 是有意的诚实边界，不应由客户端自行推导。
 
 ## 11. 启动、停止与演示
 
@@ -562,6 +661,9 @@ beans；要演示 `RECORDED_EXACT` 还必须安装测试专用 payload authority
 adapter 放进共享或生产配置。trajectory publication 还必须安装 operator-owned
 `CapabilityRetryPolicyProvider`；trajectory runtime serving 也依赖同一个当前权威。默认实现不可用，不能信任
 请求或历史 publication 自报的 `retryPolicyRef`。
+cluster publication 还必须安装 operator-owned `CapabilityCorpusClusterPolicyProvider` 和外部
+`CapabilityCorpusClusterValidationAuthority`。默认实现同样不可用；demo 启动成功只证明 route assembly，
+不证明 data-plane validation 或 cluster publication ready。
 策略中的错误类与错误码是单调收紧的两个维度：空集合表示该维度不参与约束；两者都配置时必须同时命中，
 不能用一个维度的命中掩盖另一个维度的不匹配。
 
@@ -577,6 +679,8 @@ adapter 放进共享或生产配置。trajectory publication 还必须安装 ope
 | lineage 冲突 | `CORPUS_REVISION_HEAD_CONFLICT`、`CORPUS_PUBLICATION_HEAD_CONFLICT` | 读取 current head，重新生成下一 command |
 | 发布门禁 | `CORPUS_CANDIDATE_INELIGIBLE`、`CORPUS_POLICY_DRIFTED` | 新建 candidate，不修改旧 revision |
 | trajectory 策略/结构 | `CORPUS_TRAJECTORY_RETRY_INVALID`、`CORPUS_TRAJECTORY_ORDER_INVALID`、`RETRY_POLICY_UNAVAILABLE` | 修复显式 attempt 选择或恢复 owner retry-policy authority；禁止猜测/降级 |
+| cluster policy/validation | `RG.MIRROR.CORPUS_CLUSTER_POLICY_UNAVAILABLE`、`RG.MIRROR.CORPUS_CLUSTER_VALIDATION_UNAVAILABLE`、`RG.MIRROR.CORPUS_CLUSTER_VALIDATION_INTEGRITY_INVALID`、`RG.MIRROR.CORPUS_CLUSTER_CONFIDENCE_REJECTED` | 恢复 current authority，或重新验证/发布；禁止降低阈值、忽略 identity gap 或信任调用方自报 proof |
+| cluster lineage/source | `RG.MIRROR.CORPUS_CLUSTER_HEAD_CONFLICT`、`RG.MIRROR.CORPUS_CLUSTER_SOURCE_REJECTED`、`RG.MIRROR.CORPUS_CLUSTER_USE_NOT_AUTHORIZED` | 读取 current heads，修复 source/grant 后生成新 validation/command；不得修改旧 publication |
 | serving binding | `RG.MIRROR.CORPUS_BINDING_INVALID`、`RG.MIRROR.CORPUS_PUBLICATION_STALE`、`RG.MIRROR.CORPUS_TRAJECTORY_STALE`、`RG.MIRROR.CORPUS_POLICY_DRIFT` | 修复 fixture 或重新审阅/发布，不回退历史 head |
 | trajectory runtime | `RG.MIRROR.CORPUS_TRAJECTORY_RETRY_POLICY_DRIFT`、`CONTROL_PLAN_TRAJECTORY_RETRY_INCOMPATIBLE`、`MIRROR_TRAJECTORY_ATTEMPT_EXHAUSTED` | 重新发布/绑定轨迹，或显式调整 DAG retry capacity；禁止截断序列 |
 | payload serving | `RG.MIRROR.CORPUS_PAYLOAD_UNUSABLE`、`RG.MIRROR.CORPUS_PAYLOAD_INTEGRITY_INVALID` | 查 tombstone/proof/content address；不得降级到未校验 bytes |
@@ -631,6 +735,23 @@ if (!trajectory.verified()) {
 连续编号、共同 request fingerprint 与 horizon。成功结果仍显式携带四项 online limitations；retry policy、
 normalized outcome、trace ordering、grant、retention、tombstone 和 payload authority 必须在线复验。
 
+cluster validation/command/publication 可用固定夹具独立验证：
+
+```java
+CapabilityCorpusClusterCompatibilityFixture cluster =
+        CapabilityMirrorProtocol.capabilityCorpusClusterCompatibilityFixture();
+CapabilityCorpusClusterVerifier.VerificationResult verified =
+        new CapabilityCorpusClusterVerifier().verify(cluster);
+if (!verified.verified()) {
+    throw new IllegalStateException(verified.reasonCode());
+}
+```
+
+该 verifier 关闭五份 strict artifact Schema，重算所有 content address、corpus/command/validation lineage、
+member/representative membership、response Schema、identity paths、holdout 和 Wilson confidence。它不会联网
+证明 current cluster policy、validation authority、grant/retention、source lifecycle 或 payload authority，
+也不声称 runtime resolver 已存在。
+
 fixture trajectory binding 也可独立验证：
 
 ```java
@@ -653,15 +774,16 @@ grant、retention、tombstone、payload/source authority 或节点 retry capacit
 1. 生产级 payload/proof/grant/retention/tombstone authority 与 outage SLO。
 2. candidate/publish 外部调用的 prepare/verify/commit 分段，缩短数据库事务持有时间，并用 generation token 防止
    verification 后漂移。
-3. poison、burst、producer concentration、bias 和 holdout validation。
+3. poison、burst、producer concentration、bias，以及按业务分层而非只按全局随机抽样的持续 holdout validation。
 4. owner review queue、双人审批或高风险 separation of duties。
 5. 多副本 resolver generation cache、撤销/过期传播、内存清零和 stale-while-deny 语义。
 6. retention deletion proof、legal hold 与 corpus lineage 重建。
-7. stateful/cluster resolver 的 confidence、abstention、session isolation 和 outcome calibration。
+7. cluster fixture binding、identity-safe materialization/runtime resolver，以及 stateful resolver 的
+   confidence、abstention、session isolation 和 outcome calibration。
 8. 非 Java fixed fixture、数字 canonicalization 和客户环境 certification。
 9. payload authority 与 trajectory resolver 的负载、熔断、区域故障、vault generation 撕裂、重试风暴和
    256 MiB generation budget 压测。
 
-在这些门禁完成前，本增量应被描述为“治理事实/显式 retry trajectory 管线与 test/staging exact/trajectory
-serving kernel 已闭合”，不能描述为
+在这些门禁完成前，本增量应被描述为“治理事实/显式 retry trajectory/recorded-cluster publication 管线与
+test/staging exact/trajectory serving kernel 已闭合”，不能描述为
 “保真语料服务已生产就绪”。

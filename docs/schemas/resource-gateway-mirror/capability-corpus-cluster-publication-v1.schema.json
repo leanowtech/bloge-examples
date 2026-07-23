@@ -1,0 +1,318 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://bloge.dev/schemas/resource-gateway-mirror/capability-corpus-cluster-publication-v1.schema.json",
+  "title": "Capability Corpus Cluster Publication v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "clusterFingerprint",
+    "sourceCommandFingerprint",
+    "scope",
+    "clusterId",
+    "revision",
+    "predecessorRef",
+    "capabilityRef",
+    "corpusPublicationRef",
+    "corpusRevisionRef",
+    "publicationPolicyRef",
+    "clusterPolicyRef",
+    "validationRef",
+    "representativeSource",
+    "members",
+    "matchRequestPointers",
+    "identityMode",
+    "identityProjections",
+    "distinctIdentityCount",
+    "holdout",
+    "confidence",
+    "reviewTicketRef",
+    "reasonCode",
+    "reviewedBy",
+    "publishedAt",
+    "usableUntil"
+  ],
+  "properties": {
+    "schemaVersion": {
+      "const": "resourceGateway.capabilityCorpusClusterPublication.v1"
+    },
+    "clusterFingerprint": { "$ref": "#/$defs/fingerprint" },
+    "sourceCommandFingerprint": { "$ref": "#/$defs/fingerprint" },
+    "scope": { "$ref": "#/$defs/scope" },
+    "clusterId": { "$ref": "#/$defs/identifier" },
+    "revision": { "type": "integer", "minimum": 1 },
+    "predecessorRef": {
+      "oneOf": [
+        { "type": "null" },
+        {
+          "allOf": [
+            { "$ref": "#/$defs/artifactRef" },
+            {
+              "properties": {
+                "kind": {
+                  "const": "CAPABILITY_CORPUS_CLUSTER_PUBLICATION"
+                }
+              }
+            }
+          ]
+        }
+      ]
+    },
+    "capabilityRef": {
+      "allOf": [
+        { "$ref": "#/$defs/artifactRef" },
+        { "properties": { "kind": { "const": "CAPABILITY" } } }
+      ]
+    },
+    "corpusPublicationRef": {
+      "allOf": [
+        { "$ref": "#/$defs/artifactRef" },
+        {
+          "properties": {
+            "kind": { "const": "CAPABILITY_CORPUS_PUBLICATION" }
+          }
+        }
+      ]
+    },
+    "corpusRevisionRef": {
+      "allOf": [
+        { "$ref": "#/$defs/artifactRef" },
+        {
+          "properties": {
+            "kind": { "const": "CAPABILITY_CORPUS_REVISION" }
+          }
+        }
+      ]
+    },
+    "publicationPolicyRef": {
+      "allOf": [
+        { "$ref": "#/$defs/artifactRef" },
+        {
+          "properties": {
+            "kind": { "const": "CORPUS_PUBLICATION_POLICY" }
+          }
+        }
+      ]
+    },
+    "clusterPolicyRef": {
+      "allOf": [
+        { "$ref": "#/$defs/artifactRef" },
+        {
+          "properties": {
+            "kind": { "const": "CORPUS_CLUSTER_POLICY" }
+          }
+        }
+      ]
+    },
+    "validationRef": {
+      "allOf": [
+        { "$ref": "#/$defs/artifactRef" },
+        {
+          "properties": {
+            "kind": { "const": "CAPABILITY_CORPUS_CLUSTER_VALIDATION" }
+          }
+        }
+      ]
+    },
+    "representativeSource": { "$ref": "#/$defs/sourceCoordinate" },
+    "members": {
+      "type": "array",
+      "minItems": 2,
+      "maxItems": 1000,
+      "uniqueItems": true,
+      "items": { "$ref": "#/$defs/sourceCoordinate" }
+    },
+    "matchRequestPointers": {
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 32,
+      "uniqueItems": true,
+      "items": { "$ref": "#/$defs/jsonPointer" }
+    },
+    "identityMode": {
+      "enum": ["IDENTITY_FREE_RESPONSE", "REQUEST_PROJECTION"]
+    },
+    "identityProjections": {
+      "type": "array",
+      "maxItems": 16,
+      "uniqueItems": true,
+      "items": { "$ref": "#/$defs/identityProjection" }
+    },
+    "distinctIdentityCount": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 1000
+    },
+    "holdout": { "$ref": "#/$defs/holdout" },
+    "confidence": { "$ref": "#/$defs/confidence" },
+    "reviewTicketRef": {
+      "allOf": [
+        { "$ref": "#/$defs/artifactRef" },
+        {
+          "properties": {
+            "kind": { "const": "GOVERNANCE_REVIEW_TICKET" }
+          }
+        }
+      ]
+    },
+    "reasonCode": {
+      "type": "string",
+      "pattern": "^[A-Z][A-Z0-9_.-]{0,127}$"
+    },
+    "reviewedBy": { "$ref": "#/$defs/actorIdentifier" },
+    "publishedAt": { "$ref": "#/$defs/canonicalInstant" },
+    "usableUntil": { "$ref": "#/$defs/canonicalInstant" }
+  },
+  "allOf": [
+    {
+      "if": {
+        "properties": {
+          "identityMode": { "const": "IDENTITY_FREE_RESPONSE" }
+        }
+      },
+      "then": {
+        "properties": {
+          "identityProjections": { "maxItems": 0 }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "identityMode": { "const": "REQUEST_PROJECTION" }
+        }
+      },
+      "then": {
+        "properties": {
+          "identityProjections": { "minItems": 1 }
+        }
+      }
+    }
+  ],
+  "$defs": {
+    "identifier": {
+      "type": "string",
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9._:/#-]{0,511}$"
+    },
+    "actorIdentifier": {
+      "type": "string",
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9@._:/#-]{0,511}$"
+    },
+    "fingerprint": {
+      "type": "string",
+      "pattern": "^sha256:[a-f0-9]{64}$"
+    },
+    "canonicalInstant": {
+      "type": "string",
+      "format": "date-time",
+      "pattern": "^(?:[0-9]{4})-(?:0[1-9]|1[0-2])-(?:0[1-9]|[12][0-9]|3[01])T(?:[01][0-9]|2[0-3]):[0-5][0-9]:[0-5][0-9](?:\\.[0-9]{1,9})?Z$"
+    },
+    "jsonPointer": {
+      "type": "string",
+      "minLength": 2,
+      "maxLength": 512,
+      "pattern": "^/(?:[^~*]|~[01])+$"
+    },
+    "scope": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "tenantId",
+        "organizationId",
+        "projectId",
+        "environmentId",
+        "region"
+      ],
+      "properties": {
+        "tenantId": { "$ref": "#/$defs/identifier" },
+        "organizationId": { "$ref": "#/$defs/identifier" },
+        "projectId": { "$ref": "#/$defs/identifier" },
+        "environmentId": { "$ref": "#/$defs/identifier" },
+        "region": { "$ref": "#/$defs/identifier" }
+      }
+    },
+    "artifactRef": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["kind", "id", "revision", "fingerprint"],
+      "properties": {
+        "kind": {
+          "type": "string",
+          "pattern": "^[A-Z][A-Z0-9_]{0,127}$"
+        },
+        "id": { "$ref": "#/$defs/identifier" },
+        "revision": { "type": "integer", "minimum": 1 },
+        "fingerprint": { "$ref": "#/$defs/fingerprint" }
+      }
+    },
+    "sourceCoordinate": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["observationRef", "admissionRef"],
+      "properties": {
+        "observationRef": {
+          "allOf": [
+            { "$ref": "#/$defs/artifactRef" },
+            {
+              "properties": {
+                "kind": { "const": "CAPABILITY_OBSERVATION" }
+              }
+            }
+          ]
+        },
+        "admissionRef": {
+          "allOf": [
+            { "$ref": "#/$defs/artifactRef" },
+            {
+              "properties": {
+                "kind": { "const": "CAPABILITY_OBSERVATION_ADMISSION" }
+              }
+            }
+          ]
+        }
+      }
+    },
+    "identityProjection": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["requestPointer", "responsePointers"],
+      "properties": {
+        "requestPointer": { "$ref": "#/$defs/jsonPointer" },
+        "responsePointers": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 16,
+          "uniqueItems": true,
+          "items": { "$ref": "#/$defs/jsonPointer" }
+        }
+      }
+    },
+    "holdout": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "sampleCount",
+        "acceptedCount",
+        "correctCount",
+        "falsePositiveCount"
+      ],
+      "properties": {
+        "sampleCount": { "type": "integer", "minimum": 1 },
+        "acceptedCount": { "type": "integer", "minimum": 1 },
+        "correctCount": { "type": "integer", "minimum": 0 },
+        "falsePositiveCount": { "type": "integer", "minimum": 0 }
+      }
+    },
+    "confidence": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["point", "lowerBound", "upperBound", "method"],
+      "properties": {
+        "point": { "type": "number", "minimum": 0, "maximum": 1 },
+        "lowerBound": { "type": "number", "minimum": 0, "maximum": 1 },
+        "upperBound": { "type": "number", "minimum": 0, "maximum": 1 },
+        "method": { "const": "WILSON_PRECISION_95_V1" }
+      }
+    }
+  }
+}

@@ -157,11 +157,11 @@
         "allowedUses": {
           "type": "array",
           "minItems": 1,
-          "maxItems": 4,
+          "maxItems": 5,
           "uniqueItems": true,
           "items": {
             "enum": [
-              "CORPUS_CURATION", "EXACT_REPLAY",
+              "CLUSTER_MODELING", "CORPUS_CURATION", "EXACT_REPLAY",
               "OUTCOME_CALIBRATION", "TRAJECTORY_MODELING"
             ]
           }

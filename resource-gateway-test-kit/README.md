@@ -17,7 +17,8 @@ implementation. The JAR packages the authoritative v1 JSON Schema and provides:
   forward-compatible capability-probe negotiation, and registry-free offline verification of sealed
   `CapabilitySnapshot` and `CapabilityClosure` artifacts, including protected execution-command and
   payload-free run-summary schemas, independent deployment-isolation attestation verification, and
-  payload-free corpus review/candidate/publication lifecycle verification;
+  payload-free corpus review/candidate/publication, trajectory, and recorded-cluster lifecycle
+  verification;
 - packaged validation and version constants for the payload-free
   `bloge.executionServiceStateSnapshot.v1` durable-resume building block;
 - payload-safe typed child/suite-run summaries and JUnit 5 assertions;
@@ -226,6 +227,26 @@ binds the exact corpus publication and revision, and proves consecutive attempt 
 common request fingerprint. A verified result deliberately retains online limitations for current
 retry policy, normalized outcomes, trace ordering, grants, retention, tombstones, and payload
 authority; offline structure is not runtime readiness.
+
+Externally validated recorded-cluster publication has a fixed closed compatibility fixture:
+
+```java
+CapabilityCorpusClusterCompatibilityFixture cluster =
+        CapabilityMirrorProtocol.capabilityCorpusClusterCompatibilityFixture();
+CapabilityCorpusClusterVerifier.VerificationResult result =
+        new CapabilityCorpusClusterVerifier().verify(cluster);
+if (!result.verified()) {
+    throw new IllegalStateException(result.reasonCode());
+}
+```
+
+The verifier applies all five strict corpus/validation/command/publication schemas, independently
+re-derives every content address, binds the exact corpus and command lineages, proves member and
+representative membership plus a common response schema, rejects unsafe or overlapping identity
+JSON Pointer projections, and recomputes the 95% Wilson precision interval from holdout counts.
+A verified result still lists the online policy, validation-authority, grant/retention,
+source-lifecycle, and payload-authority checks that an offline client cannot prove. It does not
+claim that cluster fixture binding or `RECORDED_CLUSTER` runtime serving exists.
 
 Validate a fixture's payload-free exact publication selection before registration:
 

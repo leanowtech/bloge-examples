@@ -1,0 +1,117 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://bloge.dev/schemas/resource-gateway-mirror/capability-corpus-cluster-publish-request-v1.schema.json",
+  "title": "Capability Corpus Cluster Publish Request v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "clusterId",
+    "revision",
+    "expectedPredecessorRef",
+    "capabilityRef",
+    "corpusPublicationRef",
+    "clusterPolicyRef",
+    "validationRef",
+    "reviewTicketRef",
+    "reasonCode"
+  ],
+  "properties": {
+    "schemaVersion": {
+      "const": "resourceGateway.capabilityCorpusClusterPublishRequest.v1"
+    },
+    "clusterId": { "$ref": "#/$defs/identifier" },
+    "revision": { "type": "integer", "minimum": 1 },
+    "expectedPredecessorRef": {
+      "oneOf": [
+        { "type": "null" },
+        {
+          "allOf": [
+            { "$ref": "#/$defs/artifactRef" },
+            {
+              "properties": {
+                "kind": {
+                  "const": "CAPABILITY_CORPUS_CLUSTER_PUBLICATION"
+                }
+              }
+            }
+          ]
+        }
+      ]
+    },
+    "capabilityRef": {
+      "allOf": [
+        { "$ref": "#/$defs/artifactRef" },
+        { "properties": { "kind": { "const": "CAPABILITY" } } }
+      ]
+    },
+    "corpusPublicationRef": {
+      "allOf": [
+        { "$ref": "#/$defs/artifactRef" },
+        {
+          "properties": {
+            "kind": { "const": "CAPABILITY_CORPUS_PUBLICATION" }
+          }
+        }
+      ]
+    },
+    "clusterPolicyRef": {
+      "allOf": [
+        { "$ref": "#/$defs/artifactRef" },
+        {
+          "properties": {
+            "kind": { "const": "CORPUS_CLUSTER_POLICY" }
+          }
+        }
+      ]
+    },
+    "validationRef": {
+      "allOf": [
+        { "$ref": "#/$defs/artifactRef" },
+        {
+          "properties": {
+            "kind": { "const": "CAPABILITY_CORPUS_CLUSTER_VALIDATION" }
+          }
+        }
+      ]
+    },
+    "reviewTicketRef": {
+      "allOf": [
+        { "$ref": "#/$defs/artifactRef" },
+        {
+          "properties": {
+            "kind": { "const": "GOVERNANCE_REVIEW_TICKET" }
+          }
+        }
+      ]
+    },
+    "reasonCode": {
+      "type": "string",
+      "pattern": "^[A-Z][A-Z0-9_.-]{0,127}$"
+    }
+  },
+  "$defs": {
+    "identifier": {
+      "type": "string",
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9._:/#-]{0,511}$"
+    },
+    "fingerprint": {
+      "type": "string",
+      "pattern": "^sha256:[a-f0-9]{64}$"
+    },
+    "artifactRef": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["kind", "id", "revision", "fingerprint"],
+      "properties": {
+        "kind": {
+          "type": "string",
+          "pattern": "^[A-Z][A-Z0-9_]{0,127}$"
+        },
+        "id": { "$ref": "#/$defs/identifier" },
+        "revision": { "type": "integer", "minimum": 1 },
+        "fingerprint": { "$ref": "#/$defs/fingerprint" }
+      }
+    }
+  }
+}
