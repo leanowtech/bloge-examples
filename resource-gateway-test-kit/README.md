@@ -131,7 +131,11 @@ if (!result.verified()) {
 Verification re-derives strict Schema admission, deterministic ordering, exact external-attempt to
 resolution closure, request/output hash binding, nested resolution seals, evidence and bundle
 fingerprints, signing-time key policy, and the domain-separated Ed25519 signature. Its result is
-payload-free and suitable for CI logs. Canonical evidence, bundle, and resolution material is
+payload-free and suitable for CI logs. V1 and v2 use separate signature domains and cannot be mixed
+inside one bundle. For v2 deployment-egress claims the verifier also proves isolation-attestation
+reference equality, stable decision/status generation, identical agent snapshot identity,
+monotonic cache generation, admission before execution, and confirmation before signing. Canonical
+evidence, bundle, and resolution material is
 bounded to 64 MiB, 72 MiB, and 20 MiB respectively.
 
 Run the packaged fixed fixture in dependency-upgrade and startup probes:
@@ -245,9 +249,12 @@ if (!authorityCompatibility.verified()) {
 ```
 
 Packaged roots and keys are fixture-only and must never be accepted for a real deployment. The
-protocols and pure verification kernels are available now; server-side publication/attestation
-repositories, mTLS/HTTPS refresh, durable floor CAS, atomic deployment cache, and per-run evidence
-binding remain intentionally unimplemented, so current mirror evidence is still exploratory.
+server now provides publication/attestation repositories, pinned identity-bound mTLS refresh,
+durable floor CAS, atomic deployment cache, and per-run evidence binding. Certification still
+depends on a live customer deployment agent and governed signer; an exploratory bundle remains
+explicitly exploratory. The fixed compatibility fixture is v1, while generated v2 bundles are
+strictly validated and independently verified by this kit. A fixed non-Java v2 compatibility
+fixture remains future work.
 
 ## Use
 

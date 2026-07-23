@@ -127,6 +127,93 @@ class DatabaseMirrorRunRequestRepositoryTest {
     }
 
     @Test
+    void persistsStableTrustDecisionAndLeaseAttemptAcrossRepositoryRestart() {
+        MirrorDeploymentIsolationRunTrust.Admission admission =
+                MirrorPersistenceTestFixtures.trustAdmission(SCOPE);
+        MirrorRunRequestRepository.Registration registration =
+                certificationRegistration("request-trust-persist", admission);
+
+        MirrorRunRequestRepository.Claim claim = claim(registration, "owner-a", NOW,
+                NOW.plusSeconds(30), MirrorRunRequestRepository.TrustAttempt.from(admission));
+
+        assertThat(claim.state().registration().trustDecision())
+                .isEqualTo(MirrorRunRequestRepository.TrustDecision.certification(admission));
+        assertThat(claim.lease().trustAttempt())
+                .isEqualTo(MirrorRunRequestRepository.TrustAttempt.from(admission));
+
+        DatabaseMirrorRunRequestRepository restarted =
+                new DatabaseMirrorRunRequestRepository(jdbc, databaseTime::get);
+        restarted.init();
+
+        assertThat(restarted.find(SCOPE, registration.requestId())).get()
+                .satisfies(state -> {
+                    assertThat(state.registration().trustDecision())
+                            .isEqualTo(registration.trustDecision());
+                    assertThat(state.trustAttempt()).isEqualTo(claim.lease().trustAttempt());
+                });
+    }
+
+    @Test
+    void takeoverKeepsDecisionButReplacesAttemptWithNewerAgentObservation() {
+        MirrorDeploymentIsolationRunTrust.Admission firstAdmission =
+                MirrorPersistenceTestFixtures.trustAdmission(SCOPE);
+        MirrorDeploymentIsolationRunTrust.Admission secondAdmission =
+                new MirrorDeploymentIsolationRunTrust.Admission(SCOPE,
+                        firstAdmission.decisionRef(), firstAdmission.authorityKeySetRef(),
+                        firstAdmission.attestationRef(), firstAdmission.statusRef(),
+                        new MirrorArtifactRef(MirrorDeploymentIsolationAgentSnapshot.ARTIFACT_KIND,
+                                firstAdmission.admittedSnapshotRef().id(), 13,
+                                fingerprint('4')),
+                        firstAdmission.admittedAt().plusSeconds(10),
+                        firstAdmission.validUntil().plusSeconds(10));
+        MirrorRunRequestRepository.Registration registration =
+                certificationRegistration("request-trust-takeover", firstAdmission);
+        claim(registration, "owner-a", NOW, NOW.plusSeconds(10),
+                MirrorRunRequestRepository.TrustAttempt.from(firstAdmission));
+
+        MirrorRunRequestRepository.Claim takeover = claim(registration, "owner-b",
+                NOW.plusSeconds(10), NOW.plusSeconds(40),
+                MirrorRunRequestRepository.TrustAttempt.from(secondAdmission));
+
+        assertThat(takeover.outcome()).isEqualTo(MirrorRunRequestRepository.Outcome.ACQUIRED);
+        assertThat(takeover.lease().leaseEpoch()).isEqualTo(2);
+        assertThat(takeover.state().registration().trustDecision().decisionRef())
+                .isEqualTo(firstAdmission.decisionRef());
+        assertThat(takeover.lease().trustAttempt())
+                .isEqualTo(MirrorRunRequestRepository.TrustAttempt.from(secondAdmission));
+    }
+
+    @Test
+    void rejectsTrustRequiredClaimWithoutAttemptAndRequestReuseUnderAnotherDecision() {
+        MirrorDeploymentIsolationRunTrust.Admission admission =
+                MirrorPersistenceTestFixtures.trustAdmission(SCOPE);
+        MirrorRunRequestRepository.Registration registration =
+                certificationRegistration("request-trust-conflict", admission);
+
+        assertThatThrownBy(() -> transactions.execute(status -> repository.claim(
+                registration, "owner-missing", Duration.ofSeconds(30))))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("requires a trust attempt");
+
+        claim(registration, "owner-a", NOW, NOW.plusSeconds(30),
+                MirrorRunRequestRepository.TrustAttempt.from(admission));
+        MirrorArtifactRef changedDecision = new MirrorArtifactRef(
+                MirrorDeploymentIsolationAttestationBundle.ARTIFACT_KIND,
+                admission.decisionRef().id(), admission.decisionRef().revision() + 1,
+                fingerprint('5'));
+        MirrorRunRequestRepository.Registration conflicting =
+                new MirrorRunRequestRepository.Registration(SCOPE, registration.requestId(),
+                        registration.requestFingerprint(), registration.contextFingerprint(),
+                        registration.planId(), registration.planFingerprint(),
+                        registration.retainUntil(),
+                        new MirrorRunRequestRepository.TrustDecision(true, changedDecision));
+
+        assertThatThrownBy(() -> claim(conflicting, "owner-b", NOW.plusSeconds(1),
+                NOW.plusSeconds(31), MirrorRunRequestRepository.TrustAttempt.from(admission)))
+                .isInstanceOf(MirrorRunRequestConflictException.class);
+    }
+
+    @Test
     void releasedFailureCanBeRetriedImmediatelyWithoutWaitingForTheOriginalLease() {
         var first = claim(registration("request-4", 'c', 'd'), "owner-a", NOW,
                 NOW.plusSeconds(300));
@@ -261,9 +348,18 @@ class DatabaseMirrorRunRequestRepositoryTest {
             String owner,
             Instant now,
             Instant expiresAt) {
+        return claim(registration, owner, now, expiresAt, null);
+    }
+
+    private MirrorRunRequestRepository.Claim claim(
+            MirrorRunRequestRepository.Registration registration,
+            String owner,
+            Instant now,
+            Instant expiresAt,
+            MirrorRunRequestRepository.TrustAttempt trustAttempt) {
         databaseTime.set(now);
         return transactions.execute(status -> repository.claim(
-                registration, owner, Duration.between(now, expiresAt)));
+                registration, owner, Duration.between(now, expiresAt), trustAttempt));
     }
 
     private boolean complete(
@@ -286,6 +382,15 @@ class DatabaseMirrorRunRequestRepositoryTest {
         return new MirrorRunRequestRepository.Registration(SCOPE, requestId,
                 fingerprint(requestFingerprint), fingerprint(contextFingerprint),
                 "plan-1", fingerprint('0'), NOW.plusSeconds(86_400));
+    }
+
+    private static MirrorRunRequestRepository.Registration certificationRegistration(
+            String requestId,
+            MirrorDeploymentIsolationRunTrust.Admission admission) {
+        return new MirrorRunRequestRepository.Registration(SCOPE, requestId,
+                fingerprint('1'), fingerprint('2'), "plan-1", fingerprint('0'),
+                NOW.plusSeconds(86_400),
+                MirrorRunRequestRepository.TrustDecision.certification(admission));
     }
 
     private static String fingerprint(char value) {

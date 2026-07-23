@@ -38,6 +38,7 @@ public interface MirrorRunRequestRepository {
      * @param planId exact plan identity
      * @param planFingerprint exact plan generation
      * @param retainUntil minimum coordination-record retention boundary
+     * @param trustDecision stable deployment trust required by this request
      */
     record Registration(
             CapabilitySnapshot.Scope scope,
@@ -46,7 +47,8 @@ public interface MirrorRunRequestRepository {
             String contextFingerprint,
             String planId,
             String planFingerprint,
-            Instant retainUntil
+            Instant retainUntil,
+            TrustDecision trustDecision
     ) {
         /** Validates one complete content-addressed registration. */
         public Registration {
@@ -57,6 +59,83 @@ public interface MirrorRunRequestRepository {
             planId = required(planId, "planId");
             planFingerprint = required(planFingerprint, "planFingerprint");
             retainUntil = Objects.requireNonNull(retainUntil, "retainUntil");
+            trustDecision = trustDecision == null ? TrustDecision.exploratory() : trustDecision;
+        }
+
+        /** Compatibility constructor for exploratory registrations. */
+        public Registration(
+                CapabilitySnapshot.Scope scope,
+                String requestId,
+                String requestFingerprint,
+                String contextFingerprint,
+                String planId,
+                String planFingerprint,
+                Instant retainUntil) {
+            this(scope, requestId, requestFingerprint, contextFingerprint, planId,
+                    planFingerprint, retainUntil, TrustDecision.exploratory());
+        }
+    }
+
+    /**
+     * Stable trust semantics included in request idempotency.
+     *
+     * @param certificationRequired whether this request must produce certifiable evidence
+     * @param decisionRef exact atomic attestation-bundle decision, absent for exploratory work
+     */
+    record TrustDecision(boolean certificationRequired, MirrorArtifactRef decisionRef) {
+        /** Enforces exact required/absent correspondence. */
+        public TrustDecision {
+            if (certificationRequired != (decisionRef != null)
+                    || decisionRef != null
+                    && !MirrorDeploymentIsolationAttestationBundle.ARTIFACT_KIND.equals(
+                    decisionRef.kind())) {
+                throw new IllegalArgumentException("mirror request trust decision is invalid");
+            }
+        }
+
+        /** @return explicit no-certification decision */
+        public static TrustDecision exploratory() {
+            return new TrustDecision(false, null);
+        }
+
+        /** @return stable decision derived from verified deployment admission */
+        public static TrustDecision certification(
+                MirrorDeploymentIsolationRunTrust.Admission admission) {
+            return new TrustDecision(true,
+                    Objects.requireNonNull(admission, "admission").decisionRef());
+        }
+    }
+
+    /**
+     * Lease-attempt-local deployment trust observation.
+     *
+     * @param admittedSnapshotRef exact local agent generation
+     * @param admittedAt trusted admission time
+     * @param validUntil exclusive local freshness fence observed at admission
+     */
+    record TrustAttempt(
+            MirrorArtifactRef admittedSnapshotRef,
+            Instant admittedAt,
+            Instant validUntil) {
+        /** Validates one positive local observation. */
+        public TrustAttempt {
+            admittedSnapshotRef = Objects.requireNonNull(
+                    admittedSnapshotRef, "admittedSnapshotRef");
+            admittedAt = Objects.requireNonNull(admittedAt, "admittedAt");
+            validUntil = Objects.requireNonNull(validUntil, "validUntil");
+            if (!MirrorDeploymentIsolationAgentSnapshot.ARTIFACT_KIND.equals(
+                    admittedSnapshotRef.kind()) || !validUntil.isAfter(admittedAt)) {
+                throw new IllegalArgumentException("mirror request trust attempt is invalid");
+            }
+        }
+
+        /** @return attempt coordinates derived from verified deployment admission */
+        public static TrustAttempt from(
+                MirrorDeploymentIsolationRunTrust.Admission admission) {
+            MirrorDeploymentIsolationRunTrust.Admission exact = Objects.requireNonNull(
+                    admission, "admission");
+            return new TrustAttempt(exact.admittedSnapshotRef(), exact.admittedAt(),
+                    exact.validUntil());
         }
     }
 
@@ -73,6 +152,7 @@ public interface MirrorRunRequestRepository {
      * @param lastFailureCode bounded structural code from the last released attempt
      * @param createdAt first registration time
      * @param updatedAt last state transition time
+     * @param trustAttempt current lease's local trust observation, when certification is required
      */
     record State(
             Registration registration,
@@ -84,7 +164,8 @@ public interface MirrorRunRequestRepository {
             String evidenceBundleFingerprint,
             String lastFailureCode,
             Instant createdAt,
-            Instant updatedAt
+            Instant updatedAt,
+            TrustAttempt trustAttempt
     ) {
         /** Validates one internally consistent durable projection. */
         public State {
@@ -100,6 +181,11 @@ public interface MirrorRunRequestRepository {
             lastFailureCode = normalized(lastFailureCode);
             createdAt = Objects.requireNonNull(createdAt, "createdAt");
             updatedAt = Objects.requireNonNull(updatedAt, "updatedAt");
+            if (registration.trustDecision().certificationRequired()
+                    != (trustAttempt != null)) {
+                throw new IllegalArgumentException(
+                        "mirror request trust decision and attempt must correspond");
+            }
             if (status == Status.COMPLETED
                     && (runId.isBlank() || evidenceBundleFingerprint.isBlank())) {
                 throw new IllegalArgumentException(
@@ -111,6 +197,22 @@ public interface MirrorRunRequestRepository {
                         "active mirror request must not expose terminal evidence identity");
             }
         }
+
+        /** Compatibility constructor for exploratory request state. */
+        public State(
+                Registration registration,
+                Status status,
+                String leaseOwner,
+                long leaseEpoch,
+                Instant leaseExpiresAt,
+                String runId,
+                String evidenceBundleFingerprint,
+                String lastFailureCode,
+                Instant createdAt,
+                Instant updatedAt) {
+            this(registration, status, leaseOwner, leaseEpoch, leaseExpiresAt, runId,
+                    evidenceBundleFingerprint, lastFailureCode, createdAt, updatedAt, null);
+        }
     }
 
     /**
@@ -120,12 +222,14 @@ public interface MirrorRunRequestRepository {
      * @param requestId request identity
      * @param leaseOwner opaque process-attempt owner
      * @param leaseEpoch monotonic fencing epoch
+     * @param trustAttempt exact deployment observation admitted for this lease
      */
     record Lease(
             CapabilitySnapshot.Scope scope,
             String requestId,
             String leaseOwner,
-            long leaseEpoch
+            long leaseEpoch,
+            TrustAttempt trustAttempt
     ) {
         /** Validates one complete lease token. */
         public Lease {
@@ -135,6 +239,15 @@ public interface MirrorRunRequestRepository {
             if (leaseEpoch < 1) {
                 throw new IllegalArgumentException("leaseEpoch must be positive");
             }
+        }
+
+        /** Compatibility constructor for exploratory leases. */
+        public Lease(
+                CapabilitySnapshot.Scope scope,
+                String requestId,
+                String leaseOwner,
+                long leaseEpoch) {
+            this(scope, requestId, leaseOwner, leaseEpoch, null);
         }
     }
 
@@ -170,7 +283,17 @@ public interface MirrorRunRequestRepository {
      * @return acquired, still-running, or already-completed projection
      * @throws MirrorRunRequestConflictException when the request id already means something else
      */
-    Claim claim(Registration registration, String leaseOwner, Duration leaseDuration);
+    Claim claim(
+            Registration registration,
+            String leaseOwner,
+            Duration leaseDuration,
+            TrustAttempt trustAttempt);
+
+    /** Compatibility acquisition path for explicitly exploratory registrations. */
+    default Claim claim(
+            Registration registration, String leaseOwner, Duration leaseDuration) {
+        return claim(registration, leaseOwner, leaseDuration, null);
+    }
 
     /**
      * Fenced terminal transition performed in the same transaction as evidence persistence.

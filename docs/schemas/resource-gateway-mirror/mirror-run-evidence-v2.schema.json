@@ -1,0 +1,182 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://bloge.dev/schemas/resource-gateway-mirror/mirror-run-evidence-v2.schema.json",
+  "title": "Resource Gateway Mirror Run Evidence v2",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion", "runId", "requestId", "requestContextFingerprint", "planId",
+    "planFingerprint", "capabilityClosureFingerprint", "executionControlFingerprint",
+    "rootCapability", "fixtureBundleRef", "externalBindings", "scope", "authorizedPurpose",
+    "status", "evidenceClass", "semanticResultFingerprint", "startedAt", "completedAt",
+    "nodeTraces", "edgeTraces", "resolutions", "isolation", "limitations"
+  ],
+  "properties": {
+    "schemaVersion": { "const": "resourceGateway.mirrorRunEvidence.v2" },
+    "runId": { "type": "string", "minLength": 1, "maxLength": 512 },
+    "requestId": { "type": "string", "minLength": 1, "maxLength": 512 },
+    "requestContextFingerprint": {
+      "$ref": "mirror-run-evidence-v1.schema.json#/$defs/fingerprint"
+    },
+    "planId": { "type": "string", "minLength": 1, "maxLength": 512 },
+    "planFingerprint": {
+      "$ref": "mirror-run-evidence-v1.schema.json#/$defs/fingerprint"
+    },
+    "capabilityClosureFingerprint": {
+      "$ref": "mirror-run-evidence-v1.schema.json#/$defs/fingerprint"
+    },
+    "executionControlFingerprint": {
+      "$ref": "mirror-run-evidence-v1.schema.json#/$defs/fingerprint"
+    },
+    "rootCapability": {
+      "allOf": [
+        { "$ref": "mirror-run-evidence-v1.schema.json#/$defs/artifactRef" },
+        { "properties": { "kind": { "const": "CAPABILITY" } } }
+      ]
+    },
+    "fixtureBundleRef": {
+      "allOf": [
+        { "$ref": "mirror-run-evidence-v1.schema.json#/$defs/artifactRef" },
+        { "properties": { "kind": { "const": "FIXTURE_BUNDLE" } } }
+      ]
+    },
+    "externalBindings": {
+      "type": "array",
+      "maxItems": 10000,
+      "items": { "$ref": "mirror-run-evidence-v1.schema.json#/$defs/externalBinding" }
+    },
+    "scope": { "$ref": "mirror-run-evidence-v1.schema.json#/$defs/scope" },
+    "authorizedPurpose": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 256,
+      "not": { "pattern": "[Pp][Rr][Oo][Dd][Uu][Cc][Tt][Ii][Oo][Nn]" }
+    },
+    "status": {
+      "enum": [
+        "PASSED", "ASSERTION_FAILED", "EXECUTION_FAILED", "CONTROL_PLAN_REJECTED",
+        "FIXTURE_UNMATCHED", "FIXTURE_UNUSED", "CONTROL_PLAN_UNAVAILABLE",
+        "EVIDENCE_INCOMPLETE", "CANCELLED", "TIMED_OUT"
+      ]
+    },
+    "evidenceClass": { "enum": ["EXPLORATORY", "CERTIFIABLE"] },
+    "semanticResultFingerprint": {
+      "$ref": "mirror-run-evidence-v1.schema.json#/$defs/fingerprint"
+    },
+    "startedAt": { "type": "string", "format": "date-time" },
+    "completedAt": { "type": "string", "format": "date-time" },
+    "nodeTraces": {
+      "type": "array",
+      "maxItems": 100000,
+      "items": { "$ref": "mirror-run-evidence-v1.schema.json#/$defs/nodeTrace" }
+    },
+    "edgeTraces": {
+      "type": "array",
+      "maxItems": 100000,
+      "items": { "$ref": "mirror-run-evidence-v1.schema.json#/$defs/edgeTrace" }
+    },
+    "resolutions": {
+      "type": "array",
+      "maxItems": 100000,
+      "items": { "$ref": "mirror-resolution-v1.schema.json" }
+    },
+    "isolation": { "$ref": "#/$defs/isolation" },
+    "limitations": {
+      "type": "array",
+      "maxItems": 256,
+      "uniqueItems": true,
+      "items": { "type": "string", "minLength": 1, "maxLength": 512 }
+    }
+  },
+  "allOf": [
+    {
+      "if": { "properties": { "evidenceClass": { "const": "CERTIFIABLE" } } },
+      "then": {
+        "properties": {
+          "limitations": { "maxItems": 0 },
+          "isolation": {
+            "required": ["deploymentTrustBinding"],
+            "properties": {
+              "deploymentEgressEnforced": { "const": true },
+              "limitations": { "maxItems": 0 }
+            }
+          }
+        }
+      }
+    }
+  ],
+  "$defs": {
+    "isolation": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "engineMode", "interceptorTypes", "listenerTypes", "durableStoresAttached",
+        "productionContextCarriersAttached", "productionExtensionListenersAttached",
+        "realExternalCallsAllowed", "externalCredentialsAllowed", "networkEgressAllowed",
+        "deploymentEgressEnforced", "deploymentIsolationRef", "limitations"
+      ],
+      "properties": {
+        "engineMode": { "const": "INDEPENDENT_TEST_ENGINE" },
+        "interceptorTypes": {
+          "type": "array", "maxItems": 256, "uniqueItems": true,
+          "items": { "type": "string", "minLength": 1, "maxLength": 1024 }
+        },
+        "listenerTypes": {
+          "type": "array", "maxItems": 256, "uniqueItems": true,
+          "items": { "type": "string", "minLength": 1, "maxLength": 1024 }
+        },
+        "durableStoresAttached": { "const": false },
+        "productionContextCarriersAttached": { "const": false },
+        "productionExtensionListenersAttached": { "const": false },
+        "realExternalCallsAllowed": { "const": false },
+        "externalCredentialsAllowed": { "const": false },
+        "networkEgressAllowed": { "const": false },
+        "deploymentEgressEnforced": { "type": "boolean" },
+        "deploymentIsolationRef": {
+          "oneOf": [
+            { "type": "null" },
+            {
+              "allOf": [
+                { "$ref": "mirror-run-evidence-v1.schema.json#/$defs/artifactRef" },
+                { "properties": { "kind": { "const": "DEPLOYMENT_ISOLATION_ATTESTATION" } } }
+              ]
+            }
+          ]
+        },
+        "deploymentTrustBinding": {
+          "$ref": "mirror-deployment-isolation-run-trust-v1.schema.json"
+        },
+        "limitations": {
+          "type": "array", "maxItems": 256, "uniqueItems": true,
+          "items": { "type": "string", "minLength": 1, "maxLength": 512 }
+        }
+      },
+      "allOf": [
+        {
+          "if": { "properties": { "deploymentEgressEnforced": { "const": false } } },
+          "then": {
+            "not": { "required": ["deploymentTrustBinding"] },
+            "properties": {
+              "deploymentIsolationRef": { "type": "null" },
+              "limitations": { "contains": { "const": "DEPLOYMENT_EGRESS_NOT_ATTESTED" } }
+            }
+          }
+        },
+        {
+          "if": { "properties": { "deploymentEgressEnforced": { "const": true } } },
+          "then": {
+            "required": ["deploymentTrustBinding"],
+            "properties": {
+              "deploymentIsolationRef": {
+                "allOf": [
+                  { "$ref": "mirror-run-evidence-v1.schema.json#/$defs/artifactRef" },
+                  { "properties": { "kind": { "const": "DEPLOYMENT_ISOLATION_ATTESTATION" } } }
+                ]
+              }
+            }
+          }
+        }
+      ]
+    }
+  }
+}

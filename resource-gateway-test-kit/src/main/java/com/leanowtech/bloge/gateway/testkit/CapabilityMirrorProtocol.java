@@ -52,12 +52,21 @@ public final class CapabilityMirrorProtocol {
     /** Payload-free terminal mirror run evidence wire version. */
     public static final String MIRROR_RUN_EVIDENCE_V1 =
             "resourceGateway.mirrorRunEvidence.v1";
+    /** Current payload-free evidence version carrying double-observed deployment trust. */
+    public static final String MIRROR_RUN_EVIDENCE_V2 =
+            "resourceGateway.mirrorRunEvidence.v2";
     /** Detached mirror evidence attestation wire version. */
     public static final String MIRROR_EVIDENCE_ATTESTATION_V1 =
             "resourceGateway.mirrorEvidenceAttestation.v1";
+    /** Current detached evidence attestation wire version. */
+    public static final String MIRROR_EVIDENCE_ATTESTATION_V2 =
+            "resourceGateway.mirrorEvidenceAttestation.v2";
     /** Portable signed mirror evidence bundle wire version. */
     public static final String MIRROR_EVIDENCE_BUNDLE_V1 =
             "resourceGateway.mirrorEvidenceBundle.v1";
+    /** Current portable evidence bundle wire version. */
+    public static final String MIRROR_EVIDENCE_BUNDLE_V2 =
+            "resourceGateway.mirrorEvidenceBundle.v2";
     /** Externally signed deployment-isolation attestation wire version. */
     public static final String MIRROR_DEPLOYMENT_ISOLATION_ATTESTATION_V1 =
             "resourceGateway.mirrorDeploymentIsolationAttestation.v1";
@@ -70,6 +79,9 @@ public final class CapabilityMirrorProtocol {
     /** Atomic deployment-agent read-only cache snapshot wire version. */
     public static final String MIRROR_DEPLOYMENT_ISOLATION_AGENT_SNAPSHOT_V1 =
             "resourceGateway.mirrorDeploymentIsolationAgentSnapshot.v1";
+    /** Double-observed deployment-isolation run-trust binding wire version. */
+    public static final String MIRROR_DEPLOYMENT_ISOLATION_RUN_TRUST_V1 =
+            "resourceGateway.mirrorDeploymentIsolationRunTrust.v1";
     /** Optimistically fenced irreversible attestation revocation command wire version. */
     public static final String MIRROR_DEPLOYMENT_ISOLATION_ATTESTATION_REVOCATION_REQUEST_V1 =
             "resourceGateway.mirrorDeploymentIsolationAttestationRevocationRequest.v1";
@@ -122,12 +134,21 @@ public final class CapabilityMirrorProtocol {
     /** Packaged payload-free mirror run evidence schema. */
     public static final String MIRROR_RUN_EVIDENCE_SCHEMA_RESOURCE =
             SCHEMA_RESOURCE_ROOT + "mirror-run-evidence-v1.schema.json";
+    /** Packaged current mirror run evidence schema. */
+    public static final String MIRROR_RUN_EVIDENCE_V2_SCHEMA_RESOURCE =
+            SCHEMA_RESOURCE_ROOT + "mirror-run-evidence-v2.schema.json";
     /** Packaged detached mirror evidence attestation schema. */
     public static final String MIRROR_EVIDENCE_ATTESTATION_SCHEMA_RESOURCE =
             SCHEMA_RESOURCE_ROOT + "mirror-evidence-attestation-v1.schema.json";
+    /** Packaged current detached mirror evidence attestation schema. */
+    public static final String MIRROR_EVIDENCE_ATTESTATION_V2_SCHEMA_RESOURCE =
+            SCHEMA_RESOURCE_ROOT + "mirror-evidence-attestation-v2.schema.json";
     /** Packaged portable mirror evidence bundle schema. */
     public static final String MIRROR_EVIDENCE_BUNDLE_SCHEMA_RESOURCE =
             SCHEMA_RESOURCE_ROOT + "mirror-evidence-bundle-v1.schema.json";
+    /** Packaged current portable mirror evidence bundle schema. */
+    public static final String MIRROR_EVIDENCE_BUNDLE_V2_SCHEMA_RESOURCE =
+            SCHEMA_RESOURCE_ROOT + "mirror-evidence-bundle-v2.schema.json";
     /** Packaged deployment-isolation attestation schema. */
     public static final String MIRROR_DEPLOYMENT_ISOLATION_ATTESTATION_SCHEMA_RESOURCE =
             SCHEMA_RESOURCE_ROOT
@@ -144,6 +165,10 @@ public final class CapabilityMirrorProtocol {
     public static final String MIRROR_DEPLOYMENT_ISOLATION_AGENT_SNAPSHOT_SCHEMA_RESOURCE =
             SCHEMA_RESOURCE_ROOT
                     + "mirror-deployment-isolation-agent-snapshot-v1.schema.json";
+    /** Packaged double-observed deployment-isolation run-trust schema. */
+    public static final String MIRROR_DEPLOYMENT_ISOLATION_RUN_TRUST_SCHEMA_RESOURCE =
+            SCHEMA_RESOURCE_ROOT
+                    + "mirror-deployment-isolation-run-trust-v1.schema.json";
     /** Packaged optimistic irreversible attestation revocation-command schema. */
     public static final String
     MIRROR_DEPLOYMENT_ISOLATION_ATTESTATION_REVOCATION_REQUEST_SCHEMA_RESOURCE =

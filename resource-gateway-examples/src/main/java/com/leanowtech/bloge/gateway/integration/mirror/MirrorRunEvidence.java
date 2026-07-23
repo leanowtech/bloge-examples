@@ -1,5 +1,7 @@
 package com.leanowtech.bloge.gateway.integration.mirror;
 
+import com.fasterxml.jackson.annotation.JsonInclude;
+
 import java.time.Instant;
 import java.util.Comparator;
 import java.util.HashSet;
@@ -67,8 +69,10 @@ public record MirrorRunEvidence(
         IsolationFacts isolation,
         List<String> limitations
 ) {
-    /** Current payload-free mirror evidence protocol version. */
-    public static final String SCHEMA_VERSION = "resourceGateway.mirrorRunEvidence.v1";
+    /** Legacy payload-free mirror evidence protocol version. */
+    public static final String SCHEMA_VERSION_V1 = "resourceGateway.mirrorRunEvidence.v1";
+    /** Current evidence version carrying double-observed deployment trust. */
+    public static final String SCHEMA_VERSION = "resourceGateway.mirrorRunEvidence.v2";
     /** Maximum nodes or edges admitted to one portable bundle. */
     public static final int MAXIMUM_TRACE_ITEMS = 100_000;
     /** Maximum external resolver outcomes admitted to one portable bundle. */
@@ -135,11 +139,24 @@ public record MirrorRunEvidence(
         validateResolutionBindings(externalBindings, resolutions);
         isolation = Objects.requireNonNull(isolation, "isolation");
         limitations = orderedStrings(limitations, "limitations", MAXIMUM_LIMITATIONS, 512);
+        if (SCHEMA_VERSION.equals(schemaVersion)
+                && isolation.deploymentEgressEnforced()
+                != (isolation.deploymentTrustBinding() != null)) {
+            throw new IllegalArgumentException(
+                    "v2 deployment egress enforcement requires double-observed run trust");
+        }
         if (evidenceClass == EvidenceClass.CERTIFIABLE
                 && (!isolation.deploymentEgressEnforced() || !isolation.limitations().isEmpty()
-                || !limitations.isEmpty())) {
+                || !limitations.isEmpty()
+                || SCHEMA_VERSION.equals(schemaVersion)
+                && isolation.deploymentTrustBinding() == null)) {
             throw new IllegalArgumentException(
                     "certifiable mirror evidence requires proven egress isolation and no limitations");
+        }
+        if (SCHEMA_VERSION_V1.equals(schemaVersion)
+                && isolation.deploymentTrustBinding() != null) {
+            throw new IllegalArgumentException(
+                    "v1 mirror evidence cannot claim deployment run trust");
         }
     }
 
@@ -316,6 +333,7 @@ public record MirrorRunEvidence(
      * @param networkEgressAllowed whether the immutable plan allowed network egress
      * @param deploymentEgressEnforced whether an out-of-process deployment control proved egress denial
      * @param deploymentIsolationRef exact attestation proving deployment egress denial, when enforced
+     * @param deploymentTrustBinding double-observed agent trust signed into v2 evidence
      * @param limitations bounded isolation facts not yet independently proven
      */
     public record IsolationFacts(
@@ -330,6 +348,8 @@ public record MirrorRunEvidence(
             boolean networkEgressAllowed,
             boolean deploymentEgressEnforced,
             MirrorArtifactRef deploymentIsolationRef,
+            @JsonInclude(JsonInclude.Include.NON_NULL)
+            MirrorDeploymentIsolationRunTrust.Binding deploymentTrustBinding,
             List<String> limitations
     ) {
         /** Supported execution-engine isolation mode. */
@@ -358,11 +378,37 @@ public record MirrorRunEvidence(
                 throw new IllegalArgumentException(
                         "deployment egress enforcement requires an exact isolation attestation");
             }
+            if (!deploymentEgressEnforced && deploymentTrustBinding != null
+                    || deploymentTrustBinding != null
+                    && !deploymentIsolationRef.equals(deploymentTrustBinding.attestationRef())) {
+                throw new IllegalArgumentException(
+                        "deployment egress enforcement requires exact double-observed run trust");
+            }
             if (!deploymentEgressEnforced && limitations.stream()
                     .noneMatch("DEPLOYMENT_EGRESS_NOT_ATTESTED"::equals)) {
                 throw new IllegalArgumentException(
                         "unproven deployment egress requires an explicit limitation");
             }
+        }
+
+        /** Compatibility constructor for exploratory v1-style isolation facts. */
+        public IsolationFacts(
+                EngineMode engineMode,
+                List<String> interceptorTypes,
+                List<String> listenerTypes,
+                boolean durableStoresAttached,
+                boolean productionContextCarriersAttached,
+                boolean productionExtensionListenersAttached,
+                boolean realExternalCallsAllowed,
+                boolean externalCredentialsAllowed,
+                boolean networkEgressAllowed,
+                boolean deploymentEgressEnforced,
+                MirrorArtifactRef deploymentIsolationRef,
+                List<String> limitations) {
+            this(engineMode, interceptorTypes, listenerTypes, durableStoresAttached,
+                    productionContextCarriersAttached, productionExtensionListenersAttached,
+                    realExternalCallsAllowed, externalCredentialsAllowed, networkEgressAllowed,
+                    deploymentEgressEnforced, deploymentIsolationRef, null, limitations);
         }
     }
 
@@ -519,7 +565,7 @@ public record MirrorRunEvidence(
 
     private static String version(String value) {
         String normalized = value == null || value.isBlank() ? SCHEMA_VERSION : value.trim();
-        if (!SCHEMA_VERSION.equals(normalized)) {
+        if (!SCHEMA_VERSION.equals(normalized) && !SCHEMA_VERSION_V1.equals(normalized)) {
             throw new IllegalArgumentException("unsupported mirror run-evidence schemaVersion");
         }
         return normalized;

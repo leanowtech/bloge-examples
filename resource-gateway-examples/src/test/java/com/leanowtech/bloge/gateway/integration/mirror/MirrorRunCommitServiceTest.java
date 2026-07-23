@@ -15,6 +15,7 @@ import org.springframework.transaction.support.TransactionTemplate;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.Optional;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicReference;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -156,14 +157,100 @@ class MirrorRunCommitServiceTest {
                 .isEqualTo(MirrorRunRequestRepository.Status.ACTIVE);
     }
 
+    @Test
+    void certifiableCommitPinsDurableAdmissionAndHoldsPermitThroughTransactionCompletion() {
+        CapabilitySnapshot.Scope scope = MirrorPersistenceTestFixtures.scope("org-trust");
+        MirrorPlan plan = MirrorPersistenceTestFixtures.plan(mapper, scope, "plan-trust", '4');
+        MirrorDeploymentIsolationRunTrust.Admission admission =
+                MirrorPersistenceTestFixtures.trustAdmission(scope);
+        MirrorDeploymentIsolationRunTrust.Binding binding =
+                MirrorPersistenceTestFixtures.trustBinding(scope);
+        MirrorEvidenceBundle bundle = MirrorPersistenceTestFixtures.certifiableEvidence(
+                mapper, signer, plan, "run-trust", '5', "request-trust", fingerprint('6'),
+                binding);
+        MirrorRunRequestRepository.Registration registration =
+                new MirrorRunRequestRepository.Registration(scope, "request-trust",
+                        fingerprint('7'), bundle.evidence().requestContextFingerprint(),
+                        plan.planId(), plan.planFingerprint(), NOW.plusSeconds(86_400),
+                        MirrorRunRequestRepository.TrustDecision.certification(admission));
+        MirrorRunRequestRepository.Claim claim = claim(registration, "owner-trust", NOW,
+                NOW.plusSeconds(60), MirrorRunRequestRepository.TrustAttempt.from(admission));
+        RecordingTrustAuthority authority = new RecordingTrustAuthority(binding);
+        MirrorRunCommitService trustedCommit = new MirrorRunCommitService(
+                evidence, requests, authority);
+        databaseTime.set(NOW.plusSeconds(13));
+
+        MirrorEvidenceBundle persisted = transactions.execute(status -> {
+            MirrorEvidenceBundle value = trustedCommit.commit(
+                    claim.lease(), bundle, observation());
+            assertThat(authority.permitClosed).isFalse();
+            return value;
+        });
+
+        assertThat(persisted).isEqualTo(bundle);
+        assertThat(authority.permitClosed).isTrue();
+        assertThat(evidence.find(scope, "run-trust")).contains(bundle);
+    }
+
+    @Test
+    void certifiableCommitRejectsEvidenceThatDiffersFromDurableAdmission() {
+        CapabilitySnapshot.Scope scope = MirrorPersistenceTestFixtures.scope("org-mismatch");
+        MirrorPlan plan = MirrorPersistenceTestFixtures.plan(
+                mapper, scope, "plan-trust-mismatch", '8');
+        MirrorDeploymentIsolationRunTrust.Admission admission =
+                MirrorPersistenceTestFixtures.trustAdmission(scope);
+        MirrorDeploymentIsolationRunTrust.Binding expected =
+                MirrorPersistenceTestFixtures.trustBinding(scope);
+        MirrorArtifactRef changedDecision = new MirrorArtifactRef(
+                MirrorDeploymentIsolationAttestationBundle.ARTIFACT_KIND,
+                expected.decisionRef().id(), expected.decisionRef().revision() + 1,
+                fingerprint('9'));
+        MirrorArtifactRef changedStatus = new MirrorArtifactRef(
+                MirrorDeploymentIsolationAttestationStatusPublication.ARTIFACT_KIND,
+                expected.statusRef().id(), changedDecision.revision(), fingerprint('a'));
+        MirrorDeploymentIsolationRunTrust.Binding mismatched =
+                new MirrorDeploymentIsolationRunTrust.Binding("", changedDecision,
+                        expected.authorityKeySetRef(), expected.attestationRef(), changedStatus,
+                        expected.admittedSnapshotRef(), expected.committedSnapshotRef(),
+                        expected.admittedAt(), expected.confirmedAt());
+        MirrorEvidenceBundle bundle = MirrorPersistenceTestFixtures.certifiableEvidence(
+                mapper, signer, plan, "run-trust-mismatch", 'b', "request-trust-mismatch",
+                fingerprint('c'), mismatched);
+        MirrorRunRequestRepository.Registration registration =
+                new MirrorRunRequestRepository.Registration(scope,
+                        bundle.evidence().requestId(), fingerprint('d'),
+                        bundle.evidence().requestContextFingerprint(), plan.planId(),
+                        plan.planFingerprint(), NOW.plusSeconds(86_400),
+                        MirrorRunRequestRepository.TrustDecision.certification(admission));
+        MirrorRunRequestRepository.Claim claim = claim(registration, "owner-mismatch", NOW,
+                NOW.plusSeconds(60), MirrorRunRequestRepository.TrustAttempt.from(admission));
+
+        assertThatThrownBy(() -> transactions.executeWithoutResult(status ->
+                new MirrorRunCommitService(evidence, requests,
+                        new RecordingTrustAuthority(expected)).commit(
+                        claim.lease(), bundle, observation())))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("durable trust admission");
+        assertThat(evidence.find(scope, bundle.evidence().runId())).isEmpty();
+    }
+
     private MirrorRunRequestRepository.Claim claim(
             MirrorRunRequestRepository.Registration registration,
             String owner,
             Instant now,
             Instant expiresAt) {
+        return claim(registration, owner, now, expiresAt, null);
+    }
+
+    private MirrorRunRequestRepository.Claim claim(
+            MirrorRunRequestRepository.Registration registration,
+            String owner,
+            Instant now,
+            Instant expiresAt,
+            MirrorRunRequestRepository.TrustAttempt trustAttempt) {
         databaseTime.set(now);
         return transactions.execute(status -> requests.claim(
-                registration, owner, Duration.between(now, expiresAt)));
+                registration, owner, Duration.between(now, expiresAt), trustAttempt));
     }
 
     private static MirrorOperationObservability.Observation observation() {
@@ -171,5 +258,48 @@ class MirrorRunCommitServiceTest {
                 MirrorOperationAuditEvent.Operation.RUN_CREATE,
                 MirrorPersistenceTestFixtures.identity("org-a"),
                 "request-1", "plan-1", "");
+    }
+
+    private static String fingerprint(char material) {
+        return MirrorPersistenceTestFixtures.fingerprint(material);
+    }
+
+    private static final class RecordingTrustAuthority
+            implements MirrorDeploymentIsolationRunTrustAuthority {
+        private final MirrorDeploymentIsolationRunTrust.Binding expected;
+        private final AtomicBoolean permitClosed = new AtomicBoolean();
+
+        private RecordingTrustAuthority(MirrorDeploymentIsolationRunTrust.Binding expected) {
+            this.expected = expected;
+        }
+
+        @Override
+        public MirrorDeploymentIsolationRunTrust.Admission admit(
+                CapabilitySnapshot.Scope scope) {
+            throw new UnsupportedOperationException();
+        }
+
+        @Override
+        public MirrorDeploymentIsolationRunTrust.Binding confirm(
+                MirrorDeploymentIsolationRunTrust.Admission admission,
+                Instant startedAt,
+                Instant completedAt) {
+            throw new UnsupportedOperationException();
+        }
+
+        @Override
+        public CommitPermit acquireCommitPermit(
+                CapabilitySnapshot.Scope scope,
+                MirrorDeploymentIsolationRunTrust.Binding binding) {
+            if (!expected.equals(binding)) {
+                throw new TrustException("RUN_TRUST_DECISION_CHANGED");
+            }
+            return () -> permitClosed.set(true);
+        }
+
+        @Override
+        public boolean available() {
+            return true;
+        }
     }
 }

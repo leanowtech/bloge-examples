@@ -20,6 +20,14 @@ import com.leanowtech.bloge.gateway.integration.mirror.CapabilityContract;
 import com.leanowtech.bloge.gateway.integration.mirror.CapabilitySnapshot;
 import com.leanowtech.bloge.gateway.integration.mirror.CapabilitySnapshotIntegrity;
 import com.leanowtech.bloge.gateway.integration.mirror.EffectContract;
+import com.leanowtech.bloge.gateway.integration.mirror.MirrorArtifactRef;
+import com.leanowtech.bloge.gateway.integration.mirror.MirrorDeploymentIsolationAgentSnapshot;
+import com.leanowtech.bloge.gateway.integration.mirror.MirrorDeploymentIsolationAttestation;
+import com.leanowtech.bloge.gateway.integration.mirror.MirrorDeploymentIsolationAttestationBundle;
+import com.leanowtech.bloge.gateway.integration.mirror.MirrorDeploymentIsolationAttestationStatusPublication;
+import com.leanowtech.bloge.gateway.integration.mirror.MirrorDeploymentIsolationAuthorityKeySetPublication;
+import com.leanowtech.bloge.gateway.integration.mirror.MirrorDeploymentIsolationRunTrust;
+import com.leanowtech.bloge.gateway.integration.mirror.MirrorDeploymentIsolationRunTrustAuthority;
 import com.leanowtech.bloge.gateway.integration.mirror.MirrorEvidenceIntegrityService;
 import com.leanowtech.bloge.gateway.integration.mirror.MirrorPlan;
 import com.leanowtech.bloge.gateway.integration.mirror.MirrorResolution;
@@ -154,6 +162,63 @@ class MirrorRunServiceTest {
         assertThat(runtime.engineConfiguration().interceptorTypes()).isEmpty();
         assertThat(runtime.engineConfiguration().durableStores()).isFalse();
         assertThat(runtime.engineConfiguration().productionContextCarriers()).isFalse();
+    }
+
+    @Test
+    void producesCertifiableV2EvidenceOnlyAfterDoubleObservedDeploymentTrust() {
+        CompiledMirrorPlan compiled = compileCertification(fixture(rule(
+                "customer-response", "loadCustomer",
+                FixtureRule.Behavior.returning(Map.of("customerId", "C-1")))));
+        TestTrustAuthority trust = new TestTrustAuthority(false);
+        MirrorEvidenceIntegrityService integrity = new MirrorEvidenceIntegrityService(
+                mapper, evidenceSigner, Clock.systemUTC());
+        MirrorRunService trustedRuntime = new MirrorRunService(
+                registry, mapper, null,
+                Clock.fixed(COMPILED_AT.plusSeconds(1), ZoneOffset.UTC), integrity, trust);
+        MirrorDeploymentIsolationRunTrust.Admission admission = trust.admit(SCOPE);
+        MirrorRunRequest request = new MirrorRunRequest("request-certifiable", compiled,
+                new GraphContext(Map.of("customerId", "C-1")), SCOPE, PURPOSE, admission);
+
+        MirrorRunResult result = trustedRuntime.execute(request);
+
+        assertThat(result.evidenceBundle().evidence().schemaVersion())
+                .isEqualTo(com.leanowtech.bloge.gateway.integration.mirror.MirrorRunEvidence
+                        .SCHEMA_VERSION);
+        assertThat(result.evidenceBundle().evidence().evidenceClass())
+                .isEqualTo(com.leanowtech.bloge.gateway.integration.mirror.MirrorRunEvidence
+                        .EvidenceClass.CERTIFIABLE);
+        assertThat(result.evidenceBundle().evidence().limitations()).isEmpty();
+        assertThat(result.evidenceBundle().evidence().isolation().limitations()).isEmpty();
+        assertThat(result.evidenceBundle().evidence().isolation().deploymentTrustBinding())
+                .satisfies(binding -> {
+                    assertThat(binding.decisionRef()).isEqualTo(admission.decisionRef());
+                    assertThat(binding.admittedSnapshotRef())
+                            .isEqualTo(admission.admittedSnapshotRef());
+                    assertThat(binding.committedSnapshotRef().revision()).isEqualTo(2);
+                });
+        assertThat(integrity.verify(result.evidenceBundle()))
+                .isEqualTo(MirrorEvidenceIntegrityService.Verification.VERIFIED);
+    }
+
+    @Test
+    void withholdsExecutedCertificationRunWhenTerminalTrustConfirmationFails() {
+        CompiledMirrorPlan compiled = compileCertification(fixture(rule(
+                "customer-response", "loadCustomer",
+                FixtureRule.Behavior.returning(Map.of("customerId", "C-1")))));
+        TestTrustAuthority trust = new TestTrustAuthority(true);
+        MirrorRunService trustedRuntime = new MirrorRunService(
+                registry, mapper, null,
+                Clock.fixed(COMPILED_AT.plusSeconds(1), ZoneOffset.UTC),
+                new MirrorEvidenceIntegrityService(mapper, evidenceSigner, Clock.systemUTC()),
+                trust);
+        MirrorRunRequest request = new MirrorRunRequest("request-trust-changed", compiled,
+                new GraphContext(Map.of("customerId", "C-1")), SCOPE, PURPOSE,
+                trust.admit(SCOPE));
+
+        assertRunRejected(() -> trustedRuntime.execute(request),
+                "RG.MIRROR.DEPLOYMENT_TRUST_CHANGED");
+        assertThat(externalCalls).hasValue(0);
+        assertThat(internalCalls).hasValue(1);
     }
 
     @Test
@@ -496,6 +561,13 @@ class MirrorRunServiceTest {
                 COMPILED_AT, COMPILED_AT.plus(Duration.ofHours(1))));
     }
 
+    private CompiledMirrorPlan compileCertification(FixtureBundle fixture) {
+        return compiler.compile(new MirrorPlanCompilationRequest(
+                "plan-customer-view-certification", graph, TARGET, closure, fixture,
+                ResolvedReplayPayloads.empty(), policy(1000, true), null,
+                COMPILED_AT, COMPILED_AT.plus(Duration.ofHours(1))));
+    }
+
     private static ResolvedReplayPayloads replayPayloads() {
         return new ResolvedReplayPayloads(Map.of(REPLAY_REF,
                 new ResolvedReplayPayloads.Payload(
@@ -605,7 +677,13 @@ class MirrorRunServiceTest {
     }
 
     private static MirrorPlan.ExecutionPolicy policy(int maximumInvocations) {
-        return new MirrorPlan.ExecutionPolicy(PURPOSE, false, false, false, false, true,
+        return policy(maximumInvocations, false);
+    }
+
+    private static MirrorPlan.ExecutionPolicy policy(
+            int maximumInvocations, boolean certificationRequired) {
+        return new MirrorPlan.ExecutionPolicy(PURPOSE, false, false, false, false,
+                certificationRequired,
                 MirrorPlan.UnmatchedResolution.ABSTAINED, maximumInvocations,
                 Duration.ofMinutes(5),
                 CapabilityContract.DataClassification.CONFIDENTIAL, List.of("sg"),
@@ -661,6 +739,64 @@ class MirrorRunServiceTest {
         assertThatThrownBy(action::run)
                 .isInstanceOfSatisfying(MirrorRunRejectedException.class,
                         failure -> assertThat(failure.code()).isEqualTo(code));
+    }
+
+    private static final class TestTrustAuthority
+            implements MirrorDeploymentIsolationRunTrustAuthority {
+        private final boolean rejectConfirmation;
+
+        private TestTrustAuthority(boolean rejectConfirmation) {
+            this.rejectConfirmation = rejectConfirmation;
+        }
+
+        @Override
+        public MirrorDeploymentIsolationRunTrust.Admission admit(
+                CapabilitySnapshot.Scope scope) {
+            return new MirrorDeploymentIsolationRunTrust.Admission(scope,
+                    new MirrorArtifactRef(
+                            MirrorDeploymentIsolationAttestationBundle.ARTIFACT_KIND,
+                            "runtime-isolation-bundle", 7, fingerprint('b')),
+                    new MirrorArtifactRef(
+                            MirrorDeploymentIsolationAuthorityKeySetPublication.ARTIFACT_KIND,
+                            "runtime-isolation-authority", 3, fingerprint('c')),
+                    new MirrorArtifactRef(MirrorDeploymentIsolationAttestation.ARTIFACT_KIND,
+                            "runtime-isolation-attestation", 5, fingerprint('d')),
+                    new MirrorArtifactRef(
+                            MirrorDeploymentIsolationAttestationStatusPublication.ARTIFACT_KIND,
+                            "runtime-isolation-attestation", 7, fingerprint('e')),
+                    new MirrorArtifactRef(MirrorDeploymentIsolationAgentSnapshot.ARTIFACT_KIND,
+                            "runtime-isolation-agent", 1, fingerprint('f')),
+                    COMPILED_AT, COMPILED_AT.plus(Duration.ofDays(1)));
+        }
+
+        @Override
+        public MirrorDeploymentIsolationRunTrust.Binding confirm(
+                MirrorDeploymentIsolationRunTrust.Admission admission,
+                Instant startedAt,
+                Instant completedAt) {
+            if (rejectConfirmation) {
+                throw new TrustException("RUN_TRUST_DECISION_CHANGED");
+            }
+            return new MirrorDeploymentIsolationRunTrust.Binding("",
+                    admission.decisionRef(), admission.authorityKeySetRef(),
+                    admission.attestationRef(), admission.statusRef(),
+                    admission.admittedSnapshotRef(),
+                    new MirrorArtifactRef(MirrorDeploymentIsolationAgentSnapshot.ARTIFACT_KIND,
+                            admission.admittedSnapshotRef().id(), 2, fingerprint('0')),
+                    admission.admittedAt(), completedAt);
+        }
+
+        @Override
+        public CommitPermit acquireCommitPermit(
+                CapabilitySnapshot.Scope scope,
+                MirrorDeploymentIsolationRunTrust.Binding binding) {
+            return () -> { };
+        }
+
+        @Override
+        public boolean available() {
+            return true;
+        }
     }
 
     private static final class ExternalReadOperator implements Operator<Object, Object> {

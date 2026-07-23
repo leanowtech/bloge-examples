@@ -5,9 +5,10 @@ connects the protected authority/attestation distribution APIs to a crash-safe l
 snapshot without giving the runtime network credentials, TLS private keys, or permission to choose
 its own trust.
 
-The implementation is reusable Java infrastructure. It does **not** yet make Mirror evidence
-`CERTIFIABLE`: execution admission and evidence commit still need to pin and re-check the same cache
-generation.
+The implementation is reusable Java infrastructure. Certification-required Mirror execution now
+double-observes one stable decision around the run and holds an agent read permit through evidence
+transaction completion. Routine refresh may advance the local cache generation only while the
+authority, attestation, and status decision remains exact.
 
 ## 1. What is implemented
 
@@ -18,6 +19,8 @@ generation.
 | `AtomicFileMirrorDeploymentIsolationAgentCache` | Single-writer CAS, file force, required atomic rename, directory force, strict restore |
 | `MirrorDeploymentIsolationAgentSnapshotIntegrity` | Nested canonical verification and complete snapshot fingerprint |
 | `resourceGateway.mirrorDeploymentIsolationAgentSnapshot.v1` | Portable read-only cache protocol for runtime consumers |
+| `AgentBackedMirrorDeploymentIsolationRunTrustAuthority` | Admission, terminal confirmation, stable-decision comparison, and commit permit |
+| `resourceGateway.mirrorDeploymentIsolationRunTrust.v1` | Double-observed binding signed into Mirror evidence v2 |
 
 The source reuses the existing generic `ControlPlaneHttpTransport` boundary. Production composition
 must use a descriptor with all of the following:
@@ -48,9 +51,11 @@ deployment agent
   -> atomic rename + directory fsync
 
 runtime consumer
-  -> read one complete snapshot
-  -> verify canonical fingerprint
-  -> require ACTIVE and now < validUntil/signed expiries
+  -> admit one ACTIVE snapshot before durable request claim
+  -> execute under the stable attestation-bundle decision
+  -> confirm the same decision after execution; a newer local generation is allowed
+  -> sign admitted and committed snapshot refs into Mirror evidence v2
+  -> hold an agent read permit until evidence transaction completion
   -> never performs remote I/O
 ```
 
@@ -131,6 +136,10 @@ var agent = new MirrorDeploymentIsolationTrustAgent(
                 Duration.ofSeconds(15),
                 Duration.ofSeconds(60),
                 Duration.ofSeconds(30)));
+
+var runTrust = new AgentBackedMirrorDeploymentIsolationRunTrustAuthority(
+        agent,
+        Clock.systemUTC());
 ```
 
 The public constructor starts one daemon refresher after validating any durable cache generation.
@@ -210,6 +219,11 @@ attestation revision, status revision, `validUntil`, refresh interval, maximum s
 identity-binding readiness. Do not label metrics by tenant, deployment, attestation id or
 fingerprint.
 
+The integration capability probe additionally separates `mirrorServing` from
+`mirrorIsolationRunTrustReady` and `mirrorCertifiableEvidenceServingReady`. An exploratory runtime
+may remain available while certification fails closed during agent bootstrap, revocation, expiry,
+or refresh outage.
+
 ## 8. Rotation, outage and recovery runbook
 
 ### Normal authority rotation
@@ -255,17 +269,24 @@ Focused tests cover:
 - atomic file persistence, owner-only permissions, CAS, generation continuity, strict restart,
   corruption, truncation, unknown fields, oversize and symlink rejection;
 - JSON Schema packaging in the independent test-kit.
+- same-decision refresh across increasing local generations;
+- terminal decision-change rejection and complete execution-window coverage;
+- a real read/write-lock race proving refresh cannot cross the evidence commit permit;
+- durable request admission/attempt recovery and independent v2 evidence verification.
 
-## 10. Remaining certification boundary
+## 10. Runtime certification boundary delivered
 
-The next increment must bind this cache to execution itself:
+Certification-required runs now enforce:
 
-1. admission pins one exact `snapshotFingerprint/cacheGeneration` before any external materialization;
-2. every resource resolution proves it used the isolated runtime and the pinned generation;
-3. evidence commit re-reads the cache and rejects revocation, expiry or generation drift;
-4. terminal evidence carries both admitted and committed snapshot references;
-5. crash recovery cannot finalize evidence under a different generation;
-6. cross-language fixed fixtures prove canonical snapshot compatibility.
+1. admission before durable request acquisition;
+2. stable decision identity in request idempotency and lease-local snapshot identity in `TrustAttempt`;
+3. terminal re-observation of the same decision with monotonic local generation;
+4. complete authority/attestation/status coverage of the execution window;
+5. v2 evidence carrying both admitted and committed snapshot references;
+6. commit-time agent permit held through transaction completion;
+7. crash/takeover recovery that cannot finalize under a different decision.
 
-Until those checks exist, the agent is a production-quality trust-distribution primitive, not a
-claim that Mirror execution has already become certified.
+See [Mirror runtime trust binding](resource-gateway-mirror-runtime-trust-binding.md) for protocol,
+error, migration, capability, and runbook details. Remaining production work includes multi-node
+revocation-convergence certification, customer PKI/KMS/IdP and database HA/DR exercises, managed
+clock controls, and a fixed non-Java v2 compatibility fixture.

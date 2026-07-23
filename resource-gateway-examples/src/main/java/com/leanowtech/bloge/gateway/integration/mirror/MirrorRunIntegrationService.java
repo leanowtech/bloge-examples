@@ -55,6 +55,7 @@ public class MirrorRunIntegrationService {
     private final ObjectMapper mapper;
     private final MirrorOperationObservability observations;
     private final Clock clock;
+    private final MirrorDeploymentIsolationRunTrustAuthority deploymentTrust;
 
     /** Creates the protected execution boundary using the server UTC clock. */
     @Autowired
@@ -65,9 +66,10 @@ public class MirrorRunIntegrationService {
             MirrorEvidenceRepository evidence,
             MirrorRunCommitService commits,
             ObjectMapper mapper,
-            MirrorOperationObservability observations) {
+            MirrorOperationObservability observations,
+            MirrorDeploymentIsolationRunTrustAuthority deploymentTrust) {
         this(plans, runtime, requests, evidence, commits, mapper, observations,
-                Clock.systemUTC());
+                Clock.systemUTC(), deploymentTrust);
     }
 
     /** Full constructor for deterministic admission and lease tests. */
@@ -80,6 +82,21 @@ public class MirrorRunIntegrationService {
             ObjectMapper mapper,
             MirrorOperationObservability observations,
             Clock clock) {
+        this(plans, runtime, requests, evidence, commits, mapper, observations, clock,
+                MirrorDeploymentIsolationRunTrustAuthority.unavailable());
+    }
+
+    /** Full constructor with deterministic time and deployment trust. */
+    public MirrorRunIntegrationService(
+            MirrorPlanIntegrationService plans,
+            MirrorRunService runtime,
+            MirrorRunRequestRepository requests,
+            MirrorEvidenceRepository evidence,
+            MirrorRunCommitService commits,
+            ObjectMapper mapper,
+            MirrorOperationObservability observations,
+            Clock clock,
+            MirrorDeploymentIsolationRunTrustAuthority deploymentTrust) {
         this.plans = Objects.requireNonNull(plans, "plans");
         this.runtime = Objects.requireNonNull(runtime, "runtime");
         this.requests = Objects.requireNonNull(requests, "requests");
@@ -88,6 +105,7 @@ public class MirrorRunIntegrationService {
         this.mapper = Objects.requireNonNull(mapper, "mapper");
         this.observations = Objects.requireNonNull(observations, "observations");
         this.clock = Objects.requireNonNull(clock, "clock");
+        this.deploymentTrust = Objects.requireNonNull(deploymentTrust, "deploymentTrust");
     }
 
     /**
@@ -133,12 +151,17 @@ public class MirrorRunIntegrationService {
                     "Server-bound mirror context exceeds the evidence fingerprint limit.",
                     Map.of("maximumBytes", MirrorRunEvidenceProjector.MAXIMUM_PAYLOAD_BYTES));
         }
+        MirrorDeploymentIsolationRunTrust.Admission trustAdmission =
+                admitDeploymentTrust(plan, scope, identity);
+        String trustDecisionFingerprint = trustAdmission == null
+                ? "" : trustAdmission.decisionRef().fingerprint();
         String requestFingerprint = ProtocolFingerprint.of(mapper, Map.of(
                 "schemaVersion", request.schemaVersion(),
                 "requestId", request.requestId(),
                 "planId", plan.planId(),
                 "planFingerprint", plan.planFingerprint(),
                 "requestContextFingerprint", contextFingerprint,
+                "deploymentTrustDecisionFingerprint", trustDecisionFingerprint,
                 "scope", scope,
                 "authorizedPurpose", identity.purpose()));
         Instant now = clock.instant();
@@ -146,8 +169,13 @@ public class MirrorRunIntegrationService {
         MirrorRunRequestRepository.Registration registration =
                 new MirrorRunRequestRepository.Registration(scope, request.requestId(),
                         requestFingerprint, contextFingerprint, plan.planId(),
-                        plan.planFingerprint(), retainUntil);
-        MirrorRunRequestRepository.Claim claim = claim(registration, plan, identity);
+                        plan.planFingerprint(), retainUntil,
+                        trustAdmission == null
+                                ? MirrorRunRequestRepository.TrustDecision.exploratory()
+                                : MirrorRunRequestRepository.TrustDecision.certification(
+                                trustAdmission));
+        MirrorRunRequestRepository.Claim claim = claim(
+                registration, trustAdmission, plan, identity);
         if (claim.outcome() == MirrorRunRequestRepository.Outcome.IN_PROGRESS) {
             throw new IntegrationProblemException(IntegrationProblem.retryableConflict(
                     "RG.MIRROR.RUN_REQUEST_IN_PROGRESS",
@@ -171,7 +199,7 @@ public class MirrorRunIntegrationService {
             CompiledMirrorPlan generation = plans.materialize(plan, identity);
             MirrorRunResult result = runtime.execute(new MirrorRunRequest(request.requestId(),
                     generation, effectiveContext, scope,
-                    MirrorPlanIntegrationService.AUTHORIZED_PURPOSE));
+                    MirrorPlanIntegrationService.AUTHORIZED_PURPOSE, trustAdmission));
             MirrorRunSummary summary = MirrorRunSummary.from(result.evidenceBundle());
             commits.commit(lease, result.evidenceBundle(), observation);
             return summary;
@@ -186,6 +214,10 @@ public class MirrorRunIntegrationService {
                     "RG.MIRROR.RUN_LEASE_LOST",
                     "Mirror execution authority expired before terminal evidence commit.",
                     identity.correlationId(), Map.of("retryAfterSeconds", 1)));
+        } catch (MirrorDeploymentIsolationRunTrustAuthority.TrustException denied) {
+            release(lease, "RG.MIRROR.DEPLOYMENT_TRUST_CHANGED");
+            throw serviceUnavailable(identity, "RG.MIRROR.DEPLOYMENT_TRUST_CHANGED",
+                    "Deployment isolation trust changed before terminal evidence commit.");
         } catch (RuntimeException unavailable) {
             release(lease, "RG.MIRROR.RUN_UNAVAILABLE");
             throw serviceUnavailable(identity, "RG.MIRROR.RUN_UNAVAILABLE",
@@ -223,11 +255,16 @@ public class MirrorRunIntegrationService {
 
     private MirrorRunRequestRepository.Claim claim(
             MirrorRunRequestRepository.Registration registration,
+            MirrorDeploymentIsolationRunTrust.Admission trustAdmission,
             MirrorPlan plan,
             IntegrationRequestContext identity) {
         try {
-            return requests.claim(registration, "mirror-attempt-" + UUID.randomUUID(),
-                    plan.policy().timeout().plus(EVIDENCE_COMMIT_RESERVE));
+            String owner = "mirror-attempt-" + UUID.randomUUID();
+            Duration duration = plan.policy().timeout().plus(EVIDENCE_COMMIT_RESERVE);
+            return trustAdmission == null
+                    ? requests.claim(registration, owner, duration)
+                    : requests.claim(registration, owner, duration,
+                    MirrorRunRequestRepository.TrustAttempt.from(trustAdmission));
         } catch (MirrorRunRequestConflictException conflict) {
             throw conflict(identity, "RG.MIRROR.RUN_IDEMPOTENCY_CONFLICT",
                     "The request id already identifies different immutable execution inputs.",
@@ -235,6 +272,21 @@ public class MirrorRunIntegrationService {
         } catch (RuntimeException unavailable) {
             throw serviceUnavailable(identity, "RG.MIRROR.RUN_COORDINATION_UNAVAILABLE",
                     "The durable mirror request coordinator is unavailable.");
+        }
+    }
+
+    private MirrorDeploymentIsolationRunTrust.Admission admitDeploymentTrust(
+            MirrorPlan plan,
+            CapabilitySnapshot.Scope scope,
+            IntegrationRequestContext identity) {
+        if (!plan.policy().certificationRequired()) {
+            return null;
+        }
+        try {
+            return deploymentTrust.admit(scope);
+        } catch (MirrorDeploymentIsolationRunTrustAuthority.TrustException denied) {
+            throw serviceUnavailable(identity, "RG.MIRROR.DEPLOYMENT_TRUST_UNAVAILABLE",
+                    "Certification-required deployment isolation trust is unavailable.");
         }
     }
 
@@ -255,11 +307,27 @@ public class MirrorRunIntegrationService {
                 .equals(run.requestContextFingerprint())
                 || !state.registration().planId().equals(run.planId())
                 || !state.registration().planFingerprint().equals(run.planFingerprint())
-                || !state.registration().scope().equals(run.scope())) {
+                || !state.registration().scope().equals(run.scope())
+                || !completedTrustMatches(state, run)) {
             throw serviceUnavailable(identity, "RG.MIRROR.RUN_EVIDENCE_INCONSISTENT",
                     "Completed mirror request evidence differs from its durable coordination state.");
         }
         return MirrorRunSummary.from(bundle);
+    }
+
+    private static boolean completedTrustMatches(
+            MirrorRunRequestRepository.State state, MirrorRunEvidence evidence) {
+        MirrorRunRequestRepository.TrustDecision decision =
+                state.registration().trustDecision();
+        MirrorDeploymentIsolationRunTrust.Binding binding =
+                evidence.isolation().deploymentTrustBinding();
+        if (!decision.certificationRequired()) {
+            return binding == null && state.trustAttempt() == null;
+        }
+        return binding != null && state.trustAttempt() != null
+                && decision.decisionRef().equals(binding.decisionRef())
+                && state.trustAttempt().admittedSnapshotRef().equals(
+                binding.admittedSnapshotRef());
     }
 
     private MirrorEvidenceBundle requireEvidence(
@@ -318,7 +386,9 @@ public class MirrorRunIntegrationService {
             case "RG.MIRROR.EVIDENCE_SIGNER_UNAVAILABLE",
                  "RG.MIRROR.EVIDENCE_INTEGRITY_REJECTED",
                  "RG.MIRROR.RUN_EVIDENCE_REJECTED",
-                 "RG.MIRROR.RESOLUTION_EVIDENCE_REJECTED" ->
+                 "RG.MIRROR.RESOLUTION_EVIDENCE_REJECTED",
+                 "RG.MIRROR.DEPLOYMENT_TRUST_REQUIRED",
+                 "RG.MIRROR.DEPLOYMENT_TRUST_CHANGED" ->
                     serviceUnavailable(identity, rejected.code(),
                             "Mirror execution evidence could not be finalized safely.");
             default -> conflict(identity, rejected.code(),

@@ -131,6 +131,65 @@ final class MirrorPersistenceTestFixtures {
                 Clock.fixed(startedAt.plusSeconds(2), ZoneOffset.UTC)).seal(run).bundle();
     }
 
+    static MirrorEvidenceBundle certifiableEvidence(
+            ObjectMapper mapper,
+            VisualEvidenceSigner signer,
+            MirrorPlan plan,
+            String runId,
+            char semanticMaterial,
+            String requestId,
+            String contextFingerprint,
+            MirrorDeploymentIsolationRunTrust.Binding trustBinding) {
+        Instant startedAt = COMPILED_AT.plusSeconds(10);
+        MirrorRunEvidence run = new MirrorRunEvidence("", runId, requestId,
+                contextFingerprint, plan.planId(), plan.planFingerprint(),
+                plan.capabilityClosureFingerprint(), plan.executionControlFingerprint(),
+                plan.rootCapability(), plan.fixtureBundleRef(), List.of(
+                new MirrorRunEvidence.ExternalBinding(plan.rootCapability(), "loadCustomer",
+                        plan.externalBindings().getFirst().capabilityRef(),
+                        "/root/loadCustomer#RESOURCE", "/root")), plan.scope(),
+                PURPOSE, MirrorRunEvidence.Status.PASSED,
+                MirrorRunEvidence.EvidenceClass.CERTIFIABLE, fingerprint(semanticMaterial),
+                startedAt, startedAt.plusSeconds(1), List.of(), List.of(), List.of(),
+                new MirrorRunEvidence.IsolationFacts(
+                        MirrorRunEvidence.IsolationFacts.EngineMode.INDEPENDENT_TEST_ENGINE,
+                        List.of(), List.of("InvocationRecorder"), false, false, false,
+                        false, false, false, true, trustBinding.attestationRef(), trustBinding,
+                        List.of()), List.of());
+        return new MirrorEvidenceIntegrityService(mapper, signer,
+                Clock.fixed(startedAt.plusSeconds(3), ZoneOffset.UTC)).seal(run).bundle();
+    }
+
+    static MirrorDeploymentIsolationRunTrust.Admission trustAdmission(
+            CapabilitySnapshot.Scope scope) {
+        return new MirrorDeploymentIsolationRunTrust.Admission(scope,
+                new MirrorArtifactRef(
+                        MirrorDeploymentIsolationAttestationBundle.ARTIFACT_KIND,
+                        "isolation-bundle-a", 7, fingerprint('d')),
+                new MirrorArtifactRef(
+                        MirrorDeploymentIsolationAuthorityKeySetPublication.ARTIFACT_KIND,
+                        "isolation-authority-a", 3, fingerprint('e')),
+                new MirrorArtifactRef(MirrorDeploymentIsolationAttestation.ARTIFACT_KIND,
+                        "isolation-attestation-a", 5, fingerprint('f')),
+                new MirrorArtifactRef(
+                        MirrorDeploymentIsolationAttestationStatusPublication.ARTIFACT_KIND,
+                        "isolation-attestation-a", 7, fingerprint('0')),
+                new MirrorArtifactRef(MirrorDeploymentIsolationAgentSnapshot.ARTIFACT_KIND,
+                        "isolation-agent-a", 11, fingerprint('1')),
+                COMPILED_AT.minusSeconds(1), COMPILED_AT.plus(Duration.ofHours(1)));
+    }
+
+    static MirrorDeploymentIsolationRunTrust.Binding trustBinding(
+            CapabilitySnapshot.Scope scope) {
+        MirrorDeploymentIsolationRunTrust.Admission admission = trustAdmission(scope);
+        return new MirrorDeploymentIsolationRunTrust.Binding("", admission.decisionRef(),
+                admission.authorityKeySetRef(), admission.attestationRef(),
+                admission.statusRef(), admission.admittedSnapshotRef(),
+                new MirrorArtifactRef(MirrorDeploymentIsolationAgentSnapshot.ARTIFACT_KIND,
+                        admission.admittedSnapshotRef().id(), 12, fingerprint('2')),
+                admission.admittedAt(), COMPILED_AT.plusSeconds(12));
+    }
+
     static String fingerprint(char material) {
         return "sha256:" + String.valueOf(material).repeat(64);
     }

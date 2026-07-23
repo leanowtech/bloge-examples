@@ -4,6 +4,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.leanowtech.bloge.gateway.integration.mirror.MirrorPlan;
 import com.leanowtech.bloge.gateway.integration.mirror.MirrorResolution;
 import com.leanowtech.bloge.gateway.integration.mirror.MirrorRunEvidence;
+import com.leanowtech.bloge.gateway.integration.mirror.MirrorDeploymentIsolationRunTrust;
 import com.leanowtech.bloge.gateway.testing.domain.TestRunEvidence;
 import com.leanowtech.bloge.gateway.testing.evidence.ProtocolFingerprint;
 import com.leanowtech.bloge.gateway.testing.evidence.TestSemanticResultFingerprint;
@@ -67,7 +68,7 @@ public final class MirrorRunEvidenceProjector {
             throw new IllegalArgumentException(
                     "runtime invocation budget snapshot is required for budgeted mirror evidence");
         }
-        return projectInternal(request, execution, resolutions, engineConfiguration, null);
+        return projectInternal(request, execution, resolutions, engineConfiguration, null, null);
     }
 
     /**
@@ -87,7 +88,30 @@ public final class MirrorRunEvidenceProjector {
             IndependentTestEngineFactory.Configuration engineConfiguration,
             MirrorInvocationBudget.Snapshot invocationBudget) {
         return projectInternal(request, execution, resolutions, engineConfiguration,
-                Objects.requireNonNull(invocationBudget, "invocationBudget"));
+                Objects.requireNonNull(invocationBudget, "invocationBudget"), null);
+    }
+
+    /**
+     * Creates portable evidence with invocation-budget and double-observed deployment trust.
+     *
+     * @param request exact authenticated mirror request
+     * @param execution terminal shared-kernel result
+     * @param resolutions sealed resolver provenance
+     * @param engineConfiguration structural independent-engine facts
+     * @param invocationBudget payload-free runtime occurrence counters
+     * @param deploymentTrust exact trust binding confirmed after execution
+     * @return unsigned v2 evidence ready for the integrity boundary
+     */
+    public MirrorRunEvidence project(
+            MirrorRunRequest request,
+            TestExecutionResult execution,
+            List<MirrorResolution> resolutions,
+            IndependentTestEngineFactory.Configuration engineConfiguration,
+            MirrorInvocationBudget.Snapshot invocationBudget,
+            MirrorDeploymentIsolationRunTrust.Binding deploymentTrust) {
+        return projectInternal(request, execution, resolutions, engineConfiguration,
+                Objects.requireNonNull(invocationBudget, "invocationBudget"),
+                Objects.requireNonNull(deploymentTrust, "deploymentTrust"));
     }
 
     private MirrorRunEvidence projectInternal(
@@ -95,7 +119,8 @@ public final class MirrorRunEvidenceProjector {
             TestExecutionResult execution,
             List<MirrorResolution> resolutions,
             IndependentTestEngineFactory.Configuration engineConfiguration,
-            MirrorInvocationBudget.Snapshot invocationBudget) {
+            MirrorInvocationBudget.Snapshot invocationBudget,
+            MirrorDeploymentIsolationRunTrust.Binding deploymentTrust) {
         Objects.requireNonNull(request, "request");
         Objects.requireNonNull(execution, "execution");
         TestRunEvidence source = Objects.requireNonNull(execution.evidence(), "execution.evidence");
@@ -110,7 +135,8 @@ public final class MirrorRunEvidenceProjector {
         IndependentTestEngineFactory.Configuration configuration = Objects.requireNonNull(
                 engineConfiguration, "engineConfiguration");
 
-        List<String> isolationLimitations = List.of(DEPLOYMENT_EGRESS_NOT_ATTESTED);
+        List<String> isolationLimitations = deploymentTrust == null
+                ? List.of(DEPLOYMENT_EGRESS_NOT_ATTESTED) : List.of();
         MirrorRunEvidence.IsolationFacts isolation = new MirrorRunEvidence.IsolationFacts(
                 MirrorRunEvidence.IsolationFacts.EngineMode.INDEPENDENT_TEST_ENGINE,
                 configuration.interceptorTypes(), configuration.listenerTypes(),
@@ -118,7 +144,9 @@ public final class MirrorRunEvidenceProjector {
                 configuration.productionExtensionListeners(),
                 plan.policy().realExternalCallsAllowed(),
                 plan.policy().externalCredentialsAllowed(),
-                plan.policy().networkEgressAllowed(), false, null, isolationLimitations);
+                plan.policy().networkEgressAllowed(), deploymentTrust != null,
+                deploymentTrust == null ? null : deploymentTrust.attestationRef(),
+                deploymentTrust, isolationLimitations);
         Set<String> limitations = new LinkedHashSet<>(isolationLimitations);
         if (source.evidenceClass() == TestRunEvidence.EvidenceClass.EXPLORATORY) {
             limitations.add(SHARED_TEST_EVIDENCE_EXPLORATORY);
@@ -126,12 +154,16 @@ public final class MirrorRunEvidenceProjector {
         if (invocationBudget != null && invocationBudget.exhausted()) {
             limitations.add(MirrorInvocationBudget.EXHAUSTED_LIMITATION);
         }
+        MirrorRunEvidence.EvidenceClass evidenceClass = deploymentTrust != null
+                && source.evidenceClass() == TestRunEvidence.EvidenceClass.CERTIFIABLE
+                ? MirrorRunEvidence.EvidenceClass.CERTIFIABLE
+                : MirrorRunEvidence.EvidenceClass.EXPLORATORY;
         return new MirrorRunEvidence("", source.runId(), request.requestId(),
                 fingerprint(request.context().asMap()), plan.planId(), plan.planFingerprint(),
                 plan.capabilityClosureFingerprint(), plan.executionControlFingerprint(),
                 plan.rootCapability(), plan.fixtureBundleRef(), projectBindings(plan), plan.scope(),
                 plan.policy().authorizedPurpose(), MirrorRunEvidence.Status.valueOf(source.status().name()),
-                MirrorRunEvidence.EvidenceClass.EXPLORATORY,
+                evidenceClass,
                 source.semanticResultFingerprint(), source.startedAt(), source.completedAt(),
                 projectNodes(source.nodeTrace()), projectEdges(source.edgeTrace()), exactResolutions,
                 isolation, List.copyOf(limitations));

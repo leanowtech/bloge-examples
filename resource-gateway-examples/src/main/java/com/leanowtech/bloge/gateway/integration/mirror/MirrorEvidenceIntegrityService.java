@@ -28,7 +28,8 @@ public final class MirrorEvidenceIntegrityService {
     /** Maximum canonical portable bundle admitted to signing and verification. */
     public static final int MAXIMUM_BUNDLE_BYTES = 72 * 1024 * 1024;
     private static final int MAXIMUM_SIGNATURE_MATERIAL_BYTES = 8 * 1024;
-    private static final String SIGNATURE_DOMAIN = "RESOURCE_GATEWAY_MIRROR_EVIDENCE_V1";
+    private static final String SIGNATURE_DOMAIN_V1 = "RESOURCE_GATEWAY_MIRROR_EVIDENCE_V1";
+    private static final String SIGNATURE_DOMAIN_V2 = "RESOURCE_GATEWAY_MIRROR_EVIDENCE_V2";
 
     private final ObjectMapper mapper;
     private final VisualEvidenceSigner signer;
@@ -75,10 +76,19 @@ public final class MirrorEvidenceIntegrityService {
             if (Instant.EPOCH.equals(signedAt) || signedAt.isBefore(snapshot.completedAt())) {
                 return SealResult.failed(snapshot, unavailable, MATERIAL_INVALID);
             }
-            String materialFingerprint = signatureMaterialFingerprint(
+            String attestationVersion = MirrorRunEvidence.SCHEMA_VERSION_V1.equals(
+                    snapshot.schemaVersion())
+                    ? MirrorEvidenceAttestation.SCHEMA_VERSION_V1
+                    : MirrorEvidenceAttestation.SCHEMA_VERSION;
+            String materialFingerprint = signatureMaterialFingerprint(attestationVersion,
                     snapshot.runId(), snapshot.planFingerprint(), evidenceFingerprint, signedAt);
             VisualRunEvidenceSeal seal = signer.seal(materialFingerprint);
-            MirrorEvidenceAttestation attestation = new MirrorEvidenceAttestation("",
+            String bundleVersion = MirrorRunEvidence.SCHEMA_VERSION_V1.equals(
+                    snapshot.schemaVersion())
+                    ? MirrorEvidenceBundle.SCHEMA_VERSION_V1
+                    : MirrorEvidenceBundle.SCHEMA_VERSION;
+            MirrorEvidenceAttestation attestation = new MirrorEvidenceAttestation(
+                    attestationVersion,
                     MirrorEvidenceAttestation.SignatureStatus.VERIFIED,
                     snapshot.runId(), snapshot.planFingerprint(), evidenceFingerprint, signedAt,
                     seal.keyId(), seal.algorithm(), seal.signature(), true);
@@ -86,10 +96,10 @@ public final class MirrorEvidenceIntegrityService {
                 return SealResult.failed(snapshot, unavailable, SIGNATURE_INVALID);
             }
             BundleMaterial bundleMaterial = new BundleMaterial(
-                    MirrorEvidenceBundle.SCHEMA_VERSION,
+                    bundleVersion,
                     MirrorEvidenceBundle.PayloadPolicy.HASH_ONLY, attestation, snapshot);
             String bundleFingerprint = fingerprint(bundleMaterial, MAXIMUM_BUNDLE_BYTES);
-            MirrorEvidenceBundle bundle = new MirrorEvidenceBundle("", bundleFingerprint,
+            MirrorEvidenceBundle bundle = new MirrorEvidenceBundle(bundleVersion, bundleFingerprint,
                     MirrorEvidenceBundle.PayloadPolicy.HASH_ONLY, attestation, snapshot);
             if (verify(bundle) != Verification.VERIFIED) {
                 return SealResult.failed(snapshot, unavailable, SIGNATURE_INVALID);
@@ -107,7 +117,8 @@ public final class MirrorEvidenceIntegrityService {
      * @return bounded verification outcome
      */
     public Verification verify(MirrorEvidenceBundle bundle) {
-        if (bundle == null || !MirrorEvidenceBundle.SCHEMA_VERSION.equals(bundle.schemaVersion())) {
+        if (bundle == null || !MirrorEvidenceBundle.SCHEMA_VERSION.equals(bundle.schemaVersion())
+                && !MirrorEvidenceBundle.SCHEMA_VERSION_V1.equals(bundle.schemaVersion())) {
             return Verification.INVALID;
         }
         try {
@@ -164,7 +175,8 @@ public final class MirrorEvidenceIntegrityService {
                 != MirrorEvidenceAttestation.SignatureStatus.VERIFIED) {
             return false;
         }
-        String materialFingerprint = signatureMaterialFingerprint(attestation.runId(),
+        String materialFingerprint = signatureMaterialFingerprint(attestation.schemaVersion(),
+                attestation.runId(),
                 attestation.planFingerprint(), attestation.evidenceFingerprint(),
                 attestation.signedAt());
         VisualEvidenceSigner.Verification verification = signer.verify(
@@ -175,9 +187,15 @@ public final class MirrorEvidenceIntegrityService {
     }
 
     private String signatureMaterialFingerprint(
-            String runId, String planFingerprint, String evidenceFingerprint, Instant signedAt) {
-        return fingerprint(new SignatureMaterial(SIGNATURE_DOMAIN,
-                MirrorEvidenceAttestation.SCHEMA_VERSION, runId, planFingerprint,
+            String schemaVersion,
+            String runId,
+            String planFingerprint,
+            String evidenceFingerprint,
+            Instant signedAt) {
+        String domain = MirrorEvidenceAttestation.SCHEMA_VERSION_V1.equals(
+                schemaVersion) ? SIGNATURE_DOMAIN_V1 : SIGNATURE_DOMAIN_V2;
+        return fingerprint(new SignatureMaterial(domain,
+                schemaVersion, runId, planFingerprint,
                 evidenceFingerprint, signedAt), MAXIMUM_SIGNATURE_MATERIAL_BYTES);
     }
 

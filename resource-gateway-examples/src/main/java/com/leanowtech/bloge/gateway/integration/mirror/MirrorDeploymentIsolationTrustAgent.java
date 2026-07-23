@@ -9,6 +9,8 @@ import java.util.Optional;
 import java.util.concurrent.ScheduledThreadPoolExecutor;
 import java.util.concurrent.ThreadLocalRandom;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.locks.Lock;
+import java.util.concurrent.locks.ReentrantReadWriteLock;
 
 /**
  * Pulls, verifies, and atomically publishes deployment-isolation trust to a local runtime.
@@ -34,7 +36,7 @@ public final class MirrorDeploymentIsolationTrustAgent implements AutoCloseable 
     private final MirrorDeploymentIsolationAttestationIntegrity attestationIntegrity;
     private final TrustPolicy trustPolicy;
     private final Settings settings;
-    private final Object refreshLock = new Object();
+    private final ReentrantReadWriteLock generationLock = new ReentrantReadWriteLock(true);
     private final ScheduledThreadPoolExecutor scheduler;
 
     private volatile RefreshState state = RefreshState.empty();
@@ -109,7 +111,9 @@ public final class MirrorDeploymentIsolationTrustAgent implements AutoCloseable 
      * @return true only when a complete active or revoked generation was committed
      */
     public boolean refreshNow() {
-        synchronized (refreshLock) {
+        Lock lock = generationLock.writeLock();
+        lock.lock();
+        try {
             if (closed) {
                 return false;
             }
@@ -157,6 +161,8 @@ public final class MirrorDeploymentIsolationTrustAgent implements AutoCloseable 
                 state = state.failed(reasonCode(failure), now);
                 return false;
             }
+        } finally {
+            lock.unlock();
         }
     }
 
@@ -226,18 +232,50 @@ public final class MirrorDeploymentIsolationTrustAgent implements AutoCloseable 
 
     /** Stops background refresh; the durable cache remains available for forensic inspection. */
     @Override
-    public synchronized void close() {
-        if (closed) {
-            return;
-        }
-        closed = true;
-        if (scheduler != null) {
-            scheduler.shutdownNow();
-            try {
-                scheduler.awaitTermination(1, TimeUnit.SECONDS);
-            } catch (InterruptedException interrupted) {
-                Thread.currentThread().interrupt();
+    public void close() {
+        Lock lock = generationLock.writeLock();
+        lock.lock();
+        try {
+            if (closed) {
+                return;
             }
+            closed = true;
+            if (scheduler != null) {
+                scheduler.shutdownNow();
+                try {
+                    scheduler.awaitTermination(1, TimeUnit.SECONDS);
+                } catch (InterruptedException interrupted) {
+                    Thread.currentThread().interrupt();
+                }
+            }
+        } finally {
+            lock.unlock();
+        }
+    }
+
+    ActiveSnapshotPermit acquireActiveSnapshot(
+            CapabilitySnapshot.Scope scope, Instant at) {
+        Objects.requireNonNull(scope, "scope");
+        Instant exact = Objects.requireNonNull(at, "at");
+        Lock lock = generationLock.readLock();
+        lock.lock();
+        try {
+            if (closed) {
+                throw new TrustUnavailableException("AGENT_CLOSED");
+            }
+            MirrorDeploymentIsolationAgentSnapshot snapshot = current().orElseThrow(
+                    () -> new TrustUnavailableException("AGENT_CACHE_UNAVAILABLE"));
+            if (!scope.equals(snapshot.attestationBundle().scope())) {
+                throw new TrustUnavailableException("AGENT_SCOPE_MISMATCH");
+            }
+            if (!snapshot.usableAt(exact)) {
+                throw new TrustUnavailableException(snapshot.revoked()
+                        ? "AGENT_CACHE_REVOKED" : "AGENT_CACHE_EXPIRED");
+            }
+            return new ActiveSnapshotPermit(snapshot, lock);
+        } catch (RuntimeException failure) {
+            lock.unlock();
+            throw failure;
         }
     }
 
@@ -408,8 +446,36 @@ public final class MirrorDeploymentIsolationTrustAgent implements AutoCloseable 
         try {
             refreshNow();
         } catch (RuntimeException failure) {
-            synchronized (refreshLock) {
+            Lock lock = generationLock.writeLock();
+            lock.lock();
+            try {
                 state = state.failed("AGENT_REFRESH_TASK_FAILED", clock.instant());
+            } finally {
+                lock.unlock();
+            }
+        }
+    }
+
+    static final class ActiveSnapshotPermit implements AutoCloseable {
+        private final MirrorDeploymentIsolationAgentSnapshot snapshot;
+        private final Lock lock;
+        private boolean closed;
+
+        private ActiveSnapshotPermit(
+                MirrorDeploymentIsolationAgentSnapshot snapshot, Lock lock) {
+            this.snapshot = snapshot;
+            this.lock = lock;
+        }
+
+        MirrorDeploymentIsolationAgentSnapshot snapshot() {
+            return snapshot;
+        }
+
+        @Override
+        public void close() {
+            if (!closed) {
+                closed = true;
+                lock.unlock();
             }
         }
     }

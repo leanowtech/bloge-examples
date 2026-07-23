@@ -19,12 +19,16 @@ offline artifact verification live in the independent `resource-gateway-test-kit
 | `mirror-run-summary-v1.schema.json` | `MirrorRunSummary` | Compact payload-free terminal projection derived from verified evidence |
 | `mirror-resolution-v1.schema.json` | `MirrorResolution` | Fingerprinted per-attempt source, confidence, freshness, payload visibility, output/error, and abstention provenance |
 | `mirror-run-evidence-v1.schema.json` | `MirrorRunEvidence` | Payload-free node, edge, resolution, semantic-result, request-context, and isolation facts for one terminal run |
+| `mirror-run-evidence-v2.schema.json` | `MirrorRunEvidence` | Current evidence generation; adds run trust and requires it for v2 deployment-egress or certifiable claims |
 | `mirror-evidence-attestation-v1.schema.json` | `MirrorEvidenceAttestation` | Domain-separated detached Ed25519 signature over one complete mirror run evidence value |
+| `mirror-evidence-attestation-v2.schema.json` | `MirrorEvidenceAttestation` | Current detached-signature generation with a distinct v2 signature domain |
 | `mirror-evidence-bundle-v1.schema.json` | `MirrorEvidenceBundle` | Portable `HASH_ONLY` evidence, attestation, and complete bundle fingerprint closure |
+| `mirror-evidence-bundle-v2.schema.json` | `MirrorEvidenceBundle` | Current strict bundle; requires v2 evidence and attestation and rejects mixed generations |
 | `mirror-deployment-isolation-attestation-v1.schema.json` | `MirrorDeploymentIsolationAttestation` | Short-lived external proof binding an exact deployment generation to fail-closed egress and credential controls |
 | `mirror-deployment-isolation-attestation-status-v1.schema.json` | `MirrorDeploymentIsolationAttestationStatusPublication` | Locally content-addressed `ACTIVE` or irreversible `REVOKED` status for one exact attestation revision |
 | `mirror-deployment-isolation-attestation-bundle-v1.schema.json` | `MirrorDeploymentIsolationAttestationBundle` | Atomic current-only distribution of authority reference, external attestation body, and local status |
 | `mirror-deployment-isolation-agent-snapshot-v1.schema.json` | `MirrorDeploymentIsolationAgentSnapshot` | Crash-safe local cache generation binding refresh deadline, optional denial-only authority body, and atomic attestation bundle |
+| `mirror-deployment-isolation-run-trust-v1.schema.json` | `MirrorDeploymentIsolationRunTrust.Binding` | Stable decision plus admitted/committed local agent observations signed into v2 evidence |
 | `mirror-deployment-isolation-attestation-revocation-request-v1.schema.json` | `MirrorDeploymentIsolationAttestationRevocationRequest` | Exact-current optimistic command for one irreversible status transition |
 | `mirror-deployment-isolation-authority-key-set-publication-v1.schema.json` | `MirrorDeploymentIsolationAuthorityKeySetPublication` | Full-scope, monotonic, M-of-N bootstrap-root-signed publication of isolation-attestation authority keys |
 | `capability-lifecycle-transition-v1.schema.json` | `CapabilityLifecycleTransitionRequest` | Optimistically fenced governance transition for one exact revision |
@@ -39,6 +43,14 @@ It contains a server-produced `HASH_ONLY` bundle and public Ed25519 key, but no 
 business payload. The server rehydrates and verifies it through its Java protocol model; the
 standalone test-kit validates the strict schemas and independently re-derives every nested seal,
 closure, aggregate fingerprint, key policy, and signature from the same file.
+
+The producer now emits evidence, attestation, and bundle v2. Readers and the standalone test-kit
+continue to verify v1, including legacy v1 certifiable evidence without a run-trust binding. A
+portable bundle must use one generation throughout; v1/v2 mixing is rejected. V2 certifiable
+evidence carries `resourceGateway.mirrorDeploymentIsolationRunTrust.v1`, while a v2 exploratory
+run without deployment proof omits that field and preserves the explicit
+`DEPLOYMENT_EGRESS_NOT_ATTESTED` limitation. See
+[Mirror runtime trust binding](../../resource-gateway-mirror-runtime-trust-binding.md).
 
 `mirror-deployment-isolation-stage1-v1.fixture.json` is a second fixed Stage 1 cryptographic
 fixture. It contains one short-lived deployment-isolation attestation, the external authority's

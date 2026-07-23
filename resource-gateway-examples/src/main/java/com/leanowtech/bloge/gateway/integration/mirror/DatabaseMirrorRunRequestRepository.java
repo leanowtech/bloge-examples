@@ -45,6 +45,15 @@ public class DatabaseMirrorRunRequestRepository implements MirrorRunRequestRepos
                 context_fingerprint VARCHAR(71) NOT NULL,
                 plan_id VARCHAR(512) NOT NULL,
                 plan_fingerprint VARCHAR(71) NOT NULL,
+                trust_required BOOLEAN NOT NULL DEFAULT FALSE,
+                trust_bundle_id VARCHAR(512) NOT NULL DEFAULT '',
+                trust_bundle_revision BIGINT NOT NULL DEFAULT 0,
+                trust_bundle_fingerprint VARCHAR(71) NOT NULL DEFAULT '',
+                admitted_snapshot_id VARCHAR(512) NOT NULL DEFAULT '',
+                admitted_cache_generation BIGINT NOT NULL DEFAULT 0,
+                admitted_snapshot_fingerprint VARCHAR(71) NOT NULL DEFAULT '',
+                trust_admitted_at VARCHAR(64) NOT NULL DEFAULT '',
+                trust_valid_until VARCHAR(64) NOT NULL DEFAULT '',
                 status VARCHAR(32) NOT NULL,
                 lease_owner VARCHAR(512) NOT NULL,
                 lease_epoch BIGINT NOT NULL,
@@ -64,13 +73,20 @@ public class DatabaseMirrorRunRequestRepository implements MirrorRunRequestRepos
             INSERT INTO mirror_run_requests (
                 tenant_id, organization_id, project_id, environment_id, region,
                 request_id, request_fingerprint, context_fingerprint, plan_id, plan_fingerprint,
+                trust_required, trust_bundle_id, trust_bundle_revision,
+                trust_bundle_fingerprint, admitted_snapshot_id, admitted_cache_generation,
+                admitted_snapshot_fingerprint, trust_admitted_at, trust_valid_until,
                 status, lease_owner, lease_epoch, lease_expires_at, run_id,
                 evidence_bundle_fingerprint, last_failure_code, created_at, updated_at, retain_until
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'ACTIVE', ?, 1, ?, '', '', '', ?, ?, ?)
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
+                      'ACTIVE', ?, 1, ?, '', '', '', ?, ?, ?)
             """;
     private static final String SELECT_EXACT = """
             SELECT request_id, request_fingerprint, context_fingerprint, plan_id,
-                   plan_fingerprint, status, lease_owner, lease_epoch, lease_expires_at,
+                   plan_fingerprint, trust_required, trust_bundle_id, trust_bundle_revision,
+                   trust_bundle_fingerprint, admitted_snapshot_id, admitted_cache_generation,
+                   admitted_snapshot_fingerprint, trust_admitted_at, trust_valid_until,
+                   status, lease_owner, lease_epoch, lease_expires_at,
                    run_id, evidence_bundle_fingerprint, last_failure_code,
                    created_at, updated_at, retain_until
             FROM mirror_run_requests
@@ -81,7 +97,9 @@ public class DatabaseMirrorRunRequestRepository implements MirrorRunRequestRepos
     private static final String TAKE_OVER = """
             UPDATE mirror_run_requests
             SET lease_owner = ?, lease_epoch = ?, lease_expires_at = ?,
-                last_failure_code = '', updated_at = ?, retain_until = ?
+                admitted_snapshot_id = ?, admitted_cache_generation = ?,
+                admitted_snapshot_fingerprint = ?, trust_admitted_at = ?,
+                trust_valid_until = ?, last_failure_code = '', updated_at = ?, retain_until = ?
             WHERE tenant_id = ? AND organization_id = ? AND project_id = ?
               AND environment_id = ? AND region = ? AND request_id = ?
               AND status = 'ACTIVE' AND lease_epoch = ?
@@ -125,6 +143,7 @@ public class DatabaseMirrorRunRequestRepository implements MirrorRunRequestRepos
     @PostConstruct
     void init() {
         jdbc.execute(CREATE_TABLE);
+        addTrustColumns();
     }
 
     @Override
@@ -132,8 +151,10 @@ public class DatabaseMirrorRunRequestRepository implements MirrorRunRequestRepos
     public Claim claim(
             Registration registration,
             String leaseOwner,
-            Duration leaseDuration) {
+            Duration leaseDuration,
+            TrustAttempt trustAttempt) {
         Objects.requireNonNull(registration, "registration");
+        requireTrustAttempt(registration, trustAttempt);
         String owner = required(leaseOwner, "leaseOwner");
         Duration duration = Objects.requireNonNull(leaseDuration, "leaseDuration");
         if (duration.isZero() || duration.isNegative()) {
@@ -145,7 +166,7 @@ public class DatabaseMirrorRunRequestRepository implements MirrorRunRequestRepos
         Instant expiresAt = observedAt.plus(duration);
         if (existing.isEmpty()) {
             try {
-                insert(registration, owner, observedAt, expiresAt);
+                insert(registration, trustAttempt, owner, observedAt, expiresAt);
                 State state = locked(registration.scope(), registration.requestId()).orElseThrow();
                 return acquired(state);
             } catch (DuplicateKeyException concurrentInsert) {
@@ -171,8 +192,11 @@ public class DatabaseMirrorRunRequestRepository implements MirrorRunRequestRepos
 
         long nextEpoch = Math.addExact(state.leaseEpoch(), 1);
         CapabilitySnapshot.Scope scope = registration.scope();
+        TrustColumns trust = TrustColumns.from(trustAttempt);
         int updated = jdbc.update(TAKE_OVER, owner, nextEpoch, expiresAt.toString(),
-                observedAt.toString(), later(state.registration().retainUntil(),
+                trust.snapshotId(), trust.cacheGeneration(), trust.snapshotFingerprint(),
+                trust.admittedAt(), trust.validUntil(), observedAt.toString(),
+                later(state.registration().retainUntil(),
                         registration.retainUntil()).toString(),
                 scope.tenantId(), scope.organizationId(), scope.projectId(),
                 scope.environmentId(), scope.region(), registration.requestId(),
@@ -249,29 +273,42 @@ public class DatabaseMirrorRunRequestRepository implements MirrorRunRequestRepos
         Registration registration = new Registration(scope, rs.getString("request_id"),
                 rs.getString("request_fingerprint"), rs.getString("context_fingerprint"),
                 rs.getString("plan_id"), rs.getString("plan_fingerprint"),
-                Instant.parse(rs.getString("retain_until")));
+                Instant.parse(rs.getString("retain_until")), trustDecision(rs));
         return new State(registration, Status.valueOf(rs.getString("status")),
                 rs.getString("lease_owner"), rs.getLong("lease_epoch"),
                 Instant.parse(rs.getString("lease_expires_at")), rs.getString("run_id"),
                 rs.getString("evidence_bundle_fingerprint"),
                 rs.getString("last_failure_code"), Instant.parse(rs.getString("created_at")),
-                Instant.parse(rs.getString("updated_at")));
+                Instant.parse(rs.getString("updated_at")), trustAttempt(rs));
     }
 
     private void insert(
-            Registration registration, String owner, Instant now, Instant leaseExpiresAt) {
+            Registration registration,
+            TrustAttempt trustAttempt,
+            String owner,
+            Instant now,
+            Instant leaseExpiresAt) {
         CapabilitySnapshot.Scope scope = registration.scope();
+        TrustDecision decision = registration.trustDecision();
+        MirrorArtifactRef decisionRef = decision.decisionRef();
+        TrustColumns trust = TrustColumns.from(trustAttempt);
         jdbc.update(INSERT, scope.tenantId(), scope.organizationId(), scope.projectId(),
                 scope.environmentId(), scope.region(), registration.requestId(),
                 registration.requestFingerprint(), registration.contextFingerprint(),
-                registration.planId(), registration.planFingerprint(), owner,
+                registration.planId(), registration.planFingerprint(),
+                decision.certificationRequired(), decisionRef == null ? "" : decisionRef.id(),
+                decisionRef == null ? 0L : decisionRef.revision(),
+                decisionRef == null ? "" : decisionRef.fingerprint(),
+                trust.snapshotId(), trust.cacheGeneration(), trust.snapshotFingerprint(),
+                trust.admittedAt(), trust.validUntil(), owner,
                 leaseExpiresAt.toString(), now.toString(), now.toString(),
                 registration.retainUntil().toString());
     }
 
     private static Claim acquired(State state) {
         return new Claim(Outcome.ACQUIRED, state, new Lease(state.registration().scope(),
-                state.registration().requestId(), state.leaseOwner(), state.leaseEpoch()), 0);
+                state.registration().requestId(), state.leaseOwner(), state.leaseEpoch(),
+                state.trustAttempt()), 0);
     }
 
     private static void requireSameRegistration(
@@ -281,8 +318,72 @@ public class DatabaseMirrorRunRequestRepository implements MirrorRunRequestRepos
                 || !existing.requestFingerprint().equals(requested.requestFingerprint())
                 || !existing.contextFingerprint().equals(requested.contextFingerprint())
                 || !existing.planId().equals(requested.planId())
-                || !existing.planFingerprint().equals(requested.planFingerprint())) {
+                || !existing.planFingerprint().equals(requested.planFingerprint())
+                || !existing.trustDecision().equals(requested.trustDecision())) {
             throw new MirrorRunRequestConflictException();
+        }
+    }
+
+    private void addTrustColumns() {
+        for (String definition : List.of(
+                "trust_required BOOLEAN NOT NULL DEFAULT FALSE",
+                "trust_bundle_id VARCHAR(512) NOT NULL DEFAULT ''",
+                "trust_bundle_revision BIGINT NOT NULL DEFAULT 0",
+                "trust_bundle_fingerprint VARCHAR(71) NOT NULL DEFAULT ''",
+                "admitted_snapshot_id VARCHAR(512) NOT NULL DEFAULT ''",
+                "admitted_cache_generation BIGINT NOT NULL DEFAULT 0",
+                "admitted_snapshot_fingerprint VARCHAR(71) NOT NULL DEFAULT ''",
+                "trust_admitted_at VARCHAR(64) NOT NULL DEFAULT ''",
+                "trust_valid_until VARCHAR(64) NOT NULL DEFAULT ''")) {
+            jdbc.execute("ALTER TABLE mirror_run_requests ADD COLUMN IF NOT EXISTS " + definition);
+        }
+    }
+
+    private static TrustDecision trustDecision(ResultSet rs) throws SQLException {
+        if (!rs.getBoolean("trust_required")) {
+            return TrustDecision.exploratory();
+        }
+        return new TrustDecision(true, new MirrorArtifactRef(
+                MirrorDeploymentIsolationAttestationBundle.ARTIFACT_KIND,
+                rs.getString("trust_bundle_id"), rs.getLong("trust_bundle_revision"),
+                rs.getString("trust_bundle_fingerprint")));
+    }
+
+    private static TrustAttempt trustAttempt(ResultSet rs) throws SQLException {
+        long generation = rs.getLong("admitted_cache_generation");
+        if (generation == 0) {
+            return null;
+        }
+        return new TrustAttempt(new MirrorArtifactRef(
+                MirrorDeploymentIsolationAgentSnapshot.ARTIFACT_KIND,
+                rs.getString("admitted_snapshot_id"), generation,
+                rs.getString("admitted_snapshot_fingerprint")),
+                Instant.parse(rs.getString("trust_admitted_at")),
+                Instant.parse(rs.getString("trust_valid_until")));
+    }
+
+    private static void requireTrustAttempt(
+            Registration registration, TrustAttempt trustAttempt) {
+        if (registration.trustDecision().certificationRequired() != (trustAttempt != null)) {
+            throw new IllegalArgumentException(
+                    "certification-required registration requires a trust attempt");
+        }
+    }
+
+    private record TrustColumns(
+            String snapshotId,
+            long cacheGeneration,
+            String snapshotFingerprint,
+            String admittedAt,
+            String validUntil) {
+        private static TrustColumns from(TrustAttempt attempt) {
+            if (attempt == null) {
+                return new TrustColumns("", 0L, "", "", "");
+            }
+            return new TrustColumns(attempt.admittedSnapshotRef().id(),
+                    attempt.admittedSnapshotRef().revision(),
+                    attempt.admittedSnapshotRef().fingerprint(),
+                    attempt.admittedAt().toString(), attempt.validUntil().toString());
         }
     }
 

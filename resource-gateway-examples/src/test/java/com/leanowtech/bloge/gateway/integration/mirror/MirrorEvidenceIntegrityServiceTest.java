@@ -222,18 +222,19 @@ class MirrorEvidenceIntegrityServiceTest {
                 .isInstanceOf(IllegalArgumentException.class)
                 .hasMessageContaining("proven egress isolation");
 
+        MirrorDeploymentIsolationRunTrust.Binding trustBinding =
+                MirrorPersistenceTestFixtures.trustBinding(SCOPE);
         MirrorRunEvidence.IsolationFacts proven = new MirrorRunEvidence.IsolationFacts(
                 MirrorRunEvidence.IsolationFacts.EngineMode.INDEPENDENT_TEST_ENGINE,
                 List.of(), List.of("InvocationRecorder"), false, false, false,
                 false, false, false, true,
-                new MirrorArtifactRef("DEPLOYMENT_ISOLATION_ATTESTATION", "sandbox-sg", 1,
-                        fingerprint('d')), List.of());
+                trustBinding.attestationRef(), trustBinding, List.of());
         MirrorRunEvidence.IsolationFacts falselyLimited = new MirrorRunEvidence.IsolationFacts(
                 MirrorRunEvidence.IsolationFacts.EngineMode.INDEPENDENT_TEST_ENGINE,
                 List.of(), List.of("InvocationRecorder"), false, false, false,
                 false, false, false, true,
-                new MirrorArtifactRef("DEPLOYMENT_ISOLATION_ATTESTATION", "sandbox-sg", 1,
-                        fingerprint('d')), List.of("UNPROVEN_CREDENTIAL_SCAN"));
+                trustBinding.attestationRef(), trustBinding,
+                List.of("UNPROVEN_CREDENTIAL_SCAN"));
         MirrorRunEvidence base = evidence();
         MirrorRunEvidence certifiable = new MirrorRunEvidence("", base.runId(), base.requestId(),
                 base.requestContextFingerprint(), base.planId(), base.planFingerprint(),
@@ -244,6 +245,9 @@ class MirrorEvidenceIntegrityServiceTest {
                 base.nodeTraces(), base.edgeTraces(), base.resolutions(), proven, List.of());
 
         assertThat(service.seal(certifiable).verified()).isTrue();
+        assertThat(certifiable.schemaVersion()).isEqualTo(MirrorRunEvidence.SCHEMA_VERSION);
+        assertThat(certifiable.isolation().deploymentTrustBinding())
+                .isEqualTo(trustBinding);
         assertThatThrownBy(() -> new MirrorRunEvidence("", base.runId(), base.requestId(),
                 base.requestContextFingerprint(), base.planId(), base.planFingerprint(),
                 base.capabilityClosureFingerprint(), base.executionControlFingerprint(),
@@ -253,6 +257,39 @@ class MirrorEvidenceIntegrityServiceTest {
                 base.nodeTraces(), base.edgeTraces(), base.resolutions(), falselyLimited, List.of()))
                 .isInstanceOf(IllegalArgumentException.class)
                 .hasMessageContaining("no limitations");
+    }
+
+    @Test
+    void legacyV1CertificationRemainsReadableAndVerifiableWithoutRunTrustBinding() {
+        MirrorRunEvidence base = evidence();
+        MirrorRunEvidence.IsolationFacts legacyIsolation =
+                new MirrorRunEvidence.IsolationFacts(
+                        MirrorRunEvidence.IsolationFacts.EngineMode.INDEPENDENT_TEST_ENGINE,
+                        List.of(), List.of("InvocationRecorder"), false, false, false,
+                        false, false, false, true,
+                        new MirrorArtifactRef("DEPLOYMENT_ISOLATION_ATTESTATION",
+                                "legacy-isolation", 1, fingerprint('d')),
+                        List.of());
+        MirrorRunEvidence legacy = new MirrorRunEvidence(
+                MirrorRunEvidence.SCHEMA_VERSION_V1, base.runId(), base.requestId(),
+                base.requestContextFingerprint(), base.planId(), base.planFingerprint(),
+                base.capabilityClosureFingerprint(), base.executionControlFingerprint(),
+                base.rootCapability(), base.fixtureBundleRef(), base.externalBindings(),
+                base.scope(), base.authorizedPurpose(), base.status(),
+                MirrorRunEvidence.EvidenceClass.CERTIFIABLE,
+                base.semanticResultFingerprint(), base.startedAt(), base.completedAt(),
+                base.nodeTraces(), base.edgeTraces(), base.resolutions(), legacyIsolation,
+                List.of());
+
+        MirrorEvidenceIntegrityService.SealResult sealed = service.seal(legacy);
+
+        assertThat(sealed.verified()).isTrue();
+        assertThat(sealed.bundle().schemaVersion())
+                .isEqualTo(MirrorEvidenceBundle.SCHEMA_VERSION_V1);
+        assertThat(sealed.attestation().schemaVersion())
+                .isEqualTo(MirrorEvidenceAttestation.SCHEMA_VERSION_V1);
+        assertThat(service.verify(sealed.bundle()))
+                .isEqualTo(MirrorEvidenceIntegrityService.Verification.VERIFIED);
     }
 
     @Test

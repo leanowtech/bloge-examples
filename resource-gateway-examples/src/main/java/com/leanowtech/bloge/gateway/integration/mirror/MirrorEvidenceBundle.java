@@ -23,11 +23,13 @@ public record MirrorEvidenceBundle(
         MirrorEvidenceAttestation attestation,
         MirrorRunEvidence evidence
 ) {
+    /** Legacy portable mirror evidence bundle version. */
+    public static final String SCHEMA_VERSION_V1 = "resourceGateway.mirrorEvidenceBundle.v1";
     /** Current portable mirror evidence bundle version. */
-    public static final String SCHEMA_VERSION = "resourceGateway.mirrorEvidenceBundle.v1";
+    public static final String SCHEMA_VERSION = "resourceGateway.mirrorEvidenceBundle.v2";
     private static final Pattern FINGERPRINT = Pattern.compile("sha256:[a-f0-9]{64}");
 
-    /** Business payload handling for every v1 bundle. */
+    /** Business payload handling for every supported bundle version. */
     public enum PayloadPolicy {
         HASH_ONLY
     }
@@ -40,11 +42,20 @@ public record MirrorEvidenceBundle(
         payloadPolicy = payloadPolicy == null ? PayloadPolicy.HASH_ONLY : payloadPolicy;
         attestation = Objects.requireNonNull(attestation, "attestation");
         evidence = Objects.requireNonNull(evidence, "evidence");
-        if (!SCHEMA_VERSION.equals(schemaVersion)
+        boolean v2 = SCHEMA_VERSION.equals(schemaVersion);
+        boolean v1 = SCHEMA_VERSION_V1.equals(schemaVersion);
+        if ((!v1 && !v2)
                 || !FINGERPRINT.matcher(bundleFingerprint).matches()
                 || !attestation.independentlyVerifiable()
                 || !evidence.runId().equals(attestation.runId())
-                || !evidence.planFingerprint().equals(attestation.planFingerprint())) {
+                || !evidence.planFingerprint().equals(attestation.planFingerprint())
+                || v2 && (!MirrorRunEvidence.SCHEMA_VERSION.equals(evidence.schemaVersion())
+                || !MirrorEvidenceAttestation.SCHEMA_VERSION.equals(
+                attestation.schemaVersion()))
+                || v1 && (!MirrorRunEvidence.SCHEMA_VERSION_V1.equals(
+                evidence.schemaVersion())
+                || !MirrorEvidenceAttestation.SCHEMA_VERSION_V1.equals(
+                attestation.schemaVersion()))) {
             throw new IllegalArgumentException("portable mirror evidence bundle is incomplete");
         }
     }

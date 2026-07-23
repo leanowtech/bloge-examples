@@ -31,7 +31,8 @@ public final class MirrorEvidenceVerifier {
     /** Maximum canonical bytes admitted for one portable bundle. */
     public static final int MAXIMUM_BUNDLE_BYTES = 72 * 1024 * 1024;
     private static final int MAXIMUM_SIGNATURE_MATERIAL_BYTES = 8 * 1024;
-    private static final String SIGNATURE_DOMAIN = "RESOURCE_GATEWAY_MIRROR_EVIDENCE_V1";
+    private static final String SIGNATURE_DOMAIN_V1 = "RESOURCE_GATEWAY_MIRROR_EVIDENCE_V1";
+    private static final String SIGNATURE_DOMAIN_V2 = "RESOURCE_GATEWAY_MIRROR_EVIDENCE_V2";
     private static final ObjectMapper JSON = new ObjectMapper();
 
     /** Creates a stateless offline mirror evidence verifier. */
@@ -100,7 +101,7 @@ public final class MirrorEvidenceVerifier {
      * input produces a bounded invalid result rather than propagating parser or cryptographic
      * exception text.</p>
      *
-     * @param bundle decoded {@code resourceGateway.mirrorEvidenceBundle.v1} value
+     * @param bundle decoded supported mirror evidence bundle version
      * @param key public key resolved by the attestation key id; may be {@code null}
      * @return payload-free verification result
      */
@@ -108,7 +109,7 @@ public final class MirrorEvidenceVerifier {
         Coordinates coordinates = Coordinates.from(bundle);
         try {
             CapabilityMirrorSchemaValidator.require(bundle,
-                    CapabilityMirrorProtocol.MIRROR_EVIDENCE_BUNDLE_SCHEMA_RESOURCE,
+                    bundleSchema(bundle),
                     "RG.MIRROR.CLIENT.EVIDENCE_SCHEMA_INVALID");
         } catch (RuntimeException invalid) {
             return result(Outcome.INVALID, "MIRROR_EVIDENCE_SCHEMA_INVALID", coordinates);
@@ -241,6 +242,48 @@ public final class MirrorEvidenceVerifier {
                 "MIRROR_ISOLATION_ORDER_INVALID");
         requireStringOrder(isolation.path("limitations"),
                 "MIRROR_ISOLATION_ORDER_INVALID");
+        verifyDeploymentTrust(evidence, attestation, isolation, startedAt, completedAt,
+                signedAt);
+    }
+
+    private static void verifyDeploymentTrust(
+            JsonNode evidence,
+            JsonNode attestation,
+            JsonNode isolation,
+            Instant startedAt,
+            Instant completedAt,
+            Instant signedAt) {
+        boolean current = CapabilityMirrorProtocol.MIRROR_RUN_EVIDENCE_V2.equals(
+                evidence.path("schemaVersion").asText());
+        JsonNode binding = isolation.path("deploymentTrustBinding");
+        if (!current) {
+            if (!binding.isMissingNode()) {
+                fail("MIRROR_DEPLOYMENT_TRUST_VERSION_INVALID");
+            }
+            return;
+        }
+        if (!isolation.path("deploymentEgressEnforced").asBoolean()) {
+            if (!binding.isMissingNode()) {
+                fail("MIRROR_DEPLOYMENT_TRUST_UNEXPECTED");
+            }
+            return;
+        }
+        JsonNode admitted = binding.path("admittedSnapshotRef");
+        JsonNode committed = binding.path("committedSnapshotRef");
+        Instant admittedAt = instant(binding.path("admittedAt"),
+                "MIRROR_DEPLOYMENT_TRUST_TIME_INVALID");
+        Instant confirmedAt = instant(binding.path("confirmedAt"),
+                "MIRROR_DEPLOYMENT_TRUST_TIME_INVALID");
+        if (!isolation.path("deploymentIsolationRef").equals(binding.path("attestationRef"))
+                || binding.path("decisionRef").path("revision").asLong()
+                != binding.path("statusRef").path("revision").asLong()
+                || !admitted.path("id").asText().equals(committed.path("id").asText())
+                || committed.path("revision").asLong() < admitted.path("revision").asLong()
+                || admittedAt.isAfter(startedAt)
+                || confirmedAt.isBefore(completedAt)
+                || signedAt.isBefore(confirmedAt)) {
+            fail("MIRROR_DEPLOYMENT_TRUST_BINDING_INVALID");
+        }
     }
 
     private static void verifyResolution(
@@ -401,13 +444,26 @@ public final class MirrorEvidenceVerifier {
 
     private static ObjectNode signatureMaterial(JsonNode attestation) {
         ObjectNode material = JSON.createObjectNode();
-        material.put("domain", SIGNATURE_DOMAIN);
-        material.put("schemaVersion", CapabilityMirrorProtocol.MIRROR_EVIDENCE_ATTESTATION_V1);
+        String version = attestation.path("schemaVersion").asText();
+        material.put("domain", CapabilityMirrorProtocol.MIRROR_EVIDENCE_ATTESTATION_V1
+                .equals(version) ? SIGNATURE_DOMAIN_V1 : SIGNATURE_DOMAIN_V2);
+        material.put("schemaVersion", version);
         material.put("runId", attestation.path("runId").asText());
         material.put("planFingerprint", attestation.path("planFingerprint").asText());
         material.put("evidenceFingerprint", attestation.path("evidenceFingerprint").asText());
         material.put("signedAt", attestation.path("signedAt").asText());
         return material;
+    }
+
+    private static String bundleSchema(JsonNode bundle) {
+        String version = bundle == null ? "" : bundle.path("schemaVersion").asText();
+        if (CapabilityMirrorProtocol.MIRROR_EVIDENCE_BUNDLE_V1.equals(version)) {
+            return CapabilityMirrorProtocol.MIRROR_EVIDENCE_BUNDLE_SCHEMA_RESOURCE;
+        }
+        if (CapabilityMirrorProtocol.MIRROR_EVIDENCE_BUNDLE_V2.equals(version)) {
+            return CapabilityMirrorProtocol.MIRROR_EVIDENCE_BUNDLE_V2_SCHEMA_RESOURCE;
+        }
+        return "";
     }
 
     private static ObjectNode bundleMaterial(JsonNode bundle) {

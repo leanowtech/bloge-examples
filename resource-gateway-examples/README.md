@@ -140,9 +140,13 @@ route exists. With `RG_MIRROR_RUNTIME_ENABLED=true` under `test` or `staging`, t
 adapter additionally reports `mirrorOperationObservability=true` and reports `mirrorServing=true` while its signer
 is usable. Signer readiness is re-evaluated on each
 probe; a signer outage leaves the installed endpoints discoverable but changes serving to false and execution fails
-closed with `503`. Serving means the isolated exploratory API is callable. Evidence
-remains `EXPLORATORY` until an exact deployment egress attestation closes its declared limitation. The complete protocol and lifecycle rules are in the
-[mirror schema guide](../docs/schemas/resource-gateway-mirror/README.md).
+closed with `503`. Serving means the isolated exploratory API is callable. The probe separately reports
+`mirrorIsolationRunTrustReady` and `mirrorCertifiableEvidenceServingReady`; only the latter means
+a certification-required plan can obtain double-observed deployment trust. Exploratory runs remain
+explicit, while eligible runs emit v2 `CERTIFIABLE` evidence with admitted and committed agent
+snapshot references. The complete protocol and lifecycle rules are in the
+[mirror schema guide](../docs/schemas/resource-gateway-mirror/README.md) and
+[runtime trust-binding guide](../docs/resource-gateway-mirror-runtime-trust-binding.md).
 
 The Stage 1 compiler and run kernels verify Capability Closure against the recursively
 frozen BLOGE invocation inventory, adapt the existing FixtureBundle into mandatory external-site controls, retain
@@ -172,8 +176,13 @@ expiry. H2 time is sampled through an independent short connection after locking
 frozen; configure the datasource with capacity for the transaction connection plus the clock connection. The
 deployment-egress proof and M-of-N authority key-set publication protocols are frozen. Authority publications now
 have full-scope append-only trusted distribution, a durable database CAS floor, strict protected APIs, and read-time
-local re-verification. Deployment-agent refresh and runtime binding remain open, so evidence stays
-exploratory. The fixture reuse decision is in
+local re-verification. The deployment agent now admits certification plans before durable claim,
+confirms the same stable attestation-bundle decision after execution, and holds a read permit through
+atomic evidence commit. Routine refresh may advance only the local cache generation; revocation,
+successor attestation, expiry, rollback, or decision drift fail closed. V1 evidence remains readable
+and v2 adds the signed run-trust binding. Multi-node revocation convergence, customer PKI/KMS/IdP,
+database HA/DR, managed clock controls, and non-Java v2 compatibility still require environment
+certification. The fixture reuse decision is in
 [ADR-004](../docs/adr/ADR-004-mirror-plan-reuses-fixture-bundle.md).
 
 ### Mirror dynamic occurrence budget

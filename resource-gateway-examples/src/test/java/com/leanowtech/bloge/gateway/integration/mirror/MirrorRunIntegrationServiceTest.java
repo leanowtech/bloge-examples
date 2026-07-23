@@ -197,6 +197,73 @@ class MirrorRunIntegrationServiceTest {
         verify(requests, never()).claim(any(), anyString(), any());
     }
 
+    @Test
+    void certificationAdmissionIsPinnedIntoIdempotencyLeaseAndRuntimeRequest() {
+        MirrorDeploymentIsolationRunTrust.Admission admission =
+                MirrorPersistenceTestFixtures.trustAdmission(SCOPE);
+        MirrorDeploymentIsolationRunTrust.Binding binding =
+                MirrorPersistenceTestFixtures.trustBinding(SCOPE);
+        MirrorDeploymentIsolationRunTrustAuthority trust =
+                mock(MirrorDeploymentIsolationRunTrustAuthority.class);
+        when(trust.admit(SCOPE)).thenReturn(admission);
+        service = new MirrorRunIntegrationService(plans, runtime, requests, evidence,
+                commits, mapper, MirrorOperationObservability.noop(),
+                Clock.fixed(NOW, ZoneOffset.UTC), trust);
+        plan = certificationPlan(plan);
+        when(plans.findForExecution("plan-1", identity())).thenReturn(plan);
+        when(plans.materialize(plan, identity())).thenReturn(generation);
+        bundle = MirrorPersistenceTestFixtures.certifiableEvidence(mapper,
+                new InMemoryVisualEvidenceSigner(), plan, "run-certification", 'c',
+                "request-1", ProtocolFingerprint.of(mapper, Map.of(
+                        "customerId", "C-1",
+                        ReservedKeys.TENANT_ID, SCOPE.tenantId(),
+                        ReservedKeys.NAMESPACE, SCOPE.projectId())), binding);
+        when(requests.claim(any(), anyString(), any(), any())).thenAnswer(invocation ->
+                acquired(invocation.getArgument(0), "owner-certification", 1,
+                        invocation.getArgument(3)));
+        MirrorRunResult result = mock(MirrorRunResult.class);
+        when(result.evidenceBundle()).thenReturn(bundle);
+        when(runtime.execute(any())).thenReturn(result);
+        when(commits.commit(any(), any(), any())).thenReturn(bundle);
+
+        MirrorRunSummary summary = service.execute(request(), identity());
+
+        assertThat(summary.evidenceClass()).isEqualTo(
+                MirrorRunEvidence.EvidenceClass.CERTIFIABLE);
+        ArgumentCaptor<MirrorRunRequestRepository.Registration> registration =
+                ArgumentCaptor.forClass(MirrorRunRequestRepository.Registration.class);
+        ArgumentCaptor<MirrorRunRequestRepository.TrustAttempt> attempt =
+                ArgumentCaptor.forClass(MirrorRunRequestRepository.TrustAttempt.class);
+        verify(requests).claim(registration.capture(), anyString(), any(), attempt.capture());
+        assertThat(registration.getValue().trustDecision())
+                .isEqualTo(MirrorRunRequestRepository.TrustDecision.certification(admission));
+        assertThat(attempt.getValue())
+                .isEqualTo(MirrorRunRequestRepository.TrustAttempt.from(admission));
+        ArgumentCaptor<MirrorRunRequest> runtimeRequest =
+                ArgumentCaptor.forClass(MirrorRunRequest.class);
+        verify(runtime).execute(runtimeRequest.capture());
+        assertThat(runtimeRequest.getValue().deploymentTrust()).isEqualTo(admission);
+    }
+
+    @Test
+    void unavailableCertificationTrustFailsBeforeDurableClaim() {
+        MirrorDeploymentIsolationRunTrustAuthority trust =
+                mock(MirrorDeploymentIsolationRunTrustAuthority.class);
+        when(trust.admit(SCOPE)).thenThrow(
+                new MirrorDeploymentIsolationRunTrustAuthority.TrustException(
+                        "RUN_TRUST_AUTHORITY_UNAVAILABLE"));
+        service = new MirrorRunIntegrationService(plans, runtime, requests, evidence,
+                commits, mapper, MirrorOperationObservability.noop(),
+                Clock.fixed(NOW, ZoneOffset.UTC), trust);
+        plan = certificationPlan(plan);
+        when(plans.findForExecution("plan-1", identity())).thenReturn(plan);
+
+        assertProblem(() -> service.execute(request(), identity()), 503,
+                "RG.MIRROR.DEPLOYMENT_TRUST_UNAVAILABLE", true);
+        verify(requests, never()).claim(any(), anyString(), any(), any());
+        verify(runtime, never()).execute(any());
+    }
+
     private MirrorExecutionRequest request() {
         return new MirrorExecutionRequest("", "request-1", "plan-1",
                 plan.planFingerprint(), Map.of("customerId", "C-1"));
@@ -206,11 +273,19 @@ class MirrorRunIntegrationServiceTest {
             MirrorRunRequestRepository.Registration registration,
             String owner,
             long epoch) {
+        return acquired(registration, owner, epoch, null);
+    }
+
+    private static MirrorRunRequestRepository.Claim acquired(
+            MirrorRunRequestRepository.Registration registration,
+            String owner,
+            long epoch,
+            MirrorRunRequestRepository.TrustAttempt trustAttempt) {
         var state = state(registration, MirrorRunRequestRepository.Status.ACTIVE,
-                owner, epoch, NOW.plusSeconds(60), "", "");
+                owner, epoch, NOW.plusSeconds(60), "", "", trustAttempt);
         return new MirrorRunRequestRepository.Claim(MirrorRunRequestRepository.Outcome.ACQUIRED,
                 state, new MirrorRunRequestRepository.Lease(
-                registration.scope(), registration.requestId(), owner, epoch), 0);
+                registration.scope(), registration.requestId(), owner, epoch, trustAttempt), 0);
     }
 
     private static MirrorRunRequestRepository.Claim completed(
@@ -233,6 +308,36 @@ class MirrorRunIntegrationServiceTest {
             String bundleFingerprint) {
         return new MirrorRunRequestRepository.State(registration, status, owner, epoch,
                 leaseExpiresAt, runId, bundleFingerprint, "", NOW.minusSeconds(1), NOW);
+    }
+
+    private static MirrorRunRequestRepository.State state(
+            MirrorRunRequestRepository.Registration registration,
+            MirrorRunRequestRepository.Status status,
+            String owner,
+            long epoch,
+            Instant leaseExpiresAt,
+            String runId,
+            String bundleFingerprint,
+            MirrorRunRequestRepository.TrustAttempt trustAttempt) {
+        return new MirrorRunRequestRepository.State(registration, status, owner, epoch,
+                leaseExpiresAt, runId, bundleFingerprint, "", NOW.minusSeconds(1), NOW,
+                trustAttempt);
+    }
+
+    private MirrorPlan certificationPlan(MirrorPlan source) {
+        MirrorPlan.ExecutionPolicy policy = source.policy();
+        MirrorPlan.ExecutionPolicy certification = new MirrorPlan.ExecutionPolicy(
+                policy.authorizedPurpose(), policy.realExternalCallsAllowed(),
+                policy.externalCredentialsAllowed(), policy.networkEgressAllowed(),
+                policy.schemaSynthesisAllowed(), true, policy.unmatchedResolution(),
+                policy.maximumInvocations(), policy.timeout(), policy.maximumClassification(),
+                policy.allowedRegions(), policy.allowedLifecycles());
+        return MirrorPlanIntegrity.seal(mapper, new MirrorPlan("", source.planId(), "",
+                source.rootCapability(), source.capabilityClosureFingerprint(),
+                source.capabilityClosure(), source.scope(), source.fixtureBundleRef(),
+                source.executionControlFingerprint(), source.externalBindings(),
+                source.scenarioPackRef(), source.stateModelRefs(), source.executionServices(),
+                certification, source.compiledAt(), source.expiresAt()));
     }
 
     private static IntegrationRequestContext identity() {

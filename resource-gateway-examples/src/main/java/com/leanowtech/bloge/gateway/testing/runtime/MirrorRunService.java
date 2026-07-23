@@ -7,6 +7,8 @@ import com.leanowtech.bloge.core.spi.OperatorRegistry;
 import com.leanowtech.bloge.gateway.integration.mirror.CapabilityClosureIntegrity;
 import com.leanowtech.bloge.gateway.integration.mirror.CapabilitySnapshot;
 import com.leanowtech.bloge.gateway.integration.mirror.MirrorEvidenceIntegrityService;
+import com.leanowtech.bloge.gateway.integration.mirror.MirrorDeploymentIsolationRunTrust;
+import com.leanowtech.bloge.gateway.integration.mirror.MirrorDeploymentIsolationRunTrustAuthority;
 import com.leanowtech.bloge.gateway.integration.mirror.MirrorPlan;
 import com.leanowtech.bloge.gateway.integration.mirror.MirrorPlanIntegrity;
 import com.leanowtech.bloge.gateway.integration.mirror.MirrorResolution;
@@ -52,6 +54,7 @@ public class MirrorRunService {
     private final Clock clock;
     private final MirrorRunEvidenceProjector evidenceProjector;
     private final MirrorEvidenceIntegrityService evidenceIntegrity;
+    private final MirrorDeploymentIsolationRunTrustAuthority deploymentTrust;
 
     /**
      * Creates a mirror runtime over the shared isolated testing kernel.
@@ -108,7 +111,29 @@ public class MirrorRunService {
             Clock clock,
             MirrorEvidenceIntegrityService evidenceIntegrity) {
         this(mapper, new TestRunService(registry, mapper, resourceRuntime), clock,
-                new MirrorRunEvidenceProjector(mapper), evidenceIntegrity);
+                new MirrorRunEvidenceProjector(mapper), evidenceIntegrity,
+                MirrorDeploymentIsolationRunTrustAuthority.unavailable());
+    }
+
+    /**
+     * Creates a runtime with explicit evidence integrity and deployment trust authorities.
+     *
+     * @param registry operator registry used only to construct the independent engine
+     * @param mapper canonical protocol mapper
+     * @param resourceRuntime optional descriptor protocol adapter for transport fixtures
+     * @param clock server admission clock
+     * @param evidenceIntegrity shared detached-signature integrity boundary
+     * @param deploymentTrust deployment-owned certification authority
+     */
+    public MirrorRunService(
+            OperatorRegistry registry,
+            ObjectMapper mapper,
+            ResourceFixtureRuntime resourceRuntime,
+            Clock clock,
+            MirrorEvidenceIntegrityService evidenceIntegrity,
+            MirrorDeploymentIsolationRunTrustAuthority deploymentTrust) {
+        this(mapper, new TestRunService(registry, mapper, resourceRuntime), clock,
+                new MirrorRunEvidenceProjector(mapper), evidenceIntegrity, deploymentTrust);
     }
 
     /**
@@ -121,7 +146,8 @@ public class MirrorRunService {
     public MirrorRunService(ObjectMapper mapper, TestRunService testRunService, Clock clock) {
         this(mapper, testRunService, clock, new MirrorRunEvidenceProjector(mapper),
                 new MirrorEvidenceIntegrityService(mapper, VisualEvidenceSigner.unavailable(),
-                        Clock.systemUTC()));
+                        Clock.systemUTC()),
+                MirrorDeploymentIsolationRunTrustAuthority.unavailable());
     }
 
     /**
@@ -144,6 +170,32 @@ public class MirrorRunService {
         this.clock = Objects.requireNonNull(clock, "clock");
         this.evidenceProjector = Objects.requireNonNull(evidenceProjector, "evidenceProjector");
         this.evidenceIntegrity = Objects.requireNonNull(evidenceIntegrity, "evidenceIntegrity");
+        this.deploymentTrust = MirrorDeploymentIsolationRunTrustAuthority.unavailable();
+    }
+
+    /**
+     * Full constructor with an explicit deployment-trust authority.
+     *
+     * @param mapper canonical protocol mapper
+     * @param testRunService isolated shared testing kernel
+     * @param clock server admission clock
+     * @param evidenceProjector payload-free execution projector
+     * @param evidenceIntegrity detached-signature integrity boundary
+     * @param deploymentTrust deployment-owned certification authority
+     */
+    public MirrorRunService(
+            ObjectMapper mapper,
+            TestRunService testRunService,
+            Clock clock,
+            MirrorRunEvidenceProjector evidenceProjector,
+            MirrorEvidenceIntegrityService evidenceIntegrity,
+            MirrorDeploymentIsolationRunTrustAuthority deploymentTrust) {
+        this.mapper = Objects.requireNonNull(mapper, "mapper");
+        this.testRunService = Objects.requireNonNull(testRunService, "testRunService");
+        this.clock = Objects.requireNonNull(clock, "clock");
+        this.evidenceProjector = Objects.requireNonNull(evidenceProjector, "evidenceProjector");
+        this.evidenceIntegrity = Objects.requireNonNull(evidenceIntegrity, "evidenceIntegrity");
+        this.deploymentTrust = Objects.requireNonNull(deploymentTrust, "deploymentTrust");
     }
 
     /**
@@ -161,6 +213,7 @@ public class MirrorRunService {
         verifyPlan(plan);
         Instant admittedAt = clock.instant();
         validateAdmission(request, plan, admittedAt);
+        validateDeploymentTrust(request, plan);
         validateRuntimeGeneration(compiled);
 
         GraphContext context = new GraphContext(request.context().asMap());
@@ -207,8 +260,18 @@ public class MirrorRunService {
         }
         MirrorRunEvidence evidence;
         try {
-            evidence = evidenceProjector.project(request, execution, resolutions,
-                    engineConfiguration(), invocationBudget.snapshot());
+            MirrorDeploymentIsolationRunTrust.Binding trustBinding =
+                    request.deploymentTrust() == null ? null : deploymentTrust.confirm(
+                            request.deploymentTrust(), execution.evidence().startedAt(),
+                            execution.evidence().completedAt());
+            evidence = trustBinding == null
+                    ? evidenceProjector.project(request, execution, resolutions,
+                    engineConfiguration(), invocationBudget.snapshot())
+                    : evidenceProjector.project(request, execution, resolutions,
+                    engineConfiguration(), invocationBudget.snapshot(), trustBinding);
+        } catch (MirrorDeploymentIsolationRunTrustAuthority.TrustException failure) {
+            throw reject("RG.MIRROR.DEPLOYMENT_TRUST_CHANGED",
+                    "Deployment isolation trust changed before evidence confirmation.");
         } catch (RuntimeException failure) {
             throw reject("RG.MIRROR.RUN_EVIDENCE_REJECTED",
                     "Mirror run evidence could not prove a complete payload-free execution closure.");
@@ -257,6 +320,15 @@ public class MirrorRunService {
         }
         if (!admittedAt.isBefore(plan.expiresAt())) {
             throw reject("RG.MIRROR.RUN_EXPIRED", "Mirror plan has expired.");
+        }
+    }
+
+    private static void validateDeploymentTrust(
+            MirrorRunRequest request, MirrorPlan plan) {
+        boolean present = request.deploymentTrust() != null;
+        if (plan.policy().certificationRequired() != present) {
+            throw reject("RG.MIRROR.DEPLOYMENT_TRUST_REQUIRED",
+                    "Certification-required plans require exact deployment trust admission.");
         }
     }
 

@@ -29,8 +29,12 @@ public record MirrorEvidenceAttestation(
         String signature,
         boolean independentlyVerifiable
 ) {
+    /** Legacy mirror-evidence attestation version. */
+    public static final String SCHEMA_VERSION_V1 =
+            "resourceGateway.mirrorEvidenceAttestation.v1";
     /** Current mirror-evidence attestation version. */
-    public static final String SCHEMA_VERSION = "resourceGateway.mirrorEvidenceAttestation.v1";
+    public static final String SCHEMA_VERSION =
+            "resourceGateway.mirrorEvidenceAttestation.v2";
     private static final Pattern FINGERPRINT = Pattern.compile("sha256:[a-f0-9]{64}");
 
     /** Persisted signature trust state. */
@@ -43,7 +47,7 @@ public record MirrorEvidenceAttestation(
     public MirrorEvidenceAttestation {
         schemaVersion = schemaVersion == null || schemaVersion.isBlank()
                 ? SCHEMA_VERSION : schemaVersion.trim();
-        if (!SCHEMA_VERSION.equals(schemaVersion)) {
+        if (!SCHEMA_VERSION.equals(schemaVersion) && !SCHEMA_VERSION_V1.equals(schemaVersion)) {
             throw new IllegalArgumentException("unsupported mirror evidence attestation version");
         }
         signatureStatus = signatureStatus == null
@@ -86,7 +90,9 @@ public record MirrorEvidenceAttestation(
         if (evidence == null) {
             throw new IllegalArgumentException("mirror run evidence is required");
         }
-        return new MirrorEvidenceAttestation("", SignatureStatus.VERIFICATION_UNAVAILABLE,
+        String version = MirrorRunEvidence.SCHEMA_VERSION_V1.equals(evidence.schemaVersion())
+                ? SCHEMA_VERSION_V1 : SCHEMA_VERSION;
+        return new MirrorEvidenceAttestation(version, SignatureStatus.VERIFICATION_UNAVAILABLE,
                 evidence.runId(), evidence.planFingerprint(), evidenceFingerprint,
                 Instant.EPOCH, "", "", "", false);
     }

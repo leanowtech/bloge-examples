@@ -280,7 +280,19 @@ class ToolStudioIntegrationServiceTest {
                                 .MirrorRunSummary.SCHEMA_VERSION))
                 .containsEntry("mirrorEvidenceBundle", List.of(
                         com.leanowtech.bloge.gateway.integration.mirror
-                                .MirrorEvidenceBundle.SCHEMA_VERSION));
+                                .MirrorEvidenceBundle.SCHEMA_VERSION_V1,
+                        com.leanowtech.bloge.gateway.integration.mirror
+                                .MirrorEvidenceBundle.SCHEMA_VERSION))
+                .containsEntry("mirrorRunEvidence", List.of(
+                        com.leanowtech.bloge.gateway.integration.mirror
+                                .MirrorRunEvidence.SCHEMA_VERSION_V1,
+                        com.leanowtech.bloge.gateway.integration.mirror
+                                .MirrorRunEvidence.SCHEMA_VERSION))
+                .containsEntry("mirrorEvidenceAttestation", List.of(
+                        com.leanowtech.bloge.gateway.integration.mirror
+                                .MirrorEvidenceAttestation.SCHEMA_VERSION_V1,
+                        com.leanowtech.bloge.gateway.integration.mirror
+                                .MirrorEvidenceAttestation.SCHEMA_VERSION));
         assertThat(enabledCapabilities.endpoints())
                 .extracting(endpoint -> endpoint.method() + " " + endpoint.path())
                 .contains("POST /api/mirror/plans", "GET /api/mirror/plans/{planId}",
@@ -311,6 +323,34 @@ class ToolStudioIntegrationServiceTest {
         assertThat(available.endpoints())
                 .anyMatch(endpoint -> endpoint.path().equals("/api/mirror/executions"));
         assertThat(available.supportedObjects()).containsKey("mirrorExecutionRequest");
+    }
+
+    @Test
+    void capabilitiesSeparateExploratoryServingFromCertificationTrustReadiness() {
+        ToolStudioIntegrationService service = service(null, null, null, null);
+        java.util.concurrent.atomic.AtomicBoolean certificationReady =
+                new java.util.concurrent.atomic.AtomicBoolean(false);
+        service.configureMirrorRuntime(new MirrorRuntimeAvailability(
+                true, true, () -> true, true, () -> true, true, () -> true,
+                certificationReady::get));
+
+        IntegrationCapabilities exploratoryOnly = service.capabilities().payload();
+        certificationReady.set(true);
+        IntegrationCapabilities certifiable = service.capabilities().payload();
+
+        assertThat(exploratoryOnly.features())
+                .containsEntry("mirrorServing", true)
+                .containsEntry("mirrorIsolationRunTrustBindingProtocol", true)
+                .containsEntry("mirrorIsolationRunTrustReady", false)
+                .containsEntry("mirrorCertifiableEvidenceServingReady", false);
+        assertThat(certifiable.features())
+                .containsEntry("mirrorServing", true)
+                .containsEntry("mirrorIsolationRunTrustReady", true)
+                .containsEntry("mirrorCertifiableEvidenceServingReady", true);
+        assertThat(certifiable.supportedObjects())
+                .containsEntry("mirrorDeploymentIsolationRunTrust", List.of(
+                        com.leanowtech.bloge.gateway.integration.mirror
+                                .MirrorDeploymentIsolationRunTrust.Binding.SCHEMA_VERSION));
     }
 
     @Test

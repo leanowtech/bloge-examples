@@ -1392,7 +1392,7 @@ SRE runbook 和生产认证包。
 | RG-MIR-003 | 实现 transitive EffectContract 汇总 | `gateway/integration/mirror` | read/write/mixed/unknown、递归环和声明冲突测试齐全 |
 | RG-MIR-004 | 冻结 provenance 与 lifecycle 状态机 | mirror schema + repository interface | 非法跃迁拒绝；stale/revoke 行为有协议测试 |
 | RG-MIR-005 | 增加 capability snapshot API 与 capability probe | integration controller/capability service | scope/identity 校验；功能未闭合时 feature flag 为 false |
-| RG-MIR-006 | 建立 `MirrorPlanCompiler` 骨架 | `gateway/testing/planning` | 已完成 compiler/run kernel、exact closure/runtime inventory 对账、external-only 控制、resolver provenance、generation/TTL/scope 准入、静态 + 动态 occurrence budget、payload-free durable store、受保护 Plan/Run/Evidence API、durable request fencing、fail-closed operation observability、deployment-attestation 协议/离线验真、authority key-set trusted distribution/durable floor、attestation ingest/status/revocation/current-only 分发，以及 agent pinned mTLS/non-TOFU/atomic cache；待 runtime dual binding 和跨语言固定 bundle/snapshot fixture |
+| RG-MIR-006 | 建立 `MirrorPlanCompiler` 骨架 | `gateway/testing/planning` | 已完成 compiler/run kernel、exact closure/runtime inventory 对账、external-only 控制、resolver provenance、generation/TTL/scope 准入、静态 + 动态 occurrence budget、payload-free durable store、受保护 Plan/Run/Evidence API、durable request fencing、fail-closed operation observability、deployment-attestation 协议/离线验真、authority key-set trusted distribution/durable floor、attestation ingest/status/revocation/current-only 分发、agent pinned mTLS/non-TOFU/atomic cache，以及 admission/confirmation/transaction commit 的 runtime trust binding；待非 Java v2 固定 fixture 与环境级多副本认证 |
 | RG-MIR-007 | 复用 FixtureBundle 的 mirror adapter ADR | `docs/adr/ADR-004-mirror-plan-reuses-fixture-bundle.md` + `compileMirror` | 已完成；不新增平行 fixture 主模型；映射损失和暂不支持项显式报告 |
 | RG-MIR-008 | 建立生产隔离架构测试 | production composition tests | bean/profile 双栅栏、普通请求控制字段拒绝及 Plan/Run/Evidence route 在 production/mixed profile 物理不存在已完成；deployment-attestation strict protocol/producer/verifier 已完成；待外部签发/分发、运行时 egress 证明绑定和 pre-materialization ingress 门禁 |
 | RG-MIR-009 | 增加 test-kit 协议模型与 compatibility fixtures | `resource-gateway-test-kit` | 已完成 Snapshot/Closure、MirrorEvidence 与 DeploymentIsolationAttestation 独立复验；三份共享 fixture（含两份 signed fixture）；不依赖 server/Spring |
@@ -1414,8 +1414,9 @@ deployment-isolation strict protocol、producer integrity、共享 signed fixtur
 full-scope append-only trusted distribution API 与 durable floor CAS，以及 full-scope attestation body/status/head
 存储、受保护 ingest/current/revoke API、不可逆撤销和当前 authority 读时复验，以及 deployment agent 的 private-PKI/
 SPKI-pinned/identity-bound mTLS、strict vendor/envelope、operator-pinned bootstrap floor、连续状态机、denial-first revocation、
-hard freshness fence 与 crash-safe atomic cache；execution admission/evidence projector 双重运行时 binding、跨语言固定
-bundle/snapshot fixture、语言中立数字 canonicalization
+hard freshness fence 与 crash-safe atomic cache，以及 certification-required plan 的 pre-claim admission、稳定 decision
+幂等绑定、lease-local TrustAttempt、terminal re-observation、v2 evidence 双 snapshot binding、transaction-lifetime commit
+permit、v1/v2 双读和独立 test-kit 语义复验；非 Java v2 固定 bundle/snapshot fixture、语言中立数字 canonicalization
 和生产部署门禁未闭合，仍在 Stage 1 主链；008/010/011/012 继续补齐生产隔离、退款资产、
 错误码注册与持续 CI。
 企业客户准入仍必须关闭第 22.2 节的环境级开放决策。
@@ -1499,6 +1500,19 @@ bundle/snapshot fixture、语言中立数字 canonicalization
 | 退款域 entity/state/write effect owner | 退款业务 owner | Stage 2 开始前 |
 | authoritative outcome 定义与延迟窗口 | 业务分析 + owner | Stage 4 开始前 |
 | 首批 SLO 和租户容量预算 | SRE + 产品 | Stage 1 结束前 |
+
+### 22.3 已冻结的运行期认证语义
+
+当前实现已经关闭“deployment agent 的可信事实如何绑定到一次完整运行”这一仓库内缺口：认证计划在 durable
+claim 前读取 ACTIVE trust；Registration 固定稳定 attestation-bundle decision；每个 lease epoch 固定自己的
+agent snapshot attempt；执行结束再次观察同一 decision；v2 evidence 同时签入 admitted/committed snapshot；
+commit 读许可保持到 evidence、request terminal state 和成功审计的事务完成。正常 refresh 只增加本地 generation
+时不杀死长运行，revocation、successor、rollback、expiry 或 decision drift 均 fail closed。
+
+该能力把“隔离声明”变成了可离线复验的运行事实，但没有把 fixture 自动变成业务真相。客户业务拟合仍必须继续推进
+corpus/state/scenario/outcome calibration；ANEKE 仍负责 correctness workbook、owner approval 与 publish gate。
+协议、迁移、错误和运维细节见
+[Mirror 运行期信任绑定](resource-gateway-mirror-runtime-trust-binding.md)。
 
 ---
 

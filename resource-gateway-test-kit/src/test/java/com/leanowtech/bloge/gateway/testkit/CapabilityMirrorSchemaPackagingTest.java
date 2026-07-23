@@ -29,12 +29,17 @@ class CapabilityMirrorSchemaPackagingTest {
                 "mirror-run-summary-v1.schema.json",
                 "mirror-resolution-v1.schema.json",
                 "mirror-run-evidence-v1.schema.json",
+                "mirror-run-evidence-v2.schema.json",
                 "mirror-evidence-attestation-v1.schema.json",
+                "mirror-evidence-attestation-v2.schema.json",
                 "mirror-evidence-bundle-v1.schema.json",
+                "mirror-evidence-bundle-v2.schema.json",
                 "mirror-deployment-isolation-attestation-v1.schema.json",
                 "mirror-deployment-isolation-attestation-status-v1.schema.json",
                 "mirror-deployment-isolation-attestation-revocation-request-v1.schema.json",
                 "mirror-deployment-isolation-attestation-bundle-v1.schema.json",
+                "mirror-deployment-isolation-agent-snapshot-v1.schema.json",
+                "mirror-deployment-isolation-run-trust-v1.schema.json",
                 "mirror-deployment-isolation-authority-key-set-publication-v1.schema.json")) {
             String resource = CapabilityMirrorProtocol.SCHEMA_RESOURCE_ROOT + name;
             try (InputStream input = getClass().getResourceAsStream(resource)) {
@@ -54,6 +59,11 @@ class CapabilityMirrorSchemaPackagingTest {
                 .endsWith("mirror-execution-request-v1.schema.json");
         assertThat(CapabilityMirrorProtocol.MIRROR_RUN_SUMMARY_SCHEMA_RESOURCE)
                 .endsWith("mirror-run-summary-v1.schema.json");
+        assertThat(CapabilityMirrorProtocol.MIRROR_EVIDENCE_BUNDLE_V2_SCHEMA_RESOURCE)
+                .endsWith("mirror-evidence-bundle-v2.schema.json");
+        assertThat(CapabilityMirrorProtocol
+                .MIRROR_DEPLOYMENT_ISOLATION_RUN_TRUST_SCHEMA_RESOURCE)
+                .endsWith("mirror-deployment-isolation-run-trust-v1.schema.json");
 
         JsonNode baseline = CapabilityMirrorProtocol.compatibilityBaseline();
         assertThat(baseline.path("schemaVersion").asText())

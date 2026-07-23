@@ -10,6 +10,9 @@ import java.time.ZoneId;
 import java.time.ZoneOffset;
 import java.util.List;
 import java.util.Optional;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.Executors;
+import java.util.concurrent.TimeUnit;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
@@ -178,6 +181,67 @@ class MirrorDeploymentIsolationTrustAgentTest {
                 policy(active), settings, false))
                 .isInstanceOf(IllegalArgumentException.class)
                 .hasMessageContaining("two requests");
+    }
+
+    @Test
+    void runTrustAcceptsNewerCacheGenerationOnlyForTheSameStableDecision() {
+        try (var agent = agent(policy(active), cache, source)) {
+            assertThat(agent.refreshNow()).isTrue();
+            var runTrust = new AgentBackedMirrorDeploymentIsolationRunTrustAuthority(
+                    agent, clock);
+            MirrorDeploymentIsolationRunTrust.Admission admission =
+                    runTrust.admit(active.scope());
+            clock.advance(Duration.ofSeconds(1));
+
+            assertThat(agent.refreshNow()).isTrue();
+            MirrorDeploymentIsolationRunTrust.Binding binding = runTrust.confirm(
+                    admission, admission.admittedAt(), clock.instant());
+
+            assertThat(binding.decisionRef()).isEqualTo(admission.decisionRef());
+            assertThat(binding.admittedSnapshotRef().revision()).isEqualTo(1);
+            assertThat(binding.committedSnapshotRef().revision()).isEqualTo(2);
+
+            source.bundle = activeBundle(fixtures.BOOTSTRAP_REVISION + 1, authority);
+            assertThat(agent.refreshNow()).isTrue();
+
+            assertThatThrownBy(() -> runTrust.confirm(
+                    admission, admission.admittedAt(), clock.instant()))
+                    .isInstanceOf(MirrorDeploymentIsolationRunTrustAuthority.TrustException.class)
+                    .extracting("reasonCode").isEqualTo("RUN_TRUST_DECISION_CHANGED");
+        }
+    }
+
+    @Test
+    void commitPermitLinearizesAgentRefreshAfterEvidenceTransaction() throws Exception {
+        try (var agent = agent(policy(active), cache, source)) {
+            assertThat(agent.refreshNow()).isTrue();
+            var runTrust = new AgentBackedMirrorDeploymentIsolationRunTrustAuthority(
+                    agent, clock);
+            MirrorDeploymentIsolationRunTrust.Admission admission =
+                    runTrust.admit(active.scope());
+            MirrorDeploymentIsolationRunTrust.Binding binding = runTrust.confirm(
+                    admission, admission.admittedAt(), clock.instant());
+            MirrorDeploymentIsolationRunTrustAuthority.CommitPermit permit =
+                    runTrust.acquireCommitPermit(active.scope(), binding);
+            CountDownLatch refreshStarted = new CountDownLatch(1);
+
+            try (var executor = Executors.newSingleThreadExecutor()) {
+                var refresh = executor.submit(() -> {
+                    refreshStarted.countDown();
+                    return agent.refreshNow();
+                });
+                assertThat(refreshStarted.await(5, TimeUnit.SECONDS)).isTrue();
+                Thread.sleep(50);
+                assertThat(refresh).isNotDone();
+
+                permit.close();
+
+                assertThat(refresh.get(5, TimeUnit.SECONDS)).isTrue();
+                assertThat(agent.requireActive().cacheGeneration()).isEqualTo(2);
+            } finally {
+                permit.close();
+            }
+        }
     }
 
     private MirrorDeploymentIsolationTrustAgent agent(

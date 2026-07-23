@@ -56,6 +56,29 @@ class MirrorEvidenceVerifierTest {
     }
 
     @Test
+    void verifiesV2DoubleObservedTrustAndRejectsAValidlySignedBrokenBinding()
+            throws Exception {
+        bundle = signedBundleV2();
+
+        assertThat(verifier.verify(bundle, key).verified()).isTrue();
+
+        bundle.withObject("/evidence/isolation/deploymentTrustBinding/committedSnapshotRef")
+                .put("id", "different-agent-cache");
+        resignAggregate(bundle, false);
+
+        assertThat(verifier.verify(bundle, key).reasonCode())
+                .isEqualTo("MIRROR_DEPLOYMENT_TRUST_BINDING_INVALID");
+
+        bundle = signedBundleV2();
+        bundle.withObject("/evidence/isolation/deploymentTrustBinding")
+                .put("admittedAt", COMPLETED_AT.toString());
+        resignAggregate(bundle, false);
+
+        assertThat(verifier.verify(bundle, key).reasonCode())
+                .isEqualTo("MIRROR_DEPLOYMENT_TRUST_BINDING_INVALID");
+    }
+
+    @Test
     void validatesStructureAndFingerprintsBeforeReportingAMissingKey() {
         assertThat(verifier.verify(bundle, null).outcome())
                 .isEqualTo(MirrorEvidenceVerifier.Outcome.KEY_UNAVAILABLE);
@@ -199,14 +222,24 @@ class MirrorEvidenceVerifierTest {
     }
 
     private ObjectNode signedBundle() throws Exception {
-        ObjectNode evidence = evidence();
+        return signedBundle(false);
+    }
+
+    private ObjectNode signedBundleV2() throws Exception {
+        return signedBundle(true);
+    }
+
+    private ObjectNode signedBundle(boolean current) throws Exception {
+        ObjectNode evidence = current ? evidenceV2() : evidence();
         ObjectNode resolution = evidence.withArray("resolutions").get(0).deepCopy();
         resealResolution(resolution);
         evidence.withArray("resolutions").set(0, resolution);
         String evidenceFingerprint = EvidenceVerificationSupport.sha256(evidence);
 
         ObjectNode attestation = JSON.createObjectNode();
-        attestation.put("schemaVersion", CapabilityMirrorProtocol.MIRROR_EVIDENCE_ATTESTATION_V1);
+        attestation.put("schemaVersion", current
+                ? CapabilityMirrorProtocol.MIRROR_EVIDENCE_ATTESTATION_V2
+                : CapabilityMirrorProtocol.MIRROR_EVIDENCE_ATTESTATION_V1);
         attestation.put("signatureStatus", "VERIFIED");
         attestation.put("runId", RUN_ID);
         attestation.put("planFingerprint", PLAN);
@@ -219,12 +252,44 @@ class MirrorEvidenceVerifierTest {
         resignAttestation(attestation);
 
         ObjectNode value = JSON.createObjectNode();
-        value.put("schemaVersion", CapabilityMirrorProtocol.MIRROR_EVIDENCE_BUNDLE_V1);
+        value.put("schemaVersion", current
+                ? CapabilityMirrorProtocol.MIRROR_EVIDENCE_BUNDLE_V2
+                : CapabilityMirrorProtocol.MIRROR_EVIDENCE_BUNDLE_V1);
         value.put("bundleFingerprint", "");
         value.put("payloadPolicy", "HASH_ONLY");
         value.set("attestation", attestation);
         value.set("evidence", evidence);
         refreshBundleFingerprint(value);
+        return value;
+    }
+
+    private ObjectNode evidenceV2() {
+        ObjectNode value = evidence();
+        value.put("schemaVersion", CapabilityMirrorProtocol.MIRROR_RUN_EVIDENCE_V2);
+        value.put("evidenceClass", "CERTIFIABLE");
+        value.putArray("limitations");
+        ObjectNode isolation = value.withObject("isolation");
+        isolation.put("deploymentEgressEnforced", true);
+        isolation.putArray("limitations");
+        ObjectNode attestation = artifactRef("DEPLOYMENT_ISOLATION_ATTESTATION",
+                "isolation-attestation-a", 5, fingerprint('b'));
+        isolation.set("deploymentIsolationRef", attestation.deepCopy());
+        ObjectNode trust = isolation.putObject("deploymentTrustBinding");
+        trust.put("schemaVersion",
+                CapabilityMirrorProtocol.MIRROR_DEPLOYMENT_ISOLATION_RUN_TRUST_V1);
+        trust.set("decisionRef", artifactRef("DEPLOYMENT_ISOLATION_ATTESTATION_BUNDLE",
+                "isolation-bundle-a", 7, fingerprint('c')));
+        trust.set("authorityKeySetRef", artifactRef("DEPLOYMENT_ISOLATION_AUTHORITY_KEY_SET",
+                "isolation-authority-a", 3, fingerprint('d')));
+        trust.set("attestationRef", attestation);
+        trust.set("statusRef", artifactRef("DEPLOYMENT_ISOLATION_ATTESTATION_STATUS",
+                "isolation-attestation-a", 7, fingerprint('e')));
+        trust.set("admittedSnapshotRef", artifactRef("DEPLOYMENT_ISOLATION_AGENT_SNAPSHOT",
+                "isolation-agent-a", 11, fingerprint('f')));
+        trust.set("committedSnapshotRef", artifactRef("DEPLOYMENT_ISOLATION_AGENT_SNAPSHOT",
+                "isolation-agent-a", 12, fingerprint('0')));
+        trust.put("admittedAt", STARTED_AT.minusSeconds(1).toString());
+        trust.put("confirmedAt", COMPLETED_AT.toString());
         return value;
     }
 
@@ -367,8 +432,11 @@ class MirrorEvidenceVerifierTest {
     private static void signAttestation(ObjectNode attestation, KeyPair signingKey)
             throws Exception {
         ObjectNode material = JSON.createObjectNode();
-        material.put("domain", "RESOURCE_GATEWAY_MIRROR_EVIDENCE_V1");
-        material.put("schemaVersion", CapabilityMirrorProtocol.MIRROR_EVIDENCE_ATTESTATION_V1);
+        String version = attestation.path("schemaVersion").asText();
+        material.put("domain", CapabilityMirrorProtocol.MIRROR_EVIDENCE_ATTESTATION_V1
+                .equals(version) ? "RESOURCE_GATEWAY_MIRROR_EVIDENCE_V1"
+                : "RESOURCE_GATEWAY_MIRROR_EVIDENCE_V2");
+        material.put("schemaVersion", version);
         material.put("runId", attestation.path("runId").asText());
         material.put("planFingerprint", attestation.path("planFingerprint").asText());
         material.put("evidenceFingerprint", attestation.path("evidenceFingerprint").asText());

@@ -391,6 +391,10 @@ public class ToolStudioIntegrationService {
                 mirrorRuntimeAvailability.attestationDistributionApi());
         features.put("mirrorIsolationAttestationDistributionReady",
                 mirrorRuntimeAvailability.attestationDistributionReady());
+        features.put("mirrorIsolationRunTrustReady",
+                mirrorRuntimeAvailability.certificationReady());
+        features.put("mirrorCertifiableEvidenceServingReady",
+                mirrorExecutionReady && mirrorRuntimeAvailability.certificationReady());
         ExternalAnchorTrustState suiteAnchorTrust = currentSuiteStabilityAnchorTrust();
         features.put("managedSuiteStabilityExternalNotaryTrust",
                 testExecutionEndpointEnabled && suiteAnchorTrust.managed());
@@ -736,7 +740,19 @@ public class ToolStudioIntegrationService {
                             .MirrorRunSummary.SCHEMA_VERSION));
             supportedObjects.put("mirrorEvidenceBundle", List.of(
                     com.leanowtech.bloge.gateway.integration.mirror
+                            .MirrorEvidenceBundle.SCHEMA_VERSION_V1,
+                    com.leanowtech.bloge.gateway.integration.mirror
                             .MirrorEvidenceBundle.SCHEMA_VERSION));
+            supportedObjects.put("mirrorRunEvidence", List.of(
+                    com.leanowtech.bloge.gateway.integration.mirror
+                            .MirrorRunEvidence.SCHEMA_VERSION_V1,
+                    com.leanowtech.bloge.gateway.integration.mirror
+                            .MirrorRunEvidence.SCHEMA_VERSION));
+            supportedObjects.put("mirrorEvidenceAttestation", List.of(
+                    com.leanowtech.bloge.gateway.integration.mirror
+                            .MirrorEvidenceAttestation.SCHEMA_VERSION_V1,
+                    com.leanowtech.bloge.gateway.integration.mirror
+                            .MirrorEvidenceAttestation.SCHEMA_VERSION));
         }
         List<IntegrationCapabilities.Endpoint> endpoints =
                 new java.util.ArrayList<>(current.endpoints());

@@ -42,48 +42,56 @@ class MirrorEvidenceProtocolSchemaTest {
         JsonNode bundleValue = mapper.valueToTree(bundle);
         JsonNode evidenceValue = bundleValue.path("evidence");
         JsonNode attestationValue = bundleValue.path("attestation");
-        JsonNode bundleSchema = schema("mirror-evidence-bundle-v1.schema.json");
-        JsonNode evidenceSchema = schema("mirror-run-evidence-v1.schema.json");
-        JsonNode attestationSchema = schema("mirror-evidence-attestation-v1.schema.json");
+        JsonNode bundleSchema = schema("mirror-evidence-bundle-v2.schema.json");
+        JsonNode evidenceSchema = schema("mirror-run-evidence-v2.schema.json");
+        JsonNode attestationSchema = schema("mirror-evidence-attestation-v2.schema.json");
+        JsonNode sharedEvidenceSchema = schema("mirror-run-evidence-v1.schema.json");
+        JsonNode runTrustSchema = schema(
+                "mirror-deployment-isolation-run-trust-v1.schema.json");
 
         assertProperties(bundleValue, bundleSchema.path("properties"));
         assertProperties(evidenceValue, evidenceSchema.path("properties"));
         assertProperties(attestationValue, attestationSchema.path("properties"));
         assertProperties(evidenceValue.path("rootCapability"),
-                evidenceSchema.at("/$defs/artifactRef/properties"));
+                sharedEvidenceSchema.at("/$defs/artifactRef/properties"));
         assertProperties(evidenceValue.path("scope"),
-                evidenceSchema.at("/$defs/scope/properties"));
+                sharedEvidenceSchema.at("/$defs/scope/properties"));
         assertProperties(evidenceValue.path("externalBindings").get(0),
-                evidenceSchema.at("/$defs/externalBinding/properties"));
+                sharedEvidenceSchema.at("/$defs/externalBinding/properties"));
         assertProperties(evidenceValue.path("nodeTraces").get(0),
-                evidenceSchema.at("/$defs/nodeTrace/properties"));
+                sharedEvidenceSchema.at("/$defs/nodeTrace/properties"));
         assertProperties(evidenceValue.at("/nodeTraces/0/attempts/0"),
-                evidenceSchema.at("/$defs/attemptTrace/properties"));
+                sharedEvidenceSchema.at("/$defs/attemptTrace/properties"));
         assertProperties(evidenceValue.path("edgeTraces").get(0),
-                evidenceSchema.at("/$defs/edgeTrace/properties"));
+                sharedEvidenceSchema.at("/$defs/edgeTrace/properties"));
         assertProperties(evidenceValue.path("isolation"),
                 evidenceSchema.at("/$defs/isolation/properties"));
+        assertProperties(evidenceValue.at("/isolation/deploymentTrustBinding"),
+                runTrustSchema.path("properties"));
         assertThat(bundleSchema.path("additionalProperties").asBoolean()).isFalse();
         assertThat(evidenceSchema.path("additionalProperties").asBoolean()).isFalse();
         assertThat(attestationSchema.path("additionalProperties").asBoolean()).isFalse();
         for (String definition : List.of("artifactRef", "scope", "externalBinding", "nodeTrace", "attemptTrace",
                 "edgeTrace", "isolation")) {
-            assertThat(evidenceSchema.at("/$defs/" + definition + "/additionalProperties")
+            assertThat(sharedEvidenceSchema.at("/$defs/" + definition
+                    + "/additionalProperties")
                     .asBoolean()).as(definition).isFalse();
         }
+        assertThat(runTrustSchema.path("additionalProperties").asBoolean()).isFalse();
     }
 
     @Test
     void schemasFreezePayloadOmissionAndDetachedSignaturePolicy() throws Exception {
-        JsonNode bundle = schema("mirror-evidence-bundle-v1.schema.json");
-        JsonNode evidence = schema("mirror-run-evidence-v1.schema.json");
-        JsonNode attestation = schema("mirror-evidence-attestation-v1.schema.json");
+        JsonNode bundle = schema("mirror-evidence-bundle-v2.schema.json");
+        JsonNode evidence = schema("mirror-run-evidence-v2.schema.json");
+        JsonNode attestation = schema("mirror-evidence-attestation-v2.schema.json");
+        JsonNode sharedEvidence = schema("mirror-run-evidence-v1.schema.json");
 
         assertThat(bundle.at("/properties/payloadPolicy/const").asText()).isEqualTo("HASH_ONLY");
         assertThat(bundle.at("/properties/evidence/$ref").asText())
-                .isEqualTo("mirror-run-evidence-v1.schema.json");
+                .isEqualTo("mirror-run-evidence-v2.schema.json");
         assertThat(bundle.at("/properties/attestation/allOf/0/$ref").asText())
-                .isEqualTo("mirror-evidence-attestation-v1.schema.json");
+                .isEqualTo("mirror-evidence-attestation-v2.schema.json");
         assertThat(evidence.at("/properties/resolutions/items/$ref").asText())
                 .isEqualTo("mirror-resolution-v1.schema.json");
         assertThat(attestation.at("/properties/signatureStatus/enum"))
@@ -95,12 +103,18 @@ class MirrorEvidenceProtocolSchemaTest {
                 .asText()).isEqualTo("VERIFIED");
         assertThat(bundle.at("/properties/attestation/allOf/1/properties/independentlyVerifiable/const")
                 .asBoolean()).isTrue();
-        assertThat(evidence.at("/$defs/nodeTrace/properties").has("input")).isFalse();
-        assertThat(evidence.at("/$defs/nodeTrace/properties").has("output")).isFalse();
-        assertThat(evidence.at("/$defs/edgeTrace/properties").has("value")).isFalse();
-        assertThat(evidence.at("/$defs/nodeTrace/properties").has("inputFingerprint")).isTrue();
-        assertThat(evidence.at("/$defs/nodeTrace/properties").has("outputFingerprint")).isTrue();
-        assertThat(evidence.at("/$defs/edgeTrace/properties").has("valueFingerprint")).isTrue();
+        assertThat(sharedEvidence.at("/$defs/nodeTrace/properties").has("input")).isFalse();
+        assertThat(sharedEvidence.at("/$defs/nodeTrace/properties").has("output")).isFalse();
+        assertThat(sharedEvidence.at("/$defs/edgeTrace/properties").has("value")).isFalse();
+        assertThat(sharedEvidence.at("/$defs/nodeTrace/properties")
+                .has("inputFingerprint")).isTrue();
+        assertThat(sharedEvidence.at("/$defs/nodeTrace/properties")
+                .has("outputFingerprint")).isTrue();
+        assertThat(sharedEvidence.at("/$defs/edgeTrace/properties")
+                .has("valueFingerprint")).isTrue();
+        assertThat(evidence.at("/$defs/isolation/properties/deploymentTrustBinding/$ref")
+                .asText()).isEqualTo(
+                        "mirror-deployment-isolation-run-trust-v1.schema.json");
     }
 
     @Test
@@ -124,7 +138,7 @@ class MirrorEvidenceProtocolSchemaTest {
     }
 
     private MirrorEvidenceBundle bundle() {
-        Instant started = Instant.parse("2026-07-23T00:00:00Z");
+        Instant started = Instant.parse("2026-07-23T00:00:10Z");
         String request = fingerprint('4');
         String output = fingerprint('5');
         MirrorResolution resolution = MirrorResolutionIntegrity.seal(mapper,
@@ -144,7 +158,7 @@ class MirrorEvidenceProtocolSchemaTest {
                 "loadCustomer", CAPABILITY, "/root/loadCustomer#PRIMARY", "/root")),
                 new CapabilitySnapshot.Scope("tenant-a", "org-a", "support", "test", "sg"),
                 "MIRROR_REHEARSAL", MirrorRunEvidence.Status.PASSED,
-                MirrorRunEvidence.EvidenceClass.EXPLORATORY, fingerprint('a'), started,
+                MirrorRunEvidence.EvidenceClass.CERTIFIABLE, fingerprint('a'), started,
                 started.plusSeconds(1),
                 List.of(new MirrorRunEvidence.NodeTrace("loadCustomer", "customer.lookup",
                         "MOCKED", "OUTPUT_LEVEL", request, output, "", 1,
@@ -157,9 +171,15 @@ class MirrorEvidenceProtocolSchemaTest {
                 List.of(resolution), new MirrorRunEvidence.IsolationFacts(
                         MirrorRunEvidence.IsolationFacts.EngineMode.INDEPENDENT_TEST_ENGINE,
                         List.of(), List.of("InvocationRecorder"), false, false, false,
-                        false, false, false, false, null,
-                        List.of("DEPLOYMENT_EGRESS_NOT_ATTESTED")),
-                List.of("DEPLOYMENT_EGRESS_NOT_ATTESTED"));
+                        false, false, false, true,
+                        MirrorPersistenceTestFixtures.trustBinding(
+                                new CapabilitySnapshot.Scope(
+                                        "tenant-a", "org-a", "support", "test", "sg"))
+                                .attestationRef(),
+                        MirrorPersistenceTestFixtures.trustBinding(
+                                new CapabilitySnapshot.Scope(
+                                        "tenant-a", "org-a", "support", "test", "sg")),
+                        List.of()), List.of());
         return new MirrorEvidenceIntegrityService(mapper, new InMemoryVisualEvidenceSigner(),
                 Clock.fixed(started.plusSeconds(2), ZoneOffset.UTC)).seal(evidence).bundle();
     }

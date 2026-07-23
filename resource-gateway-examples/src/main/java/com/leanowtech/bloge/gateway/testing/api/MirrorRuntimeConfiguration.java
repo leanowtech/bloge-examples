@@ -10,6 +10,7 @@ import com.leanowtech.bloge.gateway.integration.mirror.DatabaseMirrorPlanReposit
 import com.leanowtech.bloge.gateway.integration.mirror.DatabaseMirrorDeploymentIsolationAuthorityPublicationRepository;
 import com.leanowtech.bloge.gateway.integration.mirror.DatabaseMirrorDeploymentIsolationAttestationRepository;
 import com.leanowtech.bloge.gateway.integration.mirror.DatabaseMirrorRunRequestRepository;
+import com.leanowtech.bloge.gateway.integration.mirror.AgentBackedMirrorDeploymentIsolationRunTrustAuthority;
 import com.leanowtech.bloge.gateway.integration.mirror.MirrorEvidenceIntegrityService;
 import com.leanowtech.bloge.gateway.integration.mirror.MirrorEvidenceRepository;
 import com.leanowtech.bloge.gateway.integration.mirror.MirrorFixtureScopeRepository;
@@ -28,6 +29,8 @@ import com.leanowtech.bloge.gateway.integration.mirror.MirrorDeploymentIsolation
 import com.leanowtech.bloge.gateway.integration.mirror.MirrorDeploymentIsolationAttestationIntegrity;
 import com.leanowtech.bloge.gateway.integration.mirror.MirrorDeploymentIsolationAttestationRepository;
 import com.leanowtech.bloge.gateway.integration.mirror.MirrorDeploymentIsolationAttestationService;
+import com.leanowtech.bloge.gateway.integration.mirror.MirrorDeploymentIsolationRunTrustAuthority;
+import com.leanowtech.bloge.gateway.integration.mirror.MirrorDeploymentIsolationTrustAgent;
 import com.leanowtech.bloge.gateway.integration.mirror.MirrorRunIntegrationService;
 import com.leanowtech.bloge.gateway.integration.mirror.MirrorRunRequestRepository;
 import com.leanowtech.bloge.gateway.integration.MirrorRuntimeAvailability;
@@ -103,11 +106,30 @@ public class MirrorRuntimeConfiguration {
                                              ObjectMapper objectMapper,
                                              ResourceRegistry resourceRegistry,
                                              BlgeExpressionEvaluator expressionEvaluator,
-                                             MirrorEvidenceIntegrityService evidenceIntegrity) {
+                                             MirrorEvidenceIntegrityService evidenceIntegrity,
+                                             MirrorDeploymentIsolationRunTrustAuthority
+                                                     deploymentTrust) {
         ResourceFixtureRuntime resourceRuntime = new ResourceFixtureRuntime(
                 resourceRegistry, expressionEvaluator, objectMapper);
         return new MirrorRunService(operatorRegistry, objectMapper, resourceRuntime,
-                Clock.systemUTC(), evidenceIntegrity);
+                Clock.systemUTC(), evidenceIntegrity, deploymentTrust);
+    }
+
+    /**
+     * Creates the runtime trust bridge when a deployment agent is assembled.
+     *
+     * @param agents optional deployment-owned trust agent
+     * @return agent-backed authority or an explicit fail-closed placeholder
+     */
+    @Bean
+    @ConditionalOnMissingBean
+    public MirrorDeploymentIsolationRunTrustAuthority
+    mirrorDeploymentIsolationRunTrustAuthority(
+            ObjectProvider<MirrorDeploymentIsolationTrustAgent> agents) {
+        MirrorDeploymentIsolationTrustAgent agent = agents.getIfAvailable();
+        return agent == null ? MirrorDeploymentIsolationRunTrustAuthority.unavailable()
+                : new AgentBackedMirrorDeploymentIsolationRunTrustAuthority(
+                agent, Clock.systemUTC());
     }
 
     /**
@@ -355,6 +377,11 @@ public class MirrorRuntimeConfiguration {
      * @param planService fully assembled authoritative plan application boundary
      * @param runService fully assembled durable execution and evidence application boundary
      * @param evidenceSigner governed signing authority required for terminal evidence
+     * @param authorityService assembled isolation-authority publication boundary
+     * @param trustPolicies dynamic authority trust-policy source
+     * @param attestationService assembled isolation-attestation boundary
+     * @param admissionPolicies dynamic attestation admission policy source
+     * @param deploymentTrust deployment-agent authority for certification-required runs
      * @return profile-owned mirror capability marker
      */
     @Bean
@@ -369,10 +396,12 @@ public class MirrorRuntimeConfiguration {
             MirrorDeploymentIsolationAuthorityPublicationService authorityService,
             MirrorDeploymentIsolationAuthorityTrustPolicyProvider trustPolicies,
             MirrorDeploymentIsolationAttestationService attestationService,
-            MirrorDeploymentIsolationAttestationAdmissionPolicyProvider admissionPolicies) {
+            MirrorDeploymentIsolationAttestationAdmissionPolicyProvider admissionPolicies,
+            MirrorDeploymentIsolationRunTrustAuthority deploymentTrust) {
         return new MirrorRuntimeAvailability(true, true, evidenceSigner::available,
                 true, trustPolicies::available, true,
-                () -> trustPolicies.available() && admissionPolicies.available());
+                () -> trustPolicies.available() && admissionPolicies.available(),
+                deploymentTrust::available);
     }
 
     /** Compatibility factory retained for focused readiness tests outside Spring composition. */

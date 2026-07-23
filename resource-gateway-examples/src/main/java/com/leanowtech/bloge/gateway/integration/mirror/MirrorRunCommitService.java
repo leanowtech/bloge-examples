@@ -1,9 +1,12 @@
 package com.leanowtech.bloge.gateway.integration.mirror;
 
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.context.annotation.Profile;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.support.TransactionSynchronization;
+import org.springframework.transaction.support.TransactionSynchronizationManager;
 
 import java.util.Objects;
 
@@ -22,6 +25,7 @@ import java.util.Objects;
 public class MirrorRunCommitService {
     private final MirrorEvidenceRepository evidence;
     private final MirrorRunRequestRepository requests;
+    private final MirrorDeploymentIsolationRunTrustAuthority deploymentTrust;
 
     /**
      * @param evidence append-only independently verified evidence store
@@ -30,8 +34,22 @@ public class MirrorRunCommitService {
     public MirrorRunCommitService(
             MirrorEvidenceRepository evidence,
             MirrorRunRequestRepository requests) {
+        this(evidence, requests, MirrorDeploymentIsolationRunTrustAuthority.unavailable());
+    }
+
+    /**
+     * @param evidence append-only independently verified evidence store
+     * @param requests fenced durable request coordinator
+     * @param deploymentTrust deployment-owned terminal trust authority
+     */
+    @Autowired
+    public MirrorRunCommitService(
+            MirrorEvidenceRepository evidence,
+            MirrorRunRequestRepository requests,
+            MirrorDeploymentIsolationRunTrustAuthority deploymentTrust) {
         this.evidence = Objects.requireNonNull(evidence, "evidence");
         this.requests = Objects.requireNonNull(requests, "requests");
+        this.deploymentTrust = Objects.requireNonNull(deploymentTrust, "deploymentTrust");
     }
 
     /**
@@ -69,11 +87,64 @@ public class MirrorRunCommitService {
             throw new IllegalArgumentException(
                     "mirror evidence must match its complete durable request registration");
         }
-        MirrorEvidenceBundle persisted = evidence.create(bundle);
-        if (!requests.complete(lease, run.runId(), persisted.bundleFingerprint())) {
-            throw new MirrorRunLeaseLostException();
+        MirrorDeploymentIsolationRunTrust.Binding trustBinding =
+                run.isolation().deploymentTrustBinding();
+        requireTrustBinding(registration, state.trustAttempt(), trustBinding);
+        MirrorDeploymentIsolationRunTrustAuthority.CommitPermit trustPermit = null;
+        boolean releaseAfterTransaction = false;
+        try {
+            if (trustBinding != null) {
+                trustPermit = deploymentTrust.acquireCommitPermit(run.scope(), trustBinding);
+                releaseAfterTransaction = releaseAfterCompletion(trustPermit);
+            }
+            MirrorEvidenceBundle persisted = evidence.create(bundle);
+            if (!requests.complete(lease, run.runId(), persisted.bundleFingerprint())) {
+                throw new MirrorRunLeaseLostException();
+            }
+            observation.succeeded(run.runId());
+            return persisted;
+        } finally {
+            if (trustPermit != null && !releaseAfterTransaction) {
+                trustPermit.close();
+            }
         }
-        observation.succeeded(run.runId());
-        return persisted;
+    }
+
+    private static void requireTrustBinding(
+            MirrorRunRequestRepository.Registration registration,
+            MirrorRunRequestRepository.TrustAttempt trustAttempt,
+            MirrorDeploymentIsolationRunTrust.Binding binding) {
+        MirrorRunRequestRepository.TrustDecision decision = registration.trustDecision();
+        if (!decision.certificationRequired()) {
+            if (binding != null || trustAttempt != null) {
+                throw new IllegalArgumentException(
+                        "exploratory mirror request cannot commit deployment trust");
+            }
+            return;
+        }
+        if (binding == null || trustAttempt == null
+                || !decision.decisionRef().equals(binding.decisionRef())
+                || !trustAttempt.admittedSnapshotRef().equals(
+                binding.admittedSnapshotRef())
+                || !trustAttempt.admittedAt().equals(binding.admittedAt())) {
+            throw new IllegalArgumentException(
+                    "certifiable mirror evidence differs from durable trust admission");
+        }
+    }
+
+    private static boolean releaseAfterCompletion(
+            MirrorDeploymentIsolationRunTrustAuthority.CommitPermit permit) {
+        if (!TransactionSynchronizationManager.isActualTransactionActive()
+                || !TransactionSynchronizationManager.isSynchronizationActive()) {
+            return false;
+        }
+        TransactionSynchronizationManager.registerSynchronization(
+                new TransactionSynchronization() {
+                    @Override
+                    public void afterCompletion(int status) {
+                        permit.close();
+                    }
+                });
+        return true;
     }
 }
