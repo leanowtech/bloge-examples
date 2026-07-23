@@ -1641,7 +1641,10 @@ class DatabaseTestSuiteStabilityPhysicalAttemptObservationJournalTest {
         }
         TestSuiteStabilityPhysicalAttemptObservationCommand observationCommand =
                 command(context, id);
-        journal.prepare(observationCommand, descriptor);
+        // Projection fixtures test queue fencing, not a 100 ms provider SLA. A relaxed
+        // descriptor prevents host scheduling before prepare from becoming fake latency.
+        journal.prepare(
+                observationCommand, descriptor(Duration.ofSeconds(5)));
         journal.accept(observationCommand.commandId(), observation(
                 observationCommand, 101, 1,
                 TestSuiteStabilityPhysicalAttemptObservationReceipt.State.TERMINAL,
