@@ -10,6 +10,13 @@ import com.leanowtech.bloge.gateway.integration.mirror.DatabaseMirrorPlanReposit
 import com.leanowtech.bloge.gateway.integration.mirror.DatabaseMirrorDeploymentIsolationAuthorityPublicationRepository;
 import com.leanowtech.bloge.gateway.integration.mirror.DatabaseMirrorDeploymentIsolationAttestationRepository;
 import com.leanowtech.bloge.gateway.integration.mirror.DatabaseMirrorRunRequestRepository;
+import com.leanowtech.bloge.gateway.integration.mirror.CapabilityObservationAdmissionIntegrity;
+import com.leanowtech.bloge.gateway.integration.mirror.CapabilityObservationAdmissionPolicyProvider;
+import com.leanowtech.bloge.gateway.integration.mirror.CapabilityObservationAdmissionService;
+import com.leanowtech.bloge.gateway.integration.mirror.CapabilityObservationIntegrity;
+import com.leanowtech.bloge.gateway.integration.mirror.CapabilityObservationPayloadReferenceVerifier;
+import com.leanowtech.bloge.gateway.integration.mirror.CapabilityObservationRepository;
+import com.leanowtech.bloge.gateway.integration.mirror.DatabaseCapabilityObservationRepository;
 import com.leanowtech.bloge.gateway.integration.mirror.AgentBackedMirrorDeploymentIsolationRunTrustAuthority;
 import com.leanowtech.bloge.gateway.integration.mirror.MirrorEvidenceIntegrityService;
 import com.leanowtech.bloge.gateway.integration.mirror.MirrorEvidenceRepository;
@@ -273,6 +280,76 @@ public class MirrorRuntimeConfiguration {
     }
 
     /**
+     * Creates the signed capability-observation integrity boundary.
+     *
+     * @param objectMapper canonical protocol mapper
+     * @return producer signature and content-addressing verifier
+     */
+    @Bean
+    @ConditionalOnMissingBean
+    public CapabilityObservationIntegrity capabilityObservationIntegrity(
+            ObjectMapper objectMapper) {
+        return new CapabilityObservationIntegrity(objectMapper);
+    }
+
+    /**
+     * Creates the local admission-decision content-addressing boundary.
+     *
+     * @param objectMapper canonical protocol mapper
+     * @return immutable admission decision integrity boundary
+     */
+    @Bean
+    @ConditionalOnMissingBean
+    public CapabilityObservationAdmissionIntegrity
+            capabilityObservationAdmissionIntegrity(ObjectMapper objectMapper) {
+        return new CapabilityObservationAdmissionIntegrity(objectMapper);
+    }
+
+    /**
+     * Installs a fail-closed placeholder until governed corpus policy is supplied.
+     *
+     * @return unavailable operator-owned observation policy provider
+     */
+    @Bean
+    @ConditionalOnMissingBean
+    public CapabilityObservationAdmissionPolicyProvider
+            capabilityObservationAdmissionPolicyProvider() {
+        return CapabilityObservationAdmissionPolicyProvider.unavailable();
+    }
+
+    /**
+     * Installs a fail-closed placeholder until a sanitized payload vault is integrated.
+     *
+     * @return unavailable external payload-reference verifier
+     */
+    @Bean
+    @ConditionalOnMissingBean
+    public CapabilityObservationPayloadReferenceVerifier
+            capabilityObservationPayloadReferenceVerifier() {
+        return CapabilityObservationPayloadReferenceVerifier.unavailable();
+    }
+
+    /**
+     * Creates the append-only observation and terminal-decision store.
+     *
+     * @param jdbc transaction-aware application JDBC boundary
+     * @param objectMapper canonical protocol mapper
+     * @param observationIntegrity producer observation integrity boundary
+     * @param admissionIntegrity local decision integrity boundary
+     * @return full-scope payload-free observation repository
+     */
+    @Bean
+    @ConditionalOnMissingBean
+    public CapabilityObservationRepository capabilityObservationRepository(
+            JdbcTemplate jdbc,
+            ObjectMapper objectMapper,
+            CapabilityObservationIntegrity observationIntegrity,
+            CapabilityObservationAdmissionIntegrity admissionIntegrity) {
+        return new DatabaseCapabilityObservationRepository(
+                jdbc, objectMapper, observationIntegrity, admissionIntegrity);
+    }
+
+    /**
      * Creates the append-only full-enterprise-scope fixture authorization index.
      *
      * @param jdbc application JDBC boundary
@@ -382,13 +459,17 @@ public class MirrorRuntimeConfiguration {
      * @param attestationService assembled isolation-attestation boundary
      * @param admissionPolicies dynamic attestation admission policy source
      * @param deploymentTrust deployment-agent authority for certification-required runs
+     * @param observationService assembled observation-admission application boundary
+     * @param observationPolicies dynamic observation admission policy source
+     * @param payloadReferences dynamic sanitized payload-reference authority
      * @return profile-owned mirror capability marker
      */
     @Bean
     @ConditionalOnMissingBean
     @ConditionalOnBean({MirrorPlanIntegrationService.class, MirrorRunIntegrationService.class,
             MirrorDeploymentIsolationAuthorityPublicationService.class,
-            MirrorDeploymentIsolationAttestationService.class})
+            MirrorDeploymentIsolationAttestationService.class,
+            CapabilityObservationAdmissionService.class})
     public MirrorRuntimeAvailability mirrorRuntimeAvailability(
             MirrorPlanIntegrationService planService,
             MirrorRunIntegrationService runService,
@@ -397,11 +478,15 @@ public class MirrorRuntimeConfiguration {
             MirrorDeploymentIsolationAuthorityTrustPolicyProvider trustPolicies,
             MirrorDeploymentIsolationAttestationService attestationService,
             MirrorDeploymentIsolationAttestationAdmissionPolicyProvider admissionPolicies,
-            MirrorDeploymentIsolationRunTrustAuthority deploymentTrust) {
+            MirrorDeploymentIsolationRunTrustAuthority deploymentTrust,
+            CapabilityObservationAdmissionService observationService,
+            CapabilityObservationAdmissionPolicyProvider observationPolicies,
+            CapabilityObservationPayloadReferenceVerifier payloadReferences) {
         return new MirrorRuntimeAvailability(true, true, evidenceSigner::available,
                 true, trustPolicies::available, true,
                 () -> trustPolicies.available() && admissionPolicies.available(),
-                deploymentTrust::available);
+                deploymentTrust::available, true,
+                () -> observationPolicies.available() && payloadReferences.available());
     }
 
     /** Compatibility factory retained for focused readiness tests outside Spring composition. */

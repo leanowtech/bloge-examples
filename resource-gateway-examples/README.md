@@ -29,6 +29,7 @@ integration something the business flow can see, reason about, test, and change.
 | Managed evidence signing | Non-exportable KMS/HSM provider protocol, atomic public-key generations, locally verified signatures, rotation/revoke semantics, and machine-readable custody health |
 | Consistent draft export | Frozen operator/library/binding/activation/test-suite refs, deterministic dependency fingerprints, and retryable 409 conflict on assembly-time drift |
 | Governed capability closures | Sealed Resource/Operator/Graph projections, exact cycle-checked closure for all seven shipped graphs, nested foreach/loop boundary inventory, full enterprise scope, append-only lifecycle revisions, classification-aware reads, and honest mirror readiness flags |
+| Governed capability observations | Signed payload-free invocation facts, operator-owned admission policy, external vault/proof verification, durable admitted-or-quarantined decisions, full-scope idempotency, and independent offline verification |
 | Governed replay payloads | Payload values detached from immutable evidence, classification ABAC, selective retention, legal hold, bounded expiry, and signed deletion proof |
 | Workbook and gate evidence loop | Deterministic sanitized workbook seeds, exact suite/run evidence refs, versioned gate decision basis, stale detection, and transactional gate events |
 | Operational controls | Cache, tenant rate limit, circuit breaker, run history, golden cases, and publication history |
@@ -108,6 +109,7 @@ to demonstrate that the testing beans and endpoints are structurally absent.
 | `POST http://localhost:8080/api/mirror/trust/deployment-isolation/attestations` | Verify and append an operator-pinned attestation bootstrap or continuous successor |
 | `GET http://localhost:8080/api/mirror/trust/deployment-isolation/attestations/{attestationId}/latest` | Read one atomic current attestation and local status bundle |
 | `POST http://localhost:8080/api/mirror/trust/deployment-isolation/attestations/{attestationId}/revocations` | Irreversibly revoke one exact current attestation status |
+| `POST http://localhost:8080/api/mirror/observations` | Admit or quarantine one signed payload-free capability observation under operator-owned policy and external payload-proof verification |
 
 Deployment-agent authority/attestation GETs require vendor negotiation in addition to normal
 `MIRROR_TRUST_DISTRIBUTION` or `MIRROR_REHEARSAL` authentication:
@@ -147,6 +149,16 @@ explicit, while eligible runs emit v2 `CERTIFIABLE` evidence with admitted and c
 snapshot references. The complete protocol and lifecycle rules are in the
 [mirror schema guide](../docs/schemas/resource-gateway-mirror/README.md) and
 [runtime trust-binding guide](../docs/resource-gateway-mirror-runtime-trust-binding.md).
+
+Observation capability discovery uses the same separation. `mirrorObservationProtocol=true`
+means the wire model is supported, `mirrorObservationAdmissionApi=true` means the non-production
+route is assembled, and `mirrorObservationAdmissionReady=true` means both the operator-owned
+policy source and external sanitized-payload reference authority are currently usable. The default
+providers are unavailable, so enabling Mirror runtime does not invent trust. Producer workloads
+need the dedicated `MIRROR_CORPUS_INGESTION` purpose and exact
+tenant/organization/project/environment/region scope. Integration, receipt semantics, stable
+errors, and outage drills are documented in the
+[capability observation admission guide](../docs/resource-gateway-capability-observation-admission.md).
 
 The Stage 1 compiler and run kernels verify Capability Closure against the recursively
 frozen BLOGE invocation inventory, adapt the existing FixtureBundle into mandatory external-site controls, retain
@@ -317,9 +329,10 @@ projects its real node/attempt/edge values to bounded fingerprints, proves exact
 resolution, and refuses to return a result when no explicit signer exists or immediate signature verification
 fails. A cryptographically signed run is still exploratory unless deployment egress denial is bound to an exact
 isolation attestation and every limitation is closed. Payload-free persistence and protected plan serving are
-complete; run/evidence serving is also complete for isolated test/staging use. Agent-snapshot
-admission/evidence binding, pre-materialization ingress controls, and cross-language canonicalization
-remain production/certification gates.
+complete; run/evidence serving is also complete for isolated test/staging use. Agent-snapshot admission,
+terminal confirmation, v2 evidence binding, and transaction commit fencing are complete. Pre-materialization
+ingress controls, non-Java v2 fixtures, cross-language canonicalization, and environment certification remain
+production gates.
 The Spring kernel now has
 profile/property isolation and
 ordinary business run APIs reject nested mirror, replay, replacement, and scenario controls before DTO binding,
@@ -370,10 +383,11 @@ The reusable deployment agent now pulls these current artifacts through private-
 identity-bound mTLS, requires an operator-provisioned non-TOFU bootstrap floor, rejects rollback,
 fork, gaps and same-revision reactivation, and atomically replaces a durable read-only snapshot.
 Revocation can commit without a positive authority read; stale ACTIVE use is bounded by the local
-hard snapshot age. This is still not a deployment-isolation runtime-readiness claim. Binding the exact
-snapshot generation into execution admission and `MirrorRunEvidenceProjector` remains open;
-consequently current runs remain `EXPLORATORY` and the capability probe does not advertise deployment isolation as
-certified. See the
+hard snapshot age. Certification-required runs now bind an admitted and committed agent snapshot
+to v2 evidence and keep a transaction-lifetime trust permit through terminal commit. Exploratory
+runs remain explicit; only an eligible plan with a stable ACTIVE decision can become `CERTIFIABLE`.
+Customer PKI/KMS/IdP, multi-replica revocation convergence, non-Java v2 compatibility, and
+environment certification remain deployment responsibilities. See the
 [mirror schema guide](../docs/schemas/resource-gateway-mirror/README.md#deployment-isolation-attestation-boundary).
 Operational wiring, endpoint semantics, stable failures, and rollout checks are in the
 [authority trusted-distribution guide](../docs/resource-gateway-mirror-authority-trusted-distribution.md) and

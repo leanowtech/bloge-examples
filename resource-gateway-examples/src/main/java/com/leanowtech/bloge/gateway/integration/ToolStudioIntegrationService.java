@@ -395,6 +395,10 @@ public class ToolStudioIntegrationService {
                 mirrorRuntimeAvailability.certificationReady());
         features.put("mirrorCertifiableEvidenceServingReady",
                 mirrorExecutionReady && mirrorRuntimeAvailability.certificationReady());
+        features.put("mirrorObservationAdmissionApi",
+                mirrorRuntimeAvailability.observationAdmissionApi());
+        features.put("mirrorObservationAdmissionReady",
+                mirrorRuntimeAvailability.observationAdmissionReady());
         ExternalAnchorTrustState suiteAnchorTrust = currentSuiteStabilityAnchorTrust();
         features.put("managedSuiteStabilityExternalNotaryTrust",
                 testExecutionEndpointEnabled && suiteAnchorTrust.managed());
@@ -783,6 +787,10 @@ public class ToolStudioIntegrationService {
                     "/api/mirror/trust/deployment-isolation/attestations/{attestationId}/revisions/{revision}"));
             endpoints.add(new IntegrationCapabilities.Endpoint("POST",
                     "/api/mirror/trust/deployment-isolation/attestations/{attestationId}/revocations"));
+        }
+        if (mirrorRuntimeAvailability.observationAdmissionApi()) {
+            endpoints.add(new IntegrationCapabilities.Endpoint(
+                    "POST", "/api/mirror/observations"));
         }
         IntegrationCapabilities augmented = new IntegrationCapabilities(
                 current.schemaVersion(), current.protocol(), current.protocolVersion(),

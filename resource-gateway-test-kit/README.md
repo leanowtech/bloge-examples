@@ -155,6 +155,38 @@ The fixture is produced by the server and independently consumed here. It includ
 or business payload. Non-Java implementations are not certified merely by matching field names;
 they must pass this cryptographic fixture without lossy numeric reserialization.
 
+Capability observations use a separate producer authority and verifier. Run the packaged public-only
+fixture whenever upgrading the protocol, JSON stack, crypto provider, or consumer:
+
+```java
+CapabilityObservationCompatibilityFixture fixture =
+        CapabilityMirrorProtocol.capabilityObservationCompatibilityFixture();
+
+CapabilityObservationVerifier.VerificationResult observation =
+        new CapabilityObservationVerifier().verify(
+                fixture.observation(),
+                fixture.verificationKey(),
+                fixture.expectedScope(),
+                fixture.verificationTime());
+if (!observation.verified()) {
+    throw new IllegalStateException(observation.reasonCode());
+}
+```
+
+For a real observation, construct `CapabilityObservationVerificationKey` and
+`CapabilityObservationScope` from locally trusted configuration, never from the observation itself.
+The verifier checks the strict `resourceGateway.capabilityObservation.v1` Schema, canonical use
+ordering, full-scope equality, grant/retention/issuance windows, material and envelope fingerprints,
+producer key lifecycle, issuer, algorithm, and Ed25519 signature. Its result contains only stable
+coordinates and a low-cardinality reason.
+
+This verification deliberately does not prove that `SANITIZED_PAYLOAD`,
+`PAYLOAD_SANITIZATION_PROOF`, or `JSON_SCHEMA` references exist, belong to the tenant, or were
+sanitized before persistence. Corpus admission still requires an independent tenant-scoped
+payload-vault authority. Treating a valid producer signature as proof of payload governance would
+collapse two separate trust domains. The packaged observation, admission, and receipt Schemas are
+available through `CapabilityMirrorProtocol`; the fixture includes no private key or payload.
+
 Deployment isolation uses separate bootstrap-root, isolation-attestation, and mirror-evidence
 authorities. Never reuse keys between those roles or trust deployment coordinates copied from an
 untrusted publication. Verify the authority key-set against immutable local binding, locally pinned

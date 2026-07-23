@@ -97,6 +97,18 @@ public final class CapabilityMirrorProtocol {
     /** Signed Stage 1 mirror evidence compatibility fixture version. */
     public static final String MIRROR_EVIDENCE_COMPATIBILITY_V1 =
             "resourceGateway.mirrorEvidenceCompatibility.v1";
+    /** Signed capability-observation wire version. */
+    public static final String CAPABILITY_OBSERVATION_V1 =
+            "resourceGateway.capabilityObservation.v1";
+    /** Immutable capability-observation admission wire version. */
+    public static final String CAPABILITY_OBSERVATION_ADMISSION_V1 =
+            "resourceGateway.capabilityObservationAdmission.v1";
+    /** Atomic capability-observation receipt wire version. */
+    public static final String CAPABILITY_OBSERVATION_RECEIPT_V1 =
+            "resourceGateway.capabilityObservationReceipt.v1";
+    /** Fixed observation compatibility-fixture wire version. */
+    public static final String CAPABILITY_OBSERVATION_COMPATIBILITY_V1 =
+            "resourceGateway.capabilityObservationCompatibility.v1";
 
     /** Classpath root containing the authoritative mirror schemas and fixtures. */
     public static final String SCHEMA_RESOURCE_ROOT = "/schemas/resource-gateway-mirror/";
@@ -113,6 +125,9 @@ public final class CapabilityMirrorProtocol {
     public static final String MIRROR_DEPLOYMENT_ISOLATION_AUTHORITY_KEY_SET_FIXTURE_RESOURCE =
             SCHEMA_RESOURCE_ROOT
                     + "mirror-deployment-isolation-authority-key-set-stage1-v1.fixture.json";
+    /** Packaged signed capability-observation compatibility fixture. */
+    public static final String CAPABILITY_OBSERVATION_FIXTURE_RESOURCE =
+            SCHEMA_RESOURCE_ROOT + "capability-observation-stage2-v1.fixture.json";
     /** Packaged compatibility fixture schema. */
     public static final String COMPATIBILITY_SCHEMA_RESOURCE =
             SCHEMA_RESOURCE_ROOT + "capability-mirror-compatibility-v1.schema.json";
@@ -178,6 +193,15 @@ public final class CapabilityMirrorProtocol {
     public static final String MIRROR_DEPLOYMENT_ISOLATION_AUTHORITY_KEY_SET_SCHEMA_RESOURCE =
             SCHEMA_RESOURCE_ROOT
                     + "mirror-deployment-isolation-authority-key-set-publication-v1.schema.json";
+    /** Packaged signed capability-observation schema. */
+    public static final String CAPABILITY_OBSERVATION_SCHEMA_RESOURCE =
+            SCHEMA_RESOURCE_ROOT + "capability-observation-v1.schema.json";
+    /** Packaged immutable capability-observation admission schema. */
+    public static final String CAPABILITY_OBSERVATION_ADMISSION_SCHEMA_RESOURCE =
+            SCHEMA_RESOURCE_ROOT + "capability-observation-admission-v1.schema.json";
+    /** Packaged atomic capability-observation receipt schema. */
+    public static final String CAPABILITY_OBSERVATION_RECEIPT_SCHEMA_RESOURCE =
+            SCHEMA_RESOURCE_ROOT + "capability-observation-receipt-v1.schema.json";
 
     private static final ObjectMapper JSON = new ObjectMapper();
 
@@ -241,6 +265,21 @@ public final class CapabilityMirrorProtocol {
         return IsolationAuthorityFixtureHolder.FIXTURE.detachedCopy();
     }
 
+    /**
+     * Returns the fixed independently verified capability-observation fixture.
+     *
+     * <p>The fixture proves strict-schema loading, canonical content addressing, full-scope
+     * comparison, purpose-window checks, public-key parsing, and Ed25519 verification without
+     * contacting Resource Gateway or a payload vault.</p>
+     *
+     * @return detached signed observation, public key, expected scope, and verification time
+     * @throws IllegalStateException when the packaged fixture is absent or unverifiable
+     */
+    public static CapabilityObservationCompatibilityFixture
+            capabilityObservationCompatibilityFixture() {
+        return ObservationFixtureHolder.FIXTURE.detachedCopy();
+    }
+
     private static final class BaselineHolder {
         private static final JsonNode BASELINE = load();
 
@@ -300,6 +339,54 @@ public final class CapabilityMirrorProtocol {
             } catch (IOException | RuntimeException failure) {
                 throw new IllegalStateException(
                         "RG.MIRROR.CLIENT.EVIDENCE_FIXTURE_UNAVAILABLE");
+            }
+        }
+
+        private static Set<String> fieldNames(JsonNode value) {
+            java.util.HashSet<String> names = new java.util.HashSet<>();
+            value.fieldNames().forEachRemaining(names::add);
+            return Set.copyOf(names);
+        }
+    }
+
+    private static final class ObservationFixtureHolder {
+        private static final CapabilityObservationCompatibilityFixture FIXTURE = load();
+
+        private static CapabilityObservationCompatibilityFixture load() {
+            try (InputStream input = CapabilityMirrorProtocol.class.getResourceAsStream(
+                    CAPABILITY_OBSERVATION_FIXTURE_RESOURCE)) {
+                if (input == null) {
+                    throw new IOException("Capability observation fixture is absent");
+                }
+                JsonNode value = JSON.readTree(input);
+                if (!value.isObject() || value.size() != 5
+                        || !Set.of("schemaVersion", "verificationKey", "expectedScope",
+                        "verificationTime", "observation").equals(fieldNames(value))
+                        || !CAPABILITY_OBSERVATION_COMPATIBILITY_V1.equals(
+                        value.path("schemaVersion").asText())) {
+                    throw new IOException(
+                            "Capability observation fixture envelope is invalid");
+                }
+                CapabilityMirrorSchemaValidator.require(
+                        value.path("observation"),
+                        CAPABILITY_OBSERVATION_SCHEMA_RESOURCE,
+                        "RG.MIRROR.CLIENT.OBSERVATION_FIXTURE_SCHEMA_INVALID");
+                CapabilityObservationCompatibilityFixture fixture =
+                        CapabilityObservationCompatibilityFixture.from(value);
+                CapabilityObservationVerifier.VerificationResult result =
+                        new CapabilityObservationVerifier().verify(
+                                fixture.observation(),
+                                fixture.verificationKey(),
+                                fixture.expectedScope(),
+                                fixture.verificationTime());
+                if (!result.verified()) {
+                    throw new IOException(
+                            "Capability observation fixture verification failed");
+                }
+                return fixture;
+            } catch (IOException | RuntimeException failure) {
+                throw new IllegalStateException(
+                        "RG.MIRROR.CLIENT.OBSERVATION_FIXTURE_UNAVAILABLE");
             }
         }
 

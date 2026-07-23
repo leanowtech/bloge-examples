@@ -1,0 +1,134 @@
+{
+  "schemaVersion": "resourceGateway.capabilityObservationCompatibility.v1",
+  "verificationKey": {
+    "schemaVersion": "resourceGateway.capabilityObservationVerificationKey.v1",
+    "keyId": "support-observation-key-2030",
+    "algorithm": "Ed25519",
+    "encodedPublicKey": "MCowBQYDK2VwAyEAYHxaOH5xrdryfkolBjhKo8YoSROCRAJLsmarsKNbs9c=",
+    "issuer": "support-observation-authority",
+    "notBefore": "2030-01-01T00:00:00Z",
+    "notAfter": "2031-01-01T00:00:00Z",
+    "state": "ACTIVE"
+  },
+  "expectedScope": {
+    "tenantId": "tenant-a",
+    "organizationId": "org-support",
+    "projectId": "support-platform",
+    "environmentId": "staging",
+    "region": "sg"
+  },
+  "verificationTime": "2030-01-03T00:00:00Z",
+  "observation": {
+    "schemaVersion": "resourceGateway.capabilityObservation.v1",
+    "observationFingerprint": "sha256:1f3b78c8cc7112b6cf4f218b2709339c643b9cac4381ff1e3c4115c2083709b0",
+    "material": {
+      "observationId": "support-refund-observation-0001",
+      "scope": {
+        "tenantId": "tenant-a",
+        "organizationId": "org-support",
+        "projectId": "support-platform",
+        "environmentId": "staging",
+        "region": "sg"
+      },
+      "capabilityRef": {
+        "kind": "CAPABILITY",
+        "id": "graph:support-refund",
+        "revision": 7,
+        "fingerprint": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+      },
+      "occurredAt": "2030-01-02T03:04:05Z",
+      "trace": {
+        "traceId": "trace-support-refund-0001",
+        "spanId": "span-refund-eligibility",
+        "sequence": 4
+      },
+      "request": {
+        "payloadRef": {
+          "kind": "SANITIZED_PAYLOAD",
+          "id": "refund-request-0001",
+          "revision": 1,
+          "fingerprint": "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+        },
+        "sanitizationProofRef": {
+          "kind": "PAYLOAD_SANITIZATION_PROOF",
+          "id": "refund-request-0001-proof",
+          "revision": 3,
+          "fingerprint": "sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"
+        },
+        "schemaRef": {
+          "kind": "JSON_SCHEMA",
+          "id": "refund-request-0001-schema",
+          "revision": 5,
+          "fingerprint": "sha256:dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd"
+        },
+        "sizeBytes": 384,
+        "mediaType": "application/json",
+        "classification": "CONFIDENTIAL",
+        "vaultRegion": "sg",
+        "retentionUntil": "2030-03-01T00:00:00Z"
+      },
+      "response": {
+        "payloadRef": {
+          "kind": "SANITIZED_PAYLOAD",
+          "id": "refund-response-0001",
+          "revision": 1,
+          "fingerprint": "sha256:eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee"
+        },
+        "sanitizationProofRef": {
+          "kind": "PAYLOAD_SANITIZATION_PROOF",
+          "id": "refund-response-0001-proof",
+          "revision": 3,
+          "fingerprint": "sha256:ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff"
+        },
+        "schemaRef": {
+          "kind": "JSON_SCHEMA",
+          "id": "refund-response-0001-schema",
+          "revision": 5,
+          "fingerprint": "sha256:0000000000000000000000000000000000000000000000000000000000000000"
+        },
+        "sizeBytes": 384,
+        "mediaType": "application/json",
+        "classification": "CONFIDENTIAL",
+        "vaultRegion": "sg",
+        "retentionUntil": "2030-03-01T00:00:00Z"
+      },
+      "error": null,
+      "latencyMillis": 87,
+      "stateCorrelation": {
+        "entityType": "support-case",
+        "businessKeyFingerprint": "sha256:1111111111111111111111111111111111111111111111111111111111111111",
+        "stateBeforeFingerprint": "sha256:2222222222222222222222222222222222222222222222222222222222222222",
+        "stateAfterFingerprint": "sha256:3333333333333333333333333333333333333333333333333333333333333333"
+      },
+      "outcomeCorrelationRef": {
+        "kind": "OUTCOME_CORRELATION",
+        "id": "refund-outcome-0001",
+        "revision": 2,
+        "fingerprint": "sha256:4444444444444444444444444444444444444444444444444444444444444444"
+      },
+      "dataUseGrant": {
+        "grantRef": {
+          "kind": "DATA_USE_GRANT",
+          "id": "support-corpus-grant",
+          "revision": 11,
+          "fingerprint": "sha256:5555555555555555555555555555555555555555555555555555555555555555"
+        },
+        "purpose": "MIRROR_CORPUS_INGESTION",
+        "allowedUses": [
+          "CORPUS_CURATION",
+          "EXACT_REPLAY"
+        ],
+        "validFrom": "2030-01-01T00:00:00Z",
+        "expiresAt": "2030-02-01T00:00:00Z"
+      }
+    },
+    "seal": {
+      "materialFingerprint": "sha256:72c36a1393e909ef1e80b785c2833c214bb07981dd9ab9f6bfb507835ea32120",
+      "algorithm": "Ed25519",
+      "keyId": "support-observation-key-2030",
+      "issuer": "support-observation-authority",
+      "signedAt": "2030-01-02T03:04:10Z",
+      "signature": "2O9Wdtyhlm4gT2zRr4rv/RRoJpVet5jXLJ57zfaFTcu+XpR1JuSjw3OwQCSj5Lmv3y2FNTwfkCF/3dCQqbzRCQ=="
+    }
+  }
+}

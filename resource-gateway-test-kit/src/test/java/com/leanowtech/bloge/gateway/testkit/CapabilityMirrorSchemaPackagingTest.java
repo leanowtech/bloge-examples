@@ -40,7 +40,10 @@ class CapabilityMirrorSchemaPackagingTest {
                 "mirror-deployment-isolation-attestation-bundle-v1.schema.json",
                 "mirror-deployment-isolation-agent-snapshot-v1.schema.json",
                 "mirror-deployment-isolation-run-trust-v1.schema.json",
-                "mirror-deployment-isolation-authority-key-set-publication-v1.schema.json")) {
+                "mirror-deployment-isolation-authority-key-set-publication-v1.schema.json",
+                "capability-observation-v1.schema.json",
+                "capability-observation-admission-v1.schema.json",
+                "capability-observation-receipt-v1.schema.json")) {
             String resource = CapabilityMirrorProtocol.SCHEMA_RESOURCE_ROOT + name;
             try (InputStream input = getClass().getResourceAsStream(resource)) {
                 assertThat(input).as(resource).isNotNull();
@@ -64,6 +67,14 @@ class CapabilityMirrorSchemaPackagingTest {
         assertThat(CapabilityMirrorProtocol
                 .MIRROR_DEPLOYMENT_ISOLATION_RUN_TRUST_SCHEMA_RESOURCE)
                 .endsWith("mirror-deployment-isolation-run-trust-v1.schema.json");
+        assertThat(CapabilityMirrorProtocol.CAPABILITY_OBSERVATION_SCHEMA_RESOURCE)
+                .endsWith("capability-observation-v1.schema.json");
+        assertThat(CapabilityMirrorProtocol
+                .CAPABILITY_OBSERVATION_ADMISSION_SCHEMA_RESOURCE)
+                .endsWith("capability-observation-admission-v1.schema.json");
+        assertThat(CapabilityMirrorProtocol
+                .CAPABILITY_OBSERVATION_RECEIPT_SCHEMA_RESOURCE)
+                .endsWith("capability-observation-receipt-v1.schema.json");
 
         JsonNode baseline = CapabilityMirrorProtocol.compatibilityBaseline();
         assertThat(baseline.path("schemaVersion").asText())
@@ -157,6 +168,27 @@ class CapabilityMirrorSchemaPackagingTest {
         assertThat(CapabilityMirrorProtocol
                 .MIRROR_DEPLOYMENT_ISOLATION_AUTHORITY_KEY_SET_SCHEMA_RESOURCE)
                 .endsWith("authority-key-set-publication-v1.schema.json");
+    }
+
+    @Test
+    void packagesOneFixedSignedPayloadFreeObservationFixture() {
+        CapabilityObservationCompatibilityFixture fixture =
+                CapabilityMirrorProtocol.capabilityObservationCompatibilityFixture();
+
+        CapabilityObservationVerifier.VerificationResult verified =
+                new CapabilityObservationVerifier().verify(
+                        fixture.observation(),
+                        fixture.verificationKey(),
+                        fixture.expectedScope(),
+                        fixture.verificationTime());
+
+        assertThat(verified.verified()).isTrue();
+        assertThat(verified.observationId())
+                .isEqualTo("support-refund-observation-0001");
+        assertThat(fixture.observation().toString())
+                .doesNotContain("customer-123")
+                .doesNotContain("requestBody")
+                .doesNotContain("responseBody");
     }
 
     @Test

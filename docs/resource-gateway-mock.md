@@ -7,7 +7,7 @@
 
 | 文档属性 | 内容 |
 |---|---|
-| 状态 | Accepted / In implementation；Stage 0 仓库内工程退出门禁已通过；Stage 1 compiler、resolver provenance、payload-free evidence 签发/独立复验、scope-isolated durable store、受保护 Plan/Run/Evidence API、durable request fencing、动态 occurrence budget、payload-free operation audit、固定基数指标、部署隔离证明协议/离线验真、M-of-N authority key-set trusted distribution、full-scope attestation ingest/current-only distribution/irreversible revocation、deployment agent pinned mTLS/atomic cache 已完成；运行时双重绑定、跨语言 canonicalization 与 certification 门禁继续实施 |
+| 状态 | Accepted / In implementation；Stage 0 仓库内工程退出门禁已通过；Stage 1 compiler、resolver provenance、payload-free evidence 签发/独立复验、scope-isolated durable store、受保护 Plan/Run/Evidence API、durable request fencing、动态 occurrence budget、payload-free operation audit、固定基数指标、部署隔离证明协议/离线验真、M-of-N authority key-set trusted distribution、full-scope attestation ingest/current-only distribution/irreversible revocation、deployment agent pinned mTLS/atomic cache、execution admission/evidence commit 运行时双重绑定已完成；Stage 2 签名 observation 协议、准入/隔离纵切、独立复验已完成第一增量；跨语言 canonicalization、corpus/resolver 和环境 certification 门禁继续实施 |
 | 目标读者 | Resource Gateway、BLOGE Runtime、ANEKE、TEE/数据平台、QA、SRE、安全与业务运营团队 |
 | 设计范围 | external/composed 能力建模、镜像运行、保真语料、有状态世界、场景演练、证据、保真度与结果校准 |
 | 非目标 | 不重做 ANEKE 的资产治理和发布门禁；不允许测试控制进入生产业务请求；不把观测频率直接当成业务正确性 |
@@ -324,6 +324,26 @@
   Resource Gateway 干净全量门禁 `4608/4608`（另有 3 条条件跳过）通过，真实 Chrome 与可执行 Boot JAR 同时验证。
   运行时 admission/evidence commit 尚未 pin 同一 cache generation，trust class 仍保持 `EXPLORATORY`。接线与 SLO/runbook 见
   [deployment-agent guide](resource-gateway-mirror-deployment-agent.md)。
+- Stage 1 第二十二增量完成运行期信任双重绑定。certification-required plan 在 durable claim 前观察 ACTIVE
+  agent snapshot，稳定 decision 被固定到 request registration；每个 lease epoch 生成独立 TrustAttempt，执行结束再次
+  观察同一 decision，v2 evidence 同时签入 admitted/committed snapshot，transaction-lifetime commit permit 保持到
+  evidence、terminal request state 与成功审计一起提交。正常 refresh 只增加 local generation 时不会误杀长运行；
+  revocation、successor、rollback、expiry 或 decision drift 均 fail closed。v1/v2 双读和 test-kit 独立语义复验已经落地，
+  非 Java v2 固定 fixture、语言中立数字 canonicalization 与环境级多副本 certification 仍是生产门禁。详见
+  [runtime trust-binding guide](resource-gateway-mirror-runtime-trust-binding.md)。
+- Stage 2 第一增量已冻结 `CapabilityObservationEnvelope`、`CapabilityObservationAdmission` 和
+  `CapabilityObservationReceipt`。producer 只能提交 payload-free、Ed25519 签名的 exact metadata；request/response
+  payload 必须先在外部 vault 完成脱敏和不可变落库，Resource Gateway 只接收 payload/proof/schema/grant references。
+  `POST /api/mirror/observations` 在完整 scope、专用 purpose 和 test/staging 双栅栏下执行：exact retry 返回原决定，
+  确定的信任/策略/reference 拒绝进入 durable `QUARANTINED`，policy、payload authority、capability store、observation
+  store 或 mandatory audit 不可用则返回 503 且不伪造决定。full-scope append-only store 会在读写时重验 canonical
+  JSON 与索引列；成功写入和 audit 位于同一事务。默认 operator-owned policy 与 external payload-reference verifier
+  均 unavailable，probe 因而分开报告 protocol、API assembly 和 readiness。strict Schema、public-only fixed signed
+  fixture、server/test-kit 双边独立复验、生产 route 物理缺失和事务回滚均已有专项测试；Resource Gateway 干净全量
+  门禁 `4649` 项测试零失败、零错误（另有 3 项条件跳过），独立 test-kit `277/277` 全绿。该增量只关闭“可信
+  observation 准入”根问题，不宣称 corpus revision、resolver、retention/deletion proof 或 outcome calibration
+  已完成。接线与 runbook 见
+  [Capability Observation 准入指南](resource-gateway-capability-observation-admission.md)。
 
 ---
 
@@ -412,15 +432,16 @@ Resource Gateway 已有的工业底座应直接复用：
 |---|---:|---|
 | Resource/Graph/Schema | 95% | Capability/Effect/Closure、7 张内置图和 3 张画布示例投影、生命周期仓储、scope-bound closure API、共享 compatibility fixture 与独立离线 verifier 已落地；nested graph exact child closure 进入 Stage 1 MirrorPlan |
 | 确定性测试控制 | 80% | 缺镜像来源、匹配可信度和领域状态控制 |
-| Evidence/Replay | 75% | 缺 mirror provenance、state trace、fidelity observation 和 outcome lineage |
-| 递归 DAG 测试 | 65% | 缺统一镜像编译计划和 contract-mock 展开治理 |
-| 日志蒸馏与语料 | 10% | 缺标准事件、准入、分层匹配、漂移和偏差控制 |
+| Evidence/Replay | 90% | payload-free signed mirror evidence、deployment trust 双重绑定和独立复验已落地；缺业务 state trace、fidelity observation 聚合和 outcome lineage |
+| 递归 DAG 测试 | 85% | MirrorPlan/closure/runtime inventory/fixture control 已统一；缺 contract-mock 展开治理和状态世界 |
+| 日志蒸馏与语料 | 25% | payload-free signed observation、准入/隔离、full-scope durable store 和独立 verifier 已落地；缺 corpus revision、review、resolver、漂移、偏差和删除证明 |
 | 有状态业务世界 | 5% | 执行 checkpoint 不等于业务实体与事务状态模型 |
 | Scenario/Rehearsal | 10% | 缺场景、写效果、处置断言和状态演练协议 |
 | Fidelity/Outcome | 5% | 缺保真向量、shadow、权威结果归因和校准闭环 |
 | 业务运营工作台 | 10% | Author Canvas 尚未成为案例驱动的镜像运营工作台 |
 
-结论：基础设施准备度约 65%，镜像复利闭环完成度约 10%–15%，完整理想态完成度约 30%。
+结论：基础设施准备度约 80%，镜像复利闭环完成度约 20%–25%，完整理想态完成度约 40%。剩余主要矛盾已经
+从“能否安全执行和取证”转向“能否把可信 observation 持续蒸馏成可校准、可拒答、可删除的业务拟合资产”。
 
 ## 4. 目标架构与系统责任
 
@@ -727,39 +748,54 @@ interface MirrorResolution {
 ```ts
 interface CapabilityObservationEnvelope {
   schemaVersion: "resourceGateway.capabilityObservation.v1"
-  observationId: string
-  tenantId: string
-  environmentId: string
-  capabilityRef: RevisionRef
-  occurredAt: Instant
-  traceCoordinates: { traceId: string; spanId: string; sequence: long }
-  requestRef: PayloadRef
-  responseRef?: PayloadRef
-  normalizedError?: ErrorContract
-  latencyMs: long
-  stateCorrelation?: { entityType: string; businessKeys: object }
-  outcomeCorrelationRef?: string
-  consentAndPurpose: DataUseGrant
-  integrity: SignedEnvelope
+  observationFingerprint: string
+  material: {
+    observationId: string
+    scope: EnterpriseScope
+    capabilityRef: RevisionRef
+    occurredAt: Instant
+    trace: { traceId: string; spanId: string; sequence: long }
+    request: SanitizedPayloadRef
+    response?: SanitizedPayloadRef
+    error?: PayloadFreeError
+    latencyMillis: long
+    stateCorrelation?: {
+      entityType: string
+      businessKeyFingerprint: string
+      stateBeforeFingerprint: string
+      stateAfterFingerprint: string
+    }
+    outcomeCorrelationRef?: RevisionRef
+    dataUseGrant: DataUseGrant
+  }
+  seal: Ed25519Seal
 }
 ```
+
+`SanitizedPayloadRef` 同时绑定 exact payload、sanitization proof、JSON Schema、size、classification、vault region
+和 retention。`response` 与 `normalizedError` 必须且只能出现一个。当前实现不接收任何 payload bytes、原始业务键、
+provider message 或 stack trace。
 
 ### 8.2 准入管线
 
 ```text
-接收签名事件
- -> tenant/environment/purpose 校验
- -> 原始字段分类
- -> secret/PII 脱敏或 tokenization
- -> payload 与 metadata 分离
+外部 producer/vault 对原始数据分类、脱敏并不可变落库
+ -> 接收签名且 payload-free 的 observation metadata
+ -> authenticated full scope/environment/purpose 校验
+ -> exact retry 恢复原始终态决定
+ -> operator-owned atomic policy 与 capability revision 校验
  -> schema 与大小限制
- -> 完整性指纹
- -> 数据权利和保留期
- -> poisoning/异常样本检测
+ -> canonical fingerprint、producer key lifecycle 与 Ed25519 验签
+ -> external vault/sanitization proof reference verification
+ -> 数据权利、驻留地域和保留期
+ -> admitted 或 quarantined 终态与 mandatory audit 原子提交
+ -> poisoning/异常样本检测（下一增量）
  -> admitted corpus revision
 ```
 
-任何一步失败都进入隔离队列，不得部分进入 serving corpus。
+确定的 policy、capability、integrity、grant、window 或 payload-reference 拒绝进入隔离队列，不得部分进入 serving
+corpus。provider/store/audit 不可用不是业务拒绝，必须返回 503 且不形成决定。跨 scope 请求在任何 repository 或
+provider lookup 前拒绝。exact retry 返回第一次提交的决定，不受后续 mutable policy 变化影响。
 
 ### 8.3 Schema 归纳
 
@@ -1054,7 +1090,7 @@ session 重放造成重复状态、运行时依赖漂移。
 | `GET /api/mirror/trust/deployment-isolation/attestations/{attestationId}/latest` | 分发 atomic attestation/current-status bundle | ACTIVE 同 authority/time 复验；REVOKED denial-only 分发 | 已实现（test/staging） |
 | `GET /api/mirror/trust/deployment-isolation/attestations/{attestationId}/revisions/{revision}` | exact current attestation + status 地址读取 | 四坐标都仍等于 current head 才返回 | 已实现（test/staging） |
 | `POST /api/mirror/trust/deployment-isolation/attestations/{attestationId}/revocations` | 精确栅栏下不可逆追加 REVOKED 状态 | 同 reason 原 fence/exact fence 幂等；禁止 re-activate | 已实现（test/staging + `MIRROR_TRUST_ADMIN`） |
-| `POST /api/mirror/observations` | 接收签名 observation metadata | observationId 幂等 | 待实现 |
+| `POST /api/mirror/observations` | 接收签名 payload-free observation metadata，并原子返回 admitted/quarantined receipt | full scope + observationId/fingerprint 幂等 | 已实现（test/staging + 显式开关；默认外部 policy/payload authority 未就绪） |
 | `POST /api/mirror/corpus-candidates` | 触发受治理归纳 | source snapshot 幂等 | 待实现 |
 | `POST /api/mirror/shadow-jobs` | 提交 shadow comparison | job fingerprint 幂等 | 待实现 |
 | `GET /api/mirror/fidelity/domains/{domainId}` | 查询 fidelity profile | 只读 | 待实现 |
@@ -1069,9 +1105,10 @@ append-only body/status repository、durable current head、protected ingest/cur
 必须绑定同一 current authority generation，REVOKED 在 authority outage/过期后仍可作为 denial-only 状态分发。
 deployment agent 现在经 private-PKI/SPKI-pinned/identity-bound mTLS 拉取 exact vendor/envelope，按 operator-pinned
 bootstrap floor 与连续 authority/attestation/status 状态机验真，并通过 fsync + atomic rename 替换 durable read-only
-snapshot；旧 ACTIVE 在 hard age 关闭后不可用，REVOKED 不因过期恢复权限。下一增量应让 execution admission 和
-evidence commit pin 并复验同一 `cacheGeneration/snapshotFingerprint`。在运行时双重绑定闭合前，不得仅凭 control-plane
-分发成功、agent cache 存在或调用方上传 attestation 提升 trust class。
+snapshot；旧 ACTIVE 在 hard age 关闭后不可用，REVOKED 不因过期恢复权限。execution admission、lease-local
+TrustAttempt、terminal confirmation、v2 evidence 和 transaction commit 已 pin 并复验同一稳定 decision 的
+admitted/committed snapshot。该闭环只证明仓库内协议和运行时绑定；在非 Java v2 fixture、语言中立
+canonicalization、外部签发部署和多副本环境 certification 完成前，仍不得把实验室门禁冒充客户环境认证。
 
 外部集成协议扩展 `ToolStudioResourceGatewayProtocol`，新增能力快照、镜像证据和保真度 feature flags；
 旧 GraphDraft/RunEvidence 协议保持兼容，不在 v1 中删除。
@@ -1296,6 +1333,12 @@ effect unknown 和递归环会失败关闭；旧协议无破坏。
 
 ### Stage 2：受治理语料，4 个 sprint，P0/P1
 
+**当前状态**：第一纵切已完成签名 payload-free observation、operator-owned policy、external payload-reference
+verification SPI、admitted/quarantined 终态、full-scope append-only store、受保护 API、honest capability probe、
+mandatory audit 原子性和独立 test-kit verifier。尚未完成 payload vault 实现、quarantine review、corpus revision、
+exact/trajectory/cluster resolver、poisoning/drift、retention/deletion proof 与 outcome calibration，因此 Stage 2
+不能标记完成。
+
 **交付物**：
 
 - observation envelope、ingest/admission/quarantine 管线；
@@ -1394,8 +1437,8 @@ SRE runbook 和生产认证包。
 | RG-MIR-005 | 增加 capability snapshot API 与 capability probe | integration controller/capability service | scope/identity 校验；功能未闭合时 feature flag 为 false |
 | RG-MIR-006 | 建立 `MirrorPlanCompiler` 骨架 | `gateway/testing/planning` | 已完成 compiler/run kernel、exact closure/runtime inventory 对账、external-only 控制、resolver provenance、generation/TTL/scope 准入、静态 + 动态 occurrence budget、payload-free durable store、受保护 Plan/Run/Evidence API、durable request fencing、fail-closed operation observability、deployment-attestation 协议/离线验真、authority key-set trusted distribution/durable floor、attestation ingest/status/revocation/current-only 分发、agent pinned mTLS/non-TOFU/atomic cache，以及 admission/confirmation/transaction commit 的 runtime trust binding；待非 Java v2 固定 fixture 与环境级多副本认证 |
 | RG-MIR-007 | 复用 FixtureBundle 的 mirror adapter ADR | `docs/adr/ADR-004-mirror-plan-reuses-fixture-bundle.md` + `compileMirror` | 已完成；不新增平行 fixture 主模型；映射损失和暂不支持项显式报告 |
-| RG-MIR-008 | 建立生产隔离架构测试 | production composition tests | bean/profile 双栅栏、普通请求控制字段拒绝及 Plan/Run/Evidence route 在 production/mixed profile 物理不存在已完成；deployment-attestation strict protocol/producer/verifier 已完成；待外部签发/分发、运行时 egress 证明绑定和 pre-materialization ingress 门禁 |
-| RG-MIR-009 | 增加 test-kit 协议模型与 compatibility fixtures | `resource-gateway-test-kit` | 已完成 Snapshot/Closure、MirrorEvidence 与 DeploymentIsolationAttestation 独立复验；三份共享 fixture（含两份 signed fixture）；不依赖 server/Spring |
+| RG-MIR-008 | 建立生产隔离架构测试 | production composition tests | bean/profile 双栅栏、普通请求控制字段拒绝、Mirror route 在 production/mixed profile 物理不存在、deployment trust runtime 双重绑定已完成；待客户环境外部签发/分发认证、非 Java v2 compatibility 和 pre-materialization ingress 门禁 |
+| RG-MIR-009 | 增加 test-kit 协议模型与 compatibility fixtures | `resource-gateway-test-kit` | 已完成 Snapshot/Closure、MirrorEvidence、DeploymentIsolationAttestation/Authority 与 CapabilityObservation 独立复验；五份共享 fixture 均不携带私钥或业务 payload；不依赖 server/Spring |
 | RG-MIR-010 | 建立退款域资产清单 | `docs/examples/resource-gateway-mirror/refund/` | capability closure、entity、baseline read、write effect、outcome owner 完整 |
 | RG-MIR-011 | 增加协议版本与错误码注册表 | mirror protocol docs | 每个拒绝路径有稳定 code、HTTP 语义和重试分类 |
 | RG-MIR-012 | 建立 Stage 0 CI 门禁 | Maven/schema/doc verification | projection、schema、compatibility、production isolation 在 PR 必跑 |

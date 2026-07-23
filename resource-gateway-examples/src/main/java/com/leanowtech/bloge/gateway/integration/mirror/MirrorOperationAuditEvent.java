@@ -74,7 +74,9 @@ public record MirrorOperationAuditEvent(
         /** Read one atomic current deployment-isolation attestation and status bundle. */
         ISOLATION_ATTESTATION_READ,
         /** Irreversibly revoke one exact current deployment-isolation attestation. */
-        ISOLATION_ATTESTATION_REVOKE
+        ISOLATION_ATTESTATION_REVOKE,
+        /** Admit or quarantine one signed payload-free capability observation. */
+        OBSERVATION_INGEST
     }
 
     /** Terminal operation outcomes. */

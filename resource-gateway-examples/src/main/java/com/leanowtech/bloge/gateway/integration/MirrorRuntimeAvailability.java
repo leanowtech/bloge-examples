@@ -19,6 +19,8 @@ public final class MirrorRuntimeAvailability {
     private final boolean attestationDistributionApi;
     private final BooleanSupplier attestationDistributionReadiness;
     private final BooleanSupplier certificationReadiness;
+    private final boolean observationAdmissionApi;
+    private final BooleanSupplier observationAdmissionReadiness;
 
     /**
      * Creates a marker with static readiness, primarily for disabled composition and tests.
@@ -28,7 +30,8 @@ public final class MirrorRuntimeAvailability {
      */
     public MirrorRuntimeAvailability(boolean planCompilationApi, boolean executionApi) {
         this(planCompilationApi, executionApi, () -> executionApi,
-                false, () -> false, false, () -> false, () -> false);
+                false, () -> false, false, () -> false, () -> false,
+                false, () -> false);
     }
 
     /**
@@ -43,7 +46,8 @@ public final class MirrorRuntimeAvailability {
             boolean executionApi,
             BooleanSupplier executionReadiness) {
         this(planCompilationApi, executionApi, executionReadiness,
-                false, () -> false, false, () -> false, () -> false);
+                false, () -> false, false, () -> false, () -> false,
+                false, () -> false);
     }
 
     /**
@@ -63,7 +67,7 @@ public final class MirrorRuntimeAvailability {
             BooleanSupplier authorityDistributionReadiness) {
         this(planCompilationApi, executionApi, executionReadiness,
                 authorityDistributionApi, authorityDistributionReadiness,
-                false, () -> false, () -> false);
+                false, () -> false, () -> false, false, () -> false);
     }
 
     /**
@@ -88,7 +92,7 @@ public final class MirrorRuntimeAvailability {
         this(planCompilationApi, executionApi, executionReadiness,
                 authorityDistributionApi, authorityDistributionReadiness,
                 attestationDistributionApi, attestationDistributionReadiness,
-                () -> false);
+                () -> false, false, () -> false);
     }
 
     /**
@@ -112,6 +116,37 @@ public final class MirrorRuntimeAvailability {
             boolean attestationDistributionApi,
             BooleanSupplier attestationDistributionReadiness,
             BooleanSupplier certificationReadiness) {
+        this(planCompilationApi, executionApi, executionReadiness,
+                authorityDistributionApi, authorityDistributionReadiness,
+                attestationDistributionApi, attestationDistributionReadiness,
+                certificationReadiness, false, () -> false);
+    }
+
+    /**
+     * Creates a marker that also probes the observation-admission ingress.
+     *
+     * @param planCompilationApi protected plan compile/read routes are assembled
+     * @param executionApi protected run/evidence routes are assembled
+     * @param executionReadiness dynamic run/evidence and signing-authority readiness
+     * @param authorityDistributionApi protected authority publication routes are assembled
+     * @param authorityDistributionReadiness dynamic local authority trust readiness
+     * @param attestationDistributionApi protected attestation ingest/read/revoke routes are assembled
+     * @param attestationDistributionReadiness dynamic authority and bootstrap-policy readiness
+     * @param certificationReadiness dynamic deployment-agent run-trust readiness
+     * @param observationAdmissionApi protected observation ingest route is assembled
+     * @param observationAdmissionReadiness dynamic policy and payload-reference authority readiness
+     */
+    public MirrorRuntimeAvailability(
+            boolean planCompilationApi,
+            boolean executionApi,
+            BooleanSupplier executionReadiness,
+            boolean authorityDistributionApi,
+            BooleanSupplier authorityDistributionReadiness,
+            boolean attestationDistributionApi,
+            BooleanSupplier attestationDistributionReadiness,
+            BooleanSupplier certificationReadiness,
+            boolean observationAdmissionApi,
+            BooleanSupplier observationAdmissionReadiness) {
         this.planCompilationApi = planCompilationApi;
         this.executionApi = executionApi;
         this.executionReadiness = Objects.requireNonNull(
@@ -124,6 +159,9 @@ public final class MirrorRuntimeAvailability {
                 attestationDistributionReadiness, "attestationDistributionReadiness");
         this.certificationReadiness = Objects.requireNonNull(
                 certificationReadiness, "certificationReadiness");
+        this.observationAdmissionApi = observationAdmissionApi;
+        this.observationAdmissionReadiness = Objects.requireNonNull(
+                observationAdmissionReadiness, "observationAdmissionReadiness");
     }
 
     /**
@@ -221,6 +259,31 @@ public final class MirrorRuntimeAvailability {
         }
         try {
             return certificationReadiness.getAsBoolean();
+        } catch (RuntimeException unavailable) {
+            return false;
+        }
+    }
+
+    /**
+     * Reports protected observation-ingest route assembly.
+     *
+     * @return whether the signed observation admission route is physically assembled
+     */
+    public boolean observationAdmissionApi() {
+        return observationAdmissionApi;
+    }
+
+    /**
+     * Probes current observation policy and external reference-verification readiness.
+     *
+     * @return whether the assembled observation route can currently make admission decisions
+     */
+    public boolean observationAdmissionReady() {
+        if (!observationAdmissionApi) {
+            return false;
+        }
+        try {
+            return observationAdmissionReadiness.getAsBoolean();
         } catch (RuntimeException unavailable) {
             return false;
         }

@@ -1,0 +1,19 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://bloge.dev/schemas/resource-gateway-mirror/capability-observation-receipt-v1.schema.json",
+  "title": "Resource Gateway Capability Observation Receipt v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schemaVersion", "envelope", "admission"],
+  "properties": {
+    "schemaVersion": {
+      "const": "resourceGateway.capabilityObservationReceipt.v1"
+    },
+    "envelope": {
+      "$ref": "https://bloge.dev/schemas/resource-gateway-mirror/capability-observation-v1.schema.json"
+    },
+    "admission": {
+      "$ref": "https://bloge.dev/schemas/resource-gateway-mirror/capability-observation-admission-v1.schema.json"
+    }
+  }
+}

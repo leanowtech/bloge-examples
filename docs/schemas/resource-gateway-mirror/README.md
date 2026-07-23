@@ -31,6 +31,9 @@ offline artifact verification live in the independent `resource-gateway-test-kit
 | `mirror-deployment-isolation-run-trust-v1.schema.json` | `MirrorDeploymentIsolationRunTrust.Binding` | Stable decision plus admitted/committed local agent observations signed into v2 evidence |
 | `mirror-deployment-isolation-attestation-revocation-request-v1.schema.json` | `MirrorDeploymentIsolationAttestationRevocationRequest` | Exact-current optimistic command for one irreversible status transition |
 | `mirror-deployment-isolation-authority-key-set-publication-v1.schema.json` | `MirrorDeploymentIsolationAuthorityKeySetPublication` | Full-scope, monotonic, M-of-N bootstrap-root-signed publication of isolation-attestation authority keys |
+| `capability-observation-v1.schema.json` | `CapabilityObservationEnvelope` | Signed payload-free capability invocation with exact sanitized-payload, proof, schema, purpose, trace, and state references |
+| `capability-observation-admission-v1.schema.json` | `CapabilityObservationAdmission` | Content-addressed local `ADMITTED` or terminal `QUARANTINED` decision |
+| `capability-observation-receipt-v1.schema.json` | `CapabilityObservationReceipt` | Atomic ingest result linking the exact producer envelope to its immutable local decision |
 | `capability-lifecycle-transition-v1.schema.json` | `CapabilityLifecycleTransitionRequest` | Optimistically fenced governance transition for one exact revision |
 | `capability-mirror-compatibility-v1.schema.json` | `CapabilityMirrorCompatibility` | Minimum protocol/object/feature baseline a mirror consumer can negotiate |
 
@@ -64,6 +67,18 @@ bootstrap-root public keys, exact local binding policy, and a deterministic veri
 contains no private key or business payload. Both implementations re-derive the material and
 publication fingerprints, verify both Ed25519 signatures, and expose the advertised attestation
 key only after every local binding and policy check succeeds.
+
+`capability-observation-stage2-v1.fixture.json` is the fixed public-only Stage 2 observation
+fixture. It contains a signed payload-free support-refund invocation, exact sanitized-payload,
+sanitization-proof, schema, grant, trace, state, and outcome references, the producer public key,
+local expected scope, and a deterministic verification instant. It contains no private key,
+request/response value, business key, secret, stack trace, or provider message. The server schemas
+and standalone test-kit independently re-derive both fingerprints and verify the Ed25519
+signature. Payload-vault existence and sanitization-proof validity remain separate admission
+authorities and are not implied by this fixture.
+The admission order, operator-owned SPI contract, quarantine/unavailable split, stable errors and
+runbook are documented in
+[Capability Observation admission](../../resource-gateway-capability-observation-admission.md).
 
 ## Deployment isolation attestation boundary
 
@@ -402,6 +417,7 @@ The protected Tool Studio integration surface exposes:
 | `GET /api/mirror/trust/deployment-isolation/attestations/{attestationId}/latest` | Re-verify and read the atomic current active/revoked bundle | `MIRROR_TRUST_DISTRIBUTION` or `MIRROR_REHEARSAL` |
 | `GET /api/mirror/trust/deployment-isolation/attestations/{attestationId}/revisions/{revision}` | Read exact coordinates only while they remain the current head | `MIRROR_TRUST_DISTRIBUTION` or `MIRROR_REHEARSAL` |
 | `POST /api/mirror/trust/deployment-isolation/attestations/{attestationId}/revocations` | Apply one exact-current irreversible revocation | `MIRROR_TRUST_ADMIN` |
+| `POST /api/mirror/observations` | Admit or quarantine one signed payload-free observation and return an atomic receipt | `MIRROR_CORPUS_INGESTION` |
 
 All authority/attestation GET routes additionally require the exact
 `application/vnd.bloge.mirror-deployment-isolation-trust.v1+json` media type and
@@ -415,11 +431,11 @@ not become an asset-existence oracle.
 The Stage 0 baseline verifies all seven shipped resource graphs plus all three frontend visual examples. The
 MirrorPlan protocol increment adds nine semantic integrity cases and extends the strict protocol-field test. Its
 focused protocol and probe suite passes 32 tests with no failures, errors, or skips. After adding the Stage 1
-compiler, internal mirror runtime kernel, and MirrorResolution protocol, the latest complete Resource Gateway gate
-passes 4608 tests with no
+compiler, internal mirror runtime kernel, MirrorResolution protocol, and the first Stage 2 governed observation
+admission increment, the latest complete Resource Gateway gate passes 4649 tests with no
 failures or errors and 3 conditional frontend skips, exercises the real browser workflow, and successfully rebuilds
-the executable Spring Boot JAR. The independent test-kit gate passes 270 tests with no failures, errors, or skips,
-packages all 25 mirror protocol resources, and rebuilds its ordinary/shaded JAR plus public Javadocs.
+the executable Spring Boot JAR. The independent test-kit gate passes 277 tests with no failures, errors, or skips,
+packages all 33 mirror protocol resources, and rebuilds its ordinary/shaded JAR plus public Javadocs.
 
 The Stage 1 `MirrorPlan` protocol presence alone does not make mirror execution available. Capability discovery
 always reports `mirrorPlanProtocol=true`. It reports `mirrorPlanCompilation` and
@@ -466,5 +482,6 @@ The compiler and execution kernel now have protected service endpoints. The kern
 node/edge/attempt value to a bounded canonical fingerprint, proves exact closure against resolver provenance,
 requires an explicit signer, and returns an immediately verified portable bundle. Durable payload-free
 plan/evidence storage, request-id coordination with epoch fencing, atomic terminal commit, dynamic occurrence
-budgeting, and independent test-kit verification are complete. Deployment egress proof, pre-MVC ingress controls,
-and cross-language numeric canonicalization remain open certification/production gates.
+budgeting, independent test-kit verification, and deployment-trust admission/confirmation/evidence commit binding
+are complete. Pre-MVC ingress controls, non-Java v2 fixtures, cross-language numeric canonicalization, and
+customer-environment certification remain open production gates.

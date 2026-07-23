@@ -157,6 +157,9 @@ class ToolStudioIntegrationServiceTest {
                 .containsEntry("mirrorIsolationAttestationTrustProtocol", true)
                 .containsEntry("mirrorIsolationAttestationDistributionApi", false)
                 .containsEntry("mirrorIsolationAttestationDistributionReady", false)
+                .containsEntry("mirrorObservationProtocol", true)
+                .containsEntry("mirrorObservationAdmissionApi", false)
+                .containsEntry("mirrorObservationAdmissionReady", false)
                 .containsEntry("runEvidenceBundle", true)
                 .containsEntry("structuredExecutionFacts", true)
                 .containsEntry("graphDeadline", true)
@@ -417,6 +420,37 @@ class ToolStudioIntegrationServiceTest {
         assertThat(available.features())
                 .containsEntry("mirrorIsolationAttestationDistributionApi", true)
                 .containsEntry("mirrorIsolationAttestationDistributionReady", true);
+    }
+
+    @Test
+    void capabilitiesSeparateObservationRouteAssemblyFromAdmissionReadiness() {
+        ToolStudioIntegrationService service = service(null, null, null, null);
+        java.util.concurrent.atomic.AtomicBoolean observationReady =
+                new java.util.concurrent.atomic.AtomicBoolean(false);
+        service.configureMirrorRuntime(new MirrorRuntimeAvailability(
+                true, true, () -> true, true, () -> true,
+                true, () -> true, () -> true,
+                true, observationReady::get));
+
+        IntegrationCapabilities unavailable = service.capabilities().payload();
+        observationReady.set(true);
+        IntegrationCapabilities available = service.capabilities().payload();
+
+        assertThat(unavailable.features())
+                .containsEntry("mirrorObservationProtocol", true)
+                .containsEntry("mirrorObservationAdmissionApi", true)
+                .containsEntry("mirrorObservationAdmissionReady", false);
+        assertThat(unavailable.supportedObjects())
+                .containsKeys(
+                        "capabilityObservation",
+                        "capabilityObservationAdmission",
+                        "capabilityObservationReceipt");
+        assertThat(unavailable.endpoints())
+                .extracting(endpoint -> endpoint.method() + " " + endpoint.path())
+                .contains("POST /api/mirror/observations");
+        assertThat(available.features())
+                .containsEntry("mirrorObservationAdmissionApi", true)
+                .containsEntry("mirrorObservationAdmissionReady", true);
     }
 
     @Test

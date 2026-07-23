@@ -23,6 +23,11 @@ import com.leanowtech.bloge.gateway.integration.mirror.MirrorDeploymentIsolation
 import com.leanowtech.bloge.gateway.integration.mirror.MirrorDeploymentIsolationAttestationIntegrity;
 import com.leanowtech.bloge.gateway.integration.mirror.MirrorDeploymentIsolationAttestationRepository;
 import com.leanowtech.bloge.gateway.integration.mirror.MirrorRunIntegrationService;
+import com.leanowtech.bloge.gateway.integration.mirror.CapabilityObservationAdmissionIntegrity;
+import com.leanowtech.bloge.gateway.integration.mirror.CapabilityObservationAdmissionPolicyProvider;
+import com.leanowtech.bloge.gateway.integration.mirror.CapabilityObservationIntegrity;
+import com.leanowtech.bloge.gateway.integration.mirror.CapabilityObservationPayloadReferenceVerifier;
+import com.leanowtech.bloge.gateway.integration.mirror.CapabilityObservationRepository;
 import com.leanowtech.bloge.gateway.integration.MirrorRuntimeAvailability;
 import com.leanowtech.bloge.gateway.resource.ResourceDescriptor;
 import com.leanowtech.bloge.gateway.resource.ResourceRegistry;
@@ -169,10 +174,26 @@ class MirrorRuntimeConfigurationTest {
                 MirrorDeploymentIsolationAttestationAdmissionPolicyProvider.class).values())
                 .singleElement()
                 .satisfies(provider -> assertThat(provider.available()).isFalse());
+        assertThat(context.getBeansOfType(
+                CapabilityObservationIntegrity.class)).hasSize(1);
+        assertThat(context.getBeansOfType(
+                CapabilityObservationAdmissionIntegrity.class)).hasSize(1);
+        assertThat(context.getBeansOfType(
+                CapabilityObservationRepository.class)).hasSize(1);
+        assertThat(context.getBeansOfType(
+                CapabilityObservationAdmissionPolicyProvider.class).values())
+                .singleElement()
+                .satisfies(provider -> assertThat(provider.available()).isFalse());
+        assertThat(context.getBeansOfType(
+                CapabilityObservationPayloadReferenceVerifier.class).values())
+                .singleElement()
+                .satisfies(provider -> assertThat(provider.available()).isFalse());
         assertThat(AopUtils.isCglibProxy(context.getBean(MirrorPlanRepository.class))).isTrue();
         assertThat(AopUtils.isCglibProxy(context.getBean(MirrorFixtureScopeRepository.class))).isTrue();
         assertThat(AopUtils.isCglibProxy(context.getBean(MirrorEvidenceRepository.class))).isTrue();
         assertThat(AopUtils.isCglibProxy(context.getBean(MirrorRunRequestRepository.class))).isTrue();
+        assertThat(AopUtils.isCglibProxy(
+                context.getBean(CapabilityObservationRepository.class))).isTrue();
         assertThat(context.getBean(MirrorRunService.class).engineConfiguration())
                 .satisfies(configuration -> {
                     assertThat(configuration.interceptorTypes()).isEmpty();
@@ -211,6 +232,16 @@ class MirrorRuntimeConfigurationTest {
                 MirrorDeploymentIsolationAttestationRepository.class)).isEmpty();
         assertThat(context.getBeansOfType(
                 MirrorDeploymentIsolationAttestationAdmissionPolicyProvider.class)).isEmpty();
+        assertThat(context.getBeansOfType(
+                CapabilityObservationIntegrity.class)).isEmpty();
+        assertThat(context.getBeansOfType(
+                CapabilityObservationAdmissionIntegrity.class)).isEmpty();
+        assertThat(context.getBeansOfType(
+                CapabilityObservationRepository.class)).isEmpty();
+        assertThat(context.getBeansOfType(
+                CapabilityObservationAdmissionPolicyProvider.class)).isEmpty();
+        assertThat(context.getBeansOfType(
+                CapabilityObservationPayloadReferenceVerifier.class)).isEmpty();
     }
 
     private static final class EmptyResourceRegistry implements ResourceRegistry {

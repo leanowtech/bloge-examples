@@ -4,6 +4,7 @@ import com.leanowtech.bloge.gateway.integration.mirror.MirrorPlanIntegrationServ
 import com.leanowtech.bloge.gateway.integration.mirror.MirrorRunIntegrationService;
 import com.leanowtech.bloge.gateway.integration.mirror.MirrorDeploymentIsolationAuthorityPublicationService;
 import com.leanowtech.bloge.gateway.integration.mirror.MirrorDeploymentIsolationAttestationService;
+import com.leanowtech.bloge.gateway.integration.mirror.CapabilityObservationAdmissionService;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.junit.jupiter.api.Test;
 import org.springframework.context.ApplicationContext;
@@ -39,7 +40,8 @@ class MirrorIntegrationRouteIsolationTest {
                     "POST /api/mirror/trust/deployment-isolation/attestations",
                     "GET /api/mirror/trust/deployment-isolation/attestations/{attestationId}/latest",
                     "GET /api/mirror/trust/deployment-isolation/attestations/{attestationId}/revisions/{revision}",
-                    "POST /api/mirror/trust/deployment-isolation/attestations/{attestationId}/revocations");
+                    "POST /api/mirror/trust/deployment-isolation/attestations/{attestationId}/revocations",
+                    "POST /api/mirror/observations");
             assertThat(routes(staging)).contains(
                     "POST /api/mirror/plans",
                     "GET /api/mirror/plans/{planId}",
@@ -52,7 +54,8 @@ class MirrorIntegrationRouteIsolationTest {
                     "POST /api/mirror/trust/deployment-isolation/attestations",
                     "GET /api/mirror/trust/deployment-isolation/attestations/{attestationId}/latest",
                     "GET /api/mirror/trust/deployment-isolation/attestations/{attestationId}/revisions/{revision}",
-                    "POST /api/mirror/trust/deployment-isolation/attestations/{attestationId}/revocations");
+                    "POST /api/mirror/trust/deployment-isolation/attestations/{attestationId}/revocations",
+                    "POST /api/mirror/observations");
             assertThat(routes(disabled)).noneMatch(route -> route.contains("/api/mirror/"));
         }
     }
@@ -75,6 +78,10 @@ class MirrorIntegrationRouteIsolationTest {
                     MirrorDeploymentIsolationAttestationController.class)).isEmpty();
             assertThat(mixed.getBeansOfType(
                     MirrorDeploymentIsolationAttestationController.class)).isEmpty();
+            assertThat(production.getBeansOfType(
+                    CapabilityObservationController.class)).isEmpty();
+            assertThat(mixed.getBeansOfType(
+                    CapabilityObservationController.class)).isEmpty();
         }
     }
 
@@ -90,7 +97,8 @@ class MirrorIntegrationRouteIsolationTest {
         context.register(WebConfiguration.class, MirrorIntegrationController.class,
                 MirrorRunIntegrationController.class,
                 MirrorDeploymentIsolationAuthorityPublicationController.class,
-                MirrorDeploymentIsolationAttestationController.class);
+                MirrorDeploymentIsolationAttestationController.class,
+                CapabilityObservationController.class);
         context.refresh();
         return context;
     }
@@ -132,6 +140,12 @@ class MirrorIntegrationRouteIsolationTest {
         }
 
         @Bean
+        CapabilityObservationAdmissionService
+        capabilityObservationAdmissionService() {
+            return mock(CapabilityObservationAdmissionService.class);
+        }
+
+        @Bean
         IntegrationRequestAuthenticator integrationRequestAuthenticator() {
             return mock(IntegrationRequestAuthenticator.class);
         }
@@ -159,6 +173,12 @@ class MirrorIntegrationRouteIsolationTest {
         MirrorDeploymentIsolationAttestationDecoder
         mirrorDeploymentIsolationAttestationDecoder() {
             return new MirrorDeploymentIsolationAttestationDecoder(
+                    new ObjectMapper().findAndRegisterModules());
+        }
+
+        @Bean
+        CapabilityObservationDecoder capabilityObservationDecoder() {
+            return new CapabilityObservationDecoder(
                     new ObjectMapper().findAndRegisterModules());
         }
     }

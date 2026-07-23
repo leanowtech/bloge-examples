@@ -1,0 +1,270 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://bloge.dev/schemas/resource-gateway-mirror/capability-observation-v1.schema.json",
+  "title": "Resource Gateway Capability Observation v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schemaVersion", "observationFingerprint", "material", "seal"],
+  "properties": {
+    "schemaVersion": {
+      "const": "resourceGateway.capabilityObservation.v1"
+    },
+    "observationFingerprint": { "$ref": "#/$defs/fingerprint" },
+    "material": { "$ref": "#/$defs/material" },
+    "seal": { "$ref": "#/$defs/seal" }
+  },
+  "$defs": {
+    "fingerprint": {
+      "type": "string",
+      "pattern": "^sha256:[a-f0-9]{64}$"
+    },
+    "identifier": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 512,
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9._:/#-]{0,511}$"
+    },
+    "canonicalInstant": {
+      "type": "string",
+      "format": "date-time",
+      "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}(?:\\.[0-9]{3}(?:[0-9]{3})?(?:[0-9]{3})?)?Z$"
+    },
+    "scope": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "tenantId", "organizationId", "projectId", "environmentId", "region"
+      ],
+      "properties": {
+        "tenantId": { "type": "string", "minLength": 1, "maxLength": 255 },
+        "organizationId": { "type": "string", "minLength": 1, "maxLength": 255 },
+        "projectId": { "type": "string", "maxLength": 255 },
+        "environmentId": { "type": "string", "minLength": 1, "maxLength": 255 },
+        "region": { "type": "string", "maxLength": 96 }
+      }
+    },
+    "artifactRef": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["kind", "id", "revision", "fingerprint"],
+      "properties": {
+        "kind": {
+          "enum": [
+            "CAPABILITY", "DATA_USE_GRANT", "JSON_SCHEMA",
+            "OUTCOME_CORRELATION", "PAYLOAD_SANITIZATION_PROOF",
+            "SANITIZED_PAYLOAD"
+          ]
+        },
+        "id": { "$ref": "#/$defs/identifier" },
+        "revision": { "type": "integer", "minimum": 1 },
+        "fingerprint": { "$ref": "#/$defs/fingerprint" }
+      }
+    },
+    "traceCoordinates": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["traceId", "spanId", "sequence"],
+      "properties": {
+        "traceId": { "$ref": "#/$defs/identifier" },
+        "spanId": { "$ref": "#/$defs/identifier" },
+        "sequence": { "type": "integer", "minimum": 0 }
+      }
+    },
+    "payloadReference": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "payloadRef", "sanitizationProofRef", "schemaRef", "sizeBytes",
+        "mediaType", "classification", "vaultRegion", "retentionUntil"
+      ],
+      "properties": {
+        "payloadRef": {
+          "allOf": [
+            { "$ref": "#/$defs/artifactRef" },
+            { "properties": { "kind": { "const": "SANITIZED_PAYLOAD" } } }
+          ]
+        },
+        "sanitizationProofRef": {
+          "allOf": [
+            { "$ref": "#/$defs/artifactRef" },
+            {
+              "properties": {
+                "kind": { "const": "PAYLOAD_SANITIZATION_PROOF" }
+              }
+            }
+          ]
+        },
+        "schemaRef": {
+          "allOf": [
+            { "$ref": "#/$defs/artifactRef" },
+            { "properties": { "kind": { "const": "JSON_SCHEMA" } } }
+          ]
+        },
+        "sizeBytes": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 67108864
+        },
+        "mediaType": { "const": "application/json" },
+        "classification": {
+          "enum": ["PUBLIC", "INTERNAL", "CONFIDENTIAL", "RESTRICTED"]
+        },
+        "vaultRegion": { "$ref": "#/$defs/identifier" },
+        "retentionUntil": { "$ref": "#/$defs/canonicalInstant" }
+      }
+    },
+    "normalizedError": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "errorClass", "errorCode", "retryable", "detailsFingerprint"
+      ],
+      "properties": {
+        "errorClass": { "$ref": "#/$defs/identifier" },
+        "errorCode": { "$ref": "#/$defs/identifier" },
+        "retryable": { "type": "boolean" },
+        "detailsFingerprint": { "$ref": "#/$defs/fingerprint" }
+      }
+    },
+    "stateCorrelation": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "entityType", "businessKeyFingerprint",
+        "stateBeforeFingerprint", "stateAfterFingerprint"
+      ],
+      "properties": {
+        "entityType": { "$ref": "#/$defs/identifier" },
+        "businessKeyFingerprint": { "$ref": "#/$defs/fingerprint" },
+        "stateBeforeFingerprint": { "$ref": "#/$defs/fingerprint" },
+        "stateAfterFingerprint": { "$ref": "#/$defs/fingerprint" }
+      }
+    },
+    "dataUseGrant": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "grantRef", "purpose", "allowedUses", "validFrom", "expiresAt"
+      ],
+      "properties": {
+        "grantRef": {
+          "allOf": [
+            { "$ref": "#/$defs/artifactRef" },
+            { "properties": { "kind": { "const": "DATA_USE_GRANT" } } }
+          ]
+        },
+        "purpose": { "const": "MIRROR_CORPUS_INGESTION" },
+        "allowedUses": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 4,
+          "uniqueItems": true,
+          "items": {
+            "enum": [
+              "CORPUS_CURATION", "EXACT_REPLAY",
+              "OUTCOME_CALIBRATION", "TRAJECTORY_MODELING"
+            ]
+          }
+        },
+        "validFrom": { "$ref": "#/$defs/canonicalInstant" },
+        "expiresAt": { "$ref": "#/$defs/canonicalInstant" }
+      }
+    },
+    "material": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "observationId", "scope", "capabilityRef", "occurredAt", "trace",
+        "request", "response", "error", "latencyMillis", "stateCorrelation",
+        "outcomeCorrelationRef", "dataUseGrant"
+      ],
+      "properties": {
+        "observationId": { "$ref": "#/$defs/identifier" },
+        "scope": { "$ref": "#/$defs/scope" },
+        "capabilityRef": {
+          "allOf": [
+            { "$ref": "#/$defs/artifactRef" },
+            { "properties": { "kind": { "const": "CAPABILITY" } } }
+          ]
+        },
+        "occurredAt": { "$ref": "#/$defs/canonicalInstant" },
+        "trace": { "$ref": "#/$defs/traceCoordinates" },
+        "request": { "$ref": "#/$defs/payloadReference" },
+        "response": {
+          "oneOf": [
+            { "$ref": "#/$defs/payloadReference" },
+            { "type": "null" }
+          ]
+        },
+        "error": {
+          "oneOf": [
+            { "$ref": "#/$defs/normalizedError" },
+            { "type": "null" }
+          ]
+        },
+        "latencyMillis": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 86400000
+        },
+        "stateCorrelation": {
+          "oneOf": [
+            { "$ref": "#/$defs/stateCorrelation" },
+            { "type": "null" }
+          ]
+        },
+        "outcomeCorrelationRef": {
+          "oneOf": [
+            {
+              "allOf": [
+                { "$ref": "#/$defs/artifactRef" },
+                {
+                  "properties": {
+                    "kind": { "const": "OUTCOME_CORRELATION" }
+                  }
+                }
+              ]
+            },
+            { "type": "null" }
+          ]
+        },
+        "dataUseGrant": { "$ref": "#/$defs/dataUseGrant" }
+      },
+      "oneOf": [
+        {
+          "properties": {
+            "response": { "$ref": "#/$defs/payloadReference" },
+            "error": { "type": "null" }
+          }
+        },
+        {
+          "properties": {
+            "response": { "type": "null" },
+            "error": { "$ref": "#/$defs/normalizedError" }
+          }
+        }
+      ]
+    },
+    "seal": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "materialFingerprint", "algorithm", "keyId",
+        "issuer", "signedAt", "signature"
+      ],
+      "properties": {
+        "materialFingerprint": { "$ref": "#/$defs/fingerprint" },
+        "algorithm": { "const": "Ed25519" },
+        "keyId": { "$ref": "#/$defs/identifier" },
+        "issuer": { "$ref": "#/$defs/identifier" },
+        "signedAt": { "$ref": "#/$defs/canonicalInstant" },
+        "signature": {
+          "type": "string",
+          "minLength": 4,
+          "maxLength": 4096,
+          "pattern": "^[A-Za-z0-9+/]+={0,2}$"
+        }
+      }
+    }
+  }
+}

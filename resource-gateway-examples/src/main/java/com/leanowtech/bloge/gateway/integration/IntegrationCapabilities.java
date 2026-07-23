@@ -304,6 +304,15 @@ public record IntegrationCapabilities(
         objects.put("mirrorDeploymentIsolationAttestationRevocationRequest", List.of(
                 com.leanowtech.bloge.gateway.integration.mirror
                         .MirrorDeploymentIsolationAttestationRevocationRequest.SCHEMA_VERSION));
+        objects.put("capabilityObservation", List.of(
+                com.leanowtech.bloge.gateway.integration.mirror
+                        .CapabilityObservationEnvelope.SCHEMA_VERSION));
+        objects.put("capabilityObservationAdmission", List.of(
+                com.leanowtech.bloge.gateway.integration.mirror
+                        .CapabilityObservationAdmission.SCHEMA_VERSION));
+        objects.put("capabilityObservationReceipt", List.of(
+                com.leanowtech.bloge.gateway.integration.mirror
+                        .CapabilityObservationReceipt.SCHEMA_VERSION));
         objects.put("capabilityClosureProjectionRequest", List.of(
                 com.leanowtech.bloge.gateway.integration.mirror
                         .CapabilityClosureProjectionRequest.SCHEMA_VERSION));
@@ -747,6 +756,9 @@ public record IntegrationCapabilities(
         features.put("mirrorIsolationRunTrustBindingProtocol", true);
         features.put("mirrorIsolationRunTrustReady", false);
         features.put("mirrorCertifiableEvidenceServingReady", false);
+        features.put("mirrorObservationProtocol", true);
+        features.put("mirrorObservationAdmissionApi", false);
+        features.put("mirrorObservationAdmissionReady", false);
         features.put("runEvidenceBundle", true);
         features.put("structuredExecutionFacts", true);
         features.put("graphDeadline", true);

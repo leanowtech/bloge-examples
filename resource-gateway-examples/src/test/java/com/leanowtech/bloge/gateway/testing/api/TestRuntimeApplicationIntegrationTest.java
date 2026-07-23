@@ -9,6 +9,9 @@ import com.leanowtech.bloge.gateway.integration.MirrorIntegrationController;
 import com.leanowtech.bloge.gateway.integration.MirrorRunIntegrationController;
 import com.leanowtech.bloge.gateway.integration.MirrorRuntimeAvailability;
 import com.leanowtech.bloge.gateway.integration.MirrorDeploymentIsolationAuthorityPublicationController;
+import com.leanowtech.bloge.gateway.integration.CapabilityObservationController;
+import com.leanowtech.bloge.gateway.integration.mirror.CapabilityObservationAdmissionService;
+import com.leanowtech.bloge.gateway.integration.mirror.CapabilityObservationRepository;
 import com.leanowtech.bloge.gateway.integration.mirror.MirrorDeploymentIsolationAuthorityPublicationService;
 import com.leanowtech.bloge.gateway.integration.mirror.MirrorPlanIntegrationService;
 import com.leanowtech.bloge.gateway.integration.mirror.MirrorRunCommitService;
@@ -96,10 +99,16 @@ class TestRuntimeApplicationIntegrationTest {
         assertThat(context.getBeansOfType(MirrorRunIntegrationController.class)).hasSize(1);
         assertThat(context.getBeansOfType(
                 MirrorDeploymentIsolationAuthorityPublicationController.class)).hasSize(1);
+        assertThat(context.getBeansOfType(
+                CapabilityObservationController.class)).hasSize(1);
         assertThat(context.getBeansOfType(MirrorPlanIntegrationService.class)).hasSize(1);
         assertThat(context.getBeansOfType(MirrorRunIntegrationService.class)).hasSize(1);
         assertThat(context.getBeansOfType(
                 MirrorDeploymentIsolationAuthorityPublicationService.class)).hasSize(1);
+        assertThat(context.getBeansOfType(
+                CapabilityObservationAdmissionService.class)).hasSize(1);
+        assertThat(context.getBeansOfType(
+                CapabilityObservationRepository.class)).hasSize(1);
         assertThat(context.getBeansOfType(MirrorRunCommitService.class)).hasSize(1);
         assertThat(context.getBeansOfType(MirrorRunRequestRepository.class)).hasSize(1);
         assertThat(context.getBeansOfType(MirrorRuntimeAvailability.class)).hasSize(1);
@@ -108,6 +117,8 @@ class TestRuntimeApplicationIntegrationTest {
             assertThat(availability.executionApi()).isTrue();
             assertThat(availability.authorityDistributionApi()).isTrue();
             assertThat(availability.authorityDistributionReady()).isFalse();
+            assertThat(availability.observationAdmissionApi()).isTrue();
+            assertThat(availability.observationAdmissionReady()).isFalse();
         });
         assertThat(context.getBeansOfType(TestRunRepository.class)).hasSize(1);
         assertThat(context.getBeansOfType(TestSuiteRunRepository.class)).hasSize(1);
