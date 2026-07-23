@@ -714,11 +714,14 @@ class DatabaseTestSuiteStabilityPhysicalAttemptObservationJournalTest {
         Instant now = databaseTime();
         TestSuiteStabilityPhysicalAttemptObservationCommand old = command(
                 context, "", 0, 'a', now.minusMillis(10), now.plusMillis(200));
+        journal.prepare(old, descriptor);
+        Instant preparedAt = journal.find("tenant-a", "test", old.commandId())
+                .orElseThrow().preparedAt();
         var late = observation(
                 old, 103, 1,
                 TestSuiteStabilityPhysicalAttemptObservationReceipt.State.START_PENDING,
-                keyPair, now.plusMillis(80), now.plusMillis(80), fingerprint('4'));
-        journal.prepare(old, descriptor);
+                keyPair, preparedAt.plusMillis(1), preparedAt.plusMillis(1),
+                fingerprint('4'));
         Thread.sleep(250L);
 
         TestSuiteStabilityPhysicalAttemptObservationCommand recovery = command(context, 'b');
@@ -741,11 +744,14 @@ class DatabaseTestSuiteStabilityPhysicalAttemptObservationJournalTest {
         Instant now = databaseTime();
         TestSuiteStabilityPhysicalAttemptObservationCommand old = command(
                 context, "", 0, 'a', now.minusMillis(10), now.plusMillis(200));
+        journal.prepare(old, descriptor);
+        Instant preparedAt = journal.find("tenant-a", "test", old.commandId())
+                .orElseThrow().preparedAt();
         var replacement = observation(
                 old, 103, 2,
                 TestSuiteStabilityPhysicalAttemptObservationReceipt.State.RUNNING,
-                keyPair, now.plusMillis(80), now.plusMillis(80), fingerprint('8'));
-        journal.prepare(old, descriptor);
+                keyPair, preparedAt.plusMillis(1), preparedAt.plusMillis(1),
+                fingerprint('8'));
         Thread.sleep(250L);
 
         TestSuiteStabilityPhysicalAttemptObservationCommand recovery = command(context, 'b');
@@ -765,11 +771,14 @@ class DatabaseTestSuiteStabilityPhysicalAttemptObservationJournalTest {
         Instant now = databaseTime();
         TestSuiteStabilityPhysicalAttemptObservationCommand old = command(
                 context, "", 0, 'a', now.minusMillis(10), now.plusMillis(200));
+        journal.prepare(old, descriptor);
+        Instant preparedAt = journal.find("tenant-a", "test", old.commandId())
+                .orElseThrow().preparedAt();
         var regressed = observation(
                 old, 103, 2,
                 TestSuiteStabilityPhysicalAttemptObservationReceipt.State.START_PENDING,
-                keyPair, now.plusMillis(80), now.plusMillis(80), fingerprint('4'));
-        journal.prepare(old, descriptor);
+                keyPair, preparedAt.plusMillis(1), preparedAt.plusMillis(1),
+                fingerprint('4'));
         Thread.sleep(250L);
 
         TestSuiteStabilityPhysicalAttemptObservationCommand recovery = command(context, 'b');
