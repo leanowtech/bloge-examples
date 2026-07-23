@@ -130,6 +130,9 @@ public final class CapabilityMirrorProtocol {
     /** Fixed corpus-governance compatibility-fixture wire version. */
     public static final String CAPABILITY_CORPUS_COMPATIBILITY_V1 =
             "resourceGateway.capabilityCorpusCompatibility.v1";
+    /** Fixture metadata contract selecting exact corpus serving publications. */
+    public static final String FIXTURE_MIRROR_CORPUS_BINDINGS_V1 =
+            "resourceGateway.fixtureMirrorCorpusBindings.v1";
 
     /** Classpath root containing the authoritative mirror schemas and fixtures. */
     public static final String SCHEMA_RESOURCE_ROOT = "/schemas/resource-gateway-mirror/";
@@ -152,6 +155,10 @@ public final class CapabilityMirrorProtocol {
     /** Packaged payload-free corpus-governance compatibility fixture. */
     public static final String CAPABILITY_CORPUS_FIXTURE_RESOURCE =
             SCHEMA_RESOURCE_ROOT + "capability-corpus-stage2-v1.fixture.json";
+    /** Packaged fixed fixture-level corpus-binding example. */
+    public static final String FIXTURE_MIRROR_CORPUS_BINDINGS_FIXTURE_RESOURCE =
+            SCHEMA_RESOURCE_ROOT
+                    + "fixture-mirror-corpus-bindings-v1.fixture.json";
     /** Packaged compatibility fixture schema. */
     public static final String COMPATIBILITY_SCHEMA_RESOURCE =
             SCHEMA_RESOURCE_ROOT + "capability-mirror-compatibility-v1.schema.json";
@@ -247,6 +254,10 @@ public final class CapabilityMirrorProtocol {
     /** Packaged immutable serving-publication fact schema. */
     public static final String CAPABILITY_CORPUS_PUBLICATION_SCHEMA_RESOURCE =
             SCHEMA_RESOURCE_ROOT + "capability-corpus-publication-v1.schema.json";
+    /** Packaged strict fixture-level corpus-binding schema. */
+    public static final String FIXTURE_MIRROR_CORPUS_BINDINGS_SCHEMA_RESOURCE =
+            SCHEMA_RESOURCE_ROOT
+                    + "fixture-mirror-corpus-bindings-v1.schema.json";
 
     private static final ObjectMapper JSON = new ObjectMapper();
 

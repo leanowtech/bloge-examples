@@ -1,0 +1,33 @@
+{
+  "schemaVersion": "resourceGateway.fixtureMirrorCorpusBindings.v1",
+  "publications": [
+    {
+      "capabilityRef": {
+        "kind": "CAPABILITY",
+        "id": "operator:customer.lookup",
+        "revision": 3,
+        "fingerprint": "sha256:1111111111111111111111111111111111111111111111111111111111111111"
+      },
+      "publicationRef": {
+        "kind": "CAPABILITY_CORPUS_PUBLICATION",
+        "id": "customer-lookup-corpus",
+        "revision": 7,
+        "fingerprint": "sha256:2222222222222222222222222222222222222222222222222222222222222222"
+      }
+    },
+    {
+      "capabilityRef": {
+        "kind": "CAPABILITY",
+        "id": "operator:entitlement.check",
+        "revision": 5,
+        "fingerprint": "sha256:3333333333333333333333333333333333333333333333333333333333333333"
+      },
+      "publicationRef": {
+        "kind": "CAPABILITY_CORPUS_PUBLICATION",
+        "id": "entitlement-check-corpus",
+        "revision": 2,
+        "fingerprint": "sha256:4444444444444444444444444444444444444444444444444444444444444444"
+      }
+    }
+  ]
+}

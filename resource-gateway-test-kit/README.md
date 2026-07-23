@@ -209,6 +209,24 @@ that the actor remains authorized, that the publication is the current server he
 resolver consumes it. Those remain online governance checks. See the
 [Capability Corpus governance guide](../docs/resource-gateway-capability-corpus-governance.md).
 
+Validate a fixture's payload-free exact publication selection before registration:
+
+```java
+JsonNode binding = objectMapper.readTree(bindingJson);
+FixtureMirrorCorpusBindingsVerifier.VerificationResult verified =
+        new FixtureMirrorCorpusBindingsVerifier().verify(binding);
+if (!verified.verified()) {
+    throw new IllegalStateException(verified.outcome().name());
+}
+```
+
+The packaged fixed input is available at
+`CapabilityMirrorProtocol.FIXTURE_MIRROR_CORPUS_BINDINGS_FIXTURE_RESOURCE`; its strict Schema is
+`FIXTURE_MIRROR_CORPUS_BINDINGS_SCHEMA_RESOURCE`. The verifier checks schema closure, exact
+artifact kinds, canonical capability ordering, and unique capability/publication coordinates. It
+does not claim that a publication remains the current head or that live policy, grant, retention,
+tombstone, regional vault, or resolver readiness checks pass.
+
 Deployment isolation uses separate bootstrap-root, isolation-attestation, and mirror-evidence
 authorities. Never reuse keys between those roles or trust deployment coordinates copied from an
 untrusted publication. Verify the authority key-set against immutable local binding, locally pinned

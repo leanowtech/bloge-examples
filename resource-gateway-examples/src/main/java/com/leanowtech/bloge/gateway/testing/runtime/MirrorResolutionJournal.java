@@ -104,7 +104,7 @@ public final class MirrorResolutionJournal implements MirrorResolutionObserver {
         MirrorResolution.Status status = expectedBusinessFailure(behavior, failure)
                 ? MirrorResolution.Status.RESOLVED : MirrorResolution.Status.REJECTED;
         append(Draft.failed(binding, attempt, requestFingerprint, decision, status,
-                error(behavior, failure, status)));
+                error(decision.match(), failure, status)));
     }
 
     @Override
@@ -171,12 +171,16 @@ public final class MirrorResolutionJournal implements MirrorResolutionObserver {
                 draft.binding().site().graphPath(), draft.binding().site().correlationKey(),
                 draft.binding().occurrence(), draft.attempt(), draft.requestFingerprint(),
                 draft.status(), draft.decision().source(), draft.visibility(), false, null,
-                draft.outputFingerprint(), draft.error(), artifacts(match.rule()),
-                List.of(match.rule().ruleId()), match.confidence(), match.freshness(),
+                    draft.outputFingerprint(), draft.error(), artifacts(match),
+                ruleRefs(match), match.confidence(), match.freshness(),
                 limitations(match));
     }
 
-    private List<MirrorArtifactRef> artifacts(FixtureRule rule) {
+    private List<MirrorArtifactRef> artifacts(MirrorResolver.Match match) {
+        if (!match.artifactRefs().isEmpty()) {
+            return match.artifactRefs();
+        }
+        FixtureRule rule = match.rule();
         List<MirrorArtifactRef> result = new ArrayList<>();
         result.add(plan.fixtureBundleRef());
         if (rule.behavior().kind() == FixtureRule.BehaviorKind.REPLAY) {
@@ -185,6 +189,11 @@ public final class MirrorResolutionJournal implements MirrorResolutionObserver {
                     "REPLAY_PAYLOAD", ref.replayPayloadId(), ref.revision(), ref.fingerprint()));
         }
         return result;
+    }
+
+    private static List<String> ruleRefs(MirrorResolver.Match match) {
+        return match.ruleRefs().isEmpty()
+                ? List.of(match.rule().ruleId()) : match.ruleRefs();
     }
 
     private List<String> limitations(MirrorResolver.Match match) {
@@ -225,9 +234,10 @@ public final class MirrorResolutionJournal implements MirrorResolutionObserver {
     }
 
     private static MirrorResolution.MirrorError error(
-            FixtureRule.Behavior behavior,
+            MirrorResolver.Match match,
             Exception failure,
             MirrorResolution.Status status) {
+        FixtureRule.Behavior behavior = match.rule().behavior();
         if (status == MirrorResolution.Status.RESOLVED) {
             String code = behavior.errorCode().isBlank()
                     ? behavior.kind() == FixtureRule.BehaviorKind.TIMEOUT
@@ -235,7 +245,8 @@ public final class MirrorResolutionJournal implements MirrorResolutionObserver {
                     : behavior.errorCode();
             String type = behavior.errorType().isBlank()
                     ? behavior.kind().name() : behavior.errorType();
-            return new MirrorResolution.MirrorError(code, type, "");
+            return new MirrorResolution.MirrorError(
+                    code, type, match.errorDetailsFingerprint());
         }
         if (failure instanceof TestControlException controlled) {
             return new MirrorResolution.MirrorError(

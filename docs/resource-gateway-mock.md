@@ -7,7 +7,7 @@
 
 | 文档属性 | 内容 |
 |---|---|
-| 状态 | Accepted / In implementation；Stage 0 仓库内工程退出门禁已通过；Stage 1 compiler、resolver provenance、payload-free evidence 签发/独立复验、scope-isolated durable store、受保护 Plan/Run/Evidence API、durable request fencing、动态 occurrence budget、payload-free operation audit、固定基数指标、部署隔离证明协议/离线验真、M-of-N authority key-set trusted distribution、full-scope attestation ingest/current-only distribution/irreversible revocation、deployment agent pinned mTLS/atomic cache、execution admission/evidence commit 运行时双重绑定已完成；Stage 2 已完成签名 observation 准入/隔离与 immutable review/candidate/publication 两个纵切；payload authority、resolver、漂移/删除证明、跨语言 canonicalization 和环境 certification 门禁继续实施 |
+| 状态 | Accepted / In implementation；Stage 0 仓库内工程退出门禁已通过；Stage 1 compiler、resolver provenance、payload-free evidence 签发/独立复验、scope-isolated durable store、受保护 Plan/Run/Evidence API、durable request fencing、动态 occurrence budget、payload-free operation audit、固定基数指标、部署隔离证明协议/离线验真、M-of-N authority key-set trusted distribution、full-scope attestation ingest/current-only distribution/irreversible revocation、deployment agent pinned mTLS/atomic cache、execution admission/evidence commit 运行时双重绑定已完成；Stage 2 已完成签名 observation 准入/隔离、immutable review/candidate/publication 和 test/staging `RECORDED_EXACT` serving kernel 三个纵切；生产 payload authority、trajectory/stateful/cluster resolver、漂移/删除证明、跨语言 canonicalization 和环境 certification 门禁继续实施 |
 | 目标读者 | Resource Gateway、BLOGE Runtime、ANEKE、TEE/数据平台、QA、SRE、安全与业务运营团队 |
 | 设计范围 | external/composed 能力建模、镜像运行、保真语料、有状态世界、场景演练、证据、保真度与结果校准 |
 | 非目标 | 不重做 ANEKE 的资产治理和发布门禁；不允许测试控制进入生产业务请求；不把观测频率直接当成业务正确性 |
@@ -356,6 +356,23 @@
   `mirrorCorpusResolverReady`。因此该增量只关闭“治理事实如何形成并发布”，不宣称运行时已经消费 corpus。接线、
   错误语义和演练见
   [Capability Corpus 治理与发布指南](resource-gateway-capability-corpus-governance.md)。
+- Stage 2 第三增量已把 reviewed publication 接入 test/staging mirror generation，但没有把 payload 所有权搬进
+  Resource Gateway。`fixtureBundle.metadata.mirrorCorpus` 以 strict、canonical、内容寻址的
+  `resourceGateway.fixtureMirrorCorpusBindings.v1` 绑定 exact capability/publication；plan create 与每次
+  materialize 都重新验证 latest publication、revision/capability/scope、current policy、eligibility、grant、
+  classification、region、retention、tombstone/source authority 和响应 payload size/content address。外部
+  `CapabilityCorpusPayloadAuthority` 只返回短时 sanitized response JSON，默认 unavailable；验证后的 bytes 只冻结
+  在当前 in-memory run generation，不进入 plan、database、HTTP、evidence、audit、metric 或日志。编译器只允许
+  corpus 绑定 graph closure 的 external site，并把 `OWNER_SPECIFIED -> RECORDED_EXACT -> GOVERNED_REPLAY ->
+  ABSTAINED` 顺序写入 execution-control fingerprint。相同 request fingerprint 的冲突 outcome 拒绝整代；
+  retryable 单点 error 因缺 attempt trajectory 明确失败关闭。resolution 直接携带 publication/revision/observation/
+  admission/payload/proof/schema/policy/grant provenance，真实 external operator 不被调用。probe 独立公开
+  `mirrorCorpusExactResolverProtocol` 与动态 `mirrorCorpusResolverReady`，避免用 governance readiness 冒充
+  payload serving readiness。strict Schema、固定 binding fixture、独立 test-kit verifier 和服务端
+  policy drift/tombstone/content drift/conflict/region/horizon/error 测试已落地。Resource Gateway 干净全量门禁
+  `4698` 项测试零失败、零错误（另有 3 项条件跳过），独立 test-kit `289/289` 全绿；真实 Chrome、前端脚本、
+  可执行 Boot JAR、Schema packaging、shaded CLI 与公共 JavaDoc 同时验证。该 kernel 仍不等于生产 vault、
+  删除证明、trajectory/stateful/cluster 拟合或认证级客户环境。
 
 ---
 
@@ -446,13 +463,13 @@ Resource Gateway 已有的工业底座应直接复用：
 | 确定性测试控制 | 80% | 缺镜像来源、匹配可信度和领域状态控制 |
 | Evidence/Replay | 90% | payload-free signed mirror evidence、deployment trust 双重绑定和独立复验已落地；缺业务 state trace、fidelity observation 聚合和 outcome lineage |
 | 递归 DAG 测试 | 85% | MirrorPlan/closure/runtime inventory/fixture control 已统一；缺 contract-mock 展开治理和状态世界 |
-| 日志蒸馏与语料 | 40% | payload-free signed observation、准入/隔离、immutable review、candidate/publication 双 lineage、元数据风险门禁和独立 verifier 已落地；缺生产 payload authority、resolver、漂移、偏差、outcome 校准和删除证明 |
+| 日志蒸馏与语料 | 55% | payload-free signed observation、准入/隔离、immutable review、candidate/publication 双 lineage、元数据风险门禁、fixture exact binding、在线 revalidation、test/staging `RECORDED_EXACT` 与独立 verifier 已落地；缺生产 payload authority、trajectory/stateful/cluster resolver、漂移、偏差、outcome 校准和删除证明 |
 | 有状态业务世界 | 5% | 执行 checkpoint 不等于业务实体与事务状态模型 |
 | Scenario/Rehearsal | 10% | 缺场景、写效果、处置断言和状态演练协议 |
 | Fidelity/Outcome | 5% | 缺保真向量、shadow、权威结果归因和校准闭环 |
 | 业务运营工作台 | 10% | Author Canvas 尚未成为案例驱动的镜像运营工作台 |
 
-结论：基础设施准备度约 80%，镜像复利闭环完成度约 20%–25%，完整理想态完成度约 40%。剩余主要矛盾已经
+结论：基础设施准备度约 82%，镜像复利闭环完成度约 25%–30%，完整理想态完成度约 42%。剩余主要矛盾已经
 从“能否安全执行和取证”转向“能否把可信 observation 持续蒸馏成可校准、可拒答、可删除的业务拟合资产”。
 
 ## 4. 目标架构与系统责任
@@ -807,7 +824,11 @@ provider message 或 stack trace。
  -> blocked candidate 保留治理证据，eligible candidate 等待 owner 审批
  -> current policy + publisher authorization + every-source second recheck
  -> independent serving publication lineage
- -> resolver（后续增量，当前未接线）
+ -> immutable fixture capability/publication binding
+ -> latest head + current policy/source/grant/retention/tombstone recheck
+ -> external payload authority materialization + content-address verification
+ -> frozen test/staging RECORDED_EXACT generation
+ -> trajectory/stateful/cluster resolver（后续增量）
 ```
 
 确定的 policy、capability、integrity、grant、window 或 payload-reference 拒绝进入隔离队列，不得部分进入 serving
@@ -1352,13 +1373,16 @@ effect unknown 和递归环会失败关闭；旧协议无破坏。
 
 ### Stage 2：受治理语料，4 个 sprint，P0/P1
 
-**当前状态**：前两个纵切已完成。第一纵切冻结签名 payload-free observation、operator-owned admission policy、
+**当前状态**：前三个纵切已完成。第一纵切冻结签名 payload-free observation、operator-owned admission policy、
 external payload-reference verification SPI、admitted/quarantined 终态、full-scope append-only store、受保护 API、
 honest capability probe、mandatory audit 原子性和独立 test-kit verifier。第二纵切完成 terminal quarantine review、
 non-serving corpus candidate、policy-independent risk statistics、owner-reviewed serving publication、candidate/publication
-双 lineage、每 source 二次 external verification、strict Schema 与固定兼容样本。尚未完成生产 payload vault/authority、
-exact/trajectory/cluster resolver、poisoning/drift/bias、retention/deletion proof、outcome calibration 和运行时 serving
-绑定，因此 Stage 2 仍不能标记完成。
+双 lineage、每 source 二次 external verification、strict Schema 与固定兼容样本。第三纵切完成 immutable fixture
+publication binding、latest-head/current-policy/source/grant/retention/tombstone 在线复验、外部 payload authority SPI、
+content-addressed in-memory generation、`RECORDED_EXACT` resolver、固定 precedence、payload-free provenance/evidence、
+honest readiness 和独立 binding verifier。尚未完成生产 payload vault/authority、trajectory/stateful/cluster resolver、
+poisoning/drift/bias、retention/deletion proof、outcome calibration 和多副本 serving generation 运维，因此 Stage 2
+仍不能标记完成。
 
 **交付物**：
 

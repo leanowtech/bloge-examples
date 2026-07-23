@@ -1,5 +1,7 @@
 package com.leanowtech.bloge.gateway.testing.runtime;
 
+import com.fasterxml.jackson.databind.ObjectMapper;
+import com.leanowtech.bloge.gateway.integration.mirror.MirrorArtifactRef;
 import com.leanowtech.bloge.gateway.integration.mirror.MirrorPlan;
 import com.leanowtech.bloge.gateway.testing.domain.FixtureRule;
 import com.leanowtech.bloge.gateway.testing.domain.InvocationSite;
@@ -88,6 +90,104 @@ class MirrorResolverChainTest {
     }
 
     @Test
+    void recordedExactResolvesFrozenRequestAndOwnerRulesStillTakePrecedence()
+            throws Exception {
+        ObjectMapper mapper = new ObjectMapper().findAndRegisterModules();
+        MirrorArtifactRef capability = ref("CAPABILITY", "operator:subject", '1');
+        MirrorArtifactRef publication = ref(
+                "CAPABILITY_CORPUS_PUBLICATION", "subject-corpus", '2');
+        MirrorArtifactRef revision = ref(
+                "CAPABILITY_CORPUS_REVISION", "subject-corpus", '3');
+        MirrorArtifactRef observation = ref(
+                "CAPABILITY_OBSERVATION", "subject-observation", '4');
+        ResolvedCorpusPayloads.CapabilityCorpus corpus =
+                new ResolvedCorpusPayloads.CapabilityCorpus(
+                        capability, publication, revision,
+                        java.time.Instant.parse("2026-07-23T08:00:00Z"),
+                        java.time.Instant.parse("2026-07-24T08:00:00Z"),
+                        List.of(ResolvedCorpusPayloads.Sample.response(
+                                REQUEST_FINGERPRINT,
+                                mapper.writeValueAsBytes(Map.of("source", "recorded")),
+                                List.of(publication, revision, observation),
+                                List.of(observation.id()), 0.9, List.of())));
+        FixtureRule owner = rule("owner", FixtureRule.Selector.any(),
+                FixtureRule.Behavior.returning(Map.of("source", "owner")));
+        var control = mirrorControl(List.of(owner), List.of(
+                MirrorPlan.MirrorSource.OWNER_SPECIFIED,
+                MirrorPlan.MirrorSource.RECORDED_EXACT,
+                MirrorPlan.MirrorSource.ABSTAINED));
+
+        MirrorResolver.Request recordedRequest = new MirrorResolver.Request(
+                SITE, 1, 1, REQUEST_FINGERPRINT,
+                Map.of("customerId", "c-1"), List.of(), corpus);
+        MirrorResolverChain.Decision recorded = MirrorResolverChain.standard(mapper)
+                .resolve(control, recordedRequest);
+        MirrorResolver.Request ownerRequest = new MirrorResolver.Request(
+                SITE, 1, 1, REQUEST_FINGERPRINT,
+                Map.of("customerId", "c-1"), List.of(owner), corpus);
+        MirrorResolverChain.Decision selectedOwner = MirrorResolverChain.standard(mapper)
+                .resolve(control, ownerRequest);
+
+        assertThat(recorded.source())
+                .isEqualTo(MirrorPlan.MirrorSource.RECORDED_EXACT);
+        assertThat(recorded.match().rule().behavior().value())
+                .isEqualTo(Map.of("source", "recorded"));
+        assertThat(recorded.match().artifactRefs())
+                .containsExactlyInAnyOrder(publication, revision, observation);
+        assertThat(recordedRequest.toString())
+                .doesNotContain("c-1")
+                .doesNotContain("customerId");
+        assertThat(recorded.match().toString())
+                .doesNotContain("recorded")
+                .doesNotContain("\"source\"");
+        assertThat(selectedOwner.source())
+                .isEqualTo(MirrorPlan.MirrorSource.OWNER_SPECIFIED);
+    }
+
+    @Test
+    void recordedExactCarriesNormalizedErrorDetailsWithoutPayloadText() {
+        ObjectMapper mapper = new ObjectMapper().findAndRegisterModules();
+        MirrorArtifactRef capability = ref("CAPABILITY", "operator:subject", '1');
+        MirrorArtifactRef publication = ref(
+                "CAPABILITY_CORPUS_PUBLICATION", "subject-corpus", '2');
+        MirrorArtifactRef revision = ref(
+                "CAPABILITY_CORPUS_REVISION", "subject-corpus", '3');
+        MirrorArtifactRef observation = ref(
+                "CAPABILITY_OBSERVATION", "subject-observation", '4');
+        String details = "sha256:" + "e".repeat(64);
+        ResolvedCorpusPayloads.CapabilityCorpus corpus =
+                new ResolvedCorpusPayloads.CapabilityCorpus(
+                        capability, publication, revision,
+                        java.time.Instant.parse("2026-07-23T08:00:00Z"),
+                        java.time.Instant.parse("2026-07-24T08:00:00Z"),
+                        List.of(ResolvedCorpusPayloads.Sample.error(
+                                REQUEST_FINGERPRINT,
+                                "CUSTOMER_NOT_FOUND",
+                                "BUSINESS",
+                                false,
+                                details,
+                                List.of(publication, revision, observation),
+                                List.of(observation.id()),
+                                0.8,
+                                List.of())));
+        var control = mirrorControl(List.of(), List.of(
+                MirrorPlan.MirrorSource.RECORDED_EXACT,
+                MirrorPlan.MirrorSource.ABSTAINED));
+
+        MirrorResolverChain.Decision decision = MirrorResolverChain.standard(mapper)
+                .resolve(control, new MirrorResolver.Request(
+                        SITE, 1, 1, REQUEST_FINGERPRINT,
+                        Map.of("customerId", "missing"), List.of(), corpus));
+
+        assertThat(decision.match().rule().behavior().errorCode())
+                .isEqualTo("CUSTOMER_NOT_FOUND");
+        assertThat(decision.match().errorDetailsFingerprint()).isEqualTo(details);
+        assertThat(decision.match().toString())
+                .doesNotContain("customerId")
+                .doesNotContain("missing");
+    }
+
+    @Test
     void ordinaryControlCannotEnterMirrorResolverChain() {
         var control = new CompiledExecutionControl.ResolvedControl(SITE, List.of(), false);
 
@@ -156,5 +256,12 @@ class MirrorResolverChainTest {
                 return java.util.Optional.empty();
             }
         };
+    }
+
+    private static MirrorArtifactRef ref(
+            String kind, String id, char fingerprint) {
+        return new MirrorArtifactRef(
+                kind, id, 1,
+                "sha256:" + String.valueOf(fingerprint).repeat(64));
     }
 }

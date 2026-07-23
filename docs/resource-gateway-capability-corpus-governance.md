@@ -1,26 +1,31 @@
-# Resource Gateway Capability Corpus 治理与发布指南
+# Resource Gateway Capability Corpus 治理、发布与精确服务指南
 
 > 本增量把可信 observation 变成可审查、可冻结、可发布的 payload-free 治理事实。
-> 它没有实现 resolver，也不会让候选或发布结果自动进入运行时服务。
+> 当前第三纵切进一步允许 fixture 精确选择 reviewed publication，并在 plan generation
+> 创建时经外部 authority 物化为进程内 `RECORDED_EXACT` 结果。它仍不是生产 payload vault，
+> 也不把单点 observation 冒充重试轨迹或有状态世界。
 
 ## 1. 能力边界
 
-本阶段解决三个问题：
+本阶段解决四个问题：
 
 1. 对终态 `QUARANTINED` observation 记录一次不可变人工审查，但不篡改原准入事实。
 2. 把一组 exact `ADMITTED` observation 冻结成不可变 corpus candidate revision，并计算确定性的元数据风险。
 3. 由授权 owner 对当前 eligible candidate 做第二次来源复验后，追加一个独立 serving publication。
+4. 由不可变 fixture 绑定 exact capability/publication；计划创建和重建时重新验证当前 head、policy、grant、
+   retention、region、classification、tombstone 和 payload content address，再冻结进单次运行 generation。
 
 以下能力仍不在本阶段：
 
-- 不保存、读取或返回 request/response payload。
-- 不实现 payload vault、proof service、retention service 或 tombstone authority。
-- 不实现 exact、trajectory、cluster resolver。
+- 不在数据库、HTTP、plan、evidence 或普通日志中保存、读取或返回 request/response payload。
+- 不内建生产 payload vault、proof service、retention service 或 tombstone authority；只提供部署实现的 SPI。
+- 不实现 trajectory、cluster、stateful resolver。
 - 不把 candidate revision 直接当作 serving 数据。
 - 不证明当前策略、组织授权或外部 payload 在离线验证后仍然有效。
 - 不完成 poisoning、drift、bias、outcome calibration 和删除证明。
+- 不把 retryable 单点错误当作精确重试行为；此类 observation 必须等待 attempt-trajectory corpus。
 
-## 2. 三个不可破坏的不变量
+## 2. 四个不可破坏的不变量
 
 ### 2.1 审查不是改判
 
@@ -49,14 +54,27 @@
 
 它不包含 payload，也不表示 owner 已批准。即使 `eligibility=ELIGIBLE`，仍不能被 resolver 直接读取。
 
-### 2.3 发布不等于运行时已接线
+### 2.3 发布不等于自动服务
 
 `CapabilityCorpusPublication` 是独立 append-only lineage。它绑定当前 candidate、当前 publication
-policy、owner review ticket、认证 reviewer 和 source horizon。未来 resolver 只能消费最新且重新验证通过的
-publication，不能回退读取 observation store 或 candidate table。
+policy、owner review ticket、认证 reviewer 和 source horizon。resolver 只能消费 fixture 显式绑定、当前最新且
+在线重新验证通过的 publication，不能回退读取 observation store、candidate table 或任意历史 publication。
 
-当前 capability probe 固定报告 `mirrorCorpusResolverReady=false`。本增量发布的 corpus 不会改变现有 mirror
-运行结果。
+publication 自身不会改变任何 mirror 结果。只有 immutable fixture metadata 中出现合法 binding，且当前
+`CapabilityCorpusGovernancePolicyProvider`、`CapabilityCorpusSourceVerifier` 和
+`CapabilityCorpusPayloadAuthority` 同时可用，计划才可编译出 `RECORDED_EXACT`。
+
+### 2.4 物化不是长期 payload 所有权
+
+`CapabilityCorpusPayloadAuthority` 是区域 vault 的短时读取边界，不是 Resource Gateway 的 payload repository。
+Resource Gateway 只把 authority 返回的响应 JSON 冻结在当前 `CompiledMirrorPlan` generation 内：
+
+- 每次 plan 创建和 materialize 都重新检查当前 publication head 与当前 policy；
+- 每个 source 都重新检查 grant、retention、classification、region、tombstone 与 proof authority；
+- 响应 bytes 必须与声明 size 和 `SANITIZED_PAYLOAD` content address 一致，并且是单根 JSON 文档；
+- 整个 generation 最多持有 256 MiB，一个 payload 最多 16 MiB，与运行证据协议共用同一限制；
+- payload 不进入 public `MirrorPlan`、database、evidence、metrics、audit 或 `toString()`；
+- 运行期间不再回读 mutable vault，避免同一 generation 内出现撕裂行为。
 
 ## 3. 生命周期
 
@@ -74,7 +92,11 @@ signed observation
                                          v
                                   serving publication
                                          |
-                              future resolver, not implemented
+                       fixture exact publication binding
+                                         |
+                   online head/policy/source/payload revalidation
+                                         |
+                      frozen RECORDED_EXACT run generation
 ```
 
 `ObservationReview`、`CorpusRevision`、`CorpusPublication` 是三条不同的事实线。review 以 observation
@@ -92,6 +114,7 @@ signed observation
 | Candidate revision | `capability-corpus-revision-v1.schema.json` | payload-free sources、risk、policy、horizon |
 | Publish command | `capability-corpus-publish-request-v1.schema.json` | publication fence、exact candidate、owner ticket |
 | Publication fact | `capability-corpus-publication-v1.schema.json` | serving lineage、policy、reviewer、horizon |
+| Fixture serving binding | `fixture-mirror-corpus-bindings-v1.schema.json` | immutable capability 到 exact latest publication 的选择 |
 
 所有对象都：
 
@@ -105,6 +128,42 @@ signed observation
 共享固定样本是
 `docs/schemas/resource-gateway-mirror/capability-corpus-stage2-v1.fixture.json`。服务端生产者与独立
 test-kit 都会验证同一份 review、candidate 和 publication 生命周期。
+
+Serving binding 的固定 payload-free 样本是
+`docs/schemas/resource-gateway-mirror/fixture-mirror-corpus-bindings-v1.fixture.json`。服务端 parser 和独立
+`FixtureMirrorCorpusBindingsVerifier` 都验证 strict Schema、canonical capability order、capability/publication
+唯一性和 artifact kind。离线 verifier 故意不声称 publication 仍是 live head，也不声称 policy、grant、tombstone
+或 vault 当前可用。
+
+### 4.1 Fixture 绑定示例
+
+该对象只能放在 `FixtureBundle.metadata.mirrorCorpus`，不能由 plan/run 请求临时注入：
+
+```json
+{
+  "schemaVersion": "resourceGateway.fixtureMirrorCorpusBindings.v1",
+  "publications": [
+    {
+      "capabilityRef": {
+        "kind": "CAPABILITY",
+        "id": "operator:customer.lookup",
+        "revision": 3,
+        "fingerprint": "sha256:1111111111111111111111111111111111111111111111111111111111111111"
+      },
+      "publicationRef": {
+        "kind": "CAPABILITY_CORPUS_PUBLICATION",
+        "id": "customer-lookup-corpus",
+        "revision": 7,
+        "fingerprint": "sha256:2222222222222222222222222222222222222222222222222222222222222222"
+      }
+    }
+  ]
+}
+```
+
+`publications` 必须按 capability `(id, revision, fingerprint)` 严格升序；capability 与 publication 都不能重复。
+每个 capability 必须恰好存在于当前 graph closure 的 external invocation binding 中，未使用 binding、内部节点
+binding、跨 scope publication、旧 publication head 或 fingerprint 不一致都会在调度前失败关闭。
 
 ## 5. 受保护 API
 
@@ -219,10 +278,11 @@ publish 只接受当前 candidate head。candidate 创建后若又追加了新 r
 
 ## 6. Operator-owned 接线
 
-默认组合根会安装两个 unavailable provider，防止演示配置被误当成信任：
+默认组合根会安装三个 unavailable provider，防止演示配置被误当成信任：
 
 - `CapabilityCorpusGovernancePolicyProvider`
 - `CapabilityCorpusSourceVerifier`
+- `CapabilityCorpusPayloadAuthority`
 
 企业环境需要提供自己的 Spring bean。`@ConditionalOnMissingBean` 会让部署实现替换默认 placeholder。
 
@@ -259,7 +319,58 @@ source verifier 每次 candidate 创建和 publication 发布都必须重新检�
 接口只返回 `VERIFIED`、`REJECTED` 或 `UNAVAILABLE`，不得把 payload 返回 Resource Gateway。确定的失效返回
 `REJECTED`；authority 超时、撕裂读或无法确认必须返回 `UNAVAILABLE`。
 
-## 7. 风险与发布门禁
+### 6.3 Payload authority
+
+payload authority 只接收 exact full scope、capability/publication/observation/payload/proof/schema/grant refs、
+server-minted `MIRROR_REHEARSAL` purpose、classification、vault region、声明 size 与完整 plan horizon。部署实现必须：
+
+- 在同一可信读中验证 tenant、region、grant、proof、retention 与 tombstone generation；
+- 只返回已脱敏响应的 canonical JSON，不返回 request payload；
+- 对删除、撤销、grant 失效和 policy denial 返回 `REJECTED`；
+- 对超时、部分读、generation 不一致和无法证明返回 `UNAVAILABLE`；
+- 不缓存超过调用生命周期，不记录 bytes、业务键、provider message 或 secret；
+- 提供独立的并发、吞吐、超时、熔断和审计 SLO，不能借 Resource Gateway 数据库承担 vault 职责。
+
+当前仓库只提供 fail-closed SPI 与测试 authority，不提供可投产的 vault adapter。
+
+## 7. 运行期解析语义
+
+plan 创建和每次 durable run materialize 都执行同一条在线门禁：
+
+```text
+fixture exact binding
+ -> exact publication lookup + latest-head equality
+ -> exact corpus revision/capability/scope equality
+ -> current governance/publication policy equality
+ -> ELIGIBLE risk state + full plan horizon
+ -> exact observation/admission/source lineage
+ -> current grant/classification/region/retention checks
+ -> source lifecycle/tombstone authority
+ -> response payload authority + size/content-address/single-JSON checks
+ -> conflict-free request-fingerprint index
+ -> immutable run-generation snapshot
+```
+
+固定 resolver 顺序由 execution-control fingerprint 封印：
+
+```text
+OWNER_SPECIFIED
+ -> RECORDED_EXACT
+ -> GOVERNED_REPLAY
+ -> ABSTAINED
+```
+
+owner rule 因此可以显式覆盖 corpus；corpus 未命中当前 canonical request fingerprint 时继续进入 governed replay，
+最终仍然失配就 `ABSTAINED`，绝不落到真实 external call。相同 request fingerprint 的多条 source 只有 outcome
+完全一致才会折叠，并在 limitation 中记录 source count；response 或 normalized error 冲突会以
+`RG.MIRROR.CORPUS_EXACT_CONFLICT` 拒绝整个 generation。
+
+成功响应以 `HASH_ONLY` 输出进入 mirror evidence，同时附 exact publication、revision、policy、review、
+observation、admission、payload/proof/schema、authority key 和 grant provenance。非重试 normalized error 保留稳定
+error code/type；retryable 单点 error 返回 `RG.MIRROR.CORPUS_RETRYABLE_ERROR_UNSUPPORTED`，因为正确拟合需要完整
+attempt/退避/最终结果 trajectory，不能把一个观测点重复播放成虚假业务行为。
+
+## 8. 风险与发布门禁
 
 candidate 会确定性计算：
 
@@ -283,7 +394,7 @@ publish 还要求：
 6. 每个 source 再次通过外部 authority；
 7. serving horizon 尚未到期。
 
-## 8. 幂等、并发与事务
+## 9. 幂等、并发与事务
 
 - exact retry 先读取已提交事实，再访问 mutable policy/source provider。
 - 同坐标、同 command fingerprint 返回原事实。
@@ -301,7 +412,7 @@ H2 表只保存完整 scope、索引元数据和 canonical payload-free JSON：
 
 每次读取同时复验 JSON fingerprint 与冗余索引列，索引漂移不能改变治理结果。
 
-## 9. Capability Probe
+## 10. Capability Probe
 
 调用：
 
@@ -314,14 +425,17 @@ curl -sS http://localhost:8080/api/integration/capabilities
 | Flag | 含义 |
 |---|---|
 | `mirrorCorpusGovernanceProtocol` | 六类 v1 wire object 与 strict Schema 已支持 |
+| `mirrorCorpusExactResolverProtocol` | fixture binding 与 `RECORDED_EXACT` 运行协议已支持 |
 | `mirrorCorpusGovernanceApi` | 三条 test/staging route 已装配 |
 | `mirrorCorpusGovernanceReady` | policy provider 与 source verifier 当前都可用 |
-| `mirrorCorpusResolverReady` | runtime resolver 已接入 verified publication |
+| `mirrorCorpusResolverReady` | policy、source lifecycle、payload authority 当前都可用 |
 
-默认 demo 中前三项通常为 `true/true/false`，resolver 为 `false`。客户端不能用 `Api=true` 推导
-`Ready=true`，也不能用 `GovernanceReady=true` 推导 resolver 已服务。
+`supportedObjects.fixtureMirrorCorpusBindings` 应包含
+`resourceGateway.fixtureMirrorCorpusBindings.v1`。默认 demo 中两个 protocol 为 `true`，API 为 `true`，两个
+readiness 通常为 `false`。客户端不能用 `Api=true` 推导 `GovernanceReady=true`，也不能用
+`GovernanceReady=true` 推导 resolver 已可物化 payload。
 
-## 10. 启动、停止与演示
+## 11. 启动、停止与演示
 
 从仓库根目录启动：
 
@@ -345,9 +459,10 @@ curl -sS http://localhost:8080/api/integration/capabilities
 
 默认外部 providers 是 fail-closed placeholder，因此 probe 会显示 governance API 已安装但未 ready，实际治理请求会
 返回稳定 `503`。要演示成功 candidate/publication，必须在演示应用中安装测试专用 policy 与 source authority
-beans；不要把 always-verified adapter 放进共享或生产配置。
+beans；要演示 `RECORDED_EXACT` 还必须安装测试专用 payload authority。不要把 always-verified 或内存 payload
+adapter 放进共享或生产配置。
 
-## 11. 稳定错误与处置
+## 12. 稳定错误与处置
 
 | 类型 | 代表错误 | 处置 |
 |---|---|---|
@@ -358,11 +473,14 @@ beans；不要把 always-verified adapter 放进共享或生产配置。
 | provider 不确定 | `CORPUS_POLICY_UNAVAILABLE`、`CORPUS_SOURCE_AUTHORITY_UNAVAILABLE` | 恢复 authority 后 exact retry |
 | lineage 冲突 | `CORPUS_REVISION_HEAD_CONFLICT`、`CORPUS_PUBLICATION_HEAD_CONFLICT` | 读取 current head，重新生成下一 command |
 | 发布门禁 | `CORPUS_CANDIDATE_INELIGIBLE`、`CORPUS_POLICY_DRIFTED` | 新建 candidate，不修改旧 revision |
+| serving binding | `RG.MIRROR.CORPUS_BINDING_INVALID`、`RG.MIRROR.CORPUS_PUBLICATION_STALE`、`RG.MIRROR.CORPUS_POLICY_DRIFT` | 修复 fixture 或重新审阅/发布，不回退历史 head |
+| payload serving | `RG.MIRROR.CORPUS_PAYLOAD_UNUSABLE`、`RG.MIRROR.CORPUS_PAYLOAD_INTEGRITY_INVALID` | 查 tombstone/proof/content address；不得降级到未校验 bytes |
+| outcome 冲突 | `RG.MIRROR.CORPUS_EXACT_CONFLICT`、`RG.MIRROR.CORPUS_RETRYABLE_ERROR_UNSUPPORTED` | 修复污染 source；retryable 行为进入 trajectory pipeline |
 | 存储/审计 | `CORPUS_STORE_UNAVAILABLE`、`OPERATION_AUDIT_UNAVAILABLE` | 按 outage runbook 恢复；确认事务未留下半成品 |
 
 错误详情不返回 provider message、SQL、payload 或 stack trace。
 
-## 12. 独立验证
+## 13. 独立验证
 
 `resource-gateway-test-kit` 提供：
 
@@ -380,18 +498,33 @@ if (!result.verified()) {
 顺序、lineage、risk statistics 和时间窗。它不会证明 live payload/proof、当前策略、授权 group 或 current serving
 head；这些必须由在线 authority 和服务端门禁确认。
 
-## 13. 上线前剩余门禁
+fixture serving binding 可独立做结构验证：
 
-进入 resolver 实现前至少补齐：
+```java
+FixtureMirrorCorpusBindingsVerifier.VerificationResult binding =
+        new FixtureMirrorCorpusBindingsVerifier().verify(bindingJson);
+if (!binding.verified()) {
+    throw new IllegalStateException(binding.outcome().name());
+}
+```
+
+该 verifier 只证明 strict Schema、canonical order、唯一 coordinate 与 artifact kind，不证明 live head、policy、
+grant、retention、tombstone、payload bytes 或 runtime readiness。
+
+## 14. 上线前剩余门禁
+
+进入生产流量或 certification 前至少补齐：
 
 1. 生产级 payload/proof/grant/retention/tombstone authority 与 outage SLO。
 2. candidate/publish 外部调用的 prepare/verify/commit 分段，缩短数据库事务持有时间，并用 generation token 防止
    verification 后漂移。
 3. poison、burst、producer concentration、bias 和 holdout validation。
 4. owner review queue、双人审批或高风险 separation of duties。
-5. publication current-head 读取、resolver cache、撤销/过期传播和 stale-while-deny 语义。
+5. 多副本 resolver generation cache、撤销/过期传播、内存清零和 stale-while-deny 语义。
 6. retention deletion proof、legal hold 与 corpus lineage 重建。
-7. exact/trajectory/cluster resolver 的 confidence、abstention、provenance 与 signed evidence。
+7. retry/attempt trajectory、stateful trajectory 与 cluster resolver 的 confidence、abstention 和 outcome calibration。
 8. 非 Java fixed fixture、数字 canonicalization 和客户环境 certification。
+9. payload authority 的负载、熔断、区域故障、vault generation 撕裂与 256 MiB generation budget 压测。
 
-在这些门禁完成前，本增量应被描述为“治理事实管线已闭合”，不能描述为“保真语料服务已生产就绪”。
+在这些门禁完成前，本增量应被描述为“治理事实管线与 test/staging exact serving kernel 已闭合”，不能描述为
+“保真语料服务已生产就绪”。

@@ -117,6 +117,7 @@ public class CompiledTestRuntimeOptions {
                     entry.node(), binding, entry.frozenOperator(), recorder);
         }
         return doubleFactory.create(entry.node(), binding, control,
-                entry.frozenOperator(), recorder, compiled.replayPayloads(), mirrorObserver);
+                entry.frozenOperator(), recorder, compiled.replayPayloads(),
+                compiled.corpusPayloads(), mirrorObserver);
     }
 }

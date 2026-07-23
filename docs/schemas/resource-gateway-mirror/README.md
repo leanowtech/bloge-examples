@@ -40,6 +40,7 @@ offline artifact verification live in the independent `resource-gateway-test-kit
 | `capability-corpus-revision-v1.schema.json` | `CapabilityCorpusRevision` | Non-serving payload-free source snapshot with deterministic metadata risk |
 | `capability-corpus-publish-request-v1.schema.json` | `CapabilityCorpusPublishRequest` | Owner-reviewed publication command with independent lineage fencing |
 | `capability-corpus-publication-v1.schema.json` | `CapabilityCorpusPublication` | Immutable serving-publication fact for one exact eligible candidate |
+| `fixture-mirror-corpus-bindings-v1.schema.json` | `FixtureMirrorCorpusBindings` | Strict immutable fixture metadata selecting one exact latest publication per external capability |
 | `capability-lifecycle-transition-v1.schema.json` | `CapabilityLifecycleTransitionRequest` | Optimistically fenced governance transition for one exact revision |
 | `capability-mirror-compatibility-v1.schema.json` | `CapabilityMirrorCompatibility` | Minimum protocol/object/feature baseline a mirror consumer can negotiate |
 
@@ -94,6 +95,14 @@ command-to-fact bindings, source ordering, lineage, policy-independent risk stat
 horizons. The fixture does not prove live payload/proof existence, current policy, actor
 authorization, current serving-head status or resolver readiness. See
 [Capability Corpus governance](../../resource-gateway-capability-corpus-governance.md).
+
+`fixture-mirror-corpus-bindings-v1.fixture.json` is the fixed payload-free serving-selection
+fixture. It contains canonically ordered exact capability/publication references and no request or
+response values. The server parser and standalone `FixtureMirrorCorpusBindingsVerifier` both reject
+unknown fields, wrong artifact kinds, duplicate capability/publication coordinates, and
+non-canonical capability order. A successful offline result proves only structural compatibility;
+latest-head status, current policy, grant, retention, tombstone, payload bytes, and runtime
+readiness are online authority decisions.
 
 ## Deployment isolation attestation boundary
 

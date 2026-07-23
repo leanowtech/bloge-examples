@@ -169,10 +169,23 @@ the six review/candidate/publication wire objects and strict Schemas are support
 `mirrorCorpusGovernanceApi=true` means the three non-production routes are assembled; and
 `mirrorCorpusGovernanceReady=true` requires both the operator-owned governance policy provider and
 external source-lifecycle authority to be currently available. The defaults are unavailable.
-`mirrorCorpusResolverReady` remains false: a candidate is never a serving fact, and the current
-runtime does not yet consume even a valid publication. Governance workloads require
-`MIRROR_CORPUS_GOVERNANCE`. The immutable fact model, provider contracts, request examples, errors,
-startup commands and remaining production gates are in the
+`mirrorCorpusExactResolverProtocol=true` means the runtime understands strict
+`fixtureBundle.metadata.mirrorCorpus` bindings and the fixed
+`OWNER_SPECIFIED -> RECORDED_EXACT -> GOVERNED_REPLAY -> ABSTAINED` chain.
+`mirrorCorpusResolverReady=true` is stronger: the policy provider, source-lifecycle authority, and
+regional `CapabilityCorpusPayloadAuthority` must all be currently usable. The default payload
+authority is unavailable, so enabling the mirror profile never invents payload-vault trust.
+Governance workloads require `MIRROR_CORPUS_GOVERNANCE`; plan/run workloads continue to require
+`MIRROR_REHEARSAL`.
+
+The binding selects an exact latest publication for one exact external capability revision. Plan
+creation and every runtime materialization recheck the publication head, current policy, source
+lineage, exact-replay grant, retention, classification, region, tombstone state, and response
+content address before freezing response JSON in the in-memory run generation. Payload bytes are
+not written to the public plan, database, HTTP response, evidence, audit, metrics, or logs.
+Single retryable-error observations fail closed until the trajectory resolver can preserve the
+full attempt sequence. The immutable fact model, fixture binding, provider contracts, request
+examples, errors, startup commands and remaining production gates are in the
 [capability corpus governance guide](../docs/resource-gateway-capability-corpus-governance.md).
 
 The Stage 1 compiler and run kernels verify Capability Closure against the recursively

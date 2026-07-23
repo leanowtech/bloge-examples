@@ -460,19 +460,26 @@ class ToolStudioIntegrationServiceTest {
     @Test
     void capabilitiesSeparateCorpusProtocolApiReadinessAndResolverClaims() {
         ToolStudioIntegrationService service = service(null, null, null, null);
-        java.util.concurrent.atomic.AtomicBoolean corpusReady =
+        java.util.concurrent.atomic.AtomicBoolean governanceReady =
+                new java.util.concurrent.atomic.AtomicBoolean(false);
+        java.util.concurrent.atomic.AtomicBoolean resolverReady =
                 new java.util.concurrent.atomic.AtomicBoolean(false);
         service.configureMirrorRuntime(new MirrorRuntimeAvailability(
                 true, true, () -> true, true, () -> true,
                 true, () -> true, () -> true,
-                true, () -> true, true, corpusReady::get));
+                true, () -> true, true, governanceReady::get,
+                resolverReady::get));
 
         IntegrationCapabilities unavailable = service.capabilities().payload();
-        corpusReady.set(true);
-        IntegrationCapabilities available = service.capabilities().payload();
+        governanceReady.set(true);
+        IntegrationCapabilities governanceAvailable =
+                service.capabilities().payload();
+        resolverReady.set(true);
+        IntegrationCapabilities fullyAvailable = service.capabilities().payload();
 
         assertThat(unavailable.features())
                 .containsEntry("mirrorCorpusGovernanceProtocol", true)
+                .containsEntry("mirrorCorpusExactResolverProtocol", true)
                 .containsEntry("mirrorCorpusGovernanceApi", true)
                 .containsEntry("mirrorCorpusGovernanceReady", false)
                 .containsEntry("mirrorCorpusResolverReady", false);
@@ -483,17 +490,21 @@ class ToolStudioIntegrationServiceTest {
                         "capabilityCorpusCandidateRequest",
                         "capabilityCorpusRevision",
                         "capabilityCorpusPublishRequest",
-                        "capabilityCorpusPublication");
+                        "capabilityCorpusPublication",
+                        "fixtureMirrorCorpusBindings");
         assertThat(unavailable.endpoints())
                 .extracting(endpoint -> endpoint.method() + " " + endpoint.path())
                 .contains(
                         "POST /api/mirror/observations/{observationId}/reviews",
                         "POST /api/mirror/corpus-candidates",
                         "POST /api/mirror/corpus-publications");
-        assertThat(available.features())
+        assertThat(governanceAvailable.features())
                 .containsEntry("mirrorCorpusGovernanceApi", true)
                 .containsEntry("mirrorCorpusGovernanceReady", true)
                 .containsEntry("mirrorCorpusResolverReady", false);
+        assertThat(fullyAvailable.features())
+                .containsEntry("mirrorCorpusGovernanceReady", true)
+                .containsEntry("mirrorCorpusResolverReady", true);
     }
 
     @Test

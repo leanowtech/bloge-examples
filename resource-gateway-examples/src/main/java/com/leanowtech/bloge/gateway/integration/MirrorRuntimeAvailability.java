@@ -23,6 +23,7 @@ public final class MirrorRuntimeAvailability {
     private final BooleanSupplier observationAdmissionReadiness;
     private final boolean corpusGovernanceApi;
     private final BooleanSupplier corpusGovernanceReadiness;
+    private final BooleanSupplier corpusResolverReadiness;
 
     /**
      * Creates a marker with static readiness, primarily for disabled composition and tests.
@@ -187,6 +188,45 @@ public final class MirrorRuntimeAvailability {
             BooleanSupplier observationAdmissionReadiness,
             boolean corpusGovernanceApi,
             BooleanSupplier corpusGovernanceReadiness) {
+        this(planCompilationApi, executionApi, executionReadiness,
+                authorityDistributionApi, authorityDistributionReadiness,
+                attestationDistributionApi, attestationDistributionReadiness,
+                certificationReadiness, observationAdmissionApi,
+                observationAdmissionReadiness, corpusGovernanceApi,
+                corpusGovernanceReadiness, () -> false);
+    }
+
+    /**
+     * Creates a marker that also probes the external-payload-backed exact corpus resolver.
+     *
+     * @param planCompilationApi protected plan compile/read routes are assembled
+     * @param executionApi protected run/evidence routes are assembled
+     * @param executionReadiness dynamic run/evidence readiness
+     * @param authorityDistributionApi authority routes are assembled
+     * @param authorityDistributionReadiness dynamic authority readiness
+     * @param attestationDistributionApi attestation routes are assembled
+     * @param attestationDistributionReadiness dynamic attestation readiness
+     * @param certificationReadiness dynamic certification readiness
+     * @param observationAdmissionApi observation admission route is assembled
+     * @param observationAdmissionReadiness dynamic observation readiness
+     * @param corpusGovernanceApi corpus governance routes are assembled
+     * @param corpusGovernanceReadiness dynamic corpus governance readiness
+     * @param corpusResolverReadiness dynamic policy, source, and payload authority readiness
+     */
+    public MirrorRuntimeAvailability(
+            boolean planCompilationApi,
+            boolean executionApi,
+            BooleanSupplier executionReadiness,
+            boolean authorityDistributionApi,
+            BooleanSupplier authorityDistributionReadiness,
+            boolean attestationDistributionApi,
+            BooleanSupplier attestationDistributionReadiness,
+            BooleanSupplier certificationReadiness,
+            boolean observationAdmissionApi,
+            BooleanSupplier observationAdmissionReadiness,
+            boolean corpusGovernanceApi,
+            BooleanSupplier corpusGovernanceReadiness,
+            BooleanSupplier corpusResolverReadiness) {
         this.planCompilationApi = planCompilationApi;
         this.executionApi = executionApi;
         this.executionReadiness = Objects.requireNonNull(
@@ -205,6 +245,8 @@ public final class MirrorRuntimeAvailability {
         this.corpusGovernanceApi = corpusGovernanceApi;
         this.corpusGovernanceReadiness = Objects.requireNonNull(
                 corpusGovernanceReadiness, "corpusGovernanceReadiness");
+        this.corpusResolverReadiness = Objects.requireNonNull(
+                corpusResolverReadiness, "corpusResolverReadiness");
     }
 
     /**
@@ -352,6 +394,22 @@ public final class MirrorRuntimeAvailability {
         }
         try {
             return corpusGovernanceReadiness.getAsBoolean();
+        } catch (RuntimeException unavailable) {
+            return false;
+        }
+    }
+
+    /**
+     * Probes current exact-corpus resolver policy, lifecycle, and payload authorities.
+     *
+     * @return whether a corpus-bound plan can currently be compiled and materialized
+     */
+    public boolean corpusResolverReady() {
+        if (!planCompilationApi || !executionApi) {
+            return false;
+        }
+        try {
+            return corpusResolverReadiness.getAsBoolean();
         } catch (RuntimeException unavailable) {
             return false;
         }

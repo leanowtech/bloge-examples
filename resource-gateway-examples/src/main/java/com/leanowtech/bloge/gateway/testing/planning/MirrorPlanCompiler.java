@@ -23,6 +23,7 @@ import com.leanowtech.bloge.gateway.testing.domain.FixtureBundle;
 import com.leanowtech.bloge.gateway.testing.domain.FixtureExecutionServices;
 import com.leanowtech.bloge.gateway.testing.domain.FixtureRule;
 import com.leanowtech.bloge.gateway.testing.evidence.ProtocolFingerprint;
+import com.leanowtech.bloge.gateway.testing.runtime.ResolvedCorpusPayloads;
 
 import java.util.ArrayList;
 import java.util.Comparator;
@@ -98,13 +99,15 @@ public class MirrorPlanCompiler {
                 .map(edge -> edge.entry().site().invocationSiteId())
                 .collect(java.util.stream.Collectors.toCollection(LinkedHashSet::new));
         rejectUnclosedRuntimeExternals(inventory, mandatorySites);
+        ResolvedCorpusPayloads corpusPayloads = bindCorpusPayloads(
+                request.corpusPayloads(), edges);
 
         CompiledExecutionControl control;
         try {
             control = executionControlCompiler.compileMirrorFromInventory(
                     request.graph(), request.fixtureBundle(),
                     request.policy().authorizedPurpose(), request.graphArtifactFingerprint(),
-                    request.replayPayloads(), mandatorySites, inventory);
+                    request.replayPayloads(), mandatorySites, inventory, corpusPayloads);
         } catch (ControlPlanRejectedException failure) {
             throw controlFailure(failure);
         }
@@ -364,19 +367,35 @@ public class MirrorPlanCompiler {
                     "External runtime site has no frozen execution control.");
         }
         List<FixtureRule> rules = resolved.implicitDeny() ? List.of() : resolved.rules();
-        LinkedHashSet<MirrorPlan.MirrorSource> sources = new LinkedHashSet<>();
-        for (FixtureRule rule : rules) {
-            sources.add(rule.behavior().kind() == FixtureRule.BehaviorKind.REPLAY
-                    ? MirrorPlan.MirrorSource.GOVERNED_REPLAY
-                    : MirrorPlan.MirrorSource.OWNER_SPECIFIED);
-        }
-        List<MirrorPlan.MirrorSource> resolverOrder = new ArrayList<>(sources);
-        resolverOrder.sort(Comparator.naturalOrder());
-        resolverOrder.add(MirrorPlan.MirrorSource.ABSTAINED);
         return new MirrorPlan.ExternalBinding(edge.parentRef(), edge.dependency().nodeId(),
                 edge.dependency().capabilityRef(), siteId, edge.entry().site().graphPath(),
                 edge.child().source().sourceKind(), edge.child().source().sourceRef(),
-                resolverOrder, rules.stream().map(FixtureRule::ruleId).toList());
+                resolved.resolverOrder(), rules.stream().map(FixtureRule::ruleId).toList());
+    }
+
+    private static ResolvedCorpusPayloads bindCorpusPayloads(
+            ResolvedCorpusPayloads corpusPayloads,
+            List<ResolvedExternalEdge> edges) {
+        ResolvedCorpusPayloads exact = corpusPayloads == null
+                ? ResolvedCorpusPayloads.empty() : corpusPayloads;
+        Set<MirrorArtifactRef> externalCapabilities = edges.stream()
+                .map(edge -> edge.dependency().capabilityRef())
+                .collect(java.util.stream.Collectors.toSet());
+        List<MirrorArtifactRef> unused = exact.capabilityRefs().stream()
+                .filter(ref -> !externalCapabilities.contains(ref))
+                .sorted(Comparator.comparing(MirrorArtifactRef::id)
+                        .thenComparingLong(MirrorArtifactRef::revision)
+                        .thenComparing(MirrorArtifactRef::fingerprint))
+                .toList();
+        if (!unused.isEmpty()) {
+            throw reject("RG.MIRROR.CORPUS_CAPABILITY_NOT_IN_CLOSURE",
+                    "Fixture corpus publications must bind external capabilities in the closure.");
+        }
+        Map<String, MirrorArtifactRef> capabilityBySite = new LinkedHashMap<>();
+        edges.forEach(edge -> capabilityBySite.put(
+                edge.entry().site().invocationSiteId(),
+                edge.dependency().capabilityRef()));
+        return exact.bindSites(capabilityBySite);
     }
 
     private MirrorArtifactRef fixtureServiceRef(

@@ -19,6 +19,7 @@ import com.leanowtech.bloge.gateway.testing.planning.MirrorPlanCompilationReques
 import com.leanowtech.bloge.gateway.testing.planning.MirrorPlanCompiler;
 import com.leanowtech.bloge.gateway.testing.planning.MirrorPlanRejectedException;
 import com.leanowtech.bloge.gateway.testing.runtime.ResolvedReplayPayloads;
+import com.leanowtech.bloge.gateway.testing.runtime.ResolvedCorpusPayloads;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.context.annotation.Profile;
@@ -65,6 +66,7 @@ public class MirrorPlanIntegrationService {
     private final FixtureBundleRepository fixtures;
     private final MirrorFixtureScopeRepository fixtureScopes;
     private final TestReplayPayloadService replayPayloads;
+    private final CapabilityCorpusServingService corpusServing;
     private final GatewayGraphService graphs;
     private final ObjectMapper mapper;
     private final MirrorOperationObservability observations;
@@ -78,6 +80,7 @@ public class MirrorPlanIntegrationService {
      * @param fixtures immutable governed fixture registry
      * @param fixtureScopes full-enterprise-scope fixture authorization index
      * @param replayPayloads governed replay resolver
+     * @param corpusServing governed recorded-corpus serving boundary
      * @param graphs authoritative registered graph catalog
      * @param mapper canonical protocol mapper
      * @param observations mandatory audit-before-publish operation observer
@@ -89,10 +92,11 @@ public class MirrorPlanIntegrationService {
             FixtureBundleRepository fixtures,
             MirrorFixtureScopeRepository fixtureScopes,
             TestReplayPayloadService replayPayloads,
+            CapabilityCorpusServingService corpusServing,
             GatewayGraphService graphs,
             ObjectMapper mapper,
             MirrorOperationObservability observations) {
-        this(compiler, plans, fixtures, fixtureScopes, replayPayloads, graphs, mapper,
+        this(compiler, plans, fixtures, fixtureScopes, replayPayloads, corpusServing, graphs, mapper,
                 observations, Clock.systemUTC());
     }
 
@@ -103,6 +107,7 @@ public class MirrorPlanIntegrationService {
             FixtureBundleRepository fixtures,
             MirrorFixtureScopeRepository fixtureScopes,
             TestReplayPayloadService replayPayloads,
+            CapabilityCorpusServingService corpusServing,
             GatewayGraphService graphs,
             ObjectMapper mapper,
             MirrorOperationObservability observations,
@@ -112,10 +117,28 @@ public class MirrorPlanIntegrationService {
         this.fixtures = Objects.requireNonNull(fixtures, "fixtures");
         this.fixtureScopes = Objects.requireNonNull(fixtureScopes, "fixtureScopes");
         this.replayPayloads = replayPayloads;
+        this.corpusServing = corpusServing;
         this.graphs = Objects.requireNonNull(graphs, "graphs");
         this.mapper = Objects.requireNonNull(mapper, "mapper");
         this.observations = Objects.requireNonNull(observations, "observations");
         this.clock = Objects.requireNonNull(clock, "clock");
+    }
+
+    /**
+     * Backward-compatible deterministic constructor for tests without corpus bindings.
+     */
+    public MirrorPlanIntegrationService(
+            MirrorPlanCompiler compiler,
+            MirrorPlanRepository plans,
+            FixtureBundleRepository fixtures,
+            MirrorFixtureScopeRepository fixtureScopes,
+            TestReplayPayloadService replayPayloads,
+            GatewayGraphService graphs,
+            ObjectMapper mapper,
+            MirrorOperationObservability observations,
+            Clock clock) {
+        this(compiler, plans, fixtures, fixtureScopes, replayPayloads, null,
+                graphs, mapper, observations, clock);
     }
 
     /**
@@ -163,12 +186,14 @@ public class MirrorPlanIntegrationService {
         FixtureBundle fixture = storedFixture.bundle();
         ResolvedReplayPayloads replays = resolveReplayPayloads(fixture, identity);
         MirrorPlan.ExecutionPolicy policy = serverPolicy(request, identity, scope);
+        ResolvedCorpusPayloads corpora = resolveCorpusPayloads(
+                fixture, scope, policy, request.expiresAt(), identity);
 
         CompiledMirrorPlan compiled;
         try {
             compiled = compiler.compile(new MirrorPlanCompilationRequest(
                     request.planId(), graph, currentGraphFingerprint,
-                    request.capabilityClosure(), fixture, replays, policy, null,
+                    request.capabilityClosure(), fixture, replays, corpora, policy, null,
                     compiledAt, request.expiresAt()));
         } catch (MirrorPlanRejectedException rejected) {
             throw conflict(identity, rejected.code(),
@@ -288,12 +313,14 @@ public class MirrorPlanIntegrationService {
         }
         StoredFixtureBundle storedFixture = requireFixture(plan.fixtureBundleRef(), scope, identity);
         ResolvedReplayPayloads replays = resolveReplayPayloads(storedFixture.bundle(), identity);
+        ResolvedCorpusPayloads corpora = resolveCorpusPayloads(
+                storedFixture.bundle(), scope, plan.policy(), plan.expiresAt(), identity);
 
         CompiledMirrorPlan compiled;
         try {
             compiled = compiler.compile(new MirrorPlanCompilationRequest(
                     plan.planId(), graph, graphFingerprint, closure, storedFixture.bundle(),
-                    replays, plan.policy(), plan.scenarioPackRef(), plan.compiledAt(),
+                    replays, corpora, plan.policy(), plan.scenarioPackRef(), plan.compiledAt(),
                     plan.expiresAt()));
         } catch (MirrorPlanRejectedException rejected) {
             throw conflict(identity, rejected.code(),
@@ -388,6 +415,30 @@ public class MirrorPlanIntegrationService {
                     "Governed replay payload resolution is unavailable.");
         }
         return replayPayloads.resolveForMirror(fixture, identity);
+    }
+
+    private ResolvedCorpusPayloads resolveCorpusPayloads(
+            FixtureBundle fixture,
+            CapabilitySnapshot.Scope scope,
+            MirrorPlan.ExecutionPolicy policy,
+            Instant requiredUntil,
+            IntegrationRequestContext identity) {
+        FixtureMirrorCorpusBindings bindings;
+        try {
+            bindings = FixtureMirrorCorpusBindings.from(fixture);
+        } catch (IllegalArgumentException malformed) {
+            throw badRequest(identity, "RG.MIRROR.CORPUS_BINDING_INVALID",
+                    "Fixture mirror-corpus bindings are invalid.", Map.of());
+        }
+        if (!bindings.configured()) {
+            return ResolvedCorpusPayloads.empty();
+        }
+        if (corpusServing == null) {
+            throw unavailable(identity, "RG.MIRROR.CORPUS_SERVING_UNAVAILABLE",
+                    "Governed corpus serving is unavailable.");
+        }
+        return corpusServing.resolve(
+                fixture, scope, policy, requiredUntil, identity);
     }
 
     private Graph requireGraph(String graphName, IntegrationRequestContext identity) {

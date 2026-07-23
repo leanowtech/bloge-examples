@@ -165,6 +165,132 @@ class MirrorRunServiceTest {
     }
 
     @Test
+    void executesRecordedExactCorpusAndExportsDirectPublicationProvenance() throws Exception {
+        MirrorArtifactRef capabilityRef = closure.snapshots().stream()
+                .filter(snapshot -> snapshot.kind() == CapabilitySnapshot.Kind.EXTERNAL)
+                .map(CapabilityClosureIntegrity::reference)
+                .findFirst().orElseThrow();
+        MirrorArtifactRef publicationRef = new MirrorArtifactRef(
+                "CAPABILITY_CORPUS_PUBLICATION", "customer-corpus", 4, fingerprint('4'));
+        MirrorArtifactRef revisionRef = new MirrorArtifactRef(
+                "CAPABILITY_CORPUS_REVISION", "customer-corpus", 7, fingerprint('5'));
+        MirrorArtifactRef observationRef = new MirrorArtifactRef(
+                "CAPABILITY_OBSERVATION", "customer-observation", 1, fingerprint('6'));
+        String requestFingerprint = ProtocolFingerprint.of(mapper, null);
+        byte[] responseJson = mapper.writeValueAsBytes(
+                Map.of("customerId", "C-recorded"));
+        ResolvedCorpusPayloads corpus = ResolvedCorpusPayloads.of(List.of(
+                new ResolvedCorpusPayloads.CapabilityCorpus(
+                        capabilityRef, publicationRef, revisionRef,
+                        COMPILED_AT, COMPILED_AT.plus(Duration.ofHours(2)),
+                        List.of(ResolvedCorpusPayloads.Sample.response(
+                                requestFingerprint, responseJson,
+                                List.of(publicationRef, revisionRef, observationRef),
+                                List.of(observationRef.id()), 0.95, List.of())))));
+        CompiledMirrorPlan compiled = compiler.compile(new MirrorPlanCompilationRequest(
+                "plan-customer-corpus", graph, TARGET, closure, fixture(),
+                ResolvedReplayPayloads.empty(), corpus, policy(), null,
+                COMPILED_AT, COMPILED_AT.plus(Duration.ofHours(1))));
+
+        MirrorRunResult result = runtime.execute(request(compiled, SCOPE, PURPOSE));
+
+        assertThat(result.passed()).isTrue();
+        assertThat(externalCalls).hasValue(0);
+        assertThat(result.execution().evidence().nodeTrace())
+                .filteredOn(trace -> trace.invocationSiteId()
+                        .equals("/root/loadCustomer#PRIMARY"))
+                .singleElement()
+                .satisfies(trace -> assertThat(trace.output())
+                        .isEqualTo(Map.of("customerId", "C-recorded")));
+        assertThat(compiled.plan().externalBindings()).singleElement()
+                .satisfies(binding -> assertThat(binding.resolverOrder()).containsExactly(
+                        MirrorPlan.MirrorSource.RECORDED_EXACT,
+                        MirrorPlan.MirrorSource.ABSTAINED));
+        assertThat(result.resolutions()).singleElement().satisfies(resolution -> {
+            assertThat(resolution.source())
+                    .isEqualTo(MirrorPlan.MirrorSource.RECORDED_EXACT);
+            assertThat(resolution.matchedArtifactRefs())
+                    .containsExactlyInAnyOrder(
+                            publicationRef, revisionRef, observationRef);
+            assertThat(resolution.matchedRuleRefs())
+                    .containsExactly(observationRef.id());
+            assertThat(resolution.confidence().method())
+                    .isEqualTo("RECORDED_EXACT_V1");
+            assertThat(resolution.freshness()).isEqualTo(0.95);
+            assertThat(resolution.outputFingerprint()).isEqualTo(
+                    ProtocolFingerprint.of(
+                            mapper, Map.of("customerId", "C-recorded")));
+        });
+        assertThat(compiled.executionControl().corpusPayloads().toString())
+                .doesNotContain("C-recorded");
+    }
+
+    @Test
+    void executesRecordedExactBusinessErrorWithDetailsFingerprint() {
+        MirrorArtifactRef capabilityRef = closure.snapshots().stream()
+                .filter(snapshot -> snapshot.kind() == CapabilitySnapshot.Kind.EXTERNAL)
+                .map(CapabilityClosureIntegrity::reference)
+                .findFirst().orElseThrow();
+        MirrorArtifactRef publicationRef = new MirrorArtifactRef(
+                "CAPABILITY_CORPUS_PUBLICATION", "customer-error-corpus",
+                1, fingerprint('4'));
+        MirrorArtifactRef revisionRef = new MirrorArtifactRef(
+                "CAPABILITY_CORPUS_REVISION", "customer-error-corpus",
+                1, fingerprint('5'));
+        MirrorArtifactRef observationRef = new MirrorArtifactRef(
+                "CAPABILITY_OBSERVATION", "customer-error-observation",
+                1, fingerprint('6'));
+        String detailsFingerprint = fingerprint('e');
+        ResolvedCorpusPayloads corpus = ResolvedCorpusPayloads.of(List.of(
+                new ResolvedCorpusPayloads.CapabilityCorpus(
+                        capabilityRef, publicationRef, revisionRef,
+                        COMPILED_AT, COMPILED_AT.plus(Duration.ofHours(2)),
+                        List.of(ResolvedCorpusPayloads.Sample.error(
+                                ProtocolFingerprint.of(mapper, null),
+                                "CUSTOMER_NOT_FOUND",
+                                "BUSINESS",
+                                false,
+                                detailsFingerprint,
+                                List.of(publicationRef, revisionRef, observationRef),
+                                List.of(observationRef.id()),
+                                0.9,
+                                List.of())))));
+        CompiledMirrorPlan compiled = compiler.compile(
+                new MirrorPlanCompilationRequest(
+                        "plan-customer-error-corpus",
+                        graph,
+                        TARGET,
+                        closure,
+                        fixture(),
+                        ResolvedReplayPayloads.empty(),
+                        corpus,
+                        policy(),
+                        null,
+                        COMPILED_AT,
+                        COMPILED_AT.plus(Duration.ofHours(1))));
+
+        MirrorRunResult result = runtime.execute(
+                request(compiled, SCOPE, PURPOSE));
+
+        assertThat(result.passed()).isFalse();
+        assertThat(externalCalls).hasValue(0);
+        assertThat(result.resolutions()).singleElement().satisfies(resolution -> {
+            assertThat(resolution.status()).isEqualTo(
+                    MirrorResolution.Status.RESOLVED);
+            assertThat(resolution.source()).isEqualTo(
+                    MirrorPlan.MirrorSource.RECORDED_EXACT);
+            assertThat(resolution.error()).isEqualTo(
+                    new MirrorResolution.MirrorError(
+                            "CUSTOMER_NOT_FOUND",
+                            "BUSINESS",
+                            detailsFingerprint));
+            assertThat(resolution.matchedArtifactRefs())
+                    .containsExactlyInAnyOrder(
+                            publicationRef, revisionRef, observationRef);
+        });
+    }
+
+    @Test
     void producesCertifiableV2EvidenceOnlyAfterDoubleObservedDeploymentTrust() {
         CompiledMirrorPlan compiled = compileCertification(fixture(rule(
                 "customer-response", "loadCustomer",

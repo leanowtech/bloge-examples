@@ -11,6 +11,7 @@ import com.leanowtech.bloge.core.model.Graph;
 import com.leanowtech.bloge.core.operator.Operator;
 import com.leanowtech.bloge.core.operator.SideEffectType;
 import com.leanowtech.bloge.core.spi.OperatorRegistry;
+import com.leanowtech.bloge.gateway.integration.mirror.MirrorPlan;
 import com.leanowtech.bloge.gateway.testing.domain.EffectiveExecutionPlan;
 import com.leanowtech.bloge.gateway.testing.domain.ExecutionServiceStateSnapshot;
 import com.leanowtech.bloge.gateway.testing.domain.FixtureBundle;
@@ -20,6 +21,7 @@ import com.leanowtech.bloge.gateway.testing.domain.TestSuiteRunEvidenceV5;
 import com.leanowtech.bloge.gateway.testing.evidence.ProtocolFingerprint;
 import com.leanowtech.bloge.gateway.testing.runtime.ResolvedReplayPayloads;
 import com.leanowtech.bloge.gateway.testing.runtime.GovernedExecutionServices;
+import com.leanowtech.bloge.gateway.testing.runtime.ResolvedCorpusPayloads;
 import com.leanowtech.bloge.gateway.testing.runtime.ResolvedTestSecrets;
 
 import java.util.ArrayList;
@@ -202,9 +204,27 @@ public class ExecutionControlCompiler {
             ResolvedReplayPayloads replayPayloads,
             Set<String> mandatoryExternalSiteIds,
             InvocationInventory frozenInventory) {
+        return compileMirrorFromInventory(graph, fixtureBundle, authorizedPurpose,
+                targetFingerprint, replayPayloads, mandatoryExternalSiteIds,
+                frozenInventory, ResolvedCorpusPayloads.empty());
+    }
+
+    /**
+     * Compiles mirror controls with an already-authorized, site-bound exact corpus snapshot.
+     */
+    CompiledExecutionControl compileMirrorFromInventory(
+            Graph graph,
+            FixtureBundle fixtureBundle,
+            String authorizedPurpose,
+            String targetFingerprint,
+            ResolvedReplayPayloads replayPayloads,
+            Set<String> mandatoryExternalSiteIds,
+            InvocationInventory frozenInventory,
+            ResolvedCorpusPayloads corpusPayloads) {
         return compileBound(graph, fixtureBundle, authorizedPurpose, targetFingerprint,
                 targetFingerprint, replayPayloads, ResolvedTestSecrets.empty(), null,
-                mandatoryExternalSiteIds, Objects.requireNonNull(frozenInventory, "frozenInventory"));
+                mandatoryExternalSiteIds, Objects.requireNonNull(frozenInventory, "frozenInventory"),
+                corpusPayloads);
     }
 
     /**
@@ -281,7 +301,7 @@ public class ExecutionControlCompiler {
             ExecutionServiceStateSnapshot providerState) {
         return compileBound(graph, fixtureBundle, authorizedPurpose, targetFingerprint,
                 fixtureBindingTargetFingerprint, replayPayloads, testSecrets, providerState,
-                null, null);
+                null, null, ResolvedCorpusPayloads.empty());
     }
 
     private CompiledExecutionControl compileBound(
@@ -296,7 +316,7 @@ public class ExecutionControlCompiler {
             Set<String> mandatoryExternalSiteIds) {
         return compileBound(graph, fixtureBundle, authorizedPurpose, targetFingerprint,
                 fixtureBindingTargetFingerprint, replayPayloads, testSecrets, providerState,
-                mandatoryExternalSiteIds, null);
+                mandatoryExternalSiteIds, null, ResolvedCorpusPayloads.empty());
     }
 
     private CompiledExecutionControl compileBound(
@@ -309,12 +329,15 @@ public class ExecutionControlCompiler {
             ResolvedTestSecrets testSecrets,
             ExecutionServiceStateSnapshot providerState,
             Set<String> mandatoryExternalSiteIds,
-            InvocationInventory frozenInventory) {
+            InvocationInventory frozenInventory,
+            ResolvedCorpusPayloads corpusPayloads) {
         Objects.requireNonNull(graph, "graph");
         ResolvedReplayPayloads resolvedReplays = replayPayloads == null
                 ? ResolvedReplayPayloads.empty() : replayPayloads;
         ResolvedTestSecrets resolvedSecrets = testSecrets == null
                 ? ResolvedTestSecrets.empty() : testSecrets;
+        ResolvedCorpusPayloads resolvedCorpus = corpusPayloads == null
+                ? ResolvedCorpusPayloads.empty() : corpusPayloads;
         safetyPreflight.validate(fixtureBundle, authorizedPurpose,
                 fixtureBindingTargetFingerprint, resolvedReplays);
 
@@ -322,6 +345,12 @@ public class ExecutionControlCompiler {
                 ? inventoryBuilder.build(graph, targetFingerprint) : frozenInventory;
         boolean mirrorCompilation = mandatoryExternalSiteIds != null;
         Set<String> mandatoryExternalSites = normalizedSites(mandatoryExternalSiteIds);
+        Set<String> recordedExactSites = normalizedSites(resolvedCorpus.siteIds());
+        if (!mandatoryExternalSites.containsAll(recordedExactSites)) {
+            throw new ControlPlanRejectedException(
+                    "CONTROL_PLAN_CORPUS_SITE_NOT_EXTERNAL", List.of(
+                    "Recorded exact corpus sites must belong to the external capability closure."));
+        }
         List<String> missingMirrorSites = mandatoryExternalSites.stream()
                 .filter(siteId -> !inventory.byInvocationSiteId().containsKey(siteId)).toList();
         if (!missingMirrorSites.isEmpty()) {
@@ -349,6 +378,14 @@ public class ExecutionControlCompiler {
                         entry.site(), denyRules, true));
             }
         }
+        recordedExactSites.forEach(siteId -> controls.compute(siteId, (ignored, control) -> {
+            if (control == null) {
+                throw new ControlPlanRejectedException(
+                        "CONTROL_PLAN_CORPUS_SITE_UNRESOLVED", List.of(
+                        "Recorded exact corpus site has no mirror control."));
+            }
+            return control.withMirrorSource(MirrorPlan.MirrorSource.RECORDED_EXACT);
+        }));
         rejectUnsupportedControlledBindings(inventory, controls);
         rejectUnsafeExternalReal(inventory, controls, mandatoryExternalSites);
 
@@ -363,10 +400,18 @@ public class ExecutionControlCompiler {
                         FixtureRule.DoubleBoundary.NODE, List.of(), "REAL"));
             } else {
                 FixtureRule first = control.rules().getFirst();
-                FixtureRule.BehaviorKind kind = first.behavior().kind();
+                boolean corpusOnly = control.implicitDeny()
+                        && control.resolverOrder().contains(
+                        MirrorPlan.MirrorSource.RECORDED_EXACT);
+                FixtureRule.BehaviorKind kind = corpusOnly
+                        ? FixtureRule.BehaviorKind.REPLAY : first.behavior().kind();
                 sites.add(new EffectiveExecutionPlan.ResolvedSite(control.site().invocationSiteId(),
-                        resolution(control), kind, first.behavior().boundary(),
-                        control.rules().stream().map(FixtureRule::ruleId).toList(), fidelity(control)));
+                        corpusOnly ? EffectiveExecutionPlan.Resolution.TEST_DOUBLE
+                                : resolution(control),
+                        kind, first.behavior().boundary(),
+                        corpusOnly ? List.of()
+                                : control.rules().stream().map(FixtureRule::ruleId).toList(),
+                        corpusOnly ? "RECORDED_EXACT" : fidelity(control)));
             }
         }
         Map<String, String> defaults = new LinkedHashMap<>();
@@ -424,7 +469,7 @@ public class ExecutionControlCompiler {
                 Map.copyOf(defaults),
                 List.of());
         return new CompiledExecutionControl(effectivePlan, controls, fixtureBundle.rules(), inventory,
-                resolvedReplays, executionServices);
+                resolvedReplays, resolvedCorpus, executionServices);
     }
 
     private boolean externalEffect(InvocationInventory.Entry entry) {

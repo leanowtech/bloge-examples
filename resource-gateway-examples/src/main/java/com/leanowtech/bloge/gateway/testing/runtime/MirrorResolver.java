@@ -41,6 +41,7 @@ public interface MirrorResolver {
      * @param requestFingerprint canonical payload-free request identity
      * @param input ephemeral business input; resolvers must not retain or log it
      * @param matchedRules preflight-ordered rules whose selectors match this invocation
+     * @param recordedExactCorpus optional site-bound immutable corpus generation
      */
     record Request(
             InvocationSite site,
@@ -48,7 +49,8 @@ public interface MirrorResolver {
             int attempt,
             String requestFingerprint,
             Object input,
-            List<FixtureRule> matchedRules
+            List<FixtureRule> matchedRules,
+            ResolvedCorpusPayloads.CapabilityCorpus recordedExactCorpus
     ) {
         /** Validates exact coordinates and detaches the candidate list. */
         public Request {
@@ -63,6 +65,29 @@ public interface MirrorResolver {
             }
             matchedRules = matchedRules == null ? List.of() : List.copyOf(matchedRules);
         }
+
+        /** Backward-compatible request without a site-bound recorded corpus. */
+        public Request(
+                InvocationSite site,
+                int occurrence,
+                int attempt,
+                String requestFingerprint,
+                Object input,
+                List<FixtureRule> matchedRules) {
+            this(site, occurrence, attempt, requestFingerprint,
+                    input, matchedRules, null);
+        }
+
+        /** Prevents ephemeral business input from entering ordinary logs. */
+        @Override
+        public String toString() {
+            return "Request[invocationSiteId=" + site.invocationSiteId()
+                    + ", occurrence=" + occurrence
+                    + ", attempt=" + attempt
+                    + ", requestFingerprint=" + requestFingerprint
+                    + ", matchedRules=" + matchedRules.size()
+                    + ", recordedExactCorpus=" + (recordedExactCorpus != null) + "]";
+        }
     }
 
     /**
@@ -72,12 +97,18 @@ public interface MirrorResolver {
      * @param confidence bounded match confidence and named method
      * @param freshness normalized source freshness in the closed interval [0,1]
      * @param limitations bounded payload-free fidelity or governance limitations
+     * @param artifactRefs exact governed artifacts used by this source
+     * @param ruleRefs exact source-local rule identities used by this source
+     * @param errorDetailsFingerprint exact normalized error-details identity, or blank
      */
     record Match(
             FixtureRule rule,
             ArtifactProvenance.Confidence confidence,
             double freshness,
-            List<String> limitations
+            List<String> limitations,
+            List<com.leanowtech.bloge.gateway.integration.mirror.MirrorArtifactRef> artifactRefs,
+            List<String> ruleRefs,
+            String errorDetailsFingerprint
     ) {
         /** Validates the claim without inferring absent governance facts. */
         public Match {
@@ -92,6 +123,68 @@ public interface MirrorResolver {
             if (limitations.size() > 64) {
                 throw new IllegalArgumentException("limitations exceeds its item limit");
             }
+            artifactRefs = artifactRefs == null ? List.of() : artifactRefs.stream()
+                    .map(value -> Objects.requireNonNull(value, "artifactRef"))
+                    .distinct().sorted(java.util.Comparator
+                            .comparing(com.leanowtech.bloge.gateway.integration.mirror
+                                    .MirrorArtifactRef::kind)
+                            .thenComparing(com.leanowtech.bloge.gateway.integration.mirror
+                                    .MirrorArtifactRef::id)
+                            .thenComparingLong(com.leanowtech.bloge.gateway.integration.mirror
+                                    .MirrorArtifactRef::revision)
+                            .thenComparing(com.leanowtech.bloge.gateway.integration.mirror
+                                    .MirrorArtifactRef::fingerprint))
+                    .toList();
+            ruleRefs = ruleRefs == null ? List.of() : ruleRefs.stream()
+                    .map(value -> bounded(value, "ruleRef", 512))
+                    .distinct().sorted().toList();
+            if (artifactRefs.size() > 1_000 || ruleRefs.size() > 1_000) {
+                throw new IllegalArgumentException(
+                        "mirror match provenance exceeds its item limit");
+            }
+            errorDetailsFingerprint = errorDetailsFingerprint == null
+                    ? "" : errorDetailsFingerprint.trim();
+            if (!errorDetailsFingerprint.isBlank()
+                    && !FINGERPRINT.matcher(errorDetailsFingerprint).matches()) {
+                throw new IllegalArgumentException(
+                        "errorDetailsFingerprint must be blank or canonical SHA-256");
+            }
+        }
+
+        /** Backward-compatible exact match whose provenance is derived from its fixture rule. */
+        public Match(
+                FixtureRule rule,
+                ArtifactProvenance.Confidence confidence,
+                double freshness,
+                List<String> limitations) {
+            this(rule, confidence, freshness, limitations,
+                    List.of(), List.of(), "");
+        }
+
+        /** Backward-compatible source match without normalized error-detail provenance. */
+        public Match(
+                FixtureRule rule,
+                ArtifactProvenance.Confidence confidence,
+                double freshness,
+                List<String> limitations,
+                List<com.leanowtech.bloge.gateway.integration.mirror.MirrorArtifactRef>
+                        artifactRefs,
+                List<String> ruleRefs) {
+            this(rule, confidence, freshness, limitations,
+                    artifactRefs, ruleRefs, "");
+        }
+
+        /** Prevents a resolved rule's response value or diagnostic text from entering logs. */
+        @Override
+        public String toString() {
+            return "Match[ruleId=" + rule.ruleId()
+                    + ", behavior=" + rule.behavior().kind()
+                    + ", confidence=" + confidence.method()
+                    + ", freshness=" + freshness
+                    + ", limitations=" + limitations.size()
+                    + ", artifactRefs=" + artifactRefs.size()
+                    + ", ruleRefs=" + ruleRefs.size()
+                    + ", errorDetailsFingerprint=" + errorDetailsFingerprint + "]";
         }
     }
 

@@ -19,9 +19,11 @@ import com.leanowtech.bloge.gateway.integration.mirror.CapabilityObservationRepo
 import com.leanowtech.bloge.gateway.integration.mirror.DatabaseCapabilityObservationRepository;
 import com.leanowtech.bloge.gateway.integration.mirror.CapabilityCorpusGovernancePolicyProvider;
 import com.leanowtech.bloge.gateway.integration.mirror.CapabilityCorpusGovernanceService;
+import com.leanowtech.bloge.gateway.integration.mirror.CapabilityCorpusServingService;
 import com.leanowtech.bloge.gateway.integration.mirror.CapabilityCorpusIntegrity;
 import com.leanowtech.bloge.gateway.integration.mirror.CapabilityCorpusRepository;
 import com.leanowtech.bloge.gateway.integration.mirror.CapabilityCorpusSourceVerifier;
+import com.leanowtech.bloge.gateway.integration.mirror.CapabilityCorpusPayloadAuthority;
 import com.leanowtech.bloge.gateway.integration.mirror.CapabilityObservationReviewRepository;
 import com.leanowtech.bloge.gateway.integration.mirror.DatabaseCapabilityCorpusRepository;
 import com.leanowtech.bloge.gateway.integration.mirror.DatabaseCapabilityObservationReviewRepository;
@@ -394,6 +396,17 @@ public class MirrorRuntimeConfiguration {
     }
 
     /**
+     * Installs a fail-closed placeholder until a regional sanitized-payload vault is supplied.
+     *
+     * @return unavailable short-lived corpus payload authority
+     */
+    @Bean
+    @ConditionalOnMissingBean
+    public CapabilityCorpusPayloadAuthority capabilityCorpusPayloadAuthority() {
+        return CapabilityCorpusPayloadAuthority.unavailable();
+    }
+
+    /**
      * Creates the terminal quarantine-review store.
      *
      * @param jdbc transaction-aware application JDBC boundary
@@ -546,6 +559,7 @@ public class MirrorRuntimeConfiguration {
      * @param corpusService assembled quarantine-review and corpus-publication boundary
      * @param corpusPolicies dynamic operator-owned corpus policy source
      * @param corpusSources dynamic external source lifecycle authority
+     * @param corpusServing online exact-publication materialization boundary
      * @return profile-owned mirror capability marker
      */
     @Bean
@@ -569,14 +583,16 @@ public class MirrorRuntimeConfiguration {
             CapabilityObservationPayloadReferenceVerifier payloadReferences,
             CapabilityCorpusGovernanceService corpusService,
             CapabilityCorpusGovernancePolicyProvider corpusPolicies,
-            CapabilityCorpusSourceVerifier corpusSources) {
+            CapabilityCorpusSourceVerifier corpusSources,
+            CapabilityCorpusServingService corpusServing) {
         return new MirrorRuntimeAvailability(true, true, evidenceSigner::available,
                 true, trustPolicies::available, true,
                 () -> trustPolicies.available() && admissionPolicies.available(),
                 deploymentTrust::available, true,
                 () -> observationPolicies.available() && payloadReferences.available(),
                 true,
-                () -> corpusPolicies.available() && corpusSources.available());
+                () -> corpusPolicies.available() && corpusSources.available(),
+                corpusServing::ready);
     }
 
     /** Compatibility factory retained for focused readiness tests outside Spring composition. */

@@ -1,5 +1,6 @@
 package com.leanowtech.bloge.gateway.testing.runtime;
 
+import com.fasterxml.jackson.databind.ObjectMapper;
 import com.leanowtech.bloge.gateway.integration.mirror.ArtifactProvenance;
 import com.leanowtech.bloge.gateway.integration.mirror.MirrorPlan;
 import com.leanowtech.bloge.gateway.testing.domain.FixtureRule;
@@ -23,6 +24,8 @@ import java.util.Optional;
 public final class MirrorResolverChain {
     private static final ArtifactProvenance.Confidence EXACT_RULE_CONFIDENCE =
             new ArtifactProvenance.Confidence(1, 1, 1, "EXACT_FIXTURE_RULE_V1");
+    private static final ArtifactProvenance.Confidence RECORDED_EXACT_CONFIDENCE =
+            new ArtifactProvenance.Confidence(1, 1, 1, "RECORDED_EXACT_V1");
 
     private final Map<MirrorPlan.MirrorSource, MirrorResolver> resolvers;
 
@@ -54,6 +57,19 @@ public final class MirrorResolverChain {
     public static MirrorResolverChain fixtureRules() {
         return new MirrorResolverChain(List.of(
                 new ExactRuleResolver(MirrorPlan.MirrorSource.OWNER_SPECIFIED, false),
+                new ExactRuleResolver(MirrorPlan.MirrorSource.GOVERNED_REPLAY, true)));
+    }
+
+    /**
+     * Returns the standard runtime chain including governed recorded-exact corpus resolution.
+     *
+     * @param mapper mapper used only to materialize the already-frozen response JSON
+     * @return complete stateless v1 runtime chain
+     */
+    public static MirrorResolverChain standard(ObjectMapper mapper) {
+        return new MirrorResolverChain(List.of(
+                new ExactRuleResolver(MirrorPlan.MirrorSource.OWNER_SPECIFIED, false),
+                new RecordedExactResolver(Objects.requireNonNull(mapper, "mapper")),
                 new ExactRuleResolver(MirrorPlan.MirrorSource.GOVERNED_REPLAY, true)));
     }
 
@@ -155,6 +171,33 @@ public final class MirrorResolverChain {
                     == FixtureRule.SchemaCheckMode.WAIVED
                     ? List.of("SCHEMA_VALIDATION_WAIVED") : List.of();
             return Optional.of(new Match(rule, EXACT_RULE_CONFIDENCE, 1, limitations));
+        }
+    }
+
+    private record RecordedExactResolver(ObjectMapper mapper) implements MirrorResolver {
+        private RecordedExactResolver {
+            Objects.requireNonNull(mapper, "mapper");
+        }
+
+        @Override
+        public MirrorPlan.MirrorSource source() {
+            return MirrorPlan.MirrorSource.RECORDED_EXACT;
+        }
+
+        @Override
+        public Optional<Match> resolve(Request request) {
+            if (request.recordedExactCorpus() == null) {
+                return Optional.empty();
+            }
+            return request.recordedExactCorpus().find(request.requestFingerprint())
+                    .map(sample -> new Match(
+                            sample.toRule(mapper),
+                            RECORDED_EXACT_CONFIDENCE,
+                            sample.freshness(),
+                            sample.limitations(),
+                            sample.artifactRefs(),
+                            sample.ruleRefs(),
+                            sample.errorDetailsFingerprint()));
         }
     }
 }

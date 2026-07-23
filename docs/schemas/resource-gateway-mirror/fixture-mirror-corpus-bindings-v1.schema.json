@@ -1,0 +1,69 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://bloge.dev/schemas/resource-gateway-mirror/fixture-mirror-corpus-bindings-v1.schema.json",
+  "title": "Resource Gateway Fixture Mirror Corpus Bindings v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schemaVersion", "publications"],
+  "properties": {
+    "schemaVersion": {
+      "const": "resourceGateway.fixtureMirrorCorpusBindings.v1"
+    },
+    "publications": {
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 1000,
+      "items": { "$ref": "#/$defs/publicationBinding" }
+    }
+  },
+  "$defs": {
+    "fingerprint": {
+      "type": "string",
+      "pattern": "^sha256:[a-f0-9]{64}$"
+    },
+    "identifier": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 512,
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9@._:/#-]{0,511}$"
+    },
+    "artifactRef": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["kind", "id", "revision", "fingerprint"],
+      "properties": {
+        "kind": {
+          "enum": ["CAPABILITY", "CAPABILITY_CORPUS_PUBLICATION"]
+        },
+        "id": { "$ref": "#/$defs/identifier" },
+        "revision": { "type": "integer", "minimum": 1 },
+        "fingerprint": { "$ref": "#/$defs/fingerprint" }
+      }
+    },
+    "capabilityRef": {
+      "allOf": [
+        { "$ref": "#/$defs/artifactRef" },
+        { "properties": { "kind": { "const": "CAPABILITY" } } }
+      ]
+    },
+    "publicationRef": {
+      "allOf": [
+        { "$ref": "#/$defs/artifactRef" },
+        {
+          "properties": {
+            "kind": { "const": "CAPABILITY_CORPUS_PUBLICATION" }
+          }
+        }
+      ]
+    },
+    "publicationBinding": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["capabilityRef", "publicationRef"],
+      "properties": {
+        "capabilityRef": { "$ref": "#/$defs/capabilityRef" },
+        "publicationRef": { "$ref": "#/$defs/publicationRef" }
+      }
+    }
+  }
+}

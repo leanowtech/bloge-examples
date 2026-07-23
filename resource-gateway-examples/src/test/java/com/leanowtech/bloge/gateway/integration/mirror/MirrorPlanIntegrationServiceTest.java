@@ -182,6 +182,70 @@ class MirrorPlanIntegrationServiceTest {
     }
 
     @Test
+    void corpusBindingFailsClosedWhenTheServingBoundaryIsNotInstalled() {
+        MirrorArtifactRef capability = closure.snapshots().stream()
+                .filter(snapshot -> snapshot.kind() == CapabilitySnapshot.Kind.EXTERNAL)
+                .map(MirrorPlanIntegrationServiceTest::capabilityRef)
+                .findFirst()
+                .orElseThrow();
+        MirrorArtifactRef publication = new MirrorArtifactRef(
+                CapabilityCorpusPublication.ARTIFACT_KIND,
+                "customer-corpus",
+                1,
+                fingerprint('7'));
+        FixtureBundle fixture = new FixtureBundle(
+                "",
+                "customer-corpus-fixture",
+                1,
+                graphFingerprint,
+                "CONFIDENTIAL",
+                NOW,
+                42L,
+                List.of(),
+                List.of(),
+                Map.of(FixtureMirrorCorpusBindings.METADATA_KEY, Map.of(
+                        "schemaVersion", FixtureMirrorCorpusBindings.SCHEMA_VERSION,
+                        "publications", List.of(Map.of(
+                                "capabilityRef", wire(capability),
+                                "publicationRef", wire(publication))))));
+        storedFixture = new StoredFixtureBundle(
+                "",
+                SCOPE.tenantId(),
+                SCOPE.environmentId(),
+                fixture.fixtureBundleId(),
+                fixture.revision(),
+                ProtocolFingerprint.of(mapper, fixture),
+                fixture,
+                NOW,
+                "fixture-owner");
+        fixtureScopes.values.clear();
+        fixtureScopes.create(new MirrorFixtureScopeBinding(
+                SCOPE, fixtureRef(storedFixture), NOW, "fixture-owner"));
+        service = new MirrorPlanIntegrationService(
+                new MirrorPlanCompiler(operators, mapper),
+                plans,
+                new FixedFixtureRepository(storedFixture),
+                fixtureScopes,
+                null,
+                graphService,
+                mapper,
+                MirrorOperationObservability.noop(),
+                Clock.fixed(NOW, ZoneOffset.UTC));
+
+        assertProblem(() -> service.create(
+                        request(
+                                "corpus-serving-missing",
+                                closure,
+                                graphFingerprint,
+                                fixtureRef(storedFixture),
+                                Duration.ofMinutes(5)),
+                        identity()),
+                503,
+                "RG.MIRROR.CORPUS_SERVING_UNAVAILABLE");
+        assertThat(plans.values).isEmpty();
+    }
+
+    @Test
     void failsClosedForWrongPurposeProductionEnvironmentIncompleteScopeAndClearance() {
         MirrorPlanCreateRequest request = request("guarded", closure,
                 graphFingerprint, fixtureRef(storedFixture), Duration.ofMinutes(5));
@@ -318,6 +382,22 @@ class MirrorPlanIntegrationServiceTest {
 
     private static String fingerprint(char value) {
         return "sha256:" + String.valueOf(value).repeat(64);
+    }
+
+    private static Map<String, Object> wire(MirrorArtifactRef ref) {
+        return Map.of(
+                "kind", ref.kind(),
+                "id", ref.id(),
+                "revision", ref.revision(),
+                "fingerprint", ref.fingerprint());
+    }
+
+    private static MirrorArtifactRef capabilityRef(CapabilitySnapshot snapshot) {
+        return new MirrorArtifactRef(
+                "CAPABILITY",
+                snapshot.capabilityId(),
+                snapshot.revision(),
+                snapshot.fingerprint());
     }
 
     private static final class InMemoryPlanRepository implements MirrorPlanRepository {

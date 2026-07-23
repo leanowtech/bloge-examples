@@ -5,6 +5,7 @@ import com.leanowtech.bloge.gateway.testing.domain.FixtureRule;
 import com.leanowtech.bloge.gateway.testing.domain.InvocationSite;
 import com.leanowtech.bloge.gateway.integration.mirror.MirrorPlan;
 import com.leanowtech.bloge.gateway.testing.runtime.GovernedExecutionServices;
+import com.leanowtech.bloge.gateway.testing.runtime.ResolvedCorpusPayloads;
 import com.leanowtech.bloge.gateway.testing.runtime.ResolvedReplayPayloads;
 
 import java.util.List;
@@ -22,6 +23,7 @@ import java.util.Map;
  * @param rules frozen source rules in declaration order
  * @param inventory exact reachable runtime bindings used to compute fingerprints and resolve a run
  * @param replayPayloads exact governed values frozen before compilation
+ * @param corpusPayloads exact governed recorded outcomes frozen before compilation
  * @param executionServices exact run-scoped services frozen during plan compilation
  */
 public record CompiledExecutionControl(
@@ -30,6 +32,7 @@ public record CompiledExecutionControl(
         List<FixtureRule> rules,
         InvocationInventory inventory,
         ResolvedReplayPayloads replayPayloads,
+        ResolvedCorpusPayloads corpusPayloads,
         GovernedExecutionServices executionServices
 ) {
     /** Creates immutable runtime collections. */
@@ -39,7 +42,20 @@ public record CompiledExecutionControl(
         inventory = inventory == null
                 ? new InvocationInventory(List.of(), Map.of(), Map.of()) : inventory;
         replayPayloads = replayPayloads == null ? ResolvedReplayPayloads.empty() : replayPayloads;
+        corpusPayloads = corpusPayloads == null ? ResolvedCorpusPayloads.empty() : corpusPayloads;
         executionServices = java.util.Objects.requireNonNull(executionServices, "executionServices");
+    }
+
+    /** Backward-compatible constructor for controls without a recorded corpus snapshot. */
+    public CompiledExecutionControl(
+            EffectiveExecutionPlan effectivePlan,
+            Map<String, ResolvedControl> controls,
+            List<FixtureRule> rules,
+            InvocationInventory inventory,
+            ResolvedReplayPayloads replayPayloads,
+            GovernedExecutionServices executionServices) {
+        this(effectivePlan, controls, rules, inventory, replayPayloads,
+                ResolvedCorpusPayloads.empty(), executionServices);
     }
 
     /**
@@ -50,6 +66,8 @@ public record CompiledExecutionControl(
      * @param site stable invocation site
      * @param rules ordered candidate rules
      * @param implicitDeny whether the control was synthesized by side-effect fail-closed policy
+     * @param resolutionStrategy selector-only or fixed mirror-source precedence
+     * @param resolverOrder exact concrete sources followed by terminal abstention
      */
     public record ResolvedControl(
             InvocationSite site,
@@ -113,6 +131,28 @@ public record CompiledExecutionControl(
             order.add(MirrorPlan.MirrorSource.ABSTAINED);
             return new ResolvedControl(site, rules, implicitDeny,
                     ResolutionStrategy.MIRROR_SOURCE_THEN_SELECTOR, order);
+        }
+
+        /**
+         * Returns this mirror control with one additional frozen resolver source.
+         *
+         * @param source source implemented by the same execution generation
+         * @return copied control preserving fixed v1 source precedence
+         */
+        public ResolvedControl withMirrorSource(MirrorPlan.MirrorSource source) {
+            if (resolutionStrategy != ResolutionStrategy.MIRROR_SOURCE_THEN_SELECTOR
+                    || source == null || source == MirrorPlan.MirrorSource.ABSTAINED) {
+                throw new IllegalArgumentException(
+                        "a concrete source requires a mirror control");
+            }
+            java.util.TreeSet<MirrorPlan.MirrorSource> sources =
+                    new java.util.TreeSet<>(resolverOrder);
+            sources.remove(MirrorPlan.MirrorSource.ABSTAINED);
+            sources.add(source);
+            List<MirrorPlan.MirrorSource> order = new java.util.ArrayList<>(sources);
+            order.add(MirrorPlan.MirrorSource.ABSTAINED);
+            return new ResolvedControl(
+                    site, rules, implicitDeny, resolutionStrategy, order);
         }
     }
 }
