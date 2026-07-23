@@ -371,6 +371,50 @@ class ToolStudioIntegrationServiceTest {
     }
 
     @Test
+    void capabilitiesAdvertiseStatefulSessionApiAndStoreWithoutClaimingRuntimeReadiness() {
+        ToolStudioIntegrationService service =
+                service(null, null, null, null);
+        java.util.concurrent.atomic.AtomicBoolean ready =
+                new java.util.concurrent.atomic.AtomicBoolean(false);
+        service.configureMirrorStatefulRuntime(
+                new MirrorStatefulRuntimeAvailability(
+                        true, ready::get));
+
+        IntegrationCapabilities unavailable =
+                service.capabilities().payload();
+        ready.set(true);
+        IntegrationCapabilities available =
+                service.capabilities().payload();
+
+        assertThat(unavailable.features())
+                .containsEntry("mirrorStatefulProtocol", true)
+                .containsEntry("mirrorStatefulSessionApi", true)
+                .containsEntry("mirrorStatefulStateStoreReady", false)
+                .containsEntry("mirrorStatefulResolverReady", false)
+                .containsEntry("mirrorStatefulRuntimeReady", false);
+        assertThat(available.features())
+                .containsEntry("mirrorStatefulSessionApi", true)
+                .containsEntry("mirrorStatefulStateStoreReady", true)
+                .containsEntry("mirrorStatefulResolverReady", false)
+                .containsEntry("mirrorStatefulRuntimeReady", false);
+        assertThat(available.supportedObjects())
+                .containsKeys(
+                        "mirrorSessionPayload",
+                        "mirrorSessionCreateRequest",
+                        "mirrorSessionDescriptor",
+                        "mirrorSessionCommandRequest",
+                        "mirrorSessionCommandResult");
+        assertThat(available.endpoints())
+                .extracting(endpoint ->
+                        endpoint.method() + " " + endpoint.path())
+                .contains(
+                        "POST /api/mirror/sessions",
+                        "GET /api/mirror/sessions/{sessionId}",
+                        "POST /api/mirror/sessions/{sessionId}/commands",
+                        "DELETE /api/mirror/sessions/{sessionId}");
+    }
+
+    @Test
     void capabilitiesSeparateExploratoryServingFromCertificationTrustReadiness() {
         ToolStudioIntegrationService service = service(null, null, null, null);
         java.util.concurrent.atomic.AtomicBoolean certificationReady =

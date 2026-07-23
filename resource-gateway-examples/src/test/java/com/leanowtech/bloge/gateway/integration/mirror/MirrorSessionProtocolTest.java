@@ -131,6 +131,39 @@ class MirrorSessionProtocolTest {
     }
 
     @Test
+    void sessionAggregateRejectsIdentifiersThatCannotRoundTripThroughHttpPaths() {
+        Fixture fixture = fixture();
+        SessionStateSpace state = fixture.state();
+        SessionStateSpace pathUnsafe = new SessionStateSpace(
+                state.schemaVersion(),
+                "unsafe/session",
+                state.scope(),
+                state.planFingerprint(),
+                state.stateModelRef(),
+                state.writeEffectRefs(),
+                state.stateRevision(),
+                state.logicalClock(),
+                state.randomSeed(),
+                state.entities(),
+                state.tombstones(),
+                state.businessKeyIndex(),
+                state.committedEvents(),
+                state.processedCommands(),
+                state.expiresAt(),
+                state.worldFingerprint(),
+                state.fingerprint());
+
+        assertThatThrownBy(() -> new MirrorSessionPayload(
+                MirrorSessionPayload.SCHEMA_VERSION,
+                fixture.model(),
+                List.of(fixture.effect()),
+                pathUnsafe,
+                ""))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("path-safe");
+    }
+
+    @Test
     void terminalDescriptorsRequireADeletionTime() {
         Fixture fixture = fixture();
         MirrorSessionPayload payload = MirrorSessionProtocolIntegrity.sealInitial(

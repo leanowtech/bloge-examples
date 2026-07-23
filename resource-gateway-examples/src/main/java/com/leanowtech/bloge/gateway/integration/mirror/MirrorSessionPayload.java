@@ -45,6 +45,11 @@ public record MirrorSessionPayload(
                     "session payload requires between 1 and 256 unique write effects");
         }
         state = Objects.requireNonNull(state, "state");
+        if (!state.sessionId().matches(
+                "[A-Za-z0-9][A-Za-z0-9@._:-]{0,511}")) {
+            throw new IllegalArgumentException(
+                    "session payload requires an HTTP path-safe session id");
+        }
         fingerprint = MirrorStateProtocolSupport.optionalFingerprint(
                 fingerprint, "session payload fingerprint");
     }

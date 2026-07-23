@@ -27,7 +27,19 @@
       }
     },
     "state": {
-      "$ref": "session-state-space-v1.schema.json"
+      "allOf": [
+        {
+          "$ref": "session-state-space-v1.schema.json"
+        },
+        {
+          "properties": {
+            "sessionId": {
+              "type": "string",
+              "pattern": "^[A-Za-z0-9][A-Za-z0-9@._:-]{0,511}$"
+            }
+          }
+        }
+      ]
     },
     "fingerprint": {
       "$ref": "session-state-space-v1.schema.json#/$defs/fingerprint"

@@ -49,6 +49,21 @@ gateway:
     mirror:
       # Requires the test or staging profile and is physically excluded whenever production is active.
       enabled: ${RG_MIRROR_RUNTIME_ENABLED:false}
+      stateful:
+        # Separate opt-in: missing encryption keys or a state-plane outage fail startup/readiness closed.
+        enabled: ${RG_MIRROR_STATEFUL_ENABLED:false}
+        instance-id: ${RG_MIRROR_STATEFUL_INSTANCE_ID:}
+        lease-duration-seconds: ${RG_MIRROR_STATEFUL_LEASE_SECONDS:30}
+        datasource:
+          # This must remain a physically distinct database/credential in managed deployments.
+          url: ${RG_MIRROR_STATEFUL_JDBC_URL:jdbc:h2:file:./target/bloge-resource-gateway-mirror-state;DB_CLOSE_DELAY=-1;DB_CLOSE_ON_EXIT=false}
+          username: ${RG_MIRROR_STATEFUL_JDBC_USERNAME:sa}
+          password: ${RG_MIRROR_STATEFUL_JDBC_PASSWORD:}
+          maximum-pool-size: ${RG_MIRROR_STATEFUL_JDBC_MAXIMUM_POOL_SIZE:4}
+        encryption:
+          # Comma-separated keyId=base64(AES-256-key); prior keys remain decrypt-only during rotation.
+          active-key-id: ${RG_MIRROR_STATEFUL_ACTIVE_KEY_ID:}
+          key-ring: ${RG_MIRROR_STATEFUL_KEY_RING:}
   integration:
     evidence-signing:
       # Production path: Resource Gateway keeps public verification keys only; the sidecar owns KMS/HSM access.

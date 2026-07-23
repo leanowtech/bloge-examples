@@ -78,6 +78,8 @@ public class ToolStudioIntegrationService {
     private boolean suiteStabilityJobSubmissionEnabled;
     private MirrorRuntimeAvailability mirrorRuntimeAvailability =
             new MirrorRuntimeAvailability(false, false);
+    private MirrorStatefulRuntimeAvailability mirrorStatefulRuntimeAvailability =
+            new MirrorStatefulRuntimeAvailability(false, () -> false);
     private WorkerQuarantineRequestIndexMode workerQuarantineRequestIndexMode;
     private WorkerQuarantineChangeAuthorizationTrustStore.Descriptor
             workerQuarantineChangeAuthorizationTrust =
@@ -165,6 +167,15 @@ public class ToolStudioIntegrationService {
     void configureMirrorRuntime(MirrorRuntimeAvailability availability) {
         this.mirrorRuntimeAvailability = availability == null
                 ? new MirrorRuntimeAvailability(false, false) : availability;
+    }
+
+    /** Receives the marker only when encrypted stateful Session routes are assembled. */
+    @Autowired(required = false)
+    void configureMirrorStatefulRuntime(
+            MirrorStatefulRuntimeAvailability availability) {
+        this.mirrorStatefulRuntimeAvailability = availability == null
+                ? new MirrorStatefulRuntimeAvailability(false, () -> false)
+                : availability;
     }
 
     /** Resolves time-sensitive current-authority readiness on every capability request. */
@@ -358,6 +369,10 @@ public class ToolStudioIntegrationService {
         boolean mirrorPlanReady = mirrorRuntimeAvailability.planCompilationApi();
         boolean mirrorExecutionApi = mirrorRuntimeAvailability.executionApi();
         boolean mirrorExecutionReady = mirrorRuntimeAvailability.executionReady();
+        boolean mirrorStatefulSessionApi =
+                mirrorStatefulRuntimeAvailability.sessionApi();
+        boolean mirrorStatefulStoreReady =
+                mirrorStatefulRuntimeAvailability.stateStoreReady();
         VisualEvidenceSigner signer = runRepository == null
                 ? VisualEvidenceSigner.unavailable() : runRepository.evidenceSigner();
         VisualRunPayloadRepository payloads = runRepository == null ? null : runRepository.payloadRepository();
@@ -421,6 +436,10 @@ public class ToolStudioIntegrationService {
                 mirrorRuntimeAvailability.corpusTrajectoryResolverReady());
         features.put("mirrorCorpusClusterResolverReady",
                 mirrorRuntimeAvailability.corpusClusterResolverReady());
+        features.put("mirrorStatefulSessionApi", mirrorStatefulSessionApi);
+        features.put("mirrorStatefulStateStoreReady", mirrorStatefulStoreReady);
+        features.put("mirrorStatefulResolverReady", false);
+        features.put("mirrorStatefulRuntimeReady", false);
         ExternalAnchorTrustState suiteAnchorTrust = currentSuiteStabilityAnchorTrust();
         features.put("managedSuiteStabilityExternalNotaryTrust",
                 testExecutionEndpointEnabled && suiteAnchorTrust.managed());
@@ -780,6 +799,23 @@ public class ToolStudioIntegrationService {
                     com.leanowtech.bloge.gateway.integration.mirror
                             .MirrorEvidenceAttestation.SCHEMA_VERSION));
         }
+        if (mirrorStatefulSessionApi) {
+            supportedObjects.put("mirrorSessionPayload", List.of(
+                    com.leanowtech.bloge.gateway.integration.mirror
+                            .MirrorSessionPayload.SCHEMA_VERSION));
+            supportedObjects.put("mirrorSessionCreateRequest", List.of(
+                    com.leanowtech.bloge.gateway.integration.mirror
+                            .MirrorSessionCreateRequest.SCHEMA_VERSION));
+            supportedObjects.put("mirrorSessionDescriptor", List.of(
+                    com.leanowtech.bloge.gateway.integration.mirror
+                            .MirrorSessionDescriptor.SCHEMA_VERSION));
+            supportedObjects.put("mirrorSessionCommandRequest", List.of(
+                    com.leanowtech.bloge.gateway.integration.mirror
+                            .MirrorSessionCommandRequest.SCHEMA_VERSION));
+            supportedObjects.put("mirrorSessionCommandResult", List.of(
+                    com.leanowtech.bloge.gateway.integration.mirror
+                            .MirrorSessionCommandResult.SCHEMA_VERSION));
+        }
         List<IntegrationCapabilities.Endpoint> endpoints =
                 new java.util.ArrayList<>(current.endpoints());
         if (mirrorPlanReady) {
@@ -791,6 +827,16 @@ public class ToolStudioIntegrationService {
             endpoints.add(new IntegrationCapabilities.Endpoint("GET", "/api/mirror/runs/{runId}"));
             endpoints.add(new IntegrationCapabilities.Endpoint(
                     "GET", "/api/mirror/runs/{runId}/evidence"));
+        }
+        if (mirrorStatefulSessionApi) {
+            endpoints.add(new IntegrationCapabilities.Endpoint(
+                    "POST", "/api/mirror/sessions"));
+            endpoints.add(new IntegrationCapabilities.Endpoint(
+                    "GET", "/api/mirror/sessions/{sessionId}"));
+            endpoints.add(new IntegrationCapabilities.Endpoint(
+                    "POST", "/api/mirror/sessions/{sessionId}/commands"));
+            endpoints.add(new IntegrationCapabilities.Endpoint(
+                    "DELETE", "/api/mirror/sessions/{sessionId}"));
         }
         if (mirrorRuntimeAvailability.authorityDistributionApi()) {
             endpoints.add(new IntegrationCapabilities.Endpoint("POST",

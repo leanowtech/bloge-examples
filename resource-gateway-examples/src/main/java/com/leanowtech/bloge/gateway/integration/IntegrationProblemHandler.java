@@ -13,6 +13,7 @@ import org.springframework.web.bind.annotation.RestControllerAdvice;
         CapabilityClosureIntegrationController.class,
         MirrorIntegrationController.class,
         MirrorRunIntegrationController.class,
+        MirrorSessionController.class,
         MirrorDeploymentIsolationAuthorityPublicationController.class,
         MirrorDeploymentIsolationAttestationController.class,
         CapabilityObservationController.class,
@@ -26,6 +27,12 @@ public class IntegrationProblemHandler {
         ResponseEntity.BodyBuilder response = ResponseEntity.status(problem.status());
         if (problem.status() == 401) {
             response.header(HttpHeaders.WWW_AUTHENTICATE, "Bearer realm=\"resource-gateway-integration\"");
+        }
+        Object retryAfter = problem.details().get("retryAfterSeconds");
+        if (problem.retryable() && retryAfter instanceof Number seconds
+                && seconds.longValue() >= 1 && seconds.longValue() <= 3_600) {
+            response.header(HttpHeaders.RETRY_AFTER,
+                    Long.toString(seconds.longValue()));
         }
         return response.body(problem);
     }

@@ -319,6 +319,47 @@ public final class DatabaseMirrorSessionStateStore
     }
 
     @Override
+    public boolean release(Lease lease) {
+        Objects.requireNonNull(lease, "lease");
+        try {
+            return Boolean.TRUE.equals(transaction.execute(ignored -> {
+                Optional<Row> found = rowForUpdate(
+                        lease.scope(), lease.sessionId());
+                if (found.isEmpty()) {
+                    return false;
+                }
+                Row row = found.orElseThrow();
+                Instant now = now();
+                if (row.active() && !row.expiresAt().isAfter(now)) {
+                    expire(lease.scope(), lease.sessionId(), row, now);
+                    return false;
+                }
+                if (!row.active()
+                        || !lease.ownerId().equals(row.leaseOwner())
+                        || lease.fence() != row.leaseFence()) {
+                    return false;
+                }
+                int updated = jdbc.update("""
+                                UPDATE mirror_session_state
+                                   SET lease_owner = NULL,
+                                       lease_expires_at = NULL
+                                 WHERE %s AND session_id = ?
+                                   AND status = 'ACTIVE'
+                                   AND lease_owner = ?
+                                   AND lease_fence = ?
+                                """.formatted(SCOPE),
+                        scopeArgs(lease.scope(), lease.sessionId(),
+                                lease.ownerId(), lease.fence()));
+                return updated == 1;
+            }));
+        } catch (MirrorSessionStateStoreException expected) {
+            throw expected;
+        } catch (DataAccessException failure) {
+            throw retryable(UNAVAILABLE, RETRY_AFTER_UNAVAILABLE_SECONDS);
+        }
+    }
+
+    @Override
     public CommitResult compareAndSet(CommitCommand command) {
         Objects.requireNonNull(command, "command");
         MirrorSessionProtocolIntegrity.verify(mapper, command.candidate());

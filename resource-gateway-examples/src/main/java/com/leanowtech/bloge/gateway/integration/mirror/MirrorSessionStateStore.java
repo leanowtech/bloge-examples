@@ -42,6 +42,17 @@ public interface MirrorSessionStateStore {
     ClaimedSession claim(ClaimCommand command);
 
     /**
+     * Releases one exact lease generation without changing the state head.
+     *
+     * <p>A stale owner or superseded fence must return {@code false} and must never clear a newer
+     * lease. Lease expiry remains the recovery path when release cannot reach the store.</p>
+     *
+     * @param lease exact internal lease generation
+     * @return {@code true} only when that exact live lease was cleared
+     */
+    boolean release(Lease lease);
+
+    /**
      * Atomically replaces the current encrypted state under an exact lease and state fence.
      *
      * @param command lease, expected state fingerprint, and sealed candidate aggregate

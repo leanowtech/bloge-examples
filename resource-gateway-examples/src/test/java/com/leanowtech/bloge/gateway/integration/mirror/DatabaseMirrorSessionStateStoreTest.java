@@ -146,6 +146,32 @@ class DatabaseMirrorSessionStateStoreTest {
     }
 
     @Test
+    void exactReleaseAllowsImmediateTakeoverAndStaleFenceCannotClearNewOwner() {
+        try (Harness harness = harness()) {
+            Fixture fixture = fixture();
+            harness.store().create(create("create-1", fixture.payload()));
+            MirrorSessionStateStore.ClaimedSession first =
+                    harness.store().claim(claim(
+                            fixture.state().scope(),
+                            fixture.state().sessionId(), "worker-a", 30));
+
+            assertThat(harness.store().release(first.lease())).isTrue();
+            assertThat(harness.store().release(first.lease())).isFalse();
+            MirrorSessionStateStore.ClaimedSession takeover =
+                    harness.store().claim(claim(
+                            fixture.state().scope(),
+                            fixture.state().sessionId(), "worker-b", 30));
+
+            assertThat(harness.store().release(first.lease())).isFalse();
+            assertStoreFailure(() -> harness.store().claim(claim(
+                    fixture.state().scope(),
+                    fixture.state().sessionId(), "worker-c", 30)),
+                    LEASE_BUSY);
+            assertThat(harness.store().release(takeover.lease())).isTrue();
+        }
+    }
+
+    @Test
     void expiredLeaseCanBeTakenOverAndStaleStateCannotCommit() {
         try (Harness harness = harness()) {
             Fixture fixture = fixture();
