@@ -1,0 +1,27 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://bloge.dev/schemas/resource-gateway-mirror/mirror-session-command-result-v1.schema.json",
+  "title": "Resource Gateway Mirror Session Command Result v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "descriptor",
+    "receipt",
+    "replayed"
+  ],
+  "properties": {
+    "schemaVersion": {
+      "const": "resourceGateway.mirrorSessionCommandResult.v1"
+    },
+    "descriptor": {
+      "$ref": "mirror-session-descriptor-v1.schema.json"
+    },
+    "receipt": {
+      "$ref": "session-state-space-v1.schema.json#/$defs/receipt"
+    },
+    "replayed": {
+      "type": "boolean"
+    }
+  }
+}

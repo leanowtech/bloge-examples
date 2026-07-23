@@ -54,6 +54,11 @@ offline artifact verification live in the independent `resource-gateway-test-kit
 | `state-model-v1.schema.json` | `StateModel` | Content-addressed entity schemas, unique business keys, invariants, scope, and provenance |
 | `write-effect-spec-v1.schema.json` | `WriteEffectSpec` | Owner-governed atomic multi-entity virtual mutation and exact idempotency contract |
 | `session-state-space-v1.schema.json` | `SessionStateSpace` | Payload-bearing isolated world, tombstones, business-key index, transition journal, and receipts |
+| `mirror-session-payload-v1.schema.json` | `MirrorSessionPayload` | Encrypted data-plane aggregate closing one state model, admitted write effects, and current session state |
+| `mirror-session-create-request-v1.schema.json` | `MirrorSessionCreateRequest` | Strict idempotent session creation command with no independent tenant selector |
+| `mirror-session-descriptor-v1.schema.json` | `MirrorSessionDescriptor` | Payload-free lifecycle, dependency, revision, and fingerprint projection |
+| `mirror-session-command-request-v1.schema.json` | `MirrorSessionCommandRequest` | Strict exact-effect state transition command with an optional optimistic state fence |
+| `mirror-session-command-result-v1.schema.json` | `MirrorSessionCommandResult` | Current payload-free descriptor plus original or newly committed transaction receipt |
 | `stateful-refund-stage3-v1.fixture.schema.json` | compatibility fixture envelope | Exact state model, write effect, initial session, and executable refund expectation |
 | `capability-lifecycle-transition-v1.schema.json` | `CapabilityLifecycleTransitionRequest` | Optimistically fenced governance transition for one exact revision |
 | `capability-mirror-compatibility-v1.schema.json` | `CapabilityMirrorCompatibility` | Minimum protocol/object/feature baseline a mirror consumer can negotiate |
