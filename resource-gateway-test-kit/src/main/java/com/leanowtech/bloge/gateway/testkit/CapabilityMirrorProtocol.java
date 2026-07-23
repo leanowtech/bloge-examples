@@ -170,6 +170,21 @@ public final class CapabilityMirrorProtocol {
     /** Payload-bearing isolated session-state wire version. */
     public static final String SESSION_STATE_SPACE_V1 =
             "resourceGateway.sessionStateSpace.v1";
+    /** Encrypted stateful-mirror session aggregate wire version. */
+    public static final String MIRROR_SESSION_PAYLOAD_V1 =
+            "resourceGateway.mirrorSessionPayload.v1";
+    /** Stateful-mirror session-create command wire version. */
+    public static final String MIRROR_SESSION_CREATE_REQUEST_V1 =
+            "resourceGateway.mirrorSessionCreateRequest.v1";
+    /** Payload-free stateful-mirror session descriptor wire version. */
+    public static final String MIRROR_SESSION_DESCRIPTOR_V1 =
+            "resourceGateway.mirrorSessionDescriptor.v1";
+    /** Stateful-mirror state-transition command wire version. */
+    public static final String MIRROR_SESSION_COMMAND_REQUEST_V1 =
+            "resourceGateway.mirrorSessionCommandRequest.v1";
+    /** Stateful-mirror committed or replayed command-result wire version. */
+    public static final String MIRROR_SESSION_COMMAND_RESULT_V1 =
+            "resourceGateway.mirrorSessionCommandResult.v1";
     /** Fixed Stage 3 refund fixture envelope version. */
     public static final String STATEFUL_REFUND_FIXTURE_V1 =
             "resourceGateway.statefulRefundFixture.v1";
@@ -362,6 +377,21 @@ public final class CapabilityMirrorProtocol {
     /** Packaged isolated session-state schema. */
     public static final String SESSION_STATE_SPACE_SCHEMA_RESOURCE =
             SCHEMA_RESOURCE_ROOT + "session-state-space-v1.schema.json";
+    /** Packaged encrypted stateful-mirror session aggregate schema. */
+    public static final String MIRROR_SESSION_PAYLOAD_SCHEMA_RESOURCE =
+            SCHEMA_RESOURCE_ROOT + "mirror-session-payload-v1.schema.json";
+    /** Packaged stateful-mirror session-create command schema. */
+    public static final String MIRROR_SESSION_CREATE_REQUEST_SCHEMA_RESOURCE =
+            SCHEMA_RESOURCE_ROOT + "mirror-session-create-request-v1.schema.json";
+    /** Packaged payload-free stateful-mirror session descriptor schema. */
+    public static final String MIRROR_SESSION_DESCRIPTOR_SCHEMA_RESOURCE =
+            SCHEMA_RESOURCE_ROOT + "mirror-session-descriptor-v1.schema.json";
+    /** Packaged stateful-mirror state-transition command schema. */
+    public static final String MIRROR_SESSION_COMMAND_REQUEST_SCHEMA_RESOURCE =
+            SCHEMA_RESOURCE_ROOT + "mirror-session-command-request-v1.schema.json";
+    /** Packaged stateful-mirror command-result schema. */
+    public static final String MIRROR_SESSION_COMMAND_RESULT_SCHEMA_RESOURCE =
+            SCHEMA_RESOURCE_ROOT + "mirror-session-command-result-v1.schema.json";
     /** Packaged fixed Stage 3 refund-fixture schema. */
     public static final String STATEFUL_REFUND_FIXTURE_SCHEMA_RESOURCE =
             SCHEMA_RESOURCE_ROOT + "stateful-refund-stage3-v1.fixture.schema.json";

@@ -64,6 +64,11 @@ final class CapabilityMirrorSchemaValidator {
             "state-model-v1.schema.json",
             "write-effect-spec-v1.schema.json",
             "session-state-space-v1.schema.json",
+            "mirror-session-payload-v1.schema.json",
+            "mirror-session-create-request-v1.schema.json",
+            "mirror-session-descriptor-v1.schema.json",
+            "mirror-session-command-request-v1.schema.json",
+            "mirror-session-command-result-v1.schema.json",
             "stateful-refund-stage3-v1.fixture.schema.json");
     private static final Map<String, String> RESOURCE_TO_ID = resourceIds();
 

@@ -5,6 +5,8 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 
+import java.time.Instant;
+import java.time.format.DateTimeParseException;
 import java.util.ArrayDeque;
 import java.util.ArrayList;
 import java.util.HashMap;
@@ -354,6 +356,196 @@ public final class MirrorStateProtocolVerifier {
                 value.path("processedCommands").size());
     }
 
+    /**
+     * Verifies one encrypted data-plane aggregate before create or after trusted decryption.
+     *
+     * <p>This method validates strict Schema, the complete model/effect/state closure, and the
+     * aggregate fingerprint. It returns identities only; customer-shaped entities, command
+     * inputs, and command responses are never copied into the result.</p>
+     *
+     * @param value complete session-payload JSON
+     * @return payload-free verified aggregate identity
+     */
+    public VerifiedSessionPayload verifySessionPayload(JsonNode value) {
+        CapabilityMirrorSchemaValidator.require(
+                value,
+                CapabilityMirrorProtocol.MIRROR_SESSION_PAYLOAD_SCHEMA_RESOURCE,
+                "RG.MIRROR.CLIENT.SESSION_PAYLOAD_SCHEMA_INVALID");
+        List<JsonNode> writeEffects = new ArrayList<>();
+        value.path("writeEffects").forEach(writeEffects::add);
+        VerifiedStateModel stateModel = verifyStateModel(value.path("stateModel"));
+        VerifiedSession session = verifySession(
+                value.path("state"), value.path("stateModel"), writeEffects);
+        requireFingerprint(value, "fingerprint",
+                "RG.MIRROR.CLIENT.SESSION_PAYLOAD_FINGERPRINT_MISMATCH");
+        return new VerifiedSessionPayload(
+                value.path("schemaVersion").asText(),
+                session.sessionId(),
+                session.stateRevision(),
+                value.path("fingerprint").asText(),
+                stateModel.fingerprint(),
+                writeEffects.size());
+    }
+
+    /**
+     * Verifies one create command and its complete sealed aggregate.
+     *
+     * @param value session-create request JSON
+     * @return payload-free verified command identity
+     */
+    public VerifiedSessionCreateRequest verifySessionCreateRequest(JsonNode value) {
+        CapabilityMirrorSchemaValidator.require(
+                value,
+                CapabilityMirrorProtocol.MIRROR_SESSION_CREATE_REQUEST_SCHEMA_RESOURCE,
+                "RG.MIRROR.CLIENT.SESSION_CREATE_SCHEMA_INVALID");
+        return new VerifiedSessionCreateRequest(
+                value.path("schemaVersion").asText(),
+                value.path("requestId").asText(),
+                verifySessionPayload(value.path("payload")));
+    }
+
+    /**
+     * Verifies one payload-free session descriptor, including lifecycle and time ordering.
+     *
+     * @param value descriptor JSON
+     * @return verified payload-free descriptor identity
+     */
+    public VerifiedSessionDescriptor verifySessionDescriptor(JsonNode value) {
+        CapabilityMirrorSchemaValidator.require(
+                value,
+                CapabilityMirrorProtocol.MIRROR_SESSION_DESCRIPTOR_SCHEMA_RESOURCE,
+                "RG.MIRROR.CLIENT.SESSION_DESCRIPTOR_SCHEMA_INVALID");
+        requireFingerprint(value, "fingerprint",
+                "RG.MIRROR.CLIENT.SESSION_DESCRIPTOR_FINGERPRINT_MISMATCH");
+        JsonNode stateModelRef = value.path("stateModelRef");
+        if (!"STATE_MODEL".equals(stateModelRef.path("kind").asText())) {
+            throw invalid("RG.MIRROR.CLIENT.SESSION_DESCRIPTOR_CLOSURE_INVALID");
+        }
+        Set<String> admittedEffects = new HashSet<>();
+        for (JsonNode ref : value.path("writeEffectRefs")) {
+            if (!"WRITE_EFFECT".equals(ref.path("kind").asText())
+                    || !admittedEffects.add(referenceCoordinate(ref))) {
+                throw invalid("RG.MIRROR.CLIENT.SESSION_DESCRIPTOR_CLOSURE_INVALID");
+            }
+        }
+        Instant createdAt = instant(
+                value.path("createdAt"), "RG.MIRROR.CLIENT.SESSION_DESCRIPTOR_TIME_INVALID");
+        Instant updatedAt = instant(
+                value.path("updatedAt"), "RG.MIRROR.CLIENT.SESSION_DESCRIPTOR_TIME_INVALID");
+        Instant expiresAt = instant(
+                value.path("expiresAt"), "RG.MIRROR.CLIENT.SESSION_DESCRIPTOR_TIME_INVALID");
+        JsonNode destroyedValue = value.path("destroyedAt");
+        Instant destroyedAt = destroyedValue.isNull()
+                ? null : instant(destroyedValue,
+                "RG.MIRROR.CLIENT.SESSION_DESCRIPTOR_TIME_INVALID");
+        String status = value.path("status").asText();
+        if (updatedAt.isBefore(createdAt)
+                || !expiresAt.isAfter(createdAt)
+                || ("ACTIVE".equals(status) && destroyedAt != null)
+                || (!"ACTIVE".equals(status) && destroyedAt == null)
+                || (destroyedAt != null && destroyedAt.isBefore(createdAt))) {
+            throw invalid("RG.MIRROR.CLIENT.SESSION_DESCRIPTOR_TIME_INVALID");
+        }
+        return new VerifiedSessionDescriptor(
+                value.path("schemaVersion").asText(),
+                value.path("sessionId").asText(),
+                value.path("stateRevision").asLong(),
+                status,
+                value.path("worldFingerprint").asText(),
+                value.path("stateFingerprint").asText(),
+                value.path("fingerprint").asText(),
+                referenceCoordinate(stateModelRef),
+                Set.copyOf(admittedEffects),
+                createdAt,
+                updatedAt,
+                expiresAt,
+                destroyedAt);
+    }
+
+    /**
+     * Verifies one state-transition command and exact write-effect reference.
+     *
+     * @param value command-request JSON
+     * @return payload-free verified command coordinates
+     */
+    public VerifiedSessionCommandRequest verifySessionCommandRequest(JsonNode value) {
+        CapabilityMirrorSchemaValidator.require(
+                value,
+                CapabilityMirrorProtocol.MIRROR_SESSION_COMMAND_REQUEST_SCHEMA_RESOURCE,
+                "RG.MIRROR.CLIENT.SESSION_COMMAND_SCHEMA_INVALID");
+        JsonNode writeEffectRef = value.path("writeEffectRef");
+        if (!"WRITE_EFFECT".equals(writeEffectRef.path("kind").asText())) {
+            throw invalid("RG.MIRROR.CLIENT.SESSION_COMMAND_EFFECT_INVALID");
+        }
+        return new VerifiedSessionCommandRequest(
+                value.path("schemaVersion").asText(),
+                referenceCoordinate(writeEffectRef),
+                value.path("expectedStateFingerprint").asText());
+    }
+
+    /**
+     * Verifies one command against the effect closure advertised by a descriptor.
+     *
+     * @param value command-request JSON
+     * @param descriptor payload-free descriptor JSON
+     * @return verified command coordinates
+     */
+    public VerifiedSessionCommandRequest verifySessionCommandRequest(
+            JsonNode value, JsonNode descriptor) {
+        VerifiedSessionCommandRequest command = verifySessionCommandRequest(value);
+        VerifiedSessionDescriptor session = verifySessionDescriptor(descriptor);
+        if (!session.writeEffectCoordinates().contains(
+                command.writeEffectCoordinate())) {
+            throw invalid("RG.MIRROR.CLIENT.SESSION_COMMAND_EFFECT_INVALID");
+        }
+        return command;
+    }
+
+    /**
+     * Verifies one newly committed or replayed command result.
+     *
+     * <p>The check covers descriptor integrity, receipt integrity, response fingerprinting,
+     * monotonic revision semantics, and current-world closure without returning the receipt
+     * response body.</p>
+     *
+     * @param value command-result JSON
+     * @return payload-free verified result identity
+     */
+    public VerifiedSessionCommandResult verifySessionCommandResult(JsonNode value) {
+        CapabilityMirrorSchemaValidator.require(
+                value,
+                CapabilityMirrorProtocol.MIRROR_SESSION_COMMAND_RESULT_SCHEMA_RESOURCE,
+                "RG.MIRROR.CLIENT.SESSION_COMMAND_RESULT_SCHEMA_INVALID");
+        VerifiedSessionDescriptor descriptor =
+                verifySessionDescriptor(value.path("descriptor"));
+        JsonNode receipt = value.path("receipt");
+        requireFingerprint(receipt, "fingerprint",
+                "RG.MIRROR.CLIENT.SESSION_RECEIPT_FINGERPRINT_MISMATCH");
+        if (!EvidenceVerificationSupport.sha256(receipt.path("response"))
+                .equals(receipt.path("responseFingerprint").asText())) {
+            throw invalid("RG.MIRROR.CLIENT.SESSION_RESPONSE_FINGERPRINT_MISMATCH");
+        }
+        long revisionBefore = receipt.path("revisionBefore").asLong();
+        long revisionAfter = receipt.path("revisionAfter").asLong();
+        boolean replayed = value.path("replayed").asBoolean();
+        if (revisionAfter != revisionBefore + 1
+                || (!replayed && revisionAfter != descriptor.stateRevision())
+                || (replayed && revisionAfter > descriptor.stateRevision())
+                || (revisionAfter == descriptor.stateRevision()
+                && !receipt.path("resultingWorldFingerprint").asText()
+                .equals(descriptor.worldFingerprint()))) {
+            throw invalid("RG.MIRROR.CLIENT.SESSION_COMMAND_RESULT_CLOSURE_INVALID");
+        }
+        return new VerifiedSessionCommandResult(
+                value.path("schemaVersion").asText(),
+                descriptor,
+                receipt.path("idempotencyKey").asText(),
+                revisionBefore,
+                revisionAfter,
+                replayed,
+                receipt.path("fingerprint").asText());
+    }
+
     private void verifyExpression(JsonNode root) {
         ArrayDeque<ExpressionFrame> stack = new ArrayDeque<>();
         stack.push(new ExpressionFrame(root, 1));
@@ -476,6 +668,14 @@ public final class MirrorStateProtocolVerifier {
         return key.path("entityType").asText() + "\0" + key.path("entityId").asText();
     }
 
+    private static Instant instant(JsonNode value, String failureCode) {
+        try {
+            return Instant.parse(value.asText());
+        } catch (DateTimeParseException failure) {
+            throw invalid(failureCode);
+        }
+    }
+
     private static IllegalArgumentException invalid(String code) {
         return new IllegalArgumentException(code);
     }
@@ -544,6 +744,114 @@ public final class MirrorStateProtocolVerifier {
             String fingerprint,
             int entityCount,
             int processedCommandCount
+    ) {
+    }
+
+    /**
+     * Payload-free identity of a verified encrypted session aggregate.
+     *
+     * @param schemaVersion verified aggregate version
+     * @param sessionId isolated session identity
+     * @param stateRevision committed state revision
+     * @param fingerprint verified aggregate fingerprint
+     * @param stateModelFingerprint exact state-model fingerprint
+     * @param writeEffectCount admitted write-effect count
+     */
+    public record VerifiedSessionPayload(
+            String schemaVersion,
+            String sessionId,
+            long stateRevision,
+            String fingerprint,
+            String stateModelFingerprint,
+            int writeEffectCount
+    ) {
+    }
+
+    /**
+     * Payload-free identity of a verified session-create request.
+     *
+     * @param schemaVersion verified command version
+     * @param requestId caller-owned create idempotency key
+     * @param payload verified aggregate identity
+     */
+    public record VerifiedSessionCreateRequest(
+            String schemaVersion,
+            String requestId,
+            VerifiedSessionPayload payload
+    ) {
+    }
+
+    /**
+     * Payload-free identity and lifecycle facts from a verified descriptor.
+     *
+     * @param schemaVersion verified descriptor version
+     * @param sessionId isolated session identity
+     * @param stateRevision current committed revision
+     * @param status lifecycle status
+     * @param worldFingerprint current business-world fingerprint
+     * @param stateFingerprint current state-and-journal fingerprint
+     * @param fingerprint verified descriptor fingerprint
+     * @param stateModelCoordinate exact state-model coordinate
+     * @param writeEffectCoordinates exact admitted write-effect coordinates
+     * @param createdAt durable creation time
+     * @param updatedAt durable latest-transition time
+     * @param expiresAt hard expiry
+     * @param destroyedAt terminal transition time, otherwise {@code null}
+     */
+    public record VerifiedSessionDescriptor(
+            String schemaVersion,
+            String sessionId,
+            long stateRevision,
+            String status,
+            String worldFingerprint,
+            String stateFingerprint,
+            String fingerprint,
+            String stateModelCoordinate,
+            Set<String> writeEffectCoordinates,
+            Instant createdAt,
+            Instant updatedAt,
+            Instant expiresAt,
+            Instant destroyedAt
+    ) {
+        /** Freezes the admitted-effect closure exposed to callers. */
+        public VerifiedSessionDescriptor {
+            writeEffectCoordinates = Set.copyOf(writeEffectCoordinates);
+        }
+    }
+
+    /**
+     * Payload-free coordinates from a verified session command.
+     *
+     * @param schemaVersion verified command version
+     * @param writeEffectCoordinate exact requested write effect
+     * @param expectedStateFingerprint optional optimistic state fence
+     */
+    public record VerifiedSessionCommandRequest(
+            String schemaVersion,
+            String writeEffectCoordinate,
+            String expectedStateFingerprint
+    ) {
+    }
+
+    /**
+     * Payload-free identity of a verified command result.
+     *
+     * @param schemaVersion verified result version
+     * @param descriptor verified current descriptor
+     * @param idempotencyKey exact committed command key
+     * @param revisionBefore previous revision
+     * @param revisionAfter committed revision
+     * @param replayed whether an existing receipt was replayed
+     * @param receiptFingerprint verified receipt fingerprint
+     */
+    public record VerifiedSessionCommandResult(
+            String schemaVersion,
+            VerifiedSessionDescriptor descriptor,
+            String idempotencyKey,
+            long revisionBefore,
+            long revisionAfter,
+            boolean replayed,
+            String receiptFingerprint
     ) {
     }
 }

@@ -39,6 +39,8 @@ import java.util.function.Supplier;
 public final class ResourceGatewayTestClient {
 
     private static final ObjectMapper JSON = new ObjectMapper();
+    private static final MirrorStateProtocolVerifier MIRROR_STATE_VERIFIER =
+            new MirrorStateProtocolVerifier();
     private static final int DEFAULT_MAX_BODY_BYTES = 16 * 1024 * 1024;
     private static final Duration MAX_RETRY_AFTER = Duration.ofHours(24);
 
@@ -1414,6 +1416,121 @@ public final class ResourceGatewayTestClient {
     }
 
     /**
+     * Creates or exactly replays one encrypted stateful-mirror session.
+     *
+     * <p>The request is verified locally before transport. The returned descriptor is strict
+     * Schema checked, fingerprint checked, and matched to the submitted session identity without
+     * exposing encrypted business state.</p>
+     *
+     * @param createRequest complete sealed session-create request
+     * @return defensive copy of the verified payload-free descriptor
+     */
+    public JsonNode createMirrorSession(JsonNode createRequest) {
+        JsonNode request = requiredObject(createRequest, "createRequest");
+        MirrorStateProtocolVerifier.VerifiedSessionCreateRequest verifiedRequest =
+                MIRROR_STATE_VERIFIER.verifySessionCreateRequest(request);
+        JsonNode response = exchange(
+                "POST", "/api/mirror/sessions", "",
+                "MIRROR_REHEARSAL", request);
+        JsonNode descriptor = requireMirrorEnvelope(
+                response,
+                "MIRROR_SESSION_DESCRIPTOR",
+                CapabilityMirrorProtocol.MIRROR_SESSION_DESCRIPTOR_V1);
+        MirrorStateProtocolVerifier.VerifiedSessionDescriptor verifiedDescriptor =
+                MIRROR_STATE_VERIFIER.verifySessionDescriptor(descriptor);
+        if (!verifiedRequest.payload().sessionId().equals(
+                verifiedDescriptor.sessionId())
+                || verifiedRequest.payload().stateRevision()
+                != verifiedDescriptor.stateRevision()) {
+            throw responseContractInvalid(
+                    "The server returned a descriptor for a different mirror session.");
+        }
+        return descriptor.deepCopy();
+    }
+
+    /**
+     * Reads one current payload-free stateful-mirror session descriptor.
+     *
+     * @param sessionId path-safe session identity
+     * @return defensive copy of the verified descriptor
+     */
+    public JsonNode findMirrorSession(String sessionId) {
+        String exactSessionId = mirrorSessionId(sessionId);
+        JsonNode response = exchange(
+                "GET", "/api/mirror/sessions/" + segment(exactSessionId), "",
+                "MIRROR_REHEARSAL", null);
+        JsonNode descriptor = requireMirrorEnvelope(
+                response,
+                "MIRROR_SESSION_DESCRIPTOR",
+                CapabilityMirrorProtocol.MIRROR_SESSION_DESCRIPTOR_V1);
+        MirrorStateProtocolVerifier.VerifiedSessionDescriptor verified =
+                MIRROR_STATE_VERIFIER.verifySessionDescriptor(descriptor);
+        if (!exactSessionId.equals(verified.sessionId())) {
+            throw responseContractInvalid(
+                    "The server returned a descriptor for a different mirror session.");
+        }
+        return descriptor.deepCopy();
+    }
+
+    /**
+     * Executes or exactly replays one admitted virtual state transition.
+     *
+     * <p>The write effect defines the idempotency-key input path. Callers must therefore place a
+     * stable command key in the request input at that path; the server returns the original
+     * receipt for an exact replay.</p>
+     *
+     * @param sessionId path-safe session identity
+     * @param commandRequest strict state-transition command
+     * @return defensive copy of the verified command result
+     */
+    public JsonNode executeMirrorSessionCommand(
+            String sessionId, JsonNode commandRequest) {
+        String exactSessionId = mirrorSessionId(sessionId);
+        JsonNode request = requiredObject(commandRequest, "commandRequest");
+        MIRROR_STATE_VERIFIER.verifySessionCommandRequest(request);
+        JsonNode response = exchange(
+                "POST",
+                "/api/mirror/sessions/" + segment(exactSessionId) + "/commands",
+                "", "MIRROR_REHEARSAL", request);
+        JsonNode result = requireMirrorEnvelope(
+                response,
+                "MIRROR_SESSION_COMMAND_RESULT",
+                CapabilityMirrorProtocol.MIRROR_SESSION_COMMAND_RESULT_V1);
+        MirrorStateProtocolVerifier.VerifiedSessionCommandResult verified =
+                MIRROR_STATE_VERIFIER.verifySessionCommandResult(result);
+        if (!exactSessionId.equals(verified.descriptor().sessionId())) {
+            throw responseContractInvalid(
+                    "The server returned a command result for a different mirror session.");
+        }
+        return result.deepCopy();
+    }
+
+    /**
+     * Irreversibly destroys one stateful-mirror session payload.
+     *
+     * @param sessionId path-safe session identity
+     * @return defensive copy of the verified terminal descriptor
+     */
+    public JsonNode destroyMirrorSession(String sessionId) {
+        String exactSessionId = mirrorSessionId(sessionId);
+        JsonNode response = exchange(
+                "DELETE", "/api/mirror/sessions/" + segment(exactSessionId), "",
+                "MIRROR_REHEARSAL", null);
+        JsonNode descriptor = requireMirrorEnvelope(
+                response,
+                "MIRROR_SESSION_DESCRIPTOR",
+                CapabilityMirrorProtocol.MIRROR_SESSION_DESCRIPTOR_V1);
+        MirrorStateProtocolVerifier.VerifiedSessionDescriptor verified =
+                MIRROR_STATE_VERIFIER.verifySessionDescriptor(descriptor);
+        if (!exactSessionId.equals(verified.sessionId())
+                || !"DESTROYED".equals(verified.status())) {
+            throw responseContractInvalid(
+                    "The server returned a non-terminal or mismatched mirror descriptor.");
+        }
+        return descriptor.deepCopy();
+    }
+
+    /**
      * Resolves one public evidence verification key from the integration protocol.
      *
      * @param keyId attestation verification key id
@@ -2070,6 +2187,31 @@ public final class ResourceGatewayTestClient {
             throw new IllegalArgumentException(field + " must be a JSON object");
         }
         return value;
+    }
+
+    private static JsonNode requireMirrorEnvelope(
+            JsonNode response, String payloadKind, String payloadVersion) {
+        if (!CapabilityMirrorProtocol.INTEGRATION_PROTOCOL.equals(
+                response.path("protocol").asText())
+                || !CapabilityMirrorProtocol.INTEGRATION_PROTOCOL_V1.equals(
+                response.path("protocolVersion").asText())
+                || !payloadKind.equals(response.path("payloadKind").asText())
+                || !payloadVersion.equals(
+                response.path("payloadSchemaVersion").asText())
+                || !response.path("payload").isObject()) {
+            throw responseContractInvalid(
+                    "The server returned an invalid stateful-mirror envelope.");
+        }
+        return response.path("payload");
+    }
+
+    private static String mirrorSessionId(String value) {
+        String normalized = normalized(value);
+        if (!normalized.matches("[A-Za-z0-9][A-Za-z0-9@._:-]{0,511}")) {
+            throw new IllegalArgumentException(
+                    "mirror session id must be path-safe and contain 1 to 512 characters");
+        }
+        return normalized;
     }
 
     private static String segment(String value) {
