@@ -107,6 +107,7 @@ class MirrorRunIntegrationServiceTest {
                 .isEqualTo(bundle.evidence().requestContextFingerprint());
         assertThat(registration.getValue().retainUntil())
                 .isEqualTo(NOW.plus(MirrorRunIntegrationService.REQUEST_RETENTION));
+        verify(generation).close();
     }
 
     @Test
@@ -167,6 +168,7 @@ class MirrorRunIntegrationServiceTest {
                 "RG.MIRROR.RUN_EXPIRED", false);
         verify(requests).release(any(),
                 org.mockito.ArgumentMatchers.eq("RG.MIRROR.RUN_EXPIRED"));
+        verify(generation).close();
 
         IntegrationRequestContext other = identity("org-b");
         when(evidence.find(new CapabilitySnapshot.Scope(
@@ -174,6 +176,24 @@ class MirrorRunIntegrationServiceTest {
                 .thenReturn(Optional.empty());
         assertProblem(() -> service.find("run-1", other), 404,
                 "RG.MIRROR.RUN_NOT_FOUND", false);
+    }
+
+    @Test
+    void closesGenerationAndReleasesClaimWhenTerminalCommitFails() {
+        when(requests.claim(any(), anyString(), any())).thenAnswer(invocation ->
+                acquired(invocation.getArgument(0), "owner-a", 1));
+        MirrorRunResult result = mock(MirrorRunResult.class);
+        when(result.evidenceBundle()).thenReturn(bundle);
+        when(runtime.execute(any())).thenReturn(result);
+        when(commits.commit(any(), any(), any()))
+                .thenThrow(new IllegalStateException("store unavailable"));
+
+        assertProblem(() -> service.execute(request(), identity()), 503,
+                "RG.MIRROR.RUN_UNAVAILABLE", true);
+
+        verify(generation).close();
+        verify(requests).release(any(),
+                org.mockito.ArgumentMatchers.eq("RG.MIRROR.RUN_UNAVAILABLE"));
     }
 
     @Test

@@ -139,6 +139,9 @@ class CapabilityCorpusServingServiceTest {
         assertThat(resolved.toString()).doesNotContain("C-recorded");
         assertThat(sample.toString()).doesNotContain("C-recorded");
         assertThat(service.ready()).isTrue();
+        assertThatThrownBy(payloadAuthority.lastMaterialization::canonicalJson)
+                .isInstanceOf(IllegalStateException.class);
+        resolved.close();
     }
 
     @Test
@@ -1329,6 +1332,7 @@ class CapabilityCorpusServingServiceTest {
         private final java.util.concurrent.atomic.AtomicInteger calls =
                 new java.util.concurrent.atomic.AtomicInteger();
         private boolean available = true;
+        private Materialization lastMaterialization;
 
         @Override
         public boolean available() {
@@ -1339,9 +1343,10 @@ class CapabilityCorpusServingServiceTest {
         public Materialization materialize(MaterializationRequest request) {
             calls.incrementAndGet();
             byte[] value = payloads.get(request.payloadRef());
-            return value == null
+            lastMaterialization = value == null
                     ? Materialization.rejected("PAYLOAD_NOT_FOUND")
                     : Materialization.materialized(Arrays.copyOf(value, value.length));
+            return lastMaterialization;
         }
     }
 }

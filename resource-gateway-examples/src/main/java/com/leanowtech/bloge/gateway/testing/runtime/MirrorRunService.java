@@ -208,6 +208,23 @@ public class MirrorRunService {
      */
     public MirrorRunResult execute(MirrorRunRequest request) {
         Objects.requireNonNull(request, "request");
+        ResolvedCorpusPayloads.GenerationLease lease;
+        try {
+            lease = request.compiledPlan().executionControl()
+                    .corpusPayloads().acquireLease();
+        } catch (TestControlException closed) {
+            if ("MIRROR_GENERATION_CLOSED".equals(closed.code())) {
+                throw reject("RG.MIRROR.RUNTIME_GENERATION_CLOSED",
+                        "Compiled mirror payload generation is no longer available.");
+            }
+            throw closed;
+        }
+        try (lease) {
+            return executeLeased(request);
+        }
+    }
+
+    private MirrorRunResult executeLeased(MirrorRunRequest request) {
         CompiledMirrorPlan compiled = request.compiledPlan();
         MirrorPlan plan = compiled.plan();
         verifyPlan(plan);

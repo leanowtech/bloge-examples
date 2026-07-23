@@ -484,6 +484,45 @@ Operational wiring, endpoint semantics, stable failures, and rollout checks are 
 assembly, cache ownership, revocation SLOs and recovery are in the
 [deployment-agent guide](../docs/resource-gateway-mirror-deployment-agent.md).
 
+### Mirror recorded-payload generation lifecycle
+
+Recorded exact, trajectory, and cluster payloads now belong to one explicit in-process generation.
+Unbound serving results and compiler site-bound views share the same owner. `MirrorRunService`
+acquires an execution lease before any admission or engine work; `MirrorRunIntegrationService`
+closes the owning `CompiledMirrorPlan` after evidence commit or on every failure path. Plan creation,
+which persists only the payload-free public plan, closes its temporary generation immediately.
+
+The lifecycle is `OPEN -> DRAINING -> CLOSED`. Owner close rejects new runs, lets already admitted
+leases finish, then synchronously overwrites owned response JSON and private cluster-match byte
+buffers. Escaped `Sample`, `Trajectory`, `Cluster`, or bound-view references fail closed after
+destruction. Repeated owner and lease close calls are safe. Internal diagnostics can inspect
+`ResolvedCorpusPayloads.lifecycle()` for payload-free active-lease, resident-byte, and
+zeroized-byte accounting; business values never enter that snapshot or `toString()`.
+
+Recorded-cluster matching owns its projected response only for the resolver call and zeroizes it
+immediately after lowering it into a runtime rule. Failed capability, trajectory, cluster, or
+whole-generation assembly also closes every payload object whose ownership already transferred.
+Once attached, nested payload objects reject direct close; only the generation owner can destroy
+them after active leases drain. Attachment and destruction carry the same process-local owner
+token, so a failed second generation cannot clean up payloads held by the first. Payload-authority
+materializations, their verification copies, and cluster-projection serialization buffers are
+independently zeroized at their serving or resolver boundary.
+
+Direct Java callers that materialize a runtime generation own it and must use try-with-resources:
+
+```java
+try (CompiledMirrorPlan generation = mirrorPlans.materialize(plan, identity)) {
+    MirrorRunResult result = mirrorRuntime.execute(new MirrorRunRequest(
+            requestId, generation, context, scope, "MIRROR_REHEARSAL"));
+    // Persist or project terminal payload-free evidence before this block exits.
+}
+```
+
+The protected HTTP run endpoint already applies this lifecycle and requires no client change.
+Production certification still requires the planned forked-JVM heap-residue scan, asynchronous
+cancellation/crash injection, fixed-cardinality leak telemetry, and a production payload authority
+that minimizes heap plaintext with a direct-memory or sidecar-handle implementation.
+
 Useful variants:
 
 ```bash

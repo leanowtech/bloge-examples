@@ -190,11 +190,13 @@ public class MirrorPlanIntegrationService {
                 fixture, scope, policy, request.expiresAt(), identity);
 
         CompiledMirrorPlan compiled;
+        boolean ownershipTransferred = false;
         try {
             compiled = compiler.compile(new MirrorPlanCompilationRequest(
                     request.planId(), graph, currentGraphFingerprint,
                     request.capabilityClosure(), fixture, replays, corpora, policy, null,
                     compiledAt, request.expiresAt()));
+            ownershipTransferred = true;
         } catch (MirrorPlanRejectedException rejected) {
             throw conflict(identity, rejected.code(),
                     "Mirror plan compilation rejected an inconsistent artifact closure.",
@@ -203,21 +205,30 @@ public class MirrorPlanIntegrationService {
         } catch (IllegalArgumentException invalid) {
             throw badRequest(identity, "RG.MIRROR.PLAN_COMPILE_REQUEST_INVALID",
                     "Mirror plan compilation inputs are invalid.", Map.of());
+        } finally {
+            if (!ownershipTransferred) {
+                corpora.close();
+            }
         }
 
-        if (existing.isPresent()
-                && !existing.get().planFingerprint().equals(compiled.plan().planFingerprint())) {
-            throw conflict(identity, "RG.MIRROR.PLAN_IDEMPOTENCY_CONFLICT",
-                    "The plan id already identifies different immutable compile inputs.", Map.of());
-        }
-        try {
-            return plans.create(compiled.plan());
-        } catch (IllegalArgumentException conflict) {
-            throw conflict(identity, "RG.MIRROR.PLAN_IDEMPOTENCY_CONFLICT",
-                    "The plan id already identifies different immutable compile inputs.", Map.of());
-        } catch (RuntimeException unavailable) {
-            throw unavailable(identity, "RG.MIRROR.PLAN_STORE_UNAVAILABLE",
-                    "The isolated mirror plan store is unavailable.");
+        try (compiled) {
+            if (existing.isPresent()
+                    && !existing.get().planFingerprint().equals(
+                    compiled.plan().planFingerprint())) {
+                throw conflict(identity, "RG.MIRROR.PLAN_IDEMPOTENCY_CONFLICT",
+                        "The plan id already identifies different immutable compile inputs.",
+                        Map.of());
+            }
+            try {
+                return plans.create(compiled.plan());
+            } catch (IllegalArgumentException conflict) {
+                throw conflict(identity, "RG.MIRROR.PLAN_IDEMPOTENCY_CONFLICT",
+                        "The plan id already identifies different immutable compile inputs.",
+                        Map.of());
+            } catch (RuntimeException unavailable) {
+                throw unavailable(identity, "RG.MIRROR.PLAN_STORE_UNAVAILABLE",
+                        "The isolated mirror plan store is unavailable.");
+            }
         }
     }
 
@@ -268,7 +279,8 @@ public class MirrorPlanIntegrationService {
      *
      * @param plan verified persisted public plan
      * @param identity authenticated enterprise identity and mirror purpose
-     * @return exact self-contained runtime generation
+     * @return exact self-contained runtime generation; caller must close it after execution or
+     *         failed terminal commit
      */
     public CompiledMirrorPlan materialize(
             MirrorPlan plan, IntegrationRequestContext identity) {
@@ -317,11 +329,13 @@ public class MirrorPlanIntegrationService {
                 storedFixture.bundle(), scope, plan.policy(), plan.expiresAt(), identity);
 
         CompiledMirrorPlan compiled;
+        boolean ownershipTransferred = false;
         try {
             compiled = compiler.compile(new MirrorPlanCompilationRequest(
                     plan.planId(), graph, graphFingerprint, closure, storedFixture.bundle(),
                     replays, corpora, plan.policy(), plan.scenarioPackRef(), plan.compiledAt(),
                     plan.expiresAt()));
+            ownershipTransferred = true;
         } catch (MirrorPlanRejectedException rejected) {
             throw conflict(identity, rejected.code(),
                     "The sealed mirror generation can no longer be materialized exactly.",
@@ -331,8 +345,13 @@ public class MirrorPlanIntegrationService {
             throw conflict(identity, "RG.MIRROR.RUNTIME_GENERATION_INVALID",
                     "The sealed mirror generation can no longer be materialized exactly.",
                     Map.of());
+        } finally {
+            if (!ownershipTransferred) {
+                corpora.close();
+            }
         }
         if (!compiled.plan().equals(plan)) {
+            compiled.close();
             throw conflict(identity, "RG.MIRROR.RUNTIME_GENERATION_DRIFT",
                     "Recompiled runtime artifacts differ from the sealed mirror plan.", Map.of());
         }

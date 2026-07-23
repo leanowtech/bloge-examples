@@ -196,13 +196,14 @@ public class MirrorRunIntegrationService {
                         "RG.MIRROR.RUN_EXPIRED", "The mirror plan has expired.",
                         identity.correlationId(), Map.of()));
             }
-            CompiledMirrorPlan generation = plans.materialize(plan, identity);
-            MirrorRunResult result = runtime.execute(new MirrorRunRequest(request.requestId(),
-                    generation, effectiveContext, scope,
-                    MirrorPlanIntegrationService.AUTHORIZED_PURPOSE, trustAdmission));
-            MirrorRunSummary summary = MirrorRunSummary.from(result.evidenceBundle());
-            commits.commit(lease, result.evidenceBundle(), observation);
-            return summary;
+            try (CompiledMirrorPlan generation = plans.materialize(plan, identity)) {
+                MirrorRunResult result = runtime.execute(new MirrorRunRequest(request.requestId(),
+                        generation, effectiveContext, scope,
+                        MirrorPlanIntegrationService.AUTHORIZED_PURPOSE, trustAdmission));
+                MirrorRunSummary summary = MirrorRunSummary.from(result.evidenceBundle());
+                commits.commit(lease, result.evidenceBundle(), observation);
+                return summary;
+            }
         } catch (IntegrationProblemException expected) {
             release(lease, expected.problem().code());
             throw expected;

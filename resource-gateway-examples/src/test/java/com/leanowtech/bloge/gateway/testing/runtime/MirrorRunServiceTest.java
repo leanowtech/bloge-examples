@@ -223,6 +223,20 @@ class MirrorRunServiceTest {
         });
         assertThat(compiled.executionControl().corpusPayloads().toString())
                 .doesNotContain("C-recorded");
+        assertThat(compiled.executionControl().corpusPayloads().lifecycle())
+                .isEqualTo(new ResolvedCorpusPayloads.GenerationLifecycle(
+                        ResolvedCorpusPayloads.GenerationState.OPEN,
+                        0, responseJson.length, 0));
+
+        compiled.close();
+
+        assertThat(compiled.executionControl().corpusPayloads().lifecycle())
+                .isEqualTo(new ResolvedCorpusPayloads.GenerationLifecycle(
+                        ResolvedCorpusPayloads.GenerationState.CLOSED,
+                        0, 0, responseJson.length));
+        assertRunRejected(
+                () -> runtime.execute(request(compiled, SCOPE, PURPOSE)),
+                "RG.MIRROR.RUNTIME_GENERATION_CLOSED");
     }
 
     @Test

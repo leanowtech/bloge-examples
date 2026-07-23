@@ -23,7 +23,7 @@ public record CompiledMirrorPlan(
         Graph graph,
         FixtureBundle fixtureBundle,
         CompiledExecutionControl executionControl
-) {
+) implements AutoCloseable {
     /** Requires the public plan and every runtime artifact from one execution generation. */
     public CompiledMirrorPlan {
         plan = Objects.requireNonNull(plan, "plan");
@@ -47,5 +47,16 @@ public record CompiledMirrorPlan(
             throw new IllegalArgumentException(
                     "mirror plan, fixture, and execution control identities must match");
         }
+    }
+
+    /**
+     * Closes the private recorded-payload generation retained by this compiled plan.
+     *
+     * <p>Owner close is idempotent. Any admitted execution lease drains before nested sensitive
+     * buffers are synchronously zeroized.</p>
+     */
+    @Override
+    public void close() {
+        executionControl.corpusPayloads().close();
     }
 }

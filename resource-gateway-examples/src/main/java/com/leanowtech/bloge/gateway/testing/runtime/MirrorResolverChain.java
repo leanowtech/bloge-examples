@@ -267,16 +267,18 @@ public final class MirrorResolverChain {
                             request.input(),
                             mapper)
                     .map(selected -> {
-                        ResolvedCorpusPayloads.Sample sample =
-                                selected.sample();
-                        return new Match(
-                                sample.toRule(mapper),
-                                selected.confidence(),
-                                sample.freshness(),
-                                sample.limitations(),
-                                sample.artifactRefs(),
-                                sample.ruleRefs(),
-                                sample.errorDetailsFingerprint());
+                        try (selected) {
+                            ResolvedCorpusPayloads.Sample sample =
+                                    selected.sample();
+                            return new Match(
+                                    sample.toRule(mapper),
+                                    selected.confidence(),
+                                    sample.freshness(),
+                                    sample.limitations(),
+                                    sample.artifactRefs(),
+                                    sample.ruleRefs(),
+                                    sample.errorDetailsFingerprint());
+                        }
                     });
         }
     }

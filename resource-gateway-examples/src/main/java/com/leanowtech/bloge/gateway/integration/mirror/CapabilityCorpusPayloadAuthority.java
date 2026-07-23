@@ -25,7 +25,7 @@ public interface CapabilityCorpusPayloadAuthority {
      * Materializes one exact sanitized response or returns a closed failure.
      *
      * @param request exact payload, proof, schema, purpose, and use-horizon coordinates
-     * @return canonical JSON bytes or a payload-free closed failure
+     * @return fresh caller-owned materialization that must be closed after one use
      */
     Materialization materialize(MaterializationRequest request);
 
@@ -125,22 +125,25 @@ public interface CapabilityCorpusPayloadAuthority {
      * Short-lived canonical material with a payload-safe textual representation.
      *
      * <p>The constructor defensively copies bytes and {@link #canonicalJson()} returns another
-     * copy. Callers should drop both copies immediately after compiling the run generation.</p>
+     * copy. Callers must close the materialization and zeroize the returned copy immediately after
+     * transferring the verified value into the run generation.</p>
      */
-    final class Materialization {
+    final class Materialization implements AutoCloseable {
         private final Outcome outcome;
         private final String reasonCode;
         private final byte[] canonicalJson;
+        private boolean closed;
 
         private Materialization(Outcome outcome, String reasonCode, byte[] canonicalJson) {
             this.outcome = Objects.requireNonNull(outcome, "outcome");
             this.reasonCode = reason(reasonCode);
-            this.canonicalJson = canonicalJson == null
-                    ? new byte[0] : Arrays.copyOf(canonicalJson, canonicalJson.length);
-            if ((outcome == Outcome.MATERIALIZED) != (this.canonicalJson.length > 0)) {
+            int length = canonicalJson == null ? 0 : canonicalJson.length;
+            if ((outcome == Outcome.MATERIALIZED) != (length > 0)) {
                 throw new IllegalArgumentException(
                         "only MATERIALIZED may carry non-empty canonical JSON");
             }
+            this.canonicalJson = canonicalJson == null
+                    ? new byte[0] : Arrays.copyOf(canonicalJson, canonicalJson.length);
         }
 
         /** @return successful canonical JSON materialization */
@@ -168,16 +171,35 @@ public interface CapabilityCorpusPayloadAuthority {
             return reasonCode;
         }
 
-        /** @return defensive copy of canonical JSON, empty for failures */
-        public byte[] canonicalJson() {
+        /**
+         * Returns one caller-owned defensive copy of canonical JSON.
+         *
+         * @return canonical JSON, empty for failures
+         * @throws IllegalStateException after this materialization is closed
+         */
+        public synchronized byte[] canonicalJson() {
+            if (closed) {
+                throw new IllegalStateException(
+                        "payload materialization is closed");
+            }
             return Arrays.copyOf(canonicalJson, canonicalJson.length);
+        }
+
+        /** Zeroizes authority-owned canonical JSON. Repeated close is safe. */
+        @Override
+        public synchronized void close() {
+            if (!closed) {
+                Arrays.fill(canonicalJson, (byte) 0);
+                closed = true;
+            }
         }
 
         /** Prevents payload bytes from entering logs through object rendering. */
         @Override
-        public String toString() {
+        public synchronized String toString() {
             return "Materialization[outcome=" + outcome + ", reasonCode=" + reasonCode
-                    + ", bytes=" + canonicalJson.length + "]";
+                    + ", bytes=" + canonicalJson.length
+                    + ", closed=" + closed + "]";
         }
     }
 
