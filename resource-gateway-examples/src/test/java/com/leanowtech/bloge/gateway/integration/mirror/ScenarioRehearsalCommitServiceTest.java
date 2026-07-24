@@ -37,6 +37,7 @@ class ScenarioRehearsalCommitServiceTest {
     private AtomicReference<Instant> databaseTime;
     private DatabaseScenarioRehearsalRunRepository requests;
     private DatabaseScenarioRehearsalEvidenceRepository evidence;
+    private DatabaseScenarioRehearsalRetentionRepository retention;
     private DatabaseScenarioRehearsalLifecycleAuditRepository
             lifecycleAudit;
     private DatabaseMirrorOperationAuditRepository operationAudit;
@@ -66,8 +67,12 @@ class ScenarioRehearsalCommitServiceTest {
         operationAudit =
                 new DatabaseMirrorOperationAuditRepository(jdbc);
         operationAudit.init();
+        retention =
+                new DatabaseScenarioRehearsalRetentionRepository(
+                        jdbc, mapper, signer, databaseTime::get);
+        retention.init();
         service = new ScenarioRehearsalCommitService(
-                evidence, requests);
+                evidence, requests, retention);
     }
 
     @AfterEach
@@ -103,6 +108,16 @@ class ScenarioRehearsalCommitServiceTest {
         assertThat(evidence.find(
                 SCOPE, bundle.attestation().runId()))
                 .contains(bundle);
+        assertThat(retention.find(
+                SCOPE, bundle.attestation().runId()))
+                .get()
+                .satisfies(state -> {
+                    assertThat(state.status()).isEqualTo(
+                            ScenarioRehearsalRetentionState
+                                    .Status.RETAINED);
+                    assertThat(state.evidenceBundleFingerprint())
+                            .isEqualTo(bundle.bundleFingerprint());
+                });
         assertThat(operationAudit.recent(SCOPE, 10))
                 .singleElement()
                 .satisfies(event -> {
@@ -146,6 +161,9 @@ class ScenarioRehearsalCommitServiceTest {
                             .isBlank();
                 });
         assertThat(operationAudit.recent(SCOPE, 10)).isEmpty();
+        assertThat(retention.find(
+                SCOPE, bundle.attestation().runId()))
+                .isEmpty();
     }
 
     @Test
@@ -173,6 +191,9 @@ class ScenarioRehearsalCommitServiceTest {
                 "SELECT COUNT(*) FROM scenario_rehearsal_evidence",
                 Integer.class)).isZero();
         assertThat(operationAudit.recent(SCOPE, 10)).isEmpty();
+        assertThat(retention.find(
+                SCOPE, bundle.attestation().runId()))
+                .isEmpty();
     }
 
     private ScenarioRehearsalRunRepository.Claim claim(

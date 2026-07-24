@@ -10,6 +10,10 @@ import com.leanowtech.bloge.gateway.integration.mirror.ScenarioRehearsalCompileR
 import com.leanowtech.bloge.gateway.integration.mirror.ScenarioRehearsalEvidenceBundle;
 import com.leanowtech.bloge.gateway.integration.mirror.ScenarioRehearsalExecutionRequest;
 import com.leanowtech.bloge.gateway.integration.mirror.ScenarioRehearsalIntegrationService;
+import com.leanowtech.bloge.gateway.integration.mirror.ScenarioRehearsalLegalHoldCommand;
+import com.leanowtech.bloge.gateway.integration.mirror.ScenarioRehearsalPurgeCommand;
+import com.leanowtech.bloge.gateway.integration.mirror.ScenarioRehearsalRetentionService;
+import com.leanowtech.bloge.gateway.integration.mirror.ScenarioRehearsalRetentionState;
 import com.leanowtech.bloge.gateway.integration.mirror.ScenarioRehearsalRuntimeService;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.context.annotation.Profile;
@@ -39,6 +43,7 @@ public final class ScenarioRehearsalController {
     private final ScenarioArtifactRegistryService artifacts;
     private final ScenarioRehearsalIntegrationService rehearsals;
     private final ScenarioRehearsalRuntimeService runtime;
+    private final ScenarioRehearsalRetentionService retention;
     private final IntegrationRequestAuthenticator authenticator;
     private final ScenarioArtifactRequestDecoder decoder;
 
@@ -47,11 +52,14 @@ public final class ScenarioRehearsalController {
             ScenarioArtifactRegistryService artifacts,
             ScenarioRehearsalIntegrationService rehearsals,
             ScenarioRehearsalRuntimeService runtime,
+            ScenarioRehearsalRetentionService retention,
             IntegrationRequestAuthenticator authenticator,
             ScenarioArtifactRequestDecoder decoder) {
         this.artifacts = Objects.requireNonNull(artifacts, "artifacts");
         this.rehearsals = Objects.requireNonNull(rehearsals, "rehearsals");
         this.runtime = Objects.requireNonNull(runtime, "runtime");
+        this.retention = Objects.requireNonNull(
+                retention, "retention");
         this.authenticator = Objects.requireNonNull(
                 authenticator, "authenticator");
         this.decoder = Objects.requireNonNull(decoder, "decoder");
@@ -197,6 +205,92 @@ public final class ScenarioRehearsalController {
                 "SCENARIO_REHEARSAL_EVIDENCE_BUNDLE",
                 value.schemaVersion(),
                 value);
+    }
+
+    /** Reads one verified retention projection and its latest signed lifecycle event. */
+    @GetMapping("/runs/{runId}/retention")
+    public IntegrationEnvelope<ScenarioRehearsalRetentionState>
+    retention(
+            @PathVariable String runId,
+            @RequestHeader HttpHeaders headers) {
+        IntegrationRequestContext identity =
+                authenticator.authenticate(
+                        headers,
+                        IntegrationOperation
+                                .MIRROR_REHEARSAL_RETENTION_READ);
+        ScenarioRehearsalRetentionState value =
+                retention.find(runId, identity);
+        return IntegrationEnvelope.of(
+                "SCENARIO_REHEARSAL_RETENTION_STATE",
+                value.schemaVersion(), value);
+    }
+
+    /** Places one independent legal hold on retained Scenario aggregate evidence. */
+    @PostMapping("/runs/{runId}/retention/holds")
+    public IntegrationEnvelope<ScenarioRehearsalRetentionState>
+    placeHold(
+            @PathVariable String runId,
+            @RequestBody byte[] request,
+            @RequestHeader HttpHeaders headers) {
+        IntegrationRequestContext identity =
+                authenticator.authenticate(
+                        headers,
+                        IntegrationOperation
+                                .MIRROR_REHEARSAL_LEGAL_HOLD);
+        ScenarioRehearsalLegalHoldCommand command =
+                decoder.decodeLegalHoldCommand(
+                        request, identity);
+        ScenarioRehearsalRetentionState value =
+                retention.placeHold(
+                        runId, command, identity);
+        return IntegrationEnvelope.of(
+                "SCENARIO_REHEARSAL_RETENTION_STATE",
+                value.schemaVersion(), value);
+    }
+
+    /** Releases one exact legal hold without changing other active holds. */
+    @PostMapping("/runs/{runId}/retention/hold-releases")
+    public IntegrationEnvelope<ScenarioRehearsalRetentionState>
+    releaseHold(
+            @PathVariable String runId,
+            @RequestBody byte[] request,
+            @RequestHeader HttpHeaders headers) {
+        IntegrationRequestContext identity =
+                authenticator.authenticate(
+                        headers,
+                        IntegrationOperation
+                                .MIRROR_REHEARSAL_LEGAL_HOLD);
+        ScenarioRehearsalLegalHoldCommand command =
+                decoder.decodeLegalHoldCommand(
+                        request, identity);
+        ScenarioRehearsalRetentionState value =
+                retention.releaseHold(
+                        runId, command, identity);
+        return IntegrationEnvelope.of(
+                "SCENARIO_REHEARSAL_RETENTION_STATE",
+                value.schemaVersion(), value);
+    }
+
+    /** Deletes eligible aggregate evidence and returns the signed deletion proof state. */
+    @PostMapping("/runs/{runId}/retention/purge")
+    public IntegrationEnvelope<ScenarioRehearsalRetentionState>
+    purge(
+            @PathVariable String runId,
+            @RequestBody byte[] request,
+            @RequestHeader HttpHeaders headers) {
+        IntegrationRequestContext identity =
+                authenticator.authenticate(
+                        headers,
+                        IntegrationOperation
+                                .MIRROR_REHEARSAL_RETENTION_ADMIN);
+        ScenarioRehearsalPurgeCommand command =
+                decoder.decodePurgeCommand(
+                        request, identity);
+        ScenarioRehearsalRetentionState value =
+                retention.purge(runId, command, identity);
+        return IntegrationEnvelope.of(
+                "SCENARIO_REHEARSAL_RETENTION_STATE",
+                value.schemaVersion(), value);
     }
 
     private IntegrationRequestContext authenticateWrite(

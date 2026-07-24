@@ -23,16 +23,21 @@ import java.util.Objects;
 public class ScenarioRehearsalCommitService {
     private final ScenarioRehearsalEvidenceRepository evidence;
     private final ScenarioRehearsalRunRepository requests;
+    private final ScenarioRehearsalRetentionRepository retention;
 
     /**
      * @param evidence append-only independently verified evidence store
      * @param requests fenced aggregate coordinator
+     * @param retention signed retention and deletion-proof authority
      */
     public ScenarioRehearsalCommitService(
             ScenarioRehearsalEvidenceRepository evidence,
-            ScenarioRehearsalRunRepository requests) {
+            ScenarioRehearsalRunRepository requests,
+            ScenarioRehearsalRetentionRepository retention) {
         this.evidence = Objects.requireNonNull(evidence, "evidence");
         this.requests = Objects.requireNonNull(requests, "requests");
+        this.retention = Objects.requireNonNull(
+                retention, "retention");
     }
 
     /**
@@ -79,6 +84,8 @@ public class ScenarioRehearsalCommitService {
         }
         ScenarioRehearsalEvidenceBundle persisted =
                 evidence.create(exact);
+        retention.register(
+                persisted, registration.retainUntil());
         if (!requests.complete(
                 lease, persisted.bundleFingerprint())) {
             throw new ScenarioRehearsalLeaseLostException();

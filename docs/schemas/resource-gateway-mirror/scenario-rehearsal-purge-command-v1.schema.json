@@ -1,0 +1,21 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://bloge.dev/schemas/resource-gateway-mirror/scenario-rehearsal-purge-command-v1.schema.json",
+  "title": "Resource Gateway Scenario Rehearsal Purge Command v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schemaVersion", "commandId", "reasonCode"],
+  "properties": {
+    "schemaVersion": {
+      "const": "resourceGateway.scenarioRehearsalPurgeCommand.v1"
+    },
+    "commandId": {
+      "type": "string",
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,255}$"
+    },
+    "reasonCode": {
+      "type": "string",
+      "pattern": "^RG\\.MIRROR\\.[A-Z0-9_.-]{1,224}$"
+    }
+  }
+}

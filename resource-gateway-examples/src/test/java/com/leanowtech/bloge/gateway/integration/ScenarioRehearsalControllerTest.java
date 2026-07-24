@@ -12,6 +12,10 @@ import com.leanowtech.bloge.gateway.integration.mirror.ScenarioRehearsalCompileR
 import com.leanowtech.bloge.gateway.integration.mirror.ScenarioRehearsalEvidenceBundle;
 import com.leanowtech.bloge.gateway.integration.mirror.ScenarioRehearsalExecutionRequest;
 import com.leanowtech.bloge.gateway.integration.mirror.ScenarioRehearsalIntegrationService;
+import com.leanowtech.bloge.gateway.integration.mirror.ScenarioRehearsalLegalHoldCommand;
+import com.leanowtech.bloge.gateway.integration.mirror.ScenarioRehearsalPurgeCommand;
+import com.leanowtech.bloge.gateway.integration.mirror.ScenarioRehearsalRetentionService;
+import com.leanowtech.bloge.gateway.integration.mirror.ScenarioRehearsalRetentionState;
 import com.leanowtech.bloge.gateway.integration.mirror.ScenarioRehearsalRuntimeService;
 import org.junit.jupiter.api.Test;
 import org.springframework.http.HttpHeaders;
@@ -45,6 +49,8 @@ class ScenarioRehearsalControllerTest {
                 mock(ScenarioRehearsalIntegrationService.class);
         ScenarioRehearsalRuntimeService runtime =
                 mock(ScenarioRehearsalRuntimeService.class);
+        ScenarioRehearsalRetentionService retention =
+                mock(ScenarioRehearsalRetentionService.class);
         IntegrationRequestAuthenticator authenticator =
                 mock(IntegrationRequestAuthenticator.class);
         ScenarioArtifactRequestDecoder decoder =
@@ -62,6 +68,8 @@ class ScenarioRehearsalControllerTest {
                 mock(CompiledScenarioRehearsalPlan.class);
         ScenarioRehearsalEvidenceBundle result =
                 mock(ScenarioRehearsalEvidenceBundle.class);
+        ScenarioRehearsalRetentionState retentionState =
+                mock(ScenarioRehearsalRetentionState.class);
         String runId = "scenario-" + "b".repeat(64);
         ScenarioRehearsalCompileRequest command =
                 new ScenarioRehearsalCompileRequest("", 1, SHA_A);
@@ -71,6 +79,14 @@ class ScenarioRehearsalControllerTest {
                         new MirrorArtifactRef(
                                 "COMPILED_REHEARSAL_PLAN",
                                 "refund-pack@compiled-v1", 1, SHA_A));
+        ScenarioRehearsalLegalHoldCommand holdCommand =
+                new ScenarioRehearsalLegalHoldCommand(
+                        "", "hold-command", "legal-a",
+                        "RG.MIRROR.REHEARSAL.LEGAL_HOLD");
+        ScenarioRehearsalPurgeCommand purgeCommand =
+                new ScenarioRehearsalPurgeCommand(
+                        "", "purge-command",
+                        "RG.MIRROR.REHEARSAL.RETENTION_EXPIRED");
         when(assertion.schemaVersion()).thenReturn(
                 CaseHandlingAssertion.SCHEMA_VERSION);
         when(checkpoint.schemaVersion()).thenReturn(
@@ -82,6 +98,8 @@ class ScenarioRehearsalControllerTest {
                 CompiledScenarioRehearsalPlan.SCHEMA_VERSION);
         when(result.schemaVersion()).thenReturn(
                 ScenarioRehearsalEvidenceBundle.SCHEMA_VERSION);
+        when(retentionState.schemaVersion()).thenReturn(
+                ScenarioRehearsalRetentionState.SCHEMA_VERSION);
         when(authenticator.authenticate(
                 headers, IntegrationOperation.MIRROR_SCENARIO_ARTIFACT_WRITE))
                 .thenReturn(identity);
@@ -101,6 +119,18 @@ class ScenarioRehearsalControllerTest {
                 headers,
                 IntegrationOperation.MIRROR_REHEARSAL_EVIDENCE_READ))
                 .thenReturn(identity);
+        when(authenticator.authenticate(
+                headers,
+                IntegrationOperation.MIRROR_REHEARSAL_RETENTION_READ))
+                .thenReturn(identity);
+        when(authenticator.authenticate(
+                headers,
+                IntegrationOperation.MIRROR_REHEARSAL_LEGAL_HOLD))
+                .thenReturn(identity);
+        when(authenticator.authenticate(
+                headers,
+                IntegrationOperation.MIRROR_REHEARSAL_RETENTION_ADMIN))
+                .thenReturn(identity);
         when(decoder.decodeAssertion(raw, identity)).thenReturn(assertion);
         when(decoder.decodeCheckpoint(raw, identity)).thenReturn(checkpoint);
         when(decoder.decodeCase(raw, identity)).thenReturn(scenarioCase);
@@ -108,6 +138,10 @@ class ScenarioRehearsalControllerTest {
         when(decoder.decodeCompileRequest(raw, identity)).thenReturn(command);
         when(decoder.decodeExecutionRequest(raw, identity))
                 .thenReturn(execution);
+        when(decoder.decodeLegalHoldCommand(raw, identity))
+                .thenReturn(holdCommand);
+        when(decoder.decodePurgeCommand(raw, identity))
+                .thenReturn(purgeCommand);
         when(artifacts.register(assertion, identity)).thenReturn(assertion);
         when(artifacts.register(checkpoint, identity)).thenReturn(checkpoint);
         when(artifacts.register(scenarioCase, identity))
@@ -121,9 +155,21 @@ class ScenarioRehearsalControllerTest {
                 .thenReturn(plan);
         when(runtime.execute(execution, identity)).thenReturn(result);
         when(runtime.evidence(runId, identity)).thenReturn(result);
+        when(retention.find(runId, identity))
+                .thenReturn(retentionState);
+        when(retention.placeHold(
+                runId, holdCommand, identity))
+                .thenReturn(retentionState);
+        when(retention.releaseHold(
+                runId, holdCommand, identity))
+                .thenReturn(retentionState);
+        when(retention.purge(
+                runId, purgeCommand, identity))
+                .thenReturn(retentionState);
         ScenarioRehearsalController controller =
                 new ScenarioRehearsalController(
                         artifacts, rehearsals, runtime,
+                        retention,
                         authenticator, decoder);
 
         assertThat(controller.registerAssertion(raw, headers).payload())
@@ -145,6 +191,17 @@ class ScenarioRehearsalControllerTest {
                 .isSameAs(result);
         assertThat(controller.evidence(runId, headers).payload())
                 .isSameAs(result);
+        assertThat(controller.retention(runId, headers).payload())
+                .isSameAs(retentionState);
+        assertThat(controller.placeHold(
+                runId, raw, headers).payload())
+                .isSameAs(retentionState);
+        assertThat(controller.releaseHold(
+                runId, raw, headers).payload())
+                .isSameAs(retentionState);
+        assertThat(controller.purge(
+                runId, raw, headers).payload())
+                .isSameAs(retentionState);
         verify(authenticator, times(4)).authenticate(
                 headers, IntegrationOperation.MIRROR_SCENARIO_ARTIFACT_WRITE);
         verify(authenticator).authenticate(
@@ -158,6 +215,15 @@ class ScenarioRehearsalControllerTest {
         verify(authenticator).authenticate(
                 headers,
                 IntegrationOperation.MIRROR_REHEARSAL_EVIDENCE_READ);
+        verify(authenticator).authenticate(
+                headers,
+                IntegrationOperation.MIRROR_REHEARSAL_RETENTION_READ);
+        verify(authenticator, times(2)).authenticate(
+                headers,
+                IntegrationOperation.MIRROR_REHEARSAL_LEGAL_HOLD);
+        verify(authenticator).authenticate(
+                headers,
+                IntegrationOperation.MIRROR_REHEARSAL_RETENTION_ADMIN);
     }
 
     @Test
@@ -169,6 +235,8 @@ class ScenarioRehearsalControllerTest {
                 mock(ScenarioRehearsalIntegrationService.class);
         ScenarioRehearsalRuntimeService runtime =
                 mock(ScenarioRehearsalRuntimeService.class);
+        ScenarioRehearsalRetentionService retention =
+                mock(ScenarioRehearsalRetentionService.class);
         IntegrationRequestAuthenticator authenticator =
                 mock(IntegrationRequestAuthenticator.class);
         ScenarioArtifactRequestDecoder decoder =
@@ -183,7 +251,8 @@ class ScenarioRehearsalControllerTest {
                                 "corr-1",
                                 Map.of())));
         MockMvc mvc = mvc(new ScenarioRehearsalController(
-                artifacts, rehearsals, runtime, authenticator, decoder));
+                artifacts, rehearsals, runtime, retention,
+                authenticator, decoder));
 
         mvc.perform(post(
                         "/api/mirror/scenarios/packs/refund-pack/compiled-plans")
@@ -204,6 +273,8 @@ class ScenarioRehearsalControllerTest {
                 mock(ScenarioRehearsalIntegrationService.class);
         ScenarioRehearsalRuntimeService runtime =
                 mock(ScenarioRehearsalRuntimeService.class);
+        ScenarioRehearsalRetentionService retention =
+                mock(ScenarioRehearsalRetentionService.class);
         IntegrationRequestAuthenticator authenticator =
                 mock(IntegrationRequestAuthenticator.class);
         when(authenticator.authenticate(
@@ -214,7 +285,8 @@ class ScenarioRehearsalControllerTest {
                 new ScenarioArtifactRequestDecoder(
                         new ObjectMapper().findAndRegisterModules());
         MockMvc mvc = mvc(new ScenarioRehearsalController(
-                artifacts, rehearsals, runtime, authenticator, decoder));
+                artifacts, rehearsals, runtime, retention,
+                authenticator, decoder));
         String request = """
                 {
                   "schemaVersion":"resourceGateway.scenarioRehearsalCompileRequest.v1",

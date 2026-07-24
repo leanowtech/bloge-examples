@@ -9,6 +9,8 @@ import com.leanowtech.bloge.gateway.integration.mirror.MirrorArtifactRef;
 import com.leanowtech.bloge.gateway.integration.mirror.ScenarioPackIntegrity;
 import com.leanowtech.bloge.gateway.integration.mirror.ScenarioRehearsalCompileRequest;
 import com.leanowtech.bloge.gateway.integration.mirror.ScenarioRehearsalExecutionRequest;
+import com.leanowtech.bloge.gateway.integration.mirror.ScenarioRehearsalLegalHoldCommand;
+import com.leanowtech.bloge.gateway.integration.mirror.ScenarioRehearsalPurgeCommand;
 import org.junit.jupiter.api.Test;
 
 import java.nio.charset.StandardCharsets;
@@ -39,6 +41,14 @@ class ScenarioArtifactRequestDecoderTest {
                         new MirrorArtifactRef(
                                 "COMPILED_REHEARSAL_PLAN",
                                 "support@compiled-v1", 1, SHA_A));
+        ScenarioRehearsalLegalHoldCommand holdCommand =
+                new ScenarioRehearsalLegalHoldCommand(
+                        "", "hold-command-1", "legal-a",
+                        "RG.MIRROR.REHEARSAL.LITIGATION");
+        ScenarioRehearsalPurgeCommand purgeCommand =
+                new ScenarioRehearsalPurgeCommand(
+                        "", "purge-command-1",
+                        "RG.MIRROR.REHEARSAL.RETENTION_EXPIRED");
         CaseHandlingAssertion assertion = assertion();
 
         assertThat(decoder.decodeCompileRequest(
@@ -50,6 +60,12 @@ class ScenarioArtifactRequestDecoderTest {
         assertThat(decoder.decodeExecutionRequest(
                 mapper.writeValueAsBytes(executionRequest), identity()))
                 .isEqualTo(executionRequest);
+        assertThat(decoder.decodeLegalHoldCommand(
+                mapper.writeValueAsBytes(holdCommand), identity()))
+                .isEqualTo(holdCommand);
+        assertThat(decoder.decodePurgeCommand(
+                mapper.writeValueAsBytes(purgeCommand), identity()))
+                .isEqualTo(purgeCommand);
     }
 
     @Test
@@ -129,6 +145,42 @@ class ScenarioArtifactRequestDecoderTest {
                                         "maximumBytes",
                                         ScenarioArtifactRequestDecoder
                                                 .MAXIMUM_REQUEST_BYTES));
+    }
+
+    @Test
+    void rejectsUnknownOrDuplicateRetentionCommandFields() {
+        String unknown = """
+                {
+                  "schemaVersion":"resourceGateway.scenarioRehearsalLegalHoldCommand.v1",
+                  "commandId":"hold-command-1",
+                  "holdId":"legal-a",
+                  "reasonCode":"RG.MIRROR.REHEARSAL.LITIGATION",
+                  "payload":{"customer":"must-not-cross"}
+                }
+                """;
+        String duplicated = """
+                {
+                  "schemaVersion":"resourceGateway.scenarioRehearsalPurgeCommand.v1",
+                  "commandId":"purge-command-1",
+                  "commandId":"purge-command-2",
+                  "reasonCode":"RG.MIRROR.REHEARSAL.RETENTION_EXPIRED"
+                }
+                """;
+
+        assertThatThrownBy(() -> decoder.decodeLegalHoldCommand(
+                unknown.getBytes(StandardCharsets.UTF_8), identity()))
+                .isInstanceOfSatisfying(
+                        IntegrationProblemException.class,
+                        failure -> assertThat(failure.problem().code())
+                                .isEqualTo(
+                                        "RG.MIRROR.SCENARIO_REQUEST_MALFORMED"));
+        assertThatThrownBy(() -> decoder.decodePurgeCommand(
+                duplicated.getBytes(StandardCharsets.UTF_8), identity()))
+                .isInstanceOfSatisfying(
+                        IntegrationProblemException.class,
+                        failure -> assertThat(failure.problem().code())
+                                .isEqualTo(
+                                        "RG.MIRROR.SCENARIO_REQUEST_MALFORMED"));
     }
 
     private CaseHandlingAssertion assertion() {

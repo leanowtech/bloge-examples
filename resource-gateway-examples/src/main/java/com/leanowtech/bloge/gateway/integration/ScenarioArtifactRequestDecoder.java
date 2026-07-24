@@ -10,6 +10,8 @@ import com.leanowtech.bloge.gateway.integration.mirror.ScenarioCase;
 import com.leanowtech.bloge.gateway.integration.mirror.ScenarioPack;
 import com.leanowtech.bloge.gateway.integration.mirror.ScenarioRehearsalCompileRequest;
 import com.leanowtech.bloge.gateway.integration.mirror.ScenarioRehearsalExecutionRequest;
+import com.leanowtech.bloge.gateway.integration.mirror.ScenarioRehearsalLegalHoldCommand;
+import com.leanowtech.bloge.gateway.integration.mirror.ScenarioRehearsalPurgeCommand;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.context.annotation.Profile;
 import org.springframework.stereotype.Component;
@@ -60,6 +62,10 @@ public final class ScenarioArtifactRequestDecoder {
             "schemaVersion", "revision", "fingerprint");
     private static final Set<String> EXECUTION_FIELDS = Set.of(
             "schemaVersion", "requestId", "compiledPlanRef");
+    private static final Set<String> LEGAL_HOLD_FIELDS = Set.of(
+            "schemaVersion", "commandId", "holdId", "reasonCode");
+    private static final Set<String> PURGE_FIELDS = Set.of(
+            "schemaVersion", "commandId", "reasonCode");
 
     private final ObjectMapper strictMapper;
 
@@ -134,6 +140,28 @@ public final class ScenarioArtifactRequestDecoder {
                 EXECUTION_FIELDS,
                 ScenarioRehearsalExecutionRequest.SCHEMA_VERSION,
                 ScenarioRehearsalExecutionRequest.class);
+    }
+
+    /** Decodes one exact Scenario legal-hold placement or release command. */
+    public ScenarioRehearsalLegalHoldCommand decodeLegalHoldCommand(
+            byte[] value, IntegrationRequestContext identity) {
+        return decode(
+                value,
+                identity,
+                LEGAL_HOLD_FIELDS,
+                ScenarioRehearsalLegalHoldCommand.SCHEMA_VERSION,
+                ScenarioRehearsalLegalHoldCommand.class);
+    }
+
+    /** Decodes one exact governed aggregate-deletion command. */
+    public ScenarioRehearsalPurgeCommand decodePurgeCommand(
+            byte[] value, IntegrationRequestContext identity) {
+        return decode(
+                value,
+                identity,
+                PURGE_FIELDS,
+                ScenarioRehearsalPurgeCommand.SCHEMA_VERSION,
+                ScenarioRehearsalPurgeCommand.class);
     }
 
     private <T> T decode(

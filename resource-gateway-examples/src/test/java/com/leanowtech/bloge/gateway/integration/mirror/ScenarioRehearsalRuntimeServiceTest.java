@@ -432,6 +432,45 @@ class ScenarioRehearsalRuntimeServiceTest {
                                 executed.attestation().runId()));
     }
 
+    @Test
+    void returnsGoneWithDeletionProofAfterGovernedPurge() {
+        Fixture fixture = fixture(
+                Map.of("customerId", "C-1"));
+        ScenarioRehearsalRetentionState state =
+                mock(ScenarioRehearsalRetentionState.class);
+        ScenarioRehearsalRetentionEvent proof =
+                mock(ScenarioRehearsalRetentionEvent.class);
+        when(state.status()).thenReturn(
+                ScenarioRehearsalRetentionState.Status.PURGED);
+        when(state.deletionProof()).thenReturn(proof);
+        when(proof.eventFingerprint()).thenReturn(
+                fingerprint('f'));
+        when(proof.occurredAt()).thenReturn(
+                Instant.parse("2026-04-01T00:00:00Z"));
+        when(fixture.retention().find(any(), any()))
+                .thenReturn(Optional.of(state));
+
+        assertThatThrownBy(() ->
+                fixture.service().evidence(
+                        ScenarioRehearsalRunIdentity.derive(
+                                mapper, scope,
+                                fixture.request().requestId()),
+                        identity))
+                .isInstanceOfSatisfying(
+                        IntegrationProblemException.class,
+                        failure -> {
+                            assertThat(failure.problem().status())
+                                    .isEqualTo(410);
+                            assertThat(failure.problem().code())
+                                    .isEqualTo(
+                                            "RG.MIRROR.REHEARSAL.EVIDENCE_PURGED");
+                            assertThat(failure.problem().details())
+                                    .containsEntry(
+                                            "deletionProofFingerprint",
+                                            fingerprint('f'));
+                        });
+    }
+
     private Fixture fixture(Object input) {
         return fixture(input, false, false);
     }
@@ -628,6 +667,10 @@ class ScenarioRehearsalRuntimeServiceTest {
                             persisted.attestation().runId());
                     return persisted;
                 });
+        ScenarioRehearsalRetentionRepository retention =
+                mock(ScenarioRehearsalRetentionRepository.class);
+        when(retention.find(any(), any()))
+                .thenReturn(Optional.empty());
 
         when(rehearsals.find(
                 compiled.planId(), compiled.revision(),
@@ -672,12 +715,13 @@ class ScenarioRehearsalRuntimeServiceTest {
                         new ScenarioHandlingAssertionEvaluator(mapper),
                         rehearsalIntegrity, rehearsalEvidence,
                         rehearsalRequests, rehearsalCommits,
+                        retention,
                         observations,
                         mapper, sessions, runtimeClock);
         return new Fixture(
                 service, request, mirrorRuns, bundle, sessions,
                 rehearsalIntegrity, rehearsalEvidence,
-                rehearsalRequests);
+                rehearsalRequests, retention);
     }
 
     private ScenarioPack.RehearsalPolicy policy() {
@@ -714,6 +758,7 @@ class ScenarioRehearsalRuntimeServiceTest {
             MirrorSessionIntegrationService sessions,
             ScenarioRehearsalEvidenceIntegrityService rehearsalIntegrity,
             ScenarioRehearsalEvidenceRepository rehearsalEvidence,
-            ScenarioRehearsalRunRepository rehearsalRequests) {
+            ScenarioRehearsalRunRepository rehearsalRequests,
+            ScenarioRehearsalRetentionRepository retention) {
     }
 }

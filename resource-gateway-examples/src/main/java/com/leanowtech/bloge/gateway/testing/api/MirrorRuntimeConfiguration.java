@@ -14,6 +14,7 @@ import com.leanowtech.bloge.gateway.integration.mirror.DatabaseCompiledScenarioR
 import com.leanowtech.bloge.gateway.integration.mirror.DatabaseScenarioArtifactRepository;
 import com.leanowtech.bloge.gateway.integration.mirror.DatabaseScenarioRehearsalEvidenceRepository;
 import com.leanowtech.bloge.gateway.integration.mirror.DatabaseScenarioRehearsalLifecycleAuditRepository;
+import com.leanowtech.bloge.gateway.integration.mirror.DatabaseScenarioRehearsalRetentionRepository;
 import com.leanowtech.bloge.gateway.integration.mirror.DatabaseScenarioRehearsalRunRepository;
 import com.leanowtech.bloge.gateway.integration.mirror.CapabilityObservationAdmissionIntegrity;
 import com.leanowtech.bloge.gateway.integration.mirror.CapabilityObservationAdmissionPolicyProvider;
@@ -72,6 +73,7 @@ import com.leanowtech.bloge.gateway.integration.mirror.ScenarioHandlingAssertion
 import com.leanowtech.bloge.gateway.integration.mirror.ScenarioRehearsalEvidenceIntegrityService;
 import com.leanowtech.bloge.gateway.integration.mirror.ScenarioRehearsalEvidenceRepository;
 import com.leanowtech.bloge.gateway.integration.mirror.ScenarioRehearsalLifecycleAuditRepository;
+import com.leanowtech.bloge.gateway.integration.mirror.ScenarioRehearsalRetentionRepository;
 import com.leanowtech.bloge.gateway.integration.mirror.ScenarioRehearsalRunRepository;
 import com.leanowtech.bloge.gateway.integration.mirror.MirrorServingGenerationAuthority;
 import com.leanowtech.bloge.gateway.integration.mirror.MirrorServingGenerationIntegrity;
@@ -284,6 +286,25 @@ public class MirrorRuntimeConfiguration {
             JdbcTemplate jdbc) {
         return new DatabaseScenarioRehearsalLifecycleAuditRepository(
                 jdbc);
+    }
+
+    /**
+     * Creates the signed multi-hold retention and deletion-proof control plane.
+     *
+     * @param jdbc transaction-aware application JDBC boundary
+     * @param objectMapper canonical protocol mapper
+     * @param evidenceSigner governed retention-event signer
+     * @return full-scope Scenario aggregate retention repository
+     */
+    @Bean
+    @ConditionalOnMissingBean
+    public ScenarioRehearsalRetentionRepository
+    scenarioRehearsalRetentionRepository(
+            JdbcTemplate jdbc,
+            ObjectMapper objectMapper,
+            VisualEvidenceSigner evidenceSigner) {
+        return new DatabaseScenarioRehearsalRetentionRepository(
+                jdbc, objectMapper, evidenceSigner);
     }
 
     /**

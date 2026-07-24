@@ -66,6 +66,7 @@ public class ScenarioRehearsalRuntimeService {
     private final ScenarioRehearsalEvidenceRepository rehearsalEvidence;
     private final ScenarioRehearsalRunRepository rehearsalRequests;
     private final ScenarioRehearsalCommitService rehearsalCommits;
+    private final ScenarioRehearsalRetentionRepository retention;
     private final MirrorOperationObservability observations;
     private final ObjectMapper mapper;
     private final MirrorSessionIntegrationService sessions;
@@ -85,6 +86,7 @@ public class ScenarioRehearsalRuntimeService {
             ScenarioRehearsalEvidenceRepository rehearsalEvidence,
             ScenarioRehearsalRunRepository rehearsalRequests,
             ScenarioRehearsalCommitService rehearsalCommits,
+            ScenarioRehearsalRetentionRepository retention,
             MirrorOperationObservability observations,
             ObjectMapper mapper,
             ObjectProvider<MirrorSessionIntegrationService> sessionProvider) {
@@ -92,7 +94,8 @@ public class ScenarioRehearsalRuntimeService {
                 rehearsals, scenarioArtifacts, testSuites, mirrorRuns,
                 evidenceIntegrity, assertionEvaluator,
                 rehearsalEvidenceIntegrity, rehearsalEvidence,
-                rehearsalRequests, rehearsalCommits, observations, mapper,
+                rehearsalRequests, rehearsalCommits, retention,
+                observations, mapper,
                 Objects.requireNonNull(
                         sessionProvider, "sessionProvider").getIfAvailable(),
                 Clock.systemUTC());
@@ -111,6 +114,7 @@ public class ScenarioRehearsalRuntimeService {
             ScenarioRehearsalEvidenceRepository rehearsalEvidence,
             ScenarioRehearsalRunRepository rehearsalRequests,
             ScenarioRehearsalCommitService rehearsalCommits,
+            ScenarioRehearsalRetentionRepository retention,
             MirrorOperationObservability observations,
             ObjectMapper mapper,
             MirrorSessionIntegrationService sessions,
@@ -133,6 +137,8 @@ public class ScenarioRehearsalRuntimeService {
                 rehearsalRequests, "rehearsalRequests");
         this.rehearsalCommits = Objects.requireNonNull(
                 rehearsalCommits, "rehearsalCommits");
+        this.retention = Objects.requireNonNull(
+                retention, "retention");
         this.observations = Objects.requireNonNull(
                 observations, "observations");
         this.mapper = Objects.requireNonNull(mapper, "mapper");
@@ -329,15 +335,19 @@ public class ScenarioRehearsalRuntimeService {
                             Map.of()));
         }
         try {
+            Optional<ScenarioRehearsalEvidenceBundle> stored =
+                    rehearsalEvidence.find(scope, id);
+            if (stored.isEmpty()) {
+                requireNotPurged(scope, id, identity);
+            }
             ScenarioRehearsalEvidenceBundle bundle =
-                    rehearsalEvidence.find(scope, id)
-                            .orElseThrow(() ->
-                                    new IntegrationProblemException(
-                                            IntegrationProblem.notFound(
-                                                    "RG.MIRROR.REHEARSAL.RUN_NOT_FOUND",
-                                                    "Scenario rehearsal run was not found in the authorized scope.",
-                                                    identity.correlationId(),
-                                                    Map.of())));
+                    stored.orElseThrow(() ->
+                            new IntegrationProblemException(
+                                    IntegrationProblem.notFound(
+                                            "RG.MIRROR.REHEARSAL.RUN_NOT_FOUND",
+                                            "Scenario rehearsal run was not found in the authorized scope.",
+                                            identity.correlationId(),
+                                            Map.of())));
             return rehearsalEvidenceIntegrity
                     .requireVerified(bundle)
                     .bundle();
@@ -381,6 +391,7 @@ public class ScenarioRehearsalRuntimeService {
                     "Scenario rehearsal evidence could not be read safely.");
         }
         if (existing.isEmpty()) {
+            requireNotPurged(scope, runId, identity);
             return null;
         }
         ScenarioRehearsalEvidenceBundle bundle;
@@ -453,6 +464,39 @@ public class ScenarioRehearsalRuntimeService {
                     identity,
                     "RG.MIRROR.REHEARSAL.TIME_BOUNDS_INVALID",
                     "Compiled rehearsal time or retention bounds are invalid.");
+        }
+    }
+
+    private void requireNotPurged(
+            CapabilitySnapshot.Scope scope,
+            String runId,
+            IntegrationRequestContext identity) {
+        try {
+            Optional<ScenarioRehearsalRetentionState> state =
+                    retention.find(scope, runId);
+            if (state.isPresent()
+                    && state.orElseThrow().status()
+                    == ScenarioRehearsalRetentionState.Status.PURGED) {
+                ScenarioRehearsalRetentionEvent proof =
+                        state.orElseThrow().deletionProof();
+                throw new IntegrationProblemException(
+                        IntegrationProblem.gone(
+                                "RG.MIRROR.REHEARSAL.EVIDENCE_PURGED",
+                                "Scenario rehearsal aggregate evidence was deleted under its retention policy.",
+                                identity.correlationId(),
+                                Map.of(
+                                        "deletionProofFingerprint",
+                                        proof.eventFingerprint(),
+                                        "purgedAt",
+                                        proof.occurredAt().toString())));
+            }
+        } catch (IntegrationProblemException expected) {
+            throw expected;
+        } catch (RuntimeException unavailable) {
+            throw unavailable(
+                    identity,
+                    "RG.MIRROR.REHEARSAL.RETENTION_UNAVAILABLE",
+                    "Scenario rehearsal retention authority is unavailable.");
         }
     }
 

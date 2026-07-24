@@ -24,14 +24,19 @@ Fixture、MirrorPlan 和可选 Session checkpoint 绑定成不可变执行许可
 | aggregate durable coordination | 可用 | 完整 scope 请求注册、数据库时钟 lease、单调 epoch、逐 case checkpoint、takeover 与原子终态 |
 | 受保护 Scenario 操作审计 | 可用（终态） | run/evidence read 成功与失败均写入 payload-free audit；run 成功审计与 evidence/request 终态同事务 |
 | aggregate lifecycle audit | 可用 | `CLAIMED/TAKEN_OVER/CHECKPOINTED/RELEASED/COMPLETED` 只含 scope、epoch、cursor、ref 与 fingerprint，并与状态转换同事务 |
-| 可作为发布门禁的 Scenario evidence | 未交付 | 尚无保留/法律留置策略、删除证明和 ANEKE workbook seed |
+| `ScenarioRehearsalRetentionEvent/State.v1` | 可用 | 完整 scope、不可变最短保留边界、多重独立 hold、签名事件链和删除证明 |
+| Scenario retention API | 可用 | retention read、hold place/release、到期 purge 均使用独立 purpose 和 payload-free 操作审计 |
+| `ScenarioRehearsalRetentionVerifier` | 可用 | ANEKE/CI 可离线重算最新事件指纹、验证 projection 闭包、密钥策略与 Ed25519 删除证明 |
+| 可作为发布门禁的 Scenario evidence | 未交付 | 尚无企业 retention policy authority、WORM/外部锚和 ANEKE workbook seed |
 
 当前链路已经解决“执行前冻结什么、运行时从哪里取值、每个结果依据什么证据”
 三个问题，并让同步完成的聚合成为可独立复验和重读的证据。aggregate 现以
 数据库时钟 lease/epoch 串行化执行，把每个 payload-free case result 作为连续
 checkpoint；进程退出后，同 request id 可由下一副本从首个未完成 case 接续。
-下一条链路负责保留策略、删除证明和 ANEKE workbook seed；在此之前，证据适合
-test/staging 的可恢复回归和排错，但不能冒充 publish-gate-ready 证据。
+终态证据与 retention registration 同事务提交，默认最短保留 30 天；到期后只有
+`PAYLOAD_RETENTION_ADMIN` 且不存在任何 active hold 才能删除 aggregate evidence。
+下一条链路负责企业策略权威和 ANEKE workbook seed；在此之前，证据适合
+test/staging 的可恢复回归、法律保全和排错，但不能冒充 publish-gate-ready 证据。
 
 ## 2. 为什么需要独立编译计划
 
@@ -96,6 +101,9 @@ curl -sS http://localhost:8080/api/integration/capabilities
 | `mirrorScenarioRehearsalCompilation` | `true` |
 | `mirrorScenarioRehearsalExecution` | `true` |
 | `mirrorScenarioRehearsalEvidenceApi` | `true` |
+| `mirrorScenarioRehearsalRetentionApi` | `true` |
+| `mirrorScenarioRehearsalLegalHold` | `true` |
+| `mirrorScenarioRehearsalDeletionProof` | `true` |
 | `mirrorScenarioRehearsalEvidence` | `false` |
 
 若前两个为 `false`，先检查 profile 是否为 `test`/`staging`、Mirror 开关、
@@ -175,6 +183,10 @@ ScenarioPack
 | `GET /api/mirror/scenarios/packs/{packId}` | `MIRROR_SCENARIO_ARTIFACT_READ` | 按 revision + fingerprint 精确读取 |
 | `POST /api/mirror/scenarios/runs` | `MIRROR_REHEARSAL_EXECUTE` | 同步执行 exact compiled plan 并返回内容寻址聚合 |
 | `GET /api/mirror/scenarios/runs/{runId}/evidence` | `MIRROR_REHEARSAL_EVIDENCE_READ` | 按完整企业 scope 读取并重新验签一个 Scenario 聚合证据 |
+| `GET /api/mirror/scenarios/runs/{runId}/retention` | `MIRROR_REHEARSAL_RETENTION_READ` | 重建并验证 retention projection 与最新签名事件 |
+| `POST /api/mirror/scenarios/runs/{runId}/retention/holds` | `MIRROR_REHEARSAL_LEGAL_HOLD` | 以独立 command/hold id 放置一个法律保全 |
+| `POST /api/mirror/scenarios/runs/{runId}/retention/hold-releases` | `MIRROR_REHEARSAL_LEGAL_HOLD` | 释放一个 exact hold，不影响其他 active hold |
+| `POST /api/mirror/scenarios/runs/{runId}/retention/purge` | `MIRROR_REHEARSAL_RETENTION_ADMIN` | 数据库时钟确认到期且无 hold 后删除 aggregate 并返回签名证明 |
 
 同一 scope、kind、id、revision 的相同内容重试是幂等的；不同 fingerprint
 是不可变修订冲突。API 不提供 `latest`、覆盖更新或删除语义。
@@ -306,6 +318,79 @@ if (!verified.verified()) {
 重新派生 case/aggregate outcome 与 summary，并检查完整身份、时间和 evidence
 closure；即使生产者用合法 key 给错误的 PASS 结论签名也会被拒绝。
 
+### 8.1 保留、法律保全和删除证明
+
+终态提交不允许先发布 evidence、稍后再“尽力登记”保留信息。
+`scenario_rehearsal_evidence`、request `COMPLETED`、lifecycle/operation audit
+和 revision 1 `RETENTION_REGISTERED` 位于同一本地事务。最短保留边界由服务端在
+request registration 时计算为运行时刻后至少 30 天，客户端不能缩短或覆盖。
+
+查看当前状态：
+
+```bash
+curl -sS \
+  http://localhost:8080/api/mirror/scenarios/runs/scenario-REPLACE_WITH_64_HEX/retention \
+  -H 'Authorization: Bearer bloge-aneke-demo-token' \
+  -H 'X-Purpose: GOVERNANCE_EVIDENCE_INGESTION'
+```
+
+放置和释放 hold 必须使用 `LEGAL_HOLD` purpose。`commandId` 是操作幂等键，
+`holdId` 是独立保全身份；同一 aggregate 可以同时持有多个 hold：
+
+```bash
+curl -sS -X POST \
+  http://localhost:8080/api/mirror/scenarios/runs/scenario-REPLACE_WITH_64_HEX/retention/holds \
+  -H 'Authorization: Bearer bloge-aneke-demo-token' \
+  -H 'X-Purpose: LEGAL_HOLD' \
+  -H 'Content-Type: application/json' \
+  --data '{
+    "schemaVersion": "resourceGateway.scenarioRehearsalLegalHoldCommand.v1",
+    "commandId": "legal-case-2026-001-place",
+    "holdId": "legal-case-2026-001",
+    "reasonCode": "RG.MIRROR.REHEARSAL.LITIGATION"
+  }'
+```
+
+释放时调用 `hold-releases`，使用新的 `commandId` 和同一个 `holdId`。已经释放
+的 hold id 不允许复用；这避免一条旧审计链被解释成一次新的法律保全。
+
+到期清除必须使用 `PAYLOAD_RETENTION_ADMIN` purpose：
+
+```bash
+curl -sS -X POST \
+  http://localhost:8080/api/mirror/scenarios/runs/scenario-REPLACE_WITH_64_HEX/retention/purge \
+  -H 'Authorization: Bearer bloge-aneke-demo-token' \
+  -H 'X-Purpose: PAYLOAD_RETENTION_ADMIN' \
+  -H 'Content-Type: application/json' \
+  --data '{
+    "schemaVersion": "resourceGateway.scenarioRehearsalPurgeCommand.v1",
+    "commandId": "retention-purge-2026-001",
+    "reasonCode": "RG.MIRROR.REHEARSAL.RETENTION_EXPIRED"
+  }'
+```
+
+清除只删除 aggregate evidence 和 aggregate case progress。request tombstone、
+lifecycle/operation audit、签名 retention event chain 和 deletion proof 保留；
+child Mirror evidence 可能被其他聚合引用，因此明确记录为 `RETAINED`，不级联
+删除。之后 evidence 路由返回 `410
+RG.MIRROR.REHEARSAL.EVIDENCE_PURGED`，并只暴露删除证明 fingerprint 与时间。
+
+ANEKE/CI 应验证响应 `payload`，而不是相信状态字符串：
+
+```java
+ScenarioRehearsalRetentionVerifier.VerificationResult verified =
+        new ScenarioRehearsalRetentionVerifier()
+                .verify(retentionStateJson, publicKey);
+if (!verified.verifiedDeletionProof()) {
+    throw new IllegalStateException(verified.reasonCode());
+}
+```
+
+该 verifier 对严格 Schema、projection/latest-event 闭包、规范事件指纹、签名
+时间、key id/lifecycle 和 Ed25519 seal 逐项失败关闭。当前 API 返回最新事件和
+前序事件 fingerprint；完整事件链由服务端每次读取重建验证，跨系统全历史导出
+与外部 transparency anchor 仍是后续部署能力。
+
 case 结果遵循以下保守语义：
 
 | 条件 | case outcome |
@@ -333,8 +418,9 @@ case 直接把 checkpoint 的 session id + state fingerprint 作为原始 fence 
   owner/epoch/expiry 栅栏；最终 evidence 与 terminal transition 同事务提交；
 - 聚合 evidence 已独立签名、耐久保存和可读取；run/evidence read 的 protected
   operation audit 已失败关闭，内部 claim/takeover/checkpoint/release/complete
-  转换也有同事务 payload-free lifecycle audit；尚无 retention/legal-hold、
-  deletion proof、WORM/transparency anchor 和 workbook seed；
+  转换也有同事务 payload-free lifecycle audit；retention registration、multi-hold、
+  purge 与签名 deletion proof 已闭合，但尚无企业 policy authority、
+  WORM/transparency anchor 和 workbook seed；
 - checkpoint 是同一加密数据面的 recovery fence，不是隔离 clone；全新重复执行
   需要新的隔离 Session/checkpoint；
 - operator 级 scalar TestSuite input 暂不能直接作为 graph context；
@@ -419,6 +505,8 @@ request、response、实体或 fixture payload。
 - `scenario_rehearsal_case_progress`
 - `scenario_rehearsal_lifecycle_audit`
 - `scenario_rehearsal_evidence`
+- `scenario_rehearsal_retention_states`
+- `scenario_rehearsal_retention_events`
 
 主键覆盖完整 scope、artifact kind、id 和 revision。写入与读取都重算
 canonical fingerprint，并核对数据库索引身份；checkpoint 还会重新验签。
@@ -447,14 +535,23 @@ lease 在提交前到期会整体回滚，不留下孤儿 evidence。
 完成的 `ScenarioRehearsalResult` 被封入独立签名 bundle，按完整 scope + stable
 runId append-only 保存；读取时重算 result/bundle fingerprint 并复验 Ed25519
 signature。`mirrorScenarioRehearsalEvidence` 仍保持 `false`，原因已从“运行不可
-恢复”收敛为缺少 retention/legal hold、deletion proof 和 ANEKE workbook
-消费闭包。最终 run 提交把 signed evidence、request `COMPLETED`、lifecycle
+恢复”收敛为缺少企业 policy authority、WORM/外部锚和 ANEKE workbook
+消费闭包。最终 run 提交把 signed evidence、retention registration、
+request `COMPLETED`、lifecycle
 `COMPLETED` 和
 `SCENARIO_REHEARSAL_CREATE` 成功审计放在同一本地事务；evidence read 也必须先
 提交 `SCENARIO_REHEARSAL_EVIDENCE_READ` 审计才可发布结果。
 
+retention state 是可重建 projection，append-only signed event chain 才是权威。
+每次读取/修改会验签完整链、检查 revision/previous fingerprint、重放 multi-hold
+状态并与 projection 和数据库索引比对。purge 在同一行锁事务内再次使用数据库
+时钟检查 `retainUntil` 和全部 hold，核对 exact evidence fingerprint，删除
+aggregate 两张数据表，写入 `PURGED` 事件并更新 projection。任一步骤或强制
+operation audit 失败都会回滚。
+
 本地重启后可以按 exact fingerprint 读取同一资产。数据库备份、跨区域恢复、
-WORM、外部 transparency anchor 和法律保留仍属于部署认证，不由本地哈希代替。
+WORM、外部 transparency anchor、企业级策略分发和跨地域删除认证仍属于部署
+认证，不由本地签名链代替。
 
 ## 12. 开发验证
 
@@ -462,7 +559,7 @@ WORM、外部 transparency anchor 和法律保留仍属于部署认证，不由�
 
 ```bash
 mvn -f resource-gateway-examples/pom.xml \
-  -Dtest=ScenarioRehearsalControllerTest,ScenarioArtifactRequestDecoderTest,ScenarioArtifactRegistryServiceTest,ScenarioRehearsalIntegrationServiceTest,ScenarioRehearsalCompilerTest,ScenarioRehearsalRuntimeServiceTest,ScenarioRehearsalResultProtocolTest,ScenarioRehearsalEvidenceIntegrityServiceTest,DatabaseScenarioRehearsalEvidenceRepositoryTest,DatabaseScenarioRehearsalRunRepositoryTest,ScenarioRehearsalCommitServiceTest,DatabaseScenarioArtifactRepositoryTest,DatabaseCompiledScenarioRehearsalPlanRepositoryTest,ScenarioPackProtocolTest,MirrorEvidenceIntegrityServiceTest,ScenarioHandlingAssertionEvaluatorTest,MirrorRuntimeConfigurationTest,ToolStudioIntegrationServiceTest \
+  -Dtest=ScenarioRehearsalControllerTest,ScenarioArtifactRequestDecoderTest,ScenarioArtifactRegistryServiceTest,ScenarioRehearsalIntegrationServiceTest,ScenarioRehearsalCompilerTest,ScenarioRehearsalRuntimeServiceTest,ScenarioRehearsalResultProtocolTest,ScenarioRehearsalEvidenceIntegrityServiceTest,DatabaseScenarioRehearsalEvidenceRepositoryTest,DatabaseScenarioRehearsalRunRepositoryTest,ScenarioRehearsalCommitServiceTest,DatabaseScenarioRehearsalRetentionRepositoryTest,ScenarioRehearsalRetentionServiceTest,DatabaseScenarioArtifactRepositoryTest,DatabaseCompiledScenarioRehearsalPlanRepositoryTest,ScenarioPackProtocolTest,MirrorEvidenceIntegrityServiceTest,ScenarioHandlingAssertionEvaluatorTest,MirrorRuntimeConfigurationTest,ToolStudioIntegrationServiceTest \
   test
 ```
 
@@ -473,9 +570,9 @@ mvn -f resource-gateway-examples/pom.xml clean verify
 mvn -f resource-gateway-test-kit/pom.xml clean verify
 ```
 
-2026-07-24 本轮门禁结果：Resource Gateway `5,034` 项测试零失败、零错误、
-3 项条件跳过（含真实 Chrome DOM/工作流）；Test Kit `353` 项零失败、零错误，
-完成 101 个 Mirror Schema 的引用闭包、shaded JAR 和零警告公共 JavaDoc。
+2026-07-24 本轮门禁结果：Resource Gateway `5,047` 项测试零失败、零错误、
+3 项条件跳过（含真实 Chrome DOM/工作流）；Test Kit `359` 项零失败、零错误，
+完成 105 个 Mirror Schema 的引用闭包、shaded JAR 和零警告公共 JavaDoc。
 
 关键实现与协议：
 
@@ -494,6 +591,9 @@ mvn -f resource-gateway-test-kit/pom.xml clean verify
 - `resource-gateway-examples/src/main/java/com/leanowtech/bloge/gateway/integration/mirror/ScenarioRehearsalEvidenceBundle.java`
 - `resource-gateway-examples/src/main/java/com/leanowtech/bloge/gateway/integration/mirror/ScenarioRehearsalEvidenceIntegrityService.java`
 - `resource-gateway-examples/src/main/java/com/leanowtech/bloge/gateway/integration/mirror/DatabaseScenarioRehearsalEvidenceRepository.java`
+- `resource-gateway-examples/src/main/java/com/leanowtech/bloge/gateway/integration/mirror/ScenarioRehearsalRetentionService.java`
+- `resource-gateway-examples/src/main/java/com/leanowtech/bloge/gateway/integration/mirror/DatabaseScenarioRehearsalRetentionRepository.java`
+- `resource-gateway-test-kit/src/main/java/com/leanowtech/bloge/gateway/testkit/ScenarioRehearsalRetentionVerifier.java`
 - `docs/schemas/resource-gateway-mirror/scenario-rehearsal-compile-request-v1.schema.json`
 - `docs/schemas/resource-gateway-mirror/compiled-scenario-rehearsal-plan-v1.schema.json`
 - `docs/schemas/resource-gateway-mirror/scenario-handling-assertion-result-v1.schema.json`
@@ -502,6 +602,10 @@ mvn -f resource-gateway-test-kit/pom.xml clean verify
 - `docs/schemas/resource-gateway-mirror/scenario-rehearsal-result-v1.schema.json`
 - `docs/schemas/resource-gateway-mirror/scenario-rehearsal-evidence-attestation-v1.schema.json`
 - `docs/schemas/resource-gateway-mirror/scenario-rehearsal-evidence-bundle-v1.schema.json`
+- `docs/schemas/resource-gateway-mirror/scenario-rehearsal-legal-hold-command-v1.schema.json`
+- `docs/schemas/resource-gateway-mirror/scenario-rehearsal-purge-command-v1.schema.json`
+- `docs/schemas/resource-gateway-mirror/scenario-rehearsal-retention-event-v1.schema.json`
+- `docs/schemas/resource-gateway-mirror/scenario-rehearsal-retention-state-v1.schema.json`
 
 独立 consumer 继续使用 `resource-gateway-test-kit` 的
 `ScenarioPackVerifier` 验证 ScenarioPack/Case/Assertion，并使用

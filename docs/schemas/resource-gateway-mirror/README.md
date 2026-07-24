@@ -83,6 +83,10 @@ offline artifact verification live in the independent `resource-gateway-test-kit
 | `scenario-rehearsal-result-v1.schema.json` | `ScenarioRehearsalResult` | Content-addressed ordered aggregate with fail-closed outcome precedence and derived case/assertion counters |
 | `scenario-rehearsal-evidence-attestation-v1.schema.json` | `ScenarioRehearsalEvidenceAttestation` | Domain-separated Ed25519 manifest binding stable aggregate run id, request, compiled plan, result fingerprint, and signing time |
 | `scenario-rehearsal-evidence-bundle-v1.schema.json` | `ScenarioRehearsalEvidenceBundle` | Independently verifiable `HASH_ONLY` portable aggregate containing one complete content-addressed result and detached signature |
+| `scenario-rehearsal-legal-hold-command-v1.schema.json` | `ScenarioRehearsalLegalHoldCommand` | Strict idempotent placement/release command with independent hold identity and stable governance reason |
+| `scenario-rehearsal-purge-command-v1.schema.json` | `ScenarioRehearsalPurgeCommand` | Strict idempotent aggregate-deletion command carrying no policy override or business payload |
+| `scenario-rehearsal-retention-event-v1.schema.json` | `ScenarioRehearsalRetentionEvent` | Signed payload-free retention/hold/deletion transition with complete scope, immutable retention boundary, previous-event address, and explicit child-evidence disposition |
+| `scenario-rehearsal-retention-state-v1.schema.json` | `ScenarioRehearsalRetentionState` | Rebuildable multi-hold projection whose latest signed event becomes the independently verifiable deletion proof after purge |
 | `scenario-case-v1.schema.json` | `ScenarioCase` | Exact binding from one business intent to an existing TestSuite case, FixtureBundle, MirrorPlan, deterministic services, optional isolated Session checkpoint, explicit fault rules, and handling assertions |
 | `scenario-pack-v1.schema.json` | `ScenarioPack` | Content-addressed ordered scenario closure and fail-closed sequential rehearsal policy |
 | `scenario-rehearsal-compile-request-v1.schema.json` | `ScenarioRehearsalCompileRequest` | Exact registered ScenarioPack revision and fingerprint requested for online closure compilation |
@@ -259,6 +263,23 @@ response, or credential. `CapabilityMirrorProtocol.scenarioPackCompatibilityFixt
 validates the envelope and all referenced Schemas, re-runs the independent
 closure verifier, and compares every projected field before exposing a detached
 copy.
+
+Completed Scenario aggregate evidence has a separate retention lifecycle.
+Revision one registers the exact evidence bundle fingerprint and immutable
+minimum retention boundary in the same local transaction as terminal evidence.
+Later `HOLD_PLACED`, `HOLD_RELEASED`, and `PURGED` events form a signed,
+previous-fingerprint-linked chain under complete enterprise scope. Holds are
+independent: releasing one never releases another. A purge event preserves the
+deleted aggregate fingerprint and deleted progress-row count and records child
+Mirror evidence as `RETAINED`; it carries no deleted payload.
+
+`ScenarioRehearsalRetentionVerifier` applies the strict state/event Schemas,
+re-derives the latest canonical event fingerprint, checks projection closure,
+enforces signing-time key policy, and verifies the Ed25519 seal without server
+classes. This proves the current projection and latest deletion proof. The
+server additionally replays the complete retained event chain on every read;
+external full-history export, WORM storage, and transparency anchoring are
+deployment capabilities rather than claims of this v1 wire contract.
 
 ## Deployment isolation attestation boundary
 

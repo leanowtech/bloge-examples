@@ -136,6 +136,10 @@ dedicated local data plane.
 | `GET http://localhost:8080/api/mirror/scenarios/compiled-plans/{planId}?revision=...&fingerprint=...` | Read one exact compiler-issued rehearsal plan |
 | `POST http://localhost:8080/api/mirror/scenarios/runs` | Run one exact compiled Scenario plan and return an independently verified signed aggregate bundle |
 | `GET http://localhost:8080/api/mirror/scenarios/runs/{runId}/evidence` | Re-read and independently verify one full-scope append-only Scenario aggregate |
+| `GET http://localhost:8080/api/mirror/scenarios/runs/{runId}/retention` | Rebuild and verify the aggregate retention projection and latest signed event |
+| `POST http://localhost:8080/api/mirror/scenarios/runs/{runId}/retention/holds` | Place one independent idempotent legal hold (`X-Purpose: LEGAL_HOLD`) |
+| `POST http://localhost:8080/api/mirror/scenarios/runs/{runId}/retention/hold-releases` | Release one exact legal hold without affecting any other hold |
+| `POST http://localhost:8080/api/mirror/scenarios/runs/{runId}/retention/purge` | Delete eligible aggregate evidence and return a signed deletion proof (`X-Purpose: PAYLOAD_RETENTION_ADMIN`) |
 
 Deployment-agent authority/attestation GETs require vendor negotiation in addition to normal
 `MIRROR_TRUST_DISTRIBUTION` or `MIRROR_REHEARSAL` authentication:
@@ -197,11 +201,19 @@ addresses, outcomes, summary counters, bundle identity, key policy, and the
 Scenario-specific Ed25519 signature without linking server classes. Outcomes and
 summary counters are server-derived;
 stateful retries reach completed child idempotency before checking a possibly
-advanced Session head. The capability probe therefore reports Scenario
-execution and `mirrorScenarioRehearsalEvidenceApi` as available while keeping
-`mirrorScenarioRehearsalEvidence=false`: retention/legal hold, deletion proof,
-workbook seed, batch scheduling, and owner UX remain required before this
-becomes publish-gate evidence. See the
+advanced Session head. The final evidence commit now atomically registers a
+30-day minimum retention boundary. A signed append-only event chain governs
+multiple independent legal holds and database-clock purge; purge deletes only
+aggregate evidence/progress, retains child Mirror evidence and tombstones, and
+returns an offline-verifiable deletion proof. Retention reads and mutations
+also use mandatory payload-free operation audit. The Test Kit packages strict
+hold/purge/event/state Schemas and independently re-derives the latest event
+address, projection closure, signing-time key policy, and Ed25519 seal.
+The capability probe therefore reports Scenario execution, evidence API,
+retention API, legal hold, and deletion proof as available while keeping
+`mirrorScenarioRehearsalEvidence=false`: enterprise policy authority,
+WORM/transparency anchoring, workbook seed, batch scheduling, and owner UX
+remain required before this becomes publish-gate evidence. See the
 [scenario rehearsal compiler guide](../docs/resource-gateway-scenario-rehearsal-compiler.md).
 
 Stored suites and fixtures now use `bloge.storedTestSuite.v2` and

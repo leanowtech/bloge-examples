@@ -409,6 +409,12 @@ public class ToolStudioIntegrationService {
                 mirrorPlanReady && mirrorExecutionApi);
         features.put("mirrorScenarioRehearsalEvidenceApi",
                 mirrorPlanReady && mirrorExecutionApi);
+        features.put("mirrorScenarioRehearsalRetentionApi",
+                mirrorPlanReady && mirrorExecutionApi);
+        features.put("mirrorScenarioRehearsalLegalHold",
+                mirrorPlanReady && mirrorExecutionApi);
+        features.put("mirrorScenarioRehearsalDeletionProof",
+                mirrorPlanReady && mirrorExecutionApi);
         features.put("mirrorScenarioRehearsalEvidence", false);
         features.put("mirrorServing", mirrorExecutionReady);
         features.put("mirrorOperationObservability", mirrorPlanReady && mirrorExecutionApi);
@@ -856,6 +862,30 @@ public class ToolStudioIntegrationService {
                             com.leanowtech.bloge.gateway.integration.mirror
                                     .ScenarioRehearsalEvidenceBundle
                                     .SCHEMA_VERSION));
+            supportedObjects.put(
+                    "scenarioRehearsalLegalHoldCommand",
+                    List.of(
+                            com.leanowtech.bloge.gateway.integration.mirror
+                                    .ScenarioRehearsalLegalHoldCommand
+                                    .SCHEMA_VERSION));
+            supportedObjects.put(
+                    "scenarioRehearsalPurgeCommand",
+                    List.of(
+                            com.leanowtech.bloge.gateway.integration.mirror
+                                    .ScenarioRehearsalPurgeCommand
+                                    .SCHEMA_VERSION));
+            supportedObjects.put(
+                    "scenarioRehearsalRetentionEvent",
+                    List.of(
+                            com.leanowtech.bloge.gateway.integration.mirror
+                                    .ScenarioRehearsalRetentionEvent
+                                    .SCHEMA_VERSION));
+            supportedObjects.put(
+                    "scenarioRehearsalRetentionState",
+                    List.of(
+                            com.leanowtech.bloge.gateway.integration.mirror
+                                    .ScenarioRehearsalRetentionState
+                                    .SCHEMA_VERSION));
         }
         if (mirrorExecutionApi) {
             supportedObjects.put("mirrorExecutionRequest", List.of(
@@ -987,6 +1017,18 @@ public class ToolStudioIntegrationService {
                 endpoints.add(new IntegrationCapabilities.Endpoint(
                         "GET",
                         "/api/mirror/scenarios/runs/{runId}/evidence"));
+                endpoints.add(new IntegrationCapabilities.Endpoint(
+                        "GET",
+                        "/api/mirror/scenarios/runs/{runId}/retention"));
+                endpoints.add(new IntegrationCapabilities.Endpoint(
+                        "POST",
+                        "/api/mirror/scenarios/runs/{runId}/retention/holds"));
+                endpoints.add(new IntegrationCapabilities.Endpoint(
+                        "POST",
+                        "/api/mirror/scenarios/runs/{runId}/retention/hold-releases"));
+                endpoints.add(new IntegrationCapabilities.Endpoint(
+                        "POST",
+                        "/api/mirror/scenarios/runs/{runId}/retention/purge"));
             }
         }
         if (mirrorExecutionApi) {

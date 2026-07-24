@@ -257,6 +257,33 @@ domain. It never returns TestCase input, Fixture value, Session entity or
 business payload. A valid producer signature over a false aggregate outcome is
 still rejected.
 
+After the aggregate reaches its retention boundary, governance consumers can
+verify the signed retention projection or deletion proof independently:
+
+```java
+JsonNode retention = objectMapper.readTree(retentionStateJson);
+String keyId = retention.path("latestEvent")
+        .path("evidenceSeal").path("keyId").asText();
+EvidenceVerificationKey key = client.findEvidenceVerificationKey(keyId);
+
+ScenarioRehearsalRetentionVerifier.VerificationResult result =
+        new ScenarioRehearsalRetentionVerifier().verify(retention, key);
+if (!result.verified()) {
+    throw new IllegalStateException(result.reasonCode());
+}
+if ("PURGED".equals(retention.path("status").asText())
+        && !result.verifiedDeletionProof()) {
+    throw new IllegalStateException("Deletion proof is invalid");
+}
+```
+
+The verifier applies the packaged command/event/state Schemas, recomputes the
+latest event address, binds scope/run/request/revision/retention time back to
+the projection, checks signing time and key lifecycle, and verifies Ed25519.
+It never needs deleted aggregate data. The current state API exposes only the
+latest event plus its predecessor address; full retained event-chain replay is
+still performed by the server and is not claimed by this client method.
+
 `findMirrorSessionWriteAttempt` accepts an attempt id obtained from the
 run/evidence recovery coordinate. Before returning its bounded projection, it
 independently checks strict Schema, nested store generation, deterministic id,

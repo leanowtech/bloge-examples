@@ -862,6 +862,50 @@ takeover、checkpoint cursor、terminal evidence fingerprint、跨 scope 隔离�
 审计故障回滚、Spring Bean 装配和真实应用启动。这里的 audit 是状态转换事实，不
 替代签名业务 evidence，也不宣称具备外部 WORM。
 
+### 3.7 2026-07-24 Scenario 证据保留治理迭代差距复评
+
+本轮关闭 RG-MIR-SCEN-003 的“本地证据生命周期不可治理”缺口。最终
+Scenario commit 现在把 signed aggregate evidence、request/lifecycle/operation
+终态与 revision 1 `RETENTION_REGISTERED` 放入同一本地事务。保留边界在请求
+注册时冻结，当前至少为 30 天；客户端不能通过执行或清除命令缩短它。权威时间
+来自数据库，而不是调用方或 worker 时钟。
+
+保留模型不是一个容易被最后写覆盖的 `held=true`。每个 aggregate 支持多个
+独立 `holdId`，place/release 都有独立 `commandId`、actor、stable reason code
+和完整 enterprise scope。释放一个 hold 不影响其他 hold，释放后的 id 不可复用。
+所有 `RETENTION_REGISTERED/HOLD_PLACED/HOLD_RELEASED/PURGED` 事件均为
+payload-free、append-only、previous-fingerprint-linked，并由治理证据 key
+签名；materialized state 只是一份每次读取都从完整签名链重放并核对的 projection。
+
+purge 必须同时满足数据库时钟越过 `retainUntil`、零 active hold、exact evidence
+fingerprint 仍在本 scope。成功时只删除 aggregate evidence 和 case progress，
+保留 request tombstone、聚合 lifecycle/operation audit、retention event chain
+和签名 deletion proof。child Mirror evidence 可能被其他 aggregate 共享，明确
+记为 `RETAINED`，不做危险级联。之后 evidence read 返回稳定 `410` 和删除证明
+fingerprint/time，而不是把“按政策删除”伪装成普通 404 或重新执行原业务。
+
+四份 strict Draft 2020-12 Schema、capability probe、独立 purpose、严格 decoder
+和离线 `ScenarioRehearsalRetentionVerifier` 同步交付。消费者可在不连接服务端
+数据库、不读取已删除 payload 的前提下，重算最新事件 fingerprint、核对
+projection/event 闭包、执行 key lifecycle policy 并验 Ed25519 deletion proof。
+完整门禁覆盖 Resource Gateway `5,047` 项测试（零失败、零错误、3 项条件跳过）
+与独立 Test Kit `359/359`；后者完成 105 份 Mirror Schema 引用闭包、shaded JAR
+和零警告公共 JavaDoc。
+
+这仍不是完整企业 retention service。当前 30 天边界来自本地固定策略，尚无按
+tenant/业务域/数据分类/司法辖区解析并签名下发的 policy authority；事件保存在
+普通事务数据库，尚无 WORM、外部 transparency anchor、跨地域 purge
+certification、全历史分页导出或 retention sweep/backlog SLO。基于这个边界，
+Scenario/Rehearsal 从 68% 上调至 74%，固定权重总分从 57.35% 上调至
+58.31%，距理想态 41.69%。提高幅度只计算“本地治理闭包”，不拿数据库签名链
+冒充法规认证。
+
+下一条最短路径是从已验签 aggregate bundle 确定性投影 ANEKE correctness
+workbook seed，并将 `ScenarioPack/CompiledPlan/Evidence/RetentionProof`
+绑定为同一个 gate-consumable closure。然后才是 durable batch job；企业 policy
+authority 与 WORM/anchor 可以作为独立部署认证流并行推进。Fidelity score
+仍然不能抢跑，因为没有 workbook 消费闭包就无法把“拟合结果”转成可执行门禁。
+
 ## 4. 目标架构与系统责任
 
 ![Resource Gateway 业务能力镜像目标架构](assets/resource-gateway-capability-mirror-target-architecture.svg)
@@ -1413,8 +1457,10 @@ aggregate result 已完成。运行命令只能引用 exact compiled plan，Test
 每个 child 复用既有耐久 Mirror 幂等协调与 signed evidence，aggregate outcome 和 summary 全部
 由服务端派生。aggregate 也已有数据库时钟 lease/epoch、连续 case checkpoint、
 takeover、独立签名、exact evidence read 和 evidence/request 原子终态。capability probe
-将 execution 与 evidence API 报告为 true；operation audit、retention/legal hold 和
-workbook seed 尚未闭合，因此 publish-gate evidence 仍必须为 false。
+将 execution、evidence API、retention API、multi-hold 和 deletion proof 报告为
+true；protected operation/lifecycle audit 也已闭合。企业 policy authority、
+WORM/transparency anchor 和 workbook seed 尚未闭合，因此 publish-gate
+evidence 仍必须为 false。
 操作与启停见
 [场景演练注册与编译指南](resource-gateway-scenario-rehearsal-compiler.md)。
 
@@ -1610,6 +1656,10 @@ session 重放造成重复状态、运行时依赖漂移。
 | `GET /api/mirror/scenarios/compiled-plans/{planId}` | 按 revision + fingerprint 读取 compiler-issued plan | 只读、完整 scope 隔离；读取时重验完整性 | 已实现（test/staging + 显式开关） |
 | `POST /api/mirror/scenarios/runs` | 执行 exact compiled Scenario plan 并返回 signed aggregate evidence | full scope + request/plan fingerprint；数据库时钟 lease/epoch、连续 case checkpoint、takeover 和原子终态 | 已实现（test/staging + 显式开关） |
 | `GET /api/mirror/scenarios/runs/{runId}/evidence` | 读取并重新验签一个 payload-free Scenario aggregate | stable scope-bound runId；result/bundle/signature 完整闭包 | 已实现（test/staging + 显式开关） |
+| `GET /api/mirror/scenarios/runs/{runId}/retention` | 重建 retention projection 并验证最新签名事件 | 完整 scope；evidence 缺失但有 purge proof 时仍可读取 | 已实现（test/staging + 独立 purpose） |
+| `POST /api/mirror/scenarios/runs/{runId}/retention/holds` | 放置一个独立 legal hold | command 幂等、hold id 不可复用、多 hold 不互相覆盖 | 已实现（`LEGAL_HOLD`） |
+| `POST /api/mirror/scenarios/runs/{runId}/retention/hold-releases` | 释放一个 exact legal hold | 只释放指定 hold；其他 hold 继续阻止删除 | 已实现（`LEGAL_HOLD`） |
+| `POST /api/mirror/scenarios/runs/{runId}/retention/purge` | 到期删除 aggregate 并返回签名 deletion proof | 数据库时钟、零 hold、exact fingerprint；child evidence 不级联 | 已实现（`PAYLOAD_RETENTION_ADMIN`） |
 | `POST /api/mirror/rehearsal-jobs` | 提交批量长任务 | job request fingerprint | 待实现 |
 | `GET /api/mirror/runs/{runId}` | 查询 verified payload-free 运行摘要 | 只读、完整 scope 隔离 | 已实现（test/staging + 显式开关） |
 | `GET /api/mirror/runs/{runId}/evidence` | 导出 independently verified `HASH_ONLY` signed evidence | 只读、完整 scope 隔离 | 已实现（test/staging + 显式开关） |
@@ -2025,9 +2075,11 @@ binding。恢复后继续执行与不中断执行的最终 outcome parity、逐�
 
 **当前状态**：Sprint 1 的协议、独立 verifier、append-only registry、deterministic compiler 与完整
 enterprise scope authority 已完成。Sprint 2 已交付同步逐 case runtime、typed assertion evaluator、
-payload-free content-addressed case/aggregate result；下一步必须补 aggregate 自身的 durable
-lease/recovery、独立签名 evidence、读取/retention 与 workbook seed，再进入批量 job 与 Author UX。
-单个已签名 MirrorRun 和请求线程内 aggregate 都不能冒充可供发布门禁消费的 Scenario evidence。
+payload-free content-addressed case/aggregate result、durable lease/recovery、独立签名 evidence、
+exact read、multi-hold retention 和 deletion proof。下一步是 deterministic ANEKE workbook seed
+及其 gate evidence binding，再进入 durable batch job 与 Author UX。企业 policy authority、
+WORM/anchor 和跨地域删除认证作为部署认证支线并行，不阻塞本地 workbook 纵切，但会阻塞最终
+production readiness。
 
 **交付物**：
 

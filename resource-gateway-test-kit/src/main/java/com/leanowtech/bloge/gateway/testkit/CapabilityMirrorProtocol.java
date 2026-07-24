@@ -260,6 +260,18 @@ public final class CapabilityMirrorProtocol {
     /** Governed payload-free case handling assertion wire version. */
     public static final String CASE_HANDLING_ASSERTION_V1 =
             "resourceGateway.caseHandlingAssertion.v1";
+    /** Idempotent Scenario evidence legal-hold command wire version. */
+    public static final String SCENARIO_REHEARSAL_LEGAL_HOLD_COMMAND_V1 =
+            "resourceGateway.scenarioRehearsalLegalHoldCommand.v1";
+    /** Idempotent Scenario aggregate evidence purge command wire version. */
+    public static final String SCENARIO_REHEARSAL_PURGE_COMMAND_V1 =
+            "resourceGateway.scenarioRehearsalPurgeCommand.v1";
+    /** Signed append-only Scenario evidence retention event wire version. */
+    public static final String SCENARIO_REHEARSAL_RETENTION_EVENT_V1 =
+            "resourceGateway.scenarioRehearsalRetentionEvent.v1";
+    /** Rebuildable Scenario evidence retention projection wire version. */
+    public static final String SCENARIO_REHEARSAL_RETENTION_STATE_V1 =
+            "resourceGateway.scenarioRehearsalRetentionState.v1";
     /** Fixed scenario protocol compatibility-fixture wire version. */
     public static final String SCENARIO_PACK_COMPATIBILITY_V1 =
             "resourceGateway.scenarioPackCompatibility.v1";
@@ -589,6 +601,23 @@ public final class CapabilityMirrorProtocol {
     public static final String SCENARIO_REHEARSAL_EVIDENCE_BUNDLE_SCHEMA_RESOURCE =
             SCHEMA_RESOURCE_ROOT
                     + "scenario-rehearsal-evidence-bundle-v1.schema.json";
+    /** Packaged idempotent Scenario legal-hold command schema. */
+    public static final String
+    SCENARIO_REHEARSAL_LEGAL_HOLD_COMMAND_SCHEMA_RESOURCE =
+            SCHEMA_RESOURCE_ROOT
+                    + "scenario-rehearsal-legal-hold-command-v1.schema.json";
+    /** Packaged idempotent Scenario aggregate purge command schema. */
+    public static final String SCENARIO_REHEARSAL_PURGE_COMMAND_SCHEMA_RESOURCE =
+            SCHEMA_RESOURCE_ROOT
+                    + "scenario-rehearsal-purge-command-v1.schema.json";
+    /** Packaged signed append-only Scenario retention event schema. */
+    public static final String SCENARIO_REHEARSAL_RETENTION_EVENT_SCHEMA_RESOURCE =
+            SCHEMA_RESOURCE_ROOT
+                    + "scenario-rehearsal-retention-event-v1.schema.json";
+    /** Packaged rebuildable Scenario retention projection schema. */
+    public static final String SCENARIO_REHEARSAL_RETENTION_STATE_SCHEMA_RESOURCE =
+            SCHEMA_RESOURCE_ROOT
+                    + "scenario-rehearsal-retention-state-v1.schema.json";
     /** Packaged fixed ScenarioPack compatibility-fixture schema. */
     public static final String SCENARIO_PACK_FIXTURE_SCHEMA_RESOURCE =
             SCHEMA_RESOURCE_ROOT

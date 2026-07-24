@@ -70,6 +70,14 @@ public record MirrorOperationAuditEvent(
         SCENARIO_REHEARSAL_CREATE,
         /** Read one independently verified signed Scenario aggregate. */
         SCENARIO_REHEARSAL_EVIDENCE_READ,
+        /** Read one signed Scenario aggregate retention projection. */
+        SCENARIO_RETENTION_READ,
+        /** Place one independent Scenario aggregate legal hold. */
+        SCENARIO_HOLD_PLACE,
+        /** Release one exact Scenario aggregate legal hold. */
+        SCENARIO_HOLD_RELEASE,
+        /** Delete eligible Scenario aggregate evidence and issue a proof. */
+        SCENARIO_EVIDENCE_PURGE,
         /** Verify and append one deployment-isolation authority key-set generation. */
         AUTHORITY_KEY_SET_PUBLISH,
         /** Read and re-verify the current deployment-isolation authority key-set floor. */
