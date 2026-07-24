@@ -27,6 +27,7 @@ final class CapabilityMirrorSchemaValidator {
             "capability-closure-v1.schema.json",
             "capability-lifecycle-transition-v1.schema.json",
             "capability-mirror-compatibility-v1.schema.json",
+            "mirror-plan-v1.schema.json",
             "mirror-execution-request-v1.schema.json",
             "mirror-execution-request-v2.schema.json",
             "mirror-run-summary-v1.schema.json",
@@ -92,6 +93,10 @@ final class CapabilityMirrorSchemaValidator {
             "mirror-session-checkpoint-attestation-v1.schema.json",
             "mirror-session-checkpoint-bundle-v1.schema.json",
             "mirror-session-recovery-result-v1.schema.json",
+            "case-handling-assertion-v1.schema.json",
+            "scenario-case-v1.schema.json",
+            "scenario-pack-v1.schema.json",
+            "scenario-pack-stage7-v1.fixture.schema.json",
             "stateful-refund-stage3-v1.fixture.schema.json");
     private static final Map<String, String> RESOURCE_TO_ID = resourceIds();
 

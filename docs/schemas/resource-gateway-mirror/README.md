@@ -76,6 +76,10 @@ offline artifact verification live in the independent `resource-gateway-test-kit
 | `mirror-session-checkpoint-attestation-v1.schema.json` | `MirrorSessionCheckpointAttestation` | Detached Ed25519 attestation in the checkpoint-specific signature domain |
 | `mirror-session-checkpoint-bundle-v1.schema.json` | `MirrorSessionCheckpointBundle` | Portable `HASH_ONLY` checkpoint and attestation bundle |
 | `mirror-session-recovery-result-v1.schema.json` | `MirrorSessionRecoveryResult` | Payload-free exact recovery admission and reconstructed Session run binding |
+| `case-handling-assertion-v1.schema.json` | `CaseHandlingAssertion` | Payload-free business handling assertion over graph, node, edge, capability, state, effect, governance, latency, retry, and resource evidence |
+| `scenario-case-v1.schema.json` | `ScenarioCase` | Exact binding from one business intent to an existing TestSuite case, FixtureBundle, MirrorPlan, deterministic services, optional isolated Session checkpoint, explicit fault rules, and handling assertions |
+| `scenario-pack-v1.schema.json` | `ScenarioPack` | Content-addressed ordered scenario closure and fail-closed sequential rehearsal policy |
+| `scenario-pack-stage7-v1.fixture.schema.json` | compatibility fixture envelope | One fixed payload-free pack/case/assertion closure and expected independent projection |
 | `mirror-state-run-evidence-v1.schema.json` | `MirrorStateRunEvidence` | Exact Session head, model, stateful binding, and payload-free live/absent/tombstone access closure |
 | `mirror-state-run-evidence-v2.schema.json` | `MirrorStateTransitionRunEvidence` | Initial/final Session heads, exact read revisions, and payload-free write receipt/event transition closure |
 | `mirror-state-run-evidence-v3.schema.json` | `MirrorStateWriteOutcomeRunEvidence` | One terminal outcome per state-write attempt: committed, replayed, rejected, pre-commit failed, or commit outcome unknown |
@@ -223,6 +227,30 @@ Neither fixture nor checkpoint protocol proves TEE/KMS custody, cross-region
 payload HA/DR, retention certification, or production readiness.
 See the
 [Stateful Mirror kernel guide](../../resource-gateway-stateful-mirror-kernel.md).
+
+The Scenario protocol is an orchestration layer over existing testing assets,
+not a second test model. `ScenarioCase` carries no business input or expected
+response; it freezes the exact `TEST_SUITE` case and `FIXTURE_BUNDLE` that own
+those values. It also freezes one exact `MIRROR_PLAN`, logical clock/random
+services, optional `MIRROR_SESSION_CHECKPOINT`, explicit fixture fault-rule ids,
+and payload-free handling assertions. Generation one is deliberately
+sequential, requires isolated case Sessions, forbids real calls, credentials,
+and network egress, and exports only `HASH_ONLY` evidence. The standalone
+`ScenarioPackVerifier` applies all three packaged strict Schemas, re-derives
+every content address, resolves the exact case/assertion closure, and rejects
+scope/target drift, per-plan execution-service drift, shared checkpoints,
+implicit faults, invalid assertion selectors, stale approval, and extra
+artifacts without linking Resource Gateway server code.
+
+`scenario-pack-stage7-v1.fixture.json` is the fixed E7 cross-implementation
+compatibility vector. It contains one refund pack, one case that points to an
+existing test-suite coordinate, one output-schema handling assertion, an
+explicit verification instant, and the expected payload-free projection. It
+contains no TestSuite input, FixtureBundle payload, Session state, request,
+response, or credential. `CapabilityMirrorProtocol.scenarioPackCompatibilityFixture`
+validates the envelope and all referenced Schemas, re-runs the independent
+closure verifier, and compares every projected field before exposing a detached
+copy.
 
 ## Deployment isolation attestation boundary
 

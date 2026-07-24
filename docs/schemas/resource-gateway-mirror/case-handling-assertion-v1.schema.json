@@ -1,0 +1,133 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://bloge.dev/schemas/resource-gateway-mirror/case-handling-assertion-v1.schema.json",
+  "title": "Resource Gateway Case Handling Assertion v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion", "assertionId", "revision", "fingerprint", "scope",
+    "observation", "selector", "expectation", "severity", "governanceCode",
+    "provenance", "lifecycle", "createdAt"
+  ],
+  "properties": {
+    "schemaVersion": { "const": "resourceGateway.caseHandlingAssertion.v1" },
+    "assertionId": { "$ref": "#/$defs/identifier" },
+    "revision": { "type": "integer", "minimum": 1 },
+    "fingerprint": { "$ref": "mirror-plan-v1.schema.json#/$defs/fingerprint" },
+    "scope": { "$ref": "mirror-plan-v1.schema.json#/$defs/scope" },
+    "observation": {
+      "enum": [
+        "GRAPH_OUTPUT_VALUE", "GRAPH_OUTPUT_SCHEMA", "NODE_STATUS", "EDGE_STATUS",
+        "CAPABILITY_OCCURRENCE", "INVOCATION_INPUT", "ERROR", "FALLBACK",
+        "COMPENSATION", "STATE_TRANSITION", "FINAL_STATE_INVARIANT",
+        "SIDE_EFFECT_RECEIPT", "GOVERNANCE_EXPECTATION", "LATENCY_BUDGET",
+        "RETRY_BUDGET", "RESOURCE_BUDGET"
+      ]
+    },
+    "selector": { "$ref": "#/$defs/selector" },
+    "expectation": { "$ref": "#/$defs/expectation" },
+    "severity": { "enum": ["BLOCKER", "WARNING"] },
+    "governanceCode": { "$ref": "#/$defs/machineValue" },
+    "provenance": { "$ref": "artifact-provenance-v1.schema.json" },
+    "lifecycle": {
+      "enum": ["DRAFT", "REVIEWED", "ACTIVE", "DEPRECATED", "STALE", "REVOKED"]
+    },
+    "createdAt": { "type": "string", "format": "date-time" }
+  },
+  "$defs": {
+    "identifier": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 512,
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9@._:/-]{0,511}$"
+    },
+    "optionalIdentifier": {
+      "type": "string",
+      "maxLength": 512,
+      "pattern": "^$|^[A-Za-z0-9][A-Za-z0-9@._:/-]{0,511}$"
+    },
+    "machineValue": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 192,
+      "pattern": "^[A-Z][A-Z0-9_.-]{0,191}$"
+    },
+    "optionalMachineValue": {
+      "type": "string",
+      "maxLength": 192,
+      "pattern": "^$|^[A-Z][A-Z0-9_.-]{0,191}$"
+    },
+    "optionalFingerprint": {
+      "type": "string",
+      "pattern": "^$|^sha256:[a-f0-9]{64}$"
+    },
+    "capabilityRef": {
+      "allOf": [
+        { "$ref": "mirror-plan-v1.schema.json#/$defs/artifactRef" },
+        { "properties": { "kind": { "const": "CAPABILITY" } } }
+      ]
+    },
+    "selector": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["nodeId", "edgeId", "invocationSiteId", "capabilityRef", "path"],
+      "properties": {
+        "nodeId": { "$ref": "#/$defs/optionalIdentifier" },
+        "edgeId": { "$ref": "#/$defs/optionalIdentifier" },
+        "invocationSiteId": { "$ref": "#/$defs/optionalIdentifier" },
+        "capabilityRef": {
+          "oneOf": [
+            { "type": "null" },
+            { "$ref": "#/$defs/capabilityRef" }
+          ]
+        },
+        "path": {
+          "type": "string",
+          "maxLength": 2048,
+          "pattern": "^$|^/.*[^/]$"
+        }
+      }
+    },
+    "expectation": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "statuses", "errorCode", "schemaFingerprint", "valueFingerprint",
+        "minimumOccurrences", "maximumOccurrences", "maximumDurationMillis",
+        "expectedBoolean"
+      ],
+      "properties": {
+        "statuses": {
+          "type": "array",
+          "maxItems": 64,
+          "uniqueItems": true,
+          "items": { "$ref": "#/$defs/machineValue" }
+        },
+        "errorCode": { "$ref": "#/$defs/optionalMachineValue" },
+        "schemaFingerprint": { "$ref": "#/$defs/optionalFingerprint" },
+        "valueFingerprint": { "$ref": "#/$defs/optionalFingerprint" },
+        "minimumOccurrences": {
+          "oneOf": [
+            { "type": "null" },
+            { "type": "integer", "minimum": 0 }
+          ]
+        },
+        "maximumOccurrences": {
+          "oneOf": [
+            { "type": "null" },
+            { "type": "integer", "minimum": 0 }
+          ]
+        },
+        "maximumDurationMillis": {
+          "oneOf": [
+            { "type": "null" },
+            { "type": "integer", "minimum": 0 }
+          ]
+        },
+        "expectedBoolean": {
+          "type": ["boolean", "null"]
+        }
+      }
+    }
+  }
+}

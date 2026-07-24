@@ -146,8 +146,21 @@ the operation. Use `CAPABILITY_PROJECTION` for exact append or visual draft proj
 `CAPABILITY_GOVERNANCE` for lifecycle transitions, and
 `MIRROR_REHEARSAL` or `CHANGE_SYNC` for reads. Scope and clearance come from verified identity claims;
 `X-Tenant-Id` and similar headers are only consistency hints. The demo token includes these purposes, while
-enterprise deployments should issue separate author, governor, and rehearsal identities. The capability
-closure projection request carries only the portable draft, positive target revision, deterministic creation time,
+enterprise deployments should issue separate author, governor, and rehearsal identities.
+
+Scenario authoring now has a strict protocol base:
+`resourceGateway.scenarioPack.v1`, `resourceGateway.scenarioCase.v1`, and
+`resourceGateway.caseHandlingAssertion.v1`. These content-addressed,
+scope-bound, payload-free assets reference existing TestSuite, FixtureBundle,
+MirrorPlan, Session checkpoint, and write/state artifacts instead of creating a
+second fixture or test-case format. Generation-one policy is sequential,
+isolates stateful cases, denies real calls, credentials, and network egress,
+and permits only `HASH_ONLY` evidence. This milestone supplies models, strict
+Schemas, producer integrity checks, and the standalone verifier; durable
+registration, compilation, execution, and rehearsal evidence are the next E7
+slice.
+
+The capability closure projection request carries only the portable draft, positive target revision, deterministic creation time,
 and a classification no higher than the caller's clearance. Tenant, organization, project, environment, region,
 purpose, ownership, and `DRAFT` lifecycle are server-derived. The capability probe reports snapshot/closure
 protocol, projection, seven built-in graph closures, visual draft closure projection, API, lifecycle, and the

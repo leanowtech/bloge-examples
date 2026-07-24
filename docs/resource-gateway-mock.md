@@ -1142,6 +1142,8 @@ interface ScenarioPack {
   schemaVersion: "resourceGateway.scenarioPack.v1"
   packId: string
   revision: number
+  fingerprint: Fingerprint
+  scope: EnterpriseScope
   targetCapabilityRef: RevisionRef
   caseRefs: RevisionRef[]
   assertionRefs: RevisionRef[]
@@ -1150,10 +1152,29 @@ interface ScenarioPack {
   stateModelRefs: RevisionRef[]
   policy: RehearsalPolicy
   provenance: ArtifactProvenance
+  lifecycle: ArtifactLifecycle
+  createdAt: Instant
 }
 ```
 
 场景 case 支持：`golden`、`negative`、`boundary`、`regression`、`fault`、`state-transition`、`what-if`。
+
+`ScenarioCase.v1` 不是第二套 test case。它必须引用 exact `TEST_SUITE` revision + `testCaseId`、
+`FIXTURE_BUNDLE`、`MIRROR_PLAN`、deterministic execution services、可选的
+`MIRROR_SESSION_CHECKPOINT`、显式 fixture fault rule 和 `CASE_HANDLING_ASSERTION`。业务 input、
+expected output 与 mock payload 继续由既有 TestSuite/FixtureBundle 权威持有；Scenario 控制面
+禁止复制这些值。
+
+generation one 的 `RehearsalPolicy` 固定为 sequential、每 case Session 隔离、真实外呼/外部凭据/
+网络出口全部禁止、portable evidence 固定 `HASH_ONLY`。未来并行只能在静态证明 state/write set
+隔离后通过新协议版本加入。
+
+**当前实现状态（2026-07-24）**：三个内容寻址 Java model、canonical seal/verify、严格 Draft
+2020-12 Schema 和独立 test-kit `ScenarioPackVerifier` 已完成。verifier 能证明 exact
+case/assertion closure、scope/target 一致、每 plan execution-service 一致、Session checkpoint
+不复用、fault 显式绑定、断言可求值和 approval/expiry 有效。它不冒充在线 registry authority；
+TestSuite case、Fixture rule、MirrorPlan 和 live checkpoint 的真实存在与当前性由下一步 rehearsal
+compiler 失败关闭校验。
 
 ### 10.2 CaseHandlingAssertion
 
@@ -1168,6 +1189,11 @@ interface ScenarioPack {
 - side-effect receipt；
 - governance expectation；
 - latency、retry 和 resource budget。
+
+`CaseHandlingAssertion.v1` 只保存 evidence selector 与 typed expectation：status、error code、
+schema/value fingerprint、occurrence bound、duration bound 或 boolean。它不能携带 request、
+response、entity 或明文 expected business value；具体值相等性继续由 FixtureBundle assertion
+负责。这样 Scenario evidence 可以进入 ANEKE workbook，而不会把业务 payload 扩散到控制面。
 
 自动归纳规则只生成 `CANDIDATE`。支持度和 lift 之外，还必须有最小样本量、时间切分验证、置信区间、
 混杂风险、代理 outcome 说明和人工确认。任何归纳规则在 outcome 定义改变后自动 stale。

@@ -251,6 +251,18 @@ public final class CapabilityMirrorProtocol {
     /** Successful exact Session recovery-admission result wire version. */
     public static final String MIRROR_SESSION_RECOVERY_RESULT_V1 =
             "resourceGateway.mirrorSessionRecoveryResult.v1";
+    /** Governed payload-free scenario-pack wire version. */
+    public static final String SCENARIO_PACK_V1 =
+            "resourceGateway.scenarioPack.v1";
+    /** Governed exact scenario-case wire version. */
+    public static final String SCENARIO_CASE_V1 =
+            "resourceGateway.scenarioCase.v1";
+    /** Governed payload-free case handling assertion wire version. */
+    public static final String CASE_HANDLING_ASSERTION_V1 =
+            "resourceGateway.caseHandlingAssertion.v1";
+    /** Fixed scenario protocol compatibility-fixture wire version. */
+    public static final String SCENARIO_PACK_COMPATIBILITY_V1 =
+            "resourceGateway.scenarioPackCompatibility.v1";
     /** Fixed Stage 3 refund fixture envelope version. */
     public static final String STATEFUL_REFUND_FIXTURE_V1 =
             "resourceGateway.statefulRefundFixture.v1";
@@ -297,6 +309,9 @@ public final class CapabilityMirrorProtocol {
     /** Packaged fixed Stage 3 refund-domain fixture. */
     public static final String STATEFUL_REFUND_FIXTURE_RESOURCE =
             SCHEMA_RESOURCE_ROOT + "stateful-refund-stage3-v1.fixture.json";
+    /** Packaged fixed ScenarioPack compatibility fixture. */
+    public static final String SCENARIO_PACK_FIXTURE_RESOURCE =
+            SCHEMA_RESOURCE_ROOT + "scenario-pack-stage7-v1.fixture.json";
     /** Packaged compatibility fixture schema. */
     public static final String COMPATIBILITY_SCHEMA_RESOURCE =
             SCHEMA_RESOURCE_ROOT + "capability-mirror-compatibility-v1.schema.json";
@@ -536,6 +551,20 @@ public final class CapabilityMirrorProtocol {
     public static final String MIRROR_SESSION_RECOVERY_RESULT_SCHEMA_RESOURCE =
             SCHEMA_RESOURCE_ROOT
                     + "mirror-session-recovery-result-v1.schema.json";
+    /** Packaged governed scenario-pack schema. */
+    public static final String SCENARIO_PACK_SCHEMA_RESOURCE =
+            SCHEMA_RESOURCE_ROOT + "scenario-pack-v1.schema.json";
+    /** Packaged governed scenario-case schema. */
+    public static final String SCENARIO_CASE_SCHEMA_RESOURCE =
+            SCHEMA_RESOURCE_ROOT + "scenario-case-v1.schema.json";
+    /** Packaged governed case handling assertion schema. */
+    public static final String CASE_HANDLING_ASSERTION_SCHEMA_RESOURCE =
+            SCHEMA_RESOURCE_ROOT
+                    + "case-handling-assertion-v1.schema.json";
+    /** Packaged fixed ScenarioPack compatibility-fixture schema. */
+    public static final String SCENARIO_PACK_FIXTURE_SCHEMA_RESOURCE =
+            SCHEMA_RESOURCE_ROOT
+                    + "scenario-pack-stage7-v1.fixture.schema.json";
     /** Packaged fixed Stage 3 refund-fixture schema. */
     public static final String STATEFUL_REFUND_FIXTURE_SCHEMA_RESOURCE =
             SCHEMA_RESOURCE_ROOT + "stateful-refund-stage3-v1.fixture.schema.json";
@@ -673,6 +702,71 @@ public final class CapabilityMirrorProtocol {
         return StatefulRefundFixtureHolder.FIXTURE.deepCopy();
     }
 
+    /**
+     * Returns the strict-schema and independently verified ScenarioPack compatibility fixture.
+     *
+     * <p>The fixture is payload-free and closes one pack, one existing-test binding case, one
+     * handling assertion, an explicit verification instant, and the expected bounded projection.
+     * Loading proves producer/test-kit canonicalization and closure agreement without linking the
+     * Resource Gateway server.</p>
+     *
+     * @return mutable detached copy of the verified scenario fixture
+     * @throws IllegalStateException when the packaged fixture is absent or unverifiable
+     */
+    public static JsonNode scenarioPackCompatibilityFixture() {
+        return ScenarioPackFixtureHolder.FIXTURE.deepCopy();
+    }
+
+    private static final class ScenarioPackFixtureHolder {
+        private static final JsonNode FIXTURE = load();
+
+        private static JsonNode load() {
+            try (InputStream input = CapabilityMirrorProtocol.class.getResourceAsStream(
+                    SCENARIO_PACK_FIXTURE_RESOURCE)) {
+                if (input == null) {
+                    throw new IOException("ScenarioPack fixture is absent");
+                }
+                JsonNode fixture = JSON.readTree(input);
+                CapabilityMirrorSchemaValidator.require(
+                        fixture,
+                        SCENARIO_PACK_FIXTURE_SCHEMA_RESOURCE,
+                        "RG.MIRROR.CLIENT.SCENARIO_FIXTURE_SCHEMA_INVALID");
+                ScenarioPackVerifier.VerifiedScenarioPack verified =
+                        new ScenarioPackVerifier().verify(
+                                fixture.path("scenarioPack"),
+                                toList(fixture.path("scenarioCases")),
+                                toList(fixture.path("handlingAssertions")),
+                                Instant.parse(fixture.path("verifiedAt").asText()));
+                JsonNode expected = fixture.path("expected");
+                if (!expected.path("packId").asText().equals(verified.packId())
+                        || expected.path("revision").asLong() != verified.revision()
+                        || !expected.path("fingerprint").asText()
+                        .equals(verified.fingerprint())
+                        || !expected.path("targetCapabilityId").asText()
+                        .equals(verified.targetCapabilityId())
+                        || !expected.path("caseIds").equals(
+                        JSON.valueToTree(verified.caseIds()))
+                        || !expected.path("caseTypes").equals(
+                        JSON.valueToTree(verified.caseTypes()))
+                        || expected.path("assertionCount").asInt()
+                        != verified.assertionCount()
+                        || expected.path("statefulCaseCount").asInt()
+                        != verified.statefulCaseCount()
+                        || expected.path("faultCaseCount").asInt()
+                        != verified.faultCaseCount()
+                        || expected.path("certificationRequired").asBoolean()
+                        != verified.certificationRequired()) {
+                    throw new IllegalArgumentException(
+                            "ScenarioPack fixture expectation mismatch");
+                }
+                return fixture;
+            } catch (IOException | RuntimeException failure) {
+                throw new IllegalStateException(
+                        "RG.MIRROR.CLIENT.SCENARIO_FIXTURE_UNAVAILABLE");
+            }
+        }
+    }
+
     private static final class StatefulRefundFixtureHolder {
         private static final JsonNode FIXTURE = load();
 
@@ -702,6 +796,15 @@ public final class CapabilityMirrorProtocol {
                         "RG.MIRROR.CLIENT.STATEFUL_REFUND_FIXTURE_UNAVAILABLE");
             }
         }
+    }
+
+    private static List<JsonNode> toList(JsonNode values) {
+        if (values == null || !values.isArray()) {
+            return List.of();
+        }
+        java.util.ArrayList<JsonNode> result = new java.util.ArrayList<>();
+        values.forEach(result::add);
+        return List.copyOf(result);
     }
 
     private static final class BaselineHolder {

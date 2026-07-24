@@ -26,6 +26,9 @@ implementation. The JAR packages the authoritative v1 JSON Schema and provides:
   and recovery-closure verification, v3 read/v4 transition evidence verification, deterministic
   v3 read and v4 transition ANEKE workbook-seed projection, and an online client that independently
   reconstructs the v4 seed before accepting the producer projection;
+- strict `ScenarioPack.v1`, `ScenarioCase.v1`, and
+  `CaseHandlingAssertion.v1` Schemas plus an independent payload-free scenario
+  closure verifier;
 - packaged validation and version constants for the payload-free
   `bloge.executionServiceStateSnapshot.v1` durable-resume building block;
 - payload-safe typed child/suite-run summaries and JUnit 5 assertions;
@@ -194,6 +197,38 @@ resolver/runtime readiness. See the
 [stateful mirror kernel guide](../docs/resource-gateway-stateful-mirror-kernel.md)
 for startup, transaction semantics, stable errors, and remaining production
 work.
+
+### Verify a ScenarioPack closure
+
+Scenario assets reuse the existing TestSuite and FixtureBundle authorities.
+They must not embed a second copy of business inputs, outputs, Session payloads,
+or credentials. Resolve exact case and assertion revisions from your registry,
+then verify the whole closure at an explicit policy instant:
+
+```java
+ScenarioPackVerifier.VerifiedScenarioPack verified =
+        new ScenarioPackVerifier().verify(
+                scenarioPackJson,
+                resolvedScenarioCases,
+                resolvedHandlingAssertions,
+                Instant.parse("2026-07-24T05:00:00Z"));
+
+assert verified.certificationRequired();
+assert !verified.caseIds().isEmpty();
+```
+
+The verifier rejects unknown fields, fingerprint tampering, extra or missing
+closure members, cross-scope or cross-target substitution, stale approvals,
+shared stateful checkpoints, implicit fault injection, per-plan clock/random
+drift, and handling assertions that cannot be evaluated from evidence. Exact
+TestSuite case membership, FixtureBundle rule membership, MirrorPlan equality,
+and live checkpoint authority are online rehearsal-compiler decisions and are
+not claimed by this offline verifier.
+
+Use `CapabilityMirrorProtocol.scenarioPackCompatibilityFixture()` to load the
+fixed producer/test-kit canonicalization vector. The loader applies the fixture
+Schema, verifies its complete closure at the embedded instant, compares the
+expected projection, and returns a detached copy.
 
 `findMirrorSessionWriteAttempt` accepts an attempt id obtained from the
 run/evidence recovery coordinate. Before returning its bounded projection, it

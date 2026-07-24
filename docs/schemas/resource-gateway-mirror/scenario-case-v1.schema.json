@@ -1,0 +1,115 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://bloge.dev/schemas/resource-gateway-mirror/scenario-case-v1.schema.json",
+  "title": "Resource Gateway Scenario Case v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion", "caseId", "revision", "fingerprint", "scope", "caseType",
+    "targetCapabilityRef", "testSuiteRef", "testCaseId", "mirrorPlanRef",
+    "fixtureBundleRef", "sessionCheckpointRef", "executionServices",
+    "faultRuleRefs", "assertionRefs", "provenance", "lifecycle", "createdAt"
+  ],
+  "properties": {
+    "schemaVersion": { "const": "resourceGateway.scenarioCase.v1" },
+    "caseId": { "$ref": "#/$defs/identifier" },
+    "revision": { "type": "integer", "minimum": 1 },
+    "fingerprint": { "$ref": "mirror-plan-v1.schema.json#/$defs/fingerprint" },
+    "scope": { "$ref": "mirror-plan-v1.schema.json#/$defs/scope" },
+    "caseType": {
+      "enum": [
+        "GOLDEN", "NEGATIVE", "BOUNDARY", "REGRESSION",
+        "FAULT", "STATE_TRANSITION", "WHAT_IF"
+      ]
+    },
+    "targetCapabilityRef": { "$ref": "#/$defs/capabilityRef" },
+    "testSuiteRef": { "$ref": "#/$defs/testSuiteRef" },
+    "testCaseId": { "$ref": "#/$defs/identifier" },
+    "mirrorPlanRef": { "$ref": "#/$defs/mirrorPlanRef" },
+    "fixtureBundleRef": { "$ref": "#/$defs/fixtureBundleRef" },
+    "sessionCheckpointRef": {
+      "oneOf": [
+        { "type": "null" },
+        { "$ref": "#/$defs/sessionCheckpointRef" }
+      ]
+    },
+    "executionServices": {
+      "$ref": "mirror-plan-v1.schema.json#/$defs/executionServices"
+    },
+    "faultRuleRefs": {
+      "type": "array",
+      "maxItems": 128,
+      "uniqueItems": true,
+      "items": { "$ref": "#/$defs/identifier" }
+    },
+    "assertionRefs": {
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 256,
+      "uniqueItems": true,
+      "items": { "$ref": "#/$defs/assertionRef" }
+    },
+    "provenance": { "$ref": "artifact-provenance-v1.schema.json" },
+    "lifecycle": {
+      "enum": ["DRAFT", "REVIEWED", "ACTIVE", "DEPRECATED", "STALE", "REVOKED"]
+    },
+    "createdAt": { "type": "string", "format": "date-time" }
+  },
+  "$defs": {
+    "identifier": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 512,
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9@._:/-]{0,511}$"
+    },
+    "artifactRefByKind": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["kind", "id", "revision", "fingerprint"],
+      "properties": {
+        "kind": { "type": "string", "minLength": 1, "maxLength": 64 },
+        "id": { "type": "string", "minLength": 1, "maxLength": 512 },
+        "revision": { "type": "integer", "minimum": 1 },
+        "fingerprint": {
+          "$ref": "mirror-plan-v1.schema.json#/$defs/fingerprint"
+        }
+      }
+    },
+    "capabilityRef": {
+      "allOf": [
+        { "$ref": "#/$defs/artifactRefByKind" },
+        { "properties": { "kind": { "const": "CAPABILITY" } } }
+      ]
+    },
+    "testSuiteRef": {
+      "allOf": [
+        { "$ref": "#/$defs/artifactRefByKind" },
+        { "properties": { "kind": { "const": "TEST_SUITE" } } }
+      ]
+    },
+    "mirrorPlanRef": {
+      "allOf": [
+        { "$ref": "#/$defs/artifactRefByKind" },
+        { "properties": { "kind": { "const": "MIRROR_PLAN" } } }
+      ]
+    },
+    "fixtureBundleRef": {
+      "allOf": [
+        { "$ref": "#/$defs/artifactRefByKind" },
+        { "properties": { "kind": { "const": "FIXTURE_BUNDLE" } } }
+      ]
+    },
+    "sessionCheckpointRef": {
+      "allOf": [
+        { "$ref": "#/$defs/artifactRefByKind" },
+        { "properties": { "kind": { "const": "MIRROR_SESSION_CHECKPOINT" } } }
+      ]
+    },
+    "assertionRef": {
+      "allOf": [
+        { "$ref": "#/$defs/artifactRefByKind" },
+        { "properties": { "kind": { "const": "CASE_HANDLING_ASSERTION" } } }
+      ]
+    }
+  }
+}

@@ -1,0 +1,167 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://bloge.dev/schemas/resource-gateway-mirror/scenario-pack-v1.schema.json",
+  "title": "Resource Gateway Scenario Pack v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion", "packId", "revision", "fingerprint", "scope",
+    "targetCapabilityRef", "caseRefs", "assertionRefs", "writeEffectRefs",
+    "corpusSnapshotRef", "stateModelRefs", "policy", "provenance",
+    "lifecycle", "createdAt"
+  ],
+  "properties": {
+    "schemaVersion": { "const": "resourceGateway.scenarioPack.v1" },
+    "packId": { "$ref": "#/$defs/identifier" },
+    "revision": { "type": "integer", "minimum": 1 },
+    "fingerprint": { "$ref": "mirror-plan-v1.schema.json#/$defs/fingerprint" },
+    "scope": { "$ref": "mirror-plan-v1.schema.json#/$defs/scope" },
+    "targetCapabilityRef": { "$ref": "#/$defs/capabilityRef" },
+    "caseRefs": {
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 256,
+      "uniqueItems": true,
+      "items": { "$ref": "#/$defs/scenarioCaseRef" }
+    },
+    "assertionRefs": {
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 512,
+      "uniqueItems": true,
+      "items": { "$ref": "#/$defs/assertionRef" }
+    },
+    "writeEffectRefs": {
+      "type": "array",
+      "maxItems": 256,
+      "uniqueItems": true,
+      "items": { "$ref": "#/$defs/writeEffectRef" }
+    },
+    "corpusSnapshotRef": {
+      "oneOf": [
+        { "type": "null" },
+        { "$ref": "#/$defs/corpusSnapshotRef" }
+      ]
+    },
+    "stateModelRefs": {
+      "type": "array",
+      "maxItems": 256,
+      "uniqueItems": true,
+      "items": { "$ref": "#/$defs/stateModelRef" }
+    },
+    "policy": { "$ref": "#/$defs/policy" },
+    "provenance": { "$ref": "artifact-provenance-v1.schema.json" },
+    "lifecycle": {
+      "enum": ["DRAFT", "REVIEWED", "ACTIVE", "DEPRECATED", "STALE", "REVOKED"]
+    },
+    "createdAt": { "type": "string", "format": "date-time" }
+  },
+  "$defs": {
+    "identifier": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 512,
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9@._:/-]{0,511}$"
+    },
+    "artifactRefByKind": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["kind", "id", "revision", "fingerprint"],
+      "properties": {
+        "kind": { "type": "string", "minLength": 1, "maxLength": 64 },
+        "id": { "type": "string", "minLength": 1, "maxLength": 512 },
+        "revision": { "type": "integer", "minimum": 1 },
+        "fingerprint": {
+          "$ref": "mirror-plan-v1.schema.json#/$defs/fingerprint"
+        }
+      }
+    },
+    "capabilityRef": {
+      "allOf": [
+        { "$ref": "#/$defs/artifactRefByKind" },
+        { "properties": { "kind": { "const": "CAPABILITY" } } }
+      ]
+    },
+    "scenarioCaseRef": {
+      "allOf": [
+        { "$ref": "#/$defs/artifactRefByKind" },
+        { "properties": { "kind": { "const": "SCENARIO_CASE" } } }
+      ]
+    },
+    "assertionRef": {
+      "allOf": [
+        { "$ref": "#/$defs/artifactRefByKind" },
+        { "properties": { "kind": { "const": "CASE_HANDLING_ASSERTION" } } }
+      ]
+    },
+    "writeEffectRef": {
+      "allOf": [
+        { "$ref": "#/$defs/artifactRefByKind" },
+        { "properties": { "kind": { "const": "WRITE_EFFECT" } } }
+      ]
+    },
+    "corpusSnapshotRef": {
+      "allOf": [
+        { "$ref": "#/$defs/artifactRefByKind" },
+        { "properties": { "kind": { "const": "CORPUS_SNAPSHOT" } } }
+      ]
+    },
+    "stateModelRef": {
+      "allOf": [
+        { "$ref": "#/$defs/artifactRefByKind" },
+        { "properties": { "kind": { "const": "STATE_MODEL" } } }
+      ]
+    },
+    "policy": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "scheduling", "isolatedCaseSessions", "realExternalCallsAllowed",
+        "externalCredentialsAllowed", "networkEgressAllowed", "evidenceMode",
+        "maximumCases", "maximumInvocationsPerCase", "caseTimeout", "totalTimeout",
+        "certificationRequired", "maximumClassification", "allowedRegions"
+      ],
+      "properties": {
+        "scheduling": { "const": "SEQUENTIAL" },
+        "isolatedCaseSessions": { "const": true },
+        "realExternalCallsAllowed": { "const": false },
+        "externalCredentialsAllowed": { "const": false },
+        "networkEgressAllowed": { "const": false },
+        "evidenceMode": { "const": "HASH_ONLY" },
+        "maximumCases": { "type": "integer", "minimum": 1, "maximum": 256 },
+        "maximumInvocationsPerCase": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 1000000
+        },
+        "caseTimeout": {
+          "type": "string",
+          "minLength": 3,
+          "maxLength": 64,
+          "pattern": "^PT"
+        },
+        "totalTimeout": {
+          "type": "string",
+          "minLength": 3,
+          "maxLength": 64,
+          "pattern": "^PT"
+        },
+        "certificationRequired": { "type": "boolean" },
+        "maximumClassification": {
+          "enum": ["PUBLIC", "INTERNAL", "CONFIDENTIAL", "RESTRICTED"]
+        },
+        "allowedRegions": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 64,
+          "uniqueItems": true,
+          "items": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 128
+          }
+        }
+      }
+    }
+  }
+}

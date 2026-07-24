@@ -1,0 +1,59 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://bloge.dev/schemas/resource-gateway-mirror/scenario-pack-stage7-v1.fixture.schema.json",
+  "title": "Resource Gateway Scenario Pack Stage 7 Compatibility Fixture v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion", "verifiedAt", "scenarioPack", "scenarioCases",
+    "handlingAssertions", "expected"
+  ],
+  "properties": {
+    "schemaVersion": {
+      "const": "resourceGateway.scenarioPackCompatibility.v1"
+    },
+    "verifiedAt": { "type": "string", "format": "date-time" },
+    "scenarioPack": { "$ref": "scenario-pack-v1.schema.json" },
+    "scenarioCases": {
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 256,
+      "items": { "$ref": "scenario-case-v1.schema.json" }
+    },
+    "handlingAssertions": {
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 512,
+      "items": { "$ref": "case-handling-assertion-v1.schema.json" }
+    },
+    "expected": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "packId", "revision", "fingerprint", "targetCapabilityId",
+        "caseIds", "caseTypes", "assertionCount", "statefulCaseCount",
+        "faultCaseCount", "certificationRequired"
+      ],
+      "properties": {
+        "packId": { "const": "refund-rehearsal" },
+        "revision": { "const": 1 },
+        "fingerprint": {
+          "$ref": "mirror-plan-v1.schema.json#/$defs/fingerprint"
+        },
+        "targetCapabilityId": { "const": "refund-orchestration" },
+        "caseIds": {
+          "type": "array",
+          "const": ["refund-golden"]
+        },
+        "caseTypes": {
+          "type": "array",
+          "const": ["GOLDEN"]
+        },
+        "assertionCount": { "const": 1 },
+        "statefulCaseCount": { "const": 0 },
+        "faultCaseCount": { "const": 0 },
+        "certificationRequired": { "const": true }
+      }
+    }
+  }
+}

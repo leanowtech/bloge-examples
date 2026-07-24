@@ -1,0 +1,229 @@
+{
+  "schemaVersion": "resourceGateway.scenarioPackCompatibility.v1",
+  "verifiedAt": "2026-07-24T05:00:00Z",
+  "scenarioPack": {
+    "schemaVersion": "resourceGateway.scenarioPack.v1",
+    "packId": "refund-rehearsal",
+    "revision": 1,
+    "fingerprint": "sha256:0d021b0936268859a5ccd059433f14107a511d57142b0229f31482590c272863",
+    "scope": {
+      "tenantId": "tenant-a",
+      "organizationId": "org-a",
+      "projectId": "tool-studio",
+      "environmentId": "test",
+      "region": "sg"
+    },
+    "targetCapabilityRef": {
+      "kind": "CAPABILITY",
+      "id": "refund-orchestration",
+      "revision": 1,
+      "fingerprint": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+    },
+    "caseRefs": [
+      {
+        "kind": "SCENARIO_CASE",
+        "id": "refund-golden",
+        "revision": 1,
+        "fingerprint": "sha256:ba0cd87a5587bc6ea2e96dd434700d44863593d1b71e4151a557ee84a9c11c87"
+      }
+    ],
+    "assertionRefs": [
+      {
+        "kind": "CASE_HANDLING_ASSERTION",
+        "id": "refund-output",
+        "revision": 1,
+        "fingerprint": "sha256:2d3f7ef326b4966d5ae90494acec8142a3826c0c44438739cdb876cf3a35cb73"
+      }
+    ],
+    "writeEffectRefs": [
+      {
+        "kind": "WRITE_EFFECT",
+        "id": "create-refund",
+        "revision": 1,
+        "fingerprint": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+      }
+    ],
+    "corpusSnapshotRef": null,
+    "stateModelRefs": [
+      {
+        "kind": "STATE_MODEL",
+        "id": "refund-world",
+        "revision": 1,
+        "fingerprint": "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+      }
+    ],
+    "policy": {
+      "scheduling": "SEQUENTIAL",
+      "isolatedCaseSessions": true,
+      "realExternalCallsAllowed": false,
+      "externalCredentialsAllowed": false,
+      "networkEgressAllowed": false,
+      "evidenceMode": "HASH_ONLY",
+      "maximumCases": 16,
+      "maximumInvocationsPerCase": 1000,
+      "caseTimeout": "PT2M",
+      "totalTimeout": "PT30M",
+      "certificationRequired": true,
+      "maximumClassification": "CONFIDENTIAL",
+      "allowedRegions": ["sg"]
+    },
+    "provenance": {
+      "schemaVersion": "resourceGateway.artifactProvenance.v1",
+      "sourceType": "OWNER",
+      "sourceRefs": [],
+      "tenantId": "tenant-a",
+      "purpose": "customer-support-simulation",
+      "sampleFrom": null,
+      "sampleTo": null,
+      "sampleCount": null,
+      "confidence": null,
+      "biasRisks": [],
+      "approvedBy": "refund-owner",
+      "approvedAt": "2026-07-24T05:00:00Z",
+      "expiresAt": "2026-07-25T05:00:00Z",
+      "revocationRef": ""
+    },
+    "lifecycle": "ACTIVE",
+    "createdAt": "2026-07-24T05:00:00Z"
+  },
+  "scenarioCases": [
+    {
+      "schemaVersion": "resourceGateway.scenarioCase.v1",
+      "caseId": "refund-golden",
+      "revision": 1,
+      "fingerprint": "sha256:ba0cd87a5587bc6ea2e96dd434700d44863593d1b71e4151a557ee84a9c11c87",
+      "scope": {
+        "tenantId": "tenant-a",
+        "organizationId": "org-a",
+        "projectId": "tool-studio",
+        "environmentId": "test",
+        "region": "sg"
+      },
+      "caseType": "GOLDEN",
+      "targetCapabilityRef": {
+        "kind": "CAPABILITY",
+        "id": "refund-orchestration",
+        "revision": 1,
+        "fingerprint": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+      },
+      "testSuiteRef": {
+        "kind": "TEST_SUITE",
+        "id": "refund-contract-suite",
+        "revision": 1,
+        "fingerprint": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+      },
+      "testCaseId": "refund-golden",
+      "mirrorPlanRef": {
+        "kind": "MIRROR_PLAN",
+        "id": "refund-plan",
+        "revision": 1,
+        "fingerprint": "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+      },
+      "fixtureBundleRef": {
+        "kind": "FIXTURE_BUNDLE",
+        "id": "refund-fixtures",
+        "revision": 1,
+        "fingerprint": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+      },
+      "sessionCheckpointRef": null,
+      "executionServices": {
+        "logicalClock": "2026-07-24T05:00:00Z",
+        "randomSeed": 42,
+        "identityFixtureRef": null,
+        "featureFlagFixtureRef": null
+      },
+      "faultRuleRefs": [],
+      "assertionRefs": [
+        {
+          "kind": "CASE_HANDLING_ASSERTION",
+          "id": "refund-output",
+          "revision": 1,
+          "fingerprint": "sha256:2d3f7ef326b4966d5ae90494acec8142a3826c0c44438739cdb876cf3a35cb73"
+        }
+      ],
+      "provenance": {
+        "schemaVersion": "resourceGateway.artifactProvenance.v1",
+        "sourceType": "OWNER",
+        "sourceRefs": [],
+        "tenantId": "tenant-a",
+        "purpose": "customer-support-simulation",
+        "sampleFrom": null,
+        "sampleTo": null,
+        "sampleCount": null,
+        "confidence": null,
+        "biasRisks": [],
+        "approvedBy": "refund-owner",
+        "approvedAt": "2026-07-24T05:00:00Z",
+        "expiresAt": "2026-07-25T05:00:00Z",
+        "revocationRef": ""
+      },
+      "lifecycle": "ACTIVE",
+      "createdAt": "2026-07-24T05:00:00Z"
+    }
+  ],
+  "handlingAssertions": [
+    {
+      "schemaVersion": "resourceGateway.caseHandlingAssertion.v1",
+      "assertionId": "refund-output",
+      "revision": 1,
+      "fingerprint": "sha256:2d3f7ef326b4966d5ae90494acec8142a3826c0c44438739cdb876cf3a35cb73",
+      "scope": {
+        "tenantId": "tenant-a",
+        "organizationId": "org-a",
+        "projectId": "tool-studio",
+        "environmentId": "test",
+        "region": "sg"
+      },
+      "observation": "GRAPH_OUTPUT_SCHEMA",
+      "selector": {
+        "nodeId": "",
+        "edgeId": "",
+        "invocationSiteId": "",
+        "capabilityRef": null,
+        "path": "/refund"
+      },
+      "expectation": {
+        "statuses": [],
+        "errorCode": "",
+        "schemaFingerprint": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "valueFingerprint": "",
+        "minimumOccurrences": null,
+        "maximumOccurrences": null,
+        "maximumDurationMillis": null,
+        "expectedBoolean": null
+      },
+      "severity": "BLOCKER",
+      "governanceCode": "RG.MIRROR.SCENARIO.REFUND_OUTPUT_INVALID",
+      "provenance": {
+        "schemaVersion": "resourceGateway.artifactProvenance.v1",
+        "sourceType": "OWNER",
+        "sourceRefs": [],
+        "tenantId": "tenant-a",
+        "purpose": "customer-support-simulation",
+        "sampleFrom": null,
+        "sampleTo": null,
+        "sampleCount": null,
+        "confidence": null,
+        "biasRisks": [],
+        "approvedBy": "refund-owner",
+        "approvedAt": "2026-07-24T05:00:00Z",
+        "expiresAt": "2026-07-25T05:00:00Z",
+        "revocationRef": ""
+      },
+      "lifecycle": "ACTIVE",
+      "createdAt": "2026-07-24T05:00:00Z"
+    }
+  ],
+  "expected": {
+    "packId": "refund-rehearsal",
+    "revision": 1,
+    "fingerprint": "sha256:0d021b0936268859a5ccd059433f14107a511d57142b0229f31482590c272863",
+    "targetCapabilityId": "refund-orchestration",
+    "caseIds": ["refund-golden"],
+    "caseTypes": ["GOLDEN"],
+    "assertionCount": 1,
+    "statefulCaseCount": 0,
+    "faultCaseCount": 0,
+    "certificationRequired": true
+  }
+}
