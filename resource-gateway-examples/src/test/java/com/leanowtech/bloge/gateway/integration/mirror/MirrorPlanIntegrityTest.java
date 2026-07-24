@@ -224,12 +224,17 @@ class MirrorPlanIntegrityTest {
     }
 
     private MirrorPlan plan(PlanMaterial material) {
+        List<MirrorPlan.MirrorSource> resolverOrder =
+                material.stateModelRef() == null
+                        ? List.of(MirrorPlan.MirrorSource.OWNER_SPECIFIED,
+                        MirrorPlan.MirrorSource.ABSTAINED)
+                        : List.of(MirrorPlan.MirrorSource.SESSION_STATE,
+                        MirrorPlan.MirrorSource.ABSTAINED);
         MirrorPlan.ExternalBinding binding = new MirrorPlan.ExternalBinding(
                 material.closure().rootRef(), "loadCustomer", material.childRef(),
                 "/root/loadCustomer#RESOURCE", "/root",
                 material.child().source().sourceKind(), material.child().source().sourceRef(),
-                List.of(MirrorPlan.MirrorSource.OWNER_SPECIFIED,
-                        MirrorPlan.MirrorSource.ABSTAINED), List.of("customer-response"));
+                resolverOrder, List.of("customer-response"));
         List<MirrorArtifactRef> stateModels = material.stateModelRef() == null
                 ? List.of() : List.of(material.stateModelRef());
         return new MirrorPlan("", "plan-customer-view", "", material.closure().rootRef(),

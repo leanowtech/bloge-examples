@@ -6,6 +6,7 @@ import com.leanowtech.bloge.gateway.integration.IntegrationProblemException;
 import com.leanowtech.bloge.gateway.integration.IntegrationRequestContext;
 import com.leanowtech.bloge.gateway.testing.runtime.MirrorStateBaselineResolver;
 import com.leanowtech.bloge.gateway.testing.runtime.MirrorStateException;
+import com.leanowtech.bloge.gateway.testing.runtime.MirrorStateRunSession;
 import com.leanowtech.bloge.gateway.testing.runtime.MirrorStateTransactionEngine;
 
 import java.time.Clock;
@@ -244,6 +245,47 @@ public final class MirrorSessionIntegrationService {
             String sessionId,
             MirrorSessionCommandRequest request,
             IntegrationRequestContext identity) {
+        MirrorStateRunSession.CommandResult result =
+                commandResult(sessionId, request, identity);
+        return new MirrorSessionCommandResult(
+                MirrorSessionCommandResult.SCHEMA_VERSION,
+                result.descriptor(), result.receipt(),
+                result.replayed());
+    }
+
+    /**
+     * Executes one graph-embedded virtual write and returns the newly visible Session aggregate.
+     *
+     * <p>This method is intentionally package-scoped to the authenticated mirror-run adapter. It
+     * shares the same backpressure, per-session serialization, database lease, exact replay, and
+     * CAS commit path as the public command API, but additionally returns the already verified
+     * payload needed by downstream state resolvers in the same DAG run.</p>
+     *
+     * @param sessionId exact authenticated Session identity
+     * @param writeEffectRef exact effect selected by the plan capability
+     * @param input detached graph-node input
+     * @param expectedStateFingerprint exact current run head
+     * @param identity verified enterprise identity
+     * @return durable command result and complete newly visible Session aggregate
+     */
+    MirrorStateRunSession.CommandResult commandForRun(
+            String sessionId,
+            MirrorArtifactRef writeEffectRef,
+            Map<String, Object> input,
+            String expectedStateFingerprint,
+            IntegrationRequestContext identity) {
+        return commandResult(
+                sessionId,
+                new MirrorSessionCommandRequest(
+                        MirrorSessionCommandRequest.SCHEMA_VERSION,
+                        writeEffectRef, expectedStateFingerprint, input),
+                identity);
+    }
+
+    private MirrorStateRunSession.CommandResult commandResult(
+            String sessionId,
+            MirrorSessionCommandRequest request,
+            IntegrationRequestContext identity) {
         CapabilitySnapshot.Scope scope = requireScope(identity);
         if (request == null) {
             throw badRequest(identity, "RG.MIRROR.SESSION.COMMAND_INVALID",
@@ -292,7 +334,7 @@ public final class MirrorSessionIntegrationService {
         }
     }
 
-    private MirrorSessionCommandResult executeCommand(
+    private MirrorStateRunSession.CommandResult executeCommand(
             SessionKey key,
             MirrorSessionCommandRequest request,
             IntegrationRequestContext identity) {
@@ -311,7 +353,7 @@ public final class MirrorSessionIntegrationService {
         }
     }
 
-    private MirrorSessionCommandResult executeClaimedCommand(
+    private MirrorStateRunSession.CommandResult executeClaimedCommand(
             MirrorSessionStateStore.ClaimedSession claimed,
             MirrorSessionCommandRequest request,
             IntegrationRequestContext identity) {
@@ -328,6 +370,8 @@ public final class MirrorSessionIntegrationService {
         int receiptCount = payload.state().processedCommands().size();
         AtomicReference<MirrorSessionStateStore.CommitResult> committed =
                 new AtomicReference<>();
+        AtomicReference<MirrorSessionPayload> committedPayload =
+                new AtomicReference<>();
         AtomicReference<MirrorSessionStateStoreException> storeFailure =
                 new AtomicReference<>();
         MirrorStateTransactionEngine engine = new MirrorStateTransactionEngine(
@@ -338,6 +382,7 @@ public final class MirrorSessionIntegrationService {
                         MirrorSessionPayload sealed =
                                 MirrorSessionProtocolIntegrity.seal(
                                         mapper, payload.withState(candidate));
+                        committedPayload.set(sealed);
                         committed.set(store.compareAndSet(
                                 new MirrorSessionStateStore.CommitCommand(
                                         claimed.lease(),
@@ -382,9 +427,12 @@ public final class MirrorSessionIntegrationService {
                     MirrorSessionCapacityTelemetry.Boundary.DATA_PLANE,
                     MirrorSessionCapacityTelemetry.Decision.ADMITTED);
         }
-        return new MirrorSessionCommandResult(
-                MirrorSessionCommandResult.SCHEMA_VERSION,
-                descriptor, receipt, replayed);
+        MirrorSessionPayload resultingPayload = replayed
+                ? payload : Objects.requireNonNull(
+                committedPayload.get(),
+                "new command did not produce a sealed payload");
+        return new MirrorStateRunSession.CommandResult(
+                descriptor, resultingPayload, receipt, replayed);
     }
 
     private void releaseLease(MirrorSessionStateStore.Lease lease) {

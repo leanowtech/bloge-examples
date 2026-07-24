@@ -4,6 +4,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.leanowtech.bloge.core.context.GraphContext;
 import com.leanowtech.bloge.core.dsl.GraphBuilder;
 import com.leanowtech.bloge.core.engine.operators.ForEachOperator;
+import com.leanowtech.bloge.core.model.Edge;
 import com.leanowtech.bloge.core.model.Graph;
 import com.leanowtech.bloge.core.model.NodeSpec;
 import com.leanowtech.bloge.core.model.ResilienceConfig;
@@ -35,10 +36,13 @@ import com.leanowtech.bloge.gateway.integration.mirror.MirrorEvidenceIntegritySe
 import com.leanowtech.bloge.gateway.integration.mirror.MirrorPlan;
 import com.leanowtech.bloge.gateway.integration.mirror.MirrorResolution;
 import com.leanowtech.bloge.gateway.integration.mirror.MirrorResolutionIntegrity;
+import com.leanowtech.bloge.gateway.integration.mirror.MirrorSessionDescriptor;
 import com.leanowtech.bloge.gateway.integration.mirror.MirrorSessionPayload;
 import com.leanowtech.bloge.gateway.integration.mirror.MirrorSessionProtocolIntegrity;
 import com.leanowtech.bloge.gateway.integration.mirror.MirrorStateRunEvidence;
 import com.leanowtech.bloge.gateway.integration.mirror.MirrorStateRunEvidenceIntegrity;
+import com.leanowtech.bloge.gateway.integration.mirror.MirrorStateTransitionRunEvidence;
+import com.leanowtech.bloge.gateway.integration.mirror.MirrorStateTransitionRunEvidenceIntegrity;
 import com.leanowtech.bloge.gateway.integration.mirror.MirrorStateWorkbookSeed;
 import com.leanowtech.bloge.gateway.integration.mirror.MirrorServingGenerationAuthority;
 import com.leanowtech.bloge.gateway.integration.mirror.MirrorServingGenerationIntegrity;
@@ -314,9 +318,12 @@ class MirrorRunServiceTest {
                             .anyMatch(ref -> ref.startsWith(
                                     "state-read-spec:query-customer:"));
                 });
+        assertThat(result.evidenceBundle().evidence()
+                .stateEvidence())
+                .isInstanceOf(MirrorStateRunEvidence.class);
         MirrorStateRunEvidence stateEvidence =
-                result.evidenceBundle().evidence().stateEvidence();
-        assertThat(stateEvidence).isNotNull();
+                (MirrorStateRunEvidence) result.evidenceBundle()
+                        .evidence().stateEvidence();
         MirrorStateRunEvidenceIntegrity.verify(
                 mapper, stateEvidence);
         assertThat(stateEvidence.runId())
@@ -389,6 +396,213 @@ class MirrorRunServiceTest {
                 fingerprint('f')).verify(mapper))
                 .isInstanceOf(IllegalArgumentException.class)
                 .hasMessageContaining("fingerprint mismatch");
+    }
+
+    @Test
+    void executesReadWriteReadDagAgainstOneAdvancingSessionWithoutRealExternalCalls() {
+        AtomicInteger queryCalls = new AtomicInteger();
+        AtomicInteger updateCalls = new AtomicInteger();
+        registry.register(
+                "customer.state.query",
+                new ExternalReadOperator(queryCalls));
+        registry.register(
+                "customer.state.update",
+                new ExternalReadOperator(updateCalls));
+        graph = customerReadWriteReadGraph();
+        StateModel model = customerStateModel();
+        MirrorArtifactRef modelRef =
+                StateModelIntegrity.reference(model);
+        ReadWriteClosure exactClosure =
+                customerReadWriteClosure(modelRef);
+        closure = exactClosure.closure();
+        CompiledMirrorPlan compiled = compile(fixture(
+                rule("missing-owner", "queryMissing",
+                        FixtureRule.Behavior.returning(
+                                Map.of(
+                                        "customerId",
+                                        "C-missing",
+                                        "name",
+                                        "Owner fallback")))));
+        WriteEffectSpec effect = customerWriteEffect(
+                model, exactClosure.writeCapabilityRef());
+        StateReadSpec readSpec =
+                customerReadSpec(
+                        model, exactClosure.readCapabilityRef());
+        SessionStateSpace.EntitySnapshot customer =
+                SessionStateSpaceIntegrity.sealEntity(
+                        mapper,
+                        new SessionStateSpace.EntitySnapshot(
+                                new SessionStateSpace.EntityKey(
+                                        "customer", "C-1"),
+                                1,
+                                Map.of(
+                                        "customerId", "C-1",
+                                        "name", "Before",
+                                        "segment", "ENTERPRISE"),
+                                ""));
+        SessionStateSpace initialState =
+                SessionStateSpaceIntegrity.seal(
+                        mapper,
+                        new SessionStateSpace(
+                                SessionStateSpace.SCHEMA_VERSION,
+                                "customer-rw-session",
+                                SCOPE,
+                                compiled.plan().planFingerprint(),
+                                modelRef,
+                                List.of(
+                                        WriteEffectSpecIntegrity
+                                                .reference(effect)),
+                                0, COMPILED_AT, 42,
+                                List.of(customer), List.of(),
+                                List.of(SessionStateSpaceIntegrity
+                                        .businessKey(
+                                                mapper,
+                                                "customer-id",
+                                                List.of("C-1"),
+                                                customer.key())),
+                                List.of(), List.of(),
+                                COMPILED_AT.plus(
+                                        Duration.ofHours(1)),
+                                "", ""));
+        MirrorSessionPayload initial =
+                MirrorSessionProtocolIntegrity.sealInitial(
+                        mapper,
+                        new MirrorSessionPayload(
+                                MirrorSessionPayload.SCHEMA_VERSION,
+                                model, List.of(readSpec),
+                                List.of(effect), initialState, ""),
+                        COMPILED_AT.plusSeconds(1));
+        AtomicReference<MirrorSessionPayload> durable =
+                new AtomicReference<>(initial);
+        MirrorStateRunSession runSession =
+                new MirrorStateRunSession(
+                        mapper, initial,
+                        (writeEffectRef, input,
+                         expectedStateFingerprint) ->
+                                commitStateCommand(
+                                        durable, effect,
+                                        writeEffectRef, input,
+                                        expectedStateFingerprint));
+        Map<String, MirrorArtifactRef> capabilitiesBySite =
+                new LinkedHashMap<>();
+        compiled.plan().externalBindings().forEach(binding ->
+                capabilitiesBySite.put(
+                        binding.invocationSiteId(),
+                        binding.capabilityRef()));
+        MirrorResolver.SessionContext sessionContext =
+                new MirrorResolver.SessionContext(
+                        initial,
+                        compiled.plan().planFingerprint(),
+                        capabilitiesBySite, runSession);
+        MirrorRunRequest request = new MirrorRunRequest(
+                "request-state-rw-1", compiled,
+                new GraphContext(Map.of(
+                        "customerId", "C-1",
+                        "requestId", "REQ-UPDATE-1",
+                        "name", "After")),
+                SCOPE, PURPOSE, null, sessionContext);
+
+        MirrorRunResult result = runtime.execute(request);
+
+        assertThat(result.passed()).isTrue();
+        assertThat(queryCalls).hasValue(0);
+        assertThat(updateCalls).hasValue(0);
+        assertThat(compiled.plan().externalBindings())
+                .filteredOn(binding -> binding.invocationSiteId()
+                        .contains("updateCustomer"))
+                .singleElement()
+                .satisfies(binding -> assertThat(
+                        binding.resolverOrder())
+                        .containsExactly(
+                                MirrorPlan.MirrorSource
+                                        .SESSION_STATE,
+                                MirrorPlan.MirrorSource
+                                        .ABSTAINED));
+        assertThat(result.execution().graphResult()
+                .getOutput("queryAfter", Map.class))
+                .containsEntry("name", "After");
+        assertThat(result.execution().graphResult()
+                .getOutput("queryMissing", Map.class))
+                .containsEntry("name", "Owner fallback");
+        assertThat(runSession.currentPayload().state()
+                .stateRevision()).isEqualTo(1);
+        assertThat(result.evidenceBundle().schemaVersion())
+                .isEqualTo(
+                        MirrorEvidenceBundle
+                                .READ_WRITE_SCHEMA_VERSION);
+        assertThat(result.evidenceBundle().attestation()
+                .schemaVersion()).isEqualTo(
+                MirrorEvidenceAttestation
+                        .READ_WRITE_SCHEMA_VERSION);
+        assertThat(result.evidenceBundle().evidence()
+                .schemaVersion()).isEqualTo(
+                com.leanowtech.bloge.gateway.integration.mirror
+                        .MirrorRunEvidence
+                        .READ_WRITE_SCHEMA_VERSION);
+        assertThat(result.evidenceBundle().evidence()
+                .stateEvidence())
+                .isInstanceOf(
+                        MirrorStateTransitionRunEvidence.class);
+        MirrorStateTransitionRunEvidence stateEvidence =
+                (MirrorStateTransitionRunEvidence)
+                        result.evidenceBundle().evidence()
+                                .stateEvidence();
+        MirrorStateTransitionRunEvidenceIntegrity.verify(
+                mapper, stateEvidence);
+        assertThat(stateEvidence.stateRevision()).isZero();
+        assertThat(stateEvidence.finalStateRevision())
+                .isEqualTo(1);
+        assertThat(stateEvidence.accesses())
+                .extracting(
+                        MirrorStateTransitionRunEvidence
+                                .StateAccess
+                                ::observedStateRevision)
+                .containsExactlyInAnyOrder(0L, 1L, 1L);
+        assertThat(stateEvidence.accesses())
+                .extracting(
+                        MirrorStateTransitionRunEvidence
+                                .StateAccess::outcome)
+                .contains(
+                        MirrorStateTransitionRunEvidence
+                                .AccessOutcome.ABSENT);
+        assertThat(stateEvidence.transitions())
+                .singleElement()
+                .satisfies(transition -> {
+                    assertThat(transition.revisionBefore())
+                            .isZero();
+                    assertThat(transition.revisionAfter())
+                            .isEqualTo(1);
+                    assertThat(transition.replayed()).isFalse();
+                    assertThat(transition.writeEffectRef())
+                            .isEqualTo(
+                                    WriteEffectSpecIntegrity
+                                            .reference(effect));
+                });
+        assertThat(result.resolutions())
+                .filteredOn(resolution -> resolution
+                        .invocationSiteId()
+                        .contains("queryMissing"))
+                .singleElement()
+                .satisfies(resolution ->
+                        assertThat(resolution.source())
+                                .isEqualTo(
+                                        MirrorPlan.MirrorSource
+                                                .OWNER_SPECIFIED));
+        assertThat(result.resolutions())
+                .filteredOn(resolution -> !resolution
+                        .invocationSiteId()
+                        .contains("queryMissing"))
+                .allSatisfy(resolution ->
+                        assertThat(resolution.source())
+                                .isEqualTo(
+                                        MirrorPlan.MirrorSource
+                                                .SESSION_STATE));
+        assertThat(new MirrorEvidenceIntegrityService(
+                mapper, evidenceSigner, Clock.systemUTC())
+                .verify(result.evidenceBundle()))
+                .isEqualTo(
+                        MirrorEvidenceIntegrityService
+                                .Verification.VERIFIED);
     }
 
     @Test
@@ -1333,6 +1547,126 @@ class MirrorRunServiceTest {
                         List.of(root, external), ""));
     }
 
+    private ReadWriteClosure customerReadWriteClosure(
+            MirrorArtifactRef stateModelRef) {
+        EffectContract read =
+                EffectContract.readOnly(
+                        List.of("customer:*"));
+        EffectContract virtualWrite =
+                new EffectContract(
+                        EffectContract.SCHEMA_VERSION,
+                        EffectContract.Mode.VIRTUAL_MUTATION,
+                        List.of("customer:*"),
+                        List.of("customer:*"),
+                        List.of(), null, false,
+                        EffectContract.RiskLevel.LOW,
+                        EffectContract.Derivation.DECLARED,
+                        List.of());
+        CapabilitySnapshot query =
+                CapabilitySnapshotIntegrity.seal(
+                        mapper,
+                        new CapabilitySnapshot(
+                                "",
+                                "operator:customer.state.query",
+                                1, "",
+                                CapabilitySnapshot.Kind.EXTERNAL,
+                                SCOPE,
+                                new CapabilitySnapshot.Source(
+                                        CapabilitySnapshot.SourceKind
+                                                .OPERATOR,
+                                        "customer.state.query",
+                                        fingerprint('1')),
+                                contract(read, stateModelRef),
+                                runtime(
+                                        "OPERATOR",
+                                        "customer.state.query", '2'),
+                                List.of(), ownership(),
+                                CapabilitySnapshot.Lifecycle.ACTIVE,
+                                provenance(), COMPILED_AT));
+        CapabilitySnapshot update =
+                CapabilitySnapshotIntegrity.seal(
+                        mapper,
+                        new CapabilitySnapshot(
+                                "",
+                                "operator:customer.state.update",
+                                1, "",
+                                CapabilitySnapshot.Kind.EXTERNAL,
+                                SCOPE,
+                                new CapabilitySnapshot.Source(
+                                        CapabilitySnapshot.SourceKind
+                                                .OPERATOR,
+                                        "customer.state.update",
+                                        fingerprint('3')),
+                                contract(
+                                        virtualWrite,
+                                        stateModelRef),
+                                runtime(
+                                        "OPERATOR",
+                                        "customer.state.update", '4'),
+                                List.of(), ownership(),
+                                CapabilitySnapshot.Lifecycle.ACTIVE,
+                                provenance(), COMPILED_AT));
+        MirrorArtifactRef queryRef =
+                CapabilityClosureIntegrity.reference(query);
+        MirrorArtifactRef updateRef =
+                CapabilityClosureIntegrity.reference(update);
+        CapabilitySnapshot root =
+                CapabilitySnapshotIntegrity.seal(
+                        mapper,
+                        new CapabilitySnapshot(
+                                "",
+                                "graph:customerReadWriteRead",
+                                1, "",
+                                CapabilitySnapshot.Kind.COMPOSED,
+                                SCOPE,
+                                new CapabilitySnapshot.Source(
+                                        CapabilitySnapshot.SourceKind
+                                                .GRAPH,
+                                        "customerReadWriteRead",
+                                        TARGET),
+                                contract(
+                                        virtualWrite,
+                                        stateModelRef),
+                                runtime(
+                                        "BLOGE_GRAPH",
+                                        "customerReadWriteRead", '5'),
+                                List.of(
+                                        new CapabilitySnapshot
+                                                .Dependency(
+                                                "queryBefore",
+                                                queryRef, true,
+                                                List.of()),
+                                        new CapabilitySnapshot
+                                                .Dependency(
+                                                "updateCustomer",
+                                                updateRef, true,
+                                                List.of()),
+                                        new CapabilitySnapshot
+                                                .Dependency(
+                                                "queryAfter",
+                                                queryRef, true,
+                                                List.of()),
+                                        new CapabilitySnapshot
+                                                .Dependency(
+                                                "queryMissing",
+                                                queryRef, true,
+                                                List.of())),
+                                ownership(),
+                                CapabilitySnapshot.Lifecycle.ACTIVE,
+                                provenance(), COMPILED_AT));
+        CapabilityClosure exact =
+                CapabilityClosureIntegrity.seal(
+                        mapper,
+                        new CapabilityClosure(
+                                "",
+                                CapabilityClosureIntegrity
+                                        .reference(root),
+                                List.of(root, query, update),
+                                ""));
+        return new ReadWriteClosure(
+                exact, queryRef, updateRef);
+    }
+
     private StateModel customerStateModel() {
         return StateModelIntegrity.seal(
                 mapper, new StateModel(
@@ -1364,6 +1698,16 @@ class MirrorRunServiceTest {
 
     private WriteEffectSpec customerWriteEffect(
             StateModel model) {
+        return customerWriteEffect(
+                model,
+                new MirrorArtifactRef(
+                        "CAPABILITY", "customer.update", 1,
+                        fingerprint('7')));
+    }
+
+    private WriteEffectSpec customerWriteEffect(
+            StateModel model,
+            MirrorArtifactRef targetCapabilityRef) {
         WriteEffectSpec.Mutation mutation =
                 new WriteEffectSpec.Mutation(
                         "update-customer",
@@ -1386,9 +1730,7 @@ class MirrorRunServiceTest {
                 mapper, new WriteEffectSpec(
                         WriteEffectSpec.SCHEMA_VERSION,
                         "update-customer", 1, "", SCOPE,
-                        new MirrorArtifactRef(
-                                "CAPABILITY", "customer.update", 1,
-                                fingerprint('7')),
+                        targetCapabilityRef,
                         StateModelIntegrity.reference(model),
                         List.of(mutation),
                         BoundedStateExpression.entity(
@@ -1398,6 +1740,83 @@ class MirrorRunServiceTest {
                         stateProvenance(),
                         CapabilitySnapshot.Lifecycle.ACTIVE,
                         COMPILED_AT));
+    }
+
+    private StateReadSpec customerReadSpec(
+            StateModel model,
+            MirrorArtifactRef targetCapabilityRef) {
+        return StateReadSpecIntegrity.seal(
+                mapper,
+                new StateReadSpec(
+                        StateReadSpec.SCHEMA_VERSION,
+                        "query-customer-rw", 1, "",
+                        SCOPE, targetCapabilityRef,
+                        StateModelIntegrity.reference(model),
+                        "customer", "customer-id",
+                        List.of(BoundedStateExpression.input(
+                                "/customerId")),
+                        BoundedStateExpression.entity(
+                                StateReadSpec.RESULT_ALIAS, ""),
+                        stateProvenance(),
+                        CapabilitySnapshot.Lifecycle.ACTIVE,
+                        COMPILED_AT));
+    }
+
+    private MirrorStateRunSession.CommandResult commitStateCommand(
+            AtomicReference<MirrorSessionPayload> durable,
+            WriteEffectSpec effect,
+            MirrorArtifactRef writeEffectRef,
+            Map<String, Object> input,
+            String expectedStateFingerprint) {
+        MirrorSessionPayload before = durable.get();
+        if (!WriteEffectSpecIntegrity.reference(effect)
+                .equals(writeEffectRef)
+                || !before.state().fingerprint().equals(
+                expectedStateFingerprint)) {
+            throw new IllegalArgumentException(
+                    "test durable command fence changed");
+        }
+        MirrorStateTransactionEngine engine =
+                new MirrorStateTransactionEngine(
+                        mapper, before.stateModel(),
+                        before.state(),
+                        MirrorStateBaselineResolver.none(),
+                        Clock.fixed(
+                                COMPILED_AT.plusSeconds(10),
+                                ZoneOffset.UTC),
+                        MirrorStateTransactionEngine
+                                .CommitGuard.noop());
+        SessionStateSpace.TransactionReceipt receipt =
+                engine.execute(effect, input);
+        MirrorSessionPayload after =
+                MirrorSessionProtocolIntegrity.seal(
+                        mapper,
+                        before.withState(engine.snapshot()));
+        durable.set(after);
+        SessionStateSpace state = after.state();
+        MirrorSessionDescriptor descriptor =
+                MirrorSessionProtocolIntegrity
+                        .sealDescriptor(
+                                mapper,
+                                new MirrorSessionDescriptor(
+                                        MirrorSessionDescriptor
+                                                .SCHEMA_VERSION,
+                                        state.sessionId(),
+                                        state.scope(),
+                                        state.planFingerprint(),
+                                        state.stateModelRef(),
+                                        state.writeEffectRefs(),
+                                        state.stateRevision(),
+                                        MirrorSessionDescriptor
+                                                .Status.ACTIVE,
+                                        state.worldFingerprint(),
+                                        state.fingerprint(),
+                                        COMPILED_AT,
+                                        state.logicalClock(),
+                                        state.expiresAt(),
+                                        null, ""));
+        return new MirrorStateRunSession.CommandResult(
+                descriptor, after, receipt, false);
     }
 
     private CapabilityClosure foreachClosure(Graph rootGraph, Graph itemGraph) {
@@ -1542,6 +1961,74 @@ class MirrorRunServiceTest {
                 SchemaValidationLevel.OFF);
     }
 
+    private static Graph customerReadWriteReadGraph() {
+        Map<String, NodeSpec> nodes =
+                new LinkedHashMap<>();
+        nodes.put(
+                "queryBefore",
+                new NodeSpec(
+                        "queryBefore",
+                        "customer.state.query",
+                        (results, context) -> Map.of(
+                                "customerId",
+                                context.get("customerId")),
+                        ResilienceConfig.DEFAULT, Map.of(),
+                        OpaqueSchema.INSTANCE,
+                        OpaqueSchema.INSTANCE));
+        nodes.put(
+                "updateCustomer",
+                new NodeSpec(
+                        "updateCustomer",
+                        "customer.state.update",
+                        (results, context) -> Map.of(
+                                "customerId",
+                                context.get("customerId"),
+                                "requestId",
+                                context.get("requestId"),
+                                "name",
+                                context.get("name")),
+                        ResilienceConfig.DEFAULT, Map.of(),
+                        OpaqueSchema.INSTANCE,
+                        OpaqueSchema.INSTANCE));
+        nodes.put(
+                "queryAfter",
+                new NodeSpec(
+                        "queryAfter",
+                        "customer.state.query",
+                        (results, context) -> Map.of(
+                                "customerId",
+                                context.get("customerId")),
+                        ResilienceConfig.DEFAULT, Map.of(),
+                        OpaqueSchema.INSTANCE,
+                        OpaqueSchema.INSTANCE));
+        nodes.put(
+                "queryMissing",
+                new NodeSpec(
+                        "queryMissing",
+                        "customer.state.query",
+                        (results, context) -> Map.of(
+                                "customerId",
+                                "C-missing"),
+                        ResilienceConfig.DEFAULT, Map.of(),
+                        OpaqueSchema.INSTANCE,
+                        OpaqueSchema.INSTANCE));
+        return new Graph(
+                "customerReadWriteRead", nodes,
+                List.of(
+                        new Edge.Direct(
+                                "queryBefore",
+                                "updateCustomer"),
+                        new Edge.Direct(
+                                "updateCustomer",
+                                "queryAfter"),
+                        new Edge.Direct(
+                                "queryAfter",
+                                "queryMissing")),
+                Set.of("queryBefore"),
+                Set.of("queryMissing"),
+                SchemaValidationLevel.OFF);
+    }
+
     private static NodeSpec node(String id, String operatorRef) {
         return new NodeSpec(id, operatorRef, null, ResilienceConfig.DEFAULT,
                 Map.of(), OpaqueSchema.INSTANCE, OpaqueSchema.INSTANCE);
@@ -1575,6 +2062,13 @@ class MirrorRunServiceTest {
             MirrorServingGenerationToken token,
             InMemoryVisualEvidenceSigner signer,
             MirrorServingGenerationIntegrity integrity
+    ) {
+    }
+
+    private record ReadWriteClosure(
+            CapabilityClosure closure,
+            MirrorArtifactRef readCapabilityRef,
+            MirrorArtifactRef writeCapabilityRef
     ) {
     }
 

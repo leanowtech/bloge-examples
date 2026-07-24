@@ -233,11 +233,12 @@ public class ExecutionControlCompiler {
     }
 
     /**
-     * Compiles mirror controls with exact state-model-backed read sites.
+     * Compiles mirror controls with exact state-model-backed read and virtual-write sites.
      *
      * <p>The stateful site set is capability-derived rather than caller-selected. Every such site
-     * remains a mandatory intercepted external and receives {@code SESSION_STATE} before owner,
-     * recorded, and replay fallbacks.</p>
+     * remains a mandatory intercepted external and receives {@code SESSION_STATE} first. A
+     * virtual-write plan site is independently required by runtime admission to terminate at
+     * {@code ABSTAINED}, so it can never fall through to a real external mutation.</p>
      */
     CompiledExecutionControl compileMirrorFromInventory(
             Graph graph,

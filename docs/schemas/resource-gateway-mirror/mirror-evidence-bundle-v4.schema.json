@@ -1,0 +1,30 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://bloge.dev/schemas/resource-gateway-mirror/mirror-evidence-bundle-v4.schema.json",
+  "title": "Resource Gateway Mirror Evidence Bundle v4",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion", "bundleFingerprint", "payloadPolicy", "attestation", "evidence"
+  ],
+  "properties": {
+    "schemaVersion": { "const": "resourceGateway.mirrorEvidenceBundle.v4" },
+    "bundleFingerprint": {
+      "type": "string",
+      "pattern": "^sha256:[a-f0-9]{64}$"
+    },
+    "payloadPolicy": { "const": "HASH_ONLY" },
+    "attestation": {
+      "allOf": [
+        { "$ref": "mirror-evidence-attestation-v4.schema.json" },
+        {
+          "properties": {
+            "signatureStatus": { "const": "VERIFIED" },
+            "independentlyVerifiable": { "const": true }
+          }
+        }
+      ]
+    },
+    "evidence": { "$ref": "mirror-run-evidence-v4.schema.json" }
+  }
+}

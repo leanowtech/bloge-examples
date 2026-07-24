@@ -443,11 +443,14 @@ public class ToolStudioIntegrationService {
         features.put("mirrorStatefulResolverReady", mirrorStatefulResolverReady);
         features.put("mirrorStateRunEvidenceReady",
                 mirrorStatefulResolverReady);
+        features.put("mirrorStateTransitionEvidenceReady",
+                mirrorStatefulResolverReady);
         features.put("mirrorStateWorkbookSeedApi",
                 mirrorExecutionApi);
         features.put("mirrorStateWorkbookSeedReady",
                 mirrorStatefulResolverReady);
-        // Graph-embedded virtual writes and checkpoint recovery remain later stages.
+        // Transition workbook projection and checkpoint/recovery remain later stages.
+        features.put("mirrorStateTransitionWorkbookSeedReady", false);
         features.put("mirrorStatefulRuntimeReady", false);
         ExternalAnchorTrustState suiteAnchorTrust = currentSuiteStabilityAnchorTrust();
         features.put("managedSuiteStabilityExternalNotaryTrust",
@@ -800,24 +803,32 @@ public class ToolStudioIntegrationService {
                     com.leanowtech.bloge.gateway.integration.mirror
                             .MirrorEvidenceBundle.SCHEMA_VERSION,
                     com.leanowtech.bloge.gateway.integration.mirror
-                            .MirrorEvidenceBundle.STATEFUL_SCHEMA_VERSION));
+                            .MirrorEvidenceBundle.STATEFUL_SCHEMA_VERSION,
+                    com.leanowtech.bloge.gateway.integration.mirror
+                            .MirrorEvidenceBundle.READ_WRITE_SCHEMA_VERSION));
             supportedObjects.put("mirrorRunEvidence", List.of(
                     com.leanowtech.bloge.gateway.integration.mirror
                             .MirrorRunEvidence.SCHEMA_VERSION_V1,
                     com.leanowtech.bloge.gateway.integration.mirror
                             .MirrorRunEvidence.SCHEMA_VERSION,
                     com.leanowtech.bloge.gateway.integration.mirror
-                            .MirrorRunEvidence.STATEFUL_SCHEMA_VERSION));
+                            .MirrorRunEvidence.STATEFUL_SCHEMA_VERSION,
+                    com.leanowtech.bloge.gateway.integration.mirror
+                            .MirrorRunEvidence.READ_WRITE_SCHEMA_VERSION));
             supportedObjects.put("mirrorEvidenceAttestation", List.of(
                     com.leanowtech.bloge.gateway.integration.mirror
                             .MirrorEvidenceAttestation.SCHEMA_VERSION_V1,
                     com.leanowtech.bloge.gateway.integration.mirror
                             .MirrorEvidenceAttestation.SCHEMA_VERSION,
                     com.leanowtech.bloge.gateway.integration.mirror
-                            .MirrorEvidenceAttestation.STATEFUL_SCHEMA_VERSION));
+                            .MirrorEvidenceAttestation.STATEFUL_SCHEMA_VERSION,
+                    com.leanowtech.bloge.gateway.integration.mirror
+                            .MirrorEvidenceAttestation.READ_WRITE_SCHEMA_VERSION));
             supportedObjects.put("mirrorStateRunEvidence", List.of(
                     com.leanowtech.bloge.gateway.integration.mirror
-                            .MirrorStateRunEvidence.SCHEMA_VERSION));
+                            .MirrorStateRunEvidence.SCHEMA_VERSION,
+                    com.leanowtech.bloge.gateway.integration.mirror
+                            .MirrorStateTransitionRunEvidence.SCHEMA_VERSION));
             supportedObjects.put("mirrorStateWorkbookSeed", List.of(
                     com.leanowtech.bloge.gateway.integration.mirror
                             .MirrorStateWorkbookSeed.SCHEMA_VERSION));

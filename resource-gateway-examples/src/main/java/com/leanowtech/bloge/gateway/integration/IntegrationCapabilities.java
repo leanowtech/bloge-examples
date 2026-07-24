@@ -831,13 +831,16 @@ public record IntegrationCapabilities(
         features.put("mirrorCorpusClusterResolverReady", false);
         features.put("mirrorStatefulProtocol", true);
         features.put("mirrorStateRunEvidenceProtocol", true);
+        features.put("mirrorStateTransitionEvidenceProtocol", true);
         features.put("mirrorStateWorkbookSeedProtocol", true);
         features.put("mirrorStatefulSessionApi", false);
         features.put("mirrorStatefulStateStoreReady", false);
         features.put("mirrorStatefulResolverReady", false);
         features.put("mirrorStateRunEvidenceReady", false);
+        features.put("mirrorStateTransitionEvidenceReady", false);
         features.put("mirrorStateWorkbookSeedApi", false);
         features.put("mirrorStateWorkbookSeedReady", false);
+        features.put("mirrorStateTransitionWorkbookSeedReady", false);
         features.put("mirrorStatefulRuntimeReady", false);
         features.put("runEvidenceBundle", true);
         features.put("structuredExecutionFacts", true);

@@ -32,14 +32,18 @@ class CapabilityMirrorSchemaPackagingTest {
                 "mirror-run-evidence-v1.schema.json",
                 "mirror-run-evidence-v2.schema.json",
                 "mirror-run-evidence-v3.schema.json",
+                "mirror-run-evidence-v4.schema.json",
                 "mirror-state-run-evidence-v1.schema.json",
+                "mirror-state-run-evidence-v2.schema.json",
                 "mirror-state-workbook-seed-v1.schema.json",
                 "mirror-evidence-attestation-v1.schema.json",
                 "mirror-evidence-attestation-v2.schema.json",
                 "mirror-evidence-attestation-v3.schema.json",
+                "mirror-evidence-attestation-v4.schema.json",
                 "mirror-evidence-bundle-v1.schema.json",
                 "mirror-evidence-bundle-v2.schema.json",
                 "mirror-evidence-bundle-v3.schema.json",
+                "mirror-evidence-bundle-v4.schema.json",
                 "mirror-deployment-isolation-attestation-v1.schema.json",
                 "mirror-deployment-isolation-attestation-status-v1.schema.json",
                 "mirror-deployment-isolation-attestation-revocation-request-v1.schema.json",
@@ -132,12 +136,19 @@ class CapabilityMirrorSchemaPackagingTest {
                 .endsWith(
                         "mirror-state-run-evidence-v1.schema.json");
         assertThat(CapabilityMirrorProtocol
+                .MIRROR_STATE_RUN_EVIDENCE_V2_SCHEMA_RESOURCE)
+                .endsWith(
+                        "mirror-state-run-evidence-v2.schema.json");
+        assertThat(CapabilityMirrorProtocol
                 .MIRROR_STATE_WORKBOOK_SEED_SCHEMA_RESOURCE)
                 .endsWith(
                         "mirror-state-workbook-seed-v1.schema.json");
         assertThat(CapabilityMirrorProtocol
                 .MIRROR_EVIDENCE_BUNDLE_V3_SCHEMA_RESOURCE)
                 .endsWith("mirror-evidence-bundle-v3.schema.json");
+        assertThat(CapabilityMirrorProtocol
+                .MIRROR_EVIDENCE_BUNDLE_V4_SCHEMA_RESOURCE)
+                .endsWith("mirror-evidence-bundle-v4.schema.json");
         assertThat(CapabilityMirrorProtocol
                 .MIRROR_DEPLOYMENT_ISOLATION_RUN_TRUST_SCHEMA_RESOURCE)
                 .endsWith("mirror-deployment-isolation-run-trust-v1.schema.json");

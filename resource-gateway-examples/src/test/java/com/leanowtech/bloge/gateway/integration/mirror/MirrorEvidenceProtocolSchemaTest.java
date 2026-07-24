@@ -197,6 +197,71 @@ class MirrorEvidenceProtocolSchemaTest {
     }
 
     @Test
+    void readWriteSchemasCloseEveryV4TransitionEvidenceField()
+            throws Exception {
+        MirrorStateTransitionRunEvidence state =
+                MirrorStateTransitionRunEvidenceIntegrity.seal(
+                        mapper,
+                        MirrorStateTransitionRunEvidenceIntegrityTest
+                                .evidence());
+        JsonNode stateValue = mapper.valueToTree(state);
+        JsonNode stateSchema = schema(
+                "mirror-state-run-evidence-v2.schema.json");
+        JsonNode runSchema = schema(
+                "mirror-run-evidence-v4.schema.json");
+        JsonNode attestationSchema = schema(
+                "mirror-evidence-attestation-v4.schema.json");
+        JsonNode bundleSchema = schema(
+                "mirror-evidence-bundle-v4.schema.json");
+
+        assertProperties(
+                stateValue, stateSchema.path("properties"));
+        assertProperties(
+                stateValue.path("statefulBindings").get(0),
+                stateSchema.at(
+                        "/$defs/statefulBinding/properties"));
+        assertProperties(
+                stateValue.path("transitions").get(0),
+                stateSchema.at(
+                        "/$defs/stateTransition/properties"));
+        assertProperties(
+                stateValue.at("/transitions/0/events/0"),
+                stateSchema.at(
+                        "/$defs/transitionEvent/properties"));
+        assertThat(stateSchema.path(
+                "additionalProperties").asBoolean()).isFalse();
+        for (String definition : List.of(
+                "statefulBinding", "stateAccess",
+                "stateTransition", "transitionEvent")) {
+            assertThat(stateSchema.at(
+                    "/$defs/" + definition
+                            + "/additionalProperties")
+                    .asBoolean()).as(definition).isFalse();
+        }
+        assertThat(runSchema.at(
+                "/properties/stateEvidence/$ref").asText())
+                .isEqualTo(
+                        "mirror-state-run-evidence-v2.schema.json");
+        assertThat(attestationSchema.at(
+                "/properties/schemaVersion/const").asText())
+                .isEqualTo(
+                        MirrorEvidenceAttestation
+                                .READ_WRITE_SCHEMA_VERSION);
+        assertThat(bundleSchema.at(
+                "/properties/evidence/$ref").asText())
+                .isEqualTo(
+                        "mirror-run-evidence-v4.schema.json");
+        assertThat(bundleSchema.at(
+                "/properties/attestation/allOf/0/$ref")
+                .asText()).isEqualTo(
+                "mirror-evidence-attestation-v4.schema.json");
+        assertThat(stateValue.toString())
+                .doesNotContain("idempotencyKey\"")
+                .doesNotContain("entityId\"")
+                .doesNotContain("response\"");
+    }
+
+    @Test
     void serverAndIndependentClientShareOneCryptographicallyValidCompatibilityFixture()
             throws Exception {
         JsonNode fixture = mapper.readTree(Files.readString(Path.of("..", "docs", "schemas",

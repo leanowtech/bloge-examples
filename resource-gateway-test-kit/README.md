@@ -21,7 +21,7 @@ implementation. The JAR packages the authoritative v1 JSON Schema and provides:
   verification;
 - strict stateful-mirror payload/create/descriptor/command Schemas, a canonical payload sealer,
   payload-free semantic verification, authenticated create/read/command/destroy client methods,
-  v3 signed state-run evidence verification, and deterministic ANEKE workbook-seed projection;
+  v3 read/v4 transition evidence verification, and deterministic v3 ANEKE workbook-seed projection;
 - packaged validation and version constants for the payload-free
   `bloge.executionServiceStateSnapshot.v1` durable-resume building block;
 - payload-safe typed child/suite-run summaries and JUnit 5 assertions;
@@ -207,8 +207,9 @@ if (CapabilityMirrorProtocol.MIRROR_EVIDENCE_BUNDLE_V3.equals(
 Verification re-derives strict Schema admission, deterministic ordering, exact external-attempt to
 resolution closure, request/output hash binding, nested resolution seals, evidence and bundle
 fingerprints, signing-time key policy, and the domain-separated Ed25519 signature. Its result is
-payload-free and suitable for CI logs. V1, v2, and stateful v3 use separate signature domains and
-cannot be mixed inside one bundle. For v2/v3 deployment-egress claims the verifier also proves isolation-attestation
+payload-free and suitable for CI logs. V1, v2, stateful-read v3, and
+stateful-read/write v4 use separate signature domains and cannot be mixed inside
+one bundle. For v2/v3/v4 deployment-egress claims the verifier also proves isolation-attestation
 reference equality, stable decision/status generation, identical agent snapshot identity,
 monotonic cache generation, admission before execution, and confirmation before signing. Canonical
 evidence, bundle, and resolution material is
@@ -221,6 +222,13 @@ binding/access order, and proves every `LIVE_ENTITY`, `ABSENT`, or
 `TOMBSTONED` access closes against exactly one node attempt and resolution.
 It never exposes entity values or business-key material.
 
+V4 requires `resourceGateway.mirrorStateRunEvidence.v2`. The verifier binds the
+initial and final Session heads, every read's exact observed revision, every
+virtual write's request/output and receipt provenance, contiguous committed
+revision chain, replay semantics, and payload-free transition-event closure to
+the node attempt and resolution. Raw entity ids, idempotency keys, inputs, and
+responses remain absent.
+
 `MirrorStateWorkbookSeed.fromVerifiedBundle` repeats verification before it
 projects the exact bundle/state/session/model coordinates, access counts, and
 conservative blockers. `fromPayload` checks only the strict seed schema and
@@ -228,7 +236,8 @@ self-fingerprint and must not be used as a substitute for source-bundle
 verification. Local exploratory evidence normally yields `gateReady=false`;
 `requireGateReady()` returns the stable blocker set instead of silently
 promoting it. ANEKE remains responsible for workbook coverage, owner approval,
-policy, and the final publish gate.
+policy, and the final publish gate. This seed API intentionally rejects v4
+until transition assertions are formalized.
 
 Run the packaged fixed fixture in dependency-upgrade and startup probes:
 

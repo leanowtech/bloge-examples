@@ -41,7 +41,7 @@ import java.util.regex.Pattern;
  * @param nodeTraces payload-free node and delegate-attempt facts
  * @param edgeTraces payload-free edge transfer facts
  * @param resolutions sealed resolver provenance for every external delegate attempt
- * @param stateEvidence payload-free Session state closure for stateful v3 runs
+ * @param stateEvidence payload-free Session state closure for stateful v3 or v4 runs
  * @param isolation structural and deployment isolation facts observed for this run
  * @param limitations bounded reasons the evidence cannot claim higher fidelity or certification
  */
@@ -68,7 +68,7 @@ public record MirrorRunEvidence(
         List<EdgeTrace> edgeTraces,
         List<MirrorResolution> resolutions,
         @JsonInclude(JsonInclude.Include.NON_NULL)
-        MirrorStateRunEvidence stateEvidence,
+        MirrorStateEvidence stateEvidence,
         IsolationFacts isolation,
         List<String> limitations
 ) {
@@ -79,6 +79,9 @@ public record MirrorRunEvidence(
     /** Stateful evidence version carrying one complete Session access closure. */
     public static final String STATEFUL_SCHEMA_VERSION =
             "resourceGateway.mirrorRunEvidence.v3";
+    /** Read/write evidence version carrying one complete Session transition closure. */
+    public static final String READ_WRITE_SCHEMA_VERSION =
+            "resourceGateway.mirrorRunEvidence.v4";
     /** Maximum nodes or edges admitted to one portable bundle. */
     public static final int MAXIMUM_TRACE_ITEMS = 100_000;
     /** Maximum external resolver outcomes admitted to one portable bundle. */
@@ -143,8 +146,12 @@ public record MirrorRunEvidence(
         edgeTraces = orderedEdges(edgeTraces);
         resolutions = orderedResolutions(resolutions, runId, planFingerprint);
         validateResolutionBindings(externalBindings, resolutions);
-        boolean statefulVersion =
+        boolean readOnlyStatefulVersion =
                 STATEFUL_SCHEMA_VERSION.equals(schemaVersion);
+        boolean readWriteStatefulVersion =
+                READ_WRITE_SCHEMA_VERSION.equals(schemaVersion);
+        boolean statefulVersion =
+                readOnlyStatefulVersion || readWriteStatefulVersion;
         if (statefulVersion) {
             stateEvidence = Objects.requireNonNull(
                     stateEvidence, "stateEvidence");
@@ -154,6 +161,15 @@ public record MirrorRunEvidence(
                     || stateEvidence.stateEvidenceFingerprint().isBlank()) {
                 throw new IllegalArgumentException(
                         "stateful mirror evidence requires one sealed exact state closure");
+            }
+            if (readOnlyStatefulVersion
+                    != MirrorStateRunEvidence.SCHEMA_VERSION.equals(
+                    stateEvidence.schemaVersion())
+                    || readWriteStatefulVersion
+                    != MirrorStateTransitionRunEvidence.SCHEMA_VERSION.equals(
+                    stateEvidence.schemaVersion())) {
+                throw new IllegalArgumentException(
+                        "mirror run evidence and nested state evidence versions differ");
             }
         } else if (stateEvidence != null) {
             throw new IllegalArgumentException(
@@ -631,7 +647,8 @@ public record MirrorRunEvidence(
         String normalized = value == null || value.isBlank() ? SCHEMA_VERSION : value.trim();
         if (!SCHEMA_VERSION.equals(normalized)
                 && !SCHEMA_VERSION_V1.equals(normalized)
-                && !STATEFUL_SCHEMA_VERSION.equals(normalized)) {
+                && !STATEFUL_SCHEMA_VERSION.equals(normalized)
+                && !READ_WRITE_SCHEMA_VERSION.equals(normalized)) {
             throw new IllegalArgumentException("unsupported mirror run-evidence schemaVersion");
         }
         return normalized;

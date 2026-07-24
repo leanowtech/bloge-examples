@@ -14,6 +14,7 @@ import com.leanowtech.bloge.gateway.testing.runtime.MirrorRunResult;
 import com.leanowtech.bloge.gateway.testing.runtime.MirrorRunEvidenceProjector;
 import com.leanowtech.bloge.gateway.testing.runtime.MirrorRunService;
 import com.leanowtech.bloge.gateway.testing.runtime.MirrorResolver;
+import com.leanowtech.bloge.gateway.testing.runtime.MirrorStateRunSession;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
@@ -311,10 +312,13 @@ public class MirrorRunIntegrationService {
         }
         LinkedHashMap<String, MirrorArtifactRef> capabilitiesBySite =
                 new LinkedHashMap<>();
+        boolean writable = false;
         for (MirrorPlan.ExternalBinding binding
                 : plan.externalBindings()) {
-            validateStateReadSpec(
-                    binding, snapshot.payload(), identity);
+            StateInteraction interaction = validateStateInteraction(
+                    plan, binding, snapshot.payload(), identity);
+            writable = writable
+                    || interaction == StateInteraction.WRITE;
             if (capabilitiesBySite.put(
                     binding.invocationSiteId(),
                     binding.capabilityRef()) != null) {
@@ -324,47 +328,124 @@ public class MirrorRunIntegrationService {
                         "The mirror plan contains duplicate invocation-site bindings.");
             }
         }
+        MirrorStateRunSession runSession = writable
+                ? new MirrorStateRunSession(
+                mapper, snapshot.payload(),
+                (writeEffectRef, input,
+                 expectedStateFingerprint) ->
+                        sessions.commandForRun(
+                                request.sessionBinding().sessionId(),
+                                writeEffectRef, input,
+                                expectedStateFingerprint,
+                                identity))
+                : null;
         return new MirrorResolver.SessionContext(
                 snapshot.payload(),
                 plan.planFingerprint(),
-                capabilitiesBySite);
+                capabilitiesBySite,
+                runSession);
     }
 
-    private static void validateStateReadSpec(
+    private static StateInteraction validateStateInteraction(
+            MirrorPlan plan,
             MirrorPlan.ExternalBinding binding,
             MirrorSessionPayload payload,
             IntegrationRequestContext identity) {
         if (!binding.resolverOrder().contains(
                 MirrorPlan.MirrorSource.SESSION_STATE)) {
-            return;
+            return StateInteraction.NONE;
         }
-        List<StateReadSpec> matches = payload.stateReadSpecs().stream()
+        List<StateReadSpec> reads = payload.stateReadSpecs().stream()
                 .filter(spec -> spec.targetCapabilityRef().equals(
                         binding.capabilityRef()))
                 .toList();
-        if (matches.isEmpty()) {
+        List<WriteEffectSpec> writes = payload.writeEffects().stream()
+                .filter(effect -> effect.targetCapabilityRef().equals(
+                        binding.capabilityRef()))
+                .toList();
+        CapabilitySnapshot capability =
+                plan.capabilityClosure().stream()
+                        .filter(candidate ->
+                                CapabilityClosureIntegrity
+                                        .reference(candidate)
+                                        .equals(binding.capabilityRef()))
+                        .findFirst()
+                        .orElseThrow(() -> serviceUnavailable(
+                                identity,
+                                "RG.MIRROR.PLAN_BINDING_INCONSISTENT",
+                                "The stateful plan capability closure is incomplete."));
+        boolean virtualWrite =
+                capability.contract().effect().mode()
+                        == EffectContract.Mode.VIRTUAL_MUTATION;
+        if (reads.size() + writes.size() == 0) {
             throw conflict(
                     identity,
-                    "RG.MIRROR.SESSION.READ_SPEC_MISSING",
-                    "The session has no state read specification for an admitted plan site.",
+                    virtualWrite
+                            ? "RG.MIRROR.SESSION.WRITE_EFFECT_MISSING"
+                            : "RG.MIRROR.SESSION.READ_SPEC_MISSING",
+                    virtualWrite
+                            ? "The session has no write effect for an admitted virtual-write site."
+                            : "The session has no state read specification for an admitted plan site.",
                     Map.of("invocationSiteId",
                             binding.invocationSiteId()));
         }
-        if (matches.size() != 1) {
+        if (reads.size() + writes.size() != 1) {
             throw serviceUnavailable(
                     identity,
-                    "RG.MIRROR.SESSION.READ_SPEC_INCONSISTENT",
-                    "The session has ambiguous state read specifications.");
+                    "RG.MIRROR.SESSION.INTERACTION_SPEC_INCONSISTENT",
+                    "The session has ambiguous state interaction specifications.");
         }
-        if (matches.getFirst().lifecycle()
+        if (!reads.isEmpty()) {
+            if (virtualWrite) {
+                throw conflict(
+                        identity,
+                        "RG.MIRROR.SESSION.INTERACTION_SPEC_INCONSISTENT",
+                        "A virtual-write capability cannot be lowered through a state read specification.",
+                        Map.of("invocationSiteId",
+                                binding.invocationSiteId()));
+            }
+            if (reads.getFirst().lifecycle()
+                    != CapabilitySnapshot.Lifecycle.ACTIVE) {
+                throw conflict(
+                        identity,
+                        "RG.MIRROR.SESSION.READ_SPEC_NOT_ACTIVE",
+                        "The session state read specification is not active.",
+                        Map.of("invocationSiteId",
+                                binding.invocationSiteId()));
+            }
+            return StateInteraction.READ;
+        }
+        WriteEffectSpec effect = writes.getFirst();
+        if (effect.lifecycle()
                 != CapabilitySnapshot.Lifecycle.ACTIVE) {
             throw conflict(
                     identity,
-                    "RG.MIRROR.SESSION.READ_SPEC_NOT_ACTIVE",
-                    "The session state read specification is not active.",
+                    "RG.MIRROR.SESSION.WRITE_EFFECT_NOT_ACTIVE",
+                    "The session write effect is not active.",
                     Map.of("invocationSiteId",
                             binding.invocationSiteId()));
         }
+        if (!virtualWrite
+                || !effect.stateModelRef().equals(
+                capability.contract().stateModelRef())
+                || !binding.resolverOrder().equals(
+                List.of(
+                        MirrorPlan.MirrorSource.SESSION_STATE,
+                        MirrorPlan.MirrorSource.ABSTAINED))) {
+            throw conflict(
+                    identity,
+                    "RG.MIRROR.SESSION.WRITE_BINDING_NOT_ADMITTED",
+                    "A graph virtual write requires an exact state model and terminal Session-only resolution.",
+                    Map.of("invocationSiteId",
+                            binding.invocationSiteId()));
+        }
+        return StateInteraction.WRITE;
+    }
+
+    private enum StateInteraction {
+        NONE,
+        READ,
+        WRITE
     }
 
     private static void validateSessionBinding(

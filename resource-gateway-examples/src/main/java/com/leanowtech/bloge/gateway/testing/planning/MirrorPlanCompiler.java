@@ -46,9 +46,10 @@ import java.util.Set;
  * the payload-free public plan. Mutable registries are not consulted after constructor entry and no
  * graph node is scheduled during compilation.</p>
  *
- * <p>The compiler admits state-model-backed read capabilities through the immutable Session
- * resolver. Graph-internal virtual writes, scenario packs, and schema synthesis remain rejected
- * until their own serving paths can produce complete transactional evidence.</p>
+ * <p>The compiler admits state-model-backed reads and virtual mutations through the Session
+ * resolver. Virtual mutations are terminal Session-only bindings and are later executed through
+ * the authenticated run-scoped write bridge. Scenario packs and schema synthesis remain rejected
+ * until their own governed serving paths are available.</p>
  */
 public class MirrorPlanCompiler {
     private static final String ROOT_PATH = "/root";
@@ -71,7 +72,7 @@ public class MirrorPlanCompiler {
     }
 
     /**
-     * Compiles and seals one stateless mirror execution generation.
+     * Compiles and seals one stateless or Session-backed mirror execution generation.
      *
      * @param request exact already-authorized artifacts and policy
      * @return sealed public plan plus its frozen in-process execution control
@@ -99,8 +100,8 @@ public class MirrorPlanCompiler {
         Set<String> mandatorySites = edges.stream()
                 .map(edge -> edge.entry().site().invocationSiteId())
                 .collect(java.util.stream.Collectors.toCollection(LinkedHashSet::new));
-        Set<String> statefulReadSites = edges.stream()
-                .filter(edge -> statefulRead(edge.child()))
+        Set<String> statefulSites = edges.stream()
+                .filter(edge -> statefulInteraction(edge.child()))
                 .map(edge -> edge.entry().site().invocationSiteId())
                 .collect(java.util.stream.Collectors.toCollection(
                         LinkedHashSet::new));
@@ -114,7 +115,7 @@ public class MirrorPlanCompiler {
                     request.graph(), request.fixtureBundle(),
                     request.policy().authorizedPurpose(), request.graphArtifactFingerprint(),
                     request.replayPayloads(), mandatorySites,
-                    statefulReadSites, inventory, corpusPayloads);
+                    statefulSites, inventory, corpusPayloads);
         } catch (ControlPlanRejectedException failure) {
             throw controlFailure(failure);
         }
@@ -203,19 +204,23 @@ public class MirrorPlanCompiler {
         for (CapabilitySnapshot snapshot : snapshots) {
             if (snapshot.contract().stateModelRef() != null
                     && snapshot.contract().effect().mode()
-                    != EffectContract.Mode.READ_ONLY) {
+                    != EffectContract.Mode.READ_ONLY
+                    && snapshot.contract().effect().mode()
+                    != EffectContract.Mode.VIRTUAL_MUTATION) {
                 throw reject(
                         "RG.MIRROR.STATEFUL_WRITE_RUNTIME_NOT_AVAILABLE",
-                        "Stateful DAG execution currently admits virtual reads only.");
+                        "Stateful DAG execution admits only exact reads and virtual mutations.");
             }
         }
     }
 
-    private static boolean statefulRead(
+    private static boolean statefulInteraction(
             CapabilitySnapshot snapshot) {
         return snapshot.contract().stateModelRef() != null
-                && snapshot.contract().effect().mode()
-                == EffectContract.Mode.READ_ONLY;
+                && (snapshot.contract().effect().mode()
+                == EffectContract.Mode.READ_ONLY
+                || snapshot.contract().effect().mode()
+                == EffectContract.Mode.VIRTUAL_MUTATION);
     }
 
     private List<ResolvedExternalEdge> resolveExternalEdges(

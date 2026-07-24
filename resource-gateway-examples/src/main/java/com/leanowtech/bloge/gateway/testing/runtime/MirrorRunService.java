@@ -13,7 +13,7 @@ import com.leanowtech.bloge.gateway.integration.mirror.MirrorPlan;
 import com.leanowtech.bloge.gateway.integration.mirror.MirrorPlanIntegrity;
 import com.leanowtech.bloge.gateway.integration.mirror.MirrorResolution;
 import com.leanowtech.bloge.gateway.integration.mirror.MirrorRunEvidence;
-import com.leanowtech.bloge.gateway.integration.mirror.MirrorStateRunEvidence;
+import com.leanowtech.bloge.gateway.integration.mirror.MirrorStateEvidence;
 import com.leanowtech.bloge.gateway.testing.domain.EffectiveExecutionPlan;
 import com.leanowtech.bloge.gateway.testing.evidence.ProtocolFingerprint;
 import com.leanowtech.bloge.gateway.testing.planning.CompiledExecutionControl;
@@ -312,7 +312,7 @@ public class MirrorRunService {
             throw reject("RG.MIRROR.RESOLUTION_EVIDENCE_REJECTED",
                     "Mirror resolution evidence could not be sealed for this run.");
         }
-        MirrorStateRunEvidence stateEvidence;
+        MirrorStateEvidence stateEvidence;
         try {
             stateEvidence = stateJournal == null ? null
                     : stateJournal.complete(

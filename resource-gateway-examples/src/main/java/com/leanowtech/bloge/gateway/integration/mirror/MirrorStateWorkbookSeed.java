@@ -159,14 +159,15 @@ public record MirrorStateWorkbookSeed(
         Objects.requireNonNull(mapper, "mapper");
         Objects.requireNonNull(bundle, "bundle");
         MirrorRunEvidence run = bundle.evidence();
-        MirrorStateRunEvidence state = run.stateEvidence();
+        MirrorStateEvidence nestedState = run.stateEvidence();
         if (!MirrorEvidenceBundle.STATEFUL_SCHEMA_VERSION.equals(
                 bundle.schemaVersion())
                 || !MirrorEvidenceAttestation.STATEFUL_SCHEMA_VERSION.equals(
                 bundle.attestation().schemaVersion())
                 || !MirrorRunEvidence.STATEFUL_SCHEMA_VERSION.equals(
                 run.schemaVersion())
-                || state == null
+                || !(nestedState
+                instanceof MirrorStateRunEvidence state)
                 || !bundle.attestation().independentlyVerifiable()
                 || !run.runId().equals(state.runId())
                 || !run.planFingerprint().equals(

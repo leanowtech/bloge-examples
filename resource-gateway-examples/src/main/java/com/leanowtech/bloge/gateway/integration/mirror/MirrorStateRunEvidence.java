@@ -46,7 +46,7 @@ public record MirrorStateRunEvidence(
         List<StatefulBinding> statefulBindings,
         List<StateAccess> accesses,
         List<String> limitations
-) {
+) implements MirrorStateEvidence {
     /** Current payload-free state run-evidence version. */
     public static final String SCHEMA_VERSION =
             "resourceGateway.mirrorStateRunEvidence.v1";

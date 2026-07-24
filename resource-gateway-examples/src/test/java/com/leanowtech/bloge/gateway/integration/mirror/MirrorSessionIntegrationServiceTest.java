@@ -6,6 +6,7 @@ import com.leanowtech.bloge.gateway.integration.IntegrationProblemException;
 import com.leanowtech.bloge.gateway.integration.IntegrationRequestContext;
 import com.leanowtech.bloge.gateway.testing.persistence.MirrorStatePayloadProtector;
 import com.leanowtech.bloge.gateway.testing.runtime.MirrorStateBaselineResolver;
+import com.leanowtech.bloge.gateway.testing.runtime.MirrorStateRunSession;
 import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import org.junit.jupiter.api.Test;
 import org.springframework.jdbc.core.JdbcTemplate;
@@ -71,6 +72,66 @@ class MirrorSessionIntegrationServiceTest {
                     "SELECT payload_envelope IS NULL "
                             + "FROM mirror_session_state",
                     Boolean.class)).isTrue();
+        }
+    }
+
+    @Test
+    void graphCommandAdapterReturnsTheDurablePayloadAndExactReplay() {
+        try (Harness harness = harness()) {
+            Fixture fixture = fixture();
+            MirrorSessionDescriptor created =
+                    harness.service().create(
+                            create(fixture.payload()),
+                            identity());
+            Map<String, Object> input = Map.of(
+                    "requestId", "REQ-GRAPH-1",
+                    "orderId", "O-100",
+                    "amount", 450);
+
+            MirrorStateRunSession.CommandResult committed =
+                    harness.service().commandForRun(
+                            created.sessionId(),
+                            WriteEffectSpecIntegrity.reference(
+                                    fixture.effect()),
+                            input, created.stateFingerprint(),
+                            identity());
+            MirrorStateRunSession.CommandResult replayed =
+                    harness.service().commandForRun(
+                            created.sessionId(),
+                            WriteEffectSpecIntegrity.reference(
+                                    fixture.effect()),
+                            input,
+                            committed.payload().state()
+                                    .fingerprint(),
+                            identity());
+
+            assertThat(committed.replayed()).isFalse();
+            assertThat(committed.payload().state()
+                    .stateRevision()).isEqualTo(1);
+            assertThat(committed.descriptor()
+                    .stateFingerprint()).isEqualTo(
+                    committed.payload().state()
+                            .fingerprint());
+            assertThat(committed.payload().state()
+                    .processedCommands())
+                    .contains(committed.receipt());
+            assertThat(replayed.replayed()).isTrue();
+            assertThat(replayed.payload().fingerprint())
+                    .isEqualTo(committed.payload().fingerprint());
+            assertThat(replayed.payload().state().fingerprint())
+                    .isEqualTo(committed.payload().state().fingerprint());
+            assertThat(replayed.payload().state().stateRevision())
+                    .isEqualTo(committed.payload().state().stateRevision());
+            assertThat(replayed.receipt())
+                    .isEqualTo(committed.receipt());
+            assertThat(harness.service().snapshotForRun(
+                    new MirrorSessionRunBinding(
+                            created.sessionId(),
+                            committed.payload().state()
+                                    .fingerprint()),
+                    created.planFingerprint(), identity())
+                    .payload().fingerprint())
+                    .isEqualTo(committed.payload().fingerprint());
         }
     }
 

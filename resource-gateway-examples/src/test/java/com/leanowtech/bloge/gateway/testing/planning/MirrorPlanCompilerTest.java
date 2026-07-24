@@ -325,7 +325,7 @@ class MirrorPlanCompilerTest {
     }
 
     @Test
-    void rejectsReservedStateScenarioAndSynthesisCapabilitiesUntilTheirRuntimesExist() {
+    void admitsVirtualStateMutationButRejectsScenarioAndSynthesisWithoutRuntimes() {
         registry.register("refund.update", new ReadOnlyOperator());
         Graph graph = graph("refundFlow", Map.of("updateRefund", "refund.update"));
         MirrorArtifactRef stateModel = ref("STATE_MODEL", "refund-world", 'c');
@@ -334,9 +334,16 @@ class MirrorPlanCompilerTest {
                 EffectContract.RiskLevel.MEDIUM, EffectContract.Derivation.DECLARED, List.of());
         CapabilityClosure closure = directClosure("refundFlow", "updateRefund",
                 "refund.update", TARGET, mutation, stateModel);
-        assertRejected(() -> compiler.compile(request(
-                        graph, closure, fixture(), policy(), null, TARGET)),
-                "RG.MIRROR.STATEFUL_WRITE_RUNTIME_NOT_AVAILABLE");
+        CompiledMirrorPlan compiled = compiler.compile(request(
+                graph, closure, fixture(), policy(), null, TARGET));
+        assertThat(compiled.plan().stateModelRefs()).containsExactly(stateModel);
+        assertThat(compiled.plan().externalBindings())
+                .singleElement()
+                .satisfies(binding -> assertThat(binding.resolverOrder())
+                        .containsExactly(
+                                MirrorPlan.MirrorSource.SESSION_STATE,
+                                MirrorPlan.MirrorSource.ABSTAINED));
+        MirrorPlanIntegrity.verify(mapper, compiled.plan());
 
         CapabilityClosure stateless = directClosure("refundFlow", "updateRefund",
                 "refund.update", TARGET, readOnlyEffect(), null);

@@ -314,10 +314,13 @@ class ToolStudioIntegrationServiceTest {
                 .containsEntry("mirrorOperationObservability", true)
                 .containsEntry("mirrorServing", true)
                 .containsEntry("mirrorStateRunEvidenceProtocol", true)
+                .containsEntry("mirrorStateTransitionEvidenceProtocol", true)
                 .containsEntry("mirrorStateWorkbookSeedProtocol", true)
                 .containsEntry("mirrorStateRunEvidenceReady", false)
+                .containsEntry("mirrorStateTransitionEvidenceReady", false)
                 .containsEntry("mirrorStateWorkbookSeedApi", true)
-                .containsEntry("mirrorStateWorkbookSeedReady", false);
+                .containsEntry("mirrorStateWorkbookSeedReady", false)
+                .containsEntry("mirrorStateTransitionWorkbookSeedReady", false);
         assertThat(enabledCapabilities.supportedObjects())
                 .containsEntry("mirrorPlanCreateRequest", List.of(
                         com.leanowtech.bloge.gateway.integration.mirror
@@ -336,24 +339,32 @@ class ToolStudioIntegrationServiceTest {
                         com.leanowtech.bloge.gateway.integration.mirror
                                 .MirrorEvidenceBundle.SCHEMA_VERSION,
                         com.leanowtech.bloge.gateway.integration.mirror
-                                .MirrorEvidenceBundle.STATEFUL_SCHEMA_VERSION))
+                                .MirrorEvidenceBundle.STATEFUL_SCHEMA_VERSION,
+                        com.leanowtech.bloge.gateway.integration.mirror
+                                .MirrorEvidenceBundle.READ_WRITE_SCHEMA_VERSION))
                 .containsEntry("mirrorRunEvidence", List.of(
                         com.leanowtech.bloge.gateway.integration.mirror
                                 .MirrorRunEvidence.SCHEMA_VERSION_V1,
                         com.leanowtech.bloge.gateway.integration.mirror
                                 .MirrorRunEvidence.SCHEMA_VERSION,
                         com.leanowtech.bloge.gateway.integration.mirror
-                                .MirrorRunEvidence.STATEFUL_SCHEMA_VERSION))
+                                .MirrorRunEvidence.STATEFUL_SCHEMA_VERSION,
+                        com.leanowtech.bloge.gateway.integration.mirror
+                                .MirrorRunEvidence.READ_WRITE_SCHEMA_VERSION))
                 .containsEntry("mirrorEvidenceAttestation", List.of(
                         com.leanowtech.bloge.gateway.integration.mirror
                                 .MirrorEvidenceAttestation.SCHEMA_VERSION_V1,
                         com.leanowtech.bloge.gateway.integration.mirror
                                 .MirrorEvidenceAttestation.SCHEMA_VERSION,
                         com.leanowtech.bloge.gateway.integration.mirror
-                                .MirrorEvidenceAttestation.STATEFUL_SCHEMA_VERSION))
+                                .MirrorEvidenceAttestation.STATEFUL_SCHEMA_VERSION,
+                        com.leanowtech.bloge.gateway.integration.mirror
+                                .MirrorEvidenceAttestation.READ_WRITE_SCHEMA_VERSION))
                 .containsEntry("mirrorStateRunEvidence", List.of(
                         com.leanowtech.bloge.gateway.integration.mirror
-                                .MirrorStateRunEvidence.SCHEMA_VERSION))
+                                .MirrorStateRunEvidence.SCHEMA_VERSION,
+                        com.leanowtech.bloge.gateway.integration.mirror
+                                .MirrorStateTransitionRunEvidence.SCHEMA_VERSION))
                 .containsEntry("mirrorStateWorkbookSeed", List.of(
                         com.leanowtech.bloge.gateway.integration.mirror
                                 .MirrorStateWorkbookSeed.SCHEMA_VERSION));
@@ -413,11 +424,14 @@ class ToolStudioIntegrationServiceTest {
                 .containsEntry("mirrorStatefulSessionApi", true)
                 .containsEntry("mirrorStatefulStateStoreReady", false)
                 .containsEntry("mirrorStatefulResolverReady", false)
+                .containsEntry("mirrorStateTransitionEvidenceReady", false)
                 .containsEntry("mirrorStatefulRuntimeReady", false);
         assertThat(available.features())
                 .containsEntry("mirrorStatefulSessionApi", true)
                 .containsEntry("mirrorStatefulStateStoreReady", true)
                 .containsEntry("mirrorStatefulResolverReady", true)
+                .containsEntry("mirrorStateTransitionEvidenceReady", true)
+                .containsEntry("mirrorStateTransitionWorkbookSeedReady", false)
                 .containsEntry("mirrorStatefulRuntimeReady", false);
         assertThat(available.supportedObjects())
                 .containsKeys(

@@ -199,15 +199,27 @@ public final class MirrorPlanIntegrity {
                 throw new IllegalArgumentException(
                         "external binding source does not match its capability snapshot");
             }
-            boolean statefulRead =
+            boolean statefulInteraction =
                     child.contract().stateModelRef() != null
-                            && child.contract().effect().mode()
-                            == EffectContract.Mode.READ_ONLY;
+                            && (child.contract().effect().mode()
+                            == EffectContract.Mode.READ_ONLY
+                            || child.contract().effect().mode()
+                            == EffectContract.Mode
+                            .VIRTUAL_MUTATION);
             if (binding.resolverOrder().contains(
                     MirrorPlan.MirrorSource.SESSION_STATE)
-                    != statefulRead) {
+                    != statefulInteraction) {
                 throw new IllegalArgumentException(
-                        "SESSION_STATE must exactly match state-model-backed read capabilities");
+                        "SESSION_STATE must exactly match state-model-backed interactions");
+            }
+            if (child.contract().effect().mode()
+                    == EffectContract.Mode.VIRTUAL_MUTATION
+                    && !binding.resolverOrder().equals(
+                    List.of(
+                            MirrorPlan.MirrorSource.SESSION_STATE,
+                            MirrorPlan.MirrorSource.ABSTAINED))) {
+                throw new IllegalArgumentException(
+                        "virtual mutations require terminal Session-only resolution");
             }
         }
         if (!expected.equals(actual)) {

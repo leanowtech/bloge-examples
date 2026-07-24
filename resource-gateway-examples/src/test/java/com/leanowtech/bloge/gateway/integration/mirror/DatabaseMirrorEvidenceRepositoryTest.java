@@ -90,6 +90,44 @@ class DatabaseMirrorEvidenceRepositoryTest {
     }
 
     @Test
+    void persistsAndReverifiesReadWriteV4EvidenceAcrossRepositoryInstances() {
+        MirrorPlan plan = plan(
+                mapper, scope("org-a"), "plan-transition", 'a');
+        MirrorEvidenceBundle bundle =
+                MirrorPersistenceTestFixtures.readWriteEvidence(
+                        mapper, signer, plan,
+                        "run-transition", 'd');
+
+        repository.create(bundle);
+        DatabaseMirrorEvidenceRepository restarted =
+                repository(signer);
+        restarted.init();
+
+        MirrorEvidenceBundle restored = restarted.find(
+                plan.scope(), "run-transition").orElseThrow();
+        assertThat(restored).isEqualTo(bundle);
+        assertThat(restored.evidence().stateEvidence())
+                .isInstanceOf(
+                        MirrorStateTransitionRunEvidence.class);
+        assertThat(((MirrorStateTransitionRunEvidence)
+                restored.evidence().stateEvidence())
+                .transitions()).singleElement()
+                .satisfies(transition -> {
+                    assertThat(transition.revisionBefore())
+                            .isZero();
+                    assertThat(transition.revisionAfter())
+                            .isEqualTo(1);
+                });
+        assertThat(jdbc.queryForObject(
+                "SELECT schema_version FROM mirror_run_evidence "
+                        + "WHERE run_id = ?",
+                String.class, "run-transition"))
+                .isEqualTo(
+                        MirrorEvidenceBundle
+                                .READ_WRITE_SCHEMA_VERSION);
+    }
+
+    @Test
     void isolatesIdenticalRunIdsByCompleteEnterpriseScope() {
         MirrorPlan orgA = plan(mapper, scope("org-a"), "plan-a", 'a');
         MirrorPlan orgB = plan(mapper, scope("org-b"), "plan-b", 'a');

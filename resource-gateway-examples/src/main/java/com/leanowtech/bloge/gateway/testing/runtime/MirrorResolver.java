@@ -143,11 +143,13 @@ public interface MirrorResolver {
      * @param payload exact sealed session aggregate observed before graph execution
      * @param planFingerprint exact plan generation authorized for the run
      * @param capabilitiesBySite exact external capability binding by invocation site
+     * @param runSession optional serializable virtual-write bridge; absent for read-only runs
      */
     record SessionContext(
             MirrorSessionPayload payload,
             String planFingerprint,
-            Map<String, MirrorArtifactRef> capabilitiesBySite
+            Map<String, MirrorArtifactRef> capabilitiesBySite,
+            MirrorStateRunSession runSession
     ) {
         /** Validates payload-free coordinates and detaches the capability map. */
         public SessionContext {
@@ -164,9 +166,39 @@ public interface MirrorResolver {
                 if (!"CAPABILITY".equals(
                         Objects.requireNonNull(capability, "capability").kind())) {
                     throw new IllegalArgumentException(
-                            "session resolver sites must reference CAPABILITY");
+                        "session resolver sites must reference CAPABILITY");
                 }
             });
+            if (runSession != null
+                    && !payload.fingerprint().equals(
+                    runSession.initialPayload().fingerprint())) {
+                throw new IllegalArgumentException(
+                        "state run session must start from the admitted payload");
+            }
+        }
+
+        /**
+         * Compatibility constructor for a read-only run over one immutable state head.
+         *
+         * @param payload exact sealed session aggregate observed before graph execution
+         * @param planFingerprint exact plan generation authorized for the run
+         * @param capabilitiesBySite exact external capability binding by invocation site
+         */
+        public SessionContext(
+                MirrorSessionPayload payload,
+                String planFingerprint,
+                Map<String, MirrorArtifactRef> capabilitiesBySite) {
+            this(payload, planFingerprint, capabilitiesBySite, null);
+        }
+
+        /**
+         * Returns the latest state head visible inside this graph run.
+         *
+         * @return initial payload for read-only runs or the last verified write result
+         */
+        public MirrorSessionPayload currentPayload() {
+            return runSession == null
+                    ? payload : runSession.currentPayload();
         }
 
         /** Prevents decrypted session payloads from entering ordinary logs. */
@@ -175,7 +207,8 @@ public interface MirrorResolver {
             return "SessionContext[sessionId=" + payload.state().sessionId()
                     + ", planFingerprint=" + planFingerprint
                     + ", stateFingerprint=" + payload.state().fingerprint()
-                    + ", capabilitySites=" + capabilitiesBySite.size() + "]";
+                    + ", capabilitySites=" + capabilitiesBySite.size()
+                    + ", writable=" + (runSession != null) + "]";
         }
     }
 

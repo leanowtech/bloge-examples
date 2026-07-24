@@ -14,6 +14,8 @@ import com.leanowtech.bloge.gateway.integration.mirror.SessionStateSpaceIntegrit
 import com.leanowtech.bloge.gateway.integration.mirror.StateModelIntegrity;
 import com.leanowtech.bloge.gateway.integration.mirror.StateReadSpec;
 import com.leanowtech.bloge.gateway.integration.mirror.StateReadSpecIntegrity;
+import com.leanowtech.bloge.gateway.integration.mirror.WriteEffectSpec;
+import com.leanowtech.bloge.gateway.integration.mirror.WriteEffectSpecIntegrity;
 import com.leanowtech.bloge.gateway.testing.domain.FixtureRule;
 import com.leanowtech.bloge.gateway.testing.domain.ProtocolJsonValue;
 import com.leanowtech.bloge.gateway.testing.evidence.ProtocolFingerprint;
@@ -27,13 +29,15 @@ import java.util.Objects;
 import java.util.Optional;
 
 /**
- * Resolves exact external reads from one immutable stateful-mirror Session snapshot.
+ * Resolves exact external reads and virtual writes from one run-scoped stateful-mirror Session.
  *
  * <p>A live entity produces a normal output-level fixture. An indexed tombstone produces a
  * governed non-retryable business failure and therefore terminates source precedence. A key absent
  * from both live and tombstoned state abstains so exact corpus or owner policy may provide the
- * initial observation. The resolver never consults the state store itself, so every occurrence in
- * one graph run observes the same pre-admitted state revision.</p>
+ * initial observation. A capability with one exact {@link WriteEffectSpec} is executed only through
+ * the run-scoped {@link MirrorStateRunSession}; that bridge delegates lease/CAS persistence to the
+ * authenticated Session service and advances the state head visible to downstream nodes. The
+ * resolver never receives a store, credential, or real external operator.</p>
  */
 public final class MirrorSessionStateResolver implements MirrorResolver {
     /** Stable terminal error emitted when an exact session key is tombstoned. */
@@ -44,6 +48,9 @@ public final class MirrorSessionStateResolver implements MirrorResolver {
             16 * 1024 * 1024;
     private static final ArtifactProvenance.Confidence EXACT_STATE_CONFIDENCE =
             new ArtifactProvenance.Confidence(1, 1, 1, "SESSION_STATE_EXACT_V1");
+    private static final ArtifactProvenance.Confidence EXACT_STATE_WRITE_CONFIDENCE =
+            new ArtifactProvenance.Confidence(
+                    1, 1, 1, "SESSION_STATE_WRITE_EXACT_V1");
     private static final FixtureRule.Consumption UNBOUNDED =
             new FixtureRule.Consumption(
                     false, 0, 0, FixtureRule.ExhaustedAction.FAIL,
@@ -70,7 +77,7 @@ public final class MirrorSessionStateResolver implements MirrorResolver {
         if (context == null) {
             return Optional.empty();
         }
-        MirrorSessionPayload payload = context.payload();
+        MirrorSessionPayload payload = context.currentPayload();
         MirrorSessionProtocolIntegrity.verify(mapper, payload);
         SessionStateSpace state = payload.state();
         if (!state.planFingerprint().equals(context.planFingerprint())) {
@@ -88,6 +95,21 @@ public final class MirrorSessionStateResolver implements MirrorResolver {
         List<StateReadSpec> candidates = payload.stateReadSpecs().stream()
                 .filter(spec -> spec.targetCapabilityRef().equals(capability))
                 .toList();
+        List<WriteEffectSpec> writeCandidates =
+                payload.writeEffects().stream()
+                        .filter(effect -> effect.targetCapabilityRef()
+                                .equals(capability))
+                        .toList();
+        if (!candidates.isEmpty() && !writeCandidates.isEmpty()) {
+            throw rejected(
+                    "MIRROR_SESSION_INTERACTION_AMBIGUOUS",
+                    "The capability is bound to both a state read and a virtual write.");
+        }
+        if (!writeCandidates.isEmpty()) {
+            return resolveWrite(
+                    request, context, payload, capability,
+                    writeCandidates);
+        }
         if (candidates.isEmpty()) {
             throw rejected(
                     "MIRROR_SESSION_READ_SPEC_MISSING",
@@ -128,8 +150,11 @@ public final class MirrorSessionStateResolver implements MirrorResolver {
                                 keyFingerprint))
                         .findFirst();
         if (indexed.isEmpty()) {
-            request.stateAccessObserver().observed(
-                    request, spec, keyFingerprint,
+            request.stateAccessObserver().observedAt(
+                    request, spec, stateRef(state),
+                    state.stateRevision(),
+                    state.worldFingerprint(),
+                    state.logicalClock(), keyFingerprint,
                     MirrorStateRunEvidence.AccessOutcome.ABSENT,
                     "", "");
             return Optional.empty();
@@ -164,8 +189,11 @@ public final class MirrorSessionStateResolver implements MirrorResolver {
             }
             String outputFingerprint = ProtocolFingerprint.ofBounded(
                     mapper, output, MAXIMUM_PROJECTED_OUTPUT_BYTES);
-            request.stateAccessObserver().observed(
-                    request, spec, keyFingerprint,
+            request.stateAccessObserver().observedAt(
+                    request, spec, stateRef(state),
+                    state.stateRevision(),
+                    state.worldFingerprint(),
+                    state.logicalClock(), keyFingerprint,
                     MirrorStateRunEvidence.AccessOutcome.LIVE_ENTITY,
                     entity.orElseThrow().fingerprint(),
                     outputFingerprint);
@@ -183,8 +211,11 @@ public final class MirrorSessionStateResolver implements MirrorResolver {
                     "MIRROR_SESSION_INDEX_CORRUPT",
                     "State business-key index targets no live entity or tombstone.");
         }
-        request.stateAccessObserver().observed(
-                request, spec, keyFingerprint,
+        request.stateAccessObserver().observedAt(
+                request, spec, stateRef(state),
+                state.stateRevision(),
+                state.worldFingerprint(),
+                state.logicalClock(), keyFingerprint,
                 MirrorStateRunEvidence.AccessOutcome.TOMBSTONED,
                 tombstone.orElseThrow().fingerprint(), "");
         return Optional.of(new Match(
@@ -195,6 +226,82 @@ public final class MirrorSessionStateResolver implements MirrorResolver {
                 List.of("TOMBSTONE_TERMINAL"), artifacts, ruleRefs));
     }
 
+    private Optional<Match> resolveWrite(
+            Request request,
+            SessionContext context,
+            MirrorSessionPayload payload,
+            MirrorArtifactRef capability,
+            List<WriteEffectSpec> candidates) {
+        if (candidates.size() != 1) {
+            throw rejected(
+                    "MIRROR_SESSION_WRITE_EFFECT_AMBIGUOUS",
+                    "More than one write effect targets the capability.");
+        }
+        WriteEffectSpec effect = candidates.getFirst();
+        if (effect.lifecycle()
+                != CapabilitySnapshot.Lifecycle.ACTIVE) {
+            throw rejected(
+                    "MIRROR_SESSION_WRITE_EFFECT_INACTIVE",
+                    "The exact write effect is not active.");
+        }
+        WriteEffectSpecIntegrity.verify(
+                mapper, effect, payload.stateModel());
+        if (context.runSession() == null) {
+            throw rejected(
+                    "MIRROR_SESSION_WRITE_RUNTIME_UNAVAILABLE",
+                    "The graph run did not admit a serializable Session write boundary.");
+        }
+        Map<String, Object> input;
+        if (request.input() instanceof Map<?, ?> raw) {
+            input = new LinkedHashMap<>();
+            raw.forEach((key, value) -> {
+                if (!(key instanceof String name)) {
+                    throw rejected(
+                            "MIRROR_SESSION_WRITE_INPUT_INVALID",
+                            "Virtual-write input must be a JSON object.");
+                }
+                input.put(name, value);
+            });
+        } else {
+            throw rejected(
+                    "MIRROR_SESSION_WRITE_INPUT_INVALID",
+                    "Virtual-write input must be a JSON object.");
+        }
+        MirrorStateRunSession.Execution execution;
+        try {
+            execution = context.runSession().execute(
+                    WriteEffectSpecIntegrity.reference(effect),
+                    input);
+        } catch (TestControlException expected) {
+            throw expected;
+        } catch (RuntimeException failure) {
+            throw rejected(
+                    "MIRROR_SESSION_WRITE_FAILED",
+                    "The virtual-write transaction did not produce a durable result.");
+        }
+        Object output = execution.receipt().response();
+        String outputFingerprint = ProtocolFingerprint.ofBounded(
+                mapper, output, MAXIMUM_PROJECTED_OUTPUT_BYTES);
+        request.stateAccessObserver().transitioned(
+                request, effect,
+                MirrorStateTransitionObservation.project(
+                        mapper, effect, execution,
+                        outputFingerprint));
+        return Optional.of(new Match(
+                rule(effect, execution.after().state(),
+                        FixtureRule.Behavior.returning(output)),
+                EXACT_STATE_WRITE_CONFIDENCE, 1,
+                execution.replayed()
+                        ? List.of("IDEMPOTENT_REPLAY")
+                        : List.of(),
+                artifactRefs(execution.after(), effect),
+                List.of(
+                        "write-effect:" + effect.specId()
+                                + ":" + effect.revision(),
+                        "transaction-receipt:"
+                                + execution.receipt().fingerprint())));
+    }
+
     private FixtureRule rule(
             StateReadSpec spec,
             SessionStateSpace state,
@@ -202,6 +309,18 @@ public final class MirrorSessionStateResolver implements MirrorResolver {
         return new FixtureRule(
                 FixtureRule.SCHEMA_VERSION,
                 "session-state:" + spec.specId() + ":"
+                        + state.stateRevision(),
+                FixtureRule.Selector.any(), behavior, UNBOUNDED,
+                FixtureRule.SchemaCheck.strict());
+    }
+
+    private FixtureRule rule(
+            WriteEffectSpec effect,
+            SessionStateSpace state,
+            FixtureRule.Behavior behavior) {
+        return new FixtureRule(
+                FixtureRule.SCHEMA_VERSION,
+                "session-write:" + effect.specId() + ":"
                         + state.stateRevision(),
                 FixtureRule.Selector.any(), behavior, UNBOUNDED,
                 FixtureRule.SchemaCheck.strict());
@@ -217,6 +336,27 @@ public final class MirrorSessionStateResolver implements MirrorResolver {
                         state.fingerprint()),
                 StateModelIntegrity.reference(payload.stateModel()),
                 StateReadSpecIntegrity.reference(spec));
+    }
+
+    private static MirrorArtifactRef stateRef(
+            SessionStateSpace state) {
+        return new MirrorArtifactRef(
+                "SESSION_STATE", state.sessionId(),
+                Math.addExact(state.stateRevision(), 1),
+                state.fingerprint());
+    }
+
+    private static List<MirrorArtifactRef> artifactRefs(
+            MirrorSessionPayload payload,
+            WriteEffectSpec effect) {
+        SessionStateSpace state = payload.state();
+        return List.of(
+                new MirrorArtifactRef(
+                        "SESSION_STATE", state.sessionId(),
+                        Math.addExact(state.stateRevision(), 1),
+                        state.fingerprint()),
+                StateModelIntegrity.reference(payload.stateModel()),
+                WriteEffectSpecIntegrity.reference(effect));
     }
 
     private static Object evaluate(

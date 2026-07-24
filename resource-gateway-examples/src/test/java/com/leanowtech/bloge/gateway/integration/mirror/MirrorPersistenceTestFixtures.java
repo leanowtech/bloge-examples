@@ -197,6 +197,116 @@ final class MirrorPersistenceTestFixtures {
                         ZoneOffset.UTC)).seal(run).bundle();
     }
 
+    static MirrorEvidenceBundle readWriteEvidence(
+            ObjectMapper mapper,
+            VisualEvidenceSigner signer,
+            MirrorPlan plan,
+            String runId,
+            char semanticMaterial) {
+        MirrorRunEvidence base = statefulEvidence(
+                mapper, signer, plan, runId,
+                semanticMaterial).evidence();
+        MirrorRunEvidence.ExternalBinding binding =
+                base.externalBindings().getFirst();
+        MirrorStateTransitionRunEvidence source =
+                MirrorStateTransitionRunEvidenceIntegrityTest
+                        .evidence();
+        MirrorStateTransitionRunEvidence.StateTransition
+                sourceTransition =
+                source.transitions().getFirst();
+        MirrorStateTransitionRunEvidence transitionEvidence =
+                MirrorStateTransitionRunEvidenceIntegrity.seal(
+                        mapper,
+                        new MirrorStateTransitionRunEvidence(
+                                MirrorStateTransitionRunEvidence
+                                        .SCHEMA_VERSION,
+                                "", runId,
+                                plan.planFingerprint(),
+                                source.sessionStateRef(),
+                                source.finalSessionStateRef(),
+                                source.stateModelRef(),
+                                source.stateRevision(),
+                                source.finalStateRevision(),
+                                source.worldFingerprint(),
+                                source.finalWorldFingerprint(),
+                                source.logicalClock(),
+                                source.finalLogicalClock(),
+                                source.mode(),
+                                List.of(
+                                        new MirrorStateTransitionRunEvidence
+                                                .StatefulBinding(
+                                                binding.invocationSiteId(),
+                                                binding.graphPath(),
+                                                binding.capabilityRef(),
+                                                MirrorStateTransitionRunEvidence
+                                                        .Interaction.WRITE,
+                                                null,
+                                                sourceTransition
+                                                        .writeEffectRef())),
+                                List.of(),
+                                List.of(
+                                        new MirrorStateTransitionRunEvidence
+                                                .StateTransition(
+                                                binding.invocationSiteId(),
+                                                binding.graphPath(),
+                                                "", 1, 1,
+                                                binding.capabilityRef(),
+                                                sourceTransition
+                                                        .writeEffectRef(),
+                                                sourceTransition
+                                                        .initialStateRef(),
+                                                sourceTransition
+                                                        .finalStateRef(),
+                                                sourceTransition
+                                                        .revisionBefore(),
+                                                sourceTransition
+                                                        .revisionAfter(),
+                                                sourceTransition
+                                                        .initialWorldFingerprint(),
+                                                sourceTransition
+                                                        .finalWorldFingerprint(),
+                                                sourceTransition
+                                                        .initialLogicalClock(),
+                                                sourceTransition
+                                                        .finalLogicalClock(),
+                                                sourceTransition
+                                                        .requestFingerprint(),
+                                                sourceTransition
+                                                        .idempotencyKeyFingerprint(),
+                                                sourceTransition
+                                                        .commandFingerprint(),
+                                                sourceTransition
+                                                        .receiptFingerprint(),
+                                                sourceTransition
+                                                        .responseFingerprint(),
+                                                sourceTransition
+                                                        .resultingWorldFingerprint(),
+                                                sourceTransition.committedAt(),
+                                                sourceTransition.replayed(),
+                                                sourceTransition.events())),
+                                List.of()));
+        MirrorRunEvidence run = new MirrorRunEvidence(
+                MirrorRunEvidence.READ_WRITE_SCHEMA_VERSION,
+                base.runId(), base.requestId(),
+                base.requestContextFingerprint(), base.planId(),
+                base.planFingerprint(),
+                base.capabilityClosureFingerprint(),
+                base.executionControlFingerprint(),
+                base.rootCapability(), base.fixtureBundleRef(),
+                base.externalBindings(), base.scope(),
+                base.authorizedPurpose(), base.status(),
+                base.evidenceClass(),
+                base.semanticResultFingerprint(),
+                base.startedAt(), base.completedAt(),
+                base.nodeTraces(), base.edgeTraces(),
+                base.resolutions(), transitionEvidence,
+                base.isolation(), base.limitations());
+        return new MirrorEvidenceIntegrityService(
+                mapper, signer,
+                Clock.fixed(base.completedAt().plusSeconds(1),
+                        ZoneOffset.UTC)).seal(run).bundle();
+    }
+
     static MirrorEvidenceBundle certifiableEvidence(
             ObjectMapper mapper,
             VisualEvidenceSigner signer,

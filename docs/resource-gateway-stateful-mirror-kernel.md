@@ -2,9 +2,9 @@
 
 ## 1. 当前结论
 
-Stateful Mirror 的退款域纵向切片现已贯通“协议 -> 事务内核 -> 加密持久化 -> 受保护 Session API ->
-固定运行快照 -> DAG 状态读 -> signed state evidence -> 独立客户端复验 -> ANEKE seed”，可以在
-`test`/`staging` 环境作为可调用的状态化模拟数据面、只读 DAG resolver 和 payload-free 证据源使用，
+Stateful Mirror 的状态化纵向切片现已贯通“协议 -> 事务内核 -> 加密持久化 -> 受保护 Session API ->
+run-scoped 串行状态推进 -> DAG 读/虚拟写/再读 -> signed transition evidence -> 独立客户端复验”，可以在
+`test`/`staging` 环境作为可调用的状态化模拟数据面、DAG 状态 resolver 和 payload-free 证据源使用，
 但还不是 production-certified runtime。
 
 当前实现已经解决：
@@ -16,17 +16,23 @@ Stateful Mirror 的退款域纵向切片现已贯通“协议 -> 事务内核 ->
 - 删除形成不可复活的 tombstone。
 - `StateReadSpec` 把一个 exact read capability 显式 lowering 到 entity type、业务键、请求取键表达式和响应投影，
   runtime 不按算子名字猜字段。
-- 一次 DAG run 只读取一次认证 scope 内的 Session head；plan/state fingerprint 双 fence 后，所有节点共享同一
-  revision，运行中并发 command 不会造成撕裂读。
+- 一次 DAG run 从认证 scope 内的 exact Session head 开始；plan/state fingerprint 双 fence 后，read-only run
+  始终观察该 revision，read/write run 则在一个公平串行的 run session 中推进 head，后续读精确观察已提交的新 revision。
+- `VIRTUAL_MUTATION` 站点必须使用 `[SESSION_STATE, ABSTAINED]`，并经与公开 Session command 相同的 admission、
+  DB lease、idempotency、expected-head、CAS 和 audit 路径提交；真实外部写 operator 不会被调用。
 - `SESSION_STATE` 位于 resolver precedence 首位。live entity 直接返回，absent 才允许下层来源提供初始观测；
   tombstone 返回终态业务错误，不能回退 corpus、fixture 或真实资源。
 - 每个 Session-backed run 绑定一次 exact Session head、StateModel、state revision、world fingerprint 与
   logical clock；每次 `LIVE_ENTITY`、`ABSENT`、`TOMBSTONED` access 都与 exact stateful binding、
   node delegate attempt 和 `MirrorResolution` 闭合，不保留实体值或业务键。
-- stateful run 使用 `mirrorStateRunEvidence.v1` 和独立签名域的 mirror evidence/attestation/bundle v3；
-  stateless v1/v2 wire、签名域和读兼容不变。JDBC 重启后仍会重新复验 nested state seal 和 detached signature。
-- 独立 test-kit 能先离线复验 v3 bundle，再本地投影确定性的 `mirrorStateWorkbookSeed.v1`。服务端提供同一投影
-  的 scope-isolated endpoint；两者只生成 workbook 输入坐标与 blocker，发布裁决仍归 ANEKE。
+- read-only stateful run 使用 `mirrorStateRunEvidence.v1` 和独立签名域的 mirror evidence/attestation/bundle v3；
+  read/write run 使用 `mirrorStateRunEvidence.v2` 与独立 v4 签名域。V2 绑定 initial/final head、每次读实际观察
+  revision、每次写的 request/idempotency/command/receipt/response fingerprint、连续 revision/world/logical-clock
+  推进和完整 transition event；不保留业务值、业务键或原始 idempotency key。stateless v1/v2 与 read-only v3
+  wire/签名语义不变，JDBC 重启后仍会恢复正确 subtype 并重验 nested seal 与 detached signature。
+- 独立 test-kit 能离线复验 v3 read closure 与 v4 transition closure。当前
+  `mirrorStateWorkbookSeed.v1` 只从 v3 read-only bundle 投影；服务端提供同一投影的 scope-isolated endpoint。
+  transition-aware workbook assertion 属于 RG-MIR-STATE-016，发布裁决始终归 ANEKE。
 - 单 session 写事务串行化，时间、sequence 和 ID 由确定性执行服务产生。
 - state revision、transition event 和 transaction receipt 必须形成完整闭包。
 - 独立 test-kit 不依赖 Resource Gateway/Spring，可复验相同 Schema、fingerprint 和闭包。
@@ -45,18 +51,18 @@ Stateful Mirror 的退款域纵向切片现已贯通“协议 -> 事务内核 ->
 
 - production profile；
 - TEE、HSM/KMS 托管密钥、远程 payload authority 和正式 cryptographic erasure 证明；
-- 图内虚拟写及 query/create/query 完整 DAG lowering；
 - 签名 checkpoint、跨区域恢复、灾备演练和逐写点进程 crash certification；
-- 图内 virtual-write transition evidence 与 receipt/event assertion closure；
+- transition-aware ANEKE workbook assertion 与发布门禁闭环；
 - 目标共享数据库的方言/锁语义认证、容量基准、stateful Scenario UI 与 fidelity/outcome 校准；
 - 生产级共享数据库、跨区域 owner 接管与 HA/DR SLO 认证。
 
-Capability probe 会分别报告事实：协议、Session API、数据面、只读 resolver、state evidence 与 workbook seed
+Capability probe 会分别报告事实：协议、Session API、数据面、状态 resolver、state evidence 与 workbook seed
 readiness 可以为 `true`。
 `mirrorStatefulResolverReady=true` 只在 Mirror execution 可运行、Session API 已装配且 state store 当前健康时
-成立；`mirrorStateRunEvidenceReady` 与 `mirrorStateWorkbookSeedReady` 使用同一运行依赖健康门槛，
-`mirrorStateWorkbookSeedApi` 只表示路由已装配。图内写、checkpoint/recovery 尚未闭环，因此
-`mirrorStatefulRuntimeReady` 必须继续为 `false`。不能把“状态读和证据可调用”
+成立；`mirrorStateRunEvidenceReady` 与 `mirrorStateTransitionEvidenceReady` 使用同一运行依赖健康门槛。
+`mirrorStateWorkbookSeedApi` 只表示路由已装配，`mirrorStateWorkbookSeedReady` 只覆盖 v3 read-only seed，
+`mirrorStateTransitionWorkbookSeedReady` 当前固定为 `false`。checkpoint/recovery 尚未闭环，因此
+`mirrorStatefulRuntimeReady` 必须继续为 `false`。不能把“状态读写和证据可调用”
 解释为“完整 Stateful Mirror runtime 已可发布”。
 
 ### 1.1 一条命令启动与停止
@@ -157,7 +163,8 @@ client.destroyMirrorSession(descriptor.path("sessionId").asText());
 ```
 
 要让 `/api/mirror/executions` 使用 Session 状态，编译的 plan 必须把对应 external capability 声明为
-`READ_ONLY + stateModelRef`，Session 的 `planFingerprint` 必须与该 plan 完全相同。调用方先读取 payload-free
+`READ_ONLY + stateModelRef` 或 `VIRTUAL_MUTATION + stateModelRef`，Session 的 `planFingerprint` 必须与该 plan
+完全相同。调用方先读取 payload-free
 descriptor，再提交 v2 命令：
 
 ```json
@@ -176,12 +183,15 @@ descriptor，再提交 v2 命令：
 }
 ```
 
-服务端在 durable run 首次 claim 后读取一次 Session snapshot；completed request retry 不再重新读 Session。
-若状态已变化返回 retryable `RG.MIRROR.SESSION.STATE_CONFLICT`，若 plan 不同返回
+服务端在 durable run 首次 claim 后读取 initial Session head；completed request retry 不再重新读 Session。
+只读 DAG 固定在该 head。含虚拟写的 DAG 创建一个 run-scoped state session：每次 write 原子推进 head，
+后续 read 从当前 head 解析，因此 `queryBefore -> updateCustomer -> queryAfter` 会依次观察 revision 0 和 1。
+write site 只能使用 `[SESSION_STATE, ABSTAINED]`，不会回退 owner/corpus/fixture/real operator。
+若初始状态已变化返回 retryable `RG.MIRROR.SESSION.STATE_CONFLICT`，若 plan 不同返回
 `RG.MIRROR.SESSION.PLAN_CONFLICT`。固定退款 fixture 的 `planFingerprint` 是兼容测试坐标，不对应运行中 plan；
 它可直接演示 Session API，但不能绕过 exact-plan fence 冒充可执行 plan。
 
-stateful execution 完成后可导出 signed v3 evidence 和 ANEKE seed：
+stateful execution 完成后可导出 signed evidence。只读 run 返回 v3，包含虚拟写的 run 返回 v4：
 
 ```bash
 RUN_ID='<stateful-run-id>'
@@ -195,8 +205,9 @@ curl -sS "http://localhost:8080/api/mirror/runs/${RUN_ID}/state-workbook-seed" \
   -H 'X-Purpose: MIRROR_REHEARSAL'
 ```
 
-stateless/v1/v2 run 请求该 seed 会返回稳定冲突
-`RG.MIRROR.STATE_WORKBOOK_SEED_UNAVAILABLE`，不会生成看似可用的空 workbook。演示结束使用既有
+只有 v3 read-only run 能请求当前 `state-workbook-seed`。stateless v1/v2 或 read/write v4 run 请求该 seed
+都会返回稳定冲突 `RG.MIRROR.STATE_WORKBOOK_SEED_UNAVAILABLE`，不会生成看似可用但缺 transition assertion
+的空 workbook。演示结束使用既有
 `./scripts/stop-visual-canvas-demo.sh` 即可停止；state evidence 和 seed endpoint 与 `--stateful` 服务同进程，
 不需要再启动 sidecar。
 
@@ -556,7 +567,7 @@ var session = verifier.verifySession(
 - 非 Java 客户端实现对照。
 
 stateful run evidence 由另一条独立验证链处理。消费者必须使用本地信任配置解析 attestation 的 key，
-先验完整 v3 bundle，再生成或接收 workbook seed：
+先验证完整 v3 或 v4 bundle；仅 v3 能继续生成或接收当前 workbook seed：
 
 ```java
 JsonNode bundle = objectMapper.readTree(evidenceJson);
@@ -569,14 +580,19 @@ if (!verified.verified()) {
     throw new IllegalStateException(verified.reasonCode());
 }
 
-MirrorStateWorkbookSeed seed =
-        MirrorStateWorkbookSeed.fromVerifiedBundle(bundle, key);
-seed.requireGateReady();
+if ("resourceGateway.mirrorEvidenceBundle.v3"
+        .equals(bundle.path("schemaVersion").asText())) {
+    MirrorStateWorkbookSeed seed =
+            MirrorStateWorkbookSeed.fromVerifiedBundle(bundle, key);
+    seed.requireGateReady();
+}
 ```
 
-独立 verifier 会额外证明：v3 专属签名域、nested state evidence self-fingerprint、exact Session/state-model
-reference、canonical binding/access 顺序、每个 access 与 node attempt/resolution 一一闭合，以及
-live/absent/tombstone 不互相冒充。`fromVerifiedBundle` 从已验证 bundle 本地重建 seed，因而无需相信服务端
+独立 verifier 会额外证明：v3/v4 专属签名域、nested state evidence self-fingerprint、exact Session/state-model
+reference 和 canonical ordering。V3 证明每个 access 与 node attempt/resolution 一一闭合，且
+live/absent/tombstone 不互相冒充；V4 还证明 exact observed revision、initial/final head、连续 committed
+transition、receipt/response/event provenance 与 write attempt/resolution 一一闭合。`fromVerifiedBundle`
+只从 v3 bundle 本地重建 seed，因而无需相信服务端
 `Map` 投影；`fromPayload` 只验证一个已有 seed 的 strict Schema 和 self-fingerprint，不能替代源 bundle 验签。
 `gateReady=false` 是正常且保守的结果：例如本地 demo 缺 deployment isolation proof 时会出现
 `EVIDENCE_NOT_CERTIFIABLE` 和 `RUN_EVIDENCE_LIMITED`。Resource Gateway 不删除 blocker，也不代替 ANEKE
@@ -625,6 +641,8 @@ Session transport/store 另有一组稳定、payload-safe 的服务错误：
 | `RG.MIRROR.SESSION.PLAN_CONFLICT` | Session 与待执行 plan generation 不一致，不得自动迁移 |
 | `RG.MIRROR.SESSION.BINDING_REQUIRED` / `BINDING_NOT_ADMITTED` | stateful plan 必须使用 v2 exact Session binding；stateless plan 禁止携带该 binding |
 | `RG.MIRROR.SESSION.READ_SPEC_MISSING` / `READ_SPEC_NOT_ACTIVE` | Session 无法完整服务 plan 的状态读站点；DAG 调度前失败，不得伪装成业务实体缺失 |
+| `RG.MIRROR.SESSION.WRITE_EFFECT_MISSING` / `WRITE_EFFECT_NOT_ACTIVE` | Session 无法完整服务 plan 的虚拟写站点；DAG 调度前失败，不得回退真实写 |
+| `RG.MIRROR.SESSION.WRITE_BINDING_NOT_ADMITTED` | write site 不是 exact `SESSION_STATE -> ABSTAINED` 或 capability/effect binding 漂移 |
 | `RG.MIRROR.SESSION.READ_SPEC_INCONSISTENT` | 已验证 Session 出现歧义读规范；按数据面完整性故障处理 |
 | `RG.MIRROR.STATE.ENTITY_TOMBSTONED` | exact 业务键已删除；终态命中且禁止下层 resolver 回退 |
 | `RG.MIRROR.STATE_EVIDENCE_REJECTED` | state access、attempt、resolution 或 nested seal 无法形成 exact closure |
@@ -646,16 +664,16 @@ Session transport/store 另有一组稳定、payload-safe 的服务错误：
 
 | Ticket | 状态 | 工作与验收门禁 |
 |---|---|---|
-| RG-MIR-STATE-006 | 完成 | `StateReadSpec`、v2 session run binding、单次固定快照、`SESSION_STATE` 首位 resolver、live/absent/tombstone 语义、真实 BLOGE 运行测试均已完成 |
-| RG-MIR-STATE-007 | 部分完成 | create-refund 两实体事务已可经 API 运行；仍需 query-order/create-refund/query-refund 真实 DAG lowering，且外部写调用恒为 0 |
+| RG-MIR-STATE-006 | 完成 | `StateReadSpec`、v2 session run binding、read-only 固定 head、`SESSION_STATE` 首位 resolver、live/absent/tombstone 语义、真实 BLOGE 运行测试均已完成 |
+| RG-MIR-STATE-007 | 核心完成 | 真实 BLOGE `queryBefore -> updateCustomer -> queryAfter` DAG 已在一个 run session 中完成 revision 0 -> 1 推进；后读命中新值，query/update 外部算子调用均为 0；仍需退款固定 fixture 的同构 DAG 与环境级真实写 egress 对抗认证 |
 | RG-MIR-STATE-008 | 内核完成 | exact source/kind/identity/schema/key 校验已完成；仍需接 corpus/owner fixture authority 的在线 scope/grant/retention/content-address 复验 |
-| RG-MIR-STATE-009 | 部分完成 | protocol、API、store、resolver、state evidence、workbook seed、runtime 探针已分离；resolver/evidence/seed 只在各自真实依赖 ready 时为 true；完整 runtime 在图内写与 recovery 闭环前保持 false |
+| RG-MIR-STATE-009 | 部分完成 | protocol、API、store、resolver、read/transition evidence、read-only workbook seed、runtime 探针已分离；`mirrorStateTransitionEvidenceReady` 动态报告，transition workbook 明确为 false；完整 runtime 在 recovery 闭环前保持 false |
 
 ### 10.3 P0：Evidence、checkpoint 与恢复
 
 | Ticket | 状态 | 工作与验收门禁 |
 |---|---|---|
-| RG-MIR-STATE-010 | 完成 | read-only Session head/model/revision/world/logical-clock、stateful bindings 与 live/absent/tombstone access 已投为 payload-free state evidence v1；stateful bundle v3 具有独立签名域，JDBC 重启与 test-kit 均可离线复验；ANEKE seed 可从 verified bundle 本地重建或通过受保护 API 导出 |
+| RG-MIR-STATE-010 | 完成 | read-only v1/v3 与 read/write v2/v4 两代状态证据均已封闭：v4 绑定 initial/final head、exact read revision、write request/idempotency/command/receipt/response、连续 transition/event 及 attempt/resolution；JDBC 重启恢复 subtype 并复验，test-kit 可独立离线复验；ANEKE seed 仍只覆盖 verified v3 read-only bundle |
 | RG-MIR-STATE-011 | 待实现 | 签名 checkpoint，固定 plan/model/effect/store generation 和 revision；恢复结果必须与不中断执行语义 fingerprint 一致 |
 | RG-MIR-STATE-012 | 部分完成 | 已覆盖 timeout/cancel 边界的内核语义；仍需 crash/network/recovery matrix，证明 commit 前回滚、commit 后只返回或恢复 committed receipt |
 | RG-MIR-STATE-013 | 部分完成 | TTL/destroy 与密文清除已实现；仍需 KMS cryptographic erasure、legal hold 和删除证明，并保持删除后证据可验证 |
@@ -689,7 +707,7 @@ Session transport/store 另有一组稳定、payload-safe 的服务错误：
 
 ```bash
 mvn -f resource-gateway-examples/pom.xml \
-  -Dtest=StateReadSpecIntegrityTest,MirrorSessionStateResolverTest,MirrorRunServiceTest,MirrorStateRunEvidenceIntegrityTest,MirrorEvidenceIntegrityServiceTest,MirrorRunIntegrationServiceTest,MirrorEvidenceProtocolSchemaTest,DatabaseMirrorEvidenceRepositoryTest,MirrorSessionProtocolTest,MirrorStateTransactionEngineTest,DatabaseMirrorSessionStateStoreTest,MirrorSessionIntegrationServiceTest,MirrorSessionControllerTest,VisualCanvasDemoScriptTest test
+  -Dtest=StateReadSpecIntegrityTest,MirrorSessionStateResolverTest,MirrorRunServiceTest,MirrorStateRunEvidenceIntegrityTest,MirrorStateTransitionRunEvidenceIntegrityTest,MirrorEvidenceIntegrityServiceTest,MirrorRunIntegrationServiceTest,MirrorEvidenceProtocolSchemaTest,DatabaseMirrorEvidenceRepositoryTest,MirrorSessionProtocolTest,MirrorStateTransactionEngineTest,DatabaseMirrorSessionStateStoreTest,MirrorSessionIntegrationServiceTest,MirrorSessionControllerTest,VisualCanvasDemoScriptTest test
 
 mvn -f resource-gateway-test-kit/pom.xml \
   -Dtest=MirrorStateProtocolVerifierTest,MirrorEvidenceVerifierTest,ResourceGatewayMirrorSessionClientTest,CapabilityMirrorSchemaPackagingTest test
@@ -698,10 +716,13 @@ mvn -f resource-gateway-examples/pom.xml clean verify
 mvn -f resource-gateway-test-kit/pom.xml clean verify
 ```
 
-这些命令验证协议、事务、固定运行快照、状态读 resolver、state access/attempt/resolution closure、v3
-签名与持久化恢复、workbook seed、加密数据面、HTTP 生命周期、脚本和独立客户端。
+这些命令验证协议、事务、read-only 固定 head、run-scoped 状态推进、状态读/虚拟写 resolver、
+access/transition/attempt/resolution/receipt/event closure、v3/v4 签名与持久化恢复、read-only workbook seed、
+加密数据面、HTTP 生命周期、脚本和独立客户端。
 它们不会把完整 runtime readiness 提升为 true。要做真实服务演示，运行
 `./scripts/start-visual-canvas-demo.sh --stateful`；仅在 capability probe 同时报告
 `mirrorStatefulSessionApi=true` 与 `mirrorStatefulStateStoreReady=true` 时调用 Session API；只有再报告
 `mirrorStatefulResolverReady=true` 时才提交 execution request v2；导出 seed 前还要确认
-`mirrorStateRunEvidenceReady=true` 与 `mirrorStateWorkbookSeedReady=true`。
+`mirrorStateRunEvidenceReady=true` 与 `mirrorStateWorkbookSeedReady=true`。含虚拟写的 run 还应确认
+`mirrorStateTransitionEvidenceReady=true`；不要在
+`mirrorStateTransitionWorkbookSeedReady=false` 时请求 transition workbook seed。

@@ -139,6 +139,34 @@ class MirrorEvidenceVerifierTest {
     }
 
     @Test
+    void verifiesV4TransitionReceiptClosureAndRejectsAValidlySignedMismatch()
+            throws Exception {
+        bundle = signedBundleV4();
+
+        MirrorEvidenceVerifier.VerificationResult verified =
+                verifier.verify(bundle, key);
+        assertThat(verified.verified())
+                .as(verified.reasonCode())
+                .isTrue();
+        assertThat(bundle.path("schemaVersion").asText())
+                .isEqualTo(
+                        CapabilityMirrorProtocol
+                                .MIRROR_EVIDENCE_BUNDLE_V4);
+
+        bundle.withObject(
+                "/evidence/stateEvidence/transitions/0")
+                .put("receiptFingerprint",
+                        fingerprint('7'));
+        resealStateEvidence(bundle.withObject(
+                "/evidence/stateEvidence"));
+        resignAggregate(bundle, false);
+
+        assertThat(verifier.verify(bundle, key)
+                .reasonCode()).isEqualTo(
+                "MIRROR_STATE_TRANSITION_CLOSURE_INVALID");
+    }
+
+    @Test
     void rejectsValidlySignedStateOutputAndAccessClosureContradictions()
             throws Exception {
         bundle = signedBundleV3();
@@ -347,6 +375,10 @@ class MirrorEvidenceVerifierTest {
         return signedBundle(3);
     }
 
+    private ObjectNode signedBundleV4() throws Exception {
+        return signedBundle(4);
+    }
+
     private ObjectNode signedBundle(boolean current) throws Exception {
         return signedBundle(current ? 2 : 1);
     }
@@ -356,6 +388,7 @@ class MirrorEvidenceVerifierTest {
             case 1 -> evidence();
             case 2 -> evidenceV2();
             case 3 -> evidenceV3();
+            case 4 -> evidenceV4();
             default -> throw new IllegalArgumentException(
                     "unsupported test evidence version");
         };
@@ -372,6 +405,8 @@ class MirrorEvidenceVerifierTest {
                     .MIRROR_EVIDENCE_ATTESTATION_V2;
             case 3 -> CapabilityMirrorProtocol
                     .MIRROR_EVIDENCE_ATTESTATION_V3;
+            case 4 -> CapabilityMirrorProtocol
+                    .MIRROR_EVIDENCE_ATTESTATION_V4;
             default -> throw new IllegalArgumentException(
                     "unsupported test attestation version");
         });
@@ -394,6 +429,8 @@ class MirrorEvidenceVerifierTest {
                     .MIRROR_EVIDENCE_BUNDLE_V2;
             case 3 -> CapabilityMirrorProtocol
                     .MIRROR_EVIDENCE_BUNDLE_V3;
+            case 4 -> CapabilityMirrorProtocol
+                    .MIRROR_EVIDENCE_BUNDLE_V4;
             default -> throw new IllegalArgumentException(
                     "unsupported test bundle version");
         });
@@ -498,6 +535,135 @@ class MirrorEvidenceVerifierTest {
         refs.add(readSpecRef.deepCopy());
         resolution.putArray("matchedRuleRefs")
                 .add("state-read-spec:query-customer:1");
+        return value;
+    }
+
+    private ObjectNode evidenceV4() {
+        ObjectNode value = evidence();
+        value.put("schemaVersion",
+                CapabilityMirrorProtocol
+                        .MIRROR_RUN_EVIDENCE_V4);
+        ObjectNode initialStateRef = artifactRef(
+                "SESSION_STATE", "customer-session-1",
+                1, fingerprint('b'));
+        ObjectNode finalStateRef = artifactRef(
+                "SESSION_STATE", "customer-session-1",
+                2, fingerprint('c'));
+        ObjectNode modelRef = artifactRef(
+                "STATE_MODEL", "customer-state",
+                1, fingerprint('d'));
+        ObjectNode effectRef = artifactRef(
+                "WRITE_EFFECT", "update-customer",
+                1, fingerprint('e'));
+        ObjectNode capability = value.withObject(
+                "/externalBindings/0/capabilityRef");
+        String initialWorld = fingerprint('f');
+        String finalWorld = fingerprint('0');
+        String receipt = fingerprint('1');
+
+        ObjectNode state =
+                value.putObject("stateEvidence");
+        state.put("schemaVersion",
+                CapabilityMirrorProtocol
+                        .MIRROR_STATE_RUN_EVIDENCE_V2);
+        state.put("stateEvidenceFingerprint", "");
+        state.put("runId", RUN_ID);
+        state.put("planFingerprint", PLAN);
+        state.set("sessionStateRef",
+                initialStateRef.deepCopy());
+        state.set("finalSessionStateRef",
+                finalStateRef.deepCopy());
+        state.set("stateModelRef", modelRef.deepCopy());
+        state.put("stateRevision", 0);
+        state.put("finalStateRevision", 1);
+        state.put("worldFingerprint", initialWorld);
+        state.put("finalWorldFingerprint", finalWorld);
+        state.put("logicalClock", STARTED_AT.toString());
+        state.put("finalLogicalClock",
+                STARTED_AT.plusSeconds(1).toString());
+        state.put("mode", "SERIALIZABLE_READ_WRITE");
+        ObjectNode binding =
+                state.putArray("statefulBindings")
+                        .addObject();
+        binding.put("invocationSiteId", SITE);
+        binding.put("graphPath", "/root");
+        binding.set("capabilityRef",
+                capability.deepCopy());
+        binding.put("interaction", "WRITE");
+        binding.set("writeEffectRef",
+                effectRef.deepCopy());
+        state.putArray("accesses");
+        ObjectNode transition =
+                state.putArray("transitions")
+                        .addObject();
+        transition.put("invocationSiteId", SITE);
+        transition.put("graphPath", "/root");
+        transition.put("correlationKey", "C-1");
+        transition.put("occurrence", 1);
+        transition.put("attempt", 1);
+        transition.set("capabilityRef",
+                capability.deepCopy());
+        transition.set("writeEffectRef",
+                effectRef.deepCopy());
+        transition.set("initialStateRef",
+                initialStateRef.deepCopy());
+        transition.set("finalStateRef",
+                finalStateRef.deepCopy());
+        transition.put("revisionBefore", 0);
+        transition.put("revisionAfter", 1);
+        transition.put(
+                "initialWorldFingerprint",
+                initialWorld);
+        transition.put(
+                "finalWorldFingerprint", finalWorld);
+        transition.put("initialLogicalClock",
+                STARTED_AT.toString());
+        transition.put("finalLogicalClock",
+                STARTED_AT.plusSeconds(1).toString());
+        transition.put("requestFingerprint", REQUEST);
+        transition.put("idempotencyKeyFingerprint",
+                fingerprint('2'));
+        transition.put("commandFingerprint",
+                fingerprint('3'));
+        transition.put("receiptFingerprint", receipt);
+        transition.put("responseFingerprint", OUTPUT);
+        transition.put(
+                "resultingWorldFingerprint", finalWorld);
+        transition.put("committedAt",
+                STARTED_AT.plusSeconds(1).toString());
+        transition.put("replayed", false);
+        ObjectNode event =
+                transition.putArray("events").addObject();
+        event.put("eventIdFingerprint",
+                fingerprint('4'));
+        event.put("stateRevision", 1);
+        event.put("mutationId", "update-customer");
+        event.put("operation", "UPDATE");
+        event.put("entityType", "customer");
+        event.put("entityIdentityFingerprint",
+                fingerprint('5'));
+        event.put("beforeFingerprint",
+                fingerprint('6'));
+        event.put("afterFingerprint",
+                fingerprint('7'));
+        event.put("occurredAt",
+                STARTED_AT.plusSeconds(1).toString());
+        event.put("eventFingerprint",
+                fingerprint('8'));
+        state.putArray("limitations");
+        resealStateEvidence(state);
+
+        ObjectNode resolution =
+                value.withObject("/resolutions/0");
+        resolution.put("source", "SESSION_STATE");
+        ArrayNode refs = resolution.putArray(
+                "matchedArtifactRefs");
+        refs.add(finalStateRef.deepCopy());
+        refs.add(modelRef.deepCopy());
+        refs.add(effectRef.deepCopy());
+        resolution.putArray("matchedRuleRefs")
+                .add("transaction-receipt:" + receipt)
+                .add("write-effect:update-customer:1");
         return value;
     }
 
@@ -648,6 +814,8 @@ class MirrorEvidenceVerifierTest {
                     "RESOURCE_GATEWAY_MIRROR_EVIDENCE_V2";
             case CapabilityMirrorProtocol.MIRROR_EVIDENCE_ATTESTATION_V3 ->
                     "RESOURCE_GATEWAY_MIRROR_EVIDENCE_V3";
+            case CapabilityMirrorProtocol.MIRROR_EVIDENCE_ATTESTATION_V4 ->
+                    "RESOURCE_GATEWAY_MIRROR_EVIDENCE_V4";
             default -> throw new IllegalArgumentException(
                     "unsupported test attestation version");
         });

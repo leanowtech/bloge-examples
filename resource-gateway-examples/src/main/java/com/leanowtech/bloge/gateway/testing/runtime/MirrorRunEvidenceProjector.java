@@ -5,10 +5,14 @@ import com.leanowtech.bloge.gateway.integration.mirror.MirrorPlan;
 import com.leanowtech.bloge.gateway.integration.mirror.MirrorResolution;
 import com.leanowtech.bloge.gateway.integration.mirror.MirrorRunEvidence;
 import com.leanowtech.bloge.gateway.integration.mirror.MirrorDeploymentIsolationRunTrust;
+import com.leanowtech.bloge.gateway.integration.mirror.MirrorStateEvidence;
 import com.leanowtech.bloge.gateway.integration.mirror.MirrorStateRunEvidence;
 import com.leanowtech.bloge.gateway.integration.mirror.MirrorStateRunEvidenceIntegrity;
+import com.leanowtech.bloge.gateway.integration.mirror.MirrorStateTransitionRunEvidence;
+import com.leanowtech.bloge.gateway.integration.mirror.MirrorStateTransitionRunEvidenceIntegrity;
 import com.leanowtech.bloge.gateway.integration.mirror.StateModelIntegrity;
 import com.leanowtech.bloge.gateway.integration.mirror.StateReadSpecIntegrity;
+import com.leanowtech.bloge.gateway.integration.mirror.WriteEffectSpecIntegrity;
 import com.leanowtech.bloge.gateway.testing.domain.TestRunEvidence;
 import com.leanowtech.bloge.gateway.testing.evidence.ProtocolFingerprint;
 import com.leanowtech.bloge.gateway.testing.evidence.TestSemanticResultFingerprint;
@@ -123,7 +127,7 @@ public final class MirrorRunEvidenceProjector {
     }
 
     /**
-     * Creates v3 portable evidence with one complete payload-free Session access closure.
+     * Creates v3 or v4 portable evidence with one complete payload-free Session closure.
      *
      * @param request exact authenticated stateful mirror request
      * @param execution terminal shared-kernel result
@@ -132,7 +136,7 @@ public final class MirrorRunEvidenceProjector {
      * @param invocationBudget payload-free runtime occurrence counters
      * @param deploymentTrust exact trust binding confirmed after execution, or {@code null}
      * @param stateEvidence sealed payload-free Session state evidence
-     * @return unsigned v3 evidence ready for the integrity boundary
+     * @return unsigned v3 read-only or v4 read/write evidence ready for the integrity boundary
      */
     public MirrorRunEvidence projectStateful(
             MirrorRunRequest request,
@@ -141,7 +145,7 @@ public final class MirrorRunEvidenceProjector {
             IndependentTestEngineFactory.Configuration engineConfiguration,
             MirrorInvocationBudget.Snapshot invocationBudget,
             MirrorDeploymentIsolationRunTrust.Binding deploymentTrust,
-            MirrorStateRunEvidence stateEvidence) {
+            MirrorStateEvidence stateEvidence) {
         return projectInternal(
                 request, execution, resolutions, engineConfiguration,
                 Objects.requireNonNull(invocationBudget, "invocationBudget"),
@@ -156,7 +160,7 @@ public final class MirrorRunEvidenceProjector {
             IndependentTestEngineFactory.Configuration engineConfiguration,
             MirrorInvocationBudget.Snapshot invocationBudget,
             MirrorDeploymentIsolationRunTrust.Binding deploymentTrust,
-            MirrorStateRunEvidence stateEvidence) {
+            MirrorStateEvidence stateEvidence) {
         Objects.requireNonNull(request, "request");
         Objects.requireNonNull(execution, "execution");
         TestRunEvidence source = Objects.requireNonNull(execution.evidence(), "execution.evidence");
@@ -197,9 +201,13 @@ public final class MirrorRunEvidenceProjector {
                 && source.evidenceClass() == TestRunEvidence.EvidenceClass.CERTIFIABLE
                 ? MirrorRunEvidence.EvidenceClass.CERTIFIABLE
                 : MirrorRunEvidence.EvidenceClass.EXPLORATORY;
-        String schemaVersion = stateEvidence == null
-                ? MirrorRunEvidence.SCHEMA_VERSION
-                : MirrorRunEvidence.STATEFUL_SCHEMA_VERSION;
+        String schemaVersion = switch (stateEvidence) {
+            case null -> MirrorRunEvidence.SCHEMA_VERSION;
+            case MirrorStateRunEvidence ignored ->
+                    MirrorRunEvidence.STATEFUL_SCHEMA_VERSION;
+            case MirrorStateTransitionRunEvidence ignored ->
+                    MirrorRunEvidence.READ_WRITE_SCHEMA_VERSION;
+        };
         return new MirrorRunEvidence(schemaVersion, source.runId(), request.requestId(),
                 fingerprint(request.context().asMap()), plan.planId(), plan.planFingerprint(),
                 plan.capabilityClosureFingerprint(), plan.executionControlFingerprint(),
@@ -215,7 +223,7 @@ public final class MirrorRunEvidenceProjector {
             MirrorRunRequest request,
             List<TestRunEvidence.NodeTrace> nodes,
             List<MirrorResolution> resolutions,
-            MirrorStateRunEvidence stateEvidence) {
+            MirrorStateEvidence stateEvidence) {
         if (stateEvidence == null) {
             if (request.sessionContext() != null) {
                 throw new IllegalArgumentException(
@@ -223,6 +231,21 @@ public final class MirrorRunEvidenceProjector {
             }
             return;
         }
+        switch (stateEvidence) {
+            case MirrorStateRunEvidence readOnly ->
+                    validateReadOnlyStateClosure(
+                            request, nodes, resolutions, readOnly);
+            case MirrorStateTransitionRunEvidence readWrite ->
+                    validateReadWriteStateClosure(
+                            request, nodes, resolutions, readWrite);
+        }
+    }
+
+    private void validateReadOnlyStateClosure(
+            MirrorRunRequest request,
+            List<TestRunEvidence.NodeTrace> nodes,
+            List<MirrorResolution> resolutions,
+            MirrorStateRunEvidence stateEvidence) {
         MirrorResolver.SessionContext context =
                 Objects.requireNonNull(
                         request.sessionContext(), "sessionContext");
@@ -386,6 +409,323 @@ public final class MirrorRunEvidenceProjector {
                 access.stateReadSpecRef())) {
             throw new IllegalArgumentException(
                     "Session state resolution lacks exact state provenance");
+        }
+    }
+
+    private void validateReadWriteStateClosure(
+            MirrorRunRequest request,
+            List<TestRunEvidence.NodeTrace> nodes,
+            List<MirrorResolution> resolutions,
+            MirrorStateTransitionRunEvidence stateEvidence) {
+        MirrorResolver.SessionContext context =
+                Objects.requireNonNull(
+                        request.sessionContext(), "sessionContext");
+        if (context.runSession() == null) {
+            throw new IllegalArgumentException(
+                    "read/write state evidence requires a run-scoped write boundary");
+        }
+        MirrorStateTransitionRunEvidenceIntegrity.verify(
+                mapper, stateEvidence);
+        var initial = context.payload().state();
+        var terminal = context.currentPayload().state();
+        if (!request.compiledPlan().plan().planFingerprint()
+                .equals(stateEvidence.planFingerprint())
+                || !initial.fingerprint().equals(
+                stateEvidence.sessionStateRef().fingerprint())
+                || initial.stateRevision()
+                != stateEvidence.stateRevision()
+                || !initial.worldFingerprint().equals(
+                stateEvidence.worldFingerprint())
+                || !initial.logicalClock().equals(
+                stateEvidence.logicalClock())
+                || !terminal.fingerprint().equals(
+                stateEvidence.finalSessionStateRef().fingerprint())
+                || terminal.stateRevision()
+                != stateEvidence.finalStateRevision()
+                || !terminal.worldFingerprint().equals(
+                stateEvidence.finalWorldFingerprint())
+                || !terminal.logicalClock().equals(
+                stateEvidence.finalLogicalClock())
+                || !StateModelIntegrity.reference(
+                context.payload().stateModel()).equals(
+                stateEvidence.stateModelRef())) {
+            throw new IllegalArgumentException(
+                    "state transition evidence differs from the run Session heads");
+        }
+
+        Map<String, MirrorStateTransitionRunEvidence.StatefulBinding>
+                stateBindings = new LinkedHashMap<>();
+        stateEvidence.statefulBindings().forEach(binding ->
+                stateBindings.put(
+                        binding.invocationSiteId(), binding));
+        Map<String, MirrorPlan.ExternalBinding> expectedBindings =
+                new LinkedHashMap<>();
+        request.compiledPlan().plan().externalBindings()
+                .stream()
+                .filter(binding -> binding.resolverOrder()
+                        .contains(MirrorPlan.MirrorSource
+                                .SESSION_STATE))
+                .forEach(binding -> expectedBindings.put(
+                        binding.invocationSiteId(), binding));
+        if (!expectedBindings.keySet().equals(
+                stateBindings.keySet())) {
+            throw new IllegalArgumentException(
+                    "state transition binding closure differs from the plan");
+        }
+        expectedBindings.forEach((site, binding) -> {
+            MirrorStateTransitionRunEvidence.StatefulBinding
+                    stateBinding = stateBindings.get(site);
+            boolean exactIdentity =
+                    binding.capabilityRef().equals(
+                            stateBinding.capabilityRef())
+                            && binding.graphPath().equals(
+                            stateBinding.graphPath());
+            boolean exactLowering =
+                    switch (stateBinding.interaction()) {
+                        case READ ->
+                                context.payload().stateReadSpecs()
+                                        .stream()
+                                        .filter(spec -> spec
+                                                .targetCapabilityRef()
+                                                .equals(binding
+                                                        .capabilityRef()))
+                                        .map(StateReadSpecIntegrity
+                                                ::reference)
+                                        .anyMatch(
+                                                stateBinding
+                                                        .stateReadSpecRef()
+                                                        ::equals);
+                        case WRITE ->
+                                context.payload().writeEffects()
+                                        .stream()
+                                        .filter(effect -> effect
+                                                .targetCapabilityRef()
+                                                .equals(binding
+                                                        .capabilityRef()))
+                                        .map(WriteEffectSpecIntegrity
+                                                ::reference)
+                                        .anyMatch(
+                                                stateBinding
+                                                        .writeEffectRef()
+                                                        ::equals);
+                    };
+            if (!exactIdentity || !exactLowering) {
+                throw new IllegalArgumentException(
+                        "state transition binding differs from its exact interaction spec");
+            }
+        });
+
+        Map<Coordinate, AttemptProjection> statefulAttempts =
+                statefulAttempts(
+                        nodes, stateBindings.keySet(),
+                        expectedBindings);
+        Map<Coordinate, MirrorResolution> resolutionByCoordinate =
+                new LinkedHashMap<>();
+        resolutions.forEach(resolution -> {
+            Coordinate coordinate =
+                    Coordinate.from(resolution);
+            if (resolutionByCoordinate.put(
+                    coordinate, resolution) != null) {
+                throw new IllegalArgumentException(
+                        "state transition resolution coordinates must be unique");
+            }
+        });
+        Map<Coordinate, MirrorStateTransitionRunEvidence.StateAccess>
+                reads = new LinkedHashMap<>();
+        stateEvidence.accesses().forEach(access -> {
+            Coordinate coordinate = coordinate(
+                    access.invocationSiteId(),
+                    access.correlationKey(),
+                    access.occurrence(), access.attempt());
+            if (reads.put(coordinate, access) != null) {
+                throw new IllegalArgumentException(
+                        "state transition evidence contains duplicate read coordinates");
+            }
+        });
+        Map<Coordinate, MirrorStateTransitionRunEvidence.StateTransition>
+                writes = new LinkedHashMap<>();
+        stateEvidence.transitions().forEach(transition -> {
+            Coordinate coordinate = coordinate(
+                    transition.invocationSiteId(),
+                    transition.correlationKey(),
+                    transition.occurrence(),
+                    transition.attempt());
+            if (writes.put(coordinate, transition) != null
+                    || reads.containsKey(coordinate)) {
+                throw new IllegalArgumentException(
+                        "state transition evidence contains duplicate interaction coordinates");
+            }
+        });
+        Set<Coordinate> interactions =
+                new LinkedHashSet<>(reads.keySet());
+        interactions.addAll(writes.keySet());
+        if (!statefulAttempts.keySet().equals(interactions)) {
+            throw new IllegalArgumentException(
+                    "state interaction closure differs from executed stateful attempts");
+        }
+
+        statefulAttempts.forEach((coordinate, attempt) -> {
+            MirrorStateTransitionRunEvidence.StatefulBinding
+                    binding = stateBindings.get(
+                    coordinate.invocationSiteId());
+            MirrorResolution resolution =
+                    resolutionByCoordinate.get(coordinate);
+            if (resolution == null
+                    || !attempt.requestFingerprint().equals(
+                    resolution.requestFingerprint())) {
+                throw new IllegalArgumentException(
+                        "state interaction differs from its delegate resolution");
+            }
+            switch (binding.interaction()) {
+                case READ -> validateReadInteraction(
+                        attempt, resolution,
+                        Objects.requireNonNull(
+                                reads.get(coordinate),
+                                "state read observation"),
+                        stateEvidence);
+                case WRITE -> validateWriteInteraction(
+                        attempt, resolution,
+                        Objects.requireNonNull(
+                                writes.get(coordinate),
+                                "state transition observation"),
+                        stateEvidence);
+            }
+        });
+    }
+
+    private Map<Coordinate, AttemptProjection> statefulAttempts(
+            List<TestRunEvidence.NodeTrace> nodes,
+            Set<String> statefulSites,
+            Map<String, MirrorPlan.ExternalBinding> bindings) {
+        Map<Coordinate, AttemptProjection> attempts =
+                new LinkedHashMap<>();
+        for (TestRunEvidence.NodeTrace node : nodes) {
+            if (!statefulSites.contains(
+                    node.invocationSiteId())) {
+                continue;
+            }
+            MirrorPlan.ExternalBinding binding =
+                    bindings.get(node.invocationSiteId());
+            if (!binding.graphPath().equals(
+                    node.graphPath())) {
+                throw new IllegalArgumentException(
+                        "stateful node graph path differs from its binding");
+            }
+            for (TestRunEvidence.AttemptTrace attempt
+                    : node.attempts()) {
+                Coordinate coordinate = coordinate(
+                        node.invocationSiteId(),
+                        node.correlationKey(),
+                        node.occurrence(), attempt.attempt());
+                AttemptProjection projection =
+                        new AttemptProjection(
+                                binding,
+                                fingerprint(attempt.input()),
+                                fingerprint(attempt.output()));
+                if (attempts.put(
+                        coordinate, projection) != null) {
+                    throw new IllegalArgumentException(
+                            "stateful delegate attempt coordinates must be unique");
+                }
+            }
+        }
+        return attempts;
+    }
+
+    private static Coordinate coordinate(
+            String invocationSiteId,
+            String correlationKey,
+            int occurrence,
+            int attempt) {
+        return new Coordinate(
+                invocationSiteId, correlationKey,
+                occurrence, attempt);
+    }
+
+    private static void validateReadInteraction(
+            AttemptProjection attempt,
+            MirrorResolution resolution,
+            MirrorStateTransitionRunEvidence.StateAccess access,
+            MirrorStateTransitionRunEvidence stateEvidence) {
+        if (!attempt.requestFingerprint().equals(
+                access.requestFingerprint())) {
+            throw new IllegalArgumentException(
+                    "state read differs from its exact request");
+        }
+        switch (access.outcome()) {
+            case LIVE_ENTITY -> {
+                if (resolution.source()
+                        != MirrorPlan.MirrorSource.SESSION_STATE
+                        || !hasReadStateProvenance(
+                        resolution, access, stateEvidence)
+                        || !access.projectedOutputFingerprint()
+                        .equals(resolution.outputFingerprint())
+                        || !attempt.outputFingerprint().equals(
+                        access.projectedOutputFingerprint())) {
+                    throw new IllegalArgumentException(
+                            "live state read differs from its final resolution");
+                }
+            }
+            case TOMBSTONED -> {
+                if (resolution.source()
+                        != MirrorPlan.MirrorSource.SESSION_STATE
+                        || !hasReadStateProvenance(
+                        resolution, access, stateEvidence)
+                        || resolution.error() == null
+                        || !access.errorCode().equals(
+                        resolution.error().code())) {
+                    throw new IllegalArgumentException(
+                            "tombstoned state read differs from its terminal resolution");
+                }
+            }
+            case ABSENT -> {
+                if (resolution.source()
+                        == MirrorPlan.MirrorSource.SESSION_STATE) {
+                    throw new IllegalArgumentException(
+                            "absent state read cannot select the Session resolver");
+                }
+            }
+        }
+    }
+
+    private static boolean hasReadStateProvenance(
+            MirrorResolution resolution,
+            MirrorStateTransitionRunEvidence.StateAccess access,
+            MirrorStateTransitionRunEvidence stateEvidence) {
+        return resolution.matchedArtifactRefs().contains(
+                access.observedStateRef())
+                && resolution.matchedArtifactRefs().contains(
+                stateEvidence.stateModelRef())
+                && resolution.matchedArtifactRefs().contains(
+                access.stateReadSpecRef());
+    }
+
+    private static void validateWriteInteraction(
+            AttemptProjection attempt,
+            MirrorResolution resolution,
+            MirrorStateTransitionRunEvidence.StateTransition transition,
+            MirrorStateTransitionRunEvidence stateEvidence) {
+        if (!attempt.requestFingerprint().equals(
+                transition.requestFingerprint())
+                || resolution.source()
+                != MirrorPlan.MirrorSource.SESSION_STATE
+                || resolution.status()
+                != MirrorResolution.Status.RESOLVED
+                || !transition.responseFingerprint().equals(
+                resolution.outputFingerprint())
+                || !attempt.outputFingerprint().equals(
+                transition.responseFingerprint())
+                || !resolution.matchedArtifactRefs().contains(
+                transition.finalStateRef())
+                || !resolution.matchedArtifactRefs().contains(
+                stateEvidence.stateModelRef())
+                || !resolution.matchedArtifactRefs().contains(
+                transition.writeEffectRef())
+                || !resolution.matchedRuleRefs().contains(
+                "transaction-receipt:"
+                        + transition.receiptFingerprint())) {
+            throw new IllegalArgumentException(
+                    "virtual write differs from its exact transition receipt");
         }
     }
 

@@ -6,13 +6,19 @@ import com.leanowtech.bloge.gateway.integration.mirror.MirrorArtifactRef;
 import com.leanowtech.bloge.gateway.integration.mirror.MirrorPlan;
 import com.leanowtech.bloge.gateway.integration.mirror.MirrorSessionPayload;
 import com.leanowtech.bloge.gateway.integration.mirror.MirrorSessionProtocolIntegrity;
+import com.leanowtech.bloge.gateway.integration.mirror.MirrorStateEvidence;
 import com.leanowtech.bloge.gateway.integration.mirror.MirrorStateRunEvidence;
 import com.leanowtech.bloge.gateway.integration.mirror.MirrorStateRunEvidenceIntegrity;
+import com.leanowtech.bloge.gateway.integration.mirror.MirrorStateTransitionRunEvidence;
+import com.leanowtech.bloge.gateway.integration.mirror.MirrorStateTransitionRunEvidenceIntegrity;
 import com.leanowtech.bloge.gateway.integration.mirror.SessionStateSpace;
 import com.leanowtech.bloge.gateway.integration.mirror.StateModelIntegrity;
 import com.leanowtech.bloge.gateway.integration.mirror.StateReadSpec;
 import com.leanowtech.bloge.gateway.integration.mirror.StateReadSpecIntegrity;
+import com.leanowtech.bloge.gateway.integration.mirror.WriteEffectSpec;
+import com.leanowtech.bloge.gateway.integration.mirror.WriteEffectSpecIntegrity;
 
+import java.time.Instant;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -21,22 +27,24 @@ import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicBoolean;
 
 /**
- * Concurrent run-scoped journal that closes Session resolver observations into state evidence.
+ * Concurrent run-scoped journal that closes Session reads and writes into signed state evidence.
  *
- * <p>The constructor freezes the complete state-backed binding closure from the sealed plan and
- * Session payload. Runtime callbacks can add only payload-free access facts for those bindings.
- * Completion is one-shot, rejects duplicate invocation coordinates, and returns a canonically
- * sealed {@link MirrorStateRunEvidence} value.</p>
+ * <p>The constructor freezes every state-backed plan site against the admitted Session payload.
+ * Read-only runs retain the immutable v1 evidence shape. Runs with one or more virtual-write
+ * bindings emit v2 evidence that binds initial/final Session heads, every read to its observed
+ * revision, and each write to a payload-free receipt/event projection. Completion is one-shot and
+ * rejects duplicate invocation coordinates or any runtime/spec drift.</p>
  */
 public final class MirrorStateAccessJournal
         implements MirrorStateAccessObserver {
     private final ObjectMapper mapper;
     private final MirrorPlan plan;
     private final MirrorResolver.SessionContext sessionContext;
-    private final Map<String, MirrorStateRunEvidence.StatefulBinding>
-            bindingsBySite;
+    private final Map<String, Binding> bindingsBySite;
+    private final ConcurrentHashMap<Coordinate, ReadObservation>
+            reads = new ConcurrentHashMap<>();
     private final ConcurrentHashMap<Coordinate,
-            MirrorStateRunEvidence.StateAccess> accesses =
+            WriteObservation> transitions =
             new ConcurrentHashMap<>();
     private final AtomicBoolean completed = new AtomicBoolean();
 
@@ -45,7 +53,7 @@ public final class MirrorStateAccessJournal
      *
      * @param mapper canonical protocol mapper
      * @param plan sealed mirror plan
-     * @param sessionContext immutable Session state head and site bindings
+     * @param sessionContext admitted Session head, exact site bindings, and optional write bridge
      */
     public MirrorStateAccessJournal(
             ObjectMapper mapper,
@@ -68,9 +76,9 @@ public final class MirrorStateAccessJournal
             throw new IllegalArgumentException(
                     "state journal Session scope or state model is not admitted");
         }
-        LinkedHashMap<String,
-                MirrorStateRunEvidence.StatefulBinding> bindings =
+        LinkedHashMap<String, Binding> bindings =
                 new LinkedHashMap<>();
+        boolean writeBinding = false;
         for (MirrorPlan.ExternalBinding binding
                 : plan.externalBindings()) {
             if (!binding.resolverOrder().contains(
@@ -84,33 +92,58 @@ public final class MirrorStateAccessJournal
                 throw new IllegalArgumentException(
                         "state journal capability binding differs from the plan");
             }
-            List<StateReadSpec> matches = payload.stateReadSpecs().stream()
-                    .filter(spec -> spec.targetCapabilityRef().equals(
-                            capability))
+            List<StateReadSpec> reads = payload.stateReadSpecs()
+                    .stream()
+                    .filter(spec -> spec.targetCapabilityRef()
+                            .equals(capability))
                     .toList();
-            if (matches.size() != 1
-                    || matches.getFirst().lifecycle()
-                    != CapabilitySnapshot.Lifecycle.ACTIVE) {
+            List<WriteEffectSpec> writes = payload.writeEffects()
+                    .stream()
+                    .filter(effect -> effect.targetCapabilityRef()
+                            .equals(capability))
+                    .toList();
+            if (reads.size() + writes.size() != 1) {
                 throw new IllegalArgumentException(
-                        "state journal requires one active read spec per stateful site");
+                        "state journal requires one exact interaction spec per site");
             }
-            StateReadSpec spec = matches.getFirst();
-            StateReadSpecIntegrity.verify(
-                    mapper, spec, payload.stateModel());
-            MirrorStateRunEvidence.StatefulBinding stateful =
-                    new MirrorStateRunEvidence.StatefulBinding(
-                            binding.invocationSiteId(),
-                            binding.graphPath(), capability,
-                            StateReadSpecIntegrity.reference(spec));
+            Binding projected;
+            if (!reads.isEmpty()) {
+                StateReadSpec spec = reads.getFirst();
+                if (spec.lifecycle()
+                        != CapabilitySnapshot.Lifecycle.ACTIVE) {
+                    throw new IllegalArgumentException(
+                            "state journal read spec must be active");
+                }
+                StateReadSpecIntegrity.verify(
+                        mapper, spec, payload.stateModel());
+                projected = new Binding(
+                        binding, capability, spec, null);
+            } else {
+                WriteEffectSpec effect = writes.getFirst();
+                if (effect.lifecycle()
+                        != CapabilitySnapshot.Lifecycle.ACTIVE
+                        || sessionContext.runSession() == null) {
+                    throw new IllegalArgumentException(
+                            "state journal write effect requires an active run session");
+                }
+                WriteEffectSpecIntegrity.verify(
+                        mapper, effect, payload.stateModel());
+                projected = new Binding(
+                        binding, capability, null, effect);
+                writeBinding = true;
+            }
             if (bindings.put(
-                    binding.invocationSiteId(), stateful) != null) {
+                    binding.invocationSiteId(),
+                    projected) != null) {
                 throw new IllegalArgumentException(
                         "state journal binding sites must be unique");
             }
         }
-        if (bindings.isEmpty()) {
+        if (bindings.isEmpty()
+                || writeBinding
+                != (sessionContext.runSession() != null)) {
             throw new IllegalArgumentException(
-                    "state journal requires a state-backed plan binding");
+                    "state journal run mode differs from its binding closure");
         }
         this.bindingsBySite = Map.copyOf(bindings);
     }
@@ -123,43 +156,106 @@ public final class MirrorStateAccessJournal
             MirrorStateRunEvidence.AccessOutcome outcome,
             String stateRecordFingerprint,
             String projectedOutputFingerprint) {
-        if (completed.get()) {
-            throw new IllegalStateException(
-                    "mirror state access journal is already complete");
-        }
-        Objects.requireNonNull(request, "request");
+        MirrorSessionPayload payload =
+                requireContext(request).currentPayload();
+        SessionStateSpace state = payload.state();
+        observedAt(
+                request, spec, stateRef(state),
+                state.stateRevision(),
+                state.worldFingerprint(),
+                state.logicalClock(),
+                businessKeyFingerprint, outcome,
+                stateRecordFingerprint,
+                projectedOutputFingerprint);
+    }
+
+    @Override
+    public void observedAt(
+            MirrorResolver.Request request,
+            StateReadSpec spec,
+            MirrorArtifactRef observedStateRef,
+            long observedStateRevision,
+            String observedWorldFingerprint,
+            Instant observedLogicalClock,
+            String businessKeyFingerprint,
+            MirrorStateRunEvidence.AccessOutcome outcome,
+            String stateRecordFingerprint,
+            String projectedOutputFingerprint) {
+        ensureOpen();
+        MirrorResolver.SessionContext context =
+                requireContext(request);
         Objects.requireNonNull(spec, "spec");
-        MirrorStateRunEvidence.StatefulBinding binding =
-                bindingsBySite.get(request.site().invocationSiteId());
-        if (binding == null
-                || !binding.stateReadSpecRef().equals(
-                StateReadSpecIntegrity.reference(spec))
-                || request.sessionContext() == null
-                || !request.sessionContext().payload().fingerprint()
-                .equals(sessionContext.payload().fingerprint())) {
+        Binding binding = bindingsBySite.get(
+                request.site().invocationSiteId());
+        if (binding == null || binding.readSpec() == null
+                || !StateReadSpecIntegrity.reference(spec).equals(
+                StateReadSpecIntegrity.reference(
+                        binding.readSpec()))
+                || !observedStateRef.id().equals(
+                context.payload().state().sessionId())) {
             throw new IllegalArgumentException(
-                    "state access observation differs from the frozen journal binding");
+                    "state read observation differs from its frozen journal binding");
         }
         String errorCode =
-                outcome == MirrorStateRunEvidence.AccessOutcome.TOMBSTONED
-                        ? MirrorStateRunEvidence.MirrorSessionStateError
+                outcome
+                == MirrorStateRunEvidence.AccessOutcome.TOMBSTONED
+                        ? MirrorStateRunEvidence
+                        .MirrorSessionStateError
                         .ENTITY_TOMBSTONED : "";
-        MirrorStateRunEvidence.StateAccess access =
-                new MirrorStateRunEvidence.StateAccess(
-                        request.site().invocationSiteId(),
-                        request.site().graphPath(),
-                        request.site().correlationKey(),
-                        request.occurrence(), request.attempt(),
-                        binding.capabilityRef(),
-                        binding.stateReadSpecRef(),
-                        request.requestFingerprint(),
-                        businessKeyFingerprint, outcome,
-                        stateRecordFingerprint,
-                        projectedOutputFingerprint, errorCode);
-        Coordinate coordinate = Coordinate.from(access);
-        if (accesses.putIfAbsent(coordinate, access) != null) {
+        ReadObservation observation = new ReadObservation(
+                request.site().invocationSiteId(),
+                request.site().graphPath(),
+                request.site().correlationKey(),
+                request.occurrence(), request.attempt(),
+                request.requestFingerprint(),
+                binding, observedStateRef,
+                observedStateRevision,
+                observedWorldFingerprint,
+                observedLogicalClock,
+                businessKeyFingerprint, outcome,
+                stateRecordFingerprint,
+                projectedOutputFingerprint, errorCode);
+        Coordinate coordinate = Coordinate.from(request);
+        if (reads.putIfAbsent(
+                coordinate, observation) != null
+                || transitions.containsKey(coordinate)) {
             throw new IllegalStateException(
-                    "duplicate mirror state access coordinate");
+                    "duplicate mirror state interaction coordinate");
+        }
+    }
+
+    @Override
+    public void transitioned(
+            MirrorResolver.Request request,
+            WriteEffectSpec spec,
+            MirrorStateTransitionObservation transition) {
+        ensureOpen();
+        requireContext(request);
+        Objects.requireNonNull(spec, "spec");
+        Objects.requireNonNull(transition, "transition");
+        Binding binding = bindingsBySite.get(
+                request.site().invocationSiteId());
+        if (binding == null || binding.writeEffect() == null
+                || !WriteEffectSpecIntegrity.reference(spec)
+                .equals(transition.writeEffectRef())
+                || !WriteEffectSpecIntegrity.reference(
+                binding.writeEffect()).equals(
+                transition.writeEffectRef())
+                || !transition.initialStateRef().id().equals(
+                sessionContext.payload().state().sessionId())) {
+            throw new IllegalArgumentException(
+                    "state transition differs from its frozen journal binding");
+        }
+        Coordinate coordinate = Coordinate.from(request);
+        WriteObservation observation =
+                new WriteObservation(
+                        request.requestFingerprint(),
+                        transition);
+        if (transitions.putIfAbsent(
+                coordinate, observation) != null
+                || reads.containsKey(coordinate)) {
+            throw new IllegalStateException(
+                    "duplicate mirror state interaction coordinate");
         }
     }
 
@@ -167,37 +263,276 @@ public final class MirrorStateAccessJournal
      * Closes and seals the complete payload-free state evidence value.
      *
      * @param runId terminal mirror run identity
-     * @return sealed state evidence
+     * @return sealed read-only v1 or serializable read/write v2 evidence
      */
-    public MirrorStateRunEvidence complete(String runId) {
+    public MirrorStateEvidence complete(String runId) {
         if (!completed.compareAndSet(false, true)) {
             throw new IllegalStateException(
                     "mirror state access journal is already complete");
         }
-        SessionStateSpace state = sessionContext.payload().state();
-        MirrorArtifactRef sessionStateRef = new MirrorArtifactRef(
-                "SESSION_STATE", state.sessionId(),
-                Math.addExact(state.stateRevision(), 1),
-                state.fingerprint());
-        MirrorStateRunEvidence evidence =
-                new MirrorStateRunEvidence(
-                        MirrorStateRunEvidence.SCHEMA_VERSION, "",
-                        runId, plan.planFingerprint(),
-                        sessionStateRef,
+        return sessionContext.runSession() == null
+                ? completeReadOnly(runId)
+                : completeReadWrite(runId);
+    }
+
+    /** @return number of unique state reads and writes observed so far */
+    public int size() {
+        return reads.size() + transitions.size();
+    }
+
+    private MirrorStateRunEvidence completeReadOnly(
+            String runId) {
+        SessionStateSpace state =
+                sessionContext.payload().state();
+        List<MirrorStateRunEvidence.StatefulBinding> bindings =
+                bindingsBySite.values().stream()
+                        .map(binding ->
+                                new MirrorStateRunEvidence
+                                        .StatefulBinding(
+                                        binding.planBinding()
+                                                .invocationSiteId(),
+                                        binding.planBinding()
+                                                .graphPath(),
+                                        binding.capabilityRef(),
+                                        StateReadSpecIntegrity
+                                                .reference(
+                                                        binding
+                                                                .readSpec())))
+                        .toList();
+        List<MirrorStateRunEvidence.StateAccess> accesses =
+                reads.values().stream()
+                        .map(ReadObservation::toV1)
+                        .toList();
+        return MirrorStateRunEvidenceIntegrity.seal(
+                mapper, new MirrorStateRunEvidence(
+                        MirrorStateRunEvidence.SCHEMA_VERSION,
+                        "", runId, plan.planFingerprint(),
+                        stateRef(state),
                         StateModelIntegrity.reference(
-                                sessionContext.payload().stateModel()),
+                                sessionContext.payload()
+                                        .stateModel()),
                         state.stateRevision(),
                         state.worldFingerprint(),
                         state.logicalClock(),
-                        MirrorStateRunEvidence.Mode.READ_ONLY_SNAPSHOT,
-                        List.copyOf(bindingsBySite.values()),
-                        List.copyOf(accesses.values()), List.of());
-        return MirrorStateRunEvidenceIntegrity.seal(mapper, evidence);
+                        MirrorStateRunEvidence.Mode
+                                .READ_ONLY_SNAPSHOT,
+                        bindings, accesses, List.of()));
     }
 
-    /** @return number of unique state accesses observed so far */
-    public int size() {
-        return accesses.size();
+    private MirrorStateTransitionRunEvidence completeReadWrite(
+            String runId) {
+        MirrorSessionPayload initial =
+                sessionContext.payload();
+        MirrorSessionPayload terminal =
+                sessionContext.runSession().currentPayload();
+        SessionStateSpace initialState = initial.state();
+        SessionStateSpace finalState = terminal.state();
+        List<MirrorStateTransitionRunEvidence.StatefulBinding>
+                bindings = bindingsBySite.values().stream()
+                .map(Binding::toV2).toList();
+        List<MirrorStateTransitionRunEvidence.StateAccess>
+                accesses = reads.values().stream()
+                .map(ReadObservation::toV2).toList();
+        List<MirrorStateTransitionRunEvidence.StateTransition>
+                writes = transitions.entrySet().stream()
+                .map(entry -> toV2(
+                        entry.getKey(),
+                        bindingsBySite.get(
+                                entry.getKey()
+                                        .invocationSiteId()),
+                        entry.getValue()))
+                .toList();
+        return MirrorStateTransitionRunEvidenceIntegrity.seal(
+                mapper,
+                new MirrorStateTransitionRunEvidence(
+                        MirrorStateTransitionRunEvidence
+                                .SCHEMA_VERSION,
+                        "", runId, plan.planFingerprint(),
+                        stateRef(initialState),
+                        stateRef(finalState),
+                        StateModelIntegrity.reference(
+                                initial.stateModel()),
+                        initialState.stateRevision(),
+                        finalState.stateRevision(),
+                        initialState.worldFingerprint(),
+                        finalState.worldFingerprint(),
+                        initialState.logicalClock(),
+                        finalState.logicalClock(),
+                        MirrorStateTransitionRunEvidence.Mode
+                                .SERIALIZABLE_READ_WRITE,
+                        bindings, accesses, writes, List.of()));
+    }
+
+    private static MirrorStateTransitionRunEvidence
+            .StateTransition toV2(
+            Coordinate coordinate,
+            Binding binding,
+            WriteObservation observation) {
+        MirrorStateTransitionObservation value =
+                observation.transition();
+        return new MirrorStateTransitionRunEvidence
+                .StateTransition(
+                coordinate.invocationSiteId(),
+                binding.planBinding().graphPath(),
+                coordinate.correlationKey(),
+                coordinate.occurrence(),
+                coordinate.attempt(),
+                binding.capabilityRef(),
+                value.writeEffectRef(),
+                value.initialStateRef(),
+                value.finalStateRef(),
+                value.revisionBefore(),
+                value.revisionAfter(),
+                value.initialWorldFingerprint(),
+                value.finalWorldFingerprint(),
+                value.initialLogicalClock(),
+                value.finalLogicalClock(),
+                observation.requestFingerprint(),
+                value.idempotencyKeyFingerprint(),
+                value.commandFingerprint(),
+                value.receiptFingerprint(),
+                value.responseFingerprint(),
+                value.resultingWorldFingerprint(),
+                value.committedAt(), value.replayed(),
+                value.events().stream()
+                        .map(event ->
+                                new MirrorStateTransitionRunEvidence
+                                        .TransitionEvent(
+                                        event.eventIdFingerprint(),
+                                        event.stateRevision(),
+                                        event.mutationId(),
+                                        event.operation(),
+                                        event.entityType(),
+                                        event.entityIdentityFingerprint(),
+                                        event.beforeFingerprint(),
+                                        event.afterFingerprint(),
+                                        event.occurredAt(),
+                                        event.eventFingerprint()))
+                        .toList());
+    }
+
+    private MirrorResolver.SessionContext requireContext(
+            MirrorResolver.Request request) {
+        Objects.requireNonNull(request, "request");
+        MirrorResolver.SessionContext current =
+                request.sessionContext();
+        if (current == null
+                || current != sessionContext) {
+            throw new IllegalArgumentException(
+                    "state observation differs from the run Session context");
+        }
+        return current;
+    }
+
+    private void ensureOpen() {
+        if (completed.get()) {
+            throw new IllegalStateException(
+                    "mirror state access journal is already complete");
+        }
+    }
+
+    private static MirrorArtifactRef stateRef(
+            SessionStateSpace state) {
+        return new MirrorArtifactRef(
+                "SESSION_STATE", state.sessionId(),
+                Math.addExact(state.stateRevision(), 1),
+                state.fingerprint());
+    }
+
+    private record Binding(
+            MirrorPlan.ExternalBinding planBinding,
+            MirrorArtifactRef capabilityRef,
+            StateReadSpec readSpec,
+            WriteEffectSpec writeEffect
+    ) {
+        private MirrorStateTransitionRunEvidence
+                .StatefulBinding toV2() {
+            return new MirrorStateTransitionRunEvidence
+                    .StatefulBinding(
+                    planBinding.invocationSiteId(),
+                    planBinding.graphPath(),
+                    capabilityRef,
+                    readSpec == null
+                            ? MirrorStateTransitionRunEvidence
+                            .Interaction.WRITE
+                            : MirrorStateTransitionRunEvidence
+                            .Interaction.READ,
+                    readSpec == null ? null
+                            : StateReadSpecIntegrity
+                            .reference(readSpec),
+                    writeEffect == null ? null
+                            : WriteEffectSpecIntegrity
+                            .reference(writeEffect));
+        }
+    }
+
+    private record ReadObservation(
+            String invocationSiteId,
+            String graphPath,
+            String correlationKey,
+            int occurrence,
+            int attempt,
+            String requestFingerprint,
+            Binding binding,
+            MirrorArtifactRef observedStateRef,
+            long observedStateRevision,
+            String observedWorldFingerprint,
+            Instant observedLogicalClock,
+            String businessKeyFingerprint,
+            MirrorStateRunEvidence.AccessOutcome outcome,
+            String stateRecordFingerprint,
+            String projectedOutputFingerprint,
+            String errorCode
+    ) {
+        private MirrorStateRunEvidence.StateAccess toV1() {
+            return new MirrorStateRunEvidence.StateAccess(
+                    invocationSiteId, graphPath,
+                    correlationKey,
+                    occurrence, attempt,
+                    binding.capabilityRef(),
+                    StateReadSpecIntegrity.reference(
+                            binding.readSpec()),
+                    requestFingerprint,
+                    businessKeyFingerprint, outcome,
+                    stateRecordFingerprint,
+                    projectedOutputFingerprint, errorCode);
+        }
+
+        private MirrorStateTransitionRunEvidence
+                .StateAccess toV2() {
+            return new MirrorStateTransitionRunEvidence
+                    .StateAccess(
+                    invocationSiteId, graphPath,
+                    correlationKey,
+                    occurrence, attempt,
+                    binding.capabilityRef(),
+                    StateReadSpecIntegrity.reference(
+                            binding.readSpec()),
+                    observedStateRef,
+                    observedStateRevision,
+                    observedWorldFingerprint,
+                    observedLogicalClock,
+                    requestFingerprint,
+                    businessKeyFingerprint,
+                    MirrorStateTransitionRunEvidence
+                            .AccessOutcome.valueOf(
+                                    outcome.name()),
+                    stateRecordFingerprint,
+                    projectedOutputFingerprint, errorCode);
+        }
+    }
+
+    private record WriteObservation(
+            String requestFingerprint,
+            MirrorStateTransitionObservation transition
+    ) {
+        private WriteObservation {
+            requestFingerprint = Objects.requireNonNull(
+                    requestFingerprint,
+                    "requestFingerprint");
+            transition = Objects.requireNonNull(
+                    transition, "transition");
+        }
     }
 
     private record Coordinate(
@@ -207,11 +542,12 @@ public final class MirrorStateAccessJournal
             int attempt
     ) {
         private static Coordinate from(
-                MirrorStateRunEvidence.StateAccess access) {
+                MirrorResolver.Request request) {
             return new Coordinate(
-                    access.invocationSiteId(),
-                    access.correlationKey(),
-                    access.occurrence(), access.attempt());
+                    request.site().invocationSiteId(),
+                    request.site().correlationKey(),
+                    request.occurrence(),
+                    request.attempt());
         }
     }
 }

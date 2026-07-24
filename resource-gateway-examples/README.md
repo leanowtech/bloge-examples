@@ -290,31 +290,39 @@ available while full. A bounded oldest-first worker erases expired ciphertext,
 and aggregate health plus fixed-cardinality metrics never expose customer
 dimensions.
 
-State-model-backed `READ_ONLY` external capabilities can now be compiled with
-`SESSION_STATE` first in resolver precedence. Execution request v2 binds the run
-to one caller-reviewed Session state fingerprint. The server freezes that head
-once per run, propagates the same immutable revision to every controlled
-operator, returns live entities through the declared bounded projection, and
-lets an absent key continue to lower governed sources. A missing read spec is a
-plan/Session closure defect that fails before graph scheduling; it is never
-treated as an absent business entity. An indexed tombstone is terminal and
-cannot fall through to corpus, fixture, or a real resource. The fixed refund
-fixture and standalone test kit include and independently verify the
-`query-order` read lowering.
+State-model-backed `READ_ONLY` and `VIRTUAL_MUTATION` external capabilities can
+now be compiled with `SESSION_STATE` first in resolver precedence. Execution
+request v2 binds the run to one caller-reviewed Session state fingerprint. A
+read-only run uses that immutable head throughout. A read/write run owns one
+fair, serialized run session: each virtual write passes through the same
+admission, database lease, idempotency, optimistic fence, CAS, and audit path as
+the protected Session command API, then atomically advances the head visible to
+downstream nodes. The write binding is exactly
+`[SESSION_STATE, ABSTAINED]`, so the graph can never invoke the registered real
+write operator. Reads return live entities through the declared bounded
+projection; absent keys may continue to lower governed sources, while an
+indexed tombstone is terminal. Missing read or write specifications are
+plan/Session closure defects rejected before graph scheduling.
 
-Every Session-backed run now emits a nested
-`resourceGateway.mirrorStateRunEvidence.v1`. It binds the exact Session head,
-state model, revision, world fingerprint, logical clock, and every state-backed
-invocation site. Each `LIVE_ENTITY`, `ABSENT`, or `TOMBSTONED` access is
-fingerprinted without retaining an entity or business key, then closed against
-the matching node delegate attempt and `MirrorResolution`. Stateful runs use
-mirror run evidence, attestation, and bundle v3 under a separate signature
-domain; existing stateless v1/v2 bundles remain readable and keep their
-original signature semantics. Repository reads after restart re-verify both
-the nested state seal and detached signature.
+Read-only Session runs emit nested
+`resourceGateway.mirrorStateRunEvidence.v1` inside mirror evidence,
+attestation, and bundle v3. Read/write runs emit
+`resourceGateway.mirrorStateRunEvidence.v2` inside the independently
+domain-separated v4 generation. V2 state evidence binds both initial and final
+Session heads, every read's exact observed revision, and every write's
+request/idempotency/command/receipt/response fingerprints, contiguous
+revision/world/logical-clock transition, and complete transition-event
+closure. It retains neither entity values, business keys, nor raw idempotency
+keys. Every read or write is also closed against the matching node delegate
+attempt and `MirrorResolution`. Existing v1/v2 stateless and v3 read-only
+bundles remain readable with their original signature semantics. Repository
+reads after restart rehydrate the state-evidence subtype and re-verify its
+nested seal and detached signature.
 
-The standalone test kit independently verifies that v3 state closure and can
-derive `resourceGateway.mirrorStateWorkbookSeed.v1` from the verified bundle.
+The standalone test kit independently verifies both v3 read closure and v4
+read/write transition closure. It can derive
+`resourceGateway.mirrorStateWorkbookSeed.v1` only from a verified v3 bundle;
+transition-aware workbook projection remains a separate milestone.
 The protected
 `GET /api/mirror/runs/{runId}/state-workbook-seed` route returns the same
 deterministic payload-free projection in the authenticated scope. A seed names
@@ -324,14 +332,16 @@ Resource Gateway make ANEKE's workbook, owner-approval, or publish-gate
 decision.
 
 This is not yet a production-certified stateful runtime: TEE/KMS custody,
-graph-embedded virtual writes and their transition evidence, signed checkpoint/recovery,
+signed checkpoint/recovery, transition-aware workbook assertions,
 cryptographic deletion proof, target-database capacity/lock certification and
 HA/DR certification remain. The probe reports `mirrorStatefulResolverReady`
 only when mirror execution, the Session API, and the encrypted state store are
 all ready. It separately reports `mirrorStateRunEvidenceReady`,
-`mirrorStateWorkbookSeedApi`, and `mirrorStateWorkbookSeedReady`;
-`mirrorStatefulRuntimeReady` remains false until graph-write and recovery
-closure is complete. Startup, request v2 usage, Java usage, capacity
+`mirrorStateTransitionEvidenceReady`, `mirrorStateWorkbookSeedApi`,
+`mirrorStateWorkbookSeedReady`, and the deliberately false
+`mirrorStateTransitionWorkbookSeedReady`; `mirrorStatefulRuntimeReady` remains
+false until checkpoint and recovery closure is complete. Startup, request v2
+usage, Java usage, capacity
 configuration, stable errors, and remaining industrial work packages are in the
 [stateful mirror kernel guide](../docs/resource-gateway-stateful-mirror-kernel.md).
 
@@ -509,11 +519,15 @@ remain distinct. Ordinary tests keep their previous selection path. The probe ad
 the protected plan adapter is assembled, and advertises serving only when the complete run/evidence chain is assembled.
 
 The portable evidence protocol supports the frozen v1 and v2 stateless
-generations plus a v3 stateful generation. V3 requires nested
+generations, a v3 read-only stateful generation, and a v4 read/write stateful
+generation. V3 requires nested
 `resourceGateway.mirrorStateRunEvidence.v1` and uses distinct
 `resourceGateway.mirrorRunEvidence.v3`,
 `resourceGateway.mirrorEvidenceAttestation.v3`, and
-`resourceGateway.mirrorEvidenceBundle.v3` schemas and signature domain. Every generation signs only a
+`resourceGateway.mirrorEvidenceBundle.v3` schemas and signature domain. V4
+requires nested `resourceGateway.mirrorStateRunEvidence.v2` and similarly uses
+distinct run-evidence, attestation, bundle schemas and a v4 signature domain.
+Every generation signs only a
 `HASH_ONLY` projection that binds request context, plan, capability closure, execution control, fixture revision,
 semantic result, ordered node/edge traces, every sealed resolution, and explicit isolation facts. Newly produced
 Ed25519 signatures and the complete bundle fingerprint are verified immediately. The internal run kernel now
@@ -526,9 +540,11 @@ terminal confirmation, v2 evidence binding, and transaction commit fencing are c
 ingress controls, non-Java v2 fixtures, cross-language canonicalization, and environment certification remain
 production gates.
 V3 additionally closes one immutable Session head and every state access
-against the existing node-attempt/resolution trace. The independent test kit
-verifies v1/v2/v3, rejects mixed generations, and can derive the state workbook
-seed only after v3 verification. A local exploratory demo will normally return
+against the existing node-attempt/resolution trace. V4 closes an advancing
+Session head, exact read revisions, virtual-write receipts and transition
+events against the same trace. The independent test kit verifies v1/v2/v3/v4,
+rejects mixed generations, and can derive the state workbook seed only after v3
+verification. A local exploratory demo will normally return
 `gateReady=false` with blockers such as `EVIDENCE_NOT_CERTIFIABLE` and
 `RUN_EVIDENCE_LIMITED`; that is an honest trust result, not a transport failure.
 The Spring kernel now has
@@ -666,9 +682,10 @@ Useful variants:
 ./scripts/stop-visual-canvas-demo.sh
 ```
 
-`--stateful` starts the Session data plane, state resolver, v3 evidence
-projection, and workbook-seed route in the same service. No extra sidecar is
-required for the local demonstration; use the ordinary stop script above.
+`--stateful` starts the Session data plane, read/virtual-write resolver, v3/v4
+evidence projection, and v3 read-only workbook-seed route in the same service.
+No extra sidecar is required for the local demonstration; use the ordinary stop
+script above.
 
 `--stateful` uses conservative local defaults: 1,000 global and 100 per-scope
 active sessions, 4 GiB global and 512 MiB per-scope retained canonical payload,
