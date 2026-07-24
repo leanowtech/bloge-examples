@@ -122,7 +122,7 @@ class ScenarioRehearsalBatchServiceTest {
                 SCOPE,
                 claim.item().childRequestId());
         when(repository.claimNext(
-                "test", "worker-a", policy()))
+                "sg", "test", "worker-a", policy()))
                 .thenReturn(claim);
         when(runtime.execute(any(), any()))
                 .thenReturn(bundle);
@@ -174,7 +174,7 @@ class ScenarioRehearsalBatchServiceTest {
                         mapper);
 
         ScenarioRehearsalBatchWorker.Turn turn =
-                worker.runOnce("test", "worker-a");
+                worker.runOnce("sg", "test", "worker-a");
 
         assertThat(turn.disposition()).isEqualTo(
                 ScenarioRehearsalBatchWorker.Disposition
@@ -209,10 +209,10 @@ class ScenarioRehearsalBatchServiceTest {
         ScenarioRehearsalBatchRepository.Claim first = claim();
         ScenarioRehearsalBatchRepository.Claim second = claim();
         when(repository.claimNext(
-                "test", "worker-a", policy()))
+                "sg", "test", "worker-a", policy()))
                 .thenReturn(first);
         when(repository.claimNext(
-                "test", "worker-b", policy()))
+                "sg", "test", "worker-b", policy()))
                 .thenReturn(second);
         when(repository.retryItem(
                 first.lease(),
@@ -246,11 +246,11 @@ class ScenarioRehearsalBatchServiceTest {
                         policy(),
                         mapper);
 
-        assertThat(worker.runOnce("test", "worker-a")
+        assertThat(worker.runOnce("sg", "test", "worker-a")
                 .disposition()).isEqualTo(
                 ScenarioRehearsalBatchWorker.Disposition
                         .ITEM_RETRY_SCHEDULED);
-        assertThat(worker.runOnce("test", "worker-b")
+        assertThat(worker.runOnce("sg", "test", "worker-b")
                 .disposition()).isEqualTo(
                 ScenarioRehearsalBatchWorker.Disposition
                         .ITEM_FAILED);

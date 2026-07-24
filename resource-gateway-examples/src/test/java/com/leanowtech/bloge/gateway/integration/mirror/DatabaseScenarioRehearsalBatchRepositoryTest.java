@@ -157,13 +157,13 @@ class DatabaseScenarioRehearsalBatchRepositoryTest {
 
         ScenarioRehearsalBatchRepository.Claim first =
                 repository.claimNext(
-                        "test", "worker-a", policy);
+                        "sg", "test", "worker-a", policy);
         ScenarioRehearsalBatchRepository.Claim second =
                 repository.claimNext(
-                        "test", "worker-b", policy);
+                        "sg", "test", "worker-b", policy);
         ScenarioRehearsalBatchRepository.Claim saturated =
                 repository.claimNext(
-                        "test", "worker-c", policy);
+                        "sg", "test", "worker-c", policy);
 
         assertThat(first.job().scope().tenantId())
                 .isEqualTo("tenant-a");
@@ -171,7 +171,55 @@ class DatabaseScenarioRehearsalBatchRepositoryTest {
                 tenantB.jobId());
         assertThat(saturated.outcome()).isEqualTo(
                 ScenarioRehearsalBatchRepository.ClaimOutcome
-                        .NO_WORK);
+                                .NO_WORK);
+    }
+
+    @Test
+    void isolatesCapacityPolicyAndClaimsAcrossRegionsWithTheSameEnvironment() {
+        ScenarioRehearsalBatchPolicy sgPolicy =
+                policy(1, 1);
+        ScenarioRehearsalBatchPolicy usPolicy =
+                new ScenarioRehearsalBatchPolicy(
+                        sgPolicy.generation(),
+                        sgPolicy.failureMode(),
+                        ScenarioRehearsalBatchPolicy.Priority.HIGH,
+                        sgPolicy.maximumItemAttempts(),
+                        sgPolicy.maximumQueued(),
+                        sgPolicy.maximumQueuedPerTenant(),
+                        sgPolicy.maximumRunning(),
+                        sgPolicy.maximumRunningPerTenant(),
+                        sgPolicy.maximumPlanTimeout(),
+                        sgPolicy.maximumDeadlineHorizon(),
+                        sgPolicy.leaseReserve(),
+                        sgPolicy.retryBackoff(),
+                        sgPolicy.priorityAgingInterval(),
+                        sgPolicy.terminalRetention());
+        CapabilitySnapshot.Scope usScope =
+                scope("tenant-a", "org-a", "us");
+        repository.submit(
+                submission(SCOPE, "batch-sg", "refund"),
+                sgPolicy);
+        repository.submit(
+                submission(usScope, "batch-us", "refund"),
+                usPolicy);
+
+        ScenarioRehearsalBatchRepository.Claim sg =
+                repository.claimNext(
+                        "sg", "test", "worker-sg", sgPolicy);
+        ScenarioRehearsalBatchRepository.Claim us =
+                repository.claimNext(
+                        "us", "test", "worker-us", usPolicy);
+
+        assertThat(sg.outcome()).isEqualTo(
+                ScenarioRehearsalBatchRepository.ClaimOutcome.ACQUIRED);
+        assertThat(sg.job().scope().region()).isEqualTo("sg");
+        assertThat(us.outcome()).isEqualTo(
+                ScenarioRehearsalBatchRepository.ClaimOutcome.ACQUIRED);
+        assertThat(us.job().scope().region()).isEqualTo("us");
+        assertThat(repository.claimNext(
+                "eu", "test", "worker-eu", sgPolicy).outcome())
+                .isEqualTo(
+                        ScenarioRehearsalBatchRepository.ClaimOutcome.NO_WORK);
     }
 
     @Test
@@ -181,7 +229,7 @@ class DatabaseScenarioRehearsalBatchRepositoryTest {
         repository.submit(submission, policy());
         ScenarioRehearsalBatchRepository.Claim claim =
                 repository.claimNext(
-                        "test", "worker-a", policy());
+                        "sg", "test", "worker-a", policy());
 
         assertThatThrownBy(() -> repository.completeItem(
                 claim.lease(),
@@ -232,20 +280,20 @@ class DatabaseScenarioRehearsalBatchRepositoryTest {
         repository.submit(submission, policy);
         ScenarioRehearsalBatchRepository.Claim first =
                 repository.claimNext(
-                        "test", "worker-a", policy);
+                        "sg", "test", "worker-a", policy);
         assertThat(first.lease().expiresAt())
                 .isEqualTo(NOW.plusSeconds(2));
 
         databaseTime.set(NOW.plusMillis(2_001));
         assertThat(repository.claimNext(
-                "test", "worker-b", policy).outcome())
+                "sg", "test", "worker-b", policy).outcome())
                 .isEqualTo(
                         ScenarioRehearsalBatchRepository.ClaimOutcome
                                 .NO_WORK);
         databaseTime.set(NOW.plusMillis(2_101));
         ScenarioRehearsalBatchRepository.Claim takeover =
                 repository.claimNext(
-                        "test", "worker-b", policy);
+                        "sg", "test", "worker-b", policy);
 
         assertThat(takeover.outcome()).isEqualTo(
                 ScenarioRehearsalBatchRepository.ClaimOutcome
@@ -299,7 +347,7 @@ class DatabaseScenarioRehearsalBatchRepositoryTest {
         repository.submit(completed, policy());
         ScenarioRehearsalBatchRepository.Claim claim =
                 repository.claimNext(
-                        "test", "worker-a", policy());
+                        "sg", "test", "worker-a", policy());
         ScenarioRehearsalBatchJob terminal =
                 repository.completeItem(
                         claim.lease(),
@@ -501,12 +549,19 @@ class DatabaseScenarioRehearsalBatchRepositoryTest {
     private static CapabilitySnapshot.Scope scope(
             String tenant,
             String organization) {
+        return scope(tenant, organization, "sg");
+    }
+
+    private static CapabilitySnapshot.Scope scope(
+            String tenant,
+            String organization,
+            String region) {
         return new CapabilitySnapshot.Scope(
                 tenant,
                 organization,
                 "support",
                 "test",
-                "sg");
+                region);
     }
 
     private static boolean businessPayloadColumn(String column) {

@@ -32,9 +32,9 @@ Fixture、MirrorPlan 和可选 Session checkpoint 绑定成不可变执行许可
 | Scenario workbook API/Test Kit client | 可用 | 受保护 exact-run 读取；客户端自动拉取五类源资产并在返回前完成独立闭包验证 |
 | `ScenarioRehearsalBatchRequest/Manifest.v1` | 可用 | 调用方只提交有序 exact plan ref；服务端解析并封存 batch id、child request/run id、case count 和总预算 |
 | `ScenarioRehearsalBatchJob/ItemPage.v1` | 可用 | 暴露 payload-free 生命周期、计数、失败码和稳定 manifest-index 分页，不泄露 fixture、context 或 worker 身份 |
-| durable batch repository | 可用（控制面基础） | 数据库权威容量、同请求精确重放、租户公平 claim、优先级老化、lease/epoch、重试、取消、deadline 和恢复 |
-| batch worker turn | 可用（手动/待调度） | 执行一个 manifest item，复用 aggregate 幂等，独立复验签名 evidence 与 workbook closure 后才完成 item |
-| autonomous batch scheduling | 未交付 | 尚无常驻 scheduler/pool、region-local partition、heartbeat 和 cooperative in-flight cancellation |
+| durable batch repository | 可用 | `(region, environment)` 数据库权威容量、同请求精确重放、租户公平 claim、优先级老化、lease/epoch、重试、取消、deadline 和恢复 |
+| batch worker turn | 可用 | 执行一个 manifest item，复用 aggregate 幂等，独立复验签名 evidence 与 workbook closure 后才完成 item |
+| autonomous batch scheduling | 可用（显式非生产开关） | 单地域分区、固定 lane、有界 fixed-delay poll、启动配置校验、动态 readiness 和停机 drain；heartbeat 与执行中 cooperative cancel 未交付 |
 | signed batch evidence/index | 未交付 | 每个 child 已有独立证据；尚无可离线验证的 batch manifest/result 索引、batch retention/audit 与 ANEKE 批次消费闭包 |
 | 可作为生产发布门禁的 Scenario evidence | 未交付 | 本地 gate-consumable closure 已完成；尚无企业 retention policy authority、WORM/外部锚、消费者认证和环境级门禁 |
 
@@ -117,7 +117,7 @@ curl -sS http://localhost:8080/api/integration/capabilities
 | `mirrorScenarioRehearsalDeletionProof` | `true` |
 | `mirrorScenarioRehearsalWorkbookSeed` | `true` |
 | `mirrorScenarioRehearsalBatchApi` | `true` |
-| `mirrorScenarioRehearsalBatchScheduling` | `false` |
+| `mirrorScenarioRehearsalBatchScheduling` | 默认 `false`；使用 `--scenario-batch` 且 scheduler 健康时为 `true` |
 | `mirrorScenarioRehearsalEvidence` | `false` |
 
 若前两个为 `false`，先检查 profile 是否为 `test`/`staging`、Mirror 开关、
@@ -583,12 +583,36 @@ curl -sS -X POST \
   'http://localhost:8080/api/mirror/rehearsal-jobs/<jobId>/cancellations'
 ```
 
-当前 milestone 只交付了队列、协议、API 和“一次处理一个 item”的 worker
-turn，没有安装后台 scheduler。因此 `mirrorScenarioRehearsalBatchApi=true`
-但 `mirrorScenarioRehearsalBatchScheduling=false`；仅通过 REST 入队的任务会保持
-`QUEUED`，不能把它当成已经自动运行。下一阶段会加入 region-local scheduler、
-有界 worker pool、heartbeat、停机 drain、批次级签名 evidence/index，以及批次
-审计、保留和 PostgreSQL 多副本认证。
+默认启动仍只装配队列、协议、API 和 worker turn，不启动后台线程。演示自治批次：
+
+```bash
+./scripts/start-visual-canvas-demo.sh --scenario-batch
+```
+
+脚本会派生稳定 instance id，把 scheduler 和 demo identity 对齐到同一个
+`sg/test`（staging profile 对应 staging），并在 capability 动态确认
+`mirrorScenarioRehearsalBatchScheduling=true` 后报告 ready。手动配置使用：
+
+```bash
+export RG_MIRROR_RUNTIME_ENABLED=true
+export RG_MIRROR_SCENARIO_BATCH_SCHEDULER_ENABLED=true
+export RG_MIRROR_SCENARIO_BATCH_INSTANCE_ID=rg-sg-test-01
+export RG_MIRROR_SCENARIO_BATCH_REGION=sg
+export RG_MIRROR_SCENARIO_BATCH_ENVIRONMENT=test
+export RG_MIRROR_SCENARIO_BATCH_MAXIMUM_POLLERS=4
+export RG_INTEGRATION_REGION=sg
+export RG_INTEGRATION_ENVIRONMENT_ID=test
+```
+
+每个进程只轮询一个 exact `(region, environment)`；数据库协调键、policy
+generation、容量、tenant fairness、reconcile 和 claim 查询均使用同一完整分区，
+同名环境跨地域互不争抢容量。固定 lane 保证进程内并发有界；停止时先取消未来
+poll，再等待当前 turn drain，最终发布仍受数据库 lease/epoch fence 约束。
+
+本阶段尚未把 heartbeat 与 cancel 检查穿透到 Scenario aggregate 的逐 case
+checkpoint，因此运行中取消会先成为 durable intent，最迟在当前 item 返回或 lease
+到期后收敛；也尚无签名 batch evidence/index、batch audit/retention 和 PostgreSQL
+多副本认证。调用方必须依据 capability，而不是只看 API 是否存在。
 
 ## 9. 失败语义
 
@@ -723,7 +747,7 @@ WORM、外部 transparency anchor、企业级策略分发和跨地域删除认�
 
 ```bash
 mvn -f resource-gateway-examples/pom.xml \
-  -Dtest=ScenarioRehearsalControllerTest,ScenarioRehearsalBatchControllerTest,ScenarioArtifactRequestDecoderTest,ScenarioArtifactRegistryServiceTest,ScenarioRehearsalIntegrationServiceTest,ScenarioRehearsalCompilerTest,ScenarioRehearsalRuntimeServiceTest,ScenarioRehearsalBatchProtocolTest,ScenarioRehearsalBatchManifestTest,ScenarioRehearsalBatchServiceTest,DatabaseScenarioRehearsalBatchRepositoryTest,ScenarioRehearsalWorkbookSeedTest,ScenarioRehearsalResultProtocolTest,ScenarioRehearsalEvidenceIntegrityServiceTest,DatabaseScenarioRehearsalEvidenceRepositoryTest,DatabaseScenarioRehearsalRunRepositoryTest,ScenarioRehearsalCommitServiceTest,DatabaseScenarioRehearsalRetentionRepositoryTest,ScenarioRehearsalRetentionServiceTest,DatabaseScenarioArtifactRepositoryTest,DatabaseCompiledScenarioRehearsalPlanRepositoryTest,ScenarioPackProtocolTest,MirrorEvidenceIntegrityServiceTest,ScenarioHandlingAssertionEvaluatorTest,MirrorRuntimeConfigurationTest,ToolStudioIntegrationServiceTest \
+  -Dtest=ScenarioRehearsalControllerTest,ScenarioRehearsalBatchControllerTest,ScenarioArtifactRequestDecoderTest,ScenarioArtifactRegistryServiceTest,ScenarioRehearsalIntegrationServiceTest,ScenarioRehearsalCompilerTest,ScenarioRehearsalRuntimeServiceTest,ScenarioRehearsalBatchProtocolTest,ScenarioRehearsalBatchManifestTest,ScenarioRehearsalBatchServiceTest,DatabaseScenarioRehearsalBatchRepositoryTest,ScenarioRehearsalBatchSchedulerTest,ScenarioRehearsalBatchSchedulerPropertiesTest,ScenarioRehearsalWorkbookSeedTest,ScenarioRehearsalResultProtocolTest,ScenarioRehearsalEvidenceIntegrityServiceTest,DatabaseScenarioRehearsalEvidenceRepositoryTest,DatabaseScenarioRehearsalRunRepositoryTest,ScenarioRehearsalCommitServiceTest,DatabaseScenarioRehearsalRetentionRepositoryTest,ScenarioRehearsalRetentionServiceTest,DatabaseScenarioArtifactRepositoryTest,DatabaseCompiledScenarioRehearsalPlanRepositoryTest,ScenarioPackProtocolTest,MirrorEvidenceIntegrityServiceTest,ScenarioHandlingAssertionEvaluatorTest,MirrorRuntimeConfigurationTest,ToolStudioIntegrationServiceTest,VisualCanvasDemoScriptTest \
   test
 ```
 
@@ -734,7 +758,7 @@ mvn -f resource-gateway-examples/pom.xml clean verify
 mvn -f resource-gateway-test-kit/pom.xml clean verify
 ```
 
-2026-07-24 本轮门禁结果：Resource Gateway `5,075` 项测试零失败、零错误、
+2026-07-24 本轮门禁结果：Resource Gateway `5,086` 项测试零失败、零错误、
 3 项条件跳过（含真实 Chrome DOM/工作流）；Test Kit `366` 项零失败、零错误，
 完成 111 个 Mirror Schema 的引用闭包、shaded JAR 和零警告公共 JavaDoc。
 

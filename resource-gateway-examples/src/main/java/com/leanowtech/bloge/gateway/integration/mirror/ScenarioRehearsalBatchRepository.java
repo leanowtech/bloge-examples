@@ -10,9 +10,9 @@ import java.util.Optional;
  * Database-authoritative durable queue for multi-plan Scenario rehearsals.
  *
  * <p>Implementations must serialize admission, fairness cursor movement, claim, cancellation,
- * retry, and item completion per environment. All deadlines and lease decisions use database
- * time. One lease authorizes exactly one manifest item, so a crashed worker can replay the stable
- * child request without rerunning already checkpointed items.</p>
+ * retry, and item completion per region and environment. All deadlines and lease decisions use
+ * database time. One lease authorizes exactly one manifest item, so a crashed worker can replay
+ * the stable child request without rerunning already checkpointed items.</p>
  */
 public interface ScenarioRehearsalBatchRepository {
 
@@ -179,6 +179,7 @@ public interface ScenarioRehearsalBatchRepository {
 
     /** Claims at most one item using tenant rotation and aged priority. */
     Claim claimNext(
+            String region,
             String environmentId,
             String ownerId,
             ScenarioRehearsalBatchPolicy policy);

@@ -1146,6 +1146,18 @@ curl -sS 'http://localhost:8080/api/integration/reconciliation' \
 ./scripts/start-visual-canvas-demo.sh
 ```
 
+需要演示 Scenario 批量回归时，显式启用地域隔离的自治 worker：
+
+```bash
+./scripts/start-visual-canvas-demo.sh --scenario-batch
+```
+
+脚本会同时打开 Mirror runtime，把 scheduler 与 demo identity 固定到同一个
+`region/environment`，并等待 capability 中
+`mirrorScenarioRehearsalBatchApi=true` 和
+`mirrorScenarioRehearsalBatchScheduling=true` 后才报告 ready。默认仍不开启后台
+worker，普通画布演示不会意外消费历史队列。
+
 启动成功后脚本会打印：
 
 ```text
@@ -1192,7 +1204,18 @@ curl -fsS http://localhost:8080/api/integration/capabilities
 | `--no-build` | 跳过打包，复用已有 jar |
 | `--api-only` | 不启用 `-Pfrontend`，只打包后端 API |
 | `--run-tests` | 打包时不跳过 Maven 测试 |
+| `--scenario-batch` | 启用单地域分区、固定并发度的 Scenario batch worker（仅 test/staging） |
 | `-- --gateway.base-url=http://localhost:9091` | `--` 后面的参数透传给 Spring Boot 应用 |
+
+`--scenario-batch` 的进程级参数可通过
+`RG_MIRROR_SCENARIO_BATCH_INSTANCE_ID`、
+`RG_MIRROR_SCENARIO_BATCH_REGION`、
+`RG_MIRROR_SCENARIO_BATCH_ENVIRONMENT` 和
+`RG_MIRROR_SCENARIO_BATCH_MAXIMUM_POLLERS` 覆盖。environment 只能是 `test` 或
+`staging`；region/environment 必须与 integration identity 一致，否则脚本在构建
+和启动前失败。停止仍使用同一个命令。停止时 scheduler 先禁止新 claim，再按配置
+的 drain timeout 等待当前 worker turn；超时中断只是最佳努力，数据库 lease/epoch
+仍是防止旧 worker 发布结果的最终 fence。
 
 `staging` 还要求显式注入 claim-token key ring、独立 request-index key ring，以及
 `RG_TEST_WORKER_QUARANTINE_REQUEST_INDEX_WRITE_MODE`。此外，隔离区销毁审批必须配置独立的

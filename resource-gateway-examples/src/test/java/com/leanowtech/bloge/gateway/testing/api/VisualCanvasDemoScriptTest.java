@@ -51,7 +51,13 @@ class VisualCanvasDemoScriptTest {
                 "RG_MIRROR_STATEFUL_EXPIRY_BATCH_SIZE",
                 "RG_MIRROR_STATEFUL_WRITE_ATTEMPT_RECONCILIATION_BATCH_SIZE",
                 "RG_MIRROR_STATEFUL_WRITE_ATTEMPT_RECONCILIATION_SWEEP_INTERVAL_MILLIS",
-                "scripts/start-visual-canvas-demo.sh --stateful");
+                "scripts/start-visual-canvas-demo.sh --stateful",
+                "--scenario-batch",
+                "BLOGE_VISUAL_CANVAS_SCENARIO_BATCH",
+                "RG_MIRROR_SCENARIO_BATCH_INSTANCE_ID",
+                "RG_MIRROR_SCENARIO_BATCH_REGION",
+                "RG_MIRROR_SCENARIO_BATCH_ENVIRONMENT",
+                "scripts/start-visual-canvas-demo.sh --scenario-batch");
     }
 
     @Test
@@ -102,6 +108,57 @@ class VisualCanvasDemoScriptTest {
         assertThat(process.exitValue()).isEqualTo(1);
         assertThat(output).contains(
                 "Stateful mirror key ring does not contain the active key id.");
+        assertThat(output).doesNotContain(
+                "Packaging Resource Gateway demo",
+                "Starting Visual Canvas demo");
+    }
+
+    @Test
+    void scenarioBatchDemoIsRejectedForProductionBeforeBuild()
+            throws Exception {
+        Process process = new ProcessBuilder(
+                "bash", SCRIPT.toString(), "start",
+                "--profile", "production",
+                "--scenario-batch", "--no-build")
+                .redirectErrorStream(true)
+                .start();
+
+        assertThat(process.waitFor(
+                Duration.ofSeconds(5))).isTrue();
+        String output = new String(
+                process.getInputStream().readAllBytes(),
+                StandardCharsets.UTF_8);
+
+        assertThat(process.exitValue()).isEqualTo(1);
+        assertThat(output).contains(
+                "Scenario batch scheduling is physically unavailable in the production profile.");
+        assertThat(output).doesNotContain(
+                "Packaging Resource Gateway demo",
+                "Starting Visual Canvas demo");
+    }
+
+    @Test
+    void scenarioBatchDemoRejectsAnIdentityPartitionMismatchBeforeBuild()
+            throws Exception {
+        ProcessBuilder builder = new ProcessBuilder(
+                "bash", SCRIPT.toString(), "start",
+                "--scenario-batch", "--no-build")
+                .redirectErrorStream(true);
+        builder.environment().put(
+                "RG_INTEGRATION_REGION", "us");
+        builder.environment().put(
+                "RG_MIRROR_SCENARIO_BATCH_REGION", "sg");
+
+        Process process = builder.start();
+        assertThat(process.waitFor(
+                Duration.ofSeconds(5))).isTrue();
+        String output = new String(
+                process.getInputStream().readAllBytes(),
+                StandardCharsets.UTF_8);
+
+        assertThat(process.exitValue()).isEqualTo(1);
+        assertThat(output).contains(
+                "Scenario batch region must match the integration identity region.");
         assertThat(output).doesNotContain(
                 "Packaging Resource Gateway demo",
                 "Starting Visual Canvas demo");

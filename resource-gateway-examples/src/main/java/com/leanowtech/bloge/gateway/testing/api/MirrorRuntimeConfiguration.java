@@ -76,6 +76,7 @@ import com.leanowtech.bloge.gateway.integration.mirror.ScenarioRehearsalEvidence
 import com.leanowtech.bloge.gateway.integration.mirror.ScenarioRehearsalBatchCompiler;
 import com.leanowtech.bloge.gateway.integration.mirror.ScenarioRehearsalBatchPolicy;
 import com.leanowtech.bloge.gateway.integration.mirror.ScenarioRehearsalBatchRepository;
+import com.leanowtech.bloge.gateway.integration.mirror.ScenarioRehearsalBatchScheduler;
 import com.leanowtech.bloge.gateway.integration.mirror.ScenarioRehearsalBatchService;
 import com.leanowtech.bloge.gateway.integration.mirror.ScenarioRehearsalBatchWorker;
 import com.leanowtech.bloge.gateway.integration.mirror.ScenarioRehearsalIntegrationService;
@@ -100,6 +101,7 @@ import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnMissingBean;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnBean;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
+import org.springframework.boot.context.properties.EnableConfigurationProperties;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.context.annotation.Profile;
@@ -124,6 +126,8 @@ import java.time.Clock;
 @Configuration(proxyBeanMethods = false)
 @Profile("!production & (test | staging)")
 @ConditionalOnProperty(prefix = "gateway.testing.mirror", name = "enabled", havingValue = "true")
+@EnableConfigurationProperties(
+        ScenarioRehearsalBatchSchedulerProperties.class)
 public class MirrorRuntimeConfiguration {
 
     /**
@@ -394,6 +398,35 @@ public class MirrorRuntimeConfiguration {
                 integrity,
                 policy,
                 objectMapper);
+    }
+
+    /**
+     * Starts explicitly enabled bounded worker lanes for one regional non-production partition.
+     *
+     * @param worker evidence-verifying single-item worker
+     * @param properties strict process-local scheduler policy
+     * @return closeable autonomous scheduler
+     */
+    @Bean(destroyMethod = "close")
+    @ConditionalOnMissingBean
+    @ConditionalOnProperty(
+            prefix = ScenarioRehearsalBatchSchedulerProperties.PREFIX,
+            name = "enabled",
+            havingValue = "true")
+    public ScenarioRehearsalBatchScheduler
+    scenarioRehearsalBatchScheduler(
+            ScenarioRehearsalBatchWorker worker,
+            ScenarioRehearsalBatchSchedulerProperties
+                    properties) {
+        return new ScenarioRehearsalBatchScheduler(
+                worker,
+                properties.region(),
+                properties.environmentId(),
+                properties.instanceId(),
+                properties.maximumPollers(),
+                properties.initialDelay(),
+                properties.pollInterval(),
+                properties.drainTimeout());
     }
 
     /** Creates the append-only payload-free compiled rehearsal-plan registry. */

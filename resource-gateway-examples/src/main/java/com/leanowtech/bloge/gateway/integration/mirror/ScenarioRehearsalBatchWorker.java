@@ -46,16 +46,18 @@ public final class ScenarioRehearsalBatchWorker {
     /**
      * Claims and processes at most one exact manifest item.
      *
-     * @param environmentId server-owned queue partition
+     * @param region server-owned regional queue partition
+     * @param environmentId server-owned environment queue partition
      * @param ownerId opaque stable worker-attempt owner
      * @return bounded turn result without business payload
      */
     public Turn runOnce(
+            String region,
             String environmentId,
             String ownerId) {
         ScenarioRehearsalBatchRepository.Claim claim =
                 repository.claimNext(
-                        environmentId, ownerId, policy);
+                        region, environmentId, ownerId, policy);
         if (claim.outcome()
                 == ScenarioRehearsalBatchRepository
                 .ClaimOutcome.NO_WORK) {

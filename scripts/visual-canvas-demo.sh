@@ -19,6 +19,7 @@ OPEN_BROWSER="${BLOGE_VISUAL_CANVAS_OPEN:-0}"
 JAVA_BIN="${JAVA_BIN:-java}"
 SPRING_PROFILE="${BLOGE_VISUAL_CANVAS_PROFILE:-test}"
 STATEFUL_MIRROR="${BLOGE_VISUAL_CANVAS_STATEFUL:-${RG_MIRROR_STATEFUL_ENABLED:-0}}"
+SCENARIO_BATCH="${BLOGE_VISUAL_CANVAS_SCENARIO_BATCH:-${RG_MIRROR_SCENARIO_BATCH_SCHEDULER_ENABLED:-0}}"
 STATEFUL_KEY_FILE="${BLOGE_VISUAL_CANVAS_STATEFUL_KEY_FILE:-${ROOT_DIR}/target/example-state/mirror-aes256.key}"
 
 if [ -z "${MVN:-}" ]; then
@@ -45,6 +46,7 @@ Options:
   --api-only        Build without the React frontend profile.
   --run-tests       Run Maven tests during the package step.
   --stateful        Enable the encrypted stateful-mirror Session API for test/staging.
+  --scenario-batch  Enable autonomous regional Scenario batch workers for test/staging.
   --open            Open /author/ in the default browser after startup.
   -h, --help        Show this help.
 
@@ -57,7 +59,12 @@ Environment:
   BLOGE_VISUAL_CANVAS_OPEN             default: 0
   BLOGE_VISUAL_CANVAS_PROFILE          default: test
   BLOGE_VISUAL_CANVAS_STATEFUL         default: 0; same effect as --stateful
+  BLOGE_VISUAL_CANVAS_SCENARIO_BATCH   default: 0; same effect as --scenario-batch
   BLOGE_VISUAL_CANVAS_STATEFUL_KEY_FILE  local demo AES-256 key file; never printed
+  RG_MIRROR_SCENARIO_BATCH_INSTANCE_ID  stable local batch-worker replica id
+  RG_MIRROR_SCENARIO_BATCH_REGION       exact regional queue partition
+  RG_MIRROR_SCENARIO_BATCH_ENVIRONMENT  exact test or staging queue partition
+  RG_MIRROR_SCENARIO_BATCH_MAXIMUM_POLLERS  local bounded worker lanes (1..256)
   RG_MIRROR_STATEFUL_JDBC_URL          optional dedicated state-plane JDBC URL
   RG_MIRROR_STATEFUL_INSTANCE_ID       optional stable replica id
   RG_MIRROR_STATEFUL_ACTIVE_KEY_ID     optional active AES key id
@@ -236,6 +243,7 @@ Examples:
   scripts/start-visual-canvas-demo.sh
   scripts/start-visual-canvas-demo.sh --open
   scripts/start-visual-canvas-demo.sh --stateful
+  scripts/start-visual-canvas-demo.sh --scenario-batch
   scripts/start-visual-canvas-demo.sh --port 18080 -- --gateway.base-url=http://localhost:9091
   scripts/visual-canvas-demo.sh status
 EOF
@@ -246,6 +254,82 @@ truthy() {
         1|true|TRUE|yes|YES|on|ON) return 0 ;;
         *) return 1 ;;
     esac
+}
+
+configure_scenario_batch() {
+    if ! truthy "${SCENARIO_BATCH}"; then
+        return 0
+    fi
+    local default_environment
+    case ",${SPRING_PROFILE}," in
+        *,production,*)
+            echo "Scenario batch scheduling is physically unavailable in the production profile." >&2
+            return 1
+            ;;
+        *,staging,*)
+            default_environment="staging"
+            ;;
+        *,test,*)
+            default_environment="test"
+            ;;
+        *)
+            echo "Scenario batch scheduling requires the test or staging profile." >&2
+            return 1
+            ;;
+    esac
+
+    export RG_MIRROR_RUNTIME_ENABLED=true
+    export RG_MIRROR_SCENARIO_BATCH_SCHEDULER_ENABLED=true
+    export RG_MIRROR_SCENARIO_BATCH_INSTANCE_ID="${RG_MIRROR_SCENARIO_BATCH_INSTANCE_ID:-visual-canvas-batch-$(configured_port)}"
+    export RG_MIRROR_SCENARIO_BATCH_REGION="${RG_MIRROR_SCENARIO_BATCH_REGION:-${RG_INTEGRATION_REGION:-sg}}"
+    export RG_MIRROR_SCENARIO_BATCH_ENVIRONMENT="${RG_MIRROR_SCENARIO_BATCH_ENVIRONMENT:-${default_environment}}"
+    if [ -n "${RG_INTEGRATION_REGION:-}" ] &&
+        [ "${RG_INTEGRATION_REGION}" != "${RG_MIRROR_SCENARIO_BATCH_REGION}" ]; then
+        echo "Scenario batch region must match the integration identity region." >&2
+        return 1
+    fi
+    if [ -n "${RG_INTEGRATION_ENVIRONMENT_ID:-}" ] &&
+        [ "${RG_INTEGRATION_ENVIRONMENT_ID}" != "${RG_MIRROR_SCENARIO_BATCH_ENVIRONMENT}" ]; then
+        echo "Scenario batch environment must match the integration identity environment." >&2
+        return 1
+    fi
+    export RG_INTEGRATION_REGION="${RG_MIRROR_SCENARIO_BATCH_REGION}"
+    export RG_INTEGRATION_ENVIRONMENT_ID="${RG_MIRROR_SCENARIO_BATCH_ENVIRONMENT}"
+}
+
+validate_scenario_batch() {
+    if ! truthy "${RG_MIRROR_SCENARIO_BATCH_SCHEDULER_ENABLED:-false}"; then
+        return 0
+    fi
+    if ! truthy "${RG_MIRROR_RUNTIME_ENABLED:-false}"; then
+        echo "Scenario batch scheduling requires RG_MIRROR_RUNTIME_ENABLED=true." >&2
+        return 1
+    fi
+    if ! printf '%s' "${RG_MIRROR_SCENARIO_BATCH_INSTANCE_ID:-}" |
+        grep -Eq '^[A-Za-z0-9][A-Za-z0-9._:/#-]{0,254}$' ||
+        ! printf '%s' "${RG_MIRROR_SCENARIO_BATCH_REGION:-}" |
+        grep -Eq '^[A-Za-z0-9][A-Za-z0-9._:/#-]{0,63}$'; then
+        echo "Scenario batch instance or region identity is invalid." >&2
+        return 1
+    fi
+    case "${RG_MIRROR_SCENARIO_BATCH_ENVIRONMENT:-}" in
+        test|staging) ;;
+        *)
+            echo "Scenario batch environment must be test or staging." >&2
+            return 1
+            ;;
+    esac
+    if [ "${RG_INTEGRATION_REGION:-}" != "${RG_MIRROR_SCENARIO_BATCH_REGION}" ] ||
+        [ "${RG_INTEGRATION_ENVIRONMENT_ID:-}" != "${RG_MIRROR_SCENARIO_BATCH_ENVIRONMENT}" ]; then
+        echo "Scenario batch partition must match the integration identity scope." >&2
+        return 1
+    fi
+    local pollers="${RG_MIRROR_SCENARIO_BATCH_MAXIMUM_POLLERS:-4}"
+    if ! printf '%s' "${pollers}" | grep -Eq '^[1-9][0-9]*$' ||
+        [ "${pollers}" -gt 256 ]; then
+        echo "Scenario batch maximum pollers must be between 1 and 256." >&2
+        return 1
+    fi
 }
 
 configure_stateful_mirror() {
@@ -1842,6 +1926,7 @@ Integration API templates:
   Fixture registry: PUT /api/testing/fixture-bundles/{id} (X-Purpose: TEST_FIXTURE_WRITE)
   Stateful session: POST /api/mirror/sessions (--stateful; Bearer token + X-Purpose: MIRROR_REHEARSAL)
   Session command:  POST /api/mirror/sessions/{sessionId}/commands
+  Scenario batches: POST /api/mirror/rehearsal-jobs (--scenario-batch; Bearer token + X-Purpose: MIRROR_REHEARSAL)
 EOF
 }
 
@@ -1891,6 +1976,23 @@ wait_for_ready() {
             return 1
         fi
         if response="$(curl -fsS "${url}" 2>/dev/null)"; then
+            if truthy "${RG_MIRROR_SCENARIO_BATCH_SCHEDULER_ENABLED:-false}"; then
+                if command -v jq >/dev/null 2>&1; then
+                    if ! printf '%s' "${response}" | jq -e '
+                        .payload.features.mirrorScenarioRehearsalBatchApi == true
+                        and .payload.features.mirrorScenarioRehearsalBatchScheduling == true
+                    ' >/dev/null 2>&1; then
+                        sleep 2
+                        continue
+                    fi
+                elif ! printf '%s' "${response}" |
+                    grep -Eq '"mirrorScenarioRehearsalBatchApi"[[:space:]]*:[[:space:]]*true' ||
+                    ! printf '%s' "${response}" |
+                    grep -Eq '"mirrorScenarioRehearsalBatchScheduling"[[:space:]]*:[[:space:]]*true'; then
+                    sleep 2
+                    continue
+                fi
+            fi
             if truthy "${RG_MIRROR_STATEFUL_ENABLED:-false}"; then
                 if command -v jq >/dev/null 2>&1; then
                     if ! printf '%s' "${response}" | jq -e '
@@ -1910,7 +2012,15 @@ wait_for_ready() {
                     sleep 2
                     continue
                 fi
-                echo "Demo service ready; stateful Session, state store, and write-attempt reconciliation probes passed: ${url}"
+                if truthy "${RG_MIRROR_SCENARIO_BATCH_SCHEDULER_ENABLED:-false}"; then
+                    echo "Demo service ready; stateful and Scenario batch scheduler probes passed: ${url}"
+                else
+                    echo "Demo service ready; stateful Session, state store, and write-attempt reconciliation probes passed: ${url}"
+                fi
+                return 0
+            fi
+            if truthy "${RG_MIRROR_SCENARIO_BATCH_SCHEDULER_ENABLED:-false}"; then
+                echo "Demo service ready; Scenario batch API and scheduler probes passed: ${url}"
                 return 0
             fi
             echo "Demo service ready; integration capability probe passed: ${url}"
@@ -1937,6 +2047,8 @@ open_author_if_requested() {
 }
 
 start_service() {
+    configure_scenario_batch
+    validate_scenario_batch
     configure_stateful_mirror
     validate_stateful_mirror
     validate_profile_secrets
@@ -2066,6 +2178,10 @@ parse_options() {
                 ;;
             --stateful)
                 STATEFUL_MIRROR=1
+                shift
+                ;;
+            --scenario-batch)
+                SCENARIO_BATCH=1
                 shift
                 ;;
             --open)

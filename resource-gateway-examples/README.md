@@ -31,7 +31,7 @@ integration something the business flow can see, reason about, test, and change.
 | Governed capability closures | Sealed Resource/Operator/Graph projections, exact cycle-checked closure for all seven shipped graphs, nested foreach/loop boundary inventory, full enterprise scope, append-only lifecycle revisions, classification-aware reads, and honest mirror readiness flags |
 | Governed capability observations | Signed payload-free invocation facts, operator-owned admission policy, external vault/proof verification, durable admitted-or-quarantined decisions, full-scope idempotency, and independent offline verification |
 | Governed capability corpora | Immutable quarantine review, exact admitted-source candidates, metadata risk gates, independent owner-reviewed publication lineage, second source-authority verification, and honest resolver readiness |
-| Governed scenario rehearsal | Append-only Scenario assets, exact compilation, durable per-case execution, independently signed aggregate evidence, multi-hold retention/deletion proof, and deterministic independently verifiable ANEKE workbook seeds |
+| Governed scenario rehearsal | Append-only Scenario assets, exact compilation, durable per-case execution, independently signed aggregate evidence, multi-hold retention/deletion proof, deterministic ANEKE workbook seeds, and an opt-in region-isolated durable batch scheduler |
 | Stateful mirror sessions | Versioned entity/write/session/checkpoint/write-attempt protocols, atomic multi-entity mutations, exact replay, AES-GCM isolated persistence, lease/fence/CAS concurrency, durable crash-window reconciliation, TTL/destroy, payload-free signed state evidence, signed same-data-plane restart recovery admission, ANEKE workbook seeds, and independently verified clients |
 | Governed replay payloads | Payload values detached from immutable evidence, classification ABAC, selective retention, legal hold, bounded expiry, and signed deletion proof |
 | Workbook and gate evidence loop | Deterministic sanitized workbook seeds, exact suite/run evidence refs, versioned gate decision basis, stale detection, and transactional gate events |
@@ -50,7 +50,8 @@ demo on `http://localhost:8080`. The dedicated demo script activates the `test`
 profile by default so `/api/testing/**` is available; use `--profile production`
 to demonstrate that the testing beans and endpoints are structurally absent.
 Add `--stateful` to assemble the encrypted stateful-mirror Session API and its
-dedicated local data plane.
+dedicated local data plane. Add `--scenario-batch` to start bounded autonomous
+workers for one exact `test`/`staging` regional queue partition.
 
 | Open | Best first move |
 | --- | --- |
@@ -62,6 +63,8 @@ dedicated local data plane.
 | `GET http://localhost:8080/api/mirror/sessions/{sessionId}/write-attempts/{attemptId}` | Read one authenticated payload-free durable write outcome for recovery or governance evidence |
 | `POST http://localhost:8080/api/mirror/sessions/{sessionId}/checkpoints` | Sign a payload-free exact Session/store-generation checkpoint after starting with `--stateful` |
 | `POST http://localhost:8080/api/mirror/sessions/{sessionId}/recoveries` | Re-verify a checkpoint against the current encrypted data-plane head and return an exact run binding |
+| `POST http://localhost:8080/api/mirror/rehearsal-jobs` | Submit an exact-plan batch after starting with `--scenario-batch`; the script aligns the worker partition with the demo identity |
+| `GET http://localhost:8080/api/mirror/rehearsal-jobs/{jobId}/items` | Read stable payload-free item pages while bounded regional workers progress the batch |
 | `GET http://localhost:8080/api/integration/capability-snapshots/{capabilityId}?revision=0` | Read the latest authorized capability snapshot; use a positive revision for an exact read |
 | `PUT http://localhost:8080/api/integration/capability-snapshots/{capabilityId}/revisions/{revision}` | Append one exact sealed capability snapshot revision |
 | `POST http://localhost:8080/api/integration/capability-snapshots/{capabilityId}/lifecycle-transitions` | Append an optimistically fenced lifecycle-only revision |
@@ -222,7 +225,8 @@ returning the seed.
 The capability probe therefore reports Scenario execution, evidence API,
 retention API, legal hold, deletion proof, and workbook seed as available while keeping
 `mirrorScenarioRehearsalEvidence=false`: enterprise policy authority,
-WORM/transparency anchoring, consumer/environment certification, batch scheduling, and owner UX
+WORM/transparency anchoring, consumer/environment certification, in-flight batch heartbeat/cancel,
+batch evidence, and owner UX
 remain required before this becomes publish-gate evidence. See the
 [scenario rehearsal compiler guide](../docs/resource-gateway-scenario-rehearsal-compiler.md).
 

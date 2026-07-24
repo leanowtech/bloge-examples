@@ -20,6 +20,7 @@ import com.leanowtech.bloge.gateway.integration.mirror.ScenarioArtifactRepositor
 import com.leanowtech.bloge.gateway.integration.mirror.ScenarioRehearsalBatchCompiler;
 import com.leanowtech.bloge.gateway.integration.mirror.ScenarioRehearsalBatchPolicy;
 import com.leanowtech.bloge.gateway.integration.mirror.ScenarioRehearsalBatchRepository;
+import com.leanowtech.bloge.gateway.integration.mirror.ScenarioRehearsalBatchScheduler;
 import com.leanowtech.bloge.gateway.integration.mirror.ScenarioRehearsalBatchService;
 import com.leanowtech.bloge.gateway.integration.mirror.ScenarioRehearsalBatchWorker;
 import com.leanowtech.bloge.gateway.integration.mirror.ScenarioRehearsalCompiler;
@@ -104,6 +105,38 @@ class MirrorRuntimeConfigurationTest {
     }
 
     @Test
+    void batchSchedulerRequiresExplicitBoundedNonProductionConfiguration() {
+        Map<String, Object> properties = Map.of(
+                "gateway.testing.mirror.enabled", true,
+                "gateway.testing.mirror.scenario-batch.scheduler.enabled", true,
+                "gateway.testing.mirror.scenario-batch.scheduler.instance-id", "replica-a",
+                "gateway.testing.mirror.scenario-batch.scheduler.region", "sg",
+                "gateway.testing.mirror.scenario-batch.scheduler.environment-id", "test",
+                "gateway.testing.mirror.scenario-batch.scheduler.maximum-pollers", 2,
+                "gateway.testing.mirror.scenario-batch.scheduler.initial-delay-millis", 300_000,
+                "gateway.testing.mirror.scenario-batch.scheduler.poll-interval-millis", 1_000,
+                "gateway.testing.mirror.scenario-batch.scheduler.drain-timeout-millis", 1_000);
+
+        try (var test = context(properties, "test");
+             var production = context(
+                     properties, "production", "test")) {
+            assertThat(test.getBeansOfType(
+                    ScenarioRehearsalBatchScheduler.class).values())
+                    .singleElement()
+                    .satisfies(scheduler -> {
+                        assertThat(scheduler.ready()).isTrue();
+                        assertThat(scheduler.region())
+                                .isEqualTo("sg");
+                        assertThat(scheduler.environmentId())
+                                .isEqualTo("test");
+                    });
+            assertThat(production.getBeansOfType(
+                    ScenarioRehearsalBatchScheduler.class))
+                    .isEmpty();
+        }
+    }
+
+    @Test
     void servingAvailabilityRequiresAnActuallyAvailableEvidenceSigner() {
         MirrorRuntimeConfiguration configuration = new MirrorRuntimeConfiguration();
         MirrorPlanIntegrationService plans = mock(MirrorPlanIntegrationService.class);
@@ -139,10 +172,20 @@ class MirrorRuntimeConfigurationTest {
 
     private static AnnotationConfigApplicationContext context(boolean enabled,
                                                               String... profiles) {
+        return context(
+                Map.of(
+                        "gateway.testing.mirror.enabled",
+                        enabled),
+                profiles);
+    }
+
+    private static AnnotationConfigApplicationContext context(
+            Map<String, Object> properties,
+            String... profiles) {
         AnnotationConfigApplicationContext context = new AnnotationConfigApplicationContext();
         context.getEnvironment().setActiveProfiles(profiles);
         context.getEnvironment().getPropertySources().addFirst(new MapPropertySource(
-                "mirror-runtime-test", Map.of("gateway.testing.mirror.enabled", enabled)));
+                "mirror-runtime-test", properties));
         context.registerBean(ObjectMapper.class, () -> new ObjectMapper().findAndRegisterModules());
         context.registerBean(OperatorRegistry.class, DefaultOperatorRegistry::new);
         context.registerBean(ResourceRegistry.class, EmptyResourceRegistry::new);
@@ -189,6 +232,8 @@ class MirrorRuntimeConfigurationTest {
                 ScenarioRehearsalBatchService.class)).hasSize(1);
         assertThat(context.getBeansOfType(
                 ScenarioRehearsalBatchWorker.class)).hasSize(1);
+        assertThat(context.getBeansOfType(
+                ScenarioRehearsalBatchScheduler.class)).isEmpty();
         assertThat(context.getBeansOfType(
                 CompiledScenarioRehearsalPlanRepository.class)).hasSize(1);
         assertThat(context.getBeansOfType(MirrorFixtureScopeRepository.class)).hasSize(1);
@@ -300,6 +345,8 @@ class MirrorRuntimeConfigurationTest {
                 ScenarioRehearsalBatchService.class)).isEmpty();
         assertThat(context.getBeansOfType(
                 ScenarioRehearsalBatchWorker.class)).isEmpty();
+        assertThat(context.getBeansOfType(
+                ScenarioRehearsalBatchScheduler.class)).isEmpty();
         assertThat(context.getBeansOfType(
                 CompiledScenarioRehearsalPlanRepository.class)).isEmpty();
         assertThat(context.getBeansOfType(MirrorFixtureScopeRepository.class)).isEmpty();

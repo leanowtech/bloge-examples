@@ -36,10 +36,11 @@ import static com.leanowtech.bloge.gateway.integration.mirror.ScenarioRehearsalB
 /**
  * JDBC implementation of the cross-replica Scenario rehearsal batch queue.
  *
- * <p>One environment authority row serializes policy convergence, capacity admission, tenant
- * rotation, stale-lease recovery, and claim. Execution occurs outside that transaction under a
- * one-item owner/epoch/expiry fence. Every item and public job projection is content-addressed;
- * corruption fails closed instead of silently changing scheduling or correctness outcomes.</p>
+ * <p>One region-and-environment authority row serializes policy convergence, capacity admission,
+ * tenant rotation, stale-lease recovery, and claim. Execution occurs outside that transaction
+ * under a one-item owner/epoch/expiry fence. Every item and public job projection is
+ * content-addressed; corruption fails closed instead of silently changing scheduling or
+ * correctness outcomes.</p>
  *
  * <p>Only exact plan references, credential-free principal coordinates, and payload-free evidence
  * references are retained. TestSuite input, FixtureBundle values, Session state, child node
@@ -166,6 +167,19 @@ public final class DatabaseScenarioRehearsalBatchRepository
                 )
                 """);
         jdbc.execute("""
+                CREATE INDEX IF NOT EXISTS idx_scenario_rehearsal_batch_partition_schedule
+                ON scenario_rehearsal_batch_jobs (
+                    region, environment_id, status, next_eligible_at,
+                    tenant_id, created_at, job_id
+                )
+                """);
+        jdbc.execute("""
+                CREATE INDEX IF NOT EXISTS idx_scenario_rehearsal_batch_partition_live
+                ON scenario_rehearsal_batch_jobs (
+                    region, environment_id, tenant_id, status, lease_expires_at
+                )
+                """);
+        jdbc.execute("""
                 CREATE TABLE IF NOT EXISTS scenario_rehearsal_batch_items (
                     job_id VARCHAR(512) NOT NULL,
                     item_index INTEGER NOT NULL,
@@ -203,13 +217,12 @@ public final class DatabaseScenarioRehearsalBatchRepository
         Objects.requireNonNull(submission, "submission");
         Objects.requireNonNull(policy, "policy");
         SubmissionResult result = mutations.execute(status -> {
-            String environment =
-                    submission.manifest().scope()
-                            .environmentId();
-            lockEnvironment(environment);
+            QueuePartition partition = partition(
+                    submission.manifest().scope());
+            lockPartition(partition);
             Instant observedAt = coordinationNow();
-            ensurePolicy(environment, policy, observedAt);
-            reconcile(environment, observedAt, policy);
+            ensurePolicy(partition, policy, observedAt);
+            reconcile(partition, observedAt, policy);
             ScenarioRehearsalBatchManifestIntegrity.verify(
                     mapper, submission.manifest());
             if (!submission.requestFingerprint().equals(
@@ -229,14 +242,14 @@ public final class DatabaseScenarioRehearsalBatchRepository
                         existing.orElseThrow().job(), true);
             }
             requireDeadline(submission, policy, observedAt);
-            if (activeCount(environment, null)
+            if (activeCount(partition, null)
                     >= policy.maximumQueued()) {
                 throw conflict(
                         Reason.GLOBAL_QUEUE_FULL,
                         "Scenario rehearsal batch environment queue is full");
             }
             if (activeCount(
-                    environment,
+                    partition,
                     submission.manifest().scope()
                             .tenantId())
                     >= policy.maximumQueuedPerTenant()) {
@@ -318,19 +331,20 @@ public final class DatabaseScenarioRehearsalBatchRepository
 
     @Override
     public Claim claimNext(
+            String region,
             String environmentId,
             String ownerId,
             ScenarioRehearsalBatchPolicy policy) {
-        String environment = required(
-                environmentId, "environmentId");
+        QueuePartition partition = partition(
+                region, environmentId);
         String owner = identifier(ownerId, "ownerId");
         Objects.requireNonNull(policy, "policy");
         Claim result = mutations.execute(status -> {
-            lockEnvironment(environment);
+            lockPartition(partition);
             Instant observedAt = coordinationNow();
-            ensurePolicy(environment, policy, observedAt);
-            reconcile(environment, observedAt, policy);
-            if (liveRunningCount(environment, null, observedAt)
+            ensurePolicy(partition, policy, observedAt);
+            reconcile(partition, observedAt, policy);
+            if (liveRunningCount(partition, null, observedAt)
                     >= policy.maximumRunning()) {
                 return Claim.noWork(observedAt);
             }
@@ -338,7 +352,7 @@ public final class DatabaseScenarioRehearsalBatchRepository
                  skipped < RECONCILIATION_LIMIT;
                  skipped++) {
                 Optional<StoredJob> selected =
-                        selectNext(environment, observedAt, policy);
+                        selectNext(partition, observedAt, policy);
                 if (selected.isEmpty()) {
                     return Claim.noWork(observedAt);
                 }
@@ -405,7 +419,7 @@ public final class DatabaseScenarioRehearsalBatchRepository
                         stored.expiresAt());
                 updateJob(stored, claimed);
                 advanceCursor(
-                        environment,
+                        partition,
                         stored.job().scope().tenantId(),
                         observedAt);
                 Lease lease = new Lease(
@@ -441,11 +455,12 @@ public final class DatabaseScenarioRehearsalBatchRepository
         Objects.requireNonNull(policy, "policy");
         ScenarioRehearsalBatchJob result =
                 mutations.execute(status -> {
-                    lockEnvironment(
-                            lease.scope().environmentId());
+                    QueuePartition partition =
+                            partition(lease.scope());
+                    lockPartition(partition);
                     Instant observedAt = coordinationNow();
                     ensurePolicy(
-                            lease.scope().environmentId(),
+                            partition,
                             policy,
                             observedAt);
                     StoredJob stored =
@@ -523,11 +538,12 @@ public final class DatabaseScenarioRehearsalBatchRepository
         Objects.requireNonNull(policy, "policy");
         ScenarioRehearsalBatchJob result =
                 mutations.execute(status -> {
-                    lockEnvironment(
-                            lease.scope().environmentId());
+                    QueuePartition partition =
+                            partition(lease.scope());
+                    lockPartition(partition);
                     Instant observedAt = coordinationNow();
                     ensurePolicy(
-                            lease.scope().environmentId(),
+                            partition,
                             policy,
                             observedAt);
                     StoredJob stored =
@@ -621,11 +637,12 @@ public final class DatabaseScenarioRehearsalBatchRepository
         Objects.requireNonNull(policy, "policy");
         ScenarioRehearsalBatchJob result =
                 mutations.execute(status -> {
-                    lockEnvironment(
-                            lease.scope().environmentId());
+                    QueuePartition partition =
+                            partition(lease.scope());
+                    lockPartition(partition);
                     Instant observedAt = coordinationNow();
                     ensurePolicy(
-                            lease.scope().environmentId(),
+                            partition,
                             policy,
                             observedAt);
                     StoredJob stored =
@@ -651,15 +668,16 @@ public final class DatabaseScenarioRehearsalBatchRepository
         Objects.requireNonNull(cancellation, "cancellation");
         Objects.requireNonNull(policy, "policy");
         SubmissionResult result = mutations.execute(status -> {
-            lockEnvironment(
-                    cancellation.scope().environmentId());
+            QueuePartition partition =
+                    partition(cancellation.scope());
+            lockPartition(partition);
             Instant observedAt = coordinationNow();
             ensurePolicy(
-                    cancellation.scope().environmentId(),
+                    partition,
                     policy,
                     observedAt);
             reconcile(
-                    cancellation.scope().environmentId(),
+                    partition,
                     observedAt,
                     policy);
             StoredJob stored = byJob(
@@ -746,14 +764,16 @@ public final class DatabaseScenarioRehearsalBatchRepository
         Objects.requireNonNull(policy, "policy");
         Optional<ScenarioRehearsalBatchJob> result =
                 mutations.execute(status -> {
-                    lockEnvironment(scope.environmentId());
+                    QueuePartition partition =
+                            partition(scope);
+                    lockPartition(partition);
                     Instant observedAt = coordinationNow();
                     ensurePolicy(
-                            scope.environmentId(),
+                            partition,
                             policy,
                             observedAt);
                     reconcile(
-                            scope.environmentId(),
+                            partition,
                             observedAt,
                             policy);
                     return byJob(scope, id, false)
@@ -802,20 +822,22 @@ public final class DatabaseScenarioRehearsalBatchRepository
     }
 
     private Optional<StoredJob> selectNext(
-            String environment,
+            QueuePartition partition,
             Instant observedAt,
             ScenarioRehearsalBatchPolicy policy) {
-        Cursor cursor = cursor(environment, observedAt);
+        Cursor cursor = cursor(partition, observedAt);
         List<String> eligibleTenants = jdbc.queryForList("""
                 SELECT DISTINCT tenant_id
                 FROM scenario_rehearsal_batch_jobs
-                WHERE environment_id = ?
+                WHERE region = ?
+                  AND environment_id = ?
                   AND status = 'QUEUED'
                   AND next_eligible_at <= ?
                   AND tenant_id IN (
                     SELECT candidate.tenant_id
                     FROM scenario_rehearsal_batch_jobs candidate
-                    WHERE candidate.environment_id = ?
+                    WHERE candidate.region = ?
+                      AND candidate.environment_id = ?
                     GROUP BY candidate.tenant_id
                     HAVING SUM(CASE
                         WHEN candidate.status IN ('RUNNING', 'CANCEL_REQUESTED')
@@ -825,9 +847,11 @@ public final class DatabaseScenarioRehearsalBatchRepository
                 ORDER BY tenant_id
                 """,
                 String.class,
-                environment,
+                partition.region(),
+                partition.environmentId(),
                 timestamp(observedAt),
-                environment,
+                partition.region(),
+                partition.environmentId(),
                 timestamp(observedAt),
                 policy.maximumRunningPerTenant());
         if (eligibleTenants.isEmpty()) {
@@ -838,7 +862,8 @@ public final class DatabaseScenarioRehearsalBatchRepository
         List<StoredJob> candidates = jdbc.query("""
                 SELECT *
                 FROM scenario_rehearsal_batch_jobs
-                WHERE environment_id = ?
+                WHERE region = ?
+                  AND environment_id = ?
                   AND tenant_id = ?
                   AND status = 'QUEUED'
                   AND next_eligible_at <= ?
@@ -846,7 +871,8 @@ public final class DatabaseScenarioRehearsalBatchRepository
                 FOR UPDATE
                 """,
                 this::mapJob,
-                environment,
+                partition.region(),
+                partition.environmentId(),
                 tenant,
                 timestamp(observedAt));
         return candidates.stream()
@@ -1046,13 +1072,14 @@ public final class DatabaseScenarioRehearsalBatchRepository
     }
 
     private void reconcile(
-            String environment,
+            QueuePartition partition,
             Instant observedAt,
             ScenarioRehearsalBatchPolicy policy) {
         List<String> stale = jdbc.queryForList("""
                 SELECT job_id
                 FROM scenario_rehearsal_batch_jobs
-                WHERE environment_id = ?
+                WHERE region = ?
+                  AND environment_id = ?
                   AND (
                     status = 'QUEUED' AND deadline_at <= ?
                     OR status IN ('RUNNING', 'CANCEL_REQUESTED')
@@ -1062,7 +1089,8 @@ public final class DatabaseScenarioRehearsalBatchRepository
                 LIMIT ?
                 """,
                 String.class,
-                environment,
+                partition.region(),
+                partition.environmentId(),
                 timestamp(observedAt),
                 timestamp(observedAt),
                 RECONCILIATION_LIMIT);
@@ -1415,13 +1443,14 @@ public final class DatabaseScenarioRehearsalBatchRepository
         }
     }
 
-    private void lockEnvironment(String environment) {
+    private void lockPartition(QueuePartition partition) {
+        String coordinationKey = coordinationKey(partition);
         try {
             jdbc.update("""
                     INSERT INTO scenario_rehearsal_batch_locks (
                         environment_id
                     ) VALUES (?)
-                    """, environment);
+                    """, coordinationKey);
         } catch (DuplicateKeyException existing) {
             // The existing row is the intended cross-replica authority.
         }
@@ -1430,17 +1459,18 @@ public final class DatabaseScenarioRehearsalBatchRepository
                 FROM scenario_rehearsal_batch_locks
                 WHERE environment_id = ?
                 FOR UPDATE
-                """, String.class, environment);
-        if (!environment.equals(locked)) {
+                """, String.class, coordinationKey);
+        if (!coordinationKey.equals(locked)) {
             throw new IllegalStateException(
-                    "Scenario batch environment lock is unavailable");
+                    "Scenario batch regional partition lock is unavailable");
         }
     }
 
     private void ensurePolicy(
-            String environment,
+            QueuePartition partition,
             ScenarioRehearsalBatchPolicy policy,
             Instant observedAt) {
+        String coordinationKey = coordinationKey(partition);
         String fingerprint = ProtocolFingerprint.of(
                 mapper, policy);
         List<PolicyState> states = jdbc.query("""
@@ -1452,7 +1482,7 @@ public final class DatabaseScenarioRehearsalBatchRepository
                 (rs, row) -> new PolicyState(
                         rs.getLong("policy_generation"),
                         rs.getString("policy_fingerprint")),
-                environment);
+                coordinationKey);
         if (states.isEmpty()) {
             jdbc.update("""
                     INSERT INTO scenario_rehearsal_batch_policies (
@@ -1460,7 +1490,7 @@ public final class DatabaseScenarioRehearsalBatchRepository
                         policy_fingerprint, updated_at
                     ) VALUES (?, ?, ?, ?)
                     """,
-                    environment,
+                    coordinationKey,
                     policy.generation(),
                     fingerprint,
                     timestamp(observedAt));
@@ -1487,7 +1517,7 @@ public final class DatabaseScenarioRehearsalBatchRepository
                     policy.generation(),
                     fingerprint,
                     timestamp(observedAt),
-                    environment,
+                    coordinationKey,
                     stored.generation(),
                     stored.fingerprint());
             if (updated != 1) {
@@ -1498,8 +1528,9 @@ public final class DatabaseScenarioRehearsalBatchRepository
     }
 
     private Cursor cursor(
-            String environment,
+            QueuePartition partition,
             Instant observedAt) {
+        String coordinationKey = coordinationKey(partition);
         List<Cursor> values = jdbc.query("""
                 SELECT last_tenant_id, cycle_epoch
                 FROM scenario_rehearsal_batch_cursors
@@ -1509,7 +1540,7 @@ public final class DatabaseScenarioRehearsalBatchRepository
                 (rs, row) -> new Cursor(
                         rs.getString("last_tenant_id"),
                         rs.getLong("cycle_epoch")),
-                environment);
+                coordinationKey);
         if (values.isEmpty()) {
             jdbc.update("""
                     INSERT INTO scenario_rehearsal_batch_cursors (
@@ -1517,7 +1548,7 @@ public final class DatabaseScenarioRehearsalBatchRepository
                         cycle_epoch, updated_at
                     ) VALUES (?, '', 0, ?)
                     """,
-                    environment,
+                    coordinationKey,
                     timestamp(observedAt));
             return new Cursor(NO_TENANT, 0);
         }
@@ -1525,10 +1556,11 @@ public final class DatabaseScenarioRehearsalBatchRepository
     }
 
     private void advanceCursor(
-            String environment,
+            QueuePartition partition,
             String tenant,
             Instant observedAt) {
-        Cursor cursor = cursor(environment, observedAt);
+        Cursor cursor = cursor(partition, observedAt);
+        String coordinationKey = coordinationKey(partition);
         long epoch = tenant.compareTo(
                 cursor.lastTenantId()) <= 0
                 ? Math.addExact(cursor.cycleEpoch(), 1)
@@ -1544,7 +1576,7 @@ public final class DatabaseScenarioRehearsalBatchRepository
                 tenant,
                 epoch,
                 timestamp(observedAt),
-                environment,
+                coordinationKey,
                 cursor.lastTenantId(),
                 cursor.cycleEpoch());
         if (updated != 1) {
@@ -1564,28 +1596,34 @@ public final class DatabaseScenarioRehearsalBatchRepository
     }
 
     private long activeCount(
-            String environment,
+            QueuePartition partition,
             String tenant) {
         String tenantClause =
                 tenant == null ? "" : " AND tenant_id = ?";
         String sql = """
                 SELECT COUNT(*)
                 FROM scenario_rehearsal_batch_jobs
-                WHERE environment_id = ?
+                WHERE region = ?
+                  AND environment_id = ?
                   AND status IN (
                     'QUEUED', 'RUNNING', 'CANCEL_REQUESTED'
                   )
                 """ + tenantClause;
         Long count = tenant == null
                 ? jdbc.queryForObject(
-                sql, Long.class, environment)
+                sql, Long.class,
+                partition.region(),
+                partition.environmentId())
                 : jdbc.queryForObject(
-                sql, Long.class, environment, tenant);
+                sql, Long.class,
+                partition.region(),
+                partition.environmentId(),
+                tenant);
         return count == null ? 0 : count;
     }
 
     private long liveRunningCount(
-            String environment,
+            QueuePartition partition,
             String tenant,
             Instant observedAt) {
         String tenantClause =
@@ -1593,7 +1631,8 @@ public final class DatabaseScenarioRehearsalBatchRepository
         String sql = """
                 SELECT COUNT(*)
                 FROM scenario_rehearsal_batch_jobs
-                WHERE environment_id = ?
+                WHERE region = ?
+                  AND environment_id = ?
                   AND status IN ('RUNNING', 'CANCEL_REQUESTED')
                   AND lease_expires_at > ?
                 """ + tenantClause;
@@ -1601,12 +1640,14 @@ public final class DatabaseScenarioRehearsalBatchRepository
                 ? jdbc.queryForObject(
                 sql,
                 Long.class,
-                environment,
+                partition.region(),
+                partition.environmentId(),
                 timestamp(observedAt))
                 : jdbc.queryForObject(
                 sql,
                 Long.class,
-                environment,
+                partition.region(),
+                partition.environmentId(),
                 timestamp(observedAt),
                 tenant);
         return count == null ? 0 : count;
@@ -2096,6 +2137,30 @@ public final class DatabaseScenarioRehearsalBatchRepository
         return value == null ? null : Timestamp.from(value);
     }
 
+    private QueuePartition partition(
+            CapabilitySnapshot.Scope scope) {
+        CapabilitySnapshot.Scope required =
+                Objects.requireNonNull(scope, "scope");
+        return partition(
+                required.region(),
+                required.environmentId());
+    }
+
+    private static QueuePartition partition(
+            String region,
+            String environmentId) {
+        return new QueuePartition(
+                required(region, "region"),
+                required(environmentId, "environmentId"));
+    }
+
+    private String coordinationKey(
+            QueuePartition partition) {
+        return ProtocolFingerprint.of(
+                mapper,
+                Objects.requireNonNull(partition, "partition"));
+    }
+
     private static Instant instant(
             ResultSet result,
             String column) throws SQLException {
@@ -2232,6 +2297,21 @@ public final class DatabaseScenarioRehearsalBatchRepository
     private record PolicyState(
             long generation,
             String fingerprint) {
+    }
+
+    private record QueuePartition(
+            String region,
+            String environmentId) {
+        private QueuePartition {
+            region = required(region, "region");
+            environmentId = required(
+                    environmentId, "environmentId");
+            if (region.length() > 64
+                    || environmentId.length() > 255) {
+                throw new IllegalArgumentException(
+                        "Scenario batch regional partition is too long");
+            }
+        }
     }
 
     private record Cursor(

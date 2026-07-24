@@ -8,6 +8,7 @@ import com.leanowtech.bloge.gateway.testing.api.TestSuiteStabilityJobAuthorizer;
 import com.leanowtech.bloge.gateway.testing.api.TestSecretAuthority;
 import com.leanowtech.bloge.gateway.testing.api.TestSuiteStabilityObservationExternalArchiveReconciliationHealth;
 import com.leanowtech.bloge.gateway.testing.api.WorkerQuarantineChangeAuthorizationTrustStore;
+import com.leanowtech.bloge.gateway.integration.mirror.ScenarioRehearsalBatchScheduler;
 import com.leanowtech.bloge.gateway.visual.catalog.OperatorCatalogQuery;
 import com.leanowtech.bloge.gateway.visual.catalog.OperatorDefinition;
 import com.leanowtech.bloge.gateway.visual.catalog.VisualOperatorCatalog;
@@ -300,9 +301,20 @@ class ToolStudioIntegrationServiceTest {
         ToolStudioIntegrationService disabled = service(null, null, null, null);
         ToolStudioIntegrationService enabled = service(null, null, null, null);
         enabled.configureMirrorRuntime(new MirrorRuntimeAvailability(true, true));
+        ToolStudioIntegrationService scheduled =
+                service(null, null, null, null);
+        scheduled.configureMirrorRuntime(
+                new MirrorRuntimeAvailability(true, true));
+        ScenarioRehearsalBatchScheduler scheduler =
+                mock(ScenarioRehearsalBatchScheduler.class);
+        when(scheduler.ready()).thenReturn(true);
+        scheduled.configureScenarioRehearsalBatchScheduler(
+                scheduler);
 
         IntegrationCapabilities disabledCapabilities = disabled.capabilities().payload();
         IntegrationCapabilities enabledCapabilities = enabled.capabilities().payload();
+        IntegrationCapabilities scheduledCapabilities =
+                scheduled.capabilities().payload();
 
         assertThat(disabledCapabilities.features())
                 .containsEntry("mirrorPlanCompilation", false)
@@ -478,6 +490,15 @@ class ToolStudioIntegrationServiceTest {
                         "GET /api/mirror/runs/{runId}/state-workbook-seed",
                         "GET /api/mirror/runs/{runId}/state-transition-workbook-seed",
                         "GET /api/mirror/runs/{runId}/state-write-outcome-workbook-seed");
+        assertThat(scheduledCapabilities.features())
+                .containsEntry(
+                        "mirrorScenarioRehearsalBatchScheduling",
+                        true);
+        when(scheduler.ready()).thenReturn(false);
+        assertThat(scheduled.capabilities().payload().features())
+                .containsEntry(
+                        "mirrorScenarioRehearsalBatchScheduling",
+                        false);
     }
 
     @Test

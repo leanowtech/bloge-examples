@@ -23,6 +23,7 @@ import com.leanowtech.bloge.gateway.testing.api.TestSuiteStabilityPhysicalAttemp
 import com.leanowtech.bloge.gateway.testing.api.TestSuiteStabilityPhysicalAttemptRuntimeCapability;
 import com.leanowtech.bloge.gateway.testing.api.TestSuiteStabilityPhysicalAttemptTerminalProjectionHealth;
 import com.leanowtech.bloge.gateway.testing.api.WorkerQuarantineChangeAuthorizationTrustStore;
+import com.leanowtech.bloge.gateway.integration.mirror.ScenarioRehearsalBatchScheduler;
 import com.leanowtech.bloge.gateway.visual.catalog.VisualOperatorCatalog;
 import com.leanowtech.bloge.gateway.visual.draft.GraphDraft;
 import com.leanowtech.bloge.gateway.visual.draft.GraphDraftDependencyReport;
@@ -78,6 +79,8 @@ public class ToolStudioIntegrationService {
     private boolean suiteStabilityJobSubmissionEnabled;
     private MirrorRuntimeAvailability mirrorRuntimeAvailability =
             new MirrorRuntimeAvailability(false, false);
+    private ScenarioRehearsalBatchScheduler
+            scenarioRehearsalBatchScheduler;
     private MirrorStatefulRuntimeAvailability mirrorStatefulRuntimeAvailability =
             new MirrorStatefulRuntimeAvailability(false, () -> false);
     private WorkerQuarantineRequestIndexMode workerQuarantineRequestIndexMode;
@@ -167,6 +170,13 @@ public class ToolStudioIntegrationService {
     void configureMirrorRuntime(MirrorRuntimeAvailability availability) {
         this.mirrorRuntimeAvailability = availability == null
                 ? new MirrorRuntimeAvailability(false, false) : availability;
+    }
+
+    /** Receives the scheduler only when an exact non-production batch partition is active. */
+    @Autowired(required = false)
+    void configureScenarioRehearsalBatchScheduler(
+            ScenarioRehearsalBatchScheduler scheduler) {
+        this.scenarioRehearsalBatchScheduler = scheduler;
     }
 
     /** Receives the marker only when encrypted stateful Session routes are assembled. */
@@ -419,7 +429,12 @@ public class ToolStudioIntegrationService {
                 mirrorPlanReady && mirrorExecutionApi);
         features.put("mirrorScenarioRehearsalBatchApi",
                 mirrorPlanReady && mirrorExecutionApi);
-        features.put("mirrorScenarioRehearsalBatchScheduling", false);
+        features.put(
+                "mirrorScenarioRehearsalBatchScheduling",
+                mirrorPlanReady
+                        && mirrorExecutionApi
+                        && scenarioRehearsalBatchScheduler != null
+                        && scenarioRehearsalBatchScheduler.ready());
         features.put("mirrorScenarioRehearsalEvidence", false);
         features.put("mirrorServing", mirrorExecutionReady);
         features.put("mirrorOperationObservability", mirrorPlanReady && mirrorExecutionApi);

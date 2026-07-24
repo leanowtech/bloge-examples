@@ -7,7 +7,7 @@
 
 | 文档属性 | 内容 |
 |---|---|
-| 状态 | Accepted / In implementation；Stage 0 工程门禁已通过；Stage 1 完成 MirrorPlan、受保护运行/证据 API、部署隔离信任与 durable execution；Stage 2 完成 observation/corpus 的准入、review、publication、trajectory/cluster serving 与 generation fence；Stage 3 完成有状态 Session、虚拟读写、checkpoint/recovery、write-attempt reconciliation 和三类 ANEKE seed；Stage 4 完成 Scenario 编译、可恢复 aggregate、签名 evidence、audit/retention/workbook closure，以及 durable batch manifest/queue/API/worker turn。自治 batch scheduler/evidence、Owner UX、Fidelity/Outcome 和生产环境认证继续实施；未完成前相关 readiness 必须保持 `false` |
+| 状态 | Accepted / In implementation；Stage 0 工程门禁已通过；Stage 1 完成 MirrorPlan、受保护运行/证据 API、部署隔离信任与 durable execution；Stage 2 完成 observation/corpus 的准入、review、publication、trajectory/cluster serving 与 generation fence；Stage 3 完成有状态 Session、虚拟读写、checkpoint/recovery、write-attempt reconciliation 和三类 ANEKE seed；Stage 4 完成 Scenario 编译、可恢复 aggregate、签名 evidence、audit/retention/workbook closure、durable batch manifest/queue/API/worker turn，以及显式启用的 region-local bounded scheduler。批次 heartbeat/cancel/evidence、Owner UX、Fidelity/Outcome 和生产环境认证继续实施；未完成前相关 readiness 必须保持 `false` |
 | 目标读者 | Resource Gateway、BLOGE Runtime、ANEKE、TEE/数据平台、QA、SRE、安全与业务运营团队 |
 | 设计范围 | external/composed 能力建模、镜像运行、保真语料、有状态世界、场景演练、证据、保真度与结果校准 |
 | 非目标 | 不重做 ANEKE 的资产治理和发布门禁；不允许测试控制进入生产业务请求；不把观测频率直接当成业务正确性 |
@@ -576,11 +576,11 @@ Resource Gateway 已有的工业底座应直接复用：
 | 递归 DAG 测试 | 85% | MirrorPlan/closure/runtime inventory/fixture control 已统一；缺 contract-mock 展开治理和状态世界 |
 | 日志蒸馏与语料 | 82% | payload-free signed observation、准入/隔离、immutable review、candidate/publication/trajectory/cluster 独立 lineage、元数据风险门禁、fixture exact/trajectory/cluster binding、在线 revalidation、test/staging `RECORDED_EXACT`/`RECORDED_TRAJECTORY`/`RECORDED_CLUSTER`、BLOGE 原生 retry loop、identity-safe projection、Wilson confidence、Session state read 与独立 verifier 已落地；缺生产 payload authority、漂移、偏差、outcome 校准和删除证明 |
 | 有状态业务世界 | 91% | 协议、read/write 退款 fixture、独立 verifier/sealer/client、事务内核、受保护 Session API、独立 AES-GCM 数据面、lease/fence/CAS、durable write-attempt journal/reconciliation、TTL/destroy、全局/scope 容量、保留字节、命令背压、过期擦除、固定 read head、run-scoped virtual write、真实 DAG read-write-read、payload-free v1/v2/v3 state evidence、read-only/successful-transition/write-outcome ANEKE seed、签名 HASH_ONLY checkpoint 与同数据面代际精确恢复准入已落地；缺 TEE/KMS、跨区域数据恢复、真实 process-kill/network parity、目标数据库容量认证和 HA/DR certification |
-| Scenario/Rehearsal | 86% | ScenarioPack/Case/Assertion、exact compiler、可恢复逐 case runtime、签名 aggregate、audit/retention、ANEKE seed，以及 payload-free durable batch manifest/queue/API/worker turn 已落地；缺自治 region-local scheduler、批次签名 evidence/index、batch audit/retention、owner UX、企业策略/WORM/anchor 与异构消费者认证 |
+| Scenario/Rehearsal | 89% | ScenarioPack/Case/Assertion、exact compiler、可恢复逐 case runtime、签名 aggregate、audit/retention、ANEKE seed、durable batch manifest/queue/API/worker turn，以及显式 region-local bounded scheduler 已落地；缺执行中 heartbeat/cancel、批次签名 evidence/index、batch audit/retention、owner UX、企业策略/WORM/anchor 与异构消费者认证 |
 | Fidelity/Outcome | 5% | 缺保真向量、shadow、权威结果归因和校准闭环 |
 | 业务运营工作台 | 10% | Author Canvas 尚未成为案例驱动的镜像运营工作台 |
 
-结论：基础设施准备度约 88%，固定权重理想态完成度为 60.23%。剩余主要矛盾已经
+结论：基础设施准备度约 89%，固定权重理想态完成度为 60.71%。剩余主要矛盾已经
 从“能否安全执行和取证”转向“能否把可信 observation 持续蒸馏成可校准、可拒答、可删除的业务拟合资产”。
 
 ### 3.1 2026-07-24 Scenario 编译期闭包迭代差距复评
@@ -647,7 +647,7 @@ HA/DR 或权威 outcome 当成已完成。51.59% 只承认已由代码和测试�
 | 2 | RG-MIR-SCEN-001A | 完成 | 将 TestSuite/Fixture authority 升级为完整 enterprise scope；旧 tenant+environment 资产采用独立表、禁止隐式提升、授权重新注册的迁移策略 | 两个 organization/project/region 可安全复用同 id/revision；跨 scope、混合版本与 indexed scope 搬移失败关闭 |
 | 3 | RG-MIR-SCEN-002 | 完成 | deterministic compiler/runtime；每 case 使用隔离 Session/checkpoint、固定时钟/随机源、fixture data-flow inversion 和禁止真实 egress | exact plan、逐 case 运行、数据库时钟 lease/epoch、连续 checkpoint、takeover、旧 worker fencing 与原子 evidence/terminal commit 全绿 |
 | 4 | RG-MIR-SCEN-003 | 完成（本地治理闭包） | 产出 payload-free Scenario evidence、state diff、处置断言结果与 ANEKE workbook seed，区分执行失败、断言失败、低保真和证据不完整 | 独立签名、append-only store、exact read、崩溃恢复、audit/retention/workbook seed 已完成；unknown outcome、缺断言或不完整 evidence 阻断 gate-ready |
-| 5 | RG-MIR-SCEN-004 | 批次控制面基础完成，自治运行与 UX 待实现 | 提供批量 rehearsal API、deep link 和最小 Author 场景表格；先保证业务 owner 不编辑 JSON/DSL 即可维护 case | exact manifest、数据库队列、API 和 worker turn 已完成；下一步 scheduler、batch evidence、两个样例域、浏览器与 owner UX |
+| 5 | RG-MIR-SCEN-004 | 单地域自治调度完成，执行中控制、证据与 UX 待实现 | 提供批量 rehearsal API、deep link 和最小 Author 场景表格；先保证业务 owner 不编辑 JSON/DSL 即可维护 case | exact manifest、数据库队列、API、worker turn、region-local bounded scheduler 与启动脚本已完成；下一步 heartbeat/cancel、batch evidence、两个样例域、浏览器与 owner UX |
 
 完成 E7 后才进入 E8：以 Scenario coverage 为分母建立
 `DomainFidelityProfile`、typed shadow diff、confidence/abstention debt 和 drift downgrade；随后 E9 接入
@@ -1010,6 +1010,49 @@ content-addressed batch evidence/index，并把 lifecycle audit、retention 与 
 离线 verifier 闭合；最后用 PostgreSQL 多副本、进程 kill、网络分区、队列积压和
 10,000-case soak test 做环境认证。完成后才进入 deep link、失败定位和 owner 场景
 表格，否则 UI 展示的是一个尚不能可靠运营的队列。
+
+### 3.10 2026-07-24 Scenario 地域自治调度迭代差距复评
+
+本轮关闭“队列已经耐久，但没有进程负责持续消费”以及“同名 environment 跨地域
+共享容量锁”两个断点。repository 的 coordination lock、policy generation、
+tenant fairness cursor、admission、live-running capacity、stale reconcile 和 claim
+查询现在都以完整 `(region, environment)` 为权威分区；协调行使用该分区的内容
+地址，因此旧表无需破坏性迁移，同名 `test` 在 `sg/us` 可持有独立 policy 和容量，
+worker 也无法跨地域 claim。
+
+新增 `ScenarioRehearsalBatchScheduler`，每个进程只绑定一个 exact 非生产分区，
+使用 1..256 条固定 lane 做 fixed-delay polling。lane 内一次只执行一个同步 worker
+turn，不在 JVM 内复制容量、retry 或 fairness 状态；这些仍由数据库跨副本裁决。
+关闭时先取消未来 poll，再有界等待当前 turn，超时后线程中断仅是最佳努力，旧
+worker 的最终发布仍必须通过 lease owner/epoch/expiry fence。scheduler 捕获轮询
+歧义时不记录异常 message 或业务 identity，也不会让 periodic lane 静默死亡。
+
+Spring 装配使用独立 strict properties 和显式开关，且继续受
+`!production & (test | staging)` 物理隔离。启用配置缺 instance id、region、
+非生产 environment 或有限并发参数时启动失败。capability 不再写死：
+只有 scheduler bean 存在且 lanes 健康时
+`mirrorScenarioRehearsalBatchScheduling=true`，关闭或调度线程失效会动态回落。
+演示脚本新增 `--scenario-batch`，自动让 worker partition 与 integration identity
+一致，并等待 API 与 scheduling 两个 capability 都为 true 后才报告 ready；不带
+该参数时不启动后台消费。
+
+这仍不是完整的工业批次执行控制。当前一个 worker turn 进入同步 aggregate 后，
+没有在逐 case checkpoint 续租并读取 durable cancel/deadline decision；所以运行中
+取消最迟在当前 item 返回或 lease 到期后收敛，停机 drain 也不能证明外部 operator
+已经物理退出。scheduler 只有单一静态分区，没有受治理的 active-partition
+inventory、动态 rebalance、固定基数 telemetry/SLO 和跨副本 rollout health。
+batch evidence/index、audit/retention/legal hold 与 ANEKE 离线 verifier 也仍缺失。
+
+基于已通过的 region-isolation、scheduler lifecycle、Spring production exclusion、
+capability truth 和脚本 fail-fast 测试，本轮将 Scenario/Rehearsal 从 86% 上调至
+89%，固定权重总分从 60.23% 上调至 60.71%，距理想态 39.29%。下一条最短路径是
+先让 lease heartbeat/cancel/deadline decision 穿透 aggregate 的逐 case 执行控制，
+形成可证明的 cooperative stop；随后签发 batch evidence/index 并闭合 audit、
+retention 与 ANEKE consumer。完成这两步后才值得增加 owner 批次失败定位 UX。
+
+本轮完整 Resource Gateway 门禁通过 `5,086` 项测试，零失败、零错误、3 项条件
+跳过，并完成公共 JavaDoc、Boot JAR 重打包和真实 Chrome 工作流验证。Test Kit
+基线保持 `366` 项测试与 111 份 Mirror Schema 引用闭包；本轮未修改其协议包。
 
 ## 4. 目标架构与系统责任
 
@@ -1768,7 +1811,7 @@ session 重放造成重复状态、运行时依赖漂移。
 | `POST /api/mirror/scenarios/runs/{runId}/retention/holds` | 放置一个独立 legal hold | command 幂等、hold id 不可复用、多 hold 不互相覆盖 | 已实现（`LEGAL_HOLD`） |
 | `POST /api/mirror/scenarios/runs/{runId}/retention/hold-releases` | 释放一个 exact legal hold | 只释放指定 hold；其他 hold 继续阻止删除 | 已实现（`LEGAL_HOLD`） |
 | `POST /api/mirror/scenarios/runs/{runId}/retention/purge` | 到期删除 aggregate 并返回签名 deletion proof | 数据库时钟、零 hold、exact fingerprint；child evidence 不级联 | 已实现（`PAYLOAD_RETENTION_ADMIN`） |
-| `POST /api/mirror/rehearsal-jobs` | 提交批量长任务 | exact request/manifest fingerprint；服务端 policy admission | 已实现控制面（test/staging；自治 scheduler 待实现） |
+| `POST /api/mirror/rehearsal-jobs` | 提交批量长任务 | exact request/manifest fingerprint；服务端 policy admission | 已实现（test/staging；scheduler 需显式启用） |
 | `GET /api/mirror/rehearsal-jobs/{jobId}` | 查询 batch projection | full scope + job record fingerprint | 已实现控制面 |
 | `GET /api/mirror/rehearsal-jobs/{jobId}/items` | 分页查询 item | stable manifest index + bounded page | 已实现控制面 |
 | `POST /api/mirror/rehearsal-jobs/{jobId}/cancellations` | 请求 cooperative cancellation | command id 幂等 + stable reason code | 已实现控制面；in-flight heartbeat/cancel 待实现 |
@@ -2188,8 +2231,9 @@ binding。恢复后继续执行与不中断执行的最终 outcome parity、逐�
 enterprise scope authority 已完成。Sprint 2 已交付同步逐 case runtime、typed assertion evaluator、
 payload-free content-addressed case/aggregate result、durable lease/recovery、独立签名 evidence、
 exact read、multi-hold retention、deletion proof、deterministic ANEKE workbook seed
-及其独立 gate evidence closure。durable batch request/manifest、数据库队列/API 和 evidence-verifying
-worker turn 已完成；下一步进入自治 scheduler、批次 evidence/index，再进入 Author UX。企业 policy authority、
+及其独立 gate evidence closure。durable batch request/manifest、数据库队列/API、evidence-verifying
+worker turn 和显式 region-local bounded scheduler 已完成；下一步进入执行中 heartbeat/cancel、
+批次 evidence/index，再进入 Author UX。企业 policy authority、
 WORM/anchor 和跨地域删除认证作为部署认证支线并行，不阻塞本地 workbook 纵切，但会阻塞最终
 production readiness。
 

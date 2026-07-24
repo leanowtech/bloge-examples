@@ -7,17 +7,17 @@ import java.util.Objects;
  * Cross-replica queue and execution bounds for durable Scenario rehearsal batches.
  *
  * <p>Every replica must use the same generation and effective values. The database repository
- * persists the policy fingerprint per environment and fails closed when a rolling deployment
- * presents a different policy under the same generation.</p>
+ * persists the policy fingerprint per region and environment and fails closed when a rolling
+ * deployment presents a different policy under the same generation.</p>
  *
  * @param generation monotonically increasing policy generation
  * @param failureMode server-owned non-passing item behavior
  * @param priority server-owned base scheduling priority
  * @param maximumItemAttempts bounded infrastructure attempts for each item
- * @param maximumQueued maximum active batches per environment
- * @param maximumQueuedPerTenant maximum active batches per tenant and environment
- * @param maximumRunning maximum live item leases per environment
- * @param maximumRunningPerTenant maximum live item leases per tenant and environment
+ * @param maximumQueued maximum active batches per regional environment partition
+ * @param maximumQueuedPerTenant maximum active batches per tenant and regional environment
+ * @param maximumRunning maximum live item leases per regional environment partition
+ * @param maximumRunningPerTenant maximum live item leases per tenant and regional environment
  * @param maximumPlanTimeout largest compiled-plan total timeout admitted to a batch
  * @param maximumDeadlineHorizon furthest accepted batch deadline
  * @param leaseReserve time reserved after a plan's declared timeout for evidence publication
