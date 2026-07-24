@@ -162,6 +162,7 @@ public class DatabaseScenarioRehearsalRunRepository
 
     private final JdbcTemplate jdbc;
     private final ObjectMapper mapper;
+    private final ScenarioRehearsalLifecycleAuditRepository lifecycleAudit;
     private final Supplier<Instant> coordinationClock;
 
     /**
@@ -169,19 +170,25 @@ public class DatabaseScenarioRehearsalRunRepository
      *
      * @param jdbc transaction-aware application JDBC boundary
      * @param mapper canonical protocol mapper
+     * @param lifecycleAudit mandatory payload-free transition audit
      */
     public DatabaseScenarioRehearsalRunRepository(
-            JdbcTemplate jdbc, ObjectMapper mapper) {
-        this(jdbc, mapper, null);
+            JdbcTemplate jdbc,
+            ObjectMapper mapper,
+            ScenarioRehearsalLifecycleAuditRepository lifecycleAudit) {
+        this(jdbc, mapper, lifecycleAudit, null);
     }
 
     /** Package-private deterministic database-clock seam for concurrency tests. */
     DatabaseScenarioRehearsalRunRepository(
             JdbcTemplate jdbc,
             ObjectMapper mapper,
+            ScenarioRehearsalLifecycleAuditRepository lifecycleAudit,
             Supplier<Instant> coordinationClock) {
         this.jdbc = Objects.requireNonNull(jdbc, "jdbc");
         this.mapper = Objects.requireNonNull(mapper, "mapper");
+        this.lifecycleAudit = Objects.requireNonNull(
+                lifecycleAudit, "lifecycleAudit");
         this.coordinationClock = coordinationClock == null
                 ? () -> databaseNow(this.jdbc)
                 : Objects.requireNonNull(
@@ -213,9 +220,15 @@ public class DatabaseScenarioRehearsalRunRepository
         if (existing.isEmpty()) {
             try {
                 insert(registration, owner, observedAt, expiresAt);
-                return acquired(locked(
+                State created = locked(
                         registration.scope(),
-                        registration.requestId()).orElseThrow());
+                        registration.requestId()).orElseThrow();
+                appendLifecycle(
+                        created,
+                        ScenarioRehearsalLifecycleAuditEvent
+                                .Transition.CLAIMED,
+                        -1, "", "", "");
+                return acquired(created);
             } catch (DuplicateKeyException concurrentInsert) {
                 existing = locked(
                         registration.scope(), registration.requestId());
@@ -261,8 +274,14 @@ public class DatabaseScenarioRehearsalRunRepository
             throw new IllegalStateException(
                     "Scenario rehearsal lease changed while row was locked");
         }
-        return acquired(locked(
-                scope, registration.requestId()).orElseThrow());
+        State acquired = locked(
+                scope, registration.requestId()).orElseThrow();
+        appendLifecycle(
+                acquired,
+                ScenarioRehearsalLifecycleAuditEvent
+                        .Transition.TAKEN_OVER,
+                -1, "", "", "");
+        return acquired(acquired);
     }
 
     @Override
@@ -318,8 +337,10 @@ public class DatabaseScenarioRehearsalRunRepository
                     duplicate);
         }
         Instant at = coordinationNow();
-        if (!at.isBefore(state.leaseExpiresAt())
-                || jdbc.update(
+        if (!at.isBefore(state.leaseExpiresAt())) {
+            throw new ScenarioRehearsalLeaseLostException();
+        }
+        int advanced = jdbc.update(
                 ADVANCE,
                 caseIndex + 1,
                 at.toString(),
@@ -332,9 +353,15 @@ public class DatabaseScenarioRehearsalRunRepository
                 lease.leaseOwner(),
                 lease.leaseEpoch(),
                 state.leaseExpiresAt().toString(),
-                caseIndex) != 1) {
+                caseIndex);
+        if (advanced != 1) {
             throw new ScenarioRehearsalLeaseLostException();
         }
+        appendLifecycle(
+                state,
+                ScenarioRehearsalLifecycleAuditEvent
+                        .Transition.CHECKPOINTED,
+                caseIndex, exact.resultFingerprint(), "", "");
     }
 
     @Override
@@ -358,7 +385,7 @@ public class DatabaseScenarioRehearsalRunRepository
             return false;
         }
         CapabilitySnapshot.Scope scope = lease.scope();
-        return jdbc.update(
+        int completed = jdbc.update(
                 COMPLETE,
                 fingerprint,
                 at.toString(),
@@ -370,7 +397,15 @@ public class DatabaseScenarioRehearsalRunRepository
                 lease.requestId(),
                 lease.leaseOwner(),
                 lease.leaseEpoch(),
-                state.leaseExpiresAt().toString()) == 1;
+                state.leaseExpiresAt().toString());
+        if (completed == 1) {
+            appendLifecycle(
+                    state,
+                    ScenarioRehearsalLifecycleAuditEvent
+                            .Transition.COMPLETED,
+                    -1, "", fingerprint, "");
+        }
+        return completed == 1;
     }
 
     @Override
@@ -387,10 +422,11 @@ public class DatabaseScenarioRehearsalRunRepository
         }
         Instant at = coordinationNow();
         CapabilitySnapshot.Scope scope = lease.scope();
-        return jdbc.update(
+        String reasonCode = bounded(failureCode, 256);
+        int released = jdbc.update(
                 RELEASE,
                 at.toString(),
-                bounded(failureCode, 256),
+                reasonCode,
                 at.toString(),
                 scope.tenantId(),
                 scope.organizationId(),
@@ -400,7 +436,15 @@ public class DatabaseScenarioRehearsalRunRepository
                 lease.requestId(),
                 lease.leaseOwner(),
                 lease.leaseEpoch(),
-                state.leaseExpiresAt().toString()) == 1;
+                state.leaseExpiresAt().toString());
+        if (released == 1) {
+            appendLifecycle(
+                    state,
+                    ScenarioRehearsalLifecycleAuditEvent
+                            .Transition.RELEASED,
+                    -1, "", "", reasonCode);
+        }
+        return released == 1;
     }
 
     @Override
@@ -502,6 +546,32 @@ public class DatabaseScenarioRehearsalRunRepository
                 now.toString(),
                 now.toString(),
                 registration.retainUntil().toString());
+    }
+
+    private void appendLifecycle(
+            State state,
+            ScenarioRehearsalLifecycleAuditEvent.Transition transition,
+            int caseIndex,
+            String resultFingerprint,
+            String evidenceBundleFingerprint,
+            String reasonCode) {
+        Registration registration = state.registration();
+        int nextCaseIndex =
+                transition
+                        == ScenarioRehearsalLifecycleAuditEvent
+                        .Transition.CHECKPOINTED
+                        ? caseIndex + 1
+                        : state.nextCaseIndex();
+        lifecycleAudit.append(
+                new ScenarioRehearsalLifecycleAuditEvent(
+                        0, null, registration.scope(),
+                        registration.requestId(),
+                        registration.compiledPlanRef(),
+                        registration.runId(), transition,
+                        state.leaseOwner(), state.leaseEpoch(),
+                        registration.totalCases(), caseIndex,
+                        nextCaseIndex, resultFingerprint,
+                        evidenceBundleFingerprint, reasonCode));
     }
 
     private List<ScenarioCaseRehearsalResult> readProgress(

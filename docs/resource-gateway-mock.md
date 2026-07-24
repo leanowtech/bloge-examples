@@ -576,11 +576,11 @@ Resource Gateway 已有的工业底座应直接复用：
 | 递归 DAG 测试 | 85% | MirrorPlan/closure/runtime inventory/fixture control 已统一；缺 contract-mock 展开治理和状态世界 |
 | 日志蒸馏与语料 | 82% | payload-free signed observation、准入/隔离、immutable review、candidate/publication/trajectory/cluster 独立 lineage、元数据风险门禁、fixture exact/trajectory/cluster binding、在线 revalidation、test/staging `RECORDED_EXACT`/`RECORDED_TRAJECTORY`/`RECORDED_CLUSTER`、BLOGE 原生 retry loop、identity-safe projection、Wilson confidence、Session state read 与独立 verifier 已落地；缺生产 payload authority、漂移、偏差、outcome 校准和删除证明 |
 | 有状态业务世界 | 91% | 协议、read/write 退款 fixture、独立 verifier/sealer/client、事务内核、受保护 Session API、独立 AES-GCM 数据面、lease/fence/CAS、durable write-attempt journal/reconciliation、TTL/destroy、全局/scope 容量、保留字节、命令背压、过期擦除、固定 read head、run-scoped virtual write、真实 DAG read-write-read、payload-free v1/v2/v3 state evidence、read-only/successful-transition/write-outcome ANEKE seed、签名 HASH_ONLY checkpoint 与同数据面代际精确恢复准入已落地；缺 TEE/KMS、跨区域数据恢复、真实 process-kill/network parity、目标数据库容量认证和 HA/DR certification |
-| Scenario/Rehearsal | 64% | ScenarioPack/Case/Assertion、append-only registry、exact compiler、全企业作用域 authority、逐 case runtime、验签断言、独立签名 evidence、数据库时钟 aggregate lease/epoch、连续 case checkpoint、takeover 和原子终态已落地；缺审计/retention/workbook、批量任务和 owner UX |
+| Scenario/Rehearsal | 68% | ScenarioPack/Case/Assertion、append-only registry、exact compiler、全企业作用域 authority、逐 case runtime、验签断言、独立签名 evidence、数据库时钟 aggregate lease/epoch、连续 case checkpoint、takeover、原子终态、protected operation audit 和同事务 lifecycle audit 已落地；缺 retention/deletion proof/workbook、批量任务和 owner UX |
 | Fidelity/Outcome | 5% | 缺保真向量、shadow、权威结果归因和校准闭环 |
 | 业务运营工作台 | 10% | Author Canvas 尚未成为案例驱动的镜像运营工作台 |
 
-结论：基础设施准备度约 88%，镜像复利闭环完成度约 47%，完整理想态完成度约 57%。剩余主要矛盾已经
+结论：基础设施准备度约 88%，镜像复利闭环完成度约 48%，完整理想态完成度约 57%。剩余主要矛盾已经
 从“能否安全执行和取证”转向“能否把可信 observation 持续蒸馏成可校准、可拒答、可删除的业务拟合资产”。
 
 ### 3.1 2026-07-24 Scenario 编译期闭包迭代差距复评
@@ -841,19 +841,26 @@ Spring CGLIB 代理后才失效的装配回归。
 这次关闭的是“聚合执行可恢复”病根，不是发布治理终点。当前 aggregate 状态机
 采用可观测的 `ACTIVE/COMPLETED + lease/cursor` 投影，而不是暴露没有外部消费
 价值的瞬态枚举。受保护 run/evidence-read 的成功与失败已接入既有 payload-free
-operation audit，最终 run 的 evidence/request/audit 同事务失败关闭；尚缺内部
-claim/checkpoint/takeover 生命周期审计、retention/legal hold、
-WORM/transparency anchor 和 ANEKE workbook seed，所以
+operation audit；`CLAIMED/TAKEN_OVER/CHECKPOINTED/RELEASED/COMPLETED`
+也进入数据库赋时的 append-only lifecycle audit。最终 run 的
+evidence/request/lifecycle/operation audit 同事务失败关闭；尚缺
+retention/legal hold、deletion proof、WORM/transparency anchor 和 ANEKE
+workbook seed，所以
 `mirrorScenarioRehearsalEvidenceApi=true` 但
-`mirrorScenarioRehearsalEvidence=false` 保持不变。Scenario/Rehearsal 从 55%
-上调至 64%，固定权重总分从 55.27% 上调至 56.71%，距理想态 43.29%。
+`mirrorScenarioRehearsalEvidence=false` 保持不变。Scenario/Rehearsal 在耐久
+协调里程碑从 55% 上调至 64%，本轮审计闭包再上调至 68%；固定权重总分从
+56.71% 上调至 57.35%，距理想态 42.65%。
 
 下一条最短路径是让 aggregate evidence 可被治理系统可靠消费：在已完成的
-protected operation terminal audit 之下，把
-claim/checkpoint/takeover/release 等内部转换写入 payload-free lifecycle audit，
-定义 retention/legal-hold 与删除证明，然后从 verified bundle 确定性投影 ANEKE
+protected operation 与内部 lifecycle audit 之上，定义 retention/legal-hold 与
+删除证明，然后从 verified bundle 确定性投影 ANEKE
 workbook seed。其后再做 batch job、deep link 与 owner UI；Fidelity score
 仍不应抢跑。
+
+内部审计的聚焦门禁为 `18/18`：覆盖 lifecycle 表无 payload 列、完整顺序、epoch
+takeover、checkpoint cursor、terminal evidence fingerprint、跨 scope 隔离、
+审计故障回滚、Spring Bean 装配和真实应用启动。这里的 audit 是状态转换事实，不
+替代签名业务 evidence，也不宣称具备外部 WORM。
 
 ## 4. 目标架构与系统责任
 

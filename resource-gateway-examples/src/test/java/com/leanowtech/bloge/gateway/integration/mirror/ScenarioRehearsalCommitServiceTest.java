@@ -37,7 +37,9 @@ class ScenarioRehearsalCommitServiceTest {
     private AtomicReference<Instant> databaseTime;
     private DatabaseScenarioRehearsalRunRepository requests;
     private DatabaseScenarioRehearsalEvidenceRepository evidence;
-    private DatabaseMirrorOperationAuditRepository audit;
+    private DatabaseScenarioRehearsalLifecycleAuditRepository
+            lifecycleAudit;
+    private DatabaseMirrorOperationAuditRepository operationAudit;
     private ScenarioRehearsalCommitService service;
 
     @BeforeEach
@@ -50,14 +52,20 @@ class ScenarioRehearsalCommitServiceTest {
         transactions = new TransactionTemplate(
                 new DataSourceTransactionManager(database));
         databaseTime = new AtomicReference<>(NOW);
+        lifecycleAudit =
+                new DatabaseScenarioRehearsalLifecycleAuditRepository(
+                        jdbc);
+        lifecycleAudit.init();
         requests = new DatabaseScenarioRehearsalRunRepository(
-                jdbc, mapper, databaseTime::get);
+                jdbc, mapper, lifecycleAudit,
+                databaseTime::get);
         requests.init();
         evidence = new DatabaseScenarioRehearsalEvidenceRepository(
                 jdbc, mapper, integrity());
         evidence.init();
-        audit = new DatabaseMirrorOperationAuditRepository(jdbc);
-        audit.init();
+        operationAudit =
+                new DatabaseMirrorOperationAuditRepository(jdbc);
+        operationAudit.init();
         service = new ScenarioRehearsalCommitService(
                 evidence, requests);
     }
@@ -95,7 +103,7 @@ class ScenarioRehearsalCommitServiceTest {
         assertThat(evidence.find(
                 SCOPE, bundle.attestation().runId()))
                 .contains(bundle);
-        assertThat(audit.recent(SCOPE, 10))
+        assertThat(operationAudit.recent(SCOPE, 10))
                 .singleElement()
                 .satisfies(event -> {
                     assertThat(event.operation()).isEqualTo(
@@ -137,7 +145,7 @@ class ScenarioRehearsalCommitServiceTest {
                     assertThat(state.evidenceBundleFingerprint())
                             .isBlank();
                 });
-        assertThat(audit.recent(SCOPE, 10)).isEmpty();
+        assertThat(operationAudit.recent(SCOPE, 10)).isEmpty();
     }
 
     @Test
@@ -164,7 +172,7 @@ class ScenarioRehearsalCommitServiceTest {
         assertThat(jdbc.queryForObject(
                 "SELECT COUNT(*) FROM scenario_rehearsal_evidence",
                 Integer.class)).isZero();
-        assertThat(audit.recent(SCOPE, 10)).isEmpty();
+        assertThat(operationAudit.recent(SCOPE, 10)).isEmpty();
     }
 
     private ScenarioRehearsalRunRepository.Claim claim(
@@ -224,7 +232,8 @@ class ScenarioRehearsalCommitServiceTest {
 
     private MirrorOperationObservability.Observation observation() {
         return new MirrorOperationObservability(
-                audit, MirrorOperationTelemetry.noop(), () -> 0)
+                operationAudit,
+                MirrorOperationTelemetry.noop(), () -> 0)
                 .start(
                 MirrorOperationAuditEvent.Operation
                         .SCENARIO_REHEARSAL_CREATE,

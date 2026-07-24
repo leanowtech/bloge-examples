@@ -188,15 +188,19 @@ request transition share one transaction, so stale workers cannot publish
 orphan evidence. Protected Scenario run and evidence-read operations also use
 the existing mandatory payload-free audit boundary. A successful run commits
 its audit fact in the same transaction as evidence and request terminalization;
-audit failure rolls the protected result back. The independent Test Kit re-derives nested result
+audit failure rolls the protected result back. Every committed aggregate
+transition also appends a database-timestamped lifecycle fact containing only
+scope, exact artifact references, lease epoch, cursor, reason code, and content
+addresses. Lifecycle audit failure rolls the corresponding state transition
+back. The independent Test Kit re-derives nested result
 addresses, outcomes, summary counters, bundle identity, key policy, and the
 Scenario-specific Ed25519 signature without linking server classes. Outcomes and
 summary counters are server-derived;
 stateful retries reach completed child idempotency before checking a possibly
 advanced Session head. The capability probe therefore reports Scenario
 execution and `mirrorScenarioRehearsalEvidenceApi` as available while keeping
-`mirrorScenarioRehearsalEvidence=false`: internal claim/checkpoint/takeover
-lifecycle audit, retention/legal hold, workbook seed, batch scheduling, and owner UX remain required before this
+`mirrorScenarioRehearsalEvidence=false`: retention/legal hold, deletion proof,
+workbook seed, batch scheduling, and owner UX remain required before this
 becomes publish-gate evidence. See the
 [scenario rehearsal compiler guide](../docs/resource-gateway-scenario-rehearsal-compiler.md).
 

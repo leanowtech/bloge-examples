@@ -13,6 +13,7 @@ import com.leanowtech.bloge.gateway.integration.mirror.DatabaseMirrorRunRequestR
 import com.leanowtech.bloge.gateway.integration.mirror.DatabaseCompiledScenarioRehearsalPlanRepository;
 import com.leanowtech.bloge.gateway.integration.mirror.DatabaseScenarioArtifactRepository;
 import com.leanowtech.bloge.gateway.integration.mirror.DatabaseScenarioRehearsalEvidenceRepository;
+import com.leanowtech.bloge.gateway.integration.mirror.DatabaseScenarioRehearsalLifecycleAuditRepository;
 import com.leanowtech.bloge.gateway.integration.mirror.DatabaseScenarioRehearsalRunRepository;
 import com.leanowtech.bloge.gateway.integration.mirror.CapabilityObservationAdmissionIntegrity;
 import com.leanowtech.bloge.gateway.integration.mirror.CapabilityObservationAdmissionPolicyProvider;
@@ -70,6 +71,7 @@ import com.leanowtech.bloge.gateway.integration.mirror.ScenarioRehearsalCompiler
 import com.leanowtech.bloge.gateway.integration.mirror.ScenarioHandlingAssertionEvaluator;
 import com.leanowtech.bloge.gateway.integration.mirror.ScenarioRehearsalEvidenceIntegrityService;
 import com.leanowtech.bloge.gateway.integration.mirror.ScenarioRehearsalEvidenceRepository;
+import com.leanowtech.bloge.gateway.integration.mirror.ScenarioRehearsalLifecycleAuditRepository;
 import com.leanowtech.bloge.gateway.integration.mirror.ScenarioRehearsalRunRepository;
 import com.leanowtech.bloge.gateway.integration.mirror.MirrorServingGenerationAuthority;
 import com.leanowtech.bloge.gateway.integration.mirror.MirrorServingGenerationIntegrity;
@@ -270,19 +272,37 @@ public class MirrorRuntimeConfiguration {
     }
 
     /**
+     * Creates the append-only payload-free Scenario lifecycle audit.
+     *
+     * @param jdbc transaction-aware application JDBC boundary
+     * @return full-scope lifecycle audit repository
+     */
+    @Bean
+    @ConditionalOnMissingBean
+    public ScenarioRehearsalLifecycleAuditRepository
+    scenarioRehearsalLifecycleAuditRepository(
+            JdbcTemplate jdbc) {
+        return new DatabaseScenarioRehearsalLifecycleAuditRepository(
+                jdbc);
+    }
+
+    /**
      * Creates the database-clock aggregate lease and case-progress coordinator.
      *
      * @param jdbc transaction-aware application JDBC boundary
      * @param objectMapper canonical protocol mapper
+     * @param lifecycleAudit mandatory payload-free transition audit
      * @return full-scope durable Scenario rehearsal request repository
      */
     @Bean
     @ConditionalOnMissingBean
     public ScenarioRehearsalRunRepository
     scenarioRehearsalRunRepository(
-            JdbcTemplate jdbc, ObjectMapper objectMapper) {
+            JdbcTemplate jdbc,
+            ObjectMapper objectMapper,
+            ScenarioRehearsalLifecycleAuditRepository lifecycleAudit) {
         return new DatabaseScenarioRehearsalRunRepository(
-                jdbc, objectMapper);
+                jdbc, objectMapper, lifecycleAudit);
     }
 
     /** Creates the append-only payload-free compiled rehearsal-plan registry. */

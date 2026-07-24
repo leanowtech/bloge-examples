@@ -35,6 +35,8 @@ class DatabaseScenarioRehearsalRunRepositoryTest {
     private JdbcTemplate jdbc;
     private TransactionTemplate transactions;
     private AtomicReference<Instant> databaseTime;
+    private DatabaseScenarioRehearsalLifecycleAuditRepository
+            lifecycleAudit;
     private DatabaseScenarioRehearsalRunRepository repository;
 
     @BeforeEach
@@ -47,8 +49,13 @@ class DatabaseScenarioRehearsalRunRepositoryTest {
         transactions = new TransactionTemplate(
                 new DataSourceTransactionManager(database));
         databaseTime = new AtomicReference<>(NOW);
+        lifecycleAudit =
+                new DatabaseScenarioRehearsalLifecycleAuditRepository(
+                        jdbc);
+        lifecycleAudit.init();
         repository = new DatabaseScenarioRehearsalRunRepository(
-                jdbc, mapper, databaseTime::get);
+                jdbc, mapper, lifecycleAudit,
+                databaseTime::get);
         repository.init();
     }
 
@@ -67,7 +74,8 @@ class DatabaseScenarioRehearsalRunRepositoryTest {
 
         DatabaseScenarioRehearsalRunRepository restarted =
                 new DatabaseScenarioRehearsalRunRepository(
-                        jdbc, mapper, databaseTime::get);
+                        jdbc, mapper, lifecycleAudit,
+                        databaseTime::get);
         restarted.init();
         databaseTime.set(NOW.plusSeconds(30));
         ScenarioRehearsalRunRepository.Claim takeover =
@@ -102,11 +110,39 @@ class DatabaseScenarioRehearsalRunRepositoryTest {
                 "SCENARIO_REHEARSAL_RUN_REQUESTS");
         List<String> progressColumns = columns(
                 "SCENARIO_REHEARSAL_CASE_PROGRESS");
+        List<String> lifecycleColumns = columns(
+                "SCENARIO_REHEARSAL_LIFECYCLE_AUDIT");
         assertThat(requestColumns).noneMatch(
                 DatabaseScenarioRehearsalRunRepositoryTest::businessPayloadColumn);
         assertThat(progressColumns).noneMatch(
                 DatabaseScenarioRehearsalRunRepositoryTest::businessPayloadColumn);
+        assertThat(lifecycleColumns).noneMatch(
+                DatabaseScenarioRehearsalRunRepositoryTest::businessPayloadColumn);
         assertThat(progressColumns).contains("RESULT_JSON");
+        assertThat(lifecycleColumns).doesNotContain("RESULT_JSON");
+        assertThat(lifecycleAudit.lifecycle(
+                SCOPE, registration().requestId(), 20))
+                .extracting(
+                        ScenarioRehearsalLifecycleAuditEvent::transition,
+                        ScenarioRehearsalLifecycleAuditEvent::leaseEpoch,
+                        ScenarioRehearsalLifecycleAuditEvent::nextCaseIndex)
+                .containsExactly(
+                        org.assertj.core.groups.Tuple.tuple(
+                                ScenarioRehearsalLifecycleAuditEvent
+                                        .Transition.CLAIMED,
+                                1L, 0),
+                        org.assertj.core.groups.Tuple.tuple(
+                                ScenarioRehearsalLifecycleAuditEvent
+                                        .Transition.CHECKPOINTED,
+                                1L, 1),
+                        org.assertj.core.groups.Tuple.tuple(
+                                ScenarioRehearsalLifecycleAuditEvent
+                                        .Transition.TAKEN_OVER,
+                                2L, 1),
+                        org.assertj.core.groups.Tuple.tuple(
+                                ScenarioRehearsalLifecycleAuditEvent
+                                        .Transition.COMPLETED,
+                                2L, 1));
     }
 
     @Test
@@ -368,6 +404,44 @@ class DatabaseScenarioRehearsalRunRepositoryTest {
         assertThat(jdbc.queryForObject(
                 "SELECT COUNT(*) FROM scenario_rehearsal_run_requests",
                 Integer.class)).isEqualTo(1);
+    }
+
+    @Test
+    void rollsBackAggregateStateWhenMandatoryLifecycleAuditFails() {
+        ScenarioRehearsalLifecycleAuditRepository unavailable =
+                new ScenarioRehearsalLifecycleAuditRepository() {
+                    @Override
+                    public ScenarioRehearsalLifecycleAuditEvent append(
+                            ScenarioRehearsalLifecycleAuditEvent event) {
+                        throw new IllegalStateException(
+                                "lifecycle audit unavailable");
+                    }
+
+                    @Override
+                    public List<ScenarioRehearsalLifecycleAuditEvent>
+                    lifecycle(
+                            CapabilitySnapshot.Scope scope,
+                            String requestId,
+                            int limit) {
+                        return List.of();
+                    }
+                };
+        DatabaseScenarioRehearsalRunRepository guarded =
+                new DatabaseScenarioRehearsalRunRepository(
+                        jdbc, mapper, unavailable,
+                        databaseTime::get);
+        guarded.init();
+
+        assertThatThrownBy(() ->
+                transactions.execute(status -> guarded.claim(
+                        registration(),
+                        "owner-a",
+                        Duration.ofSeconds(30))))
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessageContaining("audit unavailable");
+        assertThat(jdbc.queryForObject(
+                "SELECT COUNT(*) FROM scenario_rehearsal_run_requests",
+                Integer.class)).isZero();
     }
 
     private ScenarioRehearsalRunRepository.Claim claim(
