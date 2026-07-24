@@ -14,6 +14,7 @@ import com.leanowtech.bloge.gateway.integration.mirror.DatabaseCompiledScenarioR
 import com.leanowtech.bloge.gateway.integration.mirror.DatabaseScenarioArtifactRepository;
 import com.leanowtech.bloge.gateway.integration.mirror.DatabaseScenarioRehearsalBatchEvidenceRepository;
 import com.leanowtech.bloge.gateway.integration.mirror.DatabaseScenarioRehearsalBatchLifecycleAuditRepository;
+import com.leanowtech.bloge.gateway.integration.mirror.DatabaseScenarioRehearsalBatchRetentionRepository;
 import com.leanowtech.bloge.gateway.integration.mirror.DatabaseScenarioRehearsalEvidenceRepository;
 import com.leanowtech.bloge.gateway.integration.mirror.DatabaseScenarioRehearsalBatchRepository;
 import com.leanowtech.bloge.gateway.integration.mirror.DatabaseScenarioRehearsalLifecycleAuditRepository;
@@ -82,6 +83,7 @@ import com.leanowtech.bloge.gateway.integration.mirror.ScenarioRehearsalBatchLif
 import com.leanowtech.bloge.gateway.integration.mirror.ScenarioRehearsalBatchCompiler;
 import com.leanowtech.bloge.gateway.integration.mirror.ScenarioRehearsalBatchPolicy;
 import com.leanowtech.bloge.gateway.integration.mirror.ScenarioRehearsalBatchRepository;
+import com.leanowtech.bloge.gateway.integration.mirror.ScenarioRehearsalBatchRetentionRepository;
 import com.leanowtech.bloge.gateway.integration.mirror.ScenarioRehearsalBatchScheduler;
 import com.leanowtech.bloge.gateway.integration.mirror.ScenarioRehearsalBatchService;
 import com.leanowtech.bloge.gateway.integration.mirror.ScenarioRehearsalBatchWorker;
@@ -376,6 +378,27 @@ public class MirrorRuntimeConfiguration {
                 jdbc, objectMapper, integrity);
     }
 
+    /**
+     * Creates the signed multi-hold retention and logical-deletion control plane for batches.
+     *
+     * @param jdbc transaction-aware application JDBC boundary
+     * @param objectMapper canonical protocol mapper
+     * @param evidenceSigner governed retention-event signer
+     * @param evidence independently verifying terminal batch evidence
+     * @return full-scope Scenario batch retention repository
+     */
+    @Bean
+    @ConditionalOnMissingBean
+    public ScenarioRehearsalBatchRetentionRepository
+    scenarioRehearsalBatchRetentionRepository(
+            JdbcTemplate jdbc,
+            ObjectMapper objectMapper,
+            VisualEvidenceSigner evidenceSigner,
+            ScenarioRehearsalBatchEvidenceRepository evidence) {
+        return new DatabaseScenarioRehearsalBatchRetentionRepository(
+                jdbc, objectMapper, evidenceSigner, evidence);
+    }
+
     /** Creates the fail-closed atomic terminal batch evidence publisher. */
     @Bean
     @ConditionalOnMissingBean
@@ -384,9 +407,10 @@ public class MirrorRuntimeConfiguration {
             ScenarioRehearsalEvidenceRepository childEvidence,
             ScenarioRehearsalBatchEvidenceIntegrityService
                     integrity,
-            ScenarioRehearsalBatchEvidenceRepository batches) {
+            ScenarioRehearsalBatchEvidenceRepository batches,
+            ScenarioRehearsalBatchRetentionRepository retention) {
         return new ScenarioRehearsalBatchEvidencePublisher(
-                childEvidence, integrity, batches);
+                childEvidence, integrity, batches, retention);
     }
 
     /** Creates the append-only payload-free Scenario batch lifecycle audit. */

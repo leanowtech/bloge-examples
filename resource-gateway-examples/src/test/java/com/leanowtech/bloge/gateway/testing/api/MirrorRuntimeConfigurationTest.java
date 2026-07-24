@@ -20,6 +20,7 @@ import com.leanowtech.bloge.gateway.integration.mirror.ScenarioArtifactRepositor
 import com.leanowtech.bloge.gateway.integration.mirror.ScenarioRehearsalBatchCompiler;
 import com.leanowtech.bloge.gateway.integration.mirror.ScenarioRehearsalBatchPolicy;
 import com.leanowtech.bloge.gateway.integration.mirror.ScenarioRehearsalBatchRepository;
+import com.leanowtech.bloge.gateway.integration.mirror.ScenarioRehearsalBatchRetentionRepository;
 import com.leanowtech.bloge.gateway.integration.mirror.ScenarioRehearsalBatchScheduler;
 import com.leanowtech.bloge.gateway.integration.mirror.ScenarioRehearsalBatchService;
 import com.leanowtech.bloge.gateway.integration.mirror.ScenarioRehearsalBatchWorker;
@@ -227,6 +228,8 @@ class MirrorRuntimeConfigurationTest {
         assertThat(context.getBeansOfType(
                 ScenarioRehearsalBatchRepository.class)).hasSize(1);
         assertThat(context.getBeansOfType(
+                ScenarioRehearsalBatchRetentionRepository.class)).hasSize(1);
+        assertThat(context.getBeansOfType(
                 ScenarioRehearsalBatchCompiler.class)).hasSize(1);
         assertThat(context.getBeansOfType(
                 ScenarioRehearsalBatchService.class)).hasSize(1);
@@ -339,6 +342,8 @@ class MirrorRuntimeConfigurationTest {
                 ScenarioRehearsalBatchPolicy.class)).isEmpty();
         assertThat(context.getBeansOfType(
                 ScenarioRehearsalBatchRepository.class)).isEmpty();
+        assertThat(context.getBeansOfType(
+                ScenarioRehearsalBatchRetentionRepository.class)).isEmpty();
         assertThat(context.getBeansOfType(
                 ScenarioRehearsalBatchCompiler.class)).isEmpty();
         assertThat(context.getBeansOfType(

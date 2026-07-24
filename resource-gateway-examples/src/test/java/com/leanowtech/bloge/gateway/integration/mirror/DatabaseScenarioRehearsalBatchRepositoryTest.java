@@ -22,6 +22,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.argThat;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.atLeastOnce;
 import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.mock;
@@ -59,7 +60,7 @@ class DatabaseScenarioRehearsalBatchRepositoryTest {
         when(evidence.bundleFingerprint())
                 .thenReturn("sha256:" + "b".repeat(64));
         when(evidencePublisher.publish(
-                any(), any(), any(), any()))
+                any(), any(), any(), any(), any()))
                 .thenReturn(evidence);
         lifecycleAudit = mock(
                 ScenarioRehearsalBatchLifecycleAuditRepository.class);
@@ -289,15 +290,16 @@ class DatabaseScenarioRehearsalBatchRepositoryTest {
         assertThat(completed.summary().passedItems())
                 .isEqualTo(1);
         verify(evidencePublisher).publish(
-                submission.request(),
-                submission.manifest(),
-                completed,
-                repository.page(
+                eq(submission.request()),
+                eq(submission.manifest()),
+                eq(completed),
+                eq(repository.page(
                         SCOPE,
                         completed.jobId(),
                         0,
                         10,
-                        policy()).items());
+                        policy()).items()),
+                any());
         verify(lifecycleAudit, atLeastOnce()).append(argThat(
                 event -> event.transition()
                         == ScenarioRehearsalBatchLifecycleAuditEvent
@@ -383,7 +385,7 @@ class DatabaseScenarioRehearsalBatchRepositoryTest {
         doThrow(new IllegalStateException(
                 "signing unavailable"))
                 .when(evidencePublisher)
-                .publish(any(), any(), any(), any());
+                .publish(any(), any(), any(), any(), any());
 
         assertThatThrownBy(() -> repository.completeItem(
                 claim.lease(),
@@ -599,15 +601,16 @@ class DatabaseScenarioRehearsalBatchRepositoryTest {
                 ScenarioRehearsalBatchJob.Status.CANCELLED);
         assertThat(replay.idempotentReplay()).isTrue();
         verify(evidencePublisher).publish(
-                queued.request(),
-                queued.manifest(),
-                first.job(),
-                repository.page(
+                eq(queued.request()),
+                eq(queued.manifest()),
+                eq(first.job()),
+                eq(repository.page(
                         SCOPE,
                         job.jobId(),
                         0,
                         10,
-                        policy()).items());
+                        policy()).items()),
+                any());
         verify(lifecycleAudit, atLeastOnce()).append(argThat(
                 event -> event.transition()
                         == ScenarioRehearsalBatchLifecycleAuditEvent

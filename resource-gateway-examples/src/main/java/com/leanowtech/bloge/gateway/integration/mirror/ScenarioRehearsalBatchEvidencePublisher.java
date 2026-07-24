@@ -1,5 +1,6 @@
 package com.leanowtech.bloge.gateway.integration.mirror;
 
+import java.time.Instant;
 import java.util.List;
 import java.util.Objects;
 
@@ -19,6 +20,8 @@ public final class ScenarioRehearsalBatchEvidencePublisher {
             integrity;
     private final ScenarioRehearsalBatchEvidenceRepository
             batches;
+    private final ScenarioRehearsalBatchRetentionRepository
+            retention;
 
     /**
      * Creates the atomic terminal evidence publisher.
@@ -26,17 +29,21 @@ public final class ScenarioRehearsalBatchEvidencePublisher {
      * @param childEvidence independently verifying aggregate evidence repository
      * @param integrity batch signature and content-address authority
      * @param batches append-only batch evidence repository
+     * @param retention signed retention and logical-deletion authority
      */
     public ScenarioRehearsalBatchEvidencePublisher(
             ScenarioRehearsalEvidenceRepository childEvidence,
             ScenarioRehearsalBatchEvidenceIntegrityService integrity,
-            ScenarioRehearsalBatchEvidenceRepository batches) {
+            ScenarioRehearsalBatchEvidenceRepository batches,
+            ScenarioRehearsalBatchRetentionRepository retention) {
         this.childEvidence = Objects.requireNonNull(
                 childEvidence, "childEvidence");
         this.integrity = Objects.requireNonNull(
                 integrity, "integrity");
         this.batches = Objects.requireNonNull(
                 batches, "batches");
+        this.retention = Objects.requireNonNull(
+                retention, "retention");
     }
 
     /**
@@ -46,13 +53,15 @@ public final class ScenarioRehearsalBatchEvidencePublisher {
      * @param manifest immutable exact-plan closure
      * @param job terminal integrity-sealed job
      * @param items complete ordered terminal items
+     * @param retainUntil immutable minimum batch retention boundary
      * @return inserted or exact idempotently existing bundle
      */
     public ScenarioRehearsalBatchEvidenceBundle publish(
             ScenarioRehearsalBatchRequest request,
             ScenarioRehearsalBatchManifest manifest,
             ScenarioRehearsalBatchJob job,
-            List<ScenarioRehearsalBatchItemPage.Item> items) {
+            List<ScenarioRehearsalBatchItemPage.Item> items,
+            Instant retainUntil) {
         List<ScenarioRehearsalBatchItemPage.Item> exactItems =
                 items == null ? List.of() : List.copyOf(items);
         for (ScenarioRehearsalBatchItemPage.Item item
@@ -86,6 +95,12 @@ public final class ScenarioRehearsalBatchEvidencePublisher {
                     "Scenario batch evidence could not be signed and verified: "
                             + sealed.failureCode());
         }
-        return batches.create(sealed.bundle());
+        ScenarioRehearsalBatchEvidenceBundle persisted =
+                batches.create(sealed.bundle());
+        retention.register(
+                persisted,
+                Objects.requireNonNull(
+                        retainUntil, "retainUntil"));
+        return persisted;
     }
 }

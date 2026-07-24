@@ -114,6 +114,8 @@ final class CapabilityMirrorSchemaValidator {
             "scenario-rehearsal-purge-command-v1.schema.json",
             "scenario-rehearsal-retention-event-v1.schema.json",
             "scenario-rehearsal-retention-state-v1.schema.json",
+            "scenario-rehearsal-batch-retention-event-v1.schema.json",
+            "scenario-rehearsal-batch-retention-state-v1.schema.json",
             "scenario-rehearsal-workbook-seed-v1.schema.json",
             "scenario-case-v1.schema.json",
             "scenario-pack-v1.schema.json",

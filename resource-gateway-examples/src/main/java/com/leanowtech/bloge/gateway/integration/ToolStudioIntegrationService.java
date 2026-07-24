@@ -436,6 +436,15 @@ public class ToolStudioIntegrationService {
                 "mirrorScenarioRehearsalBatchEvidence",
                 mirrorPlanReady && mirrorExecutionApi);
         features.put(
+                "mirrorScenarioRehearsalBatchRetentionApi",
+                mirrorPlanReady && mirrorExecutionApi);
+        features.put(
+                "mirrorScenarioRehearsalBatchLegalHold",
+                mirrorPlanReady && mirrorExecutionApi);
+        features.put(
+                "mirrorScenarioRehearsalBatchDeletionProof",
+                mirrorPlanReady && mirrorExecutionApi);
+        features.put(
                 "mirrorScenarioRehearsalBatchScheduling",
                 mirrorPlanReady
                         && mirrorExecutionApi
@@ -967,6 +976,18 @@ public class ToolStudioIntegrationService {
                                 com.leanowtech.bloge.gateway.integration.mirror
                                         .ScenarioRehearsalBatchEvidenceBundle
                                         .SCHEMA_VERSION));
+                supportedObjects.put(
+                        "scenarioRehearsalBatchRetentionEvent",
+                        List.of(
+                                com.leanowtech.bloge.gateway.integration.mirror
+                                        .ScenarioRehearsalBatchRetentionEvent
+                                        .SCHEMA_VERSION));
+                supportedObjects.put(
+                        "scenarioRehearsalBatchRetentionState",
+                        List.of(
+                                com.leanowtech.bloge.gateway.integration.mirror
+                                        .ScenarioRehearsalBatchRetentionState
+                                        .SCHEMA_VERSION));
             }
         }
         if (mirrorExecutionApi) {
@@ -1125,6 +1146,18 @@ public class ToolStudioIntegrationService {
                 endpoints.add(new IntegrationCapabilities.Endpoint(
                         "POST",
                         "/api/mirror/rehearsal-jobs/{jobId}/cancellations"));
+                endpoints.add(new IntegrationCapabilities.Endpoint(
+                        "GET",
+                        "/api/mirror/rehearsal-jobs/{jobId}/retention"));
+                endpoints.add(new IntegrationCapabilities.Endpoint(
+                        "POST",
+                        "/api/mirror/rehearsal-jobs/{jobId}/retention/holds"));
+                endpoints.add(new IntegrationCapabilities.Endpoint(
+                        "POST",
+                        "/api/mirror/rehearsal-jobs/{jobId}/retention/hold-releases"));
+                endpoints.add(new IntegrationCapabilities.Endpoint(
+                        "POST",
+                        "/api/mirror/rehearsal-jobs/{jobId}/retention/purge"));
             }
         }
         if (mirrorExecutionApi) {

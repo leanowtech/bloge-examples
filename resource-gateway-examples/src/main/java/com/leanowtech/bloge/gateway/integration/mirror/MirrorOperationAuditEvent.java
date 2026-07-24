@@ -80,6 +80,14 @@ public record MirrorOperationAuditEvent(
         SCENARIO_REHEARSAL_BATCH_EVIDENCE_READ,
         /** Record one exactly replayable cooperative Scenario batch cancellation. */
         SCENARIO_REHEARSAL_BATCH_CANCEL,
+        /** Read one signed Scenario batch retention projection. */
+        SCENARIO_REHEARSAL_BATCH_RETENTION_READ,
+        /** Place one independent Scenario batch legal hold. */
+        SCENARIO_REHEARSAL_BATCH_HOLD_PLACE,
+        /** Release one exact Scenario batch legal hold. */
+        SCENARIO_REHEARSAL_BATCH_HOLD_RELEASE,
+        /** Delete one eligible Scenario batch aggregate and issue a proof. */
+        SCENARIO_REHEARSAL_BATCH_EVIDENCE_PURGE,
         /** Read one signed Scenario aggregate retention projection. */
         SCENARIO_RETENTION_READ,
         /** Place one independent Scenario aggregate legal hold. */

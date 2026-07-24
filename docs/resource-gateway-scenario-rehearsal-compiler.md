@@ -37,7 +37,8 @@ Fixture、MirrorPlan 和可选 Session checkpoint 绑定成不可变执行许可
 | autonomous batch scheduling | 可用（显式非生产开关） | 单地域分区、固定 lane、有界 fixed-delay poll、启动配置校验、动态 readiness、停机 drain 和逐 case heartbeat/cancel/deadline |
 | signed batch evidence/index | 可用 | 请求、冻结 manifest、终态 job、有序 item 与 child evidence/workbook ref 形成 Ed25519 签名闭包；Test Kit 在返回前独立重算 |
 | batch operation/lifecycle audit | 可用 | submit/read/evidence/cancel 使用强制 payload-free operation audit；低频队列转换使用数据库赋时 append-only lifecycle audit，并与状态写同事务 |
-| batch retention | 未交付 | 尚无 batch legal hold、最短保留边界、删除证明和独立 policy authority；不得套用 aggregate retention 或级联删除 child |
+| `ScenarioRehearsalBatchRetentionEvent/State.v1` | 可用 | 准入时冻结不可缩短的批次保留下限，提供多重独立 hold、签名事件链、精确删除计数和逻辑删除证明 |
+| batch retention API/Test Kit client | 可用 | read/place/release/purge 使用独立 purpose；客户端在返回前重算投影闭包、事件指纹、密钥策略和 Ed25519 签名 |
 | 可作为生产发布门禁的 Scenario evidence | 未交付 | 本地 gate-consumable closure 已完成；尚无企业 retention policy authority、WORM/外部锚、消费者认证和环境级门禁 |
 
 当前链路已经解决“执行前冻结什么、运行时从哪里取值、每个结果依据什么证据”
@@ -46,6 +47,10 @@ Fixture、MirrorPlan 和可选 Session checkpoint 绑定成不可变执行许可
 checkpoint；进程退出后，同 request id 可由下一副本从首个未完成 case 接续。
 终态证据与 retention registration 同事务提交，默认最短保留 30 天；到期后只有
 `PAYLOAD_RETENTION_ADMIN` 且不存在任何 active hold 才能删除 aggregate evidence。
+批次终态也把 evidence、retention registration、job/item 终态和 lifecycle audit
+放在同一事务；批次保留下限在准入时按 `deadlineAt + terminalRetention` 冻结，
+不会因提前完成而缩短。批次 purge 只删除 job、全部 item 和 batch evidence，
+child Scenario evidence 及 operation/lifecycle audit 明确保留。
 系统现在可从完整已验证闭包确定性导出 ANEKE workbook seed，且独立客户端会再次
 验签、重算来源闭包与 gate decision。该本地闭包适合 test/staging 的回归、法律
 保全、正确性工作簿导入和门禁联调；企业策略权威、WORM/外部锚与消费者环境认证
@@ -121,6 +126,9 @@ curl -sS http://localhost:8080/api/integration/capabilities
 | `mirrorScenarioRehearsalBatchApi` | `true` |
 | `mirrorScenarioRehearsalBatchCooperativeControl` | `true` |
 | `mirrorScenarioRehearsalBatchEvidence` | `true` |
+| `mirrorScenarioRehearsalBatchRetentionApi` | `true` |
+| `mirrorScenarioRehearsalBatchLegalHold` | `true` |
+| `mirrorScenarioRehearsalBatchDeletionProof` | `true` |
 | `mirrorScenarioRehearsalBatchScheduling` | 默认 `false`；使用 `--scenario-batch` 且 scheduler 健康时为 `true` |
 | `mirrorScenarioRehearsalEvidence` | `false` |
 
@@ -213,9 +221,14 @@ ScenarioPack
 | `GET /api/mirror/rehearsal-jobs/{jobId}/items` | `MIRROR_REHEARSAL_BATCH_READ` | 使用 `startIndex` + `limit` 读取稳定 manifest-index 页 |
 | `GET /api/mirror/rehearsal-jobs/{jobId}/evidence` | `MIRROR_REHEARSAL_BATCH_EVIDENCE_READ` | 读取并复验请求、manifest、终态 job、全部 item ref 的签名批次闭包 |
 | `POST /api/mirror/rehearsal-jobs/{jobId}/cancellations` | `MIRROR_REHEARSAL_BATCH_CANCEL` | 记录幂等 cooperative cancellation intent |
+| `GET /api/mirror/rehearsal-jobs/{jobId}/retention` | `MIRROR_REHEARSAL_RETENTION_READ` | 重建并验证 batch retention projection 与最新签名事件 |
+| `POST /api/mirror/rehearsal-jobs/{jobId}/retention/holds` | `MIRROR_REHEARSAL_LEGAL_HOLD` | 放置一个独立 batch legal hold |
+| `POST /api/mirror/rehearsal-jobs/{jobId}/retention/hold-releases` | `MIRROR_REHEARSAL_LEGAL_HOLD` | 只释放指定 hold，不影响其他 active hold |
+| `POST /api/mirror/rehearsal-jobs/{jobId}/retention/purge` | `MIRROR_REHEARSAL_RETENTION_ADMIN` | 到期且无 hold 时删除 batch closure 并返回签名逻辑删除证明 |
 
 同一 scope、kind、id、revision 的相同内容重试是幂等的；不同 fingerprint
-是不可变修订冲突。API 不提供 `latest`、覆盖更新或删除语义。
+是不可变修订冲突。资产注册和编译 API 不提供 `latest` 或覆盖更新；删除只能通过
+独立权限、保留期和法律保全约束下的 retention purge 协议。
 
 严格 decoder 在构造领域对象前拒绝：
 
@@ -629,7 +642,7 @@ owner/epoch/item fence，写入单调 heartbeat count 与 next-case cursor，并
 
 heartbeat 不延长 lease。claim 已按 immutable compiled-plan timeout 加 commit reserve
 一次性分配权限；允许 checkpoint 无限续期会破坏测试的有界性。当前仍不能物理终止
-不合作的 operator，也尚无 batch retention 和 PostgreSQL 多副本认证。调用方必须同时检查
+不合作的 operator，也尚无 PostgreSQL 多副本认证。调用方必须同时检查
 `mirrorScenarioRehearsalBatchCooperativeControl` 与 scheduling capability，不能只看
 API 是否存在。
 
@@ -658,6 +671,72 @@ policy 和 Ed25519 signature。`ScenarioRehearsalBatchEvidenceVerifier` 也可�
 `TERMINALIZED`。它绑定完整 scope、job/request/manifest、item/attempt、
 lease epoch、稳定 reason 和 evidence fingerprint；fixture、业务输入输出、凭据、
 异常文本和栈不可表示。heartbeat 是高频运行信号，不进入 lifecycle audit。
+
+批次 retention registration 与 signed batch evidence、terminal job/item 和
+`TERMINALIZED` lifecycle event 共用一个事务。准入时数据库已经冻结
+`retainUntil = deadlineAt + terminalRetention`，终态发布只复用该值，因此快速完成
+不会缩短最短保留期，晚完成也不会暗中延长已承诺的删除边界。默认
+`terminalRetention` 为 30 天，当前由本地一致性 policy generation 管理；企业 policy
+authority 尚未交付。
+
+读取与法律保全：
+
+```bash
+curl -sS \
+  -H 'Authorization: Bearer bloge-aneke-demo-token' \
+  -H 'X-Purpose: GOVERNANCE_EVIDENCE_INGESTION' \
+  'http://localhost:8080/api/mirror/rehearsal-jobs/<jobId>/retention'
+
+curl -sS -X POST \
+  -H 'Authorization: Bearer bloge-aneke-demo-token' \
+  -H 'X-Purpose: LEGAL_HOLD' \
+  -H 'Content-Type: application/json' \
+  --data '{
+    "schemaVersion": "resourceGateway.scenarioRehearsalLegalHoldCommand.v1",
+    "commandId": "batch-hold-command-20260725",
+    "holdId": "litigation-case-2026-017",
+    "reasonCode": "RG.MIRROR.REHEARSAL.LITIGATION"
+  }' \
+  'http://localhost:8080/api/mirror/rehearsal-jobs/<jobId>/retention/holds'
+```
+
+释放 hold 使用同一 command shape 和
+`/retention/hold-releases`，但必须使用新的 `commandId`。同一 command 的 exact
+重放是幂等的；语义漂移或复用已经释放的 `holdId` 会失败关闭。到期清除：
+
+```bash
+curl -sS -X POST \
+  -H 'Authorization: Bearer bloge-aneke-demo-token' \
+  -H 'X-Purpose: PAYLOAD_RETENTION_ADMIN' \
+  -H 'Content-Type: application/json' \
+  --data '{
+    "schemaVersion": "resourceGateway.scenarioRehearsalPurgeCommand.v1",
+    "commandId": "batch-purge-command-20260725",
+    "reasonCode": "RG.MIRROR.REHEARSAL.BATCH_RETENTION_EXPIRED"
+  }' \
+  'http://localhost:8080/api/mirror/rehearsal-jobs/<jobId>/retention/purge'
+```
+
+purge 前会重读并复验 signed batch bundle，重算 terminal job 和全部 item
+fingerprint，并要求它们与 evidence index 精确一致。成功事务只删除一条 batch job、
+全部 batch item 和一条 batch evidence；child Scenario evidence、
+operation/lifecycle audit 和 retention event chain 保留。最新 `PURGED` 事件记录
+三类精确删除计数及两个 `RETAINED` disposition。它是数据库逻辑删除证明，不是
+磁盘擦除、备份清除、外部 WORM 或跨地域删除证明。
+
+Java/CI 可让 Test Kit 自动完成 key 获取和独立验证：
+
+```java
+JsonNode state =
+        client.findScenarioRehearsalBatchRetention(jobId);
+JsonNode deletionProof =
+        client.purgeScenarioRehearsalBatch(jobId, purgeCommand);
+```
+
+`placeScenarioRehearsalBatchLegalHold` 和
+`releaseScenarioRehearsalBatchLegalHold` 使用同一严格命令协议。四个入口都会在
+请求离开进程前验证 Schema，并在返回前验证 batch identity、投影/事件闭包、签名
+时间、key lifecycle 和 Ed25519 seal。
 
 ## 9. 失败语义
 
@@ -741,6 +820,8 @@ request、response、实体或 fixture payload。
 - `scenario_rehearsal_batch_items`
 - `scenario_rehearsal_batch_evidence`
 - `scenario_rehearsal_batch_lifecycle_audit`
+- `scenario_rehearsal_batch_retention_states`
+- `scenario_rehearsal_batch_retention_events`
 
 主键覆盖完整 scope、artifact kind、id 和 revision。写入与读取都重算
 canonical fingerprint，并核对数据库索引身份；checkpoint 还会重新验签。
@@ -783,9 +864,8 @@ request `COMPLETED`、lifecycle
 repository 只有在 evidence publisher 成功后才写 job 终态，因此 signer/store
 不可用不会留下 terminal-without-evidence；排队态直接取消也复用相同发布路径。
 每个重要队列转换同时追加 batch lifecycle audit，任一审计写失败都会回滚对应的
-item/job/evidence。该表当前还没有独立 retention state、
-legal hold 和 deletion proof；在这些治理协议交付前不得按 aggregate retention
-策略猜测或级联清除。
+item/job/evidence。batch retention 使用独立 projection 和签名事件链，不借用
+aggregate retention；注册失败会回滚整个批次终态提交。
 
 retention state 是可重建 projection，append-only signed event chain 才是权威。
 每次读取/修改会验签完整链、检查 revision/previous fingerprint、重放 multi-hold
@@ -793,6 +873,11 @@ retention state 是可重建 projection，append-only signed event chain 才是�
 时钟检查 `retainUntil` 和全部 hold，核对 exact evidence fingerprint，删除
 aggregate 两张数据表，写入 `PURGED` 事件并更新 projection。任一步骤或强制
 operation audit 失败都会回滚。
+
+batch purge 使用同样的数据库时钟、multi-hold、幂等命令和签名事件链原则，但在
+删除前额外重算 batch job、全部 item 与 signed evidence index。它只删除三类 batch
+closure 表，保留 child aggregate evidence 及 batch operation/lifecycle audit，并用
+精确计数和 disposition 形成可离线验证的逻辑删除证明。
 
 本地重启后可以按 exact fingerprint 读取同一资产。数据库备份、跨区域恢复、
 WORM、外部 transparency anchor、企业级策略分发和跨地域删除认证仍属于部署
@@ -804,7 +889,7 @@ WORM、外部 transparency anchor、企业级策略分发和跨地域删除认�
 
 ```bash
 mvn -f resource-gateway-examples/pom.xml \
-  -Dtest=ScenarioRehearsalControllerTest,ScenarioRehearsalBatchControllerTest,ScenarioArtifactRequestDecoderTest,ScenarioArtifactRegistryServiceTest,ScenarioRehearsalIntegrationServiceTest,ScenarioRehearsalCompilerTest,ScenarioRehearsalRuntimeServiceTest,ScenarioRehearsalBatchProtocolTest,ScenarioRehearsalBatchManifestTest,ScenarioRehearsalBatchServiceTest,DatabaseScenarioRehearsalBatchRepositoryTest,DatabaseScenarioRehearsalBatchLifecycleAuditRepositoryTest,ScenarioRehearsalBatchEvidenceIntegrityServiceTest,ScenarioRehearsalBatchEvidencePublisherTest,DatabaseScenarioRehearsalBatchEvidenceRepositoryTest,ScenarioRehearsalBatchSchedulerTest,ScenarioRehearsalBatchSchedulerPropertiesTest,ScenarioRehearsalWorkbookSeedTest,ScenarioRehearsalResultProtocolTest,ScenarioRehearsalEvidenceIntegrityServiceTest,DatabaseScenarioRehearsalEvidenceRepositoryTest,DatabaseScenarioRehearsalRunRepositoryTest,ScenarioRehearsalCommitServiceTest,DatabaseScenarioRehearsalRetentionRepositoryTest,ScenarioRehearsalRetentionServiceTest,DatabaseScenarioArtifactRepositoryTest,DatabaseCompiledScenarioRehearsalPlanRepositoryTest,ScenarioPackProtocolTest,MirrorEvidenceIntegrityServiceTest,ScenarioHandlingAssertionEvaluatorTest,MirrorRuntimeConfigurationTest,ToolStudioIntegrationServiceTest,VisualCanvasDemoScriptTest \
+  -Dtest=ScenarioRehearsalControllerTest,ScenarioRehearsalBatchControllerTest,ScenarioArtifactRequestDecoderTest,ScenarioArtifactRegistryServiceTest,ScenarioRehearsalIntegrationServiceTest,ScenarioRehearsalCompilerTest,ScenarioRehearsalRuntimeServiceTest,ScenarioRehearsalBatchProtocolTest,ScenarioRehearsalBatchManifestTest,ScenarioRehearsalBatchServiceTest,DatabaseScenarioRehearsalBatchRepositoryTest,DatabaseScenarioRehearsalBatchLifecycleAuditRepositoryTest,ScenarioRehearsalBatchEvidenceIntegrityServiceTest,ScenarioRehearsalBatchEvidencePublisherTest,DatabaseScenarioRehearsalBatchEvidenceRepositoryTest,DatabaseScenarioRehearsalBatchRetentionRepositoryTest,ScenarioRehearsalBatchRetentionServiceTest,ScenarioRehearsalBatchSchedulerTest,ScenarioRehearsalBatchSchedulerPropertiesTest,ScenarioRehearsalWorkbookSeedTest,ScenarioRehearsalResultProtocolTest,ScenarioRehearsalEvidenceIntegrityServiceTest,DatabaseScenarioRehearsalEvidenceRepositoryTest,DatabaseScenarioRehearsalRunRepositoryTest,ScenarioRehearsalCommitServiceTest,DatabaseScenarioRehearsalRetentionRepositoryTest,ScenarioRehearsalRetentionServiceTest,DatabaseScenarioArtifactRepositoryTest,DatabaseCompiledScenarioRehearsalPlanRepositoryTest,ScenarioPackProtocolTest,MirrorEvidenceIntegrityServiceTest,ScenarioHandlingAssertionEvaluatorTest,MirrorRuntimeConfigurationTest,ToolStudioIntegrationServiceTest,VisualCanvasDemoScriptTest \
   test
 ```
 
@@ -815,11 +900,11 @@ mvn -f resource-gateway-examples/pom.xml clean verify
 mvn -f resource-gateway-test-kit/pom.xml clean verify
 ```
 
-2026-07-25 本轮门禁结果：Resource Gateway `5,112` 项测试零失败、零错误、
-3 项条件跳过（含真实 Chrome DOM/工作流和可执行 Boot JAR）；Test Kit `370` 项
-零失败、零错误，完成 114 个 Mirror Schema 的引用闭包、shaded JAR 和零警告
-公共 JavaDoc。本轮最终源码另通过服务端 batch audit `46/46` 项聚焦验证；Test Kit
-协议未变，沿用最近一次 `15/15` 项聚焦验证。
+2026-07-25 本轮门禁结果：Resource Gateway `5,120` 项测试零失败、零错误、
+3 项条件跳过（含真实 Chrome DOM/工作流和可执行 Boot JAR）；Test Kit `380` 项
+零失败、零错误，完成 116 个 Mirror Schema 的引用闭包与 shaded JAR 打包，公共
+JavaDoc 校验通过。本轮最终源码另通过服务端 batch retention 联合 `35/35` 项与
+Test Kit Schema/verifier/client `10/10` 项聚焦验证。
 
 关键实现与协议：
 
@@ -873,6 +958,8 @@ mvn -f resource-gateway-test-kit/pom.xml clean verify
 - `docs/schemas/resource-gateway-mirror/scenario-rehearsal-batch-evidence-index-v1.schema.json`
 - `docs/schemas/resource-gateway-mirror/scenario-rehearsal-batch-evidence-attestation-v1.schema.json`
 - `docs/schemas/resource-gateway-mirror/scenario-rehearsal-batch-evidence-bundle-v1.schema.json`
+- `docs/schemas/resource-gateway-mirror/scenario-rehearsal-batch-retention-event-v1.schema.json`
+- `docs/schemas/resource-gateway-mirror/scenario-rehearsal-batch-retention-state-v1.schema.json`
 
 独立 consumer 继续使用 `resource-gateway-test-kit` 的
 `ScenarioPackVerifier` 验证 ScenarioPack/Case/Assertion，并使用

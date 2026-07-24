@@ -303,6 +303,12 @@ public final class CapabilityMirrorProtocol {
     /** Rebuildable Scenario evidence retention projection wire version. */
     public static final String SCENARIO_REHEARSAL_RETENTION_STATE_V1 =
             "resourceGateway.scenarioRehearsalRetentionState.v1";
+    /** Signed append-only Scenario batch retention event wire version. */
+    public static final String SCENARIO_REHEARSAL_BATCH_RETENTION_EVENT_V1 =
+            "resourceGateway.scenarioRehearsalBatchRetentionEvent.v1";
+    /** Rebuildable Scenario batch retention projection wire version. */
+    public static final String SCENARIO_REHEARSAL_BATCH_RETENTION_STATE_V1 =
+            "resourceGateway.scenarioRehearsalBatchRetentionState.v1";
     /** Deterministic payload-free ANEKE Scenario correctness-workbook seed wire version. */
     public static final String SCENARIO_REHEARSAL_WORKBOOK_SEED_V1 =
             "resourceGateway.scenarioRehearsalWorkbookSeed.v1";
@@ -688,6 +694,16 @@ public final class CapabilityMirrorProtocol {
     public static final String SCENARIO_REHEARSAL_RETENTION_STATE_SCHEMA_RESOURCE =
             SCHEMA_RESOURCE_ROOT
                     + "scenario-rehearsal-retention-state-v1.schema.json";
+    /** Packaged signed append-only Scenario batch retention event schema. */
+    public static final String
+    SCENARIO_REHEARSAL_BATCH_RETENTION_EVENT_SCHEMA_RESOURCE =
+            SCHEMA_RESOURCE_ROOT
+                    + "scenario-rehearsal-batch-retention-event-v1.schema.json";
+    /** Packaged rebuildable Scenario batch retention projection schema. */
+    public static final String
+    SCENARIO_REHEARSAL_BATCH_RETENTION_STATE_SCHEMA_RESOURCE =
+            SCHEMA_RESOURCE_ROOT
+                    + "scenario-rehearsal-batch-retention-state-v1.schema.json";
     /** Packaged deterministic Scenario correctness-workbook seed schema. */
     public static final String SCENARIO_REHEARSAL_WORKBOOK_SEED_SCHEMA_RESOURCE =
             SCHEMA_RESOURCE_ROOT

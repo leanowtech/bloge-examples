@@ -1,5 +1,6 @@
 package com.leanowtech.bloge.gateway.integration.mirror;
 
+import com.fasterxml.jackson.databind.ObjectMapper;
 import com.leanowtech.bloge.gateway.integration.IntegrationProblemException;
 import com.leanowtech.bloge.gateway.integration.IntegrationRequestContext;
 import org.junit.jupiter.api.Test;
@@ -16,58 +17,64 @@ import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
-class ScenarioRehearsalRetentionServiceTest {
-    private static final String RUN_ID =
-            "scenario-" + "9".repeat(64);
+class ScenarioRehearsalBatchRetentionServiceTest {
+    private static final CapabilitySnapshot.Scope SCOPE =
+            MirrorPersistenceTestFixtures.scope("org-a");
+    private static final String JOB_ID =
+            ScenarioRehearsalBatchIdentity.derive(
+                    new ObjectMapper().findAndRegisterModules(),
+                    SCOPE,
+                    "batch-retention-service");
 
     @Test
-    void auditsEachProtectedRetentionOperationWithExactCoordinates() {
-        ScenarioRehearsalRetentionRepository repository =
-                mock(ScenarioRehearsalRetentionRepository.class);
-        ScenarioRehearsalRetentionState state =
-                mock(ScenarioRehearsalRetentionState.class);
+    void enforcesPurposeAndAuditsEachProtectedRetentionOperation() {
+        ScenarioRehearsalBatchRetentionRepository repository =
+                mock(
+                        ScenarioRehearsalBatchRetentionRepository
+                                .class);
+        ScenarioRehearsalBatchRetentionState state =
+                mock(ScenarioRehearsalBatchRetentionState.class);
         RecordingAuditRepository audit =
                 new RecordingAuditRepository();
-        ScenarioRehearsalRetentionService service =
+        ScenarioRehearsalBatchRetentionService service =
                 service(repository, audit);
-        IntegrationRequestContext identity =
-                identity("MIRROR_REHEARSAL");
+        IntegrationRequestContext read =
+                identity("GOVERNANCE_EVIDENCE_INGESTION");
         IntegrationRequestContext legal =
                 identity("LEGAL_HOLD");
         IntegrationRequestContext admin =
                 identity("PAYLOAD_RETENTION_ADMIN");
-        CapabilitySnapshot.Scope scope =
-                MirrorPersistenceTestFixtures.scope("org-a");
         ScenarioRehearsalLegalHoldCommand hold =
                 new ScenarioRehearsalLegalHoldCommand(
                         "", "hold-command-1", "legal-a",
-                        "RG.MIRROR.REHEARSAL.LITIGATION");
+                        "RG.MIRROR.REHEARSAL_BATCH.LITIGATION");
         ScenarioRehearsalPurgeCommand purge =
                 new ScenarioRehearsalPurgeCommand(
                         "", "purge-command-1",
-                        "RG.MIRROR.REHEARSAL.RETENTION_EXPIRED");
-        when(repository.find(scope, RUN_ID))
+                        "RG.MIRROR.REHEARSAL_BATCH.RETENTION_EXPIRED");
+        when(repository.find(SCOPE, JOB_ID))
                 .thenReturn(Optional.of(state));
         when(repository.placeHold(
-                scope, RUN_ID, hold.commandId(), hold.holdId(),
+                SCOPE, JOB_ID, hold.commandId(), hold.holdId(),
                 legal.actorId(), hold.reasonCode()))
                 .thenReturn(state);
         when(repository.releaseHold(
-                scope, RUN_ID, hold.commandId(), hold.holdId(),
+                SCOPE, JOB_ID, hold.commandId(), hold.holdId(),
                 legal.actorId(), hold.reasonCode()))
                 .thenReturn(state);
         when(repository.purge(
-                scope, RUN_ID, purge.commandId(),
+                SCOPE, JOB_ID, purge.commandId(),
                 admin.actorId(), purge.reasonCode()))
                 .thenReturn(state);
 
-        assertThat(service.find(RUN_ID, identity)).isSameAs(state);
+        assertThat(service.find(
+                JOB_ID, read)).isSameAs(state);
         assertThat(service.placeHold(
-                RUN_ID, hold, legal)).isSameAs(state);
+                JOB_ID, hold, legal)).isSameAs(state);
         assertThat(service.releaseHold(
-                RUN_ID, hold, legal)).isSameAs(state);
+                JOB_ID, hold, legal)).isSameAs(state);
         assertThat(service.purge(
-                RUN_ID, purge, admin)).isSameAs(state);
+                JOB_ID, purge, admin)).isSameAs(state);
 
         assertThat(audit.events)
                 .extracting(
@@ -78,57 +85,57 @@ class ScenarioRehearsalRetentionServiceTest {
                 .containsExactly(
                         org.assertj.core.groups.Tuple.tuple(
                                 MirrorOperationAuditEvent.Operation
-                                        .SCENARIO_RETENTION_READ,
-                                "", RUN_ID,
+                                        .SCENARIO_REHEARSAL_BATCH_RETENTION_READ,
+                                "", JOB_ID,
                                 MirrorOperationAuditEvent.Outcome
                                         .SUCCEEDED),
                         org.assertj.core.groups.Tuple.tuple(
                                 MirrorOperationAuditEvent.Operation
-                                        .SCENARIO_HOLD_PLACE,
-                                "hold-command-1", RUN_ID,
+                                        .SCENARIO_REHEARSAL_BATCH_HOLD_PLACE,
+                                hold.commandId(), JOB_ID,
                                 MirrorOperationAuditEvent.Outcome
                                         .SUCCEEDED),
                         org.assertj.core.groups.Tuple.tuple(
                                 MirrorOperationAuditEvent.Operation
-                                        .SCENARIO_HOLD_RELEASE,
-                                "hold-command-1", RUN_ID,
+                                        .SCENARIO_REHEARSAL_BATCH_HOLD_RELEASE,
+                                hold.commandId(), JOB_ID,
                                 MirrorOperationAuditEvent.Outcome
                                         .SUCCEEDED),
                         org.assertj.core.groups.Tuple.tuple(
                                 MirrorOperationAuditEvent.Operation
-                                        .SCENARIO_EVIDENCE_PURGE,
-                                "purge-command-1", RUN_ID,
+                                        .SCENARIO_REHEARSAL_BATCH_EVIDENCE_PURGE,
+                                purge.commandId(), JOB_ID,
                                 MirrorOperationAuditEvent.Outcome
                                         .SUCCEEDED));
     }
 
     @Test
-    void mapsMissingAndConflictingStateToStablePayloadFreeProblems() {
-        ScenarioRehearsalRetentionRepository repository =
-                mock(ScenarioRehearsalRetentionRepository.class);
+    void mapsMissingConflictAndWrongPurposeToStableProblems() {
+        ScenarioRehearsalBatchRetentionRepository repository =
+                mock(
+                        ScenarioRehearsalBatchRetentionRepository
+                                .class);
         RecordingAuditRepository audit =
                 new RecordingAuditRepository();
-        ScenarioRehearsalRetentionService service =
+        ScenarioRehearsalBatchRetentionService service =
                 service(repository, audit);
-        IntegrationRequestContext identity =
-                identity("MIRROR_REHEARSAL");
+        IntegrationRequestContext read =
+                identity("GOVERNANCE_EVIDENCE_INGESTION");
         IntegrationRequestContext legal =
                 identity("LEGAL_HOLD");
-        CapabilitySnapshot.Scope scope =
-                MirrorPersistenceTestFixtures.scope("org-a");
         ScenarioRehearsalLegalHoldCommand hold =
                 new ScenarioRehearsalLegalHoldCommand(
                         "", "release-command-1", "legal-a",
-                        "RG.MIRROR.REHEARSAL.LITIGATION_COMPLETE");
-        when(repository.find(scope, RUN_ID))
+                        "RG.MIRROR.REHEARSAL_BATCH.LITIGATION_COMPLETE");
+        when(repository.find(SCOPE, JOB_ID))
                 .thenReturn(Optional.empty());
         when(repository.releaseHold(
-                scope, RUN_ID, hold.commandId(), hold.holdId(),
+                SCOPE, JOB_ID, hold.commandId(), hold.holdId(),
                 legal.actorId(), hold.reasonCode()))
                 .thenThrow(new IllegalStateException(
                         "customer legal hold is not active"));
 
-        assertThatThrownBy(() -> service.find(RUN_ID, identity))
+        assertThatThrownBy(() -> service.find(JOB_ID, read))
                 .isInstanceOfSatisfying(
                         IntegrationProblemException.class,
                         failure -> {
@@ -136,10 +143,10 @@ class ScenarioRehearsalRetentionServiceTest {
                                     .isEqualTo(404);
                             assertThat(failure.problem().code())
                                     .isEqualTo(
-                                            "RG.MIRROR.REHEARSAL.RETENTION_NOT_FOUND");
+                                            "RG.MIRROR.REHEARSAL_BATCH.RETENTION_NOT_FOUND");
                         });
         assertThatThrownBy(() -> service.releaseHold(
-                RUN_ID, hold, legal))
+                JOB_ID, hold, legal))
                 .isInstanceOfSatisfying(
                         IntegrationProblemException.class,
                         failure -> {
@@ -147,9 +154,22 @@ class ScenarioRehearsalRetentionServiceTest {
                                     .isEqualTo(409);
                             assertThat(failure.problem().code())
                                     .isEqualTo(
-                                            "RG.MIRROR.REHEARSAL.RETENTION_CONFLICT");
+                                            "RG.MIRROR.REHEARSAL_BATCH.RETENTION_CONFLICT");
                             assertThat(failure.toString())
                                     .doesNotContain("customer");
+                        });
+        assertThatThrownBy(() -> service.placeHold(
+                JOB_ID,
+                hold,
+                identity("MIRROR_REHEARSAL")))
+                .isInstanceOfSatisfying(
+                        IntegrationProblemException.class,
+                        failure -> {
+                            assertThat(failure.problem().status())
+                                    .isEqualTo(403);
+                            assertThat(failure.problem().code())
+                                    .isEqualTo(
+                                            "RG.MIRROR.LEGAL_HOLD_PURPOSE_REQUIRED");
                         });
         assertThat(audit.events)
                 .extracting(
@@ -158,26 +178,32 @@ class ScenarioRehearsalRetentionServiceTest {
                 .containsExactly(
                         org.assertj.core.groups.Tuple.tuple(
                                 MirrorOperationAuditEvent.Outcome.REJECTED,
-                                "RG.MIRROR.REHEARSAL.RETENTION_NOT_FOUND"),
+                                "RG.MIRROR.REHEARSAL_BATCH.RETENTION_NOT_FOUND"),
                         org.assertj.core.groups.Tuple.tuple(
                                 MirrorOperationAuditEvent.Outcome.REJECTED,
-                                "RG.MIRROR.REHEARSAL.RETENTION_CONFLICT"));
+                                "RG.MIRROR.REHEARSAL_BATCH.RETENTION_CONFLICT"),
+                        org.assertj.core.groups.Tuple.tuple(
+                                MirrorOperationAuditEvent.Outcome.REJECTED,
+                                "RG.MIRROR.LEGAL_HOLD_PURPOSE_REQUIRED"));
     }
 
     @Test
-    void invalidRunIdIsRejectedBeforeRepositoryAccess() {
-        ScenarioRehearsalRetentionRepository repository =
-                mock(ScenarioRehearsalRetentionRepository.class);
-        ScenarioRehearsalRetentionService service =
+    void invalidJobIdIsRejectedBeforeRepositoryAccess() {
+        ScenarioRehearsalBatchRetentionRepository repository =
+                mock(
+                        ScenarioRehearsalBatchRetentionRepository
+                                .class);
+        ScenarioRehearsalBatchRetentionService service =
                 service(repository, new RecordingAuditRepository());
 
         assertThatThrownBy(() -> service.find(
-                "run-raw", MirrorPersistenceTestFixtures.identity("org-a")))
+                "job-raw",
+                identity("GOVERNANCE_EVIDENCE_INGESTION")))
                 .isInstanceOfSatisfying(
                         IntegrationProblemException.class,
                         failure -> assertThat(failure.problem().code())
                                 .isEqualTo(
-                                        "RG.MIRROR.REHEARSAL.RUN_ID_INVALID"));
+                                        "RG.MIRROR.REHEARSAL_BATCH.JOB_ID_INVALID"));
         verify(repository,
                 org.mockito.Mockito.never())
                 .find(
@@ -185,10 +211,10 @@ class ScenarioRehearsalRetentionServiceTest {
                         org.mockito.ArgumentMatchers.any());
     }
 
-    private static ScenarioRehearsalRetentionService service(
-            ScenarioRehearsalRetentionRepository repository,
+    private static ScenarioRehearsalBatchRetentionService service(
+            ScenarioRehearsalBatchRetentionRepository repository,
             MirrorOperationAuditRepository audit) {
-        return new ScenarioRehearsalRetentionService(
+        return new ScenarioRehearsalBatchRetentionService(
                 repository,
                 new MirrorOperationObservability(
                         audit,
@@ -198,19 +224,17 @@ class ScenarioRehearsalRetentionServiceTest {
 
     private static IntegrationRequestContext identity(
             String purpose) {
-        CapabilitySnapshot.Scope scope =
-                MirrorPersistenceTestFixtures.scope("org-a");
         return new IntegrationRequestContext(
-                scope.tenantId(),
-                scope.organizationId(),
-                scope.projectId(),
-                scope.environmentId(),
-                scope.region(),
+                SCOPE.tenantId(),
+                SCOPE.organizationId(),
+                SCOPE.projectId(),
+                SCOPE.environmentId(),
+                SCOPE.region(),
                 "SERVICE",
-                "mirror-test-client",
+                "governance-owner",
                 "",
                 purpose,
-                "corr-mirror-test",
+                "corr-batch-retention",
                 Set.of("quality"),
                 "RESTRICTED",
                 "");

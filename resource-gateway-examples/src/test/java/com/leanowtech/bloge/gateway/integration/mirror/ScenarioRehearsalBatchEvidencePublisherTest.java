@@ -3,6 +3,8 @@ package com.leanowtech.bloge.gateway.integration.mirror;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.junit.jupiter.api.Test;
 
+import java.time.Duration;
+import java.time.Instant;
 import java.util.Optional;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -37,6 +39,10 @@ class ScenarioRehearsalBatchEvidencePublisherTest {
                 mock(
                         ScenarioRehearsalBatchEvidenceRepository
                                 .class);
+        ScenarioRehearsalBatchRetentionRepository retention =
+                mock(
+                        ScenarioRehearsalBatchRetentionRepository
+                                .class);
         ScenarioRehearsalBatchEvidenceBundle bundle =
                 mock(ScenarioRehearsalBatchEvidenceBundle.class);
         ScenarioRehearsalBatchEvidenceIntegrityService.SealResult
@@ -68,14 +74,19 @@ class ScenarioRehearsalBatchEvidencePublisherTest {
         when(batches.create(bundle)).thenReturn(bundle);
         ScenarioRehearsalBatchEvidencePublisher publisher =
                 new ScenarioRehearsalBatchEvidencePublisher(
-                        children, integrity, batches);
+                        children, integrity, batches, retention);
+        Instant retainUntil = material.job().completedAt()
+                .plus(Duration.ofDays(30));
 
         assertThat(publisher.publish(
                 material.request(),
                 material.manifest(),
                 material.job(),
-                material.items())).isSameAs(bundle);
+                material.items(),
+                retainUntil)).isSameAs(bundle);
         verify(batches).create(bundle);
+        verify(retention).register(
+                bundle, retainUntil);
     }
 
     @Test
@@ -100,15 +111,97 @@ class ScenarioRehearsalBatchEvidencePublisherTest {
                         integrity,
                         mock(
                                 ScenarioRehearsalBatchEvidenceRepository
+                                        .class),
+                        mock(
+                                ScenarioRehearsalBatchRetentionRepository
                                         .class));
 
         assertThatThrownBy(() -> publisher.publish(
                 material.request(),
                 material.manifest(),
                 material.job(),
-                material.items()))
+                material.items(),
+                Instant.parse("2030-01-01T00:00:00Z")))
                 .isInstanceOf(IllegalStateException.class);
         verify(integrity, never())
                 .seal(any(), any(), any(), any());
+    }
+
+    @Test
+    void retentionRegistrationFailurePropagatesAfterEvidenceAppend() {
+        ScenarioRehearsalBatchEvidenceTestFixtures.Material
+                material =
+                ScenarioRehearsalBatchEvidenceTestFixtures.material(
+                        mapper);
+        ScenarioRehearsalEvidenceRepository children =
+                mock(ScenarioRehearsalEvidenceRepository.class);
+        ScenarioRehearsalEvidenceBundle child =
+                mock(ScenarioRehearsalEvidenceBundle.class);
+        ScenarioRehearsalResult result =
+                mock(ScenarioRehearsalResult.class);
+        ScenarioRehearsalBatchEvidenceIntegrityService integrity =
+                mock(
+                        ScenarioRehearsalBatchEvidenceIntegrityService
+                                .class);
+        ScenarioRehearsalBatchEvidenceRepository batches =
+                mock(
+                        ScenarioRehearsalBatchEvidenceRepository
+                                .class);
+        ScenarioRehearsalBatchRetentionRepository retention =
+                mock(
+                        ScenarioRehearsalBatchRetentionRepository
+                                .class);
+        ScenarioRehearsalBatchEvidenceBundle bundle =
+                mock(ScenarioRehearsalBatchEvidenceBundle.class);
+        ScenarioRehearsalBatchEvidenceIntegrityService.SealResult
+                sealed = mock(
+                ScenarioRehearsalBatchEvidenceIntegrityService
+                        .SealResult.class);
+        ScenarioRehearsalBatchItemPage.Item item =
+                material.items().getFirst();
+        when(children.find(
+                material.job().scope(), item.runId()))
+                .thenReturn(Optional.of(child));
+        when(child.bundleFingerprint()).thenReturn(
+                item.evidenceBundleFingerprint());
+        when(child.result()).thenReturn(result);
+        when(result.scope()).thenReturn(
+                material.job().scope());
+        when(result.requestId()).thenReturn(
+                item.childRequestId());
+        when(result.compiledPlanRef()).thenReturn(
+                item.compiledPlanRef());
+        when(result.outcome()).thenReturn(
+                item.outcome());
+        when(integrity.seal(
+                material.request(),
+                material.manifest(),
+                material.job(),
+                material.items()))
+                .thenReturn(sealed);
+        when(sealed.verified()).thenReturn(true);
+        when(sealed.bundle()).thenReturn(bundle);
+        when(batches.create(bundle)).thenReturn(bundle);
+        Instant retainUntil =
+                Instant.parse("2030-01-01T00:00:00Z");
+        when(retention.register(
+                bundle, retainUntil))
+                .thenThrow(new IllegalStateException(
+                        "retention unavailable"));
+        ScenarioRehearsalBatchEvidencePublisher publisher =
+                new ScenarioRehearsalBatchEvidencePublisher(
+                        children, integrity, batches, retention);
+
+        assertThatThrownBy(() -> publisher.publish(
+                material.request(),
+                material.manifest(),
+                material.job(),
+                material.items(),
+                retainUntil))
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessage("retention unavailable");
+        verify(batches).create(bundle);
+        verify(retention).register(
+                bundle, retainUntil);
     }
 }

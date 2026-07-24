@@ -1982,6 +1982,9 @@ wait_for_ready() {
                         .payload.features.mirrorScenarioRehearsalBatchApi == true
                         and .payload.features.mirrorScenarioRehearsalBatchCooperativeControl == true
                         and .payload.features.mirrorScenarioRehearsalBatchEvidence == true
+                        and .payload.features.mirrorScenarioRehearsalBatchRetentionApi == true
+                        and .payload.features.mirrorScenarioRehearsalBatchLegalHold == true
+                        and .payload.features.mirrorScenarioRehearsalBatchDeletionProof == true
                         and .payload.features.mirrorScenarioRehearsalBatchScheduling == true
                     ' >/dev/null 2>&1; then
                         sleep 2
@@ -1993,6 +1996,12 @@ wait_for_ready() {
                     grep -Eq '"mirrorScenarioRehearsalBatchCooperativeControl"[[:space:]]*:[[:space:]]*true' ||
                     ! printf '%s' "${response}" |
                     grep -Eq '"mirrorScenarioRehearsalBatchEvidence"[[:space:]]*:[[:space:]]*true' ||
+                    ! printf '%s' "${response}" |
+                    grep -Eq '"mirrorScenarioRehearsalBatchRetentionApi"[[:space:]]*:[[:space:]]*true' ||
+                    ! printf '%s' "${response}" |
+                    grep -Eq '"mirrorScenarioRehearsalBatchLegalHold"[[:space:]]*:[[:space:]]*true' ||
+                    ! printf '%s' "${response}" |
+                    grep -Eq '"mirrorScenarioRehearsalBatchDeletionProof"[[:space:]]*:[[:space:]]*true' ||
                     ! printf '%s' "${response}" |
                     grep -Eq '"mirrorScenarioRehearsalBatchScheduling"[[:space:]]*:[[:space:]]*true'; then
                     sleep 2

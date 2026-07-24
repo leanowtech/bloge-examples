@@ -6,7 +6,11 @@ import com.leanowtech.bloge.gateway.integration.mirror.ScenarioRehearsalBatchIte
 import com.leanowtech.bloge.gateway.integration.mirror.ScenarioRehearsalBatchJob;
 import com.leanowtech.bloge.gateway.integration.mirror.ScenarioRehearsalBatchRepository;
 import com.leanowtech.bloge.gateway.integration.mirror.ScenarioRehearsalBatchRequest;
+import com.leanowtech.bloge.gateway.integration.mirror.ScenarioRehearsalBatchRetentionService;
+import com.leanowtech.bloge.gateway.integration.mirror.ScenarioRehearsalBatchRetentionState;
 import com.leanowtech.bloge.gateway.integration.mirror.ScenarioRehearsalBatchService;
+import com.leanowtech.bloge.gateway.integration.mirror.ScenarioRehearsalLegalHoldCommand;
+import com.leanowtech.bloge.gateway.integration.mirror.ScenarioRehearsalPurgeCommand;
 import org.junit.jupiter.api.Test;
 import org.springframework.http.HttpHeaders;
 
@@ -24,6 +28,8 @@ class ScenarioRehearsalBatchControllerTest {
     void authenticatesSubmitReadPageAndCancelWithDedicatedOperations() {
         ScenarioRehearsalBatchService batches =
                 mock(ScenarioRehearsalBatchService.class);
+        ScenarioRehearsalBatchRetentionService retention =
+                mock(ScenarioRehearsalBatchRetentionService.class);
         IntegrationRequestAuthenticator authenticator =
                 mock(IntegrationRequestAuthenticator.class);
         ScenarioArtifactRequestDecoder decoder =
@@ -43,6 +49,16 @@ class ScenarioRehearsalBatchControllerTest {
                 mock(ScenarioRehearsalBatchItemPage.class);
         ScenarioRehearsalBatchEvidenceBundle evidence =
                 mock(ScenarioRehearsalBatchEvidenceBundle.class);
+        ScenarioRehearsalBatchRetentionState retentionState =
+                mock(ScenarioRehearsalBatchRetentionState.class);
+        ScenarioRehearsalLegalHoldCommand hold =
+                new ScenarioRehearsalLegalHoldCommand(
+                        "", "hold-command", "legal-a",
+                        "RG.MIRROR.REHEARSAL_BATCH.LEGAL_HOLD");
+        ScenarioRehearsalPurgeCommand purge =
+                new ScenarioRehearsalPurgeCommand(
+                        "", "purge-command",
+                        "RG.MIRROR.REHEARSAL_BATCH.RETENTION_EXPIRED");
         HttpHeaders headers = new HttpHeaders();
         byte[] raw = "{}".getBytes(StandardCharsets.UTF_8);
         when(job.schemaVersion()).thenReturn(
@@ -51,6 +67,8 @@ class ScenarioRehearsalBatchControllerTest {
                 ScenarioRehearsalBatchItemPage.SCHEMA_VERSION);
         when(evidence.schemaVersion()).thenReturn(
                 ScenarioRehearsalBatchEvidenceBundle.SCHEMA_VERSION);
+        when(retentionState.schemaVersion()).thenReturn(
+                ScenarioRehearsalBatchRetentionState.SCHEMA_VERSION);
         when(authenticator.authenticate(
                 headers,
                 IntegrationOperation
@@ -71,11 +89,30 @@ class ScenarioRehearsalBatchControllerTest {
                 IntegrationOperation
                         .MIRROR_REHEARSAL_BATCH_EVIDENCE_READ))
                 .thenReturn(identity);
+        when(authenticator.authenticate(
+                headers,
+                IntegrationOperation
+                        .MIRROR_REHEARSAL_RETENTION_READ))
+                .thenReturn(identity);
+        when(authenticator.authenticate(
+                headers,
+                IntegrationOperation
+                        .MIRROR_REHEARSAL_LEGAL_HOLD))
+                .thenReturn(identity);
+        when(authenticator.authenticate(
+                headers,
+                IntegrationOperation
+                        .MIRROR_REHEARSAL_RETENTION_ADMIN))
+                .thenReturn(identity);
         when(decoder.decodeBatchRequest(raw, identity))
                 .thenReturn(request);
         when(decoder.decodeBatchCancellationRequest(
                 raw, identity))
                 .thenReturn(cancellation);
+        when(decoder.decodeLegalHoldCommand(raw, identity))
+                .thenReturn(hold);
+        when(decoder.decodePurgeCommand(raw, identity))
+                .thenReturn(purge);
         when(batches.submit(request, identity))
                 .thenReturn(
                         new ScenarioRehearsalBatchRepository
@@ -95,9 +132,21 @@ class ScenarioRehearsalBatchControllerTest {
                 .thenReturn(
                         new ScenarioRehearsalBatchRepository
                                 .SubmissionResult(job, false));
+        when(retention.find("job-a", identity))
+                .thenReturn(retentionState);
+        when(retention.placeHold(
+                "job-a", hold, identity))
+                .thenReturn(retentionState);
+        when(retention.releaseHold(
+                "job-a", hold, identity))
+                .thenReturn(retentionState);
+        when(retention.purge(
+                "job-a", purge, identity))
+                .thenReturn(retentionState);
         ScenarioRehearsalBatchController controller =
                 new ScenarioRehearsalBatchController(
-                        batches, authenticator, decoder);
+                        batches, retention,
+                        authenticator, decoder);
 
         assertThat(controller.submit(raw, headers).payload())
                 .isSameAs(job);
@@ -113,6 +162,18 @@ class ScenarioRehearsalBatchControllerTest {
         assertThat(controller.cancel(
                 "job-a", raw, headers).payload())
                 .isSameAs(job);
+        assertThat(controller.retention(
+                "job-a", headers).payload())
+                .isSameAs(retentionState);
+        assertThat(controller.placeHold(
+                "job-a", raw, headers).payload())
+                .isSameAs(retentionState);
+        assertThat(controller.releaseHold(
+                "job-a", raw, headers).payload())
+                .isSameAs(retentionState);
+        assertThat(controller.purge(
+                "job-a", raw, headers).payload())
+                .isSameAs(retentionState);
         verify(authenticator).authenticate(
                 headers,
                 IntegrationOperation
@@ -131,5 +192,19 @@ class ScenarioRehearsalBatchControllerTest {
                 headers,
                 IntegrationOperation
                         .MIRROR_REHEARSAL_BATCH_EVIDENCE_READ);
+        verify(authenticator).authenticate(
+                headers,
+                IntegrationOperation
+                        .MIRROR_REHEARSAL_RETENTION_READ);
+        verify(authenticator,
+                org.mockito.Mockito.times(2))
+                .authenticate(
+                        headers,
+                        IntegrationOperation
+                                .MIRROR_REHEARSAL_LEGAL_HOLD);
+        verify(authenticator).authenticate(
+                headers,
+                IntegrationOperation
+                        .MIRROR_REHEARSAL_RETENTION_ADMIN);
     }
 }

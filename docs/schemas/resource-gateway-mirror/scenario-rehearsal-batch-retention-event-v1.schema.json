@@ -1,0 +1,211 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://bloge.dev/schemas/resource-gateway-mirror/scenario-rehearsal-batch-retention-event-v1.schema.json",
+  "title": "Resource Gateway Scenario Rehearsal Batch Retention Event v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion", "eventId", "commandId", "scope", "requestId", "jobId",
+    "manifestFingerprint", "revision", "type", "retainUntil", "occurredAt",
+    "actorId", "reasonCode", "holdId", "evidenceBundleFingerprint",
+    "previousEventFingerprint", "deletedJobCount", "deletedItemCount",
+    "deletedBatchEvidenceCount", "childEvidenceDisposition",
+    "auditDisposition", "evidenceSeal"
+  ],
+  "properties": {
+    "schemaVersion": {
+      "const": "resourceGateway.scenarioRehearsalBatchRetentionEvent.v1"
+    },
+    "eventId": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 128,
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$"
+    },
+    "commandId": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 256,
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,255}$"
+    },
+    "scope": {
+      "$ref": "mirror-plan-v1.schema.json#/$defs/scope"
+    },
+    "requestId": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 256,
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,255}$"
+    },
+    "jobId": {
+      "type": "string",
+      "pattern": "^scenario-batch-[a-f0-9]{64}$"
+    },
+    "manifestFingerprint": {
+      "$ref": "mirror-plan-v1.schema.json#/$defs/fingerprint"
+    },
+    "revision": {
+      "type": "integer",
+      "minimum": 1
+    },
+    "type": {
+      "enum": [
+        "RETENTION_REGISTERED", "HOLD_PLACED", "HOLD_RELEASED", "PURGED"
+      ]
+    },
+    "retainUntil": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "occurredAt": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "actorId": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 255,
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,254}$"
+    },
+    "reasonCode": {
+      "type": "string",
+      "pattern": "^RG\\.MIRROR\\.[A-Z0-9_.-]{1,224}$"
+    },
+    "holdId": {
+      "type": "string",
+      "maxLength": 256,
+      "pattern": "^$|^[A-Za-z0-9][A-Za-z0-9._:-]{0,255}$"
+    },
+    "evidenceBundleFingerprint": {
+      "$ref": "mirror-plan-v1.schema.json#/$defs/fingerprint"
+    },
+    "previousEventFingerprint": {
+      "oneOf": [
+        {"const": ""},
+        {"$ref": "mirror-plan-v1.schema.json#/$defs/fingerprint"}
+      ]
+    },
+    "deletedJobCount": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 1
+    },
+    "deletedItemCount": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 256
+    },
+    "deletedBatchEvidenceCount": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 1
+    },
+    "childEvidenceDisposition": {
+      "enum": ["NOT_APPLICABLE", "RETAINED"]
+    },
+    "auditDisposition": {
+      "enum": ["NOT_APPLICABLE", "RETAINED"]
+    },
+    "evidenceSeal": {
+      "$ref": "#/$defs/evidenceSeal"
+    }
+  },
+  "allOf": [
+    {
+      "if": {
+        "properties": {"revision": {"const": 1}},
+        "required": ["revision"]
+      },
+      "then": {
+        "properties": {"previousEventFingerprint": {"const": ""}}
+      },
+      "else": {
+        "properties": {
+          "previousEventFingerprint": {
+            "$ref": "mirror-plan-v1.schema.json#/$defs/fingerprint"
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "type": {"enum": ["HOLD_PLACED", "HOLD_RELEASED"]}
+        },
+        "required": ["type"]
+      },
+      "then": {
+        "properties": {
+          "holdId": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 256,
+            "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,255}$"
+          }
+        }
+      },
+      "else": {
+        "properties": {"holdId": {"const": ""}}
+      }
+    },
+    {
+      "if": {
+        "properties": {"type": {"const": "PURGED"}},
+        "required": ["type"]
+      },
+      "then": {
+        "properties": {
+          "deletedJobCount": {"const": 1},
+          "deletedItemCount": {"type": "integer", "minimum": 1, "maximum": 256},
+          "deletedBatchEvidenceCount": {"const": 1},
+          "childEvidenceDisposition": {"const": "RETAINED"},
+          "auditDisposition": {"const": "RETAINED"}
+        }
+      },
+      "else": {
+        "properties": {
+          "deletedJobCount": {"const": 0},
+          "deletedItemCount": {"const": 0},
+          "deletedBatchEvidenceCount": {"const": 0},
+          "childEvidenceDisposition": {"const": "NOT_APPLICABLE"},
+          "auditDisposition": {"const": "NOT_APPLICABLE"}
+        }
+      }
+    }
+  ],
+  "$defs": {
+    "evidenceSeal": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "schemaVersion", "materialFingerprint", "algorithm",
+        "keyId", "signedAt", "signature"
+      ],
+      "properties": {
+        "schemaVersion": {
+          "const": "bloge.visualRunEvidenceSeal.v1"
+        },
+        "materialFingerprint": {
+          "$ref": "mirror-plan-v1.schema.json#/$defs/fingerprint"
+        },
+        "algorithm": {
+          "const": "Ed25519"
+        },
+        "keyId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 256
+        },
+        "signedAt": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "signature": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 4096
+        }
+      }
+    }
+  }
+}

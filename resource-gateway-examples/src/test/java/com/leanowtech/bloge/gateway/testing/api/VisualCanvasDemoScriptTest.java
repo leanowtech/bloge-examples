@@ -31,7 +31,7 @@ class VisualCanvasDemoScriptTest {
     }
 
     @Test
-    void scenarioBatchReadinessRequiresControlAndSignedEvidence() throws Exception {
+    void scenarioBatchReadinessRequiresControlEvidenceAndRetention() throws Exception {
         String source = Files.readString(
                 SCRIPT, StandardCharsets.UTF_8);
 
@@ -39,7 +39,13 @@ class VisualCanvasDemoScriptTest {
                 ".payload.features.mirrorScenarioRehearsalBatchCooperativeControl == true",
                 "\"mirrorScenarioRehearsalBatchCooperativeControl\"",
                 ".payload.features.mirrorScenarioRehearsalBatchEvidence == true",
-                "\"mirrorScenarioRehearsalBatchEvidence\"");
+                "\"mirrorScenarioRehearsalBatchEvidence\"",
+                ".payload.features.mirrorScenarioRehearsalBatchRetentionApi == true",
+                "\"mirrorScenarioRehearsalBatchRetentionApi\"",
+                ".payload.features.mirrorScenarioRehearsalBatchLegalHold == true",
+                "\"mirrorScenarioRehearsalBatchLegalHold\"",
+                ".payload.features.mirrorScenarioRehearsalBatchDeletionProof == true",
+                "\"mirrorScenarioRehearsalBatchDeletionProof\"");
     }
 
     @Test

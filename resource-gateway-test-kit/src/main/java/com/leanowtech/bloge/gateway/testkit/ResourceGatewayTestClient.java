@@ -1584,6 +1584,155 @@ public final class ResourceGatewayTestClient {
     }
 
     /**
+     * Reads and independently verifies one Scenario batch-retention projection.
+     *
+     * <p>The client applies the packaged strict Schema, binds the projection to the requested
+     * batch, resolves the latest event's public key, reconstructs the signed content address,
+     * and verifies projection closure and Ed25519 key-lifecycle policy. A purged projection
+     * therefore proves Resource Gateway's logical deletion of the batch job, item index, and
+     * batch evidence; it does not claim physical-media erasure.</p>
+     *
+     * @param jobId canonical {@code scenario-batch-<sha256>} identity
+     * @return defensive copy of the independently verified payload-free projection
+     */
+    public JsonNode findScenarioRehearsalBatchRetention(
+            String jobId) {
+        String exactJobId =
+                scenarioRehearsalBatchJobId(jobId);
+        JsonNode response = exchange(
+                "GET",
+                "/api/mirror/rehearsal-jobs/"
+                        + segment(exactJobId)
+                        + "/retention",
+                "",
+                "GOVERNANCE_EVIDENCE_INGESTION",
+                null);
+        return verifiedScenarioRehearsalBatchRetention(
+                response, exactJobId);
+    }
+
+    /**
+     * Places one idempotent independent legal hold and verifies the returned signed projection.
+     *
+     * @param jobId canonical Scenario batch identity
+     * @param command strict {@code resourceGateway.scenarioRehearsalLegalHoldCommand.v1}
+     * @return defensive copy of the independently verified retained projection
+     */
+    public JsonNode placeScenarioRehearsalBatchLegalHold(
+            String jobId, JsonNode command) {
+        return mutateScenarioRehearsalBatchRetention(
+                jobId,
+                "/holds",
+                command,
+                CapabilityMirrorProtocol
+                        .SCENARIO_REHEARSAL_LEGAL_HOLD_COMMAND_SCHEMA_RESOURCE,
+                "LEGAL_HOLD");
+    }
+
+    /**
+     * Releases one exact legal hold without affecting other active holds.
+     *
+     * @param jobId canonical Scenario batch identity
+     * @param command strict {@code resourceGateway.scenarioRehearsalLegalHoldCommand.v1}
+     * @return defensive copy of the independently verified retained projection
+     */
+    public JsonNode releaseScenarioRehearsalBatchLegalHold(
+            String jobId, JsonNode command) {
+        return mutateScenarioRehearsalBatchRetention(
+                jobId,
+                "/hold-releases",
+                command,
+                CapabilityMirrorProtocol
+                        .SCENARIO_REHEARSAL_LEGAL_HOLD_COMMAND_SCHEMA_RESOURCE,
+                "LEGAL_HOLD");
+    }
+
+    /**
+     * Requests governed logical deletion and verifies the returned signed deletion proof.
+     *
+     * @param jobId canonical Scenario batch identity
+     * @param command strict {@code resourceGateway.scenarioRehearsalPurgeCommand.v1}
+     * @return defensive copy of the independently verified purged projection
+     */
+    public JsonNode purgeScenarioRehearsalBatch(
+            String jobId, JsonNode command) {
+        JsonNode state = mutateScenarioRehearsalBatchRetention(
+                jobId,
+                "/purge",
+                command,
+                CapabilityMirrorProtocol
+                        .SCENARIO_REHEARSAL_PURGE_COMMAND_SCHEMA_RESOURCE,
+                "PAYLOAD_RETENTION_ADMIN");
+        if (!"PURGED".equals(
+                state.path("status").asText())) {
+            throw responseContractInvalid(
+                    "The server did not return a Scenario batch deletion proof.");
+        }
+        return state;
+    }
+
+    private JsonNode mutateScenarioRehearsalBatchRetention(
+            String jobId,
+            String operationPath,
+            JsonNode command,
+            String commandSchema,
+            String purpose) {
+        String exactJobId =
+                scenarioRehearsalBatchJobId(jobId);
+        JsonNode request = requiredObject(
+                command, "command");
+        CapabilityMirrorSchemaValidator.require(
+                request,
+                commandSchema,
+                "RG.MIRROR.CLIENT.SCENARIO_BATCH_RETENTION_COMMAND_INVALID");
+        JsonNode response = exchange(
+                "POST",
+                "/api/mirror/rehearsal-jobs/"
+                        + segment(exactJobId)
+                        + "/retention"
+                        + operationPath,
+                "",
+                purpose,
+                request);
+        return verifiedScenarioRehearsalBatchRetention(
+                response, exactJobId);
+    }
+
+    private JsonNode verifiedScenarioRehearsalBatchRetention(
+            JsonNode response, String exactJobId) {
+        JsonNode state = requireMirrorEnvelope(
+                response,
+                "SCENARIO_REHEARSAL_BATCH_RETENTION_STATE",
+                CapabilityMirrorProtocol
+                        .SCENARIO_REHEARSAL_BATCH_RETENTION_STATE_V1);
+        if (!exactJobId.equals(
+                state.path("jobId").asText())) {
+            throw responseContractInvalid(
+                    "The server returned Scenario batch retention for a different job.");
+        }
+        EvidenceVerificationKey key;
+        try {
+            key = findEvidenceVerificationKey(
+                    state.path("latestEvent")
+                            .path("evidenceSeal")
+                            .path("keyId").asText());
+        } catch (IllegalArgumentException failure) {
+            throw responseContractInvalid(
+                    "The server returned Scenario batch retention with an invalid verification-key identity.");
+        }
+        ScenarioRehearsalBatchRetentionVerifier.VerificationResult
+                verification =
+                new ScenarioRehearsalBatchRetentionVerifier()
+                        .verify(state, key);
+        if (!verification.verified()) {
+            throw responseContractInvalid(
+                    "The Scenario batch retention proof failed independent verification: "
+                            + verification.reasonCode());
+        }
+        return state.deepCopy();
+    }
+
+    /**
      * Reads and independently reconstructs one payload-free state-transition workbook seed.
      *
      * <p>The client fetches the signed v4 evidence bundle, resolves its evidence key through the

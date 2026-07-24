@@ -1,0 +1,94 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://bloge.dev/schemas/resource-gateway-mirror/scenario-rehearsal-batch-retention-state-v1.schema.json",
+  "title": "Resource Gateway Scenario Rehearsal Batch Retention State v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion", "scope", "requestId", "jobId", "manifestFingerprint",
+    "evidenceBundleFingerprint", "status", "revision", "retainUntil",
+    "activeHoldIds", "updatedAt", "latestEvent"
+  ],
+  "properties": {
+    "schemaVersion": {
+      "const": "resourceGateway.scenarioRehearsalBatchRetentionState.v1"
+    },
+    "scope": {
+      "$ref": "mirror-plan-v1.schema.json#/$defs/scope"
+    },
+    "requestId": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 256,
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,255}$"
+    },
+    "jobId": {
+      "type": "string",
+      "pattern": "^scenario-batch-[a-f0-9]{64}$"
+    },
+    "manifestFingerprint": {
+      "$ref": "mirror-plan-v1.schema.json#/$defs/fingerprint"
+    },
+    "evidenceBundleFingerprint": {
+      "$ref": "mirror-plan-v1.schema.json#/$defs/fingerprint"
+    },
+    "status": {
+      "enum": ["RETAINED", "PURGED"]
+    },
+    "revision": {
+      "type": "integer",
+      "minimum": 1
+    },
+    "retainUntil": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "activeHoldIds": {
+      "type": "array",
+      "maxItems": 10000,
+      "uniqueItems": true,
+      "items": {
+        "type": "string",
+        "minLength": 1,
+        "maxLength": 256,
+        "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,255}$"
+      }
+    },
+    "updatedAt": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "latestEvent": {
+      "$ref": "scenario-rehearsal-batch-retention-event-v1.schema.json"
+    }
+  },
+  "allOf": [
+    {
+      "if": {
+        "properties": {"status": {"const": "PURGED"}},
+        "required": ["status"]
+      },
+      "then": {
+        "properties": {
+          "activeHoldIds": {"maxItems": 0},
+          "latestEvent": {
+            "properties": {"type": {"const": "PURGED"}}
+          }
+        }
+      },
+      "else": {
+        "properties": {
+          "latestEvent": {
+            "properties": {
+              "type": {
+                "enum": [
+                  "RETENTION_REGISTERED", "HOLD_PLACED", "HOLD_RELEASED"
+                ]
+              }
+            }
+          }
+        }
+      }
+    }
+  ]
+}

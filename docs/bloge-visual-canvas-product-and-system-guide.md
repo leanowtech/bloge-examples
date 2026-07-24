@@ -1156,7 +1156,10 @@ curl -sS 'http://localhost:8080/api/integration/reconciliation' \
 `region/environment`，并等待 capability 中
 `mirrorScenarioRehearsalBatchApi=true`、
 `mirrorScenarioRehearsalBatchCooperativeControl=true`、
-`mirrorScenarioRehearsalBatchEvidence=true`，以及
+`mirrorScenarioRehearsalBatchEvidence=true`、
+`mirrorScenarioRehearsalBatchRetentionApi=true`、
+`mirrorScenarioRehearsalBatchLegalHold=true`、
+`mirrorScenarioRehearsalBatchDeletionProof=true`，以及
 `mirrorScenarioRehearsalBatchScheduling=true` 后才报告 ready。默认仍不开启后台
 worker，普通画布演示不会意外消费历史队列。
 
@@ -1181,6 +1184,14 @@ curl -sS \
 context、node input/output 或异常文本。它签名绑定原始 request、冻结 manifest、
 终态 job、稳定顺序 item 结果及每个 child aggregate 的 evidence/workbook 指纹；
 子 aggregate bundle 仍保持独立内容寻址，ANEKE 或 CI 可按引用继续取证。
+
+同一终态事务还会注册不可缩短的批次保留下限。治理方可读取
+`/api/mirror/rehearsal-jobs/<jobId>/retention`，使用 `LEGAL_HOLD` purpose 在
+`/retention/holds` 和 `/retention/hold-releases` 管理多个独立法律保全，并在到期
+且无 active hold 时以 `PAYLOAD_RETENTION_ADMIN` 调用 `/retention/purge`。签名删除
+证明会记录 job、item 和 batch evidence 的精确逻辑删除计数，同时明确保留 child
+Scenario evidence 与 operation/lifecycle audit。完整命令示例和 Test Kit 验签方式见
+[场景演练注册、编译、耐久批次与证据指南](resource-gateway-scenario-rehearsal-compiler.md)。
 
 启动成功后脚本会打印：
 

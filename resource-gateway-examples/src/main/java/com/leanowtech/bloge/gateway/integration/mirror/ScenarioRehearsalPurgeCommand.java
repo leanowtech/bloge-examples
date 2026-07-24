@@ -3,7 +3,7 @@ package com.leanowtech.bloge.gateway.integration.mirror;
 import java.util.regex.Pattern;
 
 /**
- * Strict idempotent command for governed Scenario aggregate evidence deletion.
+ * Strict idempotent command for governed Scenario aggregate or batch evidence deletion.
  *
  * @param schemaVersion protocol version
  * @param commandId governance command idempotency identity

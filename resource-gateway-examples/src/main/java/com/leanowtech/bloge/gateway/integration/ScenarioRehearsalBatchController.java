@@ -5,7 +5,11 @@ import com.leanowtech.bloge.gateway.integration.mirror.ScenarioRehearsalBatchEvi
 import com.leanowtech.bloge.gateway.integration.mirror.ScenarioRehearsalBatchItemPage;
 import com.leanowtech.bloge.gateway.integration.mirror.ScenarioRehearsalBatchJob;
 import com.leanowtech.bloge.gateway.integration.mirror.ScenarioRehearsalBatchRequest;
+import com.leanowtech.bloge.gateway.integration.mirror.ScenarioRehearsalBatchRetentionService;
+import com.leanowtech.bloge.gateway.integration.mirror.ScenarioRehearsalBatchRetentionState;
 import com.leanowtech.bloge.gateway.integration.mirror.ScenarioRehearsalBatchService;
+import com.leanowtech.bloge.gateway.integration.mirror.ScenarioRehearsalLegalHoldCommand;
+import com.leanowtech.bloge.gateway.integration.mirror.ScenarioRehearsalPurgeCommand;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.context.annotation.Profile;
 import org.springframework.http.HttpHeaders;
@@ -33,16 +37,20 @@ import java.util.Objects;
         havingValue = "true")
 public final class ScenarioRehearsalBatchController {
     private final ScenarioRehearsalBatchService batches;
+    private final ScenarioRehearsalBatchRetentionService retention;
     private final IntegrationRequestAuthenticator authenticator;
     private final ScenarioArtifactRequestDecoder decoder;
 
     /** Creates the protected batch transport. */
     public ScenarioRehearsalBatchController(
             ScenarioRehearsalBatchService batches,
+            ScenarioRehearsalBatchRetentionService retention,
             IntegrationRequestAuthenticator authenticator,
             ScenarioArtifactRequestDecoder decoder) {
         this.batches = Objects.requireNonNull(
                 batches, "batches");
+        this.retention = Objects.requireNonNull(
+                retention, "retention");
         this.authenticator = Objects.requireNonNull(
                 authenticator, "authenticator");
         this.decoder = Objects.requireNonNull(
@@ -169,5 +177,90 @@ public final class ScenarioRehearsalBatchController {
                 "SCENARIO_REHEARSAL_BATCH_JOB",
                 value.schemaVersion(),
                 value);
+    }
+
+    /** Reads one verified batch-retention projection and its latest signed event. */
+    @GetMapping("/{jobId}/retention")
+    public IntegrationEnvelope<ScenarioRehearsalBatchRetentionState>
+    retention(
+            @PathVariable String jobId,
+            @RequestHeader HttpHeaders headers) {
+        IntegrationRequestContext identity =
+                authenticator.authenticate(
+                        headers,
+                        IntegrationOperation
+                                .MIRROR_REHEARSAL_RETENTION_READ);
+        ScenarioRehearsalBatchRetentionState value =
+                retention.find(jobId, identity);
+        return IntegrationEnvelope.of(
+                "SCENARIO_REHEARSAL_BATCH_RETENTION_STATE",
+                value.schemaVersion(), value);
+    }
+
+    /** Places one independent legal hold on a retained terminal batch. */
+    @PostMapping("/{jobId}/retention/holds")
+    public IntegrationEnvelope<ScenarioRehearsalBatchRetentionState>
+    placeHold(
+            @PathVariable String jobId,
+            @RequestBody byte[] request,
+            @RequestHeader HttpHeaders headers) {
+        IntegrationRequestContext identity =
+                authenticator.authenticate(
+                        headers,
+                        IntegrationOperation
+                                .MIRROR_REHEARSAL_LEGAL_HOLD);
+        ScenarioRehearsalLegalHoldCommand command =
+                decoder.decodeLegalHoldCommand(
+                        request, identity);
+        ScenarioRehearsalBatchRetentionState value =
+                retention.placeHold(jobId, command, identity);
+        return IntegrationEnvelope.of(
+                "SCENARIO_REHEARSAL_BATCH_RETENTION_STATE",
+                value.schemaVersion(), value);
+    }
+
+    /** Releases one exact batch legal hold without affecting other active holds. */
+    @PostMapping("/{jobId}/retention/hold-releases")
+    public IntegrationEnvelope<ScenarioRehearsalBatchRetentionState>
+    releaseHold(
+            @PathVariable String jobId,
+            @RequestBody byte[] request,
+            @RequestHeader HttpHeaders headers) {
+        IntegrationRequestContext identity =
+                authenticator.authenticate(
+                        headers,
+                        IntegrationOperation
+                                .MIRROR_REHEARSAL_LEGAL_HOLD);
+        ScenarioRehearsalLegalHoldCommand command =
+                decoder.decodeLegalHoldCommand(
+                        request, identity);
+        ScenarioRehearsalBatchRetentionState value =
+                retention.releaseHold(
+                        jobId, command, identity);
+        return IntegrationEnvelope.of(
+                "SCENARIO_REHEARSAL_BATCH_RETENTION_STATE",
+                value.schemaVersion(), value);
+    }
+
+    /** Deletes one eligible batch aggregate and returns its signed logical-deletion proof. */
+    @PostMapping("/{jobId}/retention/purge")
+    public IntegrationEnvelope<ScenarioRehearsalBatchRetentionState>
+    purge(
+            @PathVariable String jobId,
+            @RequestBody byte[] request,
+            @RequestHeader HttpHeaders headers) {
+        IntegrationRequestContext identity =
+                authenticator.authenticate(
+                        headers,
+                        IntegrationOperation
+                                .MIRROR_REHEARSAL_RETENTION_ADMIN);
+        ScenarioRehearsalPurgeCommand command =
+                decoder.decodePurgeCommand(
+                        request, identity);
+        ScenarioRehearsalBatchRetentionState value =
+                retention.purge(jobId, command, identity);
+        return IntegrationEnvelope.of(
+                "SCENARIO_REHEARSAL_BATCH_RETENTION_STATE",
+                value.schemaVersion(), value);
     }
 }

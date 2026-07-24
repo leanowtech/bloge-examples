@@ -1379,7 +1379,8 @@ public final class DatabaseScenarioRehearsalBatchRepository
                         terminal,
                         items(stored.job().jobId()).stream()
                                 .map(StoredItem::item)
-                                .toList());
+                                .toList(),
+                        stored.expiresAt());
         updateJob(
                 stored,
                 idle(stored, terminal, Instant.EPOCH));

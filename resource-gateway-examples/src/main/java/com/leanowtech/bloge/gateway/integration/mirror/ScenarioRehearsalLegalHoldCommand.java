@@ -3,7 +3,7 @@ package com.leanowtech.bloge.gateway.integration.mirror;
 import java.util.regex.Pattern;
 
 /**
- * Strict idempotent command for placing or releasing one Scenario aggregate legal hold.
+ * Strict idempotent command for placing or releasing one Scenario aggregate or batch legal hold.
  *
  * @param schemaVersion protocol version
  * @param commandId governance command idempotency identity

@@ -513,6 +513,40 @@ public class MirrorPlanIntegrationService {
                 "Mirror evidence reads require a rehearsal or governance-ingestion purpose.");
     }
 
+    /** Validates the shared scope for Scenario retention projection reads. */
+    static CapabilitySnapshot.Scope requireMirrorRetentionReadIdentity(
+            IntegrationRequestContext identity) {
+        return requireMirrorIdentity(
+                identity,
+                Set.of(
+                        AUTHORIZED_PURPOSE,
+                        "GOVERNANCE_EVIDENCE_INGESTION",
+                        "PAYLOAD_RETENTION_ADMIN",
+                        "LEGAL_HOLD"),
+                "RG.MIRROR.RETENTION_READ_PURPOSE_REQUIRED",
+                "Mirror retention reads require a rehearsal or retention-governance purpose.");
+    }
+
+    /** Validates the shared scope for legal-hold transitions. */
+    static CapabilitySnapshot.Scope requireMirrorLegalHoldIdentity(
+            IntegrationRequestContext identity) {
+        return requireMirrorIdentity(
+                identity,
+                Set.of("LEGAL_HOLD"),
+                "RG.MIRROR.LEGAL_HOLD_PURPOSE_REQUIRED",
+                "Mirror legal-hold operations require the verified LEGAL_HOLD purpose.");
+    }
+
+    /** Validates the shared scope for governed retention deletion. */
+    static CapabilitySnapshot.Scope requireMirrorRetentionAdminIdentity(
+            IntegrationRequestContext identity) {
+        return requireMirrorIdentity(
+                identity,
+                Set.of("PAYLOAD_RETENTION_ADMIN"),
+                "RG.MIRROR.RETENTION_ADMIN_PURPOSE_REQUIRED",
+                "Mirror retention deletion requires the verified PAYLOAD_RETENTION_ADMIN purpose.");
+    }
+
     private static CapabilitySnapshot.Scope requireMirrorIdentity(
             IntegrationRequestContext identity,
             Set<String> allowedPurposes,
