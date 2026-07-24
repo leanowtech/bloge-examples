@@ -375,6 +375,118 @@ class DatabaseScenarioRehearsalBatchRepositoryTest {
     }
 
     @Test
+    void checkpointsProgressAndStopsAtARequestedCancellation() {
+        ScenarioRehearsalBatchRepository.Submission submission =
+                submission(SCOPE, "batch-running-cancel", "refund");
+        ScenarioRehearsalBatchJob job =
+                repository.submit(submission, policy()).job();
+        ScenarioRehearsalBatchRepository.Claim claim =
+                repository.claimNext(
+                        "sg", "test", "worker-a", policy());
+
+        ScenarioRehearsalBatchRepository.ExecutionControlCheckpoint
+                first = repository.checkpointExecution(
+                claim.lease(), 0, policy());
+        assertThat(first.outcome()).isEqualTo(
+                ScenarioRehearsalBatchRepository
+                        .ExecutionControlOutcome.CONTINUE);
+        assertThat(first.heartbeatCount()).isEqualTo(1);
+
+        ScenarioRehearsalBatchJob cancellationRequested =
+                repository.cancel(
+                        new ScenarioRehearsalBatchRepository
+                                .Cancellation(
+                                SCOPE,
+                                job.jobId(),
+                                "cancel-running-001",
+                                "OWNER_REQUEST"),
+                        policy()).job();
+        assertThat(cancellationRequested.status()).isEqualTo(
+                ScenarioRehearsalBatchJob.Status.CANCEL_REQUESTED);
+
+        databaseTime.set(NOW.plusMillis(100));
+        ScenarioRehearsalBatchRepository.ExecutionControlCheckpoint
+                stopped = repository.checkpointExecution(
+                claim.lease(), 1, policy());
+
+        assertThat(stopped.outcome()).isEqualTo(
+                ScenarioRehearsalBatchRepository
+                        .ExecutionControlOutcome.CANCELLED);
+        assertThat(stopped.heartbeatCount()).isEqualTo(2);
+        assertThat(stopped.job().status()).isEqualTo(
+                ScenarioRehearsalBatchJob.Status.CANCELLED);
+        assertThat(repository.page(
+                SCOPE, job.jobId(), 0, 10, policy()).items())
+                .singleElement()
+                .satisfies(item -> {
+                    assertThat(item.status()).isEqualTo(
+                            ScenarioRehearsalBatchItemPage.Status
+                                    .INDETERMINATE);
+                    assertThat(item.failureCode()).isEqualTo(
+                            "RG.MIRROR.REHEARSAL_BATCH.CANCELLED");
+                });
+        assertThat(jdbc.queryForObject("""
+                SELECT heartbeat_count
+                FROM scenario_rehearsal_batch_jobs
+                WHERE job_id = ?
+                """, Long.class, job.jobId())).isEqualTo(2L);
+        assertThat(jdbc.queryForObject("""
+                SELECT heartbeat_case_index
+                FROM scenario_rehearsal_batch_jobs
+                WHERE job_id = ?
+                """, Integer.class, job.jobId())).isEqualTo(1);
+
+        ScenarioRehearsalBatchRepository.ExecutionControlCheckpoint
+                stale = repository.checkpointExecution(
+                claim.lease(), 1, policy());
+        assertThat(stale.outcome()).isEqualTo(
+                ScenarioRehearsalBatchRepository
+                        .ExecutionControlOutcome.LEASE_LOST);
+        assertThat(stale.job()).isEqualTo(stopped.job());
+    }
+
+    @Test
+    void terminalizesTheExactLeaseAtTheDatabaseDeadline() {
+        ScenarioRehearsalBatchPolicy policy = shortPolicy();
+        ScenarioRehearsalBatchRepository.Submission submission =
+                submission(
+                        SCOPE,
+                        "batch-deadline",
+                        "refund",
+                        Duration.ofSeconds(4));
+        repository.submit(submission, policy);
+        ScenarioRehearsalBatchRepository.Claim claim =
+                repository.claimNext(
+                        "sg", "test", "worker-a", policy);
+        assertThat(claim.lease().expiresAt())
+                .isEqualTo(NOW.plusSeconds(5));
+
+        databaseTime.set(NOW.plusSeconds(5));
+        ScenarioRehearsalBatchRepository.ExecutionControlCheckpoint
+                stopped = repository.checkpointExecution(
+                claim.lease(), 0, policy);
+
+        assertThat(stopped.outcome()).isEqualTo(
+                ScenarioRehearsalBatchRepository
+                        .ExecutionControlOutcome.DEADLINE_EXCEEDED);
+        assertThat(stopped.job().status()).isEqualTo(
+                ScenarioRehearsalBatchJob.Status.EXPIRED);
+        assertThat(stopped.job().failureCode()).isEqualTo(
+                "RG.MIRROR.REHEARSAL_BATCH.DEADLINE_EXCEEDED");
+        assertThat(repository.page(
+                SCOPE,
+                stopped.job().jobId(),
+                0,
+                10,
+                policy).items())
+                .extracting(
+                        ScenarioRehearsalBatchItemPage.Item::status)
+                .containsExactly(
+                        ScenarioRehearsalBatchItemPage.Status
+                                .INDETERMINATE);
+    }
+
+    @Test
     void failsClosedOnSameGenerationPolicyDrift() {
         ScenarioRehearsalBatchPolicy first =
                 policy();

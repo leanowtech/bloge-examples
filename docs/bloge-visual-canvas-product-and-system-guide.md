@@ -1155,8 +1155,15 @@ curl -sS 'http://localhost:8080/api/integration/reconciliation' \
 脚本会同时打开 Mirror runtime，把 scheduler 与 demo identity 固定到同一个
 `region/environment`，并等待 capability 中
 `mirrorScenarioRehearsalBatchApi=true` 和
+`mirrorScenarioRehearsalBatchCooperativeControl=true`、以及
 `mirrorScenarioRehearsalBatchScheduling=true` 后才报告 ready。默认仍不开启后台
 worker，普通画布演示不会意外消费历史队列。
+
+批次运行期间，系统会在每个 Scenario case 前后写入 payload-free heartbeat 与
+next-case cursor，并读取数据库权威的 cancel/deadline 决策。点击取消后，当前
+受 case timeout 限制的调用会先完成并写入可恢复进度，随后任务停止；画面上当前项
+应显示为 `INDETERMINATE`，尚未开始的项显示为 `CANCELLED`。这表示“可能已经发生
+外部效果，需要人工或补偿确认”，而不是把取消伪装成从未执行。
 
 启动成功后脚本会打印：
 

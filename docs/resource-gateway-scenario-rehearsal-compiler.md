@@ -117,6 +117,7 @@ curl -sS http://localhost:8080/api/integration/capabilities
 | `mirrorScenarioRehearsalDeletionProof` | `true` |
 | `mirrorScenarioRehearsalWorkbookSeed` | `true` |
 | `mirrorScenarioRehearsalBatchApi` | `true` |
+| `mirrorScenarioRehearsalBatchCooperativeControl` | `true` |
 | `mirrorScenarioRehearsalBatchScheduling` | 默认 `false`；使用 `--scenario-batch` 且 scheduler 健康时为 `true` |
 | `mirrorScenarioRehearsalEvidence` | `false` |
 
@@ -609,10 +610,20 @@ generation、容量、tenant fairness、reconcile 和 claim 查询均使用同�
 同名环境跨地域互不争抢容量。固定 lane 保证进程内并发有界；停止时先取消未来
 poll，再等待当前 turn drain，最终发布仍受数据库 lease/epoch fence 约束。
 
-本阶段尚未把 heartbeat 与 cancel 检查穿透到 Scenario aggregate 的逐 case
-checkpoint，因此运行中取消会先成为 durable intent，最迟在当前 item 返回或 lease
-到期后收敛；也尚无签名 batch evidence/index、batch audit/retention 和 PostgreSQL
-多副本认证。调用方必须依据 capability，而不是只看 API 是否存在。
+Scenario runtime 现在提供 server-owned、payload-free 的 execution-control hook，
+在 case resolution 前、每个外部 case 前、case progress 耐久 checkpoint 后以及
+aggregate commit 前回调。batch worker 在这些边界以数据库时钟核对 exact
+owner/epoch/item fence，写入单调 heartbeat count 与 next-case cursor，并在同一事务
+观察 cancellation/deadline。运行中取消最迟在当前受 case timeout 约束的外部调用
+返回后收敛；已完成 case 先落耐久 progress，batch 当前 item 保守标为
+`INDETERMINATE`，未开始项标为 `CANCELLED`。
+
+heartbeat 不延长 lease。claim 已按 immutable compiled-plan timeout 加 commit reserve
+一次性分配权限；允许 checkpoint 无限续期会破坏测试的有界性。当前仍不能物理终止
+不合作的 operator，也尚无签名 batch evidence/index、batch audit/retention 和
+PostgreSQL 多副本认证。调用方必须同时检查
+`mirrorScenarioRehearsalBatchCooperativeControl` 与 scheduling capability，不能只看
+API 是否存在。
 
 ## 9. 失败语义
 
@@ -758,7 +769,7 @@ mvn -f resource-gateway-examples/pom.xml clean verify
 mvn -f resource-gateway-test-kit/pom.xml clean verify
 ```
 
-2026-07-24 本轮门禁结果：Resource Gateway `5,086` 项测试零失败、零错误、
+2026-07-25 本轮门禁结果：Resource Gateway `5,091` 项测试零失败、零错误、
 3 项条件跳过（含真实 Chrome DOM/工作流）；Test Kit `366` 项零失败、零错误，
 完成 111 个 Mirror Schema 的引用闭包、shaded JAR 和零警告公共 JavaDoc。
 

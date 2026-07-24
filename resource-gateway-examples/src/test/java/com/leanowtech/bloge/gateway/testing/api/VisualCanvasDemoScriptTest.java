@@ -31,6 +31,16 @@ class VisualCanvasDemoScriptTest {
     }
 
     @Test
+    void scenarioBatchReadinessRequiresCooperativeControl() throws Exception {
+        String source = Files.readString(
+                SCRIPT, StandardCharsets.UTF_8);
+
+        assertThat(source).contains(
+                ".payload.features.mirrorScenarioRehearsalBatchCooperativeControl == true",
+                "\"mirrorScenarioRehearsalBatchCooperativeControl\"");
+    }
+
+    @Test
     void helpDocumentsTheOneFlagStatefulDemoMode() throws Exception {
         Process process = new ProcessBuilder(
                 "bash", SCRIPT.toString(), "--help")

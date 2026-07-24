@@ -430,6 +430,9 @@ public class ToolStudioIntegrationService {
         features.put("mirrorScenarioRehearsalBatchApi",
                 mirrorPlanReady && mirrorExecutionApi);
         features.put(
+                "mirrorScenarioRehearsalBatchCooperativeControl",
+                mirrorPlanReady && mirrorExecutionApi);
+        features.put(
                 "mirrorScenarioRehearsalBatchScheduling",
                 mirrorPlanReady
                         && mirrorExecutionApi

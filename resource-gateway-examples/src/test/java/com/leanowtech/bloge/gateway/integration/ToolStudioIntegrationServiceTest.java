@@ -326,6 +326,9 @@ class ToolStudioIntegrationServiceTest {
                 .containsEntry("mirrorScenarioRehearsalWorkbookSeed", false)
                 .containsEntry("mirrorScenarioRehearsalBatchApi", false)
                 .containsEntry(
+                        "mirrorScenarioRehearsalBatchCooperativeControl",
+                        false)
+                .containsEntry(
                         "mirrorScenarioRehearsalBatchScheduling", false)
                 .containsEntry("mirrorScenarioRehearsalEvidence", false)
                 .containsEntry("mirrorOperationObservability", false)
@@ -341,6 +344,9 @@ class ToolStudioIntegrationServiceTest {
                 .containsEntry("mirrorScenarioRehearsalEvidenceApi", true)
                 .containsEntry("mirrorScenarioRehearsalWorkbookSeed", true)
                 .containsEntry("mirrorScenarioRehearsalBatchApi", true)
+                .containsEntry(
+                        "mirrorScenarioRehearsalBatchCooperativeControl",
+                        true)
                 .containsEntry(
                         "mirrorScenarioRehearsalBatchScheduling", false)
                 .containsEntry("mirrorScenarioRehearsalEvidence", false)

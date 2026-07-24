@@ -1980,6 +1980,7 @@ wait_for_ready() {
                 if command -v jq >/dev/null 2>&1; then
                     if ! printf '%s' "${response}" | jq -e '
                         .payload.features.mirrorScenarioRehearsalBatchApi == true
+                        and .payload.features.mirrorScenarioRehearsalBatchCooperativeControl == true
                         and .payload.features.mirrorScenarioRehearsalBatchScheduling == true
                     ' >/dev/null 2>&1; then
                         sleep 2
@@ -1987,6 +1988,8 @@ wait_for_ready() {
                     fi
                 elif ! printf '%s' "${response}" |
                     grep -Eq '"mirrorScenarioRehearsalBatchApi"[[:space:]]*:[[:space:]]*true' ||
+                    ! printf '%s' "${response}" |
+                    grep -Eq '"mirrorScenarioRehearsalBatchCooperativeControl"[[:space:]]*:[[:space:]]*true' ||
                     ! printf '%s' "${response}" |
                     grep -Eq '"mirrorScenarioRehearsalBatchScheduling"[[:space:]]*:[[:space:]]*true'; then
                     sleep 2

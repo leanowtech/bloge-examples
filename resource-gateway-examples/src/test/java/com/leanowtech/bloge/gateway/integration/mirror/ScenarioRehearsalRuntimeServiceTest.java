@@ -89,6 +89,55 @@ class ScenarioRehearsalRuntimeServiceTest {
     }
 
     @Test
+    void exposesPayloadFreeControlPointsAndStopsAfterDurableCaseProgress() {
+        Fixture fixture = fixture(Map.of("customerId", "C-1"));
+        List<ScenarioRehearsalExecutionControl.Checkpoint> observed =
+                new ArrayList<>();
+        ScenarioRehearsalExecutionControl control = checkpoint -> {
+            observed.add(checkpoint);
+            if (checkpoint.phase()
+                    == ScenarioRehearsalExecutionControl.Phase
+                    .AFTER_CASE) {
+                throw new ScenarioRehearsalExecutionControlException(
+                        ScenarioRehearsalExecutionControlException
+                                .Reason.CANCELLED,
+                        identity.correlationId());
+            }
+        };
+
+        assertThatThrownBy(() ->
+                fixture.service().execute(
+                        fixture.request(), identity, control))
+                .isInstanceOfSatisfying(
+                        ScenarioRehearsalExecutionControlException.class,
+                        failure -> assertThat(failure.reason())
+                                .isEqualTo(
+                                        ScenarioRehearsalExecutionControlException
+                                                .Reason.CANCELLED));
+
+        assertThat(observed)
+                .extracting(
+                        ScenarioRehearsalExecutionControl
+                                .Checkpoint::phase)
+                .containsExactly(
+                        ScenarioRehearsalExecutionControl.Phase
+                                .BEFORE_RESOLUTION,
+                        ScenarioRehearsalExecutionControl.Phase
+                                .BEFORE_CASE,
+                        ScenarioRehearsalExecutionControl.Phase
+                                .AFTER_CASE);
+        assertThat(observed.getLast().nextCaseIndex())
+                .isEqualTo(1);
+        verify(fixture.rehearsalRequests())
+                .checkpoint(any(), any());
+        verify(fixture.rehearsalRequests())
+                .release(
+                        any(),
+                        org.mockito.ArgumentMatchers.eq(
+                                "RG.MIRROR.REHEARSAL_BATCH.CANCELLED"));
+    }
+
+    @Test
     void propagatesRetryableChildFailureSoTheSameRequestCanResume() {
         Fixture fixture = fixture(Map.of("customerId", "C-1"));
         when(fixture.mirrorRuns().execute(any(), any()))

@@ -161,6 +161,29 @@ public class ScenarioRehearsalRuntimeService {
     public ScenarioRehearsalEvidenceBundle execute(
             ScenarioRehearsalExecutionRequest request,
             IntegrationRequestContext identity) {
+        return execute(
+                request,
+                identity,
+                ScenarioRehearsalExecutionControl.uncontrolled());
+    }
+
+    /**
+     * Executes one aggregate under a server-owned cooperative control boundary.
+     *
+     * <p>This overload is intended for durable schedulers. The control callback receives only
+     * progress coordinates and is invoked outside child execution, so cancellation convergence is
+     * bounded by one case timeout without exposing fixture or graph payload.</p>
+     *
+     * @param request exact payload-free rehearsal command
+     * @param identity authenticated full enterprise mirror identity
+     * @param control server-owned deadline, cancellation, and lease controller
+     * @return signed portable aggregate over verified child evidence
+     */
+    public ScenarioRehearsalEvidenceBundle execute(
+            ScenarioRehearsalExecutionRequest request,
+            IntegrationRequestContext identity,
+            ScenarioRehearsalExecutionControl control) {
+        Objects.requireNonNull(control, "control");
         MirrorOperationObservability.Observation observation =
                 observations.start(
                         MirrorOperationAuditEvent.Operation
@@ -173,7 +196,8 @@ public class ScenarioRehearsalRuntimeService {
                                 : request.compiledPlanRef().id(),
                         "");
         try {
-            return executeObserved(request, identity, observation);
+            return executeObserved(
+                    request, identity, control, observation);
         } catch (RuntimeException failure) {
             throw observation.failed(failure);
         }
@@ -182,6 +206,7 @@ public class ScenarioRehearsalRuntimeService {
     private ScenarioRehearsalEvidenceBundle executeObserved(
             ScenarioRehearsalExecutionRequest request,
             IntegrationRequestContext identity,
+            ScenarioRehearsalExecutionControl control,
             MirrorOperationObservability.Observation observation) {
         Objects.requireNonNull(request, "request");
         requireExecutionPurpose(identity);
@@ -234,6 +259,12 @@ public class ScenarioRehearsalRuntimeService {
         ScenarioRehearsalRunRepository.Lease lease = claim.lease();
         try {
             Instant startedAt = claim.state().startedAt();
+            control.checkpoint(
+                    new ScenarioRehearsalExecutionControl.Checkpoint(
+                            ScenarioRehearsalExecutionControl.Phase
+                                    .BEFORE_RESOLUTION,
+                            claim.state().nextCaseIndex(),
+                            plan.cases().size()));
             List<ResolvedCase> resolved = resolveCases(
                     plan, scope, identity, startedAt);
             List<ScenarioCaseRehearsalResult> results =
@@ -246,6 +277,12 @@ public class ScenarioRehearsalRuntimeService {
             for (int index = results.size();
                  index < resolved.size();
                  index++) {
+                control.checkpoint(
+                        new ScenarioRehearsalExecutionControl.Checkpoint(
+                                ScenarioRehearsalExecutionControl.Phase
+                                        .BEFORE_CASE,
+                                index,
+                                resolved.size()));
                 ResolvedCase current = resolved.get(index);
                 Instant now = clock.instant();
                 ScenarioCaseRehearsalResult caseResult =
@@ -267,7 +304,19 @@ public class ScenarioRehearsalRuntimeService {
                 rehearsalRequests.checkpoint(
                         lease, caseResult);
                 results.add(caseResult);
+                control.checkpoint(
+                        new ScenarioRehearsalExecutionControl.Checkpoint(
+                                ScenarioRehearsalExecutionControl.Phase
+                                        .AFTER_CASE,
+                                results.size(),
+                                resolved.size()));
             }
+            control.checkpoint(
+                    new ScenarioRehearsalExecutionControl.Checkpoint(
+                            ScenarioRehearsalExecutionControl.Phase
+                                    .BEFORE_COMMIT,
+                            results.size(),
+                            resolved.size()));
             ScenarioRehearsalEvidenceBundle sealed =
                     sealAggregate(
                             request, plan, scope, runId,

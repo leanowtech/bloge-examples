@@ -140,6 +140,9 @@ public final class DatabaseScenarioRehearsalBatchRepository
                     lease_epoch BIGINT NOT NULL,
                     lease_expires_at TIMESTAMP WITH TIME ZONE NOT NULL,
                     current_item_index INTEGER NOT NULL,
+                    heartbeat_at TIMESTAMP WITH TIME ZONE,
+                    heartbeat_count BIGINT DEFAULT 0 NOT NULL,
+                    heartbeat_case_index INTEGER DEFAULT 0 NOT NULL,
                     deadline_at TIMESTAMP WITH TIME ZONE NOT NULL,
                     created_at TIMESTAMP WITH TIME ZONE NOT NULL,
                     updated_at TIMESTAMP WITH TIME ZONE NOT NULL,
@@ -152,6 +155,18 @@ public final class DatabaseScenarioRehearsalBatchRepository
                             environment_id, region, request_id
                         )
                 )
+                """);
+        jdbc.execute("""
+                ALTER TABLE scenario_rehearsal_batch_jobs
+                ADD COLUMN IF NOT EXISTS heartbeat_at TIMESTAMP WITH TIME ZONE
+                """);
+        jdbc.execute("""
+                ALTER TABLE scenario_rehearsal_batch_jobs
+                ADD COLUMN IF NOT EXISTS heartbeat_count BIGINT DEFAULT 0 NOT NULL
+                """);
+        jdbc.execute("""
+                ALTER TABLE scenario_rehearsal_batch_jobs
+                ADD COLUMN IF NOT EXISTS heartbeat_case_index INTEGER DEFAULT 0 NOT NULL
                 """);
         jdbc.execute("""
                 CREATE INDEX IF NOT EXISTS idx_scenario_rehearsal_batch_schedule
@@ -418,6 +433,8 @@ public final class DatabaseScenarioRehearsalBatchRepository
                         running.itemIndex(),
                         stored.expiresAt());
                 updateJob(stored, claimed);
+                resetExecutionCheckpoint(
+                        claimed, observedAt);
                 advanceCursor(
                         partition,
                         stored.job().scope().tenantId(),
@@ -443,6 +460,121 @@ public final class DatabaseScenarioRehearsalBatchRepository
         return required(
                 result,
                 "Scenario rehearsal batch claim returned no result");
+    }
+
+    @Override
+    public ExecutionControlCheckpoint checkpointExecution(
+            Lease lease,
+            int nextCaseIndex,
+            ScenarioRehearsalBatchPolicy policy) {
+        Objects.requireNonNull(lease, "lease");
+        if (nextCaseIndex < 0
+                || nextCaseIndex > ScenarioPack.MAXIMUM_CASES) {
+            throw new IllegalArgumentException(
+                    "Scenario batch execution cursor is invalid");
+        }
+        Objects.requireNonNull(policy, "policy");
+        ExecutionControlCheckpoint result =
+                mutations.execute(status -> {
+                    QueuePartition partition =
+                            partition(lease.scope());
+                    lockPartition(partition);
+                    Instant observedAt = coordinationNow();
+                    ensurePolicy(
+                            partition,
+                            policy,
+                            observedAt);
+                    StoredJob stored = byJob(
+                            lease.scope(),
+                            lease.jobId(),
+                            true).orElseThrow(() ->
+                            conflict(
+                                    Reason.JOB_NOT_FOUND,
+                                    "Scenario rehearsal batch lease no longer exists"));
+                    StoredHeartbeat heartbeat =
+                            heartbeat(stored.job().jobId());
+                    if (!sameLease(stored, lease)) {
+                        return new ExecutionControlCheckpoint(
+                                ExecutionControlOutcome.LEASE_LOST,
+                                observedAt,
+                                heartbeat.count(),
+                                nextCaseIndex,
+                                stored.job());
+                    }
+                    StoredItem current =
+                            requireRunningItem(stored, lease);
+                    if (nextCaseIndex < heartbeat.nextCaseIndex()) {
+                        throw new IllegalStateException(
+                                "Scenario batch execution cursor regressed");
+                    }
+                    if (stored.job().status()
+                            != ScenarioRehearsalBatchJob.Status
+                            .CANCEL_REQUESTED
+                            && stored.job().deadlineAt()
+                            .isAfter(observedAt)
+                            && !stored.leaseExpiresAt()
+                            .isAfter(observedAt)) {
+                        return new ExecutionControlCheckpoint(
+                                ExecutionControlOutcome.LEASE_LOST,
+                                observedAt,
+                                heartbeat.count(),
+                                nextCaseIndex,
+                                stored.job());
+                    }
+                    long heartbeatCount = Math.addExact(
+                            heartbeat.count(), 1);
+                    updateExecutionCheckpoint(
+                            stored,
+                            lease,
+                            observedAt,
+                            heartbeatCount,
+                            nextCaseIndex);
+                    if (stored.job().status()
+                            == ScenarioRehearsalBatchJob.Status
+                            .CANCEL_REQUESTED) {
+                        ScenarioRehearsalBatchJob cancelled =
+                                terminalizeRemaining(
+                                        stored,
+                                        current,
+                                        ScenarioRehearsalBatchJob.Status
+                                                .CANCELLED,
+                                        "RG.MIRROR.REHEARSAL_BATCH.CANCELLED",
+                                        observedAt);
+                        return new ExecutionControlCheckpoint(
+                                ExecutionControlOutcome.CANCELLED,
+                                observedAt,
+                                heartbeatCount,
+                                nextCaseIndex,
+                                cancelled);
+                    }
+                    if (!stored.job().deadlineAt()
+                            .isAfter(observedAt)) {
+                        ScenarioRehearsalBatchJob expired =
+                                terminalizeRemaining(
+                                        stored,
+                                        current,
+                                        ScenarioRehearsalBatchJob.Status
+                                                .EXPIRED,
+                                        "RG.MIRROR.REHEARSAL_BATCH.DEADLINE_EXCEEDED",
+                                        observedAt);
+                        return new ExecutionControlCheckpoint(
+                                ExecutionControlOutcome
+                                        .DEADLINE_EXCEEDED,
+                                observedAt,
+                                heartbeatCount,
+                                nextCaseIndex,
+                                expired);
+                    }
+                    return new ExecutionControlCheckpoint(
+                            ExecutionControlOutcome.CONTINUE,
+                            observedAt,
+                            heartbeatCount,
+                            nextCaseIndex,
+                            stored.job());
+                });
+        return required(
+                result,
+                "Scenario batch execution checkpoint returned no result");
     }
 
     @Override
@@ -1234,22 +1366,107 @@ public final class DatabaseScenarioRehearsalBatchRepository
                         conflict(
                                 Reason.LEASE_LOST,
                                 "Scenario rehearsal batch lease no longer exists"));
-        if (!stored.leaseOwner().equals(lease.ownerId())
-                || stored.leaseEpoch() != lease.epoch()
-                || stored.currentItemIndex() != lease.itemIndex()
-                || !stored.leaseExpiresAt().equals(
-                lease.expiresAt())
-                || !stored.leaseExpiresAt().isAfter(observedAt)
-                || stored.job().status()
-                != ScenarioRehearsalBatchJob.Status.RUNNING
-                && stored.job().status()
-                != ScenarioRehearsalBatchJob.Status
-                .CANCEL_REQUESTED) {
+        if (!liveLease(stored, lease, observedAt)) {
             throw conflict(
                     Reason.LEASE_LOST,
                     "Scenario rehearsal batch lease was lost");
         }
         return stored;
+    }
+
+    private static boolean liveLease(
+            StoredJob stored,
+            Lease lease,
+            Instant observedAt) {
+        return sameLease(stored, lease)
+                && stored.leaseExpiresAt().isAfter(observedAt);
+    }
+
+    private static boolean sameLease(
+            StoredJob stored,
+            Lease lease) {
+        return stored.leaseOwner().equals(lease.ownerId())
+                && stored.leaseEpoch() == lease.epoch()
+                && stored.currentItemIndex() == lease.itemIndex()
+                && stored.leaseExpiresAt().equals(lease.expiresAt())
+                && (stored.job().status()
+                == ScenarioRehearsalBatchJob.Status.RUNNING
+                || stored.job().status()
+                == ScenarioRehearsalBatchJob.Status
+                .CANCEL_REQUESTED);
+    }
+
+    private StoredHeartbeat heartbeat(String jobId) {
+        List<StoredHeartbeat> values = jdbc.query("""
+                SELECT heartbeat_count, heartbeat_case_index
+                FROM scenario_rehearsal_batch_jobs
+                WHERE job_id = ?
+                """,
+                (rs, rowNum) -> new StoredHeartbeat(
+                        rs.getLong("heartbeat_count"),
+                        rs.getInt("heartbeat_case_index")),
+                jobId);
+        if (values.size() != 1) {
+            throw new IllegalStateException(
+                    "Scenario batch heartbeat state is unavailable");
+        }
+        return values.getFirst();
+    }
+
+    private void resetExecutionCheckpoint(
+            StoredJob claimed,
+            Instant observedAt) {
+        int updated = jdbc.update("""
+                UPDATE scenario_rehearsal_batch_jobs
+                SET heartbeat_at = ?,
+                    heartbeat_count = 0,
+                    heartbeat_case_index = 0
+                WHERE job_id = ?
+                  AND lease_owner = ?
+                  AND lease_epoch = ?
+                  AND current_item_index = ?
+                """,
+                timestamp(observedAt),
+                claimed.job().jobId(),
+                claimed.leaseOwner(),
+                claimed.leaseEpoch(),
+                claimed.currentItemIndex());
+        if (updated != 1) {
+            throw new IllegalStateException(
+                    "Scenario batch heartbeat reset lost its lease");
+        }
+    }
+
+    private void updateExecutionCheckpoint(
+            StoredJob stored,
+            Lease lease,
+            Instant observedAt,
+            long heartbeatCount,
+            int nextCaseIndex) {
+        int updated = jdbc.update("""
+                UPDATE scenario_rehearsal_batch_jobs
+                SET heartbeat_at = ?,
+                    heartbeat_count = ?,
+                    heartbeat_case_index = ?
+                WHERE job_id = ?
+                  AND lease_owner = ?
+                  AND lease_epoch = ?
+                  AND lease_expires_at = ?
+                  AND current_item_index = ?
+                  AND status IN ('RUNNING', 'CANCEL_REQUESTED')
+                """,
+                timestamp(observedAt),
+                heartbeatCount,
+                nextCaseIndex,
+                stored.job().jobId(),
+                lease.ownerId(),
+                lease.epoch(),
+                timestamp(lease.expiresAt()),
+                lease.itemIndex());
+        if (updated != 1) {
+            throw new IllegalStateException(
+                    "Scenario batch heartbeat lost its lease");
+        }
     }
 
     private StoredItem requireRunningItem(
@@ -2290,6 +2507,18 @@ public final class DatabaseScenarioRehearsalBatchRepository
                     || executionTimeout.isNegative()) {
                 throw new IllegalArgumentException(
                         "executionTimeout must be positive");
+            }
+        }
+    }
+
+    private record StoredHeartbeat(
+            long count,
+            int nextCaseIndex
+    ) {
+        private StoredHeartbeat {
+            if (count < 0 || nextCaseIndex < 0) {
+                throw new IllegalStateException(
+                        "Scenario batch heartbeat state is invalid");
             }
         }
     }

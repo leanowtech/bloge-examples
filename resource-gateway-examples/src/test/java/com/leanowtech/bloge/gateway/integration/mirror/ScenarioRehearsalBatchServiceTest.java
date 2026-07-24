@@ -124,7 +124,7 @@ class ScenarioRehearsalBatchServiceTest {
         when(repository.claimNext(
                 "sg", "test", "worker-a", policy()))
                 .thenReturn(claim);
-        when(runtime.execute(any(), any()))
+        when(runtime.execute(any(), any(), any()))
                 .thenReturn(bundle);
         when(integrity.requireVerified(bundle))
                 .thenReturn(verified);
@@ -225,7 +225,7 @@ class ScenarioRehearsalBatchServiceTest {
                 policy()))
                 .thenReturn(job(
                         ScenarioRehearsalBatchJob.Status.PARTIAL));
-        when(runtime.execute(any(), any()))
+        when(runtime.execute(any(), any(), any()))
                 .thenThrow(new IntegrationProblemException(
                         IntegrationProblem.serviceUnavailable(
                                 "RG.MIRROR.REHEARSAL.RUNTIME_UNAVAILABLE",
@@ -254,6 +254,88 @@ class ScenarioRehearsalBatchServiceTest {
                 .disposition()).isEqualTo(
                 ScenarioRehearsalBatchWorker.Disposition
                         .ITEM_FAILED);
+    }
+
+    @Test
+    void workerMapsADurableCancellationCheckpointWithoutPublishingEvidence() {
+        ScenarioRehearsalBatchRepository repository =
+                mock(ScenarioRehearsalBatchRepository.class);
+        ScenarioRehearsalRuntimeService runtime =
+                mock(ScenarioRehearsalRuntimeService.class);
+        ScenarioRehearsalBatchRepository.Claim claim = claim();
+        ScenarioRehearsalBatchJob cancelled =
+                job(ScenarioRehearsalBatchJob.Status.CANCELLED);
+        when(repository.claimNext(
+                "sg", "test", "worker-a", policy()))
+                .thenReturn(claim);
+        when(repository.checkpointExecution(
+                claim.lease(), 0, policy()))
+                .thenReturn(
+                        new ScenarioRehearsalBatchRepository
+                                .ExecutionControlCheckpoint(
+                                ScenarioRehearsalBatchRepository
+                                        .ExecutionControlOutcome
+                                        .CONTINUE,
+                                NOW,
+                                1,
+                                0,
+                                claim.job()));
+        when(repository.checkpointExecution(
+                claim.lease(), 1, policy()))
+                .thenReturn(
+                        new ScenarioRehearsalBatchRepository
+                                .ExecutionControlCheckpoint(
+                                ScenarioRehearsalBatchRepository
+                                        .ExecutionControlOutcome
+                                        .CANCELLED,
+                                NOW.plusMillis(1),
+                                2,
+                                1,
+                                cancelled));
+        when(runtime.execute(any(), any(), any()))
+                .thenAnswer(invocation -> {
+                    ScenarioRehearsalExecutionControl control =
+                            invocation.getArgument(2);
+                    control.checkpoint(
+                            new ScenarioRehearsalExecutionControl
+                                    .Checkpoint(
+                                    ScenarioRehearsalExecutionControl
+                                            .Phase.BEFORE_CASE,
+                                    0,
+                                    1));
+                    control.checkpoint(
+                            new ScenarioRehearsalExecutionControl
+                                    .Checkpoint(
+                                    ScenarioRehearsalExecutionControl
+                                            .Phase.AFTER_CASE,
+                                    1,
+                                    1));
+                    throw new AssertionError(
+                            "Cancellation checkpoint must stop execution");
+                });
+        ScenarioRehearsalBatchWorker worker =
+                new ScenarioRehearsalBatchWorker(
+                        repository,
+                        runtime,
+                        mock(ScenarioRehearsalEvidenceIntegrityService.class),
+                        policy(),
+                        mapper);
+
+        ScenarioRehearsalBatchWorker.Turn turn =
+                worker.runOnce("sg", "test", "worker-a");
+
+        assertThat(turn.disposition()).isEqualTo(
+                ScenarioRehearsalBatchWorker.Disposition
+                        .ITEM_CANCELLED);
+        assertThat(turn.job()).isEqualTo(cancelled);
+        assertThat(turn.failureCode()).isEqualTo(
+                "RG.MIRROR.REHEARSAL_BATCH.CANCELLED");
+        verify(repository, org.mockito.Mockito.never())
+                .completeItem(any(), any(), any());
+        verify(repository, org.mockito.Mockito.never())
+                .retryItem(any(), any(), any());
+        verify(repository, org.mockito.Mockito.never())
+                .failItem(any(), any(), any());
     }
 
     private ScenarioRehearsalBatchRepository.Claim claim() {
@@ -337,8 +419,19 @@ class ScenarioRehearsalBatchServiceTest {
                                 == ScenarioRehearsalBatchJob.Status
                                 .PARTIAL
                                 ? "RG.MIRROR.REHEARSAL.PLAN_REVOKED"
+                                : status
+                                == ScenarioRehearsalBatchJob.Status
+                                .CANCELLED
+                                ? "RG.MIRROR.REHEARSAL_BATCH.CANCELLED"
                                 : "",
-                        "", "",
+                        status
+                                == ScenarioRehearsalBatchJob.Status
+                                .CANCELLED
+                                ? "cancel-running-001" : "",
+                        status
+                                == ScenarioRehearsalBatchJob.Status
+                                .CANCELLED
+                                ? "OWNER_REQUEST" : "",
                         NOW,
                         NOW,
                         terminal ? NOW : null,

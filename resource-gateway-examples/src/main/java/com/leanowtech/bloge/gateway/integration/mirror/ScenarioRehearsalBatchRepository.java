@@ -135,6 +135,53 @@ public interface ScenarioRehearsalBatchRepository {
         }
     }
 
+    /** Database-authoritative outcome of one payload-free execution heartbeat. */
+    enum ExecutionControlOutcome {
+        CONTINUE,
+        CANCELLED,
+        DEADLINE_EXCEEDED,
+        LEASE_LOST
+    }
+
+    /**
+     * Persisted heartbeat and cooperative-control decision for the current item.
+     *
+     * @param outcome continue or a closed stop reason
+     * @param observedAt database-clock decision time
+     * @param heartbeatCount monotonic heartbeat count for the current item attempt
+     * @param nextCaseIndex latest observed aggregate progress cursor
+     * @param job integrity-verified job projection after the decision
+     */
+    record ExecutionControlCheckpoint(
+            ExecutionControlOutcome outcome,
+            Instant observedAt,
+            long heartbeatCount,
+            int nextCaseIndex,
+            ScenarioRehearsalBatchJob job
+    ) {
+        /** Validates heartbeat coordinates and terminal decision closure. */
+        public ExecutionControlCheckpoint {
+            outcome = Objects.requireNonNull(outcome, "outcome");
+            observedAt = Objects.requireNonNull(
+                    observedAt, "observedAt");
+            job = Objects.requireNonNull(job, "job");
+            if (heartbeatCount < 0 || nextCaseIndex < 0) {
+                throw new IllegalArgumentException(
+                        "Scenario batch execution checkpoint is invalid");
+            }
+            if ((outcome == ExecutionControlOutcome.CANCELLED
+                    && job.status()
+                    != ScenarioRehearsalBatchJob.Status.CANCELLED)
+                    || (outcome
+                    == ExecutionControlOutcome.DEADLINE_EXCEEDED
+                    && job.status()
+                    != ScenarioRehearsalBatchJob.Status.EXPIRED)) {
+                throw new IllegalArgumentException(
+                        "Scenario batch stop decision differs from its job");
+            }
+        }
+    }
+
     /** Terminal execution projection supplied after independent Scenario evidence verification. */
     record ItemCompletion(
             ScenarioCaseRehearsalResult.Outcome outcome,
@@ -182,6 +229,19 @@ public interface ScenarioRehearsalBatchRepository {
             String region,
             String environmentId,
             String ownerId,
+            ScenarioRehearsalBatchPolicy policy);
+
+    /**
+     * Persists one liveness/progress heartbeat and observes cancellation, deadline, or lease loss.
+     *
+     * <p>The heartbeat does not extend the lease: claim already reserves the immutable compiled
+     * plan timeout plus commit reserve, and renewal must not turn a bounded plan into unbounded
+     * execution. A cancellation or deadline decision terminalizes the batch in the same database
+     * transaction before it is returned.</p>
+     */
+    ExecutionControlCheckpoint checkpointExecution(
+            Lease lease,
+            int nextCaseIndex,
             ScenarioRehearsalBatchPolicy policy);
 
     /**

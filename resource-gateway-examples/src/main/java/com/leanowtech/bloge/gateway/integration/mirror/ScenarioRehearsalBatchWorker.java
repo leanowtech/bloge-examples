@@ -71,6 +71,10 @@ public final class ScenarioRehearsalBatchWorker {
         IntegrationRequestContext identity =
                 claim.principal().toExecutionContext(
                         correlationId(claim));
+        BatchExecutionControl control =
+                new BatchExecutionControl(
+                        claim.lease(),
+                        identity.correlationId());
         try {
             ScenarioRehearsalEvidenceBundle produced =
                     runtime.execute(
@@ -78,7 +82,8 @@ public final class ScenarioRehearsalBatchWorker {
                                     "",
                                     claim.item().childRequestId(),
                                     claim.item().compiledPlanRef()),
-                            identity);
+                            identity,
+                            control);
             ScenarioRehearsalEvidenceBundle verified =
                     evidenceIntegrity.requireVerified(
                             produced).bundle();
@@ -105,6 +110,9 @@ public final class ScenarioRehearsalBatchWorker {
                     job,
                     claim.item().itemIndex(),
                     "");
+        } catch (ScenarioRehearsalExecutionControlException stopped) {
+            return controlledStop(
+                    claim, control, stopped);
         } catch (IntegrationProblemException problem) {
             String code = failureCode(
                     problem.problem().code(),
@@ -125,6 +133,55 @@ public final class ScenarioRehearsalBatchWorker {
                     claim,
                     "RG.MIRROR.REHEARSAL_BATCH.WORKER_UNAVAILABLE");
         }
+    }
+
+    private Turn controlledStop(
+            ScenarioRehearsalBatchRepository.Claim claim,
+            BatchExecutionControl control,
+            ScenarioRehearsalExecutionControlException stopped) {
+        ScenarioRehearsalBatchRepository
+                .ExecutionControlCheckpoint checkpoint =
+                control.latest();
+        if (checkpoint == null
+                || !matches(
+                checkpoint.outcome(), stopped.reason())) {
+            return new Turn(
+                    Disposition.CONTROL_INCONSISTENT,
+                    checkpoint == null
+                            ? claim.job() : checkpoint.job(),
+                    claim.item().itemIndex(),
+                    "RG.MIRROR.REHEARSAL_BATCH.CONTROL_INCONSISTENT");
+        }
+        Disposition disposition = switch (checkpoint.outcome()) {
+            case CANCELLED -> Disposition.ITEM_CANCELLED;
+            case DEADLINE_EXCEEDED -> Disposition.ITEM_EXPIRED;
+            case LEASE_LOST -> Disposition.LEASE_LOST;
+            case CONTINUE -> throw new IllegalStateException(
+                    "Continue checkpoint cannot stop a Scenario batch");
+        };
+        return new Turn(
+                disposition,
+                checkpoint.job(),
+                claim.item().itemIndex(),
+                stopped.reason().code());
+    }
+
+    private static boolean matches(
+            ScenarioRehearsalBatchRepository
+                    .ExecutionControlOutcome outcome,
+            ScenarioRehearsalExecutionControlException.Reason reason) {
+        return switch (outcome) {
+            case CONTINUE -> false;
+            case CANCELLED ->
+                    reason == ScenarioRehearsalExecutionControlException
+                            .Reason.CANCELLED;
+            case DEADLINE_EXCEEDED ->
+                    reason == ScenarioRehearsalExecutionControlException
+                            .Reason.DEADLINE_EXCEEDED;
+            case LEASE_LOST ->
+                    reason == ScenarioRehearsalExecutionControlException
+                            .Reason.LEASE_LOST;
+        };
     }
 
     private Turn retry(
@@ -228,6 +285,53 @@ public final class ScenarioRehearsalBatchWorker {
                 ? normalized : fallback;
     }
 
+    private final class BatchExecutionControl
+            implements ScenarioRehearsalExecutionControl {
+        private final ScenarioRehearsalBatchRepository.Lease lease;
+        private final String correlationId;
+        private ScenarioRehearsalBatchRepository
+                .ExecutionControlCheckpoint latest;
+
+        private BatchExecutionControl(
+                ScenarioRehearsalBatchRepository.Lease lease,
+                String correlationId) {
+            this.lease = Objects.requireNonNull(lease, "lease");
+            this.correlationId = correlationId == null
+                    ? "" : correlationId.trim();
+        }
+
+        @Override
+        public void checkpoint(Checkpoint checkpoint) {
+            Objects.requireNonNull(checkpoint, "checkpoint");
+            latest = repository.checkpointExecution(
+                    lease,
+                    checkpoint.nextCaseIndex(),
+                    policy);
+            ScenarioRehearsalExecutionControlException.Reason
+                    reason = switch (latest.outcome()) {
+                case CONTINUE -> null;
+                case CANCELLED ->
+                        ScenarioRehearsalExecutionControlException
+                                .Reason.CANCELLED;
+                case DEADLINE_EXCEEDED ->
+                        ScenarioRehearsalExecutionControlException
+                                .Reason.DEADLINE_EXCEEDED;
+                case LEASE_LOST ->
+                        ScenarioRehearsalExecutionControlException
+                                .Reason.LEASE_LOST;
+            };
+            if (reason != null) {
+                throw new ScenarioRehearsalExecutionControlException(
+                        reason, correlationId);
+            }
+        }
+
+        private ScenarioRehearsalBatchRepository
+                .ExecutionControlCheckpoint latest() {
+            return latest;
+        }
+    }
+
     /** Payload-free outcome of one bounded worker turn. */
     public record Turn(
             Disposition disposition,
@@ -256,6 +360,10 @@ public final class ScenarioRehearsalBatchWorker {
         NO_WORK,
         ITEM_COMPLETED,
         ITEM_RETRY_SCHEDULED,
-        ITEM_FAILED
+        ITEM_FAILED,
+        ITEM_CANCELLED,
+        ITEM_EXPIRED,
+        LEASE_LOST,
+        CONTROL_INCONSISTENT
     }
 }

@@ -31,7 +31,7 @@ integration something the business flow can see, reason about, test, and change.
 | Governed capability closures | Sealed Resource/Operator/Graph projections, exact cycle-checked closure for all seven shipped graphs, nested foreach/loop boundary inventory, full enterprise scope, append-only lifecycle revisions, classification-aware reads, and honest mirror readiness flags |
 | Governed capability observations | Signed payload-free invocation facts, operator-owned admission policy, external vault/proof verification, durable admitted-or-quarantined decisions, full-scope idempotency, and independent offline verification |
 | Governed capability corpora | Immutable quarantine review, exact admitted-source candidates, metadata risk gates, independent owner-reviewed publication lineage, second source-authority verification, and honest resolver readiness |
-| Governed scenario rehearsal | Append-only Scenario assets, exact compilation, durable per-case execution, independently signed aggregate evidence, multi-hold retention/deletion proof, deterministic ANEKE workbook seeds, and an opt-in region-isolated durable batch scheduler |
+| Governed scenario rehearsal | Append-only Scenario assets, exact compilation, durable per-case execution, independently signed aggregate evidence, multi-hold retention/deletion proof, deterministic ANEKE workbook seeds, and an opt-in region-isolated batch scheduler with database-authoritative cooperative control |
 | Stateful mirror sessions | Versioned entity/write/session/checkpoint/write-attempt protocols, atomic multi-entity mutations, exact replay, AES-GCM isolated persistence, lease/fence/CAS concurrency, durable crash-window reconciliation, TTL/destroy, payload-free signed state evidence, signed same-data-plane restart recovery admission, ANEKE workbook seeds, and independently verified clients |
 | Governed replay payloads | Payload values detached from immutable evidence, classification ABAC, selective retention, legal hold, bounded expiry, and signed deletion proof |
 | Workbook and gate evidence loop | Deterministic sanitized workbook seeds, exact suite/run evidence refs, versioned gate decision basis, stale detection, and transactional gate events |
@@ -222,11 +222,21 @@ aggregate, exact plan, and both public keys with
 `findScenarioRehearsalWorkbookSeed`, then independently recheck both
 signatures, every content address and source join, and the gate decision before
 returning the seed.
+Autonomous batches add payload-free execution-control checkpoints before case
+resolution, before each external case, after its durable progress checkpoint,
+and before aggregate commit. Each checkpoint verifies the exact batch
+owner/epoch/item fence using database time, records a monotonic heartbeat and
+case cursor, and atomically observes cancellation or deadline expiry. A
+running cancellation therefore converges after at most the current bounded
+case; completed case progress is retained while the current batch item becomes
+conservatively `INDETERMINATE`. Heartbeats deliberately do not extend the
+immutable plan timeout plus commit reserve.
 The capability probe therefore reports Scenario execution, evidence API,
-retention API, legal hold, deletion proof, and workbook seed as available while keeping
+retention API, legal hold, deletion proof, workbook seed, and
+`mirrorScenarioRehearsalBatchCooperativeControl=true` as available while keeping
 `mirrorScenarioRehearsalEvidence=false`: enterprise policy authority,
-WORM/transparency anchoring, consumer/environment certification, in-flight batch heartbeat/cancel,
-batch evidence, and owner UX
+WORM/transparency anchoring, consumer/environment certification, hard
+termination of an uncooperative operator, batch evidence, and owner UX
 remain required before this becomes publish-gate evidence. See the
 [scenario rehearsal compiler guide](../docs/resource-gateway-scenario-rehearsal-compiler.md).
 
