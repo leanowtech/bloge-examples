@@ -4,6 +4,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.leanowtech.bloge.gateway.integration.IntegrationProblem;
 import com.leanowtech.bloge.gateway.integration.IntegrationProblemException;
 import com.leanowtech.bloge.gateway.integration.IntegrationRequestContext;
+import com.leanowtech.bloge.gateway.testing.evidence.ProtocolFingerprint;
 import com.leanowtech.bloge.gateway.testing.runtime.MirrorStateBaselineResolver;
 import com.leanowtech.bloge.gateway.testing.runtime.MirrorStateException;
 import com.leanowtech.bloge.gateway.testing.runtime.MirrorStateRunSession;
@@ -28,6 +29,10 @@ import java.util.concurrent.locks.ReentrantLock;
  * resource, credential, operator registry, or caller-selected baseline can enter this boundary.</p>
  */
 public final class MirrorSessionIntegrationService {
+    private static final String CORRELATION_FINGERPRINT_DOMAIN =
+            "resourceGateway.mirrorStateWriteAttempt.correlation.v1";
+    private static final int MAXIMUM_CORRELATION_MATERIAL_BYTES =
+            16 * 1_024;
     private final ObjectMapper mapper;
     private final MirrorSessionStateStore store;
     private final MirrorStateBaselineResolver baselineResolver;
@@ -202,6 +207,37 @@ public final class MirrorSessionIntegrationService {
         } catch (IllegalArgumentException invalid) {
             throw badRequest(identity, "RG.MIRROR.SESSION.ID_INVALID",
                     "The mirror session id is invalid.");
+        }
+    }
+
+    /**
+     * Reads one durable payload-free write-attempt outcome for recovery or governance evidence.
+     *
+     * @param sessionId exact Session identity
+     * @param attemptId deterministic attempt identity
+     * @param identity verified enterprise identity
+     * @return canonical in-progress or terminal journal record
+     */
+    public MirrorStateWriteAttempt writeAttempt(
+            String sessionId,
+            String attemptId,
+            IntegrationRequestContext identity) {
+        CapabilitySnapshot.Scope scope = requireScope(identity);
+        try {
+            return store.findWriteAttempt(
+                    scope,
+                    normalizeSessionId(sessionId, identity),
+                    normalizeAttemptId(attemptId, identity))
+                    .orElseThrow(() -> notFound(identity));
+        } catch (IntegrationProblemException expected) {
+            throw expected;
+        } catch (MirrorSessionStateStoreException failure) {
+            throw storeProblem(identity, failure);
+        } catch (IllegalArgumentException invalid) {
+            throw badRequest(
+                    identity,
+                    "RG.MIRROR.SESSION.WRITE_ATTEMPT_ID_INVALID",
+                    "The mirror Session write-attempt id is invalid.");
         }
     }
 
@@ -397,8 +433,12 @@ public final class MirrorSessionIntegrationService {
             String sessionId,
             MirrorSessionCommandRequest request,
             IntegrationRequestContext identity) {
+        WriteAttemptContext attemptContext =
+                directAttemptContext(request, identity);
         MirrorStateRunSession.CommandResult result =
-                commandResult(sessionId, request, identity);
+                commandResult(
+                        sessionId, request,
+                        attemptContext, identity);
         return new MirrorSessionCommandResult(
                 MirrorSessionCommandResult.SCHEMA_VERSION,
                 result.descriptor(), result.receipt(),
@@ -417,8 +457,30 @@ public final class MirrorSessionIntegrationService {
      * @param writeEffectRef exact effect selected by the plan capability
      * @param input detached graph-node input
      * @param expectedStateFingerprint exact current run head
+     * @param attemptContext exact durable graph execution coordinate
      * @param identity verified enterprise identity
      * @return durable command result and complete newly visible Session aggregate
+     */
+    MirrorStateRunSession.CommandResult commandForRun(
+            String sessionId,
+            MirrorArtifactRef writeEffectRef,
+            Map<String, Object> input,
+            String expectedStateFingerprint,
+            MirrorStateRunSession.AttemptContext attemptContext,
+            IntegrationRequestContext identity) {
+        return commandResult(
+                sessionId,
+                new MirrorSessionCommandRequest(
+                        MirrorSessionCommandRequest.SCHEMA_VERSION,
+                        writeEffectRef, expectedStateFingerprint, input),
+                new WriteAttemptContext(
+                        attemptContext.coordinate(),
+                        attemptContext.requestFingerprint()),
+                identity);
+    }
+
+    /**
+     * Compatibility adapter for isolated tests that do not assemble the durable attempt journal.
      */
     MirrorStateRunSession.CommandResult commandForRun(
             String sessionId,
@@ -430,18 +492,37 @@ public final class MirrorSessionIntegrationService {
                 sessionId,
                 new MirrorSessionCommandRequest(
                         MirrorSessionCommandRequest.SCHEMA_VERSION,
-                        writeEffectRef, expectedStateFingerprint, input),
-                identity);
+                        writeEffectRef, expectedStateFingerprint,
+                        input),
+                null, identity);
     }
 
     private MirrorStateRunSession.CommandResult commandResult(
             String sessionId,
             MirrorSessionCommandRequest request,
+            WriteAttemptContext attemptContext,
             IntegrationRequestContext identity) {
         CapabilitySnapshot.Scope scope = requireScope(identity);
         if (request == null) {
             throw badRequest(identity, "RG.MIRROR.SESSION.COMMAND_INVALID",
                     "A complete stateful mirror command is required.");
+        }
+        if (attemptContext != null) {
+            boolean reconciliationReady;
+            try {
+                reconciliationReady =
+                        store.writeAttemptReconciliationReady();
+            } catch (RuntimeException unavailable) {
+                reconciliationReady = false;
+            }
+            if (!reconciliationReady) {
+                throw storeProblem(
+                        identity,
+                        new MirrorSessionStateStoreException(
+                                MirrorSessionStateStoreException.Code
+                                        .UNAVAILABLE,
+                                5));
+            }
         }
         SessionKey key = new SessionKey(scope, normalizeSessionId(
                 sessionId, identity));
@@ -454,7 +535,9 @@ public final class MirrorSessionIntegrationService {
             try {
                 reference.lock().lock();
                 try {
-                    return executeCommand(key, request, identity);
+                    return executeCommand(
+                            key, request, attemptContext,
+                            identity);
                 } finally {
                     reference.lock().unlock();
                 }
@@ -489,6 +572,7 @@ public final class MirrorSessionIntegrationService {
     private MirrorStateRunSession.CommandResult executeCommand(
             SessionKey key,
             MirrorSessionCommandRequest request,
+            WriteAttemptContext attemptContext,
             IntegrationRequestContext identity) {
         MirrorSessionStateStore.ClaimedSession claimed;
         try {
@@ -499,7 +583,9 @@ public final class MirrorSessionIntegrationService {
             throw storeProblem(identity, failure);
         }
         try {
-            return executeClaimedCommand(claimed, request, identity);
+            return executeClaimedCommand(
+                    claimed, request,
+                    attemptContext, identity);
         } finally {
             releaseLease(claimed.lease());
         }
@@ -508,6 +594,7 @@ public final class MirrorSessionIntegrationService {
     private MirrorStateRunSession.CommandResult executeClaimedCommand(
             MirrorSessionStateStore.ClaimedSession claimed,
             MirrorSessionCommandRequest request,
+            WriteAttemptContext attemptContext,
             IntegrationRequestContext identity) {
         MirrorSessionPayload payload = claimed.payload();
         WriteEffectSpec effect = payload.writeEffects().stream()
@@ -526,6 +613,8 @@ public final class MirrorSessionIntegrationService {
                 new AtomicReference<>();
         AtomicReference<MirrorSessionStateStoreException> storeFailure =
                 new AtomicReference<>();
+        AtomicReference<String> writeAttemptId =
+                new AtomicReference<>("");
         MirrorStateTransactionEngine engine = new MirrorStateTransactionEngine(
                 mapper, payload.stateModel(), payload.state(),
                 baselineResolver, clock,
@@ -534,13 +623,20 @@ public final class MirrorSessionIntegrationService {
                         MirrorSessionPayload sealed =
                                 MirrorSessionProtocolIntegrity.seal(
                                         mapper, payload.withState(candidate));
-                        committedPayload.set(sealed);
                         committed.set(store.compareAndSet(
                                 new MirrorSessionStateStore.CommitCommand(
                                         claimed.lease(),
                                         expected.fingerprint(),
-                                        sealed)));
+                                        sealed,
+                                        writeAttemptId.get())));
+                        committedPayload.set(sealed);
                     } catch (MirrorSessionStateStoreException failure) {
+                        if (recoverCommittedAttempt(
+                                claimed, writeAttemptId.get(),
+                                candidate, committed,
+                                committedPayload)) {
+                            return;
+                        }
                         storeFailure.set(failure);
                         throw failure;
                     }
@@ -550,14 +646,44 @@ public final class MirrorSessionIntegrationService {
             receipt = engine.execute(
                     effect,
                     request.input(),
-                    current -> {
-                        if (!request.expectedStateFingerprint().isBlank()
-                                && !request.expectedStateFingerprint().equals(
-                                current.fingerprint())) {
-                            throw new MirrorSessionStateStoreException(
-                                    MirrorSessionStateStoreException.Code
-                                            .STATE_CONFLICT,
-                                    1);
+                    new MirrorStateTransactionEngine
+                            .CommandLifecycle() {
+                        @Override
+                        public void beforeNew(
+                                SessionStateSpace current,
+                                MirrorStateTransactionEngine
+                                        .CommandIdentity commandIdentity) {
+                            if (!request.expectedStateFingerprint()
+                                    .isBlank()
+                                    && !request
+                                    .expectedStateFingerprint()
+                                    .equals(current.fingerprint())) {
+                                throw new MirrorSessionStateStoreException(
+                                        MirrorSessionStateStoreException.Code
+                                                .STATE_CONFLICT,
+                                        1);
+                            }
+                            beginWriteAttempt(
+                                    claimed, attemptContext,
+                                    current, commandIdentity,
+                                    writeAttemptId);
+                        }
+
+                        @Override
+                        public void onReplay(
+                                SessionStateSpace current,
+                                MirrorStateTransactionEngine
+                                        .CommandIdentity commandIdentity,
+                                SessionStateSpace.TransactionReceipt
+                                        originalReceipt) {
+                            beginWriteAttempt(
+                                    claimed, attemptContext,
+                                    current, commandIdentity,
+                                    writeAttemptId);
+                            completeReplayAttempt(
+                                    claimed, current,
+                                    originalReceipt,
+                                    writeAttemptId.get());
                         }
                     });
         } catch (MirrorSessionStateStoreException failure) {
@@ -566,6 +692,9 @@ public final class MirrorSessionIntegrationService {
             if (storeFailure.get() != null) {
                 throw storeProblem(identity, storeFailure.get());
             }
+            completeRejectedAttempt(
+                    claimed, payload.state(),
+                    writeAttemptId.get(), failure);
             throw stateProblem(identity, failure);
         }
         boolean replayed =
@@ -585,6 +714,168 @@ public final class MirrorSessionIntegrationService {
                 "new command did not produce a sealed payload");
         return new MirrorStateRunSession.CommandResult(
                 descriptor, resultingPayload, receipt, replayed);
+    }
+
+    private void beginWriteAttempt(
+            MirrorSessionStateStore.ClaimedSession claimed,
+            WriteAttemptContext attemptContext,
+            SessionStateSpace current,
+            MirrorStateTransactionEngine.CommandIdentity commandIdentity,
+            AtomicReference<String> writeAttemptId) {
+        if (attemptContext == null) {
+            return;
+        }
+        String attemptId =
+                MirrorStateWriteAttemptIntegrity.attemptId(
+                        mapper, claimed.lease().scope(),
+                        claimed.lease().sessionId(),
+                        attemptContext.coordinate(),
+                        commandIdentity.writeEffectRef(),
+                        attemptContext.requestFingerprint());
+        writeAttemptId.set(attemptId);
+        store.beginWriteAttempt(
+                new MirrorSessionStateStore
+                        .BeginWriteAttemptCommand(
+                        claimed.lease(), attemptId,
+                        attemptContext.coordinate(),
+                        current.planFingerprint(),
+                        commandIdentity.writeEffectRef(),
+                        attemptContext.requestFingerprint(),
+                        commandIdentity.commandFingerprint(),
+                        current.stateRevision(),
+                        current.worldFingerprint(),
+                        current.fingerprint()));
+    }
+
+    private void completeReplayAttempt(
+            MirrorSessionStateStore.ClaimedSession claimed,
+            SessionStateSpace current,
+            SessionStateSpace.TransactionReceipt receipt,
+            String writeAttemptId) {
+        if (writeAttemptId.isBlank()) {
+            return;
+        }
+        store.completeWriteAttempt(
+                new MirrorSessionStateStore
+                        .CompleteWriteAttemptCommand(
+                        claimed.lease(), writeAttemptId,
+                        MirrorStateWriteOutcomeRunEvidence
+                                .WriteOutcome.REPLAYED,
+                        MirrorStateWriteOutcomeRunEvidence
+                                .WriteStage.COMPLETED,
+                        current.stateRevision(),
+                        current.worldFingerprint(),
+                        current.fingerprint(),
+                        receipt.fingerprint(),
+                        false, "", ""));
+    }
+
+    private void completeRejectedAttempt(
+            MirrorSessionStateStore.ClaimedSession claimed,
+            SessionStateSpace current,
+            String writeAttemptId,
+            MirrorStateException failure) {
+        if (writeAttemptId.isBlank()
+                || "RG.MIRROR.STATE.COMMIT_FAILED".equals(
+                failure.code())) {
+            return;
+        }
+        try {
+            store.completeWriteAttempt(
+                    new MirrorSessionStateStore
+                            .CompleteWriteAttemptCommand(
+                            claimed.lease(), writeAttemptId,
+                            MirrorStateWriteOutcomeRunEvidence
+                                    .WriteOutcome.REJECTED,
+                            MirrorStateWriteOutcomeRunEvidence
+                                    .WriteStage
+                                    .COMMAND_EVALUATION,
+                            current.stateRevision(),
+                            current.worldFingerprint(),
+                            current.fingerprint(),
+                            "", false, failure.code(),
+                            "MIRROR_STATE_WRITE"));
+        } catch (RuntimeException unavailable) {
+            // The in-progress intent remains recoverable after its database lease expires.
+        }
+    }
+
+    private boolean recoverCommittedAttempt(
+            MirrorSessionStateStore.ClaimedSession claimed,
+            String writeAttemptId,
+            SessionStateSpace candidate,
+            AtomicReference<MirrorSessionStateStore.CommitResult> committed,
+            AtomicReference<MirrorSessionPayload> committedPayload) {
+        if (writeAttemptId.isBlank()) {
+            return false;
+        }
+        try {
+            Optional<MirrorStateWriteAttempt> attempt =
+                    store.findWriteAttempt(
+                            claimed.lease().scope(),
+                            claimed.lease().sessionId(),
+                            writeAttemptId);
+            if (attempt.isEmpty()
+                    || attempt.orElseThrow().outcome()
+                    != MirrorStateWriteOutcomeRunEvidence
+                    .WriteOutcome.COMMITTED) {
+                return false;
+            }
+            MirrorSessionStateStore.SessionSnapshot snapshot =
+                    store.snapshot(
+                            new MirrorSessionStateStore.SnapshotCommand(
+                                    claimed.lease().scope(),
+                                    claimed.lease().sessionId()));
+            if (!snapshot.payload().state().fingerprint().equals(
+                    candidate.fingerprint())) {
+                return false;
+            }
+            committed.set(new MirrorSessionStateStore.CommitResult(
+                    snapshot.descriptor()));
+            committedPayload.set(snapshot.payload());
+            return true;
+        } catch (RuntimeException unavailable) {
+            return false;
+        }
+    }
+
+    private WriteAttemptContext directAttemptContext(
+            MirrorSessionCommandRequest request,
+            IntegrationRequestContext identity) {
+        if (request == null || identity == null) {
+            return null;
+        }
+        String requestFingerprint =
+                ProtocolFingerprint.ofBounded(
+                        mapper, request,
+                        MirrorSessionProtocolIntegrity
+                                .MAXIMUM_PAYLOAD_BYTES);
+        String executionRequestId = "command-"
+                + UUID.randomUUID();
+        return new WriteAttemptContext(
+                new MirrorStateWriteAttempt.Coordinate(
+                        MirrorStateWriteAttempt.ExecutionKind
+                                .SESSION_COMMAND,
+                        executionRequestId, 1,
+                        "session-command-api",
+                        "/session-command",
+                        correlationFingerprint(
+                                identity.correlationId()),
+                        1, 1),
+                requestFingerprint);
+    }
+
+    private String correlationFingerprint(String value) {
+        String normalized = value == null ? "" : value.trim();
+        if (normalized.isEmpty()) {
+            return "";
+        }
+        return ProtocolFingerprint.ofBounded(
+                mapper,
+                Map.of(
+                        "domain", CORRELATION_FINGERPRINT_DOMAIN,
+                        "value", normalized),
+                MAXIMUM_CORRELATION_MATERIAL_BYTES);
     }
 
     private void releaseLease(MirrorSessionStateStore.Lease lease) {
@@ -623,6 +914,21 @@ public final class MirrorSessionIntegrationService {
         if (!normalized.matches("[A-Za-z0-9][A-Za-z0-9@._:-]{0,511}")) {
             throw badRequest(identity, "RG.MIRROR.SESSION.ID_INVALID",
                     "The mirror session id is invalid.");
+        }
+        return normalized;
+    }
+
+    private static String normalizeAttemptId(
+            String attemptId,
+            IntegrationRequestContext identity) {
+        String normalized = attemptId == null
+                ? "" : attemptId.trim();
+        if (!normalized.matches(
+                "attempt-[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}")) {
+            throw badRequest(
+                    identity,
+                    "RG.MIRROR.SESSION.WRITE_ATTEMPT_ID_INVALID",
+                    "The mirror Session write-attempt id is invalid.");
         }
         return normalized;
     }
@@ -769,6 +1075,19 @@ public final class MirrorSessionIntegrationService {
             CapabilitySnapshot.Scope scope,
             String sessionId
     ) {
+    }
+
+    private record WriteAttemptContext(
+            MirrorStateWriteAttempt.Coordinate coordinate,
+            String requestFingerprint
+    ) {
+        private WriteAttemptContext {
+            coordinate = Objects.requireNonNull(
+                    coordinate, "coordinate");
+            requestFingerprint = canonicalFingerprint(
+                    requestFingerprint,
+                    "requestFingerprint");
+        }
     }
 
     private record LockReference(

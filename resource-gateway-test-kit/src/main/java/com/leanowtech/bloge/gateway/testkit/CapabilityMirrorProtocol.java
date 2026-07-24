@@ -516,6 +516,10 @@ public final class CapabilityMirrorProtocol {
     public static final String MIRROR_SESSION_STORE_GENERATION_SCHEMA_RESOURCE =
             SCHEMA_RESOURCE_ROOT
                     + "mirror-session-store-generation-v1.schema.json";
+    /** Packaged durable payload-free Session write-attempt schema. */
+    public static final String MIRROR_STATE_WRITE_ATTEMPT_SCHEMA_RESOURCE =
+            SCHEMA_RESOURCE_ROOT
+                    + "mirror-state-write-attempt-v1.schema.json";
     /** Packaged payload-free exact Session checkpoint schema. */
     public static final String MIRROR_SESSION_CHECKPOINT_SCHEMA_RESOURCE =
             SCHEMA_RESOURCE_ROOT

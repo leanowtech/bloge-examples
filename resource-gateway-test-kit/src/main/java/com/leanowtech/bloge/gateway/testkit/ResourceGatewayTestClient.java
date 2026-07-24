@@ -43,6 +43,9 @@ public final class ResourceGatewayTestClient {
             new MirrorStateProtocolVerifier();
     private static final MirrorSessionCheckpointVerifier MIRROR_CHECKPOINT_VERIFIER =
             new MirrorSessionCheckpointVerifier();
+    private static final MirrorStateWriteAttemptVerifier
+            MIRROR_WRITE_ATTEMPT_VERIFIER =
+            new MirrorStateWriteAttemptVerifier();
     private static final int DEFAULT_MAX_BODY_BYTES = 16 * 1024 * 1024;
     private static final Duration MAX_RETRY_AFTER = Duration.ofHours(24);
 
@@ -1677,6 +1680,54 @@ public final class ResourceGatewayTestClient {
     }
 
     /**
+     * Reads and independently verifies one durable Session write-attempt outcome.
+     *
+     * <p>The result is payload-free and suitable for crash recovery, correctness evidence, and
+     * governance diagnostics. The client verifies strict Schema, store generation, deterministic
+     * attempt id, record fingerprint, failure fingerprint, time ordering, and outcome/state
+     * closure before returning.</p>
+     *
+     * @param sessionId path-safe Session identity
+     * @param attemptId deterministic {@code attempt-UUID} identity
+     * @return bounded verified payload-free attempt projection
+     */
+    public MirrorStateWriteAttemptVerifier.VerifiedWriteAttempt
+    findMirrorSessionWriteAttempt(
+            String sessionId, String attemptId) {
+        String exactSessionId = mirrorSessionId(sessionId);
+        String exactAttemptId = mirrorWriteAttemptId(
+                attemptId);
+        JsonNode response = exchange(
+                "GET",
+                "/api/mirror/sessions/"
+                        + segment(exactSessionId)
+                        + "/write-attempts/"
+                        + segment(exactAttemptId),
+                "", "MIRROR_REHEARSAL", null);
+        JsonNode attempt = requireMirrorEnvelope(
+                response,
+                "MIRROR_STATE_WRITE_ATTEMPT",
+                "resourceGateway.mirrorStateWriteAttempt.v1");
+        MirrorStateWriteAttemptVerifier.VerifiedWriteAttempt
+                verified;
+        try {
+            verified =
+                    MIRROR_WRITE_ATTEMPT_VERIFIER.verify(
+                            attempt);
+        } catch (IllegalArgumentException invalid) {
+            throw responseContractInvalid(
+                    "The server returned an invalid durable mirror Session write attempt.");
+        }
+        if (!exactSessionId.equals(verified.sessionId())
+                || !exactAttemptId.equals(
+                verified.attemptId())) {
+            throw responseContractInvalid(
+                    "The server returned a write attempt for different Session coordinates.");
+        }
+        return verified;
+    }
+
+    /**
      * Creates and independently verifies one payload-free exact Session checkpoint.
      *
      * <p>The client validates strict Schema and every canonical fingerprint, resolves the
@@ -2477,6 +2528,17 @@ public final class ResourceGatewayTestClient {
         if (!normalized.matches("[A-Za-z0-9][A-Za-z0-9@._:-]{0,511}")) {
             throw new IllegalArgumentException(
                     "mirror session id must be path-safe and contain 1 to 512 characters");
+        }
+        return normalized;
+    }
+
+    private static String mirrorWriteAttemptId(
+            String value) {
+        String normalized = normalized(value);
+        if (!normalized.matches(
+                "attempt-[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}")) {
+            throw new IllegalArgumentException(
+                    "mirror write-attempt id must be a canonical attempt UUID");
         }
         return normalized;
     }

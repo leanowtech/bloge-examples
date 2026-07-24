@@ -33,6 +33,7 @@ import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 import static org.springframework.http.MediaType.APPLICATION_JSON;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.header;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
@@ -162,6 +163,50 @@ class MirrorSessionControllerTest {
                 .andExpect(jsonPath("$.code").value(
                         "RG.INTEGRATION.AUTHENTICATION_REQUIRED"));
         verifyNoInteractions(decoder, service);
+    }
+
+    @Test
+    void writeAttemptReadAuthenticatesBeforeScopedLookup()
+            throws Exception {
+        Fixture fixture = fixture();
+        MirrorSessionIntegrationService service =
+                mock(MirrorSessionIntegrationService.class);
+        IntegrationRequestAuthenticator authenticator =
+                mock(IntegrationRequestAuthenticator.class);
+        MirrorSessionRequestDecoder decoder =
+                mock(MirrorSessionRequestDecoder.class);
+        MirrorStateWriteAttempt attempt =
+                writeAttempt(fixture);
+        when(authenticator.authenticate(
+                any(HttpHeaders.class),
+                eq(IntegrationOperation.MIRROR_SESSION_READ)))
+                .thenReturn(identity());
+        when(service.writeAttempt(
+                "refund-session-1",
+                "attempt-00000000-0000-0000-0000-000000000001",
+                identity())).thenReturn(attempt);
+        MockMvc mvc = MockMvcBuilders.standaloneSetup(
+                        new MirrorSessionController(
+                                service, authenticator, decoder))
+                .setControllerAdvice(
+                        new IntegrationProblemHandler())
+                .build();
+
+        mvc.perform(get(
+                        "/api/mirror/sessions/refund-session-1/"
+                                + "write-attempts/"
+                                + "attempt-00000000-0000-0000-0000-000000000001"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.payloadKind").value(
+                        "MIRROR_STATE_WRITE_ATTEMPT"));
+        verify(authenticator).authenticate(
+                any(HttpHeaders.class),
+                eq(IntegrationOperation.MIRROR_SESSION_READ));
+        verify(service).writeAttempt(
+                "refund-session-1",
+                "attempt-00000000-0000-0000-0000-000000000001",
+                identity());
+        verifyNoInteractions(decoder);
     }
 
     @Test
@@ -334,6 +379,47 @@ class MirrorSessionControllerTest {
                         descriptor, receipt, false);
         return new Fixture(
                 create, command, descriptor, result);
+    }
+
+    private MirrorStateWriteAttempt writeAttempt(Fixture fixture) {
+        String fingerprint = fixture.descriptor().fingerprint();
+        MirrorSessionStoreGeneration generation =
+                MirrorSessionStoreGenerationIntegrity.seal(
+                        mapper,
+                        new MirrorSessionStoreGeneration(
+                                "", "store-generation-a",
+                                MirrorSessionStoreGeneration
+                                        .CURRENT_SCHEMA_REVISION,
+                                NOW, ""));
+        return MirrorStateWriteAttemptIntegrity.seal(
+                mapper,
+                new MirrorStateWriteAttempt(
+                        MirrorStateWriteAttempt.SCHEMA_VERSION,
+                        fixture.descriptor().scope(),
+                        fixture.descriptor().sessionId(),
+                        "attempt-00000000-0000-0000-0000-000000000001",
+                        new MirrorStateWriteAttempt.Coordinate(
+                                MirrorStateWriteAttempt.ExecutionKind
+                                        .SESSION_COMMAND,
+                                "session-command-request-a", 1,
+                                "/session-command", "/session-command",
+                                "", 1, 1),
+                        generation,
+                        fixture.descriptor().planFingerprint(),
+                        fixture.command().writeEffectRef(),
+                        fingerprint, fingerprint, 0,
+                        fingerprint, fingerprint,
+                        MirrorStateWriteAttempt.Status.IN_PROGRESS,
+                        null,
+                        MirrorStateWriteOutcomeRunEvidence
+                                .WriteStage.COMMAND_ADMISSION,
+                        MirrorStateWriteOutcomeRunEvidence
+                                .StateDisposition.UNKNOWN,
+                        -1, "", "", "", false,
+                        "", "", "",
+                        MirrorStateWriteAttempt
+                                .ResolutionSource.EXECUTION,
+                        NOW, null, null, ""));
     }
 
     private static IntegrationRequestContext identity() {

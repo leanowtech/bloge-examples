@@ -69,6 +69,8 @@ Environment:
   RG_MIRROR_STATEFUL_MAXIMUM_CONCURRENT_COMMANDS  replica-local in-flight limit
   RG_MIRROR_STATEFUL_EXPIRY_BATCH_SIZE  oldest-first erasure page size (1..1000)
   RG_MIRROR_STATEFUL_EXPIRY_SWEEP_INTERVAL_MILLIS  erasure sweep delay
+  RG_MIRROR_STATEFUL_WRITE_ATTEMPT_RECONCILIATION_BATCH_SIZE  stale-intent page size (1..1000)
+  RG_MIRROR_STATEFUL_WRITE_ATTEMPT_RECONCILIATION_SWEEP_INTERVAL_MILLIS  stale-intent sweep delay
   RG_TEST_WORKER_QUARANTINE_TOKEN_ACTIVE_KEY_ID  required for staging
   RG_TEST_WORKER_QUARANTINE_TOKEN_KEY_RING       required for staging; keyId=base64AES256[,..]
   RG_TEST_WORKER_QUARANTINE_REQUEST_KEY_ACTIVE_KEY_ID  required for staging
@@ -1894,6 +1896,7 @@ wait_for_ready() {
                     if ! printf '%s' "${response}" | jq -e '
                         .payload.features.mirrorStatefulSessionApi == true
                         and .payload.features.mirrorStatefulStateStoreReady == true
+                        and .payload.features.mirrorStateWriteAttemptDurableReconciliationReady == true
                     ' >/dev/null 2>&1; then
                         sleep 2
                         continue
@@ -1901,11 +1904,13 @@ wait_for_ready() {
                 elif ! printf '%s' "${response}" |
                     grep -Eq '"mirrorStatefulSessionApi"[[:space:]]*:[[:space:]]*true' ||
                     ! printf '%s' "${response}" |
-                    grep -Eq '"mirrorStatefulStateStoreReady"[[:space:]]*:[[:space:]]*true'; then
+                    grep -Eq '"mirrorStatefulStateStoreReady"[[:space:]]*:[[:space:]]*true' ||
+                    ! printf '%s' "${response}" |
+                    grep -Eq '"mirrorStateWriteAttemptDurableReconciliationReady"[[:space:]]*:[[:space:]]*true'; then
                     sleep 2
                     continue
                 fi
-                echo "Demo service ready; stateful Session API and state store probes passed: ${url}"
+                echo "Demo service ready; stateful Session, state store, and write-attempt reconciliation probes passed: ${url}"
                 return 0
             fi
             echo "Demo service ready; integration capability probe passed: ${url}"

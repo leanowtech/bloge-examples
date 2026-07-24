@@ -333,6 +333,52 @@ class MirrorSessionStateResolverTest {
                 .isZero();
     }
 
+    @Test
+    void durableAttemptFingerprintsBusinessCorrelationBeforeItLeavesTheRun() {
+        String businessCorrelation = "customer-secret-42";
+        AtomicReference<MirrorStateRunSession.AttemptContext>
+                captured = new AtomicReference<>();
+        MirrorStateRunSession runSession =
+                new MirrorStateRunSession(
+                        mapper, payload(initialState()),
+                        "run-request-42", 3,
+                        (effect, input, expectedState, attempt) -> {
+                            captured.set(attempt);
+                            throw new MirrorStateWriteFailure(
+                                    MirrorStateWriteOutcomeRunEvidence
+                                            .WriteOutcome.REJECTED,
+                                    MirrorStateWriteOutcomeRunEvidence
+                                            .WriteStage
+                                            .COMMAND_EVALUATION,
+                                    "RG.MIRROR.STATE.REFUND_LIMIT",
+                                    "MIRROR_STATE_WRITE", false);
+                        });
+        String requestFingerprint =
+                MirrorResolutionJournal.requestFingerprint(
+                        mapper, Map.of(
+                                "requestId", "REQ-REFUND-42",
+                                "orderId", "O-100",
+                                "amount", 100));
+
+        assertThatThrownBy(() -> runSession.execute(
+                WriteEffectSpecIntegrity.reference(refund),
+                Map.of(
+                        "requestId", "REQ-REFUND-42",
+                        "orderId", "O-100",
+                        "amount", 100),
+                new MirrorStateRunSession.InvocationAttempt(
+                        SITE.invocationSiteId(),
+                        SITE.graphPath(),
+                        businessCorrelation,
+                        1, 1, requestFingerprint)))
+                .isInstanceOf(MirrorStateWriteFailure.class);
+        assertThat(captured.get().coordinate()
+                .correlationFingerprint())
+                .startsWith("sha256:")
+                .doesNotContain(businessCorrelation)
+                .isNotEqualTo(businessCorrelation);
+    }
+
     private MirrorResolver.Request request(MirrorSessionPayload payload) {
         return request(payload, Map.of("orderId", "O-100"));
     }

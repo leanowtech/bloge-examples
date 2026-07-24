@@ -16,6 +16,7 @@ import java.time.ZoneOffset;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
@@ -67,6 +68,50 @@ class MirrorSessionProtocolSchemaTest {
                         mapper, new MirrorSessionStoreGeneration(
                                 "", "store-generation-1", 1,
                                 NOW.minusSeconds(60), ""));
+        MirrorStateWriteAttempt.Coordinate coordinate =
+                new MirrorStateWriteAttempt.Coordinate(
+                        MirrorStateWriteAttempt.ExecutionKind
+                                .GRAPH_RUN,
+                        "run-request-1", 1,
+                        "/root/refund#PRIMARY",
+                        "/root", "", 1, 1);
+        String requestFingerprint =
+                "sha256:" + "7".repeat(64);
+        String attemptId =
+                MirrorStateWriteAttemptIntegrity.attemptId(
+                        mapper, initial.scope(),
+                        initial.sessionId(), coordinate,
+                        WriteEffectSpecIntegrity.reference(effect),
+                        requestFingerprint);
+        MirrorStateWriteAttempt writeAttempt =
+                MirrorStateWriteAttemptIntegrity.seal(
+                        mapper, new MirrorStateWriteAttempt(
+                                MirrorStateWriteAttempt
+                                        .SCHEMA_VERSION,
+                                initial.scope(),
+                                initial.sessionId(), attemptId,
+                                coordinate, generation,
+                                initial.planFingerprint(),
+                                WriteEffectSpecIntegrity
+                                        .reference(effect),
+                                requestFingerprint,
+                                receipt.commandFingerprint(),
+                                initial.stateRevision(),
+                                initial.worldFingerprint(),
+                                initial.fingerprint(),
+                                MirrorStateWriteAttempt.Status
+                                        .IN_PROGRESS,
+                                null,
+                                MirrorStateWriteOutcomeRunEvidence
+                                        .WriteStage
+                                        .COMMAND_ADMISSION,
+                                MirrorStateWriteOutcomeRunEvidence
+                                        .StateDisposition.UNKNOWN,
+                                -1, "", "", "", false,
+                                "", "", "",
+                                MirrorStateWriteAttempt
+                                        .ResolutionSource.EXECUTION,
+                                NOW, null, null, ""));
         MirrorSessionCheckpointIntegrityService checkpointIntegrity =
                 new MirrorSessionCheckpointIntegrityService(
                         mapper,
@@ -102,6 +147,12 @@ class MirrorSessionProtocolSchemaTest {
         assertProperties(result, "mirror-session-command-result-v1.schema.json");
         assertProperties(generation,
                 "mirror-session-store-generation-v1.schema.json");
+        assertProperties(
+                writeAttempt,
+                "mirror-state-write-attempt-v1.schema.json",
+                Set.of(
+                        "outcome", "terminalAt",
+                        "reconciledAt"));
         assertProperties(checkpoint.checkpoint(),
                 "mirror-session-checkpoint-v1.schema.json");
         assertProperties(checkpoint.attestation(),
@@ -137,15 +188,33 @@ class MirrorSessionProtocolSchemaTest {
         assertThat(checkpoint.has("payload")).isFalse();
         assertThat(checkpoint.has("ciphertext")).isFalse();
         assertThat(checkpoint.has("encryptionKeyId")).isFalse();
+
+        JsonNode writeAttempt = schema(
+                "mirror-state-write-attempt-v1.schema.json")
+                .path("properties");
+        assertThat(writeAttempt.has("input")).isFalse();
+        assertThat(writeAttempt.has("response")).isFalse();
+        assertThat(writeAttempt.has("idempotencyKey")).isFalse();
+        assertThat(writeAttempt.has("entityId")).isFalse();
+        assertThat(writeAttempt.has("leaseOwner")).isFalse();
     }
 
     private void assertProperties(Object value, String schemaFile) throws Exception {
+        assertProperties(value, schemaFile, Set.of());
+    }
+
+    private void assertProperties(
+            Object value,
+            String schemaFile,
+            Set<String> omittedOptionalProperties)
+            throws Exception {
         JsonNode serialized = mapper.valueToTree(value);
         JsonNode contract = schema(schemaFile);
         LinkedHashSet<String> actual = new LinkedHashSet<>();
         serialized.fieldNames().forEachRemaining(actual::add);
         LinkedHashSet<String> expected = new LinkedHashSet<>();
         contract.path("properties").fieldNames().forEachRemaining(expected::add);
+        expected.removeAll(omittedOptionalProperties);
 
         assertThat(actual).containsExactlyInAnyOrderElementsOf(expected);
         assertThat(contract.path("additionalProperties").asBoolean()).isFalse();

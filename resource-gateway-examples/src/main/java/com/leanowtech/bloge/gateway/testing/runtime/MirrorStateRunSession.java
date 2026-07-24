@@ -8,10 +8,12 @@ import com.leanowtech.bloge.gateway.integration.mirror.MirrorSessionDescriptor;
 import com.leanowtech.bloge.gateway.integration.mirror.MirrorSessionPayload;
 import com.leanowtech.bloge.gateway.integration.mirror.MirrorSessionProtocolIntegrity;
 import com.leanowtech.bloge.gateway.integration.mirror.MirrorStateWriteOutcomeRunEvidence;
+import com.leanowtech.bloge.gateway.integration.mirror.MirrorStateWriteAttempt;
 import com.leanowtech.bloge.gateway.integration.mirror.SessionStateSpace;
 import com.leanowtech.bloge.gateway.integration.mirror.WriteEffectSpec;
 import com.leanowtech.bloge.gateway.integration.mirror.WriteEffectSpecIntegrity;
 import com.leanowtech.bloge.gateway.testing.domain.ProtocolJsonValue;
+import com.leanowtech.bloge.gateway.testing.evidence.ProtocolFingerprint;
 
 import java.util.Map;
 import java.util.Objects;
@@ -29,9 +31,16 @@ import java.util.concurrent.locks.ReentrantLock;
  * world. It never accepts a store, credential, production operator, or caller-selected scope.</p>
  */
 public final class MirrorStateRunSession {
+    private static final String CORRELATION_FINGERPRINT_DOMAIN =
+            "resourceGateway.mirrorStateWriteAttempt.correlation.v1";
+    private static final int MAXIMUM_CORRELATION_MATERIAL_BYTES =
+            16 * 1_024;
     private final ObjectMapper mapper;
     private final MirrorSessionPayload initialPayload;
     private final CommandExecutor executor;
+    private final DurableCommandExecutor durableExecutor;
+    private final String executionRequestId;
+    private final long executionLeaseEpoch;
     private final AtomicReference<MirrorSessionPayload> currentPayload;
     private final ReentrantLock commandLock = new ReentrantLock(true);
 
@@ -51,6 +60,41 @@ public final class MirrorStateRunSession {
                 initialPayload, "initialPayload");
         MirrorSessionProtocolIntegrity.verify(mapper, initialPayload);
         this.executor = Objects.requireNonNull(executor, "executor");
+        this.durableExecutor = null;
+        this.executionRequestId = "";
+        this.executionLeaseEpoch = 0;
+        this.currentPayload = new AtomicReference<>(initialPayload);
+    }
+
+    /**
+     * Creates one graph-run state head with durable write-attempt coordinates.
+     *
+     * @param mapper canonical protocol mapper
+     * @param initialPayload exact authenticated Session snapshot admitted before graph execution
+     * @param executionRequestId durable mirror execution request identity
+     * @param executionLeaseEpoch monotonic execution-claim generation
+     * @param executor protected durable command and write-attempt boundary
+     */
+    public MirrorStateRunSession(
+            ObjectMapper mapper,
+            MirrorSessionPayload initialPayload,
+            String executionRequestId,
+            long executionLeaseEpoch,
+            DurableCommandExecutor executor) {
+        this.mapper = Objects.requireNonNull(mapper, "mapper");
+        this.initialPayload = Objects.requireNonNull(
+                initialPayload, "initialPayload");
+        MirrorSessionProtocolIntegrity.verify(mapper, initialPayload);
+        this.executionRequestId = required(
+                executionRequestId, "executionRequestId");
+        if (executionLeaseEpoch < 1) {
+            throw new IllegalArgumentException(
+                    "executionLeaseEpoch must be positive");
+        }
+        this.executionLeaseEpoch = executionLeaseEpoch;
+        this.durableExecutor = Objects.requireNonNull(
+                executor, "executor");
+        this.executor = null;
         this.currentPayload = new AtomicReference<>(initialPayload);
     }
 
@@ -64,6 +108,21 @@ public final class MirrorStateRunSession {
     public Execution execute(
             MirrorArtifactRef writeEffectRef,
             Map<String, ?> input) {
+        return execute(writeEffectRef, input, null);
+    }
+
+    /**
+     * Executes one graph invocation with an exact durable delegate-attempt coordinate.
+     *
+     * @param writeEffectRef exact effect selected by the invocation capability
+     * @param input ephemeral detached invocation input
+     * @param invocation exact graph coordinate; required by a durable executor
+     * @return verified before/after state heads and committed receipt
+     */
+    public Execution execute(
+            MirrorArtifactRef writeEffectRef,
+            Map<String, ?> input,
+            InvocationAttempt invocation) {
         Objects.requireNonNull(writeEffectRef, "writeEffectRef");
         if (!"WRITE_EFFECT".equals(writeEffectRef.kind())) {
             throw new IllegalArgumentException(
@@ -86,10 +145,22 @@ public final class MirrorStateRunSession {
                     mapper, effect, before.stateModel());
             CommandResult result;
             try {
+                AttemptContext attemptContext =
+                        durableExecutor == null
+                                ? null : attemptContext(
+                                writeEffectRef,
+                                Objects.requireNonNull(
+                                        invocation,
+                                        "invocation"));
                 result = Objects.requireNonNull(
-                        executor.execute(
+                        durableExecutor == null
+                                ? executor.execute(
                                 writeEffectRef, detachedInput,
-                                before.state().fingerprint()),
+                                before.state().fingerprint())
+                                : durableExecutor.execute(
+                                writeEffectRef, detachedInput,
+                                before.state().fingerprint(),
+                                attemptContext),
                         "command result");
             } catch (MirrorStateWriteFailure normalized) {
                 throw normalized;
@@ -113,6 +184,39 @@ public final class MirrorStateRunSession {
         } finally {
             commandLock.unlock();
         }
+    }
+
+    private AttemptContext attemptContext(
+            MirrorArtifactRef writeEffectRef,
+            InvocationAttempt invocation) {
+        MirrorStateWriteAttempt.Coordinate coordinate =
+                new MirrorStateWriteAttempt.Coordinate(
+                        MirrorStateWriteAttempt.ExecutionKind
+                                .GRAPH_RUN,
+                        executionRequestId,
+                        executionLeaseEpoch,
+                        invocation.invocationSiteId(),
+                        invocation.graphPath(),
+                        correlationFingerprint(
+                                invocation.correlationKey()),
+                        invocation.occurrence(),
+                        invocation.delegateAttempt());
+        return new AttemptContext(
+                coordinate,
+                invocation.requestFingerprint());
+    }
+
+    private String correlationFingerprint(String value) {
+        String normalized = value == null ? "" : value.trim();
+        if (normalized.isEmpty()) {
+            return "";
+        }
+        return ProtocolFingerprint.ofBounded(
+                mapper,
+                Map.of(
+                        "domain", CORRELATION_FINGERPRINT_DOMAIN,
+                        "value", normalized),
+                MAXIMUM_CORRELATION_MATERIAL_BYTES);
     }
 
     /** @return immutable Session aggregate admitted at graph-run start */
@@ -311,6 +415,88 @@ public final class MirrorStateRunSession {
     }
 
     /**
+     * Protected command adapter that also persists the exact graph write-attempt lifecycle.
+     */
+    @FunctionalInterface
+    public interface DurableCommandExecutor {
+        /**
+         * Executes one exact write under state and durable-attempt fences.
+         *
+         * @param writeEffectRef exact admitted write effect
+         * @param input detached business command
+         * @param expectedStateFingerprint exact current run head
+         * @param attemptContext payload-free run/delegate attempt identity
+         * @return durable result including the complete newly visible Session payload
+         */
+        CommandResult execute(
+                MirrorArtifactRef writeEffectRef,
+                Map<String, Object> input,
+                String expectedStateFingerprint,
+                AttemptContext attemptContext);
+    }
+
+    /**
+     * Graph coordinate supplied by the resolver before command execution.
+     *
+     * @param invocationSiteId exact structural invocation site
+     * @param graphPath exact owning graph
+     * @param correlationKey foreach or business correlation coordinate
+     * @param occurrence one-based occurrence
+     * @param delegateAttempt one-based delegate attempt
+     * @param requestFingerprint canonical invocation input identity
+     */
+    public record InvocationAttempt(
+            String invocationSiteId,
+            String graphPath,
+            String correlationKey,
+            int occurrence,
+            int delegateAttempt,
+            String requestFingerprint
+    ) {
+        /** Validates bounded payload-free graph coordinates. */
+        public InvocationAttempt {
+            invocationSiteId = required(
+                    invocationSiteId, "invocationSiteId");
+            graphPath = required(graphPath, "graphPath");
+            correlationKey = correlationKey == null
+                    ? "" : correlationKey.trim();
+            if (occurrence < 1 || delegateAttempt < 1) {
+                throw new IllegalArgumentException(
+                        "occurrence and delegateAttempt must be positive");
+            }
+            requestFingerprint = fingerprint(
+                    requestFingerprint,
+                    "requestFingerprint");
+        }
+    }
+
+    /**
+     * Complete payload-free durable-attempt identity passed to the Session command boundary.
+     *
+     * @param coordinate exact execution and delegate coordinate
+     * @param requestFingerprint canonical invocation input identity
+     */
+    public record AttemptContext(
+            MirrorStateWriteAttempt.Coordinate coordinate,
+            String requestFingerprint
+    ) {
+        /** Validates exact graph execution identity. */
+        public AttemptContext {
+            coordinate = Objects.requireNonNull(
+                    coordinate, "coordinate");
+            if (coordinate.executionKind()
+                    != MirrorStateWriteAttempt.ExecutionKind
+                    .GRAPH_RUN) {
+                throw new IllegalArgumentException(
+                        "run attempt context requires GRAPH_RUN");
+            }
+            requestFingerprint = fingerprint(
+                    requestFingerprint,
+                    "requestFingerprint");
+        }
+    }
+
+    /**
      * Complete durable command result returned by the protected Session boundary.
      *
      * @param descriptor payload-free current Session descriptor
@@ -379,5 +565,26 @@ public final class MirrorStateRunSession {
                     + after.state().stateRevision()
                     + ", replayed=" + replayed + "]";
         }
+    }
+
+    private static String required(
+            String value, String field) {
+        String normalized = value == null ? "" : value.trim();
+        if (normalized.isBlank()) {
+            throw new IllegalArgumentException(
+                    field + " must not be blank");
+        }
+        return normalized;
+    }
+
+    private static String fingerprint(
+            String value, String field) {
+        String normalized = required(value, field);
+        if (!MirrorResolver.FINGERPRINT.matcher(
+                normalized).matches()) {
+            throw new IllegalArgumentException(
+                    field + " must be a canonical SHA-256 value");
+        }
+        return normalized;
     }
 }

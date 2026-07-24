@@ -836,6 +836,7 @@ public record IntegrationCapabilities(
         features.put("mirrorStateWorkbookSeedProtocol", true);
         features.put("mirrorStateTransitionWorkbookSeedProtocol", true);
         features.put("mirrorStateWriteOutcomeWorkbookSeedProtocol", true);
+        features.put("mirrorStateWriteAttemptProtocol", true);
         features.put("mirrorStatefulSessionApi", false);
         features.put("mirrorStatefulStateStoreReady", false);
         features.put("mirrorStatefulResolverReady", false);

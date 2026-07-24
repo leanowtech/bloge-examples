@@ -1,0 +1,312 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://bloge.dev/schemas/resource-gateway-mirror/mirror-state-write-attempt-v1.schema.json",
+  "title": "Resource Gateway Durable Mirror State Write Attempt v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "scope",
+    "sessionId",
+    "attemptId",
+    "coordinate",
+    "storeGeneration",
+    "planFingerprint",
+    "writeEffectRef",
+    "requestFingerprint",
+    "commandFingerprint",
+    "initialStateRevision",
+    "initialWorldFingerprint",
+    "initialStateFingerprint",
+    "status",
+    "stage",
+    "stateDisposition",
+    "resultingStateRevision",
+    "resultingWorldFingerprint",
+    "resultingStateFingerprint",
+    "receiptFingerprint",
+    "retryable",
+    "errorCode",
+    "errorType",
+    "failureFingerprint",
+    "resolutionSource",
+    "startedAt",
+    "fingerprint"
+  ],
+  "properties": {
+    "schemaVersion": {
+      "const": "resourceGateway.mirrorStateWriteAttempt.v1"
+    },
+    "scope": {
+      "$ref": "capability-snapshot-v1.schema.json#/$defs/scope"
+    },
+    "sessionId": {
+      "$ref": "session-state-space-v1.schema.json#/$defs/identifier"
+    },
+    "attemptId": {
+      "type": "string",
+      "pattern": "^attempt-[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"
+    },
+    "coordinate": {
+      "$ref": "#/$defs/coordinate"
+    },
+    "storeGeneration": {
+      "$ref": "mirror-session-store-generation-v1.schema.json"
+    },
+    "planFingerprint": {
+      "$ref": "session-state-space-v1.schema.json#/$defs/fingerprint"
+    },
+    "writeEffectRef": {
+      "$ref": "session-state-space-v1.schema.json#/$defs/writeEffectRef"
+    },
+    "requestFingerprint": {
+      "$ref": "session-state-space-v1.schema.json#/$defs/fingerprint"
+    },
+    "commandFingerprint": {
+      "$ref": "session-state-space-v1.schema.json#/$defs/fingerprint"
+    },
+    "initialStateRevision": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "initialWorldFingerprint": {
+      "$ref": "session-state-space-v1.schema.json#/$defs/fingerprint"
+    },
+    "initialStateFingerprint": {
+      "$ref": "session-state-space-v1.schema.json#/$defs/fingerprint"
+    },
+    "status": {
+      "enum": [
+        "IN_PROGRESS",
+        "TERMINAL"
+      ]
+    },
+    "outcome": {
+      "enum": [
+        "COMMITTED",
+        "REPLAYED",
+        "REJECTED",
+        "PRE_COMMIT_FAILED",
+        "COMMIT_OUTCOME_UNKNOWN"
+      ]
+    },
+    "stage": {
+      "enum": [
+        "RESOLVER_ADMISSION",
+        "COMMAND_ADMISSION",
+        "COMMAND_EVALUATION",
+        "COMMIT",
+        "RESULT_VERIFICATION",
+        "PROCESS_INTERRUPTION",
+        "COMPLETED"
+      ]
+    },
+    "stateDisposition": {
+      "enum": [
+        "ADVANCED",
+        "UNCHANGED",
+        "UNKNOWN"
+      ]
+    },
+    "resultingStateRevision": {
+      "type": "integer",
+      "minimum": -1
+    },
+    "resultingWorldFingerprint": {
+      "$ref": "#/$defs/optionalFingerprint"
+    },
+    "resultingStateFingerprint": {
+      "$ref": "#/$defs/optionalFingerprint"
+    },
+    "receiptFingerprint": {
+      "$ref": "#/$defs/optionalFingerprint"
+    },
+    "retryable": {
+      "type": "boolean"
+    },
+    "errorCode": {
+      "type": "string",
+      "pattern": "^$|^[A-Z][A-Z0-9_.-]{0,191}$"
+    },
+    "errorType": {
+      "type": "string",
+      "pattern": "^$|^[A-Z][A-Z0-9_.-]{0,127}$"
+    },
+    "failureFingerprint": {
+      "$ref": "#/$defs/optionalFingerprint"
+    },
+    "resolutionSource": {
+      "enum": [
+        "EXECUTION",
+        "RECONCILER"
+      ]
+    },
+    "startedAt": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "terminalAt": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "reconciledAt": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "fingerprint": {
+      "$ref": "session-state-space-v1.schema.json#/$defs/fingerprint"
+    }
+  },
+  "allOf": [
+    {
+      "if": {
+        "properties": {
+          "status": {
+            "const": "IN_PROGRESS"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "stage": {
+            "const": "COMMAND_ADMISSION"
+          },
+          "stateDisposition": {
+            "const": "UNKNOWN"
+          },
+          "resultingStateRevision": {
+            "const": -1
+          },
+          "resultingWorldFingerprint": {
+            "const": ""
+          },
+          "resultingStateFingerprint": {
+            "const": ""
+          },
+          "receiptFingerprint": {
+            "const": ""
+          },
+          "retryable": {
+            "const": false
+          },
+          "errorCode": {
+            "const": ""
+          },
+          "errorType": {
+            "const": ""
+          },
+          "failureFingerprint": {
+            "const": ""
+          },
+          "resolutionSource": {
+            "const": "EXECUTION"
+          }
+        },
+        "not": {
+          "anyOf": [
+            {
+              "required": [
+                "outcome"
+              ]
+            },
+            {
+              "required": [
+                "terminalAt"
+              ]
+            },
+            {
+              "required": [
+                "reconciledAt"
+              ]
+            }
+          ]
+        }
+      },
+      "else": {
+        "required": [
+          "outcome",
+          "terminalAt"
+        ]
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "resolutionSource": {
+            "const": "RECONCILER"
+          }
+        }
+      },
+      "then": {
+        "required": [
+          "reconciledAt"
+        ]
+      },
+      "else": {
+        "not": {
+          "required": [
+            "reconciledAt"
+          ]
+        }
+      }
+    }
+  ],
+  "$defs": {
+    "optionalFingerprint": {
+      "type": "string",
+      "pattern": "^$|^sha256:[a-f0-9]{64}$"
+    },
+    "coordinate": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "executionKind",
+        "executionRequestId",
+        "executionLeaseEpoch",
+        "invocationSiteId",
+        "graphPath",
+        "correlationFingerprint",
+        "occurrence",
+        "delegateAttempt"
+      ],
+      "properties": {
+        "executionKind": {
+          "enum": [
+            "GRAPH_RUN",
+            "SESSION_COMMAND"
+          ]
+        },
+        "executionRequestId": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9@._:-]{0,511}$"
+        },
+        "executionLeaseEpoch": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "invocationSiteId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 512
+        },
+        "graphPath": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 2048
+        },
+        "correlationFingerprint": {
+          "type": "string",
+          "pattern": "^$|^sha256:[a-f0-9]{64}$"
+        },
+        "occurrence": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "delegateAttempt": {
+          "type": "integer",
+          "minimum": 1
+        }
+      }
+    }
+  }
+}

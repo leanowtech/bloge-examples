@@ -186,6 +186,22 @@ public class MirrorStatefulRuntimeConfiguration {
                 sweepIntervalMillis);
     }
 
+    /** Creates the bounded cross-replica-safe stale write-intent reconciler. */
+    @Bean
+    @ConditionalOnMissingBean
+    public MirrorSessionWriteAttemptReconciliationScheduler
+    mirrorSessionWriteAttemptReconciliationScheduler(
+            MirrorSessionStateStore store,
+            MirrorSessionCapacityTelemetry capacityTelemetry,
+            @Value("${gateway.testing.mirror.stateful.write-attempt-reconciliation.batch-size:100}")
+            int batchSize,
+            @Value("${gateway.testing.mirror.stateful.write-attempt-reconciliation.sweep-interval-millis:5000}")
+            long sweepIntervalMillis) {
+        return new MirrorSessionWriteAttemptReconciliationScheduler(
+                store, capacityTelemetry, batchSize,
+                sweepIntervalMillis);
+    }
+
     /** Publishes route assembly and dynamic encrypted-store readiness independently. */
     @Bean
     @ConditionalOnMissingBean
@@ -194,6 +210,7 @@ public class MirrorStatefulRuntimeConfiguration {
             MirrorSessionStateStore store,
             VisualEvidenceSigner evidenceSigner) {
         return new MirrorStatefulRuntimeAvailability(
-                true, store::ready, evidenceSigner::available);
+                true, store::ready, evidenceSigner::available,
+                store::writeAttemptReconciliationReady);
     }
 }

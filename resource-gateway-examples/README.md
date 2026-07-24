@@ -31,7 +31,7 @@ integration something the business flow can see, reason about, test, and change.
 | Governed capability closures | Sealed Resource/Operator/Graph projections, exact cycle-checked closure for all seven shipped graphs, nested foreach/loop boundary inventory, full enterprise scope, append-only lifecycle revisions, classification-aware reads, and honest mirror readiness flags |
 | Governed capability observations | Signed payload-free invocation facts, operator-owned admission policy, external vault/proof verification, durable admitted-or-quarantined decisions, full-scope idempotency, and independent offline verification |
 | Governed capability corpora | Immutable quarantine review, exact admitted-source candidates, metadata risk gates, independent owner-reviewed publication lineage, second source-authority verification, and honest resolver readiness |
-| Stateful mirror sessions | Versioned entity/write/session/checkpoint protocols, atomic multi-entity mutations, exact replay, AES-GCM isolated persistence, lease/fence/CAS concurrency, TTL/destroy, payload-free signed state evidence, signed same-data-plane restart recovery admission, ANEKE workbook seeds, and independently verified clients |
+| Stateful mirror sessions | Versioned entity/write/session/checkpoint/write-attempt protocols, atomic multi-entity mutations, exact replay, AES-GCM isolated persistence, lease/fence/CAS concurrency, durable crash-window reconciliation, TTL/destroy, payload-free signed state evidence, signed same-data-plane restart recovery admission, ANEKE workbook seeds, and independently verified clients |
 | Governed replay payloads | Payload values detached from immutable evidence, classification ABAC, selective retention, legal hold, bounded expiry, and signed deletion proof |
 | Workbook and gate evidence loop | Deterministic sanitized workbook seeds, exact suite/run evidence refs, versioned gate decision basis, stale detection, and transactional gate events |
 | Operational controls | Cache, tenant rate limit, circuit breaker, run history, golden cases, and publication history |
@@ -58,6 +58,7 @@ dedicated local data plane.
 | `http://localhost:8080/examples/gateway` | Use the legacy Custom Composer regression surface |
 | `http://localhost:8080/api/integration/capabilities` | Verify protocol versions, endpoints, feature flags, identity provider, payload policy, and signer readiness |
 | `POST http://localhost:8080/api/mirror/sessions` | Create an encrypted stateful simulation Session after starting with `--stateful` (test/staging only) |
+| `GET http://localhost:8080/api/mirror/sessions/{sessionId}/write-attempts/{attemptId}` | Read one authenticated payload-free durable write outcome for recovery or governance evidence |
 | `POST http://localhost:8080/api/mirror/sessions/{sessionId}/checkpoints` | Sign a payload-free exact Session/store-generation checkpoint after starting with `--stateful` |
 | `POST http://localhost:8080/api/mirror/sessions/{sessionId}/recoveries` | Re-verify a checkpoint against the current encrypted data-plane head and return an exact run binding |
 | `GET http://localhost:8080/api/integration/capability-snapshots/{capabilityId}?revision=0` | Read the latest authorized capability snapshot; use a positive revision for an exact read |
@@ -295,6 +296,24 @@ available while full. A bounded oldest-first worker erases expired ciphertext,
 and aggregate health plus fixed-cardinality metrics never expose customer
 dimensions.
 
+Before a new virtual write evaluates mutation logic, the state plane persists
+a payload-free `mirrorStateWriteAttempt.v1` intent under the exact Session
+lease, initial head, run lease epoch, invocation site, occurrence, delegate
+attempt, write effect, request fingerprint, and engine-computed command
+fingerprint. A successful CAS advances the encrypted Session and marks that
+intent `COMMITTED` in the same database transaction. Exact command replay
+marks its distinct execution attempt `REPLAYED`; known rejection and proven
+pre-commit failure become immutable terminal records.
+
+If a process dies while an intent is still `IN_PROGRESS`, a bounded
+cross-replica reconciler waits for its database lease to expire, locks the
+Session then the attempt, and derives the result from the append-only receipt
+journal. It emits `COMMITTED`, `REPLAYED`, `PRE_COMMIT_FAILED`, or conservative
+`COMMIT_OUTCOME_UNKNOWN`; it never infers unchanged state from a missing or
+unverifiable Session. Each attempt uses a short transaction, so one corrupt row
+cannot roll back healthy records in the same page. The authenticated query
+route and independent test-kit verifier expose only payload-free facts.
+
 The state plane also initializes one content-addressed durable store
 generation that remains stable across process restart and changes for an
 independently initialized store. Checkpoint creation reads this generation and the
@@ -379,20 +398,27 @@ This is not yet a production-certified stateful runtime: TEE/KMS custody,
 organization-pinned checkpoint trust, cross-region payload restore,
 cryptographic deletion proof, target-database capacity/lock certification and
 HA/DR certification remain. In-process rejected, pre-commit failure, and
-ambiguous commit outcomes are now evidence-complete; a process death between
-durable commit and observation still requires a durable write-attempt journal
-and recovery reconciler. The probe reports `mirrorStatefulResolverReady`
+ambiguous commit outcomes are evidence-complete. The durable write-attempt
+journal now closes the single-database process-crash ambiguity window and can
+recover a committed result after its response is lost without repeating the
+write. Journal records contain only the domain-separated fingerprint of a
+runtime correlation value, never its raw business value. Stateful writes fail
+closed while the journal or reconciliation query path is unavailable. Real
+process-kill, network partition, vendor-database, region failover,
+and restored-clone certification are still required. The probe reports
+`mirrorStatefulResolverReady`
 only when mirror execution, the Session API, and the encrypted state store are
 all ready. It separately reports `mirrorStateRunEvidenceReady`,
 `mirrorStateTransitionEvidenceReady`, `mirrorStateWriteOutcomeEvidenceReady`,
 the three workbook-seed API flags, and their matching readiness flags. All
 three workbook readiness flags follow the stateful resolver's current health.
-`mirrorStateWriteAttemptDurableReconciliationReady=false` states that a crash
-attempt is not yet durably recoverable. The probe also separates
+`mirrorStateWriteAttemptDurableReconciliationReady` becomes true only when the
+stateful resolver, encrypted store, attempt table, and reconciliation query
+path are currently ready. The probe also separates
 `mirrorStateCheckpointProtocol`, `mirrorStateCheckpointApi`,
 `mirrorStateCheckpointReady`, and `mirrorStateRecoveryReady`; readiness requires
 both the state store and signing authority. `mirrorStatefulRuntimeReady` remains
-false until durable crash reconciliation, network/HA/DR, and environment certification are
+false until process-kill/network/HA/DR and environment certification are
 complete. Startup, request v2 usage, Java usage, capacity
 configuration, stable errors, and remaining industrial work packages are in the
 [stateful mirror kernel guide](../docs/resource-gateway-stateful-mirror-kernel.md).
@@ -765,15 +791,18 @@ admitted afterward when its exact Session head is unchanged.
 
 `--stateful` uses conservative local defaults: 1,000 global and 100 per-scope
 active sessions, 4 GiB global and 512 MiB per-scope retained canonical payload,
-32 concurrent commands per replica, and a 100-session expiry page every 30
-seconds. Override them with
+32 concurrent commands per replica, a 100-session expiry page every 30
+seconds, and a 100-attempt reconciliation page every 5 seconds. Override them with
 `RG_MIRROR_STATEFUL_MAXIMUM_ACTIVE_SESSIONS`,
 `RG_MIRROR_STATEFUL_MAXIMUM_SCOPE_ACTIVE_SESSIONS`,
 `RG_MIRROR_STATEFUL_MAXIMUM_RETAINED_PAYLOAD_BYTES`,
 `RG_MIRROR_STATEFUL_MAXIMUM_SCOPE_RETAINED_PAYLOAD_BYTES`,
 `RG_MIRROR_STATEFUL_MAXIMUM_CONCURRENT_COMMANDS`,
 `RG_MIRROR_STATEFUL_EXPIRY_BATCH_SIZE`, and
-`RG_MIRROR_STATEFUL_EXPIRY_SWEEP_INTERVAL_MILLIS`. These are hard safety
+`RG_MIRROR_STATEFUL_EXPIRY_SWEEP_INTERVAL_MILLIS`,
+`RG_MIRROR_STATEFUL_WRITE_ATTEMPT_RECONCILIATION_BATCH_SIZE`, and
+`RG_MIRROR_STATEFUL_WRITE_ATTEMPT_RECONCILIATION_SWEEP_INTERVAL_MILLIS`.
+These are hard safety
 bounds, not production sizing recommendations. Target database dialect, row-lock
 semantics, guard contention, expiry lag, and peak/soak behavior require
 deployment-specific certification; this payload counter is not a physical

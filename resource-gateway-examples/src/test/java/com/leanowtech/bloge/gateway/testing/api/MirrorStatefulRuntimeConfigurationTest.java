@@ -198,6 +198,9 @@ class MirrorStatefulRuntimeConfigurationTest {
         assertThat(context.getBeansOfType(
                 MirrorSessionExpiryScheduler.class)).hasSize(1);
         assertThat(context.getBeansOfType(
+                MirrorSessionWriteAttemptReconciliationScheduler.class))
+                .hasSize(1);
+        assertThat(context.getBeansOfType(
                 MirrorStateBaselineResolver.class)).hasSize(1);
         assertThat(context.getBeansOfType(
                 MirrorSessionIntegrationService.class)).hasSize(1);
@@ -208,6 +211,9 @@ class MirrorStatefulRuntimeConfigurationTest {
                     assertThat(availability.sessionApi()).isTrue();
                     assertThat(availability.stateStoreReady()).isTrue();
                     assertThat(availability.checkpointReady()).isTrue();
+                    assertThat(availability
+                            .writeAttemptReconciliationReady())
+                            .isTrue();
                 });
         assertThat(context.getBeansOfType(DataSource.class)).isEmpty();
     }
@@ -226,6 +232,9 @@ class MirrorStatefulRuntimeConfigurationTest {
                 MirrorSessionCommandAdmission.class)).isEmpty();
         assertThat(context.getBeansOfType(
                 MirrorSessionExpiryScheduler.class)).isEmpty();
+        assertThat(context.getBeansOfType(
+                MirrorSessionWriteAttemptReconciliationScheduler.class))
+                .isEmpty();
         assertThat(context.getBeansOfType(
                 MirrorSessionIntegrationService.class)).isEmpty();
         assertThat(context.getBeansOfType(

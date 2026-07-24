@@ -19,9 +19,10 @@ implementation. The JAR packages the authoritative v1 JSON Schema and provides:
   payload-free run-summary schemas, independent deployment-isolation attestation verification, and
   payload-free corpus review/candidate/publication, trajectory, and recorded-cluster lifecycle
   verification;
-- strict stateful-mirror payload/create/descriptor/command/checkpoint/recovery Schemas, a canonical
+- strict stateful-mirror payload/create/descriptor/command/write-attempt/checkpoint/recovery Schemas, a canonical
   payload sealer, payload-free semantic verification, authenticated
-  create/read/command/checkpoint/recover/destroy client methods, independent checkpoint signature
+  create/read/command/write-attempt/checkpoint/recover/destroy client methods, independent durable-attempt,
+  checkpoint signature
   and recovery-closure verification, v3 read/v4 transition evidence verification, deterministic
   v3 read and v4 transition ANEKE workbook-seed projection, and an online client that independently
   reconstructs the v4 seed before accepting the producer projection;
@@ -144,7 +145,7 @@ JsonNode payload = verifier.sealSessionPayload(
 ```
 
 The JAR packages the bounded-expression, state-model, write-effect,
-session-state, five Session lifecycle objects, five checkpoint/recovery objects, and fixture
+session-state, Session lifecycle/write-attempt objects, five checkpoint/recovery objects, and fixture
 Schemas. Verification re-derives nested and
 top-level fingerprints, exact model/effect/session closure, mutation alias
 admission, business-key component fingerprints, contiguous transaction
@@ -172,6 +173,10 @@ JsonNode current = client.findMirrorSession(
         descriptor.path("sessionId").asText());
 JsonNode result = client.executeMirrorSessionCommand(
         descriptor.path("sessionId").asText(), commandRequest);
+String attemptId = "<attempt id from run/evidence recovery coordinates>";
+MirrorStateWriteAttemptVerifier.VerifiedWriteAttempt attempt =
+        client.findMirrorSessionWriteAttempt(
+                descriptor.path("sessionId").asText(), attemptId);
 JsonNode checkpoint = client.createMirrorSessionCheckpoint(
         descriptor.path("sessionId").asText());
 JsonNode recovery = client.recoverMirrorSession(
@@ -180,7 +185,7 @@ JsonNode terminal = client.destroyMirrorSession(
         descriptor.path("sessionId").asText());
 ```
 
-All six calls use `X-Purpose: MIRROR_REHEARSAL`, validate the Tool Studio
+All seven calls use `X-Purpose: MIRROR_REHEARSAL`, validate the Tool Studio
 envelope, and bind the response session id to the requested id. Command
 idempotency comes from the path declared by the admitted
 `WriteEffectSpec.idempotency`, not from an ambient client retry key. The API is
@@ -189,6 +194,16 @@ resolver/runtime readiness. See the
 [stateful mirror kernel guide](../docs/resource-gateway-stateful-mirror-kernel.md)
 for startup, transaction semantics, stable errors, and remaining production
 work.
+
+`findMirrorSessionWriteAttempt` accepts an attempt id obtained from the
+run/evidence recovery coordinate. Before returning its bounded projection, it
+independently checks strict Schema, nested store generation, deterministic id,
+record/failure fingerprints, lifecycle times, and outcome/state closure. It
+never returns command input/output, entity identity, business key, raw
+idempotency key, lease owner, or encryption material. For a direct command
+whose response is uncertain, repeat the original command with the same
+effect-defined idempotency key; exact replay remains the business recovery
+path, while attempt lookup is the governance and diagnostics path.
 
 `createMirrorSessionCheckpoint` fetches the checkpoint attestation key and
 fully verifies strict Schema, store generation, nested fingerprints,
@@ -309,10 +324,11 @@ Local exploratory evidence normally yields `gateReady=false`;
 promoting it. ANEKE remains responsible for workbook coverage, owner approval,
 policy, and the final publish gate. The legacy v4 transition seed deliberately
 reports only observed committed/replayed writes. Prefer v5 for new write-capable
-integrations. `mirrorStateWriteAttemptDurableReconciliationReady=false` means a
-process crash can still leave a durable commit without a terminal attempt
-record; certification must remain closed until the server adds a durable
-attempt journal and recovery reconciler.
+integrations. The server now supplies a durable attempt journal and recovery
+reconciler. `mirrorStateWriteAttemptDurableReconciliationReady=false` therefore
+means that the encrypted store, attempt table, resolver, or reconciliation
+query path is currently unhealthy; writes and certification must remain closed
+until readiness is restored.
 
 Run the packaged fixed fixture in dependency-upgrade and startup probes:
 

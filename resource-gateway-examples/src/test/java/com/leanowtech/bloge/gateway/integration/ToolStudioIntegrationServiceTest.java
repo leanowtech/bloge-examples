@@ -462,7 +462,8 @@ class ToolStudioIntegrationServiceTest {
                 new MirrorRuntimeAvailability(true, true, ready::get));
         service.configureMirrorStatefulRuntime(
                 new MirrorStatefulRuntimeAvailability(
-                        true, ready::get, ready::get));
+                        true, ready::get, ready::get,
+                        ready::get));
 
         IntegrationCapabilities unavailable =
                 service.capabilities().payload();
@@ -479,6 +480,9 @@ class ToolStudioIntegrationServiceTest {
                 .containsEntry("mirrorStateRecoveryReady", false)
                 .containsEntry("mirrorStatefulResolverReady", false)
                 .containsEntry("mirrorStateTransitionEvidenceReady", false)
+                .containsEntry(
+                        "mirrorStateWriteAttemptDurableReconciliationReady",
+                        false)
                 .containsEntry("mirrorStatefulRuntimeReady", false);
         assertThat(available.features())
                 .containsEntry("mirrorStatefulSessionApi", true)
@@ -494,6 +498,9 @@ class ToolStudioIntegrationServiceTest {
                 .containsEntry(
                         "mirrorStateWriteOutcomeWorkbookSeedReady",
                         true)
+                .containsEntry(
+                        "mirrorStateWriteAttemptDurableReconciliationReady",
+                        true)
                 .containsEntry("mirrorStatefulRuntimeReady", false);
         assertThat(available.supportedObjects())
                 .containsKeys(
@@ -503,6 +510,7 @@ class ToolStudioIntegrationServiceTest {
                         "mirrorSessionDescriptor",
                         "mirrorSessionCommandRequest",
                         "mirrorSessionCommandResult",
+                        "mirrorStateWriteAttempt",
                         "mirrorSessionStoreGeneration",
                         "mirrorSessionCheckpoint",
                         "mirrorSessionCheckpointAttestation",
@@ -515,6 +523,7 @@ class ToolStudioIntegrationServiceTest {
                         "POST /api/mirror/sessions",
                         "GET /api/mirror/sessions/{sessionId}",
                         "POST /api/mirror/sessions/{sessionId}/commands",
+                        "GET /api/mirror/sessions/{sessionId}/write-attempts/{attemptId}",
                         "POST /api/mirror/sessions/{sessionId}/checkpoints",
                         "POST /api/mirror/sessions/{sessionId}/recoveries",
                         "DELETE /api/mirror/sessions/{sessionId}");

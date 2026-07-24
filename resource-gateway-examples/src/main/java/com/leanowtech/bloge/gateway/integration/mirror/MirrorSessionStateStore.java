@@ -101,6 +101,78 @@ public interface MirrorSessionStateStore {
     CommitResult compareAndSet(CommitCommand command);
 
     /**
+     * Persists or reads the exact pre-mutation intent for one Session write attempt.
+     *
+     * <p>The implementation must verify the live Session lease and initial state fence before
+     * inserting. An exact retry returns the existing immutable record. A conflicting reuse of an
+     * attempt id must fail closed. The record contains no command payload or raw idempotency
+     * key.</p>
+     *
+     * @param command exact execution and state coordinates established by the transaction engine
+     * @return newly started or previously persisted attempt
+     */
+    default MirrorStateWriteAttempt beginWriteAttempt(
+            BeginWriteAttemptCommand command) {
+        throw new MirrorSessionStateStoreException(
+                MirrorSessionStateStoreException.Code.UNAVAILABLE, 5);
+    }
+
+    /**
+     * Terminalizes an in-progress replay or proven failure under the exact live Session lease.
+     *
+     * <p>A committed state transition must not use this method; it is terminalized only by
+     * {@link #compareAndSet(CommitCommand)} in the same transaction as the encrypted state
+     * update.</p>
+     *
+     * @param command exact terminal facts
+     * @return immutable terminal record, or the existing exact terminal record on retry
+     */
+    default MirrorStateWriteAttempt completeWriteAttempt(
+            CompleteWriteAttemptCommand command) {
+        throw new MirrorSessionStateStoreException(
+                MirrorSessionStateStoreException.Code.UNAVAILABLE, 5);
+    }
+
+    /**
+     * Reads one payload-free write-attempt record inside an exact enterprise scope.
+     *
+     * @param scope authenticated enterprise namespace
+     * @param sessionId exact Session identity
+     * @param attemptId deterministic attempt identity
+     * @return verified record, or empty without revealing another scope
+     */
+    default Optional<MirrorStateWriteAttempt> findWriteAttempt(
+            CapabilitySnapshot.Scope scope,
+            String sessionId,
+            String attemptId) {
+        return Optional.empty();
+    }
+
+    /**
+     * Reconciles one bounded page of lease-expired in-progress write attempts.
+     *
+     * <p>Implementations must coordinate competing replicas and derive each outcome from the
+     * encrypted current Session plus its append-only receipt journal. A missing, terminal, or
+     * unverifiable Session must become {@code COMMIT_OUTCOME_UNKNOWN}; it must never be guessed as
+     * unchanged.</p>
+     *
+     * @param limit positive bounded page size
+     * @return number of records terminalized by this sweep
+     */
+    default int reconcileWriteAttempts(int limit) {
+        return 0;
+    }
+
+    /**
+     * Probes whether the durable journal and reconciliation query path are available.
+     *
+     * @return {@code true} only when attempts can be persisted and recovered
+     */
+    default boolean writeAttemptReconciliationReady() {
+        return false;
+    }
+
+    /**
      * Irreversibly clears the encrypted payload and marks the descriptor destroyed.
      *
      * @param scope authenticated enterprise namespace
@@ -313,7 +385,8 @@ public interface MirrorSessionStateStore {
     record CommitCommand(
             Lease lease,
             String expectedStateFingerprint,
-            MirrorSessionPayload candidate
+            MirrorSessionPayload candidate,
+            String writeAttemptId
     ) {
         /** Validates an exact state fence and candidate. */
         public CommitCommand {
@@ -321,6 +394,112 @@ public interface MirrorSessionStateStore {
             expectedStateFingerprint = fingerprint(
                     expectedStateFingerprint, "expectedStateFingerprint");
             candidate = Objects.requireNonNull(candidate, "candidate");
+            writeAttemptId = writeAttemptId == null
+                    ? "" : writeAttemptId.trim();
+            if (!writeAttemptId.isBlank()) {
+                required(writeAttemptId, "writeAttemptId");
+            }
+        }
+
+        /**
+         * Compatibility constructor for stores or isolated tests without durable attempt
+         * reconciliation.
+         */
+        public CommitCommand(
+                Lease lease,
+                String expectedStateFingerprint,
+                MirrorSessionPayload candidate) {
+            this(lease, expectedStateFingerprint, candidate, "");
+        }
+    }
+
+    /** Exact pre-mutation write-attempt intent. */
+    record BeginWriteAttemptCommand(
+            Lease lease,
+            String attemptId,
+            MirrorStateWriteAttempt.Coordinate coordinate,
+            String planFingerprint,
+            MirrorArtifactRef writeEffectRef,
+            String requestFingerprint,
+            String commandFingerprint,
+            long initialStateRevision,
+            String initialWorldFingerprint,
+            String initialStateFingerprint
+    ) {
+        /** Validates state, execution, and command identity without retaining business values. */
+        public BeginWriteAttemptCommand {
+            lease = Objects.requireNonNull(lease, "lease");
+            attemptId = required(attemptId, "attemptId");
+            coordinate = Objects.requireNonNull(coordinate, "coordinate");
+            planFingerprint = fingerprint(
+                    planFingerprint, "planFingerprint");
+            writeEffectRef = Objects.requireNonNull(
+                    writeEffectRef, "writeEffectRef");
+            if (!"WRITE_EFFECT".equals(writeEffectRef.kind())) {
+                throw new IllegalArgumentException(
+                        "writeEffectRef must reference WRITE_EFFECT");
+            }
+            requestFingerprint = fingerprint(
+                    requestFingerprint, "requestFingerprint");
+            commandFingerprint = fingerprint(
+                    commandFingerprint, "commandFingerprint");
+            if (initialStateRevision < 0) {
+                throw new IllegalArgumentException(
+                        "initialStateRevision must not be negative");
+            }
+            initialWorldFingerprint = fingerprint(
+                    initialWorldFingerprint, "initialWorldFingerprint");
+            initialStateFingerprint = fingerprint(
+                    initialStateFingerprint, "initialStateFingerprint");
+        }
+    }
+
+    /** Exact replay or failure terminalization command. */
+    record CompleteWriteAttemptCommand(
+            Lease lease,
+            String attemptId,
+            MirrorStateWriteOutcomeRunEvidence.WriteOutcome outcome,
+            MirrorStateWriteOutcomeRunEvidence.WriteStage stage,
+            long resultingStateRevision,
+            String resultingWorldFingerprint,
+            String resultingStateFingerprint,
+            String receiptFingerprint,
+            boolean retryable,
+            String errorCode,
+            String errorType
+    ) {
+        /** Rejects COMMITTED because state advancement belongs to the atomic CAS boundary. */
+        public CompleteWriteAttemptCommand {
+            lease = Objects.requireNonNull(lease, "lease");
+            attemptId = required(attemptId, "attemptId");
+            outcome = Objects.requireNonNull(outcome, "outcome");
+            stage = Objects.requireNonNull(stage, "stage");
+            if (outcome
+                    == MirrorStateWriteOutcomeRunEvidence
+                    .WriteOutcome.COMMITTED
+                    || outcome
+                    == MirrorStateWriteOutcomeRunEvidence
+                    .WriteOutcome.COMMIT_OUTCOME_UNKNOWN) {
+                throw new IllegalArgumentException(
+                        "commit and unknown outcomes require database-authoritative reconciliation");
+            }
+            if (resultingStateRevision < 0) {
+                throw new IllegalArgumentException(
+                        "known write outcome requires a resulting revision");
+            }
+            resultingWorldFingerprint = fingerprint(
+                    resultingWorldFingerprint,
+                    "resultingWorldFingerprint");
+            resultingStateFingerprint = fingerprint(
+                    resultingStateFingerprint,
+                    "resultingStateFingerprint");
+            receiptFingerprint = receiptFingerprint == null
+                    ? "" : receiptFingerprint.trim();
+            if (!receiptFingerprint.isBlank()) {
+                fingerprint(receiptFingerprint, "receiptFingerprint");
+            }
+            errorCode = errorCode == null ? "" : errorCode.trim();
+            errorType = errorType == null ? "" : errorType.trim();
         }
     }
 

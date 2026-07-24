@@ -87,6 +87,7 @@ final class CapabilityMirrorSchemaValidator {
             "mirror-session-command-request-v1.schema.json",
             "mirror-session-command-result-v1.schema.json",
             "mirror-session-store-generation-v1.schema.json",
+            "mirror-state-write-attempt-v1.schema.json",
             "mirror-session-checkpoint-v1.schema.json",
             "mirror-session-checkpoint-attestation-v1.schema.json",
             "mirror-session-checkpoint-bundle-v1.schema.json",

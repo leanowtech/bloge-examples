@@ -88,23 +88,48 @@ class MirrorSessionIntegrationServiceTest {
                     "requestId", "REQ-GRAPH-1",
                     "orderId", "O-100",
                     "amount", 450);
+            MirrorArtifactRef effectRef =
+                    WriteEffectSpecIntegrity.reference(
+                            fixture.effect());
+            String requestFingerprint =
+                    "sha256:" + "7".repeat(64);
+            MirrorStateRunSession.AttemptContext
+                    committedAttempt = attemptContext(
+                    "run-request-1", 1,
+                    requestFingerprint);
+            MirrorStateRunSession.AttemptContext
+                    replayedAttempt = attemptContext(
+                    "run-request-1", 2,
+                    requestFingerprint);
 
             MirrorStateRunSession.CommandResult committed =
                     harness.service().commandForRun(
                             created.sessionId(),
-                            WriteEffectSpecIntegrity.reference(
-                                    fixture.effect()),
+                            effectRef,
                             input, created.stateFingerprint(),
+                            committedAttempt,
                             identity());
             MirrorStateRunSession.CommandResult replayed =
                     harness.service().commandForRun(
                             created.sessionId(),
-                            WriteEffectSpecIntegrity.reference(
-                                    fixture.effect()),
+                            effectRef,
                             input,
                             committed.payload().state()
                                     .fingerprint(),
+                            replayedAttempt,
                             identity());
+            String committedAttemptId =
+                    MirrorStateWriteAttemptIntegrity.attemptId(
+                            mapper, created.scope(),
+                            created.sessionId(),
+                            committedAttempt.coordinate(),
+                            effectRef, requestFingerprint);
+            String replayedAttemptId =
+                    MirrorStateWriteAttemptIntegrity.attemptId(
+                            mapper, created.scope(),
+                            created.sessionId(),
+                            replayedAttempt.coordinate(),
+                            effectRef, requestFingerprint);
 
             assertThat(committed.replayed()).isFalse();
             assertThat(committed.payload().state()
@@ -125,6 +150,18 @@ class MirrorSessionIntegrationServiceTest {
                     .isEqualTo(committed.payload().state().stateRevision());
             assertThat(replayed.receipt())
                     .isEqualTo(committed.receipt());
+            assertThat(harness.service().writeAttempt(
+                    created.sessionId(),
+                    committedAttemptId, identity()).outcome())
+                    .isEqualTo(
+                            MirrorStateWriteOutcomeRunEvidence
+                                    .WriteOutcome.COMMITTED);
+            assertThat(harness.service().writeAttempt(
+                    created.sessionId(),
+                    replayedAttemptId, identity()).outcome())
+                    .isEqualTo(
+                            MirrorStateWriteOutcomeRunEvidence
+                                    .WriteOutcome.REPLAYED);
             assertThat(harness.service().snapshotForRun(
                     new MirrorSessionRunBinding(
                             created.sessionId(),
@@ -134,6 +171,21 @@ class MirrorSessionIntegrationServiceTest {
                     .payload().fingerprint())
                     .isEqualTo(committed.payload().fingerprint());
         }
+    }
+
+    private static MirrorStateRunSession.AttemptContext
+    attemptContext(
+            String requestId,
+            long leaseEpoch,
+            String requestFingerprint) {
+        return new MirrorStateRunSession.AttemptContext(
+                new MirrorStateWriteAttempt.Coordinate(
+                        MirrorStateWriteAttempt.ExecutionKind
+                                .GRAPH_RUN,
+                        requestId, leaseEpoch,
+                        "/root/refund#PRIMARY",
+                        "/root", "", 1, 1),
+                requestFingerprint);
     }
 
     @Test
@@ -400,6 +452,83 @@ class MirrorSessionIntegrationServiceTest {
     }
 
     @Test
+    void refusesWritesWhenDurableAttemptRecoveryIsUnavailable() {
+        try (Harness harness = harness()) {
+            Fixture fixture = fixture();
+            MirrorSessionDescriptor created =
+                    harness.service().create(
+                            create(fixture.payload()), identity());
+            harness.jdbc().execute(
+                    "DROP TABLE mirror_session_write_attempt");
+
+            assertProblem(() -> harness.service().command(
+                            created.sessionId(),
+                            command(
+                                    fixture.effect(),
+                                    "REQ-NO-JOURNAL", 100,
+                                    created.stateFingerprint()),
+                            identity()),
+                    503,
+                    MirrorSessionStateStoreException.Code
+                            .UNAVAILABLE.wireCode(),
+                    true);
+            assertThat(harness.service().find(
+                    created.sessionId(), identity())
+                    .stateRevision()).isZero();
+        }
+    }
+
+    @Test
+    void recoversCommittedResultWhenTheDatabaseResponseIsLost()
+            throws Exception {
+        try (Harness harness = harness()) {
+            Fixture fixture = fixture();
+            MirrorSessionDescriptor created =
+                    harness.service().create(
+                            create(fixture.payload()), identity());
+            MirrorSessionIntegrationService responseLoss =
+                    service(
+                            new PostCommitResponseLossStore(
+                                    harness.store()),
+                            harness.signer());
+
+            MirrorSessionCommandResult committed =
+                    responseLoss.command(
+                            created.sessionId(),
+                            command(
+                                    fixture.effect(),
+                                    "REQ-RESPONSE-LOSS", 100,
+                                    created.stateFingerprint()),
+                            identity());
+
+            assertThat(committed.replayed()).isFalse();
+            assertThat(committed.descriptor().stateRevision())
+                    .isEqualTo(1);
+            assertThat(harness.store().snapshot(
+                    new MirrorSessionStateStore.SnapshotCommand(
+                            created.scope(), created.sessionId()))
+                    .payload().state().processedCommands())
+                    .hasSize(1);
+            assertThat(harness.jdbc().queryForObject("""
+                    SELECT COUNT(*)
+                      FROM mirror_session_write_attempt
+                     WHERE status = 'TERMINAL'
+                       AND outcome = 'COMMITTED'
+                    """, Long.class)).isEqualTo(1);
+            String attemptRecord =
+                    harness.jdbc().queryForObject("""
+                            SELECT record_json
+                              FROM mirror_session_write_attempt
+                            """, String.class);
+            assertThat(attemptRecord).doesNotContain("corr-1");
+            assertThat(mapper.readTree(attemptRecord)
+                    .path("coordinate")
+                    .path("correlationFingerprint")
+                    .asText()).matches("sha256:[a-f0-9]{64}");
+        }
+    }
+
+    @Test
     void mapsReplicaCommandBackpressureToStableRetryableCapacityProblem() {
         try (Harness harness = harness()) {
             Fixture fixture = fixture();
@@ -631,6 +760,144 @@ class MirrorSessionIntegrationServiceTest {
         public CommitResult compareAndSet(CommitCommand command) {
             throw new MirrorSessionStateStoreException(
                     STATE_CONFLICT, 1);
+        }
+
+        @Override
+        public MirrorStateWriteAttempt beginWriteAttempt(
+                BeginWriteAttemptCommand command) {
+            return delegate.beginWriteAttempt(command);
+        }
+
+        @Override
+        public MirrorStateWriteAttempt completeWriteAttempt(
+                CompleteWriteAttemptCommand command) {
+            return delegate.completeWriteAttempt(command);
+        }
+
+        @Override
+        public java.util.Optional<MirrorStateWriteAttempt>
+        findWriteAttempt(
+                CapabilitySnapshot.Scope scope,
+                String sessionId,
+                String attemptId) {
+            return delegate.findWriteAttempt(
+                    scope, sessionId, attemptId);
+        }
+
+        @Override
+        public boolean writeAttemptReconciliationReady() {
+            return true;
+        }
+
+        @Override
+        public DestroyResult destroy(
+                CapabilitySnapshot.Scope scope, String sessionId) {
+            return delegate.destroy(scope, sessionId);
+        }
+
+        @Override
+        public int expireDue(int limit) {
+            return delegate.expireDue(limit);
+        }
+
+        @Override
+        public List<OperationAudit> recentAudit(
+                CapabilitySnapshot.Scope scope,
+                String sessionId,
+                int limit) {
+            return delegate.recentAudit(scope, sessionId, limit);
+        }
+
+        @Override
+        public CapacitySnapshot capacity() {
+            return delegate.capacity();
+        }
+
+        @Override
+        public boolean ready() {
+            return delegate.ready();
+        }
+    }
+
+    private record PostCommitResponseLossStore(
+            MirrorSessionStateStore delegate
+    ) implements MirrorSessionStateStore {
+        @Override
+        public MirrorSessionStoreGeneration generation() {
+            return delegate.generation();
+        }
+
+        @Override
+        public CreateResult create(CreateCommand command) {
+            return delegate.create(command);
+        }
+
+        @Override
+        public java.util.Optional<MirrorSessionDescriptor> find(
+                CapabilitySnapshot.Scope scope, String sessionId) {
+            return delegate.find(scope, sessionId);
+        }
+
+        @Override
+        public SessionSnapshot snapshot(SnapshotCommand command) {
+            return delegate.snapshot(command);
+        }
+
+        @Override
+        public CheckpointSnapshot checkpointSnapshot(
+                SnapshotCommand command) {
+            return delegate.checkpointSnapshot(command);
+        }
+
+        @Override
+        public ClaimedSession claim(ClaimCommand command) {
+            return delegate.claim(command);
+        }
+
+        @Override
+        public boolean release(Lease lease) {
+            return delegate.release(lease);
+        }
+
+        @Override
+        public CommitResult compareAndSet(CommitCommand command) {
+            delegate.compareAndSet(command);
+            throw new MirrorSessionStateStoreException(
+                    MirrorSessionStateStoreException.Code
+                            .UNAVAILABLE,
+                    1);
+        }
+
+        @Override
+        public MirrorStateWriteAttempt beginWriteAttempt(
+                BeginWriteAttemptCommand command) {
+            return delegate.beginWriteAttempt(command);
+        }
+
+        @Override
+        public MirrorStateWriteAttempt completeWriteAttempt(
+                CompleteWriteAttemptCommand command) {
+            return delegate.completeWriteAttempt(command);
+        }
+
+        @Override
+        public java.util.Optional<MirrorStateWriteAttempt>
+        findWriteAttempt(
+                CapabilitySnapshot.Scope scope,
+                String sessionId,
+                String attemptId) {
+            return delegate.findWriteAttempt(
+                    scope, sessionId, attemptId);
+        }
+
+        @Override
+        public int reconcileWriteAttempts(int limit) {
+            return delegate.reconcileWriteAttempts(limit);
+        }
+
+        @Override
+        public boolean writeAttemptReconciliationReady() {
+            return true;
         }
 
         @Override

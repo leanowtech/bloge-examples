@@ -21,6 +21,8 @@ public final class MirrorSessionCapacityTelemetry {
     private final boolean enabled;
     private final Map<Boundary, Map<Decision, Counter>> decisions;
     private final Map<ExpiryOutcome, Counter> expirySweeps;
+    private final Map<AttemptReconciliationOutcome, Counter>
+            attemptReconciliationSweeps;
     private final AtomicLong inflightCommands;
     private final AtomicLong activeSessions;
     private final AtomicLong retainedPayloadBytes;
@@ -28,6 +30,7 @@ public final class MirrorSessionCapacityTelemetry {
     private final AtomicLong maximumActiveSessions;
     private final AtomicLong maximumRetainedPayloadBytes;
     private final AtomicLong lastExpiredSessions;
+    private final AtomicLong lastReconciledWriteAttempts;
 
     /** Closed capacity-decision authorities. */
     public enum Boundary {
@@ -43,6 +46,13 @@ public final class MirrorSessionCapacityTelemetry {
 
     /** Closed terminal outcomes for the bounded expiry worker. */
     public enum ExpiryOutcome {
+        SUCCEEDED,
+        FAILED,
+        SKIPPED
+    }
+
+    /** Closed terminal outcomes for the durable write-attempt reconciler. */
+    public enum AttemptReconciliationOutcome {
         SUCCEEDED,
         FAILED,
         SKIPPED
@@ -80,6 +90,21 @@ public final class MirrorSessionCapacityTelemetry {
                     .register(meters));
         }
         expirySweeps = Map.copyOf(sweepCounters);
+        EnumMap<AttemptReconciliationOutcome, Counter>
+                reconciliationCounters =
+                new EnumMap<>(
+                        AttemptReconciliationOutcome.class);
+        for (AttemptReconciliationOutcome outcome
+                : AttemptReconciliationOutcome.values()) {
+            reconciliationCounters.put(
+                    outcome, Counter.builder(
+                                    PREFIX
+                                            + "write.attempt.reconciliation.sweeps")
+                            .tag("outcome", metric(outcome))
+                            .register(meters));
+        }
+        attemptReconciliationSweeps =
+                Map.copyOf(reconciliationCounters);
         inflightCommands = gauge(meters, "commands.inflight");
         activeSessions = gauge(meters, "capacity.active.sessions");
         retainedPayloadBytes = gauge(
@@ -92,12 +117,16 @@ public final class MirrorSessionCapacityTelemetry {
                 meters, "capacity.maximum.retained.payload.bytes");
         lastExpiredSessions = gauge(
                 meters, "expiry.last.expired.sessions");
+        lastReconciledWriteAttempts = gauge(
+                meters,
+                "write.attempt.reconciliation.last.terminalized");
     }
 
     private MirrorSessionCapacityTelemetry() {
         enabled = false;
         decisions = Map.of();
         expirySweeps = Map.of();
+        attemptReconciliationSweeps = Map.of();
         inflightCommands = new AtomicLong();
         activeSessions = new AtomicLong();
         retainedPayloadBytes = new AtomicLong();
@@ -105,6 +134,7 @@ public final class MirrorSessionCapacityTelemetry {
         maximumActiveSessions = new AtomicLong();
         maximumRetainedPayloadBytes = new AtomicLong();
         lastExpiredSessions = new AtomicLong();
+        lastReconciledWriteAttempts = new AtomicLong();
     }
 
     /**
@@ -184,6 +214,44 @@ public final class MirrorSessionCapacityTelemetry {
     public void expirySweepSkipped() {
         if (enabled) {
             expirySweeps.get(ExpiryOutcome.SKIPPED).increment();
+        }
+    }
+
+    /**
+     * Records one successful bounded write-attempt reconciliation sweep.
+     *
+     * @param terminalizedAttempts number of expired intents resolved
+     */
+    public void writeAttemptReconciliationCompleted(
+            int terminalizedAttempts) {
+        if (terminalizedAttempts < 0) {
+            throw new IllegalArgumentException(
+                    "terminalized write-attempt count must not be negative");
+        }
+        lastReconciledWriteAttempts.set(
+                terminalizedAttempts);
+        if (enabled) {
+            attemptReconciliationSweeps.get(
+                    AttemptReconciliationOutcome.SUCCEEDED)
+                    .increment();
+        }
+    }
+
+    /** Records one payload-free write-attempt reconciliation failure. */
+    public void writeAttemptReconciliationFailed() {
+        if (enabled) {
+            attemptReconciliationSweeps.get(
+                    AttemptReconciliationOutcome.FAILED)
+                    .increment();
+        }
+    }
+
+    /** Records one overlapping local reconciliation tick that was skipped. */
+    public void writeAttemptReconciliationSkipped() {
+        if (enabled) {
+            attemptReconciliationSweeps.get(
+                    AttemptReconciliationOutcome.SKIPPED)
+                    .increment();
         }
     }
 

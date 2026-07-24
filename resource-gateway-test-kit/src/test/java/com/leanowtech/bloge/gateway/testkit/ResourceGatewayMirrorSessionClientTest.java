@@ -16,6 +16,8 @@ import java.nio.charset.StandardCharsets;
 import java.time.Duration;
 import java.util.ArrayList;
 import java.util.List;
+import java.nio.charset.StandardCharsets;
+import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
@@ -109,6 +111,29 @@ class ResourceGatewayMirrorSessionClientTest {
         assertThat(descriptor.path("stateRevision").asLong()).isEqualTo(1);
     }
 
+    @Test
+    void readsOnlyIndependentlyVerifiedDurableWriteAttempts() {
+        ObjectNode attempt = writeAttempt();
+        String attemptId =
+                attempt.path("attemptId").asText();
+
+        MirrorStateWriteAttemptVerifier.VerifiedWriteAttempt
+                verified = client()
+                .findMirrorSessionWriteAttempt(
+                        "refund-session-1", attemptId);
+
+        assertThat(verified.status())
+                .isEqualTo("TERMINAL");
+        assertThat(verified.outcome())
+                .isEqualTo("REPLAYED");
+        assertThat(verified.resultingStateRevision())
+                .isZero();
+        assertThat(requests.getFirst().path())
+                .isEqualTo(
+                        "/api/mirror/sessions/refund-session-1/"
+                                + "write-attempts/" + attemptId);
+    }
+
     private ResourceGatewayTestClient client() {
         return ResourceGatewayTestClient.builder(URI.create(
                         "http://127.0.0.1:" + server.getAddress().getPort()))
@@ -130,11 +155,18 @@ class ResourceGatewayMirrorSessionClientTest {
                 body));
         ObjectNode payload = payload();
         boolean command = exchange.getRequestURI().getPath().endsWith("/commands");
+        boolean writeAttempt = exchange.getRequestURI()
+                .getPath().contains("/write-attempts/");
         boolean destroy = "DELETE".equals(exchange.getRequestMethod());
         JsonNode responsePayload;
         String kind;
         String version;
-        if (command) {
+        if (writeAttempt) {
+            responsePayload = writeAttempt();
+            kind = "MIRROR_STATE_WRITE_ATTEMPT";
+            version =
+                    "resourceGateway.mirrorStateWriteAttempt.v1";
+        } else if (command) {
             ObjectNode descriptor = descriptor(payload, 1, "ACTIVE", null);
             responsePayload = commandResult(descriptor);
             kind = "MIRROR_SESSION_COMMAND_RESULT";
@@ -252,6 +284,99 @@ class ResourceGatewayMirrorSessionClientTest {
                 .put("replayed", false);
         value.set("descriptor", descriptor);
         value.set("receipt", receipt);
+        return value;
+    }
+
+    static ObjectNode writeAttempt() {
+        JsonNode state = payload().path("state");
+        ObjectNode generation = JSON.createObjectNode()
+                .put("schemaVersion",
+                        "resourceGateway.mirrorSessionStoreGeneration.v1")
+                .put("generationId", "store-generation-1")
+                .put("schemaRevision", 1)
+                .put("createdAt",
+                        "2026-07-24T00:00:00Z");
+        seal(generation);
+        ObjectNode coordinate = JSON.createObjectNode()
+                .put("executionKind", "GRAPH_RUN")
+                .put("executionRequestId", "run-request-1")
+                .put("executionLeaseEpoch", 1)
+                .put("invocationSiteId",
+                        "/root/refund#PRIMARY")
+                .put("graphPath", "/root")
+                .put("correlationFingerprint", "")
+                .put("occurrence", 1)
+                .put("delegateAttempt", 1);
+        String requestFingerprint =
+                "sha256:" + "7".repeat(64);
+        ObjectNode idMaterial = JSON.createObjectNode();
+        idMaterial.set("scope",
+                state.path("scope").deepCopy());
+        idMaterial.put("sessionId",
+                state.path("sessionId").asText());
+        idMaterial.set("coordinate", coordinate.deepCopy());
+        idMaterial.set("writeEffectRef",
+                state.path("writeEffectRefs")
+                        .get(0).deepCopy());
+        idMaterial.put(
+                "requestFingerprint",
+                requestFingerprint);
+        String attemptId = "attempt-"
+                + UUID.nameUUIDFromBytes(
+                EvidenceVerificationSupport
+                        .sha256(idMaterial)
+                        .getBytes(StandardCharsets.UTF_8));
+        ObjectNode value = JSON.createObjectNode()
+                .put("schemaVersion",
+                        "resourceGateway.mirrorStateWriteAttempt.v1")
+                .put("sessionId",
+                        state.path("sessionId").asText())
+                .put("attemptId", attemptId)
+                .put("planFingerprint",
+                        state.path("planFingerprint").asText())
+                .put("requestFingerprint",
+                        requestFingerprint)
+                .put("commandFingerprint",
+                        "sha256:" + "8".repeat(64))
+                .put("initialStateRevision", 0)
+                .put("initialWorldFingerprint",
+                        state.path("worldFingerprint").asText())
+                .put("initialStateFingerprint",
+                        state.path("fingerprint").asText())
+                .put("status", "TERMINAL")
+                .put("outcome", "REPLAYED")
+                .put("stage", "COMPLETED")
+                .put("stateDisposition", "UNCHANGED")
+                .put("resultingStateRevision", 0)
+                .put("resultingWorldFingerprint",
+                        state.path("worldFingerprint").asText())
+                .put("resultingStateFingerprint",
+                        state.path("fingerprint").asText())
+                .put("receiptFingerprint",
+                        "sha256:" + "9".repeat(64))
+                .put("retryable", false)
+                .put("errorCode", "")
+                .put("errorType", "")
+                .put("failureFingerprint", "")
+                .put("resolutionSource", "EXECUTION")
+                .put("startedAt",
+                        "2026-07-24T00:00:00Z")
+                .put("terminalAt",
+                        "2026-07-24T00:00:01Z");
+        value.set("scope",
+                state.path("scope").deepCopy());
+        value.set("coordinate", coordinate);
+        value.set("storeGeneration", generation);
+        value.set("writeEffectRef",
+                state.path("writeEffectRefs")
+                        .get(0).deepCopy());
+        ObjectNode fingerprintMaterial =
+                value.deepCopy();
+        fingerprintMaterial.putNull("reconciledAt");
+        fingerprintMaterial.put("fingerprint", "");
+        value.put("fingerprint",
+                EvidenceVerificationSupport.sha256(
+                        fingerprintMaterial));
         return value;
     }
 

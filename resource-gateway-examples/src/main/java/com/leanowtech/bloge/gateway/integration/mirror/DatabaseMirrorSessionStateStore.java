@@ -42,6 +42,8 @@ public final class DatabaseMirrorSessionStateStore
     private static final long RETRY_AFTER_UNAVAILABLE_SECONDS = 5;
     private static final long MAXIMUM_CAPACITY_RETRY_SECONDS = 300;
     private static final int MAXIMUM_EXPIRY_SWEEP_BATCH = 1_000;
+    private static final int MAXIMUM_WRITE_ATTEMPT_RECONCILIATION_BATCH =
+            1_000;
     private static final int GLOBAL_CAPACITY_GUARD = 1;
     private static final int STORE_GENERATION_SINGLETON = 1;
     private static final String CREATE_STATE_TABLE = """
@@ -111,6 +113,29 @@ public final class DatabaseMirrorSessionStateStore
                 generation_fingerprint VARCHAR(71) NOT NULL
             )
             """;
+    private static final String CREATE_WRITE_ATTEMPT_TABLE = """
+            CREATE TABLE IF NOT EXISTS mirror_session_write_attempt (
+                tenant_id VARCHAR(256) NOT NULL,
+                organization_id VARCHAR(256) NOT NULL,
+                project_id VARCHAR(256) NOT NULL,
+                environment_id VARCHAR(256) NOT NULL,
+                region VARCHAR(256) NOT NULL,
+                session_id VARCHAR(512) NOT NULL,
+                attempt_id VARCHAR(512) NOT NULL,
+                record_json CLOB NOT NULL,
+                record_fingerprint VARCHAR(71) NOT NULL,
+                status VARCHAR(16) NOT NULL,
+                outcome VARCHAR(32),
+                command_fingerprint VARCHAR(71) NOT NULL,
+                attempt_lease_expires_at VARCHAR(64) NOT NULL,
+                started_at VARCHAR(64) NOT NULL,
+                updated_at VARCHAR(64) NOT NULL,
+                PRIMARY KEY (
+                    tenant_id, organization_id, project_id,
+                    environment_id, region, session_id, attempt_id
+                )
+            )
+            """;
     private static final String CREATE_CAPACITY_INDEX = """
             CREATE INDEX IF NOT EXISTS mirror_session_capacity_idx
             ON mirror_session_state (
@@ -123,6 +148,14 @@ public final class DatabaseMirrorSessionStateStore
                 tenant_id, organization_id, project_id,
                 environment_id, region,
                 status, expires_at, payload_bytes
+            )
+            """;
+    private static final String CREATE_WRITE_ATTEMPT_RECONCILIATION_INDEX = """
+            CREATE INDEX IF NOT EXISTS mirror_session_write_attempt_due_idx
+            ON mirror_session_write_attempt (
+                status, attempt_lease_expires_at,
+                tenant_id, organization_id, project_id,
+                environment_id, region, session_id, attempt_id
             )
             """;
     private static final String SCOPE =
@@ -150,6 +183,15 @@ public final class DatabaseMirrorSessionStateStore
               FROM mirror_session_state
              WHERE %s AND create_request_id = ?
             """.formatted(SCOPE);
+    private static final String SELECT_WRITE_ATTEMPT = """
+            SELECT attempt_id, record_json, record_fingerprint, status, outcome,
+                   command_fingerprint, attempt_lease_expires_at,
+                   started_at, updated_at
+              FROM mirror_session_write_attempt
+             WHERE %s AND session_id = ? AND attempt_id = ?
+            """.formatted(SCOPE);
+    private static final String SELECT_WRITE_ATTEMPT_FOR_UPDATE =
+            SELECT_WRITE_ATTEMPT + " FOR UPDATE";
 
     private final JdbcTemplate jdbc;
     private final ObjectMapper mapper;
@@ -253,8 +295,10 @@ public final class DatabaseMirrorSessionStateStore
         jdbc.execute(CREATE_AUDIT_TABLE);
         jdbc.execute(CREATE_CAPACITY_GUARD_TABLE);
         jdbc.execute(CREATE_STORE_GENERATION_TABLE);
+        jdbc.execute(CREATE_WRITE_ATTEMPT_TABLE);
         jdbc.execute(CREATE_CAPACITY_INDEX);
         jdbc.execute(CREATE_SCOPE_CAPACITY_INDEX);
+        jdbc.execute(CREATE_WRITE_ATTEMPT_RECONCILIATION_INDEX);
         jdbc.update("""
                 MERGE INTO mirror_session_capacity_guard (guard_id)
                 KEY (guard_id) VALUES (?)
@@ -606,6 +650,9 @@ public final class DatabaseMirrorSessionStateStore
                 requireCommitFence(command, row, now);
                 MirrorSessionDescriptor previous = readDescriptor(row);
                 requireCandidateClosure(previous, candidateState);
+                WriteAttemptRow writeAttempt = command.writeAttemptId().isBlank()
+                        ? null : requireCommitWriteAttempt(
+                        command, candidateState, now);
                 CapacityUsage usage = capacityUsage(now, scope);
                 requireCommitCapacity(
                         usage, row.payloadBytes(), plaintext.length, now);
@@ -651,6 +698,11 @@ public final class DatabaseMirrorSessionStateStore
                 }
                 appendAudit(scope, sessionId, now,
                         Operation.COMMIT, "", descriptor);
+                if (writeAttempt != null) {
+                    terminalizeCommittedWriteAttempt(
+                            writeAttempt, command.candidate(),
+                            descriptor, now);
+                }
                 return CommitAttempt.committed(
                         new CommitResult(descriptor),
                         globalSnapshot(usage.global().replace(
@@ -665,6 +717,304 @@ public final class DatabaseMirrorSessionStateStore
             throw expected;
         } catch (DataAccessException failure) {
             throw retryable(UNAVAILABLE, RETRY_AFTER_UNAVAILABLE_SECONDS);
+        }
+    }
+
+    @Override
+    public MirrorStateWriteAttempt beginWriteAttempt(
+            BeginWriteAttemptCommand command) {
+        Objects.requireNonNull(command, "command");
+        try {
+            MirrorStateWriteAttempt attempt = transaction.execute(ignored -> {
+                Row session = rowForUpdate(
+                        command.lease().scope(),
+                        command.lease().sessionId())
+                        .orElseThrow(() -> terminal(NOT_FOUND));
+                Instant now = now();
+                requireLiveLease(command.lease(), session, now);
+                if (session.stateRevision()
+                        != command.initialStateRevision()
+                        || !session.worldFingerprint().equals(
+                        command.initialWorldFingerprint())
+                        || !session.stateFingerprint().equals(
+                        command.initialStateFingerprint())) {
+                    throw retryable(STATE_CONFLICT, 1);
+                }
+                Optional<WriteAttemptRow> existing =
+                        writeAttemptForUpdate(
+                                command.lease().scope(),
+                                command.lease().sessionId(),
+                                command.attemptId());
+                if (existing.isPresent()) {
+                    MirrorStateWriteAttempt persisted =
+                            readWriteAttempt(
+                                    command.lease().scope(),
+                                    command.lease().sessionId(),
+                                    command.attemptId(),
+                                    existing.orElseThrow());
+                    requireBeginRetry(command, persisted);
+                    return persisted;
+                }
+                MirrorStateWriteAttempt started =
+                        MirrorStateWriteAttemptIntegrity.seal(
+                                mapper, new MirrorStateWriteAttempt(
+                                        MirrorStateWriteAttempt.SCHEMA_VERSION,
+                                        command.lease().scope(),
+                                        command.lease().sessionId(),
+                                        command.attemptId(),
+                                        command.coordinate(),
+                                        readGeneration(),
+                                        command.planFingerprint(),
+                                        command.writeEffectRef(),
+                                        command.requestFingerprint(),
+                                        command.commandFingerprint(),
+                                        command.initialStateRevision(),
+                                        command.initialWorldFingerprint(),
+                                        command.initialStateFingerprint(),
+                                        MirrorStateWriteAttempt.Status
+                                                .IN_PROGRESS,
+                                        null,
+                                        MirrorStateWriteOutcomeRunEvidence
+                                                .WriteStage
+                                                .COMMAND_ADMISSION,
+                                        MirrorStateWriteOutcomeRunEvidence
+                                                .StateDisposition.UNKNOWN,
+                                        -1, "", "", "", false,
+                                        "", "", "",
+                                        MirrorStateWriteAttempt
+                                                .ResolutionSource.EXECUTION,
+                                        now, null, null, ""));
+                jdbc.update("""
+                                INSERT INTO mirror_session_write_attempt (
+                                    tenant_id, organization_id, project_id,
+                                    environment_id, region, session_id,
+                                    attempt_id, record_json,
+                                    record_fingerprint, status, outcome,
+                                    command_fingerprint,
+                                    attempt_lease_expires_at,
+                                    started_at, updated_at
+                                ) VALUES (
+                                    ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL,
+                                    ?, ?, ?, ?
+                                )
+                                """,
+                        command.lease().scope().tenantId(),
+                        command.lease().scope().organizationId(),
+                        command.lease().scope().projectId(),
+                        command.lease().scope().environmentId(),
+                        command.lease().scope().region(),
+                        command.lease().sessionId(),
+                        command.attemptId(),
+                        json(started),
+                        started.fingerprint(),
+                        started.status().name(),
+                        started.commandFingerprint(),
+                        command.lease().expiresAt().toString(),
+                        now.toString(),
+                        now.toString());
+                return started;
+            });
+            return Objects.requireNonNull(
+                    attempt, "write-attempt transaction returned null");
+        } catch (MirrorSessionStateStoreException expected) {
+            throw expected;
+        } catch (DuplicateKeyException conflict) {
+            return findWriteAttempt(
+                    command.lease().scope(),
+                    command.lease().sessionId(),
+                    command.attemptId())
+                    .filter(existing -> {
+                        requireBeginRetry(command, existing);
+                        return true;
+                    })
+                    .orElseThrow(() -> retryable(
+                            UNAVAILABLE,
+                            RETRY_AFTER_UNAVAILABLE_SECONDS));
+        } catch (DataAccessException failure) {
+            throw retryable(UNAVAILABLE,
+                    RETRY_AFTER_UNAVAILABLE_SECONDS);
+        }
+    }
+
+    @Override
+    public MirrorStateWriteAttempt completeWriteAttempt(
+            CompleteWriteAttemptCommand command) {
+        Objects.requireNonNull(command, "command");
+        try {
+            MirrorStateWriteAttempt result =
+                    transaction.execute(ignored -> {
+                        Row session = rowForUpdate(
+                                command.lease().scope(),
+                                command.lease().sessionId())
+                                .orElseThrow(() -> terminal(NOT_FOUND));
+                        Instant now = now();
+                        requireLiveLease(
+                                command.lease(), session, now);
+                        WriteAttemptRow row = writeAttemptForUpdate(
+                                command.lease().scope(),
+                                command.lease().sessionId(),
+                                command.attemptId())
+                                .orElseThrow(() -> terminal(CORRUPT));
+                        MirrorStateWriteAttempt current =
+                                readWriteAttempt(
+                                        command.lease().scope(),
+                                        command.lease().sessionId(),
+                                        command.attemptId(), row);
+                        if (current.status()
+                                == MirrorStateWriteAttempt.Status
+                                .TERMINAL) {
+                            requireCompletionRetry(command, current);
+                            return current;
+                        }
+                        MirrorStateWriteAttempt terminal =
+                                executionTerminal(
+                                        current, command, now);
+                        updateWriteAttempt(row, terminal, now);
+                        return terminal;
+                    });
+            return Objects.requireNonNull(
+                    result, "write-attempt completion returned null");
+        } catch (MirrorSessionStateStoreException expected) {
+            throw expected;
+        } catch (DataAccessException failure) {
+            throw retryable(UNAVAILABLE,
+                    RETRY_AFTER_UNAVAILABLE_SECONDS);
+        }
+    }
+
+    @Override
+    public Optional<MirrorStateWriteAttempt> findWriteAttempt(
+            CapabilitySnapshot.Scope scope,
+            String sessionId,
+            String attemptId) {
+        requireScope(scope);
+        String id = required(sessionId, "sessionId");
+        String attempt = required(attemptId, "attemptId");
+        try {
+            return queryWriteAttempt(
+                    SELECT_WRITE_ATTEMPT,
+                    scopeArgs(scope, id, attempt))
+                    .map(row -> readWriteAttempt(
+                            scope, id, attempt, row));
+        } catch (MirrorSessionStateStoreException expected) {
+            throw expected;
+        } catch (DataAccessException failure) {
+            throw retryable(UNAVAILABLE,
+                    RETRY_AFTER_UNAVAILABLE_SECONDS);
+        }
+    }
+
+    @Override
+    public int reconcileWriteAttempts(int limit) {
+        if (limit < 1
+                || limit
+                > MAXIMUM_WRITE_ATTEMPT_RECONCILIATION_BATCH) {
+            throw new IllegalArgumentException(
+                    "write-attempt reconciliation limit must be between 1 and "
+                            + MAXIMUM_WRITE_ATTEMPT_RECONCILIATION_BATCH);
+        }
+        try {
+            Instant scanTime = now();
+            List<WriteAttemptCoordinate> due = jdbc.query("""
+                            SELECT tenant_id, organization_id,
+                                   project_id, environment_id, region,
+                                   session_id, attempt_id
+                              FROM mirror_session_write_attempt
+                             WHERE status = 'IN_PROGRESS'
+                               AND attempt_lease_expires_at <= ?
+                             ORDER BY attempt_lease_expires_at,
+                                      tenant_id, organization_id,
+                                      project_id, environment_id,
+                                      region, session_id, attempt_id
+                             LIMIT ?
+                            """,
+                    (rs, rowNum) -> new WriteAttemptCoordinate(
+                            new CapabilitySnapshot.Scope(
+                                    rs.getString("tenant_id"),
+                                    rs.getString("organization_id"),
+                                    rs.getString("project_id"),
+                                    rs.getString("environment_id"),
+                                    rs.getString("region")),
+                            rs.getString("session_id"),
+                            rs.getString("attempt_id")),
+                    scanTime.toString(), limit);
+            int terminalized = 0;
+            MirrorSessionStateStoreException firstCorrupt = null;
+            for (WriteAttemptCoordinate coordinate : due) {
+                try {
+                    Boolean resolved = transaction.execute(
+                            ignored -> reconcileWriteAttempt(
+                                    coordinate));
+                    if (Boolean.TRUE.equals(resolved)) {
+                        terminalized++;
+                    }
+                } catch (MirrorSessionStateStoreException failure) {
+                    if (failure.code() != CORRUPT) {
+                        throw failure;
+                    }
+                    if (firstCorrupt == null) {
+                        firstCorrupt = failure;
+                    }
+                }
+            }
+            if (firstCorrupt != null) {
+                throw firstCorrupt;
+            }
+            return terminalized;
+        } catch (MirrorSessionStateStoreException expected) {
+            throw expected;
+        } catch (DataAccessException failure) {
+            throw retryable(UNAVAILABLE,
+                    RETRY_AFTER_UNAVAILABLE_SECONDS);
+        }
+    }
+
+    private boolean reconcileWriteAttempt(
+            WriteAttemptCoordinate coordinate) {
+        Instant reconciliationTime = now();
+        Optional<Row> session = rowForUpdate(
+                coordinate.scope(), coordinate.sessionId());
+        Optional<WriteAttemptRow> found =
+                writeAttemptForUpdate(
+                        coordinate.scope(),
+                        coordinate.sessionId(),
+                        coordinate.attemptId());
+        if (found.isEmpty()) {
+            return false;
+        }
+        WriteAttemptRow attemptRow = found.orElseThrow();
+        if (!MirrorStateWriteAttempt.Status.IN_PROGRESS
+                .name().equals(attemptRow.status())
+                || attemptRow.attemptLeaseExpiresAt()
+                .isAfter(reconciliationTime)) {
+            return false;
+        }
+        MirrorStateWriteAttempt attempt =
+                readWriteAttempt(
+                        coordinate.scope(),
+                        coordinate.sessionId(),
+                        coordinate.attemptId(),
+                        attemptRow);
+        MirrorStateWriteAttempt terminal =
+                reconcileWriteAttempt(
+                        attempt, session, reconciliationTime);
+        updateWriteAttempt(
+                attemptRow, terminal, reconciliationTime);
+        return true;
+    }
+
+    @Override
+    public boolean writeAttemptReconciliationReady() {
+        try {
+            Long count = jdbc.queryForObject("""
+                    SELECT COUNT(*)
+                      FROM mirror_session_write_attempt
+                     WHERE status = 'IN_PROGRESS'
+                        OR status = 'TERMINAL'
+                    """, Long.class);
+            return count != null;
+        } catch (RuntimeException unavailable) {
+            return false;
         }
     }
 
@@ -1129,18 +1479,374 @@ public final class DatabaseMirrorSessionStateStore
 
     private void requireCommitFence(
             CommitCommand command, Row row, Instant now) {
+        requireLiveLease(command.lease(), row, now);
+        if (!command.expectedStateFingerprint().equals(
+                row.stateFingerprint())) {
+            throw retryable(STATE_CONFLICT, 1);
+        }
+    }
+
+    private static void requireLiveLease(
+            Lease lease, Row row, Instant now) {
         if (!row.active()) {
             throw terminal(GONE);
         }
-        if (!command.lease().ownerId().equals(row.leaseOwner())
-                || command.lease().fence() != row.leaseFence()
+        if (!lease.ownerId().equals(row.leaseOwner())
+                || lease.fence() != row.leaseFence()
                 || row.leaseExpiresAt() == null
                 || !row.leaseExpiresAt().isAfter(now)) {
             throw retryable(LEASE_LOST, 1);
         }
-        if (!command.expectedStateFingerprint().equals(
-                row.stateFingerprint())) {
-            throw retryable(STATE_CONFLICT, 1);
+    }
+
+    private WriteAttemptRow requireCommitWriteAttempt(
+            CommitCommand command,
+            SessionStateSpace candidate,
+            Instant now) {
+        WriteAttemptRow row = writeAttemptForUpdate(
+                command.lease().scope(),
+                command.lease().sessionId(),
+                command.writeAttemptId())
+                .orElseThrow(() -> terminal(CORRUPT));
+        MirrorStateWriteAttempt attempt = readWriteAttempt(
+                command.lease().scope(),
+                command.lease().sessionId(),
+                command.writeAttemptId(), row);
+        if (attempt.status()
+                != MirrorStateWriteAttempt.Status.IN_PROGRESS
+                || !attempt.initialStateFingerprint().equals(
+                command.expectedStateFingerprint())
+                || attempt.initialStateRevision()
+                != candidate.stateRevision() - 1
+                || !attempt.planFingerprint().equals(
+                candidate.planFingerprint())
+                || !row.attemptLeaseExpiresAt().isAfter(now)
+                || candidate.processedCommands().isEmpty()) {
+            throw terminal(CORRUPT);
+        }
+        SessionStateSpace.TransactionReceipt receipt =
+                candidate.processedCommands().get(
+                        candidate.processedCommands().size() - 1);
+        if (!attempt.commandFingerprint().equals(
+                receipt.commandFingerprint())
+                || receipt.revisionBefore()
+                != attempt.initialStateRevision()
+                || receipt.revisionAfter()
+                != candidate.stateRevision()) {
+            throw terminal(CORRUPT);
+        }
+        return row;
+    }
+
+    private void terminalizeCommittedWriteAttempt(
+            WriteAttemptRow row,
+            MirrorSessionPayload candidate,
+            MirrorSessionDescriptor descriptor,
+            Instant now) {
+        MirrorStateWriteAttempt current =
+                readWriteAttempt(
+                        candidate.state().scope(),
+                        candidate.state().sessionId(),
+                        row.attemptId(), row);
+        SessionStateSpace.TransactionReceipt receipt =
+                candidate.state().processedCommands().get(
+                        candidate.state().processedCommands().size() - 1);
+        MirrorStateWriteAttempt terminal =
+                terminalAttempt(
+                        current,
+                        MirrorStateWriteOutcomeRunEvidence
+                                .WriteOutcome.COMMITTED,
+                        MirrorStateWriteOutcomeRunEvidence
+                                .WriteStage.COMPLETED,
+                        MirrorStateWriteOutcomeRunEvidence
+                                .StateDisposition.ADVANCED,
+                        descriptor.stateRevision(),
+                        descriptor.worldFingerprint(),
+                        descriptor.stateFingerprint(),
+                        receipt.fingerprint(),
+                        false, "", "", "",
+                        MirrorStateWriteAttempt
+                                .ResolutionSource.EXECUTION,
+                        now);
+        updateWriteAttempt(row, terminal, now);
+    }
+
+    private MirrorStateWriteAttempt executionTerminal(
+            MirrorStateWriteAttempt current,
+            CompleteWriteAttemptCommand command,
+            Instant now) {
+        boolean replayed = command.outcome()
+                == MirrorStateWriteOutcomeRunEvidence
+                .WriteOutcome.REPLAYED;
+        String failureFingerprint = replayed
+                ? "" : MirrorStateWriteAttemptIntegrity.failureFingerprint(
+                mapper, current.attemptId(),
+                current.commandFingerprint(), command.outcome(),
+                command.stage(), command.retryable(),
+                command.errorCode(), command.errorType());
+        return terminalAttempt(
+                current, command.outcome(),
+                replayed
+                        ? MirrorStateWriteOutcomeRunEvidence
+                        .WriteStage.COMPLETED
+                        : command.stage(),
+                MirrorStateWriteOutcomeRunEvidence
+                        .StateDisposition.UNCHANGED,
+                command.resultingStateRevision(),
+                command.resultingWorldFingerprint(),
+                command.resultingStateFingerprint(),
+                command.receiptFingerprint(),
+                command.retryable(),
+                command.errorCode(), command.errorType(),
+                failureFingerprint,
+                MirrorStateWriteAttempt
+                        .ResolutionSource.EXECUTION,
+                now);
+    }
+
+    private MirrorStateWriteAttempt reconcileWriteAttempt(
+            MirrorStateWriteAttempt attempt,
+            Optional<Row> sessionRow,
+            Instant now) {
+        if (sessionRow.isEmpty()) {
+            return unknownReconciliation(
+                    attempt,
+                    "RG.MIRROR.STATE.WRITE_ATTEMPT_SESSION_MISSING",
+                    now);
+        }
+        Row row = sessionRow.orElseThrow();
+        if (!row.active()) {
+            return unknownReconciliation(
+                    attempt,
+                    "RG.MIRROR.STATE.WRITE_ATTEMPT_SESSION_TERMINAL",
+                    now);
+        }
+        MirrorSessionPayload payload;
+        try {
+            if (!attempt.storeGeneration().equals(
+                    readGeneration())) {
+                return unknownReconciliation(
+                        attempt,
+                        "RG.MIRROR.STATE.WRITE_ATTEMPT_GENERATION_CHANGED",
+                        now);
+            }
+            payload = decrypt(
+                    attempt.scope(), attempt.sessionId(), row);
+        } catch (RuntimeException unavailable) {
+            return unknownReconciliation(
+                    attempt,
+                    "RG.MIRROR.STATE.WRITE_ATTEMPT_STATE_UNVERIFIABLE",
+                    now);
+        }
+        Optional<SessionStateSpace.TransactionReceipt> found =
+                payload.state().processedCommands().stream()
+                        .filter(receipt ->
+                                receipt.commandFingerprint().equals(
+                                        attempt.commandFingerprint()))
+                        .findFirst();
+        if (found.isEmpty()) {
+            String code =
+                    "RG.MIRROR.STATE.WRITE_ATTEMPT_ABANDONED";
+            String type = "PROCESS_INTERRUPTION";
+            String failureFingerprint =
+                    MirrorStateWriteAttemptIntegrity
+                            .failureFingerprint(
+                                    mapper, attempt.attemptId(),
+                                    attempt.commandFingerprint(),
+                                    MirrorStateWriteOutcomeRunEvidence
+                                            .WriteOutcome
+                                            .PRE_COMMIT_FAILED,
+                                    MirrorStateWriteOutcomeRunEvidence
+                                            .WriteStage.COMMIT,
+                                    true, code, type);
+            return terminalAttempt(
+                    attempt,
+                    MirrorStateWriteOutcomeRunEvidence
+                            .WriteOutcome.PRE_COMMIT_FAILED,
+                    MirrorStateWriteOutcomeRunEvidence
+                            .WriteStage.COMMIT,
+                    MirrorStateWriteOutcomeRunEvidence
+                            .StateDisposition.UNCHANGED,
+                    attempt.initialStateRevision(),
+                    attempt.initialWorldFingerprint(),
+                    attempt.initialStateFingerprint(),
+                    "", true, code, type,
+                    failureFingerprint,
+                    MirrorStateWriteAttempt
+                            .ResolutionSource.RECONCILER,
+                    now);
+        }
+        SessionStateSpace.TransactionReceipt receipt =
+                found.orElseThrow();
+        if (receipt.revisionAfter()
+                <= attempt.initialStateRevision()) {
+            return terminalAttempt(
+                    attempt,
+                    MirrorStateWriteOutcomeRunEvidence
+                            .WriteOutcome.REPLAYED,
+                    MirrorStateWriteOutcomeRunEvidence
+                            .WriteStage.COMPLETED,
+                    MirrorStateWriteOutcomeRunEvidence
+                            .StateDisposition.UNCHANGED,
+                    attempt.initialStateRevision(),
+                    attempt.initialWorldFingerprint(),
+                    attempt.initialStateFingerprint(),
+                    receipt.fingerprint(), false,
+                    "", "", "",
+                    MirrorStateWriteAttempt
+                            .ResolutionSource.RECONCILER,
+                    now);
+        }
+        if (receipt.revisionBefore()
+                == attempt.initialStateRevision()
+                && receipt.revisionAfter()
+                == Math.addExact(
+                attempt.initialStateRevision(), 1)) {
+            String resultingStateFingerprint =
+                    payload.state().stateRevision()
+                            == receipt.revisionAfter()
+                            ? payload.state().fingerprint() : "";
+            return terminalAttempt(
+                    attempt,
+                    MirrorStateWriteOutcomeRunEvidence
+                            .WriteOutcome.COMMITTED,
+                    MirrorStateWriteOutcomeRunEvidence
+                            .WriteStage.COMPLETED,
+                    MirrorStateWriteOutcomeRunEvidence
+                            .StateDisposition.ADVANCED,
+                    receipt.revisionAfter(),
+                    receipt.resultingWorldFingerprint(),
+                    resultingStateFingerprint,
+                    receipt.fingerprint(), false,
+                    "", "", "",
+                    MirrorStateWriteAttempt
+                            .ResolutionSource.RECONCILER,
+                    now);
+        }
+        return unknownReconciliation(
+                attempt,
+                "RG.MIRROR.STATE.WRITE_ATTEMPT_RECEIPT_INCONSISTENT",
+                now);
+    }
+
+    private MirrorStateWriteAttempt unknownReconciliation(
+            MirrorStateWriteAttempt attempt,
+            String errorCode,
+            Instant now) {
+        String errorType = "RECONCILIATION";
+        String failureFingerprint =
+                MirrorStateWriteAttemptIntegrity.failureFingerprint(
+                        mapper, attempt.attemptId(),
+                        attempt.commandFingerprint(),
+                        MirrorStateWriteOutcomeRunEvidence
+                                .WriteOutcome
+                                .COMMIT_OUTCOME_UNKNOWN,
+                        MirrorStateWriteOutcomeRunEvidence
+                                .WriteStage.COMMIT,
+                        false, errorCode, errorType);
+        return terminalAttempt(
+                attempt,
+                MirrorStateWriteOutcomeRunEvidence
+                        .WriteOutcome.COMMIT_OUTCOME_UNKNOWN,
+                MirrorStateWriteOutcomeRunEvidence
+                        .WriteStage.COMMIT,
+                MirrorStateWriteOutcomeRunEvidence
+                        .StateDisposition.UNKNOWN,
+                -1, "", "", "", false,
+                errorCode, errorType, failureFingerprint,
+                MirrorStateWriteAttempt
+                        .ResolutionSource.RECONCILER,
+                now);
+    }
+
+    private MirrorStateWriteAttempt terminalAttempt(
+            MirrorStateWriteAttempt current,
+            MirrorStateWriteOutcomeRunEvidence.WriteOutcome outcome,
+            MirrorStateWriteOutcomeRunEvidence.WriteStage stage,
+            MirrorStateWriteOutcomeRunEvidence.StateDisposition disposition,
+            long resultingRevision,
+            String resultingWorldFingerprint,
+            String resultingStateFingerprint,
+            String receiptFingerprint,
+            boolean retryable,
+            String errorCode,
+            String errorType,
+            String failureFingerprint,
+            MirrorStateWriteAttempt.ResolutionSource source,
+            Instant now) {
+        return MirrorStateWriteAttemptIntegrity.seal(
+                mapper, new MirrorStateWriteAttempt(
+                        current.schemaVersion(), current.scope(),
+                        current.sessionId(), current.attemptId(),
+                        current.coordinate(), current.storeGeneration(),
+                        current.planFingerprint(),
+                        current.writeEffectRef(),
+                        current.requestFingerprint(),
+                        current.commandFingerprint(),
+                        current.initialStateRevision(),
+                        current.initialWorldFingerprint(),
+                        current.initialStateFingerprint(),
+                        MirrorStateWriteAttempt.Status.TERMINAL,
+                        outcome, stage, disposition,
+                        resultingRevision,
+                        resultingWorldFingerprint,
+                        resultingStateFingerprint,
+                        receiptFingerprint, retryable,
+                        errorCode, errorType, failureFingerprint,
+                        source, current.startedAt(), now,
+                        source
+                                == MirrorStateWriteAttempt
+                                .ResolutionSource.RECONCILER
+                                ? now : null,
+                        ""));
+    }
+
+    private static void requireBeginRetry(
+            BeginWriteAttemptCommand command,
+            MirrorStateWriteAttempt existing) {
+        if (!command.lease().scope().equals(existing.scope())
+                || !command.lease().sessionId().equals(
+                existing.sessionId())
+                || !command.attemptId().equals(existing.attemptId())
+                || !command.coordinate().equals(
+                existing.coordinate())
+                || !command.planFingerprint().equals(
+                existing.planFingerprint())
+                || !command.writeEffectRef().equals(
+                existing.writeEffectRef())
+                || !command.requestFingerprint().equals(
+                existing.requestFingerprint())
+                || !command.commandFingerprint().equals(
+                existing.commandFingerprint())
+                || command.initialStateRevision()
+                != existing.initialStateRevision()
+                || !command.initialWorldFingerprint().equals(
+                existing.initialWorldFingerprint())
+                || !command.initialStateFingerprint().equals(
+                existing.initialStateFingerprint())) {
+            throw terminal(CORRUPT);
+        }
+    }
+
+    private static void requireCompletionRetry(
+            CompleteWriteAttemptCommand command,
+            MirrorStateWriteAttempt existing) {
+        if (command.outcome() != existing.outcome()
+                || command.stage() != existing.stage()
+                || command.resultingStateRevision()
+                != existing.resultingStateRevision()
+                || !command.resultingWorldFingerprint().equals(
+                existing.resultingWorldFingerprint())
+                || !command.resultingStateFingerprint().equals(
+                existing.resultingStateFingerprint())
+                || !command.receiptFingerprint().equals(
+                existing.receiptFingerprint())
+                || command.retryable() != existing.retryable()
+                || !command.errorCode().equals(
+                existing.errorCode())
+                || !command.errorType().equals(
+                existing.errorType())) {
+            throw terminal(CORRUPT);
         }
     }
 
@@ -1289,6 +1995,117 @@ public final class DatabaseMirrorSessionStateStore
             throw terminal(CORRUPT);
         }
         return rows.stream().findFirst();
+    }
+
+    private Optional<WriteAttemptRow> writeAttemptForUpdate(
+            CapabilitySnapshot.Scope scope,
+            String sessionId,
+            String attemptId) {
+        return queryWriteAttempt(
+                SELECT_WRITE_ATTEMPT_FOR_UPDATE,
+                scopeArgs(scope, sessionId, attemptId));
+    }
+
+    private Optional<WriteAttemptRow> queryWriteAttempt(
+            String sql, Object[] arguments) {
+        List<WriteAttemptRow> rows = jdbc.query(
+                sql, (rs, rowNum) -> new WriteAttemptRow(
+                        rs.getString("attempt_id"),
+                        rs.getString("record_json"),
+                        rs.getString("record_fingerprint"),
+                        rs.getString("status"),
+                        rs.getString("outcome"),
+                        rs.getString("command_fingerprint"),
+                        Instant.parse(rs.getString(
+                                "attempt_lease_expires_at")),
+                        Instant.parse(rs.getString("started_at")),
+                        Instant.parse(rs.getString("updated_at"))),
+                arguments);
+        if (rows.size() > 1) {
+            throw terminal(CORRUPT);
+        }
+        return rows.stream().findFirst();
+    }
+
+    private MirrorStateWriteAttempt readWriteAttempt(
+            CapabilitySnapshot.Scope scope,
+            String sessionId,
+            String attemptId,
+            WriteAttemptRow row) {
+        try {
+            MirrorStateWriteAttempt attempt = mapper.readValue(
+                    row.recordJson(),
+                    MirrorStateWriteAttempt.class);
+            MirrorStateWriteAttemptIntegrity.verify(
+                    mapper, attempt);
+            if (!scope.equals(attempt.scope())
+                    || !sessionId.equals(attempt.sessionId())
+                    || !attemptId.equals(attempt.attemptId())
+                    || !attempt.fingerprint().equals(
+                    row.recordFingerprint())
+                    || !attempt.status().name().equals(row.status())
+                    || !Objects.equals(
+                    attempt.outcome() == null
+                            ? null : attempt.outcome().name(),
+                    row.outcome())
+                    || !attempt.commandFingerprint().equals(
+                    row.commandFingerprint())
+                    || !attempt.startedAt().equals(
+                    row.startedAt())
+                    || attempt.status()
+                    == MirrorStateWriteAttempt.Status.TERMINAL
+                    && !Objects.equals(
+                    attempt.terminalAt(), row.updatedAt())) {
+                throw terminal(CORRUPT);
+            }
+            return attempt;
+        } catch (MirrorSessionStateStoreException expected) {
+            throw expected;
+        } catch (Exception invalid) {
+            throw terminal(CORRUPT);
+        }
+    }
+
+    private void updateWriteAttempt(
+            WriteAttemptRow previous,
+            MirrorStateWriteAttempt terminal,
+            Instant now) {
+        MirrorStateWriteAttemptIntegrity.verify(mapper, terminal);
+        if (terminal.status()
+                != MirrorStateWriteAttempt.Status.TERMINAL
+                || !terminal.attemptId().equals(previous.attemptId())
+                || !terminal.startedAt().equals(previous.startedAt())
+                || !now.equals(terminal.terminalAt())) {
+            throw terminal(CORRUPT);
+        }
+        int updated = jdbc.update("""
+                        UPDATE mirror_session_write_attempt
+                           SET record_json = ?,
+                               record_fingerprint = ?,
+                               status = ?,
+                               outcome = ?,
+                               updated_at = ?
+                         WHERE %s AND session_id = ?
+                           AND attempt_id = ?
+                           AND status = 'IN_PROGRESS'
+                           AND record_fingerprint = ?
+                        """.formatted(SCOPE),
+                concatArgs(
+                        new Object[]{
+                                json(terminal),
+                                terminal.fingerprint(),
+                                terminal.status().name(),
+                                terminal.outcome().name(),
+                                now.toString()
+                        },
+                        scopeArgs(
+                                terminal.scope(),
+                                terminal.sessionId(),
+                                terminal.attemptId(),
+                                previous.recordFingerprint())));
+        if (updated != 1) {
+            throw retryable(STATE_CONFLICT, 1);
+        }
     }
 
     private void appendAudit(
@@ -1451,6 +2268,47 @@ public final class DatabaseMirrorSessionStateStore
         private SessionCoordinate {
             scope = Objects.requireNonNull(scope, "scope");
             sessionId = required(sessionId, "sessionId");
+        }
+    }
+
+    private record WriteAttemptCoordinate(
+            CapabilitySnapshot.Scope scope,
+            String sessionId,
+            String attemptId
+    ) {
+        private WriteAttemptCoordinate {
+            scope = Objects.requireNonNull(scope, "scope");
+            sessionId = required(sessionId, "sessionId");
+            attemptId = required(attemptId, "attemptId");
+        }
+    }
+
+    private record WriteAttemptRow(
+            String attemptId,
+            String recordJson,
+            String recordFingerprint,
+            String status,
+            String outcome,
+            String commandFingerprint,
+            Instant attemptLeaseExpiresAt,
+            Instant startedAt,
+            Instant updatedAt
+    ) {
+        private WriteAttemptRow {
+            attemptId = required(attemptId, "attemptId");
+            recordJson = required(recordJson, "recordJson");
+            recordFingerprint = required(
+                    recordFingerprint, "recordFingerprint");
+            status = required(status, "status");
+            commandFingerprint = required(
+                    commandFingerprint, "commandFingerprint");
+            attemptLeaseExpiresAt = Objects.requireNonNull(
+                    attemptLeaseExpiresAt,
+                    "attemptLeaseExpiresAt");
+            startedAt = Objects.requireNonNull(
+                    startedAt, "startedAt");
+            updatedAt = Objects.requireNonNull(
+                    updatedAt, "updatedAt");
         }
     }
 

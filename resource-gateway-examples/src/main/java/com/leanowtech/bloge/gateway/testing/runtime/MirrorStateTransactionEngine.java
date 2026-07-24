@@ -150,8 +150,45 @@ public final class MirrorStateTransactionEngine {
             WriteEffectSpec effect,
             Map<String, ?> input,
             NewCommandGuard newCommandGuard) {
-        Objects.requireNonNull(effect, "effect");
         Objects.requireNonNull(newCommandGuard, "newCommandGuard");
+        return execute(effect, input, new CommandLifecycle() {
+            @Override
+            public void beforeNew(
+                    SessionStateSpace current,
+                    CommandIdentity identity) {
+                newCommandGuard.beforeExecute(current);
+            }
+
+            @Override
+            public void onReplay(
+                    SessionStateSpace current,
+                    CommandIdentity identity,
+                    SessionStateSpace.TransactionReceipt receipt) {
+                // Compatibility callers do not need a durable replay callback.
+            }
+        });
+    }
+
+    /**
+     * Executes or replays one keyed transaction with payload-free lifecycle callbacks.
+     *
+     * <p>The lifecycle receives the exact command fingerprint only after effect, input, and
+     * idempotency validation. A new-command callback runs before mutation evaluation; a replay
+     * callback runs before the original receipt is returned. Neither callback receives the
+     * command input or raw idempotency key.</p>
+     *
+     * @param effect exact sealed write effect admitted by the session
+     * @param input detached JSON command input
+     * @param lifecycle payload-free durable-attempt lifecycle
+     * @return original or newly committed receipt
+     * @throws MirrorStateException for stable fail-closed admission or transaction failures
+     */
+    public SessionStateSpace.TransactionReceipt execute(
+            WriteEffectSpec effect,
+            Map<String, ?> input,
+            CommandLifecycle lifecycle) {
+        Objects.requireNonNull(effect, "effect");
+        Objects.requireNonNull(lifecycle, "lifecycle");
         Map<String, Object> detachedInput = ProtocolJsonValue.freezeMap(input);
         mutationLock.lock();
         try {
@@ -171,6 +208,8 @@ public final class MirrorStateTransactionEngine {
                     readPointer(detachedInput, effect.idempotency().keyPath()));
             String commandFingerprint = commandFingerprint(
                     current, effectRef, detachedInput, idempotencyKey);
+            CommandIdentity identity = new CommandIdentity(
+                    effectRef, commandFingerprint);
             Optional<SessionStateSpace.TransactionReceipt> previous =
                     current.processedCommands().stream()
                             .filter(receipt -> receipt.idempotencyKey()
@@ -181,9 +220,11 @@ public final class MirrorStateTransactionEngine {
                         .equals(commandFingerprint)) {
                     throw reject(IDEMPOTENCY_CONFLICT);
                 }
+                lifecycle.onReplay(
+                        current, identity, previous.orElseThrow());
                 return previous.orElseThrow();
             }
-            newCommandGuard.beforeExecute(current);
+            lifecycle.beforeNew(current, identity);
             if (Thread.currentThread().isInterrupted()) {
                 throw reject(CANCELLED);
             }
@@ -738,6 +779,83 @@ public final class MirrorStateTransactionEngine {
         /** @return a no-op guard for callers without an additional admission fence */
         static NewCommandGuard noop() {
             return current -> {
+            };
+        }
+    }
+
+    /**
+     * Payload-free command identity established by the transaction engine.
+     *
+     * @param writeEffectRef exact admitted effect
+     * @param commandFingerprint canonical effect, state closure, idempotency, and input identity
+     */
+    public record CommandIdentity(
+            MirrorArtifactRef writeEffectRef,
+            String commandFingerprint
+    ) {
+        /** Validates the exact effect kind and canonical command fingerprint. */
+        public CommandIdentity {
+            writeEffectRef = Objects.requireNonNull(
+                    writeEffectRef, "writeEffectRef");
+            if (!"WRITE_EFFECT".equals(writeEffectRef.kind())) {
+                throw new IllegalArgumentException(
+                        "command identity must reference WRITE_EFFECT");
+            }
+            commandFingerprint = commandFingerprint == null
+                    ? "" : commandFingerprint.trim();
+            if (!MirrorResolver.FINGERPRINT.matcher(
+                    commandFingerprint).matches()) {
+                throw new IllegalArgumentException(
+                        "commandFingerprint must be a canonical SHA-256 value");
+            }
+        }
+    }
+
+    /**
+     * Payload-free durable lifecycle around command identity and exact replay.
+     *
+     * <p>Callbacks run while the engine serializes its state head. They must remain bounded and
+     * must not call back into this engine. Throwing aborts before any new candidate becomes
+     * visible.</p>
+     */
+    public interface CommandLifecycle {
+        /**
+         * Persists admission for one genuinely new command before evaluation.
+         *
+         * @param current exact current Session head
+         * @param identity payload-free command identity
+         */
+        void beforeNew(
+                SessionStateSpace current,
+                CommandIdentity identity);
+
+        /**
+         * Persists exact-replay evidence before returning the original receipt.
+         *
+         * @param current exact current Session head
+         * @param identity payload-free command identity
+         * @param receipt exact previously committed receipt
+         */
+        void onReplay(
+                SessionStateSpace current,
+                CommandIdentity identity,
+                SessionStateSpace.TransactionReceipt receipt);
+
+        /** @return a no-op lifecycle for isolated in-memory execution */
+        static CommandLifecycle noop() {
+            return new CommandLifecycle() {
+                @Override
+                public void beforeNew(
+                        SessionStateSpace current,
+                        CommandIdentity identity) {
+                }
+
+                @Override
+                public void onReplay(
+                        SessionStateSpace current,
+                        CommandIdentity identity,
+                        SessionStateSpace.TransactionReceipt receipt) {
+                }
             };
         }
     }

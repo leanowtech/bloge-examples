@@ -670,6 +670,433 @@ class DatabaseMirrorSessionStateStoreTest {
         }
     }
 
+    @Test
+    void writeAttemptCommitIsAtomicPayloadFreeAndRestartVerifiable() {
+        try (Harness harness = harness()) {
+            Fixture fixture = fixture();
+            harness.store().create(
+                    create("create-attempt-commit",
+                            fixture.payload()));
+            MirrorSessionStateStore.ClaimedSession claimed =
+                    harness.store().claim(claim(
+                            fixture.state().scope(),
+                            fixture.state().sessionId(),
+                            "worker-attempt", 30));
+            MirrorSessionPayload candidate = committedPayload(
+                    claimed.payload(), fixture.effect(), 450);
+            SessionStateSpace.TransactionReceipt receipt =
+                    candidate.state().processedCommands().getLast();
+            String attemptId = beginAttempt(
+                    harness.store(), claimed,
+                    fixture.effect(),
+                    receipt.commandFingerprint(),
+                    "attempt-00000000-0000-0000-0000-000000000001");
+
+            harness.store().compareAndSet(
+                    new MirrorSessionStateStore.CommitCommand(
+                            claimed.lease(),
+                            claimed.payload().state().fingerprint(),
+                            candidate, attemptId));
+            DatabaseMirrorSessionStateStore restarted =
+                    store(harness,
+                            MirrorSessionCapacityPolicy.defaults());
+            MirrorStateWriteAttempt terminal =
+                    restarted.findWriteAttempt(
+                            fixture.state().scope(),
+                            fixture.state().sessionId(),
+                            attemptId).orElseThrow();
+            String persisted = harness.jdbc().queryForObject(
+                    "SELECT record_json "
+                            + "FROM mirror_session_write_attempt",
+                    String.class);
+
+            assertThat(terminal.status())
+                    .isEqualTo(
+                            MirrorStateWriteAttempt.Status.TERMINAL);
+            assertThat(terminal.outcome())
+                    .isEqualTo(
+                            MirrorStateWriteOutcomeRunEvidence
+                                    .WriteOutcome.COMMITTED);
+            assertThat(terminal.resultingStateRevision())
+                    .isEqualTo(1);
+            assertThat(terminal.receiptFingerprint())
+                    .isEqualTo(receipt.fingerprint());
+            assertThat(terminal.resolutionSource())
+                    .isEqualTo(
+                            MirrorStateWriteAttempt
+                                    .ResolutionSource.EXECUTION);
+            assertThat(persisted)
+                    .doesNotContain("REQ-X")
+                    .doesNotContain("O-100")
+                    .doesNotContain("\"amount\"")
+                    .doesNotContain("\"response\"");
+        }
+    }
+
+    @Test
+    void failedAtomicCommitLeavesStateAndAttemptIntentUnchanged() {
+        try (Harness harness = harness()) {
+            Fixture fixture = fixture();
+            harness.store().create(
+                    create("create-attempt-rollback",
+                            fixture.payload()));
+            MirrorSessionStateStore.ClaimedSession claimed =
+                    harness.store().claim(claim(
+                            fixture.state().scope(),
+                            fixture.state().sessionId(),
+                            "worker-attempt", 30));
+            MirrorSessionPayload candidate = committedPayload(
+                    claimed.payload(), fixture.effect(), 450);
+            String attemptId = beginAttempt(
+                    harness.store(), claimed,
+                    fixture.effect(),
+                    candidate.state().processedCommands()
+                            .getLast().commandFingerprint(),
+                    "attempt-00000000-0000-0000-0000-000000000002");
+            harness.jdbc().execute(
+                    "DROP TABLE mirror_session_operation_audit");
+
+            assertStoreFailure(
+                    () -> harness.store().compareAndSet(
+                            new MirrorSessionStateStore
+                                    .CommitCommand(
+                                    claimed.lease(),
+                                    claimed.payload().state()
+                                            .fingerprint(),
+                                    candidate, attemptId)),
+                    UNAVAILABLE);
+
+            MirrorSessionStateStore.SessionSnapshot state =
+                    harness.store().snapshot(
+                            new MirrorSessionStateStore
+                                    .SnapshotCommand(
+                                    fixture.state().scope(),
+                                    fixture.state().sessionId()));
+            MirrorStateWriteAttempt attempt =
+                    harness.store().findWriteAttempt(
+                            fixture.state().scope(),
+                            fixture.state().sessionId(),
+                            attemptId).orElseThrow();
+            assertThat(state.payload().state().stateRevision())
+                    .isZero();
+            assertThat(attempt.status())
+                    .isEqualTo(
+                            MirrorStateWriteAttempt.Status.IN_PROGRESS);
+        }
+    }
+
+    @Test
+    void expiredIntentReconcilesToPreCommitFailureWithoutPayload() {
+        try (Harness harness = harness()) {
+            Fixture fixture = fixture();
+            harness.store().create(
+                    create("create-attempt-abandoned",
+                            fixture.payload()));
+            MirrorSessionStateStore.ClaimedSession claimed =
+                    harness.store().claim(claim(
+                            fixture.state().scope(),
+                            fixture.state().sessionId(),
+                            "worker-attempt", 1));
+            MirrorSessionPayload candidate = committedPayload(
+                    claimed.payload(), fixture.effect(), 450);
+            String attemptId = beginAttempt(
+                    harness.store(), claimed,
+                    fixture.effect(),
+                    candidate.state().processedCommands()
+                            .getLast().commandFingerprint(),
+                    "attempt-00000000-0000-0000-0000-000000000003");
+            harness.clock().set(NOW.plusSeconds(2));
+
+            assertThat(harness.store()
+                    .reconcileWriteAttempts(10)).isEqualTo(1);
+            MirrorStateWriteAttempt terminal =
+                    harness.store().findWriteAttempt(
+                            fixture.state().scope(),
+                            fixture.state().sessionId(),
+                            attemptId).orElseThrow();
+
+            assertThat(terminal.outcome())
+                    .isEqualTo(
+                            MirrorStateWriteOutcomeRunEvidence
+                                    .WriteOutcome
+                                    .PRE_COMMIT_FAILED);
+            assertThat(terminal.stateDisposition())
+                    .isEqualTo(
+                            MirrorStateWriteOutcomeRunEvidence
+                                    .StateDisposition.UNCHANGED);
+            assertThat(terminal.resultingStateRevision())
+                    .isZero();
+            assertThat(terminal.reconciledAt())
+                    .isEqualTo(NOW.plusSeconds(2));
+            assertThat(harness.store()
+                    .reconcileWriteAttempts(10)).isZero();
+        }
+    }
+
+    @Test
+    void competingReconcilersTerminalizeOneExpiredIntentOnce()
+            throws Exception {
+        try (Harness harness = harness();
+             var workers = Executors.newFixedThreadPool(2)) {
+            Fixture fixture = fixture();
+            harness.store().create(
+                    create("create-attempt-race",
+                            fixture.payload()));
+            MirrorSessionStateStore.ClaimedSession claimed =
+                    harness.store().claim(claim(
+                            fixture.state().scope(),
+                            fixture.state().sessionId(),
+                            "worker-attempt", 1));
+            MirrorSessionPayload candidate = committedPayload(
+                    claimed.payload(), fixture.effect(), 450);
+            String attemptId = beginAttempt(
+                    harness.store(), claimed,
+                    fixture.effect(),
+                    candidate.state().processedCommands()
+                            .getLast().commandFingerprint(),
+                    "attempt-00000000-0000-0000-0000-000000000006");
+            DatabaseMirrorSessionStateStore replica =
+                    store(harness,
+                            MirrorSessionCapacityPolicy.defaults());
+            CountDownLatch ready = new CountDownLatch(2);
+            CountDownLatch start = new CountDownLatch(1);
+            harness.clock().set(NOW.plusSeconds(2));
+
+            Future<Integer> first = workers.submit(() -> {
+                ready.countDown();
+                start.await();
+                return harness.store()
+                        .reconcileWriteAttempts(10);
+            });
+            Future<Integer> second = workers.submit(() -> {
+                ready.countDown();
+                start.await();
+                return replica.reconcileWriteAttempts(10);
+            });
+            ready.await();
+            start.countDown();
+
+            assertThat(first.get() + second.get()).isEqualTo(1);
+            assertThat(harness.store().findWriteAttempt(
+                    fixture.state().scope(),
+                    fixture.state().sessionId(),
+                    attemptId).orElseThrow().outcome())
+                    .isEqualTo(
+                            MirrorStateWriteOutcomeRunEvidence
+                                    .WriteOutcome
+                                    .PRE_COMMIT_FAILED);
+        }
+    }
+
+    @Test
+    void corruptIntentDoesNotRollBackHealthyReconciliationsInThePage() {
+        try (Harness harness = harness()) {
+            Fixture corrupt = fixture("a-corrupt-session");
+            Fixture healthy = fixture("b-healthy-session");
+            harness.store().create(
+                    create("create-corrupt-attempt",
+                            corrupt.payload()));
+            harness.store().create(
+                    create("create-healthy-attempt",
+                            healthy.payload()));
+            MirrorSessionStateStore.ClaimedSession corruptClaim =
+                    harness.store().claim(claim(
+                            corrupt.state().scope(),
+                            corrupt.state().sessionId(),
+                            "worker-corrupt", 1));
+            MirrorSessionStateStore.ClaimedSession healthyClaim =
+                    harness.store().claim(claim(
+                            healthy.state().scope(),
+                            healthy.state().sessionId(),
+                            "worker-healthy", 1));
+            MirrorSessionPayload corruptCandidate =
+                    committedPayload(
+                            corruptClaim.payload(),
+                            corrupt.effect(), 100);
+            MirrorSessionPayload healthyCandidate =
+                    committedPayload(
+                            healthyClaim.payload(),
+                            healthy.effect(), 100);
+            beginAttempt(
+                    harness.store(), corruptClaim,
+                    corrupt.effect(),
+                    corruptCandidate.state()
+                            .processedCommands().getLast()
+                            .commandFingerprint(),
+                    "attempt-00000000-0000-0000-0000-000000000007");
+            String healthyAttemptId = beginAttempt(
+                    harness.store(), healthyClaim,
+                    healthy.effect(),
+                    healthyCandidate.state()
+                            .processedCommands().getLast()
+                            .commandFingerprint(),
+                    "attempt-00000000-0000-0000-0000-000000000008");
+            harness.jdbc().update("""
+                    UPDATE mirror_session_write_attempt
+                       SET record_fingerprint = ?
+                     WHERE session_id = ?
+                    """,
+                    "sha256:" + "0".repeat(64),
+                    corrupt.state().sessionId());
+            harness.clock().set(NOW.plusSeconds(2));
+
+            assertStoreFailure(
+                    () -> harness.store()
+                            .reconcileWriteAttempts(10),
+                    CORRUPT);
+            assertThat(harness.store().findWriteAttempt(
+                    healthy.state().scope(),
+                    healthy.state().sessionId(),
+                    healthyAttemptId).orElseThrow().outcome())
+                    .isEqualTo(
+                            MirrorStateWriteOutcomeRunEvidence
+                                    .WriteOutcome
+                                    .PRE_COMMIT_FAILED);
+        }
+    }
+
+    @Test
+    void receiptJournalLetsReconcilerRecoverLegacyCommitAndReplay() {
+        try (Harness harness = harness()) {
+            Fixture fixture = fixture();
+            harness.store().create(
+                    create("create-attempt-receipt",
+                            fixture.payload()));
+            MirrorSessionStateStore.ClaimedSession claimed =
+                    harness.store().claim(claim(
+                            fixture.state().scope(),
+                            fixture.state().sessionId(),
+                            "worker-attempt", 1));
+            MirrorSessionPayload candidate = committedPayload(
+                    claimed.payload(), fixture.effect(), 450);
+            SessionStateSpace.TransactionReceipt receipt =
+                    candidate.state().processedCommands().getLast();
+            String attemptId = beginAttempt(
+                    harness.store(), claimed,
+                    fixture.effect(),
+                    receipt.commandFingerprint(),
+                    "attempt-00000000-0000-0000-0000-000000000004");
+
+            // Simulates a pre-journal writer or injected crash gap.
+            harness.store().compareAndSet(
+                    new MirrorSessionStateStore.CommitCommand(
+                            claimed.lease(),
+                            claimed.payload().state().fingerprint(),
+                            candidate));
+            harness.clock().set(NOW.plusSeconds(2));
+
+            assertThat(harness.store()
+                    .reconcileWriteAttempts(10)).isEqualTo(1);
+            MirrorStateWriteAttempt terminal =
+                    harness.store().findWriteAttempt(
+                            fixture.state().scope(),
+                            fixture.state().sessionId(),
+                            attemptId).orElseThrow();
+            assertThat(terminal.outcome())
+                    .isEqualTo(
+                            MirrorStateWriteOutcomeRunEvidence
+                                    .WriteOutcome.COMMITTED);
+            assertThat(terminal.receiptFingerprint())
+                    .isEqualTo(receipt.fingerprint());
+            assertThat(terminal.resolutionSource())
+                    .isEqualTo(
+                            MirrorStateWriteAttempt
+                                    .ResolutionSource.RECONCILER);
+        }
+    }
+
+    @Test
+    void terminalOrTamperedRecoveryMaterialFailsClosed() {
+        try (Harness harness = harness()) {
+            Fixture fixture = fixture();
+            harness.store().create(
+                    create("create-attempt-terminal",
+                            fixture.payload()));
+            MirrorSessionStateStore.ClaimedSession claimed =
+                    harness.store().claim(claim(
+                            fixture.state().scope(),
+                            fixture.state().sessionId(),
+                            "worker-attempt", 1));
+            MirrorSessionPayload candidate = committedPayload(
+                    claimed.payload(), fixture.effect(), 450);
+            String attemptId = beginAttempt(
+                    harness.store(), claimed,
+                    fixture.effect(),
+                    candidate.state().processedCommands()
+                            .getLast().commandFingerprint(),
+                    "attempt-00000000-0000-0000-0000-000000000005");
+            harness.store().destroy(
+                    fixture.state().scope(),
+                    fixture.state().sessionId());
+            harness.clock().set(NOW.plusSeconds(2));
+
+            assertThat(harness.store()
+                    .reconcileWriteAttempts(10)).isEqualTo(1);
+            assertThat(harness.store().findWriteAttempt(
+                    fixture.state().scope(),
+                    fixture.state().sessionId(),
+                    attemptId).orElseThrow().outcome())
+                    .isEqualTo(
+                            MirrorStateWriteOutcomeRunEvidence
+                                    .WriteOutcome
+                                    .COMMIT_OUTCOME_UNKNOWN);
+
+            harness.jdbc().update("""
+                    UPDATE mirror_session_write_attempt
+                       SET record_fingerprint = ?
+                    """, "sha256:" + "0".repeat(64));
+            assertStoreFailure(
+                    () -> harness.store().findWriteAttempt(
+                            fixture.state().scope(),
+                            fixture.state().sessionId(),
+                            attemptId),
+                    CORRUPT);
+            harness.jdbc().execute(
+                    "DROP TABLE mirror_session_write_attempt");
+            assertThat(harness.store()
+                    .writeAttemptReconciliationReady()).isFalse();
+        }
+    }
+
+    private String beginAttempt(
+            DatabaseMirrorSessionStateStore store,
+            MirrorSessionStateStore.ClaimedSession claimed,
+            WriteEffectSpec effect,
+            String commandFingerprint,
+            String attemptId) {
+        MirrorStateWriteAttempt.Coordinate coordinate =
+                new MirrorStateWriteAttempt.Coordinate(
+                        MirrorStateWriteAttempt.ExecutionKind
+                                .GRAPH_RUN,
+                        "run-request-1", 1,
+                        "/root/refund#PRIMARY",
+                        "/root", "", 1, 1);
+        MirrorArtifactRef effectRef =
+                WriteEffectSpecIntegrity.reference(effect);
+        String requestFingerprint =
+                "sha256:" + "1".repeat(64);
+        MirrorStateWriteAttempt started =
+                store.beginWriteAttempt(
+                        new MirrorSessionStateStore
+                                .BeginWriteAttemptCommand(
+                                claimed.lease(), attemptId,
+                                coordinate,
+                                claimed.payload().state()
+                                        .planFingerprint(),
+                                effectRef, requestFingerprint,
+                                commandFingerprint,
+                                claimed.payload().state()
+                                        .stateRevision(),
+                                claimed.payload().state()
+                                        .worldFingerprint(),
+                                claimed.payload().state()
+                                        .fingerprint()));
+        assertThat(started.status())
+                .isEqualTo(
+                        MirrorStateWriteAttempt.Status.IN_PROGRESS);
+        return attemptId;
+    }
+
     private SessionStateSpace.TransactionReceipt executeRefund(
             Harness harness,
             MirrorSessionStateStore.ClaimedSession claimed,

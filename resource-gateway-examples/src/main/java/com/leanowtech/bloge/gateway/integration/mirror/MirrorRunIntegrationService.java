@@ -254,7 +254,8 @@ public class MirrorRunIntegrationService {
             }
             try (CompiledMirrorPlan generation = plans.materialize(plan, identity)) {
                 MirrorResolver.SessionContext sessionContext =
-                        sessionContext(request, plan, identity);
+                        sessionContext(
+                                request, plan, lease, identity);
                 MirrorRunResult result = runtime.execute(new MirrorRunRequest(request.requestId(),
                         generation, effectiveContext, scope,
                         MirrorPlanIntegrationService.AUTHORIZED_PURPOSE,
@@ -288,6 +289,7 @@ public class MirrorRunIntegrationService {
     private MirrorResolver.SessionContext sessionContext(
             MirrorExecutionRequest request,
             MirrorPlan plan,
+            MirrorRunRequestRepository.Lease runLease,
             IntegrationRequestContext identity) {
         if (request.sessionBinding() == null) {
             return null;
@@ -331,12 +333,15 @@ public class MirrorRunIntegrationService {
         MirrorStateRunSession runSession = writable
                 ? new MirrorStateRunSession(
                 mapper, snapshot.payload(),
+                runLease.requestId(),
+                runLease.leaseEpoch(),
                 (writeEffectRef, input,
-                 expectedStateFingerprint) ->
+                 expectedStateFingerprint, attemptContext) ->
                         sessions.commandForRun(
                                 request.sessionBinding().sessionId(),
                                 writeEffectRef, input,
                                 expectedStateFingerprint,
+                                attemptContext,
                                 identity))
                 : null;
         return new MirrorResolver.SessionContext(

@@ -49,6 +49,8 @@ class VisualCanvasDemoScriptTest {
                 "RG_MIRROR_STATEFUL_MAXIMUM_RETAINED_PAYLOAD_BYTES",
                 "RG_MIRROR_STATEFUL_MAXIMUM_CONCURRENT_COMMANDS",
                 "RG_MIRROR_STATEFUL_EXPIRY_BATCH_SIZE",
+                "RG_MIRROR_STATEFUL_WRITE_ATTEMPT_RECONCILIATION_BATCH_SIZE",
+                "RG_MIRROR_STATEFUL_WRITE_ATTEMPT_RECONCILIATION_SWEEP_INTERVAL_MILLIS",
                 "scripts/start-visual-canvas-demo.sh --stateful");
     }
 

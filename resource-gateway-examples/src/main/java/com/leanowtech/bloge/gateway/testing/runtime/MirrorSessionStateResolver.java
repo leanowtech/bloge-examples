@@ -294,7 +294,14 @@ public final class MirrorSessionStateResolver implements MirrorResolver {
         try {
             execution = context.runSession().execute(
                     WriteEffectSpecIntegrity.reference(effect),
-                    input);
+                    input,
+                    new MirrorStateRunSession.InvocationAttempt(
+                            request.site().invocationSiteId(),
+                            request.site().graphPath(),
+                            request.site().correlationKey(),
+                            request.occurrence(),
+                            request.attempt(),
+                            request.requestFingerprint()));
         } catch (MirrorStateWriteFailure failure) {
             return Optional.of(failedMatch(
                     request,

@@ -70,6 +70,7 @@ offline artifact verification live in the independent `resource-gateway-test-kit
 | `mirror-session-descriptor-v1.schema.json` | `MirrorSessionDescriptor` | Payload-free lifecycle, dependency, revision, and fingerprint projection |
 | `mirror-session-command-request-v1.schema.json` | `MirrorSessionCommandRequest` | Strict exact-effect state transition command with an optional optimistic state fence |
 | `mirror-session-command-result-v1.schema.json` | `MirrorSessionCommandResult` | Current payload-free descriptor plus original or newly committed transaction receipt |
+| `mirror-state-write-attempt-v1.schema.json` | `MirrorStateWriteAttempt` | Durable payload-free intent, execution coordinate with a domain-separated correlation fingerprint, terminal outcome, and crash-reconciliation proof |
 | `mirror-session-store-generation-v1.schema.json` | `MirrorSessionStoreGeneration` | Initialize-once durable state-plane generation fence that remains stable across restart and changes for an independently initialized store |
 | `mirror-session-checkpoint-v1.schema.json` | `MirrorSessionCheckpoint` | Payload-free exact Session, dependency, state, descriptor, and store-generation closure |
 | `mirror-session-checkpoint-attestation-v1.schema.json` | `MirrorSessionCheckpointAttestation` | Detached Ed25519 attestation in the checkpoint-specific signature domain |
@@ -585,6 +586,7 @@ The protected Tool Studio integration surface exposes:
 | `POST /api/mirror/sessions` | Create or exactly replay one sealed encrypted Session | `MIRROR_REHEARSAL` |
 | `GET /api/mirror/sessions/{sessionId}` | Read the current payload-free Session descriptor | `MIRROR_REHEARSAL` |
 | `POST /api/mirror/sessions/{sessionId}/commands` | Execute or exactly replay one admitted virtual write effect | `MIRROR_REHEARSAL` |
+| `GET /api/mirror/sessions/{sessionId}/write-attempts/{attemptId}` | Read and independently verify one payload-free durable write outcome | `MIRROR_REHEARSAL` |
 | `POST /api/mirror/sessions/{sessionId}/checkpoints` | Sign one payload-free exact store-generation and Session-head checkpoint | `MIRROR_REHEARSAL` |
 | `POST /api/mirror/sessions/{sessionId}/recoveries` | Verify a checkpoint against the current transactional snapshot and return an exact run binding | `MIRROR_REHEARSAL` |
 | `DELETE /api/mirror/sessions/{sessionId}` | Irreversibly clear encrypted payload and return the terminal descriptor | `MIRROR_REHEARSAL` |

@@ -13,6 +13,12 @@ run-scoped 串行状态推进 -> DAG 读/虚拟写/再读 -> signed transition e
 - 业务世界、写效果和会话状态不再是任意 `Map`，而是版本化、严格封闭、可内容寻址的协议。
 - 一个写能力可以原子修改多个实体；失败、超时适配、取消和提交拒绝不会留下半状态。
 - 同一 idempotency key 的相同命令返回原 receipt，输入漂移则失败关闭。
+- 新写在 mutation 评估前先写入 payload-free durable attempt；Session head、receipt journal、operation audit
+  与 `COMMITTED` attempt 在同一个数据库事务中提交。提交响应丢失时，服务会读取 exact attempt 和新 head
+  认回成功，不会把已提交写误报为失败。
+- lease 过期后，跨副本 reconciler 以 Session -> attempt 的固定锁顺序和每 attempt 一个短事务，对照 append-only
+  receipt journal，将遗留 intent 终态化为 `COMMITTED`、`REPLAYED`、`PRE_COMMIT_FAILED` 或保守的
+  `COMMIT_OUTCOME_UNKNOWN`。单条损坏记录会让 sweep 报错，但不会回滚同页已恢复的健康记录。
 - update/delete 的历史实体只允许从 exact recorded sample 或 owner fixture copy-in。
 - 删除形成不可复活的 tombstone。
 - `StateReadSpec` 把一个 exact read capability 显式 lowering 到 entity type、业务键、请求取键表达式和响应投影，
@@ -68,7 +74,7 @@ run-scoped 串行状态推进 -> DAG 读/虚拟写/再读 -> signed transition e
 - TEE、HSM/KMS 托管密钥、远程 payload authority 和正式 cryptographic erasure 证明；
 - 跨区域 payload replication/restore、灾备演练和逐写点进程 crash certification；
 - checkpoint 的组织级受信 key-set pin、长期留存/audit/deep link 与跨语言固定签名向量；
-- 进程崩溃时的 durable write-attempt journal、commit outcome reconciliation，以及 ANEKE 发布门禁闭环；
+- durable write-attempt 与 ANEKE 发布门禁、长期 evidence retention/deep link 的完整消费闭环；
 - 目标共享数据库的方言/锁语义认证、容量基准、stateful Scenario UI 与 fidelity/outcome 校准；
 - 生产级共享数据库、跨区域 owner 接管与 HA/DR SLO 认证。
 
@@ -77,11 +83,12 @@ readiness 可以为 `true`。
 `mirrorStatefulResolverReady=true` 只在 Mirror execution 可运行、Session API 已装配且 state store 当前健康时
 成立；三类 state evidence readiness 使用同一运行依赖健康门槛。三个 workbook API flag 只表示路由已装配，
 三个 matching readiness 都要求 stateful resolver 当前健康，分别覆盖 v3 read-only、v4 successful transition
-与 v5 failure-aware write-outcome seed。`mirrorStateWriteAttemptDurableReconciliationReady=false` 明确表示
-进程死亡后还不能从持久化 write intent/commit marker 恢复终态。`mirrorStateCheckpointProtocol` 与
+与 v5 failure-aware write-outcome seed。`mirrorStateWriteAttemptDurableReconciliationReady` 只有在
+stateful resolver、加密 state store、attempt 表和 reconciliation query path 同时健康时才为 `true`。
+`mirrorStateCheckpointProtocol` 与
 `mirrorStateCheckpointApi` 表示协议/路由存在；只有 state store 与 signing authority 同时健康时，
 `mirrorStateCheckpointReady` 和 `mirrorStateRecoveryReady` 才为 `true`。它们只证明同一 durable data plane
-上的精确恢复准入，不证明 payload 备份或跨区域接管。crash reconciliation、network/HA/DR 尚未闭环，
+上的精确恢复准入，不证明 payload 备份或跨区域接管。真实进程 kill、network/HA/DR 尚未完成环境认证，
 因此 `mirrorStatefulRuntimeReady` 必须继续为 `false`。不能把“状态读写、证据和恢复准入可调用”
 解释为“完整 Stateful Mirror runtime 已可发布”。
 
@@ -119,6 +126,8 @@ export RG_MIRROR_STATEFUL_MAXIMUM_SCOPE_ACTIVE_SESSIONS=500
 export RG_MIRROR_STATEFUL_MAXIMUM_RETAINED_PAYLOAD_BYTES=42949672960
 export RG_MIRROR_STATEFUL_MAXIMUM_SCOPE_RETAINED_PAYLOAD_BYTES=2147483648
 export RG_MIRROR_STATEFUL_MAXIMUM_CONCURRENT_COMMANDS=64
+export RG_MIRROR_STATEFUL_WRITE_ATTEMPT_RECONCILIATION_BATCH_SIZE=100
+export RG_MIRROR_STATEFUL_WRITE_ATTEMPT_RECONCILIATION_SWEEP_INTERVAL_MILLIS=5000
 
 ./scripts/start-visual-canvas-demo.sh --profile staging
 ```
@@ -340,6 +349,69 @@ scope 上限必须小于或等于全局上限。数量上限最大 `1,000,000`�
 拒绝率、连接池等待和 sweep 对前台延迟的影响；超过目标 SLO 后按稳定 scope hash 分片 guard，并证明全局总量
 不会因分片而失去硬约束。禁止未经基准直接增大连接池掩盖锁竞争。
 
+### 1.3 Durable write-attempt 与崩溃窗口恢复
+
+`resourceGateway.mirrorStateWriteAttempt.v1` 是运行恢复协议，不是业务 command log。它只保留：
+
+- full enterprise scope、Session、store generation、plan 和 exact write-effect ref；
+- graph run/direct command、execution request、lease epoch、invocation site、graph path、域分离后的
+  correlation fingerprint、occurrence 和 delegate attempt 坐标；
+- request/command、初始 world/state、receipt、失败和整条记录的 canonical fingerprint；
+- `IN_PROGRESS|TERMINAL`、五类 write outcome、可信 stage、state disposition、重试标志与时间。
+
+原始 correlation key 只在进程内参与
+`resourceGateway.mirrorStateWriteAttempt.correlation.v1` 域的 canonical SHA-256 计算，不进入持久化对象。
+它明确不保存 command input/output、实体值、业务键、原始 correlation key、原始 idempotency key、
+provider diagnostics、lease owner、
+数据库凭据或加密材料。即使数据库管理员直接查看 `mirror_session_write_attempt.record_json`，也不应看到客户
+payload；但 request/command fingerprint 仍属于受控元数据，必须按企业数据分类和 retention policy 管理。
+
+状态机只有两层：
+
+```text
+IN_PROGRESS
+  -> COMMITTED               Session CAS + audit + attempt 同事务
+  -> REPLAYED                exact receipt 已存在
+  -> REJECTED                mutation/precondition 的已知拒绝
+  -> PRE_COMMIT_FAILED       已证明没有 receipt 且 state 未改变
+  -> COMMIT_OUTCOME_UNKNOWN  Session/代际/密文/receipt 无法形成证明
+```
+
+恢复算法遵守四个不变量：
+
+1. intent 只能在 exact live Session lease 与 initial head 下创建；同 attempt id 的内容漂移失败关闭。
+2. `COMMITTED` 只能由同事务提交，或在 lease 过期后由 exact command fingerprint 对应的 receipt 证明。
+3. 缺 receipt 只有在 append-only journal 可验证、Session 仍活动且 generation 相同时，才能判为
+   `PRE_COMMIT_FAILED`；Session 缺失、终态、密文不可验、generation 漂移或 receipt revision 不一致一律
+   `COMMIT_OUTCOME_UNKNOWN`。
+4. reconciler 先分页读取坐标，再对每条记录使用独立短事务，并按 Session -> attempt 固定顺序加锁。竞争副本
+   最多一个完成 terminalization；损坏记录不会回滚同页已完成记录，也不会被悄悄跳过为成功。
+
+运行参数和指标：
+
+| 环境变量 | 默认值 | 语义 |
+|---|---:|---|
+| `RG_MIRROR_STATEFUL_WRITE_ATTEMPT_RECONCILIATION_BATCH_SIZE` | `100` | 单次最早 lease-expired intent 页，范围 `1..1000` |
+| `RG_MIRROR_STATEFUL_WRITE_ATTEMPT_RECONCILIATION_SWEEP_INTERVAL_MILLIS` | `5000` | 本副本上一次 sweep 完成到下一次开始的间隔，范围 `1000..3600000` |
+
+| 指标 | 语义 |
+|---|---|
+| `resource.gateway.mirror.session.write.attempt.reconciliation.sweeps{outcome=succeeded|failed|skipped}` | 成功、失败或本副本重入跳过的 sweep |
+| `resource.gateway.mirror.session.write.attempt.reconciliation.last.terminalized` | 最近一次成功 sweep 终态化的 attempt 数 |
+
+受保护的
+`GET /api/mirror/sessions/{sessionId}/write-attempts/{attemptId}` 使用 `MIRROR_SESSION_READ` 权限和
+auth-before-scope-lookup，返回 payload-free envelope。test-kit 的
+`findMirrorSessionWriteAttempt` 会独立验证 strict Schema、store generation、deterministic attempt id、
+record/failure fingerprint、时间顺序和 outcome/state closure。直接 command 的调用方在响应不确定时仍应使用
+原 effect idempotency key 重试；exact replay 是业务恢复入口，attempt 查询主要供 run/evidence 对账与治理诊断。
+
+运维告警至少覆盖：连续 `failed` sweep、`last.terminalized` 长期高位、数据库中最老 `IN_PROGRESS`
+的 `attempt_lease_expires_at` 已超过“lease + 两个 sweep 周期”、`COMMIT_OUTCOME_UNKNOWN` 新增，以及 capability
+probe 从 true 退化为 false。损坏 record 不允许直接手改为成功；应隔离数据库写流量、保全行和 Session
+密文、导出 payload-free 证据、确认代际/receipt 后按受控修复流程处理。当前没有自动删除 attempt journal；
+上线前必须确定 evidence 引用、legal hold、最短审计期和分区归档策略，不能用无界表增长换取“可恢复”。
+
 ## 2. 为什么先做事务内核
 
 客服业务拟合不是“返回一个长得像真的 JSON”。退款、工单、权益、库存、账户和审批都具有状态历史：
@@ -370,6 +442,7 @@ scope 上限必须小于或等于全局上限。数量上限最大 `1,000,000`�
 | `resourceGateway.mirrorSessionDescriptor.v1` | `mirror-session-descriptor-v1.schema.json` | 不含业务 payload 的依赖、revision、生命周期与 fingerprint 投影 |
 | `resourceGateway.mirrorSessionCommandRequest.v1` | `mirror-session-command-request-v1.schema.json` | exact effect、可选 expected-state fence 与业务输入 |
 | `resourceGateway.mirrorSessionCommandResult.v1` | `mirror-session-command-result-v1.schema.json` | 当前 descriptor 与新提交或原始 replay receipt |
+| `resourceGateway.mirrorStateWriteAttempt.v1` | `mirror-state-write-attempt-v1.schema.json` | payload-free durable intent、execution coordinate、终态 outcome 与 crash reconciliation 证明 |
 | `resourceGateway.mirrorSessionStoreGeneration.v1` | `mirror-session-store-generation-v1.schema.json` | durable state-plane 初始化一次、重启稳定且独立新库变化的 generation fence |
 | `resourceGateway.mirrorSessionCheckpoint.v1` | `mirror-session-checkpoint-v1.schema.json` | payload-free Session、dependency、state 与 store generation 精确闭包 |
 | `resourceGateway.mirrorSessionCheckpointAttestation.v1` | `mirror-session-checkpoint-attestation-v1.schema.json` | checkpoint 专用签名域的 Ed25519 detached attestation |
@@ -719,6 +792,9 @@ Session transport/store 另有一组稳定、payload-safe 的服务错误：
 | `RG.MIRROR.SESSION.STATE_CORRUPT` | 密文、AAD、fingerprint 或闭包不一致，失败关闭并告警 |
 | `RG.MIRROR.SESSION.STORE_UNAVAILABLE` | 数据面不可用，失败关闭，不回退真实资源 |
 | `RG.MIRROR.SESSION.WRITE_EFFECT_NOT_ADMITTED` | command effect 不在 Session 的 exact closure |
+| `RG.MIRROR.SESSION.WRITE_ATTEMPT_ID_INVALID` | attempt path id 不是 canonical `attempt-UUID`；请求在 scope lookup 前拒绝 |
+| `RG.MIRROR.STATE.WRITE_ATTEMPT_ABANDONED` | lease 已过期、Session/journal 可验证且没有对应 receipt；终态 `PRE_COMMIT_FAILED` |
+| `RG.MIRROR.STATE.WRITE_ATTEMPT_SESSION_MISSING` / `SESSION_TERMINAL` / `GENERATION_CHANGED` / `STATE_UNVERIFIABLE` / `RECEIPT_INCONSISTENT` | reconciler 无法证明 commit 或 unchanged；终态 `COMMIT_OUTCOME_UNKNOWN`，阻断发布并进入治理调查 |
 | `RG.MIRROR.SESSION.PLAN_CONFLICT` | Session 与待执行 plan generation 不一致，不得自动迁移 |
 | `RG.MIRROR.SESSION.BINDING_REQUIRED` / `BINDING_NOT_ADMITTED` | stateful plan 必须使用 v2 exact Session binding；stateless plan 禁止携带该 binding |
 | `RG.MIRROR.SESSION.READ_SPEC_MISSING` / `READ_SPEC_NOT_ACTIVE` | Session 无法完整服务 plan 的状态读站点；DAG 调度前失败，不得伪装成业务实体缺失 |
@@ -743,7 +819,7 @@ Session transport/store 另有一组稳定、payload-safe 的服务错误：
 
 | Ticket | 状态 | 已完成 | 下一门禁 |
 |---|---|---|---|
-| RG-MIR-STATE-002 | 完成 | 五个 Session 协议、create/get/command/destroy API、auth-before-decode、身份派生 scope、strict bounded decoder、稳定错误 | 保持兼容性与跨语言 contract suite |
+| RG-MIR-STATE-002 | 完成 | Session lifecycle、write-attempt 与 checkpoint/recovery 协议，create/get/command/attempt/checkpoint/recover/destroy API、auth-before-decode、身份派生 scope、strict bounded decoder、稳定错误 | 保持兼容性与跨语言 contract suite |
 | RG-MIR-STATE-003 | 核心完成 | 独立 JDBC 数据面、AES-256-GCM key ring、CAS head、DB lease/fence、TTL、destroy、精确 release | TEE/KMS provider、共享托管 DB、HA/DR 与跨区域接管认证 |
 | RG-MIR-STATE-004 | 核心完成 | payload/head/revision/audit 同事务提交，失败回滚；stale owner/CAS/审计失败测试 | 每个持久化写点的真实进程 kill、网络分区和恢复 fault injection |
 | RG-MIR-STATE-005 | 核心完成 | 数据库权威全局/scope 数量与保留字节配额、exact replay 优先、副本无等待背压、429/Retry-After、固定基数 telemetry、aggregate health、有界 oldest-first expiry erasure | 目标数据库方言与锁认证、峰值/耐久容量基准、guard 分片阈值、跨副本长期 soak |
@@ -755,7 +831,7 @@ Session transport/store 另有一组稳定、payload-safe 的服务错误：
 | RG-MIR-STATE-006 | 完成 | `StateReadSpec`、v2 session run binding、read-only 固定 head、`SESSION_STATE` 首位 resolver、live/absent/tombstone 语义、真实 BLOGE 运行测试均已完成 |
 | RG-MIR-STATE-007 | 核心完成 | 真实 BLOGE `queryBefore -> updateCustomer -> queryAfter` DAG 已在一个 run session 中完成 revision 0 -> 1 推进；后读命中新值，query/update 外部算子调用均为 0；仍需退款固定 fixture 的同构 DAG 与环境级真实写 egress 对抗认证 |
 | RG-MIR-STATE-008 | 内核完成 | exact source/kind/identity/schema/key 校验已完成；仍需接 corpus/owner fixture authority 的在线 scope/grant/retention/content-address 复验 |
-| RG-MIR-STATE-009 | 部分完成 | protocol、API、store、checkpoint API/readiness、resolver、read/transition/write-outcome evidence、三类 workbook seed、runtime 探针已分离；readiness 与 resolver 健康动态对齐；新增 durable-reconciliation=false 事实；完整 runtime 在 crash reconciliation/network/HA/DR 闭环前保持 false |
+| RG-MIR-STATE-009 | 部分完成 | protocol、API、store、checkpoint API/readiness、resolver、read/transition/write-outcome evidence、三类 workbook seed、durable write-attempt reconciliation 与 runtime 探针已分离；reconciliation readiness 动态检查 resolver/store/table/query path；完整 runtime 在真实进程 kill、network/HA/DR 与环境认证闭环前保持 false |
 
 ### 10.3 P0：Evidence、checkpoint 与恢复
 
@@ -763,7 +839,7 @@ Session transport/store 另有一组稳定、payload-safe 的服务错误：
 |---|---|---|
 | RG-MIR-STATE-010 | 完成 | read-only v1/v3、successful transition v2/v4 与 failure-aware write outcome v3/v5 均已封闭：v5 覆盖 committed/replayed/rejected/pre-commit-failed/commit-outcome-unknown，并绑定 stage、state disposition、failure fingerprint、attempt/resolution 与 mandatory limitation；JDBC 恢复 subtype 并复验，test-kit 可独立离线复验；v3/v4/v5 都有确定性 ANEKE seed |
 | RG-MIR-STATE-011 | 核心完成 | strict generation/checkpoint/attestation/bundle/recovery 协议、独立签名域、同事务 store-generation/head 快照、scope/signature/generation/dependency/state 五层失败关闭、同 DB 重启恢复和 test-kit 离线复验已完成；仍需组织 key-set pin、固定跨语言向量、retention/audit/deep link 和目标环境 certification |
-| RG-MIR-STATE-012 | 部分完成 | 已覆盖 timeout/cancel 边界、进程内 rejected/pre-commit/ambiguous outcome、同 DB 进程重启和 stale/tampered/wrong-generation checkpoint；仍需 durable attempt journal、逐写点 crash/network matrix，并证明恢复 reconciler 与不中断执行 outcome parity；跨区域 payload restore 由 HA/DR 数据面闭环 |
+| RG-MIR-STATE-012 | 核心完成 | durable payload-free attempt 协议/表、intent-before-mutation、commit/audit/attempt 原子事务、lease-expired receipt reconciliation、提交响应丢失认回、两副本竞态、损坏行隔离、同 DB 重启和 stale/tampered/wrong-generation checkpoint 已覆盖；仍需 forked-JVM 逐写点 kill、真实 timeout/network partition、恢复与不中断 outcome parity、目标数据库和跨区域 HA/DR 认证 |
 | RG-MIR-STATE-013 | 部分完成 | TTL/destroy 与密文清除已实现；仍需 KMS cryptographic erasure、legal hold 和删除证明，并保持删除后证据可验证 |
 
 ### 10.4 P1：Scenario、业务不变量与运营闭环
@@ -772,7 +848,7 @@ Session transport/store 另有一组稳定、payload-safe 的服务错误：
 |---|---|---|
 | RG-MIR-STATE-014 | state-transition/what-if/fault ScenarioPack | 业务 owner 无需手写 JSON 即可调整初始状态和命令 |
 | RG-MIR-STATE-015 | 状态 diff、timeline、失败定位和批量运行 | 能定位到 mutation/precondition/entity/path |
-| RG-MIR-STATE-016 | 核心完成：v4 success seed 与 v5 write-outcome seed、五类 outcome assertion、receipt/event/failure closure、strict Schema、API、probe 与独立 client 已完成；继续补 expected-rejection workbook authoring、durable crash reconciliation 与环境对账 | 发布门禁能区分运行失败、预期/非预期拒绝、pre-commit failure、unknown commit、写状态不一致和低保真 |
+| RG-MIR-STATE-016 | 核心完成：v4 success seed 与 v5 write-outcome seed、五类 outcome assertion、receipt/event/failure closure、durable attempt 查询/独立验证、strict Schema、API 与 probe 已完成；继续补 expected-rejection workbook authoring、ANEKE journal retention/deep link 和环境对账 | 发布门禁能区分运行失败、预期/非预期拒绝、pre-commit failure、unknown commit、写状态不一致和低保真 |
 | RG-MIR-STATE-017 | drift/outcome 校准和 owner review | 规则失真自动 stale；未经 owner 确认不能 serving |
 
 ## 11. 上线前不可省略的测试矩阵
@@ -786,7 +862,7 @@ Session transport/store 另有一组稳定、payload-safe 的服务错误：
 | 状态读 | live exact hit、absent 后受控回退、tombstone 终止、错误 key arity、projection alias、运行中并发 command、跨 plan/state fence |
 | 状态写证据 | committed、replayed、rejected、pre-commit failure、commit outcome unknown、stage/disposition tamper、缺 mandatory limitation、attempt/resolution 不闭合 |
 | 基线 | exact hit、absent、authority outage、source mismatch、identity drift、tombstone |
-| 恢复 | 同 DB 重启、不同 DB generation、checkpoint/signature tamper、scope/dependency/state drift、重复恢复、每个持久化写点 crash、继续执行 outcome parity |
+| 恢复 | 同 DB 重启、不同 DB generation、checkpoint/signature tamper、scope/dependency/state drift、重复恢复、intent 无 receipt、legacy commit gap、提交响应丢失、两副本 reconciliation、poison row、每个持久化写点 forked-JVM crash、继续执行 outcome parity |
 | 隔离 | 跨 tenant/org/project/environment/region、production credential、真实写 egress |
 | 容量 | entity/event/receipt 上限、16 MiB payload、256 MiB snapshot、全局/scope 数量与字节、commit 增长、exact replay、429/backpressure、expiry lag、guard lock 压测 |
 | 数据治理 | TTL、destroy、legal hold、deletion proof、日志/metric/exception 泄漏扫描 |
@@ -796,18 +872,23 @@ Session transport/store 另有一组稳定、payload-safe 的服务错误：
 
 ```bash
 mvn -f resource-gateway-examples/pom.xml \
-  -Dtest=StateReadSpecIntegrityTest,MirrorSessionStateResolverTest,MirrorRunServiceTest,MirrorStateRunEvidenceIntegrityTest,MirrorStateTransitionRunEvidenceIntegrityTest,MirrorStateWriteOutcomeRunEvidenceIntegrityTest,MirrorStateWriteOutcomeWorkbookSeedTest,MirrorEvidenceIntegrityServiceTest,MirrorRunIntegrationServiceTest,MirrorEvidenceProtocolSchemaTest,DatabaseMirrorEvidenceRepositoryTest,MirrorSessionProtocolTest,MirrorStateTransactionEngineTest,DatabaseMirrorSessionStateStoreTest,MirrorSessionCheckpointIntegrityServiceTest,MirrorSessionIntegrationServiceTest,MirrorSessionControllerTest,VisualCanvasDemoScriptTest test
+  -Dtest=StateReadSpecIntegrityTest,MirrorSessionStateResolverTest,MirrorRunServiceTest,MirrorStateRunEvidenceIntegrityTest,MirrorStateTransitionRunEvidenceIntegrityTest,MirrorStateWriteOutcomeRunEvidenceIntegrityTest,MirrorStateWriteOutcomeWorkbookSeedTest,MirrorEvidenceIntegrityServiceTest,MirrorRunIntegrationServiceTest,MirrorEvidenceProtocolSchemaTest,DatabaseMirrorEvidenceRepositoryTest,MirrorSessionProtocolTest,MirrorStateWriteAttemptTest,MirrorStateTransactionEngineTest,DatabaseMirrorSessionStateStoreTest,MirrorSessionCheckpointIntegrityServiceTest,MirrorSessionIntegrationServiceTest,MirrorSessionControllerTest,MirrorSessionWriteAttemptReconciliationSchedulerTest,VisualCanvasDemoScriptTest test
 
 mvn -f resource-gateway-test-kit/pom.xml \
-  -Dtest=MirrorStateProtocolVerifierTest,MirrorSessionCheckpointVerifierTest,MirrorEvidenceVerifierTest,ResourceGatewayMirrorSessionClientTest,ResourceGatewayMirrorSessionCheckpointClientTest,CapabilityMirrorSchemaPackagingTest test
+  -Dtest=MirrorStateProtocolVerifierTest,MirrorStateWriteAttemptVerifierTest,MirrorSessionCheckpointVerifierTest,MirrorEvidenceVerifierTest,ResourceGatewayMirrorSessionClientTest,ResourceGatewayMirrorSessionCheckpointClientTest,CapabilityMirrorSchemaPackagingTest test
 
 mvn -f resource-gateway-examples/pom.xml clean verify
 mvn -f resource-gateway-test-kit/pom.xml clean verify
 ```
 
+2026-07-24 本轮完整门禁结果：Resource Gateway `4946` 项测试、0 失败、0 错误、3 项因普通门禁未启用
+`-Pfrontend` 而条件跳过；真实 Chrome 画布场景已执行。test-kit `337/337` 全绿，普通/阴影 JAR 和公开 JavaDoc
+均生成成功。
+
 这些命令验证协议、事务、read-only 固定 head、run-scoped 状态推进、状态读/虚拟写 resolver、
   access/transition/attempt/resolution/receipt/event/failure closure、v3/v4/v5 签名与持久化恢复、三类 workbook seed、
-store generation、checkpoint 专用签名域、同 DB 重启恢复、stale/tampered/cross-generation 拒绝、加密数据面、
+store generation、durable attempt 状态机/指纹/响应丢失恢复/两副本对账/poison-row 隔离、checkpoint 专用签名域、
+同 DB 重启恢复、stale/tampered/cross-generation 拒绝、加密数据面、
 HTTP 生命周期、脚本和独立客户端。
 它们不会把完整 runtime readiness 提升为 true。要做真实服务演示，运行
 `./scripts/start-visual-canvas-demo.sh --stateful`；仅在 capability probe 同时报告

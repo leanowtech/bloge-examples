@@ -14,6 +14,7 @@ public final class MirrorStatefulRuntimeAvailability {
     private final boolean sessionApi;
     private final BooleanSupplier stateStoreReadiness;
     private final BooleanSupplier checkpointSignerReadiness;
+    private final BooleanSupplier writeAttemptReconciliationReadiness;
 
     /**
      * Creates an honest stateful Session API marker.
@@ -43,6 +44,32 @@ public final class MirrorStatefulRuntimeAvailability {
         this.checkpointSignerReadiness = Objects.requireNonNull(
                 checkpointSignerReadiness,
                 "checkpointSignerReadiness");
+        this.writeAttemptReconciliationReadiness = () -> false;
+    }
+
+    /**
+     * Creates the complete Session, checkpoint, and crash-reconciliation marker.
+     *
+     * @param sessionApi protected Session routes are physically assembled
+     * @param stateStoreReadiness dynamic encrypted data-plane readiness
+     * @param checkpointSignerReadiness dynamic checkpoint signing authority readiness
+     * @param writeAttemptReconciliationReadiness dynamic journal and reconciler readiness
+     */
+    public MirrorStatefulRuntimeAvailability(
+            boolean sessionApi,
+            BooleanSupplier stateStoreReadiness,
+            BooleanSupplier checkpointSignerReadiness,
+            BooleanSupplier writeAttemptReconciliationReadiness) {
+        this.sessionApi = sessionApi;
+        this.stateStoreReadiness = Objects.requireNonNull(
+                stateStoreReadiness, "stateStoreReadiness");
+        this.checkpointSignerReadiness = Objects.requireNonNull(
+                checkpointSignerReadiness,
+                "checkpointSignerReadiness");
+        this.writeAttemptReconciliationReadiness =
+                Objects.requireNonNull(
+                        writeAttemptReconciliationReadiness,
+                        "writeAttemptReconciliationReadiness");
     }
 
     /**
@@ -81,6 +108,24 @@ public final class MirrorStatefulRuntimeAvailability {
         }
         try {
             return checkpointSignerReadiness.getAsBoolean();
+        } catch (RuntimeException unavailable) {
+            return false;
+        }
+    }
+
+    /**
+     * Probes durable write-intent persistence and reconciliation without reading a customer
+     * payload.
+     *
+     * @return whether the state store and durable reconciliation query path are both ready
+     */
+    public boolean writeAttemptReconciliationReady() {
+        if (!stateStoreReady()) {
+            return false;
+        }
+        try {
+            return writeAttemptReconciliationReadiness
+                    .getAsBoolean();
         } catch (RuntimeException unavailable) {
             return false;
         }

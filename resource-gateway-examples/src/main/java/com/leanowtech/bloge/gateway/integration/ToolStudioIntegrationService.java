@@ -375,6 +375,9 @@ public class ToolStudioIntegrationService {
                 mirrorStatefulRuntimeAvailability.stateStoreReady();
         boolean mirrorCheckpointReady =
                 mirrorStatefulRuntimeAvailability.checkpointReady();
+        boolean mirrorWriteAttemptReconciliationReady =
+                mirrorStatefulRuntimeAvailability
+                        .writeAttemptReconciliationReady();
         boolean mirrorStatefulResolverReady = mirrorExecutionReady
                 && mirrorStatefulSessionApi && mirrorStatefulStoreReady;
         VisualEvidenceSigner signer = runRepository == null
@@ -471,7 +474,8 @@ public class ToolStudioIntegrationService {
                 mirrorStatefulResolverReady);
         features.put(
                 "mirrorStateWriteAttemptDurableReconciliationReady",
-                false);
+                mirrorStatefulResolverReady
+                        && mirrorWriteAttemptReconciliationReady);
         // Full crash/network/HA/DR certification remains a separate runtime gate.
         features.put("mirrorStatefulRuntimeReady", false);
         ExternalAnchorTrustState suiteAnchorTrust = currentSuiteStabilityAnchorTrust();
@@ -894,6 +898,9 @@ public class ToolStudioIntegrationService {
             supportedObjects.put("mirrorSessionCommandResult", List.of(
                     com.leanowtech.bloge.gateway.integration.mirror
                             .MirrorSessionCommandResult.SCHEMA_VERSION));
+            supportedObjects.put("mirrorStateWriteAttempt", List.of(
+                    com.leanowtech.bloge.gateway.integration.mirror
+                            .MirrorStateWriteAttempt.SCHEMA_VERSION));
             supportedObjects.put("mirrorSessionStoreGeneration", List.of(
                     com.leanowtech.bloge.gateway.integration.mirror
                             .MirrorSessionStoreGeneration.SCHEMA_VERSION));
@@ -938,6 +945,9 @@ public class ToolStudioIntegrationService {
                     "GET", "/api/mirror/sessions/{sessionId}"));
             endpoints.add(new IntegrationCapabilities.Endpoint(
                     "POST", "/api/mirror/sessions/{sessionId}/commands"));
+            endpoints.add(new IntegrationCapabilities.Endpoint(
+                    "GET",
+                    "/api/mirror/sessions/{sessionId}/write-attempts/{attemptId}"));
             endpoints.add(new IntegrationCapabilities.Endpoint(
                     "POST", "/api/mirror/sessions/{sessionId}/checkpoints"));
             endpoints.add(new IntegrationCapabilities.Endpoint(

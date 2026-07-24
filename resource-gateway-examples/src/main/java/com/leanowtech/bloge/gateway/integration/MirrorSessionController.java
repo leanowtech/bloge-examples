@@ -5,6 +5,7 @@ import com.leanowtech.bloge.gateway.integration.mirror.MirrorSessionCheckpointBu
 import com.leanowtech.bloge.gateway.integration.mirror.MirrorSessionDescriptor;
 import com.leanowtech.bloge.gateway.integration.mirror.MirrorSessionIntegrationService;
 import com.leanowtech.bloge.gateway.integration.mirror.MirrorSessionRecoveryResult;
+import com.leanowtech.bloge.gateway.integration.mirror.MirrorStateWriteAttempt;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.context.annotation.Profile;
 import org.springframework.http.HttpHeaders;
@@ -93,6 +94,25 @@ public final class MirrorSessionController {
                 "MIRROR_SESSION_COMMAND_RESULT",
                 MirrorSessionCommandResult.SCHEMA_VERSION,
                 result);
+    }
+
+    /** Reads one payload-free durable write-attempt outcome. */
+    @GetMapping("/{sessionId}/write-attempts/{attemptId}")
+    public IntegrationEnvelope<MirrorStateWriteAttempt> writeAttempt(
+            @PathVariable String sessionId,
+            @PathVariable String attemptId,
+            @RequestHeader HttpHeaders headers) {
+        IntegrationRequestContext identity =
+                authenticator.authenticate(
+                        headers,
+                        IntegrationOperation.MIRROR_SESSION_READ);
+        MirrorStateWriteAttempt attempt =
+                service.writeAttempt(
+                        sessionId, attemptId, identity);
+        return IntegrationEnvelope.of(
+                "MIRROR_STATE_WRITE_ATTEMPT",
+                MirrorStateWriteAttempt.SCHEMA_VERSION,
+                attempt);
     }
 
     /** Creates a signed payload-free checkpoint over one exact durable Session state head. */
