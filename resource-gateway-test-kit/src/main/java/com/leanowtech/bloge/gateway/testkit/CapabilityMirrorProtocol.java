@@ -74,6 +74,9 @@ public final class CapabilityMirrorProtocol {
     /** Deterministic ANEKE state-workbook seed wire version. */
     public static final String MIRROR_STATE_WORKBOOK_SEED_V1 =
             "resourceGateway.mirrorStateWorkbookSeed.v1";
+    /** Deterministic ANEKE read/write state-transition workbook seed wire version. */
+    public static final String MIRROR_STATE_TRANSITION_WORKBOOK_SEED_V1 =
+            "resourceGateway.mirrorStateTransitionWorkbookSeed.v1";
     /** Detached mirror evidence attestation wire version. */
     public static final String MIRROR_EVIDENCE_ATTESTATION_V1 =
             "resourceGateway.mirrorEvidenceAttestation.v1";
@@ -321,6 +324,10 @@ public final class CapabilityMirrorProtocol {
     /** Packaged deterministic ANEKE state-workbook seed schema. */
     public static final String MIRROR_STATE_WORKBOOK_SEED_SCHEMA_RESOURCE =
             SCHEMA_RESOURCE_ROOT + "mirror-state-workbook-seed-v1.schema.json";
+    /** Packaged deterministic ANEKE state-transition workbook seed schema. */
+    public static final String MIRROR_STATE_TRANSITION_WORKBOOK_SEED_SCHEMA_RESOURCE =
+            SCHEMA_RESOURCE_ROOT
+                    + "mirror-state-transition-workbook-seed-v1.schema.json";
     /** Packaged detached mirror evidence attestation schema. */
     public static final String MIRROR_EVIDENCE_ATTESTATION_SCHEMA_RESOURCE =
             SCHEMA_RESOURCE_ROOT + "mirror-evidence-attestation-v1.schema.json";

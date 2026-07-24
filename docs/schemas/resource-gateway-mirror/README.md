@@ -75,6 +75,7 @@ offline artifact verification live in the independent `resource-gateway-test-kit
 | `mirror-state-run-evidence-v1.schema.json` | `MirrorStateRunEvidence` | Exact Session head, model, stateful binding, and payload-free live/absent/tombstone access closure |
 | `mirror-state-run-evidence-v2.schema.json` | `MirrorStateTransitionRunEvidence` | Initial/final Session heads, exact read revisions, and payload-free write receipt/event transition closure |
 | `mirror-state-workbook-seed-v1.schema.json` | `MirrorStateWorkbookSeed` | Deterministic payload-free ANEKE seed with exact evidence/state coordinates, counts, and conservative blockers |
+| `mirror-state-transition-workbook-seed-v1.schema.json` | `MirrorStateTransitionWorkbookSeed` | Deterministic v4-only ANEKE seed with initial/final heads, committed/replayed receipt assertions, payload-free events, counts, and blockers |
 | `stateful-refund-stage3-v1.fixture.schema.json` | compatibility fixture envelope | Exact state model, write effect, initial session, and executable refund expectation |
 | `capability-lifecycle-transition-v1.schema.json` | `CapabilityLifecycleTransitionRequest` | Optimistically fenced governance transition for one exact revision |
 | `capability-mirror-compatibility-v1.schema.json` | `CapabilityMirrorCompatibility` | Minimum protocol/object/feature baseline a mirror consumer can negotiate |
@@ -197,8 +198,11 @@ and no real external write operator is invoked. A read-only execution emits
 `mirrorStateRunEvidence.v2` inside a v4 bundle. The independent
 `MirrorEvidenceVerifier` proves exact
 access/transition/attempt/resolution/receipt/event closure.
-`MirrorStateWorkbookSeed.fromVerifiedBundle` currently derives a payload-free
-ANEKE seed only for v3 read-only evidence. The fixture itself does not contain
+`MirrorStateWorkbookSeed.fromVerifiedBundle` derives a payload-free ANEKE seed
+for v3 read-only evidence. `MirrorStateTransitionWorkbookSeed.fromVerifiedBundle`
+independently verifies v4 and projects exact committed/replayed receipts and
+payload-free event assertions; the test client also compares the producer seed
+with a locally reconstructed canonical fingerprint. The fixture itself does not contain
 a fixed v3, v4, or checkpoint signature vector and therefore does not certify
 non-Java stateful canonicalization. The separately tested checkpoint protocol
 proves signed exact recovery admission after a process restart against the same
@@ -354,6 +358,7 @@ profile; any active `production` profile physically removes all four mappings:
 | `GET /api/mirror/runs/{runId}` | `resourceGateway.mirrorRunSummary.v1` | Read a verified payload-free terminal projection |
 | `GET /api/mirror/runs/{runId}/evidence` | `resourceGateway.mirrorEvidenceBundle.v1/v2/v3/v4` | Read independently verified signed `HASH_ONLY` evidence using the bundle's actual generation |
 | `GET /api/mirror/runs/{runId}/state-workbook-seed` | `resourceGateway.mirrorStateWorkbookSeed.v1` | Derive a deterministic payload-free ANEKE seed from a verified stateful v3 bundle; reject stateless runs |
+| `GET /api/mirror/runs/{runId}/state-transition-workbook-seed` | `resourceGateway.mirrorStateTransitionWorkbookSeed.v1` | Derive deterministic payload-free write assertions from a verified v4 bundle; reject every other generation |
 
 Stateless `POST /api/mirror/executions` v1 accepts exactly `schemaVersion`, `requestId`, `planId`,
 `expectedPlanFingerprint`, and `context`; stateful v2 additionally requires one exact
@@ -563,6 +568,7 @@ The protected Tool Studio integration surface exposes:
 | `GET /api/mirror/runs/{runId}` | Read one verified payload-free run summary | `MIRROR_REHEARSAL` |
 | `GET /api/mirror/runs/{runId}/evidence` | Read one verified signed `HASH_ONLY` bundle | `MIRROR_REHEARSAL` |
 | `GET /api/mirror/runs/{runId}/state-workbook-seed` | Derive a deterministic payload-free ANEKE seed from one verified stateful v3 bundle | `MIRROR_REHEARSAL` |
+| `GET /api/mirror/runs/{runId}/state-transition-workbook-seed` | Derive committed/replayed write assertions from one verified stateful v4 bundle | `MIRROR_REHEARSAL` |
 | `POST /api/mirror/sessions` | Create or exactly replay one sealed encrypted Session | `MIRROR_REHEARSAL` |
 | `GET /api/mirror/sessions/{sessionId}` | Read the current payload-free Session descriptor | `MIRROR_REHEARSAL` |
 | `POST /api/mirror/sessions/{sessionId}/commands` | Execute or exactly replay one admitted virtual write effect | `MIRROR_REHEARSAL` |

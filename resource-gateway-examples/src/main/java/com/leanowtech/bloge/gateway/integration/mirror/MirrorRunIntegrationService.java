@@ -533,6 +533,42 @@ public class MirrorRunIntegrationService {
         }
     }
 
+    /**
+     * Projects one verified read/write run into a deterministic ANEKE transition-workbook seed.
+     *
+     * @param runId terminal read/write mirror run identity
+     * @param identity authenticated enterprise identity and mirror purpose
+     * @return payload-free seed bound to exact state heads, receipts, and event assertions
+     */
+    public MirrorStateTransitionWorkbookSeed
+    stateTransitionWorkbookSeed(
+            String runId, IntegrationRequestContext identity) {
+        MirrorOperationObservability.Observation observation =
+                observations.start(
+                        MirrorOperationAuditEvent.Operation.EVIDENCE_READ,
+                        identity, "", "", runId);
+        try {
+            MirrorStateTransitionWorkbookSeed seed =
+                    MirrorStateTransitionWorkbookSeed.project(
+                            mapper, requireEvidence(runId, identity));
+            observation.succeeded(seed.runId());
+            return seed;
+        } catch (IntegrationProblemException expected) {
+            throw observation.failed(expected);
+        } catch (IllegalArgumentException invalid) {
+            throw observation.failed(conflict(
+                    identity,
+                    "RG.MIRROR.STATE_TRANSITION_WORKBOOK_SEED_UNAVAILABLE",
+                    "The run does not contain a complete read/write state evidence closure.",
+                    Map.of()));
+        } catch (RuntimeException unavailable) {
+            throw observation.failed(serviceUnavailable(
+                    identity,
+                    "RG.MIRROR.STATE_TRANSITION_WORKBOOK_SEED_UNAVAILABLE",
+                    "The state transition workbook seed could not be projected safely."));
+        }
+    }
+
     private MirrorRunRequestRepository.Claim claim(
             MirrorRunRequestRepository.Registration registration,
             MirrorDeploymentIsolationRunTrust.Admission trustAdmission,

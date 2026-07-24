@@ -4,15 +4,20 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ArrayNode;
 import com.fasterxml.jackson.databind.node.ObjectNode;
+import com.sun.net.httpserver.HttpExchange;
+import com.sun.net.httpserver.HttpServer;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
+import java.net.InetSocketAddress;
+import java.net.URI;
 import java.nio.charset.StandardCharsets;
 import java.security.KeyPair;
 import java.security.KeyPairGenerator;
 import java.security.Signature;
 import java.time.Instant;
 import java.util.Base64;
+import java.util.concurrent.atomic.AtomicInteger;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
@@ -152,6 +157,42 @@ class MirrorEvidenceVerifierTest {
                 .isEqualTo(
                         CapabilityMirrorProtocol
                                 .MIRROR_EVIDENCE_BUNDLE_V4);
+        MirrorStateTransitionWorkbookSeed seed =
+                MirrorStateTransitionWorkbookSeed
+                        .fromVerifiedBundle(bundle, key);
+        assertThat(seed.runId()).isEqualTo(RUN_ID);
+        assertThat(seed.initialStateRevision()).isZero();
+        assertThat(seed.finalStateRevision()).isEqualTo(1);
+        assertThat(seed.transitionCount()).isEqualTo(1);
+        assertThat(seed.committedTransitionCount())
+                .isEqualTo(1);
+        assertThat(seed.replayedTransitionCount()).isZero();
+        assertThat(seed.eventCount()).isEqualTo(1);
+        assertThat(seed.stateAdvanced()).isTrue();
+        assertThat(seed.writeAssertions()).singleElement()
+                .satisfies(write -> {
+                    assertThat(write.receiptFingerprint())
+                            .isEqualTo(fingerprint('1'));
+                    assertThat(write.events()).singleElement()
+                            .satisfies(event -> assertThat(
+                                    event.mutationId())
+                                    .isEqualTo(
+                                            "update-customer"));
+                });
+        assertThat(seed.rawPayload().toString())
+                .doesNotContain("raw-idempotency-key")
+                .doesNotContain("\"entityId\"")
+                .contains("idempotencyKeyFingerprint")
+                .contains("entityIdentityFingerprint");
+        ObjectNode alteredSeed =
+                (ObjectNode) seed.rawPayload();
+        alteredSeed.put("eventCount", 2);
+        assertThat(org.assertj.core.api.Assertions
+                .catchThrowable(() ->
+                        MirrorStateTransitionWorkbookSeed
+                                .fromPayload(alteredSeed)))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("FINGERPRINT_INVALID");
 
         bundle.withObject(
                 "/evidence/stateEvidence/transitions/0")
@@ -164,6 +205,99 @@ class MirrorEvidenceVerifierTest {
         assertThat(verifier.verify(bundle, key)
                 .reasonCode()).isEqualTo(
                 "MIRROR_STATE_TRANSITION_CLOSURE_INVALID");
+    }
+
+    @Test
+    void refusesToProjectAReadOnlyBundleAsATransitionWorkbook()
+            throws Exception {
+        bundle = signedBundleV3();
+
+        assertThat(org.assertj.core.api.Assertions
+                .catchThrowable(() ->
+                        MirrorStateTransitionWorkbookSeed
+                                .fromVerifiedBundle(
+                                        bundle, key)))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("REQUIRES_V4");
+    }
+
+    @Test
+    void clientReconstructsAndMatchesTheProducerTransitionSeed()
+            throws Exception {
+        bundle = signedBundleV4();
+        MirrorStateTransitionWorkbookSeed expected =
+                MirrorStateTransitionWorkbookSeed
+                        .fromVerifiedBundle(bundle, key);
+        HttpServer server = HttpServer.create(
+                new InetSocketAddress("127.0.0.1", 0), 0);
+        AtomicInteger requests = new AtomicInteger();
+        server.createContext("/", exchange -> {
+            requests.incrementAndGet();
+            String path = exchange.getRequestURI().getPath();
+            if (path.endsWith("/evidence")) {
+                respond(exchange, mirrorEnvelope(
+                        "MIRROR_EVIDENCE_BUNDLE",
+                        CapabilityMirrorProtocol
+                                .MIRROR_EVIDENCE_BUNDLE_V4,
+                        bundle));
+            } else if (path.endsWith(
+                    "/state-transition-workbook-seed")) {
+                respond(exchange, mirrorEnvelope(
+                        "MIRROR_STATE_TRANSITION_WORKBOOK_SEED",
+                        CapabilityMirrorProtocol
+                                .MIRROR_STATE_TRANSITION_WORKBOOK_SEED_V1,
+                        expected.rawPayload()));
+            } else if (path.endsWith(
+                    "/evidence-keys/mirror-key-1")) {
+                ObjectNode payload = JSON.createObjectNode();
+                payload.put("schemaVersion",
+                        key.schemaVersion());
+                payload.put("keyId", key.keyId());
+                payload.put("algorithm", key.algorithm());
+                payload.put("encodedPublicKey",
+                        key.encodedPublicKey());
+                payload.put("createdAt",
+                        key.createdAt().toString());
+                payload.put("state", key.state());
+                payload.put("provider", key.provider());
+                ObjectNode envelope = JSON.createObjectNode();
+                envelope.put("payloadKind",
+                        "EVIDENCE_VERIFICATION_KEY");
+                envelope.put("payloadSchemaVersion",
+                        TestingProtocol
+                                .EVIDENCE_VERIFICATION_KEY_V1);
+                envelope.set("payload", payload);
+                respond(exchange, envelope);
+            } else {
+                exchange.sendResponseHeaders(404, -1);
+                exchange.close();
+            }
+        });
+        server.start();
+        try {
+            ResourceGatewayTestClient client =
+                    ResourceGatewayTestClient.builder(URI.create(
+                                    "http://127.0.0.1:"
+                                            + server.getAddress()
+                                            .getPort()))
+                            .bearerToken(() -> "test-token")
+                            .build();
+
+            MirrorStateTransitionWorkbookSeed actual =
+                    client.findMirrorStateTransitionWorkbookSeed(
+                            RUN_ID);
+
+            assertThat(actual.seedFingerprint())
+                    .isEqualTo(expected.seedFingerprint());
+            assertThat(actual.evidenceBundleFingerprint())
+                    .isEqualTo(
+                            expected.evidenceBundleFingerprint());
+            assertThat(actual.writeAssertions())
+                    .isEqualTo(expected.writeAssertions());
+            assertThat(requests).hasValue(3);
+        } finally {
+            server.stop(0);
+        }
     }
 
     @Test
@@ -861,6 +995,31 @@ class MirrorEvidenceVerifierTest {
         value.put("revision", revision);
         value.put("fingerprint", fingerprint);
         return value;
+    }
+
+    private static ObjectNode mirrorEnvelope(
+            String kind, String version, JsonNode payload) {
+        ObjectNode envelope = JSON.createObjectNode();
+        envelope.put("protocol",
+                CapabilityMirrorProtocol.INTEGRATION_PROTOCOL);
+        envelope.put("protocolVersion",
+                CapabilityMirrorProtocol
+                        .INTEGRATION_PROTOCOL_V1);
+        envelope.put("payloadKind", kind);
+        envelope.put("payloadSchemaVersion", version);
+        envelope.set("payload", payload.deepCopy());
+        return envelope;
+    }
+
+    private static void respond(
+            HttpExchange exchange, JsonNode response)
+            throws java.io.IOException {
+        byte[] bytes = JSON.writeValueAsBytes(response);
+        exchange.getResponseHeaders().set(
+                "Content-Type", "application/json");
+        exchange.sendResponseHeaders(200, bytes.length);
+        exchange.getResponseBody().write(bytes);
+        exchange.close();
     }
 
     private static EvidenceVerificationKey verificationKey(

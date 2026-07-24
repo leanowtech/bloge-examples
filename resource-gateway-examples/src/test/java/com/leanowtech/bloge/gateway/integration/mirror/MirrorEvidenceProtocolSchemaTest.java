@@ -213,6 +213,23 @@ class MirrorEvidenceProtocolSchemaTest {
                 "mirror-evidence-attestation-v4.schema.json");
         JsonNode bundleSchema = schema(
                 "mirror-evidence-bundle-v4.schema.json");
+        MirrorPlan plan = MirrorPersistenceTestFixtures.plan(
+                mapper,
+                MirrorPersistenceTestFixtures.scope("org-a"),
+                "transition-seed-schema-plan", 'e');
+        MirrorStateTransitionWorkbookSeed seed =
+                MirrorStateTransitionWorkbookSeed.project(
+                        mapper,
+                        MirrorPersistenceTestFixtures
+                                .readWriteEvidence(
+                                        mapper,
+                                        new InMemoryVisualEvidenceSigner(),
+                                        plan,
+                                        "transition-seed-schema-run",
+                                        'f'));
+        JsonNode seedValue = mapper.valueToTree(seed);
+        JsonNode seedSchema = schema(
+                "mirror-state-transition-workbook-seed-v1.schema.json");
 
         assertProperties(
                 stateValue, stateSchema.path("properties"));
@@ -255,6 +272,28 @@ class MirrorEvidenceProtocolSchemaTest {
                 "/properties/attestation/allOf/0/$ref")
                 .asText()).isEqualTo(
                 "mirror-evidence-attestation-v4.schema.json");
+        assertProperties(
+                seedValue, seedSchema.path("properties"));
+        assertProperties(
+                seedValue.path("writeAssertions").get(0),
+                seedSchema.at(
+                        "/$defs/writeAssertion/properties"));
+        assertProperties(
+                seedValue.at("/writeAssertions/0/events/0"),
+                seedSchema.at(
+                        "/$defs/eventAssertion/properties"));
+        assertThat(seedSchema.path(
+                "additionalProperties").asBoolean()).isFalse();
+        assertThat(seedSchema.at(
+                "/$defs/writeAssertion/additionalProperties")
+                .asBoolean()).isFalse();
+        assertThat(seedSchema.at(
+                "/$defs/eventAssertion/additionalProperties")
+                .asBoolean()).isFalse();
+        assertThat(seedSchema.at(
+                "/properties/stateEvidenceRef/allOf/1/properties/revision/const")
+                .asInt()).isEqualTo(2);
+        seed.verify(mapper);
         assertThat(stateValue.toString())
                 .doesNotContain("idempotencyKey\"")
                 .doesNotContain("entityId\"")

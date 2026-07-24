@@ -1,0 +1,210 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://bloge.dev/schemas/resource-gateway-mirror/mirror-state-transition-workbook-seed-v1.schema.json",
+  "title": "Resource Gateway Mirror State Transition Workbook Seed v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion", "seedFingerprint", "runId", "planFingerprint",
+    "evidenceBundleFingerprint", "stateEvidenceRef", "initialSessionStateRef",
+    "finalSessionStateRef", "stateModelRef", "initialStateRevision",
+    "finalStateRevision", "initialWorldFingerprint", "finalWorldFingerprint",
+    "initialLogicalClock", "finalLogicalClock", "mode", "runStatus",
+    "evidenceClass", "bindingCount", "accessCount", "liveEntityCount",
+    "absentCount", "tombstonedCount", "transitionCount",
+    "committedTransitionCount", "replayedTransitionCount", "eventCount",
+    "stateAdvanced", "writeAssertions", "gateReady", "blockers"
+  ],
+  "properties": {
+    "schemaVersion": {
+      "const": "resourceGateway.mirrorStateTransitionWorkbookSeed.v1"
+    },
+    "seedFingerprint": { "$ref": "#/$defs/fingerprint" },
+    "runId": { "type": "string", "minLength": 1, "maxLength": 512 },
+    "planFingerprint": { "$ref": "#/$defs/fingerprint" },
+    "evidenceBundleFingerprint": { "$ref": "#/$defs/fingerprint" },
+    "stateEvidenceRef": {
+      "allOf": [
+        { "$ref": "mirror-run-evidence-v1.schema.json#/$defs/artifactRef" },
+        {
+          "properties": {
+            "kind": { "const": "MIRROR_STATE_RUN_EVIDENCE" },
+            "revision": { "const": 2 }
+          }
+        }
+      ]
+    },
+    "initialSessionStateRef": { "$ref": "#/$defs/sessionStateRef" },
+    "finalSessionStateRef": { "$ref": "#/$defs/sessionStateRef" },
+    "stateModelRef": {
+      "allOf": [
+        { "$ref": "mirror-run-evidence-v1.schema.json#/$defs/artifactRef" },
+        { "properties": { "kind": { "const": "STATE_MODEL" } } }
+      ]
+    },
+    "initialStateRevision": { "type": "integer", "minimum": 0 },
+    "finalStateRevision": { "type": "integer", "minimum": 0 },
+    "initialWorldFingerprint": { "$ref": "#/$defs/fingerprint" },
+    "finalWorldFingerprint": { "$ref": "#/$defs/fingerprint" },
+    "initialLogicalClock": { "type": "string", "format": "date-time" },
+    "finalLogicalClock": { "type": "string", "format": "date-time" },
+    "mode": { "const": "SERIALIZABLE_READ_WRITE" },
+    "runStatus": { "$ref": "#/$defs/runStatus" },
+    "evidenceClass": { "enum": ["EXPLORATORY", "CERTIFIABLE"] },
+    "bindingCount": { "type": "integer", "minimum": 1, "maximum": 10000 },
+    "accessCount": { "type": "integer", "minimum": 0, "maximum": 100000 },
+    "liveEntityCount": { "type": "integer", "minimum": 0, "maximum": 100000 },
+    "absentCount": { "type": "integer", "minimum": 0, "maximum": 100000 },
+    "tombstonedCount": { "type": "integer", "minimum": 0, "maximum": 100000 },
+    "transitionCount": { "type": "integer", "minimum": 0, "maximum": 100000 },
+    "committedTransitionCount": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 100000
+    },
+    "replayedTransitionCount": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 100000
+    },
+    "eventCount": { "type": "integer", "minimum": 0, "maximum": 12800000 },
+    "stateAdvanced": { "type": "boolean" },
+    "writeAssertions": {
+      "type": "array",
+      "maxItems": 100000,
+      "items": { "$ref": "#/$defs/writeAssertion" }
+    },
+    "gateReady": { "type": "boolean" },
+    "blockers": {
+      "type": "array",
+      "maxItems": 16,
+      "uniqueItems": true,
+      "items": {
+        "type": "string",
+        "pattern": "^[A-Z][A-Z0-9_.-]{0,255}$"
+      }
+    }
+  },
+  "allOf": [
+    {
+      "if": { "properties": { "gateReady": { "const": true } } },
+      "then": {
+        "properties": {
+          "runStatus": { "const": "PASSED" },
+          "evidenceClass": { "const": "CERTIFIABLE" },
+          "transitionCount": { "minimum": 1 },
+          "writeAssertions": { "minItems": 1 },
+          "blockers": { "maxItems": 0 }
+        }
+      }
+    },
+    {
+      "if": { "properties": { "gateReady": { "const": false } } },
+      "then": { "properties": { "blockers": { "minItems": 1 } } }
+    }
+  ],
+  "$defs": {
+    "fingerprint": {
+      "type": "string",
+      "pattern": "^sha256:[a-f0-9]{64}$"
+    },
+    "optionalFingerprint": {
+      "type": "string",
+      "pattern": "^(|sha256:[a-f0-9]{64})$"
+    },
+    "sessionStateRef": {
+      "allOf": [
+        { "$ref": "mirror-run-evidence-v1.schema.json#/$defs/artifactRef" },
+        { "properties": { "kind": { "const": "SESSION_STATE" } } }
+      ]
+    },
+    "runStatus": {
+      "enum": [
+        "PASSED", "ASSERTION_FAILED", "EXECUTION_FAILED",
+        "CONTROL_PLAN_REJECTED", "FIXTURE_UNMATCHED", "FIXTURE_UNUSED",
+        "CONTROL_PLAN_UNAVAILABLE", "EVIDENCE_INCOMPLETE", "CANCELLED",
+        "TIMED_OUT"
+      ]
+    },
+    "writeAssertion": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "invocationSiteId", "graphPath", "correlationKey", "occurrence",
+        "attempt", "capabilityRef", "writeEffectRef", "initialStateRef",
+        "finalStateRef", "revisionBefore", "revisionAfter",
+        "initialWorldFingerprint", "finalWorldFingerprint",
+        "initialLogicalClock", "finalLogicalClock", "requestFingerprint",
+        "idempotencyKeyFingerprint", "commandFingerprint",
+        "receiptFingerprint", "responseFingerprint",
+        "resultingWorldFingerprint", "committedAt", "replayed", "events"
+      ],
+      "properties": {
+        "invocationSiteId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 2048
+        },
+        "graphPath": { "type": "string", "minLength": 1, "maxLength": 4096 },
+        "correlationKey": { "type": "string", "maxLength": 1024 },
+        "occurrence": { "type": "integer", "minimum": 1 },
+        "attempt": { "type": "integer", "minimum": 1 },
+        "capabilityRef": {
+          "allOf": [
+            { "$ref": "mirror-run-evidence-v1.schema.json#/$defs/artifactRef" },
+            { "properties": { "kind": { "const": "CAPABILITY" } } }
+          ]
+        },
+        "writeEffectRef": {
+          "allOf": [
+            { "$ref": "mirror-run-evidence-v1.schema.json#/$defs/artifactRef" },
+            { "properties": { "kind": { "const": "WRITE_EFFECT" } } }
+          ]
+        },
+        "initialStateRef": { "$ref": "#/$defs/sessionStateRef" },
+        "finalStateRef": { "$ref": "#/$defs/sessionStateRef" },
+        "revisionBefore": { "type": "integer", "minimum": 0 },
+        "revisionAfter": { "type": "integer", "minimum": 0 },
+        "initialWorldFingerprint": { "$ref": "#/$defs/fingerprint" },
+        "finalWorldFingerprint": { "$ref": "#/$defs/fingerprint" },
+        "initialLogicalClock": { "type": "string", "format": "date-time" },
+        "finalLogicalClock": { "type": "string", "format": "date-time" },
+        "requestFingerprint": { "$ref": "#/$defs/fingerprint" },
+        "idempotencyKeyFingerprint": { "$ref": "#/$defs/fingerprint" },
+        "commandFingerprint": { "$ref": "#/$defs/fingerprint" },
+        "receiptFingerprint": { "$ref": "#/$defs/fingerprint" },
+        "responseFingerprint": { "$ref": "#/$defs/fingerprint" },
+        "resultingWorldFingerprint": { "$ref": "#/$defs/fingerprint" },
+        "committedAt": { "type": "string", "format": "date-time" },
+        "replayed": { "type": "boolean" },
+        "events": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 128,
+          "items": { "$ref": "#/$defs/eventAssertion" }
+        }
+      }
+    },
+    "eventAssertion": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "eventIdFingerprint", "stateRevision", "mutationId", "operation",
+        "entityType", "entityIdentityFingerprint", "beforeFingerprint",
+        "afterFingerprint", "occurredAt", "eventFingerprint"
+      ],
+      "properties": {
+        "eventIdFingerprint": { "$ref": "#/$defs/fingerprint" },
+        "stateRevision": { "type": "integer", "minimum": 1 },
+        "mutationId": { "type": "string", "minLength": 1, "maxLength": 512 },
+        "operation": { "enum": ["CREATE", "UPDATE", "DELETE"] },
+        "entityType": { "type": "string", "minLength": 1, "maxLength": 512 },
+        "entityIdentityFingerprint": { "$ref": "#/$defs/fingerprint" },
+        "beforeFingerprint": { "$ref": "#/$defs/optionalFingerprint" },
+        "afterFingerprint": { "$ref": "#/$defs/optionalFingerprint" },
+        "occurredAt": { "type": "string", "format": "date-time" },
+        "eventFingerprint": { "$ref": "#/$defs/fingerprint" }
+      }
+    }
+  }
+}

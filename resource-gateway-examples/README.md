@@ -112,6 +112,7 @@ dedicated local data plane.
 | `GET http://localhost:8080/api/mirror/runs/{runId}` | Read a verified payload-free terminal mirror summary in the complete scope |
 | `GET http://localhost:8080/api/mirror/runs/{runId}/evidence` | Export the independently verified signed `HASH_ONLY` evidence bundle |
 | `GET http://localhost:8080/api/mirror/runs/{runId}/state-workbook-seed` | Export a deterministic payload-free ANEKE seed from one verified stateful v3 bundle |
+| `GET http://localhost:8080/api/mirror/runs/{runId}/state-transition-workbook-seed` | Export deterministic committed/replayed write assertions from one verified stateful v4 bundle |
 | `POST http://localhost:8080/api/mirror/trust/deployment-isolation/authority-key-sets` | Verify and append one current isolation-authority key-set generation |
 | `GET http://localhost:8080/api/mirror/trust/deployment-isolation/authority-key-sets/{keySetId}/latest` | Distribute the re-verified current authority floor |
 | `POST http://localhost:8080/api/mirror/trust/deployment-isolation/attestations` | Verify and append an operator-pinned attestation bootstrap or continuous successor |
@@ -348,31 +349,35 @@ reads after restart rehydrate the state-evidence subtype and re-verify its
 nested seal and detached signature.
 
 The standalone test kit independently verifies both v3 read closure and v4
-read/write transition closure. It can derive
-`resourceGateway.mirrorStateWorkbookSeed.v1` only from a verified v3 bundle;
-transition-aware workbook projection remains a separate milestone.
-The protected
-`GET /api/mirror/runs/{runId}/state-workbook-seed` route returns the same
-deterministic payload-free projection in the authenticated scope. A seed names
-the exact bundle, state evidence, Session head, model, revision, access counts,
-and conservative blockers; it does not replace the signed bundle or let
+read/write transition closure. It derives
+`resourceGateway.mirrorStateWorkbookSeed.v1` from a verified v3 bundle and
+`resourceGateway.mirrorStateTransitionWorkbookSeed.v1` from a verified v4
+bundle. The transition seed closes initial/final heads, access outcome counts,
+committed/replayed receipt assertions, and payload-free events. The protected
+`state-workbook-seed` and `state-transition-workbook-seed` routes return the
+same deterministic projections in the authenticated scope. The independent
+client fetches v4 evidence and its signing key, reconstructs the transition
+seed locally, and compares its canonical fingerprint with the producer seed.
+A seed names exact evidence coordinates and conservative blockers; it does not
+replace the signed bundle or let
 Resource Gateway make ANEKE's workbook, owner-approval, or publish-gate
 decision.
 
 This is not yet a production-certified stateful runtime: TEE/KMS custody,
 organization-pinned checkpoint trust, cross-region payload restore,
-transition-aware workbook assertions,
+rejected/pre-commit/crash write-attempt assertions,
 cryptographic deletion proof, target-database capacity/lock certification and
 HA/DR certification remain. The probe reports `mirrorStatefulResolverReady`
 only when mirror execution, the Session API, and the encrypted state store are
 all ready. It separately reports `mirrorStateRunEvidenceReady`,
 `mirrorStateTransitionEvidenceReady`, `mirrorStateWorkbookSeedApi`,
-`mirrorStateWorkbookSeedReady`, and the deliberately false
-`mirrorStateTransitionWorkbookSeedReady`. It also separates
+`mirrorStateWorkbookSeedReady`, `mirrorStateTransitionWorkbookSeedApi`, and
+`mirrorStateTransitionWorkbookSeedReady`; both workbook readiness flags follow
+the stateful resolver's current health. It also separates
 `mirrorStateCheckpointProtocol`, `mirrorStateCheckpointApi`,
 `mirrorStateCheckpointReady`, and `mirrorStateRecoveryReady`; readiness requires
 both the state store and signing authority. `mirrorStatefulRuntimeReady` remains
-false until crash/network/HA/DR and transition-workbook certification are
+false until crash/network/HA/DR and failed-write outcome certification are
 complete. Startup, request v2 usage, Java usage, capacity
 configuration, stable errors, and remaining industrial work packages are in the
 [stateful mirror kernel guide](../docs/resource-gateway-stateful-mirror-kernel.md).
@@ -520,6 +525,11 @@ curl -sS http://localhost:8080/api/mirror/runs/REPLACE_WITH_RUN_ID/evidence \
 curl -sS http://localhost:8080/api/mirror/runs/REPLACE_WITH_RUN_ID/state-workbook-seed \
   -H 'Authorization: Bearer bloge-aneke-demo-token' \
   -H 'X-Purpose: MIRROR_REHEARSAL'
+
+# Stateful v4 read/write runs only
+curl -sS http://localhost:8080/api/mirror/runs/REPLACE_WITH_RUN_ID/state-transition-workbook-seed \
+  -H 'Authorization: Bearer bloge-aneke-demo-token' \
+  -H 'X-Purpose: MIRROR_REHEARSAL'
 ```
 
 Do not place `bloge.tenantId`, `bloge.namespace`, or `__nodeOutput:` keys in `context`; the service derives scope
@@ -528,7 +538,10 @@ fingerprints, timestamps, status/trust class, and trace counts. Use the evidence
 node/edge/resolution facts; neither response returns business payload values.
 The state-workbook route rejects stateless or incomplete runs with
 `RG.MIRROR.STATE_WORKBOOK_SEED_UNAVAILABLE`; it never manufactures an empty
-state workbook.
+state workbook. The transition route rejects non-v4 evidence with
+`RG.MIRROR.STATE_TRANSITION_WORKBOOK_SEED_UNAVAILABLE`; it reports only
+observed committed/replayed transitions and never equates an empty transition
+list with proof that no write was attempted.
 
 The strict `resourceGateway.mirrorResolution.v1` protocol is also frozen. It binds every future resolver outcome to
 the exact run, plan, capability and invocation attempt; separates resolved null, visible/redacted output, hash-only
@@ -575,8 +588,8 @@ V3 additionally closes one immutable Session head and every state access
 against the existing node-attempt/resolution trace. V4 closes an advancing
 Session head, exact read revisions, virtual-write receipts and transition
 events against the same trace. The independent test kit verifies v1/v2/v3/v4,
-rejects mixed generations, and can derive the state workbook seed only after v3
-verification. A local exploratory demo will normally return
+rejects mixed generations, and derives the matching read-only or transition
+workbook seed only after v3 or v4 verification. A local exploratory demo will normally return
 `gateReady=false` with blockers such as `EVIDENCE_NOT_CERTIFIABLE` and
 `RUN_EVIDENCE_LIMITED`; that is an honest trust result, not a transport failure.
 The Spring kernel now has

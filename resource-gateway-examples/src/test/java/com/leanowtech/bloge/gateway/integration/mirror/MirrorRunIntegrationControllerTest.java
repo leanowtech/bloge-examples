@@ -54,6 +54,13 @@ class MirrorRunIntegrationControllerTest {
                         plan, "run-1", '2');
         MirrorStateWorkbookSeed seed =
                 MirrorStateWorkbookSeed.project(mapper, bundle);
+        MirrorEvidenceBundle readWriteBundle =
+                MirrorPersistenceTestFixtures.readWriteEvidence(
+                        mapper, new InMemoryVisualEvidenceSigner(),
+                        plan, "run-1", '3');
+        MirrorStateTransitionWorkbookSeed transitionSeed =
+                MirrorStateTransitionWorkbookSeed.project(
+                        mapper, readWriteBundle);
         MirrorRunSummary summary = MirrorRunSummary.from(bundle);
         MirrorExecutionRequest request = new MirrorExecutionRequest("", "request-1", "plan-1",
                 plan.planFingerprint(), Map.of());
@@ -69,12 +76,17 @@ class MirrorRunIntegrationControllerTest {
         when(service.evidence("run-1", identity)).thenReturn(bundle);
         when(service.stateWorkbookSeed("run-1", identity))
                 .thenReturn(seed);
+        when(service.stateTransitionWorkbookSeed(
+                "run-1", identity)).thenReturn(transitionSeed);
 
         var executed = controller.execute(json, headers);
         var found = controller.find("run-1", headers);
         var evidence = controller.evidence("run-1", headers);
         var workbook =
                 controller.stateWorkbookSeed("run-1", headers);
+        var transitionWorkbook =
+                controller.stateTransitionWorkbookSeed(
+                        "run-1", headers);
 
         assertThat(executed.payloadKind()).isEqualTo("MIRROR_RUN_SUMMARY");
         assertThat(executed.payloadSchemaVersion()).isEqualTo(MirrorRunSummary.SCHEMA_VERSION);
@@ -87,9 +99,18 @@ class MirrorRunIntegrationControllerTest {
         assertThat(workbook.payloadSchemaVersion())
                 .isEqualTo(MirrorStateWorkbookSeed.SCHEMA_VERSION);
         assertThat(workbook.payload()).isEqualTo(seed);
+        assertThat(transitionWorkbook.payloadKind())
+                .isEqualTo(
+                        "MIRROR_STATE_TRANSITION_WORKBOOK_SEED");
+        assertThat(transitionWorkbook.payloadSchemaVersion())
+                .isEqualTo(
+                        MirrorStateTransitionWorkbookSeed
+                                .SCHEMA_VERSION);
+        assertThat(transitionWorkbook.payload())
+                .isEqualTo(transitionSeed);
         verify(authenticator).authenticate(headers, IntegrationOperation.MIRROR_EXECUTION_CREATE);
         verify(authenticator).authenticate(headers, IntegrationOperation.MIRROR_RUN_READ);
-        verify(authenticator, times(2)).authenticate(
+        verify(authenticator, times(3)).authenticate(
                 headers, IntegrationOperation.MIRROR_EVIDENCE_READ);
     }
 

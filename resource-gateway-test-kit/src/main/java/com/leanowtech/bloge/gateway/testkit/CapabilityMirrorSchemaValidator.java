@@ -38,6 +38,7 @@ final class CapabilityMirrorSchemaValidator {
             "mirror-state-run-evidence-v1.schema.json",
             "mirror-state-run-evidence-v2.schema.json",
             "mirror-state-workbook-seed-v1.schema.json",
+            "mirror-state-transition-workbook-seed-v1.schema.json",
             "mirror-evidence-attestation-v1.schema.json",
             "mirror-evidence-attestation-v2.schema.json",
             "mirror-evidence-attestation-v3.schema.json",

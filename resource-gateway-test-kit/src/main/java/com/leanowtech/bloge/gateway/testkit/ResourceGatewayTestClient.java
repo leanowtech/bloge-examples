@@ -1418,6 +1418,82 @@ public final class ResourceGatewayTestClient {
     }
 
     /**
+     * Reads and independently reconstructs one payload-free state-transition workbook seed.
+     *
+     * <p>The client fetches the signed v4 evidence bundle, resolves its evidence key through the
+     * integration trust surface, verifies the detached signature and complete transition closure,
+     * and projects a local seed. It then reads the producer seed and requires canonical protocol
+     * equality with the local projection. The method therefore fails closed on evidence tampering,
+     * key unavailability, stale producer projection, or cross-run substitution.</p>
+     *
+     * @param runId path-safe terminal mirror-run identity
+     * @return independently reconstructed typed transition-workbook seed
+     */
+    public MirrorStateTransitionWorkbookSeed
+    findMirrorStateTransitionWorkbookSeed(String runId) {
+        String exactRunId = mirrorRunId(runId);
+        JsonNode evidenceResponse = exchange(
+                "GET", "/api/mirror/runs/"
+                        + segment(exactRunId) + "/evidence",
+                "", "MIRROR_REHEARSAL", null);
+        JsonNode bundle = requireMirrorEnvelope(
+                evidenceResponse, "MIRROR_EVIDENCE_BUNDLE",
+                CapabilityMirrorProtocol
+                        .MIRROR_EVIDENCE_BUNDLE_V4);
+        EvidenceVerificationKey key;
+        try {
+            key = findEvidenceVerificationKey(
+                    bundle.path("attestation")
+                            .path("keyId").asText());
+        } catch (IllegalArgumentException failure) {
+            throw responseContractInvalid(
+                    "The server returned mirror evidence with an invalid verification-key identity.");
+        }
+        MirrorStateTransitionWorkbookSeed local;
+        try {
+            local = MirrorStateTransitionWorkbookSeed
+                    .fromVerifiedBundle(bundle, key);
+        } catch (IllegalArgumentException failure) {
+            throw responseContractInvalid(
+                    "The server returned invalid signed state-transition evidence.");
+        }
+        if (!exactRunId.equals(local.runId())) {
+            throw responseContractInvalid(
+                    "The server returned evidence for a different mirror run.");
+        }
+
+        JsonNode seedResponse = exchange(
+                "GET", "/api/mirror/runs/"
+                        + segment(exactRunId)
+                        + "/state-transition-workbook-seed",
+                "", "MIRROR_REHEARSAL", null);
+        JsonNode payload = requireMirrorEnvelope(
+                seedResponse,
+                "MIRROR_STATE_TRANSITION_WORKBOOK_SEED",
+                CapabilityMirrorProtocol
+                        .MIRROR_STATE_TRANSITION_WORKBOOK_SEED_V1);
+        MirrorStateTransitionWorkbookSeed producer;
+        try {
+            producer = MirrorStateTransitionWorkbookSeed
+                    .fromPayload(payload);
+        } catch (IllegalArgumentException failure) {
+            throw responseContractInvalid(
+                    "The server returned an invalid state-transition workbook seed.");
+        }
+        if (!local.seedFingerprint().equals(
+                producer.seedFingerprint())
+                || !local.runId().equals(producer.runId())
+                || !local.planFingerprint().equals(
+                producer.planFingerprint())
+                || !local.evidenceBundleFingerprint().equals(
+                producer.evidenceBundleFingerprint())) {
+            throw responseContractInvalid(
+                    "The producer transition-workbook seed does not match independently verified evidence.");
+        }
+        return local;
+    }
+
+    /**
      * Creates or exactly replays one encrypted stateful-mirror session.
      *
      * <p>The request is verified locally before transport. The returned descriptor is strict
@@ -2319,6 +2395,16 @@ public final class ResourceGatewayTestClient {
         if (!normalized.matches("[A-Za-z0-9][A-Za-z0-9@._:-]{0,511}")) {
             throw new IllegalArgumentException(
                     "mirror session id must be path-safe and contain 1 to 512 characters");
+        }
+        return normalized;
+    }
+
+    private static String mirrorRunId(String value) {
+        String normalized = normalized(value);
+        if (!normalized.matches(
+                "[A-Za-z0-9][A-Za-z0-9@._:-]{0,511}")) {
+            throw new IllegalArgumentException(
+                    "mirror run id must be path-safe and contain 1 to 512 characters");
         }
         return normalized;
     }

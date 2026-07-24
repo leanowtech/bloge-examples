@@ -459,8 +459,11 @@ public class ToolStudioIntegrationService {
                 mirrorExecutionApi);
         features.put("mirrorStateWorkbookSeedReady",
                 mirrorStatefulResolverReady);
-        // Transition workbook projection and full crash-matrix certification remain later stages.
-        features.put("mirrorStateTransitionWorkbookSeedReady", false);
+        features.put("mirrorStateTransitionWorkbookSeedApi",
+                mirrorExecutionApi);
+        features.put("mirrorStateTransitionWorkbookSeedReady",
+                mirrorStatefulResolverReady);
+        // Full crash/network/HA/DR certification remains a separate runtime gate.
         features.put("mirrorStatefulRuntimeReady", false);
         ExternalAnchorTrustState suiteAnchorTrust = currentSuiteStabilityAnchorTrust();
         features.put("managedSuiteStabilityExternalNotaryTrust",
@@ -842,6 +845,11 @@ public class ToolStudioIntegrationService {
             supportedObjects.put("mirrorStateWorkbookSeed", List.of(
                     com.leanowtech.bloge.gateway.integration.mirror
                             .MirrorStateWorkbookSeed.SCHEMA_VERSION));
+            supportedObjects.put(
+                    "mirrorStateTransitionWorkbookSeed", List.of(
+                            com.leanowtech.bloge.gateway.integration.mirror
+                                    .MirrorStateTransitionWorkbookSeed
+                                    .SCHEMA_VERSION));
         }
         if (mirrorStatefulSessionApi) {
             supportedObjects.put("stateReadSpec", List.of(
@@ -892,6 +900,9 @@ public class ToolStudioIntegrationService {
             endpoints.add(new IntegrationCapabilities.Endpoint(
                     "GET",
                     "/api/mirror/runs/{runId}/state-workbook-seed"));
+            endpoints.add(new IntegrationCapabilities.Endpoint(
+                    "GET",
+                    "/api/mirror/runs/{runId}/state-transition-workbook-seed"));
         }
         if (mirrorStatefulSessionApi) {
             endpoints.add(new IntegrationCapabilities.Endpoint(

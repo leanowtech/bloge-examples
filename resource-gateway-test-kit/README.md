@@ -22,8 +22,9 @@ implementation. The JAR packages the authoritative v1 JSON Schema and provides:
 - strict stateful-mirror payload/create/descriptor/command/checkpoint/recovery Schemas, a canonical
   payload sealer, payload-free semantic verification, authenticated
   create/read/command/checkpoint/recover/destroy client methods, independent checkpoint signature
-  and recovery-closure verification, v3 read/v4 transition evidence verification, and deterministic
-  v3 ANEKE workbook-seed projection;
+  and recovery-closure verification, v3 read/v4 transition evidence verification, deterministic
+  v3 read and v4 transition ANEKE workbook-seed projection, and an online client that independently
+  reconstructs the v4 seed before accepting the producer projection;
 - packaged validation and version constants for the payload-free
   `bloge.executionServiceStateSnapshot.v1` durable-resume building block;
 - payload-safe typed child/suite-run summaries and JUnit 5 assertions;
@@ -218,6 +219,12 @@ if (CapabilityMirrorProtocol.MIRROR_EVIDENCE_BUNDLE_V3.equals(
     MirrorStateWorkbookSeed seed =
             MirrorStateWorkbookSeed.fromVerifiedBundle(mirrorBundle, key);
     seed.requireGateReady();
+} else if (CapabilityMirrorProtocol.MIRROR_EVIDENCE_BUNDLE_V4.equals(
+        mirrorBundle.path("schemaVersion").asText())) {
+    MirrorStateTransitionWorkbookSeed seed =
+            MirrorStateTransitionWorkbookSeed.fromVerifiedBundle(
+                    mirrorBundle, key);
+    seed.requireGateReady();
 }
 ```
 
@@ -246,15 +253,30 @@ revision chain, replay semantics, and payload-free transition-event closure to
 the node attempt and resolution. Raw entity ids, idempotency keys, inputs, and
 responses remain absent.
 
-`MirrorStateWorkbookSeed.fromVerifiedBundle` repeats verification before it
+`MirrorStateWorkbookSeed.fromVerifiedBundle` repeats v3 verification before it
 projects the exact bundle/state/session/model coordinates, access counts, and
-conservative blockers. `fromPayload` checks only the strict seed schema and
-self-fingerprint and must not be used as a substitute for source-bundle
-verification. Local exploratory evidence normally yields `gateReady=false`;
+conservative blockers. `MirrorStateTransitionWorkbookSeed.fromVerifiedBundle`
+repeats v4 verification and additionally projects initial/final heads,
+committed/replayed receipt assertions, and payload-free event assertions.
+`fromPayload` checks strict seed Schema, self-fingerprint, counts, ordering, and
+state closure, but cannot substitute for source-bundle signature verification.
+For online use,
+`client.findMirrorStateTransitionWorkbookSeed(runId)` fetches v4 evidence,
+resolves its signing key, reconstructs the seed locally, reads the producer
+seed, and compares canonical fingerprint plus source coordinates:
+
+```java
+MirrorStateTransitionWorkbookSeed seed =
+        client.findMirrorStateTransitionWorkbookSeed(runId);
+seed.requireGateReady();
+```
+
+Local exploratory evidence normally yields `gateReady=false`;
 `requireGateReady()` returns the stable blocker set instead of silently
 promoting it. ANEKE remains responsible for workbook coverage, owner approval,
-policy, and the final publish gate. This seed API intentionally rejects v4
-until transition assertions are formalized.
+policy, and the final publish gate. The transition seed deliberately reports
+only observed committed/replayed writes; rejected, pre-commit failure, and
+crash write-attempt outcomes remain a separate evidence evolution.
 
 Run the packaged fixed fixture in dependency-upgrade and startup probes:
 

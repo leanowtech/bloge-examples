@@ -36,6 +36,7 @@ class CapabilityMirrorSchemaPackagingTest {
                 "mirror-state-run-evidence-v1.schema.json",
                 "mirror-state-run-evidence-v2.schema.json",
                 "mirror-state-workbook-seed-v1.schema.json",
+                "mirror-state-transition-workbook-seed-v1.schema.json",
                 "mirror-evidence-attestation-v1.schema.json",
                 "mirror-evidence-attestation-v2.schema.json",
                 "mirror-evidence-attestation-v3.schema.json",
@@ -176,6 +177,14 @@ class CapabilityMirrorSchemaPackagingTest {
                 .MIRROR_STATE_WORKBOOK_SEED_SCHEMA_RESOURCE)
                 .endsWith(
                         "mirror-state-workbook-seed-v1.schema.json");
+        assertThat(CapabilityMirrorProtocol
+                .MIRROR_STATE_TRANSITION_WORKBOOK_SEED_V1)
+                .isEqualTo(
+                        "resourceGateway.mirrorStateTransitionWorkbookSeed.v1");
+        assertThat(CapabilityMirrorProtocol
+                .MIRROR_STATE_TRANSITION_WORKBOOK_SEED_SCHEMA_RESOURCE)
+                .endsWith(
+                        "mirror-state-transition-workbook-seed-v1.schema.json");
         assertThat(CapabilityMirrorProtocol
                 .MIRROR_EVIDENCE_BUNDLE_V3_SCHEMA_RESOURCE)
                 .endsWith("mirror-evidence-bundle-v3.schema.json");

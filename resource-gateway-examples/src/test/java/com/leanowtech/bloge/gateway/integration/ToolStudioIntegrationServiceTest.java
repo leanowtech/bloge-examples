@@ -319,10 +319,15 @@ class ToolStudioIntegrationServiceTest {
                 .containsEntry("mirrorStateRunEvidenceProtocol", true)
                 .containsEntry("mirrorStateTransitionEvidenceProtocol", true)
                 .containsEntry("mirrorStateWorkbookSeedProtocol", true)
+                .containsEntry(
+                        "mirrorStateTransitionWorkbookSeedProtocol",
+                        true)
                 .containsEntry("mirrorStateRunEvidenceReady", false)
                 .containsEntry("mirrorStateTransitionEvidenceReady", false)
                 .containsEntry("mirrorStateWorkbookSeedApi", true)
                 .containsEntry("mirrorStateWorkbookSeedReady", false)
+                .containsEntry(
+                        "mirrorStateTransitionWorkbookSeedApi", true)
                 .containsEntry("mirrorStateTransitionWorkbookSeedReady", false);
         assertThat(enabledCapabilities.supportedObjects())
                 .containsEntry("mirrorPlanCreateRequest", List.of(
@@ -370,13 +375,19 @@ class ToolStudioIntegrationServiceTest {
                                 .MirrorStateTransitionRunEvidence.SCHEMA_VERSION))
                 .containsEntry("mirrorStateWorkbookSeed", List.of(
                         com.leanowtech.bloge.gateway.integration.mirror
-                                .MirrorStateWorkbookSeed.SCHEMA_VERSION));
+                                .MirrorStateWorkbookSeed.SCHEMA_VERSION))
+                .containsEntry(
+                        "mirrorStateTransitionWorkbookSeed", List.of(
+                                com.leanowtech.bloge.gateway.integration.mirror
+                                        .MirrorStateTransitionWorkbookSeed
+                                        .SCHEMA_VERSION));
         assertThat(enabledCapabilities.endpoints())
                 .extracting(endpoint -> endpoint.method() + " " + endpoint.path())
                 .contains("POST /api/mirror/plans", "GET /api/mirror/plans/{planId}",
                         "POST /api/mirror/executions", "GET /api/mirror/runs/{runId}",
                         "GET /api/mirror/runs/{runId}/evidence",
-                        "GET /api/mirror/runs/{runId}/state-workbook-seed");
+                        "GET /api/mirror/runs/{runId}/state-workbook-seed",
+                        "GET /api/mirror/runs/{runId}/state-transition-workbook-seed");
     }
 
     @Test
@@ -439,7 +450,7 @@ class ToolStudioIntegrationServiceTest {
                 .containsEntry("mirrorStateRecoveryReady", true)
                 .containsEntry("mirrorStatefulResolverReady", true)
                 .containsEntry("mirrorStateTransitionEvidenceReady", true)
-                .containsEntry("mirrorStateTransitionWorkbookSeedReady", false)
+                .containsEntry("mirrorStateTransitionWorkbookSeedReady", true)
                 .containsEntry("mirrorStatefulRuntimeReady", false);
         assertThat(available.supportedObjects())
                 .containsKeys(

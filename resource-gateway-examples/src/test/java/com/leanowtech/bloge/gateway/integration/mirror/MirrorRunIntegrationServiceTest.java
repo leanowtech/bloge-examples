@@ -162,6 +162,41 @@ class MirrorRunIntegrationServiceTest {
     }
 
     @Test
+    void projectsATransitionWorkbookSeedOnlyFromScopedReadWriteEvidence() {
+        MirrorEvidenceBundle readWrite =
+                MirrorPersistenceTestFixtures.readWriteEvidence(
+                        mapper, new InMemoryVisualEvidenceSigner(),
+                        plan, "run-state-write-1", 'd');
+        when(evidence.find(SCOPE, "run-state-write-1"))
+                .thenReturn(Optional.of(readWrite));
+
+        MirrorStateTransitionWorkbookSeed seed =
+                service.stateTransitionWorkbookSeed(
+                        "run-state-write-1", identity());
+
+        seed.verify(mapper);
+        assertThat(seed.runId()).isEqualTo("run-state-write-1");
+        assertThat(seed.evidenceBundleFingerprint())
+                .isEqualTo(readWrite.bundleFingerprint());
+        assertThat(seed.transitionCount()).isEqualTo(1);
+        assertThat(seed.committedTransitionCount()).isEqualTo(1);
+        assertThat(seed.eventCount()).isEqualTo(1);
+
+        MirrorEvidenceBundle readOnly =
+                MirrorPersistenceTestFixtures.statefulEvidence(
+                        mapper, new InMemoryVisualEvidenceSigner(),
+                        plan, "run-state-read-1", 'e');
+        when(evidence.find(SCOPE, "run-state-read-1"))
+                .thenReturn(Optional.of(readOnly));
+        assertProblem(
+                () -> service.stateTransitionWorkbookSeed(
+                        "run-state-read-1", identity()),
+                409,
+                "RG.MIRROR.STATE_TRANSITION_WORKBOOK_SEED_UNAVAILABLE",
+                false);
+    }
+
+    @Test
     void freezesOneAuthenticatedSessionSnapshotAndPassesItToTheWholeRun() {
         MirrorArtifactRef stateModelRef = new MirrorArtifactRef(
                 "STATE_MODEL", "order-world", 1,

@@ -3,6 +3,7 @@ package com.leanowtech.bloge.gateway.integration;
 import com.leanowtech.bloge.gateway.integration.mirror.MirrorEvidenceBundle;
 import com.leanowtech.bloge.gateway.integration.mirror.MirrorRunIntegrationService;
 import com.leanowtech.bloge.gateway.integration.mirror.MirrorRunSummary;
+import com.leanowtech.bloge.gateway.integration.mirror.MirrorStateTransitionWorkbookSeed;
 import com.leanowtech.bloge.gateway.integration.mirror.MirrorStateWorkbookSeed;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.context.annotation.Profile;
@@ -90,5 +91,20 @@ public class MirrorRunIntegrationController {
                 "MIRROR_STATE_WORKBOOK_SEED",
                 MirrorStateWorkbookSeed.SCHEMA_VERSION,
                 service.stateWorkbookSeed(runId, identity));
+    }
+
+    /** Reads a deterministic payload-free transition-workbook seed for a read/write run. */
+    @GetMapping("/runs/{runId}/state-transition-workbook-seed")
+    public IntegrationEnvelope<MirrorStateTransitionWorkbookSeed>
+    stateTransitionWorkbookSeed(
+            @PathVariable String runId,
+            @RequestHeader HttpHeaders headers) {
+        IntegrationRequestContext identity = authenticator.authenticate(
+                headers, IntegrationOperation.MIRROR_EVIDENCE_READ);
+        return IntegrationEnvelope.of(
+                "MIRROR_STATE_TRANSITION_WORKBOOK_SEED",
+                MirrorStateTransitionWorkbookSeed.SCHEMA_VERSION,
+                service.stateTransitionWorkbookSeed(
+                        runId, identity));
     }
 }

@@ -833,6 +833,7 @@ public record IntegrationCapabilities(
         features.put("mirrorStateRunEvidenceProtocol", true);
         features.put("mirrorStateTransitionEvidenceProtocol", true);
         features.put("mirrorStateWorkbookSeedProtocol", true);
+        features.put("mirrorStateTransitionWorkbookSeedProtocol", true);
         features.put("mirrorStatefulSessionApi", false);
         features.put("mirrorStatefulStateStoreReady", false);
         features.put("mirrorStatefulResolverReady", false);
@@ -840,6 +841,7 @@ public record IntegrationCapabilities(
         features.put("mirrorStateTransitionEvidenceReady", false);
         features.put("mirrorStateWorkbookSeedApi", false);
         features.put("mirrorStateWorkbookSeedReady", false);
+        features.put("mirrorStateTransitionWorkbookSeedApi", false);
         features.put("mirrorStateTransitionWorkbookSeedReady", false);
         features.put("mirrorStatefulRuntimeReady", false);
         features.put("runEvidenceBundle", true);
