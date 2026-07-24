@@ -407,6 +407,8 @@ public class ToolStudioIntegrationService {
         features.put("mirrorScenarioRehearsalCompilation", mirrorPlanReady);
         features.put("mirrorScenarioRehearsalExecution",
                 mirrorPlanReady && mirrorExecutionApi);
+        features.put("mirrorScenarioRehearsalEvidenceApi",
+                mirrorPlanReady && mirrorExecutionApi);
         features.put("mirrorScenarioRehearsalEvidence", false);
         features.put("mirrorServing", mirrorExecutionReady);
         features.put("mirrorOperationObservability", mirrorPlanReady && mirrorExecutionApi);
@@ -842,6 +844,18 @@ public class ToolStudioIntegrationService {
             supportedObjects.put("scenarioRehearsalResult", List.of(
                     com.leanowtech.bloge.gateway.integration.mirror
                             .ScenarioRehearsalResult.SCHEMA_VERSION));
+            supportedObjects.put(
+                    "scenarioRehearsalEvidenceAttestation",
+                    List.of(
+                            com.leanowtech.bloge.gateway.integration.mirror
+                                    .ScenarioRehearsalEvidenceAttestation
+                                    .SCHEMA_VERSION));
+            supportedObjects.put(
+                    "scenarioRehearsalEvidenceBundle",
+                    List.of(
+                            com.leanowtech.bloge.gateway.integration.mirror
+                                    .ScenarioRehearsalEvidenceBundle
+                                    .SCHEMA_VERSION));
         }
         if (mirrorExecutionApi) {
             supportedObjects.put("mirrorExecutionRequest", List.of(
@@ -970,6 +984,9 @@ public class ToolStudioIntegrationService {
             if (mirrorExecutionApi) {
                 endpoints.add(new IntegrationCapabilities.Endpoint(
                         "POST", "/api/mirror/scenarios/runs"));
+                endpoints.add(new IntegrationCapabilities.Endpoint(
+                        "GET",
+                        "/api/mirror/scenarios/runs/{runId}/evidence"));
             }
         }
         if (mirrorExecutionApi) {

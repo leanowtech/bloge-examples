@@ -1,0 +1,42 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://bloge.dev/schemas/resource-gateway-mirror/scenario-rehearsal-evidence-bundle-v1.schema.json",
+  "title": "Resource Gateway Scenario Rehearsal Evidence Bundle v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion", "bundleFingerprint", "payloadPolicy",
+    "attestation", "result"
+  ],
+  "properties": {
+    "schemaVersion": {
+      "const": "resourceGateway.scenarioRehearsalEvidenceBundle.v1"
+    },
+    "bundleFingerprint": {
+      "$ref": "mirror-plan-v1.schema.json#/$defs/fingerprint"
+    },
+    "payloadPolicy": {
+      "const": "HASH_ONLY"
+    },
+    "attestation": {
+      "allOf": [
+        {
+          "$ref": "scenario-rehearsal-evidence-attestation-v1.schema.json"
+        },
+        {
+          "properties": {
+            "signatureStatus": {
+              "const": "VERIFIED"
+            },
+            "independentlyVerifiable": {
+              "const": true
+            }
+          }
+        }
+      ]
+    },
+    "result": {
+      "$ref": "scenario-rehearsal-result-v1.schema.json"
+    }
+  }
+}

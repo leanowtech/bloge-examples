@@ -134,6 +134,8 @@ dedicated local data plane.
 | `GET http://localhost:8080/api/mirror/scenarios/packs/{packId}?revision=...&fingerprint=...` | Read one exact content-addressed ScenarioPack revision |
 | `POST http://localhost:8080/api/mirror/scenarios/packs/{packId}/compiled-plans` | Resolve TestSuite, FixtureBundle, MirrorPlan and checkpoint authority, then compile a payload-free execution license |
 | `GET http://localhost:8080/api/mirror/scenarios/compiled-plans/{planId}?revision=...&fingerprint=...` | Read one exact compiler-issued rehearsal plan |
+| `POST http://localhost:8080/api/mirror/scenarios/runs` | Run one exact compiled Scenario plan and return an independently verified signed aggregate bundle |
+| `GET http://localhost:8080/api/mirror/scenarios/runs/{runId}/evidence` | Re-read and independently verify one full-scope append-only Scenario aggregate |
 
 Deployment-agent authority/attestation GETs require vendor negotiation in addition to normal
 `MIRROR_TRUST_DISTRIBUTION` or `MIRROR_REHEARSAL` authentication:
@@ -174,13 +176,19 @@ never test input or fixture payload. The synchronous Scenario runtime accepts
 only an aggregate request id and exact compiled-plan ref, resolves TestSuite
 input server-side, reuses the durable Mirror child-run coordinator, verifies
 each signed evidence bundle, evaluates the complete handling-assertion closure,
-and returns content-addressed per-case and aggregate results. Outcomes and
-summary counters are server-derived; stateful retries reach completed child
-idempotency before checking a possibly advanced Session head. The capability
-probe advertises Scenario execution while keeping aggregate Scenario evidence
-false: the aggregate still needs its own durable lease/store, detached
-signature, read API, workbook seed, and retention policy before it is
-publish-gate evidence. See the
+and returns content-addressed per-case and aggregate results. The aggregate is
+sealed under a separate Ed25519 signature domain, immediately re-verified,
+stored append-only under complete enterprise scope, and available from an
+exact run evidence endpoint. The independent Test Kit re-derives nested result
+addresses, outcomes, summary counters, bundle identity, key policy, and the
+Scenario-specific Ed25519 signature without linking server classes. Outcomes and
+summary counters are server-derived;
+stateful retries reach completed child idempotency before checking a possibly
+advanced Session head. The capability probe therefore reports Scenario
+execution and `mirrorScenarioRehearsalEvidenceApi` as available while keeping
+`mirrorScenarioRehearsalEvidence=false`: aggregate lease/epoch recovery,
+operation audit, retention/legal hold, workbook seed, batch scheduling, and
+owner UX remain required before this becomes publish-gate evidence. See the
 [scenario rehearsal compiler guide](../docs/resource-gateway-scenario-rehearsal-compiler.md).
 
 Stored suites and fixtures now use `bloge.storedTestSuite.v2` and

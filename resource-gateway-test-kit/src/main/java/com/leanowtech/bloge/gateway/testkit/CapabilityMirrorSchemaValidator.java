@@ -100,6 +100,8 @@ final class CapabilityMirrorSchemaValidator {
             "scenario-rehearsal-execution-request-v1.schema.json",
             "scenario-case-rehearsal-result-v1.schema.json",
             "scenario-rehearsal-result-v1.schema.json",
+            "scenario-rehearsal-evidence-attestation-v1.schema.json",
+            "scenario-rehearsal-evidence-bundle-v1.schema.json",
             "scenario-case-v1.schema.json",
             "scenario-pack-v1.schema.json",
             "scenario-pack-stage7-v1.fixture.schema.json",

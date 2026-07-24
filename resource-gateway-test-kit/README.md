@@ -28,7 +28,9 @@ implementation. The JAR packages the authoritative v1 JSON Schema and provides:
   reconstructs the v4 seed before accepting the producer projection;
 - strict `ScenarioPack.v1`, `ScenarioCase.v1`, and
   `CaseHandlingAssertion.v1` Schemas plus an independent payload-free scenario
-  closure verifier;
+  closure verifier, signed aggregate Schemas, and a dependency-light verifier
+  that re-derives every assertion/case/result/bundle content address and the
+  domain-separated Ed25519 signature;
 - packaged validation and version constants for the payload-free
   `bloge.executionServiceStateSnapshot.v1` durable-resume building block;
 - payload-safe typed child/suite-run summaries and JUnit 5 assertions;
@@ -229,6 +231,31 @@ Use `CapabilityMirrorProtocol.scenarioPackCompatibilityFixture()` to load the
 fixed producer/test-kit canonicalization vector. The loader applies the fixture
 Schema, verifies its complete closure at the embedded instant, compares the
 expected projection, and returns a detached copy.
+
+Completed Scenario rehearsal aggregates have a separate offline verifier.
+Fetch the exact evidence bundle, resolve the public key named by its
+attestation, then verify before workbook or gate ingestion:
+
+```java
+JsonNode scenarioBundle = objectMapper.readTree(scenarioEvidenceJson);
+String keyId = scenarioBundle.path("attestation").path("keyId").asText();
+EvidenceVerificationKey key = client.findEvidenceVerificationKey(keyId);
+
+ScenarioRehearsalEvidenceVerifier.VerificationResult result =
+        new ScenarioRehearsalEvidenceVerifier().verify(
+                scenarioBundle, key);
+if (!result.verified()) {
+    throw new IllegalStateException(result.reasonCode());
+}
+```
+
+Verification applies the packaged strict Schema, re-derives assertion, case,
+aggregate and bundle fingerprints, proves ordered case identity, time,
+evidence/assertion binding, derived outcome and summary counters, applies
+signing-time key policy, and verifies the Scenario-specific Ed25519 signature
+domain. It never returns TestCase input, Fixture value, Session entity or
+business payload. A valid producer signature over a false aggregate outcome is
+still rejected.
 
 `findMirrorSessionWriteAttempt` accepts an attempt id obtained from the
 run/evidence recovery coordinate. Before returning its bounded projection, it

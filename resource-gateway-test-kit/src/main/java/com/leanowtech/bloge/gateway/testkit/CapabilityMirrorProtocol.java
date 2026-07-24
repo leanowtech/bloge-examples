@@ -581,6 +581,14 @@ public final class CapabilityMirrorProtocol {
     public static final String SCENARIO_REHEARSAL_RESULT_SCHEMA_RESOURCE =
             SCHEMA_RESOURCE_ROOT
                     + "scenario-rehearsal-result-v1.schema.json";
+    /** Packaged detached signature manifest for one Scenario aggregate. */
+    public static final String SCENARIO_REHEARSAL_EVIDENCE_ATTESTATION_SCHEMA_RESOURCE =
+            SCHEMA_RESOURCE_ROOT
+                    + "scenario-rehearsal-evidence-attestation-v1.schema.json";
+    /** Packaged independently verifiable payload-free Scenario evidence bundle. */
+    public static final String SCENARIO_REHEARSAL_EVIDENCE_BUNDLE_SCHEMA_RESOURCE =
+            SCHEMA_RESOURCE_ROOT
+                    + "scenario-rehearsal-evidence-bundle-v1.schema.json";
     /** Packaged fixed ScenarioPack compatibility-fixture schema. */
     public static final String SCENARIO_PACK_FIXTURE_SCHEMA_RESOURCE =
             SCHEMA_RESOURCE_ROOT

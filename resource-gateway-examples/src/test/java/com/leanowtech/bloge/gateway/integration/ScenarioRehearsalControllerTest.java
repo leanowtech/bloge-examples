@@ -9,9 +9,9 @@ import com.leanowtech.bloge.gateway.integration.mirror.ScenarioArtifactRegistryS
 import com.leanowtech.bloge.gateway.integration.mirror.ScenarioCase;
 import com.leanowtech.bloge.gateway.integration.mirror.ScenarioPack;
 import com.leanowtech.bloge.gateway.integration.mirror.ScenarioRehearsalCompileRequest;
+import com.leanowtech.bloge.gateway.integration.mirror.ScenarioRehearsalEvidenceBundle;
 import com.leanowtech.bloge.gateway.integration.mirror.ScenarioRehearsalExecutionRequest;
 import com.leanowtech.bloge.gateway.integration.mirror.ScenarioRehearsalIntegrationService;
-import com.leanowtech.bloge.gateway.integration.mirror.ScenarioRehearsalResult;
 import com.leanowtech.bloge.gateway.integration.mirror.ScenarioRehearsalRuntimeService;
 import org.junit.jupiter.api.Test;
 import org.springframework.http.HttpHeaders;
@@ -60,8 +60,9 @@ class ScenarioRehearsalControllerTest {
         ScenarioPack pack = mock(ScenarioPack.class);
         CompiledScenarioRehearsalPlan plan =
                 mock(CompiledScenarioRehearsalPlan.class);
-        ScenarioRehearsalResult result =
-                mock(ScenarioRehearsalResult.class);
+        ScenarioRehearsalEvidenceBundle result =
+                mock(ScenarioRehearsalEvidenceBundle.class);
+        String runId = "scenario-" + "b".repeat(64);
         ScenarioRehearsalCompileRequest command =
                 new ScenarioRehearsalCompileRequest("", 1, SHA_A);
         ScenarioRehearsalExecutionRequest execution =
@@ -80,7 +81,7 @@ class ScenarioRehearsalControllerTest {
         when(plan.schemaVersion()).thenReturn(
                 CompiledScenarioRehearsalPlan.SCHEMA_VERSION);
         when(result.schemaVersion()).thenReturn(
-                ScenarioRehearsalResult.SCHEMA_VERSION);
+                ScenarioRehearsalEvidenceBundle.SCHEMA_VERSION);
         when(authenticator.authenticate(
                 headers, IntegrationOperation.MIRROR_SCENARIO_ARTIFACT_WRITE))
                 .thenReturn(identity);
@@ -95,6 +96,10 @@ class ScenarioRehearsalControllerTest {
                 .thenReturn(identity);
         when(authenticator.authenticate(
                 headers, IntegrationOperation.MIRROR_REHEARSAL_EXECUTE))
+                .thenReturn(identity);
+        when(authenticator.authenticate(
+                headers,
+                IntegrationOperation.MIRROR_REHEARSAL_EVIDENCE_READ))
                 .thenReturn(identity);
         when(decoder.decodeAssertion(raw, identity)).thenReturn(assertion);
         when(decoder.decodeCheckpoint(raw, identity)).thenReturn(checkpoint);
@@ -115,6 +120,7 @@ class ScenarioRehearsalControllerTest {
         when(rehearsals.find("refund-pack@compiled-v1", 1, SHA_A, identity))
                 .thenReturn(plan);
         when(runtime.execute(execution, identity)).thenReturn(result);
+        when(runtime.evidence(runId, identity)).thenReturn(result);
         ScenarioRehearsalController controller =
                 new ScenarioRehearsalController(
                         artifacts, rehearsals, runtime,
@@ -137,6 +143,8 @@ class ScenarioRehearsalControllerTest {
                 .isSameAs(plan);
         assertThat(controller.execute(raw, headers).payload())
                 .isSameAs(result);
+        assertThat(controller.evidence(runId, headers).payload())
+                .isSameAs(result);
         verify(authenticator, times(4)).authenticate(
                 headers, IntegrationOperation.MIRROR_SCENARIO_ARTIFACT_WRITE);
         verify(authenticator).authenticate(
@@ -147,6 +155,9 @@ class ScenarioRehearsalControllerTest {
                 headers, IntegrationOperation.MIRROR_REHEARSAL_PLAN_READ);
         verify(authenticator).authenticate(
                 headers, IntegrationOperation.MIRROR_REHEARSAL_EXECUTE);
+        verify(authenticator).authenticate(
+                headers,
+                IntegrationOperation.MIRROR_REHEARSAL_EVIDENCE_READ);
     }
 
     @Test

@@ -22,6 +22,7 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
+import java.util.Optional;
 
 /**
  * Synchronous generation-one runtime for one exact compiled Scenario rehearsal plan.
@@ -33,9 +34,10 @@ import java.util.Objects;
  * original fence to that coordinator lets a completed stateful retry resolve before the current
  * Session head is inspected.</p>
  *
- * <p>Generation one is deliberately stateless at the aggregate layer. Stable child request ids
- * make an interrupted retry reuse already committed Mirror runs, but concurrent aggregate leases,
- * durable progress, batch scheduling, and checkpoint cloning remain later control-plane work.</p>
+ * <p>Generation one signs and append-only stores complete aggregates under a stable run identity.
+ * Stable child request ids make an interrupted retry reuse already committed Mirror runs, but
+ * concurrent aggregate leases, durable case progress, batch scheduling, and checkpoint cloning
+ * remain later control-plane work.</p>
  */
 @Service
 @Profile("!production & (test | staging)")
@@ -52,6 +54,9 @@ public class ScenarioRehearsalRuntimeService {
     private final MirrorRunIntegrationService mirrorRuns;
     private final MirrorEvidenceIntegrityService evidenceIntegrity;
     private final ScenarioHandlingAssertionEvaluator assertionEvaluator;
+    private final ScenarioRehearsalEvidenceIntegrityService
+            rehearsalEvidenceIntegrity;
+    private final ScenarioRehearsalEvidenceRepository rehearsalEvidence;
     private final ObjectMapper mapper;
     private final MirrorSessionIntegrationService sessions;
     private final Clock clock;
@@ -65,11 +70,15 @@ public class ScenarioRehearsalRuntimeService {
             MirrorRunIntegrationService mirrorRuns,
             MirrorEvidenceIntegrityService evidenceIntegrity,
             ScenarioHandlingAssertionEvaluator assertionEvaluator,
+            ScenarioRehearsalEvidenceIntegrityService
+                    rehearsalEvidenceIntegrity,
+            ScenarioRehearsalEvidenceRepository rehearsalEvidence,
             ObjectMapper mapper,
             ObjectProvider<MirrorSessionIntegrationService> sessionProvider) {
         this(
                 rehearsals, scenarioArtifacts, testSuites, mirrorRuns,
-                evidenceIntegrity, assertionEvaluator, mapper,
+                evidenceIntegrity, assertionEvaluator,
+                rehearsalEvidenceIntegrity, rehearsalEvidence, mapper,
                 Objects.requireNonNull(
                         sessionProvider, "sessionProvider").getIfAvailable(),
                 Clock.systemUTC());
@@ -83,6 +92,9 @@ public class ScenarioRehearsalRuntimeService {
             MirrorRunIntegrationService mirrorRuns,
             MirrorEvidenceIntegrityService evidenceIntegrity,
             ScenarioHandlingAssertionEvaluator assertionEvaluator,
+            ScenarioRehearsalEvidenceIntegrityService
+                    rehearsalEvidenceIntegrity,
+            ScenarioRehearsalEvidenceRepository rehearsalEvidence,
             ObjectMapper mapper,
             MirrorSessionIntegrationService sessions,
             Clock clock) {
@@ -95,6 +107,11 @@ public class ScenarioRehearsalRuntimeService {
                 evidenceIntegrity, "evidenceIntegrity");
         this.assertionEvaluator = Objects.requireNonNull(
                 assertionEvaluator, "assertionEvaluator");
+        this.rehearsalEvidenceIntegrity = Objects.requireNonNull(
+                rehearsalEvidenceIntegrity,
+                "rehearsalEvidenceIntegrity");
+        this.rehearsalEvidence = Objects.requireNonNull(
+                rehearsalEvidence, "rehearsalEvidence");
         this.mapper = Objects.requireNonNull(mapper, "mapper");
         this.sessions = sessions;
         this.clock = Objects.requireNonNull(clock, "clock");
@@ -105,9 +122,9 @@ public class ScenarioRehearsalRuntimeService {
      *
      * @param request exact payload-free rehearsal command
      * @param identity authenticated full enterprise mirror identity
-     * @return content-addressed aggregate over verified child evidence
+     * @return signed portable aggregate over verified child evidence
      */
-    public ScenarioRehearsalResult execute(
+    public ScenarioRehearsalEvidenceBundle execute(
             ScenarioRehearsalExecutionRequest request,
             IntegrationRequestContext identity) {
         Objects.requireNonNull(request, "request");
@@ -118,6 +135,13 @@ public class ScenarioRehearsalRuntimeService {
         CompiledScenarioRehearsalPlan plan = rehearsals.find(
                 planRef.id(), planRef.revision(),
                 planRef.fingerprint(), identity);
+        String runId = ScenarioRehearsalRunIdentity.derive(
+                mapper, scope, request.requestId());
+        ScenarioRehearsalEvidenceBundle completed =
+                completedRetry(runId, request, plan, scope, identity);
+        if (completed != null) {
+            return completed;
+        }
         Instant startedAt = clock.instant();
         List<ResolvedCase> resolved = resolveCases(
                 plan, scope, identity, startedAt);
@@ -147,15 +171,12 @@ public class ScenarioRehearsalRuntimeService {
         }
         Instant aggregateStartedAt = results.stream()
                 .map(ScenarioCaseRehearsalResult::startedAt)
-                .filter(value -> value.isBefore(startedAt))
                 .min(Instant::compareTo)
                 .orElse(startedAt);
-        Instant completedAt = clock.instant();
-        if (!results.isEmpty()
-                && completedAt.isBefore(
-                results.getLast().completedAt())) {
-            completedAt = results.getLast().completedAt();
-        }
+        Instant completedAt = results.stream()
+                .map(ScenarioCaseRehearsalResult::completedAt)
+                .max(Instant::compareTo)
+                .orElse(aggregateStartedAt);
         ScenarioCaseRehearsalResult.Outcome outcome =
                 ScenarioRehearsalResult.deriveOutcome(results);
         ScenarioRehearsalResult material =
@@ -164,7 +185,133 @@ public class ScenarioRehearsalRuntimeService {
                         plan.targetCapabilityRef(), outcome, results,
                         ScenarioRehearsalResult.Summary.from(results),
                         aggregateStartedAt, completedAt);
-        return ScenarioRehearsalResultIntegrity.seal(mapper, material);
+        ScenarioRehearsalResult result =
+                ScenarioRehearsalResultIntegrity.seal(mapper, material);
+        ScenarioRehearsalEvidenceIntegrityService.SealResult sealed =
+                rehearsalEvidenceIntegrity.seal(runId, result);
+        if (!sealed.verified()) {
+            throw unavailable(
+                    identity,
+                    "RG.MIRROR.REHEARSAL.EVIDENCE_SIGNING_UNAVAILABLE",
+                    "Scenario rehearsal evidence could not be signed and verified.");
+        }
+        try {
+            return rehearsalEvidence.create(sealed.bundle());
+        } catch (ScenarioRehearsalEvidenceStoreException classified) {
+            throw evidenceStoreFailure(classified, identity);
+        } catch (RuntimeException unavailable) {
+            throw unavailable(
+                    identity,
+                    "RG.MIRROR.REHEARSAL.EVIDENCE_STORE_UNAVAILABLE",
+                    "Scenario rehearsal evidence could not be stored safely.");
+        }
+    }
+
+    /**
+     * Reads and re-verifies one signed Scenario aggregate in the authorized scope.
+     *
+     * @param runId stable aggregate run identity
+     * @param identity authenticated full enterprise mirror identity
+     * @return independently verified portable evidence
+     */
+    public ScenarioRehearsalEvidenceBundle evidence(
+            String runId, IntegrationRequestContext identity) {
+        requirePurpose(identity);
+        CapabilitySnapshot.Scope scope =
+                MirrorPlanIntegrationService.requireMirrorIdentity(identity);
+        String id = runId == null ? "" : runId.trim();
+        if (!ScenarioRehearsalRunIdentity.hasCanonicalShape(id)) {
+            throw new IntegrationProblemException(
+                    IntegrationProblem.badRequest(
+                            "RG.MIRROR.REHEARSAL.RUN_ID_INVALID",
+                            "Scenario rehearsal run id is invalid.",
+                            identity.correlationId(),
+                            Map.of()));
+        }
+        try {
+            ScenarioRehearsalEvidenceBundle bundle =
+                    rehearsalEvidence.find(scope, id)
+                            .orElseThrow(() ->
+                                    new IntegrationProblemException(
+                                            IntegrationProblem.notFound(
+                                                    "RG.MIRROR.REHEARSAL.RUN_NOT_FOUND",
+                                                    "Scenario rehearsal run was not found in the authorized scope.",
+                                                    identity.correlationId(),
+                                                    Map.of())));
+            return rehearsalEvidenceIntegrity
+                    .requireVerified(bundle)
+                    .bundle();
+        } catch (IntegrationProblemException expected) {
+            throw expected;
+        } catch (ScenarioRehearsalEvidenceStoreException classified) {
+            throw evidenceStoreFailure(classified, identity);
+        } catch (IllegalStateException unavailable) {
+            throw unavailable(
+                    identity,
+                    "RG.MIRROR.REHEARSAL.EVIDENCE_VERIFIER_UNAVAILABLE",
+                    "Scenario evidence verification authority is unavailable.");
+        } catch (IllegalArgumentException invalid) {
+            throw unavailable(
+                    identity,
+                    "RG.MIRROR.REHEARSAL.EVIDENCE_INCONSISTENT",
+                    "Stored Scenario evidence failed independent verification.");
+        } catch (RuntimeException unavailable) {
+            throw unavailable(
+                    identity,
+                    "RG.MIRROR.REHEARSAL.EVIDENCE_STORE_UNAVAILABLE",
+                    "Scenario rehearsal evidence could not be read safely.");
+        }
+    }
+
+    private ScenarioRehearsalEvidenceBundle completedRetry(
+            String runId,
+            ScenarioRehearsalExecutionRequest request,
+            CompiledScenarioRehearsalPlan plan,
+            CapabilitySnapshot.Scope scope,
+            IntegrationRequestContext identity) {
+        Optional<ScenarioRehearsalEvidenceBundle> existing;
+        try {
+            existing = rehearsalEvidence.find(scope, runId);
+        } catch (ScenarioRehearsalEvidenceStoreException classified) {
+            throw evidenceStoreFailure(classified, identity);
+        } catch (RuntimeException unavailable) {
+            throw unavailable(
+                    identity,
+                    "RG.MIRROR.REHEARSAL.EVIDENCE_STORE_UNAVAILABLE",
+                    "Scenario rehearsal evidence could not be read safely.");
+        }
+        if (existing.isEmpty()) {
+            return null;
+        }
+        ScenarioRehearsalEvidenceBundle bundle;
+        try {
+            bundle = rehearsalEvidenceIntegrity
+                    .requireVerified(existing.orElseThrow())
+                    .bundle();
+        } catch (IllegalStateException unavailable) {
+            throw unavailable(
+                    identity,
+                    "RG.MIRROR.REHEARSAL.EVIDENCE_VERIFIER_UNAVAILABLE",
+                    "Scenario evidence verification authority is unavailable.");
+        } catch (IllegalArgumentException invalid) {
+            throw unavailable(
+                    identity,
+                    "RG.MIRROR.REHEARSAL.EVIDENCE_INCONSISTENT",
+                    "Stored Scenario evidence failed independent verification.");
+        }
+        ScenarioRehearsalResult result = bundle.result();
+        if (!request.requestId().equals(result.requestId())
+                || !request.compiledPlanRef().equals(
+                result.compiledPlanRef())
+                || !scope.equals(result.scope())
+                || !plan.targetCapabilityRef().equals(
+                result.targetCapabilityRef())) {
+            throw conflict(
+                    identity,
+                    "RG.MIRROR.REHEARSAL.IDEMPOTENCY_CONFLICT",
+                    "The request id already identifies different immutable rehearsal inputs.");
+        }
+        return bundle;
     }
 
     private List<ResolvedCase> resolveCases(
@@ -603,6 +750,25 @@ public class ScenarioRehearsalRuntimeService {
         return new IntegrationProblemException(
                 IntegrationProblem.serviceUnavailable(
                         code, title, identity.correlationId(), Map.of()));
+    }
+
+    private static IntegrationProblemException evidenceStoreFailure(
+            ScenarioRehearsalEvidenceStoreException failure,
+            IntegrationRequestContext identity) {
+        return switch (failure.reason()) {
+            case CONFLICT -> conflict(
+                    identity,
+                    "RG.MIRROR.REHEARSAL.RUN_ID_CONFLICT",
+                    "Scenario run id already identifies different terminal evidence.");
+            case INTEGRITY_INVALID -> unavailable(
+                    identity,
+                    "RG.MIRROR.REHEARSAL.EVIDENCE_INCONSISTENT",
+                    "Stored Scenario evidence failed independent verification.");
+            case VERIFICATION_UNAVAILABLE -> unavailable(
+                    identity,
+                    "RG.MIRROR.REHEARSAL.EVIDENCE_VERIFIER_UNAVAILABLE",
+                    "Scenario evidence verification authority is unavailable.");
+        };
     }
 
     private record ResolvedCase(

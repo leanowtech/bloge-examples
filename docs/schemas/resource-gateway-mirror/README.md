@@ -81,6 +81,8 @@ offline artifact verification live in the independent `resource-gateway-test-kit
 | `scenario-rehearsal-execution-request-v1.schema.json` | `ScenarioRehearsalExecutionRequest` | Payload-free request containing only an aggregate idempotency key and exact compiled-plan ref; runtime overrides are forbidden |
 | `scenario-case-rehearsal-result-v1.schema.json` | `ScenarioCaseRehearsalResult` | Content-addressed per-case execution and assertion interpretation with complete-or-absent child evidence identity |
 | `scenario-rehearsal-result-v1.schema.json` | `ScenarioRehearsalResult` | Content-addressed ordered aggregate with fail-closed outcome precedence and derived case/assertion counters |
+| `scenario-rehearsal-evidence-attestation-v1.schema.json` | `ScenarioRehearsalEvidenceAttestation` | Domain-separated Ed25519 manifest binding stable aggregate run id, request, compiled plan, result fingerprint, and signing time |
+| `scenario-rehearsal-evidence-bundle-v1.schema.json` | `ScenarioRehearsalEvidenceBundle` | Independently verifiable `HASH_ONLY` portable aggregate containing one complete content-addressed result and detached signature |
 | `scenario-case-v1.schema.json` | `ScenarioCase` | Exact binding from one business intent to an existing TestSuite case, FixtureBundle, MirrorPlan, deterministic services, optional isolated Session checkpoint, explicit fault rules, and handling assertions |
 | `scenario-pack-v1.schema.json` | `ScenarioPack` | Content-addressed ordered scenario closure and fail-closed sequential rehearsal policy |
 | `scenario-rehearsal-compile-request-v1.schema.json` | `ScenarioRehearsalCompileRequest` | Exact registered ScenarioPack revision and fingerprint requested for online closure compilation |

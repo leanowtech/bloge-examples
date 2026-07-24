@@ -31,6 +31,12 @@ class ScenarioRehearsalRuntimeSchemaTest {
                         .SCENARIO_REHEARSAL_RESULT_SCHEMA_RESOURCE,
                 "RG.MIRROR.CLIENT.SCENARIO_RESULT_INVALID"))
                 .doesNotThrowAnyException();
+        assertThatCode(() -> CapabilityMirrorSchemaValidator.require(
+                evidenceBundle(),
+                CapabilityMirrorProtocol
+                        .SCENARIO_REHEARSAL_EVIDENCE_BUNDLE_SCHEMA_RESOURCE,
+                "RG.MIRROR.CLIENT.SCENARIO_EVIDENCE_INVALID"))
+                .doesNotThrowAnyException();
     }
 
     @Test
@@ -42,6 +48,9 @@ class ScenarioRehearsalRuntimeSchemaTest {
         falsePass.put("diagnosticCode", "");
         ObjectNode unknown = result();
         unknown.put("input", "must-not-leak");
+        ObjectNode unsigned = evidenceBundle();
+        ((ObjectNode) unsigned.get("attestation"))
+                .put("signatureStatus", "VERIFICATION_UNAVAILABLE");
 
         assertInvalid(
                 override,
@@ -55,6 +64,10 @@ class ScenarioRehearsalRuntimeSchemaTest {
                 unknown,
                 CapabilityMirrorProtocol
                         .SCENARIO_REHEARSAL_RESULT_SCHEMA_RESOURCE);
+        assertInvalid(
+                unsigned,
+                CapabilityMirrorProtocol
+                        .SCENARIO_REHEARSAL_EVIDENCE_BUNDLE_SCHEMA_RESOURCE);
     }
 
     private static ObjectNode request() {
@@ -144,6 +157,34 @@ class ScenarioRehearsalRuntimeSchemaTest {
         summary.put("warningIndeterminate", 0);
         value.put("startedAt", "2026-07-24T08:00:00Z");
         value.put("completedAt", "2026-07-24T08:00:01Z");
+        return value;
+    }
+
+    private static ObjectNode evidenceBundle() {
+        ObjectNode value = JSON.createObjectNode();
+        value.put(
+                "schemaVersion",
+                "resourceGateway.scenarioRehearsalEvidenceBundle.v1");
+        value.put("bundleFingerprint", fingerprint('8'));
+        value.put("payloadPolicy", "HASH_ONLY");
+        ObjectNode attestation = value.putObject("attestation");
+        attestation.put(
+                "schemaVersion",
+                "resourceGateway.scenarioRehearsalEvidenceAttestation.v1");
+        attestation.put("signatureStatus", "VERIFIED");
+        attestation.put(
+                "runId",
+                "scenario-" + "9".repeat(64));
+        attestation.put("requestId", "scenario-request-1");
+        attestation.put(
+                "compiledPlanFingerprint", fingerprint('a'));
+        attestation.put("resultFingerprint", fingerprint('0'));
+        attestation.put("signedAt", "2026-07-24T08:00:02Z");
+        attestation.put("keyId", "scenario-key-1");
+        attestation.put("algorithm", "Ed25519");
+        attestation.put("signature", "c2lnbmF0dXJl");
+        attestation.put("independentlyVerifiable", true);
+        value.set("result", result());
         return value;
     }
 

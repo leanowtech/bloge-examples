@@ -20,6 +20,7 @@ import java.time.ZoneOffset;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import java.util.Set;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -49,10 +50,15 @@ class ScenarioRehearsalRuntimeServiceTest {
         Fixture fixture = fixture(Map.of("customerId", "C-1"));
         ScenarioRehearsalRuntimeService service = fixture.service();
 
-        ScenarioRehearsalResult result = service.execute(
+        ScenarioRehearsalEvidenceBundle aggregate = service.execute(
                 fixture.request(), identity);
+        ScenarioRehearsalResult result = aggregate.result();
 
         ScenarioRehearsalResultIntegrity.verify(mapper, result);
+        assertThat(fixture.rehearsalIntegrity().verify(aggregate))
+                .isEqualTo(
+                        ScenarioRehearsalEvidenceIntegrityService
+                                .Verification.VERIFIED);
         assertThat(result.outcome())
                 .isEqualTo(ScenarioCaseRehearsalResult.Outcome.PASS);
         assertThat(result.summary())
@@ -106,7 +112,8 @@ class ScenarioRehearsalRuntimeServiceTest {
                                 "stale", identity.correlationId(), Map.of())));
 
         ScenarioRehearsalResult result =
-                fixture.service().execute(fixture.request(), identity);
+                fixture.service().execute(
+                        fixture.request(), identity).result();
 
         assertThat(result.outcome())
                 .isEqualTo(ScenarioCaseRehearsalResult.Outcome.FAIL);
@@ -126,13 +133,13 @@ class ScenarioRehearsalRuntimeServiceTest {
                 Map.of("customerId", "C-1"), true);
 
         ScenarioRehearsalResult result =
-                fixture.service().execute(fixture.request(), identity);
+                fixture.service().execute(
+                        fixture.request(), identity).result();
 
         assertThat(result.startedAt())
                 .isEqualTo(fixture.bundle().evidence().startedAt());
         assertThat(result.completedAt())
-                .isAfterOrEqualTo(
-                        fixture.bundle().evidence().completedAt());
+                .isEqualTo(fixture.bundle().evidence().completedAt());
         assertThat(result.outcome())
                 .isEqualTo(ScenarioCaseRehearsalResult.Outcome.PASS);
     }
@@ -208,6 +215,61 @@ class ScenarioRehearsalRuntimeServiceTest {
                         "scenario-session-1", fingerprint('3')));
         verify(fixture.sessions(), never())
                 .recover(any(), any(), any());
+    }
+
+    @Test
+    void returnsVerifiedExistingAggregateWithoutExecutingAChildAgain() {
+        Fixture fixture = fixture(Map.of("customerId", "C-1"));
+        ScenarioRehearsalEvidenceBundle first =
+                fixture.service().execute(fixture.request(), identity);
+        when(fixture.rehearsalEvidence().find(
+                scope, first.attestation().runId()))
+                .thenReturn(Optional.of(first));
+
+        ScenarioRehearsalEvidenceBundle retried =
+                fixture.service().execute(fixture.request(), identity);
+
+        assertThat(retried).isEqualTo(first);
+        verify(fixture.mirrorRuns()).execute(any(), any());
+    }
+
+    @Test
+    void rereadsEvidenceOnlyAfterIndependentVerification() {
+        Fixture fixture = fixture(Map.of("customerId", "C-1"));
+        ScenarioRehearsalEvidenceBundle first =
+                fixture.service().execute(fixture.request(), identity);
+        when(fixture.rehearsalEvidence().find(
+                scope, first.attestation().runId()))
+                .thenReturn(Optional.of(first));
+
+        ScenarioRehearsalEvidenceBundle read =
+                fixture.service().evidence(
+                        first.attestation().runId(), identity);
+
+        assertThat(read).isEqualTo(first);
+        assertThat(fixture.rehearsalIntegrity().verify(read))
+                .isEqualTo(
+                        ScenarioRehearsalEvidenceIntegrityService
+                                .Verification.VERIFIED);
+    }
+
+    @Test
+    void distinguishesCorruptStoredEvidenceFromGenericStoreOutage() {
+        Fixture fixture = fixture(Map.of("customerId", "C-1"));
+        when(fixture.rehearsalEvidence().find(any(), any()))
+                .thenThrow(new ScenarioRehearsalEvidenceStoreException(
+                        ScenarioRehearsalEvidenceStoreException.Reason
+                                .INTEGRITY_INVALID,
+                        "corrupt", null));
+
+        assertThatThrownBy(() ->
+                fixture.service().execute(fixture.request(), identity))
+                .isInstanceOf(IntegrationProblemException.class)
+                .satisfies(failure ->
+                        assertThat(((IntegrationProblemException) failure)
+                                .problem().code()).isEqualTo(
+                                "RG.MIRROR.REHEARSAL.EVIDENCE_INCONSISTENT"));
+        verify(fixture.mirrorRuns(), never()).execute(any(), any());
     }
 
     private Fixture fixture(Object input) {
@@ -339,6 +401,20 @@ class ScenarioRehearsalRuntimeServiceTest {
                         Clock.fixed(
                                 bundle.evidence().completedAt().plusSeconds(2),
                                 ZoneOffset.UTC));
+        ScenarioRehearsalEvidenceIntegrityService rehearsalIntegrity =
+                new ScenarioRehearsalEvidenceIntegrityService(
+                        mapper,
+                        signer,
+                        Clock.fixed(
+                                bundle.evidence().completedAt()
+                                        .plusSeconds(20),
+                                ZoneOffset.UTC));
+        ScenarioRehearsalEvidenceRepository rehearsalEvidence =
+                mock(ScenarioRehearsalEvidenceRepository.class);
+        when(rehearsalEvidence.find(any(), any()))
+                .thenReturn(Optional.empty());
+        when(rehearsalEvidence.create(any()))
+                .thenAnswer(invocation -> invocation.getArgument(0));
 
         when(rehearsals.find(
                 compiled.planId(), compiled.revision(),
@@ -381,9 +457,11 @@ class ScenarioRehearsalRuntimeServiceTest {
                         rehearsals, scenarioArtifacts, testSuites,
                         mirrorRuns, evidenceIntegrity,
                         new ScenarioHandlingAssertionEvaluator(mapper),
+                        rehearsalIntegrity, rehearsalEvidence,
                         mapper, sessions, runtimeClock);
         return new Fixture(
-                service, request, mirrorRuns, bundle, sessions);
+                service, request, mirrorRuns, bundle, sessions,
+                rehearsalIntegrity, rehearsalEvidence);
     }
 
     private ScenarioPack.RehearsalPolicy policy() {
@@ -417,6 +495,8 @@ class ScenarioRehearsalRuntimeServiceTest {
             ScenarioRehearsalExecutionRequest request,
             MirrorRunIntegrationService mirrorRuns,
             MirrorEvidenceBundle bundle,
-            MirrorSessionIntegrationService sessions) {
+            MirrorSessionIntegrationService sessions,
+            ScenarioRehearsalEvidenceIntegrityService rehearsalIntegrity,
+            ScenarioRehearsalEvidenceRepository rehearsalEvidence) {
     }
 }

@@ -576,11 +576,11 @@ Resource Gateway 已有的工业底座应直接复用：
 | 递归 DAG 测试 | 85% | MirrorPlan/closure/runtime inventory/fixture control 已统一；缺 contract-mock 展开治理和状态世界 |
 | 日志蒸馏与语料 | 82% | payload-free signed observation、准入/隔离、immutable review、candidate/publication/trajectory/cluster 独立 lineage、元数据风险门禁、fixture exact/trajectory/cluster binding、在线 revalidation、test/staging `RECORDED_EXACT`/`RECORDED_TRAJECTORY`/`RECORDED_CLUSTER`、BLOGE 原生 retry loop、identity-safe projection、Wilson confidence、Session state read 与独立 verifier 已落地；缺生产 payload authority、漂移、偏差、outcome 校准和删除证明 |
 | 有状态业务世界 | 91% | 协议、read/write 退款 fixture、独立 verifier/sealer/client、事务内核、受保护 Session API、独立 AES-GCM 数据面、lease/fence/CAS、durable write-attempt journal/reconciliation、TTL/destroy、全局/scope 容量、保留字节、命令背压、过期擦除、固定 read head、run-scoped virtual write、真实 DAG read-write-read、payload-free v1/v2/v3 state evidence、read-only/successful-transition/write-outcome ANEKE seed、签名 HASH_ONLY checkpoint 与同数据面代际精确恢复准入已落地；缺 TEE/KMS、跨区域数据恢复、真实 process-kill/network parity、目标数据库容量认证和 HA/DR certification |
-| Scenario/Rehearsal | 38% | ScenarioPack/Case/Assertion、append-only registry、exact compiler、全企业作用域 authority、验签能力令牌、payload-free assertion result 与 evidence-bound evaluator 已落地；缺 case runtime、聚合 evidence、批量任务和 owner UX |
+| Scenario/Rehearsal | 55% | ScenarioPack/Case/Assertion、append-only registry、exact compiler、全企业作用域 authority、逐 case runtime、验签断言、独立签名且可重读的 aggregate evidence 已落地；缺聚合租约/恢复、审计/retention/workbook、批量任务和 owner UX |
 | Fidelity/Outcome | 5% | 缺保真向量、shadow、权威结果归因和校准闭环 |
 | 业务运营工作台 | 10% | Author Canvas 尚未成为案例驱动的镜像运营工作台 |
 
-结论：基础设施准备度约 88%，镜像复利闭环完成度约 43%，完整理想态完成度约 53%。剩余主要矛盾已经
+结论：基础设施准备度约 88%，镜像复利闭环完成度约 45%，完整理想态完成度约 55%。剩余主要矛盾已经
 从“能否安全执行和取证”转向“能否把可信 observation 持续蒸馏成可校准、可拒答、可删除的业务拟合资产”。
 
 ### 3.1 2026-07-24 Scenario 编译期闭包迭代差距复评
@@ -645,8 +645,8 @@ HA/DR 或权威 outcome 当成已完成。51.59% 只承认已由代码和测试�
 |---:|---|---|---|---|
 | 1 | RG-MIR-SCEN-001 | 完成 | 冻结 `ScenarioPack.v1`、`ScenarioCase.v1`、`CaseHandlingAssertion.v1` 与 exact Graph/Fixture/Session/clock/fault binding | strict Schema、Java model、test-kit 独立 verifier、合法/篡改/越权/过期/未知字段矩阵全绿 |
 | 2 | RG-MIR-SCEN-001A | 完成 | 将 TestSuite/Fixture authority 升级为完整 enterprise scope；旧 tenant+environment 资产采用独立表、禁止隐式提升、授权重新注册的迁移策略 | 两个 organization/project/region 可安全复用同 id/revision；跨 scope、混合版本与 indexed scope 搬移失败关闭 |
-| 3 | RG-MIR-SCEN-002 | 同步 runtime 完成，耐久聚合待实现 | deterministic compiler/runtime；每 case 使用隔离 Session/checkpoint、固定时钟/随机源、fixture data-flow inversion 和禁止真实 egress | exact plan 驱动的逐 case 运行、TestSuite context 注入、deadline、状态栅栏、幂等 child run 与结果聚合已全绿；下一步补耐久 aggregate lease/recovery |
-| 4 | RG-MIR-SCEN-003 | 断言与 payload-free result 完成，签名 evidence 待实现 | 产出 payload-free Scenario evidence、state diff、处置断言结果与 ANEKE workbook seed，区分执行失败、断言失败、低保真和证据不完整 | 处置断言和 result 已失败关闭；下一步独立签名、读取/retention、workbook seed，任何 unknown outcome、缺断言或不完整 evidence 阻断 gate-ready |
+| 3 | RG-MIR-SCEN-002 | 同步 runtime 完成，耐久协调待实现 | deterministic compiler/runtime；每 case 使用隔离 Session/checkpoint、固定时钟/随机源、fixture data-flow inversion 和禁止真实 egress | exact plan 驱动的逐 case 运行、TestSuite context 注入、deadline、状态栅栏、幂等 child run 与结果聚合已全绿；下一步补 durable aggregate lease/checkpoint/recovery |
+| 4 | RG-MIR-SCEN-003 | 签名 evidence API 完成，门禁闭包待实现 | 产出 payload-free Scenario evidence、state diff、处置断言结果与 ANEKE workbook seed，区分执行失败、断言失败、低保真和证据不完整 | 独立签名、append-only store、exact read 已完成；下一步 audit/retention/workbook seed，任何 unknown outcome、缺断言或不完整 evidence 阻断 gate-ready |
 | 5 | RG-MIR-SCEN-004 | 待实现 | 提供批量 rehearsal API、deep link 和最小 Author 场景表格；先保证业务 owner 不编辑 JSON/DSL 即可维护 case | 退款与工单故障两个样例域端到端演示；浏览器、REST、Java/test-kit 使用同一协议资产 |
 
 完成 E7 后才进入 E8：以 Scenario coverage 为分母建立
@@ -754,6 +754,55 @@ operation audit 和 ANEKE workbook seed；checkpoint 也只是 exact state fence
 Scenario/Rehearsal 由 38% 上调至 50%，固定权重总分由 52.55% 上调至
 54.47%，距理想态 45.53%。下一最短路径固定为 RG-MIR-SCEN-003：
 先交付耐久聚合协调与独立签名 evidence，再做批量 job/workbook/Author UX。
+
+### 3.5 2026-07-24 Scenario 聚合签名证据迭代差距复评
+
+本轮先关闭 RG-MIR-SCEN-003 中可独立验证的“聚合证据协议与存取边界”。
+新增 strict `ScenarioRehearsalEvidenceAttestation.v1` 与
+`ScenarioRehearsalEvidenceBundle.v1`。attestation 使用独立于 child Mirror
+evidence 的签名域，精确绑定 stable aggregate runId、requestId、compiled plan
+fingerprint、完整 result fingerprint 和 signedAt；bundle 继续执行
+`HASH_ONLY`，不携带 TestCase input、Fixture value、Session entity 或业务
+request/response payload。
+
+签发不是“给 JSON 多放一个 signature 字段”。完整 result 先被 canonical
+detach，并重验每个 case、assertion result 与 aggregate content address；随后
+使用受治理 Ed25519 authority 签名并立即复验，最后再对 attestation + result
+封印 bundle fingerprint。签名 authority 不可用、签名时间早于执行完成、
+nested fingerprint 漂移或 bundle identity 不闭合均失败关闭，不会返回不可验证
+的便携证据。Java 构造器和 JSON Schema 对 runId、fingerprint、算法和 unavailable
+状态采用同一约束，避免 producer 可写、consumer 拒绝的协议分叉。
+
+完成证据按完整 enterprise scope + `scenario-<sha256>` stable runId 写入独立
+append-only 表。仓储在 create/read 两侧都要求 `VerifiedBundle` 或重新验签，
+并核对 request、plan、result、bundle、schema 和 completedAt 索引；不存在
+payload/context/fixture/entity 列。同一 requestId 和完整 scope 派生同一 runId，
+已存在的 exact evidence 直接返回；不同计划或身份使用同一 requestId 会发生
+idempotency conflict。`POST /api/mirror/scenarios/runs` 现返回签名 bundle，
+`GET /api/mirror/scenarios/runs/{runId}/evidence` 支持同 scope 精确重读。
+
+这里仍然不能把 capability readiness 提升为 true。stable identity 和 append-only
+唯一性只能防止覆盖，不能在多个副本同时收到请求时阻止重复 orchestration；进程在
+aggregate commit 前崩溃也没有 durable checkpoint 可接管。当前还缺 owner
+lease/epoch、case progress、terminal atomic commit、operation audit、
+retention/legal hold、ANEKE workbook seed 和批量调度。因此 capability probe
+新增 `mirrorScenarioRehearsalEvidenceApi=true`，但继续保持
+`mirrorScenarioRehearsalEvidence=false`，把“协议/API 可用”和“publish-gate-ready”
+分开表达。
+
+服务端聚焦回归 `55/55`、独立 Test Kit schema/packaging/offline verification
+`16/16` 全绿；Test Kit 现打包 101 个 Mirror Schema。完整门禁结果记录在场景
+演练指南：Resource Gateway `5,021` 项测试零失败、零错误、3 项条件跳过，
+Test Kit `353/353` 全绿并通过 shaded JAR 与零警告公共 JavaDoc。本轮把
+Scenario/Rehearsal 从 50% 上调至 55%，固定权重总分从 54.47% 上调至
+55.27%，距理想态 44.73%。提高幅度受控，是因为签名和存取闭合了“证据可携带”
+问题，却还没有闭合“聚合执行可恢复”和“证据可治理消费”两个更大的病根。
+
+下一条最短路径不再横向扩充协议，而是给 Scenario aggregate 增加 durable
+request state machine：`RESERVED -> RUNNING -> COMMITTING -> COMPLETED`，
+以 lease owner + epoch 防并发，以 case checkpoint 支持 takeover，以 evidence、
+terminal request state 和 audit 同事务提交。该闭包完成后再交付 Scenario
+workbook seed、retention 与 batch job；在此之前不进入 Fidelity score 的提升。
 
 ## 4. 目标架构与系统责任
 

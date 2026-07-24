@@ -12,6 +12,7 @@ import com.leanowtech.bloge.gateway.integration.mirror.DatabaseMirrorDeploymentI
 import com.leanowtech.bloge.gateway.integration.mirror.DatabaseMirrorRunRequestRepository;
 import com.leanowtech.bloge.gateway.integration.mirror.DatabaseCompiledScenarioRehearsalPlanRepository;
 import com.leanowtech.bloge.gateway.integration.mirror.DatabaseScenarioArtifactRepository;
+import com.leanowtech.bloge.gateway.integration.mirror.DatabaseScenarioRehearsalEvidenceRepository;
 import com.leanowtech.bloge.gateway.integration.mirror.CapabilityObservationAdmissionIntegrity;
 import com.leanowtech.bloge.gateway.integration.mirror.CapabilityObservationAdmissionPolicyProvider;
 import com.leanowtech.bloge.gateway.integration.mirror.CapabilityObservationAdmissionService;
@@ -66,6 +67,8 @@ import com.leanowtech.bloge.gateway.integration.mirror.MirrorSessionCheckpointIn
 import com.leanowtech.bloge.gateway.integration.mirror.ScenarioArtifactRepository;
 import com.leanowtech.bloge.gateway.integration.mirror.ScenarioRehearsalCompiler;
 import com.leanowtech.bloge.gateway.integration.mirror.ScenarioHandlingAssertionEvaluator;
+import com.leanowtech.bloge.gateway.integration.mirror.ScenarioRehearsalEvidenceIntegrityService;
+import com.leanowtech.bloge.gateway.integration.mirror.ScenarioRehearsalEvidenceRepository;
 import com.leanowtech.bloge.gateway.integration.mirror.MirrorServingGenerationAuthority;
 import com.leanowtech.bloge.gateway.integration.mirror.MirrorServingGenerationIntegrity;
 import com.leanowtech.bloge.gateway.integration.mirror.MirrorServingGenerationService;
@@ -239,6 +242,29 @@ public class MirrorRuntimeConfiguration {
     public ScenarioHandlingAssertionEvaluator
     scenarioHandlingAssertionEvaluator(ObjectMapper objectMapper) {
         return new ScenarioHandlingAssertionEvaluator(objectMapper);
+    }
+
+    /** Creates the domain-separated signed Scenario aggregate integrity boundary. */
+    @Bean
+    @ConditionalOnMissingBean
+    public ScenarioRehearsalEvidenceIntegrityService
+    scenarioRehearsalEvidenceIntegrityService(
+            ObjectMapper objectMapper,
+            VisualEvidenceSigner evidenceSigner) {
+        return new ScenarioRehearsalEvidenceIntegrityService(
+                objectMapper, evidenceSigner, Clock.systemUTC());
+    }
+
+    /** Creates the append-only independently verified Scenario evidence store. */
+    @Bean
+    @ConditionalOnMissingBean
+    public ScenarioRehearsalEvidenceRepository
+    scenarioRehearsalEvidenceRepository(
+            JdbcTemplate jdbc,
+            ObjectMapper objectMapper,
+            ScenarioRehearsalEvidenceIntegrityService integrity) {
+        return new DatabaseScenarioRehearsalEvidenceRepository(
+                jdbc, objectMapper, integrity);
     }
 
     /** Creates the append-only payload-free compiled rehearsal-plan registry. */

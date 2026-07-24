@@ -7,9 +7,9 @@ import com.leanowtech.bloge.gateway.integration.mirror.ScenarioArtifactRegistryS
 import com.leanowtech.bloge.gateway.integration.mirror.ScenarioCase;
 import com.leanowtech.bloge.gateway.integration.mirror.ScenarioPack;
 import com.leanowtech.bloge.gateway.integration.mirror.ScenarioRehearsalCompileRequest;
+import com.leanowtech.bloge.gateway.integration.mirror.ScenarioRehearsalEvidenceBundle;
 import com.leanowtech.bloge.gateway.integration.mirror.ScenarioRehearsalExecutionRequest;
 import com.leanowtech.bloge.gateway.integration.mirror.ScenarioRehearsalIntegrationService;
-import com.leanowtech.bloge.gateway.integration.mirror.ScenarioRehearsalResult;
 import com.leanowtech.bloge.gateway.integration.mirror.ScenarioRehearsalRuntimeService;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.context.annotation.Profile;
@@ -168,17 +168,33 @@ public final class ScenarioRehearsalController {
 
     /** Executes one exact compiled plan without accepting runtime payload overrides. */
     @PostMapping("/runs")
-    public IntegrationEnvelope<ScenarioRehearsalResult> execute(
+    public IntegrationEnvelope<ScenarioRehearsalEvidenceBundle> execute(
             @RequestBody byte[] request,
             @RequestHeader HttpHeaders headers) {
         IntegrationRequestContext identity = authenticator.authenticate(
                 headers,
                 IntegrationOperation.MIRROR_REHEARSAL_EXECUTE);
-        ScenarioRehearsalResult value = runtime.execute(
+        ScenarioRehearsalEvidenceBundle value = runtime.execute(
                 decoder.decodeExecutionRequest(request, identity),
                 identity);
         return IntegrationEnvelope.of(
-                "SCENARIO_REHEARSAL_RESULT",
+                "SCENARIO_REHEARSAL_EVIDENCE_BUNDLE",
+                value.schemaVersion(),
+                value);
+    }
+
+    /** Reads one independently verified signed Scenario rehearsal aggregate. */
+    @GetMapping("/runs/{runId}/evidence")
+    public IntegrationEnvelope<ScenarioRehearsalEvidenceBundle> evidence(
+            @PathVariable String runId,
+            @RequestHeader HttpHeaders headers) {
+        IntegrationRequestContext identity = authenticator.authenticate(
+                headers,
+                IntegrationOperation.MIRROR_REHEARSAL_EVIDENCE_READ);
+        ScenarioRehearsalEvidenceBundle value =
+                runtime.evidence(runId, identity);
+        return IntegrationEnvelope.of(
+                "SCENARIO_REHEARSAL_EVIDENCE_BUNDLE",
                 value.schemaVersion(),
                 value);
     }

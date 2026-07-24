@@ -310,6 +310,7 @@ class ToolStudioIntegrationServiceTest {
                 .containsEntry("mirrorScenarioArtifactRegistry", false)
                 .containsEntry("mirrorScenarioRehearsalCompilation", false)
                 .containsEntry("mirrorScenarioRehearsalExecution", false)
+                .containsEntry("mirrorScenarioRehearsalEvidenceApi", false)
                 .containsEntry("mirrorScenarioRehearsalEvidence", false)
                 .containsEntry("mirrorOperationObservability", false)
                 .containsEntry("mirrorServing", false);
@@ -321,6 +322,7 @@ class ToolStudioIntegrationServiceTest {
                 .containsEntry("mirrorScenarioArtifactRegistry", true)
                 .containsEntry("mirrorScenarioRehearsalCompilation", true)
                 .containsEntry("mirrorScenarioRehearsalExecution", true)
+                .containsEntry("mirrorScenarioRehearsalEvidenceApi", true)
                 .containsEntry("mirrorScenarioRehearsalEvidence", false)
                 .containsEntry("mirrorOperationObservability", true)
                 .containsEntry("mirrorServing", true)
@@ -367,7 +369,9 @@ class ToolStudioIntegrationServiceTest {
                         "compiledScenarioRehearsalPlan",
                         "scenarioRehearsalExecutionRequest",
                         "scenarioCaseRehearsalResult",
-                        "scenarioRehearsalResult")
+                        "scenarioRehearsalResult",
+                        "scenarioRehearsalEvidenceAttestation",
+                        "scenarioRehearsalEvidenceBundle")
                 .containsEntry("mirrorExecutionRequest", List.of(
                         com.leanowtech.bloge.gateway.integration.mirror
                                 .MirrorExecutionRequest.SCHEMA_VERSION,
@@ -445,6 +449,7 @@ class ToolStudioIntegrationServiceTest {
                         "POST /api/mirror/scenarios/packs/{packId}/compiled-plans",
                         "GET /api/mirror/scenarios/compiled-plans/{planId}",
                         "POST /api/mirror/scenarios/runs",
+                        "GET /api/mirror/scenarios/runs/{runId}/evidence",
                         "POST /api/mirror/executions", "GET /api/mirror/runs/{runId}",
                         "GET /api/mirror/runs/{runId}/evidence",
                         "GET /api/mirror/runs/{runId}/state-workbook-seed",

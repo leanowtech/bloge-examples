@@ -98,6 +98,8 @@ class CapabilityMirrorSchemaPackagingTest {
                 "scenario-rehearsal-execution-request-v1.schema.json",
                 "scenario-case-rehearsal-result-v1.schema.json",
                 "scenario-rehearsal-result-v1.schema.json",
+                "scenario-rehearsal-evidence-attestation-v1.schema.json",
+                "scenario-rehearsal-evidence-bundle-v1.schema.json",
                 "scenario-pack-stage7-v1.fixture.schema.json",
                 "stateful-refund-stage3-v1.fixture.schema.json")) {
             String resource = CapabilityMirrorProtocol.SCHEMA_RESOURCE_ROOT + name;
@@ -198,6 +200,14 @@ class CapabilityMirrorSchemaPackagingTest {
                 .SCENARIO_REHEARSAL_RESULT_SCHEMA_RESOURCE)
                 .endsWith(
                         "scenario-rehearsal-result-v1.schema.json");
+        assertThat(CapabilityMirrorProtocol
+                .SCENARIO_REHEARSAL_EVIDENCE_ATTESTATION_SCHEMA_RESOURCE)
+                .endsWith(
+                        "scenario-rehearsal-evidence-attestation-v1.schema.json");
+        assertThat(CapabilityMirrorProtocol
+                .SCENARIO_REHEARSAL_EVIDENCE_BUNDLE_SCHEMA_RESOURCE)
+                .endsWith(
+                        "scenario-rehearsal-evidence-bundle-v1.schema.json");
         assertThat(CapabilityMirrorProtocol.MIRROR_EVIDENCE_BUNDLE_V2_SCHEMA_RESOURCE)
                 .endsWith("mirror-evidence-bundle-v2.schema.json");
         assertThat(CapabilityMirrorProtocol
