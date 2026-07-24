@@ -1,0 +1,50 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://bloge.dev/schemas/resource-gateway-mirror/mirror-session-checkpoint-attestation-v1.schema.json",
+  "title": "Resource Gateway Mirror Session Checkpoint Attestation v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "checkpointId",
+    "checkpointFingerprint",
+    "signedAt",
+    "keyId",
+    "algorithm",
+    "signature",
+    "independentlyVerifiable"
+  ],
+  "properties": {
+    "schemaVersion": {
+      "const": "resourceGateway.mirrorSessionCheckpointAttestation.v1"
+    },
+    "checkpointId": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 512
+    },
+    "checkpointFingerprint": {
+      "$ref": "session-state-space-v1.schema.json#/$defs/fingerprint"
+    },
+    "signedAt": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "keyId": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 1024
+    },
+    "algorithm": {
+      "const": "Ed25519"
+    },
+    "signature": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 16384
+    },
+    "independentlyVerifiable": {
+      "const": true
+    }
+  }
+}

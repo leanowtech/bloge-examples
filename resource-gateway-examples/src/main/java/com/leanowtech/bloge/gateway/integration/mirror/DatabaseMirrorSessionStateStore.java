@@ -14,6 +14,7 @@ import java.time.Instant;
 import java.util.List;
 import java.util.Objects;
 import java.util.Optional;
+import java.util.UUID;
 import java.util.function.Supplier;
 
 import static com.leanowtech.bloge.gateway.integration.mirror.MirrorSessionStateStoreException.Code.CAPACITY_EXCEEDED;
@@ -42,6 +43,7 @@ public final class DatabaseMirrorSessionStateStore
     private static final long MAXIMUM_CAPACITY_RETRY_SECONDS = 300;
     private static final int MAXIMUM_EXPIRY_SWEEP_BATCH = 1_000;
     private static final int GLOBAL_CAPACITY_GUARD = 1;
+    private static final int STORE_GENERATION_SINGLETON = 1;
     private static final String CREATE_STATE_TABLE = """
             CREATE TABLE IF NOT EXISTS mirror_session_state (
                 tenant_id VARCHAR(256) NOT NULL,
@@ -98,6 +100,15 @@ public final class DatabaseMirrorSessionStateStore
     private static final String CREATE_CAPACITY_GUARD_TABLE = """
             CREATE TABLE IF NOT EXISTS mirror_session_capacity_guard (
                 guard_id INTEGER PRIMARY KEY
+            )
+            """;
+    private static final String CREATE_STORE_GENERATION_TABLE = """
+            CREATE TABLE IF NOT EXISTS mirror_session_store_generation (
+                singleton_id INTEGER PRIMARY KEY,
+                generation_id VARCHAR(256) NOT NULL,
+                schema_revision BIGINT NOT NULL,
+                created_at VARCHAR(64) NOT NULL,
+                generation_fingerprint VARCHAR(71) NOT NULL
             )
             """;
     private static final String CREATE_CAPACITY_INDEX = """
@@ -241,13 +252,27 @@ public final class DatabaseMirrorSessionStateStore
         jdbc.execute(CREATE_STATE_TABLE);
         jdbc.execute(CREATE_AUDIT_TABLE);
         jdbc.execute(CREATE_CAPACITY_GUARD_TABLE);
+        jdbc.execute(CREATE_STORE_GENERATION_TABLE);
         jdbc.execute(CREATE_CAPACITY_INDEX);
         jdbc.execute(CREATE_SCOPE_CAPACITY_INDEX);
         jdbc.update("""
                 MERGE INTO mirror_session_capacity_guard (guard_id)
                 KEY (guard_id) VALUES (?)
                 """, GLOBAL_CAPACITY_GUARD);
+        initializeGeneration();
         capacityTelemetry.observe(globalSnapshot(globalCapacity(now())));
+    }
+
+    @Override
+    public MirrorSessionStoreGeneration generation() {
+        try {
+            return readGeneration();
+        } catch (MirrorSessionStateStoreException expected) {
+            throw expected;
+        } catch (DataAccessException failure) {
+            throw retryable(
+                    UNAVAILABLE, RETRY_AFTER_UNAVAILABLE_SECONDS);
+        }
     }
 
     @Override
@@ -405,6 +430,50 @@ public final class DatabaseMirrorSessionStateStore
             throw expected;
         } catch (DataAccessException failure) {
             throw retryable(UNAVAILABLE, RETRY_AFTER_UNAVAILABLE_SECONDS);
+        }
+    }
+
+    @Override
+    public CheckpointSnapshot checkpointSnapshot(
+            SnapshotCommand command) {
+        Objects.requireNonNull(command, "command");
+        try {
+            SnapshotAttempt attempt = transaction.execute(ignored -> {
+                MirrorSessionStoreGeneration generation =
+                        readGeneration();
+                Row row = rowForUpdate(
+                        command.scope(), command.sessionId())
+                        .orElseThrow(() -> terminal(NOT_FOUND));
+                Instant now = now();
+                if (row.active() && !row.expiresAt().isAfter(now)) {
+                    expire(command.scope(), command.sessionId(), row, now);
+                    return SnapshotAttempt.expiredAttempt();
+                }
+                if (!row.active()) {
+                    throw terminal(GONE);
+                }
+                MirrorSessionPayload payload = decrypt(
+                        command.scope(), command.sessionId(), row);
+                return SnapshotAttempt.available(new SessionSnapshot(
+                        payload, readDescriptor(row)), generation);
+            });
+            if (attempt == null) {
+                throw retryable(
+                        UNAVAILABLE, RETRY_AFTER_UNAVAILABLE_SECONDS);
+            }
+            if (attempt.expired()) {
+                throw terminal(GONE);
+            }
+            return new CheckpointSnapshot(
+                    Objects.requireNonNull(
+                            attempt.generation(),
+                            "checkpoint snapshot generation"),
+                    attempt.snapshot());
+        } catch (MirrorSessionStateStoreException expected) {
+            throw expected;
+        } catch (DataAccessException failure) {
+            throw retryable(
+                    UNAVAILABLE, RETRY_AFTER_UNAVAILABLE_SECONDS);
         }
     }
 
@@ -755,9 +824,68 @@ public final class DatabaseMirrorSessionStateStore
         try {
             Integer one = jdbc.queryForObject("SELECT 1", Integer.class);
             return one != null && one == 1
-                    && !protector.activeKeyId().isBlank();
+                    && !protector.activeKeyId().isBlank()
+                    && generation() != null;
         } catch (RuntimeException unavailable) {
             return false;
+        }
+    }
+
+    private void initializeGeneration() {
+        MirrorSessionStoreGeneration candidate =
+                MirrorSessionStoreGenerationIntegrity.seal(
+                        mapper, new MirrorSessionStoreGeneration(
+                                "", "store-" + UUID.randomUUID(),
+                                MirrorSessionStoreGeneration
+                                        .CURRENT_SCHEMA_REVISION,
+                                now(), ""));
+        try {
+            jdbc.update("""
+                    INSERT INTO mirror_session_store_generation (
+                        singleton_id, generation_id, schema_revision,
+                        created_at, generation_fingerprint
+                    ) VALUES (?, ?, ?, ?, ?)
+                    """,
+                    STORE_GENERATION_SINGLETON,
+                    candidate.generationId(),
+                    candidate.schemaRevision(),
+                    candidate.createdAt().toString(),
+                    candidate.fingerprint());
+        } catch (DuplicateKeyException alreadyInitialized) {
+            // Another replica won first initialization; immutable readback is authoritative.
+        }
+        readGeneration();
+    }
+
+    private MirrorSessionStoreGeneration readGeneration() {
+        try {
+            MirrorSessionStoreGeneration generation =
+                    jdbc.queryForObject("""
+                                    SELECT generation_id, schema_revision,
+                                           created_at, generation_fingerprint
+                                      FROM mirror_session_store_generation
+                                     WHERE singleton_id = ?
+                                    """,
+                            (rs, rowNum) ->
+                                    new MirrorSessionStoreGeneration(
+                                            "",
+                                            rs.getString("generation_id"),
+                                            rs.getLong("schema_revision"),
+                                            Instant.parse(
+                                                    rs.getString("created_at")),
+                                            rs.getString(
+                                                    "generation_fingerprint")),
+                            STORE_GENERATION_SINGLETON);
+            if (generation == null) {
+                throw terminal(CORRUPT);
+            }
+            MirrorSessionStoreGenerationIntegrity.verify(
+                    mapper, generation);
+            return generation;
+        } catch (MirrorSessionStateStoreException expected) {
+            throw expected;
+        } catch (IllegalArgumentException invalid) {
+            throw terminal(CORRUPT);
         }
     }
 
@@ -1342,16 +1470,27 @@ public final class DatabaseMirrorSessionStateStore
 
     private record SnapshotAttempt(
             SessionSnapshot snapshot,
+            MirrorSessionStoreGeneration generation,
             boolean expired
     ) {
         private static SnapshotAttempt available(
                 SessionSnapshot snapshot) {
             return new SnapshotAttempt(
-                    Objects.requireNonNull(snapshot, "snapshot"), false);
+                    Objects.requireNonNull(snapshot, "snapshot"),
+                    null, false);
+        }
+
+        private static SnapshotAttempt available(
+                SessionSnapshot snapshot,
+                MirrorSessionStoreGeneration generation) {
+            return new SnapshotAttempt(
+                    Objects.requireNonNull(snapshot, "snapshot"),
+                    Objects.requireNonNull(generation, "generation"),
+                    false);
         }
 
         private static SnapshotAttempt expiredAttempt() {
-            return new SnapshotAttempt(null, true);
+            return new SnapshotAttempt(null, null, true);
         }
     }
 

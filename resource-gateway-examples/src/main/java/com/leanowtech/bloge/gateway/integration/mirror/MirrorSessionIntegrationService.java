@@ -10,6 +10,7 @@ import com.leanowtech.bloge.gateway.testing.runtime.MirrorStateRunSession;
 import com.leanowtech.bloge.gateway.testing.runtime.MirrorStateTransactionEngine;
 
 import java.time.Clock;
+import java.time.Instant;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
@@ -35,6 +36,7 @@ public final class MirrorSessionIntegrationService {
     private final long leaseDurationSeconds;
     private final MirrorSessionCommandAdmission commandAdmission;
     private final MirrorSessionCapacityTelemetry capacityTelemetry;
+    private final MirrorSessionCheckpointIntegrityService checkpointIntegrity;
     private final ConcurrentHashMap<SessionKey, LockReference> sessionLocks =
             new ConcurrentHashMap<>();
 
@@ -59,7 +61,12 @@ public final class MirrorSessionIntegrationService {
                 leaseDurationSeconds,
                 new MirrorSessionCommandAdmission(
                         64, MirrorSessionCapacityTelemetry.noop()),
-                MirrorSessionCapacityTelemetry.noop());
+                MirrorSessionCapacityTelemetry.noop(),
+                new MirrorSessionCheckpointIntegrityService(
+                        mapper,
+                        com.leanowtech.bloge.gateway.visual.runtime
+                                .VisualEvidenceSigner.unavailable(),
+                        clock));
     }
 
     /**
@@ -83,6 +90,40 @@ public final class MirrorSessionIntegrationService {
             long leaseDurationSeconds,
             MirrorSessionCommandAdmission commandAdmission,
             MirrorSessionCapacityTelemetry capacityTelemetry) {
+        this(mapper, store, baselineResolver, clock, instanceId,
+                leaseDurationSeconds, commandAdmission,
+                capacityTelemetry,
+                new MirrorSessionCheckpointIntegrityService(
+                        mapper,
+                        com.leanowtech.bloge.gateway.visual.runtime
+                                .VisualEvidenceSigner.unavailable(),
+                        clock));
+    }
+
+    /**
+     * Creates the protected Session application service with checkpoint signing and recovery
+     * admission.
+     *
+     * @param mapper canonical protocol mapper
+     * @param store dedicated encrypted data-plane store
+     * @param baselineResolver governed copy-on-write baseline authority
+     * @param clock server clock for kernel expiry and recovery admission
+     * @param instanceId unique replica identity; blank generates a process identity
+     * @param leaseDurationSeconds bounded database lease duration
+     * @param commandAdmission fair replica-local command admission boundary
+     * @param capacityTelemetry fixed-cardinality capacity telemetry sink
+     * @param checkpointIntegrity signed checkpoint integrity boundary
+     */
+    public MirrorSessionIntegrationService(
+            ObjectMapper mapper,
+            MirrorSessionStateStore store,
+            MirrorStateBaselineResolver baselineResolver,
+            Clock clock,
+            String instanceId,
+            long leaseDurationSeconds,
+            MirrorSessionCommandAdmission commandAdmission,
+            MirrorSessionCapacityTelemetry capacityTelemetry,
+            MirrorSessionCheckpointIntegrityService checkpointIntegrity) {
         this.mapper = Objects.requireNonNull(mapper, "mapper");
         this.store = Objects.requireNonNull(store, "store");
         this.baselineResolver = Objects.requireNonNull(
@@ -102,6 +143,8 @@ public final class MirrorSessionIntegrationService {
                 commandAdmission, "commandAdmission");
         this.capacityTelemetry = Objects.requireNonNull(
                 capacityTelemetry, "capacityTelemetry");
+        this.checkpointIntegrity = Objects.requireNonNull(
+                checkpointIntegrity, "checkpointIntegrity");
     }
 
     /**
@@ -159,6 +202,115 @@ public final class MirrorSessionIntegrationService {
         } catch (IllegalArgumentException invalid) {
             throw badRequest(identity, "RG.MIRROR.SESSION.ID_INVALID",
                     "The mirror session id is invalid.");
+        }
+    }
+
+    /**
+     * Creates a signed payload-free checkpoint over one transactional durable Session state head.
+     *
+     * <p>The encrypted business aggregate never leaves the data plane. The returned bundle pins
+     * only exact dependency, revision, logical-time, and fingerprint coordinates and can be used
+     * after a process or worker restart while the same durable state head remains current.</p>
+     *
+     * @param sessionId stable Session identity
+     * @param identity verified enterprise identity
+     * @return independently verified checkpoint bundle
+     */
+    public MirrorSessionCheckpointBundle checkpoint(
+            String sessionId, IntegrationRequestContext identity) {
+        CapabilitySnapshot.Scope scope = requireScope(identity);
+        try {
+            String id = normalizeSessionId(sessionId, identity);
+            return checkpointIntegrity.seal(
+                    store.checkpointSnapshot(
+                            new MirrorSessionStateStore.SnapshotCommand(
+                                    scope, id)));
+        } catch (MirrorSessionCheckpointException failure) {
+            throw checkpointProblem(identity, failure);
+        } catch (MirrorSessionStateStoreException failure) {
+            throw storeProblem(identity, failure);
+        } catch (IllegalArgumentException invalid) {
+            throw badRequest(identity,
+                    "RG.MIRROR.SESSION.CHECKPOINT_REQUEST_INVALID",
+                    "The mirror Session checkpoint request is invalid.");
+        }
+    }
+
+    /**
+     * Admits a signed checkpoint only when the original physical data plane and exact Session head
+     * still exist unchanged.
+     *
+     * <p>This operation supports process and worker continuation; it is not a payload restore API.
+     * A changed revision, dependency, data-plane generation, destroyed Session, expired Session,
+     * invalid signature, or unavailable signer is rejected before a run binding is issued.</p>
+     *
+     * @param sessionId exact path-selected Session identity
+     * @param bundle signed payload-free checkpoint
+     * @param identity verified enterprise identity
+     * @return content-addressed exact run binding and current descriptor
+     */
+    public MirrorSessionRecoveryResult recover(
+            String sessionId,
+            MirrorSessionCheckpointBundle bundle,
+            IntegrationRequestContext identity) {
+        CapabilitySnapshot.Scope scope = requireScope(identity);
+        if (bundle == null) {
+            throw badRequest(identity,
+                    "RG.MIRROR.SESSION.CHECKPOINT_INVALID",
+                    "A complete signed mirror Session checkpoint is required.");
+        }
+        try {
+            String id = normalizeSessionId(sessionId, identity);
+            MirrorSessionCheckpointIntegrityService.Verification verification =
+                    checkpointIntegrity.verify(bundle);
+            if (verification
+                    == MirrorSessionCheckpointIntegrityService.Verification
+                    .UNAVAILABLE) {
+                throw new MirrorSessionCheckpointException(
+                        MirrorSessionCheckpointException.Code
+                                .SIGNER_UNAVAILABLE);
+            }
+            if (verification
+                    != MirrorSessionCheckpointIntegrityService.Verification
+                    .VERIFIED) {
+                throw new MirrorSessionCheckpointException(
+                        MirrorSessionCheckpointException.Code.INVALID);
+            }
+            MirrorSessionCheckpoint checkpoint = bundle.checkpoint();
+            if (!scope.equals(checkpoint.scope())
+                    || !id.equals(checkpoint.sessionId())) {
+                throw notFound(identity);
+            }
+            MirrorSessionStateStore.CheckpointSnapshot current =
+                    store.checkpointSnapshot(
+                            new MirrorSessionStateStore.SnapshotCommand(
+                                    scope, id));
+            checkpointIntegrity.verifyCurrent(bundle, current);
+            MirrorSessionDescriptor descriptor =
+                    current.snapshot().descriptor();
+            Instant recoveredAt = clock.instant();
+            MirrorSessionRecoveryResult result =
+                    new MirrorSessionRecoveryResult(
+                            "", "recovery-" + UUID.randomUUID(),
+                            checkpoint.checkpointId(),
+                            checkpoint.fingerprint(),
+                            current.generation().fingerprint(),
+                            descriptor,
+                            new MirrorSessionRunBinding(
+                                    descriptor.sessionId(),
+                                    descriptor.stateFingerprint()),
+                            recoveredAt, "");
+            return checkpointIntegrity.sealRecoveryResult(result);
+        } catch (IntegrationProblemException expected) {
+            throw expected;
+        } catch (MirrorSessionCheckpointException failure) {
+            throw checkpointProblem(identity, failure);
+        } catch (MirrorSessionStateStoreException failure) {
+            throw storeProblem(identity, failure);
+        } catch (IllegalArgumentException invalid) {
+            throw badRequest(identity,
+                    "RG.MIRROR.SESSION.CHECKPOINT_INVALID",
+                    "The signed mirror Session checkpoint is invalid.");
         }
     }
 
@@ -526,6 +678,42 @@ public final class MirrorSessionIntegrationService {
                                     code,
                                     "The mirror state data plane cannot safely serve this request.",
                                     identity.correlationId(), retry));
+        };
+    }
+
+    private static IntegrationProblemException checkpointProblem(
+            IntegrationRequestContext identity,
+            MirrorSessionCheckpointException failure) {
+        return switch (failure.code()) {
+            case SIGNER_UNAVAILABLE ->
+                    new IntegrationProblemException(
+                            IntegrationProblem.serviceUnavailable(
+                                    "RG.MIRROR.SESSION.CHECKPOINT_SIGNER_UNAVAILABLE",
+                                    "The checkpoint signing authority cannot establish recovery trust.",
+                                    identity.correlationId(),
+                                    Map.of("retryAfterSeconds", 5)));
+            case INVALID ->
+                    badRequest(identity,
+                            "RG.MIRROR.SESSION.CHECKPOINT_INVALID",
+                            "The signed mirror Session checkpoint is invalid.");
+            case GENERATION_CONFLICT ->
+                    new IntegrationProblemException(
+                            IntegrationProblem.conflict(
+                                    "RG.MIRROR.SESSION.CHECKPOINT_GENERATION_CONFLICT",
+                                    "The checkpoint belongs to a different Session data-plane generation.",
+                                    identity.correlationId(), Map.of()));
+            case DEPENDENCY_CONFLICT ->
+                    new IntegrationProblemException(
+                            IntegrationProblem.conflict(
+                                    "RG.MIRROR.SESSION.CHECKPOINT_DEPENDENCY_CONFLICT",
+                                    "The checkpoint executable dependency closure no longer matches.",
+                                    identity.correlationId(), Map.of()));
+            case STATE_CONFLICT ->
+                    new IntegrationProblemException(
+                            IntegrationProblem.conflict(
+                                    "RG.MIRROR.SESSION.CHECKPOINT_STATE_CONFLICT",
+                                    "The Session state head changed after the checkpoint was created.",
+                                    identity.correlationId(), Map.of()));
         };
     }
 

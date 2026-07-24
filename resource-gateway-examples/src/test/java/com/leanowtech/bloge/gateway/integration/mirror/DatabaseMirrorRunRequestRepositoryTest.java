@@ -10,6 +10,7 @@ import org.springframework.jdbc.datasource.embedded.EmbeddedDatabaseBuilder;
 import org.springframework.jdbc.datasource.embedded.EmbeddedDatabaseType;
 import org.springframework.transaction.support.TransactionTemplate;
 
+import java.sql.Timestamp;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.List;
@@ -323,8 +324,13 @@ class DatabaseMirrorRunRequestRepositoryTest {
         DatabaseMirrorRunRequestRepository productionRepository =
                 new DatabaseMirrorRunRequestRepository(jdbc);
         productionRepository.init();
+        Instant databaseNow = jdbc.queryForObject(
+                "SELECT CURRENT_TIMESTAMP", Timestamp.class).toInstant();
         MirrorRunRequestRepository.Registration registration =
-                registration("request-fresh-database-clock", '3', '4');
+                new MirrorRunRequestRepository.Registration(
+                        SCOPE, "request-fresh-database-clock",
+                        fingerprint('3'), fingerprint('4'),
+                        "plan-1", fingerprint('0'), databaseNow.plus(Duration.ofDays(1)));
 
         transactions.executeWithoutResult(status -> {
             MirrorRunRequestRepository.Claim claim = productionRepository.claim(

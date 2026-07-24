@@ -67,6 +67,11 @@ offline artifact verification live in the independent `resource-gateway-test-kit
 | `mirror-session-descriptor-v1.schema.json` | `MirrorSessionDescriptor` | Payload-free lifecycle, dependency, revision, and fingerprint projection |
 | `mirror-session-command-request-v1.schema.json` | `MirrorSessionCommandRequest` | Strict exact-effect state transition command with an optional optimistic state fence |
 | `mirror-session-command-result-v1.schema.json` | `MirrorSessionCommandResult` | Current payload-free descriptor plus original or newly committed transaction receipt |
+| `mirror-session-store-generation-v1.schema.json` | `MirrorSessionStoreGeneration` | Initialize-once durable state-plane generation fence that remains stable across restart and changes for an independently initialized store |
+| `mirror-session-checkpoint-v1.schema.json` | `MirrorSessionCheckpoint` | Payload-free exact Session, dependency, state, descriptor, and store-generation closure |
+| `mirror-session-checkpoint-attestation-v1.schema.json` | `MirrorSessionCheckpointAttestation` | Detached Ed25519 attestation in the checkpoint-specific signature domain |
+| `mirror-session-checkpoint-bundle-v1.schema.json` | `MirrorSessionCheckpointBundle` | Portable `HASH_ONLY` checkpoint and attestation bundle |
+| `mirror-session-recovery-result-v1.schema.json` | `MirrorSessionRecoveryResult` | Payload-free exact recovery admission and reconstructed Session run binding |
 | `mirror-state-run-evidence-v1.schema.json` | `MirrorStateRunEvidence` | Exact Session head, model, stateful binding, and payload-free live/absent/tombstone access closure |
 | `mirror-state-run-evidence-v2.schema.json` | `MirrorStateTransitionRunEvidence` | Initial/final Session heads, exact read revisions, and payload-free write receipt/event transition closure |
 | `mirror-state-workbook-seed-v1.schema.json` | `MirrorStateWorkbookSeed` | Deterministic payload-free ANEKE seed with exact evidence/state coordinates, counts, and conservative blockers |
@@ -194,9 +199,12 @@ and no real external write operator is invoked. A read-only execution emits
 access/transition/attempt/resolution/receipt/event closure.
 `MirrorStateWorkbookSeed.fromVerifiedBundle` currently derives a payload-free
 ANEKE seed only for v3 read-only evidence. The fixture itself does not contain
-a fixed v3 or v4 signature vector and therefore does not certify non-Java
-stateful canonicalization. It also does not prove checkpoint/recovery, TEE/KMS
-custody, cross-region HA/DR, retention certification, or production readiness.
+a fixed v3, v4, or checkpoint signature vector and therefore does not certify
+non-Java stateful canonicalization. The separately tested checkpoint protocol
+proves signed exact recovery admission after a process restart against the same
+encrypted data-plane generation; it does not move or restore Session payload.
+Neither fixture nor checkpoint protocol proves TEE/KMS custody, cross-region
+payload HA/DR, retention certification, or production readiness.
 See the
 [Stateful Mirror kernel guide](../../resource-gateway-stateful-mirror-kernel.md).
 
@@ -558,6 +566,8 @@ The protected Tool Studio integration surface exposes:
 | `POST /api/mirror/sessions` | Create or exactly replay one sealed encrypted Session | `MIRROR_REHEARSAL` |
 | `GET /api/mirror/sessions/{sessionId}` | Read the current payload-free Session descriptor | `MIRROR_REHEARSAL` |
 | `POST /api/mirror/sessions/{sessionId}/commands` | Execute or exactly replay one admitted virtual write effect | `MIRROR_REHEARSAL` |
+| `POST /api/mirror/sessions/{sessionId}/checkpoints` | Sign one payload-free exact store-generation and Session-head checkpoint | `MIRROR_REHEARSAL` |
+| `POST /api/mirror/sessions/{sessionId}/recoveries` | Verify a checkpoint against the current transactional snapshot and return an exact run binding | `MIRROR_REHEARSAL` |
 | `DELETE /api/mirror/sessions/{sessionId}` | Irreversibly clear encrypted payload and return the terminal descriptor | `MIRROR_REHEARSAL` |
 | `POST /api/mirror/trust/deployment-isolation/authority-key-sets` | Verify local trust and append one generation plus durable floor | `MIRROR_TRUST_ADMIN` |
 | `GET /api/mirror/trust/deployment-isolation/authority-key-sets/{keySetId}/latest` | Re-verify and read the current floor | `MIRROR_TRUST_DISTRIBUTION` or `MIRROR_REHEARSAL` |
@@ -580,6 +590,10 @@ from the verified workload identity; no Session command contains a tenant select
 payload lives in a dedicated JDBC data plane, while descriptors expose only dependency, lifecycle,
 revision, time, and fingerprint facts. A state-plane outage, key failure, corrupt ciphertext,
 lease conflict, or CAS conflict fails closed and never falls through to a real resource.
+Checkpoint creation also requires a healthy signing authority. The bundle contains no payload,
+lease, fence, payload-encryption key id, or key material. Recovery re-verifies its signature and
+exact scope/store-generation/dependency/state closure against one transactional current snapshot;
+it never imports the checkpoint as state or rolls the Session head backward.
 
 All authority/attestation GET routes additionally require the exact
 `application/vnd.bloge.mirror-deployment-isolation-trust.v1+json` media type and

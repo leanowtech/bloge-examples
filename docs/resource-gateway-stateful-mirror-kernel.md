@@ -3,7 +3,8 @@
 ## 1. 当前结论
 
 Stateful Mirror 的状态化纵向切片现已贯通“协议 -> 事务内核 -> 加密持久化 -> 受保护 Session API ->
-run-scoped 串行状态推进 -> DAG 读/虚拟写/再读 -> signed transition evidence -> 独立客户端复验”，可以在
+run-scoped 串行状态推进 -> DAG 读/虚拟写/再读 -> signed transition evidence -> 签名 checkpoint ->
+同数据面代际精确恢复准入 -> 独立客户端复验”，可以在
 `test`/`staging` 环境作为可调用的状态化模拟数据面、DAG 状态 resolver 和 payload-free 证据源使用，
 但还不是 production-certified runtime。
 
@@ -46,12 +47,21 @@ run-scoped 串行状态推进 -> DAG 读/虚拟写/再读 -> signed transition e
   吞掉整个部署，跨副本也不能同时抢到最后一个名额。
 - 每副本命令执行使用无等待的公平 admission；执行中和等待单 Session 锁的请求总量都受硬上限保护。
 - 过期 worker 按最早到期顺序有界擦除密文，健康检查和指标只暴露固定基数的全局容量事实。
+- state store 首次初始化不可覆盖的 durable generation；generation 与 encrypted Session head 在同一数据库事务中
+  读取，形成不会跨数据面撕裂的 checkpoint material。
+- checkpoint 使用独立 Ed25519 签名域，闭合 full scope、plan/model/read/effect closure、committed state
+  revision、logical clock、world/state/payload/descriptor fingerprint 和 Session 时间，不携带业务 payload、
+  lease/fence 或密钥材料。
+- recovery 先做本地签名与 canonical closure 复验，再区分 generation、dependency 和 state drift；只有当前
+  durable Session 仍与 checkpoint exact 相同才返回新的 `MirrorSessionRunBinding`。同一数据库重启后可以恢复
+  准入，替换数据库、篡改签名或推进状态都会失败关闭。
 
 当前实现**仍不代表**以下能力已经可用：
 
 - production profile；
 - TEE、HSM/KMS 托管密钥、远程 payload authority 和正式 cryptographic erasure 证明；
-- 签名 checkpoint、跨区域恢复、灾备演练和逐写点进程 crash certification；
+- 跨区域 payload replication/restore、灾备演练和逐写点进程 crash certification；
+- checkpoint 的组织级受信 key-set pin、长期留存/audit/deep link 与跨语言固定签名向量；
 - transition-aware ANEKE workbook assertion 与发布门禁闭环；
 - 目标共享数据库的方言/锁语义认证、容量基准、stateful Scenario UI 与 fidelity/outcome 校准；
 - 生产级共享数据库、跨区域 owner 接管与 HA/DR SLO 认证。
@@ -61,9 +71,16 @@ readiness 可以为 `true`。
 `mirrorStatefulResolverReady=true` 只在 Mirror execution 可运行、Session API 已装配且 state store 当前健康时
 成立；`mirrorStateRunEvidenceReady` 与 `mirrorStateTransitionEvidenceReady` 使用同一运行依赖健康门槛。
 `mirrorStateWorkbookSeedApi` 只表示路由已装配，`mirrorStateWorkbookSeedReady` 只覆盖 v3 read-only seed，
-`mirrorStateTransitionWorkbookSeedReady` 当前固定为 `false`。checkpoint/recovery 尚未闭环，因此
-`mirrorStatefulRuntimeReady` 必须继续为 `false`。不能把“状态读写和证据可调用”
+`mirrorStateTransitionWorkbookSeedReady` 当前固定为 `false`。`mirrorStateCheckpointProtocol` 与
+`mirrorStateCheckpointApi` 表示协议/路由存在；只有 state store 与 signing authority 同时健康时，
+`mirrorStateCheckpointReady` 和 `mirrorStateRecoveryReady` 才为 `true`。它们只证明同一 durable data plane
+上的精确恢复准入，不证明 payload 备份或跨区域接管。crash/network/HA/DR 与 transition workbook 尚未闭环，
+因此 `mirrorStatefulRuntimeReady` 必须继续为 `false`。不能把“状态读写、证据和恢复准入可调用”
 解释为“完整 Stateful Mirror runtime 已可发布”。
+
+generation 是持久化数据集身份，不是云磁盘或 region 身份。整库 clone/restore 会保留 generation；若 clone
+状态落后，exact state closure 会拒绝，但两个内容完全相同的 clone 仍无法仅靠库内元数据选主。生产恢复流量必须
+再绑定 deployment authority、region ownership、restore generation 与 split-brain fence。
 
 ### 1.1 一条命令启动与停止
 
@@ -159,8 +176,22 @@ JsonNode result = client.executeMirrorSessionCommand(
         descriptor.path("sessionId").asText(), command);
 JsonNode replay = client.executeMirrorSessionCommand(
         descriptor.path("sessionId").asText(), command);
+
+// The client fetches the named verification key and verifies the detached
+// signature locally before returning or submitting portable material.
+JsonNode checkpoint = client.createMirrorSessionCheckpoint(
+        descriptor.path("sessionId").asText());
+JsonNode recovered = client.recoverMirrorSession(
+        descriptor.path("sessionId").asText(), checkpoint);
+
 client.destroyMirrorSession(descriptor.path("sessionId").asText());
 ```
+
+`checkpoint` 是 `HASH_ONLY` bundle，`recovered` 是 payload-free recovery admission result。实际演示进程
+重启时，应在 checkpoint 后停止并用同一个 JDBC data plane 和 AES key ring 再启动服务，然后调用
+`recoverMirrorSession`。test-kit 会在发起恢复前验证 strict Schema、nested fingerprint、签名、key validity 和
+payload-free policy，服务端仍会重新验签并与当前 transactional snapshot 比较。客户端从服务端发现公钥只适用于
+本地联调；企业门禁必须把公钥锚定到组织批准的 authority key-set，不能把 endpoint 自报 key 当作信任根。
 
 要让 `/api/mirror/executions` 使用 Session 状态，编译的 plan 必须把对应 external capability 声明为
 `READ_ONLY + stateModelRef` 或 `VIRTUAL_MUTATION + stateModelRef`，Session 的 `planFingerprint` 必须与该 plan
@@ -314,6 +345,11 @@ scope 上限必须小于或等于全局上限。数量上限最大 `1,000,000`�
 | `resourceGateway.mirrorSessionDescriptor.v1` | `mirror-session-descriptor-v1.schema.json` | 不含业务 payload 的依赖、revision、生命周期与 fingerprint 投影 |
 | `resourceGateway.mirrorSessionCommandRequest.v1` | `mirror-session-command-request-v1.schema.json` | exact effect、可选 expected-state fence 与业务输入 |
 | `resourceGateway.mirrorSessionCommandResult.v1` | `mirror-session-command-result-v1.schema.json` | 当前 descriptor 与新提交或原始 replay receipt |
+| `resourceGateway.mirrorSessionStoreGeneration.v1` | `mirror-session-store-generation-v1.schema.json` | durable state-plane 初始化一次、重启稳定且独立新库变化的 generation fence |
+| `resourceGateway.mirrorSessionCheckpoint.v1` | `mirror-session-checkpoint-v1.schema.json` | payload-free Session、dependency、state 与 store generation 精确闭包 |
+| `resourceGateway.mirrorSessionCheckpointAttestation.v1` | `mirror-session-checkpoint-attestation-v1.schema.json` | checkpoint 专用签名域的 Ed25519 detached attestation |
+| `resourceGateway.mirrorSessionCheckpointBundle.v1` | `mirror-session-checkpoint-bundle-v1.schema.json` | 只允许 `HASH_ONLY` 的 portable checkpoint 与 attestation 原子包 |
+| `resourceGateway.mirrorSessionRecoveryResult.v1` | `mirror-session-recovery-result-v1.schema.json` | 当前快照 exact 一致后生成的 payload-free Session run binding |
 | `resourceGateway.statefulRefundFixture.v1` | `stateful-refund-stage3-v1.fixture.schema.json` | 跨实现固定退款兼容样本 |
 
 固定样本
@@ -644,6 +680,11 @@ Session transport/store 另有一组稳定、payload-safe 的服务错误：
 | `RG.MIRROR.SESSION.WRITE_EFFECT_MISSING` / `WRITE_EFFECT_NOT_ACTIVE` | Session 无法完整服务 plan 的虚拟写站点；DAG 调度前失败，不得回退真实写 |
 | `RG.MIRROR.SESSION.WRITE_BINDING_NOT_ADMITTED` | write site 不是 exact `SESSION_STATE -> ABSTAINED` 或 capability/effect binding 漂移 |
 | `RG.MIRROR.SESSION.READ_SPEC_INCONSISTENT` | 已验证 Session 出现歧义读规范；按数据面完整性故障处理 |
+| `RG.MIRROR.SESSION.CHECKPOINT_SIGNER_UNAVAILABLE` | signer 未就绪；checkpoint/recovery 返回可重试 503，不能生成未签名降级对象 |
+| `RG.MIRROR.SESSION.CHECKPOINT_INVALID` | strict Schema、fingerprint、时间、payload policy 或签名无效；按不可信输入拒绝 |
+| `RG.MIRROR.SESSION.CHECKPOINT_GENERATION_CONFLICT` | checkpoint 来自不同 durable state-plane generation；不得按当前库继续 |
+| `RG.MIRROR.SESSION.CHECKPOINT_DEPENDENCY_CONFLICT` | plan/model/read/effect closure 或 scope/Session 坐标漂移；必须重新建世界或 checkpoint |
+| `RG.MIRROR.SESSION.CHECKPOINT_STATE_CONFLICT` | 当前 revision/world/state/payload/descriptor 与 checkpoint 不同；不得回退旧 head |
 | `RG.MIRROR.STATE.ENTITY_TOMBSTONED` | exact 业务键已删除；终态命中且禁止下层 resolver 回退 |
 | `RG.MIRROR.STATE_EVIDENCE_REJECTED` | state access、attempt、resolution 或 nested seal 无法形成 exact closure |
 | `RG.MIRROR.STATE_WORKBOOK_SEED_UNAVAILABLE` | run 不是完整 verified stateful v3 evidence；不能生成 seed |
@@ -667,15 +708,15 @@ Session transport/store 另有一组稳定、payload-safe 的服务错误：
 | RG-MIR-STATE-006 | 完成 | `StateReadSpec`、v2 session run binding、read-only 固定 head、`SESSION_STATE` 首位 resolver、live/absent/tombstone 语义、真实 BLOGE 运行测试均已完成 |
 | RG-MIR-STATE-007 | 核心完成 | 真实 BLOGE `queryBefore -> updateCustomer -> queryAfter` DAG 已在一个 run session 中完成 revision 0 -> 1 推进；后读命中新值，query/update 外部算子调用均为 0；仍需退款固定 fixture 的同构 DAG 与环境级真实写 egress 对抗认证 |
 | RG-MIR-STATE-008 | 内核完成 | exact source/kind/identity/schema/key 校验已完成；仍需接 corpus/owner fixture authority 的在线 scope/grant/retention/content-address 复验 |
-| RG-MIR-STATE-009 | 部分完成 | protocol、API、store、resolver、read/transition evidence、read-only workbook seed、runtime 探针已分离；`mirrorStateTransitionEvidenceReady` 动态报告，transition workbook 明确为 false；完整 runtime 在 recovery 闭环前保持 false |
+| RG-MIR-STATE-009 | 部分完成 | protocol、API、store、checkpoint API/readiness、resolver、read/transition evidence、read-only workbook seed、runtime 探针已分离；`mirrorStateTransitionEvidenceReady` 与 checkpoint/recovery 动态报告，transition workbook 明确为 false；完整 runtime 在 crash/network/HA/DR 和 transition workbook 闭环前保持 false |
 
 ### 10.3 P0：Evidence、checkpoint 与恢复
 
 | Ticket | 状态 | 工作与验收门禁 |
 |---|---|---|
 | RG-MIR-STATE-010 | 完成 | read-only v1/v3 与 read/write v2/v4 两代状态证据均已封闭：v4 绑定 initial/final head、exact read revision、write request/idempotency/command/receipt/response、连续 transition/event 及 attempt/resolution；JDBC 重启恢复 subtype 并复验，test-kit 可独立离线复验；ANEKE seed 仍只覆盖 verified v3 read-only bundle |
-| RG-MIR-STATE-011 | 待实现 | 签名 checkpoint，固定 plan/model/effect/store generation 和 revision；恢复结果必须与不中断执行语义 fingerprint 一致 |
-| RG-MIR-STATE-012 | 部分完成 | 已覆盖 timeout/cancel 边界的内核语义；仍需 crash/network/recovery matrix，证明 commit 前回滚、commit 后只返回或恢复 committed receipt |
+| RG-MIR-STATE-011 | 核心完成 | strict generation/checkpoint/attestation/bundle/recovery 协议、独立签名域、同事务 store-generation/head 快照、scope/signature/generation/dependency/state 五层失败关闭、同 DB 重启恢复和 test-kit 离线复验已完成；仍需组织 key-set pin、固定跨语言向量、retention/audit/deep link 和目标环境 certification |
+| RG-MIR-STATE-012 | 部分完成 | 已覆盖 timeout/cancel 边界、同 DB 进程重启和 stale/tampered/wrong-generation checkpoint；仍需逐写点 crash/network matrix，并证明 checkpoint 后继续执行与不中断执行 outcome parity；跨区域 payload restore 由 HA/DR 数据面闭环 |
 | RG-MIR-STATE-013 | 部分完成 | TTL/destroy 与密文清除已实现；仍需 KMS cryptographic erasure、legal hold 和删除证明，并保持删除后证据可验证 |
 
 ### 10.4 P1：Scenario、业务不变量与运营闭环
@@ -697,7 +738,7 @@ Session transport/store 另有一组稳定、payload-safe 的服务错误：
 | 时间 | expiry 边界、logical clock、timeout before/after commit、clock skew |
 | 状态读 | live exact hit、absent 后受控回退、tombstone 终止、错误 key arity、projection alias、运行中并发 command、跨 plan/state fence |
 | 基线 | exact hit、absent、authority outage、source mismatch、identity drift、tombstone |
-| 恢复 | 每个持久化写点 crash、checkpoint tamper、dependency drift、重复恢复 |
+| 恢复 | 同 DB 重启、不同 DB generation、checkpoint/signature tamper、scope/dependency/state drift、重复恢复、每个持久化写点 crash、继续执行 outcome parity |
 | 隔离 | 跨 tenant/org/project/environment/region、production credential、真实写 egress |
 | 容量 | entity/event/receipt 上限、16 MiB payload、256 MiB snapshot、全局/scope 数量与字节、commit 增长、exact replay、429/backpressure、expiry lag、guard lock 压测 |
 | 数据治理 | TTL、destroy、legal hold、deletion proof、日志/metric/exception 泄漏扫描 |
@@ -707,10 +748,10 @@ Session transport/store 另有一组稳定、payload-safe 的服务错误：
 
 ```bash
 mvn -f resource-gateway-examples/pom.xml \
-  -Dtest=StateReadSpecIntegrityTest,MirrorSessionStateResolverTest,MirrorRunServiceTest,MirrorStateRunEvidenceIntegrityTest,MirrorStateTransitionRunEvidenceIntegrityTest,MirrorEvidenceIntegrityServiceTest,MirrorRunIntegrationServiceTest,MirrorEvidenceProtocolSchemaTest,DatabaseMirrorEvidenceRepositoryTest,MirrorSessionProtocolTest,MirrorStateTransactionEngineTest,DatabaseMirrorSessionStateStoreTest,MirrorSessionIntegrationServiceTest,MirrorSessionControllerTest,VisualCanvasDemoScriptTest test
+  -Dtest=StateReadSpecIntegrityTest,MirrorSessionStateResolverTest,MirrorRunServiceTest,MirrorStateRunEvidenceIntegrityTest,MirrorStateTransitionRunEvidenceIntegrityTest,MirrorEvidenceIntegrityServiceTest,MirrorRunIntegrationServiceTest,MirrorEvidenceProtocolSchemaTest,DatabaseMirrorEvidenceRepositoryTest,MirrorSessionProtocolTest,MirrorStateTransactionEngineTest,DatabaseMirrorSessionStateStoreTest,MirrorSessionCheckpointIntegrityServiceTest,MirrorSessionIntegrationServiceTest,MirrorSessionControllerTest,VisualCanvasDemoScriptTest test
 
 mvn -f resource-gateway-test-kit/pom.xml \
-  -Dtest=MirrorStateProtocolVerifierTest,MirrorEvidenceVerifierTest,ResourceGatewayMirrorSessionClientTest,CapabilityMirrorSchemaPackagingTest test
+  -Dtest=MirrorStateProtocolVerifierTest,MirrorSessionCheckpointVerifierTest,MirrorEvidenceVerifierTest,ResourceGatewayMirrorSessionClientTest,ResourceGatewayMirrorSessionCheckpointClientTest,CapabilityMirrorSchemaPackagingTest test
 
 mvn -f resource-gateway-examples/pom.xml clean verify
 mvn -f resource-gateway-test-kit/pom.xml clean verify
@@ -718,11 +759,13 @@ mvn -f resource-gateway-test-kit/pom.xml clean verify
 
 这些命令验证协议、事务、read-only 固定 head、run-scoped 状态推进、状态读/虚拟写 resolver、
 access/transition/attempt/resolution/receipt/event closure、v3/v4 签名与持久化恢复、read-only workbook seed、
-加密数据面、HTTP 生命周期、脚本和独立客户端。
+store generation、checkpoint 专用签名域、同 DB 重启恢复、stale/tampered/cross-generation 拒绝、加密数据面、
+HTTP 生命周期、脚本和独立客户端。
 它们不会把完整 runtime readiness 提升为 true。要做真实服务演示，运行
 `./scripts/start-visual-canvas-demo.sh --stateful`；仅在 capability probe 同时报告
 `mirrorStatefulSessionApi=true` 与 `mirrorStatefulStateStoreReady=true` 时调用 Session API；只有再报告
 `mirrorStatefulResolverReady=true` 时才提交 execution request v2；导出 seed 前还要确认
 `mirrorStateRunEvidenceReady=true` 与 `mirrorStateWorkbookSeedReady=true`。含虚拟写的 run 还应确认
-`mirrorStateTransitionEvidenceReady=true`；不要在
+`mirrorStateTransitionEvidenceReady=true`；签发或恢复 checkpoint 前同时确认
+`mirrorStateCheckpointApi=true`、`mirrorStateCheckpointReady=true` 和 `mirrorStateRecoveryReady=true`。不要在
 `mirrorStateTransitionWorkbookSeedReady=false` 时请求 transition workbook seed。

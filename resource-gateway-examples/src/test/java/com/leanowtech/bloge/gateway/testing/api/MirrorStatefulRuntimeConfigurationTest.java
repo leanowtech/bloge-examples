@@ -10,6 +10,8 @@ import com.leanowtech.bloge.gateway.integration.mirror.MirrorSessionStateStore;
 import com.leanowtech.bloge.gateway.testing.persistence.MirrorStateDataPlane;
 import com.leanowtech.bloge.gateway.testing.persistence.MirrorStatePayloadProtector;
 import com.leanowtech.bloge.gateway.testing.runtime.MirrorStateBaselineResolver;
+import com.leanowtech.bloge.gateway.visual.runtime.InMemoryVisualEvidenceSigner;
+import com.leanowtech.bloge.gateway.visual.runtime.VisualEvidenceSigner;
 import org.junit.jupiter.api.Test;
 import org.springframework.context.annotation.AnnotationConfigApplicationContext;
 import org.springframework.core.env.MapPropertySource;
@@ -162,6 +164,9 @@ class MirrorStatefulRuntimeConfigurationTest {
         context.registerBean(
                 ObjectMapper.class,
                 () -> new ObjectMapper().findAndRegisterModules());
+        context.registerBean(
+                VisualEvidenceSigner.class,
+                InMemoryVisualEvidenceSigner::new);
         context.register(MirrorStatefulRuntimeConfiguration.class);
         try {
             context.refresh();
@@ -202,6 +207,7 @@ class MirrorStatefulRuntimeConfigurationTest {
                 .satisfies(availability -> {
                     assertThat(availability.sessionApi()).isTrue();
                     assertThat(availability.stateStoreReady()).isTrue();
+                    assertThat(availability.checkpointReady()).isTrue();
                 });
         assertThat(context.getBeansOfType(DataSource.class)).isEmpty();
     }

@@ -218,6 +218,21 @@ public final class CapabilityMirrorProtocol {
     /** Stateful-mirror committed or replayed command-result wire version. */
     public static final String MIRROR_SESSION_COMMAND_RESULT_V1 =
             "resourceGateway.mirrorSessionCommandResult.v1";
+    /** Immutable durable Session-store generation wire version. */
+    public static final String MIRROR_SESSION_STORE_GENERATION_V1 =
+            "resourceGateway.mirrorSessionStoreGeneration.v1";
+    /** Payload-free exact Session checkpoint wire version. */
+    public static final String MIRROR_SESSION_CHECKPOINT_V1 =
+            "resourceGateway.mirrorSessionCheckpoint.v1";
+    /** Detached checkpoint attestation wire version. */
+    public static final String MIRROR_SESSION_CHECKPOINT_ATTESTATION_V1 =
+            "resourceGateway.mirrorSessionCheckpointAttestation.v1";
+    /** Portable signed checkpoint bundle wire version. */
+    public static final String MIRROR_SESSION_CHECKPOINT_BUNDLE_V1 =
+            "resourceGateway.mirrorSessionCheckpointBundle.v1";
+    /** Successful exact Session recovery-admission result wire version. */
+    public static final String MIRROR_SESSION_RECOVERY_RESULT_V1 =
+            "resourceGateway.mirrorSessionRecoveryResult.v1";
     /** Fixed Stage 3 refund fixture envelope version. */
     public static final String STATEFUL_REFUND_FIXTURE_V1 =
             "resourceGateway.statefulRefundFixture.v1";
@@ -458,6 +473,26 @@ public final class CapabilityMirrorProtocol {
     /** Packaged stateful-mirror command-result schema. */
     public static final String MIRROR_SESSION_COMMAND_RESULT_SCHEMA_RESOURCE =
             SCHEMA_RESOURCE_ROOT + "mirror-session-command-result-v1.schema.json";
+    /** Packaged immutable Session-store generation schema. */
+    public static final String MIRROR_SESSION_STORE_GENERATION_SCHEMA_RESOURCE =
+            SCHEMA_RESOURCE_ROOT
+                    + "mirror-session-store-generation-v1.schema.json";
+    /** Packaged payload-free exact Session checkpoint schema. */
+    public static final String MIRROR_SESSION_CHECKPOINT_SCHEMA_RESOURCE =
+            SCHEMA_RESOURCE_ROOT
+                    + "mirror-session-checkpoint-v1.schema.json";
+    /** Packaged detached checkpoint attestation schema. */
+    public static final String MIRROR_SESSION_CHECKPOINT_ATTESTATION_SCHEMA_RESOURCE =
+            SCHEMA_RESOURCE_ROOT
+                    + "mirror-session-checkpoint-attestation-v1.schema.json";
+    /** Packaged portable signed checkpoint bundle schema. */
+    public static final String MIRROR_SESSION_CHECKPOINT_BUNDLE_SCHEMA_RESOURCE =
+            SCHEMA_RESOURCE_ROOT
+                    + "mirror-session-checkpoint-bundle-v1.schema.json";
+    /** Packaged successful Session recovery result schema. */
+    public static final String MIRROR_SESSION_RECOVERY_RESULT_SCHEMA_RESOURCE =
+            SCHEMA_RESOURCE_ROOT
+                    + "mirror-session-recovery-result-v1.schema.json";
     /** Packaged fixed Stage 3 refund-fixture schema. */
     public static final String STATEFUL_REFUND_FIXTURE_SCHEMA_RESOURCE =
             SCHEMA_RESOURCE_ROOT + "stateful-refund-stage3-v1.fixture.schema.json";

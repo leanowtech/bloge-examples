@@ -42,6 +42,41 @@ class DatabaseMirrorSessionStateStoreTest {
             .disable(SerializationFeature.WRITE_DATES_AS_TIMESTAMPS);
 
     @Test
+    void storeGenerationSurvivesReplicaRestartAndChangesWithDataPlane() {
+        try (Harness first = harness();
+             Harness different = harness()) {
+            MirrorSessionStoreGeneration generation =
+                    first.store().generation();
+            DatabaseMirrorSessionStateStore restarted =
+                    store(first, MirrorSessionCapacityPolicy.defaults());
+
+            assertThat(restarted.generation()).isEqualTo(generation);
+            assertThat(different.store().generation())
+                    .isNotEqualTo(generation);
+            assertThat(generation.fingerprint())
+                    .startsWith("sha256:");
+            assertThat(generation.toString())
+                    .doesNotContain("test=")
+                    .doesNotContain("payload");
+        }
+    }
+
+    @Test
+    void corruptStoreGenerationFailsClosedAndMakesReadinessFalse() {
+        try (Harness harness = harness()) {
+            harness.jdbc().update("""
+                    UPDATE mirror_session_store_generation
+                       SET generation_fingerprint = ?
+                     WHERE singleton_id = 1
+                    """, "sha256:" + "0".repeat(64));
+
+            assertStoreFailure(
+                    () -> harness.store().generation(), CORRUPT);
+            assertThat(harness.store().ready()).isFalse();
+        }
+    }
+
+    @Test
     void createsEncryptedSessionAndExactlyReplaysCreate() {
         try (Harness harness = harness()) {
             Fixture fixture = fixture();
@@ -113,6 +148,29 @@ class DatabaseMirrorSessionStateStoreTest {
             assertThat(harness.jdbc().queryForObject(
                     "SELECT lease_owner FROM mirror_session_state",
                     String.class)).isNull();
+        }
+    }
+
+    @Test
+    void checkpointSnapshotReadsGenerationAndStateHeadTogether() {
+        try (Harness harness = harness()) {
+            Fixture fixture = fixture();
+            MirrorSessionDescriptor created = harness.store().create(
+                    create("create-checkpoint", fixture.payload()))
+                    .descriptor();
+
+            MirrorSessionStateStore.CheckpointSnapshot material =
+                    harness.store().checkpointSnapshot(
+                            new MirrorSessionStateStore.SnapshotCommand(
+                                    fixture.state().scope(),
+                                    fixture.state().sessionId()));
+
+            assertThat(material.generation())
+                    .isEqualTo(harness.store().generation());
+            assertThat(material.snapshot().payload())
+                    .isEqualTo(fixture.payload());
+            assertThat(material.snapshot().descriptor())
+                    .isEqualTo(created);
         }
     }
 

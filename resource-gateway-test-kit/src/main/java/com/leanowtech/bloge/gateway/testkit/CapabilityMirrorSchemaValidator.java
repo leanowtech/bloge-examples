@@ -80,6 +80,11 @@ final class CapabilityMirrorSchemaValidator {
             "mirror-session-descriptor-v1.schema.json",
             "mirror-session-command-request-v1.schema.json",
             "mirror-session-command-result-v1.schema.json",
+            "mirror-session-store-generation-v1.schema.json",
+            "mirror-session-checkpoint-v1.schema.json",
+            "mirror-session-checkpoint-attestation-v1.schema.json",
+            "mirror-session-checkpoint-bundle-v1.schema.json",
+            "mirror-session-recovery-result-v1.schema.json",
             "stateful-refund-stage3-v1.fixture.schema.json");
     private static final Map<String, String> RESOURCE_TO_ID = resourceIds();
 

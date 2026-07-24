@@ -7,6 +7,7 @@ import com.leanowtech.bloge.gateway.integration.IntegrationRequestContext;
 import com.leanowtech.bloge.gateway.testing.persistence.MirrorStatePayloadProtector;
 import com.leanowtech.bloge.gateway.testing.runtime.MirrorStateBaselineResolver;
 import com.leanowtech.bloge.gateway.testing.runtime.MirrorStateRunSession;
+import com.leanowtech.bloge.gateway.visual.runtime.InMemoryVisualEvidenceSigner;
 import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import org.junit.jupiter.api.Test;
 import org.springframework.jdbc.core.JdbcTemplate;
@@ -252,6 +253,132 @@ class MirrorSessionIntegrationServiceTest {
     }
 
     @Test
+    void signedCheckpointRecoversAfterServiceAndStoreRestart() {
+        try (Harness harness = harness()) {
+            Fixture fixture = fixture();
+            MirrorSessionDescriptor created = harness.service().create(
+                    create(fixture.payload()), identity());
+            MirrorSessionCheckpointBundle checkpoint =
+                    harness.service().checkpoint(
+                            created.sessionId(), identity());
+            DatabaseMirrorSessionStateStore restartedStore =
+                    restartedStore(harness);
+            MirrorSessionIntegrationService restartedService =
+                    service(restartedStore, harness.signer());
+
+            MirrorSessionRecoveryResult recovered =
+                    restartedService.recover(
+                            created.sessionId(), checkpoint, identity());
+
+            assertThat(recovered.descriptor()).isEqualTo(created);
+            assertThat(recovered.runBinding())
+                    .isEqualTo(new MirrorSessionRunBinding(
+                            created.sessionId(),
+                            created.stateFingerprint()));
+            assertThat(recovered.storeGenerationFingerprint())
+                    .isEqualTo(restartedStore.generation().fingerprint());
+            assertThat(recovered.fingerprint()).startsWith("sha256:");
+            assertThat(mapper.writeValueAsString(checkpoint))
+                    .doesNotContain("O-100")
+                    .doesNotContain("entities")
+                    .doesNotContain("processedCommands");
+            assertThat(checkpoint.toString())
+                    .doesNotContain(checkpoint.attestation().signature())
+                    .doesNotContain(checkpoint.checkpoint()
+                            .payloadFingerprint());
+        } catch (com.fasterxml.jackson.core.JsonProcessingException failure) {
+            throw new AssertionError(failure);
+        }
+    }
+
+    @Test
+    void recoveryRejectsStaleTamperedAndCrossScopeCheckpoints() {
+        try (Harness harness = harness()) {
+            Fixture fixture = fixture();
+            MirrorSessionDescriptor created = harness.service().create(
+                    create(fixture.payload()), identity());
+            MirrorSessionCheckpointBundle checkpoint =
+                    harness.service().checkpoint(
+                            created.sessionId(), identity());
+
+            harness.service().command(
+                    created.sessionId(),
+                    command(fixture.effect(), "REQ-ADVANCE", 100),
+                    identity());
+            assertProblem(() -> harness.service().recover(
+                            created.sessionId(), checkpoint, identity()),
+                    409,
+                    "RG.MIRROR.SESSION.CHECKPOINT_STATE_CONFLICT",
+                    false);
+            assertProblem(() -> harness.service().recover(
+                            created.sessionId(), checkpoint,
+                            identity("org-b")),
+                    404, "RG.MIRROR.SESSION.NOT_FOUND", false);
+
+            com.fasterxml.jackson.databind.node.ObjectNode tampered =
+                    mapper.valueToTree(checkpoint);
+            ((com.fasterxml.jackson.databind.node.ObjectNode)
+                    tampered.path("attestation")).put(
+                    "signature", java.util.Base64.getEncoder()
+                            .encodeToString(new byte[64]));
+            MirrorSessionCheckpointBundle invalid =
+                    mapper.treeToValue(
+                            tampered,
+                            MirrorSessionCheckpointBundle.class);
+            assertProblem(() -> harness.service().recover(
+                            created.sessionId(), invalid, identity()),
+                    400, "RG.MIRROR.SESSION.CHECKPOINT_INVALID",
+                    false);
+        } catch (com.fasterxml.jackson.core.JsonProcessingException failure) {
+            throw new AssertionError(failure);
+        }
+    }
+
+    @Test
+    void recoveryRejectsAValidCheckpointFromAnotherDataPlaneGeneration() {
+        try (Harness source = harness();
+             Harness replacement = harness()) {
+            Fixture fixture = fixture();
+            MirrorSessionDescriptor original = source.service().create(
+                    create(fixture.payload()), identity());
+            replacement.service().create(
+                    create(fixture.payload()), identity());
+            MirrorSessionCheckpointBundle checkpoint =
+                    source.service().checkpoint(
+                            original.sessionId(), identity());
+            MirrorSessionIntegrationService trustedReplacement =
+                    service(replacement.store(), source.signer());
+
+            assertProblem(() -> trustedReplacement.recover(
+                            original.sessionId(), checkpoint, identity()),
+                    409,
+                    "RG.MIRROR.SESSION.CHECKPOINT_GENERATION_CONFLICT",
+                    false);
+        }
+    }
+
+    @Test
+    void checkpointFailsClosedWhenSignerIsUnavailable() {
+        try (Harness harness = harness()) {
+            Fixture fixture = fixture();
+            harness.service().create(
+                    create(fixture.payload()), identity());
+            MirrorSessionIntegrationService unavailable =
+                    new MirrorSessionIntegrationService(
+                            mapper, harness.store(),
+                            MirrorStateBaselineResolver.none(),
+                            Clock.fixed(NOW, ZoneOffset.UTC),
+                            "unsigned-replica", 30);
+
+            assertProblem(() -> unavailable.checkpoint(
+                            fixture.state().sessionId(), identity()),
+                    503,
+                    "RG.MIRROR.SESSION.CHECKPOINT_SIGNER_UNAVAILABLE",
+                    true);
+        }
+    }
+
+    @Test
     void preservesDatabaseCasFailureInsteadOfCollapsingItToKernelCommitFailed() {
         try (Harness harness = harness()) {
             Fixture fixture = fixture();
@@ -383,12 +510,43 @@ class MirrorSessionIntegrationServiceTest {
                         jdbc, mapper, protector,
                         new DataSourceTransactionManager(database),
                         clock::get);
+        InMemoryVisualEvidenceSigner signer =
+                InMemoryVisualEvidenceSigner.usingClock(
+                        Clock.fixed(NOW, ZoneOffset.UTC));
         MirrorSessionIntegrationService service =
-                new MirrorSessionIntegrationService(
-                        mapper, store, MirrorStateBaselineResolver.none(),
-                        Clock.fixed(NOW, ZoneOffset.UTC),
-                        "replica-a", 30);
-        return new Harness(database, jdbc, store, service);
+                service(store, signer);
+        return new Harness(
+                database, jdbc, clock, store, signer, service);
+    }
+
+    private DatabaseMirrorSessionStateStore restartedStore(
+            Harness harness) {
+        byte[] key = new byte[32];
+        java.util.Arrays.fill(key, (byte) 7);
+        MirrorStatePayloadProtector protector =
+                MirrorStatePayloadProtector.fromConfiguration(
+                        "test", "test=" + Base64.getEncoder()
+                                .encodeToString(key));
+        return new DatabaseMirrorSessionStateStore(
+                harness.jdbc(), mapper, protector,
+                new DataSourceTransactionManager(harness.database()),
+                harness.clock()::get);
+    }
+
+    private MirrorSessionIntegrationService service(
+            MirrorSessionStateStore store,
+            InMemoryVisualEvidenceSigner signer) {
+        MirrorSessionCapacityTelemetry telemetry =
+                MirrorSessionCapacityTelemetry.noop();
+        return new MirrorSessionIntegrationService(
+                mapper, store, MirrorStateBaselineResolver.none(),
+                Clock.fixed(NOW, ZoneOffset.UTC),
+                "replica-" + java.util.UUID.randomUUID(), 30,
+                new MirrorSessionCommandAdmission(64, telemetry),
+                telemetry,
+                new MirrorSessionCheckpointIntegrityService(
+                        mapper, signer,
+                        Clock.fixed(NOW, ZoneOffset.UTC)));
     }
 
     private static void assertProblem(
@@ -418,7 +576,9 @@ class MirrorSessionIntegrationServiceTest {
     private record Harness(
             EmbeddedDatabase database,
             JdbcTemplate jdbc,
+            AtomicReference<Instant> clock,
             MirrorSessionStateStore store,
+            InMemoryVisualEvidenceSigner signer,
             MirrorSessionIntegrationService service
     ) implements AutoCloseable {
         @Override
@@ -430,6 +590,11 @@ class MirrorSessionIntegrationServiceTest {
     private record FailingCommitStore(
             MirrorSessionStateStore delegate
     ) implements MirrorSessionStateStore {
+        @Override
+        public MirrorSessionStoreGeneration generation() {
+            return delegate.generation();
+        }
+
         @Override
         public CreateResult create(CreateCommand command) {
             return delegate.create(command);
@@ -444,6 +609,12 @@ class MirrorSessionIntegrationServiceTest {
         @Override
         public SessionSnapshot snapshot(SnapshotCommand command) {
             return delegate.snapshot(command);
+        }
+
+        @Override
+        public CheckpointSnapshot checkpointSnapshot(
+                SnapshotCommand command) {
+            return delegate.checkpointSnapshot(command);
         }
 
         @Override

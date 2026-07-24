@@ -31,7 +31,7 @@ integration something the business flow can see, reason about, test, and change.
 | Governed capability closures | Sealed Resource/Operator/Graph projections, exact cycle-checked closure for all seven shipped graphs, nested foreach/loop boundary inventory, full enterprise scope, append-only lifecycle revisions, classification-aware reads, and honest mirror readiness flags |
 | Governed capability observations | Signed payload-free invocation facts, operator-owned admission policy, external vault/proof verification, durable admitted-or-quarantined decisions, full-scope idempotency, and independent offline verification |
 | Governed capability corpora | Immutable quarantine review, exact admitted-source candidates, metadata risk gates, independent owner-reviewed publication lineage, second source-authority verification, and honest resolver readiness |
-| Stateful mirror sessions | Versioned entity/write/session/API protocols, atomic multi-entity mutations, exact replay, AES-GCM isolated persistence, lease/fence/CAS concurrency, TTL/destroy, payload-free signed state-read evidence, ANEKE workbook seeds, and independently verified clients |
+| Stateful mirror sessions | Versioned entity/write/session/checkpoint protocols, atomic multi-entity mutations, exact replay, AES-GCM isolated persistence, lease/fence/CAS concurrency, TTL/destroy, payload-free signed state evidence, signed same-data-plane restart recovery admission, ANEKE workbook seeds, and independently verified clients |
 | Governed replay payloads | Payload values detached from immutable evidence, classification ABAC, selective retention, legal hold, bounded expiry, and signed deletion proof |
 | Workbook and gate evidence loop | Deterministic sanitized workbook seeds, exact suite/run evidence refs, versioned gate decision basis, stale detection, and transactional gate events |
 | Operational controls | Cache, tenant rate limit, circuit breaker, run history, golden cases, and publication history |
@@ -58,6 +58,8 @@ dedicated local data plane.
 | `http://localhost:8080/examples/gateway` | Use the legacy Custom Composer regression surface |
 | `http://localhost:8080/api/integration/capabilities` | Verify protocol versions, endpoints, feature flags, identity provider, payload policy, and signer readiness |
 | `POST http://localhost:8080/api/mirror/sessions` | Create an encrypted stateful simulation Session after starting with `--stateful` (test/staging only) |
+| `POST http://localhost:8080/api/mirror/sessions/{sessionId}/checkpoints` | Sign a payload-free exact Session/store-generation checkpoint after starting with `--stateful` |
+| `POST http://localhost:8080/api/mirror/sessions/{sessionId}/recoveries` | Re-verify a checkpoint against the current encrypted data-plane head and return an exact run binding |
 | `GET http://localhost:8080/api/integration/capability-snapshots/{capabilityId}?revision=0` | Read the latest authorized capability snapshot; use a positive revision for an exact read |
 | `PUT http://localhost:8080/api/integration/capability-snapshots/{capabilityId}/revisions/{revision}` | Append one exact sealed capability snapshot revision |
 | `POST http://localhost:8080/api/integration/capability-snapshots/{capabilityId}/lifecycle-transitions` | Append an optimistically fenced lifecycle-only revision |
@@ -257,7 +259,8 @@ examples, errors, startup commands and remaining production gates are in the
 ### Stateful mirror Session data plane and DAG reads
 
 The Stage 3 vertical freezes `StateModel`, `StateReadSpec`, `WriteEffectSpec`,
-`SessionStateSpace`, five Session API objects, and a closed bounded expression AST. The
+`SessionStateSpace`, five Session lifecycle objects, five checkpoint/recovery objects, and a closed
+bounded expression AST. The
 `MirrorStateTransactionEngine` serializes one session's writes, atomically
 applies ordered multi-entity mutations, returns the original receipt for exact
 idempotent retries, rejects same-key command drift, validates entity schemas and
@@ -270,8 +273,8 @@ Session integrity requires a contiguous revision/receipt journal and exact
 event closure, while each entity, tombstone, event, receipt, current world, and
 complete session is content-addressed. The test kit packages the same strict
 Schemas and refund fixture, seals canonical payloads, verifies them without
-linking server classes, and exposes bounded create/read/command/destroy client
-methods.
+linking server classes, and exposes bounded create/read/command/checkpoint/
+recover/destroy client methods.
 
 With `test` or `staging` plus `--stateful`, `/api/mirror/sessions` stores the
 complete payload under AES-256-GCM in a dedicated JDBC data plane. The public
@@ -289,6 +292,31 @@ Saturation is a stable retryable `429`; exact idempotent replay remains
 available while full. A bounded oldest-first worker erases expired ciphertext,
 and aggregate health plus fixed-cardinality metrics never expose customer
 dimensions.
+
+The state plane also initializes one content-addressed durable store
+generation that remains stable across process restart and changes for an
+independently initialized store. Checkpoint creation reads this generation and the
+encrypted Session head in one database transaction, then signs a `HASH_ONLY`
+bundle in a checkpoint-specific Ed25519 domain. The portable bundle closes the
+full enterprise scope, Session/plan/model/read/effect dependencies, committed
+revision, logical clock, world/state/payload/descriptor fingerprints, and
+Session times. It contains no business payload, lease/fence, payload-encryption
+key id, or key material.
+
+Recovery never writes the checkpoint into the state store. It verifies strict
+Schema, nested fingerprints, detached signature, scope, store generation,
+dependency closure, and the exact current state before returning a new
+`MirrorSessionRunBinding`. A signature problem, database replacement,
+dependency drift, or any command after checkpoint is a distinct fail-closed
+error. This supports process or worker continuation against the same durable
+encrypted data plane; it is not a database backup, cross-region payload
+restore, or rollback mechanism.
+
+A full database clone or backup restore preserves the generation because it is
+part of the durable dataset. The exact state comparison still rejects a stale
+clone, but generation alone cannot elect an active region or detect two
+identical clones. Production HA/DR must add deployment-authority ownership and
+split-brain fencing before enabling recovery traffic.
 
 State-model-backed `READ_ONLY` and `VIRTUAL_MUTATION` external capabilities can
 now be compiled with `SESSION_STATE` first in resolver precedence. Execution
@@ -332,16 +360,20 @@ Resource Gateway make ANEKE's workbook, owner-approval, or publish-gate
 decision.
 
 This is not yet a production-certified stateful runtime: TEE/KMS custody,
-signed checkpoint/recovery, transition-aware workbook assertions,
+organization-pinned checkpoint trust, cross-region payload restore,
+transition-aware workbook assertions,
 cryptographic deletion proof, target-database capacity/lock certification and
 HA/DR certification remain. The probe reports `mirrorStatefulResolverReady`
 only when mirror execution, the Session API, and the encrypted state store are
 all ready. It separately reports `mirrorStateRunEvidenceReady`,
 `mirrorStateTransitionEvidenceReady`, `mirrorStateWorkbookSeedApi`,
 `mirrorStateWorkbookSeedReady`, and the deliberately false
-`mirrorStateTransitionWorkbookSeedReady`; `mirrorStatefulRuntimeReady` remains
-false until checkpoint and recovery closure is complete. Startup, request v2
-usage, Java usage, capacity
+`mirrorStateTransitionWorkbookSeedReady`. It also separates
+`mirrorStateCheckpointProtocol`, `mirrorStateCheckpointApi`,
+`mirrorStateCheckpointReady`, and `mirrorStateRecoveryReady`; readiness requires
+both the state store and signing authority. `mirrorStatefulRuntimeReady` remains
+false until crash/network/HA/DR and transition-workbook certification are
+complete. Startup, request v2 usage, Java usage, capacity
 configuration, stable errors, and remaining industrial work packages are in the
 [stateful mirror kernel guide](../docs/resource-gateway-stateful-mirror-kernel.md).
 
@@ -683,9 +715,11 @@ Useful variants:
 ```
 
 `--stateful` starts the Session data plane, read/virtual-write resolver, v3/v4
-evidence projection, and v3 read-only workbook-seed route in the same service.
-No extra sidecar is required for the local demonstration; use the ordinary stop
-script above.
+evidence projection, v3 read-only workbook-seed route, and signed
+checkpoint/recovery routes in the same service. No extra sidecar is required
+for the local demonstration; use the ordinary stop script above. Stop preserves
+the local JDBC data and AES key, so a checkpoint created before restart can be
+admitted afterward when its exact Session head is unchanged.
 
 `--stateful` uses conservative local defaults: 1,000 global and 100 per-scope
 active sessions, 4 GiB global and 512 MiB per-scope retained canonical payload,

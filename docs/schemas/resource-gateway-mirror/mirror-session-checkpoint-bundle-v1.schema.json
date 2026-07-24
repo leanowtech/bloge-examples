@@ -1,0 +1,31 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://bloge.dev/schemas/resource-gateway-mirror/mirror-session-checkpoint-bundle-v1.schema.json",
+  "title": "Resource Gateway Mirror Session Checkpoint Bundle v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "bundleFingerprint",
+    "payloadPolicy",
+    "checkpoint",
+    "attestation"
+  ],
+  "properties": {
+    "schemaVersion": {
+      "const": "resourceGateway.mirrorSessionCheckpointBundle.v1"
+    },
+    "bundleFingerprint": {
+      "$ref": "session-state-space-v1.schema.json#/$defs/fingerprint"
+    },
+    "payloadPolicy": {
+      "const": "HASH_ONLY"
+    },
+    "checkpoint": {
+      "$ref": "mirror-session-checkpoint-v1.schema.json"
+    },
+    "attestation": {
+      "$ref": "mirror-session-checkpoint-attestation-v1.schema.json"
+    }
+  }
+}

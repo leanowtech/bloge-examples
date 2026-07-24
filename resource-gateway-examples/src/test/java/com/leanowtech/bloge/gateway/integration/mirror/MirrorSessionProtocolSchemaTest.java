@@ -5,6 +5,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.SerializationFeature;
 import com.leanowtech.bloge.gateway.testing.runtime.MirrorStateBaselineResolver;
 import com.leanowtech.bloge.gateway.testing.runtime.MirrorStateTransactionEngine;
+import com.leanowtech.bloge.gateway.visual.runtime.InMemoryVisualEvidenceSigner;
 import org.junit.jupiter.api.Test;
 
 import java.nio.file.Files;
@@ -61,6 +62,37 @@ class MirrorSessionProtocolSchemaTest {
                                 NOW, NOW, updated.expiresAt(), null, ""));
         MirrorSessionCommandResult result = new MirrorSessionCommandResult(
                 "", descriptor, receipt, false);
+        MirrorSessionStoreGeneration generation =
+                MirrorSessionStoreGenerationIntegrity.seal(
+                        mapper, new MirrorSessionStoreGeneration(
+                                "", "store-generation-1", 1,
+                                NOW.minusSeconds(60), ""));
+        MirrorSessionCheckpointIntegrityService checkpointIntegrity =
+                new MirrorSessionCheckpointIntegrityService(
+                        mapper,
+                        InMemoryVisualEvidenceSigner.usingClock(
+                                Clock.fixed(NOW, ZoneOffset.UTC)),
+                        Clock.fixed(NOW, ZoneOffset.UTC));
+        MirrorSessionCheckpointBundle checkpoint =
+                checkpointIntegrity.seal(
+                        new MirrorSessionStateStore.CheckpointSnapshot(
+                                generation,
+                                new MirrorSessionStateStore.SessionSnapshot(
+                                        MirrorSessionProtocolIntegrity.seal(
+                                                mapper,
+                                                payload.withState(updated)),
+                                        descriptor)));
+        MirrorSessionRecoveryResult recovery =
+                checkpointIntegrity.sealRecoveryResult(
+                        new MirrorSessionRecoveryResult(
+                                "", "recovery-1",
+                                checkpoint.checkpoint().checkpointId(),
+                                checkpoint.checkpoint().fingerprint(),
+                                generation.fingerprint(), descriptor,
+                                new MirrorSessionRunBinding(
+                                        descriptor.sessionId(),
+                                        descriptor.stateFingerprint()),
+                                NOW, ""));
 
         assertProperties(readSpec, "state-read-spec-v1.schema.json");
         assertProperties(payload, "mirror-session-payload-v1.schema.json");
@@ -68,6 +100,16 @@ class MirrorSessionProtocolSchemaTest {
         assertProperties(descriptor, "mirror-session-descriptor-v1.schema.json");
         assertProperties(command, "mirror-session-command-request-v1.schema.json");
         assertProperties(result, "mirror-session-command-result-v1.schema.json");
+        assertProperties(generation,
+                "mirror-session-store-generation-v1.schema.json");
+        assertProperties(checkpoint.checkpoint(),
+                "mirror-session-checkpoint-v1.schema.json");
+        assertProperties(checkpoint.attestation(),
+                "mirror-session-checkpoint-attestation-v1.schema.json");
+        assertProperties(checkpoint,
+                "mirror-session-checkpoint-bundle-v1.schema.json");
+        assertProperties(recovery,
+                "mirror-session-recovery-result-v1.schema.json");
         assertThat(schema("mirror-session-command-request-v1.schema.json")
                 .at("/properties/input/additionalProperties").asBoolean()).isTrue();
     }
@@ -86,6 +128,15 @@ class MirrorSessionProtocolSchemaTest {
         assertThat(descriptor.has("encryptionKeyId")).isFalse();
         assertThat(command.has("tenantId")).isFalse();
         assertThat(command.has("environmentId")).isFalse();
+
+        JsonNode checkpoint = schema(
+                "mirror-session-checkpoint-v1.schema.json")
+                .path("properties");
+        assertThat(checkpoint.has("entities")).isFalse();
+        assertThat(checkpoint.has("processedCommands")).isFalse();
+        assertThat(checkpoint.has("payload")).isFalse();
+        assertThat(checkpoint.has("ciphertext")).isFalse();
+        assertThat(checkpoint.has("encryptionKeyId")).isFalse();
     }
 
     private void assertProperties(Object value, String schemaFile) throws Exception {

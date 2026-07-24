@@ -6,11 +6,13 @@ import com.leanowtech.bloge.gateway.integration.mirror.DatabaseMirrorSessionStat
 import com.leanowtech.bloge.gateway.integration.mirror.MirrorSessionCapacityPolicy;
 import com.leanowtech.bloge.gateway.integration.mirror.MirrorSessionCapacityTelemetry;
 import com.leanowtech.bloge.gateway.integration.mirror.MirrorSessionCommandAdmission;
+import com.leanowtech.bloge.gateway.integration.mirror.MirrorSessionCheckpointIntegrityService;
 import com.leanowtech.bloge.gateway.integration.mirror.MirrorSessionIntegrationService;
 import com.leanowtech.bloge.gateway.integration.mirror.MirrorSessionStateStore;
 import com.leanowtech.bloge.gateway.testing.persistence.MirrorStateDataPlane;
 import com.leanowtech.bloge.gateway.testing.persistence.MirrorStatePayloadProtector;
 import com.leanowtech.bloge.gateway.testing.runtime.MirrorStateBaselineResolver;
+import com.leanowtech.bloge.gateway.visual.runtime.VisualEvidenceSigner;
 import io.micrometer.core.instrument.MeterRegistry;
 import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import org.springframework.beans.factory.ObjectProvider;
@@ -146,14 +148,19 @@ public class MirrorStatefulRuntimeConfiguration {
             MirrorStateBaselineResolver baselineResolver,
             MirrorSessionCommandAdmission commandAdmission,
             MirrorSessionCapacityTelemetry capacityTelemetry,
+            VisualEvidenceSigner evidenceSigner,
             @Value("${gateway.testing.mirror.stateful.instance-id:}")
             String instanceId,
             @Value("${gateway.testing.mirror.stateful.lease-duration-seconds:30}")
             long leaseDurationSeconds) {
+        MirrorSessionCheckpointIntegrityService checkpointIntegrity =
+                new MirrorSessionCheckpointIntegrityService(
+                        mapper, evidenceSigner, Clock.systemUTC());
         return new MirrorSessionIntegrationService(
                 mapper, store, baselineResolver, Clock.systemUTC(),
                 instanceId, leaseDurationSeconds,
-                commandAdmission, capacityTelemetry);
+                commandAdmission, capacityTelemetry,
+                checkpointIntegrity);
     }
 
     /** Publishes aggregate-only state-plane capacity and connectivity health. */
@@ -183,7 +190,10 @@ public class MirrorStatefulRuntimeConfiguration {
     @Bean
     @ConditionalOnMissingBean
     public MirrorStatefulRuntimeAvailability
-    mirrorStatefulRuntimeAvailability(MirrorSessionStateStore store) {
-        return new MirrorStatefulRuntimeAvailability(true, store::ready);
+    mirrorStatefulRuntimeAvailability(
+            MirrorSessionStateStore store,
+            VisualEvidenceSigner evidenceSigner) {
+        return new MirrorStatefulRuntimeAvailability(
+                true, store::ready, evidenceSigner::available);
     }
 }

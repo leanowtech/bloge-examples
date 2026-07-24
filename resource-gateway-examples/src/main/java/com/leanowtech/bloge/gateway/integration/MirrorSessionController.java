@@ -1,8 +1,10 @@
 package com.leanowtech.bloge.gateway.integration;
 
 import com.leanowtech.bloge.gateway.integration.mirror.MirrorSessionCommandResult;
+import com.leanowtech.bloge.gateway.integration.mirror.MirrorSessionCheckpointBundle;
 import com.leanowtech.bloge.gateway.integration.mirror.MirrorSessionDescriptor;
 import com.leanowtech.bloge.gateway.integration.mirror.MirrorSessionIntegrationService;
+import com.leanowtech.bloge.gateway.integration.mirror.MirrorSessionRecoveryResult;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.context.annotation.Profile;
 import org.springframework.http.HttpHeaders;
@@ -90,6 +92,38 @@ public final class MirrorSessionController {
         return IntegrationEnvelope.of(
                 "MIRROR_SESSION_COMMAND_RESULT",
                 MirrorSessionCommandResult.SCHEMA_VERSION,
+                result);
+    }
+
+    /** Creates a signed payload-free checkpoint over one exact durable Session state head. */
+    @PostMapping("/{sessionId}/checkpoints")
+    public IntegrationEnvelope<MirrorSessionCheckpointBundle> checkpoint(
+            @PathVariable String sessionId,
+            @RequestHeader HttpHeaders headers) {
+        IntegrationRequestContext identity = authenticator.authenticate(
+                headers, IntegrationOperation.MIRROR_SESSION_CHECKPOINT);
+        MirrorSessionCheckpointBundle bundle = service.checkpoint(
+                sessionId, identity);
+        return IntegrationEnvelope.of(
+                "MIRROR_SESSION_CHECKPOINT_BUNDLE",
+                MirrorSessionCheckpointBundle.SCHEMA_VERSION,
+                bundle);
+    }
+
+    /** Admits exact continuation only when the signed checkpoint still matches durable state. */
+    @PostMapping("/{sessionId}/recoveries")
+    public IntegrationEnvelope<MirrorSessionRecoveryResult> recover(
+            @PathVariable String sessionId,
+            @RequestBody byte[] request,
+            @RequestHeader HttpHeaders headers) {
+        IntegrationRequestContext identity = authenticator.authenticate(
+                headers, IntegrationOperation.MIRROR_SESSION_RECOVER);
+        MirrorSessionRecoveryResult result = service.recover(
+                sessionId, decoder.decodeCheckpoint(request, identity),
+                identity);
+        return IntegrationEnvelope.of(
+                "MIRROR_SESSION_RECOVERY_RESULT",
+                MirrorSessionRecoveryResult.SCHEMA_VERSION,
                 result);
     }
 

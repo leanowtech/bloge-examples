@@ -373,6 +373,8 @@ public class ToolStudioIntegrationService {
                 mirrorStatefulRuntimeAvailability.sessionApi();
         boolean mirrorStatefulStoreReady =
                 mirrorStatefulRuntimeAvailability.stateStoreReady();
+        boolean mirrorCheckpointReady =
+                mirrorStatefulRuntimeAvailability.checkpointReady();
         boolean mirrorStatefulResolverReady = mirrorExecutionReady
                 && mirrorStatefulSessionApi && mirrorStatefulStoreReady;
         VisualEvidenceSigner signer = runRepository == null
@@ -440,6 +442,14 @@ public class ToolStudioIntegrationService {
                 mirrorRuntimeAvailability.corpusClusterResolverReady());
         features.put("mirrorStatefulSessionApi", mirrorStatefulSessionApi);
         features.put("mirrorStatefulStateStoreReady", mirrorStatefulStoreReady);
+        features.put("mirrorStateCheckpointProtocol",
+                mirrorStatefulSessionApi);
+        features.put("mirrorStateCheckpointApi",
+                mirrorStatefulSessionApi);
+        features.put("mirrorStateCheckpointReady",
+                mirrorCheckpointReady);
+        features.put("mirrorStateRecoveryReady",
+                mirrorCheckpointReady);
         features.put("mirrorStatefulResolverReady", mirrorStatefulResolverReady);
         features.put("mirrorStateRunEvidenceReady",
                 mirrorStatefulResolverReady);
@@ -449,7 +459,7 @@ public class ToolStudioIntegrationService {
                 mirrorExecutionApi);
         features.put("mirrorStateWorkbookSeedReady",
                 mirrorStatefulResolverReady);
-        // Transition workbook projection and checkpoint/recovery remain later stages.
+        // Transition workbook projection and full crash-matrix certification remain later stages.
         features.put("mirrorStateTransitionWorkbookSeedReady", false);
         features.put("mirrorStatefulRuntimeReady", false);
         ExternalAnchorTrustState suiteAnchorTrust = currentSuiteStabilityAnchorTrust();
@@ -852,6 +862,21 @@ public class ToolStudioIntegrationService {
             supportedObjects.put("mirrorSessionCommandResult", List.of(
                     com.leanowtech.bloge.gateway.integration.mirror
                             .MirrorSessionCommandResult.SCHEMA_VERSION));
+            supportedObjects.put("mirrorSessionStoreGeneration", List.of(
+                    com.leanowtech.bloge.gateway.integration.mirror
+                            .MirrorSessionStoreGeneration.SCHEMA_VERSION));
+            supportedObjects.put("mirrorSessionCheckpoint", List.of(
+                    com.leanowtech.bloge.gateway.integration.mirror
+                            .MirrorSessionCheckpoint.SCHEMA_VERSION));
+            supportedObjects.put("mirrorSessionCheckpointAttestation", List.of(
+                    com.leanowtech.bloge.gateway.integration.mirror
+                            .MirrorSessionCheckpointAttestation.SCHEMA_VERSION));
+            supportedObjects.put("mirrorSessionCheckpointBundle", List.of(
+                    com.leanowtech.bloge.gateway.integration.mirror
+                            .MirrorSessionCheckpointBundle.SCHEMA_VERSION));
+            supportedObjects.put("mirrorSessionRecoveryResult", List.of(
+                    com.leanowtech.bloge.gateway.integration.mirror
+                            .MirrorSessionRecoveryResult.SCHEMA_VERSION));
         }
         List<IntegrationCapabilities.Endpoint> endpoints =
                 new java.util.ArrayList<>(current.endpoints());
@@ -875,6 +900,10 @@ public class ToolStudioIntegrationService {
                     "GET", "/api/mirror/sessions/{sessionId}"));
             endpoints.add(new IntegrationCapabilities.Endpoint(
                     "POST", "/api/mirror/sessions/{sessionId}/commands"));
+            endpoints.add(new IntegrationCapabilities.Endpoint(
+                    "POST", "/api/mirror/sessions/{sessionId}/checkpoints"));
+            endpoints.add(new IntegrationCapabilities.Endpoint(
+                    "POST", "/api/mirror/sessions/{sessionId}/recoveries"));
             endpoints.add(new IntegrationCapabilities.Endpoint(
                     "DELETE", "/api/mirror/sessions/{sessionId}"));
         }

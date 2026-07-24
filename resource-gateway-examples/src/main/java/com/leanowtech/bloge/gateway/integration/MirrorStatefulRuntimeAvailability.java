@@ -13,6 +13,7 @@ import java.util.function.BooleanSupplier;
 public final class MirrorStatefulRuntimeAvailability {
     private final boolean sessionApi;
     private final BooleanSupplier stateStoreReadiness;
+    private final BooleanSupplier checkpointSignerReadiness;
 
     /**
      * Creates an honest stateful Session API marker.
@@ -22,12 +23,33 @@ public final class MirrorStatefulRuntimeAvailability {
      */
     public MirrorStatefulRuntimeAvailability(
             boolean sessionApi, BooleanSupplier stateStoreReadiness) {
+        this(sessionApi, stateStoreReadiness, () -> false);
+    }
+
+    /**
+     * Creates an honest Session and signed-checkpoint capability marker.
+     *
+     * @param sessionApi protected Session routes are physically assembled
+     * @param stateStoreReadiness dynamic encrypted data-plane readiness
+     * @param checkpointSignerReadiness dynamic checkpoint signing authority readiness
+     */
+    public MirrorStatefulRuntimeAvailability(
+            boolean sessionApi,
+            BooleanSupplier stateStoreReadiness,
+            BooleanSupplier checkpointSignerReadiness) {
         this.sessionApi = sessionApi;
         this.stateStoreReadiness = Objects.requireNonNull(
                 stateStoreReadiness, "stateStoreReadiness");
+        this.checkpointSignerReadiness = Objects.requireNonNull(
+                checkpointSignerReadiness,
+                "checkpointSignerReadiness");
     }
 
-    /** @return whether protected Session routes are physically assembled */
+    /**
+     * Reports whether protected Session routes are physically assembled.
+     *
+     * @return {@code true} when the Session API is present
+     */
     public boolean sessionApi() {
         return sessionApi;
     }
@@ -43,6 +65,22 @@ public final class MirrorStatefulRuntimeAvailability {
         }
         try {
             return stateStoreReadiness.getAsBoolean();
+        } catch (RuntimeException unavailable) {
+            return false;
+        }
+    }
+
+    /**
+     * Probes exact recovery prerequisites without creating or reading a checkpoint.
+     *
+     * @return whether the Session store and checkpoint signing authority are both ready
+     */
+    public boolean checkpointReady() {
+        if (!stateStoreReady()) {
+            return false;
+        }
+        try {
+            return checkpointSignerReadiness.getAsBoolean();
         } catch (RuntimeException unavailable) {
             return false;
         }

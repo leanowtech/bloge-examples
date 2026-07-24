@@ -19,9 +19,11 @@ implementation. The JAR packages the authoritative v1 JSON Schema and provides:
   payload-free run-summary schemas, independent deployment-isolation attestation verification, and
   payload-free corpus review/candidate/publication, trajectory, and recorded-cluster lifecycle
   verification;
-- strict stateful-mirror payload/create/descriptor/command Schemas, a canonical payload sealer,
-  payload-free semantic verification, authenticated create/read/command/destroy client methods,
-  v3 read/v4 transition evidence verification, and deterministic v3 ANEKE workbook-seed projection;
+- strict stateful-mirror payload/create/descriptor/command/checkpoint/recovery Schemas, a canonical
+  payload sealer, payload-free semantic verification, authenticated
+  create/read/command/checkpoint/recover/destroy client methods, independent checkpoint signature
+  and recovery-closure verification, v3 read/v4 transition evidence verification, and deterministic
+  v3 ANEKE workbook-seed projection;
 - packaged validation and version constants for the payload-free
   `bloge.executionServiceStateSnapshot.v1` durable-resume building block;
 - payload-safe typed child/suite-run summaries and JUnit 5 assertions;
@@ -141,7 +143,8 @@ JsonNode payload = verifier.sealSessionPayload(
 ```
 
 The JAR packages the bounded-expression, state-model, write-effect,
-session-state, five Session API object, and fixture Schemas. Verification re-derives nested and
+session-state, five Session lifecycle objects, five checkpoint/recovery objects, and fixture
+Schemas. Verification re-derives nested and
 top-level fingerprints, exact model/effect/session closure, mutation alias
 admission, business-key component fingerprints, contiguous transaction
 revisions, exact receipt/event closure, response fingerprints, and the latest
@@ -168,11 +171,15 @@ JsonNode current = client.findMirrorSession(
         descriptor.path("sessionId").asText());
 JsonNode result = client.executeMirrorSessionCommand(
         descriptor.path("sessionId").asText(), commandRequest);
+JsonNode checkpoint = client.createMirrorSessionCheckpoint(
+        descriptor.path("sessionId").asText());
+JsonNode recovery = client.recoverMirrorSession(
+        descriptor.path("sessionId").asText(), checkpoint);
 JsonNode terminal = client.destroyMirrorSession(
         descriptor.path("sessionId").asText());
 ```
 
-All four calls use `X-Purpose: MIRROR_REHEARSAL`, validate the Tool Studio
+All six calls use `X-Purpose: MIRROR_REHEARSAL`, validate the Tool Studio
 envelope, and bind the response session id to the requested id. Command
 idempotency comes from the path declared by the admitted
 `WriteEffectSpec.idempotency`, not from an ambient client retry key. The API is
@@ -181,6 +188,16 @@ resolver/runtime readiness. See the
 [stateful mirror kernel guide](../docs/resource-gateway-stateful-mirror-kernel.md)
 for startup, transaction semantics, stable errors, and remaining production
 work.
+
+`createMirrorSessionCheckpoint` fetches the checkpoint attestation key and
+fully verifies strict Schema, store generation, nested fingerprints,
+checkpoint-specific Ed25519 signature, time closure, and `HASH_ONLY` policy
+before returning. `recoverMirrorSession` repeats local verification before any
+recovery request, then requires the server result to bind the exact checkpoint,
+generation, descriptor, and Session run binding. The test client discovers the
+server key for local integration convenience; production CI and governance
+must additionally pin that key through an organization-approved trust set.
+Neither method reads, logs, restores, or rolls back Session payload.
 
 Mirror run evidence has a separate fail-closed verifier. Resolve the public key named by the
 attestation, then verify the decoded bundle before admitting it into a correctness workbook:

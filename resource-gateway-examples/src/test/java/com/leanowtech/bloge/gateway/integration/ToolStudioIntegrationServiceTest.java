@@ -224,6 +224,9 @@ class ToolStudioIntegrationServiceTest {
                 .containsEntry("testSecretAuthorityDeploymentSignedInventoryReady", false)
                 .containsEntry("mirrorStatefulProtocol", true)
                 .containsEntry("mirrorStatefulSessionApi", false)
+                .containsEntry("mirrorStateCheckpointApi", false)
+                .containsEntry("mirrorStateCheckpointReady", false)
+                .containsEntry("mirrorStateRecoveryReady", false)
                 .containsEntry("mirrorStatefulStateStoreReady", false)
                 .containsEntry("mirrorStatefulResolverReady", false)
                 .containsEntry("mirrorStatefulRuntimeReady", false)
@@ -411,7 +414,7 @@ class ToolStudioIntegrationServiceTest {
                 new MirrorRuntimeAvailability(true, true, ready::get));
         service.configureMirrorStatefulRuntime(
                 new MirrorStatefulRuntimeAvailability(
-                        true, ready::get));
+                        true, ready::get, ready::get));
 
         IntegrationCapabilities unavailable =
                 service.capabilities().payload();
@@ -423,12 +426,17 @@ class ToolStudioIntegrationServiceTest {
                 .containsEntry("mirrorStatefulProtocol", true)
                 .containsEntry("mirrorStatefulSessionApi", true)
                 .containsEntry("mirrorStatefulStateStoreReady", false)
+                .containsEntry("mirrorStateCheckpointApi", true)
+                .containsEntry("mirrorStateCheckpointReady", false)
+                .containsEntry("mirrorStateRecoveryReady", false)
                 .containsEntry("mirrorStatefulResolverReady", false)
                 .containsEntry("mirrorStateTransitionEvidenceReady", false)
                 .containsEntry("mirrorStatefulRuntimeReady", false);
         assertThat(available.features())
                 .containsEntry("mirrorStatefulSessionApi", true)
                 .containsEntry("mirrorStatefulStateStoreReady", true)
+                .containsEntry("mirrorStateCheckpointReady", true)
+                .containsEntry("mirrorStateRecoveryReady", true)
                 .containsEntry("mirrorStatefulResolverReady", true)
                 .containsEntry("mirrorStateTransitionEvidenceReady", true)
                 .containsEntry("mirrorStateTransitionWorkbookSeedReady", false)
@@ -440,7 +448,12 @@ class ToolStudioIntegrationServiceTest {
                         "mirrorSessionCreateRequest",
                         "mirrorSessionDescriptor",
                         "mirrorSessionCommandRequest",
-                        "mirrorSessionCommandResult");
+                        "mirrorSessionCommandResult",
+                        "mirrorSessionStoreGeneration",
+                        "mirrorSessionCheckpoint",
+                        "mirrorSessionCheckpointAttestation",
+                        "mirrorSessionCheckpointBundle",
+                        "mirrorSessionRecoveryResult");
         assertThat(available.endpoints())
                 .extracting(endpoint ->
                         endpoint.method() + " " + endpoint.path())
@@ -448,6 +461,8 @@ class ToolStudioIntegrationServiceTest {
                         "POST /api/mirror/sessions",
                         "GET /api/mirror/sessions/{sessionId}",
                         "POST /api/mirror/sessions/{sessionId}/commands",
+                        "POST /api/mirror/sessions/{sessionId}/checkpoints",
+                        "POST /api/mirror/sessions/{sessionId}/recoveries",
                         "DELETE /api/mirror/sessions/{sessionId}");
     }
 

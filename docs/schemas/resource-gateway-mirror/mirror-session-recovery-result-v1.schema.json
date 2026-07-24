@@ -1,0 +1,61 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://bloge.dev/schemas/resource-gateway-mirror/mirror-session-recovery-result-v1.schema.json",
+  "title": "Resource Gateway Mirror Session Recovery Result v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "recoveryId",
+    "checkpointId",
+    "checkpointFingerprint",
+    "storeGenerationFingerprint",
+    "descriptor",
+    "runBinding",
+    "recoveredAt",
+    "fingerprint"
+  ],
+  "properties": {
+    "schemaVersion": {
+      "const": "resourceGateway.mirrorSessionRecoveryResult.v1"
+    },
+    "recoveryId": {
+      "$ref": "session-state-space-v1.schema.json#/$defs/identifier"
+    },
+    "checkpointId": {
+      "$ref": "session-state-space-v1.schema.json#/$defs/identifier"
+    },
+    "checkpointFingerprint": {
+      "$ref": "session-state-space-v1.schema.json#/$defs/fingerprint"
+    },
+    "storeGenerationFingerprint": {
+      "$ref": "session-state-space-v1.schema.json#/$defs/fingerprint"
+    },
+    "descriptor": {
+      "$ref": "mirror-session-descriptor-v1.schema.json"
+    },
+    "runBinding": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "sessionId",
+        "expectedStateFingerprint"
+      ],
+      "properties": {
+        "sessionId": {
+          "$ref": "session-state-space-v1.schema.json#/$defs/identifier"
+        },
+        "expectedStateFingerprint": {
+          "$ref": "session-state-space-v1.schema.json#/$defs/fingerprint"
+        }
+      }
+    },
+    "recoveredAt": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "fingerprint": {
+      "$ref": "session-state-space-v1.schema.json#/$defs/fingerprint"
+    }
+  }
+}

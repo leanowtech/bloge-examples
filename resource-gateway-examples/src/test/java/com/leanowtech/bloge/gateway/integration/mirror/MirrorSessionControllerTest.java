@@ -67,12 +67,24 @@ class MirrorSessionControllerTest {
                 IntegrationOperation.MIRROR_SESSION_COMMAND))
                 .thenReturn(identity);
         when(authenticator.authenticate(headers,
+                IntegrationOperation.MIRROR_SESSION_CHECKPOINT))
+                .thenReturn(identity);
+        when(authenticator.authenticate(headers,
+                IntegrationOperation.MIRROR_SESSION_RECOVER))
+                .thenReturn(identity);
+        when(authenticator.authenticate(headers,
                 IntegrationOperation.MIRROR_SESSION_DESTROY))
                 .thenReturn(identity);
         when(decoder.decodeCreate(raw, identity))
                 .thenReturn(fixture.create());
         when(decoder.decodeCommand(raw, identity))
                 .thenReturn(fixture.command());
+        MirrorSessionCheckpointBundle checkpoint =
+                mock(MirrorSessionCheckpointBundle.class);
+        MirrorSessionRecoveryResult recovery =
+                mock(MirrorSessionRecoveryResult.class);
+        when(decoder.decodeCheckpoint(raw, identity))
+                .thenReturn(checkpoint);
         when(service.create(fixture.create(), identity))
                 .thenReturn(fixture.descriptor());
         when(service.find("refund-session-1", identity))
@@ -80,6 +92,11 @@ class MirrorSessionControllerTest {
         when(service.command(
                 "refund-session-1", fixture.command(), identity))
                 .thenReturn(fixture.result());
+        when(service.checkpoint("refund-session-1", identity))
+                .thenReturn(checkpoint);
+        when(service.recover(
+                "refund-session-1", checkpoint, identity))
+                .thenReturn(recovery);
         when(service.destroy("refund-session-1", identity))
                 .thenReturn(fixture.descriptor());
         MirrorSessionController controller = new MirrorSessionController(
@@ -92,6 +109,12 @@ class MirrorSessionControllerTest {
         assertThat(controller.command(
                 "refund-session-1", raw, headers).payload())
                 .isEqualTo(fixture.result());
+        assertThat(controller.checkpoint(
+                "refund-session-1", headers).payload())
+                .isEqualTo(checkpoint);
+        assertThat(controller.recover(
+                "refund-session-1", raw, headers).payload())
+                .isEqualTo(recovery);
         assertThat(controller.destroy(
                 "refund-session-1", headers).payload())
                 .isEqualTo(fixture.descriptor());
@@ -101,6 +124,10 @@ class MirrorSessionControllerTest {
                 headers, IntegrationOperation.MIRROR_SESSION_READ);
         verify(authenticator).authenticate(
                 headers, IntegrationOperation.MIRROR_SESSION_COMMAND);
+        verify(authenticator).authenticate(
+                headers, IntegrationOperation.MIRROR_SESSION_CHECKPOINT);
+        verify(authenticator).authenticate(
+                headers, IntegrationOperation.MIRROR_SESSION_RECOVER);
         verify(authenticator).authenticate(
                 headers, IntegrationOperation.MIRROR_SESSION_DESTROY);
     }
@@ -129,6 +156,39 @@ class MirrorSessionControllerTest {
                 .build();
 
         mvc.perform(post("/api/mirror/sessions")
+                        .contentType(APPLICATION_JSON)
+                        .content("{not-json"))
+                .andExpect(status().isUnauthorized())
+                .andExpect(jsonPath("$.code").value(
+                        "RG.INTEGRATION.AUTHENTICATION_REQUIRED"));
+        verifyNoInteractions(decoder, service);
+    }
+
+    @Test
+    void recoveryAuthenticationFailureHappensBeforeCheckpointDecoding()
+            throws Exception {
+        MirrorSessionIntegrationService service =
+                mock(MirrorSessionIntegrationService.class);
+        IntegrationRequestAuthenticator authenticator =
+                mock(IntegrationRequestAuthenticator.class);
+        MirrorSessionRequestDecoder decoder =
+                mock(MirrorSessionRequestDecoder.class);
+        when(authenticator.authenticate(
+                any(HttpHeaders.class),
+                eq(IntegrationOperation.MIRROR_SESSION_RECOVER)))
+                .thenThrow(new IntegrationProblemException(
+                        IntegrationProblem.unauthorized(
+                                "RG.INTEGRATION.AUTHENTICATION_REQUIRED",
+                                "Authentication is required.",
+                                "corr-1", Map.of())));
+        MockMvc mvc = MockMvcBuilders.standaloneSetup(
+                        new MirrorSessionController(
+                                service, authenticator, decoder))
+                .setControllerAdvice(new IntegrationProblemHandler())
+                .build();
+
+        mvc.perform(post(
+                        "/api/mirror/sessions/refund-session-1/recoveries")
                         .contentType(APPLICATION_JSON)
                         .content("{not-json"))
                 .andExpect(status().isUnauthorized())

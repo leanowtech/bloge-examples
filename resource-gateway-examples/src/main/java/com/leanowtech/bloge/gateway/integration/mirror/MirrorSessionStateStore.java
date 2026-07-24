@@ -16,6 +16,19 @@ import java.util.Optional;
 public interface MirrorSessionStateStore {
 
     /**
+     * Reads and verifies the immutable identity of the durable Session data-plane generation.
+     *
+     * <p>The identity must survive process and replica restarts against the same database and must
+     * change when a new independent store is initialized. Encryption-key rotation must not change
+     * this value because decrypt-only keys can preserve the same durable Session generation. A
+     * full database clone preserves the generation and requires a separate deployment-ownership
+     * fence to prevent split brain.</p>
+     *
+     * @return current durable store generation
+     */
+    MirrorSessionStoreGeneration generation();
+
+    /**
      * Creates a session or returns the original descriptor for an exact create retry.
      *
      * @param command exact create identity and sealed initial payload
@@ -45,6 +58,20 @@ public interface MirrorSessionStateStore {
      * @return payload and descriptor aligned to one durable state head
      */
     SessionSnapshot snapshot(SnapshotCommand command);
+
+    /**
+     * Reads the durable store generation and one active Session state head in the same database
+     * transaction.
+     *
+     * <p>This is the only material admitted to checkpoint creation and recovery. Implementations
+     * must not compose it from independent {@link #generation()} and {@link #snapshot} calls,
+     * because a data-plane replacement between those reads would create a mixed-generation
+     * recovery proof.</p>
+     *
+     * @param command exact enterprise namespace and Session identity
+     * @return generation and immutable payload/descriptor snapshot from one transaction
+     */
+    CheckpointSnapshot checkpointSnapshot(SnapshotCommand command);
 
     /**
      * Acquires or renews a database-clock owner lease and decrypts the exact current aggregate.
@@ -195,6 +222,24 @@ public interface MirrorSessionStateStore {
                 throw new IllegalArgumentException(
                         "session snapshot payload and descriptor do not align");
             }
+        }
+    }
+
+    /**
+     * Exact transactional material for checkpoint creation or recovery admission.
+     *
+     * @param generation immutable durable data-plane generation
+     * @param snapshot exact active Session state head
+     */
+    record CheckpointSnapshot(
+            MirrorSessionStoreGeneration generation,
+            SessionSnapshot snapshot
+    ) {
+        /** Validates complete immutable checkpoint material. */
+        public CheckpointSnapshot {
+            generation = Objects.requireNonNull(
+                    generation, "generation");
+            snapshot = Objects.requireNonNull(snapshot, "snapshot");
         }
     }
 

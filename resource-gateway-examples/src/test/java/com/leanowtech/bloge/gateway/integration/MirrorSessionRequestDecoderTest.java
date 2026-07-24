@@ -4,18 +4,27 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.SerializationFeature;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import com.leanowtech.bloge.gateway.integration.mirror.MirrorSessionCommandRequest;
+import com.leanowtech.bloge.gateway.integration.mirror.MirrorSessionCheckpointBundle;
+import com.leanowtech.bloge.gateway.integration.mirror.MirrorSessionCheckpointIntegrityService;
 import com.leanowtech.bloge.gateway.integration.mirror.MirrorSessionCreateRequest;
+import com.leanowtech.bloge.gateway.integration.mirror.MirrorSessionDescriptor;
 import com.leanowtech.bloge.gateway.integration.mirror.MirrorSessionPayload;
 import com.leanowtech.bloge.gateway.integration.mirror.MirrorSessionProtocolIntegrity;
+import com.leanowtech.bloge.gateway.integration.mirror.MirrorSessionStateStore;
+import com.leanowtech.bloge.gateway.integration.mirror.MirrorSessionStoreGeneration;
+import com.leanowtech.bloge.gateway.integration.mirror.MirrorSessionStoreGenerationIntegrity;
 import com.leanowtech.bloge.gateway.integration.mirror.SessionStateSpace;
 import com.leanowtech.bloge.gateway.integration.mirror.StateModel;
 import com.leanowtech.bloge.gateway.integration.mirror.StateModelIntegrity;
 import com.leanowtech.bloge.gateway.integration.mirror.StatefulMirrorProtocolTest;
 import com.leanowtech.bloge.gateway.integration.mirror.WriteEffectSpec;
 import com.leanowtech.bloge.gateway.integration.mirror.WriteEffectSpecIntegrity;
+import com.leanowtech.bloge.gateway.visual.runtime.InMemoryVisualEvidenceSigner;
 import org.junit.jupiter.api.Test;
 
 import java.time.Instant;
+import java.time.Clock;
+import java.time.ZoneOffset;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -51,6 +60,58 @@ class MirrorSessionRequestDecoderTest {
         assertThat(decoder.decodeCommand(
                 mapper.writeValueAsBytes(command), identity()))
                 .isEqualTo(command);
+    }
+
+    @Test
+    void decodesStrictSignedCheckpointAndRejectsUnknownFields()
+            throws Exception {
+        Fixture fixture = fixture();
+        MirrorSessionCheckpointBundle checkpoint =
+                checkpoint(fixture);
+
+        assertThat(decoder.decodeCheckpoint(
+                mapper.writeValueAsBytes(checkpoint), identity()))
+                .isEqualTo(checkpoint);
+
+        ObjectNode unknown = mapper.valueToTree(checkpoint);
+        unknown.put("payload", "sensitive-value");
+        assertMalformed(() -> decoder.decodeCheckpoint(
+                        mapper.writeValueAsBytes(unknown), identity()),
+                "RG.MIRROR.SESSION.CHECKPOINT_REQUEST_MALFORMED");
+    }
+
+    @Test
+    void rejectsNonCanonicalCheckpointAttestationAndDependencyOrder()
+            throws Exception {
+        MirrorSessionCheckpointBundle checkpoint =
+                checkpoint(fixture());
+        ObjectNode unverifiable = mapper.valueToTree(checkpoint);
+        ((ObjectNode) unverifiable.path("attestation"))
+                .put("independentlyVerifiable", false);
+
+        assertMalformed(() -> decoder.decodeCheckpoint(
+                        mapper.writeValueAsBytes(unverifiable), identity()),
+                "RG.MIRROR.SESSION.CHECKPOINT_REQUEST_MALFORMED");
+
+        ObjectNode unordered = mapper.valueToTree(checkpoint);
+        var refs = ((ObjectNode) unordered.path("checkpoint"))
+                .putArray("stateReadRefs");
+        String fingerprint = checkpoint.checkpoint()
+                .stateModelRef().fingerprint();
+        refs.addObject()
+                .put("kind", "STATE_READ_SPEC")
+                .put("id", "read-z")
+                .put("revision", 1)
+                .put("fingerprint", fingerprint);
+        refs.addObject()
+                .put("kind", "STATE_READ_SPEC")
+                .put("id", "read-a")
+                .put("revision", 1)
+                .put("fingerprint", fingerprint);
+
+        assertMalformed(() -> decoder.decodeCheckpoint(
+                        mapper.writeValueAsBytes(unordered), identity()),
+                "RG.MIRROR.SESSION.CHECKPOINT_REQUEST_MALFORMED");
     }
 
     @Test
@@ -116,6 +177,40 @@ class MirrorSessionRequestDecoderTest {
                                 "", model, List.of(effect), state, ""),
                         NOW);
         return new Fixture(effect, payload);
+    }
+
+    private MirrorSessionCheckpointBundle checkpoint(
+            Fixture fixture) {
+        SessionStateSpace state = fixture.payload().state();
+        MirrorSessionDescriptor descriptor =
+                MirrorSessionProtocolIntegrity.sealDescriptor(
+                        mapper, new MirrorSessionDescriptor(
+                                "", state.sessionId(), state.scope(),
+                                state.planFingerprint(),
+                                state.stateModelRef(),
+                                state.writeEffectRefs(),
+                                state.stateRevision(),
+                                MirrorSessionDescriptor.Status.ACTIVE,
+                                state.worldFingerprint(),
+                                state.fingerprint(),
+                                NOW, NOW, state.expiresAt(),
+                                null, ""));
+        MirrorSessionStoreGeneration generation =
+                MirrorSessionStoreGenerationIntegrity.seal(
+                        mapper, new MirrorSessionStoreGeneration(
+                                "", "store-generation-1", 1,
+                                NOW.minusSeconds(60), ""));
+        MirrorSessionCheckpointIntegrityService integrity =
+                new MirrorSessionCheckpointIntegrityService(
+                        mapper,
+                        InMemoryVisualEvidenceSigner.usingClock(
+                                Clock.fixed(NOW, ZoneOffset.UTC)),
+                        Clock.fixed(NOW, ZoneOffset.UTC));
+        return integrity.seal(
+                new MirrorSessionStateStore.CheckpointSnapshot(
+                        generation,
+                        new MirrorSessionStateStore.SessionSnapshot(
+                                fixture.payload(), descriptor)));
     }
 
     private static IntegrationRequestContext identity() {

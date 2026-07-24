@@ -6,6 +6,7 @@ import com.fasterxml.jackson.databind.DeserializationFeature;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.leanowtech.bloge.gateway.integration.mirror.MirrorSessionCommandRequest;
+import com.leanowtech.bloge.gateway.integration.mirror.MirrorSessionCheckpointBundle;
 import com.leanowtech.bloge.gateway.integration.mirror.MirrorSessionCreateRequest;
 import com.leanowtech.bloge.gateway.integration.mirror.MirrorSessionProtocolIntegrity;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
@@ -39,6 +40,8 @@ public final class MirrorSessionRequestDecoder {
             MirrorSessionProtocolIntegrity.MAXIMUM_PAYLOAD_BYTES + 1024 * 1024;
     /** Maximum raw state-transition command. */
     public static final int MAXIMUM_COMMAND_BYTES = 16 * 1024 * 1024;
+    /** Maximum raw signed checkpoint recovery request. */
+    public static final int MAXIMUM_CHECKPOINT_BYTES = 5 * 1024 * 1024;
     /** Maximum admitted JSON nesting depth. */
     public static final int MAXIMUM_DEPTH = 128;
     /** Maximum admitted JSON nodes before typed materialization. */
@@ -48,6 +51,9 @@ public final class MirrorSessionRequestDecoder {
     private static final Set<String> COMMAND_FIELDS = Set.of(
             "schemaVersion", "writeEffectRef",
             "expectedStateFingerprint", "input");
+    private static final Set<String> CHECKPOINT_FIELDS = Set.of(
+            "schemaVersion", "bundleFingerprint", "payloadPolicy",
+            "checkpoint", "attestation");
 
     private final ObjectMapper strictMapper;
 
@@ -86,6 +92,29 @@ public final class MirrorSessionRequestDecoder {
                     root, MirrorSessionCommandRequest.class);
         } catch (JsonProcessingException | IllegalArgumentException malformed) {
             throw invalid(identity, "COMMAND");
+        }
+    }
+
+    /**
+     * Decodes one complete signed checkpoint bundle for exact recovery admission.
+     *
+     * @param value bounded raw JSON body
+     * @param identity already authenticated enterprise request
+     * @return strict checkpoint bundle
+     */
+    public MirrorSessionCheckpointBundle decodeCheckpoint(
+            byte[] value, IntegrationRequestContext identity) {
+        JsonNode root = parse(
+                value, MAXIMUM_CHECKPOINT_BYTES,
+                identity, "CHECKPOINT");
+        requireFields(root, CHECKPOINT_FIELDS,
+                MirrorSessionCheckpointBundle.SCHEMA_VERSION,
+                identity, "CHECKPOINT");
+        try {
+            return strictMapper.treeToValue(
+                    root, MirrorSessionCheckpointBundle.class);
+        } catch (JsonProcessingException | IllegalArgumentException malformed) {
+            throw invalid(identity, "CHECKPOINT");
         }
     }
 
@@ -149,7 +178,10 @@ public final class MirrorSessionRequestDecoder {
     private static IntegrationProblemException invalid(
             IntegrationRequestContext identity, String operation) {
         int maximumBytes = "CREATE".equals(operation)
-                ? MAXIMUM_CREATE_BYTES : MAXIMUM_COMMAND_BYTES;
+                ? MAXIMUM_CREATE_BYTES
+                : "CHECKPOINT".equals(operation)
+                ? MAXIMUM_CHECKPOINT_BYTES
+                : MAXIMUM_COMMAND_BYTES;
         return new IntegrationProblemException(IntegrationProblem.badRequest(
                 "RG.MIRROR.SESSION." + operation + "_REQUEST_MALFORMED",
                 "The stateful mirror request does not match its strict bounded protocol.",

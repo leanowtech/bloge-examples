@@ -41,6 +41,8 @@ public final class ResourceGatewayTestClient {
     private static final ObjectMapper JSON = new ObjectMapper();
     private static final MirrorStateProtocolVerifier MIRROR_STATE_VERIFIER =
             new MirrorStateProtocolVerifier();
+    private static final MirrorSessionCheckpointVerifier MIRROR_CHECKPOINT_VERIFIER =
+            new MirrorSessionCheckpointVerifier();
     private static final int DEFAULT_MAX_BODY_BYTES = 16 * 1024 * 1024;
     private static final Duration MAX_RETRY_AFTER = Duration.ofHours(24);
 
@@ -1514,6 +1516,102 @@ public final class ResourceGatewayTestClient {
                     "The server returned a command result for a different mirror session.");
         }
         return result.deepCopy();
+    }
+
+    /**
+     * Creates and independently verifies one payload-free exact Session checkpoint.
+     *
+     * <p>The client validates strict Schema and every canonical fingerprint, resolves the
+     * attestation public key, applies key policy, and verifies the checkpoint-specific Ed25519
+     * signature before returning the bundle. No Session payload is copied into the result.</p>
+     *
+     * @param sessionId path-safe Session identity
+     * @return defensive copy of the independently verified checkpoint bundle
+     */
+    public JsonNode createMirrorSessionCheckpoint(
+            String sessionId) {
+        String exactSessionId = mirrorSessionId(sessionId);
+        JsonNode response = exchange(
+                "POST",
+                "/api/mirror/sessions/" + segment(exactSessionId)
+                        + "/checkpoints",
+                "", "MIRROR_REHEARSAL", null);
+        JsonNode bundle = requireMirrorEnvelope(
+                response,
+                "MIRROR_SESSION_CHECKPOINT_BUNDLE",
+                CapabilityMirrorProtocol
+                        .MIRROR_SESSION_CHECKPOINT_BUNDLE_V1);
+        MirrorSessionCheckpointVerifier.VerificationResult verified =
+                verifyMirrorSessionCheckpoint(bundle);
+        if (!verified.verified()
+                || !exactSessionId.equals(verified.sessionId())) {
+            throw responseContractInvalid(
+                    "The server returned an invalid or mismatched mirror Session checkpoint.");
+        }
+        return bundle.deepCopy();
+    }
+
+    /**
+     * Requests exact Session continuation from one locally verified signed checkpoint.
+     *
+     * @param sessionId path-safe Session identity
+     * @param checkpointBundle exact signed checkpoint returned by the checkpoint API
+     * @return defensive copy of the verified payload-free recovery result
+     */
+    public JsonNode recoverMirrorSession(
+            String sessionId, JsonNode checkpointBundle) {
+        String exactSessionId = mirrorSessionId(sessionId);
+        JsonNode bundle = requiredObject(
+                checkpointBundle, "checkpointBundle");
+        MirrorSessionCheckpointVerifier.VerificationResult checkpoint =
+                verifyMirrorSessionCheckpoint(bundle);
+        if (!checkpoint.verified()
+                || !exactSessionId.equals(checkpoint.sessionId())) {
+            throw new IllegalArgumentException(
+                    "checkpointBundle is not a verified checkpoint for the selected Session");
+        }
+        JsonNode response = exchange(
+                "POST",
+                "/api/mirror/sessions/" + segment(exactSessionId)
+                        + "/recoveries",
+                "", "MIRROR_REHEARSAL", bundle);
+        JsonNode result = requireMirrorEnvelope(
+                response,
+                "MIRROR_SESSION_RECOVERY_RESULT",
+                CapabilityMirrorProtocol
+                        .MIRROR_SESSION_RECOVERY_RESULT_V1);
+        MirrorSessionCheckpointVerifier.VerifiedRecoveryResult verified;
+        try {
+            verified = MIRROR_CHECKPOINT_VERIFIER
+                    .verifyRecoveryResult(result, bundle);
+        } catch (IllegalArgumentException invalid) {
+            throw responseContractInvalid(
+                    "The server returned an invalid mirror Session recovery result.");
+        }
+        if (!exactSessionId.equals(verified.sessionId())) {
+            throw responseContractInvalid(
+                    "The server recovered a different mirror Session.");
+        }
+        return result.deepCopy();
+    }
+
+    private MirrorSessionCheckpointVerifier.VerificationResult
+    verifyMirrorSessionCheckpoint(JsonNode bundle) {
+        String keyId = bundle.at("/attestation/keyId").asText();
+        EvidenceVerificationKey key;
+        try {
+            key = findEvidenceVerificationKey(keyId);
+        } catch (ResourceGatewayTestException failure) {
+            if ("RG.INTEGRATION.EVIDENCE_KEY_NOT_FOUND".equals(
+                    failure.code())
+                    || "RG.INTEGRATION.EVIDENCE_KEY_PROVIDER_UNAVAILABLE"
+                    .equals(failure.code())) {
+                return MIRROR_CHECKPOINT_VERIFIER.verify(
+                        bundle, null);
+            }
+            throw failure;
+        }
+        return MIRROR_CHECKPOINT_VERIFIER.verify(bundle, key);
     }
 
     /**

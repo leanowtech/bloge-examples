@@ -78,6 +78,11 @@ class CapabilityMirrorSchemaPackagingTest {
                 "mirror-session-descriptor-v1.schema.json",
                 "mirror-session-command-request-v1.schema.json",
                 "mirror-session-command-result-v1.schema.json",
+                "mirror-session-store-generation-v1.schema.json",
+                "mirror-session-checkpoint-v1.schema.json",
+                "mirror-session-checkpoint-attestation-v1.schema.json",
+                "mirror-session-checkpoint-bundle-v1.schema.json",
+                "mirror-session-recovery-result-v1.schema.json",
                 "stateful-refund-stage3-v1.fixture.schema.json")) {
             String resource = CapabilityMirrorProtocol.SCHEMA_RESOURCE_ROOT + name;
             try (InputStream input = getClass().getResourceAsStream(resource)) {
@@ -116,6 +121,14 @@ class CapabilityMirrorSchemaPackagingTest {
                 .isEqualTo("resourceGateway.mirrorSessionCommandRequest.v1");
         assertThat(CapabilityMirrorProtocol.MIRROR_SESSION_COMMAND_RESULT_V1)
                 .isEqualTo("resourceGateway.mirrorSessionCommandResult.v1");
+        assertThat(CapabilityMirrorProtocol
+                .MIRROR_SESSION_CHECKPOINT_BUNDLE_V1)
+                .isEqualTo(
+                        "resourceGateway.mirrorSessionCheckpointBundle.v1");
+        assertThat(CapabilityMirrorProtocol
+                .MIRROR_SESSION_RECOVERY_RESULT_V1)
+                .isEqualTo(
+                        "resourceGateway.mirrorSessionRecoveryResult.v1");
         assertThat(CapabilityMirrorProtocol.MIRROR_SESSION_PAYLOAD_SCHEMA_RESOURCE)
                 .endsWith("mirror-session-payload-v1.schema.json");
         assertThat(CapabilityMirrorProtocol
@@ -129,6 +142,26 @@ class CapabilityMirrorSchemaPackagingTest {
         assertThat(CapabilityMirrorProtocol
                 .MIRROR_SESSION_COMMAND_RESULT_SCHEMA_RESOURCE)
                 .endsWith("mirror-session-command-result-v1.schema.json");
+        assertThat(CapabilityMirrorProtocol
+                .MIRROR_SESSION_STORE_GENERATION_SCHEMA_RESOURCE)
+                .endsWith(
+                        "mirror-session-store-generation-v1.schema.json");
+        assertThat(CapabilityMirrorProtocol
+                .MIRROR_SESSION_CHECKPOINT_SCHEMA_RESOURCE)
+                .endsWith(
+                        "mirror-session-checkpoint-v1.schema.json");
+        assertThat(CapabilityMirrorProtocol
+                .MIRROR_SESSION_CHECKPOINT_ATTESTATION_SCHEMA_RESOURCE)
+                .endsWith(
+                        "mirror-session-checkpoint-attestation-v1.schema.json");
+        assertThat(CapabilityMirrorProtocol
+                .MIRROR_SESSION_CHECKPOINT_BUNDLE_SCHEMA_RESOURCE)
+                .endsWith(
+                        "mirror-session-checkpoint-bundle-v1.schema.json");
+        assertThat(CapabilityMirrorProtocol
+                .MIRROR_SESSION_RECOVERY_RESULT_SCHEMA_RESOURCE)
+                .endsWith(
+                        "mirror-session-recovery-result-v1.schema.json");
         assertThat(CapabilityMirrorProtocol.MIRROR_EVIDENCE_BUNDLE_V2_SCHEMA_RESOURCE)
                 .endsWith("mirror-evidence-bundle-v2.schema.json");
         assertThat(CapabilityMirrorProtocol
