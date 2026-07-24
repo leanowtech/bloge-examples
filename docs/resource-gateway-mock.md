@@ -576,19 +576,37 @@ Resource Gateway 已有的工业底座应直接复用：
 | 递归 DAG 测试 | 85% | MirrorPlan/closure/runtime inventory/fixture control 已统一；缺 contract-mock 展开治理和状态世界 |
 | 日志蒸馏与语料 | 82% | payload-free signed observation、准入/隔离、immutable review、candidate/publication/trajectory/cluster 独立 lineage、元数据风险门禁、fixture exact/trajectory/cluster binding、在线 revalidation、test/staging `RECORDED_EXACT`/`RECORDED_TRAJECTORY`/`RECORDED_CLUSTER`、BLOGE 原生 retry loop、identity-safe projection、Wilson confidence、Session state read 与独立 verifier 已落地；缺生产 payload authority、漂移、偏差、outcome 校准和删除证明 |
 | 有状态业务世界 | 91% | 协议、read/write 退款 fixture、独立 verifier/sealer/client、事务内核、受保护 Session API、独立 AES-GCM 数据面、lease/fence/CAS、durable write-attempt journal/reconciliation、TTL/destroy、全局/scope 容量、保留字节、命令背压、过期擦除、固定 read head、run-scoped virtual write、真实 DAG read-write-read、payload-free v1/v2/v3 state evidence、read-only/successful-transition/write-outcome ANEKE seed、签名 HASH_ONLY checkpoint 与同数据面代际精确恢复准入已落地；缺 TEE/KMS、跨区域数据恢复、真实 process-kill/network parity、目标数据库容量认证和 HA/DR certification |
-| Scenario/Rehearsal | 10% | 缺场景、写效果、处置断言和状态演练协议 |
+| Scenario/Rehearsal | 28% | ScenarioPack/Case/Assertion、append-only registry、exact 跨仓储 compiler 与 payload-free compiled plan 已落地；缺 case runtime、断言求值、聚合 evidence、批量任务和 owner UX |
 | Fidelity/Outcome | 5% | 缺保真向量、shadow、权威结果归因和校准闭环 |
 | 业务运营工作台 | 10% | Author Canvas 尚未成为案例驱动的镜像运营工作台 |
 
-结论：基础设施准备度约 87%，镜像复利闭环完成度约 35%–40%，完整理想态完成度约 48%。剩余主要矛盾已经
+结论：基础设施准备度约 88%，镜像复利闭环完成度约 40%，完整理想态完成度约 51%。剩余主要矛盾已经
 从“能否安全执行和取证”转向“能否把可信 observation 持续蒸馏成可校准、可拒答、可删除的业务拟合资产”。
 
-### 3.1 2026-07-24 迭代差距复评
+### 3.1 2026-07-24 Scenario 编译期闭包迭代差距复评
 
-本轮关闭的是 stateful write 的 crash ambiguity，而不是把“能模拟”偷换成“模拟得对”。完成项包括 durable
-payload-free write-attempt、intent-before-mutation、Session/receipt/audit/attempt 原子提交、响应丢失认回、
-lease-expired reconciliation、两副本竞态、poison-row 隔离、journal 不健康时写入失败关闭，以及原始
-correlation key 不落盘。它显著提高了运行正确性和证据可信度，但没有直接产生新的客户业务知识。
+上一轮关闭了 stateful write 的 crash ambiguity；本轮开始把这些运行底座组织成业务场景。已完成
+`ScenarioPack.v1`、`ScenarioCase.v1`、`CaseHandlingAssertion.v1` 的 strict Schema、canonical seal、
+test-kit 独立 verifier 与固定 compatibility fixture，并新增完整 scope 的 append-only 场景注册表、严格
+auth-before-decode API、跨 TestSuite/Fixture/MirrorPlan/checkpoint authority 的 deterministic compiler 和
+`CompiledScenarioRehearsalPlan.v1`。
+
+编译计划是 ScenarioPack 与 MirrorPlan 的内容寻址 join artifact。系统明确拒绝
+`ScenarioPack -> ScenarioCase -> MirrorPlan -> ScenarioPack` 的反向指纹环，MirrorPlan 保持可复用，
+compiled plan 独占 exact 组合关系。编译结果只保存 ref、policy、execution service 和 assertion closure，
+不保存 TestCase input、Fixture value、Session payload 或凭据。数据库按完整企业 scope、kind、id、revision
+append-only 保存，写入和读取均重验 seal/signature/indexed identity；真实 Spring 上下文、严格传输、重启、
+串租户、篡改、隐式 fault、过期 checkpoint 和执行策略漂移测试已通过。
+
+这里还有一个不能掩盖的 scope 债务：Scenario/MirrorPlan/Capability 已使用完整
+tenant/organization/project/environment/region，而历史 TestSuite/Fixture registry envelope 和主键仍只有
+tenant + environment。当前 compiler 能证明 exact 内容、target、classification 和调用身份，却不能证明这两类
+来源资产的 organization/project/region ownership。它因此只能是 test/staging compile-only 能力；进入生产认证前
+必须升级资产 scope 或引入完整 scope 的外部 ownership attestation，不能信任 ScenarioCase 的自声明来补洞。
+
+这仍不是“场景已经跑通”。capability probe 分开报告 registry/compilation 为 `true`，execution/evidence 为
+`false`。逐 case runtime、断言 evaluator、state diff、aggregate evidence 和 workbook seed 尚未完成，
+因此本轮只提高 Scenario/Rehearsal，不提高 Fidelity/Outcome。
 
 为防止每轮用主观印象抬高完成度，后续统一采用下面的固定权重。权重刻意把 `Scenario/Rehearsal`、
 `Fidelity/Outcome` 和业务工作台放到 50%，因为客户服务的上限由业务拟合保真度和 owner 可运营性决定，而不是由
@@ -602,14 +620,14 @@ correlation key 不落盘。它显著提高了运行正确性和证据可信度�
 | 递归 DAG 测试 | 6% | 85% | 5.10 | contract-mock 展开债务与 stateful child 治理 |
 | 日志蒸馏与语料 | 10% | 82% | 8.20 | 生产 payload authority、偏差、漂移和删除证明 |
 | 有状态业务世界 | 13% | 91% | 11.83 | process-kill/network/vendor DB/HA/DR 认证 |
-| Scenario/Rehearsal | 16% | 10% | 1.60 | 尚无可执行 ScenarioPack、处置断言和批量演练闭环 |
+| Scenario/Rehearsal | 16% | 28% | 4.48 | 已有治理协议/注册/编译闭包；尚无逐 case runtime、处置断言结果、聚合 evidence 和批量演练 |
 | Fidelity/Outcome | 24% | 5% | 1.20 | 尚无保真向量、shadow、权威 outcome 归因与校准 |
 | 业务运营工作台 | 10% | 10% | 1.00 | owner 仍不能零 DSL 完成“看、调、确认、发布” |
-| **合计** | **100%** |  | **48.07%** | **距理想态 51.93%，远高于 5% 停止线** |
+| **合计** | **100%** |  | **50.95%** | **距理想态 49.05%，远高于 5% 停止线** |
 
 这个分数基于仓库协议、实现、测试和 capability readiness，不是生产 SLA，也不把尚未接入的客户 TEE、KMS、
-HA/DR 或权威 outcome 当成已完成。与上一轮约 49% 的定性判断相比，48.07% 不是能力倒退，而是固定权重后的保守
-校准；以后必须使用同一权重，只有新增可复验能力才能提高分数。
+HA/DR 或权威 outcome 当成已完成。50.95% 只承认已由代码和测试复验的编译期增量；以后必须使用同一权重，
+只有新增可复验能力才能提高分数。
 
 **病根分类**：
 
@@ -622,12 +640,13 @@ HA/DR 或权威 outcome 当成已完成。与上一轮约 49% 的定性判断相
 
 **下一轮最短有效路径：先打通 E7 Scenario/Rehearsal，不继续横向堆 state 基础设施。**
 
-| 顺序 | Ticket | 直击病根的工程任务 | 仓库内退出门禁 |
-|---:|---|---|---|
-| 1 | RG-MIR-SCEN-001 | 冻结 `ScenarioPack.v1`、`ScenarioCase.v1`、`CaseHandlingAssertion.v1` 与 exact Graph/Fixture/Session/clock/fault binding | strict Schema、Java model、test-kit 独立 verifier、合法/篡改/越权/过期/未知字段矩阵全绿 |
-| 2 | RG-MIR-SCEN-002 | 实现 deterministic rehearsal compiler/runtime；每 case 使用隔离 Session/checkpoint、固定时钟/随机源、fixture data-flow inversion 和禁止真实 egress | 退款域覆盖 golden/negative/boundary/retry/timeout/rejected/unknown/recovery，重复运行语义指纹一致 |
-| 3 | RG-MIR-SCEN-003 | 产出 payload-free Scenario evidence、state diff、处置断言结果与 ANEKE workbook seed，区分执行失败、断言失败、低保真和证据不完整 | 独立重建 seed；任何 unknown outcome、缺断言或不完整 evidence 阻断 gate-ready |
-| 4 | RG-MIR-SCEN-004 | 提供批量 rehearsal API、deep link 和最小 Author 场景表格；先保证业务 owner 不编辑 JSON/DSL 即可维护 case | 退款与工单故障两个样例域端到端演示；浏览器、REST、Java/test-kit 使用同一协议资产 |
+| 顺序 | Ticket | 状态 | 直击病根的工程任务 | 仓库内退出门禁 |
+|---:|---|---|---|---|
+| 1 | RG-MIR-SCEN-001 | 完成 | 冻结 `ScenarioPack.v1`、`ScenarioCase.v1`、`CaseHandlingAssertion.v1` 与 exact Graph/Fixture/Session/clock/fault binding | strict Schema、Java model、test-kit 独立 verifier、合法/篡改/越权/过期/未知字段矩阵全绿 |
+| 2 | RG-MIR-SCEN-001A | 待实现，runtime 前置 | 将 TestSuite/Fixture authority 升级为完整 enterprise scope，或验证独立 scope ownership attestation；提供旧 tenant+environment 资产的显式迁移/隔离策略 | 两个 organization/project/region 使用同 id/revision/fingerprint 仍不能串读、串绑或经 metadata 伪造归属；混合版本失败关闭 |
+| 3 | RG-MIR-SCEN-002 | 编译期完成，runtime 待实现 | deterministic compiler/runtime；每 case 使用隔离 Session/checkpoint、固定时钟/随机源、fixture data-flow inversion 和禁止真实 egress | 编译闭包已全绿；下一步退款域覆盖 golden/negative/boundary/retry/timeout/rejected/unknown/recovery，重复运行语义指纹一致 |
+| 4 | RG-MIR-SCEN-003 | 待实现 | 产出 payload-free Scenario evidence、state diff、处置断言结果与 ANEKE workbook seed，区分执行失败、断言失败、低保真和证据不完整 | 独立重建 seed；任何 unknown outcome、缺断言或不完整 evidence 阻断 gate-ready |
+| 5 | RG-MIR-SCEN-004 | 待实现 | 提供批量 rehearsal API、deep link 和最小 Author 场景表格；先保证业务 owner 不编辑 JSON/DSL 即可维护 case | 退款与工单故障两个样例域端到端演示；浏览器、REST、Java/test-kit 使用同一协议资产 |
 
 完成 E7 后才进入 E8：以 Scenario coverage 为分母建立
 `DomainFidelityProfile`、typed shadow diff、confidence/abstention debt 和 drift downgrade；随后 E9 接入
@@ -1172,9 +1191,17 @@ generation one 的 `RehearsalPolicy` 固定为 sequential、每 case Session 隔
 **当前实现状态（2026-07-24）**：三个内容寻址 Java model、canonical seal/verify、严格 Draft
 2020-12 Schema 和独立 test-kit `ScenarioPackVerifier` 已完成。verifier 能证明 exact
 case/assertion closure、scope/target 一致、每 plan execution-service 一致、Session checkpoint
-不复用、fault 显式绑定、断言可求值和 approval/expiry 有效。它不冒充在线 registry authority；
-TestSuite case、Fixture rule、MirrorPlan 和 live checkpoint 的真实存在与当前性由下一步 rehearsal
-compiler 失败关闭校验。
+不复用、fault 显式绑定、断言可求值和 approval/expiry 有效。
+
+在线 append-only registry 与 compiler 也已落地。注册表以完整
+tenant/organization/project/environment/region + kind/id/revision 为地址，父资产只在 exact child
+已存在、同 scope 且通过 seal/signature/lifecycle 校验后写入。compiler 从各自 authority 重新解析
+TestSuite/TestCase、FixtureBundle、MirrorPlan、fault rule 和可选 live checkpoint，拒绝 implicit fault、
+execution-service drift、classification 越界、状态闭包漂移和内容寻址反向环，并产出
+`resourceGateway.compiledScenarioRehearsalPlan.v1`。该 plan 是 payload-free 执行许可，不是运行结果；
+逐 case runtime 和 aggregate evidence 未完成前，capability probe 必须保持 execution/evidence 为 false。
+操作与启停见
+[场景演练注册与编译指南](resource-gateway-scenario-rehearsal-compiler.md)。
 
 ### 10.2 CaseHandlingAssertion
 
@@ -1350,6 +1377,13 @@ session 重放造成重复状态、运行时依赖漂移。
 | `POST /api/mirror/sessions/{sessionId}/recoveries` | 验签并比较当前 exact store/dependency/state closure，返回新的 Session run binding | 对同一有效 checkpoint 可重复准入；不复制或回写 payload | 已实现（test/staging + stateful 开关 + signer ready） |
 | `DELETE /api/mirror/sessions/{sessionId}` | 终态销毁 Session 密文 | 终态幂等 | 已实现（test/staging + stateful 开关） |
 | `POST /api/mirror/executions` | 同步运行一个 sealed stateless 或 exact Session-bound capability generation | full scope + requestId + plan/context/state fingerprint；并发 lease + epoch fencing | 已实现（test/staging + 显式开关） |
+| `POST /api/mirror/scenarios/assertions` | 注册一个 payload-free typed handling assertion | full scope + kind/id/revision/fingerprint；同内容幂等 | 已实现（test/staging + 显式开关） |
+| `POST /api/mirror/scenarios/checkpoints` | 注册一个 live、signed、payload-free Session checkpoint | full scope + checkpoint exact ref；同内容幂等 | 已实现（test/staging + 显式开关） |
+| `POST /api/mirror/scenarios/cases` | 注册 exact TestCase/Fixture/MirrorPlan/fault/assertion/checkpoint binding | child-before-parent；同 scope/id/revision/fingerprint 幂等 | 已实现（test/staging + 显式开关） |
+| `POST /api/mirror/scenarios/packs` | 注册完整 ScenarioPack closure | child-before-parent；同 scope/id/revision/fingerprint 幂等 | 已实现（test/staging + 显式开关） |
+| `GET /api/mirror/scenarios/packs/{packId}` | 按 revision + fingerprint 读取 exact pack | 只读、完整 scope 隔离；不支持 latest | 已实现（test/staging + 显式开关） |
+| `POST /api/mirror/scenarios/packs/{packId}/compiled-plans` | 从各 authority 解析 exact closure 并编译 payload-free execution license | 相同 closure 生成相同 fingerprint；同 plan revision 不允许依赖漂移 | 已实现（compile-only，尚不可执行） |
+| `GET /api/mirror/scenarios/compiled-plans/{planId}` | 按 revision + fingerprint 读取 compiler-issued plan | 只读、完整 scope 隔离；读取时重验完整性 | 已实现（compile-only） |
 | `POST /api/mirror/rehearsal-jobs` | 提交批量长任务 | job request fingerprint | 待实现 |
 | `GET /api/mirror/runs/{runId}` | 查询 verified payload-free 运行摘要 | 只读、完整 scope 隔离 | 已实现（test/staging + 显式开关） |
 | `GET /api/mirror/runs/{runId}/evidence` | 导出 independently verified `HASH_ONLY` signed evidence | 只读、完整 scope 隔离 | 已实现（test/staging + 显式开关） |
@@ -1762,6 +1796,10 @@ binding。恢复后继续执行与不中断执行的最终 outcome parity、逐�
 [Stateful Mirror 事务内核与工业接入指南](resource-gateway-stateful-mirror-kernel.md)。
 
 ### Stage 4：Scenario 与正确性工作簿，3 个 sprint，P1
+
+**当前状态**：Sprint 1 的协议、独立 verifier、append-only registry 和 deterministic compile-only
+执行许可已完成。Sprint 2 必须先交付真实逐 case runtime、typed assertion evaluator 和 payload-free aggregate
+evidence，再进入批量 job 与 Author UX；不能用单 case MirrorRun 或已编译 plan 代替 Scenario 运行证明。
 
 **交付物**：
 

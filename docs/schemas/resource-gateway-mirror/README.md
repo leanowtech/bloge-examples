@@ -79,6 +79,8 @@ offline artifact verification live in the independent `resource-gateway-test-kit
 | `case-handling-assertion-v1.schema.json` | `CaseHandlingAssertion` | Payload-free business handling assertion over graph, node, edge, capability, state, effect, governance, latency, retry, and resource evidence |
 | `scenario-case-v1.schema.json` | `ScenarioCase` | Exact binding from one business intent to an existing TestSuite case, FixtureBundle, MirrorPlan, deterministic services, optional isolated Session checkpoint, explicit fault rules, and handling assertions |
 | `scenario-pack-v1.schema.json` | `ScenarioPack` | Content-addressed ordered scenario closure and fail-closed sequential rehearsal policy |
+| `scenario-rehearsal-compile-request-v1.schema.json` | `ScenarioRehearsalCompileRequest` | Exact registered ScenarioPack revision and fingerprint requested for online closure compilation |
+| `compiled-scenario-rehearsal-plan-v1.schema.json` | `CompiledScenarioRehearsalPlan` | Compiler-issued payload-free execution license after exact TestSuite, FixtureBundle, MirrorPlan, assertion, and optional checkpoint closure verification |
 | `scenario-pack-stage7-v1.fixture.schema.json` | compatibility fixture envelope | One fixed payload-free pack/case/assertion closure and expected independent projection |
 | `mirror-state-run-evidence-v1.schema.json` | `MirrorStateRunEvidence` | Exact Session head, model, stateful binding, and payload-free live/absent/tombstone access closure |
 | `mirror-state-run-evidence-v2.schema.json` | `MirrorStateTransitionRunEvidence` | Initial/final Session heads, exact read revisions, and payload-free write receipt/event transition closure |

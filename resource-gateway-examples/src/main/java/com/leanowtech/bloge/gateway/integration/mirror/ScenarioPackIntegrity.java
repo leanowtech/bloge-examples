@@ -128,6 +128,31 @@ public final class ScenarioPackIntegrity {
                 assertion.fingerprint());
     }
 
+    /**
+     * Returns the exact portable checkpoint reference used by ScenarioCase.
+     *
+     * <p>Mirror Session state revisions begin at zero while {@link MirrorArtifactRef} revisions are
+     * positive. The protocol therefore maps a checkpoint to {@code stateRevision + 1}. The content
+     * identity remains the signed complete bundle fingerprint, so the offset cannot weaken the
+     * exact state-head fence.</p>
+     *
+     * @param bundle signed payload-free checkpoint bundle
+     * @return exact MIRROR_SESSION_CHECKPOINT reference
+     */
+    public static MirrorArtifactRef reference(
+            MirrorSessionCheckpointBundle bundle) {
+        if (bundle == null || bundle.bundleFingerprint().isBlank()
+                || bundle.checkpoint().stateRevision() == Long.MAX_VALUE) {
+            throw new IllegalArgumentException(
+                    "checkpoint bundle must have a representable sealed revision");
+        }
+        return new MirrorArtifactRef(
+                "MIRROR_SESSION_CHECKPOINT",
+                bundle.checkpoint().checkpointId(),
+                bundle.checkpoint().stateRevision() + 1,
+                bundle.bundleFingerprint());
+    }
+
     private static void validateLifecycle(
             CapabilitySnapshot.Scope scope,
             ArtifactProvenance provenance,

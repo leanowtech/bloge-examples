@@ -14,6 +14,10 @@ import com.leanowtech.bloge.gateway.integration.mirror.MirrorOperationObservabil
 import com.leanowtech.bloge.gateway.integration.mirror.MirrorOperationTelemetry;
 import com.leanowtech.bloge.gateway.integration.mirror.MirrorPlanRepository;
 import com.leanowtech.bloge.gateway.integration.mirror.MirrorRunRequestRepository;
+import com.leanowtech.bloge.gateway.integration.mirror.CompiledScenarioRehearsalPlanRepository;
+import com.leanowtech.bloge.gateway.integration.mirror.MirrorSessionCheckpointIntegrityService;
+import com.leanowtech.bloge.gateway.integration.mirror.ScenarioArtifactRepository;
+import com.leanowtech.bloge.gateway.integration.mirror.ScenarioRehearsalCompiler;
 import com.leanowtech.bloge.gateway.integration.mirror.MirrorPlanIntegrationService;
 import com.leanowtech.bloge.gateway.integration.mirror.MirrorDeploymentIsolationAuthorityKeySetIntegrity;
 import com.leanowtech.bloge.gateway.integration.mirror.MirrorDeploymentIsolationAuthorityPublicationRepository;
@@ -156,6 +160,14 @@ class MirrorRuntimeConfigurationTest {
         assertThat(context.getBeansOfType(MirrorRunService.class)).hasSize(1);
         assertThat(context.getBeansOfType(MirrorEvidenceIntegrityService.class)).hasSize(1);
         assertThat(context.getBeansOfType(MirrorPlanRepository.class)).hasSize(1);
+        assertThat(context.getBeansOfType(
+                MirrorSessionCheckpointIntegrityService.class)).hasSize(1);
+        assertThat(context.getBeansOfType(
+                ScenarioArtifactRepository.class)).hasSize(1);
+        assertThat(context.getBeansOfType(
+                ScenarioRehearsalCompiler.class)).hasSize(1);
+        assertThat(context.getBeansOfType(
+                CompiledScenarioRehearsalPlanRepository.class)).hasSize(1);
         assertThat(context.getBeansOfType(MirrorFixtureScopeRepository.class)).hasSize(1);
         assertThat(context.getBeansOfType(MirrorEvidenceRepository.class)).hasSize(1);
         assertThat(context.getBeansOfType(MirrorRunRequestRepository.class)).hasSize(1);
@@ -216,6 +228,10 @@ class MirrorRuntimeConfigurationTest {
                 .singleElement()
                 .satisfies(provider -> assertThat(provider.available()).isFalse());
         assertThat(AopUtils.isCglibProxy(context.getBean(MirrorPlanRepository.class))).isTrue();
+        assertThat(AopUtils.isCglibProxy(
+                context.getBean(ScenarioArtifactRepository.class))).isTrue();
+        assertThat(AopUtils.isCglibProxy(context.getBean(
+                CompiledScenarioRehearsalPlanRepository.class))).isTrue();
         assertThat(AopUtils.isCglibProxy(context.getBean(MirrorFixtureScopeRepository.class))).isTrue();
         assertThat(AopUtils.isCglibProxy(context.getBean(MirrorEvidenceRepository.class))).isTrue();
         assertThat(AopUtils.isCglibProxy(context.getBean(MirrorRunRequestRepository.class))).isTrue();
@@ -245,6 +261,14 @@ class MirrorRuntimeConfigurationTest {
         assertThat(context.getBeansOfType(MirrorRunService.class)).isEmpty();
         assertThat(context.getBeansOfType(MirrorEvidenceIntegrityService.class)).isEmpty();
         assertThat(context.getBeansOfType(MirrorPlanRepository.class)).isEmpty();
+        assertThat(context.getBeansOfType(
+                MirrorSessionCheckpointIntegrityService.class)).isEmpty();
+        assertThat(context.getBeansOfType(
+                ScenarioArtifactRepository.class)).isEmpty();
+        assertThat(context.getBeansOfType(
+                ScenarioRehearsalCompiler.class)).isEmpty();
+        assertThat(context.getBeansOfType(
+                CompiledScenarioRehearsalPlanRepository.class)).isEmpty();
         assertThat(context.getBeansOfType(MirrorFixtureScopeRepository.class)).isEmpty();
         assertThat(context.getBeansOfType(MirrorEvidenceRepository.class)).isEmpty();
         assertThat(context.getBeansOfType(MirrorRunRequestRepository.class)).isEmpty();

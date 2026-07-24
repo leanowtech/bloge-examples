@@ -403,6 +403,10 @@ public class ToolStudioIntegrationService {
         Map<String, Boolean> features = new LinkedHashMap<>(current.features());
         features.put("mirrorPlanCompilation", mirrorPlanReady);
         features.put("mirrorExternalLeafInterception", mirrorPlanReady);
+        features.put("mirrorScenarioArtifactRegistry", mirrorPlanReady);
+        features.put("mirrorScenarioRehearsalCompilation", mirrorPlanReady);
+        features.put("mirrorScenarioRehearsalExecution", false);
+        features.put("mirrorScenarioRehearsalEvidence", false);
         features.put("mirrorServing", mirrorExecutionReady);
         features.put("mirrorOperationObservability", mirrorPlanReady && mirrorExecutionApi);
         features.put("mirrorIsolationAuthorityDistributionApi",
@@ -813,6 +817,21 @@ public class ToolStudioIntegrationService {
             supportedObjects.put("mirrorPlanCreateRequest", List.of(
                     com.leanowtech.bloge.gateway.integration.mirror
                             .MirrorPlanCreateRequest.SCHEMA_VERSION));
+            supportedObjects.put("caseHandlingAssertion", List.of(
+                    com.leanowtech.bloge.gateway.integration.mirror
+                            .CaseHandlingAssertion.SCHEMA_VERSION));
+            supportedObjects.put("scenarioCase", List.of(
+                    com.leanowtech.bloge.gateway.integration.mirror
+                            .ScenarioCase.SCHEMA_VERSION));
+            supportedObjects.put("scenarioPack", List.of(
+                    com.leanowtech.bloge.gateway.integration.mirror
+                            .ScenarioPack.SCHEMA_VERSION));
+            supportedObjects.put("scenarioRehearsalCompileRequest", List.of(
+                    com.leanowtech.bloge.gateway.integration.mirror
+                            .ScenarioRehearsalCompileRequest.SCHEMA_VERSION));
+            supportedObjects.put("compiledScenarioRehearsalPlan", List.of(
+                    com.leanowtech.bloge.gateway.integration.mirror
+                            .CompiledScenarioRehearsalPlan.SCHEMA_VERSION));
         }
         if (mirrorExecutionApi) {
             supportedObjects.put("mirrorExecutionRequest", List.of(
@@ -922,6 +941,22 @@ public class ToolStudioIntegrationService {
         if (mirrorPlanReady) {
             endpoints.add(new IntegrationCapabilities.Endpoint("POST", "/api/mirror/plans"));
             endpoints.add(new IntegrationCapabilities.Endpoint("GET", "/api/mirror/plans/{planId}"));
+            endpoints.add(new IntegrationCapabilities.Endpoint(
+                    "POST", "/api/mirror/scenarios/assertions"));
+            endpoints.add(new IntegrationCapabilities.Endpoint(
+                    "POST", "/api/mirror/scenarios/checkpoints"));
+            endpoints.add(new IntegrationCapabilities.Endpoint(
+                    "POST", "/api/mirror/scenarios/cases"));
+            endpoints.add(new IntegrationCapabilities.Endpoint(
+                    "POST", "/api/mirror/scenarios/packs"));
+            endpoints.add(new IntegrationCapabilities.Endpoint(
+                    "GET", "/api/mirror/scenarios/packs/{packId}"));
+            endpoints.add(new IntegrationCapabilities.Endpoint(
+                    "POST",
+                    "/api/mirror/scenarios/packs/{packId}/compiled-plans"));
+            endpoints.add(new IntegrationCapabilities.Endpoint(
+                    "GET",
+                    "/api/mirror/scenarios/compiled-plans/{planId}"));
         }
         if (mirrorExecutionApi) {
             endpoints.add(new IntegrationCapabilities.Endpoint("POST", "/api/mirror/executions"));

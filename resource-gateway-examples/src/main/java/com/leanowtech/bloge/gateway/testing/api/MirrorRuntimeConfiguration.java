@@ -10,6 +10,8 @@ import com.leanowtech.bloge.gateway.integration.mirror.DatabaseMirrorPlanReposit
 import com.leanowtech.bloge.gateway.integration.mirror.DatabaseMirrorDeploymentIsolationAuthorityPublicationRepository;
 import com.leanowtech.bloge.gateway.integration.mirror.DatabaseMirrorDeploymentIsolationAttestationRepository;
 import com.leanowtech.bloge.gateway.integration.mirror.DatabaseMirrorRunRequestRepository;
+import com.leanowtech.bloge.gateway.integration.mirror.DatabaseCompiledScenarioRehearsalPlanRepository;
+import com.leanowtech.bloge.gateway.integration.mirror.DatabaseScenarioArtifactRepository;
 import com.leanowtech.bloge.gateway.integration.mirror.CapabilityObservationAdmissionIntegrity;
 import com.leanowtech.bloge.gateway.integration.mirror.CapabilityObservationAdmissionPolicyProvider;
 import com.leanowtech.bloge.gateway.integration.mirror.CapabilityObservationAdmissionService;
@@ -59,6 +61,10 @@ import com.leanowtech.bloge.gateway.integration.mirror.MirrorDeploymentIsolation
 import com.leanowtech.bloge.gateway.integration.mirror.MirrorDeploymentIsolationTrustAgent;
 import com.leanowtech.bloge.gateway.integration.mirror.MirrorRunIntegrationService;
 import com.leanowtech.bloge.gateway.integration.mirror.MirrorRunRequestRepository;
+import com.leanowtech.bloge.gateway.integration.mirror.CompiledScenarioRehearsalPlanRepository;
+import com.leanowtech.bloge.gateway.integration.mirror.MirrorSessionCheckpointIntegrityService;
+import com.leanowtech.bloge.gateway.integration.mirror.ScenarioArtifactRepository;
+import com.leanowtech.bloge.gateway.integration.mirror.ScenarioRehearsalCompiler;
 import com.leanowtech.bloge.gateway.integration.mirror.MirrorServingGenerationAuthority;
 import com.leanowtech.bloge.gateway.integration.mirror.MirrorServingGenerationIntegrity;
 import com.leanowtech.bloge.gateway.integration.mirror.MirrorServingGenerationService;
@@ -190,6 +196,50 @@ public class MirrorRuntimeConfiguration {
     public MirrorPlanRepository mirrorPlanRepository(
             JdbcTemplate jdbc, ObjectMapper objectMapper) {
         return new DatabaseMirrorPlanRepository(jdbc, objectMapper);
+    }
+
+    /**
+     * Creates the signed portable Session-checkpoint verifier shared by stateful runtime and
+     * ScenarioPack registration.
+     */
+    @Bean
+    @ConditionalOnMissingBean
+    public MirrorSessionCheckpointIntegrityService
+    mirrorSessionCheckpointIntegrityService(
+            ObjectMapper objectMapper, VisualEvidenceSigner evidenceSigner) {
+        return new MirrorSessionCheckpointIntegrityService(
+                objectMapper, evidenceSigner, Clock.systemUTC());
+    }
+
+    /** Creates the append-only full-scope ScenarioPack artifact registry. */
+    @Bean
+    @ConditionalOnMissingBean
+    public ScenarioArtifactRepository scenarioArtifactRepository(
+            JdbcTemplate jdbc,
+            ObjectMapper objectMapper,
+            MirrorSessionCheckpointIntegrityService checkpointIntegrity) {
+        return new DatabaseScenarioArtifactRepository(
+                jdbc, objectMapper, checkpointIntegrity);
+    }
+
+    /** Creates the pure exact-closure ScenarioPack rehearsal compiler. */
+    @Bean
+    @ConditionalOnMissingBean
+    public ScenarioRehearsalCompiler scenarioRehearsalCompiler(
+            ObjectMapper objectMapper,
+            MirrorSessionCheckpointIntegrityService checkpointIntegrity) {
+        return new ScenarioRehearsalCompiler(
+                objectMapper, checkpointIntegrity);
+    }
+
+    /** Creates the append-only payload-free compiled rehearsal-plan registry. */
+    @Bean
+    @ConditionalOnMissingBean
+    public CompiledScenarioRehearsalPlanRepository
+    compiledScenarioRehearsalPlanRepository(
+            JdbcTemplate jdbc, ObjectMapper objectMapper) {
+        return new DatabaseCompiledScenarioRehearsalPlanRepository(
+                jdbc, objectMapper);
     }
 
     /**

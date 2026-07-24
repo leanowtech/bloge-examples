@@ -3,6 +3,8 @@ package com.leanowtech.bloge.gateway.integration;
 import com.leanowtech.bloge.gateway.integration.mirror.MirrorPlanIntegrationService;
 import com.leanowtech.bloge.gateway.integration.mirror.MirrorRunIntegrationService;
 import com.leanowtech.bloge.gateway.integration.mirror.MirrorSessionIntegrationService;
+import com.leanowtech.bloge.gateway.integration.mirror.ScenarioArtifactRegistryService;
+import com.leanowtech.bloge.gateway.integration.mirror.ScenarioRehearsalIntegrationService;
 import com.leanowtech.bloge.gateway.integration.mirror.MirrorDeploymentIsolationAuthorityPublicationService;
 import com.leanowtech.bloge.gateway.integration.mirror.MirrorDeploymentIsolationAttestationService;
 import com.leanowtech.bloge.gateway.integration.mirror.CapabilityObservationAdmissionService;
@@ -40,6 +42,13 @@ class MirrorIntegrationRouteIsolationTest {
                     "GET /api/mirror/sessions/{sessionId}",
                     "POST /api/mirror/sessions/{sessionId}/commands",
                     "DELETE /api/mirror/sessions/{sessionId}",
+                    "POST /api/mirror/scenarios/assertions",
+                    "POST /api/mirror/scenarios/checkpoints",
+                    "POST /api/mirror/scenarios/cases",
+                    "POST /api/mirror/scenarios/packs",
+                    "GET /api/mirror/scenarios/packs/{packId}",
+                    "POST /api/mirror/scenarios/packs/{packId}/compiled-plans",
+                    "GET /api/mirror/scenarios/compiled-plans/{planId}",
                     "POST /api/mirror/trust/deployment-isolation/authority-key-sets",
                     "GET /api/mirror/trust/deployment-isolation/authority-key-sets/{keySetId}/latest",
                     "GET /api/mirror/trust/deployment-isolation/authority-key-sets/{keySetId}/generations/{generation}",
@@ -61,6 +70,13 @@ class MirrorIntegrationRouteIsolationTest {
                     "GET /api/mirror/sessions/{sessionId}",
                     "POST /api/mirror/sessions/{sessionId}/commands",
                     "DELETE /api/mirror/sessions/{sessionId}",
+                    "POST /api/mirror/scenarios/assertions",
+                    "POST /api/mirror/scenarios/checkpoints",
+                    "POST /api/mirror/scenarios/cases",
+                    "POST /api/mirror/scenarios/packs",
+                    "GET /api/mirror/scenarios/packs/{packId}",
+                    "POST /api/mirror/scenarios/packs/{packId}/compiled-plans",
+                    "GET /api/mirror/scenarios/compiled-plans/{planId}",
                     "POST /api/mirror/trust/deployment-isolation/authority-key-sets",
                     "GET /api/mirror/trust/deployment-isolation/authority-key-sets/{keySetId}/latest",
                     "GET /api/mirror/trust/deployment-isolation/authority-key-sets/{keySetId}/generations/{generation}",
@@ -90,6 +106,10 @@ class MirrorIntegrationRouteIsolationTest {
                     MirrorSessionController.class)).isEmpty();
             assertThat(mixed.getBeansOfType(
                     MirrorSessionController.class)).isEmpty();
+            assertThat(production.getBeansOfType(
+                    ScenarioRehearsalController.class)).isEmpty();
+            assertThat(mixed.getBeansOfType(
+                    ScenarioRehearsalController.class)).isEmpty();
             assertThat(production.getBeansOfType(
                     MirrorDeploymentIsolationAuthorityPublicationController.class)).isEmpty();
             assertThat(mixed.getBeansOfType(
@@ -123,6 +143,7 @@ class MirrorIntegrationRouteIsolationTest {
         context.register(WebConfiguration.class, MirrorIntegrationController.class,
                 MirrorRunIntegrationController.class,
                 MirrorSessionController.class,
+                ScenarioRehearsalController.class,
                 MirrorDeploymentIsolationAuthorityPublicationController.class,
                 MirrorDeploymentIsolationAttestationController.class,
                 CapabilityObservationController.class,
@@ -158,6 +179,17 @@ class MirrorIntegrationRouteIsolationTest {
         @Bean
         MirrorSessionIntegrationService mirrorSessionIntegrationService() {
             return mock(MirrorSessionIntegrationService.class);
+        }
+
+        @Bean
+        ScenarioArtifactRegistryService scenarioArtifactRegistryService() {
+            return mock(ScenarioArtifactRegistryService.class);
+        }
+
+        @Bean
+        ScenarioRehearsalIntegrationService
+        scenarioRehearsalIntegrationService() {
+            return mock(ScenarioRehearsalIntegrationService.class);
         }
 
         @Bean
@@ -203,6 +235,12 @@ class MirrorIntegrationRouteIsolationTest {
         @Bean
         MirrorSessionRequestDecoder mirrorSessionRequestDecoder() {
             return new MirrorSessionRequestDecoder(
+                    new ObjectMapper().findAndRegisterModules());
+        }
+
+        @Bean
+        ScenarioArtifactRequestDecoder scenarioArtifactRequestDecoder() {
+            return new ScenarioArtifactRequestDecoder(
                     new ObjectMapper().findAndRegisterModules());
         }
 

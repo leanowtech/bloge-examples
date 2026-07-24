@@ -1,0 +1,20 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://bloge.dev/schemas/resource-gateway-mirror/scenario-rehearsal-compile-request-v1.schema.json",
+  "title": "Resource Gateway Scenario Rehearsal Compile Request v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schemaVersion", "revision", "fingerprint"],
+  "properties": {
+    "schemaVersion": {
+      "const": "resourceGateway.scenarioRehearsalCompileRequest.v1"
+    },
+    "revision": {
+      "type": "integer",
+      "minimum": 1
+    },
+    "fingerprint": {
+      "$ref": "mirror-plan-v1.schema.json#/$defs/fingerprint"
+    }
+  }
+}

@@ -19,6 +19,7 @@ import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnMissingBean;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
+import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.context.annotation.Profile;
@@ -148,14 +149,17 @@ public class MirrorStatefulRuntimeConfiguration {
             MirrorStateBaselineResolver baselineResolver,
             MirrorSessionCommandAdmission commandAdmission,
             MirrorSessionCapacityTelemetry capacityTelemetry,
+            ObjectProvider<MirrorSessionCheckpointIntegrityService>
+                    checkpointIntegrities,
             VisualEvidenceSigner evidenceSigner,
             @Value("${gateway.testing.mirror.stateful.instance-id:}")
             String instanceId,
             @Value("${gateway.testing.mirror.stateful.lease-duration-seconds:30}")
             long leaseDurationSeconds) {
         MirrorSessionCheckpointIntegrityService checkpointIntegrity =
-                new MirrorSessionCheckpointIntegrityService(
-                        mapper, evidenceSigner, Clock.systemUTC());
+                checkpointIntegrities.getIfAvailable(
+                        () -> new MirrorSessionCheckpointIntegrityService(
+                                mapper, evidenceSigner, Clock.systemUTC()));
         return new MirrorSessionIntegrationService(
                 mapper, store, baselineResolver, Clock.systemUTC(),
                 instanceId, leaseDurationSeconds,

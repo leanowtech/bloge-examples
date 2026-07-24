@@ -74,7 +74,6 @@ class ScenarioPackProtocolTest {
                 mapper, scenarioPack(
                         List.of(ScenarioPackIntegrity.reference(scenarioCase)),
                         List.of(ScenarioPackIntegrity.reference(assertion))));
-
         assertThatThrownBy(() -> ScenarioPackIntegrity.verify(
                 mapper, pack.withFingerprint(SHA_C)))
                 .isInstanceOf(IllegalArgumentException.class)
@@ -164,6 +163,38 @@ class ScenarioPackProtocolTest {
                 mapper, scenarioPack(
                         List.of(ScenarioPackIntegrity.reference(scenarioCase)),
                         List.of(ScenarioPackIntegrity.reference(assertion))));
+        CompiledScenarioRehearsalPlan compiled =
+                CompiledScenarioRehearsalPlanIntegrity.seal(
+                        mapper,
+                        new CompiledScenarioRehearsalPlan(
+                                "",
+                                pack.packId()
+                                        + ScenarioRehearsalCompiler
+                                        .PLAN_ID_SUFFIX,
+                                pack.revision(),
+                                "",
+                                pack.scope(),
+                                ScenarioPackIntegrity.reference(pack),
+                                pack.targetCapabilityRef(),
+                                List.of(
+                                        new CompiledScenarioRehearsalPlan
+                                                .CaseBinding(
+                                                ScenarioPackIntegrity.reference(
+                                                        scenarioCase),
+                                                scenarioCase.caseType(),
+                                                scenarioCase.testSuiteRef(),
+                                                scenarioCase.testCaseId(),
+                                                scenarioCase.mirrorPlanRef(),
+                                                scenarioCase.fixtureBundleRef(),
+                                                scenarioCase
+                                                        .sessionCheckpointRef(),
+                                                scenarioCase.executionServices(),
+                                                scenarioCase.assertionRefs())),
+                                pack.assertionRefs(),
+                                pack.policy()));
+        ScenarioRehearsalCompileRequest compileRequest =
+                new ScenarioRehearsalCompileRequest(
+                        "", pack.revision(), pack.fingerprint());
 
         assertProperties(assertion, "case-handling-assertion-v1.schema.json");
         assertProperties(
@@ -177,6 +208,16 @@ class ScenarioPackProtocolTest {
         assertProperties(scenarioCase, "scenario-case-v1.schema.json");
         assertProperties(pack, "scenario-pack-v1.schema.json");
         assertProperties(
+                compiled,
+                "compiled-scenario-rehearsal-plan-v1.schema.json");
+        assertProperties(
+                compiled.cases().getFirst(),
+                schema("compiled-scenario-rehearsal-plan-v1.schema.json")
+                        .at("/$defs/caseBinding/properties"));
+        assertProperties(
+                compileRequest,
+                "scenario-rehearsal-compile-request-v1.schema.json");
+        assertProperties(
                 pack.policy(),
                 schema("scenario-pack-v1.schema.json")
                         .at("/$defs/policy/properties"));
@@ -184,7 +225,9 @@ class ScenarioPackProtocolTest {
         for (String file : List.of(
                 "case-handling-assertion-v1.schema.json",
                 "scenario-case-v1.schema.json",
-                "scenario-pack-v1.schema.json")) {
+                "scenario-pack-v1.schema.json",
+                "scenario-rehearsal-compile-request-v1.schema.json",
+                "compiled-scenario-rehearsal-plan-v1.schema.json")) {
             JsonNode properties = schema(file).path("properties");
             assertThat(properties.has("input")).isFalse();
             assertThat(properties.has("output")).isFalse();

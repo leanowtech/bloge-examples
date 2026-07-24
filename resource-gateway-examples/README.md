@@ -31,6 +31,7 @@ integration something the business flow can see, reason about, test, and change.
 | Governed capability closures | Sealed Resource/Operator/Graph projections, exact cycle-checked closure for all seven shipped graphs, nested foreach/loop boundary inventory, full enterprise scope, append-only lifecycle revisions, classification-aware reads, and honest mirror readiness flags |
 | Governed capability observations | Signed payload-free invocation facts, operator-owned admission policy, external vault/proof verification, durable admitted-or-quarantined decisions, full-scope idempotency, and independent offline verification |
 | Governed capability corpora | Immutable quarantine review, exact admitted-source candidates, metadata risk gates, independent owner-reviewed publication lineage, second source-authority verification, and honest resolver readiness |
+| Governed scenario compilation | Append-only ScenarioPack/Case/assertion/checkpoint registry, exact cross-registry dependency closure, deterministic payload-free compiled plans, strict transport, and honest compile-versus-execute capability flags |
 | Stateful mirror sessions | Versioned entity/write/session/checkpoint/write-attempt protocols, atomic multi-entity mutations, exact replay, AES-GCM isolated persistence, lease/fence/CAS concurrency, durable crash-window reconciliation, TTL/destroy, payload-free signed state evidence, signed same-data-plane restart recovery admission, ANEKE workbook seeds, and independently verified clients |
 | Governed replay payloads | Payload values detached from immutable evidence, classification ABAC, selective retention, legal hold, bounded expiry, and signed deletion proof |
 | Workbook and gate evidence loop | Deterministic sanitized workbook seeds, exact suite/run evidence refs, versioned gate decision basis, stale detection, and transactional gate events |
@@ -126,6 +127,13 @@ dedicated local data plane.
 | `POST http://localhost:8080/api/mirror/corpus-publications` | Publish one current eligible candidate after owner authorization and a second source-authority check |
 | `POST http://localhost:8080/api/mirror/corpus-trajectories` | Publish one explicit owner-reviewed retry sequence from the exact current corpus |
 | `POST http://localhost:8080/api/mirror/corpus-clusters` | Publish one externally validated, owner-reviewed recorded cluster without moving payload into Resource Gateway |
+| `POST http://localhost:8080/api/mirror/scenarios/assertions` | Append one exact payload-free handling assertion revision |
+| `POST http://localhost:8080/api/mirror/scenarios/checkpoints` | Append one live signed Session checkpoint for a stateful scenario case |
+| `POST http://localhost:8080/api/mirror/scenarios/cases` | Append one ScenarioCase after its assertion/checkpoint closure exists |
+| `POST http://localhost:8080/api/mirror/scenarios/packs` | Append one complete ScenarioPack revision |
+| `GET http://localhost:8080/api/mirror/scenarios/packs/{packId}?revision=...&fingerprint=...` | Read one exact content-addressed ScenarioPack revision |
+| `POST http://localhost:8080/api/mirror/scenarios/packs/{packId}/compiled-plans` | Resolve TestSuite, FixtureBundle, MirrorPlan and checkpoint authority, then compile a payload-free execution license |
+| `GET http://localhost:8080/api/mirror/scenarios/compiled-plans/{planId}?revision=...&fingerprint=...` | Read one exact compiler-issued rehearsal plan |
 
 Deployment-agent authority/attestation GETs require vendor negotiation in addition to normal
 `MIRROR_TRUST_DISTRIBUTION` or `MIRROR_REHEARSAL` authentication:
@@ -156,9 +164,16 @@ MirrorPlan, Session checkpoint, and write/state artifacts instead of creating a
 second fixture or test-case format. Generation-one policy is sequential,
 isolates stateful cases, denies real calls, credentials, and network egress,
 and permits only `HASH_ONLY` evidence. This milestone supplies models, strict
-Schemas, producer integrity checks, and the standalone verifier; durable
-registration, compilation, execution, and rehearsal evidence are the next E7
-slice.
+Schemas, producer integrity checks, the standalone verifier, append-only
+same-scope registration, and deterministic
+`resourceGateway.compiledScenarioRehearsalPlan.v1` compilation. Compilation
+fails closed unless every exact TestSuite case, FixtureBundle, MirrorPlan,
+fault rule, assertion, execution-service binding, and optional signed
+checkpoint agrees. The compiled object contains coordinates and policy only,
+never test input or fixture payload. Rehearsal execution and aggregate scenario
+evidence are deliberately advertised as unavailable until the runtime/evaluator
+slice is installed. See the
+[scenario rehearsal compiler guide](../docs/resource-gateway-scenario-rehearsal-compiler.md).
 
 The capability closure projection request carries only the portable draft, positive target revision, deterministic creation time,
 and a classification no higher than the caller's clearance. Tenant, organization, project, environment, region,

@@ -1,0 +1,187 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://bloge.dev/schemas/resource-gateway-mirror/compiled-scenario-rehearsal-plan-v1.schema.json",
+  "title": "Resource Gateway Compiled Scenario Rehearsal Plan v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion", "planId", "revision", "fingerprint", "scope",
+    "scenarioPackRef", "targetCapabilityRef", "cases", "assertionRefs", "policy"
+  ],
+  "properties": {
+    "schemaVersion": {
+      "const": "resourceGateway.compiledScenarioRehearsalPlan.v1"
+    },
+    "planId": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 512,
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9@._:/-]{0,511}$"
+    },
+    "revision": {
+      "type": "integer",
+      "minimum": 1
+    },
+    "fingerprint": {
+      "$ref": "mirror-plan-v1.schema.json#/$defs/fingerprint"
+    },
+    "scope": {
+      "$ref": "mirror-plan-v1.schema.json#/$defs/scope"
+    },
+    "scenarioPackRef": {
+      "$ref": "#/$defs/scenarioPackRef"
+    },
+    "targetCapabilityRef": {
+      "$ref": "scenario-pack-v1.schema.json#/$defs/capabilityRef"
+    },
+    "cases": {
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 256,
+      "items": {
+        "$ref": "#/$defs/caseBinding"
+      }
+    },
+    "assertionRefs": {
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 512,
+      "uniqueItems": true,
+      "items": {
+        "$ref": "scenario-pack-v1.schema.json#/$defs/assertionRef"
+      }
+    },
+    "policy": {
+      "$ref": "scenario-pack-v1.schema.json#/$defs/policy"
+    }
+  },
+  "$defs": {
+    "scenarioPackRef": {
+      "allOf": [
+        {
+          "$ref": "scenario-pack-v1.schema.json#/$defs/artifactRefByKind"
+        },
+        {
+          "properties": {
+            "kind": {
+              "const": "SCENARIO_PACK"
+            }
+          }
+        }
+      ]
+    },
+    "testSuiteRef": {
+      "allOf": [
+        {
+          "$ref": "scenario-pack-v1.schema.json#/$defs/artifactRefByKind"
+        },
+        {
+          "properties": {
+            "kind": {
+              "const": "TEST_SUITE"
+            }
+          }
+        }
+      ]
+    },
+    "mirrorPlanRef": {
+      "allOf": [
+        {
+          "$ref": "scenario-pack-v1.schema.json#/$defs/artifactRefByKind"
+        },
+        {
+          "properties": {
+            "kind": {
+              "const": "MIRROR_PLAN"
+            }
+          }
+        }
+      ]
+    },
+    "fixtureBundleRef": {
+      "allOf": [
+        {
+          "$ref": "scenario-pack-v1.schema.json#/$defs/artifactRefByKind"
+        },
+        {
+          "properties": {
+            "kind": {
+              "const": "FIXTURE_BUNDLE"
+            }
+          }
+        }
+      ]
+    },
+    "checkpointRef": {
+      "allOf": [
+        {
+          "$ref": "scenario-pack-v1.schema.json#/$defs/artifactRefByKind"
+        },
+        {
+          "properties": {
+            "kind": {
+              "const": "MIRROR_SESSION_CHECKPOINT"
+            }
+          }
+        }
+      ]
+    },
+    "caseBinding": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "scenarioCaseRef", "caseType", "testSuiteRef", "testCaseId",
+        "mirrorPlanRef", "fixtureBundleRef", "sessionCheckpointRef",
+        "executionServices", "assertionRefs"
+      ],
+      "properties": {
+        "scenarioCaseRef": {
+          "$ref": "scenario-pack-v1.schema.json#/$defs/scenarioCaseRef"
+        },
+        "caseType": {
+          "enum": [
+            "GOLDEN", "NEGATIVE", "BOUNDARY", "REGRESSION",
+            "FAULT", "STATE_TRANSITION", "WHAT_IF"
+          ]
+        },
+        "testSuiteRef": {
+          "$ref": "#/$defs/testSuiteRef"
+        },
+        "testCaseId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 512,
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9@._:/-]{0,511}$"
+        },
+        "mirrorPlanRef": {
+          "$ref": "#/$defs/mirrorPlanRef"
+        },
+        "fixtureBundleRef": {
+          "$ref": "#/$defs/fixtureBundleRef"
+        },
+        "sessionCheckpointRef": {
+          "oneOf": [
+            {
+              "type": "null"
+            },
+            {
+              "$ref": "#/$defs/checkpointRef"
+            }
+          ]
+        },
+        "executionServices": {
+          "$ref": "mirror-plan-v1.schema.json#/$defs/executionServices"
+        },
+        "assertionRefs": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 256,
+          "uniqueItems": true,
+          "items": {
+            "$ref": "scenario-pack-v1.schema.json#/$defs/assertionRef"
+          }
+        }
+      }
+    }
+  }
+}

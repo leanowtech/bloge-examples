@@ -307,6 +307,10 @@ class ToolStudioIntegrationServiceTest {
         assertThat(disabledCapabilities.features())
                 .containsEntry("mirrorPlanCompilation", false)
                 .containsEntry("mirrorExternalLeafInterception", false)
+                .containsEntry("mirrorScenarioArtifactRegistry", false)
+                .containsEntry("mirrorScenarioRehearsalCompilation", false)
+                .containsEntry("mirrorScenarioRehearsalExecution", false)
+                .containsEntry("mirrorScenarioRehearsalEvidence", false)
                 .containsEntry("mirrorOperationObservability", false)
                 .containsEntry("mirrorServing", false);
         assertThat(disabledCapabilities.endpoints())
@@ -314,6 +318,10 @@ class ToolStudioIntegrationServiceTest {
         assertThat(enabledCapabilities.features())
                 .containsEntry("mirrorPlanCompilation", true)
                 .containsEntry("mirrorExternalLeafInterception", true)
+                .containsEntry("mirrorScenarioArtifactRegistry", true)
+                .containsEntry("mirrorScenarioRehearsalCompilation", true)
+                .containsEntry("mirrorScenarioRehearsalExecution", false)
+                .containsEntry("mirrorScenarioRehearsalEvidence", false)
                 .containsEntry("mirrorOperationObservability", true)
                 .containsEntry("mirrorServing", true)
                 .containsEntry("mirrorStateRunEvidenceProtocol", true)
@@ -351,6 +359,12 @@ class ToolStudioIntegrationServiceTest {
                 .containsEntry("mirrorPlanCreateRequest", List.of(
                         com.leanowtech.bloge.gateway.integration.mirror
                                 .MirrorPlanCreateRequest.SCHEMA_VERSION))
+                .containsKeys(
+                        "caseHandlingAssertion",
+                        "scenarioCase",
+                        "scenarioPack",
+                        "scenarioRehearsalCompileRequest",
+                        "compiledScenarioRehearsalPlan")
                 .containsEntry("mirrorExecutionRequest", List.of(
                         com.leanowtech.bloge.gateway.integration.mirror
                                 .MirrorExecutionRequest.SCHEMA_VERSION,
@@ -420,6 +434,13 @@ class ToolStudioIntegrationServiceTest {
         assertThat(enabledCapabilities.endpoints())
                 .extracting(endpoint -> endpoint.method() + " " + endpoint.path())
                 .contains("POST /api/mirror/plans", "GET /api/mirror/plans/{planId}",
+                        "POST /api/mirror/scenarios/assertions",
+                        "POST /api/mirror/scenarios/checkpoints",
+                        "POST /api/mirror/scenarios/cases",
+                        "POST /api/mirror/scenarios/packs",
+                        "GET /api/mirror/scenarios/packs/{packId}",
+                        "POST /api/mirror/scenarios/packs/{packId}/compiled-plans",
+                        "GET /api/mirror/scenarios/compiled-plans/{planId}",
                         "POST /api/mirror/executions", "GET /api/mirror/runs/{runId}",
                         "GET /api/mirror/runs/{runId}/evidence",
                         "GET /api/mirror/runs/{runId}/state-workbook-seed",
