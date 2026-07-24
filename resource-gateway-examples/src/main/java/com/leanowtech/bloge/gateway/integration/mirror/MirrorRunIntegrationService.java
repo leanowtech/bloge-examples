@@ -569,6 +569,43 @@ public class MirrorRunIntegrationService {
         }
     }
 
+    /**
+     * Projects one verified failure-aware run into an ANEKE write-outcome workbook seed.
+     *
+     * @param runId terminal failure-aware mirror run identity
+     * @param identity authenticated enterprise identity and mirror purpose
+     * @return payload-free seed bound to every terminal write attempt and exact state heads
+     */
+    public MirrorStateWriteOutcomeWorkbookSeed
+    stateWriteOutcomeWorkbookSeed(
+            String runId, IntegrationRequestContext identity) {
+        MirrorOperationObservability.Observation observation =
+                observations.start(
+                        MirrorOperationAuditEvent.Operation.EVIDENCE_READ,
+                        identity, "", "", runId);
+        try {
+            MirrorStateWriteOutcomeWorkbookSeed seed =
+                    MirrorStateWriteOutcomeWorkbookSeed.project(
+                            mapper,
+                            requireEvidence(runId, identity));
+            observation.succeeded(seed.runId());
+            return seed;
+        } catch (IntegrationProblemException expected) {
+            throw observation.failed(expected);
+        } catch (IllegalArgumentException invalid) {
+            throw observation.failed(conflict(
+                    identity,
+                    "RG.MIRROR.STATE_WRITE_OUTCOME_WORKBOOK_SEED_UNAVAILABLE",
+                    "The run does not contain a complete failure-aware state-write evidence closure.",
+                    Map.of()));
+        } catch (RuntimeException unavailable) {
+            throw observation.failed(serviceUnavailable(
+                    identity,
+                    "RG.MIRROR.STATE_WRITE_OUTCOME_WORKBOOK_SEED_UNAVAILABLE",
+                    "The state write-outcome workbook seed could not be projected safely."));
+        }
+    }
+
     private MirrorRunRequestRepository.Claim claim(
             MirrorRunRequestRepository.Registration registration,
             MirrorDeploymentIsolationRunTrust.Admission trustAdmission,

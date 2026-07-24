@@ -455,6 +455,8 @@ public class ToolStudioIntegrationService {
                 mirrorStatefulResolverReady);
         features.put("mirrorStateTransitionEvidenceReady",
                 mirrorStatefulResolverReady);
+        features.put("mirrorStateWriteOutcomeEvidenceReady",
+                mirrorStatefulResolverReady);
         features.put("mirrorStateWorkbookSeedApi",
                 mirrorExecutionApi);
         features.put("mirrorStateWorkbookSeedReady",
@@ -463,6 +465,13 @@ public class ToolStudioIntegrationService {
                 mirrorExecutionApi);
         features.put("mirrorStateTransitionWorkbookSeedReady",
                 mirrorStatefulResolverReady);
+        features.put("mirrorStateWriteOutcomeWorkbookSeedApi",
+                mirrorExecutionApi);
+        features.put("mirrorStateWriteOutcomeWorkbookSeedReady",
+                mirrorStatefulResolverReady);
+        features.put(
+                "mirrorStateWriteAttemptDurableReconciliationReady",
+                false);
         // Full crash/network/HA/DR certification remains a separate runtime gate.
         features.put("mirrorStatefulRuntimeReady", false);
         ExternalAnchorTrustState suiteAnchorTrust = currentSuiteStabilityAnchorTrust();
@@ -818,7 +827,9 @@ public class ToolStudioIntegrationService {
                     com.leanowtech.bloge.gateway.integration.mirror
                             .MirrorEvidenceBundle.STATEFUL_SCHEMA_VERSION,
                     com.leanowtech.bloge.gateway.integration.mirror
-                            .MirrorEvidenceBundle.READ_WRITE_SCHEMA_VERSION));
+                            .MirrorEvidenceBundle.READ_WRITE_SCHEMA_VERSION,
+                    com.leanowtech.bloge.gateway.integration.mirror
+                            .MirrorEvidenceBundle.WRITE_OUTCOME_SCHEMA_VERSION));
             supportedObjects.put("mirrorRunEvidence", List.of(
                     com.leanowtech.bloge.gateway.integration.mirror
                             .MirrorRunEvidence.SCHEMA_VERSION_V1,
@@ -827,7 +838,9 @@ public class ToolStudioIntegrationService {
                     com.leanowtech.bloge.gateway.integration.mirror
                             .MirrorRunEvidence.STATEFUL_SCHEMA_VERSION,
                     com.leanowtech.bloge.gateway.integration.mirror
-                            .MirrorRunEvidence.READ_WRITE_SCHEMA_VERSION));
+                            .MirrorRunEvidence.READ_WRITE_SCHEMA_VERSION,
+                    com.leanowtech.bloge.gateway.integration.mirror
+                            .MirrorRunEvidence.WRITE_OUTCOME_SCHEMA_VERSION));
             supportedObjects.put("mirrorEvidenceAttestation", List.of(
                     com.leanowtech.bloge.gateway.integration.mirror
                             .MirrorEvidenceAttestation.SCHEMA_VERSION_V1,
@@ -836,12 +849,18 @@ public class ToolStudioIntegrationService {
                     com.leanowtech.bloge.gateway.integration.mirror
                             .MirrorEvidenceAttestation.STATEFUL_SCHEMA_VERSION,
                     com.leanowtech.bloge.gateway.integration.mirror
-                            .MirrorEvidenceAttestation.READ_WRITE_SCHEMA_VERSION));
+                            .MirrorEvidenceAttestation.READ_WRITE_SCHEMA_VERSION,
+                    com.leanowtech.bloge.gateway.integration.mirror
+                            .MirrorEvidenceAttestation
+                            .WRITE_OUTCOME_SCHEMA_VERSION));
             supportedObjects.put("mirrorStateRunEvidence", List.of(
                     com.leanowtech.bloge.gateway.integration.mirror
                             .MirrorStateRunEvidence.SCHEMA_VERSION,
                     com.leanowtech.bloge.gateway.integration.mirror
-                            .MirrorStateTransitionRunEvidence.SCHEMA_VERSION));
+                            .MirrorStateTransitionRunEvidence.SCHEMA_VERSION,
+                    com.leanowtech.bloge.gateway.integration.mirror
+                            .MirrorStateWriteOutcomeRunEvidence
+                            .SCHEMA_VERSION));
             supportedObjects.put("mirrorStateWorkbookSeed", List.of(
                     com.leanowtech.bloge.gateway.integration.mirror
                             .MirrorStateWorkbookSeed.SCHEMA_VERSION));
@@ -849,6 +868,11 @@ public class ToolStudioIntegrationService {
                     "mirrorStateTransitionWorkbookSeed", List.of(
                             com.leanowtech.bloge.gateway.integration.mirror
                                     .MirrorStateTransitionWorkbookSeed
+                                    .SCHEMA_VERSION));
+            supportedObjects.put(
+                    "mirrorStateWriteOutcomeWorkbookSeed", List.of(
+                            com.leanowtech.bloge.gateway.integration.mirror
+                                    .MirrorStateWriteOutcomeWorkbookSeed
                                     .SCHEMA_VERSION));
         }
         if (mirrorStatefulSessionApi) {
@@ -903,6 +927,9 @@ public class ToolStudioIntegrationService {
             endpoints.add(new IntegrationCapabilities.Endpoint(
                     "GET",
                     "/api/mirror/runs/{runId}/state-transition-workbook-seed"));
+            endpoints.add(new IntegrationCapabilities.Endpoint(
+                    "GET",
+                    "/api/mirror/runs/{runId}/state-write-outcome-workbook-seed"));
         }
         if (mirrorStatefulSessionApi) {
             endpoints.add(new IntegrationCapabilities.Endpoint(

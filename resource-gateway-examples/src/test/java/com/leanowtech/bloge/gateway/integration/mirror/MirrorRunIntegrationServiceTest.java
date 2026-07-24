@@ -197,6 +197,54 @@ class MirrorRunIntegrationServiceTest {
     }
 
     @Test
+    void projectsAWriteOutcomeWorkbookSeedOnlyFromScopedV5Evidence() {
+        MirrorEvidenceBundle writeOutcome =
+                MirrorPersistenceTestFixtures
+                        .writeOutcomeEvidence(
+                                mapper,
+                                new InMemoryVisualEvidenceSigner(),
+                                plan,
+                                "run-state-write-outcome-1", 'f');
+        when(evidence.find(
+                SCOPE, "run-state-write-outcome-1"))
+                .thenReturn(Optional.of(writeOutcome));
+
+        MirrorStateWriteOutcomeWorkbookSeed seed =
+                service.stateWriteOutcomeWorkbookSeed(
+                        "run-state-write-outcome-1",
+                        identity());
+
+        seed.verify(mapper);
+        assertThat(seed.runId())
+                .isEqualTo(
+                        "run-state-write-outcome-1");
+        assertThat(seed.evidenceBundleFingerprint())
+                .isEqualTo(
+                        writeOutcome.bundleFingerprint());
+        assertThat(seed.writeAttemptCount()).isEqualTo(1);
+        assertThat(seed.committedCount()).isEqualTo(1);
+
+        MirrorEvidenceBundle legacy =
+                MirrorPersistenceTestFixtures
+                        .readWriteEvidence(
+                                mapper,
+                                new InMemoryVisualEvidenceSigner(),
+                                plan,
+                                "run-state-write-legacy", 'e');
+        when(evidence.find(
+                SCOPE, "run-state-write-legacy"))
+                .thenReturn(Optional.of(legacy));
+        assertProblem(
+                () -> service
+                        .stateWriteOutcomeWorkbookSeed(
+                                "run-state-write-legacy",
+                                identity()),
+                409,
+                "RG.MIRROR.STATE_WRITE_OUTCOME_WORKBOOK_SEED_UNAVAILABLE",
+                false);
+    }
+
+    @Test
     void freezesOneAuthenticatedSessionSnapshotAndPassesItToTheWholeRun() {
         MirrorArtifactRef stateModelRef = new MirrorArtifactRef(
                 "STATE_MODEL", "order-world", 1,

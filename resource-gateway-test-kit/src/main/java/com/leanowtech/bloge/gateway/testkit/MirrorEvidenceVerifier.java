@@ -37,6 +37,9 @@ public final class MirrorEvidenceVerifier {
     private static final String SIGNATURE_DOMAIN_V2 = "RESOURCE_GATEWAY_MIRROR_EVIDENCE_V2";
     private static final String SIGNATURE_DOMAIN_V3 = "RESOURCE_GATEWAY_MIRROR_EVIDENCE_V3";
     private static final String SIGNATURE_DOMAIN_V4 = "RESOURCE_GATEWAY_MIRROR_EVIDENCE_V4";
+    private static final String SIGNATURE_DOMAIN_V5 = "RESOURCE_GATEWAY_MIRROR_EVIDENCE_V5";
+    private static final int MAXIMUM_WRITE_FAILURE_MATERIAL_BYTES =
+            16 * 1024;
     private static final ObjectMapper JSON = new ObjectMapper();
 
     /** Creates an offline verifier for stateless and Session-backed mirror evidence. */
@@ -271,6 +274,8 @@ public final class MirrorEvidenceVerifier {
                         || CapabilityMirrorProtocol.MIRROR_RUN_EVIDENCE_V3
                         .equals(version)
                         || CapabilityMirrorProtocol.MIRROR_RUN_EVIDENCE_V4
+                        .equals(version)
+                        || CapabilityMirrorProtocol.MIRROR_RUN_EVIDENCE_V5
                         .equals(version);
         JsonNode binding = isolation.path("deploymentTrustBinding");
         if (!current) {
@@ -366,7 +371,16 @@ public final class MirrorEvidenceVerifier {
         boolean readWrite =
                 CapabilityMirrorProtocol.MIRROR_RUN_EVIDENCE_V4.equals(
                         evidence.path("schemaVersion").asText());
+        boolean writeOutcome =
+                CapabilityMirrorProtocol.MIRROR_RUN_EVIDENCE_V5.equals(
+                        evidence.path("schemaVersion").asText());
         JsonNode state = evidence.path("stateEvidence");
+        if (writeOutcome) {
+            verifyStateWriteOutcomeEvidence(
+                    evidence, state, bindingBySite,
+                    expectedAttempts, resolutionByCoordinate);
+            return;
+        }
         if (readWrite) {
             verifyStateTransitionEvidence(
                     evidence, state, bindingBySite,
@@ -469,6 +483,372 @@ public final class MirrorEvidenceVerifier {
         requireStringOrder(
                 state.path("limitations"),
                 "MIRROR_STATE_LIMITATION_ORDER_INVALID");
+    }
+
+    private static void verifyStateWriteOutcomeEvidence(
+            JsonNode evidence,
+            JsonNode state,
+            Map<String, JsonNode> bindingBySite,
+            Map<String, JsonNode> expectedAttempts,
+            Map<String, JsonNode> resolutionByCoordinate) {
+        long initialRevision =
+                state.path("stateRevision").asLong();
+        long finalRevision =
+                state.path("finalStateRevision").asLong();
+        if (!evidence.path("runId").equals(
+                state.path("runId"))
+                || !evidence.path("planFingerprint").equals(
+                state.path("planFingerprint"))
+                || state.path("sessionStateRef")
+                .path("revision").asLong()
+                != initialRevision + 1
+                || state.path("finalSessionStateRef")
+                .path("revision").asLong()
+                != finalRevision + 1
+                || finalRevision < initialRevision
+                || !state.path("sessionStateRef")
+                .path("id").equals(
+                        state.path("finalSessionStateRef")
+                                .path("id"))) {
+            fail("MIRROR_STATE_WRITE_OUTCOME_IDENTITY_INVALID");
+        }
+        ObjectNode material =
+                ((ObjectNode) state).deepCopy();
+        String attached = material.path(
+                "stateEvidenceFingerprint").asText();
+        material.put("stateEvidenceFingerprint", "");
+        if (!EvidenceVerificationSupport.sha256Bounded(
+                material, MAXIMUM_STATE_EVIDENCE_BYTES)
+                .equals(attached)) {
+            fail("MIRROR_STATE_EVIDENCE_FINGERPRINT_INVALID");
+        }
+
+        JsonNode stateBindings =
+                state.path("statefulBindings");
+        requireOrdered(
+                stateBindings,
+                MirrorEvidenceVerifier::compareStateBinding,
+                value -> value.path(
+                        "invocationSiteId").asText(),
+                "MIRROR_STATE_BINDING_ORDER_INVALID");
+        Map<String, JsonNode> stateBindingBySite =
+                new HashMap<>();
+        for (JsonNode stateBinding : stateBindings) {
+            String site = stateBinding.path(
+                    "invocationSiteId").asText();
+            JsonNode graphBinding = bindingBySite.get(site);
+            String interaction =
+                    stateBinding.path("interaction").asText();
+            boolean exactSpec =
+                    "READ".equals(interaction)
+                            ? stateBinding.hasNonNull(
+                            "stateReadSpecRef")
+                            && !stateBinding.hasNonNull(
+                            "writeEffectRef")
+                            : "WRITE".equals(interaction)
+                            && stateBinding.hasNonNull(
+                            "writeEffectRef")
+                            && !stateBinding.hasNonNull(
+                            "stateReadSpecRef");
+            if (graphBinding == null || !exactSpec
+                    || !graphBinding.path("graphPath").equals(
+                    stateBinding.path("graphPath"))
+                    || !graphBinding.path("capabilityRef").equals(
+                    stateBinding.path("capabilityRef"))
+                    || stateBindingBySite.put(
+                    site, stateBinding) != null) {
+                fail("MIRROR_STATE_BINDING_CLOSURE_INVALID");
+            }
+        }
+        Map<String, JsonNode> expectedStateAttempts =
+                new HashMap<>();
+        expectedAttempts.forEach((coordinate, attempt) -> {
+            String site = coordinate.substring(
+                    0, coordinate.indexOf('\0'));
+            if (stateBindingBySite.containsKey(site)) {
+                expectedStateAttempts.put(
+                        coordinate, attempt);
+            }
+        });
+
+        Set<String> actualInteractions =
+                new HashSet<>();
+        Set<String> virtualCoordinates =
+                new HashSet<>();
+        state.path("accesses").forEach(access -> {
+            String coordinate =
+                    stateAccessCoordinate(access);
+            if (!actualInteractions.add(coordinate)) {
+                fail("MIRROR_STATE_INTERACTION_DUPLICATE");
+            }
+            virtualCoordinates.add(coordinate);
+        });
+
+        JsonNode writes = state.path("writeAttempts");
+        requireOrdered(
+                writes,
+                MirrorEvidenceVerifier::compareStateWriteAttempt,
+                MirrorEvidenceVerifier
+                        ::stateAccessCoordinate,
+                "MIRROR_STATE_WRITE_ATTEMPT_ORDER_INVALID");
+        ArrayNode successfulTransitions =
+                JSON.createArrayNode();
+        Set<JsonNode> knownHeads = new HashSet<>();
+        knownHeads.add(
+                state.path("sessionStateRef"));
+        for (JsonNode write : writes) {
+            String coordinate =
+                    stateAccessCoordinate(write);
+            JsonNode binding = stateBindingBySite.get(
+                    write.path("invocationSiteId").asText());
+            JsonNode attempt =
+                    expectedStateAttempts.get(coordinate);
+            JsonNode resolution =
+                    resolutionByCoordinate.get(coordinate);
+            long observed = write.path(
+                    "observedStateRevision").asLong();
+            if (binding == null
+                    || !"WRITE".equals(
+                    binding.path("interaction").asText())
+                    || attempt == null || resolution == null
+                    || !binding.path("graphPath").equals(
+                    write.path("graphPath"))
+                    || !binding.path("capabilityRef").equals(
+                    write.path("capabilityRef"))
+                    || !binding.path("writeEffectRef").equals(
+                    write.path("writeEffectRef"))
+                    || observed < initialRevision
+                    || observed > finalRevision
+                    || write.path("observedStateRef")
+                    .path("revision").asLong()
+                    != observed + 1
+                    || !write.path("observedStateRef")
+                    .path("id").equals(
+                            state.path("sessionStateRef")
+                                    .path("id"))
+                    || !write.path("requestFingerprint")
+                    .equals(attempt.path(
+                            "inputFingerprint"))
+                    || !write.path("requestFingerprint")
+                    .equals(resolution.path(
+                            "requestFingerprint"))
+                    || !actualInteractions.add(
+                    coordinate)) {
+                fail("MIRROR_STATE_WRITE_ATTEMPT_CLOSURE_INVALID");
+            }
+            String outcome =
+                    write.path("outcome").asText();
+            if ("COMMITTED".equals(outcome)
+                    || "REPLAYED".equals(outcome)) {
+                JsonNode transition =
+                        write.path("transition");
+                verifyWriteAttemptTransition(
+                        write, transition, outcome);
+                successfulTransitions.add(
+                        transition.deepCopy());
+                virtualCoordinates.add(coordinate);
+                if ("COMMITTED".equals(outcome)) {
+                    knownHeads.add(
+                            transition.path(
+                                    "finalStateRef"));
+                }
+            } else {
+                verifyFailedWriteAttempt(
+                        evidence, state, write,
+                        resolution, outcome);
+            }
+        }
+        if (!actualInteractions.equals(
+                expectedStateAttempts.keySet())) {
+            fail("MIRROR_STATE_INTERACTION_CLOSURE_INCOMPLETE");
+        }
+        for (JsonNode write : writes) {
+            if (!knownHeads.contains(
+                    write.path("observedStateRef"))) {
+                fail("MIRROR_STATE_WRITE_OBSERVED_HEAD_INVALID");
+            }
+        }
+        boolean unknown = false;
+        for (JsonNode write : writes) {
+            if ("COMMIT_OUTCOME_UNKNOWN".equals(
+                    write.path("outcome").asText())) {
+                unknown = true;
+                break;
+            }
+        }
+        boolean unknownLimitation = containsText(
+                state.path("limitations"),
+                "WRITE_COMMIT_OUTCOME_UNKNOWN");
+        if (unknown != unknownLimitation) {
+            fail("MIRROR_STATE_UNKNOWN_OUTCOME_LIMITATION_INVALID");
+        }
+
+        ObjectNode virtualState =
+                ((ObjectNode) state).deepCopy();
+        virtualState.put(
+                "schemaVersion",
+                CapabilityMirrorProtocol
+                        .MIRROR_STATE_RUN_EVIDENCE_V2);
+        virtualState.put(
+                "mode", "SERIALIZABLE_READ_WRITE");
+        virtualState.remove("writeAttempts");
+        virtualState.set(
+                "transitions", successfulTransitions);
+        virtualState.put("stateEvidenceFingerprint", "");
+        virtualState.put(
+                "stateEvidenceFingerprint",
+                EvidenceVerificationSupport.sha256Bounded(
+                        virtualState,
+                        MAXIMUM_STATE_EVIDENCE_BYTES));
+        Map<String, JsonNode> virtualAttempts =
+                new HashMap<>();
+        Map<String, JsonNode> virtualResolutions =
+                new HashMap<>();
+        for (String coordinate : virtualCoordinates) {
+            virtualAttempts.put(
+                    coordinate,
+                    expectedStateAttempts.get(coordinate));
+            virtualResolutions.put(
+                    coordinate,
+                    resolutionByCoordinate.get(coordinate));
+        }
+        verifyStateTransitionEvidence(
+                evidence, virtualState, bindingBySite,
+                virtualAttempts, virtualResolutions);
+        requireStringOrder(
+                state.path("limitations"),
+                "MIRROR_STATE_LIMITATION_ORDER_INVALID");
+    }
+
+    private static void verifyWriteAttemptTransition(
+            JsonNode write,
+            JsonNode transition,
+            String outcome) {
+        boolean committed = "COMMITTED".equals(outcome);
+        if (transition.isMissingNode()
+                || !write.path("invocationSiteId").equals(
+                transition.path("invocationSiteId"))
+                || !write.path("graphPath").equals(
+                transition.path("graphPath"))
+                || !write.path("correlationKey").equals(
+                transition.path("correlationKey"))
+                || !write.path("occurrence").equals(
+                transition.path("occurrence"))
+                || !write.path("attempt").equals(
+                transition.path("attempt"))
+                || !write.path("capabilityRef").equals(
+                transition.path("capabilityRef"))
+                || !write.path("writeEffectRef").equals(
+                transition.path("writeEffectRef"))
+                || !write.path("observedStateRef").equals(
+                transition.path("initialStateRef"))
+                || write.path("observedStateRevision").asLong()
+                != transition.path("revisionBefore").asLong()
+                || !write.path("observedWorldFingerprint")
+                .equals(transition.path(
+                        "initialWorldFingerprint"))
+                || !write.path("observedLogicalClock")
+                .equals(transition.path(
+                        "initialLogicalClock"))
+                || !write.path("requestFingerprint").equals(
+                transition.path("requestFingerprint"))
+                || committed
+                == transition.path("replayed").asBoolean()) {
+            fail("MIRROR_STATE_WRITE_TRANSITION_IDENTITY_INVALID");
+        }
+    }
+
+    private static void verifyFailedWriteAttempt(
+            JsonNode evidence,
+            JsonNode state,
+            JsonNode write,
+            JsonNode resolution,
+            String outcome) {
+        String limitation = switch (outcome) {
+            case "REJECTED" -> "STATE_WRITE_REJECTED";
+            case "PRE_COMMIT_FAILED" ->
+                    "STATE_WRITE_PRE_COMMIT_FAILED";
+            case "COMMIT_OUTCOME_UNKNOWN" ->
+                    "WRITE_COMMIT_OUTCOME_UNKNOWN";
+            default -> {
+                fail("MIRROR_STATE_WRITE_OUTCOME_INVALID");
+                yield "";
+            }
+        };
+        ObjectNode material = JSON.createObjectNode();
+        material.set(
+                "writeEffectRef",
+                write.path("writeEffectRef").deepCopy());
+        material.set(
+                "observedStateRef",
+                write.path("observedStateRef").deepCopy());
+        material.put(
+                "observedStateRevision",
+                write.path("observedStateRevision").asLong());
+        material.put(
+                "observedWorldFingerprint",
+                write.path(
+                        "observedWorldFingerprint").asText());
+        material.put(
+                "observedLogicalClock",
+                write.path("observedLogicalClock").asText());
+        material.put(
+                "requestFingerprint",
+                write.path("requestFingerprint").asText());
+        material.put("outcome", outcome);
+        material.put(
+                "stage", write.path("stage").asText());
+        material.put(
+                "disposition",
+                write.path("stateDisposition").asText());
+        material.put(
+                "retryable",
+                write.path("retryable").asBoolean());
+        material.put(
+                "errorCode",
+                write.path("errorCode").asText());
+        material.put(
+                "errorType",
+                write.path("errorType").asText());
+        String failureFingerprint =
+                EvidenceVerificationSupport.sha256Bounded(
+                        material,
+                        MAXIMUM_WRITE_FAILURE_MATERIAL_BYTES);
+        if (!failureFingerprint.equals(
+                write.path("failureFingerprint").asText())
+                || !"RESOLVED".equals(
+                resolution.path("status").asText())
+                || !"SESSION_STATE".equals(
+                resolution.path("source").asText())
+                || !resolution.path("outputFingerprint")
+                .asText().isBlank()
+                || !write.path("errorCode").equals(
+                resolution.path("error").path("code"))
+                || !write.path("errorType").equals(
+                resolution.path("error").path("type"))
+                || !failureFingerprint.equals(
+                resolution.path("error")
+                        .path("message").asText())
+                || !containsArtifact(
+                resolution.path("matchedArtifactRefs"),
+                write.path("observedStateRef"))
+                || !containsArtifact(
+                resolution.path("matchedArtifactRefs"),
+                state.path("stateModelRef"))
+                || !containsArtifact(
+                resolution.path("matchedArtifactRefs"),
+                write.path("writeEffectRef"))
+                || !containsText(
+                resolution.path("matchedRuleRefs"),
+                "write-attempt:" + failureFingerprint)
+                || !containsText(
+                resolution.path("limitations"),
+                limitation)
+                || !containsText(
+                evidence.path("limitations"),
+                limitation)) {
+            fail("MIRROR_STATE_WRITE_FAILURE_CLOSURE_INVALID");
+        }
     }
 
     private static void verifyStateTransitionEvidence(
@@ -976,6 +1356,22 @@ public final class MirrorEvidenceVerifier {
                 .compare(left, right);
     }
 
+    private static int compareStateWriteAttempt(
+            JsonNode left, JsonNode right) {
+        return Comparator.comparing(
+                (JsonNode value) -> value.path(
+                        "invocationSiteId").asText())
+                .thenComparing(value ->
+                        value.path("graphPath").asText())
+                .thenComparing(value ->
+                        value.path("correlationKey").asText())
+                .thenComparingInt(value ->
+                        value.path("occurrence").asInt())
+                .thenComparingInt(value ->
+                        value.path("attempt").asInt())
+                .compare(left, right);
+    }
+
     private static int compareArtifactRef(JsonNode left, JsonNode right) {
         return Comparator.comparing((JsonNode value) -> value.path("kind").asText())
                 .thenComparing(value -> value.path("id").asText())
@@ -1037,6 +1433,8 @@ public final class MirrorEvidenceVerifier {
                     SIGNATURE_DOMAIN_V3;
             case CapabilityMirrorProtocol.MIRROR_EVIDENCE_ATTESTATION_V4 ->
                     SIGNATURE_DOMAIN_V4;
+            case CapabilityMirrorProtocol.MIRROR_EVIDENCE_ATTESTATION_V5 ->
+                    SIGNATURE_DOMAIN_V5;
             default -> throw new IllegalArgumentException(
                     "unsupported mirror evidence attestation version");
         };
@@ -1062,6 +1460,9 @@ public final class MirrorEvidenceVerifier {
         }
         if (CapabilityMirrorProtocol.MIRROR_EVIDENCE_BUNDLE_V4.equals(version)) {
             return CapabilityMirrorProtocol.MIRROR_EVIDENCE_BUNDLE_V4_SCHEMA_RESOURCE;
+        }
+        if (CapabilityMirrorProtocol.MIRROR_EVIDENCE_BUNDLE_V5.equals(version)) {
+            return CapabilityMirrorProtocol.MIRROR_EVIDENCE_BUNDLE_V5_SCHEMA_RESOURCE;
         }
         return "";
     }

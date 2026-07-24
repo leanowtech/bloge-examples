@@ -10,7 +10,8 @@ import com.leanowtech.bloge.gateway.integration.mirror.MirrorStateEvidence;
 import com.leanowtech.bloge.gateway.integration.mirror.MirrorStateRunEvidence;
 import com.leanowtech.bloge.gateway.integration.mirror.MirrorStateRunEvidenceIntegrity;
 import com.leanowtech.bloge.gateway.integration.mirror.MirrorStateTransitionRunEvidence;
-import com.leanowtech.bloge.gateway.integration.mirror.MirrorStateTransitionRunEvidenceIntegrity;
+import com.leanowtech.bloge.gateway.integration.mirror.MirrorStateWriteOutcomeRunEvidence;
+import com.leanowtech.bloge.gateway.integration.mirror.MirrorStateWriteOutcomeRunEvidenceIntegrity;
 import com.leanowtech.bloge.gateway.integration.mirror.SessionStateSpace;
 import com.leanowtech.bloge.gateway.integration.mirror.StateModelIntegrity;
 import com.leanowtech.bloge.gateway.integration.mirror.StateReadSpec;
@@ -31,9 +32,10 @@ import java.util.concurrent.atomic.AtomicBoolean;
  *
  * <p>The constructor freezes every state-backed plan site against the admitted Session payload.
  * Read-only runs retain the immutable v1 evidence shape. Runs with one or more virtual-write
- * bindings emit v2 evidence that binds initial/final Session heads, every read to its observed
- * revision, and each write to a payload-free receipt/event projection. Completion is one-shot and
- * rejects duplicate invocation coordinates or any runtime/spec drift.</p>
+ * bindings emit v3 evidence that binds initial/final Session heads, every read to its observed
+ * revision, and every write delegate attempt to one committed, replayed, rejected, pre-commit
+ * failed, or commit-outcome-unknown terminal record. Completion is one-shot and rejects duplicate
+ * invocation coordinates or any runtime/spec drift.</p>
  */
 public final class MirrorStateAccessJournal
         implements MirrorStateAccessObserver {
@@ -44,7 +46,7 @@ public final class MirrorStateAccessJournal
     private final ConcurrentHashMap<Coordinate, ReadObservation>
             reads = new ConcurrentHashMap<>();
     private final ConcurrentHashMap<Coordinate,
-            WriteObservation> transitions =
+            WriteObservation> writeAttempts =
             new ConcurrentHashMap<>();
     private final AtomicBoolean completed = new AtomicBoolean();
 
@@ -218,7 +220,7 @@ public final class MirrorStateAccessJournal
         Coordinate coordinate = Coordinate.from(request);
         if (reads.putIfAbsent(
                 coordinate, observation) != null
-                || transitions.containsKey(coordinate)) {
+                || writeAttempts.containsKey(coordinate)) {
             throw new IllegalStateException(
                     "duplicate mirror state interaction coordinate");
         }
@@ -250,8 +252,50 @@ public final class MirrorStateAccessJournal
         WriteObservation observation =
                 new WriteObservation(
                         request.requestFingerprint(),
-                        transition);
-        if (transitions.putIfAbsent(
+                        MirrorStateWriteAttemptObservation
+                                .succeeded(transition));
+        if (writeAttempts.putIfAbsent(
+                coordinate, observation) != null
+                || reads.containsKey(coordinate)) {
+            throw new IllegalStateException(
+                    "duplicate mirror state interaction coordinate");
+        }
+    }
+
+    @Override
+    public void writeFailed(
+            MirrorResolver.Request request,
+            WriteEffectSpec spec,
+            MirrorStateWriteAttemptObservation failure) {
+        ensureOpen();
+        requireContext(request);
+        Objects.requireNonNull(spec, "spec");
+        Objects.requireNonNull(failure, "failure");
+        Binding binding = bindingsBySite.get(
+                request.site().invocationSiteId());
+        if (binding == null || binding.writeEffect() == null
+                || !WriteEffectSpecIntegrity.reference(spec)
+                .equals(failure.writeEffectRef())
+                || !WriteEffectSpecIntegrity.reference(
+                binding.writeEffect()).equals(
+                failure.writeEffectRef())
+                || !failure.observedStateRef().id().equals(
+                sessionContext.payload().state().sessionId())
+                || failure.outcome()
+                == MirrorStateWriteOutcomeRunEvidence
+                .WriteOutcome.COMMITTED
+                || failure.outcome()
+                == MirrorStateWriteOutcomeRunEvidence
+                .WriteOutcome.REPLAYED) {
+            throw new IllegalArgumentException(
+                    "state write failure differs from its frozen journal binding");
+        }
+        Coordinate coordinate = Coordinate.from(request);
+        WriteObservation observation =
+                new WriteObservation(
+                        request.requestFingerprint(),
+                        failure);
+        if (writeAttempts.putIfAbsent(
                 coordinate, observation) != null
                 || reads.containsKey(coordinate)) {
             throw new IllegalStateException(
@@ -263,7 +307,7 @@ public final class MirrorStateAccessJournal
      * Closes and seals the complete payload-free state evidence value.
      *
      * @param runId terminal mirror run identity
-     * @return sealed read-only v1 or serializable read/write v2 evidence
+     * @return sealed read-only v1 or failure-aware read/write v3 evidence
      */
     public MirrorStateEvidence complete(String runId) {
         if (!completed.compareAndSet(false, true)) {
@@ -277,7 +321,7 @@ public final class MirrorStateAccessJournal
 
     /** @return number of unique state reads and writes observed so far */
     public int size() {
-        return reads.size() + transitions.size();
+        return reads.size() + writeAttempts.size();
     }
 
     private MirrorStateRunEvidence completeReadOnly(
@@ -319,7 +363,7 @@ public final class MirrorStateAccessJournal
                         bindings, accesses, List.of()));
     }
 
-    private MirrorStateTransitionRunEvidence completeReadWrite(
+    private MirrorStateWriteOutcomeRunEvidence completeReadWrite(
             String runId) {
         MirrorSessionPayload initial =
                 sessionContext.payload();
@@ -333,19 +377,27 @@ public final class MirrorStateAccessJournal
         List<MirrorStateTransitionRunEvidence.StateAccess>
                 accesses = reads.values().stream()
                 .map(ReadObservation::toV2).toList();
-        List<MirrorStateTransitionRunEvidence.StateTransition>
-                writes = transitions.entrySet().stream()
-                .map(entry -> toV2(
+        List<MirrorStateWriteOutcomeRunEvidence.StateWriteAttempt>
+                writes = writeAttempts.entrySet().stream()
+                .map(entry -> toV3(
                         entry.getKey(),
                         bindingsBySite.get(
                                 entry.getKey()
                                         .invocationSiteId()),
                         entry.getValue()))
                 .toList();
-        return MirrorStateTransitionRunEvidenceIntegrity.seal(
+        List<String> limitations = writes.stream()
+                .anyMatch(attempt -> attempt.outcome()
+                        == MirrorStateWriteOutcomeRunEvidence
+                        .WriteOutcome.COMMIT_OUTCOME_UNKNOWN)
+                ? List.of(
+                MirrorStateWriteOutcomeRunEvidence
+                        .UNKNOWN_OUTCOME_LIMITATION)
+                : List.of();
+        return MirrorStateWriteOutcomeRunEvidenceIntegrity.seal(
                 mapper,
-                new MirrorStateTransitionRunEvidence(
-                        MirrorStateTransitionRunEvidence
+                new MirrorStateWriteOutcomeRunEvidence(
+                        MirrorStateWriteOutcomeRunEvidence
                                 .SCHEMA_VERSION,
                         "", runId, plan.planFingerprint(),
                         stateRef(initialState),
@@ -358,20 +410,21 @@ public final class MirrorStateAccessJournal
                         finalState.worldFingerprint(),
                         initialState.logicalClock(),
                         finalState.logicalClock(),
-                        MirrorStateTransitionRunEvidence.Mode
-                                .SERIALIZABLE_READ_WRITE,
-                        bindings, accesses, writes, List.of()));
+                        MirrorStateWriteOutcomeRunEvidence.Mode
+                                .SERIALIZABLE_READ_WRITE_OUTCOMES,
+                        bindings, accesses, writes,
+                        limitations));
     }
 
-    private static MirrorStateTransitionRunEvidence
-            .StateTransition toV2(
+    private static MirrorStateWriteOutcomeRunEvidence
+            .StateWriteAttempt toV3(
             Coordinate coordinate,
             Binding binding,
             WriteObservation observation) {
-        MirrorStateTransitionObservation value =
-                observation.transition();
-        return new MirrorStateTransitionRunEvidence
-                .StateTransition(
+        MirrorStateWriteAttemptObservation value =
+                observation.attempt();
+        return new MirrorStateWriteOutcomeRunEvidence
+                .StateWriteAttempt(
                 coordinate.invocationSiteId(),
                 binding.planBinding().graphPath(),
                 coordinate.correlationKey(),
@@ -379,36 +432,24 @@ public final class MirrorStateAccessJournal
                 coordinate.attempt(),
                 binding.capabilityRef(),
                 value.writeEffectRef(),
-                value.initialStateRef(),
-                value.finalStateRef(),
-                value.revisionBefore(),
-                value.revisionAfter(),
-                value.initialWorldFingerprint(),
-                value.finalWorldFingerprint(),
-                value.initialLogicalClock(),
-                value.finalLogicalClock(),
+                value.observedStateRef(),
+                value.observedStateRevision(),
+                value.observedWorldFingerprint(),
+                value.observedLogicalClock(),
                 observation.requestFingerprint(),
-                value.idempotencyKeyFingerprint(),
-                value.commandFingerprint(),
-                value.receiptFingerprint(),
-                value.responseFingerprint(),
-                value.resultingWorldFingerprint(),
-                value.committedAt(), value.replayed(),
-                value.events().stream()
-                        .map(event ->
-                                new MirrorStateTransitionRunEvidence
-                                        .TransitionEvent(
-                                        event.eventIdFingerprint(),
-                                        event.stateRevision(),
-                                        event.mutationId(),
-                                        event.operation(),
-                                        event.entityType(),
-                                        event.entityIdentityFingerprint(),
-                                        event.beforeFingerprint(),
-                                        event.afterFingerprint(),
-                                        event.occurredAt(),
-                                        event.eventFingerprint()))
-                        .toList());
+                value.outcome(), value.stage(),
+                value.stateDisposition(),
+                value.retryable(), value.errorCode(),
+                value.errorType(),
+                value.failureFingerprint(),
+                value.protocolTransition(
+                        coordinate.invocationSiteId(),
+                        binding.planBinding().graphPath(),
+                        coordinate.correlationKey(),
+                        coordinate.occurrence(),
+                        coordinate.attempt(),
+                        binding.capabilityRef(),
+                        observation.requestFingerprint()));
     }
 
     private MirrorResolver.SessionContext requireContext(
@@ -524,14 +565,14 @@ public final class MirrorStateAccessJournal
 
     private record WriteObservation(
             String requestFingerprint,
-            MirrorStateTransitionObservation transition
+            MirrorStateWriteAttemptObservation attempt
     ) {
         private WriteObservation {
             requestFingerprint = Objects.requireNonNull(
                     requestFingerprint,
                     "requestFingerprint");
-            transition = Objects.requireNonNull(
-                    transition, "transition");
+            attempt = Objects.requireNonNull(
+                    attempt, "attempt");
         }
     }
 

@@ -113,6 +113,7 @@ dedicated local data plane.
 | `GET http://localhost:8080/api/mirror/runs/{runId}/evidence` | Export the independently verified signed `HASH_ONLY` evidence bundle |
 | `GET http://localhost:8080/api/mirror/runs/{runId}/state-workbook-seed` | Export a deterministic payload-free ANEKE seed from one verified stateful v3 bundle |
 | `GET http://localhost:8080/api/mirror/runs/{runId}/state-transition-workbook-seed` | Export deterministic committed/replayed write assertions from one verified stateful v4 bundle |
+| `GET http://localhost:8080/api/mirror/runs/{runId}/state-write-outcome-workbook-seed` | Export every terminal state-write attempt and its governance blockers from one verified stateful v5 bundle |
 | `POST http://localhost:8080/api/mirror/trust/deployment-isolation/authority-key-sets` | Verify and append one current isolation-authority key-set generation |
 | `GET http://localhost:8080/api/mirror/trust/deployment-isolation/authority-key-sets/{keySetId}/latest` | Distribute the re-verified current authority floor |
 | `POST http://localhost:8080/api/mirror/trust/deployment-isolation/attestations` | Verify and append an operator-pinned attestation bootstrap or continuous successor |
@@ -335,49 +336,63 @@ plan/Session closure defects rejected before graph scheduling.
 
 Read-only Session runs emit nested
 `resourceGateway.mirrorStateRunEvidence.v1` inside mirror evidence,
-attestation, and bundle v3. Read/write runs emit
-`resourceGateway.mirrorStateRunEvidence.v2` inside the independently
-domain-separated v4 generation. V2 state evidence binds both initial and final
-Session heads, every read's exact observed revision, and every write's
-request/idempotency/command/receipt/response fingerprints, contiguous
-revision/world/logical-clock transition, and complete transition-event
-closure. It retains neither entity values, business keys, nor raw idempotency
-keys. Every read or write is also closed against the matching node delegate
-attempt and `MirrorResolution`. Existing v1/v2 stateless and v3 read-only
-bundles remain readable with their original signature semantics. Repository
-reads after restart rehydrate the state-evidence subtype and re-verify its
-nested seal and detached signature.
+attestation, and bundle v3. Legacy successful read/write runs use nested v2
+state evidence and bundle v4. New read/write runs emit
+`resourceGateway.mirrorStateRunEvidence.v3` inside independently
+domain-separated run evidence, attestation, and bundle v5. V3 binds both
+initial and final Session heads, every exact read, and every executed write
+attempt to one terminal outcome: `COMMITTED`, `REPLAYED`, `REJECTED`,
+`PRE_COMMIT_FAILED`, or `COMMIT_OUTCOME_UNKNOWN`. Each attempt records its
+bounded stage and whether state was `ADVANCED`, `UNCHANGED`, or `UNKNOWN`.
+Successful attempts retain the v2 request/receipt/event transition closure;
+failed attempts retain only state coordinates, stable error metadata, and a
+recomputable failure fingerprint. Entity values, business keys, raw
+idempotency keys, command inputs, and responses are never retained.
 
-The standalone test kit independently verifies both v3 read closure and v4
-read/write transition closure. It derives
+Every state access and write attempt closes against the matching node delegate
+attempt and `MirrorResolution`. `COMMIT_OUTCOME_UNKNOWN` requires
+`WRITE_COMMIT_OUTCOME_UNKNOWN` on both nested and outer evidence, so it cannot
+be certified as unchanged or published without reconciliation. Existing
+v1/v2 stateless and v3/v4 stateful bundles remain readable with their original
+signature semantics. Repository reads after restart rehydrate the exact
+state-evidence subtype and re-verify its nested seal and detached signature.
+
+The standalone test kit independently verifies v3 read closure, v4 successful
+transition closure, and v5 failure-aware write-attempt closure. It derives
 `resourceGateway.mirrorStateWorkbookSeed.v1` from a verified v3 bundle and
 `resourceGateway.mirrorStateTransitionWorkbookSeed.v1` from a verified v4
-bundle. The transition seed closes initial/final heads, access outcome counts,
-committed/replayed receipt assertions, and payload-free events. The protected
-`state-workbook-seed` and `state-transition-workbook-seed` routes return the
-same deterministic projections in the authenticated scope. The independent
-client fetches v4 evidence and its signing key, reconstructs the transition
-seed locally, and compares its canonical fingerprint with the producer seed.
-A seed names exact evidence coordinates and conservative blockers; it does not
-replace the signed bundle or let
+bundle. It derives
+`resourceGateway.mirrorStateWriteOutcomeWorkbookSeed.v1` from v5. The v5 seed
+closes initial/final heads, all five outcome counts, ordered write-attempt
+assertions, and successful receipt/event transitions where present. Rejected
+writes remain explicit until ANEKE supplies an expected rejection assertion;
+pre-commit failures and unknown commit outcomes are blockers. The three
+protected seed routes return the same deterministic projections in the
+authenticated scope. The independent client fetches evidence and its signing
+key, reconstructs the matching seed locally, and compares its canonical
+fingerprint with the producer seed. A seed names exact evidence coordinates
+and conservative blockers; it does not replace the signed bundle or let
 Resource Gateway make ANEKE's workbook, owner-approval, or publish-gate
 decision.
 
 This is not yet a production-certified stateful runtime: TEE/KMS custody,
 organization-pinned checkpoint trust, cross-region payload restore,
-rejected/pre-commit/crash write-attempt assertions,
 cryptographic deletion proof, target-database capacity/lock certification and
-HA/DR certification remain. The probe reports `mirrorStatefulResolverReady`
+HA/DR certification remain. In-process rejected, pre-commit failure, and
+ambiguous commit outcomes are now evidence-complete; a process death between
+durable commit and observation still requires a durable write-attempt journal
+and recovery reconciler. The probe reports `mirrorStatefulResolverReady`
 only when mirror execution, the Session API, and the encrypted state store are
 all ready. It separately reports `mirrorStateRunEvidenceReady`,
-`mirrorStateTransitionEvidenceReady`, `mirrorStateWorkbookSeedApi`,
-`mirrorStateWorkbookSeedReady`, `mirrorStateTransitionWorkbookSeedApi`, and
-`mirrorStateTransitionWorkbookSeedReady`; both workbook readiness flags follow
-the stateful resolver's current health. It also separates
+`mirrorStateTransitionEvidenceReady`, `mirrorStateWriteOutcomeEvidenceReady`,
+the three workbook-seed API flags, and their matching readiness flags. All
+three workbook readiness flags follow the stateful resolver's current health.
+`mirrorStateWriteAttemptDurableReconciliationReady=false` states that a crash
+attempt is not yet durably recoverable. The probe also separates
 `mirrorStateCheckpointProtocol`, `mirrorStateCheckpointApi`,
 `mirrorStateCheckpointReady`, and `mirrorStateRecoveryReady`; readiness requires
 both the state store and signing authority. `mirrorStatefulRuntimeReady` remains
-false until crash/network/HA/DR and failed-write outcome certification are
+false until durable crash reconciliation, network/HA/DR, and environment certification are
 complete. Startup, request v2 usage, Java usage, capacity
 configuration, stable errors, and remaining industrial work packages are in the
 [stateful mirror kernel guide](../docs/resource-gateway-stateful-mirror-kernel.md).
@@ -530,6 +545,11 @@ curl -sS http://localhost:8080/api/mirror/runs/REPLACE_WITH_RUN_ID/state-workboo
 curl -sS http://localhost:8080/api/mirror/runs/REPLACE_WITH_RUN_ID/state-transition-workbook-seed \
   -H 'Authorization: Bearer bloge-aneke-demo-token' \
   -H 'X-Purpose: MIRROR_REHEARSAL'
+
+# Stateful v5 failure-aware read/write runs only
+curl -sS http://localhost:8080/api/mirror/runs/REPLACE_WITH_RUN_ID/state-write-outcome-workbook-seed \
+  -H 'Authorization: Bearer bloge-aneke-demo-token' \
+  -H 'X-Purpose: MIRROR_REHEARSAL'
 ```
 
 Do not place `bloge.tenantId`, `bloge.namespace`, or `__nodeOutput:` keys in `context`; the service derives scope
@@ -541,7 +561,11 @@ The state-workbook route rejects stateless or incomplete runs with
 state workbook. The transition route rejects non-v4 evidence with
 `RG.MIRROR.STATE_TRANSITION_WORKBOOK_SEED_UNAVAILABLE`; it reports only
 observed committed/replayed transitions and never equates an empty transition
-list with proof that no write was attempted.
+list with proof that no write was attempted. The write-outcome route rejects
+non-v5 evidence with
+`RG.MIRROR.STATE_WRITE_OUTCOME_WORKBOOK_SEED_UNAVAILABLE`; it reports every
+executed write attempt and fails the gate on unresolved rejection,
+pre-commit failure, or unknown commit outcome.
 
 The strict `resourceGateway.mirrorResolution.v1` protocol is also frozen. It binds every future resolver outcome to
 the exact run, plan, capability and invocation attempt; separates resolved null, visible/redacted output, hash-only
@@ -564,14 +588,17 @@ remain distinct. Ordinary tests keep their previous selection path. The probe ad
 the protected plan adapter is assembled, and advertises serving only when the complete run/evidence chain is assembled.
 
 The portable evidence protocol supports the frozen v1 and v2 stateless
-generations, a v3 read-only stateful generation, and a v4 read/write stateful
-generation. V3 requires nested
+generations, a v3 read-only stateful generation, a v4 successful read/write
+generation, and a v5 failure-aware read/write generation. V3 requires nested
 `resourceGateway.mirrorStateRunEvidence.v1` and uses distinct
 `resourceGateway.mirrorRunEvidence.v3`,
 `resourceGateway.mirrorEvidenceAttestation.v3`, and
 `resourceGateway.mirrorEvidenceBundle.v3` schemas and signature domain. V4
 requires nested `resourceGateway.mirrorStateRunEvidence.v2` and similarly uses
 distinct run-evidence, attestation, bundle schemas and a v4 signature domain.
+V5 requires nested `resourceGateway.mirrorStateRunEvidence.v3`; every write
+attempt has a terminal outcome, stage, state disposition, and independently
+recomputable success or failure closure under a v5 signature domain.
 Every generation signs only a
 `HASH_ONLY` projection that binds request context, plan, capability closure, execution control, fixture revision,
 semantic result, ordered node/edge traces, every sealed resolution, and explicit isolation facts. Newly produced
@@ -585,11 +612,13 @@ terminal confirmation, v2 evidence binding, and transaction commit fencing are c
 ingress controls, non-Java v2 fixtures, cross-language canonicalization, and environment certification remain
 production gates.
 V3 additionally closes one immutable Session head and every state access
-against the existing node-attempt/resolution trace. V4 closes an advancing
-Session head, exact read revisions, virtual-write receipts and transition
-events against the same trace. The independent test kit verifies v1/v2/v3/v4,
-rejects mixed generations, and derives the matching read-only or transition
-workbook seed only after v3 or v4 verification. A local exploratory demo will normally return
+against the existing node-attempt/resolution trace. V4 closes successful
+advancing Session heads, exact read revisions, virtual-write receipts and
+transition events against the same trace. V5 also closes rejected,
+pre-commit-failed, and in-process ambiguous outcomes without exposing payloads.
+The independent test kit verifies v1/v2/v3/v4/v5, rejects mixed generations,
+and derives the matching read-only, transition, or write-outcome workbook seed
+only after generation-specific verification. A local exploratory demo will normally return
 `gateReady=false` with blockers such as `EVIDENCE_NOT_CERTIFIABLE` and
 `RUN_EVIDENCE_LIMITED`; that is an honest trust result, not a transport failure.
 The Spring kernel now has
@@ -727,7 +756,7 @@ Useful variants:
 ./scripts/stop-visual-canvas-demo.sh
 ```
 
-`--stateful` starts the Session data plane, read/virtual-write resolver, v3/v4
+`--stateful` starts the Session data plane, read/virtual-write resolver, v3/v4/v5
 evidence projection, v3 read-only workbook-seed route, and signed
 checkpoint/recovery routes in the same service. No extra sidecar is required
 for the local demonstration; use the ordinary stop script above. Stop preserves

@@ -1,10 +1,13 @@
 package com.leanowtech.bloge.gateway.testing.runtime;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.leanowtech.bloge.gateway.integration.IntegrationProblem;
+import com.leanowtech.bloge.gateway.integration.IntegrationProblemException;
 import com.leanowtech.bloge.gateway.integration.mirror.MirrorArtifactRef;
 import com.leanowtech.bloge.gateway.integration.mirror.MirrorSessionDescriptor;
 import com.leanowtech.bloge.gateway.integration.mirror.MirrorSessionPayload;
 import com.leanowtech.bloge.gateway.integration.mirror.MirrorSessionProtocolIntegrity;
+import com.leanowtech.bloge.gateway.integration.mirror.MirrorStateWriteOutcomeRunEvidence;
 import com.leanowtech.bloge.gateway.integration.mirror.SessionStateSpace;
 import com.leanowtech.bloge.gateway.integration.mirror.WriteEffectSpec;
 import com.leanowtech.bloge.gateway.integration.mirror.WriteEffectSpecIntegrity;
@@ -81,12 +84,28 @@ public final class MirrorStateRunSession {
                             "The Session does not admit the exact graph write effect."));
             WriteEffectSpecIntegrity.verify(
                     mapper, effect, before.stateModel());
-            CommandResult result = Objects.requireNonNull(
-                    executor.execute(
-                            writeEffectRef, detachedInput,
-                            before.state().fingerprint()),
-                    "command result");
-            verifyProgression(before, writeEffectRef, result);
+            CommandResult result;
+            try {
+                result = Objects.requireNonNull(
+                        executor.execute(
+                                writeEffectRef, detachedInput,
+                                before.state().fingerprint()),
+                        "command result");
+            } catch (MirrorStateWriteFailure normalized) {
+                throw normalized;
+            } catch (RuntimeException failure) {
+                throw classify(failure);
+            }
+            try {
+                verifyProgression(
+                        before, writeEffectRef, result);
+            } catch (RuntimeException invalid) {
+                throw unknown(
+                        MirrorStateWriteOutcomeRunEvidence
+                                .WriteStage.RESULT_VERIFICATION,
+                        "MIRROR_SESSION_WRITE_RESULT_UNVERIFIED",
+                        false);
+            }
             currentPayload.set(result.payload());
             return new Execution(
                     before, result.payload(), result.descriptor(),
@@ -104,6 +123,105 @@ public final class MirrorStateRunSession {
     /** @return latest verified Session aggregate visible to downstream graph nodes */
     public MirrorSessionPayload currentPayload() {
         return currentPayload.get();
+    }
+
+    private static MirrorStateWriteFailure classify(
+            RuntimeException failure) {
+        if (failure instanceof IntegrationProblemException
+                integration) {
+            return classify(integration.problem());
+        }
+        if (failure instanceof MirrorStateException state) {
+            if ("RG.MIRROR.STATE.COMMIT_FAILED".equals(
+                    state.code())
+                    || state.code().endsWith(
+                    "_UNAVAILABLE")) {
+                return unknown(
+                        MirrorStateWriteOutcomeRunEvidence
+                                .WriteStage.COMMIT,
+                        state.code(), true);
+            }
+            return rejected(
+                    MirrorStateWriteOutcomeRunEvidence
+                            .WriteStage.COMMAND_EVALUATION,
+                    state.code(), false);
+        }
+        if (failure instanceof TestControlException control) {
+            return rejected(
+                    MirrorStateWriteOutcomeRunEvidence
+                            .WriteStage.COMMAND_ADMISSION,
+                    control.code(), false);
+        }
+        return unknown(
+                MirrorStateWriteOutcomeRunEvidence
+                        .WriteStage.COMMIT,
+                "MIRROR_SESSION_WRITE_OUTCOME_UNKNOWN",
+                false);
+    }
+
+    private static MirrorStateWriteFailure classify(
+            IntegrationProblem problem) {
+        String code = stableProblemCode(problem.code());
+        if ("RG.MIRROR.SESSION.STORE_UNAVAILABLE".equals(code)
+                || "RG.MIRROR.SESSION.STATE_CORRUPT".equals(code)
+                || "RG.MIRROR.STATE.COMMIT_FAILED".equals(code)
+                || code.endsWith("_UNAVAILABLE")) {
+            return unknown(
+                    MirrorStateWriteOutcomeRunEvidence
+                            .WriteStage.COMMIT,
+                    code, problem.retryable());
+        }
+        if (code.startsWith("RG.MIRROR.STATE.")) {
+            return rejected(
+                    MirrorStateWriteOutcomeRunEvidence
+                            .WriteStage.COMMAND_EVALUATION,
+                    code, problem.retryable());
+        }
+        if (code.startsWith("RG.MIRROR.SESSION.")) {
+            return new MirrorStateWriteFailure(
+                    MirrorStateWriteOutcomeRunEvidence
+                            .WriteOutcome.PRE_COMMIT_FAILED,
+                    MirrorStateWriteOutcomeRunEvidence
+                            .WriteStage.COMMAND_ADMISSION,
+                    code, "MIRROR_STATE_WRITE",
+                    problem.retryable());
+        }
+        return unknown(
+                MirrorStateWriteOutcomeRunEvidence
+                        .WriteStage.COMMIT,
+                "MIRROR_SESSION_WRITE_OUTCOME_UNKNOWN",
+                problem.retryable());
+    }
+
+    private static String stableProblemCode(String value) {
+        String normalized =
+                value == null ? "" : value.trim();
+        return normalized.matches(
+                "[A-Z][A-Z0-9_.-]{0,191}")
+                ? normalized
+                : "MIRROR_SESSION_WRITE_OUTCOME_UNKNOWN";
+    }
+
+    private static MirrorStateWriteFailure rejected(
+            MirrorStateWriteOutcomeRunEvidence.WriteStage stage,
+            String code,
+            boolean retryable) {
+        return new MirrorStateWriteFailure(
+                MirrorStateWriteOutcomeRunEvidence
+                        .WriteOutcome.REJECTED,
+                stage, code, "MIRROR_STATE_WRITE",
+                retryable);
+    }
+
+    private static MirrorStateWriteFailure unknown(
+            MirrorStateWriteOutcomeRunEvidence.WriteStage stage,
+            String code,
+            boolean retryable) {
+        return new MirrorStateWriteFailure(
+                MirrorStateWriteOutcomeRunEvidence
+                        .WriteOutcome.COMMIT_OUTCOME_UNKNOWN,
+                stage, code, "MIRROR_STATE_WRITE",
+                retryable);
     }
 
     private void verifyProgression(

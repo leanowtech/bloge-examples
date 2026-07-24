@@ -4,11 +4,14 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.json.JsonMapper;
 import com.leanowtech.bloge.gateway.integration.mirror.BoundedStateExpression;
 import com.leanowtech.bloge.gateway.integration.mirror.CapabilitySnapshot;
+import com.leanowtech.bloge.gateway.integration.IntegrationProblem;
+import com.leanowtech.bloge.gateway.integration.IntegrationProblemException;
 import com.leanowtech.bloge.gateway.integration.mirror.MirrorArtifactRef;
 import com.leanowtech.bloge.gateway.integration.mirror.MirrorPlan;
 import com.leanowtech.bloge.gateway.integration.mirror.MirrorSessionPayload;
 import com.leanowtech.bloge.gateway.integration.mirror.MirrorSessionProtocolIntegrity;
 import com.leanowtech.bloge.gateway.integration.mirror.MirrorStateRunEvidence;
+import com.leanowtech.bloge.gateway.integration.mirror.MirrorStateWriteOutcomeRunEvidence;
 import com.leanowtech.bloge.gateway.integration.mirror.SessionStateSpace;
 import com.leanowtech.bloge.gateway.integration.mirror.SessionStateSpaceIntegrity;
 import com.leanowtech.bloge.gateway.integration.mirror.StateModel;
@@ -31,6 +34,7 @@ import java.time.ZoneOffset;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.atomic.AtomicReference;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
@@ -244,6 +248,91 @@ class MirrorSessionStateResolverTest {
                         "refundedAmount", 0));
     }
 
+    @Test
+    void returnsAProvenRejectedWriteMatchWithoutAdvancingState() {
+        AtomicReference<MirrorStateWriteAttemptObservation>
+                observed = new AtomicReference<>();
+        MirrorResolver.Request request = writeRequest(
+                (effect, input, expected) -> {
+                    throw new MirrorStateWriteFailure(
+                            MirrorStateWriteOutcomeRunEvidence
+                                    .WriteOutcome.REJECTED,
+                            MirrorStateWriteOutcomeRunEvidence
+                                    .WriteStage.COMMAND_EVALUATION,
+                            "RG.MIRROR.STATE.REFUND_LIMIT",
+                            "MIRROR_STATE_WRITE", false);
+                }, observed);
+
+        MirrorResolver.Match match =
+                resolver.resolve(request).orElseThrow();
+
+        assertThat(match.rule().behavior().kind())
+                .isEqualTo(FixtureRule.BehaviorKind.THROW);
+        assertThat(match.rule().behavior().errorCode())
+                .isEqualTo(
+                        "RG.MIRROR.STATE.REFUND_LIMIT");
+        assertThat(match.limitations())
+                .containsExactly("STATE_WRITE_REJECTED");
+        assertThat(observed.get()).satisfies(outcome -> {
+            assertThat(outcome.outcome()).isEqualTo(
+                    MirrorStateWriteOutcomeRunEvidence
+                            .WriteOutcome.REJECTED);
+            assertThat(outcome.stateDisposition())
+                    .isEqualTo(
+                            MirrorStateWriteOutcomeRunEvidence
+                                    .StateDisposition.UNCHANGED);
+            assertThat(outcome.failureFingerprint())
+                    .startsWith("sha256:");
+            assertThat(outcome.transition()).isNull();
+        });
+        assertThat(request.sessionContext()
+                .currentPayload().state().stateRevision())
+                .isZero();
+    }
+
+    @Test
+    void preservesStoreUnavailabilityAsUnknownCommitOutcome() {
+        AtomicReference<MirrorStateWriteAttemptObservation>
+                observed = new AtomicReference<>();
+        MirrorResolver.Request request = writeRequest(
+                (effect, input, expected) -> {
+                    throw new IntegrationProblemException(
+                            IntegrationProblem
+                                    .serviceUnavailable(
+                                            "RG.MIRROR.SESSION.STORE_UNAVAILABLE",
+                                            "payload-free",
+                                            "correlation",
+                                            Map.of(
+                                                    "retryAfterSeconds",
+                                                    1)));
+                }, observed);
+
+        MirrorResolver.Match match =
+                resolver.resolve(request).orElseThrow();
+
+        assertThat(match.retryableOutcome()).isTrue();
+        assertThat(match.limitations()).containsExactly(
+                MirrorStateWriteOutcomeRunEvidence
+                        .UNKNOWN_OUTCOME_LIMITATION);
+        assertThat(observed.get()).satisfies(outcome -> {
+            assertThat(outcome.outcome()).isEqualTo(
+                    MirrorStateWriteOutcomeRunEvidence
+                            .WriteOutcome
+                            .COMMIT_OUTCOME_UNKNOWN);
+            assertThat(outcome.stage()).isEqualTo(
+                    MirrorStateWriteOutcomeRunEvidence
+                            .WriteStage.COMMIT);
+            assertThat(outcome.stateDisposition())
+                    .isEqualTo(
+                            MirrorStateWriteOutcomeRunEvidence
+                                    .StateDisposition.UNKNOWN);
+            assertThat(outcome.retryable()).isTrue();
+        });
+        assertThat(request.sessionContext()
+                .currentPayload().state().stateRevision())
+                .isZero();
+    }
+
     private MirrorResolver.Request request(MirrorSessionPayload payload) {
         return request(payload, Map.of("orderId", "O-100"));
     }
@@ -281,6 +370,58 @@ class MirrorSessionStateResolverTest {
                 payload, PLAN, Map.of(
                 SITE.invocationSiteId(),
                 StatefulMirrorProtocolTest.capabilityRef("query-order")));
+    }
+
+    private MirrorResolver.Request writeRequest(
+            MirrorStateRunSession.CommandExecutor executor,
+            AtomicReference<MirrorStateWriteAttemptObservation>
+                    observed) {
+        MirrorSessionPayload payload =
+                payload(initialState());
+        MirrorStateRunSession runSession =
+                new MirrorStateRunSession(
+                        mapper, payload, executor);
+        MirrorResolver.SessionContext context =
+                new MirrorResolver.SessionContext(
+                        payload, PLAN,
+                        Map.of(
+                                SITE.invocationSiteId(),
+                                refund.targetCapabilityRef()),
+                        runSession);
+        Map<String, Object> input = Map.of(
+                "requestId", "REQ-REFUND-1",
+                "orderId", "O-100",
+                "amount", 100);
+        return new MirrorResolver.Request(
+                SITE, 1, 1,
+                MirrorResolutionJournal.requestFingerprint(
+                        mapper, input),
+                input, List.of(), null, context,
+                new MirrorStateAccessObserver() {
+                    @Override
+                    public void observed(
+                            MirrorResolver.Request request,
+                            StateReadSpec spec,
+                            String businessKeyFingerprint,
+                            MirrorStateRunEvidence.AccessOutcome
+                                    outcome,
+                            String stateRecordFingerprint,
+                            String projectedOutputFingerprint) {
+                        throw new AssertionError(
+                                "write request cannot emit a read observation");
+                    }
+
+                    @Override
+                    public void writeFailed(
+                            MirrorResolver.Request request,
+                            WriteEffectSpec spec,
+                            MirrorStateWriteAttemptObservation
+                                    failure) {
+                        assertThat(spec).isEqualTo(refund);
+                        assertThat(observed.compareAndSet(
+                                null, failure)).isTrue();
+                    }
+                });
     }
 
     private SessionStateSpace initialState() {

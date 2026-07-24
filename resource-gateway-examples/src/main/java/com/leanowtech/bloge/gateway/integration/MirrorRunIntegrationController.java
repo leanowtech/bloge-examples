@@ -5,6 +5,7 @@ import com.leanowtech.bloge.gateway.integration.mirror.MirrorRunIntegrationServi
 import com.leanowtech.bloge.gateway.integration.mirror.MirrorRunSummary;
 import com.leanowtech.bloge.gateway.integration.mirror.MirrorStateTransitionWorkbookSeed;
 import com.leanowtech.bloge.gateway.integration.mirror.MirrorStateWorkbookSeed;
+import com.leanowtech.bloge.gateway.integration.mirror.MirrorStateWriteOutcomeWorkbookSeed;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.context.annotation.Profile;
 import org.springframework.http.HttpHeaders;
@@ -105,6 +106,24 @@ public class MirrorRunIntegrationController {
                 "MIRROR_STATE_TRANSITION_WORKBOOK_SEED",
                 MirrorStateTransitionWorkbookSeed.SCHEMA_VERSION,
                 service.stateTransitionWorkbookSeed(
+                        runId, identity));
+    }
+
+    /** Reads a payload-free workbook seed closing every failure-aware state-write attempt. */
+    @GetMapping("/runs/{runId}/state-write-outcome-workbook-seed")
+    public IntegrationEnvelope<MirrorStateWriteOutcomeWorkbookSeed>
+    stateWriteOutcomeWorkbookSeed(
+            @PathVariable String runId,
+            @RequestHeader HttpHeaders headers) {
+        IntegrationRequestContext identity =
+                authenticator.authenticate(
+                        headers,
+                        IntegrationOperation.MIRROR_EVIDENCE_READ);
+        return IntegrationEnvelope.of(
+                "MIRROR_STATE_WRITE_OUTCOME_WORKBOOK_SEED",
+                MirrorStateWriteOutcomeWorkbookSeed
+                        .SCHEMA_VERSION,
+                service.stateWriteOutcomeWorkbookSeed(
                         runId, identity));
     }
 }

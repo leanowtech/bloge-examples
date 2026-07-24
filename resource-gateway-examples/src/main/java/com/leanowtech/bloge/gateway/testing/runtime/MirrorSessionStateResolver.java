@@ -9,6 +9,7 @@ import com.leanowtech.bloge.gateway.integration.mirror.MirrorPlan;
 import com.leanowtech.bloge.gateway.integration.mirror.MirrorSessionPayload;
 import com.leanowtech.bloge.gateway.integration.mirror.MirrorSessionProtocolIntegrity;
 import com.leanowtech.bloge.gateway.integration.mirror.MirrorStateRunEvidence;
+import com.leanowtech.bloge.gateway.integration.mirror.MirrorStateWriteOutcomeRunEvidence;
 import com.leanowtech.bloge.gateway.integration.mirror.SessionStateSpace;
 import com.leanowtech.bloge.gateway.integration.mirror.SessionStateSpaceIntegrity;
 import com.leanowtech.bloge.gateway.integration.mirror.StateModelIntegrity;
@@ -247,37 +248,58 @@ public final class MirrorSessionStateResolver implements MirrorResolver {
         WriteEffectSpecIntegrity.verify(
                 mapper, effect, payload.stateModel());
         if (context.runSession() == null) {
-            throw rejected(
-                    "MIRROR_SESSION_WRITE_RUNTIME_UNAVAILABLE",
-                    "The graph run did not admit a serializable Session write boundary.");
+            return Optional.of(failedMatch(
+                    request, payload, effect,
+                    new MirrorStateWriteFailure(
+                            MirrorStateWriteOutcomeRunEvidence
+                                    .WriteOutcome.REJECTED,
+                            MirrorStateWriteOutcomeRunEvidence
+                                    .WriteStage.RESOLVER_ADMISSION,
+                            "MIRROR_SESSION_WRITE_RUNTIME_UNAVAILABLE",
+                            "MIRROR_STATE_WRITE", false)));
         }
         Map<String, Object> input;
         if (request.input() instanceof Map<?, ?> raw) {
             input = new LinkedHashMap<>();
-            raw.forEach((key, value) -> {
+            for (Map.Entry<?, ?> entry : raw.entrySet()) {
+                Object key = entry.getKey();
                 if (!(key instanceof String name)) {
-                    throw rejected(
-                            "MIRROR_SESSION_WRITE_INPUT_INVALID",
-                            "Virtual-write input must be a JSON object.");
+                    return Optional.of(failedMatch(
+                            request, payload, effect,
+                            new MirrorStateWriteFailure(
+                                    MirrorStateWriteOutcomeRunEvidence
+                                            .WriteOutcome.REJECTED,
+                                    MirrorStateWriteOutcomeRunEvidence
+                                            .WriteStage.RESOLVER_ADMISSION,
+                                    "MIRROR_SESSION_WRITE_INPUT_INVALID",
+                                    "MIRROR_STATE_WRITE",
+                                    false)));
                 }
-                input.put(name, value);
-            });
+                input.put(name, entry.getValue());
+            }
         } else {
-            throw rejected(
-                    "MIRROR_SESSION_WRITE_INPUT_INVALID",
-                    "Virtual-write input must be a JSON object.");
+            return Optional.of(failedMatch(
+                    request, payload, effect,
+                    new MirrorStateWriteFailure(
+                            MirrorStateWriteOutcomeRunEvidence
+                                    .WriteOutcome.REJECTED,
+                            MirrorStateWriteOutcomeRunEvidence
+                                    .WriteStage.RESOLVER_ADMISSION,
+                            "MIRROR_SESSION_WRITE_INPUT_INVALID",
+                            "MIRROR_STATE_WRITE", false)));
         }
+        SessionStateSpace observedBefore =
+                context.currentPayload().state();
         MirrorStateRunSession.Execution execution;
         try {
             execution = context.runSession().execute(
                     WriteEffectSpecIntegrity.reference(effect),
                     input);
-        } catch (TestControlException expected) {
-            throw expected;
-        } catch (RuntimeException failure) {
-            throw rejected(
-                    "MIRROR_SESSION_WRITE_FAILED",
-                    "The virtual-write transaction did not produce a durable result.");
+        } catch (MirrorStateWriteFailure failure) {
+            return Optional.of(failedMatch(
+                    request,
+                    payload.withState(observedBefore),
+                    effect, failure));
         }
         Object output = execution.receipt().response();
         String outputFingerprint = ProtocolFingerprint.ofBounded(
@@ -300,6 +322,48 @@ public final class MirrorSessionStateResolver implements MirrorResolver {
                                 + ":" + effect.revision(),
                         "transaction-receipt:"
                                 + execution.receipt().fingerprint())));
+    }
+
+    private MirrorResolver.Match failedMatch(
+            Request request,
+            MirrorSessionPayload payload,
+            WriteEffectSpec effect,
+            MirrorStateWriteFailure failure) {
+        MirrorStateWriteAttemptObservation observation =
+                MirrorStateWriteAttemptObservation.failed(
+                        mapper, effect, payload.state(),
+                        request.requestFingerprint(), failure);
+        request.stateAccessObserver().writeFailed(
+                request, effect, observation);
+        String limitation = switch (failure.outcome()) {
+            case REJECTED ->
+                    "STATE_WRITE_REJECTED";
+            case PRE_COMMIT_FAILED ->
+                    "STATE_WRITE_PRE_COMMIT_FAILED";
+            case COMMIT_OUTCOME_UNKNOWN ->
+                    MirrorStateWriteOutcomeRunEvidence
+                            .UNKNOWN_OUTCOME_LIMITATION;
+            default -> throw new IllegalArgumentException(
+                    "successful write cannot produce a failure match");
+        };
+        return new Match(
+                rule(effect, payload.state(),
+                        FixtureRule.Behavior.throwing(
+                                failure.code(),
+                                failure.errorType(),
+                                "The governed Session write "
+                                        + "ended without a verified commit result.")),
+                EXACT_STATE_WRITE_CONFIDENCE, 1,
+                List.of(limitation),
+                artifactRefs(payload, effect),
+                List.of(
+                        "write-effect:" + effect.specId()
+                                + ":" + effect.revision(),
+                        "write-attempt:"
+                                + observation
+                                .failureFingerprint()),
+                observation.failureFingerprint(),
+                failure.retryable());
     }
 
     private FixtureRule rule(

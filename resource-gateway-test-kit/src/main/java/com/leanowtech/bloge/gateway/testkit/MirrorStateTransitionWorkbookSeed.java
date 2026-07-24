@@ -127,7 +127,13 @@ public record MirrorStateTransitionWorkbookSeed(
             }
         }
 
-        private static ArtifactRef from(JsonNode value) {
+        /**
+         * Decodes one strict artifact reference already admitted by a protocol schema.
+         *
+         * @param value decoded artifact-reference object
+         * @return validated immutable reference
+         */
+        public static ArtifactRef from(JsonNode value) {
             return new ArtifactRef(
                     value.path("kind").asText(),
                     value.path("id").asText(),
@@ -275,7 +281,13 @@ public record MirrorStateTransitionWorkbookSeed(
             }
         }
 
-        private static WriteAssertion from(JsonNode value) {
+        /**
+         * Decodes one strict successful transition assertion.
+         *
+         * @param value decoded write assertion
+         * @return validated payload-free transition assertion
+         */
+        public static WriteAssertion from(JsonNode value) {
             return new WriteAssertion(
                     value.path("invocationSiteId").asText(),
                     value.path("graphPath").asText(),

@@ -41,7 +41,7 @@ import java.util.regex.Pattern;
  * @param nodeTraces payload-free node and delegate-attempt facts
  * @param edgeTraces payload-free edge transfer facts
  * @param resolutions sealed resolver provenance for every external delegate attempt
- * @param stateEvidence payload-free Session state closure for stateful v3 or v4 runs
+ * @param stateEvidence payload-free Session state closure for stateful v3, v4, or v5 runs
  * @param isolation structural and deployment isolation facts observed for this run
  * @param limitations bounded reasons the evidence cannot claim higher fidelity or certification
  */
@@ -82,6 +82,9 @@ public record MirrorRunEvidence(
     /** Read/write evidence version carrying one complete Session transition closure. */
     public static final String READ_WRITE_SCHEMA_VERSION =
             "resourceGateway.mirrorRunEvidence.v4";
+    /** Failure-aware read/write evidence carrying every terminal write-attempt outcome. */
+    public static final String WRITE_OUTCOME_SCHEMA_VERSION =
+            "resourceGateway.mirrorRunEvidence.v5";
     /** Maximum nodes or edges admitted to one portable bundle. */
     public static final int MAXIMUM_TRACE_ITEMS = 100_000;
     /** Maximum external resolver outcomes admitted to one portable bundle. */
@@ -150,8 +153,13 @@ public record MirrorRunEvidence(
                 STATEFUL_SCHEMA_VERSION.equals(schemaVersion);
         boolean readWriteStatefulVersion =
                 READ_WRITE_SCHEMA_VERSION.equals(schemaVersion);
+        boolean writeOutcomeStatefulVersion =
+                WRITE_OUTCOME_SCHEMA_VERSION.equals(
+                        schemaVersion);
         boolean statefulVersion =
-                readOnlyStatefulVersion || readWriteStatefulVersion;
+                readOnlyStatefulVersion
+                        || readWriteStatefulVersion
+                        || writeOutcomeStatefulVersion;
         if (statefulVersion) {
             stateEvidence = Objects.requireNonNull(
                     stateEvidence, "stateEvidence");
@@ -167,6 +175,9 @@ public record MirrorRunEvidence(
                     stateEvidence.schemaVersion())
                     || readWriteStatefulVersion
                     != MirrorStateTransitionRunEvidence.SCHEMA_VERSION.equals(
+                    stateEvidence.schemaVersion())
+                    || writeOutcomeStatefulVersion
+                    != MirrorStateWriteOutcomeRunEvidence.SCHEMA_VERSION.equals(
                     stateEvidence.schemaVersion())) {
                 throw new IllegalArgumentException(
                         "mirror run evidence and nested state evidence versions differ");
@@ -648,7 +659,9 @@ public record MirrorRunEvidence(
         if (!SCHEMA_VERSION.equals(normalized)
                 && !SCHEMA_VERSION_V1.equals(normalized)
                 && !STATEFUL_SCHEMA_VERSION.equals(normalized)
-                && !READ_WRITE_SCHEMA_VERSION.equals(normalized)) {
+                && !READ_WRITE_SCHEMA_VERSION.equals(normalized)
+                && !WRITE_OUTCOME_SCHEMA_VERSION.equals(
+                normalized)) {
             throw new IllegalArgumentException("unsupported mirror run-evidence schemaVersion");
         }
         return normalized;

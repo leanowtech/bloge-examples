@@ -307,6 +307,197 @@ final class MirrorPersistenceTestFixtures {
                         ZoneOffset.UTC)).seal(run).bundle();
     }
 
+    static MirrorEvidenceBundle writeOutcomeEvidence(
+            ObjectMapper mapper,
+            VisualEvidenceSigner signer,
+            MirrorPlan plan,
+            String runId,
+            char semanticMaterial) {
+        return writeOutcomeEvidence(
+                mapper, signer, plan, runId,
+                semanticMaterial, false);
+    }
+
+    static MirrorEvidenceBundle rejectedWriteOutcomeEvidence(
+            ObjectMapper mapper,
+            VisualEvidenceSigner signer,
+            MirrorPlan plan,
+            String runId,
+            char semanticMaterial) {
+        return writeOutcomeEvidence(
+                mapper, signer, plan, runId,
+                semanticMaterial, true);
+    }
+
+    private static MirrorEvidenceBundle writeOutcomeEvidence(
+            ObjectMapper mapper,
+            VisualEvidenceSigner signer,
+            MirrorPlan plan,
+            String runId,
+            char semanticMaterial,
+            boolean rejected) {
+        MirrorRunEvidence base = readWriteEvidence(
+                mapper, signer, plan, runId,
+                semanticMaterial).evidence();
+        MirrorStateTransitionRunEvidence transitionState =
+                (MirrorStateTransitionRunEvidence)
+                        base.stateEvidence();
+        MirrorStateTransitionRunEvidence.StateTransition
+                transition =
+                transitionState.transitions().getFirst();
+        MirrorStateWriteOutcomeRunEvidence.StateWriteAttempt
+                attempt;
+        MirrorArtifactRef terminalState;
+        long terminalRevision;
+        String terminalWorld;
+        Instant terminalClock;
+        List<String> stateLimitations;
+        if (rejected) {
+            String errorCode =
+                    "RG.MIRROR.STATE.PRECONDITION_FAILED";
+            String errorType = "MIRROR_STATE_WRITE";
+            String failureFingerprint =
+                    MirrorStateWriteOutcomeRunEvidenceIntegrity
+                            .failureFingerprint(
+                                    mapper,
+                                    transition.writeEffectRef(),
+                                    transition.initialStateRef(),
+                                    transition.revisionBefore(),
+                                    transition.initialWorldFingerprint(),
+                                    transition.initialLogicalClock(),
+                                    transition.requestFingerprint(),
+                                    MirrorStateWriteOutcomeRunEvidence
+                                            .WriteOutcome.REJECTED,
+                                    MirrorStateWriteOutcomeRunEvidence
+                                            .WriteStage
+                                            .COMMAND_EVALUATION,
+                                    MirrorStateWriteOutcomeRunEvidence
+                                            .StateDisposition.UNCHANGED,
+                                    false, errorCode, errorType);
+            attempt = new MirrorStateWriteOutcomeRunEvidence
+                    .StateWriteAttempt(
+                    transition.invocationSiteId(),
+                    transition.graphPath(),
+                    transition.correlationKey(),
+                    transition.occurrence(),
+                    transition.attempt(),
+                    transition.capabilityRef(),
+                    transition.writeEffectRef(),
+                    transition.initialStateRef(),
+                    transition.revisionBefore(),
+                    transition.initialWorldFingerprint(),
+                    transition.initialLogicalClock(),
+                    transition.requestFingerprint(),
+                    MirrorStateWriteOutcomeRunEvidence
+                            .WriteOutcome.REJECTED,
+                    MirrorStateWriteOutcomeRunEvidence
+                            .WriteStage.COMMAND_EVALUATION,
+                    MirrorStateWriteOutcomeRunEvidence
+                            .StateDisposition.UNCHANGED,
+                    false, errorCode, errorType,
+                    failureFingerprint, null);
+            terminalState = transition.initialStateRef();
+            terminalRevision = transition.revisionBefore();
+            terminalWorld =
+                    transition.initialWorldFingerprint();
+            terminalClock = transition.initialLogicalClock();
+            stateLimitations = List.of();
+        } else {
+            attempt = new MirrorStateWriteOutcomeRunEvidence
+                    .StateWriteAttempt(
+                    transition.invocationSiteId(),
+                    transition.graphPath(),
+                    transition.correlationKey(),
+                    transition.occurrence(),
+                    transition.attempt(),
+                    transition.capabilityRef(),
+                    transition.writeEffectRef(),
+                    transition.initialStateRef(),
+                    transition.revisionBefore(),
+                    transition.initialWorldFingerprint(),
+                    transition.initialLogicalClock(),
+                    transition.requestFingerprint(),
+                    MirrorStateWriteOutcomeRunEvidence
+                            .WriteOutcome.COMMITTED,
+                    MirrorStateWriteOutcomeRunEvidence
+                            .WriteStage.COMPLETED,
+                    MirrorStateWriteOutcomeRunEvidence
+                            .StateDisposition.ADVANCED,
+                    false, "", "", "",
+                    transition);
+            terminalState = transition.finalStateRef();
+            terminalRevision = transition.revisionAfter();
+            terminalWorld =
+                    transition.finalWorldFingerprint();
+            terminalClock = transition.finalLogicalClock();
+            stateLimitations = List.of();
+        }
+        MirrorStateWriteOutcomeRunEvidence state =
+                MirrorStateWriteOutcomeRunEvidenceIntegrity
+                        .seal(
+                                mapper,
+                                new MirrorStateWriteOutcomeRunEvidence(
+                                        MirrorStateWriteOutcomeRunEvidence
+                                                .SCHEMA_VERSION,
+                                        "", runId,
+                                        plan.planFingerprint(),
+                                        transition.initialStateRef(),
+                                        terminalState,
+                                        transitionState
+                                                .stateModelRef(),
+                                        transition.revisionBefore(),
+                                        terminalRevision,
+                                        transition
+                                                .initialWorldFingerprint(),
+                                        terminalWorld,
+                                        transition
+                                                .initialLogicalClock(),
+                                        terminalClock,
+                                        MirrorStateWriteOutcomeRunEvidence
+                                                .Mode
+                                                .SERIALIZABLE_READ_WRITE_OUTCOMES,
+                                        transitionState
+                                                .statefulBindings(),
+                                        List.of(),
+                                        List.of(attempt),
+                                        stateLimitations));
+        List<String> limitations = rejected
+                ? java.util.stream.Stream.concat(
+                base.limitations().stream(),
+                java.util.stream.Stream.of(
+                        "STATE_WRITE_REJECTED"))
+                .toList()
+                : base.limitations();
+        MirrorRunEvidence run = new MirrorRunEvidence(
+                MirrorRunEvidence
+                        .WRITE_OUTCOME_SCHEMA_VERSION,
+                base.runId(), base.requestId(),
+                base.requestContextFingerprint(),
+                base.planId(), base.planFingerprint(),
+                base.capabilityClosureFingerprint(),
+                base.executionControlFingerprint(),
+                base.rootCapability(),
+                base.fixtureBundleRef(),
+                base.externalBindings(), base.scope(),
+                base.authorizedPurpose(),
+                rejected
+                        ? MirrorRunEvidence.Status
+                        .EXECUTION_FAILED
+                        : base.status(),
+                base.evidenceClass(),
+                base.semanticResultFingerprint(),
+                base.startedAt(), base.completedAt(),
+                base.nodeTraces(), base.edgeTraces(),
+                base.resolutions(), state,
+                base.isolation(), limitations);
+        return new MirrorEvidenceIntegrityService(
+                mapper, signer,
+                Clock.fixed(
+                        base.completedAt().plusSeconds(1),
+                        ZoneOffset.UTC))
+                .seal(run).bundle();
+    }
+
     static MirrorEvidenceBundle certifiableEvidence(
             ObjectMapper mapper,
             VisualEvidenceSigner signer,

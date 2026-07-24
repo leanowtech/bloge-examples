@@ -41,6 +41,9 @@ public record MirrorEvidenceAttestation(
     /** Read/write stateful attestation version with a distinct signature domain. */
     public static final String READ_WRITE_SCHEMA_VERSION =
             "resourceGateway.mirrorEvidenceAttestation.v4";
+    /** Failure-aware read/write attestation version with a distinct signature domain. */
+    public static final String WRITE_OUTCOME_SCHEMA_VERSION =
+            "resourceGateway.mirrorEvidenceAttestation.v5";
     private static final Pattern FINGERPRINT = Pattern.compile("sha256:[a-f0-9]{64}");
 
     /** Persisted signature trust state. */
@@ -56,7 +59,9 @@ public record MirrorEvidenceAttestation(
         if (!SCHEMA_VERSION.equals(schemaVersion)
                 && !SCHEMA_VERSION_V1.equals(schemaVersion)
                 && !STATEFUL_SCHEMA_VERSION.equals(schemaVersion)
-                && !READ_WRITE_SCHEMA_VERSION.equals(schemaVersion)) {
+                && !READ_WRITE_SCHEMA_VERSION.equals(schemaVersion)
+                && !WRITE_OUTCOME_SCHEMA_VERSION.equals(
+                schemaVersion)) {
             throw new IllegalArgumentException("unsupported mirror evidence attestation version");
         }
         signatureStatus = signatureStatus == null
@@ -103,6 +108,8 @@ public record MirrorEvidenceAttestation(
             case MirrorRunEvidence.SCHEMA_VERSION_V1 -> SCHEMA_VERSION_V1;
             case MirrorRunEvidence.STATEFUL_SCHEMA_VERSION -> STATEFUL_SCHEMA_VERSION;
             case MirrorRunEvidence.READ_WRITE_SCHEMA_VERSION -> READ_WRITE_SCHEMA_VERSION;
+            case MirrorRunEvidence.WRITE_OUTCOME_SCHEMA_VERSION ->
+                    WRITE_OUTCOME_SCHEMA_VERSION;
             default -> SCHEMA_VERSION;
         };
         return new MirrorEvidenceAttestation(version, SignatureStatus.VERIFICATION_UNAVAILABLE,

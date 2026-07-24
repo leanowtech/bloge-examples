@@ -82,6 +82,24 @@ public interface MirrorStateAccessObserver {
         // Read-only observers remain source-compatible.
     }
 
+    /**
+     * Records one terminal rejected, pre-commit-failed, or commit-outcome-unknown virtual write.
+     *
+     * <p>The observation contains the exact pre-attempt state head and only normalized failure
+     * facts. An observer must preserve an unknown commit outcome as unknown until a durable
+     * reconciliation authority proves the original command result.</p>
+     *
+     * @param request current invocation coordinates and payload-free request fingerprint
+     * @param spec exact write effect selected by the resolver
+     * @param failure payload-free terminal write-attempt observation
+     */
+    default void writeFailed(
+            MirrorResolver.Request request,
+            WriteEffectSpec spec,
+            MirrorStateWriteAttemptObservation failure) {
+        // Read-only observers remain source-compatible.
+    }
+
     /** @return allocation-free observer for ordinary or stateless mirror execution */
     static MirrorStateAccessObserver noop() {
         return Noop.INSTANCE;

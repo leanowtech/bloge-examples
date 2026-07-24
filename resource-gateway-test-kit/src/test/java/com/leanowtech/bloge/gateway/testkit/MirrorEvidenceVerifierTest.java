@@ -208,6 +208,127 @@ class MirrorEvidenceVerifierTest {
     }
 
     @Test
+    void verifiesV5WriteOutcomeClosureAndProjectsTypedSeed()
+            throws Exception {
+        bundle = signedBundleV5();
+
+        MirrorEvidenceVerifier.VerificationResult verified =
+                verifier.verify(bundle, key);
+        assertThat(verified.verified())
+                .as(verified.reasonCode())
+                .isTrue();
+        MirrorStateWriteOutcomeWorkbookSeed seed =
+                MirrorStateWriteOutcomeWorkbookSeed
+                        .fromVerifiedBundle(bundle, key);
+        assertThat(seed.runId()).isEqualTo(RUN_ID);
+        assertThat(seed.initialStateRevision()).isZero();
+        assertThat(seed.finalStateRevision())
+                .isEqualTo(1);
+        assertThat(seed.writeAttemptCount())
+                .isEqualTo(1);
+        assertThat(seed.committedCount())
+                .isEqualTo(1);
+        assertThat(seed.rejectedCount()).isZero();
+        assertThat(seed.eventCount()).isEqualTo(1);
+        assertThat(seed.stateAdvanced()).isTrue();
+        assertThat(seed.writeAttemptAssertions())
+                .singleElement()
+                .satisfies(attempt -> {
+                    assertThat(attempt.outcome())
+                            .isEqualTo("COMMITTED");
+                    assertThat(attempt.transition())
+                            .isNotNull();
+                    assertThat(attempt.transition()
+                            .receiptFingerprint())
+                            .isEqualTo(fingerprint('1'));
+                });
+        assertThat(seed.rawPayload().toString())
+                .doesNotContain("raw-idempotency-key")
+                .doesNotContain("\"entityId\"")
+                .contains("failureFingerprint")
+                .contains("receiptFingerprint");
+    }
+
+    @Test
+    void verifiesRejectedWriteAndRejectsTamperedFailureIdentity()
+            throws Exception {
+        bundle = signedRejectedBundleV5();
+
+        MirrorEvidenceVerifier.VerificationResult verified =
+                verifier.verify(bundle, key);
+        assertThat(verified.verified())
+                .as(verified.reasonCode())
+                .isTrue();
+        MirrorStateWriteOutcomeWorkbookSeed seed =
+                MirrorStateWriteOutcomeWorkbookSeed
+                        .fromVerifiedBundle(bundle, key);
+        assertThat(seed.rejectedCount()).isEqualTo(1);
+        assertThat(seed.committedCount()).isZero();
+        assertThat(seed.stateAdvanced()).isFalse();
+        assertThat(seed.blockers()).contains(
+                "RUN_NOT_PASSED",
+                "STATE_WRITE_REJECTION_REQUIRES_EXPECTATION");
+        assertThat(seed.writeAttemptAssertions())
+                .singleElement()
+                .satisfies(attempt -> {
+                    assertThat(attempt.outcome())
+                            .isEqualTo("REJECTED");
+                    assertThat(attempt.transition()).isNull();
+                    assertThat(attempt.failureFingerprint())
+                            .startsWith("sha256:");
+                });
+
+        bundle.withObject(
+                "/evidence/stateEvidence/writeAttempts/0")
+                .put("failureFingerprint",
+                        fingerprint('9'));
+        resealStateEvidence(bundle.withObject(
+                "/evidence/stateEvidence"));
+        resignAggregate(bundle, false);
+
+        assertThat(verifier.verify(bundle, key)
+                .reasonCode()).isEqualTo(
+                "MIRROR_STATE_WRITE_FAILURE_CLOSURE_INVALID");
+    }
+
+    @Test
+    void preservesUnknownCommitOutcomeAsMandatoryReconciliationBlocker()
+            throws Exception {
+        bundle = failedBundleV5(
+                "COMMIT_OUTCOME_UNKNOWN",
+                "COMMIT", "UNKNOWN", true,
+                "RG.MIRROR.SESSION.STORE_UNAVAILABLE",
+                "WRITE_COMMIT_OUTCOME_UNKNOWN",
+                true);
+
+        MirrorEvidenceVerifier.VerificationResult verified =
+                verifier.verify(bundle, key);
+        assertThat(verified.verified())
+                .as(verified.reasonCode())
+                .isTrue();
+        MirrorStateWriteOutcomeWorkbookSeed seed =
+                MirrorStateWriteOutcomeWorkbookSeed
+                        .fromVerifiedBundle(bundle, key);
+        assertThat(seed.commitOutcomeUnknownCount())
+                .isEqualTo(1);
+        assertThat(seed.finalStateRevision()).isZero();
+        assertThat(seed.stateAdvanced()).isFalse();
+        assertThat(seed.blockers()).contains(
+                "STATE_EVIDENCE_LIMITED",
+                "STATE_WRITE_COMMIT_OUTCOME_UNKNOWN");
+        assertThat(seed.writeAttemptAssertions())
+                .singleElement()
+                .satisfies(attempt -> {
+                    assertThat(attempt.outcome())
+                            .isEqualTo(
+                                    "COMMIT_OUTCOME_UNKNOWN");
+                    assertThat(attempt.stateDisposition())
+                            .isEqualTo("UNKNOWN");
+                    assertThat(attempt.retryable()).isTrue();
+                });
+    }
+
+    @Test
     void refusesToProjectAReadOnlyBundleAsATransitionWorkbook()
             throws Exception {
         bundle = signedBundleV3();
@@ -294,6 +415,102 @@ class MirrorEvidenceVerifierTest {
                             expected.evidenceBundleFingerprint());
             assertThat(actual.writeAssertions())
                     .isEqualTo(expected.writeAssertions());
+            assertThat(requests).hasValue(3);
+        } finally {
+            server.stop(0);
+        }
+    }
+
+    @Test
+    void clientReconstructsAndMatchesProducerWriteOutcomeSeed()
+            throws Exception {
+        bundle = signedBundleV5();
+        MirrorStateWriteOutcomeWorkbookSeed expected =
+                MirrorStateWriteOutcomeWorkbookSeed
+                        .fromVerifiedBundle(bundle, key);
+        HttpServer server = HttpServer.create(
+                new InetSocketAddress(
+                        "127.0.0.1", 0), 0);
+        AtomicInteger requests = new AtomicInteger();
+        server.createContext("/", exchange -> {
+            requests.incrementAndGet();
+            String path =
+                    exchange.getRequestURI().getPath();
+            if (path.endsWith("/evidence")) {
+                respond(exchange, mirrorEnvelope(
+                        "MIRROR_EVIDENCE_BUNDLE",
+                        CapabilityMirrorProtocol
+                                .MIRROR_EVIDENCE_BUNDLE_V5,
+                        bundle));
+            } else if (path.endsWith(
+                    "/state-write-outcome-workbook-seed")) {
+                respond(exchange, mirrorEnvelope(
+                        "MIRROR_STATE_WRITE_OUTCOME_WORKBOOK_SEED",
+                        CapabilityMirrorProtocol
+                                .MIRROR_STATE_WRITE_OUTCOME_WORKBOOK_SEED_V1,
+                        expected.rawPayload()));
+            } else if (path.endsWith(
+                    "/evidence-keys/mirror-key-1")) {
+                ObjectNode payload =
+                        JSON.createObjectNode();
+                payload.put(
+                        "schemaVersion",
+                        key.schemaVersion());
+                payload.put("keyId", key.keyId());
+                payload.put(
+                        "algorithm", key.algorithm());
+                payload.put(
+                        "encodedPublicKey",
+                        key.encodedPublicKey());
+                payload.put(
+                        "createdAt",
+                        key.createdAt().toString());
+                payload.put("state", key.state());
+                payload.put(
+                        "provider", key.provider());
+                ObjectNode envelope =
+                        JSON.createObjectNode();
+                envelope.put(
+                        "payloadKind",
+                        "EVIDENCE_VERIFICATION_KEY");
+                envelope.put(
+                        "payloadSchemaVersion",
+                        TestingProtocol
+                                .EVIDENCE_VERIFICATION_KEY_V1);
+                envelope.set("payload", payload);
+                respond(exchange, envelope);
+            } else {
+                exchange.sendResponseHeaders(404, -1);
+                exchange.close();
+            }
+        });
+        server.start();
+        try {
+            ResourceGatewayTestClient client =
+                    ResourceGatewayTestClient.builder(
+                                    URI.create(
+                                            "http://127.0.0.1:"
+                                                    + server.getAddress()
+                                                    .getPort()))
+                            .bearerToken(
+                                    () -> "test-token")
+                            .build();
+
+            MirrorStateWriteOutcomeWorkbookSeed actual =
+                    client.findMirrorStateWriteOutcomeWorkbookSeed(
+                            RUN_ID);
+
+            assertThat(actual.seedFingerprint())
+                    .isEqualTo(
+                            expected.seedFingerprint());
+            assertThat(actual.evidenceBundleFingerprint())
+                    .isEqualTo(
+                            expected
+                                    .evidenceBundleFingerprint());
+            assertThat(actual.writeAttemptAssertions())
+                    .isEqualTo(
+                            expected
+                                    .writeAttemptAssertions());
             assertThat(requests).hasValue(3);
         } finally {
             server.stop(0);
@@ -513,6 +730,152 @@ class MirrorEvidenceVerifierTest {
         return signedBundle(4);
     }
 
+    private ObjectNode signedBundleV5() throws Exception {
+        return signedBundle(5);
+    }
+
+    private ObjectNode signedRejectedBundleV5()
+            throws Exception {
+        return failedBundleV5(
+                "REJECTED",
+                "COMMAND_EVALUATION",
+                "UNCHANGED", false,
+                "RG.MIRROR.STATE.PRECONDITION_FAILED",
+                "STATE_WRITE_REJECTED", false);
+    }
+
+    private ObjectNode failedBundleV5(
+            String outcome,
+            String stage,
+            String disposition,
+            boolean retryable,
+            String errorCode,
+            String limitation,
+            boolean stateLimited)
+            throws Exception {
+        ObjectNode value = signedBundleV5();
+        ObjectNode evidence =
+                value.withObject("/evidence");
+        ObjectNode state = evidence.withObject(
+                "/stateEvidence");
+        ObjectNode write = state.withObject(
+                "/writeAttempts/0");
+        JsonNode transition =
+                write.path("transition");
+        state.set(
+                "finalSessionStateRef",
+                transition.path(
+                        "initialStateRef").deepCopy());
+        state.put("finalStateRevision", 0);
+        state.put(
+                "finalWorldFingerprint",
+                transition.path(
+                        "initialWorldFingerprint").asText());
+        state.put(
+                "finalLogicalClock",
+                transition.path(
+                        "initialLogicalClock").asText());
+        write.put("outcome", outcome);
+        write.put("stage", stage);
+        write.put("stateDisposition", disposition);
+        write.put("retryable", retryable);
+        write.put("errorCode", errorCode);
+        write.put(
+                "errorType", "MIRROR_STATE_WRITE");
+        write.remove("transition");
+        ObjectNode failureMaterial =
+                JSON.createObjectNode();
+        failureMaterial.set(
+                "writeEffectRef",
+                write.path(
+                        "writeEffectRef").deepCopy());
+        failureMaterial.set(
+                "observedStateRef",
+                write.path(
+                        "observedStateRef").deepCopy());
+        failureMaterial.put(
+                "observedStateRevision",
+                write.path(
+                        "observedStateRevision").asLong());
+        failureMaterial.put(
+                "observedWorldFingerprint",
+                write.path(
+                        "observedWorldFingerprint").asText());
+        failureMaterial.put(
+                "observedLogicalClock",
+                write.path(
+                        "observedLogicalClock").asText());
+        failureMaterial.put(
+                "requestFingerprint",
+                write.path(
+                        "requestFingerprint").asText());
+        failureMaterial.put(
+                "outcome", write.path("outcome").asText());
+        failureMaterial.put(
+                "stage", write.path("stage").asText());
+        failureMaterial.put(
+                "disposition",
+                write.path(
+                        "stateDisposition").asText());
+        failureMaterial.put(
+                "retryable",
+                write.path("retryable").asBoolean());
+        failureMaterial.put(
+                "errorCode",
+                write.path("errorCode").asText());
+        failureMaterial.put(
+                "errorType",
+                write.path("errorType").asText());
+        String failureFingerprint =
+                EvidenceVerificationSupport.sha256(
+                        failureMaterial);
+        write.put(
+                "failureFingerprint",
+                failureFingerprint);
+        ObjectNode resolution =
+                evidence.withObject("/resolutions/0");
+        resolution.put("payloadVisibility", "NONE");
+        resolution.put("outputFingerprint", "");
+        resolution.putObject("error")
+                .put(
+                        "code",
+                        write.path("errorCode").asText())
+                .put(
+                        "type",
+                        write.path("errorType").asText())
+                .put(
+                        "message", failureFingerprint);
+        ArrayNode refs = resolution.putArray(
+                "matchedArtifactRefs");
+        refs.add(
+                write.path(
+                        "observedStateRef").deepCopy());
+        refs.add(
+                state.path(
+                        "stateModelRef").deepCopy());
+        refs.add(
+                write.path(
+                        "writeEffectRef").deepCopy());
+        resolution.putArray("matchedRuleRefs")
+                .add(
+                        "write-attempt:"
+                                + failureFingerprint);
+        resolution.putArray("limitations")
+                .add(limitation);
+        evidence.put(
+                "status", "EXECUTION_FAILED");
+        evidence.putArray("limitations")
+                .add("DEPLOYMENT_EGRESS_NOT_ATTESTED")
+                .add(limitation);
+        if (stateLimited) {
+            state.putArray("limitations")
+                    .add(limitation);
+        }
+        resealStateEvidence(state);
+        resignAggregate(value, true);
+        return value;
+    }
+
     private ObjectNode signedBundle(boolean current) throws Exception {
         return signedBundle(current ? 2 : 1);
     }
@@ -523,6 +886,7 @@ class MirrorEvidenceVerifierTest {
             case 2 -> evidenceV2();
             case 3 -> evidenceV3();
             case 4 -> evidenceV4();
+            case 5 -> evidenceV5();
             default -> throw new IllegalArgumentException(
                     "unsupported test evidence version");
         };
@@ -541,6 +905,8 @@ class MirrorEvidenceVerifierTest {
                     .MIRROR_EVIDENCE_ATTESTATION_V3;
             case 4 -> CapabilityMirrorProtocol
                     .MIRROR_EVIDENCE_ATTESTATION_V4;
+            case 5 -> CapabilityMirrorProtocol
+                    .MIRROR_EVIDENCE_ATTESTATION_V5;
             default -> throw new IllegalArgumentException(
                     "unsupported test attestation version");
         });
@@ -565,6 +931,8 @@ class MirrorEvidenceVerifierTest {
                     .MIRROR_EVIDENCE_BUNDLE_V3;
             case 4 -> CapabilityMirrorProtocol
                     .MIRROR_EVIDENCE_BUNDLE_V4;
+            case 5 -> CapabilityMirrorProtocol
+                    .MIRROR_EVIDENCE_BUNDLE_V5;
             default -> throw new IllegalArgumentException(
                     "unsupported test bundle version");
         });
@@ -801,6 +1169,85 @@ class MirrorEvidenceVerifierTest {
         return value;
     }
 
+    private ObjectNode evidenceV5() {
+        ObjectNode value = evidenceV4();
+        value.put(
+                "schemaVersion",
+                CapabilityMirrorProtocol
+                        .MIRROR_RUN_EVIDENCE_V5);
+        ObjectNode state =
+                value.withObject("/stateEvidence");
+        state.put(
+                "schemaVersion",
+                CapabilityMirrorProtocol
+                        .MIRROR_STATE_RUN_EVIDENCE_V3);
+        state.put(
+                "mode",
+                "SERIALIZABLE_READ_WRITE_OUTCOMES");
+        JsonNode transition =
+                state.withArray("transitions")
+                        .get(0).deepCopy();
+        state.remove("transitions");
+        ObjectNode write = state.putArray(
+                "writeAttempts").addObject();
+        write.put(
+                "invocationSiteId",
+                transition.path(
+                        "invocationSiteId").asText());
+        write.put(
+                "graphPath",
+                transition.path("graphPath").asText());
+        write.put(
+                "correlationKey",
+                transition.path(
+                        "correlationKey").asText());
+        write.put(
+                "occurrence",
+                transition.path("occurrence").asInt());
+        write.put(
+                "attempt",
+                transition.path("attempt").asInt());
+        write.set(
+                "capabilityRef",
+                transition.path(
+                        "capabilityRef").deepCopy());
+        write.set(
+                "writeEffectRef",
+                transition.path(
+                        "writeEffectRef").deepCopy());
+        write.set(
+                "observedStateRef",
+                transition.path(
+                        "initialStateRef").deepCopy());
+        write.put(
+                "observedStateRevision",
+                transition.path(
+                        "revisionBefore").asLong());
+        write.put(
+                "observedWorldFingerprint",
+                transition.path(
+                        "initialWorldFingerprint").asText());
+        write.put(
+                "observedLogicalClock",
+                transition.path(
+                        "initialLogicalClock").asText());
+        write.put(
+                "requestFingerprint",
+                transition.path(
+                        "requestFingerprint").asText());
+        write.put("outcome", "COMMITTED");
+        write.put("stage", "COMPLETED");
+        write.put(
+                "stateDisposition", "ADVANCED");
+        write.put("retryable", false);
+        write.put("errorCode", "");
+        write.put("errorType", "");
+        write.put("failureFingerprint", "");
+        write.set("transition", transition);
+        resealStateEvidence(state);
+        return value;
+    }
+
     private ObjectNode evidence() {
         ObjectNode value = JSON.createObjectNode();
         value.put("schemaVersion", CapabilityMirrorProtocol.MIRROR_RUN_EVIDENCE_V1);
@@ -950,6 +1397,8 @@ class MirrorEvidenceVerifierTest {
                     "RESOURCE_GATEWAY_MIRROR_EVIDENCE_V3";
             case CapabilityMirrorProtocol.MIRROR_EVIDENCE_ATTESTATION_V4 ->
                     "RESOURCE_GATEWAY_MIRROR_EVIDENCE_V4";
+            case CapabilityMirrorProtocol.MIRROR_EVIDENCE_ATTESTATION_V5 ->
+                    "RESOURCE_GATEWAY_MIRROR_EVIDENCE_V5";
             default -> throw new IllegalArgumentException(
                     "unsupported test attestation version");
         });

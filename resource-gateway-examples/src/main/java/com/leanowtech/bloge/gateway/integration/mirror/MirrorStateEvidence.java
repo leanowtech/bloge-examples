@@ -23,11 +23,15 @@ import java.time.Instant;
                 name = MirrorStateRunEvidence.SCHEMA_VERSION),
         @JsonSubTypes.Type(
                 value = MirrorStateTransitionRunEvidence.class,
-                name = MirrorStateTransitionRunEvidence.SCHEMA_VERSION)
+                name = MirrorStateTransitionRunEvidence.SCHEMA_VERSION),
+        @JsonSubTypes.Type(
+                value = MirrorStateWriteOutcomeRunEvidence.class,
+                name = MirrorStateWriteOutcomeRunEvidence.SCHEMA_VERSION)
 })
 public sealed interface MirrorStateEvidence
         permits MirrorStateRunEvidence,
-        MirrorStateTransitionRunEvidence {
+        MirrorStateTransitionRunEvidence,
+        MirrorStateWriteOutcomeRunEvidence {
     /** @return exact state-evidence protocol version */
     String schemaVersion();
 

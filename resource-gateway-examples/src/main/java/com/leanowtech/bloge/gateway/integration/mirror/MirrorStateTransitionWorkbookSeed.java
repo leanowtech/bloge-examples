@@ -471,8 +471,15 @@ public record MirrorStateTransitionWorkbookSeed(
             }
         }
 
-        private static WriteAssertion from(
+        /**
+         * Projects one verified transition into its payload-free workbook assertion.
+         *
+         * @param source exact committed or replayed state transition
+         * @return bounded assertion that omits command and entity payloads
+         */
+        public static WriteAssertion from(
                 MirrorStateTransitionRunEvidence.StateTransition source) {
+            Objects.requireNonNull(source, "source");
             return new WriteAssertion(
                     source.invocationSiteId(),
                     source.graphPath(),
@@ -558,8 +565,15 @@ public record MirrorStateTransitionWorkbookSeed(
                     eventFingerprint, "eventFingerprint");
         }
 
-        private static EventAssertion from(
+        /**
+         * Projects one verified transition event into its payload-free workbook assertion.
+         *
+         * @param source exact receipt event
+         * @return bounded event assertion without raw entity identity or values
+         */
+        public static EventAssertion from(
                 MirrorStateTransitionRunEvidence.TransitionEvent source) {
+            Objects.requireNonNull(source, "source");
             return new EventAssertion(
                     source.eventIdFingerprint(),
                     source.stateRevision(),

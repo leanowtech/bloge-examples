@@ -65,18 +65,27 @@ public final class CapabilityMirrorProtocol {
     /** Read/write stateful evidence carrying an exact Session transition closure. */
     public static final String MIRROR_RUN_EVIDENCE_V4 =
             "resourceGateway.mirrorRunEvidence.v4";
+    /** Failure-aware stateful evidence carrying every terminal write-attempt outcome. */
+    public static final String MIRROR_RUN_EVIDENCE_V5 =
+            "resourceGateway.mirrorRunEvidence.v5";
     /** Payload-free Session state-access evidence wire version. */
     public static final String MIRROR_STATE_RUN_EVIDENCE_V1 =
             "resourceGateway.mirrorStateRunEvidence.v1";
     /** Payload-free Session read/write transition evidence wire version. */
     public static final String MIRROR_STATE_RUN_EVIDENCE_V2 =
             "resourceGateway.mirrorStateRunEvidence.v2";
+    /** Failure-aware Session write-attempt evidence wire version. */
+    public static final String MIRROR_STATE_RUN_EVIDENCE_V3 =
+            "resourceGateway.mirrorStateRunEvidence.v3";
     /** Deterministic ANEKE state-workbook seed wire version. */
     public static final String MIRROR_STATE_WORKBOOK_SEED_V1 =
             "resourceGateway.mirrorStateWorkbookSeed.v1";
     /** Deterministic ANEKE read/write state-transition workbook seed wire version. */
     public static final String MIRROR_STATE_TRANSITION_WORKBOOK_SEED_V1 =
             "resourceGateway.mirrorStateTransitionWorkbookSeed.v1";
+    /** Deterministic ANEKE failure-aware state-write workbook seed wire version. */
+    public static final String MIRROR_STATE_WRITE_OUTCOME_WORKBOOK_SEED_V1 =
+            "resourceGateway.mirrorStateWriteOutcomeWorkbookSeed.v1";
     /** Detached mirror evidence attestation wire version. */
     public static final String MIRROR_EVIDENCE_ATTESTATION_V1 =
             "resourceGateway.mirrorEvidenceAttestation.v1";
@@ -89,6 +98,9 @@ public final class CapabilityMirrorProtocol {
     /** Read/write stateful detached evidence attestation wire version. */
     public static final String MIRROR_EVIDENCE_ATTESTATION_V4 =
             "resourceGateway.mirrorEvidenceAttestation.v4";
+    /** Failure-aware stateful detached evidence attestation wire version. */
+    public static final String MIRROR_EVIDENCE_ATTESTATION_V5 =
+            "resourceGateway.mirrorEvidenceAttestation.v5";
     /** Portable signed mirror evidence bundle wire version. */
     public static final String MIRROR_EVIDENCE_BUNDLE_V1 =
             "resourceGateway.mirrorEvidenceBundle.v1";
@@ -101,6 +113,9 @@ public final class CapabilityMirrorProtocol {
     /** Read/write stateful portable evidence bundle wire version. */
     public static final String MIRROR_EVIDENCE_BUNDLE_V4 =
             "resourceGateway.mirrorEvidenceBundle.v4";
+    /** Failure-aware stateful portable evidence bundle wire version. */
+    public static final String MIRROR_EVIDENCE_BUNDLE_V5 =
+            "resourceGateway.mirrorEvidenceBundle.v5";
     /** Externally signed deployment-isolation attestation wire version. */
     public static final String MIRROR_DEPLOYMENT_ISOLATION_ATTESTATION_V1 =
             "resourceGateway.mirrorDeploymentIsolationAttestation.v1";
@@ -315,12 +330,18 @@ public final class CapabilityMirrorProtocol {
     /** Packaged read/write stateful mirror run evidence schema. */
     public static final String MIRROR_RUN_EVIDENCE_V4_SCHEMA_RESOURCE =
             SCHEMA_RESOURCE_ROOT + "mirror-run-evidence-v4.schema.json";
+    /** Packaged failure-aware stateful mirror run evidence schema. */
+    public static final String MIRROR_RUN_EVIDENCE_V5_SCHEMA_RESOURCE =
+            SCHEMA_RESOURCE_ROOT + "mirror-run-evidence-v5.schema.json";
     /** Packaged payload-free Session state-access evidence schema. */
     public static final String MIRROR_STATE_RUN_EVIDENCE_SCHEMA_RESOURCE =
             SCHEMA_RESOURCE_ROOT + "mirror-state-run-evidence-v1.schema.json";
     /** Packaged payload-free Session read/write transition evidence schema. */
     public static final String MIRROR_STATE_RUN_EVIDENCE_V2_SCHEMA_RESOURCE =
             SCHEMA_RESOURCE_ROOT + "mirror-state-run-evidence-v2.schema.json";
+    /** Packaged failure-aware Session write-attempt evidence schema. */
+    public static final String MIRROR_STATE_RUN_EVIDENCE_V3_SCHEMA_RESOURCE =
+            SCHEMA_RESOURCE_ROOT + "mirror-state-run-evidence-v3.schema.json";
     /** Packaged deterministic ANEKE state-workbook seed schema. */
     public static final String MIRROR_STATE_WORKBOOK_SEED_SCHEMA_RESOURCE =
             SCHEMA_RESOURCE_ROOT + "mirror-state-workbook-seed-v1.schema.json";
@@ -328,6 +349,11 @@ public final class CapabilityMirrorProtocol {
     public static final String MIRROR_STATE_TRANSITION_WORKBOOK_SEED_SCHEMA_RESOURCE =
             SCHEMA_RESOURCE_ROOT
                     + "mirror-state-transition-workbook-seed-v1.schema.json";
+    /** Packaged failure-aware state-write workbook seed schema. */
+    public static final String
+    MIRROR_STATE_WRITE_OUTCOME_WORKBOOK_SEED_SCHEMA_RESOURCE =
+            SCHEMA_RESOURCE_ROOT
+                    + "mirror-state-write-outcome-workbook-seed-v1.schema.json";
     /** Packaged detached mirror evidence attestation schema. */
     public static final String MIRROR_EVIDENCE_ATTESTATION_SCHEMA_RESOURCE =
             SCHEMA_RESOURCE_ROOT + "mirror-evidence-attestation-v1.schema.json";
@@ -340,6 +366,9 @@ public final class CapabilityMirrorProtocol {
     /** Packaged read/write stateful detached evidence attestation schema. */
     public static final String MIRROR_EVIDENCE_ATTESTATION_V4_SCHEMA_RESOURCE =
             SCHEMA_RESOURCE_ROOT + "mirror-evidence-attestation-v4.schema.json";
+    /** Packaged failure-aware stateful detached evidence attestation schema. */
+    public static final String MIRROR_EVIDENCE_ATTESTATION_V5_SCHEMA_RESOURCE =
+            SCHEMA_RESOURCE_ROOT + "mirror-evidence-attestation-v5.schema.json";
     /** Packaged portable mirror evidence bundle schema. */
     public static final String MIRROR_EVIDENCE_BUNDLE_SCHEMA_RESOURCE =
             SCHEMA_RESOURCE_ROOT + "mirror-evidence-bundle-v1.schema.json";
@@ -352,6 +381,9 @@ public final class CapabilityMirrorProtocol {
     /** Packaged read/write stateful portable evidence bundle schema. */
     public static final String MIRROR_EVIDENCE_BUNDLE_V4_SCHEMA_RESOURCE =
             SCHEMA_RESOURCE_ROOT + "mirror-evidence-bundle-v4.schema.json";
+    /** Packaged failure-aware stateful portable evidence bundle schema. */
+    public static final String MIRROR_EVIDENCE_BUNDLE_V5_SCHEMA_RESOURCE =
+            SCHEMA_RESOURCE_ROOT + "mirror-evidence-bundle-v5.schema.json";
     /** Packaged deployment-isolation attestation schema. */
     public static final String MIRROR_DEPLOYMENT_ISOLATION_ATTESTATION_SCHEMA_RESOURCE =
             SCHEMA_RESOURCE_ROOT

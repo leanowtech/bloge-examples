@@ -225,15 +225,21 @@ if (CapabilityMirrorProtocol.MIRROR_EVIDENCE_BUNDLE_V3.equals(
             MirrorStateTransitionWorkbookSeed.fromVerifiedBundle(
                     mirrorBundle, key);
     seed.requireGateReady();
+} else if (CapabilityMirrorProtocol.MIRROR_EVIDENCE_BUNDLE_V5.equals(
+        mirrorBundle.path("schemaVersion").asText())) {
+    MirrorStateWriteOutcomeWorkbookSeed seed =
+            MirrorStateWriteOutcomeWorkbookSeed.fromVerifiedBundle(
+                    mirrorBundle, key);
+    seed.requireGateReady();
 }
 ```
 
 Verification re-derives strict Schema admission, deterministic ordering, exact external-attempt to
 resolution closure, request/output hash binding, nested resolution seals, evidence and bundle
 fingerprints, signing-time key policy, and the domain-separated Ed25519 signature. Its result is
-payload-free and suitable for CI logs. V1, v2, stateful-read v3, and
-stateful-read/write v4 use separate signature domains and cannot be mixed inside
-one bundle. For v2/v3/v4 deployment-egress claims the verifier also proves isolation-attestation
+payload-free and suitable for CI logs. V1, v2, stateful-read v3, successful
+stateful-read/write v4, and failure-aware stateful-read/write v5 use separate
+signature domains and cannot be mixed inside one bundle. For v2/v3/v4/v5 deployment-egress claims the verifier also proves isolation-attestation
 reference equality, stable decision/status generation, identical agent snapshot identity,
 monotonic cache generation, admission before execution, and confirmation before signing. Canonical
 evidence, bundle, and resolution material is
@@ -253,11 +259,23 @@ revision chain, replay semantics, and payload-free transition-event closure to
 the node attempt and resolution. Raw entity ids, idempotency keys, inputs, and
 responses remain absent.
 
+V5 requires `resourceGateway.mirrorStateRunEvidence.v3`. The verifier proves
+that every executed virtual-write delegate attempt terminates as `COMMITTED`,
+`REPLAYED`, `REJECTED`, `PRE_COMMIT_FAILED`, or
+`COMMIT_OUTCOME_UNKNOWN`, with the exact failure stage and
+`ADVANCED`/`UNCHANGED`/`UNKNOWN` state disposition. It independently
+recomputes failure fingerprints and exact attempt/resolution closure. Unknown
+commit outcomes must carry `WRITE_COMMIT_OUTCOME_UNKNOWN` in both nested and
+outer evidence; they cannot be treated as a failed no-op.
+
 `MirrorStateWorkbookSeed.fromVerifiedBundle` repeats v3 verification before it
 projects the exact bundle/state/session/model coordinates, access counts, and
 conservative blockers. `MirrorStateTransitionWorkbookSeed.fromVerifiedBundle`
 repeats v4 verification and additionally projects initial/final heads,
 committed/replayed receipt assertions, and payload-free event assertions.
+`MirrorStateWriteOutcomeWorkbookSeed.fromVerifiedBundle` repeats v5
+verification and projects every ordered attempt, all outcome counts, failure
+coordinates, and successful transitions when present.
 `fromPayload` checks strict seed Schema, self-fingerprint, counts, ordering, and
 state closure, but cannot substitute for source-bundle signature verification.
 For online use,
@@ -271,12 +289,30 @@ MirrorStateTransitionWorkbookSeed seed =
 seed.requireGateReady();
 ```
 
+For a new v5 run, use the failure-aware API instead:
+
+```java
+MirrorStateWriteOutcomeWorkbookSeed seed =
+        client.findMirrorStateWriteOutcomeWorkbookSeed(runId);
+seed.requireGateReady();
+```
+
+The client fetches v5 evidence, resolves its verification key, independently
+reconstructs the seed, fetches the producer seed, and compares the canonical
+fingerprint and source coordinates. A rejected write remains a blocker until
+the workbook records it as an expected business outcome. Pre-commit failures
+and unknown commit outcomes remain blockers; the latter require durable
+reconciliation before certification.
+
 Local exploratory evidence normally yields `gateReady=false`;
 `requireGateReady()` returns the stable blocker set instead of silently
 promoting it. ANEKE remains responsible for workbook coverage, owner approval,
-policy, and the final publish gate. The transition seed deliberately reports
-only observed committed/replayed writes; rejected, pre-commit failure, and
-crash write-attempt outcomes remain a separate evidence evolution.
+policy, and the final publish gate. The legacy v4 transition seed deliberately
+reports only observed committed/replayed writes. Prefer v5 for new write-capable
+integrations. `mirrorStateWriteAttemptDurableReconciliationReady=false` means a
+process crash can still leave a durable commit without a terminal attempt
+record; certification must remain closed until the server adds a durable
+attempt journal and recovery reconciler.
 
 Run the packaged fixed fixture in dependency-upgrade and startup probes:
 

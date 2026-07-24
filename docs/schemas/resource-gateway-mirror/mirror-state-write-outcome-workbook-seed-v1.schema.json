@@ -1,0 +1,316 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://bloge.dev/schemas/resource-gateway-mirror/mirror-state-write-outcome-workbook-seed-v1.schema.json",
+  "title": "Resource Gateway Mirror State Write Outcome Workbook Seed v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion", "seedFingerprint", "runId", "planFingerprint",
+    "evidenceBundleFingerprint", "stateEvidenceRef", "initialSessionStateRef",
+    "finalSessionStateRef", "stateModelRef", "initialStateRevision",
+    "finalStateRevision", "initialWorldFingerprint", "finalWorldFingerprint",
+    "initialLogicalClock", "finalLogicalClock", "mode", "runStatus",
+    "evidenceClass", "bindingCount", "accessCount", "writeAttemptCount",
+    "committedCount", "replayedCount", "rejectedCount",
+    "preCommitFailedCount", "commitOutcomeUnknownCount", "eventCount",
+    "stateAdvanced", "writeAttemptAssertions", "gateReady", "blockers"
+  ],
+  "properties": {
+    "schemaVersion": {
+      "const": "resourceGateway.mirrorStateWriteOutcomeWorkbookSeed.v1"
+    },
+    "seedFingerprint": { "$ref": "#/$defs/fingerprint" },
+    "runId": { "type": "string", "minLength": 1, "maxLength": 512 },
+    "planFingerprint": { "$ref": "#/$defs/fingerprint" },
+    "evidenceBundleFingerprint": { "$ref": "#/$defs/fingerprint" },
+    "stateEvidenceRef": {
+      "allOf": [
+        { "$ref": "mirror-run-evidence-v1.schema.json#/$defs/artifactRef" },
+        {
+          "properties": {
+            "kind": { "const": "MIRROR_STATE_RUN_EVIDENCE" },
+            "revision": { "const": 3 }
+          }
+        }
+      ]
+    },
+    "initialSessionStateRef": { "$ref": "#/$defs/sessionStateRef" },
+    "finalSessionStateRef": { "$ref": "#/$defs/sessionStateRef" },
+    "stateModelRef": {
+      "allOf": [
+        { "$ref": "mirror-run-evidence-v1.schema.json#/$defs/artifactRef" },
+        { "properties": { "kind": { "const": "STATE_MODEL" } } }
+      ]
+    },
+    "initialStateRevision": { "type": "integer", "minimum": 0 },
+    "finalStateRevision": { "type": "integer", "minimum": 0 },
+    "initialWorldFingerprint": { "$ref": "#/$defs/fingerprint" },
+    "finalWorldFingerprint": { "$ref": "#/$defs/fingerprint" },
+    "initialLogicalClock": { "type": "string", "format": "date-time" },
+    "finalLogicalClock": { "type": "string", "format": "date-time" },
+    "mode": { "const": "SERIALIZABLE_READ_WRITE_OUTCOMES" },
+    "runStatus": { "$ref": "#/$defs/runStatus" },
+    "evidenceClass": { "enum": ["EXPLORATORY", "CERTIFIABLE"] },
+    "bindingCount": { "type": "integer", "minimum": 1, "maximum": 10000 },
+    "accessCount": { "type": "integer", "minimum": 0, "maximum": 100000 },
+    "writeAttemptCount": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 100000
+    },
+    "committedCount": { "type": "integer", "minimum": 0, "maximum": 100000 },
+    "replayedCount": { "type": "integer", "minimum": 0, "maximum": 100000 },
+    "rejectedCount": { "type": "integer", "minimum": 0, "maximum": 100000 },
+    "preCommitFailedCount": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 100000
+    },
+    "commitOutcomeUnknownCount": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 100000
+    },
+    "eventCount": { "type": "integer", "minimum": 0, "maximum": 12800000 },
+    "stateAdvanced": { "type": "boolean" },
+    "writeAttemptAssertions": {
+      "type": "array",
+      "maxItems": 100000,
+      "items": { "$ref": "#/$defs/writeAttemptAssertion" }
+    },
+    "gateReady": { "type": "boolean" },
+    "blockers": {
+      "type": "array",
+      "maxItems": 16,
+      "uniqueItems": true,
+      "items": {
+        "type": "string",
+        "pattern": "^[A-Z][A-Z0-9_.-]{0,255}$"
+      }
+    }
+  },
+  "allOf": [
+    {
+      "if": {
+        "required": ["gateReady"],
+        "properties": { "gateReady": { "const": true } }
+      },
+      "then": {
+        "properties": {
+          "runStatus": { "const": "PASSED" },
+          "evidenceClass": { "const": "CERTIFIABLE" },
+          "writeAttemptCount": { "minimum": 1 },
+          "rejectedCount": { "const": 0 },
+          "preCommitFailedCount": { "const": 0 },
+          "commitOutcomeUnknownCount": { "const": 0 },
+          "writeAttemptAssertions": { "minItems": 1 },
+          "blockers": { "maxItems": 0 }
+        }
+      }
+    },
+    {
+      "if": {
+        "required": ["gateReady"],
+        "properties": { "gateReady": { "const": false } }
+      },
+      "then": { "properties": { "blockers": { "minItems": 1 } } }
+    }
+  ],
+  "$defs": {
+    "fingerprint": {
+      "type": "string",
+      "pattern": "^sha256:[a-f0-9]{64}$"
+    },
+    "optionalFingerprint": {
+      "type": "string",
+      "pattern": "^(|sha256:[a-f0-9]{64})$"
+    },
+    "sessionStateRef": {
+      "allOf": [
+        { "$ref": "mirror-run-evidence-v1.schema.json#/$defs/artifactRef" },
+        { "properties": { "kind": { "const": "SESSION_STATE" } } }
+      ]
+    },
+    "runStatus": {
+      "enum": [
+        "PASSED", "ASSERTION_FAILED", "EXECUTION_FAILED",
+        "CONTROL_PLAN_REJECTED", "FIXTURE_UNMATCHED", "FIXTURE_UNUSED",
+        "CONTROL_PLAN_UNAVAILABLE", "EVIDENCE_INCOMPLETE", "CANCELLED",
+        "TIMED_OUT"
+      ]
+    },
+    "writeAttemptAssertion": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "invocationSiteId", "graphPath", "correlationKey", "occurrence",
+        "attempt", "capabilityRef", "writeEffectRef", "observedStateRef",
+        "observedStateRevision", "observedWorldFingerprint",
+        "observedLogicalClock", "requestFingerprint", "outcome", "stage",
+        "stateDisposition", "retryable", "errorCode", "errorType",
+        "failureFingerprint"
+      ],
+      "properties": {
+        "invocationSiteId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 2048
+        },
+        "graphPath": { "type": "string", "minLength": 1, "maxLength": 4096 },
+        "correlationKey": { "type": "string", "maxLength": 1024 },
+        "occurrence": { "type": "integer", "minimum": 1 },
+        "attempt": { "type": "integer", "minimum": 1 },
+        "capabilityRef": {
+          "allOf": [
+            { "$ref": "mirror-run-evidence-v1.schema.json#/$defs/artifactRef" },
+            { "properties": { "kind": { "const": "CAPABILITY" } } }
+          ]
+        },
+        "writeEffectRef": {
+          "allOf": [
+            { "$ref": "mirror-run-evidence-v1.schema.json#/$defs/artifactRef" },
+            { "properties": { "kind": { "const": "WRITE_EFFECT" } } }
+          ]
+        },
+        "observedStateRef": { "$ref": "#/$defs/sessionStateRef" },
+        "observedStateRevision": { "type": "integer", "minimum": 0 },
+        "observedWorldFingerprint": { "$ref": "#/$defs/fingerprint" },
+        "observedLogicalClock": { "type": "string", "format": "date-time" },
+        "requestFingerprint": { "$ref": "#/$defs/fingerprint" },
+        "outcome": {
+          "enum": [
+            "COMMITTED", "REPLAYED", "REJECTED", "PRE_COMMIT_FAILED",
+            "COMMIT_OUTCOME_UNKNOWN"
+          ]
+        },
+        "stage": {
+          "enum": [
+            "RESOLVER_ADMISSION", "COMMAND_ADMISSION", "COMMAND_EVALUATION",
+            "COMMIT", "RESULT_VERIFICATION", "PROCESS_INTERRUPTION", "COMPLETED"
+          ]
+        },
+        "stateDisposition": {
+          "enum": ["ADVANCED", "UNCHANGED", "UNKNOWN"]
+        },
+        "retryable": { "type": "boolean" },
+        "errorCode": { "type": "string", "maxLength": 192 },
+        "errorType": { "type": "string", "maxLength": 128 },
+        "failureFingerprint": { "$ref": "#/$defs/optionalFingerprint" },
+        "transition": {
+          "$ref": "mirror-state-transition-workbook-seed-v1.schema.json#/$defs/writeAssertion"
+        }
+      },
+      "allOf": [
+        {
+          "if": {
+            "required": ["outcome"],
+            "properties": { "outcome": { "enum": ["COMMITTED", "REPLAYED"] } }
+          },
+          "then": {
+            "required": ["transition"],
+            "properties": {
+              "stage": { "const": "COMPLETED" },
+              "retryable": { "const": false },
+              "errorCode": { "const": "" },
+              "errorType": { "const": "" },
+              "failureFingerprint": { "const": "" }
+            }
+          },
+          "else": {
+            "not": { "required": ["transition"] },
+            "properties": {
+              "errorCode": { "type": "string", "minLength": 1 },
+              "errorType": { "type": "string", "minLength": 1 },
+              "failureFingerprint": { "$ref": "#/$defs/fingerprint" }
+            }
+          }
+        },
+        {
+          "if": {
+            "required": ["outcome"],
+            "properties": { "outcome": { "const": "COMMITTED" } }
+          },
+          "then": {
+            "properties": {
+              "stateDisposition": { "const": "ADVANCED" },
+              "transition": {
+                "allOf": [
+                  {
+                    "$ref": "mirror-state-transition-workbook-seed-v1.schema.json#/$defs/writeAssertion"
+                  },
+                  { "properties": { "replayed": { "const": false } } }
+                ]
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "required": ["outcome"],
+            "properties": { "outcome": { "const": "REPLAYED" } }
+          },
+          "then": {
+            "properties": {
+              "stateDisposition": { "const": "UNCHANGED" },
+              "transition": {
+                "allOf": [
+                  {
+                    "$ref": "mirror-state-transition-workbook-seed-v1.schema.json#/$defs/writeAssertion"
+                  },
+                  { "properties": { "replayed": { "const": true } } }
+                ]
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "required": ["outcome"],
+            "properties": { "outcome": { "const": "REJECTED" } }
+          },
+          "then": {
+            "properties": {
+              "stage": {
+                "enum": [
+                  "RESOLVER_ADMISSION", "COMMAND_ADMISSION",
+                  "COMMAND_EVALUATION"
+                ]
+              },
+              "stateDisposition": { "const": "UNCHANGED" }
+            }
+          }
+        },
+        {
+          "if": {
+            "required": ["outcome"],
+            "properties": { "outcome": { "const": "PRE_COMMIT_FAILED" } }
+          },
+          "then": {
+            "properties": {
+              "stage": {
+                "enum": [
+                  "COMMAND_ADMISSION", "COMMAND_EVALUATION", "COMMIT"
+                ]
+              },
+              "stateDisposition": { "const": "UNCHANGED" }
+            }
+          }
+        },
+        {
+          "if": {
+            "required": ["outcome"],
+            "properties": { "outcome": { "const": "COMMIT_OUTCOME_UNKNOWN" } }
+          },
+          "then": {
+            "properties": {
+              "stage": {
+                "enum": ["COMMIT", "RESULT_VERIFICATION", "PROCESS_INTERRUPTION"]
+              },
+              "stateDisposition": { "const": "UNKNOWN" }
+            }
+          }
+        }
+      ]
+    }
+  }
+}

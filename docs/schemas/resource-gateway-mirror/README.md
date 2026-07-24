@@ -25,14 +25,17 @@ offline artifact verification live in the independent `resource-gateway-test-kit
 | `mirror-run-evidence-v2.schema.json` | `MirrorRunEvidence` | Stateless trust-bound evidence generation; adds run trust and requires it for v2 deployment-egress or certifiable claims |
 | `mirror-run-evidence-v3.schema.json` | `MirrorRunEvidence` | Stateful generation requiring one exact sealed `mirrorStateRunEvidence.v1` closure |
 | `mirror-run-evidence-v4.schema.json` | `MirrorRunEvidence` | Read/write stateful generation requiring one exact sealed `mirrorStateRunEvidence.v2` transition closure |
+| `mirror-run-evidence-v5.schema.json` | `MirrorRunEvidence` | Failure-aware read/write generation requiring one exact sealed `mirrorStateRunEvidence.v3` write-attempt outcome closure |
 | `mirror-evidence-attestation-v1.schema.json` | `MirrorEvidenceAttestation` | Domain-separated detached Ed25519 signature over one complete mirror run evidence value |
 | `mirror-evidence-attestation-v2.schema.json` | `MirrorEvidenceAttestation` | Stateless detached-signature generation with a distinct v2 signature domain |
 | `mirror-evidence-attestation-v3.schema.json` | `MirrorEvidenceAttestation` | Stateful detached-signature generation with a distinct v3 signature domain |
 | `mirror-evidence-attestation-v4.schema.json` | `MirrorEvidenceAttestation` | Read/write stateful detached-signature generation with a distinct v4 signature domain |
+| `mirror-evidence-attestation-v5.schema.json` | `MirrorEvidenceAttestation` | Failure-aware stateful detached-signature generation with a distinct v5 signature domain |
 | `mirror-evidence-bundle-v1.schema.json` | `MirrorEvidenceBundle` | Portable `HASH_ONLY` evidence, attestation, and complete bundle fingerprint closure |
 | `mirror-evidence-bundle-v2.schema.json` | `MirrorEvidenceBundle` | Strict stateless trust-bound bundle; requires v2 evidence and attestation and rejects mixed generations |
 | `mirror-evidence-bundle-v3.schema.json` | `MirrorEvidenceBundle` | Strict stateful bundle; requires v3 evidence/attestation and rejects mixed generations |
 | `mirror-evidence-bundle-v4.schema.json` | `MirrorEvidenceBundle` | Strict read/write stateful bundle; requires v4 evidence/attestation and rejects mixed generations |
+| `mirror-evidence-bundle-v5.schema.json` | `MirrorEvidenceBundle` | Strict failure-aware stateful bundle; requires v5 evidence/attestation and rejects mixed generations |
 | `mirror-deployment-isolation-attestation-v1.schema.json` | `MirrorDeploymentIsolationAttestation` | Short-lived external proof binding an exact deployment generation to fail-closed egress and credential controls |
 | `mirror-deployment-isolation-attestation-status-v1.schema.json` | `MirrorDeploymentIsolationAttestationStatusPublication` | Locally content-addressed `ACTIVE` or irreversible `REVOKED` status for one exact attestation revision |
 | `mirror-deployment-isolation-attestation-bundle-v1.schema.json` | `MirrorDeploymentIsolationAttestationBundle` | Atomic current-only distribution of authority reference, external attestation body, and local status |
@@ -74,8 +77,10 @@ offline artifact verification live in the independent `resource-gateway-test-kit
 | `mirror-session-recovery-result-v1.schema.json` | `MirrorSessionRecoveryResult` | Payload-free exact recovery admission and reconstructed Session run binding |
 | `mirror-state-run-evidence-v1.schema.json` | `MirrorStateRunEvidence` | Exact Session head, model, stateful binding, and payload-free live/absent/tombstone access closure |
 | `mirror-state-run-evidence-v2.schema.json` | `MirrorStateTransitionRunEvidence` | Initial/final Session heads, exact read revisions, and payload-free write receipt/event transition closure |
+| `mirror-state-run-evidence-v3.schema.json` | `MirrorStateWriteOutcomeRunEvidence` | One terminal outcome per state-write attempt: committed, replayed, rejected, pre-commit failed, or commit outcome unknown |
 | `mirror-state-workbook-seed-v1.schema.json` | `MirrorStateWorkbookSeed` | Deterministic payload-free ANEKE seed with exact evidence/state coordinates, counts, and conservative blockers |
 | `mirror-state-transition-workbook-seed-v1.schema.json` | `MirrorStateTransitionWorkbookSeed` | Deterministic v4-only ANEKE seed with initial/final heads, committed/replayed receipt assertions, payload-free events, counts, and blockers |
+| `mirror-state-write-outcome-workbook-seed-v1.schema.json` | `MirrorStateWriteOutcomeWorkbookSeed` | Deterministic v5-only ANEKE seed with exact attempt outcome/stage/failure identity, optional receipt closure, counts, and conservative blockers |
 | `stateful-refund-stage3-v1.fixture.schema.json` | compatibility fixture envelope | Exact state model, write effect, initial session, and executable refund expectation |
 | `capability-lifecycle-transition-v1.schema.json` | `CapabilityLifecycleTransitionRequest` | Optimistically fenced governance transition for one exact revision |
 | `capability-mirror-compatibility-v1.schema.json` | `CapabilityMirrorCompatibility` | Minimum protocol/object/feature baseline a mirror consumer can negotiate |
@@ -90,11 +95,12 @@ business payload. The server rehydrates and verifies it through its Java protoco
 standalone test-kit validates the strict schemas and independently re-derives every nested seal,
 closure, aggregate fingerprint, key policy, and signature from the same file.
 
-The producer emits v2 for stateless runs, v3 for read-only Session runs, and v4
-for Session runs containing virtual writes. Readers and the standalone test-kit
+The producer emits v2 for stateless runs, v3 for read-only Session runs, and v5
+for new Session runs containing virtual writes. V4 remains the compatible
+successful-transition generation. Readers and the standalone test-kit
 continue to verify v1, including legacy v1 certifiable evidence without a
 run-trust binding. A portable bundle must use one generation throughout;
-v1/v2/v3/v4 mixing is rejected. V2/v3/v4 certifiable
+v1/v2/v3/v4/v5 mixing is rejected. V2/v3/v4/v5 certifiable
 evidence carries `resourceGateway.mirrorDeploymentIsolationRunTrust.v1`, while a v2 exploratory
 or stateful exploratory run without deployment proof omits that field and preserves the explicit
 `DEPLOYMENT_EGRESS_NOT_ATTESTED` limitation. See
@@ -195,15 +201,20 @@ executes state-model-backed `READ_ONLY` sites through an exact Session head and
 advance the head observed by downstream reads, tombstones terminate precedence,
 and no real external write operator is invoked. A read-only execution emits
 `mirrorStateRunEvidence.v1` inside a v3 bundle; a read/write execution emits
-`mirrorStateRunEvidence.v2` inside a v4 bundle. The independent
-`MirrorEvidenceVerifier` proves exact
-access/transition/attempt/resolution/receipt/event closure.
+`mirrorStateRunEvidence.v3` inside a v5 bundle. V3 keeps the complete v2
+receipt/event closure for committed and replayed writes and adds one exact
+terminal attempt for rejected, proven pre-commit-failed, and
+commit-outcome-unknown writes. The independent `MirrorEvidenceVerifier` proves
+exact access/write-attempt/resolution/failure-fingerprint/receipt/event closure.
 `MirrorStateWorkbookSeed.fromVerifiedBundle` derives a payload-free ANEKE seed
 for v3 read-only evidence. `MirrorStateTransitionWorkbookSeed.fromVerifiedBundle`
 independently verifies v4 and projects exact committed/replayed receipts and
-payload-free event assertions; the test client also compares the producer seed
-with a locally reconstructed canonical fingerprint. The fixture itself does not contain
-a fixed v3, v4, or checkpoint signature vector and therefore does not certify
+payload-free event assertions. `MirrorStateWriteOutcomeWorkbookSeed.fromVerifiedBundle`
+independently verifies v5, exposes all five outcome classes and the last
+trustworthy write stage, and blocks unknown commit outcomes pending
+reconciliation. Both test client methods compare the producer seed with a
+locally reconstructed canonical fingerprint. The fixture itself does not contain
+a fixed v3, v4, v5, or checkpoint signature vector and therefore does not certify
 non-Java stateful canonicalization. The separately tested checkpoint protocol
 proves signed exact recovery admission after a process restart against the same
 encrypted data-plane generation; it does not move or restore Session payload.
@@ -350,15 +361,16 @@ fixture identity/fingerprint, timestamp, and actor, never fixture or replay valu
 ## Protected execution and evidence boundary
 
 The same isolated composition exposes these routes only under an explicit mirror switch and a `test` or `staging`
-profile; any active `production` profile physically removes all four mappings:
+profile; any active `production` profile physically removes all mappings:
 
 | Method and path | Response | Semantics |
 |---|---|---|
 | `POST /api/mirror/executions` | `resourceGateway.mirrorRunSummary.v1` | Execute once or return an identical completed request |
 | `GET /api/mirror/runs/{runId}` | `resourceGateway.mirrorRunSummary.v1` | Read a verified payload-free terminal projection |
-| `GET /api/mirror/runs/{runId}/evidence` | `resourceGateway.mirrorEvidenceBundle.v1/v2/v3/v4` | Read independently verified signed `HASH_ONLY` evidence using the bundle's actual generation |
+| `GET /api/mirror/runs/{runId}/evidence` | `resourceGateway.mirrorEvidenceBundle.v1/v2/v3/v4/v5` | Read independently verified signed `HASH_ONLY` evidence using the bundle's actual generation |
 | `GET /api/mirror/runs/{runId}/state-workbook-seed` | `resourceGateway.mirrorStateWorkbookSeed.v1` | Derive a deterministic payload-free ANEKE seed from a verified stateful v3 bundle; reject stateless runs |
 | `GET /api/mirror/runs/{runId}/state-transition-workbook-seed` | `resourceGateway.mirrorStateTransitionWorkbookSeed.v1` | Derive deterministic payload-free write assertions from a verified v4 bundle; reject every other generation |
+| `GET /api/mirror/runs/{runId}/state-write-outcome-workbook-seed` | `resourceGateway.mirrorStateWriteOutcomeWorkbookSeed.v1` | Derive deterministic terminal write-attempt assertions from verified v5 evidence; reject every other generation |
 
 Stateless `POST /api/mirror/executions` v1 accepts exactly `schemaVersion`, `requestId`, `planId`,
 `expectedPlanFingerprint`, and `context`; stateful v2 additionally requires one exact
@@ -569,6 +581,7 @@ The protected Tool Studio integration surface exposes:
 | `GET /api/mirror/runs/{runId}/evidence` | Read one verified signed `HASH_ONLY` bundle | `MIRROR_REHEARSAL` |
 | `GET /api/mirror/runs/{runId}/state-workbook-seed` | Derive a deterministic payload-free ANEKE seed from one verified stateful v3 bundle | `MIRROR_REHEARSAL` |
 | `GET /api/mirror/runs/{runId}/state-transition-workbook-seed` | Derive committed/replayed write assertions from one verified stateful v4 bundle | `MIRROR_REHEARSAL` |
+| `GET /api/mirror/runs/{runId}/state-write-outcome-workbook-seed` | Derive failure-aware write-attempt assertions from one verified stateful v5 bundle | `MIRROR_REHEARSAL` |
 | `POST /api/mirror/sessions` | Create or exactly replay one sealed encrypted Session | `MIRROR_REHEARSAL` |
 | `GET /api/mirror/sessions/{sessionId}` | Read the current payload-free Session descriptor | `MIRROR_REHEARSAL` |
 | `POST /api/mirror/sessions/{sessionId}/commands` | Execute or exactly replay one admitted virtual write effect | `MIRROR_REHEARSAL` |

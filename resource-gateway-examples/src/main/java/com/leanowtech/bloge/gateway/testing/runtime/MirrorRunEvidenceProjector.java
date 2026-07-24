@@ -1,6 +1,7 @@
 package com.leanowtech.bloge.gateway.testing.runtime;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.leanowtech.bloge.gateway.integration.mirror.MirrorArtifactRef;
 import com.leanowtech.bloge.gateway.integration.mirror.MirrorPlan;
 import com.leanowtech.bloge.gateway.integration.mirror.MirrorResolution;
 import com.leanowtech.bloge.gateway.integration.mirror.MirrorRunEvidence;
@@ -10,6 +11,8 @@ import com.leanowtech.bloge.gateway.integration.mirror.MirrorStateRunEvidence;
 import com.leanowtech.bloge.gateway.integration.mirror.MirrorStateRunEvidenceIntegrity;
 import com.leanowtech.bloge.gateway.integration.mirror.MirrorStateTransitionRunEvidence;
 import com.leanowtech.bloge.gateway.integration.mirror.MirrorStateTransitionRunEvidenceIntegrity;
+import com.leanowtech.bloge.gateway.integration.mirror.MirrorStateWriteOutcomeRunEvidence;
+import com.leanowtech.bloge.gateway.integration.mirror.MirrorStateWriteOutcomeRunEvidenceIntegrity;
 import com.leanowtech.bloge.gateway.integration.mirror.StateModelIntegrity;
 import com.leanowtech.bloge.gateway.integration.mirror.StateReadSpecIntegrity;
 import com.leanowtech.bloge.gateway.integration.mirror.WriteEffectSpecIntegrity;
@@ -127,7 +130,7 @@ public final class MirrorRunEvidenceProjector {
     }
 
     /**
-     * Creates v3 or v4 portable evidence with one complete payload-free Session closure.
+     * Creates v3, v4, or v5 portable evidence with one complete payload-free Session closure.
      *
      * @param request exact authenticated stateful mirror request
      * @param execution terminal shared-kernel result
@@ -136,7 +139,7 @@ public final class MirrorRunEvidenceProjector {
      * @param invocationBudget payload-free runtime occurrence counters
      * @param deploymentTrust exact trust binding confirmed after execution, or {@code null}
      * @param stateEvidence sealed payload-free Session state evidence
-     * @return unsigned v3 read-only or v4 read/write evidence ready for the integrity boundary
+     * @return unsigned stateful evidence ready for the integrity boundary
      */
     public MirrorRunEvidence projectStateful(
             MirrorRunRequest request,
@@ -197,6 +200,12 @@ public final class MirrorRunEvidenceProjector {
         if (invocationBudget != null && invocationBudget.exhausted()) {
             limitations.add(MirrorInvocationBudget.EXHAUSTED_LIMITATION);
         }
+        if (stateEvidence
+                instanceof MirrorStateWriteOutcomeRunEvidence
+                writeOutcomes) {
+            limitations.addAll(
+                    writeOutcomes.limitations());
+        }
         MirrorRunEvidence.EvidenceClass evidenceClass = deploymentTrust != null
                 && source.evidenceClass() == TestRunEvidence.EvidenceClass.CERTIFIABLE
                 ? MirrorRunEvidence.EvidenceClass.CERTIFIABLE
@@ -207,6 +216,8 @@ public final class MirrorRunEvidenceProjector {
                     MirrorRunEvidence.STATEFUL_SCHEMA_VERSION;
             case MirrorStateTransitionRunEvidence ignored ->
                     MirrorRunEvidence.READ_WRITE_SCHEMA_VERSION;
+            case MirrorStateWriteOutcomeRunEvidence ignored ->
+                    MirrorRunEvidence.WRITE_OUTCOME_SCHEMA_VERSION;
         };
         return new MirrorRunEvidence(schemaVersion, source.runId(), request.requestId(),
                 fingerprint(request.context().asMap()), plan.planId(), plan.planFingerprint(),
@@ -238,6 +249,10 @@ public final class MirrorRunEvidenceProjector {
             case MirrorStateTransitionRunEvidence readWrite ->
                     validateReadWriteStateClosure(
                             request, nodes, resolutions, readWrite);
+            case MirrorStateWriteOutcomeRunEvidence writeOutcomes ->
+                    validateWriteOutcomeStateClosure(
+                            request, nodes, resolutions,
+                            writeOutcomes);
         }
     }
 
@@ -593,6 +608,310 @@ public final class MirrorRunEvidenceProjector {
         });
     }
 
+    private void validateWriteOutcomeStateClosure(
+            MirrorRunRequest request,
+            List<TestRunEvidence.NodeTrace> nodes,
+            List<MirrorResolution> resolutions,
+            MirrorStateWriteOutcomeRunEvidence stateEvidence) {
+        MirrorResolver.SessionContext context =
+                Objects.requireNonNull(
+                        request.sessionContext(),
+                        "sessionContext");
+        if (context.runSession() == null) {
+            throw new IllegalArgumentException(
+                    "write-outcome evidence requires a run-scoped write boundary");
+        }
+        MirrorStateWriteOutcomeRunEvidenceIntegrity.verify(
+                mapper, stateEvidence);
+        var initial = context.payload().state();
+        var terminal = context.currentPayload().state();
+        if (!request.compiledPlan().plan().planFingerprint()
+                .equals(stateEvidence.planFingerprint())
+                || !initial.fingerprint().equals(
+                stateEvidence.sessionStateRef().fingerprint())
+                || initial.stateRevision()
+                != stateEvidence.stateRevision()
+                || !initial.worldFingerprint().equals(
+                stateEvidence.worldFingerprint())
+                || !initial.logicalClock().equals(
+                stateEvidence.logicalClock())
+                || !terminal.fingerprint().equals(
+                stateEvidence.finalSessionStateRef()
+                        .fingerprint())
+                || terminal.stateRevision()
+                != stateEvidence.finalStateRevision()
+                || !terminal.worldFingerprint().equals(
+                stateEvidence.finalWorldFingerprint())
+                || !terminal.logicalClock().equals(
+                stateEvidence.finalLogicalClock())
+                || !StateModelIntegrity.reference(
+                context.payload().stateModel()).equals(
+                stateEvidence.stateModelRef())) {
+            throw new IllegalArgumentException(
+                    "write-outcome evidence differs from the run Session heads");
+        }
+
+        Map<String, MirrorStateTransitionRunEvidence.StatefulBinding>
+                stateBindings = new LinkedHashMap<>();
+        stateEvidence.statefulBindings().forEach(binding ->
+                stateBindings.put(
+                        binding.invocationSiteId(),
+                        binding));
+        Map<String, MirrorPlan.ExternalBinding>
+                expectedBindings = new LinkedHashMap<>();
+        request.compiledPlan().plan().externalBindings()
+                .stream()
+                .filter(binding -> binding.resolverOrder()
+                        .contains(MirrorPlan.MirrorSource
+                                .SESSION_STATE))
+                .forEach(binding -> expectedBindings.put(
+                        binding.invocationSiteId(),
+                        binding));
+        if (!expectedBindings.keySet().equals(
+                stateBindings.keySet())) {
+            throw new IllegalArgumentException(
+                    "write-outcome binding closure differs from the plan");
+        }
+        expectedBindings.forEach((site, binding) -> {
+            MirrorStateTransitionRunEvidence.StatefulBinding
+                    stateBinding = stateBindings.get(site);
+            boolean exactIdentity =
+                    binding.capabilityRef().equals(
+                            stateBinding.capabilityRef())
+                            && binding.graphPath().equals(
+                            stateBinding.graphPath());
+            boolean exactLowering =
+                    switch (stateBinding.interaction()) {
+                        case READ ->
+                                context.payload()
+                                        .stateReadSpecs()
+                                        .stream()
+                                        .filter(spec -> spec
+                                                .targetCapabilityRef()
+                                                .equals(binding
+                                                        .capabilityRef()))
+                                        .map(StateReadSpecIntegrity
+                                                ::reference)
+                                        .anyMatch(stateBinding
+                                                .stateReadSpecRef()
+                                                ::equals);
+                        case WRITE ->
+                                context.payload()
+                                        .writeEffects()
+                                        .stream()
+                                        .filter(effect -> effect
+                                                .targetCapabilityRef()
+                                                .equals(binding
+                                                        .capabilityRef()))
+                                        .map(WriteEffectSpecIntegrity
+                                                ::reference)
+                                        .anyMatch(stateBinding
+                                                .writeEffectRef()
+                                                ::equals);
+                    };
+            if (!exactIdentity || !exactLowering) {
+                throw new IllegalArgumentException(
+                        "write-outcome binding differs from its exact interaction spec");
+            }
+        });
+
+        Map<Coordinate, AttemptProjection> statefulAttempts =
+                statefulAttempts(
+                        nodes, stateBindings.keySet(),
+                        expectedBindings);
+        Map<Coordinate, MirrorResolution>
+                resolutionByCoordinate =
+                new LinkedHashMap<>();
+        resolutions.forEach(resolution -> {
+            Coordinate coordinate =
+                    Coordinate.from(resolution);
+            if (resolutionByCoordinate.put(
+                    coordinate, resolution) != null) {
+                throw new IllegalArgumentException(
+                        "write-outcome resolution coordinates must be unique");
+            }
+        });
+        Map<Coordinate, MirrorStateTransitionRunEvidence.StateAccess>
+                reads = new LinkedHashMap<>();
+        stateEvidence.accesses().forEach(access -> {
+            Coordinate coordinate = coordinate(
+                    access.invocationSiteId(),
+                    access.correlationKey(),
+                    access.occurrence(), access.attempt());
+            if (reads.put(coordinate, access) != null) {
+                throw new IllegalArgumentException(
+                        "write-outcome evidence contains duplicate read coordinates");
+            }
+        });
+        Map<Coordinate, MirrorStateWriteOutcomeRunEvidence.StateWriteAttempt>
+                writes = new LinkedHashMap<>();
+        stateEvidence.writeAttempts().forEach(attempt -> {
+            Coordinate coordinate = coordinate(
+                    attempt.invocationSiteId(),
+                    attempt.correlationKey(),
+                    attempt.occurrence(),
+                    attempt.attempt());
+            if (writes.put(coordinate, attempt) != null
+                    || reads.containsKey(coordinate)) {
+                throw new IllegalArgumentException(
+                        "write-outcome evidence contains duplicate interaction coordinates");
+            }
+        });
+        Set<Coordinate> interactions =
+                new LinkedHashSet<>(reads.keySet());
+        interactions.addAll(writes.keySet());
+        if (!statefulAttempts.keySet().equals(
+                interactions)) {
+            throw new IllegalArgumentException(
+                    "write-outcome closure differs from executed stateful attempts");
+        }
+
+        statefulAttempts.forEach((coordinate, attempt) -> {
+            MirrorStateTransitionRunEvidence.StatefulBinding
+                    binding = stateBindings.get(
+                    coordinate.invocationSiteId());
+            MirrorResolution resolution =
+                    resolutionByCoordinate.get(coordinate);
+            if (resolution == null
+                    || !attempt.requestFingerprint().equals(
+                    resolution.requestFingerprint())) {
+                throw new IllegalArgumentException(
+                        "write outcome differs from its delegate resolution");
+            }
+            switch (binding.interaction()) {
+                case READ ->
+                        validateWriteOutcomeRead(
+                                attempt, resolution,
+                                Objects.requireNonNull(
+                                        reads.get(coordinate),
+                                        "state read observation"),
+                                stateEvidence);
+                case WRITE ->
+                        validateWriteOutcome(
+                                attempt, resolution,
+                                Objects.requireNonNull(
+                                        writes.get(coordinate),
+                                        "state write outcome"),
+                                stateEvidence);
+            }
+        });
+    }
+
+    private static void validateWriteOutcomeRead(
+            AttemptProjection attempt,
+            MirrorResolution resolution,
+            MirrorStateTransitionRunEvidence.StateAccess access,
+            MirrorStateWriteOutcomeRunEvidence stateEvidence) {
+        if (!attempt.requestFingerprint().equals(
+                access.requestFingerprint())) {
+            throw new IllegalArgumentException(
+                    "state read differs from its exact request");
+        }
+        switch (access.outcome()) {
+            case LIVE_ENTITY -> {
+                if (resolution.source()
+                        != MirrorPlan.MirrorSource.SESSION_STATE
+                        || !hasReadStateProvenance(
+                        resolution, access,
+                        stateEvidence.stateModelRef())
+                        || !access.projectedOutputFingerprint()
+                        .equals(resolution.outputFingerprint())
+                        || !attempt.outputFingerprint().equals(
+                        access.projectedOutputFingerprint())) {
+                    throw new IllegalArgumentException(
+                            "live state read differs from its final resolution");
+                }
+            }
+            case TOMBSTONED -> {
+                if (resolution.source()
+                        != MirrorPlan.MirrorSource.SESSION_STATE
+                        || !hasReadStateProvenance(
+                        resolution, access,
+                        stateEvidence.stateModelRef())
+                        || resolution.error() == null
+                        || !access.errorCode().equals(
+                        resolution.error().code())) {
+                    throw new IllegalArgumentException(
+                            "tombstoned state read differs from its terminal resolution");
+                }
+            }
+            case ABSENT -> {
+                if (resolution.source()
+                        == MirrorPlan.MirrorSource.SESSION_STATE) {
+                    throw new IllegalArgumentException(
+                            "absent state read cannot select the Session resolver");
+                }
+            }
+        }
+    }
+
+    private static void validateWriteOutcome(
+            AttemptProjection attempt,
+            MirrorResolution resolution,
+            MirrorStateWriteOutcomeRunEvidence.StateWriteAttempt
+                    write,
+            MirrorStateWriteOutcomeRunEvidence stateEvidence) {
+        if (!attempt.requestFingerprint().equals(
+                write.requestFingerprint())
+                || resolution.source()
+                != MirrorPlan.MirrorSource.SESSION_STATE) {
+            throw new IllegalArgumentException(
+                    "state write outcome differs from its exact request");
+        }
+        if (write.outcome()
+                == MirrorStateWriteOutcomeRunEvidence
+                .WriteOutcome.COMMITTED
+                || write.outcome()
+                == MirrorStateWriteOutcomeRunEvidence
+                .WriteOutcome.REPLAYED) {
+            validateWriteInteraction(
+                    attempt, resolution,
+                    Objects.requireNonNull(
+                            write.transition(),
+                            "successful transition"),
+                    stateEvidence.stateModelRef());
+            return;
+        }
+        String limitation = switch (write.outcome()) {
+            case REJECTED ->
+                    "STATE_WRITE_REJECTED";
+            case PRE_COMMIT_FAILED ->
+                    "STATE_WRITE_PRE_COMMIT_FAILED";
+            case COMMIT_OUTCOME_UNKNOWN ->
+                    MirrorStateWriteOutcomeRunEvidence
+                            .UNKNOWN_OUTCOME_LIMITATION;
+            default -> throw new IllegalArgumentException(
+                    "successful outcome lacks transition");
+        };
+        if (write.transition() != null
+                || resolution.status()
+                != MirrorResolution.Status.RESOLVED
+                || resolution.error() == null
+                || !write.errorCode().equals(
+                resolution.error().code())
+                || !write.errorType().equals(
+                resolution.error().type())
+                || !write.failureFingerprint().equals(
+                resolution.error()
+                        .message())
+                || !resolution.outputFingerprint()
+                .isBlank()
+                || !resolution.matchedArtifactRefs()
+                .contains(write.observedStateRef())
+                || !resolution.matchedArtifactRefs()
+                .contains(stateEvidence.stateModelRef())
+                || !resolution.matchedArtifactRefs()
+                .contains(write.writeEffectRef())
+                || !resolution.matchedRuleRefs()
+                .contains("write-attempt:"
+                        + write.failureFingerprint())
+                || !resolution.limitations()
+                .contains(limitation)) {
+            throw new IllegalArgumentException(
+                    "failed state write differs from its exact failure outcome");
+        }
+    }
+
     private Map<Coordinate, AttemptProjection> statefulAttempts(
             List<TestRunEvidence.NodeTrace> nodes,
             Set<String> statefulSites,
@@ -692,10 +1011,19 @@ public final class MirrorRunEvidenceProjector {
             MirrorResolution resolution,
             MirrorStateTransitionRunEvidence.StateAccess access,
             MirrorStateTransitionRunEvidence stateEvidence) {
+        return hasReadStateProvenance(
+                resolution, access,
+                stateEvidence.stateModelRef());
+    }
+
+    private static boolean hasReadStateProvenance(
+            MirrorResolution resolution,
+            MirrorStateTransitionRunEvidence.StateAccess access,
+            MirrorArtifactRef stateModelRef) {
         return resolution.matchedArtifactRefs().contains(
                 access.observedStateRef())
                 && resolution.matchedArtifactRefs().contains(
-                stateEvidence.stateModelRef())
+                stateModelRef)
                 && resolution.matchedArtifactRefs().contains(
                 access.stateReadSpecRef());
     }
@@ -705,6 +1033,16 @@ public final class MirrorRunEvidenceProjector {
             MirrorResolution resolution,
             MirrorStateTransitionRunEvidence.StateTransition transition,
             MirrorStateTransitionRunEvidence stateEvidence) {
+        validateWriteInteraction(
+                attempt, resolution, transition,
+                stateEvidence.stateModelRef());
+    }
+
+    private static void validateWriteInteraction(
+            AttemptProjection attempt,
+            MirrorResolution resolution,
+            MirrorStateTransitionRunEvidence.StateTransition transition,
+            MirrorArtifactRef stateModelRef) {
         if (!attempt.requestFingerprint().equals(
                 transition.requestFingerprint())
                 || resolution.source()
@@ -718,7 +1056,7 @@ public final class MirrorRunEvidenceProjector {
                 || !resolution.matchedArtifactRefs().contains(
                 transition.finalStateRef())
                 || !resolution.matchedArtifactRefs().contains(
-                stateEvidence.stateModelRef())
+                stateModelRef)
                 || !resolution.matchedArtifactRefs().contains(
                 transition.writeEffectRef())
                 || !resolution.matchedRuleRefs().contains(

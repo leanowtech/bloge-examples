@@ -301,6 +301,91 @@ class MirrorEvidenceProtocolSchemaTest {
     }
 
     @Test
+    void writeOutcomeSchemasCloseEveryV5AttemptAndWorkbookField()
+            throws Exception {
+        MirrorPlan plan = MirrorPersistenceTestFixtures.plan(
+                mapper,
+                MirrorPersistenceTestFixtures.scope("org-a"),
+                "write-outcome-schema-plan", '7');
+        MirrorEvidenceBundle bundle =
+                MirrorPersistenceTestFixtures
+                        .writeOutcomeEvidence(
+                                mapper,
+                                new InMemoryVisualEvidenceSigner(),
+                                plan,
+                                "write-outcome-schema-run", '8');
+        MirrorStateWriteOutcomeWorkbookSeed seed =
+                MirrorStateWriteOutcomeWorkbookSeed.project(
+                        mapper, bundle);
+        JsonNode bundleValue = mapper.valueToTree(bundle);
+        JsonNode runValue = bundleValue.path("evidence");
+        JsonNode stateValue =
+                runValue.path("stateEvidence");
+        JsonNode seedValue = mapper.valueToTree(seed);
+        JsonNode stateSchema = schema(
+                "mirror-state-run-evidence-v3.schema.json");
+        JsonNode runSchema = schema(
+                "mirror-run-evidence-v5.schema.json");
+        JsonNode attestationSchema = schema(
+                "mirror-evidence-attestation-v5.schema.json");
+        JsonNode bundleSchema = schema(
+                "mirror-evidence-bundle-v5.schema.json");
+        JsonNode seedSchema = schema(
+                "mirror-state-write-outcome-workbook-seed-v1.schema.json");
+
+        assertProperties(
+                bundleValue, bundleSchema.path("properties"));
+        assertProperties(
+                runValue, runSchema.path("properties"));
+        assertProperties(
+                bundleValue.path("attestation"),
+                attestationSchema.path("properties"));
+        assertProperties(
+                stateValue, stateSchema.path("properties"));
+        assertProperties(
+                stateValue.path("writeAttempts").get(0),
+                stateSchema.at(
+                        "/$defs/writeAttempt/properties"));
+        assertProperties(
+                seedValue, seedSchema.path("properties"));
+        assertProperties(
+                seedValue.path(
+                        "writeAttemptAssertions").get(0),
+                seedSchema.at(
+                        "/$defs/writeAttemptAssertion/properties"));
+        assertThat(stateSchema.path(
+                "additionalProperties").asBoolean()).isFalse();
+        assertThat(stateSchema.at(
+                "/$defs/writeAttempt/additionalProperties")
+                .asBoolean()).isFalse();
+        assertThat(seedSchema.path(
+                "additionalProperties").asBoolean()).isFalse();
+        assertThat(seedSchema.at(
+                "/$defs/writeAttemptAssertion/additionalProperties")
+                .asBoolean()).isFalse();
+        assertThat(runSchema.at(
+                "/properties/stateEvidence/$ref").asText())
+                .isEqualTo(
+                        "mirror-state-run-evidence-v3.schema.json");
+        assertThat(bundleSchema.at(
+                "/properties/evidence/$ref").asText())
+                .isEqualTo(
+                        "mirror-run-evidence-v5.schema.json");
+        assertThat(bundleSchema.at(
+                "/properties/attestation/allOf/0/$ref")
+                .asText()).isEqualTo(
+                "mirror-evidence-attestation-v5.schema.json");
+        assertThat(seedSchema.at(
+                "/properties/stateEvidenceRef/allOf/1/properties/revision/const")
+                .asInt()).isEqualTo(3);
+        seed.verify(mapper);
+        assertThat(seedValue.toString())
+                .doesNotContain("idempotencyKey\"")
+                .doesNotContain("entityId\"")
+                .doesNotContain("response\"");
+    }
+
+    @Test
     void serverAndIndependentClientShareOneCryptographicallyValidCompatibilityFixture()
             throws Exception {
         JsonNode fixture = mapper.readTree(Files.readString(Path.of("..", "docs", "schemas",

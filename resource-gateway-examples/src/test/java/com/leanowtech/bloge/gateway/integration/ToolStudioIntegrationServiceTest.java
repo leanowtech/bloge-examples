@@ -318,17 +318,35 @@ class ToolStudioIntegrationServiceTest {
                 .containsEntry("mirrorServing", true)
                 .containsEntry("mirrorStateRunEvidenceProtocol", true)
                 .containsEntry("mirrorStateTransitionEvidenceProtocol", true)
+                .containsEntry(
+                        "mirrorStateWriteOutcomeEvidenceProtocol",
+                        true)
                 .containsEntry("mirrorStateWorkbookSeedProtocol", true)
                 .containsEntry(
                         "mirrorStateTransitionWorkbookSeedProtocol",
                         true)
+                .containsEntry(
+                        "mirrorStateWriteOutcomeWorkbookSeedProtocol",
+                        true)
                 .containsEntry("mirrorStateRunEvidenceReady", false)
                 .containsEntry("mirrorStateTransitionEvidenceReady", false)
+                .containsEntry(
+                        "mirrorStateWriteOutcomeEvidenceReady",
+                        false)
                 .containsEntry("mirrorStateWorkbookSeedApi", true)
                 .containsEntry("mirrorStateWorkbookSeedReady", false)
                 .containsEntry(
                         "mirrorStateTransitionWorkbookSeedApi", true)
-                .containsEntry("mirrorStateTransitionWorkbookSeedReady", false);
+                .containsEntry("mirrorStateTransitionWorkbookSeedReady", false)
+                .containsEntry(
+                        "mirrorStateWriteOutcomeWorkbookSeedApi",
+                        true)
+                .containsEntry(
+                        "mirrorStateWriteOutcomeWorkbookSeedReady",
+                        false)
+                .containsEntry(
+                        "mirrorStateWriteAttemptDurableReconciliationReady",
+                        false);
         assertThat(enabledCapabilities.supportedObjects())
                 .containsEntry("mirrorPlanCreateRequest", List.of(
                         com.leanowtech.bloge.gateway.integration.mirror
@@ -349,7 +367,10 @@ class ToolStudioIntegrationServiceTest {
                         com.leanowtech.bloge.gateway.integration.mirror
                                 .MirrorEvidenceBundle.STATEFUL_SCHEMA_VERSION,
                         com.leanowtech.bloge.gateway.integration.mirror
-                                .MirrorEvidenceBundle.READ_WRITE_SCHEMA_VERSION))
+                                .MirrorEvidenceBundle.READ_WRITE_SCHEMA_VERSION,
+                        com.leanowtech.bloge.gateway.integration.mirror
+                                .MirrorEvidenceBundle
+                                .WRITE_OUTCOME_SCHEMA_VERSION))
                 .containsEntry("mirrorRunEvidence", List.of(
                         com.leanowtech.bloge.gateway.integration.mirror
                                 .MirrorRunEvidence.SCHEMA_VERSION_V1,
@@ -358,7 +379,10 @@ class ToolStudioIntegrationServiceTest {
                         com.leanowtech.bloge.gateway.integration.mirror
                                 .MirrorRunEvidence.STATEFUL_SCHEMA_VERSION,
                         com.leanowtech.bloge.gateway.integration.mirror
-                                .MirrorRunEvidence.READ_WRITE_SCHEMA_VERSION))
+                                .MirrorRunEvidence.READ_WRITE_SCHEMA_VERSION,
+                        com.leanowtech.bloge.gateway.integration.mirror
+                                .MirrorRunEvidence
+                                .WRITE_OUTCOME_SCHEMA_VERSION))
                 .containsEntry("mirrorEvidenceAttestation", List.of(
                         com.leanowtech.bloge.gateway.integration.mirror
                                 .MirrorEvidenceAttestation.SCHEMA_VERSION_V1,
@@ -367,12 +391,18 @@ class ToolStudioIntegrationServiceTest {
                         com.leanowtech.bloge.gateway.integration.mirror
                                 .MirrorEvidenceAttestation.STATEFUL_SCHEMA_VERSION,
                         com.leanowtech.bloge.gateway.integration.mirror
-                                .MirrorEvidenceAttestation.READ_WRITE_SCHEMA_VERSION))
+                                .MirrorEvidenceAttestation.READ_WRITE_SCHEMA_VERSION,
+                        com.leanowtech.bloge.gateway.integration.mirror
+                                .MirrorEvidenceAttestation
+                                .WRITE_OUTCOME_SCHEMA_VERSION))
                 .containsEntry("mirrorStateRunEvidence", List.of(
                         com.leanowtech.bloge.gateway.integration.mirror
                                 .MirrorStateRunEvidence.SCHEMA_VERSION,
                         com.leanowtech.bloge.gateway.integration.mirror
-                                .MirrorStateTransitionRunEvidence.SCHEMA_VERSION))
+                                .MirrorStateTransitionRunEvidence.SCHEMA_VERSION,
+                        com.leanowtech.bloge.gateway.integration.mirror
+                                .MirrorStateWriteOutcomeRunEvidence
+                                .SCHEMA_VERSION))
                 .containsEntry("mirrorStateWorkbookSeed", List.of(
                         com.leanowtech.bloge.gateway.integration.mirror
                                 .MirrorStateWorkbookSeed.SCHEMA_VERSION))
@@ -380,6 +410,12 @@ class ToolStudioIntegrationServiceTest {
                         "mirrorStateTransitionWorkbookSeed", List.of(
                                 com.leanowtech.bloge.gateway.integration.mirror
                                         .MirrorStateTransitionWorkbookSeed
+                                        .SCHEMA_VERSION))
+                .containsEntry(
+                        "mirrorStateWriteOutcomeWorkbookSeed",
+                        List.of(
+                                com.leanowtech.bloge.gateway.integration.mirror
+                                        .MirrorStateWriteOutcomeWorkbookSeed
                                         .SCHEMA_VERSION));
         assertThat(enabledCapabilities.endpoints())
                 .extracting(endpoint -> endpoint.method() + " " + endpoint.path())
@@ -387,7 +423,8 @@ class ToolStudioIntegrationServiceTest {
                         "POST /api/mirror/executions", "GET /api/mirror/runs/{runId}",
                         "GET /api/mirror/runs/{runId}/evidence",
                         "GET /api/mirror/runs/{runId}/state-workbook-seed",
-                        "GET /api/mirror/runs/{runId}/state-transition-workbook-seed");
+                        "GET /api/mirror/runs/{runId}/state-transition-workbook-seed",
+                        "GET /api/mirror/runs/{runId}/state-write-outcome-workbook-seed");
     }
 
     @Test
@@ -451,6 +488,12 @@ class ToolStudioIntegrationServiceTest {
                 .containsEntry("mirrorStatefulResolverReady", true)
                 .containsEntry("mirrorStateTransitionEvidenceReady", true)
                 .containsEntry("mirrorStateTransitionWorkbookSeedReady", true)
+                .containsEntry(
+                        "mirrorStateWriteOutcomeEvidenceReady",
+                        true)
+                .containsEntry(
+                        "mirrorStateWriteOutcomeWorkbookSeedReady",
+                        true)
                 .containsEntry("mirrorStatefulRuntimeReady", false);
         assertThat(available.supportedObjects())
                 .containsKeys(

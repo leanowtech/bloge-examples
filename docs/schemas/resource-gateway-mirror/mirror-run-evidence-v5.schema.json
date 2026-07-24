@@ -1,0 +1,149 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://bloge.dev/schemas/resource-gateway-mirror/mirror-run-evidence-v5.schema.json",
+  "title": "Resource Gateway Mirror Run Evidence v5",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion", "runId", "requestId", "requestContextFingerprint", "planId",
+    "planFingerprint", "capabilityClosureFingerprint", "executionControlFingerprint",
+    "rootCapability", "fixtureBundleRef", "externalBindings", "scope", "authorizedPurpose",
+    "status", "evidenceClass", "semanticResultFingerprint", "startedAt", "completedAt",
+    "nodeTraces", "edgeTraces", "resolutions", "stateEvidence", "isolation", "limitations"
+  ],
+  "properties": {
+    "schemaVersion": { "const": "resourceGateway.mirrorRunEvidence.v5" },
+    "runId": { "type": "string", "minLength": 1, "maxLength": 512 },
+    "requestId": { "type": "string", "minLength": 1, "maxLength": 512 },
+    "requestContextFingerprint": {
+      "$ref": "mirror-run-evidence-v1.schema.json#/$defs/fingerprint"
+    },
+    "planId": { "type": "string", "minLength": 1, "maxLength": 512 },
+    "planFingerprint": {
+      "$ref": "mirror-run-evidence-v1.schema.json#/$defs/fingerprint"
+    },
+    "capabilityClosureFingerprint": {
+      "$ref": "mirror-run-evidence-v1.schema.json#/$defs/fingerprint"
+    },
+    "executionControlFingerprint": {
+      "$ref": "mirror-run-evidence-v1.schema.json#/$defs/fingerprint"
+    },
+    "rootCapability": {
+      "allOf": [
+        { "$ref": "mirror-run-evidence-v1.schema.json#/$defs/artifactRef" },
+        { "properties": { "kind": { "const": "CAPABILITY" } } }
+      ]
+    },
+    "fixtureBundleRef": {
+      "allOf": [
+        { "$ref": "mirror-run-evidence-v1.schema.json#/$defs/artifactRef" },
+        { "properties": { "kind": { "const": "FIXTURE_BUNDLE" } } }
+      ]
+    },
+    "externalBindings": {
+      "type": "array",
+      "maxItems": 10000,
+      "items": {
+        "$ref": "mirror-run-evidence-v1.schema.json#/$defs/externalBinding"
+      }
+    },
+    "scope": {
+      "$ref": "mirror-run-evidence-v1.schema.json#/$defs/scope"
+    },
+    "authorizedPurpose": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 256,
+      "not": {
+        "pattern": "[Pp][Rr][Oo][Dd][Uu][Cc][Tt][Ii][Oo][Nn]"
+      }
+    },
+    "status": {
+      "enum": [
+        "PASSED", "ASSERTION_FAILED", "EXECUTION_FAILED", "CONTROL_PLAN_REJECTED",
+        "FIXTURE_UNMATCHED", "FIXTURE_UNUSED", "CONTROL_PLAN_UNAVAILABLE",
+        "EVIDENCE_INCOMPLETE", "CANCELLED", "TIMED_OUT"
+      ]
+    },
+    "evidenceClass": { "enum": ["EXPLORATORY", "CERTIFIABLE"] },
+    "semanticResultFingerprint": {
+      "$ref": "mirror-run-evidence-v1.schema.json#/$defs/fingerprint"
+    },
+    "startedAt": { "type": "string", "format": "date-time" },
+    "completedAt": { "type": "string", "format": "date-time" },
+    "nodeTraces": {
+      "type": "array",
+      "maxItems": 100000,
+      "items": {
+        "$ref": "mirror-run-evidence-v1.schema.json#/$defs/nodeTrace"
+      }
+    },
+    "edgeTraces": {
+      "type": "array",
+      "maxItems": 100000,
+      "items": {
+        "$ref": "mirror-run-evidence-v1.schema.json#/$defs/edgeTrace"
+      }
+    },
+    "resolutions": {
+      "type": "array",
+      "maxItems": 100000,
+      "items": { "$ref": "mirror-resolution-v1.schema.json" }
+    },
+    "stateEvidence": {
+      "$ref": "mirror-state-run-evidence-v3.schema.json"
+    },
+    "isolation": {
+      "$ref": "mirror-run-evidence-v2.schema.json#/$defs/isolation"
+    },
+    "limitations": {
+      "type": "array",
+      "maxItems": 256,
+      "uniqueItems": true,
+      "items": {
+        "type": "string", "minLength": 1, "maxLength": 512
+      }
+    }
+  },
+  "allOf": [
+    {
+      "if": {
+        "required": ["stateEvidence"],
+        "properties": {
+          "stateEvidence": {
+            "required": ["limitations"],
+            "properties": {
+              "limitations": {
+                "contains": { "const": "WRITE_COMMIT_OUTCOME_UNKNOWN" }
+              }
+            }
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "limitations": {
+            "contains": { "const": "WRITE_COMMIT_OUTCOME_UNKNOWN" }
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": { "evidenceClass": { "const": "CERTIFIABLE" } }
+      },
+      "then": {
+        "properties": {
+          "limitations": { "maxItems": 0 },
+          "isolation": {
+            "required": ["deploymentTrustBinding"],
+            "properties": {
+              "deploymentEgressEnforced": { "const": true },
+              "limitations": { "maxItems": 0 }
+            }
+          }
+        }
+      }
+    }
+  ]
+}

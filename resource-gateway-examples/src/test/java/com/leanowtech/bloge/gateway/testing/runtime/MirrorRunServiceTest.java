@@ -42,7 +42,8 @@ import com.leanowtech.bloge.gateway.integration.mirror.MirrorSessionProtocolInte
 import com.leanowtech.bloge.gateway.integration.mirror.MirrorStateRunEvidence;
 import com.leanowtech.bloge.gateway.integration.mirror.MirrorStateRunEvidenceIntegrity;
 import com.leanowtech.bloge.gateway.integration.mirror.MirrorStateTransitionRunEvidence;
-import com.leanowtech.bloge.gateway.integration.mirror.MirrorStateTransitionRunEvidenceIntegrity;
+import com.leanowtech.bloge.gateway.integration.mirror.MirrorStateWriteOutcomeRunEvidence;
+import com.leanowtech.bloge.gateway.integration.mirror.MirrorStateWriteOutcomeRunEvidenceIntegrity;
 import com.leanowtech.bloge.gateway.integration.mirror.MirrorStateWorkbookSeed;
 import com.leanowtech.bloge.gateway.integration.mirror.MirrorServingGenerationAuthority;
 import com.leanowtech.bloge.gateway.integration.mirror.MirrorServingGenerationIntegrity;
@@ -529,25 +530,25 @@ class MirrorRunServiceTest {
         assertThat(result.evidenceBundle().schemaVersion())
                 .isEqualTo(
                         MirrorEvidenceBundle
-                                .READ_WRITE_SCHEMA_VERSION);
+                                .WRITE_OUTCOME_SCHEMA_VERSION);
         assertThat(result.evidenceBundle().attestation()
                 .schemaVersion()).isEqualTo(
                 MirrorEvidenceAttestation
-                        .READ_WRITE_SCHEMA_VERSION);
+                        .WRITE_OUTCOME_SCHEMA_VERSION);
         assertThat(result.evidenceBundle().evidence()
                 .schemaVersion()).isEqualTo(
                 com.leanowtech.bloge.gateway.integration.mirror
                         .MirrorRunEvidence
-                        .READ_WRITE_SCHEMA_VERSION);
+                        .WRITE_OUTCOME_SCHEMA_VERSION);
         assertThat(result.evidenceBundle().evidence()
                 .stateEvidence())
                 .isInstanceOf(
-                        MirrorStateTransitionRunEvidence.class);
-        MirrorStateTransitionRunEvidence stateEvidence =
-                (MirrorStateTransitionRunEvidence)
+                        MirrorStateWriteOutcomeRunEvidence.class);
+        MirrorStateWriteOutcomeRunEvidence stateEvidence =
+                (MirrorStateWriteOutcomeRunEvidence)
                         result.evidenceBundle().evidence()
                                 .stateEvidence();
-        MirrorStateTransitionRunEvidenceIntegrity.verify(
+        MirrorStateWriteOutcomeRunEvidenceIntegrity.verify(
                 mapper, stateEvidence);
         assertThat(stateEvidence.stateRevision()).isZero();
         assertThat(stateEvidence.finalStateRevision())
@@ -565,9 +566,18 @@ class MirrorRunServiceTest {
                 .contains(
                         MirrorStateTransitionRunEvidence
                                 .AccessOutcome.ABSENT);
-        assertThat(stateEvidence.transitions())
+        assertThat(stateEvidence.writeAttempts())
                 .singleElement()
-                .satisfies(transition -> {
+                .satisfies(write -> {
+                    assertThat(write.outcome()).isEqualTo(
+                            MirrorStateWriteOutcomeRunEvidence
+                                    .WriteOutcome.COMMITTED);
+                    assertThat(write.stateDisposition())
+                            .isEqualTo(
+                                    MirrorStateWriteOutcomeRunEvidence
+                                            .StateDisposition.ADVANCED);
+                    assertThat(write.errorCode()).isEmpty();
+                    var transition = write.transition();
                     assertThat(transition.revisionBefore())
                             .isZero();
                     assertThat(transition.revisionAfter())
@@ -599,6 +609,199 @@ class MirrorRunServiceTest {
                                                 .SESSION_STATE));
         assertThat(new MirrorEvidenceIntegrityService(
                 mapper, evidenceSigner, Clock.systemUTC())
+                .verify(result.evidenceBundle()))
+                .isEqualTo(
+                        MirrorEvidenceIntegrityService
+                                .Verification.VERIFIED);
+    }
+
+    @Test
+    void exportsRejectedWriteAttemptAsSignedV5Evidence() {
+        registry.register(
+                "customer.state.query",
+                new ExternalReadOperator(
+                        new AtomicInteger()));
+        registry.register(
+                "customer.state.update",
+                new ExternalReadOperator(
+                        new AtomicInteger()));
+        graph = customerReadWriteReadGraph();
+        StateModel model = customerStateModel();
+        MirrorArtifactRef modelRef =
+                StateModelIntegrity.reference(model);
+        ReadWriteClosure exactClosure =
+                customerReadWriteClosure(modelRef);
+        closure = exactClosure.closure();
+        CompiledMirrorPlan compiled = compile(
+                fixture(rule(
+                        "missing-owner",
+                        "queryMissing",
+                        FixtureRule.Behavior.returning(
+                                Map.of(
+                                        "customerId",
+                                        "C-missing",
+                                        "name",
+                                        "Owner fallback")))));
+        WriteEffectSpec effect =
+                customerWriteEffect(
+                        model,
+                        exactClosure.writeCapabilityRef());
+        StateReadSpec readSpec =
+                customerReadSpec(
+                        model,
+                        exactClosure.readCapabilityRef());
+        SessionStateSpace.EntitySnapshot customer =
+                SessionStateSpaceIntegrity.sealEntity(
+                        mapper,
+                        new SessionStateSpace.EntitySnapshot(
+                                new SessionStateSpace.EntityKey(
+                                        "customer", "C-1"),
+                                1,
+                                Map.of(
+                                        "customerId", "C-1",
+                                        "name", "Before",
+                                        "segment",
+                                        "ENTERPRISE"),
+                                ""));
+        SessionStateSpace initialState =
+                SessionStateSpaceIntegrity.seal(
+                        mapper,
+                        new SessionStateSpace(
+                                SessionStateSpace.SCHEMA_VERSION,
+                                "customer-rw-rejected-session",
+                                SCOPE,
+                                compiled.plan()
+                                        .planFingerprint(),
+                                modelRef,
+                                List.of(
+                                        WriteEffectSpecIntegrity
+                                                .reference(effect)),
+                                0, COMPILED_AT, 42,
+                                List.of(customer), List.of(),
+                                List.of(
+                                        SessionStateSpaceIntegrity
+                                                .businessKey(
+                                                        mapper,
+                                                        "customer-id",
+                                                        List.of("C-1"),
+                                                        customer.key())),
+                                List.of(), List.of(),
+                                COMPILED_AT.plus(
+                                        Duration.ofHours(1)),
+                                "", ""));
+        MirrorSessionPayload initial =
+                MirrorSessionProtocolIntegrity.sealInitial(
+                        mapper,
+                        new MirrorSessionPayload(
+                                MirrorSessionPayload
+                                        .SCHEMA_VERSION,
+                                model, List.of(readSpec),
+                                List.of(effect),
+                                initialState, ""),
+                        COMPILED_AT.plusSeconds(1));
+        MirrorStateRunSession runSession =
+                new MirrorStateRunSession(
+                        mapper, initial,
+                        (writeEffectRef, input,
+                         expectedStateFingerprint) -> {
+                            throw new MirrorStateWriteFailure(
+                                    MirrorStateWriteOutcomeRunEvidence
+                                            .WriteOutcome.REJECTED,
+                                    MirrorStateWriteOutcomeRunEvidence
+                                            .WriteStage
+                                            .COMMAND_EVALUATION,
+                                    "RG.MIRROR.STATE.CUSTOMER_LOCKED",
+                                    "MIRROR_STATE_WRITE",
+                                    false);
+                        });
+        Map<String, MirrorArtifactRef>
+                capabilitiesBySite =
+                new LinkedHashMap<>();
+        compiled.plan().externalBindings()
+                .forEach(binding ->
+                        capabilitiesBySite.put(
+                                binding.invocationSiteId(),
+                                binding.capabilityRef()));
+        MirrorResolver.SessionContext sessionContext =
+                new MirrorResolver.SessionContext(
+                        initial,
+                        compiled.plan().planFingerprint(),
+                        capabilitiesBySite, runSession);
+        MirrorRunRequest request =
+                new MirrorRunRequest(
+                        "request-state-rw-rejected",
+                        compiled,
+                        new GraphContext(Map.of(
+                                "customerId", "C-1",
+                                "requestId",
+                                "REQ-UPDATE-REJECTED",
+                                "name", "After")),
+                        SCOPE, PURPOSE, null,
+                        sessionContext);
+
+        MirrorRunResult result = runtime.execute(request);
+
+        assertThat(result.passed()).isFalse();
+        assertThat(runSession.currentPayload().state()
+                .stateRevision()).isZero();
+        assertThat(result.evidenceBundle()
+                .schemaVersion()).isEqualTo(
+                MirrorEvidenceBundle
+                        .WRITE_OUTCOME_SCHEMA_VERSION);
+        MirrorStateWriteOutcomeRunEvidence
+                stateEvidence =
+                (MirrorStateWriteOutcomeRunEvidence)
+                        result.evidenceBundle()
+                                .evidence()
+                                .stateEvidence();
+        assertThat(stateEvidence.finalStateRevision())
+                .isZero();
+        assertThat(stateEvidence.limitations())
+                .isEmpty();
+        assertThat(stateEvidence.writeAttempts())
+                .singleElement()
+                .satisfies(attempt -> {
+                    assertThat(attempt.outcome())
+                            .isEqualTo(
+                                    MirrorStateWriteOutcomeRunEvidence
+                                            .WriteOutcome.REJECTED);
+                    assertThat(attempt.stage())
+                            .isEqualTo(
+                                    MirrorStateWriteOutcomeRunEvidence
+                                            .WriteStage
+                                            .COMMAND_EVALUATION);
+                    assertThat(attempt.stateDisposition())
+                            .isEqualTo(
+                                    MirrorStateWriteOutcomeRunEvidence
+                                            .StateDisposition.UNCHANGED);
+                    assertThat(attempt.errorCode())
+                            .isEqualTo(
+                                    "RG.MIRROR.STATE.CUSTOMER_LOCKED");
+                    assertThat(attempt.transition())
+                            .isNull();
+                });
+        assertThat(result.resolutions())
+                .filteredOn(resolution -> resolution
+                        .invocationSiteId()
+                        .contains("updateCustomer"))
+                .singleElement()
+                .satisfies(resolution -> {
+                    assertThat(resolution.source())
+                            .isEqualTo(
+                                    MirrorPlan.MirrorSource
+                                            .SESSION_STATE);
+                    assertThat(resolution.error()
+                            .code()).isEqualTo(
+                            "RG.MIRROR.STATE.CUSTOMER_LOCKED");
+                    assertThat(resolution
+                            .matchedRuleRefs())
+                            .anyMatch(ref -> ref
+                                    .startsWith(
+                                            "write-attempt:sha256:"));
+                });
+        assertThat(new MirrorEvidenceIntegrityService(
+                mapper, evidenceSigner,
+                Clock.systemUTC())
                 .verify(result.evidenceBundle()))
                 .isEqualTo(
                         MirrorEvidenceIntegrityService

@@ -32,6 +32,7 @@ public final class MirrorEvidenceIntegrityService {
     private static final String SIGNATURE_DOMAIN_V2 = "RESOURCE_GATEWAY_MIRROR_EVIDENCE_V2";
     private static final String SIGNATURE_DOMAIN_V3 = "RESOURCE_GATEWAY_MIRROR_EVIDENCE_V3";
     private static final String SIGNATURE_DOMAIN_V4 = "RESOURCE_GATEWAY_MIRROR_EVIDENCE_V4";
+    private static final String SIGNATURE_DOMAIN_V5 = "RESOURCE_GATEWAY_MIRROR_EVIDENCE_V5";
 
     private final ObjectMapper mapper;
     private final VisualEvidenceSigner signer;
@@ -120,6 +121,8 @@ public final class MirrorEvidenceIntegrityService {
                 && !MirrorEvidenceBundle.STATEFUL_SCHEMA_VERSION.equals(
                 bundle.schemaVersion())
                 && !MirrorEvidenceBundle.READ_WRITE_SCHEMA_VERSION.equals(
+                bundle.schemaVersion())
+                && !MirrorEvidenceBundle.WRITE_OUTCOME_SCHEMA_VERSION.equals(
                 bundle.schemaVersion())) {
             return Verification.INVALID;
         }
@@ -177,6 +180,9 @@ public final class MirrorEvidenceIntegrityService {
                 case MirrorStateTransitionRunEvidence readWrite ->
                         MirrorStateTransitionRunEvidenceIntegrity.verify(
                                 mapper, readWrite);
+                case MirrorStateWriteOutcomeRunEvidence writeOutcome ->
+                        MirrorStateWriteOutcomeRunEvidenceIntegrity.verify(
+                                mapper, writeOutcome);
             }
         }
     }
@@ -208,6 +214,8 @@ public final class MirrorEvidenceIntegrityService {
             case MirrorEvidenceAttestation.SCHEMA_VERSION_V1 -> SIGNATURE_DOMAIN_V1;
             case MirrorEvidenceAttestation.STATEFUL_SCHEMA_VERSION -> SIGNATURE_DOMAIN_V3;
             case MirrorEvidenceAttestation.READ_WRITE_SCHEMA_VERSION -> SIGNATURE_DOMAIN_V4;
+            case MirrorEvidenceAttestation.WRITE_OUTCOME_SCHEMA_VERSION ->
+                    SIGNATURE_DOMAIN_V5;
             case MirrorEvidenceAttestation.SCHEMA_VERSION -> SIGNATURE_DOMAIN_V2;
             default -> throw new IllegalArgumentException(
                     "unsupported mirror evidence attestation version");
@@ -226,6 +234,8 @@ public final class MirrorEvidenceIntegrityService {
                     MirrorEvidenceAttestation.STATEFUL_SCHEMA_VERSION;
             case MirrorRunEvidence.READ_WRITE_SCHEMA_VERSION ->
                     MirrorEvidenceAttestation.READ_WRITE_SCHEMA_VERSION;
+            case MirrorRunEvidence.WRITE_OUTCOME_SCHEMA_VERSION ->
+                    MirrorEvidenceAttestation.WRITE_OUTCOME_SCHEMA_VERSION;
             case MirrorRunEvidence.SCHEMA_VERSION ->
                     MirrorEvidenceAttestation.SCHEMA_VERSION;
             default -> throw new IllegalArgumentException(
@@ -241,6 +251,8 @@ public final class MirrorEvidenceIntegrityService {
                     MirrorEvidenceBundle.STATEFUL_SCHEMA_VERSION;
             case MirrorRunEvidence.READ_WRITE_SCHEMA_VERSION ->
                     MirrorEvidenceBundle.READ_WRITE_SCHEMA_VERSION;
+            case MirrorRunEvidence.WRITE_OUTCOME_SCHEMA_VERSION ->
+                    MirrorEvidenceBundle.WRITE_OUTCOME_SCHEMA_VERSION;
             case MirrorRunEvidence.SCHEMA_VERSION ->
                     MirrorEvidenceBundle.SCHEMA_VERSION;
             default -> throw new IllegalArgumentException(
