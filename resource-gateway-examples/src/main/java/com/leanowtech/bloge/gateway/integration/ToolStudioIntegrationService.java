@@ -417,6 +417,9 @@ public class ToolStudioIntegrationService {
                 mirrorPlanReady && mirrorExecutionApi);
         features.put("mirrorScenarioRehearsalWorkbookSeed",
                 mirrorPlanReady && mirrorExecutionApi);
+        features.put("mirrorScenarioRehearsalBatchApi",
+                mirrorPlanReady && mirrorExecutionApi);
+        features.put("mirrorScenarioRehearsalBatchScheduling", false);
         features.put("mirrorScenarioRehearsalEvidence", false);
         features.put("mirrorServing", mirrorExecutionReady);
         features.put("mirrorOperationObservability", mirrorPlanReady && mirrorExecutionApi);
@@ -894,6 +897,38 @@ public class ToolStudioIntegrationService {
                             com.leanowtech.bloge.gateway.integration.mirror
                                     .ScenarioRehearsalWorkbookSeed
                                     .SCHEMA_VERSION));
+            if (mirrorExecutionApi) {
+                supportedObjects.put(
+                        "scenarioRehearsalBatchRequest",
+                        List.of(
+                                com.leanowtech.bloge.gateway.integration.mirror
+                                        .ScenarioRehearsalBatchRequest
+                                        .SCHEMA_VERSION));
+                supportedObjects.put(
+                        "scenarioRehearsalBatchManifest",
+                        List.of(
+                                com.leanowtech.bloge.gateway.integration.mirror
+                                        .ScenarioRehearsalBatchManifest
+                                        .SCHEMA_VERSION));
+                supportedObjects.put(
+                        "scenarioRehearsalBatchJob",
+                        List.of(
+                                com.leanowtech.bloge.gateway.integration.mirror
+                                        .ScenarioRehearsalBatchJob
+                                        .SCHEMA_VERSION));
+                supportedObjects.put(
+                        "scenarioRehearsalBatchItemPage",
+                        List.of(
+                                com.leanowtech.bloge.gateway.integration.mirror
+                                        .ScenarioRehearsalBatchItemPage
+                                        .SCHEMA_VERSION));
+                supportedObjects.put(
+                        "scenarioRehearsalBatchCancellationRequest",
+                        List.of(
+                                com.leanowtech.bloge.gateway.integration.mirror
+                                        .ScenarioRehearsalBatchCancellationRequest
+                                        .SCHEMA_VERSION));
+            }
         }
         if (mirrorExecutionApi) {
             supportedObjects.put("mirrorExecutionRequest", List.of(
@@ -1040,6 +1075,15 @@ public class ToolStudioIntegrationService {
                 endpoints.add(new IntegrationCapabilities.Endpoint(
                         "POST",
                         "/api/mirror/scenarios/runs/{runId}/retention/purge"));
+                endpoints.add(new IntegrationCapabilities.Endpoint(
+                        "POST", "/api/mirror/rehearsal-jobs"));
+                endpoints.add(new IntegrationCapabilities.Endpoint(
+                        "GET", "/api/mirror/rehearsal-jobs/{jobId}"));
+                endpoints.add(new IntegrationCapabilities.Endpoint(
+                        "GET", "/api/mirror/rehearsal-jobs/{jobId}/items"));
+                endpoints.add(new IntegrationCapabilities.Endpoint(
+                        "POST",
+                        "/api/mirror/rehearsal-jobs/{jobId}/cancellations"));
             }
         }
         if (mirrorExecutionApi) {

@@ -9,6 +9,8 @@ import com.leanowtech.bloge.gateway.integration.mirror.MirrorSessionCheckpointBu
 import com.leanowtech.bloge.gateway.integration.mirror.ScenarioCase;
 import com.leanowtech.bloge.gateway.integration.mirror.ScenarioPack;
 import com.leanowtech.bloge.gateway.integration.mirror.ScenarioRehearsalCompileRequest;
+import com.leanowtech.bloge.gateway.integration.mirror.ScenarioRehearsalBatchCancellationRequest;
+import com.leanowtech.bloge.gateway.integration.mirror.ScenarioRehearsalBatchRequest;
 import com.leanowtech.bloge.gateway.integration.mirror.ScenarioRehearsalExecutionRequest;
 import com.leanowtech.bloge.gateway.integration.mirror.ScenarioRehearsalLegalHoldCommand;
 import com.leanowtech.bloge.gateway.integration.mirror.ScenarioRehearsalPurgeCommand;
@@ -62,6 +64,10 @@ public final class ScenarioArtifactRequestDecoder {
             "schemaVersion", "revision", "fingerprint");
     private static final Set<String> EXECUTION_FIELDS = Set.of(
             "schemaVersion", "requestId", "compiledPlanRef");
+    private static final Set<String> BATCH_FIELDS = Set.of(
+            "schemaVersion", "requestId", "entries");
+    private static final Set<String> BATCH_CANCELLATION_FIELDS = Set.of(
+            "schemaVersion", "commandId", "reasonCode");
     private static final Set<String> LEGAL_HOLD_FIELDS = Set.of(
             "schemaVersion", "commandId", "holdId", "reasonCode");
     private static final Set<String> PURGE_FIELDS = Set.of(
@@ -140,6 +146,30 @@ public final class ScenarioArtifactRequestDecoder {
                 EXECUTION_FIELDS,
                 ScenarioRehearsalExecutionRequest.SCHEMA_VERSION,
                 ScenarioRehearsalExecutionRequest.class);
+    }
+
+    /** Decodes one strict payload-free multi-plan Scenario batch request. */
+    public ScenarioRehearsalBatchRequest decodeBatchRequest(
+            byte[] value, IntegrationRequestContext identity) {
+        return decode(
+                value,
+                identity,
+                BATCH_FIELDS,
+                ScenarioRehearsalBatchRequest.SCHEMA_VERSION,
+                ScenarioRehearsalBatchRequest.class);
+    }
+
+    /** Decodes one exactly replayable Scenario batch cancellation command. */
+    public ScenarioRehearsalBatchCancellationRequest
+    decodeBatchCancellationRequest(
+            byte[] value, IntegrationRequestContext identity) {
+        return decode(
+                value,
+                identity,
+                BATCH_CANCELLATION_FIELDS,
+                ScenarioRehearsalBatchCancellationRequest
+                        .SCHEMA_VERSION,
+                ScenarioRehearsalBatchCancellationRequest.class);
     }
 
     /** Decodes one exact Scenario legal-hold placement or release command. */

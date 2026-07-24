@@ -13,6 +13,7 @@ import com.leanowtech.bloge.gateway.integration.mirror.DatabaseMirrorRunRequestR
 import com.leanowtech.bloge.gateway.integration.mirror.DatabaseCompiledScenarioRehearsalPlanRepository;
 import com.leanowtech.bloge.gateway.integration.mirror.DatabaseScenarioArtifactRepository;
 import com.leanowtech.bloge.gateway.integration.mirror.DatabaseScenarioRehearsalEvidenceRepository;
+import com.leanowtech.bloge.gateway.integration.mirror.DatabaseScenarioRehearsalBatchRepository;
 import com.leanowtech.bloge.gateway.integration.mirror.DatabaseScenarioRehearsalLifecycleAuditRepository;
 import com.leanowtech.bloge.gateway.integration.mirror.DatabaseScenarioRehearsalRetentionRepository;
 import com.leanowtech.bloge.gateway.integration.mirror.DatabaseScenarioRehearsalRunRepository;
@@ -72,6 +73,13 @@ import com.leanowtech.bloge.gateway.integration.mirror.ScenarioRehearsalCompiler
 import com.leanowtech.bloge.gateway.integration.mirror.ScenarioHandlingAssertionEvaluator;
 import com.leanowtech.bloge.gateway.integration.mirror.ScenarioRehearsalEvidenceIntegrityService;
 import com.leanowtech.bloge.gateway.integration.mirror.ScenarioRehearsalEvidenceRepository;
+import com.leanowtech.bloge.gateway.integration.mirror.ScenarioRehearsalBatchCompiler;
+import com.leanowtech.bloge.gateway.integration.mirror.ScenarioRehearsalBatchPolicy;
+import com.leanowtech.bloge.gateway.integration.mirror.ScenarioRehearsalBatchRepository;
+import com.leanowtech.bloge.gateway.integration.mirror.ScenarioRehearsalBatchService;
+import com.leanowtech.bloge.gateway.integration.mirror.ScenarioRehearsalBatchWorker;
+import com.leanowtech.bloge.gateway.integration.mirror.ScenarioRehearsalIntegrationService;
+import com.leanowtech.bloge.gateway.integration.mirror.ScenarioRehearsalRuntimeService;
 import com.leanowtech.bloge.gateway.integration.mirror.ScenarioRehearsalLifecycleAuditRepository;
 import com.leanowtech.bloge.gateway.integration.mirror.ScenarioRehearsalRetentionRepository;
 import com.leanowtech.bloge.gateway.integration.mirror.ScenarioRehearsalRunRepository;
@@ -324,6 +332,68 @@ public class MirrorRuntimeConfiguration {
             ScenarioRehearsalLifecycleAuditRepository lifecycleAudit) {
         return new DatabaseScenarioRehearsalRunRepository(
                 jdbc, objectMapper, lifecycleAudit);
+    }
+
+    /** Installs the conservative server-owned durable Scenario batch policy. */
+    @Bean
+    @ConditionalOnMissingBean
+    public ScenarioRehearsalBatchPolicy
+    scenarioRehearsalBatchPolicy() {
+        return ScenarioRehearsalBatchPolicy.defaults();
+    }
+
+    /** Creates the cross-replica database-authoritative Scenario batch queue. */
+    @Bean
+    @ConditionalOnMissingBean
+    public ScenarioRehearsalBatchRepository
+    scenarioRehearsalBatchRepository(
+            JdbcTemplate jdbc,
+            ObjectMapper objectMapper,
+            PlatformTransactionManager transactionManager) {
+        return new DatabaseScenarioRehearsalBatchRepository(
+                jdbc, objectMapper, transactionManager);
+    }
+
+    /** Creates the exact-plan resolver that freezes immutable batch manifests. */
+    @Bean
+    @ConditionalOnMissingBean
+    public ScenarioRehearsalBatchCompiler
+    scenarioRehearsalBatchCompiler(
+            ScenarioRehearsalIntegrationService rehearsals,
+            ObjectMapper objectMapper) {
+        return new ScenarioRehearsalBatchCompiler(
+                rehearsals, objectMapper);
+    }
+
+    /** Creates the protected batch submission, query, and cancellation boundary. */
+    @Bean
+    @ConditionalOnMissingBean
+    public ScenarioRehearsalBatchService
+    scenarioRehearsalBatchService(
+            ScenarioRehearsalBatchCompiler compiler,
+            ScenarioRehearsalBatchRepository repository,
+            ScenarioRehearsalBatchPolicy policy,
+            ObjectMapper objectMapper) {
+        return new ScenarioRehearsalBatchService(
+                compiler, repository, policy, objectMapper);
+    }
+
+    /** Creates one evidence-verifying durable Scenario batch worker turn. */
+    @Bean
+    @ConditionalOnMissingBean
+    public ScenarioRehearsalBatchWorker
+    scenarioRehearsalBatchWorker(
+            ScenarioRehearsalBatchRepository repository,
+            ScenarioRehearsalRuntimeService runtime,
+            ScenarioRehearsalEvidenceIntegrityService integrity,
+            ScenarioRehearsalBatchPolicy policy,
+            ObjectMapper objectMapper) {
+        return new ScenarioRehearsalBatchWorker(
+                repository,
+                runtime,
+                integrity,
+                policy,
+                objectMapper);
     }
 
     /** Creates the append-only payload-free compiled rehearsal-plan registry. */

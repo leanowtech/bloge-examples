@@ -1,0 +1,107 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://bloge.dev/schemas/resource-gateway-mirror/scenario-rehearsal-batch-manifest-v1.schema.json",
+  "title": "Resource Gateway Scenario Rehearsal Batch Manifest v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion", "batchId", "manifestFingerprint", "scope",
+    "requestId", "entries", "totalCases"
+  ],
+  "properties": {
+    "schemaVersion": {
+      "const": "resourceGateway.scenarioRehearsalBatchManifest.v1"
+    },
+    "batchId": {
+      "type": "string",
+      "pattern": "^scenario-batch-[a-f0-9]{64}$"
+    },
+    "manifestFingerprint": {
+      "$ref": "mirror-plan-v1.schema.json#/$defs/fingerprint"
+    },
+    "scope": {
+      "$ref": "mirror-plan-v1.schema.json#/$defs/scope"
+    },
+    "requestId": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 128,
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$"
+    },
+    "entries": {
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 256,
+      "uniqueItems": true,
+      "items": {
+        "$ref": "#/$defs/entry"
+      }
+    },
+    "totalCases": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 10000
+    }
+  },
+  "$defs": {
+    "compiledPlanRef": {
+      "allOf": [
+        {
+          "$ref": "scenario-pack-v1.schema.json#/$defs/artifactRefByKind"
+        },
+        {
+          "properties": {
+            "kind": {
+              "const": "COMPILED_REHEARSAL_PLAN"
+            }
+          }
+        }
+      ]
+    },
+    "entry": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "entryIndex", "entryId", "compiledPlanRef", "aggregateRequestId",
+        "aggregateRunId", "caseCount", "executionTimeout"
+      ],
+      "properties": {
+        "entryIndex": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 255
+        },
+        "entryId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$"
+        },
+        "compiledPlanRef": {
+          "$ref": "#/$defs/compiledPlanRef"
+        },
+        "aggregateRequestId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 512,
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,511}$"
+        },
+        "aggregateRunId": {
+          "type": "string",
+          "pattern": "^scenario-run-[a-f0-9]{64}$"
+        },
+        "caseCount": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 256
+        },
+        "executionTimeout": {
+          "type": "string",
+          "minLength": 3,
+          "maxLength": 64,
+          "pattern": "^PT"
+        }
+      }
+    }
+  }
+}

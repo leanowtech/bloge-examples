@@ -1,0 +1,25 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://bloge.dev/schemas/resource-gateway-mirror/scenario-rehearsal-batch-cancellation-request-v1.schema.json",
+  "title": "Resource Gateway Scenario Rehearsal Batch Cancellation Request v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schemaVersion", "commandId", "reasonCode"],
+  "properties": {
+    "schemaVersion": {
+      "const": "resourceGateway.scenarioRehearsalBatchCancellationRequest.v1"
+    },
+    "commandId": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 128,
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$"
+    },
+    "reasonCode": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 128,
+      "pattern": "^[A-Z][A-Z0-9_.-]{0,127}$"
+    }
+  }
+}

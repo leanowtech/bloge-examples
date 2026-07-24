@@ -312,6 +312,9 @@ class ToolStudioIntegrationServiceTest {
                 .containsEntry("mirrorScenarioRehearsalExecution", false)
                 .containsEntry("mirrorScenarioRehearsalEvidenceApi", false)
                 .containsEntry("mirrorScenarioRehearsalWorkbookSeed", false)
+                .containsEntry("mirrorScenarioRehearsalBatchApi", false)
+                .containsEntry(
+                        "mirrorScenarioRehearsalBatchScheduling", false)
                 .containsEntry("mirrorScenarioRehearsalEvidence", false)
                 .containsEntry("mirrorOperationObservability", false)
                 .containsEntry("mirrorServing", false);
@@ -325,6 +328,9 @@ class ToolStudioIntegrationServiceTest {
                 .containsEntry("mirrorScenarioRehearsalExecution", true)
                 .containsEntry("mirrorScenarioRehearsalEvidenceApi", true)
                 .containsEntry("mirrorScenarioRehearsalWorkbookSeed", true)
+                .containsEntry("mirrorScenarioRehearsalBatchApi", true)
+                .containsEntry(
+                        "mirrorScenarioRehearsalBatchScheduling", false)
                 .containsEntry("mirrorScenarioRehearsalEvidence", false)
                 .containsEntry("mirrorOperationObservability", true)
                 .containsEntry("mirrorServing", true)
@@ -378,7 +384,12 @@ class ToolStudioIntegrationServiceTest {
                         "scenarioRehearsalPurgeCommand",
                         "scenarioRehearsalRetentionEvent",
                         "scenarioRehearsalRetentionState",
-                        "scenarioRehearsalWorkbookSeed")
+                        "scenarioRehearsalWorkbookSeed",
+                        "scenarioRehearsalBatchRequest",
+                        "scenarioRehearsalBatchManifest",
+                        "scenarioRehearsalBatchJob",
+                        "scenarioRehearsalBatchItemPage",
+                        "scenarioRehearsalBatchCancellationRequest")
                 .containsEntry("mirrorExecutionRequest", List.of(
                         com.leanowtech.bloge.gateway.integration.mirror
                                 .MirrorExecutionRequest.SCHEMA_VERSION,
@@ -458,6 +469,10 @@ class ToolStudioIntegrationServiceTest {
                         "POST /api/mirror/scenarios/runs",
                         "GET /api/mirror/scenarios/runs/{runId}/evidence",
                         "GET /api/mirror/scenarios/runs/{runId}/workbook-seed",
+                        "POST /api/mirror/rehearsal-jobs",
+                        "GET /api/mirror/rehearsal-jobs/{jobId}",
+                        "GET /api/mirror/rehearsal-jobs/{jobId}/items",
+                        "POST /api/mirror/rehearsal-jobs/{jobId}/cancellations",
                         "POST /api/mirror/executions", "GET /api/mirror/runs/{runId}",
                         "GET /api/mirror/runs/{runId}/evidence",
                         "GET /api/mirror/runs/{runId}/state-workbook-seed",

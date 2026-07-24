@@ -7,6 +7,8 @@ import com.leanowtech.bloge.gateway.integration.mirror.CapabilitySnapshot;
 import com.leanowtech.bloge.gateway.integration.mirror.CaseHandlingAssertion;
 import com.leanowtech.bloge.gateway.integration.mirror.MirrorArtifactRef;
 import com.leanowtech.bloge.gateway.integration.mirror.ScenarioPackIntegrity;
+import com.leanowtech.bloge.gateway.integration.mirror.ScenarioRehearsalBatchCancellationRequest;
+import com.leanowtech.bloge.gateway.integration.mirror.ScenarioRehearsalBatchRequest;
 import com.leanowtech.bloge.gateway.integration.mirror.ScenarioRehearsalCompileRequest;
 import com.leanowtech.bloge.gateway.integration.mirror.ScenarioRehearsalExecutionRequest;
 import com.leanowtech.bloge.gateway.integration.mirror.ScenarioRehearsalLegalHoldCommand;
@@ -49,6 +51,20 @@ class ScenarioArtifactRequestDecoderTest {
                 new ScenarioRehearsalPurgeCommand(
                         "", "purge-command-1",
                         "RG.MIRROR.REHEARSAL.RETENTION_EXPIRED");
+        ScenarioRehearsalBatchRequest batchRequest =
+                new ScenarioRehearsalBatchRequest(
+                        "",
+                        "batch-001",
+                        List.of(
+                                new ScenarioRehearsalBatchRequest.Entry(
+                                        "refund",
+                                        executionRequest
+                                                .compiledPlanRef())));
+        ScenarioRehearsalBatchCancellationRequest cancellation =
+                new ScenarioRehearsalBatchCancellationRequest(
+                        "",
+                        "cancel-001",
+                        "OWNER_REQUEST");
         CaseHandlingAssertion assertion = assertion();
 
         assertThat(decoder.decodeCompileRequest(
@@ -66,6 +82,12 @@ class ScenarioArtifactRequestDecoderTest {
         assertThat(decoder.decodePurgeCommand(
                 mapper.writeValueAsBytes(purgeCommand), identity()))
                 .isEqualTo(purgeCommand);
+        assertThat(decoder.decodeBatchRequest(
+                mapper.writeValueAsBytes(batchRequest), identity()))
+                .isEqualTo(batchRequest);
+        assertThat(decoder.decodeBatchCancellationRequest(
+                mapper.writeValueAsBytes(cancellation), identity()))
+                .isEqualTo(cancellation);
     }
 
     @Test
@@ -128,6 +150,46 @@ class ScenarioArtifactRequestDecoderTest {
                         failure -> assertThat(failure.problem().code())
                                 .isEqualTo(
                                         "RG.MIRROR.SCENARIO_REQUEST_MALFORMED"));
+    }
+
+    @Test
+    void rejectsBatchSchedulerOverridesAndNestedPayloadSmuggling()
+            throws Exception {
+        ObjectNode request = mapper.valueToTree(
+                new ScenarioRehearsalBatchRequest(
+                        "",
+                        "batch-001",
+                        List.of(
+                                new ScenarioRehearsalBatchRequest.Entry(
+                                        "refund",
+                                        new MirrorArtifactRef(
+                                                "COMPILED_REHEARSAL_PLAN",
+                                                "refund-plan",
+                                                1,
+                                                SHA_A)))));
+        request.put("priority", "HIGH");
+        ObjectNode nested = mapper.valueToTree(
+                new ScenarioRehearsalBatchRequest(
+                        "",
+                        "batch-002",
+                        List.of(
+                                new ScenarioRehearsalBatchRequest.Entry(
+                                        "refund",
+                                        new MirrorArtifactRef(
+                                                "COMPILED_REHEARSAL_PLAN",
+                                                "refund-plan",
+                                                1,
+                                                SHA_A)))));
+        ((ObjectNode) nested.path("entries").get(0))
+                .putObject("fixture")
+                .put("customerId", "must-not-cross");
+
+        assertThatThrownBy(() -> decoder.decodeBatchRequest(
+                mapper.writeValueAsBytes(request), identity()))
+                .isInstanceOf(IntegrationProblemException.class);
+        assertThatThrownBy(() -> decoder.decodeBatchRequest(
+                mapper.writeValueAsBytes(nested), identity()))
+                .isInstanceOf(IntegrationProblemException.class);
     }
 
     @Test

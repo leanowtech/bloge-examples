@@ -96,6 +96,11 @@ class CapabilityMirrorSchemaPackagingTest {
                 "scenario-handling-assertion-result-v1.schema.json",
                 "compiled-scenario-rehearsal-plan-v1.schema.json",
                 "scenario-rehearsal-execution-request-v1.schema.json",
+                "scenario-rehearsal-batch-request-v1.schema.json",
+                "scenario-rehearsal-batch-manifest-v1.schema.json",
+                "scenario-rehearsal-batch-cancellation-request-v1.schema.json",
+                "scenario-rehearsal-batch-job-v1.schema.json",
+                "scenario-rehearsal-batch-item-page-v1.schema.json",
                 "scenario-case-rehearsal-result-v1.schema.json",
                 "scenario-rehearsal-result-v1.schema.json",
                 "scenario-rehearsal-evidence-attestation-v1.schema.json",
@@ -197,6 +202,26 @@ class CapabilityMirrorSchemaPackagingTest {
                 .SCENARIO_REHEARSAL_EXECUTION_REQUEST_SCHEMA_RESOURCE)
                 .endsWith(
                         "scenario-rehearsal-execution-request-v1.schema.json");
+        assertThat(CapabilityMirrorProtocol
+                .SCENARIO_REHEARSAL_BATCH_REQUEST_SCHEMA_RESOURCE)
+                .endsWith(
+                        "scenario-rehearsal-batch-request-v1.schema.json");
+        assertThat(CapabilityMirrorProtocol
+                .SCENARIO_REHEARSAL_BATCH_MANIFEST_SCHEMA_RESOURCE)
+                .endsWith(
+                        "scenario-rehearsal-batch-manifest-v1.schema.json");
+        assertThat(CapabilityMirrorProtocol
+                .SCENARIO_REHEARSAL_BATCH_CANCELLATION_REQUEST_SCHEMA_RESOURCE)
+                .endsWith(
+                        "scenario-rehearsal-batch-cancellation-request-v1.schema.json");
+        assertThat(CapabilityMirrorProtocol
+                .SCENARIO_REHEARSAL_BATCH_JOB_SCHEMA_RESOURCE)
+                .endsWith(
+                        "scenario-rehearsal-batch-job-v1.schema.json");
+        assertThat(CapabilityMirrorProtocol
+                .SCENARIO_REHEARSAL_BATCH_ITEM_PAGE_SCHEMA_RESOURCE)
+                .endsWith(
+                        "scenario-rehearsal-batch-item-page-v1.schema.json");
         assertThat(CapabilityMirrorProtocol
                 .SCENARIO_CASE_REHEARSAL_RESULT_SCHEMA_RESOURCE)
                 .endsWith(

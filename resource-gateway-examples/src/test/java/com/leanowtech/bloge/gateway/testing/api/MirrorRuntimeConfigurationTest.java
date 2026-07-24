@@ -17,7 +17,13 @@ import com.leanowtech.bloge.gateway.integration.mirror.MirrorRunRequestRepositor
 import com.leanowtech.bloge.gateway.integration.mirror.CompiledScenarioRehearsalPlanRepository;
 import com.leanowtech.bloge.gateway.integration.mirror.MirrorSessionCheckpointIntegrityService;
 import com.leanowtech.bloge.gateway.integration.mirror.ScenarioArtifactRepository;
+import com.leanowtech.bloge.gateway.integration.mirror.ScenarioRehearsalBatchCompiler;
+import com.leanowtech.bloge.gateway.integration.mirror.ScenarioRehearsalBatchPolicy;
+import com.leanowtech.bloge.gateway.integration.mirror.ScenarioRehearsalBatchRepository;
+import com.leanowtech.bloge.gateway.integration.mirror.ScenarioRehearsalBatchService;
+import com.leanowtech.bloge.gateway.integration.mirror.ScenarioRehearsalBatchWorker;
 import com.leanowtech.bloge.gateway.integration.mirror.ScenarioRehearsalCompiler;
+import com.leanowtech.bloge.gateway.integration.mirror.ScenarioRehearsalIntegrationService;
 import com.leanowtech.bloge.gateway.integration.mirror.MirrorPlanIntegrationService;
 import com.leanowtech.bloge.gateway.integration.mirror.MirrorDeploymentIsolationAuthorityKeySetIntegrity;
 import com.leanowtech.bloge.gateway.integration.mirror.MirrorDeploymentIsolationAuthorityPublicationRepository;
@@ -27,6 +33,7 @@ import com.leanowtech.bloge.gateway.integration.mirror.MirrorDeploymentIsolation
 import com.leanowtech.bloge.gateway.integration.mirror.MirrorDeploymentIsolationAttestationIntegrity;
 import com.leanowtech.bloge.gateway.integration.mirror.MirrorDeploymentIsolationAttestationRepository;
 import com.leanowtech.bloge.gateway.integration.mirror.MirrorRunIntegrationService;
+import com.leanowtech.bloge.gateway.integration.mirror.ScenarioRehearsalRuntimeService;
 import com.leanowtech.bloge.gateway.integration.mirror.CapabilityObservationAdmissionIntegrity;
 import com.leanowtech.bloge.gateway.integration.mirror.CapabilityObservationAdmissionPolicyProvider;
 import com.leanowtech.bloge.gateway.integration.mirror.CapabilityObservationIntegrity;
@@ -142,6 +149,12 @@ class MirrorRuntimeConfigurationTest {
         context.registerBean(BlgeExpressionEvaluator.class,
                 () -> new BlgeExpressionEvaluator());
         context.registerBean(VisualEvidenceSigner.class, VisualEvidenceSigner::unavailable);
+        context.registerBean(
+                ScenarioRehearsalIntegrationService.class,
+                () -> mock(ScenarioRehearsalIntegrationService.class));
+        context.registerBean(
+                ScenarioRehearsalRuntimeService.class,
+                () -> mock(ScenarioRehearsalRuntimeService.class));
         context.registerBean(EmbeddedDatabase.class,
                 () -> new EmbeddedDatabaseBuilder().setType(EmbeddedDatabaseType.H2)
                         .generateUniqueName(true).build(),
@@ -166,6 +179,16 @@ class MirrorRuntimeConfigurationTest {
                 ScenarioArtifactRepository.class)).hasSize(1);
         assertThat(context.getBeansOfType(
                 ScenarioRehearsalCompiler.class)).hasSize(1);
+        assertThat(context.getBeansOfType(
+                ScenarioRehearsalBatchPolicy.class)).hasSize(1);
+        assertThat(context.getBeansOfType(
+                ScenarioRehearsalBatchRepository.class)).hasSize(1);
+        assertThat(context.getBeansOfType(
+                ScenarioRehearsalBatchCompiler.class)).hasSize(1);
+        assertThat(context.getBeansOfType(
+                ScenarioRehearsalBatchService.class)).hasSize(1);
+        assertThat(context.getBeansOfType(
+                ScenarioRehearsalBatchWorker.class)).hasSize(1);
         assertThat(context.getBeansOfType(
                 CompiledScenarioRehearsalPlanRepository.class)).hasSize(1);
         assertThat(context.getBeansOfType(MirrorFixtureScopeRepository.class)).hasSize(1);
@@ -267,6 +290,16 @@ class MirrorRuntimeConfigurationTest {
                 ScenarioArtifactRepository.class)).isEmpty();
         assertThat(context.getBeansOfType(
                 ScenarioRehearsalCompiler.class)).isEmpty();
+        assertThat(context.getBeansOfType(
+                ScenarioRehearsalBatchPolicy.class)).isEmpty();
+        assertThat(context.getBeansOfType(
+                ScenarioRehearsalBatchRepository.class)).isEmpty();
+        assertThat(context.getBeansOfType(
+                ScenarioRehearsalBatchCompiler.class)).isEmpty();
+        assertThat(context.getBeansOfType(
+                ScenarioRehearsalBatchService.class)).isEmpty();
+        assertThat(context.getBeansOfType(
+                ScenarioRehearsalBatchWorker.class)).isEmpty();
         assertThat(context.getBeansOfType(
                 CompiledScenarioRehearsalPlanRepository.class)).isEmpty();
         assertThat(context.getBeansOfType(MirrorFixtureScopeRepository.class)).isEmpty();

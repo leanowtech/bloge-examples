@@ -1,0 +1,416 @@
+package com.leanowtech.bloge.gateway.integration.mirror;
+
+import com.fasterxml.jackson.databind.ObjectMapper;
+import com.leanowtech.bloge.gateway.integration.IntegrationProblem;
+import com.leanowtech.bloge.gateway.integration.IntegrationProblemException;
+import com.leanowtech.bloge.gateway.integration.IntegrationRequestContext;
+import org.junit.jupiter.api.Test;
+import org.mockito.ArgumentCaptor;
+
+import java.time.Duration;
+import java.time.Instant;
+import java.util.List;
+import java.util.Map;
+import java.util.Set;
+
+import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.when;
+
+class ScenarioRehearsalBatchServiceTest {
+    private static final Instant NOW =
+            Instant.parse("2026-07-24T08:00:00Z");
+    private static final CapabilitySnapshot.Scope SCOPE =
+            new CapabilitySnapshot.Scope(
+                    "tenant-a", "org-a", "support", "test", "sg");
+    private final ObjectMapper mapper =
+            new ObjectMapper().findAndRegisterModules();
+
+    @Test
+    void serviceCompilesBeforeAdmissionAndCapturesNoCredential() {
+        ScenarioRehearsalBatchCompiler compiler =
+                mock(ScenarioRehearsalBatchCompiler.class);
+        ScenarioRehearsalBatchRepository repository =
+                mock(ScenarioRehearsalBatchRepository.class);
+        ScenarioRehearsalBatchRequest request = request();
+        ScenarioRehearsalBatchManifest manifest = manifest();
+        ScenarioRehearsalBatchJob job = job();
+        when(compiler.compile(request, identity()))
+                .thenReturn(manifest);
+        when(repository.submit(
+                any(ScenarioRehearsalBatchRepository
+                        .Submission.class),
+                any(ScenarioRehearsalBatchPolicy.class)))
+                .thenReturn(
+                        new ScenarioRehearsalBatchRepository
+                                .SubmissionResult(job, false));
+        ScenarioRehearsalBatchService service =
+                new ScenarioRehearsalBatchService(
+                        compiler,
+                        repository,
+                        policy(),
+                        mapper);
+
+        assertThat(service.submit(request, identity()).job())
+                .isEqualTo(job);
+        ArgumentCaptor<ScenarioRehearsalBatchRepository.Submission>
+                captured = ArgumentCaptor.forClass(
+                ScenarioRehearsalBatchRepository.Submission.class);
+        verify(repository).submit(
+                captured.capture(),
+                any(ScenarioRehearsalBatchPolicy.class));
+        assertThat(captured.getValue().manifest())
+                .isEqualTo(manifest);
+        assertThat(captured.getValue().requestFingerprint())
+                .matches("sha256:[a-f0-9]{64}");
+        assertThat(captured.getValue().principal())
+                .satisfies(principal -> {
+                    assertThat(principal.scope()).isEqualTo(SCOPE);
+                    assertThat(principal.actorId())
+                            .isEqualTo("owner-a");
+                    assertThat(principal.toExecutionContext("worker"))
+                            .extracting(
+                                    IntegrationRequestContext::purpose)
+                            .isEqualTo("MIRROR_REHEARSAL");
+                });
+    }
+
+    @Test
+    void serviceRejectsUnauthorizedPurposeBeforeCompilation() {
+        ScenarioRehearsalBatchCompiler compiler =
+                mock(ScenarioRehearsalBatchCompiler.class);
+        ScenarioRehearsalBatchService service =
+                new ScenarioRehearsalBatchService(
+                        compiler,
+                        mock(ScenarioRehearsalBatchRepository.class),
+                        policy(),
+                        mapper);
+
+        assertThatThrownBy(() -> service.submit(
+                request(), identity("MIRROR_READ")))
+                .isInstanceOf(IntegrationProblemException.class);
+        verify(compiler, org.mockito.Mockito.never())
+                .compile(any(), any());
+    }
+
+    @Test
+    void workerCompletesOnlyVerifiedEvidenceAndWorkbookClosure() {
+        ScenarioRehearsalBatchRepository repository =
+                mock(ScenarioRehearsalBatchRepository.class);
+        ScenarioRehearsalRuntimeService runtime =
+                mock(ScenarioRehearsalRuntimeService.class);
+        ScenarioRehearsalEvidenceIntegrityService integrity =
+                mock(ScenarioRehearsalEvidenceIntegrityService.class);
+        ScenarioRehearsalBatchRepository.Claim claim = claim();
+        ScenarioRehearsalEvidenceBundle bundle =
+                mock(ScenarioRehearsalEvidenceBundle.class);
+        ScenarioRehearsalResult result =
+                mock(ScenarioRehearsalResult.class);
+        ScenarioRehearsalEvidenceAttestation attestation =
+                mock(ScenarioRehearsalEvidenceAttestation.class);
+        ScenarioRehearsalEvidenceIntegrityService.VerifiedBundle
+                verified = mock(
+                ScenarioRehearsalEvidenceIntegrityService
+                        .VerifiedBundle.class);
+        ScenarioRehearsalWorkbookSeed workbook =
+                mock(ScenarioRehearsalWorkbookSeed.class);
+        String runId = ScenarioRehearsalRunIdentity.derive(
+                mapper,
+                SCOPE,
+                claim.item().childRequestId());
+        when(repository.claimNext(
+                "test", "worker-a", policy()))
+                .thenReturn(claim);
+        when(runtime.execute(any(), any()))
+                .thenReturn(bundle);
+        when(integrity.requireVerified(bundle))
+                .thenReturn(verified);
+        when(verified.bundle()).thenReturn(bundle);
+        when(bundle.result()).thenReturn(result);
+        when(bundle.attestation()).thenReturn(attestation);
+        when(bundle.bundleFingerprint())
+                .thenReturn("sha256:" + "e".repeat(64));
+        when(result.scope()).thenReturn(SCOPE);
+        when(result.requestId())
+                .thenReturn(claim.item().childRequestId());
+        when(result.compiledPlanRef())
+                .thenReturn(claim.item().compiledPlanRef());
+        when(result.outcome()).thenReturn(
+                ScenarioCaseRehearsalResult.Outcome.PASS);
+        when(attestation.runId()).thenReturn(runId);
+        when(runtime.workbookSeed(
+                org.mockito.ArgumentMatchers.eq(runId),
+                any(IntegrationRequestContext.class)))
+                .thenReturn(workbook);
+        when(workbook.scope()).thenReturn(SCOPE);
+        when(workbook.runId()).thenReturn(runId);
+        when(workbook.requestId())
+                .thenReturn(claim.item().childRequestId());
+        when(workbook.compiledPlanRef())
+                .thenReturn(claim.item().compiledPlanRef());
+        when(workbook.evidenceBundleFingerprint())
+                .thenReturn("sha256:" + "e".repeat(64));
+        when(workbook.outcome()).thenReturn(
+                ScenarioCaseRehearsalResult.Outcome.PASS);
+        when(workbook.seedFingerprint())
+                .thenReturn("sha256:" + "d".repeat(64));
+        when(repository.completeItem(
+                org.mockito.ArgumentMatchers.eq(claim.lease()),
+                any(ScenarioRehearsalBatchRepository
+                        .ItemCompletion.class),
+                org.mockito.ArgumentMatchers.eq(policy())))
+                .thenReturn(job(
+                        ScenarioRehearsalBatchJob.Status
+                                .SUCCEEDED));
+        ScenarioRehearsalBatchWorker worker =
+                new ScenarioRehearsalBatchWorker(
+                        repository,
+                        runtime,
+                        integrity,
+                        policy(),
+                        mapper);
+
+        ScenarioRehearsalBatchWorker.Turn turn =
+                worker.runOnce("test", "worker-a");
+
+        assertThat(turn.disposition()).isEqualTo(
+                ScenarioRehearsalBatchWorker.Disposition
+                        .ITEM_COMPLETED);
+        verify(workbook).verify(mapper);
+        ArgumentCaptor<ScenarioRehearsalBatchRepository.ItemCompletion>
+                completion = ArgumentCaptor.forClass(
+                ScenarioRehearsalBatchRepository
+                        .ItemCompletion.class);
+        verify(repository).completeItem(
+                org.mockito.ArgumentMatchers.eq(claim.lease()),
+                completion.capture(),
+                org.mockito.ArgumentMatchers.eq(policy()));
+        assertThat(completion.getValue())
+                .satisfies(value -> {
+                    assertThat(value.runId()).isEqualTo(runId);
+                    assertThat(value.outcome()).isEqualTo(
+                            ScenarioCaseRehearsalResult
+                                    .Outcome.PASS);
+                    assertThat(value.workbookSeedFingerprint())
+                            .isEqualTo(
+                                    "sha256:" + "d".repeat(64));
+                });
+    }
+
+    @Test
+    void workerSeparatesRetryableOutageFromTerminalGovernanceFailure() {
+        ScenarioRehearsalBatchRepository repository =
+                mock(ScenarioRehearsalBatchRepository.class);
+        ScenarioRehearsalRuntimeService runtime =
+                mock(ScenarioRehearsalRuntimeService.class);
+        ScenarioRehearsalBatchRepository.Claim first = claim();
+        ScenarioRehearsalBatchRepository.Claim second = claim();
+        when(repository.claimNext(
+                "test", "worker-a", policy()))
+                .thenReturn(first);
+        when(repository.claimNext(
+                "test", "worker-b", policy()))
+                .thenReturn(second);
+        when(repository.retryItem(
+                first.lease(),
+                "RG.MIRROR.REHEARSAL.RUNTIME_UNAVAILABLE",
+                policy()))
+                .thenReturn(job());
+        when(repository.failItem(
+                second.lease(),
+                "RG.MIRROR.REHEARSAL.PLAN_REVOKED",
+                policy()))
+                .thenReturn(job(
+                        ScenarioRehearsalBatchJob.Status.PARTIAL));
+        when(runtime.execute(any(), any()))
+                .thenThrow(new IntegrationProblemException(
+                        IntegrationProblem.serviceUnavailable(
+                                "RG.MIRROR.REHEARSAL.RUNTIME_UNAVAILABLE",
+                                "runtime unavailable",
+                                "corr",
+                                Map.of())))
+                .thenThrow(new IntegrationProblemException(
+                        IntegrationProblem.conflict(
+                                "RG.MIRROR.REHEARSAL.PLAN_REVOKED",
+                                "plan revoked",
+                                "corr",
+                                Map.of())));
+        ScenarioRehearsalBatchWorker worker =
+                new ScenarioRehearsalBatchWorker(
+                        repository,
+                        runtime,
+                        mock(ScenarioRehearsalEvidenceIntegrityService.class),
+                        policy(),
+                        mapper);
+
+        assertThat(worker.runOnce("test", "worker-a")
+                .disposition()).isEqualTo(
+                ScenarioRehearsalBatchWorker.Disposition
+                        .ITEM_RETRY_SCHEDULED);
+        assertThat(worker.runOnce("test", "worker-b")
+                .disposition()).isEqualTo(
+                ScenarioRehearsalBatchWorker.Disposition
+                        .ITEM_FAILED);
+    }
+
+    private ScenarioRehearsalBatchRepository.Claim claim() {
+        ScenarioRehearsalBatchJob job = job(
+                ScenarioRehearsalBatchJob.Status.RUNNING);
+        ScenarioRehearsalBatchItemPage.Item item =
+                new ScenarioRehearsalBatchItemPage.Item(
+                        0,
+                        planRef(),
+                        "batch-001:plan:000",
+                        ScenarioRehearsalBatchItemPage.Status.RUNNING,
+                        1,
+                        "", "", "", "",
+                        NOW,
+                        null);
+        ScenarioRehearsalBatchPrincipal principal =
+                new ScenarioRehearsalBatchPrincipal(
+                        SCOPE,
+                        "USER",
+                        "owner-a",
+                        "",
+                        Set.of("support-owner"),
+                        "RESTRICTED",
+                        "");
+        ScenarioRehearsalBatchRepository.Lease lease =
+                new ScenarioRehearsalBatchRepository.Lease(
+                        SCOPE,
+                        job.jobId(),
+                        "worker-a",
+                        1,
+                        0,
+                        NOW.plus(Duration.ofMinutes(10)));
+        return new ScenarioRehearsalBatchRepository.Claim(
+                ScenarioRehearsalBatchRepository
+                        .ClaimOutcome.ACQUIRED,
+                NOW,
+                job,
+                item,
+                principal,
+                lease);
+    }
+
+    private ScenarioRehearsalBatchJob job() {
+        return job(ScenarioRehearsalBatchJob.Status.QUEUED);
+    }
+
+    private ScenarioRehearsalBatchJob job(
+            ScenarioRehearsalBatchJob.Status status) {
+        boolean terminal = status.terminal();
+        ScenarioRehearsalBatchJob.Summary summary =
+                terminal
+                        ? new ScenarioRehearsalBatchJob.Summary(
+                        1, 1, status
+                        == ScenarioRehearsalBatchJob.Status.SUCCEEDED
+                        ? 1 : 0,
+                        status
+                                == ScenarioRehearsalBatchJob.Status
+                                .PARTIAL ? 1 : 0,
+                        0,
+                        status
+                                == ScenarioRehearsalBatchJob.Status
+                                .CANCELLED ? 1 : 0)
+                        : new ScenarioRehearsalBatchJob.Summary(
+                        1, 0, 0, 0, 0, 0);
+        return ScenarioRehearsalBatchIntegrity.seal(
+                mapper,
+                new ScenarioRehearsalBatchJob(
+                        "",
+                        manifest().batchId(),
+                        "batch-001",
+                        "sha256:" + "a".repeat(64),
+                        manifest().manifestFingerprint(),
+                        SCOPE,
+                        status,
+                        policy().failureMode(),
+                        policy().priority(),
+                        policy().maximumItemAttempts(),
+                        summary,
+                        NOW.plus(Duration.ofHours(1)),
+                        status
+                                == ScenarioRehearsalBatchJob.Status
+                                .PARTIAL
+                                ? "RG.MIRROR.REHEARSAL.PLAN_REVOKED"
+                                : "",
+                        "", "",
+                        NOW,
+                        NOW,
+                        terminal ? NOW : null,
+                        ""));
+    }
+
+    private ScenarioRehearsalBatchRequest request() {
+        return new ScenarioRehearsalBatchRequest(
+                "",
+                "batch-001",
+                List.of(new ScenarioRehearsalBatchRequest.Entry(
+                        "entry-0",
+                        planRef())));
+    }
+
+    private ScenarioRehearsalBatchManifest manifest() {
+        String child = "batch-001:plan:000";
+        return ScenarioRehearsalBatchManifestIntegrity.seal(
+                mapper,
+                new ScenarioRehearsalBatchManifest(
+                        "",
+                        ScenarioRehearsalBatchIdentity.derive(
+                                mapper, SCOPE, "batch-001"),
+                        "",
+                        SCOPE,
+                        "batch-001",
+                        List.of(
+                                new ScenarioRehearsalBatchManifest.Entry(
+                                        0,
+                                        "entry-0",
+                                        planRef(),
+                                        child,
+                                        ScenarioRehearsalRunIdentity
+                                                .derive(
+                                                        mapper,
+                                                        SCOPE,
+                                                        child),
+                                        1,
+                                        Duration.ofMinutes(5))),
+                        1));
+    }
+
+    private MirrorArtifactRef planRef() {
+        return new MirrorArtifactRef(
+                "COMPILED_REHEARSAL_PLAN",
+                "refund-plan",
+                1,
+                "sha256:" + "f".repeat(64));
+    }
+
+    private ScenarioRehearsalBatchPolicy policy() {
+        return ScenarioRehearsalBatchPolicy.defaults();
+    }
+
+    private IntegrationRequestContext identity() {
+        return identity("MIRROR_REHEARSAL");
+    }
+
+    private IntegrationRequestContext identity(String purpose) {
+        return new IntegrationRequestContext(
+                SCOPE.tenantId(),
+                SCOPE.organizationId(),
+                SCOPE.projectId(),
+                SCOPE.environmentId(),
+                SCOPE.region(),
+                "USER",
+                "owner-a",
+                "",
+                purpose,
+                "corr-batch",
+                Set.of("support-owner"),
+                "RESTRICTED",
+                "");
+    }
+}

@@ -15,6 +15,7 @@ import org.springframework.web.bind.annotation.RestControllerAdvice;
         MirrorRunIntegrationController.class,
         MirrorSessionController.class,
         ScenarioRehearsalController.class,
+        ScenarioRehearsalBatchController.class,
         MirrorDeploymentIsolationAuthorityPublicationController.class,
         MirrorDeploymentIsolationAttestationController.class,
         CapabilityObservationController.class,

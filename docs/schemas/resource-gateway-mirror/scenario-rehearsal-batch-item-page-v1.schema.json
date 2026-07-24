@@ -1,0 +1,129 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://bloge.dev/schemas/resource-gateway-mirror/scenario-rehearsal-batch-item-page-v1.schema.json",
+  "title": "Resource Gateway Scenario Rehearsal Batch Item Page v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion", "jobId", "manifestFingerprint", "items", "nextIndex"
+  ],
+  "properties": {
+    "schemaVersion": {
+      "const": "resourceGateway.scenarioRehearsalBatchItemPage.v1"
+    },
+    "jobId": {
+      "type": "string",
+      "pattern": "^scenario-batch-[a-f0-9]{64}$"
+    },
+    "manifestFingerprint": {
+      "$ref": "mirror-plan-v1.schema.json#/$defs/fingerprint"
+    },
+    "items": {
+      "type": "array",
+      "maxItems": 100,
+      "items": {
+        "$ref": "#/$defs/item"
+      }
+    },
+    "nextIndex": {
+      "oneOf": [
+        { "type": "null" },
+        {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 256
+        }
+      ]
+    }
+  },
+  "$defs": {
+    "compiledPlanRef": {
+      "allOf": [
+        {
+          "$ref": "scenario-pack-v1.schema.json#/$defs/artifactRefByKind"
+        },
+        {
+          "properties": {
+            "kind": {
+              "const": "COMPILED_REHEARSAL_PLAN"
+            }
+          }
+        }
+      ]
+    },
+    "optionalIdentifier": {
+      "type": "string",
+      "maxLength": 512,
+      "pattern": "^$|^[A-Za-z0-9][A-Za-z0-9._:-]{0,511}$"
+    },
+    "optionalFingerprint": {
+      "type": "string",
+      "pattern": "^$|^sha256:[a-f0-9]{64}$"
+    },
+    "optionalCode": {
+      "type": "string",
+      "maxLength": 255,
+      "pattern": "^$|^[A-Z][A-Z0-9_.-]{0,254}$"
+    },
+    "optionalInstant": {
+      "oneOf": [
+        { "type": "null" },
+        { "type": "string", "format": "date-time" }
+      ]
+    },
+    "item": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "itemIndex", "compiledPlanRef", "childRequestId", "status",
+        "attemptCount", "runId", "evidenceBundleFingerprint",
+        "workbookSeedFingerprint", "failureCode", "startedAt", "completedAt"
+      ],
+      "properties": {
+        "itemIndex": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 255
+        },
+        "compiledPlanRef": {
+          "$ref": "#/$defs/compiledPlanRef"
+        },
+        "childRequestId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 512,
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,511}$"
+        },
+        "status": {
+          "enum": [
+            "PENDING", "RUNNING", "PASSED", "FAILED",
+            "INDETERMINATE", "CANCELLED"
+          ]
+        },
+        "attemptCount": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 5
+        },
+        "runId": {
+          "$ref": "#/$defs/optionalIdentifier"
+        },
+        "evidenceBundleFingerprint": {
+          "$ref": "#/$defs/optionalFingerprint"
+        },
+        "workbookSeedFingerprint": {
+          "$ref": "#/$defs/optionalFingerprint"
+        },
+        "failureCode": {
+          "$ref": "#/$defs/optionalCode"
+        },
+        "startedAt": {
+          "$ref": "#/$defs/optionalInstant"
+        },
+        "completedAt": {
+          "$ref": "#/$defs/optionalInstant"
+        }
+      }
+    }
+  }
+}

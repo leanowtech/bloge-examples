@@ -263,6 +263,21 @@ public final class CapabilityMirrorProtocol {
     /** Compiled and governed Scenario rehearsal execution-plan wire version. */
     public static final String COMPILED_SCENARIO_REHEARSAL_PLAN_V1 =
             "resourceGateway.compiledScenarioRehearsalPlan.v1";
+    /** Strict payload-free multi-plan Scenario batch request wire version. */
+    public static final String SCENARIO_REHEARSAL_BATCH_REQUEST_V1 =
+            "resourceGateway.scenarioRehearsalBatchRequest.v1";
+    /** Immutable content-addressed Scenario batch execution closure wire version. */
+    public static final String SCENARIO_REHEARSAL_BATCH_MANIFEST_V1 =
+            "resourceGateway.scenarioRehearsalBatchManifest.v1";
+    /** Idempotent cooperative Scenario batch cancellation command wire version. */
+    public static final String SCENARIO_REHEARSAL_BATCH_CANCELLATION_REQUEST_V1 =
+            "resourceGateway.scenarioRehearsalBatchCancellationRequest.v1";
+    /** Durable payload-free Scenario batch job projection wire version. */
+    public static final String SCENARIO_REHEARSAL_BATCH_JOB_V1 =
+            "resourceGateway.scenarioRehearsalBatchJob.v1";
+    /** Stable bounded Scenario batch item-page wire version. */
+    public static final String SCENARIO_REHEARSAL_BATCH_ITEM_PAGE_V1 =
+            "resourceGateway.scenarioRehearsalBatchItemPage.v1";
     /** Independently verifiable signed Scenario rehearsal aggregate wire version. */
     public static final String SCENARIO_REHEARSAL_EVIDENCE_BUNDLE_V1 =
             "resourceGateway.scenarioRehearsalEvidenceBundle.v1";
@@ -594,6 +609,27 @@ public final class CapabilityMirrorProtocol {
     public static final String SCENARIO_REHEARSAL_EXECUTION_REQUEST_SCHEMA_RESOURCE =
             SCHEMA_RESOURCE_ROOT
                     + "scenario-rehearsal-execution-request-v1.schema.json";
+    /** Packaged strict payload-free multi-plan Scenario batch request. */
+    public static final String SCENARIO_REHEARSAL_BATCH_REQUEST_SCHEMA_RESOURCE =
+            SCHEMA_RESOURCE_ROOT
+                    + "scenario-rehearsal-batch-request-v1.schema.json";
+    /** Packaged immutable content-addressed Scenario batch execution closure. */
+    public static final String SCENARIO_REHEARSAL_BATCH_MANIFEST_SCHEMA_RESOURCE =
+            SCHEMA_RESOURCE_ROOT
+                    + "scenario-rehearsal-batch-manifest-v1.schema.json";
+    /** Packaged idempotent cooperative Scenario batch cancellation command. */
+    public static final String
+    SCENARIO_REHEARSAL_BATCH_CANCELLATION_REQUEST_SCHEMA_RESOURCE =
+            SCHEMA_RESOURCE_ROOT
+                    + "scenario-rehearsal-batch-cancellation-request-v1.schema.json";
+    /** Packaged durable payload-free Scenario batch job projection. */
+    public static final String SCENARIO_REHEARSAL_BATCH_JOB_SCHEMA_RESOURCE =
+            SCHEMA_RESOURCE_ROOT
+                    + "scenario-rehearsal-batch-job-v1.schema.json";
+    /** Packaged stable bounded Scenario batch item page. */
+    public static final String SCENARIO_REHEARSAL_BATCH_ITEM_PAGE_SCHEMA_RESOURCE =
+            SCHEMA_RESOURCE_ROOT
+                    + "scenario-rehearsal-batch-item-page-v1.schema.json";
     /** Packaged payload-free result for one compiled Scenario case. */
     public static final String SCENARIO_CASE_REHEARSAL_RESULT_SCHEMA_RESOURCE =
             SCHEMA_RESOURCE_ROOT

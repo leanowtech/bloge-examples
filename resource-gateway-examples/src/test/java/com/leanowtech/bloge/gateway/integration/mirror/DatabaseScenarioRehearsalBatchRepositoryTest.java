@@ -1,0 +1,522 @@
+package com.leanowtech.bloge.gateway.integration.mirror;
+
+import com.fasterxml.jackson.databind.ObjectMapper;
+import com.leanowtech.bloge.gateway.testing.evidence.ProtocolFingerprint;
+import org.junit.jupiter.api.AfterEach;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
+import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.jdbc.datasource.DataSourceTransactionManager;
+import org.springframework.jdbc.datasource.embedded.EmbeddedDatabase;
+import org.springframework.jdbc.datasource.embedded.EmbeddedDatabaseBuilder;
+import org.springframework.jdbc.datasource.embedded.EmbeddedDatabaseType;
+
+import java.time.Duration;
+import java.time.Instant;
+import java.util.List;
+import java.util.Set;
+import java.util.concurrent.atomic.AtomicReference;
+
+import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
+
+class DatabaseScenarioRehearsalBatchRepositoryTest {
+    private static final Instant NOW =
+            Instant.parse("2026-07-24T08:00:00Z");
+    private static final CapabilitySnapshot.Scope SCOPE =
+            scope("tenant-a", "org-a");
+    private final ObjectMapper mapper =
+            new ObjectMapper().findAndRegisterModules();
+    private final AtomicReference<Instant> databaseTime =
+            new AtomicReference<>(NOW);
+    private EmbeddedDatabase database;
+    private JdbcTemplate jdbc;
+    private DatabaseScenarioRehearsalBatchRepository repository;
+
+    @BeforeEach
+    void setUp() {
+        database = new EmbeddedDatabaseBuilder()
+                .setType(EmbeddedDatabaseType.H2)
+                .generateUniqueName(true)
+                .build();
+        jdbc = new JdbcTemplate(database);
+        repository = new DatabaseScenarioRehearsalBatchRepository(
+                jdbc,
+                mapper,
+                new DataSourceTransactionManager(database),
+                databaseTime::get);
+        repository.init();
+    }
+
+    @AfterEach
+    void tearDown() {
+        database.shutdown();
+    }
+
+    @Test
+    void persistsExactManifestAndIdempotentlyRecoversAfterRestart() {
+        ScenarioRehearsalBatchRepository.Submission submission =
+                submission(SCOPE, "batch-001", "refund");
+
+        ScenarioRehearsalBatchRepository.SubmissionResult created =
+                repository.submit(submission, policy());
+        ScenarioRehearsalBatchRepository.SubmissionResult replay =
+                repository.submit(submission, policy());
+        DatabaseScenarioRehearsalBatchRepository restarted =
+                new DatabaseScenarioRehearsalBatchRepository(
+                        jdbc,
+                        mapper,
+                        new DataSourceTransactionManager(database),
+                        databaseTime::get);
+        restarted.init();
+
+        assertThat(created.idempotentReplay()).isFalse();
+        assertThat(replay.idempotentReplay()).isTrue();
+        assertThat(replay.job()).isEqualTo(created.job());
+        assertThat(restarted.find(
+                SCOPE, created.job().jobId(), policy()))
+                .contains(created.job());
+        assertThat(restarted.page(
+                SCOPE, created.job().jobId(),
+                0, 10, policy()).items())
+                .singleElement()
+                .satisfies(item -> {
+                    assertThat(item.status()).isEqualTo(
+                            ScenarioRehearsalBatchItemPage
+                                    .Status.PENDING);
+                    assertThat(item.childRequestId())
+                            .isEqualTo(
+                                    "batch-001:plan:000");
+                });
+        assertThat(columns("SCENARIO_REHEARSAL_BATCH_JOBS"))
+                .noneMatch(
+                        DatabaseScenarioRehearsalBatchRepositoryTest
+                                ::businessPayloadColumn);
+        assertThat(columns("SCENARIO_REHEARSAL_BATCH_ITEMS"))
+                .noneMatch(
+                        DatabaseScenarioRehearsalBatchRepositoryTest
+                                ::businessPayloadColumn);
+    }
+
+    @Test
+    void rejectsRequestDriftButIsolatesSameRequestAcrossFullScope() {
+        ScenarioRehearsalBatchRepository.Submission first =
+                submission(SCOPE, "batch-001", "refund");
+        repository.submit(first, policy());
+
+        assertThatThrownBy(() -> repository.submit(
+                submission(SCOPE, "batch-001", "escalation"),
+                policy()))
+                .isInstanceOfSatisfying(
+                        ScenarioRehearsalBatchConflictException.class,
+                        conflict -> assertThat(conflict.reason())
+                                .isEqualTo(
+                                        ScenarioRehearsalBatchConflictException
+                                                .Reason
+                                                .IDEMPOTENCY_CONFLICT));
+
+        CapabilitySnapshot.Scope other =
+                scope("tenant-a", "org-b");
+        ScenarioRehearsalBatchJob isolated =
+                repository.submit(
+                        submission(
+                                other, "batch-001", "refund"),
+                        policy()).job();
+        assertThat(isolated.jobId()).isNotEqualTo(
+                first.manifest().batchId());
+        assertThat(repository.find(
+                SCOPE, isolated.jobId(), policy())).isEmpty();
+        assertThat(repository.find(
+                other, isolated.jobId(), policy()))
+                .contains(isolated);
+    }
+
+    @Test
+    void rotatesTenantsAndEnforcesLiveConcurrencyCapacity() {
+        ScenarioRehearsalBatchPolicy policy =
+                policy(2, 1);
+        repository.submit(
+                        submission(
+                                scope("tenant-a", "org-a"),
+                                "batch-a",
+                                "refund"),
+                        policy);
+        ScenarioRehearsalBatchJob tenantB =
+                repository.submit(
+                        submission(
+                                scope("tenant-b", "org-b"),
+                                "batch-b",
+                                "escalation"),
+                        policy).job();
+        repository.submit(
+                submission(
+                        scope("tenant-a", "org-a"),
+                        "batch-a-2",
+                        "retention"),
+                policy);
+
+        ScenarioRehearsalBatchRepository.Claim first =
+                repository.claimNext(
+                        "test", "worker-a", policy);
+        ScenarioRehearsalBatchRepository.Claim second =
+                repository.claimNext(
+                        "test", "worker-b", policy);
+        ScenarioRehearsalBatchRepository.Claim saturated =
+                repository.claimNext(
+                        "test", "worker-c", policy);
+
+        assertThat(first.job().scope().tenantId())
+                .isEqualTo("tenant-a");
+        assertThat(second.job().jobId()).isEqualTo(
+                tenantB.jobId());
+        assertThat(saturated.outcome()).isEqualTo(
+                ScenarioRehearsalBatchRepository.ClaimOutcome
+                        .NO_WORK);
+    }
+
+    @Test
+    void bindsCompletionToManifestAndFencesStaleLease() {
+        ScenarioRehearsalBatchRepository.Submission submission =
+                submission(SCOPE, "batch-001", "refund");
+        repository.submit(submission, policy());
+        ScenarioRehearsalBatchRepository.Claim claim =
+                repository.claimNext(
+                        "test", "worker-a", policy());
+
+        assertThatThrownBy(() -> repository.completeItem(
+                claim.lease(),
+                completion(
+                        "scenario-run-" + "f".repeat(64)),
+                policy()))
+                .isInstanceOfSatisfying(
+                        ScenarioRehearsalBatchConflictException.class,
+                        conflict -> assertThat(conflict.reason())
+                                .isEqualTo(
+                                        ScenarioRehearsalBatchConflictException
+                                                .Reason
+                                                .EVIDENCE_MISMATCH));
+
+        String runId = submission.manifest()
+                .entries().getFirst().aggregateRunId();
+        ScenarioRehearsalBatchJob completed =
+                repository.completeItem(
+                        claim.lease(),
+                        completion(runId),
+                        policy());
+        assertThat(completed.status()).isEqualTo(
+                ScenarioRehearsalBatchJob.Status.SUCCEEDED);
+        assertThat(completed.summary().passedItems())
+                .isEqualTo(1);
+        assertThatThrownBy(() -> repository.retryItem(
+                claim.lease(),
+                "RG.MIRROR.REHEARSAL_BATCH.LATE",
+                policy()))
+                .isInstanceOfSatisfying(
+                        ScenarioRehearsalBatchConflictException.class,
+                        conflict -> assertThat(conflict.reason())
+                                .isEqualTo(
+                                        ScenarioRehearsalBatchConflictException
+                                                .Reason.LEASE_LOST));
+    }
+
+    @Test
+    void recoversExpiredLeaseAcrossAnExactSecondBoundary() {
+        ScenarioRehearsalBatchPolicy policy =
+                shortPolicy();
+        ScenarioRehearsalBatchRepository.Submission submission =
+                submission(
+                        SCOPE,
+                        "batch-001",
+                        "refund",
+                        Duration.ofSeconds(1));
+        repository.submit(submission, policy);
+        ScenarioRehearsalBatchRepository.Claim first =
+                repository.claimNext(
+                        "test", "worker-a", policy);
+        assertThat(first.lease().expiresAt())
+                .isEqualTo(NOW.plusSeconds(2));
+
+        databaseTime.set(NOW.plusMillis(2_001));
+        assertThat(repository.claimNext(
+                "test", "worker-b", policy).outcome())
+                .isEqualTo(
+                        ScenarioRehearsalBatchRepository.ClaimOutcome
+                                .NO_WORK);
+        databaseTime.set(NOW.plusMillis(2_101));
+        ScenarioRehearsalBatchRepository.Claim takeover =
+                repository.claimNext(
+                        "test", "worker-b", policy);
+
+        assertThat(takeover.outcome()).isEqualTo(
+                ScenarioRehearsalBatchRepository.ClaimOutcome
+                        .ACQUIRED);
+        assertThat(takeover.lease().epoch()).isEqualTo(2);
+        assertThat(takeover.item().attemptCount()).isEqualTo(2);
+        assertThatThrownBy(() -> repository.completeItem(
+                first.lease(),
+                completion(
+                        submission.manifest().entries()
+                                .getFirst().aggregateRunId()),
+                policy))
+                .isInstanceOfSatisfying(
+                        ScenarioRehearsalBatchConflictException.class,
+                        conflict -> assertThat(conflict.reason())
+                                .isEqualTo(
+                                        ScenarioRehearsalBatchConflictException
+                                                .Reason.LEASE_LOST));
+    }
+
+    @Test
+    void cancellationIsReplayableAndCannotRewriteTerminalHistory() {
+        ScenarioRehearsalBatchRepository.Submission queued =
+                submission(SCOPE, "batch-cancel", "refund");
+        ScenarioRehearsalBatchJob job =
+                repository.submit(queued, policy()).job();
+        ScenarioRehearsalBatchRepository.Cancellation cancellation =
+                new ScenarioRehearsalBatchRepository.Cancellation(
+                        SCOPE,
+                        job.jobId(),
+                        "cancel-001",
+                        "OWNER_REQUEST");
+
+        ScenarioRehearsalBatchRepository.SubmissionResult first =
+                repository.cancel(cancellation, policy());
+        ScenarioRehearsalBatchRepository.SubmissionResult replay =
+                repository.cancel(cancellation, policy());
+        assertThat(first.job().status()).isEqualTo(
+                ScenarioRehearsalBatchJob.Status.CANCELLED);
+        assertThat(replay.idempotentReplay()).isTrue();
+        assertThat(repository.page(
+                SCOPE, job.jobId(), 0, 10, policy()).items())
+                .extracting(
+                        ScenarioRehearsalBatchItemPage.Item::status)
+                .containsExactly(
+                        ScenarioRehearsalBatchItemPage.Status
+                                .CANCELLED);
+
+        ScenarioRehearsalBatchRepository.Submission completed =
+                submission(SCOPE, "batch-complete", "escalation");
+        repository.submit(completed, policy());
+        ScenarioRehearsalBatchRepository.Claim claim =
+                repository.claimNext(
+                        "test", "worker-a", policy());
+        ScenarioRehearsalBatchJob terminal =
+                repository.completeItem(
+                        claim.lease(),
+                        completion(
+                                completed.manifest().entries()
+                                        .getFirst().aggregateRunId()),
+                        policy());
+        assertThatThrownBy(() -> repository.cancel(
+                new ScenarioRehearsalBatchRepository.Cancellation(
+                        SCOPE,
+                        terminal.jobId(),
+                        "cancel-late",
+                        "OWNER_REQUEST"),
+                policy()))
+                .isInstanceOfSatisfying(
+                        ScenarioRehearsalBatchConflictException.class,
+                        conflict -> assertThat(conflict.reason())
+                                .isEqualTo(
+                                        ScenarioRehearsalBatchConflictException
+                                                .Reason
+                                                .CANCELLATION_CONFLICT));
+        assertThat(repository.find(
+                SCOPE, terminal.jobId(), policy()))
+                .contains(terminal);
+    }
+
+    @Test
+    void failsClosedOnSameGenerationPolicyDrift() {
+        ScenarioRehearsalBatchPolicy first =
+                policy();
+        repository.submit(
+                submission(SCOPE, "batch-001", "refund"),
+                first);
+        ScenarioRehearsalBatchPolicy drift =
+                new ScenarioRehearsalBatchPolicy(
+                        first.generation(),
+                        first.failureMode(),
+                        ScenarioRehearsalBatchPolicy.Priority.HIGH,
+                        first.maximumItemAttempts(),
+                        first.maximumQueued(),
+                        first.maximumQueuedPerTenant(),
+                        first.maximumRunning(),
+                        first.maximumRunningPerTenant(),
+                        first.maximumPlanTimeout(),
+                        first.maximumDeadlineHorizon(),
+                        first.leaseReserve(),
+                        first.retryBackoff(),
+                        first.priorityAgingInterval(),
+                        first.terminalRetention());
+
+        assertThatThrownBy(() -> repository.find(
+                SCOPE,
+                ScenarioRehearsalBatchIdentity.derive(
+                        mapper, SCOPE, "batch-001"),
+                drift))
+                .isInstanceOfSatisfying(
+                        ScenarioRehearsalBatchConflictException.class,
+                        conflict -> assertThat(conflict.reason())
+                                .isEqualTo(
+                                        ScenarioRehearsalBatchConflictException
+                                                .Reason.POLICY_MISMATCH));
+    }
+
+    private ScenarioRehearsalBatchRepository.Submission submission(
+            CapabilitySnapshot.Scope scope,
+            String requestId,
+            String planId) {
+        return submission(
+                scope, requestId, planId,
+                Duration.ofSeconds(5));
+    }
+
+    private ScenarioRehearsalBatchRepository.Submission submission(
+            CapabilitySnapshot.Scope scope,
+            String requestId,
+            String planId,
+            Duration timeout) {
+        MirrorArtifactRef ref = new MirrorArtifactRef(
+                "COMPILED_REHEARSAL_PLAN",
+                planId,
+                1,
+                "sha256:" + Integer.toHexString(
+                        Math.abs(planId.hashCode()) % 16).repeat(64));
+        ScenarioRehearsalBatchRequest request =
+                new ScenarioRehearsalBatchRequest(
+                        "",
+                        requestId,
+                        List.of(
+                                new ScenarioRehearsalBatchRequest.Entry(
+                                        "entry-0", ref)));
+        String aggregateRequest = requestId + ":plan:000";
+        ScenarioRehearsalBatchManifest manifest =
+                ScenarioRehearsalBatchManifestIntegrity.seal(
+                        mapper,
+                        new ScenarioRehearsalBatchManifest(
+                                "",
+                                ScenarioRehearsalBatchIdentity
+                                        .derive(
+                                                mapper,
+                                                scope,
+                                                requestId),
+                                "",
+                                scope,
+                                requestId,
+                                List.of(
+                                        new ScenarioRehearsalBatchManifest
+                                                .Entry(
+                                                0,
+                                                "entry-0",
+                                                ref,
+                                                aggregateRequest,
+                                                ScenarioRehearsalRunIdentity
+                                                        .derive(
+                                                                mapper,
+                                                                scope,
+                                                                aggregateRequest),
+                                                1,
+                                                timeout)),
+                                1));
+        return new ScenarioRehearsalBatchRepository.Submission(
+                request,
+                ProtocolFingerprint.of(mapper, request),
+                manifest,
+                new ScenarioRehearsalBatchPrincipal(
+                        scope,
+                        "USER",
+                        "owner-a",
+                        "",
+                        Set.of("support-owner"),
+                        "RESTRICTED",
+                        ""));
+    }
+
+    private ScenarioRehearsalBatchRepository.ItemCompletion
+    completion(String runId) {
+        return new ScenarioRehearsalBatchRepository.ItemCompletion(
+                ScenarioCaseRehearsalResult.Outcome.PASS,
+                runId,
+                "sha256:" + "e".repeat(64),
+                "sha256:" + "d".repeat(64));
+    }
+
+    private ScenarioRehearsalBatchPolicy policy() {
+        return policy(8, 4);
+    }
+
+    private ScenarioRehearsalBatchPolicy policy(
+            int maximumRunning,
+            int maximumRunningPerTenant) {
+        return new ScenarioRehearsalBatchPolicy(
+                1,
+                ScenarioRehearsalBatchPolicy.FailureMode
+                        .COLLECT_ALL,
+                ScenarioRehearsalBatchPolicy.Priority.NORMAL,
+                3,
+                100,
+                20,
+                maximumRunning,
+                maximumRunningPerTenant,
+                Duration.ofMinutes(10),
+                Duration.ofHours(1),
+                Duration.ofSeconds(1),
+                Duration.ofMillis(100),
+                Duration.ofSeconds(1),
+                Duration.ofDays(1));
+    }
+
+    private ScenarioRehearsalBatchPolicy shortPolicy() {
+        return new ScenarioRehearsalBatchPolicy(
+                1,
+                ScenarioRehearsalBatchPolicy.FailureMode
+                        .COLLECT_ALL,
+                ScenarioRehearsalBatchPolicy.Priority.NORMAL,
+                3,
+                100,
+                20,
+                8,
+                4,
+                Duration.ofSeconds(5),
+                Duration.ofSeconds(5),
+                Duration.ofSeconds(1),
+                Duration.ofMillis(100),
+                Duration.ofSeconds(1),
+                Duration.ofDays(1));
+    }
+
+    private List<String> columns(String table) {
+        return jdbc.queryForList(
+                """
+                        SELECT COLUMN_NAME
+                        FROM INFORMATION_SCHEMA.COLUMNS
+                        WHERE TABLE_NAME = ?
+                        ORDER BY ORDINAL_POSITION
+                        """,
+                String.class,
+                table);
+    }
+
+    private static CapabilitySnapshot.Scope scope(
+            String tenant,
+            String organization) {
+        return new CapabilitySnapshot.Scope(
+                tenant,
+                organization,
+                "support",
+                "test",
+                "sg");
+    }
+
+    private static boolean businessPayloadColumn(String column) {
+        String normalized = column.toLowerCase(
+                java.util.Locale.ROOT);
+        return normalized.contains("payload")
+                || normalized.contains("fixture_value")
+                || normalized.contains("input_json")
+                || normalized.contains("output_json")
+                || normalized.contains("credential")
+                || normalized.contains("secret");
+    }
+}
