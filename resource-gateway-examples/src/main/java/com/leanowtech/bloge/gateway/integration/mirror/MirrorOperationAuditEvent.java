@@ -66,6 +66,10 @@ public record MirrorOperationAuditEvent(
         RUN_READ,
         /** Read one independently verified signed Mirror evidence bundle. */
         EVIDENCE_READ,
+        /** Execute or idempotently recover one exact compiled Scenario rehearsal. */
+        SCENARIO_REHEARSAL_CREATE,
+        /** Read one independently verified signed Scenario aggregate. */
+        SCENARIO_REHEARSAL_EVIDENCE_READ,
         /** Verify and append one deployment-isolation authority key-set generation. */
         AUTHORITY_KEY_SET_PUBLISH,
         /** Read and re-verify the current deployment-isolation authority key-set floor. */

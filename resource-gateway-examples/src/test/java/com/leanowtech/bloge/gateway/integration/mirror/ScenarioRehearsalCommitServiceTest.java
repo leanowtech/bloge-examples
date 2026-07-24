@@ -37,6 +37,7 @@ class ScenarioRehearsalCommitServiceTest {
     private AtomicReference<Instant> databaseTime;
     private DatabaseScenarioRehearsalRunRepository requests;
     private DatabaseScenarioRehearsalEvidenceRepository evidence;
+    private DatabaseMirrorOperationAuditRepository audit;
     private ScenarioRehearsalCommitService service;
 
     @BeforeEach
@@ -55,6 +56,8 @@ class ScenarioRehearsalCommitServiceTest {
         evidence = new DatabaseScenarioRehearsalEvidenceRepository(
                 jdbc, mapper, integrity());
         evidence.init();
+        audit = new DatabaseMirrorOperationAuditRepository(jdbc);
+        audit.init();
         service = new ScenarioRehearsalCommitService(
                 evidence, requests);
     }
@@ -74,7 +77,9 @@ class ScenarioRehearsalCommitServiceTest {
 
         ScenarioRehearsalEvidenceBundle persisted =
                 transactions.execute(status ->
-                        service.commit(claim.lease(), bundle));
+                        service.commit(
+                                claim.lease(), bundle,
+                                observation()));
 
         assertThat(persisted).isEqualTo(bundle);
         assertThat(requests.find(
@@ -90,6 +95,17 @@ class ScenarioRehearsalCommitServiceTest {
         assertThat(evidence.find(
                 SCOPE, bundle.attestation().runId()))
                 .contains(bundle);
+        assertThat(audit.recent(SCOPE, 10))
+                .singleElement()
+                .satisfies(event -> {
+                    assertThat(event.operation()).isEqualTo(
+                            MirrorOperationAuditEvent.Operation
+                                    .SCENARIO_REHEARSAL_CREATE);
+                    assertThat(event.outcome()).isEqualTo(
+                            MirrorOperationAuditEvent.Outcome.SUCCEEDED);
+                    assertThat(event.runId()).isEqualTo(
+                            bundle.attestation().runId());
+                });
     }
 
     @Test
@@ -102,7 +118,9 @@ class ScenarioRehearsalCommitServiceTest {
 
         assertThatThrownBy(() ->
                 transactions.execute(status ->
-                        service.commit(claim.lease(), bundle)))
+                        service.commit(
+                                claim.lease(), bundle,
+                                observation())))
                 .isInstanceOf(
                         ScenarioRehearsalLeaseLostException.class);
 
@@ -119,6 +137,7 @@ class ScenarioRehearsalCommitServiceTest {
                     assertThat(state.evidenceBundleFingerprint())
                             .isBlank();
                 });
+        assertThat(audit.recent(SCOPE, 10)).isEmpty();
     }
 
     @Test
@@ -137,12 +156,15 @@ class ScenarioRehearsalCommitServiceTest {
 
         assertThatThrownBy(() ->
                 transactions.execute(status ->
-                        service.commit(claim.lease(), bundle)))
+                        service.commit(
+                                claim.lease(), bundle,
+                                observation())))
                 .isInstanceOf(IllegalArgumentException.class)
                 .hasMessageContaining("durable request registration");
         assertThat(jdbc.queryForObject(
                 "SELECT COUNT(*) FROM scenario_rehearsal_evidence",
                 Integer.class)).isZero();
+        assertThat(audit.recent(SCOPE, 10)).isEmpty();
     }
 
     private ScenarioRehearsalRunRepository.Claim claim(
@@ -198,5 +220,17 @@ class ScenarioRehearsalCommitServiceTest {
                         ScenarioRehearsalEvidenceTestFixtures.COMPLETED
                                 .plusSeconds(5),
                         ZoneOffset.UTC));
+    }
+
+    private MirrorOperationObservability.Observation observation() {
+        return new MirrorOperationObservability(
+                audit, MirrorOperationTelemetry.noop(), () -> 0)
+                .start(
+                MirrorOperationAuditEvent.Operation
+                        .SCENARIO_REHEARSAL_CREATE,
+                MirrorPersistenceTestFixtures.identity("org-a"),
+                ScenarioRehearsalEvidenceTestFixtures.REQUEST_ID,
+                result().compiledPlanRef().id(),
+                "");
     }
 }

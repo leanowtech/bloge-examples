@@ -22,13 +22,14 @@ Fixture、MirrorPlan 和可选 Session checkpoint 绑定成不可变执行许可
 | `ScenarioRehearsalEvidenceAttestation.v1` | 可用 | 在独立签名域中绑定 aggregate run、request、compiled plan、result fingerprint 和签名时间 |
 | `ScenarioRehearsalEvidenceBundle.v1` | 可用（证据 API） | 对完整 payload-free result 做 Ed25519 签名、立即复验、append-only 保存和 exact runId 读取 |
 | aggregate durable coordination | 可用 | 完整 scope 请求注册、数据库时钟 lease、单调 epoch、逐 case checkpoint、takeover 与原子终态 |
-| 可作为发布门禁的 Scenario evidence | 未交付 | 尚无操作审计、保留/法律留置策略和 ANEKE workbook seed |
+| 受保护 Scenario 操作审计 | 可用（终态） | run/evidence read 成功与失败均写入 payload-free audit；run 成功审计与 evidence/request 终态同事务 |
+| 可作为发布门禁的 Scenario evidence | 未交付 | 尚无内部 claim/checkpoint/takeover 生命周期审计、保留/法律留置策略和 ANEKE workbook seed |
 
 当前链路已经解决“执行前冻结什么、运行时从哪里取值、每个结果依据什么证据”
 三个问题，并让同步完成的聚合成为可独立复验和重读的证据。aggregate 现以
 数据库时钟 lease/epoch 串行化执行，把每个 payload-free case result 作为连续
 checkpoint；进程退出后，同 request id 可由下一副本从首个未完成 case 接续。
-下一条链路负责操作审计、保留策略和 ANEKE workbook seed；在此之前，证据适合
+下一条链路负责内部生命周期审计、保留策略和 ANEKE workbook seed；在此之前，证据适合
 test/staging 的可恢复回归和排错，但不能冒充 publish-gate-ready 证据。
 
 ## 2. 为什么需要独立编译计划
@@ -329,7 +330,8 @@ case 直接把 checkpoint 的 session id + state fingerprint 作为原始 fence 
   `409`，lease 到期后下一副本从首个未完成 case 接管；
 - case checkpoint、signed evidence 插入和 terminal request transition 均受当前
   owner/epoch/expiry 栅栏；最终 evidence 与 terminal transition 同事务提交；
-- 聚合 evidence 已独立签名、耐久保存和可读取，但尚无 operation audit、
+- 聚合 evidence 已独立签名、耐久保存和可读取；run/evidence read 的 protected
+  operation audit 已失败关闭，但尚无内部 claim/checkpoint/takeover 审计、
   retention/legal-hold、WORM/transparency anchor 和 workbook seed；
 - checkpoint 是同一加密数据面的 recovery fence，不是隔离 clone；全新重复执行
   需要新的隔离 Session/checkpoint；
@@ -436,8 +438,10 @@ lease 在提交前到期会整体回滚，不留下孤儿 evidence。
 完成的 `ScenarioRehearsalResult` 被封入独立签名 bundle，按完整 scope + stable
 runId append-only 保存；读取时重算 result/bundle fingerprint 并复验 Ed25519
 signature。`mirrorScenarioRehearsalEvidence` 仍保持 `false`，原因已从“运行不可
-恢复”收敛为缺少 operation audit、retention/legal hold 和 ANEKE workbook
-消费闭包。
+恢复”收敛为缺少内部生命周期审计、retention/legal hold 和 ANEKE workbook
+消费闭包。最终 run 提交把 signed evidence、request `COMPLETED` 和
+`SCENARIO_REHEARSAL_CREATE` 成功审计放在同一本地事务；evidence read 也必须先
+提交 `SCENARIO_REHEARSAL_EVIDENCE_READ` 审计才可发布结果。
 
 本地重启后可以按 exact fingerprint 读取同一资产。数据库备份、跨区域恢复、
 WORM、外部 transparency anchor 和法律保留仍属于部署认证，不由本地哈希代替。

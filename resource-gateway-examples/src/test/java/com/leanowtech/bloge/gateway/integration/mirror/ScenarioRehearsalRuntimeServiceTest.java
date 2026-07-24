@@ -17,6 +17,7 @@ import java.time.Clock;
 import java.time.Duration;
 import java.time.Instant;
 import java.time.ZoneOffset;
+import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -363,6 +364,74 @@ class ScenarioRehearsalRuntimeServiceTest {
         verify(fixture.mirrorRuns(), never()).execute(any(), any());
     }
 
+    @Test
+    void auditsScenarioRunAndEvidenceReadBeforePublishingResults() {
+        List<MirrorOperationAuditEvent> events =
+                new ArrayList<>();
+        MirrorOperationAuditRepository audit =
+                new MirrorOperationAuditRepository() {
+                    @Override
+                    public MirrorOperationAuditEvent append(
+                            MirrorOperationAuditEvent event) {
+                        MirrorOperationAuditEvent persisted =
+                                event.persisted(
+                                        events.size() + 1L,
+                                        Instant.parse(
+                                                "2026-03-01T00:00:00Z")
+                                                .plusSeconds(
+                                                        events.size()));
+                        events.add(persisted);
+                        return persisted;
+                    }
+
+                    @Override
+                    public List<MirrorOperationAuditEvent> recent(
+                            CapabilitySnapshot.Scope requestedScope,
+                            int limit) {
+                        return List.copyOf(events);
+                    }
+                };
+        MirrorOperationObservability observations =
+                new MirrorOperationObservability(
+                        audit,
+                        MirrorOperationTelemetry.noop(),
+                        () -> 0);
+        Fixture fixture = fixture(
+                Map.of("customerId", "C-1"),
+                false, false, observations);
+
+        ScenarioRehearsalEvidenceBundle executed =
+                fixture.service().execute(
+                        fixture.request(), identity);
+        when(fixture.rehearsalEvidence().find(
+                scope, executed.attestation().runId()))
+                .thenReturn(Optional.of(executed));
+        ScenarioRehearsalEvidenceBundle read =
+                fixture.service().evidence(
+                        executed.attestation().runId(), identity);
+
+        assertThat(read).isEqualTo(executed);
+        assertThat(events)
+                .extracting(
+                        MirrorOperationAuditEvent::operation,
+                        MirrorOperationAuditEvent::outcome,
+                        MirrorOperationAuditEvent::requestId,
+                        MirrorOperationAuditEvent::runId)
+                .containsExactly(
+                        org.assertj.core.groups.Tuple.tuple(
+                                MirrorOperationAuditEvent.Operation
+                                        .SCENARIO_REHEARSAL_CREATE,
+                                MirrorOperationAuditEvent.Outcome.SUCCEEDED,
+                                fixture.request().requestId(),
+                                executed.attestation().runId()),
+                        org.assertj.core.groups.Tuple.tuple(
+                                MirrorOperationAuditEvent.Operation
+                                        .SCENARIO_REHEARSAL_EVIDENCE_READ,
+                                MirrorOperationAuditEvent.Outcome.SUCCEEDED,
+                                "",
+                                executed.attestation().runId()));
+    }
+
     private Fixture fixture(Object input) {
         return fixture(input, false, false);
     }
@@ -375,6 +444,16 @@ class ScenarioRehearsalRuntimeServiceTest {
             Object input,
             boolean delayedAttempt,
             boolean stateful) {
+        return fixture(
+                input, delayedAttempt, stateful,
+                MirrorOperationObservability.noop());
+    }
+
+    private Fixture fixture(
+            Object input,
+            boolean delayedAttempt,
+            boolean stateful,
+            MirrorOperationObservability observations) {
         ScenarioRehearsalIntegrationService rehearsals =
                 mock(ScenarioRehearsalIntegrationService.class);
         ScenarioArtifactRegistryService scenarioArtifacts =
@@ -539,8 +618,16 @@ class ScenarioRehearsalRuntimeServiceTest {
                 .thenReturn(List.of());
         ScenarioRehearsalCommitService rehearsalCommits =
                 mock(ScenarioRehearsalCommitService.class);
-        when(rehearsalCommits.commit(any(), any()))
-                .thenAnswer(invocation -> invocation.getArgument(1));
+        when(rehearsalCommits.commit(any(), any(), any()))
+                .thenAnswer(invocation -> {
+                    MirrorOperationObservability.Observation observation =
+                            invocation.getArgument(2);
+                    ScenarioRehearsalEvidenceBundle persisted =
+                            invocation.getArgument(1);
+                    observation.succeeded(
+                            persisted.attestation().runId());
+                    return persisted;
+                });
 
         when(rehearsals.find(
                 compiled.planId(), compiled.revision(),
@@ -585,6 +672,7 @@ class ScenarioRehearsalRuntimeServiceTest {
                         new ScenarioHandlingAssertionEvaluator(mapper),
                         rehearsalIntegrity, rehearsalEvidence,
                         rehearsalRequests, rehearsalCommits,
+                        observations,
                         mapper, sessions, runtimeClock);
         return new Fixture(
                 service, request, mirrorRuns, bundle, sessions,

@@ -185,15 +185,18 @@ Concurrent callers are rejected before child orchestration; after release or
 lease expiry, a successor resumes at the first incomplete case. Case
 checkpoint writes are fenced, while signed evidence insertion and terminal
 request transition share one transaction, so stale workers cannot publish
-orphan evidence. The independent Test Kit re-derives nested result
+orphan evidence. Protected Scenario run and evidence-read operations also use
+the existing mandatory payload-free audit boundary. A successful run commits
+its audit fact in the same transaction as evidence and request terminalization;
+audit failure rolls the protected result back. The independent Test Kit re-derives nested result
 addresses, outcomes, summary counters, bundle identity, key policy, and the
 Scenario-specific Ed25519 signature without linking server classes. Outcomes and
 summary counters are server-derived;
 stateful retries reach completed child idempotency before checking a possibly
 advanced Session head. The capability probe therefore reports Scenario
 execution and `mirrorScenarioRehearsalEvidenceApi` as available while keeping
-`mirrorScenarioRehearsalEvidence=false`: operation audit, retention/legal hold,
-workbook seed, batch scheduling, and owner UX remain required before this
+`mirrorScenarioRehearsalEvidence=false`: internal claim/checkpoint/takeover
+lifecycle audit, retention/legal hold, workbook seed, batch scheduling, and owner UX remain required before this
 becomes publish-gate evidence. See the
 [scenario rehearsal compiler guide](../docs/resource-gateway-scenario-rehearsal-compiler.md).
 

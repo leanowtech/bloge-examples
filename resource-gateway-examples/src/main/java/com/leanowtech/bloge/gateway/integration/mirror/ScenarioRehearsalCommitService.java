@@ -38,15 +38,18 @@ public class ScenarioRehearsalCommitService {
     /**
      * Atomically stores one complete signed aggregate under the exact current lease.
      *
+     * @param observation authenticated mandatory operation-audit token
      * @throws ScenarioRehearsalLeaseLostException when the lease expired or was replaced
      */
     @Transactional
     public ScenarioRehearsalEvidenceBundle commit(
             ScenarioRehearsalRunRepository.Lease lease,
-            ScenarioRehearsalEvidenceBundle bundle) {
+            ScenarioRehearsalEvidenceBundle bundle,
+            MirrorOperationObservability.Observation observation) {
         Objects.requireNonNull(lease, "lease");
         ScenarioRehearsalEvidenceBundle exact =
                 Objects.requireNonNull(bundle, "bundle");
+        Objects.requireNonNull(observation, "observation");
         ScenarioRehearsalRunRepository.State state =
                 requests.find(
                         lease.scope(), lease.requestId()).orElseThrow(
@@ -80,6 +83,7 @@ public class ScenarioRehearsalCommitService {
                 lease, persisted.bundleFingerprint())) {
             throw new ScenarioRehearsalLeaseLostException();
         }
+        observation.succeeded(exact.attestation().runId());
         return persisted;
     }
 }

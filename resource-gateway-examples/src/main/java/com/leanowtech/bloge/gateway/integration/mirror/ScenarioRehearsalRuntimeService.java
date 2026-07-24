@@ -66,6 +66,7 @@ public class ScenarioRehearsalRuntimeService {
     private final ScenarioRehearsalEvidenceRepository rehearsalEvidence;
     private final ScenarioRehearsalRunRepository rehearsalRequests;
     private final ScenarioRehearsalCommitService rehearsalCommits;
+    private final MirrorOperationObservability observations;
     private final ObjectMapper mapper;
     private final MirrorSessionIntegrationService sessions;
     private final Clock clock;
@@ -84,13 +85,14 @@ public class ScenarioRehearsalRuntimeService {
             ScenarioRehearsalEvidenceRepository rehearsalEvidence,
             ScenarioRehearsalRunRepository rehearsalRequests,
             ScenarioRehearsalCommitService rehearsalCommits,
+            MirrorOperationObservability observations,
             ObjectMapper mapper,
             ObjectProvider<MirrorSessionIntegrationService> sessionProvider) {
         this(
                 rehearsals, scenarioArtifacts, testSuites, mirrorRuns,
                 evidenceIntegrity, assertionEvaluator,
                 rehearsalEvidenceIntegrity, rehearsalEvidence,
-                rehearsalRequests, rehearsalCommits, mapper,
+                rehearsalRequests, rehearsalCommits, observations, mapper,
                 Objects.requireNonNull(
                         sessionProvider, "sessionProvider").getIfAvailable(),
                 Clock.systemUTC());
@@ -109,6 +111,7 @@ public class ScenarioRehearsalRuntimeService {
             ScenarioRehearsalEvidenceRepository rehearsalEvidence,
             ScenarioRehearsalRunRepository rehearsalRequests,
             ScenarioRehearsalCommitService rehearsalCommits,
+            MirrorOperationObservability observations,
             ObjectMapper mapper,
             MirrorSessionIntegrationService sessions,
             Clock clock) {
@@ -130,6 +133,8 @@ public class ScenarioRehearsalRuntimeService {
                 rehearsalRequests, "rehearsalRequests");
         this.rehearsalCommits = Objects.requireNonNull(
                 rehearsalCommits, "rehearsalCommits");
+        this.observations = Objects.requireNonNull(
+                observations, "observations");
         this.mapper = Objects.requireNonNull(mapper, "mapper");
         this.sessions = sessions;
         this.clock = Objects.requireNonNull(clock, "clock");
@@ -145,6 +150,28 @@ public class ScenarioRehearsalRuntimeService {
     public ScenarioRehearsalEvidenceBundle execute(
             ScenarioRehearsalExecutionRequest request,
             IntegrationRequestContext identity) {
+        MirrorOperationObservability.Observation observation =
+                observations.start(
+                        MirrorOperationAuditEvent.Operation
+                                .SCENARIO_REHEARSAL_CREATE,
+                        identity,
+                        request == null ? "" : request.requestId(),
+                        request == null
+                                || request.compiledPlanRef() == null
+                                ? ""
+                                : request.compiledPlanRef().id(),
+                        "");
+        try {
+            return executeObserved(request, identity, observation);
+        } catch (RuntimeException failure) {
+            throw observation.failed(failure);
+        }
+    }
+
+    private ScenarioRehearsalEvidenceBundle executeObserved(
+            ScenarioRehearsalExecutionRequest request,
+            IntegrationRequestContext identity,
+            MirrorOperationObservability.Observation observation) {
         Objects.requireNonNull(request, "request");
         requirePurpose(identity);
         CapabilitySnapshot.Scope scope =
@@ -158,6 +185,7 @@ public class ScenarioRehearsalRuntimeService {
         ScenarioRehearsalEvidenceBundle completed =
                 completedRetry(runId, request, plan, scope, identity);
         if (completed != null) {
+            observation.succeeded(runId);
             return completed;
         }
         ScenarioRehearsalRunRepository.Registration registration =
@@ -188,6 +216,7 @@ public class ScenarioRehearsalRuntimeService {
                         "RG.MIRROR.REHEARSAL.EVIDENCE_INCONSISTENT",
                         "Completed Scenario coordination state differs from signed evidence.");
             }
+            observation.succeeded(runId);
             return terminal;
         }
 
@@ -232,7 +261,8 @@ public class ScenarioRehearsalRuntimeService {
                     sealAggregate(
                             request, plan, scope, runId,
                             startedAt, results, identity);
-            return rehearsalCommits.commit(lease, sealed);
+            return rehearsalCommits.commit(
+                    lease, sealed, observation);
         } catch (ScenarioRehearsalLeaseLostException stale) {
             throw new IntegrationProblemException(
                     IntegrationProblem.retryableConflict(
@@ -267,6 +297,24 @@ public class ScenarioRehearsalRuntimeService {
      * @return independently verified portable evidence
      */
     public ScenarioRehearsalEvidenceBundle evidence(
+            String runId, IntegrationRequestContext identity) {
+        MirrorOperationObservability.Observation observation =
+                observations.start(
+                        MirrorOperationAuditEvent.Operation
+                                .SCENARIO_REHEARSAL_EVIDENCE_READ,
+                        identity, "", "", runId);
+        try {
+            ScenarioRehearsalEvidenceBundle bundle =
+                    evidenceObserved(runId, identity);
+            observation.succeeded(
+                    bundle.attestation().runId());
+            return bundle;
+        } catch (RuntimeException failure) {
+            throw observation.failed(failure);
+        }
+    }
+
+    private ScenarioRehearsalEvidenceBundle evidenceObserved(
             String runId, IntegrationRequestContext identity) {
         requirePurpose(identity);
         CapabilitySnapshot.Scope scope =

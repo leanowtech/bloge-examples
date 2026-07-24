@@ -840,15 +840,18 @@ Spring CGLIB 代理后才失效的装配回归。
 
 这次关闭的是“聚合执行可恢复”病根，不是发布治理终点。当前 aggregate 状态机
 采用可观测的 `ACTIVE/COMPLETED + lease/cursor` 投影，而不是暴露没有外部消费
-价值的瞬态枚举；尚缺 operation audit、retention/legal hold、WORM/transparency
-anchor 和 ANEKE workbook seed，所以
+价值的瞬态枚举。受保护 run/evidence-read 的成功与失败已接入既有 payload-free
+operation audit，最终 run 的 evidence/request/audit 同事务失败关闭；尚缺内部
+claim/checkpoint/takeover 生命周期审计、retention/legal hold、
+WORM/transparency anchor 和 ANEKE workbook seed，所以
 `mirrorScenarioRehearsalEvidenceApi=true` 但
 `mirrorScenarioRehearsalEvidence=false` 保持不变。Scenario/Rehearsal 从 55%
 上调至 64%，固定权重总分从 55.27% 上调至 56.71%，距理想态 43.29%。
 
-下一条最短路径是让 aggregate evidence 可被治理系统可靠消费：把
-start/checkpoint/takeover/release/terminal 操作写入 payload-free audit，定义
-retention/legal-hold 与删除证明，然后从 verified bundle 确定性投影 ANEKE
+下一条最短路径是让 aggregate evidence 可被治理系统可靠消费：在已完成的
+protected operation terminal audit 之下，把
+claim/checkpoint/takeover/release 等内部转换写入 payload-free lifecycle audit，
+定义 retention/legal-hold 与删除证明，然后从 verified bundle 确定性投影 ANEKE
 workbook seed。其后再做 batch job、deep link 与 owner UI；Fidelity score
 仍不应抢跑。
 
