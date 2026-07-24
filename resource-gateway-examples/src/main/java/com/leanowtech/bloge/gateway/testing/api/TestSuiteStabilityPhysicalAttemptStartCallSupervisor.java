@@ -3,13 +3,14 @@ package com.leanowtech.bloge.gateway.testing.api;
 import java.time.Duration;
 import java.util.Objects;
 import java.util.Set;
+import java.util.concurrent.ArrayBlockingQueue;
 import java.util.concurrent.Callable;
 import java.util.concurrent.CancellationException;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.Future;
 import java.util.concurrent.RejectedExecutionException;
-import java.util.concurrent.SynchronousQueue;
+import java.util.concurrent.Semaphore;
 import java.util.concurrent.ThreadFactory;
 import java.util.concurrent.ThreadPoolExecutor;
 import java.util.concurrent.TimeUnit;
@@ -32,6 +33,7 @@ public final class TestSuiteStabilityPhysicalAttemptStartCallSupervisor
 
     private final Policy policy;
     private final ThreadPoolExecutor executor;
+    private final Semaphore admission;
     private final Set<CallState<?>> runningCalls = ConcurrentHashMap.newKeySet();
     private final Object outcomeLock = new Object();
     private final Object occupancyLock = new Object();
@@ -63,9 +65,11 @@ public final class TestSuiteStabilityPhysicalAttemptStartCallSupervisor
         ThreadFactory factory = task -> Thread.ofPlatform().daemon(true).name(
                 "resource-gateway-physical-attempt-start-" + poolId + '-'
                         + threadSequence.incrementAndGet()).unstarted(task);
+        admission = new Semaphore(policy.maximumConcurrentCalls(), true);
         executor = new ThreadPoolExecutor(
                 policy.maximumConcurrentCalls(), policy.maximumConcurrentCalls(),
-                0L, TimeUnit.MILLISECONDS, new SynchronousQueue<>(), factory,
+                0L, TimeUnit.MILLISECONDS,
+                new ArrayBlockingQueue<>(policy.maximumConcurrentCalls()), factory,
                 new ThreadPoolExecutor.AbortPolicy());
     }
 
@@ -136,24 +140,30 @@ public final class TestSuiteStabilityPhysicalAttemptStartCallSupervisor
             closedCalls.incrementAndGet();
             throw failed(callType, Disposition.CLOSED);
         }
+        if (!admission.tryAcquire()) {
+            saturatedCalls.incrementAndGet();
+            throw failed(callType, Disposition.SATURATED);
+        }
         CallState<T> call = new CallState<>(operation);
         Future<T> future;
-        try {
-            synchronized (outcomeLock) {
+        synchronized (outcomeLock) {
+            if (closed.get()) {
+                admission.release();
+                closedCalls.incrementAndGet();
+                throw failed(callType, Disposition.CLOSED);
+            }
+            try {
+                future = executor.submit(call);
+                acceptedCalls.incrementAndGet();
+            } catch (RejectedExecutionException rejected) {
+                admission.release();
                 if (closed.get()) {
                     closedCalls.incrementAndGet();
                     throw failed(callType, Disposition.CLOSED);
                 }
-                future = executor.submit(call);
-                acceptedCalls.incrementAndGet();
+                saturatedCalls.incrementAndGet();
+                throw failed(callType, Disposition.SATURATED);
             }
-        } catch (RejectedExecutionException saturated) {
-            if (closed.get()) {
-                closedCalls.incrementAndGet();
-                throw failed(callType, Disposition.CLOSED);
-            }
-            saturatedCalls.incrementAndGet();
-            throw failed(callType, Disposition.SATURATED);
         }
         try {
             T result = Objects.requireNonNull(
@@ -349,34 +359,38 @@ public final class TestSuiteStabilityPhysicalAttemptStartCallSupervisor
 
         @Override
         public T call() throws Exception {
-            synchronized (this) {
-                synchronized (outcomeLock) {
-                    if (closed.get()) {
-                        throw new CancellationException();
-                    }
-                    started = true;
-                    synchronized (occupancyLock) {
-                        activeCalls.incrementAndGet();
-                    }
-                    runningCalls.add(this);
-                }
-                countLingeringIfRequired();
-            }
             try {
-                return operation.call();
-            } finally {
                 synchronized (this) {
-                    completed = true;
-                    if (lingeringCounted) {
+                    synchronized (outcomeLock) {
+                        if (closed.get()) {
+                            throw new CancellationException();
+                        }
+                        started = true;
                         synchronized (occupancyLock) {
-                            lingeringCalls.decrementAndGet();
+                            activeCalls.incrementAndGet();
+                        }
+                        runningCalls.add(this);
+                    }
+                    countLingeringIfRequired();
+                }
+                try {
+                    return operation.call();
+                } finally {
+                    synchronized (this) {
+                        completed = true;
+                        if (lingeringCounted) {
+                            synchronized (occupancyLock) {
+                                lingeringCalls.decrementAndGet();
+                            }
                         }
                     }
+                    synchronized (occupancyLock) {
+                        activeCalls.decrementAndGet();
+                    }
+                    runningCalls.remove(this);
                 }
-                synchronized (occupancyLock) {
-                    activeCalls.decrementAndGet();
-                }
-                runningCalls.remove(this);
+            } finally {
+                admission.release();
             }
         }
 

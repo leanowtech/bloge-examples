@@ -40,7 +40,7 @@ class TestSuiteStabilityPhysicalAttemptStartCallSupervisorTest {
                     return attestation;
                 });
 
-        try (var supervisor = supervisor(Duration.ofSeconds(1), 2)) {
+        try (var supervisor = supervisor(Duration.ofSeconds(1), 1)) {
             assertThat(supervisor.descriptor(authority)).isSameAs(descriptor);
             assertThat(supervisor.start(authority, command)).isSameAs(attestation);
             assertThat(supervisor.snapshot())
@@ -55,6 +55,29 @@ class TestSuiteStabilityPhysicalAttemptStartCallSupervisorTest {
         }
         assertThat(descriptorCalls).hasValue(1);
         assertThat(startCalls).hasValue(1);
+    }
+
+    @Test
+    void completedCallsHandCapacityDirectlyToSequentialSuccessors() {
+        TestSuiteStabilityPhysicalAttemptStartAuthority authority = authority(
+                TestSuiteStabilityPhysicalAttemptStartCallSupervisorTest::descriptor,
+                ignored -> attestation(command()));
+
+        try (var supervisor = supervisor(Duration.ofSeconds(1), 1)) {
+            for (int call = 0; call < 1_000; call++) {
+                assertThat(supervisor.descriptor(authority)).isEqualTo(descriptor());
+            }
+
+            assertThat(supervisor.snapshot())
+                    .extracting(
+                            TestSuiteStabilityPhysicalAttemptStartCallSupervisor.Snapshot
+                                    ::acceptedCalls,
+                            TestSuiteStabilityPhysicalAttemptStartCallSupervisor.Snapshot
+                                    ::completedCalls,
+                            TestSuiteStabilityPhysicalAttemptStartCallSupervisor.Snapshot
+                                    ::saturatedCalls)
+                    .containsExactly(1_000L, 1_000L, 0L);
+        }
     }
 
     @Test
