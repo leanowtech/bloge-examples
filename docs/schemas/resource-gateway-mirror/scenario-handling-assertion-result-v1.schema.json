@@ -1,0 +1,148 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://bloge.dev/schemas/resource-gateway-mirror/scenario-handling-assertion-result-v1.schema.json",
+  "title": "Resource Gateway Scenario Handling Assertion Result v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion", "resultFingerprint", "runId",
+    "evidenceBundleFingerprint", "planFingerprint", "assertionRef",
+    "observation", "outcome", "severity", "governanceCode",
+    "reasonCode", "observed"
+  ],
+  "properties": {
+    "schemaVersion": {
+      "const": "resourceGateway.scenarioHandlingAssertionResult.v1"
+    },
+    "resultFingerprint": {
+      "$ref": "mirror-plan-v1.schema.json#/$defs/fingerprint"
+    },
+    "runId": { "$ref": "#/$defs/identifier" },
+    "evidenceBundleFingerprint": {
+      "$ref": "mirror-plan-v1.schema.json#/$defs/fingerprint"
+    },
+    "planFingerprint": {
+      "$ref": "mirror-plan-v1.schema.json#/$defs/fingerprint"
+    },
+    "assertionRef": { "$ref": "#/$defs/assertionRef" },
+    "observation": {
+      "enum": [
+        "GRAPH_OUTPUT_VALUE", "GRAPH_OUTPUT_SCHEMA", "NODE_STATUS", "EDGE_STATUS",
+        "CAPABILITY_OCCURRENCE", "INVOCATION_INPUT", "ERROR", "FALLBACK",
+        "COMPENSATION", "STATE_TRANSITION", "FINAL_STATE_INVARIANT",
+        "SIDE_EFFECT_RECEIPT", "GOVERNANCE_EXPECTATION", "LATENCY_BUDGET",
+        "RETRY_BUDGET", "RESOURCE_BUDGET"
+      ]
+    },
+    "outcome": { "enum": ["PASS", "FAIL", "INDETERMINATE"] },
+    "severity": { "enum": ["BLOCKER", "WARNING"] },
+    "governanceCode": { "$ref": "#/$defs/machineValue" },
+    "reasonCode": {
+      "enum": [
+        "ASSERTION_MATCHED",
+        "ASSERTION_MISMATCH",
+        "ASSERTION_OBSERVATION_ABSENT",
+        "ASSERTION_EVIDENCE_INCOMPLETE",
+        "ASSERTION_EVIDENCE_FACT_UNAVAILABLE"
+      ]
+    },
+    "observed": { "$ref": "#/$defs/observedFacts" }
+  },
+  "allOf": [
+    {
+      "if": {
+        "properties": { "outcome": { "const": "PASS" } },
+        "required": ["outcome"]
+      },
+      "then": {
+        "properties": { "reasonCode": { "const": "ASSERTION_MATCHED" } }
+      }
+    },
+    {
+      "if": {
+        "properties": { "outcome": { "const": "FAIL" } },
+        "required": ["outcome"]
+      },
+      "then": {
+        "properties": {
+          "reasonCode": {
+            "enum": ["ASSERTION_MISMATCH", "ASSERTION_OBSERVATION_ABSENT"]
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": { "outcome": { "const": "INDETERMINATE" } },
+        "required": ["outcome"]
+      },
+      "then": {
+        "properties": {
+          "reasonCode": {
+            "enum": [
+              "ASSERTION_EVIDENCE_INCOMPLETE",
+              "ASSERTION_EVIDENCE_FACT_UNAVAILABLE"
+            ]
+          }
+        }
+      }
+    }
+  ],
+  "$defs": {
+    "identifier": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 512,
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9@._:/-]{0,511}$"
+    },
+    "machineValue": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 192,
+      "pattern": "^[A-Z][A-Z0-9_.-]{0,191}$"
+    },
+    "assertionRef": {
+      "allOf": [
+        { "$ref": "mirror-plan-v1.schema.json#/$defs/artifactRef" },
+        { "properties": { "kind": { "const": "CASE_HANDLING_ASSERTION" } } }
+      ]
+    },
+    "machineValues": {
+      "type": "array",
+      "maxItems": 256,
+      "uniqueItems": true,
+      "items": { "$ref": "#/$defs/machineValue" }
+    },
+    "fingerprints": {
+      "type": "array",
+      "maxItems": 256,
+      "uniqueItems": true,
+      "items": {
+        "$ref": "mirror-plan-v1.schema.json#/$defs/fingerprint"
+      }
+    },
+    "observedFacts": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "statuses", "errorCodes", "fingerprints", "sources", "limitations"
+      ],
+      "properties": {
+        "statuses": { "$ref": "#/$defs/machineValues" },
+        "errorCodes": { "$ref": "#/$defs/machineValues" },
+        "fingerprints": { "$ref": "#/$defs/fingerprints" },
+        "sources": { "$ref": "#/$defs/machineValues" },
+        "occurrenceCount": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "durationMillis": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "booleanValue": { "type": "boolean" },
+        "limitations": { "$ref": "#/$defs/machineValues" }
+      }
+    }
+  }
+}

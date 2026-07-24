@@ -46,6 +46,11 @@
       "maxLength": 512,
       "pattern": "^$|^[A-Za-z0-9][A-Za-z0-9@._:/-]{0,511}$"
     },
+    "optionalCoordinate": {
+      "type": "string",
+      "maxLength": 2048,
+      "pattern": "^$|^[^\\u0000-\\u001F\\u007F]+$"
+    },
     "machineValue": {
       "type": "string",
       "minLength": 1,
@@ -73,8 +78,8 @@
       "required": ["nodeId", "edgeId", "invocationSiteId", "capabilityRef", "path"],
       "properties": {
         "nodeId": { "$ref": "#/$defs/optionalIdentifier" },
-        "edgeId": { "$ref": "#/$defs/optionalIdentifier" },
-        "invocationSiteId": { "$ref": "#/$defs/optionalIdentifier" },
+        "edgeId": { "$ref": "#/$defs/optionalCoordinate" },
+        "invocationSiteId": { "$ref": "#/$defs/optionalCoordinate" },
         "capabilityRef": {
           "oneOf": [
             { "type": "null" },

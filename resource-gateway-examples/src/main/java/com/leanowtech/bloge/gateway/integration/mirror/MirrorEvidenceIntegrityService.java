@@ -154,6 +154,33 @@ public final class MirrorEvidenceIntegrityService {
     }
 
     /**
+     * Verifies and canonically detaches a bundle before trusted evidence consumption.
+     *
+     * <p>The returned capability object can only be created by this integrity boundary. Downstream
+     * evaluators accept it instead of a raw bundle so signature verification cannot be skipped by
+     * accident.</p>
+     *
+     * @param bundle caller-supplied portable evidence
+     * @return canonical bundle carrying proof that this verifier accepted it
+     * @throws IllegalArgumentException when material or signature verification fails
+     * @throws IllegalStateException when the verification authority is unavailable
+     */
+    public VerifiedBundle requireVerified(MirrorEvidenceBundle bundle) {
+        Verification verification = verify(bundle);
+        if (verification == Verification.UNAVAILABLE) {
+            throw new IllegalStateException(
+                    "mirror evidence verification authority is unavailable");
+        }
+        if (verification != Verification.VERIFIED) {
+            throw new IllegalArgumentException("mirror evidence bundle is not verified");
+        }
+        MirrorRunEvidence evidence = canonicalSnapshot(bundle.evidence());
+        return new VerifiedBundle(new MirrorEvidenceBundle(
+                bundle.schemaVersion(), bundle.bundleFingerprint(),
+                bundle.payloadPolicy(), bundle.attestation(), evidence));
+    }
+
+    /**
      * Returns a canonical independently owned snapshot before any identity is trusted.
      *
      * @param evidence caller-owned evidence
@@ -287,6 +314,32 @@ public final class MirrorEvidenceIntegrityService {
         VERIFIED,
         INVALID,
         UNAVAILABLE
+    }
+
+    /**
+     * Capability token proving that one detached bundle passed this integrity boundary.
+     *
+     * <p>The constructor is private so application code cannot label an arbitrary bundle as
+     * verified. Consumers may inspect the immutable protocol value through {@link #bundle()}.</p>
+     */
+    public static final class VerifiedBundle {
+        private final MirrorEvidenceBundle bundle;
+
+        private VerifiedBundle(MirrorEvidenceBundle bundle) {
+            this.bundle = Objects.requireNonNull(bundle, "bundle");
+        }
+
+        /** @return canonically detached, independently verified portable evidence */
+        public MirrorEvidenceBundle bundle() {
+            return bundle;
+        }
+
+        /** Keeps evidence internals out of ordinary logs. */
+        @Override
+        public String toString() {
+            return "VerifiedBundle[runId=" + bundle.evidence().runId()
+                    + ", bundleFingerprint=" + bundle.bundleFingerprint() + "]";
+        }
     }
 
     /**

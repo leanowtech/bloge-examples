@@ -94,6 +94,7 @@ final class CapabilityMirrorSchemaValidator {
             "mirror-session-checkpoint-bundle-v1.schema.json",
             "mirror-session-recovery-result-v1.schema.json",
             "case-handling-assertion-v1.schema.json",
+            "scenario-handling-assertion-result-v1.schema.json",
             "scenario-case-v1.schema.json",
             "scenario-pack-v1.schema.json",
             "scenario-pack-stage7-v1.fixture.schema.json",

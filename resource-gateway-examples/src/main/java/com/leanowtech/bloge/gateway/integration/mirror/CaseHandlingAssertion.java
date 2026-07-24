@@ -119,8 +119,9 @@ public record CaseHandlingAssertion(
         /** Normalizes bounded selector coordinates. */
         public Selector {
             nodeId = optionalIdentifier(nodeId, "nodeId");
-            edgeId = optionalIdentifier(edgeId, "edgeId");
-            invocationSiteId = optionalIdentifier(invocationSiteId, "invocationSiteId");
+            edgeId = optionalCoordinate(edgeId, "edgeId");
+            invocationSiteId = optionalCoordinate(
+                    invocationSiteId, "invocationSiteId");
             if (capabilityRef != null && !"CAPABILITY".equals(capabilityRef.kind())) {
                 throw new IllegalArgumentException(
                         "capabilityRef must be an exact CAPABILITY ref");
@@ -270,6 +271,15 @@ public record CaseHandlingAssertion(
     private static String optionalIdentifier(String value, String field) {
         String normalized = value == null ? "" : value.trim();
         if (!normalized.isBlank() && !IDENTIFIER.matcher(normalized).matches()) {
+            throw new IllegalArgumentException(field + " is invalid");
+        }
+        return normalized;
+    }
+
+    private static String optionalCoordinate(String value, String field) {
+        String normalized = value == null ? "" : value.trim();
+        if (normalized.length() > 2_048
+                || normalized.chars().anyMatch(Character::isISOControl)) {
             throw new IllegalArgumentException(field + " is invalid");
         }
         return normalized;

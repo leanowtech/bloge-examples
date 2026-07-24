@@ -77,6 +77,7 @@ offline artifact verification live in the independent `resource-gateway-test-kit
 | `mirror-session-checkpoint-bundle-v1.schema.json` | `MirrorSessionCheckpointBundle` | Portable `HASH_ONLY` checkpoint and attestation bundle |
 | `mirror-session-recovery-result-v1.schema.json` | `MirrorSessionRecoveryResult` | Payload-free exact recovery admission and reconstructed Session run binding |
 | `case-handling-assertion-v1.schema.json` | `CaseHandlingAssertion` | Payload-free business handling assertion over graph, node, edge, capability, state, effect, governance, latency, retry, and resource evidence |
+| `scenario-handling-assertion-result-v1.schema.json` | `ScenarioHandlingAssertionResult` | Content-addressed payload-free result binding one exact assertion to one verified evidence bundle; unavailable facts remain explicitly indeterminate |
 | `scenario-case-v1.schema.json` | `ScenarioCase` | Exact binding from one business intent to an existing TestSuite case, FixtureBundle, MirrorPlan, deterministic services, optional isolated Session checkpoint, explicit fault rules, and handling assertions |
 | `scenario-pack-v1.schema.json` | `ScenarioPack` | Content-addressed ordered scenario closure and fail-closed sequential rehearsal policy |
 | `scenario-rehearsal-compile-request-v1.schema.json` | `ScenarioRehearsalCompileRequest` | Exact registered ScenarioPack revision and fingerprint requested for online closure compilation |

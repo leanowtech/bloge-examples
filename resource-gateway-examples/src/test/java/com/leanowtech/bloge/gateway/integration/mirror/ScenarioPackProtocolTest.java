@@ -195,6 +195,25 @@ class ScenarioPackProtocolTest {
         ScenarioRehearsalCompileRequest compileRequest =
                 new ScenarioRehearsalCompileRequest(
                         "", pack.revision(), pack.fingerprint());
+        ScenarioHandlingAssertionResult assertionResult =
+                ScenarioHandlingAssertionResultIntegrity.seal(
+                        mapper,
+                        new ScenarioHandlingAssertionResult(
+                                "", "", "run-refund-1", SHA_A, SHA_B,
+                                ScenarioPackIntegrity.reference(assertion),
+                                assertion.observation(),
+                                ScenarioHandlingAssertionResult.Outcome
+                                        .INDETERMINATE,
+                                assertion.severity(),
+                                assertion.governanceCode(),
+                                ScenarioHandlingAssertionResult.ReasonCode
+                                        .ASSERTION_EVIDENCE_FACT_UNAVAILABLE,
+                                new ScenarioHandlingAssertionResult
+                                        .ObservedFacts(
+                                        List.of("PASSED"), List.of(), List.of(),
+                                        List.of("EXPLORATORY"), 1L, 12L, false,
+                                        List.of(
+                                                "MISSING_GRAPH_OUTPUT_SCHEMA_FACT"))));
 
         assertProperties(assertion, "case-handling-assertion-v1.schema.json");
         assertProperties(
@@ -218,6 +237,13 @@ class ScenarioPackProtocolTest {
                 compileRequest,
                 "scenario-rehearsal-compile-request-v1.schema.json");
         assertProperties(
+                assertionResult,
+                "scenario-handling-assertion-result-v1.schema.json");
+        assertProperties(
+                assertionResult.observed(),
+                schema("scenario-handling-assertion-result-v1.schema.json")
+                        .at("/$defs/observedFacts/properties"));
+        assertProperties(
                 pack.policy(),
                 schema("scenario-pack-v1.schema.json")
                         .at("/$defs/policy/properties"));
@@ -227,7 +253,8 @@ class ScenarioPackProtocolTest {
                 "scenario-case-v1.schema.json",
                 "scenario-pack-v1.schema.json",
                 "scenario-rehearsal-compile-request-v1.schema.json",
-                "compiled-scenario-rehearsal-plan-v1.schema.json")) {
+                "compiled-scenario-rehearsal-plan-v1.schema.json",
+                "scenario-handling-assertion-result-v1.schema.json")) {
             JsonNode properties = schema(file).path("properties");
             assertThat(properties.has("input")).isFalse();
             assertThat(properties.has("output")).isFalse();

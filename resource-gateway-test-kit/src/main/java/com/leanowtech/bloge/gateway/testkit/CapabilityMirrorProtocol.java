@@ -561,6 +561,10 @@ public final class CapabilityMirrorProtocol {
     public static final String CASE_HANDLING_ASSERTION_SCHEMA_RESOURCE =
             SCHEMA_RESOURCE_ROOT
                     + "case-handling-assertion-v1.schema.json";
+    /** Packaged payload-free result of evaluating one exact handling assertion. */
+    public static final String SCENARIO_HANDLING_ASSERTION_RESULT_SCHEMA_RESOURCE =
+            SCHEMA_RESOURCE_ROOT
+                    + "scenario-handling-assertion-result-v1.schema.json";
     /** Packaged fixed ScenarioPack compatibility-fixture schema. */
     public static final String SCENARIO_PACK_FIXTURE_SCHEMA_RESOURCE =
             SCHEMA_RESOURCE_ROOT

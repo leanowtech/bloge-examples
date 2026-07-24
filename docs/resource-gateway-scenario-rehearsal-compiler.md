@@ -13,10 +13,13 @@ Fixture、MirrorPlan 和可选 Session checkpoint 绑定成一个不可变、
 | `ScenarioPack.v1` | 可用 | 多个 case、断言、状态模型和写效果形成同一业务能力的不可变场景包 |
 | 场景资产注册表 | 可用 | 全企业 scope、append-only、exact revision/fingerprint、读取时重验完整性 |
 | `CompiledScenarioRehearsalPlan.v1` | 可用 | 编译时证明跨仓储依赖闭包一致，产出 payload-free 执行许可 |
+| `ScenarioHandlingAssertionResult.v1` | 可用（求值内核） | 把一个 exact assertion 绑定到一个已验签 evidence bundle；只输出状态、错误码、指纹、计数、耗时、布尔值和局限 |
+| `ScenarioHandlingAssertionEvaluator` | 可用（求值内核） | 对现有 evidence 已表达的 node/edge/capability/input/error/state/receipt/governance/budget 事实确定性求值 |
 | 场景执行与聚合 evidence | 未交付 | capability probe 必须继续返回 `false`，不能把“可编译”冒充成“已跑通” |
 
 这条链路解决的是“执行前到底冻结了什么”。下一条链路才负责逐 case
-执行、断言求值、state diff、聚合 evidence 和 ANEKE workbook seed。
+执行、state diff、结果聚合和 ANEKE workbook seed。单断言求值内核已经
+可复用，但尚未被误标为 Scenario runtime。
 
 ## 2. 为什么需要独立编译计划
 
@@ -231,7 +234,54 @@ curl -sS \
 correlation id 和 payload-free details。认证失败在 decoder 前发生，避免未授权
 请求通过解析差异探测协议内部结构。
 
-## 9. 数据库与重启语义
+## 9. 单断言求值
+
+`ScenarioHandlingAssertionEvaluator` 不接收裸 `MirrorEvidenceBundle`。调用方必须
+先通过持有验证 key authority 的 `MirrorEvidenceIntegrityService` 获取类型化能力令牌：
+
+```java
+MirrorEvidenceIntegrityService.VerifiedBundle verified =
+        evidenceIntegrity.requireVerified(bundle);
+ScenarioHandlingAssertionResult result =
+        assertionEvaluator.evaluate(assertion, verified);
+ScenarioHandlingAssertionResultIntegrity.verify(mapper, result);
+```
+
+`requireVerified` 会重算嵌套 resolution/state seal、evidence fingerprint、
+bundle fingerprint 和 detached signature，并返回 canonical detached bundle。
+验证 authority 不可用与材料/签名无效分别失败；不能用一个调用方布尔值冒充验签结果。
+断言还必须是同一完整 enterprise scope 下的 ACTIVE revision，owner approval
+不得晚于 evidence `startedAt`，未撤销且到期时间必须严格晚于 `completedAt`。
+事后补批和执行窗口内到期都失败关闭。
+
+当前求值覆盖：
+
+| 断言维度 | 当前证据求值语义 |
+|---|---|
+| `NODE_STATUS` / `EDGE_STATUS` | exact selector 命中的所有状态都必须属于允许集合；没有 observation 为失败 |
+| `CAPABILITY_OCCURRENCE` | 按 site + graph path + correlation + occurrence 去重；同一次调用的 retry attempt 不重复计数 |
+| `INVOCATION_INPUT` | node input 与 resolution request 的所有可见指纹必须匹配 |
+| `ERROR` | node、attempt、resolution 的稳定错误码精确匹配 |
+| `STATE_TRANSITION` / `SIDE_EFFECT_RECEIPT` | 从 v4/v5 state evidence 读取 committed/replayed/rejected 状态与 receipt fingerprint |
+| `GOVERNANCE_EXPECTATION` | 只有 `CERTIFIABLE` 且 run/isolation limitation 均为空才为 certifiable |
+| `LATENCY_BUDGET` | whole run 或 selected node occurrence 的最大耗时 |
+| `RETRY_BUDGET` | node attempts 超出第一次的次数；无 node trace 时按 resolution attempt 重建 |
+| `RESOURCE_BUDGET` | whole run 或 selector 范围内的 node、edge、resolution 数量 |
+
+当前 signed evidence 尚未携带 path-level graph output/schema、fallback 顺序、
+compensation 和 final invariant 事实。因此对应断言固定返回
+`INDETERMINATE + ASSERTION_EVIDENCE_FACT_UNAVAILABLE`，而不是从 whole-run
+`PASSED` 推断业务正确。`EVIDENCE_INCOMPLETE` 同样固定返回
+`INDETERMINATE`。这两类结果在后续 aggregate gate 中都必须阻断 blocker
+断言，不能按 warning 静默吞掉。
+
+结果协议为
+`resourceGateway.scenarioHandlingAssertionResult.v1`，采用 strict Schema、
+256 KiB canonical 上限和 content address。它绑定 exact `runId`、
+evidence bundle fingerprint、plan fingerprint 和 assertion ref，不复制
+request、response、实体或 fixture payload。
+
+## 10. 数据库与重启语义
 
 场景资产和编译计划存放在独立 append-only 表中：
 
@@ -245,13 +295,13 @@ canonical fingerprint，并核对数据库索引身份；checkpoint 还会重新
 本地重启后可以按 exact fingerprint 读取同一资产。数据库备份、跨区域恢复、
 WORM、外部 transparency anchor 和法律保留仍属于部署认证，不由本地哈希代替。
 
-## 10. 开发验证
+## 11. 开发验证
 
 先运行场景纵向聚焦测试：
 
 ```bash
 mvn -f resource-gateway-examples/pom.xml \
-  -Dtest=ScenarioRehearsalControllerTest,ScenarioArtifactRequestDecoderTest,ScenarioArtifactRegistryServiceTest,ScenarioRehearsalIntegrationServiceTest,ScenarioRehearsalCompilerTest,DatabaseScenarioArtifactRepositoryTest,DatabaseCompiledScenarioRehearsalPlanRepositoryTest,ScenarioPackProtocolTest,MirrorRuntimeConfigurationTest \
+  -Dtest=ScenarioRehearsalControllerTest,ScenarioArtifactRequestDecoderTest,ScenarioArtifactRegistryServiceTest,ScenarioRehearsalIntegrationServiceTest,ScenarioRehearsalCompilerTest,DatabaseScenarioArtifactRepositoryTest,DatabaseCompiledScenarioRehearsalPlanRepositoryTest,ScenarioPackProtocolTest,MirrorEvidenceIntegrityServiceTest,ScenarioHandlingAssertionEvaluatorTest,MirrorRuntimeConfigurationTest \
   test
 ```
 
@@ -262,13 +312,20 @@ mvn -f resource-gateway-examples/pom.xml clean verify
 mvn -f resource-gateway-test-kit/pom.xml clean verify
 ```
 
+2026-07-24 本轮门禁结果：Resource Gateway `4,994` 项测试零失败、零错误、
+3 项条件跳过（含真实 Chrome DOM/工作流）；Test Kit `346` 项零失败、零错误，
+并完成 strict schema packaging、shaded JAR 和公共 JavaDoc。
+
 关键实现与协议：
 
 - `resource-gateway-examples/src/main/java/com/leanowtech/bloge/gateway/integration/mirror/ScenarioRehearsalCompiler.java`
 - `resource-gateway-examples/src/main/java/com/leanowtech/bloge/gateway/integration/mirror/ScenarioArtifactRegistryService.java`
 - `resource-gateway-examples/src/main/java/com/leanowtech/bloge/gateway/integration/ScenarioRehearsalController.java`
+- `resource-gateway-examples/src/main/java/com/leanowtech/bloge/gateway/integration/mirror/ScenarioHandlingAssertionEvaluator.java`
+- `resource-gateway-examples/src/main/java/com/leanowtech/bloge/gateway/integration/mirror/ScenarioHandlingAssertionResult.java`
 - `docs/schemas/resource-gateway-mirror/scenario-rehearsal-compile-request-v1.schema.json`
 - `docs/schemas/resource-gateway-mirror/compiled-scenario-rehearsal-plan-v1.schema.json`
+- `docs/schemas/resource-gateway-mirror/scenario-handling-assertion-result-v1.schema.json`
 
 独立 consumer 继续使用 `resource-gateway-test-kit` 的
 `ScenarioPackVerifier` 验证 ScenarioPack/Case/Assertion；编译计划的独立

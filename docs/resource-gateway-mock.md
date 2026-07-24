@@ -576,11 +576,11 @@ Resource Gateway 已有的工业底座应直接复用：
 | 递归 DAG 测试 | 85% | MirrorPlan/closure/runtime inventory/fixture control 已统一；缺 contract-mock 展开治理和状态世界 |
 | 日志蒸馏与语料 | 82% | payload-free signed observation、准入/隔离、immutable review、candidate/publication/trajectory/cluster 独立 lineage、元数据风险门禁、fixture exact/trajectory/cluster binding、在线 revalidation、test/staging `RECORDED_EXACT`/`RECORDED_TRAJECTORY`/`RECORDED_CLUSTER`、BLOGE 原生 retry loop、identity-safe projection、Wilson confidence、Session state read 与独立 verifier 已落地；缺生产 payload authority、漂移、偏差、outcome 校准和删除证明 |
 | 有状态业务世界 | 91% | 协议、read/write 退款 fixture、独立 verifier/sealer/client、事务内核、受保护 Session API、独立 AES-GCM 数据面、lease/fence/CAS、durable write-attempt journal/reconciliation、TTL/destroy、全局/scope 容量、保留字节、命令背压、过期擦除、固定 read head、run-scoped virtual write、真实 DAG read-write-read、payload-free v1/v2/v3 state evidence、read-only/successful-transition/write-outcome ANEKE seed、签名 HASH_ONLY checkpoint 与同数据面代际精确恢复准入已落地；缺 TEE/KMS、跨区域数据恢复、真实 process-kill/network parity、目标数据库容量认证和 HA/DR certification |
-| Scenario/Rehearsal | 32% | ScenarioPack/Case/Assertion、append-only registry、exact 跨仓储 compiler、payload-free compiled plan 及 TestSuite/Fixture 全企业作用域 authority 已落地；缺 case runtime、断言求值、聚合 evidence、批量任务和 owner UX |
+| Scenario/Rehearsal | 38% | ScenarioPack/Case/Assertion、append-only registry、exact compiler、全企业作用域 authority、验签能力令牌、payload-free assertion result 与 evidence-bound evaluator 已落地；缺 case runtime、聚合 evidence、批量任务和 owner UX |
 | Fidelity/Outcome | 5% | 缺保真向量、shadow、权威结果归因和校准闭环 |
 | 业务运营工作台 | 10% | Author Canvas 尚未成为案例驱动的镜像运营工作台 |
 
-结论：基础设施准备度约 88%，镜像复利闭环完成度约 41%，完整理想态完成度约 52%。剩余主要矛盾已经
+结论：基础设施准备度约 88%，镜像复利闭环完成度约 43%，完整理想态完成度约 53%。剩余主要矛盾已经
 从“能否安全执行和取证”转向“能否把可信 observation 持续蒸馏成可校准、可拒答、可删除的业务拟合资产”。
 
 ### 3.1 2026-07-24 Scenario 编译期闭包迭代差距复评
@@ -677,6 +677,44 @@ MirrorPlan 编译和 Scenario compiler 全部调用完整 scope repository API�
 Vitest `150/150` 全绿。它关闭的是 Scenario runtime 的 authority 前置条件，不等于 case 已执行；因此
 Scenario/Rehearsal 只从 28% 上调至 32%，Fidelity/Outcome 与业务工作台均不变。按固定权重总分为
 `51.59%`，距理想态 `48.41%`，下一最短路径仍是 RG-MIR-SCEN-002 的逐 case runtime。
+
+### 3.3 2026-07-24 单断言证据求值迭代差距复评
+
+本轮先关闭 RG-MIR-SCEN-003 中可独立交付的“处置断言结果”内核。新增
+`resourceGateway.scenarioHandlingAssertionResult.v1` strict Schema、Java model、
+content address 和 test-kit schema packaging。结果只包含 run/plan/evidence/assertion
+精确绑定、状态、错误码、指纹、来源、计数、耗时、布尔值和 bounded limitation，
+不复制业务 input/output、fixture、Session entity 或诊断文本。
+
+求值器已覆盖 node/edge status、capability occurrence、invocation input、error、
+state transition、side-effect receipt、governance、latency/retry/resource budget。
+capability occurrence 按业务 occurrence 去重，retry attempt 单独计入 retry budget，
+避免把一次重试误算成两次业务调用。v4/v5 state evidence 中的 committed/replayed/
+rejected 状态和 receipt fingerprint 可直接成为断言事实。
+
+工业级边界不是“支持更多 switch case”，而是不能把未证明的事实判为通过。
+因此求值器只接收 `MirrorEvidenceIntegrityService.requireVerified` 生成的
+`VerifiedBundle` 能力令牌，未验签原始 bundle 无法通过类型签名进入求值。
+ACTIVE 断言的 owner approval 必须不晚于 evidence `startedAt`，且未撤销、
+到期时间严格晚于 `completedAt`；事后补批或执行中到期都失败关闭。
+graph output path/schema、fallback 顺序、compensation 和 final invariant 尚未进入
+当前 signed evidence，这些维度固定返回 `INDETERMINATE`；whole-run `PASSED`
+不能替代业务断言。`EVIDENCE_INCOMPLETE` 同样不能被降格为 warning pass。
+
+真实协议测试还暴露并修复了 selector 与运行坐标不一致的问题：原正则无法表达
+`loadCustomer->format` edge id 和 `/root/loadCustomer#RESOURCE` invocation site。
+两者现改为 2,048 字符上限、拒绝控制字符的结构坐标，strict Schema 同步更新。
+服务端求值/协议/证据聚焦 `30/30`、独立 test-kit schema/Scenario verifier
+`9/9` 全绿。最终 `clean verify` 门禁为 Resource Gateway `4,994` 项测试
+零失败、零错误、3 项条件跳过（含真实 Chrome DOM/工作流），Test Kit `346`
+项零失败、零错误，并通过 schema packaging、shaded JAR 与公共 JavaDoc。
+
+这仍不是可运行 ScenarioPack：还没有逐 case 调度、TestSuite input 注入、
+checkpoint 克隆、aggregate result、durable idempotency、workbook seed 和批量 API，
+capability probe 的 execution/evidence 继续保持 `false`。Scenario/Rehearsal
+由 32% 上调至 38%，固定权重总分由 51.59% 上调至 52.55%，距理想态
+47.45%。下一最短路径仍是 RG-MIR-SCEN-002 的逐 case runtime，然后把本轮
+evaluator 纳入 RG-MIR-SCEN-003 聚合闭环。
 
 ## 4. 目标架构与系统责任
 
@@ -1224,7 +1262,8 @@ tenant/organization/project/environment/region + kind/id/revision 为地址，�
 TestSuite/TestCase、FixtureBundle、MirrorPlan、fault rule 和可选 live checkpoint，拒绝 implicit fault、
 execution-service drift、classification 越界、状态闭包漂移和内容寻址反向环，并产出
 `resourceGateway.compiledScenarioRehearsalPlan.v1`。该 plan 是 payload-free 执行许可，不是运行结果；
-逐 case runtime 和 aggregate evidence 未完成前，capability probe 必须保持 execution/evidence 为 false。
+单断言 evidence evaluator 与 payload-free result 已完成；逐 case runtime 和 aggregate evidence
+未完成前，capability probe 必须保持 execution/evidence 为 false。
 操作与启停见
 [场景演练注册与编译指南](resource-gateway-scenario-rehearsal-compiler.md)。
 
@@ -1246,6 +1285,15 @@ execution-service drift、classification 越界、状态闭包漂移和内容寻
 schema/value fingerprint、occurrence bound、duration bound 或 boolean。它不能携带 request、
 response、entity 或明文 expected business value；具体值相等性继续由 FixtureBundle assertion
 负责。这样 Scenario evidence 可以进入 ANEKE workbook，而不会把业务 payload 扩散到控制面。
+
+**当前实现状态（2026-07-24）**：`ScenarioHandlingAssertionEvaluator` 只接收
+`MirrorEvidenceIntegrityService.VerifiedBundle`，从而在类型边界上强制先复验 nested seal、
+bundle fingerprint 和 detached signature。`ScenarioHandlingAssertionResult.v1` 把 exact
+assertion ref 绑定到 run、plan 和 evidence bundle，支持 PASS、FAIL、INDETERMINATE。
+node/edge/capability/input/error/state/receipt/governance/budget 已可求值；当前 evidence
+没有 path-level output/schema、fallback、compensation 和 final invariant 事实，因此这些维度
+诚实返回 `INDETERMINATE`。aggregate gate 必须把 blocker 的 INDETERMINATE 当作未证明，
+不能从 graph `PASSED` 推断处置正确。
 
 自动归纳规则只生成 `CANDIDATE`。支持度和 lift 之外，还必须有最小样本量、时间切分验证、置信区间、
 混杂风险、代理 outcome 说明和人工确认。任何归纳规则在 outcome 定义改变后自动 stale。
