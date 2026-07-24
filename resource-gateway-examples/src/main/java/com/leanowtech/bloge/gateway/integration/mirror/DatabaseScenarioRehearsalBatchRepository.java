@@ -59,6 +59,8 @@ public final class DatabaseScenarioRehearsalBatchRepository
     private final ObjectMapper mapper;
     private final Supplier<Instant> coordinationClock;
     private final TransactionTemplate mutations;
+    private final ScenarioRehearsalBatchEvidencePublisher
+            evidencePublisher;
 
     /**
      * Creates the production repository using an independent application-database clock sample.
@@ -66,12 +68,20 @@ public final class DatabaseScenarioRehearsalBatchRepository
      * @param jdbc transaction-aware application JDBC boundary
      * @param mapper canonical protocol mapper
      * @param transactionManager manager for the same datasource
+     * @param evidencePublisher mandatory atomic terminal evidence publisher
      */
     public DatabaseScenarioRehearsalBatchRepository(
             JdbcTemplate jdbc,
             ObjectMapper mapper,
-            PlatformTransactionManager transactionManager) {
-        this(jdbc, mapper, transactionManager, null);
+            PlatformTransactionManager transactionManager,
+            ScenarioRehearsalBatchEvidencePublisher
+                    evidencePublisher) {
+        this(
+                jdbc,
+                mapper,
+                transactionManager,
+                evidencePublisher,
+                null);
     }
 
     /** Package-private deterministic database-clock seam for concurrency and deadline tests. */
@@ -79,9 +89,13 @@ public final class DatabaseScenarioRehearsalBatchRepository
             JdbcTemplate jdbc,
             ObjectMapper mapper,
             PlatformTransactionManager transactionManager,
+            ScenarioRehearsalBatchEvidencePublisher
+                    evidencePublisher,
             Supplier<Instant> coordinationClock) {
         this.jdbc = Objects.requireNonNull(jdbc, "jdbc");
         this.mapper = Objects.requireNonNull(mapper, "mapper");
+        this.evidencePublisher = Objects.requireNonNull(
+                evidencePublisher, "evidencePublisher");
         this.coordinationClock = coordinationClock == null
                 ? () -> databaseNow(this.jdbc)
                 : Objects.requireNonNull(
@@ -1197,6 +1211,13 @@ public final class DatabaseScenarioRehearsalBatchRepository
                         stored.job().cancellationReasonCode(),
                         observedAt,
                         observedAt);
+        evidencePublisher.publish(
+                stored.request(),
+                stored.manifest(),
+                terminal,
+                items(stored.job().jobId()).stream()
+                        .map(StoredItem::item)
+                        .toList());
         updateJob(
                 stored,
                 idle(stored, terminal, Instant.EPOCH));

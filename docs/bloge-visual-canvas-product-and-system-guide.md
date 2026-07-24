@@ -1154,8 +1154,9 @@ curl -sS 'http://localhost:8080/api/integration/reconciliation' \
 
 脚本会同时打开 Mirror runtime，把 scheduler 与 demo identity 固定到同一个
 `region/environment`，并等待 capability 中
-`mirrorScenarioRehearsalBatchApi=true` 和
-`mirrorScenarioRehearsalBatchCooperativeControl=true`、以及
+`mirrorScenarioRehearsalBatchApi=true`、
+`mirrorScenarioRehearsalBatchCooperativeControl=true`、
+`mirrorScenarioRehearsalBatchEvidence=true`，以及
 `mirrorScenarioRehearsalBatchScheduling=true` 后才报告 ready。默认仍不开启后台
 worker，普通画布演示不会意外消费历史队列。
 
@@ -1164,6 +1165,22 @@ next-case cursor，并读取数据库权威的 cancel/deadline 决策。点击�
 受 case timeout 限制的调用会先完成并写入可恢复进度，随后任务停止；画面上当前项
 应显示为 `INDETERMINATE`，尚未开始的项显示为 `CANCELLED`。这表示“可能已经发生
 外部效果，需要人工或补偿确认”，而不是把取消伪装成从未执行。
+
+批次进入 `SUCCEEDED`、`FAILED`、`CANCELLED` 或 `EXPIRED` 终态前，系统会在同一
+数据库事务中生成并立即复验签名 evidence；签名或存储失败时，job 与当前 item 的
+终态一起回滚，不会出现“页面显示完成但没有证据”的窗口。可使用治理读取目的获取：
+
+```bash
+curl -sS \
+  -H 'Authorization: Bearer bloge-aneke-demo-token' \
+  -H 'X-Purpose: GOVERNANCE_EVIDENCE_INGESTION' \
+  'http://localhost:8080/api/mirror/rehearsal-jobs/<jobId>/evidence'
+```
+
+返回的 `resourceGateway.scenarioRehearsalBatchEvidenceBundle.v1` 不包含 fixture、
+context、node input/output 或异常文本。它签名绑定原始 request、冻结 manifest、
+终态 job、稳定顺序 item 结果及每个 child aggregate 的 evidence/workbook 指纹；
+子 aggregate bundle 仍保持独立内容寻址，ANEKE 或 CI 可按引用继续取证。
 
 启动成功后脚本会打印：
 

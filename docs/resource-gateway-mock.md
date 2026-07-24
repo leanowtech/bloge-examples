@@ -576,11 +576,11 @@ Resource Gateway 已有的工业底座应直接复用：
 | 递归 DAG 测试 | 85% | MirrorPlan/closure/runtime inventory/fixture control 已统一；缺 contract-mock 展开治理和状态世界 |
 | 日志蒸馏与语料 | 82% | payload-free signed observation、准入/隔离、immutable review、candidate/publication/trajectory/cluster 独立 lineage、元数据风险门禁、fixture exact/trajectory/cluster binding、在线 revalidation、test/staging `RECORDED_EXACT`/`RECORDED_TRAJECTORY`/`RECORDED_CLUSTER`、BLOGE 原生 retry loop、identity-safe projection、Wilson confidence、Session state read 与独立 verifier 已落地；缺生产 payload authority、漂移、偏差、outcome 校准和删除证明 |
 | 有状态业务世界 | 91% | 协议、read/write 退款 fixture、独立 verifier/sealer/client、事务内核、受保护 Session API、独立 AES-GCM 数据面、lease/fence/CAS、durable write-attempt journal/reconciliation、TTL/destroy、全局/scope 容量、保留字节、命令背压、过期擦除、固定 read head、run-scoped virtual write、真实 DAG read-write-read、payload-free v1/v2/v3 state evidence、read-only/successful-transition/write-outcome ANEKE seed、签名 HASH_ONLY checkpoint 与同数据面代际精确恢复准入已落地；缺 TEE/KMS、跨区域数据恢复、真实 process-kill/network parity、目标数据库容量认证和 HA/DR certification |
-| Scenario/Rehearsal | 92% | ScenarioPack/Case/Assertion、exact compiler、可恢复逐 case runtime、签名 aggregate、audit/retention、ANEKE seed、durable batch manifest/queue/API/worker turn、region-local bounded scheduler，以及逐 case heartbeat/cancel/deadline cooperative control 已落地；缺 hard kill、批次签名 evidence/index、batch audit/retention、owner UX、企业策略/WORM/anchor 与异构消费者认证 |
+| Scenario/Rehearsal | 94% | ScenarioPack/Case/Assertion、exact compiler、可恢复逐 case runtime、签名 aggregate、audit/retention、ANEKE seed、durable batch manifest/queue/API/worker turn、region-local bounded scheduler、逐 case cooperative control 与签名 batch evidence/index 已落地；缺 hard kill、batch audit/retention、owner UX、企业策略/WORM/anchor 与异构消费者认证 |
 | Fidelity/Outcome | 5% | 缺保真向量、shadow、权威结果归因和校准闭环 |
 | 业务运营工作台 | 10% | Author Canvas 尚未成为案例驱动的镜像运营工作台 |
 
-结论：基础设施准备度约 90%，固定权重理想态完成度为 61.19%。剩余主要矛盾已经
+结论：基础设施准备度约 90%，固定权重理想态完成度为 61.51%。剩余主要矛盾已经
 从“能否安全执行和取证”转向“能否把可信 observation 持续蒸馏成可校准、可拒答、可删除的业务拟合资产”。
 
 ### 3.1 2026-07-24 Scenario 编译期闭包迭代差距复评
@@ -647,7 +647,7 @@ HA/DR 或权威 outcome 当成已完成。51.59% 只承认已由代码和测试�
 | 2 | RG-MIR-SCEN-001A | 完成 | 将 TestSuite/Fixture authority 升级为完整 enterprise scope；旧 tenant+environment 资产采用独立表、禁止隐式提升、授权重新注册的迁移策略 | 两个 organization/project/region 可安全复用同 id/revision；跨 scope、混合版本与 indexed scope 搬移失败关闭 |
 | 3 | RG-MIR-SCEN-002 | 完成 | deterministic compiler/runtime；每 case 使用隔离 Session/checkpoint、固定时钟/随机源、fixture data-flow inversion 和禁止真实 egress | exact plan、逐 case 运行、数据库时钟 lease/epoch、连续 checkpoint、takeover、旧 worker fencing 与原子 evidence/terminal commit 全绿 |
 | 4 | RG-MIR-SCEN-003 | 完成（本地治理闭包） | 产出 payload-free Scenario evidence、state diff、处置断言结果与 ANEKE workbook seed，区分执行失败、断言失败、低保真和证据不完整 | 独立签名、append-only store、exact read、崩溃恢复、audit/retention/workbook seed 已完成；unknown outcome、缺断言或不完整 evidence 阻断 gate-ready |
-| 5 | RG-MIR-SCEN-004 | 单地域自治调度与逐 case cooperative control 完成，证据与 UX 待实现 | 提供批量 rehearsal API、deep link 和最小 Author 场景表格；先保证业务 owner 不编辑 JSON/DSL 即可维护 case | exact manifest、数据库队列、API、worker turn、region-local bounded scheduler、heartbeat/cancel/deadline 与启动脚本已完成；下一步 batch evidence、两个样例域、浏览器与 owner UX |
+| 5 | RG-MIR-SCEN-004 | 单地域自治调度、逐 case cooperative control 与签名 batch evidence 完成；治理与 UX 待实现 | 提供批量 rehearsal API、deep link 和最小 Author 场景表格；先保证业务 owner 不编辑 JSON/DSL 即可维护 case | exact manifest、数据库队列、API、worker turn、region-local scheduler、heartbeat/cancel/deadline、签名 batch index、离线 verifier 与启动脚本已完成；下一步 batch audit/retention、两个样例域、浏览器与 owner UX |
 
 完成 E7 后才进入 E8：以 Scenario coverage 为分母建立
 `DomainFidelityProfile`、typed shadow diff、confidence/abstention debt 和 drift downgrade；随后 E9 接入
@@ -1091,6 +1091,56 @@ PostgreSQL 多副本故障认证作为独立生产门禁推进。
 跳过，并完成真实 Chrome 工作流与 Boot JAR 重打包。相对上一里程碑新增 5 项
 runtime、repository、worker 和脚本控制测试；Test Kit 与 111 份 Mirror Schema
 未发生协议变更，沿用已通过的 `366` 项独立验证基线。
+
+### 3.12 2026-07-25 Scenario 批次签名证据迭代差距复评
+
+本轮关闭“每个 child aggregate 有证据，但无法证明一次批量回归究竟冻结、执行并
+汇总了哪些计划”的根因。批次终态采用
+`request -> manifest -> terminal job + ordered items -> signed bundle` 闭包：
+索引保留原始 payload-free 请求、解析后的 exact-plan manifest、完整 scope 终态
+job、全部稳定顺序 item，以及 child run/evidence/workbook 内容地址。它不会复制
+最多 256 份 child bundle，因此证据大小不随业务 payload 或 trace 体积失控。
+
+`ScenarioRehearsalBatchEvidenceIntegrityService` 在独立签名域中重算 request、
+manifest、job、index 和 bundle fingerprint，绑定数据库完成时间与签名时间，并用
+Ed25519 签名后立即复验。`ScenarioRehearsalBatchEvidencePublisher` 还会通过既有
+验签仓储重读每个已产出 evidence 的 child aggregate，核对 scope、request、plan、
+outcome 和 bundle fingerprint。批次 repository 在同一数据库事务、同一分区锁和
+lease/epoch fence 下先发布 evidence，再更新 item/job 终态；signer、child store 或
+batch store 任一失败均整体回滚，因此不存在 terminal-without-evidence 窗口。
+
+append-only `scenario_rehearsal_batch_evidence` 以完整企业 scope + stable job id
+隔离，冗余索引列不能成为信任来源：每次读取会先验签 JSON，再逐项核对 request、
+manifest、terminal job、index、bundle 与 completed-at 索引。治理读取使用独立
+`MIRROR_REHEARSAL_BATCH_EVIDENCE_READ` 操作，并允许最小权限
+`GOVERNANCE_EVIDENCE_INGESTION`；本轮同时修复了 batch find/page/evidence
+“外层允许治理目的、内层旧 guard 又拒绝”的双重校验缺陷。
+
+Test Kit 新增三个 strict Schema 与
+`ScenarioRehearsalBatchEvidenceVerifier`。独立消费者不信任生产者自报的 batch id、
+child run id、total cases、summary 或 status，而是重新派生完整 scope identity、
+有序 item closure、所有内容地址、签名时间 key policy 和 Ed25519 signature。
+`ResourceGatewayTestClient.findScenarioRehearsalBatchEvidence(jobId)` 只在完整闭包
+通过后返回 defensive copy。演示脚本的 `--scenario-batch` readiness 也要求
+`mirrorScenarioRehearsalBatchEvidence=true`，避免 worker 可运行但不能取证时误报
+ready。
+
+本轮不掩盖两个剩余生产断点。第一，远程 KMS 调用当前发生在数据库事务与分区锁
+内；本地 fail-closed 语义正确，但生产形态需要 durable `FINALIZING`/outbox、
+有界签名重试和陈旧 finalization 接管，避免 KMS 延迟放大队列锁竞争。第二，batch
+尚无 lifecycle operation audit、最短保留策略、multi-hold、删除证明和 ANEKE 批次
+workbook 消费闭包；已有 aggregate retention 不能被默认套用，也不能级联删除 child
+evidence。
+
+基于签名闭包、终态原子性、索引篡改拒绝、错误 summary/child identity 拒绝、
+完整 scope 治理读取、Schema 包装和离线复验测试，本轮将 Scenario/Rehearsal 从
+92% 上调至 94%，固定权重总分从 61.19% 上调至 61.51%，距理想态 38.49%。
+完整门禁覆盖 Resource Gateway `5,101` 项测试，零失败、零错误、3 项条件跳过，
+含真实 Chrome 工作流和可执行 Boot JAR；独立 Test Kit `370` 项测试零失败、
+零错误，完成 114 份 Mirror Schema 引用闭包、shaded JAR 和零警告公共 JavaDoc。
+最终源码另通过服务端 `88/88` 与 Test Kit `15/15` 项批次证据聚焦验证。
+下一条最短路径是 batch lifecycle/operation audit 与 retention/legal-hold/deletion
+proof；随后再做 `FINALIZING` outbox/KMS 故障隔离和 ANEKE batch workbook。
 
 ## 4. 目标架构与系统责任
 

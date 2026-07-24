@@ -12,6 +12,7 @@ import com.leanowtech.bloge.gateway.integration.mirror.DatabaseMirrorDeploymentI
 import com.leanowtech.bloge.gateway.integration.mirror.DatabaseMirrorRunRequestRepository;
 import com.leanowtech.bloge.gateway.integration.mirror.DatabaseCompiledScenarioRehearsalPlanRepository;
 import com.leanowtech.bloge.gateway.integration.mirror.DatabaseScenarioArtifactRepository;
+import com.leanowtech.bloge.gateway.integration.mirror.DatabaseScenarioRehearsalBatchEvidenceRepository;
 import com.leanowtech.bloge.gateway.integration.mirror.DatabaseScenarioRehearsalEvidenceRepository;
 import com.leanowtech.bloge.gateway.integration.mirror.DatabaseScenarioRehearsalBatchRepository;
 import com.leanowtech.bloge.gateway.integration.mirror.DatabaseScenarioRehearsalLifecycleAuditRepository;
@@ -73,6 +74,9 @@ import com.leanowtech.bloge.gateway.integration.mirror.ScenarioRehearsalCompiler
 import com.leanowtech.bloge.gateway.integration.mirror.ScenarioHandlingAssertionEvaluator;
 import com.leanowtech.bloge.gateway.integration.mirror.ScenarioRehearsalEvidenceIntegrityService;
 import com.leanowtech.bloge.gateway.integration.mirror.ScenarioRehearsalEvidenceRepository;
+import com.leanowtech.bloge.gateway.integration.mirror.ScenarioRehearsalBatchEvidenceIntegrityService;
+import com.leanowtech.bloge.gateway.integration.mirror.ScenarioRehearsalBatchEvidencePublisher;
+import com.leanowtech.bloge.gateway.integration.mirror.ScenarioRehearsalBatchEvidenceRepository;
 import com.leanowtech.bloge.gateway.integration.mirror.ScenarioRehearsalBatchCompiler;
 import com.leanowtech.bloge.gateway.integration.mirror.ScenarioRehearsalBatchPolicy;
 import com.leanowtech.bloge.gateway.integration.mirror.ScenarioRehearsalBatchRepository;
@@ -346,6 +350,43 @@ public class MirrorRuntimeConfiguration {
         return ScenarioRehearsalBatchPolicy.defaults();
     }
 
+    /** Creates the domain-separated signed Scenario batch integrity boundary. */
+    @Bean
+    @ConditionalOnMissingBean
+    public ScenarioRehearsalBatchEvidenceIntegrityService
+    scenarioRehearsalBatchEvidenceIntegrityService(
+            ObjectMapper objectMapper,
+            VisualEvidenceSigner evidenceSigner) {
+        return new ScenarioRehearsalBatchEvidenceIntegrityService(
+                objectMapper, evidenceSigner, Clock.systemUTC());
+    }
+
+    /** Creates the append-only independently verified Scenario batch evidence store. */
+    @Bean
+    @ConditionalOnMissingBean
+    public ScenarioRehearsalBatchEvidenceRepository
+    scenarioRehearsalBatchEvidenceRepository(
+            JdbcTemplate jdbc,
+            ObjectMapper objectMapper,
+            ScenarioRehearsalBatchEvidenceIntegrityService
+                    integrity) {
+        return new DatabaseScenarioRehearsalBatchEvidenceRepository(
+                jdbc, objectMapper, integrity);
+    }
+
+    /** Creates the fail-closed atomic terminal batch evidence publisher. */
+    @Bean
+    @ConditionalOnMissingBean
+    public ScenarioRehearsalBatchEvidencePublisher
+    scenarioRehearsalBatchEvidencePublisher(
+            ScenarioRehearsalEvidenceRepository childEvidence,
+            ScenarioRehearsalBatchEvidenceIntegrityService
+                    integrity,
+            ScenarioRehearsalBatchEvidenceRepository batches) {
+        return new ScenarioRehearsalBatchEvidencePublisher(
+                childEvidence, integrity, batches);
+    }
+
     /** Creates the cross-replica database-authoritative Scenario batch queue. */
     @Bean
     @ConditionalOnMissingBean
@@ -353,9 +394,14 @@ public class MirrorRuntimeConfiguration {
     scenarioRehearsalBatchRepository(
             JdbcTemplate jdbc,
             ObjectMapper objectMapper,
-            PlatformTransactionManager transactionManager) {
+            PlatformTransactionManager transactionManager,
+            ScenarioRehearsalBatchEvidencePublisher
+                    evidencePublisher) {
         return new DatabaseScenarioRehearsalBatchRepository(
-                jdbc, objectMapper, transactionManager);
+                jdbc,
+                objectMapper,
+                transactionManager,
+                evidencePublisher);
     }
 
     /** Creates the exact-plan resolver that freezes immutable batch manifests. */
@@ -377,9 +423,14 @@ public class MirrorRuntimeConfiguration {
             ScenarioRehearsalBatchCompiler compiler,
             ScenarioRehearsalBatchRepository repository,
             ScenarioRehearsalBatchPolicy policy,
-            ObjectMapper objectMapper) {
+            ObjectMapper objectMapper,
+            ScenarioRehearsalBatchEvidenceRepository evidence) {
         return new ScenarioRehearsalBatchService(
-                compiler, repository, policy, objectMapper);
+                compiler,
+                repository,
+                policy,
+                objectMapper,
+                evidence);
     }
 
     /** Creates one evidence-verifying durable Scenario batch worker turn. */

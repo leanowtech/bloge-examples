@@ -52,7 +52,10 @@ class ScenarioRehearsalBatchServiceTest {
                         compiler,
                         repository,
                         policy(),
-                        mapper);
+                        mapper,
+                        mock(
+                                ScenarioRehearsalBatchEvidenceRepository
+                                        .class));
 
         assertThat(service.submit(request, identity()).job())
                 .isEqualTo(job);
@@ -87,13 +90,41 @@ class ScenarioRehearsalBatchServiceTest {
                         compiler,
                         mock(ScenarioRehearsalBatchRepository.class),
                         policy(),
-                        mapper);
+                        mapper,
+                        mock(
+                                ScenarioRehearsalBatchEvidenceRepository
+                                        .class));
 
         assertThatThrownBy(() -> service.submit(
                 request(), identity("MIRROR_READ")))
                 .isInstanceOf(IntegrationProblemException.class);
         verify(compiler, org.mockito.Mockito.never())
                 .compile(any(), any());
+    }
+
+    @Test
+    void serviceReadsEvidenceOnlyInsideTheAuthenticatedScope() {
+        ScenarioRehearsalBatchEvidenceRepository evidence =
+                mock(
+                        ScenarioRehearsalBatchEvidenceRepository
+                                .class);
+        ScenarioRehearsalBatchEvidenceBundle bundle =
+                mock(ScenarioRehearsalBatchEvidenceBundle.class);
+        when(evidence.find(SCOPE, job().jobId()))
+                .thenReturn(java.util.Optional.of(bundle));
+        ScenarioRehearsalBatchService service =
+                new ScenarioRehearsalBatchService(
+                        mock(ScenarioRehearsalBatchCompiler.class),
+                        mock(ScenarioRehearsalBatchRepository.class),
+                        policy(),
+                        mapper,
+                        evidence);
+
+        assertThat(service.evidence(
+                job().jobId(),
+                identity("GOVERNANCE_EVIDENCE_INGESTION")))
+                .contains(bundle);
+        verify(evidence).find(SCOPE, job().jobId());
     }
 
     @Test

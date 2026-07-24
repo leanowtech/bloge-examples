@@ -19,6 +19,10 @@ import java.util.concurrent.atomic.AtomicReference;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.doThrow;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.verify;
 
 class DatabaseScenarioRehearsalBatchRepositoryTest {
     private static final Instant NOW =
@@ -32,6 +36,8 @@ class DatabaseScenarioRehearsalBatchRepositoryTest {
     private EmbeddedDatabase database;
     private JdbcTemplate jdbc;
     private DatabaseScenarioRehearsalBatchRepository repository;
+    private ScenarioRehearsalBatchEvidencePublisher
+            evidencePublisher;
 
     @BeforeEach
     void setUp() {
@@ -40,10 +46,13 @@ class DatabaseScenarioRehearsalBatchRepositoryTest {
                 .generateUniqueName(true)
                 .build();
         jdbc = new JdbcTemplate(database);
+        evidencePublisher = mock(
+                ScenarioRehearsalBatchEvidencePublisher.class);
         repository = new DatabaseScenarioRehearsalBatchRepository(
                 jdbc,
                 mapper,
                 new DataSourceTransactionManager(database),
+                evidencePublisher,
                 databaseTime::get);
         repository.init();
     }
@@ -67,6 +76,7 @@ class DatabaseScenarioRehearsalBatchRepositoryTest {
                         jdbc,
                         mapper,
                         new DataSourceTransactionManager(database),
+                        evidencePublisher,
                         databaseTime::get);
         restarted.init();
 
@@ -255,6 +265,16 @@ class DatabaseScenarioRehearsalBatchRepositoryTest {
                 ScenarioRehearsalBatchJob.Status.SUCCEEDED);
         assertThat(completed.summary().passedItems())
                 .isEqualTo(1);
+        verify(evidencePublisher).publish(
+                submission.request(),
+                submission.manifest(),
+                completed,
+                repository.page(
+                        SCOPE,
+                        completed.jobId(),
+                        0,
+                        10,
+                        policy()).items());
         assertThatThrownBy(() -> repository.retryItem(
                 claim.lease(),
                 "RG.MIRROR.REHEARSAL_BATCH.LATE",
@@ -265,6 +285,46 @@ class DatabaseScenarioRehearsalBatchRepositoryTest {
                                 .isEqualTo(
                                         ScenarioRehearsalBatchConflictException
                                                 .Reason.LEASE_LOST));
+    }
+
+    @Test
+    void rollsBackTerminalItemAndJobWhenEvidencePublicationFails() {
+        ScenarioRehearsalBatchRepository.Submission submission =
+                submission(
+                        SCOPE,
+                        "batch-evidence-outage",
+                        "refund");
+        ScenarioRehearsalBatchJob queued =
+                repository.submit(submission, policy()).job();
+        ScenarioRehearsalBatchRepository.Claim claim =
+                repository.claimNext(
+                        "sg", "test", "worker-a", policy());
+        doThrow(new IllegalStateException(
+                "signing unavailable"))
+                .when(evidencePublisher)
+                .publish(any(), any(), any(), any());
+
+        assertThatThrownBy(() -> repository.completeItem(
+                claim.lease(),
+                completion(
+                        submission.manifest().entries()
+                                .getFirst().aggregateRunId()),
+                policy()))
+                .isInstanceOf(IllegalStateException.class);
+
+        assertThat(repository.find(
+                SCOPE, queued.jobId(), policy()))
+                .get()
+                .extracting(ScenarioRehearsalBatchJob::status)
+                .isEqualTo(
+                        ScenarioRehearsalBatchJob.Status.RUNNING);
+        assertThat(repository.page(
+                SCOPE, queued.jobId(), 0, 10, policy()).items())
+                .singleElement()
+                .extracting(
+                        ScenarioRehearsalBatchItemPage.Item::status)
+                .isEqualTo(
+                        ScenarioRehearsalBatchItemPage.Status.RUNNING);
     }
 
     @Test

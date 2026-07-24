@@ -329,6 +329,9 @@ class ToolStudioIntegrationServiceTest {
                         "mirrorScenarioRehearsalBatchCooperativeControl",
                         false)
                 .containsEntry(
+                        "mirrorScenarioRehearsalBatchEvidence",
+                        false)
+                .containsEntry(
                         "mirrorScenarioRehearsalBatchScheduling", false)
                 .containsEntry("mirrorScenarioRehearsalEvidence", false)
                 .containsEntry("mirrorOperationObservability", false)
@@ -346,6 +349,9 @@ class ToolStudioIntegrationServiceTest {
                 .containsEntry("mirrorScenarioRehearsalBatchApi", true)
                 .containsEntry(
                         "mirrorScenarioRehearsalBatchCooperativeControl",
+                        true)
+                .containsEntry(
+                        "mirrorScenarioRehearsalBatchEvidence",
                         true)
                 .containsEntry(
                         "mirrorScenarioRehearsalBatchScheduling", false)
@@ -490,6 +496,7 @@ class ToolStudioIntegrationServiceTest {
                         "POST /api/mirror/rehearsal-jobs",
                         "GET /api/mirror/rehearsal-jobs/{jobId}",
                         "GET /api/mirror/rehearsal-jobs/{jobId}/items",
+                        "GET /api/mirror/rehearsal-jobs/{jobId}/evidence",
                         "POST /api/mirror/rehearsal-jobs/{jobId}/cancellations",
                         "POST /api/mirror/executions", "GET /api/mirror/runs/{runId}",
                         "GET /api/mirror/runs/{runId}/evidence",

@@ -1,0 +1,114 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://bloge.dev/schemas/resource-gateway-mirror/scenario-rehearsal-batch-evidence-attestation-v1.schema.json",
+  "title": "Resource Gateway Scenario Rehearsal Batch Evidence Attestation v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion", "signatureStatus", "jobId", "requestFingerprint",
+    "manifestFingerprint", "terminalJobFingerprint", "indexFingerprint",
+    "signedAt", "keyId", "algorithm", "signature", "independentlyVerifiable"
+  ],
+  "properties": {
+    "schemaVersion": {
+      "const": "resourceGateway.scenarioRehearsalBatchEvidenceAttestation.v1"
+    },
+    "signatureStatus": {
+      "enum": ["VERIFIED", "VERIFICATION_UNAVAILABLE"]
+    },
+    "jobId": {
+      "type": "string",
+      "pattern": "^scenario-batch-[a-f0-9]{64}$"
+    },
+    "requestFingerprint": {
+      "$ref": "mirror-plan-v1.schema.json#/$defs/fingerprint"
+    },
+    "manifestFingerprint": {
+      "$ref": "mirror-plan-v1.schema.json#/$defs/fingerprint"
+    },
+    "terminalJobFingerprint": {
+      "$ref": "mirror-plan-v1.schema.json#/$defs/fingerprint"
+    },
+    "indexFingerprint": {
+      "$ref": "mirror-plan-v1.schema.json#/$defs/fingerprint"
+    },
+    "signedAt": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "keyId": {
+      "type": "string",
+      "maxLength": 1024
+    },
+    "algorithm": {
+      "type": "string",
+      "maxLength": 64
+    },
+    "signature": {
+      "type": "string",
+      "maxLength": 16384
+    },
+    "independentlyVerifiable": {
+      "type": "boolean"
+    }
+  },
+  "allOf": [
+    {
+      "if": {
+        "properties": {
+          "signatureStatus": {
+            "const": "VERIFIED"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "keyId": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 1024
+          },
+          "algorithm": {
+            "const": "Ed25519"
+          },
+          "signature": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 16384
+          },
+          "independentlyVerifiable": {
+            "const": true
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "signatureStatus": {
+            "const": "VERIFICATION_UNAVAILABLE"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "signedAt": {
+            "const": "1970-01-01T00:00:00Z"
+          },
+          "keyId": {
+            "const": ""
+          },
+          "algorithm": {
+            "const": ""
+          },
+          "signature": {
+            "const": ""
+          },
+          "independentlyVerifiable": {
+            "const": false
+          }
+        }
+      }
+    }
+  ]
+}

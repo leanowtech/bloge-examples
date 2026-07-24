@@ -1,6 +1,7 @@
 package com.leanowtech.bloge.gateway.integration;
 
 import com.leanowtech.bloge.gateway.integration.mirror.ScenarioRehearsalBatchCancellationRequest;
+import com.leanowtech.bloge.gateway.integration.mirror.ScenarioRehearsalBatchEvidenceBundle;
 import com.leanowtech.bloge.gateway.integration.mirror.ScenarioRehearsalBatchItemPage;
 import com.leanowtech.bloge.gateway.integration.mirror.ScenarioRehearsalBatchJob;
 import com.leanowtech.bloge.gateway.integration.mirror.ScenarioRehearsalBatchRequest;
@@ -114,6 +115,32 @@ public final class ScenarioRehearsalBatchController {
                         identity);
         return IntegrationEnvelope.of(
                 "SCENARIO_REHEARSAL_BATCH_ITEM_PAGE",
+                value.schemaVersion(),
+                value);
+    }
+
+    /** Reads one independently verified terminal batch evidence index. */
+    @GetMapping("/{jobId}/evidence")
+    public IntegrationEnvelope<ScenarioRehearsalBatchEvidenceBundle>
+    evidence(
+            @PathVariable String jobId,
+            @RequestHeader HttpHeaders headers) {
+        IntegrationRequestContext identity =
+                authenticator.authenticate(
+                        headers,
+                        IntegrationOperation
+                                .MIRROR_REHEARSAL_BATCH_EVIDENCE_READ);
+        ScenarioRehearsalBatchEvidenceBundle value =
+                batches.evidence(jobId, identity)
+                        .orElseThrow(() ->
+                                new IntegrationProblemException(
+                                        IntegrationProblem.notFound(
+                                                "RG.MIRROR.REHEARSAL_BATCH.EVIDENCE_NOT_FOUND",
+                                                "Scenario rehearsal batch evidence was not found.",
+                                                identity.correlationId(),
+                                                Map.of())));
+        return IntegrationEnvelope.of(
+                "SCENARIO_REHEARSAL_BATCH_EVIDENCE_BUNDLE",
                 value.schemaVersion(),
                 value);
     }

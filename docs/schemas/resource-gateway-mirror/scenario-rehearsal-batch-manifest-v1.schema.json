@@ -88,7 +88,7 @@
         },
         "aggregateRunId": {
           "type": "string",
-          "pattern": "^scenario-run-[a-f0-9]{64}$"
+          "pattern": "^scenario-[a-f0-9]{64}$"
         },
         "caseCount": {
           "type": "integer",

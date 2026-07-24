@@ -1,6 +1,7 @@
 package com.leanowtech.bloge.gateway.integration;
 
 import com.leanowtech.bloge.gateway.integration.mirror.ScenarioRehearsalBatchCancellationRequest;
+import com.leanowtech.bloge.gateway.integration.mirror.ScenarioRehearsalBatchEvidenceBundle;
 import com.leanowtech.bloge.gateway.integration.mirror.ScenarioRehearsalBatchItemPage;
 import com.leanowtech.bloge.gateway.integration.mirror.ScenarioRehearsalBatchJob;
 import com.leanowtech.bloge.gateway.integration.mirror.ScenarioRehearsalBatchRepository;
@@ -40,12 +41,16 @@ class ScenarioRehearsalBatchControllerTest {
                 mock(ScenarioRehearsalBatchJob.class);
         ScenarioRehearsalBatchItemPage page =
                 mock(ScenarioRehearsalBatchItemPage.class);
+        ScenarioRehearsalBatchEvidenceBundle evidence =
+                mock(ScenarioRehearsalBatchEvidenceBundle.class);
         HttpHeaders headers = new HttpHeaders();
         byte[] raw = "{}".getBytes(StandardCharsets.UTF_8);
         when(job.schemaVersion()).thenReturn(
                 ScenarioRehearsalBatchJob.SCHEMA_VERSION);
         when(page.schemaVersion()).thenReturn(
                 ScenarioRehearsalBatchItemPage.SCHEMA_VERSION);
+        when(evidence.schemaVersion()).thenReturn(
+                ScenarioRehearsalBatchEvidenceBundle.SCHEMA_VERSION);
         when(authenticator.authenticate(
                 headers,
                 IntegrationOperation
@@ -61,6 +66,11 @@ class ScenarioRehearsalBatchControllerTest {
                 IntegrationOperation
                         .MIRROR_REHEARSAL_BATCH_CANCEL))
                 .thenReturn(identity);
+        when(authenticator.authenticate(
+                headers,
+                IntegrationOperation
+                        .MIRROR_REHEARSAL_BATCH_EVIDENCE_READ))
+                .thenReturn(identity);
         when(decoder.decodeBatchRequest(raw, identity))
                 .thenReturn(request);
         when(decoder.decodeBatchCancellationRequest(
@@ -75,6 +85,8 @@ class ScenarioRehearsalBatchControllerTest {
         when(batches.page(
                 "job-a", 10, 25, identity))
                 .thenReturn(page);
+        when(batches.evidence("job-a", identity))
+                .thenReturn(Optional.of(evidence));
         when(batches.cancel(
                 "job-a",
                 cancellation.commandId(),
@@ -95,6 +107,9 @@ class ScenarioRehearsalBatchControllerTest {
         assertThat(controller.page(
                 "job-a", 10, 25, headers).payload())
                 .isSameAs(page);
+        assertThat(controller.evidence(
+                "job-a", headers).payload())
+                .isSameAs(evidence);
         assertThat(controller.cancel(
                 "job-a", raw, headers).payload())
                 .isSameAs(job);
@@ -112,5 +127,9 @@ class ScenarioRehearsalBatchControllerTest {
                 headers,
                 IntegrationOperation
                         .MIRROR_REHEARSAL_BATCH_CANCEL);
+        verify(authenticator).authenticate(
+                headers,
+                IntegrationOperation
+                        .MIRROR_REHEARSAL_BATCH_EVIDENCE_READ);
     }
 }

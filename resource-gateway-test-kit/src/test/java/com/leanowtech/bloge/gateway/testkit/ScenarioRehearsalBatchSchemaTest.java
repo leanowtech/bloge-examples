@@ -132,7 +132,7 @@ class ScenarioRehearsalBatchSchemaTest {
                 "nightly-support-regression:plan:000");
         entry.put(
                 "aggregateRunId",
-                "scenario-run-" + "d".repeat(64));
+                "scenario-" + "d".repeat(64));
         entry.put("caseCount", 12);
         entry.put("executionTimeout", "PT5M");
         value.put("totalCases", 12);

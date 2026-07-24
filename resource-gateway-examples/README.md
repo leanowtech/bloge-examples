@@ -65,6 +65,7 @@ workers for one exact `test`/`staging` regional queue partition.
 | `POST http://localhost:8080/api/mirror/sessions/{sessionId}/recoveries` | Re-verify a checkpoint against the current encrypted data-plane head and return an exact run binding |
 | `POST http://localhost:8080/api/mirror/rehearsal-jobs` | Submit an exact-plan batch after starting with `--scenario-batch`; the script aligns the worker partition with the demo identity |
 | `GET http://localhost:8080/api/mirror/rehearsal-jobs/{jobId}/items` | Read stable payload-free item pages while bounded regional workers progress the batch |
+| `GET http://localhost:8080/api/mirror/rehearsal-jobs/{jobId}/evidence` | Read one signed payload-free terminal batch index whose request, manifest, item results, and child evidence references can be verified offline |
 | `GET http://localhost:8080/api/integration/capability-snapshots/{capabilityId}?revision=0` | Read the latest authorized capability snapshot; use a positive revision for an exact read |
 | `PUT http://localhost:8080/api/integration/capability-snapshots/{capabilityId}/revisions/{revision}` | Append one exact sealed capability snapshot revision |
 | `POST http://localhost:8080/api/integration/capability-snapshots/{capabilityId}/lifecycle-transitions` | Append an optimistically fenced lifecycle-only revision |
@@ -232,11 +233,12 @@ case; completed case progress is retained while the current batch item becomes
 conservatively `INDETERMINATE`. Heartbeats deliberately do not extend the
 immutable plan timeout plus commit reserve.
 The capability probe therefore reports Scenario execution, evidence API,
-retention API, legal hold, deletion proof, workbook seed, and
-`mirrorScenarioRehearsalBatchCooperativeControl=true` as available while keeping
+retention API, legal hold, deletion proof, workbook seed,
+`mirrorScenarioRehearsalBatchCooperativeControl=true`, and
+`mirrorScenarioRehearsalBatchEvidence=true` as available while keeping
 `mirrorScenarioRehearsalEvidence=false`: enterprise policy authority,
 WORM/transparency anchoring, consumer/environment certification, hard
-termination of an uncooperative operator, batch evidence, and owner UX
+termination of an uncooperative operator, governed batch retention, and owner UX
 remain required before this becomes publish-gate evidence. See the
 [scenario rehearsal compiler guide](../docs/resource-gateway-scenario-rehearsal-compiler.md).
 

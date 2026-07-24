@@ -1529,6 +1529,61 @@ public final class ResourceGatewayTestClient {
     }
 
     /**
+     * Reads and independently verifies one terminal Scenario rehearsal batch evidence index.
+     *
+     * <p>The client resolves the signed bundle and its public verification key, then re-derives
+     * request, manifest, full-scope batch and child run identities, terminal job, ordered summary,
+     * index, bundle, and Ed25519 signature before returning a defensive copy. Child aggregate
+     * bundles remain separately addressable through each indexed run and evidence fingerprint.</p>
+     *
+     * @param jobId canonical {@code scenario-batch-<sha256>} identity
+     * @return defensive copy of the independently verified payload-free batch bundle
+     */
+    public JsonNode findScenarioRehearsalBatchEvidence(
+            String jobId) {
+        String exactJobId =
+                scenarioRehearsalBatchJobId(jobId);
+        JsonNode response = exchange(
+                "GET",
+                "/api/mirror/rehearsal-jobs/"
+                        + segment(exactJobId)
+                        + "/evidence",
+                "",
+                "GOVERNANCE_EVIDENCE_INGESTION",
+                null);
+        JsonNode bundle = requireMirrorEnvelope(
+                response,
+                "SCENARIO_REHEARSAL_BATCH_EVIDENCE_BUNDLE",
+                CapabilityMirrorProtocol
+                        .SCENARIO_REHEARSAL_BATCH_EVIDENCE_BUNDLE_V1);
+        if (!exactJobId.equals(
+                bundle.path("index").path("job")
+                        .path("jobId").asText())) {
+            throw responseContractInvalid(
+                    "The server returned Scenario batch evidence for a different job.");
+        }
+        EvidenceVerificationKey key;
+        try {
+            key = findEvidenceVerificationKey(
+                    bundle.path("attestation")
+                            .path("keyId").asText());
+        } catch (IllegalArgumentException failure) {
+            throw responseContractInvalid(
+                    "The server returned Scenario batch evidence with an invalid verification-key identity.");
+        }
+        ScenarioRehearsalBatchEvidenceVerifier.VerificationResult
+                verification =
+                new ScenarioRehearsalBatchEvidenceVerifier()
+                        .verify(bundle, key);
+        if (!verification.verified()) {
+            throw responseContractInvalid(
+                    "The Scenario batch evidence failed independent verification: "
+                            + verification.reasonCode());
+        }
+        return bundle.deepCopy();
+    }
+
+    /**
      * Reads and independently reconstructs one payload-free state-transition workbook seed.
      *
      * <p>The client fetches the signed v4 evidence bundle, resolves its evidence key through the
@@ -2669,6 +2724,17 @@ public final class ResourceGatewayTestClient {
                 "scenario-[a-f0-9]{64}")) {
             throw new IllegalArgumentException(
                     "Scenario rehearsal run id must be canonical");
+        }
+        return normalized;
+    }
+
+    private static String scenarioRehearsalBatchJobId(
+            String value) {
+        String normalized = normalized(value);
+        if (!normalized.matches(
+                "scenario-batch-[a-f0-9]{64}")) {
+            throw new IllegalArgumentException(
+                    "Scenario rehearsal batch job id must be canonical");
         }
         return normalized;
     }

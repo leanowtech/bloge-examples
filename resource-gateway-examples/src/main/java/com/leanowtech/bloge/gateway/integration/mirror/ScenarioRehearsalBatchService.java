@@ -20,10 +20,6 @@ import java.util.Set;
  * callers.</p>
  */
 public final class ScenarioRehearsalBatchService {
-    private static final Set<String> READ_PURPOSES =
-            Set.of(
-                    "MIRROR_REHEARSAL",
-                    "GOVERNANCE_EVIDENCE_INGESTION");
     private static final int MAXIMUM_REQUEST_BYTES =
             2 * 1024 * 1024;
 
@@ -31,19 +27,24 @@ public final class ScenarioRehearsalBatchService {
     private final ScenarioRehearsalBatchRepository repository;
     private final ScenarioRehearsalBatchPolicy policy;
     private final ObjectMapper mapper;
+    private final ScenarioRehearsalBatchEvidenceRepository
+            evidence;
 
     /** Creates the protected batch application service under one server-owned policy. */
     public ScenarioRehearsalBatchService(
             ScenarioRehearsalBatchCompiler compiler,
             ScenarioRehearsalBatchRepository repository,
             ScenarioRehearsalBatchPolicy policy,
-            ObjectMapper mapper) {
+            ObjectMapper mapper,
+            ScenarioRehearsalBatchEvidenceRepository evidence) {
         this.compiler = Objects.requireNonNull(
                 compiler, "compiler");
         this.repository = Objects.requireNonNull(
                 repository, "repository");
         this.policy = Objects.requireNonNull(policy, "policy");
         this.mapper = Objects.requireNonNull(mapper, "mapper");
+        this.evidence = Objects.requireNonNull(
+                evidence, "evidence");
     }
 
     /**
@@ -85,11 +86,12 @@ public final class ScenarioRehearsalBatchService {
     public Optional<ScenarioRehearsalBatchJob> find(
             String jobId,
             IntegrationRequestContext identity) {
-        requirePurpose(identity, READ_PURPOSES);
+        CapabilitySnapshot.Scope scope =
+                MirrorPlanIntegrationService
+                        .requireMirrorReadIdentity(identity);
         try {
             return repository.find(
-                    MirrorPlanIntegrationService
-                            .requireMirrorIdentity(identity),
+                    scope,
                     jobId,
                     policy);
         } catch (ScenarioRehearsalBatchConflictException conflict) {
@@ -103,11 +105,12 @@ public final class ScenarioRehearsalBatchService {
             int startIndex,
             int limit,
             IntegrationRequestContext identity) {
-        requirePurpose(identity, READ_PURPOSES);
+        CapabilitySnapshot.Scope scope =
+                MirrorPlanIntegrationService
+                        .requireMirrorReadIdentity(identity);
         try {
             return repository.page(
-                    MirrorPlanIntegrationService
-                            .requireMirrorIdentity(identity),
+                    scope,
                     jobId,
                     startIndex,
                     limit,
@@ -115,6 +118,18 @@ public final class ScenarioRehearsalBatchService {
         } catch (ScenarioRehearsalBatchConflictException conflict) {
             throw problem(conflict, identity);
         }
+    }
+
+    /** Finds one independently verified terminal batch evidence bundle inside the exact scope. */
+    public Optional<ScenarioRehearsalBatchEvidenceBundle> evidence(
+            String jobId,
+            IntegrationRequestContext identity) {
+        CapabilitySnapshot.Scope scope =
+                MirrorPlanIntegrationService
+                        .requireMirrorReadIdentity(identity);
+        return evidence.find(
+                scope,
+                jobId);
     }
 
     /** Applies one exactly replayable cooperative cancellation intent. */

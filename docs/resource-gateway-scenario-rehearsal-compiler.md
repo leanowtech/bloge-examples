@@ -34,8 +34,9 @@ Fixture、MirrorPlan 和可选 Session checkpoint 绑定成不可变执行许可
 | `ScenarioRehearsalBatchJob/ItemPage.v1` | 可用 | 暴露 payload-free 生命周期、计数、失败码和稳定 manifest-index 分页，不泄露 fixture、context 或 worker 身份 |
 | durable batch repository | 可用 | `(region, environment)` 数据库权威容量、同请求精确重放、租户公平 claim、优先级老化、lease/epoch、重试、取消、deadline 和恢复 |
 | batch worker turn | 可用 | 执行一个 manifest item，复用 aggregate 幂等，独立复验签名 evidence 与 workbook closure 后才完成 item |
-| autonomous batch scheduling | 可用（显式非生产开关） | 单地域分区、固定 lane、有界 fixed-delay poll、启动配置校验、动态 readiness 和停机 drain；heartbeat 与执行中 cooperative cancel 未交付 |
-| signed batch evidence/index | 未交付 | 每个 child 已有独立证据；尚无可离线验证的 batch manifest/result 索引、batch retention/audit 与 ANEKE 批次消费闭包 |
+| autonomous batch scheduling | 可用（显式非生产开关） | 单地域分区、固定 lane、有界 fixed-delay poll、启动配置校验、动态 readiness、停机 drain 和逐 case heartbeat/cancel/deadline |
+| signed batch evidence/index | 可用 | 请求、冻结 manifest、终态 job、有序 item 与 child evidence/workbook ref 形成 Ed25519 签名闭包；Test Kit 在返回前独立重算 |
+| batch audit/retention | 未交付 | 批次终态已有原子 evidence，但尚无 batch lifecycle audit、legal hold、最短保留边界和删除证明 |
 | 可作为生产发布门禁的 Scenario evidence | 未交付 | 本地 gate-consumable closure 已完成；尚无企业 retention policy authority、WORM/外部锚、消费者认证和环境级门禁 |
 
 当前链路已经解决“执行前冻结什么、运行时从哪里取值、每个结果依据什么证据”
@@ -118,6 +119,7 @@ curl -sS http://localhost:8080/api/integration/capabilities
 | `mirrorScenarioRehearsalWorkbookSeed` | `true` |
 | `mirrorScenarioRehearsalBatchApi` | `true` |
 | `mirrorScenarioRehearsalBatchCooperativeControl` | `true` |
+| `mirrorScenarioRehearsalBatchEvidence` | `true` |
 | `mirrorScenarioRehearsalBatchScheduling` | 默认 `false`；使用 `--scenario-batch` 且 scheduler 健康时为 `true` |
 | `mirrorScenarioRehearsalEvidence` | `false` |
 
@@ -208,6 +210,7 @@ ScenarioPack
 | `POST /api/mirror/rehearsal-jobs` | `MIRROR_REHEARSAL_BATCH_SUBMIT` | 解析所有 exact plan、冻结 manifest 并按服务端容量策略幂等入队 |
 | `GET /api/mirror/rehearsal-jobs/{jobId}` | `MIRROR_REHEARSAL_BATCH_READ` | 读取并重验 payload-free job projection |
 | `GET /api/mirror/rehearsal-jobs/{jobId}/items` | `MIRROR_REHEARSAL_BATCH_READ` | 使用 `startIndex` + `limit` 读取稳定 manifest-index 页 |
+| `GET /api/mirror/rehearsal-jobs/{jobId}/evidence` | `MIRROR_REHEARSAL_BATCH_EVIDENCE_READ` | 读取并复验请求、manifest、终态 job、全部 item ref 的签名批次闭包 |
 | `POST /api/mirror/rehearsal-jobs/{jobId}/cancellations` | `MIRROR_REHEARSAL_BATCH_CANCEL` | 记录幂等 cooperative cancellation intent |
 
 同一 scope、kind、id、revision 的相同内容重试是幂等的；不同 fingerprint
@@ -572,6 +575,11 @@ curl -sS \
   -H 'X-Purpose: MIRROR_REHEARSAL' \
   'http://localhost:8080/api/mirror/rehearsal-jobs/<jobId>/items?startIndex=0&limit=50'
 
+curl -sS \
+  -H 'Authorization: Bearer bloge-aneke-demo-token' \
+  -H 'X-Purpose: GOVERNANCE_EVIDENCE_INGESTION' \
+  'http://localhost:8080/api/mirror/rehearsal-jobs/<jobId>/evidence'
+
 curl -sS -X POST \
   -H 'Authorization: Bearer bloge-aneke-demo-token' \
   -H 'X-Purpose: MIRROR_REHEARSAL' \
@@ -620,10 +628,25 @@ owner/epoch/item fence，写入单调 heartbeat count 与 next-case cursor，并
 
 heartbeat 不延长 lease。claim 已按 immutable compiled-plan timeout 加 commit reserve
 一次性分配权限；允许 checkpoint 无限续期会破坏测试的有界性。当前仍不能物理终止
-不合作的 operator，也尚无签名 batch evidence/index、batch audit/retention 和
-PostgreSQL 多副本认证。调用方必须同时检查
+不合作的 operator，也尚无 batch audit/retention 和 PostgreSQL 多副本认证。调用方必须同时检查
 `mirrorScenarioRehearsalBatchCooperativeControl` 与 scheduling capability，不能只看
 API 是否存在。
+
+终态发布采用 `request -> manifest -> terminal job + ordered items -> signed bundle`
+闭包。repository 在同一数据库事务中先重新验证每个已完成 child aggregate 的
+scope、run id、evidence fingerprint 与 workbook fingerprint，再生成
+`ScenarioRehearsalBatchEvidenceIndex.v1`，使用独立签名域封装为
+`ScenarioRehearsalBatchEvidenceBundle.v1`，立即复验并 append-only 保存，最后才把
+item/job 更新为终态。签名 authority 或 evidence store 失败会让整笔终态事务回滚。
+批次包只携带 child 内容地址，不复制最多 256 份 aggregate bundle，因而保持
+payload-free 和有界；消费者仍可按 ref 获取并验证每份 child evidence。
+
+Test Kit 的 `findScenarioRehearsalBatchEvidence(jobId)` 会获取公开 key，并在返回
+前重新派生 request/manifest/job/index/bundle fingerprint、完整 scope batch id、
+每个 child request/run id、总 case 数、item 顺序、终态 summary、签名时间 key
+policy 和 Ed25519 signature。`ScenarioRehearsalBatchEvidenceVerifier` 也可用于
+离线材料。当前本地事务在持有批次分区锁时调用 signer；远程 KMS 的高延迟与故障
+隔离需要后续用 durable `FINALIZING`/outbox 状态机认证，不能依靠无限事务等待。
 
 ## 9. 失败语义
 
@@ -705,6 +728,7 @@ request、response、实体或 fixture payload。
 - `scenario_rehearsal_batch_fairness`
 - `scenario_rehearsal_batch_jobs`
 - `scenario_rehearsal_batch_items`
+- `scenario_rehearsal_batch_evidence`
 
 主键覆盖完整 scope、artifact kind、id 和 revision。写入与读取都重算
 canonical fingerprint，并核对数据库索引身份；checkpoint 还会重新验签。
@@ -741,6 +765,14 @@ request `COMPLETED`、lifecycle
 `SCENARIO_REHEARSAL_CREATE` 成功审计放在同一本地事务；evidence read 也必须先
 提交 `SCENARIO_REHEARSAL_EVIDENCE_READ` 审计才可发布结果。
 
+批次 evidence 表按完整 scope + stable job id append-only 保存有界签名 bundle，
+并冗余保存 request/manifest/job/index/bundle fingerprint 作为查询索引。读取时
+不能信任这些列：repository 会重算完整签名闭包，再逐项核对索引列。batch
+repository 只有在 evidence publisher 成功后才写 job 终态，因此 signer/store
+不可用不会留下 terminal-without-evidence。该表当前还没有独立 retention state、
+legal hold 和 deletion proof；在这些治理协议交付前不得按 aggregate retention
+策略猜测或级联清除。
+
 retention state 是可重建 projection，append-only signed event chain 才是权威。
 每次读取/修改会验签完整链、检查 revision/previous fingerprint、重放 multi-hold
 状态并与 projection 和数据库索引比对。purge 在同一行锁事务内再次使用数据库
@@ -758,7 +790,7 @@ WORM、外部 transparency anchor、企业级策略分发和跨地域删除认�
 
 ```bash
 mvn -f resource-gateway-examples/pom.xml \
-  -Dtest=ScenarioRehearsalControllerTest,ScenarioRehearsalBatchControllerTest,ScenarioArtifactRequestDecoderTest,ScenarioArtifactRegistryServiceTest,ScenarioRehearsalIntegrationServiceTest,ScenarioRehearsalCompilerTest,ScenarioRehearsalRuntimeServiceTest,ScenarioRehearsalBatchProtocolTest,ScenarioRehearsalBatchManifestTest,ScenarioRehearsalBatchServiceTest,DatabaseScenarioRehearsalBatchRepositoryTest,ScenarioRehearsalBatchSchedulerTest,ScenarioRehearsalBatchSchedulerPropertiesTest,ScenarioRehearsalWorkbookSeedTest,ScenarioRehearsalResultProtocolTest,ScenarioRehearsalEvidenceIntegrityServiceTest,DatabaseScenarioRehearsalEvidenceRepositoryTest,DatabaseScenarioRehearsalRunRepositoryTest,ScenarioRehearsalCommitServiceTest,DatabaseScenarioRehearsalRetentionRepositoryTest,ScenarioRehearsalRetentionServiceTest,DatabaseScenarioArtifactRepositoryTest,DatabaseCompiledScenarioRehearsalPlanRepositoryTest,ScenarioPackProtocolTest,MirrorEvidenceIntegrityServiceTest,ScenarioHandlingAssertionEvaluatorTest,MirrorRuntimeConfigurationTest,ToolStudioIntegrationServiceTest,VisualCanvasDemoScriptTest \
+  -Dtest=ScenarioRehearsalControllerTest,ScenarioRehearsalBatchControllerTest,ScenarioArtifactRequestDecoderTest,ScenarioArtifactRegistryServiceTest,ScenarioRehearsalIntegrationServiceTest,ScenarioRehearsalCompilerTest,ScenarioRehearsalRuntimeServiceTest,ScenarioRehearsalBatchProtocolTest,ScenarioRehearsalBatchManifestTest,ScenarioRehearsalBatchServiceTest,DatabaseScenarioRehearsalBatchRepositoryTest,ScenarioRehearsalBatchEvidenceIntegrityServiceTest,ScenarioRehearsalBatchEvidencePublisherTest,DatabaseScenarioRehearsalBatchEvidenceRepositoryTest,ScenarioRehearsalBatchSchedulerTest,ScenarioRehearsalBatchSchedulerPropertiesTest,ScenarioRehearsalWorkbookSeedTest,ScenarioRehearsalResultProtocolTest,ScenarioRehearsalEvidenceIntegrityServiceTest,DatabaseScenarioRehearsalEvidenceRepositoryTest,DatabaseScenarioRehearsalRunRepositoryTest,ScenarioRehearsalCommitServiceTest,DatabaseScenarioRehearsalRetentionRepositoryTest,ScenarioRehearsalRetentionServiceTest,DatabaseScenarioArtifactRepositoryTest,DatabaseCompiledScenarioRehearsalPlanRepositoryTest,ScenarioPackProtocolTest,MirrorEvidenceIntegrityServiceTest,ScenarioHandlingAssertionEvaluatorTest,MirrorRuntimeConfigurationTest,ToolStudioIntegrationServiceTest,VisualCanvasDemoScriptTest \
   test
 ```
 
@@ -769,9 +801,10 @@ mvn -f resource-gateway-examples/pom.xml clean verify
 mvn -f resource-gateway-test-kit/pom.xml clean verify
 ```
 
-2026-07-25 本轮门禁结果：Resource Gateway `5,091` 项测试零失败、零错误、
-3 项条件跳过（含真实 Chrome DOM/工作流）；Test Kit `366` 项零失败、零错误，
-完成 111 个 Mirror Schema 的引用闭包、shaded JAR 和零警告公共 JavaDoc。
+2026-07-25 本轮门禁结果：Resource Gateway `5,101` 项测试零失败、零错误、
+3 项条件跳过（含真实 Chrome DOM/工作流和可执行 Boot JAR）；Test Kit `370` 项
+零失败、零错误，完成 114 个 Mirror Schema 的引用闭包、shaded JAR 和零警告
+公共 JavaDoc。本轮最终源码另通过服务端 `88/88`、Test Kit `15/15` 项聚焦验证。
 
 关键实现与协议：
 
@@ -795,10 +828,13 @@ mvn -f resource-gateway-test-kit/pom.xml clean verify
 - `resource-gateway-examples/src/main/java/com/leanowtech/bloge/gateway/integration/mirror/ScenarioRehearsalWorkbookSeed.java`
 - `resource-gateway-examples/src/main/java/com/leanowtech/bloge/gateway/integration/mirror/ScenarioRehearsalBatchCompiler.java`
 - `resource-gateway-examples/src/main/java/com/leanowtech/bloge/gateway/integration/mirror/DatabaseScenarioRehearsalBatchRepository.java`
+- `resource-gateway-examples/src/main/java/com/leanowtech/bloge/gateway/integration/mirror/ScenarioRehearsalBatchEvidenceIntegrityService.java`
+- `resource-gateway-examples/src/main/java/com/leanowtech/bloge/gateway/integration/mirror/DatabaseScenarioRehearsalBatchEvidenceRepository.java`
 - `resource-gateway-examples/src/main/java/com/leanowtech/bloge/gateway/integration/mirror/ScenarioRehearsalBatchWorker.java`
 - `resource-gateway-examples/src/main/java/com/leanowtech/bloge/gateway/integration/ScenarioRehearsalBatchController.java`
 - `resource-gateway-test-kit/src/main/java/com/leanowtech/bloge/gateway/testkit/ScenarioRehearsalRetentionVerifier.java`
 - `resource-gateway-test-kit/src/main/java/com/leanowtech/bloge/gateway/testkit/ScenarioRehearsalWorkbookVerifier.java`
+- `resource-gateway-test-kit/src/main/java/com/leanowtech/bloge/gateway/testkit/ScenarioRehearsalBatchEvidenceVerifier.java`
 - `docs/schemas/resource-gateway-mirror/scenario-rehearsal-compile-request-v1.schema.json`
 - `docs/schemas/resource-gateway-mirror/compiled-scenario-rehearsal-plan-v1.schema.json`
 - `docs/schemas/resource-gateway-mirror/scenario-handling-assertion-result-v1.schema.json`
@@ -817,6 +853,9 @@ mvn -f resource-gateway-test-kit/pom.xml clean verify
 - `docs/schemas/resource-gateway-mirror/scenario-rehearsal-batch-job-v1.schema.json`
 - `docs/schemas/resource-gateway-mirror/scenario-rehearsal-batch-item-page-v1.schema.json`
 - `docs/schemas/resource-gateway-mirror/scenario-rehearsal-batch-cancellation-request-v1.schema.json`
+- `docs/schemas/resource-gateway-mirror/scenario-rehearsal-batch-evidence-index-v1.schema.json`
+- `docs/schemas/resource-gateway-mirror/scenario-rehearsal-batch-evidence-attestation-v1.schema.json`
+- `docs/schemas/resource-gateway-mirror/scenario-rehearsal-batch-evidence-bundle-v1.schema.json`
 
 独立 consumer 继续使用 `resource-gateway-test-kit` 的
 `ScenarioPackVerifier` 验证 ScenarioPack/Case/Assertion，并使用
