@@ -9,6 +9,7 @@ import com.leanowtech.bloge.gateway.integration.mirror.MirrorSessionCheckpointBu
 import com.leanowtech.bloge.gateway.integration.mirror.ScenarioCase;
 import com.leanowtech.bloge.gateway.integration.mirror.ScenarioPack;
 import com.leanowtech.bloge.gateway.integration.mirror.ScenarioRehearsalCompileRequest;
+import com.leanowtech.bloge.gateway.integration.mirror.ScenarioRehearsalExecutionRequest;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.context.annotation.Profile;
 import org.springframework.stereotype.Component;
@@ -57,6 +58,8 @@ public final class ScenarioArtifactRequestDecoder {
             "checkpoint", "attestation");
     private static final Set<String> COMPILE_FIELDS = Set.of(
             "schemaVersion", "revision", "fingerprint");
+    private static final Set<String> EXECUTION_FIELDS = Set.of(
+            "schemaVersion", "requestId", "compiledPlanRef");
 
     private final ObjectMapper strictMapper;
 
@@ -120,6 +123,17 @@ public final class ScenarioArtifactRequestDecoder {
                 COMPILE_FIELDS,
                 ScenarioRehearsalCompileRequest.SCHEMA_VERSION,
                 ScenarioRehearsalCompileRequest.class);
+    }
+
+    /** Decodes one exact payload-free Scenario rehearsal execution command. */
+    public ScenarioRehearsalExecutionRequest decodeExecutionRequest(
+            byte[] value, IntegrationRequestContext identity) {
+        return decode(
+                value,
+                identity,
+                EXECUTION_FIELDS,
+                ScenarioRehearsalExecutionRequest.SCHEMA_VERSION,
+                ScenarioRehearsalExecutionRequest.class);
     }
 
     private <T> T decode(

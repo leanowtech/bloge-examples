@@ -454,7 +454,7 @@ public final class ScenarioRehearsalCompiler {
                     "ASSERTION_SCOPE_INVALID", assertion.assertionId());
             requireLive(
                     assertion.lifecycle(), assertion.provenance(),
-                    assertion.createdAt(), pack.policy().certificationRequired(),
+                    assertion.createdAt(), true,
                     validatedAt, "ASSERTION_LIFECYCLE_INVALID",
                     assertion.assertionId());
         }

@@ -405,7 +405,8 @@ public class ToolStudioIntegrationService {
         features.put("mirrorExternalLeafInterception", mirrorPlanReady);
         features.put("mirrorScenarioArtifactRegistry", mirrorPlanReady);
         features.put("mirrorScenarioRehearsalCompilation", mirrorPlanReady);
-        features.put("mirrorScenarioRehearsalExecution", false);
+        features.put("mirrorScenarioRehearsalExecution",
+                mirrorPlanReady && mirrorExecutionApi);
         features.put("mirrorScenarioRehearsalEvidence", false);
         features.put("mirrorServing", mirrorExecutionReady);
         features.put("mirrorOperationObservability", mirrorPlanReady && mirrorExecutionApi);
@@ -832,6 +833,15 @@ public class ToolStudioIntegrationService {
             supportedObjects.put("compiledScenarioRehearsalPlan", List.of(
                     com.leanowtech.bloge.gateway.integration.mirror
                             .CompiledScenarioRehearsalPlan.SCHEMA_VERSION));
+            supportedObjects.put("scenarioRehearsalExecutionRequest", List.of(
+                    com.leanowtech.bloge.gateway.integration.mirror
+                            .ScenarioRehearsalExecutionRequest.SCHEMA_VERSION));
+            supportedObjects.put("scenarioCaseRehearsalResult", List.of(
+                    com.leanowtech.bloge.gateway.integration.mirror
+                            .ScenarioCaseRehearsalResult.SCHEMA_VERSION));
+            supportedObjects.put("scenarioRehearsalResult", List.of(
+                    com.leanowtech.bloge.gateway.integration.mirror
+                            .ScenarioRehearsalResult.SCHEMA_VERSION));
         }
         if (mirrorExecutionApi) {
             supportedObjects.put("mirrorExecutionRequest", List.of(
@@ -957,6 +967,10 @@ public class ToolStudioIntegrationService {
             endpoints.add(new IntegrationCapabilities.Endpoint(
                     "GET",
                     "/api/mirror/scenarios/compiled-plans/{planId}"));
+            if (mirrorExecutionApi) {
+                endpoints.add(new IntegrationCapabilities.Endpoint(
+                        "POST", "/api/mirror/scenarios/runs"));
+            }
         }
         if (mirrorExecutionApi) {
             endpoints.add(new IntegrationCapabilities.Endpoint("POST", "/api/mirror/executions"));

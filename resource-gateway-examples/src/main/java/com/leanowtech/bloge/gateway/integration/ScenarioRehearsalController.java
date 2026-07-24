@@ -7,7 +7,10 @@ import com.leanowtech.bloge.gateway.integration.mirror.ScenarioArtifactRegistryS
 import com.leanowtech.bloge.gateway.integration.mirror.ScenarioCase;
 import com.leanowtech.bloge.gateway.integration.mirror.ScenarioPack;
 import com.leanowtech.bloge.gateway.integration.mirror.ScenarioRehearsalCompileRequest;
+import com.leanowtech.bloge.gateway.integration.mirror.ScenarioRehearsalExecutionRequest;
 import com.leanowtech.bloge.gateway.integration.mirror.ScenarioRehearsalIntegrationService;
+import com.leanowtech.bloge.gateway.integration.mirror.ScenarioRehearsalResult;
+import com.leanowtech.bloge.gateway.integration.mirror.ScenarioRehearsalRuntimeService;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.context.annotation.Profile;
 import org.springframework.http.HttpHeaders;
@@ -35,6 +38,7 @@ import java.util.Objects;
 public final class ScenarioRehearsalController {
     private final ScenarioArtifactRegistryService artifacts;
     private final ScenarioRehearsalIntegrationService rehearsals;
+    private final ScenarioRehearsalRuntimeService runtime;
     private final IntegrationRequestAuthenticator authenticator;
     private final ScenarioArtifactRequestDecoder decoder;
 
@@ -42,10 +46,12 @@ public final class ScenarioRehearsalController {
     public ScenarioRehearsalController(
             ScenarioArtifactRegistryService artifacts,
             ScenarioRehearsalIntegrationService rehearsals,
+            ScenarioRehearsalRuntimeService runtime,
             IntegrationRequestAuthenticator authenticator,
             ScenarioArtifactRequestDecoder decoder) {
         this.artifacts = Objects.requireNonNull(artifacts, "artifacts");
         this.rehearsals = Objects.requireNonNull(rehearsals, "rehearsals");
+        this.runtime = Objects.requireNonNull(runtime, "runtime");
         this.authenticator = Objects.requireNonNull(
                 authenticator, "authenticator");
         this.decoder = Objects.requireNonNull(decoder, "decoder");
@@ -156,6 +162,23 @@ public final class ScenarioRehearsalController {
                 planId, revision, fingerprint, identity);
         return IntegrationEnvelope.of(
                 "COMPILED_SCENARIO_REHEARSAL_PLAN",
+                value.schemaVersion(),
+                value);
+    }
+
+    /** Executes one exact compiled plan without accepting runtime payload overrides. */
+    @PostMapping("/runs")
+    public IntegrationEnvelope<ScenarioRehearsalResult> execute(
+            @RequestBody byte[] request,
+            @RequestHeader HttpHeaders headers) {
+        IntegrationRequestContext identity = authenticator.authenticate(
+                headers,
+                IntegrationOperation.MIRROR_REHEARSAL_EXECUTE);
+        ScenarioRehearsalResult value = runtime.execute(
+                decoder.decodeExecutionRequest(request, identity),
+                identity);
+        return IntegrationEnvelope.of(
+                "SCENARIO_REHEARSAL_RESULT",
                 value.schemaVersion(),
                 value);
     }

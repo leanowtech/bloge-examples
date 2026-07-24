@@ -645,8 +645,8 @@ HA/DR 或权威 outcome 当成已完成。51.59% 只承认已由代码和测试�
 |---:|---|---|---|---|
 | 1 | RG-MIR-SCEN-001 | 完成 | 冻结 `ScenarioPack.v1`、`ScenarioCase.v1`、`CaseHandlingAssertion.v1` 与 exact Graph/Fixture/Session/clock/fault binding | strict Schema、Java model、test-kit 独立 verifier、合法/篡改/越权/过期/未知字段矩阵全绿 |
 | 2 | RG-MIR-SCEN-001A | 完成 | 将 TestSuite/Fixture authority 升级为完整 enterprise scope；旧 tenant+environment 资产采用独立表、禁止隐式提升、授权重新注册的迁移策略 | 两个 organization/project/region 可安全复用同 id/revision；跨 scope、混合版本与 indexed scope 搬移失败关闭 |
-| 3 | RG-MIR-SCEN-002 | 编译期完成，runtime 待实现 | deterministic compiler/runtime；每 case 使用隔离 Session/checkpoint、固定时钟/随机源、fixture data-flow inversion 和禁止真实 egress | 编译闭包已全绿；下一步退款域覆盖 golden/negative/boundary/retry/timeout/rejected/unknown/recovery，重复运行语义指纹一致 |
-| 4 | RG-MIR-SCEN-003 | 待实现 | 产出 payload-free Scenario evidence、state diff、处置断言结果与 ANEKE workbook seed，区分执行失败、断言失败、低保真和证据不完整 | 独立重建 seed；任何 unknown outcome、缺断言或不完整 evidence 阻断 gate-ready |
+| 3 | RG-MIR-SCEN-002 | 同步 runtime 完成，耐久聚合待实现 | deterministic compiler/runtime；每 case 使用隔离 Session/checkpoint、固定时钟/随机源、fixture data-flow inversion 和禁止真实 egress | exact plan 驱动的逐 case 运行、TestSuite context 注入、deadline、状态栅栏、幂等 child run 与结果聚合已全绿；下一步补耐久 aggregate lease/recovery |
+| 4 | RG-MIR-SCEN-003 | 断言与 payload-free result 完成，签名 evidence 待实现 | 产出 payload-free Scenario evidence、state diff、处置断言结果与 ANEKE workbook seed，区分执行失败、断言失败、低保真和证据不完整 | 处置断言和 result 已失败关闭；下一步独立签名、读取/retention、workbook seed，任何 unknown outcome、缺断言或不完整 evidence 阻断 gate-ready |
 | 5 | RG-MIR-SCEN-004 | 待实现 | 提供批量 rehearsal API、deep link 和最小 Author 场景表格；先保证业务 owner 不编辑 JSON/DSL 即可维护 case | 退款与工单故障两个样例域端到端演示；浏览器、REST、Java/test-kit 使用同一协议资产 |
 
 完成 E7 后才进入 E8：以 Scenario coverage 为分母建立
@@ -715,6 +715,45 @@ capability probe 的 execution/evidence 继续保持 `false`。Scenario/Rehearsa
 由 32% 上调至 38%，固定权重总分由 51.59% 上调至 52.55%，距理想态
 47.45%。下一最短路径仍是 RG-MIR-SCEN-002 的逐 case runtime，然后把本轮
 evaluator 纳入 RG-MIR-SCEN-003 聚合闭环。
+
+### 3.4 2026-07-24 同步逐 Case 演练迭代差距复评
+
+本轮关闭 RG-MIR-SCEN-002 的同步执行主链。新增 strict
+`ScenarioRehearsalExecutionRequest.v1`、`ScenarioCaseRehearsalResult.v1` 和
+`ScenarioRehearsalResult.v1`：调用方只能提交 exact compiled plan 引用与 requestId，
+不能临时覆盖 fixture、时钟、fault、Session 或断言。服务端重新解析已封印的 plan、
+ScenarioCase、TestSuite case/input、断言和可选 checkpoint，防止把调用方提交的冗余
+快照当成权威。
+
+每个 case 继续复用既有 `MirrorRunIntegrationService`，因而共享同一幂等协调、
+Session state fingerprint 栅栏、部署隔离、证据签名和失败语义，不另造一套执行引擎。
+TestSuite object input 被注入 graph context，实现 data-flow inversion；generation one
+对 scalar input 明确失败关闭。case 只能在剩余总预算足以容纳完整 case timeout 时开始，
+未调度 case 记为 `INDETERMINATE`，不会伪装成 timeout 后的 pass。可重试基础设施故障
+向调用方传播，确定性执行失败形成 `FAIL`，证据缺失、验签不可用或取消形成
+`INDETERMINATE`。
+
+运行后重新读取并验签 child evidence，再校验 run、plan、target、scope 与 evidence
+identity，随后求值全部 ACTIVE 且 owner-approved 的断言。blocker 决定 case outcome，
+warning 保持可见但不掩盖 blocker；aggregate outcome 固定按
+`FAIL > INDETERMINATE > PASS` 派生。case result 与 aggregate result 都是
+payload-free、content-addressed 完整闭包，任何跨 run、跨 evidence 或缺失断言结果都会
+拒绝封印。重试已覆盖“child evidence 早于 aggregate retry”与 stateful checkpoint
+原始状态栅栏，避免恢复时错误读取已经前移的 Session head。
+
+本轮全量门禁为 Resource Gateway `5,009` 项测试零失败、零错误、3 项条件跳过，
+含真实 Chrome DOM/工作流；独立 Test Kit `348/348` 全绿，并完成 99 个 Mirror Schema
+资源的引用闭包检查、shaded JAR 与公共 JavaDoc。capability probe 仅将
+`mirrorScenarioRehearsalExecution` 提升为 `true`，继续把
+`mirrorScenarioRehearsalEvidence` 保持为 `false`。
+
+剩余病根不是“再加几个 case 类型”，而是 aggregate 目前仍是请求线程内的瞬时结果：
+没有自身的 durable lease/epoch、崩溃恢复、签名 attestation、GET/read、retention、
+operation audit 和 ANEKE workbook seed；checkpoint 也只是 exact state fence，不是
+隔离 clone。因此它可用于受控 test/staging 演练，不能作为跨系统发布门禁证据。
+Scenario/Rehearsal 由 38% 上调至 50%，固定权重总分由 52.55% 上调至
+54.47%，距理想态 45.53%。下一最短路径固定为 RG-MIR-SCEN-003：
+先交付耐久聚合协调与独立签名 evidence，再做批量 job/workbook/Author UX。
 
 ## 4. 目标架构与系统责任
 
@@ -1262,8 +1301,11 @@ tenant/organization/project/environment/region + kind/id/revision 为地址，�
 TestSuite/TestCase、FixtureBundle、MirrorPlan、fault rule 和可选 live checkpoint，拒绝 implicit fault、
 execution-service drift、classification 越界、状态闭包漂移和内容寻址反向环，并产出
 `resourceGateway.compiledScenarioRehearsalPlan.v1`。该 plan 是 payload-free 执行许可，不是运行结果；
-单断言 evidence evaluator 与 payload-free result 已完成；逐 case runtime 和 aggregate evidence
-未完成前，capability probe 必须保持 execution/evidence 为 false。
+单断言 evidence evaluator、同步逐 case runtime、payload-free case result 和 content-addressed
+aggregate result 已完成。运行命令只能引用 exact compiled plan，TestSuite context 由服务端解析，
+每个 child 复用既有耐久 Mirror 幂等协调与 signed evidence，aggregate outcome 和 summary 全部
+由服务端派生。capability probe 现在将 execution 报告为 true；aggregate 尚未耐久租约化、独立
+签名、提供读取/retention/workbook seed，因此 evidence 必须继续为 false，不能进入发布门禁。
 操作与启停见
 [场景演练注册与编译指南](resource-gateway-scenario-rehearsal-compiler.md)。
 
@@ -1870,9 +1912,11 @@ binding。恢复后继续执行与不中断执行的最终 outcome parity、逐�
 
 ### Stage 4：Scenario 与正确性工作簿，3 个 sprint，P1
 
-**当前状态**：Sprint 1 的协议、独立 verifier、append-only registry 和 deterministic compile-only
-执行许可已完成。Sprint 2 必须先交付真实逐 case runtime、typed assertion evaluator 和 payload-free aggregate
-evidence，再进入批量 job 与 Author UX；不能用单 case MirrorRun 或已编译 plan 代替 Scenario 运行证明。
+**当前状态**：Sprint 1 的协议、独立 verifier、append-only registry、deterministic compiler 与完整
+enterprise scope authority 已完成。Sprint 2 已交付同步逐 case runtime、typed assertion evaluator、
+payload-free content-addressed case/aggregate result；下一步必须补 aggregate 自身的 durable
+lease/recovery、独立签名 evidence、读取/retention 与 workbook seed，再进入批量 job 与 Author UX。
+单个已签名 MirrorRun 和请求线程内 aggregate 都不能冒充可供发布门禁消费的 Scenario evidence。
 
 **交付物**：
 

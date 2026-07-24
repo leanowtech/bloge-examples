@@ -5,6 +5,7 @@ import com.leanowtech.bloge.gateway.integration.mirror.MirrorRunIntegrationServi
 import com.leanowtech.bloge.gateway.integration.mirror.MirrorSessionIntegrationService;
 import com.leanowtech.bloge.gateway.integration.mirror.ScenarioArtifactRegistryService;
 import com.leanowtech.bloge.gateway.integration.mirror.ScenarioRehearsalIntegrationService;
+import com.leanowtech.bloge.gateway.integration.mirror.ScenarioRehearsalRuntimeService;
 import com.leanowtech.bloge.gateway.integration.mirror.MirrorDeploymentIsolationAuthorityPublicationService;
 import com.leanowtech.bloge.gateway.integration.mirror.MirrorDeploymentIsolationAttestationService;
 import com.leanowtech.bloge.gateway.integration.mirror.CapabilityObservationAdmissionService;
@@ -49,6 +50,7 @@ class MirrorIntegrationRouteIsolationTest {
                     "GET /api/mirror/scenarios/packs/{packId}",
                     "POST /api/mirror/scenarios/packs/{packId}/compiled-plans",
                     "GET /api/mirror/scenarios/compiled-plans/{planId}",
+                    "POST /api/mirror/scenarios/runs",
                     "POST /api/mirror/trust/deployment-isolation/authority-key-sets",
                     "GET /api/mirror/trust/deployment-isolation/authority-key-sets/{keySetId}/latest",
                     "GET /api/mirror/trust/deployment-isolation/authority-key-sets/{keySetId}/generations/{generation}",
@@ -77,6 +79,7 @@ class MirrorIntegrationRouteIsolationTest {
                     "GET /api/mirror/scenarios/packs/{packId}",
                     "POST /api/mirror/scenarios/packs/{packId}/compiled-plans",
                     "GET /api/mirror/scenarios/compiled-plans/{planId}",
+                    "POST /api/mirror/scenarios/runs",
                     "POST /api/mirror/trust/deployment-isolation/authority-key-sets",
                     "GET /api/mirror/trust/deployment-isolation/authority-key-sets/{keySetId}/latest",
                     "GET /api/mirror/trust/deployment-isolation/authority-key-sets/{keySetId}/generations/{generation}",
@@ -190,6 +193,11 @@ class MirrorIntegrationRouteIsolationTest {
         ScenarioRehearsalIntegrationService
         scenarioRehearsalIntegrationService() {
             return mock(ScenarioRehearsalIntegrationService.class);
+        }
+
+        @Bean
+        ScenarioRehearsalRuntimeService scenarioRehearsalRuntimeService() {
+            return mock(ScenarioRehearsalRuntimeService.class);
         }
 
         @Bean

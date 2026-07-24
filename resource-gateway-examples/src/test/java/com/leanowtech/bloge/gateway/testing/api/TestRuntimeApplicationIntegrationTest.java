@@ -195,7 +195,7 @@ class TestRuntimeApplicationIntegrationTest {
                 .containsEntry("mirrorExternalLeafInterception", true)
                 .containsEntry("mirrorScenarioArtifactRegistry", true)
                 .containsEntry("mirrorScenarioRehearsalCompilation", true)
-                .containsEntry("mirrorScenarioRehearsalExecution", false)
+                .containsEntry("mirrorScenarioRehearsalExecution", true)
                 .containsEntry("mirrorScenarioRehearsalEvidence", false)
                 .containsEntry("mirrorServing", true)
                 .containsEntry("mirrorIsolationAuthorityPublicationProtocol", true)

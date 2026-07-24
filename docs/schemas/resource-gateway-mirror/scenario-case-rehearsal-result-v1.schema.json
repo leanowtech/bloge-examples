@@ -1,0 +1,210 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://bloge.dev/schemas/resource-gateway-mirror/scenario-case-rehearsal-result-v1.schema.json",
+  "title": "Resource Gateway Scenario Case Rehearsal Result v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion", "resultFingerprint", "caseIndex", "scenarioCaseRef",
+    "caseType", "testSuiteRef", "testCaseId", "mirrorPlanRef",
+    "fixtureBundleRef", "sessionCheckpointRef", "childRequestId", "outcome",
+    "runId", "evidenceBundleFingerprint", "evidenceStatus", "evidenceClass",
+    "assertionResults", "diagnosticCode", "startedAt", "completedAt"
+  ],
+  "properties": {
+    "schemaVersion": {
+      "const": "resourceGateway.scenarioCaseRehearsalResult.v1"
+    },
+    "resultFingerprint": {
+      "$ref": "mirror-plan-v1.schema.json#/$defs/fingerprint"
+    },
+    "caseIndex": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 255
+    },
+    "scenarioCaseRef": {
+      "$ref": "scenario-pack-v1.schema.json#/$defs/scenarioCaseRef"
+    },
+    "caseType": {
+      "enum": [
+        "GOLDEN", "NEGATIVE", "BOUNDARY", "REGRESSION",
+        "FAULT", "STATE_TRANSITION", "WHAT_IF"
+      ]
+    },
+    "testSuiteRef": {
+      "$ref": "compiled-scenario-rehearsal-plan-v1.schema.json#/$defs/testSuiteRef"
+    },
+    "testCaseId": {
+      "$ref": "#/$defs/identifier"
+    },
+    "mirrorPlanRef": {
+      "$ref": "compiled-scenario-rehearsal-plan-v1.schema.json#/$defs/mirrorPlanRef"
+    },
+    "fixtureBundleRef": {
+      "$ref": "compiled-scenario-rehearsal-plan-v1.schema.json#/$defs/fixtureBundleRef"
+    },
+    "sessionCheckpointRef": {
+      "oneOf": [
+        { "type": "null" },
+        {
+          "$ref": "compiled-scenario-rehearsal-plan-v1.schema.json#/$defs/checkpointRef"
+        }
+      ]
+    },
+    "childRequestId": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 512,
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,511}$"
+    },
+    "outcome": {
+      "enum": ["PASS", "FAIL", "INDETERMINATE"]
+    },
+    "runId": {
+      "$ref": "#/$defs/optionalIdentifier"
+    },
+    "evidenceBundleFingerprint": {
+      "$ref": "#/$defs/optionalFingerprint"
+    },
+    "evidenceStatus": {
+      "oneOf": [
+        { "type": "null" },
+        {
+          "enum": [
+            "PASSED", "ASSERTION_FAILED", "EXECUTION_FAILED",
+            "CONTROL_PLAN_REJECTED", "FIXTURE_UNMATCHED", "FIXTURE_UNUSED",
+            "CONTROL_PLAN_UNAVAILABLE", "EVIDENCE_INCOMPLETE",
+            "CANCELLED", "TIMED_OUT"
+          ]
+        }
+      ]
+    },
+    "evidenceClass": {
+      "oneOf": [
+        { "type": "null" },
+        { "enum": ["EXPLORATORY", "CERTIFIABLE"] }
+      ]
+    },
+    "assertionResults": {
+      "type": "array",
+      "maxItems": 256,
+      "items": {
+        "$ref": "scenario-handling-assertion-result-v1.schema.json"
+      }
+    },
+    "diagnosticCode": {
+      "type": "string",
+      "maxLength": 255,
+      "pattern": "^$|^[A-Z][A-Z0-9_.-]{0,254}$"
+    },
+    "startedAt": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "completedAt": {
+      "type": "string",
+      "format": "date-time"
+    }
+  },
+  "oneOf": [
+    {
+      "properties": {
+        "runId": {
+          "$ref": "#/$defs/identifier"
+        },
+        "evidenceBundleFingerprint": {
+          "$ref": "mirror-plan-v1.schema.json#/$defs/fingerprint"
+        },
+        "evidenceStatus": {
+          "enum": [
+            "PASSED", "ASSERTION_FAILED", "EXECUTION_FAILED",
+            "CONTROL_PLAN_REJECTED", "FIXTURE_UNMATCHED", "FIXTURE_UNUSED",
+            "CONTROL_PLAN_UNAVAILABLE", "EVIDENCE_INCOMPLETE",
+            "CANCELLED", "TIMED_OUT"
+          ]
+        },
+        "evidenceClass": {
+          "enum": ["EXPLORATORY", "CERTIFIABLE"]
+        },
+        "assertionResults": {
+          "minItems": 1
+        }
+      }
+    },
+    {
+      "properties": {
+        "outcome": {
+          "enum": ["FAIL", "INDETERMINATE"]
+        },
+        "runId": {
+          "const": ""
+        },
+        "evidenceBundleFingerprint": {
+          "const": ""
+        },
+        "evidenceStatus": {
+          "type": "null"
+        },
+        "evidenceClass": {
+          "type": "null"
+        },
+        "assertionResults": {
+          "maxItems": 0
+        },
+        "diagnosticCode": {
+          "$ref": "#/$defs/machineCode"
+        }
+      }
+    }
+  ],
+  "allOf": [
+    {
+      "if": {
+        "properties": {
+          "outcome": {
+            "const": "PASS"
+          }
+        },
+        "required": ["outcome"]
+      },
+      "then": {
+        "properties": {
+          "diagnosticCode": {
+            "const": ""
+          }
+        }
+      },
+      "else": {
+        "properties": {
+          "diagnosticCode": {
+            "$ref": "#/$defs/machineCode"
+          }
+        }
+      }
+    }
+  ],
+  "$defs": {
+    "identifier": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 512,
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9@._:/-]{0,511}$"
+    },
+    "optionalIdentifier": {
+      "type": "string",
+      "maxLength": 512,
+      "pattern": "^$|^[A-Za-z0-9][A-Za-z0-9@._:/-]{0,511}$"
+    },
+    "optionalFingerprint": {
+      "type": "string",
+      "pattern": "^$|^sha256:[a-f0-9]{64}$"
+    },
+    "machineCode": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 255,
+      "pattern": "^[A-Z][A-Z0-9_.-]{0,254}$"
+    }
+  }
+}

@@ -170,9 +170,17 @@ same-scope registration, and deterministic
 fails closed unless every exact TestSuite case, FixtureBundle, MirrorPlan,
 fault rule, assertion, execution-service binding, and optional signed
 checkpoint agrees. The compiled object contains coordinates and policy only,
-never test input or fixture payload. Rehearsal execution and aggregate scenario
-evidence are deliberately advertised as unavailable until the runtime/evaluator
-slice is installed. See the
+never test input or fixture payload. The synchronous Scenario runtime accepts
+only an aggregate request id and exact compiled-plan ref, resolves TestSuite
+input server-side, reuses the durable Mirror child-run coordinator, verifies
+each signed evidence bundle, evaluates the complete handling-assertion closure,
+and returns content-addressed per-case and aggregate results. Outcomes and
+summary counters are server-derived; stateful retries reach completed child
+idempotency before checking a possibly advanced Session head. The capability
+probe advertises Scenario execution while keeping aggregate Scenario evidence
+false: the aggregate still needs its own durable lease/store, detached
+signature, read API, workbook seed, and retention policy before it is
+publish-gate evidence. See the
 [scenario rehearsal compiler guide](../docs/resource-gateway-scenario-rehearsal-compiler.md).
 
 Stored suites and fixtures now use `bloge.storedTestSuite.v2` and

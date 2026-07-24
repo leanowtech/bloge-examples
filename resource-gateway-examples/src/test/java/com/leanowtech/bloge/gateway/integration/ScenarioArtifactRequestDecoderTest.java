@@ -5,8 +5,10 @@ import com.fasterxml.jackson.databind.node.ObjectNode;
 import com.leanowtech.bloge.gateway.integration.mirror.ArtifactProvenance;
 import com.leanowtech.bloge.gateway.integration.mirror.CapabilitySnapshot;
 import com.leanowtech.bloge.gateway.integration.mirror.CaseHandlingAssertion;
+import com.leanowtech.bloge.gateway.integration.mirror.MirrorArtifactRef;
 import com.leanowtech.bloge.gateway.integration.mirror.ScenarioPackIntegrity;
 import com.leanowtech.bloge.gateway.integration.mirror.ScenarioRehearsalCompileRequest;
+import com.leanowtech.bloge.gateway.integration.mirror.ScenarioRehearsalExecutionRequest;
 import org.junit.jupiter.api.Test;
 
 import java.nio.charset.StandardCharsets;
@@ -31,6 +33,12 @@ class ScenarioArtifactRequestDecoderTest {
     void decodesExactCompileAndAssertionProtocols() throws Exception {
         ScenarioRehearsalCompileRequest compileRequest =
                 new ScenarioRehearsalCompileRequest("", 1, SHA_A);
+        ScenarioRehearsalExecutionRequest executionRequest =
+                new ScenarioRehearsalExecutionRequest(
+                        "", "request-1",
+                        new MirrorArtifactRef(
+                                "COMPILED_REHEARSAL_PLAN",
+                                "support@compiled-v1", 1, SHA_A));
         CaseHandlingAssertion assertion = assertion();
 
         assertThat(decoder.decodeCompileRequest(
@@ -39,6 +47,9 @@ class ScenarioArtifactRequestDecoderTest {
         assertThat(decoder.decodeAssertion(
                 mapper.writeValueAsBytes(assertion), identity()))
                 .isEqualTo(assertion);
+        assertThat(decoder.decodeExecutionRequest(
+                mapper.writeValueAsBytes(executionRequest), identity()))
+                .isEqualTo(executionRequest);
     }
 
     @Test
@@ -73,6 +84,29 @@ class ScenarioArtifactRequestDecoderTest {
 
         assertThatThrownBy(() -> decoder.decodeAssertion(
                 mapper.writeValueAsBytes(value), identity()))
+                .isInstanceOfSatisfying(
+                        IntegrationProblemException.class,
+                        failure -> assertThat(failure.problem().code())
+                                .isEqualTo(
+                                "RG.MIRROR.SCENARIO_REQUEST_MALFORMED"));
+    }
+
+    @Test
+    void rejectsRuntimeContextOverrides() throws Exception {
+        ObjectNode request = mapper.createObjectNode();
+        request.put(
+                "schemaVersion",
+                ScenarioRehearsalExecutionRequest.SCHEMA_VERSION);
+        request.put("requestId", "request-1");
+        request.set(
+                "compiledPlanRef",
+                mapper.valueToTree(new MirrorArtifactRef(
+                        "COMPILED_REHEARSAL_PLAN",
+                        "support@compiled-v1", 1, SHA_A)));
+        request.putObject("context").put("customerId", "smuggled");
+
+        assertThatThrownBy(() -> decoder.decodeExecutionRequest(
+                mapper.writeValueAsBytes(request), identity()))
                 .isInstanceOfSatisfying(
                         IntegrationProblemException.class,
                         failure -> assertThat(failure.problem().code())

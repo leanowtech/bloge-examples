@@ -320,7 +320,7 @@ class ToolStudioIntegrationServiceTest {
                 .containsEntry("mirrorExternalLeafInterception", true)
                 .containsEntry("mirrorScenarioArtifactRegistry", true)
                 .containsEntry("mirrorScenarioRehearsalCompilation", true)
-                .containsEntry("mirrorScenarioRehearsalExecution", false)
+                .containsEntry("mirrorScenarioRehearsalExecution", true)
                 .containsEntry("mirrorScenarioRehearsalEvidence", false)
                 .containsEntry("mirrorOperationObservability", true)
                 .containsEntry("mirrorServing", true)
@@ -364,7 +364,10 @@ class ToolStudioIntegrationServiceTest {
                         "scenarioCase",
                         "scenarioPack",
                         "scenarioRehearsalCompileRequest",
-                        "compiledScenarioRehearsalPlan")
+                        "compiledScenarioRehearsalPlan",
+                        "scenarioRehearsalExecutionRequest",
+                        "scenarioCaseRehearsalResult",
+                        "scenarioRehearsalResult")
                 .containsEntry("mirrorExecutionRequest", List.of(
                         com.leanowtech.bloge.gateway.integration.mirror
                                 .MirrorExecutionRequest.SCHEMA_VERSION,
@@ -441,6 +444,7 @@ class ToolStudioIntegrationServiceTest {
                         "GET /api/mirror/scenarios/packs/{packId}",
                         "POST /api/mirror/scenarios/packs/{packId}/compiled-plans",
                         "GET /api/mirror/scenarios/compiled-plans/{planId}",
+                        "POST /api/mirror/scenarios/runs",
                         "POST /api/mirror/executions", "GET /api/mirror/runs/{runId}",
                         "GET /api/mirror/runs/{runId}/evidence",
                         "GET /api/mirror/runs/{runId}/state-workbook-seed",

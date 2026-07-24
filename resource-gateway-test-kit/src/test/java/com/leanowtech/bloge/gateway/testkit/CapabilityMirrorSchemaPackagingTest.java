@@ -90,6 +90,15 @@ class CapabilityMirrorSchemaPackagingTest {
                 "mirror-session-checkpoint-attestation-v1.schema.json",
                 "mirror-session-checkpoint-bundle-v1.schema.json",
                 "mirror-session-recovery-result-v1.schema.json",
+                "scenario-pack-v1.schema.json",
+                "scenario-case-v1.schema.json",
+                "case-handling-assertion-v1.schema.json",
+                "scenario-handling-assertion-result-v1.schema.json",
+                "compiled-scenario-rehearsal-plan-v1.schema.json",
+                "scenario-rehearsal-execution-request-v1.schema.json",
+                "scenario-case-rehearsal-result-v1.schema.json",
+                "scenario-rehearsal-result-v1.schema.json",
+                "scenario-pack-stage7-v1.fixture.schema.json",
                 "stateful-refund-stage3-v1.fixture.schema.json")) {
             String resource = CapabilityMirrorProtocol.SCHEMA_RESOURCE_ROOT + name;
             try (InputStream input = getClass().getResourceAsStream(resource)) {
@@ -173,6 +182,22 @@ class CapabilityMirrorSchemaPackagingTest {
                 .MIRROR_SESSION_RECOVERY_RESULT_SCHEMA_RESOURCE)
                 .endsWith(
                         "mirror-session-recovery-result-v1.schema.json");
+        assertThat(CapabilityMirrorProtocol
+                .COMPILED_SCENARIO_REHEARSAL_PLAN_SCHEMA_RESOURCE)
+                .endsWith(
+                        "compiled-scenario-rehearsal-plan-v1.schema.json");
+        assertThat(CapabilityMirrorProtocol
+                .SCENARIO_REHEARSAL_EXECUTION_REQUEST_SCHEMA_RESOURCE)
+                .endsWith(
+                        "scenario-rehearsal-execution-request-v1.schema.json");
+        assertThat(CapabilityMirrorProtocol
+                .SCENARIO_CASE_REHEARSAL_RESULT_SCHEMA_RESOURCE)
+                .endsWith(
+                        "scenario-case-rehearsal-result-v1.schema.json");
+        assertThat(CapabilityMirrorProtocol
+                .SCENARIO_REHEARSAL_RESULT_SCHEMA_RESOURCE)
+                .endsWith(
+                        "scenario-rehearsal-result-v1.schema.json");
         assertThat(CapabilityMirrorProtocol.MIRROR_EVIDENCE_BUNDLE_V2_SCHEMA_RESOURCE)
                 .endsWith("mirror-evidence-bundle-v2.schema.json");
         assertThat(CapabilityMirrorProtocol

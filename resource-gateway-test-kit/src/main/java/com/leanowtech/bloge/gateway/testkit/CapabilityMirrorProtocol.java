@@ -565,6 +565,22 @@ public final class CapabilityMirrorProtocol {
     public static final String SCENARIO_HANDLING_ASSERTION_RESULT_SCHEMA_RESOURCE =
             SCHEMA_RESOURCE_ROOT
                     + "scenario-handling-assertion-result-v1.schema.json";
+    /** Packaged compiled and governed Scenario rehearsal execution plan schema. */
+    public static final String COMPILED_SCENARIO_REHEARSAL_PLAN_SCHEMA_RESOURCE =
+            SCHEMA_RESOURCE_ROOT
+                    + "compiled-scenario-rehearsal-plan-v1.schema.json";
+    /** Packaged payload-free command for one exact compiled Scenario rehearsal. */
+    public static final String SCENARIO_REHEARSAL_EXECUTION_REQUEST_SCHEMA_RESOURCE =
+            SCHEMA_RESOURCE_ROOT
+                    + "scenario-rehearsal-execution-request-v1.schema.json";
+    /** Packaged payload-free result for one compiled Scenario case. */
+    public static final String SCENARIO_CASE_REHEARSAL_RESULT_SCHEMA_RESOURCE =
+            SCHEMA_RESOURCE_ROOT
+                    + "scenario-case-rehearsal-result-v1.schema.json";
+    /** Packaged payload-free aggregate over one complete Scenario rehearsal. */
+    public static final String SCENARIO_REHEARSAL_RESULT_SCHEMA_RESOURCE =
+            SCHEMA_RESOURCE_ROOT
+                    + "scenario-rehearsal-result-v1.schema.json";
     /** Packaged fixed ScenarioPack compatibility-fixture schema. */
     public static final String SCENARIO_PACK_FIXTURE_SCHEMA_RESOURCE =
             SCHEMA_RESOURCE_ROOT

@@ -1,0 +1,115 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://bloge.dev/schemas/resource-gateway-mirror/scenario-rehearsal-result-v1.schema.json",
+  "title": "Resource Gateway Scenario Rehearsal Result v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion", "resultFingerprint", "requestId", "compiledPlanRef",
+    "scope", "targetCapabilityRef", "outcome", "caseResults", "summary",
+    "startedAt", "completedAt"
+  ],
+  "properties": {
+    "schemaVersion": {
+      "const": "resourceGateway.scenarioRehearsalResult.v1"
+    },
+    "resultFingerprint": {
+      "$ref": "mirror-plan-v1.schema.json#/$defs/fingerprint"
+    },
+    "requestId": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 256,
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,255}$"
+    },
+    "compiledPlanRef": {
+      "$ref": "scenario-rehearsal-execution-request-v1.schema.json#/$defs/compiledPlanRef"
+    },
+    "scope": {
+      "$ref": "mirror-plan-v1.schema.json#/$defs/scope"
+    },
+    "targetCapabilityRef": {
+      "$ref": "scenario-pack-v1.schema.json#/$defs/capabilityRef"
+    },
+    "outcome": {
+      "enum": ["PASS", "FAIL", "INDETERMINATE"]
+    },
+    "caseResults": {
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 256,
+      "items": {
+        "$ref": "scenario-case-rehearsal-result-v1.schema.json"
+      }
+    },
+    "summary": {
+      "$ref": "#/$defs/summary"
+    },
+    "startedAt": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "completedAt": {
+      "type": "string",
+      "format": "date-time"
+    }
+  },
+  "$defs": {
+    "summary": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "totalCases", "passedCases", "failedCases", "indeterminateCases",
+        "assertionResults", "blockerFailures", "blockerIndeterminate",
+        "warningFailures", "warningIndeterminate"
+      ],
+      "properties": {
+        "totalCases": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 256
+        },
+        "passedCases": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 256
+        },
+        "failedCases": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 256
+        },
+        "indeterminateCases": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 256
+        },
+        "assertionResults": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 65536
+        },
+        "blockerFailures": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 65536
+        },
+        "blockerIndeterminate": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 65536
+        },
+        "warningFailures": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 65536
+        },
+        "warningIndeterminate": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 65536
+        }
+      }
+    }
+  }
+}

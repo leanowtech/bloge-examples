@@ -65,6 +65,7 @@ import com.leanowtech.bloge.gateway.integration.mirror.CompiledScenarioRehearsal
 import com.leanowtech.bloge.gateway.integration.mirror.MirrorSessionCheckpointIntegrityService;
 import com.leanowtech.bloge.gateway.integration.mirror.ScenarioArtifactRepository;
 import com.leanowtech.bloge.gateway.integration.mirror.ScenarioRehearsalCompiler;
+import com.leanowtech.bloge.gateway.integration.mirror.ScenarioHandlingAssertionEvaluator;
 import com.leanowtech.bloge.gateway.integration.mirror.MirrorServingGenerationAuthority;
 import com.leanowtech.bloge.gateway.integration.mirror.MirrorServingGenerationIntegrity;
 import com.leanowtech.bloge.gateway.integration.mirror.MirrorServingGenerationService;
@@ -230,6 +231,14 @@ public class MirrorRuntimeConfiguration {
             MirrorSessionCheckpointIntegrityService checkpointIntegrity) {
         return new ScenarioRehearsalCompiler(
                 objectMapper, checkpointIntegrity);
+    }
+
+    /** Creates the deterministic evaluator over independently verified Mirror evidence. */
+    @Bean
+    @ConditionalOnMissingBean
+    public ScenarioHandlingAssertionEvaluator
+    scenarioHandlingAssertionEvaluator(ObjectMapper objectMapper) {
+        return new ScenarioHandlingAssertionEvaluator(objectMapper);
     }
 
     /** Creates the append-only payload-free compiled rehearsal-plan registry. */

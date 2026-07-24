@@ -9,6 +9,7 @@ import com.networknt.schema.dialect.Dialects;
 
 import java.io.IOException;
 import java.io.InputStream;
+import java.net.URI;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -95,6 +96,10 @@ final class CapabilityMirrorSchemaValidator {
             "mirror-session-recovery-result-v1.schema.json",
             "case-handling-assertion-v1.schema.json",
             "scenario-handling-assertion-result-v1.schema.json",
+            "compiled-scenario-rehearsal-plan-v1.schema.json",
+            "scenario-rehearsal-execution-request-v1.schema.json",
+            "scenario-case-rehearsal-result-v1.schema.json",
+            "scenario-rehearsal-result-v1.schema.json",
             "scenario-case-v1.schema.json",
             "scenario-pack-v1.schema.json",
             "scenario-pack-stage7-v1.fixture.schema.json",
@@ -138,10 +143,34 @@ final class CapabilityMirrorSchemaValidator {
             schemas.put(entry.getValue(), load(entry.getKey(), entry.getValue()));
         }
         try {
+            requireReferenceClosure(schemas);
             return SchemaRegistry.withDialect(Dialects.getDraft202012(),
                     builder -> builder.schemas(schemas));
         } catch (RuntimeException failure) {
             throw unavailable();
+        }
+    }
+
+    private static void requireReferenceClosure(Map<String, String> schemas) {
+        for (Map.Entry<String, String> entry : schemas.entrySet()) {
+            JsonNode schema;
+            try {
+                schema = JSON.readTree(entry.getValue());
+            } catch (IOException failure) {
+                throw new IllegalStateException("Invalid packaged schema", failure);
+            }
+            URI base = URI.create(entry.getKey());
+            for (JsonNode reference : schema.findValues("$ref")) {
+                if (!reference.isTextual() || reference.textValue().startsWith("#")) {
+                    continue;
+                }
+                URI resolved = base.resolve(reference.textValue());
+                String target = resolved.toString().split("#", 2)[0];
+                if (!schemas.containsKey(target)) {
+                    throw new IllegalStateException(
+                            "Packaged schema reference is absent: " + target);
+                }
+            }
         }
     }
 

@@ -158,6 +158,36 @@ class ScenarioRehearsalCompilerTest {
                 "RG.MIRROR.REHEARSAL.PACK_LIFECYCLE_INVALID");
     }
 
+    @Test
+    void rejectsDraftAssertionsEvenForExploratoryRehearsals() {
+        Material material = material(
+                FixtureRule.Behavior.returning(Map.of("status", "FOUND")),
+                ScenarioCase.CaseType.GOLDEN,
+                List.of(),
+                100,
+                null);
+        CaseHandlingAssertion source =
+                material.request().assertions().getFirst();
+        CaseHandlingAssertion draft = ScenarioPackIntegrity.sealAssertion(
+                mapper,
+                new CaseHandlingAssertion(
+                        source.schemaVersion(), source.assertionId(),
+                        source.revision(), "", source.scope(),
+                        source.observation(), source.selector(),
+                        source.expectation(), source.severity(),
+                        source.governanceCode(), source.provenance(),
+                        CapabilitySnapshot.Lifecycle.DRAFT,
+                        source.createdAt()));
+
+        assertRejected(
+                new ScenarioRehearsalCompilationRequest(
+                        material.pack(),
+                        material.request().cases(),
+                        List.of(draft),
+                        VALIDATED_AT),
+                "RG.MIRROR.REHEARSAL.ASSERTION_LIFECYCLE_INVALID");
+    }
+
     private Material material(
             FixtureRule.Behavior behavior,
             ScenarioCase.CaseType caseType,
