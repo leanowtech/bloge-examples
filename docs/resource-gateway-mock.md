@@ -7,7 +7,7 @@
 
 | 文档属性 | 内容 |
 |---|---|
-| 状态 | Accepted / In implementation；Stage 0 工程门禁已通过；Stage 1 完成 MirrorPlan、受保护运行/证据 API、部署隔离信任与 durable execution；Stage 2 完成 observation/corpus 的准入、review、publication、trajectory/cluster serving 与 generation fence；Stage 3 完成有状态 Session、虚拟读写、checkpoint/recovery、write-attempt reconciliation 和三类 ANEKE seed；Stage 4 完成 Scenario 编译、可恢复 aggregate、签名 evidence、audit/retention/workbook closure、durable batch manifest/queue/API/worker turn，以及显式启用的 region-local bounded scheduler。批次 heartbeat/cancel/evidence、Owner UX、Fidelity/Outcome 和生产环境认证继续实施；未完成前相关 readiness 必须保持 `false` |
+| 状态 | Accepted / In implementation；Stage 0 工程门禁已通过；Stage 1 完成 MirrorPlan、受保护运行/证据 API、部署隔离信任与 durable execution；Stage 2 完成 observation/corpus 的准入、review、publication、trajectory/cluster serving 与 generation fence；Stage 3 完成有状态 Session、虚拟读写、checkpoint/recovery、write-attempt reconciliation 和三类 ANEKE seed；Stage 4 完成 Scenario 编译、可恢复 aggregate、签名 evidence、audit/retention/workbook closure、durable batch manifest/queue/API/worker turn、region-local bounded scheduler、cooperative control、签名 batch evidence 及批次 operation/lifecycle audit。批次 retention、Owner UX、Fidelity/Outcome 和生产环境认证继续实施；未完成前相关 readiness 必须保持 `false` |
 | 目标读者 | Resource Gateway、BLOGE Runtime、ANEKE、TEE/数据平台、QA、SRE、安全与业务运营团队 |
 | 设计范围 | external/composed 能力建模、镜像运行、保真语料、有状态世界、场景演练、证据、保真度与结果校准 |
 | 非目标 | 不重做 ANEKE 的资产治理和发布门禁；不允许测试控制进入生产业务请求；不把观测频率直接当成业务正确性 |
@@ -576,11 +576,11 @@ Resource Gateway 已有的工业底座应直接复用：
 | 递归 DAG 测试 | 85% | MirrorPlan/closure/runtime inventory/fixture control 已统一；缺 contract-mock 展开治理和状态世界 |
 | 日志蒸馏与语料 | 82% | payload-free signed observation、准入/隔离、immutable review、candidate/publication/trajectory/cluster 独立 lineage、元数据风险门禁、fixture exact/trajectory/cluster binding、在线 revalidation、test/staging `RECORDED_EXACT`/`RECORDED_TRAJECTORY`/`RECORDED_CLUSTER`、BLOGE 原生 retry loop、identity-safe projection、Wilson confidence、Session state read 与独立 verifier 已落地；缺生产 payload authority、漂移、偏差、outcome 校准和删除证明 |
 | 有状态业务世界 | 91% | 协议、read/write 退款 fixture、独立 verifier/sealer/client、事务内核、受保护 Session API、独立 AES-GCM 数据面、lease/fence/CAS、durable write-attempt journal/reconciliation、TTL/destroy、全局/scope 容量、保留字节、命令背压、过期擦除、固定 read head、run-scoped virtual write、真实 DAG read-write-read、payload-free v1/v2/v3 state evidence、read-only/successful-transition/write-outcome ANEKE seed、签名 HASH_ONLY checkpoint 与同数据面代际精确恢复准入已落地；缺 TEE/KMS、跨区域数据恢复、真实 process-kill/network parity、目标数据库容量认证和 HA/DR certification |
-| Scenario/Rehearsal | 94% | ScenarioPack/Case/Assertion、exact compiler、可恢复逐 case runtime、签名 aggregate、audit/retention、ANEKE seed、durable batch manifest/queue/API/worker turn、region-local bounded scheduler、逐 case cooperative control 与签名 batch evidence/index 已落地；缺 hard kill、batch audit/retention、owner UX、企业策略/WORM/anchor 与异构消费者认证 |
+| Scenario/Rehearsal | 95% | ScenarioPack/Case/Assertion、exact compiler、可恢复逐 case runtime、签名 aggregate、audit/retention、ANEKE seed、durable batch manifest/queue/API/worker turn、region-local bounded scheduler、逐 case cooperative control、签名 batch evidence/index 与批次 operation/lifecycle audit 已落地；缺 hard kill、batch retention、owner UX、企业策略/WORM/anchor 与异构消费者认证 |
 | Fidelity/Outcome | 5% | 缺保真向量、shadow、权威结果归因和校准闭环 |
 | 业务运营工作台 | 10% | Author Canvas 尚未成为案例驱动的镜像运营工作台 |
 
-结论：基础设施准备度约 90%，固定权重理想态完成度为 61.51%。剩余主要矛盾已经
+结论：基础设施准备度约 90%，固定权重理想态完成度为 61.67%。剩余主要矛盾已经
 从“能否安全执行和取证”转向“能否把可信 observation 持续蒸馏成可校准、可拒答、可删除的业务拟合资产”。
 
 ### 3.1 2026-07-24 Scenario 编译期闭包迭代差距复评
@@ -647,7 +647,7 @@ HA/DR 或权威 outcome 当成已完成。51.59% 只承认已由代码和测试�
 | 2 | RG-MIR-SCEN-001A | 完成 | 将 TestSuite/Fixture authority 升级为完整 enterprise scope；旧 tenant+environment 资产采用独立表、禁止隐式提升、授权重新注册的迁移策略 | 两个 organization/project/region 可安全复用同 id/revision；跨 scope、混合版本与 indexed scope 搬移失败关闭 |
 | 3 | RG-MIR-SCEN-002 | 完成 | deterministic compiler/runtime；每 case 使用隔离 Session/checkpoint、固定时钟/随机源、fixture data-flow inversion 和禁止真实 egress | exact plan、逐 case 运行、数据库时钟 lease/epoch、连续 checkpoint、takeover、旧 worker fencing 与原子 evidence/terminal commit 全绿 |
 | 4 | RG-MIR-SCEN-003 | 完成（本地治理闭包） | 产出 payload-free Scenario evidence、state diff、处置断言结果与 ANEKE workbook seed，区分执行失败、断言失败、低保真和证据不完整 | 独立签名、append-only store、exact read、崩溃恢复、audit/retention/workbook seed 已完成；unknown outcome、缺断言或不完整 evidence 阻断 gate-ready |
-| 5 | RG-MIR-SCEN-004 | 单地域自治调度、逐 case cooperative control 与签名 batch evidence 完成；治理与 UX 待实现 | 提供批量 rehearsal API、deep link 和最小 Author 场景表格；先保证业务 owner 不编辑 JSON/DSL 即可维护 case | exact manifest、数据库队列、API、worker turn、region-local scheduler、heartbeat/cancel/deadline、签名 batch index、离线 verifier 与启动脚本已完成；下一步 batch audit/retention、两个样例域、浏览器与 owner UX |
+| 5 | RG-MIR-SCEN-004 | 单地域自治调度、逐 case cooperative control、签名 batch evidence 与批次审计完成；retention 与 UX 待实现 | 提供批量 rehearsal API、deep link 和最小 Author 场景表格；先保证业务 owner 不编辑 JSON/DSL 即可维护 case | exact manifest、数据库队列、API、worker turn、region-local scheduler、heartbeat/cancel/deadline、签名 batch index、离线 verifier、operation/lifecycle audit 与启动脚本已完成；下一步 batch retention、两个样例域、浏览器与 owner UX |
 
 完成 E7 后才进入 E8：以 Scenario coverage 为分母建立
 `DomainFidelityProfile`、typed shadow diff、confidence/abstention debt 和 drift downgrade；随后 E9 接入
@@ -1128,7 +1128,7 @@ ready。
 本轮不掩盖两个剩余生产断点。第一，远程 KMS 调用当前发生在数据库事务与分区锁
 内；本地 fail-closed 语义正确，但生产形态需要 durable `FINALIZING`/outbox、
 有界签名重试和陈旧 finalization 接管，避免 KMS 延迟放大队列锁竞争。第二，batch
-尚无 lifecycle operation audit、最短保留策略、multi-hold、删除证明和 ANEKE 批次
+尚无最短保留策略、multi-hold、删除证明和 ANEKE 批次
 workbook 消费闭包；已有 aggregate retention 不能被默认套用，也不能级联删除 child
 evidence。
 
@@ -1139,8 +1139,50 @@ evidence。
 含真实 Chrome 工作流和可执行 Boot JAR；独立 Test Kit `370` 项测试零失败、
 零错误，完成 114 份 Mirror Schema 引用闭包、shaded JAR 和零警告公共 JavaDoc。
 最终源码另通过服务端 `88/88` 与 Test Kit `15/15` 项批次证据聚焦验证。
-下一条最短路径是 batch lifecycle/operation audit 与 retention/legal-hold/deletion
-proof；随后再做 `FINALIZING` outbox/KMS 故障隔离和 ANEKE batch workbook。
+下一条最短路径是 batch retention/legal-hold/deletion proof；随后再做
+`FINALIZING` outbox/KMS 故障隔离和 ANEKE batch workbook。
+
+### 3.13 2026-07-25 Scenario 批次审计迭代差距复评
+
+本轮关闭“批次能排队和签名，但无法回答谁调用了 API、队列为何发生状态变化”的
+根因，并修复排队态取消绕过 evidence publisher 的 terminal-without-evidence
+缺陷。外部调用和内部调度使用两套互补事实：`mirror_operation_audit` 记录
+submit/read/evidence/cancel 的身份、scope、结果与稳定原因；新的
+`scenario_rehearsal_batch_lifecycle_audit` 记录 `ADMITTED`、`CLAIMED`、
+`ITEM_TERMINALIZED`、`ITEM_RETRY_SCHEDULED`、`CANCELLATION_REQUESTED` 和
+`TERMINALIZED`。前者回答“谁做了什么”，后者回答“队列为何变成现在这样”，两者
+都不能表示 fixture、图上下文、业务输入输出、凭据、异常文本或栈。
+既有 `mirror_operation_audit.operation` 从 32 扩到 64 字符并带本地升级 DDL，
+避免最长的 batch evidence read 词汇在真实 JDBC 中被截断或拒绝。
+
+submit/cancel 的成功 operation audit 被传入数据库 mutation，在同一事务内、业务
+状态返回前提交；失败/拒绝仍由隔离事务保留。lifecycle append 与对应 job/item/
+evidence 写共享事务，审计不可用会回滚业务转换。幂等 submit/cancel replay 不重复
+追加生命周期事件，高频 heartbeat 也不进入该表，防止治理事实被运行噪声和容量
+放大淹没。排队态取消现在先把 pending item 变为 `CANCELLED`，再生成签名 batch
+evidence、追加 cancellation/terminal lifecycle，最后提交 terminal job；任一步
+失败全部回滚。
+
+回归还暴露并修复了 `COLLECT_ALL` 的累计失败码漂移：过去 claim 和后续 queue
+转换会把较早的失败原因清空，导致“前项失败、末项通过”的 `PARTIAL` 只能得到空
+原因。现在非终态转换保留已有累计失败码，新失败才覆盖，终态 evidence 和 lifecycle
+因此能解释批次为何不是 `SUCCEEDED`。
+
+这个增量仍不等于完整批次治理。lifecycle audit 是数据库内的状态事实，不是签名
+retention chain；尚缺最短保留边界、multi-hold、purge/deletion proof、外部 WORM/
+transparency anchor、归档和批次 ANEKE workbook。远程 KMS 仍需要
+`FINALIZING`/outbox 隔离，真实 PostgreSQL 多副本、审计容量/归档和故障注入也必须
+进入部署认证。
+
+基于受保护 operation 的成功/拒绝审计、成功审计故障回滚、完整 scope lifecycle
+读取、审计表 payload omission、终态审计故障回滚、幂等事件抑制、排队取消签名
+证据和累计失败保真测试，本轮将 Scenario/Rehearsal 从 94% 上调至 95%，固定权重
+总分从 61.51% 上调至 61.67%，距理想态 38.33%。下一条最短路径是 batch
+retention/legal-hold/deletion proof，再处理 `FINALIZING` outbox/KMS 故障隔离。
+当前精确源码的 batch audit 聚焦门禁为 `46/46`；干净完整门禁覆盖 Resource
+Gateway `5,112` 项测试，零失败、零错误、3 项条件跳过，含 35 个真实 Chrome
+DOM 场景与可执行 Boot JAR。Test Kit 协议未变，最近一次门禁仍为 `370/370`，
+完成 114 份 Mirror Schema 引用闭包、shaded JAR 和零警告公共 JavaDoc。
 
 ## 4. 目标架构与系统责任
 

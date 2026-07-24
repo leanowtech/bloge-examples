@@ -13,6 +13,7 @@ import com.leanowtech.bloge.gateway.integration.mirror.DatabaseMirrorRunRequestR
 import com.leanowtech.bloge.gateway.integration.mirror.DatabaseCompiledScenarioRehearsalPlanRepository;
 import com.leanowtech.bloge.gateway.integration.mirror.DatabaseScenarioArtifactRepository;
 import com.leanowtech.bloge.gateway.integration.mirror.DatabaseScenarioRehearsalBatchEvidenceRepository;
+import com.leanowtech.bloge.gateway.integration.mirror.DatabaseScenarioRehearsalBatchLifecycleAuditRepository;
 import com.leanowtech.bloge.gateway.integration.mirror.DatabaseScenarioRehearsalEvidenceRepository;
 import com.leanowtech.bloge.gateway.integration.mirror.DatabaseScenarioRehearsalBatchRepository;
 import com.leanowtech.bloge.gateway.integration.mirror.DatabaseScenarioRehearsalLifecycleAuditRepository;
@@ -77,6 +78,7 @@ import com.leanowtech.bloge.gateway.integration.mirror.ScenarioRehearsalEvidence
 import com.leanowtech.bloge.gateway.integration.mirror.ScenarioRehearsalBatchEvidenceIntegrityService;
 import com.leanowtech.bloge.gateway.integration.mirror.ScenarioRehearsalBatchEvidencePublisher;
 import com.leanowtech.bloge.gateway.integration.mirror.ScenarioRehearsalBatchEvidenceRepository;
+import com.leanowtech.bloge.gateway.integration.mirror.ScenarioRehearsalBatchLifecycleAuditRepository;
 import com.leanowtech.bloge.gateway.integration.mirror.ScenarioRehearsalBatchCompiler;
 import com.leanowtech.bloge.gateway.integration.mirror.ScenarioRehearsalBatchPolicy;
 import com.leanowtech.bloge.gateway.integration.mirror.ScenarioRehearsalBatchRepository;
@@ -387,6 +389,16 @@ public class MirrorRuntimeConfiguration {
                 childEvidence, integrity, batches);
     }
 
+    /** Creates the append-only payload-free Scenario batch lifecycle audit. */
+    @Bean
+    @ConditionalOnMissingBean
+    public ScenarioRehearsalBatchLifecycleAuditRepository
+    scenarioRehearsalBatchLifecycleAuditRepository(
+            JdbcTemplate jdbc) {
+        return new DatabaseScenarioRehearsalBatchLifecycleAuditRepository(
+                jdbc);
+    }
+
     /** Creates the cross-replica database-authoritative Scenario batch queue. */
     @Bean
     @ConditionalOnMissingBean
@@ -396,12 +408,15 @@ public class MirrorRuntimeConfiguration {
             ObjectMapper objectMapper,
             PlatformTransactionManager transactionManager,
             ScenarioRehearsalBatchEvidencePublisher
-                    evidencePublisher) {
+                    evidencePublisher,
+            ScenarioRehearsalBatchLifecycleAuditRepository
+                    lifecycleAudit) {
         return new DatabaseScenarioRehearsalBatchRepository(
                 jdbc,
                 objectMapper,
                 transactionManager,
-                evidencePublisher);
+                evidencePublisher,
+                lifecycleAudit);
     }
 
     /** Creates the exact-plan resolver that freezes immutable batch manifests. */
@@ -424,13 +439,15 @@ public class MirrorRuntimeConfiguration {
             ScenarioRehearsalBatchRepository repository,
             ScenarioRehearsalBatchPolicy policy,
             ObjectMapper objectMapper,
-            ScenarioRehearsalBatchEvidenceRepository evidence) {
+            ScenarioRehearsalBatchEvidenceRepository evidence,
+            MirrorOperationObservability observations) {
         return new ScenarioRehearsalBatchService(
                 compiler,
                 repository,
                 policy,
                 objectMapper,
-                evidence);
+                evidence,
+                observations);
     }
 
     /** Creates one evidence-verifying durable Scenario batch worker turn. */

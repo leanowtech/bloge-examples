@@ -61,6 +61,8 @@ public final class DatabaseScenarioRehearsalBatchRepository
     private final TransactionTemplate mutations;
     private final ScenarioRehearsalBatchEvidencePublisher
             evidencePublisher;
+    private final ScenarioRehearsalBatchLifecycleAuditRepository
+            lifecycleAudit;
 
     /**
      * Creates the production repository using an independent application-database clock sample.
@@ -69,18 +71,22 @@ public final class DatabaseScenarioRehearsalBatchRepository
      * @param mapper canonical protocol mapper
      * @param transactionManager manager for the same datasource
      * @param evidencePublisher mandatory atomic terminal evidence publisher
+     * @param lifecycleAudit mandatory payload-free transition audit
      */
     public DatabaseScenarioRehearsalBatchRepository(
             JdbcTemplate jdbc,
             ObjectMapper mapper,
             PlatformTransactionManager transactionManager,
             ScenarioRehearsalBatchEvidencePublisher
-                    evidencePublisher) {
+                    evidencePublisher,
+            ScenarioRehearsalBatchLifecycleAuditRepository
+                    lifecycleAudit) {
         this(
                 jdbc,
                 mapper,
                 transactionManager,
                 evidencePublisher,
+                lifecycleAudit,
                 null);
     }
 
@@ -91,11 +97,15 @@ public final class DatabaseScenarioRehearsalBatchRepository
             PlatformTransactionManager transactionManager,
             ScenarioRehearsalBatchEvidencePublisher
                     evidencePublisher,
+            ScenarioRehearsalBatchLifecycleAuditRepository
+                    lifecycleAudit,
             Supplier<Instant> coordinationClock) {
         this.jdbc = Objects.requireNonNull(jdbc, "jdbc");
         this.mapper = Objects.requireNonNull(mapper, "mapper");
         this.evidencePublisher = Objects.requireNonNull(
                 evidencePublisher, "evidencePublisher");
+        this.lifecycleAudit = Objects.requireNonNull(
+                lifecycleAudit, "lifecycleAudit");
         this.coordinationClock = coordinationClock == null
                 ? () -> databaseNow(this.jdbc)
                 : Objects.requireNonNull(
@@ -243,6 +253,26 @@ public final class DatabaseScenarioRehearsalBatchRepository
     public SubmissionResult submit(
             Submission submission,
             ScenarioRehearsalBatchPolicy policy) {
+        return submitObserved(
+                submission, policy, null);
+    }
+
+    @Override
+    public SubmissionResult submit(
+            Submission submission,
+            ScenarioRehearsalBatchPolicy policy,
+            MirrorOperationObservability.Observation observation) {
+        return submitObserved(
+                submission,
+                policy,
+                Objects.requireNonNull(
+                        observation, "observation"));
+    }
+
+    private SubmissionResult submitObserved(
+            Submission submission,
+            ScenarioRehearsalBatchPolicy policy,
+            MirrorOperationObservability.Observation observation) {
         Objects.requireNonNull(submission, "submission");
         Objects.requireNonNull(policy, "policy");
         SubmissionResult result = mutations.execute(status -> {
@@ -267,8 +297,11 @@ public final class DatabaseScenarioRehearsalBatchRepository
             if (existing.isPresent()) {
                 requireSameSubmission(
                         existing.orElseThrow(), submission);
-                return new SubmissionResult(
-                        existing.orElseThrow().job(), true);
+                return observed(
+                        new SubmissionResult(
+                                existing.orElseThrow().job(),
+                                true),
+                        observation);
             }
             requireDeadline(submission, policy, observedAt);
             if (activeCount(partition, null)
@@ -344,14 +377,27 @@ public final class DatabaseScenarioRehearsalBatchRepository
                 if (winner.isPresent()) {
                     requireSameSubmission(
                             winner.orElseThrow(), submission);
-                    return new SubmissionResult(
-                            winner.orElseThrow().job(), true);
+                    return observed(
+                            new SubmissionResult(
+                                    winner.orElseThrow().job(),
+                                    true),
+                            observation);
                 }
                 throw conflict(
                         Reason.IDEMPOTENCY_CONFLICT,
                         "Scenario rehearsal batch identity already belongs to another intent");
             }
-            return new SubmissionResult(job, false);
+            appendLifecycle(
+                    stored,
+                    ScenarioRehearsalBatchLifecycleAuditEvent
+                            .Transition.ADMITTED,
+                    job,
+                    null,
+                    "",
+                    "");
+            return observed(
+                    new SubmissionResult(job, false),
+                    observation);
         });
         return required(
                 result,
@@ -430,7 +476,7 @@ public final class DatabaseScenarioRehearsalBatchRepository
                                 stored.job(),
                                 ScenarioRehearsalBatchJob.Status.RUNNING,
                                 summary(stored.job().jobId()),
-                                "",
+                                stored.job().failureCode(),
                                 stored.job().cancellationRequestId(),
                                 stored.job().cancellationReasonCode(),
                                 observedAt,
@@ -453,6 +499,14 @@ public final class DatabaseScenarioRehearsalBatchRepository
                         partition,
                         stored.job().scope().tenantId(),
                         observedAt);
+                appendLifecycle(
+                        claimed,
+                        ScenarioRehearsalBatchLifecycleAuditEvent
+                                .Transition.CLAIMED,
+                        runningJob,
+                        running,
+                        "",
+                        "");
                 Lease lease = new Lease(
                         runningJob.scope(),
                         runningJob.jobId(),
@@ -662,6 +716,14 @@ public final class DatabaseScenarioRehearsalBatchRepository
                             new StoredItem(
                                     terminal,
                                     current.executionTimeout()));
+                    appendLifecycle(
+                            stored,
+                            ScenarioRehearsalBatchLifecycleAuditEvent
+                                    .Transition.ITEM_TERMINALIZED,
+                            stored.job(),
+                            terminal,
+                            completion.evidenceBundleFingerprint(),
+                            failureCode);
                     return advanceAfterTerminalItem(
                             stored,
                             terminal,
@@ -759,6 +821,14 @@ public final class DatabaseScenarioRehearsalBatchRepository
                                         observedAt,
                                         policy.retryBackoff()));
                         updateJob(stored, successor);
+                        appendLifecycle(
+                                stored,
+                                ScenarioRehearsalBatchLifecycleAuditEvent
+                                        .Transition.ITEM_RETRY_SCHEDULED,
+                                queued,
+                                pending,
+                                "",
+                                code);
                         return queued;
                     }
                     return terminalFailure(
@@ -811,6 +881,26 @@ public final class DatabaseScenarioRehearsalBatchRepository
     public SubmissionResult cancel(
             Cancellation cancellation,
             ScenarioRehearsalBatchPolicy policy) {
+        return cancelObserved(
+                cancellation, policy, null);
+    }
+
+    @Override
+    public SubmissionResult cancel(
+            Cancellation cancellation,
+            ScenarioRehearsalBatchPolicy policy,
+            MirrorOperationObservability.Observation observation) {
+        return cancelObserved(
+                cancellation,
+                policy,
+                Objects.requireNonNull(
+                        observation, "observation"));
+    }
+
+    private SubmissionResult cancelObserved(
+            Cancellation cancellation,
+            ScenarioRehearsalBatchPolicy policy,
+            MirrorOperationObservability.Observation observation) {
         Objects.requireNonNull(cancellation, "cancellation");
         Objects.requireNonNull(policy, "policy");
         SubmissionResult result = mutations.execute(status -> {
@@ -838,8 +928,10 @@ public final class DatabaseScenarioRehearsalBatchRepository
                         cancellation.commandId())
                         && stored.job().cancellationReasonCode()
                         .equals(cancellation.reasonCode())) {
-                    return new SubmissionResult(
-                            stored.job(), true);
+                    return observed(
+                            new SubmissionResult(
+                                    stored.job(), true),
+                            observation);
                 }
                 throw conflict(
                         Reason.CANCELLATION_CONFLICT,
@@ -867,21 +959,45 @@ public final class DatabaseScenarioRehearsalBatchRepository
                         observedAt,
                         "RG.MIRROR.REHEARSAL_BATCH.CANCELLED");
             }
+            String terminalFailureCode =
+                    nextStatus.terminal()
+                            ? "RG.MIRROR.REHEARSAL_BATCH.CANCELLED"
+                            : stored.job().failureCode();
             ScenarioRehearsalBatchJob updated =
                     transition(
                             stored.job(),
                             nextStatus,
                             summary(stored.job().jobId()),
-                            stored.job().failureCode(),
+                            terminalFailureCode,
                             cancellation.commandId(),
                             cancellation.reasonCode(),
                             observedAt,
                             nextStatus.terminal()
                                     ? observedAt : null);
+            appendLifecycle(
+                    stored,
+                    ScenarioRehearsalBatchLifecycleAuditEvent
+                            .Transition.CANCELLATION_REQUESTED,
+                    updated,
+                    null,
+                    "",
+                    cancellation.reasonCode());
+            if (nextStatus.terminal()) {
+                ScenarioRehearsalBatchJob terminal =
+                        publishTerminal(
+                                stored,
+                                nextStatus,
+                                terminalFailureCode,
+                                cancellation.commandId(),
+                                cancellation.reasonCode(),
+                                observedAt);
+                return observed(
+                        new SubmissionResult(
+                                terminal, false),
+                        observation);
+            }
             StoredJob successor =
-                    nextStatus.terminal()
-                            ? idle(stored, updated, Instant.EPOCH)
-                            : new StoredJob(
+                    new StoredJob(
                             updated,
                             stored.request(),
                             stored.manifest(),
@@ -893,7 +1009,9 @@ public final class DatabaseScenarioRehearsalBatchRepository
                             stored.currentItemIndex(),
                             stored.expiresAt());
             updateJob(stored, successor);
-            return new SubmissionResult(updated, false);
+            return observed(
+                    new SubmissionResult(updated, false),
+                    observation);
         });
         return required(
                 result,
@@ -1067,7 +1185,7 @@ public final class DatabaseScenarioRehearsalBatchRepository
             return publishTerminal(
                     stored,
                     ScenarioRehearsalBatchJob.Status.CANCELLED,
-                    failureCode,
+                    "RG.MIRROR.REHEARSAL_BATCH.CANCELLED",
                     observedAt);
         }
         if (!stored.job().deadlineAt().isAfter(observedAt)) {
@@ -1107,10 +1225,19 @@ public final class DatabaseScenarioRehearsalBatchRepository
                             .SUCCEEDED
                             : ScenarioRehearsalBatchJob.Status
                             .PARTIAL;
+            String terminalFailure =
+                    terminalStatus
+                            == ScenarioRehearsalBatchJob.Status.SUCCEEDED
+                            ? ""
+                            : !failureCode.isBlank()
+                            ? failureCode
+                            : !stored.job().failureCode().isBlank()
+                            ? stored.job().failureCode()
+                            : "RG.MIRROR.REHEARSAL_BATCH.NON_PASSING_ITEM";
             return publishTerminal(
                     stored,
                     terminalStatus,
-                    failureCode,
+                    terminalFailure,
                     observedAt);
         }
         ScenarioRehearsalBatchJob queued =
@@ -1118,7 +1245,9 @@ public final class DatabaseScenarioRehearsalBatchRepository
                         stored.job(),
                         ScenarioRehearsalBatchJob.Status.QUEUED,
                         summary,
-                        failureCode,
+                        failureCode.isBlank()
+                                ? stored.job().failureCode()
+                                : failureCode,
                         stored.job().cancellationRequestId(),
                         stored.job().cancellationReasonCode(),
                         observedAt,
@@ -1151,6 +1280,14 @@ public final class DatabaseScenarioRehearsalBatchRepository
                 new StoredItem(
                         failed,
                         current.executionTimeout()));
+        appendLifecycle(
+                stored,
+                ScenarioRehearsalBatchLifecycleAuditEvent
+                        .Transition.ITEM_TERMINALIZED,
+                stored.job(),
+                failed,
+                "",
+                failureCode);
         return advanceAfterTerminalItem(
                 stored,
                 failed,
@@ -1187,6 +1324,14 @@ public final class DatabaseScenarioRehearsalBatchRepository
                     new StoredItem(
                             uncertain,
                             current.executionTimeout()));
+            appendLifecycle(
+                    stored,
+                    ScenarioRehearsalBatchLifecycleAuditEvent
+                            .Transition.ITEM_TERMINALIZED,
+                    stored.job(),
+                    uncertain,
+                    "",
+                    failureCode);
         }
         cancelPending(
                 stored.job().jobId(),
@@ -1201,26 +1346,51 @@ public final class DatabaseScenarioRehearsalBatchRepository
             ScenarioRehearsalBatchJob.Status status,
             String failureCode,
             Instant observedAt) {
+        return publishTerminal(
+                stored,
+                status,
+                failureCode,
+                stored.job().cancellationRequestId(),
+                stored.job().cancellationReasonCode(),
+                observedAt);
+    }
+
+    private ScenarioRehearsalBatchJob publishTerminal(
+            StoredJob stored,
+            ScenarioRehearsalBatchJob.Status status,
+            String failureCode,
+            String cancellationRequestId,
+            String cancellationReasonCode,
+            Instant observedAt) {
         ScenarioRehearsalBatchJob terminal =
                 transition(
                         stored.job(),
                         status,
                         summary(stored.job().jobId()),
                         failureCode,
-                        stored.job().cancellationRequestId(),
-                        stored.job().cancellationReasonCode(),
+                        cancellationRequestId,
+                        cancellationReasonCode,
                         observedAt,
                         observedAt);
-        evidencePublisher.publish(
-                stored.request(),
-                stored.manifest(),
-                terminal,
-                items(stored.job().jobId()).stream()
-                        .map(StoredItem::item)
-                        .toList());
+        ScenarioRehearsalBatchEvidenceBundle evidence =
+                evidencePublisher.publish(
+                        stored.request(),
+                        stored.manifest(),
+                        terminal,
+                        items(stored.job().jobId()).stream()
+                                .map(StoredItem::item)
+                                .toList());
         updateJob(
                 stored,
                 idle(stored, terminal, Instant.EPOCH));
+        appendLifecycle(
+                stored,
+                ScenarioRehearsalBatchLifecycleAuditEvent
+                        .Transition.TERMINALIZED,
+                terminal,
+                null,
+                evidence.bundleFingerprint(),
+                failureCode);
         return terminal;
     }
 
@@ -1316,6 +1486,14 @@ public final class DatabaseScenarioRehearsalBatchRepository
                         new StoredItem(
                                 failed,
                                 current.executionTimeout()));
+                appendLifecycle(
+                        stored,
+                        ScenarioRehearsalBatchLifecycleAuditEvent
+                                .Transition.ITEM_TERMINALIZED,
+                        stored.job(),
+                        failed,
+                        "",
+                        "RG.MIRROR.REHEARSAL_BATCH.LEASE_EXPIRED");
                 advanceAfterTerminalItem(
                         stored,
                         failed,
@@ -1360,6 +1538,14 @@ public final class DatabaseScenarioRehearsalBatchRepository
                             safePlus(
                                     observedAt,
                                     policy.retryBackoff())));
+            appendLifecycle(
+                    stored,
+                    ScenarioRehearsalBatchLifecycleAuditEvent
+                            .Transition.ITEM_RETRY_SCHEDULED,
+                    queued,
+                    pending,
+                    "",
+                    "RG.MIRROR.REHEARSAL_BATCH.LEASE_EXPIRED");
         }
     }
 
@@ -2369,6 +2555,53 @@ public final class DatabaseScenarioRehearsalBatchRepository
                     "Scenario batch duration overflowed",
                     invalid);
         }
+    }
+
+    private void appendLifecycle(
+            StoredJob stored,
+            ScenarioRehearsalBatchLifecycleAuditEvent.Transition
+                    transition,
+            ScenarioRehearsalBatchJob job,
+            ScenarioRehearsalBatchItemPage.Item item,
+            String evidenceFingerprint,
+            String reasonCode) {
+        lifecycleAudit.append(
+                new ScenarioRehearsalBatchLifecycleAuditEvent(
+                        0,
+                        null,
+                        job.scope(),
+                        job.jobId(),
+                        job.requestId(),
+                        job.manifestFingerprint(),
+                        transition,
+                        job.status(),
+                        item == null
+                                ? -1
+                                : item.itemIndex(),
+                        ScenarioRehearsalBatchLifecycleAuditEvent
+                                .ItemStatus.from(
+                                item == null
+                                        ? null
+                                        : item.status()),
+                        item == null
+                                ? 0
+                                : item.attemptCount(),
+                        stored.leaseOwner(),
+                        stored.leaseEpoch(),
+                        evidenceFingerprint,
+                        reasonCode));
+    }
+
+    private static SubmissionResult observed(
+            SubmissionResult result,
+            MirrorOperationObservability.Observation observation) {
+        SubmissionResult required =
+                Objects.requireNonNull(result, "result");
+        if (observation != null) {
+            observation.succeeded(
+                    required.job().jobId());
+        }
+        return required;
     }
 
     private static Timestamp timestamp(Instant value) {

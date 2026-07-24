@@ -38,7 +38,7 @@ public final class DatabaseMirrorOperationAuditRepository
                     correlation_id VARCHAR(160) NOT NULL,
                     actor_type VARCHAR(64) NOT NULL,
                     actor_id VARCHAR(255) NOT NULL,
-                    operation VARCHAR(32) NOT NULL,
+                    operation VARCHAR(64) NOT NULL,
                     outcome VARCHAR(32) NOT NULL,
                     reason VARCHAR(32) NOT NULL,
                     reason_code VARCHAR(160) NOT NULL,
@@ -47,6 +47,10 @@ public final class DatabaseMirrorOperationAuditRepository
                     run_id VARCHAR(512) NOT NULL,
                     duration_millis BIGINT NOT NULL
                 )
+                """);
+        jdbc.execute("""
+                ALTER TABLE mirror_operation_audit
+                ALTER COLUMN operation VARCHAR(64)
                 """);
         jdbc.execute("""
                 CREATE INDEX IF NOT EXISTS idx_mirror_operation_audit_scope_sequence

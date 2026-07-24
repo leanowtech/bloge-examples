@@ -29,6 +29,7 @@ public final class ScenarioRehearsalBatchService {
     private final ObjectMapper mapper;
     private final ScenarioRehearsalBatchEvidenceRepository
             evidence;
+    private final MirrorOperationObservability observations;
 
     /** Creates the protected batch application service under one server-owned policy. */
     public ScenarioRehearsalBatchService(
@@ -36,7 +37,8 @@ public final class ScenarioRehearsalBatchService {
             ScenarioRehearsalBatchRepository repository,
             ScenarioRehearsalBatchPolicy policy,
             ObjectMapper mapper,
-            ScenarioRehearsalBatchEvidenceRepository evidence) {
+            ScenarioRehearsalBatchEvidenceRepository evidence,
+            MirrorOperationObservability observations) {
         this.compiler = Objects.requireNonNull(
                 compiler, "compiler");
         this.repository = Objects.requireNonNull(
@@ -45,6 +47,8 @@ public final class ScenarioRehearsalBatchService {
         this.mapper = Objects.requireNonNull(mapper, "mapper");
         this.evidence = Objects.requireNonNull(
                 evidence, "evidence");
+        this.observations = Objects.requireNonNull(
+                observations, "observations");
     }
 
     /**
@@ -57,6 +61,27 @@ public final class ScenarioRehearsalBatchService {
     public ScenarioRehearsalBatchRepository.SubmissionResult submit(
             ScenarioRehearsalBatchRequest request,
             IntegrationRequestContext identity) {
+        MirrorOperationObservability.Observation operation =
+                observations.start(
+                        MirrorOperationAuditEvent.Operation
+                                .SCENARIO_REHEARSAL_BATCH_CREATE,
+                        identity,
+                        request == null ? "" : request.requestId(),
+                        "",
+                        "");
+        try {
+            return submitObserved(
+                    request, identity, operation);
+        } catch (RuntimeException failure) {
+            throw operation.failed(failure);
+        }
+    }
+
+    private ScenarioRehearsalBatchRepository.SubmissionResult
+    submitObserved(
+            ScenarioRehearsalBatchRequest request,
+            IntegrationRequestContext identity,
+            MirrorOperationObservability.Observation operation) {
         requirePurpose(identity, Set.of("MIRROR_REHEARSAL"));
         ScenarioRehearsalBatchManifest manifest =
                 compiler.compile(
@@ -76,7 +101,8 @@ public final class ScenarioRehearsalBatchService {
                             requestFingerprint,
                             manifest,
                             principal(identity, manifest.scope())),
-                    policy);
+                    policy,
+                    operation);
         } catch (ScenarioRehearsalBatchConflictException conflict) {
             throw problem(conflict, identity);
         }
@@ -86,16 +112,38 @@ public final class ScenarioRehearsalBatchService {
     public Optional<ScenarioRehearsalBatchJob> find(
             String jobId,
             IntegrationRequestContext identity) {
-        CapabilitySnapshot.Scope scope =
-                MirrorPlanIntegrationService
-                        .requireMirrorReadIdentity(identity);
+        MirrorOperationObservability.Observation operation =
+                observations.start(
+                        MirrorOperationAuditEvent.Operation
+                                .SCENARIO_REHEARSAL_BATCH_READ,
+                        identity,
+                        "",
+                        "",
+                        jobId);
         try {
-            return repository.find(
-                    scope,
-                    jobId,
-                    policy);
+            CapabilitySnapshot.Scope scope =
+                    MirrorPlanIntegrationService
+                            .requireMirrorReadIdentity(identity);
+            Optional<ScenarioRehearsalBatchJob> result =
+                    repository.find(
+                            scope,
+                            jobId,
+                            policy);
+            if (result.isEmpty()) {
+                operation.failed(problem(
+                        new ScenarioRehearsalBatchConflictException(
+                                ScenarioRehearsalBatchConflictException
+                                        .Reason.JOB_NOT_FOUND,
+                                "Scenario rehearsal batch was not found"),
+                        identity));
+                return result;
+            }
+            operation.succeeded(jobId);
+            return result;
         } catch (ScenarioRehearsalBatchConflictException conflict) {
-            throw problem(conflict, identity);
+            throw operation.failed(problem(conflict, identity));
+        } catch (RuntimeException failure) {
+            throw operation.failed(failure);
         }
     }
 
@@ -105,18 +153,31 @@ public final class ScenarioRehearsalBatchService {
             int startIndex,
             int limit,
             IntegrationRequestContext identity) {
-        CapabilitySnapshot.Scope scope =
-                MirrorPlanIntegrationService
-                        .requireMirrorReadIdentity(identity);
+        MirrorOperationObservability.Observation operation =
+                observations.start(
+                        MirrorOperationAuditEvent.Operation
+                                .SCENARIO_REHEARSAL_BATCH_READ,
+                        identity,
+                        "",
+                        "",
+                        jobId);
         try {
-            return repository.page(
-                    scope,
-                    jobId,
-                    startIndex,
-                    limit,
-                    policy);
+            CapabilitySnapshot.Scope scope =
+                    MirrorPlanIntegrationService
+                            .requireMirrorReadIdentity(identity);
+            ScenarioRehearsalBatchItemPage result =
+                    repository.page(
+                            scope,
+                            jobId,
+                            startIndex,
+                            limit,
+                            policy);
+            operation.succeeded(jobId);
+            return result;
         } catch (ScenarioRehearsalBatchConflictException conflict) {
-            throw problem(conflict, identity);
+            throw operation.failed(problem(conflict, identity));
+        } catch (RuntimeException failure) {
+            throw operation.failed(failure);
         }
     }
 
@@ -124,12 +185,34 @@ public final class ScenarioRehearsalBatchService {
     public Optional<ScenarioRehearsalBatchEvidenceBundle> evidence(
             String jobId,
             IntegrationRequestContext identity) {
-        CapabilitySnapshot.Scope scope =
-                MirrorPlanIntegrationService
-                        .requireMirrorReadIdentity(identity);
-        return evidence.find(
-                scope,
-                jobId);
+        MirrorOperationObservability.Observation operation =
+                observations.start(
+                        MirrorOperationAuditEvent.Operation
+                                .SCENARIO_REHEARSAL_BATCH_EVIDENCE_READ,
+                        identity,
+                        "",
+                        "",
+                        jobId);
+        try {
+            CapabilitySnapshot.Scope scope =
+                    MirrorPlanIntegrationService
+                            .requireMirrorReadIdentity(identity);
+            Optional<ScenarioRehearsalBatchEvidenceBundle> result =
+                    evidence.find(scope, jobId);
+            if (result.isEmpty()) {
+                operation.failed(new IntegrationProblemException(
+                        IntegrationProblem.notFound(
+                                "RG.MIRROR.REHEARSAL_BATCH.EVIDENCE_NOT_FOUND",
+                                "Scenario rehearsal batch evidence was not found.",
+                                identity.correlationId(),
+                                Map.of())));
+                return result;
+            }
+            operation.succeeded(jobId);
+            return result;
+        } catch (RuntimeException failure) {
+            throw operation.failed(failure);
+        }
     }
 
     /** Applies one exactly replayable cooperative cancellation intent. */
@@ -138,20 +221,31 @@ public final class ScenarioRehearsalBatchService {
             String commandId,
             String reasonCode,
             IntegrationRequestContext identity) {
-        requirePurpose(identity, Set.of("MIRROR_REHEARSAL"));
-        CapabilitySnapshot.Scope scope =
-                MirrorPlanIntegrationService
-                        .requireMirrorIdentity(identity);
+        MirrorOperationObservability.Observation operation =
+                observations.start(
+                        MirrorOperationAuditEvent.Operation
+                                .SCENARIO_REHEARSAL_BATCH_CANCEL,
+                        identity,
+                        commandId,
+                        "",
+                        jobId);
         try {
+            requirePurpose(identity, Set.of("MIRROR_REHEARSAL"));
+            CapabilitySnapshot.Scope scope =
+                    MirrorPlanIntegrationService
+                            .requireMirrorIdentity(identity);
             return repository.cancel(
                     new ScenarioRehearsalBatchRepository.Cancellation(
                             scope,
                             jobId,
                             commandId,
                             reasonCode),
-                    policy);
+                    policy,
+                    operation);
         } catch (ScenarioRehearsalBatchConflictException conflict) {
-            throw problem(conflict, identity);
+            throw operation.failed(problem(conflict, identity));
+        } catch (RuntimeException failure) {
+            throw operation.failed(failure);
         }
     }
 

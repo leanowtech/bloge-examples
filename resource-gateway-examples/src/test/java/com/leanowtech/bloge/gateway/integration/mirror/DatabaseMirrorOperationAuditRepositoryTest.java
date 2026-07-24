@@ -60,6 +60,44 @@ class DatabaseMirrorOperationAuditRepositoryTest {
     }
 
     @Test
+    void persistsTheLongestScenarioBatchOperationWithoutTruncation() {
+        CapabilitySnapshot.Scope scope = scope("org-a");
+        MirrorOperationAuditEvent event =
+                new MirrorOperationAuditEvent(
+                        0,
+                        null,
+                        scope.tenantId(),
+                        scope.organizationId(),
+                        scope.projectId(),
+                        scope.environmentId(),
+                        scope.region(),
+                        "corr-batch",
+                        "service",
+                        "test-client",
+                        MirrorOperationAuditEvent.Operation
+                                .SCENARIO_REHEARSAL_BATCH_EVIDENCE_READ,
+                        MirrorOperationAuditEvent.Outcome.SUCCEEDED,
+                        MirrorOperationAuditEvent.Reason.NONE,
+                        "",
+                        "",
+                        "",
+                        "scenario-batch-001",
+                        23);
+
+        MirrorOperationAuditEvent persisted =
+                repository.append(event);
+
+        assertThat(repository.recent(scope, 1))
+                .containsExactly(persisted);
+        assertThat(jdbc.queryForObject("""
+                SELECT CHARACTER_MAXIMUM_LENGTH
+                FROM INFORMATION_SCHEMA.COLUMNS
+                WHERE TABLE_NAME = 'MIRROR_OPERATION_AUDIT'
+                  AND COLUMN_NAME = 'OPERATION'
+                """, Long.class)).isEqualTo(64L);
+    }
+
+    @Test
     void schemaCanRepresentOnlyPayloadFreeBoundedAuditFacts() {
         repository.append(failure(scope("org-a"), "plan-1"));
 

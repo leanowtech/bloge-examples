@@ -209,6 +209,10 @@ public interface ScenarioRehearsalBatchRepository {
             String commandId,
             String reasonCode
     ) {
+        private static final java.util.regex.Pattern REASON_CODE =
+                java.util.regex.Pattern.compile(
+                        "[A-Z][A-Z0-9_.-]{0,127}");
+
         /** Validates exact scope, job, and bounded command identity. */
         public Cancellation {
             scope = Objects.requireNonNull(scope, "scope");
@@ -216,6 +220,10 @@ public interface ScenarioRehearsalBatchRepository {
             commandId = required(commandId, "commandId");
             reasonCode = required(reasonCode, "reasonCode")
                     .toUpperCase(java.util.Locale.ROOT);
+            if (!REASON_CODE.matcher(reasonCode).matches()) {
+                throw new IllegalArgumentException(
+                        "Scenario batch cancellation reason code is invalid");
+            }
         }
     }
 
@@ -223,6 +231,23 @@ public interface ScenarioRehearsalBatchRepository {
     SubmissionResult submit(
             Submission submission,
             ScenarioRehearsalBatchPolicy policy);
+
+    /**
+     * Submits one batch and commits its mandatory protected-operation success audit.
+     *
+     * <p>Durable implementations must override this method so the success audit and admission
+     * share one transaction. The default keeps test doubles and alternate adapters compatible,
+     * but does not claim atomic persistence.</p>
+     */
+    default SubmissionResult submit(
+            Submission submission,
+            ScenarioRehearsalBatchPolicy policy,
+            MirrorOperationObservability.Observation observation) {
+        SubmissionResult result = submit(submission, policy);
+        Objects.requireNonNull(observation, "observation")
+                .succeeded(result.job().jobId());
+        return result;
+    }
 
     /** Claims at most one item using tenant rotation and aged priority. */
     Claim claimNext(
@@ -270,6 +295,22 @@ public interface ScenarioRehearsalBatchRepository {
     SubmissionResult cancel(
             Cancellation cancellation,
             ScenarioRehearsalBatchPolicy policy);
+
+    /**
+     * Applies cancellation and commits its mandatory protected-operation success audit.
+     *
+     * <p>Durable implementations must override this method so the success audit and cancellation
+     * transition share one transaction.</p>
+     */
+    default SubmissionResult cancel(
+            Cancellation cancellation,
+            ScenarioRehearsalBatchPolicy policy,
+            MirrorOperationObservability.Observation observation) {
+        SubmissionResult result = cancel(cancellation, policy);
+        Objects.requireNonNull(observation, "observation")
+                .succeeded(result.job().jobId());
+        return result;
+    }
 
     /** Finds one integrity-verified job inside its exact scope. */
     Optional<ScenarioRehearsalBatchJob> find(

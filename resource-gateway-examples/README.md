@@ -232,6 +232,18 @@ running cancellation therefore converges after at most the current bounded
 case; completed case progress is retained while the current batch item becomes
 conservatively `INDETERMINATE`. Heartbeats deliberately do not extend the
 immutable plan timeout plus commit reserve.
+Every protected batch submit/read/evidence/cancel operation now uses the same
+payload-free operation-audit vocabulary as individual rehearsals. Submit and
+cancel success audit is committed inside the queue mutation transaction;
+missing reads are audited as `NOT_FOUND`, and audit failure prevents a
+protected response. Separately, the append-only
+`scenario_rehearsal_batch_lifecycle_audit` records only meaningful durable
+transitions (`ADMITTED`, `CLAIMED`, item terminal/retry, cancellation intent,
+and evidence-backed terminalization). Heartbeats are intentionally excluded
+from lifecycle audit to prevent an operational liveness signal from becoming
+an unbounded governance log. A queued cancellation now follows the same signed
+terminal evidence path as worker completion instead of creating an unaudited,
+terminal-without-evidence job.
 The capability probe therefore reports Scenario execution, evidence API,
 retention API, legal hold, deletion proof, workbook seed,
 `mirrorScenarioRehearsalBatchCooperativeControl=true`, and

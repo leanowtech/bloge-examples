@@ -72,6 +72,14 @@ public record MirrorOperationAuditEvent(
         SCENARIO_REHEARSAL_EVIDENCE_READ,
         /** Project one verified Scenario closure into an ANEKE workbook seed. */
         SCENARIO_REHEARSAL_WORKBOOK_READ,
+        /** Resolve and durably admit one exact multi-plan Scenario rehearsal batch. */
+        SCENARIO_REHEARSAL_BATCH_CREATE,
+        /** Read one integrity-verified Scenario batch job or item page. */
+        SCENARIO_REHEARSAL_BATCH_READ,
+        /** Read one independently verified signed Scenario batch evidence bundle. */
+        SCENARIO_REHEARSAL_BATCH_EVIDENCE_READ,
+        /** Record one exactly replayable cooperative Scenario batch cancellation. */
+        SCENARIO_REHEARSAL_BATCH_CANCEL,
         /** Read one signed Scenario aggregate retention projection. */
         SCENARIO_RETENTION_READ,
         /** Place one independent Scenario aggregate legal hold. */

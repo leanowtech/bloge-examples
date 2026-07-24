@@ -20,9 +20,13 @@ import java.util.concurrent.atomic.AtomicReference;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.ArgumentMatchers.argThat;
+import static org.mockito.Mockito.atLeastOnce;
 import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.when;
 
 class DatabaseScenarioRehearsalBatchRepositoryTest {
     private static final Instant NOW =
@@ -38,6 +42,8 @@ class DatabaseScenarioRehearsalBatchRepositoryTest {
     private DatabaseScenarioRehearsalBatchRepository repository;
     private ScenarioRehearsalBatchEvidencePublisher
             evidencePublisher;
+    private ScenarioRehearsalBatchLifecycleAuditRepository
+            lifecycleAudit;
 
     @BeforeEach
     void setUp() {
@@ -48,11 +54,21 @@ class DatabaseScenarioRehearsalBatchRepositoryTest {
         jdbc = new JdbcTemplate(database);
         evidencePublisher = mock(
                 ScenarioRehearsalBatchEvidencePublisher.class);
+        ScenarioRehearsalBatchEvidenceBundle evidence =
+                mock(ScenarioRehearsalBatchEvidenceBundle.class);
+        when(evidence.bundleFingerprint())
+                .thenReturn("sha256:" + "b".repeat(64));
+        when(evidencePublisher.publish(
+                any(), any(), any(), any()))
+                .thenReturn(evidence);
+        lifecycleAudit = mock(
+                ScenarioRehearsalBatchLifecycleAuditRepository.class);
         repository = new DatabaseScenarioRehearsalBatchRepository(
                 jdbc,
                 mapper,
                 new DataSourceTransactionManager(database),
                 evidencePublisher,
+                lifecycleAudit,
                 databaseTime::get);
         repository.init();
     }
@@ -77,6 +93,7 @@ class DatabaseScenarioRehearsalBatchRepositoryTest {
                         mapper,
                         new DataSourceTransactionManager(database),
                         evidencePublisher,
+                        lifecycleAudit,
                         databaseTime::get);
         restarted.init();
 
@@ -98,6 +115,12 @@ class DatabaseScenarioRehearsalBatchRepositoryTest {
                             .isEqualTo(
                                     "batch-001:plan:000");
                 });
+        verify(lifecycleAudit).append(argThat(
+                event -> event.transition()
+                        == ScenarioRehearsalBatchLifecycleAuditEvent
+                        .Transition.ADMITTED
+                        && event.jobId().equals(
+                        created.job().jobId())));
         assertThat(columns("SCENARIO_REHEARSAL_BATCH_JOBS"))
                 .noneMatch(
                         DatabaseScenarioRehearsalBatchRepositoryTest
@@ -275,6 +298,23 @@ class DatabaseScenarioRehearsalBatchRepositoryTest {
                         0,
                         10,
                         policy()).items());
+        verify(lifecycleAudit, atLeastOnce()).append(argThat(
+                event -> event.transition()
+                        == ScenarioRehearsalBatchLifecycleAuditEvent
+                        .Transition.CLAIMED
+                        && event.jobId().equals(completed.jobId())));
+        verify(lifecycleAudit, atLeastOnce()).append(argThat(
+                event -> event.transition()
+                        == ScenarioRehearsalBatchLifecycleAuditEvent
+                        .Transition.ITEM_TERMINALIZED
+                        && event.evidenceBundleFingerprint().equals(
+                        "sha256:" + "e".repeat(64))));
+        verify(lifecycleAudit, atLeastOnce()).append(argThat(
+                event -> event.transition()
+                        == ScenarioRehearsalBatchLifecycleAuditEvent
+                        .Transition.TERMINALIZED
+                        && event.evidenceBundleFingerprint().equals(
+                        "sha256:" + "b".repeat(64))));
         assertThatThrownBy(() -> repository.retryItem(
                 claim.lease(),
                 "RG.MIRROR.REHEARSAL_BATCH.LATE",
@@ -284,7 +324,48 @@ class DatabaseScenarioRehearsalBatchRepositoryTest {
                         conflict -> assertThat(conflict.reason())
                                 .isEqualTo(
                                         ScenarioRehearsalBatchConflictException
-                                                .Reason.LEASE_LOST));
+                                .Reason.LEASE_LOST));
+    }
+
+    @Test
+    void retainsEarlierFailureWhenTheLastCollectedItemPasses() {
+        ScenarioRehearsalBatchRepository.Submission submission =
+                submission(
+                        SCOPE,
+                        "batch-partial",
+                        List.of("refund", "escalation"),
+                        Duration.ofSeconds(5));
+        repository.submit(submission, policy());
+        ScenarioRehearsalBatchRepository.Claim first =
+                repository.claimNext(
+                        "sg", "test", "worker-a", policy());
+        ScenarioRehearsalBatchJob queued =
+                repository.completeItem(
+                        first.lease(),
+                        completion(
+                                submission.manifest().entries()
+                                        .getFirst().aggregateRunId(),
+                                ScenarioCaseRehearsalResult.Outcome
+                                        .FAIL),
+                        policy());
+        assertThat(queued.status()).isEqualTo(
+                ScenarioRehearsalBatchJob.Status.QUEUED);
+
+        ScenarioRehearsalBatchRepository.Claim second =
+                repository.claimNext(
+                        "sg", "test", "worker-b", policy());
+        ScenarioRehearsalBatchJob terminal =
+                repository.completeItem(
+                        second.lease(),
+                        completion(
+                                submission.manifest().entries()
+                                        .get(1).aggregateRunId()),
+                        policy());
+
+        assertThat(terminal.status()).isEqualTo(
+                ScenarioRehearsalBatchJob.Status.PARTIAL);
+        assertThat(terminal.failureCode()).isEqualTo(
+                "RG.MIRROR.REHEARSAL_BATCH.ITEM_FAILED");
     }
 
     @Test
@@ -303,6 +384,76 @@ class DatabaseScenarioRehearsalBatchRepositoryTest {
                 "signing unavailable"))
                 .when(evidencePublisher)
                 .publish(any(), any(), any(), any());
+
+        assertThatThrownBy(() -> repository.completeItem(
+                claim.lease(),
+                completion(
+                        submission.manifest().entries()
+                                .getFirst().aggregateRunId()),
+                policy()))
+                .isInstanceOf(IllegalStateException.class);
+
+        assertThat(repository.find(
+                SCOPE, queued.jobId(), policy()))
+                .get()
+                .extracting(ScenarioRehearsalBatchJob::status)
+                .isEqualTo(
+                        ScenarioRehearsalBatchJob.Status.RUNNING);
+        assertThat(repository.page(
+                SCOPE, queued.jobId(), 0, 10, policy()).items())
+                .singleElement()
+                .extracting(
+                        ScenarioRehearsalBatchItemPage.Item::status)
+                .isEqualTo(
+                        ScenarioRehearsalBatchItemPage.Status.RUNNING);
+    }
+
+    @Test
+    void rollsBackAdmissionWhenMandatoryOperationAuditFails() {
+        ScenarioRehearsalBatchRepository.Submission submission =
+                submission(
+                        SCOPE,
+                        "batch-operation-audit-outage",
+                        "refund");
+        MirrorOperationObservability.Observation operation =
+                mock(MirrorOperationObservability.Observation.class);
+        doThrow(new IllegalStateException("audit unavailable"))
+                .when(operation)
+                .succeeded(anyString());
+
+        assertThatThrownBy(() -> repository.submit(
+                submission,
+                policy(),
+                operation))
+                .isInstanceOf(IllegalStateException.class);
+
+        assertThat(jdbc.queryForObject(
+                "SELECT COUNT(*) FROM scenario_rehearsal_batch_jobs",
+                Long.class)).isZero();
+        assertThat(jdbc.queryForObject(
+                "SELECT COUNT(*) FROM scenario_rehearsal_batch_items",
+                Long.class)).isZero();
+    }
+
+    @Test
+    void rollsBackTerminalStateWhenLifecycleAuditFails() {
+        ScenarioRehearsalBatchRepository.Submission submission =
+                submission(
+                        SCOPE,
+                        "batch-lifecycle-audit-outage",
+                        "refund");
+        ScenarioRehearsalBatchJob queued =
+                repository.submit(submission, policy()).job();
+        ScenarioRehearsalBatchRepository.Claim claim =
+                repository.claimNext(
+                        "sg", "test", "worker-a", policy());
+        doThrow(new IllegalStateException(
+                "lifecycle audit unavailable"))
+                .when(lifecycleAudit)
+                .append(argThat(event ->
+                        event.transition()
+                                == ScenarioRehearsalBatchLifecycleAuditEvent
+                                .Transition.TERMINALIZED));
 
         assertThatThrownBy(() -> repository.completeItem(
                 claim.lease(),
@@ -375,6 +526,59 @@ class DatabaseScenarioRehearsalBatchRepositoryTest {
     }
 
     @Test
+    void exhaustedStaleLeaseUsesTheSameItemLifecycleAsAWorkerFailure() {
+        ScenarioRehearsalBatchPolicy base =
+                shortPolicy();
+        ScenarioRehearsalBatchPolicy singleAttempt =
+                new ScenarioRehearsalBatchPolicy(
+                        base.generation(),
+                        base.failureMode(),
+                        base.priority(),
+                        1,
+                        base.maximumQueued(),
+                        base.maximumQueuedPerTenant(),
+                        base.maximumRunning(),
+                        base.maximumRunningPerTenant(),
+                        base.maximumPlanTimeout(),
+                        base.maximumDeadlineHorizon(),
+                        base.leaseReserve(),
+                        base.retryBackoff(),
+                        base.priorityAgingInterval(),
+                        base.terminalRetention());
+        ScenarioRehearsalBatchRepository.Submission submission =
+                submission(
+                        SCOPE,
+                        "batch-stale-exhausted",
+                        "refund",
+                        Duration.ofSeconds(1));
+        ScenarioRehearsalBatchJob queued =
+                repository.submit(
+                        submission, singleAttempt).job();
+        repository.claimNext(
+                "sg", "test", "worker-a", singleAttempt);
+
+        databaseTime.set(NOW.plusMillis(2_001));
+        assertThat(repository.claimNext(
+                "sg", "test", "worker-b", singleAttempt).outcome())
+                .isEqualTo(
+                        ScenarioRehearsalBatchRepository.ClaimOutcome
+                                .NO_WORK);
+        assertThat(repository.find(
+                SCOPE, queued.jobId(), singleAttempt))
+                .get()
+                .extracting(ScenarioRehearsalBatchJob::status)
+                .isEqualTo(
+                        ScenarioRehearsalBatchJob.Status.PARTIAL);
+        verify(lifecycleAudit, atLeastOnce()).append(argThat(
+                event -> event.transition()
+                        == ScenarioRehearsalBatchLifecycleAuditEvent
+                        .Transition.ITEM_TERMINALIZED
+                        && event.jobId().equals(queued.jobId())
+                        && event.reasonCode().equals(
+                        "RG.MIRROR.REHEARSAL_BATCH.LEASE_EXPIRED")));
+    }
+
+    @Test
     void cancellationIsReplayableAndCannotRewriteTerminalHistory() {
         ScenarioRehearsalBatchRepository.Submission queued =
                 submission(SCOPE, "batch-cancel", "refund");
@@ -394,6 +598,28 @@ class DatabaseScenarioRehearsalBatchRepositoryTest {
         assertThat(first.job().status()).isEqualTo(
                 ScenarioRehearsalBatchJob.Status.CANCELLED);
         assertThat(replay.idempotentReplay()).isTrue();
+        verify(evidencePublisher).publish(
+                queued.request(),
+                queued.manifest(),
+                first.job(),
+                repository.page(
+                        SCOPE,
+                        job.jobId(),
+                        0,
+                        10,
+                        policy()).items());
+        verify(lifecycleAudit, atLeastOnce()).append(argThat(
+                event -> event.transition()
+                        == ScenarioRehearsalBatchLifecycleAuditEvent
+                        .Transition.CANCELLATION_REQUESTED
+                        && event.jobId().equals(job.jobId())
+                        && event.reasonCode().equals(
+                        "OWNER_REQUEST")));
+        verify(lifecycleAudit, atLeastOnce()).append(argThat(
+                event -> event.transition()
+                        == ScenarioRehearsalBatchLifecycleAuditEvent
+                        .Transition.TERMINALIZED
+                        && event.jobId().equals(job.jobId())));
         assertThat(repository.page(
                 SCOPE, job.jobId(), 0, 10, policy()).items())
                 .extracting(
@@ -597,20 +823,39 @@ class DatabaseScenarioRehearsalBatchRepositoryTest {
             String requestId,
             String planId,
             Duration timeout) {
-        MirrorArtifactRef ref = new MirrorArtifactRef(
-                "COMPILED_REHEARSAL_PLAN",
-                planId,
-                1,
-                "sha256:" + Integer.toHexString(
-                        Math.abs(planId.hashCode()) % 16).repeat(64));
+        return submission(
+                scope,
+                requestId,
+                List.of(planId),
+                timeout);
+    }
+
+    private ScenarioRehearsalBatchRepository.Submission submission(
+            CapabilitySnapshot.Scope scope,
+            String requestId,
+            List<String> planIds,
+            Duration timeout) {
+        List<MirrorArtifactRef> refs = planIds.stream()
+                .map(planId -> new MirrorArtifactRef(
+                        "COMPILED_REHEARSAL_PLAN",
+                        planId,
+                        1,
+                        "sha256:" + Integer.toHexString(
+                                Math.abs(planId.hashCode()) % 16)
+                                .repeat(64)))
+                .toList();
         ScenarioRehearsalBatchRequest request =
                 new ScenarioRehearsalBatchRequest(
                         "",
                         requestId,
-                        List.of(
-                                new ScenarioRehearsalBatchRequest.Entry(
-                                        "entry-0", ref)));
-        String aggregateRequest = requestId + ":plan:000";
+                        java.util.stream.IntStream.range(
+                                        0, refs.size())
+                                .mapToObj(index ->
+                                        new ScenarioRehearsalBatchRequest
+                                                .Entry(
+                                                "entry-" + index,
+                                                refs.get(index)))
+                                .toList());
         ScenarioRehearsalBatchManifest manifest =
                 ScenarioRehearsalBatchManifestIntegrity.seal(
                         mapper,
@@ -624,21 +869,30 @@ class DatabaseScenarioRehearsalBatchRepositoryTest {
                                 "",
                                 scope,
                                 requestId,
-                                List.of(
-                                        new ScenarioRehearsalBatchManifest
-                                                .Entry(
-                                                0,
-                                                "entry-0",
-                                                ref,
-                                                aggregateRequest,
-                                                ScenarioRehearsalRunIdentity
-                                                        .derive(
-                                                                mapper,
-                                                                scope,
-                                                                aggregateRequest),
-                                                1,
-                                                timeout)),
-                                1));
+                                java.util.stream.IntStream.range(
+                                                0, refs.size())
+                                        .mapToObj(index -> {
+                                            String aggregateRequest =
+                                                    requestId
+                                                            + ":plan:"
+                                                            + "%03d".formatted(
+                                                            index);
+                                            return new ScenarioRehearsalBatchManifest
+                                                    .Entry(
+                                                    index,
+                                                    "entry-" + index,
+                                                    refs.get(index),
+                                                    aggregateRequest,
+                                                    ScenarioRehearsalRunIdentity
+                                                            .derive(
+                                                                    mapper,
+                                                                    scope,
+                                                                    aggregateRequest),
+                                                    1,
+                                                    timeout);
+                                        })
+                                        .toList(),
+                                refs.size()));
         return new ScenarioRehearsalBatchRepository.Submission(
                 request,
                 ProtocolFingerprint.of(mapper, request),
@@ -655,8 +909,17 @@ class DatabaseScenarioRehearsalBatchRepositoryTest {
 
     private ScenarioRehearsalBatchRepository.ItemCompletion
     completion(String runId) {
+        return completion(
+                runId,
+                ScenarioCaseRehearsalResult.Outcome.PASS);
+    }
+
+    private ScenarioRehearsalBatchRepository.ItemCompletion
+    completion(
+            String runId,
+            ScenarioCaseRehearsalResult.Outcome outcome) {
         return new ScenarioRehearsalBatchRepository.ItemCompletion(
-                ScenarioCaseRehearsalResult.Outcome.PASS,
+                outcome,
                 runId,
                 "sha256:" + "e".repeat(64),
                 "sha256:" + "d".repeat(64));

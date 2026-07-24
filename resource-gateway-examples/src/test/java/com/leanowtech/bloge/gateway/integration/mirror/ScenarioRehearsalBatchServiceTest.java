@@ -9,8 +9,10 @@ import org.mockito.ArgumentCaptor;
 
 import java.time.Duration;
 import java.time.Instant;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import java.util.Set;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -43,10 +45,17 @@ class ScenarioRehearsalBatchServiceTest {
         when(repository.submit(
                 any(ScenarioRehearsalBatchRepository
                         .Submission.class),
-                any(ScenarioRehearsalBatchPolicy.class)))
-                .thenReturn(
-                        new ScenarioRehearsalBatchRepository
-                                .SubmissionResult(job, false));
+                any(ScenarioRehearsalBatchPolicy.class),
+                any(MirrorOperationObservability.Observation.class)))
+                .thenAnswer(invocation -> {
+                    MirrorOperationObservability.Observation
+                            operation = invocation.getArgument(2);
+                    operation.succeeded(job.jobId());
+                    return new ScenarioRehearsalBatchRepository
+                            .SubmissionResult(job, false);
+                });
+        List<MirrorOperationAuditEvent> events =
+                new ArrayList<>();
         ScenarioRehearsalBatchService service =
                 new ScenarioRehearsalBatchService(
                         compiler,
@@ -55,7 +64,8 @@ class ScenarioRehearsalBatchServiceTest {
                         mapper,
                         mock(
                                 ScenarioRehearsalBatchEvidenceRepository
-                                        .class));
+                                        .class),
+                        observations(events));
 
         assertThat(service.submit(request, identity()).job())
                 .isEqualTo(job);
@@ -64,7 +74,8 @@ class ScenarioRehearsalBatchServiceTest {
                 ScenarioRehearsalBatchRepository.Submission.class);
         verify(repository).submit(
                 captured.capture(),
-                any(ScenarioRehearsalBatchPolicy.class));
+                any(ScenarioRehearsalBatchPolicy.class),
+                any(MirrorOperationObservability.Observation.class));
         assertThat(captured.getValue().manifest())
                 .isEqualTo(manifest);
         assertThat(captured.getValue().requestFingerprint())
@@ -78,6 +89,16 @@ class ScenarioRehearsalBatchServiceTest {
                             .extracting(
                                     IntegrationRequestContext::purpose)
                             .isEqualTo("MIRROR_REHEARSAL");
+                });
+        assertThat(events)
+                .singleElement()
+                .satisfies(event -> {
+                    assertThat(event.operation()).isEqualTo(
+                            MirrorOperationAuditEvent.Operation
+                                    .SCENARIO_REHEARSAL_BATCH_CREATE);
+                    assertThat(event.outcome()).isEqualTo(
+                            MirrorOperationAuditEvent.Outcome
+                                    .SUCCEEDED);
                 });
     }
 
@@ -93,7 +114,8 @@ class ScenarioRehearsalBatchServiceTest {
                         mapper,
                         mock(
                                 ScenarioRehearsalBatchEvidenceRepository
-                                        .class));
+                                        .class),
+                        MirrorOperationObservability.noop());
 
         assertThatThrownBy(() -> service.submit(
                 request(), identity("MIRROR_READ")))
@@ -112,19 +134,148 @@ class ScenarioRehearsalBatchServiceTest {
                 mock(ScenarioRehearsalBatchEvidenceBundle.class);
         when(evidence.find(SCOPE, job().jobId()))
                 .thenReturn(java.util.Optional.of(bundle));
+        List<MirrorOperationAuditEvent> events =
+                new ArrayList<>();
         ScenarioRehearsalBatchService service =
                 new ScenarioRehearsalBatchService(
                         mock(ScenarioRehearsalBatchCompiler.class),
                         mock(ScenarioRehearsalBatchRepository.class),
                         policy(),
                         mapper,
-                        evidence);
+                        evidence,
+                        observations(events));
 
         assertThat(service.evidence(
                 job().jobId(),
                 identity("GOVERNANCE_EVIDENCE_INGESTION")))
                 .contains(bundle);
         verify(evidence).find(SCOPE, job().jobId());
+        assertThat(events)
+                .singleElement()
+                .extracting(MirrorOperationAuditEvent::operation)
+                .isEqualTo(
+                        MirrorOperationAuditEvent.Operation
+                                .SCENARIO_REHEARSAL_BATCH_EVIDENCE_READ);
+    }
+
+    @Test
+    void cancellationUsesItsOwnProtectedOperationAudit() {
+        ScenarioRehearsalBatchRepository repository =
+                mock(ScenarioRehearsalBatchRepository.class);
+        ScenarioRehearsalBatchJob cancelled =
+                job(ScenarioRehearsalBatchJob.Status.CANCELLED);
+        when(repository.cancel(
+                any(ScenarioRehearsalBatchRepository
+                        .Cancellation.class),
+                any(ScenarioRehearsalBatchPolicy.class),
+                any(MirrorOperationObservability.Observation.class)))
+                .thenAnswer(invocation -> {
+                    MirrorOperationObservability.Observation
+                            operation = invocation.getArgument(2);
+                    operation.succeeded(cancelled.jobId());
+                    return new ScenarioRehearsalBatchRepository
+                            .SubmissionResult(cancelled, false);
+                });
+        List<MirrorOperationAuditEvent> events =
+                new ArrayList<>();
+        ScenarioRehearsalBatchService service =
+                new ScenarioRehearsalBatchService(
+                        mock(ScenarioRehearsalBatchCompiler.class),
+                        repository,
+                        policy(),
+                        mapper,
+                        mock(
+                                ScenarioRehearsalBatchEvidenceRepository
+                                        .class),
+                        observations(events));
+
+        assertThat(service.cancel(
+                cancelled.jobId(),
+                "cancel-running-001",
+                "OWNER_REQUEST",
+                identity()).job()).isEqualTo(cancelled);
+
+        assertThat(events)
+                .singleElement()
+                .extracting(MirrorOperationAuditEvent::operation)
+                .isEqualTo(
+                        MirrorOperationAuditEvent.Operation
+                                .SCENARIO_REHEARSAL_BATCH_CANCEL);
+    }
+
+    @Test
+    void jobReadsAuditSuccessAndHiddenAbsenceWithClosedReasons() {
+        List<MirrorOperationAuditEvent> events =
+                new ArrayList<>();
+        MirrorOperationAuditRepository audit =
+                new MirrorOperationAuditRepository() {
+                    @Override
+                    public MirrorOperationAuditEvent append(
+                            MirrorOperationAuditEvent event) {
+                        MirrorOperationAuditEvent persisted =
+                                event.persisted(
+                                        events.size() + 1L,
+                                        NOW);
+                        events.add(persisted);
+                        return persisted;
+                    }
+
+                    @Override
+                    public List<MirrorOperationAuditEvent> recent(
+                            CapabilitySnapshot.Scope scope,
+                            int limit) {
+                        return List.copyOf(events);
+                    }
+                };
+        ScenarioRehearsalBatchRepository repository =
+                mock(ScenarioRehearsalBatchRepository.class);
+        when(repository.find(
+                SCOPE, job().jobId(), policy()))
+                .thenReturn(
+                        Optional.of(job()),
+                        Optional.empty());
+        ScenarioRehearsalBatchService service =
+                new ScenarioRehearsalBatchService(
+                        mock(ScenarioRehearsalBatchCompiler.class),
+                        repository,
+                        policy(),
+                        mapper,
+                        mock(
+                                ScenarioRehearsalBatchEvidenceRepository
+                                        .class),
+                        new MirrorOperationObservability(
+                                audit,
+                                MirrorOperationTelemetry.noop(),
+                                () -> 0L));
+
+        assertThat(service.find(
+                job().jobId(),
+                identity("GOVERNANCE_EVIDENCE_INGESTION")))
+                .contains(job());
+        assertThat(service.find(
+                job().jobId(),
+                identity("GOVERNANCE_EVIDENCE_INGESTION")))
+                .isEmpty();
+
+        assertThat(events)
+                .extracting(
+                        MirrorOperationAuditEvent::operation,
+                        MirrorOperationAuditEvent::outcome,
+                        MirrorOperationAuditEvent::reason)
+                .containsExactly(
+                        org.assertj.core.groups.Tuple.tuple(
+                                MirrorOperationAuditEvent.Operation
+                                        .SCENARIO_REHEARSAL_BATCH_READ,
+                                MirrorOperationAuditEvent.Outcome
+                                        .SUCCEEDED,
+                                MirrorOperationAuditEvent.Reason.NONE),
+                        org.assertj.core.groups.Tuple.tuple(
+                                MirrorOperationAuditEvent.Operation
+                                        .SCENARIO_REHEARSAL_BATCH_READ,
+                                MirrorOperationAuditEvent.Outcome
+                                        .REJECTED,
+                                MirrorOperationAuditEvent.Reason
+                                        .NOT_FOUND));
     }
 
     @Test
@@ -536,5 +687,33 @@ class ScenarioRehearsalBatchServiceTest {
                 Set.of("support-owner"),
                 "RESTRICTED",
                 "");
+    }
+
+    private MirrorOperationObservability observations(
+            List<MirrorOperationAuditEvent> events) {
+        MirrorOperationAuditRepository audit =
+                new MirrorOperationAuditRepository() {
+                    @Override
+                    public MirrorOperationAuditEvent append(
+                            MirrorOperationAuditEvent event) {
+                        MirrorOperationAuditEvent persisted =
+                                event.persisted(
+                                        events.size() + 1L,
+                                        NOW);
+                        events.add(persisted);
+                        return persisted;
+                    }
+
+                    @Override
+                    public List<MirrorOperationAuditEvent> recent(
+                            CapabilitySnapshot.Scope scope,
+                            int limit) {
+                        return List.copyOf(events);
+                    }
+                };
+        return new MirrorOperationObservability(
+                audit,
+                MirrorOperationTelemetry.noop(),
+                () -> 0L);
     }
 }
