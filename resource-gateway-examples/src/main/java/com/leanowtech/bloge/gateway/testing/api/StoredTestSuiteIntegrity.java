@@ -46,8 +46,9 @@ public final class StoredTestSuiteIntegrity {
             TestSuiteProtocolCodec codec = new TestSuiteProtocolCodec(objectMapper);
             TestSuiteProtocol suite = codec.read(codec.write(stored.suite()));
             return verify(codec, new StoredTestSuite(stored.schemaVersion(), stored.tenantId(),
-                    stored.environmentId(), stored.suiteId(), stored.revision(),
-                    stored.fingerprint(), suite, stored.createdAt(), stored.createdBy()));
+                    stored.organizationId(), stored.projectId(), stored.environmentId(),
+                    stored.region(), stored.suiteId(), stored.revision(), stored.fingerprint(),
+                    suite, stored.createdAt(), stored.createdBy()));
         } catch (TestSuiteIntegrityException invalid) {
             throw invalid;
         } catch (RuntimeException invalid) {
@@ -84,6 +85,33 @@ public final class StoredTestSuiteIntegrity {
     }
 
     /**
+     * Detaches and binds a repository result to the complete enterprise lookup key.
+     *
+     * @param objectMapper canonical protocol mapper
+     * @param stored repository-owned result
+     * @param scope authorized enterprise scope
+     * @param suiteId requested suite id
+     * @param revision requested immutable revision
+     * @return independently owned v2 result bound to every scope dimension
+     */
+    public static StoredTestSuite verifiedSnapshot(
+            ObjectMapper objectMapper,
+            StoredTestSuite stored,
+            TestingArtifactScope scope,
+            String suiteId,
+            long revision) {
+        Objects.requireNonNull(scope, "scope");
+        StoredTestSuite snapshot = verifiedSnapshot(objectMapper, stored);
+        if (!snapshot.enterpriseScoped()
+                || !scope.equals(snapshot.scope())
+                || !Objects.equals(suiteId, snapshot.suiteId())
+                || revision != snapshot.revision()) {
+            throw new TestSuiteIntegrityException();
+        }
+        return snapshot;
+    }
+
+    /**
      * Detaches and verifies a create result against the submitted immutable identity and content.
      *
      * <p>Creation provenance is intentionally not compared. An idempotent create returns the
@@ -103,7 +131,10 @@ public final class StoredTestSuiteIntegrity {
             throw new TestSuiteIntegrityException();
         }
         StoredTestSuite expectedSnapshot = verifiedSnapshot(objectMapper, expected);
-        StoredTestSuite snapshot = verifiedSnapshot(objectMapper, stored,
+        StoredTestSuite snapshot = expectedSnapshot.enterpriseScoped()
+                ? verifiedSnapshot(objectMapper, stored, expectedSnapshot.scope(),
+                expectedSnapshot.suiteId(), expectedSnapshot.revision())
+                : verifiedSnapshot(objectMapper, stored,
                 expectedSnapshot.tenantId(), expectedSnapshot.environmentId(),
                 expectedSnapshot.suiteId(), expectedSnapshot.revision());
         if (!Objects.equals(expectedSnapshot.schemaVersion(), snapshot.schemaVersion())
@@ -114,7 +145,13 @@ public final class StoredTestSuiteIntegrity {
     }
 
     private static StoredTestSuite verify(TestSuiteProtocolCodec codec, StoredTestSuite stored) {
-        if (!StoredTestSuite.SCHEMA_VERSION.equals(stored.schemaVersion())
+        boolean legacy = StoredTestSuite.LEGACY_SCHEMA_VERSION.equals(stored.schemaVersion())
+                && blank(stored.organizationId()) && blank(stored.projectId())
+                && blank(stored.region());
+        boolean enterprise = StoredTestSuite.SCHEMA_VERSION.equals(stored.schemaVersion())
+                && !blank(stored.organizationId()) && !blank(stored.projectId())
+                && !blank(stored.region());
+        if (!(legacy || enterprise)
                 || blank(stored.tenantId()) || blank(stored.environmentId())
                 || blank(stored.suiteId()) || stored.revision() <= 0
                 || stored.createdAt() == null || blank(stored.createdBy())

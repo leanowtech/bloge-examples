@@ -7,6 +7,7 @@ import com.leanowtech.bloge.gateway.testing.api.FixtureBundleRepository;
 import com.leanowtech.bloge.gateway.testing.api.StoredFixtureBundle;
 import com.leanowtech.bloge.gateway.testing.api.StoredTestSuite;
 import com.leanowtech.bloge.gateway.testing.api.TestSuiteRegistryService;
+import com.leanowtech.bloge.gateway.testing.api.TestingArtifactScope;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.context.annotation.Profile;
@@ -232,18 +233,24 @@ public class ScenarioRehearsalIntegrationService {
     private StoredFixtureBundle requireFixture(
             MirrorArtifactRef ref,
             IntegrationRequestContext identity) {
+        TestingArtifactScope scope = TestingArtifactScope.from(identity);
         try {
-            return fixtures.find(
-                            identity.tenantId(),
-                            identity.environmentId(),
-                            ref.id(),
-                            ref.revision())
+            StoredFixtureBundle stored = fixtures.find(scope, ref.id(), ref.revision())
                     .orElseThrow(() -> new IntegrationProblemException(
                             IntegrationProblem.notFound(
                                     "RG.MIRROR.REHEARSAL.FIXTURE_NOT_FOUND",
                                     "FixtureBundle was not found in the authorized scope.",
                                     identity.correlationId(),
                                     Map.of())));
+            if (!ref.fingerprint().equals(stored.fingerprint())) {
+                throw new IntegrationProblemException(
+                        IntegrationProblem.conflict(
+                                "RG.MIRROR.REHEARSAL.FIXTURE_STALE",
+                                "FixtureBundle differs from the reviewed reference.",
+                                identity.correlationId(),
+                                Map.of()));
+            }
+            return stored;
         } catch (IntegrationProblemException expected) {
             throw expected;
         } catch (RuntimeException unavailable) {

@@ -178,9 +178,12 @@ describe('operator library API client', () => {
           },
         });
         return new Response(JSON.stringify({
-          schemaVersion: 'bloge.storedFixtureBundle.v1',
+          schemaVersion: 'bloge.storedFixtureBundle.v2',
           tenantId: 'tenant-a',
+          organizationId: 'knowledge-governance',
+          projectId: 'tool-studio',
           environmentId: 'test',
+          region: 'region-a',
           fixtureBundleId: storedFixtureId,
           revision: 1,
           fingerprint: 'sha256:stored-fixture',
@@ -358,9 +361,12 @@ describe('operator library API client', () => {
         });
         storedSuiteFingerprint = `sha256:${'d'.repeat(64)}`;
         return new Response(JSON.stringify({
-          schemaVersion: 'bloge.storedTestSuite.v1',
+          schemaVersion: 'bloge.storedTestSuite.v2',
           tenantId: 'tenant-a',
+          organizationId: 'knowledge-governance',
+          projectId: 'tool-studio',
           environmentId: 'test',
+          region: 'region-a',
           suiteId: storedSuiteId,
           revision: 1,
           fingerprint: storedSuiteFingerprint,

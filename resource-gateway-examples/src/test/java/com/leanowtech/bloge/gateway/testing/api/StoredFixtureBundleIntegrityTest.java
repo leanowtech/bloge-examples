@@ -82,6 +82,30 @@ class StoredFixtureBundleIntegrityTest {
                 "sha256:fixture", bundle, Instant.EPOCH, ""));
     }
 
+    @Test
+    void enterpriseSnapshotRequiresEveryScopeDimensionAndNeverPromotesLegacy() {
+        FixtureBundle bundle = bundle("fixture-a", 3, Map.of());
+        String fingerprint = ProtocolFingerprint.of(mapper, bundle);
+        TestingArtifactScope scope = new TestingArtifactScope(
+                "tenant-a", "org-a", "project-a", "test", "sg");
+        StoredFixtureBundle scoped = new StoredFixtureBundle(
+                "", scope.tenantId(), scope.organizationId(), scope.projectId(),
+                scope.environmentId(), scope.region(), bundle.fixtureBundleId(),
+                bundle.revision(), fingerprint, bundle, Instant.EPOCH, "runner");
+
+        assertThat(StoredFixtureBundleIntegrity.verifiedSnapshot(
+                mapper, scoped, scope, "fixture-a", 3)).isEqualTo(scoped);
+        assertThatThrownBy(() -> StoredFixtureBundleIntegrity.verifiedSnapshot(
+                mapper, scoped,
+                new TestingArtifactScope(
+                        "tenant-a", "org-a", "project-b", "test", "sg"),
+                "fixture-a", 3))
+                .isInstanceOf(FixtureBundleIntegrityException.class);
+        assertThatThrownBy(() -> StoredFixtureBundleIntegrity.verifiedSnapshot(
+                mapper, stored(bundle, fingerprint), scope, "fixture-a", 3))
+                .isInstanceOf(FixtureBundleIntegrityException.class);
+    }
+
     private void assertPayloadFreeFailure(StoredFixtureBundle stored) {
         assertThatThrownBy(() -> StoredFixtureBundleIntegrity.verifiedSnapshot(mapper, stored))
                 .isInstanceOf(FixtureBundleIntegrityException.class)

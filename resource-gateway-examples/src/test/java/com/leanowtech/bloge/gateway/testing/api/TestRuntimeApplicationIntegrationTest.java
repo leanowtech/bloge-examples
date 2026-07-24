@@ -525,7 +525,8 @@ class TestRuntimeApplicationIntegrationTest {
                 "OUTPUT_PATH", "decision", "/decision", "EQUALS", "APPROVE", null)),
                 Map.of("source", "property-http-integration"));
         String propertyFixtureFingerprint = ProtocolFingerprint.of(objectMapper, propertyFixture);
-        fixtureRepository.create(new StoredFixtureBundle("", "tenant-a", "test",
+        fixtureRepository.create(new StoredFixtureBundle("", "tenant-a",
+                "knowledge-governance", "tool-studio", "test", "region-a",
                 propertyFixture.fixtureBundleId(), propertyFixture.revision(),
                 propertyFixtureFingerprint, propertyFixture, Instant.now(), "integration-test"));
 
@@ -856,8 +857,10 @@ class TestRuntimeApplicationIntegrationTest {
                         FixtureRule.SchemaCheck.strict())),
                 List.of(), Map.of());
         String fixtureFingerprint = ProtocolFingerprint.of(objectMapper, fixture);
-        fixtureRepository.create(new StoredFixtureBundle("", "tenant-a", "test", "suite-fixture", 1,
-                fixtureFingerprint, fixture, Instant.now(), "integration-test"));
+        fixtureRepository.create(new StoredFixtureBundle("", "tenant-a",
+                "knowledge-governance", "tool-studio", "test", "region-a",
+                "suite-fixture", 1, fixtureFingerprint, fixture,
+                Instant.now(), "integration-test"));
         TestSuite suite = new TestSuite("", "suite-integration", 1,
                 new TestSuite.Target("GRAPH", descriptor.target().id(), descriptor.target().fingerprint()),
                 "INTERNAL", List.of(new TestSuite.TestCase("golden", TestSuite.CaseType.GOLDEN,

@@ -6,6 +6,7 @@ import com.leanowtech.bloge.gateway.testing.api.StoredFixtureBundle;
 import com.leanowtech.bloge.gateway.testing.api.StoredFixtureBundleIntegrity;
 import com.leanowtech.bloge.gateway.testing.api.StoredTestSuite;
 import com.leanowtech.bloge.gateway.testing.api.StoredTestSuiteIntegrity;
+import com.leanowtech.bloge.gateway.testing.api.TestingArtifactScope;
 import com.leanowtech.bloge.gateway.testing.domain.FixtureBundle;
 import com.leanowtech.bloge.gateway.testing.domain.FixtureRule;
 import com.leanowtech.bloge.gateway.testing.domain.TestSuite;
@@ -167,9 +168,7 @@ public final class ScenarioRehearsalCompiler {
         StoredTestSuite suite;
         try {
             suite = StoredTestSuiteIntegrity.verifiedSnapshot(
-                    mapper, value,
-                    scenarioCase.scope().tenantId(),
-                    scenarioCase.scope().environmentId(),
+                    mapper, value, testingScope(scenarioCase.scope()),
                     scenarioCase.testSuiteRef().id(),
                     scenarioCase.testSuiteRef().revision());
         } catch (RuntimeException invalid) {
@@ -214,9 +213,7 @@ public final class ScenarioRehearsalCompiler {
         try {
             StoredFixtureBundle fixture =
                     StoredFixtureBundleIntegrity.verifiedSnapshot(
-                            mapper, value,
-                            scenarioCase.scope().tenantId(),
-                            scenarioCase.scope().environmentId(),
+                            mapper, value, testingScope(scenarioCase.scope()),
                             scenarioCase.fixtureBundleRef().id(),
                             scenarioCase.fixtureBundleRef().revision());
             requireRef(
@@ -234,6 +231,12 @@ public final class ScenarioRehearsalCompiler {
                     "RG.MIRROR.REHEARSAL.FIXTURE_INTEGRITY_INVALID",
                     "caseId", scenarioCase.caseId());
         }
+    }
+
+    private static TestingArtifactScope testingScope(CapabilitySnapshot.Scope scope) {
+        return new TestingArtifactScope(
+                scope.tenantId(), scope.organizationId(), scope.projectId(),
+                scope.environmentId(), scope.region());
     }
 
     private MirrorPlan verifiedPlan(

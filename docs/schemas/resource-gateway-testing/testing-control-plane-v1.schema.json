@@ -1747,7 +1747,29 @@
     "storedFixtureBundle": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["schemaVersion", "tenantId", "environmentId", "fixtureBundleId", "revision", "fingerprint", "bundle", "createdAt", "createdBy"],
+      "required": ["schemaVersion", "tenantId", "organizationId", "projectId", "environmentId",
+        "region", "fixtureBundleId", "revision", "fingerprint", "bundle", "createdAt", "createdBy"],
+      "properties": {
+        "schemaVersion": {"const": "bloge.storedFixtureBundle.v2"},
+        "tenantId": {"type": "string", "minLength": 1},
+        "organizationId": {"type": "string", "minLength": 1},
+        "projectId": {"type": "string", "minLength": 1},
+        "environmentId": {"type": "string", "minLength": 1},
+        "region": {"type": "string", "minLength": 1},
+        "fixtureBundleId": {"type": "string", "minLength": 1, "maxLength": 255},
+        "revision": {"type": "integer", "minimum": 1},
+        "fingerprint": {"$ref": "#/$defs/fingerprint"},
+        "bundle": {"$ref": "#/$defs/fixtureBundle"},
+        "createdAt": {"type": "string", "format": "date-time"},
+        "createdBy": {"type": "string", "minLength": 1}
+      }
+    },
+    "storedFixtureBundleV1": {
+      "description": "Legacy migration input. It is not eligible for enterprise-scoped execution.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["schemaVersion", "tenantId", "environmentId", "fixtureBundleId", "revision",
+        "fingerprint", "bundle", "createdAt", "createdBy"],
       "properties": {
         "schemaVersion": {"const": "bloge.storedFixtureBundle.v1"},
         "tenantId": {"type": "string", "minLength": 1},
@@ -2459,6 +2481,27 @@
       }
     },
     "storedTestSuite": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["schemaVersion", "tenantId", "organizationId", "projectId", "environmentId",
+        "region", "suiteId", "revision", "fingerprint", "suite", "createdAt", "createdBy"],
+      "properties": {
+        "schemaVersion": {"const": "bloge.storedTestSuite.v2"},
+        "tenantId": {"type": "string", "minLength": 1},
+        "organizationId": {"type": "string", "minLength": 1},
+        "projectId": {"type": "string", "minLength": 1},
+        "environmentId": {"type": "string", "minLength": 1},
+        "region": {"type": "string", "minLength": 1},
+        "suiteId": {"type": "string", "minLength": 1, "maxLength": 255},
+        "revision": {"type": "integer", "minimum": 1},
+        "fingerprint": {"$ref": "#/$defs/fingerprint"},
+        "suite": {"$ref": "#/$defs/testSuiteProtocol"},
+        "createdAt": {"type": "string", "format": "date-time"},
+        "createdBy": {"type": "string", "minLength": 1}
+      }
+    },
+    "storedTestSuiteV1": {
+      "description": "Legacy migration input. It is not eligible for enterprise-scoped execution.",
       "type": "object",
       "additionalProperties": false,
       "required": ["schemaVersion", "tenantId", "environmentId", "suiteId", "revision",

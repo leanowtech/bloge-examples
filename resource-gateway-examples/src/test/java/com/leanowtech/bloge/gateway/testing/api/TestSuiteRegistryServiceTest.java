@@ -136,7 +136,10 @@ class TestSuiteRegistryServiceTest {
                 List.of(testCase("golden", TestSuite.CaseType.GOLDEN, internalFixture)),
                 TestSuite.CoveragePolicy.defaults());
         StoredTestSuite first = storedSuite("tenant-a", "test", candidate, "first-runner");
-        suites.values.put(InMemorySuites.key("tenant-a", "test", "suite-a", 1), first);
+        suites.values.put(InMemorySuites.key(
+                new TestingArtifactScope(
+                        "tenant-a", "org-a", "project-a", "test", "local"),
+                "suite-a", 1), first);
 
         StoredTestSuite repeated = service.register("suite-a",
                 new TestSuiteRegistrationRequest("", candidate),
@@ -177,7 +180,8 @@ class TestSuiteRegistryServiceTest {
                 List.of(), List.of(), Map.of("payload", "must-never-escape-319"));
         fixtures.values.put(InMemoryFixtures.key("tenant-a", "test",
                         internalFixture.fixtureBundleId(), internalFixture.revision()),
-                new StoredFixtureBundle("", "tenant-a", "test",
+                new StoredFixtureBundle("", "tenant-a", "org-a", "project-a",
+                        "test", "local",
                         internalFixture.fixtureBundleId(), internalFixture.revision(),
                         internalFixture.fingerprint(), tampered, internalFixture.createdAt(),
                         internalFixture.createdBy()));
@@ -490,16 +494,20 @@ class TestSuiteRegistryServiceTest {
         FixtureBundle bundle = new FixtureBundle("", id, revision, fingerprint,
                 classification, null, null, List.of(), List.of(new FixtureBundle.Assertion(
                 "OUTPUT_PATH", "subject", "/result", "EQUALS", "hello", null)), Map.of());
-        StoredFixtureBundle stored = new StoredFixtureBundle("", "tenant-a", "test", id, revision,
-                ProtocolFingerprint.of(mapper, bundle), bundle, Instant.now(), "runner");
+        StoredFixtureBundle stored = new StoredFixtureBundle(
+                "", "tenant-a", "org-a", "project-a", "test", "local",
+                id, revision, ProtocolFingerprint.of(mapper, bundle),
+                bundle, Instant.now(), "runner");
         return fixtures.create(stored);
     }
 
     private StoredFixtureBundle storeInertFixture(String id, String classification, long revision) {
         FixtureBundle bundle = new FixtureBundle("", id, revision, targetFingerprint,
                 classification, null, null, List.of(), List.of(), Map.of("mode", "admission"));
-        StoredFixtureBundle stored = new StoredFixtureBundle("", "tenant-a", "test", id, revision,
-                ProtocolFingerprint.of(mapper, bundle), bundle, Instant.now(), "runner");
+        StoredFixtureBundle stored = new StoredFixtureBundle(
+                "", "tenant-a", "org-a", "project-a", "test", "local",
+                id, revision, ProtocolFingerprint.of(mapper, bundle),
+                bundle, Instant.now(), "runner");
         return fixtures.create(stored);
     }
 
@@ -523,7 +531,9 @@ class TestSuiteRegistryServiceTest {
 
     private StoredTestSuite storedSuite(String tenant, String environment, TestSuite suite,
                                         String createdBy) {
-        return new StoredTestSuite("", tenant, environment, suite.suiteId(), suite.revision(),
+        return new StoredTestSuite(
+                "", tenant, "org-a", "project-a", environment, "local",
+                suite.suiteId(), suite.revision(),
                 ProtocolFingerprint.of(mapper, suite), suite, Instant.EPOCH, createdBy);
     }
 
@@ -559,8 +569,24 @@ class TestSuiteRegistryServiceTest {
                                                             String id, long revision) {
             return Optional.ofNullable(values.get(key(tenant, environment, id, revision)));
         }
+        @Override public StoredFixtureBundle create(
+                TestingArtifactScope scope, StoredFixtureBundle value) {
+            values.put(key(scope, value.fixtureBundleId(), value.revision()), value);
+            return value;
+        }
+        @Override public Optional<StoredFixtureBundle> find(
+                TestingArtifactScope scope, String id, long revision) {
+            StoredFixtureBundle value = values.get(key(scope, id, revision));
+            if (value == null) {
+                value = values.get(key(scope.tenantId(), scope.environmentId(), id, revision));
+            }
+            return Optional.ofNullable(value);
+        }
         private static String key(String tenant, String environment, String id, long revision) {
             return tenant + "|" + environment + "|" + id + "|" + revision;
+        }
+        private static String key(TestingArtifactScope scope, String id, long revision) {
+            return scope + "|" + id + "|" + revision;
         }
     }
 
@@ -582,8 +608,31 @@ class TestSuiteRegistryServiceTest {
                                                         String id, long revision) {
             return Optional.ofNullable(values.get(key(tenant, environment, id, revision)));
         }
+        @Override public StoredTestSuite create(
+                TestingArtifactScope scope, StoredTestSuite value) {
+            if (createOverride != null) {
+                return createOverride;
+            }
+            String key = key(scope, value.suiteId(), value.revision());
+            StoredTestSuite existing = values.putIfAbsent(key, value);
+            if (existing != null && !existing.fingerprint().equals(value.fingerprint())) {
+                throw new TestSuiteConflictException("different immutable content");
+            }
+            return existing == null ? value : existing;
+        }
+        @Override public Optional<StoredTestSuite> find(
+                TestingArtifactScope scope, String id, long revision) {
+            StoredTestSuite value = values.get(key(scope, id, revision));
+            if (value == null) {
+                value = values.get(key(scope.tenantId(), scope.environmentId(), id, revision));
+            }
+            return Optional.ofNullable(value);
+        }
         private static String key(String tenant, String environment, String id, long revision) {
             return tenant + "|" + environment + "|" + id + "|" + revision;
+        }
+        private static String key(TestingArtifactScope scope, String id, long revision) {
+            return scope + "|" + id + "|" + revision;
         }
     }
 

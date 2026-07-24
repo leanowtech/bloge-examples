@@ -73,13 +73,12 @@
   `mirrorServing` 也只在完整 run adapter 装配时为 `true`。这表示可交付带明确 limitation 的 exploratory evidence，
   不表示部署级 egress attestation 或 certification 已完成。客户环境的数据
   使用授权、跨系统 schema owner、部署/namespace 形态等组织决策仍是生产准入前置，不由仓库测试冒充完成。
-- Stage 0 验证基线：前端 Vitest `150/150` 全绿并完成 TypeScript/Vite 生产构建；带 `-Pfrontend` 的真实
+- 当前验证基线：前端 Vitest `150/150` 全绿并完成 TypeScript/Vite 生产构建；带 `-Pfrontend` 的真实
   Chrome 示例投影用例 `1/1` 全绿。纳入当前 compiler、mirror runtime 与 stateful recovery kernel 后，
-  Resource Gateway 最新 `clean verify` 为 `4946` 项测试、0 失败、0 错误、3 项条件跳过；其中
+  Resource Gateway 最新完整 Java 门禁为 `4985` 项测试、0 失败、0 错误、3 项条件跳过；其中
   `VisualAuthoringBrowserDomTest` 的 32 项非 frontend-bundle 场景和
   `VisualAuthoringBrowserWorkflowTest` 均已在真实 Chrome 中执行，3 项跳过仅因普通门禁未启用
-  `-Pfrontend`。可执行 Spring Boot JAR 已重打。独立 test-kit `337/337` 全绿，JavaDoc 与普通/阴影 JAR
-  均成功生成。
+  `-Pfrontend`。独立 test-kit `344/344` 全绿，JavaDoc 与普通/阴影 JAR 均成功生成。
 - Stage 1 第二增量已实现 `MirrorPlanCompiler`、`MirrorPlanCompilationRequest`、`CompiledMirrorPlan` 和
   `ExecutionControlCompiler.compileMirror` adapter。编译器把每条 direct/nested external capability edge 对账到
   递归冻结的 BLOGE `InvocationInventory`，再复用 FixtureBundle selector、replay、schema check 和 test-double
@@ -182,7 +181,7 @@
   Graph artifact fingerprint、独立复验 fixture 存储 envelope、冻结 governed replay closure，并要求
   `MIRROR_REHEARSAL`、完整 tenant/org/project/environment/region 与 test/staging 环境。mirror replay 新路径只能
   服务编译期闭包解析，不能借此 capture 或直接读取 payload。
-  租户内 fixture registry 原先只有 tenant/environment scope，因此本增量没有用文档掩盖这个隔离缺口，而是增加
+  当时租户内 fixture registry 只有 tenant/environment scope，因此该增量没有用文档掩盖这个隔离缺口，而是增加
   payload-free、append-only `mirror_fixture_scope_bindings`。fixture 注册成功时服务端自动绑定
   organization/project/region；mirror 编译先验证该 exact binding 再读取 fixture。历史 fixture 未绑定时失败关闭，
   以相同内容重试注册即可补写；知道或猜到 fixture id/revision/fingerprint 本身不能跨项目获得 mirror 使用权。
@@ -193,7 +192,8 @@
   Probe 只有在真实 adapter 装配后才报告 `mirrorPlanCompilation=true` 和
   `mirrorExternalLeafInterception=true`。服务、replay 权限隔离、路由隔离与装配聚焦回归及 fixture scope 根治
   聚焦门禁全绿；执行/evidence HTTP 与 request lease 已由第十四增量闭合，deployment egress attestation 的可信分发与
-  runtime binding 仍是下一门禁。
+  runtime binding 仍是下一门禁。该阶段的临时 scope 债务已在后续
+  `bloge.storedFixtureBundle.v2` 全企业作用域升级中关闭，binding 继续作为纵深防御。
 - Stage 1 第十四增量开放 `POST /api/mirror/executions`、`GET /api/mirror/runs/{runId}` 与
   `GET /api/mirror/runs/{runId}/evidence`，冻结 `resourceGateway.mirrorExecutionRequest.v1` 和
   `resourceGateway.mirrorRunSummary.v1`。请求只能提交 stable requestId、planId、expected plan fingerprint 与业务
@@ -576,11 +576,11 @@ Resource Gateway 已有的工业底座应直接复用：
 | 递归 DAG 测试 | 85% | MirrorPlan/closure/runtime inventory/fixture control 已统一；缺 contract-mock 展开治理和状态世界 |
 | 日志蒸馏与语料 | 82% | payload-free signed observation、准入/隔离、immutable review、candidate/publication/trajectory/cluster 独立 lineage、元数据风险门禁、fixture exact/trajectory/cluster binding、在线 revalidation、test/staging `RECORDED_EXACT`/`RECORDED_TRAJECTORY`/`RECORDED_CLUSTER`、BLOGE 原生 retry loop、identity-safe projection、Wilson confidence、Session state read 与独立 verifier 已落地；缺生产 payload authority、漂移、偏差、outcome 校准和删除证明 |
 | 有状态业务世界 | 91% | 协议、read/write 退款 fixture、独立 verifier/sealer/client、事务内核、受保护 Session API、独立 AES-GCM 数据面、lease/fence/CAS、durable write-attempt journal/reconciliation、TTL/destroy、全局/scope 容量、保留字节、命令背压、过期擦除、固定 read head、run-scoped virtual write、真实 DAG read-write-read、payload-free v1/v2/v3 state evidence、read-only/successful-transition/write-outcome ANEKE seed、签名 HASH_ONLY checkpoint 与同数据面代际精确恢复准入已落地；缺 TEE/KMS、跨区域数据恢复、真实 process-kill/network parity、目标数据库容量认证和 HA/DR certification |
-| Scenario/Rehearsal | 28% | ScenarioPack/Case/Assertion、append-only registry、exact 跨仓储 compiler 与 payload-free compiled plan 已落地；缺 case runtime、断言求值、聚合 evidence、批量任务和 owner UX |
+| Scenario/Rehearsal | 32% | ScenarioPack/Case/Assertion、append-only registry、exact 跨仓储 compiler、payload-free compiled plan 及 TestSuite/Fixture 全企业作用域 authority 已落地；缺 case runtime、断言求值、聚合 evidence、批量任务和 owner UX |
 | Fidelity/Outcome | 5% | 缺保真向量、shadow、权威结果归因和校准闭环 |
 | 业务运营工作台 | 10% | Author Canvas 尚未成为案例驱动的镜像运营工作台 |
 
-结论：基础设施准备度约 88%，镜像复利闭环完成度约 40%，完整理想态完成度约 51%。剩余主要矛盾已经
+结论：基础设施准备度约 88%，镜像复利闭环完成度约 41%，完整理想态完成度约 52%。剩余主要矛盾已经
 从“能否安全执行和取证”转向“能否把可信 observation 持续蒸馏成可校准、可拒答、可删除的业务拟合资产”。
 
 ### 3.1 2026-07-24 Scenario 编译期闭包迭代差距复评
@@ -598,11 +598,12 @@ compiled plan 独占 exact 组合关系。编译结果只保存 ref、policy、e
 append-only 保存，写入和读取均重验 seal/signature/indexed identity；真实 Spring 上下文、严格传输、重启、
 串租户、篡改、隐式 fault、过期 checkpoint 和执行策略漂移测试已通过。
 
-这里还有一个不能掩盖的 scope 债务：Scenario/MirrorPlan/Capability 已使用完整
+本次编译期增量结束时还有一个不能掩盖的 scope 债务：Scenario/MirrorPlan/Capability 已使用完整
 tenant/organization/project/environment/region，而历史 TestSuite/Fixture registry envelope 和主键仍只有
 tenant + environment。当前 compiler 能证明 exact 内容、target、classification 和调用身份，却不能证明这两类
 来源资产的 organization/project/region ownership。它因此只能是 test/staging compile-only 能力；进入生产认证前
 必须升级资产 scope 或引入完整 scope 的外部 ownership attestation，不能信任 ScenarioCase 的自声明来补洞。
+该前置债务已由下一迭代的 v2 全作用域 authority 关闭。
 
 这仍不是“场景已经跑通”。capability probe 分开报告 registry/compilation 为 `true`，execution/evidence 为
 `false`。逐 case runtime、断言 evaluator、state diff、aggregate evidence 和 workbook seed 尚未完成，
@@ -620,13 +621,13 @@ tenant + environment。当前 compiler 能证明 exact 内容、target、classif
 | 递归 DAG 测试 | 6% | 85% | 5.10 | contract-mock 展开债务与 stateful child 治理 |
 | 日志蒸馏与语料 | 10% | 82% | 8.20 | 生产 payload authority、偏差、漂移和删除证明 |
 | 有状态业务世界 | 13% | 91% | 11.83 | process-kill/network/vendor DB/HA/DR 认证 |
-| Scenario/Rehearsal | 16% | 28% | 4.48 | 已有治理协议/注册/编译闭包；尚无逐 case runtime、处置断言结果、聚合 evidence 和批量演练 |
+| Scenario/Rehearsal | 16% | 32% | 5.12 | 已有治理协议/注册/编译闭包和完整 scope 测试资产 authority；尚无逐 case runtime、处置断言结果、聚合 evidence 和批量演练 |
 | Fidelity/Outcome | 24% | 5% | 1.20 | 尚无保真向量、shadow、权威 outcome 归因与校准 |
 | 业务运营工作台 | 10% | 10% | 1.00 | owner 仍不能零 DSL 完成“看、调、确认、发布” |
-| **合计** | **100%** |  | **50.95%** | **距理想态 49.05%，远高于 5% 停止线** |
+| **合计** | **100%** |  | **51.59%** | **距理想态 48.41%，远高于 5% 停止线** |
 
 这个分数基于仓库协议、实现、测试和 capability readiness，不是生产 SLA，也不把尚未接入的客户 TEE、KMS、
-HA/DR 或权威 outcome 当成已完成。50.95% 只承认已由代码和测试复验的编译期增量；以后必须使用同一权重，
+HA/DR 或权威 outcome 当成已完成。51.59% 只承认已由代码和测试复验的协议、编译和作用域增量；以后必须使用同一权重，
 只有新增可复验能力才能提高分数。
 
 **病根分类**：
@@ -643,7 +644,7 @@ HA/DR 或权威 outcome 当成已完成。50.95% 只承认已由代码和测试�
 | 顺序 | Ticket | 状态 | 直击病根的工程任务 | 仓库内退出门禁 |
 |---:|---|---|---|---|
 | 1 | RG-MIR-SCEN-001 | 完成 | 冻结 `ScenarioPack.v1`、`ScenarioCase.v1`、`CaseHandlingAssertion.v1` 与 exact Graph/Fixture/Session/clock/fault binding | strict Schema、Java model、test-kit 独立 verifier、合法/篡改/越权/过期/未知字段矩阵全绿 |
-| 2 | RG-MIR-SCEN-001A | 待实现，runtime 前置 | 将 TestSuite/Fixture authority 升级为完整 enterprise scope，或验证独立 scope ownership attestation；提供旧 tenant+environment 资产的显式迁移/隔离策略 | 两个 organization/project/region 使用同 id/revision/fingerprint 仍不能串读、串绑或经 metadata 伪造归属；混合版本失败关闭 |
+| 2 | RG-MIR-SCEN-001A | 完成 | 将 TestSuite/Fixture authority 升级为完整 enterprise scope；旧 tenant+environment 资产采用独立表、禁止隐式提升、授权重新注册的迁移策略 | 两个 organization/project/region 可安全复用同 id/revision；跨 scope、混合版本与 indexed scope 搬移失败关闭 |
 | 3 | RG-MIR-SCEN-002 | 编译期完成，runtime 待实现 | deterministic compiler/runtime；每 case 使用隔离 Session/checkpoint、固定时钟/随机源、fixture data-flow inversion 和禁止真实 egress | 编译闭包已全绿；下一步退款域覆盖 golden/negative/boundary/retry/timeout/rejected/unknown/recovery，重复运行语义指纹一致 |
 | 4 | RG-MIR-SCEN-003 | 待实现 | 产出 payload-free Scenario evidence、state diff、处置断言结果与 ANEKE workbook seed，区分执行失败、断言失败、低保真和证据不完整 | 独立重建 seed；任何 unknown outcome、缺断言或不完整 evidence 阻断 gate-ready |
 | 5 | RG-MIR-SCEN-004 | 待实现 | 提供批量 rehearsal API、deep link 和最小 Author 场景表格；先保证业务 owner 不编辑 JSON/DSL 即可维护 case | 退款与工单故障两个样例域端到端演示；浏览器、REST、Java/test-kit 使用同一协议资产 |
@@ -652,6 +653,30 @@ HA/DR 或权威 outcome 当成已完成。50.95% 只承认已由代码和测试�
 `DomainFidelityProfile`、typed shadow diff、confidence/abstention debt 和 drift downgrade；随后 E9 接入
 authoritative outcome 做校准。生产 payload authority 和环境 certification 与 E7 并行推进，但不得再以等待外部环境
 为由推迟仓库内 Scenario 主链。每轮结束继续按本表复评；加权差距未低于 5% 前，目标保持进行中。
+
+### 3.2 2026-07-24 测试资产全企业作用域迭代差距复评
+
+本轮关闭 RG-MIR-SCEN-001A。新增 `TestingArtifactScope`，把 tenant、organization、project、
+environment、region 作为 TestSuite 和 FixtureBundle 不可拆分的所有权坐标；新写入使用
+`bloge.storedTestSuite.v2`、`bloge.storedFixtureBundle.v2` 及独立 v2 表。v2 复合主键包含五个 scope
+维度、资产 id 和 revision，允许不同组织/项目安全复用局部 id。
+
+仅把 scope 放进 JSON 和主键还不能防止数据库列被整体搬移。因此 v2 行额外保存
+`binding_fingerprint = hash(scope + id + revision + contentFingerprint)`，读取时先重建该绑定，再做
+内容 fingerprint、envelope、lookup key 的独立校验。TestSuite 注册、Fixture 注册、执行、durable recovery、
+MirrorPlan 编译和 Scenario compiler 全部调用完整 scope repository API；第三方旧 adapter 的默认桥接只能过滤
+已经携带正确 v2 scope 的对象，不能把 v1 资产冒充为 v2。
+
+迁移策略刻意拒绝“补一个默认 project”。v1 表和 envelope 保持只读隔离；目标 project 的授权主体必须从
+原始受治理定义重新注册 FixtureBundle、再注册 TestSuite、最后重编译 ScenarioPack。无法证明所有权的历史资产
+进入隔离态而不是运行态。这样迁移成本可见，但不会把组织边界的不确定性变成静默越权。
+
+本轮验证覆盖同 tenant/environment 下两个 project 使用相同 id/revision 的隔离、v2 资产对模糊 legacy lookup
+不可见、错误 project 的完整性拒绝、v1 混合引用拒绝，以及直接修改数据库 project 列时 binding fingerprint
+失败。完整 Java 门禁为 `4985` 项测试零失败、零错误、3 项条件跳过；独立 test-kit `344/344` 与前端
+Vitest `150/150` 全绿。它关闭的是 Scenario runtime 的 authority 前置条件，不等于 case 已执行；因此
+Scenario/Rehearsal 只从 28% 上调至 32%，Fidelity/Outcome 与业务工作台均不变。按固定权重总分为
+`51.59%`，距理想态 `48.41%`，下一最短路径仍是 RG-MIR-SCEN-002 的逐 case runtime。
 
 ## 4. 目标架构与系统责任
 

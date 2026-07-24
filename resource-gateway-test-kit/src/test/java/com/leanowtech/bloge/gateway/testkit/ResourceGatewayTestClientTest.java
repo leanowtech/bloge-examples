@@ -1354,16 +1354,18 @@ class ResourceGatewayTestClientTest {
 
     private static String storedFixtureResponse() {
         return """
-                {"schemaVersion":"bloge.storedFixtureBundle.v1","tenantId":"tenant",
-                 "environmentId":"test","fixtureBundleId":"fixture/approved","revision":3,
+                {"schemaVersion":"bloge.storedFixtureBundle.v2","tenantId":"tenant",
+                 "organizationId":"org","projectId":"project","environmentId":"test","region":"sg",
+                 "fixtureBundleId":"fixture/approved","revision":3,
                  "fingerprint":"%s","bundle":{},"createdAt":"2026-07-15T10:15:30Z","createdBy":"ci"}
                 """.formatted(FINGERPRINT);
     }
 
     private static String storedSuiteResponse() {
         return """
-                {"schemaVersion":"bloge.storedTestSuite.v1","tenantId":"tenant",
-                 "environmentId":"test","suiteId":"suite/policy","revision":7,
+                {"schemaVersion":"bloge.storedTestSuite.v2","tenantId":"tenant",
+                 "organizationId":"org","projectId":"project","environmentId":"test","region":"sg",
+                 "suiteId":"suite/policy","revision":7,
                  "fingerprint":"%1$s","suite":{"schemaVersion":"bloge.testSuite.v1",
                    "suiteId":"suite/policy","revision":7,
                    "target":{"kind":"OPERATOR","id":"customer.normalize/v2","fingerprint":"%1$s"},

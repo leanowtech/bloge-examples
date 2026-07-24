@@ -17,6 +17,7 @@ import com.leanowtech.bloge.gateway.testing.api.TestSuiteExecutionRequest;
 import com.leanowtech.bloge.gateway.testing.api.TestSuiteRunConflictException;
 import com.leanowtech.bloge.gateway.testing.api.TestSuiteRunLease;
 import com.leanowtech.bloge.gateway.testing.api.TestSuiteRunRecord;
+import com.leanowtech.bloge.gateway.testing.api.TestingArtifactScope;
 import com.leanowtech.bloge.gateway.testing.domain.FixtureBundle;
 import com.leanowtech.bloge.gateway.testing.domain.EffectiveExecutionPlan;
 import com.leanowtech.bloge.gateway.testing.domain.TestSuite;
@@ -102,6 +103,94 @@ class TestRuntimePersistenceTest {
     }
 
     @Test
+    void enterpriseScopesMayReuseFixtureAndSuiteCoordinatesWithoutCollision() {
+        TestingArtifactScope support = scope("support");
+        TestingArtifactScope billing = scope("billing");
+        FixtureBundle supportFixture = new FixtureBundle(
+                "", "shared-fixture", 1, "sha256:" + "a".repeat(64),
+                "INTERNAL", null, null, List.of(), List.of(),
+                Map.of("project", "support"));
+        FixtureBundle billingFixture = new FixtureBundle(
+                "", "shared-fixture", 1, "sha256:" + "a".repeat(64),
+                "INTERNAL", null, null, List.of(), List.of(),
+                Map.of("project", "billing"));
+        StoredFixtureBundle storedSupport = scopedFixture(support, supportFixture);
+        StoredFixtureBundle storedBilling = scopedFixture(billing, billingFixture);
+
+        fixtures.create(support, storedSupport);
+        fixtures.create(billing, storedBilling);
+
+        assertThat(fixtures.find(support, "shared-fixture", 1))
+                .contains(storedSupport);
+        assertThat(fixtures.find(billing, "shared-fixture", 1))
+                .contains(storedBilling);
+        assertThat(fixtures.find("tenant-a", "test", "shared-fixture", 1))
+                .as("v2 assets never leak through the ambiguous legacy lookup")
+                .isEmpty();
+
+        TestSuite supportSuite = suite(
+                "shared-suite", 1, Map.of("project", "support"), Map.of());
+        TestSuite billingSuite = suite(
+                "shared-suite", 1, Map.of("project", "billing"), Map.of());
+        StoredTestSuite storedSupportSuite = scopedSuite(support, supportSuite);
+        StoredTestSuite storedBillingSuite = scopedSuite(billing, billingSuite);
+
+        suites.create(support, storedSupportSuite);
+        suites.create(billing, storedBillingSuite);
+
+        assertThat(suites.find(support, "shared-suite", 1))
+                .contains(storedSupportSuite);
+        assertThat(suites.find(billing, "shared-suite", 1))
+                .contains(storedBillingSuite);
+        assertThat(suites.find("tenant-a", "test", "shared-suite", 1)).isEmpty();
+    }
+
+    @Test
+    void scopeBindingFingerprintRejectsARevisionMovedBetweenProjects() {
+        TestingArtifactScope support = scope("support");
+        TestingArtifactScope billing = scope("billing");
+        FixtureBundle fixture = new FixtureBundle(
+                "", "moved-fixture", 1, "sha256:" + "a".repeat(64),
+                "INTERNAL", null, null, List.of(), List.of(), Map.of());
+        fixtures.create(support, scopedFixture(support, fixture));
+        jdbc.update("""
+                UPDATE rg_test_fixture_bundles_v2
+                SET project_id = ?
+                WHERE tenant_id = ? AND organization_id = ? AND project_id = ?
+                  AND environment_id = ? AND region = ?
+                  AND fixture_bundle_id = ? AND revision = ?
+                """, billing.projectId(), support.tenantId(), support.organizationId(),
+                support.projectId(), support.environmentId(), support.region(),
+                fixture.fixtureBundleId(), fixture.revision());
+
+        assertThatThrownBy(() -> fixtures.find(billing, "moved-fixture", 1))
+                .isInstanceOf(FixtureBundleIntegrityException.class)
+                .hasMessage("Stored fixture integrity verification failed");
+    }
+
+    @Test
+    void suiteScopeBindingFingerprintRejectsARevisionMovedBetweenProjects() {
+        TestingArtifactScope support = scope("support");
+        TestingArtifactScope billing = scope("billing");
+        TestSuite suite = suite(
+                "moved-suite", 1, Map.of("project", "support"), Map.of());
+        suites.create(support, scopedSuite(support, suite));
+        jdbc.update("""
+                UPDATE rg_test_suites_v2
+                SET project_id = ?
+                WHERE tenant_id = ? AND organization_id = ? AND project_id = ?
+                  AND environment_id = ? AND region = ?
+                  AND suite_id = ? AND revision = ?
+                """, billing.projectId(), support.tenantId(), support.organizationId(),
+                support.projectId(), support.environmentId(), support.region(),
+                suite.suiteId(), suite.revision());
+
+        assertThatThrownBy(() -> suites.find(billing, "moved-suite", 1))
+                .isInstanceOf(TestSuiteIntegrityException.class)
+                .hasMessage("Stored test-suite integrity verification failed");
+    }
+
+    @Test
     void fixtureCreatePersistsAndReturnsACanonicalSnapshotDetachedFromCallerAliases() {
         MutableFixtureValue callerValue = new MutableFixtureValue("approved");
         FixtureBundle bundle = new FixtureBundle("", "fixture-snapshot", 1,
@@ -148,6 +237,31 @@ class TestRuntimePersistenceTest {
                 .hasMessage("Stored fixture integrity verification failed")
                 .hasMessageNotContaining("original")
                 .hasMessageNotContaining("changed");
+    }
+
+    @Test
+    void enterpriseFixtureReadClassifiesMalformedJsonAsPayloadFreeIntegrityFailure() {
+        TestingArtifactScope scope = scope("support");
+        FixtureBundle fixture = new FixtureBundle(
+                "", "malformed-fixture", 1, "sha256:" + "a".repeat(64),
+                "INTERNAL", null, null, List.of(), List.of(), Map.of());
+        fixtures.create(scope, scopedFixture(scope, fixture));
+        jdbc.update("""
+                UPDATE rg_test_fixture_bundles_v2
+                SET bundle_json = ?
+                WHERE tenant_id = ? AND organization_id = ? AND project_id = ?
+                  AND environment_id = ? AND region = ?
+                  AND fixture_bundle_id = ? AND revision = ?
+                """, "{\"payload\":\"must-never-escape-91\"", scope.tenantId(),
+                scope.organizationId(), scope.projectId(), scope.environmentId(),
+                scope.region(), fixture.fixtureBundleId(), fixture.revision());
+
+        assertThatThrownBy(() -> fixtures.find(
+                scope, fixture.fixtureBundleId(), fixture.revision()))
+                .isInstanceOf(FixtureBundleIntegrityException.class)
+                .hasMessage("Stored fixture integrity verification failed")
+                .hasMessageNotContaining("must-never-escape-91")
+                .hasMessageNotContaining("malformed-fixture");
     }
 
     private static final class MutableFixtureValue {
@@ -259,6 +373,29 @@ class TestRuntimePersistenceTest {
                 TestSuite.CaseType.GOLDEN, input, new TestSuite.FixtureBundleRef(
                 "fixture-a", 1, "sha256:" + "b".repeat(64)), List.of(), Map.of())),
                 TestSuite.CoveragePolicy.defaults(), TestSuite.PromotionPolicy.defaults(), metadata);
+    }
+
+    private StoredFixtureBundle scopedFixture(
+            TestingArtifactScope scope, FixtureBundle bundle) {
+        return new StoredFixtureBundle(
+                "", scope.tenantId(), scope.organizationId(), scope.projectId(),
+                scope.environmentId(), scope.region(), bundle.fixtureBundleId(),
+                bundle.revision(), ProtocolFingerprint.of(mapper, bundle), bundle,
+                Instant.now(), "runner");
+    }
+
+    private StoredTestSuite scopedSuite(
+            TestingArtifactScope scope, TestSuite suite) {
+        return new StoredTestSuite(
+                "", scope.tenantId(), scope.organizationId(), scope.projectId(),
+                scope.environmentId(), scope.region(), suite.suiteId(),
+                suite.revision(), ProtocolFingerprint.of(mapper, suite), suite,
+                Instant.now(), "runner");
+    }
+
+    private static TestingArtifactScope scope(String projectId) {
+        return new TestingArtifactScope(
+                "tenant-a", "org-a", projectId, "test", "sg");
     }
 
     private static final class MutableSuiteValue {

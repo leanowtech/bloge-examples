@@ -86,6 +86,30 @@ class StoredTestSuiteIntegrityTest {
                 "sha256:suite", suite, Instant.EPOCH, ""));
     }
 
+    @Test
+    void enterpriseSnapshotRequiresEveryScopeDimensionAndNeverPromotesLegacy() {
+        TestSuite suite = suite("suite-a", 3, Map.of(), Map.of());
+        String fingerprint = ProtocolFingerprint.of(mapper, suite);
+        TestingArtifactScope scope = new TestingArtifactScope(
+                "tenant-a", "org-a", "project-a", "test", "sg");
+        StoredTestSuite scoped = new StoredTestSuite(
+                "", scope.tenantId(), scope.organizationId(), scope.projectId(),
+                scope.environmentId(), scope.region(), suite.suiteId(), suite.revision(),
+                fingerprint, suite, Instant.EPOCH, "runner");
+
+        assertThat(StoredTestSuiteIntegrity.verifiedSnapshot(
+                mapper, scoped, scope, "suite-a", 3)).isEqualTo(scoped);
+        assertThatThrownBy(() -> StoredTestSuiteIntegrity.verifiedSnapshot(
+                mapper, scoped,
+                new TestingArtifactScope(
+                        "tenant-a", "org-a", "project-b", "test", "sg"),
+                "suite-a", 3))
+                .isInstanceOf(TestSuiteIntegrityException.class);
+        assertThatThrownBy(() -> StoredTestSuiteIntegrity.verifiedSnapshot(
+                mapper, stored(suite, fingerprint), scope, "suite-a", 3))
+                .isInstanceOf(TestSuiteIntegrityException.class);
+    }
+
     private void assertPayloadFreeFailure(StoredTestSuite stored) {
         assertThatThrownBy(() -> StoredTestSuiteIntegrity.verifiedSnapshot(mapper, stored))
                 .isInstanceOf(TestSuiteIntegrityException.class)

@@ -588,8 +588,24 @@ class TestOperatorExecutionApiServiceTest {
                                                             String id, long revision) {
             return Optional.ofNullable(values.get(key(tenant, environment, id, revision)));
         }
+        @Override public StoredFixtureBundle create(
+                TestingArtifactScope scope, StoredFixtureBundle value) {
+            String key = key(scope, value.fixtureBundleId(), value.revision());
+            StoredFixtureBundle existing = values.putIfAbsent(key, value);
+            if (existing != null && !existing.fingerprint().equals(value.fingerprint())) {
+                throw new FixtureBundleConflictException("immutable conflict");
+            }
+            return existing == null ? value : existing;
+        }
+        @Override public Optional<StoredFixtureBundle> find(
+                TestingArtifactScope scope, String id, long revision) {
+            return Optional.ofNullable(values.get(key(scope, id, revision)));
+        }
         private static String key(String tenant, String environment, String id, long revision) {
             return tenant + "|" + environment + "|" + id + "|" + revision;
+        }
+        private static String key(TestingArtifactScope scope, String id, long revision) {
+            return scope + "|" + id + "|" + revision;
         }
     }
 

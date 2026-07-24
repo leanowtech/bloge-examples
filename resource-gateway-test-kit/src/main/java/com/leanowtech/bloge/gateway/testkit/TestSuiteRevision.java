@@ -12,6 +12,11 @@ import com.fasterxml.jackson.databind.JsonNode;
  * @param targetId registered target identifier
  * @param targetFingerprint frozen target dependency fingerprint
  * @param caseCount number of governed cases in this revision
+ * @param tenantId verified tenant scope
+ * @param organizationId verified organization scope
+ * @param projectId verified project scope
+ * @param environmentId verified environment scope
+ * @param region verified region scope
  * @param createdAt authoritative registry creation timestamp
  * @param createdBy verified registering actor
  * @param rawResponse defensive complete registry response for explicit authorized inspection
@@ -24,6 +29,11 @@ public record TestSuiteRevision(
         String targetId,
         String targetFingerprint,
         int caseCount,
+        String tenantId,
+        String organizationId,
+        String projectId,
+        String environmentId,
+        String region,
         String createdAt,
         String createdBy,
         JsonNode rawResponse
@@ -35,6 +45,11 @@ public record TestSuiteRevision(
         targetKind = normalized(targetKind);
         targetId = normalized(targetId);
         targetFingerprint = normalized(targetFingerprint);
+        tenantId = normalized(tenantId);
+        organizationId = normalized(organizationId);
+        projectId = normalized(projectId);
+        environmentId = normalized(environmentId);
+        region = normalized(region);
         createdAt = normalized(createdAt);
         createdBy = normalized(createdBy);
         if (suiteId.isBlank() || revision < 1 || !fingerprint(fingerprint)
@@ -46,7 +61,37 @@ public record TestSuiteRevision(
     }
 
     /**
-     * Projects a {@code bloge.storedTestSuite.v1} response into stable identity fields.
+     * Source-compatible constructor for historical v1 client projections.
+     *
+     * @param suiteId stable suite identifier
+     * @param revision immutable suite revision
+     * @param fingerprint canonical complete-suite fingerprint
+     * @param targetKind graph or operator target kind
+     * @param targetId registered target identifier
+     * @param targetFingerprint frozen target dependency fingerprint
+     * @param caseCount number of governed cases in this revision
+     * @param createdAt authoritative registry creation timestamp
+     * @param createdBy verified registering actor
+     * @param rawResponse defensive complete registry response
+     */
+    public TestSuiteRevision(
+            String suiteId,
+            long revision,
+            String fingerprint,
+            String targetKind,
+            String targetId,
+            String targetFingerprint,
+            int caseCount,
+            String createdAt,
+            String createdBy,
+            JsonNode rawResponse) {
+        this(suiteId, revision, fingerprint, targetKind, targetId,
+                targetFingerprint, caseCount, "", "", "", "", "",
+                createdAt, createdBy, rawResponse);
+    }
+
+    /**
+     * Projects a {@code bloge.storedTestSuite.v2} response into stable identity fields.
      *
      * @param response decoded registry response
      * @return immutable suite revision projection
@@ -62,7 +107,10 @@ public record TestSuiteRevision(
         return new TestSuiteRevision(response.path("suiteId").asText(), response.path("revision").asLong(),
                 response.path("fingerprint").asText(), target.path("kind").asText(),
                 target.path("id").asText(), target.path("fingerprint").asText(),
-                suite.path("cases").size(), response.path("createdAt").asText(),
+                suite.path("cases").size(), response.path("tenantId").asText(),
+                response.path("organizationId").asText(), response.path("projectId").asText(),
+                response.path("environmentId").asText(), response.path("region").asText(),
+                response.path("createdAt").asText(),
                 response.path("createdBy").asText(), response);
     }
 

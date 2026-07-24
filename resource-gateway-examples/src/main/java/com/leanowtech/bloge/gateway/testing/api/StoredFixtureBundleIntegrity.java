@@ -27,7 +27,15 @@ public final class StoredFixtureBundleIntegrity {
 
     private static StoredFixtureBundle verify(ObjectMapper objectMapper, StoredFixtureBundle stored) {
         Objects.requireNonNull(objectMapper, "objectMapper");
-        if (stored == null || !StoredFixtureBundle.SCHEMA_VERSION.equals(stored.schemaVersion())
+        boolean legacy = stored != null
+                && StoredFixtureBundle.LEGACY_SCHEMA_VERSION.equals(stored.schemaVersion())
+                && blank(stored.organizationId()) && blank(stored.projectId())
+                && blank(stored.region());
+        boolean enterprise = stored != null
+                && StoredFixtureBundle.SCHEMA_VERSION.equals(stored.schemaVersion())
+                && !blank(stored.organizationId()) && !blank(stored.projectId())
+                && !blank(stored.region());
+        if (stored == null || !(legacy || enterprise)
                 || blank(stored.tenantId()) || blank(stored.environmentId())
                 || blank(stored.fixtureBundleId()) || stored.revision() <= 0
                 || stored.createdAt() == null || blank(stored.createdBy())
@@ -75,9 +83,10 @@ public final class StoredFixtureBundleIntegrity {
             byte[] canonicalValue = objectMapper.writeValueAsBytes(stored.bundle());
             FixtureBundle bundle = objectMapper.readValue(canonicalValue, FixtureBundle.class);
             return verify(objectMapper, new StoredFixtureBundle(stored.schemaVersion(),
-                    stored.tenantId(), stored.environmentId(), stored.fixtureBundleId(),
-                    stored.revision(), stored.fingerprint(), bundle, stored.createdAt(),
-                    stored.createdBy()));
+                    stored.tenantId(), stored.organizationId(), stored.projectId(),
+                    stored.environmentId(), stored.region(), stored.fixtureBundleId(),
+                    stored.revision(), stored.fingerprint(), bundle,
+                    stored.createdAt(), stored.createdBy()));
         } catch (FixtureBundleIntegrityException invalid) {
             throw invalid;
         } catch (IOException | RuntimeException invalid) {
@@ -114,6 +123,33 @@ public final class StoredFixtureBundleIntegrity {
     }
 
     /**
+     * Detaches and binds a repository result to the complete enterprise lookup key.
+     *
+     * @param objectMapper canonical protocol mapper
+     * @param stored repository-owned result
+     * @param scope authorized enterprise scope
+     * @param fixtureBundleId requested fixture id
+     * @param revision requested immutable revision
+     * @return independently owned v2 result bound to every scope dimension
+     */
+    public static StoredFixtureBundle verifiedSnapshot(
+            ObjectMapper objectMapper,
+            StoredFixtureBundle stored,
+            TestingArtifactScope scope,
+            String fixtureBundleId,
+            long revision) {
+        Objects.requireNonNull(scope, "scope");
+        StoredFixtureBundle snapshot = verifiedSnapshot(objectMapper, stored);
+        if (!snapshot.enterpriseScoped()
+                || !scope.equals(snapshot.scope())
+                || !Objects.equals(fixtureBundleId, snapshot.fixtureBundleId())
+                || revision != snapshot.revision()) {
+            throw new FixtureBundleIntegrityException();
+        }
+        return snapshot;
+    }
+
+    /**
      * Detaches and verifies a create result against the submitted immutable identity.
      *
      * <p>Creation provenance is intentionally not compared. An idempotent create returns the
@@ -132,11 +168,15 @@ public final class StoredFixtureBundleIntegrity {
         if (expected == null) {
             throw new FixtureBundleIntegrityException();
         }
-        StoredFixtureBundle snapshot = verifiedSnapshot(objectMapper, stored,
-                expected.tenantId(), expected.environmentId(), expected.fixtureBundleId(),
-                expected.revision());
-        if (!Objects.equals(expected.schemaVersion(), snapshot.schemaVersion())
-                || !Objects.equals(expected.fingerprint(), snapshot.fingerprint())) {
+        StoredFixtureBundle expectedSnapshot = verifiedSnapshot(objectMapper, expected);
+        StoredFixtureBundle snapshot = expectedSnapshot.enterpriseScoped()
+                ? verifiedSnapshot(objectMapper, stored, expectedSnapshot.scope(),
+                expectedSnapshot.fixtureBundleId(), expectedSnapshot.revision())
+                : verifiedSnapshot(objectMapper, stored,
+                expectedSnapshot.tenantId(), expectedSnapshot.environmentId(),
+                expectedSnapshot.fixtureBundleId(), expectedSnapshot.revision());
+        if (!Objects.equals(expectedSnapshot.schemaVersion(), snapshot.schemaVersion())
+                || !Objects.equals(expectedSnapshot.fingerprint(), snapshot.fingerprint())) {
             throw new FixtureBundleIntegrityException();
         }
         return snapshot;

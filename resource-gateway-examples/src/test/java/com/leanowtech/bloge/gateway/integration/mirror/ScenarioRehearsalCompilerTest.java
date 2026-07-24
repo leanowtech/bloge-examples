@@ -182,7 +182,8 @@ class ScenarioRehearsalCompilerTest {
                 Map.of());
         String fixtureFingerprint = ProtocolFingerprint.of(mapper, fixture);
         StoredFixtureBundle storedFixture = new StoredFixtureBundle(
-                "", SCOPE.tenantId(), SCOPE.environmentId(),
+                "", SCOPE.tenantId(), SCOPE.organizationId(), SCOPE.projectId(),
+                SCOPE.environmentId(), SCOPE.region(),
                 fixture.fixtureBundleId(), fixture.revision(),
                 fixtureFingerprint, fixture,
                 COMPILED_AT, "test-owner");
@@ -209,7 +210,8 @@ class ScenarioRehearsalCompilerTest {
         String suiteFingerprint =
                 new TestSuiteProtocolCodec(mapper).fingerprint(suite);
         StoredTestSuite storedSuite = new StoredTestSuite(
-                "", SCOPE.tenantId(), SCOPE.environmentId(),
+                "", SCOPE.tenantId(), SCOPE.organizationId(), SCOPE.projectId(),
+                SCOPE.environmentId(), SCOPE.region(),
                 suite.suiteId(), suite.revision(), suiteFingerprint,
                 suite, COMPILED_AT, "test-owner");
         MirrorPlan plan = mirrorPlan(

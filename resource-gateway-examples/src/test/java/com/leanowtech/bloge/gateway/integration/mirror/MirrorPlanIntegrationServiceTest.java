@@ -15,6 +15,7 @@ import com.leanowtech.bloge.gateway.integration.IntegrationProblemException;
 import com.leanowtech.bloge.gateway.integration.IntegrationRequestContext;
 import com.leanowtech.bloge.gateway.testing.api.FixtureBundleRepository;
 import com.leanowtech.bloge.gateway.testing.api.StoredFixtureBundle;
+import com.leanowtech.bloge.gateway.testing.api.TestingArtifactScope;
 import com.leanowtech.bloge.gateway.testing.domain.FixtureBundle;
 import com.leanowtech.bloge.gateway.testing.evidence.GraphArtifactFingerprint;
 import com.leanowtech.bloge.gateway.testing.evidence.ProtocolFingerprint;
@@ -63,7 +64,9 @@ class MirrorPlanIntegrationServiceTest {
         FixtureBundle fixture = new FixtureBundle("", "customer-fixture", 1,
                 graphFingerprint, "CONFIDENTIAL", NOW, 42L,
                 List.of(), List.of(), Map.of("owner", "support"));
-        storedFixture = new StoredFixtureBundle("", SCOPE.tenantId(), SCOPE.environmentId(),
+        storedFixture = new StoredFixtureBundle(
+                "", SCOPE.tenantId(), SCOPE.organizationId(), SCOPE.projectId(),
+                SCOPE.environmentId(), SCOPE.region(),
                 fixture.fixtureBundleId(), fixture.revision(),
                 ProtocolFingerprint.of(mapper, fixture), fixture, NOW, "fixture-owner");
         fixtureScopes = new InMemoryFixtureScopeRepository();
@@ -211,7 +214,10 @@ class MirrorPlanIntegrationServiceTest {
         storedFixture = new StoredFixtureBundle(
                 "",
                 SCOPE.tenantId(),
+                SCOPE.organizationId(),
+                SCOPE.projectId(),
                 SCOPE.environmentId(),
+                SCOPE.region(),
                 fixture.fixtureBundleId(),
                 fixture.revision(),
                 ProtocolFingerprint.of(mapper, fixture),
@@ -438,6 +444,20 @@ class MirrorPlanIntegrationServiceTest {
                 long revision) {
             if (fixture.tenantId().equals(tenantId)
                     && fixture.environmentId().equals(environmentId)
+                    && fixture.fixtureBundleId().equals(fixtureBundleId)
+                    && fixture.revision() == revision) {
+                return Optional.of(fixture);
+            }
+            return Optional.empty();
+        }
+
+        @Override
+        public Optional<StoredFixtureBundle> find(
+                TestingArtifactScope scope,
+                String fixtureBundleId,
+                long revision) {
+            if (fixture.enterpriseScoped()
+                    && fixture.scope().equals(scope)
                     && fixture.fixtureBundleId().equals(fixtureBundleId)
                     && fixture.revision() == revision) {
                 return Optional.of(fixture);

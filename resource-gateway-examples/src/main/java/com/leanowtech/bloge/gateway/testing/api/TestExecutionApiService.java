@@ -861,13 +861,16 @@ public final class TestExecutionApiService {
         }
         resolveReplayPayloads(bundle, identity);
         String fingerprint = ProtocolFingerprint.of(objectMapper, bundle);
-        StoredFixtureBundle stored = new StoredFixtureBundle("", identity.tenantId(), identity.environmentId(),
-                bundle.fixtureBundleId(), bundle.revision(), fingerprint, bundle, Instant.now(), identity.actorId());
+        TestingArtifactScope scope = TestingArtifactScope.from(identity);
+        StoredFixtureBundle stored = new StoredFixtureBundle(
+                "", scope.tenantId(), scope.organizationId(), scope.projectId(),
+                scope.environmentId(), scope.region(), bundle.fixtureBundleId(),
+                bundle.revision(), fingerprint, bundle, Instant.now(), identity.actorId());
         StoredFixtureBundle persisted;
         try {
             StoredFixtureBundle requested = StoredFixtureBundleIntegrity.verifiedSnapshot(objectMapper, stored);
             persisted = StoredFixtureBundleIntegrity.verifiedSnapshot(
-                    objectMapper, fixtureRepository.create(requested), requested);
+                    objectMapper, fixtureRepository.create(scope, requested), requested);
         } catch (FixtureBundleConflictException conflict) {
             throw conflict(identity, "RG.TEST.FIXTURE_REVISION_CONFLICT", conflict.getMessage(), Map.of());
         } catch (FixtureBundleIntegrityException corrupt) {
@@ -909,15 +912,15 @@ public final class TestExecutionApiService {
                                            IntegrationRequestContext identity) {
         requireTestIdentity(identity);
         String requestedId = normalized(fixtureBundleId);
+        TestingArtifactScope scope = TestingArtifactScope.from(identity);
         StoredFixtureBundle stored;
         try {
-            stored = fixtureRepository.find(identity.tenantId(), identity.environmentId(),
-                            requestedId, revision)
+            stored = fixtureRepository.find(scope, requestedId, revision)
                     .orElseThrow(() -> new IntegrationProblemException(IntegrationProblem.notFound(
                             "RG.TEST.FIXTURE_NOT_FOUND", "Fixture bundle was not found in the authorized scope.",
                             identity.correlationId(), Map.of())));
-            stored = StoredFixtureBundleIntegrity.verifiedSnapshot(objectMapper, stored,
-                    identity.tenantId(), identity.environmentId(), requestedId, revision);
+            stored = StoredFixtureBundleIntegrity.verifiedSnapshot(
+                    objectMapper, stored, scope, requestedId, revision);
         } catch (IntegrationProblemException notFound) {
             throw notFound;
         } catch (FixtureBundleIntegrityException corrupt) {
@@ -1112,6 +1115,10 @@ public final class TestExecutionApiService {
 
     private void requireTestIdentity(IntegrationRequestContext identity) {
         Objects.requireNonNull(identity, "identity").requireComplete();
+        if (identity.projectId().isBlank() || identity.region().isBlank()) {
+            throw badRequest(identity, "RG.TEST.ENTERPRISE_SCOPE_REQUIRED",
+                    "Project and region are required for governed test assets.", Map.of());
+        }
         String environment = identity.environmentId().toLowerCase(Locale.ROOT);
         if (!ENABLED_ENVIRONMENTS.contains(environment)) {
             securityEvent(identity, "TEST_PURPOSE_PRODUCTION_TOUCH", "REJECTED",

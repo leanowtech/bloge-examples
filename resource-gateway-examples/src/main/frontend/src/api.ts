@@ -621,7 +621,12 @@ async function registerOperatorTestFixture(
       }),
     }),
   );
-  if (storedFixture.schemaVersion !== 'bloge.storedFixtureBundle.v1'
+  if (!['bloge.storedFixtureBundle.v1', 'bloge.storedFixtureBundle.v2']
+        .includes(storedFixture.schemaVersion)
+      || (storedFixture.schemaVersion === 'bloge.storedFixtureBundle.v2'
+        && (!storedFixture.organizationId?.trim()
+          || !storedFixture.projectId?.trim()
+          || !storedFixture.region?.trim()))
       || storedFixture.fixtureBundleId !== fixtureBundleId
       || storedFixture.revision !== 1
       || !storedFixture.fingerprint?.trim()) {
@@ -699,7 +704,12 @@ function validateStoredOperatorSuite(
   suiteId: string,
   expectedSuite: StoredOperatorTestSuite['suite'],
 ): void {
-  if (stored.schemaVersion !== 'bloge.storedTestSuite.v1'
+  if (!['bloge.storedTestSuite.v1', 'bloge.storedTestSuite.v2']
+        .includes(stored.schemaVersion)
+      || (stored.schemaVersion === 'bloge.storedTestSuite.v2'
+        && (!stored.organizationId?.trim()
+          || !stored.projectId?.trim()
+          || !stored.region?.trim()))
       || stored.suiteId !== suiteId
       || stored.revision !== 1
       || !fullFingerprint(stored.fingerprint)

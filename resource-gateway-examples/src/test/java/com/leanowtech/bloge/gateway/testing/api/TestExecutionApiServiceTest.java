@@ -299,8 +299,12 @@ class TestExecutionApiServiceTest {
         FixtureBundle tampered = new FixtureBundle("", "integrity", 1, targetFingerprint,
                 "INTERNAL", null, null, List.of(), List.of(),
                 Map.of("payload", "must-never-escape-721"));
-        fixtures.values.put(InMemoryFixtures.key("tenant-a", "test", "integrity", 1),
-                new StoredFixtureBundle("", "tenant-a", "test", "integrity", 1,
+        fixtures.values.put(InMemoryFixtures.key(
+                        new TestingArtifactScope(
+                                "tenant-a", "org-a", "project-a", "test", "local"),
+                        "integrity", 1),
+                new StoredFixtureBundle("", "tenant-a", "org-a", "project-a",
+                        "test", "local", "integrity", 1,
                         stored.fingerprint(), tampered, stored.createdAt(), stored.createdBy()));
 
         assertThatThrownBy(() -> service.findFixture("integrity", 1, identity("test")))
@@ -325,7 +329,8 @@ class TestExecutionApiServiceTest {
                 FixtureRule.Selector.node("subject"), FixtureRule.Behavior.returning(repositoryValue),
                 FixtureRule.Consumption.once(), FixtureRule.SchemaCheck.strict()));
         String fingerprint = ProtocolFingerprint.of(mapper, bundle);
-        StoredFixtureBundle repositoryObject = new StoredFixtureBundle("", "tenant-a", "test",
+        StoredFixtureBundle repositoryObject = new StoredFixtureBundle(
+                "", "tenant-a", "org-a", "project-a", "test", "local",
                 "detached", 1, fingerprint, bundle, java.time.Instant.EPOCH, "repository");
         fixtures.values.put(InMemoryFixtures.key("tenant-a", "test", "detached", 1), repositoryObject);
 
@@ -342,7 +347,8 @@ class TestExecutionApiServiceTest {
     @Test
     void storedFixtureReadRejectsAValidCrossScopeRepositorySubstitution() {
         FixtureBundle bundle = bundle("cross-scope");
-        StoredFixtureBundle foreign = new StoredFixtureBundle("", "tenant-b", "test",
+        StoredFixtureBundle foreign = new StoredFixtureBundle(
+                "", "tenant-b", "org-a", "project-a", "test", "local",
                 "cross-scope", 1, ProtocolFingerprint.of(mapper, bundle), bundle,
                 java.time.Instant.EPOCH, "repository");
         fixtures.values.put(InMemoryFixtures.key("tenant-a", "test", "cross-scope", 1), foreign);
@@ -364,7 +370,8 @@ class TestExecutionApiServiceTest {
     @Test
     void fixtureRegistrationRejectsAValidButSubstitutedRepositoryReceipt() {
         FixtureBundle bundle = bundle("create-substitution");
-        fixtures.createOverride = new StoredFixtureBundle("", "tenant-b", "test",
+        fixtures.createOverride = new StoredFixtureBundle(
+                "", "tenant-b", "org-a", "project-a", "test", "local",
                 "create-substitution", 1, ProtocolFingerprint.of(mapper, bundle), bundle,
                 java.time.Instant.EPOCH, "repository");
 
@@ -386,7 +393,8 @@ class TestExecutionApiServiceTest {
     @Test
     void fixtureRegistrationPreservesProvenanceFromAnIdempotentExistingRevision() {
         FixtureBundle bundle = bundle("idempotent-provenance");
-        fixtures.createOverride = new StoredFixtureBundle("", "tenant-a", "test",
+        fixtures.createOverride = new StoredFixtureBundle(
+                "", "tenant-a", "org-a", "project-a", "test", "local",
                 "idempotent-provenance", 1, ProtocolFingerprint.of(mapper, bundle), bundle,
                 java.time.Instant.EPOCH, "original-author");
 
@@ -761,8 +769,31 @@ class TestExecutionApiServiceTest {
                                                             String id, long revision) {
             return Optional.ofNullable(values.get(key(tenant, environment, id, revision)));
         }
+        @Override public StoredFixtureBundle create(
+                TestingArtifactScope scope, StoredFixtureBundle value) {
+            String key = key(scope, value.fixtureBundleId(), value.revision());
+            StoredFixtureBundle existing = values.putIfAbsent(key, value);
+            if (existing != null && !existing.fingerprint().equals(value.fingerprint())) {
+                throw new FixtureBundleConflictException("immutable conflict");
+            }
+            StoredFixtureBundle result = existing == null ? value : existing;
+            return createOverride == null ? result : createOverride;
+        }
+        @Override public Optional<StoredFixtureBundle> find(
+                TestingArtifactScope scope, String id, long revision) {
+            StoredFixtureBundle value = values.get(key(scope, id, revision));
+            if (value == null) {
+                value = values.get(key(scope.tenantId(), scope.environmentId(), id, revision));
+            }
+            return Optional.ofNullable(value);
+        }
         private static String key(String tenant, String environment, String id, long revision) {
             return tenant + "|" + environment + "|" + id + "|" + revision;
+        }
+        private static String key(TestingArtifactScope scope, String id, long revision) {
+            return scope.tenantId() + "|" + scope.organizationId() + "|"
+                    + scope.projectId() + "|" + scope.environmentId() + "|"
+                    + scope.region() + "|" + id + "|" + revision;
         }
     }
 

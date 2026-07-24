@@ -107,9 +107,12 @@ export interface OperatorTestExecutionResponse {
 
 /** Immutable fixture revision registered in the isolated testing control plane. */
 export interface StoredOperatorTestFixture {
-  schemaVersion: string;
+  schemaVersion: 'bloge.storedFixtureBundle.v1' | 'bloge.storedFixtureBundle.v2';
   tenantId: string;
+  organizationId?: string;
+  projectId?: string;
   environmentId: string;
+  region?: string;
   fixtureBundleId: string;
   revision: number;
   fingerprint: string;
@@ -146,9 +149,12 @@ export interface GovernedFixtureReference {
 
 /** Immutable suite revision returned by the isolated testing control plane. */
 export interface StoredOperatorTestSuite {
-  schemaVersion: 'bloge.storedTestSuite.v1';
+  schemaVersion: 'bloge.storedTestSuite.v1' | 'bloge.storedTestSuite.v2';
   tenantId: string;
+  organizationId?: string;
+  projectId?: string;
   environmentId: string;
+  region?: string;
   suiteId: string;
   revision: number;
   fingerprint: string;

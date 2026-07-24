@@ -984,8 +984,10 @@ Content-Type: application/json
 }
 ```
 
-The `(tenant, environment, fixtureBundleId, revision)` key is immutable. Repeating byte-equivalent
-content is idempotent; different content returns `RG.TEST.FIXTURE_REVISION_CONFLICT`.
+The `(tenant, organization, project, environment, region, fixtureBundleId, revision)` v2 key is
+immutable. Repeating byte-equivalent content in that complete scope is idempotent; different content
+returns `RG.TEST.FIXTURE_REVISION_CONFLICT`. The response envelope is
+`bloge.storedFixtureBundle.v2` and carries all five scope dimensions.
 
 Registration canonicalizes the request before it reaches the repository, recursively detaching JSON
 containers and rejecting cyclic or excessively nested values. The repository response is accepted
@@ -2882,20 +2884,24 @@ Content-Type: application/json
 Registration is dependency-closed and fail closed:
 
 - the current target must exactly match the suite target fingerprint;
-- every case must resolve an existing fixture in the same verified tenant and environment;
+- every case must resolve an existing fixture in the same verified tenant, organization, project,
+  environment and region;
 - blank or stale fixture fingerprints are rejected; there is no implicit `latest` lookup;
 - suite classification must be at least as restrictive as every fixture classification;
 - graph case input must be a JSON object, case ids must be unique, and cases are bounded to 100;
 - required case types, minimum case count, and minimum assertion density must already be satisfiable;
 - `requireTargetCertificationEligible=true` rejects a target revision with certification gaps;
-- `(tenant, environment, suiteId, revision)` is immutable and idempotent for equivalent content.
+- `(tenant, organization, project, environment, region, suiteId, revision)` is immutable and
+  idempotent for equivalent content.
 
 The request is first converted into an independently owned canonical v1-v5 suite value, so retained
 mutable aliases cannot change validation or fingerprinting after admission. Repository create/read
 and service create/read each repeat exact-generation canonicalization and verify that
-`bloge.storedTestSuite.v1` binds the suite JSON and fingerprint to the complete
-tenant/environment/suiteId/revision key. Create responses must preserve immutable identity/content;
-an idempotent retry legitimately returns the first writer's `createdAt` and `createdBy`.
+`bloge.storedTestSuite.v2` binds the suite JSON and fingerprint to the complete
+tenant/organization/project/environment/region/suiteId/revision key. A separate binding fingerprint
+covers that full coordinate, id, revision and suite fingerprint so indexed ownership fields cannot
+be changed independently. Create responses must preserve immutable identity/content; an idempotent
+retry legitimately returns the first writer's `createdAt` and `createdBy`.
 
 Storage JSON that is malformed, uses an unsupported generation, differs from its indexed fingerprint,
 or belongs to another valid key returns `503 RG.TEST.SUITE_INTEGRITY_INVALID` and appends a
@@ -2904,6 +2910,11 @@ payload-free `TEST_SUITE_INTEGRITY_INVALID` security event. A database outage in
 key returns `409 RG.TEST.SUITE_REVISION_CONFLICT`. No error includes case input, suite metadata,
 fingerprint, or substituted scope. The canonical hash detects accidental/partial drift; it is not an
 external signature and cannot defeat an authority that can replace both JSON and fingerprint.
+
+Historical `bloge.storedTestSuite.v1` rows are migration input only. Runtime reads do not infer
+organization/project/region, choose a default project, or lazily promote them. An authorized owner
+must re-register the authoritative FixtureBundle and TestSuite definitions in the destination full
+scope, then recompile dependent ScenarioPacks.
 
 Coverage uses `invocationSiteId` and explicit source/destination site pairs rather than local
 `nodeId` or `edgeId`. The structural coordinate includes graph path and invocation kind, so the same
@@ -4169,13 +4180,15 @@ transport-level rather than an output-level self-report.
 
 Every stored read reconstructs an independently owned, deeply frozen canonical JSON snapshot,
 recomputes its bundle fingerprint, and binds it to the complete authorized
-tenant/environment/id/revision lookup key. Execution and suite services repeat that check after
-repository return; `RG.TEST.FIXTURE_INTEGRITY_INVALID` is therefore raised before planning or
-persistence when content drifts, a mutable repository alias is observed, or a valid revision is
-returned for a different key. The error and required security event never include fixture ids,
-fingerprints or payload values. Durable recovery intentionally projects corruption or cross-key
-substitution as a dependency-store outage, while a valid same-key new fingerprint remains an
-exact-closure conflict. See
+tenant/organization/project/environment/region/id/revision lookup key. The v2 table also verifies a
+binding fingerprint over the scope and content coordinate. Execution and suite services repeat that
+check after repository return; `RG.TEST.FIXTURE_INTEGRITY_INVALID` is therefore raised before
+planning or persistence when content drifts, a mutable repository alias is observed, indexed scope
+is moved, or a valid revision is returned for a different key. The error and required security event
+never include fixture ids, fingerprints or payload values. Durable recovery intentionally projects
+corruption or cross-key substitution as a dependency-store outage, while a valid same-key new
+fingerprint remains an exact-closure conflict. Legacy v1 rows remain isolated until explicitly
+re-registered under a complete ownership identity. See
 [Stage 2 fixture registry integrity verification](resource-gateway-execution-data-control-plane-stage2-fixture-registry-integrity-verification.md).
 
 ### 4.3.1 Execute a frozen operator binding

@@ -31,7 +31,7 @@ integration something the business flow can see, reason about, test, and change.
 | Governed capability closures | Sealed Resource/Operator/Graph projections, exact cycle-checked closure for all seven shipped graphs, nested foreach/loop boundary inventory, full enterprise scope, append-only lifecycle revisions, classification-aware reads, and honest mirror readiness flags |
 | Governed capability observations | Signed payload-free invocation facts, operator-owned admission policy, external vault/proof verification, durable admitted-or-quarantined decisions, full-scope idempotency, and independent offline verification |
 | Governed capability corpora | Immutable quarantine review, exact admitted-source candidates, metadata risk gates, independent owner-reviewed publication lineage, second source-authority verification, and honest resolver readiness |
-| Governed scenario compilation | Append-only ScenarioPack/Case/assertion/checkpoint registry, exact cross-registry dependency closure, deterministic payload-free compiled plans, strict transport, and honest compile-versus-execute capability flags |
+| Governed scenario compilation | Append-only ScenarioPack/Case/assertion/checkpoint registry, exact cross-registry dependency closure, full-scope v2 TestSuite/Fixture ownership, deterministic payload-free compiled plans, strict transport, and honest compile-versus-execute capability flags |
 | Stateful mirror sessions | Versioned entity/write/session/checkpoint/write-attempt protocols, atomic multi-entity mutations, exact replay, AES-GCM isolated persistence, lease/fence/CAS concurrency, durable crash-window reconciliation, TTL/destroy, payload-free signed state evidence, signed same-data-plane restart recovery admission, ANEKE workbook seeds, and independently verified clients |
 | Governed replay payloads | Payload values detached from immutable evidence, classification ABAC, selective retention, legal hold, bounded expiry, and signed deletion proof |
 | Workbook and gate evidence loop | Deterministic sanitized workbook seeds, exact suite/run evidence refs, versioned gate decision basis, stale detection, and transactional gate events |
@@ -174,6 +174,14 @@ never test input or fixture payload. Rehearsal execution and aggregate scenario
 evidence are deliberately advertised as unavailable until the runtime/evaluator
 slice is installed. See the
 [scenario rehearsal compiler guide](../docs/resource-gateway-scenario-rehearsal-compiler.md).
+
+Stored suites and fixtures now use `bloge.storedTestSuite.v2` and
+`bloge.storedFixtureBundle.v2`. Their identity and database keys include tenant,
+organization, project, environment, and region; a binding fingerprint also
+detects indexed-scope movement. Historical v1 rows stay in separate legacy
+tables and are never promoted during a runtime read. Migrate them by
+re-registering the authoritative FixtureBundle and TestSuite definitions under
+the destination full-scope identity, then recompiling dependent scenarios.
 
 The capability closure projection request carries only the portable draft, positive target revision, deterministic creation time,
 and a classification no higher than the caller's clearance. Tenant, organization, project, environment, region,
@@ -464,10 +472,10 @@ and tampered rows fail closed, and no fixture/replay/context/result payload colu
 production-certified runtime. The protected plan endpoint authenticates `MIRROR_REHEARSAL`, requires complete project and
 region scope, fingerprints the current registered graph, independently verifies the exact stored fixture envelope,
 freezes governed replay dependencies without changing caller purpose, derives all isolation policy on the server,
-and persists only the payload-free plan. Because the legacy testing fixture registry is tenant/environment scoped,
-fixture registration also creates an append-only payload-free organization/project/region authorization binding
-when mirror is assembled; plan compilation requires that exact binding before reading the fixture. Historical
-fixtures must be re-registered idempotently to gain a binding. Plan requests expose no real-call, credential, egress, region, lifecycle,
+and persists only the payload-free plan. Current fixture registration writes a v2 envelope and repository key with
+tenant/organization/project/environment/region. The existing append-only mirror scope binding remains
+defense-in-depth for plan authorization. Historical v1 fixtures stay isolated in the legacy table and must be
+explicitly re-registered under the destination full-scope identity. Plan requests expose no real-call, credential, egress, region, lifecycle,
 or clearance override. The execution endpoint accepts only requestId, exact plan identity, reviewed plan fingerprint,
 and business context. It server-binds BLOGE tenant/project scope, reconstructs Graph/Fixture/Replay artifacts, and
 requires the complete recompiled plan to equal the stored plan before execution. A payload-free durable request row
@@ -919,8 +927,9 @@ curl -sS -X PUT http://localhost:8080/api/testing/catalogs/gateway-graph-contrac
 Stored fixture identity is verified at every trust boundary: the database repository and each
 execution, suite-publication, and durable-recovery consumer reconstruct an independently owned,
 deeply frozen canonical snapshot, recompute its bundle fingerprint, and bind it to the complete
-tenant/environment/id/revision lookup key. Create responses must also match the submitted immutable
-identity and content, while idempotent retries preserve first-write provenance. A valid same-key
+tenant/organization/project/environment/region/id/revision lookup key. A binding fingerprint
+additionally detects indexed ownership movement. Create responses must also match the submitted
+immutable identity and content, while idempotent retries preserve first-write provenance. A valid same-key
 replacement is treated as dependency drift; mutable aliases, cross-scope
 substitution, malformed storage, and tampering fail closed without exposing fixture content.
 See the
@@ -930,8 +939,9 @@ for invariants, failure semantics, and remaining trust assumptions.
 Stored TestSuite revisions use the same fail-closed ownership model across all v1-v5 generations.
 Registration first canonicalizes caller-owned case inputs and metadata; repository create/read and
 service create/read independently detach the returned value, recompute its exact-generation
-fingerprint, bind its envelope to the full tenant/environment/suiteId/revision key, and verify create
-receipts. Malformed JSON, content drift, or a valid cross-scope substitution produces the payload-free
+fingerprint, bind its v2 envelope to the full
+tenant/organization/project/environment/region/suiteId/revision key, verify the scope binding
+fingerprint, and verify create receipts. Malformed JSON, content drift, or a valid cross-scope substitution produces the payload-free
 `RG.TEST.SUITE_INTEGRITY_INVALID`; idempotent retries retain first-write provenance, while a valid
 different suite at the same key remains an immutable revision conflict. These local hashes detect
 drift but do not replace external signing or WORM storage. See the

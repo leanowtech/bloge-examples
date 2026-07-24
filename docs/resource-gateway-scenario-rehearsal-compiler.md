@@ -100,13 +100,18 @@ Content-Type: application/json
 请求内的 Scenario scope 必须与该完整身份一致；不同组织、项目、环境或
 region 即使 id 相同，也不能互相读取 Scenario 资产。
 
-当前既有 TestSuite/Fixture registry 历史协议只以 tenant + environment
-寻址。compiler 会通过该 authority 读取并验证 exact fingerprint、target 和
-classification，但还不能从其 envelope 证明 organization/project/region
-归属。因此这条 compile-only API 仅存在于 test/staging；进入生产认证前必须
-升级 TestSuite/Fixture scope envelope 与仓储主键，或接入能签发完整 scope
-ownership attestation 的外部 authority。不能用 ScenarioCase 中调用方声明的
-scope 替代来源资产的归属证明。
+TestSuite/Fixture registry 当前写入 `bloge.storedTestSuite.v2` 与
+`bloge.storedFixtureBundle.v2`。两类 envelope、仓储主键和读取条件都包含
+tenant、organization、project、environment 与 region；额外的
+`binding_fingerprint` 将这五个维度与资产 id、revision、内容 fingerprint
+绑定，防止只改数据库 scope 列后把有效内容搬到另一项目。
+
+历史 `v1` envelope 和表只保留为显式迁移输入。场景 compiler、运行入口和
+完整 scope repository API 均不会把 `v1` 自动提升为 `v2`，也不会回退到
+tenant + environment 查询。迁移必须由目标 project 的授权主体从原始
+TestSuite/Fixture 定义重新注册，得到新的 v2 envelope，再重新编译引用它们的
+ScenarioPack。这样迁移是在重新声明所有权，而不是用 ScenarioCase 的自声明
+补造来源资产归属。
 
 ## 5. 资产准备
 
@@ -121,6 +126,10 @@ scope 替代来源资产的归属证明。
 6. 每一个 `CaseHandlingAssertion`；
 7. stateful case 需要 live、同 scope、签名有效且与 plan/state closure
    一致的 Session checkpoint。
+
+其中 TestSuite 与 FixtureBundle 必须是完整 scope 的 v2 存储 envelope。
+混用 v1/v2、跨 organization/project/region 引用，或数据库 scope
+`binding_fingerprint` 漂移都会失败关闭。
 
 业务输入和预期业务输出继续保存在 TestSuite/Fixture 的既有受治理边界中。
 Scenario 资产只能引用，不能复制这些内容。

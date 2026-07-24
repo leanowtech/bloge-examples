@@ -268,7 +268,7 @@ public final class ResourceGatewayTestClient {
     public FixtureBundleRevision registerFixture(String fixtureBundleId, JsonNode registrationRequest) {
         JsonNode response = exchange("PUT", "/api/testing/fixture-bundles/" + segment(fixtureBundleId), "",
                 "TEST_FIXTURE_WRITE", requiredObject(registrationRequest, "registrationRequest"));
-        requireVersion(response, TestingProtocol.STORED_FIXTURE_BUNDLE_V1);
+        requireVersion(response, TestingProtocol.STORED_FIXTURE_BUNDLE_V2);
         return FixtureBundleRevision.from(response);
     }
 
@@ -284,7 +284,7 @@ public final class ResourceGatewayTestClient {
         }
         JsonNode response = exchange("GET", "/api/testing/fixture-bundles/" + segment(fixtureBundleId),
                 "revision=" + revision, "TEST_FIXTURE_READ", null);
-        requireVersion(response, TestingProtocol.STORED_FIXTURE_BUNDLE_V1);
+        requireVersion(response, TestingProtocol.STORED_FIXTURE_BUNDLE_V2);
         return FixtureBundleRevision.from(response);
     }
 
@@ -305,7 +305,7 @@ public final class ResourceGatewayTestClient {
         long revision = request.at("/testSuite/revision").asLong();
         JsonNode response = exchange("PUT", "/api/testing/suites/" + segment(exactSuiteId), "",
                 "TEST_SUITE_WRITE", request);
-        requireVersion(response, TestingProtocol.STORED_TEST_SUITE_V1);
+        requireVersion(response, TestingProtocol.STORED_TEST_SUITE_V2);
         TestSuiteRevision stored = projectSuiteRevision(response);
         requireSuiteRevisionIdentity(stored, exactSuiteId, revision);
         return stored;
@@ -325,7 +325,7 @@ public final class ResourceGatewayTestClient {
         String exactSuiteId = requiredIdentifier(suiteId, "suiteId", 255);
         JsonNode response = exchange("GET", "/api/testing/suites/" + segment(exactSuiteId),
                 "revision=" + revision, "TEST_SUITE_READ", null);
-        requireVersion(response, TestingProtocol.STORED_TEST_SUITE_V1);
+        requireVersion(response, TestingProtocol.STORED_TEST_SUITE_V2);
         TestSuiteRevision stored = projectSuiteRevision(response);
         requireSuiteRevisionIdentity(stored, exactSuiteId, revision);
         return stored;

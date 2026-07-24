@@ -87,8 +87,11 @@ public final class TestingProtocol {
     /** Fixture registration request wire version. */
     public static final String FIXTURE_REGISTRATION_REQUEST_V1 =
             "bloge.fixtureBundleRegistrationRequest.v1";
-    /** Stored fixture response wire version. */
+    /** Historical tenant/environment-only stored fixture response version. */
+    @Deprecated(forRemoval = false)
     public static final String STORED_FIXTURE_BUNDLE_V1 = "bloge.storedFixtureBundle.v1";
+    /** Enterprise-scoped stored fixture response wire version. */
+    public static final String STORED_FIXTURE_BUNDLE_V2 = "bloge.storedFixtureBundle.v2";
     /** Graph target descriptor wire version. */
     public static final String GRAPH_TARGET_DESCRIPTOR_V1 = "bloge.testGraphTargetDescriptor.v1";
     /** Operator execution request wire version. */
@@ -163,8 +166,11 @@ public final class TestingProtocol {
     /** Test-suite registration request wire version. */
     public static final String TEST_SUITE_REGISTRATION_REQUEST_V1 =
             "bloge.testSuiteRegistrationRequest.v1";
-    /** Stored immutable test-suite response wire version. */
+    /** Historical tenant/environment-only stored suite response version. */
+    @Deprecated(forRemoval = false)
     public static final String STORED_TEST_SUITE_V1 = "bloge.storedTestSuite.v1";
+    /** Enterprise-scoped stored immutable test-suite response wire version. */
+    public static final String STORED_TEST_SUITE_V2 = "bloge.storedTestSuite.v2";
     /** Exact immutable suite execution request wire version. */
     public static final String TEST_SUITE_EXECUTION_REQUEST_V1 =
             "bloge.testSuiteExecutionRequest.v1";

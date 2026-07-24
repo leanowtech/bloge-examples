@@ -197,13 +197,15 @@ public final class TestSuiteRegistryService {
         validatePoliciesAndCases(suite, exactPropertyPlan, exactMutationPlan,
                 exactOracleSuite, identity);
         String fingerprint = suiteCodec.fingerprint(suite);
+        TestingArtifactScope scope = TestingArtifactScope.from(identity);
         StoredTestSuite stored = StoredTestSuiteIntegrity.verifiedSnapshot(objectMapper,
-                new StoredTestSuite("", identity.tenantId(), identity.environmentId(),
-                        suite.suiteId(), suite.revision(), fingerprint, suite, Instant.now(),
-                        identity.actorId()));
+                new StoredTestSuite("", scope.tenantId(), scope.organizationId(),
+                        scope.projectId(), scope.environmentId(), scope.region(),
+                        suite.suiteId(), suite.revision(), fingerprint, suite,
+                        Instant.now(), identity.actorId()));
         try {
             return StoredTestSuiteIntegrity.verifiedSnapshot(objectMapper,
-                    suiteRepository.create(stored), stored);
+                    suiteRepository.create(scope, stored), stored);
         } catch (TestSuiteIntegrityException corrupt) {
             securityEvent(identity, "TEST_SUITE_INTEGRITY_INVALID", "REJECTED",
                     "RG.TEST.SUITE_INTEGRITY_INVALID", Map.of());
@@ -233,16 +235,16 @@ public final class TestSuiteRegistryService {
                     "A non-empty suiteId and positive revision are required.", Map.of());
         }
         String normalizedSuiteId = normalized(suiteId);
+        TestingArtifactScope scope = TestingArtifactScope.from(identity);
         StoredTestSuite stored;
         try {
-            stored = suiteRepository.find(identity.tenantId(), identity.environmentId(),
-                            normalizedSuiteId, revision)
+            stored = suiteRepository.find(scope, normalizedSuiteId, revision)
                     .orElseThrow(() -> new IntegrationProblemException(IntegrationProblem.notFound(
                             "RG.TEST.SUITE_NOT_FOUND",
                             "Test suite was not found in the authorized scope.",
                             identity.correlationId(), Map.of())));
-            stored = StoredTestSuiteIntegrity.verifiedSnapshot(objectMapper, stored,
-                    identity.tenantId(), identity.environmentId(), normalizedSuiteId, revision);
+            stored = StoredTestSuiteIntegrity.verifiedSnapshot(
+                    objectMapper, stored, scope, normalizedSuiteId, revision);
         } catch (IntegrationProblemException notFound) {
             throw notFound;
         } catch (TestSuiteIntegrityException corrupt) {
@@ -674,17 +676,17 @@ public final class TestSuiteRegistryService {
 
     private StoredFixtureBundle requireFixture(TestSuite.FixtureBundleRef reference,
                                                 IntegrationRequestContext identity) {
+        TestingArtifactScope scope = TestingArtifactScope.from(identity);
         try {
             StoredFixtureBundle stored = fixtureRepository.find(
-                            identity.tenantId(), identity.environmentId(),
-                            reference.fixtureBundleId(), reference.revision())
+                            scope, reference.fixtureBundleId(), reference.revision())
                     .orElseThrow(() -> conflict(identity, "RG.TEST.SUITE_FIXTURE_NOT_FOUND",
                             "A referenced fixture revision is absent from the authorized scope.",
                             Map.of("fixtureBundleId", reference.fixtureBundleId(),
                                     "revision", reference.revision())));
-            return StoredFixtureBundleIntegrity.verifiedSnapshot(objectMapper, stored,
-                    identity.tenantId(), identity.environmentId(), reference.fixtureBundleId(),
-                    reference.revision());
+            return StoredFixtureBundleIntegrity.verifiedSnapshot(
+                    objectMapper, stored, scope,
+                    reference.fixtureBundleId(), reference.revision());
         } catch (IntegrationProblemException expected) {
             throw expected;
         } catch (FixtureBundleIntegrityException corrupt) {
@@ -829,6 +831,10 @@ public final class TestSuiteRegistryService {
 
     private void requireTestIdentity(IntegrationRequestContext identity) {
         Objects.requireNonNull(identity, "identity").requireComplete();
+        if (identity.projectId().isBlank() || identity.region().isBlank()) {
+            throw badRequest(identity, "RG.TEST.ENTERPRISE_SCOPE_REQUIRED",
+                    "Project and region are required for governed test assets.", Map.of());
+        }
         if (!ENABLED_ENVIRONMENTS.contains(identity.environmentId().toLowerCase(Locale.ROOT))) {
             securityEvent(identity, "TEST_PURPOSE_PRODUCTION_TOUCH", "REJECTED",
                     "RG.TEST.ENVIRONMENT_FORBIDDEN", Map.of("allowedEnvironments", ENABLED_ENVIRONMENTS));

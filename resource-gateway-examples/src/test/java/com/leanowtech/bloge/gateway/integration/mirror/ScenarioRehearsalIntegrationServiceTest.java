@@ -7,6 +7,7 @@ import com.leanowtech.bloge.gateway.testing.api.FixtureBundleRepository;
 import com.leanowtech.bloge.gateway.testing.api.StoredFixtureBundle;
 import com.leanowtech.bloge.gateway.testing.api.StoredTestSuite;
 import com.leanowtech.bloge.gateway.testing.api.TestSuiteRegistryService;
+import com.leanowtech.bloge.gateway.testing.api.TestingArtifactScope;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
 
@@ -56,6 +57,8 @@ class ScenarioRehearsalIntegrationServiceTest {
         ScenarioPack pack = pack(assertion, scenarioCase);
         StoredTestSuite suite = mock(StoredTestSuite.class);
         StoredFixtureBundle fixture = mock(StoredFixtureBundle.class);
+        when(fixture.fingerprint()).thenReturn(
+                scenarioCase.fixtureBundleRef().fingerprint());
         MirrorPlan mirrorPlan = mock(MirrorPlan.class);
         CompiledScenarioRehearsalPlan compiled =
                 compiled(pack, scenarioCase);
@@ -74,8 +77,9 @@ class ScenarioRehearsalIntegrationServiceTest {
                 scenarioCase.testSuiteRef().revision(),
                 identity)).thenReturn(suite);
         when(fixtures.find(
-                SCOPE.tenantId(),
-                SCOPE.environmentId(),
+                new TestingArtifactScope(
+                        SCOPE.tenantId(), SCOPE.organizationId(), SCOPE.projectId(),
+                        SCOPE.environmentId(), SCOPE.region()),
                 scenarioCase.fixtureBundleRef().id(),
                 scenarioCase.fixtureBundleRef().revision()))
                 .thenReturn(Optional.of(fixture));
@@ -151,11 +155,17 @@ class ScenarioRehearsalIntegrationServiceTest {
                 scenarioCase.testSuiteRef().revision(),
                 identity)).thenReturn(mock(StoredTestSuite.class));
         when(fixtures.find(
-                SCOPE.tenantId(),
-                SCOPE.environmentId(),
+                new TestingArtifactScope(
+                        SCOPE.tenantId(), SCOPE.organizationId(), SCOPE.projectId(),
+                        SCOPE.environmentId(), SCOPE.region()),
                 scenarioCase.fixtureBundleRef().id(),
                 scenarioCase.fixtureBundleRef().revision()))
-                .thenReturn(Optional.of(mock(StoredFixtureBundle.class)));
+                .thenAnswer(ignored -> {
+                    StoredFixtureBundle fixture = mock(StoredFixtureBundle.class);
+                    when(fixture.fingerprint()).thenReturn(
+                            scenarioCase.fixtureBundleRef().fingerprint());
+                    return Optional.of(fixture);
+                });
         when(plans.findForExecution(
                 scenarioCase.mirrorPlanRef().id(), identity))
                 .thenReturn(mock(MirrorPlan.class));

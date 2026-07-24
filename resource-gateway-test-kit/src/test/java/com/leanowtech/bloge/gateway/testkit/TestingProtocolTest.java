@@ -109,7 +109,7 @@ class TestingProtocolTest {
             assertConstant(definitions, "fixtureRule", TestingProtocol.FIXTURE_RULE_V1);
             assertConstant(definitions, "fixtureBundleRegistrationRequest",
                     TestingProtocol.FIXTURE_REGISTRATION_REQUEST_V1);
-            assertConstant(definitions, "storedFixtureBundle", TestingProtocol.STORED_FIXTURE_BUNDLE_V1);
+            assertConstant(definitions, "storedFixtureBundle", TestingProtocol.STORED_FIXTURE_BUNDLE_V2);
             assertConstant(definitions, "testGraphTargetDescriptor",
                     TestingProtocol.GRAPH_TARGET_DESCRIPTOR_V1);
             assertConstant(definitions, "testOperatorExecutionRequest",
@@ -155,7 +155,7 @@ class TestingProtocolTest {
                     TestingProtocol.TEST_MUTATION_SUITE_MATERIALIZATION_V1);
             assertConstant(definitions, "testSuiteRegistrationRequest",
                     TestingProtocol.TEST_SUITE_REGISTRATION_REQUEST_V1);
-            assertConstant(definitions, "storedTestSuite", TestingProtocol.STORED_TEST_SUITE_V1);
+            assertConstant(definitions, "storedTestSuite", TestingProtocol.STORED_TEST_SUITE_V2);
             assertConstant(definitions, "testSuiteExecutionRequest",
                     TestingProtocol.TEST_SUITE_EXECUTION_REQUEST_V1);
             assertConstant(definitions, "testMutationSuiteExecutionRequest",

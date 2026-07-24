@@ -11,6 +11,7 @@ import com.leanowtech.bloge.gateway.testing.api.FixtureBundleRepository;
 import com.leanowtech.bloge.gateway.testing.api.StoredFixtureBundle;
 import com.leanowtech.bloge.gateway.testing.api.StoredFixtureBundleIntegrity;
 import com.leanowtech.bloge.gateway.testing.api.TestReplayPayloadService;
+import com.leanowtech.bloge.gateway.testing.api.TestingArtifactScope;
 import com.leanowtech.bloge.gateway.testing.domain.FixtureBundle;
 import com.leanowtech.bloge.gateway.testing.domain.FixtureRule;
 import com.leanowtech.bloge.gateway.testing.evidence.GraphArtifactFingerprint;
@@ -396,14 +397,16 @@ public class MirrorPlanIntegrationService {
                     "Fixture authorization differs from the requested immutable reference.", Map.of());
         }
         try {
-            StoredFixtureBundle stored = fixtures.find(scope.tenantId(), scope.environmentId(),
-                            ref.id(), ref.revision())
+            TestingArtifactScope fixtureScope = new TestingArtifactScope(
+                    scope.tenantId(), scope.organizationId(), scope.projectId(),
+                    scope.environmentId(), scope.region());
+            StoredFixtureBundle stored = fixtures.find(fixtureScope, ref.id(), ref.revision())
                     .orElseThrow(() -> new IntegrationProblemException(IntegrationProblem.notFound(
                             "RG.MIRROR.FIXTURE_NOT_FOUND",
                             "Fixture bundle was not found in the authorized scope.",
                             identity.correlationId(), Map.of())));
-            stored = StoredFixtureBundleIntegrity.verifiedSnapshot(mapper, stored,
-                    scope.tenantId(), scope.environmentId(), ref.id(), ref.revision());
+            stored = StoredFixtureBundleIntegrity.verifiedSnapshot(
+                    mapper, stored, fixtureScope, ref.id(), ref.revision());
             if (!ref.fingerprint().equals(stored.fingerprint())) {
                 throw conflict(identity, "RG.MIRROR.FIXTURE_FINGERPRINT_CONFLICT",
                         "Stored fixture differs from the requested immutable reference.", Map.of());

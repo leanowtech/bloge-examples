@@ -427,13 +427,13 @@ public class DurableTestRecoveryAuthorizer {
             String targetFingerprint,
             IntegrationRequestContext identity) {
         StoredFixtureBundle stored;
+        TestingArtifactScope scope = TestingArtifactScope.from(identity);
         try {
-            stored = fixtureRepository.find(identity.tenantId(), identity.environmentId(),
-                    ref.fixtureBundleId(), ref.revision()).orElse(null);
+            stored = fixtureRepository.find(
+                    scope, ref.fixtureBundleId(), ref.revision()).orElse(null);
             if (stored != null) {
-                stored = StoredFixtureBundleIntegrity.verifiedSnapshot(objectMapper, stored,
-                        identity.tenantId(), identity.environmentId(), ref.fixtureBundleId(),
-                        ref.revision());
+                stored = StoredFixtureBundleIntegrity.verifiedSnapshot(
+                        objectMapper, stored, scope, ref.fixtureBundleId(), ref.revision());
             }
         } catch (RuntimeException infrastructure) {
             throw dependencyStoreUnavailable(identity, "FIXTURE");
@@ -447,7 +447,10 @@ public class DurableTestRecoveryAuthorizer {
         }
         if (stored == null || !StoredFixtureBundle.SCHEMA_VERSION.equals(stored.schemaVersion())
                 || !identity.tenantId().equals(stored.tenantId())
+                || !identity.organizationId().equals(stored.organizationId())
+                || !identity.projectId().equals(stored.projectId())
                 || !identity.environmentId().equals(stored.environmentId())
+                || !identity.region().equals(stored.region())
                 || !ref.fixtureBundleId().equals(stored.fixtureBundleId())
                 || ref.revision() != stored.revision()
                 || !ref.fingerprint().equals(stored.fingerprint())

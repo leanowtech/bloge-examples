@@ -65,8 +65,10 @@ class DurableTestRecoveryAuthorizerTest {
                 "secretRefs", Map.of("payment-key", "vault://test/payments/key@v3"))));
         String fixtureFingerprint = ProtocolFingerprint.of(mapper, fixture);
         FixtureBundleRepository fixtures = mock(FixtureBundleRepository.class);
-        when(fixtures.find("tenant-a", "test", "fixture-a", 1)).thenReturn(Optional.of(
-                new StoredFixtureBundle("", "tenant-a", "test", "fixture-a", 1,
+        when(fixtures.find(scope(), "fixture-a", 1)).thenReturn(Optional.of(
+                new StoredFixtureBundle(
+                        "", "tenant-a", "org-a", "project-a", "test", "sg",
+                        "fixture-a", 1,
                         fixtureFingerprint, fixture, Instant.now(), "author-a")));
         AtomicReference<String> version = new AtomicReference<>("version-3");
         AtomicInteger resolutions = new AtomicInteger();
@@ -274,6 +276,16 @@ class DurableTestRecoveryAuthorizerTest {
                 "us-east", "correlation-a", "CONFIDENTIAL");
         IntegrationRequestContext retried = identity(
                 "sg", "correlation-retry", "CONFIDENTIAL");
+        StoredFixtureBundle fixture = scenario.storedFixture();
+        StoredFixtureBundle virginiaFixture = new StoredFixtureBundle(
+                "", fixture.tenantId(), fixture.organizationId(), fixture.projectId(),
+                fixture.environmentId(), "us-east", fixture.fixtureBundleId(),
+                fixture.revision(), fixture.fingerprint(), fixture.bundle(),
+                fixture.createdAt(), fixture.createdBy());
+        when(scenario.fixtures().find(
+                new TestingArtifactScope(
+                        "tenant-a", "org-a", "project-a", "test", "us-east"),
+                "fixture-a", 1)).thenReturn(Optional.of(virginiaFixture));
 
         String singaporePrincipal = scenario.authorizer().authorize(
                 scenario.checkpoint(), singapore).authorization().principalFingerprint();
@@ -302,9 +314,11 @@ class DurableTestRecoveryAuthorizerTest {
                 stored.bundle().targetFingerprint(), stored.bundle().classification(),
                 stored.bundle().logicalClock(), stored.bundle().randomSeed(), stored.bundle().rules(),
                 stored.bundle().assertions(), Map.of("revisionMarker", "changed"));
-        when(fixtureDrift.fixtures().find("tenant-a", "test", "fixture-a", 1))
-                .thenReturn(Optional.of(new StoredFixtureBundle("", stored.tenantId(),
-                        stored.environmentId(), stored.fixtureBundleId(), stored.revision(),
+        when(fixtureDrift.fixtures().find(scope(), "fixture-a", 1))
+                .thenReturn(Optional.of(new StoredFixtureBundle(
+                        "", stored.tenantId(), stored.organizationId(), stored.projectId(),
+                        stored.environmentId(), stored.region(),
+                        stored.fixtureBundleId(), stored.revision(),
                         ProtocolFingerprint.of(fixtureDrift.mapper(), changedFixture), changedFixture,
                         stored.createdAt(), stored.createdBy())));
         assertUnavailable(() -> fixtureDrift.authorizer().authorize(
@@ -321,9 +335,11 @@ class DurableTestRecoveryAuthorizerTest {
     void corruptFixtureEnvelopeIsAnUnavailableStoreNotAComparableDependencyRevision() {
         Scenario scenario = Scenario.graph();
         StoredFixtureBundle stored = scenario.storedFixture();
-        when(scenario.fixtures().find("tenant-a", "test", "fixture-a", 1))
-                .thenReturn(Optional.of(new StoredFixtureBundle("", stored.tenantId(),
-                        stored.environmentId(), stored.fixtureBundleId(), stored.revision(),
+        when(scenario.fixtures().find(scope(), "fixture-a", 1))
+                .thenReturn(Optional.of(new StoredFixtureBundle(
+                        "", stored.tenantId(), stored.organizationId(), stored.projectId(),
+                        stored.environmentId(), stored.region(),
+                        stored.fixtureBundleId(), stored.revision(),
                         "sha256:" + "f".repeat(64), stored.bundle(), stored.createdAt(),
                         stored.createdBy())));
 
@@ -364,6 +380,11 @@ class DurableTestRecoveryAuthorizerTest {
 
     private static IntegrationRequestContext identity(String clearance) {
         return identity("sg", "correlation-a", clearance);
+    }
+
+    private static TestingArtifactScope scope() {
+        return new TestingArtifactScope(
+                "tenant-a", "org-a", "project-a", "test", "sg");
     }
 
     private static DurableTestExecutionCreateRequest creationRequest(Scenario scenario) {
@@ -479,10 +500,11 @@ class DurableTestRecoveryAuthorizerTest {
                     List.of(rule), List.of(), Map.of());
             String fixtureFingerprint = ProtocolFingerprint.of(mapper, fixture);
             FixtureBundleRepository fixtures = mock(FixtureBundleRepository.class);
-            StoredFixtureBundle stored = new StoredFixtureBundle("", "tenant-a", "test",
+            StoredFixtureBundle stored = new StoredFixtureBundle(
+                    "", "tenant-a", "org-a", "project-a", "test", "sg",
                     "fixture-a", 1, fixtureFingerprint, fixture,
                     Instant.parse("2026-07-16T00:00:00Z"), "author-a");
-            when(fixtures.find("tenant-a", "test", "fixture-a", 1))
+            when(fixtures.find(scope(), "fixture-a", 1))
                     .thenReturn(Optional.of(stored));
             TestReplayPayloadService replay = mock(TestReplayPayloadService.class);
             IntegrationRequestAuthenticator authenticator =
