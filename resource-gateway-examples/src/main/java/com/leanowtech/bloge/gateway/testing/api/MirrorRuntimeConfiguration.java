@@ -13,6 +13,7 @@ import com.leanowtech.bloge.gateway.integration.mirror.DatabaseMirrorRunRequestR
 import com.leanowtech.bloge.gateway.integration.mirror.DatabaseCompiledScenarioRehearsalPlanRepository;
 import com.leanowtech.bloge.gateway.integration.mirror.DatabaseScenarioArtifactRepository;
 import com.leanowtech.bloge.gateway.integration.mirror.DatabaseScenarioRehearsalEvidenceRepository;
+import com.leanowtech.bloge.gateway.integration.mirror.DatabaseScenarioRehearsalRunRepository;
 import com.leanowtech.bloge.gateway.integration.mirror.CapabilityObservationAdmissionIntegrity;
 import com.leanowtech.bloge.gateway.integration.mirror.CapabilityObservationAdmissionPolicyProvider;
 import com.leanowtech.bloge.gateway.integration.mirror.CapabilityObservationAdmissionService;
@@ -69,6 +70,7 @@ import com.leanowtech.bloge.gateway.integration.mirror.ScenarioRehearsalCompiler
 import com.leanowtech.bloge.gateway.integration.mirror.ScenarioHandlingAssertionEvaluator;
 import com.leanowtech.bloge.gateway.integration.mirror.ScenarioRehearsalEvidenceIntegrityService;
 import com.leanowtech.bloge.gateway.integration.mirror.ScenarioRehearsalEvidenceRepository;
+import com.leanowtech.bloge.gateway.integration.mirror.ScenarioRehearsalRunRepository;
 import com.leanowtech.bloge.gateway.integration.mirror.MirrorServingGenerationAuthority;
 import com.leanowtech.bloge.gateway.integration.mirror.MirrorServingGenerationIntegrity;
 import com.leanowtech.bloge.gateway.integration.mirror.MirrorServingGenerationService;
@@ -265,6 +267,22 @@ public class MirrorRuntimeConfiguration {
             ScenarioRehearsalEvidenceIntegrityService integrity) {
         return new DatabaseScenarioRehearsalEvidenceRepository(
                 jdbc, objectMapper, integrity);
+    }
+
+    /**
+     * Creates the database-clock aggregate lease and case-progress coordinator.
+     *
+     * @param jdbc transaction-aware application JDBC boundary
+     * @param objectMapper canonical protocol mapper
+     * @return full-scope durable Scenario rehearsal request repository
+     */
+    @Bean
+    @ConditionalOnMissingBean
+    public ScenarioRehearsalRunRepository
+    scenarioRehearsalRunRepository(
+            JdbcTemplate jdbc, ObjectMapper objectMapper) {
+        return new DatabaseScenarioRehearsalRunRepository(
+                jdbc, objectMapper);
     }
 
     /** Creates the append-only payload-free compiled rehearsal-plan registry. */

@@ -8,6 +8,7 @@ import com.leanowtech.bloge.gateway.integration.IntegrationRequestContext;
 import com.leanowtech.bloge.gateway.testing.api.StoredTestSuite;
 import com.leanowtech.bloge.gateway.testing.api.TestSuiteRegistryService;
 import com.leanowtech.bloge.gateway.testing.domain.TestSuite;
+import com.leanowtech.bloge.gateway.testing.evidence.ProtocolFingerprint;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
@@ -15,6 +16,7 @@ import org.springframework.context.annotation.Profile;
 import org.springframework.stereotype.Service;
 
 import java.time.Clock;
+import java.time.Duration;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.Collections;
@@ -23,6 +25,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
+import java.util.UUID;
 
 /**
  * Synchronous generation-one runtime for one exact compiled Scenario rehearsal plan.
@@ -34,10 +37,10 @@ import java.util.Optional;
  * original fence to that coordinator lets a completed stateful retry resolve before the current
  * Session head is inspected.</p>
  *
- * <p>Generation one signs and append-only stores complete aggregates under a stable run identity.
- * Stable child request ids make an interrupted retry reuse already committed Mirror runs, but
- * concurrent aggregate leases, durable case progress, batch scheduling, and checkpoint cloning
- * remain later control-plane work.</p>
+ * <p>The aggregate has its own database-clock lease and epoch, append-only case-progress prefix,
+ * and atomic signed-evidence commit. Stable child request ids and durable aggregate checkpoints
+ * let a takeover resume at the first incomplete case while fencing stale workers. Batch
+ * scheduling and checkpoint cloning remain later control-plane work.</p>
  */
 @Service
 @Profile("!production & (test | staging)")
@@ -47,6 +50,10 @@ import java.util.Optional;
         havingValue = "true")
 public class ScenarioRehearsalRuntimeService {
     private static final String PURPOSE = "MIRROR_REHEARSAL";
+    private static final Duration COMMIT_RESERVE =
+            Duration.ofSeconds(30);
+    private static final Duration REQUEST_RETENTION =
+            Duration.ofDays(30);
 
     private final ScenarioRehearsalIntegrationService rehearsals;
     private final ScenarioArtifactRegistryService scenarioArtifacts;
@@ -57,6 +64,8 @@ public class ScenarioRehearsalRuntimeService {
     private final ScenarioRehearsalEvidenceIntegrityService
             rehearsalEvidenceIntegrity;
     private final ScenarioRehearsalEvidenceRepository rehearsalEvidence;
+    private final ScenarioRehearsalRunRepository rehearsalRequests;
+    private final ScenarioRehearsalCommitService rehearsalCommits;
     private final ObjectMapper mapper;
     private final MirrorSessionIntegrationService sessions;
     private final Clock clock;
@@ -73,12 +82,15 @@ public class ScenarioRehearsalRuntimeService {
             ScenarioRehearsalEvidenceIntegrityService
                     rehearsalEvidenceIntegrity,
             ScenarioRehearsalEvidenceRepository rehearsalEvidence,
+            ScenarioRehearsalRunRepository rehearsalRequests,
+            ScenarioRehearsalCommitService rehearsalCommits,
             ObjectMapper mapper,
             ObjectProvider<MirrorSessionIntegrationService> sessionProvider) {
         this(
                 rehearsals, scenarioArtifacts, testSuites, mirrorRuns,
                 evidenceIntegrity, assertionEvaluator,
-                rehearsalEvidenceIntegrity, rehearsalEvidence, mapper,
+                rehearsalEvidenceIntegrity, rehearsalEvidence,
+                rehearsalRequests, rehearsalCommits, mapper,
                 Objects.requireNonNull(
                         sessionProvider, "sessionProvider").getIfAvailable(),
                 Clock.systemUTC());
@@ -95,6 +107,8 @@ public class ScenarioRehearsalRuntimeService {
             ScenarioRehearsalEvidenceIntegrityService
                     rehearsalEvidenceIntegrity,
             ScenarioRehearsalEvidenceRepository rehearsalEvidence,
+            ScenarioRehearsalRunRepository rehearsalRequests,
+            ScenarioRehearsalCommitService rehearsalCommits,
             ObjectMapper mapper,
             MirrorSessionIntegrationService sessions,
             Clock clock) {
@@ -112,6 +126,10 @@ public class ScenarioRehearsalRuntimeService {
                 "rehearsalEvidenceIntegrity");
         this.rehearsalEvidence = Objects.requireNonNull(
                 rehearsalEvidence, "rehearsalEvidence");
+        this.rehearsalRequests = Objects.requireNonNull(
+                rehearsalRequests, "rehearsalRequests");
+        this.rehearsalCommits = Objects.requireNonNull(
+                rehearsalCommits, "rehearsalCommits");
         this.mapper = Objects.requireNonNull(mapper, "mapper");
         this.sessions = sessions;
         this.clock = Objects.requireNonNull(clock, "clock");
@@ -142,68 +160,102 @@ public class ScenarioRehearsalRuntimeService {
         if (completed != null) {
             return completed;
         }
-        Instant startedAt = clock.instant();
-        List<ResolvedCase> resolved = resolveCases(
-                plan, scope, identity, startedAt);
-        List<ScenarioCaseRehearsalResult> results =
-                new ArrayList<>(resolved.size());
-        Instant deadline;
-        try {
-            deadline = startedAt.plus(plan.policy().totalTimeout());
-        } catch (RuntimeException invalid) {
-            throw conflict(
-                    identity,
-                    "RG.MIRROR.REHEARSAL.TIME_BOUNDS_INVALID",
-                    "Compiled rehearsal time bounds are invalid.");
+        ScenarioRehearsalRunRepository.Registration registration =
+                registration(request, plan, scope, runId, identity);
+        ScenarioRehearsalRunRepository.Claim claim =
+                claim(registration, plan, identity);
+        if (claim.outcome()
+                == ScenarioRehearsalRunRepository.Outcome.IN_PROGRESS) {
+            throw new IntegrationProblemException(
+                    IntegrationProblem.retryableConflict(
+                            "RG.MIRROR.REHEARSAL.REQUEST_IN_PROGRESS",
+                            "An identical Scenario rehearsal is already in progress.",
+                            identity.correlationId(),
+                            Map.of(
+                                    "retryAfterSeconds",
+                                    claim.retryAfterSeconds())));
         }
-        for (int index = 0; index < resolved.size(); index++) {
-            ResolvedCase current = resolved.get(index);
-            Instant now = clock.instant();
-            if (now.isAfter(
-                    deadline.minus(plan.policy().caseTimeout()))) {
-                results.add(unscheduled(
-                        index, request.requestId(), current, now,
-                        "RG.MIRROR.REHEARSAL.TOTAL_TIMEOUT_EXCEEDED"));
-                continue;
+        if (claim.outcome()
+                == ScenarioRehearsalRunRepository.Outcome.COMPLETED) {
+            ScenarioRehearsalEvidenceBundle terminal =
+                    completedRetry(
+                            runId, request, plan, scope, identity);
+            if (terminal == null
+                    || !claim.state().evidenceBundleFingerprint().equals(
+                    terminal.bundleFingerprint())) {
+                throw unavailable(
+                        identity,
+                        "RG.MIRROR.REHEARSAL.EVIDENCE_INCONSISTENT",
+                        "Completed Scenario coordination state differs from signed evidence.");
             }
-            results.add(executeCase(
-                    index, request.requestId(), current, scope, identity));
+            return terminal;
         }
-        Instant aggregateStartedAt = results.stream()
-                .map(ScenarioCaseRehearsalResult::startedAt)
-                .min(Instant::compareTo)
-                .orElse(startedAt);
-        Instant completedAt = results.stream()
-                .map(ScenarioCaseRehearsalResult::completedAt)
-                .max(Instant::compareTo)
-                .orElse(aggregateStartedAt);
-        ScenarioCaseRehearsalResult.Outcome outcome =
-                ScenarioRehearsalResult.deriveOutcome(results);
-        ScenarioRehearsalResult material =
-                new ScenarioRehearsalResult(
-                        "", "", request.requestId(), planRef, scope,
-                        plan.targetCapabilityRef(), outcome, results,
-                        ScenarioRehearsalResult.Summary.from(results),
-                        aggregateStartedAt, completedAt);
-        ScenarioRehearsalResult result =
-                ScenarioRehearsalResultIntegrity.seal(mapper, material);
-        ScenarioRehearsalEvidenceIntegrityService.SealResult sealed =
-                rehearsalEvidenceIntegrity.seal(runId, result);
-        if (!sealed.verified()) {
-            throw unavailable(
-                    identity,
-                    "RG.MIRROR.REHEARSAL.EVIDENCE_SIGNING_UNAVAILABLE",
-                    "Scenario rehearsal evidence could not be signed and verified.");
-        }
+
+        ScenarioRehearsalRunRepository.Lease lease = claim.lease();
         try {
-            return rehearsalEvidence.create(sealed.bundle());
+            Instant startedAt = claim.state().startedAt();
+            List<ResolvedCase> resolved = resolveCases(
+                    plan, scope, identity, startedAt);
+            List<ScenarioCaseRehearsalResult> results =
+                    new ArrayList<>(
+                            rehearsalRequests.progress(lease));
+            requireProgress(
+                    results, request, plan, identity);
+            Instant deadline = deadline(
+                    startedAt, plan, identity);
+            for (int index = results.size();
+                 index < resolved.size();
+                 index++) {
+                ResolvedCase current = resolved.get(index);
+                Instant now = clock.instant();
+                ScenarioCaseRehearsalResult caseResult =
+                        now.isAfter(
+                                deadline.minus(
+                                        plan.policy().caseTimeout()))
+                                ? unscheduled(
+                                index,
+                                request.requestId(),
+                                current,
+                                now,
+                                "RG.MIRROR.REHEARSAL.TOTAL_TIMEOUT_EXCEEDED")
+                                : executeCase(
+                                index,
+                                request.requestId(),
+                                current,
+                                scope,
+                                identity);
+                rehearsalRequests.checkpoint(
+                        lease, caseResult);
+                results.add(caseResult);
+            }
+            ScenarioRehearsalEvidenceBundle sealed =
+                    sealAggregate(
+                            request, plan, scope, runId,
+                            startedAt, results, identity);
+            return rehearsalCommits.commit(lease, sealed);
+        } catch (ScenarioRehearsalLeaseLostException stale) {
+            throw new IntegrationProblemException(
+                    IntegrationProblem.retryableConflict(
+                            "RG.MIRROR.REHEARSAL.LEASE_LOST",
+                            "Scenario rehearsal authority expired before durable progress or evidence commit.",
+                            identity.correlationId(),
+                            Map.of("retryAfterSeconds", 1)));
+        } catch (IntegrationProblemException expected) {
+            release(lease, expected.problem().code());
+            throw expected;
         } catch (ScenarioRehearsalEvidenceStoreException classified) {
+            release(
+                    lease,
+                    "RG.MIRROR.REHEARSAL.EVIDENCE_STORE_REJECTED");
             throw evidenceStoreFailure(classified, identity);
         } catch (RuntimeException unavailable) {
+            release(
+                    lease,
+                    "RG.MIRROR.REHEARSAL.RUNTIME_UNAVAILABLE");
             throw unavailable(
                     identity,
-                    "RG.MIRROR.REHEARSAL.EVIDENCE_STORE_UNAVAILABLE",
-                    "Scenario rehearsal evidence could not be stored safely.");
+                    "RG.MIRROR.REHEARSAL.RUNTIME_UNAVAILABLE",
+                    "Scenario rehearsal coordination, execution, or evidence commit is unavailable.");
         }
     }
 
@@ -312,6 +364,192 @@ public class ScenarioRehearsalRuntimeService {
                     "The request id already identifies different immutable rehearsal inputs.");
         }
         return bundle;
+    }
+
+    private ScenarioRehearsalRunRepository.Registration registration(
+            ScenarioRehearsalExecutionRequest request,
+            CompiledScenarioRehearsalPlan plan,
+            CapabilitySnapshot.Scope scope,
+            String runId,
+            IntegrationRequestContext identity) {
+        try {
+            LinkedHashMap<String, Object> semantics =
+                    new LinkedHashMap<>();
+            semantics.put("schemaVersion", request.schemaVersion());
+            semantics.put("requestId", request.requestId());
+            semantics.put(
+                    "compiledPlanRef",
+                    request.compiledPlanRef());
+            semantics.put("scope", scope);
+            semantics.put(
+                    "authorizedPurpose", identity.purpose());
+            String requestFingerprint =
+                    ProtocolFingerprint.of(mapper, semantics);
+            Instant now = clock.instant();
+            Instant runBoundary = now.plus(
+                    plan.policy().totalTimeout())
+                    .plus(COMMIT_RESERVE);
+            Instant retainUntil = later(
+                    now.plus(REQUEST_RETENTION),
+                    runBoundary);
+            return new ScenarioRehearsalRunRepository.Registration(
+                    scope,
+                    request.requestId(),
+                    requestFingerprint,
+                    request.compiledPlanRef(),
+                    runId,
+                    plan.cases().size(),
+                    retainUntil);
+        } catch (RuntimeException invalid) {
+            throw conflict(
+                    identity,
+                    "RG.MIRROR.REHEARSAL.TIME_BOUNDS_INVALID",
+                    "Compiled rehearsal time or retention bounds are invalid.");
+        }
+    }
+
+    private ScenarioRehearsalRunRepository.Claim claim(
+            ScenarioRehearsalRunRepository.Registration registration,
+            CompiledScenarioRehearsalPlan plan,
+            IntegrationRequestContext identity) {
+        try {
+            Duration leaseDuration =
+                    plan.policy().totalTimeout()
+                            .plus(COMMIT_RESERVE);
+            return rehearsalRequests.claim(
+                    registration,
+                    "scenario-rehearsal-attempt-"
+                            + UUID.randomUUID(),
+                    leaseDuration);
+        } catch (ScenarioRehearsalRunRequestConflictException conflict) {
+            throw conflict(
+                    identity,
+                    "RG.MIRROR.REHEARSAL.IDEMPOTENCY_CONFLICT",
+                    "The request id already identifies different immutable rehearsal inputs.");
+        } catch (IntegrationProblemException expected) {
+            throw expected;
+        } catch (RuntimeException unavailable) {
+            throw unavailable(
+                    identity,
+                    "RG.MIRROR.REHEARSAL.COORDINATION_UNAVAILABLE",
+                    "The durable Scenario rehearsal coordinator is unavailable.");
+        }
+    }
+
+    private Instant deadline(
+            Instant startedAt,
+            CompiledScenarioRehearsalPlan plan,
+            IntegrationRequestContext identity) {
+        try {
+            return startedAt.plus(
+                    plan.policy().totalTimeout());
+        } catch (RuntimeException invalid) {
+            throw conflict(
+                    identity,
+                    "RG.MIRROR.REHEARSAL.TIME_BOUNDS_INVALID",
+                    "Compiled rehearsal time bounds are invalid.");
+        }
+    }
+
+    private void requireProgress(
+            List<ScenarioCaseRehearsalResult> results,
+            ScenarioRehearsalExecutionRequest request,
+            CompiledScenarioRehearsalPlan plan,
+            IntegrationRequestContext identity) {
+        if (results.size() > plan.cases().size()) {
+            throw unavailable(
+                    identity,
+                    "RG.MIRROR.REHEARSAL.PROGRESS_INCONSISTENT",
+                    "Durable Scenario progress exceeds the compiled case closure.");
+        }
+        for (int index = 0; index < results.size(); index++) {
+            ScenarioCaseRehearsalResult result =
+                    results.get(index);
+            CompiledScenarioRehearsalPlan.CaseBinding binding =
+                    plan.cases().get(index);
+            try {
+                ScenarioRehearsalResultIntegrity.verifyCase(
+                        mapper, result);
+            } catch (IllegalArgumentException invalid) {
+                throw unavailable(
+                        identity,
+                        "RG.MIRROR.REHEARSAL.PROGRESS_INCONSISTENT",
+                        "Durable Scenario progress failed content-address verification.");
+            }
+            if (result.caseIndex() != index
+                    || !childRequestId(
+                    request.requestId(), index).equals(
+                    result.childRequestId())
+                    || !binding.scenarioCaseRef().equals(
+                    result.scenarioCaseRef())
+                    || binding.caseType() != result.caseType()
+                    || !binding.testSuiteRef().equals(
+                    result.testSuiteRef())
+                    || !binding.testCaseId().equals(
+                    result.testCaseId())
+                    || !binding.mirrorPlanRef().equals(
+                    result.mirrorPlanRef())
+                    || !binding.fixtureBundleRef().equals(
+                    result.fixtureBundleRef())
+                    || !Objects.equals(
+                    binding.sessionCheckpointRef(),
+                    result.sessionCheckpointRef())) {
+                throw unavailable(
+                        identity,
+                        "RG.MIRROR.REHEARSAL.PROGRESS_INCONSISTENT",
+                        "Durable Scenario progress differs from the compiled plan.");
+            }
+        }
+    }
+
+    private ScenarioRehearsalEvidenceBundle sealAggregate(
+            ScenarioRehearsalExecutionRequest request,
+            CompiledScenarioRehearsalPlan plan,
+            CapabilitySnapshot.Scope scope,
+            String runId,
+            Instant admittedAt,
+            List<ScenarioCaseRehearsalResult> results,
+            IntegrationRequestContext identity) {
+        Instant aggregateStartedAt = results.stream()
+                .map(ScenarioCaseRehearsalResult::startedAt)
+                .min(Instant::compareTo)
+                .orElse(admittedAt);
+        Instant completedAt = results.stream()
+                .map(ScenarioCaseRehearsalResult::completedAt)
+                .max(Instant::compareTo)
+                .orElse(aggregateStartedAt);
+        ScenarioCaseRehearsalResult.Outcome outcome =
+                ScenarioRehearsalResult.deriveOutcome(results);
+        ScenarioRehearsalResult material =
+                new ScenarioRehearsalResult(
+                        "", "", request.requestId(),
+                        request.compiledPlanRef(), scope,
+                        plan.targetCapabilityRef(), outcome,
+                        results,
+                        ScenarioRehearsalResult.Summary.from(results),
+                        aggregateStartedAt, completedAt);
+        ScenarioRehearsalResult result =
+                ScenarioRehearsalResultIntegrity.seal(
+                        mapper, material);
+        ScenarioRehearsalEvidenceIntegrityService.SealResult sealed =
+                rehearsalEvidenceIntegrity.seal(runId, result);
+        if (!sealed.verified()) {
+            throw unavailable(
+                    identity,
+                    "RG.MIRROR.REHEARSAL.EVIDENCE_SIGNING_UNAVAILABLE",
+                    "Scenario rehearsal evidence could not be signed and verified.");
+        }
+        return sealed.bundle();
+    }
+
+    private void release(
+            ScenarioRehearsalRunRepository.Lease lease,
+            String failureCode) {
+        try {
+            rehearsalRequests.release(lease, failureCode);
+        } catch (RuntimeException ignored) {
+            // Bounded lease expiry remains the takeover path during coordinator outage.
+        }
     }
 
     private List<ResolvedCase> resolveCases(
@@ -714,6 +952,11 @@ public class ScenarioRehearsalRuntimeService {
             String aggregateRequestId, int caseIndex) {
         return aggregateRequestId + ":case:"
                 + String.format("%03d", caseIndex);
+    }
+
+    private static Instant later(
+            Instant left, Instant right) {
+        return left.isAfter(right) ? left : right;
     }
 
     private static String machineCode(String value) {

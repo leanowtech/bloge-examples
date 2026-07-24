@@ -26,8 +26,10 @@ import java.util.Set;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.doAnswer;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.clearInvocations;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -272,6 +274,95 @@ class ScenarioRehearsalRuntimeServiceTest {
         verify(fixture.mirrorRuns(), never()).execute(any(), any());
     }
 
+    @Test
+    void returnsRetryableConflictWithoutExecutingWhenAggregateIsAlreadyOwned() {
+        Fixture fixture = fixture(Map.of("customerId", "C-1"));
+        doAnswer(invocation -> {
+                    ScenarioRehearsalRunRepository.Registration registration =
+                            invocation.getArgument(0);
+                    ScenarioRehearsalRunRepository.State state =
+                            new ScenarioRehearsalRunRepository.State(
+                                    registration,
+                                    ScenarioRehearsalRunRepository.Status.ACTIVE,
+                                    "other-owner",
+                                    4,
+                                    fixture.bundle().evidence().completedAt()
+                                            .plusSeconds(30),
+                                    0,
+                                    "",
+                                    "",
+                                    fixture.bundle().evidence().startedAt(),
+                                    fixture.bundle().evidence().startedAt());
+                    return new ScenarioRehearsalRunRepository.Claim(
+                            ScenarioRehearsalRunRepository.Outcome.IN_PROGRESS,
+                            state, null, 7);
+                }).when(fixture.rehearsalRequests()).claim(
+                        any(), any(), any());
+
+        assertThatThrownBy(() ->
+                fixture.service().execute(fixture.request(), identity))
+                .isInstanceOf(IntegrationProblemException.class)
+                .satisfies(failure -> {
+                    IntegrationProblem problem =
+                            ((IntegrationProblemException) failure)
+                                    .problem();
+                    assertThat(problem.code()).isEqualTo(
+                            "RG.MIRROR.REHEARSAL.REQUEST_IN_PROGRESS");
+                    assertThat(problem.retryable()).isTrue();
+                    assertThat(problem.details())
+                            .containsEntry("retryAfterSeconds", 7L);
+                });
+        verify(fixture.mirrorRuns(), never()).execute(any(), any());
+    }
+
+    @Test
+    void resumesAfterTheDurableCasePrefixWithoutRepeatingAChild() {
+        Fixture fixture = fixture(Map.of("customerId", "C-1"));
+        ScenarioCaseRehearsalResult completed =
+                fixture.service().execute(
+                        fixture.request(), identity)
+                        .result().caseResults().getFirst();
+        clearInvocations(fixture.mirrorRuns());
+        doAnswer(invocation -> {
+                    ScenarioRehearsalRunRepository.Registration registration =
+                            invocation.getArgument(0);
+                    String owner = invocation.getArgument(1);
+                    ScenarioRehearsalRunRepository.State state =
+                            new ScenarioRehearsalRunRepository.State(
+                                    registration,
+                                    ScenarioRehearsalRunRepository.Status.ACTIVE,
+                                    owner,
+                                    2,
+                                    fixture.bundle().evidence().completedAt()
+                                            .plusSeconds(30),
+                                    1,
+                                    "",
+                                    "",
+                                    fixture.bundle().evidence().startedAt(),
+                                    fixture.bundle().evidence().completedAt());
+                    return new ScenarioRehearsalRunRepository.Claim(
+                            ScenarioRehearsalRunRepository.Outcome.ACQUIRED,
+                            state,
+                            new ScenarioRehearsalRunRepository.Lease(
+                                    scope,
+                                    registration.requestId(),
+                                    owner,
+                                    2),
+                            0);
+                }).when(fixture.rehearsalRequests()).claim(
+                        any(), any(), any());
+        when(fixture.rehearsalRequests().progress(any()))
+                .thenReturn(List.of(completed));
+
+        ScenarioRehearsalEvidenceBundle resumed =
+                fixture.service().execute(
+                        fixture.request(), identity);
+
+        assertThat(resumed.result().caseResults())
+                .containsExactly(completed);
+        verify(fixture.mirrorRuns(), never()).execute(any(), any());
+    }
+
     private Fixture fixture(Object input) {
         return fixture(input, false, false);
     }
@@ -415,6 +506,41 @@ class ScenarioRehearsalRuntimeServiceTest {
                 .thenReturn(Optional.empty());
         when(rehearsalEvidence.create(any()))
                 .thenAnswer(invocation -> invocation.getArgument(0));
+        ScenarioRehearsalRunRepository rehearsalRequests =
+                mock(ScenarioRehearsalRunRepository.class);
+        doAnswer(invocation -> {
+                    ScenarioRehearsalRunRepository.Registration registration =
+                            invocation.getArgument(0);
+                    String owner = invocation.getArgument(1);
+                    ScenarioRehearsalRunRepository.State state =
+                            new ScenarioRehearsalRunRepository.State(
+                                    registration,
+                                    ScenarioRehearsalRunRepository.Status.ACTIVE,
+                                    owner,
+                                    1,
+                                    runtimeClock.instant().plusSeconds(60),
+                                    0,
+                                    "",
+                                    "",
+                                    runtimeClock.instant(),
+                                    runtimeClock.instant());
+                    return new ScenarioRehearsalRunRepository.Claim(
+                            ScenarioRehearsalRunRepository.Outcome.ACQUIRED,
+                            state,
+                            new ScenarioRehearsalRunRepository.Lease(
+                                    scope,
+                                    registration.requestId(),
+                                    owner,
+                                    1),
+                            0);
+                }).when(rehearsalRequests).claim(
+                        any(), any(), any());
+        when(rehearsalRequests.progress(any()))
+                .thenReturn(List.of());
+        ScenarioRehearsalCommitService rehearsalCommits =
+                mock(ScenarioRehearsalCommitService.class);
+        when(rehearsalCommits.commit(any(), any()))
+                .thenAnswer(invocation -> invocation.getArgument(1));
 
         when(rehearsals.find(
                 compiled.planId(), compiled.revision(),
@@ -458,10 +584,12 @@ class ScenarioRehearsalRuntimeServiceTest {
                         mirrorRuns, evidenceIntegrity,
                         new ScenarioHandlingAssertionEvaluator(mapper),
                         rehearsalIntegrity, rehearsalEvidence,
+                        rehearsalRequests, rehearsalCommits,
                         mapper, sessions, runtimeClock);
         return new Fixture(
                 service, request, mirrorRuns, bundle, sessions,
-                rehearsalIntegrity, rehearsalEvidence);
+                rehearsalIntegrity, rehearsalEvidence,
+                rehearsalRequests);
     }
 
     private ScenarioPack.RehearsalPolicy policy() {
@@ -497,6 +625,7 @@ class ScenarioRehearsalRuntimeServiceTest {
             MirrorEvidenceBundle bundle,
             MirrorSessionIntegrationService sessions,
             ScenarioRehearsalEvidenceIntegrityService rehearsalIntegrity,
-            ScenarioRehearsalEvidenceRepository rehearsalEvidence) {
+            ScenarioRehearsalEvidenceRepository rehearsalEvidence,
+            ScenarioRehearsalRunRepository rehearsalRequests) {
     }
 }

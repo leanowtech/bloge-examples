@@ -179,16 +179,22 @@ each signed evidence bundle, evaluates the complete handling-assertion closure,
 and returns content-addressed per-case and aggregate results. The aggregate is
 sealed under a separate Ed25519 signature domain, immediately re-verified,
 stored append-only under complete enterprise scope, and available from an
-exact run evidence endpoint. The independent Test Kit re-derives nested result
+exact run evidence endpoint. Aggregate execution now has a separate full-scope
+database-clock lease, monotonic epoch, and append-only case-progress cursor.
+Concurrent callers are rejected before child orchestration; after release or
+lease expiry, a successor resumes at the first incomplete case. Case
+checkpoint writes are fenced, while signed evidence insertion and terminal
+request transition share one transaction, so stale workers cannot publish
+orphan evidence. The independent Test Kit re-derives nested result
 addresses, outcomes, summary counters, bundle identity, key policy, and the
 Scenario-specific Ed25519 signature without linking server classes. Outcomes and
 summary counters are server-derived;
 stateful retries reach completed child idempotency before checking a possibly
 advanced Session head. The capability probe therefore reports Scenario
 execution and `mirrorScenarioRehearsalEvidenceApi` as available while keeping
-`mirrorScenarioRehearsalEvidence=false`: aggregate lease/epoch recovery,
-operation audit, retention/legal hold, workbook seed, batch scheduling, and
-owner UX remain required before this becomes publish-gate evidence. See the
+`mirrorScenarioRehearsalEvidence=false`: operation audit, retention/legal hold,
+workbook seed, batch scheduling, and owner UX remain required before this
+becomes publish-gate evidence. See the
 [scenario rehearsal compiler guide](../docs/resource-gateway-scenario-rehearsal-compiler.md).
 
 Stored suites and fixtures now use `bloge.storedTestSuite.v2` and

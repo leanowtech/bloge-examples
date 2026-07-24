@@ -576,11 +576,11 @@ Resource Gateway 已有的工业底座应直接复用：
 | 递归 DAG 测试 | 85% | MirrorPlan/closure/runtime inventory/fixture control 已统一；缺 contract-mock 展开治理和状态世界 |
 | 日志蒸馏与语料 | 82% | payload-free signed observation、准入/隔离、immutable review、candidate/publication/trajectory/cluster 独立 lineage、元数据风险门禁、fixture exact/trajectory/cluster binding、在线 revalidation、test/staging `RECORDED_EXACT`/`RECORDED_TRAJECTORY`/`RECORDED_CLUSTER`、BLOGE 原生 retry loop、identity-safe projection、Wilson confidence、Session state read 与独立 verifier 已落地；缺生产 payload authority、漂移、偏差、outcome 校准和删除证明 |
 | 有状态业务世界 | 91% | 协议、read/write 退款 fixture、独立 verifier/sealer/client、事务内核、受保护 Session API、独立 AES-GCM 数据面、lease/fence/CAS、durable write-attempt journal/reconciliation、TTL/destroy、全局/scope 容量、保留字节、命令背压、过期擦除、固定 read head、run-scoped virtual write、真实 DAG read-write-read、payload-free v1/v2/v3 state evidence、read-only/successful-transition/write-outcome ANEKE seed、签名 HASH_ONLY checkpoint 与同数据面代际精确恢复准入已落地；缺 TEE/KMS、跨区域数据恢复、真实 process-kill/network parity、目标数据库容量认证和 HA/DR certification |
-| Scenario/Rehearsal | 55% | ScenarioPack/Case/Assertion、append-only registry、exact compiler、全企业作用域 authority、逐 case runtime、验签断言、独立签名且可重读的 aggregate evidence 已落地；缺聚合租约/恢复、审计/retention/workbook、批量任务和 owner UX |
+| Scenario/Rehearsal | 64% | ScenarioPack/Case/Assertion、append-only registry、exact compiler、全企业作用域 authority、逐 case runtime、验签断言、独立签名 evidence、数据库时钟 aggregate lease/epoch、连续 case checkpoint、takeover 和原子终态已落地；缺审计/retention/workbook、批量任务和 owner UX |
 | Fidelity/Outcome | 5% | 缺保真向量、shadow、权威结果归因和校准闭环 |
 | 业务运营工作台 | 10% | Author Canvas 尚未成为案例驱动的镜像运营工作台 |
 
-结论：基础设施准备度约 88%，镜像复利闭环完成度约 45%，完整理想态完成度约 55%。剩余主要矛盾已经
+结论：基础设施准备度约 88%，镜像复利闭环完成度约 47%，完整理想态完成度约 57%。剩余主要矛盾已经
 从“能否安全执行和取证”转向“能否把可信 observation 持续蒸馏成可校准、可拒答、可删除的业务拟合资产”。
 
 ### 3.1 2026-07-24 Scenario 编译期闭包迭代差距复评
@@ -645,8 +645,8 @@ HA/DR 或权威 outcome 当成已完成。51.59% 只承认已由代码和测试�
 |---:|---|---|---|---|
 | 1 | RG-MIR-SCEN-001 | 完成 | 冻结 `ScenarioPack.v1`、`ScenarioCase.v1`、`CaseHandlingAssertion.v1` 与 exact Graph/Fixture/Session/clock/fault binding | strict Schema、Java model、test-kit 独立 verifier、合法/篡改/越权/过期/未知字段矩阵全绿 |
 | 2 | RG-MIR-SCEN-001A | 完成 | 将 TestSuite/Fixture authority 升级为完整 enterprise scope；旧 tenant+environment 资产采用独立表、禁止隐式提升、授权重新注册的迁移策略 | 两个 organization/project/region 可安全复用同 id/revision；跨 scope、混合版本与 indexed scope 搬移失败关闭 |
-| 3 | RG-MIR-SCEN-002 | 同步 runtime 完成，耐久协调待实现 | deterministic compiler/runtime；每 case 使用隔离 Session/checkpoint、固定时钟/随机源、fixture data-flow inversion 和禁止真实 egress | exact plan 驱动的逐 case 运行、TestSuite context 注入、deadline、状态栅栏、幂等 child run 与结果聚合已全绿；下一步补 durable aggregate lease/checkpoint/recovery |
-| 4 | RG-MIR-SCEN-003 | 签名 evidence API 完成，门禁闭包待实现 | 产出 payload-free Scenario evidence、state diff、处置断言结果与 ANEKE workbook seed，区分执行失败、断言失败、低保真和证据不完整 | 独立签名、append-only store、exact read 已完成；下一步 audit/retention/workbook seed，任何 unknown outcome、缺断言或不完整 evidence 阻断 gate-ready |
+| 3 | RG-MIR-SCEN-002 | 完成 | deterministic compiler/runtime；每 case 使用隔离 Session/checkpoint、固定时钟/随机源、fixture data-flow inversion 和禁止真实 egress | exact plan、逐 case 运行、数据库时钟 lease/epoch、连续 checkpoint、takeover、旧 worker fencing 与原子 evidence/terminal commit 全绿 |
+| 4 | RG-MIR-SCEN-003 | 签名 evidence 与 durable aggregate 完成，治理消费闭包待实现 | 产出 payload-free Scenario evidence、state diff、处置断言结果与 ANEKE workbook seed，区分执行失败、断言失败、低保真和证据不完整 | 独立签名、append-only store、exact read、崩溃恢复已完成；下一步 audit/retention/workbook seed，任何 unknown outcome、缺断言或不完整 evidence 阻断 gate-ready |
 | 5 | RG-MIR-SCEN-004 | 待实现 | 提供批量 rehearsal API、deep link 和最小 Author 场景表格；先保证业务 owner 不编辑 JSON/DSL 即可维护 case | 退款与工单故障两个样例域端到端演示；浏览器、REST、Java/test-kit 使用同一协议资产 |
 
 完成 E7 后才进入 E8：以 Scenario coverage 为分母建立
@@ -803,6 +803,54 @@ request state machine：`RESERVED -> RUNNING -> COMMITTING -> COMPLETED`，
 以 lease owner + epoch 防并发，以 case checkpoint 支持 takeover，以 evidence、
 terminal request state 和 audit 同事务提交。该闭包完成后再交付 Scenario
 workbook seed、retention 与 batch job；在此之前不进入 Fidelity score 的提升。
+
+### 3.6 2026-07-24 Scenario 耐久聚合协调迭代差距复评
+
+本轮关闭 RG-MIR-SCEN-002 最后的 aggregate 协调缺口，并完成
+RG-MIR-SCEN-003 的耐久提交前半段。新增 `ScenarioRehearsalRunRepository`、
+`DatabaseScenarioRehearsalRunRepository` 和 `ScenarioRehearsalCommitService`。
+一个 aggregate request 现在先按完整 enterprise scope 注册不可变
+request/compiled-plan/run fingerprint 和 case 总数，再由数据库时钟签发
+lease；owner 是单次 worker attempt，epoch 在 release、到期或接管后单调递增。
+相同请求的并发调用在任何 child DAG orchestration 前返回 retryable `409`，
+不再依赖最终 evidence 唯一键事后阻止覆盖。
+
+case 恢复不是“重跑整张图再猜哪些做过”。每个完成 case 的
+`ScenarioCaseRehearsalResult` 先通过 nested assertion 与 content-address
+复验，再作为 payload-free 连续前缀追加到
+`scenario_rehearsal_case_progress`；同一事务推进 request cursor。表结构没有
+TestSuite input、Fixture value、context、node input/output、entity 或 replay
+payload 列。进程退出后，新 owner 取得 `epoch + 1`，重新校验 checkpoint 与
+compiled plan 的 case/ref/child-request 闭包，只从首个未完成 case 接续。旧
+epoch、到期但尚未被接管的 lease、非连续 case 和被篡改的索引/JSON 全部失败关闭。
+
+最终签名 evidence 的 append-only insert 与 request `COMPLETED` 转换共用一个
+事务，并再次检查 scope、request、run、compiled plan、case count、owner、
+epoch、cursor 和数据库 expiry。lease 在签名后、提交前到期会回滚 evidence，
+不会留下无法由请求状态解释的孤儿记录。聚焦验证覆盖 Spring 装配、并发首抢、
+等待行锁后重新采样数据库时钟、主动 release 即时恢复、到期 takeover、跨组织
+隔离、旧 epoch fencing、progress 篡改、原子回滚，以及 runtime 不重复执行已完成
+child；本轮聚焦 `65/65` 全绿。
+
+最终门禁同时覆盖 Spring 事务代理和真实应用上下文：Resource Gateway
+`5,034` 项测试零失败、零错误、3 项条件跳过，并完成真实 Chrome 工作流与可执行
+Boot JAR 构建；独立 Test Kit `353/353` 全绿，通过 shaded JAR 和公共 JavaDoc
+`-Werror -Xdoclint:all`。这组结果也防止 `final` 事务组件在单元测试可运行、进入
+Spring CGLIB 代理后才失效的装配回归。
+
+这次关闭的是“聚合执行可恢复”病根，不是发布治理终点。当前 aggregate 状态机
+采用可观测的 `ACTIVE/COMPLETED + lease/cursor` 投影，而不是暴露没有外部消费
+价值的瞬态枚举；尚缺 operation audit、retention/legal hold、WORM/transparency
+anchor 和 ANEKE workbook seed，所以
+`mirrorScenarioRehearsalEvidenceApi=true` 但
+`mirrorScenarioRehearsalEvidence=false` 保持不变。Scenario/Rehearsal 从 55%
+上调至 64%，固定权重总分从 55.27% 上调至 56.71%，距理想态 43.29%。
+
+下一条最短路径是让 aggregate evidence 可被治理系统可靠消费：把
+start/checkpoint/takeover/release/terminal 操作写入 payload-free audit，定义
+retention/legal-hold 与删除证明，然后从 verified bundle 确定性投影 ANEKE
+workbook seed。其后再做 batch job、deep link 与 owner UI；Fidelity score
+仍不应抢跑。
 
 ## 4. 目标架构与系统责任
 
@@ -1353,8 +1401,10 @@ execution-service drift、classification 越界、状态闭包漂移和内容寻
 单断言 evidence evaluator、同步逐 case runtime、payload-free case result 和 content-addressed
 aggregate result 已完成。运行命令只能引用 exact compiled plan，TestSuite context 由服务端解析，
 每个 child 复用既有耐久 Mirror 幂等协调与 signed evidence，aggregate outcome 和 summary 全部
-由服务端派生。capability probe 现在将 execution 报告为 true；aggregate 尚未耐久租约化、独立
-签名、提供读取/retention/workbook seed，因此 evidence 必须继续为 false，不能进入发布门禁。
+由服务端派生。aggregate 也已有数据库时钟 lease/epoch、连续 case checkpoint、
+takeover、独立签名、exact evidence read 和 evidence/request 原子终态。capability probe
+将 execution 与 evidence API 报告为 true；operation audit、retention/legal hold 和
+workbook seed 尚未闭合，因此 publish-gate evidence 仍必须为 false。
 操作与启停见
 [场景演练注册与编译指南](resource-gateway-scenario-rehearsal-compiler.md)。
 
@@ -1546,8 +1596,10 @@ session 重放造成重复状态、运行时依赖漂移。
 | `POST /api/mirror/scenarios/cases` | 注册 exact TestCase/Fixture/MirrorPlan/fault/assertion/checkpoint binding | child-before-parent；同 scope/id/revision/fingerprint 幂等 | 已实现（test/staging + 显式开关） |
 | `POST /api/mirror/scenarios/packs` | 注册完整 ScenarioPack closure | child-before-parent；同 scope/id/revision/fingerprint 幂等 | 已实现（test/staging + 显式开关） |
 | `GET /api/mirror/scenarios/packs/{packId}` | 按 revision + fingerprint 读取 exact pack | 只读、完整 scope 隔离；不支持 latest | 已实现（test/staging + 显式开关） |
-| `POST /api/mirror/scenarios/packs/{packId}/compiled-plans` | 从各 authority 解析 exact closure 并编译 payload-free execution license | 相同 closure 生成相同 fingerprint；同 plan revision 不允许依赖漂移 | 已实现（compile-only，尚不可执行） |
-| `GET /api/mirror/scenarios/compiled-plans/{planId}` | 按 revision + fingerprint 读取 compiler-issued plan | 只读、完整 scope 隔离；读取时重验完整性 | 已实现（compile-only） |
+| `POST /api/mirror/scenarios/packs/{packId}/compiled-plans` | 从各 authority 解析 exact closure 并编译 payload-free execution license | 相同 closure 生成相同 fingerprint；同 plan revision 不允许依赖漂移 | 已实现（test/staging + 显式开关） |
+| `GET /api/mirror/scenarios/compiled-plans/{planId}` | 按 revision + fingerprint 读取 compiler-issued plan | 只读、完整 scope 隔离；读取时重验完整性 | 已实现（test/staging + 显式开关） |
+| `POST /api/mirror/scenarios/runs` | 执行 exact compiled Scenario plan 并返回 signed aggregate evidence | full scope + request/plan fingerprint；数据库时钟 lease/epoch、连续 case checkpoint、takeover 和原子终态 | 已实现（test/staging + 显式开关） |
+| `GET /api/mirror/scenarios/runs/{runId}/evidence` | 读取并重新验签一个 payload-free Scenario aggregate | stable scope-bound runId；result/bundle/signature 完整闭包 | 已实现（test/staging + 显式开关） |
 | `POST /api/mirror/rehearsal-jobs` | 提交批量长任务 | job request fingerprint | 待实现 |
 | `GET /api/mirror/runs/{runId}` | 查询 verified payload-free 运行摘要 | 只读、完整 scope 隔离 | 已实现（test/staging + 显式开关） |
 | `GET /api/mirror/runs/{runId}/evidence` | 导出 independently verified `HASH_ONLY` signed evidence | 只读、完整 scope 隔离 | 已实现（test/staging + 显式开关） |

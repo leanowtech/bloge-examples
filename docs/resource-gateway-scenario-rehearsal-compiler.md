@@ -18,16 +18,18 @@ Fixture、MirrorPlan 和可选 Session checkpoint 绑定成不可变执行许可
 | `ScenarioHandlingAssertionEvaluator` | 可用（求值内核） | 对现有 evidence 已表达的 node/edge/capability/input/error/state/receipt/governance/budget 事实确定性求值 |
 | `ScenarioRehearsalExecutionRequest.v1` | 可用 | 客户端只能提交 request id 和 exact compiled-plan ref，不能覆盖 context、fixture、fault、Session 或 policy |
 | `ScenarioCaseRehearsalResult.v1` | 可用 | 每个 case 绑定 exact child run、signed evidence 和完整 assertion closure；无 evidence 时失败关闭 |
-| `ScenarioRehearsalResult.v1` | 可用（同步聚合） | 顺序聚合所有 case，服务端派生 PASS/FAIL/INDETERMINATE 和计数 |
+| `ScenarioRehearsalResult.v1` | 可用（耐久同步聚合） | 顺序聚合所有 case，服务端派生 PASS/FAIL/INDETERMINATE；case 前缀可恢复 |
 | `ScenarioRehearsalEvidenceAttestation.v1` | 可用 | 在独立签名域中绑定 aggregate run、request、compiled plan、result fingerprint 和签名时间 |
 | `ScenarioRehearsalEvidenceBundle.v1` | 可用（证据 API） | 对完整 payload-free result 做 Ed25519 签名、立即复验、append-only 保存和 exact runId 读取 |
-| 可作为发布门禁的 Scenario evidence | 未交付 | 尚无 aggregate lease/recovery、操作审计、保留策略和 ANEKE workbook seed |
+| aggregate durable coordination | 可用 | 完整 scope 请求注册、数据库时钟 lease、单调 epoch、逐 case checkpoint、takeover 与原子终态 |
+| 可作为发布门禁的 Scenario evidence | 未交付 | 尚无操作审计、保留/法律留置策略和 ANEKE workbook seed |
 
 当前链路已经解决“执行前冻结什么、运行时从哪里取值、每个结果依据什么证据”
-三个问题，并让同步完成的聚合成为可独立复验和重读的证据。下一条链路负责
-聚合级租约、耐久进度、崩溃恢复、操作审计、保留策略和 ANEKE workbook seed；
-在此之前，证据适合 test/staging 的交互式试跑、回归和排错，但不能冒充
-publish-gate-ready 证据。
+三个问题，并让同步完成的聚合成为可独立复验和重读的证据。aggregate 现以
+数据库时钟 lease/epoch 串行化执行，把每个 payload-free case result 作为连续
+checkpoint；进程退出后，同 request id 可由下一副本从首个未完成 case 接续。
+下一条链路负责操作审计、保留策略和 ANEKE workbook seed；在此之前，证据适合
+test/staging 的可恢复回归和排错，但不能冒充 publish-gate-ready 证据。
 
 ## 2. 为什么需要独立编译计划
 
@@ -322,9 +324,11 @@ case 直接把 checkpoint 的 session id + state fingerprint 作为原始 fence 
 
 当前版本的明确限制：
 
-- aggregate 尚无耐久 request lease、进度表、owner epoch 和崩溃恢复；
-- 相同 request id 会派生稳定 runId；并发计算最终由 append-only 唯一性阻止覆盖，
-  但不能抑制重复的 child orchestration，因此还不是完整 exactly-once 协调；
+- aggregate 已有完整 scope request registration、数据库时钟 lease、单调 owner
+  epoch 和连续 case progress；并发请求在 child orchestration 前返回 retryable
+  `409`，lease 到期后下一副本从首个未完成 case 接管；
+- case checkpoint、signed evidence 插入和 terminal request transition 均受当前
+  owner/epoch/expiry 栅栏；最终 evidence 与 terminal transition 同事务提交；
 - 聚合 evidence 已独立签名、耐久保存和可读取，但尚无 operation audit、
   retention/legal-hold、WORM/transparency anchor 和 workbook seed；
 - checkpoint 是同一加密数据面的 recovery fence，不是隔离 clone；全新重复执行
@@ -407,6 +411,8 @@ request、response、实体或 fixture payload。
 
 - `mirror_scenario_artifacts`
 - `compiled_scenario_rehearsal_plans`
+- `scenario_rehearsal_run_requests`
+- `scenario_rehearsal_case_progress`
 - `scenario_rehearsal_evidence`
 
 主键覆盖完整 scope、artifact kind、id 和 revision。写入与读取都重算
@@ -414,15 +420,24 @@ canonical fingerprint，并核对数据库索引身份；checkpoint 还会重新
 表中没有业务 payload、原始 correlation key 或 mutable latest pointer。
 
 每个 child Mirror run 的 request lease、terminal summary 和 signed evidence
-沿用既有耐久仓储。完成的 `ScenarioRehearsalResult` 被封入独立签名 bundle，
-按完整 scope + stable runId append-only 保存；读取时重算 result/bundle
-fingerprint 并复验 Ed25519 signature。表只保存 `HASH_ONLY` 证据 JSON 及其索引
-身份，不增设 payload、context、fixture、entity 或诊断文本列。
+沿用既有耐久仓储。aggregate request 表只保存 scope、request/plan/run
+fingerprint、case cursor、lease owner/epoch/expiry、终态 evidence fingerprint
+和时间边界。progress 表只追加已经 content-addressed 的
+`ScenarioCaseRehearsalResult`，不保存 TestSuite input、Fixture value、node
+input/output 或 replay payload。
 
-进程在 aggregate evidence 提交前退出时，客户端使用同一 request id 重试，
-可复用已提交 child，但会重新解析计划、重新求值并重新封印 aggregate。当前没有
-aggregate lease/checkpoint，所以崩溃前尚未提交的聚合进度不会恢复；这正是
-`mirrorScenarioRehearsalEvidence` 仍保持 `false` 的主要原因。
+每个 case 完成后先在当前数据库时钟 lease 下原子追加 progress 并推进 cursor。
+进程退出后，相同 request id 在 lease 到期或主动 release 后取得 `epoch + 1`，
+读取并校验连续 checkpoint 前缀，只执行剩余 case。旧 worker 即使恢复运行，也
+无法写入 checkpoint 或 terminal evidence。最终
+`scenario_rehearsal_evidence` 插入与 request `COMPLETED` 转换位于同一事务；
+lease 在提交前到期会整体回滚，不留下孤儿 evidence。
+
+完成的 `ScenarioRehearsalResult` 被封入独立签名 bundle，按完整 scope + stable
+runId append-only 保存；读取时重算 result/bundle fingerprint 并复验 Ed25519
+signature。`mirrorScenarioRehearsalEvidence` 仍保持 `false`，原因已从“运行不可
+恢复”收敛为缺少 operation audit、retention/legal hold 和 ANEKE workbook
+消费闭包。
 
 本地重启后可以按 exact fingerprint 读取同一资产。数据库备份、跨区域恢复、
 WORM、外部 transparency anchor 和法律保留仍属于部署认证，不由本地哈希代替。
@@ -433,7 +448,7 @@ WORM、外部 transparency anchor 和法律保留仍属于部署认证，不由�
 
 ```bash
 mvn -f resource-gateway-examples/pom.xml \
-  -Dtest=ScenarioRehearsalControllerTest,ScenarioArtifactRequestDecoderTest,ScenarioArtifactRegistryServiceTest,ScenarioRehearsalIntegrationServiceTest,ScenarioRehearsalCompilerTest,ScenarioRehearsalRuntimeServiceTest,ScenarioRehearsalResultProtocolTest,ScenarioRehearsalEvidenceIntegrityServiceTest,DatabaseScenarioRehearsalEvidenceRepositoryTest,DatabaseScenarioArtifactRepositoryTest,DatabaseCompiledScenarioRehearsalPlanRepositoryTest,ScenarioPackProtocolTest,MirrorEvidenceIntegrityServiceTest,ScenarioHandlingAssertionEvaluatorTest,MirrorRuntimeConfigurationTest,ToolStudioIntegrationServiceTest \
+  -Dtest=ScenarioRehearsalControllerTest,ScenarioArtifactRequestDecoderTest,ScenarioArtifactRegistryServiceTest,ScenarioRehearsalIntegrationServiceTest,ScenarioRehearsalCompilerTest,ScenarioRehearsalRuntimeServiceTest,ScenarioRehearsalResultProtocolTest,ScenarioRehearsalEvidenceIntegrityServiceTest,DatabaseScenarioRehearsalEvidenceRepositoryTest,DatabaseScenarioRehearsalRunRepositoryTest,ScenarioRehearsalCommitServiceTest,DatabaseScenarioArtifactRepositoryTest,DatabaseCompiledScenarioRehearsalPlanRepositoryTest,ScenarioPackProtocolTest,MirrorEvidenceIntegrityServiceTest,ScenarioHandlingAssertionEvaluatorTest,MirrorRuntimeConfigurationTest,ToolStudioIntegrationServiceTest \
   test
 ```
 
@@ -444,7 +459,7 @@ mvn -f resource-gateway-examples/pom.xml clean verify
 mvn -f resource-gateway-test-kit/pom.xml clean verify
 ```
 
-2026-07-24 本轮门禁结果：Resource Gateway `5,021` 项测试零失败、零错误、
+2026-07-24 本轮门禁结果：Resource Gateway `5,034` 项测试零失败、零错误、
 3 项条件跳过（含真实 Chrome DOM/工作流）；Test Kit `353` 项零失败、零错误，
 完成 101 个 Mirror Schema 的引用闭包、shaded JAR 和零警告公共 JavaDoc。
 
@@ -452,6 +467,8 @@ mvn -f resource-gateway-test-kit/pom.xml clean verify
 
 - `resource-gateway-examples/src/main/java/com/leanowtech/bloge/gateway/integration/mirror/ScenarioRehearsalCompiler.java`
 - `resource-gateway-examples/src/main/java/com/leanowtech/bloge/gateway/integration/mirror/ScenarioArtifactRegistryService.java`
+- `resource-gateway-examples/src/main/java/com/leanowtech/bloge/gateway/integration/mirror/DatabaseScenarioRehearsalRunRepository.java`
+- `resource-gateway-examples/src/main/java/com/leanowtech/bloge/gateway/integration/mirror/ScenarioRehearsalCommitService.java`
 - `resource-gateway-examples/src/main/java/com/leanowtech/bloge/gateway/integration/ScenarioRehearsalController.java`
 - `resource-gateway-examples/src/main/java/com/leanowtech/bloge/gateway/integration/mirror/ScenarioHandlingAssertionEvaluator.java`
 - `resource-gateway-examples/src/main/java/com/leanowtech/bloge/gateway/integration/mirror/ScenarioHandlingAssertionResult.java`
