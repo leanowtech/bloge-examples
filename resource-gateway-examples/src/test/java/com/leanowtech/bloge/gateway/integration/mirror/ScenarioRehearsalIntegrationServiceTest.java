@@ -197,6 +197,41 @@ class ScenarioRehearsalIntegrationServiceTest {
                         });
     }
 
+    @Test
+    void permitsGovernanceConsumersToReadAnExactCompiledPlan() {
+        ScenarioArtifactRegistryService artifacts =
+                mock(ScenarioArtifactRegistryService.class);
+        TestSuiteRegistryService suites =
+                mock(TestSuiteRegistryService.class);
+        FixtureBundleRepository fixtures =
+                mock(FixtureBundleRepository.class);
+        MirrorPlanIntegrationService plans =
+                mock(MirrorPlanIntegrationService.class);
+        ScenarioRehearsalCompiler compiler =
+                mock(ScenarioRehearsalCompiler.class);
+        CompiledScenarioRehearsalPlanRepository compiledPlans =
+                mock(CompiledScenarioRehearsalPlanRepository.class);
+        CaseHandlingAssertion assertion = assertion();
+        ScenarioCase scenarioCase = scenarioCase(assertion);
+        CompiledScenarioRehearsalPlan compiled =
+                compiled(pack(assertion, scenarioCase), scenarioCase);
+        when(compiledPlans.find(
+                SCOPE, compiled.planId(), compiled.revision()))
+                .thenReturn(Optional.of(compiled));
+        ScenarioRehearsalIntegrationService service =
+                new ScenarioRehearsalIntegrationService(
+                        artifacts, suites, fixtures, plans,
+                        compiler, compiledPlans,
+                        Clock.fixed(NOW, ZoneOffset.UTC));
+
+        assertThat(service.find(
+                compiled.planId(),
+                compiled.revision(),
+                compiled.fingerprint(),
+                governanceIdentity()))
+                .isEqualTo(compiled);
+    }
+
     private CaseHandlingAssertion assertion() {
         return ScenarioPackIntegrity.sealAssertion(
                 mapper,
@@ -313,6 +348,15 @@ class ScenarioRehearsalIntegrationServiceTest {
                 "SERVICE", "scenario-client", "",
                 MirrorPlanIntegrationService.AUTHORIZED_PURPOSE,
                 "corr-scenario", Set.of(), "CONFIDENTIAL", "");
+    }
+
+    private static IntegrationRequestContext governanceIdentity() {
+        return new IntegrationRequestContext(
+                SCOPE.tenantId(), SCOPE.organizationId(),
+                SCOPE.projectId(), SCOPE.environmentId(), SCOPE.region(),
+                "SERVICE", "governance-consumer", "",
+                "GOVERNANCE_EVIDENCE_INGESTION",
+                "corr-governance", Set.of(), "CONFIDENTIAL", "");
     }
 
     private static MirrorArtifactRef ref(

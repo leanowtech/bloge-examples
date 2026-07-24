@@ -1,0 +1,288 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://bloge.dev/schemas/resource-gateway-mirror/scenario-rehearsal-workbook-seed-v1.schema.json",
+  "title": "Resource Gateway Scenario Rehearsal Workbook Seed v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion", "seedFingerprint", "scope", "runId", "requestId",
+    "scenarioPackRef", "compiledPlanRef", "targetCapabilityRef",
+    "evidenceBundleFingerprint", "resultFingerprint", "evidenceKeyId",
+    "retentionProof", "outcome", "summary", "cases", "gateReady", "blockers"
+  ],
+  "properties": {
+    "schemaVersion": {
+      "const": "resourceGateway.scenarioRehearsalWorkbookSeed.v1"
+    },
+    "seedFingerprint": {
+      "$ref": "mirror-plan-v1.schema.json#/$defs/fingerprint"
+    },
+    "scope": {
+      "$ref": "mirror-plan-v1.schema.json#/$defs/scope"
+    },
+    "runId": {
+      "type": "string",
+      "pattern": "^scenario-[a-f0-9]{64}$"
+    },
+    "requestId": {
+      "type": "string",
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,255}$"
+    },
+    "scenarioPackRef": {
+      "$ref": "compiled-scenario-rehearsal-plan-v1.schema.json#/$defs/scenarioPackRef"
+    },
+    "compiledPlanRef": {
+      "$ref": "scenario-rehearsal-execution-request-v1.schema.json#/$defs/compiledPlanRef"
+    },
+    "targetCapabilityRef": {
+      "$ref": "scenario-pack-v1.schema.json#/$defs/capabilityRef"
+    },
+    "evidenceBundleFingerprint": {
+      "$ref": "mirror-plan-v1.schema.json#/$defs/fingerprint"
+    },
+    "resultFingerprint": {
+      "$ref": "mirror-plan-v1.schema.json#/$defs/fingerprint"
+    },
+    "evidenceKeyId": {
+      "$ref": "#/$defs/verificationKeyId"
+    },
+    "retentionProof": {
+      "allOf": [
+        {
+          "$ref": "scenario-rehearsal-retention-event-v1.schema.json"
+        },
+        {
+          "properties": {
+            "revision": {"const": 1},
+            "type": {"const": "RETENTION_REGISTERED"},
+            "holdId": {"const": ""},
+            "previousEventFingerprint": {"const": ""},
+            "deletedCaseProgressCount": {"const": 0},
+            "childEvidenceDisposition": {"const": "NOT_APPLICABLE"}
+          }
+        }
+      ]
+    },
+    "outcome": {
+      "$ref": "#/$defs/outcome"
+    },
+    "summary": {
+      "$ref": "scenario-rehearsal-result-v1.schema.json#/$defs/summary"
+    },
+    "cases": {
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 256,
+      "items": {
+        "$ref": "#/$defs/caseResult"
+      }
+    },
+    "gateReady": {
+      "type": "boolean"
+    },
+    "blockers": {
+      "type": "array",
+      "maxItems": 16,
+      "uniqueItems": true,
+      "items": {
+        "$ref": "#/$defs/machineCode"
+      }
+    }
+  },
+  "allOf": [
+    {
+      "if": {
+        "properties": {
+          "gateReady": {"const": true}
+        },
+        "required": ["gateReady"]
+      },
+      "then": {
+        "properties": {
+          "outcome": {"const": "PASS"},
+          "blockers": {"maxItems": 0}
+        }
+      },
+      "else": {
+        "properties": {
+          "blockers": {"minItems": 1}
+        }
+      }
+    }
+  ],
+  "$defs": {
+    "identifier": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 512,
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9@._:/-]{0,511}$"
+    },
+    "verificationKeyId": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 1024,
+      "pattern": "^[^\\r\\n]+$"
+    },
+    "machineCode": {
+      "type": "string",
+      "pattern": "^[A-Z][A-Z0-9_.-]{0,254}$"
+    },
+    "optionalMachineCode": {
+      "type": "string",
+      "maxLength": 255,
+      "pattern": "^(?:|[A-Z][A-Z0-9_.-]{0,254})$"
+    },
+    "optionalIdentifier": {
+      "type": "string",
+      "maxLength": 512,
+      "pattern": "^(?:|[A-Za-z0-9][A-Za-z0-9@._:/-]{0,511})$"
+    },
+    "optionalFingerprint": {
+      "type": "string",
+      "pattern": "^(?:|sha256:[a-f0-9]{64})$"
+    },
+    "outcome": {
+      "enum": ["PASS", "FAIL", "INDETERMINATE"]
+    },
+    "caseResult": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "caseIndex", "scenarioCaseRef", "caseType", "testSuiteRef",
+        "testCaseId", "mirrorPlanRef", "fixtureBundleRef",
+        "sessionCheckpointRef", "childRunId",
+        "childEvidenceBundleFingerprint", "evidenceStatus", "evidenceClass",
+        "outcome", "diagnosticCode", "assertionResults"
+      ],
+      "properties": {
+        "caseIndex": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 255
+        },
+        "scenarioCaseRef": {
+          "$ref": "scenario-pack-v1.schema.json#/$defs/scenarioCaseRef"
+        },
+        "caseType": {
+          "enum": [
+            "GOLDEN", "NEGATIVE", "BOUNDARY", "REGRESSION",
+            "FAULT", "STATE_TRANSITION", "WHAT_IF"
+          ]
+        },
+        "testSuiteRef": {
+          "$ref": "compiled-scenario-rehearsal-plan-v1.schema.json#/$defs/testSuiteRef"
+        },
+        "testCaseId": {
+          "$ref": "#/$defs/identifier"
+        },
+        "mirrorPlanRef": {
+          "$ref": "compiled-scenario-rehearsal-plan-v1.schema.json#/$defs/mirrorPlanRef"
+        },
+        "fixtureBundleRef": {
+          "$ref": "compiled-scenario-rehearsal-plan-v1.schema.json#/$defs/fixtureBundleRef"
+        },
+        "sessionCheckpointRef": {
+          "oneOf": [
+            {"type": "null"},
+            {
+              "$ref": "compiled-scenario-rehearsal-plan-v1.schema.json#/$defs/checkpointRef"
+            }
+          ]
+        },
+        "childRunId": {
+          "$ref": "#/$defs/optionalIdentifier"
+        },
+        "childEvidenceBundleFingerprint": {
+          "$ref": "#/$defs/optionalFingerprint"
+        },
+        "evidenceStatus": {
+          "oneOf": [
+            {"const": ""},
+            {
+              "enum": [
+                "PASSED", "ASSERTION_FAILED", "EXECUTION_FAILED",
+                "CONTROL_PLAN_REJECTED", "CONTROL_PLAN_UNAVAILABLE",
+                "FIXTURE_UNMATCHED", "FIXTURE_UNUSED", "EVIDENCE_INCOMPLETE",
+                "TIMED_OUT", "CANCELLED"
+              ]
+            }
+          ]
+        },
+        "evidenceClass": {
+          "oneOf": [
+            {"const": ""},
+            {"enum": ["EXPLORATORY", "CERTIFIABLE"]}
+          ]
+        },
+        "outcome": {
+          "$ref": "#/$defs/outcome"
+        },
+        "diagnosticCode": {
+          "$ref": "#/$defs/optionalMachineCode"
+        },
+        "assertionResults": {
+          "type": "array",
+          "maxItems": 256,
+          "uniqueItems": true,
+          "items": {
+            "$ref": "scenario-handling-assertion-result-v1.schema.json"
+          }
+        }
+      },
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "childRunId": {"const": ""}
+            },
+            "required": ["childRunId"]
+          },
+          "then": {
+            "properties": {
+              "childEvidenceBundleFingerprint": {"const": ""},
+              "evidenceStatus": {"const": ""},
+              "evidenceClass": {"const": ""},
+              "outcome": {"enum": ["FAIL", "INDETERMINATE"]},
+              "diagnosticCode": {"minLength": 1},
+              "assertionResults": {"maxItems": 0}
+            }
+          },
+          "else": {
+            "properties": {
+              "childEvidenceBundleFingerprint": {
+                "$ref": "mirror-plan-v1.schema.json#/$defs/fingerprint"
+              },
+              "evidenceStatus": {
+                "not": {"const": ""}
+              },
+              "evidenceClass": {
+                "not": {"const": ""}
+              },
+              "assertionResults": {
+                "minItems": 1
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "outcome": {"const": "PASS"}
+            },
+            "required": ["outcome"]
+          },
+          "then": {
+            "properties": {
+              "diagnosticCode": {"const": ""}
+            }
+          },
+          "else": {
+            "properties": {
+              "diagnosticCode": {"minLength": 1}
+            }
+          }
+        }
+      ]
+    }
+  }
+}

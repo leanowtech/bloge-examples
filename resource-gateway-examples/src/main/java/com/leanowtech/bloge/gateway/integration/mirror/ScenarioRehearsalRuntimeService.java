@@ -25,6 +25,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
+import java.util.Set;
 import java.util.UUID;
 
 /**
@@ -50,6 +51,10 @@ import java.util.UUID;
         havingValue = "true")
 public class ScenarioRehearsalRuntimeService {
     private static final String PURPOSE = "MIRROR_REHEARSAL";
+    private static final Set<String> READ_PURPOSES =
+            Set.of(
+                    PURPOSE,
+                    "GOVERNANCE_EVIDENCE_INGESTION");
     private static final Duration COMMIT_RESERVE =
             Duration.ofSeconds(30);
     private static final Duration REQUEST_RETENTION =
@@ -179,7 +184,7 @@ public class ScenarioRehearsalRuntimeService {
             IntegrationRequestContext identity,
             MirrorOperationObservability.Observation observation) {
         Objects.requireNonNull(request, "request");
-        requirePurpose(identity);
+        requireExecutionPurpose(identity);
         CapabilitySnapshot.Scope scope =
                 MirrorPlanIntegrationService.requireMirrorIdentity(identity);
         MirrorArtifactRef planRef = request.compiledPlanRef();
@@ -320,11 +325,70 @@ public class ScenarioRehearsalRuntimeService {
         }
     }
 
+    /**
+     * Projects one verified aggregate into a deterministic ANEKE correctness-workbook seed.
+     *
+     * @param runId stable aggregate run identity
+     * @param identity authenticated full enterprise mirror identity
+     * @return payload-free seed bound to plan, evidence, and signed retention registration
+     */
+    public ScenarioRehearsalWorkbookSeed workbookSeed(
+            String runId, IntegrationRequestContext identity) {
+        MirrorOperationObservability.Observation observation =
+                observations.start(
+                        MirrorOperationAuditEvent.Operation
+                                .SCENARIO_REHEARSAL_WORKBOOK_READ,
+                        identity, "", "", runId);
+        try {
+            ScenarioRehearsalEvidenceBundle bundle =
+                    evidenceObserved(runId, identity);
+            MirrorArtifactRef planRef =
+                    bundle.result().compiledPlanRef();
+            CompiledScenarioRehearsalPlan plan =
+                    rehearsals.find(
+                            planRef.id(),
+                            planRef.revision(),
+                            planRef.fingerprint(),
+                            identity);
+            CapabilitySnapshot.Scope scope =
+                    bundle.result().scope();
+            ScenarioRehearsalRetentionState state =
+                    retention.find(scope, bundle.attestation().runId())
+                            .orElseThrow(() ->
+                                    new IllegalArgumentException(
+                                            "retention projection is missing"));
+            ScenarioRehearsalWorkbookSeed seed =
+                    ScenarioRehearsalWorkbookSeed.project(
+                            mapper,
+                            plan,
+                            bundle,
+                            state,
+                            retention.events(
+                                    scope,
+                                    bundle.attestation().runId()));
+            observation.succeeded(seed.runId());
+            return seed;
+        } catch (IntegrationProblemException expected) {
+            throw observation.failed(expected);
+        } catch (IllegalArgumentException invalid) {
+            throw observation.failed(conflict(
+                    identity,
+                    "RG.MIRROR.REHEARSAL.WORKBOOK_SEED_UNAVAILABLE",
+                    "The Scenario artifacts do not form one complete correctness-workbook closure."));
+        } catch (RuntimeException unavailable) {
+            throw observation.failed(unavailable(
+                    identity,
+                    "RG.MIRROR.REHEARSAL.WORKBOOK_SEED_UNAVAILABLE",
+                    "The Scenario correctness-workbook seed could not be projected safely."));
+        }
+    }
+
     private ScenarioRehearsalEvidenceBundle evidenceObserved(
             String runId, IntegrationRequestContext identity) {
-        requirePurpose(identity);
+        requireReadPurpose(identity);
         CapabilitySnapshot.Scope scope =
-                MirrorPlanIntegrationService.requireMirrorIdentity(identity);
+                MirrorPlanIntegrationService
+                        .requireMirrorReadIdentity(identity);
         String id = runId == null ? "" : runId.trim();
         if (!ScenarioRehearsalRunIdentity.hasCanonicalShape(id)) {
             throw new IntegrationProblemException(
@@ -1058,13 +1122,28 @@ public class ScenarioRehearsalRuntimeService {
                 : "RG.MIRROR.REHEARSAL.CASE_REJECTED";
     }
 
-    private static void requirePurpose(IntegrationRequestContext identity) {
+    private static void requireExecutionPurpose(
+            IntegrationRequestContext identity) {
         if (identity == null || !PURPOSE.equals(identity.purpose())) {
             throw new IntegrationProblemException(
                     IntegrationProblem.forbidden(
                             "RG.MIRROR.REHEARSAL.PURPOSE_REQUIRED",
                             "Scenario rehearsal requires MIRROR_REHEARSAL purpose.",
                             identity == null ? "" : identity.correlationId(),
+                            Map.of()));
+        }
+    }
+
+    private static void requireReadPurpose(
+            IntegrationRequestContext identity) {
+        if (identity == null
+                || !READ_PURPOSES.contains(identity.purpose())) {
+            throw new IntegrationProblemException(
+                    IntegrationProblem.forbidden(
+                            "RG.MIRROR.REHEARSAL.READ_PURPOSE_REQUIRED",
+                            "Scenario evidence reads require a rehearsal or governance-ingestion purpose.",
+                            identity == null
+                                    ? "" : identity.correlationId(),
                             Map.of()));
         }
     }

@@ -15,6 +15,7 @@ import com.leanowtech.bloge.gateway.integration.mirror.ScenarioRehearsalPurgeCom
 import com.leanowtech.bloge.gateway.integration.mirror.ScenarioRehearsalRetentionService;
 import com.leanowtech.bloge.gateway.integration.mirror.ScenarioRehearsalRetentionState;
 import com.leanowtech.bloge.gateway.integration.mirror.ScenarioRehearsalRuntimeService;
+import com.leanowtech.bloge.gateway.integration.mirror.ScenarioRehearsalWorkbookSeed;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.context.annotation.Profile;
 import org.springframework.http.HttpHeaders;
@@ -203,6 +204,25 @@ public final class ScenarioRehearsalController {
                 runtime.evidence(runId, identity);
         return IntegrationEnvelope.of(
                 "SCENARIO_REHEARSAL_EVIDENCE_BUNDLE",
+                value.schemaVersion(),
+                value);
+    }
+
+    /** Projects one verified Scenario closure into a deterministic ANEKE workbook seed. */
+    @GetMapping("/runs/{runId}/workbook-seed")
+    public IntegrationEnvelope<ScenarioRehearsalWorkbookSeed>
+    workbookSeed(
+            @PathVariable String runId,
+            @RequestHeader HttpHeaders headers) {
+        IntegrationRequestContext identity =
+                authenticator.authenticate(
+                        headers,
+                        IntegrationOperation
+                                .MIRROR_REHEARSAL_WORKBOOK_READ);
+        ScenarioRehearsalWorkbookSeed value =
+                runtime.workbookSeed(runId, identity);
+        return IntegrationEnvelope.of(
+                "SCENARIO_REHEARSAL_WORKBOOK_SEED",
                 value.schemaVersion(),
                 value);
     }

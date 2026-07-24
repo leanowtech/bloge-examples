@@ -10,6 +10,7 @@ import com.leanowtech.bloge.gateway.testing.api.TestSuiteRegistryService;
 import com.leanowtech.bloge.gateway.testing.domain.TestSuite;
 import com.leanowtech.bloge.gateway.visual.runtime.InMemoryVisualEvidenceSigner;
 import com.leanowtech.bloge.gateway.visual.runtime.VisualEvidenceSigner;
+import com.leanowtech.bloge.gateway.visual.runtime.VisualRunEvidenceSeal;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
 
@@ -433,6 +434,86 @@ class ScenarioRehearsalRuntimeServiceTest {
     }
 
     @Test
+    void projectsAWorkbookOnlyFromVerifiedEvidenceAndRetentionProof() {
+        Fixture fixture = fixture(
+                Map.of("customerId", "C-1"));
+        ScenarioRehearsalEvidenceBundle executed =
+                fixture.service().execute(
+                        fixture.request(), identity);
+        String runId = executed.attestation().runId();
+        when(fixture.rehearsalEvidence().find(scope, runId))
+                .thenReturn(Optional.of(executed));
+        Instant registeredAt =
+                executed.result().completedAt().plusSeconds(1);
+        Instant retainUntil =
+                registeredAt.plus(Duration.ofDays(30));
+        ScenarioRehearsalRetentionEvent registration =
+                mock(ScenarioRehearsalRetentionEvent.class);
+        when(registration.revision()).thenReturn(1L);
+        when(registration.type()).thenReturn(
+                ScenarioRehearsalRetentionEvent.Type
+                        .RETENTION_REGISTERED);
+        when(registration.scope()).thenReturn(scope);
+        when(registration.runId()).thenReturn(runId);
+        when(registration.requestId()).thenReturn(
+                executed.result().requestId());
+        when(registration.evidenceBundleFingerprint())
+                .thenReturn(executed.bundleFingerprint());
+        when(registration.eventId()).thenReturn(
+                "retention-event-1");
+        when(registration.eventFingerprint()).thenReturn(
+                fingerprint('d'));
+        when(registration.occurredAt()).thenReturn(registeredAt);
+        when(registration.retainUntil()).thenReturn(retainUntil);
+        when(registration.evidenceSeal()).thenReturn(
+                new VisualRunEvidenceSeal(
+                        "",
+                        fingerprint('d'),
+                        "Ed25519",
+                        "retention-key",
+                        registeredAt,
+                        "c2lnbmF0dXJl"));
+        ScenarioRehearsalRetentionState state =
+                mock(ScenarioRehearsalRetentionState.class);
+        when(state.scope()).thenReturn(scope);
+        when(state.runId()).thenReturn(runId);
+        when(state.requestId()).thenReturn(
+                executed.result().requestId());
+        when(state.evidenceBundleFingerprint()).thenReturn(
+                executed.bundleFingerprint());
+        when(state.status()).thenReturn(
+                ScenarioRehearsalRetentionState.Status.RETAINED);
+        when(state.retainUntil()).thenReturn(retainUntil);
+        when(fixture.retention().find(scope, runId))
+                .thenReturn(Optional.of(state));
+        when(fixture.retention().events(scope, runId))
+                .thenReturn(List.of(registration));
+        IntegrationRequestContext governanceIdentity =
+                new IntegrationRequestContext(
+                        scope.tenantId(), scope.organizationId(),
+                        scope.projectId(), scope.environmentId(),
+                        scope.region(), "SERVICE",
+                        "governance-consumer", "",
+                        "GOVERNANCE_EVIDENCE_INGESTION",
+                        "correlation-2", Set.of(),
+                        "RESTRICTED", "");
+
+        assertThat(fixture.service().evidence(
+                runId, governanceIdentity))
+                .isEqualTo(executed);
+        ScenarioRehearsalWorkbookSeed seed =
+                fixture.service().workbookSeed(
+                        runId, governanceIdentity);
+
+        assertThat(seed.runId()).isEqualTo(runId);
+        assertThat(seed.evidenceBundleFingerprint())
+                .isEqualTo(executed.bundleFingerprint());
+        assertThat(seed.gateReady()).isTrue();
+        assertThat(seed.blockers()).isEmpty();
+        seed.verify(mapper);
+    }
+
+    @Test
     void returnsGoneWithDeletionProofAfterGovernedPurge() {
         Fixture fixture = fixture(
                 Map.of("customerId", "C-1"));
@@ -673,8 +754,13 @@ class ScenarioRehearsalRuntimeServiceTest {
                 .thenReturn(Optional.empty());
 
         when(rehearsals.find(
-                compiled.planId(), compiled.revision(),
-                compiled.fingerprint(), identity))
+                org.mockito.ArgumentMatchers.eq(
+                        compiled.planId()),
+                org.mockito.ArgumentMatchers.eq(
+                        compiled.revision()),
+                org.mockito.ArgumentMatchers.eq(
+                        compiled.fingerprint()),
+                any(IntegrationRequestContext.class)))
                 .thenReturn(compiled);
         when(scenarioArtifacts.requireCase(
                 scope, binding.scenarioCaseRef(), identity))

@@ -415,6 +415,8 @@ public class ToolStudioIntegrationService {
                 mirrorPlanReady && mirrorExecutionApi);
         features.put("mirrorScenarioRehearsalDeletionProof",
                 mirrorPlanReady && mirrorExecutionApi);
+        features.put("mirrorScenarioRehearsalWorkbookSeed",
+                mirrorPlanReady && mirrorExecutionApi);
         features.put("mirrorScenarioRehearsalEvidence", false);
         features.put("mirrorServing", mirrorExecutionReady);
         features.put("mirrorOperationObservability", mirrorPlanReady && mirrorExecutionApi);
@@ -886,6 +888,12 @@ public class ToolStudioIntegrationService {
                             com.leanowtech.bloge.gateway.integration.mirror
                                     .ScenarioRehearsalRetentionState
                                     .SCHEMA_VERSION));
+            supportedObjects.put(
+                    "scenarioRehearsalWorkbookSeed",
+                    List.of(
+                            com.leanowtech.bloge.gateway.integration.mirror
+                                    .ScenarioRehearsalWorkbookSeed
+                                    .SCHEMA_VERSION));
         }
         if (mirrorExecutionApi) {
             supportedObjects.put("mirrorExecutionRequest", List.of(
@@ -1017,6 +1025,9 @@ public class ToolStudioIntegrationService {
                 endpoints.add(new IntegrationCapabilities.Endpoint(
                         "GET",
                         "/api/mirror/scenarios/runs/{runId}/evidence"));
+                endpoints.add(new IntegrationCapabilities.Endpoint(
+                        "GET",
+                        "/api/mirror/scenarios/runs/{runId}/workbook-seed"));
                 endpoints.add(new IntegrationCapabilities.Endpoint(
                         "GET",
                         "/api/mirror/scenarios/runs/{runId}/retention"));

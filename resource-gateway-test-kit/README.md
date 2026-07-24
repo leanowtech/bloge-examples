@@ -30,7 +30,9 @@ implementation. The JAR packages the authoritative v1 JSON Schema and provides:
   `CaseHandlingAssertion.v1` Schemas plus an independent payload-free scenario
   closure verifier, signed aggregate Schemas, and a dependency-light verifier
   that re-derives every assertion/case/result/bundle content address and the
-  domain-separated Ed25519 signature;
+  domain-separated Ed25519 signature; deterministic Scenario correctness-workbook
+  Schema, dual-signature/source-closure verifier, and a client method that
+  refuses producer-selected gate decisions;
 - packaged validation and version constants for the payload-free
   `bloge.executionServiceStateSnapshot.v1` durable-resume building block;
 - payload-safe typed child/suite-run summaries and JUnit 5 assertions;
@@ -283,6 +285,37 @@ the projection, checks signing time and key lifecycle, and verifies Ed25519.
 It never needs deleted aggregate data. The current state API exposes only the
 latest event plus its predecessor address; full retained event-chain replay is
 still performed by the server and is not claimed by this client method.
+
+For ANEKE or CI workbook ingestion, prefer the closed client operation:
+
+```java
+JsonNode workbook =
+        client.findScenarioRehearsalWorkbookSeed(scenarioRunId);
+```
+
+Before returning, the client fetches the strict workbook seed, signed aggregate
+evidence, exact compiled plan, aggregate evidence key, and retention-event key.
+`ScenarioRehearsalWorkbookVerifier` independently checks both Ed25519
+signatures, plan/workbook content addresses, complete scope and source identity,
+ordered compiled/executed/projected cases, assertion results, and the
+conservatively derived blocker set. A valid producer signature cannot make an
+incorrect `gateReady` decision acceptable.
+
+Offline consumers can perform the same verification without HTTP:
+
+```java
+ScenarioRehearsalWorkbookVerifier.VerificationResult result =
+        new ScenarioRehearsalWorkbookVerifier().verify(
+                workbook, compiledPlan, evidenceBundle,
+                evidenceKey, retentionKey);
+if (!result.verified()) {
+    throw new IllegalStateException(result.reasonCode());
+}
+```
+
+The returned seed is a payload-free input to ANEKE, not the final workbook or
+publish decision. ANEKE remains responsible for coverage policy, owner
+approval, validation debt, environment certification, and the final gate.
 
 `findMirrorSessionWriteAttempt` accepts an attempt id obtained from the
 run/evidence recovery coordinate. Before returning its bounded projection, it

@@ -311,6 +311,7 @@ class ToolStudioIntegrationServiceTest {
                 .containsEntry("mirrorScenarioRehearsalCompilation", false)
                 .containsEntry("mirrorScenarioRehearsalExecution", false)
                 .containsEntry("mirrorScenarioRehearsalEvidenceApi", false)
+                .containsEntry("mirrorScenarioRehearsalWorkbookSeed", false)
                 .containsEntry("mirrorScenarioRehearsalEvidence", false)
                 .containsEntry("mirrorOperationObservability", false)
                 .containsEntry("mirrorServing", false);
@@ -323,6 +324,7 @@ class ToolStudioIntegrationServiceTest {
                 .containsEntry("mirrorScenarioRehearsalCompilation", true)
                 .containsEntry("mirrorScenarioRehearsalExecution", true)
                 .containsEntry("mirrorScenarioRehearsalEvidenceApi", true)
+                .containsEntry("mirrorScenarioRehearsalWorkbookSeed", true)
                 .containsEntry("mirrorScenarioRehearsalEvidence", false)
                 .containsEntry("mirrorOperationObservability", true)
                 .containsEntry("mirrorServing", true)
@@ -371,7 +373,12 @@ class ToolStudioIntegrationServiceTest {
                         "scenarioCaseRehearsalResult",
                         "scenarioRehearsalResult",
                         "scenarioRehearsalEvidenceAttestation",
-                        "scenarioRehearsalEvidenceBundle")
+                        "scenarioRehearsalEvidenceBundle",
+                        "scenarioRehearsalLegalHoldCommand",
+                        "scenarioRehearsalPurgeCommand",
+                        "scenarioRehearsalRetentionEvent",
+                        "scenarioRehearsalRetentionState",
+                        "scenarioRehearsalWorkbookSeed")
                 .containsEntry("mirrorExecutionRequest", List.of(
                         com.leanowtech.bloge.gateway.integration.mirror
                                 .MirrorExecutionRequest.SCHEMA_VERSION,
@@ -450,6 +457,7 @@ class ToolStudioIntegrationServiceTest {
                         "GET /api/mirror/scenarios/compiled-plans/{planId}",
                         "POST /api/mirror/scenarios/runs",
                         "GET /api/mirror/scenarios/runs/{runId}/evidence",
+                        "GET /api/mirror/scenarios/runs/{runId}/workbook-seed",
                         "POST /api/mirror/executions", "GET /api/mirror/runs/{runId}",
                         "GET /api/mirror/runs/{runId}/evidence",
                         "GET /api/mirror/runs/{runId}/state-workbook-seed",

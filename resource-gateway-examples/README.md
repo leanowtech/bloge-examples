@@ -31,7 +31,7 @@ integration something the business flow can see, reason about, test, and change.
 | Governed capability closures | Sealed Resource/Operator/Graph projections, exact cycle-checked closure for all seven shipped graphs, nested foreach/loop boundary inventory, full enterprise scope, append-only lifecycle revisions, classification-aware reads, and honest mirror readiness flags |
 | Governed capability observations | Signed payload-free invocation facts, operator-owned admission policy, external vault/proof verification, durable admitted-or-quarantined decisions, full-scope idempotency, and independent offline verification |
 | Governed capability corpora | Immutable quarantine review, exact admitted-source candidates, metadata risk gates, independent owner-reviewed publication lineage, second source-authority verification, and honest resolver readiness |
-| Governed scenario compilation | Append-only ScenarioPack/Case/assertion/checkpoint registry, exact cross-registry dependency closure, full-scope v2 TestSuite/Fixture ownership, deterministic payload-free compiled plans, strict transport, and honest compile-versus-execute capability flags |
+| Governed scenario rehearsal | Append-only Scenario assets, exact compilation, durable per-case execution, independently signed aggregate evidence, multi-hold retention/deletion proof, and deterministic independently verifiable ANEKE workbook seeds |
 | Stateful mirror sessions | Versioned entity/write/session/checkpoint/write-attempt protocols, atomic multi-entity mutations, exact replay, AES-GCM isolated persistence, lease/fence/CAS concurrency, durable crash-window reconciliation, TTL/destroy, payload-free signed state evidence, signed same-data-plane restart recovery admission, ANEKE workbook seeds, and independently verified clients |
 | Governed replay payloads | Payload values detached from immutable evidence, classification ABAC, selective retention, legal hold, bounded expiry, and signed deletion proof |
 | Workbook and gate evidence loop | Deterministic sanitized workbook seeds, exact suite/run evidence refs, versioned gate decision basis, stale detection, and transactional gate events |
@@ -136,6 +136,7 @@ dedicated local data plane.
 | `GET http://localhost:8080/api/mirror/scenarios/compiled-plans/{planId}?revision=...&fingerprint=...` | Read one exact compiler-issued rehearsal plan |
 | `POST http://localhost:8080/api/mirror/scenarios/runs` | Run one exact compiled Scenario plan and return an independently verified signed aggregate bundle |
 | `GET http://localhost:8080/api/mirror/scenarios/runs/{runId}/evidence` | Re-read and independently verify one full-scope append-only Scenario aggregate |
+| `GET http://localhost:8080/api/mirror/scenarios/runs/{runId}/workbook-seed` | Export a deterministic payload-free ANEKE seed after re-verifying Plan, aggregate evidence, retention proof, cases, assertions, and blockers |
 | `GET http://localhost:8080/api/mirror/scenarios/runs/{runId}/retention` | Rebuild and verify the aggregate retention projection and latest signed event |
 | `POST http://localhost:8080/api/mirror/scenarios/runs/{runId}/retention/holds` | Place one independent idempotent legal hold (`X-Purpose: LEGAL_HOLD`) |
 | `POST http://localhost:8080/api/mirror/scenarios/runs/{runId}/retention/hold-releases` | Release one exact legal hold without affecting any other hold |
@@ -209,10 +210,19 @@ returns an offline-verifiable deletion proof. Retention reads and mutations
 also use mandatory payload-free operation audit. The Test Kit packages strict
 hold/purge/event/state Schemas and independently re-derives the latest event
 address, projection closure, signing-time key policy, and Ed25519 seal.
+The workbook endpoint projects the exact compiled plan, signed aggregate,
+revision-one signed retention commitment, ordered case/assertion results, and
+conservative blockers into
+`resourceGateway.scenarioRehearsalWorkbookSeed.v1`. Its `gateReady` field is
+derived, not accepted as policy input. The Test Kit can fetch the seed,
+aggregate, exact plan, and both public keys with
+`findScenarioRehearsalWorkbookSeed`, then independently recheck both
+signatures, every content address and source join, and the gate decision before
+returning the seed.
 The capability probe therefore reports Scenario execution, evidence API,
-retention API, legal hold, and deletion proof as available while keeping
+retention API, legal hold, deletion proof, and workbook seed as available while keeping
 `mirrorScenarioRehearsalEvidence=false`: enterprise policy authority,
-WORM/transparency anchoring, workbook seed, batch scheduling, and owner UX
+WORM/transparency anchoring, consumer/environment certification, batch scheduling, and owner UX
 remain required before this becomes publish-gate evidence. See the
 [scenario rehearsal compiler guide](../docs/resource-gateway-scenario-rehearsal-compiler.md).
 

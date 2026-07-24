@@ -1421,6 +1421,114 @@ public final class ResourceGatewayTestClient {
     }
 
     /**
+     * Reads and independently verifies one deterministic Scenario correctness-workbook seed.
+     *
+     * <p>The client resolves the producer seed, exact compiled plan, signed aggregate evidence,
+     * aggregate verification key, and retention-event verification key. It then independently
+     * checks both signatures, all content addresses, every ordered case and assertion, and the
+     * derived publication blockers before returning a defensive copy. A producer-controlled
+     * {@code gateReady} value, stale plan, missing key, or cross-run substitution fails closed.</p>
+     *
+     * @param runId canonical {@code scenario-<sha256>} aggregate identity
+     * @return defensive copy of the independently verified payload-free workbook seed
+     */
+    public JsonNode findScenarioRehearsalWorkbookSeed(
+            String runId) {
+        String exactRunId =
+                scenarioRehearsalRunId(runId);
+        JsonNode workbookResponse = exchange(
+                "GET",
+                "/api/mirror/scenarios/runs/"
+                        + segment(exactRunId)
+                        + "/workbook-seed",
+                "", "GOVERNANCE_EVIDENCE_INGESTION", null);
+        JsonNode workbook = requireMirrorEnvelope(
+                workbookResponse,
+                "SCENARIO_REHEARSAL_WORKBOOK_SEED",
+                CapabilityMirrorProtocol
+                        .SCENARIO_REHEARSAL_WORKBOOK_SEED_V1);
+        CapabilityMirrorSchemaValidator.require(
+                workbook,
+                CapabilityMirrorProtocol
+                        .SCENARIO_REHEARSAL_WORKBOOK_SEED_SCHEMA_RESOURCE,
+                "RG.MIRROR.CLIENT.SCENARIO_WORKBOOK_SCHEMA_INVALID");
+        if (!exactRunId.equals(
+                workbook.path("runId").asText())) {
+            throw responseContractInvalid(
+                    "The server returned a Scenario workbook for a different run.");
+        }
+
+        JsonNode evidenceResponse = exchange(
+                "GET",
+                "/api/mirror/scenarios/runs/"
+                        + segment(exactRunId)
+                        + "/evidence",
+                "", "GOVERNANCE_EVIDENCE_INGESTION", null);
+        JsonNode evidence = requireMirrorEnvelope(
+                evidenceResponse,
+                "SCENARIO_REHEARSAL_EVIDENCE_BUNDLE",
+                CapabilityMirrorProtocol
+                        .SCENARIO_REHEARSAL_EVIDENCE_BUNDLE_V1);
+
+        JsonNode planRef =
+                workbook.path("compiledPlanRef");
+        String planId = requiredIdentifier(
+                planRef.path("id").asText(),
+                "compiledPlanRef.id", 512);
+        long planRevision =
+                planRef.path("revision").asLong(-1);
+        String planFingerprint =
+                normalized(
+                        planRef.path("fingerprint").asText());
+        if (planRevision < 1
+                || !planFingerprint.matches(
+                "sha256:[a-f0-9]{64}")) {
+            throw responseContractInvalid(
+                    "The Scenario workbook contains invalid compiled-plan coordinates.");
+        }
+        JsonNode planResponse = exchange(
+                "GET",
+                "/api/mirror/scenarios/compiled-plans/"
+                        + segment(planId),
+                "revision=" + planRevision
+                        + "&fingerprint="
+                        + segment(planFingerprint),
+                "MIRROR_REHEARSAL", null);
+        JsonNode plan = requireMirrorEnvelope(
+                planResponse,
+                "COMPILED_SCENARIO_REHEARSAL_PLAN",
+                CapabilityMirrorProtocol
+                        .COMPILED_SCENARIO_REHEARSAL_PLAN_V1);
+
+        EvidenceVerificationKey evidenceKey;
+        EvidenceVerificationKey retentionKey;
+        try {
+            evidenceKey = findEvidenceVerificationKey(
+                    workbook.path("evidenceKeyId")
+                            .asText());
+            retentionKey = findEvidenceVerificationKey(
+                    workbook.path("retentionProof")
+                            .path("evidenceSeal")
+                            .path("keyId").asText());
+        } catch (IllegalArgumentException failure) {
+            throw responseContractInvalid(
+                    "The Scenario workbook contains an invalid verification-key identity.");
+        }
+        ScenarioRehearsalWorkbookVerifier.VerificationResult
+                verification =
+                new ScenarioRehearsalWorkbookVerifier()
+                        .verify(
+                                workbook, plan, evidence,
+                                evidenceKey, retentionKey);
+        if (!verification.verified()) {
+            throw responseContractInvalid(
+                    "The Scenario workbook source closure failed independent verification: "
+                            + verification.reasonCode());
+        }
+        return workbook.deepCopy();
+    }
+
+    /**
      * Reads and independently reconstructs one payload-free state-transition workbook seed.
      *
      * <p>The client fetches the signed v4 evidence bundle, resolves its evidence key through the
@@ -1855,8 +1963,9 @@ public final class ResourceGatewayTestClient {
      * @return typed public verification key
      */
     public EvidenceVerificationKey findEvidenceVerificationKey(String keyId) {
-        String exactKeyId = requiredIdentifier(keyId, "keyId", 512);
-        JsonNode response = exchange("GET", "/api/integration/evidence-keys/" + segment(exactKeyId),
+        String exactKeyId = requiredIdentifier(keyId, "keyId", 1_024);
+        JsonNode response = exchange("GET", "/api/integration/evidence-keys/"
+                        + segment(exactKeyId, 1_024),
                 "", "TEST_EXECUTION", null);
         try {
             return EvidenceVerificationKey.fromEnvelope(response, exactKeyId);
@@ -2553,10 +2662,28 @@ public final class ResourceGatewayTestClient {
         return normalized;
     }
 
-    private static String segment(String value) {
+    private static String scenarioRehearsalRunId(
+            String value) {
         String normalized = normalized(value);
-        if (normalized.isBlank() || normalized.length() > 512) {
-            throw new IllegalArgumentException("URI path identifiers must contain 1 to 512 characters");
+        if (!normalized.matches(
+                "scenario-[a-f0-9]{64}")) {
+            throw new IllegalArgumentException(
+                    "Scenario rehearsal run id must be canonical");
+        }
+        return normalized;
+    }
+
+    private static String segment(String value) {
+        return segment(value, 512);
+    }
+
+    private static String segment(
+            String value, int maximumLength) {
+        String normalized = normalized(value);
+        if (normalized.isBlank()
+                || normalized.length() > maximumLength) {
+            throw new IllegalArgumentException(
+                    "URI path identifier length is invalid");
         }
         StringBuilder encoded = new StringBuilder();
         for (byte current : normalized.getBytes(StandardCharsets.UTF_8)) {

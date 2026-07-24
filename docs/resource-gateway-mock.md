@@ -7,7 +7,7 @@
 
 | 文档属性 | 内容 |
 |---|---|
-| 状态 | Accepted / In implementation；Stage 0 仓库内工程退出门禁已通过；Stage 1 compiler、resolver provenance、payload-free evidence 签发/独立复验、scope-isolated durable store、受保护 Plan/Run/Evidence API、durable request fencing、动态 occurrence budget、payload-free operation audit、固定基数指标、部署隔离证明协议/离线验真、M-of-N authority key-set trusted distribution、full-scope attestation ingest/current-only distribution/irreversible revocation、deployment agent pinned mTLS/atomic cache、execution admission/evidence commit 运行时双重绑定已完成；Stage 2 已完成签名 observation 准入/隔离、immutable review/candidate/publication、test/staging `RECORDED_EXACT` serving、explicit owner-reviewed retry trajectory publication、`RECORDED_TRAJECTORY` runtime serving、governed `RECORDED_CLUSTER` publication、identity-safe runtime serving、显式 compiled-generation 生命周期和 signed production serving-generation fence 九个纵切；Stage 3 已完成 StateModel/StateReadSpec/WriteEffectSpec/SessionStateSpace 与 Session 协议、退款 read/write fixture、独立 verifier/sealer/client、事务内核、受保护 Session API、独立 AES-GCM JDBC 数据面、lease/fence/CAS、TTL/destroy、数据库权威容量 admission、副本背压、过期擦除、固定基数 telemetry、`SESSION_STATE` DAG read/virtual-write resolver、真实 BLOGE read-write-read 与外部写零调用、payload-free state evidence v1/v2/v3、signed mirror evidence v3/v4/v5、JDBC 重启复验、独立离线闭包验证、read-only、successful-transition 与 failure-aware write-outcome 三类 ANEKE workbook seed、签名 HASH_ONLY Session checkpoint 与同一数据面代际内的精确恢复准入，以及 durable payload-free write-attempt journal、原子 commit terminalization、lease-expired receipt reconciliation 和独立客户端复验；生产 payload authority、TEE/KMS、跨区域数据恢复、真实进程 kill/network partition、容量与目标数据库认证、HA/DR、漂移/删除证明、跨语言 canonicalization 和环境 certification 门禁继续实施 |
+| 状态 | Accepted / In implementation；Stage 0 仓库内工程退出门禁已通过；Stage 1 compiler、resolver provenance、payload-free evidence 签发/独立复验、scope-isolated durable store、受保护 Plan/Run/Evidence API、durable request fencing、动态 occurrence budget、payload-free operation audit、固定基数指标、部署隔离证明协议/离线验真、M-of-N authority key-set trusted distribution、full-scope attestation ingest/current-only distribution/irreversible revocation、deployment agent pinned mTLS/atomic cache、execution admission/evidence commit 运行时双重绑定已完成；Stage 2 已完成签名 observation 准入/隔离、immutable review/candidate/publication、test/staging `RECORDED_EXACT` serving、explicit owner-reviewed retry trajectory publication、`RECORDED_TRAJECTORY` runtime serving、governed `RECORDED_CLUSTER` publication、identity-safe runtime serving、显式 compiled-generation 生命周期和 signed production serving-generation fence 九个纵切；Stage 3 已完成 StateModel/StateReadSpec/WriteEffectSpec/SessionStateSpace 与 Session 协议、退款 read/write fixture、独立 verifier/sealer/client、事务内核、受保护 Session API、独立 AES-GCM JDBC 数据面、lease/fence/CAS、TTL/destroy、数据库权威容量 admission、副本背压、过期擦除、固定基数 telemetry、`SESSION_STATE` DAG read/virtual-write resolver、真实 BLOGE read-write-read 与外部写零调用、payload-free state evidence v1/v2/v3、signed mirror evidence v3/v4/v5、JDBC 重启复验、独立离线闭包验证、read-only、successful-transition 与 failure-aware write-outcome 三类 ANEKE workbook seed、签名 HASH_ONLY Session checkpoint 与同一数据面代际内的精确恢复准入，以及 durable payload-free write-attempt journal、原子 commit terminalization、lease-expired receipt reconciliation 和独立客户端复验；Stage 4 已完成 Scenario 资产/编译、可恢复逐 case runtime、签名 aggregate、同事务 audit/retention、多 hold/删除证明、deterministic ANEKE workbook seed 与独立双签名/source/gate verifier；生产 payload authority、TEE/KMS、跨区域数据恢复、真实进程 kill/network partition、容量与目标数据库认证、HA/DR、企业 retention policy、WORM/anchor、跨语言 canonicalization、消费者与环境 certification 门禁继续实施 |
 | 目标读者 | Resource Gateway、BLOGE Runtime、ANEKE、TEE/数据平台、QA、SRE、安全与业务运营团队 |
 | 设计范围 | external/composed 能力建模、镜像运行、保真语料、有状态世界、场景演练、证据、保真度与结果校准 |
 | 非目标 | 不重做 ANEKE 的资产治理和发布门禁；不允许测试控制进入生产业务请求；不把观测频率直接当成业务正确性 |
@@ -576,11 +576,11 @@ Resource Gateway 已有的工业底座应直接复用：
 | 递归 DAG 测试 | 85% | MirrorPlan/closure/runtime inventory/fixture control 已统一；缺 contract-mock 展开治理和状态世界 |
 | 日志蒸馏与语料 | 82% | payload-free signed observation、准入/隔离、immutable review、candidate/publication/trajectory/cluster 独立 lineage、元数据风险门禁、fixture exact/trajectory/cluster binding、在线 revalidation、test/staging `RECORDED_EXACT`/`RECORDED_TRAJECTORY`/`RECORDED_CLUSTER`、BLOGE 原生 retry loop、identity-safe projection、Wilson confidence、Session state read 与独立 verifier 已落地；缺生产 payload authority、漂移、偏差、outcome 校准和删除证明 |
 | 有状态业务世界 | 91% | 协议、read/write 退款 fixture、独立 verifier/sealer/client、事务内核、受保护 Session API、独立 AES-GCM 数据面、lease/fence/CAS、durable write-attempt journal/reconciliation、TTL/destroy、全局/scope 容量、保留字节、命令背压、过期擦除、固定 read head、run-scoped virtual write、真实 DAG read-write-read、payload-free v1/v2/v3 state evidence、read-only/successful-transition/write-outcome ANEKE seed、签名 HASH_ONLY checkpoint 与同数据面代际精确恢复准入已落地；缺 TEE/KMS、跨区域数据恢复、真实 process-kill/network parity、目标数据库容量认证和 HA/DR certification |
-| Scenario/Rehearsal | 68% | ScenarioPack/Case/Assertion、append-only registry、exact compiler、全企业作用域 authority、逐 case runtime、验签断言、独立签名 evidence、数据库时钟 aggregate lease/epoch、连续 case checkpoint、takeover、原子终态、protected operation audit 和同事务 lifecycle audit 已落地；缺 retention/deletion proof/workbook、批量任务和 owner UX |
+| Scenario/Rehearsal | 80% | ScenarioPack/Case/Assertion、exact compiler、全企业作用域 authority、可恢复逐 case runtime、独立签名 aggregate、同事务 audit/retention、多 hold/删除证明、deterministic ANEKE seed 与独立双签名/source/gate verifier 已落地；缺 durable batch、owner UX、企业策略/WORM/anchor 与异构消费者认证 |
 | Fidelity/Outcome | 5% | 缺保真向量、shadow、权威结果归因和校准闭环 |
 | 业务运营工作台 | 10% | Author Canvas 尚未成为案例驱动的镜像运营工作台 |
 
-结论：基础设施准备度约 88%，镜像复利闭环完成度约 48%，完整理想态完成度约 57%。剩余主要矛盾已经
+结论：基础设施准备度约 88%，固定权重理想态完成度为 59.27%。剩余主要矛盾已经
 从“能否安全执行和取证”转向“能否把可信 observation 持续蒸馏成可校准、可拒答、可删除的业务拟合资产”。
 
 ### 3.1 2026-07-24 Scenario 编译期闭包迭代差距复评
@@ -905,6 +905,58 @@ workbook seed，并将 `ScenarioPack/CompiledPlan/Evidence/RetentionProof`
 绑定为同一个 gate-consumable closure。然后才是 durable batch job；企业 policy
 authority 与 WORM/anchor 可以作为独立部署认证流并行推进。Fidelity score
 仍然不能抢跑，因为没有 workbook 消费闭包就无法把“拟合结果”转成可执行门禁。
+
+### 3.8 2026-07-24 Scenario 正确性工作簿闭包迭代差距复评
+
+本轮关闭 RG-MIR-SCEN-003 的“证据虽然可信，但治理消费者仍需自行拼 Map”
+缺口。新增 strict `resourceGateway.scenarioRehearsalWorkbookSeed.v1`：
+它不是 ANEKE workbook 的替代品，也不是第二份可编辑运行结果，而是从已验证
+`ScenarioPack -> CompiledPlan -> signed aggregate -> signed retention
+registration` 唯一投影出的 payload-free join artifact。seed 保留完整 enterprise
+scope、exact source ref/fingerprint、按编译顺序排列的 case/assertion 结果和
+固定 blocker vocabulary，不复制 TestCase input、Fixture value、Session payload
+或节点业务值。
+
+这里刻意没有再建一张 workbook 事实表。可变 projection 一旦独立持久化，就会产生
+“Plan 已换代、evidence 已删除、retention 已变化，但旧 workbook 仍被当作新事实”
+的双写漂移。服务端每次读取都重新验证 aggregate 签名、compiled plan content
+address 和完整 retention chain，再使用 revision 1
+`RETENTION_REGISTERED` 签名事件重建同一个 seed；合法 hold 变化不会改写运行时
+保留承诺，aggregate purge 后也不会继续发布脱离源证据的工作簿。
+
+`gateReady` 不属于生产者自由度。服务端和独立 Test Kit 都按同一冻结规则重新派生：
+aggregate `FAIL/INDETERMINATE`、缺 child evidence、非 `CERTIFIABLE` child、
+BLOCKER assertion `FAIL/INDETERMINATE` 任一出现即阻断；WARNING 结果保留但不
+单独阻断。`ScenarioRehearsalWorkbookVerifier` 不链接 Spring 或服务端 model，
+会独立执行 strict Schema、Plan/seed content address、aggregate Ed25519、
+retention Ed25519、完整 source identity、逐 case/assertion closure 和 gate
+decision 校验。合法签名重新封装的错误 PASS、case 替换或生产者自选
+`gateReady` 都会失败关闭。
+
+受保护 `GET /api/mirror/scenarios/runs/{runId}/workbook-seed`、独立
+`MIRROR_REHEARSAL_WORKBOOK_READ` operation/audit、capability feature/object/endpoint
+和 Test Kit `findScenarioRehearsalWorkbookSeed` 同步交付。客户端一次调用会拉取
+seed、signed aggregate、exact plan 和两把公开验签密钥，只有完整闭包通过才返回。
+这使 ANEKE 可以把 Resource Gateway 输出直接作为 correctness workbook 输入，
+同时继续拥有 coverage policy、owner approval、验证债务和最终 publish gate。
+完整门禁覆盖 Resource Gateway `5,053` 项测试（零失败、零错误、3 项条件跳过，
+包含真实 Chrome 工作流）与 Test Kit `364/364`；后者完成 106 份 Mirror Schema
+引用闭包、shaded JAR 和零警告公共 JavaDoc。
+
+本轮将 Scenario/Rehearsal 从 74% 上调至 80%，固定权重总分从 58.31% 上调至
+59.27%，距理想态 40.73%。只增加 6 个百分点，是因为本地 deterministic
+gate-consumable closure 已完成，但生产认证仍缺四类根能力：企业 retention policy
+authority、WORM/transparency anchor、跨语言固定向量/消费者认证，以及环境级
+备份恢复和多副本故障证明。`mirrorScenarioRehearsalWorkbookSeed=true` 只声明
+本地协议/API，`mirrorScenarioRehearsalEvidence=false` 继续防止把它冒充生产门禁。
+
+下一条最短路径是 durable batch rehearsal：冻结批次 manifest 与 request
+fingerprint，以数据库容量/租约/epoch/公平调度运行多个 exact compiled plan，
+逐 run 复用当前 aggregate 幂等与证据闭包，产出可恢复、可取消、可分页查询、
+可独立汇总的 batch evidence。没有这层，复杂客服域的 hundreds/thousands
+Scenario 回归仍靠调用方循环，正确性能力无法成为可运营的工业生产线。完成 batch
+后再进入 owner deep link/失败定位 UX；企业 policy/WORM/anchor 继续作为并行
+production-certification 轨道，不能用 UI 进展掩盖。
 
 ## 4. 目标架构与系统责任
 
@@ -1458,9 +1510,11 @@ aggregate result 已完成。运行命令只能引用 exact compiled plan，Test
 由服务端派生。aggregate 也已有数据库时钟 lease/epoch、连续 case checkpoint、
 takeover、独立签名、exact evidence read 和 evidence/request 原子终态。capability probe
 将 execution、evidence API、retention API、multi-hold 和 deletion proof 报告为
-true；protected operation/lifecycle audit 也已闭合。企业 policy authority、
-WORM/transparency anchor 和 workbook seed 尚未闭合，因此 publish-gate
-evidence 仍必须为 false。
+true；protected operation/lifecycle audit 也已闭合。deterministic workbook seed
+会绑定 exact Plan、signed aggregate 与 revision-one signed retention proof，
+独立 Test Kit 重算双签名、逐 case/assertion closure 和 gate decision。企业
+policy authority、WORM/transparency anchor、消费者/环境认证尚未闭合，因此
+production publish-gate evidence 仍必须为 false。
 操作与启停见
 [场景演练注册与编译指南](resource-gateway-scenario-rehearsal-compiler.md)。
 
@@ -1656,6 +1710,7 @@ session 重放造成重复状态、运行时依赖漂移。
 | `GET /api/mirror/scenarios/compiled-plans/{planId}` | 按 revision + fingerprint 读取 compiler-issued plan | 只读、完整 scope 隔离；读取时重验完整性 | 已实现（test/staging + 显式开关） |
 | `POST /api/mirror/scenarios/runs` | 执行 exact compiled Scenario plan 并返回 signed aggregate evidence | full scope + request/plan fingerprint；数据库时钟 lease/epoch、连续 case checkpoint、takeover 和原子终态 | 已实现（test/staging + 显式开关） |
 | `GET /api/mirror/scenarios/runs/{runId}/evidence` | 读取并重新验签一个 payload-free Scenario aggregate | stable scope-bound runId；result/bundle/signature 完整闭包 | 已实现（test/staging + 显式开关） |
+| `GET /api/mirror/scenarios/runs/{runId}/workbook-seed` | 确定性投影 ANEKE correctness workbook 输入 | exact Plan + aggregate/retention 双签名 + ordered case/assertion + conservative blockers；独立 Test Kit 对账 | 已实现（test/staging + 治理消费 purpose） |
 | `GET /api/mirror/scenarios/runs/{runId}/retention` | 重建 retention projection 并验证最新签名事件 | 完整 scope；evidence 缺失但有 purge proof 时仍可读取 | 已实现（test/staging + 独立 purpose） |
 | `POST /api/mirror/scenarios/runs/{runId}/retention/holds` | 放置一个独立 legal hold | command 幂等、hold id 不可复用、多 hold 不互相覆盖 | 已实现（`LEGAL_HOLD`） |
 | `POST /api/mirror/scenarios/runs/{runId}/retention/hold-releases` | 释放一个 exact legal hold | 只释放指定 hold；其他 hold 继续阻止删除 | 已实现（`LEGAL_HOLD`） |
@@ -2076,8 +2131,8 @@ binding。恢复后继续执行与不中断执行的最终 outcome parity、逐�
 **当前状态**：Sprint 1 的协议、独立 verifier、append-only registry、deterministic compiler 与完整
 enterprise scope authority 已完成。Sprint 2 已交付同步逐 case runtime、typed assertion evaluator、
 payload-free content-addressed case/aggregate result、durable lease/recovery、独立签名 evidence、
-exact read、multi-hold retention 和 deletion proof。下一步是 deterministic ANEKE workbook seed
-及其 gate evidence binding，再进入 durable batch job 与 Author UX。企业 policy authority、
+exact read、multi-hold retention、deletion proof、deterministic ANEKE workbook seed
+及其独立 gate evidence closure。下一步进入 durable batch job，再进入 Author UX。企业 policy authority、
 WORM/anchor 和跨地域删除认证作为部署认证支线并行，不阻塞本地 workbook 纵切，但会阻塞最终
 production readiness。
 

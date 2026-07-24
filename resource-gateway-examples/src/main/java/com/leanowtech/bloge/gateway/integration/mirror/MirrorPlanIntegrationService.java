@@ -34,6 +34,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
+import java.util.Set;
 import java.util.regex.Pattern;
 
 /**
@@ -491,11 +492,37 @@ public class MirrorPlanIntegrationService {
     }
 
     static CapabilitySnapshot.Scope requireMirrorIdentity(IntegrationRequestContext identity) {
+        return requireMirrorIdentity(
+                identity,
+                Set.of(AUTHORIZED_PURPOSE),
+                "RG.MIRROR.PURPOSE_REQUIRED",
+                "Mirror plan operations require the verified MIRROR_REHEARSAL purpose.");
+    }
+
+    /**
+     * Validates the shared non-production scope for rehearsal or governance evidence reads.
+     */
+    static CapabilitySnapshot.Scope requireMirrorReadIdentity(
+            IntegrationRequestContext identity) {
+        return requireMirrorIdentity(
+                identity,
+                Set.of(
+                        AUTHORIZED_PURPOSE,
+                        "GOVERNANCE_EVIDENCE_INGESTION"),
+                "RG.MIRROR.READ_PURPOSE_REQUIRED",
+                "Mirror evidence reads require a rehearsal or governance-ingestion purpose.");
+    }
+
+    private static CapabilitySnapshot.Scope requireMirrorIdentity(
+            IntegrationRequestContext identity,
+            Set<String> allowedPurposes,
+            String purposeCode,
+            String purposeTitle) {
         Objects.requireNonNull(identity, "identity").requireComplete();
-        if (!AUTHORIZED_PURPOSE.equals(identity.purpose())) {
+        if (!allowedPurposes.contains(identity.purpose())) {
             throw new IntegrationProblemException(IntegrationProblem.forbidden(
-                    "RG.MIRROR.PURPOSE_REQUIRED",
-                    "Mirror plan operations require the verified MIRROR_REHEARSAL purpose.",
+                    purposeCode,
+                    purposeTitle,
                     identity.correlationId(), Map.of()));
         }
         if (identity.projectId().isBlank() || identity.region().isBlank()) {

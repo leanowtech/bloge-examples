@@ -98,7 +98,8 @@ public class ScenarioRehearsalIntegrationService {
             String fingerprint,
             IntegrationRequestContext identity) {
         CapabilitySnapshot.Scope scope =
-                MirrorPlanIntegrationService.requireMirrorIdentity(identity);
+                MirrorPlanIntegrationService
+                        .requireMirrorIdentity(identity);
         ScenarioPack pack = scenarioArtifacts.findPack(
                 packId, revision, fingerprint, identity);
         List<CaseHandlingAssertion> assertions =
@@ -183,7 +184,8 @@ public class ScenarioRehearsalIntegrationService {
             String fingerprint,
             IntegrationRequestContext identity) {
         CapabilitySnapshot.Scope scope =
-                MirrorPlanIntegrationService.requireMirrorIdentity(identity);
+                MirrorPlanIntegrationService
+                        .requireMirrorReadIdentity(identity);
         MirrorArtifactRef expected;
         try {
             expected = new MirrorArtifactRef(

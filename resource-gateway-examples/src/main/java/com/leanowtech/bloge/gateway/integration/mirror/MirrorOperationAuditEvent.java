@@ -70,6 +70,8 @@ public record MirrorOperationAuditEvent(
         SCENARIO_REHEARSAL_CREATE,
         /** Read one independently verified signed Scenario aggregate. */
         SCENARIO_REHEARSAL_EVIDENCE_READ,
+        /** Project one verified Scenario closure into an ANEKE workbook seed. */
+        SCENARIO_REHEARSAL_WORKBOOK_READ,
         /** Read one signed Scenario aggregate retention projection. */
         SCENARIO_RETENTION_READ,
         /** Place one independent Scenario aggregate legal hold. */

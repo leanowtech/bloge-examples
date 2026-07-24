@@ -27,7 +27,10 @@ Fixture、MirrorPlan 和可选 Session checkpoint 绑定成不可变执行许可
 | `ScenarioRehearsalRetentionEvent/State.v1` | 可用 | 完整 scope、不可变最短保留边界、多重独立 hold、签名事件链和删除证明 |
 | Scenario retention API | 可用 | retention read、hold place/release、到期 purge 均使用独立 purpose 和 payload-free 操作审计 |
 | `ScenarioRehearsalRetentionVerifier` | 可用 | ANEKE/CI 可离线重算最新事件指纹、验证 projection 闭包、密钥策略与 Ed25519 删除证明 |
-| 可作为发布门禁的 Scenario evidence | 未交付 | 尚无企业 retention policy authority、WORM/外部锚和 ANEKE workbook seed |
+| `ScenarioRehearsalWorkbookSeed.v1` | 可用 | 把 exact Pack/Plan、signed aggregate、初始 retention proof、逐 case/assertion 与保守 blocker 投影成确定性 payload-free ANEKE 输入 |
+| `ScenarioRehearsalWorkbookVerifier` | 可用 | 独立重算计划/工作簿内容地址、两类签名、逐 case/assertion 闭包和 gate decision，不信任生产者的 `gateReady` |
+| Scenario workbook API/Test Kit client | 可用 | 受保护 exact-run 读取；客户端自动拉取五类源资产并在返回前完成独立闭包验证 |
+| 可作为生产发布门禁的 Scenario evidence | 未交付 | 本地 gate-consumable closure 已完成；尚无企业 retention policy authority、WORM/外部锚、消费者认证和环境级门禁 |
 
 当前链路已经解决“执行前冻结什么、运行时从哪里取值、每个结果依据什么证据”
 三个问题，并让同步完成的聚合成为可独立复验和重读的证据。aggregate 现以
@@ -35,8 +38,10 @@ Fixture、MirrorPlan 和可选 Session checkpoint 绑定成不可变执行许可
 checkpoint；进程退出后，同 request id 可由下一副本从首个未完成 case 接续。
 终态证据与 retention registration 同事务提交，默认最短保留 30 天；到期后只有
 `PAYLOAD_RETENTION_ADMIN` 且不存在任何 active hold 才能删除 aggregate evidence。
-下一条链路负责企业策略权威和 ANEKE workbook seed；在此之前，证据适合
-test/staging 的可恢复回归、法律保全和排错，但不能冒充 publish-gate-ready 证据。
+系统现在可从完整已验证闭包确定性导出 ANEKE workbook seed，且独立客户端会再次
+验签、重算来源闭包与 gate decision。该本地闭包适合 test/staging 的回归、法律
+保全、正确性工作簿导入和门禁联调；企业策略权威、WORM/外部锚与消费者环境认证
+完成前，仍不能冒充 production publish-gate-ready 证据。
 
 ## 2. 为什么需要独立编译计划
 
@@ -104,6 +109,7 @@ curl -sS http://localhost:8080/api/integration/capabilities
 | `mirrorScenarioRehearsalRetentionApi` | `true` |
 | `mirrorScenarioRehearsalLegalHold` | `true` |
 | `mirrorScenarioRehearsalDeletionProof` | `true` |
+| `mirrorScenarioRehearsalWorkbookSeed` | `true` |
 | `mirrorScenarioRehearsalEvidence` | `false` |
 
 若前两个为 `false`，先检查 profile 是否为 `test`/`staging`、Mirror 开关、
@@ -111,8 +117,10 @@ curl -sS http://localhost:8080/api/integration/capabilities
 
 ## 4. 调用身份
 
-所有场景路由都要求受验证身份和 `MIRROR_REHEARSAL` purpose。本地演示请求
-使用：
+所有场景路由都要求受验证的完整企业身份。资产注册、编译与执行使用
+`MIRROR_REHEARSAL`；evidence 与 workbook seed 读取也接受最小权限的
+`GOVERNANCE_EVIDENCE_INGESTION`。retention、legal hold 和 purge 使用端点表
+列出的独立 purpose。普通演练请求使用：
 
 ```http
 Authorization: Bearer bloge-aneke-demo-token
@@ -183,6 +191,7 @@ ScenarioPack
 | `GET /api/mirror/scenarios/packs/{packId}` | `MIRROR_SCENARIO_ARTIFACT_READ` | 按 revision + fingerprint 精确读取 |
 | `POST /api/mirror/scenarios/runs` | `MIRROR_REHEARSAL_EXECUTE` | 同步执行 exact compiled plan 并返回内容寻址聚合 |
 | `GET /api/mirror/scenarios/runs/{runId}/evidence` | `MIRROR_REHEARSAL_EVIDENCE_READ` | 按完整企业 scope 读取并重新验签一个 Scenario 聚合证据 |
+| `GET /api/mirror/scenarios/runs/{runId}/workbook-seed` | `MIRROR_REHEARSAL_WORKBOOK_READ` | 从 exact Plan/Evidence/Retention closure 确定性投影 ANEKE seed |
 | `GET /api/mirror/scenarios/runs/{runId}/retention` | `MIRROR_REHEARSAL_RETENTION_READ` | 重建并验证 retention projection 与最新签名事件 |
 | `POST /api/mirror/scenarios/runs/{runId}/retention/holds` | `MIRROR_REHEARSAL_LEGAL_HOLD` | 以独立 command/hold id 放置一个法律保全 |
 | `POST /api/mirror/scenarios/runs/{runId}/retention/hold-releases` | `MIRROR_REHEARSAL_LEGAL_HOLD` | 释放一个 exact hold，不影响其他 active hold |
@@ -391,6 +400,66 @@ if (!verified.verifiedDeletionProof()) {
 前序事件 fingerprint；完整事件链由服务端每次读取重建验证，跨系统全历史导出
 与外部 transparency anchor 仍是后续部署能力。
 
+### 8.2 导出并独立验证正确性工作簿
+
+workbook seed 只从仍然可读的终态 aggregate 生成。服务端先重新验证 aggregate
+bundle、exact compiled plan 和完整 retention event chain，再把 revision 1 的
+`RETENTION_REGISTERED` 签名事件作为稳定保留证明嵌入 seed：
+
+```bash
+curl -sS \
+  http://localhost:8080/api/mirror/scenarios/runs/scenario-REPLACE_WITH_64_HEX/workbook-seed \
+  -H 'Authorization: Bearer bloge-aneke-demo-token' \
+  -H 'X-Purpose: GOVERNANCE_EVIDENCE_INGESTION'
+```
+
+seed 包含完整 enterprise scope、Pack/Plan/Capability exact ref、aggregate/result
+fingerprint、两类签名 key identity、业务 outcome/summary、按编译顺序排列的 case
+与 assertion 结果，以及服务端保守派生的 blockers；不包含 TestCase input、
+Fixture value、Session payload、节点业务值或凭据。相同来源闭包必须得到相同
+`seedFingerprint`，legal hold 的后续变更不会改写 revision 1 的运行时保留承诺。
+aggregate 被合法清除后，seed 不会脱离源证据继续发布。
+
+当前固定 blocker 语义为：
+
+| 条件 | blocker |
+|---|---|
+| aggregate outcome 为 `FAIL` | `REHEARSAL_FAILED` |
+| aggregate outcome 为 `INDETERMINATE` | `REHEARSAL_INDETERMINATE` |
+| case 没有完整 child evidence | `CASE_EVIDENCE_MISSING` |
+| child evidence 不是 `CERTIFIABLE` | `CHILD_EVIDENCE_NOT_CERTIFIABLE` |
+| blocker assertion 为 `FAIL` | `BLOCKER_ASSERTION_FAILED` |
+| blocker assertion 为 `INDETERMINATE` | `BLOCKER_ASSERTION_INDETERMINATE` |
+
+warning assertion 仍进入 summary 和 case projection，但不单独形成发布 blocker。
+`gateReady=true` 当且仅当重新派生的 blocker 集合为空。它不是 ANEKE 的最终发布
+决策，也不能被生产者或调用方覆盖。
+
+Java/CI 推荐使用一键闭包读取；该调用会读取 seed、evidence、exact plan 和两把
+公开验签密钥，再用独立 verifier 重算：
+
+```java
+JsonNode verifiedSeed =
+        client.findScenarioRehearsalWorkbookSeed(runId);
+```
+
+离线场景可显式提供五份材料：
+
+```java
+ScenarioRehearsalWorkbookVerifier.VerificationResult result =
+        new ScenarioRehearsalWorkbookVerifier().verify(
+                workbookSeed, compiledPlan, aggregateBundle,
+                aggregateEvidenceKey, retentionEventKey);
+if (!result.verified()) {
+    throw new IllegalStateException(result.reasonCode());
+}
+```
+
+verifier 不复用服务端领域对象，会独立执行 strict Schema、计划 content address、
+aggregate signature、retention signature、source identity、case/assertion closure、
+blocker/gate 派生和 seed content address 校验。即使生产者用合法密钥重新封装了
+一个错误 `gateReady` 或替换了 case，消费端也会拒绝。
+
 case 结果遵循以下保守语义：
 
 | 条件 | case outcome |
@@ -419,18 +488,19 @@ case 直接把 checkpoint 的 session id + state fingerprint 作为原始 fence 
 - 聚合 evidence 已独立签名、耐久保存和可读取；run/evidence read 的 protected
   operation audit 已失败关闭，内部 claim/takeover/checkpoint/release/complete
   转换也有同事务 payload-free lifecycle audit；retention registration、multi-hold、
-  purge 与签名 deletion proof 已闭合，但尚无企业 policy authority、
-  WORM/transparency anchor 和 workbook seed；
+  purge 与签名 deletion proof 已闭合，deterministic workbook seed 和独立消费闭包
+  也已完成；尚无企业 policy authority、WORM/transparency anchor 和消费环境认证；
 - checkpoint 是同一加密数据面的 recovery fence，不是隔离 clone；全新重复执行
   需要新的隔离 Session/checkpoint；
 - operator 级 scalar TestSuite input 暂不能直接作为 graph context；
 - 只支持 sequential，最多 256 个 case；没有分布式 batch scheduler；
-- ANEKE workbook、批量 job 和 owner UX 尚未交付。
+- Resource Gateway 只输出 ANEKE seed；ANEKE workbook 持久化、owner approval、
+  最终 publish gate、批量 job 和 Author UX 尚未交付。
 
 因此 capability probe 将 `mirrorScenarioRehearsalExecution` 与
 `mirrorScenarioRehearsalEvidenceApi` 报告为 `true`，但
 `mirrorScenarioRehearsalEvidence` 仍为 `false`。调用方不得把“证据协议/API
-已可用”误读为“已可用于发布认证”。
+和本地 workbook closure 已可用”误读为“已通过生产发布认证”。
 
 ## 9. 失败语义
 
@@ -535,8 +605,9 @@ lease 在提交前到期会整体回滚，不留下孤儿 evidence。
 完成的 `ScenarioRehearsalResult` 被封入独立签名 bundle，按完整 scope + stable
 runId append-only 保存；读取时重算 result/bundle fingerprint 并复验 Ed25519
 signature。`mirrorScenarioRehearsalEvidence` 仍保持 `false`，原因已从“运行不可
-恢复”收敛为缺少企业 policy authority、WORM/外部锚和 ANEKE workbook
-消费闭包。最终 run 提交把 signed evidence、retention registration、
+恢复”收敛为缺少企业 policy authority、WORM/外部锚、消费者认证与环境级门禁。
+workbook seed 从重新验证的 Plan/Evidence/Retention closure 即时投影，不另建可
+漂移的事实仓储。最终 run 提交把 signed evidence、retention registration、
 request `COMPLETED`、lifecycle
 `COMPLETED` 和
 `SCENARIO_REHEARSAL_CREATE` 成功审计放在同一本地事务；evidence read 也必须先
@@ -559,7 +630,7 @@ WORM、外部 transparency anchor、企业级策略分发和跨地域删除认�
 
 ```bash
 mvn -f resource-gateway-examples/pom.xml \
-  -Dtest=ScenarioRehearsalControllerTest,ScenarioArtifactRequestDecoderTest,ScenarioArtifactRegistryServiceTest,ScenarioRehearsalIntegrationServiceTest,ScenarioRehearsalCompilerTest,ScenarioRehearsalRuntimeServiceTest,ScenarioRehearsalResultProtocolTest,ScenarioRehearsalEvidenceIntegrityServiceTest,DatabaseScenarioRehearsalEvidenceRepositoryTest,DatabaseScenarioRehearsalRunRepositoryTest,ScenarioRehearsalCommitServiceTest,DatabaseScenarioRehearsalRetentionRepositoryTest,ScenarioRehearsalRetentionServiceTest,DatabaseScenarioArtifactRepositoryTest,DatabaseCompiledScenarioRehearsalPlanRepositoryTest,ScenarioPackProtocolTest,MirrorEvidenceIntegrityServiceTest,ScenarioHandlingAssertionEvaluatorTest,MirrorRuntimeConfigurationTest,ToolStudioIntegrationServiceTest \
+  -Dtest=ScenarioRehearsalControllerTest,ScenarioArtifactRequestDecoderTest,ScenarioArtifactRegistryServiceTest,ScenarioRehearsalIntegrationServiceTest,ScenarioRehearsalCompilerTest,ScenarioRehearsalRuntimeServiceTest,ScenarioRehearsalWorkbookSeedTest,ScenarioRehearsalResultProtocolTest,ScenarioRehearsalEvidenceIntegrityServiceTest,DatabaseScenarioRehearsalEvidenceRepositoryTest,DatabaseScenarioRehearsalRunRepositoryTest,ScenarioRehearsalCommitServiceTest,DatabaseScenarioRehearsalRetentionRepositoryTest,ScenarioRehearsalRetentionServiceTest,DatabaseScenarioArtifactRepositoryTest,DatabaseCompiledScenarioRehearsalPlanRepositoryTest,ScenarioPackProtocolTest,MirrorEvidenceIntegrityServiceTest,ScenarioHandlingAssertionEvaluatorTest,MirrorRuntimeConfigurationTest,ToolStudioIntegrationServiceTest \
   test
 ```
 
@@ -570,9 +641,9 @@ mvn -f resource-gateway-examples/pom.xml clean verify
 mvn -f resource-gateway-test-kit/pom.xml clean verify
 ```
 
-2026-07-24 本轮门禁结果：Resource Gateway `5,047` 项测试零失败、零错误、
-3 项条件跳过（含真实 Chrome DOM/工作流）；Test Kit `359` 项零失败、零错误，
-完成 105 个 Mirror Schema 的引用闭包、shaded JAR 和零警告公共 JavaDoc。
+2026-07-24 本轮门禁结果：Resource Gateway `5,053` 项测试零失败、零错误、
+3 项条件跳过（含真实 Chrome DOM/工作流）；Test Kit `364` 项零失败、零错误，
+完成 106 个 Mirror Schema 的引用闭包、shaded JAR 和零警告公共 JavaDoc。
 
 关键实现与协议：
 
@@ -593,7 +664,9 @@ mvn -f resource-gateway-test-kit/pom.xml clean verify
 - `resource-gateway-examples/src/main/java/com/leanowtech/bloge/gateway/integration/mirror/DatabaseScenarioRehearsalEvidenceRepository.java`
 - `resource-gateway-examples/src/main/java/com/leanowtech/bloge/gateway/integration/mirror/ScenarioRehearsalRetentionService.java`
 - `resource-gateway-examples/src/main/java/com/leanowtech/bloge/gateway/integration/mirror/DatabaseScenarioRehearsalRetentionRepository.java`
+- `resource-gateway-examples/src/main/java/com/leanowtech/bloge/gateway/integration/mirror/ScenarioRehearsalWorkbookSeed.java`
 - `resource-gateway-test-kit/src/main/java/com/leanowtech/bloge/gateway/testkit/ScenarioRehearsalRetentionVerifier.java`
+- `resource-gateway-test-kit/src/main/java/com/leanowtech/bloge/gateway/testkit/ScenarioRehearsalWorkbookVerifier.java`
 - `docs/schemas/resource-gateway-mirror/scenario-rehearsal-compile-request-v1.schema.json`
 - `docs/schemas/resource-gateway-mirror/compiled-scenario-rehearsal-plan-v1.schema.json`
 - `docs/schemas/resource-gateway-mirror/scenario-handling-assertion-result-v1.schema.json`
@@ -606,14 +679,15 @@ mvn -f resource-gateway-test-kit/pom.xml clean verify
 - `docs/schemas/resource-gateway-mirror/scenario-rehearsal-purge-command-v1.schema.json`
 - `docs/schemas/resource-gateway-mirror/scenario-rehearsal-retention-event-v1.schema.json`
 - `docs/schemas/resource-gateway-mirror/scenario-rehearsal-retention-state-v1.schema.json`
+- `docs/schemas/resource-gateway-mirror/scenario-rehearsal-workbook-seed-v1.schema.json`
 
 独立 consumer 继续使用 `resource-gateway-test-kit` 的
 `ScenarioPackVerifier` 验证 ScenarioPack/Case/Assertion，并使用
 `ScenarioRehearsalEvidenceVerifier` 对执行聚合做 nested content address、
 derived outcome/summary、key policy 与 Ed25519 独立复验。compiled plan 的独立
-compatibility fixture/verifier 仍待补齐；未完成前不应把编译对象本身直接作为
-发布门禁证据。
+content address 现在会作为 workbook source closure 的一部分复验；跨语言固定
+compatibility fixture 仍待补齐，未完成前不应宣称异构消费者已通过认证。
 
-生产化之前还必须闭合 TestSuite/Fixture 的完整企业 scope、跨语言 compiled
-plan verifier、外部透明度锚点、数据库迁移/备份恢复和多副本并发认证。当前
-capability flag 只声明非生产编译能力，不声明这些环境证明已经完成。
+生产化之前还必须闭合跨语言固定向量、外部透明度锚点、企业 retention policy、
+数据库迁移/备份恢复、多副本并发与 ANEKE consumer certification。当前
+capability flag 只声明本地协议/API 能力，不声明这些环境证明已经完成。

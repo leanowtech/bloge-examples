@@ -260,6 +260,12 @@ public final class CapabilityMirrorProtocol {
     /** Governed payload-free case handling assertion wire version. */
     public static final String CASE_HANDLING_ASSERTION_V1 =
             "resourceGateway.caseHandlingAssertion.v1";
+    /** Compiled and governed Scenario rehearsal execution-plan wire version. */
+    public static final String COMPILED_SCENARIO_REHEARSAL_PLAN_V1 =
+            "resourceGateway.compiledScenarioRehearsalPlan.v1";
+    /** Independently verifiable signed Scenario rehearsal aggregate wire version. */
+    public static final String SCENARIO_REHEARSAL_EVIDENCE_BUNDLE_V1 =
+            "resourceGateway.scenarioRehearsalEvidenceBundle.v1";
     /** Idempotent Scenario evidence legal-hold command wire version. */
     public static final String SCENARIO_REHEARSAL_LEGAL_HOLD_COMMAND_V1 =
             "resourceGateway.scenarioRehearsalLegalHoldCommand.v1";
@@ -272,6 +278,9 @@ public final class CapabilityMirrorProtocol {
     /** Rebuildable Scenario evidence retention projection wire version. */
     public static final String SCENARIO_REHEARSAL_RETENTION_STATE_V1 =
             "resourceGateway.scenarioRehearsalRetentionState.v1";
+    /** Deterministic payload-free ANEKE Scenario correctness-workbook seed wire version. */
+    public static final String SCENARIO_REHEARSAL_WORKBOOK_SEED_V1 =
+            "resourceGateway.scenarioRehearsalWorkbookSeed.v1";
     /** Fixed scenario protocol compatibility-fixture wire version. */
     public static final String SCENARIO_PACK_COMPATIBILITY_V1 =
             "resourceGateway.scenarioPackCompatibility.v1";
@@ -618,6 +627,10 @@ public final class CapabilityMirrorProtocol {
     public static final String SCENARIO_REHEARSAL_RETENTION_STATE_SCHEMA_RESOURCE =
             SCHEMA_RESOURCE_ROOT
                     + "scenario-rehearsal-retention-state-v1.schema.json";
+    /** Packaged deterministic Scenario correctness-workbook seed schema. */
+    public static final String SCENARIO_REHEARSAL_WORKBOOK_SEED_SCHEMA_RESOURCE =
+            SCHEMA_RESOURCE_ROOT
+                    + "scenario-rehearsal-workbook-seed-v1.schema.json";
     /** Packaged fixed ScenarioPack compatibility-fixture schema. */
     public static final String SCENARIO_PACK_FIXTURE_SCHEMA_RESOURCE =
             SCHEMA_RESOURCE_ROOT

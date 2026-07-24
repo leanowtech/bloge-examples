@@ -17,6 +17,7 @@ import com.leanowtech.bloge.gateway.integration.mirror.ScenarioRehearsalPurgeCom
 import com.leanowtech.bloge.gateway.integration.mirror.ScenarioRehearsalRetentionService;
 import com.leanowtech.bloge.gateway.integration.mirror.ScenarioRehearsalRetentionState;
 import com.leanowtech.bloge.gateway.integration.mirror.ScenarioRehearsalRuntimeService;
+import com.leanowtech.bloge.gateway.integration.mirror.ScenarioRehearsalWorkbookSeed;
 import org.junit.jupiter.api.Test;
 import org.springframework.http.HttpHeaders;
 import org.springframework.test.web.servlet.MockMvc;
@@ -70,6 +71,8 @@ class ScenarioRehearsalControllerTest {
                 mock(ScenarioRehearsalEvidenceBundle.class);
         ScenarioRehearsalRetentionState retentionState =
                 mock(ScenarioRehearsalRetentionState.class);
+        ScenarioRehearsalWorkbookSeed workbook =
+                mock(ScenarioRehearsalWorkbookSeed.class);
         String runId = "scenario-" + "b".repeat(64);
         ScenarioRehearsalCompileRequest command =
                 new ScenarioRehearsalCompileRequest("", 1, SHA_A);
@@ -100,6 +103,8 @@ class ScenarioRehearsalControllerTest {
                 ScenarioRehearsalEvidenceBundle.SCHEMA_VERSION);
         when(retentionState.schemaVersion()).thenReturn(
                 ScenarioRehearsalRetentionState.SCHEMA_VERSION);
+        when(workbook.schemaVersion()).thenReturn(
+                ScenarioRehearsalWorkbookSeed.SCHEMA_VERSION);
         when(authenticator.authenticate(
                 headers, IntegrationOperation.MIRROR_SCENARIO_ARTIFACT_WRITE))
                 .thenReturn(identity);
@@ -118,6 +123,10 @@ class ScenarioRehearsalControllerTest {
         when(authenticator.authenticate(
                 headers,
                 IntegrationOperation.MIRROR_REHEARSAL_EVIDENCE_READ))
+                .thenReturn(identity);
+        when(authenticator.authenticate(
+                headers,
+                IntegrationOperation.MIRROR_REHEARSAL_WORKBOOK_READ))
                 .thenReturn(identity);
         when(authenticator.authenticate(
                 headers,
@@ -155,6 +164,8 @@ class ScenarioRehearsalControllerTest {
                 .thenReturn(plan);
         when(runtime.execute(execution, identity)).thenReturn(result);
         when(runtime.evidence(runId, identity)).thenReturn(result);
+        when(runtime.workbookSeed(runId, identity))
+                .thenReturn(workbook);
         when(retention.find(runId, identity))
                 .thenReturn(retentionState);
         when(retention.placeHold(
@@ -191,6 +202,8 @@ class ScenarioRehearsalControllerTest {
                 .isSameAs(result);
         assertThat(controller.evidence(runId, headers).payload())
                 .isSameAs(result);
+        assertThat(controller.workbookSeed(runId, headers).payload())
+                .isSameAs(workbook);
         assertThat(controller.retention(runId, headers).payload())
                 .isSameAs(retentionState);
         assertThat(controller.placeHold(
@@ -215,6 +228,9 @@ class ScenarioRehearsalControllerTest {
         verify(authenticator).authenticate(
                 headers,
                 IntegrationOperation.MIRROR_REHEARSAL_EVIDENCE_READ);
+        verify(authenticator).authenticate(
+                headers,
+                IntegrationOperation.MIRROR_REHEARSAL_WORKBOOK_READ);
         verify(authenticator).authenticate(
                 headers,
                 IntegrationOperation.MIRROR_REHEARSAL_RETENTION_READ);
