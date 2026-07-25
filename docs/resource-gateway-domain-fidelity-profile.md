@@ -27,20 +27,27 @@
 - Scenario workbook source adapter：重验 aggregate/retention 双签名、workbook/assertion
   内容地址、signed aggregate 对账与 exact inventory case closure；
 - Scenario assertion 到 `BEHAVIOR/CONTRACT/EFFECT/STATE_TRANSITION` 的保守映射；
+- signed `resourceGateway.readOnlyShadowComparison.v1`、strict Schema、typed diff 与
+  Test Kit 独立验真；
+- Shadow source adapter：重验 comparison 内容地址/签名、采样授权、kill switch、egress、
+  零写证明、同请求双边来源和 exact inventory unit closure；
+- Shadow diff 到 `BEHAVIOR/CONTRACT/EFFECT/STATE_TRANSITION` 的保守映射，允许部分
+  comparison 集合并把未覆盖 unit 保留为 missing debt；
 - 可组合、动态、fail-closed 的 typed source readiness；
 - 分开报告 route、signing、各 source adapter 和 partial-profile projection readiness 的
   capability probe。
 
 尚未实现：
 
-- read-only shadow、authoritative outcome 到 `Measurement` 的独立来源适配器；
+- authoritative outcome 到 `Measurement` 的独立来源适配器；
 - request-space sampling proof 与 error-distribution cohort adapter；
-- drift 自动降级、shadow job、outcome reconciliation 和工作台。
+- durable shadow job、流量采样/限流/熔断、drift 自动降级、outcome reconciliation 和工作台。
 
-因此在 managed signer 和 Scenario authority 可用时，
+因此在 managed signer、Scenario authority 或 signed Shadow comparison authority 可用时，
 `mirrorDomainFidelityProjectionReady=true` 只表示系统能从已签名演练证据生成一份显式带
-abstention debt 的**部分 profile**。它不表示 shadow 已对照、请求空间已覆盖或业务结果已校准；
-这三个事实必须分别读取 typed adapter flag 和 profile limitations。
+abstention debt 的**部分 profile**。Shadow adapter ready 表示已提供的合法 comparison 可以
+独立验真和投影，不表示 Resource Gateway 已具备生产流量复制与 shadow job。请求空间覆盖和业务
+结果校准仍必须分别读取 typed adapter flag、source artifact 与 profile limitations。
 
 ## 2. 为什么需要两个对象
 
@@ -259,6 +266,47 @@ Scenario fixture 来源固定标为 `SYNTHESIZED`。它只映射可证明的四�
 `OUTCOME`、`REQUEST_SPACE`、`ERROR_DISTRIBUTION` 继续 abstain。exploratory 或
 `EVIDENCE_INCOMPLETE` child 也会让相应 unit 全维 abstain。
 
+已由受信 Shadow 数据面生成的 signed comparison 同样不需要手工组装 `Measurement`：
+
+```java
+DomainFidelityProfile profile =
+        domainFidelityService.projectShadow(
+                inventoryRef,
+                signedComparisons,
+                readOnlyShadowDomainFidelitySource,
+                projectorIdentity);
+```
+
+`signedComparisons` 可以只覆盖部分 inventory unit；遗漏 unit 不会被删除，而会形成
+`MISSING/NO_ELIGIBLE_EVIDENCE`。每个 `ReadOnlyShadowComparison.v1` 必须同时冻结：
+
+- exact inventory/unit/ScenarioCase/target capability；
+- exact sampling grant、外部 egress attestation 和 enabled kill-switch generation；
+- `READ_ONLY` 或 `SAFE_SANDBOX` access mode，且 `writeCredentialExposed=false`、
+  `writeAttemptCount=0`；
+- 同一 `requestContextFingerprint` 的 baseline/candidate source pair；
+- baseline signed observation 与 candidate Mirror evidence bundle 的 exact ref；
+- 每个维度的 baseline/candidate normalized fact fingerprint；
+- domain-separated content address 和 Ed25519 comparison seal。
+
+typed outcome 不能由 producer 随意填写：
+
+| Outcome | 必须满足 |
+|---|---|
+| `MATCH` | 双边 fact fingerprint 非空且相等，`diffTypes=[]` |
+| `MISMATCH` | 双边 fingerprint 非空且不同，至少一个维度兼容的 diff type |
+| `INDETERMINATE` | 至少一边 fingerprint 缺失，且唯一 diff type 为 `EVIDENCE_GAP` |
+
+`OUTPUT_SCHEMA/UNKNOWN_FIELD` 只能进入 `CONTRACT`；
+`OUTPUT_VALUE/TERMINAL_STATUS/ERROR_CODE/BRANCH/RETRY/FALLBACK` 只能进入
+`BEHAVIOR`；`EFFECT` 与 `STATE` 分别进入 `EFFECT`、`STATE_TRANSITION`。
+单请求 comparison 不得证明 `OUTCOME`、`REQUEST_SPACE` 或 `ERROR_DISTRIBUTION`。两边
+任一 exploratory、不完整或任一维度 indeterminate 时，投影内核会把来源降为 abstention。
+
+当前 `projectShadow` 是内部 Java 边界，没有 HTTP ingestion route。它证明的是“可信
+comparison 可消费”，不是“Resource Gateway 已能复制生产流量”；durable job、采样执行器、
+速率预算、熔断和自动 drift downgrade 属于下一纵切。
+
 ### 5.1 受保护 API 用法
 
 路由只在显式开启 `gateway.testing.mirror.enabled=true` 的 `test` 或 `staging` profile
@@ -320,11 +368,14 @@ OIDC/mTLS adapter 或显式配置的测试身份 resolver 提供 human principal
 | `mirrorDomainFidelitySigningReady` | managed signer 当前可签名和验签 |
 | `mirrorDomainFidelityProjectionReady` | route、signer 和至少一个 verified source adapter ready，可生成显式部分 profile |
 | `mirrorDomainFidelityScenarioAdapterReady` | Scenario aggregate/workbook/retention 验真链当前可用 |
-| `mirrorDomainFidelityShadowAdapterReady` | 当前为 `false`；不能宣称真实行为已对照 |
+| `mirrorDomainFidelityShadowAdapterReady` | signed read-only comparison 可独立验真和投影；不代表生产 shadow job 已装配 |
 | `mirrorDomainFidelityOutcomeAdapterReady` | 当前为 `false`；不能宣称业务结果已校准 |
 
 调用方不得用 projection flag 推导 shadow/outcome flag；readable history、available key、
 可生成部分 profile、真实行为对照和业务结果校准是不同生命周期事实。
+当前 Shadow source adapter 重验 comparison 根签名及其 exact artifact refs，但不会主动拉取并
+重验底层 baseline/candidate artifact；这项 source-resolution closure 属于下一轮 durable
+data-plane connector。
 
 ## 6. 治理侧离线验真
 
@@ -356,6 +407,20 @@ if (!result.verified()) {
 合法签名只证明某个 key 签过内容，不证明内容语义正确。因此 Test Kit 会拒绝“修改 Wilson 下界、
 延长 freshness、缩小分母后重新计算指纹并用合法 key 重签”的 profile。
 
+Shadow comparison 使用独立 verifier：
+
+```java
+ReadOnlyShadowComparisonVerifier verifier =
+        new ReadOnlyShadowComparisonVerifier();
+
+ReadOnlyShadowComparisonVerifier.VerificationResult result =
+        verifier.verify(comparisonJson, verificationKey);
+```
+
+它会独立拒绝重新签名后的请求错配、sample ordinal 越权、写凭据或写尝试、伪造
+`MATCH/MISMATCH/INDETERMINATE`、跨维度 diff type、内容地址、签名、key lifecycle 和
+签名时间漂移。
+
 `VerificationResult` 只包含 domain id、fingerprint、assessment、闭集 limitations、key id 和稳定
 reason code，不输出 Scenario fixture、请求、响应或原始诊断。
 
@@ -364,6 +429,7 @@ reason code，不输出 Scenario fixture、请求、响应或原始诊断。
 - [`domain-fidelity-inventory-v1.schema.json`](schemas/resource-gateway-mirror/domain-fidelity-inventory-v1.schema.json)
 - [`domain-fidelity-inventory-registration-request-v1.schema.json`](schemas/resource-gateway-mirror/domain-fidelity-inventory-registration-request-v1.schema.json)
 - [`domain-fidelity-profile-v1.schema.json`](schemas/resource-gateway-mirror/domain-fidelity-profile-v1.schema.json)
+- [`read-only-shadow-comparison-v1.schema.json`](schemas/resource-gateway-mirror/read-only-shadow-comparison-v1.schema.json)
 
 Test Kit 公共资源常量：
 
@@ -371,6 +437,7 @@ Test Kit 公共资源常量：
 CapabilityMirrorProtocol.DOMAIN_FIDELITY_INVENTORY_SCHEMA_RESOURCE
 CapabilityMirrorProtocol.DOMAIN_FIDELITY_INVENTORY_REGISTRATION_SCHEMA_RESOURCE
 CapabilityMirrorProtocol.DOMAIN_FIDELITY_PROFILE_SCHEMA_RESOURCE
+CapabilityMirrorProtocol.READ_ONLY_SHADOW_COMPARISON_SCHEMA_RESOURCE
 ```
 
 Schema 使用 `additionalProperties: false`。profile 不允许业务 payload、自由文本诊断或综合
@@ -385,6 +452,10 @@ Schema 使用 `additionalProperties: false`。profile 不允许业务 payload、
 | Unit 不在 inventory 或 Scenario ref 漂移 | 拒绝投影 |
 | Scenario workbook case 并集缺失、重复或夹带额外 case | 拒绝整次来源投影 |
 | Workbook 与 signed aggregate、retention 或 assertion 指纹不一致 | 拒绝整次来源投影 |
+| Shadow comparison 的请求双边、scope、inventory、unit 或 capability 漂移 | 拒绝整次来源投影 |
+| Shadow grant 越界、kill switch/egress ref 缺失、存在写凭据或写尝试 | Schema/构造阶段拒绝 |
+| Shadow MATCH 与 fact fingerprint 不一致或 diff type 跨维度 | 服务端与 Test Kit 都拒绝 |
+| Shadow comparison 仅覆盖部分 inventory | 保留完整分母，遗漏 unit 为 `MISSING` |
 | 没有来源证据 | 保留 unit，逐维 `MISSING` |
 | 证据过期 | 全维 `STALE`，profile 为 `STALE` |
 | 证据非 certifiable 或不完整 | 逐维 `ABSTAINED` |
@@ -411,13 +482,15 @@ Schema 使用 `additionalProperties: false`。profile 不允许业务 payload、
 
 ## 10. 下一实施纵切
 
-repository、managed signer、受保护 inventory/read API、Scenario source adapter 和 capability
-分层已完成。下一步按来源信任依赖推进：
+repository、managed signer、受保护 inventory/read API、Scenario source adapter、signed
+read-only Shadow comparison adapter 和 capability 分层已完成。下一步按来源信任依赖推进：
 
-1. 实现 read-only shadow comparison、typed diff 和 sampling/egress policy。
-2. 实现 authoritative outcome observation 与 delayed/censored reconciliation。
-3. 为 `ERROR_DISTRIBUTION` 和 `REQUEST_SPACE` 增加 cohort/sampling proof，而不是借用单次
+1. 实现 durable shadow job、受控流量复制、速率/并发预算、熔断、kill switch 和来源证据拉取。
+2. 把 signed typed diff 接入 drift budget，自动 stale/downgrade/revoke serving conclusion。
+3. 实现 authoritative outcome observation 与 delayed/censored reconciliation。
+4. 为 `ERROR_DISTRIBUTION` 和 `REQUEST_SPACE` 增加 cohort/sampling proof，而不是借用单次
    Scenario PASS。
-4. 把 drift 自动降级、profile limitations/stale/debt 接入 ANEKE gate 与 Owner workbench。
+5. 把 profile limitations/stale/debt 接入 ANEKE gate 与 Owner workbench。
 
-在 shadow/outcome 未完成前，不能把 partial profile 描述为“真实行为已对照”或“业务结果已校准”。
+在 durable shadow job/outcome 未完成前，不能把 adapter readiness 描述为“已接入生产流量”或
+“业务结果已校准”。

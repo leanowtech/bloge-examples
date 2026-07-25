@@ -17,6 +17,8 @@ import com.leanowtech.bloge.gateway.integration.CapabilityCorpusClusterControlle
 import com.leanowtech.bloge.gateway.integration.mirror.CapabilityObservationAdmissionService;
 import com.leanowtech.bloge.gateway.integration.mirror.DomainFidelityRepository;
 import com.leanowtech.bloge.gateway.integration.mirror.DomainFidelityService;
+import com.leanowtech.bloge.gateway.integration.mirror.ReadOnlyShadowComparisonIntegrity;
+import com.leanowtech.bloge.gateway.integration.mirror.ReadOnlyShadowDomainFidelitySource;
 import com.leanowtech.bloge.gateway.integration.mirror.ScenarioRehearsalDomainFidelitySource;
 import com.leanowtech.bloge.gateway.integration.mirror.CapabilityObservationRepository;
 import com.leanowtech.bloge.gateway.integration.mirror.CapabilityCorpusGovernanceService;
@@ -142,6 +144,12 @@ class TestRuntimeApplicationIntegrationTest {
                 ScenarioRehearsalDomainFidelitySource.class))
                 .hasSize(1);
         assertThat(context.getBeansOfType(
+                ReadOnlyShadowComparisonIntegrity.class))
+                .hasSize(1);
+        assertThat(context.getBeansOfType(
+                ReadOnlyShadowDomainFidelitySource.class))
+                .hasSize(1);
+        assertThat(context.getBeansOfType(
                 DomainFidelityRuntimeAvailability.class).values())
                 .singleElement()
                 .satisfies(availability -> {
@@ -151,7 +159,7 @@ class TestRuntimeApplicationIntegrationTest {
                     assertThat(availability.scenarioAdapterReady())
                             .isTrue();
                     assertThat(availability.shadowAdapterReady())
-                            .isFalse();
+                            .isTrue();
                     assertThat(availability.outcomeAdapterReady())
                             .isFalse();
                     assertThat(availability.projectionReady()).isTrue();
@@ -270,7 +278,7 @@ class TestRuntimeApplicationIntegrationTest {
                 .containsEntry(
                         "mirrorDomainFidelityScenarioAdapterReady", true)
                 .containsEntry(
-                        "mirrorDomainFidelityShadowAdapterReady", false)
+                        "mirrorDomainFidelityShadowAdapterReady", true)
                 .containsEntry(
                         "mirrorDomainFidelityOutcomeAdapterReady", false);
         assertThat(capabilities.getBody().payload()

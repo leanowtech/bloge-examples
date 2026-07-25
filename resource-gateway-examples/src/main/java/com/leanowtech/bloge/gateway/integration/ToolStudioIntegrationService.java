@@ -989,6 +989,12 @@ public class ToolStudioIntegrationService {
                             com.leanowtech.bloge.gateway.integration.mirror
                                     .DomainFidelityProfile
                                     .SCHEMA_VERSION));
+            supportedObjects.put(
+                    "readOnlyShadowComparison",
+                    List.of(
+                            com.leanowtech.bloge.gateway.integration.mirror
+                                    .ReadOnlyShadowComparison
+                                    .SCHEMA_VERSION));
         }
         if (mirrorPlanReady) {
             supportedObjects.put("mirrorPlanCreateRequest", List.of(

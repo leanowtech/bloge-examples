@@ -37,7 +37,9 @@ implementation. The JAR packages the authoritative v1 JSON Schema and provides:
   payload-free `DomainFidelityProfile.v1` Schemas plus a server-independent verifier that
   reconstructs every unit denominator, dimension metric, Wilson 95% interval,
   freshness boundary, abstention debt, source composition, limitation, content
-  address, and Ed25519 seal without accepting a composite score;
+  address, and Ed25519 seal without accepting a composite score; signed
+  `ReadOnlyShadowComparison.v1` Schema and an independent verifier that rejects paired-request,
+  zero-write, sampling-budget, typed-diff, content-address, key-policy, and signature drift;
 - packaged validation and version constants for the payload-free
   `bloge.executionServiceStateSnapshot.v1` durable-resume building block;
 - payload-safe typed child/suite-run summaries and JUnit 5 assertions;

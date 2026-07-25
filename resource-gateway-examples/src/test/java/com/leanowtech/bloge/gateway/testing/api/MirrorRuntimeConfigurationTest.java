@@ -18,6 +18,8 @@ import com.leanowtech.bloge.gateway.integration.mirror.CompiledScenarioRehearsal
 import com.leanowtech.bloge.gateway.integration.mirror.DomainFidelityProfileIntegrity;
 import com.leanowtech.bloge.gateway.integration.mirror.DomainFidelityRepository;
 import com.leanowtech.bloge.gateway.integration.mirror.DomainFidelityService;
+import com.leanowtech.bloge.gateway.integration.mirror.ReadOnlyShadowComparisonIntegrity;
+import com.leanowtech.bloge.gateway.integration.mirror.ReadOnlyShadowDomainFidelitySource;
 import com.leanowtech.bloge.gateway.integration.mirror.MirrorSessionCheckpointIntegrityService;
 import com.leanowtech.bloge.gateway.integration.mirror.ScenarioArtifactRepository;
 import com.leanowtech.bloge.gateway.integration.mirror.ScenarioRehearsalBatchCompiler;
@@ -370,6 +372,10 @@ class MirrorRuntimeConfigurationTest {
         assertThat(context.getBeansOfType(
                 DomainFidelityService.class)).hasSize(1);
         assertThat(context.getBeansOfType(
+                ReadOnlyShadowComparisonIntegrity.class)).hasSize(1);
+        assertThat(context.getBeansOfType(
+                ReadOnlyShadowDomainFidelitySource.class)).hasSize(1);
+        assertThat(context.getBeansOfType(
                 DomainFidelityRuntimeAvailability.class).values())
                 .singleElement()
                 .satisfies(availability -> {
@@ -506,6 +512,10 @@ class MirrorRuntimeConfigurationTest {
                 DomainFidelityRepository.class)).isEmpty();
         assertThat(context.getBeansOfType(
                 DomainFidelityService.class)).isEmpty();
+        assertThat(context.getBeansOfType(
+                ReadOnlyShadowComparisonIntegrity.class)).isEmpty();
+        assertThat(context.getBeansOfType(
+                ReadOnlyShadowDomainFidelitySource.class)).isEmpty();
         assertThat(context.getBeansOfType(
                 DomainFidelityRuntimeAvailability.class)).isEmpty();
         assertThat(context.getBeansOfType(

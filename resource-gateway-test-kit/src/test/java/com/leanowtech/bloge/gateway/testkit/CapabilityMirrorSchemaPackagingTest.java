@@ -122,6 +122,7 @@ class CapabilityMirrorSchemaPackagingTest {
                 "scenario-rehearsal-retention-state-v1.schema.json",
                 "scenario-rehearsal-workbook-seed-v1.schema.json",
                 "scenario-rehearsal-batch-workbook-seed-v1.schema.json",
+                "read-only-shadow-comparison-v1.schema.json",
                 "scenario-pack-stage7-v1.fixture.schema.json",
                 "stateful-refund-stage3-v1.fixture.schema.json")) {
             String resource = CapabilityMirrorProtocol.SCHEMA_RESOURCE_ROOT + name;
@@ -455,6 +456,14 @@ class CapabilityMirrorSchemaPackagingTest {
                 .FIXTURE_MIRROR_CLUSTER_BINDINGS_FIXTURE_RESOURCE)
                 .endsWith(
                         "fixture-mirror-cluster-bindings-v1.fixture.json");
+        assertThat(CapabilityMirrorProtocol
+                .READ_ONLY_SHADOW_COMPARISON_V1)
+                .isEqualTo(
+                        "resourceGateway.readOnlyShadowComparison.v1");
+        assertThat(CapabilityMirrorProtocol
+                .READ_ONLY_SHADOW_COMPARISON_SCHEMA_RESOURCE)
+                .endsWith(
+                        "read-only-shadow-comparison-v1.schema.json");
         assertThat(CapabilityMirrorProtocol.fixtureMirrorClusterBindingsFixture()
                 .path("schemaVersion").asText())
                 .isEqualTo(

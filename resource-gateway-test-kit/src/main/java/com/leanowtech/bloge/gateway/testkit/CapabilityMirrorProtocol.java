@@ -388,6 +388,9 @@ public final class CapabilityMirrorProtocol {
     /** Signed payload-free domain fidelity vector wire version. */
     public static final String DOMAIN_FIDELITY_PROFILE_V1 =
             "resourceGateway.domainFidelityProfile.v1";
+    /** Signed payload-free read-only Shadow comparison wire version. */
+    public static final String READ_ONLY_SHADOW_COMPARISON_V1 =
+            "resourceGateway.readOnlyShadowComparison.v1";
     /** Fixed Stage 3 refund fixture envelope version. */
     public static final String STATEFUL_REFUND_FIXTURE_V1 =
             "resourceGateway.statefulRefundFixture.v1";
@@ -799,6 +802,11 @@ public final class CapabilityMirrorProtocol {
     public static final String DOMAIN_FIDELITY_PROFILE_SCHEMA_RESOURCE =
             SCHEMA_RESOURCE_ROOT
                     + "domain-fidelity-profile-v1.schema.json";
+    /** Packaged signed payload-free read-only Shadow comparison schema. */
+    public static final String
+    READ_ONLY_SHADOW_COMPARISON_SCHEMA_RESOURCE =
+            SCHEMA_RESOURCE_ROOT
+                    + "read-only-shadow-comparison-v1.schema.json";
     /** Packaged stable bounded Scenario batch item page. */
     public static final String SCENARIO_REHEARSAL_BATCH_ITEM_PAGE_SCHEMA_RESOURCE =
             SCHEMA_RESOURCE_ROOT

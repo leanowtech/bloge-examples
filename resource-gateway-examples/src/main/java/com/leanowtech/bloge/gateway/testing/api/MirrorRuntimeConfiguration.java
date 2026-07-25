@@ -112,6 +112,8 @@ import com.leanowtech.bloge.gateway.integration.mirror.ScenarioRehearsalDomainFi
 import com.leanowtech.bloge.gateway.integration.mirror.ScenarioRehearsalLifecycleAuditRepository;
 import com.leanowtech.bloge.gateway.integration.mirror.ScenarioRehearsalRetentionRepository;
 import com.leanowtech.bloge.gateway.integration.mirror.ScenarioRehearsalRunRepository;
+import com.leanowtech.bloge.gateway.integration.mirror.ReadOnlyShadowComparisonIntegrity;
+import com.leanowtech.bloge.gateway.integration.mirror.ReadOnlyShadowDomainFidelitySource;
 import com.leanowtech.bloge.gateway.integration.mirror.MirrorServingGenerationAuthority;
 import com.leanowtech.bloge.gateway.integration.mirror.MirrorServingGenerationIntegrity;
 import com.leanowtech.bloge.gateway.integration.mirror.MirrorServingGenerationService;
@@ -1314,6 +1316,30 @@ public class MirrorRuntimeConfiguration {
                 signer,
                 policy,
                 objectMapper);
+    }
+
+    /** Creates the signed read-only Shadow comparison integrity boundary. */
+    @Bean
+    @ConditionalOnMissingBean
+    public ReadOnlyShadowComparisonIntegrity
+    readOnlyShadowComparisonIntegrity(
+            ObjectMapper objectMapper,
+            VisualEvidenceSigner signer) {
+        return new ReadOnlyShadowComparisonIntegrity(
+                objectMapper,
+                signer);
+    }
+
+    /** Creates the independently verified read-only Shadow Fidelity source adapter. */
+    @Bean
+    @ConditionalOnMissingBean
+    public ReadOnlyShadowDomainFidelitySource
+    readOnlyShadowDomainFidelitySource(
+            ReadOnlyShadowComparisonIntegrity integrity,
+            DomainFidelityPolicy policy) {
+        return new ReadOnlyShadowDomainFidelitySource(
+                integrity,
+                policy);
     }
 
     /** Composes typed, independently probed source-adapter readiness. */

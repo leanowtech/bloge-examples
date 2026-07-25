@@ -217,6 +217,40 @@ public class DomainFidelityService {
                 identity);
     }
 
+    /**
+     * Publishes a profile directly from independently verified read-only Shadow comparisons.
+     *
+     * <p>Comparison verification remains inside the same authorization, current-inventory-head,
+     * projection, signing, persistence, and success-audit transaction. The supplied set may be
+     * partial; the projector preserves omitted inventory units as explicit missing debt.</p>
+     *
+     * @param inventoryRef exact current inventory head
+     * @param comparisons signed payload-free read-only comparison artifacts
+     * @param source assembled Shadow source authority
+     * @param identity authenticated projector service
+     * @return signed, committed, or idempotently recovered profile
+     */
+    @Transactional
+    public DomainFidelityProfile projectShadow(
+            MirrorArtifactRef inventoryRef,
+            List<ReadOnlyShadowComparison> comparisons,
+            ReadOnlyShadowDomainFidelitySource source,
+            IntegrationRequestContext identity) {
+        ReadOnlyShadowDomainFidelitySource exactSource =
+                Objects.requireNonNull(source, "source");
+        List<ReadOnlyShadowComparison> exactComparisons =
+                comparisons == null
+                        ? List.of()
+                        : List.copyOf(comparisons);
+        return project(
+                inventoryRef,
+                inventory -> exactSource.measurements(
+                        inventory,
+                        exactComparisons,
+                        identity),
+                identity);
+    }
+
     private DomainFidelityProfile project(
             MirrorArtifactRef inventoryRef,
             MeasurementProvider measurements,

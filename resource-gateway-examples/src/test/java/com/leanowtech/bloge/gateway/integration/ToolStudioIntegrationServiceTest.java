@@ -356,7 +356,12 @@ class ToolStudioIntegrationServiceTest {
                 .containsKeys(
                         "domainFidelityInventoryRegistrationRequest",
                         "domainFidelityInventory",
-                        "domainFidelityProfile");
+                        "domainFidelityProfile",
+                        "readOnlyShadowComparison");
+        assertThat(assembled.supportedObjects()
+                .get("readOnlyShadowComparison"))
+                .containsExactly(
+                        "resourceGateway.readOnlyShadowComparison.v1");
         assertThat(assembled.endpoints())
                 .extracting(endpoint ->
                         endpoint.method() + " " + endpoint.path())

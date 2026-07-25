@@ -119,6 +119,7 @@ final class CapabilityMirrorSchemaValidator {
             "domain-fidelity-inventory-registration-request-v1.schema.json",
             "domain-fidelity-inventory-v1.schema.json",
             "domain-fidelity-profile-v1.schema.json",
+            "read-only-shadow-comparison-v1.schema.json",
             "scenario-rehearsal-batch-item-page-v1.schema.json",
             "scenario-rehearsal-batch-evidence-index-v1.schema.json",
             "scenario-rehearsal-batch-evidence-index-v2.schema.json",

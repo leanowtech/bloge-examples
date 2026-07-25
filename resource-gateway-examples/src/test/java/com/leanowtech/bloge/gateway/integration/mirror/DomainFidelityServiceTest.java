@@ -13,8 +13,8 @@ import org.springframework.jdbc.datasource.embedded.EmbeddedDatabase;
 import org.springframework.jdbc.datasource.embedded.EmbeddedDatabaseBuilder;
 import org.springframework.jdbc.datasource.embedded.EmbeddedDatabaseType;
 
-import java.util.Optional;
 import java.util.List;
+import java.util.Optional;
 import java.util.Set;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -169,6 +169,48 @@ class DomainFidelityServiceTest {
 
         verify(source).measurements(
                 inventory, runs, projector);
+        assertThat(profile.profileSeal().signed()).isTrue();
+        assertThat(repository.findProfile(
+                inventory.scope(),
+                profile.profileFingerprint()))
+                .contains(profile);
+    }
+
+    @Test
+    void projectsShadowComparisonsInsideTheGovernedTransactionBoundary() {
+        DomainFidelityInventory inventory =
+                service.registerInventory(
+                        DomainFidelityTestFixtures.registration(
+                                1,
+                                "",
+                                DomainFidelityTestFixtures.units()),
+                        DomainFidelityTestFixtures
+                                .ownerIdentity("support"));
+        IntegrationRequestContext projector =
+                DomainFidelityTestFixtures
+                        .projectorIdentity("support");
+        ReadOnlyShadowDomainFidelitySource source =
+                mock(
+                        ReadOnlyShadowDomainFidelitySource.class);
+        ReadOnlyShadowComparison comparison =
+                mock(ReadOnlyShadowComparison.class);
+        List<ReadOnlyShadowComparison> comparisons =
+                List.of(comparison);
+        when(source.measurements(
+                inventory, comparisons, projector))
+                .thenReturn(
+                        DomainFidelityTestFixtures
+                                .passingMeasurements(inventory));
+
+        DomainFidelityProfile profile =
+                service.projectShadow(
+                        inventory.artifactRef(),
+                        comparisons,
+                        source,
+                        projector);
+
+        verify(source).measurements(
+                inventory, comparisons, projector);
         assertThat(profile.profileSeal().signed()).isTrue();
         assertThat(repository.findProfile(
                 inventory.scope(),

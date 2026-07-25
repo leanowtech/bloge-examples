@@ -1,0 +1,379 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://bloge.dev/schemas/resource-gateway-mirror/read-only-shadow-comparison-v1.schema.json",
+  "title": "Resource Gateway Read-only Shadow Comparison v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "comparisonId",
+    "revision",
+    "comparisonFingerprint",
+    "scope",
+    "inventoryRef",
+    "unitId",
+    "scenarioCaseRef",
+    "targetCapabilityRef",
+    "accessProof",
+    "baseline",
+    "candidate",
+    "observedAt",
+    "results",
+    "comparisonSeal"
+  ],
+  "properties": {
+    "schemaVersion": {
+      "const": "resourceGateway.readOnlyShadowComparison.v1"
+    },
+    "comparisonId": {
+      "$ref": "#/$defs/identifier"
+    },
+    "revision": {
+      "type": "integer",
+      "minimum": 1
+    },
+    "comparisonFingerprint": {
+      "$ref": "mirror-plan-v1.schema.json#/$defs/fingerprint"
+    },
+    "scope": {
+      "$ref": "mirror-plan-v1.schema.json#/$defs/scope"
+    },
+    "inventoryRef": {
+      "$ref": "#/$defs/inventoryRef"
+    },
+    "unitId": {
+      "$ref": "#/$defs/identifier"
+    },
+    "scenarioCaseRef": {
+      "$ref": "domain-fidelity-inventory-v1.schema.json#/$defs/scenarioCaseRef"
+    },
+    "targetCapabilityRef": {
+      "$ref": "#/$defs/capabilityRef"
+    },
+    "accessProof": {
+      "$ref": "#/$defs/accessProof"
+    },
+    "baseline": {
+      "allOf": [
+        {
+          "$ref": "#/$defs/sourceObservation"
+        },
+        {
+          "properties": {
+            "role": {
+              "const": "BASELINE"
+            },
+            "artifactRef": {
+              "$ref": "#/$defs/baselineObservationRef"
+            }
+          }
+        }
+      ]
+    },
+    "candidate": {
+      "allOf": [
+        {
+          "$ref": "#/$defs/sourceObservation"
+        },
+        {
+          "properties": {
+            "role": {
+              "const": "CANDIDATE"
+            },
+            "artifactRef": {
+              "$ref": "#/$defs/candidateObservationRef"
+            }
+          }
+        }
+      ]
+    },
+    "observedAt": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "results": {
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 4,
+      "uniqueItems": true,
+      "items": {
+        "$ref": "#/$defs/dimensionComparison"
+      }
+    },
+    "comparisonSeal": {
+      "$ref": "domain-fidelity-profile-v1.schema.json#/$defs/evidenceSeal"
+    }
+  },
+  "$defs": {
+    "identifier": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 512,
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9@._:/-]{0,511}$"
+    },
+    "optionalFingerprint": {
+      "type": "string",
+      "maxLength": 71,
+      "pattern": "^(|sha256:[a-f0-9]{64})$"
+    },
+    "artifactRef": {
+      "$ref": "domain-fidelity-inventory-v1.schema.json#/$defs/artifactRef"
+    },
+    "inventoryRef": {
+      "allOf": [
+        {
+          "$ref": "#/$defs/artifactRef"
+        },
+        {
+          "properties": {
+            "kind": {
+              "const": "DOMAIN_FIDELITY_INVENTORY"
+            }
+          }
+        }
+      ]
+    },
+    "capabilityRef": {
+      "allOf": [
+        {
+          "$ref": "#/$defs/artifactRef"
+        },
+        {
+          "properties": {
+            "kind": {
+              "const": "CAPABILITY"
+            }
+          }
+        }
+      ]
+    },
+    "samplingGrantRef": {
+      "allOf": [
+        {
+          "$ref": "#/$defs/artifactRef"
+        },
+        {
+          "properties": {
+            "kind": {
+              "const": "SHADOW_SAMPLING_GRANT"
+            }
+          }
+        }
+      ]
+    },
+    "egressAuthorityRef": {
+      "allOf": [
+        {
+          "$ref": "#/$defs/artifactRef"
+        },
+        {
+          "properties": {
+            "kind": {
+              "const": "MIRROR_DEPLOYMENT_ISOLATION_ATTESTATION"
+            }
+          }
+        }
+      ]
+    },
+    "killSwitchRef": {
+      "allOf": [
+        {
+          "$ref": "#/$defs/artifactRef"
+        },
+        {
+          "properties": {
+            "kind": {
+              "const": "SHADOW_KILL_SWITCH_STATE"
+            }
+          }
+        }
+      ]
+    },
+    "baselineObservationRef": {
+      "allOf": [
+        {
+          "$ref": "#/$defs/artifactRef"
+        },
+        {
+          "properties": {
+            "kind": {
+              "const": "SHADOW_BASELINE_OBSERVATION"
+            }
+          }
+        }
+      ]
+    },
+    "candidateObservationRef": {
+      "allOf": [
+        {
+          "$ref": "#/$defs/artifactRef"
+        },
+        {
+          "properties": {
+            "kind": {
+              "const": "MIRROR_EVIDENCE_BUNDLE"
+            }
+          }
+        }
+      ]
+    },
+    "accessProof": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "accessMode",
+        "samplingGrantRef",
+        "egressAuthorityRef",
+        "killSwitchRef",
+        "sampleOrdinal",
+        "maximumSamples",
+        "writeCredentialExposed",
+        "writeAttemptCount"
+      ],
+      "properties": {
+        "accessMode": {
+          "enum": [
+            "READ_ONLY",
+            "SAFE_SANDBOX"
+          ]
+        },
+        "samplingGrantRef": {
+          "$ref": "#/$defs/samplingGrantRef"
+        },
+        "egressAuthorityRef": {
+          "$ref": "#/$defs/egressAuthorityRef"
+        },
+        "killSwitchRef": {
+          "$ref": "#/$defs/killSwitchRef"
+        },
+        "sampleOrdinal": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 1000000000
+        },
+        "maximumSamples": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 1000000000
+        },
+        "writeCredentialExposed": {
+          "const": false
+        },
+        "writeAttemptCount": {
+          "const": 0
+        }
+      }
+    },
+    "sourceObservation": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "role",
+        "artifactRef",
+        "scope",
+        "targetCapabilityRef",
+        "requestContextFingerprint",
+        "semanticResultFingerprint",
+        "completedAt",
+        "evidenceClass",
+        "evidenceComplete"
+      ],
+      "properties": {
+        "role": {
+          "enum": [
+            "BASELINE",
+            "CANDIDATE"
+          ]
+        },
+        "artifactRef": {
+          "$ref": "#/$defs/artifactRef"
+        },
+        "scope": {
+          "$ref": "mirror-plan-v1.schema.json#/$defs/scope"
+        },
+        "targetCapabilityRef": {
+          "$ref": "#/$defs/capabilityRef"
+        },
+        "requestContextFingerprint": {
+          "$ref": "mirror-plan-v1.schema.json#/$defs/fingerprint"
+        },
+        "semanticResultFingerprint": {
+          "$ref": "mirror-plan-v1.schema.json#/$defs/fingerprint"
+        },
+        "completedAt": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "evidenceClass": {
+          "enum": [
+            "EXPLORATORY",
+            "CERTIFIABLE"
+          ]
+        },
+        "evidenceComplete": {
+          "type": "boolean"
+        }
+      }
+    },
+    "dimension": {
+      "enum": [
+        "BEHAVIOR",
+        "CONTRACT",
+        "EFFECT",
+        "STATE_TRANSITION"
+      ]
+    },
+    "diffType": {
+      "enum": [
+        "BRANCH",
+        "EFFECT",
+        "ERROR_CODE",
+        "EVIDENCE_GAP",
+        "FALLBACK",
+        "OUTPUT_SCHEMA",
+        "OUTPUT_VALUE",
+        "RETRY",
+        "STATE",
+        "TERMINAL_STATUS",
+        "UNKNOWN_FIELD"
+      ]
+    },
+    "dimensionComparison": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "dimension",
+        "baselineFingerprint",
+        "candidateFingerprint",
+        "outcome",
+        "diffTypes"
+      ],
+      "properties": {
+        "dimension": {
+          "$ref": "#/$defs/dimension"
+        },
+        "baselineFingerprint": {
+          "$ref": "#/$defs/optionalFingerprint"
+        },
+        "candidateFingerprint": {
+          "$ref": "#/$defs/optionalFingerprint"
+        },
+        "outcome": {
+          "enum": [
+            "MATCH",
+            "MISMATCH",
+            "INDETERMINATE"
+          ]
+        },
+        "diffTypes": {
+          "type": "array",
+          "maxItems": 11,
+          "uniqueItems": true,
+          "items": {
+            "$ref": "#/$defs/diffType"
+          }
+        }
+      }
+    }
+  }
+}
