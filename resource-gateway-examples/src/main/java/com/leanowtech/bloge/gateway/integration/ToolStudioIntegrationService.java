@@ -473,6 +473,9 @@ public class ToolStudioIntegrationService {
                 "mirrorScenarioRehearsalBatchFinalizationHealthApi",
                 mirrorPlanReady && mirrorExecutionApi);
         features.put(
+                "mirrorScenarioRehearsalReviewedRemediationApi",
+                mirrorPlanReady && mirrorExecutionApi);
+        features.put(
                 "mirrorScenarioRehearsalBatchRetentionApi",
                 mirrorPlanReady && mirrorExecutionApi);
         features.put(
@@ -1079,6 +1082,12 @@ public class ToolStudioIntegrationService {
                                         .ScenarioRehearsalRemediationReceipt
                                         .SCHEMA_VERSION));
                 supportedObjects.put(
+                        "scenarioRehearsalRemediationLineage",
+                        List.of(
+                                com.leanowtech.bloge.gateway.integration.mirror
+                                        .ScenarioRehearsalRemediationLineage
+                                        .SCHEMA_VERSION));
+                supportedObjects.put(
                         "scenarioRehearsalBatchCancellationRequest",
                         List.of(
                                 com.leanowtech.bloge.gateway.integration.mirror
@@ -1313,6 +1322,18 @@ public class ToolStudioIntegrationService {
                 endpoints.add(new IntegrationCapabilities.Endpoint(
                         "POST",
                         "/api/mirror/rehearsal-jobs/{jobId}/retention/purge"));
+                endpoints.add(new IntegrationCapabilities.Endpoint(
+                        "POST",
+                        "/api/mirror/rehearsal-jobs/{jobId}/remediations"));
+                endpoints.add(new IntegrationCapabilities.Endpoint(
+                        "GET",
+                        "/api/mirror/rehearsal-remediations/{remediationId}"));
+                endpoints.add(new IntegrationCapabilities.Endpoint(
+                        "POST",
+                        "/api/mirror/rehearsal-remediations/{remediationId}/approvals"));
+                endpoints.add(new IntegrationCapabilities.Endpoint(
+                        "POST",
+                        "/api/mirror/rehearsal-remediations/{remediationId}/submissions"));
             }
         }
         if (mirrorExecutionApi) {

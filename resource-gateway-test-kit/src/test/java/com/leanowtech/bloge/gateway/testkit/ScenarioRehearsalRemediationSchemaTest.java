@@ -38,6 +38,10 @@ class ScenarioRehearsalRemediationSchemaTest {
                 receipt(),
                 CapabilityMirrorProtocol
                         .SCENARIO_REHEARSAL_REMEDIATION_RECEIPT_SCHEMA_RESOURCE);
+        assertValid(
+                lineage(),
+                CapabilityMirrorProtocol
+                        .SCENARIO_REHEARSAL_REMEDIATION_LINEAGE_SCHEMA_RESOURCE);
     }
 
     @Test
@@ -61,6 +65,8 @@ class ScenarioRehearsalRemediationSchemaTest {
         brokenChain.put("previousApprovalFingerprint", "");
         ObjectNode underApproved = submit();
         underApproved.put("expectedApprovalGeneration", 1);
+        ObjectNode brokenLineage = lineage();
+        brokenLineage.put("approvalGeneration", 1);
 
         assertInvalid(
                 leaked,
@@ -82,6 +88,10 @@ class ScenarioRehearsalRemediationSchemaTest {
                 underApproved,
                 CapabilityMirrorProtocol
                         .SCENARIO_REHEARSAL_REMEDIATION_SUBMIT_COMMAND_SCHEMA_RESOURCE);
+        assertInvalid(
+                brokenLineage,
+                CapabilityMirrorProtocol
+                        .SCENARIO_REHEARSAL_REMEDIATION_LINEAGE_SCHEMA_RESOURCE);
     }
 
     private static ObjectNode preview() {
@@ -257,6 +267,40 @@ class ScenarioRehearsalRemediationSchemaTest {
         value.put("acceptedBy", "owner-a");
         value.put("delegatedBy", "");
         value.put("acceptedAt", "2026-07-25T11:00:00Z");
+        return value;
+    }
+
+    private static ObjectNode lineage() {
+        ObjectNode value = JSON.createObjectNode();
+        value.put(
+                "schemaVersion",
+                CapabilityMirrorProtocol
+                        .SCENARIO_REHEARSAL_REMEDIATION_LINEAGE_V1);
+        value.put("lineageFingerprint", fingerprint('8'));
+        value.put("state", "SUBMITTED");
+        value.set("plan", plan());
+        value.putArray("approvals")
+                .add(approval())
+                .add(secondApproval());
+        value.put("approvalGeneration", 2);
+        value.put(
+                "approvalHeadFingerprint",
+                fingerprint('3'));
+        value.set("receipt", receipt());
+        return value;
+    }
+
+    private static ObjectNode secondApproval() {
+        ObjectNode value = approval();
+        value.put("approvalFingerprint", fingerprint('3'));
+        value.put("sourceCommandFingerprint", fingerprint('9'));
+        value.put("generation", 2);
+        value.put(
+                "previousApprovalFingerprint",
+                fingerprint('1'));
+        value.put("role", "INDEPENDENT_REVIEWER");
+        value.put("actorId", "reviewer-b");
+        value.put("decidedAt", "2026-07-25T10:45:00Z");
         return value;
     }
 

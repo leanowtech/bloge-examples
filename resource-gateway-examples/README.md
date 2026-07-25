@@ -73,6 +73,10 @@ DAG workers plus isolated evidence-finalization lanes for one exact
 | `GET http://localhost:8080/api/mirror/rehearsal-jobs/{jobId}/finalization` | Inspect payload-free `PENDING`, `SIGNING`, `RETRY_WAIT`, `QUARANTINED`, or `FINALIZED` evidence-publication state without exposing worker or signer diagnostics |
 | `GET http://localhost:8080/api/mirror/rehearsal-jobs/finalization-health` | Read the authenticated enterprise scope's payload-free backlog, age, quarantine, policy-drift, and failure-class SLO projection |
 | `POST http://localhost:8080/api/mirror/rehearsal-jobs/{jobId}/finalization/remediations` | Compare-and-set one reviewed `QUARANTINED` generation into a new immutable intent and renewed retention floor (`X-Purpose: MIRROR_REHEARSAL_FINALIZATION_ADMIN`) |
+| `POST http://localhost:8080/api/mirror/rehearsal-jobs/{jobId}/remediations` | Freeze one blocked signed predecessor and its exact successor proposal for two-person business review (`X-Purpose: MIRROR_REHEARSAL_REMEDIATION`) |
+| `GET http://localhost:8080/api/mirror/rehearsal-remediations/{remediationId}` | Read the content-addressed plan, approval chain, derived state, and optional successor receipt |
+| `POST http://localhost:8080/api/mirror/rehearsal-remediations/{remediationId}/approvals` | Append one server-authorized `OWNER` or `INDEPENDENT_REVIEWER` decision with generation CAS |
+| `POST http://localhost:8080/api/mirror/rehearsal-remediations/{remediationId}/submissions` | Atomically admit the exact frozen successor after both distinct human approvals |
 | `GET http://localhost:8080/api/mirror/rehearsal-jobs/{jobId}/retention` | Rebuild and verify the signed batch retention projection (`X-Purpose: GOVERNANCE_EVIDENCE_INGESTION`) |
 | `POST http://localhost:8080/api/mirror/rehearsal-jobs/{jobId}/retention/holds` | Place an independent batch legal hold without replacing other holds (`X-Purpose: LEGAL_HOLD`) |
 | `POST http://localhost:8080/api/mirror/rehearsal-jobs/{jobId}/retention/purge` | Delete an eligible batch closure and return a signed logical-deletion proof (`X-Purpose: PAYLOAD_RETENTION_ADMIN`) |
@@ -187,17 +191,27 @@ publish-gate evidence. Terminal batches switch to the root-sealed
 `Signed workbook`, show gate blockers, and retain a deep link in the form
 `/rehearsals/?jobId=<jobId>&entry=<manifest-index>`. The browser never fetches
 raw Fixture, request, response, Session state, or customer payload values.
-Reviewed remediation and zero-DSL case editing remain a later workbench phase;
-the current surface intentionally exposes no write or finalization-admin
-control.
+Reviewed remediation now has a protected HTTP surface, but its Owner controls
+and zero-DSL case editing remain a later workbench phase. The current browser
+surface intentionally exposes no write or finalization-admin control.
 
-The reviewed-remediation backend is already stricter than the current read-only
-surface: it freezes an exact successor from independently verified predecessor
-workbook/evidence, requires server-authorized `OWNER` then
-`INDEPENDENT_REVIEWER` facts, and atomically commits successor admission,
-receipt, state, and success audit. Its protected HTTP API, capability readiness,
-signed predecessor/successor comparison, and Owner controls are intentionally
-not advertised until that complete product boundary is delivered.
+The reviewed-remediation API freezes an exact successor from independently
+verified predecessor workbook/evidence, requires server-authorized `OWNER`
+then `INDEPENDENT_REVIEWER` facts, and atomically commits successor admission,
+receipt, state, and success audit. `GET /api/integration/capabilities` advertises
+`mirrorScenarioRehearsalReviewedRemediationApi` and the four exact routes only
+when the isolated Mirror execution surface is assembled. Every operation uses
+`X-Purpose: MIRROR_REHEARSAL_REMEDIATION`; preview and submit additionally
+require a human in `RESOURCE_GATEWAY_SCENARIO_OWNER`, while independent review
+requires a different human in
+`RESOURCE_GATEWAY_SCENARIO_INDEPENDENT_REVIEWER`. The default demo workload
+token deliberately cannot satisfy these human-role checks. The standalone Test
+Kit exposes preview/read/approve/submit methods, validates every command and
+response against the packaged Schema, and independently re-derives the complete
+lineage before returning a read. `ScenarioRehearsalRemediationVerifier` can
+perform the same payload-free verification offline without a server or database
+connection. Signed predecessor/successor comparison and Owner browser controls
+are the next product increment.
 
 Scenario authoring now has a strict protocol base:
 `resourceGateway.scenarioPack.v1`, `resourceGateway.scenarioCase.v1`, and

@@ -294,6 +294,143 @@ class ScenarioRehearsalRemediationProtocolTest {
                 .hasMessageContaining("must differ");
     }
 
+    @Test
+    void publicLineageSealsOnlyConsistentImmutableFacts() {
+        ScenarioRehearsalRemediationPlan plan =
+                sealedPlan();
+        ScenarioRehearsalRemediationApproval first =
+                ScenarioRehearsalRemediationApproval.seal(
+                        mapper,
+                        approval(
+                                plan.planFingerprint(),
+                                1,
+                                "",
+                                ScenarioRehearsalRemediationApprovalCommand
+                                        .Role.OWNER,
+                                "owner-a"));
+        ScenarioRehearsalRemediationApproval second =
+                ScenarioRehearsalRemediationApproval.seal(
+                        mapper,
+                        approval(
+                                plan.planFingerprint(),
+                                2,
+                                first.approvalFingerprint(),
+                                ScenarioRehearsalRemediationApprovalCommand
+                                        .Role.INDEPENDENT_REVIEWER,
+                                "reviewer-b"));
+        ScenarioRehearsalRemediationReceipt receipt =
+                ScenarioRehearsalRemediationReceipt.seal(
+                        mapper,
+                        new ScenarioRehearsalRemediationReceipt(
+                                "",
+                                "",
+                                SHA_C,
+                                scope(),
+                                REMEDIATION_ID,
+                                plan.planFingerprint(),
+                                PREDECESSOR_JOB_ID,
+                                SUCCESSOR_JOB_ID,
+                                plan.successorRequestFingerprint(),
+                                2,
+                                second.approvalFingerprint(),
+                                "owner-a",
+                                "",
+                                Instant.parse(
+                                        "2026-07-25T11:00:00Z")));
+        ScenarioRehearsalRemediationRepository.Snapshot
+                snapshot =
+                new ScenarioRehearsalRemediationRepository.Snapshot(
+                        plan,
+                        ScenarioRehearsalRemediationRepository.State
+                                .SUBMITTED,
+                        List.of(first, second),
+                        receipt);
+
+        ScenarioRehearsalRemediationLineage lineage =
+                ScenarioRehearsalRemediationLineage.from(
+                        mapper, snapshot);
+
+        lineage.verify(mapper);
+        assertThat(lineage.lineageFingerprint())
+                .startsWith("sha256:");
+        assertThat(lineage.approvalGeneration())
+                .isEqualTo(2);
+        assertThat(lineage.approvalHeadFingerprint())
+                .isEqualTo(second.approvalFingerprint());
+        assertThat(lineage.receipt()).isEqualTo(receipt);
+        assertThatThrownBy(() ->
+                new ScenarioRehearsalRemediationLineage(
+                        "",
+                        "",
+                        snapshot.state(),
+                        plan,
+                        snapshot.approvals(),
+                        1,
+                        first.approvalFingerprint(),
+                        receipt))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("projection");
+
+        ScenarioRehearsalRemediationApproval duplicateActor =
+                ScenarioRehearsalRemediationApproval.seal(
+                        mapper,
+                        approval(
+                                plan.planFingerprint(),
+                                2,
+                                first.approvalFingerprint(),
+                                ScenarioRehearsalRemediationApprovalCommand
+                                        .Role.INDEPENDENT_REVIEWER,
+                                "owner-a"));
+        ScenarioRehearsalRemediationRepository.Snapshot
+                policyViolation =
+                new ScenarioRehearsalRemediationRepository.Snapshot(
+                        plan,
+                        ScenarioRehearsalRemediationRepository.State
+                                .APPROVED,
+                        List.of(first, duplicateActor),
+                        null);
+        assertThatThrownBy(() ->
+                ScenarioRehearsalRemediationLineage.from(
+                        mapper, policyViolation))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("frozen policy");
+
+        ScenarioRehearsalRemediationPlan mismatchedSuccessor =
+                ScenarioRehearsalRemediationPlan.seal(
+                        mapper,
+                        new ScenarioRehearsalRemediationPlan(
+                                plan.schemaVersion(),
+                                "",
+                                plan.scope(),
+                                plan.remediationId(),
+                                plan.previewRequestId(),
+                                plan.predecessorJobId(),
+                                plan.predecessorWorkbookSeedFingerprint(),
+                                plan.predecessorEvidenceBundleFingerprint(),
+                                plan.predecessorStatus(),
+                                plan.predecessorBlockers(),
+                                plan.strategy(),
+                                plan.reasonCode(),
+                                plan.replacements(),
+                                plan.successorRequest(),
+                                SHA_A,
+                                plan.governanceTicketRef(),
+                                plan.approvalPolicy(),
+                                plan.generatedAt(),
+                                plan.expiresAt()));
+        assertThatThrownBy(() ->
+                ScenarioRehearsalRemediationLineage.from(
+                        mapper,
+                        new ScenarioRehearsalRemediationRepository.Snapshot(
+                                mismatchedSuccessor,
+                                ScenarioRehearsalRemediationRepository.State
+                                        .PENDING_APPROVAL,
+                                List.of(),
+                                null)))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("successor request fingerprint");
+    }
+
     private static ScenarioRehearsalRemediationApproval approval(
             long generation,
             String previous,
@@ -318,6 +455,69 @@ class ScenarioRehearsalRemediationProtocolTest {
                 "",
                 Instant.parse("2026-07-25T10:30:00Z")
                         .plusSeconds(generation));
+    }
+
+    private static ScenarioRehearsalRemediationApproval approval(
+            String planFingerprint,
+            long generation,
+            String previous,
+            ScenarioRehearsalRemediationApprovalCommand.Role role,
+            String actor) {
+        return new ScenarioRehearsalRemediationApproval(
+                "",
+                "",
+                SHA_C,
+                scope(),
+                REMEDIATION_ID,
+                planFingerprint,
+                generation,
+                previous,
+                role,
+                ScenarioRehearsalRemediationApprovalCommand
+                        .Decision.APPROVE,
+                ticket(),
+                ScenarioRehearsalRemediationApprovalCommand
+                        .ReasonCode.APPROVED_AS_REVIEWED,
+                actor,
+                "",
+                Instant.parse("2026-07-25T10:30:00Z")
+                        .plusSeconds(generation));
+    }
+
+    private ScenarioRehearsalRemediationPlan sealedPlan() {
+        ScenarioRehearsalRemediationPreviewRequest.PlanReplacement
+                replacement = replacement(0, "entry-a");
+        ScenarioRehearsalBatchRequest successor =
+                successor(replacement.replacementCompiledPlanRef());
+        return ScenarioRehearsalRemediationPlan.seal(
+                mapper,
+                new ScenarioRehearsalRemediationPlan(
+                        "",
+                        "",
+                        scope(),
+                        REMEDIATION_ID,
+                        "preview-a",
+                        PREDECESSOR_JOB_ID,
+                        SHA_A,
+                        SHA_B,
+                        ScenarioRehearsalBatchJob.Status.FAILED,
+                        List.of("REHEARSAL_FAILED"),
+                        ScenarioRehearsalRemediationPreviewRequest
+                                .Strategy
+                                .REPLACE_COMPILED_PLANS,
+                        ScenarioRehearsalRemediationPreviewRequest
+                                .ReasonCode.SCENARIO_REVISION,
+                        List.of(replacement),
+                        successor,
+                        ProtocolFingerprint.of(mapper, successor),
+                        ticket(),
+                        ScenarioRehearsalRemediationPlan
+                                .ApprovalPolicy.twoPerson(
+                                        7, SHA_C),
+                        Instant.parse(
+                                "2026-07-25T10:00:00Z"),
+                        Instant.parse(
+                                "2026-07-26T10:00:00Z")));
     }
 
     private static ScenarioRehearsalBatchRequest successor(

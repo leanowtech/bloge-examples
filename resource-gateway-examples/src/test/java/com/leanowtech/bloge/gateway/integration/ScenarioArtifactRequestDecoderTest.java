@@ -14,6 +14,9 @@ import com.leanowtech.bloge.gateway.integration.mirror.ScenarioRehearsalCompileR
 import com.leanowtech.bloge.gateway.integration.mirror.ScenarioRehearsalExecutionRequest;
 import com.leanowtech.bloge.gateway.integration.mirror.ScenarioRehearsalLegalHoldCommand;
 import com.leanowtech.bloge.gateway.integration.mirror.ScenarioRehearsalPurgeCommand;
+import com.leanowtech.bloge.gateway.integration.mirror.ScenarioRehearsalRemediationApprovalCommand;
+import com.leanowtech.bloge.gateway.integration.mirror.ScenarioRehearsalRemediationPreviewRequest;
+import com.leanowtech.bloge.gateway.integration.mirror.ScenarioRehearsalRemediationSubmitCommand;
 import org.junit.jupiter.api.Test;
 
 import java.nio.charset.StandardCharsets;
@@ -74,6 +77,41 @@ class ScenarioArtifactRequestDecoderTest {
                         3,
                         NOW,
                         "KMS_POLICY_REPAIRED");
+        ScenarioRehearsalRemediationPreviewRequest preview =
+                new ScenarioRehearsalRemediationPreviewRequest(
+                        "",
+                        "preview-001",
+                        SHA_A,
+                        ScenarioRehearsalRemediationPreviewRequest
+                                .Strategy.RERUN_EXACT,
+                        List.of(),
+                        new MirrorArtifactRef(
+                                "GOVERNANCE_REVIEW_TICKET",
+                                "ticket-001", 1, SHA_A),
+                        ScenarioRehearsalRemediationPreviewRequest
+                                .ReasonCode
+                                .TRANSIENT_EXECUTION_RECHECK);
+        ScenarioRehearsalRemediationApprovalCommand approval =
+                new ScenarioRehearsalRemediationApprovalCommand(
+                        "",
+                        "approval-001",
+                        SHA_A,
+                        0,
+                        ScenarioRehearsalRemediationApprovalCommand
+                                .Role.OWNER,
+                        ScenarioRehearsalRemediationApprovalCommand
+                                .Decision.APPROVE,
+                        preview.governanceTicketRef(),
+                        ScenarioRehearsalRemediationApprovalCommand
+                                .ReasonCode.APPROVED_AS_REVIEWED);
+        ScenarioRehearsalRemediationSubmitCommand submit =
+                new ScenarioRehearsalRemediationSubmitCommand(
+                        "",
+                        "submit-001",
+                        SHA_A,
+                        2,
+                        SHA_A,
+                        null);
         CaseHandlingAssertion assertion = assertion();
 
         assertThat(decoder.decodeCompileRequest(
@@ -100,6 +138,15 @@ class ScenarioArtifactRequestDecoderTest {
         assertThat(decoder.decodeBatchFinalizationRemediationRequest(
                 mapper.writeValueAsBytes(remediation), identity()))
                 .isEqualTo(remediation);
+        assertThat(decoder.decodeRemediationPreviewRequest(
+                mapper.writeValueAsBytes(preview), identity()))
+                .isEqualTo(preview);
+        assertThat(decoder.decodeRemediationApprovalCommand(
+                mapper.writeValueAsBytes(approval), identity()))
+                .isEqualTo(approval);
+        assertThat(decoder.decodeRemediationSubmitCommand(
+                mapper.writeValueAsBytes(submit), identity()))
+                .isEqualTo(submit);
     }
 
     @Test
@@ -253,6 +300,50 @@ class ScenarioArtifactRequestDecoderTest {
                 .isInstanceOfSatisfying(
                         IntegrationProblemException.class,
                         failure -> assertThat(failure.problem().code())
+                                .isEqualTo(
+                                        "RG.MIRROR.SCENARIO_REQUEST_MALFORMED"));
+    }
+
+    @Test
+    void rejectsRemediationIdentityAndPayloadSmuggling()
+            throws Exception {
+        ScenarioRehearsalRemediationPreviewRequest preview =
+                new ScenarioRehearsalRemediationPreviewRequest(
+                        "",
+                        "preview-001",
+                        SHA_A,
+                        ScenarioRehearsalRemediationPreviewRequest
+                                .Strategy.RERUN_EXACT,
+                        List.of(),
+                        new MirrorArtifactRef(
+                                "GOVERNANCE_REVIEW_TICKET",
+                                "ticket-001", 1, SHA_A),
+                        ScenarioRehearsalRemediationPreviewRequest
+                                .ReasonCode
+                                .TRANSIENT_EXECUTION_RECHECK);
+        ObjectNode actorOverride =
+                mapper.valueToTree(preview);
+        actorOverride.put("actorId", "forged-owner");
+        ObjectNode nestedPayload =
+                mapper.valueToTree(preview);
+        ((ObjectNode) nestedPayload.path(
+                "governanceTicketRef"))
+                .putObject("payload")
+                .put("customerId", "must-not-cross");
+
+        assertThatThrownBy(() ->
+                decoder.decodeRemediationPreviewRequest(
+                        mapper.writeValueAsBytes(actorOverride),
+                        identity()))
+                .isInstanceOf(IntegrationProblemException.class);
+        assertThatThrownBy(() ->
+                decoder.decodeRemediationPreviewRequest(
+                        mapper.writeValueAsBytes(nestedPayload),
+                        identity()))
+                .isInstanceOfSatisfying(
+                        IntegrationProblemException.class,
+                        failure -> assertThat(
+                                failure.problem().code())
                                 .isEqualTo(
                                         "RG.MIRROR.SCENARIO_REQUEST_MALFORMED"));
     }

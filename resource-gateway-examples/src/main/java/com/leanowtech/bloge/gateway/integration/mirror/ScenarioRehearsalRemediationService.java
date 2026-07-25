@@ -401,7 +401,7 @@ public final class ScenarioRehearsalRemediationService {
      * @param identity authenticated remediation reader
      * @return integrity-verified plan, approval chain, state, and optional receipt
      */
-    public Optional<ScenarioRehearsalRemediationRepository.Snapshot>
+    public Optional<ScenarioRehearsalRemediationLineage>
     find(
             String remediationId,
             IntegrationRequestContext identity) {
@@ -417,9 +417,9 @@ public final class ScenarioRehearsalRemediationService {
             CapabilitySnapshot.Scope scope =
                     requireRemediationIdentity(identity);
             Optional<ScenarioRehearsalRemediationRepository.Snapshot>
-                    result = repository.find(
+                    retained = repository.find(
                     scope, remediationId);
-            if (result.isEmpty()) {
+            if (retained.isEmpty()) {
                 throw problem(
                         conflict(
                                 ScenarioRehearsalRemediationConflictException
@@ -427,8 +427,11 @@ public final class ScenarioRehearsalRemediationService {
                                 "Scenario remediation was not found in the authorized scope"),
                         identity);
             }
+            ScenarioRehearsalRemediationLineage result =
+                    ScenarioRehearsalRemediationLineage.from(
+                            mapper, retained.orElseThrow());
             operation.succeeded(remediationId);
-            return result;
+            return Optional.of(result);
         } catch (RuntimeException failure) {
             throw operation.failed(failure);
         }

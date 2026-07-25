@@ -383,6 +383,9 @@ class ToolStudioIntegrationServiceTest {
                 .containsEntry(
                         "mirrorScenarioRehearsalBatchFinalizationSloReady",
                         false)
+                .containsEntry(
+                        "mirrorScenarioRehearsalReviewedRemediationApi",
+                        false)
                 .containsEntry("mirrorScenarioRehearsalEvidence", false)
                 .containsEntry("mirrorOperationObservability", false)
                 .containsEntry("mirrorServing", false);
@@ -428,6 +431,9 @@ class ToolStudioIntegrationServiceTest {
                         false)
                 .containsEntry(
                         "mirrorScenarioRehearsalBatchFinalizationHealthApi",
+                        true)
+                .containsEntry(
+                        "mirrorScenarioRehearsalReviewedRemediationApi",
                         true)
                 .containsEntry(
                         "mirrorScenarioRehearsalBatchFinalizationSloIntegrated",
@@ -548,6 +554,7 @@ class ToolStudioIntegrationServiceTest {
                         "scenarioRehearsalRemediationApproval",
                         "scenarioRehearsalRemediationSubmitCommand",
                         "scenarioRehearsalRemediationReceipt",
+                        "scenarioRehearsalRemediationLineage",
                         "scenarioRehearsalBatchCancellationRequest",
                         "scenarioRehearsalBatchRetentionEvent",
                         "scenarioRehearsalBatchRetentionState",
@@ -644,6 +651,10 @@ class ToolStudioIntegrationServiceTest {
                         "POST /api/mirror/rehearsal-jobs/{jobId}/retention/holds",
                         "POST /api/mirror/rehearsal-jobs/{jobId}/retention/hold-releases",
                         "POST /api/mirror/rehearsal-jobs/{jobId}/retention/purge",
+                        "POST /api/mirror/rehearsal-jobs/{jobId}/remediations",
+                        "GET /api/mirror/rehearsal-remediations/{remediationId}",
+                        "POST /api/mirror/rehearsal-remediations/{remediationId}/approvals",
+                        "POST /api/mirror/rehearsal-remediations/{remediationId}/submissions",
                         "POST /api/mirror/executions", "GET /api/mirror/runs/{runId}",
                         "GET /api/mirror/runs/{runId}/evidence",
                         "GET /api/mirror/runs/{runId}/state-workbook-seed",

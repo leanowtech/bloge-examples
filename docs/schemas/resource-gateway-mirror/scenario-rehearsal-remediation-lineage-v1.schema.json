@@ -1,0 +1,212 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://bloge.dev/schemas/resource-gateway-mirror/scenario-rehearsal-remediation-lineage-v1.schema.json",
+  "title": "Resource Gateway Scenario Rehearsal Remediation Lineage v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "lineageFingerprint",
+    "state",
+    "plan",
+    "approvals",
+    "approvalGeneration",
+    "approvalHeadFingerprint",
+    "receipt"
+  ],
+  "properties": {
+    "schemaVersion": {
+      "const": "resourceGateway.scenarioRehearsalRemediationLineage.v1"
+    },
+    "lineageFingerprint": {
+      "$ref": "mirror-plan-v1.schema.json#/$defs/fingerprint"
+    },
+    "state": {
+      "enum": [
+        "PENDING_APPROVAL",
+        "APPROVED",
+        "REJECTED",
+        "SUBMITTED"
+      ]
+    },
+    "plan": {
+      "$ref": "scenario-rehearsal-remediation-plan-v1.schema.json"
+    },
+    "approvals": {
+      "type": "array",
+      "maxItems": 2,
+      "items": {
+        "$ref": "scenario-rehearsal-remediation-approval-v1.schema.json"
+      }
+    },
+    "approvalGeneration": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 2
+    },
+    "approvalHeadFingerprint": {
+      "oneOf": [
+        {
+          "const": ""
+        },
+        {
+          "$ref": "mirror-plan-v1.schema.json#/$defs/fingerprint"
+        }
+      ]
+    },
+    "receipt": {
+      "oneOf": [
+        {
+          "type": "null"
+        },
+        {
+          "$ref": "scenario-rehearsal-remediation-receipt-v1.schema.json"
+        }
+      ]
+    }
+  },
+  "allOf": [
+    {
+      "if": {
+        "properties": {
+          "approvalGeneration": {
+            "const": 0
+          }
+        },
+        "required": ["approvalGeneration"]
+      },
+      "then": {
+        "properties": {
+          "approvals": {
+            "maxItems": 0
+          },
+          "approvalHeadFingerprint": {
+            "const": ""
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "approvalGeneration": {
+            "const": 1
+          }
+        },
+        "required": ["approvalGeneration"]
+      },
+      "then": {
+        "properties": {
+          "approvals": {
+            "minItems": 1,
+            "maxItems": 1
+          },
+          "approvalHeadFingerprint": {
+            "$ref": "mirror-plan-v1.schema.json#/$defs/fingerprint"
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "approvalGeneration": {
+            "const": 2
+          }
+        },
+        "required": ["approvalGeneration"]
+      },
+      "then": {
+        "properties": {
+          "approvals": {
+            "minItems": 2,
+            "maxItems": 2
+          },
+          "approvalHeadFingerprint": {
+            "$ref": "mirror-plan-v1.schema.json#/$defs/fingerprint"
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "state": {
+            "const": "PENDING_APPROVAL"
+          }
+        },
+        "required": ["state"]
+      },
+      "then": {
+        "properties": {
+          "approvalGeneration": {
+            "maximum": 1
+          },
+          "receipt": {
+            "type": "null"
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "state": {
+            "const": "APPROVED"
+          }
+        },
+        "required": ["state"]
+      },
+      "then": {
+        "properties": {
+          "approvalGeneration": {
+            "const": 2
+          },
+          "receipt": {
+            "type": "null"
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "state": {
+            "const": "REJECTED"
+          }
+        },
+        "required": ["state"]
+      },
+      "then": {
+        "properties": {
+          "approvalGeneration": {
+            "minimum": 1
+          },
+          "receipt": {
+            "type": "null"
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "state": {
+            "const": "SUBMITTED"
+          }
+        },
+        "required": ["state"]
+      },
+      "then": {
+        "properties": {
+          "approvalGeneration": {
+            "const": 2
+          },
+          "receipt": {
+            "$ref": "scenario-rehearsal-remediation-receipt-v1.schema.json"
+          }
+        }
+      }
+    }
+  ]
+}

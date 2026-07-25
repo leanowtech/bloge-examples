@@ -44,7 +44,7 @@ Fixture、MirrorPlan 和可选 Session checkpoint 绑定成不可变执行许可
 | `ScenarioRehearsalBatchWorkbookSeed.v1` | 可用 | 把签名 batch v2、初始 retention proof、全部 child workbook commitment 与有界 correctness projection 归约为一个确定性整批 ANEKE 输入 |
 | batch workbook root seal/verifier | 可用 | 服务端内部逐 child 复验后对 deterministic seed 做域隔离 Ed25519 seal；ANEKE/CI 无需 N+1 即可重算 batch/retention/root 三类签名、blocker 和 gate |
 | batch workbook API/Test Kit client | 可用 | 受保护 exact-job 读取；一键拉取 seed、batch evidence 和三把公开 key 后失败关闭，case 级审计可按需打开 child commitment |
-| reviewed remediation transaction kernel | 可用（内部服务） | 从已验签阻断 predecessor 冻结 exact successor，经 server-authorized Owner/Independent Reviewer append-only 审批后，在同一事务准入 successor、回执和成功审计；受保护 HTTP API 与 Owner 写侧尚未开放 |
+| reviewed remediation protocol/API | 可用（受保护 test/staging API） | 从已验签阻断 predecessor 冻结 exact successor，经 server-authorized Owner/Independent Reviewer append-only 审批后，在同一事务准入 successor、回执和成功审计；输出 content-addressed lineage，Owner 浏览器写侧尚未开放 |
 | 可作为生产发布门禁的 Scenario evidence | 未交付 | 本地 gate-consumable closure 已完成；尚无企业 retention policy authority、WORM/外部锚、消费者认证和环境级门禁 |
 
 当前链路已经解决“执行前冻结什么、运行时从哪里取值、每个结果依据什么证据”
@@ -960,8 +960,8 @@ ANEKE 已作出最终发布裁决。
 当前浏览器默认凭证只被仓库的 test/staging demo identity 接受，宿主或 VSCode
 Webview 必须通过 `setOperatorTestHeadersProvider(...)` 注入短期身份。页面只请求
 `GOVERNANCE_EVIDENCE_INGESTION` purpose，不保存 token，也没有取消、修复、legal
-hold、purge 或 finalization-admin 按钮。Reviewed remediation 和零 DSL case 调整
-仍是下一阶段，不能通过开放通用 JSON/DSL 编辑器绕过。
+hold、purge 或 finalization-admin 按钮。Reviewed remediation 后端 API 已开放，但
+浏览器控件和零 DSL case 调整仍是下一阶段，不能通过开放通用 JSON/DSL 编辑器绕过。
 
 ### 8.6 经评审修复协议
 
@@ -979,6 +979,7 @@ Owner 的业务修复与 finalization 管理员修复是两套不同协议。前
 | 审批事实 | `scenario-rehearsal-remediation-approval-v1` | append-only；server-owned actor/time/delegation；previous fingerprint 形成链 |
 | 提交命令 | `scenario-rehearsal-remediation-submit-command-v1` | 同时比较 plan、approval generation 与 approval head；至少完成两级审批 |
 | 提交回执 | `scenario-rehearsal-remediation-receipt-v1` | predecessor 与 successor job 必须不同；绑定 frozen request 与最终审批链 |
+| 读取视图 | `scenario-rehearsal-remediation-lineage-v1` | 对 plan、完整 approval hash chain、derived state 与 optional receipt 再做整体 content addressing |
 
 首版 `RERUN_EXACT` 只能用于可重试的运行/证据原因，不得携带 replacement。
 `REPLACE_COMPILED_PLANS` 只替换指定 entry 的 exact existing compiled plan，
@@ -993,7 +994,7 @@ actor separation 同时比较 actor 与 `delegatedBy`，禁止两个代理账号
 绕过双人分离。计划还冻结当前 server policy generation/fingerprint；滚动升级或
 配置漂移时，旧副本不能用不同授权策略继续审批或提交。
 
-当前已交付 Java protocol、六份 authoritative Schema、Test Kit validator、
+当前已交付 Java protocol、七份 authoritative Schema、Test Kit validator、
 capability `supportedObjects` 版本目录，以及 durable JDBC repository/application
 service 事务内核。应用服务从已验签 predecessor workbook/evidence 重建 exact
 successor，服务端持有 purpose、actor、时间、过期、角色组和保留请求 ID 命名空间；
@@ -1002,9 +1003,69 @@ scope 执行约束。最终提交把 successor batch admission、receipt、状�
 放在同一事务；预占 identity、审计不可用、策略漂移、篡改或非精确重放全部回滚或
 失败关闭。
 
-尚未提供受保护 preview/approve/submit/read HTTP API、capability readiness flag、
-工作台按钮和 predecessor/successor 签名 workbook 对比视图。因此
-`/rehearsals/` 仍是只读分诊面，内部事务内核的存在不代表外部产品能力已开放。
+受保护传输固定为以下四个端点：
+
+| 操作 | 端点 | 返回对象 |
+|---|---|---|
+| 冻结预览 | `POST /api/mirror/rehearsal-jobs/{jobId}/remediations` | immutable remediation plan |
+| 读取 lineage | `GET /api/mirror/rehearsal-remediations/{remediationId}` | content-addressed lineage |
+| 追加决定 | `POST /api/mirror/rehearsal-remediations/{remediationId}/approvals` | actor-bound approval fact |
+| 提交后继 | `POST /api/mirror/rehearsal-remediations/{remediationId}/submissions` | predecessor-to-successor receipt |
+
+四个端点都要求 `X-Purpose: MIRROR_REHEARSAL_REMEDIATION`。认证在 body 解码之前
+完成；preview/submit 要求可信身份是 `USER`/`HUMAN` 且属于
+`RESOURCE_GATEWAY_SCENARIO_OWNER`，独立审批要求另一个 human actor 属于
+`RESOURCE_GATEWAY_SCENARIO_INDEPENDENT_REVIEWER`。默认
+`bloge-aneke-demo-token` 是 workload identity，刻意不能完成业务审批。演示或企业
+宿主必须签发两个不同主体的短期 JWT/可信网关身份，不能用请求 body、普通 header
+或同一 delegated principal 模拟双人分离。
+
+调用顺序为：
+
+```text
+read signed predecessor workbook
+  -> POST preview with exact workbook fingerprint and governance ticket ref
+  -> GET lineage and use planFingerprint + approvalGeneration=0
+  -> POST OWNER decision
+  -> GET lineage and use the new generation/head
+  -> POST INDEPENDENT_REVIEWER decision with a different identity
+  -> GET lineage and use generation=2 + final approval head
+  -> POST submission
+  -> GET lineage and follow receipt.successorJobId
+```
+
+每次 mutation 都必须从最新 lineage 复制 CAS 坐标，不能猜测 generation/head。
+完全相同的 command id、内容、actor 和 delegation 返回同一事实；同 id 异内容、
+过期 plan、ticket/policy/scope/actor 漂移或并发旧 generation 一律失败关闭。
+capability probe 仅在隔离 Mirror execution surface 组装时声明
+`mirrorScenarioRehearsalReviewedRemediationApi=true` 并列出四个端点。
+
+Java/CI 消费方不需要自行拼接路径或信任服务端派生字段。Test Kit 提供
+`previewScenarioRehearsalRemediation`、
+`findScenarioRehearsalRemediation`、
+`approveScenarioRehearsalRemediation` 和
+`submitScenarioRehearsalRemediation`。四个入口先校验出站命令和入站对象的 strict
+Schema，并绑定 URL 中的 job/remediation id、request id、plan fingerprint 和 CAS
+坐标。read 还会调用独立 verifier 重算 plan、successor request、每条 approval、
+receipt 与 lineage 的 content address，并检查角色顺序、actor/delegation 分离、
+ticket、scope 和派生状态；任一闭包不成立都不会把对象交给调用方。
+
+已经持有 lineage JSON 的离线系统可以直接验真：
+
+```java
+ScenarioRehearsalRemediationVerifier.VerificationResult result =
+        new ScenarioRehearsalRemediationVerifier().verify(lineage);
+if (!result.verified()) {
+    throw new IllegalStateException(result.reasonCode());
+}
+```
+
+verifier 只返回有界 reason code、对象坐标和已重算 fingerprint，不返回或记录命令
+正文、治理说明或业务 payload；它不需要连接 Resource Gateway 或数据库。
+
+尚未提供工作台按钮和 predecessor/successor 签名 workbook 对比视图。因此
+`/rehearsals/` 仍是只读分诊面；后端 API 的存在不代表浏览器已经形成完整 Owner
+任务闭环。
 
 ## 9. 失败语义
 
@@ -1157,7 +1218,7 @@ WORM、外部 transparency anchor、企业级策略分发和跨地域删除认�
 
 ```bash
 mvn -f resource-gateway-examples/pom.xml \
-  -Dtest=ScenarioRehearsalControllerTest,ScenarioRehearsalBatchControllerTest,ScenarioArtifactRequestDecoderTest,ScenarioArtifactRegistryServiceTest,ScenarioRehearsalIntegrationServiceTest,ScenarioRehearsalCompilerTest,ScenarioRehearsalRuntimeServiceTest,ScenarioRehearsalBatchProtocolTest,ScenarioRehearsalBatchManifestTest,ScenarioRehearsalBatchJobPageTest,ScenarioRehearsalBatchServiceTest,ScenarioRehearsalBatchWorkbookSeedTest,ScenarioRehearsalBatchWorkbookServiceTest,ScenarioRehearsalRemediationProtocolTest,DatabaseScenarioRehearsalRemediationRepositoryTest,ScenarioRehearsalRemediationServiceTest,DatabaseScenarioRehearsalBatchRepositoryTest,DatabaseScenarioRehearsalBatchLifecycleAuditRepositoryTest,ScenarioRehearsalBatchEvidenceIntegrityServiceTest,ScenarioRehearsalBatchEvidencePublisherTest,DatabaseScenarioRehearsalBatchEvidenceRepositoryTest,DatabaseScenarioRehearsalBatchRetentionRepositoryTest,ScenarioRehearsalBatchRetentionServiceTest,ScenarioRehearsalBatchSchedulerTest,ScenarioRehearsalBatchSchedulerPropertiesTest,ScenarioRehearsalWorkbookSeedTest,ScenarioRehearsalResultProtocolTest,ScenarioRehearsalEvidenceIntegrityServiceTest,DatabaseScenarioRehearsalEvidenceRepositoryTest,DatabaseScenarioRehearsalRunRepositoryTest,ScenarioRehearsalCommitServiceTest,DatabaseScenarioRehearsalRetentionRepositoryTest,ScenarioRehearsalRetentionServiceTest,DatabaseScenarioArtifactRepositoryTest,DatabaseCompiledScenarioRehearsalPlanRepositoryTest,ScenarioPackProtocolTest,MirrorEvidenceIntegrityServiceTest,ScenarioHandlingAssertionEvaluatorTest,MirrorRuntimeConfigurationTest,ToolStudioIntegrationServiceTest,VisualCanvasDemoScriptTest \
+  -Dtest=ScenarioRehearsalControllerTest,ScenarioRehearsalBatchControllerTest,ScenarioRehearsalRemediationControllerTest,ScenarioArtifactRequestDecoderTest,ScenarioArtifactRegistryServiceTest,ScenarioRehearsalIntegrationServiceTest,ScenarioRehearsalCompilerTest,ScenarioRehearsalRuntimeServiceTest,ScenarioRehearsalBatchProtocolTest,ScenarioRehearsalBatchManifestTest,ScenarioRehearsalBatchJobPageTest,ScenarioRehearsalBatchServiceTest,ScenarioRehearsalBatchWorkbookSeedTest,ScenarioRehearsalBatchWorkbookServiceTest,ScenarioRehearsalRemediationProtocolTest,DatabaseScenarioRehearsalRemediationRepositoryTest,ScenarioRehearsalRemediationServiceTest,DatabaseScenarioRehearsalBatchRepositoryTest,DatabaseScenarioRehearsalBatchLifecycleAuditRepositoryTest,ScenarioRehearsalBatchEvidenceIntegrityServiceTest,ScenarioRehearsalBatchEvidencePublisherTest,DatabaseScenarioRehearsalBatchEvidenceRepositoryTest,DatabaseScenarioRehearsalBatchRetentionRepositoryTest,ScenarioRehearsalBatchRetentionServiceTest,ScenarioRehearsalBatchSchedulerTest,ScenarioRehearsalBatchSchedulerPropertiesTest,ScenarioRehearsalWorkbookSeedTest,ScenarioRehearsalResultProtocolTest,ScenarioRehearsalEvidenceIntegrityServiceTest,DatabaseScenarioRehearsalEvidenceRepositoryTest,DatabaseScenarioRehearsalRunRepositoryTest,ScenarioRehearsalCommitServiceTest,DatabaseScenarioRehearsalRetentionRepositoryTest,ScenarioRehearsalRetentionServiceTest,DatabaseScenarioArtifactRepositoryTest,DatabaseCompiledScenarioRehearsalPlanRepositoryTest,ScenarioPackProtocolTest,MirrorEvidenceIntegrityServiceTest,ScenarioHandlingAssertionEvaluatorTest,MirrorRuntimeConfigurationTest,ToolStudioIntegrationServiceTest,VisualCanvasDemoScriptTest \
   test
 ```
 
@@ -1239,6 +1300,7 @@ JavaDoc 校验通过。Reviewed remediation 聚焦组 `40/40` 全绿；演练工
 - `docs/schemas/resource-gateway-mirror/scenario-rehearsal-remediation-approval-v1.schema.json`
 - `docs/schemas/resource-gateway-mirror/scenario-rehearsal-remediation-submit-command-v1.schema.json`
 - `docs/schemas/resource-gateway-mirror/scenario-rehearsal-remediation-receipt-v1.schema.json`
+- `docs/schemas/resource-gateway-mirror/scenario-rehearsal-remediation-lineage-v1.schema.json`
 - `docs/schemas/resource-gateway-mirror/scenario-rehearsal-batch-item-page-v1.schema.json`
 - `docs/schemas/resource-gateway-mirror/scenario-rehearsal-batch-cancellation-request-v1.schema.json`
 - `docs/schemas/resource-gateway-mirror/scenario-rehearsal-batch-evidence-index-v1.schema.json`

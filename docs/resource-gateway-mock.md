@@ -7,7 +7,7 @@
 
 | 文档属性 | 内容 |
 |---|---|
-| 状态 | Accepted / In implementation；Stage 0 工程门禁已通过；Stage 1 完成 MirrorPlan、受保护运行/证据 API、部署隔离信任与 durable execution；Stage 2 完成 observation/corpus 的准入、review、publication、trajectory/cluster serving 与 generation fence；Stage 3 完成有状态 Session、虚拟读写、checkpoint/recovery、write-attempt reconciliation 和三类 ANEKE seed；Stage 4 完成 Scenario 编译、可恢复 aggregate、签名 evidence、audit/retention/workbook closure、durable batch manifest/queue/API/worker、region-local bounded scheduler、cooperative control、签名 batch evidence、批次 operation/lifecycle audit、retention、durable evidence finalization、受控 remediation、聚合 health/SLO、ANEKE batch workbook、Owner 只读分诊工作台，以及 reviewed remediation 的版本化协议、持久化状态机和事务应用服务。受保护 remediation API/Owner 写侧、零 DSL case 调整、Fidelity/Outcome 和生产环境认证继续实施；未完成前相关 readiness 必须保持 `false` |
+| 状态 | Accepted / In implementation；Stage 0 工程门禁已通过；Stage 1 完成 MirrorPlan、受保护运行/证据 API、部署隔离信任与 durable execution；Stage 2 完成 observation/corpus 的准入、review、publication、trajectory/cluster serving 与 generation fence；Stage 3 完成有状态 Session、虚拟读写、checkpoint/recovery、write-attempt reconciliation 和三类 ANEKE seed；Stage 4 完成 Scenario 编译、可恢复 aggregate、签名 evidence、audit/retention/workbook closure、durable batch manifest/queue/API/worker、region-local bounded scheduler、cooperative control、签名 batch evidence、批次 operation/lifecycle audit、retention、durable evidence finalization、受控 remediation、聚合 health/SLO、ANEKE batch workbook、Owner 只读分诊工作台，以及 reviewed remediation 的版本化协议、持久化状态机、事务应用服务和受保护 API。Owner 写侧、签名前后继对账、零 DSL case 调整、Fidelity/Outcome 和生产环境认证继续实施；未完成前相关 readiness 必须保持 `false` |
 | 目标读者 | Resource Gateway、BLOGE Runtime、ANEKE、TEE/数据平台、QA、SRE、安全与业务运营团队 |
 | 设计范围 | external/composed 能力建模、镜像运行、保真语料、有状态世界、场景演练、证据、保真度与结果校准 |
 | 非目标 | 不重做 ANEKE 的资产治理和发布门禁；不允许测试控制进入生产业务请求；不把观测频率直接当成业务正确性 |
@@ -579,9 +579,9 @@ Resource Gateway 已有的工业底座应直接复用：
 | 有状态业务世界 | 91% | 协议、read/write 退款 fixture、独立 verifier/sealer/client、事务内核、受保护 Session API、独立 AES-GCM 数据面、lease/fence/CAS、durable write-attempt journal/reconciliation、TTL/destroy、全局/scope 容量、保留字节、命令背压、过期擦除、固定 read head、run-scoped virtual write、真实 DAG read-write-read、payload-free v1/v2/v3 state evidence、read-only/successful-transition/write-outcome ANEKE seed、签名 HASH_ONLY checkpoint 与同数据面代际精确恢复准入已落地；缺 TEE/KMS、跨区域数据恢复、真实 process-kill/network parity、目标数据库容量认证和 HA/DR certification |
 | Scenario/Rehearsal | 99.3% | ScenarioPack/Case/Assertion、exact compiler、可恢复逐 case runtime、签名 aggregate、audit/retention、ANEKE seed、durable batch manifest/queue/API/worker、region-local DAG/KMS 双 scheduler、逐 case cooperative control、v1/v2 签名 batch evidence/index、批次 operation/lifecycle audit、retention/multi-hold/逻辑删除证明、durable finalization outbox/lease/retry/quarantine/status、受控 remediation、聚合 health/SLO，以及 root-sealed ANEKE batch workbook 已落地；缺 hard kill、owner UX、企业策略/WORM/anchor 与异构消费者认证 |
 | Fidelity/Outcome | 5% | 缺保真向量、shadow、权威结果归因和校准闭环 |
-| 业务运营工作台 | 42% | exact-scope keyset 队列、证据分诊/deep link/响应式 UI，以及 reviewed remediation 六对象协议、server-owned 双角色策略、durable approval ledger、CAS 与 successor 原子准入内核已落地；仍缺受保护写 API、Owner 控件、前后继签名对账、零 DSL case 调整、复杂样例和真实业务 Owner 认证 |
+| 业务运营工作台 | 50% | exact-scope keyset 队列、证据分诊/deep link/响应式 UI，以及 reviewed remediation 七对象协议、server-owned 双角色策略、durable approval ledger、CAS、successor 原子准入、auth-before-decode API 和 capability probe 已落地；仍缺 Owner 控件、前后继签名对账、零 DSL case 调整、复杂样例和真实业务 Owner 认证 |
 
-结论：基础设施准备度约 93%，固定权重理想态完成度为 65.56%。剩余主要矛盾已经
+结论：基础设施准备度约 93%，固定权重理想态完成度为 66.36%。剩余主要矛盾已经
 从“能否安全执行和取证”转向“能否把可信 observation 持续蒸馏成可校准、可拒答、可删除的业务拟合资产”。
 
 ### 3.1 2026-07-24 Scenario 编译期闭包迭代差距复评
@@ -1637,6 +1637,45 @@ workbook 派生的 predecessor/successor 对比视图。由于 durable state mac
 所有变更先显示 exact entry diff 和治理原因；提交后并排展示两份已验签 workbook 的
 状态、blocker、case/assertion 与 source fingerprint。随后再做零 DSL case 调整和真实
 Owner 任务认证。
+
+### 3.23 2026-07-26 Owner 经评审修复受保护 API 迭代差距复评
+
+本轮关闭“事务内核只能被进程内代码调用”的产品断点。新增独立
+`ScenarioRehearsalRemediationController`，固定四条 test/staging 路由：
+predecessor 下创建 preview、按 remediation id 读取 lineage、追加 approval、提交
+successor。每条操作使用独立 `IntegrationOperation`，认证先于 body 解码；strict
+decoder 要求完整且唯一的顶层字段集，并递归拒绝 unknown field、重复 key、actor/time
+覆写和 payload 偷渡。production profile 与 disabled mirror composition 物理不存在
+这些路由。
+
+仓储 `Snapshot` 没有被直接当成公共 API。新增
+`ScenarioRehearsalRemediationLineage.v1`，从已重验 plan、approval hash chain 和
+optional receipt 重建 state、generation/head，再对完整读取视图做一次 content
+addressing。这样 ANEKE、Owner UI 和后续版本不会依赖数据库投影列；篡改 plan、
+approval、receipt 或派生 state 中任一层都会在出站前失败关闭。authoritative Schema
+同时约束 state、approval count/generation、head 和 receipt 的结构关系，Test Kit
+把第 133 份 Mirror Schema 纳入封闭引用注册。
+
+capability probe 新增
+`mirrorScenarioRehearsalReviewedRemediationApi`、lineage object version 和四个 exact
+endpoint；只有隔离 Mirror execution surface 组装时才声明为 true。业务授权仍没有
+为了演示而降级：全部操作要求 `MIRROR_REHEARSAL_REMEDIATION` purpose，preview 和
+submit 要求 human Owner group，第二级审批要求不同 human Reviewer group；默认
+workload demo token 无法伪装双人分离。
+
+Test Kit 同步提供 preview/read/approve/submit 客户端入口。所有入口先做 strict
+Schema 与 URL/response 坐标绑定；read 在返回前由
+`ScenarioRehearsalRemediationVerifier` 独立重算 plan、successor request、approval
+chain、optional receipt 和 lineage fingerprint，并复核 scope、ticket、角色顺序、
+actor/delegation 分离和派生状态。纯离线消费者也可以直接调用该 verifier，因此
+ANEKE 不需要相信 Resource Gateway 的数据库 projection 或 HTTP 200。
+
+本轮尚未完成 Owner 浏览器控件，也未交付 successor 终态后的两份 signed workbook
+对账。因此业务运营工作台成熟度从 `42%` 上调到 `50%`，固定权重总分从 `65.56%`
+上调到 `66.36%`，距理想态 `33.64%`。下一纵切必须把 API 接到现有 deep link
+上下文，以受治理表单呈现 exact entry diff、审批链和提交动作；随后只从独立验签的
+predecessor/successor workbook 派生比较，不能拿 mutable job projection 冒充改善
+证据。
 
 ## 4. 目标架构与系统责任
 

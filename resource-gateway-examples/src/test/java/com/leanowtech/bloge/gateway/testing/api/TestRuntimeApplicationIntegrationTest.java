@@ -198,6 +198,9 @@ class TestRuntimeApplicationIntegrationTest {
                 .containsEntry("mirrorScenarioRehearsalExecution", true)
                 .containsEntry("mirrorScenarioRehearsalBatchApi", true)
                 .containsEntry(
+                        "mirrorScenarioRehearsalReviewedRemediationApi",
+                        true)
+                .containsEntry(
                         "mirrorScenarioRehearsalBatchScheduling", false)
                 .containsEntry("mirrorScenarioRehearsalEvidence", false)
                 .containsEntry("mirrorServing", true)
@@ -453,6 +456,26 @@ class TestRuntimeApplicationIntegrationTest {
         assertThat(capabilities.getBody().payload().endpoints()).anyMatch(endpoint ->
                 endpoint.method().equals("PUT")
                         && endpoint.path().equals("/api/testing/catalogs/gateway-graph-contract-v1"));
+        assertThat(capabilities.getBody().payload().endpoints())
+                .anyMatch(endpoint -> endpoint.method().equals("POST")
+                        && endpoint.path().equals(
+                        "/api/mirror/rehearsal-jobs/{jobId}/remediations"))
+                .anyMatch(endpoint -> endpoint.method().equals("GET")
+                        && endpoint.path().equals(
+                        "/api/mirror/rehearsal-remediations/{remediationId}"))
+                .anyMatch(endpoint -> endpoint.method().equals("POST")
+                        && endpoint.path().equals(
+                        "/api/mirror/rehearsal-remediations/{remediationId}/approvals"))
+                .anyMatch(endpoint -> endpoint.method().equals("POST")
+                        && endpoint.path().equals(
+                        "/api/mirror/rehearsal-remediations/{remediationId}/submissions"));
+        assertThat(capabilities.getBody().payload().supportedObjects())
+                .containsEntry(
+                        "scenarioRehearsalRemediationLineage",
+                        List.of(
+                                com.leanowtech.bloge.gateway.integration.mirror
+                                        .ScenarioRehearsalRemediationLineage
+                                        .SCHEMA_VERSION));
 
         HttpHeaders headers = new HttpHeaders();
         headers.setBearerAuth("bloge-aneke-demo-token");

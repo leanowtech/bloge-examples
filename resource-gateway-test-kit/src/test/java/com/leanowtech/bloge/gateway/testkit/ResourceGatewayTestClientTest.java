@@ -262,6 +262,75 @@ class ResourceGatewayTestClientTest {
     }
 
     @Test
+    void drivesReviewedScenarioRemediationWithVerifiedLineageAndDedicatedPurpose() {
+        ResourceGatewayTestClient client = client();
+        ScenarioRehearsalRemediationTestFixtures.Fixture fixture =
+                ScenarioRehearsalRemediationTestFixtures
+                        .submitted();
+
+        JsonNode plan =
+                client.previewScenarioRehearsalRemediation(
+                        ScenarioRehearsalRemediationTestFixtures
+                                .PREDECESSOR_ID,
+                        fixture.preview());
+        JsonNode lineage =
+                client.findScenarioRehearsalRemediation(
+                        ScenarioRehearsalRemediationTestFixtures
+                                .REMEDIATION_ID);
+        JsonNode approval =
+                client.approveScenarioRehearsalRemediation(
+                        ScenarioRehearsalRemediationTestFixtures
+                                .REMEDIATION_ID,
+                        fixture.approvalCommand());
+        JsonNode receipt =
+                client.submitScenarioRehearsalRemediation(
+                        ScenarioRehearsalRemediationTestFixtures
+                                .REMEDIATION_ID,
+                        fixture.submitCommand());
+
+        assertThat(plan.path("planFingerprint").asText())
+                .isEqualTo(
+                        fixture.plan()
+                                .path("planFingerprint")
+                                .asText());
+        assertThat(lineage.path("state").asText())
+                .isEqualTo("SUBMITTED");
+        assertThat(approval.path("actorId").asText())
+                .isEqualTo("owner-a");
+        assertThat(receipt.path("successorJobId")
+                .asText()).isEqualTo(
+                ScenarioRehearsalRemediationTestFixtures
+                        .SUCCESSOR_ID);
+        assertThat(requests).hasSize(4);
+        assertThat(requests)
+                .allSatisfy(request ->
+                        assertThat(request.purpose())
+                                .isEqualTo(
+                                        "MIRROR_REHEARSAL_REMEDIATION"));
+        assertThat(requests)
+                .extracting(CapturedRequest::method)
+                .containsExactly("POST", "GET", "POST", "POST");
+        assertThat(requests)
+                .extracting(CapturedRequest::rawPath)
+                .containsExactly(
+                        "/api/mirror/rehearsal-jobs/"
+                                + ScenarioRehearsalRemediationTestFixtures
+                                .PREDECESSOR_ID
+                                + "/remediations",
+                        "/api/mirror/rehearsal-remediations/"
+                                + ScenarioRehearsalRemediationTestFixtures
+                                .REMEDIATION_ID,
+                        "/api/mirror/rehearsal-remediations/"
+                                + ScenarioRehearsalRemediationTestFixtures
+                                .REMEDIATION_ID
+                                + "/approvals",
+                        "/api/mirror/rehearsal-remediations/"
+                                + ScenarioRehearsalRemediationTestFixtures
+                                .REMEDIATION_ID
+                                + "/submissions");
+    }
+
+    @Test
     void plansAndMaterializesExactGraphAndOperatorPropertySuites() throws Exception {
         ResourceGatewayTestClient client = client();
         ObjectNode request = (ObjectNode) JSON.readTree(propertyMaterializationRequest());
@@ -1202,6 +1271,52 @@ class ResourceGatewayTestClientTest {
             return;
         }
         if ("POST".equals(exchange.getRequestMethod())
+                && path.endsWith("/remediations")
+                && !path.contains("/finalization/")) {
+            respond(exchange, 200,
+                    remediationEnvelope(
+                            "SCENARIO_REHEARSAL_REMEDIATION_PLAN",
+                            CapabilityMirrorProtocol
+                                    .SCENARIO_REHEARSAL_REMEDIATION_PLAN_V1,
+                            ScenarioRehearsalRemediationTestFixtures
+                                    .submitted().plan()));
+            return;
+        }
+        if ("GET".equals(exchange.getRequestMethod())
+                && path.contains(
+                "/api/mirror/rehearsal-remediations/")) {
+            respond(exchange, 200,
+                    remediationEnvelope(
+                            "SCENARIO_REHEARSAL_REMEDIATION_LINEAGE",
+                            CapabilityMirrorProtocol
+                                    .SCENARIO_REHEARSAL_REMEDIATION_LINEAGE_V1,
+                            ScenarioRehearsalRemediationTestFixtures
+                                    .submitted().lineage()));
+            return;
+        }
+        if ("POST".equals(exchange.getRequestMethod())
+                && path.endsWith("/approvals")) {
+            respond(exchange, 200,
+                    remediationEnvelope(
+                            "SCENARIO_REHEARSAL_REMEDIATION_APPROVAL",
+                            CapabilityMirrorProtocol
+                                    .SCENARIO_REHEARSAL_REMEDIATION_APPROVAL_V1,
+                            ScenarioRehearsalRemediationTestFixtures
+                                    .submitted().approval()));
+            return;
+        }
+        if ("POST".equals(exchange.getRequestMethod())
+                && path.endsWith("/submissions")) {
+            respond(exchange, 200,
+                    remediationEnvelope(
+                            "SCENARIO_REHEARSAL_REMEDIATION_RECEIPT",
+                            CapabilityMirrorProtocol
+                                    .SCENARIO_REHEARSAL_REMEDIATION_RECEIPT_V1,
+                            ScenarioRehearsalRemediationTestFixtures
+                                    .submitted().receipt()));
+            return;
+        }
+        if ("POST".equals(exchange.getRequestMethod())
                 && path.endsWith("/stability-executions")) {
             String requestFingerprint = body.path("metadata")
                     .path("forceMismatchedFingerprint").asBoolean(false)
@@ -1525,6 +1640,25 @@ class ResourceGatewayTestClientTest {
                   }
                 }
                 """;
+    }
+
+    private static String remediationEnvelope(
+            String kind,
+            String version,
+            JsonNode payload) {
+        ObjectNode envelope = JSON.createObjectNode();
+        envelope.put(
+                "protocol",
+                CapabilityMirrorProtocol
+                        .INTEGRATION_PROTOCOL);
+        envelope.put(
+                "protocolVersion",
+                CapabilityMirrorProtocol
+                        .INTEGRATION_PROTOCOL_V1);
+        envelope.put("payloadKind", kind);
+        envelope.put("payloadSchemaVersion", version);
+        envelope.set("payload", payload);
+        return envelope.toString();
     }
 
     private static String propertyMaterializationRequest() {

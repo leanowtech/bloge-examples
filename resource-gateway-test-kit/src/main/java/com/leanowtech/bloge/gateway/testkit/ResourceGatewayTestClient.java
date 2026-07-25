@@ -1677,6 +1677,224 @@ public final class ResourceGatewayTestClient {
     }
 
     /**
+     * Freezes one blocked signed Scenario batch and its exact reviewed successor proposal.
+     *
+     * <p>The client validates the strict payload-free preview command before transport, uses the
+     * dedicated remediation purpose, and rejects a response bound to another predecessor,
+     * preview request, workbook fingerprint, or governance ticket.</p>
+     *
+     * @param jobId canonical blocked predecessor batch identity
+     * @param request strict exact-rerun or compiled-plan replacement proposal
+     * @return defensive copy of the immutable content-addressed remediation plan
+     */
+    public JsonNode previewScenarioRehearsalRemediation(
+            String jobId,
+            JsonNode request) {
+        String predecessor =
+                scenarioRehearsalBatchJobId(jobId);
+        JsonNode exactRequest =
+                requiredObject(request, "request");
+        CapabilityMirrorSchemaValidator.require(
+                exactRequest,
+                CapabilityMirrorProtocol
+                        .SCENARIO_REHEARSAL_REMEDIATION_PREVIEW_REQUEST_SCHEMA_RESOURCE,
+                "RG.MIRROR.CLIENT.SCENARIO_REMEDIATION_PREVIEW_REQUEST_INVALID");
+        JsonNode response = exchange(
+                "POST",
+                "/api/mirror/rehearsal-jobs/"
+                        + segment(predecessor)
+                        + "/remediations",
+                "",
+                "MIRROR_REHEARSAL_REMEDIATION",
+                exactRequest);
+        JsonNode plan = requireMirrorEnvelope(
+                response,
+                "SCENARIO_REHEARSAL_REMEDIATION_PLAN",
+                CapabilityMirrorProtocol
+                        .SCENARIO_REHEARSAL_REMEDIATION_PLAN_V1);
+        CapabilityMirrorSchemaValidator.require(
+                plan,
+                CapabilityMirrorProtocol
+                        .SCENARIO_REHEARSAL_REMEDIATION_PLAN_SCHEMA_RESOURCE,
+                "RG.MIRROR.CLIENT.SCENARIO_REMEDIATION_PLAN_INVALID");
+        if (!predecessor.equals(
+                plan.path("predecessorJobId").asText())
+                || !exactRequest.path("previewRequestId")
+                .equals(plan.path("previewRequestId"))
+                || !exactRequest.path(
+                "expectedWorkbookSeedFingerprint")
+                .equals(plan.path(
+                        "predecessorWorkbookSeedFingerprint"))
+                || !exactRequest.path("governanceTicketRef")
+                .equals(plan.path("governanceTicketRef"))) {
+            throw responseContractInvalid(
+                    "The server returned a Scenario remediation plan for different preview coordinates.");
+        }
+        return plan.deepCopy();
+    }
+
+    /**
+     * Reads and independently verifies one complete reviewed-remediation lineage.
+     *
+     * @param remediationId canonical server-derived remediation identity
+     * @return defensive copy of the independently verified payload-free lineage
+     */
+    public JsonNode findScenarioRehearsalRemediation(
+            String remediationId) {
+        String exactId =
+                scenarioRehearsalRemediationId(
+                        remediationId);
+        JsonNode response = exchange(
+                "GET",
+                "/api/mirror/rehearsal-remediations/"
+                        + segment(exactId),
+                "",
+                "MIRROR_REHEARSAL_REMEDIATION",
+                null);
+        JsonNode lineage = requireMirrorEnvelope(
+                response,
+                "SCENARIO_REHEARSAL_REMEDIATION_LINEAGE",
+                CapabilityMirrorProtocol
+                        .SCENARIO_REHEARSAL_REMEDIATION_LINEAGE_V1);
+        ScenarioRehearsalRemediationVerifier
+                .VerificationResult verified =
+                new ScenarioRehearsalRemediationVerifier()
+                        .verify(lineage);
+        if (!verified.verified()
+                || !exactId.equals(
+                verified.remediationId())) {
+            throw responseContractInvalid(
+                    "The Scenario remediation lineage failed independent verification: "
+                            + verified.reasonCode());
+        }
+        return lineage.deepCopy();
+    }
+
+    /**
+     * Appends one role-bound decision to a reviewed-remediation approval chain.
+     *
+     * @param remediationId canonical server-derived remediation identity
+     * @param request strict role, decision, plan, and generation command
+     * @return defensive copy of the actor-bound immutable approval fact
+     */
+    public JsonNode approveScenarioRehearsalRemediation(
+            String remediationId,
+            JsonNode request) {
+        String exactId =
+                scenarioRehearsalRemediationId(
+                        remediationId);
+        JsonNode exactRequest =
+                requiredObject(request, "request");
+        CapabilityMirrorSchemaValidator.require(
+                exactRequest,
+                CapabilityMirrorProtocol
+                        .SCENARIO_REHEARSAL_REMEDIATION_APPROVAL_COMMAND_SCHEMA_RESOURCE,
+                "RG.MIRROR.CLIENT.SCENARIO_REMEDIATION_APPROVAL_COMMAND_INVALID");
+        JsonNode response = exchange(
+                "POST",
+                "/api/mirror/rehearsal-remediations/"
+                        + segment(exactId)
+                        + "/approvals",
+                "",
+                "MIRROR_REHEARSAL_REMEDIATION",
+                exactRequest);
+        JsonNode approval = requireMirrorEnvelope(
+                response,
+                "SCENARIO_REHEARSAL_REMEDIATION_APPROVAL",
+                CapabilityMirrorProtocol
+                        .SCENARIO_REHEARSAL_REMEDIATION_APPROVAL_V1);
+        CapabilityMirrorSchemaValidator.require(
+                approval,
+                CapabilityMirrorProtocol
+                        .SCENARIO_REHEARSAL_REMEDIATION_APPROVAL_SCHEMA_RESOURCE,
+                "RG.MIRROR.CLIENT.SCENARIO_REMEDIATION_APPROVAL_INVALID");
+        if (!exactId.equals(
+                approval.path("remediationId").asText())
+                || !exactRequest.path(
+                "remediationPlanFingerprint")
+                .equals(approval.path(
+                        "remediationPlanFingerprint"))
+                || exactRequest.path(
+                "expectedApprovalGeneration")
+                .asLong(-1) + 1
+                != approval.path("generation")
+                .asLong(-2)
+                || !exactRequest.path("role")
+                .equals(approval.path("role"))
+                || !exactRequest.path("decision")
+                .equals(approval.path("decision"))
+                || !exactRequest.path(
+                "governanceTicketRef")
+                .equals(approval.path(
+                        "governanceTicketRef"))
+                || !exactRequest.path("reasonCode")
+                .equals(approval.path("reasonCode"))) {
+            throw responseContractInvalid(
+                    "The server returned a Scenario remediation approval for different command coordinates.");
+        }
+        return approval.deepCopy();
+    }
+
+    /**
+     * Atomically admits the exact fully approved Scenario remediation successor.
+     *
+     * @param remediationId canonical server-derived remediation identity
+     * @param request strict frozen-plan and approval-head submission command
+     * @return defensive copy of the immutable predecessor-to-successor receipt
+     */
+    public JsonNode submitScenarioRehearsalRemediation(
+            String remediationId,
+            JsonNode request) {
+        String exactId =
+                scenarioRehearsalRemediationId(
+                        remediationId);
+        JsonNode exactRequest =
+                requiredObject(request, "request");
+        CapabilityMirrorSchemaValidator.require(
+                exactRequest,
+                CapabilityMirrorProtocol
+                        .SCENARIO_REHEARSAL_REMEDIATION_SUBMIT_COMMAND_SCHEMA_RESOURCE,
+                "RG.MIRROR.CLIENT.SCENARIO_REMEDIATION_SUBMIT_COMMAND_INVALID");
+        JsonNode response = exchange(
+                "POST",
+                "/api/mirror/rehearsal-remediations/"
+                        + segment(exactId)
+                        + "/submissions",
+                "",
+                "MIRROR_REHEARSAL_REMEDIATION",
+                exactRequest);
+        JsonNode receipt = requireMirrorEnvelope(
+                response,
+                "SCENARIO_REHEARSAL_REMEDIATION_RECEIPT",
+                CapabilityMirrorProtocol
+                        .SCENARIO_REHEARSAL_REMEDIATION_RECEIPT_V1);
+        CapabilityMirrorSchemaValidator.require(
+                receipt,
+                CapabilityMirrorProtocol
+                        .SCENARIO_REHEARSAL_REMEDIATION_RECEIPT_SCHEMA_RESOURCE,
+                "RG.MIRROR.CLIENT.SCENARIO_REMEDIATION_RECEIPT_INVALID");
+        if (!exactId.equals(
+                receipt.path("remediationId").asText())
+                || !exactRequest.path(
+                "remediationPlanFingerprint")
+                .equals(receipt.path(
+                        "remediationPlanFingerprint"))
+                || exactRequest.path(
+                "expectedApprovalGeneration")
+                .asLong(-1)
+                != receipt.path("approvalGeneration")
+                .asLong(-2)
+                || !exactRequest.path(
+                "expectedApprovalHeadFingerprint")
+                .equals(receipt.path(
+                        "approvalHeadFingerprint"))) {
+            throw responseContractInvalid(
+                    "The server returned a Scenario remediation receipt for different command coordinates.");
+        }
+        return receipt.deepCopy();
+    }
+
+    /**
      * Reads one payload-free durable Scenario batch evidence-finalization status.
      *
      * <p>The projection distinguishes pending work, active signing, bounded retry, operator
@@ -3168,6 +3386,17 @@ public final class ResourceGatewayTestClient {
                 "scenario-batch-[a-f0-9]{64}")) {
             throw new IllegalArgumentException(
                     "Scenario rehearsal batch job id must be canonical");
+        }
+        return normalized;
+    }
+
+    private static String scenarioRehearsalRemediationId(
+            String value) {
+        String normalized = normalized(value);
+        if (!normalized.matches(
+                "scenario-remediation-[a-f0-9]{64}")) {
+            throw new IllegalArgumentException(
+                    "Scenario rehearsal remediation id must be canonical");
         }
         return normalized;
     }

@@ -368,6 +368,36 @@ class ScenarioRehearsalRemediationServiceTest {
                 .isEqualTo("MIRROR_REHEARSAL");
     }
 
+    @Test
+    void readReturnsContentAddressedPublicLineage() {
+        ScenarioRehearsalRemediationPlan plan =
+                remediationPlan();
+        when(repository.find(
+                SCOPE, plan.remediationId()))
+                .thenReturn(Optional.of(
+                        new ScenarioRehearsalRemediationRepository
+                                .Snapshot(
+                                plan,
+                                ScenarioRehearsalRemediationRepository
+                                        .State.PENDING_APPROVAL,
+                                List.of(),
+                                null)));
+
+        ScenarioRehearsalRemediationLineage lineage =
+                service.find(
+                        plan.remediationId(),
+                        owner()).orElseThrow();
+
+        lineage.verify(mapper);
+        assertThat(lineage.plan()).isEqualTo(plan);
+        assertThat(lineage.state()).isEqualTo(
+                ScenarioRehearsalRemediationRepository
+                        .State.PENDING_APPROVAL);
+        assertThat(lineage.approvalGeneration()).isZero();
+        assertThat(lineage.approvalHeadFingerprint())
+                .isBlank();
+    }
+
     private void arrangeSignedPredecessor() {
         workbook = mock(
                 ScenarioRehearsalBatchWorkbookSeed.class);

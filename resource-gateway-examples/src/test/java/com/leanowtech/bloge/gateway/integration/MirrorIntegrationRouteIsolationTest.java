@@ -7,6 +7,7 @@ import com.leanowtech.bloge.gateway.integration.mirror.ScenarioArtifactRegistryS
 import com.leanowtech.bloge.gateway.integration.mirror.ScenarioRehearsalIntegrationService;
 import com.leanowtech.bloge.gateway.integration.mirror.ScenarioRehearsalRetentionService;
 import com.leanowtech.bloge.gateway.integration.mirror.ScenarioRehearsalRuntimeService;
+import com.leanowtech.bloge.gateway.integration.mirror.ScenarioRehearsalRemediationService;
 import com.leanowtech.bloge.gateway.integration.mirror.MirrorDeploymentIsolationAuthorityPublicationService;
 import com.leanowtech.bloge.gateway.integration.mirror.MirrorDeploymentIsolationAttestationService;
 import com.leanowtech.bloge.gateway.integration.mirror.CapabilityObservationAdmissionService;
@@ -55,6 +56,10 @@ class MirrorIntegrationRouteIsolationTest {
                     "GET /api/mirror/scenarios/runs/{runId}/evidence",
                     "GET /api/mirror/scenarios/runs/{runId}/workbook-seed",
                     "GET /api/mirror/scenarios/runs/{runId}/retention",
+                    "POST /api/mirror/rehearsal-jobs/{jobId}/remediations",
+                    "GET /api/mirror/rehearsal-remediations/{remediationId}",
+                    "POST /api/mirror/rehearsal-remediations/{remediationId}/approvals",
+                    "POST /api/mirror/rehearsal-remediations/{remediationId}/submissions",
                     "POST /api/mirror/scenarios/runs/{runId}/retention/holds",
                     "POST /api/mirror/scenarios/runs/{runId}/retention/hold-releases",
                     "POST /api/mirror/scenarios/runs/{runId}/retention/purge",
@@ -90,6 +95,10 @@ class MirrorIntegrationRouteIsolationTest {
                     "GET /api/mirror/scenarios/runs/{runId}/evidence",
                     "GET /api/mirror/scenarios/runs/{runId}/workbook-seed",
                     "GET /api/mirror/scenarios/runs/{runId}/retention",
+                    "POST /api/mirror/rehearsal-jobs/{jobId}/remediations",
+                    "GET /api/mirror/rehearsal-remediations/{remediationId}",
+                    "POST /api/mirror/rehearsal-remediations/{remediationId}/approvals",
+                    "POST /api/mirror/rehearsal-remediations/{remediationId}/submissions",
                     "POST /api/mirror/scenarios/runs/{runId}/retention/holds",
                     "POST /api/mirror/scenarios/runs/{runId}/retention/hold-releases",
                     "POST /api/mirror/scenarios/runs/{runId}/retention/purge",
@@ -127,6 +136,12 @@ class MirrorIntegrationRouteIsolationTest {
             assertThat(mixed.getBeansOfType(
                     ScenarioRehearsalController.class)).isEmpty();
             assertThat(production.getBeansOfType(
+                    ScenarioRehearsalRemediationController.class))
+                    .isEmpty();
+            assertThat(mixed.getBeansOfType(
+                    ScenarioRehearsalRemediationController.class))
+                    .isEmpty();
+            assertThat(production.getBeansOfType(
                     MirrorDeploymentIsolationAuthorityPublicationController.class)).isEmpty();
             assertThat(mixed.getBeansOfType(
                     MirrorDeploymentIsolationAuthorityPublicationController.class)).isEmpty();
@@ -160,6 +175,7 @@ class MirrorIntegrationRouteIsolationTest {
                 MirrorRunIntegrationController.class,
                 MirrorSessionController.class,
                 ScenarioRehearsalController.class,
+                ScenarioRehearsalRemediationController.class,
                 MirrorDeploymentIsolationAuthorityPublicationController.class,
                 MirrorDeploymentIsolationAttestationController.class,
                 CapabilityObservationController.class,
@@ -211,6 +227,13 @@ class MirrorIntegrationRouteIsolationTest {
         @Bean
         ScenarioRehearsalRuntimeService scenarioRehearsalRuntimeService() {
             return mock(ScenarioRehearsalRuntimeService.class);
+        }
+
+        @Bean
+        ScenarioRehearsalRemediationService
+        scenarioRehearsalRemediationService() {
+            return mock(
+                    ScenarioRehearsalRemediationService.class);
         }
 
         @Bean

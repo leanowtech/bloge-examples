@@ -15,6 +15,9 @@ import com.leanowtech.bloge.gateway.integration.mirror.ScenarioRehearsalBatchReq
 import com.leanowtech.bloge.gateway.integration.mirror.ScenarioRehearsalExecutionRequest;
 import com.leanowtech.bloge.gateway.integration.mirror.ScenarioRehearsalLegalHoldCommand;
 import com.leanowtech.bloge.gateway.integration.mirror.ScenarioRehearsalPurgeCommand;
+import com.leanowtech.bloge.gateway.integration.mirror.ScenarioRehearsalRemediationApprovalCommand;
+import com.leanowtech.bloge.gateway.integration.mirror.ScenarioRehearsalRemediationPreviewRequest;
+import com.leanowtech.bloge.gateway.integration.mirror.ScenarioRehearsalRemediationSubmitCommand;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.context.annotation.Profile;
 import org.springframework.stereotype.Component;
@@ -73,6 +76,26 @@ public final class ScenarioArtifactRequestDecoder {
             Set.of(
                     "schemaVersion", "commandId",
                     "expectedAttemptCount", "expectedUpdatedAt",
+                    "reasonCode");
+    private static final Set<String> REMEDIATION_PREVIEW_FIELDS =
+            Set.of(
+                    "schemaVersion", "previewRequestId",
+                    "expectedWorkbookSeedFingerprint", "strategy",
+                    "replacements", "governanceTicketRef",
+                    "reasonCode");
+    private static final Set<String> REMEDIATION_APPROVAL_FIELDS =
+            Set.of(
+                    "schemaVersion", "commandId",
+                    "remediationPlanFingerprint",
+                    "expectedApprovalGeneration", "role",
+                    "decision", "governanceTicketRef",
+                    "reasonCode");
+    private static final Set<String> REMEDIATION_SUBMIT_FIELDS =
+            Set.of(
+                    "schemaVersion", "commandId",
+                    "remediationPlanFingerprint",
+                    "expectedApprovalGeneration",
+                    "expectedApprovalHeadFingerprint",
                     "reasonCode");
     private static final Set<String> LEGAL_HOLD_FIELDS = Set.of(
             "schemaVersion", "commandId", "holdId", "reasonCode");
@@ -190,6 +213,45 @@ public final class ScenarioArtifactRequestDecoder {
                         .SCHEMA_VERSION,
                 ScenarioRehearsalBatchFinalizationRemediationRequest
                         .class);
+    }
+
+    /** Decodes one exact payload-free reviewed-successor preview proposal. */
+    public ScenarioRehearsalRemediationPreviewRequest
+    decodeRemediationPreviewRequest(
+            byte[] value, IntegrationRequestContext identity) {
+        return decode(
+                value,
+                identity,
+                REMEDIATION_PREVIEW_FIELDS,
+                ScenarioRehearsalRemediationPreviewRequest
+                        .SCHEMA_VERSION,
+                ScenarioRehearsalRemediationPreviewRequest.class);
+    }
+
+    /** Decodes one role-bound append-only remediation decision command. */
+    public ScenarioRehearsalRemediationApprovalCommand
+    decodeRemediationApprovalCommand(
+            byte[] value, IntegrationRequestContext identity) {
+        return decode(
+                value,
+                identity,
+                REMEDIATION_APPROVAL_FIELDS,
+                ScenarioRehearsalRemediationApprovalCommand
+                        .SCHEMA_VERSION,
+                ScenarioRehearsalRemediationApprovalCommand.class);
+    }
+
+    /** Decodes one exact approved-successor submission command. */
+    public ScenarioRehearsalRemediationSubmitCommand
+    decodeRemediationSubmitCommand(
+            byte[] value, IntegrationRequestContext identity) {
+        return decode(
+                value,
+                identity,
+                REMEDIATION_SUBMIT_FIELDS,
+                ScenarioRehearsalRemediationSubmitCommand
+                        .SCHEMA_VERSION,
+                ScenarioRehearsalRemediationSubmitCommand.class);
     }
 
     /** Decodes one exact Scenario legal-hold placement or release command. */
