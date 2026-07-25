@@ -1197,6 +1197,7 @@ Scenario evidence 与 operation/lifecycle audit。完整命令示例和 Test Kit
 
 ```text
 Author canvas:   http://localhost:8080/author/
+Rehearsals:      http://localhost:8080/rehearsals/
 Showcase:        http://localhost:8080/showcase/
 Legacy composer: http://localhost:8080/examples/gateway
   Capability probe: http://localhost:8080/api/integration/capabilities
@@ -1228,6 +1229,35 @@ curl -fsS http://localhost:8080/api/integration/capabilities
 ```bash
 ./scripts/stop-visual-canvas-demo.sh
 ```
+
+#### 3.8.1 使用 Owner 演练工作台
+
+启动时增加 `--scenario-batch`，然后打开
+`http://localhost:8080/rehearsals/`：
+
+```bash
+./scripts/start-visual-canvas-demo.sh --scenario-batch
+```
+
+页面顶部可在 `Author / Rehearsals / Showcase` 三个工作面间切换。Rehearsals
+不是另一套治理系统，而是 Resource Gateway 对受保护 Scenario 运行与签名证据的
+只读任务投影：
+
+1. 左侧选择当前认证 tenant/organization/project/environment/region 中的批次；
+   `Load older batches` 使用稳定 keyset，不会因运行进度变化而重复或漏项。
+2. 中间先看批次进度和 gate。运行中标为 `Live projection`，不能用于发布门禁；
+   终态标为 `Signed workbook`，并显示 root blocker。
+3. 使用 Execution、Evidence、Assertions、Governance、Warnings、Passed 分段控制
+   缩小范围。这里按处理责任分组，不改写服务端签名 outcome。
+4. 点击 entry 打开右侧证据抽屉。终态 entry 才会按需拉取 child workbook，
+   展示 case 与 handling assertion；默认打开整批不会产生 N+1。
+5. 将地址栏中的
+   `/rehearsals/?jobId=<jobId>&entry=<manifest-index>` 交给 ANEKE 或排障人员，
+   对方会回到同一批次和条目；跨 scope 的 job 不会被定位或读取。
+
+工作台不读取业务 payload，也不提供取消、重试、quarantine remediation、legal
+hold 或 purge 按钮。当前版本解决“找得到、分得清、能取证”的 Owner 分诊主链；
+“审阅后修复”和“零 DSL 调整 case”仍属于后续写侧能力。
 
 常用参数：
 

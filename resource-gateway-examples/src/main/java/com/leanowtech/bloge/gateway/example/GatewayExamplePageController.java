@@ -30,6 +30,16 @@ public class GatewayExamplePageController {
     }
 
     /**
+     * Forwards the Scenario Owner workbench route to the shared Vite-built SPA.
+     *
+     * @return static resource forward target
+     */
+    @GetMapping({"/rehearsals", "/rehearsals/"})
+    public String rehearsalWorkbench() {
+        return "forward:/rehearsals/index.html";
+    }
+
+    /**
      * Forwards the React showcase route to its Vite-built SPA entry point.
      *
      * @return static resource forward target

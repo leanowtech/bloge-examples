@@ -234,8 +234,8 @@
         Opt-in frontend build. The default build (mvn test / mvn package) does NOT build the React
         authoring app, so the Java build stays fast and offline. Enable with: mvn -Pfrontend package
         which installs a local Node, runs the Vite build, and bundles the app into the jar under
-        static/author and static/showcase (served at /author/ and /showcase/, coexisting with the
-        vanilla /examples/gateway showcase).
+        static/author, static/rehearsals, and static/showcase (served at /author/, /rehearsals/,
+        and /showcase/, coexisting with the vanilla /examples/gateway showcase).
     -->
     <profiles>
         <profile>
@@ -308,6 +308,21 @@
                                 </goals>
                                 <configuration>
                                     <outputDirectory>${project.build.outputDirectory}/static/showcase</outputDirectory>
+                                    <resources>
+                                        <resource>
+                                            <directory>src/main/frontend/dist</directory>
+                                        </resource>
+                                    </resources>
+                                </configuration>
+                            </execution>
+                            <execution>
+                                <id>copy-frontend-rehearsals-dist</id>
+                                <phase>process-classes</phase>
+                                <goals>
+                                    <goal>copy-resources</goal>
+                                </goals>
+                                <configuration>
+                                    <outputDirectory>${project.build.outputDirectory}/static/rehearsals</outputDirectory>
                                     <resources>
                                         <resource>
                                             <directory>src/main/frontend/dist</directory>

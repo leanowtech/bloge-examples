@@ -12,6 +12,10 @@ import {
   fetchGovernanceGateView,
   fetchGraphDraft,
   fetchOperatorCatalog,
+  fetchScenarioRehearsalBatchItems,
+  fetchScenarioRehearsalBatchJobs,
+  fetchScenarioRehearsalBatchWorkbook,
+  fetchScenarioRehearsalWorkbook,
   fetchVisualGraphRun,
   governOperatorTestCase,
   governOperatorTestSuite,
@@ -926,7 +930,125 @@ describe('operator library API client', () => {
       params: { userId: 'u1' },
     }));
   });
+
+  it('reads exact-scope Scenario rehearsal discovery pages with governance-purpose authentication', async () => {
+    const fetchMock = vi.spyOn(globalThis, 'fetch').mockImplementation(async (input, init) => {
+      const url = String(input);
+      expect(init?.headers).toMatchObject({
+        Authorization: 'Bearer bloge-aneke-demo-token',
+        'X-Purpose': 'GOVERNANCE_EVIDENCE_INGESTION',
+      });
+      if (url.includes('/items?')) {
+        expect(url).toBe('/api/mirror/rehearsal-jobs/job-1/items?startIndex=100&limit=25');
+        return mirrorEnvelope(
+          'SCENARIO_REHEARSAL_BATCH_ITEM_PAGE',
+          'resourceGateway.scenarioRehearsalBatchItemPage.v1',
+          {
+            schemaVersion: 'resourceGateway.scenarioRehearsalBatchItemPage.v1',
+            jobId: 'job-1',
+            manifestFingerprint: 'sha256:manifest',
+            items: [],
+            nextIndex: null,
+          },
+        );
+      }
+      expect(url).toContain('/api/mirror/rehearsal-jobs?limit=10');
+      expect(url).toContain('beforeCreatedAt=2026-07-25T10%3A00%3A00Z');
+      expect(url).toContain('beforeJobId=job-2');
+      return mirrorEnvelope(
+        'SCENARIO_REHEARSAL_BATCH_JOB_PAGE',
+        'resourceGateway.scenarioRehearsalBatchJobPage.v1',
+        {
+          schemaVersion: 'resourceGateway.scenarioRehearsalBatchJobPage.v1',
+          scope: {
+            tenantId: 'tenant-a',
+            organizationId: 'knowledge',
+            projectId: 'tool-studio',
+            environmentId: 'test',
+            region: 'sg',
+          },
+          jobs: [],
+          nextCursor: null,
+        },
+      );
+    });
+
+    const jobs = await fetchScenarioRehearsalBatchJobs(10, {
+      createdAt: '2026-07-25T10:00:00Z',
+      jobId: 'job-2',
+    });
+    const items = await fetchScenarioRehearsalBatchItems('job-1', 100, 25);
+
+    expect(jobs.scope.projectId).toBe('tool-studio');
+    expect(items.jobId).toBe('job-1');
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+  });
+
+  it('reads terminal root and child workbooks without exposing a write API', async () => {
+    const fetchMock = vi.spyOn(globalThis, 'fetch').mockImplementation(async (input, init) => {
+      const url = String(input);
+      expect(init?.method).toBeUndefined();
+      expect(init?.headers).toMatchObject({
+        'X-Purpose': 'GOVERNANCE_EVIDENCE_INGESTION',
+      });
+      if (url.endsWith('/rehearsal-jobs/job%2F1/workbook-seed')) {
+        return mirrorEnvelope(
+          'SCENARIO_REHEARSAL_BATCH_WORKBOOK_SEED',
+          'resourceGateway.scenarioRehearsalBatchWorkbookSeed.v1',
+          {
+            schemaVersion: 'resourceGateway.scenarioRehearsalBatchWorkbookSeed.v1',
+            jobId: 'job/1',
+            entries: [],
+            blockers: [],
+          },
+        );
+      }
+      expect(url).toBe('/api/mirror/scenarios/runs/run%2F1/workbook-seed');
+      return mirrorEnvelope(
+        'SCENARIO_REHEARSAL_WORKBOOK_SEED',
+        'resourceGateway.scenarioRehearsalWorkbookSeed.v1',
+        {
+          schemaVersion: 'resourceGateway.scenarioRehearsalWorkbookSeed.v1',
+          runId: 'run/1',
+          cases: [],
+          blockers: [],
+        },
+      );
+    });
+
+    const root = await fetchScenarioRehearsalBatchWorkbook('job/1');
+    const child = await fetchScenarioRehearsalWorkbook('run/1');
+
+    expect(root.jobId).toBe('job/1');
+    expect(child.runId).toBe('run/1');
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+  });
+
+  it('fails closed when a Mirror endpoint returns a different payload contract', async () => {
+    vi.spyOn(globalThis, 'fetch').mockResolvedValue(mirrorEnvelope(
+      'SCENARIO_REHEARSAL_BATCH_ITEM_PAGE',
+      'resourceGateway.scenarioRehearsalBatchItemPage.v1',
+      {},
+    ));
+
+    await expect(fetchScenarioRehearsalBatchJobs()).rejects
+      .toThrow('Mirror response contract mismatch for SCENARIO_REHEARSAL_BATCH_JOB_PAGE.');
+  });
 });
+
+function mirrorEnvelope(payloadKind: string, payloadSchemaVersion: string, payload: unknown): Response {
+  return new Response(JSON.stringify({
+    protocol: 'ToolStudioResourceGatewayProtocol',
+    protocolVersion: '1.0.0',
+    resourceGatewayVersion: '1.0.0',
+    schemaVersion: 'toolStudio.integrationEnvelope.v1',
+    producedAt: '2026-07-25T10:00:00Z',
+    payloadKind,
+    payloadSchemaVersion,
+    payloadFingerprint: 'sha256:payload',
+    payload,
+  }));
+}
 
 function executableTarget(operatorId: string, fingerprint: string) {
   return {

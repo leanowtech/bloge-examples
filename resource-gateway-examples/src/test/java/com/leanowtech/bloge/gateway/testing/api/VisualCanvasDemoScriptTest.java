@@ -36,6 +36,7 @@ class VisualCanvasDemoScriptTest {
                 SCRIPT, StandardCharsets.UTF_8);
 
         assertThat(source).contains(
+                "Rehearsals:      $(rehearsals_url)",
                 ".payload.features.mirrorScenarioRehearsalBatchJobListing == true",
                 "\"mirrorScenarioRehearsalBatchJobListing\"",
                 ".payload.features.mirrorScenarioRehearsalBatchCooperativeControl == true",

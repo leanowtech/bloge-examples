@@ -7,7 +7,7 @@
 
 | 文档属性 | 内容 |
 |---|---|
-| 状态 | Accepted / In implementation；Stage 0 工程门禁已通过；Stage 1 完成 MirrorPlan、受保护运行/证据 API、部署隔离信任与 durable execution；Stage 2 完成 observation/corpus 的准入、review、publication、trajectory/cluster serving 与 generation fence；Stage 3 完成有状态 Session、虚拟读写、checkpoint/recovery、write-attempt reconciliation 和三类 ANEKE seed；Stage 4 完成 Scenario 编译、可恢复 aggregate、签名 evidence、audit/retention/workbook closure、durable batch manifest/queue/API/worker、region-local bounded scheduler、cooperative control、签名 batch evidence、批次 operation/lifecycle audit、retention、durable evidence finalization、受控 remediation 和聚合 health/SLO。ANEKE batch workbook、Owner UX、Fidelity/Outcome 和生产环境认证继续实施；未完成前相关 readiness 必须保持 `false` |
+| 状态 | Accepted / In implementation；Stage 0 工程门禁已通过；Stage 1 完成 MirrorPlan、受保护运行/证据 API、部署隔离信任与 durable execution；Stage 2 完成 observation/corpus 的准入、review、publication、trajectory/cluster serving 与 generation fence；Stage 3 完成有状态 Session、虚拟读写、checkpoint/recovery、write-attempt reconciliation 和三类 ANEKE seed；Stage 4 完成 Scenario 编译、可恢复 aggregate、签名 evidence、audit/retention/workbook closure、durable batch manifest/queue/API/worker、region-local bounded scheduler、cooperative control、签名 batch evidence、批次 operation/lifecycle audit、retention、durable evidence finalization、受控 remediation、聚合 health/SLO、ANEKE batch workbook，以及 Owner 只读分诊工作台。Owner reviewed remediation/零 DSL case 调整、Fidelity/Outcome 和生产环境认证继续实施；未完成前相关 readiness 必须保持 `false` |
 | 目标读者 | Resource Gateway、BLOGE Runtime、ANEKE、TEE/数据平台、QA、SRE、安全与业务运营团队 |
 | 设计范围 | external/composed 能力建模、镜像运行、保真语料、有状态世界、场景演练、证据、保真度与结果校准 |
 | 非目标 | 不重做 ANEKE 的资产治理和发布门禁；不允许测试控制进入生产业务请求；不把观测频率直接当成业务正确性 |
@@ -73,12 +73,12 @@
   `mirrorServing` 也只在完整 run adapter 装配时为 `true`。这表示可交付带明确 limitation 的 exploratory evidence，
   不表示部署级 egress attestation 或 certification 已完成。客户环境的数据
   使用授权、跨系统 schema owner、部署/namespace 形态等组织决策仍是生产准入前置，不由仓库测试冒充完成。
-- 当前验证基线：前端 Vitest `150/150` 全绿并完成 TypeScript/Vite 生产构建；带 `-Pfrontend` 的真实
-  Chrome 示例投影用例 `1/1` 全绿。纳入当前 compiler、mirror runtime 与 stateful recovery kernel 后，
-  Resource Gateway 最新完整 Java 门禁为 `5173` 项测试、0 失败、0 错误、3 项条件跳过；其中
+- 当前验证基线：前端 Vitest `158/158` 全绿并完成 TypeScript/Vite 生产构建；带 `-Pfrontend` 的真实
+  Chrome 演练工作台三档响应式用例 `1/1` 全绿。纳入当前 compiler、mirror runtime 与 stateful recovery kernel 后，
+  Resource Gateway 最新完整 Java 门禁为 `5175` 项测试、0 失败、0 错误、4 项条件跳过；其中
   `VisualAuthoringBrowserDomTest` 的 32 项非 frontend-bundle 场景和
-  `VisualAuthoringBrowserWorkflowTest` 均已在真实 Chrome 中执行，3 项跳过仅因普通门禁未启用
-  `-Pfrontend`。独立 test-kit `392/392` 全绿，126 份 Mirror Schema 完成引用闭包与
+  `VisualAuthoringBrowserWorkflowTest` 均已在真实 Chrome 中执行，4 项投影用例在普通门禁中仅因未启用
+  `-Pfrontend` 而条件跳过，并已在定向 frontend 门禁中验证。独立 test-kit `392/392` 全绿，126 份 Mirror Schema 完成引用闭包与
   打包验证，公共 JavaDoc、普通 JAR 与 shaded JAR 均成功生成。
 - Stage 1 第二增量已实现 `MirrorPlanCompiler`、`MirrorPlanCompilationRequest`、`CompiledMirrorPlan` 和
   `ExecutionControlCompiler.compileMirror` adapter。编译器把每条 direct/nested external capability edge 对账到
@@ -579,9 +579,9 @@ Resource Gateway 已有的工业底座应直接复用：
 | 有状态业务世界 | 91% | 协议、read/write 退款 fixture、独立 verifier/sealer/client、事务内核、受保护 Session API、独立 AES-GCM 数据面、lease/fence/CAS、durable write-attempt journal/reconciliation、TTL/destroy、全局/scope 容量、保留字节、命令背压、过期擦除、固定 read head、run-scoped virtual write、真实 DAG read-write-read、payload-free v1/v2/v3 state evidence、read-only/successful-transition/write-outcome ANEKE seed、签名 HASH_ONLY checkpoint 与同数据面代际精确恢复准入已落地；缺 TEE/KMS、跨区域数据恢复、真实 process-kill/network parity、目标数据库容量认证和 HA/DR certification |
 | Scenario/Rehearsal | 99.3% | ScenarioPack/Case/Assertion、exact compiler、可恢复逐 case runtime、签名 aggregate、audit/retention、ANEKE seed、durable batch manifest/queue/API/worker、region-local DAG/KMS 双 scheduler、逐 case cooperative control、v1/v2 签名 batch evidence/index、批次 operation/lifecycle audit、retention/multi-hold/逻辑删除证明、durable finalization outbox/lease/retry/quarantine/status、受控 remediation、聚合 health/SLO，以及 root-sealed ANEKE batch workbook 已落地；缺 hard kill、owner UX、企业策略/WORM/anchor 与异构消费者认证 |
 | Fidelity/Outcome | 5% | 缺保真向量、shadow、权威结果归因和校准闭环 |
-| 业务运营工作台 | 12% | exact-scope 批次 keyset 发现协议已落地；仍缺面向任务的失败归因、证据抽屉、审阅复演和零 DSL case 调整 |
+| 业务运营工作台 | 30% | exact-scope keyset 队列、active/terminal 证据分层、六类失败分诊、case/assertion 证据抽屉、deep link 与响应式布局已落地；仍缺 reviewed remediation、复演、零 DSL case 调整、复杂内置样例和真实业务 Owner 可用性认证 |
 
-结论：基础设施准备度约 93%，固定权重理想态完成度为 62.56%。剩余主要矛盾已经
+结论：基础设施准备度约 93%，固定权重理想态完成度为 64.36%。剩余主要矛盾已经
 从“能否安全执行和取证”转向“能否把可信 observation 持续蒸馏成可校准、可拒答、可删除的业务拟合资产”。
 
 ### 3.1 2026-07-24 Scenario 编译期闭包迭代差距复评
@@ -648,7 +648,7 @@ HA/DR 或权威 outcome 当成已完成。51.59% 只承认已由代码和测试�
 | 2 | RG-MIR-SCEN-001A | 完成 | 将 TestSuite/Fixture authority 升级为完整 enterprise scope；旧 tenant+environment 资产采用独立表、禁止隐式提升、授权重新注册的迁移策略 | 两个 organization/project/region 可安全复用同 id/revision；跨 scope、混合版本与 indexed scope 搬移失败关闭 |
 | 3 | RG-MIR-SCEN-002 | 完成 | deterministic compiler/runtime；每 case 使用隔离 Session/checkpoint、固定时钟/随机源、fixture data-flow inversion 和禁止真实 egress | exact plan、逐 case 运行、数据库时钟 lease/epoch、连续 checkpoint、takeover、旧 worker fencing 与原子 evidence/terminal commit 全绿 |
 | 4 | RG-MIR-SCEN-003 | 完成（本地治理闭包） | 产出 payload-free Scenario evidence、state diff、处置断言结果与 ANEKE workbook seed，区分执行失败、断言失败、低保真和证据不完整 | 独立签名、append-only store、exact read、崩溃恢复、audit/retention/workbook seed 已完成；unknown outcome、缺断言或不完整 evidence 阻断 gate-ready |
-| 5 | RG-MIR-SCEN-004 | 工程控制面完成；Owner 交付面待实现 | 提供批量 rehearsal API、deep link 和最小 Author 场景表格；先保证业务 owner 不编辑 JSON/DSL 即可维护 case | exact manifest、数据库队列、API、worker、region-local DAG/KMS 双 scheduler、heartbeat/cancel/deadline、v1/v2 签名 batch index、durable finalization outbox、retention、离线 verifier、operation/lifecycle audit 与启停脚本已完成；下一步 ANEKE batch workbook、quarantine remediation 和 Owner UX |
+| 5 | RG-MIR-SCEN-004 | 工程控制面与只读 Owner 分诊纵切完成；写侧待实现 | 提供批量 rehearsal API、deep link 和最小 Author 场景表格；先保证业务 owner 不编辑 JSON/DSL 即可维护 case | exact manifest/queue/worker、DAG/KMS 双 scheduler、签名 batch evidence、ANEKE batch workbook、keyset discovery、原因分组、证据抽屉、deep link 与启停脚本已完成；下一步 reviewed remediation、复演和零 DSL case 调整 |
 
 完成 E7 后才进入 E8：以 Scenario coverage 为分母建立
 `DomainFidelityProfile`、typed shadow diff、confidence/abstention debt 和 drift downgrade；随后 E9 接入
@@ -1476,6 +1476,52 @@ Schema 外，还重算全页 scope、唯一性、降序和 cursor correspondence
 选中异常 entry 后再懒加载 child case/assertion。业务运营工作台成熟度仅由 10%
 上调至 12%，固定权重总分由 62.36% 上调至 62.56%，距理想态 37.44%。下一纵切必须
 交付真实浏览器工作台、原因分组和证据层级标识，不能用批次列表冒充 Owner 闭环。
+
+### 3.20 2026-07-25 Owner 只读分诊工作台迭代差距复评
+
+本轮关闭的病根不是“缺一个 dashboard”，而是服务端已有可信证据，业务 Owner 却仍
+需要理解 job/item/workbook JSON 才能回答三个日常问题：哪一批出问题、问题属于谁、
+是否有足够证据进入治理流程。新增独立 `/rehearsals/` 工作面，与 Author/Showcase
+共享 React/Vite 工程和宿主注入边界，不新增 iframe 或第二套前端仓库。
+
+工作台左侧只消费认证 exact scope 的 keyset job page；中间在 active batch 上读取
+bounded item page，在 terminal batch 上强制切换 root-sealed workbook。页面持续显示
+`Live projection / Mutable and not publish-gate evidence` 或
+`Signed workbook / Immutable and eligible for governance review`，避免把 mutable
+进度、执行成功和发布门禁三个概念混成一个绿色状态。
+
+entry 没有按 HTTP/Java 异常类型平铺，而是按处理责任确定性投影为 Execution、
+Evidence、Assertions、Governance、Warnings、Passed。这个分类不进入签名材料、不
+改写 outcome，也不把 warning 提升成 blocker；根 gate 和 blocker 始终来自已验证
+workbook。Owner 选中 terminal entry 后才读取 child workbook，展示 plan/run/content
+address、case summary、case type、handling assertion outcome 和稳定 governance
+code，默认打开 256-item batch 不产生 child N+1。浏览器不请求 Fixture、node
+input/output、Session state 或客户 payload。
+
+`?jobId=<jobId>&entry=<manifest-index>` 保存当前上下文。直接打开 deep link 时客户端
+只沿 authenticated keyset page 有界查找；不在 scope 内的 job 明确报不可见，不降级
+到无 scope exact read。当前默认 demo identity 只在 test/staging 有效，VSCode/企业
+宿主通过已有 header provider 注入短期凭证，页面自身不持久化 token。UI 没有取消、
+重试、remediation、hold、purge 或 admin 控件，因此不会借“易用性”扩大写权限。
+
+验证新增 8 个前端/API/App 行为用例，前端总计 `158/158` 全绿；Spring 路由与脚本
+聚焦 `36/36` 全绿；`-Pfrontend` 构建把同一 bundle 分别发布到 author/rehearsals/
+showcase，真实 Chrome 在桌面、中等宽度和移动宽度验证了独立路由、导航、工作台
+可见性和无横向溢出。完整 Resource Gateway 门禁为 `5175` 项测试、0 失败、0 错误、
+4 项条件跳过；独立 Test Kit `392/392` 全绿。演示脚本
+在 `--scenario-batch` 下通过 capability readiness 后打印 Rehearsals URL，受保护
+job listing 也以真实 demo token 返回 strict empty-page envelope。
+
+这仍不是完整 Owner 闭环。当前 surface 解决“看、分、取证”，没有解决“调整、
+复演、确认、提交修复”；也没有复杂内置批次、256-item 视觉密度认证、业务术语映射、
+可访问性审计和真实业务 Owner 任务测试。因此业务运营工作台成熟度从 12% 上调到
+30%，固定权重总分从 62.56% 上调到 64.36%，距理想态 35.64%。
+
+下一条最短路径是同一工作台内的 reviewed remediation 纵切：只允许从稳定 blocker
+选择受治理动作，生成 compare-and-set command preview，经双人/owner authority
+批准后提交，随后自动创建复演并把 predecessor/successor evidence 并排对账。不能
+先开放任意 JSON/DSL 编辑，也不能把已有 finalization-admin API 直接暴露给普通
+Owner。零 DSL case 调整与复杂内置样例紧随其后，Fidelity/Outcome 主链继续并行。
 
 ## 4. 目标架构与系统责任
 
@@ -2668,7 +2714,8 @@ worker turn、显式 region-local bounded scheduler、执行中 heartbeat/cancel
 batch evidence/index、operation/lifecycle audit 与独立 batch retention/multi-hold/
 deletion proof、`FINALIZING` outbox/KMS 故障隔离、受控 quarantine remediation
 与聚合 health/SLO、ANEKE batch workbook/root seal/无 N+1 独立消费已完成；
-下一步进入 Owner rehearsal workbench。企业 policy authority、
+Owner rehearsal workbench 的只读分诊纵切已完成；下一步进入 reviewed remediation、
+零 DSL case 调整与业务可用性认证。企业 policy authority、
 WORM/anchor 和跨地域删除认证作为部署认证支线并行，不阻塞本地 workbook 纵切，但会阻塞最终
 production readiness。
 

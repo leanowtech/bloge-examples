@@ -313,6 +313,28 @@ class VisualAuthoringBrowserDomTest {
     }
 
     @Test
+    void scenarioRehearsalWorkbenchLoadsAsASeparateOperationalRouteInRealBrowser() {
+        assumeReactRehearsalsBundlePresent();
+        driver = newChromeDriverOrSkip();
+        WebDriverWait wait = new WebDriverWait(driver, WAIT_TIMEOUT);
+        driver.get("http://localhost:" + port + "/rehearsals/");
+
+        wait.until(ExpectedConditions.visibilityOfElementLocated(
+                By.cssSelector("[data-testid='rehearsal-workbench']")));
+        assertThat(driver.getTitle()).contains("BLOGE Visual Canvas");
+        waitForText(wait, By.cssSelector(".topbar"), "Rehearsals");
+        assertThat(driver.findElement(By.cssSelector("a[href='/rehearsals/']"))
+                .getAttribute("aria-current")).isEqualTo("page");
+        waitForText(wait, By.cssSelector(".rehearsal-queue"), "Rehearsal batches");
+        assertNoHorizontalOverflow(wait, By.cssSelector(".rehearsal-workbench"));
+
+        driver.manage().window().setSize(new Dimension(1024, 768));
+        assertNoHorizontalOverflow(wait, By.cssSelector(".rehearsal-workbench"));
+        driver.manage().window().setSize(new Dimension(760, 820));
+        assertNoHorizontalOverflow(wait, By.cssSelector(".rehearsal-workbench"));
+    }
+
+    @Test
     void composerSupportsOpenApiSaveLibraryImportSchemaConnectionRunAndPublishInRealBrowser() {
         driver = newChromeDriverOrSkip();
         WebDriverWait wait = new WebDriverWait(driver, WAIT_TIMEOUT);
@@ -2375,6 +2397,16 @@ class VisualAuthoringBrowserDomTest {
         Assumptions.assumeTrue(
                 new ClassPathResource("static/showcase/index.html").exists(),
                 "React showcase bundle is built only when Maven runs with -Pfrontend"
+        );
+    }
+
+    /**
+     * The Owner workbench shares the Vite bundle while retaining an independently addressable route.
+     */
+    private void assumeReactRehearsalsBundlePresent() {
+        Assumptions.assumeTrue(
+                new ClassPathResource("static/rehearsals/index.html").exists(),
+                "React rehearsal bundle is built only when Maven runs with -Pfrontend"
         );
     }
 

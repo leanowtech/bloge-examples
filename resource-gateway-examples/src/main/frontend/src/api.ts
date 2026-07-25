@@ -33,6 +33,11 @@ import type {
   StoredOperatorTestSuite,
   SimulationRequest,
   SimulationResponse,
+  ScenarioRehearsalBatchItemPage,
+  ScenarioRehearsalBatchJobPage,
+  ScenarioRehearsalBatchWorkbookSeed,
+  ScenarioRehearsalWorkbookSeed,
+  ToolStudioIntegrationEnvelope,
   VisualValidationResult,
   VisualGraphRunRecord,
 } from './types';
@@ -317,6 +322,95 @@ function operatorTestingHeaders(purpose: OperatorTestingPurpose, json = false): 
     'X-Purpose': purpose,
     ...(json ? { 'Content-Type': 'application/json' } : {}),
   };
+}
+
+function mirrorWorkbenchHeaders(): Record<string, string> {
+  return {
+    ...operatorTestHeadersProvider(),
+    'X-Purpose': 'GOVERNANCE_EVIDENCE_INGESTION',
+  };
+}
+
+async function readMirrorPayload<T>(
+  response: Response,
+  payloadKind: string,
+  payloadSchemaVersion: string,
+): Promise<T> {
+  const envelope = await readTestingJson<ToolStudioIntegrationEnvelope<T>>(response);
+  if (envelope.payloadKind !== payloadKind
+    || envelope.payloadSchemaVersion !== payloadSchemaVersion
+    || envelope.payload === null
+    || typeof envelope.payload !== 'object') {
+    throw new Error(`Mirror response contract mismatch for ${payloadKind}.`);
+  }
+  return envelope.payload;
+}
+
+/** Lists one exact-scope newest-first page for the Owner rehearsal workbench. */
+export async function fetchScenarioRehearsalBatchJobs(
+  limit = 25,
+  cursor: ScenarioRehearsalBatchJobPage['nextCursor'] = null,
+): Promise<ScenarioRehearsalBatchJobPage> {
+  const query = new URLSearchParams({ limit: String(limit) });
+  if (cursor) {
+    query.set('beforeCreatedAt', cursor.createdAt);
+    query.set('beforeJobId', cursor.jobId);
+  }
+  return readMirrorPayload<ScenarioRehearsalBatchJobPage>(
+    await sendRequest(`/api/mirror/rehearsal-jobs?${query.toString()}`, {
+      headers: mirrorWorkbenchHeaders(),
+    }),
+    'SCENARIO_REHEARSAL_BATCH_JOB_PAGE',
+    'resourceGateway.scenarioRehearsalBatchJobPage.v1',
+  );
+}
+
+/** Reads one bounded mutable item page while a Scenario batch is active. */
+export async function fetchScenarioRehearsalBatchItems(
+  jobId: string,
+  startIndex = 0,
+  limit = 100,
+): Promise<ScenarioRehearsalBatchItemPage> {
+  const query = new URLSearchParams({
+    startIndex: String(startIndex),
+    limit: String(limit),
+  });
+  return readMirrorPayload<ScenarioRehearsalBatchItemPage>(
+    await sendRequest(
+      `/api/mirror/rehearsal-jobs/${encodeURIComponent(jobId)}/items?${query.toString()}`,
+      { headers: mirrorWorkbenchHeaders() },
+    ),
+    'SCENARIO_REHEARSAL_BATCH_ITEM_PAGE',
+    'resourceGateway.scenarioRehearsalBatchItemPage.v1',
+  );
+}
+
+/** Reads one root-sealed terminal Scenario batch workbook. */
+export async function fetchScenarioRehearsalBatchWorkbook(
+  jobId: string,
+): Promise<ScenarioRehearsalBatchWorkbookSeed> {
+  return readMirrorPayload<ScenarioRehearsalBatchWorkbookSeed>(
+    await sendRequest(
+      `/api/mirror/rehearsal-jobs/${encodeURIComponent(jobId)}/workbook-seed`,
+      { headers: mirrorWorkbenchHeaders() },
+    ),
+    'SCENARIO_REHEARSAL_BATCH_WORKBOOK_SEED',
+    'resourceGateway.scenarioRehearsalBatchWorkbookSeed.v1',
+  );
+}
+
+/** Lazily reads case and assertion evidence for one terminal Scenario child run. */
+export async function fetchScenarioRehearsalWorkbook(
+  runId: string,
+): Promise<ScenarioRehearsalWorkbookSeed> {
+  return readMirrorPayload<ScenarioRehearsalWorkbookSeed>(
+    await sendRequest(
+      `/api/mirror/scenarios/runs/${encodeURIComponent(runId)}/workbook-seed`,
+      { headers: mirrorWorkbenchHeaders() },
+    ),
+    'SCENARIO_REHEARSAL_WORKBOOK_SEED',
+    'resourceGateway.scenarioRehearsalWorkbookSeed.v1',
+  );
 }
 
 /** Resolves the executable registry binding represented by a visual operator definition. */

@@ -57,6 +57,7 @@ DAG workers plus isolated evidence-finalization lanes for one exact
 | Open | Best first move |
 | --- | --- |
 | `http://localhost:8080/author/` | Build a schema-constrained graph on the visual canvas |
+| `http://localhost:8080/rehearsals/` | Triage exact-scope Scenario batches and inspect signed case/assertion evidence |
 | `http://localhost:8080/showcase/` | Explore guided product scenarios and sample outputs |
 | `http://localhost:8080/examples/gateway` | Use the legacy Custom Composer regression surface |
 | `http://localhost:8080/api/integration/capabilities` | Verify protocol versions, endpoints, feature flags, identity provider, payload policy, and signer readiness |
@@ -175,6 +176,20 @@ the operation. Use `CAPABILITY_PROJECTION` for exact append or visual draft proj
 `MIRROR_REHEARSAL` or `CHANGE_SYNC` for reads. Scope and clearance come from verified identity claims;
 `X-Tenant-Id` and similar headers are only consistency hints. The demo token includes these purposes, while
 enterprise deployments should issue separate author, governor, and rehearsal identities.
+
+The `/rehearsals/` Owner workbench is a read-only operational projection over
+the protected Scenario APIs. Its left queue discovers newest batches with
+stable keyset pagination; the center separates execution, evidence, blocker
+assertion, governance, warning, and passed items; the evidence drawer lazily
+loads case/assertion detail only after an Owner selects a terminal entry.
+Running batches are labelled `Live projection` and cannot be mistaken for
+publish-gate evidence. Terminal batches switch to the root-sealed
+`Signed workbook`, show gate blockers, and retain a deep link in the form
+`/rehearsals/?jobId=<jobId>&entry=<manifest-index>`. The browser never fetches
+raw Fixture, request, response, Session state, or customer payload values.
+Reviewed remediation and zero-DSL case editing remain a later workbench phase;
+the current surface intentionally exposes no write or finalization-admin
+control.
 
 Scenario authoring now has a strict protocol base:
 `resourceGateway.scenarioPack.v1`, `resourceGateway.scenarioCase.v1`, and

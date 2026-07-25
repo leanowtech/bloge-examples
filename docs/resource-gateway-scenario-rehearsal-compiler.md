@@ -916,6 +916,52 @@ curl -sS \
 batch workbook，选中某个异常 entry 后才按需打开 child workbook 的 case/assertion
 明细，避免默认 N+1。
 
+### 8.5 Owner 演练工作台
+
+使用演示脚本启动批量执行与证据终态化 worker：
+
+```bash
+./scripts/start-visual-canvas-demo.sh --scenario-batch
+```
+
+打开 `http://localhost:8080/rehearsals/`。工作台与 `/author/`、`/showcase/`
+使用同一 React/Vite 包，但拥有独立可寻址路由，不通过 iframe 拼接。页面由三层任务
+信息组成：
+
+| 区域 | Owner 看到什么 | 数据权威 |
+|---|---|---|
+| 左侧批次队列 | 当前认证 exact scope、最新批次、状态和完成数；`Load older batches` 使用服务端 keyset cursor | mutable、完整性保护的 batch job projection |
+| 中间分诊区 | 批次进度、gate 状态、根 blocker，以及按 Execution/Evidence/Assertions/Governance/Warnings/Passed 分组的 entry | 运行中读 item page；终态读 root-sealed batch workbook |
+| 右侧证据抽屉 | exact plan/run/content address、case 汇总、blocker、case 与 handling assertion 结果 | 选中终态 entry 后才读取 child workbook |
+
+`Live projection` 明确表示批次仍可能变化，页面同时显示
+`Mutable and not publish-gate evidence`。终态批次才显示 `Signed workbook`；
+这表示服务端已经重验 batch evidence、retention closure 和 root seal，并不表示
+ANEKE 已作出最终发布裁决。
+
+分诊类别不是新的后端事实，也不覆盖签名结果，而是稳定的只读任务投影：
+
+| 类别 | 归类依据 | Owner 首先处理什么 |
+|---|---|---|
+| Execution | item failed/cancelled 或有稳定 failure code | timeout、target/runtime、取消和重试耗尽 |
+| Evidence | indeterminate、缺完整 evidence/workbook commitment 或仍为 mutable state | signer/store、证据缺失和未知结果 |
+| Assertions | child blocker failure/indeterminate 大于零 | 失败的业务处置断言及其治理码 |
+| Governance | child `gateReady=false` 或有非断言 blocker | evidence class、policy 和 closure |
+| Warnings | warning assertion 失败或不确定 | 非阻断验证债务 |
+| Passed | item passed 且没有 child blocker | 可抽查，不优先占用故障队列 |
+
+点击 entry 后，地址栏会保存
+`/rehearsals/?jobId=<jobId>&entry=<manifest-index>`。刷新或从 ANEKE deep link
+进入时，客户端通过有界 keyset 扫描定位 exact job；如果 job 不属于当前认证 scope，
+页面明确报告不可见，不尝试跨 scope 查询。终态 child workbook 采用 lazy read，
+因此打开 256-item 批次不会产生 256 次 case-level 请求。
+
+当前浏览器默认凭证只被仓库的 test/staging demo identity 接受，宿主或 VSCode
+Webview 必须通过 `setOperatorTestHeadersProvider(...)` 注入短期身份。页面只请求
+`GOVERNANCE_EVIDENCE_INGESTION` purpose，不保存 token，也没有取消、修复、legal
+hold、purge 或 finalization-admin 按钮。Reviewed remediation 和零 DSL case 调整
+仍是下一阶段，不能通过开放通用 JSON/DSL 编辑器绕过。
+
 ## 9. 失败语义
 
 | 失败类别 | 处理原则 |
@@ -1078,11 +1124,12 @@ mvn -f resource-gateway-examples/pom.xml clean verify
 mvn -f resource-gateway-test-kit/pom.xml clean verify
 ```
 
-2026-07-25 本轮门禁结果：Resource Gateway `5,173` 项测试零失败、零错误、
-3 项条件跳过（含真实 Chrome DOM/工作流和可执行 Boot JAR）；Test Kit `392` 项
+2026-07-25 本轮门禁结果：Resource Gateway `5,175` 项测试零失败、零错误、
+4 项条件跳过（其余真实 Chrome DOM/工作流和可执行 Boot JAR 均通过）；Test Kit `392` 项
 零失败、零错误，完成 126 个 Mirror Schema 的引用闭包与 shaded JAR 打包，公共
-JavaDoc 校验通过。本轮最终源码另通过服务端 finalization health/SLO 联合
-`99/99` 项与 Test Kit Schema/client `54/54` 项聚焦验证。
+JavaDoc 校验通过。演练工作台另以 `-Pfrontend` 在真实 Chrome 中通过桌面、中等宽度、
+移动宽度三档响应式定向验证。本轮最终源码另通过服务端 finalization health/SLO
+联合 `99/99` 项与 Test Kit Schema/client `54/54` 项聚焦验证。
 
 关键实现与协议：
 

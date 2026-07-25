@@ -260,6 +260,221 @@ export interface OperatorTestSuiteRun {
   response: OperatorTestSuiteExecutionResponse;
 }
 
+/** Versioned Tool Studio integration envelope returned by protected Mirror endpoints. */
+export interface ToolStudioIntegrationEnvelope<T> {
+  protocol: string;
+  protocolVersion: string;
+  resourceGatewayVersion: string;
+  schemaVersion: string;
+  producedAt: string;
+  payloadKind: string;
+  payloadSchemaVersion: string;
+  payloadFingerprint: string;
+  payload: T;
+}
+
+/** Enterprise coordinates fixed by the authenticated rehearsal-workbench identity. */
+export interface ScenarioRehearsalScope {
+  tenantId: string;
+  organizationId: string;
+  projectId: string;
+  environmentId: string;
+  region: string;
+}
+
+/** Payload-free progress counters shared by live jobs and signed terminal workbooks. */
+export interface ScenarioRehearsalBatchSummary {
+  totalItems: number;
+  completedItems: number;
+  passedItems: number;
+  failedItems: number;
+  indeterminateItems: number;
+  cancelledItems: number;
+}
+
+/** Integrity-protected mutable Scenario batch projection. */
+export interface ScenarioRehearsalBatchJob {
+  schemaVersion: 'resourceGateway.scenarioRehearsalBatchJob.v1'
+    | 'resourceGateway.scenarioRehearsalBatchJob.v2';
+  jobId: string;
+  requestId: string;
+  requestFingerprint: string;
+  manifestFingerprint: string;
+  scope: ScenarioRehearsalScope;
+  status: 'QUEUED' | 'RUNNING' | 'CANCEL_REQUESTED' | 'FINALIZING_EVIDENCE'
+    | 'SUCCEEDED' | 'PARTIAL' | 'FAILED' | 'CANCELLED' | 'EXPIRED' | 'QUARANTINED';
+  failureMode: string;
+  priority: string;
+  maximumItemAttempts: number;
+  summary: ScenarioRehearsalBatchSummary;
+  deadlineAt: string;
+  failureCode: string;
+  createdAt: string;
+  updatedAt: string;
+  completedAt: string | null;
+  recordFingerprint: string;
+}
+
+/** Stable newest-first keyset page used by the rehearsal workbench. */
+export interface ScenarioRehearsalBatchJobPage {
+  schemaVersion: 'resourceGateway.scenarioRehearsalBatchJobPage.v1';
+  scope: ScenarioRehearsalScope;
+  jobs: ScenarioRehearsalBatchJob[];
+  nextCursor: {
+    createdAt: string;
+    jobId: string;
+  } | null;
+}
+
+/** Content-addressed reference embedded in Scenario workbooks. */
+export interface ScenarioArtifactRef {
+  kind: string;
+  id: string;
+  revision: number;
+  fingerprint: string;
+}
+
+/** One mutable live item read before a batch reaches signed terminal evidence. */
+export interface ScenarioRehearsalBatchItem {
+  itemIndex: number;
+  compiledPlanRef: ScenarioArtifactRef;
+  childRequestId: string;
+  status: 'PENDING' | 'RUNNING' | 'PASSED' | 'FAILED' | 'INDETERMINATE' | 'CANCELLED';
+  attemptCount: number;
+  runId: string;
+  evidenceBundleFingerprint: string;
+  workbookSeedFingerprint: string;
+  failureCode: string;
+  startedAt: string | null;
+  completedAt: string | null;
+}
+
+/** Bounded mutable item page for an active Scenario batch. */
+export interface ScenarioRehearsalBatchItemPage {
+  schemaVersion: 'resourceGateway.scenarioRehearsalBatchItemPage.v1';
+  jobId: string;
+  manifestFingerprint: string;
+  items: ScenarioRehearsalBatchItem[];
+  nextIndex: number | null;
+}
+
+/** Signed child-workbook summary embedded in a terminal batch workbook. */
+export interface ScenarioRehearsalChildWorkbook {
+  schemaVersion: 'resourceGateway.scenarioRehearsalWorkbookSeed.v1';
+  seedFingerprint: string;
+  runId: string;
+  requestId: string;
+  compiledPlanRef: ScenarioArtifactRef;
+  scenarioPackRef: ScenarioArtifactRef;
+  targetCapabilityRef: ScenarioArtifactRef;
+  evidenceBundleFingerprint: string;
+  resultFingerprint: string;
+  evidenceKeyId: string;
+  retentionProofFingerprint: string;
+  outcome: 'PASS' | 'FAIL' | 'INDETERMINATE';
+  summary: ScenarioRehearsalCaseSummary;
+  gateReady: boolean;
+  blockers: string[];
+}
+
+/** Case and assertion counters derived from one signed Scenario run. */
+export interface ScenarioRehearsalCaseSummary {
+  totalCases: number;
+  passedCases: number;
+  failedCases: number;
+  indeterminateCases: number;
+  assertionResults: number;
+  blockerFailures: number;
+  blockerIndeterminate: number;
+  warningFailures: number;
+  warningIndeterminate: number;
+}
+
+/** One ordered terminal item in the signed batch workbook. */
+export interface ScenarioRehearsalBatchWorkbookEntry {
+  entryIndex: number;
+  entryId: string;
+  compiledPlanRef: ScenarioArtifactRef;
+  childRequestId: string;
+  expectedRunId: string;
+  status: 'PASSED' | 'FAILED' | 'INDETERMINATE' | 'CANCELLED';
+  attemptCount: number;
+  runId: string;
+  childEvidenceBundleFingerprint: string;
+  childWorkbookSeedFingerprint: string;
+  failureCode: string;
+  childWorkbook: ScenarioRehearsalChildWorkbook | null;
+}
+
+/** Root-sealed terminal batch workbook consumed by the Owner workbench. */
+export interface ScenarioRehearsalBatchWorkbookSeed {
+  schemaVersion: 'resourceGateway.scenarioRehearsalBatchWorkbookSeed.v1';
+  seedFingerprint: string;
+  scope: ScenarioRehearsalScope;
+  jobId: string;
+  requestId: string;
+  requestFingerprint: string;
+  manifestFingerprint: string;
+  terminalJobFingerprint: string;
+  evidenceBundleFingerprint: string;
+  evidenceIndexFingerprint: string;
+  evidenceKeyId: string;
+  workbookSeal: {
+    keyId: string;
+    algorithm: string;
+    materialFingerprint: string;
+    signature: string;
+  };
+  retentionProof: {
+    eventFingerprint: string;
+    retainUntil: string;
+    evidenceSeal?: {
+      keyId: string;
+      algorithm: string;
+      materialFingerprint: string;
+    };
+  };
+  status: ScenarioRehearsalBatchJob['status'];
+  summary: ScenarioRehearsalBatchSummary;
+  entries: ScenarioRehearsalBatchWorkbookEntry[];
+  gateReady: boolean;
+  blockers: string[];
+}
+
+/** Signed handling-assertion result shown without raw business payloads. */
+export interface ScenarioHandlingAssertionResult {
+  resultFingerprint: string;
+  assertionRef: ScenarioArtifactRef;
+  observation: string;
+  outcome: 'PASS' | 'FAIL' | 'INDETERMINATE';
+  severity: 'BLOCKER' | 'WARNING';
+  governanceCode: string;
+  reasonCode: string;
+}
+
+/** One case projection loaded only when an Owner opens a terminal batch entry. */
+export interface ScenarioRehearsalWorkbookCase {
+  caseIndex: number;
+  scenarioCaseRef: ScenarioArtifactRef;
+  caseType: 'GOLDEN' | 'NEGATIVE' | 'BOUNDARY' | 'REGRESSION'
+    | 'FAULT' | 'STATE_TRANSITION' | 'WHAT_IF';
+  testCaseId: string;
+  childRunId: string;
+  childEvidenceBundleFingerprint: string;
+  evidenceStatus: string;
+  evidenceClass: '' | 'EXPLORATORY' | 'CERTIFIABLE';
+  outcome: 'PASS' | 'FAIL' | 'INDETERMINATE';
+  diagnosticCode: string;
+  assertionResults: ScenarioHandlingAssertionResult[];
+}
+
+/** Full case-level signed workbook fetched lazily for one terminal entry. */
+export interface ScenarioRehearsalWorkbookSeed extends ScenarioRehearsalChildWorkbook {
+  scope: ScenarioRehearsalScope;
+  retentionProof: Record<string, unknown>;
+  cases: ScenarioRehearsalWorkbookCase[];
+}
+
 /** A BLOGE expression function exposed to authoring editors. */
 export interface BuiltInFunctionDefinition {
   name: string;
