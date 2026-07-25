@@ -1677,6 +1677,50 @@ ANEKE 不需要相信 Resource Gateway 的数据库 projection 或 HTTP 200。
 predecessor/successor workbook 派生比较，不能拿 mutable job projection 冒充改善
 证据。
 
+### 3.24 2026-07-26 签名工作簿整改对账迭代差距复评
+
+本轮关闭“successor 已经运行，但改善结论仍需人工比两份 JSON 或相信 mutable job
+projection”的证据断点。新增
+`ScenarioRehearsalRemediationComparison.v1` 和受保护的
+`GET /api/mirror/rehearsal-remediations/{remediationId}/comparison`。服务只接受
+`SUBMITTED` 谱系，按调用方 exact scope 取回聚合，再以内部最小
+`MIRROR_REHEARSAL` 身份分别读取 predecessor/successor 完整 batch workbook；两份
+workbook 会先执行既有的内容地址、signed batch evidence、retention 和 root seal
+验证，再进入比较投影。
+
+比较协议不发明“保真度分数”，也不把执行成功偷换成业务正确。它绑定 exact lineage、
+plan、receipt、workbook seed/request/manifest/evidence/index fingerprint 和两份
+detached root seal，按 manifest 顺序重建每个 entry 的 plan、终态、child evidence、
+case/assertion 计数与 gate blocker。根和 entry 只输出集合运算可证明的
+`resolved/remaining/introduced` blockers，以及
+`RESOLVED/STILL_BLOCKED/REGRESSED/STILL_READY` 转换。predecessor 必须 blocked；
+successor gate-ready 时只能得到根 `RESOLVED`，且 remaining/introduced 必须为空。
+
+冻结计划仍是变更边界。比较器逐项复核 successor request fingerprint、entry index/id、
+未替换 plan 保持不变、替换项的 expected/replacement ref，以及 receipt 的 distinct
+successor identity；任何漂移都以
+`RG.MIRROR.REMEDIATION.COMPARISON_CLOSURE_INVALID` 失败关闭。comparison 自身是
+20 MB 上限的内容寻址投影，不冒充第三份签名事实；它的可信根始终是两份独立验签
+workbook 和已验证 decision lineage。
+
+Test Kit 新增第 134 份封闭引用 Schema、公开协议常量、
+`findScenarioRehearsalRemediationComparison` 和依赖轻量的离线
+`ScenarioRehearsalRemediationComparisonVerifier`。HTTP 客户端先走正常来源路径独立
+验签两份 workbook，再重建全部快照、计数、blocker 差集、gate transition 和 comparison
+fingerprint；仅修改哈希会失败，连哈希一起重算但伪造改善结论也会在 source projection
+层失败。因此 ANEKE 不需要相信 HTTP 200、数据库 projection 或服务端自报 diff。
+
+本轮聚焦服务端验证 `45/45` 全绿，覆盖协议投影、successor request 漂移、未就绪状态、
+auth-before-service、operation audit、production/disabled route isolation、capability
+truth 和真实 Boot 上下文；独立 Test Kit `clean verify` 为 `401/401` 全绿，134 份
+Mirror Schema 完成 fail-closed 引用闭包、普通/shaded JAR 打包和公共 JavaDoc 校验。
+Owner 写入控件尚未接入浏览器，也尚未完成真实双人身份切换、复杂批次对比视觉密度和任务可用性认证。因此
+业务运营工作台成熟度从 `50%` 上调到 `54%`，固定权重总分从 `66.36%` 上调到
+`66.76%`，距理想态 `33.24%`。下一条最短路径不再是继续增加后端对象，而是把
+`preview -> OWNER -> INDEPENDENT_REVIEWER -> submit -> comparison` 接入现有
+Rehearsals deep link，并以宿主注入的短期 human identity 完成角色交接；之后再做
+零 DSL case 调整和真实 Owner 任务认证。
+
 ## 4. 目标架构与系统责任
 
 ![Resource Gateway 业务能力镜像目标架构](assets/resource-gateway-capability-mirror-target-architecture.svg)

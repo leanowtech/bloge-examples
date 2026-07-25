@@ -437,6 +437,83 @@ public final class ScenarioRehearsalRemediationService {
         }
     }
 
+    /**
+     * Compares the exact predecessor and terminal successor using only root-signed workbooks.
+     *
+     * @param remediationId exact submitted remediation lineage
+     * @param identity authenticated remediation reader
+     * @return deterministic content-addressed blocker and entry comparison
+     */
+    public ScenarioRehearsalRemediationComparison compare(
+            String remediationId,
+            IntegrationRequestContext identity) {
+        MirrorOperationObservability.Observation operation =
+                observations.start(
+                        MirrorOperationAuditEvent.Operation
+                                .SCENARIO_REHEARSAL_REMEDIATION_COMPARISON_READ,
+                        identity,
+                        "",
+                        "",
+                        remediationId);
+        try {
+            CapabilitySnapshot.Scope scope =
+                    requireRemediationIdentity(identity);
+            ScenarioRehearsalRemediationRepository.Snapshot
+                    retained = repository.find(
+                    scope, remediationId).orElseThrow(() ->
+                    problem(
+                            conflict(
+                                    ScenarioRehearsalRemediationConflictException
+                                            .Reason.NOT_FOUND,
+                                    "Scenario remediation was not found in the authorized scope"),
+                            identity));
+            ScenarioRehearsalRemediationLineage lineage =
+                    ScenarioRehearsalRemediationLineage.from(
+                            mapper, retained);
+            if (lineage.state()
+                    != ScenarioRehearsalRemediationRepository
+                    .State.SUBMITTED
+                    || lineage.receipt() == null) {
+                throw new IntegrationProblemException(
+                        IntegrationProblem.conflict(
+                                "RG.MIRROR.REMEDIATION.COMPARISON_NOT_READY",
+                                "A terminal successor is required before signed-workbook comparison.",
+                                identity.correlationId(),
+                                Map.of()));
+            }
+            IntegrationRequestContext internal =
+                    internalRehearsalIdentity(identity);
+            ScenarioRehearsalBatchWorkbookSeed predecessor =
+                    workbooks.workbookSeed(
+                            lineage.plan().predecessorJobId(),
+                            internal);
+            ScenarioRehearsalBatchWorkbookSeed successor =
+                    workbooks.workbookSeed(
+                            lineage.receipt().successorJobId(),
+                            internal);
+            ScenarioRehearsalRemediationComparison result =
+                    ScenarioRehearsalRemediationComparison.project(
+                            mapper,
+                            lineage,
+                            predecessor,
+                            successor);
+            operation.succeeded(remediationId);
+            return result;
+        } catch (IntegrationProblemException expected) {
+            throw operation.failed(expected);
+        } catch (IllegalArgumentException invalid) {
+            throw operation.failed(
+                    new IntegrationProblemException(
+                            IntegrationProblem.conflict(
+                                    "RG.MIRROR.REMEDIATION.COMPARISON_CLOSURE_INVALID",
+                                    "The submitted remediation and signed workbooks do not form one comparison closure.",
+                                    identity.correlationId(),
+                                    Map.of())));
+        } catch (RuntimeException failure) {
+            throw operation.failed(failure);
+        }
+    }
+
     private ScenarioRehearsalBatchRequest successor(
             ScenarioRehearsalBatchRequest original,
             ScenarioRehearsalRemediationPreviewRequest proposal,

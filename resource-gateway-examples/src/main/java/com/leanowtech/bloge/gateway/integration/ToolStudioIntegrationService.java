@@ -476,6 +476,9 @@ public class ToolStudioIntegrationService {
                 "mirrorScenarioRehearsalReviewedRemediationApi",
                 mirrorPlanReady && mirrorExecutionApi);
         features.put(
+                "mirrorScenarioRehearsalSignedRemediationComparison",
+                mirrorPlanReady && mirrorExecutionApi);
+        features.put(
                 "mirrorScenarioRehearsalBatchRetentionApi",
                 mirrorPlanReady && mirrorExecutionApi);
         features.put(
@@ -1088,6 +1091,12 @@ public class ToolStudioIntegrationService {
                                         .ScenarioRehearsalRemediationLineage
                                         .SCHEMA_VERSION));
                 supportedObjects.put(
+                        "scenarioRehearsalRemediationComparison",
+                        List.of(
+                                com.leanowtech.bloge.gateway.integration.mirror
+                                        .ScenarioRehearsalRemediationComparison
+                                        .SCHEMA_VERSION));
+                supportedObjects.put(
                         "scenarioRehearsalBatchCancellationRequest",
                         List.of(
                                 com.leanowtech.bloge.gateway.integration.mirror
@@ -1328,6 +1337,9 @@ public class ToolStudioIntegrationService {
                 endpoints.add(new IntegrationCapabilities.Endpoint(
                         "GET",
                         "/api/mirror/rehearsal-remediations/{remediationId}"));
+                endpoints.add(new IntegrationCapabilities.Endpoint(
+                        "GET",
+                        "/api/mirror/rehearsal-remediations/{remediationId}/comparison"));
                 endpoints.add(new IntegrationCapabilities.Endpoint(
                         "POST",
                         "/api/mirror/rehearsal-remediations/{remediationId}/approvals"));

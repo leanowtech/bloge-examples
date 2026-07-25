@@ -18,9 +18,11 @@ import java.util.Set;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -396,6 +398,85 @@ class ScenarioRehearsalRemediationServiceTest {
         assertThat(lineage.approvalGeneration()).isZero();
         assertThat(lineage.approvalHeadFingerprint())
                 .isBlank();
+    }
+
+    @Test
+    void comparisonUsesOnlyTheSubmittedLineageAndBothSignedWorkbooks() {
+        ScenarioRehearsalRemediationComparisonTestFixtures
+                .Fixture fixture =
+                ScenarioRehearsalRemediationComparisonTestFixtures
+                        .resolved(mapper);
+        ScenarioRehearsalRemediationLineage lineage =
+                fixture.lineage();
+        when(repository.find(
+                SCOPE, lineage.plan().remediationId()))
+                .thenReturn(Optional.of(
+                        new ScenarioRehearsalRemediationRepository
+                                .Snapshot(
+                                lineage.plan(),
+                                lineage.state(),
+                                lineage.approvals(),
+                                lineage.receipt())));
+        when(workbooks.workbookSeed(
+                eq(ScenarioRehearsalRemediationComparisonTestFixtures
+                        .PREDECESSOR_ID),
+                any())).thenReturn(fixture.predecessor());
+        when(workbooks.workbookSeed(
+                eq(ScenarioRehearsalRemediationComparisonTestFixtures
+                        .SUCCESSOR_ID),
+                any())).thenReturn(fixture.successor());
+
+        ScenarioRehearsalRemediationComparison comparison =
+                service.compare(
+                        lineage.plan().remediationId(),
+                        owner());
+
+        assertThat(comparison.gateTransition())
+                .isEqualTo(
+                        ScenarioRehearsalRemediationComparison
+                                .GateTransition.RESOLVED);
+        comparison.verify(mapper);
+        ArgumentCaptor<IntegrationRequestContext> internal =
+                ArgumentCaptor.forClass(
+                        IntegrationRequestContext.class);
+        verify(workbooks, times(2)).workbookSeed(
+                anyString(), internal.capture());
+        assertThat(internal.getAllValues())
+                .allSatisfy(value ->
+                        assertThat(value.purpose())
+                                .isEqualTo(
+                                        "MIRROR_REHEARSAL"));
+    }
+
+    @Test
+    void comparisonFailsClosedBeforeAReviewedSuccessorExists() {
+        ScenarioRehearsalRemediationPlan plan =
+                remediationPlan();
+        when(repository.find(
+                SCOPE, plan.remediationId()))
+                .thenReturn(Optional.of(
+                        new ScenarioRehearsalRemediationRepository
+                                .Snapshot(
+                                plan,
+                                ScenarioRehearsalRemediationRepository
+                                        .State.PENDING_APPROVAL,
+                                List.of(),
+                                null)));
+
+        assertThatThrownBy(() -> service.compare(
+                plan.remediationId(),
+                owner()))
+                .isInstanceOfSatisfying(
+                        IntegrationProblemException.class,
+                        failure -> {
+                            assertThat(failure.problem().status())
+                                    .isEqualTo(409);
+                            assertThat(failure.problem().code())
+                                    .isEqualTo(
+                                            "RG.MIRROR.REMEDIATION.COMPARISON_NOT_READY");
+                        });
+        verify(workbooks, never()).workbookSeed(
+                anyString(), any());
     }
 
     private void arrangeSignedPredecessor() {

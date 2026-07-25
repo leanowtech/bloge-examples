@@ -2,6 +2,7 @@ package com.leanowtech.bloge.gateway.integration;
 
 import com.leanowtech.bloge.gateway.integration.mirror.ScenarioRehearsalRemediationApproval;
 import com.leanowtech.bloge.gateway.integration.mirror.ScenarioRehearsalRemediationApprovalCommand;
+import com.leanowtech.bloge.gateway.integration.mirror.ScenarioRehearsalRemediationComparison;
 import com.leanowtech.bloge.gateway.integration.mirror.ScenarioRehearsalRemediationLineage;
 import com.leanowtech.bloge.gateway.integration.mirror.ScenarioRehearsalRemediationPlan;
 import com.leanowtech.bloge.gateway.integration.mirror.ScenarioRehearsalRemediationPreviewRequest;
@@ -46,6 +47,10 @@ class ScenarioRehearsalRemediationControllerTest {
                 mock(ScenarioRehearsalRemediationPlan.class);
         ScenarioRehearsalRemediationLineage lineage =
                 mock(ScenarioRehearsalRemediationLineage.class);
+        ScenarioRehearsalRemediationComparison comparison =
+                mock(
+                        ScenarioRehearsalRemediationComparison
+                                .class);
         ScenarioRehearsalRemediationApproval approvalFact =
                 mock(ScenarioRehearsalRemediationApproval.class);
         ScenarioRehearsalRemediationReceipt receipt =
@@ -64,6 +69,11 @@ class ScenarioRehearsalRemediationControllerTest {
                 headers,
                 IntegrationOperation
                         .MIRROR_REHEARSAL_REMEDIATION_READ))
+                .thenReturn(identity);
+        when(authenticator.authenticate(
+                headers,
+                IntegrationOperation
+                        .MIRROR_REHEARSAL_REMEDIATION_COMPARISON_READ))
                 .thenReturn(identity);
         when(authenticator.authenticate(
                 headers,
@@ -89,6 +99,9 @@ class ScenarioRehearsalRemediationControllerTest {
         when(service.find(
                 remediationId, identity))
                 .thenReturn(Optional.of(lineage));
+        when(service.compare(
+                remediationId, identity))
+                .thenReturn(comparison);
         when(service.approve(
                 remediationId, approval, identity))
                 .thenReturn(
@@ -106,6 +119,9 @@ class ScenarioRehearsalRemediationControllerTest {
                         .SCHEMA_VERSION);
         when(lineage.schemaVersion()).thenReturn(
                 ScenarioRehearsalRemediationLineage
+                        .SCHEMA_VERSION);
+        when(comparison.schemaVersion()).thenReturn(
+                ScenarioRehearsalRemediationComparison
                         .SCHEMA_VERSION);
         when(approvalFact.schemaVersion()).thenReturn(
                 ScenarioRehearsalRemediationApproval
@@ -129,6 +145,9 @@ class ScenarioRehearsalRemediationControllerTest {
         assertThat(controller.find(
                 remediationId, headers).payload())
                 .isSameAs(lineage);
+        assertThat(controller.compare(
+                remediationId, headers).payload())
+                .isSameAs(comparison);
         assertThat(controller.approve(
                 remediationId, raw, headers).payload())
                 .isSameAs(approvalFact);
@@ -147,6 +166,12 @@ class ScenarioRehearsalRemediationControllerTest {
                         raw, identity);
         previewOrder.verify(service).preview(
                 "job-a", preview, identity);
+        verify(authenticator).authenticate(
+                headers,
+                IntegrationOperation
+                        .MIRROR_REHEARSAL_REMEDIATION_COMPARISON_READ);
+        verify(service).compare(
+                remediationId, identity);
     }
 
     @Test

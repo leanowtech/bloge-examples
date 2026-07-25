@@ -201,6 +201,9 @@ class TestRuntimeApplicationIntegrationTest {
                         "mirrorScenarioRehearsalReviewedRemediationApi",
                         true)
                 .containsEntry(
+                        "mirrorScenarioRehearsalSignedRemediationComparison",
+                        true)
+                .containsEntry(
                         "mirrorScenarioRehearsalBatchScheduling", false)
                 .containsEntry("mirrorScenarioRehearsalEvidence", false)
                 .containsEntry("mirrorServing", true)
@@ -463,6 +466,9 @@ class TestRuntimeApplicationIntegrationTest {
                 .anyMatch(endpoint -> endpoint.method().equals("GET")
                         && endpoint.path().equals(
                         "/api/mirror/rehearsal-remediations/{remediationId}"))
+                .anyMatch(endpoint -> endpoint.method().equals("GET")
+                        && endpoint.path().equals(
+                        "/api/mirror/rehearsal-remediations/{remediationId}/comparison"))
                 .anyMatch(endpoint -> endpoint.method().equals("POST")
                         && endpoint.path().equals(
                         "/api/mirror/rehearsal-remediations/{remediationId}/approvals"))
@@ -473,8 +479,14 @@ class TestRuntimeApplicationIntegrationTest {
                 .containsEntry(
                         "scenarioRehearsalRemediationLineage",
                         List.of(
+                        com.leanowtech.bloge.gateway.integration.mirror
+                                .ScenarioRehearsalRemediationLineage
+                                .SCHEMA_VERSION))
+                .containsEntry(
+                        "scenarioRehearsalRemediationComparison",
+                        List.of(
                                 com.leanowtech.bloge.gateway.integration.mirror
-                                        .ScenarioRehearsalRemediationLineage
+                                        .ScenarioRehearsalRemediationComparison
                                         .SCHEMA_VERSION));
 
         HttpHeaders headers = new HttpHeaders();

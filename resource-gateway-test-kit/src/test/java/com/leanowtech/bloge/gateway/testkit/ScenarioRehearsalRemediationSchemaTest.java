@@ -42,6 +42,11 @@ class ScenarioRehearsalRemediationSchemaTest {
                 lineage(),
                 CapabilityMirrorProtocol
                         .SCENARIO_REHEARSAL_REMEDIATION_LINEAGE_SCHEMA_RESOURCE);
+        assertValid(
+                ScenarioRehearsalRemediationComparisonTestFixtures
+                        .resolved().comparison(),
+                CapabilityMirrorProtocol
+                        .SCENARIO_REHEARSAL_REMEDIATION_COMPARISON_SCHEMA_RESOURCE);
     }
 
     @Test
@@ -67,6 +72,12 @@ class ScenarioRehearsalRemediationSchemaTest {
         underApproved.put("expectedApprovalGeneration", 1);
         ObjectNode brokenLineage = lineage();
         brokenLineage.put("approvalGeneration", 1);
+        ObjectNode untruthfulComparison =
+                ScenarioRehearsalRemediationComparisonTestFixtures
+                        .resolved().comparison().deepCopy();
+        untruthfulComparison.put(
+                "gateTransition",
+                "STILL_BLOCKED");
 
         assertInvalid(
                 leaked,
@@ -92,6 +103,10 @@ class ScenarioRehearsalRemediationSchemaTest {
                 brokenLineage,
                 CapabilityMirrorProtocol
                         .SCENARIO_REHEARSAL_REMEDIATION_LINEAGE_SCHEMA_RESOURCE);
+        assertInvalid(
+                untruthfulComparison,
+                CapabilityMirrorProtocol
+                        .SCENARIO_REHEARSAL_REMEDIATION_COMPARISON_SCHEMA_RESOURCE);
     }
 
     private static ObjectNode preview() {

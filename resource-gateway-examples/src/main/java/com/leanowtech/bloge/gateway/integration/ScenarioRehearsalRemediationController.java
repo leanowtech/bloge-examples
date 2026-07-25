@@ -2,6 +2,7 @@ package com.leanowtech.bloge.gateway.integration;
 
 import com.leanowtech.bloge.gateway.integration.mirror.ScenarioRehearsalRemediationApproval;
 import com.leanowtech.bloge.gateway.integration.mirror.ScenarioRehearsalRemediationApprovalCommand;
+import com.leanowtech.bloge.gateway.integration.mirror.ScenarioRehearsalRemediationComparison;
 import com.leanowtech.bloge.gateway.integration.mirror.ScenarioRehearsalRemediationLineage;
 import com.leanowtech.bloge.gateway.integration.mirror.ScenarioRehearsalRemediationPlan;
 import com.leanowtech.bloge.gateway.integration.mirror.ScenarioRehearsalRemediationPreviewRequest;
@@ -106,6 +107,27 @@ public final class ScenarioRehearsalRemediationController {
                                                 Map.of())));
         return IntegrationEnvelope.of(
                 "SCENARIO_REHEARSAL_REMEDIATION_LINEAGE",
+                value.schemaVersion(),
+                value);
+    }
+
+    /** Compares the predecessor and successor using only verified root-signed workbooks. */
+    @GetMapping(
+            "/rehearsal-remediations/{remediationId}/comparison")
+    public IntegrationEnvelope<ScenarioRehearsalRemediationComparison>
+    compare(
+            @PathVariable String remediationId,
+            @RequestHeader HttpHeaders headers) {
+        IntegrationRequestContext identity =
+                authenticator.authenticate(
+                        headers,
+                        IntegrationOperation
+                                .MIRROR_REHEARSAL_REMEDIATION_COMPARISON_READ);
+        ScenarioRehearsalRemediationComparison value =
+                remediations.compare(
+                        remediationId, identity);
+        return IntegrationEnvelope.of(
+                "SCENARIO_REHEARSAL_REMEDIATION_COMPARISON",
                 value.schemaVersion(),
                 value);
     }

@@ -386,6 +386,9 @@ class ToolStudioIntegrationServiceTest {
                 .containsEntry(
                         "mirrorScenarioRehearsalReviewedRemediationApi",
                         false)
+                .containsEntry(
+                        "mirrorScenarioRehearsalSignedRemediationComparison",
+                        false)
                 .containsEntry("mirrorScenarioRehearsalEvidence", false)
                 .containsEntry("mirrorOperationObservability", false)
                 .containsEntry("mirrorServing", false);
@@ -434,6 +437,9 @@ class ToolStudioIntegrationServiceTest {
                         true)
                 .containsEntry(
                         "mirrorScenarioRehearsalReviewedRemediationApi",
+                        true)
+                .containsEntry(
+                        "mirrorScenarioRehearsalSignedRemediationComparison",
                         true)
                 .containsEntry(
                         "mirrorScenarioRehearsalBatchFinalizationSloIntegrated",
@@ -555,6 +561,7 @@ class ToolStudioIntegrationServiceTest {
                         "scenarioRehearsalRemediationSubmitCommand",
                         "scenarioRehearsalRemediationReceipt",
                         "scenarioRehearsalRemediationLineage",
+                        "scenarioRehearsalRemediationComparison",
                         "scenarioRehearsalBatchCancellationRequest",
                         "scenarioRehearsalBatchRetentionEvent",
                         "scenarioRehearsalBatchRetentionState",
@@ -653,6 +660,7 @@ class ToolStudioIntegrationServiceTest {
                         "POST /api/mirror/rehearsal-jobs/{jobId}/retention/purge",
                         "POST /api/mirror/rehearsal-jobs/{jobId}/remediations",
                         "GET /api/mirror/rehearsal-remediations/{remediationId}",
+                        "GET /api/mirror/rehearsal-remediations/{remediationId}/comparison",
                         "POST /api/mirror/rehearsal-remediations/{remediationId}/approvals",
                         "POST /api/mirror/rehearsal-remediations/{remediationId}/submissions",
                         "POST /api/mirror/executions", "GET /api/mirror/runs/{runId}",

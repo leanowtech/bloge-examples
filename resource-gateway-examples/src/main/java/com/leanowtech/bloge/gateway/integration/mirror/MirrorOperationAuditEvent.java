@@ -88,6 +88,8 @@ public record MirrorOperationAuditEvent(
         SCENARIO_REHEARSAL_REMEDIATION_SUBMIT,
         /** Read one integrity-verified Scenario remediation decision lineage. */
         SCENARIO_REHEARSAL_REMEDIATION_READ,
+        /** Compare two root-signed workbooks bound by one submitted remediation lineage. */
+        SCENARIO_REHEARSAL_REMEDIATION_COMPARISON_READ,
         /** Record one exactly replayable cooperative Scenario batch cancellation. */
         SCENARIO_REHEARSAL_BATCH_CANCEL,
         /** Re-queue one exactly fenced quarantined Scenario batch evidence finalization. */

@@ -75,6 +75,7 @@ DAG workers plus isolated evidence-finalization lanes for one exact
 | `POST http://localhost:8080/api/mirror/rehearsal-jobs/{jobId}/finalization/remediations` | Compare-and-set one reviewed `QUARANTINED` generation into a new immutable intent and renewed retention floor (`X-Purpose: MIRROR_REHEARSAL_FINALIZATION_ADMIN`) |
 | `POST http://localhost:8080/api/mirror/rehearsal-jobs/{jobId}/remediations` | Freeze one blocked signed predecessor and its exact successor proposal for two-person business review (`X-Purpose: MIRROR_REHEARSAL_REMEDIATION`) |
 | `GET http://localhost:8080/api/mirror/rehearsal-remediations/{remediationId}` | Read the content-addressed plan, approval chain, derived state, and optional successor receipt |
+| `GET http://localhost:8080/api/mirror/rehearsal-remediations/{remediationId}/comparison` | Reconstruct resolved, remaining, and introduced blockers from the submitted lineage and two independently verified root-signed batch workbooks |
 | `POST http://localhost:8080/api/mirror/rehearsal-remediations/{remediationId}/approvals` | Append one server-authorized `OWNER` or `INDEPENDENT_REVIEWER` decision with generation CAS |
 | `POST http://localhost:8080/api/mirror/rehearsal-remediations/{remediationId}/submissions` | Atomically admit the exact frozen successor after both distinct human approvals |
 | `GET http://localhost:8080/api/mirror/rehearsal-jobs/{jobId}/retention` | Rebuild and verify the signed batch retention projection (`X-Purpose: GOVERNANCE_EVIDENCE_INGESTION`) |
@@ -191,15 +192,17 @@ publish-gate evidence. Terminal batches switch to the root-sealed
 `Signed workbook`, show gate blockers, and retain a deep link in the form
 `/rehearsals/?jobId=<jobId>&entry=<manifest-index>`. The browser never fetches
 raw Fixture, request, response, Session state, or customer payload values.
-Reviewed remediation now has a protected HTTP surface, but its Owner controls
-and zero-DSL case editing remain a later workbench phase. The current browser
-surface intentionally exposes no write or finalization-admin control.
+Reviewed remediation now has a protected HTTP and signed-workbook comparison
+surface, but its Owner controls and zero-DSL case editing remain a later
+workbench phase. The current browser surface intentionally exposes no write or
+finalization-admin control.
 
 The reviewed-remediation API freezes an exact successor from independently
 verified predecessor workbook/evidence, requires server-authorized `OWNER`
 then `INDEPENDENT_REVIEWER` facts, and atomically commits successor admission,
 receipt, state, and success audit. `GET /api/integration/capabilities` advertises
-`mirrorScenarioRehearsalReviewedRemediationApi` and the four exact routes only
+`mirrorScenarioRehearsalReviewedRemediationApi`,
+`mirrorScenarioRehearsalSignedRemediationComparison`, and the five exact routes only
 when the isolated Mirror execution surface is assembled. Every operation uses
 `X-Purpose: MIRROR_REHEARSAL_REMEDIATION`; preview and submit additionally
 require a human in `RESOURCE_GATEWAY_SCENARIO_OWNER`, while independent review
@@ -210,8 +213,13 @@ Kit exposes preview/read/approve/submit methods, validates every command and
 response against the packaged Schema, and independently re-derives the complete
 lineage before returning a read. `ScenarioRehearsalRemediationVerifier` can
 perform the same payload-free verification offline without a server or database
-connection. Signed predecessor/successor comparison and Owner browser controls
-are the next product increment.
+connection. `findScenarioRehearsalRemediationComparison` first verifies the
+lineage and both complete workbook signature closures, then uses
+`ScenarioRehearsalRemediationComparisonVerifier` to reconstruct root and entry
+blocker differences, gate transitions, correctness counters, replacement fences,
+and the comparison fingerprint. The comparison is content addressed but is not
+a third signature: its trust anchors remain the two independently signed
+workbooks. Owner browser controls are the next product increment.
 
 Scenario authoring now has a strict protocol base:
 `resourceGateway.scenarioPack.v1`, `resourceGateway.scenarioCase.v1`, and

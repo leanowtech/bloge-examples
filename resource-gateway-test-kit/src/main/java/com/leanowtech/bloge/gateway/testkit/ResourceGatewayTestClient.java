@@ -1771,6 +1771,81 @@ public final class ResourceGatewayTestClient {
     }
 
     /**
+     * Reads and independently reconstructs one signed-workbook remediation comparison.
+     *
+     * <p>The client first validates the strict comparison envelope, then independently verifies
+     * the submitted decision lineage and both complete source workbooks through their normal
+     * signed-evidence paths. Only after those source commitments pass does it reconstruct every
+     * root and entry transition with {@link ScenarioRehearsalRemediationComparisonVerifier}.
+     * This avoids trusting either a server-computed blocker difference or a copied signature
+     * object in the comparison itself.</p>
+     *
+     * @param remediationId canonical submitted remediation identity
+     * @return defensive copy of the independently reconstructed payload-free comparison
+     */
+    public JsonNode findScenarioRehearsalRemediationComparison(
+            String remediationId) {
+        String exactId =
+                scenarioRehearsalRemediationId(
+                        remediationId);
+        JsonNode response = exchange(
+                "GET",
+                "/api/mirror/rehearsal-remediations/"
+                        + segment(exactId)
+                        + "/comparison",
+                "",
+                "MIRROR_REHEARSAL_REMEDIATION",
+                null);
+        JsonNode comparison = requireMirrorEnvelope(
+                response,
+                "SCENARIO_REHEARSAL_REMEDIATION_COMPARISON",
+                CapabilityMirrorProtocol
+                        .SCENARIO_REHEARSAL_REMEDIATION_COMPARISON_V1);
+        CapabilityMirrorSchemaValidator.require(
+                comparison,
+                CapabilityMirrorProtocol
+                        .SCENARIO_REHEARSAL_REMEDIATION_COMPARISON_SCHEMA_RESOURCE,
+                "RG.MIRROR.CLIENT.SCENARIO_REMEDIATION_COMPARISON_INVALID");
+        if (!exactId.equals(
+                comparison.path("remediationId")
+                        .asText())) {
+            throw responseContractInvalid(
+                    "The server returned a Scenario remediation comparison for a different remediation.");
+        }
+
+        JsonNode lineage =
+                findScenarioRehearsalRemediation(exactId);
+        String predecessorJobId =
+                comparison.path("predecessor")
+                        .path("jobId").asText();
+        String successorJobId =
+                comparison.path("successor")
+                        .path("jobId").asText();
+        JsonNode predecessor =
+                findScenarioRehearsalBatchWorkbookSeed(
+                        predecessorJobId);
+        JsonNode successor =
+                findScenarioRehearsalBatchWorkbookSeed(
+                        successorJobId);
+        ScenarioRehearsalRemediationComparisonVerifier
+                .VerificationResult verified =
+                new ScenarioRehearsalRemediationComparisonVerifier()
+                        .verify(
+                                comparison,
+                                lineage,
+                                predecessor,
+                                successor);
+        if (!verified.verified()
+                || !exactId.equals(
+                verified.remediationId())) {
+            throw responseContractInvalid(
+                    "The Scenario remediation comparison failed independent reconstruction: "
+                            + verified.reasonCode());
+        }
+        return comparison.deepCopy();
+    }
+
+    /**
      * Appends one role-bound decision to a reviewed-remediation approval chain.
      *
      * @param remediationId canonical server-derived remediation identity

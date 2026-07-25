@@ -1782,6 +1782,14 @@ workbook seed。`GovernanceGateResult.v3` 会按 exact evidence 重建 semantic 
 Stage 3 仓库内 semantic gate 主链已退出；部署侧仍需真实 ANEKE N/N-1 consumer conformance，shadow/live replay 仍明确
 关闭，不能把 recorded replay 的通过等价为生产副作用路径已验证。
 
+后续 Owner remediation 纵切又补齐了受保护的双人评审 successor 协议和
+`ScenarioRehearsalRemediationComparison.v1`。ANEKE 可先独立验证 submitted decision
+lineage 与两份 root-signed batch workbook，再重建 predecessor/successor 的 root 和
+entry blocker 差集、gate transition、correctness counters 与 plan replacement fence。
+比较对象不产生新的主观质量分数，也不替代两份源签名。Stage 3 产品体验仍未退出：
+Rehearsals 工作台尚未提供 human identity 交接、preview/approve/submit 控件、comparison
+并排展示和真实 Owner 任务认证。
+
 ### Stage 4 - 持续同步和运维闭环（2-4 周）
 
 交付：transactional outbox、cursor、signed webhook、DLQ、reconciliation、SLO dashboard、alerts、runbooks、backup/restore drill。

@@ -325,6 +325,10 @@ public final class CapabilityMirrorProtocol {
     public static final String
     SCENARIO_REHEARSAL_REMEDIATION_LINEAGE_V1 =
             "resourceGateway.scenarioRehearsalRemediationLineage.v1";
+    /** Deterministic signed-workbook remediation comparison wire version. */
+    public static final String
+    SCENARIO_REHEARSAL_REMEDIATION_COMPARISON_V1 =
+            "resourceGateway.scenarioRehearsalRemediationComparison.v1";
     /** Stable bounded Scenario batch item-page wire version. */
     public static final String SCENARIO_REHEARSAL_BATCH_ITEM_PAGE_V1 =
             "resourceGateway.scenarioRehearsalBatchItemPage.v1";
@@ -771,6 +775,11 @@ public final class CapabilityMirrorProtocol {
     SCENARIO_REHEARSAL_REMEDIATION_LINEAGE_SCHEMA_RESOURCE =
             SCHEMA_RESOURCE_ROOT
                     + "scenario-rehearsal-remediation-lineage-v1.schema.json";
+    /** Packaged deterministic signed-workbook remediation comparison. */
+    public static final String
+    SCENARIO_REHEARSAL_REMEDIATION_COMPARISON_SCHEMA_RESOURCE =
+            SCHEMA_RESOURCE_ROOT
+                    + "scenario-rehearsal-remediation-comparison-v1.schema.json";
     /** Packaged stable bounded Scenario batch item page. */
     public static final String SCENARIO_REHEARSAL_BATCH_ITEM_PAGE_SCHEMA_RESOURCE =
             SCHEMA_RESOURCE_ROOT

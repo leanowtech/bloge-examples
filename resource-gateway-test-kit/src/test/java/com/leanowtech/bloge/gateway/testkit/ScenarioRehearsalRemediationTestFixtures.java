@@ -67,7 +67,9 @@ final class ScenarioRehearsalRemediationTestFixtures {
                 fingerprint('f'));
         plan.put("predecessorStatus", "FAILED");
         plan.putArray("predecessorBlockers")
-                .add("REHEARSAL_FAILED");
+                .add("BATCH_ITEM_FAILED")
+                .add("BATCH_STATUS_FAILED")
+                .add("CHILD_WORKBOOK_BLOCKED");
         plan.put("strategy", "RERUN_EXACT");
         plan.put(
                 "reasonCode",
