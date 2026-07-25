@@ -182,8 +182,8 @@ the operation. Use `CAPABILITY_PROJECTION` for exact append or visual draft proj
 `X-Tenant-Id` and similar headers are only consistency hints. The demo token includes these purposes, while
 enterprise deployments should issue separate author, governor, and rehearsal identities.
 
-The `/rehearsals/` Owner workbench is a read-only operational projection over
-the protected Scenario APIs. Its left queue discovers newest batches with
+The `/rehearsals/` Owner workbench is an evidence-first operational projection
+over the protected Scenario APIs. Its left queue discovers newest batches with
 stable keyset pagination; the center separates execution, evidence, blocker
 assertion, governance, warning, and passed items; the evidence drawer lazily
 loads case/assertion detail only after an Owner selects a terminal entry.
@@ -192,10 +192,21 @@ publish-gate evidence. Terminal batches switch to the root-sealed
 `Signed workbook`, show gate blockers, and retain a deep link in the form
 `/rehearsals/?jobId=<jobId>&entry=<manifest-index>`. The browser never fetches
 raw Fixture, request, response, Session state, or customer payload values.
-Reviewed remediation now has a protected HTTP and signed-workbook comparison
-surface, but its Owner controls and zero-DSL case editing remain a later
-workbench phase. The current browser surface intentionally exposes no write or
-finalization-admin control.
+For a blocked terminal workbook, the center also opens a
+`Reviewed remediation` workflow:
+
+1. freeze either an exact rerun or selected compiled-plan replacements against
+   the signed predecessor and an exact governance-ticket reference;
+2. append the Owner decision, then a decision from a distinct independent
+   reviewer;
+3. admit only the frozen successor using the exact approval generation/head;
+4. compare predecessor and successor root-signed workbooks as
+   resolved/remaining/introduced blockers and per-entry gate transitions.
+
+The deep link then includes `remediationId`. Rejection remains immutable and
+cannot reveal a submit action. The workbench still exposes no cancellation,
+finalization-admin, legal-hold, purge, arbitrary JSON/DSL, or raw-payload
+control. Zero-DSL case adjustment remains a later workbench phase.
 
 The reviewed-remediation API freezes an exact successor from independently
 verified predecessor workbook/evidence, requires server-authorized `OWNER`
@@ -208,8 +219,38 @@ when the isolated Mirror execution surface is assembled. Every operation uses
 require a human in `RESOURCE_GATEWAY_SCENARIO_OWNER`, while independent review
 requires a different human in
 `RESOURCE_GATEWAY_SCENARIO_INDEPENDENT_REVIEWER`. The default demo workload
-token deliberately cannot satisfy these human-role checks. The standalone Test
-Kit exposes preview/read/approve/submit methods, validates every command and
+token deliberately cannot satisfy these human-role checks, and
+`--scenario-batch` does not mint human credentials. The frontend therefore
+keeps three explicit host credential slots: `READ`, `OWNER`, and
+`INDEPENDENT_REVIEWER`. A browser or authenticated host installs short-lived
+credentials before rendering the workbench:
+
+```ts
+import {
+  setRehearsalRemediationCredentialsProvider,
+} from './api';
+
+setRehearsalRemediationCredentialsProvider((slot) => {
+  const credential = hostIdentityBroker.current(slot);
+  return credential && {
+    headers: { Authorization: `Bearer ${credential.accessToken}` },
+    principalLabel: credential.logSafePrincipal,
+    expiresAt: credential.expiresAt,
+  };
+});
+```
+
+The label is display-only; the server authorizes the actual credential and
+enforces actor/delegation separation. The client overwrites caller-supplied
+`X-Purpose`/content headers, never persists credentials, and disables the
+role's actions when its slot is missing or expired. After a host rotation,
+`Refresh identities` re-reads all three slots without reloading the lineage.
+A VSCode Webview should
+additionally use `setBlogeApiTransport(...)` so the extension host holds bearer
+material and returns only a log-safe label to the Webview.
+
+The standalone Test
+Kit exposes preview/read/approve/submit/comparison methods, validates every command and
 response against the packaged Schema, and independently re-derives the complete
 lineage before returning a read. `ScenarioRehearsalRemediationVerifier` can
 perform the same payload-free verification offline without a server or database
@@ -219,7 +260,7 @@ lineage and both complete workbook signature closures, then uses
 blocker differences, gate transitions, correctness counters, replacement fences,
 and the comparison fingerprint. The comparison is content addressed but is not
 a third signature: its trust anchors remain the two independently signed
-workbooks. Owner browser controls are the next product increment.
+workbooks.
 
 Scenario authoring now has a strict protocol base:
 `resourceGateway.scenarioPack.v1`, `resourceGateway.scenarioCase.v1`, and

@@ -44,7 +44,7 @@ Fixture、MirrorPlan 和可选 Session checkpoint 绑定成不可变执行许可
 | `ScenarioRehearsalBatchWorkbookSeed.v1` | 可用 | 把签名 batch v2、初始 retention proof、全部 child workbook commitment 与有界 correctness projection 归约为一个确定性整批 ANEKE 输入 |
 | batch workbook root seal/verifier | 可用 | 服务端内部逐 child 复验后对 deterministic seed 做域隔离 Ed25519 seal；ANEKE/CI 无需 N+1 即可重算 batch/retention/root 三类签名、blocker 和 gate |
 | batch workbook API/Test Kit client | 可用 | 受保护 exact-job 读取；一键拉取 seed、batch evidence 和三把公开 key 后失败关闭，case 级审计可按需打开 child commitment |
-| reviewed remediation protocol/API | 可用（受保护 test/staging API） | 从已验签阻断 predecessor 冻结 exact successor，经 server-authorized Owner/Independent Reviewer append-only 审批后，在同一事务准入 successor、回执和成功审计；输出 content-addressed lineage，Owner 浏览器写侧尚未开放 |
+| reviewed remediation protocol/API/UI | 可用（受保护 test/staging API + host-authenticated workbench） | 从已验签阻断 predecessor 冻结 exact successor，经 server-authorized Owner/Independent Reviewer append-only 审批后，在同一事务准入 successor、回执和成功审计；输出 content-addressed lineage 与 signed-workbook comparison；浏览器按角色凭据槽失败关闭 |
 | 可作为生产发布门禁的 Scenario evidence | 未交付 | 本地 gate-consumable closure 已完成；尚无企业 retention policy authority、WORM/外部锚、消费者认证和环境级门禁 |
 
 当前链路已经解决“执行前冻结什么、运行时从哪里取值、每个结果依据什么证据”
@@ -957,11 +957,35 @@ ANEKE 已作出最终发布裁决。
 页面明确报告不可见，不尝试跨 scope 查询。终态 child workbook 采用 lazy read，
 因此打开 256-item 批次不会产生 256 次 case-level 请求。
 
-当前浏览器默认凭证只被仓库的 test/staging demo identity 接受，宿主或 VSCode
-Webview 必须通过 `setOperatorTestHeadersProvider(...)` 注入短期身份。页面只请求
-`GOVERNANCE_EVIDENCE_INGESTION` purpose，不保存 token，也没有取消、修复、legal
-hold、purge 或 finalization-admin 按钮。Reviewed remediation 后端 API 已开放，但
-浏览器控件和零 DSL case 调整仍是下一阶段，不能通过开放通用 JSON/DSL 编辑器绕过。
+被阻断的终态工作簿会在根 blocker 下方显示 `Reviewed remediation` 工作带。Owner
+不需要编辑 JSON/DSL：
+
+1. 选择 `Retry exact`，或选择 `Replace plans` 并勾选 entry，填写已有
+   `COMPILED_REHEARSAL_PLAN` 的 exact id/revision/fingerprint；
+2. 填写 `GOVERNANCE_REVIEW_TICKET` 的 exact id/revision/fingerprint，点击
+   `Freeze for review`；
+3. Owner 检查冻结计划后批准或使用闭集原因拒绝；批准后由另一个独立 Reviewer
+   追加第二代决定；
+4. 两代批准完成后 Owner 点击 `Admit successor`；后继终态化后点击
+   `Compare signed evidence`；
+5. 查看根和逐 entry 的 `resolved/remaining/introduced` blocker、plan 是否变化及
+   gate transition。地址栏同时保存 `jobId`、可选 `entry` 和 `remediationId`。
+
+拒绝事实不可覆盖，页面不会再显示提交动作；需要修改时只能基于新的治理资产创建
+另一份提案。比较接口返回 `409` 时表示 successor 尚未形成 root-signed terminal
+workbook，页面明确要求稍后刷新，不使用 mutable job 猜测改善结论。
+
+普通队列/证据读取继续使用 `setOperatorTestHeadersProvider(...)` 注入的短期 workload
+身份。Reviewed remediation 另有三个显式槽位：`READ`、`OWNER`、
+`INDEPENDENT_REVIEWER`，宿主必须在渲染前通过
+`setRehearsalRemediationCredentialsProvider(...)` 提供彼此隔离的短期身份和
+log-safe label。缺失或过期时对应动作禁用；label 不参与授权，服务端仍以真实
+credential 和 delegation 作最终裁决。默认 `bloge-aneke-demo-token` 不能审批，
+`--scenario-batch` 也不会生成“万能 Owner”。
+
+页面仍不提供取消、quarantine finalization remediation、legal hold、purge、通用
+JSON/DSL 或 raw payload 控件。业务 reviewed remediation 与管理员 finalization
+repair 不共享按钮、purpose 或角色。零 DSL case 调整仍是下一阶段。
 
 ### 8.6 经评审修复协议
 
@@ -980,6 +1004,7 @@ Owner 的业务修复与 finalization 管理员修复是两套不同协议。前
 | 提交命令 | `scenario-rehearsal-remediation-submit-command-v1` | 同时比较 plan、approval generation 与 approval head；至少完成两级审批 |
 | 提交回执 | `scenario-rehearsal-remediation-receipt-v1` | predecessor 与 successor job 必须不同；绑定 frozen request 与最终审批链 |
 | 读取视图 | `scenario-rehearsal-remediation-lineage-v1` | 对 plan、完整 approval hash chain、derived state 与 optional receipt 再做整体 content addressing |
+| 整改对账 | `scenario-rehearsal-remediation-comparison-v1` | 只比较两份独立验签 root-signed workbook；输出可重建的 blocker 集合差与 gate transition，不发明质量分 |
 
 首版 `RERUN_EXACT` 只能用于可重试的运行/证据原因，不得携带 replacement。
 `REPLACE_COMPILED_PLANS` 只替换指定 entry 的 exact existing compiled plan，
@@ -994,7 +1019,7 @@ actor separation 同时比较 actor 与 `delegatedBy`，禁止两个代理账号
 绕过双人分离。计划还冻结当前 server policy generation/fingerprint；滚动升级或
 配置漂移时，旧副本不能用不同授权策略继续审批或提交。
 
-当前已交付 Java protocol、七份 authoritative Schema、Test Kit validator、
+当前已交付 Java protocol、八份 authoritative Schema、Test Kit validator、
 capability `supportedObjects` 版本目录，以及 durable JDBC repository/application
 service 事务内核。应用服务从已验签 predecessor workbook/evidence 重建 exact
 successor，服务端持有 purpose、actor、时间、过期、角色组和保留请求 ID 命名空间；
@@ -1003,16 +1028,17 @@ scope 执行约束。最终提交把 successor batch admission、receipt、状�
 放在同一事务；预占 identity、审计不可用、策略漂移、篡改或非精确重放全部回滚或
 失败关闭。
 
-受保护传输固定为以下四个端点：
+受保护传输固定为以下五个端点：
 
 | 操作 | 端点 | 返回对象 |
 |---|---|---|
 | 冻结预览 | `POST /api/mirror/rehearsal-jobs/{jobId}/remediations` | immutable remediation plan |
 | 读取 lineage | `GET /api/mirror/rehearsal-remediations/{remediationId}` | content-addressed lineage |
+| 读取整改对账 | `GET /api/mirror/rehearsal-remediations/{remediationId}/comparison` | predecessor/successor signed-workbook comparison |
 | 追加决定 | `POST /api/mirror/rehearsal-remediations/{remediationId}/approvals` | actor-bound approval fact |
 | 提交后继 | `POST /api/mirror/rehearsal-remediations/{remediationId}/submissions` | predecessor-to-successor receipt |
 
-四个端点都要求 `X-Purpose: MIRROR_REHEARSAL_REMEDIATION`。认证在 body 解码之前
+五个端点都要求 `X-Purpose: MIRROR_REHEARSAL_REMEDIATION`。认证在 body 解码之前
 完成；preview/submit 要求可信身份是 `USER`/`HUMAN` 且属于
 `RESOURCE_GATEWAY_SCENARIO_OWNER`，独立审批要求另一个 human actor 属于
 `RESOURCE_GATEWAY_SCENARIO_INDEPENDENT_REVIEWER`。默认
@@ -1032,19 +1058,23 @@ read signed predecessor workbook
   -> GET lineage and use generation=2 + final approval head
   -> POST submission
   -> GET lineage and follow receipt.successorJobId
+  -> wait for successor root-signed terminal workbook
+  -> GET comparison and verify blocker/gate transitions
 ```
 
 每次 mutation 都必须从最新 lineage 复制 CAS 坐标，不能猜测 generation/head。
 完全相同的 command id、内容、actor 和 delegation 返回同一事实；同 id 异内容、
 过期 plan、ticket/policy/scope/actor 漂移或并发旧 generation 一律失败关闭。
 capability probe 仅在隔离 Mirror execution surface 组装时声明
-`mirrorScenarioRehearsalReviewedRemediationApi=true` 并列出四个端点。
+`mirrorScenarioRehearsalReviewedRemediationApi=true`、
+`mirrorScenarioRehearsalSignedRemediationComparison=true` 并列出五个端点。
 
 Java/CI 消费方不需要自行拼接路径或信任服务端派生字段。Test Kit 提供
 `previewScenarioRehearsalRemediation`、
 `findScenarioRehearsalRemediation`、
 `approveScenarioRehearsalRemediation` 和
-`submitScenarioRehearsalRemediation`。四个入口先校验出站命令和入站对象的 strict
+`submitScenarioRehearsalRemediation` 和
+`findScenarioRehearsalRemediationComparison`。五个入口先校验出站命令和入站对象的 strict
 Schema，并绑定 URL 中的 job/remediation id、request id、plan fingerprint 和 CAS
 坐标。read 还会调用独立 verifier 重算 plan、successor request、每条 approval、
 receipt 与 lineage 的 content address，并检查角色顺序、actor/delegation 分离、
@@ -1063,9 +1093,12 @@ if (!result.verified()) {
 verifier 只返回有界 reason code、对象坐标和已重算 fingerprint，不返回或记录命令
 正文、治理说明或业务 payload；它不需要连接 Resource Gateway 或数据库。
 
-尚未提供工作台按钮和 predecessor/successor 签名 workbook 对比视图。因此
-`/rehearsals/` 仍是只读分诊面；后端 API 的存在不代表浏览器已经形成完整 Owner
-任务闭环。
+`/rehearsals/` 已接入 preview、双角色决定、submit 和 signed-workbook comparison。
+前端单元测试覆盖无凭据禁写、exact rerun、entry replacement CAS、拒绝终态、deep
+link lineage 恢复和完整批准链；打包后的真实 Chrome 测试以只读 blocked workbook
+fixture 检查 1440/1024/760/390 视口、内部表格滚动和无身份失败关闭。它仍不是企业
+身份认证结论：真实 IdP/MFA/委派撤销、256-entry 任务计时、可访问性和多组织业务
+Owner 验收仍需在目标环境完成。
 
 ## 9. 失败语义
 
@@ -1301,6 +1334,7 @@ JavaDoc 校验通过。Reviewed remediation 聚焦组 `40/40` 全绿；演练工
 - `docs/schemas/resource-gateway-mirror/scenario-rehearsal-remediation-submit-command-v1.schema.json`
 - `docs/schemas/resource-gateway-mirror/scenario-rehearsal-remediation-receipt-v1.schema.json`
 - `docs/schemas/resource-gateway-mirror/scenario-rehearsal-remediation-lineage-v1.schema.json`
+- `docs/schemas/resource-gateway-mirror/scenario-rehearsal-remediation-comparison-v1.schema.json`
 - `docs/schemas/resource-gateway-mirror/scenario-rehearsal-batch-item-page-v1.schema.json`
 - `docs/schemas/resource-gateway-mirror/scenario-rehearsal-batch-cancellation-request-v1.schema.json`
 - `docs/schemas/resource-gateway-mirror/scenario-rehearsal-batch-evidence-index-v1.schema.json`

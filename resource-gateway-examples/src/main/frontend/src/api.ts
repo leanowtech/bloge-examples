@@ -36,6 +36,14 @@ import type {
   ScenarioRehearsalBatchItemPage,
   ScenarioRehearsalBatchJobPage,
   ScenarioRehearsalBatchWorkbookSeed,
+  ScenarioRehearsalRemediationApproval,
+  ScenarioRehearsalRemediationApprovalCommand,
+  ScenarioRehearsalRemediationComparison,
+  ScenarioRehearsalRemediationLineage,
+  ScenarioRehearsalRemediationPlan,
+  ScenarioRehearsalRemediationPreviewRequest,
+  ScenarioRehearsalRemediationReceipt,
+  ScenarioRehearsalRemediationSubmitCommand,
   ScenarioRehearsalWorkbookSeed,
   ToolStudioIntegrationEnvelope,
   VisualValidationResult,
@@ -108,6 +116,33 @@ const defaultOperatorTestHeadersProvider: OperatorTestHeadersProvider = () => ({
 });
 let operatorTestHeadersProvider = defaultOperatorTestHeadersProvider;
 
+/** Credential slots keep workload reads, Owner actions, and independent review visibly separate. */
+export type RehearsalRemediationCredentialSlot = 'READ' | 'OWNER' | 'INDEPENDENT_REVIEWER';
+
+/** Log-safe credential projection supplied by a VSCode or enterprise host. */
+export interface RehearsalRemediationCredential {
+  headers: Record<string, string>;
+  principalLabel: string;
+  expiresAt?: string;
+}
+
+/** Host-owned resolver for short-lived human remediation credentials. */
+export type RehearsalRemediationCredentialsProvider = (
+  slot: RehearsalRemediationCredentialSlot,
+) => RehearsalRemediationCredential | null;
+
+/** UI-safe credential availability; authorization remains exclusively server-enforced. */
+export interface RehearsalRemediationCredentialStatus {
+  slot: RehearsalRemediationCredentialSlot;
+  configured: boolean;
+  principalLabel: string;
+  expiresAt: string;
+}
+
+const emptyRehearsalRemediationCredentialsProvider:
+RehearsalRemediationCredentialsProvider = () => null;
+let rehearsalRemediationCredentialsProvider = emptyRehearsalRemediationCredentialsProvider;
+
 /**
  * Replaces the HTTP transport used by the visual authoring client.
  *
@@ -131,6 +166,46 @@ export function setOperatorTestHeadersProvider(provider: OperatorTestHeadersProv
 /** Restores the local test-profile credential used by the standalone demo. */
 export function resetOperatorTestHeadersProvider(): void {
   operatorTestHeadersProvider = defaultOperatorTestHeadersProvider;
+}
+
+/**
+ * Installs role-separated, short-lived credentials for reviewed remediation.
+ *
+ * The standalone demo intentionally installs none. Authenticated hosts should resolve the actual
+ * identity immediately before each request and must never expose bearer material in the label.
+ */
+export function setRehearsalRemediationCredentialsProvider(
+  provider: RehearsalRemediationCredentialsProvider,
+): void {
+  rehearsalRemediationCredentialsProvider = provider;
+}
+
+/** Restores the fail-closed standalone behavior for all reviewed remediation roles. */
+export function resetRehearsalRemediationCredentialsProvider(): void {
+  rehearsalRemediationCredentialsProvider = emptyRehearsalRemediationCredentialsProvider;
+}
+
+/** Returns only log-safe availability metadata for one host credential slot. */
+export function getRehearsalRemediationCredentialStatus(
+  slot: RehearsalRemediationCredentialSlot,
+): RehearsalRemediationCredentialStatus {
+  try {
+    const credential = rehearsalRemediationCredentialsProvider(slot);
+    const principalLabel = credential?.principalLabel?.trim() ?? '';
+    return {
+      slot,
+      configured: credential !== null && principalLabel.length > 0,
+      principalLabel,
+      expiresAt: credential?.expiresAt?.trim() ?? '',
+    };
+  } catch {
+    return {
+      slot,
+      configured: false,
+      principalLabel: '',
+      expiresAt: '',
+    };
+  }
 }
 
 function sendRequest(input: RequestInfo | URL, init?: RequestInit): Promise<Response> {
@@ -331,6 +406,36 @@ function mirrorWorkbenchHeaders(): Record<string, string> {
   };
 }
 
+function remediationHeaders(
+  slot: RehearsalRemediationCredentialSlot,
+  json = false,
+): Record<string, string> {
+  const credential = rehearsalRemediationCredentialsProvider(slot);
+  if (!credential || !credential.principalLabel?.trim()) {
+    throw new Error(`${slotLabel(slot)} remediation identity is not configured by the host.`);
+  }
+  const hostHeaders = Object.fromEntries(
+    Object.entries(credential.headers).filter(([name]) => {
+      const normalized = name.toLowerCase();
+      return normalized !== 'x-purpose'
+        && normalized !== 'content-type'
+        && normalized !== 'content-length';
+    }),
+  );
+  return {
+    ...hostHeaders,
+    'X-Purpose': 'MIRROR_REHEARSAL_REMEDIATION',
+    ...(json ? { 'Content-Type': 'application/json' } : {}),
+  };
+}
+
+function slotLabel(slot: RehearsalRemediationCredentialSlot): string {
+  if (slot === 'INDEPENDENT_REVIEWER') {
+    return 'Independent reviewer';
+  }
+  return slot === 'OWNER' ? 'Owner' : 'Read';
+}
+
 async function readMirrorPayload<T>(
   response: Response,
   payloadKind: string,
@@ -410,6 +515,96 @@ export async function fetchScenarioRehearsalWorkbook(
     ),
     'SCENARIO_REHEARSAL_WORKBOOK_SEED',
     'resourceGateway.scenarioRehearsalWorkbookSeed.v1',
+  );
+}
+
+/** Freezes one blocked signed workbook and an exact proposed successor for human review. */
+export async function previewScenarioRehearsalRemediation(
+  jobId: string,
+  request: ScenarioRehearsalRemediationPreviewRequest,
+): Promise<ScenarioRehearsalRemediationPlan> {
+  return readMirrorPayload<ScenarioRehearsalRemediationPlan>(
+    await sendRequest(
+      `/api/mirror/rehearsal-jobs/${encodeURIComponent(jobId)}/remediations`,
+      {
+        method: 'POST',
+        headers: remediationHeaders('OWNER', true),
+        body: JSON.stringify(request),
+      },
+    ),
+    'SCENARIO_REHEARSAL_REMEDIATION_PLAN',
+    'resourceGateway.scenarioRehearsalRemediationPlan.v1',
+  );
+}
+
+/** Reads the immutable plan, decision chain, state, and optional successor receipt. */
+export async function fetchScenarioRehearsalRemediationLineage(
+  remediationId: string,
+  slot: RehearsalRemediationCredentialSlot = 'READ',
+): Promise<ScenarioRehearsalRemediationLineage> {
+  return readMirrorPayload<ScenarioRehearsalRemediationLineage>(
+    await sendRequest(
+      `/api/mirror/rehearsal-remediations/${encodeURIComponent(remediationId)}`,
+      { headers: remediationHeaders(slot) },
+    ),
+    'SCENARIO_REHEARSAL_REMEDIATION_LINEAGE',
+    'resourceGateway.scenarioRehearsalRemediationLineage.v1',
+  );
+}
+
+/** Appends one Owner or independent-reviewer decision using exact generation fencing. */
+export async function decideScenarioRehearsalRemediation(
+  remediationId: string,
+  request: ScenarioRehearsalRemediationApprovalCommand,
+): Promise<ScenarioRehearsalRemediationApproval> {
+  const slot: RehearsalRemediationCredentialSlot = request.role === 'OWNER'
+    ? 'OWNER'
+    : 'INDEPENDENT_REVIEWER';
+  return readMirrorPayload<ScenarioRehearsalRemediationApproval>(
+    await sendRequest(
+      `/api/mirror/rehearsal-remediations/${encodeURIComponent(remediationId)}/approvals`,
+      {
+        method: 'POST',
+        headers: remediationHeaders(slot, true),
+        body: JSON.stringify(request),
+      },
+    ),
+    'SCENARIO_REHEARSAL_REMEDIATION_APPROVAL',
+    'resourceGateway.scenarioRehearsalRemediationApproval.v1',
+  );
+}
+
+/** Atomically admits the frozen successor after the exact two-person approval head. */
+export async function submitScenarioRehearsalRemediation(
+  remediationId: string,
+  request: ScenarioRehearsalRemediationSubmitCommand,
+): Promise<ScenarioRehearsalRemediationReceipt> {
+  return readMirrorPayload<ScenarioRehearsalRemediationReceipt>(
+    await sendRequest(
+      `/api/mirror/rehearsal-remediations/${encodeURIComponent(remediationId)}/submissions`,
+      {
+        method: 'POST',
+        headers: remediationHeaders('OWNER', true),
+        body: JSON.stringify(request),
+      },
+    ),
+    'SCENARIO_REHEARSAL_REMEDIATION_RECEIPT',
+    'resourceGateway.scenarioRehearsalRemediationReceipt.v1',
+  );
+}
+
+/** Reads the deterministic predecessor/successor comparison from two root-signed workbooks. */
+export async function fetchScenarioRehearsalRemediationComparison(
+  remediationId: string,
+  slot: RehearsalRemediationCredentialSlot = 'READ',
+): Promise<ScenarioRehearsalRemediationComparison> {
+  return readMirrorPayload<ScenarioRehearsalRemediationComparison>(
+    await sendRequest(
+      `/api/mirror/rehearsal-remediations/${encodeURIComponent(remediationId)}/comparison`,
+      { headers: remediationHeaders(slot) },
+    ),
+    'SCENARIO_REHEARSAL_REMEDIATION_COMPARISON',
+    'resourceGateway.scenarioRehearsalRemediationComparison.v1',
   );
 }
 

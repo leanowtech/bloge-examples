@@ -6,6 +6,7 @@ import {
   fetchScenarioRehearsalBatchWorkbook,
   fetchScenarioRehearsalWorkbook,
 } from './api';
+import RehearsalRemediationPanel from './RehearsalRemediationPanel';
 import type {
   ScenarioRehearsalBatchItem,
   ScenarioRehearsalBatchJob,
@@ -176,23 +177,33 @@ function statusTone(status: string): string {
   return 'neutral';
 }
 
-function querySelection(): { jobId: string; entry: number | null } {
+function querySelection(): { jobId: string; entry: number | null; remediationId: string } {
   const query = new URLSearchParams(window.location.search);
   const rawEntry = query.get('entry');
   const entry = rawEntry === null ? Number.NaN : Number(rawEntry);
   return {
     jobId: query.get('jobId') ?? '',
     entry: Number.isInteger(entry) && entry >= 0 ? entry : null,
+    remediationId: query.get('remediationId') ?? '',
   };
 }
 
-function updateDeepLink(jobId: string, entry: number | null): void {
+function updateDeepLink(
+  jobId: string,
+  entry: number | null,
+  remediationId: string,
+): void {
   const url = new URL(window.location.href);
   url.searchParams.set('jobId', jobId);
   if (entry === null) {
     url.searchParams.delete('entry');
   } else {
     url.searchParams.set('entry', String(entry));
+  }
+  if (remediationId) {
+    url.searchParams.set('remediationId', remediationId);
+  } else {
+    url.searchParams.delete('remediationId');
   }
   window.history.replaceState({}, '', `${url.pathname}${url.search}${url.hash}`);
 }
@@ -209,6 +220,8 @@ export default function RehearsalWorkbench() {
   const [nextCursor, setNextCursor] = useState<ScenarioRehearsalBatchJobPage['nextCursor']>(null);
   const [selectedJobId, setSelectedJobId] = useState(initialSelection.jobId);
   const [selectedEntryIndex, setSelectedEntryIndex] = useState<number | null>(initialSelection.entry);
+  const [selectedRemediationId, setSelectedRemediationId] =
+    useState(initialSelection.remediationId);
   const [workbook, setWorkbook] = useState<ScenarioRehearsalBatchWorkbookSeed | null>(null);
   const [liveItems, setLiveItems] = useState<ScenarioRehearsalBatchItem[]>([]);
   const [nextItemIndex, setNextItemIndex] = useState<number | null>(null);
@@ -263,6 +276,9 @@ export default function RehearsalWorkbench() {
       let page: ScenarioRehearsalBatchJobPage | null = null;
       const soughtJobId = keepSelection ? selectedJobId || initialSelection.jobId : '';
       const soughtEntry = keepSelection ? selectedEntryIndex : null;
+      const soughtRemediation = keepSelection
+        ? selectedRemediationId || initialSelection.remediationId
+        : '';
       for (let pageNumber = 0; pageNumber < 20; pageNumber += 1) {
         page = await fetchScenarioRehearsalBatchJobs(50, cursor);
         accumulated.push(...page.jobs);
@@ -282,14 +298,24 @@ export default function RehearsalWorkbench() {
         setError('The deep-linked batch is not visible in this authenticated scope.');
       }
       if (nextJobId) {
-        updateDeepLink(nextJobId, selectionExists ? soughtEntry : null);
+        updateDeepLink(
+          nextJobId,
+          selectionExists ? soughtEntry : null,
+          selectionExists ? soughtRemediation : '',
+        );
       }
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : 'Unable to discover rehearsal batches.');
     } finally {
       setLoadingJobs(false);
     }
-  }, [initialSelection.jobId, selectedEntryIndex, selectedJobId]);
+  }, [
+    initialSelection.jobId,
+    initialSelection.remediationId,
+    selectedEntryIndex,
+    selectedJobId,
+    selectedRemediationId,
+  ]);
 
   useEffect(() => {
     void discoverJobs();
@@ -412,18 +438,24 @@ export default function RehearsalWorkbench() {
   function selectJob(jobId: string) {
     setSelectedJobId(jobId);
     setSelectedEntryIndex(null);
+    setSelectedRemediationId('');
     setFilter('ALL');
-    updateDeepLink(jobId, null);
+    updateDeepLink(jobId, null, '');
   }
 
   function selectEntry(index: number) {
     setSelectedEntryIndex(index);
-    updateDeepLink(selectedJobId, index);
+    updateDeepLink(selectedJobId, index, selectedRemediationId);
   }
 
   function closeEvidence() {
     setSelectedEntryIndex(null);
-    updateDeepLink(selectedJobId, null);
+    updateDeepLink(selectedJobId, null, selectedRemediationId);
+  }
+
+  function selectRemediation(remediationId: string) {
+    setSelectedRemediationId(remediationId);
+    updateDeepLink(selectedJobId, selectedEntryIndex, remediationId);
   }
 
   const summary = workbook?.summary ?? selectedJob?.summary;
@@ -536,6 +568,15 @@ export default function RehearsalWorkbench() {
                 </div>
               )}
             </header>
+
+            {terminal && workbook && !workbook.gateReady && (
+              <RehearsalRemediationPanel
+                key={workbook.jobId}
+                workbook={workbook}
+                initialRemediationId={selectedRemediationId}
+                onRemediationIdChange={selectRemediation}
+              />
+            )}
 
             <div className="result-toolbar">
               <div className="failure-filters" role="group" aria-label="Failure category">

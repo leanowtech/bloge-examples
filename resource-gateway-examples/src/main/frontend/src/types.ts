@@ -441,6 +441,226 @@ export interface ScenarioRehearsalBatchWorkbookSeed {
   blockers: string[];
 }
 
+/** Closed construction strategy for a reviewed successor batch. */
+export type ScenarioRemediationStrategy = 'RERUN_EXACT' | 'REPLACE_COMPILED_PLANS';
+
+/** Closed reason vocabulary for reviewed successor construction. */
+export type ScenarioRemediationReason =
+  | 'TRANSIENT_EXECUTION_RECHECK'
+  | 'EVIDENCE_RECOVERY_RECHECK'
+  | 'SCENARIO_REVISION'
+  | 'FIXTURE_REVISION'
+  | 'ASSERTION_REVISION'
+  | 'MIRROR_PLAN_REVISION';
+
+/** One compare-and-set compiled-plan replacement in a remediation proposal. */
+export interface ScenarioRemediationPlanReplacement {
+  entryIndex: number;
+  entryId: string;
+  expectedCompiledPlanRef: ScenarioArtifactRef;
+  replacementCompiledPlanRef: ScenarioArtifactRef;
+}
+
+/** Payload-free proposal sent to the reviewed Scenario remediation boundary. */
+export interface ScenarioRehearsalRemediationPreviewRequest {
+  schemaVersion: 'resourceGateway.scenarioRehearsalRemediationPreviewRequest.v1';
+  previewRequestId: string;
+  expectedWorkbookSeedFingerprint: string;
+  strategy: ScenarioRemediationStrategy;
+  replacements: ScenarioRemediationPlanReplacement[];
+  governanceTicketRef: ScenarioArtifactRef;
+  reasonCode: ScenarioRemediationReason;
+}
+
+/** Server-frozen immutable successor plan reviewed by two distinct human roles. */
+export interface ScenarioRehearsalRemediationPlan {
+  schemaVersion: 'resourceGateway.scenarioRehearsalRemediationPlan.v1';
+  planFingerprint: string;
+  scope: ScenarioRehearsalScope;
+  remediationId: string;
+  previewRequestId: string;
+  predecessorJobId: string;
+  predecessorWorkbookSeedFingerprint: string;
+  predecessorEvidenceBundleFingerprint: string;
+  predecessorStatus: ScenarioRehearsalBatchJob['status'];
+  predecessorBlockers: string[];
+  strategy: ScenarioRemediationStrategy;
+  reasonCode: ScenarioRemediationReason;
+  replacements: ScenarioRemediationPlanReplacement[];
+  successorRequest: {
+    requestId: string;
+    entries: Array<{
+      entryId: string;
+      compiledPlanRef: ScenarioArtifactRef;
+    }>;
+    [key: string]: unknown;
+  };
+  successorRequestFingerprint: string;
+  governanceTicketRef: ScenarioArtifactRef;
+  approvalPolicy: {
+    requiredRoles: ScenarioRemediationApprovalRole[];
+    minimumDistinctActors: number;
+    serverPolicyGeneration: number;
+    serverPolicyFingerprint: string;
+  };
+  generatedAt: string;
+  expiresAt: string;
+}
+
+/** Fixed separation-of-duties roles in the first remediation protocol generation. */
+export type ScenarioRemediationApprovalRole = 'OWNER' | 'INDEPENDENT_REVIEWER';
+
+/** One compare-and-set role decision command. */
+export interface ScenarioRehearsalRemediationApprovalCommand {
+  schemaVersion: 'resourceGateway.scenarioRehearsalRemediationApprovalCommand.v1';
+  commandId: string;
+  remediationPlanFingerprint: string;
+  expectedApprovalGeneration: number;
+  role: ScenarioRemediationApprovalRole;
+  decision: 'APPROVE' | 'REJECT';
+  governanceTicketRef: ScenarioArtifactRef;
+  reasonCode: 'APPROVED_AS_REVIEWED'
+    | 'REJECTED_REQUIRES_CHANGES'
+    | 'REJECTED_POLICY_CONFLICT'
+    | 'REJECTED_INSUFFICIENT_EVIDENCE';
+}
+
+/** Server-authored append-only human decision fact. */
+export interface ScenarioRehearsalRemediationApproval {
+  schemaVersion: 'resourceGateway.scenarioRehearsalRemediationApproval.v1';
+  approvalFingerprint: string;
+  sourceCommandFingerprint: string;
+  scope: ScenarioRehearsalScope;
+  remediationId: string;
+  remediationPlanFingerprint: string;
+  generation: number;
+  previousApprovalFingerprint: string;
+  role: ScenarioRemediationApprovalRole;
+  decision: 'APPROVE' | 'REJECT';
+  governanceTicketRef: ScenarioArtifactRef;
+  reasonCode: ScenarioRehearsalRemediationApprovalCommand['reasonCode'];
+  actorId: string;
+  delegatedBy: string;
+  decidedAt: string;
+}
+
+/** Compare-and-set command admitting an approved frozen successor batch. */
+export interface ScenarioRehearsalRemediationSubmitCommand {
+  schemaVersion: 'resourceGateway.scenarioRehearsalRemediationSubmitCommand.v1';
+  commandId: string;
+  remediationPlanFingerprint: string;
+  expectedApprovalGeneration: number;
+  expectedApprovalHeadFingerprint: string;
+  reasonCode: 'APPROVALS_COMPLETE';
+}
+
+/** Immutable admission receipt joining predecessor, approvals, and successor. */
+export interface ScenarioRehearsalRemediationReceipt {
+  schemaVersion: 'resourceGateway.scenarioRehearsalRemediationReceipt.v1';
+  receiptFingerprint: string;
+  sourceCommandFingerprint: string;
+  scope: ScenarioRehearsalScope;
+  remediationId: string;
+  remediationPlanFingerprint: string;
+  predecessorJobId: string;
+  successorJobId: string;
+  successorRequestFingerprint: string;
+  approvalGeneration: number;
+  approvalHeadFingerprint: string;
+  acceptedBy: string;
+  delegatedBy: string;
+  acceptedAt: string;
+}
+
+/** Content-addressed public read model reconstructed from immutable remediation facts. */
+export interface ScenarioRehearsalRemediationLineage {
+  schemaVersion: 'resourceGateway.scenarioRehearsalRemediationLineage.v1';
+  lineageFingerprint: string;
+  state: 'PENDING_APPROVAL' | 'APPROVED' | 'REJECTED' | 'SUBMITTED';
+  plan: ScenarioRehearsalRemediationPlan;
+  approvals: ScenarioRehearsalRemediationApproval[];
+  approvalGeneration: number;
+  approvalHeadFingerprint: string;
+  receipt: ScenarioRehearsalRemediationReceipt | null;
+}
+
+/** Bounded aggregate correctness counters in a signed workbook comparison. */
+export interface ScenarioRemediationCorrectnessSummary extends ScenarioRehearsalCaseSummary {
+  evidenceBackedEntries: number;
+}
+
+/** Root signed-workbook projection retained by a remediation comparison. */
+export interface ScenarioRemediationWorkbookSnapshot {
+  workbookSchemaVersion: 'resourceGateway.scenarioRehearsalBatchWorkbookSeed.v1';
+  scope: ScenarioRehearsalScope;
+  jobId: string;
+  seedFingerprint: string;
+  requestFingerprint: string;
+  manifestFingerprint: string;
+  evidenceBundleFingerprint: string;
+  evidenceIndexFingerprint: string;
+  workbookSeal: ScenarioRehearsalBatchWorkbookSeed['workbookSeal'];
+  status: ScenarioRehearsalBatchJob['status'];
+  summary: ScenarioRehearsalBatchSummary;
+  correctnessSummary: ScenarioRemediationCorrectnessSummary;
+  gateReady: boolean;
+  blockers: string[];
+}
+
+/** One signed entry projection in a predecessor/successor comparison. */
+export interface ScenarioRemediationEntrySnapshot {
+  compiledPlanRef: ScenarioArtifactRef;
+  status: ScenarioRehearsalBatchWorkbookEntry['status'];
+  failureCode: string;
+  runId: string;
+  childEvidenceBundleFingerprint: string;
+  childWorkbookSeedFingerprint: string;
+  scenarioPackRef: ScenarioArtifactRef | null;
+  targetCapabilityRef: ScenarioArtifactRef | null;
+  outcome: 'PASS' | 'FAIL' | 'INDETERMINATE' | null;
+  summary: ScenarioRehearsalCaseSummary | null;
+  gateReady: boolean;
+  blockers: string[];
+}
+
+/** Exact per-entry transition between two independently verified workbooks. */
+export interface ScenarioRemediationEntryComparison {
+  entryIndex: number;
+  entryId: string;
+  planChanged: boolean;
+  gateTransition: ScenarioRemediationGateTransition;
+  resolvedBlockers: string[];
+  remainingBlockers: string[];
+  introducedBlockers: string[];
+  predecessor: ScenarioRemediationEntrySnapshot;
+  successor: ScenarioRemediationEntrySnapshot;
+}
+
+/** Source-derived readiness transition; no synthetic quality score is introduced. */
+export type ScenarioRemediationGateTransition =
+  | 'RESOLVED'
+  | 'STILL_BLOCKED'
+  | 'REGRESSED'
+  | 'STILL_READY';
+
+/** Deterministic comparison of predecessor and successor root-signed workbooks. */
+export interface ScenarioRehearsalRemediationComparison {
+  schemaVersion: 'resourceGateway.scenarioRehearsalRemediationComparison.v1';
+  comparisonFingerprint: string;
+  scope: ScenarioRehearsalScope;
+  remediationId: string;
+  lineageFingerprint: string;
+  remediationPlanFingerprint: string;
+  receiptFingerprint: string;
+  predecessor: ScenarioRemediationWorkbookSnapshot;
+  successor: ScenarioRemediationWorkbookSnapshot;
+  gateTransition: ScenarioRemediationGateTransition;
+  resolvedBlockers: string[];
+  remainingBlockers: string[];
+  introducedBlockers: string[];
+  entries: ScenarioRemediationEntryComparison[];
+}
+
 /** Signed handling-assertion result shown without raw business payloads. */
 export interface ScenarioHandlingAssertionResult {
   resultFingerprint: string;

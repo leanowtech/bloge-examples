@@ -41,8 +41,14 @@ import org.openqa.selenium.support.ui.Select;
 import org.openqa.selenium.support.ui.WebDriverWait;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.boot.test.context.TestConfiguration;
 import org.springframework.boot.test.web.server.LocalServerPort;
+import org.springframework.context.annotation.Bean;
 import org.springframework.core.io.ClassPathResource;
+import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PathVariable;
+import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RestController;
 
 import java.io.IOException;
 import java.net.URLDecoder;
@@ -62,7 +68,11 @@ import static org.assertj.core.api.Assertions.assertThat;
  * Real browser regression coverage for the visual composer.
  */
 @SpringBootTest(
-        classes = ResourceGatewayApplication.class,
+        classes = {
+                ResourceGatewayApplication.class,
+                VisualAuthoringBrowserDomTest
+                        .RehearsalBrowserFixtureConfiguration.class
+        },
         webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT,
         properties = {
                 "gateway.seed-descriptors=false",
@@ -82,6 +92,218 @@ class VisualAuthoringBrowserDomTest {
     private static final Path SELENIUM_CHROMEDRIVER_CACHE = Path.of(
             System.getProperty("user.home"), ".cache", "selenium", "chromedriver"
     );
+    private static final String REHEARSAL_BROWSER_JOB_ID =
+            "scenario-batch-" + "b".repeat(64);
+    private static final String REHEARSAL_BROWSER_FINGERPRINT =
+            "sha256:" + "a".repeat(64);
+
+    @TestConfiguration(proxyBeanMethods = false)
+    static class RehearsalBrowserFixtureConfiguration {
+        /** Supplies a deterministic signed-workbook projection only to this real-browser test. */
+        @Bean
+        RehearsalBrowserFixtureController
+        rehearsalBrowserFixtureController() {
+            return new RehearsalBrowserFixtureController();
+        }
+    }
+
+    /**
+     * Test-only Mirror read surface used to exercise the packaged React workbench in real Chrome.
+     *
+     * <p>Mutation routes are deliberately absent: the browser must render the reviewed workflow
+     * in its fail-closed identity state without acquiring a test-only authorization bypass.</p>
+     */
+    @RestController
+    @RequestMapping("/api/mirror")
+    static final class RehearsalBrowserFixtureController {
+        /** Returns one exact-scope blocked terminal batch. */
+        @GetMapping("/rehearsal-jobs")
+        Map<String, Object> jobs() {
+            Map<String, Object> job = new LinkedHashMap<>();
+            job.put(
+                    "schemaVersion",
+                    "resourceGateway.scenarioRehearsalBatchJob.v2");
+            job.put("jobId", REHEARSAL_BROWSER_JOB_ID);
+            job.put("requestId", "browser-rehearsal-request");
+            job.put(
+                    "requestFingerprint",
+                    REHEARSAL_BROWSER_FINGERPRINT);
+            job.put(
+                    "manifestFingerprint",
+                    REHEARSAL_BROWSER_FINGERPRINT);
+            job.put("scope", scope());
+            job.put("status", "PARTIAL");
+            job.put("failureMode", "CONTINUE");
+            job.put("priority", "NORMAL");
+            job.put("maximumItemAttempts", 2);
+            job.put("summary", summary());
+            job.put("deadlineAt", "2026-07-26T11:00:00Z");
+            job.put("failureCode", "");
+            job.put("createdAt", "2026-07-26T10:00:00Z");
+            job.put("updatedAt", "2026-07-26T10:02:00Z");
+            job.put("completedAt", "2026-07-26T10:02:00Z");
+            job.put(
+                    "recordFingerprint",
+                    REHEARSAL_BROWSER_FINGERPRINT);
+            Map<String, Object> page =
+                    new LinkedHashMap<>();
+            page.put(
+                    "schemaVersion",
+                    "resourceGateway.scenarioRehearsalBatchJobPage.v1");
+            page.put("scope", scope());
+            page.put("jobs", List.of(job));
+            page.put("nextCursor", null);
+            return envelope(
+                    "SCENARIO_REHEARSAL_BATCH_JOB_PAGE",
+                    "resourceGateway.scenarioRehearsalBatchJobPage.v1",
+                    page);
+        }
+
+        /** Returns one blocked root-sealed workbook for the fixture batch. */
+        @GetMapping(
+                "/rehearsal-jobs/{jobId}/workbook-seed")
+        Map<String, Object> workbook(
+                @PathVariable String jobId) {
+            assertThat(jobId)
+                    .as("browser fixture job")
+                    .isEqualTo(REHEARSAL_BROWSER_JOB_ID);
+            Map<String, Object> entry = new LinkedHashMap<>();
+            entry.put("entryIndex", 0);
+            entry.put("entryId", "entry-timeout");
+            entry.put(
+                    "compiledPlanRef",
+                    artifact(
+                            "COMPILED_REHEARSAL_PLAN",
+                            "customer-profile"));
+            entry.put("childRequestId", "browser-child-request");
+            entry.put(
+                    "expectedRunId",
+                    "scenario-run-" + "c".repeat(64));
+            entry.put("status", "FAILED");
+            entry.put("attemptCount", 2);
+            entry.put(
+                    "runId",
+                    "scenario-run-" + "c".repeat(64));
+            entry.put(
+                    "childEvidenceBundleFingerprint",
+                    REHEARSAL_BROWSER_FINGERPRINT);
+            entry.put("childWorkbookSeedFingerprint", "");
+            entry.put("failureCode", "TARGET_TIMEOUT");
+            entry.put("childWorkbook", null);
+
+            Map<String, Object> workbook =
+                    new LinkedHashMap<>();
+            workbook.put(
+                    "schemaVersion",
+                    "resourceGateway.scenarioRehearsalBatchWorkbookSeed.v1");
+            workbook.put(
+                    "seedFingerprint",
+                    REHEARSAL_BROWSER_FINGERPRINT);
+            workbook.put("scope", scope());
+            workbook.put("jobId", REHEARSAL_BROWSER_JOB_ID);
+            workbook.put(
+                    "requestId",
+                    "browser-rehearsal-request");
+            workbook.put(
+                    "requestFingerprint",
+                    REHEARSAL_BROWSER_FINGERPRINT);
+            workbook.put(
+                    "manifestFingerprint",
+                    REHEARSAL_BROWSER_FINGERPRINT);
+            workbook.put(
+                    "terminalJobFingerprint",
+                    REHEARSAL_BROWSER_FINGERPRINT);
+            workbook.put(
+                    "evidenceBundleFingerprint",
+                    REHEARSAL_BROWSER_FINGERPRINT);
+            workbook.put(
+                    "evidenceIndexFingerprint",
+                    REHEARSAL_BROWSER_FINGERPRINT);
+            workbook.put("evidenceKeyId", "browser-key");
+            workbook.put(
+                    "workbookSeal",
+                    Map.of(
+                            "keyId", "browser-key",
+                            "algorithm", "Ed25519",
+                            "materialFingerprint",
+                            REHEARSAL_BROWSER_FINGERPRINT,
+                            "signature", "base64:browser-signature"));
+            workbook.put(
+                    "retentionProof",
+                    Map.of(
+                            "eventFingerprint",
+                            REHEARSAL_BROWSER_FINGERPRINT,
+                            "retainUntil",
+                            "2033-07-26T10:00:00Z"));
+            workbook.put("status", "PARTIAL");
+            workbook.put("summary", summary());
+            workbook.put("entries", List.of(entry));
+            workbook.put("gateReady", false);
+            workbook.put(
+                    "blockers",
+                    List.of("BATCH_ITEM_EXECUTION_FAILED"));
+            return envelope(
+                    "SCENARIO_REHEARSAL_BATCH_WORKBOOK_SEED",
+                    "resourceGateway.scenarioRehearsalBatchWorkbookSeed.v1",
+                    workbook);
+        }
+
+        private static Map<String, Object> envelope(
+                String kind,
+                String version,
+                Object payload) {
+            Map<String, Object> envelope =
+                    new LinkedHashMap<>();
+            envelope.put(
+                    "protocol",
+                    "ToolStudioResourceGatewayProtocol");
+            envelope.put("protocolVersion", "1.0.0");
+            envelope.put("resourceGatewayVersion", "1.0.0");
+            envelope.put(
+                    "schemaVersion",
+                    "toolStudio.integrationEnvelope.v1");
+            envelope.put(
+                    "producedAt",
+                    "2026-07-26T10:03:00Z");
+            envelope.put("payloadKind", kind);
+            envelope.put("payloadSchemaVersion", version);
+            envelope.put(
+                    "payloadFingerprint",
+                    REHEARSAL_BROWSER_FINGERPRINT);
+            envelope.put("payload", payload);
+            return envelope;
+        }
+
+        private static Map<String, Object> scope() {
+            return Map.of(
+                    "tenantId", "tenant-a",
+                    "organizationId", "knowledge-governance",
+                    "projectId", "tool-studio",
+                    "environmentId", "test",
+                    "region", "sg");
+        }
+
+        private static Map<String, Object> summary() {
+            return Map.of(
+                    "totalItems", 1,
+                    "completedItems", 1,
+                    "passedItems", 0,
+                    "failedItems", 1,
+                    "indeterminateItems", 0,
+                    "cancelledItems", 0);
+        }
+
+        private static Map<String, Object> artifact(
+                String kind,
+                String id) {
+            return Map.of(
+                    "kind", kind,
+                    "id", id,
+                    "revision", 1,
+                    "fingerprint",
+                    REHEARSAL_BROWSER_FINGERPRINT);
+        }
+    }
 
     @Autowired
     private WritableResourceRegistry resourceRegistry;
@@ -326,12 +548,43 @@ class VisualAuthoringBrowserDomTest {
         assertThat(driver.findElement(By.cssSelector("a[href='/rehearsals/']"))
                 .getAttribute("aria-current")).isEqualTo("page");
         waitForText(wait, By.cssSelector(".rehearsal-queue"), "Rehearsal batches");
+        waitForText(
+                wait,
+                By.cssSelector("[data-testid='remediation-workflow']"),
+                "Reviewed remediation");
+        waitForText(
+                wait,
+                By.cssSelector("[data-testid='remediation-identities']"),
+                "Not connected");
+        assertThat(driver.findElement(By.cssSelector(
+                "[data-testid='remediation-workflow'] "
+                        + "button.primary-command")).isEnabled())
+                .as("reviewed remediation fails closed without a host human identity")
+                .isFalse();
+        driver.findElement(By.xpath(
+                "//button[normalize-space()='Replace plans']")).click();
+        wait.until(ExpectedConditions.visibilityOfElementLocated(
+                By.cssSelector("[data-testid='replacement-table']")));
         assertNoHorizontalOverflow(wait, By.cssSelector(".rehearsal-workbench"));
+        assertThat(driver.findElement(By.cssSelector(
+                ".batch-queue-row .status-label"))
+                .getCssValue("white-space"))
+                .isEqualTo("nowrap");
 
         driver.manage().window().setSize(new Dimension(1024, 768));
         assertNoHorizontalOverflow(wait, By.cssSelector(".rehearsal-workbench"));
         driver.manage().window().setSize(new Dimension(760, 820));
         assertNoHorizontalOverflow(wait, By.cssSelector(".rehearsal-workbench"));
+        assertThat(driver.findElement(By.cssSelector(
+                "[data-testid='replacement-table']"))
+                .getCssValue("overflow-x"))
+                .isIn("auto", "scroll");
+        driver.manage().window().setSize(new Dimension(390, 844));
+        assertNoHorizontalOverflow(wait, By.cssSelector(".rehearsal-workbench"));
+        assertThat(driver.findElement(By.cssSelector(
+                ".remediation-timeline"))
+                .getCssValue("overflow-x"))
+                .isIn("auto", "scroll");
     }
 
     @Test

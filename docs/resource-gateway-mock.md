@@ -7,7 +7,7 @@
 
 | 文档属性 | 内容 |
 |---|---|
-| 状态 | Accepted / In implementation；Stage 0 工程门禁已通过；Stage 1 完成 MirrorPlan、受保护运行/证据 API、部署隔离信任与 durable execution；Stage 2 完成 observation/corpus 的准入、review、publication、trajectory/cluster serving 与 generation fence；Stage 3 完成有状态 Session、虚拟读写、checkpoint/recovery、write-attempt reconciliation 和三类 ANEKE seed；Stage 4 完成 Scenario 编译、可恢复 aggregate、签名 evidence、audit/retention/workbook closure、durable batch manifest/queue/API/worker、region-local bounded scheduler、cooperative control、签名 batch evidence、批次 operation/lifecycle audit、retention、durable evidence finalization、受控 remediation、聚合 health/SLO、ANEKE batch workbook、Owner 只读分诊工作台，以及 reviewed remediation 的版本化协议、持久化状态机、事务应用服务和受保护 API。Owner 写侧、签名前后继对账、零 DSL case 调整、Fidelity/Outcome 和生产环境认证继续实施；未完成前相关 readiness 必须保持 `false` |
+| 状态 | Accepted / In implementation；Stage 0 工程门禁已通过；Stage 1 完成 MirrorPlan、受保护运行/证据 API、部署隔离信任与 durable execution；Stage 2 完成 observation/corpus 的准入、review、publication、trajectory/cluster serving 与 generation fence；Stage 3 完成有状态 Session、虚拟读写、checkpoint/recovery、write-attempt reconciliation 和三类 ANEKE seed；Stage 4 完成 Scenario 编译、可恢复 aggregate、签名 evidence、audit/retention/workbook closure、durable batch manifest/queue/API/worker、region-local bounded scheduler、cooperative control、签名 batch evidence、批次 operation/lifecycle audit、retention、durable evidence finalization、受控 remediation、聚合 health/SLO、ANEKE batch workbook、Owner 证据分诊工作台，以及 reviewed remediation 的版本化协议、持久化状态机、受保护 API、角色隔离浏览器流程和前后继签名对账。零 DSL case 调整、Fidelity/Outcome、企业身份任务认证和生产环境认证继续实施；未完成前相关 readiness 必须保持 `false` |
 | 目标读者 | Resource Gateway、BLOGE Runtime、ANEKE、TEE/数据平台、QA、SRE、安全与业务运营团队 |
 | 设计范围 | external/composed 能力建模、镜像运行、保真语料、有状态世界、场景演练、证据、保真度与结果校准 |
 | 非目标 | 不重做 ANEKE 的资产治理和发布门禁；不允许测试控制进入生产业务请求；不把观测频率直接当成业务正确性 |
@@ -577,11 +577,11 @@ Resource Gateway 已有的工业底座应直接复用：
 | 递归 DAG 测试 | 85% | MirrorPlan/closure/runtime inventory/fixture control 已统一；缺 contract-mock 展开治理和状态世界 |
 | 日志蒸馏与语料 | 82% | payload-free signed observation、准入/隔离、immutable review、candidate/publication/trajectory/cluster 独立 lineage、元数据风险门禁、fixture exact/trajectory/cluster binding、在线 revalidation、test/staging `RECORDED_EXACT`/`RECORDED_TRAJECTORY`/`RECORDED_CLUSTER`、BLOGE 原生 retry loop、identity-safe projection、Wilson confidence、Session state read 与独立 verifier 已落地；缺生产 payload authority、漂移、偏差、outcome 校准和删除证明 |
 | 有状态业务世界 | 91% | 协议、read/write 退款 fixture、独立 verifier/sealer/client、事务内核、受保护 Session API、独立 AES-GCM 数据面、lease/fence/CAS、durable write-attempt journal/reconciliation、TTL/destroy、全局/scope 容量、保留字节、命令背压、过期擦除、固定 read head、run-scoped virtual write、真实 DAG read-write-read、payload-free v1/v2/v3 state evidence、read-only/successful-transition/write-outcome ANEKE seed、签名 HASH_ONLY checkpoint 与同数据面代际精确恢复准入已落地；缺 TEE/KMS、跨区域数据恢复、真实 process-kill/network parity、目标数据库容量认证和 HA/DR certification |
-| Scenario/Rehearsal | 99.3% | ScenarioPack/Case/Assertion、exact compiler、可恢复逐 case runtime、签名 aggregate、audit/retention、ANEKE seed、durable batch manifest/queue/API/worker、region-local DAG/KMS 双 scheduler、逐 case cooperative control、v1/v2 签名 batch evidence/index、批次 operation/lifecycle audit、retention/multi-hold/逻辑删除证明、durable finalization outbox/lease/retry/quarantine/status、受控 remediation、聚合 health/SLO，以及 root-sealed ANEKE batch workbook 已落地；缺 hard kill、owner UX、企业策略/WORM/anchor 与异构消费者认证 |
+| Scenario/Rehearsal | 99.3% | ScenarioPack/Case/Assertion、exact compiler、可恢复逐 case runtime、签名 aggregate、audit/retention、ANEKE seed、durable batch manifest/queue/API/worker、region-local DAG/KMS 双 scheduler、逐 case cooperative control、v1/v2 签名 batch evidence/index、批次 operation/lifecycle audit、retention/multi-hold/逻辑删除证明、durable finalization outbox/lease/retry/quarantine/status、受控 remediation、聚合 health/SLO，以及 root-sealed ANEKE batch workbook 已落地；缺 hard kill、企业策略/WORM/anchor、异构消费者和目标环境认证 |
 | Fidelity/Outcome | 5% | 缺保真向量、shadow、权威结果归因和校准闭环 |
-| 业务运营工作台 | 50% | exact-scope keyset 队列、证据分诊/deep link/响应式 UI，以及 reviewed remediation 七对象协议、server-owned 双角色策略、durable approval ledger、CAS、successor 原子准入、auth-before-decode API 和 capability probe 已落地；仍缺 Owner 控件、前后继签名对账、零 DSL case 调整、复杂样例和真实业务 Owner 认证 |
+| 业务运营工作台 | 72% | exact-scope keyset 队列、证据分诊/deep link/响应式 UI，以及 reviewed remediation 八对象协议、server-owned 双角色策略、durable approval ledger、CAS、successor 原子准入、签名前后继对账、角色隔离 Owner/Reviewer 控件、auth-before-decode API 和 capability probe 已落地；仍缺零 DSL case 调整、256-item 密度/性能、任务分派与 SLA、复杂业务样例、可访问性及真实企业 IdP/委派/Owner 认证 |
 
-结论：基础设施准备度约 93%，固定权重理想态完成度为 66.36%。剩余主要矛盾已经
+结论：基础设施准备度约 93%，固定权重理想态完成度为 68.56%。剩余主要矛盾已经
 从“能否安全执行和取证”转向“能否把可信 observation 持续蒸馏成可校准、可拒答、可删除的业务拟合资产”。
 
 ### 3.1 2026-07-24 Scenario 编译期闭包迭代差距复评
@@ -640,7 +640,7 @@ HA/DR 或权威 outcome 当成已完成。51.59% 只承认已由代码和测试�
 5. **生产证明未闭合**：payload authority、TEE/KMS、process-kill、network partition、vendor DB、HA/DR 和删除证明
    仍依赖真实客户环境认证。
 
-**下一轮最短有效路径：先打通 E7 Scenario/Rehearsal，不继续横向堆 state 基础设施。**
+**E7 Scenario/Rehearsal 核心纵切已打通；下一轮最短有效路径转向 E8 Fidelity。**
 
 | 顺序 | Ticket | 状态 | 直击病根的工程任务 | 仓库内退出门禁 |
 |---:|---|---|---|---|
@@ -648,7 +648,7 @@ HA/DR 或权威 outcome 当成已完成。51.59% 只承认已由代码和测试�
 | 2 | RG-MIR-SCEN-001A | 完成 | 将 TestSuite/Fixture authority 升级为完整 enterprise scope；旧 tenant+environment 资产采用独立表、禁止隐式提升、授权重新注册的迁移策略 | 两个 organization/project/region 可安全复用同 id/revision；跨 scope、混合版本与 indexed scope 搬移失败关闭 |
 | 3 | RG-MIR-SCEN-002 | 完成 | deterministic compiler/runtime；每 case 使用隔离 Session/checkpoint、固定时钟/随机源、fixture data-flow inversion 和禁止真实 egress | exact plan、逐 case 运行、数据库时钟 lease/epoch、连续 checkpoint、takeover、旧 worker fencing 与原子 evidence/terminal commit 全绿 |
 | 4 | RG-MIR-SCEN-003 | 完成（本地治理闭包） | 产出 payload-free Scenario evidence、state diff、处置断言结果与 ANEKE workbook seed，区分执行失败、断言失败、低保真和证据不完整 | 独立签名、append-only store、exact read、崩溃恢复、audit/retention/workbook seed 已完成；unknown outcome、缺断言或不完整 evidence 阻断 gate-ready |
-| 5 | RG-MIR-SCEN-004 | 工程控制面、只读 Owner 分诊和 reviewed remediation 后端事务内核完成；产品写侧进行中 | 提供批量 rehearsal API、deep link 和最小 Author 场景表格；先保证业务 owner 不编辑 JSON/DSL 即可维护 case | exact manifest/queue/worker、签名 evidence/workbook、分诊 UI，以及 remediation policy/repository/service/原子 successor admission 已完成；下一步受保护 API、前后继签名对账、Owner 控件和零 DSL case 调整 |
+| 5 | RG-MIR-SCEN-004 | 核心纵切完成；零 DSL case 调整与企业任务认证进行中 | 提供批量 rehearsal API、deep link 和最小 Author 场景表格；先保证业务 owner 不编辑 JSON/DSL 即可维护 case | exact manifest/queue/worker、签名 evidence/workbook、分诊 UI、remediation policy/repository/service/API、双角色控件、原子 successor admission 和签名对账已完成；下一步零 DSL case 调整、256-item/a11y 与企业 Owner 认证 |
 
 完成 E7 后才进入 E8：以 Scenario coverage 为分母建立
 `DomainFidelityProfile`、typed shadow diff、confidence/abstention debt 和 drift downgrade；随后 E9 接入
@@ -1720,6 +1720,71 @@ Owner 写入控件尚未接入浏览器，也尚未完成真实双人身份切�
 `preview -> OWNER -> INDEPENDENT_REVIEWER -> submit -> comparison` 接入现有
 Rehearsals deep link，并以宿主注入的短期 human identity 完成角色交接；之后再做
 零 DSL case 调整和真实 Owner 任务认证。
+
+### 3.25 2026-07-26 Owner 经评审修复工作带迭代差距复评
+
+本轮关闭的不是“后端有 API，前端补几个按钮”，而是三处会让工业协议失去业务价值
+的断点：
+
+1. **可信事实与人的任务不连续**：Owner 能看到 blocker，却必须离开工作台手写
+   HTTP/JSON，容易把旧 workbook、旧 generation 或错误 plan 带入下一步；
+2. **身份切换含混**：沿用一个 demo workload token 会把双人分离降格为 UI 角色
+   切换，既不安全，也无法解释真实 actor/delegation；
+3. **改善结论不可见**：successor 即使完成，Owner 仍需人工比较两份 JSON，或误用
+   mutable job projection 宣称“已修复”。
+
+现有 `/rehearsals/` 中新增 unframed `Reviewed remediation` 工作带，严格映射后端
+状态机，不自造第二套流程：
+
+- `Freeze plan` 只允许 `RERUN_EXACT` 或有序的 exact
+  `REPLACE_COMPILED_PLANS`；治理 ticket、predecessor workbook 和每个 replacement
+  的 expected/new ref 都是结构化字段，proposal 变化会生成新的 request id，而网络
+  重试复用同一 id；
+- `Owner -> Independent reviewer` 固定顺序展示 server-bound actor/time 和
+  append-only generation；拒绝是不可变终态，页面不再出现 submit；
+- `Admit successor` 只提交 frozen plan fingerprint、generation 和 approval head，
+  不重述 successor；
+- `Compare evidence` 只渲染两份 independently verified root-signed workbook
+  派生的 gate transition、正确性计数和 blocker 集合差；successor 未终态时明确等待，
+  不回退到 mutable projection；
+- deep link 扩展为 `jobId + optional entry + remediationId`，刷新后按 content-
+  addressed lineage 恢复审批上下文。
+
+身份边界没有为了演示放松。前端新增 `READ`、`OWNER`、
+`INDEPENDENT_REVIEWER` 三个宿主凭据槽；默认全部为空。按钮可用性只用于提前解释，
+最终授权仍由服务端 credential、human type、group、actor 和 delegated principal
+裁决。API client 会覆盖宿主试图注入的 purpose/content headers，不在状态、URL、
+DOM 或日志中保存 token，只显示宿主提供的 log-safe label。VSCode 可继续以
+`setBlogeApiTransport` 把 bearer 留在 extension host。测试 fixture 只实现 GET，
+刻意没有浏览器测试专用 mutation controller，因此真实 Chrome 验收无法绕过写授权。
+
+验证覆盖同时约束协议和视觉：
+
+- React/Vitest `165/165` 全绿；新增用例覆盖无凭据零 transport、exact rerun、
+  selected-entry replacement CAS、Owner/Reviewer 两代命令、提交 head、拒绝终态、
+  deep-link lineage 恢复和 signed comparison；
+- API client 测试验证三个 credential slot、固定 purpose、caller header override
+  无效、五种 response kind/schema mismatch fail closed；
+- `VisualAuthoringBrowserDomTest` 使用打包后的生产 bundle、真实 Spring Boot 和
+  真实 Chrome，在 `1440/1024/760/390` 视口验证 blocked signed workbook、工作带、
+  无身份禁写、长状态不折行、页面无横向溢出，以及 replacement/timeline 只在自身
+  容器内滚动；
+- 人工真实 Chrome 流程另走完
+  `preview -> Owner -> Reviewer -> submit -> RESOLVED comparison`，确认审批账本、
+  successor receipt 和 before/after 对比在桌面与手机信息密度下无覆盖。
+
+这仍不等于“企业 Owner 已认证”。尚未关闭的证明包括：目标 IdP 的 MFA/step-up 与
+短期 token broker、委派撤销和 actor collision、任务分派/通知/审批 SLA、计划过期
+后的可解释恢复、successor 异步完成事件、256-item 批次性能与键盘/读屏可访问性、
+多语言、零 DSL case 调整，以及真实客户 Owner 的计时任务测试。浏览器中的
+principal label 也不是安全证据；服务端审计事实才是。
+
+因此业务运营工作台成熟度从 `54%` 上调到 `72%`。按固定 `10%` 权重，总分从
+`66.76%` 上调到 `68.56%`，距理想态 `31.44%`。下一轮不能继续在工作台上堆装饰：
+最大加权病根已经是仅 `5%` 的 Fidelity/Outcome。最有效路径是先冻结
+`DomainFidelityProfile` 的分母、维度、置信度、freshness、abstention debt 与 lineage
+协议并实现 fail-closed kernel；工作台侧并行的下一最小纵切才是零 DSL case 调整和
+企业身份任务认证。
 
 ## 4. 目标架构与系统责任
 
@@ -2912,10 +2977,10 @@ worker turn、显式 region-local bounded scheduler、执行中 heartbeat/cancel
 batch evidence/index、operation/lifecycle audit 与独立 batch retention/multi-hold/
 deletion proof、`FINALIZING` outbox/KMS 故障隔离、受控 quarantine remediation
 与聚合 health/SLO、ANEKE batch workbook/root seal/无 N+1 独立消费已完成；
-Owner rehearsal workbench 的只读分诊纵切已完成；下一步进入 reviewed remediation、
-其中版本化协议、durable approval ledger、服务端授权策略和原子 successor admission
-后端内核已完成；下一步开放受保护 API、签名前后继对账和 Owner 写侧，再进入零 DSL
-case 调整与业务可用性认证。企业 policy authority、
+Owner rehearsal workbench 的证据分诊、reviewed remediation 八对象协议、durable
+approval ledger、服务端授权策略、受保护 API、双角色浏览器工作带、原子 successor
+admission 和签名前后继对账已完成；下一步进入零 DSL case 调整、256-item 任务性能/
+可访问性和企业 IdP/业务 Owner 认证。企业 policy authority、
 WORM/anchor 和跨地域删除认证作为部署认证支线并行，不阻塞本地 workbook 纵切，但会阻塞最终
 production readiness。
 
@@ -3043,7 +3108,7 @@ permit、v1/v2/v3 双向兼容读取和独立 test-kit 语义复验；非 Java v
 |---:|---|---|---|---|---|---|
 | 0 | RG-MIR-SCEN-OPS-003 finalization health/SLO | 已完成 | RG Runtime + SRE | durable finalization/remediation | strict health v1、exact-scope API、Actuator、固定基数 metric、Test Kit、脚本/运行文档 | unknown state/policy drift/store failure 不误绿；API/monitor/probe 使用同一 evaluator |
 | 1 | RG-MIR-SCEN-005 ANEKE batch workbook | 已完成 | RG Evidence + ANEKE Correctness | signed batch v2、child seed、batch retention | batch seed/Schema、projector、root seal、独立 verifier/client、受保护 API、audit、capability | 1..256 个 item 全闭合；普通门禁读取无 N+1；deep audit 对漏项/重复/child drift 失败关闭 |
-| 2 | RG-MIR-SCEN-006 Owner rehearsal workbench | P0 / 进行中（只读面与 remediation 后端内核完成） | Author UX + RG Scenario + 业务 Owner | Work package 1 | batch 列表、shape summary、证据分诊/deep link 已完成；remediation protocol/policy/repository/service/原子 successor admission 已完成；待受保护 API、签名前后继对账、Owner 控件和零 DSL case 调整 | owner 能在 15 分钟内定位失败、区分执行/断言/低保真/证据故障并完成审阅；浏览器 E2E 覆盖 256-item 复杂批次 |
+| 2 | RG-MIR-SCEN-006 Owner rehearsal workbench | P0 / 进行中（证据分诊与 reviewed remediation 纵切完成） | Author UX + RG Scenario + 业务 Owner | Work package 1 | batch 列表、shape summary、证据分诊/deep link、remediation protocol/policy/repository/service/API、双角色控件、原子 successor admission 和签名对账已完成；待零 DSL case 调整、任务分派/SLA、256-item 性能/可访问性及企业 IdP/Owner 认证 | owner 能在 15 分钟内定位失败、区分执行/断言/低保真/证据故障并完成审阅；浏览器 E2E 覆盖 256-item 复杂批次 |
 | 3 | RG-MIR-FID-001 Fidelity protocol/kernel | P0 / 2 sprints | RG Domain + ANEKE Governance + 数据科学 | Work package 1；owner 冻结 coverage taxonomy | `DomainFidelityProfile.v1`、coverage denominator、dimension score、confidence interval、freshness、abstention debt、lineage | 空分母/低样本不能高分；每个分量可重建到 exact Scenario/corpus generation；单一总分不可作为唯一 gate |
 | 4 | RG-MIR-FID-002 Read-only shadow/diff | P1 / 2 sprints | RG Runtime + TEE/Data Plane + SRE | Work package 3；数据使用授权 | shadow plan/job、typed node/edge/state/effect diff、sampling budget、drift downgrade/revoke | 真实写和凭据为 0；采样不超过授权；schema/branch/retry/state/outcome 差异可归因；漂移自动使 readiness/gate stale |
 | 5 | RG-MIR-OUT-001 Outcome calibration | P1 / 2 sprints | ANEKE + 业务分析 + RG Domain | Work package 3；权威 outcome owner | versioned outcome definition/connector、delayed/censored reconciliation、calibration cohort、candidate assertion | 多源冲突和迟到结果不覆盖历史；候选不经 owner 不 serving；能证明或否证 fidelity 与业务结果关系 |

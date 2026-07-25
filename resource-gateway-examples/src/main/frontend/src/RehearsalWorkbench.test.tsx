@@ -8,6 +8,7 @@ import {
   fetchScenarioRehearsalBatchJobs,
   fetchScenarioRehearsalBatchWorkbook,
   fetchScenarioRehearsalWorkbook,
+  getRehearsalRemediationCredentialStatus,
 } from './api';
 import RehearsalWorkbench from './RehearsalWorkbench';
 import type {
@@ -21,12 +22,24 @@ vi.mock('./api', () => ({
   fetchScenarioRehearsalBatchJobs: vi.fn(),
   fetchScenarioRehearsalBatchWorkbook: vi.fn(),
   fetchScenarioRehearsalWorkbook: vi.fn(),
+  getRehearsalRemediationCredentialStatus: vi.fn((slot: string) => ({
+    slot,
+    configured: false,
+    principalLabel: '',
+    expiresAt: '',
+  })),
+  previewScenarioRehearsalRemediation: vi.fn(),
+  fetchScenarioRehearsalRemediationLineage: vi.fn(),
+  decideScenarioRehearsalRemediation: vi.fn(),
+  submitScenarioRehearsalRemediation: vi.fn(),
+  fetchScenarioRehearsalRemediationComparison: vi.fn(),
 }));
 
 const mockJobs = vi.mocked(fetchScenarioRehearsalBatchJobs);
 const mockItems = vi.mocked(fetchScenarioRehearsalBatchItems);
 const mockBatchWorkbook = vi.mocked(fetchScenarioRehearsalBatchWorkbook);
 const mockChildWorkbook = vi.mocked(fetchScenarioRehearsalWorkbook);
+const mockCredentialStatus = vi.mocked(getRehearsalRemediationCredentialStatus);
 
 describe('RehearsalWorkbench', () => {
   let root: Root | null = null;
@@ -38,6 +51,12 @@ describe('RehearsalWorkbench', () => {
     host = document.createElement('div');
     document.body.appendChild(host);
     vi.clearAllMocks();
+    mockCredentialStatus.mockImplementation((slot) => ({
+      slot,
+      configured: false,
+      principalLabel: '',
+      expiresAt: '',
+    }));
   });
 
   afterEach(async () => {

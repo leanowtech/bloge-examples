@@ -1241,7 +1241,7 @@ curl -fsS http://localhost:8080/api/integration/capabilities
 
 页面顶部可在 `Author / Rehearsals / Showcase` 三个工作面间切换。Rehearsals
 不是另一套治理系统，而是 Resource Gateway 对受保护 Scenario 运行与签名证据的
-只读任务投影：
+证据优先任务投影：
 
 1. 左侧选择当前认证 tenant/organization/project/environment/region 中的批次；
    `Load older batches` 使用稳定 keyset，不会因运行进度变化而重复或漏项。
@@ -1255,9 +1255,35 @@ curl -fsS http://localhost:8080/api/integration/capabilities
    `/rehearsals/?jobId=<jobId>&entry=<manifest-index>` 交给 ANEKE 或排障人员，
    对方会回到同一批次和条目；跨 scope 的 job 不会被定位或读取。
 
-工作台不读取业务 payload，也不提供取消、重试、quarantine remediation、legal
-hold 或 purge 按钮。当前版本解决“找得到、分得清、能取证”的 Owner 分诊主链；
-“审阅后修复”和“零 DSL 调整 case”仍属于后续写侧能力。
+被阻断的终态批次会在根 blocker 下显示 `Reviewed remediation`：
+
+6. `Retry exact` 用于暂态执行/证据复查；`Replace plans` 允许勾选 entry，并填写
+   已存在 compiled plan 的 exact id、revision 和 fingerprint。两种方式都必须绑定
+   exact governance ticket，不能输入自由 DSL/JSON。
+7. `Freeze for review` 把 predecessor workbook fingerprint、完整 successor request、
+   server policy 和 review deadline 冻结成 content-addressed plan。
+8. Owner 先批准或拒绝。Owner 批准后，独立 Reviewer 使用另一个 human identity
+   追加第二代决定；页面显示的是服务端绑定的 actor/time，而不是表单自报身份。
+9. 两代批准完成后由 Owner 点击 `Admit successor`。拒绝事实不可覆盖，拒绝后不会
+   出现提交按钮。
+10. 后继形成 root-signed terminal workbook 后，点击 `Compare signed evidence`，
+    查看根和逐 entry 的 blocker 集合差、plan changed 和 gate transition。对比没有
+    “综合质量分”，只展示两份签名来源可证明的变化。
+
+创建计划后 deep link 扩展为
+`/rehearsals/?jobId=<jobId>&remediationId=<remediationId>&entry=<optional-index>`，
+刷新会读取 content-addressed lineage 恢复审批上下文。
+
+进入这条写侧前，宿主必须通过
+`setRehearsalRemediationCredentialsProvider(...)` 分别提供 `READ`、`OWNER` 和
+`INDEPENDENT_REVIEWER` 短期身份。缺少或过期的槽位会显示 `Not connected` 并禁用
+对应动作；默认 demo workload token 刻意不能审批，`--scenario-batch` 不会生成
+万能令牌。VSCode 方案应再通过 `setBlogeApiTransport(...)` 让扩展宿主持有 bearer
+material，Webview 只接收 log-safe principal label。
+
+工作台不读取业务 payload，也不提供取消、quarantine finalization remediation、
+legal hold、purge、通用 JSON/DSL 或 raw payload 按钮。当前版本闭合“找得到、分得清、
+能取证、双人审阅、准入后继、签名对账”；“零 DSL 调整 case”仍是后续能力。
 
 常用参数：
 

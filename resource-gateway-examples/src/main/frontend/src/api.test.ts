@@ -7,6 +7,7 @@ import {
   buildGatewayRunRequest,
   checkDslRewriteGate,
   commitDslImport,
+  decideScenarioRehearsalRemediation,
   fetchGatewayDiagram,
   fetchGatewayScenarios,
   fetchGovernanceGateView,
@@ -15,17 +16,23 @@ import {
   fetchScenarioRehearsalBatchItems,
   fetchScenarioRehearsalBatchJobs,
   fetchScenarioRehearsalBatchWorkbook,
+  fetchScenarioRehearsalRemediationComparison,
+  fetchScenarioRehearsalRemediationLineage,
   fetchScenarioRehearsalWorkbook,
   fetchVisualGraphRun,
   governOperatorTestCase,
   governOperatorTestSuite,
   importOperatorLibraryText,
   previewDslImport,
+  previewScenarioRehearsalRemediation,
   resetOperatorTestHeadersProvider,
+  resetRehearsalRemediationCredentialsProvider,
   runOperatorTestCase,
   runGatewayScenario,
   resetBlogeApiTransport,
   setBlogeApiTransport,
+  setRehearsalRemediationCredentialsProvider,
+  submitScenarioRehearsalRemediation,
   validateDraft,
   validateOperatorLibraryText,
 } from './api';
@@ -34,6 +41,7 @@ describe('operator library API client', () => {
   afterEach(() => {
     resetBlogeApiTransport();
     resetOperatorTestHeadersProvider();
+    resetRehearsalRemediationCredentialsProvider();
     vi.restoreAllMocks();
   });
 
@@ -1033,6 +1041,175 @@ describe('operator library API client', () => {
 
     await expect(fetchScenarioRehearsalBatchJobs()).rejects
       .toThrow('Mirror response contract mismatch for SCENARIO_REHEARSAL_BATCH_JOB_PAGE.');
+  });
+
+  it('fails before transport when a reviewed remediation role is not configured', async () => {
+    const fetchMock = vi.spyOn(globalThis, 'fetch');
+
+    await expect(previewScenarioRehearsalRemediation('scenario-batch-1', {
+      schemaVersion: 'resourceGateway.scenarioRehearsalRemediationPreviewRequest.v1',
+      previewRequestId: 'preview-1',
+      expectedWorkbookSeedFingerprint: `sha256:${'a'.repeat(64)}`,
+      strategy: 'RERUN_EXACT',
+      replacements: [],
+      governanceTicketRef: {
+        kind: 'GOVERNANCE_REVIEW_TICKET',
+        id: 'ANEKE-42',
+        revision: 1,
+        fingerprint: `sha256:${'b'.repeat(64)}`,
+      },
+      reasonCode: 'TRANSIENT_EXECUTION_RECHECK',
+    })).rejects.toThrow('Owner remediation identity is not configured by the host.');
+
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it('routes every remediation operation through its role-separated credential slot and exact contract', async () => {
+    const planFingerprint = `sha256:${'c'.repeat(64)}`;
+    const approvalFingerprint = `sha256:${'d'.repeat(64)}`;
+    setRehearsalRemediationCredentialsProvider((slot) => ({
+      headers: {
+        Authorization: `Bearer ${slot.toLowerCase()}-credential`,
+        'X-Purpose': 'CALLER_CANNOT_OVERRIDE_PURPOSE',
+        'Content-Type': 'text/plain',
+      },
+      principalLabel: `${slot.toLowerCase()}@example.test`,
+      expiresAt: '2026-08-01T00:00:00Z',
+    }));
+    const fetchMock = vi.spyOn(globalThis, 'fetch').mockImplementation(async (input, init) => {
+      const url = String(input);
+      expect(init?.headers).toMatchObject({
+        'X-Purpose': 'MIRROR_REHEARSAL_REMEDIATION',
+      });
+      if (url.endsWith('/rehearsal-jobs/scenario-batch-1/remediations')) {
+        expect(init?.headers).toMatchObject({
+          Authorization: 'Bearer owner-credential',
+          'Content-Type': 'application/json',
+        });
+        expect(JSON.parse(String(init?.body))).toMatchObject({
+          previewRequestId: 'preview-1',
+          expectedWorkbookSeedFingerprint: `sha256:${'a'.repeat(64)}`,
+          strategy: 'RERUN_EXACT',
+          replacements: [],
+          reasonCode: 'TRANSIENT_EXECUTION_RECHECK',
+        });
+        return mirrorEnvelope(
+          'SCENARIO_REHEARSAL_REMEDIATION_PLAN',
+          'resourceGateway.scenarioRehearsalRemediationPlan.v1',
+          {
+            schemaVersion: 'resourceGateway.scenarioRehearsalRemediationPlan.v1',
+            remediationId: 'scenario-remediation-1',
+            planFingerprint,
+          },
+        );
+      }
+      if (url.endsWith('/rehearsal-remediations/scenario-remediation-1/approvals')) {
+        const command = JSON.parse(String(init?.body));
+        expect(init?.headers).toMatchObject({
+          Authorization: command.role === 'OWNER'
+            ? 'Bearer owner-credential'
+            : 'Bearer independent_reviewer-credential',
+          'Content-Type': 'application/json',
+        });
+        return mirrorEnvelope(
+          'SCENARIO_REHEARSAL_REMEDIATION_APPROVAL',
+          'resourceGateway.scenarioRehearsalRemediationApproval.v1',
+          {
+            schemaVersion: 'resourceGateway.scenarioRehearsalRemediationApproval.v1',
+            approvalFingerprint,
+            role: command.role,
+          },
+        );
+      }
+      if (url.endsWith('/rehearsal-remediations/scenario-remediation-1/submissions')) {
+        expect(init?.headers).toMatchObject({
+          Authorization: 'Bearer owner-credential',
+          'Content-Type': 'application/json',
+        });
+        expect(JSON.parse(String(init?.body))).toMatchObject({
+          expectedApprovalGeneration: 2,
+          expectedApprovalHeadFingerprint: approvalFingerprint,
+        });
+        return mirrorEnvelope(
+          'SCENARIO_REHEARSAL_REMEDIATION_RECEIPT',
+          'resourceGateway.scenarioRehearsalRemediationReceipt.v1',
+          {
+            schemaVersion: 'resourceGateway.scenarioRehearsalRemediationReceipt.v1',
+            successorJobId: 'scenario-batch-2',
+          },
+        );
+      }
+      if (url.endsWith('/rehearsal-remediations/scenario-remediation-1/comparison')) {
+        expect(init?.headers).toMatchObject({ Authorization: 'Bearer read-credential' });
+        return mirrorEnvelope(
+          'SCENARIO_REHEARSAL_REMEDIATION_COMPARISON',
+          'resourceGateway.scenarioRehearsalRemediationComparison.v1',
+          {
+            schemaVersion: 'resourceGateway.scenarioRehearsalRemediationComparison.v1',
+            gateTransition: 'RESOLVED',
+          },
+        );
+      }
+      expect(url).toBe('/api/mirror/rehearsal-remediations/scenario-remediation-1');
+      expect(init?.headers).toMatchObject({ Authorization: 'Bearer read-credential' });
+      return mirrorEnvelope(
+        'SCENARIO_REHEARSAL_REMEDIATION_LINEAGE',
+        'resourceGateway.scenarioRehearsalRemediationLineage.v1',
+        {
+          schemaVersion: 'resourceGateway.scenarioRehearsalRemediationLineage.v1',
+          state: 'PENDING_APPROVAL',
+        },
+      );
+    });
+    const ticket = {
+      kind: 'GOVERNANCE_REVIEW_TICKET',
+      id: 'ANEKE-42',
+      revision: 1,
+      fingerprint: `sha256:${'b'.repeat(64)}`,
+    };
+
+    const plan = await previewScenarioRehearsalRemediation('scenario-batch-1', {
+      schemaVersion: 'resourceGateway.scenarioRehearsalRemediationPreviewRequest.v1',
+      previewRequestId: 'preview-1',
+      expectedWorkbookSeedFingerprint: `sha256:${'a'.repeat(64)}`,
+      strategy: 'RERUN_EXACT',
+      replacements: [],
+      governanceTicketRef: ticket,
+      reasonCode: 'TRANSIENT_EXECUTION_RECHECK',
+    });
+    await fetchScenarioRehearsalRemediationLineage('scenario-remediation-1');
+    await decideScenarioRehearsalRemediation('scenario-remediation-1', {
+      schemaVersion: 'resourceGateway.scenarioRehearsalRemediationApprovalCommand.v1',
+      commandId: 'owner-decision',
+      remediationPlanFingerprint: planFingerprint,
+      expectedApprovalGeneration: 0,
+      role: 'OWNER',
+      decision: 'APPROVE',
+      governanceTicketRef: ticket,
+      reasonCode: 'APPROVED_AS_REVIEWED',
+    });
+    await decideScenarioRehearsalRemediation('scenario-remediation-1', {
+      schemaVersion: 'resourceGateway.scenarioRehearsalRemediationApprovalCommand.v1',
+      commandId: 'reviewer-decision',
+      remediationPlanFingerprint: planFingerprint,
+      expectedApprovalGeneration: 1,
+      role: 'INDEPENDENT_REVIEWER',
+      decision: 'APPROVE',
+      governanceTicketRef: ticket,
+      reasonCode: 'APPROVED_AS_REVIEWED',
+    });
+    await submitScenarioRehearsalRemediation('scenario-remediation-1', {
+      schemaVersion: 'resourceGateway.scenarioRehearsalRemediationSubmitCommand.v1',
+      commandId: 'submit-1',
+      remediationPlanFingerprint: planFingerprint,
+      expectedApprovalGeneration: 2,
+      expectedApprovalHeadFingerprint: approvalFingerprint,
+      reasonCode: 'APPROVALS_COMPLETE',
+    });
+    await fetchScenarioRehearsalRemediationComparison('scenario-remediation-1');
+
+    expect(plan.remediationId).toBe('scenario-remediation-1');
+    expect(fetchMock).toHaveBeenCalledTimes(6);
   });
 });
 
