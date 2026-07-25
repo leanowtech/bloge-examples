@@ -1,0 +1,85 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://bloge.dev/schemas/resource-gateway-mirror/domain-fidelity-inventory-registration-request-v1.schema.json",
+  "title": "DomainFidelityInventoryRegistrationRequest.v1",
+  "description": "Strict owner command without server-owned scope, approval, lifecycle, provenance, or fingerprint fields.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "inventoryId",
+    "revision",
+    "expectedPredecessorFingerprint",
+    "domainId",
+    "taxonomyRef",
+    "units",
+    "effectiveAt",
+    "expiresAt"
+  ],
+  "properties": {
+    "schemaVersion": {
+      "const": "resourceGateway.domainFidelityInventoryRegistrationRequest.v1"
+    },
+    "inventoryId": {
+      "$ref": "domain-fidelity-inventory-v1.schema.json#/$defs/identifier"
+    },
+    "revision": {
+      "type": "integer",
+      "minimum": 1
+    },
+    "expectedPredecessorFingerprint": {
+      "type": "string",
+      "pattern": "^(|sha256:[a-f0-9]{64})$"
+    },
+    "domainId": {
+      "$ref": "domain-fidelity-inventory-v1.schema.json#/$defs/identifier"
+    },
+    "taxonomyRef": {
+      "$ref": "domain-fidelity-inventory-v1.schema.json#/$defs/taxonomyRef"
+    },
+    "units": {
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 4096,
+      "items": {
+        "$ref": "domain-fidelity-inventory-v1.schema.json#/$defs/coverageUnit"
+      }
+    },
+    "effectiveAt": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "expiresAt": {
+      "type": "string",
+      "format": "date-time"
+    }
+  },
+  "allOf": [
+    {
+      "if": {
+        "properties": {
+          "revision": {
+            "const": 1
+          }
+        },
+        "required": [
+          "revision"
+        ]
+      },
+      "then": {
+        "properties": {
+          "expectedPredecessorFingerprint": {
+            "const": ""
+          }
+        }
+      },
+      "else": {
+        "properties": {
+          "expectedPredecessorFingerprint": {
+            "pattern": "^sha256:[a-f0-9]{64}$"
+          }
+        }
+      }
+    }
+  ]
+}

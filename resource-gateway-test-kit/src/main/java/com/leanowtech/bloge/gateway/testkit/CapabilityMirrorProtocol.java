@@ -790,6 +790,11 @@ public final class CapabilityMirrorProtocol {
     public static final String DOMAIN_FIDELITY_INVENTORY_SCHEMA_RESOURCE =
             SCHEMA_RESOURCE_ROOT
                     + "domain-fidelity-inventory-v1.schema.json";
+    /** Packaged strict owner command for one denominator revision. */
+    public static final String
+    DOMAIN_FIDELITY_INVENTORY_REGISTRATION_REQUEST_SCHEMA_RESOURCE =
+            SCHEMA_RESOURCE_ROOT
+                    + "domain-fidelity-inventory-registration-request-v1.schema.json";
     /** Packaged signed payload-free domain fidelity vector schema. */
     public static final String DOMAIN_FIDELITY_PROFILE_SCHEMA_RESOURCE =
             SCHEMA_RESOURCE_ROOT

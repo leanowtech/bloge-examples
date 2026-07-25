@@ -15,6 +15,9 @@ import com.leanowtech.bloge.gateway.integration.mirror.MirrorOperationTelemetry;
 import com.leanowtech.bloge.gateway.integration.mirror.MirrorPlanRepository;
 import com.leanowtech.bloge.gateway.integration.mirror.MirrorRunRequestRepository;
 import com.leanowtech.bloge.gateway.integration.mirror.CompiledScenarioRehearsalPlanRepository;
+import com.leanowtech.bloge.gateway.integration.mirror.DomainFidelityProfileIntegrity;
+import com.leanowtech.bloge.gateway.integration.mirror.DomainFidelityRepository;
+import com.leanowtech.bloge.gateway.integration.mirror.DomainFidelityService;
 import com.leanowtech.bloge.gateway.integration.mirror.MirrorSessionCheckpointIntegrityService;
 import com.leanowtech.bloge.gateway.integration.mirror.ScenarioArtifactRepository;
 import com.leanowtech.bloge.gateway.integration.mirror.ScenarioRehearsalBatchCompiler;
@@ -59,6 +62,7 @@ import com.leanowtech.bloge.gateway.integration.mirror.CapabilityCorpusSourceVer
 import com.leanowtech.bloge.gateway.integration.mirror.CapabilityRetryPolicyProvider;
 import com.leanowtech.bloge.gateway.integration.mirror.CapabilityObservationReviewRepository;
 import com.leanowtech.bloge.gateway.integration.MirrorRuntimeAvailability;
+import com.leanowtech.bloge.gateway.integration.DomainFidelityRuntimeAvailability;
 import com.leanowtech.bloge.gateway.resource.ResourceDescriptor;
 import com.leanowtech.bloge.gateway.resource.ResourceRegistry;
 import com.leanowtech.bloge.gateway.testing.planning.MirrorPlanCompiler;
@@ -360,6 +364,21 @@ class MirrorRuntimeConfigurationTest {
         assertThat(context.getBeansOfType(
                 CapabilityCorpusTrajectoryRepository.class)).hasSize(1);
         assertThat(context.getBeansOfType(
+                DomainFidelityProfileIntegrity.class)).hasSize(1);
+        assertThat(context.getBeansOfType(
+                DomainFidelityRepository.class)).hasSize(1);
+        assertThat(context.getBeansOfType(
+                DomainFidelityService.class)).hasSize(1);
+        assertThat(context.getBeansOfType(
+                DomainFidelityRuntimeAvailability.class).values())
+                .singleElement()
+                .satisfies(availability -> {
+                    assertThat(availability.inventoryApi()).isTrue();
+                    assertThat(availability.profileReadApi()).isTrue();
+                    assertThat(availability.signingReady()).isFalse();
+                    assertThat(availability.projectionReady()).isFalse();
+                });
+        assertThat(context.getBeansOfType(
                 CapabilityCorpusGovernancePolicyProvider.class).values())
                 .singleElement()
                 .satisfies(provider -> assertThat(provider.available()).isFalse());
@@ -388,6 +407,12 @@ class MirrorRuntimeConfigurationTest {
                 context.getBean(CapabilityCorpusRepository.class))).isTrue();
         assertThat(AopUtils.isCglibProxy(context.getBean(
                 CapabilityCorpusTrajectoryRepository.class))).isTrue();
+        assertThat(AopUtils.isCglibProxy(
+                context.getBean(DomainFidelityRepository.class)))
+                .isTrue();
+        assertThat(AopUtils.isCglibProxy(
+                context.getBean(DomainFidelityService.class)))
+                .isTrue();
         assertThat(context.getBean(MirrorRunService.class).engineConfiguration())
                 .satisfies(configuration -> {
                     assertThat(configuration.interceptorTypes()).isEmpty();
@@ -475,6 +500,14 @@ class MirrorRuntimeConfigurationTest {
                 CapabilityCorpusRepository.class)).isEmpty();
         assertThat(context.getBeansOfType(
                 CapabilityCorpusTrajectoryRepository.class)).isEmpty();
+        assertThat(context.getBeansOfType(
+                DomainFidelityProfileIntegrity.class)).isEmpty();
+        assertThat(context.getBeansOfType(
+                DomainFidelityRepository.class)).isEmpty();
+        assertThat(context.getBeansOfType(
+                DomainFidelityService.class)).isEmpty();
+        assertThat(context.getBeansOfType(
+                DomainFidelityRuntimeAvailability.class)).isEmpty();
         assertThat(context.getBeansOfType(
                 CapabilityCorpusGovernancePolicyProvider.class)).isEmpty();
         assertThat(context.getBeansOfType(

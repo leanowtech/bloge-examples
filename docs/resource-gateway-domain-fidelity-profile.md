@@ -17,15 +17,24 @@
 - 分维度 coverage、abstention、Wilson 95% 置信区间和最低样本门槛；
 - freshness、source composition、abstention debt、exact source lineage；
 - 服务端模型自校验，以及不依赖 Spring/服务端类的 Test Kit 离线验证器；
-- strict Draft 2020-12 JSON Schema 和恶意重签故障矩阵。
+- strict Draft 2020-12 JSON Schema 和恶意重签故障矩阵；
+- full-enterprise-scope、append-only 的 inventory/profile H2 repository；
+- inventory revision predecessor CAS、profile evidence-cut 唯一性与读取时索引/JSON
+  交叉验真；
+- 使用现有 managed evidence signer 的 domain-separated Ed25519 profile seal；
+- auth-before-decode 的 inventory register/read 和 signed profile read API；
+- owner/projector 职责隔离、同事务成功审计与审计失败回滚；
+- 分开报告 route、signing、source adapter 和 projection readiness 的 capability probe。
 
-尚未实现，因此不能宣称 API ready：
+尚未实现，因此不能宣称 profile projection ready：
 
-- inventory/profile 的 durable repository、受保护注册与读取 API；
-- managed signer 接入和 capability probe；
 - Scenario workbook、read-only shadow、authoritative outcome 到
   `Measurement` 的独立来源适配器；
 - drift 自动降级、shadow job、outcome reconciliation 和工作台。
+
+因此 inventory/profile 受保护 API 与 managed signing 可以报告 ready，但
+`mirrorDomainFidelityProjectionReady` 必须保持 `false`。历史 profile 可被读取和独立验真，
+不等于系统现在能从真实业务证据生成新 profile。
 
 ## 2. 为什么需要两个对象
 
@@ -111,7 +120,8 @@ Profile 是在固定 `measuredAt` 对 inventory 全量投影得到的多维证�
 7. 非 certifiable 或不完整来源全部转成 `ABSTAINED`，不能保留 PASS。
 8. 来源没有回答 required dimension 时生成维度特定的 `ABSTAINED`。
 9. 在完整 inventory 分母上重算 metrics、debt、source composition 和 limitations。
-10. 生成 profile 内容地址；应用服务接入 managed signer 后才能附加 Ed25519 seal。
+10. 生成 profile 内容地址；应用服务使用 managed signer 附加并立即复验
+    domain-separated Ed25519 seal。
 
 ### 4.1 Sufficiency
 
@@ -204,9 +214,78 @@ DomainFidelityProfile unsignedProfile =
 unsignedProfile.verify(objectMapper);
 ```
 
-`project` 返回 unsigned profile 是刻意的边界。后续应用服务必须使用受治理的 evidence signer 对
-`unsignedProfile.attestationMaterialFingerprint(objectMapper)` 签名，再通过
-`withProfileSeal` 附加 seal。业务代码不得安装隐式开发私钥。
+`project` 返回 unsigned profile 是刻意的边界。`DomainFidelityService.projectVerified`
+会要求 `SERVICE/WORKLOAD` principal、`MIRROR_FIDELITY_PROJECTION` purpose 和
+`RESOURCE_GATEWAY_FIDELITY_PROJECTOR` group，确认引用的是当前 inventory head，再使用受治理的
+evidence signer 签名、立即自验并持久化。该方法没有 HTTP 路由；普通业务调用方不能提交
+`certifiable=true` 自证来源可信，业务代码也不得安装隐式开发私钥。
+
+### 5.1 受保护 API 用法
+
+路由只在显式开启 `gateway.testing.mirror.enabled=true` 的 `test` 或 `staging` profile
+装配，`production` profile 中物理不存在。除 capability probe 外均要求 Bearer credential；
+scope、actor、owner、approval time、provenance、lifecycle 和 fingerprint 全部来自服务端。
+
+| 操作 | Purpose | 额外身份约束 |
+|---|---|---|
+| 注册 inventory revision | `MIRROR_FIDELITY_GOVERNANCE` | `USER/HUMAN`，属于 `RESOURCE_GATEWAY_FIDELITY_OWNER` |
+| 读取 inventory | `MIRROR_FIDELITY_GOVERNANCE` 或 `GOVERNANCE_EVIDENCE_INGESTION` | 完整企业 scope |
+| 读取 signed profile | `MIRROR_FIDELITY_GOVERNANCE` 或 `GOVERNANCE_EVIDENCE_INGESTION` | 完整企业 scope |
+| 投影新 profile | `MIRROR_FIDELITY_PROJECTION` | 仅内部 source adapter；无 HTTP endpoint |
+
+注册第一个 revision：
+
+```bash
+curl -X POST http://localhost:8080/api/mirror/domain-fidelity/inventories \
+  -H "Authorization: Bearer $HUMAN_OWNER_TOKEN" \
+  -H "X-Purpose: MIRROR_FIDELITY_GOVERNANCE" \
+  -H "Content-Type: application/json" \
+  --data @domain-fidelity-inventory-registration.json
+```
+
+请求文件必须匹配
+[`domain-fidelity-inventory-registration-request-v1.schema.json`](schemas/resource-gateway-mirror/domain-fidelity-inventory-registration-request-v1.schema.json)。
+revision 1 的 `expectedPredecessorFingerprint` 必须为空；后续 revision 必须填当前 head 的
+exact fingerprint。服务端拒绝未知/重复/缺失字段、尾随 JSON、过深结构、超限 body、过期窗口、
+revision gap、错误 predecessor 和同坐标不同内容。
+
+读取当前 denominator 和最新 profile：
+
+```bash
+curl http://localhost:8080/api/mirror/domain-fidelity/inventories/refund-support/latest \
+  -H "Authorization: Bearer $GOVERNANCE_TOKEN" \
+  -H "X-Purpose: GOVERNANCE_EVIDENCE_INGESTION"
+
+curl http://localhost:8080/api/mirror/domain-fidelity/domains/refund-domain/profiles/latest \
+  -H "Authorization: Bearer $GOVERNANCE_TOKEN" \
+  -H "X-Purpose: GOVERNANCE_EVIDENCE_INGESTION"
+```
+
+还可按 revision 或 content address 精确读取：
+
+- `GET /api/mirror/domain-fidelity/inventories/{inventoryId}/revisions/{revision}`
+- `GET /api/mirror/domain-fidelity/profiles/{profileFingerprint}`
+
+默认 demo credential 是 `WORKLOAD`，不能冒充 human owner 注册 inventory。演示写入需要企业
+OIDC/mTLS adapter 或显式配置的测试身份 resolver 提供 human principal、owner group 和治理 purpose；
+仅修改 `X-Actor-Type`、`X-Groups` 或 scope header 不会改变受信 claims。
+
+### 5.2 Capability probe
+
+`GET /api/integration/capabilities` 暴露以下独立事实：
+
+| Feature | 当前含义 |
+|---|---|
+| `mirrorDomainFidelityInventoryApi` | inventory register/read route 已装配 |
+| `mirrorDomainFidelityProfileReadApi` | signed profile read route 已装配 |
+| `mirrorDomainFidelitySigningReady` | managed signer 当前可签名和验签 |
+| `mirrorDomainFidelityProjectionReady` | route、signer 和全部 verified source adapter 同时 ready |
+| `mirrorDomainFidelityScenarioAdapterReady` | 当前固定为 `false` |
+| `mirrorDomainFidelityShadowAdapterReady` | 当前固定为 `false` |
+| `mirrorDomainFidelityOutcomeAdapterReady` | 当前固定为 `false` |
+
+调用方不得用前三项推导第四项；readable history、available key 和可生成新 profile 是三个不同
+生命周期事实。
 
 ## 6. 治理侧离线验真
 
@@ -244,12 +323,14 @@ reason code，不输出 Scenario fixture、请求、响应或原始诊断。
 ## 7. Schema
 
 - [`domain-fidelity-inventory-v1.schema.json`](schemas/resource-gateway-mirror/domain-fidelity-inventory-v1.schema.json)
+- [`domain-fidelity-inventory-registration-request-v1.schema.json`](schemas/resource-gateway-mirror/domain-fidelity-inventory-registration-request-v1.schema.json)
 - [`domain-fidelity-profile-v1.schema.json`](schemas/resource-gateway-mirror/domain-fidelity-profile-v1.schema.json)
 
 Test Kit 公共资源常量：
 
 ```java
 CapabilityMirrorProtocol.DOMAIN_FIDELITY_INVENTORY_SCHEMA_RESOURCE
+CapabilityMirrorProtocol.DOMAIN_FIDELITY_INVENTORY_REGISTRATION_SCHEMA_RESOURCE
 CapabilityMirrorProtocol.DOMAIN_FIDELITY_PROFILE_SCHEMA_RESOURCE
 ```
 
@@ -274,17 +355,30 @@ Schema 使用 `additionalProperties: false`。profile 不允许业务 payload、
 | verification key 不可用 | `KEY_UNAVAILABLE`，不能降级接受 |
 | key id/算法/生命周期不符 | `INVALID` 或 `POLICY_REJECTED` |
 
-## 9. 下一实施纵切
+## 9. 当前持久化与事务不变量
 
-下一步按以下依赖顺序推进，避免先做仪表盘后补信任链：
+1. inventory/profile 表的主键和查询都包含 tenant、organization、project、environment、region。
+2. inventory 是 immutable revision stream；revision 1 无 predecessor，后续使用 current head fingerprint
+   做 compare-and-set。
+3. profile 在 `(scope, domain, inventory fingerprint, measuredAt)` 上只能有一个权威结果。
+4. profile 必须绑定数据库中 exact inventory revision/fingerprint，不能凭孤立 JSON 插入。
+5. inventory 读取重算内容地址并核对所有重复索引；profile 读取还会重算派生统计并验签。
+6. 数据库只存 canonical protocol JSON 与 payload-free 索引，不新增 request/response/fixture/secret 列。
+7. 业务写入与 success audit 同事务；success audit 不可用时返回
+   `RG.MIRROR.OPERATION_AUDIT_UNAVAILABLE` 并回滚业务行。
+8. 跨 scope 查询返回 not found；损坏索引、不可用 verification key 或签名异常均失败关闭。
 
-1. 建立 full-scope、append-only inventory/profile repository。
-2. 接入 managed evidence signer，读写时都重验内容地址和签名。
-3. 开放 auth-before-decode 的 inventory 注册、profile project/read API。
-4. capability probe 分开报告 protocol、repository、projection、signing 和 API readiness。
-5. 实现 Scenario workbook adapter，并由 Test Kit 对来源 workbook 先验真。
-6. 实现 read-only shadow comparison 和 authoritative outcome observation。
-7. 把 profile limitations、stale 和 debt 接入 ANEKE gate 与 Owner workbench。
+## 10. 下一实施纵切
 
-在第 1 到 4 项完成前，系统只能把本能力标记为 protocol/kernel available，不能标记为
-serving/API ready；在 shadow/outcome 未完成前，也不能把 profile 描述为“业务结果已校准”。
+repository、managed signer、受保护 inventory/read API 和 capability 分层已完成。下一步按来源信任
+依赖推进：
+
+1. 实现 Scenario workbook source adapter：先用 Test Kit 独立验真 seed、child evidence 和签名，
+   再映射 payload-free `Measurement`。
+2. 将 source adapter readiness 做成可组合 provider，而不是配置布尔值。
+3. 实现 read-only shadow comparison、typed diff 和 sampling/egress policy。
+4. 实现 authoritative outcome observation 与 delayed/censored reconciliation。
+5. 把 drift 自动降级、profile limitations/stale/debt 接入 ANEKE gate 与 Owner workbench。
+
+在第 1 项完成前，`mirrorDomainFidelityProjectionReady` 必须保持 `false`；在 shadow/outcome
+未完成前，也不能把 profile 描述为“真实行为已对照”或“业务结果已校准”。

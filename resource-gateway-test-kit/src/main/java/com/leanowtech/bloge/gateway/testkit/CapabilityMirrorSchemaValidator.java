@@ -116,6 +116,7 @@ final class CapabilityMirrorSchemaValidator {
             "scenario-rehearsal-remediation-receipt-v1.schema.json",
             "scenario-rehearsal-remediation-lineage-v1.schema.json",
             "scenario-rehearsal-remediation-comparison-v1.schema.json",
+            "domain-fidelity-inventory-registration-request-v1.schema.json",
             "domain-fidelity-inventory-v1.schema.json",
             "domain-fidelity-profile-v1.schema.json",
             "scenario-rehearsal-batch-item-page-v1.schema.json",

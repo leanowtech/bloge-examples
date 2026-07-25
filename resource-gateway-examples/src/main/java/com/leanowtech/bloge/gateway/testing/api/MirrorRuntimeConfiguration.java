@@ -10,6 +10,7 @@ import com.leanowtech.bloge.gateway.integration.mirror.DatabaseMirrorPlanReposit
 import com.leanowtech.bloge.gateway.integration.mirror.DatabaseMirrorDeploymentIsolationAuthorityPublicationRepository;
 import com.leanowtech.bloge.gateway.integration.mirror.DatabaseMirrorDeploymentIsolationAttestationRepository;
 import com.leanowtech.bloge.gateway.integration.mirror.DatabaseMirrorRunRequestRepository;
+import com.leanowtech.bloge.gateway.integration.mirror.DatabaseDomainFidelityRepository;
 import com.leanowtech.bloge.gateway.integration.mirror.DatabaseCompiledScenarioRehearsalPlanRepository;
 import com.leanowtech.bloge.gateway.integration.mirror.DatabaseScenarioArtifactRepository;
 import com.leanowtech.bloge.gateway.integration.mirror.DatabaseScenarioRehearsalBatchEvidenceRepository;
@@ -70,6 +71,10 @@ import com.leanowtech.bloge.gateway.integration.mirror.MirrorDeploymentIsolation
 import com.leanowtech.bloge.gateway.integration.mirror.MirrorDeploymentIsolationTrustAgent;
 import com.leanowtech.bloge.gateway.integration.mirror.MirrorRunIntegrationService;
 import com.leanowtech.bloge.gateway.integration.mirror.MirrorRunRequestRepository;
+import com.leanowtech.bloge.gateway.integration.mirror.DomainFidelityPolicy;
+import com.leanowtech.bloge.gateway.integration.mirror.DomainFidelityProfileIntegrity;
+import com.leanowtech.bloge.gateway.integration.mirror.DomainFidelityRepository;
+import com.leanowtech.bloge.gateway.integration.mirror.DomainFidelityService;
 import com.leanowtech.bloge.gateway.integration.mirror.CompiledScenarioRehearsalPlanRepository;
 import com.leanowtech.bloge.gateway.integration.mirror.MirrorSessionCheckpointIntegrityService;
 import com.leanowtech.bloge.gateway.integration.mirror.ScenarioArtifactRepository;
@@ -110,6 +115,7 @@ import com.leanowtech.bloge.gateway.integration.mirror.MirrorServingGenerationSe
 import com.leanowtech.bloge.gateway.integration.mirror.MirrorServingGenerationTelemetry;
 import com.leanowtech.bloge.gateway.integration.mirror.MirrorServingGenerationTrustProvider;
 import com.leanowtech.bloge.gateway.integration.MirrorRuntimeAvailability;
+import com.leanowtech.bloge.gateway.integration.DomainFidelityRuntimeAvailability;
 import com.leanowtech.bloge.gateway.resource.ResourceRegistry;
 import com.leanowtech.bloge.gateway.testing.planning.MirrorPlanCompiler;
 import com.leanowtech.bloge.gateway.testing.runtime.MirrorRunService;
@@ -375,6 +381,35 @@ public class MirrorRuntimeConfiguration {
     public ScenarioRehearsalRemediationPolicy
     scenarioRehearsalRemediationPolicy() {
         return ScenarioRehearsalRemediationPolicy.defaults();
+    }
+
+    /** Installs server-owned authorization, review-horizon, and projection policy. */
+    @Bean
+    @ConditionalOnMissingBean
+    public DomainFidelityPolicy domainFidelityPolicy() {
+        return DomainFidelityPolicy.defaults();
+    }
+
+    /** Creates the domain-separated managed Profile signing and verification boundary. */
+    @Bean
+    @ConditionalOnMissingBean
+    public DomainFidelityProfileIntegrity
+    domainFidelityProfileIntegrity(
+            ObjectMapper objectMapper,
+            VisualEvidenceSigner evidenceSigner) {
+        return new DomainFidelityProfileIntegrity(
+                objectMapper, evidenceSigner);
+    }
+
+    /** Creates the full-scope append-only inventory and signed-profile repository. */
+    @Bean
+    @ConditionalOnMissingBean
+    public DomainFidelityRepository domainFidelityRepository(
+            JdbcTemplate jdbc,
+            ObjectMapper objectMapper,
+            DomainFidelityProfileIntegrity integrity) {
+        return new DatabaseDomainFidelityRepository(
+                jdbc, objectMapper, integrity);
     }
 
     /** Installs the bounded lease, retry, and quarantine policy for evidence finalization. */
@@ -1238,6 +1273,45 @@ public class MirrorRuntimeConfiguration {
             MirrorOperationFailureAuditService failureAudit,
             MirrorOperationTelemetry telemetry) {
         return new MirrorOperationObservability(audit, failureAudit, telemetry);
+    }
+
+    /**
+     * Creates the governed inventory and internal verified-source projection application boundary.
+     */
+    @Bean
+    @ConditionalOnMissingBean
+    public DomainFidelityService domainFidelityService(
+            DomainFidelityRepository repository,
+            DomainFidelityPolicy policy,
+            DomainFidelityProfileIntegrity integrity,
+            ObjectMapper objectMapper,
+            MirrorOperationObservability observability) {
+        return new DomainFidelityService(
+                repository,
+                policy,
+                integrity,
+                objectMapper,
+                observability);
+    }
+
+    /**
+     * Publishes separate route, signer, and source-adapter readiness.
+     *
+     * <p>Source adapters remain deliberately false in this increment. Their later composition
+     * replaces the final supplier instead of allowing repository or signer presence to imply that
+     * a new profile can be projected.</p>
+     */
+    @Bean
+    @ConditionalOnMissingBean
+    @ConditionalOnBean(DomainFidelityService.class)
+    public DomainFidelityRuntimeAvailability
+    domainFidelityRuntimeAvailability(
+            DomainFidelityProfileIntegrity integrity) {
+        return new DomainFidelityRuntimeAvailability(
+                true,
+                true,
+                integrity::available,
+                () -> false);
     }
 
     /**

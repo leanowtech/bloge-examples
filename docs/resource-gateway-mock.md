@@ -7,13 +7,13 @@
 
 | 文档属性 | 内容 |
 |---|---|
-| 状态 | Accepted / In implementation；Stage 0 工程门禁已通过；Stage 1 完成 MirrorPlan、受保护运行/证据 API、部署隔离信任与 durable execution；Stage 2 完成 observation/corpus 的准入、review、publication、trajectory/cluster serving 与 generation fence；Stage 3 完成有状态 Session、虚拟读写、checkpoint/recovery、write-attempt reconciliation 和三类 ANEKE seed；Stage 4 完成 Scenario 编译、可恢复 aggregate、签名 evidence、audit/retention/workbook closure、durable batch manifest/queue/API/worker、region-local bounded scheduler、cooperative control、签名 batch evidence、批次 operation/lifecycle audit、retention、durable evidence finalization、受控 remediation、聚合 health/SLO、ANEKE batch workbook、Owner 证据分诊工作台，以及 reviewed remediation 的版本化协议、持久化状态机、受保护 API、角色隔离浏览器流程和前后继签名对账。Stage 5 已完成 owner-approved Fidelity inventory、无总分 profile、fail-closed 投影内核、strict Schema 和独立 Test Kit 重算验真；durable repository、受保护 API、来源适配器、shadow/outcome、零 DSL case 调整、企业身份任务认证和生产环境认证继续实施；未完成前相关 readiness 必须保持 `false` |
+| 状态 | Accepted / In implementation；Stage 0 工程门禁已通过；Stage 1 完成 MirrorPlan、受保护运行/证据 API、部署隔离信任与 durable execution；Stage 2 完成 observation/corpus 的准入、review、publication、trajectory/cluster serving 与 generation fence；Stage 3 完成有状态 Session、虚拟读写、checkpoint/recovery、write-attempt reconciliation 和三类 ANEKE seed；Stage 4 完成 Scenario 编译、可恢复 aggregate、签名 evidence、audit/retention/workbook closure、durable batch manifest/queue/API/worker、region-local bounded scheduler、cooperative control、签名 batch evidence、批次 operation/lifecycle audit、retention、durable evidence finalization、受控 remediation、聚合 health/SLO、ANEKE batch workbook、Owner 证据分诊工作台，以及 reviewed remediation 的版本化协议、持久化状态机、受保护 API、角色隔离浏览器流程和前后继签名对账。Stage 5 已完成 owner-approved Fidelity inventory、无总分 profile、fail-closed 投影内核、strict Schema、独立 Test Kit 重算验真、full-scope append-only repository、managed signing、受保护 inventory/profile read API 与分层 readiness；Scenario/shadow/outcome 来源适配器、drift/calibration、零 DSL case 调整、企业身份任务认证和生产环境认证继续实施；未完成前 projection/source readiness 必须保持 `false` |
 | 目标读者 | Resource Gateway、BLOGE Runtime、ANEKE、TEE/数据平台、QA、SRE、安全与业务运营团队 |
 | 设计范围 | external/composed 能力建模、镜像运行、保真语料、有状态世界、场景演练、证据、保真度与结果校准 |
 | 非目标 | 不重做 ANEKE 的资产治理和发布门禁；不允许测试控制进入生产业务请求；不把观测频率直接当成业务正确性 |
 | 基准日期 | 2026-07-26 |
 
-### 实施快照（2026-07-25）
+### 实施快照（2026-07-26）
 
 - Stage 0 第一增量已完成 `CapabilitySnapshot`、`CapabilityContract`、`EffectContract`、
   `ArtifactProvenance` 和 exact `MirrorArtifactRef` Java 协议内核。
@@ -74,9 +74,9 @@
   不表示部署级 egress attestation 或 certification 已完成。客户环境的数据
   使用授权、跨系统 schema owner、部署/namespace 形态等组织决策仍是生产准入前置，不由仓库测试冒充完成。
 - 当前验证基线：前端 Vitest `165/165` 全绿并完成 TypeScript/Vite 生产构建；带
-  `-Pfrontend` 的 Resource Gateway 完整门禁为 `5218` 项 Java 测试、0 失败、0 错误、
+  `-Pfrontend` 的 Resource Gateway 完整门禁为 `5242` 项 Java 测试、0 失败、0 错误、
   0 跳过，真实 Chrome DOM/工作流与可执行 Boot JAR 均通过。独立 test-kit
-  `411/411` 全绿，136 份 Mirror Schema 完成 fail-closed 引用闭包与打包验证，公共
+  `411/411` 全绿，137 份 Mirror Schema 完成 fail-closed 引用闭包与打包验证，公共
   JavaDoc、普通 JAR 与 shaded JAR 均成功生成。
 - Stage 1 第二增量已实现 `MirrorPlanCompiler`、`MirrorPlanCompilationRequest`、`CompiledMirrorPlan` 和
   `ExecutionControlCompiler.compileMirror` adapter。编译器把每条 direct/nested external capability edge 对账到
@@ -576,11 +576,12 @@ Resource Gateway 已有的工业底座应直接复用：
 | 日志蒸馏与语料 | 82% | payload-free signed observation、准入/隔离、immutable review、candidate/publication/trajectory/cluster 独立 lineage、元数据风险门禁、fixture exact/trajectory/cluster binding、在线 revalidation、test/staging `RECORDED_EXACT`/`RECORDED_TRAJECTORY`/`RECORDED_CLUSTER`、BLOGE 原生 retry loop、identity-safe projection、Wilson confidence、Session state read 与独立 verifier 已落地；缺生产 payload authority、漂移、偏差、outcome 校准和删除证明 |
 | 有状态业务世界 | 91% | 协议、read/write 退款 fixture、独立 verifier/sealer/client、事务内核、受保护 Session API、独立 AES-GCM 数据面、lease/fence/CAS、durable write-attempt journal/reconciliation、TTL/destroy、全局/scope 容量、保留字节、命令背压、过期擦除、固定 read head、run-scoped virtual write、真实 DAG read-write-read、payload-free v1/v2/v3 state evidence、read-only/successful-transition/write-outcome ANEKE seed、签名 HASH_ONLY checkpoint 与同数据面代际精确恢复准入已落地；缺 TEE/KMS、跨区域数据恢复、真实 process-kill/network parity、目标数据库容量认证和 HA/DR certification |
 | Scenario/Rehearsal | 99.3% | ScenarioPack/Case/Assertion、exact compiler、可恢复逐 case runtime、签名 aggregate、audit/retention、ANEKE seed、durable batch manifest/queue/API/worker、region-local DAG/KMS 双 scheduler、逐 case cooperative control、v1/v2 签名 batch evidence/index、批次 operation/lifecycle audit、retention/multi-hold/逻辑删除证明、durable finalization outbox/lease/retry/quarantine/status、受控 remediation、聚合 health/SLO，以及 root-sealed ANEKE batch workbook 已落地；缺 hard kill、企业策略/WORM/anchor、异构消费者和目标环境认证 |
-| Fidelity/Outcome | 28% | owner-approved content-addressed inventory、无总分七维 profile、fail-closed freshness/低样本/abstention/source debt、Wilson 95%、exact lineage、strict Schema 与独立 Test Kit 重算验真已落地；缺 durable API、workbook/shadow/outcome adapter、drift 降级和校准闭环 |
+| Fidelity/Outcome | 42% | owner-approved content-addressed inventory、无总分七维 profile、fail-closed freshness/低样本/abstention/source debt、Wilson 95%、exact lineage、strict Schema、独立 Test Kit 重算验真、full-scope append-only repository、managed signing、受保护 inventory/profile read API、同事务 audit 和诚实 readiness 已落地；缺 workbook/shadow/outcome adapter、drift 降级和校准闭环 |
 | 业务运营工作台 | 72% | exact-scope keyset 队列、证据分诊/deep link/响应式 UI，以及 reviewed remediation 八对象协议、server-owned 双角色策略、durable approval ledger、CAS、successor 原子准入、签名前后继对账、角色隔离 Owner/Reviewer 控件、auth-before-decode API 和 capability probe 已落地；仍缺零 DSL case 调整、256-item 密度/性能、任务分派与 SLA、复杂业务样例、可访问性及真实企业 IdP/委派/Owner 认证 |
 
-结论：基础设施准备度约 93%，固定权重理想态完成度为 74.08%。剩余差距 25.92%，主要矛盾已经
-从“能否安全执行和取证”转向“能否把可信 observation 持续蒸馏成可校准、可拒答、可删除的业务拟合资产”。
+结论：基础设施准备度约 93%，固定权重理想态完成度为 77.44%。剩余差距 22.56%，主要矛盾已经
+从“保真资产能否被协议化、持久化和验真”转向“谁有资格把哪类真实来源变成 measurement，以及来源漂移后如何
+自动撤销 serving 结论”。
 
 ### 3.1 2026-07-24 Scenario 编译期闭包迭代差距复评
 
@@ -1837,6 +1838,56 @@ serving 能力，不能在 probe 中提前宣称 ready。它只把“什么叫�
 协议与使用说明见
 [`resource-gateway-domain-fidelity-profile.md`](resource-gateway-domain-fidelity-profile.md)。
 
+### 3.27 2026-07-26 Fidelity 持久化、签名与受保护 API 迭代差距复评
+
+本轮关闭 3.26 之后最危险的工程断层：协议对象已经严谨，但没有权威存储、签名与受保护应用边界时，
+任何调用方都可能绕过 Owner 分母、伪造 `certifiable` measurement，或者让一份历史 JSON 被误认为当前
+serving 事实。根因不是“少几个 CRUD”，而是四个 authority 没有分开：
+
+1. **Owner authority** 决定稳定业务分母，不应由 source adapter 或 HTTP body 代填；
+2. **Source authority** 只能提交已经独立验真的 payload-free measurement，不能改 denominator；
+3. **Signing authority** 证明 Resource Gateway 发布了哪个 profile，不替代统计和来源语义验真；
+4. **Read authority** 只能读取 authenticated full scope，不能凭 fingerprint 猜测跨组织资产。
+
+落地实现采用以下根治手段：
+
+- 新增 strict `DomainFidelityInventoryRegistrationRequest.v1`。请求不含 scope、owner、
+  approval time、provenance、lifecycle 和 fingerprint；服务端从 authenticated human identity
+  生成这些信任事实。
+- inventory/profile 使用两个 full-scope append-only 表。inventory revision 通过 predecessor
+  fingerprint 做 CAS；profile 在 `(scope, domain, inventory fingerprint, measuredAt)` 上保持唯一，
+  且必须绑定数据库里的 exact inventory。
+- 每次读取都从 canonical JSON 重建对象，重算 inventory/profile fingerprint、profile 全部派生统计与
+  detached signature，并核对重复索引。数据库列被局部修改不会改变治理行为，只会产生稳定 corruption failure。
+- `DomainFidelityService.projectVerified` 是内部 trusted-source boundary，不开放 HTTP。它要求
+  `SERVICE/WORKLOAD + MIRROR_FIDELITY_PROJECTION + RESOURCE_GATEWAY_FIDELITY_PROJECTOR`，
+  并强制使用当前 inventory head；调用方不能从请求体自报来源已认证。
+- 新增 inventory register/exact/latest 与 signed profile exact/latest 五个受保护路由。认证发生在
+  JSON 解码或 repository lookup 前；production profile 中路由和全部 Fidelity bean 物理不存在。
+- managed signer 使用 domain-separated material，签名后立即本地验签，读取时再次验签；key 不可用或
+  stored signature 异常均失败关闭。
+- inventory/profile 写入与 success audit 位于同一 Spring 事务。专项故障注入证明 audit store 抛错时
+  返回 `RG.MIRROR.OPERATION_AUDIT_UNAVAILABLE`，inventory 表保留 0 行，避免“资产已发布但审计不存在”。
+- capability probe 分开暴露 inventory API、profile read API、signing 和 projection readiness。
+  Scenario、shadow、outcome adapter 仍为 false，因此 projection 必须保持 false。
+
+真实应用装配测试在本轮发现并修复了一个单元测试无法暴露的缺陷：新增 repository/service 最初被声明为
+`final`，与工程启用的 CGLIB class proxy 冲突，Mirror profile 启动会失败。实现已改为可代理事务边界，并由
+装配测试同时断言 repository/service 都是 CGLIB proxy；这条回归保护直接针对“源码上写了
+`@Transactional`，运行时却没有事务”的病根。
+
+本轮仍没有 Scenario workbook、shadow 或 authoritative outcome adapter，所以没有证据证明系统能自动生成
+任何新 profile，也没有提高 Outcome 校准成熟度。`Fidelity/Outcome` 只从 `28%` 上调到 `42%`：
+协议到 durable/trusted API 的本地链已闭合，但真实来源、漂移与结果校准仍占该能力域的大头。按固定
+`24%` 权重，加权贡献从 `6.72` 提高到 `10.08`，总分从 `74.08%` 提高到 `77.44%`，
+距理想态 `22.56%`。
+
+下一最短路径是 Scenario workbook source adapter。它必须先用独立 Test Kit verifier 验证 seed、
+child evidence、签名和 exact inventory unit closure，再产生 measurement；不能把服务端 DTO 转换或一个
+`verified=true` 参数包装成“独立验真”。随后才是 read-only shadow typed diff 和 authoritative outcome
+reconciliation。详细协议、API、purpose/role 和 capability 用法见
+[`resource-gateway-domain-fidelity-profile.md`](resource-gateway-domain-fidelity-profile.md)。
+
 ## 4. 目标架构与系统责任
 
 ![Resource Gateway 业务能力镜像目标架构](assets/resource-gateway-capability-mirror-target-architecture.svg)
@@ -3051,7 +3102,8 @@ case 微调和结果解释；发布门禁能区分执行失败、断言失败、
 
 **交付物**：
 
-- DomainFidelityInventory/Profile 协议、confidence、coverage 和独立验真（协议内核已完成）；
+- DomainFidelityInventory/Profile 协议、confidence、coverage、独立验真、durable repository、
+  managed signing 和受保护 API（可信来源适配器尚未完成）；
 - 只读 shadow jobs、typed behavior diff 和 drift debt；
 - contract-mock grant、ratio、定期完全展开和自动 revoke；
 - domain dashboard、owner route 和 SLO alert。
@@ -3161,7 +3213,7 @@ permit、v1/v2/v3 双向兼容读取和独立 test-kit 语义复验；非 Java v
 | 0 | RG-MIR-SCEN-OPS-003 finalization health/SLO | 已完成 | RG Runtime + SRE | durable finalization/remediation | strict health v1、exact-scope API、Actuator、固定基数 metric、Test Kit、脚本/运行文档 | unknown state/policy drift/store failure 不误绿；API/monitor/probe 使用同一 evaluator |
 | 1 | RG-MIR-SCEN-005 ANEKE batch workbook | 已完成 | RG Evidence + ANEKE Correctness | signed batch v2、child seed、batch retention | batch seed/Schema、projector、root seal、独立 verifier/client、受保护 API、audit、capability | 1..256 个 item 全闭合；普通门禁读取无 N+1；deep audit 对漏项/重复/child drift 失败关闭 |
 | 2 | RG-MIR-SCEN-006 Owner rehearsal workbench | P0 / 进行中（证据分诊与 reviewed remediation 纵切完成） | Author UX + RG Scenario + 业务 Owner | Work package 1 | batch 列表、shape summary、证据分诊/deep link、remediation protocol/policy/repository/service/API、双角色控件、原子 successor admission 和签名对账已完成；待零 DSL case 调整、任务分派/SLA、256-item 性能/可访问性及企业 IdP/Owner 认证 | owner 能在 15 分钟内定位失败、区分执行/断言/低保真/证据故障并完成审阅；浏览器 E2E 覆盖 256-item 复杂批次 |
-| 3 | RG-MIR-FID-001 Fidelity protocol/kernel | P0 / 进行中（形式化协议、内核与独立验真完成） | RG Domain + ANEKE Governance + 数据科学 | Work package 1；owner 冻结 coverage taxonomy | 已完成 `DomainFidelityInventory/Profile.v1`、strict Schema、完整 denominator、七维 metric、Wilson 95%、freshness、abstention/source debt、exact lineage、fail-closed projector 和独立 Test Kit verifier；待 durable repository、managed signer、受保护 API、capability 与 source adapter | 空分母/低样本/缺失/陈旧不能高分；合法重签的伪造 metric/expiry/denominator 仍被独立拒绝；API 就绪后每个分量可回到 exact Scenario/source generation |
+| 3 | RG-MIR-FID-001 Fidelity protocol/kernel | P0 / 进行中（协议、持久化、签名与受保护 API 完成） | RG Domain + ANEKE Governance + 数据科学 | Work package 1；owner 冻结 coverage taxonomy | 已完成 `DomainFidelityInventoryRegistrationRequest/Inventory/Profile.v1`、strict Schema、完整 denominator、七维 metric、Wilson 95%、freshness、abstention/source debt、exact lineage、fail-closed projector、独立 Test Kit verifier、full-scope append-only repository、managed signer、受保护 register/read API、同事务 audit 和分层 capability；待 Scenario/shadow/outcome source adapter | 空分母/低样本/缺失/陈旧不能高分；合法重签的伪造 metric/expiry/denominator 仍被独立拒绝；审计失败回滚资产；每个 profile 分量可回到 exact inventory/source generation |
 | 4 | RG-MIR-FID-002 Read-only shadow/diff | P1 / 2 sprints | RG Runtime + TEE/Data Plane + SRE | Work package 3；数据使用授权 | shadow plan/job、typed node/edge/state/effect diff、sampling budget、drift downgrade/revoke | 真实写和凭据为 0；采样不超过授权；schema/branch/retry/state/outcome 差异可归因；漂移自动使 readiness/gate stale |
 | 5 | RG-MIR-OUT-001 Outcome calibration | P1 / 2 sprints | ANEKE + 业务分析 + RG Domain | Work package 3；权威 outcome owner | versioned outcome definition/connector、delayed/censored reconciliation、calibration cohort、candidate assertion | 多源冲突和迟到结果不覆盖历史；候选不经 owner 不 serving；能证明或否证 fidelity 与业务结果关系 |
 | 6 | RG-MIR-CERT-001 Runtime certification harness | P0 并行 / 3-4 sprints | SRE + Security + RG Runtime | 当前 Stage 3/4 runtime | PostgreSQL 多副本、真实 KMS、forked JVM kill、network partition、rolling upgrade、backup/restore、capacity 工具与证据包 | 每个故障点有期望状态/恢复上限/数据不变量；旧 owner/epoch 永不发布；结果可在 CI/nightly/客户环境重放 |

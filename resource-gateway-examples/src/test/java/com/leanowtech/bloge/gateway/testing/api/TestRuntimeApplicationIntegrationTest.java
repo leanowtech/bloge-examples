@@ -8,11 +8,15 @@ import com.leanowtech.bloge.gateway.integration.IntegrationEnvelope;
 import com.leanowtech.bloge.gateway.integration.MirrorIntegrationController;
 import com.leanowtech.bloge.gateway.integration.MirrorRunIntegrationController;
 import com.leanowtech.bloge.gateway.integration.MirrorRuntimeAvailability;
+import com.leanowtech.bloge.gateway.integration.DomainFidelityController;
+import com.leanowtech.bloge.gateway.integration.DomainFidelityRuntimeAvailability;
 import com.leanowtech.bloge.gateway.integration.MirrorDeploymentIsolationAuthorityPublicationController;
 import com.leanowtech.bloge.gateway.integration.CapabilityObservationController;
 import com.leanowtech.bloge.gateway.integration.CapabilityCorpusGovernanceController;
 import com.leanowtech.bloge.gateway.integration.CapabilityCorpusClusterController;
 import com.leanowtech.bloge.gateway.integration.mirror.CapabilityObservationAdmissionService;
+import com.leanowtech.bloge.gateway.integration.mirror.DomainFidelityRepository;
+import com.leanowtech.bloge.gateway.integration.mirror.DomainFidelityService;
 import com.leanowtech.bloge.gateway.integration.mirror.CapabilityObservationRepository;
 import com.leanowtech.bloge.gateway.integration.mirror.CapabilityCorpusGovernanceService;
 import com.leanowtech.bloge.gateway.integration.mirror.CapabilityCorpusClusterGovernanceService;
@@ -111,6 +115,8 @@ class TestRuntimeApplicationIntegrationTest {
                 CapabilityCorpusGovernanceController.class)).hasSize(1);
         assertThat(context.getBeansOfType(
                 CapabilityCorpusClusterController.class)).hasSize(1);
+        assertThat(context.getBeansOfType(
+                DomainFidelityController.class)).hasSize(1);
         assertThat(context.getBeansOfType(MirrorPlanIntegrationService.class)).hasSize(1);
         assertThat(context.getBeansOfType(MirrorRunIntegrationService.class)).hasSize(1);
         assertThat(context.getBeansOfType(
@@ -127,6 +133,19 @@ class TestRuntimeApplicationIntegrationTest {
                 CapabilityObservationReviewRepository.class)).hasSize(1);
         assertThat(context.getBeansOfType(
                 CapabilityCorpusRepository.class)).hasSize(1);
+        assertThat(context.getBeansOfType(
+                DomainFidelityRepository.class)).hasSize(1);
+        assertThat(context.getBeansOfType(
+                DomainFidelityService.class)).hasSize(1);
+        assertThat(context.getBeansOfType(
+                DomainFidelityRuntimeAvailability.class).values())
+                .singleElement()
+                .satisfies(availability -> {
+                    assertThat(availability.inventoryApi()).isTrue();
+                    assertThat(availability.profileReadApi()).isTrue();
+                    assertThat(availability.signingReady()).isTrue();
+                    assertThat(availability.projectionReady()).isFalse();
+                });
         assertThat(context.getBeansOfType(MirrorRunCommitService.class)).hasSize(1);
         assertThat(context.getBeansOfType(MirrorRunRequestRepository.class)).hasSize(1);
         assertThat(context.getBeansOfType(MirrorRuntimeAvailability.class)).hasSize(1);
@@ -229,6 +248,32 @@ class TestRuntimeApplicationIntegrationTest {
                         "mirrorCorpusTrajectoryResolverReady", false)
                 .containsEntry(
                         "mirrorCorpusClusterResolverReady", false);
+        assertThat(capabilities.getBody().payload().features())
+                .containsEntry(
+                        "mirrorDomainFidelityInventoryApi", true)
+                .containsEntry(
+                        "mirrorDomainFidelityProfileReadApi", true)
+                .containsEntry(
+                        "mirrorDomainFidelitySigningReady", true)
+                .containsEntry(
+                        "mirrorDomainFidelityProjectionReady", false)
+                .containsEntry(
+                        "mirrorDomainFidelityScenarioAdapterReady", false)
+                .containsEntry(
+                        "mirrorDomainFidelityShadowAdapterReady", false)
+                .containsEntry(
+                        "mirrorDomainFidelityOutcomeAdapterReady", false);
+        assertThat(capabilities.getBody().payload()
+                .supportedObjects())
+                .containsKeys(
+                        "domainFidelityInventoryRegistrationRequest",
+                        "domainFidelityInventory",
+                        "domainFidelityProfile");
+        assertThat(capabilities.getBody().payload().endpoints())
+                .anyMatch(endpoint ->
+                        endpoint.method().equals("POST")
+                                && endpoint.path().equals(
+                                "/api/mirror/domain-fidelity/inventories"));
         assertThat(capabilities.getBody().payload().endpoints()).anyMatch(endpoint ->
                 endpoint.method().equals("POST")
                         && endpoint.path().equals("/api/mirror/plans"));

@@ -133,7 +133,15 @@ public record MirrorOperationAuditEvent(
         /** Publish one exact owner-reviewed recorded retry trajectory. */
         CORPUS_TRAJECTORY_PUBLISH,
         /** Publish one exact externally validated recorded cluster. */
-        CORPUS_CLUSTER_PUBLISH
+        CORPUS_CLUSTER_PUBLISH,
+        /** Register one immutable owner-approved Domain Fidelity denominator revision. */
+        FIDELITY_INVENTORY_REGISTER,
+        /** Read one reverified Domain Fidelity denominator revision. */
+        FIDELITY_INVENTORY_READ,
+        /** Project verified source facts into one signed Domain Fidelity profile. */
+        FIDELITY_PROFILE_PROJECT,
+        /** Read one arithmetic- and signature-reverified Domain Fidelity profile. */
+        FIDELITY_PROFILE_READ
     }
 
     /** Terminal operation outcomes. */

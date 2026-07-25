@@ -33,8 +33,8 @@ implementation. The JAR packages the authoritative v1 JSON Schema and provides:
   domain-separated Ed25519 signature; deterministic Scenario correctness-workbook
   Schema, dual-signature/source-closure verifier, and a client method that
   refuses producer-selected gate decisions;
-- strict owner-approved `DomainFidelityInventory.v1` and signed payload-free
-  `DomainFidelityProfile.v1` Schemas plus a server-independent verifier that
+- strict owner registration-command, owner-approved `DomainFidelityInventory.v1`, and signed
+  payload-free `DomainFidelityProfile.v1` Schemas plus a server-independent verifier that
   reconstructs every unit denominator, dimension metric, Wilson 95% interval,
   freshness boundary, abstention debt, source composition, limitation, content
   address, and Ed25519 seal without accepting a composite score;

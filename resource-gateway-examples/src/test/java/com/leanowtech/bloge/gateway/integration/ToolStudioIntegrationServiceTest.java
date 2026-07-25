@@ -300,6 +300,74 @@ class ToolStudioIntegrationServiceTest {
     }
 
     @Test
+    void capabilitiesSeparateDomainFidelityRoutesSigningAndProjectionReadiness() {
+        AtomicBoolean signer = new AtomicBoolean(true);
+        AtomicBoolean sources = new AtomicBoolean(false);
+        ToolStudioIntegrationService service =
+                service(null, null, null, null);
+        service.configureDomainFidelityRuntime(
+                new DomainFidelityRuntimeAvailability(
+                        true,
+                        true,
+                        signer::get,
+                        sources::get));
+
+        IntegrationCapabilities assembled =
+                service.capabilities().payload();
+
+        assertThat(assembled.features())
+                .containsEntry(
+                        "mirrorDomainFidelityInventoryApi",
+                        true)
+                .containsEntry(
+                        "mirrorDomainFidelityProfileReadApi",
+                        true)
+                .containsEntry(
+                        "mirrorDomainFidelitySigningReady",
+                        true)
+                .containsEntry(
+                        "mirrorDomainFidelityProjectionReady",
+                        false)
+                .containsEntry(
+                        "mirrorDomainFidelityScenarioAdapterReady",
+                        false)
+                .containsEntry(
+                        "mirrorDomainFidelityShadowAdapterReady",
+                        false)
+                .containsEntry(
+                        "mirrorDomainFidelityOutcomeAdapterReady",
+                        false);
+        assertThat(assembled.supportedObjects())
+                .containsKeys(
+                        "domainFidelityInventoryRegistrationRequest",
+                        "domainFidelityInventory",
+                        "domainFidelityProfile");
+        assertThat(assembled.endpoints())
+                .extracting(endpoint ->
+                        endpoint.method() + " " + endpoint.path())
+                .contains(
+                        "POST /api/mirror/domain-fidelity/inventories",
+                        "GET /api/mirror/domain-fidelity/inventories/{inventoryId}/revisions/{revision}",
+                        "GET /api/mirror/domain-fidelity/inventories/{inventoryId}/latest",
+                        "GET /api/mirror/domain-fidelity/profiles/{profileFingerprint}",
+                        "GET /api/mirror/domain-fidelity/domains/{domainId}/profiles/latest");
+
+        sources.set(true);
+        assertThat(service.capabilities().payload().features())
+                .containsEntry(
+                        "mirrorDomainFidelityProjectionReady",
+                        true);
+        signer.set(false);
+        assertThat(service.capabilities().payload().features())
+                .containsEntry(
+                        "mirrorDomainFidelitySigningReady",
+                        false)
+                .containsEntry(
+                        "mirrorDomainFidelityProjectionReady",
+                        false);
+    }
+
+    @Test
     void capabilitiesAdvertiseOnlyTheProtectedMirrorSurfacesOwnedByItsProfileMarker() {
         ToolStudioIntegrationService disabled = service(null, null, null, null);
         ToolStudioIntegrationService enabled = service(null, null, null, null);

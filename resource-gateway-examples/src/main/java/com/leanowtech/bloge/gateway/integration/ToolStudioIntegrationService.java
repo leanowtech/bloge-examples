@@ -81,6 +81,10 @@ public class ToolStudioIntegrationService {
     private boolean suiteStabilityJobSubmissionEnabled;
     private MirrorRuntimeAvailability mirrorRuntimeAvailability =
             new MirrorRuntimeAvailability(false, false);
+    private DomainFidelityRuntimeAvailability
+            domainFidelityRuntimeAvailability =
+            new DomainFidelityRuntimeAvailability(
+                    false, false, () -> false, () -> false);
     private ScenarioRehearsalBatchScheduler
             scenarioRehearsalBatchScheduler;
     private ScenarioRehearsalBatchFinalizationScheduler
@@ -176,6 +180,17 @@ public class ToolStudioIntegrationService {
     void configureMirrorRuntime(MirrorRuntimeAvailability availability) {
         this.mirrorRuntimeAvailability = availability == null
                 ? new MirrorRuntimeAvailability(false, false) : availability;
+    }
+
+    /** Receives the marker only when protected Domain Fidelity routes are assembled. */
+    @Autowired(required = false)
+    void configureDomainFidelityRuntime(
+            DomainFidelityRuntimeAvailability availability) {
+        this.domainFidelityRuntimeAvailability =
+                availability == null
+                        ? new DomainFidelityRuntimeAvailability(
+                        false, false, () -> false, () -> false)
+                        : availability;
     }
 
     /** Receives the scheduler only when an exact non-production batch partition is active. */
@@ -554,6 +569,27 @@ public class ToolStudioIntegrationService {
                 mirrorRuntimeAvailability.corpusTrajectoryResolverReady());
         features.put("mirrorCorpusClusterResolverReady",
                 mirrorRuntimeAvailability.corpusClusterResolverReady());
+        features.put(
+                "mirrorDomainFidelityInventoryApi",
+                domainFidelityRuntimeAvailability.inventoryApi());
+        features.put(
+                "mirrorDomainFidelityProfileReadApi",
+                domainFidelityRuntimeAvailability.profileReadApi());
+        features.put(
+                "mirrorDomainFidelitySigningReady",
+                domainFidelityRuntimeAvailability.signingReady());
+        features.put(
+                "mirrorDomainFidelityProjectionReady",
+                domainFidelityRuntimeAvailability.projectionReady());
+        features.put(
+                "mirrorDomainFidelityScenarioAdapterReady",
+                false);
+        features.put(
+                "mirrorDomainFidelityShadowAdapterReady",
+                false);
+        features.put(
+                "mirrorDomainFidelityOutcomeAdapterReady",
+                false);
         features.put("mirrorStatefulSessionApi", mirrorStatefulSessionApi);
         features.put("mirrorStatefulStateStoreReady", mirrorStatefulStoreReady);
         features.put("mirrorStateCheckpointProtocol",
@@ -920,6 +956,28 @@ public class ToolStudioIntegrationService {
         features.put("controlPlaneCertificateRotationProductionReady",
                 rotation.productionReady());
         Map<String, List<String>> supportedObjects = new LinkedHashMap<>(current.supportedObjects());
+        if (domainFidelityRuntimeAvailability.inventoryApi()) {
+            supportedObjects.put(
+                    "domainFidelityInventoryRegistrationRequest",
+                    List.of(
+                            com.leanowtech.bloge.gateway.integration.mirror
+                                    .DomainFidelityInventoryRegistrationRequest
+                                    .SCHEMA_VERSION));
+            supportedObjects.put(
+                    "domainFidelityInventory",
+                    List.of(
+                            com.leanowtech.bloge.gateway.integration.mirror
+                                    .DomainFidelityInventory
+                                    .SCHEMA_VERSION));
+        }
+        if (domainFidelityRuntimeAvailability.profileReadApi()) {
+            supportedObjects.put(
+                    "domainFidelityProfile",
+                    List.of(
+                            com.leanowtech.bloge.gateway.integration.mirror
+                                    .DomainFidelityProfile
+                                    .SCHEMA_VERSION));
+        }
         if (mirrorPlanReady) {
             supportedObjects.put("mirrorPlanCreateRequest", List.of(
                     com.leanowtech.bloge.gateway.integration.mirror
@@ -1254,6 +1312,25 @@ public class ToolStudioIntegrationService {
         }
         List<IntegrationCapabilities.Endpoint> endpoints =
                 new java.util.ArrayList<>(current.endpoints());
+        if (domainFidelityRuntimeAvailability.inventoryApi()) {
+            endpoints.add(new IntegrationCapabilities.Endpoint(
+                    "POST",
+                    "/api/mirror/domain-fidelity/inventories"));
+            endpoints.add(new IntegrationCapabilities.Endpoint(
+                    "GET",
+                    "/api/mirror/domain-fidelity/inventories/{inventoryId}/revisions/{revision}"));
+            endpoints.add(new IntegrationCapabilities.Endpoint(
+                    "GET",
+                    "/api/mirror/domain-fidelity/inventories/{inventoryId}/latest"));
+        }
+        if (domainFidelityRuntimeAvailability.profileReadApi()) {
+            endpoints.add(new IntegrationCapabilities.Endpoint(
+                    "GET",
+                    "/api/mirror/domain-fidelity/profiles/{profileFingerprint}"));
+            endpoints.add(new IntegrationCapabilities.Endpoint(
+                    "GET",
+                    "/api/mirror/domain-fidelity/domains/{domainId}/profiles/latest"));
+        }
         if (mirrorPlanReady) {
             endpoints.add(new IntegrationCapabilities.Endpoint("POST", "/api/mirror/plans"));
             endpoints.add(new IntegrationCapabilities.Endpoint("GET", "/api/mirror/plans/{planId}"));
