@@ -273,15 +273,29 @@ final class ScopedProcessTree {
         }
 
         private void requireIdentityIfAlive() {
+            for (int attempt = 0; attempt < CAPTURE_ATTEMPTS; attempt++) {
+                if (!process.isAlive()) {
+                    return;
+                }
+                IdentityStatus status = identity.observe(process);
+                if (status == IdentityStatus.MATCH) {
+                    return;
+                }
+                if (status != IdentityStatus.UNKNOWN) {
+                    throw new ScopeException(Disposition.IDENTITY_MISMATCH);
+                }
+                awaitCaptureRetry();
+            }
             if (!process.isAlive()) {
                 return;
             }
             IdentityStatus status = identity.observe(process);
-            if (status != IdentityStatus.MATCH) {
-                throw new ScopeException(status == IdentityStatus.UNKNOWN
-                        ? Disposition.IDENTITY_UNAVAILABLE
-                        : Disposition.IDENTITY_MISMATCH);
+            if (status == IdentityStatus.MATCH) {
+                return;
             }
+            throw new ScopeException(status == IdentityStatus.UNKNOWN
+                    ? Disposition.IDENTITY_UNAVAILABLE
+                    : Disposition.IDENTITY_MISMATCH);
         }
 
         private void requireIdentityOrExit() {
