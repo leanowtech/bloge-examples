@@ -268,6 +268,8 @@ class ReadOnlyShadowDomainFidelitySourceTest {
                         signed.unitId(),
                         signed.scenarioCaseRef(),
                         signed.targetCapabilityRef(),
+                        signed.comparisonPolicyRef(),
+                        signed.sourceResolutionAttestationRef(),
                         signed.accessProof(),
                         signed.baseline(),
                         signed.candidate(),
@@ -338,6 +340,14 @@ class ReadOnlyShadowDomainFidelitySourceTest {
                 unit.unitId(),
                 unit.scenarioCaseRef(),
                 unit.targetCapabilityRef(),
+                ref(
+                        "SHADOW_COMPARISON_POLICY",
+                        "semantic-v1",
+                        '0'),
+                ref(
+                        "SHADOW_SOURCE_RESOLUTION_ATTESTATION",
+                        "sources",
+                        '9'),
                 new ReadOnlyShadowComparison.AccessProof(
                         ReadOnlyShadowComparison
                                 .AccessMode.READ_ONLY,
@@ -468,6 +478,8 @@ class ReadOnlyShadowDomainFidelitySourceTest {
                 source.unitId(),
                 source.scenarioCaseRef(),
                 source.targetCapabilityRef(),
+                source.comparisonPolicyRef(),
+                source.sourceResolutionAttestationRef(),
                 access,
                 baseline,
                 candidate,

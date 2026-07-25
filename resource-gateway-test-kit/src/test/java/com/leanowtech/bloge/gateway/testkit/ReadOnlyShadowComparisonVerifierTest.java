@@ -67,6 +67,33 @@ class ReadOnlyShadowComparisonVerifierTest {
     }
 
     @Test
+    void verifiesV2PolicyAndSourceResolutionClosure()
+            throws Exception {
+        comparison = comparisonV2();
+        resign(comparison);
+
+        assertThat(verifier.verify(
+                comparison, key).verified()).isTrue();
+
+        comparison.remove("comparisonPolicyRef");
+        resign(comparison);
+        assertThat(verifier.verify(
+                comparison, key).reasonCode())
+                .isEqualTo(
+                        "SHADOW_COMPARISON_SCHEMA_INVALID");
+
+        comparison = comparisonV2();
+        comparison.withObject(
+                "/sourceResolutionAttestationRef")
+                .put("kind", "UNTRUSTED_SOURCE_LABEL");
+        resign(comparison);
+        assertThat(verifier.verify(
+                comparison, key).reasonCode())
+                .isEqualTo(
+                        "SHADOW_COMPARISON_SCHEMA_INVALID");
+    }
+
+    @Test
     void rejectsResignedRequestPairAndSamplingBudgetDrift()
             throws Exception {
         comparison.withObject("/candidate")
@@ -348,6 +375,27 @@ class ReadOnlyShadowComparisonVerifierTest {
         return value;
     }
 
+    private static ObjectNode comparisonV2() {
+        ObjectNode value = comparison();
+        value.put(
+                "schemaVersion",
+                CapabilityMirrorProtocol
+                        .READ_ONLY_SHADOW_COMPARISON_V2);
+        value.set(
+                "comparisonPolicyRef",
+                ref(
+                        "SHADOW_COMPARISON_POLICY",
+                        "refund-semantic-v1",
+                        'e'));
+        value.set(
+                "sourceResolutionAttestationRef",
+                ref(
+                        "SHADOW_SOURCE_RESOLUTION_ATTESTATION",
+                        "source-verification-1",
+                        'f'));
+        return value;
+    }
+
     private static ObjectNode observation(
             String role,
             String kind,
@@ -384,7 +432,12 @@ class ReadOnlyShadowComparisonVerifierTest {
                 JsonNodeFactory.instance.objectNode();
         material.put(
                 "domain",
-                "RESOURCE_GATEWAY_READ_ONLY_SHADOW_COMPARISON_V1");
+                CapabilityMirrorProtocol
+                        .READ_ONLY_SHADOW_COMPARISON_V1
+                        .equals(value.path(
+                                "schemaVersion").asText())
+                        ? "RESOURCE_GATEWAY_READ_ONLY_SHADOW_COMPARISON_V1"
+                        : "RESOURCE_GATEWAY_READ_ONLY_SHADOW_COMPARISON_V2");
         for (String field : new String[]{
                 "schemaVersion",
                 "comparisonId",

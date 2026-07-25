@@ -994,6 +994,21 @@ public class ToolStudioIntegrationService {
                     List.of(
                             com.leanowtech.bloge.gateway.integration.mirror
                                     .ReadOnlyShadowComparison
+                                    .V1_SCHEMA_VERSION,
+                            com.leanowtech.bloge.gateway.integration.mirror
+                                    .ReadOnlyShadowComparison
+                                    .SCHEMA_VERSION));
+            supportedObjects.put(
+                    "readOnlyShadowJobRequest",
+                    List.of(
+                            com.leanowtech.bloge.gateway.integration.mirror
+                                    .ReadOnlyShadowJobRequest
+                                    .SCHEMA_VERSION));
+            supportedObjects.put(
+                    "readOnlyShadowJob",
+                    List.of(
+                            com.leanowtech.bloge.gateway.integration.mirror
+                                    .ReadOnlyShadowJob
                                     .SCHEMA_VERSION));
         }
         if (mirrorPlanReady) {

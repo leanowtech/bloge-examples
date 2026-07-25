@@ -19,7 +19,11 @@ import com.leanowtech.bloge.gateway.integration.mirror.DomainFidelityProfileInte
 import com.leanowtech.bloge.gateway.integration.mirror.DomainFidelityRepository;
 import com.leanowtech.bloge.gateway.integration.mirror.DomainFidelityService;
 import com.leanowtech.bloge.gateway.integration.mirror.ReadOnlyShadowComparisonIntegrity;
+import com.leanowtech.bloge.gateway.integration.mirror.ReadOnlyShadowDataPlane;
 import com.leanowtech.bloge.gateway.integration.mirror.ReadOnlyShadowDomainFidelitySource;
+import com.leanowtech.bloge.gateway.integration.mirror.ReadOnlyShadowJobPolicy;
+import com.leanowtech.bloge.gateway.integration.mirror.ReadOnlyShadowJobRepository;
+import com.leanowtech.bloge.gateway.integration.mirror.ReadOnlyShadowJobWorker;
 import com.leanowtech.bloge.gateway.integration.mirror.MirrorSessionCheckpointIntegrityService;
 import com.leanowtech.bloge.gateway.integration.mirror.ScenarioArtifactRepository;
 import com.leanowtech.bloge.gateway.integration.mirror.ScenarioRehearsalBatchCompiler;
@@ -376,6 +380,17 @@ class MirrorRuntimeConfigurationTest {
         assertThat(context.getBeansOfType(
                 ReadOnlyShadowDomainFidelitySource.class)).hasSize(1);
         assertThat(context.getBeansOfType(
+                ReadOnlyShadowJobRepository.class)).hasSize(1);
+        assertThat(context.getBeansOfType(
+                ReadOnlyShadowJobPolicy.class)).hasSize(1);
+        assertThat(context.getBeansOfType(
+                ReadOnlyShadowDataPlane.class)).hasSize(1);
+        assertThat(context.getBeansOfType(
+                ReadOnlyShadowJobWorker.class).values())
+                .singleElement()
+                .satisfies(worker ->
+                        assertThat(worker.ready()).isFalse());
+        assertThat(context.getBeansOfType(
                 DomainFidelityRuntimeAvailability.class).values())
                 .singleElement()
                 .satisfies(availability -> {
@@ -516,6 +531,14 @@ class MirrorRuntimeConfigurationTest {
                 ReadOnlyShadowComparisonIntegrity.class)).isEmpty();
         assertThat(context.getBeansOfType(
                 ReadOnlyShadowDomainFidelitySource.class)).isEmpty();
+        assertThat(context.getBeansOfType(
+                ReadOnlyShadowJobRepository.class)).isEmpty();
+        assertThat(context.getBeansOfType(
+                ReadOnlyShadowJobPolicy.class)).isEmpty();
+        assertThat(context.getBeansOfType(
+                ReadOnlyShadowDataPlane.class)).isEmpty();
+        assertThat(context.getBeansOfType(
+                ReadOnlyShadowJobWorker.class)).isEmpty();
         assertThat(context.getBeansOfType(
                 DomainFidelityRuntimeAvailability.class)).isEmpty();
         assertThat(context.getBeansOfType(

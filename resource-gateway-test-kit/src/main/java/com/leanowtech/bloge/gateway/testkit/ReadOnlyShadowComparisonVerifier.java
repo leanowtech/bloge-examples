@@ -29,8 +29,6 @@ public final class ReadOnlyShadowComparisonVerifier {
     /** Maximum domain-separated attestation material bytes. */
     public static final int MAXIMUM_ATTESTATION_BYTES =
             16 * 1024;
-    private static final String SIGNATURE_DOMAIN =
-            "RESOURCE_GATEWAY_READ_ONLY_SHADOW_COMPARISON_V1";
     private static final Duration MAXIMUM_CLOCK_SKEW =
             Duration.ofMinutes(2);
     private static final Map<String, Set<String>>
@@ -126,11 +124,26 @@ public final class ReadOnlyShadowComparisonVerifier {
             EvidenceVerificationKey key) {
         Coordinates coordinates =
                 Coordinates.from(comparison);
+        String schemaVersion =
+                comparison == null
+                        ? ""
+                        : comparison.path(
+                        "schemaVersion").asText("");
+        String schemaResource = switch (schemaVersion) {
+            case CapabilityMirrorProtocol
+                    .READ_ONLY_SHADOW_COMPARISON_V1 ->
+                    CapabilityMirrorProtocol
+                            .READ_ONLY_SHADOW_COMPARISON_SCHEMA_RESOURCE;
+            case CapabilityMirrorProtocol
+                    .READ_ONLY_SHADOW_COMPARISON_V2 ->
+                    CapabilityMirrorProtocol
+                            .READ_ONLY_SHADOW_COMPARISON_V2_SCHEMA_RESOURCE;
+            default -> "";
+        };
         try {
             CapabilityMirrorSchemaValidator.require(
                     comparison,
-                    CapabilityMirrorProtocol
-                            .READ_ONLY_SHADOW_COMPARISON_SCHEMA_RESOURCE,
+                    schemaResource,
                     "RG.MIRROR.CLIENT.SHADOW_COMPARISON_SCHEMA_INVALID");
         } catch (RuntimeException invalid) {
             return result(
@@ -355,7 +368,15 @@ public final class ReadOnlyShadowComparisonVerifier {
             JsonNode comparison) {
         ObjectNode material =
                 JsonNodeFactory.instance.objectNode();
-        material.put("domain", SIGNATURE_DOMAIN);
+        String version = text(
+                comparison, "schemaVersion");
+        material.put(
+                "domain",
+                CapabilityMirrorProtocol
+                        .READ_ONLY_SHADOW_COMPARISON_V1
+                        .equals(version)
+                        ? "RESOURCE_GATEWAY_READ_ONLY_SHADOW_COMPARISON_V1"
+                        : "RESOURCE_GATEWAY_READ_ONLY_SHADOW_COMPARISON_V2");
         for (String field : List.of(
                 "schemaVersion",
                 "comparisonId",

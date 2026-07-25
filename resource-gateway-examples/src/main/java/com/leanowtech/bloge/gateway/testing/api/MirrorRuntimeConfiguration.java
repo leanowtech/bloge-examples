@@ -11,6 +11,7 @@ import com.leanowtech.bloge.gateway.integration.mirror.DatabaseMirrorDeploymentI
 import com.leanowtech.bloge.gateway.integration.mirror.DatabaseMirrorDeploymentIsolationAttestationRepository;
 import com.leanowtech.bloge.gateway.integration.mirror.DatabaseMirrorRunRequestRepository;
 import com.leanowtech.bloge.gateway.integration.mirror.DatabaseDomainFidelityRepository;
+import com.leanowtech.bloge.gateway.integration.mirror.DatabaseReadOnlyShadowJobRepository;
 import com.leanowtech.bloge.gateway.integration.mirror.DatabaseCompiledScenarioRehearsalPlanRepository;
 import com.leanowtech.bloge.gateway.integration.mirror.DatabaseScenarioArtifactRepository;
 import com.leanowtech.bloge.gateway.integration.mirror.DatabaseScenarioRehearsalBatchEvidenceRepository;
@@ -113,7 +114,11 @@ import com.leanowtech.bloge.gateway.integration.mirror.ScenarioRehearsalLifecycl
 import com.leanowtech.bloge.gateway.integration.mirror.ScenarioRehearsalRetentionRepository;
 import com.leanowtech.bloge.gateway.integration.mirror.ScenarioRehearsalRunRepository;
 import com.leanowtech.bloge.gateway.integration.mirror.ReadOnlyShadowComparisonIntegrity;
+import com.leanowtech.bloge.gateway.integration.mirror.ReadOnlyShadowDataPlane;
 import com.leanowtech.bloge.gateway.integration.mirror.ReadOnlyShadowDomainFidelitySource;
+import com.leanowtech.bloge.gateway.integration.mirror.ReadOnlyShadowJobPolicy;
+import com.leanowtech.bloge.gateway.integration.mirror.ReadOnlyShadowJobRepository;
+import com.leanowtech.bloge.gateway.integration.mirror.ReadOnlyShadowJobWorker;
 import com.leanowtech.bloge.gateway.integration.mirror.MirrorServingGenerationAuthority;
 import com.leanowtech.bloge.gateway.integration.mirror.MirrorServingGenerationIntegrity;
 import com.leanowtech.bloge.gateway.integration.mirror.MirrorServingGenerationService;
@@ -1328,6 +1333,57 @@ public class MirrorRuntimeConfiguration {
         return new ReadOnlyShadowComparisonIntegrity(
                 objectMapper,
                 signer);
+    }
+
+    /** Creates the database-authoritative Shadow queue and signed comparison store. */
+    @Bean
+    @ConditionalOnMissingBean
+    public ReadOnlyShadowJobRepository
+    readOnlyShadowJobRepository(
+            JdbcTemplate jdbc,
+            ObjectMapper objectMapper,
+            ReadOnlyShadowComparisonIntegrity integrity,
+            PlatformTransactionManager transactionManager) {
+        return new DatabaseReadOnlyShadowJobRepository(
+                jdbc,
+                objectMapper,
+                integrity,
+                transactionManager);
+    }
+
+    /** Freezes conservative server-owned retry, lease, and deadline bounds. */
+    @Bean
+    @ConditionalOnMissingBean
+    public ReadOnlyShadowJobPolicy
+    readOnlyShadowJobPolicy() {
+        return ReadOnlyShadowJobPolicy.DEFAULT;
+    }
+
+    /**
+     * Fails closed until an operator-owned payload-isolated source and candidate connector is
+     * installed.
+     */
+    @Bean
+    @ConditionalOnMissingBean
+    public ReadOnlyShadowDataPlane
+    readOnlyShadowDataPlane() {
+        return ReadOnlyShadowDataPlane.unavailable();
+    }
+
+    /** Creates the owner/epoch fenced one-step durable Shadow worker. */
+    @Bean
+    @ConditionalOnMissingBean
+    public ReadOnlyShadowJobWorker
+    readOnlyShadowJobWorker(
+            ReadOnlyShadowJobRepository repository,
+            ReadOnlyShadowDataPlane dataPlane,
+            ReadOnlyShadowComparisonIntegrity integrity,
+            ReadOnlyShadowJobPolicy policy) {
+        return new ReadOnlyShadowJobWorker(
+                repository,
+                dataPlane,
+                integrity,
+                policy);
     }
 
     /** Creates the independently verified read-only Shadow Fidelity source adapter. */

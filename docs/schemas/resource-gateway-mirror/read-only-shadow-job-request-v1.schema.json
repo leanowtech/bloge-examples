@@ -1,0 +1,129 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://bloge.dev/schemas/resource-gateway-mirror/read-only-shadow-job-request-v1.schema.json",
+  "title": "Resource Gateway Read-only Shadow Job Request v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "requestId",
+    "scope",
+    "inventoryRef",
+    "unitId",
+    "scenarioCaseRef",
+    "targetCapabilityRef",
+    "candidatePlanRef",
+    "baselineBindingRef",
+    "comparisonPolicyRef",
+    "accessGrant",
+    "deadlineAt"
+  ],
+  "properties": {
+    "schemaVersion": {
+      "const": "resourceGateway.readOnlyShadowJobRequest.v1"
+    },
+    "requestId": {
+      "$ref": "read-only-shadow-comparison-v1.schema.json#/$defs/identifier"
+    },
+    "scope": {
+      "$ref": "mirror-plan-v1.schema.json#/$defs/scope"
+    },
+    "inventoryRef": {
+      "$ref": "read-only-shadow-comparison-v1.schema.json#/$defs/inventoryRef"
+    },
+    "unitId": {
+      "$ref": "read-only-shadow-comparison-v1.schema.json#/$defs/identifier"
+    },
+    "scenarioCaseRef": {
+      "$ref": "domain-fidelity-inventory-v1.schema.json#/$defs/scenarioCaseRef"
+    },
+    "targetCapabilityRef": {
+      "$ref": "read-only-shadow-comparison-v1.schema.json#/$defs/capabilityRef"
+    },
+    "candidatePlanRef": {
+      "$ref": "#/$defs/candidatePlanRef"
+    },
+    "baselineBindingRef": {
+      "$ref": "#/$defs/baselineBindingRef"
+    },
+    "comparisonPolicyRef": {
+      "$ref": "read-only-shadow-comparison-v2.schema.json#/$defs/comparisonPolicyRef"
+    },
+    "accessGrant": {
+      "$ref": "#/$defs/accessGrant"
+    },
+    "deadlineAt": {
+      "type": "string",
+      "format": "date-time"
+    }
+  },
+  "$defs": {
+    "candidatePlanRef": {
+      "allOf": [
+        {
+          "$ref": "domain-fidelity-inventory-v1.schema.json#/$defs/artifactRef"
+        },
+        {
+          "properties": {
+            "kind": {
+              "const": "MIRROR_PLAN"
+            }
+          }
+        }
+      ]
+    },
+    "baselineBindingRef": {
+      "allOf": [
+        {
+          "$ref": "domain-fidelity-inventory-v1.schema.json#/$defs/artifactRef"
+        },
+        {
+          "properties": {
+            "kind": {
+              "const": "SHADOW_BASELINE_BINDING"
+            }
+          }
+        }
+      ]
+    },
+    "accessGrant": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "accessMode",
+        "samplingGrantRef",
+        "egressAuthorityRef",
+        "killSwitchRef",
+        "sampleOrdinal",
+        "maximumSamples"
+      ],
+      "properties": {
+        "accessMode": {
+          "enum": [
+            "READ_ONLY",
+            "SAFE_SANDBOX"
+          ]
+        },
+        "samplingGrantRef": {
+          "$ref": "read-only-shadow-comparison-v1.schema.json#/$defs/samplingGrantRef"
+        },
+        "egressAuthorityRef": {
+          "$ref": "read-only-shadow-comparison-v1.schema.json#/$defs/egressAuthorityRef"
+        },
+        "killSwitchRef": {
+          "$ref": "read-only-shadow-comparison-v1.schema.json#/$defs/killSwitchRef"
+        },
+        "sampleOrdinal": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 1000000000
+        },
+        "maximumSamples": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 1000000000
+        }
+      }
+    }
+  }
+}

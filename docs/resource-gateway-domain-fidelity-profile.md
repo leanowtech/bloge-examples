@@ -27,8 +27,11 @@
 - Scenario workbook source adapter：重验 aggregate/retention 双签名、workbook/assertion
   内容地址、signed aggregate 对账与 exact inventory case closure；
 - Scenario assertion 到 `BEHAVIOR/CONTRACT/EFFECT/STATE_TRANSITION` 的保守映射；
-- signed `resourceGateway.readOnlyShadowComparison.v1`、strict Schema、typed diff 与
-  Test Kit 独立验真；
+- signed `resourceGateway.readOnlyShadowComparison.v1/v2`、strict Schema 与 typed diff；
+  v2 额外冻结 exact normalization policy 与 source-resolution attestation；
+- durable `ReadOnlyShadowJobRequest.v1/ReadOnlyShadowJob.v1`、full-scope sample ordinal
+  reservation、数据库时钟 deadline、owner/epoch/expiry lease、bounded retry 和 worker；
+- Test Kit 可独立重算 comparison 以及 job/request/comparison 完整闭包；
 - Shadow source adapter：重验 comparison 内容地址/签名、采样授权、kill switch、egress、
   零写证明、同请求双边来源和 exact inventory unit closure；
 - Shadow diff 到 `BEHAVIOR/CONTRACT/EFFECT/STATE_TRANSITION` 的保守映射，允许部分
@@ -41,13 +44,16 @@
 
 - authoritative outcome 到 `Measurement` 的独立来源适配器；
 - request-space sampling proof 与 error-distribution cohort adapter；
-- durable shadow job、流量采样/限流/熔断、drift 自动降级、outcome reconciliation 和工作台。
+- durable shadow job 的受保护 API、region scheduler 与 lifecycle audit；
+- 真实 baseline/candidate connector、流量采样/限流/熔断、drift 自动降级、
+  outcome reconciliation 和工作台。
 
 因此在 managed signer、Scenario authority 或 signed Shadow comparison authority 可用时，
 `mirrorDomainFidelityProjectionReady=true` 只表示系统能从已签名演练证据生成一份显式带
 abstention debt 的**部分 profile**。Shadow adapter ready 表示已提供的合法 comparison 可以
 独立验真和投影，不表示 Resource Gateway 已具备生产流量复制与 shadow job。请求空间覆盖和业务
-结果校准仍必须分别读取 typed adapter flag、source artifact 与 profile limitations。
+结果校准仍必须分别读取 typed adapter flag、source artifact 与 profile limitations。durable
+queue/worker ready 也只表示控制面状态机可用；默认数据面仍 fail-closed，不代表生产流量复制已启用。
 
 ## 2. 为什么需要两个对象
 
@@ -278,9 +284,11 @@ DomainFidelityProfile profile =
 ```
 
 `signedComparisons` 可以只覆盖部分 inventory unit；遗漏 unit 不会被删除，而会形成
-`MISSING/NO_ELIGIBLE_EVIDENCE`。每个 `ReadOnlyShadowComparison.v1` 必须同时冻结：
+`MISSING/NO_ELIGIBLE_EVIDENCE`。每个新作业必须生成
+`ReadOnlyShadowComparison.v2`，同时冻结：
 
 - exact inventory/unit/ScenarioCase/target capability；
+- exact normalization/typed-diff policy 与 signed source-resolution attestation；
 - exact sampling grant、外部 egress attestation 和 enabled kill-switch generation；
 - `READ_ONLY` 或 `SAFE_SANDBOX` access mode，且 `writeCredentialExposed=false`、
   `writeAttemptCount=0`；
@@ -303,9 +311,10 @@ typed outcome 不能由 producer 随意填写：
 单请求 comparison 不得证明 `OUTCOME`、`REQUEST_SPACE` 或 `ERROR_DISTRIBUTION`。两边
 任一 exploratory、不完整或任一维度 indeterminate 时，投影内核会把来源降为 abstention。
 
-当前 `projectShadow` 是内部 Java 边界，没有 HTTP ingestion route。它证明的是“可信
-comparison 可消费”，不是“Resource Gateway 已能复制生产流量”；durable job、采样执行器、
-速率预算、熔断和自动 drift downgrade 属于下一纵切。
+当前 `projectShadow` 是内部 Java 边界，没有 HTTP ingestion route。durable queue/worker kernel
+已经能够持久化 request/job、唯一占用 grant ordinal、按数据库时钟 claim/retry/expire、以
+owner/epoch/expiry fence 发布 signed comparison；但还没有受保护 job API、scheduler 或真实
+baseline/candidate data-plane connector。因此它仍不表示“Resource Gateway 已能复制生产流量”。
 
 ### 5.1 受保护 API 用法
 
@@ -421,6 +430,21 @@ ReadOnlyShadowComparisonVerifier.VerificationResult result =
 `MATCH/MISMATCH/INDETERMINATE`、跨维度 diff type、内容地址、签名、key lifecycle 和
 签名时间漂移。
 
+durable job export 使用第二个独立 verifier：
+
+```java
+ReadOnlyShadowJobVerifier verifier =
+        new ReadOnlyShadowJobVerifier();
+
+ReadOnlyShadowJobVerifier.VerificationResult result =
+        verifier.verify(jobJson, requestJson, comparisonJson, verificationKey);
+```
+
+它重算 request fingerprint、确定性 job id、mutable record fingerprint、lifecycle、scope 和
+deadline，并在 `SUCCEEDED` 时继续重验 v2 comparison 签名、artifact ref、grant proof、policy
+与 source-resolution closure。单行离线导出无法证明数据库中的 sample ordinal 唯一性或实时 lease
+owner；这两项仍由在线数据库事务证明。
+
 `VerificationResult` 只包含 domain id、fingerprint、assessment、闭集 limitations、key id 和稳定
 reason code，不输出 Scenario fixture、请求、响应或原始诊断。
 
@@ -430,6 +454,9 @@ reason code，不输出 Scenario fixture、请求、响应或原始诊断。
 - [`domain-fidelity-inventory-registration-request-v1.schema.json`](schemas/resource-gateway-mirror/domain-fidelity-inventory-registration-request-v1.schema.json)
 - [`domain-fidelity-profile-v1.schema.json`](schemas/resource-gateway-mirror/domain-fidelity-profile-v1.schema.json)
 - [`read-only-shadow-comparison-v1.schema.json`](schemas/resource-gateway-mirror/read-only-shadow-comparison-v1.schema.json)
+- [`read-only-shadow-comparison-v2.schema.json`](schemas/resource-gateway-mirror/read-only-shadow-comparison-v2.schema.json)
+- [`read-only-shadow-job-request-v1.schema.json`](schemas/resource-gateway-mirror/read-only-shadow-job-request-v1.schema.json)
+- [`read-only-shadow-job-v1.schema.json`](schemas/resource-gateway-mirror/read-only-shadow-job-v1.schema.json)
 
 Test Kit 公共资源常量：
 
@@ -483,14 +510,18 @@ Schema 使用 `additionalProperties: false`。profile 不允许业务 payload、
 ## 10. 下一实施纵切
 
 repository、managed signer、受保护 inventory/read API、Scenario source adapter、signed
-read-only Shadow comparison adapter 和 capability 分层已完成。下一步按来源信任依赖推进：
+read-only Shadow comparison adapter、durable queue/worker kernel 和 capability 分层已完成。
+下一步按来源信任依赖推进：
 
-1. 实现 durable shadow job、受控流量复制、速率/并发预算、熔断、kill switch 和来源证据拉取。
-2. 把 signed typed diff 接入 drift budget，自动 stale/downgrade/revoke serving conclusion。
-3. 实现 authoritative outcome observation 与 delayed/censored reconciliation。
-4. 为 `ERROR_DISTRIBUTION` 和 `REQUEST_SPACE` 增加 cohort/sampling proof，而不是借用单次
+1. 为 durable shadow job 增加受保护 submit/read API、operation/lifecycle audit、region scheduler
+   和独立 control-plane/data-plane readiness。
+2. 接入真实 baseline/candidate connector、grant/kill-switch 在线权威、来源证据拉取重验、外部
+   系统速率/并发预算与熔断。
+3. 把 signed typed diff 接入 drift budget，自动 stale/downgrade/revoke serving conclusion。
+4. 实现 authoritative outcome observation 与 delayed/censored reconciliation。
+5. 为 `ERROR_DISTRIBUTION` 和 `REQUEST_SPACE` 增加 cohort/sampling proof，而不是借用单次
    Scenario PASS。
-5. 把 profile limitations/stale/debt 接入 ANEKE gate 与 Owner workbench。
+6. 把 profile limitations/stale/debt 接入 ANEKE gate 与 Owner workbench。
 
-在 durable shadow job/outcome 未完成前，不能把 adapter readiness 描述为“已接入生产流量”或
-“业务结果已校准”。
+在受保护 job API/scheduler、真实 data-plane connector 与 outcome 未完成前，不能把 queue 或
+adapter readiness 描述为“已接入生产流量”或“业务结果已校准”。

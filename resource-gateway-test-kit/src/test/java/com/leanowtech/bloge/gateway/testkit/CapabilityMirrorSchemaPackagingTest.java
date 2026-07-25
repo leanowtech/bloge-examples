@@ -464,6 +464,42 @@ class CapabilityMirrorSchemaPackagingTest {
                 .READ_ONLY_SHADOW_COMPARISON_SCHEMA_RESOURCE)
                 .endsWith(
                         "read-only-shadow-comparison-v1.schema.json");
+        assertThat(CapabilityMirrorProtocol
+                .READ_ONLY_SHADOW_COMPARISON_V2)
+                .isEqualTo(
+                        "resourceGateway.readOnlyShadowComparison.v2");
+        assertThat(CapabilityMirrorProtocol
+                .READ_ONLY_SHADOW_COMPARISON_V2_SCHEMA_RESOURCE)
+                .endsWith(
+                        "read-only-shadow-comparison-v2.schema.json");
+        assertThat(CapabilityMirrorProtocol
+                .READ_ONLY_SHADOW_JOB_REQUEST_V1)
+                .isEqualTo(
+                        "resourceGateway.readOnlyShadowJobRequest.v1");
+        assertThat(CapabilityMirrorProtocol
+                .READ_ONLY_SHADOW_JOB_REQUEST_SCHEMA_RESOURCE)
+                .endsWith(
+                        "read-only-shadow-job-request-v1.schema.json");
+        assertThat(CapabilityMirrorProtocol
+                .READ_ONLY_SHADOW_JOB_V1)
+                .isEqualTo(
+                        "resourceGateway.readOnlyShadowJob.v1");
+        assertThat(CapabilityMirrorProtocol
+                .READ_ONLY_SHADOW_JOB_SCHEMA_RESOURCE)
+                .endsWith(
+                        "read-only-shadow-job-v1.schema.json");
+        assertThat(getClass().getResource(
+                CapabilityMirrorProtocol
+                        .READ_ONLY_SHADOW_COMPARISON_V2_SCHEMA_RESOURCE))
+                .isNotNull();
+        assertThat(getClass().getResource(
+                CapabilityMirrorProtocol
+                        .READ_ONLY_SHADOW_JOB_REQUEST_SCHEMA_RESOURCE))
+                .isNotNull();
+        assertThat(getClass().getResource(
+                CapabilityMirrorProtocol
+                        .READ_ONLY_SHADOW_JOB_SCHEMA_RESOURCE))
+                .isNotNull();
         assertThat(CapabilityMirrorProtocol.fixtureMirrorClusterBindingsFixture()
                 .path("schemaVersion").asText())
                 .isEqualTo(

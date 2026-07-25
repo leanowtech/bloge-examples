@@ -391,6 +391,15 @@ public final class CapabilityMirrorProtocol {
     /** Signed payload-free read-only Shadow comparison wire version. */
     public static final String READ_ONLY_SHADOW_COMPARISON_V1 =
             "resourceGateway.readOnlyShadowComparison.v1";
+    /** Signed read-only Shadow comparison with exact policy and source-resolution closure. */
+    public static final String READ_ONLY_SHADOW_COMPARISON_V2 =
+            "resourceGateway.readOnlyShadowComparison.v2";
+    /** Durable payload-free read-only Shadow job submission wire version. */
+    public static final String READ_ONLY_SHADOW_JOB_REQUEST_V1 =
+            "resourceGateway.readOnlyShadowJobRequest.v1";
+    /** Durable payload-free read-only Shadow job projection wire version. */
+    public static final String READ_ONLY_SHADOW_JOB_V1 =
+            "resourceGateway.readOnlyShadowJob.v1";
     /** Fixed Stage 3 refund fixture envelope version. */
     public static final String STATEFUL_REFUND_FIXTURE_V1 =
             "resourceGateway.statefulRefundFixture.v1";
@@ -807,6 +816,21 @@ public final class CapabilityMirrorProtocol {
     READ_ONLY_SHADOW_COMPARISON_SCHEMA_RESOURCE =
             SCHEMA_RESOURCE_ROOT
                     + "read-only-shadow-comparison-v1.schema.json";
+    /** Packaged v2 Shadow comparison schema with policy and source-resolution closure. */
+    public static final String
+    READ_ONLY_SHADOW_COMPARISON_V2_SCHEMA_RESOURCE =
+            SCHEMA_RESOURCE_ROOT
+                    + "read-only-shadow-comparison-v2.schema.json";
+    /** Packaged durable read-only Shadow job submission schema. */
+    public static final String
+    READ_ONLY_SHADOW_JOB_REQUEST_SCHEMA_RESOURCE =
+            SCHEMA_RESOURCE_ROOT
+                    + "read-only-shadow-job-request-v1.schema.json";
+    /** Packaged durable read-only Shadow job projection schema. */
+    public static final String
+    READ_ONLY_SHADOW_JOB_SCHEMA_RESOURCE =
+            SCHEMA_RESOURCE_ROOT
+                    + "read-only-shadow-job-v1.schema.json";
     /** Packaged stable bounded Scenario batch item page. */
     public static final String SCENARIO_REHEARSAL_BATCH_ITEM_PAGE_SCHEMA_RESOURCE =
             SCHEMA_RESOURCE_ROOT

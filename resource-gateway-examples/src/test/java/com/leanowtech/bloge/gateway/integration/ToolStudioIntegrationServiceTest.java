@@ -357,11 +357,22 @@ class ToolStudioIntegrationServiceTest {
                         "domainFidelityInventoryRegistrationRequest",
                         "domainFidelityInventory",
                         "domainFidelityProfile",
-                        "readOnlyShadowComparison");
+                        "readOnlyShadowComparison",
+                        "readOnlyShadowJobRequest",
+                        "readOnlyShadowJob");
         assertThat(assembled.supportedObjects()
                 .get("readOnlyShadowComparison"))
                 .containsExactly(
-                        "resourceGateway.readOnlyShadowComparison.v1");
+                        "resourceGateway.readOnlyShadowComparison.v1",
+                        "resourceGateway.readOnlyShadowComparison.v2");
+        assertThat(assembled.supportedObjects()
+                .get("readOnlyShadowJobRequest"))
+                .containsExactly(
+                        "resourceGateway.readOnlyShadowJobRequest.v1");
+        assertThat(assembled.supportedObjects()
+                .get("readOnlyShadowJob"))
+                .containsExactly(
+                        "resourceGateway.readOnlyShadowJob.v1");
         assertThat(assembled.endpoints())
                 .extracting(endpoint ->
                         endpoint.method() + " " + endpoint.path())

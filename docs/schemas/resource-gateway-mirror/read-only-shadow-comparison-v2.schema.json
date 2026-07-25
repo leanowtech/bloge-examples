@@ -1,0 +1,111 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://bloge.dev/schemas/resource-gateway-mirror/read-only-shadow-comparison-v2.schema.json",
+  "title": "Resource Gateway Read-only Shadow Comparison v2",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "comparisonId",
+    "revision",
+    "comparisonFingerprint",
+    "scope",
+    "inventoryRef",
+    "unitId",
+    "scenarioCaseRef",
+    "targetCapabilityRef",
+    "comparisonPolicyRef",
+    "sourceResolutionAttestationRef",
+    "accessProof",
+    "baseline",
+    "candidate",
+    "observedAt",
+    "results",
+    "comparisonSeal"
+  ],
+  "properties": {
+    "schemaVersion": {
+      "const": "resourceGateway.readOnlyShadowComparison.v2"
+    },
+    "comparisonId": {
+      "$ref": "read-only-shadow-comparison-v1.schema.json#/$defs/identifier"
+    },
+    "revision": {
+      "type": "integer",
+      "minimum": 1
+    },
+    "comparisonFingerprint": {
+      "$ref": "mirror-plan-v1.schema.json#/$defs/fingerprint"
+    },
+    "scope": {
+      "$ref": "mirror-plan-v1.schema.json#/$defs/scope"
+    },
+    "inventoryRef": {
+      "$ref": "read-only-shadow-comparison-v1.schema.json#/$defs/inventoryRef"
+    },
+    "unitId": {
+      "$ref": "read-only-shadow-comparison-v1.schema.json#/$defs/identifier"
+    },
+    "scenarioCaseRef": {
+      "$ref": "domain-fidelity-inventory-v1.schema.json#/$defs/scenarioCaseRef"
+    },
+    "targetCapabilityRef": {
+      "$ref": "read-only-shadow-comparison-v1.schema.json#/$defs/capabilityRef"
+    },
+    "comparisonPolicyRef": {
+      "$ref": "#/$defs/comparisonPolicyRef"
+    },
+    "sourceResolutionAttestationRef": {
+      "$ref": "#/$defs/sourceResolutionAttestationRef"
+    },
+    "accessProof": {
+      "$ref": "read-only-shadow-comparison-v1.schema.json#/$defs/accessProof"
+    },
+    "baseline": {
+      "$ref": "read-only-shadow-comparison-v1.schema.json#/properties/baseline"
+    },
+    "candidate": {
+      "$ref": "read-only-shadow-comparison-v1.schema.json#/properties/candidate"
+    },
+    "observedAt": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "results": {
+      "$ref": "read-only-shadow-comparison-v1.schema.json#/properties/results"
+    },
+    "comparisonSeal": {
+      "$ref": "domain-fidelity-profile-v1.schema.json#/$defs/evidenceSeal"
+    }
+  },
+  "$defs": {
+    "comparisonPolicyRef": {
+      "allOf": [
+        {
+          "$ref": "domain-fidelity-inventory-v1.schema.json#/$defs/artifactRef"
+        },
+        {
+          "properties": {
+            "kind": {
+              "const": "SHADOW_COMPARISON_POLICY"
+            }
+          }
+        }
+      ]
+    },
+    "sourceResolutionAttestationRef": {
+      "allOf": [
+        {
+          "$ref": "domain-fidelity-inventory-v1.schema.json#/$defs/artifactRef"
+        },
+        {
+          "properties": {
+            "kind": {
+              "const": "SHADOW_SOURCE_RESOLUTION_ATTESTATION"
+            }
+          }
+        }
+      ]
+    }
+  }
+}

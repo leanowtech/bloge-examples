@@ -32,6 +32,9 @@ import java.util.regex.Pattern;
  * @param unitId exact inventory coverage unit
  * @param scenarioCaseRef exact Scenario case classified for the paired request
  * @param targetCapabilityRef exact candidate capability revision
+ * @param comparisonPolicyRef exact normalized-fact and typed-diff policy; absent only in legacy v1
+ * @param sourceResolutionAttestationRef exact proof that both source artifacts were fetched and
+ *                                        independently verified; absent only in legacy v1
  * @param accessProof zero-write sampling, egress, and kill-switch closure
  * @param baseline independently signed read-only baseline source
  * @param candidate independently signed mirror candidate source
@@ -49,6 +52,8 @@ public record ReadOnlyShadowComparison(
         String unitId,
         MirrorArtifactRef scenarioCaseRef,
         MirrorArtifactRef targetCapabilityRef,
+        MirrorArtifactRef comparisonPolicyRef,
+        MirrorArtifactRef sourceResolutionAttestationRef,
         AccessProof accessProof,
         SourceObservation baseline,
         SourceObservation candidate,
@@ -56,9 +61,12 @@ public record ReadOnlyShadowComparison(
         List<DimensionComparison> results,
         VisualRunEvidenceSeal comparisonSeal
 ) {
-    /** Current signed shadow-comparison protocol version. */
-    public static final String SCHEMA_VERSION =
+    /** Legacy comparison protocol without an exact normalization-policy reference. */
+    public static final String V1_SCHEMA_VERSION =
             "resourceGateway.readOnlyShadowComparison.v1";
+    /** Current comparison protocol binding normalized facts to one exact governed policy. */
+    public static final String SCHEMA_VERSION =
+            "resourceGateway.readOnlyShadowComparison.v2";
     /** Artifact kind admitted by the Domain Fidelity projection kernel. */
     public static final String ARTIFACT_KIND =
             "FIDELITY_SHADOW_COMPARISON";
@@ -106,6 +114,20 @@ public record ReadOnlyShadowComparison(
                 targetCapabilityRef,
                 "CAPABILITY",
                 "targetCapabilityRef");
+        if (SCHEMA_VERSION.equals(schemaVersion)) {
+            comparisonPolicyRef = requireKind(
+                    comparisonPolicyRef,
+                    "SHADOW_COMPARISON_POLICY",
+                    "comparisonPolicyRef");
+            sourceResolutionAttestationRef = requireKind(
+                    sourceResolutionAttestationRef,
+                    "SHADOW_SOURCE_RESOLUTION_ATTESTATION",
+                    "sourceResolutionAttestationRef");
+        } else if (comparisonPolicyRef != null
+                || sourceResolutionAttestationRef != null) {
+            throw new IllegalArgumentException(
+                    "legacy shadow comparison must not declare v2 authority references");
+        }
         accessProof = Objects.requireNonNull(
                 accessProof, "accessProof");
         baseline = Objects.requireNonNull(
@@ -409,7 +431,9 @@ public record ReadOnlyShadowComparison(
         return ProtocolFingerprint.ofBounded(
                 Objects.requireNonNull(mapper, "mapper"),
                 new AttestationMaterial(
-                        "RESOURCE_GATEWAY_READ_ONLY_SHADOW_COMPARISON_V1",
+                        V1_SCHEMA_VERSION.equals(schemaVersion)
+                                ? "RESOURCE_GATEWAY_READ_ONLY_SHADOW_COMPARISON_V1"
+                                : "RESOURCE_GATEWAY_READ_ONLY_SHADOW_COMPARISON_V2",
                         schemaVersion,
                         comparisonId,
                         revision,
@@ -435,7 +459,10 @@ public record ReadOnlyShadowComparison(
 
     /** @return whether both independently signed sources qualify as certifiable */
     public boolean certifiable() {
-        return baseline.evidenceClass()
+        return SCHEMA_VERSION.equals(schemaVersion)
+                && comparisonPolicyRef != null
+                && sourceResolutionAttestationRef != null
+                && baseline.evidenceClass()
                 == MirrorRunEvidence.EvidenceClass.CERTIFIABLE
                 && candidate.evidenceClass()
                 == MirrorRunEvidence.EvidenceClass.CERTIFIABLE;
@@ -488,6 +515,8 @@ public record ReadOnlyShadowComparison(
                 unitId,
                 scenarioCaseRef,
                 targetCapabilityRef,
+                comparisonPolicyRef,
+                sourceResolutionAttestationRef,
                 accessProof,
                 baseline,
                 candidate,
@@ -511,7 +540,8 @@ public record ReadOnlyShadowComparison(
     private static String version(String value) {
         String normalized = value == null
                 ? "" : value.trim();
-        if (!SCHEMA_VERSION.equals(normalized)) {
+        if (!V1_SCHEMA_VERSION.equals(normalized)
+                && !SCHEMA_VERSION.equals(normalized)) {
             throw new IllegalArgumentException(
                     "unsupported shadow comparison schemaVersion");
         }
