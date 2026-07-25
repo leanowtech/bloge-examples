@@ -68,6 +68,7 @@ DAG workers plus isolated evidence-finalization lanes for one exact
 | `GET http://localhost:8080/api/mirror/rehearsal-jobs/{jobId}/items` | Read stable payload-free item pages while bounded regional workers progress the batch |
 | `GET http://localhost:8080/api/mirror/rehearsal-jobs/{jobId}/evidence` | Read one signed payload-free terminal batch index whose request, manifest, item results, and child evidence references can be verified offline |
 | `GET http://localhost:8080/api/mirror/rehearsal-jobs/{jobId}/finalization` | Inspect payload-free `PENDING`, `SIGNING`, `RETRY_WAIT`, `QUARANTINED`, or `FINALIZED` evidence-publication state without exposing worker or signer diagnostics |
+| `GET http://localhost:8080/api/mirror/rehearsal-jobs/finalization-health` | Read the authenticated enterprise scope's payload-free backlog, age, quarantine, policy-drift, and failure-class SLO projection |
 | `POST http://localhost:8080/api/mirror/rehearsal-jobs/{jobId}/finalization/remediations` | Compare-and-set one reviewed `QUARANTINED` generation into a new immutable intent and renewed retention floor (`X-Purpose: MIRROR_REHEARSAL_FINALIZATION_ADMIN`) |
 | `GET http://localhost:8080/api/mirror/rehearsal-jobs/{jobId}/retention` | Rebuild and verify the signed batch retention projection (`X-Purpose: GOVERNANCE_EVIDENCE_INGESTION`) |
 | `POST http://localhost:8080/api/mirror/rehearsal-jobs/{jobId}/retention/holds` | Place an independent batch legal hold without replacing other holds (`X-Purpose: LEGAL_HOLD`) |
@@ -278,6 +279,36 @@ least `acceptedAt + terminalRetention`. The immutable receipt links both intent
 fingerprints and is exactly replayable; stale consoles, reused command ids with
 different content, non-quarantined jobs, and failed mandatory audits change
 nothing.
+The finalization lane also exposes one shared health policy through the
+protected full-scope API, Actuator readiness, and fixed-cardinality Micrometer
+gauges. A single database-clock aggregate accounts for every known and unknown
+state, eligible/stale work, inconsistent records, policy-generation drift,
+closed failure classes, and maximum attempt pressure. Unknown control rows and
+policy drift are critical rather than silently omitted. `DEGRADED` remains
+operational for reviewed quarantine or slow active signing, while `CRITICAL`
+is `OUT_OF_SERVICE` and a store observation failure is `DOWN`. The protected
+API includes only the authenticated tenant/organization/project/environment/
+region scope; the deployment health contributor aggregates only its local
+region/environment scheduler partition and is never exposed as a tenant query.
+Metrics do not label region, tenant, project, job, provider, or exception text.
+
+The conservative defaults can be tuned with the following deployment variables:
+
+| Variable | Default | Meaning |
+| --- | ---: | --- |
+| `RG_MIRROR_SCENARIO_BATCH_FINALIZATION_SLO_OBSERVATION_INTERVAL_MILLIS` | `30000` | Monitor refresh interval |
+| `RG_MIRROR_SCENARIO_BATCH_FINALIZATION_SLO_MAXIMUM_ELIGIBLE_BACKLOG` | `100` | Critical actionable-intent count |
+| `RG_MIRROR_SCENARIO_BATCH_FINALIZATION_SLO_MAXIMUM_OLDEST_ELIGIBLE_AGE_SECONDS` | `300` | Critical oldest actionable age |
+| `RG_MIRROR_SCENARIO_BATCH_FINALIZATION_SLO_MAXIMUM_ACTIVE_SIGNING_AGE_SECONDS` | `90` | Degraded live-signing age |
+| `RG_MIRROR_SCENARIO_BATCH_FINALIZATION_SLO_MAXIMUM_QUARANTINED_BACKLOG` | `0` | Degraded quarantine count |
+| `RG_MIRROR_SCENARIO_BATCH_FINALIZATION_SLO_CRITICAL_QUARANTINED_BACKLOG` | `100` | Critical quarantine count |
+| `RG_MIRROR_SCENARIO_BATCH_FINALIZATION_SLO_MAXIMUM_SIGNER_UNAVAILABLE_BACKLOG` | `10` | Critical current KMS-unavailable count |
+| `RG_MIRROR_SCENARIO_BATCH_FINALIZATION_SLO_MAXIMUM_CONTROL_UNAVAILABLE_BACKLOG` | `10` | Critical current control-store count |
+
+`--scenario-batch` waits for the API, both schedulers, the installed SLO
+monitor, and a non-critical finalization assessment before reporting the demo
+ready. Use `./scripts/stop-visual-canvas-demo.sh` to stop both lanes; database
+lease/epoch fencing remains authoritative if shutdown drain expires.
 The capability probe therefore reports Scenario execution, evidence API,
 retention API, legal hold, deletion proof, workbook seed,
 `mirrorScenarioRehearsalBatchCooperativeControl=true`, and
@@ -285,6 +316,10 @@ retention API, legal hold, deletion proof, workbook seed,
 `mirrorScenarioRehearsalBatchEvidenceFinalizationApi=true`,
 `mirrorScenarioRehearsalBatchFinalizationRemediationApi=true`,
 `mirrorScenarioRehearsalBatchEvidenceFinalizationScheduling=true`,
+`mirrorScenarioRehearsalBatchFinalizationHealthApi=true`,
+`mirrorScenarioRehearsalBatchFinalizationSloIntegrated=true`, and
+`mirrorScenarioRehearsalBatchFinalizationSloReady=true` while the current
+assessment is non-critical,
 `mirrorScenarioRehearsalBatchRetentionApi=true`,
 `mirrorScenarioRehearsalBatchLegalHold=true`, and
 `mirrorScenarioRehearsalBatchDeletionProof=true` as available while keeping

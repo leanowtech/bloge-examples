@@ -4,6 +4,7 @@ import com.leanowtech.bloge.gateway.integration.mirror.ScenarioRehearsalBatchCan
 import com.leanowtech.bloge.gateway.integration.mirror.ScenarioRehearsalBatchEvidenceBundle;
 import com.leanowtech.bloge.gateway.integration.mirror.ScenarioRehearsalBatchFinalizationRemediationReceipt;
 import com.leanowtech.bloge.gateway.integration.mirror.ScenarioRehearsalBatchFinalizationRemediationRequest;
+import com.leanowtech.bloge.gateway.integration.mirror.ScenarioRehearsalBatchFinalizationHealth;
 import com.leanowtech.bloge.gateway.integration.mirror.ScenarioRehearsalBatchFinalizationStatus;
 import com.leanowtech.bloge.gateway.integration.mirror.ScenarioRehearsalBatchItemPage;
 import com.leanowtech.bloge.gateway.integration.mirror.ScenarioRehearsalBatchJob;
@@ -205,6 +206,25 @@ public final class ScenarioRehearsalBatchController {
                 jobId, command, identity).receipt();
         return IntegrationEnvelope.of(
                 "SCENARIO_REHEARSAL_BATCH_FINALIZATION_REMEDIATION_RECEIPT",
+                value.schemaVersion(),
+                value);
+    }
+
+    /** Reads exact-scope aggregate finalization backlog, failure, and SLO health. */
+    @GetMapping("/finalization-health")
+    public IntegrationEnvelope<
+            ScenarioRehearsalBatchFinalizationHealth>
+    finalizationHealth(
+            @RequestHeader HttpHeaders headers) {
+        IntegrationRequestContext identity =
+                authenticator.authenticate(
+                        headers,
+                        IntegrationOperation
+                                .MIRROR_REHEARSAL_BATCH_FINALIZATION_HEALTH_READ);
+        ScenarioRehearsalBatchFinalizationHealth value =
+                batches.finalizationHealth(identity);
+        return IntegrationEnvelope.of(
+                "SCENARIO_REHEARSAL_BATCH_FINALIZATION_HEALTH",
                 value.schemaVersion(),
                 value);
     }

@@ -36,6 +36,8 @@ Fixture、MirrorPlan 和可选 Session checkpoint 绑定成不可变执行许可
 | batch worker turn | 可用 | 执行一个 manifest item，复用 aggregate 幂等，独立复验签名 evidence 与 workbook closure 后才完成 item |
 | autonomous batch scheduling | 可用（显式非生产开关） | 单地域分区、固定 lane、有界 fixed-delay poll、启动配置校验、动态 readiness、停机 drain 和逐 case heartbeat/cancel/deadline |
 | signed batch evidence/index | 可用 | 请求、冻结 manifest、终态 job、有序 item 与 child evidence/workbook ref 形成 Ed25519 签名闭包；Test Kit 在返回前独立重算 |
+| durable batch evidence finalization | 可用 | `FINALIZING_EVIDENCE` outbox、独立 KMS lane、幂等签名、lease takeover、bounded retry/quarantine 与受控 remediation |
+| finalization health/SLO | 可用 | 同一数据库时钟聚合驱动 full-scope API、部署 readiness 和固定基数指标；未知控制状态、策略漂移和存储故障 fail closed |
 | batch operation/lifecycle audit | 可用 | submit/read/evidence/cancel 使用强制 payload-free operation audit；低频队列转换使用数据库赋时 append-only lifecycle audit，并与状态写同事务 |
 | `ScenarioRehearsalBatchRetentionEvent/State.v1` | 可用 | 准入时冻结不可缩短的批次保留下限，提供多重独立 hold、签名事件链、精确删除计数和逻辑删除证明 |
 | batch retention API/Test Kit client | 可用 | read/place/release/purge 使用独立 purpose；客户端在返回前重算投影闭包、事件指纹、密钥策略和 Ed25519 签名 |
@@ -126,6 +128,11 @@ curl -sS http://localhost:8080/api/integration/capabilities
 | `mirrorScenarioRehearsalBatchApi` | `true` |
 | `mirrorScenarioRehearsalBatchCooperativeControl` | `true` |
 | `mirrorScenarioRehearsalBatchEvidence` | `true` |
+| `mirrorScenarioRehearsalBatchEvidenceFinalizationApi` | `true` |
+| `mirrorScenarioRehearsalBatchFinalizationRemediationApi` | `true` |
+| `mirrorScenarioRehearsalBatchFinalizationHealthApi` | `true` |
+| `mirrorScenarioRehearsalBatchFinalizationSloIntegrated` | 使用 `--scenario-batch` 时为 `true` |
+| `mirrorScenarioRehearsalBatchFinalizationSloReady` | 当前聚合为 `HEALTHY`/`DEGRADED` 时为 `true` |
 | `mirrorScenarioRehearsalBatchRetentionApi` | `true` |
 | `mirrorScenarioRehearsalBatchLegalHold` | `true` |
 | `mirrorScenarioRehearsalBatchDeletionProof` | `true` |
@@ -599,6 +606,11 @@ curl -sS \
   -H 'X-Purpose: GOVERNANCE_EVIDENCE_INGESTION' \
   'http://localhost:8080/api/mirror/rehearsal-jobs/<jobId>/finalization'
 
+curl -sS \
+  -H 'Authorization: Bearer bloge-aneke-demo-token' \
+  -H 'X-Purpose: GOVERNANCE_EVIDENCE_INGESTION' \
+  'http://localhost:8080/api/mirror/rehearsal-jobs/finalization-health'
+
 curl -sS -X POST \
   -H 'Authorization: Bearer bloge-aneke-demo-token' \
   -H 'X-Purpose: MIRROR_REHEARSAL' \
@@ -634,6 +646,14 @@ export RG_MIRROR_SCENARIO_BATCH_FINALIZATION_INSTANCE_ID=rg-sg-test-01-finalizer
 export RG_MIRROR_SCENARIO_BATCH_FINALIZATION_REGION=sg
 export RG_MIRROR_SCENARIO_BATCH_FINALIZATION_ENVIRONMENT=test
 export RG_MIRROR_SCENARIO_BATCH_FINALIZATION_MAXIMUM_POLLERS=1
+export RG_MIRROR_SCENARIO_BATCH_FINALIZATION_SLO_OBSERVATION_INTERVAL_MILLIS=30000
+export RG_MIRROR_SCENARIO_BATCH_FINALIZATION_SLO_MAXIMUM_ELIGIBLE_BACKLOG=100
+export RG_MIRROR_SCENARIO_BATCH_FINALIZATION_SLO_MAXIMUM_OLDEST_ELIGIBLE_AGE_SECONDS=300
+export RG_MIRROR_SCENARIO_BATCH_FINALIZATION_SLO_MAXIMUM_ACTIVE_SIGNING_AGE_SECONDS=90
+export RG_MIRROR_SCENARIO_BATCH_FINALIZATION_SLO_MAXIMUM_QUARANTINED_BACKLOG=0
+export RG_MIRROR_SCENARIO_BATCH_FINALIZATION_SLO_CRITICAL_QUARANTINED_BACKLOG=100
+export RG_MIRROR_SCENARIO_BATCH_FINALIZATION_SLO_MAXIMUM_SIGNER_UNAVAILABLE_BACKLOG=10
+export RG_MIRROR_SCENARIO_BATCH_FINALIZATION_SLO_MAXIMUM_CONTROL_UNAVAILABLE_BACKLOG=10
 export RG_INTEGRATION_REGION=sg
 export RG_INTEGRATION_ENVIRONMENT_ID=test
 ```
@@ -684,6 +704,23 @@ epoch、把 attempt 归零、续期 `retainUntil` 至至少
 fact 和 protected-operation success audit。旧页面、重复但不同内容的 command、
 非隔离状态和审计失败均不会改变运行状态。
 
+聚合健康不是扫描某几个“最近失败”任务，而是用同一个数据库时间快照对当前
+分区或 exact enterprise scope 的控制行做闭合记账。它分别统计
+`PENDING/SIGNING/RETRY_WAIT/QUARANTINED/FINALIZED`、未知状态、当前可 claim
+数量、陈旧 signing lease、损坏控制记录、policy generation 漂移、四类稳定失败
+和最大 attempt；同时计算最老未完成、可处理、隔离和活动签名年龄。未知状态不会
+从分母中消失并制造假绿。
+
+`ScenarioRehearsalBatchFinalizationHealth.v1` 只服务认证身份自己的完整
+tenant/organization/project/environment/region，返回服务端阈值用于解释但不允许
+调用方覆盖。部署 Actuator contributor 只观察本进程 scheduler 所属
+`(region, environment)`；它可以跨该分区内多个租户聚合，但该结果不会通过租户 API
+暴露。`HEALTHY` 和仅含 quarantine/活动签名 warning 的 `DEGRADED` 保持 readiness
+`UP`；积压数或年龄超限、陈旧 lease、控制损坏、policy drift 或 KMS/control
+故障压力为 `CRITICAL/OUT_OF_SERVICE`；数据库观察失败为 `UNAVAILABLE/DOWN`。
+API、Actuator 和 Micrometer 共用同一 evaluator，避免三套阈值互相矛盾。指标标签
+只使用闭集 state/failure/health，不含 region、scope、job、provider 或异常文本。
+
 Test Kit 的 `findScenarioRehearsalBatchEvidence(jobId)` 接受 v1/v2，获取公开 key
 后重新派生 request/manifest/job/index/bundle fingerprint、完整 scope batch id、
 每个 child request/run id、总 case 数、item 顺序、终态 summary、签名时间 key
@@ -694,6 +731,9 @@ provider diagnostics 或业务数据。v1 仍按原域验证，不能以 v2 veri
 `remediateScenarioRehearsalBatchFinalization(jobId, request)` 会先校验严格命令
 Schema，使用专用 admin purpose，并拒绝 job、command 或 reviewed attempt 被替换
 的回执。
+`findScenarioRehearsalBatchFinalizationHealth()` 使用 governance evidence purpose，
+对 strict Schema、完整 scope、状态/violation 一致性和无 job-id/payload 结构做
+独立校验。它不把 deployment partition health 冒充为调用方 scope health。
 
 受保护的 batch submit/read/items/evidence/cancel 使用四个独立、固定基数
 `MirrorOperationAuditEvent.Operation`。submit/cancel 的成功事实位于队列写事务
@@ -934,11 +974,11 @@ mvn -f resource-gateway-examples/pom.xml clean verify
 mvn -f resource-gateway-test-kit/pom.xml clean verify
 ```
 
-2026-07-25 本轮门禁结果：Resource Gateway `5,120` 项测试零失败、零错误、
-3 项条件跳过（含真实 Chrome DOM/工作流和可执行 Boot JAR）；Test Kit `380` 项
-零失败、零错误，完成 116 个 Mirror Schema 的引用闭包与 shaded JAR 打包，公共
-JavaDoc 校验通过。本轮最终源码另通过服务端 batch retention 联合 `35/35` 项与
-Test Kit Schema/verifier/client `10/10` 项聚焦验证。
+2026-07-25 本轮门禁结果：Resource Gateway `5,159` 项测试零失败、零错误、
+3 项条件跳过（含真实 Chrome DOM/工作流和可执行 Boot JAR）；Test Kit `383` 项
+零失败、零错误，完成 124 个 Mirror Schema 的引用闭包与 shaded JAR 打包，公共
+JavaDoc 校验通过。本轮最终源码另通过服务端 finalization health/SLO 联合
+`80/80` 项与 Test Kit Schema/client `53/53` 项聚焦验证。
 
 关键实现与协议：
 
@@ -966,6 +1006,8 @@ Test Kit Schema/verifier/client `10/10` 项聚焦验证。
 - `resource-gateway-examples/src/main/java/com/leanowtech/bloge/gateway/integration/mirror/ScenarioRehearsalBatchFinalizationWorker.java`
 - `resource-gateway-examples/src/main/java/com/leanowtech/bloge/gateway/integration/mirror/ScenarioRehearsalBatchFinalizationScheduler.java`
 - `resource-gateway-examples/src/main/java/com/leanowtech/bloge/gateway/integration/mirror/ScenarioRehearsalBatchFinalizationStatus.java`
+- `resource-gateway-examples/src/main/java/com/leanowtech/bloge/gateway/integration/mirror/ScenarioRehearsalBatchFinalizationHealth.java`
+- `resource-gateway-examples/src/main/java/com/leanowtech/bloge/gateway/integration/mirror/ScenarioRehearsalBatchFinalizationSloMonitor.java`
 - `resource-gateway-examples/src/main/java/com/leanowtech/bloge/gateway/integration/mirror/DatabaseScenarioRehearsalBatchEvidenceRepository.java`
 - `resource-gateway-examples/src/main/java/com/leanowtech/bloge/gateway/integration/mirror/ScenarioRehearsalBatchLifecycleAuditEvent.java`
 - `resource-gateway-examples/src/main/java/com/leanowtech/bloge/gateway/integration/mirror/DatabaseScenarioRehearsalBatchLifecycleAuditRepository.java`
@@ -992,6 +1034,7 @@ Test Kit Schema/verifier/client `10/10` 项聚焦验证。
 - `docs/schemas/resource-gateway-mirror/scenario-rehearsal-batch-job-v1.schema.json`
 - `docs/schemas/resource-gateway-mirror/scenario-rehearsal-batch-job-v2.schema.json`
 - `docs/schemas/resource-gateway-mirror/scenario-rehearsal-batch-finalization-status-v1.schema.json`
+- `docs/schemas/resource-gateway-mirror/scenario-rehearsal-batch-finalization-health-v1.schema.json`
 - `docs/schemas/resource-gateway-mirror/scenario-rehearsal-batch-finalization-remediation-request-v1.schema.json`
 - `docs/schemas/resource-gateway-mirror/scenario-rehearsal-batch-finalization-remediation-receipt-v1.schema.json`
 - `docs/schemas/resource-gateway-mirror/scenario-rehearsal-batch-item-page-v1.schema.json`

@@ -7,13 +7,13 @@
 
 | 文档属性 | 内容 |
 |---|---|
-| 状态 | Accepted / In implementation；Stage 0 工程门禁已通过；Stage 1 完成 MirrorPlan、受保护运行/证据 API、部署隔离信任与 durable execution；Stage 2 完成 observation/corpus 的准入、review、publication、trajectory/cluster serving 与 generation fence；Stage 3 完成有状态 Session、虚拟读写、checkpoint/recovery、write-attempt reconciliation 和三类 ANEKE seed；Stage 4 完成 Scenario 编译、可恢复 aggregate、签名 evidence、audit/retention/workbook closure、durable batch manifest/queue/API/worker、region-local bounded scheduler、cooperative control、签名 batch evidence、批次 operation/lifecycle audit、retention，以及 durable evidence finalization outbox。ANEKE batch workbook、Owner UX、Fidelity/Outcome 和生产环境认证继续实施；未完成前相关 readiness 必须保持 `false` |
+| 状态 | Accepted / In implementation；Stage 0 工程门禁已通过；Stage 1 完成 MirrorPlan、受保护运行/证据 API、部署隔离信任与 durable execution；Stage 2 完成 observation/corpus 的准入、review、publication、trajectory/cluster serving 与 generation fence；Stage 3 完成有状态 Session、虚拟读写、checkpoint/recovery、write-attempt reconciliation 和三类 ANEKE seed；Stage 4 完成 Scenario 编译、可恢复 aggregate、签名 evidence、audit/retention/workbook closure、durable batch manifest/queue/API/worker、region-local bounded scheduler、cooperative control、签名 batch evidence、批次 operation/lifecycle audit、retention、durable evidence finalization、受控 remediation 和聚合 health/SLO。ANEKE batch workbook、Owner UX、Fidelity/Outcome 和生产环境认证继续实施；未完成前相关 readiness 必须保持 `false` |
 | 目标读者 | Resource Gateway、BLOGE Runtime、ANEKE、TEE/数据平台、QA、SRE、安全与业务运营团队 |
 | 设计范围 | external/composed 能力建模、镜像运行、保真语料、有状态世界、场景演练、证据、保真度与结果校准 |
 | 非目标 | 不重做 ANEKE 的资产治理和发布门禁；不允许测试控制进入生产业务请求；不把观测频率直接当成业务正确性 |
 | 基准日期 | 2026-07-25 |
 
-### 实施快照（2026-07-24）
+### 实施快照（2026-07-25）
 
 - Stage 0 第一增量已完成 `CapabilitySnapshot`、`CapabilityContract`、`EffectContract`、
   `ArtifactProvenance` 和 exact `MirrorArtifactRef` Java 协议内核。
@@ -75,10 +75,10 @@
   使用授权、跨系统 schema owner、部署/namespace 形态等组织决策仍是生产准入前置，不由仓库测试冒充完成。
 - 当前验证基线：前端 Vitest `150/150` 全绿并完成 TypeScript/Vite 生产构建；带 `-Pfrontend` 的真实
   Chrome 示例投影用例 `1/1` 全绿。纳入当前 compiler、mirror runtime 与 stateful recovery kernel 后，
-  Resource Gateway 最新完整 Java 门禁为 `5120` 项测试、0 失败、0 错误、3 项条件跳过；其中
+  Resource Gateway 最新完整 Java 门禁为 `5159` 项测试、0 失败、0 错误、3 项条件跳过；其中
   `VisualAuthoringBrowserDomTest` 的 32 项非 frontend-bundle 场景和
   `VisualAuthoringBrowserWorkflowTest` 均已在真实 Chrome 中执行，3 项跳过仅因普通门禁未启用
-  `-Pfrontend`。独立 test-kit `380/380` 全绿，116 份 Mirror Schema 完成引用闭包与
+  `-Pfrontend`。独立 test-kit `383/383` 全绿，124 份 Mirror Schema 完成引用闭包与
   打包验证，公共 JavaDoc、普通 JAR 与 shaded JAR 均成功生成。
 - Stage 1 第二增量已实现 `MirrorPlanCompiler`、`MirrorPlanCompilationRequest`、`CompiledMirrorPlan` 和
   `ExecutionControlCompiler.compileMirror` adapter。编译器把每条 direct/nested external capability edge 对账到
@@ -577,11 +577,11 @@ Resource Gateway 已有的工业底座应直接复用：
 | 递归 DAG 测试 | 85% | MirrorPlan/closure/runtime inventory/fixture control 已统一；缺 contract-mock 展开治理和状态世界 |
 | 日志蒸馏与语料 | 82% | payload-free signed observation、准入/隔离、immutable review、candidate/publication/trajectory/cluster 独立 lineage、元数据风险门禁、fixture exact/trajectory/cluster binding、在线 revalidation、test/staging `RECORDED_EXACT`/`RECORDED_TRAJECTORY`/`RECORDED_CLUSTER`、BLOGE 原生 retry loop、identity-safe projection、Wilson confidence、Session state read 与独立 verifier 已落地；缺生产 payload authority、漂移、偏差、outcome 校准和删除证明 |
 | 有状态业务世界 | 91% | 协议、read/write 退款 fixture、独立 verifier/sealer/client、事务内核、受保护 Session API、独立 AES-GCM 数据面、lease/fence/CAS、durable write-attempt journal/reconciliation、TTL/destroy、全局/scope 容量、保留字节、命令背压、过期擦除、固定 read head、run-scoped virtual write、真实 DAG read-write-read、payload-free v1/v2/v3 state evidence、read-only/successful-transition/write-outcome ANEKE seed、签名 HASH_ONLY checkpoint 与同数据面代际精确恢复准入已落地；缺 TEE/KMS、跨区域数据恢复、真实 process-kill/network parity、目标数据库容量认证和 HA/DR certification |
-| Scenario/Rehearsal | 98% | ScenarioPack/Case/Assertion、exact compiler、可恢复逐 case runtime、签名 aggregate、audit/retention、ANEKE seed、durable batch manifest/queue/API/worker、region-local DAG/KMS 双 scheduler、逐 case cooperative control、v1/v2 签名 batch evidence/index、批次 operation/lifecycle audit、retention/multi-hold/逻辑删除证明，以及 durable finalization outbox/lease/retry/quarantine/status 已落地；缺 hard kill、quarantine owner remediation、ANEKE batch workbook、owner UX、企业策略/WORM/anchor 与异构消费者认证 |
+| Scenario/Rehearsal | 99% | ScenarioPack/Case/Assertion、exact compiler、可恢复逐 case runtime、签名 aggregate、audit/retention、ANEKE seed、durable batch manifest/queue/API/worker、region-local DAG/KMS 双 scheduler、逐 case cooperative control、v1/v2 签名 batch evidence/index、批次 operation/lifecycle audit、retention/multi-hold/逻辑删除证明，以及 durable finalization outbox/lease/retry/quarantine/status、受控 remediation、聚合 health/SLO 已落地；缺 hard kill、ANEKE batch workbook、owner UX、企业策略/WORM/anchor 与异构消费者认证 |
 | Fidelity/Outcome | 5% | 缺保真向量、shadow、权威结果归因和校准闭环 |
 | 业务运营工作台 | 10% | Author Canvas 尚未成为案例驱动的镜像运营工作台 |
 
-结论：基础设施准备度约 92%，固定权重理想态完成度为 62.15%。剩余主要矛盾已经
+结论：基础设施准备度约 93%，固定权重理想态完成度为 62.31%。剩余主要矛盾已经
 从“能否安全执行和取证”转向“能否把可信 observation 持续蒸馏成可校准、可拒答、可删除的业务拟合资产”。
 
 ### 3.1 2026-07-24 Scenario 编译期闭包迭代差距复评
@@ -1353,6 +1353,48 @@ Rehearsal 成熟度由 98% 上调至 98.5%，固定权重总分由 62.15% 上调
 不是继续堆单 job 操作；随后才是 ANEKE batch workbook、Owner Canvas UX 和真实
 PostgreSQL/KMS/process-kill/network-partition/rolling-upgrade 认证。
 
+### 3.17 2026-07-25 Scenario finalization 聚合健康与 SLO 迭代差距复评
+
+本轮关闭“单 job 能查询和修复，但平台无法回答整个签名分区是否正在失速”的病根。
+新增 `ScenarioRehearsalBatchFinalizationHealth.v1`，并让受保护 full-scope API、
+部署 Actuator readiness 和 Micrometer 指标共用同一个确定性 evaluator。健康不是从
+日志采样，也不是数最近错误，而是在一个数据库时间快照中闭合统计已知状态、未知
+状态、当前可 claim 数、陈旧 signing lease、损坏控制行、policy generation 漂移、
+四类稳定失败、最大 attempt 和四类最老年龄。
+
+未知状态和不一致记录显式计入总数并触发 `CRITICAL`，不能因 SQL 只匹配已知枚举而
+从分母消失并制造假绿。`HEALTHY` 无 violation；reviewed quarantine 或活动签名偏慢
+可为 `DEGRADED` 且 readiness 保持 `UP`；积压数/年龄超限、陈旧 lease、控制损坏、
+policy drift 或 signer/control 故障压力为 `CRITICAL/OUT_OF_SERVICE`；数据库观察
+失败为内部 `UNAVAILABLE/DOWN`，不会导出一个伪造的 scope health。
+
+边界刻意分为两层：
+
+1. `GET /api/mirror/rehearsal-jobs/finalization-health` 先鉴权，再只聚合调用方完整
+   tenant/organization/project/environment/region，接受 `MIRROR_REHEARSAL` 或
+   `GOVERNANCE_EVIDENCE_INGESTION`，并写专用 payload-free operation audit。
+2. 部署 monitor 只观察本进程 finalization scheduler 的 `(region, environment)`，
+   可跨该物理分区内租户聚合以控制 readiness，但不会通过业务 API 暴露。
+
+固定基数 metric 只允许 closed state、failure class 和 health state 标签；region、
+environment、tenant、project、job、provider、异常文本和 evidence 坐标都不可成为
+label。capability probe 分别公开 API、SLO monitor 是否真实装配和当前是否 non-critical，
+所以“协议存在”“部署接线”“当前健康”不再混成一个布尔值。`--scenario-batch`
+启动脚本也把这三个事实纳入成功门禁。
+
+聚焦验证覆盖 exact scope 与 partition 聚合隔离、未知状态/策略漂移 fail closed、
+数据库时钟年龄、warning/critical readiness、store unavailable、指标清零和标签闭集、
+auth-before-service、operation audit、capability 动态变化、strict Schema、Test Kit
+打包与 HTTP client。Scenario/Rehearsal 成熟度由 98.5% 上调至 99%，固定权重总分
+由 62.23% 上调至 62.31%，距理想态 37.69%。
+
+这不意味着 finalization 已获生产认证。当前健康能检测排队和控制面失稳，却不能证明
+PostgreSQL 多副本隔离级别、真实 KMS 幂等语义、process-kill、network partition、
+rolling upgrade、WORM/外部锚和跨地域删除。更重要的是，它仍只证明“证据流水线健康”，
+不证明镜像拟合客户业务。下一主链必须转向 ANEKE batch workbook 和 Owner 零 DSL
+失败定位，然后进入以 Scenario coverage 为分母的 Fidelity/Shadow；生产故障认证作为
+并行支线，不得再阻塞业务拟合主链。
+
 ## 4. 目标架构与系统责任
 
 ![Resource Gateway 业务能力镜像目标架构](assets/resource-gateway-capability-mirror-target-architecture.svg)
@@ -2115,6 +2157,8 @@ session 重放造成重复状态、运行时依赖漂移。
 | `GET /api/mirror/rehearsal-jobs/{jobId}/items` | 分页读取稳定 manifest item | full scope + manifest index + bounded page | 已实现控制面 |
 | `GET /api/mirror/rehearsal-jobs/{jobId}/evidence` | 读取 independently verified signed batch closure | request/manifest/job/items/child refs/Ed25519 完整闭包 | 已实现（治理消费 purpose） |
 | `GET /api/mirror/rehearsal-jobs/{jobId}/finalization` | 读取 payload-free durable evidence finalization 状态 | full scope；retry/lease/quarantine/terminal 坐标，不暴露 worker、provider 诊断或 payload | 已实现（治理消费 purpose） |
+| `GET /api/mirror/rehearsal-jobs/finalization-health` | 读取调用方 exact enterprise scope 的 finalization SLO | 一个数据库时间快照闭合 state/unknown/age/quarantine/policy/failure；受保护 audit | 已实现（演练或治理消费 purpose） |
+| `POST /api/mirror/rehearsal-jobs/{jobId}/finalization/remediations` | 重新准入一个已审阅的 quarantined generation | command + attempt + updatedAt CAS；新 intent/signing id、旧 lease fence、retention 续期、不可变 receipt | 已实现（finalization admin purpose） |
 | `POST /api/mirror/rehearsal-jobs/{jobId}/cancellations` | 请求 cooperative cancellation | 幂等 command、逐 case heartbeat/deadline、排队取消也发布证据 | 已实现控制面 |
 | `GET /api/mirror/rehearsal-jobs/{jobId}/retention` | 读取 batch retention projection | 完整 scope、签名事件链与 projection 重放 | 已实现（独立 purpose） |
 | `POST /api/mirror/rehearsal-jobs/{jobId}/retention/holds` | 放置独立 batch legal hold | command 幂等、multi-hold、不覆盖其他法务事项 | 已实现（`LEGAL_HOLD`） |
@@ -2539,8 +2583,8 @@ exact read、multi-hold retention、deletion proof、deterministic ANEKE workboo
 及其独立 gate evidence closure。durable batch request/manifest、数据库队列/API、evidence-verifying
 worker turn、显式 region-local bounded scheduler、执行中 heartbeat/cancel、签名
 batch evidence/index、operation/lifecycle audit 与独立 batch retention/multi-hold/
-deletion proof 已完成；下一步进入 `FINALIZING` outbox/KMS 故障隔离、ANEKE
-batch workbook 和 Author UX。企业 policy authority、
+deletion proof、`FINALIZING` outbox/KMS 故障隔离、受控 quarantine remediation
+与聚合 health/SLO 已完成；下一步进入 ANEKE batch workbook 和 Author UX。企业 policy authority、
 WORM/anchor 和跨地域删除认证作为部署认证支线并行，不阻塞本地 workbook 纵切，但会阻塞最终
 production readiness。
 
@@ -2642,6 +2686,76 @@ permit、v1/v2/v3 双向兼容读取和独立 test-kit 语义复验；非 Java v
 和生产部署门禁未闭合，仍在 Stage 1 主链；008/010/011/012 继续补齐生产隔离、退款资产、
 错误码注册与持续 CI。
 企业客户准入仍必须关闭第 22.2 节的环境级开放决策。
+
+### 19.2 当前可直接开工的工业级 backlog（2026-07-25 基线）
+
+早期 `19.1` 保留为架构形成过程的追溯记录，不再作为排期入口。当前工程应采用
+“业务拟合主链 + 生产认证支线”双轨推进：主链把可信 Scenario 证据变成 owner 可消费、
+可度量、可校准的业务资产；支线用真实基础设施证明这些资产在故障和组织边界下仍可信。
+两条轨道共享协议与证据，但任何一条都不能冒充另一条完成。
+
+**差距、病根和根治手段**
+
+| 差距层 | 表面症状 | 病根 | 根治手段 | 不能接受的替代品 |
+|---|---|---|---|---|
+| 批次消费闭包 | ANEKE 需逐 job/逐 run 拼接 workbook | Resource Gateway 只有单 aggregate seed，没有 batch 级来源闭包和 blocker 归约 | 产出 content-addressed batch workbook seed，闭合 manifest、batch evidence、retention 与每个 child seed | 只导出 CSV、链接列表或相信服务端 `gateReady` |
+| Owner 可运营性 | 失败只能查 API/JSON，修复依赖工程师 | 证据模型已工业化，但任务模型没有映射成业务人员的“看、调、确认”路径 | 以 batch/item/assertion 为信息架构，提供原因分组、证据抽屉、reviewed remediation 和 deep link | 把原始 DSL/Schema 编辑器换个皮肤 |
+| 保真度不可计算 | 模拟跑通但不知道覆盖了多少真实业务 | 缺稳定分母、typed diff 和 abstention debt；通过率被误当成拟合度 | 冻结 `DomainFidelityProfile`，以 owner-approved Scenario inventory 为分母，分开 coverage/confidence/freshness/state/effect/outcome | 单一综合分、样本命中率或日志频次 |
+| 行为漂移不可发现 | 客户流程变化后旧镜像继续“绿” | serving generation 与真实行为没有受控 differential observation | 只读 shadow、typed behavior diff、drift budget、自动降级/revoke | 在线流量直接切到 mirror 或只比较 HTTP status |
+| 业务真值不可校准 | 模拟与测试正确，但客服处置未必正确 | 权威 outcome 延迟、删失、多源冲突且 owner 定义会版本化 | outcome connector + lineage + delayed/censored reconciliation + calibration window | 把 agent 点击、日志频次或模型自评当真值 |
+| 生产证明不足 | 本地 H2/KMS stub 全绿仍不能客户准入 | 故障语义依赖真实 PostgreSQL/KMS/网络/升级拓扑 | certification harness、故障注入矩阵、可重放证据包、环境 capability attestation | 一次压测报告或手工演示 |
+| 企业治理不闭合 | 多组织、跨地域、法务和委派场景难上线 | owner、数据权利、retention、密钥、region 和成本 authority 分属不同团队 | 把 authority、RACI、审批 SLA 和降级规则做成协议依赖与 readiness | 在配置文件写默认 owner/project/region |
+
+**可领取工作包**
+
+| 顺序 | Work package | 优先级/估算 | 主责与协作 | 依赖 | 可交付产物 | 退出门禁 |
+|---:|---|---|---|---|---|---|
+| 0 | RG-MIR-SCEN-OPS-003 finalization health/SLO | 已完成 | RG Runtime + SRE | durable finalization/remediation | strict health v1、exact-scope API、Actuator、固定基数 metric、Test Kit、脚本/运行文档 | unknown state/policy drift/store failure 不误绿；API/monitor/probe 使用同一 evaluator |
+| 1 | RG-MIR-SCEN-005 ANEKE batch workbook | P0 / 1 sprint | RG Evidence + ANEKE Correctness | signed batch v2、child seed、batch retention | batch seed/Schema、projector、独立 verifier/client、受保护 API、audit、capability | 1..256 个 item 全闭合；顺序/漏项/重复/child drift/删除状态篡改失败；ANEKE 不需要 N+1 拉取才能判断 gate |
+| 2 | RG-MIR-SCEN-006 Owner rehearsal workbench | P0 / 2 sprints | Author UX + RG Scenario + 业务 Owner | Work package 1 | batch 列表、shape summary、item/assertion 原因分组、evidence drawer、deep link、reviewed remediation、零 DSL case 调整 | owner 能在 15 分钟内定位失败、区分执行/断言/低保真/证据故障并完成审阅；浏览器 E2E 覆盖 256-item 复杂批次 |
+| 3 | RG-MIR-FID-001 Fidelity protocol/kernel | P0 / 2 sprints | RG Domain + ANEKE Governance + 数据科学 | Work package 1；owner 冻结 coverage taxonomy | `DomainFidelityProfile.v1`、coverage denominator、dimension score、confidence interval、freshness、abstention debt、lineage | 空分母/低样本不能高分；每个分量可重建到 exact Scenario/corpus generation；单一总分不可作为唯一 gate |
+| 4 | RG-MIR-FID-002 Read-only shadow/diff | P1 / 2 sprints | RG Runtime + TEE/Data Plane + SRE | Work package 3；数据使用授权 | shadow plan/job、typed node/edge/state/effect diff、sampling budget、drift downgrade/revoke | 真实写和凭据为 0；采样不超过授权；schema/branch/retry/state/outcome 差异可归因；漂移自动使 readiness/gate stale |
+| 5 | RG-MIR-OUT-001 Outcome calibration | P1 / 2 sprints | ANEKE + 业务分析 + RG Domain | Work package 3；权威 outcome owner | versioned outcome definition/connector、delayed/censored reconciliation、calibration cohort、candidate assertion | 多源冲突和迟到结果不覆盖历史；候选不经 owner 不 serving；能证明或否证 fidelity 与业务结果关系 |
+| 6 | RG-MIR-CERT-001 Runtime certification harness | P0 并行 / 3-4 sprints | SRE + Security + RG Runtime | 当前 Stage 3/4 runtime | PostgreSQL 多副本、真实 KMS、forked JVM kill、network partition、rolling upgrade、backup/restore、capacity 工具与证据包 | 每个故障点有期望状态/恢复上限/数据不变量；旧 owner/epoch 永不发布；结果可在 CI/nightly/客户环境重放 |
+| 7 | RG-MIR-GOV-001 Enterprise evidence governance | P0 并行 / 2-3 sprints | Security + Legal/Data Governance + RG Evidence | 企业 policy authority 与 WORM/anchor | retention policy generation、external anchor、legal hold authority、物理删除/备份证明、delegated approval | 本地逻辑删除不冒充物理删除；policy/anchor 不可用时 certifiable readiness 关闭；跨组织委派可撤销且有审计 |
+| 8 | RG-MIR-COMPAT-001 Heterogeneous consumer certification | P1 并行 / 1-2 sprints | RG Protocol + ANEKE SDK | Work package 1/3 协议冻结 | RFC 8785 或冻结等价 profile、Java/TypeScript/Go 固定向量、兼容矩阵 | 三语言对同 fixture 产生相同 fingerprint/signature verdict；unknown version/field fail closed |
+
+**第一个 sprint 的具体拆工**
+
+| 子任务 | 建议落点 | 完成定义 |
+|---|---|---|
+| 005-A 冻结 batch seed 语义 | mirror Java model + `docs/schemas/resource-gateway-mirror/` | 明确 source closure、summary、blocker 闭集、大小上限和 v1 compatibility fixture |
+| 005-B 实现只读 projector | `ScenarioRehearsalBatchWorkbookProjector` | 只从重新验签的 batch v2、retention 和 child seed 投影；不查 mutable Scenario 定义补洞 |
+| 005-C 建立独立 verifier | `resource-gateway-test-kit` | 不链接 server/Spring；重算 batch/child/retention/seed closure 与 gate decision |
+| 005-D 开放受保护 API | batch controller/service/auth/audit | auth-before-service；完整 scope；`GOVERNANCE_EVIDENCE_INGESTION`；不存在返回 404 且审计 |
+| 005-E 接 Capability/ANEKE | capability probe + ANEKE adapter fixture | protocol/API/ready 分开；消费者可一次获取并离线验真 |
+| 005-F 故障矩阵 | service/repository/schema/client tests | child 缺失、顺序漂移、混合 scope、purged batch、stale key、未知 blocker、超 256 item 全失败关闭 |
+| CERT-001-A 建认证清单 | `docs/` + 可执行 test profile | 固定 PostgreSQL/KMS 版本、拓扑、故障点、RTO/RPO、证据保留和 owner，不先写“测试通过” |
+
+**排期与并行关系**
+
+1. Sprint A：完成 005-A/B/C；并行完成 CERT-001-A 和企业 authority/RACI 冻结。
+2. Sprint B：完成 005-D/E/F；Author UX 只做真实 batch read model 和信息架构，不造 mock API。
+3. Sprint C-D：交付 Owner workbench；同时冻结 Fidelity 分母与协议，不能先画“保真总分”仪表盘。
+4. Sprint E-F：交付 shadow/diff；Outcome 团队并行接入第一个权威结果源。
+5. 每个 sprint 都运行协议、服务端、Test Kit、浏览器和故障认证回归；任一 readiness 只能由真实装配动态开启。
+
+**开工前必须指定的组织输入**
+
+| 决策 | Accountable | 最迟时间 | 未决时系统行为 |
+|---|---|---|---|
+| 第一业务域与 Scenario coverage taxonomy | 客服业务 Owner | Sprint A 第 2 天 | Fidelity 工作包不进入实现，只能做协议草案 |
+| ANEKE batch workbook ingestion contract owner | ANEKE Correctness Owner | Sprint A 第 2 天 | API 保持 draft version，不承诺兼容 |
+| authoritative outcome 定义、延迟窗和删失规则 | 业务分析 Owner | Sprint C 结束前 | Outcome calibration readiness 为 false |
+| payload/shadow 数据使用权与地域 | Data Governance | Shadow 开发前 | 只运行合成/fixture 流量 |
+| KMS、PostgreSQL、WORM/anchor 目标产品与版本 | SRE/Security | Sprint A 结束前 | 只能声明仓库内工程门禁，不声明客户认证 |
+| retention、legal hold、备份删除责任 | Legal/Data Governance | Sprint B 结束前 | physical deletion capability 为 false |
+
+这个 backlog 的产品顺序不是“先把所有底座做完再见业务”。Work package 1 和 2
+先把现有可信证据交给业务 owner，Work package 3 到 5 才把拟合保真度变成持续复利
+系统；Work package 6 到 8 并行证明它能在真实企业基础设施、组织授权和异构技术栈中
+长期运行。任何新增能力都必须回到同一个问题：它是否提高了对客户业务的可证明拟合，
+或提高了这份拟合在故障、漂移和治理条件下仍可信的概率。
 
 ## 20. 测试策略与 Definition of Done
 

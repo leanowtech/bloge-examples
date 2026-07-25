@@ -436,6 +436,52 @@ class ScenarioRehearsalBatchServiceTest {
     }
 
     @Test
+    void finalizationHealthUsesExactScopeDedicatedAuditAndReadPurposes() {
+        ScenarioRehearsalBatchRepository repository =
+                mock(ScenarioRehearsalBatchRepository.class);
+        when(repository.finalizationHealth(SCOPE))
+                .thenReturn(healthyFinalizationSnapshot());
+        List<MirrorOperationAuditEvent> events =
+                new ArrayList<>();
+        ScenarioRehearsalBatchService service =
+                new ScenarioRehearsalBatchService(
+                        mock(ScenarioRehearsalBatchCompiler.class),
+                        repository,
+                        policy(),
+                        mapper,
+                        mock(
+                                ScenarioRehearsalBatchEvidenceRepository
+                                        .class),
+                        observations(events));
+
+        ScenarioRehearsalBatchFinalizationHealth health =
+                service.finalizationHealth(
+                        identity(
+                                "GOVERNANCE_EVIDENCE_INGESTION"));
+
+        assertThat(health.scope()).isEqualTo(SCOPE);
+        assertThat(health.state()).isEqualTo(
+                ScenarioRehearsalBatchFinalizationHealth
+                        .State.HEALTHY);
+        verify(repository).finalizationHealth(SCOPE);
+        assertThat(events)
+                .singleElement()
+                .satisfies(event -> {
+                    assertThat(event.operation()).isEqualTo(
+                            MirrorOperationAuditEvent.Operation
+                                    .SCENARIO_REHEARSAL_BATCH_FINALIZATION_HEALTH_READ);
+                    assertThat(event.outcome()).isEqualTo(
+                            MirrorOperationAuditEvent.Outcome
+                                    .SUCCEEDED);
+                });
+
+        assertThatThrownBy(() ->
+                service.finalizationHealth(
+                        identity("MIRROR_READ")))
+                .isInstanceOf(IntegrationProblemException.class);
+    }
+
+    @Test
     void workerCompletesOnlyVerifiedEvidenceAndWorkbookClosure() {
         ScenarioRehearsalBatchRepository repository =
                 mock(ScenarioRehearsalBatchRepository.class);
@@ -715,6 +761,35 @@ class ScenarioRehearsalBatchServiceTest {
                 item,
                 principal,
                 lease);
+    }
+
+    private ScenarioRehearsalBatchRepository
+            .FinalizationHealthSnapshot
+    healthyFinalizationSnapshot() {
+        return new ScenarioRehearsalBatchRepository
+                .FinalizationHealthSnapshot(
+                NOW,
+                1,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                null,
+                null,
+                null,
+                null);
     }
 
     private ScenarioRehearsalBatchJob job() {

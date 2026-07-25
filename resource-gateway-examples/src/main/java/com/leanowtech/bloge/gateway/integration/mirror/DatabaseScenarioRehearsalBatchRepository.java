@@ -293,6 +293,13 @@ public final class DatabaseScenarioRehearsalBatchRepository
                 )
                 """);
         jdbc.execute("""
+                CREATE INDEX IF NOT EXISTS idx_scenario_rehearsal_batch_finalization_scope_health
+                ON scenario_rehearsal_batch_finalizations (
+                    tenant_id, organization_id, project_id,
+                    environment_id, region, state, updated_at
+                )
+                """);
+        jdbc.execute("""
                 CREATE TABLE IF NOT EXISTS scenario_rehearsal_batch_finalization_remediations (
                     job_id VARCHAR(512) NOT NULL,
                     command_id VARCHAR(128) NOT NULL,
@@ -1247,6 +1254,39 @@ public final class DatabaseScenarioRehearsalBatchRepository
                 Objects.requireNonNull(scope, "scope"),
                 required(jobId, "jobId"),
                 false).map(StoredFinalization::snapshot);
+    }
+
+    @Override
+    public FinalizationHealthSnapshot finalizationHealth(
+            CapabilitySnapshot.Scope scope) {
+        CapabilitySnapshot.Scope exact =
+                Objects.requireNonNull(scope, "scope");
+        return finalizationHealth("""
+                tenant_id = ?
+                  AND organization_id = ?
+                  AND project_id = ?
+                  AND environment_id = ?
+                  AND region = ?
+                """,
+                exact.tenantId(),
+                exact.organizationId(),
+                exact.projectId(),
+                exact.environmentId(),
+                exact.region());
+    }
+
+    @Override
+    public FinalizationHealthSnapshot finalizationPartitionHealth(
+            String region,
+            String environmentId) {
+        QueuePartition exact =
+                partition(region, environmentId);
+        return finalizationHealth("""
+                region = ?
+                  AND environment_id = ?
+                """,
+                exact.region(),
+                exact.environmentId());
     }
 
     @Override
@@ -2806,6 +2846,172 @@ public final class DatabaseScenarioRehearsalBatchRepository
                 """,
                 this::mapItem,
                 jobId);
+    }
+
+    private FinalizationHealthSnapshot finalizationHealth(
+            String scopePredicate,
+            Object... scopeArguments) {
+        Instant observedAt = coordinationNow();
+        String policyFingerprint =
+                ProtocolFingerprint.of(
+                        mapper, finalizationPolicy);
+        String sql = """
+                SELECT
+                    COUNT(*) AS total_count,
+                    SUM(CASE WHEN state = 'PENDING'
+                        THEN 1 ELSE 0 END) AS pending_count,
+                    SUM(CASE WHEN state = 'SIGNING'
+                        THEN 1 ELSE 0 END) AS signing_count,
+                    SUM(CASE WHEN state = 'RETRY_WAIT'
+                        THEN 1 ELSE 0 END) AS retry_wait_count,
+                    SUM(CASE WHEN state = 'QUARANTINED'
+                        THEN 1 ELSE 0 END) AS quarantined_count,
+                    SUM(CASE WHEN state = 'FINALIZED'
+                        THEN 1 ELSE 0 END) AS finalized_count,
+                    SUM(CASE WHEN state NOT IN (
+                            'PENDING', 'SIGNING', 'RETRY_WAIT',
+                            'QUARANTINED', 'FINALIZED')
+                        THEN 1 ELSE 0 END) AS unknown_state_count,
+                    SUM(CASE WHEN state = 'PENDING'
+                            OR state = 'RETRY_WAIT'
+                               AND next_eligible_at <= ?
+                            OR state = 'SIGNING'
+                               AND lease_expires_at <= ?
+                        THEN 1 ELSE 0 END) AS eligible_count,
+                    SUM(CASE WHEN state = 'SIGNING'
+                            AND lease_expires_at <= ?
+                        THEN 1 ELSE 0 END) AS stale_signing_count,
+                    SUM(CASE WHEN
+                            state NOT IN (
+                                'PENDING', 'SIGNING', 'RETRY_WAIT',
+                                'QUARANTINED', 'FINALIZED')
+                            OR attempt_count < 0
+                            OR lease_epoch < 0
+                            OR state = 'SIGNING'
+                               AND (
+                                   attempt_count < 1
+                                   OR lease_epoch < 1
+                                   OR lease_owner = ''
+                                   OR signing_started_at = ?
+                                   OR lease_expires_at <= updated_at
+                               )
+                            OR state <> 'SIGNING'
+                               AND (
+                                   lease_owner <> ''
+                                   OR lease_expires_at <> ?
+                               )
+                            OR state = 'FINALIZED'
+                               AND (
+                                   finalized_at IS NULL
+                                   OR evidence_bundle_fingerprint = ''
+                               )
+                            OR state <> 'FINALIZED'
+                               AND (
+                                   finalized_at IS NOT NULL
+                                   OR evidence_bundle_fingerprint <> ''
+                               )
+                        THEN 1 ELSE 0 END)
+                        AS inconsistent_record_count,
+                    SUM(CASE WHEN policy_generation <> ?
+                            OR policy_fingerprint <> ?
+                        THEN 1 ELSE 0 END) AS policy_mismatch_count,
+                    SUM(CASE WHEN state <> 'FINALIZED'
+                            AND last_failure_code = ?
+                        THEN 1 ELSE 0 END) AS signer_unavailable_count,
+                    SUM(CASE WHEN state <> 'FINALIZED'
+                            AND last_failure_code = ?
+                        THEN 1 ELSE 0 END) AS signature_invalid_count,
+                    SUM(CASE WHEN state <> 'FINALIZED'
+                            AND last_failure_code = ?
+                        THEN 1 ELSE 0 END) AS material_invalid_count,
+                    SUM(CASE WHEN state <> 'FINALIZED'
+                            AND last_failure_code = ?
+                        THEN 1 ELSE 0 END) AS control_unavailable_count,
+                    MAX(attempt_count) AS maximum_attempt_count,
+                    MIN(CASE WHEN state <> 'FINALIZED'
+                        THEN created_at END)
+                        AS oldest_unfinalized_created_at,
+                    MIN(CASE WHEN state = 'PENDING'
+                            OR state = 'RETRY_WAIT'
+                               AND next_eligible_at <= ?
+                            OR state = 'SIGNING'
+                               AND lease_expires_at <= ?
+                        THEN CASE
+                            WHEN state = 'PENDING' THEN created_at
+                            WHEN state = 'RETRY_WAIT' THEN next_eligible_at
+                            ELSE lease_expires_at
+                        END END) AS oldest_eligible_at,
+                    MIN(CASE WHEN state = 'QUARANTINED'
+                        THEN updated_at END) AS oldest_quarantined_at,
+                    MIN(CASE WHEN state = 'SIGNING'
+                            AND lease_expires_at > ?
+                        THEN signing_started_at END)
+                        AS oldest_active_signing_started_at
+                FROM scenario_rehearsal_batch_finalizations
+                WHERE
+                """ + scopePredicate;
+        List<Object> parameters = new ArrayList<>();
+        parameters.add(timestamp(observedAt));
+        parameters.add(timestamp(observedAt));
+        parameters.add(timestamp(observedAt));
+        parameters.add(timestamp(Instant.EPOCH));
+        parameters.add(timestamp(Instant.EPOCH));
+        parameters.add(finalizationPolicy.generation());
+        parameters.add(policyFingerprint);
+        parameters.add(
+                ScenarioRehearsalBatchFinalizationException
+                        .Reason.SIGNER_UNAVAILABLE
+                        .failureCode());
+        parameters.add(
+                ScenarioRehearsalBatchFinalizationException
+                        .Reason.SIGNATURE_INVALID
+                        .failureCode());
+        parameters.add(
+                ScenarioRehearsalBatchFinalizationException
+                        .Reason.MATERIAL_INVALID
+                        .failureCode());
+        parameters.add(
+                ScenarioRehearsalBatchFinalizationException
+                        .Reason.CONTROL_UNAVAILABLE
+                        .failureCode());
+        parameters.add(timestamp(observedAt));
+        parameters.add(timestamp(observedAt));
+        parameters.add(timestamp(observedAt));
+        parameters.addAll(List.of(scopeArguments));
+        List<FinalizationHealthSnapshot> values = jdbc.query(
+                sql,
+                (result, row) -> new FinalizationHealthSnapshot(
+                        observedAt,
+                        finalizationPolicy.generation(),
+                        result.getLong("total_count"),
+                        result.getLong("pending_count"),
+                        result.getLong("signing_count"),
+                        result.getLong("retry_wait_count"),
+                        result.getLong("quarantined_count"),
+                        result.getLong("finalized_count"),
+                        result.getLong("unknown_state_count"),
+                        result.getLong("eligible_count"),
+                        result.getLong("stale_signing_count"),
+                        result.getLong(
+                                "inconsistent_record_count"),
+                        result.getLong("policy_mismatch_count"),
+                        result.getLong("signer_unavailable_count"),
+                        result.getLong("signature_invalid_count"),
+                        result.getLong("material_invalid_count"),
+                        result.getLong("control_unavailable_count"),
+                        result.getInt("maximum_attempt_count"),
+                        instant(
+                                result,
+                                "oldest_unfinalized_created_at"),
+                        instant(result, "oldest_eligible_at"),
+                        instant(result, "oldest_quarantined_at"),
+                        instant(
+                                result,
+                                "oldest_active_signing_started_at")),
+                parameters.toArray());
+        return one(values).orElseThrow(() ->
+                new IllegalStateException(
+                        "Scenario batch finalization health query returned no aggregate"));
     }
 
     private void insertFinalization(

@@ -70,6 +70,16 @@ gateway:
           initial-delay-millis: ${RG_MIRROR_SCENARIO_BATCH_FINALIZATION_INITIAL_DELAY_MILLIS:1000}
           poll-interval-millis: ${RG_MIRROR_SCENARIO_BATCH_FINALIZATION_POLL_INTERVAL_MILLIS:1000}
           drain-timeout-millis: ${RG_MIRROR_SCENARIO_BATCH_FINALIZATION_DRAIN_TIMEOUT_MILLIS:30000}
+        finalization-slo:
+          # Closed aggregate thresholds shared by protected health, Actuator, and metrics.
+          observation-interval-millis: ${RG_MIRROR_SCENARIO_BATCH_FINALIZATION_SLO_OBSERVATION_INTERVAL_MILLIS:30000}
+          maximum-eligible-backlog: ${RG_MIRROR_SCENARIO_BATCH_FINALIZATION_SLO_MAXIMUM_ELIGIBLE_BACKLOG:100}
+          maximum-oldest-eligible-age-seconds: ${RG_MIRROR_SCENARIO_BATCH_FINALIZATION_SLO_MAXIMUM_OLDEST_ELIGIBLE_AGE_SECONDS:300}
+          maximum-active-signing-age-seconds: ${RG_MIRROR_SCENARIO_BATCH_FINALIZATION_SLO_MAXIMUM_ACTIVE_SIGNING_AGE_SECONDS:90}
+          maximum-quarantined-backlog: ${RG_MIRROR_SCENARIO_BATCH_FINALIZATION_SLO_MAXIMUM_QUARANTINED_BACKLOG:0}
+          critical-quarantined-backlog: ${RG_MIRROR_SCENARIO_BATCH_FINALIZATION_SLO_CRITICAL_QUARANTINED_BACKLOG:100}
+          maximum-signer-unavailable-backlog: ${RG_MIRROR_SCENARIO_BATCH_FINALIZATION_SLO_MAXIMUM_SIGNER_UNAVAILABLE_BACKLOG:10}
+          maximum-control-unavailable-backlog: ${RG_MIRROR_SCENARIO_BATCH_FINALIZATION_SLO_MAXIMUM_CONTROL_UNAVAILABLE_BACKLOG:10}
       stateful:
         # Separate opt-in: missing encryption keys or a state-plane outage fail startup/readiness closed.
         enabled: ${RG_MIRROR_STATEFUL_ENABLED:false}

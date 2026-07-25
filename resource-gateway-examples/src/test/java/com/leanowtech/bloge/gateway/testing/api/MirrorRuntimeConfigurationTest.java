@@ -19,7 +19,10 @@ import com.leanowtech.bloge.gateway.integration.mirror.MirrorSessionCheckpointIn
 import com.leanowtech.bloge.gateway.integration.mirror.ScenarioArtifactRepository;
 import com.leanowtech.bloge.gateway.integration.mirror.ScenarioRehearsalBatchCompiler;
 import com.leanowtech.bloge.gateway.integration.mirror.ScenarioRehearsalBatchFinalizationPolicy;
+import com.leanowtech.bloge.gateway.integration.mirror.ScenarioRehearsalBatchFinalizationHealthPolicy;
+import com.leanowtech.bloge.gateway.integration.mirror.ScenarioRehearsalBatchFinalizationHealthTelemetry;
 import com.leanowtech.bloge.gateway.integration.mirror.ScenarioRehearsalBatchFinalizationScheduler;
+import com.leanowtech.bloge.gateway.integration.mirror.ScenarioRehearsalBatchFinalizationSloMonitor;
 import com.leanowtech.bloge.gateway.integration.mirror.ScenarioRehearsalBatchFinalizationWorker;
 import com.leanowtech.bloge.gateway.integration.mirror.ScenarioRehearsalBatchPolicy;
 import com.leanowtech.bloge.gateway.integration.mirror.ScenarioRehearsalBatchRepository;
@@ -167,8 +170,20 @@ class MirrorRuntimeConfigurationTest {
                         assertThat(scheduler.environmentId())
                                 .isEqualTo("test");
                     });
+            assertThat(test.getBeansOfType(
+                    ScenarioRehearsalBatchFinalizationHealthPolicy
+                            .class)).hasSize(1);
+            assertThat(test.getBeansOfType(
+                    ScenarioRehearsalBatchFinalizationHealthTelemetry
+                            .class)).hasSize(1);
+            assertThat(test.getBeansOfType(
+                    ScenarioRehearsalBatchFinalizationSloMonitor
+                            .class)).hasSize(1);
             assertThat(production.getBeansOfType(
                     ScenarioRehearsalBatchFinalizationScheduler
+                            .class)).isEmpty();
+            assertThat(production.getBeansOfType(
+                    ScenarioRehearsalBatchFinalizationSloMonitor
                             .class)).isEmpty();
         }
     }

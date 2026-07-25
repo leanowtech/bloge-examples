@@ -10,6 +10,8 @@ import com.leanowtech.bloge.gateway.testing.api.TestSuiteStabilityObservationExt
 import com.leanowtech.bloge.gateway.testing.api.WorkerQuarantineChangeAuthorizationTrustStore;
 import com.leanowtech.bloge.gateway.integration.mirror.ScenarioRehearsalBatchScheduler;
 import com.leanowtech.bloge.gateway.integration.mirror.ScenarioRehearsalBatchFinalizationScheduler;
+import com.leanowtech.bloge.gateway.integration.mirror.ScenarioRehearsalBatchFinalizationHealth;
+import com.leanowtech.bloge.gateway.integration.mirror.ScenarioRehearsalBatchFinalizationSloMonitor;
 import com.leanowtech.bloge.gateway.visual.catalog.OperatorCatalogQuery;
 import com.leanowtech.bloge.gateway.visual.catalog.OperatorDefinition;
 import com.leanowtech.bloge.gateway.visual.catalog.VisualOperatorCatalog;
@@ -312,13 +314,25 @@ class ToolStudioIntegrationServiceTest {
                 mock(
                         ScenarioRehearsalBatchFinalizationScheduler
                                 .class);
+        ScenarioRehearsalBatchFinalizationSloMonitor finalizationHealth =
+                mock(ScenarioRehearsalBatchFinalizationSloMonitor.class);
+        ScenarioRehearsalBatchFinalizationHealth.Assessment
+                finalizationAssessment =
+                mock(ScenarioRehearsalBatchFinalizationHealth.Assessment.class);
         when(scheduler.ready()).thenReturn(true);
         when(finalizer.ready()).thenReturn(true);
+        when(finalizationAssessment.state()).thenReturn(
+                ScenarioRehearsalBatchFinalizationHealth.State.HEALTHY);
+        when(finalizationHealth.assessment()).thenReturn(
+                finalizationAssessment);
         scheduled.configureScenarioRehearsalBatchScheduler(
                 scheduler);
         scheduled
                 .configureScenarioRehearsalBatchFinalizationScheduler(
                         finalizer);
+        scheduled
+                .configureScenarioRehearsalBatchFinalizationSloMonitor(
+                        finalizationHealth);
 
         IntegrationCapabilities disabledCapabilities = disabled.capabilities().payload();
         IntegrationCapabilities enabledCapabilities = enabled.capabilities().payload();
@@ -357,6 +371,12 @@ class ToolStudioIntegrationServiceTest {
                 .containsEntry(
                         "mirrorScenarioRehearsalBatchEvidenceFinalizationScheduling",
                         false)
+                .containsEntry(
+                        "mirrorScenarioRehearsalBatchFinalizationSloIntegrated",
+                        false)
+                .containsEntry(
+                        "mirrorScenarioRehearsalBatchFinalizationSloReady",
+                        false)
                 .containsEntry("mirrorScenarioRehearsalEvidence", false)
                 .containsEntry("mirrorOperationObservability", false)
                 .containsEntry("mirrorServing", false);
@@ -393,6 +413,15 @@ class ToolStudioIntegrationServiceTest {
                         "mirrorScenarioRehearsalBatchScheduling", false)
                 .containsEntry(
                         "mirrorScenarioRehearsalBatchEvidenceFinalizationScheduling",
+                        false)
+                .containsEntry(
+                        "mirrorScenarioRehearsalBatchFinalizationHealthApi",
+                        true)
+                .containsEntry(
+                        "mirrorScenarioRehearsalBatchFinalizationSloIntegrated",
+                        false)
+                .containsEntry(
+                        "mirrorScenarioRehearsalBatchFinalizationSloReady",
                         false)
                 .containsEntry("mirrorScenarioRehearsalEvidence", false)
                 .containsEntry("mirrorOperationObservability", true)
@@ -446,6 +475,11 @@ class ToolStudioIntegrationServiceTest {
                         List.of(
                                 com.leanowtech.bloge.gateway.integration.mirror
                                         .ScenarioRehearsalBatchFinalizationStatus
+                                        .SCHEMA_VERSION))
+                .containsEntry(
+                        "scenarioRehearsalBatchFinalizationHealth",
+                        List.of(
+                                ScenarioRehearsalBatchFinalizationHealth
                                         .SCHEMA_VERSION))
                 .containsEntry(
                         "scenarioRehearsalBatchEvidenceBundle",
@@ -564,6 +598,7 @@ class ToolStudioIntegrationServiceTest {
                         "GET /api/mirror/rehearsal-jobs/{jobId}/items",
                         "GET /api/mirror/rehearsal-jobs/{jobId}/evidence",
                         "GET /api/mirror/rehearsal-jobs/{jobId}/finalization",
+                        "GET /api/mirror/rehearsal-jobs/finalization-health",
                         "POST /api/mirror/rehearsal-jobs/{jobId}/cancellations",
                         "GET /api/mirror/rehearsal-jobs/{jobId}/retention",
                         "POST /api/mirror/rehearsal-jobs/{jobId}/retention/holds",
@@ -580,15 +615,29 @@ class ToolStudioIntegrationServiceTest {
                         true)
                 .containsEntry(
                         "mirrorScenarioRehearsalBatchEvidenceFinalizationScheduling",
+                        true)
+                .containsEntry(
+                        "mirrorScenarioRehearsalBatchFinalizationSloIntegrated",
+                        true)
+                .containsEntry(
+                        "mirrorScenarioRehearsalBatchFinalizationSloReady",
                         true);
         when(scheduler.ready()).thenReturn(false);
         when(finalizer.ready()).thenReturn(false);
+        when(finalizationAssessment.state()).thenReturn(
+                ScenarioRehearsalBatchFinalizationHealth.State.CRITICAL);
         assertThat(scheduled.capabilities().payload().features())
                 .containsEntry(
                         "mirrorScenarioRehearsalBatchScheduling",
                         false)
                 .containsEntry(
                         "mirrorScenarioRehearsalBatchEvidenceFinalizationScheduling",
+                        false)
+                .containsEntry(
+                        "mirrorScenarioRehearsalBatchFinalizationSloIntegrated",
+                        true)
+                .containsEntry(
+                        "mirrorScenarioRehearsalBatchFinalizationSloReady",
                         false);
     }
 

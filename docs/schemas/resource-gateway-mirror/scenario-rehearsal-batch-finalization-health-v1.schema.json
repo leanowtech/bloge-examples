@@ -1,0 +1,218 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://bloge.dev/schemas/resource-gateway-mirror/scenario-rehearsal-batch-finalization-health-v1.schema.json",
+  "title": "Resource Gateway Scenario Rehearsal Batch Finalization Health v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion", "scope", "state", "violations", "observedAt",
+    "policyGeneration", "counts", "ages", "thresholds"
+  ],
+  "properties": {
+    "schemaVersion": {
+      "const": "resourceGateway.scenarioRehearsalBatchFinalizationHealth.v1"
+    },
+    "scope": {
+      "$ref": "#/$defs/scope"
+    },
+    "state": {
+      "enum": ["HEALTHY", "DEGRADED", "CRITICAL"]
+    },
+    "violations": {
+      "type": "array",
+      "uniqueItems": true,
+      "items": {
+        "enum": [
+          "CONTROL_RECORD_INCONSISTENT",
+          "POLICY_GENERATION_MISMATCH",
+          "ELIGIBLE_BACKLOG_EXCEEDED",
+          "ELIGIBLE_BACKLOG_STALE",
+          "STALE_SIGNING_LEASE",
+          "ACTIVE_SIGNING_STALE",
+          "QUARANTINE_PRESENT",
+          "QUARANTINE_BACKLOG_CRITICAL",
+          "NON_RETRYABLE_FAILURE_PRESENT",
+          "SIGNER_UNAVAILABLE_PRESSURE",
+          "CONTROL_UNAVAILABLE_PRESSURE"
+        ]
+      }
+    },
+    "observedAt": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "policyGeneration": {
+      "type": "integer",
+      "minimum": 1
+    },
+    "counts": {
+      "$ref": "#/$defs/counts"
+    },
+    "ages": {
+      "$ref": "#/$defs/ages"
+    },
+    "thresholds": {
+      "$ref": "#/$defs/thresholds"
+    }
+  },
+  "allOf": [
+    {
+      "if": {
+        "properties": {
+          "state": {
+            "const": "HEALTHY"
+          }
+        },
+        "required": ["state"]
+      },
+      "then": {
+        "properties": {
+          "violations": {
+            "maxItems": 0
+          }
+        }
+      },
+      "else": {
+        "properties": {
+          "violations": {
+            "minItems": 1
+          }
+        }
+      }
+    }
+  ],
+  "$defs": {
+    "scope": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "tenantId", "organizationId", "projectId",
+        "environmentId", "region"
+      ],
+      "properties": {
+        "tenantId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 255
+        },
+        "organizationId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 255
+        },
+        "projectId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 255
+        },
+        "environmentId": {
+          "enum": ["test", "staging"]
+        },
+        "region": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 96
+        }
+      }
+    },
+    "counts": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "total", "pending", "signing", "retryWait", "quarantined",
+        "finalized", "unknownState", "eligible", "staleSigning",
+        "inconsistentRecords", "policyMismatches", "signerUnavailable",
+        "signatureInvalid", "materialInvalid", "controlUnavailable",
+        "maximumAttemptCount"
+      ],
+      "properties": {
+        "total": {"type": "integer", "minimum": 0},
+        "pending": {"type": "integer", "minimum": 0},
+        "signing": {"type": "integer", "minimum": 0},
+        "retryWait": {"type": "integer", "minimum": 0},
+        "quarantined": {"type": "integer", "minimum": 0},
+        "finalized": {"type": "integer", "minimum": 0},
+        "unknownState": {"type": "integer", "minimum": 0},
+        "eligible": {"type": "integer", "minimum": 0},
+        "staleSigning": {"type": "integer", "minimum": 0},
+        "inconsistentRecords": {"type": "integer", "minimum": 0},
+        "policyMismatches": {"type": "integer", "minimum": 0},
+        "signerUnavailable": {"type": "integer", "minimum": 0},
+        "signatureInvalid": {"type": "integer", "minimum": 0},
+        "materialInvalid": {"type": "integer", "minimum": 0},
+        "controlUnavailable": {"type": "integer", "minimum": 0},
+        "maximumAttemptCount": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 10000
+        }
+      }
+    },
+    "ages": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "oldestUnfinalizedAgeMillis", "oldestEligibleAgeMillis",
+        "oldestQuarantinedAgeMillis", "oldestActiveSigningAgeMillis"
+      ],
+      "properties": {
+        "oldestUnfinalizedAgeMillis": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "oldestEligibleAgeMillis": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "oldestQuarantinedAgeMillis": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "oldestActiveSigningAgeMillis": {
+          "type": "integer",
+          "minimum": 0
+        }
+      }
+    },
+    "thresholds": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "maximumEligibleBacklog", "maximumOldestEligibleAgeMillis",
+        "maximumActiveSigningAgeMillis", "maximumQuarantinedBacklog",
+        "criticalQuarantinedBacklog", "maximumSignerUnavailableBacklog",
+        "maximumControlUnavailableBacklog"
+      ],
+      "properties": {
+        "maximumEligibleBacklog": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "maximumOldestEligibleAgeMillis": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "maximumActiveSigningAgeMillis": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "maximumQuarantinedBacklog": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "criticalQuarantinedBacklog": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "maximumSignerUnavailableBacklog": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "maximumControlUnavailableBacklog": {
+          "type": "integer",
+          "minimum": 0
+        }
+      }
+    }
+  }
+}

@@ -25,6 +25,7 @@ import com.leanowtech.bloge.gateway.testing.api.TestSuiteStabilityPhysicalAttemp
 import com.leanowtech.bloge.gateway.testing.api.WorkerQuarantineChangeAuthorizationTrustStore;
 import com.leanowtech.bloge.gateway.integration.mirror.ScenarioRehearsalBatchScheduler;
 import com.leanowtech.bloge.gateway.integration.mirror.ScenarioRehearsalBatchFinalizationScheduler;
+import com.leanowtech.bloge.gateway.integration.mirror.ScenarioRehearsalBatchFinalizationSloMonitor;
 import com.leanowtech.bloge.gateway.visual.catalog.VisualOperatorCatalog;
 import com.leanowtech.bloge.gateway.visual.draft.GraphDraft;
 import com.leanowtech.bloge.gateway.visual.draft.GraphDraftDependencyReport;
@@ -84,6 +85,8 @@ public class ToolStudioIntegrationService {
             scenarioRehearsalBatchScheduler;
     private ScenarioRehearsalBatchFinalizationScheduler
             scenarioRehearsalBatchFinalizationScheduler;
+    private ScenarioRehearsalBatchFinalizationSloMonitor
+            scenarioRehearsalBatchFinalizationSloMonitor;
     private MirrorStatefulRuntimeAvailability mirrorStatefulRuntimeAvailability =
             new MirrorStatefulRuntimeAvailability(false, () -> false);
     private WorkerQuarantineRequestIndexMode workerQuarantineRequestIndexMode;
@@ -188,6 +191,14 @@ public class ToolStudioIntegrationService {
             ScenarioRehearsalBatchFinalizationScheduler scheduler) {
         this.scenarioRehearsalBatchFinalizationScheduler =
                 scheduler;
+    }
+
+    /** Receives partition health only when the finalization scheduler is physically active. */
+    @Autowired(required = false)
+    void configureScenarioRehearsalBatchFinalizationSloMonitor(
+            ScenarioRehearsalBatchFinalizationSloMonitor monitor) {
+        this.scenarioRehearsalBatchFinalizationSloMonitor =
+                monitor;
     }
 
     /** Receives the marker only when encrypted stateful Session routes are assembled. */
@@ -453,6 +464,9 @@ public class ToolStudioIntegrationService {
                 "mirrorScenarioRehearsalBatchFinalizationRemediationApi",
                 mirrorPlanReady && mirrorExecutionApi);
         features.put(
+                "mirrorScenarioRehearsalBatchFinalizationHealthApi",
+                mirrorPlanReady && mirrorExecutionApi);
+        features.put(
                 "mirrorScenarioRehearsalBatchRetentionApi",
                 mirrorPlanReady && mirrorExecutionApi);
         features.put(
@@ -475,6 +489,18 @@ public class ToolStudioIntegrationService {
                         != null
                         && scenarioRehearsalBatchFinalizationScheduler
                         .ready());
+        FinalizationHealthCapability finalizationHealth =
+                currentFinalizationHealth();
+        features.put(
+                "mirrorScenarioRehearsalBatchFinalizationSloIntegrated",
+                mirrorPlanReady
+                        && mirrorExecutionApi
+                        && finalizationHealth.integrated());
+        features.put(
+                "mirrorScenarioRehearsalBatchFinalizationSloReady",
+                mirrorPlanReady
+                        && mirrorExecutionApi
+                        && finalizationHealth.ready());
         features.put("mirrorScenarioRehearsalEvidence", false);
         features.put("mirrorServing", mirrorExecutionReady);
         features.put("mirrorOperationObservability", mirrorPlanReady && mirrorExecutionApi);
@@ -999,6 +1025,12 @@ public class ToolStudioIntegrationService {
                                         .ScenarioRehearsalBatchFinalizationRemediationReceipt
                                         .SCHEMA_VERSION));
                 supportedObjects.put(
+                        "scenarioRehearsalBatchFinalizationHealth",
+                        List.of(
+                                com.leanowtech.bloge.gateway.integration.mirror
+                                        .ScenarioRehearsalBatchFinalizationHealth
+                                        .SCHEMA_VERSION));
+                supportedObjects.put(
                         "scenarioRehearsalBatchCancellationRequest",
                         List.of(
                                 com.leanowtech.bloge.gateway.integration.mirror
@@ -1205,6 +1237,9 @@ public class ToolStudioIntegrationService {
                         "POST",
                         "/api/mirror/rehearsal-jobs/{jobId}/finalization/remediations"));
                 endpoints.add(new IntegrationCapabilities.Endpoint(
+                        "GET",
+                        "/api/mirror/rehearsal-jobs/finalization-health"));
+                endpoints.add(new IntegrationCapabilities.Endpoint(
                         "POST",
                         "/api/mirror/rehearsal-jobs/{jobId}/cancellations"));
                 endpoints.add(new IntegrationCapabilities.Endpoint(
@@ -1350,6 +1385,41 @@ public class ToolStudioIntegrationService {
         } catch (RuntimeException unavailable) {
             return new CertificateStatusSloCapability(true, false, false);
         }
+    }
+
+    private FinalizationHealthCapability
+    currentFinalizationHealth() {
+        if (scenarioRehearsalBatchFinalizationSloMonitor
+                == null) {
+            return new FinalizationHealthCapability(
+                    false, false);
+        }
+        try {
+            com.leanowtech.bloge.gateway.integration.mirror
+                    .ScenarioRehearsalBatchFinalizationHealth
+                    .State state =
+                    scenarioRehearsalBatchFinalizationSloMonitor
+                            .assessment()
+                            .state();
+            return new FinalizationHealthCapability(
+                    true,
+                    state
+                            == com.leanowtech.bloge.gateway.integration.mirror
+                            .ScenarioRehearsalBatchFinalizationHealth
+                            .State.HEALTHY
+                            || state
+                            == com.leanowtech.bloge.gateway.integration.mirror
+                            .ScenarioRehearsalBatchFinalizationHealth
+                            .State.DEGRADED);
+        } catch (RuntimeException unavailable) {
+            return new FinalizationHealthCapability(
+                    true, false);
+        }
+    }
+
+    private record FinalizationHealthCapability(
+            boolean integrated,
+            boolean ready) {
     }
 
     private record CertificateStatusSloCapability(

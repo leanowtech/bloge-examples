@@ -489,6 +489,105 @@ public interface ScenarioRehearsalBatchRepository {
         }
     }
 
+    /**
+     * Payload-free database-clock aggregate of one finalization population.
+     *
+     * <p>The population is either one deployment partition or one complete enterprise scope.
+     * Implementations must use one database time sample for eligibility and every age anchor.
+     * Unknown states, malformed control rows, and policy drift are counted explicitly so health
+     * cannot look green by silently omitting corrupt records.</p>
+     */
+    record FinalizationHealthSnapshot(
+            Instant observedAt,
+            long expectedPolicyGeneration,
+            long totalCount,
+            long pendingCount,
+            long signingCount,
+            long retryWaitCount,
+            long quarantinedCount,
+            long finalizedCount,
+            long unknownStateCount,
+            long eligibleCount,
+            long staleSigningCount,
+            long inconsistentRecordCount,
+            long policyMismatchCount,
+            long signerUnavailableCount,
+            long signatureInvalidCount,
+            long materialInvalidCount,
+            long controlUnavailableCount,
+            int maximumAttemptCount,
+            Instant oldestUnfinalizedCreatedAt,
+            Instant oldestEligibleAt,
+            Instant oldestQuarantinedAt,
+            Instant oldestActiveSigningStartedAt
+    ) {
+        /** Enforces complete state accounting and bounded aggregate coordinates. */
+        public FinalizationHealthSnapshot {
+            observedAt = Objects.requireNonNull(
+                    observedAt, "observedAt");
+            nonNegative(
+                    expectedPolicyGeneration,
+                    totalCount,
+                    pendingCount,
+                    signingCount,
+                    retryWaitCount,
+                    quarantinedCount,
+                    finalizedCount,
+                    unknownStateCount,
+                    eligibleCount,
+                    staleSigningCount,
+                    inconsistentRecordCount,
+                    policyMismatchCount,
+                    signerUnavailableCount,
+                    signatureInvalidCount,
+                    materialInvalidCount,
+                    controlUnavailableCount);
+            if (expectedPolicyGeneration < 1
+                    || maximumAttemptCount < 0
+                    || totalCount != pendingCount
+                    + signingCount
+                    + retryWaitCount
+                    + quarantinedCount
+                    + finalizedCount
+                    + unknownStateCount
+                    || eligibleCount > totalCount
+                    || staleSigningCount > signingCount
+                    || inconsistentRecordCount > totalCount
+                    || unknownStateCount > inconsistentRecordCount
+                    || policyMismatchCount > totalCount
+                    || signerUnavailableCount > totalCount
+                    || signatureInvalidCount > totalCount
+                    || materialInvalidCount > totalCount
+                    || controlUnavailableCount > totalCount) {
+                throw new IllegalStateException(
+                        "Scenario batch finalization health aggregate is inconsistent");
+            }
+            if (totalCount == 0
+                    && (oldestUnfinalizedCreatedAt != null
+                    || oldestEligibleAt != null
+                    || oldestQuarantinedAt != null
+                    || oldestActiveSigningStartedAt != null)
+                    || eligibleCount == 0
+                    && oldestEligibleAt != null
+                    || quarantinedCount == 0
+                    && oldestQuarantinedAt != null
+                    || signingCount == 0
+                    && oldestActiveSigningStartedAt != null) {
+                throw new IllegalStateException(
+                        "Scenario batch finalization health age anchors are inconsistent");
+            }
+        }
+
+        private static void nonNegative(long... values) {
+            for (long value : values) {
+                if (value < 0) {
+                    throw new IllegalStateException(
+                            "Scenario batch finalization health counts must be non-negative");
+                }
+            }
+        }
+    }
+
     /** Submits or exactly replays one resolved batch under database capacity policy. */
     SubmissionResult submit(
             Submission submission,
@@ -577,6 +676,20 @@ public interface ScenarioRehearsalBatchRepository {
     Optional<FinalizationSnapshot> findFinalization(
             CapabilitySnapshot.Scope scope,
             String jobId);
+
+    /** Reads one database-clock aggregate inside the exact authenticated enterprise scope. */
+    FinalizationHealthSnapshot finalizationHealth(
+            CapabilitySnapshot.Scope scope);
+
+    /**
+     * Reads one deployment-owned regional aggregate for readiness and low-cardinality telemetry.
+     *
+     * <p>This method must never be exposed directly to an enterprise caller because the partition
+     * can contain multiple tenants and projects.</p>
+     */
+    FinalizationHealthSnapshot finalizationPartitionHealth(
+            String region,
+            String environmentId);
 
     /**
      * Re-queues one exactly fenced quarantined finalization and renews its retention floor.

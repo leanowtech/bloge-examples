@@ -1949,6 +1949,7 @@ Integration API templates:
   Session command:  POST /api/mirror/sessions/{sessionId}/commands
   Scenario batches: POST /api/mirror/rehearsal-jobs (--scenario-batch; Bearer token + X-Purpose: MIRROR_REHEARSAL)
   Finalization:     GET  /api/mirror/rehearsal-jobs/{jobId}/finalization
+  Finalizer health: GET  /api/mirror/rehearsal-jobs/finalization-health
 EOF
 }
 
@@ -2006,6 +2007,9 @@ wait_for_ready() {
                         and .payload.features.mirrorScenarioRehearsalBatchEvidence == true
                         and .payload.features.mirrorScenarioRehearsalBatchEvidenceFinalizationApi == true
                         and .payload.features.mirrorScenarioRehearsalBatchEvidenceFinalizationScheduling == true
+                        and .payload.features.mirrorScenarioRehearsalBatchFinalizationHealthApi == true
+                        and .payload.features.mirrorScenarioRehearsalBatchFinalizationSloIntegrated == true
+                        and .payload.features.mirrorScenarioRehearsalBatchFinalizationSloReady == true
                         and .payload.features.mirrorScenarioRehearsalBatchRetentionApi == true
                         and .payload.features.mirrorScenarioRehearsalBatchLegalHold == true
                         and .payload.features.mirrorScenarioRehearsalBatchDeletionProof == true
@@ -2024,6 +2028,12 @@ wait_for_ready() {
                     grep -Eq '"mirrorScenarioRehearsalBatchEvidenceFinalizationApi"[[:space:]]*:[[:space:]]*true' ||
                     ! printf '%s' "${response}" |
                     grep -Eq '"mirrorScenarioRehearsalBatchEvidenceFinalizationScheduling"[[:space:]]*:[[:space:]]*true' ||
+                    ! printf '%s' "${response}" |
+                    grep -Eq '"mirrorScenarioRehearsalBatchFinalizationHealthApi"[[:space:]]*:[[:space:]]*true' ||
+                    ! printf '%s' "${response}" |
+                    grep -Eq '"mirrorScenarioRehearsalBatchFinalizationSloIntegrated"[[:space:]]*:[[:space:]]*true' ||
+                    ! printf '%s' "${response}" |
+                    grep -Eq '"mirrorScenarioRehearsalBatchFinalizationSloReady"[[:space:]]*:[[:space:]]*true' ||
                     ! printf '%s' "${response}" |
                     grep -Eq '"mirrorScenarioRehearsalBatchRetentionApi"[[:space:]]*:[[:space:]]*true' ||
                     ! printf '%s' "${response}" |

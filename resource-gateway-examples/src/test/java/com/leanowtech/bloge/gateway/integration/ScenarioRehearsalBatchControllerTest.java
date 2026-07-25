@@ -4,6 +4,7 @@ import com.leanowtech.bloge.gateway.integration.mirror.ScenarioRehearsalBatchCan
 import com.leanowtech.bloge.gateway.integration.mirror.ScenarioRehearsalBatchEvidenceBundle;
 import com.leanowtech.bloge.gateway.integration.mirror.ScenarioRehearsalBatchFinalizationRemediationReceipt;
 import com.leanowtech.bloge.gateway.integration.mirror.ScenarioRehearsalBatchFinalizationRemediationRequest;
+import com.leanowtech.bloge.gateway.integration.mirror.ScenarioRehearsalBatchFinalizationHealth;
 import com.leanowtech.bloge.gateway.integration.mirror.ScenarioRehearsalBatchFinalizationStatus;
 import com.leanowtech.bloge.gateway.integration.mirror.ScenarioRehearsalBatchItemPage;
 import com.leanowtech.bloge.gateway.integration.mirror.ScenarioRehearsalBatchJob;
@@ -64,6 +65,11 @@ class ScenarioRehearsalBatchControllerTest {
                 mock(
                         ScenarioRehearsalBatchFinalizationRemediationReceipt
                                 .class);
+        ScenarioRehearsalBatchFinalizationHealth
+                finalizationHealth =
+                mock(
+                        ScenarioRehearsalBatchFinalizationHealth
+                                .class);
         ScenarioRehearsalBatchRetentionState retentionState =
                 mock(ScenarioRehearsalBatchRetentionState.class);
         ScenarioRehearsalLegalHoldCommand hold =
@@ -88,6 +94,9 @@ class ScenarioRehearsalBatchControllerTest {
         when(remediationReceipt.schemaVersion()).thenReturn(
                 ScenarioRehearsalBatchFinalizationRemediationReceipt
                         .SCHEMA_VERSION);
+        when(finalizationHealth.schemaVersion()).thenReturn(
+                ScenarioRehearsalBatchFinalizationHealth
+                        .SCHEMA_VERSION);
         when(retentionState.schemaVersion()).thenReturn(
                 ScenarioRehearsalBatchRetentionState.SCHEMA_VERSION);
         when(authenticator.authenticate(
@@ -109,6 +118,11 @@ class ScenarioRehearsalBatchControllerTest {
                 headers,
                 IntegrationOperation
                         .MIRROR_REHEARSAL_BATCH_FINALIZATION_REMEDIATE))
+                .thenReturn(identity);
+        when(authenticator.authenticate(
+                headers,
+                IntegrationOperation
+                        .MIRROR_REHEARSAL_BATCH_FINALIZATION_HEALTH_READ))
                 .thenReturn(identity);
         when(authenticator.authenticate(
                 headers,
@@ -162,6 +176,8 @@ class ScenarioRehearsalBatchControllerTest {
                         new ScenarioRehearsalBatchRepository
                                 .FinalizationRemediationResult(
                                 remediationReceipt, false));
+        when(batches.finalizationHealth(identity))
+                .thenReturn(finalizationHealth);
         when(batches.cancel(
                 "job-a",
                 cancellation.commandId(),
@@ -223,6 +239,17 @@ class ScenarioRehearsalBatchControllerTest {
                     assertThat(envelope.payload())
                             .isSameAs(remediationReceipt);
                 });
+        assertThat(controller.finalizationHealth(headers))
+                .satisfies(envelope -> {
+                    assertThat(envelope.payloadKind()).isEqualTo(
+                            "SCENARIO_REHEARSAL_BATCH_FINALIZATION_HEALTH");
+                    assertThat(envelope.payloadSchemaVersion())
+                            .isEqualTo(
+                                    ScenarioRehearsalBatchFinalizationHealth
+                                            .SCHEMA_VERSION);
+                    assertThat(envelope.payload())
+                            .isSameAs(finalizationHealth);
+                });
         assertThat(controller.retention(
                 "job-a", headers).payload())
                 .isSameAs(retentionState);
@@ -253,6 +280,10 @@ class ScenarioRehearsalBatchControllerTest {
                 headers,
                 IntegrationOperation
                         .MIRROR_REHEARSAL_BATCH_FINALIZATION_REMEDIATE);
+        verify(authenticator).authenticate(
+                headers,
+                IntegrationOperation
+                        .MIRROR_REHEARSAL_BATCH_FINALIZATION_HEALTH_READ);
         verify(authenticator).authenticate(
                 headers,
                 IntegrationOperation

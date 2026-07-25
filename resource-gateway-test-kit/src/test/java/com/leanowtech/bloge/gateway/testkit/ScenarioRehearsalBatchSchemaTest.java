@@ -72,6 +72,12 @@ class ScenarioRehearsalBatchSchemaTest {
                         .SCENARIO_REHEARSAL_BATCH_FINALIZATION_REMEDIATION_RECEIPT_SCHEMA_RESOURCE,
                 "RG.MIRROR.CLIENT.SCENARIO_BATCH_FINALIZATION_REMEDIATION_RECEIPT_INVALID"))
                 .doesNotThrowAnyException();
+        assertThatCode(() -> CapabilityMirrorSchemaValidator.require(
+                finalizationHealth(),
+                CapabilityMirrorProtocol
+                        .SCENARIO_REHEARSAL_BATCH_FINALIZATION_HEALTH_SCHEMA_RESOURCE,
+                "RG.MIRROR.CLIENT.SCENARIO_BATCH_FINALIZATION_HEALTH_INVALID"))
+                .doesNotThrowAnyException();
     }
 
     @Test
@@ -94,6 +100,11 @@ class ScenarioRehearsalBatchSchemaTest {
         ObjectNode invalidPage = page();
         ((ObjectNode) invalidPage.path("items").get(0))
                 .put("attemptCount", 99);
+        ObjectNode leakedHealth = finalizationHealth();
+        leakedHealth.putArray("jobIds")
+                .add("scenario-batch-" + "a".repeat(64));
+        ObjectNode falseHealthy = finalizationHealth();
+        falseHealthy.put("state", "HEALTHY");
 
         assertInvalid(
                 override,
@@ -119,6 +130,14 @@ class ScenarioRehearsalBatchSchemaTest {
                 invalidPage,
                 CapabilityMirrorProtocol
                         .SCENARIO_REHEARSAL_BATCH_ITEM_PAGE_SCHEMA_RESOURCE);
+        assertInvalid(
+                leakedHealth,
+                CapabilityMirrorProtocol
+                        .SCENARIO_REHEARSAL_BATCH_FINALIZATION_HEALTH_SCHEMA_RESOURCE);
+        assertInvalid(
+                falseHealthy,
+                CapabilityMirrorProtocol
+                        .SCENARIO_REHEARSAL_BATCH_FINALIZATION_HEALTH_SCHEMA_RESOURCE);
     }
 
     private static ObjectNode request() {
@@ -313,6 +332,60 @@ class ScenarioRehearsalBatchSchemaTest {
                 "effectiveRetainUntil",
                 "2026-08-24T08:01:00Z");
         value.put("reasonCode", "KMS_POLICY_REPAIRED");
+        return value;
+    }
+
+    private static ObjectNode finalizationHealth() {
+        ObjectNode value = JSON.createObjectNode();
+        value.put(
+                "schemaVersion",
+                CapabilityMirrorProtocol
+                        .SCENARIO_REHEARSAL_BATCH_FINALIZATION_HEALTH_V1);
+        value.set("scope", scope());
+        value.put("state", "DEGRADED");
+        value.putArray("violations")
+                .add("QUARANTINE_PRESENT");
+        value.put("observedAt", "2026-07-25T08:02:00Z");
+        value.put("policyGeneration", 1);
+        ObjectNode counts = value.putObject("counts");
+        counts.put("total", 2);
+        counts.put("pending", 0);
+        counts.put("signing", 0);
+        counts.put("retryWait", 0);
+        counts.put("quarantined", 1);
+        counts.put("finalized", 1);
+        counts.put("unknownState", 0);
+        counts.put("eligible", 0);
+        counts.put("staleSigning", 0);
+        counts.put("inconsistentRecords", 0);
+        counts.put("policyMismatches", 0);
+        counts.put("signerUnavailable", 0);
+        counts.put("signatureInvalid", 0);
+        counts.put("materialInvalid", 1);
+        counts.put("controlUnavailable", 0);
+        counts.put("maximumAttemptCount", 3);
+        ObjectNode ages = value.putObject("ages");
+        ages.put("oldestUnfinalizedAgeMillis", 120000);
+        ages.put("oldestEligibleAgeMillis", 0);
+        ages.put("oldestQuarantinedAgeMillis", 60000);
+        ages.put("oldestActiveSigningAgeMillis", 0);
+        ObjectNode thresholds =
+                value.putObject("thresholds");
+        thresholds.put("maximumEligibleBacklog", 100);
+        thresholds.put(
+                "maximumOldestEligibleAgeMillis",
+                300000);
+        thresholds.put(
+                "maximumActiveSigningAgeMillis",
+                90000);
+        thresholds.put("maximumQuarantinedBacklog", 0);
+        thresholds.put("criticalQuarantinedBacklog", 100);
+        thresholds.put(
+                "maximumSignerUnavailableBacklog",
+                10);
+        thresholds.put(
+                "maximumControlUnavailableBacklog",
+                10);
         return value;
     }
 

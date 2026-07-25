@@ -30,8 +30,10 @@ public final class ScenarioRehearsalBatchService {
     private final ScenarioRehearsalBatchEvidenceRepository
             evidence;
     private final MirrorOperationObservability observations;
+    private final ScenarioRehearsalBatchFinalizationHealthPolicy
+            finalizationHealthPolicy;
 
-    /** Creates the protected batch application service under one server-owned policy. */
+    /** Creates the protected batch service with conservative finalization-health defaults. */
     public ScenarioRehearsalBatchService(
             ScenarioRehearsalBatchCompiler compiler,
             ScenarioRehearsalBatchRepository repository,
@@ -39,6 +41,27 @@ public final class ScenarioRehearsalBatchService {
             ObjectMapper mapper,
             ScenarioRehearsalBatchEvidenceRepository evidence,
             MirrorOperationObservability observations) {
+        this(
+                compiler,
+                repository,
+                policy,
+                mapper,
+                evidence,
+                observations,
+                ScenarioRehearsalBatchFinalizationHealthPolicy
+                        .defaults());
+    }
+
+    /** Creates the protected batch application service under server-owned queue and SLO policy. */
+    public ScenarioRehearsalBatchService(
+            ScenarioRehearsalBatchCompiler compiler,
+            ScenarioRehearsalBatchRepository repository,
+            ScenarioRehearsalBatchPolicy policy,
+            ObjectMapper mapper,
+            ScenarioRehearsalBatchEvidenceRepository evidence,
+            MirrorOperationObservability observations,
+            ScenarioRehearsalBatchFinalizationHealthPolicy
+                    finalizationHealthPolicy) {
         this.compiler = Objects.requireNonNull(
                 compiler, "compiler");
         this.repository = Objects.requireNonNull(
@@ -49,6 +72,9 @@ public final class ScenarioRehearsalBatchService {
                 evidence, "evidence");
         this.observations = Objects.requireNonNull(
                 observations, "observations");
+        this.finalizationHealthPolicy = Objects.requireNonNull(
+                finalizationHealthPolicy,
+                "finalizationHealthPolicy");
     }
 
     /**
@@ -298,6 +324,38 @@ public final class ScenarioRehearsalBatchService {
                     operation);
         } catch (ScenarioRehearsalBatchConflictException conflict) {
             throw operation.failed(problem(conflict, identity));
+        } catch (RuntimeException failure) {
+            throw operation.failed(failure);
+        }
+    }
+
+    /** Reads exact-scope aggregate finalization health without exposing neighboring workloads. */
+    public ScenarioRehearsalBatchFinalizationHealth
+    finalizationHealth(
+            IntegrationRequestContext identity) {
+        MirrorOperationObservability.Observation operation =
+                observations.start(
+                        MirrorOperationAuditEvent.Operation
+                                .SCENARIO_REHEARSAL_BATCH_FINALIZATION_HEALTH_READ,
+                        identity,
+                        "",
+                        "",
+                        "");
+        try {
+            CapabilitySnapshot.Scope scope =
+                    MirrorPlanIntegrationService
+                            .requireMirrorFinalizationHealthIdentity(
+                                    identity);
+            ScenarioRehearsalBatchFinalizationHealth result =
+                    ScenarioRehearsalBatchFinalizationHealth
+                            .from(
+                                    scope,
+                                    repository
+                                            .finalizationHealth(
+                                                    scope),
+                                    finalizationHealthPolicy);
+            operation.succeeded("");
+            return result;
         } catch (RuntimeException failure) {
             throw operation.failed(failure);
         }

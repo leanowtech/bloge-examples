@@ -1569,6 +1569,35 @@ public final class ResourceGatewayTestClient {
     }
 
     /**
+     * Reads exact-scope payload-free Scenario batch evidence-finalization health.
+     *
+     * <p>The server derives scope from the authenticated identity. The client validates the
+     * complete closed counts, database-clock ages, thresholds, severity, and violation
+     * vocabulary before returning a defensive copy.</p>
+     *
+     * @return schema-validated aggregate finalization health
+     */
+    public JsonNode findScenarioRehearsalBatchFinalizationHealth() {
+        JsonNode response = exchange(
+                "GET",
+                "/api/mirror/rehearsal-jobs/finalization-health",
+                "",
+                "GOVERNANCE_EVIDENCE_INGESTION",
+                null);
+        JsonNode health = requireMirrorEnvelope(
+                response,
+                "SCENARIO_REHEARSAL_BATCH_FINALIZATION_HEALTH",
+                CapabilityMirrorProtocol
+                        .SCENARIO_REHEARSAL_BATCH_FINALIZATION_HEALTH_V1);
+        CapabilityMirrorSchemaValidator.require(
+                health,
+                CapabilityMirrorProtocol
+                        .SCENARIO_REHEARSAL_BATCH_FINALIZATION_HEALTH_SCHEMA_RESOURCE,
+                "RG.MIRROR.CLIENT.SCENARIO_BATCH_FINALIZATION_HEALTH_INVALID");
+        return health.deepCopy();
+    }
+
+    /**
      * Re-queues one exactly reviewed quarantined Scenario batch finalization.
      *
      * <p>The client validates the strict compare-and-set command before transport, uses the

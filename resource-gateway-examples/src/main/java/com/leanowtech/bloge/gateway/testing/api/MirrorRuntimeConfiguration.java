@@ -79,8 +79,11 @@ import com.leanowtech.bloge.gateway.integration.mirror.ScenarioRehearsalEvidence
 import com.leanowtech.bloge.gateway.integration.mirror.ScenarioRehearsalBatchEvidenceIntegrityService;
 import com.leanowtech.bloge.gateway.integration.mirror.ScenarioRehearsalBatchEvidencePublisher;
 import com.leanowtech.bloge.gateway.integration.mirror.ScenarioRehearsalBatchEvidenceRepository;
+import com.leanowtech.bloge.gateway.integration.mirror.ScenarioRehearsalBatchFinalizationHealthPolicy;
+import com.leanowtech.bloge.gateway.integration.mirror.ScenarioRehearsalBatchFinalizationHealthTelemetry;
 import com.leanowtech.bloge.gateway.integration.mirror.ScenarioRehearsalBatchFinalizationPolicy;
 import com.leanowtech.bloge.gateway.integration.mirror.ScenarioRehearsalBatchFinalizationScheduler;
+import com.leanowtech.bloge.gateway.integration.mirror.ScenarioRehearsalBatchFinalizationSloMonitor;
 import com.leanowtech.bloge.gateway.integration.mirror.ScenarioRehearsalBatchFinalizationWorker;
 import com.leanowtech.bloge.gateway.integration.mirror.ScenarioRehearsalBatchLifecycleAuditRepository;
 import com.leanowtech.bloge.gateway.integration.mirror.ScenarioRehearsalBatchCompiler;
@@ -139,7 +142,8 @@ import java.time.Clock;
 @ConditionalOnProperty(prefix = "gateway.testing.mirror", name = "enabled", havingValue = "true")
 @EnableConfigurationProperties({
         ScenarioRehearsalBatchSchedulerProperties.class,
-        ScenarioRehearsalBatchFinalizationSchedulerProperties.class
+        ScenarioRehearsalBatchFinalizationSchedulerProperties.class,
+        ScenarioRehearsalBatchFinalizationSloProperties.class
 })
 public class MirrorRuntimeConfiguration {
 
@@ -367,6 +371,16 @@ public class MirrorRuntimeConfiguration {
         return ScenarioRehearsalBatchFinalizationPolicy.defaults();
     }
 
+    /** Installs bounded, deployment-configurable finalization health thresholds. */
+    @Bean
+    @ConditionalOnMissingBean
+    public ScenarioRehearsalBatchFinalizationHealthPolicy
+    scenarioRehearsalBatchFinalizationHealthPolicy(
+            ScenarioRehearsalBatchFinalizationSloProperties
+                    properties) {
+        return properties.policy();
+    }
+
     /** Creates the domain-separated signed Scenario batch integrity boundary. */
     @Bean
     @ConditionalOnMissingBean
@@ -480,14 +494,17 @@ public class MirrorRuntimeConfiguration {
             ScenarioRehearsalBatchPolicy policy,
             ObjectMapper objectMapper,
             ScenarioRehearsalBatchEvidenceRepository evidence,
-            MirrorOperationObservability observations) {
+            MirrorOperationObservability observations,
+            ScenarioRehearsalBatchFinalizationHealthPolicy
+                    finalizationHealthPolicy) {
         return new ScenarioRehearsalBatchService(
                 compiler,
                 repository,
                 policy,
                 objectMapper,
                 evidence,
-                observations);
+                observations,
+                finalizationHealthPolicy);
     }
 
     /** Creates one evidence-verifying durable Scenario batch worker turn. */
@@ -547,6 +564,44 @@ public class MirrorRuntimeConfiguration {
             ScenarioRehearsalBatchFinalizationPolicy policy) {
         return new ScenarioRehearsalBatchFinalizationWorker(
                 repository, publisher, policy);
+    }
+
+    /** Registers fixed-cardinality finalization state, failure, age, and health gauges. */
+    @Bean
+    @ConditionalOnMissingBean
+    public ScenarioRehearsalBatchFinalizationHealthTelemetry
+    scenarioRehearsalBatchFinalizationHealthTelemetry(
+            ObjectProvider<MeterRegistry> meterRegistry) {
+        return new ScenarioRehearsalBatchFinalizationHealthTelemetry(
+                meterRegistry.getIfAvailable(
+                        SimpleMeterRegistry::new));
+    }
+
+    /**
+     * Monitors the exact partition owned by the enabled process-local finalization scheduler.
+     */
+    @Bean
+    @ConditionalOnMissingBean
+    @ConditionalOnProperty(
+            prefix =
+                    ScenarioRehearsalBatchFinalizationSchedulerProperties
+                            .PREFIX,
+            name = "enabled",
+            havingValue = "true")
+    public ScenarioRehearsalBatchFinalizationSloMonitor
+    scenarioRehearsalBatchFinalizationSloMonitor(
+            ScenarioRehearsalBatchRepository repository,
+            ScenarioRehearsalBatchFinalizationHealthTelemetry
+                    telemetry,
+            ScenarioRehearsalBatchFinalizationHealthPolicy policy,
+            ScenarioRehearsalBatchFinalizationSchedulerProperties
+                    properties) {
+        return new ScenarioRehearsalBatchFinalizationSloMonitor(
+                repository,
+                telemetry,
+                policy,
+                properties.region(),
+                properties.environmentId());
     }
 
     /**

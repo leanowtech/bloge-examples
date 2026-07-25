@@ -234,6 +234,10 @@ class CapabilityMirrorSchemaPackagingTest {
                 .endsWith(
                         "scenario-rehearsal-batch-finalization-remediation-receipt-v1.schema.json");
         assertThat(CapabilityMirrorProtocol
+                .SCENARIO_REHEARSAL_BATCH_FINALIZATION_HEALTH_SCHEMA_RESOURCE)
+                .endsWith(
+                        "scenario-rehearsal-batch-finalization-health-v1.schema.json");
+        assertThat(CapabilityMirrorProtocol
                 .SCENARIO_REHEARSAL_BATCH_ITEM_PAGE_SCHEMA_RESOURCE)
                 .endsWith(
                         "scenario-rehearsal-batch-item-page-v1.schema.json");

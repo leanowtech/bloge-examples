@@ -559,6 +559,20 @@ public class MirrorPlanIntegrationService {
                 "Mirror finalization remediation requires the verified MIRROR_REHEARSAL_FINALIZATION_ADMIN purpose.");
     }
 
+    /** Validates exact scope for aggregate finalization health reads. */
+    static CapabilitySnapshot.Scope
+    requireMirrorFinalizationHealthIdentity(
+            IntegrationRequestContext identity) {
+        return requireMirrorIdentity(
+                identity,
+                Set.of(
+                        AUTHORIZED_PURPOSE,
+                        "GOVERNANCE_EVIDENCE_INGESTION",
+                        "MIRROR_REHEARSAL_FINALIZATION_ADMIN"),
+                "RG.MIRROR.FINALIZATION_HEALTH_PURPOSE_REQUIRED",
+                "Mirror finalization health requires a rehearsal, governance-ingestion, or finalization-admin purpose.");
+    }
+
     private static CapabilitySnapshot.Scope requireMirrorIdentity(
             IntegrationRequestContext identity,
             Set<String> allowedPurposes,

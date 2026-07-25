@@ -999,6 +999,126 @@ class DatabaseScenarioRehearsalBatchRepositoryTest {
     }
 
     @Test
+    void aggregatesFinalizationHealthByExactScopeAndDeploymentPartition() {
+        ScenarioRehearsalBatchJob first =
+                makeFinalizing(
+                        "batch-finalization-health",
+                        "refund",
+                        "worker-a");
+        ScenarioRehearsalBatchRepository.FinalizationHealthSnapshot
+                pending = repository.finalizationHealth(SCOPE);
+        ScenarioRehearsalBatchRepository.FinalizationClaim claim =
+                claimFinalization();
+        databaseTime.set(NOW.plusSeconds(30));
+        ScenarioRehearsalBatchRepository.FinalizationHealthSnapshot
+                signing = repository.finalizationHealth(SCOPE);
+        ScenarioRehearsalBatchRepository.FinalizationSnapshot
+                retry = repository.releaseFinalization(
+                claim,
+                ScenarioRehearsalBatchFinalizationException
+                        .Reason.SIGNER_UNAVAILABLE,
+                ScenarioRehearsalBatchFinalizationPolicy
+                        .defaults());
+        databaseTime.set(retry.nextEligibleAt());
+        ScenarioRehearsalBatchRepository.FinalizationClaim
+                retryClaim = repository.claimFinalization(
+                "sg",
+                "test",
+                "finalizer-retry",
+                ScenarioRehearsalBatchFinalizationPolicy
+                        .defaults()).claim();
+        repository.releaseFinalization(
+                retryClaim,
+                ScenarioRehearsalBatchFinalizationException
+                        .Reason.MATERIAL_INVALID,
+                ScenarioRehearsalBatchFinalizationPolicy
+                        .defaults());
+        CapabilitySnapshot.Scope other =
+                scope("tenant-b", "org-b");
+        ScenarioRehearsalBatchRepository.Submission otherSubmission =
+                submission(
+                        other,
+                        "batch-finalization-health-other",
+                        "escalation");
+        repository.submit(otherSubmission, policy());
+        ScenarioRehearsalBatchRepository.Claim otherItem =
+                repository.claimNext(
+                        "sg", "test", "worker-b", policy());
+        repository.completeItem(
+                otherItem.lease(),
+                completion(
+                        otherSubmission.manifest().entries()
+                                .getFirst().aggregateRunId()),
+                policy());
+
+        ScenarioRehearsalBatchRepository.FinalizationHealthSnapshot
+                exact = repository.finalizationHealth(SCOPE);
+        ScenarioRehearsalBatchRepository.FinalizationHealthSnapshot
+                partition = repository.finalizationPartitionHealth(
+                "sg", "test");
+
+        assertThat(pending.totalCount()).isOne();
+        assertThat(pending.pendingCount()).isOne();
+        assertThat(pending.eligibleCount()).isOne();
+        assertThat(pending.oldestEligibleAt())
+                .isEqualTo(NOW);
+        assertThat(signing.signingCount()).isOne();
+        assertThat(signing.eligibleCount()).isZero();
+        assertThat(signing.oldestActiveSigningStartedAt())
+                .isEqualTo(NOW);
+        assertThat(exact.totalCount()).isOne();
+        assertThat(exact.quarantinedCount()).isOne();
+        assertThat(exact.materialInvalidCount()).isOne();
+        assertThat(exact.signerUnavailableCount()).isZero();
+        assertThat(exact.maximumAttemptCount()).isEqualTo(2);
+        assertThat(exact.oldestQuarantinedAt())
+                .isEqualTo(databaseTime.get());
+        assertThat(partition.totalCount()).isEqualTo(2);
+        assertThat(partition.pendingCount()).isOne();
+        assertThat(partition.quarantinedCount()).isOne();
+        assertThat(first.jobId()).isEqualTo(
+                retryClaim.intent().terminalJob().jobId());
+    }
+
+    @Test
+    void reportsUnknownControlStateAndPolicyDriftInsteadOfLookingHealthy() {
+        ScenarioRehearsalBatchJob finalizing =
+                makeFinalizing(
+                        "batch-finalization-health-corrupt",
+                        "refund",
+                        "worker-a");
+        jdbc.update("""
+                UPDATE scenario_rehearsal_batch_finalizations
+                SET state = 'UNKNOWN_STATE',
+                    policy_generation = 999
+                WHERE job_id = ?
+                """,
+                finalizing.jobId());
+
+        ScenarioRehearsalBatchRepository.FinalizationHealthSnapshot
+                snapshot = repository.finalizationHealth(SCOPE);
+        ScenarioRehearsalBatchFinalizationHealth.Assessment
+                assessment =
+                ScenarioRehearsalBatchFinalizationHealth.assess(
+                        snapshot,
+                        ScenarioRehearsalBatchFinalizationHealthPolicy
+                                .defaults());
+
+        assertThat(snapshot.totalCount()).isOne();
+        assertThat(snapshot.unknownStateCount()).isOne();
+        assertThat(snapshot.inconsistentRecordCount()).isOne();
+        assertThat(snapshot.policyMismatchCount()).isOne();
+        assertThat(assessment.state()).isEqualTo(
+                ScenarioRehearsalBatchFinalizationHealth
+                        .State.CRITICAL);
+        assertThat(assessment.violations()).containsExactly(
+                ScenarioRehearsalBatchFinalizationHealth
+                        .Violation.CONTROL_RECORD_INCONSISTENT,
+                ScenarioRehearsalBatchFinalizationHealth
+                        .Violation.POLICY_GENERATION_MISMATCH);
+    }
+
+    @Test
     void rollsBackTerminalJobWhenTerminalLifecycleAuditFails() {
         ScenarioRehearsalBatchJob finalizing =
                 makeFinalizing(

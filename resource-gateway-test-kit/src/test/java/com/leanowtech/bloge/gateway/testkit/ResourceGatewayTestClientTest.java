@@ -162,6 +162,29 @@ class ResourceGatewayTestClientTest {
     }
 
     @Test
+    void readsSchemaValidatedExactScopeFinalizationHealth() {
+        JsonNode health = client()
+                .findScenarioRehearsalBatchFinalizationHealth();
+
+        assertThat(health.path("scope").path("tenantId")
+                .asText()).isEqualTo("tenant-a");
+        assertThat(health.path("state").asText())
+                .isEqualTo("DEGRADED");
+        assertThat(health.path("counts")
+                .path("quarantined").asLong()).isOne();
+        assertThat(health.has("jobIds")).isFalse();
+        assertThat(requests)
+                .singleElement()
+                .satisfies(request -> {
+                    assertThat(request.method()).isEqualTo("GET");
+                    assertThat(request.rawPath()).isEqualTo(
+                            "/api/mirror/rehearsal-jobs/finalization-health");
+                    assertThat(request.purpose()).isEqualTo(
+                            "GOVERNANCE_EVIDENCE_INGESTION");
+                });
+    }
+
+    @Test
     void remediatesScenarioBatchFinalizationWithDedicatedPurposeAndReceiptFence() {
         ResourceGatewayTestClient client = client();
         String jobId = "scenario-batch-" + "a".repeat(64);
@@ -1118,6 +1141,12 @@ class ResourceGatewayTestClientTest {
             return;
         }
         if ("GET".equals(exchange.getRequestMethod())
+                && path.endsWith("/finalization-health")) {
+            respond(exchange, 200,
+                    scenarioBatchFinalizationHealthResponse());
+            return;
+        }
+        if ("GET".equals(exchange.getRequestMethod())
                 && path.endsWith("/finalization")) {
             respond(exchange, 200,
                     scenarioBatchFinalizationResponse());
@@ -1309,6 +1338,65 @@ class ResourceGatewayTestClientTest {
                 "a".repeat(64),
                 "b".repeat(64),
                 "c".repeat(64));
+    }
+
+    private static String
+    scenarioBatchFinalizationHealthResponse() {
+        return """
+                {
+                  "protocol":"ToolStudioResourceGatewayProtocol",
+                  "protocolVersion":"1.0.0",
+                  "payloadKind":"SCENARIO_REHEARSAL_BATCH_FINALIZATION_HEALTH",
+                  "payloadSchemaVersion":"resourceGateway.scenarioRehearsalBatchFinalizationHealth.v1",
+                  "payload":{
+                    "schemaVersion":"resourceGateway.scenarioRehearsalBatchFinalizationHealth.v1",
+                    "scope":{
+                      "tenantId":"tenant-a",
+                      "organizationId":"org-a",
+                      "projectId":"support",
+                      "environmentId":"test",
+                      "region":"sg"
+                    },
+                    "state":"DEGRADED",
+                    "violations":["QUARANTINE_PRESENT"],
+                    "observedAt":"2026-07-25T03:02:00Z",
+                    "policyGeneration":1,
+                    "counts":{
+                      "total":2,
+                      "pending":0,
+                      "signing":0,
+                      "retryWait":0,
+                      "quarantined":1,
+                      "finalized":1,
+                      "unknownState":0,
+                      "eligible":0,
+                      "staleSigning":0,
+                      "inconsistentRecords":0,
+                      "policyMismatches":0,
+                      "signerUnavailable":0,
+                      "signatureInvalid":0,
+                      "materialInvalid":1,
+                      "controlUnavailable":0,
+                      "maximumAttemptCount":3
+                    },
+                    "ages":{
+                      "oldestUnfinalizedAgeMillis":120000,
+                      "oldestEligibleAgeMillis":0,
+                      "oldestQuarantinedAgeMillis":60000,
+                      "oldestActiveSigningAgeMillis":0
+                    },
+                    "thresholds":{
+                      "maximumEligibleBacklog":100,
+                      "maximumOldestEligibleAgeMillis":300000,
+                      "maximumActiveSigningAgeMillis":90000,
+                      "maximumQuarantinedBacklog":0,
+                      "criticalQuarantinedBacklog":100,
+                      "maximumSignerUnavailableBacklog":10,
+                      "maximumControlUnavailableBacklog":10
+                    }
+                  }
+                }
+                """;
     }
 
     private static String propertyMaterializationRequest() {
