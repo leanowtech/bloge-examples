@@ -9,6 +9,7 @@ import com.leanowtech.bloge.gateway.testing.api.TestSecretAuthority;
 import com.leanowtech.bloge.gateway.testing.api.TestSuiteStabilityObservationExternalArchiveReconciliationHealth;
 import com.leanowtech.bloge.gateway.testing.api.WorkerQuarantineChangeAuthorizationTrustStore;
 import com.leanowtech.bloge.gateway.integration.mirror.ScenarioRehearsalBatchScheduler;
+import com.leanowtech.bloge.gateway.integration.mirror.ScenarioRehearsalBatchFinalizationScheduler;
 import com.leanowtech.bloge.gateway.visual.catalog.OperatorCatalogQuery;
 import com.leanowtech.bloge.gateway.visual.catalog.OperatorDefinition;
 import com.leanowtech.bloge.gateway.visual.catalog.VisualOperatorCatalog;
@@ -307,9 +308,17 @@ class ToolStudioIntegrationServiceTest {
                 new MirrorRuntimeAvailability(true, true));
         ScenarioRehearsalBatchScheduler scheduler =
                 mock(ScenarioRehearsalBatchScheduler.class);
+        ScenarioRehearsalBatchFinalizationScheduler finalizer =
+                mock(
+                        ScenarioRehearsalBatchFinalizationScheduler
+                                .class);
         when(scheduler.ready()).thenReturn(true);
+        when(finalizer.ready()).thenReturn(true);
         scheduled.configureScenarioRehearsalBatchScheduler(
                 scheduler);
+        scheduled
+                .configureScenarioRehearsalBatchFinalizationScheduler(
+                        finalizer);
 
         IntegrationCapabilities disabledCapabilities = disabled.capabilities().payload();
         IntegrationCapabilities enabledCapabilities = enabled.capabilities().payload();
@@ -332,6 +341,9 @@ class ToolStudioIntegrationServiceTest {
                         "mirrorScenarioRehearsalBatchEvidence",
                         false)
                 .containsEntry(
+                        "mirrorScenarioRehearsalBatchEvidenceFinalizationApi",
+                        false)
+                .containsEntry(
                         "mirrorScenarioRehearsalBatchRetentionApi",
                         false)
                 .containsEntry(
@@ -342,6 +354,9 @@ class ToolStudioIntegrationServiceTest {
                         false)
                 .containsEntry(
                         "mirrorScenarioRehearsalBatchScheduling", false)
+                .containsEntry(
+                        "mirrorScenarioRehearsalBatchEvidenceFinalizationScheduling",
+                        false)
                 .containsEntry("mirrorScenarioRehearsalEvidence", false)
                 .containsEntry("mirrorOperationObservability", false)
                 .containsEntry("mirrorServing", false);
@@ -363,6 +378,9 @@ class ToolStudioIntegrationServiceTest {
                         "mirrorScenarioRehearsalBatchEvidence",
                         true)
                 .containsEntry(
+                        "mirrorScenarioRehearsalBatchEvidenceFinalizationApi",
+                        true)
+                .containsEntry(
                         "mirrorScenarioRehearsalBatchRetentionApi",
                         true)
                 .containsEntry(
@@ -373,6 +391,9 @@ class ToolStudioIntegrationServiceTest {
                         true)
                 .containsEntry(
                         "mirrorScenarioRehearsalBatchScheduling", false)
+                .containsEntry(
+                        "mirrorScenarioRehearsalBatchEvidenceFinalizationScheduling",
+                        false)
                 .containsEntry("mirrorScenarioRehearsalEvidence", false)
                 .containsEntry("mirrorOperationObservability", true)
                 .containsEntry("mirrorServing", true)
@@ -411,6 +432,30 @@ class ToolStudioIntegrationServiceTest {
                 .containsEntry("mirrorPlanCreateRequest", List.of(
                         com.leanowtech.bloge.gateway.integration.mirror
                                 .MirrorPlanCreateRequest.SCHEMA_VERSION))
+                .containsEntry(
+                        "scenarioRehearsalBatchJob",
+                        List.of(
+                                com.leanowtech.bloge.gateway.integration.mirror
+                                        .ScenarioRehearsalBatchJob
+                                        .V1_SCHEMA_VERSION,
+                                com.leanowtech.bloge.gateway.integration.mirror
+                                        .ScenarioRehearsalBatchJob
+                                        .V2_SCHEMA_VERSION))
+                .containsEntry(
+                        "scenarioRehearsalBatchFinalizationStatus",
+                        List.of(
+                                com.leanowtech.bloge.gateway.integration.mirror
+                                        .ScenarioRehearsalBatchFinalizationStatus
+                                        .SCHEMA_VERSION))
+                .containsEntry(
+                        "scenarioRehearsalBatchEvidenceBundle",
+                        List.of(
+                                com.leanowtech.bloge.gateway.integration.mirror
+                                        .ScenarioRehearsalBatchEvidenceBundle
+                                        .V1_SCHEMA_VERSION,
+                                com.leanowtech.bloge.gateway.integration.mirror
+                                        .ScenarioRehearsalBatchEvidenceBundle
+                                        .V2_SCHEMA_VERSION))
                 .containsKeys(
                         "caseHandlingAssertion",
                         "scenarioCase",
@@ -431,6 +476,7 @@ class ToolStudioIntegrationServiceTest {
                         "scenarioRehearsalBatchManifest",
                         "scenarioRehearsalBatchJob",
                         "scenarioRehearsalBatchItemPage",
+                        "scenarioRehearsalBatchFinalizationStatus",
                         "scenarioRehearsalBatchCancellationRequest",
                         "scenarioRehearsalBatchRetentionEvent",
                         "scenarioRehearsalBatchRetentionState")
@@ -517,6 +563,7 @@ class ToolStudioIntegrationServiceTest {
                         "GET /api/mirror/rehearsal-jobs/{jobId}",
                         "GET /api/mirror/rehearsal-jobs/{jobId}/items",
                         "GET /api/mirror/rehearsal-jobs/{jobId}/evidence",
+                        "GET /api/mirror/rehearsal-jobs/{jobId}/finalization",
                         "POST /api/mirror/rehearsal-jobs/{jobId}/cancellations",
                         "GET /api/mirror/rehearsal-jobs/{jobId}/retention",
                         "POST /api/mirror/rehearsal-jobs/{jobId}/retention/holds",
@@ -530,11 +577,18 @@ class ToolStudioIntegrationServiceTest {
         assertThat(scheduledCapabilities.features())
                 .containsEntry(
                         "mirrorScenarioRehearsalBatchScheduling",
+                        true)
+                .containsEntry(
+                        "mirrorScenarioRehearsalBatchEvidenceFinalizationScheduling",
                         true);
         when(scheduler.ready()).thenReturn(false);
+        when(finalizer.ready()).thenReturn(false);
         assertThat(scheduled.capabilities().payload().features())
                 .containsEntry(
                         "mirrorScenarioRehearsalBatchScheduling",
+                        false)
+                .containsEntry(
+                        "mirrorScenarioRehearsalBatchEvidenceFinalizationScheduling",
                         false);
     }
 

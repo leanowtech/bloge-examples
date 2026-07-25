@@ -9,6 +9,8 @@ import java.time.Clock;
 import java.time.Instant;
 import java.util.List;
 import java.util.Objects;
+import java.util.UUID;
+import java.util.regex.Pattern;
 
 /**
  * Seals and verifies terminal Scenario batch indexes under an independent signature domain.
@@ -27,8 +29,12 @@ public final class ScenarioRehearsalBatchEvidenceIntegrityService {
             2 * 1024 * 1024;
     private static final int MAXIMUM_SIGNATURE_MATERIAL_BYTES =
             8 * 1024;
-    private static final String SIGNATURE_DOMAIN =
+    private static final String V1_SIGNATURE_DOMAIN =
             "RESOURCE_GATEWAY_SCENARIO_REHEARSAL_BATCH_EVIDENCE_V1";
+    private static final String V2_SIGNATURE_DOMAIN =
+            "RESOURCE_GATEWAY_SCENARIO_REHEARSAL_BATCH_EVIDENCE_V2";
+    private static final Pattern IDEMPOTENCY_KEY =
+            Pattern.compile("[A-Za-z0-9][A-Za-z0-9._:-]{0,255}");
 
     private final ObjectMapper mapper;
     private final VisualEvidenceSigner signer;
@@ -65,12 +71,49 @@ public final class ScenarioRehearsalBatchEvidenceIntegrityService {
             ScenarioRehearsalBatchManifest manifest,
             ScenarioRehearsalBatchJob job,
             List<ScenarioRehearsalBatchItemPage.Item> items) {
+        return seal(
+                request,
+                manifest,
+                job,
+                items,
+                null,
+                UUID.randomUUID().toString());
+    }
+
+    /**
+     * Seals one frozen finalization attempt under stable database time and KMS idempotency.
+     *
+     * <p>A durable finalization outbox calls this overload outside its transaction and reuses the
+     * exact {@code signedAt} and {@code signingRequestId} after lease takeover. The resulting
+     * signature material is therefore stable across response loss and process restart.</p>
+     *
+     * @param request original strict payload-free request
+     * @param manifest immutable exact-plan closure
+     * @param job terminal integrity-sealed job
+     * @param items complete ordered terminal item index
+     * @param signedAt database time frozen by the first finalization claim
+     * @param signingRequestId stable provider idempotency identity
+     * @return verified bundle or fail-closed bounded result
+     */
+    public SealResult seal(
+            ScenarioRehearsalBatchRequest request,
+            ScenarioRehearsalBatchManifest manifest,
+            ScenarioRehearsalBatchJob job,
+            List<ScenarioRehearsalBatchItemPage.Item> items,
+            Instant signedAt,
+            String signingRequestId) {
+        String requestId = signingRequestId == null
+                ? "" : signingRequestId.trim();
+        if (!IDEMPOTENCY_KEY.matcher(requestId).matches()) {
+            throw new IllegalArgumentException(
+                    "Scenario batch signing request id is invalid");
+        }
         ScenarioRehearsalBatchEvidenceIndex index;
         try {
             ScenarioRehearsalBatchEvidenceIndex material =
                     canonicalSnapshot(
                             new ScenarioRehearsalBatchEvidenceIndex(
-                                    "",
+                                    evidenceIndexVersion(job),
                                     "",
                                     request,
                                     manifest,
@@ -96,20 +139,23 @@ public final class ScenarioRehearsalBatchEvidenceIntegrityService {
                     index, unavailable, SIGNER_UNAVAILABLE);
         }
         try {
-            Instant signedAt = clock.instant();
-            if (Instant.EPOCH.equals(signedAt)
-                    || signedAt.isBefore(job.completedAt())) {
+            Instant signatureTime =
+                    signedAt == null ? clock.instant() : signedAt;
+            if (Instant.EPOCH.equals(signatureTime)
+                    || signatureTime.isBefore(job.completedAt())) {
                 return SealResult.failed(
                         index, unavailable, MATERIAL_INVALID);
             }
             String materialFingerprint =
-                    signatureMaterialFingerprint(index, signedAt);
+                    signatureMaterialFingerprint(
+                            index, signatureTime);
             VisualRunEvidenceSeal seal =
-                    signer.seal(materialFingerprint);
+                    signer.seal(
+                            materialFingerprint,
+                            requestId);
             ScenarioRehearsalBatchEvidenceAttestation attestation =
                     new ScenarioRehearsalBatchEvidenceAttestation(
-                            ScenarioRehearsalBatchEvidenceAttestation
-                                    .SCHEMA_VERSION,
+                            evidenceAttestationVersion(index),
                             ScenarioRehearsalBatchEvidenceAttestation
                                     .SignatureStatus.VERIFIED,
                             job.jobId(),
@@ -117,7 +163,7 @@ public final class ScenarioRehearsalBatchEvidenceIntegrityService {
                             manifest.manifestFingerprint(),
                             job.recordFingerprint(),
                             index.indexFingerprint(),
-                            signedAt,
+                            signatureTime,
                             seal.keyId(),
                             seal.algorithm(),
                             seal.signature(),
@@ -128,16 +174,14 @@ public final class ScenarioRehearsalBatchEvidenceIntegrityService {
             }
             BundleMaterial bundleMaterial =
                     new BundleMaterial(
-                            ScenarioRehearsalBatchEvidenceBundle
-                                    .SCHEMA_VERSION,
+                            evidenceBundleVersion(index),
                             ScenarioRehearsalBatchEvidenceBundle
                                     .PayloadPolicy.HASH_ONLY,
                             attestation,
                             index);
             ScenarioRehearsalBatchEvidenceBundle bundle =
                     new ScenarioRehearsalBatchEvidenceBundle(
-                            ScenarioRehearsalBatchEvidenceBundle
-                                    .SCHEMA_VERSION,
+                            evidenceBundleVersion(index),
                             fingerprint(
                                     bundleMaterial,
                                     ScenarioRehearsalBatchEvidenceBundle
@@ -166,8 +210,8 @@ public final class ScenarioRehearsalBatchEvidenceIntegrityService {
     public Verification verify(
             ScenarioRehearsalBatchEvidenceBundle bundle) {
         if (bundle == null
-                || !ScenarioRehearsalBatchEvidenceBundle.SCHEMA_VERSION
-                .equals(bundle.schemaVersion())) {
+                || !supportedBundleVersion(
+                bundle.schemaVersion())) {
             return Verification.INVALID;
         }
         try {
@@ -280,7 +324,8 @@ public final class ScenarioRehearsalBatchEvidenceIntegrityService {
                         attestation.manifestFingerprint(),
                         attestation.terminalJobFingerprint(),
                         attestation.indexFingerprint(),
-                        attestation.signedAt());
+                        attestation.signedAt(),
+                        attestation.schemaVersion());
         VisualEvidenceSigner.Verification verification =
                 signer.verify(
                         new VisualRunEvidenceSeal(
@@ -303,7 +348,8 @@ public final class ScenarioRehearsalBatchEvidenceIntegrityService {
                 index.manifest().manifestFingerprint(),
                 index.job().recordFingerprint(),
                 index.indexFingerprint(),
-                signedAt);
+                signedAt,
+                evidenceAttestationVersion(index));
     }
 
     private String signatureMaterialFingerprint(
@@ -312,12 +358,13 @@ public final class ScenarioRehearsalBatchEvidenceIntegrityService {
             String manifestFingerprint,
             String terminalJobFingerprint,
             String indexFingerprint,
-            Instant signedAt) {
+            Instant signedAt,
+            String attestationSchemaVersion) {
         return fingerprint(
                 new SignatureMaterial(
-                        SIGNATURE_DOMAIN,
-                        ScenarioRehearsalBatchEvidenceAttestation
-                                .SCHEMA_VERSION,
+                        signatureDomain(
+                                attestationSchemaVersion),
+                        attestationSchemaVersion,
                         jobId,
                         requestFingerprint,
                         manifestFingerprint,
@@ -348,7 +395,7 @@ public final class ScenarioRehearsalBatchEvidenceIntegrityService {
             List<ScenarioRehearsalBatchItemPage.Item> items) {
         try {
             return new ScenarioRehearsalBatchEvidenceIndex(
-                    "",
+                    evidenceIndexVersion(job),
                     "sha256:" + "0".repeat(64),
                     request,
                     manifest,
@@ -364,6 +411,60 @@ public final class ScenarioRehearsalBatchEvidenceIntegrityService {
     private String fingerprint(Object value, int maximumBytes) {
         return ProtocolFingerprint.ofBounded(
                 mapper, value, maximumBytes);
+    }
+
+    private static String evidenceIndexVersion(
+            ScenarioRehearsalBatchJob job) {
+        return ScenarioRehearsalBatchJob.V1_SCHEMA_VERSION.equals(
+                job.schemaVersion())
+                ? ScenarioRehearsalBatchEvidenceIndex
+                .V1_SCHEMA_VERSION
+                : ScenarioRehearsalBatchEvidenceIndex
+                .V2_SCHEMA_VERSION;
+    }
+
+    private static String evidenceAttestationVersion(
+            ScenarioRehearsalBatchEvidenceIndex index) {
+        return ScenarioRehearsalBatchEvidenceIndex
+                .V1_SCHEMA_VERSION.equals(index.schemaVersion())
+                ? ScenarioRehearsalBatchEvidenceAttestation
+                .V1_SCHEMA_VERSION
+                : ScenarioRehearsalBatchEvidenceAttestation
+                .V2_SCHEMA_VERSION;
+    }
+
+    private static String evidenceBundleVersion(
+            ScenarioRehearsalBatchEvidenceIndex index) {
+        return ScenarioRehearsalBatchEvidenceIndex
+                .V1_SCHEMA_VERSION.equals(index.schemaVersion())
+                ? ScenarioRehearsalBatchEvidenceBundle
+                .V1_SCHEMA_VERSION
+                : ScenarioRehearsalBatchEvidenceBundle
+                .V2_SCHEMA_VERSION;
+    }
+
+    private static boolean supportedBundleVersion(
+            String value) {
+        return ScenarioRehearsalBatchEvidenceBundle
+                .V1_SCHEMA_VERSION.equals(value)
+                || ScenarioRehearsalBatchEvidenceBundle
+                .V2_SCHEMA_VERSION.equals(value);
+    }
+
+    private static String signatureDomain(
+            String attestationSchemaVersion) {
+        if (ScenarioRehearsalBatchEvidenceAttestation
+                .V1_SCHEMA_VERSION.equals(
+                attestationSchemaVersion)) {
+            return V1_SIGNATURE_DOMAIN;
+        }
+        if (ScenarioRehearsalBatchEvidenceAttestation
+                .V2_SCHEMA_VERSION.equals(
+                attestationSchemaVersion)) {
+            return V2_SIGNATURE_DOMAIN;
+        }
+        throw new IllegalArgumentException(
+                "Unsupported Scenario batch evidence signature version");
     }
 
     private record SignatureMaterial(

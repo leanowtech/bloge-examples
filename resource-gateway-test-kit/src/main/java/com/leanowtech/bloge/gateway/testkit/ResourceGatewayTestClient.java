@@ -1529,6 +1529,46 @@ public final class ResourceGatewayTestClient {
     }
 
     /**
+     * Reads one payload-free durable Scenario batch evidence-finalization status.
+     *
+     * <p>The projection distinguishes pending work, active signing, bounded retry, operator
+     * quarantine, and atomic completion. It deliberately excludes signer diagnostics, worker
+     * identity, fixture values, and business payloads.</p>
+     *
+     * @param jobId canonical {@code scenario-batch-<sha256>} identity
+     * @return defensive copy of the schema-validated scope-bound status
+     */
+    public JsonNode findScenarioRehearsalBatchFinalization(
+            String jobId) {
+        String exactJobId =
+                scenarioRehearsalBatchJobId(jobId);
+        JsonNode response = exchange(
+                "GET",
+                "/api/mirror/rehearsal-jobs/"
+                        + segment(exactJobId)
+                        + "/finalization",
+                "",
+                "GOVERNANCE_EVIDENCE_INGESTION",
+                null);
+        JsonNode status = requireMirrorEnvelope(
+                response,
+                "SCENARIO_REHEARSAL_BATCH_FINALIZATION_STATUS",
+                CapabilityMirrorProtocol
+                        .SCENARIO_REHEARSAL_BATCH_FINALIZATION_STATUS_V1);
+        CapabilityMirrorSchemaValidator.require(
+                status,
+                CapabilityMirrorProtocol
+                        .SCENARIO_REHEARSAL_BATCH_FINALIZATION_STATUS_SCHEMA_RESOURCE,
+                "RG.MIRROR.CLIENT.SCENARIO_BATCH_FINALIZATION_INVALID");
+        if (!exactJobId.equals(
+                status.path("jobId").asText())) {
+            throw responseContractInvalid(
+                    "The server returned Scenario batch finalization for a different job.");
+        }
+        return status.deepCopy();
+    }
+
+    /**
      * Reads and independently verifies one terminal Scenario rehearsal batch evidence index.
      *
      * <p>The client resolves the signed bundle and its public verification key, then re-derives
@@ -1554,8 +1594,11 @@ public final class ResourceGatewayTestClient {
         JsonNode bundle = requireMirrorEnvelope(
                 response,
                 "SCENARIO_REHEARSAL_BATCH_EVIDENCE_BUNDLE",
-                CapabilityMirrorProtocol
-                        .SCENARIO_REHEARSAL_BATCH_EVIDENCE_BUNDLE_V1);
+                Set.of(
+                        CapabilityMirrorProtocol
+                                .SCENARIO_REHEARSAL_BATCH_EVIDENCE_BUNDLE_V1,
+                        CapabilityMirrorProtocol
+                                .SCENARIO_REHEARSAL_BATCH_EVIDENCE_BUNDLE_V2));
         if (!exactJobId.equals(
                 bundle.path("index").path("job")
                         .path("jobId").asText())) {
@@ -2822,12 +2865,21 @@ public final class ResourceGatewayTestClient {
 
     private static JsonNode requireMirrorEnvelope(
             JsonNode response, String payloadKind, String payloadVersion) {
+        return requireMirrorEnvelope(
+                response, payloadKind, Set.of(payloadVersion));
+    }
+
+    private static JsonNode requireMirrorEnvelope(
+            JsonNode response,
+            String payloadKind,
+            Set<String> payloadVersions) {
         if (!CapabilityMirrorProtocol.INTEGRATION_PROTOCOL.equals(
                 response.path("protocol").asText())
                 || !CapabilityMirrorProtocol.INTEGRATION_PROTOCOL_V1.equals(
                 response.path("protocolVersion").asText())
                 || !payloadKind.equals(response.path("payloadKind").asText())
-                || !payloadVersion.equals(
+                || payloadVersions == null
+                || !payloadVersions.contains(
                 response.path("payloadSchemaVersion").asText())
                 || !response.path("payload").isObject()) {
             throw responseContractInvalid(

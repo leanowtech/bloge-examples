@@ -2,6 +2,7 @@ package com.leanowtech.bloge.gateway.integration;
 
 import com.leanowtech.bloge.gateway.integration.mirror.ScenarioRehearsalBatchCancellationRequest;
 import com.leanowtech.bloge.gateway.integration.mirror.ScenarioRehearsalBatchEvidenceBundle;
+import com.leanowtech.bloge.gateway.integration.mirror.ScenarioRehearsalBatchFinalizationStatus;
 import com.leanowtech.bloge.gateway.integration.mirror.ScenarioRehearsalBatchItemPage;
 import com.leanowtech.bloge.gateway.integration.mirror.ScenarioRehearsalBatchJob;
 import com.leanowtech.bloge.gateway.integration.mirror.ScenarioRehearsalBatchRequest;
@@ -149,6 +150,33 @@ public final class ScenarioRehearsalBatchController {
                                                 Map.of())));
         return IntegrationEnvelope.of(
                 "SCENARIO_REHEARSAL_BATCH_EVIDENCE_BUNDLE",
+                value.schemaVersion(),
+                value);
+    }
+
+    /** Reads payload-free finalization retry, lease, quarantine, and completion state. */
+    @GetMapping("/{jobId}/finalization")
+    public IntegrationEnvelope<ScenarioRehearsalBatchFinalizationStatus>
+    finalization(
+            @PathVariable String jobId,
+            @RequestHeader HttpHeaders headers) {
+        IntegrationRequestContext identity =
+                authenticator.authenticate(
+                        headers,
+                        IntegrationOperation
+                                .MIRROR_REHEARSAL_BATCH_READ);
+        ScenarioRehearsalBatchFinalizationStatus value =
+                batches.finalization(
+                        jobId, identity)
+                        .orElseThrow(() ->
+                                new IntegrationProblemException(
+                                        IntegrationProblem.notFound(
+                                                "RG.MIRROR.REHEARSAL_BATCH.FINALIZATION_NOT_FOUND",
+                                                "Scenario rehearsal batch finalization was not found.",
+                                                identity.correlationId(),
+                                                Map.of())));
+        return IntegrationEnvelope.of(
+                "SCENARIO_REHEARSAL_BATCH_FINALIZATION_STATUS",
                 value.schemaVersion(),
                 value);
     }

@@ -1,0 +1,97 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://bloge.dev/schemas/resource-gateway-mirror/scenario-rehearsal-batch-finalization-status-v1.schema.json",
+  "title": "Resource Gateway Scenario Rehearsal Batch Finalization Status v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion", "jobId", "state", "attemptCount", "nextEligibleAt",
+    "leaseExpiresAt", "signingStartedAt", "failureCode",
+    "evidenceBundleFingerprint", "createdAt", "updatedAt", "finalizedAt"
+  ],
+  "properties": {
+    "schemaVersion": {
+      "const": "resourceGateway.scenarioRehearsalBatchFinalizationStatus.v1"
+    },
+    "jobId": {
+      "type": "string",
+      "pattern": "^scenario-batch-[a-f0-9]{64}$"
+    },
+    "state": {
+      "enum": ["PENDING", "SIGNING", "RETRY_WAIT", "QUARANTINED", "FINALIZED"]
+    },
+    "attemptCount": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 10000
+    },
+    "nextEligibleAt": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "leaseExpiresAt": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "signingStartedAt": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "failureCode": {
+      "type": "string",
+      "maxLength": 255,
+      "pattern": "^$|^[A-Z][A-Z0-9_.-]{0,254}$"
+    },
+    "evidenceBundleFingerprint": {
+      "type": "string",
+      "pattern": "^$|^sha256:[a-f0-9]{64}$"
+    },
+    "createdAt": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "updatedAt": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "finalizedAt": {
+      "oneOf": [
+        {"type": "null"},
+        {"type": "string", "format": "date-time"}
+      ]
+    }
+  },
+  "allOf": [
+    {
+      "if": {
+        "properties": {
+          "state": {
+            "const": "FINALIZED"
+          }
+        },
+        "required": ["state"]
+      },
+      "then": {
+        "properties": {
+          "evidenceBundleFingerprint": {
+            "pattern": "^sha256:[a-f0-9]{64}$"
+          },
+          "finalizedAt": {
+            "type": "string",
+            "format": "date-time"
+          }
+        }
+      },
+      "else": {
+        "properties": {
+          "evidenceBundleFingerprint": {
+            "const": ""
+          },
+          "finalizedAt": {
+            "type": "null"
+          }
+        }
+      }
+    }
+  ]
+}

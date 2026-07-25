@@ -12,6 +12,29 @@ public interface VisualEvidenceSigner {
 
     VisualRunEvidenceSeal seal(String materialFingerprint);
 
+    /**
+     * Seals material under a caller-owned stable idempotency identity.
+     *
+     * <p>Managed KMS/HSM adapters must forward this identity to the provider so a response lost
+     * after remote signing can be recovered without creating a second signing intent. Local
+     * deterministic signers may use the default because signing the same material has no remote
+     * side effect. Callers must keep one key bound to exactly one material fingerprint.</p>
+     *
+     * @param materialFingerprint canonical material content address
+     * @param idempotencyKey stable bounded signing-request identity
+     * @return detached signature over the exact material
+     */
+    default VisualRunEvidenceSeal seal(
+            String materialFingerprint,
+            String idempotencyKey) {
+        if (idempotencyKey == null
+                || idempotencyKey.isBlank()) {
+            throw new IllegalArgumentException(
+                    "Evidence signing idempotency key is required");
+        }
+        return seal(materialFingerprint);
+    }
+
     Verification verify(VisualRunEvidenceSeal seal, String actualMaterialFingerprint);
 
     Optional<VerificationKey> key(String keyId);

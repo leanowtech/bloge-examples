@@ -33,9 +33,15 @@ public record ScenarioRehearsalBatchEvidenceAttestation(
         String signature,
         boolean independentlyVerifiable
 ) {
+    /** Legacy v1 Scenario batch evidence-attestation version. */
+    public static final String V1_SCHEMA_VERSION =
+            "resourceGateway.scenarioRehearsalBatchEvidenceAttestation.v1";
+    /** Current v2 Scenario batch evidence-attestation version. */
+    public static final String V2_SCHEMA_VERSION =
+            "resourceGateway.scenarioRehearsalBatchEvidenceAttestation.v2";
     /** Current Scenario batch evidence-attestation version. */
     public static final String SCHEMA_VERSION =
-            "resourceGateway.scenarioRehearsalBatchEvidenceAttestation.v1";
+            V2_SCHEMA_VERSION;
     private static final Pattern FINGERPRINT =
             Pattern.compile("sha256:[a-f0-9]{64}");
 
@@ -50,7 +56,8 @@ public record ScenarioRehearsalBatchEvidenceAttestation(
         schemaVersion = schemaVersion == null
                 || schemaVersion.isBlank()
                 ? SCHEMA_VERSION : schemaVersion.trim();
-        if (!SCHEMA_VERSION.equals(schemaVersion)) {
+        if (!V1_SCHEMA_VERSION.equals(schemaVersion)
+                && !V2_SCHEMA_VERSION.equals(schemaVersion)) {
             throw new IllegalArgumentException(
                     "unsupported Scenario batch evidence attestation version");
         }
@@ -108,7 +115,11 @@ public record ScenarioRehearsalBatchEvidenceAttestation(
         ScenarioRehearsalBatchEvidenceIndex exact =
                 java.util.Objects.requireNonNull(index, "index");
         return new ScenarioRehearsalBatchEvidenceAttestation(
-                SCHEMA_VERSION,
+                ScenarioRehearsalBatchEvidenceIndex
+                        .V1_SCHEMA_VERSION
+                        .equals(exact.schemaVersion())
+                        ? V1_SCHEMA_VERSION
+                        : V2_SCHEMA_VERSION,
                 SignatureStatus.VERIFICATION_UNAVAILABLE,
                 exact.job().jobId(),
                 exact.job().requestFingerprint(),

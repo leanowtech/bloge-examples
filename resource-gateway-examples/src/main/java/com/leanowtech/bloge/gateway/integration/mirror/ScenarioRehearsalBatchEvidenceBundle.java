@@ -19,9 +19,15 @@ public record ScenarioRehearsalBatchEvidenceBundle(
         ScenarioRehearsalBatchEvidenceAttestation attestation,
         ScenarioRehearsalBatchEvidenceIndex index
 ) {
+    /** Legacy portable v1 Scenario batch evidence version. */
+    public static final String V1_SCHEMA_VERSION =
+            "resourceGateway.scenarioRehearsalBatchEvidenceBundle.v1";
+    /** Current portable v2 Scenario batch evidence version. */
+    public static final String V2_SCHEMA_VERSION =
+            "resourceGateway.scenarioRehearsalBatchEvidenceBundle.v2";
     /** Current portable Scenario batch evidence version. */
     public static final String SCHEMA_VERSION =
-            "resourceGateway.scenarioRehearsalBatchEvidenceBundle.v1";
+            V2_SCHEMA_VERSION;
     /** Maximum canonical portable bundle admitted to signing and verification. */
     public static final int MAXIMUM_CANONICAL_BYTES =
             18 * 1024 * 1024;
@@ -38,7 +44,8 @@ public record ScenarioRehearsalBatchEvidenceBundle(
         schemaVersion = schemaVersion == null
                 || schemaVersion.isBlank()
                 ? SCHEMA_VERSION : schemaVersion.trim();
-        if (!SCHEMA_VERSION.equals(schemaVersion)) {
+        if (!V1_SCHEMA_VERSION.equals(schemaVersion)
+                && !V2_SCHEMA_VERSION.equals(schemaVersion)) {
             throw new IllegalArgumentException(
                     "unsupported Scenario batch evidence bundle version");
         }
@@ -51,7 +58,23 @@ public record ScenarioRehearsalBatchEvidenceBundle(
         attestation = Objects.requireNonNull(
                 attestation, "attestation");
         index = Objects.requireNonNull(index, "index");
-        if (attestation.signatureStatus()
+        String expectedAttestationVersion =
+                V1_SCHEMA_VERSION.equals(schemaVersion)
+                        ? ScenarioRehearsalBatchEvidenceAttestation
+                        .V1_SCHEMA_VERSION
+                        : ScenarioRehearsalBatchEvidenceAttestation
+                        .V2_SCHEMA_VERSION;
+        String expectedIndexVersion =
+                V1_SCHEMA_VERSION.equals(schemaVersion)
+                        ? ScenarioRehearsalBatchEvidenceIndex
+                        .V1_SCHEMA_VERSION
+                        : ScenarioRehearsalBatchEvidenceIndex
+                        .V2_SCHEMA_VERSION;
+        if (!expectedAttestationVersion.equals(
+                attestation.schemaVersion())
+                || !expectedIndexVersion.equals(
+                index.schemaVersion())
+                || attestation.signatureStatus()
                 != ScenarioRehearsalBatchEvidenceAttestation
                 .SignatureStatus.VERIFIED
                 || !attestation.independentlyVerifiable()

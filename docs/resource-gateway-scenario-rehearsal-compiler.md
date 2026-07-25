@@ -594,6 +594,11 @@ curl -sS \
   -H 'X-Purpose: GOVERNANCE_EVIDENCE_INGESTION' \
   'http://localhost:8080/api/mirror/rehearsal-jobs/<jobId>/evidence'
 
+curl -sS \
+  -H 'Authorization: Bearer bloge-aneke-demo-token' \
+  -H 'X-Purpose: GOVERNANCE_EVIDENCE_INGESTION' \
+  'http://localhost:8080/api/mirror/rehearsal-jobs/<jobId>/finalization'
+
 curl -sS -X POST \
   -H 'Authorization: Bearer bloge-aneke-demo-token' \
   -H 'X-Purpose: MIRROR_REHEARSAL' \
@@ -612,9 +617,10 @@ curl -sS -X POST \
 ./scripts/start-visual-canvas-demo.sh --scenario-batch
 ```
 
-脚本会派生稳定 instance id，把 scheduler 和 demo identity 对齐到同一个
-`sg/test`（staging profile 对应 staging），并在 capability 动态确认
-`mirrorScenarioRehearsalBatchScheduling=true` 后报告 ready。手动配置使用：
+脚本会派生稳定 DAG worker/finalizer instance id，把两个 scheduler 和 demo
+identity 对齐到同一个 `sg/test`（staging profile 对应 staging），并在 capability
+动态确认普通调度与 evidence finalization 调度都 ready 后才报告 ready。手动配置
+使用：
 
 ```bash
 export RG_MIRROR_RUNTIME_ENABLED=true
@@ -623,14 +629,20 @@ export RG_MIRROR_SCENARIO_BATCH_INSTANCE_ID=rg-sg-test-01
 export RG_MIRROR_SCENARIO_BATCH_REGION=sg
 export RG_MIRROR_SCENARIO_BATCH_ENVIRONMENT=test
 export RG_MIRROR_SCENARIO_BATCH_MAXIMUM_POLLERS=4
+export RG_MIRROR_SCENARIO_BATCH_FINALIZATION_SCHEDULER_ENABLED=true
+export RG_MIRROR_SCENARIO_BATCH_FINALIZATION_INSTANCE_ID=rg-sg-test-01-finalizer
+export RG_MIRROR_SCENARIO_BATCH_FINALIZATION_REGION=sg
+export RG_MIRROR_SCENARIO_BATCH_FINALIZATION_ENVIRONMENT=test
+export RG_MIRROR_SCENARIO_BATCH_FINALIZATION_MAXIMUM_POLLERS=1
 export RG_INTEGRATION_REGION=sg
 export RG_INTEGRATION_ENVIRONMENT_ID=test
 ```
 
 每个进程只轮询一个 exact `(region, environment)`；数据库协调键、policy
-generation、容量、tenant fairness、reconcile 和 claim 查询均使用同一完整分区，
-同名环境跨地域互不争抢容量。固定 lane 保证进程内并发有界；停止时先取消未来
-poll，再等待当前 turn drain，最终发布仍受数据库 lease/epoch fence 约束。
+generation、容量、tenant fairness、reconcile、DAG claim 与 finalization claim
+均使用同一完整分区，同名环境跨地域互不争抢容量。DAG lane 与 KMS lane 分属不同
+线程池和并发上限；停止时先取消未来 poll，再分别等待当前 turn 有界 drain，最终
+发布仍受数据库 lease/epoch fence 约束。
 
 Scenario runtime 现在提供 server-owned、payload-free 的 execution-control hook，
 在 case resolution 前、每个外部 case 前、case progress 耐久 checkpoint 后以及
@@ -647,20 +659,30 @@ heartbeat 不延长 lease。claim 已按 immutable compiled-plan timeout 加 com
 API 是否存在。
 
 终态发布采用 `request -> manifest -> terminal job + ordered items -> signed bundle`
-闭包。repository 在同一数据库事务中先重新验证每个已完成 child aggregate 的
-scope、run id、evidence fingerprint 与 workbook fingerprint，再生成
-`ScenarioRehearsalBatchEvidenceIndex.v1`，使用独立签名域封装为
-`ScenarioRehearsalBatchEvidenceBundle.v1`，立即复验并 append-only 保存，最后才把
-item/job 更新为终态。签名 authority 或 evidence store 失败会让整笔终态事务回滚。
-批次包只携带 child 内容地址，不复制最多 256 份 aggregate bundle，因而保持
-payload-free 和有界；消费者仍可按 ref 获取并验证每份 child evidence。
+闭包，但远程签名不再发生在 DAG 分区锁事务内。worker 先在短事务中冻结
+content-addressed `FinalizationIntent`，把 job 更新为
+`FINALIZING_EVIDENCE`；独立 finalizer 使用数据库 lease 在事务外重新验证每个 child
+aggregate 的 scope、run id、evidence/workbook fingerprint，并生成
+`ScenarioRehearsalBatchEvidenceIndex.v2` 与
+`ScenarioRehearsalBatchEvidenceBundle.v2`。签名和 retention seal 都准备完成后，
+finalizer 以 owner/epoch fence 在一个短事务中原子提交 terminal job、evidence、
+retention、lifecycle audit 和 `FINALIZED` outbox。批次包只携带 child 内容地址，
+不复制最多 256 份 aggregate bundle，因而保持 payload-free 和有界。
 
-Test Kit 的 `findScenarioRehearsalBatchEvidence(jobId)` 会获取公开 key，并在返回
-前重新派生 request/manifest/job/index/bundle fingerprint、完整 scope batch id、
+finalization 状态为 `PENDING -> SIGNING -> FINALIZED`，可恢复故障进入有界
+`RETRY_WAIT`，永久 material/signature 故障或 20 次预算耗尽进入
+`QUARANTINED`。首次 claim 冻结 `signingStartedAt` 和 stable
+`signingRequestId`；陈旧 lease 接管继续复用它们，KMS 响应丢失后的 exact replay
+不会因 key rotation 生成第二份合法 bundle。一个 quarantined intent 不会阻塞同
+分区后续工作。
+
+Test Kit 的 `findScenarioRehearsalBatchEvidence(jobId)` 接受 v1/v2，获取公开 key
+后重新派生 request/manifest/job/index/bundle fingerprint、完整 scope batch id、
 每个 child request/run id、总 case 数、item 顺序、终态 summary、签名时间 key
-policy 和 Ed25519 signature。`ScenarioRehearsalBatchEvidenceVerifier` 也可用于
-离线材料。当前本地事务在持有批次分区锁时调用 signer；远程 KMS 的高延迟与故障
-隔离需要后续用 durable `FINALIZING`/outbox 状态机认证，不能依靠无限事务等待。
+policy 和 Ed25519 signature。`findScenarioRehearsalBatchFinalization(jobId)` 在
+strict Schema 校验和 job-id 绑定后返回 payload-free 控制状态；它不暴露 worker、
+provider diagnostics 或业务数据。v1 仍按原域验证，不能以 v2 verifier 规则静默
+改写历史证据。
 
 受保护的 batch submit/read/items/evidence/cancel 使用四个独立、固定基数
 `MirrorOperationAuditEvent.Operation`。submit/cancel 的成功事实位于队列写事务
@@ -929,6 +951,9 @@ Test Kit Schema/verifier/client `10/10` 项聚焦验证。
 - `resource-gateway-examples/src/main/java/com/leanowtech/bloge/gateway/integration/mirror/ScenarioRehearsalBatchCompiler.java`
 - `resource-gateway-examples/src/main/java/com/leanowtech/bloge/gateway/integration/mirror/DatabaseScenarioRehearsalBatchRepository.java`
 - `resource-gateway-examples/src/main/java/com/leanowtech/bloge/gateway/integration/mirror/ScenarioRehearsalBatchEvidenceIntegrityService.java`
+- `resource-gateway-examples/src/main/java/com/leanowtech/bloge/gateway/integration/mirror/ScenarioRehearsalBatchFinalizationWorker.java`
+- `resource-gateway-examples/src/main/java/com/leanowtech/bloge/gateway/integration/mirror/ScenarioRehearsalBatchFinalizationScheduler.java`
+- `resource-gateway-examples/src/main/java/com/leanowtech/bloge/gateway/integration/mirror/ScenarioRehearsalBatchFinalizationStatus.java`
 - `resource-gateway-examples/src/main/java/com/leanowtech/bloge/gateway/integration/mirror/DatabaseScenarioRehearsalBatchEvidenceRepository.java`
 - `resource-gateway-examples/src/main/java/com/leanowtech/bloge/gateway/integration/mirror/ScenarioRehearsalBatchLifecycleAuditEvent.java`
 - `resource-gateway-examples/src/main/java/com/leanowtech/bloge/gateway/integration/mirror/DatabaseScenarioRehearsalBatchLifecycleAuditRepository.java`
@@ -953,11 +978,16 @@ Test Kit Schema/verifier/client `10/10` 项聚焦验证。
 - `docs/schemas/resource-gateway-mirror/scenario-rehearsal-batch-request-v1.schema.json`
 - `docs/schemas/resource-gateway-mirror/scenario-rehearsal-batch-manifest-v1.schema.json`
 - `docs/schemas/resource-gateway-mirror/scenario-rehearsal-batch-job-v1.schema.json`
+- `docs/schemas/resource-gateway-mirror/scenario-rehearsal-batch-job-v2.schema.json`
+- `docs/schemas/resource-gateway-mirror/scenario-rehearsal-batch-finalization-status-v1.schema.json`
 - `docs/schemas/resource-gateway-mirror/scenario-rehearsal-batch-item-page-v1.schema.json`
 - `docs/schemas/resource-gateway-mirror/scenario-rehearsal-batch-cancellation-request-v1.schema.json`
 - `docs/schemas/resource-gateway-mirror/scenario-rehearsal-batch-evidence-index-v1.schema.json`
+- `docs/schemas/resource-gateway-mirror/scenario-rehearsal-batch-evidence-index-v2.schema.json`
 - `docs/schemas/resource-gateway-mirror/scenario-rehearsal-batch-evidence-attestation-v1.schema.json`
+- `docs/schemas/resource-gateway-mirror/scenario-rehearsal-batch-evidence-attestation-v2.schema.json`
 - `docs/schemas/resource-gateway-mirror/scenario-rehearsal-batch-evidence-bundle-v1.schema.json`
+- `docs/schemas/resource-gateway-mirror/scenario-rehearsal-batch-evidence-bundle-v2.schema.json`
 - `docs/schemas/resource-gateway-mirror/scenario-rehearsal-batch-retention-event-v1.schema.json`
 - `docs/schemas/resource-gateway-mirror/scenario-rehearsal-batch-retention-state-v1.schema.json`
 

@@ -151,25 +151,46 @@ public class DatabaseScenarioRehearsalBatchRetentionRepository
                 Objects.requireNonNull(bundle, "bundle");
         Instant retention = Objects.requireNonNull(
                 retainUntil, "retainUntil");
+        Instant at = databaseNow();
+        return register(
+                exact,
+                prepareRegistration(
+                        exact,
+                        retention,
+                        at,
+                        "scenario-batch-retention:"
+                                + exact.index().job().jobId()
+                                .substring("scenario-batch-".length())));
+    }
+
+    @Override
+    public ScenarioRehearsalBatchRetentionRepository
+    .PreparedRegistration prepareRegistration(
+            ScenarioRehearsalBatchEvidenceBundle bundle,
+            Instant retainUntil,
+            Instant occurredAt,
+            String signingRequestId) {
+        ScenarioRehearsalBatchEvidenceBundle exact =
+                Objects.requireNonNull(bundle, "bundle");
+        Instant retention = Objects.requireNonNull(
+                retainUntil, "retainUntil");
+        Instant at = Objects.requireNonNull(
+                occurredAt, "occurredAt");
         ScenarioRehearsalBatchJob job = exact.index().job();
         if (!job.status().terminal()) {
             throw new IllegalArgumentException(
                     "Scenario batch retention requires a terminal job");
         }
-        requireExactEvidence(exact);
-        Optional<ScenarioRehearsalBatchRetentionState> existing =
-                locked(job.scope(), job.jobId());
-        if (existing.isPresent()) {
-            return sameRegistration(
-                    existing.orElseThrow(), exact, retention);
-        }
-        Instant at = databaseNow();
         if (!retention.isAfter(at)) {
             throw new IllegalArgumentException(
                     "Scenario batch retention boundary must be in the future");
         }
+        String suffix = job.jobId().substring(
+                "scenario-batch-".length());
         ScenarioRehearsalBatchRetentionEvent event =
                 signedEvent(
+                        "batch-retention-" + suffix,
+                        signingRequestId,
                         "register:" + job.jobId(),
                         job.scope(),
                         job.requestId(),
@@ -190,6 +211,47 @@ public class DatabaseScenarioRehearsalBatchRetentionRepository
                                 .PreservedDisposition.NOT_APPLICABLE,
                         ScenarioRehearsalBatchRetentionEvent
                                 .PreservedDisposition.NOT_APPLICABLE);
+        return new ScenarioRehearsalBatchRetentionRepository
+                .PreparedRegistration(
+                exact.bundleFingerprint(),
+                retention,
+                event);
+    }
+
+    @Override
+    @Transactional
+    public ScenarioRehearsalBatchRetentionState register(
+            ScenarioRehearsalBatchEvidenceBundle bundle,
+            ScenarioRehearsalBatchRetentionRepository
+                    .PreparedRegistration prepared) {
+        ScenarioRehearsalBatchEvidenceBundle exact =
+                Objects.requireNonNull(bundle, "bundle");
+        ScenarioRehearsalBatchRetentionRepository
+                .PreparedRegistration registration =
+                Objects.requireNonNull(prepared, "prepared");
+        ScenarioRehearsalBatchJob job = exact.index().job();
+        ScenarioRehearsalBatchRetentionEvent event =
+                registration.event();
+        if (!registration.bundleFingerprint().equals(
+                exact.bundleFingerprint())
+                || !event.scope().equals(job.scope())
+                || !event.requestId().equals(job.requestId())
+                || !event.jobId().equals(job.jobId())
+                || !event.manifestFingerprint().equals(
+                job.manifestFingerprint())) {
+            throw new IllegalArgumentException(
+                    "Prepared Scenario batch retention differs from evidence");
+        }
+        verify(event);
+        requireExactEvidence(exact);
+        Optional<ScenarioRehearsalBatchRetentionState> existing =
+                locked(job.scope(), job.jobId());
+        if (existing.isPresent()) {
+            return sameRegistration(
+                    existing.orElseThrow(),
+                    exact,
+                    registration.retainUntil());
+        }
         ScenarioRehearsalBatchRetentionState state =
                 new ScenarioRehearsalBatchRetentionState(
                         "", job.scope(), job.requestId(),
@@ -197,7 +259,8 @@ public class DatabaseScenarioRehearsalBatchRetentionRepository
                         exact.bundleFingerprint(),
                         ScenarioRehearsalBatchRetentionState.Status
                                 .RETAINED,
-                        1, retention, List.of(), at, event);
+                        1, registration.retainUntil(),
+                        List.of(), event.occurredAt(), event);
         try {
             insertState(state);
             insertEvent(event);
@@ -207,7 +270,9 @@ public class DatabaseScenarioRehearsalBatchRetentionRepository
                     locked(job.scope(), job.jobId())
                             .orElseThrow(() -> concurrent);
             return sameRegistration(
-                    persisted, exact, retention);
+                    persisted,
+                    exact,
+                    registration.retainUntil());
         }
     }
 
@@ -713,13 +778,63 @@ public class DatabaseScenarioRehearsalBatchRetentionRepository
                     .PreservedDisposition childDisposition,
             ScenarioRehearsalBatchRetentionEvent
                     .PreservedDisposition auditDisposition) {
+        String eventId = UUID.randomUUID().toString();
+        return signedEvent(
+                eventId,
+                "batch-retention:" + eventId,
+                commandId,
+                scope,
+                requestId,
+                jobId,
+                manifestFingerprint,
+                revision,
+                type,
+                retainUntil,
+                occurredAt,
+                actorId,
+                reasonCode,
+                holdId,
+                evidenceBundleFingerprint,
+                previousEventFingerprint,
+                deletedJobs,
+                deletedItems,
+                deletedEvidence,
+                childDisposition,
+                auditDisposition);
+    }
+
+    private ScenarioRehearsalBatchRetentionEvent signedEvent(
+            String eventId,
+            String signingRequestId,
+            String commandId,
+            CapabilitySnapshot.Scope scope,
+            String requestId,
+            String jobId,
+            String manifestFingerprint,
+            long revision,
+            ScenarioRehearsalBatchRetentionEvent.Type type,
+            Instant retainUntil,
+            Instant occurredAt,
+            String actorId,
+            String reasonCode,
+            String holdId,
+            String evidenceBundleFingerprint,
+            String previousEventFingerprint,
+            int deletedJobs,
+            int deletedItems,
+            int deletedEvidence,
+            ScenarioRehearsalBatchRetentionEvent
+                    .PreservedDisposition childDisposition,
+            ScenarioRehearsalBatchRetentionEvent
+                    .PreservedDisposition auditDisposition) {
         if (!signer.available()) {
-            throw new IllegalStateException(
-                    "Scenario batch retention signing authority is unavailable");
+            throw new ScenarioRehearsalBatchFinalizationException(
+                    ScenarioRehearsalBatchFinalizationException
+                            .Reason.SIGNER_UNAVAILABLE);
         }
         ScenarioRehearsalBatchRetentionEvent unsigned =
                 new ScenarioRehearsalBatchRetentionEvent(
-                        "", UUID.randomUUID().toString(),
+                        "", eventId,
                         commandId, scope, requestId, jobId,
                         manifestFingerprint,
                         revision, type, retainUntil, occurredAt,
@@ -730,10 +845,28 @@ public class DatabaseScenarioRehearsalBatchRetentionRepository
                         childDisposition, auditDisposition,
                         VisualRunEvidenceSeal.unsigned());
         String fingerprint = unsigned.eventFingerprint();
+        VisualRunEvidenceSeal seal;
+        try {
+            seal = signer.seal(
+                    fingerprint,
+                    required(
+                            signingRequestId,
+                            "signingRequestId",
+                            256));
+        } catch (RuntimeException unavailable) {
+            throw new ScenarioRehearsalBatchFinalizationException(
+                    ScenarioRehearsalBatchFinalizationException
+                            .Reason.SIGNER_UNAVAILABLE);
+        }
         ScenarioRehearsalBatchRetentionEvent signed =
-                unsigned.withEvidenceSeal(
-                        signer.seal(fingerprint));
-        verify(signed);
+                unsigned.withEvidenceSeal(seal);
+        try {
+            verify(signed);
+        } catch (RuntimeException invalid) {
+            throw new ScenarioRehearsalBatchFinalizationException(
+                    ScenarioRehearsalBatchFinalizationException
+                            .Reason.SIGNATURE_INVALID);
+        }
         return signed;
     }
 

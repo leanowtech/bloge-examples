@@ -50,6 +50,7 @@ class ResourceGatewayTestClientTest {
         server = HttpServer.create(new InetSocketAddress("127.0.0.1", 0), 0);
         server.createContext("/api/testing", this::handle);
         server.createContext("/api/integration", this::handle);
+        server.createContext("/api/mirror", this::handle);
         server.start();
     }
 
@@ -129,6 +130,35 @@ class ResourceGatewayTestClientTest {
         assertThat(requests.get(7).rawQuery()).isEqualTo("verbosity=FULL");
         assertThat(requests.get(6).body().path("schemaVersion").asText())
                 .isEqualTo(TestingProtocol.TEST_EXECUTION_BATCH_REQUEST_V1);
+    }
+
+    @Test
+    void readsSchemaValidatedPayloadFreeScenarioBatchFinalization() {
+        ResourceGatewayTestClient client = client();
+        String jobId = "scenario-batch-" + "a".repeat(64);
+
+        JsonNode status =
+                client.findScenarioRehearsalBatchFinalization(
+                        jobId);
+
+        assertThat(status.path("jobId").asText())
+                .isEqualTo(jobId);
+        assertThat(status.path("state").asText())
+                .isEqualTo("RETRY_WAIT");
+        assertThat(status.path("attemptCount").asInt())
+                .isEqualTo(2);
+        assertThat(status.has("leaseOwner")).isFalse();
+        assertThat(requests)
+                .singleElement()
+                .satisfies(request -> {
+                    assertThat(request.method()).isEqualTo("GET");
+                    assertThat(request.rawPath()).isEqualTo(
+                            "/api/mirror/rehearsal-jobs/"
+                                    + jobId
+                                    + "/finalization");
+                    assertThat(request.purpose()).isEqualTo(
+                            "GOVERNANCE_EVIDENCE_INGESTION");
+                });
     }
 
     @Test
@@ -1046,6 +1076,12 @@ class ResourceGatewayTestClientTest {
                     + "\"runId\":\"private-child-payload\",\"evidence\":{\"status\":\"NOT_A_STATUS\"}}");
             return;
         }
+        if ("GET".equals(exchange.getRequestMethod())
+                && path.endsWith("/finalization")) {
+            respond(exchange, 200,
+                    scenarioBatchFinalizationResponse());
+            return;
+        }
         if ("POST".equals(exchange.getRequestMethod())
                 && path.endsWith("/stability-executions")) {
             String requestFingerprint = body.path("metadata")
@@ -1171,6 +1207,31 @@ class ResourceGatewayTestClientTest {
                 TestSuiteStabilityTestFixtures.SUITE_ID,
                 TestSuiteStabilityTestFixtures.SUITE_REVISION,
                 TestSuiteStabilityTestFixtures.SUITE_FINGERPRINT);
+    }
+
+    private static String scenarioBatchFinalizationResponse() {
+        return """
+                {
+                  "protocol":"ToolStudioResourceGatewayProtocol",
+                  "protocolVersion":"1.0.0",
+                  "payloadKind":"SCENARIO_REHEARSAL_BATCH_FINALIZATION_STATUS",
+                  "payloadSchemaVersion":"resourceGateway.scenarioRehearsalBatchFinalizationStatus.v1",
+                  "payload":{
+                    "schemaVersion":"resourceGateway.scenarioRehearsalBatchFinalizationStatus.v1",
+                    "jobId":"scenario-batch-%s",
+                    "state":"RETRY_WAIT",
+                    "attemptCount":2,
+                    "nextEligibleAt":"2026-07-25T03:00:30Z",
+                    "leaseExpiresAt":"1970-01-01T00:00:00Z",
+                    "signingStartedAt":"2026-07-25T03:00:00Z",
+                    "failureCode":"RG.MIRROR.KMS.UNAVAILABLE",
+                    "evidenceBundleFingerprint":"",
+                    "createdAt":"2026-07-25T02:59:50Z",
+                    "updatedAt":"2026-07-25T03:00:00Z",
+                    "finalizedAt":null
+                  }
+                }
+                """.formatted("a".repeat(64));
     }
 
     private static String propertyMaterializationRequest() {

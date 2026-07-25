@@ -60,6 +60,16 @@ gateway:
           initial-delay-millis: ${RG_MIRROR_SCENARIO_BATCH_INITIAL_DELAY_MILLIS:1000}
           poll-interval-millis: ${RG_MIRROR_SCENARIO_BATCH_POLL_INTERVAL_MILLIS:1000}
           drain-timeout-millis: ${RG_MIRROR_SCENARIO_BATCH_DRAIN_TIMEOUT_MILLIS:30000}
+        finalization-scheduler:
+          # Separate KMS lanes finalize durable outbox intents without holding DAG queue locks.
+          enabled: ${RG_MIRROR_SCENARIO_BATCH_FINALIZATION_SCHEDULER_ENABLED:false}
+          instance-id: ${RG_MIRROR_SCENARIO_BATCH_FINALIZATION_INSTANCE_ID:}
+          region: ${RG_MIRROR_SCENARIO_BATCH_FINALIZATION_REGION:}
+          environment-id: ${RG_MIRROR_SCENARIO_BATCH_FINALIZATION_ENVIRONMENT:}
+          maximum-pollers: ${RG_MIRROR_SCENARIO_BATCH_FINALIZATION_MAXIMUM_POLLERS:1}
+          initial-delay-millis: ${RG_MIRROR_SCENARIO_BATCH_FINALIZATION_INITIAL_DELAY_MILLIS:1000}
+          poll-interval-millis: ${RG_MIRROR_SCENARIO_BATCH_FINALIZATION_POLL_INTERVAL_MILLIS:1000}
+          drain-timeout-millis: ${RG_MIRROR_SCENARIO_BATCH_FINALIZATION_DRAIN_TIMEOUT_MILLIS:30000}
       stateful:
         # Separate opt-in: missing encryption keys or a state-plane outage fail startup/readiness closed.
         enabled: ${RG_MIRROR_STATEFUL_ENABLED:false}

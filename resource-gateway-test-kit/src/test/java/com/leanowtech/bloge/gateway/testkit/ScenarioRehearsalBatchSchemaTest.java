@@ -37,11 +37,28 @@ class ScenarioRehearsalBatchSchemaTest {
                         .SCENARIO_REHEARSAL_BATCH_JOB_SCHEMA_RESOURCE,
                 "RG.MIRROR.CLIENT.SCENARIO_BATCH_JOB_INVALID"))
                 .doesNotThrowAnyException();
+        ObjectNode legacyJob = job();
+        legacyJob.put(
+                "schemaVersion",
+                CapabilityMirrorProtocol
+                        .SCENARIO_REHEARSAL_BATCH_JOB_V1);
+        assertThatCode(() -> CapabilityMirrorSchemaValidator.require(
+                legacyJob,
+                CapabilityMirrorProtocol
+                        .SCENARIO_REHEARSAL_BATCH_JOB_V1_SCHEMA_RESOURCE,
+                "RG.MIRROR.CLIENT.SCENARIO_BATCH_JOB_V1_INVALID"))
+                .doesNotThrowAnyException();
         assertThatCode(() -> CapabilityMirrorSchemaValidator.require(
                 page(),
                 CapabilityMirrorProtocol
                         .SCENARIO_REHEARSAL_BATCH_ITEM_PAGE_SCHEMA_RESOURCE,
                 "RG.MIRROR.CLIENT.SCENARIO_BATCH_PAGE_INVALID"))
+                .doesNotThrowAnyException();
+        assertThatCode(() -> CapabilityMirrorSchemaValidator.require(
+                finalization(),
+                CapabilityMirrorProtocol
+                        .SCENARIO_REHEARSAL_BATCH_FINALIZATION_STATUS_SCHEMA_RESOURCE,
+                "RG.MIRROR.CLIENT.SCENARIO_BATCH_FINALIZATION_INVALID"))
                 .doesNotThrowAnyException();
     }
 
@@ -155,7 +172,7 @@ class ScenarioRehearsalBatchSchemaTest {
         value.put(
                 "schemaVersion",
                 CapabilityMirrorProtocol
-                        .SCENARIO_REHEARSAL_BATCH_JOB_V1);
+                        .SCENARIO_REHEARSAL_BATCH_JOB_V2);
         value.put(
                 "jobId",
                 "scenario-batch-" + "b".repeat(64));
@@ -212,6 +229,36 @@ class ScenarioRehearsalBatchSchemaTest {
         item.putNull("startedAt");
         item.putNull("completedAt");
         value.putNull("nextIndex");
+        return value;
+    }
+
+    private static ObjectNode finalization() {
+        ObjectNode value = JSON.createObjectNode();
+        value.put(
+                "schemaVersion",
+                CapabilityMirrorProtocol
+                        .SCENARIO_REHEARSAL_BATCH_FINALIZATION_STATUS_V1);
+        value.put(
+                "jobId",
+                "scenario-batch-" + "b".repeat(64));
+        value.put("state", "RETRY_WAIT");
+        value.put("attemptCount", 2);
+        value.put(
+                "nextEligibleAt",
+                "2026-07-25T08:00:05Z");
+        value.put(
+                "leaseExpiresAt",
+                "1970-01-01T00:00:00Z");
+        value.put(
+                "signingStartedAt",
+                "2026-07-25T08:00:00Z");
+        value.put(
+                "failureCode",
+                "RG.MIRROR.REHEARSAL_BATCH.FINALIZATION_SIGNER_UNAVAILABLE");
+        value.put("evidenceBundleFingerprint", "");
+        value.put("createdAt", "2026-07-25T08:00:00Z");
+        value.put("updatedAt", "2026-07-25T08:00:01Z");
+        value.putNull("finalizedAt");
         return value;
     }
 

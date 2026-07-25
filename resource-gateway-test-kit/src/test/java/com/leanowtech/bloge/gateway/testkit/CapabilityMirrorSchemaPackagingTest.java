@@ -220,7 +220,11 @@ class CapabilityMirrorSchemaPackagingTest {
         assertThat(CapabilityMirrorProtocol
                 .SCENARIO_REHEARSAL_BATCH_JOB_SCHEMA_RESOURCE)
                 .endsWith(
-                        "scenario-rehearsal-batch-job-v1.schema.json");
+                        "scenario-rehearsal-batch-job-v2.schema.json");
+        assertThat(CapabilityMirrorProtocol
+                .SCENARIO_REHEARSAL_BATCH_FINALIZATION_STATUS_SCHEMA_RESOURCE)
+                .endsWith(
+                        "scenario-rehearsal-batch-finalization-status-v1.schema.json");
         assertThat(CapabilityMirrorProtocol
                 .SCENARIO_REHEARSAL_BATCH_ITEM_PAGE_SCHEMA_RESOURCE)
                 .endsWith(
@@ -228,15 +232,15 @@ class CapabilityMirrorSchemaPackagingTest {
         assertThat(CapabilityMirrorProtocol
                 .SCENARIO_REHEARSAL_BATCH_EVIDENCE_INDEX_SCHEMA_RESOURCE)
                 .endsWith(
-                        "scenario-rehearsal-batch-evidence-index-v1.schema.json");
+                        "scenario-rehearsal-batch-evidence-index-v2.schema.json");
         assertThat(CapabilityMirrorProtocol
                 .SCENARIO_REHEARSAL_BATCH_EVIDENCE_ATTESTATION_SCHEMA_RESOURCE)
                 .endsWith(
-                        "scenario-rehearsal-batch-evidence-attestation-v1.schema.json");
+                        "scenario-rehearsal-batch-evidence-attestation-v2.schema.json");
         assertThat(CapabilityMirrorProtocol
                 .SCENARIO_REHEARSAL_BATCH_EVIDENCE_BUNDLE_SCHEMA_RESOURCE)
                 .endsWith(
-                        "scenario-rehearsal-batch-evidence-bundle-v1.schema.json");
+                        "scenario-rehearsal-batch-evidence-bundle-v2.schema.json");
         assertThat(CapabilityMirrorProtocol
                 .SCENARIO_CASE_REHEARSAL_RESULT_SCHEMA_RESOURCE)
                 .endsWith(

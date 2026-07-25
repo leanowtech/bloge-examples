@@ -275,19 +275,36 @@ public final class CapabilityMirrorProtocol {
     /** Durable payload-free Scenario batch job projection wire version. */
     public static final String SCENARIO_REHEARSAL_BATCH_JOB_V1 =
             "resourceGateway.scenarioRehearsalBatchJob.v1";
+    /** Durable Scenario batch job projection with explicit evidence finalization. */
+    public static final String SCENARIO_REHEARSAL_BATCH_JOB_V2 =
+            "resourceGateway.scenarioRehearsalBatchJob.v2";
+    /** Payload-free batch evidence finalization status wire version. */
+    public static final String
+    SCENARIO_REHEARSAL_BATCH_FINALIZATION_STATUS_V1 =
+            "resourceGateway.scenarioRehearsalBatchFinalizationStatus.v1";
     /** Stable bounded Scenario batch item-page wire version. */
     public static final String SCENARIO_REHEARSAL_BATCH_ITEM_PAGE_V1 =
             "resourceGateway.scenarioRehearsalBatchItemPage.v1";
     /** Content-addressed terminal Scenario batch evidence index wire version. */
     public static final String SCENARIO_REHEARSAL_BATCH_EVIDENCE_INDEX_V1 =
             "resourceGateway.scenarioRehearsalBatchEvidenceIndex.v1";
+    /** Content-addressed terminal Scenario batch evidence index v2. */
+    public static final String SCENARIO_REHEARSAL_BATCH_EVIDENCE_INDEX_V2 =
+            "resourceGateway.scenarioRehearsalBatchEvidenceIndex.v2";
     /** Detached terminal Scenario batch evidence attestation wire version. */
     public static final String
     SCENARIO_REHEARSAL_BATCH_EVIDENCE_ATTESTATION_V1 =
             "resourceGateway.scenarioRehearsalBatchEvidenceAttestation.v1";
+    /** Detached terminal Scenario batch evidence attestation v2. */
+    public static final String
+    SCENARIO_REHEARSAL_BATCH_EVIDENCE_ATTESTATION_V2 =
+            "resourceGateway.scenarioRehearsalBatchEvidenceAttestation.v2";
     /** Independently verifiable signed Scenario batch evidence wire version. */
     public static final String SCENARIO_REHEARSAL_BATCH_EVIDENCE_BUNDLE_V1 =
             "resourceGateway.scenarioRehearsalBatchEvidenceBundle.v1";
+    /** Independently verifiable signed Scenario batch evidence v2. */
+    public static final String SCENARIO_REHEARSAL_BATCH_EVIDENCE_BUNDLE_V2 =
+            "resourceGateway.scenarioRehearsalBatchEvidenceBundle.v2";
     /** Independently verifiable signed Scenario rehearsal aggregate wire version. */
     public static final String SCENARIO_REHEARSAL_EVIDENCE_BUNDLE_V1 =
             "resourceGateway.scenarioRehearsalEvidenceBundle.v1";
@@ -638,29 +655,68 @@ public final class CapabilityMirrorProtocol {
     SCENARIO_REHEARSAL_BATCH_CANCELLATION_REQUEST_SCHEMA_RESOURCE =
             SCHEMA_RESOURCE_ROOT
                     + "scenario-rehearsal-batch-cancellation-request-v1.schema.json";
-    /** Packaged durable payload-free Scenario batch job projection. */
-    public static final String SCENARIO_REHEARSAL_BATCH_JOB_SCHEMA_RESOURCE =
+    /** Packaged legacy durable Scenario batch job projection. */
+    public static final String SCENARIO_REHEARSAL_BATCH_JOB_V1_SCHEMA_RESOURCE =
             SCHEMA_RESOURCE_ROOT
                     + "scenario-rehearsal-batch-job-v1.schema.json";
+    /** Packaged current durable Scenario batch job projection. */
+    public static final String SCENARIO_REHEARSAL_BATCH_JOB_V2_SCHEMA_RESOURCE =
+            SCHEMA_RESOURCE_ROOT
+                    + "scenario-rehearsal-batch-job-v2.schema.json";
+    /** Packaged current durable Scenario batch job projection. */
+    public static final String SCENARIO_REHEARSAL_BATCH_JOB_SCHEMA_RESOURCE =
+            SCENARIO_REHEARSAL_BATCH_JOB_V2_SCHEMA_RESOURCE;
+    /** Packaged payload-free batch evidence finalization status. */
+    public static final String
+    SCENARIO_REHEARSAL_BATCH_FINALIZATION_STATUS_SCHEMA_RESOURCE =
+            SCHEMA_RESOURCE_ROOT
+                    + "scenario-rehearsal-batch-finalization-status-v1.schema.json";
     /** Packaged stable bounded Scenario batch item page. */
     public static final String SCENARIO_REHEARSAL_BATCH_ITEM_PAGE_SCHEMA_RESOURCE =
             SCHEMA_RESOURCE_ROOT
                     + "scenario-rehearsal-batch-item-page-v1.schema.json";
-    /** Packaged content-addressed terminal Scenario batch evidence index. */
+    /** Packaged legacy content-addressed terminal Scenario batch evidence index. */
     public static final String
-    SCENARIO_REHEARSAL_BATCH_EVIDENCE_INDEX_SCHEMA_RESOURCE =
+    SCENARIO_REHEARSAL_BATCH_EVIDENCE_INDEX_V1_SCHEMA_RESOURCE =
             SCHEMA_RESOURCE_ROOT
                     + "scenario-rehearsal-batch-evidence-index-v1.schema.json";
-    /** Packaged detached terminal Scenario batch evidence attestation. */
+    /** Packaged current content-addressed terminal Scenario batch evidence index. */
     public static final String
-    SCENARIO_REHEARSAL_BATCH_EVIDENCE_ATTESTATION_SCHEMA_RESOURCE =
+    SCENARIO_REHEARSAL_BATCH_EVIDENCE_INDEX_V2_SCHEMA_RESOURCE =
+            SCHEMA_RESOURCE_ROOT
+                    + "scenario-rehearsal-batch-evidence-index-v2.schema.json";
+    /** Packaged current content-addressed terminal Scenario batch evidence index. */
+    public static final String
+    SCENARIO_REHEARSAL_BATCH_EVIDENCE_INDEX_SCHEMA_RESOURCE =
+            SCENARIO_REHEARSAL_BATCH_EVIDENCE_INDEX_V2_SCHEMA_RESOURCE;
+    /** Packaged legacy detached terminal Scenario batch evidence attestation. */
+    public static final String
+    SCENARIO_REHEARSAL_BATCH_EVIDENCE_ATTESTATION_V1_SCHEMA_RESOURCE =
             SCHEMA_RESOURCE_ROOT
                     + "scenario-rehearsal-batch-evidence-attestation-v1.schema.json";
-    /** Packaged independently verifiable signed Scenario batch evidence. */
+    /** Packaged current detached terminal Scenario batch evidence attestation. */
     public static final String
-    SCENARIO_REHEARSAL_BATCH_EVIDENCE_BUNDLE_SCHEMA_RESOURCE =
+    SCENARIO_REHEARSAL_BATCH_EVIDENCE_ATTESTATION_V2_SCHEMA_RESOURCE =
+            SCHEMA_RESOURCE_ROOT
+                    + "scenario-rehearsal-batch-evidence-attestation-v2.schema.json";
+    /** Packaged current detached terminal Scenario batch evidence attestation. */
+    public static final String
+    SCENARIO_REHEARSAL_BATCH_EVIDENCE_ATTESTATION_SCHEMA_RESOURCE =
+            SCENARIO_REHEARSAL_BATCH_EVIDENCE_ATTESTATION_V2_SCHEMA_RESOURCE;
+    /** Packaged legacy independently verifiable signed Scenario batch evidence. */
+    public static final String
+    SCENARIO_REHEARSAL_BATCH_EVIDENCE_BUNDLE_V1_SCHEMA_RESOURCE =
             SCHEMA_RESOURCE_ROOT
                     + "scenario-rehearsal-batch-evidence-bundle-v1.schema.json";
+    /** Packaged current independently verifiable signed Scenario batch evidence. */
+    public static final String
+    SCENARIO_REHEARSAL_BATCH_EVIDENCE_BUNDLE_V2_SCHEMA_RESOURCE =
+            SCHEMA_RESOURCE_ROOT
+                    + "scenario-rehearsal-batch-evidence-bundle-v2.schema.json";
+    /** Packaged current independently verifiable signed Scenario batch evidence. */
+    public static final String
+    SCENARIO_REHEARSAL_BATCH_EVIDENCE_BUNDLE_SCHEMA_RESOURCE =
+            SCENARIO_REHEARSAL_BATCH_EVIDENCE_BUNDLE_V2_SCHEMA_RESOURCE;
     /** Packaged payload-free result for one compiled Scenario case. */
     public static final String SCENARIO_CASE_REHEARSAL_RESULT_SCHEMA_RESOURCE =
             SCHEMA_RESOURCE_ROOT

@@ -31,7 +31,7 @@ integration something the business flow can see, reason about, test, and change.
 | Governed capability closures | Sealed Resource/Operator/Graph projections, exact cycle-checked closure for all seven shipped graphs, nested foreach/loop boundary inventory, full enterprise scope, append-only lifecycle revisions, classification-aware reads, and honest mirror readiness flags |
 | Governed capability observations | Signed payload-free invocation facts, operator-owned admission policy, external vault/proof verification, durable admitted-or-quarantined decisions, full-scope idempotency, and independent offline verification |
 | Governed capability corpora | Immutable quarantine review, exact admitted-source candidates, metadata risk gates, independent owner-reviewed publication lineage, second source-authority verification, and honest resolver readiness |
-| Governed scenario rehearsal | Append-only Scenario assets, exact compilation, durable per-case execution, independently signed aggregate and batch evidence, multi-hold retention/deletion proof at both levels, deterministic ANEKE workbook seeds, and an opt-in region-isolated scheduler with database-authoritative cooperative control |
+| Governed scenario rehearsal | Append-only Scenario assets, exact compilation, durable per-case execution, independently signed aggregate and batch evidence, multi-hold retention/deletion proof at both levels, deterministic ANEKE workbook seeds, and separate opt-in regional DAG/KMS schedulers with database-authoritative cooperative control |
 | Stateful mirror sessions | Versioned entity/write/session/checkpoint/write-attempt protocols, atomic multi-entity mutations, exact replay, AES-GCM isolated persistence, lease/fence/CAS concurrency, durable crash-window reconciliation, TTL/destroy, payload-free signed state evidence, signed same-data-plane restart recovery admission, ANEKE workbook seeds, and independently verified clients |
 | Governed replay payloads | Payload values detached from immutable evidence, classification ABAC, selective retention, legal hold, bounded expiry, and signed deletion proof |
 | Workbook and gate evidence loop | Deterministic sanitized workbook seeds, exact suite/run evidence refs, versioned gate decision basis, stale detection, and transactional gate events |
@@ -51,7 +51,8 @@ profile by default so `/api/testing/**` is available; use `--profile production`
 to demonstrate that the testing beans and endpoints are structurally absent.
 Add `--stateful` to assemble the encrypted stateful-mirror Session API and its
 dedicated local data plane. Add `--scenario-batch` to start bounded autonomous
-workers for one exact `test`/`staging` regional queue partition.
+DAG workers plus isolated evidence-finalization lanes for one exact
+`test`/`staging` regional queue partition.
 
 | Open | Best first move |
 | --- | --- |
@@ -66,6 +67,7 @@ workers for one exact `test`/`staging` regional queue partition.
 | `POST http://localhost:8080/api/mirror/rehearsal-jobs` | Submit an exact-plan batch after starting with `--scenario-batch`; the script aligns the worker partition with the demo identity |
 | `GET http://localhost:8080/api/mirror/rehearsal-jobs/{jobId}/items` | Read stable payload-free item pages while bounded regional workers progress the batch |
 | `GET http://localhost:8080/api/mirror/rehearsal-jobs/{jobId}/evidence` | Read one signed payload-free terminal batch index whose request, manifest, item results, and child evidence references can be verified offline |
+| `GET http://localhost:8080/api/mirror/rehearsal-jobs/{jobId}/finalization` | Inspect payload-free `PENDING`, `SIGNING`, `RETRY_WAIT`, `QUARANTINED`, or `FINALIZED` evidence-publication state without exposing worker or signer diagnostics |
 | `GET http://localhost:8080/api/mirror/rehearsal-jobs/{jobId}/retention` | Rebuild and verify the signed batch retention projection (`X-Purpose: GOVERNANCE_EVIDENCE_INGESTION`) |
 | `POST http://localhost:8080/api/mirror/rehearsal-jobs/{jobId}/retention/holds` | Place an independent batch legal hold without replacing other holds (`X-Purpose: LEGAL_HOLD`) |
 | `POST http://localhost:8080/api/mirror/rehearsal-jobs/{jobId}/retention/purge` | Delete an eligible batch closure and return a signed logical-deletion proof (`X-Purpose: PAYLOAD_RETENTION_ADMIN`) |
@@ -256,10 +258,22 @@ deleting only the batch job, item rows, and batch evidence. Child Scenario
 evidence and both audit streams remain retained. The signed purge event proves
 this database-level logical deletion with exact row counts; it does not claim
 physical-media, backup, WORM, or cross-region erasure.
+Remote signing is isolated from the DAG queue transaction. The worker first
+freezes a content-addressed finalization intent and exposes
+`FINALIZING_EVIDENCE`; a separate region-bound finalizer claims it with a
+database lease, prepares KMS and retention signatures outside the transaction,
+then atomically publishes evidence, retention, audit, and the terminal job.
+Stable signing time and KMS idempotency key make takeover and lost-response
+replay byte-identical. Transient failures use bounded backoff, permanent
+material/signature failures enter `QUARANTINED`, and one quarantined intent
+does not block later work. The v2 evidence protocol carries this explicit
+state while the Test Kit continues to verify historical v1 bundles.
 The capability probe therefore reports Scenario execution, evidence API,
 retention API, legal hold, deletion proof, workbook seed,
 `mirrorScenarioRehearsalBatchCooperativeControl=true`, and
 `mirrorScenarioRehearsalBatchEvidence=true`,
+`mirrorScenarioRehearsalBatchEvidenceFinalizationApi=true`,
+`mirrorScenarioRehearsalBatchEvidenceFinalizationScheduling=true`,
 `mirrorScenarioRehearsalBatchRetentionApi=true`,
 `mirrorScenarioRehearsalBatchLegalHold=true`, and
 `mirrorScenarioRehearsalBatchDeletionProof=true` as available while keeping

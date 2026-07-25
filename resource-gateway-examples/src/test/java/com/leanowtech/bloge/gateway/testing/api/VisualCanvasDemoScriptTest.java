@@ -40,6 +40,10 @@ class VisualCanvasDemoScriptTest {
                 "\"mirrorScenarioRehearsalBatchCooperativeControl\"",
                 ".payload.features.mirrorScenarioRehearsalBatchEvidence == true",
                 "\"mirrorScenarioRehearsalBatchEvidence\"",
+                ".payload.features.mirrorScenarioRehearsalBatchEvidenceFinalizationApi == true",
+                "\"mirrorScenarioRehearsalBatchEvidenceFinalizationApi\"",
+                ".payload.features.mirrorScenarioRehearsalBatchEvidenceFinalizationScheduling == true",
+                "\"mirrorScenarioRehearsalBatchEvidenceFinalizationScheduling\"",
                 ".payload.features.mirrorScenarioRehearsalBatchRetentionApi == true",
                 "\"mirrorScenarioRehearsalBatchRetentionApi\"",
                 ".payload.features.mirrorScenarioRehearsalBatchLegalHold == true",
@@ -75,6 +79,8 @@ class VisualCanvasDemoScriptTest {
                 "RG_MIRROR_SCENARIO_BATCH_INSTANCE_ID",
                 "RG_MIRROR_SCENARIO_BATCH_REGION",
                 "RG_MIRROR_SCENARIO_BATCH_ENVIRONMENT",
+                "RG_MIRROR_SCENARIO_BATCH_FINALIZATION_INSTANCE_ID",
+                "RG_MIRROR_SCENARIO_BATCH_FINALIZATION_MAXIMUM_POLLERS",
                 "scripts/start-visual-canvas-demo.sh --scenario-batch");
     }
 
@@ -178,6 +184,34 @@ class VisualCanvasDemoScriptTest {
         assertThat(output).contains(
                 "Scenario batch region must match the integration identity region.");
         assertThat(output).doesNotContain(
+                "Packaging Resource Gateway demo",
+                "Starting Visual Canvas demo");
+    }
+
+    @Test
+    void scenarioBatchDemoExecutesAlignedFinalizerValidationBeforeBuild()
+            throws Exception {
+        ProcessBuilder builder = new ProcessBuilder(
+                "bash", SCRIPT.toString(), "start",
+                "--scenario-batch", "--no-build")
+                .redirectErrorStream(true);
+        builder.environment().put(
+                "RG_MIRROR_SCENARIO_BATCH_FINALIZATION_MAXIMUM_POLLERS",
+                "33");
+
+        Process process = builder.start();
+        assertThat(process.waitFor(
+                Duration.ofSeconds(5))).isTrue();
+        String output = new String(
+                process.getInputStream().readAllBytes(),
+                StandardCharsets.UTF_8);
+
+        assertThat(process.exitValue()).isEqualTo(1);
+        assertThat(output).contains(
+                "Scenario batch finalization pollers must be between 1 and 32.");
+        assertThat(output).doesNotContain(
+                "missing `]'",
+                "command not found",
                 "Packaging Resource Gateway demo",
                 "Starting Visual Canvas demo");
     }

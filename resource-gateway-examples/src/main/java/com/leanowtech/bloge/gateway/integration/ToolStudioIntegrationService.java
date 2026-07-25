@@ -24,6 +24,7 @@ import com.leanowtech.bloge.gateway.testing.api.TestSuiteStabilityPhysicalAttemp
 import com.leanowtech.bloge.gateway.testing.api.TestSuiteStabilityPhysicalAttemptTerminalProjectionHealth;
 import com.leanowtech.bloge.gateway.testing.api.WorkerQuarantineChangeAuthorizationTrustStore;
 import com.leanowtech.bloge.gateway.integration.mirror.ScenarioRehearsalBatchScheduler;
+import com.leanowtech.bloge.gateway.integration.mirror.ScenarioRehearsalBatchFinalizationScheduler;
 import com.leanowtech.bloge.gateway.visual.catalog.VisualOperatorCatalog;
 import com.leanowtech.bloge.gateway.visual.draft.GraphDraft;
 import com.leanowtech.bloge.gateway.visual.draft.GraphDraftDependencyReport;
@@ -81,6 +82,8 @@ public class ToolStudioIntegrationService {
             new MirrorRuntimeAvailability(false, false);
     private ScenarioRehearsalBatchScheduler
             scenarioRehearsalBatchScheduler;
+    private ScenarioRehearsalBatchFinalizationScheduler
+            scenarioRehearsalBatchFinalizationScheduler;
     private MirrorStatefulRuntimeAvailability mirrorStatefulRuntimeAvailability =
             new MirrorStatefulRuntimeAvailability(false, () -> false);
     private WorkerQuarantineRequestIndexMode workerQuarantineRequestIndexMode;
@@ -177,6 +180,14 @@ public class ToolStudioIntegrationService {
     void configureScenarioRehearsalBatchScheduler(
             ScenarioRehearsalBatchScheduler scheduler) {
         this.scenarioRehearsalBatchScheduler = scheduler;
+    }
+
+    /** Receives the isolated signer scheduler only when batch evidence can be finalized. */
+    @Autowired(required = false)
+    void configureScenarioRehearsalBatchFinalizationScheduler(
+            ScenarioRehearsalBatchFinalizationScheduler scheduler) {
+        this.scenarioRehearsalBatchFinalizationScheduler =
+                scheduler;
     }
 
     /** Receives the marker only when encrypted stateful Session routes are assembled. */
@@ -436,6 +447,9 @@ public class ToolStudioIntegrationService {
                 "mirrorScenarioRehearsalBatchEvidence",
                 mirrorPlanReady && mirrorExecutionApi);
         features.put(
+                "mirrorScenarioRehearsalBatchEvidenceFinalizationApi",
+                mirrorPlanReady && mirrorExecutionApi);
+        features.put(
                 "mirrorScenarioRehearsalBatchRetentionApi",
                 mirrorPlanReady && mirrorExecutionApi);
         features.put(
@@ -450,6 +464,14 @@ public class ToolStudioIntegrationService {
                         && mirrorExecutionApi
                         && scenarioRehearsalBatchScheduler != null
                         && scenarioRehearsalBatchScheduler.ready());
+        features.put(
+                "mirrorScenarioRehearsalBatchEvidenceFinalizationScheduling",
+                mirrorPlanReady
+                        && mirrorExecutionApi
+                        && scenarioRehearsalBatchFinalizationScheduler
+                        != null
+                        && scenarioRehearsalBatchFinalizationScheduler
+                        .ready());
         features.put("mirrorScenarioRehearsalEvidence", false);
         features.put("mirrorServing", mirrorExecutionReady);
         features.put("mirrorOperationObservability", mirrorPlanReady && mirrorExecutionApi);
@@ -945,12 +967,21 @@ public class ToolStudioIntegrationService {
                         List.of(
                                 com.leanowtech.bloge.gateway.integration.mirror
                                         .ScenarioRehearsalBatchJob
-                                        .SCHEMA_VERSION));
+                                        .V1_SCHEMA_VERSION,
+                                com.leanowtech.bloge.gateway.integration.mirror
+                                        .ScenarioRehearsalBatchJob
+                                        .V2_SCHEMA_VERSION));
                 supportedObjects.put(
                         "scenarioRehearsalBatchItemPage",
                         List.of(
                                 com.leanowtech.bloge.gateway.integration.mirror
                                         .ScenarioRehearsalBatchItemPage
+                                        .SCHEMA_VERSION));
+                supportedObjects.put(
+                        "scenarioRehearsalBatchFinalizationStatus",
+                        List.of(
+                                com.leanowtech.bloge.gateway.integration.mirror
+                                        .ScenarioRehearsalBatchFinalizationStatus
                                         .SCHEMA_VERSION));
                 supportedObjects.put(
                         "scenarioRehearsalBatchCancellationRequest",
@@ -963,19 +994,28 @@ public class ToolStudioIntegrationService {
                         List.of(
                                 com.leanowtech.bloge.gateway.integration.mirror
                                         .ScenarioRehearsalBatchEvidenceIndex
-                                        .SCHEMA_VERSION));
+                                        .V1_SCHEMA_VERSION,
+                                com.leanowtech.bloge.gateway.integration.mirror
+                                        .ScenarioRehearsalBatchEvidenceIndex
+                                        .V2_SCHEMA_VERSION));
                 supportedObjects.put(
                         "scenarioRehearsalBatchEvidenceAttestation",
                         List.of(
                                 com.leanowtech.bloge.gateway.integration.mirror
                                         .ScenarioRehearsalBatchEvidenceAttestation
-                                        .SCHEMA_VERSION));
+                                        .V1_SCHEMA_VERSION,
+                                com.leanowtech.bloge.gateway.integration.mirror
+                                        .ScenarioRehearsalBatchEvidenceAttestation
+                                        .V2_SCHEMA_VERSION));
                 supportedObjects.put(
                         "scenarioRehearsalBatchEvidenceBundle",
                         List.of(
                                 com.leanowtech.bloge.gateway.integration.mirror
                                         .ScenarioRehearsalBatchEvidenceBundle
-                                        .SCHEMA_VERSION));
+                                        .V1_SCHEMA_VERSION,
+                                com.leanowtech.bloge.gateway.integration.mirror
+                                        .ScenarioRehearsalBatchEvidenceBundle
+                                        .V2_SCHEMA_VERSION));
                 supportedObjects.put(
                         "scenarioRehearsalBatchRetentionEvent",
                         List.of(
@@ -1143,6 +1183,9 @@ public class ToolStudioIntegrationService {
                         "GET", "/api/mirror/rehearsal-jobs/{jobId}/items"));
                 endpoints.add(new IntegrationCapabilities.Endpoint(
                         "GET", "/api/mirror/rehearsal-jobs/{jobId}/evidence"));
+                endpoints.add(new IntegrationCapabilities.Endpoint(
+                        "GET",
+                        "/api/mirror/rehearsal-jobs/{jobId}/finalization"));
                 endpoints.add(new IntegrationCapabilities.Endpoint(
                         "POST",
                         "/api/mirror/rehearsal-jobs/{jobId}/cancellations"));

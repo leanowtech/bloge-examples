@@ -215,6 +215,44 @@ public final class ScenarioRehearsalBatchService {
         }
     }
 
+    /** Reads payload-free retry, lease, quarantine, and completion state for one finalization. */
+    public Optional<ScenarioRehearsalBatchFinalizationStatus>
+    finalization(
+            String jobId,
+            IntegrationRequestContext identity) {
+        MirrorOperationObservability.Observation operation =
+                observations.start(
+                        MirrorOperationAuditEvent.Operation
+                                .SCENARIO_REHEARSAL_BATCH_READ,
+                        identity,
+                        "",
+                        "",
+                        jobId);
+        try {
+            CapabilitySnapshot.Scope scope =
+                    MirrorPlanIntegrationService
+                            .requireMirrorReadIdentity(identity);
+            Optional<ScenarioRehearsalBatchFinalizationStatus>
+                    result = repository.findFinalization(
+                    scope, jobId).map(
+                    ScenarioRehearsalBatchFinalizationStatus
+                            ::from);
+            if (result.isEmpty()) {
+                operation.failed(new IntegrationProblemException(
+                        IntegrationProblem.notFound(
+                                "RG.MIRROR.REHEARSAL_BATCH.FINALIZATION_NOT_FOUND",
+                                "Scenario rehearsal batch finalization was not found.",
+                                identity.correlationId(),
+                                Map.of())));
+                return result;
+            }
+            operation.succeeded(jobId);
+            return result;
+        } catch (RuntimeException failure) {
+            throw operation.failed(failure);
+        }
+    }
+
     /** Applies one exactly replayable cooperative cancellation intent. */
     public ScenarioRehearsalBatchRepository.SubmissionResult cancel(
             String jobId,

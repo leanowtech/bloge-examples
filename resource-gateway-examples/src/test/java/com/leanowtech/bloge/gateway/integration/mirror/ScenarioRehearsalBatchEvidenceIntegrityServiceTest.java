@@ -6,6 +6,7 @@ import com.leanowtech.bloge.gateway.visual.runtime.VisualEvidenceSigner;
 import org.junit.jupiter.api.Test;
 
 import java.time.Clock;
+import java.time.Instant;
 import java.time.ZoneOffset;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -55,6 +56,39 @@ class ScenarioRehearsalBatchEvidenceIntegrityServiceTest {
                         "\"context\"",
                         "\"fixturePayload\"",
                         "\"credential\"");
+    }
+
+    @Test
+    void frozenFinalizationCoordinatesProduceExactlyReplayableEvidence() {
+        ScenarioRehearsalBatchEvidenceTestFixtures.Material
+                material =
+                ScenarioRehearsalBatchEvidenceTestFixtures.material(
+                        mapper);
+        Instant signedAt =
+                ScenarioRehearsalBatchEvidenceTestFixtures
+                        .COMPLETED.plusSeconds(5);
+
+        ScenarioRehearsalBatchEvidenceIntegrityService.SealResult
+                first = service.seal(
+                material.request(),
+                material.manifest(),
+                material.job(),
+                material.items(),
+                signedAt,
+                "scenario-batch-finalization:job-1");
+        ScenarioRehearsalBatchEvidenceIntegrityService.SealResult
+                replay = service.seal(
+                material.request(),
+                material.manifest(),
+                material.job(),
+                material.items(),
+                signedAt,
+                "scenario-batch-finalization:job-1");
+
+        assertThat(first.verified()).isTrue();
+        assertThat(replay.bundle()).isEqualTo(first.bundle());
+        assertThat(replay.bundle().attestation().signedAt())
+                .isEqualTo(signedAt);
     }
 
     @Test

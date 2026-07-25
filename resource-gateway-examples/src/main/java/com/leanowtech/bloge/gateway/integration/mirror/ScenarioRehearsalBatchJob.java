@@ -53,9 +53,15 @@ public record ScenarioRehearsalBatchJob(
         Instant completedAt,
         String recordFingerprint
 ) {
+    /** Legacy durable-batch job version without evidence-finalization visibility. */
+    public static final String V1_SCHEMA_VERSION =
+            "resourceGateway.scenarioRehearsalBatchJob.v1";
+    /** Current durable-batch job version with explicit evidence finalization. */
+    public static final String V2_SCHEMA_VERSION =
+            "resourceGateway.scenarioRehearsalBatchJob.v2";
     /** Current public durable-batch job version. */
     public static final String SCHEMA_VERSION =
-            "resourceGateway.scenarioRehearsalBatchJob.v1";
+            V2_SCHEMA_VERSION;
     private static final Pattern IDENTIFIER =
             Pattern.compile("[A-Za-z0-9][A-Za-z0-9._:-]{0,511}");
     private static final Pattern FINGERPRINT =
@@ -68,6 +74,7 @@ public record ScenarioRehearsalBatchJob(
         QUEUED,
         RUNNING,
         CANCEL_REQUESTED,
+        FINALIZING_EVIDENCE,
         SUCCEEDED,
         PARTIAL,
         FAILED,
@@ -79,7 +86,7 @@ public record ScenarioRehearsalBatchJob(
         public boolean terminal() {
             return switch (this) {
                 case SUCCEEDED, PARTIAL, FAILED, CANCELLED, EXPIRED, QUARANTINED -> true;
-                case QUEUED, RUNNING, CANCEL_REQUESTED -> false;
+                case QUEUED, RUNNING, CANCEL_REQUESTED, FINALIZING_EVIDENCE -> false;
             };
         }
     }
@@ -158,7 +165,11 @@ public record ScenarioRehearsalBatchJob(
         boolean noCancellation =
                 cancellationRequestId.isBlank()
                         && cancellationReasonCode.isBlank();
-        if (deadlineAt.isBefore(createdAt)
+        boolean finalizing =
+                status == Status.FINALIZING_EVIDENCE;
+        if (V1_SCHEMA_VERSION.equals(schemaVersion)
+                && finalizing
+                || deadlineAt.isBefore(createdAt)
                 || updatedAt.isBefore(createdAt)
                 || status.terminal() != (completedAt != null)
                 || completedAt != null
@@ -169,7 +180,10 @@ public record ScenarioRehearsalBatchJob(
                 && !hasCancellation
                 || status.terminal()
                 && summary.completedItems() != summary.totalItems()
+                || finalizing
+                && summary.completedItems() != summary.totalItems()
                 || !status.terminal()
+                && !finalizing
                 && summary.completedItems() == summary.totalItems()) {
             throw new IllegalArgumentException(
                     "Scenario rehearsal batch lifecycle is inconsistent");
@@ -194,7 +208,8 @@ public record ScenarioRehearsalBatchJob(
         if (normalized.isBlank()) {
             normalized = SCHEMA_VERSION;
         }
-        if (!SCHEMA_VERSION.equals(normalized)) {
+        if (!V1_SCHEMA_VERSION.equals(normalized)
+                && !V2_SCHEMA_VERSION.equals(normalized)) {
             throw new IllegalArgumentException(
                     "unsupported Scenario batch job schemaVersion");
         }

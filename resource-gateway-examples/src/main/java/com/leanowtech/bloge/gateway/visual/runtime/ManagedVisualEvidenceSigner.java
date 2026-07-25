@@ -28,6 +28,8 @@ public final class ManagedVisualEvidenceSigner implements VisualEvidenceSigner {
     private static final int MAX_KEYS = 64;
     private static final Duration MAX_CLOCK_SKEW = Duration.ofMinutes(1);
     private static final Pattern FINGERPRINT = Pattern.compile("sha256:[0-9a-f]{64}");
+    private static final Pattern IDEMPOTENCY_KEY =
+            Pattern.compile("[A-Za-z0-9][A-Za-z0-9._:-]{0,255}");
 
     private final ManagedEvidenceSigningProvider provider;
     private final Settings settings;
@@ -57,13 +59,39 @@ public final class ManagedVisualEvidenceSigner implements VisualEvidenceSigner {
 
     @Override
     public VisualRunEvidenceSeal seal(String materialFingerprint) {
+        return seal(
+                materialFingerprint,
+                UUID.randomUUID().toString(),
+                false);
+    }
+
+    @Override
+    public VisualRunEvidenceSeal seal(
+            String materialFingerprint,
+            String idempotencyKey) {
+        String requestId = normalize(idempotencyKey);
+        if (!IDEMPOTENCY_KEY.matcher(requestId).matches()) {
+            throw new IllegalArgumentException(
+                    "Evidence signing idempotency key is invalid");
+        }
+        return seal(materialFingerprint, requestId, true);
+    }
+
+    private VisualRunEvidenceSeal seal(
+            String materialFingerprint,
+            String requestId,
+            boolean historicalReplayAllowed) {
         String fingerprint = normalize(materialFingerprint);
         if (!FINGERPRINT.matcher(fingerprint).matches()) {
             throw new IllegalArgumentException("Evidence material fingerprint must be a canonical sha256 value");
         }
         for (int attempt = 0; attempt < 2; attempt++) {
             try {
-                return sign(fingerprint, attempt > 0);
+                return sign(
+                        fingerprint,
+                        requestId,
+                        attempt > 0,
+                        historicalReplayAllowed);
             } catch (EvidenceSigningProviderException failure) {
                 if (attempt == 0 && "KEY_VERSION_MISMATCH".equals(failure.code())) {
                     refresh(true);
@@ -81,13 +109,16 @@ public final class ManagedVisualEvidenceSigner implements VisualEvidenceSigner {
         throw new IllegalStateException("Managed signing retry loop exhausted");
     }
 
-    private VisualRunEvidenceSeal sign(String fingerprint, boolean afterRotationRefresh) {
+    private VisualRunEvidenceSeal sign(
+            String fingerprint,
+            String requestId,
+            boolean afterRotationRefresh,
+            boolean historicalReplayAllowed) {
         State observed = usableState();
         KeyMaterial active = observed.keys().get(observed.activeKeyId());
         if (active == null || !"ACTIVE".equals(active.state())) {
             throw providerFailure("ACTIVE_KEY_UNAVAILABLE", "Managed signing authority has no active key", false);
         }
-        String requestId = UUID.randomUUID().toString();
         ManagedEvidenceSigningProvider.SignatureRequest request =
                 new ManagedEvidenceSigningProvider.SignatureRequest("", requestId, active.descriptor().keyId(),
                         ALGORITHM, fingerprint);
@@ -101,7 +132,11 @@ public final class ManagedVisualEvidenceSigner implements VisualEvidenceSigner {
             }
             throw failure;
         }
-        validateResult(request, result, active, observed);
+        validateResult(
+                request,
+                result,
+                observed,
+                historicalReplayAllowed);
         successfulSignatures.incrementAndGet();
         clearFailure();
         return new VisualRunEvidenceSeal("", fingerprint, ALGORITHM, result.keyId(), result.signedAt(),
@@ -110,12 +145,11 @@ public final class ManagedVisualEvidenceSigner implements VisualEvidenceSigner {
 
     private void validateResult(ManagedEvidenceSigningProvider.SignatureRequest request,
                                 ManagedEvidenceSigningProvider.SignatureResult result,
-                                KeyMaterial active,
-                                State observed) {
+                                State observed,
+                                boolean historicalReplayAllowed) {
         if (result == null
                 || !ManagedEvidenceSigningProvider.SignatureResult.SCHEMA_VERSION.equals(result.schemaVersion())
                 || !request.requestId().equals(result.requestId())
-                || !request.keyId().equals(result.keyId())
                 || !request.algorithm().equals(result.algorithm())
                 || !request.materialFingerprint().equals(result.materialFingerprint())
                 || result.signedAt() == null
@@ -123,13 +157,28 @@ public final class ManagedVisualEvidenceSigner implements VisualEvidenceSigner {
             throw providerFailure("INVALID_SIGN_RESPONSE",
                     "Managed signing provider returned a response that was not bound to the request", false);
         }
+        KeyMaterial resultKey = observed.keys().get(
+                result.keyId());
+        if (resultKey == null
+                || (!historicalReplayAllowed
+                && !request.keyId().equals(result.keyId()))
+                || "REVOKED".equals(resultKey.state())
+                || "DISABLED".equals(resultKey.state())) {
+            throw providerFailure(
+                    "INVALID_SIGN_RESPONSE",
+                    "Managed signing provider returned a disallowed signing key",
+                    false);
+        }
         Instant now = clock.instant();
-        if (result.signedAt().isBefore(observed.generatedAt().minus(MAX_CLOCK_SKEW))
+        Instant earliest = historicalReplayAllowed
+                ? resultKey.descriptor().createdAt()
+                : observed.generatedAt();
+        if (result.signedAt().isBefore(earliest.minus(MAX_CLOCK_SKEW))
                 || result.signedAt().isAfter(now.plus(MAX_CLOCK_SKEW))) {
             throw providerFailure("INVALID_SIGN_TIME",
                     "Managed signing provider returned an invalid signing time", false);
         }
-        Verification verification = verifySignature(active.publicKey(), request.materialFingerprint(),
+        Verification verification = verifySignature(resultKey.publicKey(), request.materialFingerprint(),
                 result.signature());
         if (!verification.valid()) {
             throw providerFailure("PROVIDER_SIGNATURE_INVALID",

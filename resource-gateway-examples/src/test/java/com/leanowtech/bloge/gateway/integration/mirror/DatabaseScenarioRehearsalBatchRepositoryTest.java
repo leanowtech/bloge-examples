@@ -26,6 +26,7 @@ import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.atLeastOnce;
 import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -70,6 +71,7 @@ class DatabaseScenarioRehearsalBatchRepositoryTest {
                 new DataSourceTransactionManager(database),
                 evidencePublisher,
                 lifecycleAudit,
+                ScenarioRehearsalBatchFinalizationPolicy.defaults(),
                 databaseTime::get);
         repository.init();
     }
@@ -95,6 +97,7 @@ class DatabaseScenarioRehearsalBatchRepositoryTest {
                         new DataSourceTransactionManager(database),
                         evidencePublisher,
                         lifecycleAudit,
+                        ScenarioRehearsalBatchFinalizationPolicy.defaults(),
                         databaseTime::get);
         restarted.init();
 
@@ -127,6 +130,11 @@ class DatabaseScenarioRehearsalBatchRepositoryTest {
                         DatabaseScenarioRehearsalBatchRepositoryTest
                                 ::businessPayloadColumn);
         assertThat(columns("SCENARIO_REHEARSAL_BATCH_ITEMS"))
+                .noneMatch(
+                        DatabaseScenarioRehearsalBatchRepositoryTest
+                                ::businessPayloadColumn);
+        assertThat(columns(
+                "SCENARIO_REHEARSAL_BATCH_FINALIZATIONS"))
                 .noneMatch(
                         DatabaseScenarioRehearsalBatchRepositoryTest
                                 ::businessPayloadColumn);
@@ -286,20 +294,14 @@ class DatabaseScenarioRehearsalBatchRepositoryTest {
                         completion(runId),
                         policy());
         assertThat(completed.status()).isEqualTo(
-                ScenarioRehearsalBatchJob.Status.SUCCEEDED);
+                ScenarioRehearsalBatchJob.Status
+                        .FINALIZING_EVIDENCE);
         assertThat(completed.summary().passedItems())
                 .isEqualTo(1);
-        verify(evidencePublisher).publish(
-                eq(submission.request()),
-                eq(submission.manifest()),
-                eq(completed),
-                eq(repository.page(
-                        SCOPE,
-                        completed.jobId(),
-                        0,
-                        10,
-                        policy()).items()),
-                any());
+        ScenarioRehearsalBatchJob terminal =
+                finalizeEvidence(completed);
+        assertThat(terminal.status()).isEqualTo(
+                ScenarioRehearsalBatchJob.Status.SUCCEEDED);
         verify(lifecycleAudit, atLeastOnce()).append(argThat(
                 event -> event.transition()
                         == ScenarioRehearsalBatchLifecycleAuditEvent
@@ -365,13 +367,18 @@ class DatabaseScenarioRehearsalBatchRepositoryTest {
                         policy());
 
         assertThat(terminal.status()).isEqualTo(
+                ScenarioRehearsalBatchJob.Status
+                        .FINALIZING_EVIDENCE);
+        ScenarioRehearsalBatchJob finalized =
+                finalizeEvidence(terminal);
+        assertThat(finalized.status()).isEqualTo(
                 ScenarioRehearsalBatchJob.Status.PARTIAL);
-        assertThat(terminal.failureCode()).isEqualTo(
+        assertThat(finalized.failureCode()).isEqualTo(
                 "RG.MIRROR.REHEARSAL_BATCH.ITEM_FAILED");
     }
 
     @Test
-    void rollsBackTerminalItemAndJobWhenEvidencePublicationFails() {
+    void rollsBackTerminalProjectionWhenEvidencePersistenceFails() {
         ScenarioRehearsalBatchRepository.Submission submission =
                 submission(
                         SCOPE,
@@ -382,17 +389,25 @@ class DatabaseScenarioRehearsalBatchRepositoryTest {
         ScenarioRehearsalBatchRepository.Claim claim =
                 repository.claimNext(
                         "sg", "test", "worker-a", policy());
-        doThrow(new IllegalStateException(
-                "signing unavailable"))
-                .when(evidencePublisher)
-                .publish(any(), any(), any(), any(), any());
-
-        assertThatThrownBy(() -> repository.completeItem(
+        ScenarioRehearsalBatchJob finalizing =
+                repository.completeItem(
                 claim.lease(),
                 completion(
                         submission.manifest().entries()
                                 .getFirst().aggregateRunId()),
-                policy()))
+                policy());
+        ScenarioRehearsalBatchRepository.FinalizationClaim
+                finalization = claimFinalization();
+        ScenarioRehearsalBatchEvidencePublisher.PreparedFinalization
+                prepared = prepared(finalization);
+        doThrow(new IllegalStateException(
+                "evidence persistence unavailable"))
+                .when(evidencePublisher)
+                .persist(prepared);
+
+        assertThatThrownBy(() ->
+                repository.completeFinalization(
+                        finalization, prepared))
                 .isInstanceOf(IllegalStateException.class);
 
         assertThat(repository.find(
@@ -400,14 +415,18 @@ class DatabaseScenarioRehearsalBatchRepositoryTest {
                 .get()
                 .extracting(ScenarioRehearsalBatchJob::status)
                 .isEqualTo(
-                        ScenarioRehearsalBatchJob.Status.RUNNING);
+                        ScenarioRehearsalBatchJob.Status
+                                .FINALIZING_EVIDENCE);
         assertThat(repository.page(
                 SCOPE, queued.jobId(), 0, 10, policy()).items())
                 .singleElement()
                 .extracting(
                         ScenarioRehearsalBatchItemPage.Item::status)
                 .isEqualTo(
-                        ScenarioRehearsalBatchItemPage.Status.RUNNING);
+                        ScenarioRehearsalBatchItemPage.Status.PASSED);
+        assertThat(finalizing.status()).isEqualTo(
+                ScenarioRehearsalBatchJob.Status
+                        .FINALIZING_EVIDENCE);
     }
 
     @Test
@@ -438,7 +457,7 @@ class DatabaseScenarioRehearsalBatchRepositoryTest {
     }
 
     @Test
-    void rollsBackTerminalStateWhenLifecycleAuditFails() {
+    void rollsBackFinalizationIntentWhenQueueAuditFails() {
         ScenarioRehearsalBatchRepository.Submission submission =
                 submission(
                         SCOPE,
@@ -455,7 +474,7 @@ class DatabaseScenarioRehearsalBatchRepositoryTest {
                 .append(argThat(event ->
                         event.transition()
                                 == ScenarioRehearsalBatchLifecycleAuditEvent
-                                .Transition.TERMINALIZED));
+                                .Transition.FINALIZATION_QUEUED));
 
         assertThatThrownBy(() -> repository.completeItem(
                 claim.lease(),
@@ -478,6 +497,238 @@ class DatabaseScenarioRehearsalBatchRepositoryTest {
                         ScenarioRehearsalBatchItemPage.Item::status)
                 .isEqualTo(
                         ScenarioRehearsalBatchItemPage.Status.RUNNING);
+    }
+
+    @Test
+    void takesOverExpiredFinalizationWithStableSigningMaterialAndExactReplay() {
+        ScenarioRehearsalBatchRepository.Submission submission =
+                submission(
+                        SCOPE,
+                        "batch-finalization-takeover",
+                        "refund");
+        repository.submit(submission, policy());
+        ScenarioRehearsalBatchRepository.Claim item =
+                repository.claimNext(
+                        "sg", "test", "worker-a", policy());
+        ScenarioRehearsalBatchJob finalizing =
+                repository.completeItem(
+                        item.lease(),
+                        completion(
+                                submission.manifest().entries()
+                                        .getFirst()
+                                        .aggregateRunId()),
+                        policy());
+
+        ScenarioRehearsalBatchRepository.FinalizationClaim first =
+                claimFinalization();
+        databaseTime.set(
+                NOW.plus(
+                        ScenarioRehearsalBatchFinalizationPolicy
+                                .defaults().leaseDuration())
+                        .plusMillis(1));
+        ScenarioRehearsalBatchRepository.FinalizationAcquisition
+                takeover = repository.claimFinalization(
+                "sg",
+                "test",
+                "finalizer-b",
+                ScenarioRehearsalBatchFinalizationPolicy.defaults());
+
+        assertThat(takeover.outcome()).isEqualTo(
+                ScenarioRehearsalBatchRepository
+                        .FinalizationClaimOutcome.ACQUIRED);
+        assertThat(takeover.claim().leaseEpoch())
+                .isEqualTo(first.leaseEpoch() + 1);
+        assertThat(takeover.claim().attemptCount()).isEqualTo(2);
+        assertThat(takeover.claim().signingStartedAt())
+                .isEqualTo(first.signingStartedAt());
+        assertThat(takeover.claim().intent().signingRequestId())
+                .isEqualTo(first.intent().signingRequestId());
+
+        ScenarioRehearsalBatchEvidencePublisher.PreparedFinalization
+                prepared = prepared(takeover.claim());
+        assertThatThrownBy(() ->
+                repository.completeFinalization(
+                        first, prepared))
+                .isInstanceOf(IllegalStateException.class);
+        ScenarioRehearsalBatchJob terminal =
+                repository.completeFinalization(
+                        takeover.claim(), prepared);
+        ScenarioRehearsalBatchJob replay =
+                repository.completeFinalization(
+                        takeover.claim(), prepared);
+
+        assertThat(finalizing.status()).isEqualTo(
+                ScenarioRehearsalBatchJob.Status
+                        .FINALIZING_EVIDENCE);
+        assertThat(terminal.status()).isEqualTo(
+                ScenarioRehearsalBatchJob.Status.SUCCEEDED);
+        assertThat(replay).isEqualTo(terminal);
+        verify(evidencePublisher, times(1))
+                .persist(prepared);
+    }
+
+    @Test
+    void retriesTransientFinalizationAfterBackoffWithoutChangingSignatureTime() {
+        ScenarioRehearsalBatchRepository.Submission submission =
+                submission(
+                        SCOPE,
+                        "batch-finalization-retry",
+                        "refund");
+        repository.submit(submission, policy());
+        ScenarioRehearsalBatchRepository.Claim item =
+                repository.claimNext(
+                        "sg", "test", "worker-a", policy());
+        repository.completeItem(
+                item.lease(),
+                completion(
+                        submission.manifest().entries()
+                                .getFirst().aggregateRunId()),
+                policy());
+        ScenarioRehearsalBatchRepository.FinalizationClaim first =
+                claimFinalization();
+
+        ScenarioRehearsalBatchRepository.FinalizationSnapshot retry =
+                repository.releaseFinalization(
+                        first,
+                        ScenarioRehearsalBatchFinalizationException
+                                .Reason.SIGNER_UNAVAILABLE,
+                        ScenarioRehearsalBatchFinalizationPolicy
+                                .defaults());
+        ScenarioRehearsalBatchRepository.FinalizationAcquisition
+                delayed = repository.claimFinalization(
+                "sg",
+                "test",
+                "finalizer-b",
+                ScenarioRehearsalBatchFinalizationPolicy.defaults());
+        databaseTime.set(retry.nextEligibleAt());
+        ScenarioRehearsalBatchRepository.FinalizationAcquisition
+                second = repository.claimFinalization(
+                "sg",
+                "test",
+                "finalizer-b",
+                ScenarioRehearsalBatchFinalizationPolicy.defaults());
+
+        assertThat(retry.state()).isEqualTo(
+                ScenarioRehearsalBatchRepository
+                        .FinalizationState.RETRY_WAIT);
+        assertThat(delayed.outcome()).isEqualTo(
+                ScenarioRehearsalBatchRepository
+                        .FinalizationClaimOutcome.RETRY_DELAYED);
+        assertThat(second.outcome()).isEqualTo(
+                ScenarioRehearsalBatchRepository
+                        .FinalizationClaimOutcome.ACQUIRED);
+        assertThat(second.claim().attemptCount()).isEqualTo(2);
+        assertThat(second.claim().signingStartedAt())
+                .isEqualTo(first.signingStartedAt());
+    }
+
+    @Test
+    void quarantinedFinalizationDoesNotPoisonTheRegionalQueue() {
+        ScenarioRehearsalBatchJob first =
+                makeFinalizing(
+                        "batch-finalization-invalid",
+                        "refund",
+                        "worker-a");
+        ScenarioRehearsalBatchRepository.FinalizationClaim invalid =
+                claimFinalization();
+        ScenarioRehearsalBatchRepository.FinalizationSnapshot
+                quarantined = repository.releaseFinalization(
+                invalid,
+                ScenarioRehearsalBatchFinalizationException
+                        .Reason.MATERIAL_INVALID,
+                ScenarioRehearsalBatchFinalizationPolicy.defaults());
+        ScenarioRehearsalBatchJob second =
+                makeFinalizing(
+                        "batch-finalization-next",
+                        "escalation",
+                        "worker-b");
+
+        ScenarioRehearsalBatchRepository.FinalizationAcquisition
+                acquired = repository.claimFinalization(
+                "sg",
+                "test",
+                "finalizer-b",
+                ScenarioRehearsalBatchFinalizationPolicy.defaults());
+
+        assertThat(quarantined.state()).isEqualTo(
+                ScenarioRehearsalBatchRepository
+                        .FinalizationState.QUARANTINED);
+        assertThat(acquired.outcome()).isEqualTo(
+                ScenarioRehearsalBatchRepository
+                        .FinalizationClaimOutcome.ACQUIRED);
+        assertThat(acquired.claim().intent().terminalJob().jobId())
+                .isEqualTo(second.jobId())
+                .isNotEqualTo(first.jobId());
+    }
+
+    @Test
+    void restartRecoversPendingFinalizationIntent() {
+        ScenarioRehearsalBatchJob finalizing =
+                makeFinalizing(
+                        "batch-finalization-restart",
+                        "refund",
+                        "worker-a");
+        DatabaseScenarioRehearsalBatchRepository restarted =
+                new DatabaseScenarioRehearsalBatchRepository(
+                        jdbc,
+                        mapper,
+                        new DataSourceTransactionManager(database),
+                        evidencePublisher,
+                        lifecycleAudit,
+                        ScenarioRehearsalBatchFinalizationPolicy
+                                .defaults(),
+                        databaseTime::get);
+        restarted.init();
+
+        ScenarioRehearsalBatchRepository.FinalizationAcquisition
+                acquired = restarted.claimFinalization(
+                "sg",
+                "test",
+                "finalizer-restarted",
+                ScenarioRehearsalBatchFinalizationPolicy.defaults());
+
+        assertThat(acquired.outcome()).isEqualTo(
+                ScenarioRehearsalBatchRepository
+                        .FinalizationClaimOutcome.ACQUIRED);
+        assertThat(acquired.claim().intent().finalizingJob())
+                .isEqualTo(finalizing);
+    }
+
+    @Test
+    void rollsBackTerminalJobWhenTerminalLifecycleAuditFails() {
+        ScenarioRehearsalBatchJob finalizing =
+                makeFinalizing(
+                        "batch-terminal-audit-outage",
+                        "refund",
+                        "worker-a");
+        ScenarioRehearsalBatchRepository.FinalizationClaim claim =
+                claimFinalization();
+        ScenarioRehearsalBatchEvidencePublisher.PreparedFinalization
+                prepared = prepared(claim);
+        doThrow(new IllegalStateException(
+                "terminal lifecycle audit unavailable"))
+                .when(lifecycleAudit)
+                .append(argThat(event ->
+                        event.transition()
+                                == ScenarioRehearsalBatchLifecycleAuditEvent
+                                .Transition.TERMINALIZED));
+
+        assertThatThrownBy(() ->
+                repository.completeFinalization(
+                        claim, prepared))
+                .isInstanceOf(IllegalStateException.class);
+        assertThat(repository.find(
+                SCOPE, finalizing.jobId(), policy()))
+                .contains(finalizing);
+        assertThat(repository.findFinalization(
+                SCOPE, finalizing.jobId()))
+                .get()
+                .extracting(
+                        ScenarioRehearsalBatchRepository
+                                .FinalizationSnapshot::state)
+                .isEqualTo(
+                        ScenarioRehearsalBatchRepository
+                                .FinalizationState.SIGNING);
     }
 
     @Test
@@ -570,6 +821,17 @@ class DatabaseScenarioRehearsalBatchRepositoryTest {
                 .get()
                 .extracting(ScenarioRehearsalBatchJob::status)
                 .isEqualTo(
+                        ScenarioRehearsalBatchJob.Status
+                                .FINALIZING_EVIDENCE);
+        finalizeEvidence(
+                repository.find(
+                        SCOPE, queued.jobId(), singleAttempt)
+                        .orElseThrow());
+        assertThat(repository.find(
+                SCOPE, queued.jobId(), singleAttempt))
+                .get()
+                .extracting(ScenarioRehearsalBatchJob::status)
+                .isEqualTo(
                         ScenarioRehearsalBatchJob.Status.PARTIAL);
         verify(lifecycleAudit, atLeastOnce()).append(argThat(
                 event -> event.transition()
@@ -598,19 +860,13 @@ class DatabaseScenarioRehearsalBatchRepositoryTest {
         ScenarioRehearsalBatchRepository.SubmissionResult replay =
                 repository.cancel(cancellation, policy());
         assertThat(first.job().status()).isEqualTo(
-                ScenarioRehearsalBatchJob.Status.CANCELLED);
+                ScenarioRehearsalBatchJob.Status
+                        .FINALIZING_EVIDENCE);
         assertThat(replay.idempotentReplay()).isTrue();
-        verify(evidencePublisher).publish(
-                eq(queued.request()),
-                eq(queued.manifest()),
-                eq(first.job()),
-                eq(repository.page(
-                        SCOPE,
-                        job.jobId(),
-                        0,
-                        10,
-                        policy()).items()),
-                any());
+        ScenarioRehearsalBatchJob cancelled =
+                finalizeEvidence(first.job());
+        assertThat(cancelled.status()).isEqualTo(
+                ScenarioRehearsalBatchJob.Status.CANCELLED);
         verify(lifecycleAudit, atLeastOnce()).append(argThat(
                 event -> event.transition()
                         == ScenarioRehearsalBatchLifecycleAuditEvent
@@ -703,6 +959,11 @@ class DatabaseScenarioRehearsalBatchRepositoryTest {
                         .ExecutionControlOutcome.CANCELLED);
         assertThat(stopped.heartbeatCount()).isEqualTo(2);
         assertThat(stopped.job().status()).isEqualTo(
+                ScenarioRehearsalBatchJob.Status
+                        .FINALIZING_EVIDENCE);
+        ScenarioRehearsalBatchJob cancelled =
+                finalizeEvidence(stopped.job());
+        assertThat(cancelled.status()).isEqualTo(
                 ScenarioRehearsalBatchJob.Status.CANCELLED);
         assertThat(repository.page(
                 SCOPE, job.jobId(), 0, 10, policy()).items())
@@ -731,7 +992,7 @@ class DatabaseScenarioRehearsalBatchRepositoryTest {
         assertThat(stale.outcome()).isEqualTo(
                 ScenarioRehearsalBatchRepository
                         .ExecutionControlOutcome.LEASE_LOST);
-        assertThat(stale.job()).isEqualTo(stopped.job());
+        assertThat(stale.job()).isEqualTo(cancelled);
     }
 
     @Test
@@ -759,9 +1020,14 @@ class DatabaseScenarioRehearsalBatchRepositoryTest {
                 ScenarioRehearsalBatchRepository
                         .ExecutionControlOutcome.DEADLINE_EXCEEDED);
         assertThat(stopped.job().status()).isEqualTo(
-                ScenarioRehearsalBatchJob.Status.EXPIRED);
+                ScenarioRehearsalBatchJob.Status
+                        .FINALIZING_EVIDENCE);
         assertThat(stopped.job().failureCode()).isEqualTo(
                 "RG.MIRROR.REHEARSAL_BATCH.DEADLINE_EXCEEDED");
+        ScenarioRehearsalBatchJob expired =
+                finalizeEvidence(stopped.job());
+        assertThat(expired.status()).isEqualTo(
+                ScenarioRehearsalBatchJob.Status.EXPIRED);
         assertThat(repository.page(
                 SCOPE,
                 stopped.job().jobId(),
@@ -926,6 +1192,101 @@ class DatabaseScenarioRehearsalBatchRepositoryTest {
                 runId,
                 "sha256:" + "e".repeat(64),
                 "sha256:" + "d".repeat(64));
+    }
+
+    private ScenarioRehearsalBatchJob finalizeEvidence(
+            ScenarioRehearsalBatchJob finalizing) {
+        assertThat(finalizing.status()).isEqualTo(
+                ScenarioRehearsalBatchJob.Status
+                        .FINALIZING_EVIDENCE);
+        ScenarioRehearsalBatchRepository.FinalizationClaim claim =
+                claimFinalization();
+        ScenarioRehearsalBatchEvidencePublisher.PreparedFinalization
+                prepared = prepared(claim);
+        return repository.completeFinalization(
+                claim, prepared);
+    }
+
+    private ScenarioRehearsalBatchJob makeFinalizing(
+            String requestId,
+            String planId,
+            String workerId) {
+        ScenarioRehearsalBatchRepository.Submission submission =
+                submission(SCOPE, requestId, planId);
+        repository.submit(submission, policy());
+        ScenarioRehearsalBatchRepository.Claim claim =
+                repository.claimNext(
+                        "sg", "test", workerId, policy());
+        return repository.completeItem(
+                claim.lease(),
+                completion(
+                        submission.manifest().entries()
+                                .getFirst().aggregateRunId()),
+                policy());
+    }
+
+    private ScenarioRehearsalBatchRepository.FinalizationClaim
+    claimFinalization() {
+        ScenarioRehearsalBatchRepository.FinalizationAcquisition
+                acquired = repository.claimFinalization(
+                "sg",
+                "test",
+                "finalizer-a",
+                ScenarioRehearsalBatchFinalizationPolicy.defaults());
+        assertThat(acquired.outcome()).isEqualTo(
+                ScenarioRehearsalBatchRepository
+                        .FinalizationClaimOutcome.ACQUIRED);
+        return acquired.claim();
+    }
+
+    private ScenarioRehearsalBatchEvidencePublisher.PreparedFinalization
+    prepared(
+            ScenarioRehearsalBatchRepository.FinalizationClaim claim) {
+        ScenarioRehearsalBatchRepository.FinalizationIntent intent =
+                claim.intent();
+        ScenarioRehearsalBatchEvidenceBundle bundle =
+                mock(ScenarioRehearsalBatchEvidenceBundle.class);
+        ScenarioRehearsalBatchEvidenceIndex index =
+                mock(ScenarioRehearsalBatchEvidenceIndex.class);
+        ScenarioRehearsalBatchEvidenceAttestation attestation =
+                mock(
+                        ScenarioRehearsalBatchEvidenceAttestation
+                                .class);
+        ScenarioRehearsalBatchRetentionRepository
+                .PreparedRegistration registration =
+                mock(
+                        ScenarioRehearsalBatchRetentionRepository
+                                .PreparedRegistration.class);
+        ScenarioRehearsalBatchRetentionEvent event =
+                mock(
+                        ScenarioRehearsalBatchRetentionEvent.class);
+        when(bundle.bundleFingerprint())
+                .thenReturn("sha256:" + "b".repeat(64));
+        when(bundle.index()).thenReturn(index);
+        when(bundle.attestation()).thenReturn(attestation);
+        when(index.job()).thenReturn(intent.terminalJob());
+        when(index.request()).thenReturn(intent.request());
+        when(index.manifest()).thenReturn(intent.manifest());
+        when(index.items()).thenReturn(intent.items());
+        when(attestation.signedAt())
+                .thenReturn(claim.signingStartedAt());
+        when(registration.bundleFingerprint())
+                .thenReturn("sha256:" + "b".repeat(64));
+        when(registration.retainUntil())
+                .thenReturn(intent.retainUntil());
+        when(registration.event()).thenReturn(event);
+        when(event.jobId()).thenReturn(
+                intent.terminalJob().jobId());
+        when(event.occurredAt())
+                .thenReturn(claim.signingStartedAt());
+        ScenarioRehearsalBatchEvidencePublisher.PreparedFinalization
+                prepared =
+                new ScenarioRehearsalBatchEvidencePublisher
+                        .PreparedFinalization(
+                        bundle, registration);
+        when(evidencePublisher.persist(prepared))
+                .thenReturn(bundle);
+        return prepared;
     }
 
     private ScenarioRehearsalBatchPolicy policy() {

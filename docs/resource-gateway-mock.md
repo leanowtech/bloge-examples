@@ -7,11 +7,11 @@
 
 | 文档属性 | 内容 |
 |---|---|
-| 状态 | Accepted / In implementation；Stage 0 工程门禁已通过；Stage 1 完成 MirrorPlan、受保护运行/证据 API、部署隔离信任与 durable execution；Stage 2 完成 observation/corpus 的准入、review、publication、trajectory/cluster serving 与 generation fence；Stage 3 完成有状态 Session、虚拟读写、checkpoint/recovery、write-attempt reconciliation 和三类 ANEKE seed；Stage 4 完成 Scenario 编译、可恢复 aggregate、签名 evidence、audit/retention/workbook closure、durable batch manifest/queue/API/worker turn、region-local bounded scheduler、cooperative control、签名 batch evidence 及批次 operation/lifecycle audit。批次 retention、Owner UX、Fidelity/Outcome 和生产环境认证继续实施；未完成前相关 readiness 必须保持 `false` |
+| 状态 | Accepted / In implementation；Stage 0 工程门禁已通过；Stage 1 完成 MirrorPlan、受保护运行/证据 API、部署隔离信任与 durable execution；Stage 2 完成 observation/corpus 的准入、review、publication、trajectory/cluster serving 与 generation fence；Stage 3 完成有状态 Session、虚拟读写、checkpoint/recovery、write-attempt reconciliation 和三类 ANEKE seed；Stage 4 完成 Scenario 编译、可恢复 aggregate、签名 evidence、audit/retention/workbook closure、durable batch manifest/queue/API/worker、region-local bounded scheduler、cooperative control、签名 batch evidence、批次 operation/lifecycle audit、retention，以及 durable evidence finalization outbox。ANEKE batch workbook、Owner UX、Fidelity/Outcome 和生产环境认证继续实施；未完成前相关 readiness 必须保持 `false` |
 | 目标读者 | Resource Gateway、BLOGE Runtime、ANEKE、TEE/数据平台、QA、SRE、安全与业务运营团队 |
 | 设计范围 | external/composed 能力建模、镜像运行、保真语料、有状态世界、场景演练、证据、保真度与结果校准 |
 | 非目标 | 不重做 ANEKE 的资产治理和发布门禁；不允许测试控制进入生产业务请求；不把观测频率直接当成业务正确性 |
-| 基准日期 | 2026-07-24 |
+| 基准日期 | 2026-07-25 |
 
 ### 实施快照（2026-07-24）
 
@@ -577,11 +577,11 @@ Resource Gateway 已有的工业底座应直接复用：
 | 递归 DAG 测试 | 85% | MirrorPlan/closure/runtime inventory/fixture control 已统一；缺 contract-mock 展开治理和状态世界 |
 | 日志蒸馏与语料 | 82% | payload-free signed observation、准入/隔离、immutable review、candidate/publication/trajectory/cluster 独立 lineage、元数据风险门禁、fixture exact/trajectory/cluster binding、在线 revalidation、test/staging `RECORDED_EXACT`/`RECORDED_TRAJECTORY`/`RECORDED_CLUSTER`、BLOGE 原生 retry loop、identity-safe projection、Wilson confidence、Session state read 与独立 verifier 已落地；缺生产 payload authority、漂移、偏差、outcome 校准和删除证明 |
 | 有状态业务世界 | 91% | 协议、read/write 退款 fixture、独立 verifier/sealer/client、事务内核、受保护 Session API、独立 AES-GCM 数据面、lease/fence/CAS、durable write-attempt journal/reconciliation、TTL/destroy、全局/scope 容量、保留字节、命令背压、过期擦除、固定 read head、run-scoped virtual write、真实 DAG read-write-read、payload-free v1/v2/v3 state evidence、read-only/successful-transition/write-outcome ANEKE seed、签名 HASH_ONLY checkpoint 与同数据面代际精确恢复准入已落地；缺 TEE/KMS、跨区域数据恢复、真实 process-kill/network parity、目标数据库容量认证和 HA/DR certification |
-| Scenario/Rehearsal | 96% | ScenarioPack/Case/Assertion、exact compiler、可恢复逐 case runtime、签名 aggregate、audit/retention、ANEKE seed、durable batch manifest/queue/API/worker turn、region-local bounded scheduler、逐 case cooperative control、签名 batch evidence/index、批次 operation/lifecycle audit，以及 batch retention/multi-hold/逻辑删除证明已落地；缺 hard kill、`FINALIZING` 异步签名故障隔离、ANEKE batch workbook、owner UX、企业策略/WORM/anchor 与异构消费者认证 |
+| Scenario/Rehearsal | 98% | ScenarioPack/Case/Assertion、exact compiler、可恢复逐 case runtime、签名 aggregate、audit/retention、ANEKE seed、durable batch manifest/queue/API/worker、region-local DAG/KMS 双 scheduler、逐 case cooperative control、v1/v2 签名 batch evidence/index、批次 operation/lifecycle audit、retention/multi-hold/逻辑删除证明，以及 durable finalization outbox/lease/retry/quarantine/status 已落地；缺 hard kill、quarantine owner remediation、ANEKE batch workbook、owner UX、企业策略/WORM/anchor 与异构消费者认证 |
 | Fidelity/Outcome | 5% | 缺保真向量、shadow、权威结果归因和校准闭环 |
 | 业务运营工作台 | 10% | Author Canvas 尚未成为案例驱动的镜像运营工作台 |
 
-结论：基础设施准备度约 90%，固定权重理想态完成度为 61.83%。剩余主要矛盾已经
+结论：基础设施准备度约 92%，固定权重理想态完成度为 62.15%。剩余主要矛盾已经
 从“能否安全执行和取证”转向“能否把可信 observation 持续蒸馏成可校准、可拒答、可删除的业务拟合资产”。
 
 ### 3.1 2026-07-24 Scenario 编译期闭包迭代差距复评
@@ -648,7 +648,7 @@ HA/DR 或权威 outcome 当成已完成。51.59% 只承认已由代码和测试�
 | 2 | RG-MIR-SCEN-001A | 完成 | 将 TestSuite/Fixture authority 升级为完整 enterprise scope；旧 tenant+environment 资产采用独立表、禁止隐式提升、授权重新注册的迁移策略 | 两个 organization/project/region 可安全复用同 id/revision；跨 scope、混合版本与 indexed scope 搬移失败关闭 |
 | 3 | RG-MIR-SCEN-002 | 完成 | deterministic compiler/runtime；每 case 使用隔离 Session/checkpoint、固定时钟/随机源、fixture data-flow inversion 和禁止真实 egress | exact plan、逐 case 运行、数据库时钟 lease/epoch、连续 checkpoint、takeover、旧 worker fencing 与原子 evidence/terminal commit 全绿 |
 | 4 | RG-MIR-SCEN-003 | 完成（本地治理闭包） | 产出 payload-free Scenario evidence、state diff、处置断言结果与 ANEKE workbook seed，区分执行失败、断言失败、低保真和证据不完整 | 独立签名、append-only store、exact read、崩溃恢复、audit/retention/workbook seed 已完成；unknown outcome、缺断言或不完整 evidence 阻断 gate-ready |
-| 5 | RG-MIR-SCEN-004 | 单地域自治调度、逐 case cooperative control、签名 batch evidence 与批次审计完成；retention 与 UX 待实现 | 提供批量 rehearsal API、deep link 和最小 Author 场景表格；先保证业务 owner 不编辑 JSON/DSL 即可维护 case | exact manifest、数据库队列、API、worker turn、region-local scheduler、heartbeat/cancel/deadline、签名 batch index、离线 verifier、operation/lifecycle audit 与启动脚本已完成；下一步 batch retention、两个样例域、浏览器与 owner UX |
+| 5 | RG-MIR-SCEN-004 | 工程控制面完成；Owner 交付面待实现 | 提供批量 rehearsal API、deep link 和最小 Author 场景表格；先保证业务 owner 不编辑 JSON/DSL 即可维护 case | exact manifest、数据库队列、API、worker、region-local DAG/KMS 双 scheduler、heartbeat/cancel/deadline、v1/v2 签名 batch index、durable finalization outbox、retention、离线 verifier、operation/lifecycle audit 与启停脚本已完成；下一步 ANEKE batch workbook、quarantine remediation 和 Owner UX |
 
 完成 E7 后才进入 E8：以 Scenario coverage 为分母建立
 `DomainFidelityProfile`、typed shadow diff、confidence/abstention debt 和 drift downgrade；随后 E9 接入
@@ -1250,6 +1250,76 @@ DOM/工作流与可执行 Boot JAR；独立 Test Kit `380/380` 全绿，116 份 
 完成引用闭包和 shaded JAR 打包，公共 JavaDoc 校验通过。下一条最短路径是把远程
 签名移出长事务，交付 durable `FINALIZING` outbox、幂等 KMS 签名、陈旧
 finalization 接管和故障预算；随后闭合 ANEKE batch workbook 与 owner 失败定位 UX。
+
+### 3.15 2026-07-25 Scenario 批次证据异步终态迭代差距复评
+
+本轮关闭“远程 KMS 延迟或故障发生在批次分区锁和终态事务内，从而把密码学依赖
+放大成 DAG 队列阻塞”的病根。终态不再是一次包含远程 I/O 的长事务，而是两个
+各自可证明的阶段：
+
+1. DAG worker 在短事务内冻结 `FinalizationIntent`，把目标 terminal job、有序
+   item、request、manifest、保留下限和 stable `signingRequestId` 内容寻址后写入
+   durable outbox；对外 job 进入 `FINALIZING_EVIDENCE`。
+2. 独立 finalizer 以数据库租约 claim intent，在事务外验证 child closure 并调用
+   evidence/retention signer；随后用 owner + epoch fence 在一个短事务内原子提交
+   terminal job、batch evidence、retention registration、lifecycle audit 和
+   `FINALIZED` outbox 状态。
+
+finalization 状态闭集为：
+
+| 状态 | 含义 | 允许的后继 |
+|---|---|---|
+| `PENDING` | intent 已耐久冻结，尚未开始签名 | `SIGNING` |
+| `SIGNING` | 某 finalizer 持有有界数据库租约 | `FINALIZED`、`RETRY_WAIT`、`QUARANTINED`，或租约过期后被接管 |
+| `RETRY_WAIT` | 可恢复依赖故障，等待数据库时间到达下一次退避 | `SIGNING` |
+| `QUARANTINED` | material/signature 永久错误或重试预算耗尽 | 当前只读；Owner remediation 尚未交付 |
+| `FINALIZED` | 证据、留存、终态和审计已在同一事务提交 | 无 |
+
+首次 claim 时冻结 `signingStartedAt`，后续接管和重试复用同一时间与
+`signingRequestId`。`ManagedVisualEvidenceSigner.seal(material, idempotencyKey)`
+把该 id 传给 KMS/HSM provider；响应丢失后的重试可以拿回同一历史 key 的同一签名，
+即使 active key 已轮换也不会把一个 intent 签成两个合法版本。publisher 在远程
+调用前完成准备，在事务内只接受与冻结 intent 完全一致的 material；若数据库提交
+成功但 finalizer 未收到响应，exact replay 返回同一 terminal job，不重复写 evidence、
+retention 或 lifecycle。
+
+故障处理使用闭集 reason，而不是异常文本猜测。控制面/数据库暂时不可用不消耗
+签名 attempt；KMS unavailable 进入指数退避；material closure 或签名自验失败立即
+隔离；超过最多 20 次 attempt 后隔离。`QUARANTINED` 行不会阻塞同一分区后续 intent，
+未过期的旧 `SIGNING` lease 也不会让新工作饥饿。DAG worker scheduler 与 KMS
+finalization scheduler 使用不同线程池、不同并发上限和独立 readiness；默认 KMS
+lane 为 1，范围限制为 1 至 32。`--scenario-batch` 同时启用两者，并强制它们绑定
+同一 exact `(region, environment)`。
+
+协议从 batch job/index/attestation/bundle v1 演进到 v2。v2 唯一新增的业务事实是
+显式 `FINALIZING_EVIDENCE`；v1 数据和签名域仍可离线复验，新的 Test Kit client
+接受 v1/v2 bundle，不能把 v2 降格按 v1 验证。新增
+`GET /api/mirror/rehearsal-jobs/{jobId}/finalization` 返回 payload-free
+`ScenarioRehearsalBatchFinalizationStatus.v1`，只暴露 state、attempt、retry/lease
+时间、稳定 failure code 和 evidence fingerprint，不暴露 worker identity、provider
+诊断、签名字节或业务值。capability probe 分开声明
+`mirrorScenarioRehearsalBatchEvidenceFinalizationApi` 与动态
+`mirrorScenarioRehearsalBatchEvidenceFinalizationScheduling`，集成方不能再用
+“batch API 存在”推断“证据一定会被固化”。
+
+本轮验证覆盖重启恢复、陈旧 lease 接管、旧 owner fence、稳定签名时间/请求号、
+KMS 响应丢失后的 exact replay、瞬时退避、永久隔离、隔离不毒化队列、终态事务
+回滚、payload omission、独立 scheduler 分区/关闭/故障存活、capability truth、
+strict v2 Schema、v1/v2 离线验签和 Test Kit HTTP status client。Scenario/Rehearsal
+由 96% 上调至 98%，固定权重总分由 61.83% 上调至 62.15%，距理想态 37.85%。
+干净完整门禁覆盖 Resource Gateway `5,145` 项测试，零失败、零错误、3 项条件
+跳过，包含真实浏览器工作流与可执行 Boot JAR；独立 Test Kit `381/381` 全绿，
+121 份 Mirror Schema 完成引用闭包和 shaded JAR 打包，公共 JavaDoc 校验通过。
+
+这里仍有四个不能用“异步化已完成”掩盖的缺口。第一，`QUARANTINED` 还没有受权
+Owner 的 inspect/requeue/re-sign generation 工作流，长期隔离也可能逼近 admission
+时冻结的 retention floor。第二，当前只有 per-job status，尚无 backlog age、
+quarantine count 和 KMS latency/error-budget 的聚合 health/SLO。第三，H2/JDBC
+故障矩阵不能替代 PostgreSQL 多副本、真实 KMS、process-kill、network partition
+和 rolling-upgrade 认证。第四，ANEKE 还不能一次消费 batch workbook，也没有在
+Author Canvas 中定位失败 item 和隔离原因。下一条最短路径必须先补
+finalization operations/health，再交付 ANEKE batch workbook 与 Owner UX；不能直接
+跳到保真度评分，否则底层证据故障仍然只能由工程师查库处理。
 
 ## 4. 目标架构与系统责任
 
@@ -2012,13 +2082,12 @@ session 重放造成重复状态、运行时依赖漂移。
 | `GET /api/mirror/rehearsal-jobs/{jobId}` | 查询 batch projection | full scope + job record fingerprint | 已实现控制面 |
 | `GET /api/mirror/rehearsal-jobs/{jobId}/items` | 分页读取稳定 manifest item | full scope + manifest index + bounded page | 已实现控制面 |
 | `GET /api/mirror/rehearsal-jobs/{jobId}/evidence` | 读取 independently verified signed batch closure | request/manifest/job/items/child refs/Ed25519 完整闭包 | 已实现（治理消费 purpose） |
+| `GET /api/mirror/rehearsal-jobs/{jobId}/finalization` | 读取 payload-free durable evidence finalization 状态 | full scope；retry/lease/quarantine/terminal 坐标，不暴露 worker、provider 诊断或 payload | 已实现（治理消费 purpose） |
 | `POST /api/mirror/rehearsal-jobs/{jobId}/cancellations` | 请求 cooperative cancellation | 幂等 command、逐 case heartbeat/deadline、排队取消也发布证据 | 已实现控制面 |
 | `GET /api/mirror/rehearsal-jobs/{jobId}/retention` | 读取 batch retention projection | 完整 scope、签名事件链与 projection 重放 | 已实现（独立 purpose） |
 | `POST /api/mirror/rehearsal-jobs/{jobId}/retention/holds` | 放置独立 batch legal hold | command 幂等、multi-hold、不覆盖其他法务事项 | 已实现（`LEGAL_HOLD`） |
 | `POST /api/mirror/rehearsal-jobs/{jobId}/retention/hold-releases` | 释放 exact batch legal hold | 只释放指定 hold；hold id 不可复用 | 已实现（`LEGAL_HOLD`） |
 | `POST /api/mirror/rehearsal-jobs/{jobId}/retention/purge` | 删除 eligible batch closure 并返回签名证明 | 数据库时钟、零 hold、重算 job/item/evidence；child/audit 保留 | 已实现（`PAYLOAD_RETENTION_ADMIN`） |
-| `GET /api/mirror/rehearsal-jobs/{jobId}/items` | 分页查询 item | stable manifest index + bounded page | 已实现控制面 |
-| `POST /api/mirror/rehearsal-jobs/{jobId}/cancellations` | 请求 cooperative cancellation | command id 幂等 + stable reason code | 已实现控制面；in-flight heartbeat/cancel 待实现 |
 | `GET /api/mirror/runs/{runId}` | 查询 verified payload-free 运行摘要 | 只读、完整 scope 隔离 | 已实现（test/staging + 显式开关） |
 | `GET /api/mirror/runs/{runId}/evidence` | 导出 independently verified `HASH_ONLY` signed evidence | 只读、完整 scope 隔离 | 已实现（test/staging + 显式开关） |
 | `GET /api/mirror/runs/{runId}/state-workbook-seed` | 从 verified stateful v3 bundle 导出 payload-free ANEKE seed | 只读、完整 scope 隔离；同 bundle 确定性相同 | 已实现（仅 stateful run） |

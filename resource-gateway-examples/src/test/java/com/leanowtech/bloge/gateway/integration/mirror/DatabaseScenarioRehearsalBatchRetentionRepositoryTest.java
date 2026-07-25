@@ -73,6 +73,7 @@ class DatabaseScenarioRehearsalBatchRetentionRepositoryTest {
                 new DataSourceTransactionManager(database),
                 mock(ScenarioRehearsalBatchEvidencePublisher.class),
                 lifecycle,
+                ScenarioRehearsalBatchFinalizationPolicy.defaults(),
                 databaseTime::get);
         batches.init();
         ScenarioRehearsalBatchEvidenceIntegrityService integrity =

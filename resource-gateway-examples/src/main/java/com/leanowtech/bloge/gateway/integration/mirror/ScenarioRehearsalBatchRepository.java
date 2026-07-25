@@ -5,6 +5,7 @@ import java.time.Instant;
 import java.util.List;
 import java.util.Objects;
 import java.util.Optional;
+import java.util.regex.Pattern;
 
 /**
  * Database-authoritative durable queue for multi-plan Scenario rehearsals.
@@ -15,6 +16,10 @@ import java.util.Optional;
  * the stable child request without rerunning already checkpointed items.</p>
  */
 public interface ScenarioRehearsalBatchRepository {
+    Pattern FINALIZATION_FINGERPRINT =
+            Pattern.compile("sha256:[a-f0-9]{64}");
+    Pattern FINALIZATION_SIGNING_REQUEST_ID =
+            Pattern.compile("[A-Za-z0-9][A-Za-z0-9._:-]{0,255}");
 
     /** Complete immutable submission material after exact-plan resolution. */
     record Submission(
@@ -169,13 +174,26 @@ public interface ScenarioRehearsalBatchRepository {
                 throw new IllegalArgumentException(
                         "Scenario batch execution checkpoint is invalid");
             }
-            if ((outcome == ExecutionControlOutcome.CANCELLED
-                    && job.status()
-                    != ScenarioRehearsalBatchJob.Status.CANCELLED)
-                    || (outcome
+            boolean cancelled =
+                    job.status()
+                            == ScenarioRehearsalBatchJob.Status.CANCELLED
+                            || job.status()
+                            == ScenarioRehearsalBatchJob.Status
+                            .FINALIZING_EVIDENCE
+                            && !job.cancellationRequestId().isBlank();
+            boolean expired =
+                    job.status()
+                            == ScenarioRehearsalBatchJob.Status.EXPIRED
+                            || job.status()
+                            == ScenarioRehearsalBatchJob.Status
+                            .FINALIZING_EVIDENCE
+                            && "RG.MIRROR.REHEARSAL_BATCH.DEADLINE_EXCEEDED"
+                            .equals(job.failureCode());
+            if (outcome == ExecutionControlOutcome.CANCELLED
+                    && !cancelled
+                    || outcome
                     == ExecutionControlOutcome.DEADLINE_EXCEEDED
-                    && job.status()
-                    != ScenarioRehearsalBatchJob.Status.EXPIRED)) {
+                    && !expired) {
                 throw new IllegalArgumentException(
                         "Scenario batch stop decision differs from its job");
             }
@@ -223,6 +241,222 @@ public interface ScenarioRehearsalBatchRepository {
             if (!REASON_CODE.matcher(reasonCode).matches()) {
                 throw new IllegalArgumentException(
                         "Scenario batch cancellation reason code is invalid");
+            }
+        }
+    }
+
+    /** Immutable payload-free material frozen before any remote signing call. */
+    record FinalizationIntent(
+            String schemaVersion,
+            String intentFingerprint,
+            String signingRequestId,
+            ScenarioRehearsalBatchJob finalizingJob,
+            ScenarioRehearsalBatchJob terminalJob,
+            ScenarioRehearsalBatchRequest request,
+            ScenarioRehearsalBatchManifest manifest,
+            List<ScenarioRehearsalBatchItemPage.Item> items,
+            Instant retainUntil,
+            Instant queuedAt
+    ) {
+        /** Current embedded finalization-intent version. */
+        public static final String SCHEMA_VERSION =
+                "resourceGateway.scenarioRehearsalBatchFinalizationIntent.v1";
+
+        /** Enforces exact interim/terminal and evidence-source closure. */
+        public FinalizationIntent {
+            schemaVersion = normalized(schemaVersion);
+            if (schemaVersion.isBlank()) {
+                schemaVersion = SCHEMA_VERSION;
+            }
+            if (!SCHEMA_VERSION.equals(schemaVersion)) {
+                throw new IllegalArgumentException(
+                        "unsupported Scenario batch finalization intent");
+            }
+            intentFingerprint = optionalFingerprint(
+                    intentFingerprint, "intentFingerprint");
+            signingRequestId = required(
+                    signingRequestId, "signingRequestId");
+            if (!FINALIZATION_SIGNING_REQUEST_ID.matcher(
+                    signingRequestId).matches()) {
+                throw new IllegalArgumentException(
+                        "signingRequestId is invalid");
+            }
+            finalizingJob = Objects.requireNonNull(
+                    finalizingJob, "finalizingJob");
+            terminalJob = Objects.requireNonNull(
+                    terminalJob, "terminalJob");
+            request = Objects.requireNonNull(request, "request");
+            manifest = Objects.requireNonNull(
+                    manifest, "manifest");
+            items = items == null ? List.of() : List.copyOf(items);
+            retainUntil = Objects.requireNonNull(
+                    retainUntil, "retainUntil");
+            queuedAt = Objects.requireNonNull(
+                    queuedAt, "queuedAt");
+            if (finalizingJob.status()
+                    != ScenarioRehearsalBatchJob.Status
+                    .FINALIZING_EVIDENCE
+                    || terminalJob.status()
+                    .equals(ScenarioRehearsalBatchJob.Status
+                            .FINALIZING_EVIDENCE)
+                    || !terminalJob.status().terminal()
+                    || terminalJob.completedAt() == null
+                    || !queuedAt.equals(finalizingJob.updatedAt())
+                    || !queuedAt.equals(terminalJob.completedAt())
+                    || !finalizingJob.jobId().equals(
+                    terminalJob.jobId())
+                    || !finalizingJob.requestFingerprint().equals(
+                    terminalJob.requestFingerprint())
+                    || !finalizingJob.manifestFingerprint().equals(
+                    terminalJob.manifestFingerprint())
+                    || !finalizingJob.scope().equals(
+                    terminalJob.scope())
+                    || !finalizingJob.summary().equals(
+                    terminalJob.summary())
+                    || !finalizingJob.cancellationRequestId().equals(
+                    terminalJob.cancellationRequestId())
+                    || !finalizingJob.cancellationReasonCode().equals(
+                    terminalJob.cancellationReasonCode())
+                    || !retainUntil.isAfter(queuedAt)) {
+                throw new IllegalArgumentException(
+                        "Scenario batch finalization job closure is inconsistent");
+            }
+            new ScenarioRehearsalBatchEvidenceIndex(
+                    "", "", request, manifest, terminalJob, items);
+        }
+
+        /** Returns identical intent carrying its canonical content address. */
+        public FinalizationIntent withFingerprint(String value) {
+            return new FinalizationIntent(
+                    schemaVersion, value, signingRequestId,
+                    finalizingJob, terminalJob, request,
+                    manifest, items, retainUntil, queuedAt);
+        }
+    }
+
+    /** Durable finalization control state. */
+    enum FinalizationState {
+        PENDING,
+        SIGNING,
+        RETRY_WAIT,
+        QUARANTINED,
+        FINALIZED
+    }
+
+    /** Integrity-verified payload-free finalization projection. */
+    record FinalizationSnapshot(
+            FinalizationState state,
+            String jobId,
+            String intentFingerprint,
+            int attemptCount,
+            Instant nextEligibleAt,
+            String leaseOwner,
+            long leaseEpoch,
+            Instant leaseExpiresAt,
+            Instant signingStartedAt,
+            String lastFailureCode,
+            String evidenceBundleFingerprint,
+            Instant createdAt,
+            Instant updatedAt,
+            Instant finalizedAt
+    ) {
+        /** Validates bounded lease, retry, quarantine, and completion correspondence. */
+        public FinalizationSnapshot {
+            state = Objects.requireNonNull(state, "state");
+            jobId = required(jobId, "jobId");
+            intentFingerprint = fingerprint(
+                    intentFingerprint, "intentFingerprint");
+            nextEligibleAt = Objects.requireNonNull(
+                    nextEligibleAt, "nextEligibleAt");
+            leaseOwner = normalized(leaseOwner);
+            leaseExpiresAt = Objects.requireNonNull(
+                    leaseExpiresAt, "leaseExpiresAt");
+            signingStartedAt = Objects.requireNonNull(
+                    signingStartedAt, "signingStartedAt");
+            lastFailureCode = normalized(lastFailureCode);
+            evidenceBundleFingerprint = optionalFingerprint(
+                    evidenceBundleFingerprint,
+                    "evidenceBundleFingerprint");
+            createdAt = Objects.requireNonNull(
+                    createdAt, "createdAt");
+            updatedAt = Objects.requireNonNull(
+                    updatedAt, "updatedAt");
+            if (attemptCount < 0
+                    || leaseEpoch < 0
+                    || state == FinalizationState.SIGNING
+                    && (attemptCount < 1
+                    || leaseEpoch < 1
+                    || leaseOwner.isBlank()
+                    || signingStartedAt.equals(Instant.EPOCH)
+                    || !leaseExpiresAt.isAfter(updatedAt))
+                    || state != FinalizationState.SIGNING
+                    && (!leaseOwner.isBlank()
+                    || !leaseExpiresAt.equals(Instant.EPOCH))
+                    || state == FinalizationState.FINALIZED
+                    != (finalizedAt != null
+                    && !evidenceBundleFingerprint.isBlank())
+                    || state != FinalizationState.FINALIZED
+                    && finalizedAt != null) {
+                throw new IllegalArgumentException(
+                        "Scenario batch finalization snapshot is inconsistent");
+            }
+        }
+    }
+
+    /** Exact database lease over one immutable finalization intent. */
+    record FinalizationClaim(
+            FinalizationIntent intent,
+            String ownerId,
+            long leaseEpoch,
+            Instant leaseExpiresAt,
+            Instant signingStartedAt,
+            int attemptCount
+    ) {
+        /** Validates a live positive claim fence. */
+        public FinalizationClaim {
+            intent = Objects.requireNonNull(intent, "intent");
+            ownerId = required(ownerId, "ownerId");
+            leaseExpiresAt = Objects.requireNonNull(
+                    leaseExpiresAt, "leaseExpiresAt");
+            signingStartedAt = Objects.requireNonNull(
+                    signingStartedAt, "signingStartedAt");
+            if (leaseEpoch < 1
+                    || attemptCount < 1
+                    || Instant.EPOCH.equals(signingStartedAt)) {
+                throw new IllegalArgumentException(
+                        "Scenario batch finalization claim is invalid");
+            }
+        }
+    }
+
+    /** Bounded claim disposition. */
+    enum FinalizationClaimOutcome {
+        ACQUIRED,
+        NO_WORK,
+        BUSY,
+        RETRY_DELAYED,
+        QUARANTINED
+    }
+
+    /** One finalization claim or database-authoritative wait observation. */
+    record FinalizationAcquisition(
+            FinalizationClaimOutcome outcome,
+            Instant observedAt,
+            FinalizationSnapshot snapshot,
+            FinalizationClaim claim
+    ) {
+        /** Enforces acquired-claim correspondence. */
+        public FinalizationAcquisition {
+            outcome = Objects.requireNonNull(outcome, "outcome");
+            observedAt = Objects.requireNonNull(
+                    observedAt, "observedAt");
+            boolean acquired =
+                    outcome == FinalizationClaimOutcome.ACQUIRED;
+            if (acquired != (snapshot != null && claim != null)
+                    || outcome == FinalizationClaimOutcome.NO_WORK
+                    && (snapshot != null || claim != null)) {
+                throw new IllegalArgumentException(
+                        "Scenario batch finalization acquisition is inconsistent");
             }
         }
     }
@@ -291,6 +525,31 @@ public interface ScenarioRehearsalBatchRepository {
             String failureCode,
             ScenarioRehearsalBatchPolicy policy);
 
+    /** Claims the oldest eligible evidence-finalization intent in one regional partition. */
+    FinalizationAcquisition claimFinalization(
+            String region,
+            String environmentId,
+            String ownerId,
+            ScenarioRehearsalBatchFinalizationPolicy policy);
+
+    /** Commits exact prepared evidence and advances the job to its frozen terminal projection. */
+    ScenarioRehearsalBatchJob completeFinalization(
+            FinalizationClaim claim,
+            ScenarioRehearsalBatchEvidencePublisher
+                    .PreparedFinalization prepared);
+
+    /** Releases one live claim into retry backoff or durable quarantine. */
+    FinalizationSnapshot releaseFinalization(
+            FinalizationClaim claim,
+            ScenarioRehearsalBatchFinalizationException.Reason
+                    failure,
+            ScenarioRehearsalBatchFinalizationPolicy policy);
+
+    /** Reads one integrity-verified finalization projection inside exact scope. */
+    Optional<FinalizationSnapshot> findFinalization(
+            CapabilitySnapshot.Scope scope,
+            String jobId);
+
     /** Requests exactly replayable cooperative cancellation. */
     SubmissionResult cancel(
             Cancellation cancellation,
@@ -327,11 +586,39 @@ public interface ScenarioRehearsalBatchRepository {
             ScenarioRehearsalBatchPolicy policy);
 
     private static String required(String value, String field) {
-        String normalized = value == null ? "" : value.trim();
-        if (normalized.isBlank()) {
+        String normalized = normalized(value);
+        if (normalized.isBlank()
+                || normalized.length() > 512) {
             throw new IllegalArgumentException(
                     field + " must not be blank");
         }
         return normalized;
+    }
+
+    private static String fingerprint(
+            String value, String field) {
+        String normalized = normalized(value);
+        if (!FINALIZATION_FINGERPRINT.matcher(
+                normalized).matches()) {
+            throw new IllegalArgumentException(
+                    field + " must be canonical SHA-256");
+        }
+        return normalized;
+    }
+
+    private static String optionalFingerprint(
+            String value, String field) {
+        String normalized = normalized(value);
+        if (!normalized.isBlank()
+                && !FINALIZATION_FINGERPRINT.matcher(
+                normalized).matches()) {
+            throw new IllegalArgumentException(
+                    field + " must be blank or canonical SHA-256");
+        }
+        return normalized;
+    }
+
+    private static String normalized(String value) {
+        return value == null ? "" : value.trim();
     }
 }

@@ -63,6 +63,8 @@ public final class DatabaseScenarioRehearsalBatchRepository
             evidencePublisher;
     private final ScenarioRehearsalBatchLifecycleAuditRepository
             lifecycleAudit;
+    private final ScenarioRehearsalBatchFinalizationPolicy
+            finalizationPolicy;
 
     /**
      * Creates the production repository using an independent application-database clock sample.
@@ -72,6 +74,7 @@ public final class DatabaseScenarioRehearsalBatchRepository
      * @param transactionManager manager for the same datasource
      * @param evidencePublisher mandatory atomic terminal evidence publisher
      * @param lifecycleAudit mandatory payload-free transition audit
+     * @param finalizationPolicy durable KMS retry and lease bounds
      */
     public DatabaseScenarioRehearsalBatchRepository(
             JdbcTemplate jdbc,
@@ -80,13 +83,16 @@ public final class DatabaseScenarioRehearsalBatchRepository
             ScenarioRehearsalBatchEvidencePublisher
                     evidencePublisher,
             ScenarioRehearsalBatchLifecycleAuditRepository
-                    lifecycleAudit) {
+                    lifecycleAudit,
+            ScenarioRehearsalBatchFinalizationPolicy
+                    finalizationPolicy) {
         this(
                 jdbc,
                 mapper,
                 transactionManager,
                 evidencePublisher,
                 lifecycleAudit,
+                finalizationPolicy,
                 null);
     }
 
@@ -99,6 +105,8 @@ public final class DatabaseScenarioRehearsalBatchRepository
                     evidencePublisher,
             ScenarioRehearsalBatchLifecycleAuditRepository
                     lifecycleAudit,
+            ScenarioRehearsalBatchFinalizationPolicy
+                    finalizationPolicy,
             Supplier<Instant> coordinationClock) {
         this.jdbc = Objects.requireNonNull(jdbc, "jdbc");
         this.mapper = Objects.requireNonNull(mapper, "mapper");
@@ -106,6 +114,8 @@ public final class DatabaseScenarioRehearsalBatchRepository
                 evidencePublisher, "evidencePublisher");
         this.lifecycleAudit = Objects.requireNonNull(
                 lifecycleAudit, "lifecycleAudit");
+        this.finalizationPolicy = Objects.requireNonNull(
+                finalizationPolicy, "finalizationPolicy");
         this.coordinationClock = coordinationClock == null
                 ? () -> databaseNow(this.jdbc)
                 : Objects.requireNonNull(
@@ -245,6 +255,41 @@ public final class DatabaseScenarioRehearsalBatchRepository
                 CREATE INDEX IF NOT EXISTS idx_scenario_rehearsal_batch_item_status
                 ON scenario_rehearsal_batch_items (
                     job_id, status, item_index
+                )
+                """);
+        jdbc.execute("""
+                CREATE TABLE IF NOT EXISTS scenario_rehearsal_batch_finalizations (
+                    job_id VARCHAR(512) PRIMARY KEY,
+                    tenant_id VARCHAR(255) NOT NULL,
+                    organization_id VARCHAR(255) NOT NULL,
+                    project_id VARCHAR(255) NOT NULL,
+                    environment_id VARCHAR(255) NOT NULL,
+                    region VARCHAR(64) NOT NULL,
+                    state VARCHAR(32) NOT NULL,
+                    policy_generation BIGINT NOT NULL,
+                    policy_fingerprint VARCHAR(71) NOT NULL,
+                    intent_fingerprint VARCHAR(71) NOT NULL,
+                    intent_json CLOB NOT NULL,
+                    attempt_count INTEGER NOT NULL,
+                    next_eligible_at TIMESTAMP WITH TIME ZONE NOT NULL,
+                    lease_owner VARCHAR(512) NOT NULL,
+                    lease_epoch BIGINT NOT NULL,
+                    lease_expires_at TIMESTAMP WITH TIME ZONE NOT NULL,
+                    signing_started_at TIMESTAMP WITH TIME ZONE NOT NULL,
+                    last_failure_code VARCHAR(64) NOT NULL,
+                    evidence_bundle_fingerprint VARCHAR(71) NOT NULL,
+                    created_at TIMESTAMP WITH TIME ZONE NOT NULL,
+                    updated_at TIMESTAMP WITH TIME ZONE NOT NULL,
+                    finalized_at TIMESTAMP WITH TIME ZONE,
+                    FOREIGN KEY (job_id)
+                        REFERENCES scenario_rehearsal_batch_jobs (job_id)
+                )
+                """);
+        jdbc.execute("""
+                CREATE INDEX IF NOT EXISTS idx_scenario_rehearsal_batch_finalization_claim
+                ON scenario_rehearsal_batch_finalizations (
+                    region, environment_id, state,
+                    next_eligible_at, created_at, job_id
                 )
                 """);
     }
@@ -878,6 +923,315 @@ public final class DatabaseScenarioRehearsalBatchRepository
     }
 
     @Override
+    public FinalizationAcquisition claimFinalization(
+            String region,
+            String environmentId,
+            String ownerId,
+            ScenarioRehearsalBatchFinalizationPolicy policy) {
+        QueuePartition partition =
+                partition(region, environmentId);
+        String owner = identifier(ownerId, "ownerId");
+        requireFinalizationPolicy(policy);
+        FinalizationAcquisition result =
+                mutations.execute(transaction -> {
+                    Instant observedAt = coordinationNow();
+                    Optional<StoredFinalization> candidate =
+                            oldestEligibleFinalization(
+                                    partition,
+                                    observedAt,
+                                    true);
+                    if (candidate.isEmpty()) {
+                        Optional<StoredFinalization> blocked =
+                                oldestUnfinalizedFinalization(
+                                        partition);
+                        if (blocked.isEmpty()) {
+                            return new FinalizationAcquisition(
+                                    FinalizationClaimOutcome.NO_WORK,
+                                    observedAt,
+                                    null,
+                                    null);
+                        }
+                        FinalizationSnapshot snapshot =
+                                blocked.orElseThrow().snapshot();
+                        FinalizationClaimOutcome outcome =
+                                switch (snapshot.state()) {
+                                    case SIGNING ->
+                                            FinalizationClaimOutcome
+                                                    .BUSY;
+                                    case RETRY_WAIT ->
+                                            FinalizationClaimOutcome
+                                                    .RETRY_DELAYED;
+                                    case QUARANTINED ->
+                                            FinalizationClaimOutcome
+                                                    .QUARANTINED;
+                                    case PENDING, FINALIZED ->
+                                            FinalizationClaimOutcome
+                                                    .NO_WORK;
+                                };
+                        return outcome
+                                == FinalizationClaimOutcome.NO_WORK
+                                ? new FinalizationAcquisition(
+                                        outcome,
+                                        observedAt,
+                                        null,
+                                        null)
+                                : new FinalizationAcquisition(
+                                        outcome,
+                                        observedAt,
+                                        snapshot,
+                                        null);
+                    }
+                    StoredFinalization stored =
+                            candidate.orElseThrow();
+                    FinalizationSnapshot snapshot =
+                            stored.snapshot();
+                    int attempt = Math.addExact(
+                            snapshot.attemptCount(), 1);
+                    if (attempt
+                            > policy.maximumAutomaticAttempts()) {
+                        FinalizationSnapshot quarantined =
+                                updateFinalizationControl(
+                                        stored,
+                                        FinalizationState.QUARANTINED,
+                                        snapshot.attemptCount(),
+                                        Instant.EPOCH,
+                                        "",
+                                        snapshot.leaseEpoch(),
+                                        Instant.EPOCH,
+                                        snapshot.signingStartedAt(),
+                                        ScenarioRehearsalBatchFinalizationException
+                                                .Reason
+                                                .CONTROL_UNAVAILABLE
+                                                .failureCode(),
+                                        "",
+                                        observedAt,
+                                        null);
+                        return new FinalizationAcquisition(
+                                FinalizationClaimOutcome.QUARANTINED,
+                                observedAt, quarantined, null);
+                    }
+                    long epoch = Math.addExact(
+                            snapshot.leaseEpoch(), 1);
+                    Instant signingStartedAt =
+                            snapshot.signingStartedAt()
+                            .equals(Instant.EPOCH)
+                                    ? observedAt
+                                    : snapshot.signingStartedAt();
+                    Instant leaseExpiresAt = safePlus(
+                            observedAt,
+                            policy.leaseDuration());
+                    FinalizationSnapshot claimed =
+                            updateFinalizationControl(
+                                    stored,
+                                    FinalizationState.SIGNING,
+                                    attempt,
+                                    observedAt,
+                                    owner,
+                                    epoch,
+                                    leaseExpiresAt,
+                                    signingStartedAt,
+                                    "",
+                                    "",
+                                    observedAt,
+                                    null);
+                    FinalizationClaim claim =
+                            new FinalizationClaim(
+                                    stored.intent(),
+                                    owner,
+                                    epoch,
+                                    leaseExpiresAt,
+                                    signingStartedAt,
+                                    attempt);
+                    return new FinalizationAcquisition(
+                            FinalizationClaimOutcome.ACQUIRED,
+                            observedAt,
+                            claimed,
+                            claim);
+                });
+        return required(
+                result,
+                "Scenario batch finalization claim returned no result");
+    }
+
+    @Override
+    public ScenarioRehearsalBatchJob completeFinalization(
+            FinalizationClaim claim,
+            ScenarioRehearsalBatchEvidencePublisher
+                    .PreparedFinalization prepared) {
+        Objects.requireNonNull(claim, "claim");
+        ScenarioRehearsalBatchEvidencePublisher
+                .PreparedFinalization exact =
+                Objects.requireNonNull(prepared, "prepared");
+        ScenarioRehearsalBatchJob result =
+                mutations.execute(transaction -> {
+                    Instant observedAt = coordinationNow();
+                    StoredFinalization stored =
+                            finalization(
+                                    claim.intent().terminalJob()
+                                            .scope(),
+                                    claim.intent().terminalJob()
+                                            .jobId(),
+                                    true)
+                                    .orElseThrow(() ->
+                                            new IllegalStateException(
+                                                    "Scenario batch finalization disappeared"));
+                    if (stored.snapshot().state()
+                            == FinalizationState.FINALIZED) {
+                        requirePreparedFinalization(
+                                stored.intent(),
+                                exact,
+                                stored.snapshot()
+                                        .signingStartedAt());
+                        StoredJob current = byJob(
+                                stored.intent().terminalJob()
+                                        .scope(),
+                                stored.intent().terminalJob()
+                                        .jobId(),
+                                true).orElseThrow(() ->
+                                new IllegalStateException(
+                                        "Finalized Scenario batch job disappeared"));
+                        if (!current.job().equals(
+                                stored.intent().terminalJob())
+                                || !stored.snapshot()
+                                .evidenceBundleFingerprint()
+                                .equals(exact.bundle()
+                                        .bundleFingerprint())) {
+                            throw new IllegalStateException(
+                                    "Finalized Scenario batch differs from its exact replay");
+                        }
+                        return current.job();
+                    }
+                    requireLiveFinalizationClaim(
+                            stored, claim, observedAt);
+                    requirePreparedFinalization(
+                            stored.intent(),
+                            exact,
+                            claim.signingStartedAt());
+                    StoredJob current = byJob(
+                            stored.intent().terminalJob().scope(),
+                            stored.intent().terminalJob().jobId(),
+                            true).orElseThrow(() ->
+                            new IllegalStateException(
+                                    "Scenario batch finalizing job disappeared"));
+                    if (current.job().status()
+                            != ScenarioRehearsalBatchJob.Status
+                            .FINALIZING_EVIDENCE
+                            || !current.job().recordFingerprint()
+                            .equals(stored.intent()
+                                    .finalizingJob()
+                                    .recordFingerprint())) {
+                        throw new IllegalStateException(
+                                "Scenario batch finalizing job differs from its intent");
+                    }
+                    ScenarioRehearsalBatchEvidenceBundle evidence =
+                            evidencePublisher.persist(exact);
+                    ScenarioRehearsalBatchJob terminal =
+                            stored.intent().terminalJob();
+                    updateJob(
+                            current,
+                            idle(
+                                    current,
+                                    terminal,
+                                    Instant.EPOCH));
+                    updateFinalizationControl(
+                            stored,
+                            FinalizationState.FINALIZED,
+                            stored.snapshot().attemptCount(),
+                            Instant.EPOCH,
+                            "",
+                            stored.snapshot().leaseEpoch(),
+                            Instant.EPOCH,
+                            stored.snapshot().signingStartedAt(),
+                            "",
+                            evidence.bundleFingerprint(),
+                            observedAt,
+                            observedAt);
+                    appendLifecycle(
+                            current,
+                            ScenarioRehearsalBatchLifecycleAuditEvent
+                                    .Transition.TERMINALIZED,
+                            terminal,
+                            null,
+                            evidence.bundleFingerprint(),
+                            terminal.failureCode(),
+                            claim.ownerId(),
+                            claim.leaseEpoch());
+                    return terminal;
+                });
+        return required(
+                result,
+                "Scenario batch finalization completion returned no result");
+    }
+
+    @Override
+    public FinalizationSnapshot releaseFinalization(
+            FinalizationClaim claim,
+            ScenarioRehearsalBatchFinalizationException.Reason
+                    failure,
+            ScenarioRehearsalBatchFinalizationPolicy policy) {
+        Objects.requireNonNull(claim, "claim");
+        ScenarioRehearsalBatchFinalizationException.Reason reason =
+                Objects.requireNonNull(failure, "failure");
+        requireFinalizationPolicy(policy);
+        FinalizationSnapshot result =
+                mutations.execute(transaction -> {
+                    Instant observedAt = coordinationNow();
+                    StoredFinalization stored =
+                            finalization(
+                                    claim.intent().terminalJob()
+                                            .scope(),
+                                    claim.intent().terminalJob()
+                                            .jobId(),
+                                    true)
+                                    .orElseThrow(() ->
+                                            new IllegalStateException(
+                                                    "Scenario batch finalization disappeared"));
+                    requireLiveFinalizationClaim(
+                            stored, claim, observedAt);
+                    boolean exhausted =
+                            !reason.retryable()
+                            || stored.snapshot().attemptCount()
+                                    >= policy
+                                    .maximumAutomaticAttempts();
+                    Instant eligibleAt = exhausted
+                            ? Instant.EPOCH
+                            : safePlus(
+                                    observedAt,
+                                    policy.retryBackoff(
+                                            stored.snapshot()
+                                                    .attemptCount()));
+                    return updateFinalizationControl(
+                            stored,
+                            exhausted
+                                    ? FinalizationState.QUARANTINED
+                                    : FinalizationState.RETRY_WAIT,
+                            stored.snapshot().attemptCount(),
+                            eligibleAt,
+                            "",
+                            stored.snapshot().leaseEpoch(),
+                            Instant.EPOCH,
+                            stored.snapshot().signingStartedAt(),
+                            reason.failureCode(),
+                            "",
+                            observedAt,
+                            null);
+                });
+        return required(
+                result,
+                "Scenario batch finalization release returned no result");
+    }
+
+    @Override
+    public Optional<FinalizationSnapshot> findFinalization(
+            CapabilitySnapshot.Scope scope,
+            String jobId) {
+        return finalization(
+                Objects.requireNonNull(scope, "scope"),
+                required(jobId, "jobId"),
+                false).map(StoredFinalization::snapshot);
+    }
+
+    @Override
     public SubmissionResult cancel(
             Cancellation cancellation,
             ScenarioRehearsalBatchPolicy policy) {
@@ -936,6 +1290,13 @@ public final class DatabaseScenarioRehearsalBatchRepository
                 throw conflict(
                         Reason.CANCELLATION_CONFLICT,
                         "Scenario rehearsal batch already retained another cancellation intent");
+            }
+            if (stored.job().status()
+                    == ScenarioRehearsalBatchJob.Status
+                    .FINALIZING_EVIDENCE) {
+                throw conflict(
+                        Reason.CANCELLATION_CONFLICT,
+                        "A Scenario rehearsal batch with frozen finalization evidence cannot be cancelled");
             }
             if (stored.job().status().terminal()) {
                 throw conflict(
@@ -1362,37 +1723,72 @@ public final class DatabaseScenarioRehearsalBatchRepository
             String cancellationRequestId,
             String cancellationReasonCode,
             Instant observedAt) {
+        ScenarioRehearsalBatchJob.Summary terminalSummary =
+                summary(stored.job().jobId());
+        ScenarioRehearsalBatchJob finalizing =
+                transition(
+                        stored.job(),
+                        ScenarioRehearsalBatchJob.Status
+                                .FINALIZING_EVIDENCE,
+                        terminalSummary,
+                        failureCode,
+                        cancellationRequestId,
+                        cancellationReasonCode,
+                        observedAt,
+                        null);
         ScenarioRehearsalBatchJob terminal =
                 transition(
                         stored.job(),
                         status,
-                        summary(stored.job().jobId()),
+                        terminalSummary,
                         failureCode,
                         cancellationRequestId,
                         cancellationReasonCode,
                         observedAt,
                         observedAt);
-        ScenarioRehearsalBatchEvidenceBundle evidence =
-                evidencePublisher.publish(
+        List<ScenarioRehearsalBatchItemPage.Item> terminalItems =
+                items(stored.job().jobId()).stream()
+                        .map(StoredItem::item)
+                        .toList();
+        String signingRequestId =
+                "scenario-batch-finalization:"
+                        + terminal.recordFingerprint()
+                        .substring("sha256:".length());
+        ScenarioRehearsalBatchRepository.FinalizationIntent
+                unsigned =
+                new ScenarioRehearsalBatchRepository
+                        .FinalizationIntent(
+                        "",
+                        "",
+                        signingRequestId,
+                        finalizing,
+                        terminal,
                         stored.request(),
                         stored.manifest(),
-                        terminal,
-                        items(stored.job().jobId()).stream()
-                                .map(StoredItem::item)
-                                .toList(),
-                        stored.expiresAt());
+                        terminalItems,
+                        stored.expiresAt(),
+                        observedAt);
+        ScenarioRehearsalBatchRepository.FinalizationIntent
+                intent = unsigned.withFingerprint(
+                ProtocolFingerprint.ofBounded(
+                        mapper,
+                        unsigned,
+                        ScenarioRehearsalBatchEvidenceBundle
+                                .MAXIMUM_CANONICAL_BYTES
+                                + 2 * 1024 * 1024));
+        insertFinalization(intent);
         updateJob(
-                stored,
-                idle(stored, terminal, Instant.EPOCH));
+                stored, idle(
+                        stored, finalizing, Instant.EPOCH));
         appendLifecycle(
                 stored,
                 ScenarioRehearsalBatchLifecycleAuditEvent
-                        .Transition.TERMINALIZED,
-                terminal,
+                        .Transition.FINALIZATION_QUEUED,
+                finalizing,
                 null,
-                evidence.bundleFingerprint(),
+                "",
                 failureCode);
-        return terminal;
+        return finalizing;
     }
 
     private void reconcile(
@@ -1773,7 +2169,7 @@ public final class DatabaseScenarioRehearsalBatchRepository
         return ScenarioRehearsalBatchIntegrity.seal(
                 mapper,
                 new ScenarioRehearsalBatchJob(
-                        source.schemaVersion(),
+                        ScenarioRehearsalBatchJob.SCHEMA_VERSION,
                         source.jobId(),
                         source.requestId(),
                         source.requestFingerprint(),
@@ -2184,6 +2580,308 @@ public final class DatabaseScenarioRehearsalBatchRepository
                 jobId);
     }
 
+    private void insertFinalization(
+            FinalizationIntent intent) {
+        CapabilitySnapshot.Scope scope =
+                intent.terminalJob().scope();
+        String policyFingerprint =
+                ProtocolFingerprint.of(
+                        mapper, finalizationPolicy);
+        jdbc.update("""
+                INSERT INTO scenario_rehearsal_batch_finalizations (
+                    job_id, tenant_id, organization_id,
+                    project_id, environment_id, region,
+                    state, policy_generation, policy_fingerprint,
+                    intent_fingerprint, intent_json,
+                    attempt_count, next_eligible_at,
+                    lease_owner, lease_epoch, lease_expires_at,
+                    signing_started_at, last_failure_code,
+                    evidence_bundle_fingerprint,
+                    created_at, updated_at, finalized_at
+                ) VALUES (
+                    ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
+                    ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?
+                )
+                """,
+                intent.terminalJob().jobId(),
+                scope.tenantId(),
+                scope.organizationId(),
+                scope.projectId(),
+                scope.environmentId(),
+                scope.region(),
+                FinalizationState.PENDING.name(),
+                finalizationPolicy.generation(),
+                policyFingerprint,
+                intent.intentFingerprint(),
+                json(intent),
+                0,
+                timestamp(intent.queuedAt()),
+                "",
+                0,
+                timestamp(Instant.EPOCH),
+                timestamp(Instant.EPOCH),
+                "",
+                "",
+                timestamp(intent.queuedAt()),
+                timestamp(intent.queuedAt()),
+                null);
+    }
+
+    private Optional<StoredFinalization> oldestEligibleFinalization(
+            QueuePartition partition,
+            Instant observedAt,
+            boolean forUpdate) {
+        String sql = """
+                SELECT *
+                FROM scenario_rehearsal_batch_finalizations
+                WHERE region = ?
+                  AND environment_id = ?
+                  AND (
+                    state = 'PENDING'
+                    OR state = 'RETRY_WAIT'
+                       AND next_eligible_at <= ?
+                    OR state = 'SIGNING'
+                       AND lease_expires_at <= ?
+                  )
+                ORDER BY created_at, job_id
+                LIMIT 1
+                """ + (forUpdate ? " FOR UPDATE" : "");
+        return one(jdbc.query(
+                sql,
+                this::mapFinalization,
+                partition.region(),
+                partition.environmentId(),
+                timestamp(observedAt),
+                timestamp(observedAt)));
+    }
+
+    private Optional<StoredFinalization>
+    oldestUnfinalizedFinalization(
+            QueuePartition partition) {
+        return one(jdbc.query("""
+                SELECT *
+                FROM scenario_rehearsal_batch_finalizations
+                WHERE region = ?
+                  AND environment_id = ?
+                  AND state <> 'FINALIZED'
+                ORDER BY created_at, job_id
+                LIMIT 1
+                """,
+                this::mapFinalization,
+                partition.region(),
+                partition.environmentId()));
+    }
+
+    private Optional<StoredFinalization> finalization(
+            CapabilitySnapshot.Scope scope,
+            String jobId,
+            boolean forUpdate) {
+        String sql = """
+                SELECT *
+                FROM scenario_rehearsal_batch_finalizations
+                WHERE tenant_id = ?
+                  AND organization_id = ?
+                  AND project_id = ?
+                  AND environment_id = ?
+                  AND region = ?
+                  AND job_id = ?
+                """ + (forUpdate ? " FOR UPDATE" : "");
+        return one(jdbc.query(
+                sql,
+                this::mapFinalization,
+                scope.tenantId(),
+                scope.organizationId(),
+                scope.projectId(),
+                scope.environmentId(),
+                scope.region(),
+                jobId));
+    }
+
+    private StoredFinalization mapFinalization(
+            ResultSet result,
+            int row) throws SQLException {
+        FinalizationIntent intent = read(
+                result.getString("intent_json"),
+                FinalizationIntent.class);
+        String indexedFingerprint =
+                result.getString("intent_fingerprint");
+        String expectedFingerprint =
+                ProtocolFingerprint.ofBounded(
+                        mapper,
+                        intent.withFingerprint(""),
+                        ScenarioRehearsalBatchEvidenceBundle
+                                .MAXIMUM_CANONICAL_BYTES
+                                + 2 * 1024 * 1024);
+        CapabilitySnapshot.Scope indexedScope =
+                new CapabilitySnapshot.Scope(
+                        result.getString("tenant_id"),
+                        result.getString("organization_id"),
+                        result.getString("project_id"),
+                        result.getString("environment_id"),
+                        result.getString("region"));
+        if (!indexedFingerprint.equals(
+                intent.intentFingerprint())
+                || !indexedFingerprint.equals(
+                expectedFingerprint)
+                || !result.getString("job_id").equals(
+                intent.terminalJob().jobId())
+                || !indexedScope.equals(
+                intent.terminalJob().scope())
+                || result.getLong("policy_generation")
+                != finalizationPolicy.generation()
+                || !result.getString("policy_fingerprint")
+                .equals(ProtocolFingerprint.of(
+                        mapper, finalizationPolicy))) {
+            throw new IllegalStateException(
+                    "Scenario batch finalization outbox differs from its immutable intent or policy");
+        }
+        FinalizationSnapshot snapshot =
+                new FinalizationSnapshot(
+                        FinalizationState.valueOf(
+                                result.getString("state")),
+                        result.getString("job_id"),
+                        indexedFingerprint,
+                        result.getInt("attempt_count"),
+                        instant(result, "next_eligible_at"),
+                        result.getString("lease_owner"),
+                        result.getLong("lease_epoch"),
+                        instant(result, "lease_expires_at"),
+                        instant(result, "signing_started_at"),
+                        result.getString("last_failure_code"),
+                        result.getString(
+                                "evidence_bundle_fingerprint"),
+                        instant(result, "created_at"),
+                        instant(result, "updated_at"),
+                        instant(result, "finalized_at"));
+        return new StoredFinalization(
+                intent, snapshot);
+    }
+
+    private FinalizationSnapshot updateFinalizationControl(
+            StoredFinalization stored,
+            FinalizationState state,
+            int attemptCount,
+            Instant nextEligibleAt,
+            String leaseOwner,
+            long leaseEpoch,
+            Instant leaseExpiresAt,
+            Instant signingStartedAt,
+            String failureCode,
+            String evidenceFingerprint,
+            Instant updatedAt,
+            Instant finalizedAt) {
+        int updated = jdbc.update("""
+                UPDATE scenario_rehearsal_batch_finalizations
+                SET state = ?,
+                    attempt_count = ?,
+                    next_eligible_at = ?,
+                    lease_owner = ?,
+                    lease_epoch = ?,
+                    lease_expires_at = ?,
+                    signing_started_at = ?,
+                    last_failure_code = ?,
+                    evidence_bundle_fingerprint = ?,
+                    updated_at = ?,
+                    finalized_at = ?
+                WHERE job_id = ?
+                  AND intent_fingerprint = ?
+                  AND state = ?
+                  AND lease_epoch = ?
+                """,
+                state.name(),
+                attemptCount,
+                timestamp(nextEligibleAt),
+                leaseOwner,
+                leaseEpoch,
+                timestamp(leaseExpiresAt),
+                timestamp(signingStartedAt),
+                failureCode,
+                evidenceFingerprint,
+                timestamp(updatedAt),
+                timestamp(finalizedAt),
+                stored.intent().terminalJob().jobId(),
+                stored.intent().intentFingerprint(),
+                stored.snapshot().state().name(),
+                stored.snapshot().leaseEpoch());
+        if (updated != 1) {
+            throw new IllegalStateException(
+                    "Scenario batch finalization fence changed while locked");
+        }
+        return new FinalizationSnapshot(
+                state,
+                stored.intent().terminalJob().jobId(),
+                stored.intent().intentFingerprint(),
+                attemptCount,
+                nextEligibleAt,
+                leaseOwner,
+                leaseEpoch,
+                leaseExpiresAt,
+                signingStartedAt,
+                failureCode,
+                evidenceFingerprint,
+                stored.snapshot().createdAt(),
+                updatedAt,
+                finalizedAt);
+    }
+
+    private void requireLiveFinalizationClaim(
+            StoredFinalization stored,
+            FinalizationClaim claim,
+            Instant observedAt) {
+        FinalizationSnapshot snapshot =
+                stored.snapshot();
+        if (snapshot.state() != FinalizationState.SIGNING
+                || !stored.intent().equals(claim.intent())
+                || !snapshot.leaseOwner().equals(
+                claim.ownerId())
+                || snapshot.leaseEpoch()
+                != claim.leaseEpoch()
+                || !snapshot.leaseExpiresAt().equals(
+                claim.leaseExpiresAt())
+                || !snapshot.signingStartedAt().equals(
+                claim.signingStartedAt())
+                || snapshot.attemptCount()
+                != claim.attemptCount()
+                || !snapshot.leaseExpiresAt()
+                .isAfter(observedAt)) {
+            throw new IllegalStateException(
+                    "Scenario batch finalization claim is stale");
+        }
+    }
+
+    private void requirePreparedFinalization(
+            FinalizationIntent intent,
+            ScenarioRehearsalBatchEvidencePublisher
+                    .PreparedFinalization prepared,
+            Instant signingStartedAt) {
+        ScenarioRehearsalBatchEvidenceBundle bundle =
+                prepared.bundle();
+        ScenarioRehearsalBatchEvidenceIndex index =
+                bundle.index();
+        if (!index.job().equals(intent.terminalJob())
+                || !index.request().equals(intent.request())
+                || !index.manifest().equals(intent.manifest())
+                || !index.items().equals(intent.items())
+                || !bundle.attestation().signedAt().equals(
+                signingStartedAt)
+                || !prepared.retentionRegistration()
+                .retainUntil().equals(intent.retainUntil())
+                || !prepared.retentionRegistration().event()
+                .occurredAt().equals(signingStartedAt)) {
+            throw new IllegalArgumentException(
+                    "Prepared Scenario batch evidence differs from its durable finalization intent");
+        }
+    }
+
+    private void requireFinalizationPolicy(
+            ScenarioRehearsalBatchFinalizationPolicy policy) {
+        if (!finalizationPolicy.equals(
+                Objects.requireNonNull(policy, "policy"))) {
+            throw new IllegalStateException(
+                    "Scenario batch finalization policy differs from the durable outbox generation");
+        }
+    }
+
     private void insertJob(StoredJob stored) {
         ScenarioRehearsalBatchJob job = stored.job();
         CapabilitySnapshot.Scope scope = job.scope();
@@ -2566,6 +3264,27 @@ public final class DatabaseScenarioRehearsalBatchRepository
             ScenarioRehearsalBatchItemPage.Item item,
             String evidenceFingerprint,
             String reasonCode) {
+        appendLifecycle(
+                stored,
+                transition,
+                job,
+                item,
+                evidenceFingerprint,
+                reasonCode,
+                stored.leaseOwner(),
+                stored.leaseEpoch());
+    }
+
+    private void appendLifecycle(
+            StoredJob stored,
+            ScenarioRehearsalBatchLifecycleAuditEvent.Transition
+                    transition,
+            ScenarioRehearsalBatchJob job,
+            ScenarioRehearsalBatchItemPage.Item item,
+            String evidenceFingerprint,
+            String reasonCode,
+            String leaseOwner,
+            long leaseEpoch) {
         lifecycleAudit.append(
                 new ScenarioRehearsalBatchLifecycleAuditEvent(
                         0,
@@ -2587,8 +3306,8 @@ public final class DatabaseScenarioRehearsalBatchRepository
                         item == null
                                 ? 0
                                 : item.attemptCount(),
-                        stored.leaseOwner(),
-                        stored.leaseEpoch(),
+                        leaseOwner,
+                        leaseEpoch,
                         evidenceFingerprint,
                         reasonCode));
     }
@@ -2762,6 +3481,25 @@ public final class DatabaseScenarioRehearsalBatchRepository
                     || executionTimeout.isNegative()) {
                 throw new IllegalArgumentException(
                         "executionTimeout must be positive");
+            }
+        }
+    }
+
+    private record StoredFinalization(
+            FinalizationIntent intent,
+            FinalizationSnapshot snapshot
+    ) {
+        private StoredFinalization {
+            intent = Objects.requireNonNull(
+                    intent, "intent");
+            snapshot = Objects.requireNonNull(
+                    snapshot, "snapshot");
+            if (!intent.terminalJob().jobId().equals(
+                    snapshot.jobId())
+                    || !intent.intentFingerprint().equals(
+                    snapshot.intentFingerprint())) {
+                throw new IllegalStateException(
+                        "Scenario batch finalization snapshot differs from its intent");
             }
         }
     }

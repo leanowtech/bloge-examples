@@ -279,6 +279,68 @@ class ScenarioRehearsalBatchServiceTest {
     }
 
     @Test
+    void finalizationReadIsScopeBoundPayloadFreeAndAudited() {
+        ScenarioRehearsalBatchRepository repository =
+                mock(ScenarioRehearsalBatchRepository.class);
+        ScenarioRehearsalBatchRepository.FinalizationSnapshot
+                snapshot =
+                new ScenarioRehearsalBatchRepository
+                        .FinalizationSnapshot(
+                        ScenarioRehearsalBatchRepository
+                                .FinalizationState.RETRY_WAIT,
+                        job().jobId(),
+                        "sha256:" + "b".repeat(64),
+                        2,
+                        NOW.plusSeconds(30),
+                        "",
+                        2,
+                        Instant.EPOCH,
+                        NOW.minusSeconds(10),
+                        "RG.MIRROR.KMS.UNAVAILABLE",
+                        "",
+                        NOW.minusSeconds(20),
+                        NOW,
+                        null);
+        when(repository.findFinalization(
+                SCOPE, job().jobId()))
+                .thenReturn(Optional.of(snapshot));
+        List<MirrorOperationAuditEvent> events =
+                new ArrayList<>();
+        ScenarioRehearsalBatchService service =
+                new ScenarioRehearsalBatchService(
+                        mock(ScenarioRehearsalBatchCompiler.class),
+                        repository,
+                        policy(),
+                        mapper,
+                        mock(
+                                ScenarioRehearsalBatchEvidenceRepository
+                                        .class),
+                        observations(events));
+
+        assertThat(service.finalization(
+                job().jobId(),
+                identity("GOVERNANCE_EVIDENCE_INGESTION")))
+                .contains(
+                        ScenarioRehearsalBatchFinalizationStatus.from(
+                                snapshot));
+
+        verify(repository).findFinalization(
+                SCOPE, job().jobId());
+        assertThat(events)
+                .singleElement()
+                .satisfies(event -> {
+                    assertThat(event.operation()).isEqualTo(
+                            MirrorOperationAuditEvent.Operation
+                                    .SCENARIO_REHEARSAL_BATCH_READ);
+                    assertThat(event.outcome()).isEqualTo(
+                            MirrorOperationAuditEvent.Outcome
+                                    .SUCCEEDED);
+                    assertThat(event.runId())
+                            .isEqualTo(job().jobId());
+                });
+    }
+
+    @Test
     void workerCompletesOnlyVerifiedEvidenceAndWorkbookClosure() {
         ScenarioRehearsalBatchRepository repository =
                 mock(ScenarioRehearsalBatchRepository.class);

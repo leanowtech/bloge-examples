@@ -79,6 +79,9 @@ import com.leanowtech.bloge.gateway.integration.mirror.ScenarioRehearsalEvidence
 import com.leanowtech.bloge.gateway.integration.mirror.ScenarioRehearsalBatchEvidenceIntegrityService;
 import com.leanowtech.bloge.gateway.integration.mirror.ScenarioRehearsalBatchEvidencePublisher;
 import com.leanowtech.bloge.gateway.integration.mirror.ScenarioRehearsalBatchEvidenceRepository;
+import com.leanowtech.bloge.gateway.integration.mirror.ScenarioRehearsalBatchFinalizationPolicy;
+import com.leanowtech.bloge.gateway.integration.mirror.ScenarioRehearsalBatchFinalizationScheduler;
+import com.leanowtech.bloge.gateway.integration.mirror.ScenarioRehearsalBatchFinalizationWorker;
 import com.leanowtech.bloge.gateway.integration.mirror.ScenarioRehearsalBatchLifecycleAuditRepository;
 import com.leanowtech.bloge.gateway.integration.mirror.ScenarioRehearsalBatchCompiler;
 import com.leanowtech.bloge.gateway.integration.mirror.ScenarioRehearsalBatchPolicy;
@@ -134,8 +137,10 @@ import java.time.Clock;
 @Configuration(proxyBeanMethods = false)
 @Profile("!production & (test | staging)")
 @ConditionalOnProperty(prefix = "gateway.testing.mirror", name = "enabled", havingValue = "true")
-@EnableConfigurationProperties(
-        ScenarioRehearsalBatchSchedulerProperties.class)
+@EnableConfigurationProperties({
+        ScenarioRehearsalBatchSchedulerProperties.class,
+        ScenarioRehearsalBatchFinalizationSchedulerProperties.class
+})
 public class MirrorRuntimeConfiguration {
 
     /**
@@ -354,6 +359,14 @@ public class MirrorRuntimeConfiguration {
         return ScenarioRehearsalBatchPolicy.defaults();
     }
 
+    /** Installs the bounded lease, retry, and quarantine policy for evidence finalization. */
+    @Bean
+    @ConditionalOnMissingBean
+    public ScenarioRehearsalBatchFinalizationPolicy
+    scenarioRehearsalBatchFinalizationPolicy() {
+        return ScenarioRehearsalBatchFinalizationPolicy.defaults();
+    }
+
     /** Creates the domain-separated signed Scenario batch integrity boundary. */
     @Bean
     @ConditionalOnMissingBean
@@ -434,13 +447,16 @@ public class MirrorRuntimeConfiguration {
             ScenarioRehearsalBatchEvidencePublisher
                     evidencePublisher,
             ScenarioRehearsalBatchLifecycleAuditRepository
-                    lifecycleAudit) {
+                    lifecycleAudit,
+            ScenarioRehearsalBatchFinalizationPolicy
+                    finalizationPolicy) {
         return new DatabaseScenarioRehearsalBatchRepository(
                 jdbc,
                 objectMapper,
                 transactionManager,
                 evidencePublisher,
-                lifecycleAudit);
+                lifecycleAudit,
+                finalizationPolicy);
     }
 
     /** Creates the exact-plan resolver that freezes immutable batch manifests. */
@@ -511,6 +527,49 @@ public class MirrorRuntimeConfiguration {
             ScenarioRehearsalBatchSchedulerProperties
                     properties) {
         return new ScenarioRehearsalBatchScheduler(
+                worker,
+                properties.region(),
+                properties.environmentId(),
+                properties.instanceId(),
+                properties.maximumPollers(),
+                properties.initialDelay(),
+                properties.pollInterval(),
+                properties.drainTimeout());
+    }
+
+    /** Creates one outbox-fenced batch evidence finalization turn. */
+    @Bean
+    @ConditionalOnMissingBean
+    public ScenarioRehearsalBatchFinalizationWorker
+    scenarioRehearsalBatchFinalizationWorker(
+            ScenarioRehearsalBatchRepository repository,
+            ScenarioRehearsalBatchEvidencePublisher publisher,
+            ScenarioRehearsalBatchFinalizationPolicy policy) {
+        return new ScenarioRehearsalBatchFinalizationWorker(
+                repository, publisher, policy);
+    }
+
+    /**
+     * Starts explicitly enabled KMS-isolated finalization lanes for one regional partition.
+     *
+     * @param worker one durable evidence-finalization turn
+     * @param properties strict process-local KMS scheduler policy
+     * @return closeable autonomous finalization scheduler
+     */
+    @Bean(destroyMethod = "close")
+    @ConditionalOnMissingBean
+    @ConditionalOnProperty(
+            prefix =
+                    ScenarioRehearsalBatchFinalizationSchedulerProperties
+                            .PREFIX,
+            name = "enabled",
+            havingValue = "true")
+    public ScenarioRehearsalBatchFinalizationScheduler
+    scenarioRehearsalBatchFinalizationScheduler(
+            ScenarioRehearsalBatchFinalizationWorker worker,
+            ScenarioRehearsalBatchFinalizationSchedulerProperties
+                    properties) {
+        return new ScenarioRehearsalBatchFinalizationScheduler(
                 worker,
                 properties.region(),
                 properties.environmentId(),

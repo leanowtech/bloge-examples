@@ -46,7 +46,7 @@ Options:
   --api-only        Build without the React frontend profile.
   --run-tests       Run Maven tests during the package step.
   --stateful        Enable the encrypted stateful-mirror Session API for test/staging.
-  --scenario-batch  Enable autonomous regional Scenario batch workers for test/staging.
+  --scenario-batch  Enable regional Scenario workers and isolated evidence finalizers.
   --open            Open /author/ in the default browser after startup.
   -h, --help        Show this help.
 
@@ -65,6 +65,8 @@ Environment:
   RG_MIRROR_SCENARIO_BATCH_REGION       exact regional queue partition
   RG_MIRROR_SCENARIO_BATCH_ENVIRONMENT  exact test or staging queue partition
   RG_MIRROR_SCENARIO_BATCH_MAXIMUM_POLLERS  local bounded worker lanes (1..256)
+  RG_MIRROR_SCENARIO_BATCH_FINALIZATION_INSTANCE_ID  stable evidence-finalizer replica id
+  RG_MIRROR_SCENARIO_BATCH_FINALIZATION_MAXIMUM_POLLERS  isolated KMS lanes (1..32)
   RG_MIRROR_STATEFUL_JDBC_URL          optional dedicated state-plane JDBC URL
   RG_MIRROR_STATEFUL_INSTANCE_ID       optional stable replica id
   RG_MIRROR_STATEFUL_ACTIVE_KEY_ID     optional active AES key id
@@ -283,6 +285,10 @@ configure_scenario_batch() {
     export RG_MIRROR_SCENARIO_BATCH_INSTANCE_ID="${RG_MIRROR_SCENARIO_BATCH_INSTANCE_ID:-visual-canvas-batch-$(configured_port)}"
     export RG_MIRROR_SCENARIO_BATCH_REGION="${RG_MIRROR_SCENARIO_BATCH_REGION:-${RG_INTEGRATION_REGION:-sg}}"
     export RG_MIRROR_SCENARIO_BATCH_ENVIRONMENT="${RG_MIRROR_SCENARIO_BATCH_ENVIRONMENT:-${default_environment}}"
+    export RG_MIRROR_SCENARIO_BATCH_FINALIZATION_SCHEDULER_ENABLED=true
+    export RG_MIRROR_SCENARIO_BATCH_FINALIZATION_INSTANCE_ID="${RG_MIRROR_SCENARIO_BATCH_FINALIZATION_INSTANCE_ID:-${RG_MIRROR_SCENARIO_BATCH_INSTANCE_ID}-finalizer}"
+    export RG_MIRROR_SCENARIO_BATCH_FINALIZATION_REGION="${RG_MIRROR_SCENARIO_BATCH_FINALIZATION_REGION:-${RG_MIRROR_SCENARIO_BATCH_REGION}}"
+    export RG_MIRROR_SCENARIO_BATCH_FINALIZATION_ENVIRONMENT="${RG_MIRROR_SCENARIO_BATCH_FINALIZATION_ENVIRONMENT:-${RG_MIRROR_SCENARIO_BATCH_ENVIRONMENT}}"
     if [ -n "${RG_INTEGRATION_REGION:-}" ] &&
         [ "${RG_INTEGRATION_REGION}" != "${RG_MIRROR_SCENARIO_BATCH_REGION}" ]; then
         echo "Scenario batch region must match the integration identity region." >&2
@@ -328,6 +334,21 @@ validate_scenario_batch() {
     if ! printf '%s' "${pollers}" | grep -Eq '^[1-9][0-9]*$' ||
         [ "${pollers}" -gt 256 ]; then
         echo "Scenario batch maximum pollers must be between 1 and 256." >&2
+        return 1
+    fi
+    if ! truthy "${RG_MIRROR_SCENARIO_BATCH_FINALIZATION_SCHEDULER_ENABLED:-false}" ||
+        ! printf '%s' "${RG_MIRROR_SCENARIO_BATCH_FINALIZATION_INSTANCE_ID:-}" |
+        grep -Eq '^[A-Za-z0-9][A-Za-z0-9._:/#-]{0,254}$' ||
+        [ "${RG_MIRROR_SCENARIO_BATCH_FINALIZATION_REGION:-}" != "${RG_MIRROR_SCENARIO_BATCH_REGION}" ] ||
+        [ "${RG_MIRROR_SCENARIO_BATCH_FINALIZATION_ENVIRONMENT:-}" != "${RG_MIRROR_SCENARIO_BATCH_ENVIRONMENT}" ]; then
+        echo "Scenario batch finalizer must be enabled for the exact worker partition." >&2
+        return 1
+    fi
+    local finalization_pollers="${RG_MIRROR_SCENARIO_BATCH_FINALIZATION_MAXIMUM_POLLERS:-1}"
+    if ! printf '%s' "${finalization_pollers}" |
+        grep -Eq '^[1-9][0-9]*$' ||
+        [ "${finalization_pollers}" -gt 32 ]; then
+        echo "Scenario batch finalization pollers must be between 1 and 32." >&2
         return 1
     fi
 }
@@ -1927,6 +1948,7 @@ Integration API templates:
   Stateful session: POST /api/mirror/sessions (--stateful; Bearer token + X-Purpose: MIRROR_REHEARSAL)
   Session command:  POST /api/mirror/sessions/{sessionId}/commands
   Scenario batches: POST /api/mirror/rehearsal-jobs (--scenario-batch; Bearer token + X-Purpose: MIRROR_REHEARSAL)
+  Finalization:     GET  /api/mirror/rehearsal-jobs/{jobId}/finalization
 EOF
 }
 
@@ -1982,6 +2004,8 @@ wait_for_ready() {
                         .payload.features.mirrorScenarioRehearsalBatchApi == true
                         and .payload.features.mirrorScenarioRehearsalBatchCooperativeControl == true
                         and .payload.features.mirrorScenarioRehearsalBatchEvidence == true
+                        and .payload.features.mirrorScenarioRehearsalBatchEvidenceFinalizationApi == true
+                        and .payload.features.mirrorScenarioRehearsalBatchEvidenceFinalizationScheduling == true
                         and .payload.features.mirrorScenarioRehearsalBatchRetentionApi == true
                         and .payload.features.mirrorScenarioRehearsalBatchLegalHold == true
                         and .payload.features.mirrorScenarioRehearsalBatchDeletionProof == true
@@ -1996,6 +2020,10 @@ wait_for_ready() {
                     grep -Eq '"mirrorScenarioRehearsalBatchCooperativeControl"[[:space:]]*:[[:space:]]*true' ||
                     ! printf '%s' "${response}" |
                     grep -Eq '"mirrorScenarioRehearsalBatchEvidence"[[:space:]]*:[[:space:]]*true' ||
+                    ! printf '%s' "${response}" |
+                    grep -Eq '"mirrorScenarioRehearsalBatchEvidenceFinalizationApi"[[:space:]]*:[[:space:]]*true' ||
+                    ! printf '%s' "${response}" |
+                    grep -Eq '"mirrorScenarioRehearsalBatchEvidenceFinalizationScheduling"[[:space:]]*:[[:space:]]*true' ||
                     ! printf '%s' "${response}" |
                     grep -Eq '"mirrorScenarioRehearsalBatchRetentionApi"[[:space:]]*:[[:space:]]*true' ||
                     ! printf '%s' "${response}" |

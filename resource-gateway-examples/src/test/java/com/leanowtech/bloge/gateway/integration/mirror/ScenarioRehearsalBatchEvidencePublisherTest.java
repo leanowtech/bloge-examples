@@ -10,6 +10,9 @@ import java.util.Optional;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.ArgumentMatchers.isNull;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
@@ -64,19 +67,26 @@ class ScenarioRehearsalBatchEvidencePublisherTest {
                 item.compiledPlanRef());
         when(result.outcome()).thenReturn(item.outcome());
         when(integrity.seal(
-                material.request(),
-                material.manifest(),
-                material.job(),
-                material.items()))
+                eq(material.request()),
+                eq(material.manifest()),
+                eq(material.job()),
+                eq(material.items()),
+                isNull(),
+                anyString()))
                 .thenReturn(sealed);
         when(sealed.verified()).thenReturn(true);
         when(sealed.bundle()).thenReturn(bundle);
+        ScenarioRehearsalBatchRetentionRepository.PreparedRegistration
+                registration = registration(
+                bundle,
+                material,
+                retainUntil(material),
+                retention);
         when(batches.create(bundle)).thenReturn(bundle);
         ScenarioRehearsalBatchEvidencePublisher publisher =
                 new ScenarioRehearsalBatchEvidencePublisher(
                         children, integrity, batches, retention);
-        Instant retainUntil = material.job().completedAt()
-                .plus(Duration.ofDays(30));
+        Instant retainUntil = retainUntil(material);
 
         assertThat(publisher.publish(
                 material.request(),
@@ -85,8 +95,7 @@ class ScenarioRehearsalBatchEvidencePublisherTest {
                 material.items(),
                 retainUntil)).isSameAs(bundle);
         verify(batches).create(bundle);
-        verify(retention).register(
-                bundle, retainUntil);
+        verify(retention).register(bundle, registration);
     }
 
     @Test
@@ -124,7 +133,9 @@ class ScenarioRehearsalBatchEvidencePublisherTest {
                 Instant.parse("2030-01-01T00:00:00Z")))
                 .isInstanceOf(IllegalStateException.class);
         verify(integrity, never())
-                .seal(any(), any(), any(), any());
+                .seal(
+                        any(), any(), any(), any(),
+                        any(), anyString());
     }
 
     @Test
@@ -174,18 +185,23 @@ class ScenarioRehearsalBatchEvidencePublisherTest {
         when(result.outcome()).thenReturn(
                 item.outcome());
         when(integrity.seal(
-                material.request(),
-                material.manifest(),
-                material.job(),
-                material.items()))
+                eq(material.request()),
+                eq(material.manifest()),
+                eq(material.job()),
+                eq(material.items()),
+                isNull(),
+                anyString()))
                 .thenReturn(sealed);
         when(sealed.verified()).thenReturn(true);
         when(sealed.bundle()).thenReturn(bundle);
         when(batches.create(bundle)).thenReturn(bundle);
         Instant retainUntil =
                 Instant.parse("2030-01-01T00:00:00Z");
+        ScenarioRehearsalBatchRetentionRepository.PreparedRegistration
+                registration = registration(
+                bundle, material, retainUntil, retention);
         when(retention.register(
-                bundle, retainUntil))
+                bundle, registration))
                 .thenThrow(new IllegalStateException(
                         "retention unavailable"));
         ScenarioRehearsalBatchEvidencePublisher publisher =
@@ -202,6 +218,58 @@ class ScenarioRehearsalBatchEvidencePublisherTest {
                 .hasMessage("retention unavailable");
         verify(batches).create(bundle);
         verify(retention).register(
-                bundle, retainUntil);
+                bundle, registration);
+    }
+
+    private ScenarioRehearsalBatchRetentionRepository
+    .PreparedRegistration registration(
+            ScenarioRehearsalBatchEvidenceBundle bundle,
+            ScenarioRehearsalBatchEvidenceTestFixtures.Material
+                    material,
+            Instant retainUntil,
+            ScenarioRehearsalBatchRetentionRepository retention) {
+        String fingerprint =
+                "sha256:" + "a".repeat(64);
+        Instant signedAt =
+                material.job().completedAt().plusSeconds(1);
+        ScenarioRehearsalBatchEvidenceIndex index =
+                mock(ScenarioRehearsalBatchEvidenceIndex.class);
+        ScenarioRehearsalBatchEvidenceAttestation attestation =
+                mock(
+                        ScenarioRehearsalBatchEvidenceAttestation
+                                .class);
+        ScenarioRehearsalBatchRetentionRepository
+                .PreparedRegistration registration =
+                mock(
+                        ScenarioRehearsalBatchRetentionRepository
+                                .PreparedRegistration.class);
+        ScenarioRehearsalBatchRetentionEvent event =
+                mock(
+                        ScenarioRehearsalBatchRetentionEvent.class);
+        when(bundle.bundleFingerprint())
+                .thenReturn(fingerprint);
+        when(bundle.index()).thenReturn(index);
+        when(bundle.attestation()).thenReturn(attestation);
+        when(index.job()).thenReturn(material.job());
+        when(attestation.signedAt()).thenReturn(signedAt);
+        when(registration.bundleFingerprint())
+                .thenReturn(fingerprint);
+        when(registration.event()).thenReturn(event);
+        when(event.jobId()).thenReturn(
+                material.job().jobId());
+        when(retention.prepareRegistration(
+                eq(bundle),
+                eq(retainUntil),
+                eq(signedAt),
+                anyString()))
+                .thenReturn(registration);
+        return registration;
+    }
+
+    private static Instant retainUntil(
+            ScenarioRehearsalBatchEvidenceTestFixtures.Material
+                    material) {
+        return material.job().completedAt()
+                .plus(Duration.ofDays(30));
     }
 }

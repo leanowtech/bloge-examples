@@ -37,8 +37,10 @@ public final class ScenarioRehearsalBatchEvidenceVerifier {
             8 * 1024;
     private static final int MAXIMUM_IDENTITY_MATERIAL_BYTES =
             16 * 1024;
-    private static final String SIGNATURE_DOMAIN =
+    private static final String V1_SIGNATURE_DOMAIN =
             "RESOURCE_GATEWAY_SCENARIO_REHEARSAL_BATCH_EVIDENCE_V1";
+    private static final String V2_SIGNATURE_DOMAIN =
+            "RESOURCE_GATEWAY_SCENARIO_REHEARSAL_BATCH_EVIDENCE_V2";
     private static final String BATCH_ID_DOMAIN =
             "RESOURCE_GATEWAY_SCENARIO_REHEARSAL_BATCH_ID_V1";
     private static final String RUN_ID_DOMAIN =
@@ -126,8 +128,7 @@ public final class ScenarioRehearsalBatchEvidenceVerifier {
         try {
             CapabilityMirrorSchemaValidator.require(
                     bundle,
-                    CapabilityMirrorProtocol
-                            .SCENARIO_REHEARSAL_BATCH_EVIDENCE_BUNDLE_SCHEMA_RESOURCE,
+                    bundleSchema(bundle),
                     "RG.MIRROR.CLIENT.SCENARIO_BATCH_EVIDENCE_SCHEMA_INVALID");
         } catch (RuntimeException invalid) {
             return result(
@@ -463,7 +464,11 @@ public final class ScenarioRehearsalBatchEvidenceVerifier {
         ObjectNode value =
                 com.fasterxml.jackson.databind.node.JsonNodeFactory
                         .instance.objectNode();
-        value.put("domain", SIGNATURE_DOMAIN);
+        value.put(
+                "domain",
+                signatureDomain(
+                        attestation.path(
+                                "schemaVersion").asText()));
         value.set(
                 "schemaVersion",
                 attestation.path("schemaVersion"));
@@ -482,6 +487,41 @@ public final class ScenarioRehearsalBatchEvidenceVerifier {
                 attestation.path("indexFingerprint"));
         value.set("signedAt", attestation.path("signedAt"));
         return value;
+    }
+
+    private static String bundleSchema(JsonNode bundle) {
+        String version = bundle == null
+                ? "" : bundle.path("schemaVersion").asText();
+        if (CapabilityMirrorProtocol
+                .SCENARIO_REHEARSAL_BATCH_EVIDENCE_BUNDLE_V1
+                .equals(version)) {
+            return CapabilityMirrorProtocol
+                    .SCENARIO_REHEARSAL_BATCH_EVIDENCE_BUNDLE_V1_SCHEMA_RESOURCE;
+        }
+        if (CapabilityMirrorProtocol
+                .SCENARIO_REHEARSAL_BATCH_EVIDENCE_BUNDLE_V2
+                .equals(version)) {
+            return CapabilityMirrorProtocol
+                    .SCENARIO_REHEARSAL_BATCH_EVIDENCE_BUNDLE_V2_SCHEMA_RESOURCE;
+        }
+        throw new IllegalArgumentException(
+                "Unsupported Scenario batch evidence bundle version");
+    }
+
+    private static String signatureDomain(
+            String attestationVersion) {
+        if (CapabilityMirrorProtocol
+                .SCENARIO_REHEARSAL_BATCH_EVIDENCE_ATTESTATION_V1
+                .equals(attestationVersion)) {
+            return V1_SIGNATURE_DOMAIN;
+        }
+        if (CapabilityMirrorProtocol
+                .SCENARIO_REHEARSAL_BATCH_EVIDENCE_ATTESTATION_V2
+                .equals(attestationVersion)) {
+            return V2_SIGNATURE_DOMAIN;
+        }
+        throw new IllegalArgumentException(
+                "Unsupported Scenario batch evidence attestation version");
     }
 
     private static Instant instant(

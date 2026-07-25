@@ -23,6 +23,8 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 class ManagedVisualEvidenceSignerTest {
     private static final String FINGERPRINT = "sha256:" + "a".repeat(64);
+    private static final String OTHER_FINGERPRINT =
+            "sha256:" + "b".repeat(64);
 
     @Test
     void signsWithNonExportableProviderAndLocallyVerifiesReturnedSignature() throws Exception {
@@ -45,6 +47,52 @@ class ManagedVisualEvidenceSignerTest {
                     .containsEntry("returnedSignatureLocallyVerified", true);
         });
         assertThat(signer.key("kms-key-1").orElseThrow().encodedPublicKey()).isNotBlank();
+    }
+
+    @Test
+    void stableIdempotencyKeyReplaysTheOriginalSignatureAcrossKeyRotation()
+            throws Exception {
+        MutableClock clock = clock();
+        MutableProvider provider = new MutableProvider(clock);
+        provider.addActive("kms-key-1");
+        ManagedVisualEvidenceSigner signer = signer(provider, clock);
+
+        VisualRunEvidenceSeal original = signer.seal(
+                FINGERPRINT,
+                "scenario-batch-finalization:job-1");
+        provider.rotate("kms-key-2");
+        clock.advance(Duration.ofMinutes(2));
+        VisualRunEvidenceSeal replay = signer.seal(
+                FINGERPRINT,
+                "scenario-batch-finalization:job-1");
+
+        assertThat(replay).isEqualTo(original);
+        assertThat(provider.signCalls()).isEqualTo(2);
+        assertThat(signer.verify(replay, FINGERPRINT).valid())
+                .isTrue();
+        assertThatThrownBy(() -> signer.seal(
+                OTHER_FINGERPRINT,
+                "scenario-batch-finalization:job-1"))
+                .isInstanceOf(EvidenceSigningProviderException.class)
+                .extracting(failure ->
+                        ((EvidenceSigningProviderException) failure)
+                                .code())
+                .isEqualTo("IDEMPOTENCY_CONFLICT");
+    }
+
+    @Test
+    void rejectsMalformedManagedSigningIdempotencyKeyBeforeProviderIo()
+            throws Exception {
+        MutableClock clock = clock();
+        MutableProvider provider = new MutableProvider(clock);
+        provider.addActive("kms-key-1");
+        ManagedVisualEvidenceSigner signer = signer(provider, clock);
+
+        assertThatThrownBy(() -> signer.seal(
+                FINGERPRINT, "contains whitespace"))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("idempotency");
+        assertThat(provider.signCalls()).isZero();
     }
 
     @Test
@@ -308,6 +356,8 @@ class ManagedVisualEvidenceSignerTest {
         private final Map<String, String> states = new LinkedHashMap<>();
         private final AtomicInteger fetchCalls = new AtomicInteger();
         private final AtomicInteger signCalls = new AtomicInteger();
+        private final Map<String, SignatureResult> signatures =
+                new LinkedHashMap<>();
         private String activeKeyId = "";
         private String rotateOnNextSign = "";
         private Duration snapshotLifetime = Duration.ofMinutes(5);
@@ -431,6 +481,18 @@ class ManagedVisualEvidenceSignerTest {
         @Override
         public SignatureResult sign(SignatureRequest request) {
             signCalls.incrementAndGet();
+            SignatureResult replay = signatures.get(
+                    request.requestId());
+            if (replay != null) {
+                if (!replay.materialFingerprint().equals(
+                        request.materialFingerprint())) {
+                    throw new EvidenceSigningProviderException(
+                            "IDEMPOTENCY_CONFLICT",
+                            "test signing id identifies different material",
+                            false);
+                }
+                return replay;
+            }
             if (failSign) {
                 throw new EvidenceSigningProviderException("PROVIDER_UNAVAILABLE",
                         "test signing authority unavailable", true);
@@ -453,9 +515,11 @@ class ManagedVisualEvidenceSignerTest {
                 if (corruptSignature) {
                     bytes[0] ^= 1;
                 }
-                return new SignatureResult(SignatureResult.SCHEMA_VERSION, request.requestId(), request.keyId(),
+                SignatureResult result = new SignatureResult(SignatureResult.SCHEMA_VERSION, request.requestId(), request.keyId(),
                         request.algorithm(), request.materialFingerprint(), clock.instant(),
                         Base64.getEncoder().encodeToString(bytes));
+                signatures.put(request.requestId(), result);
+                return result;
             } catch (Exception failure) {
                 throw new IllegalStateException(failure);
             }

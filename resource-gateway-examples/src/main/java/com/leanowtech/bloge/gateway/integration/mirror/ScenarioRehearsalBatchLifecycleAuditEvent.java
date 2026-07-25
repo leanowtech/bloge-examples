@@ -62,6 +62,8 @@ public record ScenarioRehearsalBatchLifecycleAuditEvent(
         ITEM_RETRY_SCHEDULED,
         /** One exactly replayable cancellation intent was accepted. */
         CANCELLATION_REQUESTED,
+        /** Complete terminal material entered the durable evidence-finalization outbox. */
+        FINALIZATION_QUEUED,
         /** The complete item closure and signed batch evidence became terminal atomically. */
         TERMINALIZED
     }
@@ -235,6 +237,14 @@ public record ScenarioRehearsalBatchLifecycleAuditEvent(
                             && evidenceFingerprint.isBlank()
                             && !reasonCode.isBlank(),
                     "cancellation audit coordinates are inconsistent");
+            case FINALIZATION_QUEUED -> require(
+                    jobStatus
+                            == ScenarioRehearsalBatchJob.Status
+                            .FINALIZING_EVIDENCE
+                            && !identifiesItem
+                            && attemptCount == 0
+                            && evidenceFingerprint.isBlank(),
+                    "finalization queue audit coordinates are inconsistent");
             case TERMINALIZED -> require(
                     jobStatus.terminal()
                             && !identifiesItem

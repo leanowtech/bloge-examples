@@ -3,15 +3,15 @@ package com.leanowtech.bloge.gateway.integration.mirror;
 import java.time.Instant;
 import java.util.List;
 import java.util.Objects;
+import java.util.UUID;
 
 /**
  * Fail-closed terminal publication boundary for signed Scenario batch evidence.
  *
- * <p>The database batch repository invokes this boundary inside the same transaction that
- * publishes the terminal job projection. Every referenced child aggregate is reloaded through
- * the independently verifying evidence repository before the batch is sealed. A missing signer,
- * child, signature, or identity therefore rolls back terminal publication and leaves the job
- * recoverable under its durable queue semantics.</p>
+ * <p>Remote signing and child-evidence verification happen in {@link #prepare} outside the
+ * terminal transaction. {@link #persist} performs only exact append/CAS work in the final database
+ * transaction. This keeps KMS latency out of queue locks while preserving atomic evidence,
+ * retention, terminal job, and lifecycle publication.</p>
  */
 public final class ScenarioRehearsalBatchEvidencePublisher {
     private final ScenarioRehearsalEvidenceRepository
@@ -62,6 +62,40 @@ public final class ScenarioRehearsalBatchEvidencePublisher {
             ScenarioRehearsalBatchJob job,
             List<ScenarioRehearsalBatchItemPage.Item> items,
             Instant retainUntil) {
+        String signingRequestId =
+                "scenario-batch-sign:"
+                        + UUID.randomUUID();
+        PreparedFinalization prepared = prepare(
+                request,
+                manifest,
+                job,
+                items,
+                retainUntil,
+                null,
+                signingRequestId);
+        return persist(prepared);
+    }
+
+    /**
+     * Verifies children and prepares both signatures without holding a database mutation lock.
+     *
+     * @param request original strict payload-free request
+     * @param manifest immutable exact-plan closure
+     * @param job frozen terminal projection
+     * @param items complete ordered terminal items
+     * @param retainUntil immutable minimum retention boundary
+     * @param signedAt database time frozen by the first outbox claim
+     * @param signingRequestId stable KMS idempotency identity
+     * @return exact evidence and pre-signed retention registration
+     */
+    public PreparedFinalization prepare(
+            ScenarioRehearsalBatchRequest request,
+            ScenarioRehearsalBatchManifest manifest,
+            ScenarioRehearsalBatchJob job,
+            List<ScenarioRehearsalBatchItemPage.Item> items,
+            Instant retainUntil,
+            Instant signedAt,
+            String signingRequestId) {
         List<ScenarioRehearsalBatchItemPage.Item> exactItems =
                 items == null ? List.of() : List.copyOf(items);
         for (ScenarioRehearsalBatchItemPage.Item item
@@ -89,18 +123,111 @@ public final class ScenarioRehearsalBatchEvidencePublisher {
         }
         ScenarioRehearsalBatchEvidenceIntegrityService.SealResult
                 sealed = integrity.seal(
-                request, manifest, job, exactItems);
+                request,
+                manifest,
+                job,
+                exactItems,
+                signedAt,
+                signingRequestId);
         if (!sealed.verified()) {
-            throw new IllegalStateException(
-                    "Scenario batch evidence could not be signed and verified: "
-                            + sealed.failureCode());
+            throw new ScenarioRehearsalBatchFinalizationException(
+                    preparationReason(sealed.failureCode()));
         }
+        Instant retentionOccurredAt =
+                sealed.bundle().attestation().signedAt();
+        ScenarioRehearsalBatchRetentionRepository
+                .PreparedRegistration registration =
+                prepareRetention(
+                        sealed.bundle(),
+                        retainUntil,
+                        retentionOccurredAt,
+                        signingRequestId);
+        return new PreparedFinalization(
+                sealed.bundle(), registration);
+    }
+
+    /**
+     * Persists exact prepared material in the caller's terminal transaction.
+     *
+     * @param prepared signatures and closure prepared outside the transaction
+     * @return inserted or exact idempotently existing bundle
+     */
+    public ScenarioRehearsalBatchEvidenceBundle persist(
+            PreparedFinalization prepared) {
+        PreparedFinalization exact =
+                Objects.requireNonNull(prepared, "prepared");
         ScenarioRehearsalBatchEvidenceBundle persisted =
-                batches.create(sealed.bundle());
+                batches.create(exact.bundle());
         retention.register(
                 persisted,
-                Objects.requireNonNull(
-                        retainUntil, "retainUntil"));
+                exact.retentionRegistration());
         return persisted;
+    }
+
+    /** Exact pre-signed terminal artifacts safe to carry across the outbox commit boundary. */
+    public record PreparedFinalization(
+            ScenarioRehearsalBatchEvidenceBundle bundle,
+            ScenarioRehearsalBatchRetentionRepository
+                    .PreparedRegistration retentionRegistration
+    ) {
+        /** Enforces evidence/retention identity closure. */
+        public PreparedFinalization {
+            bundle = Objects.requireNonNull(
+                    bundle, "bundle");
+            retentionRegistration = Objects.requireNonNull(
+                    retentionRegistration,
+                    "retentionRegistration");
+            if (!bundle.bundleFingerprint().equals(
+                    retentionRegistration.bundleFingerprint())
+                    || !bundle.index().job().jobId().equals(
+                    retentionRegistration.event().jobId())) {
+                throw new IllegalArgumentException(
+                        "Scenario batch prepared finalization is inconsistent");
+            }
+        }
+    }
+
+    private ScenarioRehearsalBatchRetentionRepository
+    .PreparedRegistration prepareRetention(
+            ScenarioRehearsalBatchEvidenceBundle bundle,
+            Instant retainUntil,
+            Instant occurredAt,
+            String signingRequestId) {
+        try {
+            return retention.prepareRegistration(
+                    bundle,
+                    Objects.requireNonNull(
+                            retainUntil, "retainUntil"),
+                    occurredAt,
+                    signingRequestId + ":retention");
+        } catch (ScenarioRehearsalBatchFinalizationException
+                classified) {
+            throw classified;
+        } catch (IllegalArgumentException invalid) {
+            throw new ScenarioRehearsalBatchFinalizationException(
+                    ScenarioRehearsalBatchFinalizationException
+                            .Reason.MATERIAL_INVALID);
+        } catch (RuntimeException unavailable) {
+            throw new ScenarioRehearsalBatchFinalizationException(
+                    ScenarioRehearsalBatchFinalizationException
+                            .Reason.CONTROL_UNAVAILABLE);
+        }
+    }
+
+    private static ScenarioRehearsalBatchFinalizationException.Reason
+    preparationReason(String failureCode) {
+        return switch (failureCode) {
+            case ScenarioRehearsalBatchEvidenceIntegrityService
+                    .MATERIAL_INVALID ->
+                    ScenarioRehearsalBatchFinalizationException
+                            .Reason.MATERIAL_INVALID;
+            case ScenarioRehearsalBatchEvidenceIntegrityService
+                    .SIGNATURE_INVALID ->
+                    ScenarioRehearsalBatchFinalizationException
+                            .Reason.SIGNATURE_INVALID;
+            default ->
+                    ScenarioRehearsalBatchFinalizationException
+                            .Reason.SIGNER_UNAVAILABLE;
+        };
     }
 }

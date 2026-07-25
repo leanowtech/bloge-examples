@@ -27,9 +27,15 @@ public record ScenarioRehearsalBatchEvidenceIndex(
         ScenarioRehearsalBatchJob job,
         List<ScenarioRehearsalBatchItemPage.Item> items
 ) {
+    /** Legacy evidence-index version that embeds a v1 terminal job. */
+    public static final String V1_SCHEMA_VERSION =
+            "resourceGateway.scenarioRehearsalBatchEvidenceIndex.v1";
+    /** Current evidence-index version that embeds a v2 terminal job. */
+    public static final String V2_SCHEMA_VERSION =
+            "resourceGateway.scenarioRehearsalBatchEvidenceIndex.v2";
     /** Current portable batch evidence-index version. */
     public static final String SCHEMA_VERSION =
-            "resourceGateway.scenarioRehearsalBatchEvidenceIndex.v1";
+            V2_SCHEMA_VERSION;
     /** Maximum canonical index bytes admitted to signing and verification. */
     public static final int MAXIMUM_CANONICAL_BYTES =
             16 * 1024 * 1024;
@@ -41,7 +47,8 @@ public record ScenarioRehearsalBatchEvidenceIndex(
         schemaVersion = schemaVersion == null
                 || schemaVersion.isBlank()
                 ? SCHEMA_VERSION : schemaVersion.trim();
-        if (!SCHEMA_VERSION.equals(schemaVersion)) {
+        if (!V1_SCHEMA_VERSION.equals(schemaVersion)
+                && !V2_SCHEMA_VERSION.equals(schemaVersion)) {
             throw new IllegalArgumentException(
                     "unsupported Scenario rehearsal batch evidence-index version");
         }
@@ -50,7 +57,14 @@ public record ScenarioRehearsalBatchEvidenceIndex(
         manifest = Objects.requireNonNull(manifest, "manifest");
         job = Objects.requireNonNull(job, "job");
         items = items == null ? List.of() : List.copyOf(items);
-        if (!job.status().terminal()
+        String expectedJobVersion =
+                V1_SCHEMA_VERSION.equals(schemaVersion)
+                        ? ScenarioRehearsalBatchJob
+                        .V1_SCHEMA_VERSION
+                        : ScenarioRehearsalBatchJob
+                        .V2_SCHEMA_VERSION;
+        if (!expectedJobVersion.equals(job.schemaVersion())
+                || !job.status().terminal()
                 || job.completedAt() == null
                 || !job.jobId().equals(manifest.batchId())
                 || !job.requestId().equals(request.requestId())
