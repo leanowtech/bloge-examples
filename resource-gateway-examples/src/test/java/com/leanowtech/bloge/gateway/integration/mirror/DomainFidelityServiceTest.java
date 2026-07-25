@@ -14,10 +14,14 @@ import org.springframework.jdbc.datasource.embedded.EmbeddedDatabaseBuilder;
 import org.springframework.jdbc.datasource.embedded.EmbeddedDatabaseType;
 
 import java.util.Optional;
+import java.util.List;
 import java.util.Set;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.when;
 
 class DomainFidelityServiceTest {
     private final ObjectMapper mapper =
@@ -132,6 +136,44 @@ class DomainFidelityServiceTest {
                                 failure.problem().code())
                                 .isEqualTo(
                                         "RG.MIRROR.FIDELITY.PROFILE_NOT_FOUND"));
+    }
+
+    @Test
+    void projectsScenarioRunsInsideTheGovernedTransactionBoundary() {
+        DomainFidelityInventory inventory =
+                service.registerInventory(
+                        DomainFidelityTestFixtures.registration(
+                                1,
+                                "",
+                                DomainFidelityTestFixtures.units()),
+                        DomainFidelityTestFixtures
+                                .ownerIdentity("support"));
+        IntegrationRequestContext projector =
+                DomainFidelityTestFixtures
+                        .projectorIdentity("support");
+        ScenarioRehearsalDomainFidelitySource source =
+                mock(ScenarioRehearsalDomainFidelitySource.class);
+        List<String> runs = List.of("scenario-run");
+        when(source.measurements(
+                inventory, runs, projector))
+                .thenReturn(
+                        DomainFidelityTestFixtures
+                                .passingMeasurements(inventory));
+
+        DomainFidelityProfile profile =
+                service.projectScenario(
+                        inventory.artifactRef(),
+                        runs,
+                        source,
+                        projector);
+
+        verify(source).measurements(
+                inventory, runs, projector);
+        assertThat(profile.profileSeal().signed()).isTrue();
+        assertThat(repository.findProfile(
+                inventory.scope(),
+                profile.profileFingerprint()))
+                .contains(profile);
     }
 
     @Test

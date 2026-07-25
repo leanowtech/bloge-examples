@@ -12,6 +12,8 @@ import com.leanowtech.bloge.gateway.integration.mirror.ScenarioRehearsalBatchSch
 import com.leanowtech.bloge.gateway.integration.mirror.ScenarioRehearsalBatchFinalizationScheduler;
 import com.leanowtech.bloge.gateway.integration.mirror.ScenarioRehearsalBatchFinalizationHealth;
 import com.leanowtech.bloge.gateway.integration.mirror.ScenarioRehearsalBatchFinalizationSloMonitor;
+import com.leanowtech.bloge.gateway.integration.mirror.DomainFidelityMeasurementSource;
+import com.leanowtech.bloge.gateway.integration.mirror.DomainFidelitySourceAvailability;
 import com.leanowtech.bloge.gateway.visual.catalog.OperatorCatalogQuery;
 import com.leanowtech.bloge.gateway.visual.catalog.OperatorDefinition;
 import com.leanowtech.bloge.gateway.visual.catalog.VisualOperatorCatalog;
@@ -310,7 +312,20 @@ class ToolStudioIntegrationServiceTest {
                         true,
                         true,
                         signer::get,
-                        sources::get));
+                        new DomainFidelitySourceAvailability(
+                                List.of(
+                                        new DomainFidelityMeasurementSource() {
+                                            @Override
+                                            public Type type() {
+                                                return Type
+                                                        .SCENARIO_REHEARSAL;
+                                            }
+
+                                            @Override
+                                            public boolean ready() {
+                                                return sources.get();
+                                            }
+                                        }))));
 
         IntegrationCapabilities assembled =
                 service.capabilities().payload();
@@ -355,7 +370,9 @@ class ToolStudioIntegrationServiceTest {
         sources.set(true);
         assertThat(service.capabilities().payload().features())
                 .containsEntry(
-                        "mirrorDomainFidelityProjectionReady",
+                        "mirrorDomainFidelityProjectionReady", true)
+                .containsEntry(
+                        "mirrorDomainFidelityScenarioAdapterReady",
                         true);
         signer.set(false);
         assertThat(service.capabilities().payload().features())

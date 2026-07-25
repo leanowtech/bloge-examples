@@ -1,5 +1,8 @@
 package com.leanowtech.bloge.gateway.integration;
 
+import com.leanowtech.bloge.gateway.integration.mirror.DomainFidelityMeasurementSource;
+import com.leanowtech.bloge.gateway.integration.mirror.DomainFidelitySourceAvailability;
+
 import java.util.Objects;
 import java.util.function.BooleanSupplier;
 
@@ -14,20 +17,19 @@ public final class DomainFidelityRuntimeAvailability {
     private final boolean inventoryApi;
     private final boolean profileReadApi;
     private final BooleanSupplier signingReadiness;
-    private final BooleanSupplier sourceAdapterReadiness;
+    private final DomainFidelitySourceAvailability sources;
 
     /** Creates one profile-owned runtime marker. */
     public DomainFidelityRuntimeAvailability(
             boolean inventoryApi,
             boolean profileReadApi,
             BooleanSupplier signingReadiness,
-            BooleanSupplier sourceAdapterReadiness) {
+            DomainFidelitySourceAvailability sources) {
         this.inventoryApi = inventoryApi;
         this.profileReadApi = profileReadApi;
         this.signingReadiness = Objects.requireNonNull(
                 signingReadiness, "signingReadiness");
-        this.sourceAdapterReadiness = Objects.requireNonNull(
-                sourceAdapterReadiness, "sourceAdapterReadiness");
+        this.sources = Objects.requireNonNull(sources, "sources");
     }
 
     /** @return whether protected inventory register/read routes are assembled */
@@ -54,7 +56,28 @@ public final class DomainFidelityRuntimeAvailability {
         return inventoryApi
                 && profileReadApi
                 && signingReady()
-                && probe(sourceAdapterReadiness);
+                && sources.anyReady();
+    }
+
+    /** @return whether signed Scenario workbooks can be independently verified and projected */
+    public boolean scenarioAdapterReady() {
+        return sources.ready(
+                DomainFidelityMeasurementSource.Type
+                        .SCENARIO_REHEARSAL);
+    }
+
+    /** @return whether read-only shadow comparisons can be independently verified and projected */
+    public boolean shadowAdapterReady() {
+        return sources.ready(
+                DomainFidelityMeasurementSource.Type
+                        .READ_ONLY_SHADOW);
+    }
+
+    /** @return whether authoritative business outcomes can be independently verified */
+    public boolean outcomeAdapterReady() {
+        return sources.ready(
+                DomainFidelityMeasurementSource.Type
+                        .AUTHORITATIVE_OUTCOME);
     }
 
     private static boolean probe(BooleanSupplier source) {

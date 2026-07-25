@@ -24,17 +24,23 @@
 - 使用现有 managed evidence signer 的 domain-separated Ed25519 profile seal；
 - auth-before-decode 的 inventory register/read 和 signed profile read API；
 - owner/projector 职责隔离、同事务成功审计与审计失败回滚；
-- 分开报告 route、signing、source adapter 和 projection readiness 的 capability probe。
+- Scenario workbook source adapter：重验 aggregate/retention 双签名、workbook/assertion
+  内容地址、signed aggregate 对账与 exact inventory case closure；
+- Scenario assertion 到 `BEHAVIOR/CONTRACT/EFFECT/STATE_TRANSITION` 的保守映射；
+- 可组合、动态、fail-closed 的 typed source readiness；
+- 分开报告 route、signing、各 source adapter 和 partial-profile projection readiness 的
+  capability probe。
 
-尚未实现，因此不能宣称 profile projection ready：
+尚未实现：
 
-- Scenario workbook、read-only shadow、authoritative outcome 到
-  `Measurement` 的独立来源适配器；
+- read-only shadow、authoritative outcome 到 `Measurement` 的独立来源适配器；
+- request-space sampling proof 与 error-distribution cohort adapter；
 - drift 自动降级、shadow job、outcome reconciliation 和工作台。
 
-因此 inventory/profile 受保护 API 与 managed signing 可以报告 ready，但
-`mirrorDomainFidelityProjectionReady` 必须保持 `false`。历史 profile 可被读取和独立验真，
-不等于系统现在能从真实业务证据生成新 profile。
+因此在 managed signer 和 Scenario authority 可用时，
+`mirrorDomainFidelityProjectionReady=true` 只表示系统能从已签名演练证据生成一份显式带
+abstention debt 的**部分 profile**。它不表示 shadow 已对照、请求空间已覆盖或业务结果已校准；
+这三个事实必须分别读取 typed adapter flag 和 profile limitations。
 
 ## 2. 为什么需要两个对象
 
@@ -220,6 +226,39 @@ unsignedProfile.verify(objectMapper);
 evidence signer 签名、立即自验并持久化。该方法没有 HTTP 路由；普通业务调用方不能提交
 `certifiable=true` 自证来源可信，业务代码也不得安装隐式开发私钥。
 
+已签名 Scenario run 不需要由调用方手工组装 `Measurement`。内部 projector 使用：
+
+```java
+DomainFidelityProfile profile =
+        domainFidelityService.projectScenario(
+                inventoryRef,
+                List.of(scenarioRunIdA, scenarioRunIdB),
+                scenarioRehearsalDomainFidelitySource,
+                projectorIdentity);
+```
+
+`runIds` 的 case 并集必须与 inventory unit 一一对应，不能缺失、重复或夹带其他 case。
+适配器会用 `GOVERNANCE_EVIDENCE_INGESTION` 子目的读取 durable aggregate/workbook，再独立重验：
+
+1. aggregate 内容地址和 Ed25519 签名；
+2. workbook 内容地址及其与 signed aggregate 的逐 case 对账；
+3. retention registration 内容地址和 Ed25519 签名；
+4. 每条 assertion result 内容地址；
+5. full scope、exact ScenarioCase、case type 和 target capability。
+
+Scenario fixture 来源固定标为 `SYNTHESIZED`。它只映射可证明的四类维度：
+
+| Workbook observation | Fidelity dimension |
+|---|---|
+| `GRAPH_OUTPUT_SCHEMA` | `CONTRACT` |
+| graph value、node/edge status、occurrence、input、error、fallback、governance、latency/retry/resource budget | `BEHAVIOR` |
+| `SIDE_EFFECT_RECEIPT`、`COMPENSATION` | `EFFECT` |
+| `STATE_TRANSITION`、`FINAL_STATE_INVARIANT` | `STATE_TRANSITION` |
+
+单次确定性演练不会被包装成业务结果、请求分布或故障分布证据，所以
+`OUTCOME`、`REQUEST_SPACE`、`ERROR_DISTRIBUTION` 继续 abstain。exploratory 或
+`EVIDENCE_INCOMPLETE` child 也会让相应 unit 全维 abstain。
+
 ### 5.1 受保护 API 用法
 
 路由只在显式开启 `gateway.testing.mirror.enabled=true` 的 `test` 或 `staging` profile
@@ -279,13 +318,13 @@ OIDC/mTLS adapter 或显式配置的测试身份 resolver 提供 human principal
 | `mirrorDomainFidelityInventoryApi` | inventory register/read route 已装配 |
 | `mirrorDomainFidelityProfileReadApi` | signed profile read route 已装配 |
 | `mirrorDomainFidelitySigningReady` | managed signer 当前可签名和验签 |
-| `mirrorDomainFidelityProjectionReady` | route、signer 和全部 verified source adapter 同时 ready |
-| `mirrorDomainFidelityScenarioAdapterReady` | 当前固定为 `false` |
-| `mirrorDomainFidelityShadowAdapterReady` | 当前固定为 `false` |
-| `mirrorDomainFidelityOutcomeAdapterReady` | 当前固定为 `false` |
+| `mirrorDomainFidelityProjectionReady` | route、signer 和至少一个 verified source adapter ready，可生成显式部分 profile |
+| `mirrorDomainFidelityScenarioAdapterReady` | Scenario aggregate/workbook/retention 验真链当前可用 |
+| `mirrorDomainFidelityShadowAdapterReady` | 当前为 `false`；不能宣称真实行为已对照 |
+| `mirrorDomainFidelityOutcomeAdapterReady` | 当前为 `false`；不能宣称业务结果已校准 |
 
-调用方不得用前三项推导第四项；readable history、available key 和可生成新 profile 是三个不同
-生命周期事实。
+调用方不得用 projection flag 推导 shadow/outcome flag；readable history、available key、
+可生成部分 profile、真实行为对照和业务结果校准是不同生命周期事实。
 
 ## 6. 治理侧离线验真
 
@@ -344,6 +383,8 @@ Schema 使用 `additionalProperties: false`。profile 不允许业务 payload、
 |---|---|
 | Inventory 无 Owner 审批、过期、撤销或 scope 不一致 | 拒绝投影 |
 | Unit 不在 inventory 或 Scenario ref 漂移 | 拒绝投影 |
+| Scenario workbook case 并集缺失、重复或夹带额外 case | 拒绝整次来源投影 |
+| Workbook 与 signed aggregate、retention 或 assertion 指纹不一致 | 拒绝整次来源投影 |
 | 没有来源证据 | 保留 unit，逐维 `MISSING` |
 | 证据过期 | 全维 `STALE`，profile 为 `STALE` |
 | 证据非 certifiable 或不完整 | 逐维 `ABSTAINED` |
@@ -370,15 +411,13 @@ Schema 使用 `additionalProperties: false`。profile 不允许业务 payload、
 
 ## 10. 下一实施纵切
 
-repository、managed signer、受保护 inventory/read API 和 capability 分层已完成。下一步按来源信任
-依赖推进：
+repository、managed signer、受保护 inventory/read API、Scenario source adapter 和 capability
+分层已完成。下一步按来源信任依赖推进：
 
-1. 实现 Scenario workbook source adapter：先用 Test Kit 独立验真 seed、child evidence 和签名，
-   再映射 payload-free `Measurement`。
-2. 将 source adapter readiness 做成可组合 provider，而不是配置布尔值。
-3. 实现 read-only shadow comparison、typed diff 和 sampling/egress policy。
-4. 实现 authoritative outcome observation 与 delayed/censored reconciliation。
-5. 把 drift 自动降级、profile limitations/stale/debt 接入 ANEKE gate 与 Owner workbench。
+1. 实现 read-only shadow comparison、typed diff 和 sampling/egress policy。
+2. 实现 authoritative outcome observation 与 delayed/censored reconciliation。
+3. 为 `ERROR_DISTRIBUTION` 和 `REQUEST_SPACE` 增加 cohort/sampling proof，而不是借用单次
+   Scenario PASS。
+4. 把 drift 自动降级、profile limitations/stale/debt 接入 ANEKE gate 与 Owner workbench。
 
-在第 1 项完成前，`mirrorDomainFidelityProjectionReady` 必须保持 `false`；在 shadow/outcome
-未完成前，也不能把 profile 描述为“真实行为已对照”或“业务结果已校准”。
+在 shadow/outcome 未完成前，不能把 partial profile 描述为“真实行为已对照”或“业务结果已校准”。

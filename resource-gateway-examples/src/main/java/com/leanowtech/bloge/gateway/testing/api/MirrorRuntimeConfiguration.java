@@ -72,9 +72,11 @@ import com.leanowtech.bloge.gateway.integration.mirror.MirrorDeploymentIsolation
 import com.leanowtech.bloge.gateway.integration.mirror.MirrorRunIntegrationService;
 import com.leanowtech.bloge.gateway.integration.mirror.MirrorRunRequestRepository;
 import com.leanowtech.bloge.gateway.integration.mirror.DomainFidelityPolicy;
+import com.leanowtech.bloge.gateway.integration.mirror.DomainFidelityMeasurementSource;
 import com.leanowtech.bloge.gateway.integration.mirror.DomainFidelityProfileIntegrity;
 import com.leanowtech.bloge.gateway.integration.mirror.DomainFidelityRepository;
 import com.leanowtech.bloge.gateway.integration.mirror.DomainFidelityService;
+import com.leanowtech.bloge.gateway.integration.mirror.DomainFidelitySourceAvailability;
 import com.leanowtech.bloge.gateway.integration.mirror.CompiledScenarioRehearsalPlanRepository;
 import com.leanowtech.bloge.gateway.integration.mirror.MirrorSessionCheckpointIntegrityService;
 import com.leanowtech.bloge.gateway.integration.mirror.ScenarioArtifactRepository;
@@ -106,6 +108,7 @@ import com.leanowtech.bloge.gateway.integration.mirror.ScenarioRehearsalRemediat
 import com.leanowtech.bloge.gateway.integration.mirror.ScenarioRehearsalRemediationService;
 import com.leanowtech.bloge.gateway.integration.mirror.ScenarioRehearsalIntegrationService;
 import com.leanowtech.bloge.gateway.integration.mirror.ScenarioRehearsalRuntimeService;
+import com.leanowtech.bloge.gateway.integration.mirror.ScenarioRehearsalDomainFidelitySource;
 import com.leanowtech.bloge.gateway.integration.mirror.ScenarioRehearsalLifecycleAuditRepository;
 import com.leanowtech.bloge.gateway.integration.mirror.ScenarioRehearsalRetentionRepository;
 import com.leanowtech.bloge.gateway.integration.mirror.ScenarioRehearsalRunRepository;
@@ -1294,24 +1297,48 @@ public class MirrorRuntimeConfiguration {
                 observability);
     }
 
-    /**
-     * Publishes separate route, signer, and source-adapter readiness.
-     *
-     * <p>Source adapters remain deliberately false in this increment. Their later composition
-     * replaces the final supplier instead of allowing repository or signer presence to imply that
-     * a new profile can be projected.</p>
-     */
+    /** Creates the independently verified Scenario-workbook Fidelity source adapter. */
+    @Bean
+    @ConditionalOnMissingBean
+    @ConditionalOnBean(ScenarioRehearsalRuntimeService.class)
+    public ScenarioRehearsalDomainFidelitySource
+    scenarioRehearsalDomainFidelitySource(
+            ScenarioRehearsalRuntimeService rehearsals,
+            ScenarioRehearsalEvidenceIntegrityService evidenceIntegrity,
+            VisualEvidenceSigner signer,
+            DomainFidelityPolicy policy,
+            ObjectMapper objectMapper) {
+        return new ScenarioRehearsalDomainFidelitySource(
+                rehearsals,
+                evidenceIntegrity,
+                signer,
+                policy,
+                objectMapper);
+    }
+
+    /** Composes typed, independently probed source-adapter readiness. */
+    @Bean
+    @ConditionalOnMissingBean
+    public DomainFidelitySourceAvailability
+    domainFidelitySourceAvailability(
+            java.util.List<DomainFidelityMeasurementSource>
+                    sources) {
+        return new DomainFidelitySourceAvailability(sources);
+    }
+
+    /** Publishes separate route, signer, and typed source-adapter readiness. */
     @Bean
     @ConditionalOnMissingBean
     @ConditionalOnBean(DomainFidelityService.class)
     public DomainFidelityRuntimeAvailability
     domainFidelityRuntimeAvailability(
-            DomainFidelityProfileIntegrity integrity) {
+            DomainFidelityProfileIntegrity integrity,
+            DomainFidelitySourceAvailability sources) {
         return new DomainFidelityRuntimeAvailability(
                 true,
                 true,
                 integrity::available,
-                () -> false);
+                sources);
     }
 
     /**

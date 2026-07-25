@@ -26,6 +26,7 @@ import com.leanowtech.bloge.gateway.testing.api.WorkerQuarantineChangeAuthorizat
 import com.leanowtech.bloge.gateway.integration.mirror.ScenarioRehearsalBatchScheduler;
 import com.leanowtech.bloge.gateway.integration.mirror.ScenarioRehearsalBatchFinalizationScheduler;
 import com.leanowtech.bloge.gateway.integration.mirror.ScenarioRehearsalBatchFinalizationSloMonitor;
+import com.leanowtech.bloge.gateway.integration.mirror.DomainFidelitySourceAvailability;
 import com.leanowtech.bloge.gateway.visual.catalog.VisualOperatorCatalog;
 import com.leanowtech.bloge.gateway.visual.draft.GraphDraft;
 import com.leanowtech.bloge.gateway.visual.draft.GraphDraftDependencyReport;
@@ -84,7 +85,11 @@ public class ToolStudioIntegrationService {
     private DomainFidelityRuntimeAvailability
             domainFidelityRuntimeAvailability =
             new DomainFidelityRuntimeAvailability(
-                    false, false, () -> false, () -> false);
+                    false,
+                    false,
+                    () -> false,
+                    new DomainFidelitySourceAvailability(
+                            List.of()));
     private ScenarioRehearsalBatchScheduler
             scenarioRehearsalBatchScheduler;
     private ScenarioRehearsalBatchFinalizationScheduler
@@ -189,7 +194,11 @@ public class ToolStudioIntegrationService {
         this.domainFidelityRuntimeAvailability =
                 availability == null
                         ? new DomainFidelityRuntimeAvailability(
-                        false, false, () -> false, () -> false)
+                        false,
+                        false,
+                        () -> false,
+                        new DomainFidelitySourceAvailability(
+                                List.of()))
                         : availability;
     }
 
@@ -583,13 +592,16 @@ public class ToolStudioIntegrationService {
                 domainFidelityRuntimeAvailability.projectionReady());
         features.put(
                 "mirrorDomainFidelityScenarioAdapterReady",
-                false);
+                domainFidelityRuntimeAvailability
+                        .scenarioAdapterReady());
         features.put(
                 "mirrorDomainFidelityShadowAdapterReady",
-                false);
+                domainFidelityRuntimeAvailability
+                        .shadowAdapterReady());
         features.put(
                 "mirrorDomainFidelityOutcomeAdapterReady",
-                false);
+                domainFidelityRuntimeAvailability
+                        .outcomeAdapterReady());
         features.put("mirrorStatefulSessionApi", mirrorStatefulSessionApi);
         features.put("mirrorStatefulStateStoreReady", mirrorStatefulStoreReady);
         features.put("mirrorStateCheckpointProtocol",

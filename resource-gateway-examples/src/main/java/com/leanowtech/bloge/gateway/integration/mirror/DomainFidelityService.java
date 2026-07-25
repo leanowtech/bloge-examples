@@ -175,6 +175,52 @@ public class DomainFidelityService {
             List<DomainFidelityProfileProjector.Measurement>
                     measurements,
             IntegrationRequestContext identity) {
+        List<DomainFidelityProfileProjector.Measurement> exact =
+                measurements == null
+                        ? List.of()
+                        : List.copyOf(measurements);
+        return project(
+                inventoryRef,
+                ignored -> exact,
+                identity);
+    }
+
+    /**
+     * Publishes a profile directly from independently re-verified Scenario workbook runs.
+     *
+     * <p>This internal method keeps source resolution inside the same authorization, current-head,
+     * projection, signing, persistence, and success-audit transaction used by pre-verified
+     * measurements. It has no HTTP route.</p>
+     *
+     * @param inventoryRef exact current inventory head
+     * @param runIds exact Scenario aggregate runs covering the complete inventory
+     * @param source assembled Scenario source authority
+     * @param identity authenticated projector service
+     * @return signed, committed, or idempotently recovered profile
+     */
+    @Transactional
+    public DomainFidelityProfile projectScenario(
+            MirrorArtifactRef inventoryRef,
+            List<String> runIds,
+            ScenarioRehearsalDomainFidelitySource source,
+            IntegrationRequestContext identity) {
+        ScenarioRehearsalDomainFidelitySource exactSource =
+                Objects.requireNonNull(source, "source");
+        List<String> exactRunIds =
+                runIds == null ? List.of() : List.copyOf(runIds);
+        return project(
+                inventoryRef,
+                inventory -> exactSource.measurements(
+                        inventory,
+                        exactRunIds,
+                        identity),
+                identity);
+    }
+
+    private DomainFidelityProfile project(
+            MirrorArtifactRef inventoryRef,
+            MeasurementProvider measurements,
+            IntegrationRequestContext identity) {
         IntegrationRequestContext exactIdentity =
                 requireIdentity(
                         identity,
@@ -244,7 +290,7 @@ public class DomainFidelityService {
                     DomainFidelityProfileProjector.project(
                             mapper,
                             inventory,
-                            measurements,
+                            measurements.measure(inventory),
                             policy.projectionPolicy(),
                             measuredAt);
             DomainFidelityProfile signed =
@@ -258,6 +304,12 @@ public class DomainFidelityService {
             throw observation.failed(
                     mapFailure(failure, exactIdentity));
         }
+    }
+
+    @FunctionalInterface
+    private interface MeasurementProvider {
+        List<DomainFidelityProfileProjector.Measurement>
+        measure(DomainFidelityInventory inventory);
     }
 
     /** Reads one exact inventory revision after full repository verification. */
