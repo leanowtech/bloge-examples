@@ -75,10 +75,10 @@
   使用授权、跨系统 schema owner、部署/namespace 形态等组织决策仍是生产准入前置，不由仓库测试冒充完成。
 - 当前验证基线：前端 Vitest `158/158` 全绿并完成 TypeScript/Vite 生产构建；带 `-Pfrontend` 的真实
   Chrome 演练工作台三档响应式用例 `1/1` 全绿。纳入当前 compiler、mirror runtime 与 stateful recovery kernel 后，
-  Resource Gateway 最新完整 Java 门禁为 `5175` 项测试、0 失败、0 错误、4 项条件跳过；其中
+  Resource Gateway 最新完整 Java 门禁为 `5179` 项测试、0 失败、0 错误、4 项条件跳过；其中
   `VisualAuthoringBrowserDomTest` 的 32 项非 frontend-bundle 场景和
   `VisualAuthoringBrowserWorkflowTest` 均已在真实 Chrome 中执行，4 项投影用例在普通门禁中仅因未启用
-  `-Pfrontend` 而条件跳过，并已在定向 frontend 门禁中验证。独立 test-kit `392/392` 全绿，126 份 Mirror Schema 完成引用闭包与
+  `-Pfrontend` 而条件跳过，并已在定向 frontend 门禁中验证。独立 test-kit `394/394` 全绿，132 份 Mirror Schema 完成引用闭包与
   打包验证，公共 JavaDoc、普通 JAR 与 shaded JAR 均成功生成。
 - Stage 1 第二增量已实现 `MirrorPlanCompiler`、`MirrorPlanCompilationRequest`、`CompiledMirrorPlan` 和
   `ExecutionControlCompiler.compileMirror` adapter。编译器把每条 direct/nested external capability edge 对账到
@@ -1522,6 +1522,63 @@ job listing 也以真实 demo token 返回 strict empty-page envelope。
 批准后提交，随后自动创建复演并把 predecessor/successor evidence 并排对账。不能
 先开放任意 JSON/DSL 编辑，也不能把已有 finalization-admin API 直接暴露给普通
 Owner。零 DSL case 调整与复杂内置样例紧随其后，Fidelity/Outcome 主链继续并行。
+
+### 3.21 2026-07-25 Owner 经评审修复协议迭代差距复评
+
+本轮先根治“修复动作没有稳定业务协议”的问题，没有抢跑成一个只在单进程内可用的
+按钮。新增六个 strict、版本化且 payload-free 的对象：
+`ScenarioRehearsalRemediationPreviewRequest`、
+`ScenarioRehearsalRemediationPlan`、
+`ScenarioRehearsalRemediationApprovalCommand`、
+`ScenarioRehearsalRemediationApproval`、
+`ScenarioRehearsalRemediationSubmitCommand` 和
+`ScenarioRehearsalRemediationReceipt`。协议把生命周期固定为：
+
+```text
+preview intent
+  -> content-addressed frozen plan
+  -> append-only OWNER approval
+  -> append-only INDEPENDENT_REVIEWER approval
+  -> CAS submit
+  -> distinct successor batch receipt
+```
+
+首版只允许两类受治理动作。`RERUN_EXACT` 用于瞬时执行或证据重检，禁止携带
+replacement；`REPLACE_COMPILED_PLANS` 只按原 entry index/id 替换为已经存在的
+exact `COMPILED_REHEARSAL_PLAN`，未指定 entry 保持不变。完整 successor
+`ScenarioRehearsalBatchRequest` 在 plan 生成时冻结；提交命令不能重新携带或修改它。
+任意 JSON/DSL patch、删除 case、降低 assertion severity、弱化 credential、
+network、runtime 或 certification policy 都不属于该协议。
+
+审批事实由服务端写入 actor、delegation 和 accepted-at，不信任客户端自报身份或
+时间。审批链按 generation 和 previous fingerprint 串联；最终提交同时比较 plan
+fingerprint、approval generation 和 approval head。固定策略要求 OWNER 与
+INDEPENDENT_REVIEWER 两种角色、至少两个不同 actor。Schema 能验证结构条件；
+exact predecessor、替换闭包、角色顺序、actor 分离和 CAS 原子性必须由下一纵切的
+repository/service 在事务内重新验证。
+
+尤其需要区分两个同名相近但权限完全不同的能力：
+
+| 能力 | 用户/目的 | 是否创建新业务演练 |
+|---|---|---:|
+| `ScenarioRehearsalBatchFinalizationRemediation*` | SRE/admin 修复 quarantined KMS/outbox finalization | 否 |
+| `ScenarioRehearsalRemediation*` | Owner 对业务 blocker 发起双人评审后的后继演练 | 是 |
+
+本轮只交付 Java domain protocol、六份 authoritative Schema、Test Kit fail-closed
+打包/校验和 capability object-version catalog；没有开放 API feature flag，也没有
+宣称 preview/approve/submit endpoint ready。持久化表、服务端 identity/purpose
+授权、审批链 CAS、successor enqueue、operation audit、幂等恢复、工作台控件和
+predecessor/successor 签名 workbook 对账仍未实现。因此业务运营工作台成熟度和
+固定权重总分暂时保持 `30%` 与 `64.36%`，距理想态仍为 `35.64%`。
+
+本轮完整 Resource Gateway 门禁通过 `5179` 项测试、0 失败、0 错误、4 项条件跳过，
+包含真实 Chrome 工作流与可执行 Boot JAR；独立 Test Kit `394/394` 全绿，132 份
+Mirror Schema 完成 fail-closed 引用闭包、普通/shaded JAR 打包和公共 JavaDoc 校验。
+
+下一条最短路径是实现 durable remediation repository 与应用服务：同事务完成
+plan reservation、审批 append CAS、提交幂等键、successor batch 入队和成功审计；
+拒绝、冲突、过期与审计失败必须失败关闭。服务闭合后再接受保护 API 和 Owner UI，
+最后只从两份已验签 predecessor/successor workbook 派生比较视图。
 
 ## 4. 目标架构与系统责任
 

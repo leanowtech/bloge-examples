@@ -1,0 +1,76 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://bloge.dev/schemas/resource-gateway-mirror/scenario-rehearsal-remediation-receipt-v1.schema.json",
+  "title": "Resource Gateway Scenario Rehearsal Remediation Receipt v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "receiptFingerprint",
+    "sourceCommandFingerprint",
+    "scope",
+    "remediationId",
+    "remediationPlanFingerprint",
+    "predecessorJobId",
+    "successorJobId",
+    "successorRequestFingerprint",
+    "approvalGeneration",
+    "approvalHeadFingerprint",
+    "acceptedBy",
+    "delegatedBy",
+    "acceptedAt"
+  ],
+  "properties": {
+    "schemaVersion": {
+      "const": "resourceGateway.scenarioRehearsalRemediationReceipt.v1"
+    },
+    "receiptFingerprint": {
+      "$ref": "mirror-plan-v1.schema.json#/$defs/fingerprint"
+    },
+    "sourceCommandFingerprint": {
+      "$ref": "mirror-plan-v1.schema.json#/$defs/fingerprint"
+    },
+    "scope": {
+      "$ref": "mirror-plan-v1.schema.json#/$defs/scope"
+    },
+    "remediationId": {
+      "$ref": "scenario-rehearsal-remediation-plan-v1.schema.json#/$defs/remediationId"
+    },
+    "remediationPlanFingerprint": {
+      "$ref": "mirror-plan-v1.schema.json#/$defs/fingerprint"
+    },
+    "predecessorJobId": {
+      "$ref": "scenario-rehearsal-remediation-plan-v1.schema.json#/$defs/batchId"
+    },
+    "successorJobId": {
+      "$ref": "scenario-rehearsal-remediation-plan-v1.schema.json#/$defs/batchId"
+    },
+    "successorRequestFingerprint": {
+      "$ref": "mirror-plan-v1.schema.json#/$defs/fingerprint"
+    },
+    "approvalGeneration": {
+      "type": "integer",
+      "minimum": 2
+    },
+    "approvalHeadFingerprint": {
+      "$ref": "mirror-plan-v1.schema.json#/$defs/fingerprint"
+    },
+    "acceptedBy": {
+      "$ref": "scenario-rehearsal-remediation-approval-v1.schema.json#/$defs/actor"
+    },
+    "delegatedBy": {
+      "oneOf": [
+        {
+          "const": ""
+        },
+        {
+          "$ref": "scenario-rehearsal-remediation-approval-v1.schema.json#/$defs/actor"
+        }
+      ]
+    },
+    "acceptedAt": {
+      "type": "string",
+      "format": "date-time"
+    }
+  }
+}

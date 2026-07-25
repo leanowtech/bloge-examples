@@ -1043,6 +1043,42 @@ public class ToolStudioIntegrationService {
                                         .ScenarioRehearsalBatchFinalizationHealth
                                         .SCHEMA_VERSION));
                 supportedObjects.put(
+                        "scenarioRehearsalRemediationPreviewRequest",
+                        List.of(
+                                com.leanowtech.bloge.gateway.integration.mirror
+                                        .ScenarioRehearsalRemediationPreviewRequest
+                                        .SCHEMA_VERSION));
+                supportedObjects.put(
+                        "scenarioRehearsalRemediationPlan",
+                        List.of(
+                                com.leanowtech.bloge.gateway.integration.mirror
+                                        .ScenarioRehearsalRemediationPlan
+                                        .SCHEMA_VERSION));
+                supportedObjects.put(
+                        "scenarioRehearsalRemediationApprovalCommand",
+                        List.of(
+                                com.leanowtech.bloge.gateway.integration.mirror
+                                        .ScenarioRehearsalRemediationApprovalCommand
+                                        .SCHEMA_VERSION));
+                supportedObjects.put(
+                        "scenarioRehearsalRemediationApproval",
+                        List.of(
+                                com.leanowtech.bloge.gateway.integration.mirror
+                                        .ScenarioRehearsalRemediationApproval
+                                        .SCHEMA_VERSION));
+                supportedObjects.put(
+                        "scenarioRehearsalRemediationSubmitCommand",
+                        List.of(
+                                com.leanowtech.bloge.gateway.integration.mirror
+                                        .ScenarioRehearsalRemediationSubmitCommand
+                                        .SCHEMA_VERSION));
+                supportedObjects.put(
+                        "scenarioRehearsalRemediationReceipt",
+                        List.of(
+                                com.leanowtech.bloge.gateway.integration.mirror
+                                        .ScenarioRehearsalRemediationReceipt
+                                        .SCHEMA_VERSION));
+                supportedObjects.put(
                         "scenarioRehearsalBatchCancellationRequest",
                         List.of(
                                 com.leanowtech.bloge.gateway.integration.mirror

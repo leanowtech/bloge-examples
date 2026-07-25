@@ -1,0 +1,153 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://bloge.dev/schemas/resource-gateway-mirror/scenario-rehearsal-remediation-preview-request-v1.schema.json",
+  "title": "Resource Gateway Scenario Rehearsal Remediation Preview Request v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "previewRequestId",
+    "expectedWorkbookSeedFingerprint",
+    "strategy",
+    "replacements",
+    "governanceTicketRef",
+    "reasonCode"
+  ],
+  "properties": {
+    "schemaVersion": {
+      "const": "resourceGateway.scenarioRehearsalRemediationPreviewRequest.v1"
+    },
+    "previewRequestId": {
+      "$ref": "#/$defs/identifier"
+    },
+    "expectedWorkbookSeedFingerprint": {
+      "$ref": "mirror-plan-v1.schema.json#/$defs/fingerprint"
+    },
+    "strategy": {
+      "enum": ["RERUN_EXACT", "REPLACE_COMPILED_PLANS"]
+    },
+    "replacements": {
+      "type": "array",
+      "maxItems": 256,
+      "uniqueItems": true,
+      "items": {
+        "$ref": "#/$defs/planReplacement"
+      }
+    },
+    "governanceTicketRef": {
+      "$ref": "#/$defs/governanceTicketRef"
+    },
+    "reasonCode": {
+      "enum": [
+        "TRANSIENT_EXECUTION_RECHECK",
+        "EVIDENCE_RECOVERY_RECHECK",
+        "SCENARIO_REVISION",
+        "FIXTURE_REVISION",
+        "ASSERTION_REVISION",
+        "MIRROR_PLAN_REVISION"
+      ]
+    }
+  },
+  "allOf": [
+    {
+      "if": {
+        "properties": {
+          "strategy": {
+            "const": "RERUN_EXACT"
+          }
+        },
+        "required": ["strategy"]
+      },
+      "then": {
+        "properties": {
+          "replacements": {
+            "maxItems": 0
+          },
+          "reasonCode": {
+            "enum": [
+              "TRANSIENT_EXECUTION_RECHECK",
+              "EVIDENCE_RECOVERY_RECHECK"
+            ]
+          }
+        }
+      },
+      "else": {
+        "properties": {
+          "replacements": {
+            "minItems": 1
+          },
+          "reasonCode": {
+            "enum": [
+              "SCENARIO_REVISION",
+              "FIXTURE_REVISION",
+              "ASSERTION_REVISION",
+              "MIRROR_PLAN_REVISION"
+            ]
+          }
+        }
+      }
+    }
+  ],
+  "$defs": {
+    "identifier": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 128,
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$"
+    },
+    "compiledPlanRef": {
+      "allOf": [
+        {
+          "$ref": "scenario-pack-v1.schema.json#/$defs/artifactRefByKind"
+        },
+        {
+          "properties": {
+            "kind": {
+              "const": "COMPILED_REHEARSAL_PLAN"
+            }
+          }
+        }
+      ]
+    },
+    "governanceTicketRef": {
+      "allOf": [
+        {
+          "$ref": "scenario-pack-v1.schema.json#/$defs/artifactRefByKind"
+        },
+        {
+          "properties": {
+            "kind": {
+              "const": "GOVERNANCE_REVIEW_TICKET"
+            }
+          }
+        }
+      ]
+    },
+    "planReplacement": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "entryIndex",
+        "entryId",
+        "expectedCompiledPlanRef",
+        "replacementCompiledPlanRef"
+      ],
+      "properties": {
+        "entryIndex": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 255
+        },
+        "entryId": {
+          "$ref": "#/$defs/identifier"
+        },
+        "expectedCompiledPlanRef": {
+          "$ref": "#/$defs/compiledPlanRef"
+        },
+        "replacementCompiledPlanRef": {
+          "$ref": "#/$defs/compiledPlanRef"
+        }
+      }
+    }
+  }
+}

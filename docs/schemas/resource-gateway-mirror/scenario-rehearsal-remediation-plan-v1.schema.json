@@ -1,0 +1,172 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://bloge.dev/schemas/resource-gateway-mirror/scenario-rehearsal-remediation-plan-v1.schema.json",
+  "title": "Resource Gateway Scenario Rehearsal Remediation Plan v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "planFingerprint",
+    "scope",
+    "remediationId",
+    "previewRequestId",
+    "predecessorJobId",
+    "predecessorWorkbookSeedFingerprint",
+    "predecessorEvidenceBundleFingerprint",
+    "predecessorStatus",
+    "predecessorBlockers",
+    "strategy",
+    "replacements",
+    "successorRequest",
+    "successorRequestFingerprint",
+    "governanceTicketRef",
+    "approvalPolicy",
+    "generatedAt",
+    "expiresAt"
+  ],
+  "properties": {
+    "schemaVersion": {
+      "const": "resourceGateway.scenarioRehearsalRemediationPlan.v1"
+    },
+    "planFingerprint": {
+      "$ref": "mirror-plan-v1.schema.json#/$defs/fingerprint"
+    },
+    "scope": {
+      "$ref": "mirror-plan-v1.schema.json#/$defs/scope"
+    },
+    "remediationId": {
+      "$ref": "#/$defs/remediationId"
+    },
+    "previewRequestId": {
+      "$ref": "scenario-rehearsal-remediation-preview-request-v1.schema.json#/$defs/identifier"
+    },
+    "predecessorJobId": {
+      "$ref": "#/$defs/batchId"
+    },
+    "predecessorWorkbookSeedFingerprint": {
+      "$ref": "mirror-plan-v1.schema.json#/$defs/fingerprint"
+    },
+    "predecessorEvidenceBundleFingerprint": {
+      "$ref": "mirror-plan-v1.schema.json#/$defs/fingerprint"
+    },
+    "predecessorStatus": {
+      "enum": [
+        "SUCCEEDED",
+        "PARTIAL",
+        "FAILED",
+        "CANCELLED",
+        "EXPIRED",
+        "QUARANTINED"
+      ]
+    },
+    "predecessorBlockers": {
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 16,
+      "uniqueItems": true,
+      "items": {
+        "$ref": "#/$defs/machineCode"
+      }
+    },
+    "strategy": {
+      "enum": ["RERUN_EXACT", "REPLACE_COMPILED_PLANS"]
+    },
+    "replacements": {
+      "type": "array",
+      "maxItems": 256,
+      "uniqueItems": true,
+      "items": {
+        "$ref": "scenario-rehearsal-remediation-preview-request-v1.schema.json#/$defs/planReplacement"
+      }
+    },
+    "successorRequest": {
+      "$ref": "scenario-rehearsal-batch-request-v1.schema.json"
+    },
+    "successorRequestFingerprint": {
+      "$ref": "mirror-plan-v1.schema.json#/$defs/fingerprint"
+    },
+    "governanceTicketRef": {
+      "$ref": "scenario-rehearsal-remediation-preview-request-v1.schema.json#/$defs/governanceTicketRef"
+    },
+    "approvalPolicy": {
+      "$ref": "#/$defs/approvalPolicy"
+    },
+    "generatedAt": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "expiresAt": {
+      "type": "string",
+      "format": "date-time"
+    }
+  },
+  "allOf": [
+    {
+      "if": {
+        "properties": {
+          "strategy": {
+            "const": "RERUN_EXACT"
+          }
+        },
+        "required": ["strategy"]
+      },
+      "then": {
+        "properties": {
+          "replacements": {
+            "maxItems": 0
+          }
+        }
+      },
+      "else": {
+        "properties": {
+          "replacements": {
+            "minItems": 1
+          }
+        }
+      }
+    }
+  ],
+  "$defs": {
+    "remediationId": {
+      "type": "string",
+      "pattern": "^scenario-remediation-[a-f0-9]{64}$"
+    },
+    "batchId": {
+      "type": "string",
+      "pattern": "^scenario-batch-[a-f0-9]{64}$"
+    },
+    "machineCode": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 255,
+      "pattern": "^[A-Z][A-Z0-9_.-]{0,254}$"
+    },
+    "approvalPolicy": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "requiredRoles",
+        "minimumDistinctActors"
+      ],
+      "properties": {
+        "requiredRoles": {
+          "type": "array",
+          "minItems": 2,
+          "maxItems": 2,
+          "prefixItems": [
+            {
+              "const": "OWNER"
+            },
+            {
+              "const": "INDEPENDENT_REVIEWER"
+            }
+          ],
+          "items": false
+        },
+        "minimumDistinctActors": {
+          "const": 2
+        }
+      }
+    }
+  }
+}

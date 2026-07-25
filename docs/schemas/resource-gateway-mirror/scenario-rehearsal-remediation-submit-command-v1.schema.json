@@ -1,0 +1,36 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://bloge.dev/schemas/resource-gateway-mirror/scenario-rehearsal-remediation-submit-command-v1.schema.json",
+  "title": "Resource Gateway Scenario Rehearsal Remediation Submit Command v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "commandId",
+    "remediationPlanFingerprint",
+    "expectedApprovalGeneration",
+    "expectedApprovalHeadFingerprint",
+    "reasonCode"
+  ],
+  "properties": {
+    "schemaVersion": {
+      "const": "resourceGateway.scenarioRehearsalRemediationSubmitCommand.v1"
+    },
+    "commandId": {
+      "$ref": "scenario-rehearsal-remediation-preview-request-v1.schema.json#/$defs/identifier"
+    },
+    "remediationPlanFingerprint": {
+      "$ref": "mirror-plan-v1.schema.json#/$defs/fingerprint"
+    },
+    "expectedApprovalGeneration": {
+      "type": "integer",
+      "minimum": 2
+    },
+    "expectedApprovalHeadFingerprint": {
+      "$ref": "mirror-plan-v1.schema.json#/$defs/fingerprint"
+    },
+    "reasonCode": {
+      "const": "APPROVALS_COMPLETE"
+    }
+  }
+}

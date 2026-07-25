@@ -102,6 +102,12 @@ class CapabilityMirrorSchemaPackagingTest {
                 "scenario-rehearsal-batch-job-v1.schema.json",
                 "scenario-rehearsal-batch-job-v2.schema.json",
                 "scenario-rehearsal-batch-job-page-v1.schema.json",
+                "scenario-rehearsal-remediation-preview-request-v1.schema.json",
+                "scenario-rehearsal-remediation-plan-v1.schema.json",
+                "scenario-rehearsal-remediation-approval-command-v1.schema.json",
+                "scenario-rehearsal-remediation-approval-v1.schema.json",
+                "scenario-rehearsal-remediation-submit-command-v1.schema.json",
+                "scenario-rehearsal-remediation-receipt-v1.schema.json",
                 "scenario-rehearsal-batch-item-page-v1.schema.json",
                 "scenario-rehearsal-batch-evidence-index-v1.schema.json",
                 "scenario-rehearsal-batch-evidence-attestation-v1.schema.json",
@@ -244,6 +250,30 @@ class CapabilityMirrorSchemaPackagingTest {
                 .SCENARIO_REHEARSAL_BATCH_FINALIZATION_HEALTH_SCHEMA_RESOURCE)
                 .endsWith(
                         "scenario-rehearsal-batch-finalization-health-v1.schema.json");
+        assertThat(CapabilityMirrorProtocol
+                .SCENARIO_REHEARSAL_REMEDIATION_PREVIEW_REQUEST_SCHEMA_RESOURCE)
+                .endsWith(
+                        "scenario-rehearsal-remediation-preview-request-v1.schema.json");
+        assertThat(CapabilityMirrorProtocol
+                .SCENARIO_REHEARSAL_REMEDIATION_PLAN_SCHEMA_RESOURCE)
+                .endsWith(
+                        "scenario-rehearsal-remediation-plan-v1.schema.json");
+        assertThat(CapabilityMirrorProtocol
+                .SCENARIO_REHEARSAL_REMEDIATION_APPROVAL_COMMAND_SCHEMA_RESOURCE)
+                .endsWith(
+                        "scenario-rehearsal-remediation-approval-command-v1.schema.json");
+        assertThat(CapabilityMirrorProtocol
+                .SCENARIO_REHEARSAL_REMEDIATION_APPROVAL_SCHEMA_RESOURCE)
+                .endsWith(
+                        "scenario-rehearsal-remediation-approval-v1.schema.json");
+        assertThat(CapabilityMirrorProtocol
+                .SCENARIO_REHEARSAL_REMEDIATION_SUBMIT_COMMAND_SCHEMA_RESOURCE)
+                .endsWith(
+                        "scenario-rehearsal-remediation-submit-command-v1.schema.json");
+        assertThat(CapabilityMirrorProtocol
+                .SCENARIO_REHEARSAL_REMEDIATION_RECEIPT_SCHEMA_RESOURCE)
+                .endsWith(
+                        "scenario-rehearsal-remediation-receipt-v1.schema.json");
         assertThat(CapabilityMirrorProtocol
                 .SCENARIO_REHEARSAL_BATCH_ITEM_PAGE_SCHEMA_RESOURCE)
                 .endsWith(

@@ -1,0 +1,79 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://bloge.dev/schemas/resource-gateway-mirror/scenario-rehearsal-remediation-approval-command-v1.schema.json",
+  "title": "Resource Gateway Scenario Rehearsal Remediation Approval Command v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "commandId",
+    "remediationPlanFingerprint",
+    "expectedApprovalGeneration",
+    "role",
+    "decision",
+    "governanceTicketRef",
+    "reasonCode"
+  ],
+  "properties": {
+    "schemaVersion": {
+      "const": "resourceGateway.scenarioRehearsalRemediationApprovalCommand.v1"
+    },
+    "commandId": {
+      "$ref": "scenario-rehearsal-remediation-preview-request-v1.schema.json#/$defs/identifier"
+    },
+    "remediationPlanFingerprint": {
+      "$ref": "mirror-plan-v1.schema.json#/$defs/fingerprint"
+    },
+    "expectedApprovalGeneration": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "role": {
+      "enum": ["OWNER", "INDEPENDENT_REVIEWER"]
+    },
+    "decision": {
+      "enum": ["APPROVE", "REJECT"]
+    },
+    "governanceTicketRef": {
+      "$ref": "scenario-rehearsal-remediation-preview-request-v1.schema.json#/$defs/governanceTicketRef"
+    },
+    "reasonCode": {
+      "enum": [
+        "APPROVED_AS_REVIEWED",
+        "REJECTED_REQUIRES_CHANGES",
+        "REJECTED_POLICY_CONFLICT",
+        "REJECTED_INSUFFICIENT_EVIDENCE"
+      ]
+    }
+  },
+  "allOf": [
+    {
+      "if": {
+        "properties": {
+          "decision": {
+            "const": "APPROVE"
+          }
+        },
+        "required": ["decision"]
+      },
+      "then": {
+        "properties": {
+          "reasonCode": {
+            "const": "APPROVED_AS_REVIEWED"
+          }
+        }
+      },
+      "else": {
+        "properties": {
+          "reasonCode": {
+            "enum": [
+              "REJECTED_REQUIRES_CHANGES",
+              "REJECTED_POLICY_CONFLICT",
+              "REJECTED_INSUFFICIENT_EVIDENCE"
+            ]
+          }
+        }
+      }
+    }
+  ]
+}

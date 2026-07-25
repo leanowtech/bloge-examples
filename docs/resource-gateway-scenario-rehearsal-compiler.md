@@ -962,6 +962,41 @@ Webview 必须通过 `setOperatorTestHeadersProvider(...)` 注入短期身份。
 hold、purge 或 finalization-admin 按钮。Reviewed remediation 和零 DSL case 调整
 仍是下一阶段，不能通过开放通用 JSON/DSL 编辑器绕过。
 
+### 8.6 经评审修复协议
+
+Owner 的业务修复与 finalization 管理员修复是两套不同协议。前者创建不可变的后继
+批次；后者只重放 quarantined KMS/outbox intent，不改变业务计划，也不能暴露给
+普通 Owner。
+
+业务修复固定经过以下对象，不能跳过 preview 或用 submit 请求重新描述变更：
+
+| 阶段 | Schema | 不变量 |
+|---|---|---|
+| 预览意图 | `scenario-rehearsal-remediation-preview-request-v1` | 绑定 exact predecessor workbook；选择 `RERUN_EXACT` 或 `REPLACE_COMPILED_PLANS`；使用闭集 reason code |
+| 冻结计划 | `scenario-rehearsal-remediation-plan-v1` | content-addressed；冻结完整 successor request、predecessor blocker 和固定双角色审批策略 |
+| 审批命令 | `scenario-rehearsal-remediation-approval-command-v1` | 比较 plan fingerprint 与 expected approval generation；批准和拒绝 reason 不能混用 |
+| 审批事实 | `scenario-rehearsal-remediation-approval-v1` | append-only；server-owned actor/time/delegation；previous fingerprint 形成链 |
+| 提交命令 | `scenario-rehearsal-remediation-submit-command-v1` | 同时比较 plan、approval generation 与 approval head；至少完成两级审批 |
+| 提交回执 | `scenario-rehearsal-remediation-receipt-v1` | predecessor 与 successor job 必须不同；绑定 frozen request 与最终审批链 |
+
+首版 `RERUN_EXACT` 只能用于可重试的运行/证据原因，不得携带 replacement。
+`REPLACE_COMPILED_PLANS` 只替换指定 entry 的 exact existing compiled plan，
+必须保留原 entry id、index 和批次顺序；没有列出的 entry 保持不变。计划不得删除
+case、改写 DSL/JSON、降低断言严重度，或放松网络、凭证、运行时和 certification
+约束。`governanceTicketRef` 必须是
+`GOVERNANCE_REVIEW_TICKET` 类型的 exact resource reference。
+
+固定审批策略为先 `OWNER`、后 `INDEPENDENT_REVIEWER`，并要求两个不同 actor。
+客户端只能提交角色和决定；服务端从认证上下文写入 actor、delegation 和时间。
+Schema 负责结构失败关闭，应用服务还必须在数据库事务内校验 exact predecessor、
+replacement closure、角色顺序、actor separation、generation/head CAS 与幂等
+successor enqueue。
+
+当前交付边界是 Java protocol、六份 authoritative Schema、Test Kit validator 和
+capability `supportedObjects` 版本目录。尚未提供 preview/approve/submit API、
+repository、successor 调度或工作台按钮，因此没有对应 capability readiness flag。
+这些服务落地前，`/rehearsals/` 仍是只读分诊面。
+
 ## 9. 失败语义
 
 | 失败类别 | 处理原则 |
@@ -1124,9 +1159,9 @@ mvn -f resource-gateway-examples/pom.xml clean verify
 mvn -f resource-gateway-test-kit/pom.xml clean verify
 ```
 
-2026-07-25 本轮门禁结果：Resource Gateway `5,175` 项测试零失败、零错误、
-4 项条件跳过（其余真实 Chrome DOM/工作流和可执行 Boot JAR 均通过）；Test Kit `392` 项
-零失败、零错误，完成 126 个 Mirror Schema 的引用闭包与 shaded JAR 打包，公共
+2026-07-25 本轮门禁结果：Resource Gateway `5,179` 项测试零失败、零错误、
+4 项条件跳过（其余真实 Chrome DOM/工作流和可执行 Boot JAR 均通过）；Test Kit `394` 项
+零失败、零错误，完成 132 个 Mirror Schema 的引用闭包与 shaded JAR 打包，公共
 JavaDoc 校验通过。演练工作台另以 `-Pfrontend` 在真实 Chrome 中通过桌面、中等宽度、
 移动宽度三档响应式定向验证。本轮最终源码另通过服务端 finalization health/SLO
 联合 `99/99` 项与 Test Kit Schema/client `54/54` 项聚焦验证。
@@ -1190,6 +1225,12 @@ JavaDoc 校验通过。演练工作台另以 `-Pfrontend` 在真实 Chrome 中�
 - `docs/schemas/resource-gateway-mirror/scenario-rehearsal-batch-finalization-health-v1.schema.json`
 - `docs/schemas/resource-gateway-mirror/scenario-rehearsal-batch-finalization-remediation-request-v1.schema.json`
 - `docs/schemas/resource-gateway-mirror/scenario-rehearsal-batch-finalization-remediation-receipt-v1.schema.json`
+- `docs/schemas/resource-gateway-mirror/scenario-rehearsal-remediation-preview-request-v1.schema.json`
+- `docs/schemas/resource-gateway-mirror/scenario-rehearsal-remediation-plan-v1.schema.json`
+- `docs/schemas/resource-gateway-mirror/scenario-rehearsal-remediation-approval-command-v1.schema.json`
+- `docs/schemas/resource-gateway-mirror/scenario-rehearsal-remediation-approval-v1.schema.json`
+- `docs/schemas/resource-gateway-mirror/scenario-rehearsal-remediation-submit-command-v1.schema.json`
+- `docs/schemas/resource-gateway-mirror/scenario-rehearsal-remediation-receipt-v1.schema.json`
 - `docs/schemas/resource-gateway-mirror/scenario-rehearsal-batch-item-page-v1.schema.json`
 - `docs/schemas/resource-gateway-mirror/scenario-rehearsal-batch-cancellation-request-v1.schema.json`
 - `docs/schemas/resource-gateway-mirror/scenario-rehearsal-batch-evidence-index-v1.schema.json`

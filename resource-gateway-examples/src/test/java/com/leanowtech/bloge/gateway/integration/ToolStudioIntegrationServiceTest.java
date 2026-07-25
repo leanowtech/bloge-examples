@@ -500,6 +500,18 @@ class ToolStudioIntegrationServiceTest {
                                 ScenarioRehearsalBatchFinalizationHealth
                                         .SCHEMA_VERSION))
                 .containsEntry(
+                        "scenarioRehearsalRemediationPlan",
+                        List.of(
+                                com.leanowtech.bloge.gateway.integration.mirror
+                                        .ScenarioRehearsalRemediationPlan
+                                        .SCHEMA_VERSION))
+                .containsEntry(
+                        "scenarioRehearsalRemediationApproval",
+                        List.of(
+                                com.leanowtech.bloge.gateway.integration.mirror
+                                        .ScenarioRehearsalRemediationApproval
+                                        .SCHEMA_VERSION))
+                .containsEntry(
                         "scenarioRehearsalBatchEvidenceBundle",
                         List.of(
                                 com.leanowtech.bloge.gateway.integration.mirror
@@ -530,6 +542,12 @@ class ToolStudioIntegrationServiceTest {
                         "scenarioRehearsalBatchJobPage",
                         "scenarioRehearsalBatchItemPage",
                         "scenarioRehearsalBatchFinalizationStatus",
+                        "scenarioRehearsalRemediationPreviewRequest",
+                        "scenarioRehearsalRemediationPlan",
+                        "scenarioRehearsalRemediationApprovalCommand",
+                        "scenarioRehearsalRemediationApproval",
+                        "scenarioRehearsalRemediationSubmitCommand",
+                        "scenarioRehearsalRemediationReceipt",
                         "scenarioRehearsalBatchCancellationRequest",
                         "scenarioRehearsalBatchRetentionEvent",
                         "scenarioRehearsalBatchRetentionState",

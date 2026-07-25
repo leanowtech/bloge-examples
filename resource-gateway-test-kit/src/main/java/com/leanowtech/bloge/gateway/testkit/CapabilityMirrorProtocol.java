@@ -297,6 +297,30 @@ public final class CapabilityMirrorProtocol {
     public static final String
     SCENARIO_REHEARSAL_BATCH_FINALIZATION_HEALTH_V1 =
             "resourceGateway.scenarioRehearsalBatchFinalizationHealth.v1";
+    /** Reviewed Scenario successor preview-command wire version. */
+    public static final String
+    SCENARIO_REHEARSAL_REMEDIATION_PREVIEW_REQUEST_V1 =
+            "resourceGateway.scenarioRehearsalRemediationPreviewRequest.v1";
+    /** Immutable frozen Scenario successor remediation plan wire version. */
+    public static final String
+    SCENARIO_REHEARSAL_REMEDIATION_PLAN_V1 =
+            "resourceGateway.scenarioRehearsalRemediationPlan.v1";
+    /** Role-bound append-only Scenario remediation approval command wire version. */
+    public static final String
+    SCENARIO_REHEARSAL_REMEDIATION_APPROVAL_COMMAND_V1 =
+            "resourceGateway.scenarioRehearsalRemediationApprovalCommand.v1";
+    /** Actor-bound append-only Scenario remediation approval fact wire version. */
+    public static final String
+    SCENARIO_REHEARSAL_REMEDIATION_APPROVAL_V1 =
+            "resourceGateway.scenarioRehearsalRemediationApproval.v1";
+    /** Approved Scenario remediation submit command wire version. */
+    public static final String
+    SCENARIO_REHEARSAL_REMEDIATION_SUBMIT_COMMAND_V1 =
+            "resourceGateway.scenarioRehearsalRemediationSubmitCommand.v1";
+    /** Immutable predecessor-to-successor remediation admission receipt wire version. */
+    public static final String
+    SCENARIO_REHEARSAL_REMEDIATION_RECEIPT_V1 =
+            "resourceGateway.scenarioRehearsalRemediationReceipt.v1";
     /** Stable bounded Scenario batch item-page wire version. */
     public static final String SCENARIO_REHEARSAL_BATCH_ITEM_PAGE_V1 =
             "resourceGateway.scenarioRehearsalBatchItemPage.v1";
@@ -708,6 +732,36 @@ public final class CapabilityMirrorProtocol {
     SCENARIO_REHEARSAL_BATCH_FINALIZATION_HEALTH_SCHEMA_RESOURCE =
             SCHEMA_RESOURCE_ROOT
                     + "scenario-rehearsal-batch-finalization-health-v1.schema.json";
+    /** Packaged reviewed Scenario successor preview command. */
+    public static final String
+    SCENARIO_REHEARSAL_REMEDIATION_PREVIEW_REQUEST_SCHEMA_RESOURCE =
+            SCHEMA_RESOURCE_ROOT
+                    + "scenario-rehearsal-remediation-preview-request-v1.schema.json";
+    /** Packaged immutable frozen Scenario successor remediation plan. */
+    public static final String
+    SCENARIO_REHEARSAL_REMEDIATION_PLAN_SCHEMA_RESOURCE =
+            SCHEMA_RESOURCE_ROOT
+                    + "scenario-rehearsal-remediation-plan-v1.schema.json";
+    /** Packaged role-bound append-only Scenario remediation approval command. */
+    public static final String
+    SCENARIO_REHEARSAL_REMEDIATION_APPROVAL_COMMAND_SCHEMA_RESOURCE =
+            SCHEMA_RESOURCE_ROOT
+                    + "scenario-rehearsal-remediation-approval-command-v1.schema.json";
+    /** Packaged actor-bound append-only Scenario remediation approval fact. */
+    public static final String
+    SCENARIO_REHEARSAL_REMEDIATION_APPROVAL_SCHEMA_RESOURCE =
+            SCHEMA_RESOURCE_ROOT
+                    + "scenario-rehearsal-remediation-approval-v1.schema.json";
+    /** Packaged approved Scenario remediation submit command. */
+    public static final String
+    SCENARIO_REHEARSAL_REMEDIATION_SUBMIT_COMMAND_SCHEMA_RESOURCE =
+            SCHEMA_RESOURCE_ROOT
+                    + "scenario-rehearsal-remediation-submit-command-v1.schema.json";
+    /** Packaged immutable predecessor-to-successor remediation admission receipt. */
+    public static final String
+    SCENARIO_REHEARSAL_REMEDIATION_RECEIPT_SCHEMA_RESOURCE =
+            SCHEMA_RESOURCE_ROOT
+                    + "scenario-rehearsal-remediation-receipt-v1.schema.json";
     /** Packaged stable bounded Scenario batch item page. */
     public static final String SCENARIO_REHEARSAL_BATCH_ITEM_PAGE_SCHEMA_RESOURCE =
             SCHEMA_RESOURCE_ROOT
