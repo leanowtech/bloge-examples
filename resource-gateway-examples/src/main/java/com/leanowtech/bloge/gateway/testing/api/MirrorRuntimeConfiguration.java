@@ -93,6 +93,7 @@ import com.leanowtech.bloge.gateway.integration.mirror.ScenarioRehearsalBatchRet
 import com.leanowtech.bloge.gateway.integration.mirror.ScenarioRehearsalBatchScheduler;
 import com.leanowtech.bloge.gateway.integration.mirror.ScenarioRehearsalBatchService;
 import com.leanowtech.bloge.gateway.integration.mirror.ScenarioRehearsalBatchWorker;
+import com.leanowtech.bloge.gateway.integration.mirror.ScenarioRehearsalBatchWorkbookService;
 import com.leanowtech.bloge.gateway.integration.mirror.ScenarioRehearsalIntegrationService;
 import com.leanowtech.bloge.gateway.integration.mirror.ScenarioRehearsalRuntimeService;
 import com.leanowtech.bloge.gateway.integration.mirror.ScenarioRehearsalLifecycleAuditRepository;
@@ -505,6 +506,28 @@ public class MirrorRuntimeConfiguration {
                 evidence,
                 observations,
                 finalizationHealthPolicy);
+    }
+
+    /** Creates the signed-source ANEKE batch correctness-workbook projection boundary. */
+    @Bean
+    @ConditionalOnMissingBean
+    public ScenarioRehearsalBatchWorkbookService
+    scenarioRehearsalBatchWorkbookService(
+            ScenarioRehearsalBatchEvidenceRepository evidence,
+            ScenarioRehearsalBatchEvidenceIntegrityService integrity,
+            ScenarioRehearsalBatchRetentionRepository retention,
+            ScenarioRehearsalRuntimeService rehearsals,
+            ObjectMapper objectMapper,
+            MirrorOperationObservability observations,
+            VisualEvidenceSigner evidenceSigner) {
+        return new ScenarioRehearsalBatchWorkbookService(
+                evidence,
+                integrity,
+                retention,
+                rehearsals,
+                objectMapper,
+                observations,
+                evidenceSigner);
     }
 
     /** Creates one evidence-verifying durable Scenario batch worker turn. */

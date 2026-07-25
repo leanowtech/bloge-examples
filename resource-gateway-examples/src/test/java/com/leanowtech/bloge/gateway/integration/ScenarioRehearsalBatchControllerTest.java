@@ -13,6 +13,8 @@ import com.leanowtech.bloge.gateway.integration.mirror.ScenarioRehearsalBatchReq
 import com.leanowtech.bloge.gateway.integration.mirror.ScenarioRehearsalBatchRetentionService;
 import com.leanowtech.bloge.gateway.integration.mirror.ScenarioRehearsalBatchRetentionState;
 import com.leanowtech.bloge.gateway.integration.mirror.ScenarioRehearsalBatchService;
+import com.leanowtech.bloge.gateway.integration.mirror.ScenarioRehearsalBatchWorkbookSeed;
+import com.leanowtech.bloge.gateway.integration.mirror.ScenarioRehearsalBatchWorkbookService;
 import com.leanowtech.bloge.gateway.integration.mirror.ScenarioRehearsalLegalHoldCommand;
 import com.leanowtech.bloge.gateway.integration.mirror.ScenarioRehearsalPurgeCommand;
 import org.junit.jupiter.api.Test;
@@ -32,6 +34,8 @@ class ScenarioRehearsalBatchControllerTest {
     void authenticatesSubmitReadPageAndCancelWithDedicatedOperations() {
         ScenarioRehearsalBatchService batches =
                 mock(ScenarioRehearsalBatchService.class);
+        ScenarioRehearsalBatchWorkbookService workbooks =
+                mock(ScenarioRehearsalBatchWorkbookService.class);
         ScenarioRehearsalBatchRetentionService retention =
                 mock(ScenarioRehearsalBatchRetentionService.class);
         IntegrationRequestAuthenticator authenticator =
@@ -53,6 +57,8 @@ class ScenarioRehearsalBatchControllerTest {
                 mock(ScenarioRehearsalBatchItemPage.class);
         ScenarioRehearsalBatchEvidenceBundle evidence =
                 mock(ScenarioRehearsalBatchEvidenceBundle.class);
+        ScenarioRehearsalBatchWorkbookSeed workbook =
+                mock(ScenarioRehearsalBatchWorkbookSeed.class);
         ScenarioRehearsalBatchFinalizationStatus finalization =
                 mock(ScenarioRehearsalBatchFinalizationStatus.class);
         ScenarioRehearsalBatchFinalizationRemediationRequest
@@ -88,6 +94,8 @@ class ScenarioRehearsalBatchControllerTest {
                 ScenarioRehearsalBatchItemPage.SCHEMA_VERSION);
         when(evidence.schemaVersion()).thenReturn(
                 ScenarioRehearsalBatchEvidenceBundle.SCHEMA_VERSION);
+        when(workbook.schemaVersion()).thenReturn(
+                ScenarioRehearsalBatchWorkbookSeed.SCHEMA_VERSION);
         when(finalization.schemaVersion()).thenReturn(
                 ScenarioRehearsalBatchFinalizationStatus
                         .SCHEMA_VERSION);
@@ -132,6 +140,11 @@ class ScenarioRehearsalBatchControllerTest {
         when(authenticator.authenticate(
                 headers,
                 IntegrationOperation
+                        .MIRROR_REHEARSAL_BATCH_WORKBOOK_READ))
+                .thenReturn(identity);
+        when(authenticator.authenticate(
+                headers,
+                IntegrationOperation
                         .MIRROR_REHEARSAL_RETENTION_READ))
                 .thenReturn(identity);
         when(authenticator.authenticate(
@@ -168,6 +181,8 @@ class ScenarioRehearsalBatchControllerTest {
                 .thenReturn(page);
         when(batches.evidence("job-a", identity))
                 .thenReturn(Optional.of(evidence));
+        when(workbooks.workbookSeed("job-a", identity))
+                .thenReturn(workbook);
         when(batches.finalization("job-a", identity))
                 .thenReturn(Optional.of(finalization));
         when(batches.remediateFinalization(
@@ -199,7 +214,7 @@ class ScenarioRehearsalBatchControllerTest {
                 .thenReturn(retentionState);
         ScenarioRehearsalBatchController controller =
                 new ScenarioRehearsalBatchController(
-                        batches, retention,
+                        batches, workbooks, retention,
                         authenticator, decoder);
 
         assertThat(controller.submit(raw, headers).payload())
@@ -213,6 +228,18 @@ class ScenarioRehearsalBatchControllerTest {
         assertThat(controller.evidence(
                 "job-a", headers).payload())
                 .isSameAs(evidence);
+        assertThat(controller.workbookSeed(
+                "job-a", headers))
+                .satisfies(envelope -> {
+                    assertThat(envelope.payloadKind()).isEqualTo(
+                            "SCENARIO_REHEARSAL_BATCH_WORKBOOK_SEED");
+                    assertThat(envelope.payloadSchemaVersion())
+                            .isEqualTo(
+                                    ScenarioRehearsalBatchWorkbookSeed
+                                            .SCHEMA_VERSION);
+                    assertThat(envelope.payload())
+                            .isSameAs(workbook);
+                });
         assertThat(controller.finalization(
                 "job-a", headers))
                 .satisfies(envelope -> {
@@ -288,6 +315,10 @@ class ScenarioRehearsalBatchControllerTest {
                 headers,
                 IntegrationOperation
                         .MIRROR_REHEARSAL_BATCH_EVIDENCE_READ);
+        verify(authenticator).authenticate(
+                headers,
+                IntegrationOperation
+                        .MIRROR_REHEARSAL_BATCH_WORKBOOK_READ);
         verify(authenticator).authenticate(
                 headers,
                 IntegrationOperation

@@ -88,6 +88,7 @@ offline artifact verification live in the independent `resource-gateway-test-kit
 | `scenario-rehearsal-retention-event-v1.schema.json` | `ScenarioRehearsalRetentionEvent` | Signed payload-free retention/hold/deletion transition with complete scope, immutable retention boundary, previous-event address, and explicit child-evidence disposition |
 | `scenario-rehearsal-retention-state-v1.schema.json` | `ScenarioRehearsalRetentionState` | Rebuildable multi-hold projection whose latest signed event becomes the independently verifiable deletion proof after purge |
 | `scenario-rehearsal-workbook-seed-v1.schema.json` | `ScenarioRehearsalWorkbookSeed` | Deterministic payload-free ANEKE input binding exact Plan, signed aggregate, initial signed retention proof, ordered case/assertion closure, and conservatively derived gate blockers |
+| `scenario-rehearsal-batch-workbook-seed-v1.schema.json` | `ScenarioRehearsalBatchWorkbookSeed` | Bounded deterministic ANEKE batch input binding signed terminal batch evidence, signed retention registration, ordered child commitments and correctness projections, conservative blockers, and a domain-separated root seal for no-fan-out verification |
 | `scenario-case-v1.schema.json` | `ScenarioCase` | Exact binding from one business intent to an existing TestSuite case, FixtureBundle, MirrorPlan, deterministic services, optional isolated Session checkpoint, explicit fault rules, and handling assertions |
 | `scenario-pack-v1.schema.json` | `ScenarioPack` | Content-addressed ordered scenario closure and fail-closed sequential rehearsal policy |
 | `scenario-rehearsal-compile-request-v1.schema.json` | `ScenarioRehearsalCompileRequest` | Exact registered ScenarioPack revision and fingerprint requested for online closure compilation |
@@ -645,6 +646,7 @@ The protected Tool Studio integration surface exposes:
 | `GET /api/mirror/runs/{runId}/state-workbook-seed` | Derive a deterministic payload-free ANEKE seed from one verified stateful v3 bundle | `MIRROR_REHEARSAL` |
 | `GET /api/mirror/runs/{runId}/state-transition-workbook-seed` | Derive committed/replayed write assertions from one verified stateful v4 bundle | `MIRROR_REHEARSAL` |
 | `GET /api/mirror/runs/{runId}/state-write-outcome-workbook-seed` | Derive failure-aware write-attempt assertions from one verified stateful v5 bundle | `MIRROR_REHEARSAL` |
+| `GET /api/mirror/rehearsal-jobs/{jobId}/workbook-seed` | Read one root-sealed, payload-free Scenario batch correctness projection without fetching every child | `MIRROR_REHEARSAL` or `GOVERNANCE_EVIDENCE_INGESTION` |
 | `POST /api/mirror/sessions` | Create or exactly replay one sealed encrypted Session | `MIRROR_REHEARSAL` |
 | `GET /api/mirror/sessions/{sessionId}` | Read the current payload-free Session descriptor | `MIRROR_REHEARSAL` |
 | `POST /api/mirror/sessions/{sessionId}/commands` | Execute or exactly replay one admitted virtual write effect | `MIRROR_REHEARSAL` |

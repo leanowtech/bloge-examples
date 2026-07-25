@@ -1395,6 +1395,57 @@ rolling upgrade、WORM/外部锚和跨地域删除。更重要的是，它仍只
 失败定位，然后进入以 Scenario coverage 为分母的 Fidelity/Shadow；生产故障认证作为
 并行支线，不得再阻塞业务拟合主链。
 
+### 3.18 2026-07-25 ANEKE 批量正确性工作簿迭代差距复评
+
+本轮关闭“单个 aggregate 已可验证，但 ANEKE 仍要逐 job/逐 run 拼装整批门禁”的
+病根。新增 `ScenarioRehearsalBatchWorkbookSeed.v1`：它只从重新验签的 terminal
+batch evidence、revision 1 batch retention registration 和 signed index 精确引用的
+全部 child workbook 投影，不读取 mutable Scenario latest 补洞。最多 256 个 entry
+按 manifest index 完整排列，闭合 exact plan、child request/run、attempt、status、
+evidence/workbook content address，以及有界 outcome/summary/gate/blocker；case、
+Fixture、Session state 和业务 payload 不进入批量响应。
+
+执行状态与治理状态不再混淆。`SUCCEEDED` 只证明全部 batch item 执行为 `PASSED`；
+任一 child workbook 只有 exploratory evidence 时，批次仍保留成功状态，但根 gate
+确定性导出 `CHILD_WORKBOOK_BLOCKED`。失败、indeterminate、cancelled 和非取消项
+缺证据分别归约为 closed blocker vocabulary；调用方和 producer 都不能覆盖 summary、
+entry 顺序或 `gateReady`。
+
+第一次实现仍要求 Test Kit 拉取每个 child seed 才能核对有界投影，这会让 256-item
+批次重新退化成 N+1。该问题没有用“相信 HTTPS 响应”掩盖，而是在根上增加独立、
+域隔离的 `workbookSeal`：服务端内部完成逐 child 深验后，对 deterministic
+`seedFingerprint + job + batch bundle + index` 签发 Ed25519 seal。seed content
+address 排除 seal，因此 key rotation 不改变工作簿身份；seal 又使 ANEKE/CI 可以只
+拉 batch seed、signed batch evidence 和三把公开 key，就独立重算 batch/retention/
+workbook 三类签名、完整 ordered closure、blocker/gate 和 seed fingerprint。
+case 级审计仍可按需使用 `verifyWithChildren` 打开每个 commitment，缺失、额外、
+重复和替换全部失败关闭。
+
+`VisualRunEvidenceSeal.signedAt` 不在现有 seal 签名材料中，因此新 verifier 只把它
+当格式受限的描述性元数据，不拿它推导 key 创建先后或 root/batch 时间顺序。当前
+签名真实性由 exact key、算法、key 可验证状态和 Ed25519 signature 闭合；若生产
+门禁需要可证明时间顺序，必须在部署认证支线引入签名 key-set lifecycle 与 TSA/
+transparency anchor，不能把普通时间字段冒充密码学时间证明。
+
+受保护
+`GET /api/mirror/rehearsal-jobs/{jobId}/workbook-seed`
+先鉴权再读取，接受演练或最小治理消费 purpose，成功与失败均写专用 payload-free
+operation audit。capability probe 公开 object version、endpoint 和
+`mirrorScenarioRehearsalBatchWorkbookSeed`；`--scenario-batch` 启动门禁也要求该
+能力为真。Test Kit 打包第 125 份 mirror Schema，并提供无 Spring 依赖 verifier、
+一键 HTTP client 和可选 deep verification。
+
+故障矩阵覆盖确定性投影、成功执行但 child gate 阻断、漏/多/替换 child、batch
+signature、retention proof、producer-selected gate、auth-before-source、签名
+authority 和跨响应 identity。Scenario/Rehearsal 成熟度由 99% 上调至 99.3%，固定
+权重总分由 62.31% 上调至 62.36%，距理想态 37.64%。
+
+RG-MIR-SCEN-005 的本地协议/API/consumer 纵切现已完成；尚不能宣称 production
+publish-gate-ready，因为异构 consumer 固定向量、企业 policy/WORM/anchor 和真实
+PostgreSQL/KMS 故障认证仍未闭合。业务拟合主链的下一最短路径是
+RG-MIR-SCEN-006 Owner rehearsal workbench：把 batch/item/assertion 证据映射成
+业务 owner 可看、可定位、可审阅、可修复的零 DSL 工作流；生产认证支线继续并行。
+
 ## 4. 目标架构与系统责任
 
 ![Resource Gateway 业务能力镜像目标架构](assets/resource-gateway-capability-mirror-target-architecture.svg)
@@ -2156,6 +2207,7 @@ session 重放造成重复状态、运行时依赖漂移。
 | `GET /api/mirror/rehearsal-jobs/{jobId}` | 查询 batch projection | full scope + job record fingerprint | 已实现控制面 |
 | `GET /api/mirror/rehearsal-jobs/{jobId}/items` | 分页读取稳定 manifest item | full scope + manifest index + bounded page | 已实现控制面 |
 | `GET /api/mirror/rehearsal-jobs/{jobId}/evidence` | 读取 independently verified signed batch closure | request/manifest/job/items/child refs/Ed25519 完整闭包 | 已实现（治理消费 purpose） |
+| `GET /api/mirror/rehearsal-jobs/{jobId}/workbook-seed` | 一次读取整批 ANEKE correctness projection | signed batch/retention/root seal + ordered child commitments + conservative blockers；普通 verifier 无 N+1，deep audit 可按需打开 child | 已实现（演练或治理消费 purpose） |
 | `GET /api/mirror/rehearsal-jobs/{jobId}/finalization` | 读取 payload-free durable evidence finalization 状态 | full scope；retry/lease/quarantine/terminal 坐标，不暴露 worker、provider 诊断或 payload | 已实现（治理消费 purpose） |
 | `GET /api/mirror/rehearsal-jobs/finalization-health` | 读取调用方 exact enterprise scope 的 finalization SLO | 一个数据库时间快照闭合 state/unknown/age/quarantine/policy/failure；受保护 audit | 已实现（演练或治理消费 purpose） |
 | `POST /api/mirror/rehearsal-jobs/{jobId}/finalization/remediations` | 重新准入一个已审阅的 quarantined generation | command + attempt + updatedAt CAS；新 intent/signing id、旧 lease fence、retention 续期、不可变 receipt | 已实现（finalization admin purpose） |
@@ -2584,7 +2636,8 @@ exact read、multi-hold retention、deletion proof、deterministic ANEKE workboo
 worker turn、显式 region-local bounded scheduler、执行中 heartbeat/cancel、签名
 batch evidence/index、operation/lifecycle audit 与独立 batch retention/multi-hold/
 deletion proof、`FINALIZING` outbox/KMS 故障隔离、受控 quarantine remediation
-与聚合 health/SLO 已完成；下一步进入 ANEKE batch workbook 和 Author UX。企业 policy authority、
+与聚合 health/SLO、ANEKE batch workbook/root seal/无 N+1 独立消费已完成；
+下一步进入 Owner rehearsal workbench。企业 policy authority、
 WORM/anchor 和跨地域删除认证作为部署认证支线并行，不阻塞本地 workbook 纵切，但会阻塞最终
 production readiness。
 
@@ -2711,7 +2764,7 @@ permit、v1/v2/v3 双向兼容读取和独立 test-kit 语义复验；非 Java v
 | 顺序 | Work package | 优先级/估算 | 主责与协作 | 依赖 | 可交付产物 | 退出门禁 |
 |---:|---|---|---|---|---|---|
 | 0 | RG-MIR-SCEN-OPS-003 finalization health/SLO | 已完成 | RG Runtime + SRE | durable finalization/remediation | strict health v1、exact-scope API、Actuator、固定基数 metric、Test Kit、脚本/运行文档 | unknown state/policy drift/store failure 不误绿；API/monitor/probe 使用同一 evaluator |
-| 1 | RG-MIR-SCEN-005 ANEKE batch workbook | P0 / 1 sprint | RG Evidence + ANEKE Correctness | signed batch v2、child seed、batch retention | batch seed/Schema、projector、独立 verifier/client、受保护 API、audit、capability | 1..256 个 item 全闭合；顺序/漏项/重复/child drift/删除状态篡改失败；ANEKE 不需要 N+1 拉取才能判断 gate |
+| 1 | RG-MIR-SCEN-005 ANEKE batch workbook | 已完成 | RG Evidence + ANEKE Correctness | signed batch v2、child seed、batch retention | batch seed/Schema、projector、root seal、独立 verifier/client、受保护 API、audit、capability | 1..256 个 item 全闭合；普通门禁读取无 N+1；deep audit 对漏项/重复/child drift 失败关闭 |
 | 2 | RG-MIR-SCEN-006 Owner rehearsal workbench | P0 / 2 sprints | Author UX + RG Scenario + 业务 Owner | Work package 1 | batch 列表、shape summary、item/assertion 原因分组、evidence drawer、deep link、reviewed remediation、零 DSL case 调整 | owner 能在 15 分钟内定位失败、区分执行/断言/低保真/证据故障并完成审阅；浏览器 E2E 覆盖 256-item 复杂批次 |
 | 3 | RG-MIR-FID-001 Fidelity protocol/kernel | P0 / 2 sprints | RG Domain + ANEKE Governance + 数据科学 | Work package 1；owner 冻结 coverage taxonomy | `DomainFidelityProfile.v1`、coverage denominator、dimension score、confidence interval、freshness、abstention debt、lineage | 空分母/低样本不能高分；每个分量可重建到 exact Scenario/corpus generation；单一总分不可作为唯一 gate |
 | 4 | RG-MIR-FID-002 Read-only shadow/diff | P1 / 2 sprints | RG Runtime + TEE/Data Plane + SRE | Work package 3；数据使用授权 | shadow plan/job、typed node/edge/state/effect diff、sampling budget、drift downgrade/revoke | 真实写和凭据为 0；采样不超过授权；schema/branch/retry/state/outcome 差异可归因；漂移自动使 readiness/gate stale |

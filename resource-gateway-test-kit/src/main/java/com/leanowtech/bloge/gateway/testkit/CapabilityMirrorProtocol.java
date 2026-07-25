@@ -341,6 +341,9 @@ public final class CapabilityMirrorProtocol {
     /** Deterministic payload-free ANEKE Scenario correctness-workbook seed wire version. */
     public static final String SCENARIO_REHEARSAL_WORKBOOK_SEED_V1 =
             "resourceGateway.scenarioRehearsalWorkbookSeed.v1";
+    /** Deterministic payload-free ANEKE Scenario batch correctness-workbook seed wire version. */
+    public static final String SCENARIO_REHEARSAL_BATCH_WORKBOOK_SEED_V1 =
+            "resourceGateway.scenarioRehearsalBatchWorkbookSeed.v1";
     /** Fixed scenario protocol compatibility-fixture wire version. */
     public static final String SCENARIO_PACK_COMPATIBILITY_V1 =
             "resourceGateway.scenarioPackCompatibility.v1";
@@ -791,6 +794,11 @@ public final class CapabilityMirrorProtocol {
     public static final String SCENARIO_REHEARSAL_WORKBOOK_SEED_SCHEMA_RESOURCE =
             SCHEMA_RESOURCE_ROOT
                     + "scenario-rehearsal-workbook-seed-v1.schema.json";
+    /** Packaged deterministic Scenario batch correctness-workbook seed schema. */
+    public static final String
+    SCENARIO_REHEARSAL_BATCH_WORKBOOK_SEED_SCHEMA_RESOURCE =
+            SCHEMA_RESOURCE_ROOT
+                    + "scenario-rehearsal-batch-workbook-seed-v1.schema.json";
     /** Packaged fixed ScenarioPack compatibility-fixture schema. */
     public static final String SCENARIO_PACK_FIXTURE_SCHEMA_RESOURCE =
             SCHEMA_RESOURCE_ROOT

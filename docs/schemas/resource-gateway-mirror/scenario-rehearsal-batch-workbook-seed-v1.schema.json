@@ -1,0 +1,355 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://bloge.dev/schemas/resource-gateway-mirror/scenario-rehearsal-batch-workbook-seed-v1.schema.json",
+  "title": "Resource Gateway Scenario Rehearsal Batch Workbook Seed v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion", "seedFingerprint", "scope", "jobId", "requestId",
+    "requestFingerprint", "manifestFingerprint", "terminalJobFingerprint",
+    "evidenceBundleFingerprint", "evidenceIndexFingerprint", "evidenceKeyId",
+    "workbookSeal", "retentionProof", "status", "summary", "entries",
+    "gateReady", "blockers"
+  ],
+  "properties": {
+    "schemaVersion": {
+      "const": "resourceGateway.scenarioRehearsalBatchWorkbookSeed.v1"
+    },
+    "seedFingerprint": {
+      "$ref": "mirror-plan-v1.schema.json#/$defs/fingerprint"
+    },
+    "scope": {
+      "$ref": "mirror-plan-v1.schema.json#/$defs/scope"
+    },
+    "jobId": {
+      "type": "string",
+      "pattern": "^scenario-batch-[a-f0-9]{64}$"
+    },
+    "requestId": {
+      "$ref": "#/$defs/identifier"
+    },
+    "requestFingerprint": {
+      "$ref": "mirror-plan-v1.schema.json#/$defs/fingerprint"
+    },
+    "manifestFingerprint": {
+      "$ref": "mirror-plan-v1.schema.json#/$defs/fingerprint"
+    },
+    "terminalJobFingerprint": {
+      "$ref": "mirror-plan-v1.schema.json#/$defs/fingerprint"
+    },
+    "evidenceBundleFingerprint": {
+      "$ref": "mirror-plan-v1.schema.json#/$defs/fingerprint"
+    },
+    "evidenceIndexFingerprint": {
+      "$ref": "mirror-plan-v1.schema.json#/$defs/fingerprint"
+    },
+    "evidenceKeyId": {
+      "$ref": "#/$defs/verificationKeyId"
+    },
+    "workbookSeal": {
+      "allOf": [
+        {
+          "$ref": "scenario-rehearsal-batch-retention-event-v1.schema.json#/$defs/evidenceSeal"
+        },
+        {
+          "properties": {
+            "materialFingerprint": {
+              "$ref": "mirror-plan-v1.schema.json#/$defs/fingerprint"
+            },
+            "algorithm": {"const": "Ed25519"}
+          }
+        }
+      ]
+    },
+    "retentionProof": {
+      "allOf": [
+        {
+          "$ref": "scenario-rehearsal-batch-retention-event-v1.schema.json"
+        },
+        {
+          "properties": {
+            "revision": {"const": 1},
+            "type": {"const": "RETENTION_REGISTERED"},
+            "holdId": {"const": ""},
+            "previousEventFingerprint": {"const": ""},
+            "deletedJobCount": {"const": 0},
+            "deletedItemCount": {"const": 0},
+            "deletedBatchEvidenceCount": {"const": 0},
+            "childEvidenceDisposition": {"const": "NOT_APPLICABLE"},
+            "auditDisposition": {"const": "NOT_APPLICABLE"}
+          }
+        }
+      ]
+    },
+    "status": {
+      "enum": [
+        "SUCCEEDED", "PARTIAL", "FAILED", "CANCELLED", "EXPIRED", "QUARANTINED"
+      ]
+    },
+    "summary": {
+      "$ref": "scenario-rehearsal-batch-job-v2.schema.json#/$defs/summary"
+    },
+    "entries": {
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 256,
+      "items": {
+        "$ref": "#/$defs/entryResult"
+      }
+    },
+    "gateReady": {
+      "type": "boolean"
+    },
+    "blockers": {
+      "type": "array",
+      "maxItems": 16,
+      "uniqueItems": true,
+      "items": {
+        "$ref": "#/$defs/machineCode"
+      }
+    }
+  },
+  "allOf": [
+    {
+      "if": {
+        "properties": {
+          "gateReady": {"const": true}
+        },
+        "required": ["gateReady"]
+      },
+      "then": {
+        "properties": {
+          "status": {"const": "SUCCEEDED"},
+          "blockers": {"maxItems": 0}
+        }
+      },
+      "else": {
+        "properties": {
+          "blockers": {"minItems": 1}
+        }
+      }
+    }
+  ],
+  "$defs": {
+    "identifier": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 512,
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9@._:/-]{0,511}$"
+    },
+    "optionalIdentifier": {
+      "type": "string",
+      "maxLength": 512,
+      "pattern": "^(?:|[A-Za-z0-9][A-Za-z0-9@._:/-]{0,511})$"
+    },
+    "optionalFingerprint": {
+      "type": "string",
+      "pattern": "^(?:|sha256:[a-f0-9]{64})$"
+    },
+    "verificationKeyId": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 1024,
+      "pattern": "^[^\\r\\n]+$"
+    },
+    "machineCode": {
+      "type": "string",
+      "pattern": "^[A-Z][A-Z0-9_.-]{0,254}$"
+    },
+    "optionalMachineCode": {
+      "type": "string",
+      "maxLength": 255,
+      "pattern": "^(?:|[A-Z][A-Z0-9_.-]{0,254})$"
+    },
+    "outcome": {
+      "enum": ["PASS", "FAIL", "INDETERMINATE"]
+    },
+    "entryResult": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "entryIndex", "entryId", "compiledPlanRef", "childRequestId",
+        "expectedRunId", "status", "attemptCount", "runId",
+        "childEvidenceBundleFingerprint", "childWorkbookSeedFingerprint",
+        "failureCode", "childWorkbook"
+      ],
+      "properties": {
+        "entryIndex": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 255
+        },
+        "entryId": {
+          "$ref": "#/$defs/identifier"
+        },
+        "compiledPlanRef": {
+          "$ref": "scenario-rehearsal-execution-request-v1.schema.json#/$defs/compiledPlanRef"
+        },
+        "childRequestId": {
+          "$ref": "#/$defs/identifier"
+        },
+        "expectedRunId": {
+          "type": "string",
+          "pattern": "^scenario-[a-f0-9]{64}$"
+        },
+        "status": {
+          "enum": ["PASSED", "FAILED", "INDETERMINATE", "CANCELLED"]
+        },
+        "attemptCount": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 5
+        },
+        "runId": {
+          "$ref": "#/$defs/optionalIdentifier"
+        },
+        "childEvidenceBundleFingerprint": {
+          "$ref": "#/$defs/optionalFingerprint"
+        },
+        "childWorkbookSeedFingerprint": {
+          "$ref": "#/$defs/optionalFingerprint"
+        },
+        "failureCode": {
+          "$ref": "#/$defs/optionalMachineCode"
+        },
+        "childWorkbook": {
+          "oneOf": [
+            {"type": "null"},
+            {"$ref": "#/$defs/childWorkbook"}
+          ]
+        }
+      },
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "runId": {"const": ""}
+            },
+            "required": ["runId"]
+          },
+          "then": {
+            "properties": {
+              "status": {"enum": ["FAILED", "INDETERMINATE", "CANCELLED"]},
+              "childEvidenceBundleFingerprint": {"const": ""},
+              "childWorkbookSeedFingerprint": {"const": ""},
+              "childWorkbook": {"type": "null"}
+            }
+          },
+          "else": {
+            "properties": {
+              "runId": {
+                "type": "string",
+                "pattern": "^scenario-[a-f0-9]{64}$"
+              },
+              "childEvidenceBundleFingerprint": {
+                "$ref": "mirror-plan-v1.schema.json#/$defs/fingerprint"
+              },
+              "childWorkbookSeedFingerprint": {
+                "$ref": "mirror-plan-v1.schema.json#/$defs/fingerprint"
+              },
+              "status": {"enum": ["PASSED", "FAILED", "INDETERMINATE"]},
+              "childWorkbook": {"$ref": "#/$defs/childWorkbook"}
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "status": {"const": "PASSED"}
+            },
+            "required": ["status"]
+          },
+          "then": {
+            "properties": {
+              "failureCode": {"const": ""}
+            }
+          }
+        }
+      ]
+    },
+    "childWorkbook": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "schemaVersion", "seedFingerprint", "runId", "requestId",
+        "compiledPlanRef", "scenarioPackRef", "targetCapabilityRef",
+        "evidenceBundleFingerprint", "resultFingerprint", "evidenceKeyId",
+        "retentionProofFingerprint", "outcome", "summary", "gateReady", "blockers"
+      ],
+      "properties": {
+        "schemaVersion": {
+          "const": "resourceGateway.scenarioRehearsalWorkbookSeed.v1"
+        },
+        "seedFingerprint": {
+          "$ref": "mirror-plan-v1.schema.json#/$defs/fingerprint"
+        },
+        "runId": {
+          "type": "string",
+          "pattern": "^scenario-[a-f0-9]{64}$"
+        },
+        "requestId": {
+          "$ref": "#/$defs/identifier"
+        },
+        "compiledPlanRef": {
+          "$ref": "scenario-rehearsal-execution-request-v1.schema.json#/$defs/compiledPlanRef"
+        },
+        "scenarioPackRef": {
+          "$ref": "compiled-scenario-rehearsal-plan-v1.schema.json#/$defs/scenarioPackRef"
+        },
+        "targetCapabilityRef": {
+          "$ref": "scenario-pack-v1.schema.json#/$defs/capabilityRef"
+        },
+        "evidenceBundleFingerprint": {
+          "$ref": "mirror-plan-v1.schema.json#/$defs/fingerprint"
+        },
+        "resultFingerprint": {
+          "$ref": "mirror-plan-v1.schema.json#/$defs/fingerprint"
+        },
+        "evidenceKeyId": {
+          "$ref": "#/$defs/verificationKeyId"
+        },
+        "retentionProofFingerprint": {
+          "$ref": "mirror-plan-v1.schema.json#/$defs/fingerprint"
+        },
+        "outcome": {
+          "$ref": "#/$defs/outcome"
+        },
+        "summary": {
+          "$ref": "scenario-rehearsal-result-v1.schema.json#/$defs/summary"
+        },
+        "gateReady": {
+          "type": "boolean"
+        },
+        "blockers": {
+          "type": "array",
+          "maxItems": 16,
+          "uniqueItems": true,
+          "items": {
+            "$ref": "#/$defs/machineCode"
+          }
+        }
+      },
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "gateReady": {"const": true}
+            },
+            "required": ["gateReady"]
+          },
+          "then": {
+            "properties": {
+              "outcome": {"const": "PASS"},
+              "blockers": {"maxItems": 0}
+            }
+          },
+          "else": {
+            "properties": {
+              "blockers": {"minItems": 1}
+            }
+          }
+        }
+      ]
+    }
+  }
+}

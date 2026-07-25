@@ -161,7 +161,7 @@
         "keyId": {
           "type": "string",
           "minLength": 1,
-          "maxLength": 256
+          "maxLength": 255
         },
         "signedAt": {
           "type": "string",

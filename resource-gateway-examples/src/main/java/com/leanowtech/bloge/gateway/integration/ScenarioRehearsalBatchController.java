@@ -12,6 +12,8 @@ import com.leanowtech.bloge.gateway.integration.mirror.ScenarioRehearsalBatchReq
 import com.leanowtech.bloge.gateway.integration.mirror.ScenarioRehearsalBatchRetentionService;
 import com.leanowtech.bloge.gateway.integration.mirror.ScenarioRehearsalBatchRetentionState;
 import com.leanowtech.bloge.gateway.integration.mirror.ScenarioRehearsalBatchService;
+import com.leanowtech.bloge.gateway.integration.mirror.ScenarioRehearsalBatchWorkbookSeed;
+import com.leanowtech.bloge.gateway.integration.mirror.ScenarioRehearsalBatchWorkbookService;
 import com.leanowtech.bloge.gateway.integration.mirror.ScenarioRehearsalLegalHoldCommand;
 import com.leanowtech.bloge.gateway.integration.mirror.ScenarioRehearsalPurgeCommand;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
@@ -41,6 +43,7 @@ import java.util.Objects;
         havingValue = "true")
 public final class ScenarioRehearsalBatchController {
     private final ScenarioRehearsalBatchService batches;
+    private final ScenarioRehearsalBatchWorkbookService workbooks;
     private final ScenarioRehearsalBatchRetentionService retention;
     private final IntegrationRequestAuthenticator authenticator;
     private final ScenarioArtifactRequestDecoder decoder;
@@ -48,17 +51,39 @@ public final class ScenarioRehearsalBatchController {
     /** Creates the protected batch transport. */
     public ScenarioRehearsalBatchController(
             ScenarioRehearsalBatchService batches,
+            ScenarioRehearsalBatchWorkbookService workbooks,
             ScenarioRehearsalBatchRetentionService retention,
             IntegrationRequestAuthenticator authenticator,
             ScenarioArtifactRequestDecoder decoder) {
         this.batches = Objects.requireNonNull(
                 batches, "batches");
+        this.workbooks = Objects.requireNonNull(
+                workbooks, "workbooks");
         this.retention = Objects.requireNonNull(
                 retention, "retention");
         this.authenticator = Objects.requireNonNull(
                 authenticator, "authenticator");
         this.decoder = Objects.requireNonNull(
                 decoder, "decoder");
+    }
+
+    /** Projects one signed terminal batch into an ANEKE correctness-workbook seed. */
+    @GetMapping("/{jobId}/workbook-seed")
+    public IntegrationEnvelope<ScenarioRehearsalBatchWorkbookSeed>
+    workbookSeed(
+            @PathVariable String jobId,
+            @RequestHeader HttpHeaders headers) {
+        IntegrationRequestContext identity =
+                authenticator.authenticate(
+                        headers,
+                        IntegrationOperation
+                                .MIRROR_REHEARSAL_BATCH_WORKBOOK_READ);
+        ScenarioRehearsalBatchWorkbookSeed value =
+                workbooks.workbookSeed(jobId, identity);
+        return IntegrationEnvelope.of(
+                "SCENARIO_REHEARSAL_BATCH_WORKBOOK_SEED",
+                value.schemaVersion(),
+                value);
     }
 
     /** Resolves exact plans and admits one payload-free durable batch. */

@@ -1529,6 +1529,100 @@ public final class ResourceGatewayTestClient {
     }
 
     /**
+     * Reads and independently verifies one deterministic Scenario batch correctness workbook.
+     *
+     * <p>The client resolves the producer seed, signed terminal batch evidence, exact batch
+     * evidence, retention, and workbook-seal keys. It then independently verifies all three
+     * signatures, every ordered identity and content address, the bounded child projections,
+     * the derived publication blockers, and the root self-fingerprint without one request per
+     * child. Child case-level closure remains available through
+     * {@link #findScenarioRehearsalWorkbookSeed(String)} when a gate needs deep case inspection.</p>
+     *
+     * @param jobId canonical {@code scenario-batch-<sha256>} identity
+     * @return defensive copy of the independently verified payload-free batch workbook
+     */
+    public JsonNode findScenarioRehearsalBatchWorkbookSeed(
+            String jobId) {
+        String exactJobId =
+                scenarioRehearsalBatchJobId(jobId);
+        JsonNode workbookResponse = exchange(
+                "GET",
+                "/api/mirror/rehearsal-jobs/"
+                        + segment(exactJobId)
+                        + "/workbook-seed",
+                "",
+                "GOVERNANCE_EVIDENCE_INGESTION",
+                null);
+        JsonNode workbook = requireMirrorEnvelope(
+                workbookResponse,
+                "SCENARIO_REHEARSAL_BATCH_WORKBOOK_SEED",
+                CapabilityMirrorProtocol
+                        .SCENARIO_REHEARSAL_BATCH_WORKBOOK_SEED_V1);
+        CapabilityMirrorSchemaValidator.require(
+                workbook,
+                CapabilityMirrorProtocol
+                        .SCENARIO_REHEARSAL_BATCH_WORKBOOK_SEED_SCHEMA_RESOURCE,
+                "RG.MIRROR.CLIENT.SCENARIO_BATCH_WORKBOOK_SCHEMA_INVALID");
+        if (!exactJobId.equals(
+                workbook.path("jobId").asText())) {
+            throw responseContractInvalid(
+                    "The server returned a Scenario batch workbook for a different job.");
+        }
+
+        JsonNode evidenceResponse = exchange(
+                "GET",
+                "/api/mirror/rehearsal-jobs/"
+                        + segment(exactJobId)
+                        + "/evidence",
+                "",
+                "GOVERNANCE_EVIDENCE_INGESTION",
+                null);
+        JsonNode evidence = requireMirrorEnvelope(
+                evidenceResponse,
+                "SCENARIO_REHEARSAL_BATCH_EVIDENCE_BUNDLE",
+                Set.of(
+                        CapabilityMirrorProtocol
+                                .SCENARIO_REHEARSAL_BATCH_EVIDENCE_BUNDLE_V1,
+                        CapabilityMirrorProtocol
+                                .SCENARIO_REHEARSAL_BATCH_EVIDENCE_BUNDLE_V2));
+
+        EvidenceVerificationKey evidenceKey;
+        EvidenceVerificationKey retentionKey;
+        EvidenceVerificationKey workbookKey;
+        try {
+            evidenceKey = findEvidenceVerificationKey(
+                    workbook.path("evidenceKeyId")
+                            .asText());
+            retentionKey = findEvidenceVerificationKey(
+                    workbook.path("retentionProof")
+                            .path("evidenceSeal")
+                            .path("keyId").asText());
+            workbookKey = findEvidenceVerificationKey(
+                    workbook.path("workbookSeal")
+                            .path("keyId").asText());
+        } catch (IllegalArgumentException failure) {
+            throw responseContractInvalid(
+                    "The Scenario batch workbook contains an invalid verification-key identity.");
+        }
+
+        ScenarioRehearsalBatchWorkbookVerifier
+                .VerificationResult verification =
+                new ScenarioRehearsalBatchWorkbookVerifier()
+                        .verify(
+                                workbook,
+                                evidence,
+                                evidenceKey,
+                                retentionKey,
+                                workbookKey);
+        if (!verification.verified()) {
+            throw responseContractInvalid(
+                    "The Scenario batch workbook source closure failed independent verification: "
+                            + verification.reasonCode());
+        }
+        return workbook.deepCopy();
+    }
+
+    /**
      * Reads one payload-free durable Scenario batch evidence-finalization status.
      *
      * <p>The projection distinguishes pending work, active signing, bounded retry, operator

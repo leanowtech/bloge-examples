@@ -280,7 +280,7 @@ class ScenarioRehearsalWorkbookVerifierTest {
                 payload);
     }
 
-    private Fixture fixture() throws Exception {
+    Fixture fixture() throws Exception {
         ObjectNode assertionRef = ref(
                 "CASE_HANDLING_ASSERTION",
                 "support-certifiable", '2');
@@ -810,7 +810,7 @@ class ScenarioRehearsalWorkbookVerifierTest {
                 + String.valueOf(value).repeat(64);
     }
 
-    private record Fixture(
+    record Fixture(
             ObjectNode workbook,
             ObjectNode plan,
             ObjectNode bundle

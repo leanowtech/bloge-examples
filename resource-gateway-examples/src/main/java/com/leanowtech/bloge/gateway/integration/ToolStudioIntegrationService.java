@@ -458,6 +458,9 @@ public class ToolStudioIntegrationService {
                 "mirrorScenarioRehearsalBatchEvidence",
                 mirrorPlanReady && mirrorExecutionApi);
         features.put(
+                "mirrorScenarioRehearsalBatchWorkbookSeed",
+                mirrorPlanReady && mirrorExecutionApi);
+        features.put(
                 "mirrorScenarioRehearsalBatchEvidenceFinalizationApi",
                 mirrorPlanReady && mirrorExecutionApi);
         features.put(
@@ -1075,6 +1078,12 @@ public class ToolStudioIntegrationService {
                                 com.leanowtech.bloge.gateway.integration.mirror
                                         .ScenarioRehearsalBatchRetentionState
                                         .SCHEMA_VERSION));
+                supportedObjects.put(
+                        "scenarioRehearsalBatchWorkbookSeed",
+                        List.of(
+                                com.leanowtech.bloge.gateway.integration.mirror
+                                        .ScenarioRehearsalBatchWorkbookSeed
+                                        .SCHEMA_VERSION));
             }
         }
         if (mirrorExecutionApi) {
@@ -1230,6 +1239,9 @@ public class ToolStudioIntegrationService {
                         "GET", "/api/mirror/rehearsal-jobs/{jobId}/items"));
                 endpoints.add(new IntegrationCapabilities.Endpoint(
                         "GET", "/api/mirror/rehearsal-jobs/{jobId}/evidence"));
+                endpoints.add(new IntegrationCapabilities.Endpoint(
+                        "GET",
+                        "/api/mirror/rehearsal-jobs/{jobId}/workbook-seed"));
                 endpoints.add(new IntegrationCapabilities.Endpoint(
                         "GET",
                         "/api/mirror/rehearsal-jobs/{jobId}/finalization"));

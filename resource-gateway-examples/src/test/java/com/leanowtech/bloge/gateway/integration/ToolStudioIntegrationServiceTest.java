@@ -355,6 +355,9 @@ class ToolStudioIntegrationServiceTest {
                         "mirrorScenarioRehearsalBatchEvidence",
                         false)
                 .containsEntry(
+                        "mirrorScenarioRehearsalBatchWorkbookSeed",
+                        false)
+                .containsEntry(
                         "mirrorScenarioRehearsalBatchEvidenceFinalizationApi",
                         false)
                 .containsEntry(
@@ -396,6 +399,9 @@ class ToolStudioIntegrationServiceTest {
                         true)
                 .containsEntry(
                         "mirrorScenarioRehearsalBatchEvidence",
+                        true)
+                .containsEntry(
+                        "mirrorScenarioRehearsalBatchWorkbookSeed",
                         true)
                 .containsEntry(
                         "mirrorScenarioRehearsalBatchEvidenceFinalizationApi",
@@ -513,7 +519,8 @@ class ToolStudioIntegrationServiceTest {
                         "scenarioRehearsalBatchFinalizationStatus",
                         "scenarioRehearsalBatchCancellationRequest",
                         "scenarioRehearsalBatchRetentionEvent",
-                        "scenarioRehearsalBatchRetentionState")
+                        "scenarioRehearsalBatchRetentionState",
+                        "scenarioRehearsalBatchWorkbookSeed")
                 .containsEntry("mirrorExecutionRequest", List.of(
                         com.leanowtech.bloge.gateway.integration.mirror
                                 .MirrorExecutionRequest.SCHEMA_VERSION,
@@ -597,6 +604,7 @@ class ToolStudioIntegrationServiceTest {
                         "GET /api/mirror/rehearsal-jobs/{jobId}",
                         "GET /api/mirror/rehearsal-jobs/{jobId}/items",
                         "GET /api/mirror/rehearsal-jobs/{jobId}/evidence",
+                        "GET /api/mirror/rehearsal-jobs/{jobId}/workbook-seed",
                         "GET /api/mirror/rehearsal-jobs/{jobId}/finalization",
                         "GET /api/mirror/rehearsal-jobs/finalization-health",
                         "POST /api/mirror/rehearsal-jobs/{jobId}/cancellations",

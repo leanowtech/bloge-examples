@@ -99,7 +99,7 @@ class ScenarioRehearsalBatchEvidenceVerifierTest {
                         "SCENARIO_BATCH_EVIDENCE_SIGNATURE_INVALID");
     }
 
-    private ObjectNode bundle(
+    ObjectNode bundle(
             int reportedPassed,
             boolean correctRunId) throws Exception {
         ObjectNode scope = scope();
@@ -115,7 +115,7 @@ class ScenarioRehearsalBatchEvidenceVerifierTest {
                         "RESOURCE_GATEWAY_SCENARIO_REHEARSAL_BATCH_ID_V1",
                         scope,
                         requestId));
-        String childRequest = requestId + ":plan:000";
+        String childRequest = "scenario-request-1";
         String childRun = "scenario-" + (
                 correctRunId
                         ? hashSuffix(
@@ -202,6 +202,30 @@ class ScenarioRehearsalBatchEvidenceVerifierTest {
         bundle.set("index", index);
         sealBundle(bundle);
         return bundle;
+    }
+
+    EvidenceVerificationKey verificationKey() {
+        return key;
+    }
+
+    void resealIndexAndBundle(
+            ObjectNode bundle) throws Exception {
+        ObjectNode index =
+                (ObjectNode) bundle.path("index");
+        sealFingerprint(
+                index,
+                "indexFingerprint",
+                ScenarioRehearsalBatchEvidenceVerifier
+                        .MAXIMUM_INDEX_BYTES);
+        ObjectNode attestation =
+                (ObjectNode) bundle.path("attestation");
+        attestation.put(
+                "indexFingerprint",
+                index.path("indexFingerprint").asText());
+        attestation.put(
+                "signature",
+                sign(signatureMaterial(attestation)));
+        sealBundle(bundle);
     }
 
     private static ObjectNode request(String requestId) {

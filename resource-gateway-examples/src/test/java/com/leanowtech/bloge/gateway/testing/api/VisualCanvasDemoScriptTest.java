@@ -40,6 +40,8 @@ class VisualCanvasDemoScriptTest {
                 "\"mirrorScenarioRehearsalBatchCooperativeControl\"",
                 ".payload.features.mirrorScenarioRehearsalBatchEvidence == true",
                 "\"mirrorScenarioRehearsalBatchEvidence\"",
+                ".payload.features.mirrorScenarioRehearsalBatchWorkbookSeed == true",
+                "\"mirrorScenarioRehearsalBatchWorkbookSeed\"",
                 ".payload.features.mirrorScenarioRehearsalBatchEvidenceFinalizationApi == true",
                 "\"mirrorScenarioRehearsalBatchEvidenceFinalizationApi\"",
                 ".payload.features.mirrorScenarioRehearsalBatchEvidenceFinalizationScheduling == true",

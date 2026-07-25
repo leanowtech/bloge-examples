@@ -41,6 +41,9 @@ Fixture、MirrorPlan 和可选 Session checkpoint 绑定成不可变执行许可
 | batch operation/lifecycle audit | 可用 | submit/read/evidence/cancel 使用强制 payload-free operation audit；低频队列转换使用数据库赋时 append-only lifecycle audit，并与状态写同事务 |
 | `ScenarioRehearsalBatchRetentionEvent/State.v1` | 可用 | 准入时冻结不可缩短的批次保留下限，提供多重独立 hold、签名事件链、精确删除计数和逻辑删除证明 |
 | batch retention API/Test Kit client | 可用 | read/place/release/purge 使用独立 purpose；客户端在返回前重算投影闭包、事件指纹、密钥策略和 Ed25519 签名 |
+| `ScenarioRehearsalBatchWorkbookSeed.v1` | 可用 | 把签名 batch v2、初始 retention proof、全部 child workbook commitment 与有界 correctness projection 归约为一个确定性整批 ANEKE 输入 |
+| batch workbook root seal/verifier | 可用 | 服务端内部逐 child 复验后对 deterministic seed 做域隔离 Ed25519 seal；ANEKE/CI 无需 N+1 即可重算 batch/retention/root 三类签名、blocker 和 gate |
+| batch workbook API/Test Kit client | 可用 | 受保护 exact-job 读取；一键拉取 seed、batch evidence 和三把公开 key 后失败关闭，case 级审计可按需打开 child commitment |
 | 可作为生产发布门禁的 Scenario evidence | 未交付 | 本地 gate-consumable closure 已完成；尚无企业 retention policy authority、WORM/外部锚、消费者认证和环境级门禁 |
 
 当前链路已经解决“执行前冻结什么、运行时从哪里取值、每个结果依据什么证据”
@@ -128,6 +131,7 @@ curl -sS http://localhost:8080/api/integration/capabilities
 | `mirrorScenarioRehearsalBatchApi` | `true` |
 | `mirrorScenarioRehearsalBatchCooperativeControl` | `true` |
 | `mirrorScenarioRehearsalBatchEvidence` | `true` |
+| `mirrorScenarioRehearsalBatchWorkbookSeed` | `true` |
 | `mirrorScenarioRehearsalBatchEvidenceFinalizationApi` | `true` |
 | `mirrorScenarioRehearsalBatchFinalizationRemediationApi` | `true` |
 | `mirrorScenarioRehearsalBatchFinalizationHealthApi` | `true` |
@@ -227,6 +231,7 @@ ScenarioPack
 | `GET /api/mirror/rehearsal-jobs/{jobId}` | `MIRROR_REHEARSAL_BATCH_READ` | 读取并重验 payload-free job projection |
 | `GET /api/mirror/rehearsal-jobs/{jobId}/items` | `MIRROR_REHEARSAL_BATCH_READ` | 使用 `startIndex` + `limit` 读取稳定 manifest-index 页 |
 | `GET /api/mirror/rehearsal-jobs/{jobId}/evidence` | `MIRROR_REHEARSAL_BATCH_EVIDENCE_READ` | 读取并复验请求、manifest、终态 job、全部 item ref 的签名批次闭包 |
+| `GET /api/mirror/rehearsal-jobs/{jobId}/workbook-seed` | `MIRROR_REHEARSAL_BATCH_WORKBOOK_READ` | 从已验签 batch/retention/child closure 投影并签发有界 ANEKE batch seed |
 | `POST /api/mirror/rehearsal-jobs/{jobId}/cancellations` | `MIRROR_REHEARSAL_BATCH_CANCEL` | 记录幂等 cooperative cancellation intent |
 | `GET /api/mirror/rehearsal-jobs/{jobId}/retention` | `MIRROR_REHEARSAL_RETENTION_READ` | 重建并验证 batch retention projection 与最新签名事件 |
 | `POST /api/mirror/rehearsal-jobs/{jobId}/retention/holds` | `MIRROR_REHEARSAL_LEGAL_HOLD` | 放置一个独立 batch legal hold |
@@ -812,6 +817,71 @@ JsonNode deletionProof =
 请求离开进程前验证 Schema，并在返回前验证 batch identity、投影/事件闭包、签名
 时间、key lifecycle 和 Ed25519 seal。
 
+### 8.3 导出并独立验证批量正确性工作簿
+
+batch workbook 只允许从仍可读取且重新验签通过的 terminal batch 生成。服务端
+依次复验 batch v1/v2 evidence、初始 batch retention registration，以及签名 index
+引用的每个 child workbook seed；任何缺失、额外、重复、跨 scope、run/plan/
+evidence/workbook fingerprint 漂移都会失败关闭：
+
+```bash
+curl -sS \
+  http://localhost:8080/api/mirror/rehearsal-jobs/scenario-batch-REPLACE_WITH_64_HEX/workbook-seed \
+  -H 'Authorization: Bearer bloge-aneke-demo-token' \
+  -H 'X-Purpose: GOVERNANCE_EVIDENCE_INGESTION'
+```
+
+响应最多包含 256 个按 manifest index 排列的 entry。每个 entry 保留 exact plan、
+child request/run、attempt、terminal status、evidence/workbook content address，
+以及 child 的 outcome/summary/gate/blocker 有界投影，不复制 child 的 case 明细、
+Fixture、Session state 或业务 payload。根级 blocker 固定为：
+
+| 条件 | blocker |
+|---|---|
+| batch 不是 `SUCCEEDED` | `BATCH_STATUS_<STATUS>` |
+| 任一 item 为 `FAILED` | `BATCH_ITEM_FAILED` |
+| 任一 item 为 `INDETERMINATE` | `BATCH_ITEM_INDETERMINATE` |
+| 任一 item 为 `CANCELLED` | `BATCH_ITEM_CANCELLED` |
+| 非取消 item 没有完整 child evidence/workbook | `CHILD_EVIDENCE_MISSING` |
+| 任一 child workbook gate 被阻断 | `CHILD_WORKBOOK_BLOCKED` |
+
+执行成功和治理可发布被刻意分开：全部 item `PASSED` 时 batch status 可以是
+`SUCCEEDED`，但只要某个 child 只有 exploratory evidence，整批仍为
+`gateReady=false + CHILD_WORKBOOK_BLOCKED`。
+
+`seedFingerprint` 是排除 detached seal 的确定性内容地址；同一来源闭包在 key
+rotation 前后仍保持相同。服务端使用独立签名域
+`RESOURCE_GATEWAY_SCENARIO_REHEARSAL_BATCH_WORKBOOK_V1` 对 seed identity、job、
+batch bundle 和 index 坐标签发 `workbookSeal`。因此普通 ANEKE/CI ingestion
+不需要逐个读取 child：
+
+```java
+JsonNode verifiedBatchSeed =
+        client.findScenarioRehearsalBatchWorkbookSeed(jobId);
+```
+
+该调用只读取 batch seed、signed batch evidence，以及 batch evidence、batch
+retention、workbook seal 三把公开 key。独立 verifier 不链接 Spring 或服务端领域
+对象，并重新执行 strict Schema、batch signature、retention signature、root seal、
+request/manifest/job/item closure、summary、blocker/gate 和 seed content address
+校验：
+
+```java
+ScenarioRehearsalBatchWorkbookVerifier.VerificationResult result =
+        new ScenarioRehearsalBatchWorkbookVerifier().verify(
+                batchSeed, signedBatchEvidence,
+                batchEvidenceKey, batchRetentionKey, workbookSealKey);
+if (!result.verified()) {
+    throw new IllegalStateException(result.reasonCode());
+}
+```
+
+当审计人员需要证明某个有界 child projection 也确实来自其完整 case-level seed，
+再按需拉取 child seeds 并调用 `verifyWithChildren(...)`。这条深验路径拒绝缺失、
+额外、重复或替换的 child；它不是每次 publish-gate ingestion 的前置 N+1。
+ANEKE 仍拥有 workbook 持久化、owner approval 与最终发布裁决，Resource Gateway
+的 `gateReady` 只代表这份已验签 Scenario 闭包没有本地 blocker。
+
 ## 9. 失败语义
 
 | 失败类别 | 处理原则 |
@@ -963,7 +1033,7 @@ WORM、外部 transparency anchor、企业级策略分发和跨地域删除认�
 
 ```bash
 mvn -f resource-gateway-examples/pom.xml \
-  -Dtest=ScenarioRehearsalControllerTest,ScenarioRehearsalBatchControllerTest,ScenarioArtifactRequestDecoderTest,ScenarioArtifactRegistryServiceTest,ScenarioRehearsalIntegrationServiceTest,ScenarioRehearsalCompilerTest,ScenarioRehearsalRuntimeServiceTest,ScenarioRehearsalBatchProtocolTest,ScenarioRehearsalBatchManifestTest,ScenarioRehearsalBatchServiceTest,DatabaseScenarioRehearsalBatchRepositoryTest,DatabaseScenarioRehearsalBatchLifecycleAuditRepositoryTest,ScenarioRehearsalBatchEvidenceIntegrityServiceTest,ScenarioRehearsalBatchEvidencePublisherTest,DatabaseScenarioRehearsalBatchEvidenceRepositoryTest,DatabaseScenarioRehearsalBatchRetentionRepositoryTest,ScenarioRehearsalBatchRetentionServiceTest,ScenarioRehearsalBatchSchedulerTest,ScenarioRehearsalBatchSchedulerPropertiesTest,ScenarioRehearsalWorkbookSeedTest,ScenarioRehearsalResultProtocolTest,ScenarioRehearsalEvidenceIntegrityServiceTest,DatabaseScenarioRehearsalEvidenceRepositoryTest,DatabaseScenarioRehearsalRunRepositoryTest,ScenarioRehearsalCommitServiceTest,DatabaseScenarioRehearsalRetentionRepositoryTest,ScenarioRehearsalRetentionServiceTest,DatabaseScenarioArtifactRepositoryTest,DatabaseCompiledScenarioRehearsalPlanRepositoryTest,ScenarioPackProtocolTest,MirrorEvidenceIntegrityServiceTest,ScenarioHandlingAssertionEvaluatorTest,MirrorRuntimeConfigurationTest,ToolStudioIntegrationServiceTest,VisualCanvasDemoScriptTest \
+  -Dtest=ScenarioRehearsalControllerTest,ScenarioRehearsalBatchControllerTest,ScenarioArtifactRequestDecoderTest,ScenarioArtifactRegistryServiceTest,ScenarioRehearsalIntegrationServiceTest,ScenarioRehearsalCompilerTest,ScenarioRehearsalRuntimeServiceTest,ScenarioRehearsalBatchProtocolTest,ScenarioRehearsalBatchManifestTest,ScenarioRehearsalBatchServiceTest,ScenarioRehearsalBatchWorkbookSeedTest,ScenarioRehearsalBatchWorkbookServiceTest,DatabaseScenarioRehearsalBatchRepositoryTest,DatabaseScenarioRehearsalBatchLifecycleAuditRepositoryTest,ScenarioRehearsalBatchEvidenceIntegrityServiceTest,ScenarioRehearsalBatchEvidencePublisherTest,DatabaseScenarioRehearsalBatchEvidenceRepositoryTest,DatabaseScenarioRehearsalBatchRetentionRepositoryTest,ScenarioRehearsalBatchRetentionServiceTest,ScenarioRehearsalBatchSchedulerTest,ScenarioRehearsalBatchSchedulerPropertiesTest,ScenarioRehearsalWorkbookSeedTest,ScenarioRehearsalResultProtocolTest,ScenarioRehearsalEvidenceIntegrityServiceTest,DatabaseScenarioRehearsalEvidenceRepositoryTest,DatabaseScenarioRehearsalRunRepositoryTest,ScenarioRehearsalCommitServiceTest,DatabaseScenarioRehearsalRetentionRepositoryTest,ScenarioRehearsalRetentionServiceTest,DatabaseScenarioArtifactRepositoryTest,DatabaseCompiledScenarioRehearsalPlanRepositoryTest,ScenarioPackProtocolTest,MirrorEvidenceIntegrityServiceTest,ScenarioHandlingAssertionEvaluatorTest,MirrorRuntimeConfigurationTest,ToolStudioIntegrationServiceTest,VisualCanvasDemoScriptTest \
   test
 ```
 
@@ -1047,6 +1117,7 @@ JavaDoc 校验通过。本轮最终源码另通过服务端 finalization health/
 - `docs/schemas/resource-gateway-mirror/scenario-rehearsal-batch-evidence-bundle-v2.schema.json`
 - `docs/schemas/resource-gateway-mirror/scenario-rehearsal-batch-retention-event-v1.schema.json`
 - `docs/schemas/resource-gateway-mirror/scenario-rehearsal-batch-retention-state-v1.schema.json`
+- `docs/schemas/resource-gateway-mirror/scenario-rehearsal-batch-workbook-seed-v1.schema.json`
 
 独立 consumer 继续使用 `resource-gateway-test-kit` 的
 `ScenarioPackVerifier` 验证 ScenarioPack/Case/Assertion，并使用
