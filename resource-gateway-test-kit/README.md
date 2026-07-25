@@ -33,6 +33,11 @@ implementation. The JAR packages the authoritative v1 JSON Schema and provides:
   domain-separated Ed25519 signature; deterministic Scenario correctness-workbook
   Schema, dual-signature/source-closure verifier, and a client method that
   refuses producer-selected gate decisions;
+- strict owner-approved `DomainFidelityInventory.v1` and signed payload-free
+  `DomainFidelityProfile.v1` Schemas plus a server-independent verifier that
+  reconstructs every unit denominator, dimension metric, Wilson 95% interval,
+  freshness boundary, abstention debt, source composition, limitation, content
+  address, and Ed25519 seal without accepting a composite score;
 - packaged validation and version constants for the payload-free
   `bloge.executionServiceStateSnapshot.v1` durable-resume building block;
 - payload-safe typed child/suite-run summaries and JUnit 5 assertions;
@@ -67,6 +72,9 @@ mvn -f resource-gateway-test-kit/pom.xml install
 The module is intentionally independent of `resource-gateway-examples`. The
 server and client can therefore build and release separately against the
 versioned wire schema.
+
+The fidelity profile protocol and offline verification flow are documented in
+the [domain fidelity profile guide](../docs/resource-gateway-domain-fidelity-profile.md).
 
 Resource Gateway now exposes authenticated durable create/query/claim/heartbeat/recovery endpoints
 backed by BLOGE suspend state. This test-kit deliberately does not yet expose that broad control

@@ -1,0 +1,279 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://bloge.dev/schemas/resource-gateway-mirror/domain-fidelity-inventory-v1.schema.json",
+  "title": "Resource Gateway Domain Fidelity Inventory v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "inventoryId",
+    "revision",
+    "fingerprint",
+    "scope",
+    "domainId",
+    "taxonomyRef",
+    "units",
+    "provenance",
+    "lifecycle",
+    "effectiveAt",
+    "expiresAt"
+  ],
+  "properties": {
+    "schemaVersion": {
+      "const": "resourceGateway.domainFidelityInventory.v1"
+    },
+    "inventoryId": {
+      "$ref": "#/$defs/identifier"
+    },
+    "revision": {
+      "type": "integer",
+      "minimum": 1
+    },
+    "fingerprint": {
+      "$ref": "mirror-plan-v1.schema.json#/$defs/fingerprint"
+    },
+    "scope": {
+      "$ref": "mirror-plan-v1.schema.json#/$defs/scope"
+    },
+    "domainId": {
+      "$ref": "#/$defs/identifier"
+    },
+    "taxonomyRef": {
+      "$ref": "#/$defs/taxonomyRef"
+    },
+    "units": {
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 4096,
+      "uniqueItems": true,
+      "items": {
+        "$ref": "#/$defs/coverageUnit"
+      }
+    },
+    "provenance": {
+      "allOf": [
+        {
+          "$ref": "artifact-provenance-v1.schema.json"
+        },
+        {
+          "properties": {
+            "sourceType": {
+              "const": "OWNER"
+            },
+            "approvedBy": {
+              "minLength": 1
+            },
+            "approvedAt": {
+              "type": "string",
+              "format": "date-time"
+            },
+            "expiresAt": {
+              "type": "string",
+              "format": "date-time"
+            },
+            "revocationRef": {
+              "const": ""
+            }
+          }
+        }
+      ]
+    },
+    "lifecycle": {
+      "const": "ACTIVE"
+    },
+    "effectiveAt": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "expiresAt": {
+      "type": "string",
+      "format": "date-time"
+    }
+  },
+  "$defs": {
+    "identifier": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 512,
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9@._:/-]{0,511}$"
+    },
+    "artifactRef": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "id",
+        "revision",
+        "fingerprint"
+      ],
+      "properties": {
+        "kind": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 64
+        },
+        "id": {
+          "$ref": "#/$defs/identifier"
+        },
+        "revision": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "fingerprint": {
+          "$ref": "mirror-plan-v1.schema.json#/$defs/fingerprint"
+        }
+      }
+    },
+    "taxonomyRef": {
+      "allOf": [
+        {
+          "$ref": "#/$defs/artifactRef"
+        },
+        {
+          "properties": {
+            "kind": {
+              "const": "DOMAIN_FIDELITY_TAXONOMY"
+            }
+          }
+        }
+      ]
+    },
+    "scenarioCaseRef": {
+      "allOf": [
+        {
+          "$ref": "#/$defs/artifactRef"
+        },
+        {
+          "properties": {
+            "kind": {
+              "const": "SCENARIO_CASE"
+            }
+          }
+        }
+      ]
+    },
+    "capabilityRef": {
+      "allOf": [
+        {
+          "$ref": "#/$defs/artifactRef"
+        },
+        {
+          "properties": {
+            "kind": {
+              "const": "CAPABILITY"
+            }
+          }
+        }
+      ]
+    },
+    "dimension": {
+      "enum": [
+        "BEHAVIOR",
+        "CONTRACT",
+        "EFFECT",
+        "ERROR_DISTRIBUTION",
+        "OUTCOME",
+        "REQUEST_SPACE",
+        "STATE_TRANSITION"
+      ]
+    },
+    "coverageUnit": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "unitId",
+        "scenarioCaseRef",
+        "targetCapabilityRef",
+        "caseType",
+        "requiredDimensions"
+      ],
+      "properties": {
+        "unitId": {
+          "$ref": "#/$defs/identifier"
+        },
+        "scenarioCaseRef": {
+          "$ref": "#/$defs/scenarioCaseRef"
+        },
+        "targetCapabilityRef": {
+          "$ref": "#/$defs/capabilityRef"
+        },
+        "caseType": {
+          "enum": [
+            "GOLDEN",
+            "NEGATIVE",
+            "BOUNDARY",
+            "REGRESSION",
+            "FAULT",
+            "STATE_TRANSITION",
+            "WHAT_IF"
+          ]
+        },
+        "requiredDimensions": {
+          "type": "array",
+          "minItems": 2,
+          "maxItems": 7,
+          "uniqueItems": true,
+          "contains": {
+            "const": "CONTRACT"
+          },
+          "items": {
+            "$ref": "#/$defs/dimension"
+          }
+        }
+      },
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "caseType": {
+                "const": "STATE_TRANSITION"
+              }
+            },
+            "required": [
+              "caseType"
+            ]
+          },
+          "then": {
+            "properties": {
+              "requiredDimensions": {
+                "contains": {
+                  "const": "STATE_TRANSITION"
+                }
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "caseType": {
+                "const": "FAULT"
+              }
+            },
+            "required": [
+              "caseType"
+            ]
+          },
+          "then": {
+            "properties": {
+              "requiredDimensions": {
+                "contains": {
+                  "const": "ERROR_DISTRIBUTION"
+                }
+              }
+            }
+          }
+        },
+        {
+          "properties": {
+            "requiredDimensions": {
+              "contains": {
+                "const": "BEHAVIOR"
+              }
+            }
+          }
+        }
+      ]
+    }
+  }
+}

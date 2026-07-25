@@ -1,0 +1,740 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://bloge.dev/schemas/resource-gateway-mirror/domain-fidelity-profile-v1.schema.json",
+  "title": "Resource Gateway Domain Fidelity Profile v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "profileFingerprint",
+    "scope",
+    "domainId",
+    "inventoryRef",
+    "taxonomyRef",
+    "policy",
+    "measuredAt",
+    "validUntil",
+    "denominator",
+    "unitAssessments",
+    "dimensions",
+    "abstentionDebt",
+    "sourceComposition",
+    "assessment",
+    "limitations",
+    "profileSeal"
+  ],
+  "properties": {
+    "schemaVersion": {
+      "const": "resourceGateway.domainFidelityProfile.v1"
+    },
+    "profileFingerprint": {
+      "$ref": "mirror-plan-v1.schema.json#/$defs/fingerprint"
+    },
+    "scope": {
+      "$ref": "mirror-plan-v1.schema.json#/$defs/scope"
+    },
+    "domainId": {
+      "$ref": "#/$defs/identifier"
+    },
+    "inventoryRef": {
+      "$ref": "#/$defs/inventoryRef"
+    },
+    "taxonomyRef": {
+      "$ref": "domain-fidelity-inventory-v1.schema.json#/$defs/taxonomyRef"
+    },
+    "policy": {
+      "$ref": "#/$defs/policy"
+    },
+    "measuredAt": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "validUntil": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "denominator": {
+      "$ref": "#/$defs/denominator"
+    },
+    "unitAssessments": {
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 4096,
+      "uniqueItems": true,
+      "items": {
+        "$ref": "#/$defs/unitAssessment"
+      }
+    },
+    "dimensions": {
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 7,
+      "uniqueItems": true,
+      "items": {
+        "$ref": "#/$defs/dimensionMetric"
+      }
+    },
+    "abstentionDebt": {
+      "$ref": "#/$defs/abstentionDebt"
+    },
+    "sourceComposition": {
+      "$ref": "#/$defs/sourceComposition"
+    },
+    "assessment": {
+      "enum": [
+        "COMPLETE",
+        "PARTIAL",
+        "INSUFFICIENT_EVIDENCE",
+        "STALE"
+      ]
+    },
+    "limitations": {
+      "type": "array",
+      "maxItems": 8,
+      "uniqueItems": true,
+      "items": {
+        "enum": [
+          "ABSTENTION_PRESENT",
+          "COVERAGE_INCOMPLETE",
+          "EVIDENCE_STALE",
+          "LOW_SAMPLE",
+          "OUTCOME_UNCALIBRATED",
+          "REQUEST_SPACE_UNMEASURED",
+          "SOURCE_MODE_UNKNOWN",
+          "SYNTHESIZED_SOURCE_PRESENT"
+        ]
+      }
+    },
+    "profileSeal": {
+      "$ref": "#/$defs/evidenceSeal"
+    }
+  },
+  "$defs": {
+    "identifier": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 512,
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9@._:/-]{0,511}$"
+    },
+    "artifactRef": {
+      "$ref": "domain-fidelity-inventory-v1.schema.json#/$defs/artifactRef"
+    },
+    "sourceRef": {
+      "allOf": [
+        {
+          "$ref": "#/$defs/artifactRef"
+        },
+        {
+          "properties": {
+            "kind": {
+              "enum": [
+                "AUTHORITATIVE_OUTCOME_OBSERVATION",
+                "FIDELITY_SHADOW_COMPARISON",
+                "SCENARIO_REHEARSAL_BATCH_WORKBOOK_SEED",
+                "SCENARIO_REHEARSAL_WORKBOOK_SEED"
+              ]
+            }
+          }
+        }
+      ]
+    },
+    "inventoryRef": {
+      "allOf": [
+        {
+          "$ref": "#/$defs/artifactRef"
+        },
+        {
+          "properties": {
+            "kind": {
+              "const": "DOMAIN_FIDELITY_INVENTORY"
+            }
+          }
+        }
+      ]
+    },
+    "scenarioCaseRef": {
+      "$ref": "domain-fidelity-inventory-v1.schema.json#/$defs/scenarioCaseRef"
+    },
+    "dimension": {
+      "$ref": "domain-fidelity-inventory-v1.schema.json#/$defs/dimension"
+    },
+    "measurementOutcome": {
+      "enum": [
+        "PASS",
+        "FAIL",
+        "ABSTAINED",
+        "STALE",
+        "MISSING"
+      ]
+    },
+    "measurementReason": {
+      "enum": [
+        "ASSERTIONS_PASSED",
+        "ASSERTION_FAILED",
+        "ASSERTION_EVIDENCE_INDETERMINATE",
+        "DIMENSION_ASSERTION_ABSENT",
+        "EVIDENCE_NOT_CERTIFIABLE",
+        "OUTCOME_AUTHORITY_UNAVAILABLE",
+        "REQUEST_SPACE_EVIDENCE_UNAVAILABLE",
+        "SOURCE_EVIDENCE_INCOMPLETE",
+        "EVIDENCE_STALE",
+        "NO_ELIGIBLE_EVIDENCE"
+      ]
+    },
+    "policy": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "minimumAssessedUnits",
+        "freshnessWindow",
+        "certifiableEvidenceRequired",
+        "confidenceMethod"
+      ],
+      "properties": {
+        "minimumAssessedUnits": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 4096
+        },
+        "freshnessWindow": {
+          "type": "string",
+          "minLength": 3,
+          "maxLength": 64,
+          "pattern": "^PT"
+        },
+        "certifiableEvidenceRequired": {
+          "const": true
+        },
+        "confidenceMethod": {
+          "const": "WILSON_95_V1"
+        }
+      }
+    },
+    "dimensionDenominator": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "dimension",
+        "requiredUnits"
+      ],
+      "properties": {
+        "dimension": {
+          "$ref": "#/$defs/dimension"
+        },
+        "requiredUnits": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 4096
+        }
+      }
+    },
+    "denominator": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "totalUnits",
+        "totalObligations",
+        "dimensions"
+      ],
+      "properties": {
+        "totalUnits": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 4096
+        },
+        "totalObligations": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 28672
+        },
+        "dimensions": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 7,
+          "uniqueItems": true,
+          "items": {
+            "$ref": "#/$defs/dimensionDenominator"
+          }
+        }
+      }
+    },
+    "dimensionResult": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "dimension",
+        "outcome",
+        "reason"
+      ],
+      "properties": {
+        "dimension": {
+          "$ref": "#/$defs/dimension"
+        },
+        "outcome": {
+          "$ref": "#/$defs/measurementOutcome"
+        },
+        "reason": {
+          "$ref": "#/$defs/measurementReason"
+        }
+      }
+    },
+    "unitAssessment": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "unitId",
+        "scenarioCaseRef",
+        "sourceRef",
+        "observedAt",
+        "expiresAt",
+        "sourceMode",
+        "results"
+      ],
+      "properties": {
+        "unitId": {
+          "$ref": "#/$defs/identifier"
+        },
+        "scenarioCaseRef": {
+          "$ref": "#/$defs/scenarioCaseRef"
+        },
+        "sourceRef": {
+          "oneOf": [
+            {
+              "type": "null"
+            },
+            {
+              "$ref": "#/$defs/sourceRef"
+            }
+          ]
+        },
+        "observedAt": {
+          "oneOf": [
+            {
+              "type": "null"
+            },
+            {
+              "type": "string",
+              "format": "date-time"
+            }
+          ]
+        },
+        "expiresAt": {
+          "oneOf": [
+            {
+              "type": "null"
+            },
+            {
+              "type": "string",
+              "format": "date-time"
+            }
+          ]
+        },
+        "sourceMode": {
+          "enum": [
+            "RECORDED",
+            "SYNTHESIZED",
+            "OWNER_DECLARED",
+            "AUTHORITATIVE",
+            "UNKNOWN"
+          ]
+        },
+        "results": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 7,
+          "uniqueItems": true,
+          "items": {
+            "$ref": "#/$defs/dimensionResult"
+          }
+        }
+      },
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "sourceRef": {
+                "type": "null"
+              }
+            },
+            "required": [
+              "sourceRef"
+            ]
+          },
+          "then": {
+            "properties": {
+              "observedAt": {
+                "type": "null"
+              },
+              "expiresAt": {
+                "type": "null"
+              },
+              "sourceMode": {
+                "const": "UNKNOWN"
+              },
+              "results": {
+                "items": {
+                  "allOf": [
+                    {
+                      "$ref": "#/$defs/dimensionResult"
+                    },
+                    {
+                      "properties": {
+                        "outcome": {
+                          "const": "MISSING"
+                        },
+                        "reason": {
+                          "const": "NO_ELIGIBLE_EVIDENCE"
+                        }
+                      }
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "else": {
+            "properties": {
+              "observedAt": {
+                "type": "string",
+                "format": "date-time"
+              },
+              "expiresAt": {
+                "type": "string",
+                "format": "date-time"
+              },
+              "results": {
+                "items": {
+                  "allOf": [
+                    {
+                      "$ref": "#/$defs/dimensionResult"
+                    },
+                    {
+                      "properties": {
+                        "outcome": {
+                          "not": {
+                            "const": "MISSING"
+                          }
+                        }
+                      }
+                    }
+                  ]
+                }
+              }
+            }
+          }
+        }
+      ]
+    },
+    "confidence": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "point",
+        "lowerBound",
+        "upperBound",
+        "method"
+      ],
+      "properties": {
+        "point": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1
+        },
+        "lowerBound": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1
+        },
+        "upperBound": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1
+        },
+        "method": {
+          "const": "WILSON_95_V1"
+        }
+      }
+    },
+    "dimensionMetric": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "dimension",
+        "requiredUnits",
+        "freshEvidenceUnits",
+        "assessedUnits",
+        "passedUnits",
+        "failedUnits",
+        "abstainedUnits",
+        "staleUnits",
+        "missingUnits",
+        "coverageRatio",
+        "abstentionRatio",
+        "confidence",
+        "sufficiency"
+      ],
+      "properties": {
+        "dimension": {
+          "$ref": "#/$defs/dimension"
+        },
+        "requiredUnits": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 4096
+        },
+        "freshEvidenceUnits": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 4096
+        },
+        "assessedUnits": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 4096
+        },
+        "passedUnits": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 4096
+        },
+        "failedUnits": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 4096
+        },
+        "abstainedUnits": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 4096
+        },
+        "staleUnits": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 4096
+        },
+        "missingUnits": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 4096
+        },
+        "coverageRatio": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1
+        },
+        "abstentionRatio": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1
+        },
+        "confidence": {
+          "oneOf": [
+            {
+              "type": "null"
+            },
+            {
+              "$ref": "#/$defs/confidence"
+            }
+          ]
+        },
+        "sufficiency": {
+          "enum": [
+            "MEASURED",
+            "PARTIAL_COVERAGE",
+            "BELOW_MINIMUM_SAMPLE",
+            "NO_ASSESSED_EVIDENCE"
+          ]
+        }
+      },
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "assessedUnits": {
+                "const": 0
+              }
+            },
+            "required": [
+              "assessedUnits"
+            ]
+          },
+          "then": {
+            "properties": {
+              "confidence": {
+                "type": "null"
+              },
+              "sufficiency": {
+                "const": "NO_ASSESSED_EVIDENCE"
+              }
+            }
+          },
+          "else": {
+            "properties": {
+              "confidence": {
+                "$ref": "#/$defs/confidence"
+              },
+              "sufficiency": {
+                "not": {
+                  "const": "NO_ASSESSED_EVIDENCE"
+                }
+              }
+            }
+          }
+        }
+      ]
+    },
+    "reasonCount": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "reason",
+        "count"
+      ],
+      "properties": {
+        "reason": {
+          "enum": [
+            "ASSERTION_EVIDENCE_INDETERMINATE",
+            "DIMENSION_ASSERTION_ABSENT",
+            "EVIDENCE_NOT_CERTIFIABLE",
+            "OUTCOME_AUTHORITY_UNAVAILABLE",
+            "REQUEST_SPACE_EVIDENCE_UNAVAILABLE",
+            "SOURCE_EVIDENCE_INCOMPLETE"
+          ]
+        },
+        "count": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 28672
+        }
+      }
+    },
+    "abstentionDebt": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "totalObligations",
+        "abstainedObligations",
+        "ratio",
+        "reasons"
+      ],
+      "properties": {
+        "totalObligations": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 28672
+        },
+        "abstainedObligations": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 28672
+        },
+        "ratio": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1
+        },
+        "reasons": {
+          "type": "array",
+          "maxItems": 6,
+          "uniqueItems": true,
+          "items": {
+            "$ref": "#/$defs/reasonCount"
+          }
+        }
+      }
+    },
+    "sourceComposition": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "totalUnits",
+        "recordedUnits",
+        "synthesizedUnits",
+        "ownerDeclaredUnits",
+        "authoritativeUnits",
+        "unknownUnits",
+        "synthesizedRatio",
+        "unknownRatio"
+      ],
+      "properties": {
+        "totalUnits": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 4096
+        },
+        "recordedUnits": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 4096
+        },
+        "synthesizedUnits": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 4096
+        },
+        "ownerDeclaredUnits": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 4096
+        },
+        "authoritativeUnits": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 4096
+        },
+        "unknownUnits": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 4096
+        },
+        "synthesizedRatio": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1
+        },
+        "unknownRatio": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1
+        }
+      }
+    },
+    "evidenceSeal": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "schemaVersion",
+        "materialFingerprint",
+        "algorithm",
+        "keyId",
+        "signedAt",
+        "signature"
+      ],
+      "properties": {
+        "schemaVersion": {
+          "const": "bloge.visualRunEvidenceSeal.v1"
+        },
+        "materialFingerprint": {
+          "$ref": "mirror-plan-v1.schema.json#/$defs/fingerprint"
+        },
+        "algorithm": {
+          "const": "Ed25519"
+        },
+        "keyId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 255
+        },
+        "signedAt": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "signature": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 4096
+        }
+      }
+    }
+  }
+}

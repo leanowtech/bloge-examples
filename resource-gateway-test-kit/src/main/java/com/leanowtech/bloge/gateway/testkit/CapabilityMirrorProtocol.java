@@ -382,6 +382,12 @@ public final class CapabilityMirrorProtocol {
     /** Fixed scenario protocol compatibility-fixture wire version. */
     public static final String SCENARIO_PACK_COMPATIBILITY_V1 =
             "resourceGateway.scenarioPackCompatibility.v1";
+    /** Owner-approved domain fidelity denominator wire version. */
+    public static final String DOMAIN_FIDELITY_INVENTORY_V1 =
+            "resourceGateway.domainFidelityInventory.v1";
+    /** Signed payload-free domain fidelity vector wire version. */
+    public static final String DOMAIN_FIDELITY_PROFILE_V1 =
+            "resourceGateway.domainFidelityProfile.v1";
     /** Fixed Stage 3 refund fixture envelope version. */
     public static final String STATEFUL_REFUND_FIXTURE_V1 =
             "resourceGateway.statefulRefundFixture.v1";
@@ -780,6 +786,14 @@ public final class CapabilityMirrorProtocol {
     SCENARIO_REHEARSAL_REMEDIATION_COMPARISON_SCHEMA_RESOURCE =
             SCHEMA_RESOURCE_ROOT
                     + "scenario-rehearsal-remediation-comparison-v1.schema.json";
+    /** Packaged owner-approved domain fidelity denominator schema. */
+    public static final String DOMAIN_FIDELITY_INVENTORY_SCHEMA_RESOURCE =
+            SCHEMA_RESOURCE_ROOT
+                    + "domain-fidelity-inventory-v1.schema.json";
+    /** Packaged signed payload-free domain fidelity vector schema. */
+    public static final String DOMAIN_FIDELITY_PROFILE_SCHEMA_RESOURCE =
+            SCHEMA_RESOURCE_ROOT
+                    + "domain-fidelity-profile-v1.schema.json";
     /** Packaged stable bounded Scenario batch item page. */
     public static final String SCENARIO_REHEARSAL_BATCH_ITEM_PAGE_SCHEMA_RESOURCE =
             SCHEMA_RESOURCE_ROOT
