@@ -29,7 +29,11 @@ import com.leanowtech.bloge.gateway.integration.mirror.ScenarioRehearsalBatchRep
 import com.leanowtech.bloge.gateway.integration.mirror.ScenarioRehearsalBatchRetentionRepository;
 import com.leanowtech.bloge.gateway.integration.mirror.ScenarioRehearsalBatchScheduler;
 import com.leanowtech.bloge.gateway.integration.mirror.ScenarioRehearsalBatchService;
+import com.leanowtech.bloge.gateway.integration.mirror.ScenarioRehearsalBatchTransactionalAdmission;
 import com.leanowtech.bloge.gateway.integration.mirror.ScenarioRehearsalBatchWorker;
+import com.leanowtech.bloge.gateway.integration.mirror.ScenarioRehearsalRemediationPolicy;
+import com.leanowtech.bloge.gateway.integration.mirror.ScenarioRehearsalRemediationRepository;
+import com.leanowtech.bloge.gateway.integration.mirror.ScenarioRehearsalRemediationService;
 import com.leanowtech.bloge.gateway.integration.mirror.ScenarioRehearsalCompiler;
 import com.leanowtech.bloge.gateway.integration.mirror.ScenarioRehearsalIntegrationService;
 import com.leanowtech.bloge.gateway.integration.mirror.MirrorPlanIntegrationService;
@@ -282,6 +286,15 @@ class MirrorRuntimeConfigurationTest {
         assertThat(context.getBeansOfType(
                 ScenarioRehearsalBatchRepository.class)).hasSize(1);
         assertThat(context.getBeansOfType(
+                ScenarioRehearsalBatchTransactionalAdmission.class))
+                .hasSize(1);
+        assertThat(context.getBeansOfType(
+                ScenarioRehearsalRemediationPolicy.class)).hasSize(1);
+        assertThat(context.getBeansOfType(
+                ScenarioRehearsalRemediationRepository.class)).hasSize(1);
+        assertThat(context.getBeansOfType(
+                ScenarioRehearsalRemediationService.class)).hasSize(1);
+        assertThat(context.getBeansOfType(
                 ScenarioRehearsalBatchRetentionRepository.class)).hasSize(1);
         assertThat(context.getBeansOfType(
                 ScenarioRehearsalBatchCompiler.class)).hasSize(1);
@@ -402,6 +415,15 @@ class MirrorRuntimeConfigurationTest {
                 ScenarioRehearsalBatchPolicy.class)).isEmpty();
         assertThat(context.getBeansOfType(
                 ScenarioRehearsalBatchRepository.class)).isEmpty();
+        assertThat(context.getBeansOfType(
+                ScenarioRehearsalBatchTransactionalAdmission.class))
+                .isEmpty();
+        assertThat(context.getBeansOfType(
+                ScenarioRehearsalRemediationPolicy.class)).isEmpty();
+        assertThat(context.getBeansOfType(
+                ScenarioRehearsalRemediationRepository.class)).isEmpty();
+        assertThat(context.getBeansOfType(
+                ScenarioRehearsalRemediationService.class)).isEmpty();
         assertThat(context.getBeansOfType(
                 ScenarioRehearsalBatchRetentionRepository.class)).isEmpty();
         assertThat(context.getBeansOfType(

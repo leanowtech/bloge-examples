@@ -16,6 +16,7 @@
     "predecessorStatus",
     "predecessorBlockers",
     "strategy",
+    "reasonCode",
     "replacements",
     "successorRequest",
     "successorRequestFingerprint",
@@ -71,6 +72,16 @@
     "strategy": {
       "enum": ["RERUN_EXACT", "REPLACE_COMPILED_PLANS"]
     },
+    "reasonCode": {
+      "enum": [
+        "TRANSIENT_EXECUTION_RECHECK",
+        "EVIDENCE_RECOVERY_RECHECK",
+        "SCENARIO_REVISION",
+        "FIXTURE_REVISION",
+        "ASSERTION_REVISION",
+        "MIRROR_PLAN_REVISION"
+      ]
+    },
     "replacements": {
       "type": "array",
       "maxItems": 256,
@@ -112,6 +123,12 @@
       },
       "then": {
         "properties": {
+          "reasonCode": {
+            "enum": [
+              "TRANSIENT_EXECUTION_RECHECK",
+              "EVIDENCE_RECOVERY_RECHECK"
+            ]
+          },
           "replacements": {
             "maxItems": 0
           }
@@ -119,6 +136,14 @@
       },
       "else": {
         "properties": {
+          "reasonCode": {
+            "enum": [
+              "SCENARIO_REVISION",
+              "FIXTURE_REVISION",
+              "ASSERTION_REVISION",
+              "MIRROR_PLAN_REVISION"
+            ]
+          },
           "replacements": {
             "minItems": 1
           }
@@ -146,7 +171,9 @@
       "additionalProperties": false,
       "required": [
         "requiredRoles",
-        "minimumDistinctActors"
+        "minimumDistinctActors",
+        "serverPolicyGeneration",
+        "serverPolicyFingerprint"
       ],
       "properties": {
         "requiredRoles": {
@@ -165,6 +192,13 @@
         },
         "minimumDistinctActors": {
           "const": 2
+        },
+        "serverPolicyGeneration": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "serverPolicyFingerprint": {
+          "$ref": "mirror-plan-v1.schema.json#/$defs/fingerprint"
         }
       }
     }

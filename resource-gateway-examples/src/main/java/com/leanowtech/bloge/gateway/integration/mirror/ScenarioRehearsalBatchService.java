@@ -111,6 +111,17 @@ public final class ScenarioRehearsalBatchService {
             IntegrationRequestContext identity,
             MirrorOperationObservability.Observation operation) {
         requirePurpose(identity, Set.of("MIRROR_REHEARSAL"));
+        if (request != null
+                && request.requestId().startsWith(
+                ScenarioRehearsalRemediationIdentity
+                        .RESERVED_PREFIX)) {
+            throw new IntegrationProblemException(
+                    IntegrationProblem.badRequest(
+                            "RG.MIRROR.REHEARSAL_BATCH.REQUEST_ID_RESERVED",
+                            "The Scenario remediation request-id namespace is server-owned.",
+                            identity.correlationId(),
+                            Map.of()));
+        }
         ScenarioRehearsalBatchManifest manifest =
                 compiler.compile(
                         Objects.requireNonNull(request, "request"),

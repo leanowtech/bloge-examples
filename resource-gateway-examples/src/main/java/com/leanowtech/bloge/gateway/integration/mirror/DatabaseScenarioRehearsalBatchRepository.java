@@ -9,6 +9,7 @@ import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.jdbc.datasource.DelegatingDataSource;
 import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.transaction.TransactionDefinition;
+import org.springframework.transaction.support.TransactionSynchronizationManager;
 import org.springframework.transaction.support.TransactionTemplate;
 
 import javax.sql.DataSource;
@@ -47,7 +48,8 @@ import static com.leanowtech.bloge.gateway.integration.mirror.ScenarioRehearsalB
  * input/output, and external responses are deliberately absent from the schema.</p>
  */
 public final class DatabaseScenarioRehearsalBatchRepository
-        implements ScenarioRehearsalBatchRepository {
+        implements ScenarioRehearsalBatchRepository,
+        ScenarioRehearsalBatchTransactionalAdmission {
     private static final Pattern IDENTIFIER =
             Pattern.compile("[A-Za-z0-9][A-Za-z0-9._:/#-]{0,511}");
     private static final Pattern CODE =
@@ -352,133 +354,158 @@ public final class DatabaseScenarioRehearsalBatchRepository
             MirrorOperationObservability.Observation observation) {
         Objects.requireNonNull(submission, "submission");
         Objects.requireNonNull(policy, "policy");
-        SubmissionResult result = mutations.execute(status -> {
-            QueuePartition partition = partition(
-                    submission.manifest().scope());
-            lockPartition(partition);
-            Instant observedAt = coordinationNow();
-            ensurePolicy(partition, policy, observedAt);
-            reconcile(partition, observedAt, policy);
-            ScenarioRehearsalBatchManifestIntegrity.verify(
-                    mapper, submission.manifest());
-            if (!submission.requestFingerprint().equals(
-                    ProtocolFingerprint.of(
-                            mapper, submission.request()))) {
-                throw new IllegalArgumentException(
-                        "Scenario batch request fingerprint mismatch");
-            }
-            Optional<StoredJob> existing = byRequest(
-                    submission.manifest().scope(),
-                    submission.request().requestId(),
-                    true);
-            if (existing.isPresent()) {
-                requireSameSubmission(
-                        existing.orElseThrow(), submission);
-                return observed(
-                        new SubmissionResult(
-                                existing.orElseThrow().job(),
-                                true),
-                        observation);
-            }
-            requireDeadline(submission, policy, observedAt);
-            if (activeCount(partition, null)
-                    >= policy.maximumQueued()) {
-                throw conflict(
-                        Reason.GLOBAL_QUEUE_FULL,
-                        "Scenario rehearsal batch environment queue is full");
-            }
-            if (activeCount(
-                    partition,
-                    submission.manifest().scope()
-                            .tenantId())
-                    >= policy.maximumQueuedPerTenant()) {
-                throw conflict(
-                        Reason.TENANT_QUEUE_FULL,
-                        "Scenario rehearsal batch tenant queue is full");
-            }
-            Instant deadlineAt = safePlus(
-                    observedAt,
-                    policy.maximumDeadlineHorizon());
-            Instant expiresAt = safePlus(
-                    deadlineAt,
-                    policy.terminalRetention());
-            ScenarioRehearsalBatchJob job =
-                    ScenarioRehearsalBatchIntegrity.seal(
-                            mapper,
-                            new ScenarioRehearsalBatchJob(
-                                    "",
-                                    submission.manifest().batchId(),
-                                    submission.request().requestId(),
-                                    submission.requestFingerprint(),
-                                    submission.manifest()
-                                            .manifestFingerprint(),
-                                    submission.manifest().scope(),
-                                    ScenarioRehearsalBatchJob.Status.QUEUED,
-                                    policy.failureMode(),
-                                    policy.priority(),
-                                    policy.maximumItemAttempts(),
-                                    new ScenarioRehearsalBatchJob.Summary(
-                                            submission.manifest()
-                                                    .entries().size(),
-                                            0, 0, 0, 0, 0),
-                                    deadlineAt,
-                                    "", "", "",
-                                    observedAt, observedAt,
-                                    null, ""));
-            StoredJob stored = new StoredJob(
-                    job,
-                    submission.request(),
-                    submission.manifest(),
-                    submission.principal(),
-                    observedAt,
-                    "",
-                    0,
-                    Instant.EPOCH,
-                    -1,
-                    expiresAt);
-            try {
-                insertJob(stored);
-                for (ScenarioRehearsalBatchManifest.Entry entry
-                        : submission.manifest().entries()) {
-                    insertItem(
-                            job.jobId(),
-                            new StoredItem(
-                                    pending(entry),
-                                    entry.executionTimeout()));
-                }
-            } catch (DuplicateKeyException collision) {
-                Optional<StoredJob> winner = byRequest(
-                        submission.manifest().scope(),
-                        submission.request().requestId(),
-                        true);
-                if (winner.isPresent()) {
-                    requireSameSubmission(
-                            winner.orElseThrow(), submission);
-                    return observed(
-                            new SubmissionResult(
-                                    winner.orElseThrow().job(),
-                                    true),
-                            observation);
-                }
-                throw conflict(
-                        Reason.IDEMPOTENCY_CONFLICT,
-                        "Scenario rehearsal batch identity already belongs to another intent");
-            }
-            appendLifecycle(
-                    stored,
-                    ScenarioRehearsalBatchLifecycleAuditEvent
-                            .Transition.ADMITTED,
-                    job,
-                    null,
-                    "",
-                    "");
-            return observed(
-                    new SubmissionResult(job, false),
-                    observation);
-        });
+        SubmissionResult result = mutations.execute(status ->
+                submitInTransaction(
+                        submission, policy, observation));
         return required(
                 result,
                 "Scenario rehearsal batch submission returned no result");
+    }
+
+    /**
+     * Joins a caller-owned transaction so successor admission and remediation receipt are atomic.
+     */
+    @Override
+    public SubmissionResult submitInCurrentTransaction(
+            Submission submission,
+            ScenarioRehearsalBatchPolicy policy) {
+        if (!TransactionSynchronizationManager
+                .isActualTransactionActive()) {
+            throw new IllegalStateException(
+                    "Scenario batch transactional admission requires an active transaction");
+        }
+        return submitInTransaction(
+                Objects.requireNonNull(submission, "submission"),
+                Objects.requireNonNull(policy, "policy"),
+                null);
+    }
+
+    private SubmissionResult submitInTransaction(
+            Submission submission,
+            ScenarioRehearsalBatchPolicy policy,
+            MirrorOperationObservability.Observation observation) {
+        QueuePartition partition = partition(
+                submission.manifest().scope());
+        lockPartition(partition);
+        Instant observedAt = coordinationNow();
+        ensurePolicy(partition, policy, observedAt);
+        reconcile(partition, observedAt, policy);
+        ScenarioRehearsalBatchManifestIntegrity.verify(
+                mapper, submission.manifest());
+        if (!submission.requestFingerprint().equals(
+                ProtocolFingerprint.of(
+                        mapper, submission.request()))) {
+            throw new IllegalArgumentException(
+                    "Scenario batch request fingerprint mismatch");
+        }
+        Optional<StoredJob> existing = byRequest(
+                submission.manifest().scope(),
+                submission.request().requestId(),
+                true);
+        if (existing.isPresent()) {
+            requireSameSubmission(
+                    existing.orElseThrow(), submission);
+            return observed(
+                    new SubmissionResult(
+                            existing.orElseThrow().job(),
+                            true),
+                    observation);
+        }
+        requireDeadline(submission, policy, observedAt);
+        if (activeCount(partition, null)
+                >= policy.maximumQueued()) {
+            throw conflict(
+                    Reason.GLOBAL_QUEUE_FULL,
+                    "Scenario rehearsal batch environment queue is full");
+        }
+        if (activeCount(
+                partition,
+                submission.manifest().scope()
+                        .tenantId())
+                >= policy.maximumQueuedPerTenant()) {
+            throw conflict(
+                    Reason.TENANT_QUEUE_FULL,
+                    "Scenario rehearsal batch tenant queue is full");
+        }
+        Instant deadlineAt = safePlus(
+                observedAt,
+                policy.maximumDeadlineHorizon());
+        Instant expiresAt = safePlus(
+                deadlineAt,
+                policy.terminalRetention());
+        ScenarioRehearsalBatchJob job =
+                ScenarioRehearsalBatchIntegrity.seal(
+                        mapper,
+                        new ScenarioRehearsalBatchJob(
+                                "",
+                                submission.manifest().batchId(),
+                                submission.request().requestId(),
+                                submission.requestFingerprint(),
+                                submission.manifest()
+                                        .manifestFingerprint(),
+                                submission.manifest().scope(),
+                                ScenarioRehearsalBatchJob.Status.QUEUED,
+                                policy.failureMode(),
+                                policy.priority(),
+                                policy.maximumItemAttempts(),
+                                new ScenarioRehearsalBatchJob.Summary(
+                                        submission.manifest()
+                                                .entries().size(),
+                                        0, 0, 0, 0, 0),
+                                deadlineAt,
+                                "", "", "",
+                                observedAt, observedAt,
+                                null, ""));
+        StoredJob stored = new StoredJob(
+                job,
+                submission.request(),
+                submission.manifest(),
+                submission.principal(),
+                observedAt,
+                "",
+                0,
+                Instant.EPOCH,
+                -1,
+                expiresAt);
+        try {
+            insertJob(stored);
+            for (ScenarioRehearsalBatchManifest.Entry entry
+                    : submission.manifest().entries()) {
+                insertItem(
+                        job.jobId(),
+                        new StoredItem(
+                                pending(entry),
+                                entry.executionTimeout()));
+            }
+        } catch (DuplicateKeyException collision) {
+            Optional<StoredJob> winner = byRequest(
+                    submission.manifest().scope(),
+                    submission.request().requestId(),
+                    true);
+            if (winner.isPresent()) {
+                requireSameSubmission(
+                        winner.orElseThrow(), submission);
+                return observed(
+                        new SubmissionResult(
+                                winner.orElseThrow().job(),
+                                true),
+                        observation);
+            }
+            throw conflict(
+                    Reason.IDEMPOTENCY_CONFLICT,
+                    "Scenario rehearsal batch identity already belongs to another intent");
+        }
+        appendLifecycle(
+                stored,
+                ScenarioRehearsalBatchLifecycleAuditEvent
+                        .Transition.ADMITTED,
+                job,
+                null,
+                "",
+                "");
+        return observed(
+                new SubmissionResult(job, false),
+                observation);
     }
 
     @Override

@@ -44,6 +44,7 @@ Fixture、MirrorPlan 和可选 Session checkpoint 绑定成不可变执行许可
 | `ScenarioRehearsalBatchWorkbookSeed.v1` | 可用 | 把签名 batch v2、初始 retention proof、全部 child workbook commitment 与有界 correctness projection 归约为一个确定性整批 ANEKE 输入 |
 | batch workbook root seal/verifier | 可用 | 服务端内部逐 child 复验后对 deterministic seed 做域隔离 Ed25519 seal；ANEKE/CI 无需 N+1 即可重算 batch/retention/root 三类签名、blocker 和 gate |
 | batch workbook API/Test Kit client | 可用 | 受保护 exact-job 读取；一键拉取 seed、batch evidence 和三把公开 key 后失败关闭，case 级审计可按需打开 child commitment |
+| reviewed remediation transaction kernel | 可用（内部服务） | 从已验签阻断 predecessor 冻结 exact successor，经 server-authorized Owner/Independent Reviewer append-only 审批后，在同一事务准入 successor、回执和成功审计；受保护 HTTP API 与 Owner 写侧尚未开放 |
 | 可作为生产发布门禁的 Scenario evidence | 未交付 | 本地 gate-consumable closure 已完成；尚无企业 retention policy authority、WORM/外部锚、消费者认证和环境级门禁 |
 
 当前链路已经解决“执行前冻结什么、运行时从哪里取值、每个结果依据什么证据”
@@ -973,7 +974,7 @@ Owner 的业务修复与 finalization 管理员修复是两套不同协议。前
 | 阶段 | Schema | 不变量 |
 |---|---|---|
 | 预览意图 | `scenario-rehearsal-remediation-preview-request-v1` | 绑定 exact predecessor workbook；选择 `RERUN_EXACT` 或 `REPLACE_COMPILED_PLANS`；使用闭集 reason code |
-| 冻结计划 | `scenario-rehearsal-remediation-plan-v1` | content-addressed；冻结完整 successor request、predecessor blocker 和固定双角色审批策略 |
+| 冻结计划 | `scenario-rehearsal-remediation-plan-v1` | content-addressed；冻结完整 successor request、业务 reason、predecessor blocker，以及 server policy generation/fingerprint 约束的双角色审批策略 |
 | 审批命令 | `scenario-rehearsal-remediation-approval-command-v1` | 比较 plan fingerprint 与 expected approval generation；批准和拒绝 reason 不能混用 |
 | 审批事实 | `scenario-rehearsal-remediation-approval-v1` | append-only；server-owned actor/time/delegation；previous fingerprint 形成链 |
 | 提交命令 | `scenario-rehearsal-remediation-submit-command-v1` | 同时比较 plan、approval generation 与 approval head；至少完成两级审批 |
@@ -988,14 +989,22 @@ case、改写 DSL/JSON、降低断言严重度，或放松网络、凭证、运�
 
 固定审批策略为先 `OWNER`、后 `INDEPENDENT_REVIEWER`，并要求两个不同 actor。
 客户端只能提交角色和决定；服务端从认证上下文写入 actor、delegation 和时间。
-Schema 负责结构失败关闭，应用服务还必须在数据库事务内校验 exact predecessor、
-replacement closure、角色顺序、actor separation、generation/head CAS 与幂等
-successor enqueue。
+actor separation 同时比较 actor 与 `delegatedBy`，禁止两个代理账号由同一控制主体
+绕过双人分离。计划还冻结当前 server policy generation/fingerprint；滚动升级或
+配置漂移时，旧副本不能用不同授权策略继续审批或提交。
 
-当前交付边界是 Java protocol、六份 authoritative Schema、Test Kit validator 和
-capability `supportedObjects` 版本目录。尚未提供 preview/approve/submit API、
-repository、successor 调度或工作台按钮，因此没有对应 capability readiness flag。
-这些服务落地前，`/rehearsals/` 仍是只读分诊面。
+当前已交付 Java protocol、六份 authoritative Schema、Test Kit validator、
+capability `supportedObjects` 版本目录，以及 durable JDBC repository/application
+service 事务内核。应用服务从已验签 predecessor workbook/evidence 重建 exact
+successor，服务端持有 purpose、actor、时间、过期、角色组和保留请求 ID 命名空间；
+repository 以数据库时钟、append-only approval facts、generation/head CAS 和完整
+scope 执行约束。最终提交把 successor batch admission、receipt、状态投影和成功审计
+放在同一事务；预占 identity、审计不可用、策略漂移、篡改或非精确重放全部回滚或
+失败关闭。
+
+尚未提供受保护 preview/approve/submit/read HTTP API、capability readiness flag、
+工作台按钮和 predecessor/successor 签名 workbook 对比视图。因此
+`/rehearsals/` 仍是只读分诊面，内部事务内核的存在不代表外部产品能力已开放。
 
 ## 9. 失败语义
 
@@ -1148,7 +1157,7 @@ WORM、外部 transparency anchor、企业级策略分发和跨地域删除认�
 
 ```bash
 mvn -f resource-gateway-examples/pom.xml \
-  -Dtest=ScenarioRehearsalControllerTest,ScenarioRehearsalBatchControllerTest,ScenarioArtifactRequestDecoderTest,ScenarioArtifactRegistryServiceTest,ScenarioRehearsalIntegrationServiceTest,ScenarioRehearsalCompilerTest,ScenarioRehearsalRuntimeServiceTest,ScenarioRehearsalBatchProtocolTest,ScenarioRehearsalBatchManifestTest,ScenarioRehearsalBatchJobPageTest,ScenarioRehearsalBatchServiceTest,ScenarioRehearsalBatchWorkbookSeedTest,ScenarioRehearsalBatchWorkbookServiceTest,DatabaseScenarioRehearsalBatchRepositoryTest,DatabaseScenarioRehearsalBatchLifecycleAuditRepositoryTest,ScenarioRehearsalBatchEvidenceIntegrityServiceTest,ScenarioRehearsalBatchEvidencePublisherTest,DatabaseScenarioRehearsalBatchEvidenceRepositoryTest,DatabaseScenarioRehearsalBatchRetentionRepositoryTest,ScenarioRehearsalBatchRetentionServiceTest,ScenarioRehearsalBatchSchedulerTest,ScenarioRehearsalBatchSchedulerPropertiesTest,ScenarioRehearsalWorkbookSeedTest,ScenarioRehearsalResultProtocolTest,ScenarioRehearsalEvidenceIntegrityServiceTest,DatabaseScenarioRehearsalEvidenceRepositoryTest,DatabaseScenarioRehearsalRunRepositoryTest,ScenarioRehearsalCommitServiceTest,DatabaseScenarioRehearsalRetentionRepositoryTest,ScenarioRehearsalRetentionServiceTest,DatabaseScenarioArtifactRepositoryTest,DatabaseCompiledScenarioRehearsalPlanRepositoryTest,ScenarioPackProtocolTest,MirrorEvidenceIntegrityServiceTest,ScenarioHandlingAssertionEvaluatorTest,MirrorRuntimeConfigurationTest,ToolStudioIntegrationServiceTest,VisualCanvasDemoScriptTest \
+  -Dtest=ScenarioRehearsalControllerTest,ScenarioRehearsalBatchControllerTest,ScenarioArtifactRequestDecoderTest,ScenarioArtifactRegistryServiceTest,ScenarioRehearsalIntegrationServiceTest,ScenarioRehearsalCompilerTest,ScenarioRehearsalRuntimeServiceTest,ScenarioRehearsalBatchProtocolTest,ScenarioRehearsalBatchManifestTest,ScenarioRehearsalBatchJobPageTest,ScenarioRehearsalBatchServiceTest,ScenarioRehearsalBatchWorkbookSeedTest,ScenarioRehearsalBatchWorkbookServiceTest,ScenarioRehearsalRemediationProtocolTest,DatabaseScenarioRehearsalRemediationRepositoryTest,ScenarioRehearsalRemediationServiceTest,DatabaseScenarioRehearsalBatchRepositoryTest,DatabaseScenarioRehearsalBatchLifecycleAuditRepositoryTest,ScenarioRehearsalBatchEvidenceIntegrityServiceTest,ScenarioRehearsalBatchEvidencePublisherTest,DatabaseScenarioRehearsalBatchEvidenceRepositoryTest,DatabaseScenarioRehearsalBatchRetentionRepositoryTest,ScenarioRehearsalBatchRetentionServiceTest,ScenarioRehearsalBatchSchedulerTest,ScenarioRehearsalBatchSchedulerPropertiesTest,ScenarioRehearsalWorkbookSeedTest,ScenarioRehearsalResultProtocolTest,ScenarioRehearsalEvidenceIntegrityServiceTest,DatabaseScenarioRehearsalEvidenceRepositoryTest,DatabaseScenarioRehearsalRunRepositoryTest,ScenarioRehearsalCommitServiceTest,DatabaseScenarioRehearsalRetentionRepositoryTest,ScenarioRehearsalRetentionServiceTest,DatabaseScenarioArtifactRepositoryTest,DatabaseCompiledScenarioRehearsalPlanRepositoryTest,ScenarioPackProtocolTest,MirrorEvidenceIntegrityServiceTest,ScenarioHandlingAssertionEvaluatorTest,MirrorRuntimeConfigurationTest,ToolStudioIntegrationServiceTest,VisualCanvasDemoScriptTest \
   test
 ```
 
@@ -1159,12 +1168,11 @@ mvn -f resource-gateway-examples/pom.xml clean verify
 mvn -f resource-gateway-test-kit/pom.xml clean verify
 ```
 
-2026-07-25 本轮门禁结果：Resource Gateway `5,179` 项测试零失败、零错误、
+2026-07-26 本轮门禁结果：Resource Gateway `5,198` 项测试零失败、零错误、
 4 项条件跳过（其余真实 Chrome DOM/工作流和可执行 Boot JAR 均通过）；Test Kit `394` 项
 零失败、零错误，完成 132 个 Mirror Schema 的引用闭包与 shaded JAR 打包，公共
-JavaDoc 校验通过。演练工作台另以 `-Pfrontend` 在真实 Chrome 中通过桌面、中等宽度、
-移动宽度三档响应式定向验证。本轮最终源码另通过服务端 finalization health/SLO
-联合 `99/99` 项与 Test Kit Schema/client `54/54` 项聚焦验证。
+JavaDoc 校验通过。Reviewed remediation 聚焦组 `40/40` 全绿；演练工作台另以
+`-Pfrontend` 在真实 Chrome 中通过桌面、中等宽度、移动宽度三档响应式定向验证。
 
 关键实现与协议：
 

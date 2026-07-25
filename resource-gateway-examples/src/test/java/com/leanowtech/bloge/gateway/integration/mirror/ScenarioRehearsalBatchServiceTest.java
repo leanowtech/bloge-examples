@@ -126,6 +126,40 @@ class ScenarioRehearsalBatchServiceTest {
     }
 
     @Test
+    void ordinarySubmissionCannotOccupyTheServerOwnedRemediationNamespace() {
+        ScenarioRehearsalBatchCompiler compiler =
+                mock(ScenarioRehearsalBatchCompiler.class);
+        ScenarioRehearsalBatchService service =
+                new ScenarioRehearsalBatchService(
+                        compiler,
+                        mock(ScenarioRehearsalBatchRepository.class),
+                        policy(),
+                        mapper,
+                        mock(
+                                ScenarioRehearsalBatchEvidenceRepository
+                                        .class),
+                        MirrorOperationObservability.noop());
+        ScenarioRehearsalBatchRequest reserved =
+                new ScenarioRehearsalBatchRequest(
+                        "",
+                        ScenarioRehearsalRemediationIdentity
+                                .RESERVED_PREFIX + "caller-owned",
+                        request().entries());
+
+        assertThatThrownBy(() -> service.submit(
+                reserved, identity()))
+                .isInstanceOfSatisfying(
+                        IntegrationProblemException.class,
+                        failure -> assertThat(
+                                failure.problem().code())
+                                .isEqualTo(
+                                        "RG.MIRROR.REHEARSAL_BATCH"
+                                                + ".REQUEST_ID_RESERVED"));
+        verify(compiler, org.mockito.Mockito.never())
+                .compile(any(), any());
+    }
+
+    @Test
     void serviceReadsEvidenceOnlyInsideTheAuthenticatedScope() {
         ScenarioRehearsalBatchEvidenceRepository evidence =
                 mock(

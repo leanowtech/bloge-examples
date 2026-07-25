@@ -559,6 +559,18 @@ public class MirrorPlanIntegrationService {
                 "Mirror finalization remediation requires the verified MIRROR_REHEARSAL_FINALIZATION_ADMIN purpose.");
     }
 
+    /** Validates the dedicated human-reviewed Scenario business-remediation purpose. */
+    static CapabilitySnapshot.Scope
+    requireMirrorRemediationIdentity(
+            IntegrationRequestContext identity) {
+        return requireMirrorIdentity(
+                identity,
+                Set.of(
+                        ScenarioRehearsalRemediationPolicy.PURPOSE),
+                "RG.MIRROR.REMEDIATION_PURPOSE_REQUIRED",
+                "Reviewed Scenario remediation requires the verified MIRROR_REHEARSAL_REMEDIATION purpose.");
+    }
+
     /** Validates exact scope for aggregate finalization health reads. */
     static CapabilitySnapshot.Scope
     requireMirrorFinalizationHealthIdentity(

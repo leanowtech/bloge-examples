@@ -31,7 +31,7 @@ integration something the business flow can see, reason about, test, and change.
 | Governed capability closures | Sealed Resource/Operator/Graph projections, exact cycle-checked closure for all seven shipped graphs, nested foreach/loop boundary inventory, full enterprise scope, append-only lifecycle revisions, classification-aware reads, and honest mirror readiness flags |
 | Governed capability observations | Signed payload-free invocation facts, operator-owned admission policy, external vault/proof verification, durable admitted-or-quarantined decisions, full-scope idempotency, and independent offline verification |
 | Governed capability corpora | Immutable quarantine review, exact admitted-source candidates, metadata risk gates, independent owner-reviewed publication lineage, second source-authority verification, and honest resolver readiness |
-| Governed scenario rehearsal | Append-only Scenario assets, exact compilation, durable per-case execution, independently signed aggregate and batch evidence, multi-hold retention/deletion proof at both levels, deterministic ANEKE workbook seeds, and separate opt-in regional DAG/KMS schedulers with database-authoritative cooperative control |
+| Governed scenario rehearsal | Append-only Scenario assets, exact compilation, durable per-case execution, independently signed aggregate and batch evidence, multi-hold retention/deletion proof at both levels, deterministic ANEKE workbook seeds, separate opt-in regional DAG/KMS schedulers, and a server-authorized two-person remediation transaction kernel |
 | Stateful mirror sessions | Versioned entity/write/session/checkpoint/write-attempt protocols, atomic multi-entity mutations, exact replay, AES-GCM isolated persistence, lease/fence/CAS concurrency, durable crash-window reconciliation, TTL/destroy, payload-free signed state evidence, signed same-data-plane restart recovery admission, ANEKE workbook seeds, and independently verified clients |
 | Governed replay payloads | Payload values detached from immutable evidence, classification ABAC, selective retention, legal hold, bounded expiry, and signed deletion proof |
 | Workbook and gate evidence loop | Deterministic sanitized workbook seeds, exact suite/run evidence refs, versioned gate decision basis, stale detection, and transactional gate events |
@@ -190,6 +190,14 @@ raw Fixture, request, response, Session state, or customer payload values.
 Reviewed remediation and zero-DSL case editing remain a later workbench phase;
 the current surface intentionally exposes no write or finalization-admin
 control.
+
+The reviewed-remediation backend is already stricter than the current read-only
+surface: it freezes an exact successor from independently verified predecessor
+workbook/evidence, requires server-authorized `OWNER` then
+`INDEPENDENT_REVIEWER` facts, and atomically commits successor admission,
+receipt, state, and success audit. Its protected HTTP API, capability readiness,
+signed predecessor/successor comparison, and Owner controls are intentionally
+not advertised until that complete product boundary is delivered.
 
 Scenario authoring now has a strict protocol base:
 `resourceGateway.scenarioPack.v1`, `resourceGateway.scenarioCase.v1`, and

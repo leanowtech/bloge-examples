@@ -80,6 +80,14 @@ public record MirrorOperationAuditEvent(
         SCENARIO_REHEARSAL_BATCH_EVIDENCE_READ,
         /** Project one signed Scenario batch closure into an ANEKE workbook seed. */
         SCENARIO_REHEARSAL_BATCH_WORKBOOK_READ,
+        /** Freeze one blocked signed Scenario batch into a reviewed successor preview. */
+        SCENARIO_REHEARSAL_REMEDIATION_PREVIEW,
+        /** Append one authenticated role-bound Scenario remediation decision. */
+        SCENARIO_REHEARSAL_REMEDIATION_APPROVE,
+        /** Atomically admit one fully approved Scenario remediation successor. */
+        SCENARIO_REHEARSAL_REMEDIATION_SUBMIT,
+        /** Read one integrity-verified Scenario remediation decision lineage. */
+        SCENARIO_REHEARSAL_REMEDIATION_READ,
         /** Record one exactly replayable cooperative Scenario batch cancellation. */
         SCENARIO_REHEARSAL_BATCH_CANCEL,
         /** Re-queue one exactly fenced quarantined Scenario batch evidence finalization. */

@@ -113,12 +113,16 @@ class ScenarioRehearsalRemediationProtocolTest {
                                 ScenarioRehearsalRemediationPreviewRequest
                                         .Strategy
                                         .REPLACE_COMPILED_PLANS,
+                                ScenarioRehearsalRemediationPreviewRequest
+                                        .ReasonCode
+                                        .SCENARIO_REVISION,
                                 List.of(replacement),
                                 successor,
                                 successorFingerprint,
                                 ticket(),
                                 ScenarioRehearsalRemediationPlan
-                                        .ApprovalPolicy.twoPerson(),
+                                        .ApprovalPolicy.twoPerson(
+                                                7, SHA_C),
                                 Instant.parse(
                                         "2026-07-25T10:00:00Z"),
                                 Instant.parse(
@@ -134,12 +138,14 @@ class ScenarioRehearsalRemediationProtocolTest {
                         "BLOCKER_ASSERTION_FAILED",
                         "REHEARSAL_FAILED");
         assertThatThrownBy(() ->
-                new ScenarioRehearsalRemediationPlan
-                        .ApprovalPolicy(
-                        List.of(
-                                ScenarioRehearsalRemediationApprovalCommand
-                                        .Role.OWNER),
-                        1))
+                                new ScenarioRehearsalRemediationPlan
+                                        .ApprovalPolicy(
+                                        List.of(
+                                                ScenarioRehearsalRemediationApprovalCommand
+                                                        .Role.OWNER),
+                                        1,
+                                        7,
+                                        SHA_C))
                 .isInstanceOf(IllegalArgumentException.class)
                 .hasMessageContaining("independent reviewer");
         assertThatThrownBy(() ->
@@ -156,12 +162,15 @@ class ScenarioRehearsalRemediationProtocolTest {
                         List.of(),
                         ScenarioRehearsalRemediationPreviewRequest
                                 .Strategy.REPLACE_COMPILED_PLANS,
+                        ScenarioRehearsalRemediationPreviewRequest
+                                .ReasonCode.SCENARIO_REVISION,
                         List.of(replacement),
                         successor,
                         successorFingerprint,
                         ticket(),
                         ScenarioRehearsalRemediationPlan
-                                .ApprovalPolicy.twoPerson(),
+                                .ApprovalPolicy.twoPerson(
+                                        7, SHA_C),
                         Instant.parse("2026-07-25T10:00:00Z"),
                         Instant.parse("2026-07-26T10:00:00Z")))
                 .isInstanceOf(IllegalArgumentException.class)

@@ -17,6 +17,7 @@ import com.leanowtech.bloge.gateway.integration.mirror.DatabaseScenarioRehearsal
 import com.leanowtech.bloge.gateway.integration.mirror.DatabaseScenarioRehearsalBatchRetentionRepository;
 import com.leanowtech.bloge.gateway.integration.mirror.DatabaseScenarioRehearsalEvidenceRepository;
 import com.leanowtech.bloge.gateway.integration.mirror.DatabaseScenarioRehearsalBatchRepository;
+import com.leanowtech.bloge.gateway.integration.mirror.DatabaseScenarioRehearsalRemediationRepository;
 import com.leanowtech.bloge.gateway.integration.mirror.DatabaseScenarioRehearsalLifecycleAuditRepository;
 import com.leanowtech.bloge.gateway.integration.mirror.DatabaseScenarioRehearsalRetentionRepository;
 import com.leanowtech.bloge.gateway.integration.mirror.DatabaseScenarioRehearsalRunRepository;
@@ -94,6 +95,10 @@ import com.leanowtech.bloge.gateway.integration.mirror.ScenarioRehearsalBatchSch
 import com.leanowtech.bloge.gateway.integration.mirror.ScenarioRehearsalBatchService;
 import com.leanowtech.bloge.gateway.integration.mirror.ScenarioRehearsalBatchWorker;
 import com.leanowtech.bloge.gateway.integration.mirror.ScenarioRehearsalBatchWorkbookService;
+import com.leanowtech.bloge.gateway.integration.mirror.ScenarioRehearsalBatchTransactionalAdmission;
+import com.leanowtech.bloge.gateway.integration.mirror.ScenarioRehearsalRemediationPolicy;
+import com.leanowtech.bloge.gateway.integration.mirror.ScenarioRehearsalRemediationRepository;
+import com.leanowtech.bloge.gateway.integration.mirror.ScenarioRehearsalRemediationService;
 import com.leanowtech.bloge.gateway.integration.mirror.ScenarioRehearsalIntegrationService;
 import com.leanowtech.bloge.gateway.integration.mirror.ScenarioRehearsalRuntimeService;
 import com.leanowtech.bloge.gateway.integration.mirror.ScenarioRehearsalLifecycleAuditRepository;
@@ -364,6 +369,14 @@ public class MirrorRuntimeConfiguration {
         return ScenarioRehearsalBatchPolicy.defaults();
     }
 
+    /** Installs the human-role, expiry, and clock policy for reviewed business remediation. */
+    @Bean
+    @ConditionalOnMissingBean
+    public ScenarioRehearsalRemediationPolicy
+    scenarioRehearsalRemediationPolicy() {
+        return ScenarioRehearsalRemediationPolicy.defaults();
+    }
+
     /** Installs the bounded lease, retry, and quarantine policy for evidence finalization. */
     @Bean
     @ConditionalOnMissingBean
@@ -454,7 +467,7 @@ public class MirrorRuntimeConfiguration {
     /** Creates the cross-replica database-authoritative Scenario batch queue. */
     @Bean
     @ConditionalOnMissingBean
-    public ScenarioRehearsalBatchRepository
+    public DatabaseScenarioRehearsalBatchRepository
     scenarioRehearsalBatchRepository(
             JdbcTemplate jdbc,
             ObjectMapper objectMapper,
@@ -472,6 +485,27 @@ public class MirrorRuntimeConfiguration {
                 evidencePublisher,
                 lifecycleAudit,
                 finalizationPolicy);
+    }
+
+    /**
+     * Creates the append-only reviewed-remediation ledger and atomic successor coordinator.
+     */
+    @Bean
+    @ConditionalOnMissingBean
+    @ConditionalOnBean(
+            ScenarioRehearsalBatchTransactionalAdmission.class)
+    public ScenarioRehearsalRemediationRepository
+    scenarioRehearsalRemediationRepository(
+            JdbcTemplate jdbc,
+            ObjectMapper objectMapper,
+            PlatformTransactionManager transactionManager,
+            ScenarioRehearsalBatchTransactionalAdmission
+                    batchAdmission) {
+        return new DatabaseScenarioRehearsalRemediationRepository(
+                jdbc,
+                objectMapper,
+                transactionManager,
+                batchAdmission);
     }
 
     /** Creates the exact-plan resolver that freezes immutable batch manifests. */
@@ -528,6 +562,35 @@ public class MirrorRuntimeConfiguration {
                 objectMapper,
                 observations,
                 evidenceSigner);
+    }
+
+    /** Creates the protected preview, approval, read, and atomic successor service. */
+    @Bean
+    @ConditionalOnMissingBean
+    @ConditionalOnBean(
+            ScenarioRehearsalRemediationRepository.class)
+    public ScenarioRehearsalRemediationService
+    scenarioRehearsalRemediationService(
+            ScenarioRehearsalRemediationRepository repository,
+            ScenarioRehearsalRemediationPolicy policy,
+            ScenarioRehearsalBatchPolicy batchPolicy,
+            ScenarioRehearsalBatchWorkbookService workbooks,
+            ScenarioRehearsalBatchEvidenceRepository evidence,
+            ScenarioRehearsalBatchEvidenceIntegrityService
+                    evidenceIntegrity,
+            ScenarioRehearsalBatchCompiler compiler,
+            ObjectMapper objectMapper,
+            MirrorOperationObservability observations) {
+        return new ScenarioRehearsalRemediationService(
+                repository,
+                policy,
+                batchPolicy,
+                workbooks,
+                evidence,
+                evidenceIntegrity,
+                compiler,
+                objectMapper,
+                observations);
     }
 
     /** Creates one evidence-verifying durable Scenario batch worker turn. */

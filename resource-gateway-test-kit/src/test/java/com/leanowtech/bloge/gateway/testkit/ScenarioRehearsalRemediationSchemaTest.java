@@ -128,6 +128,7 @@ class ScenarioRehearsalRemediationSchemaTest {
                 .add("BLOCKER_ASSERTION_FAILED")
                 .add("REHEARSAL_FAILED");
         value.put("strategy", "REPLACE_COMPILED_PLANS");
+        value.put("reasonCode", "SCENARIO_REVISION");
         value.putArray("replacements")
                 .add(replacement());
         ObjectNode successor = value.putObject("successorRequest");
@@ -153,6 +154,10 @@ class ScenarioRehearsalRemediationSchemaTest {
                 .add("OWNER")
                 .add("INDEPENDENT_REVIEWER");
         policy.put("minimumDistinctActors", 2);
+        policy.put("serverPolicyGeneration", 7);
+        policy.put(
+                "serverPolicyFingerprint",
+                fingerprint('7'));
         value.put("generatedAt", "2026-07-25T10:00:00Z");
         value.put("expiresAt", "2026-07-26T10:00:00Z");
         return value;

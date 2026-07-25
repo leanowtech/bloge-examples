@@ -27,6 +27,7 @@ import java.util.regex.Pattern;
  * @param predecessorStatus terminal predecessor status
  * @param predecessorBlockers sorted blockers reviewed by the caller
  * @param strategy closed successor construction strategy
+ * @param reasonCode frozen closed reason for constructing this successor
  * @param replacements exact resolved entry replacements
  * @param successorRequest complete payload-free successor batch command
  * @param successorRequestFingerprint canonical successor command address
@@ -47,6 +48,8 @@ public record ScenarioRehearsalRemediationPlan(
         ScenarioRehearsalBatchJob.Status predecessorStatus,
         List<String> predecessorBlockers,
         ScenarioRehearsalRemediationPreviewRequest.Strategy strategy,
+        ScenarioRehearsalRemediationPreviewRequest.ReasonCode
+                reasonCode,
         List<ScenarioRehearsalRemediationPreviewRequest.PlanReplacement>
                 replacements,
         ScenarioRehearsalBatchRequest successorRequest,
@@ -115,8 +118,17 @@ public record ScenarioRehearsalRemediationPlan(
                     "Scenario remediation requires a bounded blocked predecessor");
         }
         strategy = Objects.requireNonNull(strategy, "strategy");
+        reasonCode = Objects.requireNonNull(
+                reasonCode, "reasonCode");
         replacements = replacements == null
                 ? List.of() : List.copyOf(replacements);
+        if (strategy
+                == ScenarioRehearsalRemediationPreviewRequest.Strategy
+                .RERUN_EXACT
+                != reasonCode.rerunReason()) {
+            throw new IllegalArgumentException(
+                    "Scenario remediation strategy and reasonCode are inconsistent");
+        }
         successorRequest = Objects.requireNonNull(
                 successorRequest, "successorRequest");
         successorRequestFingerprint =
@@ -160,6 +172,7 @@ public record ScenarioRehearsalRemediationPlan(
                 predecessorStatus,
                 predecessorBlockers,
                 strategy,
+                reasonCode,
                 replacements,
                 successorRequest,
                 successorRequestFingerprint,
@@ -198,11 +211,15 @@ public record ScenarioRehearsalRemediationPlan(
      *
      * @param requiredRoles exact ordered approval roles
      * @param minimumDistinctActors minimum unique authenticated actors
+     * @param serverPolicyGeneration exact server authorization-policy generation
+     * @param serverPolicyFingerprint deterministic address of the complete server policy
      */
     public record ApprovalPolicy(
             List<ScenarioRehearsalRemediationApprovalCommand.Role>
                     requiredRoles,
-            int minimumDistinctActors
+            int minimumDistinctActors,
+            long serverPolicyGeneration,
+            String serverPolicyFingerprint
     ) {
         /** Rejects weakened or caller-defined approval policies. */
         public ApprovalPolicy {
@@ -215,21 +232,35 @@ public record ScenarioRehearsalRemediationPlan(
                     ScenarioRehearsalRemediationApprovalCommand.Role
                             .INDEPENDENT_REVIEWER);
             if (!requiredRoles.equals(expected)
-                    || minimumDistinctActors != 2) {
+                    || minimumDistinctActors != 2
+                    || serverPolicyGeneration < 1) {
                 throw new IllegalArgumentException(
                         "Scenario remediation requires owner and independent reviewer separation");
             }
+            serverPolicyFingerprint =
+                    MirrorStateProtocolSupport.fingerprint(
+                            serverPolicyFingerprint,
+                            "serverPolicyFingerprint");
         }
 
-        /** Returns the only policy admitted by the first-generation protocol. */
-        public static ApprovalPolicy twoPerson() {
+        /**
+         * Returns the only role policy admitted by the first-generation protocol.
+         *
+         * @param generation server-owned policy generation
+         * @param fingerprint canonical complete policy address
+         */
+        public static ApprovalPolicy twoPerson(
+                long generation,
+                String fingerprint) {
             return new ApprovalPolicy(
                     List.of(
                             ScenarioRehearsalRemediationApprovalCommand.Role
                                     .OWNER,
                             ScenarioRehearsalRemediationApprovalCommand.Role
                                     .INDEPENDENT_REVIEWER),
-                    2);
+                    2,
+                    generation,
+                    fingerprint);
         }
     }
 
