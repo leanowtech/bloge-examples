@@ -452,6 +452,9 @@ public class ToolStudioIntegrationService {
         features.put("mirrorScenarioRehearsalBatchApi",
                 mirrorPlanReady && mirrorExecutionApi);
         features.put(
+                "mirrorScenarioRehearsalBatchJobListing",
+                mirrorPlanReady && mirrorExecutionApi);
+        features.put(
                 "mirrorScenarioRehearsalBatchCooperativeControl",
                 mirrorPlanReady && mirrorExecutionApi);
         features.put(
@@ -1004,6 +1007,12 @@ public class ToolStudioIntegrationService {
                                         .ScenarioRehearsalBatchJob
                                         .V2_SCHEMA_VERSION));
                 supportedObjects.put(
+                        "scenarioRehearsalBatchJobPage",
+                        List.of(
+                                com.leanowtech.bloge.gateway.integration.mirror
+                                        .ScenarioRehearsalBatchJobPage
+                                        .SCHEMA_VERSION));
+                supportedObjects.put(
                         "scenarioRehearsalBatchItemPage",
                         List.of(
                                 com.leanowtech.bloge.gateway.integration.mirror
@@ -1233,6 +1242,8 @@ public class ToolStudioIntegrationService {
                         "/api/mirror/scenarios/runs/{runId}/retention/purge"));
                 endpoints.add(new IntegrationCapabilities.Endpoint(
                         "POST", "/api/mirror/rehearsal-jobs"));
+                endpoints.add(new IntegrationCapabilities.Endpoint(
+                        "GET", "/api/mirror/rehearsal-jobs"));
                 endpoints.add(new IntegrationCapabilities.Endpoint(
                         "GET", "/api/mirror/rehearsal-jobs/{jobId}"));
                 endpoints.add(new IntegrationCapabilities.Endpoint(

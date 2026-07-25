@@ -75,10 +75,10 @@
   使用授权、跨系统 schema owner、部署/namespace 形态等组织决策仍是生产准入前置，不由仓库测试冒充完成。
 - 当前验证基线：前端 Vitest `150/150` 全绿并完成 TypeScript/Vite 生产构建；带 `-Pfrontend` 的真实
   Chrome 示例投影用例 `1/1` 全绿。纳入当前 compiler、mirror runtime 与 stateful recovery kernel 后，
-  Resource Gateway 最新完整 Java 门禁为 `5159` 项测试、0 失败、0 错误、3 项条件跳过；其中
+  Resource Gateway 最新完整 Java 门禁为 `5173` 项测试、0 失败、0 错误、3 项条件跳过；其中
   `VisualAuthoringBrowserDomTest` 的 32 项非 frontend-bundle 场景和
   `VisualAuthoringBrowserWorkflowTest` 均已在真实 Chrome 中执行，3 项跳过仅因普通门禁未启用
-  `-Pfrontend`。独立 test-kit `383/383` 全绿，124 份 Mirror Schema 完成引用闭包与
+  `-Pfrontend`。独立 test-kit `392/392` 全绿，126 份 Mirror Schema 完成引用闭包与
   打包验证，公共 JavaDoc、普通 JAR 与 shaded JAR 均成功生成。
 - Stage 1 第二增量已实现 `MirrorPlanCompiler`、`MirrorPlanCompilationRequest`、`CompiledMirrorPlan` 和
   `ExecutionControlCompiler.compileMirror` adapter。编译器把每条 direct/nested external capability edge 对账到
@@ -577,11 +577,11 @@ Resource Gateway 已有的工业底座应直接复用：
 | 递归 DAG 测试 | 85% | MirrorPlan/closure/runtime inventory/fixture control 已统一；缺 contract-mock 展开治理和状态世界 |
 | 日志蒸馏与语料 | 82% | payload-free signed observation、准入/隔离、immutable review、candidate/publication/trajectory/cluster 独立 lineage、元数据风险门禁、fixture exact/trajectory/cluster binding、在线 revalidation、test/staging `RECORDED_EXACT`/`RECORDED_TRAJECTORY`/`RECORDED_CLUSTER`、BLOGE 原生 retry loop、identity-safe projection、Wilson confidence、Session state read 与独立 verifier 已落地；缺生产 payload authority、漂移、偏差、outcome 校准和删除证明 |
 | 有状态业务世界 | 91% | 协议、read/write 退款 fixture、独立 verifier/sealer/client、事务内核、受保护 Session API、独立 AES-GCM 数据面、lease/fence/CAS、durable write-attempt journal/reconciliation、TTL/destroy、全局/scope 容量、保留字节、命令背压、过期擦除、固定 read head、run-scoped virtual write、真实 DAG read-write-read、payload-free v1/v2/v3 state evidence、read-only/successful-transition/write-outcome ANEKE seed、签名 HASH_ONLY checkpoint 与同数据面代际精确恢复准入已落地；缺 TEE/KMS、跨区域数据恢复、真实 process-kill/network parity、目标数据库容量认证和 HA/DR certification |
-| Scenario/Rehearsal | 99% | ScenarioPack/Case/Assertion、exact compiler、可恢复逐 case runtime、签名 aggregate、audit/retention、ANEKE seed、durable batch manifest/queue/API/worker、region-local DAG/KMS 双 scheduler、逐 case cooperative control、v1/v2 签名 batch evidence/index、批次 operation/lifecycle audit、retention/multi-hold/逻辑删除证明，以及 durable finalization outbox/lease/retry/quarantine/status、受控 remediation、聚合 health/SLO 已落地；缺 hard kill、ANEKE batch workbook、owner UX、企业策略/WORM/anchor 与异构消费者认证 |
+| Scenario/Rehearsal | 99.3% | ScenarioPack/Case/Assertion、exact compiler、可恢复逐 case runtime、签名 aggregate、audit/retention、ANEKE seed、durable batch manifest/queue/API/worker、region-local DAG/KMS 双 scheduler、逐 case cooperative control、v1/v2 签名 batch evidence/index、批次 operation/lifecycle audit、retention/multi-hold/逻辑删除证明、durable finalization outbox/lease/retry/quarantine/status、受控 remediation、聚合 health/SLO，以及 root-sealed ANEKE batch workbook 已落地；缺 hard kill、owner UX、企业策略/WORM/anchor 与异构消费者认证 |
 | Fidelity/Outcome | 5% | 缺保真向量、shadow、权威结果归因和校准闭环 |
-| 业务运营工作台 | 10% | Author Canvas 尚未成为案例驱动的镜像运营工作台 |
+| 业务运营工作台 | 12% | exact-scope 批次 keyset 发现协议已落地；仍缺面向任务的失败归因、证据抽屉、审阅复演和零 DSL case 调整 |
 
-结论：基础设施准备度约 93%，固定权重理想态完成度为 62.31%。剩余主要矛盾已经
+结论：基础设施准备度约 93%，固定权重理想态完成度为 62.56%。剩余主要矛盾已经
 从“能否安全执行和取证”转向“能否把可信 observation 持续蒸馏成可校准、可拒答、可删除的业务拟合资产”。
 
 ### 3.1 2026-07-24 Scenario 编译期闭包迭代差距复评
@@ -1445,6 +1445,37 @@ publish-gate-ready，因为异构 consumer 固定向量、企业 policy/WORM/anc
 PostgreSQL/KMS 故障认证仍未闭合。业务拟合主链的下一最短路径是
 RG-MIR-SCEN-006 Owner rehearsal workbench：把 batch/item/assertion 证据映射成
 业务 owner 可看、可定位、可审阅、可修复的零 DSL 工作流；生产认证支线继续并行。
+
+### 3.19 2026-07-25 Owner 批次发现协议迭代差距复评
+
+Owner 工作台的第一个真实缺口不是图表，而是稳定发现入口。此前所有批次 API 都以
+`jobId` 为前提，业务人员必须从提交响应、日志或数据库先找到技术身份；这使“工作台”
+天然退化成工程师调试页。本轮新增 strict
+`ScenarioRehearsalBatchJobPage.v1` 与
+`GET /api/mirror/rehearsal-jobs`，按认证得到的完整
+tenant/organization/project/environment/region 隔离，最多返回 100 条 payload-free
+job projection。
+
+分页没有使用 offset。job status、progress 和 completedAt 会持续变化，若排序依赖
+更新时间或 offset，Owner 翻页时会重复或漏看。当前固定使用不可变
+`createdAt DESC, jobId DESC` keyset；同一数据库时间用确定性 jobId 建立全序，
+下一页 cursor 必须精确对应上一页末行。cursor 只表示位置，服务端永远重新施加
+exact scope，并在查询前完成 policy convergence 与 stale execution reconciliation。
+每个返回 job 都重验 record fingerprint；跨 scope、重复、乱序、游标脱离末行和非法
+输入均失败关闭。
+
+Capability probe 新增
+`mirrorScenarioRehearsalBatchJobListing`、object version 和 endpoint；启动脚本在
+`--scenario-batch` 模式把 listing 纳入动态 readiness。独立 Test Kit client 除 strict
+Schema 外，还重算全页 scope、唯一性、降序和 cursor correspondence。该协议没有
+暴露 batch request JSON、manifest、Fixture、Session payload、worker 或签名服务
+诊断。
+
+这只解决了 Owner “找到批次、稳定翻页”的入口，不解决任务解释。mutable job page
+只能用于运行中进度，不是终态治理证据；终态必须读取 root-sealed batch workbook，
+选中异常 entry 后再懒加载 child case/assertion。业务运营工作台成熟度仅由 10%
+上调至 12%，固定权重总分由 62.36% 上调至 62.56%，距理想态 37.44%。下一纵切必须
+交付真实浏览器工作台、原因分组和证据层级标识，不能用批次列表冒充 Owner 闭环。
 
 ## 4. 目标架构与系统责任
 

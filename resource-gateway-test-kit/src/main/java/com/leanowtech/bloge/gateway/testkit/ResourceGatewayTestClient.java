@@ -1623,6 +1623,60 @@ public final class ResourceGatewayTestClient {
     }
 
     /**
+     * Lists one newest-first keyset page of payload-free Scenario batch jobs.
+     *
+     * <p>The client validates the strict page schema, exact row scope, descending immutable
+     * creation coordinates, uniqueness, and next-cursor correspondence. The cursor is not an
+     * authorization token and must be submitted with the same authenticated enterprise identity
+     * when requesting the next page.</p>
+     *
+     * @param limit requested row count from 1 through 100
+     * @param beforeCreatedAt last creation coordinate from the previous page, or null initially
+     * @param beforeJobId last job coordinate from the previous page, or blank initially
+     * @return defensive copy of one schema-validated keyset page
+     */
+    public JsonNode findScenarioRehearsalBatchJobs(
+            int limit,
+            Instant beforeCreatedAt,
+            String beforeJobId) {
+        if (limit < 1 || limit > 100) {
+            throw new IllegalArgumentException(
+                    "Scenario rehearsal batch listing requires 1..100 jobs");
+        }
+        String jobId = beforeJobId == null
+                ? "" : beforeJobId.trim();
+        if ((beforeCreatedAt == null) != jobId.isBlank()) {
+            throw new IllegalArgumentException(
+                    "Scenario rehearsal batch cursor fields must be supplied together");
+        }
+        String query = "limit=" + limit;
+        if (beforeCreatedAt != null) {
+            query += "&beforeCreatedAt="
+                    + segment(beforeCreatedAt.toString())
+                    + "&beforeJobId="
+                    + segment(scenarioRehearsalBatchJobId(jobId));
+        }
+        JsonNode response = exchange(
+                "GET",
+                "/api/mirror/rehearsal-jobs",
+                query,
+                "GOVERNANCE_EVIDENCE_INGESTION",
+                null);
+        JsonNode page = requireMirrorEnvelope(
+                response,
+                "SCENARIO_REHEARSAL_BATCH_JOB_PAGE",
+                CapabilityMirrorProtocol
+                        .SCENARIO_REHEARSAL_BATCH_JOB_PAGE_V1);
+        CapabilityMirrorSchemaValidator.require(
+                page,
+                CapabilityMirrorProtocol
+                        .SCENARIO_REHEARSAL_BATCH_JOB_PAGE_SCHEMA_RESOURCE,
+                "RG.MIRROR.CLIENT.SCENARIO_BATCH_JOB_PAGE_INVALID");
+        verifyScenarioRehearsalBatchJobPage(page);
+        return page.deepCopy();
+    }
+
+    /**
      * Reads one payload-free durable Scenario batch evidence-finalization status.
      *
      * <p>The projection distinguishes pending work, active signing, bounded retry, operator
@@ -3116,6 +3170,53 @@ public final class ResourceGatewayTestClient {
                     "Scenario rehearsal batch job id must be canonical");
         }
         return normalized;
+    }
+
+    private static void verifyScenarioRehearsalBatchJobPage(
+            JsonNode page) {
+        JsonNode scope = page.path("scope");
+        JsonNode jobs = page.path("jobs");
+        Set<String> identities = new LinkedHashSet<>();
+        Instant previousTime = null;
+        String previousId = "";
+        for (JsonNode job : jobs) {
+            if (!scope.equals(job.path("scope"))) {
+                throw responseContractInvalid(
+                        "The Scenario batch job page contains a cross-scope row.");
+            }
+            String jobId = scenarioRehearsalBatchJobId(
+                    job.path("jobId").asText());
+            Instant createdAt;
+            try {
+                createdAt = Instant.parse(
+                        job.path("createdAt").asText());
+            } catch (DateTimeParseException invalid) {
+                throw responseContractInvalid(
+                        "The Scenario batch job page contains an invalid creation time.");
+            }
+            if (!identities.add(jobId)
+                    || previousTime != null
+                    && (previousTime.isBefore(createdAt)
+                    || previousTime.equals(createdAt)
+                    && previousId.compareTo(jobId) <= 0)) {
+                throw responseContractInvalid(
+                        "The Scenario batch job page order is invalid.");
+            }
+            previousTime = createdAt;
+            previousId = jobId;
+        }
+        JsonNode cursor = page.path("nextCursor");
+        if (!cursor.isNull()
+                && (jobs.isEmpty()
+                || !cursor.path("createdAt").asText()
+                .equals(jobs.get(jobs.size() - 1)
+                        .path("createdAt").asText())
+                || !cursor.path("jobId").asText()
+                .equals(jobs.get(jobs.size() - 1)
+                        .path("jobId").asText()))) {
+            throw responseContractInvalid(
+                    "The Scenario batch job page cursor is invalid.");
+        }
     }
 
     private static String segment(String value) {

@@ -6,6 +6,8 @@ import com.leanowtech.bloge.gateway.integration.IntegrationProblemException;
 import com.leanowtech.bloge.gateway.integration.IntegrationRequestContext;
 import com.leanowtech.bloge.gateway.testing.evidence.ProtocolFingerprint;
 
+import java.time.Instant;
+import java.time.format.DateTimeParseException;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
@@ -173,6 +175,47 @@ public final class ScenarioRehearsalBatchService {
         }
     }
 
+    /**
+     * Lists newest jobs with a stable keyset cursor inside the authenticated exact scope.
+     *
+     * <p>Cursor parsing happens only after the verified identity has established scope. The cursor
+     * never carries authorization state and an invalid pair returns one stable request error.</p>
+     */
+    public ScenarioRehearsalBatchJobPage list(
+            String beforeCreatedAt,
+            String beforeJobId,
+            int limit,
+            IntegrationRequestContext identity) {
+        MirrorOperationObservability.Observation operation =
+                observations.start(
+                        MirrorOperationAuditEvent.Operation
+                                .SCENARIO_REHEARSAL_BATCH_READ,
+                        identity,
+                        "",
+                        "",
+                        "");
+        try {
+            CapabilitySnapshot.Scope scope =
+                    MirrorPlanIntegrationService
+                            .requireMirrorReadIdentity(identity);
+            ScenarioRehearsalBatchJobPage.Cursor cursor =
+                    cursor(
+                            beforeCreatedAt,
+                            beforeJobId,
+                            identity);
+            ScenarioRehearsalBatchJobPage result =
+                    repository.list(
+                            scope,
+                            cursor,
+                            limit,
+                            policy);
+            operation.succeeded("");
+            return result;
+        } catch (RuntimeException failure) {
+            throw operation.failed(failure);
+        }
+    }
+
     /** Reads one stable bounded manifest-index page inside the exact scope. */
     public ScenarioRehearsalBatchItemPage page(
             String jobId,
@@ -204,6 +247,38 @@ public final class ScenarioRehearsalBatchService {
             throw operation.failed(problem(conflict, identity));
         } catch (RuntimeException failure) {
             throw operation.failed(failure);
+        }
+    }
+
+    private static ScenarioRehearsalBatchJobPage.Cursor cursor(
+            String beforeCreatedAt,
+            String beforeJobId,
+            IntegrationRequestContext identity) {
+        String instant = beforeCreatedAt == null
+                ? "" : beforeCreatedAt.trim();
+        String jobId = beforeJobId == null
+                ? "" : beforeJobId.trim();
+        if (instant.isBlank() && jobId.isBlank()) {
+            return null;
+        }
+        try {
+            if (instant.isBlank() || jobId.isBlank()) {
+                throw new IllegalArgumentException(
+                        "cursor fields must be supplied together");
+            }
+            return new ScenarioRehearsalBatchJobPage.Cursor(
+                    Instant.parse(instant),
+                    jobId);
+        } catch (DateTimeParseException
+                 | IllegalArgumentException invalid) {
+            throw new IntegrationProblemException(
+                    IntegrationProblem.badRequest(
+                            "RG.MIRROR.REHEARSAL_BATCH.CURSOR_INVALID",
+                            "Scenario rehearsal batch cursor is invalid.",
+                            identity == null
+                                    ? ""
+                                    : identity.correlationId(),
+                            Map.of()));
         }
     }
 

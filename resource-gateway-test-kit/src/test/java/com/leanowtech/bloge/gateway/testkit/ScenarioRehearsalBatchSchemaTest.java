@@ -37,6 +37,12 @@ class ScenarioRehearsalBatchSchemaTest {
                         .SCENARIO_REHEARSAL_BATCH_JOB_SCHEMA_RESOURCE,
                 "RG.MIRROR.CLIENT.SCENARIO_BATCH_JOB_INVALID"))
                 .doesNotThrowAnyException();
+        assertThatCode(() -> CapabilityMirrorSchemaValidator.require(
+                jobPage(),
+                CapabilityMirrorProtocol
+                        .SCENARIO_REHEARSAL_BATCH_JOB_PAGE_SCHEMA_RESOURCE,
+                "RG.MIRROR.CLIENT.SCENARIO_BATCH_JOB_PAGE_INVALID"))
+                .doesNotThrowAnyException();
         ObjectNode legacyJob = job();
         legacyJob.put(
                 "schemaVersion",
@@ -100,6 +106,18 @@ class ScenarioRehearsalBatchSchemaTest {
         ObjectNode invalidPage = page();
         ((ObjectNode) invalidPage.path("items").get(0))
                 .put("attemptCount", 99);
+        ObjectNode leakedJobPage = jobPage();
+        leakedJobPage.putObject("payload")
+                .put("customerId", "must-not-leak");
+        ObjectNode invalidJobCursor = jobPage();
+        ((ObjectNode) invalidJobCursor.path("nextCursor"))
+                .put("jobId", "not-a-batch-id");
+        ObjectNode oversizedJobPage = jobPage();
+        ArrayNode oversizedJobs =
+                (ArrayNode) oversizedJobPage.path("jobs");
+        for (int index = 1; index <= 100; index++) {
+            oversizedJobs.add(job());
+        }
         ObjectNode leakedHealth = finalizationHealth();
         leakedHealth.putArray("jobIds")
                 .add("scenario-batch-" + "a".repeat(64));
@@ -130,6 +148,18 @@ class ScenarioRehearsalBatchSchemaTest {
                 invalidPage,
                 CapabilityMirrorProtocol
                         .SCENARIO_REHEARSAL_BATCH_ITEM_PAGE_SCHEMA_RESOURCE);
+        assertInvalid(
+                leakedJobPage,
+                CapabilityMirrorProtocol
+                        .SCENARIO_REHEARSAL_BATCH_JOB_PAGE_SCHEMA_RESOURCE);
+        assertInvalid(
+                invalidJobCursor,
+                CapabilityMirrorProtocol
+                        .SCENARIO_REHEARSAL_BATCH_JOB_PAGE_SCHEMA_RESOURCE);
+        assertInvalid(
+                oversizedJobPage,
+                CapabilityMirrorProtocol
+                        .SCENARIO_REHEARSAL_BATCH_JOB_PAGE_SCHEMA_RESOURCE);
         assertInvalid(
                 leakedHealth,
                 CapabilityMirrorProtocol
@@ -230,6 +260,22 @@ class ScenarioRehearsalBatchSchemaTest {
         value.put("updatedAt", "2026-07-24T08:00:00Z");
         value.putNull("completedAt");
         value.put("recordFingerprint", fingerprint('f'));
+        return value;
+    }
+
+    private static ObjectNode jobPage() {
+        ObjectNode value = JSON.createObjectNode();
+        value.put(
+                "schemaVersion",
+                CapabilityMirrorProtocol
+                        .SCENARIO_REHEARSAL_BATCH_JOB_PAGE_V1);
+        value.set("scope", scope());
+        value.putArray("jobs").add(job());
+        ObjectNode cursor = value.putObject("nextCursor");
+        cursor.put("createdAt", "2026-07-24T08:00:00Z");
+        cursor.put(
+                "jobId",
+                "scenario-batch-" + "b".repeat(64));
         return value;
     }
 

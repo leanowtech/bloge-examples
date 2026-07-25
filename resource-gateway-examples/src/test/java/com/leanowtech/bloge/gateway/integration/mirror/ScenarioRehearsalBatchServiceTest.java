@@ -18,6 +18,7 @@ import java.util.Set;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
@@ -276,6 +277,51 @@ class ScenarioRehearsalBatchServiceTest {
                                         .REJECTED,
                                 MirrorOperationAuditEvent.Reason
                                         .NOT_FOUND));
+    }
+
+    @Test
+    void listsExactScopeAndRejectsMalformedCursorBeforeRepositoryRead() {
+        ScenarioRehearsalBatchRepository repository =
+                mock(ScenarioRehearsalBatchRepository.class);
+        ScenarioRehearsalBatchJobPage page =
+                new ScenarioRehearsalBatchJobPage(
+                        "", SCOPE, List.of(job()), null);
+        when(repository.list(
+                SCOPE, null, 25, policy()))
+                .thenReturn(page);
+        ScenarioRehearsalBatchService service =
+                new ScenarioRehearsalBatchService(
+                        mock(ScenarioRehearsalBatchCompiler.class),
+                        repository,
+                        policy(),
+                        mapper,
+                        mock(ScenarioRehearsalBatchEvidenceRepository.class),
+                        MirrorOperationObservability.noop());
+
+        assertThat(service.list(
+                "", "", 25,
+                identity("GOVERNANCE_EVIDENCE_INGESTION")))
+                .isEqualTo(page);
+        verify(repository).list(
+                SCOPE, null, 25, policy());
+
+        assertThatThrownBy(() -> service.list(
+                "not-an-instant",
+                job().jobId(),
+                25,
+                identity("GOVERNANCE_EVIDENCE_INGESTION")))
+                .isInstanceOfSatisfying(
+                        IntegrationProblemException.class,
+                        failure -> assertThat(
+                                failure.problem().code())
+                                .isEqualTo(
+                                        "RG.MIRROR.REHEARSAL_BATCH.CURSOR_INVALID"));
+        verify(repository, org.mockito.Mockito.times(1))
+                .list(
+                        any(),
+                        any(),
+                        anyInt(),
+                        any());
     }
 
     @Test

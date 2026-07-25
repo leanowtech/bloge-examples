@@ -141,6 +141,48 @@ class DatabaseScenarioRehearsalBatchRepositoryTest {
     }
 
     @Test
+    void listsExactScopeWithStableNewestFirstKeysetPagination() {
+        ScenarioRehearsalBatchJob first =
+                repository.submit(
+                        submission(SCOPE, "batch-list-1", "refund"),
+                        policy()).job();
+        databaseTime.set(NOW.plusSeconds(1));
+        ScenarioRehearsalBatchJob second =
+                repository.submit(
+                        submission(SCOPE, "batch-list-2", "escalation"),
+                        policy()).job();
+        databaseTime.set(NOW.plusSeconds(2));
+        ScenarioRehearsalBatchJob third =
+                repository.submit(
+                        submission(SCOPE, "batch-list-3", "retention"),
+                        policy()).job();
+        repository.submit(
+                submission(
+                        scope("tenant-b", "org-a"),
+                        "batch-list-hidden",
+                        "hidden"),
+                policy());
+
+        ScenarioRehearsalBatchJobPage newest =
+                repository.list(SCOPE, null, 2, policy());
+        ScenarioRehearsalBatchJobPage older =
+                repository.list(
+                        SCOPE,
+                        newest.nextCursor(),
+                        2,
+                        policy());
+
+        assertThat(newest.jobs()).containsExactly(third, second);
+        assertThat(newest.nextCursor()).isEqualTo(
+                ScenarioRehearsalBatchJobPage.Cursor.after(second));
+        assertThat(older.jobs()).containsExactly(first);
+        assertThat(older.nextCursor()).isNull();
+        assertThat(newest.jobs())
+                .allSatisfy(job ->
+                        assertThat(job.scope()).isEqualTo(SCOPE));
+    }
+
+    @Test
     void rejectsRequestDriftButIsolatesSameRequestAcrossFullScope() {
         ScenarioRehearsalBatchRepository.Submission first =
                 submission(SCOPE, "batch-001", "refund");

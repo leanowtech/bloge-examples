@@ -229,6 +229,13 @@ public final class DatabaseScenarioRehearsalBatchRepository
                 )
                 """);
         jdbc.execute("""
+                CREATE INDEX IF NOT EXISTS idx_scenario_rehearsal_batch_scope_created
+                ON scenario_rehearsal_batch_jobs (
+                    tenant_id, organization_id, project_id,
+                    environment_id, region, created_at DESC, job_id DESC
+                )
+                """);
+        jdbc.execute("""
                 CREATE TABLE IF NOT EXISTS scenario_rehearsal_batch_items (
                     job_id VARCHAR(512) NOT NULL,
                     item_index INTEGER NOT NULL,
@@ -1676,6 +1683,49 @@ public final class DatabaseScenarioRehearsalBatchRepository
     }
 
     @Override
+    public ScenarioRehearsalBatchJobPage list(
+            CapabilitySnapshot.Scope scope,
+            ScenarioRehearsalBatchJobPage.Cursor before,
+            int limit,
+            ScenarioRehearsalBatchPolicy policy) {
+        CapabilitySnapshot.Scope exact =
+                Objects.requireNonNull(scope, "scope");
+        if (limit < 1
+                || limit
+                > ScenarioRehearsalBatchJobPage.MAXIMUM_PAGE_SIZE) {
+            throw new IllegalArgumentException(
+                    "Scenario batch job page limit is invalid");
+        }
+        Objects.requireNonNull(policy, "policy");
+        ScenarioRehearsalBatchJobPage page =
+                mutations.execute(status -> {
+                    QueuePartition partition = partition(exact);
+                    lockPartition(partition);
+                    Instant observedAt = coordinationNow();
+                    ensurePolicy(partition, policy, observedAt);
+                    reconcile(partition, observedAt, policy);
+                    List<StoredJob> stored = listJobs(
+                            exact, before, limit + 1);
+                    boolean hasMore = stored.size() > limit;
+                    List<ScenarioRehearsalBatchJob> jobs =
+                            stored.stream()
+                                    .limit(limit)
+                                    .map(StoredJob::job)
+                                    .toList();
+                    ScenarioRehearsalBatchJobPage.Cursor next =
+                            hasMore
+                                    ? ScenarioRehearsalBatchJobPage
+                                    .Cursor.after(jobs.getLast())
+                                    : null;
+                    return new ScenarioRehearsalBatchJobPage(
+                            "", exact, jobs, next);
+                });
+        return required(
+                page,
+                "Scenario batch job page returned no result");
+    }
+
+    @Override
     public ScenarioRehearsalBatchItemPage page(
             CapabilitySnapshot.Scope scope,
             String jobId,
@@ -1712,6 +1762,48 @@ public final class DatabaseScenarioRehearsalBatchRepository
                 job.manifestFingerprint(),
                 values,
                 next);
+    }
+
+    private List<StoredJob> listJobs(
+            CapabilitySnapshot.Scope scope,
+            ScenarioRehearsalBatchJobPage.Cursor before,
+            int limit) {
+        String cursorClause = before == null
+                ? ""
+                : """
+                  AND (
+                    created_at < ?
+                    OR (created_at = ? AND job_id < ?)
+                  )
+                """;
+        String sql = """
+                SELECT *
+                FROM scenario_rehearsal_batch_jobs
+                WHERE tenant_id = ?
+                  AND organization_id = ?
+                  AND project_id = ?
+                  AND environment_id = ?
+                  AND region = ?
+                """ + cursorClause + """
+                ORDER BY created_at DESC, job_id DESC
+                LIMIT ?
+                """;
+        List<Object> arguments = new ArrayList<>(List.of(
+                scope.tenantId(),
+                scope.organizationId(),
+                scope.projectId(),
+                scope.environmentId(),
+                scope.region()));
+        if (before != null) {
+            arguments.add(timestamp(before.createdAt()));
+            arguments.add(timestamp(before.createdAt()));
+            arguments.add(before.jobId());
+        }
+        arguments.add(limit);
+        return jdbc.query(
+                sql,
+                this::mapJob,
+                arguments.toArray());
     }
 
     private Optional<StoredJob> selectNext(

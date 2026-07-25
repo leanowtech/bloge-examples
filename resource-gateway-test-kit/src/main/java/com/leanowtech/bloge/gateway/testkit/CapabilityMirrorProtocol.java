@@ -278,6 +278,9 @@ public final class CapabilityMirrorProtocol {
     /** Durable Scenario batch job projection with explicit evidence finalization. */
     public static final String SCENARIO_REHEARSAL_BATCH_JOB_V2 =
             "resourceGateway.scenarioRehearsalBatchJob.v2";
+    /** Exact-scope keyset page over payload-free Scenario batch jobs. */
+    public static final String SCENARIO_REHEARSAL_BATCH_JOB_PAGE_V1 =
+            "resourceGateway.scenarioRehearsalBatchJobPage.v1";
     /** Payload-free batch evidence finalization status wire version. */
     public static final String
     SCENARIO_REHEARSAL_BATCH_FINALIZATION_STATUS_V1 =
@@ -681,6 +684,10 @@ public final class CapabilityMirrorProtocol {
     /** Packaged current durable Scenario batch job projection. */
     public static final String SCENARIO_REHEARSAL_BATCH_JOB_SCHEMA_RESOURCE =
             SCENARIO_REHEARSAL_BATCH_JOB_V2_SCHEMA_RESOURCE;
+    /** Packaged exact-scope keyset page over Scenario batch jobs. */
+    public static final String SCENARIO_REHEARSAL_BATCH_JOB_PAGE_SCHEMA_RESOURCE =
+            SCHEMA_RESOURCE_ROOT
+                    + "scenario-rehearsal-batch-job-page-v1.schema.json";
     /** Packaged payload-free batch evidence finalization status. */
     public static final String
     SCENARIO_REHEARSAL_BATCH_FINALIZATION_STATUS_SCHEMA_RESOURCE =

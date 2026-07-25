@@ -100,6 +100,8 @@ class CapabilityMirrorSchemaPackagingTest {
                 "scenario-rehearsal-batch-manifest-v1.schema.json",
                 "scenario-rehearsal-batch-cancellation-request-v1.schema.json",
                 "scenario-rehearsal-batch-job-v1.schema.json",
+                "scenario-rehearsal-batch-job-v2.schema.json",
+                "scenario-rehearsal-batch-job-page-v1.schema.json",
                 "scenario-rehearsal-batch-item-page-v1.schema.json",
                 "scenario-rehearsal-batch-evidence-index-v1.schema.json",
                 "scenario-rehearsal-batch-evidence-attestation-v1.schema.json",
@@ -222,6 +224,10 @@ class CapabilityMirrorSchemaPackagingTest {
                 .SCENARIO_REHEARSAL_BATCH_JOB_SCHEMA_RESOURCE)
                 .endsWith(
                         "scenario-rehearsal-batch-job-v2.schema.json");
+        assertThat(CapabilityMirrorProtocol
+                .SCENARIO_REHEARSAL_BATCH_JOB_PAGE_SCHEMA_RESOURCE)
+                .endsWith(
+                        "scenario-rehearsal-batch-job-page-v1.schema.json");
         assertThat(CapabilityMirrorProtocol
                 .SCENARIO_REHEARSAL_BATCH_FINALIZATION_STATUS_SCHEMA_RESOURCE)
                 .endsWith(

@@ -731,6 +731,19 @@ public interface ScenarioRehearsalBatchRepository {
             String jobId,
             ScenarioRehearsalBatchPolicy policy);
 
+    /**
+     * Returns one bounded newest-first page inside the exact authenticated scope.
+     *
+     * <p>The optional cursor is an immutable ordering coordinate only. Implementations must still
+     * apply every scope coordinate independently and must reconcile the regional queue before
+     * reading mutable job projections.</p>
+     */
+    ScenarioRehearsalBatchJobPage list(
+            CapabilitySnapshot.Scope scope,
+            ScenarioRehearsalBatchJobPage.Cursor before,
+            int limit,
+            ScenarioRehearsalBatchPolicy policy);
+
     /** Returns one stable bounded item page inside the exact scope. */
     ScenarioRehearsalBatchItemPage page(
             CapabilitySnapshot.Scope scope,

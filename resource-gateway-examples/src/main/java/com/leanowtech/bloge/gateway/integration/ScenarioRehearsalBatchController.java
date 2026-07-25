@@ -8,6 +8,7 @@ import com.leanowtech.bloge.gateway.integration.mirror.ScenarioRehearsalBatchFin
 import com.leanowtech.bloge.gateway.integration.mirror.ScenarioRehearsalBatchFinalizationStatus;
 import com.leanowtech.bloge.gateway.integration.mirror.ScenarioRehearsalBatchItemPage;
 import com.leanowtech.bloge.gateway.integration.mirror.ScenarioRehearsalBatchJob;
+import com.leanowtech.bloge.gateway.integration.mirror.ScenarioRehearsalBatchJobPage;
 import com.leanowtech.bloge.gateway.integration.mirror.ScenarioRehearsalBatchRequest;
 import com.leanowtech.bloge.gateway.integration.mirror.ScenarioRehearsalBatchRetentionService;
 import com.leanowtech.bloge.gateway.integration.mirror.ScenarioRehearsalBatchRetentionState;
@@ -103,6 +104,30 @@ public final class ScenarioRehearsalBatchController {
                 batches.submit(command, identity).job();
         return IntegrationEnvelope.of(
                 "SCENARIO_REHEARSAL_BATCH_JOB",
+                value.schemaVersion(),
+                value);
+    }
+
+    /** Lists newest exact-scope jobs with an immutable keyset cursor. */
+    @GetMapping
+    public IntegrationEnvelope<ScenarioRehearsalBatchJobPage> list(
+            @RequestParam(defaultValue = "25") int limit,
+            @RequestParam(defaultValue = "") String beforeCreatedAt,
+            @RequestParam(defaultValue = "") String beforeJobId,
+            @RequestHeader HttpHeaders headers) {
+        IntegrationRequestContext identity =
+                authenticator.authenticate(
+                        headers,
+                        IntegrationOperation
+                                .MIRROR_REHEARSAL_BATCH_READ);
+        ScenarioRehearsalBatchJobPage value =
+                batches.list(
+                        beforeCreatedAt,
+                        beforeJobId,
+                        limit,
+                        identity);
+        return IntegrationEnvelope.of(
+                "SCENARIO_REHEARSAL_BATCH_JOB_PAGE",
                 value.schemaVersion(),
                 value);
     }

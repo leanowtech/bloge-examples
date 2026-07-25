@@ -1948,6 +1948,7 @@ Integration API templates:
   Stateful session: POST /api/mirror/sessions (--stateful; Bearer token + X-Purpose: MIRROR_REHEARSAL)
   Session command:  POST /api/mirror/sessions/{sessionId}/commands
   Scenario batches: POST /api/mirror/rehearsal-jobs (--scenario-batch; Bearer token + X-Purpose: MIRROR_REHEARSAL)
+  Batch workbench:  GET  /api/mirror/rehearsal-jobs (exact-scope keyset page)
   Batch workbook:   GET  /api/mirror/rehearsal-jobs/{jobId}/workbook-seed
   Finalization:     GET  /api/mirror/rehearsal-jobs/{jobId}/finalization
   Finalizer health: GET  /api/mirror/rehearsal-jobs/finalization-health
@@ -2004,6 +2005,7 @@ wait_for_ready() {
                 if command -v jq >/dev/null 2>&1; then
                     if ! printf '%s' "${response}" | jq -e '
                         .payload.features.mirrorScenarioRehearsalBatchApi == true
+                        and .payload.features.mirrorScenarioRehearsalBatchJobListing == true
                         and .payload.features.mirrorScenarioRehearsalBatchCooperativeControl == true
                         and .payload.features.mirrorScenarioRehearsalBatchEvidence == true
                         and .payload.features.mirrorScenarioRehearsalBatchWorkbookSeed == true
@@ -2022,6 +2024,8 @@ wait_for_ready() {
                     fi
                 elif ! printf '%s' "${response}" |
                     grep -Eq '"mirrorScenarioRehearsalBatchApi"[[:space:]]*:[[:space:]]*true' ||
+                    ! printf '%s' "${response}" |
+                    grep -Eq '"mirrorScenarioRehearsalBatchJobListing"[[:space:]]*:[[:space:]]*true' ||
                     ! printf '%s' "${response}" |
                     grep -Eq '"mirrorScenarioRehearsalBatchCooperativeControl"[[:space:]]*:[[:space:]]*true' ||
                     ! printf '%s' "${response}" |

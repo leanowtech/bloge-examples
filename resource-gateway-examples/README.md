@@ -65,6 +65,7 @@ DAG workers plus isolated evidence-finalization lanes for one exact
 | `POST http://localhost:8080/api/mirror/sessions/{sessionId}/checkpoints` | Sign a payload-free exact Session/store-generation checkpoint after starting with `--stateful` |
 | `POST http://localhost:8080/api/mirror/sessions/{sessionId}/recoveries` | Re-verify a checkpoint against the current encrypted data-plane head and return an exact run binding |
 | `POST http://localhost:8080/api/mirror/rehearsal-jobs` | Submit an exact-plan batch after starting with `--scenario-batch`; the script aligns the worker partition with the demo identity |
+| `GET http://localhost:8080/api/mirror/rehearsal-jobs?limit=25` | List the authenticated exact scope's newest payload-free batches with immutable creation-time keyset pagination for the Owner workbench |
 | `GET http://localhost:8080/api/mirror/rehearsal-jobs/{jobId}/items` | Read stable payload-free item pages while bounded regional workers progress the batch |
 | `GET http://localhost:8080/api/mirror/rehearsal-jobs/{jobId}/evidence` | Read one signed payload-free terminal batch index whose request, manifest, item results, and child evidence references can be verified offline |
 | `GET http://localhost:8080/api/mirror/rehearsal-jobs/{jobId}/workbook-seed` | Read one bounded, root-signed ANEKE batch correctness projection; Test Kit verifies it without one request per child (`X-Purpose: GOVERNANCE_EVIDENCE_INGESTION`) |

@@ -8,6 +8,7 @@ import com.leanowtech.bloge.gateway.integration.mirror.ScenarioRehearsalBatchFin
 import com.leanowtech.bloge.gateway.integration.mirror.ScenarioRehearsalBatchFinalizationStatus;
 import com.leanowtech.bloge.gateway.integration.mirror.ScenarioRehearsalBatchItemPage;
 import com.leanowtech.bloge.gateway.integration.mirror.ScenarioRehearsalBatchJob;
+import com.leanowtech.bloge.gateway.integration.mirror.ScenarioRehearsalBatchJobPage;
 import com.leanowtech.bloge.gateway.integration.mirror.ScenarioRehearsalBatchRepository;
 import com.leanowtech.bloge.gateway.integration.mirror.ScenarioRehearsalBatchRequest;
 import com.leanowtech.bloge.gateway.integration.mirror.ScenarioRehearsalBatchRetentionService;
@@ -55,6 +56,8 @@ class ScenarioRehearsalBatchControllerTest {
                 mock(ScenarioRehearsalBatchJob.class);
         ScenarioRehearsalBatchItemPage page =
                 mock(ScenarioRehearsalBatchItemPage.class);
+        ScenarioRehearsalBatchJobPage jobs =
+                mock(ScenarioRehearsalBatchJobPage.class);
         ScenarioRehearsalBatchEvidenceBundle evidence =
                 mock(ScenarioRehearsalBatchEvidenceBundle.class);
         ScenarioRehearsalBatchWorkbookSeed workbook =
@@ -92,6 +95,8 @@ class ScenarioRehearsalBatchControllerTest {
                 ScenarioRehearsalBatchJob.SCHEMA_VERSION);
         when(page.schemaVersion()).thenReturn(
                 ScenarioRehearsalBatchItemPage.SCHEMA_VERSION);
+        when(jobs.schemaVersion()).thenReturn(
+                ScenarioRehearsalBatchJobPage.SCHEMA_VERSION);
         when(evidence.schemaVersion()).thenReturn(
                 ScenarioRehearsalBatchEvidenceBundle.SCHEMA_VERSION);
         when(workbook.schemaVersion()).thenReturn(
@@ -176,6 +181,8 @@ class ScenarioRehearsalBatchControllerTest {
                                 .SubmissionResult(job, false));
         when(batches.find("job-a", identity))
                 .thenReturn(Optional.of(job));
+        when(batches.list("", "", 25, identity))
+                .thenReturn(jobs);
         when(batches.page(
                 "job-a", 10, 25, identity))
                 .thenReturn(page);
@@ -222,6 +229,17 @@ class ScenarioRehearsalBatchControllerTest {
         assertThat(controller.find(
                 "job-a", headers).payload())
                 .isSameAs(job);
+        assertThat(controller.list(
+                25, "", "", headers))
+                .satisfies(envelope -> {
+                    assertThat(envelope.payloadKind()).isEqualTo(
+                            "SCENARIO_REHEARSAL_BATCH_JOB_PAGE");
+                    assertThat(envelope.payloadSchemaVersion())
+                            .isEqualTo(
+                                    ScenarioRehearsalBatchJobPage
+                                            .SCHEMA_VERSION);
+                    assertThat(envelope.payload()).isSameAs(jobs);
+                });
         assertThat(controller.page(
                 "job-a", 10, 25, headers).payload())
                 .isSameAs(page);
@@ -294,7 +312,7 @@ class ScenarioRehearsalBatchControllerTest {
                 IntegrationOperation
                         .MIRROR_REHEARSAL_BATCH_SUBMIT);
         verify(authenticator,
-                org.mockito.Mockito.times(3))
+                org.mockito.Mockito.times(4))
                 .authenticate(
                         headers,
                         IntegrationOperation

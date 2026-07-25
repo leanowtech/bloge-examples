@@ -14,6 +14,7 @@ import java.net.InetSocketAddress;
 import java.net.URI;
 import java.nio.charset.StandardCharsets;
 import java.time.Duration;
+import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
@@ -156,6 +157,41 @@ class ResourceGatewayTestClientTest {
                             "/api/mirror/rehearsal-jobs/"
                                     + jobId
                                     + "/finalization");
+                    assertThat(request.purpose()).isEqualTo(
+                            "GOVERNANCE_EVIDENCE_INGESTION");
+                });
+    }
+
+    @Test
+    void listsSchemaValidatedScenarioBatchesWithExactKeysetQuery() {
+        ResourceGatewayTestClient client = client();
+        Instant before =
+                Instant.parse("2026-07-25T03:00:00Z");
+        String beforeJob =
+                "scenario-batch-" + "b".repeat(64);
+
+        JsonNode page = client.findScenarioRehearsalBatchJobs(
+                2, before, beforeJob);
+
+        assertThat(page.path("jobs")).hasSize(2);
+        assertThat(page.path("jobs").get(0)
+                .path("requestId").asText())
+                .isEqualTo("owner-batch-newest");
+        assertThat(page.path("nextCursor")
+                .path("jobId").asText())
+                .isEqualTo(
+                        "scenario-batch-" + "d".repeat(64));
+        assertThat(requests)
+                .singleElement()
+                .satisfies(request -> {
+                    assertThat(request.method()).isEqualTo("GET");
+                    assertThat(request.rawPath()).isEqualTo(
+                            "/api/mirror/rehearsal-jobs");
+                    assertThat(request.rawQuery()).isEqualTo(
+                            "limit=2&beforeCreatedAt="
+                                    + "2026-07-25T03%3A00%3A00Z"
+                                    + "&beforeJobId="
+                                    + beforeJob);
                     assertThat(request.purpose()).isEqualTo(
                             "GOVERNANCE_EVIDENCE_INGESTION");
                 });
@@ -1141,6 +1177,12 @@ class ResourceGatewayTestClientTest {
             return;
         }
         if ("GET".equals(exchange.getRequestMethod())
+                && path.equals("/api/mirror/rehearsal-jobs")) {
+            respond(exchange, 200,
+                    scenarioBatchJobPageResponse());
+            return;
+        }
+        if ("GET".equals(exchange.getRequestMethod())
                 && path.endsWith("/finalization-health")) {
             respond(exchange, 200,
                     scenarioBatchFinalizationHealthResponse());
@@ -1309,6 +1351,92 @@ class ResourceGatewayTestClientTest {
                   }
                 }
                 """.formatted("a".repeat(64));
+    }
+
+    private static String scenarioBatchJobPageResponse() {
+        return """
+                {
+                  "protocol":"ToolStudioResourceGatewayProtocol",
+                  "protocolVersion":"1.0.0",
+                  "payloadKind":"SCENARIO_REHEARSAL_BATCH_JOB_PAGE",
+                  "payloadSchemaVersion":"resourceGateway.scenarioRehearsalBatchJobPage.v1",
+                  "payload":{
+                    "schemaVersion":"resourceGateway.scenarioRehearsalBatchJobPage.v1",
+                    "scope":%1$s,
+                    "jobs":[
+                      %2$s,
+                      %3$s
+                    ],
+                    "nextCursor":{
+                      "createdAt":"2026-07-25T02:00:00Z",
+                      "jobId":"scenario-batch-%4$s"
+                    }
+                  }
+                }
+                """.formatted(
+                scenarioBatchScope(),
+                scenarioBatchJob(
+                        "e",
+                        "owner-batch-newest",
+                        "2026-07-25T02:30:00Z"),
+                scenarioBatchJob(
+                        "d",
+                        "owner-batch-older",
+                        "2026-07-25T02:00:00Z"),
+                "d".repeat(64));
+    }
+
+    private static String scenarioBatchJob(
+            String digest,
+            String requestId,
+            String createdAt) {
+        return """
+                {
+                  "schemaVersion":"resourceGateway.scenarioRehearsalBatchJob.v2",
+                  "jobId":"scenario-batch-%1$s",
+                  "requestId":"%2$s",
+                  "requestFingerprint":"sha256:%3$s",
+                  "manifestFingerprint":"sha256:%3$s",
+                  "scope":%4$s,
+                  "status":"QUEUED",
+                  "failureMode":"COLLECT_ALL",
+                  "priority":"NORMAL",
+                  "maximumItemAttempts":3,
+                  "summary":{
+                    "totalItems":2,
+                    "completedItems":0,
+                    "passedItems":0,
+                    "failedItems":0,
+                    "indeterminateItems":0,
+                    "cancelledItems":0
+                  },
+                  "deadlineAt":"2026-07-25T04:00:00Z",
+                  "failureCode":"",
+                  "cancellationRequestId":"",
+                  "cancellationReasonCode":"",
+                  "createdAt":"%5$s",
+                  "updatedAt":"%5$s",
+                  "completedAt":null,
+                  "recordFingerprint":"sha256:%3$s"
+                }
+                """.formatted(
+                digest.repeat(64),
+                requestId,
+                digest.repeat(64),
+                scenarioBatchScope(),
+                createdAt);
+    }
+
+    private static String scenarioBatchScope() {
+        return """
+                {
+                  "tenantId":"tenant-a",
+                  "organizationId":"org-a",
+                  "projectId":"support",
+                  "environmentId":"test",
+                  "region":"sg"
+                }
+                """;
     }
 
     private static String

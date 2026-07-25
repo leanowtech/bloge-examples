@@ -228,6 +228,7 @@ ScenarioPack
 | `POST /api/mirror/scenarios/runs/{runId}/retention/hold-releases` | `MIRROR_REHEARSAL_LEGAL_HOLD` | 释放一个 exact hold，不影响其他 active hold |
 | `POST /api/mirror/scenarios/runs/{runId}/retention/purge` | `MIRROR_REHEARSAL_RETENTION_ADMIN` | 数据库时钟确认到期且无 hold 后删除 aggregate 并返回签名证明 |
 | `POST /api/mirror/rehearsal-jobs` | `MIRROR_REHEARSAL_BATCH_SUBMIT` | 解析所有 exact plan、冻结 manifest 并按服务端容量策略幂等入队 |
+| `GET /api/mirror/rehearsal-jobs` | `MIRROR_REHEARSAL_BATCH_READ` | 按 exact scope 与不可变创建坐标 keyset 分页列出最新 payload-free job |
 | `GET /api/mirror/rehearsal-jobs/{jobId}` | `MIRROR_REHEARSAL_BATCH_READ` | 读取并重验 payload-free job projection |
 | `GET /api/mirror/rehearsal-jobs/{jobId}/items` | `MIRROR_REHEARSAL_BATCH_READ` | 使用 `startIndex` + `limit` 读取稳定 manifest-index 页 |
 | `GET /api/mirror/rehearsal-jobs/{jobId}/evidence` | `MIRROR_REHEARSAL_BATCH_EVIDENCE_READ` | 读取并复验请求、manifest、终态 job、全部 item ref 的签名批次闭包 |
@@ -882,6 +883,39 @@ if (!result.verified()) {
 ANEKE 仍拥有 workbook 持久化、owner approval 与最终发布裁决，Resource Gateway
 的 `gateReady` 只代表这份已验签 Scenario 闭包没有本地 blocker。
 
+### 8.4 Owner 工作台的批次发现协议
+
+Owner 工作台不能要求业务人员先从日志或数据库复制 `jobId`。受保护
+`GET /api/mirror/rehearsal-jobs` 使用
+`ScenarioRehearsalBatchJobPage.v1` 返回当前认证完整 scope 内的最新批次：
+
+```bash
+curl -sS \
+  'http://localhost:8080/api/mirror/rehearsal-jobs?limit=25' \
+  -H 'Authorization: Bearer bloge-aneke-demo-token' \
+  -H 'X-Purpose: MIRROR_REHEARSAL'
+```
+
+下一页必须原样提交上一页 `nextCursor` 的两个坐标：
+
+```text
+?limit=25
+&beforeCreatedAt=2026-07-25T03:00:00Z
+&beforeJobId=scenario-batch-<64-hex>
+```
+
+排序固定为 `createdAt DESC, jobId DESC`。`createdAt` 在准入后不可变，因此运行状态、
+进度或终态更新不会把行移到另一页；同一数据库时间内用确定性 `jobId` 完成全序。
+查询始终另外绑定认证得到的 tenant/organization/project/environment/region，cursor
+只是位置坐标，不是授权令牌。缺一字段、时间非法、job id 非规范或超过 100 行都失败
+关闭。服务端逐行重验 job record fingerprint，Test Kit 还会复验 strict Schema、
+全页 scope、唯一性、降序和 cursor 与末行的一致性。
+
+这个协议只解决工作台“找到批次并稳定翻页”的底座，不把 mutable job projection
+冒充签名证据。运行中页面可用 job/item 显示进度；终态治理结论必须切换到已验签
+batch workbook，选中某个异常 entry 后才按需打开 child workbook 的 case/assertion
+明细，避免默认 N+1。
+
 ## 9. 失败语义
 
 | 失败类别 | 处理原则 |
@@ -1033,7 +1067,7 @@ WORM、外部 transparency anchor、企业级策略分发和跨地域删除认�
 
 ```bash
 mvn -f resource-gateway-examples/pom.xml \
-  -Dtest=ScenarioRehearsalControllerTest,ScenarioRehearsalBatchControllerTest,ScenarioArtifactRequestDecoderTest,ScenarioArtifactRegistryServiceTest,ScenarioRehearsalIntegrationServiceTest,ScenarioRehearsalCompilerTest,ScenarioRehearsalRuntimeServiceTest,ScenarioRehearsalBatchProtocolTest,ScenarioRehearsalBatchManifestTest,ScenarioRehearsalBatchServiceTest,ScenarioRehearsalBatchWorkbookSeedTest,ScenarioRehearsalBatchWorkbookServiceTest,DatabaseScenarioRehearsalBatchRepositoryTest,DatabaseScenarioRehearsalBatchLifecycleAuditRepositoryTest,ScenarioRehearsalBatchEvidenceIntegrityServiceTest,ScenarioRehearsalBatchEvidencePublisherTest,DatabaseScenarioRehearsalBatchEvidenceRepositoryTest,DatabaseScenarioRehearsalBatchRetentionRepositoryTest,ScenarioRehearsalBatchRetentionServiceTest,ScenarioRehearsalBatchSchedulerTest,ScenarioRehearsalBatchSchedulerPropertiesTest,ScenarioRehearsalWorkbookSeedTest,ScenarioRehearsalResultProtocolTest,ScenarioRehearsalEvidenceIntegrityServiceTest,DatabaseScenarioRehearsalEvidenceRepositoryTest,DatabaseScenarioRehearsalRunRepositoryTest,ScenarioRehearsalCommitServiceTest,DatabaseScenarioRehearsalRetentionRepositoryTest,ScenarioRehearsalRetentionServiceTest,DatabaseScenarioArtifactRepositoryTest,DatabaseCompiledScenarioRehearsalPlanRepositoryTest,ScenarioPackProtocolTest,MirrorEvidenceIntegrityServiceTest,ScenarioHandlingAssertionEvaluatorTest,MirrorRuntimeConfigurationTest,ToolStudioIntegrationServiceTest,VisualCanvasDemoScriptTest \
+  -Dtest=ScenarioRehearsalControllerTest,ScenarioRehearsalBatchControllerTest,ScenarioArtifactRequestDecoderTest,ScenarioArtifactRegistryServiceTest,ScenarioRehearsalIntegrationServiceTest,ScenarioRehearsalCompilerTest,ScenarioRehearsalRuntimeServiceTest,ScenarioRehearsalBatchProtocolTest,ScenarioRehearsalBatchManifestTest,ScenarioRehearsalBatchJobPageTest,ScenarioRehearsalBatchServiceTest,ScenarioRehearsalBatchWorkbookSeedTest,ScenarioRehearsalBatchWorkbookServiceTest,DatabaseScenarioRehearsalBatchRepositoryTest,DatabaseScenarioRehearsalBatchLifecycleAuditRepositoryTest,ScenarioRehearsalBatchEvidenceIntegrityServiceTest,ScenarioRehearsalBatchEvidencePublisherTest,DatabaseScenarioRehearsalBatchEvidenceRepositoryTest,DatabaseScenarioRehearsalBatchRetentionRepositoryTest,ScenarioRehearsalBatchRetentionServiceTest,ScenarioRehearsalBatchSchedulerTest,ScenarioRehearsalBatchSchedulerPropertiesTest,ScenarioRehearsalWorkbookSeedTest,ScenarioRehearsalResultProtocolTest,ScenarioRehearsalEvidenceIntegrityServiceTest,DatabaseScenarioRehearsalEvidenceRepositoryTest,DatabaseScenarioRehearsalRunRepositoryTest,ScenarioRehearsalCommitServiceTest,DatabaseScenarioRehearsalRetentionRepositoryTest,ScenarioRehearsalRetentionServiceTest,DatabaseScenarioArtifactRepositoryTest,DatabaseCompiledScenarioRehearsalPlanRepositoryTest,ScenarioPackProtocolTest,MirrorEvidenceIntegrityServiceTest,ScenarioHandlingAssertionEvaluatorTest,MirrorRuntimeConfigurationTest,ToolStudioIntegrationServiceTest,VisualCanvasDemoScriptTest \
   test
 ```
 
@@ -1044,11 +1078,11 @@ mvn -f resource-gateway-examples/pom.xml clean verify
 mvn -f resource-gateway-test-kit/pom.xml clean verify
 ```
 
-2026-07-25 本轮门禁结果：Resource Gateway `5,159` 项测试零失败、零错误、
-3 项条件跳过（含真实 Chrome DOM/工作流和可执行 Boot JAR）；Test Kit `383` 项
-零失败、零错误，完成 124 个 Mirror Schema 的引用闭包与 shaded JAR 打包，公共
+2026-07-25 本轮门禁结果：Resource Gateway `5,173` 项测试零失败、零错误、
+3 项条件跳过（含真实 Chrome DOM/工作流和可执行 Boot JAR）；Test Kit `392` 项
+零失败、零错误，完成 126 个 Mirror Schema 的引用闭包与 shaded JAR 打包，公共
 JavaDoc 校验通过。本轮最终源码另通过服务端 finalization health/SLO 联合
-`80/80` 项与 Test Kit Schema/client `53/53` 项聚焦验证。
+`99/99` 项与 Test Kit Schema/client `54/54` 项聚焦验证。
 
 关键实现与协议：
 
@@ -1071,6 +1105,7 @@ JavaDoc 校验通过。本轮最终源码另通过服务端 finalization health/
 - `resource-gateway-examples/src/main/java/com/leanowtech/bloge/gateway/integration/mirror/DatabaseScenarioRehearsalRetentionRepository.java`
 - `resource-gateway-examples/src/main/java/com/leanowtech/bloge/gateway/integration/mirror/ScenarioRehearsalWorkbookSeed.java`
 - `resource-gateway-examples/src/main/java/com/leanowtech/bloge/gateway/integration/mirror/ScenarioRehearsalBatchCompiler.java`
+- `resource-gateway-examples/src/main/java/com/leanowtech/bloge/gateway/integration/mirror/ScenarioRehearsalBatchJobPage.java`
 - `resource-gateway-examples/src/main/java/com/leanowtech/bloge/gateway/integration/mirror/DatabaseScenarioRehearsalBatchRepository.java`
 - `resource-gateway-examples/src/main/java/com/leanowtech/bloge/gateway/integration/mirror/ScenarioRehearsalBatchEvidenceIntegrityService.java`
 - `resource-gateway-examples/src/main/java/com/leanowtech/bloge/gateway/integration/mirror/ScenarioRehearsalBatchFinalizationWorker.java`
@@ -1103,6 +1138,7 @@ JavaDoc 校验通过。本轮最终源码另通过服务端 finalization health/
 - `docs/schemas/resource-gateway-mirror/scenario-rehearsal-batch-manifest-v1.schema.json`
 - `docs/schemas/resource-gateway-mirror/scenario-rehearsal-batch-job-v1.schema.json`
 - `docs/schemas/resource-gateway-mirror/scenario-rehearsal-batch-job-v2.schema.json`
+- `docs/schemas/resource-gateway-mirror/scenario-rehearsal-batch-job-page-v1.schema.json`
 - `docs/schemas/resource-gateway-mirror/scenario-rehearsal-batch-finalization-status-v1.schema.json`
 - `docs/schemas/resource-gateway-mirror/scenario-rehearsal-batch-finalization-health-v1.schema.json`
 - `docs/schemas/resource-gateway-mirror/scenario-rehearsal-batch-finalization-remediation-request-v1.schema.json`
