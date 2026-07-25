@@ -282,6 +282,14 @@ public final class CapabilityMirrorProtocol {
     public static final String
     SCENARIO_REHEARSAL_BATCH_FINALIZATION_STATUS_V1 =
             "resourceGateway.scenarioRehearsalBatchFinalizationStatus.v1";
+    /** Compare-and-set quarantined batch-finalization remediation command wire version. */
+    public static final String
+    SCENARIO_REHEARSAL_BATCH_FINALIZATION_REMEDIATION_REQUEST_V1 =
+            "resourceGateway.scenarioRehearsalBatchFinalizationRemediationRequest.v1";
+    /** Immutable payload-free batch-finalization remediation receipt wire version. */
+    public static final String
+    SCENARIO_REHEARSAL_BATCH_FINALIZATION_REMEDIATION_RECEIPT_V1 =
+            "resourceGateway.scenarioRehearsalBatchFinalizationRemediationReceipt.v1";
     /** Stable bounded Scenario batch item-page wire version. */
     public static final String SCENARIO_REHEARSAL_BATCH_ITEM_PAGE_V1 =
             "resourceGateway.scenarioRehearsalBatchItemPage.v1";
@@ -671,6 +679,16 @@ public final class CapabilityMirrorProtocol {
     SCENARIO_REHEARSAL_BATCH_FINALIZATION_STATUS_SCHEMA_RESOURCE =
             SCHEMA_RESOURCE_ROOT
                     + "scenario-rehearsal-batch-finalization-status-v1.schema.json";
+    /** Packaged compare-and-set quarantined finalization remediation command. */
+    public static final String
+    SCENARIO_REHEARSAL_BATCH_FINALIZATION_REMEDIATION_REQUEST_SCHEMA_RESOURCE =
+            SCHEMA_RESOURCE_ROOT
+                    + "scenario-rehearsal-batch-finalization-remediation-request-v1.schema.json";
+    /** Packaged immutable payload-free finalization remediation receipt. */
+    public static final String
+    SCENARIO_REHEARSAL_BATCH_FINALIZATION_REMEDIATION_RECEIPT_SCHEMA_RESOURCE =
+            SCHEMA_RESOURCE_ROOT
+                    + "scenario-rehearsal-batch-finalization-remediation-receipt-v1.schema.json";
     /** Packaged stable bounded Scenario batch item page. */
     public static final String SCENARIO_REHEARSAL_BATCH_ITEM_PAGE_SCHEMA_RESOURCE =
             SCHEMA_RESOURCE_ROOT

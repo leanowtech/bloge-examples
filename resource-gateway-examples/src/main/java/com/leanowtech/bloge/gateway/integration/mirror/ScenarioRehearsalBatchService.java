@@ -253,6 +253,56 @@ public final class ScenarioRehearsalBatchService {
         }
     }
 
+    /**
+     * Re-queues one exact quarantined finalization under a dedicated administrative purpose.
+     *
+     * <p>The public attempt/timestamp fence prevents stale consoles from changing a newer
+     * generation. The durable repository owns intent reconstruction, retention renewal,
+     * idempotency, lifecycle audit, and protected-operation audit as one transaction.</p>
+     */
+    public ScenarioRehearsalBatchRepository
+            .FinalizationRemediationResult
+    remediateFinalization(
+            String jobId,
+            ScenarioRehearsalBatchFinalizationRemediationRequest
+                    request,
+            IntegrationRequestContext identity) {
+        MirrorOperationObservability.Observation operation =
+                observations.start(
+                        MirrorOperationAuditEvent.Operation
+                                .SCENARIO_REHEARSAL_BATCH_FINALIZATION_REMEDIATE,
+                        identity,
+                        request == null
+                                ? "" : request.commandId(),
+                        "",
+                        jobId);
+        try {
+            CapabilitySnapshot.Scope scope =
+                    MirrorPlanIntegrationService
+                            .requireMirrorFinalizationAdminIdentity(
+                                    identity);
+            ScenarioRehearsalBatchFinalizationRemediationRequest
+                    exact = Objects.requireNonNull(
+                    request, "request");
+            return repository.remediateFinalization(
+                    new ScenarioRehearsalBatchRepository
+                            .FinalizationRemediation(
+                            scope,
+                            jobId,
+                            exact,
+                            ProtocolFingerprint.ofBounded(
+                                    mapper,
+                                    exact,
+                                    16 * 1024)),
+                    policy,
+                    operation);
+        } catch (ScenarioRehearsalBatchConflictException conflict) {
+            throw operation.failed(problem(conflict, identity));
+        } catch (RuntimeException failure) {
+            throw operation.failed(failure);
+        }
+    }
+
     /** Applies one exactly replayable cooperative cancellation intent. */
     public ScenarioRehearsalBatchRepository.SubmissionResult cancel(
             String jobId,

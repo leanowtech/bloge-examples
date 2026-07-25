@@ -60,6 +60,18 @@ class ScenarioRehearsalBatchSchemaTest {
                         .SCENARIO_REHEARSAL_BATCH_FINALIZATION_STATUS_SCHEMA_RESOURCE,
                 "RG.MIRROR.CLIENT.SCENARIO_BATCH_FINALIZATION_INVALID"))
                 .doesNotThrowAnyException();
+        assertThatCode(() -> CapabilityMirrorSchemaValidator.require(
+                remediationRequest(),
+                CapabilityMirrorProtocol
+                        .SCENARIO_REHEARSAL_BATCH_FINALIZATION_REMEDIATION_REQUEST_SCHEMA_RESOURCE,
+                "RG.MIRROR.CLIENT.SCENARIO_BATCH_FINALIZATION_REMEDIATION_REQUEST_INVALID"))
+                .doesNotThrowAnyException();
+        assertThatCode(() -> CapabilityMirrorSchemaValidator.require(
+                remediationReceipt(),
+                CapabilityMirrorProtocol
+                        .SCENARIO_REHEARSAL_BATCH_FINALIZATION_REMEDIATION_RECEIPT_SCHEMA_RESOURCE,
+                "RG.MIRROR.CLIENT.SCENARIO_BATCH_FINALIZATION_REMEDIATION_RECEIPT_INVALID"))
+                .doesNotThrowAnyException();
     }
 
     @Test
@@ -259,6 +271,48 @@ class ScenarioRehearsalBatchSchemaTest {
         value.put("createdAt", "2026-07-25T08:00:00Z");
         value.put("updatedAt", "2026-07-25T08:00:01Z");
         value.putNull("finalizedAt");
+        return value;
+    }
+
+    private static ObjectNode remediationRequest() {
+        ObjectNode value = JSON.createObjectNode();
+        value.put(
+                "schemaVersion",
+                CapabilityMirrorProtocol
+                        .SCENARIO_REHEARSAL_BATCH_FINALIZATION_REMEDIATION_REQUEST_V1);
+        value.put("commandId", "remediation-001");
+        value.put("expectedAttemptCount", 2);
+        value.put(
+                "expectedUpdatedAt",
+                "2026-07-25T08:00:01Z");
+        value.put("reasonCode", "KMS_POLICY_REPAIRED");
+        return value;
+    }
+
+    private static ObjectNode remediationReceipt() {
+        ObjectNode value = JSON.createObjectNode();
+        value.put(
+                "schemaVersion",
+                CapabilityMirrorProtocol
+                        .SCENARIO_REHEARSAL_BATCH_FINALIZATION_REMEDIATION_RECEIPT_V1);
+        value.put("receiptFingerprint", fingerprint('f'));
+        value.put("commandId", "remediation-001");
+        value.put(
+                "jobId",
+                "scenario-batch-" + "b".repeat(64));
+        value.put("remediationGeneration", 1);
+        value.put(
+                "previousIntentFingerprint",
+                fingerprint('d'));
+        value.put(
+                "currentIntentFingerprint",
+                fingerprint('e'));
+        value.put("previousAttemptCount", 2);
+        value.put("acceptedAt", "2026-07-25T08:01:00Z");
+        value.put(
+                "effectiveRetainUntil",
+                "2026-08-24T08:01:00Z");
+        value.put("reasonCode", "KMS_POLICY_REPAIRED");
         return value;
     }
 

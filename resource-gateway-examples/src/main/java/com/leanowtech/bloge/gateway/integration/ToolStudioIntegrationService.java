@@ -450,6 +450,9 @@ public class ToolStudioIntegrationService {
                 "mirrorScenarioRehearsalBatchEvidenceFinalizationApi",
                 mirrorPlanReady && mirrorExecutionApi);
         features.put(
+                "mirrorScenarioRehearsalBatchFinalizationRemediationApi",
+                mirrorPlanReady && mirrorExecutionApi);
+        features.put(
                 "mirrorScenarioRehearsalBatchRetentionApi",
                 mirrorPlanReady && mirrorExecutionApi);
         features.put(
@@ -984,6 +987,18 @@ public class ToolStudioIntegrationService {
                                         .ScenarioRehearsalBatchFinalizationStatus
                                         .SCHEMA_VERSION));
                 supportedObjects.put(
+                        "scenarioRehearsalBatchFinalizationRemediationRequest",
+                        List.of(
+                                com.leanowtech.bloge.gateway.integration.mirror
+                                        .ScenarioRehearsalBatchFinalizationRemediationRequest
+                                        .SCHEMA_VERSION));
+                supportedObjects.put(
+                        "scenarioRehearsalBatchFinalizationRemediationReceipt",
+                        List.of(
+                                com.leanowtech.bloge.gateway.integration.mirror
+                                        .ScenarioRehearsalBatchFinalizationRemediationReceipt
+                                        .SCHEMA_VERSION));
+                supportedObjects.put(
                         "scenarioRehearsalBatchCancellationRequest",
                         List.of(
                                 com.leanowtech.bloge.gateway.integration.mirror
@@ -1186,6 +1201,9 @@ public class ToolStudioIntegrationService {
                 endpoints.add(new IntegrationCapabilities.Endpoint(
                         "GET",
                         "/api/mirror/rehearsal-jobs/{jobId}/finalization"));
+                endpoints.add(new IntegrationCapabilities.Endpoint(
+                        "POST",
+                        "/api/mirror/rehearsal-jobs/{jobId}/finalization/remediations"));
                 endpoints.add(new IntegrationCapabilities.Endpoint(
                         "POST",
                         "/api/mirror/rehearsal-jobs/{jobId}/cancellations"));

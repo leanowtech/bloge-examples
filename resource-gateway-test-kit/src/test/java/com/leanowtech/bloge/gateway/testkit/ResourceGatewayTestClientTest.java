@@ -162,6 +162,47 @@ class ResourceGatewayTestClientTest {
     }
 
     @Test
+    void remediatesScenarioBatchFinalizationWithDedicatedPurposeAndReceiptFence() {
+        ResourceGatewayTestClient client = client();
+        String jobId = "scenario-batch-" + "a".repeat(64);
+        ObjectNode command = JSON.createObjectNode();
+        command.put(
+                "schemaVersion",
+                CapabilityMirrorProtocol
+                        .SCENARIO_REHEARSAL_BATCH_FINALIZATION_REMEDIATION_REQUEST_V1);
+        command.put("commandId", "remediation-001");
+        command.put("expectedAttemptCount", 2);
+        command.put(
+                "expectedUpdatedAt",
+                "2026-07-25T03:00:00Z");
+        command.put("reasonCode", "KMS_POLICY_REPAIRED");
+
+        JsonNode receipt =
+                client.remediateScenarioRehearsalBatchFinalization(
+                        jobId, command);
+
+        assertThat(receipt.path("jobId").asText())
+                .isEqualTo(jobId);
+        assertThat(receipt.path("commandId").asText())
+                .isEqualTo("remediation-001");
+        assertThat(receipt.path("previousAttemptCount").asInt())
+                .isEqualTo(2);
+        assertThat(requests)
+                .singleElement()
+                .satisfies(request -> {
+                    assertThat(request.method()).isEqualTo("POST");
+                    assertThat(request.rawPath()).isEqualTo(
+                            "/api/mirror/rehearsal-jobs/"
+                                    + jobId
+                                    + "/finalization/remediations");
+                    assertThat(request.purpose()).isEqualTo(
+                            "MIRROR_REHEARSAL_FINALIZATION_ADMIN");
+                    assertThat(request.body())
+                            .isEqualTo(command);
+                });
+    }
+
+    @Test
     void plansAndMaterializesExactGraphAndOperatorPropertySuites() throws Exception {
         ResourceGatewayTestClient client = client();
         ObjectNode request = (ObjectNode) JSON.readTree(propertyMaterializationRequest());
@@ -1083,6 +1124,13 @@ class ResourceGatewayTestClientTest {
             return;
         }
         if ("POST".equals(exchange.getRequestMethod())
+                && path.endsWith(
+                "/finalization/remediations")) {
+            respond(exchange, 200,
+                    scenarioBatchFinalizationRemediationResponse());
+            return;
+        }
+        if ("POST".equals(exchange.getRequestMethod())
                 && path.endsWith("/stability-executions")) {
             String requestFingerprint = body.path("metadata")
                     .path("forceMismatchedFingerprint").asBoolean(false)
@@ -1232,6 +1280,35 @@ class ResourceGatewayTestClientTest {
                   }
                 }
                 """.formatted("a".repeat(64));
+    }
+
+    private static String
+    scenarioBatchFinalizationRemediationResponse() {
+        return """
+                {
+                  "protocol":"ToolStudioResourceGatewayProtocol",
+                  "protocolVersion":"1.0.0",
+                  "payloadKind":"SCENARIO_REHEARSAL_BATCH_FINALIZATION_REMEDIATION_RECEIPT",
+                  "payloadSchemaVersion":"resourceGateway.scenarioRehearsalBatchFinalizationRemediationReceipt.v1",
+                  "payload":{
+                    "schemaVersion":"resourceGateway.scenarioRehearsalBatchFinalizationRemediationReceipt.v1",
+                    "receiptFingerprint":"sha256:%s",
+                    "commandId":"remediation-001",
+                    "jobId":"scenario-batch-%s",
+                    "remediationGeneration":1,
+                    "previousIntentFingerprint":"sha256:%s",
+                    "currentIntentFingerprint":"sha256:%s",
+                    "previousAttemptCount":2,
+                    "acceptedAt":"2026-07-25T03:01:00Z",
+                    "effectiveRetainUntil":"2026-08-24T03:01:00Z",
+                    "reasonCode":"KMS_POLICY_REPAIRED"
+                  }
+                }
+                """.formatted(
+                "f".repeat(64),
+                "a".repeat(64),
+                "b".repeat(64),
+                "c".repeat(64));
     }
 
     private static String propertyMaterializationRequest() {

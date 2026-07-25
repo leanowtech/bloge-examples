@@ -547,6 +547,18 @@ public class MirrorPlanIntegrationService {
                 "Mirror retention deletion requires the verified PAYLOAD_RETENTION_ADMIN purpose.");
     }
 
+    /** Validates the shared scope for quarantined evidence-finalization remediation. */
+    static CapabilitySnapshot.Scope
+    requireMirrorFinalizationAdminIdentity(
+            IntegrationRequestContext identity) {
+        return requireMirrorIdentity(
+                identity,
+                Set.of(
+                        "MIRROR_REHEARSAL_FINALIZATION_ADMIN"),
+                "RG.MIRROR.FINALIZATION_ADMIN_PURPOSE_REQUIRED",
+                "Mirror finalization remediation requires the verified MIRROR_REHEARSAL_FINALIZATION_ADMIN purpose.");
+    }
+
     private static CapabilitySnapshot.Scope requireMirrorIdentity(
             IntegrationRequestContext identity,
             Set<String> allowedPurposes,

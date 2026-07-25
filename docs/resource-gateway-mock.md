@@ -1272,7 +1272,7 @@ finalization 状态闭集为：
 | `PENDING` | intent 已耐久冻结，尚未开始签名 | `SIGNING` |
 | `SIGNING` | 某 finalizer 持有有界数据库租约 | `FINALIZED`、`RETRY_WAIT`、`QUARANTINED`，或租约过期后被接管 |
 | `RETRY_WAIT` | 可恢复依赖故障，等待数据库时间到达下一次退避 | `SIGNING` |
-| `QUARANTINED` | material/signature 永久错误或重试预算耗尽 | 当前只读；Owner remediation 尚未交付 |
+| `QUARANTINED` | material/signature 永久错误或重试预算耗尽 | 经 exact fence 和专用 admin purpose 进入新的 `PENDING` intent generation |
 | `FINALIZED` | 证据、留存、终态和审计已在同一事务提交 | 无 |
 
 首次 claim 时冻结 `signingStartedAt`，后续接管和重试复用同一时间与
@@ -1311,15 +1311,47 @@ strict v2 Schema、v1/v2 离线验签和 Test Kit HTTP status client。Scenario/
 跳过，包含真实浏览器工作流与可执行 Boot JAR；独立 Test Kit `381/381` 全绿，
 121 份 Mirror Schema 完成引用闭包和 shaded JAR 打包，公共 JavaDoc 校验通过。
 
-这里仍有四个不能用“异步化已完成”掩盖的缺口。第一，`QUARANTINED` 还没有受权
-Owner 的 inspect/requeue/re-sign generation 工作流，长期隔离也可能逼近 admission
-时冻结的 retention floor。第二，当前只有 per-job status，尚无 backlog age、
-quarantine count 和 KMS latency/error-budget 的聚合 health/SLO。第三，H2/JDBC
+这里仍有三个不能用“异步化已完成”掩盖的缺口。第一，当前只有 per-job status，
+尚无 backlog age、
+quarantine count 和 KMS latency/error-budget 的聚合 health/SLO。第二，H2/JDBC
 故障矩阵不能替代 PostgreSQL 多副本、真实 KMS、process-kill、network partition
-和 rolling-upgrade 认证。第四，ANEKE 还不能一次消费 batch workbook，也没有在
+和 rolling-upgrade 认证。第三，ANEKE 还不能一次消费 batch workbook，也没有在
 Author Canvas 中定位失败 item 和隔离原因。下一条最短路径必须先补
 finalization operations/health，再交付 ANEKE batch workbook 与 Owner UX；不能直接
 跳到保真度评分，否则底层证据故障仍然只能由工程师查库处理。
+
+### 3.16 2026-07-25 Scenario finalization 受控修复迭代差距复评
+
+本轮关闭“证据一旦隔离只能查库或手工改状态”的运维死胡同。新增
+`POST /api/mirror/rehearsal-jobs/{jobId}/finalization/remediations`，且只接受
+`MIRROR_REHEARSAL_FINALIZATION_ADMIN` purpose。命令是严格的
+`commandId + expectedAttemptCount + expectedUpdatedAt + reasonCode`
+compare-and-set 协议，不允许调用方指定 key、签名时间、重试策略、terminal 结果或
+保留期限。
+
+仓储在同一数据库事务内锁定 regional policy 与 full-scope job，验证 exact
+`QUARANTINED` generation，重建新的 finalizing/terminal projection、stable signing
+request 和 content-addressed `FinalizationIntent`；旧 finalizer epoch 被递增失效，
+attempt budget 从零开始，retention floor 自动取旧值与
+`acceptedAt + terminalRetention` 的较大者。随后写入 immutable remediation receipt、
+`FINALIZATION_REMEDIATED` lifecycle fact 和 protected-operation success audit。
+任何 mandatory audit 失败都会回滚全部变化。
+
+remediation command 以 `(jobId, commandId)` 永久保存 content fingerprint。完全相同
+的重放即使发生在后续 claim 之后仍返回原 receipt，不改变当前状态；相同 id 的不同
+内容、陈旧 attempt/timestamp、非隔离状态或跨 scope job 均失败关闭。receipt 内容
+寻址并绑定前后 intent fingerprint、generation、数据库接受时间、续期后的 retention
+floor 与原因。Capability probe 显式声明
+`mirrorScenarioRehearsalBatchFinalizationRemediationApi`，Test Kit 同步打包 request/
+receipt Schema，并提供预校验、专用 purpose 和响应坐标防替换。
+
+聚焦验证覆盖保留期限已过后的安全续期、新 intent/signing id、旧 lease fence、
+跨后续 claim 的 exact replay、陈旧 console、command 内容冲突、非法状态、审计失败
+回滚、严格解码、HTTP operation、capability truth 和 Test Kit 客户端。Scenario/
+Rehearsal 成熟度由 98% 上调至 98.5%，固定权重总分由 62.15% 上调至 62.23%，距
+理想态 37.77%。当前最短路径变为聚合 backlog/quarantine/KMS health 与 SLO，而
+不是继续堆单 job 操作；随后才是 ANEKE batch workbook、Owner Canvas UX 和真实
+PostgreSQL/KMS/process-kill/network-partition/rolling-upgrade 认证。
 
 ## 4. 目标架构与系统责任
 

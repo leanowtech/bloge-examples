@@ -674,7 +674,15 @@ finalization 状态为 `PENDING -> SIGNING -> FINALIZED`，可恢复故障进入
 `QUARANTINED`。首次 claim 冻结 `signingStartedAt` 和 stable
 `signingRequestId`；陈旧 lease 接管继续复用它们，KMS 响应丢失后的 exact replay
 不会因 key rotation 生成第二份合法 bundle。一个 quarantined intent 不会阻塞同
-分区后续工作。
+分区后续工作。Owner 修复不是放开旧 claim：调用方先读取 status，再以专用
+`MIRROR_REHEARSAL_FINALIZATION_ADMIN` purpose 提交
+`commandId + expectedAttemptCount + expectedUpdatedAt + reasonCode`。仓储只接受
+仍处于该 exact `QUARANTINED` fence 的 generation，在一个事务内重建新的
+content-addressed intent、terminal projection 与 signing request，递增旧 lease
+epoch、把 attempt 归零、续期 `retainUntil` 至至少
+`acceptedAt + terminalRetention`，并写入 immutable remediation receipt、lifecycle
+fact 和 protected-operation success audit。旧页面、重复但不同内容的 command、
+非隔离状态和审计失败均不会改变运行状态。
 
 Test Kit 的 `findScenarioRehearsalBatchEvidence(jobId)` 接受 v1/v2，获取公开 key
 后重新派生 request/manifest/job/index/bundle fingerprint、完整 scope batch id、
@@ -682,15 +690,19 @@ Test Kit 的 `findScenarioRehearsalBatchEvidence(jobId)` 接受 v1/v2，获取�
 policy 和 Ed25519 signature。`findScenarioRehearsalBatchFinalization(jobId)` 在
 strict Schema 校验和 job-id 绑定后返回 payload-free 控制状态；它不暴露 worker、
 provider diagnostics 或业务数据。v1 仍按原域验证，不能以 v2 verifier 规则静默
-改写历史证据。
+改写历史证据。Test Kit 的
+`remediateScenarioRehearsalBatchFinalization(jobId, request)` 会先校验严格命令
+Schema，使用专用 admin purpose，并拒绝 job、command 或 reviewed attempt 被替换
+的回执。
 
 受保护的 batch submit/read/items/evidence/cancel 使用四个独立、固定基数
 `MirrorOperationAuditEvent.Operation`。submit/cancel 的成功事实位于队列写事务
 内部；成功审计失败会回滚 admission/cancellation/evidence，读取缺失则先提交
 `NOT_FOUND` 拒绝审计再返回 404。内部队列另外维护 payload-free
 `scenario_rehearsal_batch_lifecycle_audit`，只追加 `ADMITTED`、`CLAIMED`、
-`ITEM_TERMINALIZED`、`ITEM_RETRY_SCHEDULED`、`CANCELLATION_REQUESTED` 和
-`TERMINALIZED`。它绑定完整 scope、job/request/manifest、item/attempt、
+`ITEM_TERMINALIZED`、`ITEM_RETRY_SCHEDULED`、`CANCELLATION_REQUESTED`、
+`FINALIZATION_QUEUED`、`FINALIZATION_REMEDIATED` 和 `TERMINALIZED`。它绑定完整
+scope、job/request/manifest、item/attempt、
 lease epoch、稳定 reason 和 evidence fingerprint；fixture、业务输入输出、凭据、
 异常文本和栈不可表示。heartbeat 是高频运行信号，不进入 lifecycle audit。
 
@@ -980,6 +992,8 @@ Test Kit Schema/verifier/client `10/10` 项聚焦验证。
 - `docs/schemas/resource-gateway-mirror/scenario-rehearsal-batch-job-v1.schema.json`
 - `docs/schemas/resource-gateway-mirror/scenario-rehearsal-batch-job-v2.schema.json`
 - `docs/schemas/resource-gateway-mirror/scenario-rehearsal-batch-finalization-status-v1.schema.json`
+- `docs/schemas/resource-gateway-mirror/scenario-rehearsal-batch-finalization-remediation-request-v1.schema.json`
+- `docs/schemas/resource-gateway-mirror/scenario-rehearsal-batch-finalization-remediation-receipt-v1.schema.json`
 - `docs/schemas/resource-gateway-mirror/scenario-rehearsal-batch-item-page-v1.schema.json`
 - `docs/schemas/resource-gateway-mirror/scenario-rehearsal-batch-cancellation-request-v1.schema.json`
 - `docs/schemas/resource-gateway-mirror/scenario-rehearsal-batch-evidence-index-v1.schema.json`

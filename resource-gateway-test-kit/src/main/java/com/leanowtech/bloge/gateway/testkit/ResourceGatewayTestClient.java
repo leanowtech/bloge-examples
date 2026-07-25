@@ -1569,6 +1569,61 @@ public final class ResourceGatewayTestClient {
     }
 
     /**
+     * Re-queues one exactly reviewed quarantined Scenario batch finalization.
+     *
+     * <p>The client validates the strict compare-and-set command before transport, uses the
+     * dedicated administrative purpose, validates the immutable receipt, and rejects any
+     * response that substitutes the job, command, or reviewed attempt generation.</p>
+     *
+     * @param jobId canonical {@code scenario-batch-<sha256>} identity
+     * @param request strict remediation request with public attempt/timestamp fence
+     * @return defensive copy of the immutable remediation receipt
+     */
+    public JsonNode remediateScenarioRehearsalBatchFinalization(
+            String jobId,
+            JsonNode request) {
+        String exactJobId =
+                scenarioRehearsalBatchJobId(jobId);
+        JsonNode exactRequest =
+                requiredObject(request, "request");
+        CapabilityMirrorSchemaValidator.require(
+                exactRequest,
+                CapabilityMirrorProtocol
+                        .SCENARIO_REHEARSAL_BATCH_FINALIZATION_REMEDIATION_REQUEST_SCHEMA_RESOURCE,
+                "RG.MIRROR.CLIENT.SCENARIO_BATCH_FINALIZATION_REMEDIATION_REQUEST_INVALID");
+        JsonNode response = exchange(
+                "POST",
+                "/api/mirror/rehearsal-jobs/"
+                        + segment(exactJobId)
+                        + "/finalization/remediations",
+                "",
+                "MIRROR_REHEARSAL_FINALIZATION_ADMIN",
+                exactRequest);
+        JsonNode receipt = requireMirrorEnvelope(
+                response,
+                "SCENARIO_REHEARSAL_BATCH_FINALIZATION_REMEDIATION_RECEIPT",
+                CapabilityMirrorProtocol
+                        .SCENARIO_REHEARSAL_BATCH_FINALIZATION_REMEDIATION_RECEIPT_V1);
+        CapabilityMirrorSchemaValidator.require(
+                receipt,
+                CapabilityMirrorProtocol
+                        .SCENARIO_REHEARSAL_BATCH_FINALIZATION_REMEDIATION_RECEIPT_SCHEMA_RESOURCE,
+                "RG.MIRROR.CLIENT.SCENARIO_BATCH_FINALIZATION_REMEDIATION_RECEIPT_INVALID");
+        if (!exactJobId.equals(
+                receipt.path("jobId").asText())
+                || !exactRequest.path("commandId").asText()
+                .equals(receipt.path("commandId").asText())
+                || exactRequest.path("expectedAttemptCount")
+                .asInt(-1)
+                != receipt.path("previousAttemptCount")
+                .asInt(-2)) {
+            throw responseContractInvalid(
+                    "The server returned a Scenario batch finalization remediation receipt for different command coordinates.");
+        }
+        return receipt.deepCopy();
+    }
+
+    /**
      * Reads and independently verifies one terminal Scenario rehearsal batch evidence index.
      *
      * <p>The client resolves the signed bundle and its public verification key, then re-derives

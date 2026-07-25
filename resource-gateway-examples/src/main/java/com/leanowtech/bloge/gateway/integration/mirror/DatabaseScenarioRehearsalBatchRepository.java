@@ -292,6 +292,24 @@ public final class DatabaseScenarioRehearsalBatchRepository
                     next_eligible_at, created_at, job_id
                 )
                 """);
+        jdbc.execute("""
+                CREATE TABLE IF NOT EXISTS scenario_rehearsal_batch_finalization_remediations (
+                    job_id VARCHAR(512) NOT NULL,
+                    command_id VARCHAR(128) NOT NULL,
+                    command_fingerprint VARCHAR(71) NOT NULL,
+                    remediation_generation BIGINT NOT NULL,
+                    previous_intent_fingerprint VARCHAR(71) NOT NULL,
+                    current_intent_fingerprint VARCHAR(71) NOT NULL,
+                    receipt_fingerprint VARCHAR(71) NOT NULL,
+                    receipt_json CLOB NOT NULL,
+                    accepted_at TIMESTAMP WITH TIME ZONE NOT NULL,
+                    PRIMARY KEY (job_id, command_id),
+                    CONSTRAINT uq_scenario_rehearsal_batch_finalization_remediation_generation
+                        UNIQUE (job_id, remediation_generation),
+                    FOREIGN KEY (job_id)
+                        REFERENCES scenario_rehearsal_batch_jobs (job_id)
+                )
+                """);
     }
 
     @Override
@@ -1229,6 +1247,216 @@ public final class DatabaseScenarioRehearsalBatchRepository
                 Objects.requireNonNull(scope, "scope"),
                 required(jobId, "jobId"),
                 false).map(StoredFinalization::snapshot);
+    }
+
+    @Override
+    public FinalizationRemediationResult remediateFinalization(
+            FinalizationRemediation remediation,
+            ScenarioRehearsalBatchPolicy policy,
+            MirrorOperationObservability.Observation observation) {
+        FinalizationRemediation exact =
+                Objects.requireNonNull(remediation, "remediation");
+        ScenarioRehearsalBatchPolicy exactPolicy =
+                Objects.requireNonNull(policy, "policy");
+        MirrorOperationObservability.Observation exactObservation =
+                Objects.requireNonNull(observation, "observation");
+        FinalizationRemediationResult result =
+                mutations.execute(transaction -> {
+                    QueuePartition partition =
+                            partition(exact.scope());
+                    lockPartition(partition);
+                    Instant observedAt = coordinationNow();
+                    ensurePolicy(
+                            partition,
+                            exactPolicy,
+                            observedAt);
+                    StoredJob current = byJob(
+                            exact.scope(),
+                            exact.jobId(),
+                            true).orElseThrow(() ->
+                            conflict(
+                                    Reason.JOB_NOT_FOUND,
+                                    "Scenario rehearsal batch was not found"));
+                    Optional<StoredFinalizationRemediation>
+                            replay = finalizationRemediation(
+                            exact.jobId(),
+                            exact.request().commandId());
+                    if (replay.isPresent()) {
+                        StoredFinalizationRemediation retained =
+                                replay.orElseThrow();
+                        if (!retained.commandFingerprint().equals(
+                                exact.requestFingerprint())) {
+                            throw conflict(
+                                    Reason.FINALIZATION_REMEDIATION_CONFLICT,
+                                    "Scenario batch finalization remediation command was reused with different content");
+                        }
+                        exactObservation.succeeded(exact.jobId());
+                        return new FinalizationRemediationResult(
+                                retained.receipt(),
+                                true);
+                    }
+                    StoredFinalization stored =
+                            finalization(
+                                    exact.scope(),
+                                    exact.jobId(),
+                                    true).orElseThrow(() ->
+                                    conflict(
+                                            Reason.JOB_NOT_FOUND,
+                                            "Scenario batch finalization was not found"));
+                    FinalizationSnapshot snapshot =
+                            stored.snapshot();
+                    if (snapshot.state()
+                            != FinalizationState.QUARANTINED
+                            || current.job().status()
+                            != ScenarioRehearsalBatchJob.Status
+                            .FINALIZING_EVIDENCE
+                            || !current.job().recordFingerprint()
+                            .equals(stored.intent()
+                                    .finalizingJob()
+                                    .recordFingerprint())) {
+                        throw conflict(
+                                Reason.FINALIZATION_NOT_QUARANTINED,
+                                "Scenario batch finalization is not an exact quarantined generation");
+                    }
+                    if (snapshot.attemptCount()
+                            != exact.request()
+                            .expectedAttemptCount()
+                            || !snapshot.updatedAt().equals(
+                            exact.request()
+                                    .expectedUpdatedAt())) {
+                        throw conflict(
+                                Reason.FINALIZATION_FENCE_MISMATCH,
+                                "Scenario batch finalization changed after the remediation review");
+                    }
+                    long generation =
+                            nextRemediationGeneration(
+                                    exact.jobId());
+                    Instant retainUntil =
+                            latest(
+                                    stored.intent()
+                                            .retainUntil(),
+                                    safePlus(
+                                            observedAt,
+                                            exactPolicy
+                                                    .terminalRetention()));
+                    ScenarioRehearsalBatchJob oldTerminal =
+                            stored.intent().terminalJob();
+                    ScenarioRehearsalBatchJob finalizing =
+                            transition(
+                                    current.job(),
+                                    ScenarioRehearsalBatchJob.Status
+                                            .FINALIZING_EVIDENCE,
+                                    oldTerminal.summary(),
+                                    oldTerminal.failureCode(),
+                                    oldTerminal
+                                            .cancellationRequestId(),
+                                    oldTerminal
+                                            .cancellationReasonCode(),
+                                    observedAt,
+                                    null);
+                    ScenarioRehearsalBatchJob terminal =
+                            transition(
+                                    current.job(),
+                                    oldTerminal.status(),
+                                    oldTerminal.summary(),
+                                    oldTerminal.failureCode(),
+                                    oldTerminal
+                                            .cancellationRequestId(),
+                                    oldTerminal
+                                            .cancellationReasonCode(),
+                                    observedAt,
+                                    observedAt);
+                    String signingRequestId =
+                            "scenario-batch-remediation:"
+                                    + generation
+                                    + ":"
+                                    + terminal
+                                    .recordFingerprint()
+                                    .substring(
+                                            "sha256:"
+                                                    .length());
+                    FinalizationIntent unsignedIntent =
+                            new FinalizationIntent(
+                                    "",
+                                    "",
+                                    signingRequestId,
+                                    finalizing,
+                                    terminal,
+                                    stored.intent().request(),
+                                    stored.intent().manifest(),
+                                    stored.intent().items(),
+                                    retainUntil,
+                                    observedAt);
+                    FinalizationIntent newIntent =
+                            unsignedIntent.withFingerprint(
+                                    ProtocolFingerprint.ofBounded(
+                                            mapper,
+                                            unsignedIntent,
+                                            ScenarioRehearsalBatchEvidenceBundle
+                                                    .MAXIMUM_CANONICAL_BYTES
+                                                    + 2 * 1024 * 1024));
+                    replaceFinalization(
+                            stored,
+                            newIntent,
+                            Math.addExact(
+                                    snapshot.leaseEpoch(), 1),
+                            observedAt);
+                    StoredJob successor = new StoredJob(
+                            finalizing,
+                            current.request(),
+                            current.manifest(),
+                            current.principal(),
+                            Instant.EPOCH,
+                            "",
+                            current.leaseEpoch(),
+                            Instant.EPOCH,
+                            -1,
+                            retainUntil);
+                    updateJob(current, successor);
+                    ScenarioRehearsalBatchFinalizationRemediationReceipt
+                            unsignedReceipt =
+                            new ScenarioRehearsalBatchFinalizationRemediationReceipt(
+                                    "",
+                                    "",
+                                    exact.request().commandId(),
+                                    exact.jobId(),
+                                    generation,
+                                    stored.intent()
+                                            .intentFingerprint(),
+                                    newIntent
+                                            .intentFingerprint(),
+                                    snapshot.attemptCount(),
+                                    observedAt,
+                                    retainUntil,
+                                    exact.request().reasonCode());
+                    ScenarioRehearsalBatchFinalizationRemediationReceipt
+                            receipt = unsignedReceipt
+                            .withFingerprint(
+                                    ProtocolFingerprint.of(
+                                            mapper,
+                                            unsignedReceipt));
+                    insertFinalizationRemediation(
+                            exact,
+                            receipt);
+                    appendLifecycle(
+                            current,
+                            ScenarioRehearsalBatchLifecycleAuditEvent
+                                    .Transition
+                                    .FINALIZATION_REMEDIATED,
+                            finalizing,
+                            null,
+                            "",
+                            exact.request().reasonCode(),
+                            "",
+                            0);
+                    exactObservation.succeeded(exact.jobId());
+                    return new FinalizationRemediationResult(
+                            receipt,
+                            false);
+                });
+        return required(
+                result,
+                "Scenario batch finalization remediation returned no result");
     }
 
     @Override
@@ -2697,6 +2925,102 @@ public final class DatabaseScenarioRehearsalBatchRepository
                 jobId));
     }
 
+    private Optional<StoredFinalizationRemediation>
+    finalizationRemediation(
+            String jobId,
+            String commandId) {
+        return one(jdbc.query("""
+                SELECT *
+                FROM scenario_rehearsal_batch_finalization_remediations
+                WHERE job_id = ?
+                  AND command_id = ?
+                """,
+                this::mapFinalizationRemediation,
+                jobId,
+                commandId));
+    }
+
+    private StoredFinalizationRemediation
+    mapFinalizationRemediation(
+            ResultSet result,
+            int row) throws SQLException {
+        ScenarioRehearsalBatchFinalizationRemediationReceipt
+                receipt = read(
+                result.getString("receipt_json"),
+                ScenarioRehearsalBatchFinalizationRemediationReceipt
+                        .class);
+        String receiptFingerprint =
+                result.getString("receipt_fingerprint");
+        String expectedFingerprint =
+                ProtocolFingerprint.of(
+                        mapper,
+                        receipt.withFingerprint(""));
+        if (!receipt.receiptFingerprint().equals(
+                receiptFingerprint)
+                || !receiptFingerprint.equals(
+                expectedFingerprint)
+                || !receipt.jobId().equals(
+                result.getString("job_id"))
+                || !receipt.commandId().equals(
+                result.getString("command_id"))
+                || receipt.remediationGeneration()
+                != result.getLong(
+                "remediation_generation")
+                || !receipt.previousIntentFingerprint()
+                .equals(result.getString(
+                        "previous_intent_fingerprint"))
+                || !receipt.currentIntentFingerprint()
+                .equals(result.getString(
+                        "current_intent_fingerprint"))
+                || !receipt.acceptedAt().equals(
+                instant(result, "accepted_at"))) {
+            throw new IllegalStateException(
+                    "Scenario batch finalization remediation receipt differs from its durable indexes");
+        }
+        return new StoredFinalizationRemediation(
+                result.getString("command_fingerprint"),
+                receipt);
+    }
+
+    private long nextRemediationGeneration(
+            String jobId) {
+        Long maximum = jdbc.queryForObject("""
+                SELECT COALESCE(MAX(remediation_generation), 0)
+                FROM scenario_rehearsal_batch_finalization_remediations
+                WHERE job_id = ?
+                """,
+                Long.class,
+                jobId);
+        return Math.addExact(
+                maximum == null ? 0 : maximum,
+                1);
+    }
+
+    private void insertFinalizationRemediation(
+            FinalizationRemediation remediation,
+            ScenarioRehearsalBatchFinalizationRemediationReceipt
+                    receipt) {
+        jdbc.update("""
+                INSERT INTO scenario_rehearsal_batch_finalization_remediations (
+                    job_id, command_id, command_fingerprint,
+                    remediation_generation,
+                    previous_intent_fingerprint,
+                    current_intent_fingerprint,
+                    receipt_fingerprint, receipt_json,
+                    accepted_at
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                remediation.jobId(),
+                remediation.request().commandId(),
+                remediation.requestFingerprint(),
+                receipt.remediationGeneration(),
+                receipt.previousIntentFingerprint(),
+                receipt.currentIntentFingerprint(),
+                receipt.receiptFingerprint(),
+                json(receipt),
+                timestamp(receipt.acceptedAt()));
+    }
+
     private StoredFinalization mapFinalization(
             ResultSet result,
             int row) throws SQLException {
@@ -2822,6 +3146,54 @@ public final class DatabaseScenarioRehearsalBatchRepository
                 stored.snapshot().createdAt(),
                 updatedAt,
                 finalizedAt);
+    }
+
+    private void replaceFinalization(
+            StoredFinalization stored,
+            FinalizationIntent intent,
+            long leaseEpoch,
+            Instant observedAt) {
+        int updated = jdbc.update("""
+                UPDATE scenario_rehearsal_batch_finalizations
+                SET state = ?,
+                    intent_fingerprint = ?,
+                    intent_json = ?,
+                    attempt_count = ?,
+                    next_eligible_at = ?,
+                    lease_owner = ?,
+                    lease_epoch = ?,
+                    lease_expires_at = ?,
+                    signing_started_at = ?,
+                    last_failure_code = ?,
+                    evidence_bundle_fingerprint = ?,
+                    updated_at = ?,
+                    finalized_at = ?
+                WHERE job_id = ?
+                  AND intent_fingerprint = ?
+                  AND state = ?
+                  AND lease_epoch = ?
+                """,
+                FinalizationState.PENDING.name(),
+                intent.intentFingerprint(),
+                json(intent),
+                0,
+                timestamp(observedAt),
+                "",
+                leaseEpoch,
+                timestamp(Instant.EPOCH),
+                timestamp(Instant.EPOCH),
+                "",
+                "",
+                timestamp(observedAt),
+                null,
+                stored.snapshot().jobId(),
+                stored.snapshot().intentFingerprint(),
+                FinalizationState.QUARANTINED.name(),
+                stored.snapshot().leaseEpoch());
+        if (updated != 1) {
+            throw new IllegalStateException(
+                    "Scenario batch finalization changed while remediation was locked");
+        }
     }
 
     private void requireLiveFinalizationClaim(
@@ -3244,6 +3616,17 @@ public final class DatabaseScenarioRehearsalBatchRepository
         }
     }
 
+    private static Instant latest(
+            Instant left,
+            Instant right) {
+        Instant exactLeft = Objects.requireNonNull(
+                left, "left");
+        Instant exactRight = Objects.requireNonNull(
+                right, "right");
+        return exactLeft.isAfter(exactRight)
+                ? exactLeft : exactRight;
+    }
+
     private static Duration safePlus(
             Duration left,
             Duration right) {
@@ -3394,6 +3777,18 @@ public final class DatabaseScenarioRehearsalBatchRepository
         return normalized;
     }
 
+    private static String finalizationFingerprint(
+            String value,
+            String field) {
+        String normalized = required(value, field);
+        if (!FINALIZATION_FINGERPRINT.matcher(
+                normalized).matches()) {
+            throw new IllegalArgumentException(
+                    field + " must be canonical SHA-256");
+        }
+        return normalized;
+    }
+
     private static <T> Optional<T> one(
             List<T> values) {
         if (values.size() > 1) {
@@ -3501,6 +3896,20 @@ public final class DatabaseScenarioRehearsalBatchRepository
                 throw new IllegalStateException(
                         "Scenario batch finalization snapshot differs from its intent");
             }
+        }
+    }
+
+    private record StoredFinalizationRemediation(
+            String commandFingerprint,
+            ScenarioRehearsalBatchFinalizationRemediationReceipt
+                    receipt
+    ) {
+        private StoredFinalizationRemediation {
+            commandFingerprint = finalizationFingerprint(
+                    commandFingerprint,
+                    "commandFingerprint");
+            receipt = Objects.requireNonNull(
+                    receipt, "receipt");
         }
     }
 

@@ -68,6 +68,7 @@ DAG workers plus isolated evidence-finalization lanes for one exact
 | `GET http://localhost:8080/api/mirror/rehearsal-jobs/{jobId}/items` | Read stable payload-free item pages while bounded regional workers progress the batch |
 | `GET http://localhost:8080/api/mirror/rehearsal-jobs/{jobId}/evidence` | Read one signed payload-free terminal batch index whose request, manifest, item results, and child evidence references can be verified offline |
 | `GET http://localhost:8080/api/mirror/rehearsal-jobs/{jobId}/finalization` | Inspect payload-free `PENDING`, `SIGNING`, `RETRY_WAIT`, `QUARANTINED`, or `FINALIZED` evidence-publication state without exposing worker or signer diagnostics |
+| `POST http://localhost:8080/api/mirror/rehearsal-jobs/{jobId}/finalization/remediations` | Compare-and-set one reviewed `QUARANTINED` generation into a new immutable intent and renewed retention floor (`X-Purpose: MIRROR_REHEARSAL_FINALIZATION_ADMIN`) |
 | `GET http://localhost:8080/api/mirror/rehearsal-jobs/{jobId}/retention` | Rebuild and verify the signed batch retention projection (`X-Purpose: GOVERNANCE_EVIDENCE_INGESTION`) |
 | `POST http://localhost:8080/api/mirror/rehearsal-jobs/{jobId}/retention/holds` | Place an independent batch legal hold without replacing other holds (`X-Purpose: LEGAL_HOLD`) |
 | `POST http://localhost:8080/api/mirror/rehearsal-jobs/{jobId}/retention/purge` | Delete an eligible batch closure and return a signed logical-deletion proof (`X-Purpose: PAYLOAD_RETENTION_ADMIN`) |
@@ -268,11 +269,21 @@ replay byte-identical. Transient failures use bounded backoff, permanent
 material/signature failures enter `QUARANTINED`, and one quarantined intent
 does not block later work. The v2 evidence protocol carries this explicit
 state while the Test Kit continues to verify historical v1 bundles.
+An authorized owner can recover a reviewed quarantine through a strict
+compare-and-set remediation command containing `commandId`,
+`expectedAttemptCount`, and `expectedUpdatedAt`. Acceptance creates a new
+content-addressed intent and signing id, increments the stale-lease fence,
+resets the automatic attempt budget, and renews the retention floor to at
+least `acceptedAt + terminalRetention`. The immutable receipt links both intent
+fingerprints and is exactly replayable; stale consoles, reused command ids with
+different content, non-quarantined jobs, and failed mandatory audits change
+nothing.
 The capability probe therefore reports Scenario execution, evidence API,
 retention API, legal hold, deletion proof, workbook seed,
 `mirrorScenarioRehearsalBatchCooperativeControl=true`, and
 `mirrorScenarioRehearsalBatchEvidence=true`,
 `mirrorScenarioRehearsalBatchEvidenceFinalizationApi=true`,
+`mirrorScenarioRehearsalBatchFinalizationRemediationApi=true`,
 `mirrorScenarioRehearsalBatchEvidenceFinalizationScheduling=true`,
 `mirrorScenarioRehearsalBatchRetentionApi=true`,
 `mirrorScenarioRehearsalBatchLegalHold=true`, and

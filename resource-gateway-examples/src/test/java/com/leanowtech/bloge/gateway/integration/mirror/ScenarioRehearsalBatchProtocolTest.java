@@ -4,6 +4,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import org.junit.jupiter.api.Test;
 
 import java.time.Duration;
+import java.time.Instant;
 import java.util.List;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -114,5 +115,55 @@ class ScenarioRehearsalBatchProtocolTest {
                     assertThat(context.correlationId())
                             .isEqualTo("batch-correlation");
                 });
+    }
+
+    @Test
+    void remediationProtocolRejectsStaleShapeAndBindsIntentLineage() {
+        Instant acceptedAt =
+                Instant.parse("2026-07-25T06:00:00Z");
+        ScenarioRehearsalBatchFinalizationRemediationReceipt
+                receipt =
+                new ScenarioRehearsalBatchFinalizationRemediationReceipt(
+                        "",
+                        "",
+                        "remediation-a",
+                        "scenario-batch-" + "a".repeat(64),
+                        1,
+                        "sha256:" + "b".repeat(64),
+                        "sha256:" + "c".repeat(64),
+                        3,
+                        acceptedAt,
+                        acceptedAt.plus(Duration.ofDays(30)),
+                        "KMS_POLICY_REPAIRED");
+        String fingerprint =
+                com.leanowtech.bloge.gateway.testing.evidence
+                        .ProtocolFingerprint.of(
+                        mapper, receipt);
+
+        assertThat(receipt.withFingerprint(fingerprint)
+                .receiptFingerprint())
+                .isEqualTo(fingerprint);
+        assertThatThrownBy(() ->
+                new ScenarioRehearsalBatchFinalizationRemediationRequest(
+                        "",
+                        "remediation-a",
+                        0,
+                        acceptedAt,
+                        "KMS_POLICY_REPAIRED"))
+                .isInstanceOf(IllegalArgumentException.class);
+        assertThatThrownBy(() ->
+                new ScenarioRehearsalBatchFinalizationRemediationReceipt(
+                        "",
+                        "",
+                        "remediation-a",
+                        "scenario-batch-" + "a".repeat(64),
+                        1,
+                        "sha256:" + "b".repeat(64),
+                        "sha256:" + "b".repeat(64),
+                        3,
+                        acceptedAt,
+                        acceptedAt.plus(Duration.ofDays(30)),
+                        "KMS_POLICY_REPAIRED"))
+                .isInstanceOf(IllegalArgumentException.class);
     }
 }

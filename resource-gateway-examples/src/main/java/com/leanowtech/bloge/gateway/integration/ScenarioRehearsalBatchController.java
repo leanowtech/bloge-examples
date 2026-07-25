@@ -2,6 +2,8 @@ package com.leanowtech.bloge.gateway.integration;
 
 import com.leanowtech.bloge.gateway.integration.mirror.ScenarioRehearsalBatchCancellationRequest;
 import com.leanowtech.bloge.gateway.integration.mirror.ScenarioRehearsalBatchEvidenceBundle;
+import com.leanowtech.bloge.gateway.integration.mirror.ScenarioRehearsalBatchFinalizationRemediationReceipt;
+import com.leanowtech.bloge.gateway.integration.mirror.ScenarioRehearsalBatchFinalizationRemediationRequest;
 import com.leanowtech.bloge.gateway.integration.mirror.ScenarioRehearsalBatchFinalizationStatus;
 import com.leanowtech.bloge.gateway.integration.mirror.ScenarioRehearsalBatchItemPage;
 import com.leanowtech.bloge.gateway.integration.mirror.ScenarioRehearsalBatchJob;
@@ -177,6 +179,32 @@ public final class ScenarioRehearsalBatchController {
                                                 Map.of())));
         return IntegrationEnvelope.of(
                 "SCENARIO_REHEARSAL_BATCH_FINALIZATION_STATUS",
+                value.schemaVersion(),
+                value);
+    }
+
+    /** Re-queues one exact quarantined finalization and returns its immutable receipt. */
+    @PostMapping("/{jobId}/finalization/remediations")
+    public IntegrationEnvelope<
+            ScenarioRehearsalBatchFinalizationRemediationReceipt>
+    remediateFinalization(
+            @PathVariable String jobId,
+            @RequestBody byte[] request,
+            @RequestHeader HttpHeaders headers) {
+        IntegrationRequestContext identity =
+                authenticator.authenticate(
+                        headers,
+                        IntegrationOperation
+                                .MIRROR_REHEARSAL_BATCH_FINALIZATION_REMEDIATE);
+        ScenarioRehearsalBatchFinalizationRemediationRequest
+                command =
+                decoder.decodeBatchFinalizationRemediationRequest(
+                        request, identity);
+        ScenarioRehearsalBatchFinalizationRemediationReceipt
+                value = batches.remediateFinalization(
+                jobId, command, identity).receipt();
+        return IntegrationEnvelope.of(
+                "SCENARIO_REHEARSAL_BATCH_FINALIZATION_REMEDIATION_RECEIPT",
                 value.schemaVersion(),
                 value);
     }

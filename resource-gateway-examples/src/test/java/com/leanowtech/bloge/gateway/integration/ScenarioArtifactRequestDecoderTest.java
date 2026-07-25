@@ -8,6 +8,7 @@ import com.leanowtech.bloge.gateway.integration.mirror.CaseHandlingAssertion;
 import com.leanowtech.bloge.gateway.integration.mirror.MirrorArtifactRef;
 import com.leanowtech.bloge.gateway.integration.mirror.ScenarioPackIntegrity;
 import com.leanowtech.bloge.gateway.integration.mirror.ScenarioRehearsalBatchCancellationRequest;
+import com.leanowtech.bloge.gateway.integration.mirror.ScenarioRehearsalBatchFinalizationRemediationRequest;
 import com.leanowtech.bloge.gateway.integration.mirror.ScenarioRehearsalBatchRequest;
 import com.leanowtech.bloge.gateway.integration.mirror.ScenarioRehearsalCompileRequest;
 import com.leanowtech.bloge.gateway.integration.mirror.ScenarioRehearsalExecutionRequest;
@@ -65,6 +66,14 @@ class ScenarioArtifactRequestDecoderTest {
                         "",
                         "cancel-001",
                         "OWNER_REQUEST");
+        ScenarioRehearsalBatchFinalizationRemediationRequest
+                remediation =
+                new ScenarioRehearsalBatchFinalizationRemediationRequest(
+                        "",
+                        "remediation-001",
+                        3,
+                        NOW,
+                        "KMS_POLICY_REPAIRED");
         CaseHandlingAssertion assertion = assertion();
 
         assertThat(decoder.decodeCompileRequest(
@@ -88,6 +97,9 @@ class ScenarioArtifactRequestDecoderTest {
         assertThat(decoder.decodeBatchCancellationRequest(
                 mapper.writeValueAsBytes(cancellation), identity()))
                 .isEqualTo(cancellation);
+        assertThat(decoder.decodeBatchFinalizationRemediationRequest(
+                mapper.writeValueAsBytes(remediation), identity()))
+                .isEqualTo(remediation);
     }
 
     @Test

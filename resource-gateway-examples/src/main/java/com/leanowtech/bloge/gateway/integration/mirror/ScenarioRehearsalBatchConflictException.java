@@ -15,6 +15,9 @@ public final class ScenarioRehearsalBatchConflictException
         TENANT_QUEUE_FULL,
         JOB_NOT_FOUND,
         CANCELLATION_CONFLICT,
+        FINALIZATION_NOT_QUARANTINED,
+        FINALIZATION_FENCE_MISMATCH,
+        FINALIZATION_REMEDIATION_CONFLICT,
         EVIDENCE_MISMATCH,
         LEASE_LOST
     }

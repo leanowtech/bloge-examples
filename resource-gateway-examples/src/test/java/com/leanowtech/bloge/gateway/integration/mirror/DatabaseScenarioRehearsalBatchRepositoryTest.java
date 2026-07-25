@@ -662,6 +662,310 @@ class DatabaseScenarioRehearsalBatchRepositoryTest {
     }
 
     @Test
+    void remediatesExactQuarantineWithNewIntentAndRenewedRetentionFloor() {
+        ScenarioRehearsalBatchJob finalizing =
+                makeFinalizing(
+                        "batch-finalization-remediate",
+                        "refund",
+                        "worker-a");
+        ScenarioRehearsalBatchRepository.FinalizationClaim
+                failed = claimFinalization();
+        ScenarioRehearsalBatchRepository.FinalizationSnapshot
+                quarantined = repository.releaseFinalization(
+                failed,
+                ScenarioRehearsalBatchFinalizationException
+                        .Reason.MATERIAL_INVALID,
+                ScenarioRehearsalBatchFinalizationPolicy
+                        .defaults());
+        databaseTime.set(NOW.plus(Duration.ofDays(2)));
+        ScenarioRehearsalBatchFinalizationRemediationRequest
+                request = remediationRequest(
+                "remediation-a",
+                quarantined);
+        MirrorOperationObservability.Observation observation =
+                mock(MirrorOperationObservability
+                        .Observation.class);
+
+        ScenarioRehearsalBatchRepository
+                .FinalizationRemediationResult result =
+                repository.remediateFinalization(
+                        remediation(
+                                finalizing.jobId(),
+                                request),
+                        policy(),
+                        observation);
+        ScenarioRehearsalBatchRepository.FinalizationSnapshot
+                pending = repository.findFinalization(
+                SCOPE, finalizing.jobId()).orElseThrow();
+        ScenarioRehearsalBatchRepository
+                .FinalizationAcquisition acquired =
+                repository.claimFinalization(
+                        "sg",
+                        "test",
+                        "finalizer-remediated",
+                        ScenarioRehearsalBatchFinalizationPolicy
+                                .defaults());
+
+        assertThat(result.idempotentReplay()).isFalse();
+        assertThat(result.receipt()
+                .previousIntentFingerprint())
+                .isEqualTo(failed.intent()
+                        .intentFingerprint());
+        assertThat(result.receipt()
+                .currentIntentFingerprint())
+                .isNotEqualTo(failed.intent()
+                        .intentFingerprint())
+                .isEqualTo(pending.intentFingerprint());
+        assertThat(result.receipt()
+                .effectiveRetainUntil())
+                .isEqualTo(databaseTime.get()
+                        .plus(policy()
+                                .terminalRetention()));
+        assertThat(pending.state()).isEqualTo(
+                ScenarioRehearsalBatchRepository
+                        .FinalizationState.PENDING);
+        assertThat(pending.attemptCount()).isZero();
+        assertThat(pending.signingStartedAt())
+                .isEqualTo(Instant.EPOCH);
+        assertThat(pending.leaseEpoch())
+                .isEqualTo(quarantined.leaseEpoch() + 1);
+        assertThat(acquired.outcome()).isEqualTo(
+                ScenarioRehearsalBatchRepository
+                        .FinalizationClaimOutcome.ACQUIRED);
+        assertThat(acquired.claim()
+                .signingStartedAt())
+                .isEqualTo(databaseTime.get());
+        assertThat(acquired.claim()
+                .intent().signingRequestId())
+                .isNotEqualTo(failed.intent()
+                        .signingRequestId());
+        assertThat(repository.find(
+                SCOPE, finalizing.jobId(), policy()))
+                .get()
+                .extracting(
+                        ScenarioRehearsalBatchJob::updatedAt)
+                .isEqualTo(databaseTime.get());
+        verify(lifecycleAudit).append(argThat(event ->
+                event.transition()
+                        == ScenarioRehearsalBatchLifecycleAuditEvent
+                        .Transition.FINALIZATION_REMEDIATED
+                        && event.reasonCode().equals(
+                        "KMS_POLICY_REPAIRED")));
+        verify(observation).succeeded(
+                finalizing.jobId());
+    }
+
+    @Test
+    void exactlyReplaysRemediationReceiptAfterLaterClaimWithoutMutation() {
+        ScenarioRehearsalBatchJob finalizing =
+                makeFinalizing(
+                        "batch-finalization-remediation-replay",
+                        "refund",
+                        "worker-a");
+        ScenarioRehearsalBatchRepository.FinalizationClaim
+                failed = claimFinalization();
+        ScenarioRehearsalBatchRepository.FinalizationSnapshot
+                quarantined = repository.releaseFinalization(
+                failed,
+                ScenarioRehearsalBatchFinalizationException
+                        .Reason.MATERIAL_INVALID,
+                ScenarioRehearsalBatchFinalizationPolicy
+                        .defaults());
+        ScenarioRehearsalBatchFinalizationRemediationRequest
+                request = remediationRequest(
+                "remediation-replay",
+                quarantined);
+        MirrorOperationObservability.Observation firstObservation =
+                mock(MirrorOperationObservability
+                        .Observation.class);
+        MirrorOperationObservability.Observation replayObservation =
+                mock(MirrorOperationObservability
+                        .Observation.class);
+        ScenarioRehearsalBatchRepository
+                .FinalizationRemediationResult first =
+                repository.remediateFinalization(
+                        remediation(
+                                finalizing.jobId(),
+                                request),
+                        policy(),
+                        firstObservation);
+        ScenarioRehearsalBatchRepository
+                .FinalizationAcquisition claim =
+                repository.claimFinalization(
+                        "sg",
+                        "test",
+                        "finalizer-after-remediation",
+                        ScenarioRehearsalBatchFinalizationPolicy
+                                .defaults());
+
+        ScenarioRehearsalBatchRepository
+                .FinalizationRemediationResult replay =
+                repository.remediateFinalization(
+                        remediation(
+                                finalizing.jobId(),
+                                request),
+                        policy(),
+                        replayObservation);
+
+        assertThat(replay.idempotentReplay()).isTrue();
+        assertThat(replay.receipt()).isEqualTo(
+                first.receipt());
+        assertThat(repository.findFinalization(
+                SCOPE, finalizing.jobId()))
+                .get()
+                .extracting(
+                        ScenarioRehearsalBatchRepository
+                                .FinalizationSnapshot::state)
+                .isEqualTo(
+                        ScenarioRehearsalBatchRepository
+                                .FinalizationState.SIGNING);
+        assertThat(jdbc.queryForObject("""
+                SELECT COUNT(*)
+                FROM scenario_rehearsal_batch_finalization_remediations
+                WHERE job_id = ?
+                """,
+                Long.class,
+                finalizing.jobId())).isOne();
+        verify(lifecycleAudit, times(1))
+                .append(argThat(event ->
+                        event.transition()
+                                == ScenarioRehearsalBatchLifecycleAuditEvent
+                                .Transition
+                                .FINALIZATION_REMEDIATED));
+        verify(replayObservation).succeeded(
+                finalizing.jobId());
+        assertThat(claim.claim()).isNotNull();
+    }
+
+    @Test
+    void rejectsStaleOrReusedFinalizationRemediationFence() {
+        ScenarioRehearsalBatchJob finalizing =
+                makeFinalizing(
+                        "batch-finalization-remediation-conflict",
+                        "refund",
+                        "worker-a");
+        ScenarioRehearsalBatchRepository.FinalizationClaim
+                failed = claimFinalization();
+        ScenarioRehearsalBatchRepository.FinalizationSnapshot
+                quarantined = repository.releaseFinalization(
+                failed,
+                ScenarioRehearsalBatchFinalizationException
+                        .Reason.MATERIAL_INVALID,
+                ScenarioRehearsalBatchFinalizationPolicy
+                        .defaults());
+        ScenarioRehearsalBatchFinalizationRemediationRequest
+                stale = new ScenarioRehearsalBatchFinalizationRemediationRequest(
+                "",
+                "remediation-conflict",
+                quarantined.attemptCount(),
+                quarantined.updatedAt().minusMillis(1),
+                "KMS_POLICY_REPAIRED");
+
+        assertThatThrownBy(() ->
+                repository.remediateFinalization(
+                        remediation(
+                                finalizing.jobId(),
+                                stale),
+                        policy(),
+                        mock(MirrorOperationObservability
+                                .Observation.class)))
+                .isInstanceOfSatisfying(
+                        ScenarioRehearsalBatchConflictException
+                                .class,
+                        failure -> assertThat(
+                                failure.reason())
+                                .isEqualTo(
+                                        ScenarioRehearsalBatchConflictException
+                                                .Reason
+                                                .FINALIZATION_FENCE_MISMATCH));
+
+        ScenarioRehearsalBatchFinalizationRemediationRequest
+                accepted = remediationRequest(
+                "remediation-conflict",
+                quarantined);
+        repository.remediateFinalization(
+                remediation(
+                        finalizing.jobId(),
+                        accepted),
+                policy(),
+                mock(MirrorOperationObservability
+                        .Observation.class));
+        ScenarioRehearsalBatchFinalizationRemediationRequest
+                reused =
+                new ScenarioRehearsalBatchFinalizationRemediationRequest(
+                        "",
+                        accepted.commandId(),
+                        accepted.expectedAttemptCount(),
+                        accepted.expectedUpdatedAt(),
+                        "OWNER_OVERRIDE");
+
+        assertThatThrownBy(() ->
+                repository.remediateFinalization(
+                        remediation(
+                                finalizing.jobId(),
+                                reused),
+                        policy(),
+                        mock(MirrorOperationObservability
+                                .Observation.class)))
+                .isInstanceOfSatisfying(
+                        ScenarioRehearsalBatchConflictException
+                                .class,
+                        failure -> assertThat(
+                                failure.reason())
+                                .isEqualTo(
+                                        ScenarioRehearsalBatchConflictException
+                                                .Reason
+                                                .FINALIZATION_REMEDIATION_CONFLICT));
+    }
+
+    @Test
+    void rollsBackRemediationWhenMandatoryOperationAuditFails() {
+        ScenarioRehearsalBatchJob finalizing =
+                makeFinalizing(
+                        "batch-finalization-remediation-audit",
+                        "refund",
+                        "worker-a");
+        ScenarioRehearsalBatchRepository.FinalizationClaim
+                failed = claimFinalization();
+        ScenarioRehearsalBatchRepository.FinalizationSnapshot
+                quarantined = repository.releaseFinalization(
+                failed,
+                ScenarioRehearsalBatchFinalizationException
+                        .Reason.MATERIAL_INVALID,
+                ScenarioRehearsalBatchFinalizationPolicy
+                        .defaults());
+        MirrorOperationObservability.Observation observation =
+                mock(MirrorOperationObservability
+                        .Observation.class);
+        doThrow(new IllegalStateException(
+                "operation audit unavailable"))
+                .when(observation)
+                .succeeded(anyString());
+
+        assertThatThrownBy(() ->
+                repository.remediateFinalization(
+                        remediation(
+                                finalizing.jobId(),
+                                remediationRequest(
+                                        "remediation-audit",
+                                        quarantined)),
+                        policy(),
+                        observation))
+                .isInstanceOf(IllegalStateException.class);
+
+        assertThat(repository.findFinalization(
+                SCOPE, finalizing.jobId()))
+                .contains(quarantined);
+        assertThat(jdbc.queryForObject("""
+                SELECT COUNT(*)
+                FROM scenario_rehearsal_batch_finalization_remediations
+                WHERE job_id = ?
+                """,
+                Long.class,
+                finalizing.jobId())).isZero();
+    }
+
+    @Test
     void restartRecoversPendingFinalizationIntent() {
         ScenarioRehearsalBatchJob finalizing =
                 makeFinalizing(
@@ -1237,6 +1541,34 @@ class DatabaseScenarioRehearsalBatchRepositoryTest {
                 ScenarioRehearsalBatchRepository
                         .FinalizationClaimOutcome.ACQUIRED);
         return acquired.claim();
+    }
+
+    private ScenarioRehearsalBatchFinalizationRemediationRequest
+    remediationRequest(
+            String commandId,
+            ScenarioRehearsalBatchRepository
+                    .FinalizationSnapshot quarantined) {
+        return new ScenarioRehearsalBatchFinalizationRemediationRequest(
+                "",
+                commandId,
+                quarantined.attemptCount(),
+                quarantined.updatedAt(),
+                "KMS_POLICY_REPAIRED");
+    }
+
+    private ScenarioRehearsalBatchRepository
+            .FinalizationRemediation
+    remediation(
+            String jobId,
+            ScenarioRehearsalBatchFinalizationRemediationRequest
+                    request) {
+        return new ScenarioRehearsalBatchRepository
+                .FinalizationRemediation(
+                SCOPE,
+                jobId,
+                request,
+                ProtocolFingerprint.of(
+                        mapper, request));
     }
 
     private ScenarioRehearsalBatchEvidencePublisher.PreparedFinalization

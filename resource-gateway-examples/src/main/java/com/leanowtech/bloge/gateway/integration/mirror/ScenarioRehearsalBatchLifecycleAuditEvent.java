@@ -64,6 +64,8 @@ public record ScenarioRehearsalBatchLifecycleAuditEvent(
         CANCELLATION_REQUESTED,
         /** Complete terminal material entered the durable evidence-finalization outbox. */
         FINALIZATION_QUEUED,
+        /** An exactly fenced quarantined finalization entered a new immutable intent generation. */
+        FINALIZATION_REMEDIATED,
         /** The complete item closure and signed batch evidence became terminal atomically. */
         TERMINALIZED
     }
@@ -245,6 +247,17 @@ public record ScenarioRehearsalBatchLifecycleAuditEvent(
                             && attemptCount == 0
                             && evidenceFingerprint.isBlank(),
                     "finalization queue audit coordinates are inconsistent");
+            case FINALIZATION_REMEDIATED -> require(
+                    jobStatus
+                            == ScenarioRehearsalBatchJob.Status
+                            .FINALIZING_EVIDENCE
+                            && !identifiesItem
+                            && attemptCount == 0
+                            && leaseOwner.isBlank()
+                            && leaseEpoch == 0
+                            && evidenceFingerprint.isBlank()
+                            && !reasonCode.isBlank(),
+                    "finalization remediation audit coordinates are inconsistent");
             case TERMINALIZED -> require(
                     jobStatus.terminal()
                             && !identifiesItem

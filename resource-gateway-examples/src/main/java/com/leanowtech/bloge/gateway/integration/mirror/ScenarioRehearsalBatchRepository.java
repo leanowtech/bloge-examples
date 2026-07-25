@@ -461,6 +461,34 @@ public interface ScenarioRehearsalBatchRepository {
         }
     }
 
+    /** Exact full-scope compare-and-set command for one quarantined finalization. */
+    record FinalizationRemediation(
+            CapabilitySnapshot.Scope scope,
+            String jobId,
+            ScenarioRehearsalBatchFinalizationRemediationRequest request,
+            String requestFingerprint
+    ) {
+        /** Validates scope, stable job identity, and canonical command content address. */
+        public FinalizationRemediation {
+            scope = Objects.requireNonNull(scope, "scope");
+            jobId = required(jobId, "jobId");
+            request = Objects.requireNonNull(request, "request");
+            requestFingerprint = fingerprint(
+                    requestFingerprint, "requestFingerprint");
+        }
+    }
+
+    /** Durable remediation disposition; exact command replay returns the original receipt. */
+    record FinalizationRemediationResult(
+            ScenarioRehearsalBatchFinalizationRemediationReceipt receipt,
+            boolean idempotentReplay
+    ) {
+        /** Requires one immutable retained receipt. */
+        public FinalizationRemediationResult {
+            receipt = Objects.requireNonNull(receipt, "receipt");
+        }
+    }
+
     /** Submits or exactly replays one resolved batch under database capacity policy. */
     SubmissionResult submit(
             Submission submission,
@@ -549,6 +577,19 @@ public interface ScenarioRehearsalBatchRepository {
     Optional<FinalizationSnapshot> findFinalization(
             CapabilitySnapshot.Scope scope,
             String jobId);
+
+    /**
+     * Re-queues one exactly fenced quarantined finalization and renews its retention floor.
+     *
+     * <p>The intent replacement, job projection, immutable remediation receipt, lifecycle fact,
+     * and protected-operation success audit must commit in one transaction. Exact command replay
+     * returns the original receipt without repeating a state mutation or lifecycle fact; the
+     * replaying protected API call still receives its own access audit.</p>
+     */
+    FinalizationRemediationResult remediateFinalization(
+            FinalizationRemediation remediation,
+            ScenarioRehearsalBatchPolicy policy,
+            MirrorOperationObservability.Observation observation);
 
     /** Requests exactly replayable cooperative cancellation. */
     SubmissionResult cancel(

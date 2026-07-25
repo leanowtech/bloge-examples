@@ -341,6 +341,101 @@ class ScenarioRehearsalBatchServiceTest {
     }
 
     @Test
+    void finalizationRemediationRequiresDedicatedPurposeAndAuditsAcceptedReceipt() {
+        ScenarioRehearsalBatchRepository repository =
+                mock(ScenarioRehearsalBatchRepository.class);
+        ScenarioRehearsalBatchFinalizationRemediationRequest
+                request =
+                new ScenarioRehearsalBatchFinalizationRemediationRequest(
+                        "",
+                        "remediation-a",
+                        3,
+                        NOW,
+                        "KMS_POLICY_REPAIRED");
+        ScenarioRehearsalBatchFinalizationRemediationReceipt
+                unsigned =
+                new ScenarioRehearsalBatchFinalizationRemediationReceipt(
+                        "",
+                        "",
+                        request.commandId(),
+                        job().jobId(),
+                        1,
+                        "sha256:" + "a".repeat(64),
+                        "sha256:" + "b".repeat(64),
+                        3,
+                        NOW.plusSeconds(1),
+                        NOW.plus(Duration.ofDays(30)),
+                        request.reasonCode());
+        ScenarioRehearsalBatchFinalizationRemediationReceipt
+                receipt = unsigned.withFingerprint(
+                com.leanowtech.bloge.gateway.testing.evidence
+                        .ProtocolFingerprint.of(
+                        mapper, unsigned));
+        when(repository.remediateFinalization(
+                any(ScenarioRehearsalBatchRepository
+                        .FinalizationRemediation.class),
+                any(ScenarioRehearsalBatchPolicy.class),
+                any(MirrorOperationObservability
+                        .Observation.class)))
+                .thenAnswer(invocation -> {
+                    MirrorOperationObservability.Observation
+                            operation = invocation.getArgument(2);
+                    operation.succeeded(job().jobId());
+                    return new ScenarioRehearsalBatchRepository
+                            .FinalizationRemediationResult(
+                            receipt, false);
+                });
+        List<MirrorOperationAuditEvent> events =
+                new ArrayList<>();
+        ScenarioRehearsalBatchService service =
+                new ScenarioRehearsalBatchService(
+                        mock(ScenarioRehearsalBatchCompiler.class),
+                        repository,
+                        policy(),
+                        mapper,
+                        mock(
+                                ScenarioRehearsalBatchEvidenceRepository
+                                        .class),
+                        observations(events));
+
+        assertThat(service.remediateFinalization(
+                job().jobId(),
+                request,
+                identity(
+                        "MIRROR_REHEARSAL_FINALIZATION_ADMIN"))
+                .receipt()).isEqualTo(receipt);
+        ArgumentCaptor<ScenarioRehearsalBatchRepository
+                .FinalizationRemediation> captured =
+                ArgumentCaptor.forClass(
+                        ScenarioRehearsalBatchRepository
+                                .FinalizationRemediation.class);
+        verify(repository).remediateFinalization(
+                captured.capture(),
+                any(ScenarioRehearsalBatchPolicy.class),
+                any(MirrorOperationObservability
+                        .Observation.class));
+        assertThat(captured.getValue().scope())
+                .isEqualTo(SCOPE);
+        assertThat(captured.getValue()
+                .requestFingerprint())
+                .matches("sha256:[a-f0-9]{64}");
+        assertThat(events)
+                .singleElement()
+                .extracting(
+                        MirrorOperationAuditEvent::operation)
+                .isEqualTo(
+                        MirrorOperationAuditEvent.Operation
+                                .SCENARIO_REHEARSAL_BATCH_FINALIZATION_REMEDIATE);
+
+        assertThatThrownBy(() ->
+                service.remediateFinalization(
+                        job().jobId(),
+                        request,
+                        identity("MIRROR_REHEARSAL")))
+                .isInstanceOf(IntegrationProblemException.class);
+    }
+
+    @Test
     void workerCompletesOnlyVerifiedEvidenceAndWorkbookClosure() {
         ScenarioRehearsalBatchRepository repository =
                 mock(ScenarioRehearsalBatchRepository.class);

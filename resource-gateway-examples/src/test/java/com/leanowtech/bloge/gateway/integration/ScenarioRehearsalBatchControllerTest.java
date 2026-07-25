@@ -2,6 +2,8 @@ package com.leanowtech.bloge.gateway.integration;
 
 import com.leanowtech.bloge.gateway.integration.mirror.ScenarioRehearsalBatchCancellationRequest;
 import com.leanowtech.bloge.gateway.integration.mirror.ScenarioRehearsalBatchEvidenceBundle;
+import com.leanowtech.bloge.gateway.integration.mirror.ScenarioRehearsalBatchFinalizationRemediationReceipt;
+import com.leanowtech.bloge.gateway.integration.mirror.ScenarioRehearsalBatchFinalizationRemediationRequest;
 import com.leanowtech.bloge.gateway.integration.mirror.ScenarioRehearsalBatchFinalizationStatus;
 import com.leanowtech.bloge.gateway.integration.mirror.ScenarioRehearsalBatchItemPage;
 import com.leanowtech.bloge.gateway.integration.mirror.ScenarioRehearsalBatchJob;
@@ -52,6 +54,16 @@ class ScenarioRehearsalBatchControllerTest {
                 mock(ScenarioRehearsalBatchEvidenceBundle.class);
         ScenarioRehearsalBatchFinalizationStatus finalization =
                 mock(ScenarioRehearsalBatchFinalizationStatus.class);
+        ScenarioRehearsalBatchFinalizationRemediationRequest
+                remediation =
+                mock(
+                        ScenarioRehearsalBatchFinalizationRemediationRequest
+                                .class);
+        ScenarioRehearsalBatchFinalizationRemediationReceipt
+                remediationReceipt =
+                mock(
+                        ScenarioRehearsalBatchFinalizationRemediationReceipt
+                                .class);
         ScenarioRehearsalBatchRetentionState retentionState =
                 mock(ScenarioRehearsalBatchRetentionState.class);
         ScenarioRehearsalLegalHoldCommand hold =
@@ -73,6 +85,9 @@ class ScenarioRehearsalBatchControllerTest {
         when(finalization.schemaVersion()).thenReturn(
                 ScenarioRehearsalBatchFinalizationStatus
                         .SCHEMA_VERSION);
+        when(remediationReceipt.schemaVersion()).thenReturn(
+                ScenarioRehearsalBatchFinalizationRemediationReceipt
+                        .SCHEMA_VERSION);
         when(retentionState.schemaVersion()).thenReturn(
                 ScenarioRehearsalBatchRetentionState.SCHEMA_VERSION);
         when(authenticator.authenticate(
@@ -89,6 +104,11 @@ class ScenarioRehearsalBatchControllerTest {
                 headers,
                 IntegrationOperation
                         .MIRROR_REHEARSAL_BATCH_CANCEL))
+                .thenReturn(identity);
+        when(authenticator.authenticate(
+                headers,
+                IntegrationOperation
+                        .MIRROR_REHEARSAL_BATCH_FINALIZATION_REMEDIATE))
                 .thenReturn(identity);
         when(authenticator.authenticate(
                 headers,
@@ -115,6 +135,10 @@ class ScenarioRehearsalBatchControllerTest {
         when(decoder.decodeBatchCancellationRequest(
                 raw, identity))
                 .thenReturn(cancellation);
+        when(decoder
+                .decodeBatchFinalizationRemediationRequest(
+                        raw, identity))
+                .thenReturn(remediation);
         when(decoder.decodeLegalHoldCommand(raw, identity))
                 .thenReturn(hold);
         when(decoder.decodePurgeCommand(raw, identity))
@@ -132,6 +156,12 @@ class ScenarioRehearsalBatchControllerTest {
                 .thenReturn(Optional.of(evidence));
         when(batches.finalization("job-a", identity))
                 .thenReturn(Optional.of(finalization));
+        when(batches.remediateFinalization(
+                "job-a", remediation, identity))
+                .thenReturn(
+                        new ScenarioRehearsalBatchRepository
+                                .FinalizationRemediationResult(
+                                remediationReceipt, false));
         when(batches.cancel(
                 "job-a",
                 cancellation.commandId(),
@@ -181,6 +211,18 @@ class ScenarioRehearsalBatchControllerTest {
         assertThat(controller.cancel(
                 "job-a", raw, headers).payload())
                 .isSameAs(job);
+        assertThat(controller.remediateFinalization(
+                "job-a", raw, headers))
+                .satisfies(envelope -> {
+                    assertThat(envelope.payloadKind()).isEqualTo(
+                            "SCENARIO_REHEARSAL_BATCH_FINALIZATION_REMEDIATION_RECEIPT");
+                    assertThat(envelope.payloadSchemaVersion())
+                            .isEqualTo(
+                                    ScenarioRehearsalBatchFinalizationRemediationReceipt
+                                            .SCHEMA_VERSION);
+                    assertThat(envelope.payload())
+                            .isSameAs(remediationReceipt);
+                });
         assertThat(controller.retention(
                 "job-a", headers).payload())
                 .isSameAs(retentionState);
@@ -207,6 +249,10 @@ class ScenarioRehearsalBatchControllerTest {
                 headers,
                 IntegrationOperation
                         .MIRROR_REHEARSAL_BATCH_CANCEL);
+        verify(authenticator).authenticate(
+                headers,
+                IntegrationOperation
+                        .MIRROR_REHEARSAL_BATCH_FINALIZATION_REMEDIATE);
         verify(authenticator).authenticate(
                 headers,
                 IntegrationOperation

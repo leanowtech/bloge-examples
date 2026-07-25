@@ -10,6 +10,7 @@ import com.leanowtech.bloge.gateway.integration.mirror.ScenarioCase;
 import com.leanowtech.bloge.gateway.integration.mirror.ScenarioPack;
 import com.leanowtech.bloge.gateway.integration.mirror.ScenarioRehearsalCompileRequest;
 import com.leanowtech.bloge.gateway.integration.mirror.ScenarioRehearsalBatchCancellationRequest;
+import com.leanowtech.bloge.gateway.integration.mirror.ScenarioRehearsalBatchFinalizationRemediationRequest;
 import com.leanowtech.bloge.gateway.integration.mirror.ScenarioRehearsalBatchRequest;
 import com.leanowtech.bloge.gateway.integration.mirror.ScenarioRehearsalExecutionRequest;
 import com.leanowtech.bloge.gateway.integration.mirror.ScenarioRehearsalLegalHoldCommand;
@@ -68,6 +69,11 @@ public final class ScenarioArtifactRequestDecoder {
             "schemaVersion", "requestId", "entries");
     private static final Set<String> BATCH_CANCELLATION_FIELDS = Set.of(
             "schemaVersion", "commandId", "reasonCode");
+    private static final Set<String> BATCH_FINALIZATION_REMEDIATION_FIELDS =
+            Set.of(
+                    "schemaVersion", "commandId",
+                    "expectedAttemptCount", "expectedUpdatedAt",
+                    "reasonCode");
     private static final Set<String> LEGAL_HOLD_FIELDS = Set.of(
             "schemaVersion", "commandId", "holdId", "reasonCode");
     private static final Set<String> PURGE_FIELDS = Set.of(
@@ -170,6 +176,20 @@ public final class ScenarioArtifactRequestDecoder {
                 ScenarioRehearsalBatchCancellationRequest
                         .SCHEMA_VERSION,
                 ScenarioRehearsalBatchCancellationRequest.class);
+    }
+
+    /** Decodes one exact compare-and-set finalization remediation command. */
+    public ScenarioRehearsalBatchFinalizationRemediationRequest
+    decodeBatchFinalizationRemediationRequest(
+            byte[] value, IntegrationRequestContext identity) {
+        return decode(
+                value,
+                identity,
+                BATCH_FINALIZATION_REMEDIATION_FIELDS,
+                ScenarioRehearsalBatchFinalizationRemediationRequest
+                        .SCHEMA_VERSION,
+                ScenarioRehearsalBatchFinalizationRemediationRequest
+                        .class);
     }
 
     /** Decodes one exact Scenario legal-hold placement or release command. */

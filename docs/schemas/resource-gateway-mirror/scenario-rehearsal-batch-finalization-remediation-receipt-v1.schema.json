@@ -1,0 +1,63 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://bloge.dev/schemas/resource-gateway-mirror/scenario-rehearsal-batch-finalization-remediation-receipt-v1.schema.json",
+  "title": "Resource Gateway Scenario Rehearsal Batch Finalization Remediation Receipt v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion", "receiptFingerprint", "commandId", "jobId",
+    "remediationGeneration", "previousIntentFingerprint",
+    "currentIntentFingerprint", "previousAttemptCount", "acceptedAt",
+    "effectiveRetainUntil", "reasonCode"
+  ],
+  "properties": {
+    "schemaVersion": {
+      "const": "resourceGateway.scenarioRehearsalBatchFinalizationRemediationReceipt.v1"
+    },
+    "receiptFingerprint": {
+      "type": "string",
+      "pattern": "^sha256:[a-f0-9]{64}$"
+    },
+    "commandId": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 128,
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$"
+    },
+    "jobId": {
+      "type": "string",
+      "pattern": "^scenario-batch-[a-f0-9]{64}$"
+    },
+    "remediationGeneration": {
+      "type": "integer",
+      "minimum": 1
+    },
+    "previousIntentFingerprint": {
+      "type": "string",
+      "pattern": "^sha256:[a-f0-9]{64}$"
+    },
+    "currentIntentFingerprint": {
+      "type": "string",
+      "pattern": "^sha256:[a-f0-9]{64}$"
+    },
+    "previousAttemptCount": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 10000
+    },
+    "acceptedAt": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "effectiveRetainUntil": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "reasonCode": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 128,
+      "pattern": "^[A-Z][A-Z0-9_.-]{0,127}$"
+    }
+  }
+}

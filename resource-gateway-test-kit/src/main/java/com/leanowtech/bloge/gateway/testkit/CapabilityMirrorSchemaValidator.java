@@ -104,6 +104,8 @@ final class CapabilityMirrorSchemaValidator {
             "scenario-rehearsal-batch-job-v1.schema.json",
             "scenario-rehearsal-batch-job-v2.schema.json",
             "scenario-rehearsal-batch-finalization-status-v1.schema.json",
+            "scenario-rehearsal-batch-finalization-remediation-request-v1.schema.json",
+            "scenario-rehearsal-batch-finalization-remediation-receipt-v1.schema.json",
             "scenario-rehearsal-batch-item-page-v1.schema.json",
             "scenario-rehearsal-batch-evidence-index-v1.schema.json",
             "scenario-rehearsal-batch-evidence-index-v2.schema.json",
