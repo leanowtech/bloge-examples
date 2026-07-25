@@ -20,6 +20,8 @@ JAVA_BIN="${JAVA_BIN:-java}"
 SPRING_PROFILE="${BLOGE_VISUAL_CANVAS_PROFILE:-test}"
 STATEFUL_MIRROR="${BLOGE_VISUAL_CANVAS_STATEFUL:-${RG_MIRROR_STATEFUL_ENABLED:-0}}"
 SCENARIO_BATCH="${BLOGE_VISUAL_CANVAS_SCENARIO_BATCH:-${RG_MIRROR_SCENARIO_BATCH_SCHEDULER_ENABLED:-0}}"
+SHADOW_JOBS="${BLOGE_VISUAL_CANVAS_SHADOW_JOBS:-0}"
+SHADOW_SCHEDULER="${BLOGE_VISUAL_CANVAS_SHADOW_SCHEDULER:-${RG_MIRROR_SHADOW_JOB_SCHEDULER_ENABLED:-0}}"
 STATEFUL_KEY_FILE="${BLOGE_VISUAL_CANVAS_STATEFUL_KEY_FILE:-${ROOT_DIR}/target/example-state/mirror-aes256.key}"
 
 if [ -z "${MVN:-}" ]; then
@@ -47,6 +49,8 @@ Options:
   --run-tests       Run Maven tests during the package step.
   --stateful        Enable the encrypted stateful-mirror Session API for test/staging.
   --scenario-batch  Enable regional Scenario workers and isolated evidence finalizers.
+  --shadow-jobs     Enable the durable read-only Shadow submit/read/lifecycle API.
+  --shadow-scheduler  Also enable bounded Shadow polling; the default data plane remains unavailable.
   --open            Open /author/ in the default browser after startup.
   -h, --help        Show this help.
 
@@ -60,7 +64,13 @@ Environment:
   BLOGE_VISUAL_CANVAS_PROFILE          default: test
   BLOGE_VISUAL_CANVAS_STATEFUL         default: 0; same effect as --stateful
   BLOGE_VISUAL_CANVAS_SCENARIO_BATCH   default: 0; same effect as --scenario-batch
+  BLOGE_VISUAL_CANVAS_SHADOW_JOBS      default: 0; same effect as --shadow-jobs
+  BLOGE_VISUAL_CANVAS_SHADOW_SCHEDULER default: 0; same effect as --shadow-scheduler
   BLOGE_VISUAL_CANVAS_STATEFUL_KEY_FILE  local demo AES-256 key file; never printed
+  RG_MIRROR_SHADOW_JOB_INSTANCE_ID     stable local Shadow scheduler replica id
+  RG_MIRROR_SHADOW_JOB_REGION          exact regional queue partition
+  RG_MIRROR_SHADOW_JOB_ENVIRONMENT     exact enterprise non-production partition
+  RG_MIRROR_SHADOW_JOB_MAXIMUM_POLLERS local bounded worker lanes (1..64)
   RG_MIRROR_SCENARIO_BATCH_INSTANCE_ID  stable local batch-worker replica id
   RG_MIRROR_SCENARIO_BATCH_REGION       exact regional queue partition
   RG_MIRROR_SCENARIO_BATCH_ENVIRONMENT  exact test or staging queue partition
@@ -246,6 +256,8 @@ Examples:
   scripts/start-visual-canvas-demo.sh --open
   scripts/start-visual-canvas-demo.sh --stateful
   scripts/start-visual-canvas-demo.sh --scenario-batch
+  scripts/start-visual-canvas-demo.sh --shadow-jobs
+  scripts/start-visual-canvas-demo.sh --shadow-scheduler
   scripts/start-visual-canvas-demo.sh --port 18080 -- --gateway.base-url=http://localhost:9091
   scripts/visual-canvas-demo.sh status
 EOF
@@ -256,6 +268,100 @@ truthy() {
         1|true|TRUE|yes|YES|on|ON) return 0 ;;
         *) return 1 ;;
     esac
+}
+
+configure_shadow_jobs() {
+    if truthy "${SHADOW_SCHEDULER}"; then
+        SHADOW_JOBS=1
+    fi
+    if ! truthy "${SHADOW_JOBS}"; then
+        return 0
+    fi
+    local default_environment
+    case ",${SPRING_PROFILE}," in
+        *,production,*)
+            echo "Read-only Shadow jobs are physically unavailable in the production profile." >&2
+            return 1
+            ;;
+        *,staging,*)
+            default_environment="staging"
+            ;;
+        *,test,*)
+            default_environment="test"
+            ;;
+        *)
+            echo "Read-only Shadow jobs require the test or staging profile." >&2
+            return 1
+            ;;
+    esac
+
+    export RG_MIRROR_RUNTIME_ENABLED=true
+    export RG_INTEGRATION_REGION="${RG_INTEGRATION_REGION:-sg}"
+    export RG_INTEGRATION_ENVIRONMENT_ID="${RG_INTEGRATION_ENVIRONMENT_ID:-${default_environment}}"
+    case "${RG_INTEGRATION_ENVIRONMENT_ID}" in
+        prod|production|live)
+            echo "Read-only Shadow jobs cannot use a reserved production identity environment." >&2
+            return 1
+            ;;
+    esac
+    if ! truthy "${SHADOW_SCHEDULER}"; then
+        return 0
+    fi
+    export RG_MIRROR_SHADOW_JOB_SCHEDULER_ENABLED=true
+    export RG_MIRROR_SHADOW_JOB_INSTANCE_ID="${RG_MIRROR_SHADOW_JOB_INSTANCE_ID:-visual-canvas-shadow-$(configured_port)}"
+    export RG_MIRROR_SHADOW_JOB_REGION="${RG_MIRROR_SHADOW_JOB_REGION:-${RG_INTEGRATION_REGION}}"
+    export RG_MIRROR_SHADOW_JOB_ENVIRONMENT="${RG_MIRROR_SHADOW_JOB_ENVIRONMENT:-${RG_INTEGRATION_ENVIRONMENT_ID}}"
+    if [ -n "${RG_INTEGRATION_REGION:-}" ] &&
+        [ "${RG_INTEGRATION_REGION}" != "${RG_MIRROR_SHADOW_JOB_REGION}" ]; then
+        echo "Shadow scheduler region must match the integration identity region." >&2
+        return 1
+    fi
+    if [ -n "${RG_INTEGRATION_ENVIRONMENT_ID:-}" ] &&
+        [ "${RG_INTEGRATION_ENVIRONMENT_ID}" != "${RG_MIRROR_SHADOW_JOB_ENVIRONMENT}" ]; then
+        echo "Shadow scheduler environment must match the integration identity environment." >&2
+        return 1
+    fi
+    export RG_INTEGRATION_REGION="${RG_MIRROR_SHADOW_JOB_REGION}"
+    export RG_INTEGRATION_ENVIRONMENT_ID="${RG_MIRROR_SHADOW_JOB_ENVIRONMENT}"
+}
+
+validate_shadow_jobs() {
+    if ! truthy "${SHADOW_JOBS}"; then
+        return 0
+    fi
+    if ! truthy "${RG_MIRROR_RUNTIME_ENABLED:-false}"; then
+        echo "Read-only Shadow jobs require RG_MIRROR_RUNTIME_ENABLED=true." >&2
+        return 1
+    fi
+    if ! truthy "${RG_MIRROR_SHADOW_JOB_SCHEDULER_ENABLED:-false}"; then
+        return 0
+    fi
+    if ! printf '%s' "${RG_MIRROR_SHADOW_JOB_INSTANCE_ID:-}" |
+        grep -Eq '^[A-Za-z0-9][A-Za-z0-9._:/#-]{0,254}$' ||
+        ! printf '%s' "${RG_MIRROR_SHADOW_JOB_REGION:-}" |
+        grep -Eq '^[A-Za-z0-9][A-Za-z0-9._:/#-]{0,95}$' ||
+        ! printf '%s' "${RG_MIRROR_SHADOW_JOB_ENVIRONMENT:-}" |
+        grep -Eq '^[A-Za-z0-9][A-Za-z0-9._:/#-]{0,254}$'; then
+        echo "Shadow scheduler instance or partition identity is invalid." >&2
+        return 1
+    fi
+    case "${RG_MIRROR_SHADOW_JOB_ENVIRONMENT}" in
+        prod|production|live)
+            echo "Shadow scheduler cannot target a reserved production environment." >&2
+            return 1
+            ;;
+    esac
+    if [ "${RG_INTEGRATION_REGION:-}" != "${RG_MIRROR_SHADOW_JOB_REGION}" ] ||
+        [ "${RG_INTEGRATION_ENVIRONMENT_ID:-}" != "${RG_MIRROR_SHADOW_JOB_ENVIRONMENT}" ]; then
+        echo "Shadow scheduler partition must match the integration identity scope." >&2
+        return 1
+    fi
+    local pollers="${RG_MIRROR_SHADOW_JOB_MAXIMUM_POLLERS:-2}"
+    if ! printf '%s' "${pollers}" | grep -Eq '^[1-9][0-9]*$' ||
+        [ "${pollers}" -gt 64 ]; then
+        echo "Shadow scheduler maximum pollers must be between 1 and 64." >&2
+        return 1
+    fi
 }
 
 configure_scenario_batch() {
@@ -1957,6 +2063,8 @@ Integration API templates:
   Batch workbook:   GET  /api/mirror/rehearsal-jobs/{jobId}/workbook-seed
   Finalization:     GET  /api/mirror/rehearsal-jobs/{jobId}/finalization
   Finalizer health: GET  /api/mirror/rehearsal-jobs/finalization-health
+  Shadow admission: POST /api/mirror/shadow-jobs (--shadow-jobs; Bearer token + X-Purpose: MIRROR_SHADOW)
+  Shadow lifecycle: GET  /api/mirror/shadow-jobs/{jobId}/lifecycle
 EOF
 }
 
@@ -2006,6 +2114,30 @@ wait_for_ready() {
             return 1
         fi
         if response="$(curl -fsS "${url}" 2>/dev/null)"; then
+            if truthy "${SHADOW_JOBS}"; then
+                if command -v jq >/dev/null 2>&1; then
+                    if ! printf '%s' "${response}" | jq -e \
+                        --argjson scheduler "$(truthy "${RG_MIRROR_SHADOW_JOB_SCHEDULER_ENABLED:-false}" && printf true || printf false)" '
+                        .payload.features.mirrorReadOnlyShadowJobApi == true
+                        and .payload.features.mirrorReadOnlyShadowLifecycleAudit == true
+                        and ($scheduler == false or .payload.features.mirrorReadOnlyShadowScheduling == true)
+                    ' >/dev/null 2>&1; then
+                        sleep 2
+                        continue
+                    fi
+                elif ! printf '%s' "${response}" |
+                    grep -Eq '"mirrorReadOnlyShadowJobApi"[[:space:]]*:[[:space:]]*true' ||
+                    ! printf '%s' "${response}" |
+                    grep -Eq '"mirrorReadOnlyShadowLifecycleAudit"[[:space:]]*:[[:space:]]*true'; then
+                    sleep 2
+                    continue
+                elif truthy "${RG_MIRROR_SHADOW_JOB_SCHEDULER_ENABLED:-false}" &&
+                    ! printf '%s' "${response}" |
+                    grep -Eq '"mirrorReadOnlyShadowScheduling"[[:space:]]*:[[:space:]]*true'; then
+                    sleep 2
+                    continue
+                fi
+            fi
             if truthy "${RG_MIRROR_SCENARIO_BATCH_SCHEDULER_ENABLED:-false}"; then
                 if command -v jq >/dev/null 2>&1; then
                     if ! printf '%s' "${response}" | jq -e '
@@ -2089,6 +2221,10 @@ wait_for_ready() {
                 echo "Demo service ready; Scenario batch API and scheduler probes passed: ${url}"
                 return 0
             fi
+            if truthy "${SHADOW_JOBS}"; then
+                echo "Demo service ready; Shadow job API and lifecycle probes passed: ${url}"
+                return 0
+            fi
             echo "Demo service ready; integration capability probe passed: ${url}"
             return 0
         fi
@@ -2113,6 +2249,8 @@ open_author_if_requested() {
 }
 
 start_service() {
+    configure_shadow_jobs
+    validate_shadow_jobs
     configure_scenario_batch
     validate_scenario_batch
     configure_stateful_mirror
@@ -2248,6 +2386,15 @@ parse_options() {
                 ;;
             --scenario-batch)
                 SCENARIO_BATCH=1
+                shift
+                ;;
+            --shadow-jobs)
+                SHADOW_JOBS=1
+                shift
+                ;;
+            --shadow-scheduler)
+                SHADOW_JOBS=1
+                SHADOW_SCHEDULER=1
                 shift
                 ;;
             --open)

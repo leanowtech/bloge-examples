@@ -118,6 +118,8 @@ import com.leanowtech.bloge.gateway.integration.mirror.ReadOnlyShadowDataPlane;
 import com.leanowtech.bloge.gateway.integration.mirror.ReadOnlyShadowDomainFidelitySource;
 import com.leanowtech.bloge.gateway.integration.mirror.ReadOnlyShadowJobPolicy;
 import com.leanowtech.bloge.gateway.integration.mirror.ReadOnlyShadowJobRepository;
+import com.leanowtech.bloge.gateway.integration.mirror.ReadOnlyShadowJobScheduler;
+import com.leanowtech.bloge.gateway.integration.mirror.ReadOnlyShadowJobService;
 import com.leanowtech.bloge.gateway.integration.mirror.ReadOnlyShadowJobWorker;
 import com.leanowtech.bloge.gateway.integration.mirror.MirrorServingGenerationAuthority;
 import com.leanowtech.bloge.gateway.integration.mirror.MirrorServingGenerationIntegrity;
@@ -126,6 +128,7 @@ import com.leanowtech.bloge.gateway.integration.mirror.MirrorServingGenerationTe
 import com.leanowtech.bloge.gateway.integration.mirror.MirrorServingGenerationTrustProvider;
 import com.leanowtech.bloge.gateway.integration.MirrorRuntimeAvailability;
 import com.leanowtech.bloge.gateway.integration.DomainFidelityRuntimeAvailability;
+import com.leanowtech.bloge.gateway.integration.ReadOnlyShadowRuntimeAvailability;
 import com.leanowtech.bloge.gateway.resource.ResourceRegistry;
 import com.leanowtech.bloge.gateway.testing.planning.MirrorPlanCompiler;
 import com.leanowtech.bloge.gateway.testing.runtime.MirrorRunService;
@@ -165,7 +168,8 @@ import java.time.Clock;
 @EnableConfigurationProperties({
         ScenarioRehearsalBatchSchedulerProperties.class,
         ScenarioRehearsalBatchFinalizationSchedulerProperties.class,
-        ScenarioRehearsalBatchFinalizationSloProperties.class
+        ScenarioRehearsalBatchFinalizationSloProperties.class,
+        ReadOnlyShadowJobSchedulerProperties.class
 })
 public class MirrorRuntimeConfiguration {
 
@@ -1359,6 +1363,20 @@ public class MirrorRuntimeConfiguration {
         return ReadOnlyShadowJobPolicy.DEFAULT;
     }
 
+    /** Creates the audited exact-scope Shadow submission and read application boundary. */
+    @Bean
+    @ConditionalOnMissingBean
+    public ReadOnlyShadowJobService
+    readOnlyShadowJobService(
+            ReadOnlyShadowJobRepository repository,
+            ReadOnlyShadowJobPolicy policy,
+            MirrorOperationObservability observability) {
+        return new ReadOnlyShadowJobService(
+                repository,
+                policy,
+                observability);
+    }
+
     /**
      * Fails closed until an operator-owned payload-isolated source and candidate connector is
      * installed.
@@ -1384,6 +1402,49 @@ public class MirrorRuntimeConfiguration {
                 dataPlane,
                 integrity,
                 policy);
+    }
+
+    /** Starts explicitly enabled bounded Shadow worker lanes for one regional partition. */
+    @Bean(destroyMethod = "close")
+    @ConditionalOnMissingBean
+    @ConditionalOnProperty(
+            prefix = ReadOnlyShadowJobSchedulerProperties.PREFIX,
+            name = "enabled",
+            havingValue = "true")
+    public ReadOnlyShadowJobScheduler
+    readOnlyShadowJobScheduler(
+            ReadOnlyShadowJobWorker worker,
+            ReadOnlyShadowJobSchedulerProperties properties) {
+        return new ReadOnlyShadowJobScheduler(
+                worker,
+                properties.region(),
+                properties.environmentId(),
+                properties.instanceId(),
+                properties.maximumPollers(),
+                properties.initialDelay(),
+                properties.pollInterval(),
+                properties.drainTimeout());
+    }
+
+    /** Publishes independent Shadow API, audit, worker, scheduler, and serving readiness. */
+    @Bean
+    @ConditionalOnMissingBean
+    public ReadOnlyShadowRuntimeAvailability
+    readOnlyShadowRuntimeAvailability(
+            ReadOnlyShadowJobService service,
+            ReadOnlyShadowJobWorker worker,
+            ObjectProvider<ReadOnlyShadowJobScheduler>
+                    scheduler) {
+        return new ReadOnlyShadowRuntimeAvailability(
+                service != null,
+                true,
+                worker::ready,
+                () -> {
+                    ReadOnlyShadowJobScheduler current =
+                            scheduler.getIfAvailable();
+                    return current != null
+                            && current.ready();
+                });
     }
 
     /** Creates the independently verified read-only Shadow Fidelity source adapter. */

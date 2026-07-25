@@ -123,6 +123,8 @@ class CapabilityMirrorSchemaPackagingTest {
                 "scenario-rehearsal-workbook-seed-v1.schema.json",
                 "scenario-rehearsal-batch-workbook-seed-v1.schema.json",
                 "read-only-shadow-comparison-v1.schema.json",
+                "read-only-shadow-job-lifecycle-event-v1.schema.json",
+                "read-only-shadow-job-lifecycle-page-v1.schema.json",
                 "scenario-pack-stage7-v1.fixture.schema.json",
                 "stateful-refund-stage3-v1.fixture.schema.json")) {
             String resource = CapabilityMirrorProtocol.SCHEMA_RESOURCE_ROOT + name;
@@ -488,6 +490,22 @@ class CapabilityMirrorSchemaPackagingTest {
                 .READ_ONLY_SHADOW_JOB_SCHEMA_RESOURCE)
                 .endsWith(
                         "read-only-shadow-job-v1.schema.json");
+        assertThat(CapabilityMirrorProtocol
+                .READ_ONLY_SHADOW_JOB_LIFECYCLE_EVENT_V1)
+                .isEqualTo(
+                        "resourceGateway.readOnlyShadowJobLifecycleEvent.v1");
+        assertThat(CapabilityMirrorProtocol
+                .READ_ONLY_SHADOW_JOB_LIFECYCLE_EVENT_SCHEMA_RESOURCE)
+                .endsWith(
+                        "read-only-shadow-job-lifecycle-event-v1.schema.json");
+        assertThat(CapabilityMirrorProtocol
+                .READ_ONLY_SHADOW_JOB_LIFECYCLE_PAGE_V1)
+                .isEqualTo(
+                        "resourceGateway.readOnlyShadowJobLifecyclePage.v1");
+        assertThat(CapabilityMirrorProtocol
+                .READ_ONLY_SHADOW_JOB_LIFECYCLE_PAGE_SCHEMA_RESOURCE)
+                .endsWith(
+                        "read-only-shadow-job-lifecycle-page-v1.schema.json");
         assertThat(getClass().getResource(
                 CapabilityMirrorProtocol
                         .READ_ONLY_SHADOW_COMPARISON_V2_SCHEMA_RESOURCE))
@@ -499,6 +517,14 @@ class CapabilityMirrorSchemaPackagingTest {
         assertThat(getClass().getResource(
                 CapabilityMirrorProtocol
                         .READ_ONLY_SHADOW_JOB_SCHEMA_RESOURCE))
+                .isNotNull();
+        assertThat(getClass().getResource(
+                CapabilityMirrorProtocol
+                        .READ_ONLY_SHADOW_JOB_LIFECYCLE_EVENT_SCHEMA_RESOURCE))
+                .isNotNull();
+        assertThat(getClass().getResource(
+                CapabilityMirrorProtocol
+                        .READ_ONLY_SHADOW_JOB_LIFECYCLE_PAGE_SCHEMA_RESOURCE))
                 .isNotNull();
         assertThat(CapabilityMirrorProtocol.fixtureMirrorClusterBindingsFixture()
                 .path("schemaVersion").asText())

@@ -1,6 +1,7 @@
 package com.leanowtech.bloge.gateway.integration.mirror;
 
 import java.time.Instant;
+import java.util.List;
 import java.util.Objects;
 import java.util.Optional;
 import java.util.regex.Pattern;
@@ -189,6 +190,21 @@ public interface ReadOnlyShadowJobRepository {
     Optional<ReadOnlyShadowComparison> findComparison(
             CapabilitySnapshot.Scope scope,
             String jobId);
+
+    /**
+     * Reads a bounded append-ordered lifecycle suffix inside one exact enterprise scope.
+     *
+     * @param scope complete enterprise scope
+     * @param jobId deterministic durable job identity
+     * @param afterSequence exclusive global sequence cursor, or zero for the beginning
+     * @param limit bounded maximum event count
+     * @return oldest-to-newest payload-free committed facts
+     */
+    List<ReadOnlyShadowJobLifecycleEvent> lifecycle(
+            CapabilitySnapshot.Scope scope,
+            String jobId,
+            long afterSequence,
+            int limit);
 
     /** Closed payload-free persistence rejection vocabulary. */
     enum Reason {

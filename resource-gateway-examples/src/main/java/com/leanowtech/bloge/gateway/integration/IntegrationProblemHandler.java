@@ -19,7 +19,9 @@ import org.springframework.web.bind.annotation.RestControllerAdvice;
         MirrorDeploymentIsolationAuthorityPublicationController.class,
         MirrorDeploymentIsolationAttestationController.class,
         CapabilityObservationController.class,
-        CapabilityCorpusGovernanceController.class
+        CapabilityCorpusGovernanceController.class,
+        DomainFidelityController.class,
+        ReadOnlyShadowJobController.class
 })
 public class IntegrationProblemHandler {
 

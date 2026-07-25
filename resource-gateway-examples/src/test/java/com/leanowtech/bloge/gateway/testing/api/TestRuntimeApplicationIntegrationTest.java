@@ -10,6 +10,8 @@ import com.leanowtech.bloge.gateway.integration.MirrorRunIntegrationController;
 import com.leanowtech.bloge.gateway.integration.MirrorRuntimeAvailability;
 import com.leanowtech.bloge.gateway.integration.DomainFidelityController;
 import com.leanowtech.bloge.gateway.integration.DomainFidelityRuntimeAvailability;
+import com.leanowtech.bloge.gateway.integration.ReadOnlyShadowJobController;
+import com.leanowtech.bloge.gateway.integration.ReadOnlyShadowRuntimeAvailability;
 import com.leanowtech.bloge.gateway.integration.MirrorDeploymentIsolationAuthorityPublicationController;
 import com.leanowtech.bloge.gateway.integration.CapabilityObservationController;
 import com.leanowtech.bloge.gateway.integration.CapabilityCorpusGovernanceController;
@@ -22,6 +24,8 @@ import com.leanowtech.bloge.gateway.integration.mirror.ReadOnlyShadowDataPlane;
 import com.leanowtech.bloge.gateway.integration.mirror.ReadOnlyShadowDomainFidelitySource;
 import com.leanowtech.bloge.gateway.integration.mirror.ReadOnlyShadowJobPolicy;
 import com.leanowtech.bloge.gateway.integration.mirror.ReadOnlyShadowJobRepository;
+import com.leanowtech.bloge.gateway.integration.mirror.ReadOnlyShadowJobScheduler;
+import com.leanowtech.bloge.gateway.integration.mirror.ReadOnlyShadowJobService;
 import com.leanowtech.bloge.gateway.integration.mirror.ReadOnlyShadowJobWorker;
 import com.leanowtech.bloge.gateway.integration.mirror.ScenarioRehearsalDomainFidelitySource;
 import com.leanowtech.bloge.gateway.integration.mirror.CapabilityObservationRepository;
@@ -80,7 +84,7 @@ import static org.assertj.core.api.Assertions.assertThat;
                 "gateway.integration.identity.region=region-a",
                 "gateway.integration.identity.groups=resource-gateway-test-runtime-operators",
                 "gateway.integration.identity.clearance=RESTRICTED",
-                "gateway.integration.identity.allowed-purposes=TEST_EXECUTION,TEST_FIXTURE_READ,TEST_FIXTURE_WRITE,TEST_REPLAY,TEST_SUITE_READ,TEST_SUITE_WRITE,TEST_RUNTIME_MAINTENANCE,MIRROR_REHEARSAL",
+                "gateway.integration.identity.allowed-purposes=TEST_EXECUTION,TEST_FIXTURE_READ,TEST_FIXTURE_WRITE,TEST_REPLAY,TEST_SUITE_READ,TEST_SUITE_WRITE,TEST_RUNTIME_MAINTENANCE,MIRROR_REHEARSAL,MIRROR_SHADOW,GOVERNANCE_EVIDENCE_INGESTION",
                 "gateway.testing.durable.worker-quarantines.claim-token-protection.active-key-id=integration-test-v1",
                 "gateway.testing.durable.worker-quarantines.claim-token-protection.key-ring=integration-test-v1=AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8=",
                 "gateway.testing.durable.worker-quarantines.request-key-protection.active-key-id=integration-request-index-v1",
@@ -124,6 +128,8 @@ class TestRuntimeApplicationIntegrationTest {
                 CapabilityCorpusClusterController.class)).hasSize(1);
         assertThat(context.getBeansOfType(
                 DomainFidelityController.class)).hasSize(1);
+        assertThat(context.getBeansOfType(
+                ReadOnlyShadowJobController.class)).hasSize(1);
         assertThat(context.getBeansOfType(MirrorPlanIntegrationService.class)).hasSize(1);
         assertThat(context.getBeansOfType(MirrorRunIntegrationService.class)).hasSize(1);
         assertThat(context.getBeansOfType(
@@ -160,6 +166,9 @@ class TestRuntimeApplicationIntegrationTest {
                 ReadOnlyShadowJobPolicy.class))
                 .hasSize(1);
         assertThat(context.getBeansOfType(
+                ReadOnlyShadowJobService.class))
+                .hasSize(1);
+        assertThat(context.getBeansOfType(
                 ReadOnlyShadowDataPlane.class))
                 .hasSize(1);
         assertThat(context.getBeansOfType(
@@ -167,6 +176,18 @@ class TestRuntimeApplicationIntegrationTest {
                 .singleElement()
                 .satisfies(worker ->
                         assertThat(worker.ready()).isFalse());
+        assertThat(context.getBeansOfType(
+                ReadOnlyShadowJobScheduler.class)).isEmpty();
+        assertThat(context.getBeansOfType(
+                ReadOnlyShadowRuntimeAvailability.class).values())
+                .singleElement()
+                .satisfies(availability -> {
+                    assertThat(availability.jobApi()).isTrue();
+                    assertThat(availability.lifecycleAudit()).isTrue();
+                    assertThat(availability.workerReady()).isFalse();
+                    assertThat(availability.schedulerReady()).isFalse();
+                    assertThat(availability.servingReady()).isFalse();
+                });
         assertThat(context.getBeansOfType(
                 DomainFidelityRuntimeAvailability.class).values())
                 .singleElement()
@@ -299,17 +320,42 @@ class TestRuntimeApplicationIntegrationTest {
                         "mirrorDomainFidelityShadowAdapterReady", true)
                 .containsEntry(
                         "mirrorDomainFidelityOutcomeAdapterReady", false);
+        assertThat(capabilities.getBody().payload().features())
+                .containsEntry(
+                        "mirrorReadOnlyShadowJobApi", true)
+                .containsEntry(
+                        "mirrorReadOnlyShadowLifecycleAudit", true)
+                .containsEntry(
+                        "mirrorReadOnlyShadowWorkerReady", false)
+                .containsEntry(
+                        "mirrorReadOnlyShadowScheduling", false)
+                .containsEntry(
+                        "mirrorReadOnlyShadowServingReady", false);
         assertThat(capabilities.getBody().payload()
                 .supportedObjects())
                 .containsKeys(
                         "domainFidelityInventoryRegistrationRequest",
                         "domainFidelityInventory",
-                        "domainFidelityProfile");
+                        "domainFidelityProfile",
+                        "readOnlyShadowJobRequest",
+                        "readOnlyShadowJob",
+                        "readOnlyShadowJobLifecycleEvent",
+                        "readOnlyShadowJobLifecyclePage");
         assertThat(capabilities.getBody().payload().endpoints())
                 .anyMatch(endpoint ->
                         endpoint.method().equals("POST")
                                 && endpoint.path().equals(
                                 "/api/mirror/domain-fidelity/inventories"));
+        assertThat(capabilities.getBody().payload().endpoints())
+                .anyMatch(endpoint ->
+                        endpoint.method().equals("POST")
+                                && endpoint.path().equals(
+                                "/api/mirror/shadow-jobs"));
+        assertThat(capabilities.getBody().payload().endpoints())
+                .anyMatch(endpoint ->
+                        endpoint.method().equals("GET")
+                                && endpoint.path().equals(
+                                "/api/mirror/shadow-jobs/{jobId}/lifecycle"));
         assertThat(capabilities.getBody().payload().endpoints()).anyMatch(endpoint ->
                 endpoint.method().equals("POST")
                         && endpoint.path().equals("/api/mirror/plans"));

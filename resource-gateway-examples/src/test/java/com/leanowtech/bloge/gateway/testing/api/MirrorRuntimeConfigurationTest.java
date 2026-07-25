@@ -23,6 +23,8 @@ import com.leanowtech.bloge.gateway.integration.mirror.ReadOnlyShadowDataPlane;
 import com.leanowtech.bloge.gateway.integration.mirror.ReadOnlyShadowDomainFidelitySource;
 import com.leanowtech.bloge.gateway.integration.mirror.ReadOnlyShadowJobPolicy;
 import com.leanowtech.bloge.gateway.integration.mirror.ReadOnlyShadowJobRepository;
+import com.leanowtech.bloge.gateway.integration.mirror.ReadOnlyShadowJobScheduler;
+import com.leanowtech.bloge.gateway.integration.mirror.ReadOnlyShadowJobService;
 import com.leanowtech.bloge.gateway.integration.mirror.ReadOnlyShadowJobWorker;
 import com.leanowtech.bloge.gateway.integration.mirror.MirrorSessionCheckpointIntegrityService;
 import com.leanowtech.bloge.gateway.integration.mirror.ScenarioArtifactRepository;
@@ -69,6 +71,7 @@ import com.leanowtech.bloge.gateway.integration.mirror.CapabilityRetryPolicyProv
 import com.leanowtech.bloge.gateway.integration.mirror.CapabilityObservationReviewRepository;
 import com.leanowtech.bloge.gateway.integration.MirrorRuntimeAvailability;
 import com.leanowtech.bloge.gateway.integration.DomainFidelityRuntimeAvailability;
+import com.leanowtech.bloge.gateway.integration.ReadOnlyShadowRuntimeAvailability;
 import com.leanowtech.bloge.gateway.resource.ResourceDescriptor;
 import com.leanowtech.bloge.gateway.resource.ResourceRegistry;
 import com.leanowtech.bloge.gateway.testing.planning.MirrorPlanCompiler;
@@ -199,6 +202,45 @@ class MirrorRuntimeConfigurationTest {
             assertThat(production.getBeansOfType(
                     ScenarioRehearsalBatchFinalizationSloMonitor
                             .class)).isEmpty();
+        }
+    }
+
+    @Test
+    void shadowSchedulerRequiresExplicitBoundedNonProductionConfiguration() {
+        Map<String, Object> properties = Map.of(
+                "gateway.testing.mirror.enabled", true,
+                "gateway.testing.mirror.shadow-job.scheduler.enabled", true,
+                "gateway.testing.mirror.shadow-job.scheduler.instance-id", "replica-a",
+                "gateway.testing.mirror.shadow-job.scheduler.region", "sg",
+                "gateway.testing.mirror.shadow-job.scheduler.environment-id", "shadow-staging",
+                "gateway.testing.mirror.shadow-job.scheduler.maximum-pollers", 2,
+                "gateway.testing.mirror.shadow-job.scheduler.initial-delay-millis", 300_000,
+                "gateway.testing.mirror.shadow-job.scheduler.poll-interval-millis", 1_000,
+                "gateway.testing.mirror.shadow-job.scheduler.drain-timeout-millis", 1_000);
+
+        try (var staging = context(properties, "staging");
+             var production = context(
+                     properties, "production", "staging")) {
+            assertThat(staging.getBeansOfType(
+                    ReadOnlyShadowJobScheduler.class).values())
+                    .singleElement()
+                    .satisfies(scheduler -> {
+                        assertThat(scheduler.ready()).isTrue();
+                        assertThat(scheduler.region()).isEqualTo("sg");
+                        assertThat(scheduler.environmentId())
+                                .isEqualTo("shadow-staging");
+                    });
+            assertThat(staging.getBean(
+                    ReadOnlyShadowRuntimeAvailability.class))
+                    .satisfies(availability -> {
+                        assertThat(availability.jobApi()).isTrue();
+                        assertThat(availability.lifecycleAudit()).isTrue();
+                        assertThat(availability.workerReady()).isFalse();
+                        assertThat(availability.schedulerReady()).isTrue();
+                        assertThat(availability.servingReady()).isFalse();
+                    });
+            assertThat(production.getBeansOfType(
+                    ReadOnlyShadowJobScheduler.class)).isEmpty();
         }
     }
 
@@ -384,12 +426,26 @@ class MirrorRuntimeConfigurationTest {
         assertThat(context.getBeansOfType(
                 ReadOnlyShadowJobPolicy.class)).hasSize(1);
         assertThat(context.getBeansOfType(
+                ReadOnlyShadowJobService.class)).hasSize(1);
+        assertThat(context.getBeansOfType(
                 ReadOnlyShadowDataPlane.class)).hasSize(1);
         assertThat(context.getBeansOfType(
                 ReadOnlyShadowJobWorker.class).values())
                 .singleElement()
                 .satisfies(worker ->
                         assertThat(worker.ready()).isFalse());
+        assertThat(context.getBeansOfType(
+                ReadOnlyShadowJobScheduler.class)).isEmpty();
+        assertThat(context.getBeansOfType(
+                ReadOnlyShadowRuntimeAvailability.class).values())
+                .singleElement()
+                .satisfies(availability -> {
+                    assertThat(availability.jobApi()).isTrue();
+                    assertThat(availability.lifecycleAudit()).isTrue();
+                    assertThat(availability.workerReady()).isFalse();
+                    assertThat(availability.schedulerReady()).isFalse();
+                    assertThat(availability.servingReady()).isFalse();
+                });
         assertThat(context.getBeansOfType(
                 DomainFidelityRuntimeAvailability.class).values())
                 .singleElement()
@@ -433,6 +489,9 @@ class MirrorRuntimeConfigurationTest {
                 .isTrue();
         assertThat(AopUtils.isCglibProxy(
                 context.getBean(DomainFidelityService.class)))
+                .isTrue();
+        assertThat(AopUtils.isCglibProxy(
+                context.getBean(ReadOnlyShadowJobService.class)))
                 .isTrue();
         assertThat(context.getBean(MirrorRunService.class).engineConfiguration())
                 .satisfies(configuration -> {
@@ -536,9 +595,15 @@ class MirrorRuntimeConfigurationTest {
         assertThat(context.getBeansOfType(
                 ReadOnlyShadowJobPolicy.class)).isEmpty();
         assertThat(context.getBeansOfType(
+                ReadOnlyShadowJobService.class)).isEmpty();
+        assertThat(context.getBeansOfType(
                 ReadOnlyShadowDataPlane.class)).isEmpty();
         assertThat(context.getBeansOfType(
                 ReadOnlyShadowJobWorker.class)).isEmpty();
+        assertThat(context.getBeansOfType(
+                ReadOnlyShadowJobScheduler.class)).isEmpty();
+        assertThat(context.getBeansOfType(
+                ReadOnlyShadowRuntimeAvailability.class)).isEmpty();
         assertThat(context.getBeansOfType(
                 DomainFidelityRuntimeAvailability.class)).isEmpty();
         assertThat(context.getBeansOfType(

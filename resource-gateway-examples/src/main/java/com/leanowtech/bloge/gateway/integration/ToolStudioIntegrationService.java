@@ -90,6 +90,13 @@ public class ToolStudioIntegrationService {
                     () -> false,
                     new DomainFidelitySourceAvailability(
                             List.of()));
+    private ReadOnlyShadowRuntimeAvailability
+            readOnlyShadowRuntimeAvailability =
+            new ReadOnlyShadowRuntimeAvailability(
+                    false,
+                    false,
+                    () -> false,
+                    () -> false);
     private ScenarioRehearsalBatchScheduler
             scenarioRehearsalBatchScheduler;
     private ScenarioRehearsalBatchFinalizationScheduler
@@ -199,6 +206,20 @@ public class ToolStudioIntegrationService {
                         () -> false,
                         new DomainFidelitySourceAvailability(
                                 List.of()))
+                        : availability;
+    }
+
+    /** Receives the marker only when protected durable Shadow routes are assembled. */
+    @Autowired(required = false)
+    void configureReadOnlyShadowRuntime(
+            ReadOnlyShadowRuntimeAvailability availability) {
+        this.readOnlyShadowRuntimeAvailability =
+                availability == null
+                        ? new ReadOnlyShadowRuntimeAvailability(
+                        false,
+                        false,
+                        () -> false,
+                        () -> false)
                         : availability;
     }
 
@@ -602,6 +623,26 @@ public class ToolStudioIntegrationService {
                 "mirrorDomainFidelityOutcomeAdapterReady",
                 domainFidelityRuntimeAvailability
                         .outcomeAdapterReady());
+        features.put(
+                "mirrorReadOnlyShadowJobApi",
+                readOnlyShadowRuntimeAvailability
+                        .jobApi());
+        features.put(
+                "mirrorReadOnlyShadowLifecycleAudit",
+                readOnlyShadowRuntimeAvailability
+                        .lifecycleAudit());
+        features.put(
+                "mirrorReadOnlyShadowWorkerReady",
+                readOnlyShadowRuntimeAvailability
+                        .workerReady());
+        features.put(
+                "mirrorReadOnlyShadowScheduling",
+                readOnlyShadowRuntimeAvailability
+                        .schedulerReady());
+        features.put(
+                "mirrorReadOnlyShadowServingReady",
+                readOnlyShadowRuntimeAvailability
+                        .servingReady());
         features.put("mirrorStatefulSessionApi", mirrorStatefulSessionApi);
         features.put("mirrorStatefulStateStoreReady", mirrorStatefulStoreReady);
         features.put("mirrorStateCheckpointProtocol",
@@ -989,6 +1030,9 @@ public class ToolStudioIntegrationService {
                             com.leanowtech.bloge.gateway.integration.mirror
                                     .DomainFidelityProfile
                                     .SCHEMA_VERSION));
+        }
+        if (domainFidelityRuntimeAvailability.profileReadApi()
+                || readOnlyShadowRuntimeAvailability.jobApi()) {
             supportedObjects.put(
                     "readOnlyShadowComparison",
                     List.of(
@@ -998,6 +1042,8 @@ public class ToolStudioIntegrationService {
                             com.leanowtech.bloge.gateway.integration.mirror
                                     .ReadOnlyShadowComparison
                                     .SCHEMA_VERSION));
+        }
+        if (readOnlyShadowRuntimeAvailability.jobApi()) {
             supportedObjects.put(
                     "readOnlyShadowJobRequest",
                     List.of(
@@ -1009,6 +1055,18 @@ public class ToolStudioIntegrationService {
                     List.of(
                             com.leanowtech.bloge.gateway.integration.mirror
                                     .ReadOnlyShadowJob
+                                    .SCHEMA_VERSION));
+            supportedObjects.put(
+                    "readOnlyShadowJobLifecycleEvent",
+                    List.of(
+                            com.leanowtech.bloge.gateway.integration.mirror
+                                    .ReadOnlyShadowJobLifecycleEvent
+                                    .SCHEMA_VERSION));
+            supportedObjects.put(
+                    "readOnlyShadowJobLifecyclePage",
+                    List.of(
+                            com.leanowtech.bloge.gateway.integration.mirror
+                                    .ReadOnlyShadowJobLifecyclePage
                                     .SCHEMA_VERSION));
         }
         if (mirrorPlanReady) {
@@ -1363,6 +1421,23 @@ public class ToolStudioIntegrationService {
             endpoints.add(new IntegrationCapabilities.Endpoint(
                     "GET",
                     "/api/mirror/domain-fidelity/domains/{domainId}/profiles/latest"));
+        }
+        if (readOnlyShadowRuntimeAvailability.jobApi()) {
+            endpoints.add(new IntegrationCapabilities.Endpoint(
+                    "POST",
+                    "/api/mirror/shadow-jobs"));
+            endpoints.add(new IntegrationCapabilities.Endpoint(
+                    "GET",
+                    "/api/mirror/shadow-jobs/{jobId}"));
+            endpoints.add(new IntegrationCapabilities.Endpoint(
+                    "GET",
+                    "/api/mirror/shadow-jobs/{jobId}/request"));
+            endpoints.add(new IntegrationCapabilities.Endpoint(
+                    "GET",
+                    "/api/mirror/shadow-jobs/{jobId}/comparison"));
+            endpoints.add(new IntegrationCapabilities.Endpoint(
+                    "GET",
+                    "/api/mirror/shadow-jobs/{jobId}/lifecycle"));
         }
         if (mirrorPlanReady) {
             endpoints.add(new IntegrationCapabilities.Endpoint("POST", "/api/mirror/plans"));

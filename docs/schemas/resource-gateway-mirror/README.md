@@ -106,6 +106,15 @@ offline artifact verification live in the independent `resource-gateway-test-kit
 | `scenario-rehearsal-remediation-receipt-v1.schema.json` | `ScenarioRehearsalRemediationReceipt` | Immutable receipt linking one predecessor batch to the distinct successor rehearsal created from the frozen plan |
 | `scenario-rehearsal-remediation-lineage-v1.schema.json` | `ScenarioRehearsalRemediationLineage` | Content-addressed complete decision lineage reconstructed from the frozen plan, append-only approval chain, derived state, and optional successor receipt |
 | `scenario-rehearsal-remediation-comparison-v1.schema.json` | `ScenarioRehearsalRemediationComparison` | Deterministic predecessor/successor comparison reconstructed from two independently verified root-signed workbooks, with exact root and entry blocker set differences rather than a synthetic score |
+| `domain-fidelity-inventory-registration-request-v1.schema.json` | `DomainFidelityInventoryRegistrationRequest` | Strict Owner command for one immutable full-scope coverage-denominator revision |
+| `domain-fidelity-inventory-v1.schema.json` | `DomainFidelityInventory` | Owner-approved content-addressed domain coverage denominator with exact Scenario/capability units |
+| `domain-fidelity-profile-v1.schema.json` | `DomainFidelityProfile` | Signed payload-free seven-dimension fidelity vector with complete denominator, confidence, source, and abstention debt |
+| `read-only-shadow-comparison-v1.schema.json` | `ReadOnlyShadowComparison` | Legacy signed payload-free single-request typed baseline/candidate comparison |
+| `read-only-shadow-comparison-v2.schema.json` | `ReadOnlyShadowComparison` | Current comparison adding exact normalization policy and source-resolution attestation closure |
+| `read-only-shadow-job-request-v1.schema.json` | `ReadOnlyShadowJobRequest` | Immutable payload-free Shadow admission command with exact grant ordinal, authority coordinates, and deadline |
+| `read-only-shadow-job-v1.schema.json` | `ReadOnlyShadowJob` | Integrity-addressed public durable queue projection without payload or raw lease owner |
+| `read-only-shadow-job-lifecycle-event-v1.schema.json` | `ReadOnlyShadowJobLifecycleEvent` | Append-only payload-free committed transition fact with database time and fencing coordinates |
+| `read-only-shadow-job-lifecycle-page-v1.schema.json` | `ReadOnlyShadowJobLifecyclePage` | Bounded monotonic cursor page of exact-job lifecycle facts |
 | `scenario-pack-stage7-v1.fixture.schema.json` | compatibility fixture envelope | One fixed payload-free pack/case/assertion closure and expected independent projection |
 | `mirror-state-run-evidence-v1.schema.json` | `MirrorStateRunEvidence` | Exact Session head, model, stateful binding, and payload-free live/absent/tombstone access closure |
 | `mirror-state-run-evidence-v2.schema.json` | `MirrorStateTransitionRunEvidence` | Initial/final Session heads, exact read revisions, and payload-free write receipt/event transition closure |

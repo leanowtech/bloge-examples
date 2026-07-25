@@ -32,7 +32,7 @@ integration something the business flow can see, reason about, test, and change.
 | Governed capability observations | Signed payload-free invocation facts, operator-owned admission policy, external vault/proof verification, durable admitted-or-quarantined decisions, full-scope idempotency, and independent offline verification |
 | Governed capability corpora | Immutable quarantine review, exact admitted-source candidates, metadata risk gates, independent owner-reviewed publication lineage, second source-authority verification, and honest resolver readiness |
 | Governed scenario rehearsal | Append-only Scenario assets, exact compilation, durable per-case execution, independently signed aggregate and batch evidence, multi-hold retention/deletion proof at both levels, deterministic ANEKE workbook seeds, separate opt-in regional DAG/KMS schedulers, and a server-authorized two-person remediation transaction kernel |
-| Reconstructable domain fidelity | Owner-approved content-addressed coverage inventory, append-only full-scope persistence, managed signed payload-free seven-dimension profiles, protected register/read APIs, independently re-verified Scenario projection, v2 signed read-only Shadow comparison with exact normalization/source-resolution closure, a full-scope durable sample-ordinal queue and owner/epoch fenced worker kernel, typed dynamic readiness, fail-closed freshness/abstention/low-sample semantics, Wilson 95% confidence, exact source lineage, and independent Test Kit verification without a composite score |
+| Reconstructable domain fidelity | Owner-approved content-addressed coverage inventory, append-only full-scope persistence, managed signed payload-free seven-dimension profiles, protected register/read APIs, independently re-verified Scenario projection, v2 signed read-only Shadow comparison with exact normalization/source-resolution closure, a protected full-scope durable sample-ordinal queue, append-only lifecycle API, optional bounded scheduler, owner/epoch fenced worker kernel, typed dynamic readiness, fail-closed freshness/abstention/low-sample semantics, Wilson 95% confidence, exact source lineage, and independent Test Kit verification without a composite score |
 | Stateful mirror sessions | Versioned entity/write/session/checkpoint/write-attempt protocols, atomic multi-entity mutations, exact replay, AES-GCM isolated persistence, lease/fence/CAS concurrency, durable crash-window reconciliation, TTL/destroy, payload-free signed state evidence, signed same-data-plane restart recovery admission, ANEKE workbook seeds, and independently verified clients |
 | Governed replay payloads | Payload values detached from immutable evidence, classification ABAC, selective retention, legal hold, bounded expiry, and signed deletion proof |
 | Workbook and gate evidence loop | Deterministic sanitized workbook seeds, exact suite/run evidence refs, versioned gate decision basis, stale detection, and transactional gate events |
@@ -54,6 +54,10 @@ Add `--stateful` to assemble the encrypted stateful-mirror Session API and its
 dedicated local data plane. Add `--scenario-batch` to start bounded autonomous
 DAG workers plus isolated evidence-finalization lanes for one exact
 `test`/`staging` regional queue partition.
+Add `--shadow-jobs` to assemble the durable read-only Shadow submit/read/lifecycle
+API. `--shadow-scheduler` also starts bounded pollers, but the demo deliberately
+keeps the trusted baseline/candidate data plane unavailable, so worker and
+end-to-end serving readiness remain false until an operator-owned connector is installed.
 
 | Open | Best first move |
 | --- | --- |
@@ -85,6 +89,11 @@ DAG workers plus isolated evidence-finalization lanes for one exact
 | `POST http://localhost:8080/api/mirror/domain-fidelity/inventories` | Register one immutable owner-approved coverage denominator revision (`X-Purpose: MIRROR_FIDELITY_GOVERNANCE`; trusted human owner identity required) |
 | `GET http://localhost:8080/api/mirror/domain-fidelity/inventories/{inventoryId}/latest` | Read and revalidate the current full-scope denominator (`X-Purpose: GOVERNANCE_EVIDENCE_INGESTION` or `MIRROR_FIDELITY_GOVERNANCE`) |
 | `GET http://localhost:8080/api/mirror/domain-fidelity/domains/{domainId}/profiles/latest` | Read and revalidate the newest managed-signed profile; profile projection remains unavailable until verified source adapters are assembled |
+| `POST http://localhost:8080/api/mirror/shadow-jobs` | Admit one immutable, payload-free read-only Shadow command after starting with `--shadow-jobs` (`X-Purpose: MIRROR_SHADOW`) |
+| `GET http://localhost:8080/api/mirror/shadow-jobs/{jobId}` | Read the exact-scope, integrity-verified durable projection without worker owner or payload |
+| `GET http://localhost:8080/api/mirror/shadow-jobs/{jobId}/request` | Read the immutable command needed for independent job verification |
+| `GET http://localhost:8080/api/mirror/shadow-jobs/{jobId}/comparison` | Read the signed v2 comparison after terminal success |
+| `GET http://localhost:8080/api/mirror/shadow-jobs/{jobId}/lifecycle?afterSequence=0&limit=100` | Read append-ordered, payload-free transition facts with a monotonic cursor |
 | `GET http://localhost:8080/api/integration/capability-snapshots/{capabilityId}?revision=0` | Read the latest authorized capability snapshot; use a positive revision for an exact read |
 | `PUT http://localhost:8080/api/integration/capability-snapshots/{capabilityId}/revisions/{revision}` | Append one exact sealed capability snapshot revision |
 | `POST http://localhost:8080/api/integration/capability-snapshots/{capabilityId}/lifecycle-transitions` | Append an optimistically fenced lifecycle-only revision |
@@ -540,6 +549,65 @@ fixture-bound full attempt sequence can produce retryable runtime behavior. The 
 model, fixture bindings, provider contracts, request
 examples, errors, startup commands and remaining production gates are in the
 [capability corpus governance guide](../docs/resource-gateway-capability-corpus-governance.md).
+
+### Durable read-only Shadow control plane
+
+Start only the protected queue and lifecycle surface:
+
+```bash
+./scripts/start-visual-canvas-demo.sh --shadow-jobs
+```
+
+To demonstrate autonomous bounded polling as a separate readiness fact:
+
+```bash
+./scripts/start-visual-canvas-demo.sh --shadow-scheduler
+```
+
+The second command sets an exact scheduler region/environment equal to the demo
+identity and waits for `mirrorReadOnlyShadowJobApi=true`,
+`mirrorReadOnlyShadowLifecycleAudit=true`, and
+`mirrorReadOnlyShadowScheduling=true`. It does not wait for or claim
+`mirrorReadOnlyShadowWorkerReady` or `mirrorReadOnlyShadowServingReady`: the
+default `ReadOnlyShadowDataPlane` is intentionally unavailable and therefore
+does not consume an attempt or touch an external system.
+
+Submit a request that validates against
+[`read-only-shadow-job-request-v1.schema.json`](../docs/schemas/resource-gateway-mirror/read-only-shadow-job-request-v1.schema.json):
+
+```bash
+curl -i -X POST http://localhost:8080/api/mirror/shadow-jobs \
+  -H "Authorization: Bearer $SHADOW_TOKEN" \
+  -H "X-Purpose: MIRROR_SHADOW" \
+  -H "Content-Type: application/json" \
+  --data @read-only-shadow-job.json
+```
+
+The authenticated identity, not JSON, owns tenant, organization, project,
+environment, and region. The submitted `scope` must match those claims exactly.
+`requestId` is idempotent for identical content; a different request using the
+same id or the same sampling-grant fingerprint plus sample ordinal is rejected.
+The response returns `202`, a deterministic `jobId`, and `Location`.
+
+Read the verification closure and lifecycle:
+
+```bash
+curl http://localhost:8080/api/mirror/shadow-jobs/$JOB_ID \
+  -H "Authorization: Bearer $GOVERNANCE_TOKEN" \
+  -H "X-Purpose: GOVERNANCE_EVIDENCE_INGESTION"
+
+curl "http://localhost:8080/api/mirror/shadow-jobs/$JOB_ID/lifecycle?afterSequence=0&limit=100" \
+  -H "Authorization: Bearer $GOVERNANCE_TOKEN" \
+  -H "X-Purpose: GOVERNANCE_EVIDENCE_INGESTION"
+```
+
+Lifecycle events expose only scope, content addresses, transition/status,
+attempt/epoch, owner fingerprint, bounded failure code, and database time.
+They cannot represent samples, credentials, exceptions, or stack traces.
+`ReadOnlyShadowLifecycleVerifier` independently distinguishes a complete
+admission-to-head proof from a valid truncated page. Protocol, authority, and
+offline-verification details are in the
+[domain fidelity guide](../docs/resource-gateway-domain-fidelity-profile.md).
 
 ### Stateful mirror Session data plane and DAG reads
 

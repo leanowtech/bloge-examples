@@ -49,6 +49,17 @@ gateway:
     mirror:
       # Requires the test or staging profile and is physically excluded whenever production is active.
       enabled: ${RG_MIRROR_RUNTIME_ENABLED:false}
+      shadow-job:
+        scheduler:
+          # Optional bounded pollers; the trusted data-plane SPI still controls worker readiness.
+          enabled: ${RG_MIRROR_SHADOW_JOB_SCHEDULER_ENABLED:false}
+          instance-id: ${RG_MIRROR_SHADOW_JOB_INSTANCE_ID:}
+          region: ${RG_MIRROR_SHADOW_JOB_REGION:}
+          environment-id: ${RG_MIRROR_SHADOW_JOB_ENVIRONMENT:}
+          maximum-pollers: ${RG_MIRROR_SHADOW_JOB_MAXIMUM_POLLERS:2}
+          initial-delay-millis: ${RG_MIRROR_SHADOW_JOB_INITIAL_DELAY_MILLIS:1000}
+          poll-interval-millis: ${RG_MIRROR_SHADOW_JOB_POLL_INTERVAL_MILLIS:1000}
+          drain-timeout-millis: ${RG_MIRROR_SHADOW_JOB_DRAIN_TIMEOUT_MILLIS:30000}
       scenario-batch:
         scheduler:
           # Explicit non-production worker activation; one process serves one regional partition.
@@ -171,7 +182,7 @@ gateway:
       actor-id: ${RG_INTEGRATION_ACTOR_ID:aneke-sync}
       groups: ${RG_INTEGRATION_GROUPS:payload-governance}
       clearance: ${RG_INTEGRATION_CLEARANCE:CONFIDENTIAL}
-      allowed-purposes: ${RG_INTEGRATION_ALLOWED_PURPOSES:GOVERNANCE_EVIDENCE_INGESTION,PAYLOAD_REPLAY,PAYLOAD_RETENTION_ADMIN,LEGAL_HOLD,GOVERNANCE_GATE_FEEDBACK,CHANGE_SYNC,SIDE_EFFECT_RECONCILIATION,CAPABILITY_PROJECTION,CAPABILITY_GOVERNANCE,MIRROR_REHEARSAL,MIRROR_REHEARSAL_FINALIZATION_ADMIN}
+      allowed-purposes: ${RG_INTEGRATION_ALLOWED_PURPOSES:GOVERNANCE_EVIDENCE_INGESTION,PAYLOAD_REPLAY,PAYLOAD_RETENTION_ADMIN,LEGAL_HOLD,GOVERNANCE_GATE_FEEDBACK,CHANGE_SYNC,SIDE_EFFECT_RECONCILIATION,CAPABILITY_PROJECTION,CAPABILITY_GOVERNANCE,MIRROR_REHEARSAL,MIRROR_REHEARSAL_FINALIZATION_ADMIN,MIRROR_SHADOW}
 
 # ── Logging ───────────────────────────────────────────────────────────────
 logging:

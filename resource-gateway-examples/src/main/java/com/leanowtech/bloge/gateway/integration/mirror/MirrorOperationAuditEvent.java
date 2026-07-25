@@ -141,7 +141,15 @@ public record MirrorOperationAuditEvent(
         /** Project verified source facts into one signed Domain Fidelity profile. */
         FIDELITY_PROFILE_PROJECT,
         /** Read one arithmetic- and signature-reverified Domain Fidelity profile. */
-        FIDELITY_PROFILE_READ
+        FIDELITY_PROFILE_READ,
+        /** Durably reserve one read-only Shadow sample and immutable request. */
+        SHADOW_JOB_CREATE,
+        /** Read one integrity-verified durable Shadow job or immutable request. */
+        SHADOW_JOB_READ,
+        /** Read one independently verified signed Shadow comparison. */
+        SHADOW_COMPARISON_READ,
+        /** Read one bounded append-only Shadow lifecycle page. */
+        SHADOW_LIFECYCLE_READ
     }
 
     /** Terminal operation outcomes. */

@@ -98,10 +98,15 @@ Common demo options:
 ./scripts/start-visual-canvas-demo.sh --no-build
 ./scripts/start-visual-canvas-demo.sh --profile staging
 ./scripts/start-visual-canvas-demo.sh --profile production
+./scripts/start-visual-canvas-demo.sh --shadow-jobs
+./scripts/start-visual-canvas-demo.sh --shadow-scheduler
 ```
 
 Startup waits for `GET /api/integration/capabilities`, then prints the canvas,
 showcase, capability probe, correctness-workbook, and gate-feedback entry points.
+`--shadow-jobs` enables the protected durable Shadow queue/lifecycle API;
+`--shadow-scheduler` additionally starts bounded pollers while honestly leaving
+worker/serving readiness false until a trusted data-plane connector is installed.
 Runtime logs and PID files remain under `target/example-logs/` and
 `target/example-pids/`.
 

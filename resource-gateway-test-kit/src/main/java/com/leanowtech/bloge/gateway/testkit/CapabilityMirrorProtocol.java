@@ -400,6 +400,14 @@ public final class CapabilityMirrorProtocol {
     /** Durable payload-free read-only Shadow job projection wire version. */
     public static final String READ_ONLY_SHADOW_JOB_V1 =
             "resourceGateway.readOnlyShadowJob.v1";
+    /** Append-only payload-free read-only Shadow job lifecycle fact wire version. */
+    public static final String
+    READ_ONLY_SHADOW_JOB_LIFECYCLE_EVENT_V1 =
+            "resourceGateway.readOnlyShadowJobLifecycleEvent.v1";
+    /** Bounded cursor page of read-only Shadow job lifecycle facts wire version. */
+    public static final String
+    READ_ONLY_SHADOW_JOB_LIFECYCLE_PAGE_V1 =
+            "resourceGateway.readOnlyShadowJobLifecyclePage.v1";
     /** Fixed Stage 3 refund fixture envelope version. */
     public static final String STATEFUL_REFUND_FIXTURE_V1 =
             "resourceGateway.statefulRefundFixture.v1";
@@ -831,6 +839,16 @@ public final class CapabilityMirrorProtocol {
     READ_ONLY_SHADOW_JOB_SCHEMA_RESOURCE =
             SCHEMA_RESOURCE_ROOT
                     + "read-only-shadow-job-v1.schema.json";
+    /** Packaged append-only read-only Shadow job lifecycle event schema. */
+    public static final String
+    READ_ONLY_SHADOW_JOB_LIFECYCLE_EVENT_SCHEMA_RESOURCE =
+            SCHEMA_RESOURCE_ROOT
+                    + "read-only-shadow-job-lifecycle-event-v1.schema.json";
+    /** Packaged bounded read-only Shadow job lifecycle page schema. */
+    public static final String
+    READ_ONLY_SHADOW_JOB_LIFECYCLE_PAGE_SCHEMA_RESOURCE =
+            SCHEMA_RESOURCE_ROOT
+                    + "read-only-shadow-job-lifecycle-page-v1.schema.json";
     /** Packaged stable bounded Scenario batch item page. */
     public static final String SCENARIO_REHEARSAL_BATCH_ITEM_PAGE_SCHEMA_RESOURCE =
             SCHEMA_RESOURCE_ROOT

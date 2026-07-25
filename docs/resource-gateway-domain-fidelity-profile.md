@@ -31,7 +31,10 @@
   v2 额外冻结 exact normalization policy 与 source-resolution attestation；
 - durable `ReadOnlyShadowJobRequest.v1/ReadOnlyShadowJob.v1`、full-scope sample ordinal
   reservation、数据库时钟 deadline、owner/epoch/expiry lease、bounded retry 和 worker；
-- Test Kit 可独立重算 comparison 以及 job/request/comparison 完整闭包；
+- protected Shadow submit/read/request/comparison/lifecycle API、同事务 operation/lifecycle audit、
+  可选 bounded regional scheduler，以及 API/worker/scheduler/serving 独立 readiness；
+- strict lifecycle event/page Schema，Test Kit 可独立重算 comparison、job/request/comparison
+  闭包与完整 admission-to-head lifecycle；
 - Shadow source adapter：重验 comparison 内容地址/签名、采样授权、kill switch、egress、
   零写证明、同请求双边来源和 exact inventory unit closure；
 - Shadow diff 到 `BEHAVIOR/CONTRACT/EFFECT/STATE_TRANSITION` 的保守映射，允许部分
@@ -44,7 +47,6 @@
 
 - authoritative outcome 到 `Measurement` 的独立来源适配器；
 - request-space sampling proof 与 error-distribution cohort adapter；
-- durable shadow job 的受保护 API、region scheduler 与 lifecycle audit；
 - 真实 baseline/candidate connector、流量采样/限流/熔断、drift 自动降级、
   outcome reconciliation 和工作台。
 
@@ -53,7 +55,8 @@
 abstention debt 的**部分 profile**。Shadow adapter ready 表示已提供的合法 comparison 可以
 独立验真和投影，不表示 Resource Gateway 已具备生产流量复制与 shadow job。请求空间覆盖和业务
 结果校准仍必须分别读取 typed adapter flag、source artifact 与 profile limitations。durable
-queue/worker ready 也只表示控制面状态机可用；默认数据面仍 fail-closed，不代表生产流量复制已启用。
+job API/lifecycle/scheduler ready 也只表示控制面状态机可用；默认 worker/data plane 仍
+fail-closed，不代表生产流量复制已启用。
 
 ## 2. 为什么需要两个对象
 
@@ -311,10 +314,12 @@ typed outcome 不能由 producer 随意填写：
 单请求 comparison 不得证明 `OUTCOME`、`REQUEST_SPACE` 或 `ERROR_DISTRIBUTION`。两边
 任一 exploratory、不完整或任一维度 indeterminate 时，投影内核会把来源降为 abstention。
 
-当前 `projectShadow` 是内部 Java 边界，没有 HTTP ingestion route。durable queue/worker kernel
-已经能够持久化 request/job、唯一占用 grant ordinal、按数据库时钟 claim/retry/expire、以
-owner/epoch/expiry fence 发布 signed comparison；但还没有受保护 job API、scheduler 或真实
-baseline/candidate data-plane connector。因此它仍不表示“Resource Gateway 已能复制生产流量”。
+当前 `projectShadow` 是内部 Java 投影边界，不接受调用方直接上传 comparison。durable
+queue/worker 已具备受保护的 job submit/read/request/comparison/lifecycle API、同事务 operation
+audit、append-only lifecycle audit、数据库时钟 claim/retry/expire、owner/epoch/expiry fence 和
+显式开启的 bounded scheduler。默认 `ReadOnlyShadowDataPlane.unavailable()` 仍使 worker 与
+end-to-end serving readiness 为 false；因此 control plane 可用绝不表示“Resource Gateway 已能
+复制生产流量”。
 
 ### 5.1 受保护 API 用法
 
@@ -328,6 +333,8 @@ scope、actor、owner、approval time、provenance、lifecycle 和 fingerprint �
 | 读取 inventory | `MIRROR_FIDELITY_GOVERNANCE` 或 `GOVERNANCE_EVIDENCE_INGESTION` | 完整企业 scope |
 | 读取 signed profile | `MIRROR_FIDELITY_GOVERNANCE` 或 `GOVERNANCE_EVIDENCE_INGESTION` | 完整企业 scope |
 | 投影新 profile | `MIRROR_FIDELITY_PROJECTION` | 仅内部 source adapter；无 HTTP endpoint |
+| 提交 Shadow job | `MIRROR_SHADOW` | 完整企业 scope 与 command scope 精确一致 |
+| 读取 Shadow job/request/comparison/lifecycle | `MIRROR_SHADOW` 或 `GOVERNANCE_EVIDENCE_INGESTION` | 完整企业 scope |
 
 注册第一个 revision：
 
@@ -366,7 +373,72 @@ curl http://localhost:8080/api/mirror/domain-fidelity/domains/refund-domain/prof
 OIDC/mTLS adapter 或显式配置的测试身份 resolver 提供 human principal、owner group 和治理 purpose；
 仅修改 `X-Actor-Type`、`X-Groups` 或 scope header 不会改变受信 claims。
 
-### 5.2 Capability probe
+### 5.2 Shadow job 与生命周期 API
+
+仅演示 control plane：
+
+```bash
+./scripts/start-visual-canvas-demo.sh --shadow-jobs
+```
+
+同时启用 bounded regional poller：
+
+```bash
+./scripts/start-visual-canvas-demo.sh --shadow-scheduler
+```
+
+`--shadow-scheduler` 会把 scheduler partition 与受信 demo identity 的 region/environment
+对齐，并拒绝 `prod`、`production`、`live`。企业可以使用 `qa-sg`、`shadow-staging` 等自定义
+非生产环境名；真正的隔离根是 `@Profile("!production & (test | staging)")` 和显式
+`RG_MIRROR_RUNTIME_ENABLED=true`，环境字符串检查只是纵深防御。production 与
+production+test 混合 profile 中，controller、service、repository、worker、scheduler 全部物理缺席。
+
+提交 body 必须匹配
+[`read-only-shadow-job-request-v1.schema.json`](schemas/resource-gateway-mirror/read-only-shadow-job-request-v1.schema.json)，
+且只包含内容地址、授权坐标、sample ordinal 与 deadline：
+
+```bash
+curl -i -X POST http://localhost:8080/api/mirror/shadow-jobs \
+  -H "Authorization: Bearer $SHADOW_TOKEN" \
+  -H "X-Purpose: MIRROR_SHADOW" \
+  -H "Content-Type: application/json" \
+  --data @read-only-shadow-job.json
+```
+
+服务端先认证再解码 JSON，拒绝重复 key、未知/缺失字段、尾随 JSON、超限 byte/depth/node；
+调用方传入的 `scope` 必须精确等于认证 identity。相同 `requestId + request fingerprint` 返回同一
+job；相同 request id 内容漂移或相同 sampling-grant fingerprint + ordinal 被不同 request 占用时
+返回 conflict。首次 admission、job row 与成功 operation audit 在一个事务中提交，audit 不可用会
+整体回滚。
+
+读取独立验真闭包：
+
+```bash
+curl http://localhost:8080/api/mirror/shadow-jobs/$JOB_ID \
+  -H "Authorization: Bearer $GOVERNANCE_TOKEN" \
+  -H "X-Purpose: GOVERNANCE_EVIDENCE_INGESTION"
+
+curl http://localhost:8080/api/mirror/shadow-jobs/$JOB_ID/request \
+  -H "Authorization: Bearer $GOVERNANCE_TOKEN" \
+  -H "X-Purpose: GOVERNANCE_EVIDENCE_INGESTION"
+
+curl "http://localhost:8080/api/mirror/shadow-jobs/$JOB_ID/lifecycle?afterSequence=0&limit=100" \
+  -H "Authorization: Bearer $GOVERNANCE_TOKEN" \
+  -H "X-Purpose: GOVERNANCE_EVIDENCE_INGESTION"
+```
+
+生命周期是 database-ordered append-only fact stream，转移闭集为 `ADMITTED`、`CLAIMED`、
+`TAKEN_OVER`、`LEASE_RENEWED`、`RETRY_SCHEDULED`、`SUCCEEDED`、`FAILED`、`EXPIRED`。
+每个事实只公开 scope、job/request/record content address、状态、attempt/epoch、owner
+fingerprint、数据库时间、comparison fingerprint 与稳定 failure code；payload、credential、
+exception message、stack trace 在模型和表结构中都不可表示。`afterSequence` 是 exclusive
+cursor，`limit` 为 1..1000；调用方必须根据 `hasMore` 继续取页，不能把单页前缀宣称为完整证据。
+
+默认数据面不可用时，scheduler 只得到 no-work，不 claim、不增加 attempt。要使 worker ready，
+客户必须注入 operator-owned `ReadOnlyShadowDataPlane`，并在每次 baseline read、candidate
+execution 和 evidence resolution 前校验 grant/kill switch/egress authority、预算和 heartbeat。
+
+### 5.3 Capability probe
 
 `GET /api/integration/capabilities` 暴露以下独立事实：
 
@@ -379,6 +451,11 @@ OIDC/mTLS adapter 或显式配置的测试身份 resolver 提供 human principal
 | `mirrorDomainFidelityScenarioAdapterReady` | Scenario aggregate/workbook/retention 验真链当前可用 |
 | `mirrorDomainFidelityShadowAdapterReady` | signed read-only comparison 可独立验真和投影；不代表生产 shadow job 已装配 |
 | `mirrorDomainFidelityOutcomeAdapterReady` | 当前为 `false`；不能宣称业务结果已校准 |
+| `mirrorReadOnlyShadowJobApi` | protected submit/read/request/comparison/lifecycle route 已装配 |
+| `mirrorReadOnlyShadowLifecycleAudit` | 每个 committed job transition 同事务写入 append-only journal |
+| `mirrorReadOnlyShadowWorkerReady` | managed signer 与受信 baseline/candidate data plane 当前可执行 |
+| `mirrorReadOnlyShadowScheduling` | bounded regional poller 当前运行；不代表 worker ready |
+| `mirrorReadOnlyShadowServingReady` | API + lifecycle + worker + scheduler 全部 ready |
 
 调用方不得用 projection flag 推导 shadow/outcome flag；readable history、available key、
 可生成部分 profile、真实行为对照和业务结果校准是不同生命周期事实。
@@ -445,8 +522,27 @@ deadline，并在 `SUCCEEDED` 时继续重验 v2 comparison 签名、artifact re
 与 source-resolution closure。单行离线导出无法证明数据库中的 sample ordinal 唯一性或实时 lease
 owner；这两项仍由在线数据库事务证明。
 
-`VerificationResult` 只包含 domain id、fingerprint、assessment、闭集 limitations、key id 和稳定
-reason code，不输出 Scenario fixture、请求、响应或原始诊断。
+生命周期页使用独立 verifier：
+
+```java
+ReadOnlyShadowLifecycleVerifier verifier =
+        new ReadOnlyShadowLifecycleVerifier();
+
+ReadOnlyShadowLifecycleVerifier.VerificationResult result =
+        verifier.verify(jobJson, lifecyclePageJson);
+
+if (!result.verified() || !result.complete()) {
+    throw new IllegalStateException(result.reasonCode());
+}
+```
+
+它重算 current job record fingerprint，逐事件检查 strict Schema、exact scope/job/request closure、
+database append order、合法状态转移和最终 job head。`VERIFIED_PAGE` 仅表示 bounded page 自洽；
+只有包含 `ADMITTED` 且 `hasMore=false`、最后事件与 current job 精确闭合时才返回
+`VERIFIED_COMPLETE`。
+
+各类 `VerificationResult` 只包含 bounded id/fingerprint/cursor、闭集 outcome 与稳定 reason
+code，不输出 Scenario fixture、请求、响应或原始诊断。
 
 ## 7. Schema
 
@@ -457,6 +553,8 @@ reason code，不输出 Scenario fixture、请求、响应或原始诊断。
 - [`read-only-shadow-comparison-v2.schema.json`](schemas/resource-gateway-mirror/read-only-shadow-comparison-v2.schema.json)
 - [`read-only-shadow-job-request-v1.schema.json`](schemas/resource-gateway-mirror/read-only-shadow-job-request-v1.schema.json)
 - [`read-only-shadow-job-v1.schema.json`](schemas/resource-gateway-mirror/read-only-shadow-job-v1.schema.json)
+- [`read-only-shadow-job-lifecycle-event-v1.schema.json`](schemas/resource-gateway-mirror/read-only-shadow-job-lifecycle-event-v1.schema.json)
+- [`read-only-shadow-job-lifecycle-page-v1.schema.json`](schemas/resource-gateway-mirror/read-only-shadow-job-lifecycle-page-v1.schema.json)
 
 Test Kit 公共资源常量：
 
@@ -465,6 +563,9 @@ CapabilityMirrorProtocol.DOMAIN_FIDELITY_INVENTORY_SCHEMA_RESOURCE
 CapabilityMirrorProtocol.DOMAIN_FIDELITY_INVENTORY_REGISTRATION_SCHEMA_RESOURCE
 CapabilityMirrorProtocol.DOMAIN_FIDELITY_PROFILE_SCHEMA_RESOURCE
 CapabilityMirrorProtocol.READ_ONLY_SHADOW_COMPARISON_SCHEMA_RESOURCE
+CapabilityMirrorProtocol.READ_ONLY_SHADOW_JOB_SCHEMA_RESOURCE
+CapabilityMirrorProtocol.READ_ONLY_SHADOW_JOB_LIFECYCLE_EVENT_SCHEMA_RESOURCE
+CapabilityMirrorProtocol.READ_ONLY_SHADOW_JOB_LIFECYCLE_PAGE_SCHEMA_RESOURCE
 ```
 
 Schema 使用 `additionalProperties: false`。profile 不允许业务 payload、自由文本诊断或综合
@@ -483,6 +584,10 @@ Schema 使用 `additionalProperties: false`。profile 不允许业务 payload、
 | Shadow grant 越界、kill switch/egress ref 缺失、存在写凭据或写尝试 | Schema/构造阶段拒绝 |
 | Shadow MATCH 与 fact fingerprint 不一致或 diff type 跨维度 | 服务端与 Test Kit 都拒绝 |
 | Shadow comparison 仅覆盖部分 inventory | 保留完整分母，遗漏 unit 为 `MISSING` |
+| Shadow API purpose/scope 不符 | 认证后返回 forbidden/not found，不触发 repository lookup 泄漏 |
+| 相同 grant ordinal 被不同 request 占用 | admission conflict；不会重复采样 |
+| lease 过期后旧 owner heartbeat/complete | owner + epoch + expiry + record fingerprint fence 拒绝 |
+| lifecycle page 截断或 head 漂移 | 独立 verifier 返回 `VERIFIED_PAGE` 或 `INVALID`，不能形成完整证据 |
 | 没有来源证据 | 保留 unit，逐维 `MISSING` |
 | 证据过期 | 全维 `STALE`，profile 为 `STALE` |
 | 证据非 certifiable 或不完整 | 逐维 `ABSTAINED` |
@@ -506,22 +611,25 @@ Schema 使用 `additionalProperties: false`。profile 不允许业务 payload、
 7. 业务写入与 success audit 同事务；success audit 不可用时返回
    `RG.MIRROR.OPERATION_AUDIT_UNAVAILABLE` 并回滚业务行。
 8. 跨 scope 查询返回 not found；损坏索引、不可用 verification key 或签名异常均失败关闭。
+9. Shadow job mutation 与对应 lifecycle event 同事务；owner 原文、payload、credential 和异常详情
+   不进入 job/lifecycle 表。
+10. autonomous scheduler 默认关闭，只服务一个 exact region/environment partition；跨副本
+    uniqueness、claim、retry、deadline 与 fencing 始终由数据库权威决定。
 
 ## 10. 下一实施纵切
 
 repository、managed signer、受保护 inventory/read API、Scenario source adapter、signed
-read-only Shadow comparison adapter、durable queue/worker kernel 和 capability 分层已完成。
+read-only Shadow comparison adapter、durable queue/worker、protected Shadow API、lifecycle audit、
+bounded scheduler、独立 readiness 和 lifecycle verifier 已完成。
 下一步按来源信任依赖推进：
 
-1. 为 durable shadow job 增加受保护 submit/read API、operation/lifecycle audit、region scheduler
-   和独立 control-plane/data-plane readiness。
-2. 接入真实 baseline/candidate connector、grant/kill-switch 在线权威、来源证据拉取重验、外部
+1. 接入真实 baseline/candidate connector、grant/kill-switch 在线权威、来源证据拉取重验、外部
    系统速率/并发预算与熔断。
-3. 把 signed typed diff 接入 drift budget，自动 stale/downgrade/revoke serving conclusion。
-4. 实现 authoritative outcome observation 与 delayed/censored reconciliation。
-5. 为 `ERROR_DISTRIBUTION` 和 `REQUEST_SPACE` 增加 cohort/sampling proof，而不是借用单次
+2. 把 signed typed diff 接入 drift budget，自动 stale/downgrade/revoke serving conclusion。
+3. 实现 authoritative outcome observation 与 delayed/censored reconciliation。
+4. 为 `ERROR_DISTRIBUTION` 和 `REQUEST_SPACE` 增加 cohort/sampling proof，而不是借用单次
    Scenario PASS。
-6. 把 profile limitations/stale/debt 接入 ANEKE gate 与 Owner workbench。
+5. 把 profile limitations/stale/debt 接入 ANEKE gate 与 Owner workbench。
 
-在受保护 job API/scheduler、真实 data-plane connector 与 outcome 未完成前，不能把 queue 或
-adapter readiness 描述为“已接入生产流量”或“业务结果已校准”。
+在真实 data-plane connector 与 outcome 未完成前，不能把 queue、API、scheduler 或 adapter
+readiness 描述为“已接入生产流量”或“业务结果已校准”。

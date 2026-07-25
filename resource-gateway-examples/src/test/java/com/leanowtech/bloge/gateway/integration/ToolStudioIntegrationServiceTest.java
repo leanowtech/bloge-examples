@@ -357,22 +357,17 @@ class ToolStudioIntegrationServiceTest {
                         "domainFidelityInventoryRegistrationRequest",
                         "domainFidelityInventory",
                         "domainFidelityProfile",
-                        "readOnlyShadowComparison",
+                        "readOnlyShadowComparison")
+                .doesNotContainKeys(
                         "readOnlyShadowJobRequest",
-                        "readOnlyShadowJob");
+                        "readOnlyShadowJob",
+                        "readOnlyShadowJobLifecycleEvent",
+                        "readOnlyShadowJobLifecyclePage");
         assertThat(assembled.supportedObjects()
                 .get("readOnlyShadowComparison"))
                 .containsExactly(
                         "resourceGateway.readOnlyShadowComparison.v1",
                         "resourceGateway.readOnlyShadowComparison.v2");
-        assertThat(assembled.supportedObjects()
-                .get("readOnlyShadowJobRequest"))
-                .containsExactly(
-                        "resourceGateway.readOnlyShadowJobRequest.v1");
-        assertThat(assembled.supportedObjects()
-                .get("readOnlyShadowJob"))
-                .containsExactly(
-                        "resourceGateway.readOnlyShadowJob.v1");
         assertThat(assembled.endpoints())
                 .extracting(endpoint ->
                         endpoint.method() + " " + endpoint.path())
@@ -398,6 +393,78 @@ class ToolStudioIntegrationServiceTest {
                 .containsEntry(
                         "mirrorDomainFidelityProjectionReady",
                         false);
+    }
+
+    @Test
+    void capabilitiesSeparateShadowControlDataAndSchedulerReadiness() {
+        AtomicBoolean worker =
+                new AtomicBoolean(false);
+        AtomicBoolean scheduler =
+                new AtomicBoolean(false);
+        ToolStudioIntegrationService service =
+                service(null, null, null, null);
+        service.configureReadOnlyShadowRuntime(
+                new ReadOnlyShadowRuntimeAvailability(
+                        true,
+                        true,
+                        worker::get,
+                        scheduler::get));
+
+        IntegrationCapabilities assembled =
+                service.capabilities().payload();
+
+        assertThat(assembled.features())
+                .containsEntry(
+                        "mirrorReadOnlyShadowJobApi",
+                        true)
+                .containsEntry(
+                        "mirrorReadOnlyShadowLifecycleAudit",
+                        true)
+                .containsEntry(
+                        "mirrorReadOnlyShadowWorkerReady",
+                        false)
+                .containsEntry(
+                        "mirrorReadOnlyShadowScheduling",
+                        false)
+                .containsEntry(
+                        "mirrorReadOnlyShadowServingReady",
+                        false);
+        assertThat(assembled.supportedObjects())
+                .containsKeys(
+                        "readOnlyShadowComparison",
+                        "readOnlyShadowJobRequest",
+                        "readOnlyShadowJob",
+                        "readOnlyShadowJobLifecycleEvent",
+                        "readOnlyShadowJobLifecyclePage");
+        assertThat(assembled.endpoints())
+                .extracting(endpoint ->
+                        endpoint.method() + " "
+                                + endpoint.path())
+                .contains(
+                        "POST /api/mirror/shadow-jobs",
+                        "GET /api/mirror/shadow-jobs/{jobId}",
+                        "GET /api/mirror/shadow-jobs/{jobId}/request",
+                        "GET /api/mirror/shadow-jobs/{jobId}/comparison",
+                        "GET /api/mirror/shadow-jobs/{jobId}/lifecycle");
+
+        worker.set(true);
+        assertThat(service.capabilities()
+                .payload().features())
+                .containsEntry(
+                        "mirrorReadOnlyShadowWorkerReady",
+                        true)
+                .containsEntry(
+                        "mirrorReadOnlyShadowServingReady",
+                        false);
+        scheduler.set(true);
+        assertThat(service.capabilities()
+                .payload().features())
+                .containsEntry(
+                        "mirrorReadOnlyShadowScheduling",
+                        true)
+                .containsEntry(
+                        "mirrorReadOnlyShadowServingReady",
+                        true);
     }
 
     @Test

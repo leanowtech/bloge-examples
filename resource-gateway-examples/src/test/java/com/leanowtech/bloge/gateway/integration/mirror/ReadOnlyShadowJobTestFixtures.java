@@ -1,6 +1,7 @@
 package com.leanowtech.bloge.gateway.integration.mirror;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.leanowtech.bloge.gateway.integration.IntegrationRequestContext;
 import com.leanowtech.bloge.gateway.visual.runtime.InMemoryVisualEvidenceSigner;
 
 import java.time.Clock;
@@ -8,6 +9,7 @@ import java.time.Duration;
 import java.time.Instant;
 import java.time.ZoneOffset;
 import java.util.List;
+import java.util.Set;
 
 /** Shared payload-free fixtures for durable Shadow queue and worker tests. */
 final class ReadOnlyShadowJobTestFixtures {
@@ -29,8 +31,29 @@ final class ReadOnlyShadowJobTestFixtures {
                 tenant,
                 "customer-operations",
                 "refund-project",
-                "shadow-staging",
+                "staging",
                 "ap-southeast-1");
+    }
+
+    static IntegrationRequestContext identity(
+            String tenant,
+            String purpose) {
+        CapabilitySnapshot.Scope scope =
+                scope(tenant);
+        return new IntegrationRequestContext(
+                scope.tenantId(),
+                scope.organizationId(),
+                scope.projectId(),
+                scope.environmentId(),
+                scope.region(),
+                "SERVICE",
+                "shadow-author",
+                "",
+                purpose,
+                "shadow-correlation",
+                Set.of("shadow-authors"),
+                "CONFIDENTIAL",
+                "");
     }
 
     static ReadOnlyShadowComparisonIntegrity integrity(

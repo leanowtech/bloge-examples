@@ -1,0 +1,322 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://bloge.dev/schemas/resource-gateway-mirror/read-only-shadow-job-lifecycle-event-v1.schema.json",
+  "title": "Resource Gateway Read-only Shadow Job Lifecycle Event v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "sequence",
+    "occurredAt",
+    "scope",
+    "jobId",
+    "requestFingerprint",
+    "transition",
+    "status",
+    "attemptCount",
+    "leaseEpoch",
+    "ownerFingerprint",
+    "nextEligibleAt",
+    "leaseExpiresAt",
+    "comparisonFingerprint",
+    "failureCode",
+    "recordFingerprint"
+  ],
+  "properties": {
+    "schemaVersion": {
+      "const": "resourceGateway.readOnlyShadowJobLifecycleEvent.v1"
+    },
+    "sequence": {
+      "type": "integer",
+      "minimum": 1
+    },
+    "occurredAt": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "scope": {
+      "$ref": "mirror-plan-v1.schema.json#/$defs/scope"
+    },
+    "jobId": {
+      "$ref": "read-only-shadow-comparison-v1.schema.json#/$defs/identifier"
+    },
+    "requestFingerprint": {
+      "$ref": "mirror-plan-v1.schema.json#/$defs/fingerprint"
+    },
+    "transition": {
+      "enum": [
+        "ADMITTED",
+        "CLAIMED",
+        "TAKEN_OVER",
+        "LEASE_RENEWED",
+        "RETRY_SCHEDULED",
+        "SUCCEEDED",
+        "FAILED",
+        "EXPIRED"
+      ]
+    },
+    "status": {
+      "enum": [
+        "QUEUED",
+        "RUNNING",
+        "SUCCEEDED",
+        "FAILED",
+        "EXPIRED"
+      ]
+    },
+    "attemptCount": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 5
+    },
+    "leaseEpoch": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "ownerFingerprint": {
+      "$ref": "#/$defs/optionalFingerprint"
+    },
+    "nextEligibleAt": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "leaseExpiresAt": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "comparisonFingerprint": {
+      "$ref": "#/$defs/optionalFingerprint"
+    },
+    "failureCode": {
+      "$ref": "#/$defs/optionalFailureCode"
+    },
+    "recordFingerprint": {
+      "$ref": "mirror-plan-v1.schema.json#/$defs/fingerprint"
+    }
+  },
+  "allOf": [
+    {
+      "if": {
+        "properties": {
+          "transition": {
+            "const": "ADMITTED"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "status": {
+            "const": "QUEUED"
+          },
+          "attemptCount": {
+            "const": 0
+          },
+          "leaseEpoch": {
+            "const": 0
+          },
+          "ownerFingerprint": {
+            "const": ""
+          },
+          "comparisonFingerprint": {
+            "const": ""
+          },
+          "failureCode": {
+            "const": ""
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "transition": {
+            "enum": [
+              "CLAIMED",
+              "TAKEN_OVER",
+              "LEASE_RENEWED"
+            ]
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "status": {
+            "const": "RUNNING"
+          },
+          "attemptCount": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 5
+          },
+          "leaseEpoch": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "ownerFingerprint": {
+            "$ref": "mirror-plan-v1.schema.json#/$defs/fingerprint"
+          },
+          "comparisonFingerprint": {
+            "const": ""
+          },
+          "failureCode": {
+            "const": ""
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "transition": {
+            "const": "RETRY_SCHEDULED"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "status": {
+            "const": "QUEUED"
+          },
+          "attemptCount": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 5
+          },
+          "leaseEpoch": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "ownerFingerprint": {
+            "$ref": "mirror-plan-v1.schema.json#/$defs/fingerprint"
+          },
+          "comparisonFingerprint": {
+            "const": ""
+          },
+          "failureCode": {
+            "$ref": "#/$defs/failureCode"
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "transition": {
+            "const": "SUCCEEDED"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "status": {
+            "const": "SUCCEEDED"
+          },
+          "attemptCount": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 5
+          },
+          "leaseEpoch": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "ownerFingerprint": {
+            "$ref": "mirror-plan-v1.schema.json#/$defs/fingerprint"
+          },
+          "comparisonFingerprint": {
+            "$ref": "mirror-plan-v1.schema.json#/$defs/fingerprint"
+          },
+          "failureCode": {
+            "const": ""
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "transition": {
+            "const": "FAILED"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "status": {
+            "const": "FAILED"
+          },
+          "comparisonFingerprint": {
+            "const": ""
+          },
+          "failureCode": {
+            "$ref": "#/$defs/failureCode"
+          }
+        },
+        "allOf": [
+          {
+            "if": {
+              "properties": {
+                "attemptCount": {
+                  "type": "integer",
+                  "minimum": 1
+                }
+              }
+            },
+            "then": {
+              "properties": {
+                "ownerFingerprint": {
+                  "$ref": "mirror-plan-v1.schema.json#/$defs/fingerprint"
+                }
+              }
+            }
+          }
+        ]
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "transition": {
+            "const": "EXPIRED"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "status": {
+            "const": "EXPIRED"
+          },
+          "comparisonFingerprint": {
+            "const": ""
+          },
+          "failureCode": {
+            "$ref": "#/$defs/failureCode"
+          }
+        }
+      }
+    }
+  ],
+  "$defs": {
+    "optionalFingerprint": {
+      "oneOf": [
+        {
+          "const": ""
+        },
+        {
+          "$ref": "mirror-plan-v1.schema.json#/$defs/fingerprint"
+        }
+      ]
+    },
+    "failureCode": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 255,
+      "pattern": "^[A-Z][A-Z0-9_.-]{0,254}$"
+    },
+    "optionalFailureCode": {
+      "type": "string",
+      "maxLength": 255,
+      "pattern": "^(|[A-Z][A-Z0-9_.-]{0,254})$"
+    }
+  }
+}

@@ -123,6 +123,8 @@ final class CapabilityMirrorSchemaValidator {
             "read-only-shadow-comparison-v2.schema.json",
             "read-only-shadow-job-request-v1.schema.json",
             "read-only-shadow-job-v1.schema.json",
+            "read-only-shadow-job-lifecycle-event-v1.schema.json",
+            "read-only-shadow-job-lifecycle-page-v1.schema.json",
             "scenario-rehearsal-batch-item-page-v1.schema.json",
             "scenario-rehearsal-batch-evidence-index-v1.schema.json",
             "scenario-rehearsal-batch-evidence-index-v2.schema.json",

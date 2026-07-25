@@ -196,6 +196,34 @@ class DatabaseReadOnlyShadowJobRepositoryTest {
         assertThat(repository.complete(
                 second.lease(), signed))
                 .isEqualTo(completed);
+
+        List<ReadOnlyShadowJobLifecycleEvent>
+                lifecycle = repository.lifecycle(
+                request.scope(),
+                job.jobId(),
+                0,
+                10);
+        assertThat(lifecycle)
+                .extracting(
+                        ReadOnlyShadowJobLifecycleEvent
+                                ::transition)
+                .containsExactly(
+                        ReadOnlyShadowJobLifecycleEvent
+                                .Transition.ADMITTED,
+                        ReadOnlyShadowJobLifecycleEvent
+                                .Transition.CLAIMED,
+                        ReadOnlyShadowJobLifecycleEvent
+                                .Transition.TAKEN_OVER,
+                        ReadOnlyShadowJobLifecycleEvent
+                                .Transition.SUCCEEDED);
+        assertThat(lifecycle)
+                .extracting(
+                        ReadOnlyShadowJobLifecycleEvent
+                                ::ownerFingerprint)
+                .doesNotContain("worker-a", "worker-b");
+        assertThat(lifecycle.get(2)
+                .ownerFingerprint())
+                .matches("sha256:[a-f0-9]{64}");
     }
 
     @Test
@@ -375,6 +403,86 @@ class DatabaseReadOnlyShadowJobRepositoryTest {
                 "SAMPLE_ORDINAL",
                 "LEASE_EPOCH",
                 "COMPARISON_FINGERPRINT");
+
+        List<String> lifecycleColumns =
+                jdbc.queryForList("""
+                        SELECT COLUMN_NAME
+                        FROM INFORMATION_SCHEMA.COLUMNS
+                        WHERE TABLE_NAME = 'MIRROR_SHADOW_JOB_LIFECYCLE'
+                        ORDER BY ORDINAL_POSITION
+                        """, String.class);
+        assertThat(lifecycleColumns)
+                .contains(
+                        "SEQUENCE",
+                        "TRANSITION",
+                        "OWNER_FINGERPRINT",
+                        "RECORD_FINGERPRINT")
+                .noneMatch(column ->
+                        column.contains("PAYLOAD")
+                                || column.contains(
+                                "CREDENTIAL")
+                                || column.contains("SECRET")
+                                || column.contains(
+                                "STACK_TRACE")
+                                || column.contains(
+                                "EXCEPTION_MESSAGE"));
+    }
+
+    @Test
+    void lifecycleUsesAnExclusiveCursorAndExactEnterpriseScope() {
+        ReadOnlyShadowJobRequest request =
+                ReadOnlyShadowJobTestFixtures.request(
+                        "shadow-lifecycle-page", 10);
+        ReadOnlyShadowJob job = repository.submit(
+                request,
+                ReadOnlyShadowJobTestFixtures
+                        .POLICY).job();
+        ReadOnlyShadowJobRepository.Claim claim =
+                claim("worker-a");
+        repository.fail(
+                claim.lease(),
+                "RG.MIRROR.SHADOW.BASELINE_SOURCE_UNAVAILABLE",
+                true,
+                ReadOnlyShadowJobTestFixtures.POLICY);
+
+        List<ReadOnlyShadowJobLifecycleEvent> first =
+                repository.lifecycle(
+                        request.scope(),
+                        job.jobId(),
+                        0,
+                        1);
+        List<ReadOnlyShadowJobLifecycleEvent> rest =
+                repository.lifecycle(
+                        request.scope(),
+                        job.jobId(),
+                        first.getFirst().sequence(),
+                        10);
+
+        assertThat(first)
+                .extracting(
+                        ReadOnlyShadowJobLifecycleEvent
+                                ::transition)
+                .containsExactly(
+                        ReadOnlyShadowJobLifecycleEvent
+                                .Transition.ADMITTED);
+        assertThat(rest)
+                .extracting(
+                        ReadOnlyShadowJobLifecycleEvent
+                                ::transition)
+                .containsExactly(
+                        ReadOnlyShadowJobLifecycleEvent
+                                .Transition.CLAIMED,
+                        ReadOnlyShadowJobLifecycleEvent
+                                .Transition.RETRY_SCHEDULED);
+        assertThat(rest.getFirst().sequence())
+                .isGreaterThan(
+                        first.getFirst().sequence());
+        assertThat(repository.lifecycle(
+                ReadOnlyShadowJobTestFixtures
+                        .scope("other"),
+                job.jobId(),
+                0,
+                10)).isEmpty();
     }
 
     private ReadOnlyShadowJobRepository.Claim claim(
