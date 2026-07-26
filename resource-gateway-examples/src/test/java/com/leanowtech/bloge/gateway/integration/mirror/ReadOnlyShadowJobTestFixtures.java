@@ -9,6 +9,7 @@ import java.time.Duration;
 import java.time.Instant;
 import java.time.ZoneOffset;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
 
 /** Shared payload-free fixtures for durable Shadow queue and worker tests. */
@@ -121,6 +122,52 @@ final class ReadOnlyShadowJobTestFixtures {
                         sampleOrdinal,
                         100),
                 NOW.plus(Duration.ofMinutes(30)));
+    }
+
+    static ReadOnlyShadowSourceBinding sourceBinding(
+            String bindingId,
+            String candidateRunId) {
+        return new ReadOnlyShadowSourceBinding(
+                ReadOnlyShadowSourceBinding.SCHEMA_VERSION,
+                "",
+                bindingId,
+                1,
+                scope("support"),
+                ref("SCENARIO_CASE", "refund-golden", '2'),
+                ref("CAPABILITY", "refund", '3'),
+                ref(
+                        "MIRROR_PLAN",
+                        "refund-shadow-plan",
+                        '4'),
+                ref(
+                        "SHADOW_BASELINE_BINDING",
+                        "refund-production-read",
+                        '5'),
+                ref(
+                        "SHADOW_COMPARISON_POLICY",
+                        "refund-semantic-v1",
+                        '6'),
+                fingerprint('a'),
+                "",
+                new ReadOnlyShadowSourceBinding.BaselineObservation(
+                        fingerprint('b'),
+                        Map.of(
+                                DomainFidelityProfile.Dimension.BEHAVIOR,
+                                fingerprint('b')),
+                        NOW.minusSeconds(20),
+                        MirrorRunEvidence.EvidenceClass.CERTIFIABLE,
+                        true,
+                        false,
+                        0),
+                ref(
+                        "MIRROR_EVIDENCE_BUNDLE",
+                        candidateRunId,
+                        'c'),
+                NOW,
+                NOW.plus(Duration.ofHours(1)),
+                NOW.minusSeconds(10),
+                com.leanowtech.bloge.gateway.visual.runtime
+                        .VisualRunEvidenceSeal.unsigned());
     }
 
     static ReadOnlyShadowComparison unsignedComparison(

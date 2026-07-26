@@ -651,6 +651,14 @@ public class ToolStudioIntegrationService {
                 "mirrorReadOnlyShadowAuthorityTrustDistributionReady",
                 readOnlyShadowRuntimeAvailability
                         .authorityTrustDistributionReady());
+        features.put(
+                "mirrorReadOnlyShadowSourceBindingApi",
+                readOnlyShadowRuntimeAvailability
+                        .sourceBindingApi());
+        features.put(
+                "mirrorReadOnlyShadowSourceBindingReady",
+                readOnlyShadowRuntimeAvailability
+                        .sourceBindingReady());
         features.put("mirrorStatefulSessionApi", mirrorStatefulSessionApi);
         features.put("mirrorStatefulStateStoreReady", mirrorStatefulStoreReady);
         features.put("mirrorStateCheckpointProtocol",
@@ -1060,7 +1068,10 @@ public class ToolStudioIntegrationService {
                     List.of(
                             com.leanowtech.bloge.gateway.integration.mirror
                                     .ReadOnlyShadowJobRequest
-                                    .SCHEMA_VERSION));
+                                    .SCHEMA_VERSION,
+                            com.leanowtech.bloge.gateway.integration.mirror
+                                    .ReadOnlyShadowJobRequest
+                                    .V2_SCHEMA_VERSION));
             supportedObjects.put(
                     "readOnlyShadowJob",
                     List.of(
@@ -1078,6 +1089,20 @@ public class ToolStudioIntegrationService {
                     List.of(
                             com.leanowtech.bloge.gateway.integration.mirror
                                     .ReadOnlyShadowJobLifecyclePage
+                                    .SCHEMA_VERSION));
+        }
+        if (readOnlyShadowRuntimeAvailability.sourceBindingApi()) {
+            supportedObjects.put(
+                    "readOnlyShadowSourceBindingRegistrationRequest",
+                    List.of(
+                            com.leanowtech.bloge.gateway.integration.mirror
+                                    .ReadOnlyShadowSourceBindingRegistrationRequest
+                                    .SCHEMA_VERSION));
+            supportedObjects.put(
+                    "readOnlyShadowSourceBinding",
+                    List.of(
+                            com.leanowtech.bloge.gateway.integration.mirror
+                                    .ReadOnlyShadowSourceBinding
                                     .SCHEMA_VERSION));
         }
         if (readOnlyShadowRuntimeAvailability
@@ -1473,6 +1498,14 @@ public class ToolStudioIntegrationService {
             endpoints.add(new IntegrationCapabilities.Endpoint(
                     "GET",
                     "/api/mirror/trust/read-only-shadow/authority-key-sets/pages"));
+        }
+        if (readOnlyShadowRuntimeAvailability.sourceBindingApi()) {
+            endpoints.add(new IntegrationCapabilities.Endpoint(
+                    "POST",
+                    "/api/mirror/shadow/source-bindings"));
+            endpoints.add(new IntegrationCapabilities.Endpoint(
+                    "GET",
+                    "/api/mirror/shadow/source-bindings/{bindingId}/revisions/{revision}"));
         }
         if (mirrorPlanReady) {
             endpoints.add(new IntegrationCapabilities.Endpoint("POST", "/api/mirror/plans"));

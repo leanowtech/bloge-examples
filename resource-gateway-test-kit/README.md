@@ -41,8 +41,13 @@ implementation. The JAR packages the authoritative v1 JSON Schema and provides:
   `ReadOnlyShadowComparison.v1/v2/v3` Schemas and an independent verifier that rejects
   paired-request, zero-write, sampling-budget, typed-diff, normalization-policy,
   source-resolution, online-authority closure, content-address, key-policy, and signature drift; durable
-  `ReadOnlyShadowJobRequest.v1` / `ReadOnlyShadowJob.v1` Schemas plus an independent verifier
+  `ReadOnlyShadowJobRequest.v1/v2` / `ReadOnlyShadowJob.v1` Schemas plus an independent verifier
   that reconstructs request/job fingerprints, lifecycle, signed comparison, and exact closure;
+  strict unsigned-registration and signed `ReadOnlyShadowSourceBinding.v1` Schemas plus
+  `ReadOnlyShadowSourceBindingVerifier`, which independently verifies the nested baseline and
+  outer binding addresses, exact v2 job reference, validity window, candidate evidence signature
+  and source/plan/capability/request closure, local key policy, and detached Ed25519 seal without
+  returning payload;
   strict Shadow authority key-set publication/page Schemas plus an independent
   root-threshold verifier that reconstructs content addresses, exact enterprise
   binding, frozen high-water cursor continuity, online terminal freshness, and
@@ -485,6 +490,36 @@ if (!compatibility.verified()) {
 The fixture is produced by the server and independently consumed here. It includes no private key
 or business payload. Non-Java implementations are not certified merely by matching field names;
 they must pass this cryptographic fixture without lossy numeric reserialization.
+
+Detached Shadow jobs use a separate exact source-pair closure. Verify the
+candidate evidence and source binding against the v2 job request's
+`sourceBindingRef` and authenticated scope:
+
+```java
+ReadOnlyShadowSourceBindingVerifier.VerificationContext context =
+        new ReadOnlyShadowSourceBindingVerifier.VerificationContext(
+                authenticatedScope,
+                jobRequest.path("sourceBindingRef"),
+                candidateEvidenceBundle,
+                candidateEvidenceKey,
+                trustedClock.instant());
+
+ReadOnlyShadowSourceBindingVerifier.VerificationResult source =
+        new ReadOnlyShadowSourceBindingVerifier().verify(
+                sourceBinding,
+                sourceBindingAuthorityKey,
+                context);
+if (!source.verified()) {
+    throw new IllegalStateException(source.reasonCode());
+}
+```
+
+The verifier first applies the packaged strict Schemas, then independently
+recomputes the baseline observation content address and complete source-binding
+content address. A valid binding seal is insufficient: the referenced candidate
+bundle must also pass `MirrorEvidenceVerifier` and match the exact run, bundle,
+scope, plan, target capability, request-context fingerprint, and completion
+time. Results contain bounded identities and reason codes only.
 
 Capability observations use a separate producer authority and verifier. Run the packaged public-only
 fixture whenever upgrading the protocol, JSON stack, crypto provider, or consumer:

@@ -14,6 +14,7 @@ import com.leanowtech.bloge.gateway.integration.mirror.DatabaseDomainFidelityRep
 import com.leanowtech.bloge.gateway.integration.mirror.DatabaseReadOnlyShadowAuthorityPublicationRepository;
 import com.leanowtech.bloge.gateway.integration.mirror.DatabaseReadOnlyShadowAuthorityKeySetRepository;
 import com.leanowtech.bloge.gateway.integration.mirror.DatabaseReadOnlyShadowJobRepository;
+import com.leanowtech.bloge.gateway.integration.mirror.DatabaseReadOnlyShadowSourceBindingRepository;
 import com.leanowtech.bloge.gateway.integration.mirror.DatabaseCompiledScenarioRehearsalPlanRepository;
 import com.leanowtech.bloge.gateway.integration.mirror.DatabaseScenarioArtifactRepository;
 import com.leanowtech.bloge.gateway.integration.mirror.DatabaseScenarioRehearsalBatchEvidenceRepository;
@@ -136,6 +137,9 @@ import com.leanowtech.bloge.gateway.integration.mirror.ReadOnlyShadowSamplingGra
 import com.leanowtech.bloge.gateway.integration.mirror.SignedReadOnlyShadowKillSwitchAuthority;
 import com.leanowtech.bloge.gateway.integration.mirror.SignedReadOnlyShadowSamplingGrantAuthority;
 import com.leanowtech.bloge.gateway.integration.mirror.ReadOnlyShadowSourceResolutionVerifier;
+import com.leanowtech.bloge.gateway.integration.mirror.ReadOnlyShadowSourceBindingIntegrity;
+import com.leanowtech.bloge.gateway.integration.mirror.ReadOnlyShadowSourceBindingRepository;
+import com.leanowtech.bloge.gateway.integration.mirror.ReadOnlyShadowSourceBindingService;
 import com.leanowtech.bloge.gateway.integration.mirror.ComposedReadOnlyShadowAccessAuthority;
 import com.leanowtech.bloge.gateway.integration.mirror.GovernedReadOnlyShadowDataPlane;
 import com.leanowtech.bloge.gateway.integration.mirror.ReadOnlyShadowDomainFidelitySource;
@@ -1362,6 +1366,47 @@ public class MirrorRuntimeConfiguration {
                 signer);
     }
 
+    /** Creates the detached source-binding content-addressing and signing boundary. */
+    @Bean
+    @ConditionalOnMissingBean
+    public ReadOnlyShadowSourceBindingIntegrity
+    readOnlyShadowSourceBindingIntegrity(
+            ObjectMapper objectMapper,
+            VisualEvidenceSigner signer) {
+        return new ReadOnlyShadowSourceBindingIntegrity(
+                objectMapper,
+                signer);
+    }
+
+    /** Creates the append-only exact-revision detached source-binding store. */
+    @Bean
+    @ConditionalOnMissingBean
+    public ReadOnlyShadowSourceBindingRepository
+    readOnlyShadowSourceBindingRepository(
+            JdbcTemplate jdbc,
+            ObjectMapper objectMapper,
+            ReadOnlyShadowSourceBindingIntegrity integrity) {
+        return new DatabaseReadOnlyShadowSourceBindingRepository(
+                jdbc,
+                objectMapper,
+                integrity);
+    }
+
+    /** Creates the candidate-closing detached source-binding admission service. */
+    @Bean
+    @ConditionalOnMissingBean
+    public ReadOnlyShadowSourceBindingService
+    readOnlyShadowSourceBindingService(
+            ReadOnlyShadowSourceBindingRepository bindings,
+            MirrorEvidenceRepository evidence,
+            ReadOnlyShadowSourceBindingIntegrity integrity) {
+        return new ReadOnlyShadowSourceBindingService(
+                bindings,
+                evidence,
+                integrity,
+                Clock.systemUTC());
+    }
+
     /** Creates the database-authoritative Shadow queue and signed comparison store. */
     @Bean
     @ConditionalOnMissingBean
@@ -1658,6 +1703,7 @@ public class MirrorRuntimeConfiguration {
             ReadOnlyShadowJobWorker worker,
             ReadOnlyShadowAuthorityKeySetTrustPolicyProvider
                     authorityTrustPolicies,
+            ReadOnlyShadowSourceBindingService sourceBindings,
             ObjectProvider<ReadOnlyShadowJobScheduler>
                     scheduler) {
         return new ReadOnlyShadowRuntimeAvailability(
@@ -1671,7 +1717,9 @@ public class MirrorRuntimeConfiguration {
                             && current.ready();
                 },
                 true,
-                authorityTrustPolicies::available);
+                authorityTrustPolicies::available,
+                true,
+                sourceBindings::ready);
     }
 
     /** Creates the independently verified read-only Shadow Fidelity source adapter. */

@@ -12,6 +12,7 @@ import com.leanowtech.bloge.gateway.integration.DomainFidelityController;
 import com.leanowtech.bloge.gateway.integration.DomainFidelityRuntimeAvailability;
 import com.leanowtech.bloge.gateway.integration.ReadOnlyShadowJobController;
 import com.leanowtech.bloge.gateway.integration.ReadOnlyShadowRuntimeAvailability;
+import com.leanowtech.bloge.gateway.integration.ReadOnlyShadowSourceBindingController;
 import com.leanowtech.bloge.gateway.integration.MirrorDeploymentIsolationAuthorityPublicationController;
 import com.leanowtech.bloge.gateway.integration.CapabilityObservationController;
 import com.leanowtech.bloge.gateway.integration.CapabilityCorpusGovernanceController;
@@ -30,6 +31,9 @@ import com.leanowtech.bloge.gateway.integration.mirror.ReadOnlyShadowJobReposito
 import com.leanowtech.bloge.gateway.integration.mirror.ReadOnlyShadowJobScheduler;
 import com.leanowtech.bloge.gateway.integration.mirror.ReadOnlyShadowJobService;
 import com.leanowtech.bloge.gateway.integration.mirror.ReadOnlyShadowJobWorker;
+import com.leanowtech.bloge.gateway.integration.mirror.ReadOnlyShadowSourceBindingIntegrity;
+import com.leanowtech.bloge.gateway.integration.mirror.ReadOnlyShadowSourceBindingRepository;
+import com.leanowtech.bloge.gateway.integration.mirror.ReadOnlyShadowSourceBindingService;
 import com.leanowtech.bloge.gateway.integration.mirror.ScenarioRehearsalDomainFidelitySource;
 import com.leanowtech.bloge.gateway.integration.mirror.CapabilityObservationRepository;
 import com.leanowtech.bloge.gateway.integration.mirror.CapabilityCorpusGovernanceService;
@@ -133,6 +137,8 @@ class TestRuntimeApplicationIntegrationTest {
                 DomainFidelityController.class)).hasSize(1);
         assertThat(context.getBeansOfType(
                 ReadOnlyShadowJobController.class)).hasSize(1);
+        assertThat(context.getBeansOfType(
+                ReadOnlyShadowSourceBindingController.class)).hasSize(1);
         assertThat(context.getBeansOfType(MirrorPlanIntegrationService.class)).hasSize(1);
         assertThat(context.getBeansOfType(MirrorRunIntegrationService.class)).hasSize(1);
         assertThat(context.getBeansOfType(
@@ -171,6 +177,17 @@ class TestRuntimeApplicationIntegrationTest {
         assertThat(context.getBeansOfType(
                 ReadOnlyShadowJobService.class))
                 .hasSize(1);
+        assertThat(context.getBeansOfType(
+                ReadOnlyShadowSourceBindingIntegrity.class))
+                .hasSize(1);
+        assertThat(context.getBeansOfType(
+                ReadOnlyShadowSourceBindingRepository.class))
+                .hasSize(1);
+        assertThat(context.getBeansOfType(
+                ReadOnlyShadowSourceBindingService.class).values())
+                .singleElement()
+                .satisfies(service ->
+                        assertThat(service.ready()).isTrue());
         assertThat(context.getBeansOfType(
                 ReadOnlyShadowDataPlane.class).values())
                 .singleElement()
@@ -349,6 +366,11 @@ class TestRuntimeApplicationIntegrationTest {
                         "mirrorReadOnlyShadowScheduling", false)
                 .containsEntry(
                         "mirrorReadOnlyShadowServingReady", false);
+        assertThat(capabilities.getBody().payload().features())
+                .containsEntry(
+                        "mirrorReadOnlyShadowSourceBindingApi", true)
+                .containsEntry(
+                        "mirrorReadOnlyShadowSourceBindingReady", true);
         assertThat(capabilities.getBody().payload()
                 .supportedObjects())
                 .containsKeys(
@@ -358,7 +380,9 @@ class TestRuntimeApplicationIntegrationTest {
                         "readOnlyShadowJobRequest",
                         "readOnlyShadowJob",
                         "readOnlyShadowJobLifecycleEvent",
-                        "readOnlyShadowJobLifecyclePage");
+                        "readOnlyShadowJobLifecyclePage",
+                        "readOnlyShadowSourceBindingRegistrationRequest",
+                        "readOnlyShadowSourceBinding");
         assertThat(capabilities.getBody().payload().endpoints())
                 .anyMatch(endpoint ->
                         endpoint.method().equals("POST")
@@ -391,6 +415,14 @@ class TestRuntimeApplicationIntegrationTest {
                 endpoint.method().equals("GET")
                         && endpoint.path().equals(
                         "/api/mirror/trust/read-only-shadow/authority-key-sets/pages"));
+        assertThat(capabilities.getBody().payload().endpoints()).anyMatch(endpoint ->
+                endpoint.method().equals("POST")
+                        && endpoint.path().equals(
+                        "/api/mirror/shadow/source-bindings"));
+        assertThat(capabilities.getBody().payload().endpoints()).anyMatch(endpoint ->
+                endpoint.method().equals("GET")
+                        && endpoint.path().equals(
+                        "/api/mirror/shadow/source-bindings/{bindingId}/revisions/{revision}"));
         assertThat(capabilities.getBody().payload().endpoints()).anyMatch(endpoint ->
                 endpoint.method().equals("POST")
                         && endpoint.path().equals(

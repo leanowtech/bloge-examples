@@ -496,6 +496,30 @@ class CapabilityMirrorSchemaPackagingTest {
                 .endsWith(
                         "read-only-shadow-job-request-v1.schema.json");
         assertThat(CapabilityMirrorProtocol
+                .READ_ONLY_SHADOW_JOB_REQUEST_V2)
+                .isEqualTo(
+                        "resourceGateway.readOnlyShadowJobRequest.v2");
+        assertThat(CapabilityMirrorProtocol
+                .READ_ONLY_SHADOW_JOB_REQUEST_V2_SCHEMA_RESOURCE)
+                .endsWith(
+                        "read-only-shadow-job-request-v2.schema.json");
+        assertThat(CapabilityMirrorProtocol
+                .READ_ONLY_SHADOW_SOURCE_BINDING_REGISTRATION_REQUEST_V1)
+                .isEqualTo(
+                        "resourceGateway.readOnlyShadowSourceBindingRegistrationRequest.v1");
+        assertThat(CapabilityMirrorProtocol
+                .READ_ONLY_SHADOW_SOURCE_BINDING_REGISTRATION_REQUEST_SCHEMA_RESOURCE)
+                .endsWith(
+                        "read-only-shadow-source-binding-registration-request-v1.schema.json");
+        assertThat(CapabilityMirrorProtocol
+                .READ_ONLY_SHADOW_SOURCE_BINDING_V1)
+                .isEqualTo(
+                        "resourceGateway.readOnlyShadowSourceBinding.v1");
+        assertThat(CapabilityMirrorProtocol
+                .READ_ONLY_SHADOW_SOURCE_BINDING_SCHEMA_RESOURCE)
+                .endsWith(
+                        "read-only-shadow-source-binding-v1.schema.json");
+        assertThat(CapabilityMirrorProtocol
                 .READ_ONLY_SHADOW_JOB_V1)
                 .isEqualTo(
                         "resourceGateway.readOnlyShadowJob.v1");

@@ -1,0 +1,192 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://bloge.dev/schemas/resource-gateway-mirror/read-only-shadow-source-binding-v1.schema.json",
+  "title": "Resource Gateway Read-only Shadow Source Binding v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "bindingFingerprint",
+    "bindingId",
+    "revision",
+    "scope",
+    "scenarioCaseRef",
+    "targetCapabilityRef",
+    "candidatePlanRef",
+    "baselineBindingRef",
+    "comparisonPolicyRef",
+    "requestContextFingerprint",
+    "baselineObservationFingerprint",
+    "baseline",
+    "candidateEvidenceRef",
+    "validFrom",
+    "expiresAt",
+    "issuedAt",
+    "bindingSeal"
+  ],
+  "properties": {
+    "schemaVersion": {
+      "const": "resourceGateway.readOnlyShadowSourceBinding.v1"
+    },
+    "bindingFingerprint": {
+      "$ref": "mirror-plan-v1.schema.json#/$defs/fingerprint"
+    },
+    "bindingId": {
+      "$ref": "read-only-shadow-comparison-v1.schema.json#/$defs/identifier"
+    },
+    "revision": {
+      "type": "integer",
+      "minimum": 1
+    },
+    "scope": {
+      "$ref": "mirror-plan-v1.schema.json#/$defs/scope"
+    },
+    "scenarioCaseRef": {
+      "$ref": "domain-fidelity-inventory-v1.schema.json#/$defs/scenarioCaseRef"
+    },
+    "targetCapabilityRef": {
+      "$ref": "read-only-shadow-comparison-v1.schema.json#/$defs/capabilityRef"
+    },
+    "candidatePlanRef": {
+      "$ref": "read-only-shadow-job-request-v1.schema.json#/$defs/candidatePlanRef"
+    },
+    "baselineBindingRef": {
+      "$ref": "read-only-shadow-job-request-v1.schema.json#/$defs/baselineBindingRef"
+    },
+    "comparisonPolicyRef": {
+      "$ref": "read-only-shadow-comparison-v2.schema.json#/$defs/comparisonPolicyRef"
+    },
+    "requestContextFingerprint": {
+      "$ref": "mirror-plan-v1.schema.json#/$defs/fingerprint"
+    },
+    "baselineObservationFingerprint": {
+      "$ref": "mirror-plan-v1.schema.json#/$defs/fingerprint"
+    },
+    "baseline": {
+      "$ref": "#/$defs/baselineObservation"
+    },
+    "candidateEvidenceRef": {
+      "$ref": "#/$defs/candidateEvidenceRef"
+    },
+    "validFrom": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "expiresAt": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "issuedAt": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "bindingSeal": {
+      "$ref": "domain-fidelity-profile-v1.schema.json#/$defs/evidenceSeal"
+    }
+  },
+  "$defs": {
+    "candidateEvidenceRef": {
+      "allOf": [
+        {
+          "$ref": "domain-fidelity-inventory-v1.schema.json#/$defs/artifactRef"
+        },
+        {
+          "properties": {
+            "kind": {
+              "const": "MIRROR_EVIDENCE_BUNDLE"
+            },
+            "revision": {
+              "const": 1
+            }
+          }
+        }
+      ]
+    },
+    "baselineObservation": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "semanticResultFingerprint",
+        "normalizedFactFingerprints",
+        "observedAt",
+        "evidenceClass",
+        "evidenceComplete",
+        "writeCredentialExposed",
+        "writeAttemptCount"
+      ],
+      "properties": {
+        "semanticResultFingerprint": {
+          "$ref": "mirror-plan-v1.schema.json#/$defs/fingerprint"
+        },
+        "normalizedFactFingerprints": {
+          "type": "object",
+          "additionalProperties": false,
+          "minProperties": 1,
+          "maxProperties": 4,
+          "properties": {
+            "BEHAVIOR": {
+              "$ref": "mirror-plan-v1.schema.json#/$defs/fingerprint"
+            },
+            "CONTRACT": {
+              "$ref": "mirror-plan-v1.schema.json#/$defs/fingerprint"
+            },
+            "EFFECT": {
+              "$ref": "mirror-plan-v1.schema.json#/$defs/fingerprint"
+            },
+            "STATE_TRANSITION": {
+              "$ref": "mirror-plan-v1.schema.json#/$defs/fingerprint"
+            }
+          }
+        },
+        "observedAt": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "evidenceClass": {
+          "enum": [
+            "EXPLORATORY",
+            "CERTIFIABLE"
+          ]
+        },
+        "evidenceComplete": {
+          "type": "boolean"
+        },
+        "writeCredentialExposed": {
+          "type": "boolean"
+        },
+        "writeAttemptCount": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 1000000000
+        }
+      },
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "evidenceClass": {
+                "const": "CERTIFIABLE"
+              }
+            },
+            "required": [
+              "evidenceClass"
+            ]
+          },
+          "then": {
+            "properties": {
+              "evidenceComplete": {
+                "const": true
+              },
+              "writeCredentialExposed": {
+                "const": false
+              },
+              "writeAttemptCount": {
+                "const": 0
+              }
+            }
+          }
+        }
+      ]
+    }
+  }
+}

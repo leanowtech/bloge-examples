@@ -414,9 +414,12 @@ OIDC/mTLS adapter 或显式配置的测试身份 resolver 提供 human principal
 `RG_MIRROR_RUNTIME_ENABLED=true`，环境字符串检查只是纵深防御。production 与
 production+test 混合 profile 中，controller、service、repository、worker、scheduler 全部物理缺席。
 
-提交 body 必须匹配
-[`read-only-shadow-job-request-v1.schema.json`](schemas/resource-gateway-mirror/read-only-shadow-job-request-v1.schema.json)，
-且只包含内容地址、授权坐标、sample ordinal 与 deadline：
+在线来源提交 body 匹配
+[`read-only-shadow-job-request-v1.schema.json`](schemas/resource-gateway-mirror/read-only-shadow-job-request-v1.schema.json)；
+v1 不携带来源模式或来源绑定，固定解释为 `ONLINE_EXECUTION`。离线证据模式必须使用
+[`read-only-shadow-job-request-v2.schema.json`](schemas/resource-gateway-mirror/read-only-shadow-job-request-v2.schema.json)，
+显式设置 `sourceMode=DETACHED_EVIDENCE` 并引用一个 exact `SHADOW_SOURCE_BINDING`。两个版本都只包含
+内容地址、授权坐标、sample ordinal 与 deadline：
 
 ```bash
 curl -i -X POST http://localhost:8080/api/mirror/shadow-jobs \
@@ -431,6 +434,26 @@ curl -i -X POST http://localhost:8080/api/mirror/shadow-jobs \
 job；相同 request id 内容漂移或相同 sampling-grant fingerprint + ordinal 被不同 request 占用时
 返回 conflict。首次 admission、job row 与成功 operation audit 在一个事务中提交，audit 不可用会
 整体回滚。
+
+detached source pair 必须先通过受保护注册 API 形成：
+
+```bash
+curl -i -X POST http://localhost:8080/api/mirror/shadow/source-bindings \
+  -H "Authorization: Bearer $SOURCE_ADMIN_TOKEN" \
+  -H "X-Purpose: MIRROR_SHADOW_SOURCE_ADMIN" \
+  -H "X-BLOGE-Shadow-Source-Binding-Protocol: read-only-shadow-source-binding-v1" \
+  -H "Accept: application/vnd.bloge.read-only-shadow-source-binding.v1+json" \
+  -H "Content-Type: application/json" \
+  --data @read-only-shadow-source-binding-registration.json
+```
+
+注册命令不能提供 `bindingFingerprint`、`baselineObservationFingerprint` 或 `bindingSeal`。
+服务端先按认证 scope 精确拉取 `candidateEvidenceRef`，独立关闭 bundle content address、
+run、plan、target capability、request context 和完成时间，再计算 nested baseline 与 outer
+binding 两层内容地址并签名。读取必须使用
+`GET /api/mirror/shadow/source-bindings/{bindingId}/revisions/{revision}?fingerprint=...`
+和相同协议协商头；不存在 latest fallback。该控制面让 detached connector 有可信输入，但不等于
+connector 已装配或 data-plane ready。
 
 读取独立验真闭包：
 
@@ -490,6 +513,8 @@ cursor，`limit` 为 1..1000；调用方必须根据 `hasMore` 继续取页，�
 | `mirrorDomainFidelityShadowAdapterReady` | signed read-only comparison 可独立验真和投影；不代表生产 shadow job 已装配 |
 | `mirrorDomainFidelityOutcomeAdapterReady` | 当前为 `false`；不能宣称业务结果已校准 |
 | `mirrorReadOnlyShadowJobApi` | protected submit/read/request/comparison/lifecycle route 已装配 |
+| `mirrorReadOnlyShadowSourceBindingApi` | detached source-pair register/exact-read route 与 v1/v2 request protocol 已装配 |
+| `mirrorReadOnlyShadowSourceBindingReady` | source-binding signer 与 repository 当前可用；不代表 baseline/candidate connector ready |
 | `mirrorReadOnlyShadowLifecycleAudit` | 每个 committed job transition 同事务写入 append-only journal |
 | `mirrorReadOnlyShadowWorkerReady` | managed signer 与受信 baseline/candidate data plane 当前可执行 |
 | `mirrorReadOnlyShadowScheduling` | bounded regional poller 当前运行；不代表 worker ready |
@@ -501,6 +526,12 @@ cursor，`limit` 为 1..1000；调用方必须根据 `hasMore` 继续取页，�
 resolver 仍不可用。只有生产 adapter 主动拉取并重验底层 baseline/candidate exact revision、签名、
 scope、target、request context 与双重观测 authority closure 后，source-resolution readiness 才能
 为 true；comparison 根签名中的 ref 本身不是来源证明。
+
+detached source binding 也遵守这一边界。`ReadOnlyShadowSourceBindingVerifier` 在独立 Test Kit
+中先重算 baseline/binding 双层 content address，再验证 exact v2 job reference、有效窗、binding
+authority key/seal，并调用 `MirrorEvidenceVerifier` 关闭 candidate bundle 的 run/scope/plan/target/
+request/completion 坐标。它证明“这对离线来源不可歧义且未被篡改”，不证明在线 baseline connector、
+egress 或 comparison policy 已可运行。
 
 签名 authority 也遵守同一原则：database publication source ready 只表示 append-only current-head
 读写和内容地址可用，不表示 issuer 已受信。`ReadOnlyShadowAuthorityTrustStore` 必须由独立 managed
@@ -621,6 +652,9 @@ code，不输出 Scenario fixture、请求、响应或原始诊断。
 - [`read-only-shadow-comparison-v2.schema.json`](schemas/resource-gateway-mirror/read-only-shadow-comparison-v2.schema.json)
 - [`read-only-shadow-comparison-v3.schema.json`](schemas/resource-gateway-mirror/read-only-shadow-comparison-v3.schema.json)
 - [`read-only-shadow-job-request-v1.schema.json`](schemas/resource-gateway-mirror/read-only-shadow-job-request-v1.schema.json)
+- [`read-only-shadow-job-request-v2.schema.json`](schemas/resource-gateway-mirror/read-only-shadow-job-request-v2.schema.json)
+- [`read-only-shadow-source-binding-registration-request-v1.schema.json`](schemas/resource-gateway-mirror/read-only-shadow-source-binding-registration-request-v1.schema.json)
+- [`read-only-shadow-source-binding-v1.schema.json`](schemas/resource-gateway-mirror/read-only-shadow-source-binding-v1.schema.json)
 - [`read-only-shadow-job-v1.schema.json`](schemas/resource-gateway-mirror/read-only-shadow-job-v1.schema.json)
 - [`read-only-shadow-job-lifecycle-event-v1.schema.json`](schemas/resource-gateway-mirror/read-only-shadow-job-lifecycle-event-v1.schema.json)
 - [`read-only-shadow-job-lifecycle-page-v1.schema.json`](schemas/resource-gateway-mirror/read-only-shadow-job-lifecycle-page-v1.schema.json)
@@ -634,6 +668,10 @@ CapabilityMirrorProtocol.DOMAIN_FIDELITY_PROFILE_SCHEMA_RESOURCE
 CapabilityMirrorProtocol.READ_ONLY_SHADOW_COMPARISON_SCHEMA_RESOURCE
 CapabilityMirrorProtocol.READ_ONLY_SHADOW_COMPARISON_V2_SCHEMA_RESOURCE
 CapabilityMirrorProtocol.READ_ONLY_SHADOW_COMPARISON_V3_SCHEMA_RESOURCE
+CapabilityMirrorProtocol.READ_ONLY_SHADOW_JOB_REQUEST_SCHEMA_RESOURCE
+CapabilityMirrorProtocol.READ_ONLY_SHADOW_JOB_REQUEST_V2_SCHEMA_RESOURCE
+CapabilityMirrorProtocol.READ_ONLY_SHADOW_SOURCE_BINDING_REGISTRATION_REQUEST_SCHEMA_RESOURCE
+CapabilityMirrorProtocol.READ_ONLY_SHADOW_SOURCE_BINDING_SCHEMA_RESOURCE
 CapabilityMirrorProtocol.READ_ONLY_SHADOW_JOB_SCHEMA_RESOURCE
 CapabilityMirrorProtocol.READ_ONLY_SHADOW_JOB_LIFECYCLE_EVENT_SCHEMA_RESOURCE
 CapabilityMirrorProtocol.READ_ONLY_SHADOW_JOB_LIFECYCLE_PAGE_SCHEMA_RESOURCE
@@ -654,6 +692,8 @@ Schema 使用 `additionalProperties: false`。profile 不允许业务 payload、
 | Shadow comparison 的请求双边、scope、inventory、unit 或 capability 漂移 | 拒绝整次来源投影 |
 | Shadow grant 越界、kill switch/egress ref 缺失、存在写凭据或写尝试 | Schema/构造阶段拒绝 |
 | v3 authority proof 缺失、时间倒序，或 grant/policy/switch material 与 attestation 坐标错配 | 服务端与 Test Kit 都拒绝 |
+| detached request 没有 exact source binding、模式/版本混用或引用指纹漂移 | strict decoder / source-binding verifier 拒绝 |
+| source binding 的 nested baseline/outer address、candidate bundle、scope/plan/target/request/time 任一漂移 | 服务端与 Test Kit 都拒绝 |
 | Shadow MATCH 与 fact fingerprint 不一致或 diff type 跨维度 | 服务端与 Test Kit 都拒绝 |
 | Shadow comparison 仅覆盖部分 inventory | 保留完整分母，遗漏 unit 为 `MISSING` |
 | Shadow API purpose/scope 不符 | 认证后返回 forbidden/not found，不触发 repository lookup 泄漏 |
@@ -687,6 +727,8 @@ Schema 使用 `additionalProperties: false`。profile 不允许业务 payload、
    不进入 job/lifecycle 表。
 10. autonomous scheduler 默认关闭，只服务一个 exact region/environment partition；跨副本
     uniqueness、claim、retry、deadline 与 fencing 始终由数据库权威决定。
+11. source binding 以完整 scope、binding id、revision 为 append-only 主键；读取重算两层内容地址、
+    复验签名和重复索引，且只接受 exact content-address reference。
 
 ## 10. 下一实施纵切
 
@@ -694,12 +736,13 @@ repository、managed signer、受保护 inventory/read API、Scenario source ada
 read-only Shadow comparison adapter、durable queue/worker、protected Shadow API、lifecycle audit、
 bounded scheduler、独立 readiness、lifecycle verifier，以及 governed data-plane composition
 kernel、database-authoritative execution guard、三类签名 online authority protocol、
-append-only current-head repository、server adapter 与独立 Test Kit verifier 已完成。
+append-only current-head repository、managed trust distribution、server adapter、v1/v2
+job request、exact detached source-binding repository/API 与独立 Test Kit verifier 已完成。
 下一步按来源信任依赖推进：
 
-1. 接入 managed authority key/revocation publication、跨区域分发与受保护发布 API，认证
-   successor/revocation 传播时限、outage 和 rolling rotation。
-2. 接入真实 baseline/candidate connector、来源 artifact
+1. 接入企业 root-policy/control-plane connector，并认证 authority successor/revocation 的
+   跨区域传播时限、outage 和 rolling rotation。
+2. 让第一个真实 detached baseline/candidate connector 消费 exact source binding，并完成来源 artifact
    拉取重验和 exact comparison policy adapter。
 3. 把 signed typed diff 接入 drift budget，自动 stale/downgrade/revoke serving conclusion。
 4. 实现 authoritative outcome observation 与 delayed/censored reconciliation。

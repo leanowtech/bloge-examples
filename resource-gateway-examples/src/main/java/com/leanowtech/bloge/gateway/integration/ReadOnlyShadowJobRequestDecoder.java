@@ -38,7 +38,7 @@ public final class ReadOnlyShadowJobRequestDecoder {
     public static final int MAXIMUM_DEPTH = 64;
     /** Largest admitted object, array, and scalar node count. */
     public static final int MAXIMUM_NODES = 10_000;
-    private static final Set<String> FIELDS = Set.of(
+    private static final Set<String> V1_FIELDS = Set.of(
             "schemaVersion",
             "requestId",
             "scope",
@@ -49,6 +49,21 @@ public final class ReadOnlyShadowJobRequestDecoder {
             "candidatePlanRef",
             "baselineBindingRef",
             "comparisonPolicyRef",
+            "accessGrant",
+            "deadlineAt");
+    private static final Set<String> V2_FIELDS = Set.of(
+            "schemaVersion",
+            "requestId",
+            "scope",
+            "inventoryRef",
+            "unitId",
+            "scenarioCaseRef",
+            "targetCapabilityRef",
+            "candidatePlanRef",
+            "baselineBindingRef",
+            "comparisonPolicyRef",
+            "sourceMode",
+            "sourceBindingRef",
             "accessGrant",
             "deadlineAt");
 
@@ -97,11 +112,16 @@ public final class ReadOnlyShadowJobRequestDecoder {
             HashSet<String> actual = new HashSet<>();
             tree.fieldNames().forEachRemaining(
                     actual::add);
-            if (!actual.equals(FIELDS)
-                    || !ReadOnlyShadowJobRequest
-                    .SCHEMA_VERSION.equals(
-                            tree.path("schemaVersion")
-                                    .textValue())) {
+            String version =
+                    tree.path("schemaVersion").textValue();
+            Set<String> expected =
+                    ReadOnlyShadowJobRequest.SCHEMA_VERSION
+                            .equals(version)
+                            ? V1_FIELDS
+                            : ReadOnlyShadowJobRequest
+                            .V2_SCHEMA_VERSION.equals(version)
+                            ? V2_FIELDS : Set.of();
+            if (!actual.equals(expected)) {
                 throw invalid(exactIdentity);
             }
             requireBounds(tree, exactIdentity);
@@ -154,7 +174,10 @@ public final class ReadOnlyShadowJobRequestDecoder {
                         "The read-only Shadow command does not match the bounded public protocol.",
                         identity.correlationId(),
                         Map.of(
-                                "schemaVersion",
+                                "currentSchemaVersion",
+                                ReadOnlyShadowJobRequest
+                                        .V2_SCHEMA_VERSION,
+                                "legacySchemaVersion",
                                 ReadOnlyShadowJobRequest
                                         .SCHEMA_VERSION,
                                 "maximumBytes",

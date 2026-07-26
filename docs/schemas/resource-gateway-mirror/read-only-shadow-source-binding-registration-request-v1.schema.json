@@ -1,0 +1,75 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://bloge.dev/schemas/resource-gateway-mirror/read-only-shadow-source-binding-registration-request-v1.schema.json",
+  "title": "Resource Gateway Read-only Shadow Source Binding Registration Request v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "bindingId",
+    "revision",
+    "scope",
+    "scenarioCaseRef",
+    "targetCapabilityRef",
+    "candidatePlanRef",
+    "baselineBindingRef",
+    "comparisonPolicyRef",
+    "requestContextFingerprint",
+    "baseline",
+    "candidateEvidenceRef",
+    "validFrom",
+    "expiresAt",
+    "issuedAt"
+  ],
+  "properties": {
+    "schemaVersion": {
+      "const": "resourceGateway.readOnlyShadowSourceBindingRegistrationRequest.v1"
+    },
+    "bindingId": {
+      "$ref": "read-only-shadow-comparison-v1.schema.json#/$defs/identifier"
+    },
+    "revision": {
+      "type": "integer",
+      "minimum": 1
+    },
+    "scope": {
+      "$ref": "mirror-plan-v1.schema.json#/$defs/scope"
+    },
+    "scenarioCaseRef": {
+      "$ref": "domain-fidelity-inventory-v1.schema.json#/$defs/scenarioCaseRef"
+    },
+    "targetCapabilityRef": {
+      "$ref": "read-only-shadow-comparison-v1.schema.json#/$defs/capabilityRef"
+    },
+    "candidatePlanRef": {
+      "$ref": "read-only-shadow-job-request-v1.schema.json#/$defs/candidatePlanRef"
+    },
+    "baselineBindingRef": {
+      "$ref": "read-only-shadow-job-request-v1.schema.json#/$defs/baselineBindingRef"
+    },
+    "comparisonPolicyRef": {
+      "$ref": "read-only-shadow-comparison-v2.schema.json#/$defs/comparisonPolicyRef"
+    },
+    "requestContextFingerprint": {
+      "$ref": "mirror-plan-v1.schema.json#/$defs/fingerprint"
+    },
+    "baseline": {
+      "$ref": "read-only-shadow-source-binding-v1.schema.json#/$defs/baselineObservation"
+    },
+    "candidateEvidenceRef": {
+      "$ref": "read-only-shadow-source-binding-v1.schema.json#/$defs/candidateEvidenceRef"
+    },
+    "validFrom": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "expiresAt": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "issuedAt": {
+      "type": "string",
+      "format": "date-time"
+    }
+  }
+}

@@ -17,6 +17,8 @@ public final class ReadOnlyShadowRuntimeAvailability {
     private final BooleanSupplier schedulerReadiness;
     private final boolean authorityTrustDistributionApi;
     private final BooleanSupplier authorityTrustDistributionReadiness;
+    private final boolean sourceBindingApi;
+    private final BooleanSupplier sourceBindingReadiness;
 
     /**
      * Creates one dynamically probed Shadow runtime marker.
@@ -32,7 +34,7 @@ public final class ReadOnlyShadowRuntimeAvailability {
             BooleanSupplier workerReadiness,
             BooleanSupplier schedulerReadiness) {
         this(jobApi, lifecycleAudit, workerReadiness, schedulerReadiness,
-                false, () -> false);
+                false, () -> false, false, () -> false);
     }
 
     /**
@@ -52,6 +54,33 @@ public final class ReadOnlyShadowRuntimeAvailability {
             BooleanSupplier schedulerReadiness,
             boolean authorityTrustDistributionApi,
             BooleanSupplier authorityTrustDistributionReadiness) {
+        this(jobApi, lifecycleAudit, workerReadiness, schedulerReadiness,
+                authorityTrustDistributionApi,
+                authorityTrustDistributionReadiness,
+                false, () -> false);
+    }
+
+    /**
+     * Creates a marker covering trust distribution and detached source-binding admission.
+     *
+     * @param jobApi protected submit/read/evidence routes are assembled
+     * @param lifecycleAudit append-only lifecycle publication is assembled
+     * @param workerReadiness dynamic signer and trusted data-plane readiness
+     * @param schedulerReadiness dynamic autonomous regional scheduler readiness
+     * @param authorityTrustDistributionApi protected authority routes are assembled
+     * @param authorityTrustDistributionReadiness dynamic bootstrap-root policy readiness
+     * @param sourceBindingApi protected detached source-binding routes are assembled
+     * @param sourceBindingReadiness dynamic binding signer and candidate resolver readiness
+     */
+    public ReadOnlyShadowRuntimeAvailability(
+            boolean jobApi,
+            boolean lifecycleAudit,
+            BooleanSupplier workerReadiness,
+            BooleanSupplier schedulerReadiness,
+            boolean authorityTrustDistributionApi,
+            BooleanSupplier authorityTrustDistributionReadiness,
+            boolean sourceBindingApi,
+            BooleanSupplier sourceBindingReadiness) {
         this.jobApi = jobApi;
         this.lifecycleAudit = lifecycleAudit;
         this.workerReadiness = Objects.requireNonNull(
@@ -64,40 +93,92 @@ public final class ReadOnlyShadowRuntimeAvailability {
                 Objects.requireNonNull(
                         authorityTrustDistributionReadiness,
                         "authorityTrustDistributionReadiness");
+        this.sourceBindingApi = sourceBindingApi;
+        this.sourceBindingReadiness =
+                Objects.requireNonNull(
+                        sourceBindingReadiness,
+                        "sourceBindingReadiness");
     }
 
-    /** @return whether the protected durable job routes are physically assembled */
+    /**
+     * Reports protected durable job API assembly.
+     *
+     * @return whether the protected durable job routes are physically assembled
+     */
     public boolean jobApi() {
         return jobApi;
     }
 
-    /** @return whether committed state transitions are durably journaled and readable */
+    /**
+     * Reports durable lifecycle audit availability.
+     *
+     * @return whether committed state transitions are durably journaled and readable
+     */
     public boolean lifecycleAudit() {
         return lifecycleAudit;
     }
 
-    /** @return whether managed signing and the trusted data plane can execute new work */
+    /**
+     * Probes worker readiness without allowing probe failures to escape.
+     *
+     * @return whether managed signing and the trusted data plane can execute new work
+     */
     public boolean workerReady() {
         return probe(workerReadiness);
     }
 
-    /** @return whether autonomous bounded polling is active */
+    /**
+     * Probes autonomous scheduler readiness.
+     *
+     * @return whether autonomous bounded polling is active
+     */
     public boolean schedulerReady() {
         return probe(schedulerReadiness);
     }
 
-    /** @return whether protected authority publish/page routes are physically assembled */
+    /**
+     * Reports authority trust-distribution API assembly.
+     *
+     * @return whether protected authority publish/page routes are physically assembled
+     */
     public boolean authorityTrustDistributionApi() {
         return authorityTrustDistributionApi;
     }
 
-    /** @return whether local bootstrap-root policy can verify authority key-set publications */
+    /**
+     * Probes local trust-distribution readiness.
+     *
+     * @return whether local bootstrap-root policy can verify authority key-set publications
+     */
     public boolean authorityTrustDistributionReady() {
         return authorityTrustDistributionApi
                 && probe(authorityTrustDistributionReadiness);
     }
 
-    /** @return whether the complete autonomous protected Shadow path is currently usable */
+    /**
+     * Reports detached source-binding API assembly.
+     *
+     * @return whether protected detached source-binding routes are physically assembled
+     */
+    public boolean sourceBindingApi() {
+        return sourceBindingApi;
+    }
+
+    /**
+     * Probes detached source-binding readiness.
+     *
+     * @return whether source-binding signing and exact candidate resolution are usable
+     */
+    public boolean sourceBindingReady() {
+        return sourceBindingApi
+                && probe(sourceBindingReadiness);
+    }
+
+    /**
+     * Combines the mandatory autonomous protected Shadow readiness signals.
+     *
+     * @return whether the complete autonomous protected Shadow path is currently usable
+     */
     public boolean servingReady() {
         return jobApi
                 && lifecycleAudit

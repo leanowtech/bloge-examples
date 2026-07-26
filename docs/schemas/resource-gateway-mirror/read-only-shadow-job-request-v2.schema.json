@@ -1,0 +1,84 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://bloge.dev/schemas/resource-gateway-mirror/read-only-shadow-job-request-v2.schema.json",
+  "title": "Resource Gateway Read-only Shadow Job Request v2",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "requestId",
+    "scope",
+    "inventoryRef",
+    "unitId",
+    "scenarioCaseRef",
+    "targetCapabilityRef",
+    "candidatePlanRef",
+    "baselineBindingRef",
+    "comparisonPolicyRef",
+    "sourceMode",
+    "sourceBindingRef",
+    "accessGrant",
+    "deadlineAt"
+  ],
+  "properties": {
+    "schemaVersion": {
+      "const": "resourceGateway.readOnlyShadowJobRequest.v2"
+    },
+    "requestId": {
+      "$ref": "read-only-shadow-comparison-v1.schema.json#/$defs/identifier"
+    },
+    "scope": {
+      "$ref": "mirror-plan-v1.schema.json#/$defs/scope"
+    },
+    "inventoryRef": {
+      "$ref": "read-only-shadow-comparison-v1.schema.json#/$defs/inventoryRef"
+    },
+    "unitId": {
+      "$ref": "read-only-shadow-comparison-v1.schema.json#/$defs/identifier"
+    },
+    "scenarioCaseRef": {
+      "$ref": "domain-fidelity-inventory-v1.schema.json#/$defs/scenarioCaseRef"
+    },
+    "targetCapabilityRef": {
+      "$ref": "read-only-shadow-comparison-v1.schema.json#/$defs/capabilityRef"
+    },
+    "candidatePlanRef": {
+      "$ref": "read-only-shadow-job-request-v1.schema.json#/$defs/candidatePlanRef"
+    },
+    "baselineBindingRef": {
+      "$ref": "read-only-shadow-job-request-v1.schema.json#/$defs/baselineBindingRef"
+    },
+    "comparisonPolicyRef": {
+      "$ref": "read-only-shadow-comparison-v2.schema.json#/$defs/comparisonPolicyRef"
+    },
+    "sourceMode": {
+      "const": "DETACHED_EVIDENCE"
+    },
+    "sourceBindingRef": {
+      "$ref": "#/$defs/sourceBindingRef"
+    },
+    "accessGrant": {
+      "$ref": "read-only-shadow-job-request-v1.schema.json#/$defs/accessGrant"
+    },
+    "deadlineAt": {
+      "type": "string",
+      "format": "date-time"
+    }
+  },
+  "$defs": {
+    "sourceBindingRef": {
+      "allOf": [
+        {
+          "$ref": "domain-fidelity-inventory-v1.schema.json#/$defs/artifactRef"
+        },
+        {
+          "properties": {
+            "kind": {
+              "const": "SHADOW_SOURCE_BINDING"
+            }
+          }
+        }
+      ]
+    }
+  }
+}

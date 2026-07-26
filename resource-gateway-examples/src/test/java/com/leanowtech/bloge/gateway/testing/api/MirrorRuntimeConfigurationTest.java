@@ -43,6 +43,9 @@ import com.leanowtech.bloge.gateway.integration.mirror.ReadOnlyShadowSamplingGra
 import com.leanowtech.bloge.gateway.integration.mirror.SignedReadOnlyShadowKillSwitchAuthority;
 import com.leanowtech.bloge.gateway.integration.mirror.SignedReadOnlyShadowSamplingGrantAuthority;
 import com.leanowtech.bloge.gateway.integration.mirror.ReadOnlyShadowSourceResolutionVerifier;
+import com.leanowtech.bloge.gateway.integration.mirror.ReadOnlyShadowSourceBindingIntegrity;
+import com.leanowtech.bloge.gateway.integration.mirror.ReadOnlyShadowSourceBindingRepository;
+import com.leanowtech.bloge.gateway.integration.mirror.ReadOnlyShadowSourceBindingService;
 import com.leanowtech.bloge.gateway.integration.mirror.MirrorSessionCheckpointIntegrityService;
 import com.leanowtech.bloge.gateway.integration.mirror.ScenarioArtifactRepository;
 import com.leanowtech.bloge.gateway.integration.mirror.ScenarioRehearsalBatchCompiler;
@@ -445,6 +448,15 @@ class MirrorRuntimeConfigurationTest {
         assertThat(context.getBeansOfType(
                 ReadOnlyShadowJobService.class)).hasSize(1);
         assertThat(context.getBeansOfType(
+                ReadOnlyShadowSourceBindingIntegrity.class)).hasSize(1);
+        assertThat(context.getBeansOfType(
+                ReadOnlyShadowSourceBindingRepository.class)).hasSize(1);
+        assertThat(context.getBeansOfType(
+                ReadOnlyShadowSourceBindingService.class).values())
+                .singleElement()
+                .satisfies(service ->
+                        assertThat(service.ready()).isFalse());
+        assertThat(context.getBeansOfType(
                 ReadOnlyShadowAuthorityIntegrity.class))
                 .hasSize(1);
         assertThat(context.getBeansOfType(
@@ -534,6 +546,8 @@ class MirrorRuntimeConfigurationTest {
                     assertThat(availability.lifecycleAudit()).isTrue();
                     assertThat(availability.workerReady()).isFalse();
                     assertThat(availability.schedulerReady()).isFalse();
+                    assertThat(availability.sourceBindingApi()).isTrue();
+                    assertThat(availability.sourceBindingReady()).isFalse();
                     assertThat(availability.servingReady()).isFalse();
                 });
         assertThat(context.getBeansOfType(

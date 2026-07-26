@@ -1,5 +1,7 @@
 package com.leanowtech.bloge.gateway.integration.mirror;
 
+import com.fasterxml.jackson.annotation.JsonInclude;
+
 import java.time.Instant;
 import java.util.Objects;
 import java.util.regex.Pattern;
@@ -23,6 +25,8 @@ import java.util.regex.Pattern;
  * @param candidatePlanRef exact sealed Mirror plan used by the candidate
  * @param baselineBindingRef exact governed baseline connector generation
  * @param comparisonPolicyRef exact normalized-fact and typed-diff policy
+ * @param sourceMode online execution or exact detached-evidence consumption
+ * @param sourceBindingRef exact detached source binding; present only for detached evidence
  * @param accessGrant exact sampling, egress, and kill-switch authorization coordinates
  * @param deadlineAt absolute execution deadline interpreted against database time
  */
@@ -37,12 +41,19 @@ public record ReadOnlyShadowJobRequest(
         MirrorArtifactRef candidatePlanRef,
         MirrorArtifactRef baselineBindingRef,
         MirrorArtifactRef comparisonPolicyRef,
+        @JsonInclude(JsonInclude.Include.NON_NULL)
+        SourceMode sourceMode,
+        @JsonInclude(JsonInclude.Include.NON_NULL)
+        MirrorArtifactRef sourceBindingRef,
         AccessGrant accessGrant,
         Instant deadlineAt
 ) {
-    /** Current durable Shadow job submission protocol. */
+    /** Durable Shadow job submission protocol with implicit online execution. */
     public static final String SCHEMA_VERSION =
             "resourceGateway.readOnlyShadowJobRequest.v1";
+    /** Detached-source generation with explicit source mode and binding. */
+    public static final String V2_SCHEMA_VERSION =
+            "resourceGateway.readOnlyShadowJobRequest.v2";
     private static final Pattern IDENTIFIER =
             Pattern.compile("[A-Za-z0-9][A-Za-z0-9@._:/-]{0,511}");
 
@@ -76,10 +87,84 @@ public record ReadOnlyShadowJobRequest(
                 comparisonPolicyRef,
                 "SHADOW_COMPARISON_POLICY",
                 "comparisonPolicyRef");
+        if (SCHEMA_VERSION.equals(schemaVersion)) {
+            if (sourceMode != null || sourceBindingRef != null) {
+                throw new IllegalArgumentException(
+                        "legacy Shadow requests must use implicit online execution");
+            }
+        } else {
+            sourceMode = Objects.requireNonNull(
+                    sourceMode, "sourceMode");
+            if (sourceMode != SourceMode.DETACHED_EVIDENCE) {
+                throw new IllegalArgumentException(
+                        "v2 Shadow requests are reserved for detached evidence");
+            }
+            sourceBindingRef = requireKind(
+                    sourceBindingRef,
+                    "SHADOW_SOURCE_BINDING",
+                    "sourceBindingRef");
+        }
         accessGrant = Objects.requireNonNull(
                 accessGrant, "accessGrant");
         deadlineAt = Objects.requireNonNull(
                 deadlineAt, "deadlineAt");
+    }
+
+    /**
+     * Compatibility constructor for v1 online-execution callers.
+     *
+     * <p>Detached evidence must use the canonical constructor and provide an exact source
+     * binding.</p>
+     *
+     * @param schemaVersion exact submission protocol version
+     * @param requestId caller-stable idempotency identity
+     * @param scope complete enterprise namespace
+     * @param inventoryRef exact owner-approved Fidelity inventory
+     * @param unitId exact inventory coverage unit
+     * @param scenarioCaseRef exact classified Scenario case
+     * @param targetCapabilityRef exact candidate capability revision
+     * @param candidatePlanRef exact sealed Mirror plan
+     * @param baselineBindingRef exact governed baseline connector generation
+     * @param comparisonPolicyRef exact comparison policy revision
+     * @param accessGrant exact runtime authorization coordinates
+     * @param deadlineAt absolute execution deadline
+     */
+    public ReadOnlyShadowJobRequest(
+            String schemaVersion,
+            String requestId,
+            CapabilitySnapshot.Scope scope,
+            MirrorArtifactRef inventoryRef,
+            String unitId,
+            MirrorArtifactRef scenarioCaseRef,
+            MirrorArtifactRef targetCapabilityRef,
+            MirrorArtifactRef candidatePlanRef,
+            MirrorArtifactRef baselineBindingRef,
+            MirrorArtifactRef comparisonPolicyRef,
+            AccessGrant accessGrant,
+            Instant deadlineAt) {
+        this(schemaVersion, requestId, scope, inventoryRef,
+                unitId, scenarioCaseRef, targetCapabilityRef,
+                candidatePlanRef, baselineBindingRef,
+                comparisonPolicyRef, null, null,
+                accessGrant, deadlineAt);
+    }
+
+    /** Source acquisition strategy frozen by the current request protocol. */
+    public enum SourceMode {
+        /** Acquires baseline and candidate observations through live read-only connectors. */
+        ONLINE_EXECUTION,
+        /** Resolves an exact previously signed source binding without live source access. */
+        DETACHED_EVIDENCE
+    }
+
+    /**
+     * Returns the effective source mode while preserving the exact legacy v1 wire shape.
+     *
+     * @return explicit v2 mode or implicit v1 online execution
+     */
+    public SourceMode effectiveSourceMode() {
+        return sourceMode == null
+                ? SourceMode.ONLINE_EXECUTION : sourceMode;
     }
 
     /**
@@ -129,6 +214,8 @@ public record ReadOnlyShadowJobRequest(
         /**
          * Converts the reserved authorization into a runtime proof only after the trusted data
          * plane reports that it exposed no write credential and observed no write attempt.
+         *
+         * @return zero-write runtime access proof carrying the reserved authorization coordinates
          */
         public ReadOnlyShadowComparison.AccessProof zeroWriteProof() {
             return new ReadOnlyShadowComparison.AccessProof(
@@ -149,7 +236,8 @@ public record ReadOnlyShadowJobRequest(
         if (normalized.isEmpty()) {
             normalized = SCHEMA_VERSION;
         }
-        if (!SCHEMA_VERSION.equals(normalized)) {
+        if (!SCHEMA_VERSION.equals(normalized)
+                && !V2_SCHEMA_VERSION.equals(normalized)) {
             throw new IllegalArgumentException(
                     "unsupported read-only Shadow job request schemaVersion");
         }

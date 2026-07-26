@@ -117,7 +117,10 @@ offline artifact verification live in the independent `resource-gateway-test-kit
 | `read-only-shadow-comparison-v1.schema.json` | `ReadOnlyShadowComparison` | Legacy signed payload-free single-request typed baseline/candidate comparison; egress proof closes to the exact `DEPLOYMENT_ISOLATION_ATTESTATION` protocol kind |
 | `read-only-shadow-comparison-v2.schema.json` | `ReadOnlyShadowComparison` | Legacy certifiable comparison adding exact normalization policy and source-resolution attestation closure |
 | `read-only-shadow-comparison-v3.schema.json` | `ReadOnlyShadowComparison` | Current comparison adding double-observed grant, guard-policy, and kill-switch publication evidence with exact material/attestation coordinate closure |
-| `read-only-shadow-job-request-v1.schema.json` | `ReadOnlyShadowJobRequest` | Immutable payload-free Shadow admission command with exact grant ordinal, authority coordinates, and deadline |
+| `read-only-shadow-job-request-v1.schema.json` | `ReadOnlyShadowJobRequest` | Immutable payload-free online-source Shadow admission command with exact grant ordinal, authority coordinates, and deadline |
+| `read-only-shadow-job-request-v2.schema.json` | `ReadOnlyShadowJobRequest` | Detached-evidence admission command that must name one exact content-addressed `SHADOW_SOURCE_BINDING`; no latest-run inference is permitted |
+| `read-only-shadow-source-binding-registration-request-v1.schema.json` | `ReadOnlyShadowSourceBindingRegistrationRequest` | Unsigned authority command containing exact baseline facts and candidate evidence coordinates but no caller-selected fingerprint or seal |
+| `read-only-shadow-source-binding-v1.schema.json` | `ReadOnlyShadowSourceBinding` | Signed payload-free detached baseline/candidate pair with nested baseline and outer binding content addresses, exact candidate bundle closure, and bounded validity |
 | `read-only-shadow-job-v1.schema.json` | `ReadOnlyShadowJob` | Integrity-addressed public durable queue projection without payload or raw lease owner |
 | `read-only-shadow-job-lifecycle-event-v1.schema.json` | `ReadOnlyShadowJobLifecycleEvent` | Append-only payload-free committed transition fact with database time and fencing coordinates |
 | `read-only-shadow-job-lifecycle-page-v1.schema.json` | `ReadOnlyShadowJobLifecyclePage` | Bounded monotonic cursor page of exact-job lifecycle facts |

@@ -91,6 +91,8 @@ false until the remaining operator-owned adapters are installed.
 | `POST http://localhost:8080/api/mirror/domain-fidelity/inventories` | Register one immutable owner-approved coverage denominator revision (`X-Purpose: MIRROR_FIDELITY_GOVERNANCE`; trusted human owner identity required) |
 | `GET http://localhost:8080/api/mirror/domain-fidelity/inventories/{inventoryId}/latest` | Read and revalidate the current full-scope denominator (`X-Purpose: GOVERNANCE_EVIDENCE_INGESTION` or `MIRROR_FIDELITY_GOVERNANCE`) |
 | `GET http://localhost:8080/api/mirror/domain-fidelity/domains/{domainId}/profiles/latest` | Read and revalidate the newest managed-signed profile; profile projection remains unavailable until verified source adapters are assembled |
+| `POST http://localhost:8080/api/mirror/shadow/source-bindings` | Resolve an exact candidate evidence bundle, double-address and sign one payload-free detached source pair (`X-Purpose: MIRROR_SHADOW_SOURCE_ADMIN`; explicit source-binding protocol header required) |
+| `GET http://localhost:8080/api/mirror/shadow/source-bindings/{bindingId}/revisions/{revision}?fingerprint=...` | Read one exact currently valid detached source pair without latest-revision fallback (`X-Purpose: MIRROR_SHADOW`, `MIRROR_SHADOW_SOURCE_ADMIN`, or `GOVERNANCE_EVIDENCE_INGESTION`) |
 | `POST http://localhost:8080/api/mirror/shadow-jobs` | Admit one immutable, payload-free read-only Shadow command after starting with `--shadow-jobs` (`X-Purpose: MIRROR_SHADOW`) |
 | `GET http://localhost:8080/api/mirror/shadow-jobs/{jobId}` | Read the exact-scope, integrity-verified durable projection without worker owner or payload |
 | `GET http://localhost:8080/api/mirror/shadow-jobs/{jobId}/request` | Read the immutable command needed for independent job verification |
@@ -670,8 +672,35 @@ key-lifecycle checks without linking server or Spring classes.
 The decision-publication wire schemas and independent offline verifier are
 packaged by `resource-gateway-test-kit`.
 
-Submit a request that validates against
-[`read-only-shadow-job-request-v1.schema.json`](../docs/schemas/resource-gateway-mirror/read-only-shadow-job-request-v1.schema.json):
+Detached evidence must first become one exact signed source pair. The
+registration command omits fingerprints and the seal; Resource Gateway
+independently loads the exact `MIRROR_EVIDENCE_BUNDLE`, closes its
+scope/run/plan/target/request/completion coordinates, computes the nested
+baseline and outer binding addresses, signs, and appends the immutable
+revision:
+
+```bash
+curl -i -X POST \
+  http://localhost:8080/api/mirror/shadow/source-bindings \
+  -H "Authorization: Bearer $SOURCE_ADMIN_TOKEN" \
+  -H "X-Purpose: MIRROR_SHADOW_SOURCE_ADMIN" \
+  -H "X-BLOGE-Shadow-Source-Binding-Protocol: read-only-shadow-source-binding-v1" \
+  -H "Accept: application/vnd.bloge.read-only-shadow-source-binding.v1+json" \
+  -H "Content-Type: application/json" \
+  --data @read-only-shadow-source-binding-registration.json
+```
+
+Use the returned `bindingId`, `revision`, and `bindingFingerprint` as the v2
+job's exact `sourceBindingRef`; set `sourceMode` to `DETACHED_EVIDENCE`. The v1
+job request remains the online-source protocol and cannot carry a detached
+reference. Neither endpoint performs latest-run inference, and a valid source
+binding does not by itself make the baseline/candidate runtime connectors
+ready.
+
+Submit an online request that validates against
+[`read-only-shadow-job-request-v1.schema.json`](../docs/schemas/resource-gateway-mirror/read-only-shadow-job-request-v1.schema.json),
+or a detached request that validates against
+[`read-only-shadow-job-request-v2.schema.json`](../docs/schemas/resource-gateway-mirror/read-only-shadow-job-request-v2.schema.json):
 
 ```bash
 curl -i -X POST http://localhost:8080/api/mirror/shadow-jobs \

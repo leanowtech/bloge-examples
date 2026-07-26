@@ -34,6 +34,74 @@ class ReadOnlyShadowJobRequestDecoderTest {
     }
 
     @Test
+    void decodesV2DetachedEvidenceWithAnExactSourceBinding() throws Exception {
+        ReadOnlyShadowJobRequest online =
+                ReadOnlyShadowJobTestFixtures.request(
+                        "shadow-detached", 15);
+        ReadOnlyShadowJobRequest detached =
+                new ReadOnlyShadowJobRequest(
+                        ReadOnlyShadowJobRequest.V2_SCHEMA_VERSION,
+                        online.requestId(),
+                        online.scope(),
+                        online.inventoryRef(),
+                        online.unitId(),
+                        online.scenarioCaseRef(),
+                        online.targetCapabilityRef(),
+                        online.candidatePlanRef(),
+                        online.baselineBindingRef(),
+                        online.comparisonPolicyRef(),
+                        ReadOnlyShadowJobRequest.SourceMode
+                                .DETACHED_EVIDENCE,
+                        ReadOnlyShadowJobTestFixtures.ref(
+                                "SHADOW_SOURCE_BINDING",
+                                "detached-refund-pair",
+                                'a'),
+                        online.accessGrant(),
+                        online.deadlineAt());
+
+        assertThat(decoder.decode(
+                mapper.writeValueAsBytes(detached),
+                identity)).isEqualTo(detached);
+        assertThat(detached.effectiveSourceMode())
+                .isEqualTo(
+                        ReadOnlyShadowJobRequest.SourceMode
+                                .DETACHED_EVIDENCE);
+    }
+
+    @Test
+    void keepsV1WireShapeImplicitAndRejectsAmbiguousV2Modes() throws Exception {
+        ReadOnlyShadowJobRequest online =
+                ReadOnlyShadowJobTestFixtures.request(
+                        "shadow-online", 16);
+
+        assertThat(mapper.valueToTree(online).has("sourceMode"))
+                .isFalse();
+        assertThat(mapper.valueToTree(online).has("sourceBindingRef"))
+                .isFalse();
+        assertThat(online.effectiveSourceMode())
+                .isEqualTo(
+                        ReadOnlyShadowJobRequest.SourceMode
+                                .ONLINE_EXECUTION);
+        assertThatThrownBy(() -> new ReadOnlyShadowJobRequest(
+                ReadOnlyShadowJobRequest.V2_SCHEMA_VERSION,
+                online.requestId(),
+                online.scope(),
+                online.inventoryRef(),
+                online.unitId(),
+                online.scenarioCaseRef(),
+                online.targetCapabilityRef(),
+                online.candidatePlanRef(),
+                online.baselineBindingRef(),
+                online.comparisonPolicyRef(),
+                ReadOnlyShadowJobRequest.SourceMode.ONLINE_EXECUTION,
+                null,
+                online.accessGrant(),
+                online.deadlineAt()))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("reserved for detached");
+    }
+
+    @Test
     void rejectsUnknownDuplicateTrailingAndOversizedCommands() {
         assertMalformed("""
                 {

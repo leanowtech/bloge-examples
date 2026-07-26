@@ -406,6 +406,16 @@ public final class CapabilityMirrorProtocol {
     /** Durable payload-free read-only Shadow job submission wire version. */
     public static final String READ_ONLY_SHADOW_JOB_REQUEST_V1 =
             "resourceGateway.readOnlyShadowJobRequest.v1";
+    /** Detached-evidence Shadow job submission with an exact source binding. */
+    public static final String READ_ONLY_SHADOW_JOB_REQUEST_V2 =
+            "resourceGateway.readOnlyShadowJobRequest.v2";
+    /** Unsigned detached source-binding registration wire version. */
+    public static final String
+    READ_ONLY_SHADOW_SOURCE_BINDING_REGISTRATION_REQUEST_V1 =
+            "resourceGateway.readOnlyShadowSourceBindingRegistrationRequest.v1";
+    /** Signed payload-free detached source-binding wire version. */
+    public static final String READ_ONLY_SHADOW_SOURCE_BINDING_V1 =
+            "resourceGateway.readOnlyShadowSourceBinding.v1";
     /** Durable payload-free read-only Shadow job projection wire version. */
     public static final String READ_ONLY_SHADOW_JOB_V1 =
             "resourceGateway.readOnlyShadowJob.v1";
@@ -868,6 +878,21 @@ public final class CapabilityMirrorProtocol {
     READ_ONLY_SHADOW_JOB_REQUEST_SCHEMA_RESOURCE =
             SCHEMA_RESOURCE_ROOT
                     + "read-only-shadow-job-request-v1.schema.json";
+    /** Packaged detached-evidence read-only Shadow job submission schema. */
+    public static final String
+    READ_ONLY_SHADOW_JOB_REQUEST_V2_SCHEMA_RESOURCE =
+            SCHEMA_RESOURCE_ROOT
+                    + "read-only-shadow-job-request-v2.schema.json";
+    /** Packaged unsigned detached source-binding registration schema. */
+    public static final String
+    READ_ONLY_SHADOW_SOURCE_BINDING_REGISTRATION_REQUEST_SCHEMA_RESOURCE =
+            SCHEMA_RESOURCE_ROOT
+                    + "read-only-shadow-source-binding-registration-request-v1.schema.json";
+    /** Packaged signed payload-free detached source-binding schema. */
+    public static final String
+    READ_ONLY_SHADOW_SOURCE_BINDING_SCHEMA_RESOURCE =
+            SCHEMA_RESOURCE_ROOT
+                    + "read-only-shadow-source-binding-v1.schema.json";
     /** Packaged durable read-only Shadow job projection schema. */
     public static final String
     READ_ONLY_SHADOW_JOB_SCHEMA_RESOURCE =
