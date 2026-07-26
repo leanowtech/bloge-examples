@@ -1328,8 +1328,16 @@ Install the three host-owned authority beans in a staging deployment, then use
 the same scripts (or the packaged Boot JAR) to start and stop it. Do not add a
 permissive authority merely to make readiness green. The current complete
 population command is bounded to 64 MiB; large customer populations still need
-the planned staged chunk upload/finalize protocol. Twelve strict Schemas and
-the standalone Test Kit client/verifier are described in the
+the planned staged chunk upload/finalize protocol.
+
+The public-only
+`authoritative-outcome-selected-population-stage1-v1.fixture.json` is generated
+from the server model and consumed independently by the Test Kit. It freezes
+population/chunk addressing, `MATCH`/`MISMATCH` observations, one legal
+disposition, zero-missing assessment arithmetic, source pagination, and all
+Resource Gateway Ed25519 signatures without carrying a private key or business
+payload. Twelve strict Schemas, the fixed fixture, and the standalone Test Kit
+client/verifier are described in the
 [Test Kit guide](../resource-gateway-test-kit/README.md#verify-selected-population-completeness).
 
 ### Stateful mirror Session data plane and DAG reads

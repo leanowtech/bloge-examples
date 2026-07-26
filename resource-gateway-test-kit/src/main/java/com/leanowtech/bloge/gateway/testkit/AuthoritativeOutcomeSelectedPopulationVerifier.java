@@ -495,15 +495,21 @@ public final class AuthoritativeOutcomeSelectedPopulationVerifier {
                     || descriptor.path("firstGlobalOrdinal").asLong(-1) != first
                     || descriptor.path("lastGlobalOrdinal").asLong(-1) != last
                     || descriptor.path("memberCount").asInt(-1) != members.size()
-                    || first != nextGlobalOrdinal
-                    || !artifactRef(
+                    || first != nextGlobalOrdinal) {
+                fail("OUTCOME_POPULATION_CHUNK_CURSOR_INVALID");
+            }
+            JsonNode expectedChunkRef = artifactRef(
                     CHUNK_KIND,
                     text(chunk, "chunkId"),
                     1,
-                    text(chunk, "chunkFingerprint"))
-                    .equals(descriptor.path("chunkRef"))
-                    || !samePopulationCoordinates(manifest, chunk)) {
-                fail("OUTCOME_POPULATION_CHUNK_CLOSURE_INVALID");
+                    text(chunk, "chunkFingerprint"));
+            if (!sameArtifactReference(
+                    expectedChunkRef,
+                    descriptor.path("chunkRef"))) {
+                fail("OUTCOME_POPULATION_CHUNK_REFERENCE_INVALID");
+            }
+            if (!samePopulationCoordinates(manifest, chunk)) {
+                fail("OUTCOME_POPULATION_CHUNK_COORDINATE_INVALID");
             }
             for (int memberIndex = 0;
                  memberIndex < members.size();
@@ -601,7 +607,8 @@ public final class AuthoritativeOutcomeSelectedPopulationVerifier {
                 text(manifest, "populationId"),
                 manifest.path("revision").asLong(),
                 text(manifest, "manifestFingerprint"));
-        if (!expectedPopulationRef.equals(
+        if (!sameArtifactReference(
+                expectedPopulationRef,
                 assessment.path("populationRef"))
                 || !assessment.path("scope").equals(
                 manifest.path("scope"))
@@ -721,9 +728,11 @@ public final class AuthoritativeOutcomeSelectedPopulationVerifier {
             if (page.path("afterGlobalOrdinal").asLong(-1) != cursor
                     || !page.path("scope").equals(
                     assessment.path("scope"))
-                    || !page.path("assessmentRef").equals(
+                    || !sameArtifactReference(
+                    page.path("assessmentRef"),
                     assessmentRef)
-                    || !page.path("populationRef").equals(
+                    || !sameArtifactReference(
+                    page.path("populationRef"),
                     populationRef)) {
                 fail("OUTCOME_ASSESSMENT_SOURCE_CURSOR_INVALID");
             }
@@ -1037,6 +1046,25 @@ public final class AuthoritativeOutcomeSelectedPopulationVerifier {
         value.put("revision", revision);
         value.put("fingerprint", fingerprint);
         return value;
+    }
+
+    private static boolean sameArtifactReference(
+            JsonNode left,
+            JsonNode right) {
+        return left != null
+                && left.isObject()
+                && right != null
+                && right.isObject()
+                && text(left, "kind").equals(
+                text(right, "kind"))
+                && text(left, "id").equals(
+                text(right, "id"))
+                && left.path("revision").isIntegralNumber()
+                && right.path("revision").isIntegralNumber()
+                && left.path("revision").asLong()
+                == right.path("revision").asLong()
+                && text(left, "fingerprint").equals(
+                text(right, "fingerprint"));
     }
 
     private static ObjectNode unsignedSeal() {

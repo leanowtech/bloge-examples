@@ -1,0 +1,620 @@
+{
+  "schemaVersion" : "resourceGateway.authoritativeOutcomeSelectedPopulationCompatibility.v1",
+  "verificationTime" : "2026-07-26T04:01:00Z",
+  "verificationKey" : {
+    "schemaVersion" : "toolStudio.resourceGateway.evidenceVerificationKey.v1",
+    "keyId" : "memory-ed25519:7afe09f8-e47f-4b18-9126-3e67f91dfdd1",
+    "algorithm" : "Ed25519",
+    "encodedPublicKey" : "MCowBQYDK2VwAyEAA7Eiq3Qdp7brTY1yislniwDMrbk7ca+1E1MEreLQEzE=",
+    "createdAt" : "2026-07-26T04:00:00Z",
+    "state" : "ACTIVE",
+    "provider" : "IN_MEMORY"
+  },
+  "populationBundle" : {
+    "schemaVersion" : "resourceGateway.authoritativeOutcomeSelectedPopulationBundle.v1",
+    "manifest" : {
+      "schemaVersion" : "resourceGateway.authoritativeOutcomeSelectedPopulationManifest.v1",
+      "populationId" : "refund-selected-population",
+      "revision" : 1,
+      "manifestFingerprint" : "sha256:ffd8814c1238ba470bbe3317b04b9624c7cefc73c9b49b2e594865a1e51ceeac",
+      "scope" : {
+        "tenantId" : "tenant-a",
+        "organizationId" : "support",
+        "projectId" : "refunds",
+        "environmentId" : "staging",
+        "region" : "sg"
+      },
+      "inventoryRef" : {
+        "kind" : "DOMAIN_FIDELITY_INVENTORY",
+        "id" : "refund-support",
+        "revision" : 1,
+        "fingerprint" : "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+      },
+      "cohortRef" : {
+        "kind" : "OUTCOME_CALIBRATION_COHORT",
+        "id" : "refunds-2026-07",
+        "revision" : 1,
+        "fingerprint" : "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+      },
+      "samplingFrameRef" : {
+        "kind" : "OUTCOME_SAMPLING_FRAME",
+        "id" : "eligible-refunds-2026-07",
+        "revision" : 1,
+        "fingerprint" : "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+      },
+      "selectionPolicyRef" : {
+        "kind" : "OUTCOME_SELECTION_POLICY",
+        "id" : "refund-selection-v1",
+        "revision" : 1,
+        "fingerprint" : "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+      },
+      "selectionAuthoritySetRef" : {
+        "kind" : "OUTCOME_SELECTION_AUTHORITY_SET",
+        "id" : "refund-selection-authorities",
+        "revision" : 1,
+        "fingerprint" : "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+      },
+      "selectionAttestationRef" : {
+        "kind" : "OUTCOME_SELECTION_ATTESTATION",
+        "id" : "refund-selection-attestation",
+        "revision" : 1,
+        "fingerprint" : "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+      },
+      "selectedAt" : "2026-07-01T00:00:00Z",
+      "strata" : [ {
+        "unitId" : "refund-boundary",
+        "stratumId" : "small",
+        "eligiblePopulationSize" : 10,
+        "selectedPopulationSize" : 2,
+        "selectionMode" : "HASH_PARTITION"
+      }, {
+        "unitId" : "refund-escalation",
+        "stratumId" : "large",
+        "eligiblePopulationSize" : 5,
+        "selectedPopulationSize" : 1,
+        "selectionMode" : "STRATIFIED_RANDOM"
+      } ],
+      "chunks" : [ {
+        "chunkIndex" : 0,
+        "chunkRef" : {
+          "kind" : "AUTHORITATIVE_OUTCOME_SELECTED_POPULATION_CHUNK",
+          "id" : "refund-selected-population:chunk:0",
+          "revision" : 1,
+          "fingerprint" : "sha256:955acaa2da903308ad89057dd539800672f5d97b17ac413c767680e3e347241a"
+        },
+        "firstGlobalOrdinal" : 1,
+        "lastGlobalOrdinal" : 2,
+        "memberCount" : 2
+      }, {
+        "chunkIndex" : 1,
+        "chunkRef" : {
+          "kind" : "AUTHORITATIVE_OUTCOME_SELECTED_POPULATION_CHUNK",
+          "id" : "refund-selected-population:chunk:1",
+          "revision" : 1,
+          "fingerprint" : "sha256:72ba399e1a59cf3cadf5f1712884a1c6b1fb1a8f2dd44b8083903ab879e16ed8"
+        },
+        "firstGlobalOrdinal" : 3,
+        "lastGlobalOrdinal" : 3,
+        "memberCount" : 1
+      } ],
+      "totalEligiblePopulation" : 15,
+      "totalSelectedPopulation" : 3,
+      "attestedAt" : "2026-07-26T04:00:00Z",
+      "manifestSeal" : {
+        "schemaVersion" : "bloge.visualRunEvidenceSeal.v1",
+        "materialFingerprint" : "sha256:a9f48d3b8a813146246907d9ae30367ce237bb1f14fa78361c46c21195ccee25",
+        "algorithm" : "Ed25519",
+        "keyId" : "memory-ed25519:7afe09f8-e47f-4b18-9126-3e67f91dfdd1",
+        "signedAt" : "2026-07-26T04:00:00Z",
+        "signature" : "fWnfbj5qLp86Fjp+O1n2ARpZCsfHXRCvGuZMbOtEWHjVLmx3o1V9PODpftnKdLPkIaafm/Fs1Ykph1ahIG2YDA=="
+      }
+    },
+    "chunks" : [ {
+      "schemaVersion" : "resourceGateway.authoritativeOutcomeSelectedPopulationChunk.v1",
+      "chunkId" : "refund-selected-population:chunk:0",
+      "chunkFingerprint" : "sha256:955acaa2da903308ad89057dd539800672f5d97b17ac413c767680e3e347241a",
+      "populationId" : "refund-selected-population",
+      "populationRevision" : 1,
+      "scope" : {
+        "tenantId" : "tenant-a",
+        "organizationId" : "support",
+        "projectId" : "refunds",
+        "environmentId" : "staging",
+        "region" : "sg"
+      },
+      "inventoryRef" : {
+        "kind" : "DOMAIN_FIDELITY_INVENTORY",
+        "id" : "refund-support",
+        "revision" : 1,
+        "fingerprint" : "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+      },
+      "cohortRef" : {
+        "kind" : "OUTCOME_CALIBRATION_COHORT",
+        "id" : "refunds-2026-07",
+        "revision" : 1,
+        "fingerprint" : "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+      },
+      "samplingFrameRef" : {
+        "kind" : "OUTCOME_SAMPLING_FRAME",
+        "id" : "eligible-refunds-2026-07",
+        "revision" : 1,
+        "fingerprint" : "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+      },
+      "selectedAt" : "2026-07-01T00:00:00Z",
+      "chunkIndex" : 0,
+      "firstGlobalOrdinal" : 1,
+      "members" : [ {
+        "globalOrdinal" : 1,
+        "unitId" : "refund-boundary",
+        "stratumId" : "small",
+        "sampleOrdinal" : 1,
+        "inclusionFingerprint" : "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "subjectFingerprint" : "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "attributionKeyFingerprint" : "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+      }, {
+        "globalOrdinal" : 2,
+        "unitId" : "refund-boundary",
+        "stratumId" : "small",
+        "sampleOrdinal" : 2,
+        "inclusionFingerprint" : "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+        "subjectFingerprint" : "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+        "attributionKeyFingerprint" : "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+      } ]
+    }, {
+      "schemaVersion" : "resourceGateway.authoritativeOutcomeSelectedPopulationChunk.v1",
+      "chunkId" : "refund-selected-population:chunk:1",
+      "chunkFingerprint" : "sha256:72ba399e1a59cf3cadf5f1712884a1c6b1fb1a8f2dd44b8083903ab879e16ed8",
+      "populationId" : "refund-selected-population",
+      "populationRevision" : 1,
+      "scope" : {
+        "tenantId" : "tenant-a",
+        "organizationId" : "support",
+        "projectId" : "refunds",
+        "environmentId" : "staging",
+        "region" : "sg"
+      },
+      "inventoryRef" : {
+        "kind" : "DOMAIN_FIDELITY_INVENTORY",
+        "id" : "refund-support",
+        "revision" : 1,
+        "fingerprint" : "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+      },
+      "cohortRef" : {
+        "kind" : "OUTCOME_CALIBRATION_COHORT",
+        "id" : "refunds-2026-07",
+        "revision" : 1,
+        "fingerprint" : "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+      },
+      "samplingFrameRef" : {
+        "kind" : "OUTCOME_SAMPLING_FRAME",
+        "id" : "eligible-refunds-2026-07",
+        "revision" : 1,
+        "fingerprint" : "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+      },
+      "selectedAt" : "2026-07-01T00:00:00Z",
+      "chunkIndex" : 1,
+      "firstGlobalOrdinal" : 3,
+      "members" : [ {
+        "globalOrdinal" : 3,
+        "unitId" : "refund-escalation",
+        "stratumId" : "large",
+        "sampleOrdinal" : 1,
+        "inclusionFingerprint" : "sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+        "subjectFingerprint" : "sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+        "attributionKeyFingerprint" : "sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"
+      } ]
+    } ],
+    "predecessorFingerprint" : ""
+  },
+  "observations" : [ {
+    "schemaVersion" : "resourceGateway.authoritativeOutcomeObservation.v1",
+    "observationId" : "fixture-outcome-match",
+    "revision" : 1,
+    "observationFingerprint" : "sha256:786016302d5f5203718560ce0763a90e4b53d5d4bc60ccdf4d82ef55afbbb381",
+    "scope" : {
+      "tenantId" : "tenant-a",
+      "organizationId" : "support",
+      "projectId" : "refunds",
+      "environmentId" : "staging",
+      "region" : "sg"
+    },
+    "inventoryRef" : {
+      "kind" : "DOMAIN_FIDELITY_INVENTORY",
+      "id" : "refund-support",
+      "revision" : 1,
+      "fingerprint" : "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+    },
+    "unitId" : "refund-boundary",
+    "scenarioCaseRef" : {
+      "kind" : "SCENARIO_CASE",
+      "id" : "refund-boundary",
+      "revision" : 1,
+      "fingerprint" : "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+    },
+    "targetCapabilityRef" : {
+      "kind" : "CAPABILITY",
+      "id" : "refund",
+      "revision" : 1,
+      "fingerprint" : "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+    },
+    "outcomeDefinitionRef" : {
+      "kind" : "OUTCOME_DEFINITION",
+      "id" : "refund-settled",
+      "revision" : 1,
+      "fingerprint" : "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+    },
+    "attributionPolicyRef" : {
+      "kind" : "OUTCOME_ATTRIBUTION_POLICY",
+      "id" : "refund-seven-day-window",
+      "revision" : 1,
+      "fingerprint" : "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+    },
+    "authoritySetRef" : {
+      "kind" : "OUTCOME_AUTHORITY_SET",
+      "id" : "refund-ledgers",
+      "revision" : 1,
+      "fingerprint" : "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+    },
+    "selectionProof" : {
+      "cohortRef" : {
+        "kind" : "OUTCOME_CALIBRATION_COHORT",
+        "id" : "refunds-2026-07",
+        "revision" : 1,
+        "fingerprint" : "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+      },
+      "samplingFrameRef" : {
+        "kind" : "OUTCOME_SAMPLING_FRAME",
+        "id" : "eligible-refunds-2026-07",
+        "revision" : 1,
+        "fingerprint" : "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+      },
+      "stratumId" : "small",
+      "inclusionFingerprint" : "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "selectedAt" : "2026-07-01T00:00:00Z",
+      "eligiblePopulationSize" : 10,
+      "selectedPopulationSize" : 2,
+      "sampleOrdinal" : 1,
+      "selectionMode" : "HASH_PARTITION"
+    },
+    "subjectFingerprint" : "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "attributionKeyFingerprint" : "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "modelOutcomeFingerprint" : "sha256:dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
+    "attributionWindow" : {
+      "actionOccurredAt" : "2026-07-02T00:00:00Z",
+      "opensAt" : "2026-07-02T00:00:00Z",
+      "closesAt" : "2026-07-09T00:00:00Z"
+    },
+    "reconciledAt" : "2026-07-10T00:00:00Z",
+    "attestedAt" : "2026-07-26T04:00:00Z",
+    "authorityWatermarks" : [ {
+      "authorityId" : "ledger-a",
+      "watermarkRef" : {
+        "kind" : "AUTHORITATIVE_OUTCOME_SOURCE_WATERMARK",
+        "id" : "ledger-a-watermark",
+        "revision" : 1,
+        "fingerprint" : "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+      },
+      "eventTimeThrough" : "2026-07-09T00:00:00Z",
+      "publishedAt" : "2026-07-09T23:59:59Z"
+    } ],
+    "authorityFacts" : [ {
+      "authorityId" : "ledger-a",
+      "sourceRef" : {
+        "kind" : "AUTHORITATIVE_OUTCOME_SOURCE_RECORD",
+        "id" : "record-a-1",
+        "revision" : 1,
+        "fingerprint" : "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+      },
+      "subjectFingerprint" : "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "attributionKeyFingerprint" : "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "outcomeFingerprint" : "sha256:dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
+      "occurredAt" : "2026-07-08T23:59:00Z",
+      "recordedAt" : "2026-07-09T00:00:30Z",
+      "evidenceComplete" : true
+    } ],
+    "reconciliation" : "MATCH",
+    "evidenceComplete" : true,
+    "observationSeal" : {
+      "schemaVersion" : "bloge.visualRunEvidenceSeal.v1",
+      "materialFingerprint" : "sha256:4ac134ff6b04fed09536460cf4877d2156d37066061f742b280fc63229dc8ba5",
+      "algorithm" : "Ed25519",
+      "keyId" : "memory-ed25519:7afe09f8-e47f-4b18-9126-3e67f91dfdd1",
+      "signedAt" : "2026-07-26T04:00:00Z",
+      "signature" : "2YTB0k+DS4WfrRUdYLlduezW6DFepVM2PteZyS8OeO12omSN7g2HXSyk/dsgJaE/yaKcvZdJqtyhMKmsGygTDA=="
+    }
+  }, {
+    "schemaVersion" : "resourceGateway.authoritativeOutcomeObservation.v1",
+    "observationId" : "fixture-outcome-mismatch",
+    "revision" : 1,
+    "observationFingerprint" : "sha256:9acfb971593cebe1ea7d4e65cba87e7828275320872caea7a3c83d3f4ed68f28",
+    "scope" : {
+      "tenantId" : "tenant-a",
+      "organizationId" : "support",
+      "projectId" : "refunds",
+      "environmentId" : "staging",
+      "region" : "sg"
+    },
+    "inventoryRef" : {
+      "kind" : "DOMAIN_FIDELITY_INVENTORY",
+      "id" : "refund-support",
+      "revision" : 1,
+      "fingerprint" : "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+    },
+    "unitId" : "refund-boundary",
+    "scenarioCaseRef" : {
+      "kind" : "SCENARIO_CASE",
+      "id" : "refund-boundary",
+      "revision" : 1,
+      "fingerprint" : "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+    },
+    "targetCapabilityRef" : {
+      "kind" : "CAPABILITY",
+      "id" : "refund",
+      "revision" : 1,
+      "fingerprint" : "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+    },
+    "outcomeDefinitionRef" : {
+      "kind" : "OUTCOME_DEFINITION",
+      "id" : "refund-settled",
+      "revision" : 1,
+      "fingerprint" : "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+    },
+    "attributionPolicyRef" : {
+      "kind" : "OUTCOME_ATTRIBUTION_POLICY",
+      "id" : "refund-seven-day-window",
+      "revision" : 1,
+      "fingerprint" : "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+    },
+    "authoritySetRef" : {
+      "kind" : "OUTCOME_AUTHORITY_SET",
+      "id" : "refund-ledgers",
+      "revision" : 1,
+      "fingerprint" : "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+    },
+    "selectionProof" : {
+      "cohortRef" : {
+        "kind" : "OUTCOME_CALIBRATION_COHORT",
+        "id" : "refunds-2026-07",
+        "revision" : 1,
+        "fingerprint" : "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+      },
+      "samplingFrameRef" : {
+        "kind" : "OUTCOME_SAMPLING_FRAME",
+        "id" : "eligible-refunds-2026-07",
+        "revision" : 1,
+        "fingerprint" : "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+      },
+      "stratumId" : "small",
+      "inclusionFingerprint" : "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+      "selectedAt" : "2026-07-01T00:00:00Z",
+      "eligiblePopulationSize" : 10,
+      "selectedPopulationSize" : 2,
+      "sampleOrdinal" : 2,
+      "selectionMode" : "HASH_PARTITION"
+    },
+    "subjectFingerprint" : "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+    "attributionKeyFingerprint" : "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+    "modelOutcomeFingerprint" : "sha256:dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
+    "attributionWindow" : {
+      "actionOccurredAt" : "2026-07-02T00:00:00Z",
+      "opensAt" : "2026-07-02T00:00:00Z",
+      "closesAt" : "2026-07-09T00:00:00Z"
+    },
+    "reconciledAt" : "2026-07-10T00:00:00Z",
+    "attestedAt" : "2026-07-26T04:00:00Z",
+    "authorityWatermarks" : [ {
+      "authorityId" : "ledger-a",
+      "watermarkRef" : {
+        "kind" : "AUTHORITATIVE_OUTCOME_SOURCE_WATERMARK",
+        "id" : "ledger-a-watermark",
+        "revision" : 1,
+        "fingerprint" : "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+      },
+      "eventTimeThrough" : "2026-07-09T00:00:00Z",
+      "publishedAt" : "2026-07-09T23:59:59Z"
+    } ],
+    "authorityFacts" : [ {
+      "authorityId" : "ledger-a",
+      "sourceRef" : {
+        "kind" : "AUTHORITATIVE_OUTCOME_SOURCE_RECORD",
+        "id" : "record-a-2",
+        "revision" : 1,
+        "fingerprint" : "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+      },
+      "subjectFingerprint" : "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+      "attributionKeyFingerprint" : "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+      "outcomeFingerprint" : "sha256:eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
+      "occurredAt" : "2026-07-08T23:59:00Z",
+      "recordedAt" : "2026-07-09T00:00:30Z",
+      "evidenceComplete" : true
+    } ],
+    "reconciliation" : "MISMATCH",
+    "evidenceComplete" : true,
+    "observationSeal" : {
+      "schemaVersion" : "bloge.visualRunEvidenceSeal.v1",
+      "materialFingerprint" : "sha256:e384e8f58dc45dc48bed98ac032b3ba81dffe701e626fbd0f5ad1467063341d5",
+      "algorithm" : "Ed25519",
+      "keyId" : "memory-ed25519:7afe09f8-e47f-4b18-9126-3e67f91dfdd1",
+      "signedAt" : "2026-07-26T04:00:00Z",
+      "signature" : "1k8regaLrSoE/IpF0BV01P2y7S3FbSYpKM9vdPb+kIzQDebVYaabC7h/iFeDobdflrJLGWnZRXEXWocsns1BBw=="
+    }
+  } ],
+  "dispositions" : [ {
+    "schemaVersion" : "resourceGateway.authoritativeOutcomeSelectedPopulationDisposition.v1",
+    "dispositionId" : "fixture-legal-deletion",
+    "revision" : 1,
+    "dispositionFingerprint" : "sha256:8a40292dee073c8a8a1643e0e10c76ab428c978abcfdb077b8f2b8be54a7ad7a",
+    "scope" : {
+      "tenantId" : "tenant-a",
+      "organizationId" : "support",
+      "projectId" : "refunds",
+      "environmentId" : "staging",
+      "region" : "sg"
+    },
+    "populationRef" : {
+      "kind" : "AUTHORITATIVE_OUTCOME_SELECTED_POPULATION_MANIFEST",
+      "id" : "refund-selected-population",
+      "revision" : 1,
+      "fingerprint" : "sha256:ffd8814c1238ba470bbe3317b04b9624c7cefc73c9b49b2e594865a1e51ceeac"
+    },
+    "unitId" : "refund-escalation",
+    "stratumId" : "large",
+    "sampleOrdinal" : 1,
+    "inclusionFingerprint" : "sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+    "subjectFingerprint" : "sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+    "attributionKeyFingerprint" : "sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+    "disposition" : "LEGALLY_DELETED",
+    "reason" : "LEGAL_RETENTION_EXPIRY",
+    "retentionPolicyRef" : {
+      "kind" : "OUTCOME_DATA_RETENTION_POLICY",
+      "id" : "refund-retention-v1",
+      "revision" : 1,
+      "fingerprint" : "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+    },
+    "deletionApprovalRef" : {
+      "kind" : "OUTCOME_MEMBER_DELETION_APPROVAL",
+      "id" : "fixture-legal-deletion-approval",
+      "revision" : 1,
+      "fingerprint" : "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+    },
+    "deletionAuthoritySetRef" : {
+      "kind" : "OUTCOME_DELETION_AUTHORITY_SET",
+      "id" : "refund-deletion-authorities",
+      "revision" : 1,
+      "fingerprint" : "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+    },
+    "effectiveAt" : "2026-07-10T00:00:00Z",
+    "attestedAt" : "2026-07-26T04:00:00Z",
+    "dispositionSeal" : {
+      "schemaVersion" : "bloge.visualRunEvidenceSeal.v1",
+      "materialFingerprint" : "sha256:0b7529a1d56fe53a7824bd8fce953f2b99625f26c69b0bf23f8585ce5669ddbe",
+      "algorithm" : "Ed25519",
+      "keyId" : "memory-ed25519:7afe09f8-e47f-4b18-9126-3e67f91dfdd1",
+      "signedAt" : "2026-07-26T04:00:00Z",
+      "signature" : "0pggLFGL2d5JnGG64hE3zSpSrBg8VA+NYGocrY22qbbhIQdjD+BEMsluky4PBCWQx9GkRAT1VmdXEdSc99mhBQ=="
+    }
+  } ],
+  "assessment" : {
+    "schemaVersion" : "resourceGateway.authoritativeOutcomeSelectedPopulationCompletenessAssessment.v1",
+    "assessmentId" : "fixture-population-completeness",
+    "revision" : 1,
+    "assessmentFingerprint" : "sha256:88df1e508cdcda7ebee3edd656fb33d4164dbfa2c338cc6a2fd1ec29d7aed6a1",
+    "scope" : {
+      "tenantId" : "tenant-a",
+      "organizationId" : "support",
+      "projectId" : "refunds",
+      "environmentId" : "staging",
+      "region" : "sg"
+    },
+    "populationRef" : {
+      "kind" : "AUTHORITATIVE_OUTCOME_SELECTED_POPULATION_MANIFEST",
+      "id" : "refund-selected-population",
+      "revision" : 1,
+      "fingerprint" : "sha256:ffd8814c1238ba470bbe3317b04b9624c7cefc73c9b49b2e594865a1e51ceeac"
+    },
+    "assessedAt" : "2026-07-26T04:00:00Z",
+    "observationSetFingerprint" : "sha256:338737e77b6b8f8ce33607bd98208c5b3034119406e38f5be602acf06416bdd4",
+    "dispositionSetFingerprint" : "sha256:9b22fc10be8d2320087f652bc806cd6e4da396a23e823a3560db7a93b84611ac",
+    "strata" : [ {
+      "unitId" : "refund-boundary",
+      "stratumId" : "small",
+      "counts" : {
+        "expected" : 2,
+        "matched" : 1,
+        "mismatched" : 1,
+        "pending" : 0,
+        "censored" : 0,
+        "conflicting" : 0,
+        "legallyDeleted" : 0,
+        "missing" : 0
+      }
+    }, {
+      "unitId" : "refund-escalation",
+      "stratumId" : "large",
+      "counts" : {
+        "expected" : 1,
+        "matched" : 0,
+        "mismatched" : 0,
+        "pending" : 0,
+        "censored" : 0,
+        "conflicting" : 0,
+        "legallyDeleted" : 1,
+        "missing" : 0
+      }
+    } ],
+    "totals" : {
+      "expected" : 3,
+      "matched" : 1,
+      "mismatched" : 1,
+      "pending" : 0,
+      "censored" : 0,
+      "conflicting" : 0,
+      "legallyDeleted" : 1,
+      "missing" : 0
+    },
+    "submissionComplete" : true,
+    "terminalComplete" : true,
+    "assessmentSeal" : {
+      "schemaVersion" : "bloge.visualRunEvidenceSeal.v1",
+      "materialFingerprint" : "sha256:9a2f59f8f00175bb030df7da330ccd0d0fdb491b31acdc790b5cb8e905e610c1",
+      "algorithm" : "Ed25519",
+      "keyId" : "memory-ed25519:7afe09f8-e47f-4b18-9126-3e67f91dfdd1",
+      "signedAt" : "2026-07-26T04:00:00Z",
+      "signature" : "kaxKOtO7Y9bjr0Vq6TIFCKITmbfEZHOdubeqiXMoo9Wd/zHRhbgnXRzznunK7ZT5iyKf26e8aPM5m+j//whCDw=="
+    }
+  },
+  "sourcePages" : [ {
+    "schemaVersion" : "resourceGateway.authoritativeOutcomeSelectedPopulationAssessmentSourcePage.v1",
+    "pageFingerprint" : "sha256:709e8ab78a1ead1ea584719ff9d61554d074df0c0ebb239dfbb796dd84eab168",
+    "scope" : {
+      "tenantId" : "tenant-a",
+      "organizationId" : "support",
+      "projectId" : "refunds",
+      "environmentId" : "staging",
+      "region" : "sg"
+    },
+    "assessmentRef" : {
+      "kind" : "AUTHORITATIVE_OUTCOME_SELECTED_POPULATION_COMPLETENESS",
+      "id" : "fixture-population-completeness",
+      "revision" : 1,
+      "fingerprint" : "sha256:88df1e508cdcda7ebee3edd656fb33d4164dbfa2c338cc6a2fd1ec29d7aed6a1"
+    },
+    "populationRef" : {
+      "kind" : "AUTHORITATIVE_OUTCOME_SELECTED_POPULATION_MANIFEST",
+      "id" : "refund-selected-population",
+      "revision" : 1,
+      "fingerprint" : "sha256:ffd8814c1238ba470bbe3317b04b9624c7cefc73c9b49b2e594865a1e51ceeac"
+    },
+    "afterGlobalOrdinal" : 0,
+    "nextGlobalOrdinal" : 3,
+    "complete" : true,
+    "entries" : [ {
+      "globalOrdinal" : 1,
+      "sourceKind" : "OBSERVATION",
+      "sourceRef" : {
+        "kind" : "AUTHORITATIVE_OUTCOME_OBSERVATION",
+        "id" : "fixture-outcome-match",
+        "revision" : 1,
+        "fingerprint" : "sha256:786016302d5f5203718560ce0763a90e4b53d5d4bc60ccdf4d82ef55afbbb381"
+      }
+    }, {
+      "globalOrdinal" : 2,
+      "sourceKind" : "OBSERVATION",
+      "sourceRef" : {
+        "kind" : "AUTHORITATIVE_OUTCOME_OBSERVATION",
+        "id" : "fixture-outcome-mismatch",
+        "revision" : 1,
+        "fingerprint" : "sha256:9acfb971593cebe1ea7d4e65cba87e7828275320872caea7a3c83d3f4ed68f28"
+      }
+    }, {
+      "globalOrdinal" : 3,
+      "sourceKind" : "LEGAL_DISPOSITION",
+      "sourceRef" : {
+        "kind" : "AUTHORITATIVE_OUTCOME_SELECTED_POPULATION_DISPOSITION",
+        "id" : "fixture-legal-deletion",
+        "revision" : 1,
+        "fingerprint" : "sha256:8a40292dee073c8a8a1643e0e10c76ab428c978abcfdb077b8f2b8be54a7ad7a"
+      }
+    } ]
+  } ]
+}

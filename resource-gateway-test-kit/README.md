@@ -1108,6 +1108,34 @@ errors with member identifiers. Selection, deletion, and source authority
 callbacks are distinct by design; a Resource Gateway verification key proves
 custody, not business selection or deletion authority.
 
+Run the fixed producer/consumer fixture in dependency upgrades and startup
+probes:
+
+```java
+AuthoritativeOutcomeSelectedPopulationCompatibilityFixture fixture =
+        CapabilityMirrorProtocol
+                .authoritativeOutcomeSelectedPopulationCompatibilityFixture();
+var compatibility = fixture.verify();
+if (!compatibility.verified()) {
+    throw new IllegalStateException(compatibility.reasonCode());
+}
+```
+
+The server-produced fixture freezes a three-member denominator: one `MATCH`,
+one `MISMATCH`, and one independently authorized legal deletion. It includes
+the signed population and chunks, two signed observations, one signed
+disposition, a zero-missing signed assessment, its complete source page, one
+public key, and a frozen verification time. It contains no private key,
+credential, endpoint, request, response, or business payload.
+
+The fixture is packaged at
+`schemas/resource-gateway-mirror/authoritative-outcome-selected-population-stage1-v1.fixture.json`.
+TypeScript, Go, and other consumers should use that exact public corpus for
+their own Schema, canonicalization, content-address, Ed25519, denominator, and
+source-closure tests. Passing the Java fixture proves server/Test Kit
+compatibility; it does not certify another language implementation or replace
+live customer authority callbacks.
+
 The current server accepts a complete population command up to 64 MiB. For a
 larger denominator, wait for the staged chunk upload/finalize protocol rather
 than splitting one logical population into unrelated revisions. The ordinary

@@ -463,6 +463,11 @@ public final class CapabilityMirrorProtocol {
     public static final String
     AUTHORITATIVE_OUTCOME_SELECTED_POPULATION_ASSESSMENT_SOURCE_PAGE_V1 =
             "resourceGateway.authoritativeOutcomeSelectedPopulationAssessmentSourcePage.v1";
+    /** Fixed server-produced selected-population completeness compatibility fixture version. */
+    public static final String
+    AUTHORITATIVE_OUTCOME_SELECTED_POPULATION_COMPATIBILITY_V1 =
+            AuthoritativeOutcomeSelectedPopulationCompatibilityFixture
+                    .SCHEMA_VERSION;
     /** Fixed server-produced authoritative outcome compatibility fixture wire version. */
     public static final String
     AUTHORITATIVE_OUTCOME_OBSERVATION_COMPATIBILITY_V1 =
@@ -562,6 +567,11 @@ public final class CapabilityMirrorProtocol {
     AUTHORITATIVE_OUTCOME_OBSERVATION_FIXTURE_RESOURCE =
             SCHEMA_RESOURCE_ROOT
                     + "authoritative-outcome-observation-stage1-v1.fixture.json";
+    /** Packaged public-only selected-population completeness compatibility fixture. */
+    public static final String
+    AUTHORITATIVE_OUTCOME_SELECTED_POPULATION_FIXTURE_RESOURCE =
+            SCHEMA_RESOURCE_ROOT
+                    + "authoritative-outcome-selected-population-stage1-v1.fixture.json";
     /** Packaged three-authority detached source-resolution compatibility fixture. */
     public static final String
     READ_ONLY_SHADOW_SOURCE_RESOLUTION_FIXTURE_RESOURCE =
@@ -1350,6 +1360,24 @@ public final class CapabilityMirrorProtocol {
     }
 
     /**
+     * Returns the server-produced public-only selected-population completeness fixture.
+     *
+     * <p>Loading independently verifies strict Schemas, population and chunk content addresses,
+     * denominator closure, every outcome and legal-disposition seal, assessment arithmetic, and
+     * complete historical source pagination. Its bounded authority callbacks prove only fixed
+     * producer/consumer compatibility, never a live customer-governance decision.</p>
+     *
+     * @return detached full selected-population compatibility fixture
+     * @throws IllegalStateException when the packaged fixture is absent or unverifiable
+     */
+    public static
+    AuthoritativeOutcomeSelectedPopulationCompatibilityFixture
+    authoritativeOutcomeSelectedPopulationCompatibilityFixture() {
+        return SelectedPopulationFixtureHolder.FIXTURE
+                .detachedCopy();
+    }
+
+    /**
      * Returns the server-produced public-only online baseline compatibility fixture.
      *
      * <p>Loading this fixture independently proves strict command and observation schemas,
@@ -1746,6 +1774,43 @@ public final class CapabilityMirrorProtocol {
             } catch (IOException | RuntimeException failure) {
                 throw new IllegalStateException(
                         "RG.MIRROR.CLIENT.OUTCOME_OBSERVATION_FIXTURE_UNAVAILABLE",
+                        failure);
+            }
+        }
+    }
+
+    private static final class SelectedPopulationFixtureHolder {
+        private static final
+        AuthoritativeOutcomeSelectedPopulationCompatibilityFixture
+                FIXTURE = load();
+
+        private static
+        AuthoritativeOutcomeSelectedPopulationCompatibilityFixture
+        load() {
+            try (InputStream input =
+                         CapabilityMirrorProtocol.class
+                                 .getResourceAsStream(
+                                         AUTHORITATIVE_OUTCOME_SELECTED_POPULATION_FIXTURE_RESOURCE)) {
+                if (input == null) {
+                    throw new IOException(
+                            "Selected-population fixture is absent");
+                }
+                AuthoritativeOutcomeSelectedPopulationCompatibilityFixture
+                        fixture =
+                        AuthoritativeOutcomeSelectedPopulationCompatibilityFixture
+                                .from(JSON.readTree(input));
+                AuthoritativeOutcomeSelectedPopulationCompatibilityFixture
+                        .VerificationResult result =
+                        fixture.verify();
+                if (!result.verified()) {
+                    throw new IOException(
+                            "Selected-population fixture cannot be verified: "
+                                    + result.reasonCode());
+                }
+                return fixture;
+            } catch (IOException | RuntimeException failure) {
+                throw new IllegalStateException(
+                        "RG.MIRROR.CLIENT.OUTCOME_SELECTED_POPULATION_FIXTURE_UNAVAILABLE",
                         failure);
             }
         }
