@@ -175,6 +175,18 @@ zero-write claims, and Ed25519 signatures. It contains no private key or
 business payload. A passing fixture proves producer/consumer wire
 compatibility, not current online authority or data-plane certification.
 
+`online-read-only-shadow-baseline-stage1-v1.fixture.json` is the fixed
+public-only regional online-baseline compatibility fixture. The server produced
+its exact payload-free command, deterministic content-addressed observation,
+expected artifact reference, and Ed25519 seal. The standalone Test Kit validates
+both strict schemas and independently recomputes command/idempotency
+fingerprints, every command-to-observation coordinate, observation identity and
+content address, time closure, key policy, and signature. It contains no private
+key, endpoint, credential, customer request, or customer response. Passing it
+proves producer/consumer wire compatibility and authenticates the encoded
+zero-write measurement; it does not prove current sidecar capability, data-use
+permission, paired online execution, or production certification.
+
 The producer emits v2 for stateless runs, v3 for read-only Session runs, and v5
 for new Session runs containing virtual writes. V4 remains the compatible
 successful-transition generation. Readers and the standalone test-kit

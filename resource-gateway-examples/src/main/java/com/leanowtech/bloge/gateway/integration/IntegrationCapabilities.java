@@ -314,6 +314,15 @@ public record IntegrationCapabilities(
         objects.put("mirrorDeploymentIsolationRunTrust", List.of(
                 com.leanowtech.bloge.gateway.integration.mirror
                         .MirrorDeploymentIsolationRunTrust.Binding.SCHEMA_VERSION));
+        objects.put("onlineReadOnlyShadowBaselineCommand", List.of(
+                com.leanowtech.bloge.gateway.integration.mirror
+                        .OnlineReadOnlyShadowBaselineCommand.SCHEMA_VERSION));
+        objects.put("onlineReadOnlyShadowBaselineObservation", List.of(
+                com.leanowtech.bloge.gateway.integration.mirror
+                        .OnlineReadOnlyShadowBaselineObservation.SCHEMA_VERSION));
+        objects.put("onlineReadOnlyShadowBaselineCapability", List.of(
+                com.leanowtech.bloge.gateway.integration.mirror
+                        .OnlineReadOnlyShadowBaselineProtocol.Capability.SCHEMA_VERSION));
         objects.put("mirrorDeploymentIsolationAttestationRevocationRequest", List.of(
                 com.leanowtech.bloge.gateway.integration.mirror
                         .MirrorDeploymentIsolationAttestationRevocationRequest.SCHEMA_VERSION));
@@ -812,6 +821,12 @@ public record IntegrationCapabilities(
         features.put("mirrorIsolationRunTrustReady", false);
         features.put("mirrorCertifiableEvidenceServingReady", false);
         features.put("mirrorObservationProtocol", true);
+        features.put("mirrorReadOnlyShadowOnlineBaselineProtocol", true);
+        features.put("mirrorReadOnlyShadowOnlineBaselineConnectorInstalled", false);
+        features.put("mirrorReadOnlyShadowOnlineBaselineAuthorityReady", false);
+        features.put("mirrorReadOnlyShadowOnlineBaselineEvidenceVerificationReady", false);
+        features.put("mirrorReadOnlyShadowOnlineBaselineReady", false);
+        features.put("mirrorReadOnlyShadowOnlineDataPlaneReady", false);
         features.put("mirrorObservationAdmissionApi", false);
         features.put("mirrorObservationAdmissionReady", false);
         features.put("mirrorCorpusGovernanceProtocol", true);

@@ -169,6 +169,7 @@ import com.leanowtech.bloge.gateway.integration.mirror.MirrorServingGenerationTe
 import com.leanowtech.bloge.gateway.integration.mirror.MirrorServingGenerationTrustProvider;
 import com.leanowtech.bloge.gateway.integration.MirrorRuntimeAvailability;
 import com.leanowtech.bloge.gateway.integration.DomainFidelityRuntimeAvailability;
+import com.leanowtech.bloge.gateway.integration.OnlineReadOnlyShadowBaselineRuntimeAvailability;
 import com.leanowtech.bloge.gateway.integration.ReadOnlyShadowRuntimeAvailability;
 import com.leanowtech.bloge.gateway.resource.ResourceRegistry;
 import com.leanowtech.bloge.gateway.testing.planning.MirrorPlanCompiler;
@@ -1761,7 +1762,7 @@ public class MirrorRuntimeConfiguration {
                     .PREFIX,
             name = "enabled",
             havingValue = "true")
-    public ReadOnlyShadowBaselineConnector
+    public OnlineReadOnlyShadowBaselineConnector
     onlineReadOnlyShadowBaselineConnector(
             OnlineReadOnlyShadowBaselineAuthority authority,
             OnlineReadOnlyShadowBaselineObservationIntegrity
@@ -1772,6 +1773,29 @@ public class MirrorRuntimeConfiguration {
                 integrity,
                 objectMapper,
                 Clock.systemUTC());
+    }
+
+    /**
+     * Publishes baseline-only readiness without implying paired online data-plane readiness.
+     *
+     * @param connector physically assembled online baseline connector
+     * @param authority regional sidecar safety-capability authority
+     * @param integrity independent observation verification boundary
+     * @return dynamically probed public capability marker
+     */
+    @Bean
+    @ConditionalOnBean(
+            OnlineReadOnlyShadowBaselineConnector.class)
+    public OnlineReadOnlyShadowBaselineRuntimeAvailability
+    onlineReadOnlyShadowBaselineRuntimeAvailability(
+            OnlineReadOnlyShadowBaselineConnector connector,
+            OnlineReadOnlyShadowBaselineAuthority authority,
+            OnlineReadOnlyShadowBaselineObservationIntegrity
+                    integrity) {
+        return new OnlineReadOnlyShadowBaselineRuntimeAvailability(
+                connector != null,
+                authority::ready,
+                integrity::available);
     }
 
     /** Installs the exact signed-binding baseline connector only behind its explicit switch. */

@@ -1,0 +1,203 @@
+{
+  "schemaVersion": "resourceGateway.onlineReadOnlyShadowBaselineCompatibility.v1",
+  "verificationTime": "2026-07-26T00:00:04Z",
+  "verificationKey": {
+    "schemaVersion": "toolStudio.resourceGateway.evidenceVerificationKey.v1",
+    "keyId": "memory-ed25519:f82b04f7-d9e1-4e62-9d6f-39a3128907d7",
+    "algorithm": "Ed25519",
+    "encodedPublicKey": "MCowBQYDK2VwAyEAB/j4Xv1unTo6Kn40u6tMFXmteTJIgBCwrN1j+emjN3k=",
+    "createdAt": "2026-07-26T00:00:04Z",
+    "state": "ACTIVE",
+    "provider": "IN_MEMORY"
+  },
+  "expectedObservationRef": {
+    "kind": "SHADOW_BASELINE_OBSERVATION",
+    "id": "online-baseline-4fdf6ef4a35932c761bf870ed4f40f5258911d81d85b1bcb08f76dc20f917a12",
+    "revision": 1,
+    "fingerprint": "sha256:c3ca28fd3065fd48bf61691e9fb8dc18c9be7349b8741221f7df54393fa21db4"
+  },
+  "command": {
+    "schemaVersion": "resourceGateway.onlineReadOnlyShadowBaselineCommand.v1",
+    "executionId": "execution-online-command",
+    "requestId": "online-command",
+    "scope": {
+      "tenantId": "support",
+      "organizationId": "customer-operations",
+      "projectId": "refund-project",
+      "environmentId": "staging",
+      "region": "ap-southeast-1"
+    },
+    "inventoryRef": {
+      "kind": "DOMAIN_FIDELITY_INVENTORY",
+      "id": "refund-fidelity",
+      "revision": 1,
+      "fingerprint": "sha256:1111111111111111111111111111111111111111111111111111111111111111"
+    },
+    "unitId": "refund-golden",
+    "scenarioCaseRef": {
+      "kind": "SCENARIO_CASE",
+      "id": "refund-golden",
+      "revision": 1,
+      "fingerprint": "sha256:2222222222222222222222222222222222222222222222222222222222222222"
+    },
+    "targetCapabilityRef": {
+      "kind": "CAPABILITY",
+      "id": "refund",
+      "revision": 1,
+      "fingerprint": "sha256:3333333333333333333333333333333333333333333333333333333333333333"
+    },
+    "baselineBindingRef": {
+      "kind": "SHADOW_BASELINE_BINDING",
+      "id": "refund-production-read",
+      "revision": 1,
+      "fingerprint": "sha256:5555555555555555555555555555555555555555555555555555555555555555"
+    },
+    "comparisonPolicyRef": {
+      "kind": "SHADOW_COMPARISON_POLICY",
+      "id": "refund-semantic-v1",
+      "revision": 1,
+      "fingerprint": "sha256:6666666666666666666666666666666666666666666666666666666666666666"
+    },
+    "accessGrant": {
+      "accessMode": "READ_ONLY",
+      "samplingGrantRef": {
+        "kind": "SHADOW_SAMPLING_GRANT",
+        "id": "grant-2026-07",
+        "revision": 1,
+        "fingerprint": "sha256:7777777777777777777777777777777777777777777777777777777777777777"
+      },
+      "egressAuthorityRef": {
+        "kind": "DEPLOYMENT_ISOLATION_ATTESTATION",
+        "id": "shadow-deployment",
+        "revision": 1,
+        "fingerprint": "sha256:8888888888888888888888888888888888888888888888888888888888888888"
+      },
+      "killSwitchRef": {
+        "kind": "SHADOW_KILL_SWITCH_STATE",
+        "id": "shadow-kill-switch",
+        "revision": 1,
+        "fingerprint": "sha256:9999999999999999999999999999999999999999999999999999999999999999"
+      },
+      "sampleOrdinal": 1,
+      "maximumSamples": 100
+    },
+    "admissionFingerprint": "sha256:0000000000000000000000000000000000000000000000000000000000000000",
+    "admittedAt": "2026-07-26T00:00:00Z",
+    "deadlineAt": "2026-07-26T00:05:00Z"
+  },
+  "observation": {
+    "schemaVersion": "resourceGateway.onlineReadOnlyShadowBaselineObservation.v1",
+    "observationFingerprint": "sha256:c3ca28fd3065fd48bf61691e9fb8dc18c9be7349b8741221f7df54393fa21db4",
+    "observationId": "online-baseline-4fdf6ef4a35932c761bf870ed4f40f5258911d81d85b1bcb08f76dc20f917a12",
+    "revision": 1,
+    "scope": {
+      "tenantId": "support",
+      "organizationId": "customer-operations",
+      "projectId": "refund-project",
+      "environmentId": "staging",
+      "region": "ap-southeast-1"
+    },
+    "executionId": "execution-online-command",
+    "requestId": "online-command",
+    "commandFingerprint": "sha256:db164dfedb7b96ec67663b8f36ad3e4254d13b0c1b63c0eb8a46b2bc7999b0fa",
+    "scenarioCaseRef": {
+      "kind": "SCENARIO_CASE",
+      "id": "refund-golden",
+      "revision": 1,
+      "fingerprint": "sha256:2222222222222222222222222222222222222222222222222222222222222222"
+    },
+    "targetCapabilityRef": {
+      "kind": "CAPABILITY",
+      "id": "refund",
+      "revision": 1,
+      "fingerprint": "sha256:3333333333333333333333333333333333333333333333333333333333333333"
+    },
+    "baselineBindingRef": {
+      "kind": "SHADOW_BASELINE_BINDING",
+      "id": "refund-production-read",
+      "revision": 1,
+      "fingerprint": "sha256:5555555555555555555555555555555555555555555555555555555555555555"
+    },
+    "comparisonPolicyRef": {
+      "kind": "SHADOW_COMPARISON_POLICY",
+      "id": "refund-semantic-v1",
+      "revision": 1,
+      "fingerprint": "sha256:6666666666666666666666666666666666666666666666666666666666666666"
+    },
+    "samplingGrantRef": {
+      "kind": "SHADOW_SAMPLING_GRANT",
+      "id": "grant-2026-07",
+      "revision": 1,
+      "fingerprint": "sha256:7777777777777777777777777777777777777777777777777777777777777777"
+    },
+    "egressAuthorityRef": {
+      "kind": "DEPLOYMENT_ISOLATION_ATTESTATION",
+      "id": "shadow-deployment",
+      "revision": 1,
+      "fingerprint": "sha256:8888888888888888888888888888888888888888888888888888888888888888"
+    },
+    "killSwitchRef": {
+      "kind": "SHADOW_KILL_SWITCH_STATE",
+      "id": "shadow-kill-switch",
+      "revision": 1,
+      "fingerprint": "sha256:9999999999999999999999999999999999999999999999999999999999999999"
+    },
+    "workloadIdentityRef": {
+      "kind": "WORKLOAD_IDENTITY",
+      "id": "baseline-read-identity",
+      "revision": 1,
+      "fingerprint": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+    },
+    "workloadIdentityAttestationRef": {
+      "kind": "WORKLOAD_IDENTITY_ATTESTATION",
+      "id": "baseline-read-identity",
+      "revision": 1,
+      "fingerprint": "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+    },
+    "payloadVaultReceiptRef": {
+      "kind": "PAYLOAD_VAULT_RECEIPT",
+      "id": "vault-receipt",
+      "revision": 1,
+      "fingerprint": "sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"
+    },
+    "transportAttestationRef": {
+      "kind": "READ_ONLY_TRANSPORT_ATTESTATION",
+      "id": "baseline-read-transport",
+      "revision": 1,
+      "fingerprint": "sha256:dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd"
+    },
+    "requestContextFingerprint": "sha256:eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
+    "semanticResultFingerprint": "sha256:ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff",
+    "sourceRequestFingerprint": "sha256:1111111111111111111111111111111111111111111111111111111111111111",
+    "sourceResponseFingerprint": "sha256:2222222222222222222222222222222222222222222222222222222222222222",
+    "idempotencyKeyFingerprint": "sha256:4ce1cb984a8c946efc9436c8e3cd83abe49cc906172b240e4139c57a36c56338",
+    "responseSchemaRef": {
+      "kind": "JSON_SCHEMA",
+      "id": "refund-response",
+      "revision": 1,
+      "fingerprint": "sha256:3333333333333333333333333333333333333333333333333333333333333333"
+    },
+    "normalizedFactFingerprints": {
+      "BEHAVIOR": "sha256:4444444444444444444444444444444444444444444444444444444444444444",
+      "CONTRACT": "sha256:5555555555555555555555555555555555555555555555555555555555555555"
+    },
+    "accessMode": "READ_ONLY",
+    "startedAt": "2026-07-26T00:00:01Z",
+    "completedAt": "2026-07-26T00:00:02Z",
+    "deadlineAt": "2026-07-26T00:05:00Z",
+    "workloadIdentityExpiresAt": "2026-07-26T00:01:00Z",
+    "evidenceClass": "CERTIFIABLE",
+    "evidenceComplete": true,
+    "writeCredentialExposed": false,
+    "writeAttemptCount": 0,
+    "issuedAt": "2026-07-26T00:00:03Z",
+    "observationSeal": {
+      "schemaVersion": "bloge.visualRunEvidenceSeal.v1",
+      "materialFingerprint": "sha256:8dff5cc3a6e83f30ac2bcebd346990f60326911e283e767b5e07996444fcc680",
+      "algorithm": "Ed25519",
+      "keyId": "memory-ed25519:f82b04f7-d9e1-4e62-9d6f-39a3128907d7",
+      "signedAt": "2026-07-26T00:00:04Z",
+      "signature": "VO6wi7zm9dw5bh+J3kq0+tQ0VN8OjHZgJQocQzw7U/uYYdNAeDOgYqqeJCPOxiIBrCs34bNAGlcvRy+g6oRpDg=="
+    }
+  }
+}

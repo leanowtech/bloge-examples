@@ -103,6 +103,7 @@ import com.leanowtech.bloge.gateway.integration.mirror.CapabilityRetryPolicyProv
 import com.leanowtech.bloge.gateway.integration.mirror.CapabilityObservationReviewRepository;
 import com.leanowtech.bloge.gateway.integration.MirrorRuntimeAvailability;
 import com.leanowtech.bloge.gateway.integration.DomainFidelityRuntimeAvailability;
+import com.leanowtech.bloge.gateway.integration.OnlineReadOnlyShadowBaselineRuntimeAvailability;
 import com.leanowtech.bloge.gateway.integration.ReadOnlyShadowRuntimeAvailability;
 import com.leanowtech.bloge.gateway.resource.ResourceDescriptor;
 import com.leanowtech.bloge.gateway.resource.ResourceRegistry;
@@ -201,6 +202,19 @@ class MirrorRuntimeConfigurationTest {
                     .satisfies(connector ->
                             assertThat(connector.ready())
                                     .isFalse());
+            assertThat(context.getBean(
+                    OnlineReadOnlyShadowBaselineRuntimeAvailability
+                            .class).snapshot())
+                    .satisfies(snapshot -> {
+                        assertThat(snapshot.connectorInstalled())
+                                .isTrue();
+                        assertThat(snapshot.authorityReady())
+                                .isFalse();
+                        assertThat(snapshot.evidenceVerificationReady())
+                                .isTrue();
+                        assertThat(snapshot.baselineReady())
+                                .isFalse();
+                    });
             assertThat(context.getBean(
                     ReadOnlyShadowCandidateConnector.class)
                     .ready()).isFalse();

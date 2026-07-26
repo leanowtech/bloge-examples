@@ -514,6 +514,66 @@ class ToolStudioIntegrationServiceTest {
     }
 
     @Test
+    void capabilitiesProjectOnlineBaselineWithoutMisreportingThePairedDataPlane() {
+        AtomicBoolean authority =
+                new AtomicBoolean(false);
+        AtomicBoolean evidence =
+                new AtomicBoolean(true);
+        ToolStudioIntegrationService service =
+                service(null, null, null, null);
+        service.configureOnlineReadOnlyShadowBaselineRuntime(
+                new OnlineReadOnlyShadowBaselineRuntimeAvailability(
+                        true,
+                        authority::get,
+                        evidence::get));
+
+        IntegrationCapabilities unavailable =
+                service.capabilities().payload();
+
+        assertThat(unavailable.supportedObjects())
+                .containsEntry(
+                        "onlineReadOnlyShadowBaselineCommand",
+                        List.of(
+                                "resourceGateway.onlineReadOnlyShadowBaselineCommand.v1"))
+                .containsEntry(
+                        "onlineReadOnlyShadowBaselineObservation",
+                        List.of(
+                                "resourceGateway.onlineReadOnlyShadowBaselineObservation.v1"))
+                .containsEntry(
+                        "onlineReadOnlyShadowBaselineCapability",
+                        List.of(
+                                "resourceGateway.onlineReadOnlyShadowBaselineCapability.v1"));
+        assertThat(unavailable.features())
+                .containsEntry(
+                        "mirrorReadOnlyShadowOnlineBaselineProtocol",
+                        true)
+                .containsEntry(
+                        "mirrorReadOnlyShadowOnlineBaselineConnectorInstalled",
+                        true)
+                .containsEntry(
+                        "mirrorReadOnlyShadowOnlineBaselineAuthorityReady",
+                        false)
+                .containsEntry(
+                        "mirrorReadOnlyShadowOnlineBaselineEvidenceVerificationReady",
+                        true)
+                .containsEntry(
+                        "mirrorReadOnlyShadowOnlineBaselineReady",
+                        false)
+                .containsEntry(
+                        "mirrorReadOnlyShadowOnlineDataPlaneReady",
+                        false);
+
+        authority.set(true);
+        assertThat(service.capabilities().payload().features())
+                .containsEntry(
+                        "mirrorReadOnlyShadowOnlineBaselineReady",
+                        true)
+                .containsEntry(
+                        "mirrorReadOnlyShadowOnlineDataPlaneReady",
+                        false);
+    }
+
+    @Test
     void capabilitiesAdvertiseOnlyTheProtectedMirrorSurfacesOwnedByItsProfileMarker() {
         ToolStudioIntegrationService disabled = service(null, null, null, null);
         ToolStudioIntegrationService enabled = service(null, null, null, null);

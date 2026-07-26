@@ -791,10 +791,47 @@ Do not enable this mode together with
 `gateway.testing.mirror.read-only-shadow.detached-data-plane.enabled`; startup
 rejects the conflict. This slice supplies only the baseline connector. The
 online candidate adapter and online source-resolution verifier are still
-unavailable, so worker and serving readiness remain false. The three strict
-schemas are packaged in `resource-gateway-test-kit`; an independent online
-observation cryptographic verifier and fixed sidecar fixture remain follow-up
-certification work.
+unavailable, so worker and serving readiness remain false.
+
+`GET /api/integration/capabilities` reports the online-baseline boundary as
+separate facts:
+
+- `mirrorReadOnlyShadowOnlineBaselineProtocol`: the three public protocol
+  versions and schemas are supported;
+- `mirrorReadOnlyShadowOnlineBaselineConnectorInstalled`: the configured
+  baseline connector bean exists;
+- `mirrorReadOnlyShadowOnlineBaselineAuthorityReady`: the live regional
+  sidecar capability probe currently passes;
+- `mirrorReadOnlyShadowOnlineBaselineEvidenceVerificationReady`: the
+  independent observation verification authority is currently usable;
+- `mirrorReadOnlyShadowOnlineBaselineReady`: connector, authority, and
+  evidence verification are all ready in one sampled projection;
+- `mirrorReadOnlyShadowOnlineDataPlaneReady`: remains false until candidate
+  acquisition and paired-source resolution are also assembled.
+
+The probe samples each dynamic dependency once per response and fails closed on
+exceptions. `Protocol`, `Installed`, `BaselineReady`, and `OnlineDataPlaneReady`
+are intentionally different lifecycle facts.
+
+The three strict schemas and a server-produced public-only fixture are packaged
+in `resource-gateway-test-kit`. Run this probe on every JSON, JDK, crypto
+provider, or Test Kit upgrade:
+
+```java
+OnlineReadOnlyShadowBaselineCompatibilityFixture fixture =
+        CapabilityMirrorProtocol
+                .onlineReadOnlyShadowBaselineCompatibilityFixture();
+var verified = fixture.verify();
+if (!verified.verified() || !verified.zeroWrite()) {
+    throw new IllegalStateException(verified.reasonCode());
+}
+```
+
+The standalone verifier does not link server or Spring classes. It independently
+recomputes strict command/observation closure, canonical fingerprints,
+deterministic identity, idempotency, time windows, public-key policy, and the
+Ed25519 signature. Passing it proves wire compatibility, not current sidecar,
+data-use, workload-identity, paired online execution, or production readiness.
 
 Read the exact proof referenced by a successful v3 comparison:
 

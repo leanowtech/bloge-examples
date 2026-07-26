@@ -432,6 +432,10 @@ public final class CapabilityMirrorProtocol {
     public static final String
     ONLINE_READ_ONLY_SHADOW_BASELINE_CAPABILITY_V1 =
             "resourceGateway.onlineReadOnlyShadowBaselineCapability.v1";
+    /** Fixed public-only online baseline compatibility fixture wire version. */
+    public static final String
+    ONLINE_READ_ONLY_SHADOW_BASELINE_COMPATIBILITY_V1 =
+            "resourceGateway.onlineReadOnlyShadowBaselineCompatibility.v1";
     /** Fixed three-authority source-resolution compatibility fixture wire version. */
     public static final String
     READ_ONLY_SHADOW_SOURCE_RESOLUTION_COMPATIBILITY_V1 =
@@ -464,6 +468,11 @@ public final class CapabilityMirrorProtocol {
     READ_ONLY_SHADOW_SOURCE_RESOLUTION_FIXTURE_RESOURCE =
             SCHEMA_RESOURCE_ROOT
                     + "read-only-shadow-source-resolution-stage1-v1.fixture.json";
+    /** Packaged public-only online baseline compatibility fixture. */
+    public static final String
+    ONLINE_READ_ONLY_SHADOW_BASELINE_FIXTURE_RESOURCE =
+            SCHEMA_RESOURCE_ROOT
+                    + "online-read-only-shadow-baseline-stage1-v1.fixture.json";
     /** Packaged signed deployment-isolation compatibility fixture. */
     public static final String MIRROR_DEPLOYMENT_ISOLATION_FIXTURE_RESOURCE =
             SCHEMA_RESOURCE_ROOT + "mirror-deployment-isolation-stage1-v1.fixture.json";
@@ -1109,6 +1118,24 @@ public final class CapabilityMirrorProtocol {
     }
 
     /**
+     * Returns the server-produced public-only online baseline compatibility fixture.
+     *
+     * <p>Loading this fixture independently proves strict command and observation schemas,
+     * canonical command and observation fingerprints, deterministic identity, source idempotency,
+     * complete command-to-observation closure, signing time, public-key policy, Ed25519 signature,
+     * and authenticated zero-write facts without starting Resource Gateway or a sidecar.</p>
+     *
+     * @return detached payload-free command, observation, expected reference, and public key
+     * @throws IllegalStateException when the packaged fixture is absent or unverifiable
+     */
+    public static
+    OnlineReadOnlyShadowBaselineCompatibilityFixture
+    onlineReadOnlyShadowBaselineCompatibilityFixture() {
+        return OnlineBaselineFixtureHolder.FIXTURE
+                .detachedCopy();
+    }
+
+    /**
      * Returns the fixed independently verified deployment-isolation compatibility fixture.
      *
      * <p>The fixture proves strict-schema loading, canonical nested fingerprints, immutable local
@@ -1415,6 +1442,44 @@ public final class CapabilityMirrorProtocol {
             } catch (IOException | RuntimeException failure) {
                 throw new IllegalStateException(
                         "RG.MIRROR.CLIENT.SHADOW_SOURCE_RESOLUTION_FIXTURE_UNAVAILABLE",
+                        failure);
+            }
+        }
+    }
+
+    private static final class OnlineBaselineFixtureHolder {
+        private static final
+        OnlineReadOnlyShadowBaselineCompatibilityFixture
+                FIXTURE = load();
+
+        private static
+        OnlineReadOnlyShadowBaselineCompatibilityFixture
+        load() {
+            try (InputStream input =
+                         CapabilityMirrorProtocol.class
+                                 .getResourceAsStream(
+                                         ONLINE_READ_ONLY_SHADOW_BASELINE_FIXTURE_RESOURCE)) {
+                if (input == null) {
+                    throw new IOException(
+                            "Online baseline fixture is absent");
+                }
+                OnlineReadOnlyShadowBaselineCompatibilityFixture
+                        fixture =
+                        OnlineReadOnlyShadowBaselineCompatibilityFixture
+                                .from(JSON.readTree(input));
+                OnlineReadOnlyShadowBaselineObservationVerifier
+                        .VerificationResult verification =
+                        fixture.verify();
+                if (!verification.verified()
+                        || !verification.zeroWrite()) {
+                    throw new IOException(
+                            "Online baseline fixture cannot be verified: "
+                                    + verification.reasonCode());
+                }
+                return fixture;
+            } catch (IOException | RuntimeException failure) {
+                throw new IllegalStateException(
+                        "RG.MIRROR.CLIENT.ONLINE_BASELINE_FIXTURE_UNAVAILABLE",
                         failure);
             }
         }

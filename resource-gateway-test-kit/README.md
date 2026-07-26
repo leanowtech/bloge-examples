@@ -592,6 +592,39 @@ producer and consumer test only self-generated artifacts. The fixture contains
 no private key or business payload; passing it proves wire compatibility, not
 current online authority, data-use permission, or production readiness.
 
+Regional online-baseline observations have a separate dependency-light
+verifier and server-produced public-only compatibility fixture:
+
+```java
+OnlineReadOnlyShadowBaselineCompatibilityFixture fixture =
+        CapabilityMirrorProtocol
+                .onlineReadOnlyShadowBaselineCompatibilityFixture();
+
+OnlineReadOnlyShadowBaselineObservationVerifier.VerificationResult
+        compatibility = fixture.verify();
+if (!compatibility.verified() || !compatibility.zeroWrite()) {
+    throw new IllegalStateException(compatibility.reasonCode());
+}
+```
+
+The fixture contains the exact payload-free sidecar command, signed payload-free
+observation, expected content-addressed artifact reference, public Ed25519 key,
+and frozen verification time. It contains no private key, endpoint, credential,
+customer request, or customer response. The loader validates both strict
+schemas and independently recomputes the command fingerprint, idempotency key,
+command-to-observation coordinates, deterministic observation id, observation
+fingerprint, seal material, time closure, key policy, and signature.
+
+For live evidence, construct
+`OnlineReadOnlyShadowBaselineObservationVerifier.VerificationContext` from the
+exact command retained by the caller, the exact observation reference expected
+by the source-resolution workflow, and a trusted clock. Never derive those
+expectations or the public key from the observation itself. A `VERIFIED` result
+authenticates the measured write facts; inspect `zeroWrite()` separately.
+Passing the fixture proves producer/consumer wire compatibility, not current
+sidecar capability, workload identity, data-use permission, paired online
+candidate execution, or production readiness.
+
 Capability observations use a separate producer authority and verifier. Run the packaged public-only
 fixture whenever upgrading the protocol, JSON stack, crypto provider, or consumer:
 

@@ -97,6 +97,12 @@ public class ToolStudioIntegrationService {
                     false,
                     () -> false,
                     () -> false);
+    private OnlineReadOnlyShadowBaselineRuntimeAvailability
+            onlineReadOnlyShadowBaselineRuntimeAvailability =
+            new OnlineReadOnlyShadowBaselineRuntimeAvailability(
+                    false,
+                    () -> false,
+                    () -> false);
     private ScenarioRehearsalBatchScheduler
             scenarioRehearsalBatchScheduler;
     private ScenarioRehearsalBatchFinalizationScheduler
@@ -217,6 +223,20 @@ public class ToolStudioIntegrationService {
                 availability == null
                         ? new ReadOnlyShadowRuntimeAvailability(
                         false,
+                        false,
+                        () -> false,
+                        () -> false)
+                        : availability;
+    }
+
+    /** Receives the marker only when the regional online baseline connector is assembled. */
+    @Autowired(required = false)
+    void configureOnlineReadOnlyShadowBaselineRuntime(
+            OnlineReadOnlyShadowBaselineRuntimeAvailability
+                    availability) {
+        this.onlineReadOnlyShadowBaselineRuntimeAvailability =
+                availability == null
+                        ? new OnlineReadOnlyShadowBaselineRuntimeAvailability(
                         false,
                         () -> false,
                         () -> false)
@@ -667,6 +687,26 @@ public class ToolStudioIntegrationService {
                 "mirrorReadOnlyShadowDetachedDataPlaneReady",
                 readOnlyShadowRuntimeAvailability
                         .detachedDataPlaneReady());
+        OnlineReadOnlyShadowBaselineRuntimeAvailability.Snapshot
+                onlineBaseline =
+                onlineReadOnlyShadowBaselineRuntimeAvailability
+                        .snapshot();
+        features.put(
+                "mirrorReadOnlyShadowOnlineBaselineConnectorInstalled",
+                onlineBaseline.connectorInstalled());
+        features.put(
+                "mirrorReadOnlyShadowOnlineBaselineAuthorityReady",
+                onlineBaseline.authorityReady());
+        features.put(
+                "mirrorReadOnlyShadowOnlineBaselineEvidenceVerificationReady",
+                onlineBaseline.evidenceVerificationReady());
+        features.put(
+                "mirrorReadOnlyShadowOnlineBaselineReady",
+                onlineBaseline.baselineReady());
+        // Candidate acquisition and paired-source resolution are not assembled yet.
+        features.put(
+                "mirrorReadOnlyShadowOnlineDataPlaneReady",
+                false);
         features.put("mirrorStatefulSessionApi", mirrorStatefulSessionApi);
         features.put("mirrorStatefulStateStoreReady", mirrorStatefulStoreReady);
         features.put("mirrorStateCheckpointProtocol",

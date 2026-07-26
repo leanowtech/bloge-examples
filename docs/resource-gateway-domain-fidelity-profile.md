@@ -43,6 +43,9 @@
 - signed online Shadow authority protocol：sampling grant、kill switch 与 shared guard
   policy 使用独立签名域、短有效窗、exact current-head、完整 scope、append-only
   predecessor chain 与 payload-free attestation；
+- regional TEE online-baseline consumer：payload-free command、signed observation、严格
+  private-PKI/SPKI/mTLS HTTP authority、动态 readiness 投影、独立 Test Kit verifier
+  与 public-only 固定签名 fixture；
 - full-scope database current-head repository、动态 key/revocation lookup、无正向缓存的
   sampling/kill-switch adapter，以及不依赖 server/Spring 的 Test Kit 独立 current-head verifier；
 - root-threshold-signed Shadow authority key-set、完整 scope/kind/issuer binding、单调
@@ -65,7 +68,8 @@
 - authoritative outcome 到 `Measurement` 的独立来源适配器；
 - request-space sampling proof 与 error-distribution cohort adapter；
 - 企业 root-policy/control-plane connector、跨区域传播 SLO 与轮换认证、
-  真实 baseline/candidate connector、source resolver/comparison policy adapter、drift 自动降级、
+  regional sidecar provider、online candidate connector、paired-source resolver、
+  drift 自动降级、
   outcome reconciliation 和工作台。
 
 因此在 managed signer、Scenario authority 或 signed Shadow comparison authority 可用时，
@@ -505,7 +509,7 @@ cursor，`limit` 为 1..1000；调用方必须根据 `hasMore` 继续取页，�
 | `ReadOnlyShadowKillSwitchAuthority` | exact current scope/switch generation、enabled 状态、短有效窗与签名 authority attestation | signed current-head adapter；因 trust store unavailable 而 fail-closed |
 | `MirrorDeploymentIsolationRunTrustAuthority` | 执行前/后的同一 egress decision、keyset、status 与 agent snapshot | unavailable |
 | `ReadOnlyShadowExecutionGuard` | 跨副本并发、窗口速率、熔断、唯一半开探针和 fenced lease | database-authoritative / ready |
-| `ReadOnlyShadowBaselineConnector` / `ReadOnlyShadowCandidateConnector` | 同一 request context 的 payload-free source observation 与零写测量 | 默认 unavailable；`--shadow-detached-data-plane` 安装 exact detached pair；显式 online-baseline 配置和三个独立 trust bean 只安装 regional TEE baseline connector |
+| `ReadOnlyShadowBaselineConnector` / `ReadOnlyShadowCandidateConnector` | 同一 request context 的 payload-free source observation 与零写测量 | 默认 unavailable；`--shadow-detached-data-plane` 安装 exact detached pair；显式 online-baseline 配置和三个独立 trust bean 只安装 regional TEE baseline connector，并动态投影其独立 readiness |
 | `ReadOnlyShadowSourceResolutionVerifier` | 两侧 exact artifact 二次拉取、内容地址/签名/scope/target/authority closure，并签发 append-only proof | 默认 unavailable；`--shadow-detached-data-plane` 安装真实 detached verifier |
 | `ReadOnlyShadowComparisonEngine` | exact comparison policy 下的规范化 typed diff | 内置 content-addressed `payload-free-equality-v1` / ready |
 
@@ -532,6 +536,12 @@ cursor，`limit` 为 1..1000；调用方必须根据 `hasMore` 继续取页，�
 | `mirrorReadOnlyShadowSourceBindingReady` | source-binding signer 与 repository 当前可用；不代表 baseline/candidate connector ready |
 | `mirrorReadOnlyShadowSourceResolutionApi` | exact signed source-resolution attestation read route 已装配 |
 | `mirrorReadOnlyShadowDetachedDataPlaneReady` | exact detached connector、二次来源复核、proof signer、online authority 与 shared guard 整条链 ready；不会由单个 API 或 policy ready 推导 |
+| `mirrorReadOnlyShadowOnlineBaselineProtocol` | command/observation/capability 三个版本化协议和 strict Schema 已支持；不代表运行时连接 |
+| `mirrorReadOnlyShadowOnlineBaselineConnectorInstalled` | regional baseline connector bean 已装配；不代表远端 authority 或证据验签可用 |
+| `mirrorReadOnlyShadowOnlineBaselineAuthorityReady` | 当前一次 sidecar live capability probe 通过全部安全事实 |
+| `mirrorReadOnlyShadowOnlineBaselineEvidenceVerificationReady` | 独立 observation authority 当前可验签 |
+| `mirrorReadOnlyShadowOnlineBaselineReady` | 同一 capability 响应内 connector、live authority、evidence authority 均 ready |
+| `mirrorReadOnlyShadowOnlineDataPlaneReady` | baseline、candidate 与 paired-source resolution 整链 ready；当前因后两者缺失固定为 `false` |
 | `mirrorReadOnlyShadowLifecycleAudit` | 每个 committed job transition 同事务写入 append-only journal |
 | `mirrorReadOnlyShadowWorkerReady` | managed signer 与受信 baseline/candidate data plane 当前可执行 |
 | `mirrorReadOnlyShadowScheduling` | bounded regional poller 当前运行；不代表 worker ready |
@@ -578,7 +588,9 @@ HTTPS `base-uri`；部署方还必须提供 role-separated
 `HttpOnlineReadOnlyShadowBaselineAuthority.RequestHeadersProvider` 和
 `OnlineReadOnlyShadowBaselineEvidenceAuthority`。缺任一角色时保持 fail closed。当前纵切没有
 online candidate 和 online source-resolution verifier，因此 baseline 可连接不等于 worker/data-plane/
-serving ready；公共 capability 也暂未单列 baseline readiness。
+serving ready。公共 capability 分开报告 protocol、connector installed、live authority、
+evidence verification、baseline ready 和 full online data-plane ready；每个动态 dependency
+在单次响应中只采样一次，异常即 `false`，不能由任一子项推导完整数据面。
 
 签名 authority 也遵守同一原则：database publication source ready 只表示 append-only current-head
 读写和内容地址可用，不表示 issuer 已受信。`ReadOnlyShadowAuthorityTrustStore` 必须由独立 managed
@@ -660,6 +672,26 @@ fixture 由服务端真实生成 candidate evidence、source binding 与 source-
 三把独立 Ed25519 key 签名；Test Kit 从同一 public-only 文件递归重算三层 content address、
 deterministic id、policy facts、时间序和签名。它用于发现两边“各自自测全绿”的
 canonicalization/domain/key-role 双重假绿，不代表当前 online authority 或数据使用授权已通过。
+
+online-baseline observation 使用独立 verifier 和另一份 public-only fixture：
+
+```java
+OnlineReadOnlyShadowBaselineCompatibilityFixture fixture =
+        CapabilityMirrorProtocol
+                .onlineReadOnlyShadowBaselineCompatibilityFixture();
+
+OnlineReadOnlyShadowBaselineObservationVerifier.VerificationResult result =
+        fixture.verify();
+if (!result.verified() || !result.zeroWrite()) {
+    throw new IllegalStateException(result.reasonCode());
+}
+```
+
+fixture 由服务端真实协议对象与 signer 产生，但由 Test Kit 在不链接 server/Spring 的情况下
+重新验证 command/observation strict Schema、command fingerprint、source idempotency、全部坐标、
+确定性 observation id、完整 content address、time/key policy 和 Ed25519 seal。它只含公钥和
+payload-free 协议文档；通过只证明跨实现 wire compatibility，不证明当前 sidecar、数据授权、
+workload identity、online candidate、paired-source resolver 或生产环境可用。
 
 durable job export 使用第二个独立 verifier：
 
@@ -824,13 +856,15 @@ kernel、database-authoritative execution guard、三类签名 online authority 
 append-only current-head repository、managed trust distribution、server adapter、v1/v2
 job request、exact detached source-binding repository/API、真实 detached connector/policy/source
 resolver、signed source-resolution proof API、独立 Test Kit verifier 与三 authority 跨产物固定签名
-fixture 已完成。
+fixture，以及 regional TEE online-baseline consumer、动态 readiness、独立 observation verifier
+与 public-only 固定签名 fixture 已完成。
 下一步按来源信任依赖推进：
 
 1. 接入企业 root-policy/control-plane connector，并认证 authority successor/revocation 的
    跨区域传播时限、outage 和 rolling rotation。
-2. 为第一个获授权的真实在线 baseline connector 接入 payload-isolated read adapter；detached
-   evidence path 已完成，不得把它误报为在线生产采样。
+2. 交付第一个获授权的 regional sidecar provider、payload-isolated production read binding、
+   online candidate connector 与 paired-source resolver；现有 baseline consumer 只证明可安全接入，
+   不得误报为完整在线生产采样。
 3. 把 signed typed diff 接入 drift budget，自动 stale/downgrade/revoke serving conclusion。
 4. 实现 authoritative outcome observation 与 delayed/censored reconciliation。
 5. 为 `ERROR_DISTRIBUTION` 和 `REQUEST_SPACE` 增加 cohort/sampling proof，而不是借用单次

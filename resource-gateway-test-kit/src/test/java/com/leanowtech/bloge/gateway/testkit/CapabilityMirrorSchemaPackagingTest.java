@@ -555,6 +555,15 @@ class CapabilityMirrorSchemaPackagingTest {
                 .endsWith(
                         "online-read-only-shadow-baseline-capability-v1.schema.json");
         assertThat(CapabilityMirrorProtocol
+                .ONLINE_READ_ONLY_SHADOW_BASELINE_COMPATIBILITY_V1)
+                .isEqualTo(
+                        OnlineReadOnlyShadowBaselineCompatibilityFixture
+                                .SCHEMA_VERSION);
+        assertThat(CapabilityMirrorProtocol
+                .ONLINE_READ_ONLY_SHADOW_BASELINE_FIXTURE_RESOURCE)
+                .endsWith(
+                        "online-read-only-shadow-baseline-stage1-v1.fixture.json");
+        assertThat(CapabilityMirrorProtocol
                 .READ_ONLY_SHADOW_JOB_V1)
                 .isEqualTo(
                         "resourceGateway.readOnlyShadowJob.v1");
@@ -714,6 +723,26 @@ class CapabilityMirrorSchemaPackagingTest {
                 .READ_ONLY_SHADOW_SOURCE_RESOLUTION_FIXTURE_RESOURCE)
                 .endsWith(
                         "read-only-shadow-source-resolution-stage1-v1.fixture.json");
+    }
+
+    @Test
+    void packagesOneFixedPublicOnlyOnlineBaselineFixture() {
+        OnlineReadOnlyShadowBaselineCompatibilityFixture
+                fixture =
+                CapabilityMirrorProtocol
+                        .onlineReadOnlyShadowBaselineCompatibilityFixture();
+
+        var verified = fixture.verify();
+
+        assertThat(verified.verified())
+                .as(verified.reasonCode())
+                .isTrue();
+        assertThat(verified.zeroWrite()).isTrue();
+        assertThat(verified.observationFingerprint())
+                .isEqualTo(
+                        fixture.expectedObservationRef()
+                                .path("fingerprint")
+                                .asText());
     }
 
     @Test
