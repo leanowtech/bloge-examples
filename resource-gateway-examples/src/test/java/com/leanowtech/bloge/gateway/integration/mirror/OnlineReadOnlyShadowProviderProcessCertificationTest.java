@@ -39,6 +39,7 @@ import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
 import java.util.concurrent.TimeUnit;
+import java.util.function.Predicate;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
@@ -715,7 +716,7 @@ class OnlineReadOnlyShadowProviderProcessCertificationTest {
             long delayMillis =
                     fault == CandidateResponseFault
                             .TRUNCATED_BODY
-                            ? 0 : 750;
+                            ? 0 : 8_000;
             OnlineReadOnlyShadowProviderProcess.Configuration
                     configuration =
                     candidateConfiguration(
@@ -738,7 +739,7 @@ class OnlineReadOnlyShadowProviderProcessCertificationTest {
                         candidateAuthority(
                                 candidate.uri(),
                                 candidateTls,
-                                Duration.ofMillis(250));
+                                Duration.ofSeconds(5));
                 GovernedReadOnlyShadowDataPlane dataPlane =
                         dataPlane(
                                 baselineAuthority,
@@ -762,7 +763,14 @@ class OnlineReadOnlyShadowProviderProcessCertificationTest {
                         .isTrue();
                 OnlineReadOnlyShadowProviderProcess.Audit
                         faultAudit =
-                        candidate.audit(mapper);
+                        candidate.awaitAudit(
+                                mapper,
+                                audit ->
+                                        audit.responseFaultInjected()
+                                                && audit.injectedResponseFault()
+                                                == fault,
+                                "committed response fault "
+                                        + fault);
                 assertThat(faultAudit
                         .injectedResponseFault())
                         .isEqualTo(fault);
@@ -1575,19 +1583,47 @@ class OnlineReadOnlyShadowProviderProcessCertificationTest {
         private OnlineReadOnlyShadowProviderProcess.Audit
         audit(
                 ObjectMapper mapper) throws Exception {
+            return awaitAudit(
+                    mapper,
+                    ignored -> true,
+                    "initial audit");
+        }
+
+        private OnlineReadOnlyShadowProviderProcess.Audit
+        awaitAudit(
+                ObjectMapper mapper,
+                Predicate<OnlineReadOnlyShadowProviderProcess.Audit>
+                        condition,
+                String expectation) throws Exception {
             Instant deadline =
                     Instant.now()
                             .plusSeconds(5);
+            OnlineReadOnlyShadowProviderProcess.Audit
+                    lastAudit = null;
             while (Instant.now()
-                    .isBefore(deadline)
-                    && !Files.isRegularFile(
-                    auditFile)) {
+                    .isBefore(deadline)) {
+                if (Files.isRegularFile(
+                        auditFile)) {
+                    lastAudit =
+                            mapper.readValue(
+                                    auditFile.toFile(),
+                                    OnlineReadOnlyShadowProviderProcess
+                                            .Audit.class);
+                    if (condition.test(
+                            lastAudit)) {
+                        return lastAudit;
+                    }
+                }
                 Thread.sleep(10);
             }
-            return mapper.readValue(
-                    auditFile.toFile(),
-                    OnlineReadOnlyShadowProviderProcess
-                            .Audit.class);
+            throw new IllegalStateException(
+                    "provider did not publish "
+                            + expectation
+                            + " before the audit deadline"
+                            + "; processAlive="
+                            + process.isAlive()
+                            + "; lastAudit="
+                            + lastAudit);
         }
 
         private void writeConfiguration(
