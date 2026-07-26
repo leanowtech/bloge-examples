@@ -102,6 +102,20 @@ public final class OnlineReadOnlyShadowProviderProcess {
         CANDIDATE
     }
 
+    /** One-shot response fault injected only after candidate evidence is durably committed. */
+    public enum CandidateResponseFault {
+        /** Sends the complete protocol response. */
+        NONE,
+        /** Halts the child JVM before any response bytes are sent. */
+        PROCESS_HALT,
+        /** Declares the complete body length, writes a prefix, and closes the connection. */
+        TRUNCATED_BODY,
+        /** Delays before response headers until the caller deadline expires. */
+        DELAYED_HEADERS,
+        /** Writes a body prefix and then stalls the connection before closing it. */
+        STALLED_BODY
+    }
+
     /**
      * Private test signing material passed only to the isolated child process.
      *
@@ -151,8 +165,9 @@ public final class OnlineReadOnlyShadowProviderProcess {
      * @param readyFile process readiness file
      * @param auditFile durable payload-free audit file
      * @param candidateStateFile durable candidate idempotency state
-     * @param crashMarkerFile one-shot committed-response-loss marker
-     * @param crashAfterFirstCandidateCommit whether to halt after the first durable candidate write
+     * @param responseFaultMarkerFile durable one-shot response-fault marker
+     * @param candidateResponseFault response fault injected after the first durable candidate write
+     * @param responseFaultDelayMillis delay for delayed-header and stalled-body faults
      * @param evidenceKey role-owned Ed25519 signing key
      * @param baselineCommand exact baseline command admitted by this fixture
      * @param baselineFixture exact payload-free baseline fixture
@@ -173,8 +188,9 @@ public final class OnlineReadOnlyShadowProviderProcess {
             String readyFile,
             String auditFile,
             String candidateStateFile,
-            String crashMarkerFile,
-            boolean crashAfterFirstCandidateCommit,
+            String responseFaultMarkerFile,
+            CandidateResponseFault candidateResponseFault,
+            long responseFaultDelayMillis,
             EvidenceKeyMaterial evidenceKey,
             OnlineReadOnlyShadowBaselineCommand baselineCommand,
             SyntheticRegionalReadOnlyShadowProvider.BaselineFixture
@@ -185,7 +201,7 @@ public final class OnlineReadOnlyShadowProviderProcess {
     ) {
         /** Configuration protocol version. */
         public static final String SCHEMA_VERSION =
-                "resourceGateway.onlineReadOnlyShadowProviderProcess.v1";
+                "resourceGateway.onlineReadOnlyShadowProviderProcess.v2";
 
         /** Validates role-specific material and local-only paths. */
         public Configuration {
@@ -218,9 +234,31 @@ public final class OnlineReadOnlyShadowProviderProcess {
             candidateStateFile = absolutePath(
                     candidateStateFile,
                     "candidateStateFile");
-            crashMarkerFile = absolutePath(
-                    crashMarkerFile,
-                    "crashMarkerFile");
+            responseFaultMarkerFile = absolutePath(
+                    responseFaultMarkerFile,
+                    "responseFaultMarkerFile");
+            candidateResponseFault =
+                    Objects.requireNonNull(
+                            candidateResponseFault,
+                            "candidateResponseFault");
+            boolean delayedFault =
+                    candidateResponseFault
+                            == CandidateResponseFault
+                            .DELAYED_HEADERS
+                            || candidateResponseFault
+                            == CandidateResponseFault
+                            .STALLED_BODY;
+            if ((role == Role.BASELINE
+                    && candidateResponseFault
+                    != CandidateResponseFault.NONE)
+                    || (delayedFault
+                    && (responseFaultDelayMillis < 100
+                    || responseFaultDelayMillis > 10_000))
+                    || (!delayedFault
+                    && responseFaultDelayMillis != 0)) {
+                throw new IllegalArgumentException(
+                        "provider response fault configuration is invalid");
+            }
             evidenceKey = Objects.requireNonNull(
                     evidenceKey, "evidenceKey");
             if (role == Role.BASELINE
@@ -280,7 +318,8 @@ public final class OnlineReadOnlyShadowProviderProcess {
      * @param peerSubject last mutual-TLS client subject
      * @param peerUriSan last mutual-TLS client URI SAN
      * @param failureCode last bounded request rejection
-     * @param committedBeforeCrash whether candidate state was committed before forced halt
+     * @param injectedResponseFault exact committed response fault observed by this process
+     * @param responseFaultInjected whether the configured one-shot fault was injected
      */
     public record Audit(
             String schemaVersion,
@@ -293,11 +332,12 @@ public final class OnlineReadOnlyShadowProviderProcess {
             String peerSubject,
             String peerUriSan,
             String failureCode,
-            boolean committedBeforeCrash
+            CandidateResponseFault injectedResponseFault,
+            boolean responseFaultInjected
     ) {
         /** Audit protocol version. */
         public static final String SCHEMA_VERSION =
-                "resourceGateway.onlineReadOnlyShadowProviderAudit.v1";
+                "resourceGateway.onlineReadOnlyShadowProviderAudit.v2";
     }
 
     private static final class Runtime {
@@ -318,8 +358,14 @@ public final class OnlineReadOnlyShadowProviderProcess {
                 new AtomicReference<>("");
         private final AtomicReference<String> failureCode =
                 new AtomicReference<>("");
-        private final AtomicBoolean committedBeforeCrash =
+        private final AtomicBoolean responseFaultInjected =
                 new AtomicBoolean();
+        private final AtomicBoolean responseFaultClaimed =
+                new AtomicBoolean();
+        private final AtomicReference<CandidateResponseFault>
+                injectedResponseFault =
+                new AtomicReference<>(
+                        CandidateResponseFault.NONE);
         private final SyntheticRegionalReadOnlyShadowProvider
                 baselineProvider;
         private final MirrorEvidenceIntegrityService
@@ -337,6 +383,10 @@ public final class OnlineReadOnlyShadowProviderProcess {
             this.signer = new FileEvidenceSigner(
                     configuration.evidenceKey(),
                     clock);
+            responseFaultClaimed.set(
+                    Files.exists(
+                            Path.of(configuration
+                                    .responseFaultMarkerFile())));
             if (configuration.role() == Role.BASELINE) {
                 OnlineReadOnlyShadowBaselineObservationIntegrity
                         baselineIntegrity =
@@ -586,24 +636,88 @@ public final class OnlineReadOnlyShadowProviderProcess {
                 candidateGenerations.set(1);
                 writeAudit();
             }
-            if (configuration
-                    .crashAfterFirstCandidateCommit()
-                    && !Files.exists(
-                    Path.of(configuration
-                            .crashMarkerFile()))) {
-                durableWrite(
-                        Path.of(configuration
-                                .crashMarkerFile()),
-                        "committed-response-lost"
-                                .getBytes(
-                                        StandardCharsets.UTF_8));
-                committedBeforeCrash.set(true);
-                writeAudit();
-                java.lang.Runtime.getRuntime()
-                        .halt(COMMITTED_RESPONSE_LOSS_EXIT);
+            if (injectCandidateResponseFault(
+                    exchange, state.bundle())) {
+                return;
             }
             respondJson(
                     exchange, state.bundle());
+        }
+
+        private boolean injectCandidateResponseFault(
+                HttpExchange exchange,
+                MirrorEvidenceBundle bundle)
+                throws Exception {
+            CandidateResponseFault fault =
+                    configuration
+                            .candidateResponseFault();
+            Path marker =
+                    Path.of(configuration
+                            .responseFaultMarkerFile());
+            if (fault == CandidateResponseFault.NONE
+                    || !responseFaultClaimed
+                    .compareAndSet(false, true)) {
+                return false;
+            }
+            durableWrite(
+                    marker,
+                    fault.name().getBytes(
+                            StandardCharsets.UTF_8));
+            injectedResponseFault.set(fault);
+            responseFaultInjected.set(true);
+            writeAudit();
+            switch (fault) {
+                case PROCESS_HALT ->
+                        java.lang.Runtime.getRuntime()
+                                .halt(
+                                        COMMITTED_RESPONSE_LOSS_EXIT);
+                case TRUNCATED_BODY ->
+                        partialCandidateResponse(
+                                exchange,
+                                bundle,
+                                false);
+                case DELAYED_HEADERS -> {
+                    Thread.sleep(configuration
+                            .responseFaultDelayMillis());
+                    exchange.close();
+                }
+                case STALLED_BODY ->
+                        partialCandidateResponse(
+                                exchange,
+                                bundle,
+                                true);
+                case NONE -> throw new IllegalStateException(
+                        "response fault dispatch is invalid");
+            }
+            return true;
+        }
+
+        private void partialCandidateResponse(
+                HttpExchange exchange,
+                MirrorEvidenceBundle bundle,
+                boolean stall) throws Exception {
+            byte[] body =
+                    MAPPER.writeValueAsBytes(bundle);
+            int prefixLength =
+                    Math.max(1, body.length / 2);
+            exchange.getResponseHeaders()
+                    .set("Content-Type", mediaType());
+            exchange.getResponseHeaders()
+                    .set(versionHeader(), version());
+            try (exchange) {
+                exchange.sendResponseHeaders(
+                        200, body.length);
+                exchange.getResponseBody()
+                        .write(
+                                body,
+                                0,
+                                prefixLength);
+                exchange.getResponseBody().flush();
+                if (stall) {
+                    Thread.sleep(configuration
+                            .responseFaultDelayMillis());
+                }
+            }
         }
 
         private void resolveBaseline(
@@ -873,7 +987,9 @@ public final class OnlineReadOnlyShadowProviderProcess {
                                         peerSubject.get(),
                                         peerUriSan.get(),
                                         failureCode.get(),
-                                        committedBeforeCrash
+                                        injectedResponseFault
+                                                .get(),
+                                        responseFaultInjected
                                                 .get())));
             } catch (IOException failure) {
                 throw new IllegalStateException(

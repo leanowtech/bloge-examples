@@ -7,7 +7,7 @@
 
 | 文档属性 | 内容 |
 |---|---|
-| 状态 | Accepted / In implementation；Stage 0 至 Stage 4 的协议、执行、状态世界、Scenario rehearsal、证据与治理闭环已完成。Stage 5 已完成 owner-approved Fidelity inventory、无总分 profile、signed Scenario 与 Shadow source adapter、durable Shadow queue/worker/lifecycle、双重观测 online authority、数据库共享 execution guard、managed trust distribution、在线 v1/detached v2 job、exact signed source binding、detached 双 connector/source resolution，以及 regional TEE online-baseline consumer、strict transport、same-input online candidate strict HTTP authority、独立 online paired-source v2 resolver、动态 readiness、双 loopback HTTP role synthetic regional certification provider、baseline/candidate 双独立 JVM 与双私有 CA/mTLS/SPKI/工作负载身份认证、candidate committed-response-loss 硬退出与无二次生成恢复、双角色同端口 server leaf 双 pin 滚动及连接池重握手认证、v1/v2 proof 数据库兼容迁移、durable worker retry/crash/takeover 组合认证、独立 Test Kit verifier 和四份 public-only 固定签名 compatibility fixture，其中 durable worker 复合 fixture 已关闭跨进程消费门禁。企业 root-policy/control-plane connector、获授权的 production regional provider/candidate authority、PostgreSQL 多副本/网络分区认证、跨区域 client/CA 撤销轮换、outcome/cohort、drift/calibration、零 DSL case 调整和企业身份任务认证继续实施；任何 protocol/API/connector/readiness 子项均不得冒充完整生产数据面 readiness |
+| 状态 | Accepted / In implementation；Stage 0 至 Stage 4 的协议、执行、状态世界、Scenario rehearsal、证据与治理闭环已完成。Stage 5 已完成 owner-approved Fidelity inventory、无总分 profile、signed Scenario 与 Shadow source adapter、durable Shadow queue/worker/lifecycle、双重观测 online authority、数据库共享 execution guard、managed trust distribution、在线 v1/detached v2 job、exact signed source binding、detached 双 connector/source resolution，以及 regional TEE online-baseline consumer、strict transport、same-input online candidate strict HTTP authority、独立 online paired-source v2 resolver、动态 readiness、双 loopback HTTP role synthetic regional certification provider、baseline/candidate 双独立 JVM 与双私有 CA/mTLS/SPKI/工作负载身份认证、candidate committed-response-loss 硬退出与无二次生成恢复、双角色同端口 server leaf 双 pin 滚动及连接池重握手认证、candidate commit 后的截断/延迟/停滞响应故障与无二次生成恢复、v1/v2 proof 数据库兼容迁移、durable worker retry/crash/takeover 组合认证、独立 Test Kit verifier 和四份 public-only 固定签名 compatibility fixture，其中 durable worker 复合 fixture 已关闭跨进程消费门禁。企业 root-policy/control-plane connector、获授权的 production regional provider/candidate authority、PostgreSQL 多副本/网络分区认证、跨区域 client/CA 撤销轮换、outcome/cohort、drift/calibration、零 DSL case 调整和企业身份任务认证继续实施；任何 protocol/API/connector/readiness 子项均不得冒充完整生产数据面 readiness |
 | 目标读者 | Resource Gateway、BLOGE Runtime、ANEKE、TEE/数据平台、QA、SRE、安全与业务运营团队 |
 | 设计范围 | external/composed 能力建模、镜像运行、保真语料、有状态世界、场景演练、证据、保真度与结果校准 |
 | 非目标 | 不重做 ANEKE 的资产治理和发布门禁；不允许测试控制进入生产业务请求；不把观测频率直接当成业务正确性 |
@@ -577,10 +577,10 @@ Resource Gateway 已有的工业底座应直接复用：
 | 日志蒸馏与语料 | 82% | payload-free signed observation、准入/隔离、immutable review、candidate/publication/trajectory/cluster 独立 lineage、元数据风险门禁、fixture exact/trajectory/cluster binding、在线 revalidation、test/staging `RECORDED_EXACT`/`RECORDED_TRAJECTORY`/`RECORDED_CLUSTER`、BLOGE 原生 retry loop、identity-safe projection、Wilson confidence、Session state read 与独立 verifier 已落地；缺生产 payload authority、漂移、偏差、outcome 校准和删除证明 |
 | 有状态业务世界 | 91% | 协议、read/write 退款 fixture、独立 verifier/sealer/client、事务内核、受保护 Session API、独立 AES-GCM 数据面、lease/fence/CAS、durable write-attempt journal/reconciliation、TTL/destroy、全局/scope 容量、保留字节、命令背压、过期擦除、固定 read head、run-scoped virtual write、真实 DAG read-write-read、payload-free v1/v2/v3 state evidence、read-only/successful-transition/write-outcome ANEKE seed、签名 HASH_ONLY checkpoint 与同数据面代际精确恢复准入已落地；缺 TEE/KMS、跨区域数据恢复、真实 process-kill/network parity、目标数据库容量认证和 HA/DR certification |
 | Scenario/Rehearsal | 99.3% | ScenarioPack/Case/Assertion、exact compiler、可恢复逐 case runtime、签名 aggregate、audit/retention、ANEKE seed、durable batch manifest/queue/API/worker、region-local DAG/KMS 双 scheduler、逐 case cooperative control、v1/v2 签名 batch evidence/index、批次 operation/lifecycle audit、retention/multi-hold/逻辑删除证明、durable finalization outbox/lease/retry/quarantine/status、受控 remediation、聚合 health/SLO，以及 root-sealed ANEKE batch workbook 已落地；缺 hard kill、企业策略/WORM/anchor、异构消费者和目标环境认证 |
-| Fidelity/Outcome | 97.3% | owner-approved inventory、无总分七维 profile、fail-closed freshness/低样本/abstention/source debt、Wilson 95%、exact lineage、strict Schema、managed signing、受保护 API、Scenario source、v3 Shadow authority/policy/source closure、durable queue/worker/lifecycle、shared guard、root-threshold managed trust、在线 v1/detached v2 job、exact signed source binding 与 detached data-plane 已落地；regional TEE baseline consumer、same-input candidate strict HTTP authority、独立 online paired-source v2 resolver、分层动态 readiness、双 loopback HTTP role provider、baseline/candidate 双独立 JVM、双私有 CA/mTLS/SPKI/工作负载身份、错误身份与跨角色信任拒绝、candidate committed-response-loss 恢复、双角色 server leaf 双 pin 滚动与连接池重握手、v1/v2 proof 数据库迁移、durable worker transient retry/crash/takeover、四角色公钥隔离，以及 request/job/comparison/lifecycle/source/proof 一次性跨进程复验已闭合；缺企业 root-policy/control-plane connector、跨区域传播及 client/CA 撤销轮换认证、获授权的 production regional provider/candidate authority、PostgreSQL 多副本/网络分区认证、outcome/cohort adapter、drift 降级和校准闭环 |
+| Fidelity/Outcome | 97.7% | owner-approved inventory、无总分七维 profile、fail-closed freshness/低样本/abstention/source debt、Wilson 95%、exact lineage、strict Schema、managed signing、受保护 API、Scenario source、v3 Shadow authority/policy/source closure、durable queue/worker/lifecycle、shared guard、root-threshold managed trust、在线 v1/detached v2 job、exact signed source binding 与 detached data-plane 已落地；regional TEE baseline consumer、same-input candidate strict HTTP authority、独立 online paired-source v2 resolver、分层动态 readiness、双 loopback HTTP role provider、baseline/candidate 双独立 JVM、双私有 CA/mTLS/SPKI/工作负载身份、错误身份与跨角色信任拒绝、candidate committed-response-loss 恢复、双角色 server leaf 双 pin 滚动与连接池重握手、candidate commit 后的截断/延迟/停滞响应故障和单 generation 恢复、v1/v2 proof 数据库迁移、durable worker transient retry/crash/takeover、四角色公钥隔离，以及 request/job/comparison/lifecycle/source/proof 一次性跨进程复验已闭合；缺企业 root-policy/control-plane connector、跨区域传播及 client/CA 撤销轮换认证、获授权的 production regional provider/candidate authority、PostgreSQL 多副本/网络分区认证、outcome/cohort adapter、drift 降级和校准闭环 |
 | 业务运营工作台 | 72% | exact-scope keyset 队列、证据分诊/deep link/响应式 UI，以及 reviewed remediation 八对象协议、server-owned 双角色策略、durable approval ledger、CAS、successor 原子准入、签名前后继对账、角色隔离 Owner/Reviewer 控件、auth-before-decode API 和 capability probe 已落地；仍缺零 DSL case 调整、256-item 密度/性能、任务分派与 SLA、复杂业务样例、可访问性及真实企业 IdP/委派/Owner 认证 |
 
-结论：基础设施准备度约 95%，固定权重理想态完成度为 90.71%。剩余差距 9.29%，主要矛盾已经
+结论：基础设施准备度约 95%，固定权重理想态完成度为 90.81%。剩余差距 9.19%，主要矛盾已经
 从“如何定义并分发可撤销 authority trust”转向“如何接入企业 root-policy/control plane、证明
 跨区域传播和轮换 SLO，并把已闭合且可跨 JVM、私有信任域和响应丢失复验的 synthetic
 provider 接入获授权的 networked production regional provider，在数据使用授权、PostgreSQL
@@ -3060,6 +3060,52 @@ identity 校验。生产滚动若只认证“冷启动可连”，会漏掉真�
 超时和半开连接，证明 authority 把传输不完整统一分类为 retryable unavailable，第二次 attempt
 返回同一 bundle 且不二次生成；随后把这些断点连同 leaf rotation 搬到 PostgreSQL 多连接/
 多 worker 与目标编排环境，关闭 lease、guard、DB commit 和 HTTP response 的组合窗口。
+
+### 3.48 2026-07-26 candidate commit 后网络响应故障差距复评
+
+3.46 只覆盖“commit 后进程立刻死亡”，它证明 durable idempotency，却没有证明 provider 存活时
+发生的网络不完整响应。两类故障的治理含义不同：完整 response 已到达但 schema/坐标非法，是确定性
+协议拒绝，盲目重试只会制造负载；response 没有完整到达，则调用方无法知道服务端是否已经 commit，
+必须以稳定 execution identity 重试。若 authority 把截断 JSON 当成普通 invalid JSON，worker 会把
+一个可恢复 transport ambiguity 错误升级成业务失败。
+
+本轮把故障点放在 candidate durable state 写入、`FileChannel.force(true)` 与原子 rename 之后，
+并扩展 test-only process 配置和审计协议：
+
+- `CandidateResponseFault` 明确定义 `NONE`、`PROCESS_HALT`、`TRUNCATED_BODY`、
+  `DELAYED_HEADERS` 与 `STALLED_BODY`，只允许 candidate 在首次 durable commit 后注入；
+- 每个故障先写入 durable one-shot marker，再通过进程内 CAS 取得注入权。进程重启会从 marker
+  恢复已领取状态，并发 retry 不能重复触发同一故障；
+- `TRUNCATED_BODY` 发送正确媒体类型、协议版本和完整 `Content-Length`，只写一半 body 后关连接；
+  `DELAYED_HEADERS` 在任何 header 前越过 client deadline；`STALLED_BODY` 先写并 flush 一半
+  body，再保持连接停滞后关闭。三者分别覆盖早期 timeout、明确截断和 body-phase 半开窗口；
+- parent 不直接调用 provider，而是继续经过 pinned-mTLS transport、正式 candidate authority、
+  candidate connector 与 `GovernedReadOnlyShadowDataPlane`。三类首次调用都必须得到稳定
+  `CANDIDATE_RUNTIME_UNAVAILABLE`，且 child JVM 仍存活；
+- 第二次 DAG attempt 使用相同 execution id 和 command fingerprint，必须完成 candidate response、
+  双方 exact read、独立验签、policy/source-resolution 和 comparison。审计固定
+  `executions=2`、`exactReads=1`、`candidateGenerations=1`，证明重试了传输而没有重做业务候选；
+- 完整送达但 unknown/duplicate JSON、协议降级、坐标漂移或超限 body 的既有用例仍是
+  deterministic rejection。网络故障恢复没有把所有反序列化错误粗暴改成 retryable。
+
+独立进程聚焦矩阵通过 `6/6`：独立信任域完整 data plane、双角色 leaf rotation、硬退出恢复，
+以及截断、headers delay、body stall 三种参数化场景均为 0 失败、0 错误、0 跳过。测试同时断言
+fault marker 内容、child liveness、exact audit vocabulary 和物理 generation 数，而不是只看最终
+第二次调用成功。加上 synthetic regional provider、private-PKI transport 与 baseline/candidate
+HTTP authority 的相邻回归通过 `37/37`，既有 deterministic rejection 与身份门禁未被放宽。
+
+本轮仍是 loopback `HttpsServer` 上的协议级网络故障，不是 Linux `tc/netem`、sidecar proxy、
+HTTP/2 multiplexing、负载均衡器 backend drain、DNS 迁移、跨 AZ packet loss、TCP RST/blackhole
+或 PostgreSQL commit/connection partition 的目标环境认证。`STALLED_BODY` 有确定的测试释放上限，
+没有模拟无限悬挂；生产系统仍必须依赖 deadline、cooperative cancellation 和连接池废弃策略回收。
+
+因此只把 `Fidelity/Outcome` 从 `97.3%` 调至 `97.7%`。按固定 `24%` 权重，加权贡献从
+`23.352` 提高到 `23.448`，总分从 `90.71%` 提高到 `90.81%`，剩余差距 `9.19%`。下一纵切不再
+增加 loopback fault 枚举，而应进入共享持久化组合认证：用 PostgreSQL/Testcontainers 或目标
+数据库启动两个 worker/provider 进程，在 candidate commit、job lease、guard lease、heartbeat、
+comparison/outbox commit 各窗口注入 process kill 与连接 partition；证明旧 fencing token 永远不能
+发布、同 ordinal 不重复消费、恢复后只有一个 terminal comparison。并行支线补 enterprise
+root-policy connector 和 client/CA revocation propagation，才是继续收敛生产 readiness 的病根路径。
 
 ## 4. 目标架构与系统责任
 

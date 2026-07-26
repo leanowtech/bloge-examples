@@ -885,6 +885,15 @@ certifies leaf-key rollover and pooled-connection re-handshake, not CA
 replacement, certificate revocation, client-certificate hot reload, or
 cross-region convergence.
 
+Candidate response recovery is certified after the durable evidence commit,
+not just before execution. The child can inject a one-shot process halt,
+declared-length body truncation, delayed headers, or a body-prefix stall. A
+durable marker and process-local CAS ensure one fault injection even under
+retry pressure. Each transport fault must surface as retryable candidate
+unavailability; a subsequent DAG attempt returns the original signed bundle
+with `candidateGenerations=1`. Complete but malformed protocol content remains
+a deterministic rejection and is not made retryable by this behavior.
+
 Together these tests prove the wire adapters, composed network call graph,
 physical process separation, private-PKI role isolation, and one committed
 response-loss recovery path. The child provider is never auto-configured and

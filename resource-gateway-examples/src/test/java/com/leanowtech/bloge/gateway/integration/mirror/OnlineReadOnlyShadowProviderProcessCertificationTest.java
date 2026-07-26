@@ -3,6 +3,7 @@ package com.leanowtech.bloge.gateway.integration.mirror;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.leanowtech.bloge.gateway.testing.api.ControlPlaneCertificateIdentityPolicy;
 import com.leanowtech.bloge.gateway.testing.api.OnlineReadOnlyShadowProviderProcess;
+import com.leanowtech.bloge.gateway.testing.api.OnlineReadOnlyShadowProviderProcess.CandidateResponseFault;
 import com.leanowtech.bloge.gateway.testing.api.PinnedMutualTlsRecoveryFleetPublicationTransport;
 import com.leanowtech.bloge.gateway.testing.api.RecoveryFleetPublicationTlsFixture;
 import com.leanowtech.bloge.gateway.visual.runtime.InMemoryVisualEvidenceSigner;
@@ -12,6 +13,8 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.Timeout;
 import org.junit.jupiter.api.io.TempDir;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.EnumSource;
 
 import java.io.IOException;
 import java.net.URI;
@@ -31,6 +34,7 @@ import java.time.Instant;
 import java.time.ZoneOffset;
 import java.util.Base64;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
@@ -174,7 +178,8 @@ class OnlineReadOnlyShadowProviderProcessCertificationTest {
                     candidateConfiguration =
                     candidateConfiguration(
                             candidateCommand,
-                            false,
+                            CandidateResponseFault.NONE,
+                            0,
                             0);
 
             try (ChildProvider candidate =
@@ -401,7 +406,8 @@ class OnlineReadOnlyShadowProviderProcessCertificationTest {
                             mapper,
                             candidateConfiguration(
                                     command,
-                                    false,
+                                    CandidateResponseFault.NONE,
+                                    0,
                                     0,
                                     candidateTls),
                             directory.resolve(
@@ -463,7 +469,8 @@ class OnlineReadOnlyShadowProviderProcessCertificationTest {
                             mapper,
                             candidateConfiguration(
                                     command,
-                                    false,
+                                    CandidateResponseFault.NONE,
+                                    0,
                                     candidatePort,
                                     nextCandidateTls),
                             directory.resolve(
@@ -556,7 +563,9 @@ class OnlineReadOnlyShadowProviderProcessCertificationTest {
                     initialConfiguration =
                     candidateConfiguration(
                             candidateCommand,
-                            true,
+                            CandidateResponseFault
+                                    .PROCESS_HALT,
+                            0,
                             0);
             ChildProvider candidate =
                     ChildProvider.start(
@@ -568,7 +577,9 @@ class OnlineReadOnlyShadowProviderProcessCertificationTest {
                         restartConfiguration =
                         candidateConfiguration(
                                 candidateCommand,
-                                true,
+                                CandidateResponseFault
+                                        .PROCESS_HALT,
+                                0,
                                 candidate.ready().port());
                 candidate.writeConfiguration(
                         mapper,
@@ -610,8 +621,13 @@ class OnlineReadOnlyShadowProviderProcessCertificationTest {
                         crashed =
                         candidate.audit(mapper);
                 assertThat(crashed
-                        .committedBeforeCrash())
+                        .responseFaultInjected())
                         .isTrue();
+                assertThat(crashed
+                        .injectedResponseFault())
+                        .isEqualTo(
+                                CandidateResponseFault
+                                        .PROCESS_HALT);
                 assertThat(crashed
                         .candidateGenerations())
                         .isEqualTo(1);
@@ -623,7 +639,7 @@ class OnlineReadOnlyShadowProviderProcessCertificationTest {
                 assertThat(Files.isRegularFile(
                         Path.of(
                                 restartConfiguration
-                                        .crashMarkerFile())))
+                                        .responseFaultMarkerFile())))
                         .isTrue();
 
                 try (ChildProvider restarted =
@@ -652,14 +668,143 @@ class OnlineReadOnlyShadowProviderProcessCertificationTest {
                     assertThat(recoveredAudit.exactReads())
                             .isEqualTo(1);
                     assertThat(recoveredAudit
-                            .committedBeforeCrash())
+                            .responseFaultInjected())
                             .isFalse();
+                    assertThat(recoveredAudit
+                            .injectedResponseFault())
+                            .isEqualTo(
+                                    CandidateResponseFault.NONE);
                     assertPeer(
                             recoveredAudit,
                             candidateTls);
                 }
             } finally {
                 candidate.close();
+            }
+        }
+    }
+
+    @ParameterizedTest(name = "{0}")
+    @EnumSource(
+            value = CandidateResponseFault.class,
+            names = {
+                    "TRUNCATED_BODY",
+                    "DELAYED_HEADERS",
+                    "STALLED_BODY"})
+    void retriesCommittedCandidateAfterRetryableNetworkResponseFault(
+            CandidateResponseFault fault) throws Exception {
+        try (ChildProvider baseline =
+                     ChildProvider.start(
+                             mapper,
+                             baselineConfiguration(),
+                             directory.resolve(
+                                     "fault-baseline-process.log"))) {
+            OnlineReadOnlyShadowBaselineAuthority
+                    baselineAuthority =
+                    baselineAuthority(
+                            baseline.uri(),
+                            baselineTls);
+            OnlineReadOnlyShadowBaselineObservation
+                    seed =
+                    baselineIntegrity.requireVerified(
+                            baselineAuthority.observe(
+                                    baselineCommand));
+            OnlineReadOnlyShadowCandidateCommand
+                    command =
+                    candidateCommand(seed);
+            long delayMillis =
+                    fault == CandidateResponseFault
+                            .TRUNCATED_BODY
+                            ? 0 : 750;
+            OnlineReadOnlyShadowProviderProcess.Configuration
+                    configuration =
+                    candidateConfiguration(
+                            command,
+                            fault,
+                            delayMillis,
+                            0);
+            try (ChildProvider candidate =
+                         ChildProvider.start(
+                                 mapper,
+                                 configuration,
+                                 directory.resolve(
+                                         "fault-candidate-"
+                                                 + fault.name()
+                                                 .toLowerCase(
+                                                         Locale.ROOT)
+                                                 + ".log"))) {
+                OnlineReadOnlyShadowCandidateAuthority
+                        candidateAuthority =
+                        candidateAuthority(
+                                candidate.uri(),
+                                candidateTls,
+                                Duration.ofMillis(250));
+                GovernedReadOnlyShadowDataPlane dataPlane =
+                        dataPlane(
+                                baselineAuthority,
+                                candidateAuthority);
+
+                assertThatThrownBy(() ->
+                        dataPlane.execute(permit(1)))
+                        .isInstanceOf(
+                                ReadOnlyShadowDataPlane
+                                        .Failure.class)
+                        .extracting(failure ->
+                                ((ReadOnlyShadowDataPlane
+                                        .Failure) failure)
+                                        .reason())
+                        .isEqualTo(
+                                ReadOnlyShadowDataPlane
+                                        .FailureReason
+                                        .CANDIDATE_RUNTIME_UNAVAILABLE);
+                assertThat(candidate.process()
+                        .isAlive())
+                        .isTrue();
+                OnlineReadOnlyShadowProviderProcess.Audit
+                        faultAudit =
+                        candidate.audit(mapper);
+                assertThat(faultAudit
+                        .injectedResponseFault())
+                        .isEqualTo(fault);
+                assertThat(faultAudit
+                        .responseFaultInjected())
+                        .isTrue();
+                assertThat(faultAudit
+                        .candidateGenerations())
+                        .isEqualTo(1);
+                assertThat(faultAudit.executions())
+                        .isEqualTo(1);
+                assertThat(faultAudit.exactReads())
+                        .isZero();
+                assertThat(Files.readString(
+                        Path.of(configuration
+                                .responseFaultMarkerFile())))
+                        .isEqualTo(fault.name());
+
+                ReadOnlyShadowDataPlane.ExecutionResult
+                        recovered =
+                        dataPlane.execute(permit(2));
+
+                assertCompleteResult(recovered);
+                OnlineReadOnlyShadowProviderProcess.Audit
+                        recoveredAudit =
+                        candidate.audit(mapper);
+                assertThat(recoveredAudit.executions())
+                        .isEqualTo(2);
+                assertThat(recoveredAudit.exactReads())
+                        .isEqualTo(1);
+                assertThat(recoveredAudit
+                        .candidateGenerations())
+                        .isEqualTo(1);
+                assertThat(recoveredAudit
+                        .injectedResponseFault())
+                        .isEqualTo(fault);
+                assertThat(recoveredAudit
+                        .responseFaultInjected())
+                        .isTrue();
+                assertPeer(
+                        recoveredAudit,
+                        candidateTls);
             }
         }
     }
@@ -816,7 +961,23 @@ class OnlineReadOnlyShadowProviderProcessCertificationTest {
                 material,
                 Set.of(spkiPin(
                         material
-                                .serverCertificate())));
+                                .serverCertificate())),
+                Duration.ofSeconds(3));
+    }
+
+    private OnlineReadOnlyShadowCandidateAuthority
+    candidateAuthority(
+            URI uri,
+            RecoveryFleetPublicationTlsFixture.Material
+                    material,
+            Duration requestTimeout) {
+        return candidateAuthority(
+                uri,
+                material,
+                Set.of(spkiPin(
+                        material
+                                .serverCertificate())),
+                requestTimeout);
     }
 
     private OnlineReadOnlyShadowCandidateAuthority
@@ -825,6 +986,20 @@ class OnlineReadOnlyShadowProviderProcessCertificationTest {
             RecoveryFleetPublicationTlsFixture.Material
                     material,
             Set<String> serverSpkiPins) {
+        return candidateAuthority(
+                uri,
+                material,
+                serverSpkiPins,
+                Duration.ofSeconds(3));
+    }
+
+    private OnlineReadOnlyShadowCandidateAuthority
+    candidateAuthority(
+            URI uri,
+            RecoveryFleetPublicationTlsFixture.Material
+                    material,
+            Set<String> serverSpkiPins,
+            Duration requestTimeout) {
         return new HttpOnlineReadOnlyShadowCandidateAuthority(
                 mapper,
                 RESOLUTION_CLOCK,
@@ -835,7 +1010,7 @@ class OnlineReadOnlyShadowProviderProcessCertificationTest {
                 new HttpOnlineReadOnlyShadowCandidateAuthority
                         .Settings(
                         uri,
-                        Duration.ofSeconds(3),
+                        requestTimeout,
                         2 * 1024 * 1024,
                         false),
                 (operation, target) -> Map.of(
@@ -917,7 +1092,8 @@ class OnlineReadOnlyShadowProviderProcessCertificationTest {
                         .toAbsolutePath().toString(),
                 process.resolve("unused-crash")
                         .toAbsolutePath().toString(),
-                false,
+                CandidateResponseFault.NONE,
+                0,
                 baselineKey,
                 baselineCommand,
                 baselineFixture,
@@ -929,11 +1105,13 @@ class OnlineReadOnlyShadowProviderProcessCertificationTest {
     private OnlineReadOnlyShadowProviderProcess.Configuration
     candidateConfiguration(
             OnlineReadOnlyShadowCandidateCommand command,
-            boolean crashAfterCommit,
+            CandidateResponseFault responseFault,
+            long responseFaultDelayMillis,
             int port) {
         return candidateConfiguration(
                 command,
-                crashAfterCommit,
+                responseFault,
+                responseFaultDelayMillis,
                 port,
                 candidateTls);
     }
@@ -941,7 +1119,8 @@ class OnlineReadOnlyShadowProviderProcessCertificationTest {
     private OnlineReadOnlyShadowProviderProcess.Configuration
     candidateConfiguration(
             OnlineReadOnlyShadowCandidateCommand command,
-            boolean crashAfterCommit,
+            CandidateResponseFault responseFault,
+            long responseFaultDelayMillis,
             int port,
             RecoveryFleetPublicationTlsFixture.Material
                     serverMaterial) {
@@ -972,9 +1151,10 @@ class OnlineReadOnlyShadowProviderProcessCertificationTest {
                         .toAbsolutePath().toString(),
                 process.resolve("candidate-state.json")
                         .toAbsolutePath().toString(),
-                process.resolve("committed-response-loss")
+                process.resolve("committed-response-fault")
                         .toAbsolutePath().toString(),
-                crashAfterCommit,
+                responseFault,
+                responseFaultDelayMillis,
                 candidateKey,
                 null,
                 null,

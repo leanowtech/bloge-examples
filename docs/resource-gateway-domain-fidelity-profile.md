@@ -55,6 +55,9 @@
 - baseline/candidate 双角色 server leaf 滚动认证：同 CA/同 URI SAN 下替换 server key，
   old/new SPKI 双 pin 过渡、old-only/new-only 前后门禁、同端口双进程重启，以及复用既有
   HTTP authority/连接池后的重新握手与完整 data-plane 连续性；
+- candidate durable commit 后的网络响应故障认证：进程硬退出、声明长度 body 截断、
+  headers 延迟和 body-prefix 停滞均使用 durable one-shot marker 与进程 CAS 注入，统一投影为
+  retryable unavailable；下一 DAG attempt 返回同一 signed bundle 且物理 generation 保持 1；
 - v1/v2 source-resolution 共用的 append-only 数据库仓储：旧 v1 表原位补充
   `source_mode` 与双 command fingerprint 索引，v1 签名 JSON 不重写，v2 无 detached binding
   也可落库，读取时逐索引对账；
