@@ -536,6 +536,10 @@ class ToolStudioIntegrationServiceTest {
                         List.of(
                                 "resourceGateway.onlineReadOnlyShadowBaselineCommand.v1"))
                 .containsEntry(
+                        "onlineReadOnlyShadowCandidateCommand",
+                        List.of(
+                                "resourceGateway.onlineReadOnlyShadowCandidateCommand.v1"))
+                .containsEntry(
                         "onlineReadOnlyShadowBaselineObservation",
                         List.of(
                                 "resourceGateway.onlineReadOnlyShadowBaselineObservation.v1"))
@@ -560,6 +564,12 @@ class ToolStudioIntegrationServiceTest {
                         "mirrorReadOnlyShadowOnlineBaselineReady",
                         false)
                 .containsEntry(
+                        "mirrorReadOnlyShadowOnlineCandidateConnectorInstalled",
+                        false)
+                .containsEntry(
+                        "mirrorReadOnlyShadowOnlinePairedResolverInstalled",
+                        false)
+                .containsEntry(
                         "mirrorReadOnlyShadowOnlineDataPlaneReady",
                         false);
 
@@ -568,6 +578,48 @@ class ToolStudioIntegrationServiceTest {
                 .containsEntry(
                         "mirrorReadOnlyShadowOnlineBaselineReady",
                         true)
+                .containsEntry(
+                        "mirrorReadOnlyShadowOnlineDataPlaneReady",
+                        false);
+
+        AtomicBoolean candidateEvidence =
+                new AtomicBoolean(true);
+        service.configureOnlineReadOnlyShadowDataPlaneRuntime(
+                new OnlineReadOnlyShadowDataPlaneRuntimeAvailability(
+                        true,
+                        true,
+                        () -> true,
+                        candidateEvidence::get,
+                        () -> true,
+                        () -> true));
+        assertThat(service.capabilities().payload().features())
+                .containsEntry(
+                        "mirrorReadOnlyShadowOnlineCandidateConnectorInstalled",
+                        true)
+                .containsEntry(
+                        "mirrorReadOnlyShadowOnlineCandidateAuthorityReady",
+                        true)
+                .containsEntry(
+                        "mirrorReadOnlyShadowOnlineCandidateEvidenceVerificationReady",
+                        true)
+                .containsEntry(
+                        "mirrorReadOnlyShadowOnlineCandidateReady",
+                        true)
+                .containsEntry(
+                        "mirrorReadOnlyShadowOnlinePairedResolverInstalled",
+                        true)
+                .containsEntry(
+                        "mirrorReadOnlyShadowOnlinePairedResolverReady",
+                        true)
+                .containsEntry(
+                        "mirrorReadOnlyShadowOnlineDataPlaneReady",
+                        true);
+
+        candidateEvidence.set(false);
+        assertThat(service.capabilities().payload().features())
+                .containsEntry(
+                        "mirrorReadOnlyShadowOnlineCandidateReady",
+                        false)
                 .containsEntry(
                         "mirrorReadOnlyShadowOnlineDataPlaneReady",
                         false);

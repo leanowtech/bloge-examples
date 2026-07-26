@@ -1,5 +1,6 @@
 package com.leanowtech.bloge.gateway.integration.mirror;
 
+import com.fasterxml.jackson.annotation.JsonInclude;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.leanowtech.bloge.gateway.testing.evidence.ProtocolFingerprint;
 import com.leanowtech.bloge.gateway.visual.runtime.VisualRunEvidenceSeal;
@@ -15,7 +16,7 @@ import java.util.Set;
 import java.util.regex.Pattern;
 
 /**
- * Signed proof that one exact detached Shadow source pair was independently re-resolved.
+ * Signed proof that one exact Shadow source pair was independently re-resolved.
  *
  * <p>The attestation carries only content addresses, normalized fact fingerprints, evidence
  * classifications, timing, and zero-write counters. Historical artifact completion is separated
@@ -29,7 +30,10 @@ import java.util.regex.Pattern;
  * @param scope complete enterprise namespace
  * @param requestId durable Shadow request identity
  * @param executionId stable logical execution identity across worker retries
- * @param sourceBindingRef exact signed detached source binding
+ * @param sourceMode online execution for v2; omitted by the exact legacy v1 wire shape
+ * @param sourceBindingRef exact signed detached source binding for v1; absent for online v2
+ * @param baselineCommandFingerprint exact online baseline command for v2; absent for v1
+ * @param candidateCommandFingerprint exact online candidate command for v2; absent for v1
  * @param comparisonPolicyRef exact normalization and typed-diff policy
  * @param requestContextFingerprint canonical paired request identity
  * @param admissionFingerprint exact joined online-authority decision
@@ -48,7 +52,14 @@ public record ReadOnlyShadowSourceResolutionAttestation(
         CapabilitySnapshot.Scope scope,
         String requestId,
         String executionId,
+        @JsonInclude(JsonInclude.Include.NON_NULL)
+        ReadOnlyShadowJobRequest.SourceMode sourceMode,
+        @JsonInclude(JsonInclude.Include.NON_NULL)
         MirrorArtifactRef sourceBindingRef,
+        @JsonInclude(JsonInclude.Include.NON_EMPTY)
+        String baselineCommandFingerprint,
+        @JsonInclude(JsonInclude.Include.NON_EMPTY)
+        String candidateCommandFingerprint,
         MirrorArtifactRef comparisonPolicyRef,
         String requestContextFingerprint,
         String admissionFingerprint,
@@ -62,6 +73,9 @@ public record ReadOnlyShadowSourceResolutionAttestation(
     /** Current detached source-resolution attestation protocol version. */
     public static final String SCHEMA_VERSION =
             "resourceGateway.readOnlyShadowSourceResolutionAttestation.v1";
+    /** Online paired-source attestation with exact source-command closure. */
+    public static final String ONLINE_SCHEMA_VERSION =
+            "resourceGateway.readOnlyShadowSourceResolutionAttestation.v2";
     /** Artifact kind referenced by read-only Shadow comparison v2 and v3. */
     public static final String ARTIFACT_KIND =
             "SHADOW_SOURCE_RESOLUTION_ATTESTATION";
@@ -85,11 +99,14 @@ public record ReadOnlyShadowSourceResolutionAttestation(
 
     /** Validates complete paired, temporal, content-addressed, and zero-write closure. */
     public ReadOnlyShadowSourceResolutionAttestation {
-        if (!SCHEMA_VERSION.equals(normalized(schemaVersion))) {
+        schemaVersion = normalized(schemaVersion);
+        boolean online =
+                ONLINE_SCHEMA_VERSION.equals(schemaVersion);
+        if (!SCHEMA_VERSION.equals(schemaVersion)
+                && !online) {
             throw new IllegalArgumentException(
                     "unsupported source-resolution attestation schemaVersion");
         }
-        schemaVersion = SCHEMA_VERSION;
         attestationFingerprint = optionalFingerprint(
                 attestationFingerprint,
                 "attestationFingerprint");
@@ -103,10 +120,36 @@ public record ReadOnlyShadowSourceResolutionAttestation(
         requestId = identifier(requestId, "requestId");
         executionId = identifier(
                 executionId, "executionId");
-        sourceBindingRef = kind(
-                sourceBindingRef,
-                ReadOnlyShadowSourceBinding.ARTIFACT_KIND,
-                "sourceBindingRef");
+        baselineCommandFingerprint =
+                optionalFingerprint(
+                        baselineCommandFingerprint,
+                        "baselineCommandFingerprint");
+        candidateCommandFingerprint =
+                optionalFingerprint(
+                        candidateCommandFingerprint,
+                        "candidateCommandFingerprint");
+        if (online) {
+            if (sourceMode
+                    != ReadOnlyShadowJobRequest.SourceMode
+                    .ONLINE_EXECUTION
+                    || sourceBindingRef != null
+                    || baselineCommandFingerprint.isEmpty()
+                    || candidateCommandFingerprint.isEmpty()) {
+                throw new IllegalArgumentException(
+                        "online source-resolution attestation coordinates are incomplete");
+            }
+        } else {
+            if (sourceMode != null
+                    || !baselineCommandFingerprint.isEmpty()
+                    || !candidateCommandFingerprint.isEmpty()) {
+                throw new IllegalArgumentException(
+                        "legacy source-resolution attestation cannot carry online coordinates");
+            }
+            sourceBindingRef = kind(
+                    sourceBindingRef,
+                    ReadOnlyShadowSourceBinding.ARTIFACT_KIND,
+                    "sourceBindingRef");
+        }
         comparisonPolicyRef = kind(
                 comparisonPolicyRef,
                 "SHADOW_COMPARISON_POLICY",
@@ -140,11 +183,19 @@ public record ReadOnlyShadowSourceResolutionAttestation(
                 candidate.artifactRef().kind())
                 || baseline.resolvedAt().isBefore(admittedAt)
                 || candidate.resolvedAt().isBefore(admittedAt)
-                || confirmedAt.isBefore(
-                baseline.resolvedAt())
-                || confirmedAt.isBefore(
-                candidate.resolvedAt())
-                || issuedAt.isBefore(confirmedAt)
+                || online && (
+                baseline.resolvedAt().isBefore(confirmedAt)
+                        || candidate.resolvedAt().isBefore(confirmedAt)
+                        || issuedAt.isBefore(
+                        baseline.resolvedAt())
+                        || issuedAt.isBefore(
+                        candidate.resolvedAt()))
+                || !online && (
+                confirmedAt.isBefore(
+                        baseline.resolvedAt())
+                        || confirmedAt.isBefore(
+                        candidate.resolvedAt())
+                        || issuedAt.isBefore(confirmedAt))
                 || baseline.writeCredentialExposed()
                 || candidate.writeCredentialExposed()
                 || baseline.writeAttemptCount() != 0
@@ -152,6 +203,55 @@ public record ReadOnlyShadowSourceResolutionAttestation(
             throw new IllegalArgumentException(
                     "source-resolution attestation pair is inconsistent");
         }
+    }
+
+    /**
+     * Compatibility constructor preserving the exact detached v1 wire model.
+     *
+     * @param schemaVersion exact detached attestation version
+     * @param attestationFingerprint complete content address or blank before signing
+     * @param attestationId deterministic proof identity
+     * @param revision immutable revision
+     * @param scope complete enterprise scope
+     * @param requestId durable Shadow request identity
+     * @param executionId stable logical execution identity
+     * @param sourceBindingRef exact detached source binding
+     * @param comparisonPolicyRef exact comparison policy
+     * @param requestContextFingerprint canonical paired request identity
+     * @param admissionFingerprint exact online-authority admission identity
+     * @param admittedAt trusted admission time
+     * @param confirmedAt trusted confirmation time
+     * @param baseline independently reconstructed baseline source
+     * @param candidate independently reconstructed candidate source
+     * @param issuedAt trusted proof issue time
+     * @param attestationSeal detached authority seal
+     */
+    public ReadOnlyShadowSourceResolutionAttestation(
+            String schemaVersion,
+            String attestationFingerprint,
+            String attestationId,
+            long revision,
+            CapabilitySnapshot.Scope scope,
+            String requestId,
+            String executionId,
+            MirrorArtifactRef sourceBindingRef,
+            MirrorArtifactRef comparisonPolicyRef,
+            String requestContextFingerprint,
+            String admissionFingerprint,
+            Instant admittedAt,
+            Instant confirmedAt,
+            SourceResolution baseline,
+            SourceResolution candidate,
+            Instant issuedAt,
+            VisualRunEvidenceSeal attestationSeal) {
+        this(schemaVersion, attestationFingerprint,
+                attestationId, revision, scope, requestId,
+                executionId, null, sourceBindingRef,
+                "", "", comparisonPolicyRef,
+                requestContextFingerprint,
+                admissionFingerprint, admittedAt,
+                confirmedAt, baseline, candidate,
+                issuedAt, attestationSeal);
     }
 
     /**
@@ -246,7 +346,10 @@ public record ReadOnlyShadowSourceResolutionAttestation(
         return ProtocolFingerprint.ofBounded(
                 Objects.requireNonNull(mapper, "mapper"),
                 new AttestationMaterial(
-                        "RESOURCE_GATEWAY_READ_ONLY_SHADOW_SOURCE_RESOLUTION_ATTESTATION_V1",
+                        ONLINE_SCHEMA_VERSION.equals(
+                                schemaVersion)
+                                ? "RESOURCE_GATEWAY_READ_ONLY_SHADOW_SOURCE_RESOLUTION_ATTESTATION_V2"
+                                : "RESOURCE_GATEWAY_READ_ONLY_SHADOW_SOURCE_RESOLUTION_ATTESTATION_V1",
                         schemaVersion,
                         attestationId,
                         revision,
@@ -280,25 +383,47 @@ public record ReadOnlyShadowSourceResolutionAttestation(
 
     String calculateFingerprint(
             ObjectMapper mapper) {
+        Object material = ONLINE_SCHEMA_VERSION.equals(
+                schemaVersion)
+                ? new OnlineFingerprintMaterial(
+                schemaVersion,
+                "",
+                attestationId,
+                revision,
+                scope,
+                requestId,
+                executionId,
+                sourceMode,
+                baselineCommandFingerprint,
+                candidateCommandFingerprint,
+                comparisonPolicyRef,
+                requestContextFingerprint,
+                admissionFingerprint,
+                admittedAt,
+                confirmedAt,
+                baseline,
+                candidate,
+                issuedAt)
+                : new DetachedFingerprintMaterial(
+                schemaVersion,
+                "",
+                attestationId,
+                revision,
+                scope,
+                requestId,
+                executionId,
+                sourceBindingRef,
+                comparisonPolicyRef,
+                requestContextFingerprint,
+                admissionFingerprint,
+                admittedAt,
+                confirmedAt,
+                baseline,
+                candidate,
+                issuedAt);
         return ProtocolFingerprint.ofBounded(
                 Objects.requireNonNull(mapper, "mapper"),
-                new FingerprintMaterial(
-                        schemaVersion,
-                        "",
-                        attestationId,
-                        revision,
-                        scope,
-                        requestId,
-                        executionId,
-                        sourceBindingRef,
-                        comparisonPolicyRef,
-                        requestContextFingerprint,
-                        admissionFingerprint,
-                        admittedAt,
-                        confirmedAt,
-                        baseline,
-                        candidate,
-                        issuedAt),
+                material,
                 MAXIMUM_CANONICAL_BYTES);
     }
 
@@ -313,7 +438,10 @@ public record ReadOnlyShadowSourceResolutionAttestation(
                 scope,
                 requestId,
                 executionId,
+                sourceMode,
                 sourceBindingRef,
+                baselineCommandFingerprint,
+                candidateCommandFingerprint,
                 comparisonPolicyRef,
                 requestContextFingerprint,
                 admissionFingerprint,
@@ -416,7 +544,7 @@ public record ReadOnlyShadowSourceResolutionAttestation(
     ) {
     }
 
-    private record FingerprintMaterial(
+    private record DetachedFingerprintMaterial(
             String schemaVersion,
             String attestationFingerprint,
             String attestationId,
@@ -425,6 +553,28 @@ public record ReadOnlyShadowSourceResolutionAttestation(
             String requestId,
             String executionId,
             MirrorArtifactRef sourceBindingRef,
+            MirrorArtifactRef comparisonPolicyRef,
+            String requestContextFingerprint,
+            String admissionFingerprint,
+            Instant admittedAt,
+            Instant confirmedAt,
+            SourceResolution baseline,
+            SourceResolution candidate,
+            Instant issuedAt
+    ) {
+    }
+
+    private record OnlineFingerprintMaterial(
+            String schemaVersion,
+            String attestationFingerprint,
+            String attestationId,
+            long revision,
+            CapabilitySnapshot.Scope scope,
+            String requestId,
+            String executionId,
+            ReadOnlyShadowJobRequest.SourceMode sourceMode,
+            String baselineCommandFingerprint,
+            String candidateCommandFingerprint,
             MirrorArtifactRef comparisonPolicyRef,
             String requestContextFingerprint,
             String admissionFingerprint,

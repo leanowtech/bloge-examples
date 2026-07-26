@@ -122,6 +122,7 @@ offline artifact verification live in the independent `resource-gateway-test-kit
 | `read-only-shadow-source-binding-registration-request-v1.schema.json` | `ReadOnlyShadowSourceBindingRegistrationRequest` | Unsigned authority command containing exact baseline facts and candidate evidence coordinates but no caller-selected fingerprint or seal |
 | `read-only-shadow-source-binding-v1.schema.json` | `ReadOnlyShadowSourceBinding` | Signed payload-free detached baseline/candidate pair with nested baseline and outer binding content addresses, exact candidate bundle closure, and bounded validity |
 | `read-only-shadow-source-resolution-attestation-v1.schema.json` | `ReadOnlyShadowSourceResolutionAttestation` | Signed payload-free proof that one stable execution independently re-resolved the exact source binding and candidate evidence under one immutable comparison policy, with separate source/resolution times and zero-write closure |
+| `read-only-shadow-source-resolution-attestation-v2.schema.json` | `ReadOnlyShadowSourceResolutionAttestation` | Signed online paired-source proof binding exact baseline/candidate command fingerprints, independently re-read signed artifacts, post-confirmation resolution times, normalized facts, and zero-write closure without a detached source binding |
 | `online-read-only-shadow-baseline-command-v1.schema.json` | `OnlineReadOnlyShadowBaselineCommand` | Payload-free regional sidecar command binding one admitted execution to exact scenario, production-read binding, policy, grant, egress, kill-switch, idempotency, and deadline coordinates |
 | `online-read-only-shadow-candidate-command-v1.schema.json` | `OnlineReadOnlyShadowCandidateCommand` | Payload-free sealed-candidate command binding exact plan execution to the independently verified baseline observation, opaque vault receipt, request-context fingerprint, grant, admission, and deadline |
 | `online-read-only-shadow-baseline-observation-v1.schema.json` | `OnlineReadOnlyShadowBaselineObservation` | Content-addressed and independently signed regional baseline evidence with read-only identity/transport attestations, opaque payload-vault receipt, hash-only source I/O, normalized facts, and measured zero-write counters |
@@ -187,6 +188,19 @@ key, endpoint, credential, customer request, or customer response. Passing it
 proves producer/consumer wire compatibility and authenticates the encoded
 zero-write measurement; it does not prove current sidecar capability, data-use
 permission, paired online execution, or production certification.
+
+`online-read-only-shadow-source-resolution-stage1-v1.fixture.json` is the fixed
+public-only online paired-source compatibility fixture. The server produced its
+two exact commands, signed regional baseline observation, signed candidate
+Mirror bundle, and signed v2 source-resolution proof through the synthetic
+regional provider and real connector/resolver composition. The standalone Test
+Kit independently verifies all three authority roles, both command content
+addresses, same-input pairing, candidate evidence coordinates, post-confirmation
+exact-read times, built-in normalization, proof identity/content address, and
+zero-write facts. The server also rehydrates and verifies the same file and
+rejects key-role swaps. It contains no private key, endpoint, credential,
+customer request, or customer response. Passing it proves cross-implementation
+wire/crypto compatibility, not a production provider or current authorization.
 
 The producer emits v2 for stateless runs, v3 for read-only Session runs, and v5
 for new Session runs containing virtual writes. V4 remains the compatible

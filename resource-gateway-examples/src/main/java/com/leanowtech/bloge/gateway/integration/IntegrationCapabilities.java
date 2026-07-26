@@ -829,6 +829,12 @@ public record IntegrationCapabilities(
         features.put("mirrorReadOnlyShadowOnlineBaselineAuthorityReady", false);
         features.put("mirrorReadOnlyShadowOnlineBaselineEvidenceVerificationReady", false);
         features.put("mirrorReadOnlyShadowOnlineBaselineReady", false);
+        features.put("mirrorReadOnlyShadowOnlineCandidateConnectorInstalled", false);
+        features.put("mirrorReadOnlyShadowOnlineCandidateAuthorityReady", false);
+        features.put("mirrorReadOnlyShadowOnlineCandidateEvidenceVerificationReady", false);
+        features.put("mirrorReadOnlyShadowOnlineCandidateReady", false);
+        features.put("mirrorReadOnlyShadowOnlinePairedResolverInstalled", false);
+        features.put("mirrorReadOnlyShadowOnlinePairedResolverReady", false);
         features.put("mirrorReadOnlyShadowOnlineDataPlaneReady", false);
         features.put("mirrorObservationAdmissionApi", false);
         features.put("mirrorObservationAdmissionReady", false);

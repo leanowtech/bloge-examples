@@ -632,9 +632,46 @@ candidate execution, or production readiness.
 `ONLINE_READ_ONLY_SHADOW_CANDIDATE_COMMAND_SCHEMA_RESOURCE` expose the strict
 same-input candidate command. Candidate authorities must place the complete
 command fingerprint in signed `MirrorRunEvidence.requestId`; consumers must
-still verify the Mirror bundle independently. Packaging the schema proves only
-wire availability. It does not prove that a candidate authority or online
-paired-source resolver is installed.
+still verify the Mirror bundle independently.
+
+Verify the complete online pair with the second fixed public-only fixture:
+
+```java
+OnlineReadOnlyShadowSourceResolutionCompatibilityFixture fixture =
+        CapabilityMirrorProtocol
+                .onlineReadOnlyShadowSourceResolutionCompatibilityFixture();
+
+OnlineReadOnlyShadowSourceResolutionAttestationVerifier.VerificationResult
+        compatibility = fixture.verify();
+if (!compatibility.verified()) {
+    throw new IllegalStateException(
+            compatibility.reasonCode());
+}
+```
+
+The server produced this fixture through the synthetic regional provider,
+baseline and candidate connectors, and the online v2 resolver. The standalone
+verifier applies both strict command schemas, delegates to the independent
+baseline and Mirror evidence verifiers, then recomputes command pairing,
+candidate command-to-evidence closure, current exact-read times,
+`payload-free-equality-v1` facts, deterministic proof identity, full content
+address, zero-write closure, key policy, and a third Ed25519 signature. The
+fixture carries three public keys but no private key, endpoint, credential, or
+business payload.
+
+For live evidence, build
+`OnlineReadOnlyShadowSourceResolutionAttestationVerifier.VerificationContext`
+from authenticated caller coordinates plus the exact two commands and two
+artifacts retained or independently resolved by the consumer. Never derive the
+expected proof ref, scope, request/execution id, admission fingerprint, or
+authority keys from the proof itself. `BASELINE_INVALID` and
+`CANDIDATE_INVALID` preserve bounded nested reason codes; producer diagnostics
+and payloads never enter the result.
+
+Packaging and passing the fixture proves cross-implementation wire and crypto
+compatibility. It does not prove that a production candidate authority,
+regional payload vault, enterprise trust distribution, or full online data
+plane is currently installed and authorized.
 
 Capability observations use a separate producer authority and verifier. Run the packaged public-only
 fixture whenever upgrading the protocol, JSON stack, crypto provider, or consumer:

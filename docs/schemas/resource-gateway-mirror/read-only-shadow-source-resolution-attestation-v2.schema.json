@@ -1,0 +1,119 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://bloge.dev/schemas/resource-gateway-mirror/read-only-shadow-source-resolution-attestation-v2.schema.json",
+  "title": "Resource Gateway Online Read-only Shadow Source Resolution Attestation v2",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "attestationFingerprint",
+    "attestationId",
+    "revision",
+    "scope",
+    "requestId",
+    "executionId",
+    "sourceMode",
+    "baselineCommandFingerprint",
+    "candidateCommandFingerprint",
+    "comparisonPolicyRef",
+    "requestContextFingerprint",
+    "admissionFingerprint",
+    "admittedAt",
+    "confirmedAt",
+    "baseline",
+    "candidate",
+    "issuedAt",
+    "attestationSeal"
+  ],
+  "properties": {
+    "schemaVersion": {
+      "const": "resourceGateway.readOnlyShadowSourceResolutionAttestation.v2"
+    },
+    "attestationFingerprint": {
+      "$ref": "mirror-plan-v1.schema.json#/$defs/fingerprint"
+    },
+    "attestationId": {
+      "$ref": "read-only-shadow-comparison-v1.schema.json#/$defs/identifier"
+    },
+    "revision": {
+      "type": "integer",
+      "minimum": 1
+    },
+    "scope": {
+      "$ref": "mirror-plan-v1.schema.json#/$defs/scope"
+    },
+    "requestId": {
+      "$ref": "read-only-shadow-comparison-v1.schema.json#/$defs/identifier"
+    },
+    "executionId": {
+      "$ref": "read-only-shadow-comparison-v1.schema.json#/$defs/identifier"
+    },
+    "sourceMode": {
+      "const": "ONLINE_EXECUTION"
+    },
+    "baselineCommandFingerprint": {
+      "$ref": "mirror-plan-v1.schema.json#/$defs/fingerprint"
+    },
+    "candidateCommandFingerprint": {
+      "$ref": "mirror-plan-v1.schema.json#/$defs/fingerprint"
+    },
+    "comparisonPolicyRef": {
+      "$ref": "read-only-shadow-comparison-v2.schema.json#/$defs/comparisonPolicyRef"
+    },
+    "requestContextFingerprint": {
+      "$ref": "mirror-plan-v1.schema.json#/$defs/fingerprint"
+    },
+    "admissionFingerprint": {
+      "$ref": "mirror-plan-v1.schema.json#/$defs/fingerprint"
+    },
+    "admittedAt": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "confirmedAt": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "baseline": {
+      "allOf": [
+        {
+          "$ref": "read-only-shadow-source-resolution-attestation-v1.schema.json#/$defs/sourceResolution"
+        },
+        {
+          "properties": {
+            "role": {
+              "const": "BASELINE"
+            },
+            "artifactRef": {
+              "$ref": "read-only-shadow-source-resolution-attestation-v1.schema.json#/$defs/baselineArtifactRef"
+            }
+          }
+        }
+      ]
+    },
+    "candidate": {
+      "allOf": [
+        {
+          "$ref": "read-only-shadow-source-resolution-attestation-v1.schema.json#/$defs/sourceResolution"
+        },
+        {
+          "properties": {
+            "role": {
+              "const": "CANDIDATE"
+            },
+            "artifactRef": {
+              "$ref": "read-only-shadow-source-resolution-attestation-v1.schema.json#/$defs/candidateArtifactRef"
+            }
+          }
+        }
+      ]
+    },
+    "issuedAt": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "attestationSeal": {
+      "$ref": "domain-fidelity-profile-v1.schema.json#/$defs/evidenceSeal"
+    }
+  }
+}

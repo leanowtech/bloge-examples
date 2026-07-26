@@ -152,6 +152,7 @@ import com.leanowtech.bloge.gateway.integration.mirror.OnlineReadOnlyShadowBasel
 import com.leanowtech.bloge.gateway.integration.mirror.OnlineReadOnlyShadowBaselineConnector;
 import com.leanowtech.bloge.gateway.integration.mirror.OnlineReadOnlyShadowCandidateAuthority;
 import com.leanowtech.bloge.gateway.integration.mirror.OnlineReadOnlyShadowCandidateConnector;
+import com.leanowtech.bloge.gateway.integration.mirror.OnlineReadOnlyShadowSourceResolutionVerifier;
 import com.leanowtech.bloge.gateway.integration.mirror.OnlineReadOnlyShadowBaselineEvidenceAuthority;
 import com.leanowtech.bloge.gateway.integration.mirror.OnlineReadOnlyShadowBaselineObservationIntegrity;
 import com.leanowtech.bloge.gateway.integration.mirror.OnlineReadOnlyShadowBaselineTransport;
@@ -172,6 +173,7 @@ import com.leanowtech.bloge.gateway.integration.mirror.MirrorServingGenerationTr
 import com.leanowtech.bloge.gateway.integration.MirrorRuntimeAvailability;
 import com.leanowtech.bloge.gateway.integration.DomainFidelityRuntimeAvailability;
 import com.leanowtech.bloge.gateway.integration.OnlineReadOnlyShadowBaselineRuntimeAvailability;
+import com.leanowtech.bloge.gateway.integration.OnlineReadOnlyShadowDataPlaneRuntimeAvailability;
 import com.leanowtech.bloge.gateway.integration.ReadOnlyShadowRuntimeAvailability;
 import com.leanowtech.bloge.gateway.resource.ResourceRegistry;
 import com.leanowtech.bloge.gateway.testing.planning.MirrorPlanCompiler;
@@ -1843,6 +1845,88 @@ public class MirrorRuntimeConfiguration {
                 policy,
                 objectMapper,
                 Clock.systemUTC());
+    }
+
+    /**
+     * Installs independent online pair re-resolution when both exact-read authorities exist.
+     *
+     * @param baselineAuthority exact regional baseline artifact resolver
+     * @param baselineIntegrity independent baseline observation verifier
+     * @param candidateAuthority exact candidate evidence resolver
+     * @param evidenceIntegrity independent Mirror evidence verifier
+     * @param policy exact payload-free normalization policy
+     * @param attestations append-only source-resolution repository
+     * @param attestationIntegrity source-resolution signing authority
+     * @param objectMapper canonical protocol mapper
+     * @return online paired-source verifier and v2 attestation producer
+     */
+    @Bean
+    @ConditionalOnBean({
+            OnlineReadOnlyShadowBaselineConnector.class,
+            OnlineReadOnlyShadowCandidateConnector.class,
+            OnlineReadOnlyShadowCandidateAuthority.class
+    })
+    @ConditionalOnProperty(
+            prefix = OnlineReadOnlyShadowBaselineProperties
+                    .PREFIX,
+            name = "enabled",
+            havingValue = "true")
+    public OnlineReadOnlyShadowSourceResolutionVerifier
+    onlineReadOnlyShadowSourceResolutionVerifier(
+            OnlineReadOnlyShadowBaselineAuthority
+                    baselineAuthority,
+            OnlineReadOnlyShadowBaselineObservationIntegrity
+                    baselineIntegrity,
+            OnlineReadOnlyShadowCandidateAuthority
+                    candidateAuthority,
+            MirrorEvidenceIntegrityService evidenceIntegrity,
+            PayloadFreeEqualityReadOnlyShadowPolicy policy,
+            ReadOnlyShadowSourceResolutionAttestationRepository
+                    attestations,
+            ReadOnlyShadowSourceResolutionAttestationIntegrity
+                    attestationIntegrity,
+            ObjectMapper objectMapper) {
+        return new OnlineReadOnlyShadowSourceResolutionVerifier(
+                baselineAuthority,
+                baselineIntegrity,
+                candidateAuthority,
+                evidenceIntegrity,
+                policy,
+                attestations,
+                attestationIntegrity,
+                objectMapper,
+                Clock.systemUTC());
+    }
+
+    /**
+     * Publishes layered online candidate, resolver, and aggregate data-plane readiness.
+     *
+     * @param candidate physically assembled same-input candidate connector
+     * @param candidateAuthority isolated candidate runtime authority
+     * @param evidenceIntegrity independent Mirror evidence verification authority
+     * @param resolver physically assembled paired-source resolver
+     * @param dataPlane governed aggregate data plane
+     * @return dynamically sampled public online data-plane marker
+     */
+    @Bean
+    @ConditionalOnBean(
+            OnlineReadOnlyShadowSourceResolutionVerifier
+                    .class)
+    public OnlineReadOnlyShadowDataPlaneRuntimeAvailability
+    onlineReadOnlyShadowDataPlaneRuntimeAvailability(
+            OnlineReadOnlyShadowCandidateConnector candidate,
+            OnlineReadOnlyShadowCandidateAuthority
+                    candidateAuthority,
+            MirrorEvidenceIntegrityService evidenceIntegrity,
+            OnlineReadOnlyShadowSourceResolutionVerifier resolver,
+            ReadOnlyShadowDataPlane dataPlane) {
+        return new OnlineReadOnlyShadowDataPlaneRuntimeAvailability(
+                candidate != null,
+                resolver != null,
+                candidateAuthority::ready,
+                evidenceIntegrity::available,
+                resolver::ready,
+                dataPlane::ready);
     }
 
     /** Installs the exact signed-binding baseline connector only behind its explicit switch. */

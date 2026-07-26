@@ -103,6 +103,15 @@ public class ToolStudioIntegrationService {
                     false,
                     () -> false,
                     () -> false);
+    private OnlineReadOnlyShadowDataPlaneRuntimeAvailability
+            onlineReadOnlyShadowDataPlaneRuntimeAvailability =
+            new OnlineReadOnlyShadowDataPlaneRuntimeAvailability(
+                    false,
+                    false,
+                    () -> false,
+                    () -> false,
+                    () -> false,
+                    () -> false);
     private ScenarioRehearsalBatchScheduler
             scenarioRehearsalBatchScheduler;
     private ScenarioRehearsalBatchFinalizationScheduler
@@ -238,6 +247,23 @@ public class ToolStudioIntegrationService {
                 availability == null
                         ? new OnlineReadOnlyShadowBaselineRuntimeAvailability(
                         false,
+                        () -> false,
+                        () -> false)
+                        : availability;
+    }
+
+    /** Receives the marker only when candidate and paired-source adapters are assembled. */
+    @Autowired(required = false)
+    void configureOnlineReadOnlyShadowDataPlaneRuntime(
+            OnlineReadOnlyShadowDataPlaneRuntimeAvailability
+                    availability) {
+        this.onlineReadOnlyShadowDataPlaneRuntimeAvailability =
+                availability == null
+                        ? new OnlineReadOnlyShadowDataPlaneRuntimeAvailability(
+                        false,
+                        false,
+                        () -> false,
+                        () -> false,
                         () -> false,
                         () -> false)
                         : availability;
@@ -703,10 +729,33 @@ public class ToolStudioIntegrationService {
         features.put(
                 "mirrorReadOnlyShadowOnlineBaselineReady",
                 onlineBaseline.baselineReady());
-        // Candidate acquisition and paired-source resolution are not assembled yet.
+        OnlineReadOnlyShadowDataPlaneRuntimeAvailability.Snapshot
+                onlineDataPlane =
+                onlineReadOnlyShadowDataPlaneRuntimeAvailability
+                        .snapshot();
+        features.put(
+                "mirrorReadOnlyShadowOnlineCandidateConnectorInstalled",
+                onlineDataPlane.candidateConnectorInstalled());
+        features.put(
+                "mirrorReadOnlyShadowOnlineCandidateAuthorityReady",
+                onlineDataPlane.candidateAuthorityReady());
+        features.put(
+                "mirrorReadOnlyShadowOnlineCandidateEvidenceVerificationReady",
+                onlineDataPlane
+                        .candidateEvidenceVerificationReady());
+        features.put(
+                "mirrorReadOnlyShadowOnlineCandidateReady",
+                onlineDataPlane.candidateReady());
+        features.put(
+                "mirrorReadOnlyShadowOnlinePairedResolverInstalled",
+                onlineDataPlane.pairedResolverInstalled());
+        features.put(
+                "mirrorReadOnlyShadowOnlinePairedResolverReady",
+                onlineDataPlane.pairedResolverReady());
         features.put(
                 "mirrorReadOnlyShadowOnlineDataPlaneReady",
-                false);
+                onlineBaseline.baselineReady()
+                        && onlineDataPlane.dataPlaneReady());
         features.put("mirrorStatefulSessionApi", mirrorStatefulSessionApi);
         features.put("mirrorStatefulStateStoreReady", mirrorStatefulStoreReady);
         features.put("mirrorStateCheckpointProtocol",
@@ -1160,7 +1209,10 @@ public class ToolStudioIntegrationService {
                     List.of(
                             com.leanowtech.bloge.gateway.integration.mirror
                                     .ReadOnlyShadowSourceResolutionAttestation
-                                    .SCHEMA_VERSION));
+                                    .SCHEMA_VERSION,
+                            com.leanowtech.bloge.gateway.integration.mirror
+                                    .ReadOnlyShadowSourceResolutionAttestation
+                                    .ONLINE_SCHEMA_VERSION));
         }
         if (readOnlyShadowRuntimeAvailability
                 .authorityTrustDistributionApi()) {

@@ -31,6 +31,7 @@ import com.leanowtech.bloge.gateway.integration.mirror.OnlineReadOnlyShadowBasel
 import com.leanowtech.bloge.gateway.integration.mirror.OnlineReadOnlyShadowBaselineTransport;
 import com.leanowtech.bloge.gateway.integration.mirror.OnlineReadOnlyShadowCandidateAuthority;
 import com.leanowtech.bloge.gateway.integration.mirror.OnlineReadOnlyShadowCandidateConnector;
+import com.leanowtech.bloge.gateway.integration.mirror.OnlineReadOnlyShadowSourceResolutionVerifier;
 import com.leanowtech.bloge.gateway.integration.mirror.GovernedReadOnlyShadowDataPlane;
 import com.leanowtech.bloge.gateway.integration.mirror.PayloadFreeEqualityReadOnlyShadowPolicy;
 import com.leanowtech.bloge.gateway.integration.mirror.ReadOnlyShadowAccessAuthority;
@@ -106,6 +107,7 @@ import com.leanowtech.bloge.gateway.integration.mirror.CapabilityObservationRevi
 import com.leanowtech.bloge.gateway.integration.MirrorRuntimeAvailability;
 import com.leanowtech.bloge.gateway.integration.DomainFidelityRuntimeAvailability;
 import com.leanowtech.bloge.gateway.integration.OnlineReadOnlyShadowBaselineRuntimeAvailability;
+import com.leanowtech.bloge.gateway.integration.OnlineReadOnlyShadowDataPlaneRuntimeAvailability;
 import com.leanowtech.bloge.gateway.integration.ReadOnlyShadowRuntimeAvailability;
 import com.leanowtech.bloge.gateway.resource.ResourceDescriptor;
 import com.leanowtech.bloge.gateway.resource.ResourceRegistry;
@@ -246,7 +248,29 @@ class MirrorRuntimeConfigurationTest {
                                     .class);
             assertThat(context.getBean(
                     ReadOnlyShadowSourceResolutionVerifier.class)
+                    .getClass())
+                    .isEqualTo(
+                            OnlineReadOnlyShadowSourceResolutionVerifier
+                                    .class);
+            assertThat(context.getBean(
+                    ReadOnlyShadowSourceResolutionVerifier.class)
                     .ready()).isFalse();
+            assertThat(context.getBean(
+                    OnlineReadOnlyShadowDataPlaneRuntimeAvailability
+                            .class).snapshot())
+                    .satisfies(snapshot -> {
+                        assertThat(snapshot
+                                .candidateConnectorInstalled())
+                                .isTrue();
+                        assertThat(snapshot
+                                .pairedResolverInstalled())
+                                .isTrue();
+                        assertThat(snapshot
+                                .candidateAuthorityReady())
+                                .isFalse();
+                        assertThat(snapshot.dataPlaneReady())
+                                .isFalse();
+                    });
             assertThat(context.getBean(
                     ReadOnlyShadowDataPlane.class)
                     .ready()).isFalse();

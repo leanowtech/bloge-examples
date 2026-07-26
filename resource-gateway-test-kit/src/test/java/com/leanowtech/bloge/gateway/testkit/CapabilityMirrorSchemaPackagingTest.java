@@ -132,6 +132,7 @@ class CapabilityMirrorSchemaPackagingTest {
                 "online-read-only-shadow-candidate-command-v1.schema.json",
                 "online-read-only-shadow-baseline-observation-v1.schema.json",
                 "online-read-only-shadow-baseline-capability-v1.schema.json",
+                "read-only-shadow-source-resolution-attestation-v2.schema.json",
                 "read-only-shadow-job-lifecycle-event-v1.schema.json",
                 "read-only-shadow-job-lifecycle-page-v1.schema.json",
                 "scenario-pack-stage7-v1.fixture.schema.json",
@@ -532,6 +533,14 @@ class CapabilityMirrorSchemaPackagingTest {
                 .endsWith(
                         "read-only-shadow-source-resolution-attestation-v1.schema.json");
         assertThat(CapabilityMirrorProtocol
+                .READ_ONLY_SHADOW_SOURCE_RESOLUTION_ATTESTATION_V2)
+                .isEqualTo(
+                        "resourceGateway.readOnlyShadowSourceResolutionAttestation.v2");
+        assertThat(CapabilityMirrorProtocol
+                .READ_ONLY_SHADOW_SOURCE_RESOLUTION_ATTESTATION_V2_SCHEMA_RESOURCE)
+                .endsWith(
+                        "read-only-shadow-source-resolution-attestation-v2.schema.json");
+        assertThat(CapabilityMirrorProtocol
                 .ONLINE_READ_ONLY_SHADOW_BASELINE_COMMAND_V1)
                 .isEqualTo(
                         "resourceGateway.onlineReadOnlyShadowBaselineCommand.v1");
@@ -572,6 +581,15 @@ class CapabilityMirrorSchemaPackagingTest {
                 .ONLINE_READ_ONLY_SHADOW_BASELINE_FIXTURE_RESOURCE)
                 .endsWith(
                         "online-read-only-shadow-baseline-stage1-v1.fixture.json");
+        assertThat(CapabilityMirrorProtocol
+                .ONLINE_READ_ONLY_SHADOW_SOURCE_RESOLUTION_COMPATIBILITY_V1)
+                .isEqualTo(
+                        OnlineReadOnlyShadowSourceResolutionCompatibilityFixture
+                                .SCHEMA_VERSION);
+        assertThat(CapabilityMirrorProtocol
+                .ONLINE_READ_ONLY_SHADOW_SOURCE_RESOLUTION_FIXTURE_RESOURCE)
+                .endsWith(
+                        "online-read-only-shadow-source-resolution-stage1-v1.fixture.json");
         assertThat(CapabilityMirrorProtocol
                 .READ_ONLY_SHADOW_JOB_V1)
                 .isEqualTo(
@@ -750,6 +768,24 @@ class CapabilityMirrorSchemaPackagingTest {
         assertThat(verified.observationFingerprint())
                 .isEqualTo(
                         fixture.expectedObservationRef()
+                                .path("fingerprint")
+                                .asText());
+    }
+
+    @Test
+    void packagesOneFixedPublicOnlyOnlinePairedSourceFixture() {
+        var fixture = CapabilityMirrorProtocol
+                .onlineReadOnlyShadowSourceResolutionCompatibilityFixture();
+
+        var verified = fixture.verify();
+
+        assertThat(verified.verified())
+                .as(verified.reasonCode())
+                .isTrue();
+        assertThat(verified.zeroWrite()).isTrue();
+        assertThat(verified.attestationFingerprint())
+                .isEqualTo(
+                        fixture.expectedAttestationRef()
                                 .path("fingerprint")
                                 .asText());
     }

@@ -134,6 +134,7 @@ public interface ReadOnlyShadowDataPlane {
         ADMISSION_AUTHORITY_UNAVAILABLE(true),
         BASELINE_SOURCE_UNAVAILABLE(true),
         CANDIDATE_RUNTIME_UNAVAILABLE(true),
+        SOURCE_RESOLUTION_UNAVAILABLE(true),
         SOURCE_VERIFICATION_FAILED(false),
         GRANT_REVOKED(false),
         KILL_SWITCH_OPEN(false),

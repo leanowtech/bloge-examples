@@ -420,6 +420,10 @@ public final class CapabilityMirrorProtocol {
     public static final String
     READ_ONLY_SHADOW_SOURCE_RESOLUTION_ATTESTATION_V1 =
             "resourceGateway.readOnlyShadowSourceResolutionAttestation.v1";
+    /** Signed proof of independent online baseline/candidate exact-read resolution. */
+    public static final String
+    READ_ONLY_SHADOW_SOURCE_RESOLUTION_ATTESTATION_V2 =
+            "resourceGateway.readOnlyShadowSourceResolutionAttestation.v2";
     /** Payload-free command sent to one regional online baseline sidecar. */
     public static final String
     ONLINE_READ_ONLY_SHADOW_BASELINE_COMMAND_V1 =
@@ -440,6 +444,10 @@ public final class CapabilityMirrorProtocol {
     public static final String
     ONLINE_READ_ONLY_SHADOW_BASELINE_COMPATIBILITY_V1 =
             "resourceGateway.onlineReadOnlyShadowBaselineCompatibility.v1";
+    /** Fixed public-only online paired-source compatibility fixture wire version. */
+    public static final String
+    ONLINE_READ_ONLY_SHADOW_SOURCE_RESOLUTION_COMPATIBILITY_V1 =
+            "resourceGateway.onlineReadOnlyShadowSourceResolutionCompatibility.v1";
     /** Fixed three-authority source-resolution compatibility fixture wire version. */
     public static final String
     READ_ONLY_SHADOW_SOURCE_RESOLUTION_COMPATIBILITY_V1 =
@@ -477,6 +485,11 @@ public final class CapabilityMirrorProtocol {
     ONLINE_READ_ONLY_SHADOW_BASELINE_FIXTURE_RESOURCE =
             SCHEMA_RESOURCE_ROOT
                     + "online-read-only-shadow-baseline-stage1-v1.fixture.json";
+    /** Packaged public-only online paired-source compatibility fixture. */
+    public static final String
+    ONLINE_READ_ONLY_SHADOW_SOURCE_RESOLUTION_FIXTURE_RESOURCE =
+            SCHEMA_RESOURCE_ROOT
+                    + "online-read-only-shadow-source-resolution-stage1-v1.fixture.json";
     /** Packaged signed deployment-isolation compatibility fixture. */
     public static final String MIRROR_DEPLOYMENT_ISOLATION_FIXTURE_RESOURCE =
             SCHEMA_RESOURCE_ROOT + "mirror-deployment-isolation-stage1-v1.fixture.json";
@@ -936,6 +949,11 @@ public final class CapabilityMirrorProtocol {
     READ_ONLY_SHADOW_SOURCE_RESOLUTION_ATTESTATION_SCHEMA_RESOURCE =
             SCHEMA_RESOURCE_ROOT
                     + "read-only-shadow-source-resolution-attestation-v1.schema.json";
+    /** Packaged signed online paired-source resolution attestation schema. */
+    public static final String
+    READ_ONLY_SHADOW_SOURCE_RESOLUTION_ATTESTATION_V2_SCHEMA_RESOURCE =
+            SCHEMA_RESOURCE_ROOT
+                    + "read-only-shadow-source-resolution-attestation-v2.schema.json";
     /** Packaged payload-free regional online baseline command schema. */
     public static final String
     ONLINE_READ_ONLY_SHADOW_BASELINE_COMMAND_SCHEMA_RESOURCE =
@@ -1142,6 +1160,23 @@ public final class CapabilityMirrorProtocol {
     onlineReadOnlyShadowBaselineCompatibilityFixture() {
         return OnlineBaselineFixtureHolder.FIXTURE
                 .detachedCopy();
+    }
+
+    /**
+     * Returns the server-produced public-only online paired-source compatibility fixture.
+     *
+     * <p>Loading this fixture independently verifies both exact commands, both signed source
+     * artifacts, command pairing, v2 identity and content addressing, fresh exact-read times,
+     * built-in normalization, zero-write closure, and three separate Ed25519 authority keys.</p>
+     *
+     * @return detached online paired-source compatibility fixture
+     * @throws IllegalStateException when the packaged fixture is absent or unverifiable
+     */
+    public static
+    OnlineReadOnlyShadowSourceResolutionCompatibilityFixture
+    onlineReadOnlyShadowSourceResolutionCompatibilityFixture() {
+        return OnlineSourceResolutionFixtureHolder
+                .FIXTURE.detachedCopy();
     }
 
     /**
@@ -1489,6 +1524,44 @@ public final class CapabilityMirrorProtocol {
             } catch (IOException | RuntimeException failure) {
                 throw new IllegalStateException(
                         "RG.MIRROR.CLIENT.ONLINE_BASELINE_FIXTURE_UNAVAILABLE",
+                        failure);
+            }
+        }
+    }
+
+    private static final class
+    OnlineSourceResolutionFixtureHolder {
+        private static final
+        OnlineReadOnlyShadowSourceResolutionCompatibilityFixture
+                FIXTURE = load();
+
+        private static
+        OnlineReadOnlyShadowSourceResolutionCompatibilityFixture
+        load() {
+            try (InputStream input =
+                         CapabilityMirrorProtocol.class
+                                 .getResourceAsStream(
+                                         ONLINE_READ_ONLY_SHADOW_SOURCE_RESOLUTION_FIXTURE_RESOURCE)) {
+                if (input == null) {
+                    throw new IOException(
+                            "Online source-resolution fixture is absent");
+                }
+                OnlineReadOnlyShadowSourceResolutionCompatibilityFixture
+                        fixture =
+                        OnlineReadOnlyShadowSourceResolutionCompatibilityFixture
+                                .from(JSON.readTree(input));
+                OnlineReadOnlyShadowSourceResolutionAttestationVerifier
+                        .VerificationResult verification =
+                        fixture.verify();
+                if (!verification.verified()) {
+                    throw new IOException(
+                            "Online source-resolution fixture cannot be verified: "
+                                    + verification.reasonCode());
+                }
+                return fixture;
+            } catch (IOException | RuntimeException failure) {
+                throw new IllegalStateException(
+                        "RG.MIRROR.CLIENT.ONLINE_SOURCE_RESOLUTION_FIXTURE_UNAVAILABLE",
                         failure);
             }
         }

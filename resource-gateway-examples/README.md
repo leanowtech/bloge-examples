@@ -808,10 +808,22 @@ closed.
 
 Do not enable this mode together with
 `gateway.testing.mirror.read-only-shadow.detached-data-plane.enabled`; startup
-rejects the conflict. The online candidate SPI and connector are available, but
-no default candidate authority is installed. The online paired-source resolver
-is still unavailable, so worker and serving readiness remain false even when a
-deployment supplies both source connectors.
+rejects the conflict. No default candidate authority is installed. When the
+deployment supplies the baseline authority/integrity, candidate authority/
+integrity, source-resolution repository/signer, and built-in policy,
+`OnlineReadOnlyShadowSourceResolutionVerifier` is assembled after both
+connectors. It independently exact-reads and verifies both artifacts,
+reconstructs both commands, reruns normalization, and signs
+`resourceGateway.readOnlyShadowSourceResolutionAttestation.v2`. V2 binds both
+command fingerprints and records `confirmedAt <= resolvedAt <= issuedAt`, so a
+historical source completion cannot masquerade as the current exact read.
+
+`SyntheticRegionalReadOnlyShadowProvider` is a bounded in-process certification
+provider for tests and staging. It offers role-separated baseline/candidate
+authorities, append-only exact reads, full command pairing, fixed capacity, and
+atomic idempotency under concurrent retries. It is never auto-configured and is
+not a payload vault, network sidecar, production read binding, or production
+candidate authority.
 
 `GET /api/integration/capabilities` reports the online-baseline boundary as
 separate facts:
@@ -826,16 +838,28 @@ separate facts:
   independent observation verification authority is currently usable;
 - `mirrorReadOnlyShadowOnlineBaselineReady`: connector, authority, and
   evidence verification are all ready in one sampled projection;
-- `mirrorReadOnlyShadowOnlineDataPlaneReady`: remains false until candidate
-  acquisition and paired-source resolution are also assembled.
+- `mirrorReadOnlyShadowOnlineCandidateConnectorInstalled`: the same-input
+  candidate connector bean exists;
+- `mirrorReadOnlyShadowOnlineCandidateAuthorityReady`: the candidate exact-read
+  authority is currently usable;
+- `mirrorReadOnlyShadowOnlineCandidateEvidenceVerificationReady`: signed Mirror
+  evidence can currently be independently verified;
+- `mirrorReadOnlyShadowOnlineCandidateReady`: all three candidate facts are
+  true in one sampled projection;
+- `mirrorReadOnlyShadowOnlinePairedResolverInstalled`: the v2 independent
+  paired-source resolver bean exists;
+- `mirrorReadOnlyShadowOnlinePairedResolverReady`: both exact-read authorities,
+  both evidence verifiers, policy, repository, and proof signer are usable;
+- `mirrorReadOnlyShadowOnlineDataPlaneReady`: baseline, candidate, and paired
+  resolver are all ready. It remains false in the default deployment.
 
 The probe samples each dynamic dependency once per response and fails closed on
 exceptions. `Protocol`, `Installed`, `BaselineReady`, and `OnlineDataPlaneReady`
 are intentionally different lifecycle facts.
 
-The three strict schemas and a server-produced public-only fixture are packaged
-in `resource-gateway-test-kit`. Run this probe on every JSON, JDK, crypto
-provider, or Test Kit upgrade:
+The five strict online schemas and two server-produced public-only fixtures are
+packaged in `resource-gateway-test-kit`. Run both probes on every JSON, JDK,
+crypto provider, or Test Kit upgrade:
 
 ```java
 OnlineReadOnlyShadowBaselineCompatibilityFixture fixture =
@@ -845,13 +869,26 @@ var verified = fixture.verify();
 if (!verified.verified() || !verified.zeroWrite()) {
     throw new IllegalStateException(verified.reasonCode());
 }
+
+OnlineReadOnlyShadowSourceResolutionCompatibilityFixture paired =
+        CapabilityMirrorProtocol
+                .onlineReadOnlyShadowSourceResolutionCompatibilityFixture();
+var pairedVerification = paired.verify();
+if (!pairedVerification.verified()) {
+    throw new IllegalStateException(
+            pairedVerification.reasonCode());
+}
 ```
 
 The standalone verifier does not link server or Spring classes. It independently
 recomputes strict command/observation closure, canonical fingerprints,
 deterministic identity, idempotency, time windows, public-key policy, and the
-Ed25519 signature. Passing it proves wire compatibility, not current sidecar,
-data-use, workload-identity, paired online execution, or production readiness.
+Ed25519 signature. The paired verifier additionally checks both exact commands,
+both signed source artifacts, same-input closure, current exact-read time,
+built-in normalization, v2 identity/content address, zero-write facts, and the
+third authority signature. Passing either fixture proves wire compatibility,
+not current sidecar, data-use, workload-identity, enterprise trust propagation,
+or production readiness.
 
 Read the exact proof referenced by a successful v3 comparison:
 
