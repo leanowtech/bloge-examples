@@ -56,10 +56,10 @@ DAG workers plus isolated evidence-finalization lanes for one exact
 `test`/`staging` regional queue partition.
 Add `--shadow-jobs` to assemble the durable read-only Shadow submit/read/lifecycle
 API. `--shadow-scheduler` also starts bounded pollers, but the demo deliberately
-keeps the governed data plane's online authorities, shared guard, trusted
-baseline/candidate connectors, source resolver, and comparison engine
-unavailable, so worker and end-to-end serving readiness remain false until
-operator-owned adapters are installed.
+keeps the governed data plane's online authorities, trusted baseline/candidate
+connectors, source resolver, and comparison engine unavailable. The shared
+database guard is ready, but worker and end-to-end serving readiness remain
+false until the remaining operator-owned adapters are installed.
 
 | Open | Best first move |
 | --- | --- |
@@ -571,9 +571,10 @@ identity and waits for `mirrorReadOnlyShadowJobApi=true`,
 `mirrorReadOnlyShadowLifecycleAudit=true`, and
 `mirrorReadOnlyShadowScheduling=true`. It does not wait for or claim
 `mirrorReadOnlyShadowWorkerReady` or `mirrorReadOnlyShadowServingReady`: the
-default `GovernedReadOnlyShadowDataPlane` is assembled, but each deep
-authority/guard/connector/verifier adapter is intentionally fail-closed.
-Therefore it does not consume an attempt or touch an external system.
+default `GovernedReadOnlyShadowDataPlane` and database-authoritative execution
+guard are assembled, but online authority/connector/verifier adapters remain
+intentionally fail-closed. Therefore it does not consume an attempt or touch an
+external system.
 
 The default composition fixes the production call order: heartbeat, exact
 grant/kill-switch/egress admission, shared guard acquisition, isolated baseline,
@@ -583,6 +584,14 @@ cannot carry raw request/response payloads; only signed source coordinates,
 normalized fact fingerprints, and measured write-capability counters cross the
 boundary. The egress proof kind is the deployment-isolation protocol's exact
 `DEPLOYMENT_ISOLATION_ATTESTATION`.
+
+`DatabaseReadOnlyShadowExecutionGuard` shares concurrency, fixed-window start
+budget, circuit state, cool-down, and one global half-open probe across replicas.
+The signed sampling decision owns a physical `guardScope` and exact
+`SHADOW_EXECUTION_GUARD_POLICY` revision, so multiple execution projects may
+share one real-source budget without allowing request JSON to choose that pool.
+Random lease tokens plus monotonic epochs fence crashed workers; retries of the
+same immutable execution id do not double-charge logical starts.
 
 Submit a request that validates against
 [`read-only-shadow-job-request-v1.schema.json`](../docs/schemas/resource-gateway-mirror/read-only-shadow-job-request-v1.schema.json):

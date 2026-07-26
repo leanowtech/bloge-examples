@@ -136,6 +136,7 @@ public interface ReadOnlyShadowDataPlane {
         EGRESS_DENIED(false),
         BUDGET_EXHAUSTED(true),
         CIRCUIT_OPEN(true),
+        EXECUTION_ID_CONFLICT(false),
         WRITE_CAPABILITY_DETECTED(false),
         WRITE_ATTEMPT_DETECTED(false),
         NORMALIZATION_POLICY_UNAVAILABLE(true),

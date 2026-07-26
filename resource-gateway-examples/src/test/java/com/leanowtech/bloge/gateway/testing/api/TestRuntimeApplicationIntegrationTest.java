@@ -19,10 +19,12 @@ import com.leanowtech.bloge.gateway.integration.CapabilityCorpusClusterControlle
 import com.leanowtech.bloge.gateway.integration.mirror.CapabilityObservationAdmissionService;
 import com.leanowtech.bloge.gateway.integration.mirror.DomainFidelityRepository;
 import com.leanowtech.bloge.gateway.integration.mirror.DomainFidelityService;
+import com.leanowtech.bloge.gateway.integration.mirror.DatabaseReadOnlyShadowExecutionGuard;
 import com.leanowtech.bloge.gateway.integration.mirror.GovernedReadOnlyShadowDataPlane;
 import com.leanowtech.bloge.gateway.integration.mirror.ReadOnlyShadowComparisonIntegrity;
 import com.leanowtech.bloge.gateway.integration.mirror.ReadOnlyShadowDataPlane;
 import com.leanowtech.bloge.gateway.integration.mirror.ReadOnlyShadowDomainFidelitySource;
+import com.leanowtech.bloge.gateway.integration.mirror.ReadOnlyShadowExecutionGuard;
 import com.leanowtech.bloge.gateway.integration.mirror.ReadOnlyShadowJobPolicy;
 import com.leanowtech.bloge.gateway.integration.mirror.ReadOnlyShadowJobRepository;
 import com.leanowtech.bloge.gateway.integration.mirror.ReadOnlyShadowJobScheduler;
@@ -176,6 +178,13 @@ class TestRuntimeApplicationIntegrationTest {
                         GovernedReadOnlyShadowDataPlane.class)
                 .satisfies(dataPlane ->
                         assertThat(dataPlane.ready()).isFalse());
+        assertThat(context.getBeansOfType(
+                ReadOnlyShadowExecutionGuard.class).values())
+                .singleElement()
+                .isInstanceOf(
+                        DatabaseReadOnlyShadowExecutionGuard.class)
+                .satisfies(guard ->
+                        assertThat(guard.ready()).isTrue());
         assertThat(context.getBeansOfType(
                 ReadOnlyShadowJobWorker.class).values())
                 .singleElement()

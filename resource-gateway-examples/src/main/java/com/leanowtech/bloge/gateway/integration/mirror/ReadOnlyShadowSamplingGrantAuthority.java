@@ -34,20 +34,24 @@ public interface ReadOnlyShadowSamplingGrantAuthority {
      * Current payload-free sampling decision.
      *
      * @param scope exact enterprise scope
+     * @param guardScope authority-owned enterprise namespace for shared physical pressure
      * @param grantRef exact owner-approved grant
      * @param maximumSamples exact logical-sample ceiling
      * @param validFrom inclusive validity start
      * @param expiresAt exclusive validity end
+     * @param guardPolicyRef exact shared pressure and circuit policy generation
      * @param limits shared external-system pressure policy
      * @param authorityAttestationRef independently signed authority decision
      * @param observedAt authority observation time
      */
     record Grant(
             CapabilitySnapshot.Scope scope,
+            CapabilitySnapshot.Scope guardScope,
             MirrorArtifactRef grantRef,
             long maximumSamples,
             Instant validFrom,
             Instant expiresAt,
+            MirrorArtifactRef guardPolicyRef,
             ReadOnlyShadowExecutionGuard.Limits limits,
             MirrorArtifactRef authorityAttestationRef,
             Instant observedAt
@@ -55,6 +59,8 @@ public interface ReadOnlyShadowSamplingGrantAuthority {
         /** Validates a bounded, time-ordered, payload-free grant decision. */
         public Grant {
             scope = Objects.requireNonNull(scope, "scope");
+            guardScope = Objects.requireNonNull(
+                    guardScope, "guardScope");
             grantRef = kind(
                     grantRef,
                     "SHADOW_SAMPLING_GRANT",
@@ -63,6 +69,10 @@ public interface ReadOnlyShadowSamplingGrantAuthority {
                     validFrom, "validFrom");
             expiresAt = Objects.requireNonNull(
                     expiresAt, "expiresAt");
+            guardPolicyRef = kind(
+                    guardPolicyRef,
+                    "SHADOW_EXECUTION_GUARD_POLICY",
+                    "guardPolicyRef");
             limits = Objects.requireNonNull(
                     limits, "limits");
             authorityAttestationRef = kind(

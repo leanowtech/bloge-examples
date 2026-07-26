@@ -291,11 +291,15 @@ public final class ComposedReadOnlyShadowAccessAuthority
             ReadOnlyShadowSamplingGrantAuthority.Grant left,
             ReadOnlyShadowSamplingGrantAuthority.Grant right) {
         return left.scope().equals(right.scope())
+                && left.guardScope().equals(
+                right.guardScope())
                 && left.grantRef().equals(right.grantRef())
                 && left.maximumSamples()
                 == right.maximumSamples()
                 && left.validFrom().equals(right.validFrom())
                 && left.expiresAt().equals(right.expiresAt())
+                && left.guardPolicyRef().equals(
+                right.guardPolicyRef())
                 && left.limits().equals(right.limits())
                 && left.authorityAttestationRef().equals(
                 right.authorityAttestationRef());
@@ -330,10 +334,17 @@ public final class ComposedReadOnlyShadowAccessAuthority
                         + scope.projectId() + "\n"
                         + scope.environmentId() + "\n"
                         + scope.region() + "\n"
+                        + grant.guardScope().tenantId() + "\n"
+                        + grant.guardScope().organizationId() + "\n"
+                        + grant.guardScope().projectId() + "\n"
+                        + grant.guardScope().environmentId() + "\n"
+                        + grant.guardScope().region() + "\n"
                         + proof.accessMode().name() + "\n"
                         + proof.samplingGrantRef().fingerprint() + "\n"
                         + proof.sampleOrdinal() + "\n"
                         + proof.maximumSamples() + "\n"
+                        + grant.guardPolicyRef()
+                        .fingerprint() + "\n"
                         + grant.authorityAttestationRef()
                         .fingerprint() + "\n"
                         + state.killSwitchRef().fingerprint() + "\n"

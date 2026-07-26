@@ -36,6 +36,9 @@
 - governed Shadow data-plane composition kernel：grant/kill-switch/egress 双重观测、
   独立共享 execution guard、baseline/candidate 隔离 connector、source-resolution verifier、
   typed comparison engine 与逐外部边界 durable heartbeat；
+- database-authoritative Shadow execution guard：authority-owned `guardScope`、stable
+  guard-policy id/revision、跨副本 concurrency/fixed-window budget、token/epoch lease、
+  circuit cool-down 与全局唯一 half-open probe；
 - strict lifecycle event/page Schema，Test Kit 可独立重算 comparison、job/request/comparison
   闭包与完整 admission-to-head lifecycle；
 - Shadow source adapter：重验 comparison 内容地址/签名、采样授权、kill switch、egress、
@@ -50,8 +53,8 @@
 
 - authoritative outcome 到 `Measurement` 的独立来源适配器；
 - request-space sampling proof 与 error-distribution cohort adapter；
-- 真实 baseline/candidate connector、在线 grant/kill-switch authority、跨副本 execution
-  guard、source resolver/comparison policy adapter、drift 自动降级、
+- 真实 baseline/candidate connector、在线签名 grant/kill-switch/guard-policy authority、
+  source resolver/comparison policy adapter、drift 自动降级、
   outcome reconciliation 和工作台。
 
 因此在 managed signer、Scenario authority 或 signed Shadow comparison authority 可用时，
@@ -59,8 +62,9 @@
 abstention debt 的**部分 profile**。Shadow adapter ready 表示已提供的合法 comparison 可以
 独立验真和投影，不表示 Resource Gateway 已具备生产流量复制与 shadow job。请求空间覆盖和业务
 结果校准仍必须分别读取 typed adapter flag、source artifact 与 profile limitations。durable
-job API/lifecycle/scheduler ready 也只表示控制面状态机可用；默认 governed data plane 因所有
-深层 adapter 均为 fail-closed placeholder 而保持 `ready=false`，不代表生产流量复制已启用。
+job API/lifecycle/scheduler ready 也只表示控制面状态机可用；默认 governed data plane 虽已具备
+database guard，但在线 authority、connector、source verifier 与 comparison engine 仍是
+fail-closed placeholder，因此保持 `ready=false`，不代表生产流量复制已启用。
 
 ## 2. 为什么需要两个对象
 
@@ -445,10 +449,10 @@ cursor，`limit` 为 1..1000；调用方必须根据 `hasMore` 继续取页，�
 
 | Adapter | 必须证明 | 默认 |
 |---|---|---|
-| `ReadOnlyShadowSamplingGrantAuthority` | exact scope/grant、sample 上限、有效窗、共享 guard limits 与签名 authority attestation | unavailable |
+| `ReadOnlyShadowSamplingGrantAuthority` | exact execution scope/grant、authority-owned `guardScope`、exact guard-policy ref、sample 上限、有效窗、共享 limits 与签名 authority attestation | unavailable |
 | `ReadOnlyShadowKillSwitchAuthority` | exact scope/switch generation、enabled 状态、有效窗与签名 authority attestation | unavailable |
 | `MirrorDeploymentIsolationRunTrustAuthority` | 执行前/后的同一 egress decision、keyset、status 与 agent snapshot | unavailable |
-| `ReadOnlyShadowExecutionGuard` | 跨副本并发、窗口速率、熔断、半开探针和 fenced lease | unavailable |
+| `ReadOnlyShadowExecutionGuard` | 跨副本并发、窗口速率、熔断、唯一半开探针和 fenced lease | database-authoritative / ready |
 | `ReadOnlyShadowBaselineConnector` / `ReadOnlyShadowCandidateConnector` | 同一 request context 的 payload-free source observation 与零写测量 | unavailable |
 | `ReadOnlyShadowSourceResolutionVerifier` | 两侧 exact artifact 拉取、内容地址/签名/scope/target/authority closure | unavailable |
 | `ReadOnlyShadowComparisonEngine` | exact comparison policy 下的规范化 typed diff | unavailable |
@@ -642,12 +646,12 @@ Schema 使用 `additionalProperties: false`。profile 不允许业务 payload、
 repository、managed signer、受保护 inventory/read API、Scenario source adapter、signed
 read-only Shadow comparison adapter、durable queue/worker、protected Shadow API、lifecycle audit、
 bounded scheduler、独立 readiness、lifecycle verifier，以及 governed data-plane composition
-kernel 已完成。
+kernel 与 database-authoritative execution guard 已完成。
 下一步按来源信任依赖推进：
 
-1. 先实现数据库权威的跨副本 execution guard，覆盖并发、窗口速率、circuit open/cool-down、
-   单一 half-open probe、lease epoch 与 idempotent retry。
-2. 定义并接入签名 grant/kill-switch 在线协议、真实 baseline/candidate connector、来源 artifact
+1. 定义并接入签名 grant/kill-switch/guard-policy 在线协议，覆盖 stable id、revision、
+   `guardScope`、有效窗、撤销、轮换、缓存上限与 authority outage。
+2. 接入真实 baseline/candidate connector、来源 artifact
    拉取重验和 exact comparison policy adapter。
 3. 把 signed typed diff 接入 drift budget，自动 stale/downgrade/revoke serving conclusion。
 4. 实现 authoritative outcome observation 与 delayed/censored reconciliation。

@@ -95,10 +95,12 @@ class ComposedReadOnlyShadowAccessAuthorityTest {
                 grant.get();
         grant.set(new ReadOnlyShadowSamplingGrantAuthority.Grant(
                 original.scope(),
+                original.guardScope(),
                 original.grantRef(),
                 original.maximumSamples(),
                 original.validFrom(),
                 original.expiresAt(),
+                original.guardPolicyRef(),
                 new ReadOnlyShadowExecutionGuard.Limits(
                         4,
                         120,
@@ -311,12 +313,17 @@ class ComposedReadOnlyShadowAccessAuthorityTest {
     grant(ReadOnlyShadowJobRequest request) {
         return new ReadOnlyShadowSamplingGrantAuthority.Grant(
                 request.scope(),
+                request.scope(),
                 request.accessGrant()
                         .samplingGrantRef(),
                 request.accessGrant()
                         .maximumSamples(),
                 NOW.minusSeconds(30),
                 NOW.plusSeconds(60),
+                ReadOnlyShadowJobTestFixtures.ref(
+                        "SHADOW_EXECUTION_GUARD_POLICY",
+                        "baseline-pressure",
+                        '0'),
                 LIMITS,
                 ReadOnlyShadowJobTestFixtures.ref(
                         "SHADOW_SAMPLING_GRANT_ATTESTATION",

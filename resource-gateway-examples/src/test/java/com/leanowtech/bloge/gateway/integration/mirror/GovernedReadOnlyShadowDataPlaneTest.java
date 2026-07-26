@@ -555,10 +555,12 @@ class GovernedReadOnlyShadowDataPlaneTest {
                     exact.admissionFingerprint(),
                     new ReadOnlyShadowSamplingGrantAuthority.Grant(
                             grant.scope(),
+                            grant.guardScope(),
                             grant.grantRef(),
                             grant.maximumSamples(),
                             grant.validFrom(),
                             grant.expiresAt(),
+                            grant.guardPolicyRef(),
                             new ReadOnlyShadowExecutionGuard.Limits(
                                     2,
                                     60,
@@ -700,12 +702,17 @@ class GovernedReadOnlyShadowDataPlaneTest {
         ReadOnlyShadowSamplingGrantAuthority.Grant grant =
                 new ReadOnlyShadowSamplingGrantAuthority.Grant(
                         request.scope(),
+                        request.scope(),
                         request.accessGrant()
                                 .samplingGrantRef(),
                         request.accessGrant()
                                 .maximumSamples(),
                         NOW.minusSeconds(10),
                         NOW.plusSeconds(60),
+                        ReadOnlyShadowJobTestFixtures.ref(
+                                "SHADOW_EXECUTION_GUARD_POLICY",
+                                "baseline-pressure",
+                                '0'),
                         limits,
                         ReadOnlyShadowJobTestFixtures.ref(
                                 "SHADOW_SAMPLING_GRANT_ATTESTATION",

@@ -7,7 +7,7 @@
 
 | 文档属性 | 内容 |
 |---|---|
-| 状态 | Accepted / In implementation；Stage 0 工程门禁已通过；Stage 1 完成 MirrorPlan、受保护运行/证据 API、部署隔离信任与 durable execution；Stage 2 完成 observation/corpus 的准入、review、publication、trajectory/cluster serving 与 generation fence；Stage 3 完成有状态 Session、虚拟读写、checkpoint/recovery、write-attempt reconciliation 和三类 ANEKE seed；Stage 4 完成 Scenario 编译、可恢复 aggregate、签名 evidence、audit/retention/workbook closure、durable batch manifest/queue/API/worker、region-local bounded scheduler、cooperative control、签名 batch evidence、批次 operation/lifecycle audit、retention、durable evidence finalization、受控 remediation、聚合 health/SLO、ANEKE batch workbook、Owner 证据分诊工作台，以及 reviewed remediation 的版本化协议、持久化状态机、受保护 API、角色隔离浏览器流程和前后继签名对账。Stage 5 已完成 owner-approved Fidelity inventory、无总分 profile、fail-closed 投影内核、strict Schema、独立 Test Kit 重算验真、full-scope append-only repository、managed signing、受保护 inventory/profile read API、分层 readiness、signed Scenario workbook source adapter、signed read-only Shadow comparison/typed diff/source adapter、durable Shadow request/job 协议、sample-ordinal queue、owner/epoch fenced worker、受保护 Shadow API、同事务 lifecycle audit、bounded scheduler、独立 control/data-plane readiness，以及双重观测 grant/kill-switch/egress、共享执行护栏、隔离 connector、来源独立验真和 typed comparison 的治理型数据平面组合内核；真实权威/connector/共享预算适配器、outcome/cohort 来源适配器、drift/calibration、零 DSL case 调整、企业身份任务认证和生产环境认证继续实施；API/queue/scheduler/adapter readiness 不得冒充生产数据面 readiness |
+| 状态 | Accepted / In implementation；Stage 0 工程门禁已通过；Stage 1 完成 MirrorPlan、受保护运行/证据 API、部署隔离信任与 durable execution；Stage 2 完成 observation/corpus 的准入、review、publication、trajectory/cluster serving 与 generation fence；Stage 3 完成有状态 Session、虚拟读写、checkpoint/recovery、write-attempt reconciliation 和三类 ANEKE seed；Stage 4 完成 Scenario 编译、可恢复 aggregate、签名 evidence、audit/retention/workbook closure、durable batch manifest/queue/API/worker、region-local bounded scheduler、cooperative control、签名 batch evidence、批次 operation/lifecycle audit、retention、durable evidence finalization、受控 remediation、聚合 health/SLO、ANEKE batch workbook、Owner 证据分诊工作台，以及 reviewed remediation 的版本化协议、持久化状态机、受保护 API、角色隔离浏览器流程和前后继签名对账。Stage 5 已完成 owner-approved Fidelity inventory、无总分 profile、fail-closed 投影内核、strict Schema、独立 Test Kit 重算验真、full-scope append-only repository、managed signing、受保护 inventory/profile read API、分层 readiness、signed Scenario workbook source adapter、signed read-only Shadow comparison/typed diff/source adapter、durable Shadow request/job 协议、sample-ordinal queue、owner/epoch fenced worker、受保护 Shadow API、同事务 lifecycle audit、bounded scheduler、独立 control/data-plane readiness，以及双重观测 grant/kill-switch/egress、数据库权威跨副本 execution guard、隔离 connector、来源独立验真和 typed comparison 的治理型数据平面组合内核；真实在线权威/connector 适配器、outcome/cohort 来源适配器、drift/calibration、零 DSL case 调整、企业身份任务认证和生产环境认证继续实施；API/queue/scheduler/adapter readiness 不得冒充生产数据面 readiness |
 | 目标读者 | Resource Gateway、BLOGE Runtime、ANEKE、TEE/数据平台、QA、SRE、安全与业务运营团队 |
 | 设计范围 | external/composed 能力建模、镜像运行、保真语料、有状态世界、场景演练、证据、保真度与结果校准 |
 | 非目标 | 不重做 ANEKE 的资产治理和发布门禁；不允许测试控制进入生产业务请求；不把观测频率直接当成业务正确性 |
@@ -74,7 +74,7 @@
   不表示部署级 egress attestation 或 certification 已完成。客户环境的数据
   使用授权、跨系统 schema owner、部署/namespace 形态等组织决策仍是生产准入前置，不由仓库测试冒充完成。
 - 当前验证基线：前端 Vitest `165/165` 全绿并完成 TypeScript/Vite 生产构建；带
-  `-Pfrontend` 的 Resource Gateway 完整门禁为 `5285` 项 Java 测试、0 失败、0 错误、
+  `-Pfrontend` 的 Resource Gateway 完整门禁为 `5309` 项 Java 测试、0 失败、0 错误、
   0 跳过，其中真实 Chrome DOM/工作流 `36/36` 全绿，可执行 Boot JAR 同步通过。独立 test-kit
   `429/429` 全绿，143 份打包 Mirror 资源（其中 131 份 JSON Schema）完成 fail-closed
   引用闭包与打包验证，公共
@@ -577,12 +577,12 @@ Resource Gateway 已有的工业底座应直接复用：
 | 日志蒸馏与语料 | 82% | payload-free signed observation、准入/隔离、immutable review、candidate/publication/trajectory/cluster 独立 lineage、元数据风险门禁、fixture exact/trajectory/cluster binding、在线 revalidation、test/staging `RECORDED_EXACT`/`RECORDED_TRAJECTORY`/`RECORDED_CLUSTER`、BLOGE 原生 retry loop、identity-safe projection、Wilson confidence、Session state read 与独立 verifier 已落地；缺生产 payload authority、漂移、偏差、outcome 校准和删除证明 |
 | 有状态业务世界 | 91% | 协议、read/write 退款 fixture、独立 verifier/sealer/client、事务内核、受保护 Session API、独立 AES-GCM 数据面、lease/fence/CAS、durable write-attempt journal/reconciliation、TTL/destroy、全局/scope 容量、保留字节、命令背压、过期擦除、固定 read head、run-scoped virtual write、真实 DAG read-write-read、payload-free v1/v2/v3 state evidence、read-only/successful-transition/write-outcome ANEKE seed、签名 HASH_ONLY checkpoint 与同数据面代际精确恢复准入已落地；缺 TEE/KMS、跨区域数据恢复、真实 process-kill/network parity、目标数据库容量认证和 HA/DR certification |
 | Scenario/Rehearsal | 99.3% | ScenarioPack/Case/Assertion、exact compiler、可恢复逐 case runtime、签名 aggregate、audit/retention、ANEKE seed、durable batch manifest/queue/API/worker、region-local DAG/KMS 双 scheduler、逐 case cooperative control、v1/v2 签名 batch evidence/index、批次 operation/lifecycle audit、retention/multi-hold/逻辑删除证明、durable finalization outbox/lease/retry/quarantine/status、受控 remediation、聚合 health/SLO，以及 root-sealed ANEKE batch workbook 已落地；缺 hard kill、企业策略/WORM/anchor、异构消费者和目标环境认证 |
-| Fidelity/Outcome | 68% | owner-approved content-addressed inventory、无总分七维 profile、fail-closed freshness/低样本/abstention/source debt、Wilson 95%、exact lineage、strict Schema、独立 Test Kit 重算验真、full-scope append-only repository、managed signing、受保护 inventory/profile read API、同事务 audit、independently re-verified Scenario source、v2 Shadow policy/source-resolution closure、grant ordinal 唯一占用、数据库时钟 deadline、lease/retry/crash recovery、protected Shadow API、append-only lifecycle、bounded scheduler、独立 readiness，以及双重观测 access authority、共享 guard SPI、隔离 connector/source verifier/comparison engine 和 fail-closed 治理型数据平面内核已落地；缺真实 baseline/candidate connector、在线 grant/kill-switch adapter、跨副本预算/熔断、outcome/cohort adapter、drift 降级和校准闭环 |
+| Fidelity/Outcome | 70% | owner-approved content-addressed inventory、无总分七维 profile、fail-closed freshness/低样本/abstention/source debt、Wilson 95%、exact lineage、strict Schema、独立 Test Kit 重算验真、full-scope append-only repository、managed signing、受保护 inventory/profile read API、同事务 audit、independently re-verified Scenario source、v2 Shadow policy/source-resolution closure、grant ordinal 唯一占用、数据库时钟 deadline、lease/retry/crash recovery、protected Shadow API、append-only lifecycle、bounded scheduler、独立 readiness、双重观测 access authority、隔离 connector/source verifier/comparison engine，以及数据库权威的跨副本 concurrency/rate/circuit/fenced-lease guard 已落地；缺真实 baseline/candidate connector、在线签名 grant/kill-switch adapter、outcome/cohort adapter、drift 降级和校准闭环 |
 | 业务运营工作台 | 72% | exact-scope keyset 队列、证据分诊/deep link/响应式 UI，以及 reviewed remediation 八对象协议、server-owned 双角色策略、durable approval ledger、CAS、successor 原子准入、签名前后继对账、角色隔离 Owner/Reviewer 控件、auth-before-decode API 和 capability probe 已落地；仍缺零 DSL case 调整、256-item 密度/性能、任务分派与 SLA、复杂业务样例、可访问性及真实企业 IdP/委派/Owner 认证 |
 
-结论：基础设施准备度约 93%，固定权重理想态完成度为 83.68%。剩余差距 16.32%，主要矛盾已经
-从“能否把权威、执行护栏、connector 与验真按正确顺序组合”转向“如何实现真实、共享且可认证的
-authority/connector adapter，在数据使用授权、速率预算、kill switch 与外部 egress 证明下持续生成 comparison，
+结论：基础设施准备度约 94%，固定权重理想态完成度为 84.16%。剩余差距 15.84%，主要矛盾已经
+从“能否在多副本下守住真实源预算和熔断状态”转向“如何实现真实、可认证且可轮换的
+authority/connector adapter，在数据使用授权、数据库共享预算、kill switch 与外部 egress 证明下持续生成 comparison，
 并用 cohort sampling 和 authoritative outcome
 校准模拟与真实业务之间的差距，在来源漂移后自动撤销 serving 结论”。
 
@@ -2171,7 +2171,8 @@ source-resolution artifact 独立验真。
   `heartbeat -> admit -> guard acquire -> baseline -> candidate -> authority confirm -> source verify
   -> typed compare -> guard terminal`。每个外部边界前先续 durable lease，再把共享 guard lease
   限定到不晚于新 lease；写凭据或写尝试在 candidate/发布前立即拒绝。
-- Spring 默认装配完整组合内核及六类 fail-closed adapter。没有真实 adapter 时
+- 本轮当时由 Spring 默认装配完整组合内核及六类 fail-closed adapter；下一轮 3.33 已将 guard
+  替换为数据库权威实现。其余真实 adapter 缺失时
   `dataPlane.ready=false`，worker/scheduler/serving readiness 不会上浮；客户仍可整体替换
   `ReadOnlyShadowDataPlane`，也可逐个注入深层适配器。
 - Java、JSON Schema 和独立 Test Kit 已把 egress artifact kind 统一为真实协议常量
@@ -2186,9 +2187,65 @@ source artifact resolver 和 comparison policy engine 均保持 fail-closed。
 
 本轮将 `Fidelity/Outcome` 从 `66%` 上调到 `68%`。按固定 `24%` 权重，加权贡献从
 `15.84` 提高到 `16.32`，总分从 `83.20%` 提高到 `83.68%`，距理想态 `16.32%`。
-下一最短路径是先实现数据库权威的跨副本 concurrency/rate/circuit guard，再定义并接入签名
+本轮结束时的下一最短路径是先实现数据库权威的跨副本 concurrency/rate/circuit guard，再定义并接入签名
 grant/kill-switch 在线协议与真实 source connector；顺序不能反过来，否则真实 connector 会先于
 全局预算和 kill switch 获得外部调用能力。
+
+### 3.33 2026-07-26 Database-authoritative Shadow execution guard 迭代差距复评
+
+上一轮已经规定了 guard SPI，却刻意没有用进程内计数器填空。继续实现时发现，真正的病根也不只是
+“把 `AtomicInteger` 换成数据库”：
+
+1. **grant 没有预算池身份**：若按 sampling grant 分桶，多张 grant 会把同一真实源容量成倍放大；
+   若只按当前 baseline ref 分桶，策略换代和跨 project 共享又没有稳定 fence。
+2. **执行 scope 不等于物理预算 scope**：真实系统配额常按共享账户、组织或区域计算；强行按业务
+   project 隔离会在企业多项目环境中系统性超额。
+3. **job retry 与物理 start 混淆**：同一 execution id 的 crash takeover 若重复计入逻辑 start，
+   会在故障时耗尽预算；若没有 connector idempotency 与 epoch fence，又可能真的重复访问来源。
+4. **并发 success/failure 会颠倒 circuit 决策**：较早的 in-flight 成功若无条件清零 breaker，
+   可能覆盖较新的失败开路，形成“失败越并发，熔断越容易被误关”的反直觉行为。
+5. **半开与策略换代缺少单写者**：多副本各自放一个 probe，或新旧 policy 在 active lease 未排空时
+   并行生效，都会突破来源容量。
+
+本轮完成 `DatabaseReadOnlyShadowExecutionGuard`：
+
+- 在线 sampling grant 新增 authority-owned `guardScope` 与 exact
+  `SHADOW_EXECUTION_GUARD_POLICY` ref。业务请求仍严格属于 execution scope；共享压力状态以
+  `guardScope + stable policy id` 为主键，所以可信 authority 可让多个 project 共用一个物理预算池，
+  同时不会让调用方自行扩大或改写 scope。
+- policy `id` 跨 grant/revision 保持稳定；revision/fingerprint、baseline binding 和 limits 全部落库。
+  只接受更高 revision，且必须等待旧 active lease 排空。fixed-window start history、failure count 与
+  open circuit 不因策略轮换清零，防止“换 policy 绕预算”。
+- acquisition 在同一数据库事务中锁 scoped state row，按数据库时间回收过期 lease、迁移策略、
+  滚动固定窗口、判断 circuit、并发与 start budget，再写入 random token + monotonic epoch 的
+  execution lease。两个进程、两个 JVM 或两个 scheduler lane 不再拥有各自的第二份正确性状态。
+- 同一 `executionId + immutable request fingerprint` 的 FAILED/EXPIRED retry 增加 epoch，但不再次
+  消耗 logical-start 预算；connector 仍必须把 execution id 用作来源幂等键。execution id 内容漂移
+  以 `EXECUTION_ID_CONFLICT` 非重试失败关闭，旧 token/epoch 无法 renew、success 或 fail。
+- circuit 使用 `CLOSED/OPEN/HALF_OPEN` 闭集。counted source/runtime failure 达阈值后开路；
+  cool-down 前全部拒绝；到期后全局只允许一个 probe。probe failure 或 lease expiry重新开始完整
+  cool-down，probe success 才能关路。普通旧执行的晚到 success 不能关闭一个更新的 OPEN/HALF_OPEN
+  决策。
+- guard lease 永远不晚于 durable job lease、job deadline 和双重观测 authority 的共同 expiry；
+  renew 只能单调前进并自动 clamp。无 terminal callback 的 close 不伪造 success，durable lease
+  保留到 expiry 后由下一事务恢复。
+- state/lease 表不含 payload、request JSON、response、credential、secret、异常或 stack；只保存
+  scope、content address、限额、token/epoch、时间、状态和稳定 failure reason。terminal row 到
+  immutable request 的最大有效窗结束后才按需删除，既保留 retry fence 又避免无界增长。
+- Spring 默认已安装 database guard，`guard.ready=true` 只说明共享预算权威可用；在线 grant、
+  kill switch、baseline/candidate、source resolver 与 comparison engine 仍默认 fail-closed，所以
+  worker/serving readiness 继续为 false。
+
+专项测试使用两个独立 guard 实例共享同一 H2 数据库，覆盖并发唯一准入、固定窗口复位、crash
+takeover、旧 epoch fencing、logical retry 不重复计数、开路/cool-down/唯一半开 probe、半开失败、
+旧 success 不覆盖新 open、policy revision drain、跨 project `guardScope`、execution-id drift、
+authority expiry clamp、表结构 payload exclusion 与数据库篡改失败关闭。
+
+本轮将 `Fidelity/Outcome` 从 `68%` 上调到 `70%`。按固定 `24%` 权重，加权贡献从
+`16.32` 提高到 `16.80`，总分从 `83.68%` 提高到 `84.16%`，距理想态 `15.84%`。
+下一最短路径是把 grant、kill switch 与 guard policy 冻结成可跨进程/跨语言独立验真的签名
+wire protocol，并实现轮换、撤销、缓存上限和 outage 语义明确的在线 adapter；在此基础上才能安全
+接真实 baseline/candidate connector。
 
 ## 4. 目标架构与系统责任
 

@@ -101,6 +101,8 @@ public interface ReadOnlyShadowSourceResolutionVerifier {
                 ReadOnlyShadowSamplingGrantAuthority.Grant admitted,
                 ReadOnlyShadowSamplingGrantAuthority.Grant confirmed) {
             return admitted.scope().equals(confirmed.scope())
+                    && admitted.guardScope().equals(
+                    confirmed.guardScope())
                     && admitted.grantRef().equals(
                     confirmed.grantRef())
                     && admitted.maximumSamples()
@@ -109,6 +111,8 @@ public interface ReadOnlyShadowSourceResolutionVerifier {
                     confirmed.validFrom())
                     && admitted.expiresAt().equals(
                     confirmed.expiresAt())
+                    && admitted.guardPolicyRef().equals(
+                    confirmed.guardPolicyRef())
                     && admitted.limits().equals(
                     confirmed.limits())
                     && admitted.authorityAttestationRef().equals(

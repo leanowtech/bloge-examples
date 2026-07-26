@@ -114,6 +114,7 @@ import com.leanowtech.bloge.gateway.integration.mirror.ScenarioRehearsalLifecycl
 import com.leanowtech.bloge.gateway.integration.mirror.ScenarioRehearsalRetentionRepository;
 import com.leanowtech.bloge.gateway.integration.mirror.ScenarioRehearsalRunRepository;
 import com.leanowtech.bloge.gateway.integration.mirror.ReadOnlyShadowComparisonIntegrity;
+import com.leanowtech.bloge.gateway.integration.mirror.DatabaseReadOnlyShadowExecutionGuard;
 import com.leanowtech.bloge.gateway.integration.mirror.ReadOnlyShadowComparisonEngine;
 import com.leanowtech.bloge.gateway.integration.mirror.ReadOnlyShadowAccessAuthority;
 import com.leanowtech.bloge.gateway.integration.mirror.ReadOnlyShadowBaselineConnector;
@@ -1420,12 +1421,18 @@ public class MirrorRuntimeConfiguration {
                 Clock.systemUTC());
     }
 
-    /** Provides a fail-closed shared budget/circuit guard until a durable adapter is installed. */
+    /** Provides a database-authoritative cross-replica budget, lease, and circuit guard. */
     @Bean
     @ConditionalOnMissingBean
     public ReadOnlyShadowExecutionGuard
-    readOnlyShadowExecutionGuard() {
-        return ReadOnlyShadowExecutionGuard.unavailable();
+    readOnlyShadowExecutionGuard(
+            JdbcTemplate jdbc,
+            ObjectMapper mapper,
+            PlatformTransactionManager transactionManager) {
+        return new DatabaseReadOnlyShadowExecutionGuard(
+                jdbc,
+                mapper,
+                transactionManager);
     }
 
     /** Provides a fail-closed baseline connector until an isolated read adapter is installed. */
