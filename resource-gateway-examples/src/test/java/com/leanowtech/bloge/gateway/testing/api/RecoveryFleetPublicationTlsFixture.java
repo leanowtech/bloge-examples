@@ -35,19 +35,68 @@ import java.time.temporal.ChronoUnit;
 import java.util.Date;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicReference;
 
-/** Reusable real-TLS fixture for recovery-fleet publication integration tests. */
-final class RecoveryFleetPublicationTlsFixture {
+/**
+ * Reusable real-TLS fixture for control-plane and isolated provider certification tests.
+ *
+ * <p>The fixture is test-only. Public visibility lets protocol tests in another package reuse the
+ * same private-CA, mutual-TLS, SPKI, and workload-identity material without copying certificate
+ * generation code into each trust domain.</p>
+ */
+public final class RecoveryFleetPublicationTlsFixture {
 
     private static final char[] PASSWORD = "test-transport-password".toCharArray();
 
     private RecoveryFleetPublicationTlsFixture() {
     }
 
-    static char[] password() {
+    /** Returns a caller-owned copy of the deterministic test-store password. */
+    public static char[] password() {
         return PASSWORD.clone();
+    }
+
+    /**
+     * Loads one server identity and private trust root for an isolated child process.
+     *
+     * @param serverKeyStore PKCS#12 server identity
+     * @param trustStore PKCS#12 client trust root
+     * @return mutual-TLS server context
+     */
+    public static SSLContext serverContext(
+            Path serverKeyStore,
+            Path trustStore) throws Exception {
+        return serverContext(serverKeyStore, trustStore, PASSWORD);
+    }
+
+    /**
+     * Loads one server identity with an explicitly supplied store password.
+     *
+     * @param serverKeyStore PKCS#12 server identity
+     * @param trustStore PKCS#12 client trust root
+     * @param password caller-owned store password
+     * @return mutual-TLS server context
+     */
+    public static SSLContext serverContext(
+            Path serverKeyStore,
+            Path trustStore,
+            char[] password) throws Exception {
+        char[] exactPassword = Objects.requireNonNull(
+                password, "password").clone();
+        KeyStore keys = Material.load(serverKeyStore, exactPassword);
+        KeyManagerFactory keyManagers = KeyManagerFactory.getInstance(
+                KeyManagerFactory.getDefaultAlgorithm());
+        keyManagers.init(keys, exactPassword);
+        KeyStore trust = Material.load(trustStore, exactPassword);
+        TrustManagerFactory trustManagers = TrustManagerFactory.getInstance(
+                TrustManagerFactory.getDefaultAlgorithm());
+        trustManagers.init(trust);
+        SSLContext context = SSLContext.getInstance("TLS");
+        context.init(keyManagers.getKeyManagers(), trustManagers.getTrustManagers(),
+                new SecureRandom());
+        return context;
     }
 
     static Server startPublication(Material material, AtomicReference<String> peer)
@@ -151,7 +200,8 @@ final class RecoveryFleetPublicationTlsFixture {
         }
     }
 
-    record Material(
+    /** Complete private-CA material for one isolated test trust domain. */
+    public record Material(
             Path serverKeyStore,
             Path clientKeyStore,
             Path trustStore,
@@ -163,7 +213,8 @@ final class RecoveryFleetPublicationTlsFixture {
             String serverUriSan,
             String clientUriSan) {
 
-        static Material create(Path directory, String suffix) throws Exception {
+        /** Creates one server/client trust domain with exact URI SAN identities. */
+        public static Material create(Path directory, String suffix) throws Exception {
             return create(directory, suffix, true);
         }
 
@@ -177,6 +228,7 @@ final class RecoveryFleetPublicationTlsFixture {
                 Path directory,
                 String suffix,
                 boolean clientExtendedKeyUsage) throws Exception {
+            Files.createDirectories(directory);
             String serverUriSan = "spiffe://bloge.test/control-plane/server/" + suffix;
             String clientUriSan = "spiffe://bloge.test/control-plane/client/" + suffix;
             KeyPair caKey = keyPair();
@@ -212,7 +264,12 @@ final class RecoveryFleetPublicationTlsFixture {
                     clientCertificate, serverUriSan, clientUriSan);
         }
 
-        Material rotateClient(Path directory, String suffix) throws Exception {
+        /**
+         * Issues a new client identity under the same CA while preserving the server identity.
+         *
+         * @return copied material carrying the replacement client key and URI SAN
+         */
+        public Material rotateClient(Path directory, String suffix) throws Exception {
             String nextClientUriSan = "spiffe://bloge.test/control-plane/client/" + suffix;
             KeyPair nextClientKey = keyPair();
             X509Certificate nextClient = certificate(
@@ -242,24 +299,16 @@ final class RecoveryFleetPublicationTlsFixture {
         }
 
         private SSLContext serverContext() throws Exception {
-            KeyStore keys = load(serverKeyStore);
-            KeyManagerFactory keyManagers = KeyManagerFactory.getInstance(
-                    KeyManagerFactory.getDefaultAlgorithm());
-            keyManagers.init(keys, PASSWORD);
-            KeyStore trust = load(trustStore);
-            TrustManagerFactory trustManagers = TrustManagerFactory.getInstance(
-                    TrustManagerFactory.getDefaultAlgorithm());
-            trustManagers.init(trust);
-            SSLContext context = SSLContext.getInstance("TLS");
-            context.init(keyManagers.getKeyManagers(), trustManagers.getTrustManagers(),
-                    new SecureRandom());
-            return context;
+            return RecoveryFleetPublicationTlsFixture.serverContext(
+                    serverKeyStore, trustStore);
         }
 
-        private static KeyStore load(Path path) throws Exception {
+        private static KeyStore load(
+                Path path,
+                char[] password) throws Exception {
             KeyStore store = KeyStore.getInstance("PKCS12");
             try (var input = Files.newInputStream(path)) {
-                store.load(input, PASSWORD);
+                store.load(input, password);
             }
             return store;
         }

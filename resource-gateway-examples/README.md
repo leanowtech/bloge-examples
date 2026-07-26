@@ -860,10 +860,26 @@ idempotency under concurrent retries. The certification suite now puts its two
 roles behind separate real loopback HTTP servers and drives the complete
 governed data plane through one baseline POST, one candidate POST, two baseline
 exact reads, one candidate exact read, independent evidence verification, and a
-signed v2 source-resolution proof. This proves the wire adapters and composed
-network call graph; the provider still shares one JVM and memory store and is
-never auto-configured. It is not a payload vault, separately deployed regional
-sidecar, production read binding, or production candidate authority.
+signed v2 source-resolution proof.
+
+`OnlineReadOnlyShadowProviderProcessCertificationTest` adds a stronger,
+test-only deployment boundary. It launches baseline and candidate in separate
+child JVMs with distinct PIDs, private CAs, server/client certificates, URI SAN
+workload identities, server SPKI pins, and Ed25519 evidence keys. The parent
+holds only public verification keys and reaches both roles through the
+production HTTP authorities. Cross-role trust is rejected during TLS; a
+same-CA client with the wrong subject/SAN is rejected by the provider identity
+policy. A second scenario durably commits candidate evidence, terminates the
+child with exit 86 before the HTTP response, restarts a new JVM on the same
+port, and proves the retry returns the original bundle with one physical
+generation.
+
+Together these tests prove the wire adapters, composed network call graph,
+physical process separation, private-PKI role isolation, and one committed
+response-loss recovery path. The child provider is never auto-configured and
+still uses a pre-admitted payload-free command plus local test files. It is not
+a payload vault, authorized production read binding, HSM-backed signer,
+production regional sidecar, or PostgreSQL/partition/rotation certification.
 
 The v2 proof is persisted by the same append-only source-resolution repository
 used by detached v1 evidence. Fresh tables index `source_mode` and both online
@@ -884,9 +900,11 @@ but before terminal job commit. The old lease remains `RUNNING`; only after its
 database deadline can a new owner and higher epoch emit `TAKEN_OVER`, rerun the
 same execution identity, reuse the one append-only proof, and atomically commit
 the final comparison plus `SUCCEEDED` lifecycle head. This certifies the durable
-in-process reference path plus the dual-role HTTP protocol path. It does not
-certify PostgreSQL multi-replica partitions, cross-process sidecar failure,
-private-PKI rotation, KMS/HSM, or production data use.
+in-process reference path plus the dual-role HTTP protocol path. The
+independent-process suite separately certifies child JVM failure, private-PKI
+role separation, and committed-response-loss recovery. It does not certify
+PostgreSQL multi-replica partitions, network partitions, private-PKI
+rotation/revocation, KMS/HSM, or production data use.
 
 `GET /api/integration/capabilities` reports the online-baseline boundary as
 separate facts:

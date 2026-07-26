@@ -49,6 +49,9 @@
 - same-input online candidate command/SPI/connector、严格 private-PKI/SPKI/mTLS HTTP
   authority、独立 online paired-source exact-read resolver、v2 signed proof、完整动态
   readiness，以及双 loopback HTTP role 认证的显式非生产 bounded synthetic regional provider；
+- baseline/candidate 双独立 JVM 认证 provider：角色独立 private CA、server/client workload
+  identity、SPKI pin、Ed25519 evidence key、跨角色信任与错误 client identity 拒绝，以及
+  candidate committed-response-loss 后同端口重启、durable exact bundle 恢复和单次物理生成；
 - v1/v2 source-resolution 共用的 append-only 数据库仓储：旧 v1 表原位补充
   `source_mode` 与双 command fingerprint 索引，v1 签名 JSON 不重写，v2 无 detached binding
   也可落库，读取时逐索引对账；
@@ -937,8 +940,9 @@ job request、exact detached source-binding repository/API、真实 detached con
 resolver、signed source-resolution proof API、独立 Test Kit verifier 与三 authority 跨产物固定签名
 fixture，以及 regional TEE online-baseline consumer、动态 readiness、独立 observation verifier
 与 public-only 固定签名 fixture、same-input candidate strict HTTP authority、online paired-source
-v2 resolver、双 loopback HTTP role synthetic regional certification provider、第二份三
-authority public-only fixture、v1/v2 proof
+v2 resolver、双 loopback HTTP role synthetic regional certification provider、双独立 JVM
+private-CA/mTLS/SPKI provider 与 committed-response-loss 恢复认证、第二份三 authority
+public-only fixture、v1/v2 proof
 数据库兼容迁移，以及 synthetic composition 到真实 durable worker 的 retry/crash/takeover
 认证和四 authority durable-worker 复合 fixture/独立 Test Kit 联合验证已完成。
 下一步按来源信任依赖推进：
@@ -947,7 +951,8 @@ authority public-only fixture、v1/v2 proof
    跨区域传播时限、outage 和 rolling rotation。
 2. 交付第一个获授权的 networked regional sidecar provider、payload-isolated production read
    binding 与 production candidate authority，并在 PostgreSQL 多副本、网络分区和滚动重启中
-   认证 claim/lease/guard/connector 的组合语义；现有 in-process provider 只证明协议和执行闭包。
+   认证 claim/lease/guard/connector 的组合语义；现有 child-JVM provider 已证明协议、角色
+   私有信任域和一次 committed-response-loss 恢复，但仍是固定 command、本地状态的测试夹具。
 3. 把 signed typed diff 接入 drift budget，自动 stale/downgrade/revoke serving conclusion。
 4. 实现 authoritative outcome observation 与 delayed/censored reconciliation。
 5. 为 `ERROR_DISTRIBUTION` 和 `REQUEST_SPACE` 增加 cohort/sampling proof，而不是借用单次
