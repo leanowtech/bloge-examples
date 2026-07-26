@@ -78,6 +78,9 @@ import com.leanowtech.bloge.gateway.integration.mirror.MirrorRunIntegrationServi
 import com.leanowtech.bloge.gateway.integration.mirror.MirrorRunRequestRepository;
 import com.leanowtech.bloge.gateway.integration.mirror.DomainFidelityPolicy;
 import com.leanowtech.bloge.gateway.integration.mirror.DomainFidelityMeasurementSource;
+import com.leanowtech.bloge.gateway.integration.mirror.AuthoritativeOutcomeAuthorityVerifier;
+import com.leanowtech.bloge.gateway.integration.mirror.AuthoritativeOutcomeDomainFidelitySource;
+import com.leanowtech.bloge.gateway.integration.mirror.AuthoritativeOutcomeObservationIntegrity;
 import com.leanowtech.bloge.gateway.integration.mirror.DomainFidelityProfileIntegrity;
 import com.leanowtech.bloge.gateway.integration.mirror.DomainFidelityRepository;
 import com.leanowtech.bloge.gateway.integration.mirror.DomainFidelityService;
@@ -2172,6 +2175,38 @@ public class MirrorRuntimeConfiguration {
             ReadOnlyShadowComparisonIntegrity integrity,
             DomainFidelityPolicy policy) {
         return new ReadOnlyShadowDomainFidelitySource(
+                integrity,
+                policy);
+    }
+
+    /**
+     * Creates the outcome observation integrity boundary only when the host supplies an independent
+     * business-authority verifier.
+     */
+    @Bean
+    @ConditionalOnMissingBean
+    @ConditionalOnBean(AuthoritativeOutcomeAuthorityVerifier.class)
+    public AuthoritativeOutcomeObservationIntegrity
+    authoritativeOutcomeObservationIntegrity(
+            ObjectMapper objectMapper,
+            VisualEvidenceSigner signer,
+            AuthoritativeOutcomeAuthorityVerifier
+                    authorityVerifier) {
+        return new AuthoritativeOutcomeObservationIntegrity(
+                objectMapper,
+                signer,
+                authorityVerifier);
+    }
+
+    /** Creates the authoritative outcome Fidelity adapter only after its trust boundary exists. */
+    @Bean
+    @ConditionalOnMissingBean
+    @ConditionalOnBean(AuthoritativeOutcomeObservationIntegrity.class)
+    public AuthoritativeOutcomeDomainFidelitySource
+    authoritativeOutcomeDomainFidelitySource(
+            AuthoritativeOutcomeObservationIntegrity integrity,
+            DomainFidelityPolicy policy) {
+        return new AuthoritativeOutcomeDomainFidelitySource(
                 integrity,
                 policy);
     }

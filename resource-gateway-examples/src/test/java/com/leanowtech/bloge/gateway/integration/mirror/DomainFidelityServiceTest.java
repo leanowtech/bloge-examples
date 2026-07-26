@@ -219,6 +219,49 @@ class DomainFidelityServiceTest {
     }
 
     @Test
+    void projectsAuthoritativeOutcomesInsideTheGovernedTransactionBoundary() {
+        DomainFidelityInventory inventory =
+                service.registerInventory(
+                        DomainFidelityTestFixtures.registration(
+                                1,
+                                "",
+                                DomainFidelityTestFixtures.units()),
+                        DomainFidelityTestFixtures
+                                .ownerIdentity("support"));
+        IntegrationRequestContext projector =
+                DomainFidelityTestFixtures
+                        .projectorIdentity("support");
+        AuthoritativeOutcomeDomainFidelitySource source =
+                mock(
+                        AuthoritativeOutcomeDomainFidelitySource
+                                .class);
+        AuthoritativeOutcomeObservation observation =
+                mock(AuthoritativeOutcomeObservation.class);
+        List<AuthoritativeOutcomeObservation> observations =
+                List.of(observation);
+        when(source.measurements(
+                inventory, observations, projector))
+                .thenReturn(
+                        DomainFidelityTestFixtures
+                                .passingMeasurements(inventory));
+
+        DomainFidelityProfile profile =
+                service.projectOutcomes(
+                        inventory.artifactRef(),
+                        observations,
+                        source,
+                        projector);
+
+        verify(source).measurements(
+                inventory, observations, projector);
+        assertThat(profile.profileSeal().signed()).isTrue();
+        assertThat(repository.findProfile(
+                inventory.scope(),
+                profile.profileFingerprint()))
+                .contains(profile);
+    }
+
+    @Test
     void rejectsUnauthorizedOwnerAndProjectorRoles() {
         IntegrationRequestContext unauthorizedOwner =
                 new IntegrationRequestContext(

@@ -178,6 +178,18 @@ zero-write claims, and Ed25519 signatures. It contains no private key or
 business payload. A passing fixture proves producer/consumer wire
 compatibility, not current online authority or data-plane certification.
 
+`authoritative-outcome-observation-stage1-v1.fixture.json` is the fixed
+server-produced public-only outcome compatibility fixture. It contains one
+signed payload-free observation, the Resource Gateway public key, and a frozen
+verification time. The server rehydrates the observation and verifies its
+canonical address, attestation material, and public signature; the standalone
+Test Kit independently validates the strict Schema, pre-treatment cohort,
+event-time attribution closure, derived reconciliation, canonical address,
+signed `attestedAt` key policy, detached-seal time proximity, and signature. It
+contains no private key, credential,
+endpoint, request, response, or payload. Its bounded authority callback proves
+wire compatibility only, not a live customer business-authority decision.
+
 `online-read-only-shadow-baseline-stage1-v1.fixture.json` is the fixed
 public-only regional online-baseline compatibility fixture. The server produced
 its exact payload-free command, deterministic content-addressed observation,

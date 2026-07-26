@@ -16,6 +16,9 @@ import com.leanowtech.bloge.gateway.integration.mirror.MirrorPlanRepository;
 import com.leanowtech.bloge.gateway.integration.mirror.MirrorRunRequestRepository;
 import com.leanowtech.bloge.gateway.integration.mirror.CompiledScenarioRehearsalPlanRepository;
 import com.leanowtech.bloge.gateway.integration.mirror.ComposedReadOnlyShadowAccessAuthority;
+import com.leanowtech.bloge.gateway.integration.mirror.AuthoritativeOutcomeAuthorityVerifier;
+import com.leanowtech.bloge.gateway.integration.mirror.AuthoritativeOutcomeDomainFidelitySource;
+import com.leanowtech.bloge.gateway.integration.mirror.AuthoritativeOutcomeObservationIntegrity;
 import com.leanowtech.bloge.gateway.integration.mirror.DomainFidelityProfileIntegrity;
 import com.leanowtech.bloge.gateway.integration.mirror.DomainFidelityRepository;
 import com.leanowtech.bloge.gateway.integration.mirror.DomainFidelityService;
@@ -158,6 +161,40 @@ class MirrorRuntimeConfigurationTest {
              var staging = context(true, "staging")) {
             assertMirrorKernelPresent(test);
             assertMirrorKernelPresent(staging);
+        }
+    }
+
+    @Test
+    void outcomeAdapterRequiresAnExplicitHealthyBusinessAuthority() {
+        try (var absent = context(true, "test");
+             var configured = context(
+                     Map.of(
+                             "gateway.testing.mirror.enabled",
+                             true,
+                             "test.outcome-authority",
+                             true,
+                             "test.available-signer",
+                             true),
+                     "test")) {
+            assertThat(absent.getBeansOfType(
+                    AuthoritativeOutcomeObservationIntegrity.class))
+                    .isEmpty();
+            assertThat(absent.getBeansOfType(
+                    AuthoritativeOutcomeDomainFidelitySource.class))
+                    .isEmpty();
+            assertThat(absent.getBean(
+                    DomainFidelityRuntimeAvailability.class)
+                    .outcomeAdapterReady()).isFalse();
+
+            assertThat(configured.getBeansOfType(
+                    AuthoritativeOutcomeObservationIntegrity.class))
+                    .hasSize(1);
+            assertThat(configured.getBeansOfType(
+                    AuthoritativeOutcomeDomainFidelitySource.class))
+                    .hasSize(1);
+            assertThat(configured.getBean(
+                    DomainFidelityRuntimeAvailability.class)
+                    .outcomeAdapterReady()).isTrue();
         }
     }
 
@@ -522,7 +559,30 @@ class MirrorRuntimeConfigurationTest {
         context.registerBean(ResourceRegistry.class, EmptyResourceRegistry::new);
         context.registerBean(BlgeExpressionEvaluator.class,
                 () -> new BlgeExpressionEvaluator());
-        context.registerBean(VisualEvidenceSigner.class, VisualEvidenceSigner::unavailable);
+        context.registerBean(
+                VisualEvidenceSigner.class,
+                () -> Boolean.TRUE.equals(
+                        properties.get("test.available-signer"))
+                        ? new InMemoryVisualEvidenceSigner()
+                        : VisualEvidenceSigner.unavailable());
+        if (Boolean.TRUE.equals(
+                properties.get("test.outcome-authority"))) {
+            context.registerBean(
+                    AuthoritativeOutcomeAuthorityVerifier.class,
+                    () -> new AuthoritativeOutcomeAuthorityVerifier() {
+                        @Override
+                        public boolean available() {
+                            return true;
+                        }
+
+                        @Override
+                        public void verify(
+                                com.leanowtech.bloge.gateway.integration.mirror
+                                        .AuthoritativeOutcomeObservation
+                                        observation) {
+                        }
+                    });
+        }
         if (Boolean.TRUE.equals(
                 properties.get(
                         OnlineReadOnlyShadowBaselineProperties

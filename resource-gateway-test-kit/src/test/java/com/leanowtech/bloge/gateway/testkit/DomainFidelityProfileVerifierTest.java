@@ -155,6 +155,32 @@ class DomainFidelityProfileVerifierTest {
     }
 
     @Test
+    void verifiesEveryAuthoritativeOutcomeAbstentionReason()
+            throws Exception {
+        for (String reason : new String[]{
+                "OUTCOME_CENSORED",
+                "OUTCOME_CONFLICTING",
+                "OUTCOME_PENDING"}) {
+            profile = profile(inventory);
+            makeFullyAbstained(profile, reason);
+            resign(profile, SIGNED_AT);
+
+            DomainFidelityProfileVerifier.VerificationResult result =
+                    verifier.verify(profile, inventory, key);
+            assertThat(result.verified())
+                    .as(reason + ": " + result.reasonCode())
+                    .isTrue();
+            assertThat(result.assessment())
+                    .isEqualTo("INSUFFICIENT_EVIDENCE");
+            assertThat(result.limitations())
+                    .containsExactly(
+                            "ABSTENTION_PRESENT",
+                            "COVERAGE_INCOMPLETE",
+                            "LOW_SAMPLE");
+        }
+    }
+
+    @Test
     void reportsUnavailableAndMismatchedKeysWithoutPayload() {
         assertThat(verifier.verify(
                 profile, inventory, null).outcome())
@@ -422,6 +448,45 @@ class DomainFidelityProfileVerifierTest {
         value.put("abstentionRatio", 0.0d);
         value.set("confidence", wilsonPass());
         value.put("sufficiency", "MEASURED");
+    }
+
+    private static void makeFullyAbstained(
+            ObjectNode value,
+            String reason) {
+        value.path("unitAssessments")
+                .path(0)
+                .path("results")
+                .forEach(result -> {
+                    ObjectNode mutable = (ObjectNode) result;
+                    mutable.put("outcome", "ABSTAINED");
+                    mutable.put("reason", reason);
+                });
+        value.path("dimensions").forEach(metric -> {
+            ObjectNode mutable = (ObjectNode) metric;
+            mutable.put("assessedUnits", 0);
+            mutable.put("passedUnits", 0);
+            mutable.put("abstainedUnits", 1);
+            mutable.put("abstentionRatio", 1.0d);
+            mutable.putNull("confidence");
+            mutable.put(
+                    "sufficiency",
+                    "NO_ASSESSED_EVIDENCE");
+        });
+        ObjectNode debt = value.withObject(
+                "/abstentionDebt");
+        debt.put("abstainedObligations", 2);
+        debt.put("ratio", 1.0d);
+        ObjectNode reasonCount =
+                debt.putArray("reasons").addObject();
+        reasonCount.put("reason", reason);
+        reasonCount.put("count", 2);
+        value.put(
+                "assessment",
+                "INSUFFICIENT_EVIDENCE");
+        value.putArray("limitations")
+                .add("ABSTENTION_PRESENT")
+                .add("COVERAGE_INCOMPLETE")
+                .add("LOW_SAMPLE");
     }
 
     private static ObjectNode wilsonPass() {

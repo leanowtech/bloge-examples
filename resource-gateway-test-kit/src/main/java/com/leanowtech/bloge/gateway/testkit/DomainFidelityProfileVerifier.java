@@ -55,6 +55,9 @@ public final class DomainFidelityProfileVerifier {
                     "ASSERTION_EVIDENCE_INDETERMINATE",
                     "DIMENSION_ASSERTION_ABSENT",
                     "EVIDENCE_NOT_CERTIFIABLE",
+                    "OUTCOME_CENSORED",
+                    "OUTCOME_CONFLICTING",
+                    "OUTCOME_PENDING",
                     "OUTCOME_AUTHORITY_UNAVAILABLE",
                     "REQUEST_SPACE_EVIDENCE_UNAVAILABLE",
                     "SOURCE_EVIDENCE_INCOMPLETE");

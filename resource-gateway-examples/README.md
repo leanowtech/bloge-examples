@@ -32,7 +32,7 @@ integration something the business flow can see, reason about, test, and change.
 | Governed capability observations | Signed payload-free invocation facts, operator-owned admission policy, external vault/proof verification, durable admitted-or-quarantined decisions, full-scope idempotency, and independent offline verification |
 | Governed capability corpora | Immutable quarantine review, exact admitted-source candidates, metadata risk gates, independent owner-reviewed publication lineage, second source-authority verification, and honest resolver readiness |
 | Governed scenario rehearsal | Append-only Scenario assets, exact compilation, durable per-case execution, independently signed aggregate and batch evidence, multi-hold retention/deletion proof at both levels, deterministic ANEKE workbook seeds, separate opt-in regional DAG/KMS schedulers, and a server-authorized two-person remediation transaction kernel |
-| Reconstructable domain fidelity | Owner-approved content-addressed coverage inventory, append-only full-scope persistence, managed signed payload-free seven-dimension profiles, protected register/read APIs, independently re-verified Scenario projection, v3 signed read-only Shadow comparison with exact normalization/source-resolution and double-observed online-authority closure, a protected full-scope durable sample-ordinal queue, append-only lifecycle API, optional bounded scheduler, owner/epoch fenced worker kernel, a governed fail-closed data-plane composition with double-observed grant/kill-switch/egress authority and isolated connector boundaries, typed dynamic readiness, fail-closed freshness/abstention/low-sample semantics, Wilson 95% confidence, exact source lineage, and independent Test Kit verification without a composite score |
+| Reconstructable domain fidelity | Owner-approved content-addressed coverage inventory, append-only full-scope persistence, managed signed payload-free seven-dimension profiles, protected register/read APIs, independently re-verified Scenario projection, v3 signed read-only Shadow comparison with exact normalization/source-resolution and double-observed online-authority closure, a protected full-scope durable sample-ordinal queue, append-only lifecycle API, optional bounded scheduler, owner/epoch fenced worker kernel, a governed fail-closed data-plane composition with double-observed grant/kill-switch/egress authority and isolated connector boundaries, signed authoritative-outcome observations with pre-treatment cohort proof, event-time delayed/censored/conflicting reconciliation and an independently supplied business-authority verifier, typed dynamic readiness, fail-closed freshness/abstention/low-sample semantics, Wilson 95% confidence, exact source lineage, and independent Test Kit verification without a composite score |
 | Stateful mirror sessions | Versioned entity/write/session/checkpoint/write-attempt protocols, atomic multi-entity mutations, exact replay, AES-GCM isolated persistence, lease/fence/CAS concurrency, durable crash-window reconciliation, TTL/destroy, payload-free signed state evidence, signed same-data-plane restart recovery admission, ANEKE workbook seeds, and independently verified clients |
 | Governed replay payloads | Payload values detached from immutable evidence, classification ABAC, selective retention, legal hold, bounded expiry, and signed deletion proof |
 | Workbook and gate evidence loop | Deterministic sanitized workbook seeds, exact suite/run evidence refs, versioned gate decision basis, stale detection, and transactional gate events |
@@ -1096,6 +1096,62 @@ They cannot represent samples, credentials, exceptions, or stack traces.
 admission-to-head proof from a valid truncated page. Protocol, authority, and
 offline-verification details are in the
 [domain fidelity guide](../docs/resource-gateway-domain-fidelity-profile.md).
+
+### Authoritative outcome fidelity
+
+`resourceGateway.authoritativeOutcomeObservation.v1` is the payload-free
+boundary between one simulated outcome and independently governed business
+facts. It binds the exact Fidelity inventory unit, outcome definition,
+attribution policy, authority set, pre-treatment cohort and sampling frame,
+subject/correlation fingerprints, event-time window, complete authority
+watermarks, source-record references, and a content-addressed `attestedAt`.
+Key lifecycle and future-time decisions use that signed field rather than the
+detached seal's independently mutable timestamp. `MATCH`, `MISMATCH`, `PENDING`,
+`CENSORED`, and `CONFLICT` are derived from that closure and cannot be asserted
+by a producer.
+
+The non-production Mirror composition deliberately provides no default business
+authority. A host must supply its own independently governed bean:
+
+```java
+@Bean
+AuthoritativeOutcomeAuthorityVerifier authoritativeOutcomes(
+        CustomerOutcomeAuthority authority) {
+    return new AuthoritativeOutcomeAuthorityVerifier() {
+        @Override
+        public boolean available() {
+            return authority.ready();
+        }
+
+        @Override
+        public void verify(AuthoritativeOutcomeObservation observation) {
+            authority.verifyExactClosure(observation);
+        }
+    };
+}
+```
+
+Only then does Spring assemble
+`AuthoritativeOutcomeObservationIntegrity` and
+`AuthoritativeOutcomeDomainFidelitySource`. Internal projector workloads call
+`DomainFidelityService.projectOutcomes(...)`; there is no public observation
+ingest or projection endpoint. The transaction rechecks current inventory,
+authority closure, cohort consistency, content address, Resource Gateway seal,
+projection, persistence, and success audit. Pending, censored, and conflicting
+facts remain distinct abstention debt, while omitted inventory units remain
+missing.
+
+`mirrorDomainFidelityOutcomeAdapterReady=true` means only that the supplied
+authority verifier, signer, and typed source adapter are usable at probe time.
+It does not certify a customer connector, durable outcome inbox, continuous
+watermark reconciliation, causality, or production calibration. Exact protocol,
+integration, and offline-verification rules are in the
+[domain fidelity guide](../docs/resource-gateway-domain-fidelity-profile.md).
+The server-produced public-only
+`authoritative-outcome-observation-stage1-v1.fixture.json` is consumed by both
+the server model and standalone Test Kit to catch canonical JSON, reconciliation,
+signature-domain, signed-attestation-time, and trusted-time drift. Its permissive authority callback is
+strictly a wire-compatibility stub, not business evidence.
 
 ### Stateful mirror Session data plane and DAG reads
 

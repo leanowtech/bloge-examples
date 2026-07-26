@@ -104,6 +104,59 @@ versioned wire schema.
 The fidelity profile protocol and offline verification flow are documented in
 the [domain fidelity profile guide](../docs/resource-gateway-domain-fidelity-profile.md).
 
+Authoritative business outcomes require two independent trust decisions.
+`AuthoritativeOutcomeObservationVerifier` first validates the packaged strict
+`resourceGateway.authoritativeOutcomeObservation.v1` Schema, derives the
+reconciliation from pre-treatment selection, attribution windows, complete
+authority watermarks and source facts, recomputes the content address, and
+enforces key lifecycle and future-time policy against the signed `attestedAt`
+rather than the detached seal timestamp. It checks the local Resource Gateway
+Ed25519 seal before invoking the caller-owned external authority callback, so
+invalid artifacts cannot amplify customer-ledger traffic:
+
+```java
+AuthoritativeOutcomeObservationVerifier.VerificationResult result =
+        new AuthoritativeOutcomeObservationVerifier().verify(
+                observationJson,
+                resourceGatewayVerificationKey,
+                candidate -> customerAuthority.verify(candidate));
+
+if (!result.verified()) {
+    throw new IllegalStateException(result.reasonCode());
+}
+```
+
+Every outcome timestamp must use the producer's canonical
+`Instant.toString()` representation. Equivalent offset spellings are rejected
+because hashing their raw bytes would otherwise diverge after server
+deserialization normalizes them.
+
+Never implement the callback as `candidate -> true` outside a bounded test.
+It must resolve the exact authority-set revision, every watermark and every
+source-record reference through a separately governed customer trust channel.
+When the callback is absent, the verifier returns `AUTHORITY_UNAVAILABLE`;
+a valid Resource Gateway signature alone cannot establish business truth.
+`DomainFidelityProfileVerifier` also recognizes
+`OUTCOME_PENDING`, `OUTCOME_CENSORED`, and `OUTCOME_CONFLICTING` as explicit
+abstention debt instead of silently converting them to failures.
+
+Run the server-produced public-only fixed vector on every JSON, JDK, crypto
+provider, or Test Kit upgrade:
+
+```java
+AuthoritativeOutcomeObservationCompatibilityFixture fixture =
+        CapabilityMirrorProtocol
+                .authoritativeOutcomeObservationCompatibilityFixture();
+if (!fixture.verify().verified()) {
+    throw new IllegalStateException(
+            "authoritative outcome wire drift");
+}
+```
+
+The fixture's internal permissive authority callback is intentionally bounded
+to producer/consumer compatibility. It cannot replace the customer-governed
+callback used for live evidence.
+
 Resource Gateway now exposes authenticated durable create/query/claim/heartbeat/recovery endpoints
 backed by BLOGE suspend state. This test-kit deliberately does not yet expose that broad control
 surface as a typed Java client; it packages the checkpoint schema and only the narrow request-index

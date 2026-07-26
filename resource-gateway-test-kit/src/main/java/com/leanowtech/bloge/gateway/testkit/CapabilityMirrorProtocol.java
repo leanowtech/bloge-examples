@@ -394,6 +394,14 @@ public final class CapabilityMirrorProtocol {
     /** Signed payload-free domain fidelity vector wire version. */
     public static final String DOMAIN_FIDELITY_PROFILE_V1 =
             "resourceGateway.domainFidelityProfile.v1";
+    /** Signed payload-free authoritative business-outcome observation wire version. */
+    public static final String AUTHORITATIVE_OUTCOME_OBSERVATION_V1 =
+            "resourceGateway.authoritativeOutcomeObservation.v1";
+    /** Fixed server-produced authoritative outcome compatibility fixture wire version. */
+    public static final String
+    AUTHORITATIVE_OUTCOME_OBSERVATION_COMPATIBILITY_V1 =
+            AuthoritativeOutcomeObservationCompatibilityFixture
+                    .SCHEMA_VERSION;
     /** Signed payload-free read-only Shadow comparison wire version. */
     public static final String READ_ONLY_SHADOW_COMPARISON_V1 =
             "resourceGateway.readOnlyShadowComparison.v1";
@@ -483,6 +491,11 @@ public final class CapabilityMirrorProtocol {
     /** Packaged signed Stage 1 mirror evidence compatibility fixture. */
     public static final String MIRROR_EVIDENCE_FIXTURE_RESOURCE =
             SCHEMA_RESOURCE_ROOT + "mirror-evidence-stage1-v1.fixture.json";
+    /** Packaged public-only authoritative outcome compatibility fixture. */
+    public static final String
+    AUTHORITATIVE_OUTCOME_OBSERVATION_FIXTURE_RESOURCE =
+            SCHEMA_RESOURCE_ROOT
+                    + "authoritative-outcome-observation-stage1-v1.fixture.json";
     /** Packaged three-authority detached source-resolution compatibility fixture. */
     public static final String
     READ_ONLY_SHADOW_SOURCE_RESOLUTION_FIXTURE_RESOURCE =
@@ -922,6 +935,11 @@ public final class CapabilityMirrorProtocol {
     public static final String DOMAIN_FIDELITY_PROFILE_SCHEMA_RESOURCE =
             SCHEMA_RESOURCE_ROOT
                     + "domain-fidelity-profile-v1.schema.json";
+    /** Packaged signed payload-free authoritative outcome observation schema. */
+    public static final String
+    AUTHORITATIVE_OUTCOME_OBSERVATION_SCHEMA_RESOURCE =
+            SCHEMA_RESOURCE_ROOT
+                    + "authoritative-outcome-observation-v1.schema.json";
     /** Packaged signed payload-free read-only Shadow comparison schema. */
     public static final String
     READ_ONLY_SHADOW_COMPARISON_SCHEMA_RESOURCE =
@@ -1159,6 +1177,24 @@ public final class CapabilityMirrorProtocol {
     public static ReadOnlyShadowSourceResolutionCompatibilityFixture
     readOnlyShadowSourceResolutionCompatibilityFixture() {
         return SourceResolutionFixtureHolder.FIXTURE
+                .detachedCopy();
+    }
+
+    /**
+     * Returns the server-produced public-only authoritative outcome compatibility fixture.
+     *
+     * <p>Loading independently proves strict observation Schema, pre-treatment cohort and
+     * attribution closure, derived reconciliation, canonical content addressing, signed
+     * attestation-time key policy, and the Resource Gateway Ed25519 seal. The fixture's bounded
+     * authority callback does not claim a live customer business-authority decision.</p>
+     *
+     * @return detached signed observation, public key, and frozen verification time
+     * @throws IllegalStateException when the packaged fixture is absent or unverifiable
+     */
+    public static
+    AuthoritativeOutcomeObservationCompatibilityFixture
+    authoritativeOutcomeObservationCompatibilityFixture() {
+        return OutcomeObservationFixtureHolder.FIXTURE
                 .detachedCopy();
     }
 
@@ -1522,6 +1558,43 @@ public final class CapabilityMirrorProtocol {
             } catch (IOException | RuntimeException failure) {
                 throw new IllegalStateException(
                         "RG.MIRROR.CLIENT.SHADOW_SOURCE_RESOLUTION_FIXTURE_UNAVAILABLE",
+                        failure);
+            }
+        }
+    }
+
+    private static final class OutcomeObservationFixtureHolder {
+        private static final
+        AuthoritativeOutcomeObservationCompatibilityFixture
+                FIXTURE = load();
+
+        private static
+        AuthoritativeOutcomeObservationCompatibilityFixture
+        load() {
+            try (InputStream input =
+                         CapabilityMirrorProtocol.class
+                                 .getResourceAsStream(
+                                         AUTHORITATIVE_OUTCOME_OBSERVATION_FIXTURE_RESOURCE)) {
+                if (input == null) {
+                    throw new IOException(
+                            "Outcome observation fixture is absent");
+                }
+                AuthoritativeOutcomeObservationCompatibilityFixture
+                        fixture =
+                        AuthoritativeOutcomeObservationCompatibilityFixture
+                                .from(JSON.readTree(input));
+                AuthoritativeOutcomeObservationVerifier
+                        .VerificationResult result =
+                        fixture.verify();
+                if (!result.verified()) {
+                    throw new IOException(
+                            "Outcome observation fixture cannot be verified: "
+                                    + result.reasonCode());
+                }
+                return fixture;
+            } catch (IOException | RuntimeException failure) {
+                throw new IllegalStateException(
+                        "RG.MIRROR.CLIENT.OUTCOME_OBSERVATION_FIXTURE_UNAVAILABLE",
                         failure);
             }
         }

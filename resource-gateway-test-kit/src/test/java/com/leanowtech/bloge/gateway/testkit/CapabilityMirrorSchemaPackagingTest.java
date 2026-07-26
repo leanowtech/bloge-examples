@@ -776,6 +776,24 @@ class CapabilityMirrorSchemaPackagingTest {
     }
 
     @Test
+    void packagesOneFixedPublicOnlyAuthoritativeOutcomeFixture() {
+        AuthoritativeOutcomeObservationCompatibilityFixture fixture =
+                CapabilityMirrorProtocol
+                        .authoritativeOutcomeObservationCompatibilityFixture();
+
+        assertThat(fixture.verify().verified()).isTrue();
+        assertThat(CapabilityMirrorProtocol
+                .AUTHORITATIVE_OUTCOME_OBSERVATION_COMPATIBILITY_V1)
+                .isEqualTo(
+                        AuthoritativeOutcomeObservationCompatibilityFixture
+                                .SCHEMA_VERSION);
+        assertThat(CapabilityMirrorProtocol
+                .AUTHORITATIVE_OUTCOME_OBSERVATION_FIXTURE_RESOURCE)
+                .endsWith(
+                        "authoritative-outcome-observation-stage1-v1.fixture.json");
+    }
+
+    @Test
     void packagesOneFixedPublicOnlyOnlineBaselineFixture() {
         OnlineReadOnlyShadowBaselineCompatibilityFixture
                 fixture =

@@ -251,6 +251,42 @@ public class DomainFidelityService {
                 identity);
     }
 
+    /**
+     * Publishes a profile directly from independently verified authoritative outcome observations.
+     *
+     * <p>Authority resolution, cohort closure, and delayed/censored reconciliation remain inside
+     * the same authorization, current-inventory-head, projection, signing, persistence, and
+     * success-audit transaction. The supplied set may be partial; omitted inventory units remain
+     * explicit missing debt, while pending, censored, and conflicting outcomes remain abstentions.
+     * This internal method has no HTTP route.</p>
+     *
+     * @param inventoryRef exact current inventory head
+     * @param observations signed payload-free outcome observations
+     * @param source assembled authoritative outcome source
+     * @param identity authenticated projector service
+     * @return signed, committed, or idempotently recovered profile
+     */
+    @Transactional
+    public DomainFidelityProfile projectOutcomes(
+            MirrorArtifactRef inventoryRef,
+            List<AuthoritativeOutcomeObservation> observations,
+            AuthoritativeOutcomeDomainFidelitySource source,
+            IntegrationRequestContext identity) {
+        AuthoritativeOutcomeDomainFidelitySource exactSource =
+                Objects.requireNonNull(source, "source");
+        List<AuthoritativeOutcomeObservation> exactObservations =
+                observations == null
+                        ? List.of()
+                        : List.copyOf(observations);
+        return project(
+                inventoryRef,
+                inventory -> exactSource.measurements(
+                        inventory,
+                        exactObservations,
+                        identity),
+                identity);
+    }
+
     private DomainFidelityProfile project(
             MirrorArtifactRef inventoryRef,
             MeasurementProvider measurements,

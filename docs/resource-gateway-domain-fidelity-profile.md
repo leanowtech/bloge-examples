@@ -77,6 +77,14 @@
   零写证明、同请求双边来源和 exact inventory unit closure；
 - Shadow diff 到 `BEHAVIOR/CONTRACT/EFFECT/STATE_TRANSITION` 的保守映射，允许部分
   comparison 集合并把未覆盖 unit 保留为 missing debt；
+- signed `resourceGateway.authoritativeOutcomeObservation.v1`：冻结 exact outcome
+  definition、attribution policy、authority set、pre-treatment cohort/sampling frame、
+  attribution window、authority watermarks 与 payload-free source facts；
+- authoritative outcome source adapter：独立复验业务 authority closure 与 Resource
+  Gateway seal，关闭 cohort/stratum/sample ordinal，按 event time 处理迟到事实，并把
+  `MATCH/MISMATCH/PENDING/CENSORED/CONFLICT` 保守映射到 `OUTCOME`；
+- 不依赖服务端/Spring 的 Test Kit outcome verifier，独立重算 strict Schema、reconciliation、
+  content address、外部业务 authority callback 和 Resource Gateway Ed25519 seal；
 - 可组合、动态、fail-closed 的 typed source readiness；
 - 分开报告 route、signing、各 source adapter 和 partial-profile projection readiness 的
   capability probe；
@@ -85,18 +93,20 @@
 
 尚未实现：
 
-- authoritative outcome 到 `Measurement` 的独立来源适配器；
 - request-space sampling proof 与 error-distribution cohort adapter；
 - 企业 root-policy/control-plane connector、跨区域传播 SLO 与 client/CA 撤销轮换认证、
   获授权的 production regional sidecar provider/candidate authority、
-  PostgreSQL 多进程/HA/网络分区认证、drift 自动降级、
-  outcome reconciliation 和工作台。
+  PostgreSQL 多进程/HA/网络分区认证、drift 自动降级、生产 outcome connector、
+  outcome observation durable inbox/reconciliation scheduler、fidelity-to-outcome
+  calibration correlation 和工作台。
 
 因此在 managed signer、Scenario authority 或 signed Shadow comparison authority 可用时，
 `mirrorDomainFidelityProjectionReady=true` 只表示系统能从已签名演练证据生成一份显式带
 abstention debt 的**部分 profile**。Shadow adapter ready 表示已提供的合法 comparison 可以
 独立验真和投影，不表示 Resource Gateway 已具备生产流量复制与 shadow job。请求空间覆盖和业务
-结果校准仍必须分别读取 typed adapter flag、source artifact 与 profile limitations。durable
+结果校准仍必须分别读取 typed adapter flag、source artifact 与 profile limitations。
+Outcome adapter 只有在宿主显式提供可用的独立业务 authority verifier 时才装配；默认部署不会把
+Resource Gateway 自己的 seal 当成业务真值，也不会自动连接客户数据库。durable
 job API/lifecycle/scheduler ready 也只表示控制面状态机可用；默认 governed data plane 已具备
 database guard、签名 authority 协议、current-head repository 和在线 adapter，但动态 trust
 policy provider、真实 connector、source verifier 与 comparison engine 仍为 fail-closed，因此保持
@@ -358,6 +368,60 @@ typed outcome 不能由 producer 随意填写：
 单请求 comparison 不得证明 `OUTCOME`、`REQUEST_SPACE` 或 `ERROR_DISTRIBUTION`。两边
 任一 exploratory、不完整或任一维度 indeterminate 时，投影内核会把来源降为 abstention。
 
+权威业务结果通过独立 source adapter 投影，不允许直接把 producer 给出的 pass/fail 当成
+`OUTCOME`：
+
+```java
+@Bean
+AuthoritativeOutcomeAuthorityVerifier outcomeAuthorityVerifier(
+        CustomerOutcomeAuthority authority) {
+    return new AuthoritativeOutcomeAuthorityVerifier() {
+        public boolean available() {
+            return authority.currentPolicyReady();
+        }
+
+        public void verify(AuthoritativeOutcomeObservation observation) {
+            authority.verifyExactAuthoritySetAndFacts(observation);
+        }
+    };
+}
+
+DomainFidelityProfile profile =
+        domainFidelityService.projectOutcomes(
+                inventoryRef,
+                signedOutcomeObservations,
+                authoritativeOutcomeDomainFidelitySource,
+                projectorIdentity);
+```
+
+宿主 verifier 必须通过客户治理的独立信任通道解析 exact `authoritySetRef`、全部成员 watermark
+和 source record，并验证 scope、撤销、时间与数据使用权限。Resource Gateway 会先重算协议语义和
+内容地址，再调用该 verifier，最后验证自身的 detached seal；签发时也按同一顺序执行。没有
+`AuthoritativeOutcomeAuthorityVerifier` bean 时，integrity/source bean 均不装配，
+`mirrorDomainFidelityOutcomeAdapterReady=false`。
+
+Observation 的结果由 closure 推导：
+
+| Reconciliation | 推导条件 | Profile 结果 |
+|---|---|---|
+| `PENDING` | 至少一个 authority watermark 尚未覆盖 attribution window close | `ABSTAINED / OUTCOME_PENDING` |
+| `CENSORED` | 所有 watermark 已关闭窗口，但没有可归因事实 | `ABSTAINED / OUTCOME_CENSORED` |
+| `CONFLICT` | 已关闭窗口内存在多个不同权威 outcome fingerprint | `ABSTAINED / OUTCOME_CONFLICTING` |
+| `MATCH` | 唯一权威 outcome 与模型 outcome 相同 | `PASS / ASSERTIONS_PASSED` |
+| `MISMATCH` | 唯一权威 outcome 与模型 outcome 不同 | `FAIL / ASSERTION_FAILED` |
+
+迟到事实按 `occurredAt` 归因，只要事件发生在 attribution window 内、`recordedAt` 不晚于
+reconciliation cut，便不会因摄取延迟被误删。跨 observation 批次还必须使用同一 cohort、
+sampling frame 和 `selectedAt` selection cut，同 stratum 的总体/样本量与 selection mode
+一致，sample ordinal 和 inclusion fingerprint 唯一。这样可以阻止已提交成员跨 cohort 或
+跨选择时点混装；`observationId` 在批内也必须唯一，不能跨 inventory unit 复用稳定身份。
+未提交成员不会被当成完整样本，而会因固定 inventory denominator 保留为 missing debt。
+生产环境仍需 durable inbox 与选中总体到齐证明，才能关闭“采集方只提交更好结果”的风险。
+
+`projectOutcomes` 是内部 Java 边界，没有 HTTP route。当前协议和投影内核已完成，客户级
+connector、observation inbox、延迟重算调度和 durable lineage repository 仍由后续纵切实现；
+在这些能力与真实 authority 未认证前，不得把 adapter-ready 描述为生产 outcome 已校准。
+
 当前 `projectShadow` 是内部 Java 投影边界，不接受调用方直接上传 comparison。durable
 queue/worker 已具备受保护的 job submit/read/request/comparison/lifecycle API、同事务 operation
 audit、append-only lifecycle audit、数据库时钟 claim/retry/expire、owner/epoch/expiry fence 和
@@ -550,7 +614,7 @@ cursor，`limit` 为 1..1000；调用方必须根据 `hasMore` 继续取页，�
 | `mirrorDomainFidelityProjectionReady` | route、signer 和至少一个 verified source adapter ready，可生成显式部分 profile |
 | `mirrorDomainFidelityScenarioAdapterReady` | Scenario aggregate/workbook/retention 验真链当前可用 |
 | `mirrorDomainFidelityShadowAdapterReady` | signed read-only comparison 可独立验真和投影；不代表生产 shadow job 已装配 |
-| `mirrorDomainFidelityOutcomeAdapterReady` | 当前为 `false`；不能宣称业务结果已校准 |
+| `mirrorDomainFidelityOutcomeAdapterReady` | 独立业务 authority verifier、RG signer 和 outcome source adapter 同时可用；默认 `false`，为 `true` 也只证明适配器可验真和投影，不证明客户 connector、持续摄取或校准结论已认证 |
 | `mirrorReadOnlyShadowJobApi` | protected submit/read/request/comparison/lifecycle route 已装配 |
 | `mirrorReadOnlyShadowSourceBindingApi` | detached source-pair register/exact-read route 与 v1/v2 request protocol 已装配 |
 | `mirrorReadOnlyShadowSourceBindingReady` | source-binding signer 与 repository 当前可用；不代表 baseline/candidate connector ready |
@@ -672,6 +736,49 @@ if (!result.verified()) {
 
 合法签名只证明某个 key 签过内容，不证明内容语义正确。因此 Test Kit 会拒绝“修改 Wilson 下界、
 延长 freshness、缩小分母后重新计算指纹并用合法 key 重签”的 profile。
+
+Outcome observation 还要关闭另一条独立业务信任链：
+
+```java
+AuthoritativeOutcomeObservationVerifier.VerificationResult outcome =
+        new AuthoritativeOutcomeObservationVerifier().verify(
+                observationJson,
+                resourceGatewayVerificationKey,
+                candidate -> customerAuthority.verify(candidate));
+
+if (!outcome.verified()) {
+    throw new IllegalStateException(outcome.reasonCode());
+}
+```
+
+Test Kit 先校验 strict Schema，独立推导 pending/censored/match/mismatch/conflict，检查
+pre-treatment selection、watermark/fact canonical closure、event-time attribution、内容地址和
+被内容地址绑定的 `attestedAt`；随后先验本地 Resource Gateway seal，再调用消费者提供的
+`AuthorityClosureVerifier`，避免无效输入放大客户账本流量。key lifecycle 与未来时间策略只信
+签名覆盖的 `attestedAt`，seal 内未被签名覆盖的 `signedAt` 只允许作为邻近一致性字段。callback
+缺失会返回
+`AUTHORITY_UNAVAILABLE`，不会把 RG 签名提升为业务权威。返回结果只含
+observation/unit/reconciliation/key 坐标，不含 subject、attribution key 或 source fact。
+所有时间字段还必须使用 producer 的 canonical `Instant.toString()` 编码；语义等价但字节不同的
+offset 表示会失败关闭，避免服务端规范化后与独立 verifier 得出不同内容地址。authority 或 key
+在批中掉线返回 `RG.MIRROR.FIDELITY.OUTCOME_SOURCE_UNAVAILABLE`，不会把可重试依赖故障误报为
+证据冲突。
+
+升级 JSON/JDK/crypto provider 时还必须运行服务端真实生成的 public-only 固定向量：
+
+```java
+AuthoritativeOutcomeObservationCompatibilityFixture fixture =
+        CapabilityMirrorProtocol
+                .authoritativeOutcomeObservationCompatibilityFixture();
+if (!fixture.verify().verified()) {
+    throw new IllegalStateException(
+            "authoritative outcome wire drift");
+}
+```
+
+它关闭服务端与 Test Kit 的 canonical JSON、reconciliation、签名域和可信时间差异，包括阻止
+可改写的 detached-seal 时间冒充签名时间。fixture 内部的 `ignored -> true` 只用于 bounded wire
+compatibility，不证明客户 authority；实时消费仍必须使用前述 customer-governed callback。
 
 Shadow comparison 使用独立 verifier：
 
@@ -854,6 +961,7 @@ code，不输出 Scenario fixture、请求、响应或原始诊断。
 - [`domain-fidelity-inventory-v1.schema.json`](schemas/resource-gateway-mirror/domain-fidelity-inventory-v1.schema.json)
 - [`domain-fidelity-inventory-registration-request-v1.schema.json`](schemas/resource-gateway-mirror/domain-fidelity-inventory-registration-request-v1.schema.json)
 - [`domain-fidelity-profile-v1.schema.json`](schemas/resource-gateway-mirror/domain-fidelity-profile-v1.schema.json)
+- [`authoritative-outcome-observation-v1.schema.json`](schemas/resource-gateway-mirror/authoritative-outcome-observation-v1.schema.json)
 - [`read-only-shadow-comparison-v1.schema.json`](schemas/resource-gateway-mirror/read-only-shadow-comparison-v1.schema.json)
 - [`read-only-shadow-comparison-v2.schema.json`](schemas/resource-gateway-mirror/read-only-shadow-comparison-v2.schema.json)
 - [`read-only-shadow-comparison-v3.schema.json`](schemas/resource-gateway-mirror/read-only-shadow-comparison-v3.schema.json)
@@ -877,6 +985,8 @@ Test Kit 公共资源常量：
 CapabilityMirrorProtocol.DOMAIN_FIDELITY_INVENTORY_SCHEMA_RESOURCE
 CapabilityMirrorProtocol.DOMAIN_FIDELITY_INVENTORY_REGISTRATION_SCHEMA_RESOURCE
 CapabilityMirrorProtocol.DOMAIN_FIDELITY_PROFILE_SCHEMA_RESOURCE
+CapabilityMirrorProtocol.AUTHORITATIVE_OUTCOME_OBSERVATION_SCHEMA_RESOURCE
+CapabilityMirrorProtocol.AUTHORITATIVE_OUTCOME_OBSERVATION_FIXTURE_RESOURCE
 CapabilityMirrorProtocol.READ_ONLY_SHADOW_COMPARISON_SCHEMA_RESOURCE
 CapabilityMirrorProtocol.READ_ONLY_SHADOW_COMPARISON_V2_SCHEMA_RESOURCE
 CapabilityMirrorProtocol.READ_ONLY_SHADOW_COMPARISON_V3_SCHEMA_RESOURCE
@@ -908,6 +1018,10 @@ Schema 使用 `additionalProperties: false`。profile 不允许业务 payload、
 | detached request 没有 exact source binding、模式/版本混用或引用指纹漂移 | strict decoder / source-binding verifier 拒绝 |
 | source binding 的 nested baseline/outer address、candidate bundle、scope/plan/target/request/time 任一漂移 | 服务端与 Test Kit 都拒绝 |
 | Shadow MATCH 与 fact fingerprint 不一致或 diff type 跨维度 | 服务端与 Test Kit 都拒绝 |
+| Outcome reconciliation 与 watermark/fact closure 不一致 | 服务端与 Test Kit 都拒绝，合法重签也不能通过 |
+| Outcome authority verifier 缺失或不可用 | adapter 不装配或 `AUTHORITY_UNAVAILABLE`，不能只验 RG seal |
+| Outcome 选择发生在 action 之后，或 cohort/stratum/sample position 冲突 | 拒绝整次来源投影 |
+| Outcome window 未关闭、关闭后无事实或多 authority 冲突 | 分别保留 `OUTCOME_PENDING/CENSORED/CONFLICTING` abstention debt |
 | Shadow comparison 仅覆盖部分 inventory | 保留完整分母，遗漏 unit 为 `MISSING` |
 | Shadow API purpose/scope 不符 | 认证后返回 forbidden/not found，不触发 repository lookup 泄漏 |
 | 相同 grant ordinal 被不同 request 占用 | admission conflict；不会重复采样 |
@@ -972,10 +1086,12 @@ public-only fixture、v1/v2 proof
    认证 claim/lease/guard/connector 的组合语义；现有 child-JVM provider 已证明协议、角色
    私有信任域和一次 committed-response-loss 恢复，但仍是固定 command、本地状态的测试夹具。
 3. 把 signed typed diff 接入 drift budget，自动 stale/downgrade/revoke serving conclusion。
-4. 实现 authoritative outcome observation 与 delayed/censored reconciliation。
+4. 为 outcome observation 增加客户级 connector、durable inbox、watermark 驱动的重算调度、
+   append-only revision lineage 和 fidelity-to-outcome calibration correlation；现有 typed
+   protocol、delayed/censored reconciliation、cohort closure 与 source adapter 作为内核复用。
 5. 为 `ERROR_DISTRIBUTION` 和 `REQUEST_SPACE` 增加 cohort/sampling proof，而不是借用单次
    Scenario PASS。
 6. 把 profile limitations/stale/debt 接入 ANEKE gate 与 Owner workbench。
 
-在真实 data-plane connector 与 outcome 未完成前，不能把 queue、API、scheduler 或 adapter
-readiness 描述为“已接入生产流量”或“业务结果已校准”。
+在真实 data-plane connector、客户 outcome connector 和持续 reconciliation 未认证前，不能把
+queue、API、scheduler 或 adapter readiness 描述为“已接入生产流量”或“业务结果已校准”。
