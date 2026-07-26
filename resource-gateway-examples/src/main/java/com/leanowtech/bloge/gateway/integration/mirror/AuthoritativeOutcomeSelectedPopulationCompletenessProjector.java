@@ -1,7 +1,6 @@
 package com.leanowtech.bloge.gateway.integration.mirror;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
-import com.leanowtech.bloge.gateway.testing.evidence.ProtocolFingerprint;
 import com.leanowtech.bloge.gateway.visual.runtime.VisualEvidenceSigner;
 import com.leanowtech.bloge.gateway.visual.runtime.VisualRunEvidenceSeal;
 
@@ -29,8 +28,6 @@ import java.util.Set;
  */
 public final class
 AuthoritativeOutcomeSelectedPopulationCompletenessProjector {
-    private static final int MAXIMUM_SOURCE_SET_BYTES =
-            32 * 1024 * 1024;
     private static final Duration MAXIMUM_CLOCK_SKEW =
             Duration.ofMinutes(2);
 
@@ -158,34 +155,46 @@ AuthoritativeOutcomeSelectedPopulationCompletenessProjector {
             throw new Violation(
                     Reason.OBSERVATION_DISPOSITION_CONFLICT);
         }
-        List<SourceEntry> observationEntries =
+        List<AuthoritativeOutcomeSelectedPopulationSourceSet
+                .Entry> observationEntries =
                 observed.values().stream()
                         .sorted(java.util.Comparator
                                 .comparingLong(
                                         ObservationCoordinate
                                                 ::globalOrdinal))
-                        .map(value -> new SourceEntry(
+                        .map(value -> new
+                                AuthoritativeOutcomeSelectedPopulationSourceSet
+                                        .Entry(
                                 value.globalOrdinal(),
                                 value.reference()))
                         .toList();
-        List<SourceEntry> dispositionEntries =
+        List<AuthoritativeOutcomeSelectedPopulationSourceSet
+                .Entry> dispositionEntries =
                 disposed.values().stream()
                         .sorted(java.util.Comparator
                                 .comparingLong(
                                         DispositionCoordinate
                                                 ::globalOrdinal))
-                        .map(value -> new SourceEntry(
+                        .map(value -> new
+                                AuthoritativeOutcomeSelectedPopulationSourceSet
+                                        .Entry(
                                 value.globalOrdinal(),
                                 value.reference()))
                         .toList();
         String observationSetFingerprint =
-                sourceSetFingerprint(
-                        "RESOURCE_GATEWAY_AUTHORITATIVE_OUTCOME_CURRENT_HEAD_SET_V1",
+                AuthoritativeOutcomeSelectedPopulationSourceSet
+                        .fingerprint(
+                        mapper,
+                        AuthoritativeOutcomeSelectedPopulationSourceSet
+                                .OBSERVATION_DOMAIN,
                         population.artifactRef(),
                         observationEntries);
         String dispositionSetFingerprint =
-                sourceSetFingerprint(
-                        "RESOURCE_GATEWAY_AUTHORITATIVE_OUTCOME_LEGAL_DISPOSITION_SET_V1",
+                AuthoritativeOutcomeSelectedPopulationSourceSet
+                        .fingerprint(
+                        mapper,
+                        AuthoritativeOutcomeSelectedPopulationSourceSet
+                                .DISPOSITION_DOMAIN,
                         population.artifactRef(),
                         dispositionEntries);
         Map<StratumKey, MutableCounts> counts =
@@ -569,19 +578,6 @@ AuthoritativeOutcomeSelectedPopulationCompletenessProjector {
         return Map.copyOf(result);
     }
 
-    private String sourceSetFingerprint(
-            String domain,
-            MirrorArtifactRef populationRef,
-            List<SourceEntry> entries) {
-        return ProtocolFingerprint.ofBounded(
-                mapper,
-                new SourceSet(
-                        domain,
-                        populationRef,
-                        entries),
-                MAXIMUM_SOURCE_SET_BYTES);
-    }
-
     private record StratumKey(
             String unitId,
             String stratumId
@@ -617,19 +613,6 @@ AuthoritativeOutcomeSelectedPopulationCompletenessProjector {
     }
 
     private record DispositionCoordinate(
-            long globalOrdinal,
-            MirrorArtifactRef reference
-    ) {
-    }
-
-    private record SourceSet(
-            String domain,
-            MirrorArtifactRef populationRef,
-            List<SourceEntry> entries
-    ) {
-    }
-
-    private record SourceEntry(
             long globalOrdinal,
             MirrorArtifactRef reference
     ) {

@@ -3382,6 +3382,52 @@ observation current heads 原子取 cut。下一纵切必须让 population、chu
 成为可恢复、可审计、可并发接入的产品边界，否则这套协议只能在进程内证明正确，不能阻止重启、
 跨实例竞态或读到混合时点的 observation set。
 
+### 3.54 2026-07-27 Selected-population durable core 与两阶段 cut
+
+3.53 的 projector 如果直接读取若干 repository 后立即签名，会产生经典的混合时点证据：读取第一个
+observation 后另一个 head 已推进，最终 assessment 既不对应旧时点，也不对应新时点。若为了避免竞态
+而在数据库事务内访问客户 selection/outcome/deletion authority，又会把外部网络延迟带进连接池和行锁，
+形成级联拥塞。两者都不是工业解法。
+
+本轮实现 `DatabaseAuthoritativeOutcomeSelectedPopulationRepository` 与
+`AuthoritativeOutcomeSelectedPopulationService`，采用短事务的 optimistic two-phase cut：
+
+1. population、disposition 和 outcome inbox 共用 `mirror_outcome_inbox_locks` 的
+   region/environment partition row；事务内读取 exact population revision、匹配的 current
+   observation heads 和 current legal-disposition heads，生成 member-ordinal ordered source-set
+   fingerprint 后立即释放锁；
+2. 事务外重做 selection authority、business outcome authority、deletion authority、canonical
+   address、RG seal 和 signing-time 验证，并投影、签发 completeness assessment；
+3. commit 事务重新锁住同一 partition，重读 current source set。任一 observation/disposition head
+   推进都会返回稳定 `CUT_STALE`；服务最多完整重试四次，不能在持续写入下无限占用请求线程；
+4. 只有 exact population ref、observation/disposition set fingerprints 与签名 assessment 全部一致
+   才 append assessment。外部 authority I/O 不在事务中，数据库仍能证明 assessment 对应一个真实
+   coherent cut。
+
+持久化模型包含 append-only population roots、content-addressed chunks、逐成员唯一索引、
+population current head、append-only legal dispositions、每成员唯一 disposition head、
+append-only assessments 和 assessment current head。revision 1 只允许空 predecessor；successor
+必须是 `current + 1` 并提供 exact current fingerprint；同 revision、同正文、同 predecessor 才是
+幂等 replay，其他情况稳定冲突。读取会同时复验 JSON、协议、签名和所有 duplicated indexes；
+head 已存在但历史丢失、member index 漂移或 head fingerprint 不一致一律
+`STORED_STATE_CORRUPT`，不能伪装成 not found。
+
+同一 population revision 内，unit/stratum/sample position、inclusion 和 attribution identity 在
+数据库都有唯一约束；同一成员只能有一个 current legal disposition。assessment cut 只接纳 exact
+inventory/cohort/frame/selection cut/stratum denominator/member fingerprints 匹配的 current
+observation，坐标交叉复用、同成员多 observation 或 observation/disposition 重叠都失败关闭。
+
+H2 真实事务测试覆盖并发首次 population admission（一个 create、一个 exact replay）、重启读取、
+chunk/member index 闭包、current observation/disposition 聚合、assessment 持久化、cut 后并发 arrival
+拒绝、authority 校验期间并发 arrival 的 bounded retry、同成员双删除证明以及 member/assessment
+篡改，共 `7/7` 通过；协议与 projector 聚焦门禁合计 `20/20` 通过。
+
+本节仍不调整成熟度分。当前 repository 尚未形成受保护 HTTP API、auth-before-decode transport、
+strict JSON Schema、Test Kit 离线 verifier、Spring 条件装配和细粒度 readiness；也没有
+PostgreSQL 双连接/双实例认证、分块 staged upload/finalize、大总体流式投影、assessment lifecycle
+event 或 scheduler。当前实现证明了事务语义和证据 cut，不等于已形成可由客户 connector 和 ANEKE
+安全消费的产品边界。
+
 ## 4. 目标架构与系统责任
 
 ![Resource Gateway 业务能力镜像目标架构](assets/resource-gateway-capability-mirror-target-architecture.svg)
