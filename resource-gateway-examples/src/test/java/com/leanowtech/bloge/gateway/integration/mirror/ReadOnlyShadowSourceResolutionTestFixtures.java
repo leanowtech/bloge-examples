@@ -52,6 +52,45 @@ final class ReadOnlyShadowSourceResolutionTestFixtures {
                 VisualRunEvidenceSeal.unsigned());
     }
 
+    static ReadOnlyShadowSourceResolutionAttestation unsignedOnline(
+            MirrorArtifactRef policyRef) {
+        return new ReadOnlyShadowSourceResolutionAttestation(
+                ReadOnlyShadowSourceResolutionAttestation
+                        .ONLINE_SCHEMA_VERSION,
+                "",
+                "source-resolution-online-test",
+                1,
+                ReadOnlyShadowJobTestFixtures.scope("support"),
+                "online-job",
+                "online-execution",
+                ReadOnlyShadowJobRequest.SourceMode
+                        .ONLINE_EXECUTION,
+                null,
+                fingerprint('a'),
+                fingerprint('b'),
+                policyRef,
+                fingerprint('2'),
+                fingerprint('3'),
+                NOW,
+                NOW.plusSeconds(3),
+                resolution(
+                        ReadOnlyShadowComparison.SourceRole.BASELINE,
+                        "SHADOW_BASELINE_OBSERVATION",
+                        "online-pair:baseline",
+                        '4',
+                        NOW.plusSeconds(1),
+                        NOW.plusSeconds(4)),
+                resolution(
+                        ReadOnlyShadowComparison.SourceRole.CANDIDATE,
+                        "MIRROR_EVIDENCE_BUNDLE",
+                        "online-candidate-run",
+                        '5',
+                        NOW.plusSeconds(2),
+                        NOW.plusSeconds(4)),
+                NOW.plusSeconds(4),
+                VisualRunEvidenceSeal.unsigned());
+    }
+
     static ReadOnlyShadowSourceResolutionAttestation.SourceResolution
     resolution(
             ReadOnlyShadowComparison.SourceRole role,

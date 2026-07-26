@@ -49,6 +49,12 @@
 - same-input online candidate command/SPI/connector、独立 online paired-source
   exact-read resolver、v2 signed proof、完整动态 readiness，以及显式非生产的 bounded
   synthetic regional certification provider；
+- v1/v2 source-resolution 共用的 append-only 数据库仓储：旧 v1 表原位补充
+  `source_mode` 与双 command fingerprint 索引，v1 签名 JSON 不重写，v2 无 detached binding
+  也可落库，读取时逐索引对账；
+- synthetic online composition 已接入真实 durable v1 job worker 与 H2 job/proof/comparison/
+  lifecycle 仓储，认证 transient exact-read retry、逐边界 heartbeat、进程崩溃后的 lease
+  expiry/takeover、稳定 execution identity、单次 candidate 物理构造和最终 v2 proof 闭包；
 - full-scope database current-head repository、动态 key/revocation lookup、无正向缓存的
   sampling/kill-switch adapter，以及不依赖 server/Spring 的 Test Kit 独立 current-head verifier；
 - root-threshold-signed Shadow authority key-set、完整 scope/kind/issuer binding、单调
@@ -72,7 +78,7 @@
 - request-space sampling proof 与 error-distribution cohort adapter；
 - 企业 root-policy/control-plane connector、跨区域传播 SLO 与轮换认证、
   获授权的 production regional sidecar provider/candidate authority、
-  drift 自动降级、
+  durable worker 跨进程复合固定 fixture、PostgreSQL 多副本/网络分区认证、drift 自动降级、
   outcome reconciliation 和工作台。
 
 因此在 managed signer、Scenario authority 或 signed Shadow comparison authority 可用时，
@@ -882,6 +888,10 @@ Schema 使用 `additionalProperties: false`。profile 不允许业务 payload、
     uniqueness、claim、retry、deadline 与 fencing 始终由数据库权威决定。
 11. source binding 以完整 scope、binding id、revision 为 append-only 主键；读取重算两层内容地址、
     复验签名和重复索引，且只接受 exact content-address reference。
+12. source-resolution v1/v2 共用完整 scope、attestation id/revision 主键；v1 使用
+    `source_binding_fingerprint`，v2 使用 `source_mode + baseline/candidate command
+    fingerprint`，不适用索引固定为空串。旧表只补列、不重写签名 JSON；任何重复索引漂移都使读取
+    失败关闭。
 
 ## 10. 下一实施纵切
 
@@ -894,19 +904,24 @@ job request、exact detached source-binding repository/API、真实 detached con
 resolver、signed source-resolution proof API、独立 Test Kit verifier 与三 authority 跨产物固定签名
 fixture，以及 regional TEE online-baseline consumer、动态 readiness、独立 observation verifier
 与 public-only 固定签名 fixture、same-input candidate、online paired-source v2 resolver、
-synthetic regional certification provider 和第二份三 authority public-only fixture 已完成。
+synthetic regional certification provider、第二份三 authority public-only fixture、v1/v2 proof
+数据库兼容迁移，以及 synthetic composition 到真实 durable worker 的 retry/crash/takeover
+认证已完成。
 下一步按来源信任依赖推进：
 
-1. 接入企业 root-policy/control-plane connector，并认证 authority successor/revocation 的
+1. 导出一份 server-produced、public-only 的 durable online worker 复合固定 fixture，让 Test Kit
+   在单次门禁中联合验证 request/job/comparison/lifecycle、两份 source artifact 和 v2 proof，
+   关闭当前“服务端组合已认证但跨进程 consumer 仍需拼接”的缺口。
+2. 接入企业 root-policy/control-plane connector，并认证 authority successor/revocation 的
    跨区域传播时限、outage 和 rolling rotation。
-2. 把已认证的 synthetic composition 接到一条 durable v1 worker job，并交付第一个获授权的
-   networked regional sidecar provider、payload-isolated production read binding 与 production
-   candidate authority；现有 in-process provider 只证明协议和执行闭包，不得误报为生产采样。
-3. 把 signed typed diff 接入 drift budget，自动 stale/downgrade/revoke serving conclusion。
-4. 实现 authoritative outcome observation 与 delayed/censored reconciliation。
-5. 为 `ERROR_DISTRIBUTION` 和 `REQUEST_SPACE` 增加 cohort/sampling proof，而不是借用单次
+3. 交付第一个获授权的 networked regional sidecar provider、payload-isolated production read
+   binding 与 production candidate authority，并在 PostgreSQL 多副本、网络分区和滚动重启中
+   认证 claim/lease/guard/connector 的组合语义；现有 in-process provider 只证明协议和执行闭包。
+4. 把 signed typed diff 接入 drift budget，自动 stale/downgrade/revoke serving conclusion。
+5. 实现 authoritative outcome observation 与 delayed/censored reconciliation。
+6. 为 `ERROR_DISTRIBUTION` 和 `REQUEST_SPACE` 增加 cohort/sampling proof，而不是借用单次
    Scenario PASS。
-6. 把 profile limitations/stale/debt 接入 ANEKE gate 与 Owner workbench。
+7. 把 profile limitations/stale/debt 接入 ANEKE gate 与 Owner workbench。
 
 在真实 data-plane connector 与 outcome 未完成前，不能把 queue、API、scheduler 或 adapter
 readiness 描述为“已接入生产流量”或“业务结果已校准”。

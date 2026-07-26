@@ -825,6 +825,28 @@ atomic idempotency under concurrent retries. It is never auto-configured and is
 not a payload vault, network sidecar, production read binding, or production
 candidate authority.
 
+The v2 proof is persisted by the same append-only source-resolution repository
+used by detached v1 evidence. Fresh tables index `source_mode` and both online
+command fingerprints; startup adds those columns with empty legacy defaults
+when it encounters the previous v1 table shape. V1 rows retain their exact
+signed JSON and detached-binding index. Online v2 rows keep that legacy index
+empty and instead require all three new indexes to match the signed document on
+every read. Index drift, including a validly signed JSON paired with an altered
+command index, fails closed.
+
+The certification suite also drives this composition through the real H2
+durable job, proof, comparison, and lifecycle repositories. One case injects a
+transient post-confirmation exact-read outage and observes
+`RETRY_SCHEDULED -> CLAIMED -> SUCCEEDED`; the provider reuses the same
+baseline/candidate artifacts and invokes the candidate factory once. A second
+case terminates the first worker after the data plane has produced its v2 proof
+but before terminal job commit. The old lease remains `RUNNING`; only after its
+database deadline can a new owner and higher epoch emit `TAKEN_OVER`, rerun the
+same execution identity, reuse the one append-only proof, and atomically commit
+the final comparison plus `SUCCEEDED` lifecycle head. This certifies the
+in-process reference path. It does not certify PostgreSQL multi-replica
+partitions, a networked regional sidecar, KMS/HSM, or production data use.
+
 `GET /api/integration/capabilities` reports the online-baseline boundary as
 separate facts:
 

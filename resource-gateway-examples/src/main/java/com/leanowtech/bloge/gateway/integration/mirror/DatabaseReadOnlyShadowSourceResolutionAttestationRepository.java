@@ -16,6 +16,11 @@ import java.util.Optional;
  *
  * <p>Every read verifies signed JSON and every redundant index. The table contains no business
  * payload, credential, endpoint, exception, or free-form text.</p>
+ *
+ * <p>Detached v1 rows index an exact source-binding fingerprint and leave online coordinates
+ * blank. Online v2 rows keep that legacy non-null column blank and instead index source mode plus
+ * both command fingerprints. Idempotent startup migration adds those v2 columns with blank
+ * defaults, preserving historical v1 JSON and signatures.</p>
  */
 public class DatabaseReadOnlyShadowSourceResolutionAttestationRepository
         implements ReadOnlyShadowSourceResolutionAttestationRepository {
@@ -30,6 +35,9 @@ public class DatabaseReadOnlyShadowSourceResolutionAttestationRepository
                 attestation_revision BIGINT NOT NULL,
                 attestation_fingerprint VARCHAR(71) NOT NULL,
                 source_binding_fingerprint VARCHAR(71) NOT NULL,
+                source_mode VARCHAR(64) NOT NULL,
+                baseline_command_fingerprint VARCHAR(71) NOT NULL,
+                candidate_command_fingerprint VARCHAR(71) NOT NULL,
                 baseline_source_fingerprint VARCHAR(71) NOT NULL,
                 candidate_source_fingerprint VARCHAR(71) NOT NULL,
                 admission_fingerprint VARCHAR(71) NOT NULL,
@@ -41,18 +49,34 @@ public class DatabaseReadOnlyShadowSourceResolutionAttestationRepository
                 )
             )
             """;
+    private static final String ADD_SOURCE_MODE = """
+            ALTER TABLE read_only_shadow_source_resolution_attestation
+            ADD COLUMN IF NOT EXISTS source_mode VARCHAR(64) NOT NULL DEFAULT ''
+            """;
+    private static final String ADD_BASELINE_COMMAND_FINGERPRINT = """
+            ALTER TABLE read_only_shadow_source_resolution_attestation
+            ADD COLUMN IF NOT EXISTS baseline_command_fingerprint VARCHAR(71) NOT NULL DEFAULT ''
+            """;
+    private static final String ADD_CANDIDATE_COMMAND_FINGERPRINT = """
+            ALTER TABLE read_only_shadow_source_resolution_attestation
+            ADD COLUMN IF NOT EXISTS candidate_command_fingerprint VARCHAR(71) NOT NULL DEFAULT ''
+            """;
     private static final String INSERT = """
             INSERT INTO read_only_shadow_source_resolution_attestation (
                 tenant_id, organization_id, project_id, environment_id, region,
                 attestation_id, attestation_revision, attestation_fingerprint,
-                source_binding_fingerprint, baseline_source_fingerprint,
+                source_binding_fingerprint, source_mode,
+                baseline_command_fingerprint, candidate_command_fingerprint,
+                baseline_source_fingerprint,
                 candidate_source_fingerprint, admission_fingerprint,
                 schema_version, attestation_json
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """;
     private static final String SELECT_EXACT = """
             SELECT attestation_id, attestation_revision,
                    attestation_fingerprint, source_binding_fingerprint,
+                   source_mode, baseline_command_fingerprint,
+                   candidate_command_fingerprint,
                    baseline_source_fingerprint, candidate_source_fingerprint,
                    admission_fingerprint, schema_version, attestation_json
             FROM read_only_shadow_source_resolution_attestation
@@ -88,6 +112,9 @@ public class DatabaseReadOnlyShadowSourceResolutionAttestationRepository
     @PostConstruct
     void init() {
         jdbc.execute(CREATE_TABLE);
+        jdbc.execute(ADD_SOURCE_MODE);
+        jdbc.execute(ADD_BASELINE_COMMAND_FINGERPRINT);
+        jdbc.execute(ADD_CANDIDATE_COMMAND_FINGERPRINT);
     }
 
     @Override
@@ -119,7 +146,10 @@ public class DatabaseReadOnlyShadowSourceResolutionAttestationRepository
                     exact.attestationId(),
                     exact.revision(),
                     exact.attestationFingerprint(),
-                    exact.sourceBindingRef().fingerprint(),
+                    sourceBindingFingerprint(exact),
+                    sourceMode(exact),
+                    exact.baselineCommandFingerprint(),
+                    exact.candidateCommandFingerprint(),
                     exact.baseline().artifactRef().fingerprint(),
                     exact.candidate().artifactRef().fingerprint(),
                     exact.admissionFingerprint(),
@@ -164,6 +194,12 @@ public class DatabaseReadOnlyShadowSourceResolutionAttestationRepository
                                 result.getString(
                                         "source_binding_fingerprint"),
                                 result.getString(
+                                        "source_mode"),
+                                result.getString(
+                                        "baseline_command_fingerprint"),
+                                result.getString(
+                                        "candidate_command_fingerprint"),
+                                result.getString(
                                         "baseline_source_fingerprint"),
                                 result.getString(
                                         "candidate_source_fingerprint"),
@@ -188,6 +224,9 @@ public class DatabaseReadOnlyShadowSourceResolutionAttestationRepository
             long revision,
             String attestationFingerprint,
             String sourceBindingFingerprint,
+            String sourceMode,
+            String baselineCommandFingerprint,
+            String candidateCommandFingerprint,
             String baselineFingerprint,
             String candidateFingerprint,
             String admissionFingerprint,
@@ -206,8 +245,13 @@ public class DatabaseReadOnlyShadowSourceResolutionAttestationRepository
                     || !attestationFingerprint.equals(
                     attestation.attestationFingerprint())
                     || !sourceBindingFingerprint.equals(
-                    attestation.sourceBindingRef()
-                            .fingerprint())
+                    sourceBindingFingerprint(attestation))
+                    || !sourceMode.equals(
+                    sourceMode(attestation))
+                    || !baselineCommandFingerprint.equals(
+                    attestation.baselineCommandFingerprint())
+                    || !candidateCommandFingerprint.equals(
+                    attestation.candidateCommandFingerprint())
                     || !baselineFingerprint.equals(
                     attestation.baseline()
                             .artifactRef().fingerprint())
@@ -253,6 +297,21 @@ public class DatabaseReadOnlyShadowSourceResolutionAttestationRepository
         }
         throw new IllegalArgumentException(
                 "source-resolution revision already contains different content");
+    }
+
+    private static String sourceBindingFingerprint(
+            ReadOnlyShadowSourceResolutionAttestation attestation) {
+        return attestation.sourceBindingRef() == null
+                ? ""
+                : attestation.sourceBindingRef()
+                .fingerprint();
+    }
+
+    private static String sourceMode(
+            ReadOnlyShadowSourceResolutionAttestation attestation) {
+        return attestation.sourceMode() == null
+                ? ""
+                : attestation.sourceMode().name();
     }
 
     private static String required(
