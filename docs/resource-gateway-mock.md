@@ -2558,6 +2558,67 @@ revocation certification。随后才能把 typed diff 接入 drift budget，再�
 引用边界、超时/取消语义和 fail-closed readiness 必须同时进入协议、运行时与证据。企业 root-policy
 connector 和 PostgreSQL 多副本/网络分区/key rotation certification 作为并行生产认证支线推进。
 
+### 3.39 2026-07-26 Regional TEE online baseline adapter 差距复评
+
+本轮把 3.38 仍为抽象接口的“真实在线 baseline”推进成可接 regional TEE sidecar 的最小工业纵切。
+边界选择不是让 Resource Gateway 持有客户请求和生产凭据，而是把数据流反转到地域内 sidecar：
+Resource Gateway 只发送 immutable refs、authority coordinates、idempotency identity 和 deadline；
+sidecar 在自己的 payload vault、生产 binding 和短期 workload identity 边界内解析并执行。
+
+已闭合的能力：
+
+- `OnlineReadOnlyShadowBaselineCommand.v1` 在类型和 strict Schema 上没有 endpoint、credential、
+  request/response payload 或 free-text error 字段；`executionId` 同时成为 source idempotency identity；
+- `OnlineReadOnlyShadowBaselineObservation.v1` 是确定性 identity、content address 和独立 Ed25519
+  authority seal 闭合的 immutable artifact，携带 exact command/binding/grant/egress/kill-switch、
+  read-only identity/transport attestation、opaque payload-vault receipt、response Schema、hash-only
+  source I/O、normalized facts 和 measured write counters；
+- observation authority 不再继承 Resource Gateway 的通用 signer 类型。真实 Spring 组合测试曾因此
+  暴露全局 signer 二义性，本轮从类型系统根治了跨 authority 误注入；
+- strict HTTP authority 强制 private trust、SPKI pin、mTLS、certificate identity binding、no redirect、
+  exact vendor media/protocol header、动态授权 header、duplicate/unknown/trailing JSON 拒绝和前置 body
+  bound；POST timeout 取本地上限与 durable deadline 的较早值；
+- live capability 最多有效 5 分钟，payload isolation、read-only identity、idempotency、vault receipt、
+  write-credential prohibition、exact artifact read 任一不成立即 `ready=false`；
+- online connector 重验 signature/content address/deterministic id 和所有 command coordinates。
+  sidecar 报告写凭据或写尝试时不擦除事实，而交给既有 governed data plane 以稳定零写 reason 失败；
+- detached 与 online-baseline 开关启动期互斥；缺 transport、dynamic auth 或独立 evidence authority
+  时不安装真实 connector；candidate 仍 unavailable，因此整条 online data plane 不误绿；
+- 三份 strict Schema 已纳入 Test Kit 的 157 个 Mirror 资源、validator 白名单和公共 URI 常量。
+
+测试不只覆盖 happy path。14 条协议/HTTP/connector 测试验证 mutation、wrong authority、invalid
+identity、command drift、deadline、write measurement、stale/incomplete capability、protocol downgrade、
+unknown payload field、oversize、redirect、unpinned transport；另有属性和真实 Spring context 测试验证
+资源上限、模式互斥、角色隔离与 fail-closed 装配。真实 socket 测试对同一 command 连续 POST 两次并按
+完整 scope/content-address 回读，证明客户端不会改变幂等 identity 或做 latest inference。
+
+本轮最终门禁：
+
+- Resource Gateway `-Pfrontend clean verify` 通过，共 `5405` 个测试，失败/错误/跳过均为 `0`；
+- 其中 `VisualAuthoringBrowserDomTest` 在真实 Chrome 中执行 `36` 个场景，失败/错误/跳过均为 `0`；
+- Test Kit `clean verify` 通过，共 `451` 个测试，失败/错误/跳过均为 `0`，JavaDoc/doclint、普通 JAR
+  与 shaded CLI JAR 均完成；
+- 普通 Test Kit JAR 内含 `157` 个 Mirror 协议资源文件，三份 online baseline Schema 已通过打包校验。
+
+本轮仍没有完成：
+
+1. regional sidecar 本身的参考实现、payload vault/production binding/workload identity provider 认证；
+2. online candidate connector 和 online paired-source re-resolution，因此 worker/serving readiness 仍关闭；
+3. `/api/integration/capabilities` 中独立的 online-baseline readiness 投影；
+4. Test Kit 对 online observation 的独立 content-address/signature verifier 与 public-only 固定 fixture；
+5. cancel 传播、服务端 idempotency conflict 语义、跨区域 failover、certificate/key rotation 和真实
+   PostgreSQL 多副本 shared guard certification。
+
+因此本轮只把 `Fidelity/Outcome` 从 `85%` 上调到 `88%`。按固定 `24%` 权重，加权贡献从
+`20.40` 提高到 `21.12`，总分从 `87.76%` 提高到 `88.48%`，距理想态 `11.52%`。这 3% 计入
+“online baseline consumer 已协议化、证据化、严格传输化和可装配”，不计入 sidecar provider、
+paired online execution、跨语言认证或生产环境认证。
+
+下一轮最短主线先增加公共 online-baseline capability 投影和独立 Test Kit verifier/固定签名 fixture，
+消除“连接状态不可见”和 producer-only crypto 自证；随后实现 online candidate 与 paired-source resolver，
+才能让一次 v1 online job 在 synthetic sidecar certification profile 中端到端成功。企业 root-policy
+connector、真实证书轮换和 PostgreSQL 多副本故障矩阵继续作为并行生产认证支线。
+
 ## 4. 目标架构与系统责任
 
 ![Resource Gateway 业务能力镜像目标架构](assets/resource-gateway-capability-mirror-target-architecture.svg)

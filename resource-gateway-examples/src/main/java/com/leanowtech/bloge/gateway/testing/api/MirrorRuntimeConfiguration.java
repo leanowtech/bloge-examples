@@ -147,6 +147,12 @@ import com.leanowtech.bloge.gateway.integration.mirror.ReadOnlyShadowSourceResol
 import com.leanowtech.bloge.gateway.integration.mirror.DetachedReadOnlyShadowBaselineConnector;
 import com.leanowtech.bloge.gateway.integration.mirror.DetachedReadOnlyShadowCandidateConnector;
 import com.leanowtech.bloge.gateway.integration.mirror.DetachedReadOnlyShadowSourceResolutionVerifier;
+import com.leanowtech.bloge.gateway.integration.mirror.HttpOnlineReadOnlyShadowBaselineAuthority;
+import com.leanowtech.bloge.gateway.integration.mirror.OnlineReadOnlyShadowBaselineAuthority;
+import com.leanowtech.bloge.gateway.integration.mirror.OnlineReadOnlyShadowBaselineConnector;
+import com.leanowtech.bloge.gateway.integration.mirror.OnlineReadOnlyShadowBaselineEvidenceAuthority;
+import com.leanowtech.bloge.gateway.integration.mirror.OnlineReadOnlyShadowBaselineObservationIntegrity;
+import com.leanowtech.bloge.gateway.integration.mirror.OnlineReadOnlyShadowBaselineTransport;
 import com.leanowtech.bloge.gateway.integration.mirror.PayloadFreeEqualityReadOnlyShadowPolicy;
 import com.leanowtech.bloge.gateway.integration.mirror.ComposedReadOnlyShadowAccessAuthority;
 import com.leanowtech.bloge.gateway.integration.mirror.GovernedReadOnlyShadowDataPlane;
@@ -179,6 +185,7 @@ import org.springframework.boot.context.properties.EnableConfigurationProperties
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.context.annotation.Profile;
+import org.springframework.core.env.Environment;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.transaction.PlatformTransactionManager;
 
@@ -204,7 +211,8 @@ import java.time.Clock;
         ScenarioRehearsalBatchSchedulerProperties.class,
         ScenarioRehearsalBatchFinalizationSchedulerProperties.class,
         ScenarioRehearsalBatchFinalizationSloProperties.class,
-        ReadOnlyShadowJobSchedulerProperties.class
+        ReadOnlyShadowJobSchedulerProperties.class,
+        OnlineReadOnlyShadowBaselineProperties.class
 })
 public class MirrorRuntimeConfiguration {
 
@@ -1656,6 +1664,116 @@ public class MirrorRuntimeConfiguration {
                 objectMapper);
     }
 
+    @Bean
+    ReadOnlyShadowDataPlaneModeSelection
+    readOnlyShadowDataPlaneModeSelection(
+            OnlineReadOnlyShadowBaselineProperties online,
+            Environment environment) {
+        boolean detached = environment.getProperty(
+                "gateway.testing.mirror.read-only-shadow.detached-data-plane.enabled",
+                Boolean.class,
+                false);
+        return new ReadOnlyShadowDataPlaneModeSelection(
+                online.enabled(),
+                detached);
+    }
+
+    /**
+     * Creates the strict regional sidecar HTTP authority only when every trust role is supplied.
+     *
+     * @param objectMapper strict protocol mapper
+     * @param transport dedicated private-PKI sidecar transport
+     * @param properties validated endpoint and resource policy
+     * @param requestHeaders fresh per-request workload authorization
+     * @return payload-free online baseline authority
+     */
+    @Bean
+    @ConditionalOnMissingBean
+    @ConditionalOnBean({
+            OnlineReadOnlyShadowBaselineTransport.class,
+            HttpOnlineReadOnlyShadowBaselineAuthority
+                    .RequestHeadersProvider.class
+    })
+    @ConditionalOnProperty(
+            prefix = OnlineReadOnlyShadowBaselineProperties
+                    .PREFIX,
+            name = "enabled",
+            havingValue = "true")
+    public OnlineReadOnlyShadowBaselineAuthority
+    onlineReadOnlyShadowBaselineAuthority(
+            ObjectMapper objectMapper,
+            OnlineReadOnlyShadowBaselineTransport transport,
+            OnlineReadOnlyShadowBaselineProperties properties,
+            HttpOnlineReadOnlyShadowBaselineAuthority
+                    .RequestHeadersProvider requestHeaders) {
+        return new HttpOnlineReadOnlyShadowBaselineAuthority(
+                objectMapper,
+                Clock.systemUTC(),
+                transport,
+                properties.settings(),
+                requestHeaders);
+    }
+
+    /**
+     * Creates the role-separated content-address and signature verification boundary.
+     *
+     * @param objectMapper canonical protocol mapper
+     * @param authority independently governed regional observation authority
+     * @return online baseline observation verifier
+     */
+    @Bean
+    @ConditionalOnMissingBean
+    @ConditionalOnBean(
+            OnlineReadOnlyShadowBaselineEvidenceAuthority
+                    .class)
+    @ConditionalOnProperty(
+            prefix = OnlineReadOnlyShadowBaselineProperties
+                    .PREFIX,
+            name = "enabled",
+            havingValue = "true")
+    public OnlineReadOnlyShadowBaselineObservationIntegrity
+    onlineReadOnlyShadowBaselineObservationIntegrity(
+            ObjectMapper objectMapper,
+            OnlineReadOnlyShadowBaselineEvidenceAuthority
+                    authority) {
+        return new OnlineReadOnlyShadowBaselineObservationIntegrity(
+                objectMapper,
+                authority,
+                Clock.systemUTC());
+    }
+
+    /**
+     * Installs online production-read baseline acquisition behind its explicit switch.
+     *
+     * @param authority strict regional command and observation authority
+     * @param integrity independently governed evidence verifier
+     * @param objectMapper canonical protocol mapper
+     * @return online payload-isolated baseline connector
+     */
+    @Bean
+    @ConditionalOnBean({
+            OnlineReadOnlyShadowBaselineAuthority.class,
+            OnlineReadOnlyShadowBaselineObservationIntegrity
+                    .class
+    })
+    @ConditionalOnProperty(
+            prefix = OnlineReadOnlyShadowBaselineProperties
+                    .PREFIX,
+            name = "enabled",
+            havingValue = "true")
+    public ReadOnlyShadowBaselineConnector
+    onlineReadOnlyShadowBaselineConnector(
+            OnlineReadOnlyShadowBaselineAuthority authority,
+            OnlineReadOnlyShadowBaselineObservationIntegrity
+                    integrity,
+            ObjectMapper objectMapper) {
+        return new OnlineReadOnlyShadowBaselineConnector(
+                authority,
+                integrity,
+                objectMapper,
+                Clock.systemUTC());
+    }
+
     /** Installs the exact signed-binding baseline connector only behind its explicit switch. */
     @Bean
     @ConditionalOnProperty(
@@ -1959,5 +2077,16 @@ public class MirrorRuntimeConfiguration {
             MirrorRunIntegrationService runService,
             VisualEvidenceSigner evidenceSigner) {
         return new MirrorRuntimeAvailability(true, true, evidenceSigner::available);
+    }
+}
+
+final class ReadOnlyShadowDataPlaneModeSelection {
+    ReadOnlyShadowDataPlaneModeSelection(
+            boolean onlineBaseline,
+            boolean detachedDataPlane) {
+        if (onlineBaseline && detachedDataPlane) {
+            throw new IllegalArgumentException(
+                    "online baseline and detached Shadow data planes are mutually exclusive");
+        }
     }
 }

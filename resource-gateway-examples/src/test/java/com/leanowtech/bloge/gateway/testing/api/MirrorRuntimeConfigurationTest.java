@@ -25,6 +25,10 @@ import com.leanowtech.bloge.gateway.integration.mirror.DatabaseReadOnlyShadowSou
 import com.leanowtech.bloge.gateway.integration.mirror.DetachedReadOnlyShadowBaselineConnector;
 import com.leanowtech.bloge.gateway.integration.mirror.DetachedReadOnlyShadowCandidateConnector;
 import com.leanowtech.bloge.gateway.integration.mirror.DetachedReadOnlyShadowSourceResolutionVerifier;
+import com.leanowtech.bloge.gateway.integration.mirror.HttpOnlineReadOnlyShadowBaselineAuthority;
+import com.leanowtech.bloge.gateway.integration.mirror.OnlineReadOnlyShadowBaselineConnector;
+import com.leanowtech.bloge.gateway.integration.mirror.OnlineReadOnlyShadowBaselineEvidenceAuthority;
+import com.leanowtech.bloge.gateway.integration.mirror.OnlineReadOnlyShadowBaselineTransport;
 import com.leanowtech.bloge.gateway.integration.mirror.GovernedReadOnlyShadowDataPlane;
 import com.leanowtech.bloge.gateway.integration.mirror.PayloadFreeEqualityReadOnlyShadowPolicy;
 import com.leanowtech.bloge.gateway.integration.mirror.ReadOnlyShadowAccessAuthority;
@@ -124,6 +128,8 @@ import java.util.Collection;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.atomic.AtomicBoolean;
+import java.net.http.HttpClient;
+import java.time.Duration;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.Mockito.mock;
@@ -173,6 +179,34 @@ class MirrorRuntimeConfigurationTest {
                         assertThat(availability.detachedDataPlaneReady()).isFalse();
                         assertThat(availability.servingReady()).isFalse();
                     });
+        }
+    }
+
+    @Test
+    void onlineBaselineSwitchInstallsOnlyTheRoleSeparatedBaselineConnector() {
+        try (var context = context(
+                Map.of(
+                        "gateway.testing.mirror.enabled", true,
+                        OnlineReadOnlyShadowBaselineProperties.PREFIX
+                                + ".enabled", true,
+                        OnlineReadOnlyShadowBaselineProperties.PREFIX
+                                + ".base-uri",
+                        "https://baseline.ap.example.test"),
+                "staging")) {
+            assertThat(context.getBean(
+                    ReadOnlyShadowBaselineConnector.class))
+                    .isInstanceOf(
+                            OnlineReadOnlyShadowBaselineConnector
+                                    .class)
+                    .satisfies(connector ->
+                            assertThat(connector.ready())
+                                    .isFalse());
+            assertThat(context.getBean(
+                    ReadOnlyShadowCandidateConnector.class)
+                    .ready()).isFalse();
+            assertThat(context.getBean(
+                    ReadOnlyShadowDataPlane.class)
+                    .ready()).isFalse();
         }
     }
 
@@ -357,6 +391,27 @@ class MirrorRuntimeConfigurationTest {
         context.registerBean(BlgeExpressionEvaluator.class,
                 () -> new BlgeExpressionEvaluator());
         context.registerBean(VisualEvidenceSigner.class, VisualEvidenceSigner::unavailable);
+        if (Boolean.TRUE.equals(
+                properties.get(
+                        OnlineReadOnlyShadowBaselineProperties
+                                .PREFIX
+                                + ".enabled"))) {
+            context.registerBean(
+                    OnlineReadOnlyShadowBaselineTransport
+                            .class,
+                    MirrorRuntimeConfigurationTest
+                            ::onlineBaselineTransport);
+            context.registerBean(
+                    HttpOnlineReadOnlyShadowBaselineAuthority
+                            .RequestHeadersProvider.class,
+                    () -> (operation, uri) -> Map.of());
+            context.registerBean(
+                    OnlineReadOnlyShadowBaselineEvidenceAuthority
+                            .class,
+                    () -> OnlineReadOnlyShadowBaselineEvidenceAuthority
+                            .from(
+                                    new InMemoryVisualEvidenceSigner()));
+        }
         context.registerBean(
                 ScenarioRehearsalIntegrationService.class,
                 () -> mock(ScenarioRehearsalIntegrationService.class));
@@ -373,6 +428,32 @@ class MirrorRuntimeConfigurationTest {
         context.register(MirrorRuntimeConfiguration.class);
         context.refresh();
         return context;
+    }
+
+    private static OnlineReadOnlyShadowBaselineTransport
+    onlineBaselineTransport() {
+        return new OnlineReadOnlyShadowBaselineTransport() {
+            @Override
+            public HttpClient client(
+                    Duration connectTimeout) {
+                return HttpClient.newBuilder()
+                        .connectTimeout(connectTimeout)
+                        .followRedirects(
+                                HttpClient.Redirect.NEVER)
+                        .build();
+            }
+
+            @Override
+            public Descriptor descriptor() {
+                return new Descriptor(
+                        Descriptor.SCHEMA_VERSION,
+                        false,
+                        true,
+                        true,
+                        true,
+                        true);
+            }
+        };
     }
 
     private static void assertMirrorKernelPresent(AnnotationConfigApplicationContext context) {

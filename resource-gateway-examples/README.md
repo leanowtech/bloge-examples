@@ -731,6 +731,71 @@ in dependency and crypto-provider upgrade probes. A passing fixture proves wire
 compatibility only; it does not claim current authority, data-use permission,
 or online connector readiness.
 
+Online baseline acquisition is a separate, mutually exclusive deployment mode.
+It does not send a customer request, response, endpoint, or credential through
+Resource Gateway. A v1 online Shadow job becomes a payload-free
+`resourceGateway.onlineReadOnlyShadowBaselineCommand.v1`; the regional TEE
+sidecar resolves the scenario request, production read binding, short-lived
+workload identity, and payload-vault policy inside its own trust domain. It
+returns a content-addressed
+`resourceGateway.onlineReadOnlyShadowBaselineObservation.v1` carrying only
+hashes, normalized facts, exact attestations, an opaque vault receipt, and
+measured write-capability counters.
+
+Enable the adapter only in the existing non-production Mirror composition:
+
+```yaml
+gateway:
+  testing:
+    mirror:
+      enabled: true
+      read-only-shadow:
+        online-baseline:
+          enabled: true
+          base-uri: https://baseline-sidecar.ap.example.test
+          request-timeout-millis: 5000
+          maximum-response-bytes: 524288
+```
+
+The deployment must also provide exactly one bean for each role:
+
+- `OnlineReadOnlyShadowBaselineTransport`: private trust store, exact server
+  SPKI pin, mTLS, and certificate-bound client/server workload identities;
+- `HttpOnlineReadOnlyShadowBaselineAuthority.RequestHeadersProvider`: fresh
+  application authorization for each exact URI;
+- `OnlineReadOnlyShadowBaselineEvidenceAuthority`: independently governed
+  sidecar observation verification authority. It is intentionally not a
+  `VisualEvidenceSigner`, so it cannot be injected as the Resource Gateway
+  local evidence signer.
+
+The adapter performs a live
+`GET /api/mirror/shadow/online-baseline/capabilities` probe and requires every
+safety fact to be fresh and positive. Commands use
+`X-BLOGE-Shadow-Execution-Id` as the source idempotency identity; POST timeout
+is the earlier of the configured bound and durable job deadline. Responses
+must use:
+
+```text
+Content-Type: application/vnd.bloge.online-read-only-shadow-baseline+json
+X-BLOGE-Online-Baseline-Protocol: 1.0
+```
+
+It rejects redirects, system trust, missing pin/mTLS/identity binding,
+duplicate/unknown/trailing JSON, protocol downgrade, oversized bodies,
+coordinate drift, stale identity, invalid content addresses, and an invalid
+authority signature. Repeating the same command must resolve the same immutable
+observation. Measured write exposure is not erased by the connector; it crosses
+as a boolean/count so `GovernedReadOnlyShadowDataPlane` can fail closed.
+
+Do not enable this mode together with
+`gateway.testing.mirror.read-only-shadow.detached-data-plane.enabled`; startup
+rejects the conflict. This slice supplies only the baseline connector. The
+online candidate adapter and online source-resolution verifier are still
+unavailable, so worker and serving readiness remain false. The three strict
+schemas are packaged in `resource-gateway-test-kit`; an independent online
+observation cryptographic verifier and fixed sidecar fixture remain follow-up
+certification work.
+
 Read the exact proof referenced by a successful v3 comparison:
 
 ```bash

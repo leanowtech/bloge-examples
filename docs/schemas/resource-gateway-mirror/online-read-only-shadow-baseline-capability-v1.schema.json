@@ -1,0 +1,57 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://bloge.dev/schemas/resource-gateway-mirror/online-read-only-shadow-baseline-capability-v1.schema.json",
+  "title": "Resource Gateway Online Read-only Shadow Baseline Capability v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "protocolVersion",
+    "checkedAt",
+    "validUntil",
+    "serviceReady",
+    "payloadIsolated",
+    "readOnlyWorkloadIdentity",
+    "idempotentExecution",
+    "payloadVaultReceipt",
+    "writeCredentialProhibited",
+    "exactArtifactRead"
+  ],
+  "properties": {
+    "schemaVersion": {
+      "const": "resourceGateway.onlineReadOnlyShadowBaselineCapability.v1"
+    },
+    "protocolVersion": {
+      "const": "1.0"
+    },
+    "checkedAt": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "validUntil": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "serviceReady": {
+      "type": "boolean"
+    },
+    "payloadIsolated": {
+      "type": "boolean"
+    },
+    "readOnlyWorkloadIdentity": {
+      "type": "boolean"
+    },
+    "idempotentExecution": {
+      "type": "boolean"
+    },
+    "payloadVaultReceipt": {
+      "type": "boolean"
+    },
+    "writeCredentialProhibited": {
+      "type": "boolean"
+    },
+    "exactArtifactRead": {
+      "type": "boolean"
+    }
+  }
+}

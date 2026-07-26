@@ -1,0 +1,261 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://bloge.dev/schemas/resource-gateway-mirror/online-read-only-shadow-baseline-observation-v1.schema.json",
+  "title": "Resource Gateway Online Read-only Shadow Baseline Observation v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "observationFingerprint",
+    "observationId",
+    "revision",
+    "scope",
+    "executionId",
+    "requestId",
+    "commandFingerprint",
+    "scenarioCaseRef",
+    "targetCapabilityRef",
+    "baselineBindingRef",
+    "comparisonPolicyRef",
+    "samplingGrantRef",
+    "egressAuthorityRef",
+    "killSwitchRef",
+    "workloadIdentityRef",
+    "workloadIdentityAttestationRef",
+    "payloadVaultReceiptRef",
+    "transportAttestationRef",
+    "requestContextFingerprint",
+    "semanticResultFingerprint",
+    "sourceRequestFingerprint",
+    "sourceResponseFingerprint",
+    "idempotencyKeyFingerprint",
+    "responseSchemaRef",
+    "normalizedFactFingerprints",
+    "accessMode",
+    "startedAt",
+    "completedAt",
+    "deadlineAt",
+    "workloadIdentityExpiresAt",
+    "evidenceClass",
+    "evidenceComplete",
+    "writeCredentialExposed",
+    "writeAttemptCount",
+    "issuedAt",
+    "observationSeal"
+  ],
+  "properties": {
+    "schemaVersion": {
+      "const": "resourceGateway.onlineReadOnlyShadowBaselineObservation.v1"
+    },
+    "observationFingerprint": {
+      "$ref": "mirror-plan-v1.schema.json#/$defs/fingerprint"
+    },
+    "observationId": {
+      "$ref": "read-only-shadow-comparison-v1.schema.json#/$defs/identifier"
+    },
+    "revision": {
+      "const": 1
+    },
+    "scope": {
+      "$ref": "mirror-plan-v1.schema.json#/$defs/scope"
+    },
+    "executionId": {
+      "$ref": "read-only-shadow-comparison-v1.schema.json#/$defs/identifier"
+    },
+    "requestId": {
+      "$ref": "read-only-shadow-comparison-v1.schema.json#/$defs/identifier"
+    },
+    "commandFingerprint": {
+      "$ref": "mirror-plan-v1.schema.json#/$defs/fingerprint"
+    },
+    "scenarioCaseRef": {
+      "$ref": "domain-fidelity-inventory-v1.schema.json#/$defs/scenarioCaseRef"
+    },
+    "targetCapabilityRef": {
+      "$ref": "read-only-shadow-comparison-v1.schema.json#/$defs/capabilityRef"
+    },
+    "baselineBindingRef": {
+      "$ref": "read-only-shadow-job-request-v1.schema.json#/$defs/baselineBindingRef"
+    },
+    "comparisonPolicyRef": {
+      "$ref": "read-only-shadow-comparison-v2.schema.json#/$defs/comparisonPolicyRef"
+    },
+    "samplingGrantRef": {
+      "$ref": "read-only-shadow-comparison-v1.schema.json#/$defs/samplingGrantRef"
+    },
+    "egressAuthorityRef": {
+      "$ref": "read-only-shadow-comparison-v1.schema.json#/$defs/egressAuthorityRef"
+    },
+    "killSwitchRef": {
+      "$ref": "read-only-shadow-comparison-v1.schema.json#/$defs/killSwitchRef"
+    },
+    "workloadIdentityRef": {
+      "$ref": "#/$defs/workloadIdentityRef"
+    },
+    "workloadIdentityAttestationRef": {
+      "$ref": "#/$defs/workloadIdentityAttestationRef"
+    },
+    "payloadVaultReceiptRef": {
+      "$ref": "#/$defs/payloadVaultReceiptRef"
+    },
+    "transportAttestationRef": {
+      "$ref": "#/$defs/transportAttestationRef"
+    },
+    "requestContextFingerprint": {
+      "$ref": "mirror-plan-v1.schema.json#/$defs/fingerprint"
+    },
+    "semanticResultFingerprint": {
+      "$ref": "mirror-plan-v1.schema.json#/$defs/fingerprint"
+    },
+    "sourceRequestFingerprint": {
+      "$ref": "mirror-plan-v1.schema.json#/$defs/fingerprint"
+    },
+    "sourceResponseFingerprint": {
+      "$ref": "mirror-plan-v1.schema.json#/$defs/fingerprint"
+    },
+    "idempotencyKeyFingerprint": {
+      "$ref": "mirror-plan-v1.schema.json#/$defs/fingerprint"
+    },
+    "responseSchemaRef": {
+      "$ref": "#/$defs/responseSchemaRef"
+    },
+    "normalizedFactFingerprints": {
+      "$ref": "#/$defs/normalizedFactFingerprints"
+    },
+    "accessMode": {
+      "const": "READ_ONLY"
+    },
+    "startedAt": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "completedAt": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "deadlineAt": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "workloadIdentityExpiresAt": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "evidenceClass": {
+      "enum": [
+        "EXPLORATORY",
+        "CERTIFIABLE"
+      ]
+    },
+    "evidenceComplete": {
+      "type": "boolean"
+    },
+    "writeCredentialExposed": {
+      "type": "boolean"
+    },
+    "writeAttemptCount": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 1000000000
+    },
+    "issuedAt": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "observationSeal": {
+      "$ref": "domain-fidelity-profile-v1.schema.json#/$defs/evidenceSeal"
+    }
+  },
+  "$defs": {
+    "workloadIdentityRef": {
+      "allOf": [
+        {
+          "$ref": "domain-fidelity-inventory-v1.schema.json#/$defs/artifactRef"
+        },
+        {
+          "properties": {
+            "kind": {
+              "const": "WORKLOAD_IDENTITY"
+            }
+          }
+        }
+      ]
+    },
+    "workloadIdentityAttestationRef": {
+      "allOf": [
+        {
+          "$ref": "domain-fidelity-inventory-v1.schema.json#/$defs/artifactRef"
+        },
+        {
+          "properties": {
+            "kind": {
+              "const": "WORKLOAD_IDENTITY_ATTESTATION"
+            }
+          }
+        }
+      ]
+    },
+    "payloadVaultReceiptRef": {
+      "allOf": [
+        {
+          "$ref": "domain-fidelity-inventory-v1.schema.json#/$defs/artifactRef"
+        },
+        {
+          "properties": {
+            "kind": {
+              "const": "PAYLOAD_VAULT_RECEIPT"
+            }
+          }
+        }
+      ]
+    },
+    "transportAttestationRef": {
+      "allOf": [
+        {
+          "$ref": "domain-fidelity-inventory-v1.schema.json#/$defs/artifactRef"
+        },
+        {
+          "properties": {
+            "kind": {
+              "const": "READ_ONLY_TRANSPORT_ATTESTATION"
+            }
+          }
+        }
+      ]
+    },
+    "responseSchemaRef": {
+      "allOf": [
+        {
+          "$ref": "domain-fidelity-inventory-v1.schema.json#/$defs/artifactRef"
+        },
+        {
+          "properties": {
+            "kind": {
+              "const": "JSON_SCHEMA"
+            }
+          }
+        }
+      ]
+    },
+    "normalizedFactFingerprints": {
+      "type": "object",
+      "additionalProperties": false,
+      "minProperties": 1,
+      "maxProperties": 4,
+      "properties": {
+        "BEHAVIOR": {
+          "$ref": "mirror-plan-v1.schema.json#/$defs/fingerprint"
+        },
+        "CONTRACT": {
+          "$ref": "mirror-plan-v1.schema.json#/$defs/fingerprint"
+        },
+        "EFFECT": {
+          "$ref": "mirror-plan-v1.schema.json#/$defs/fingerprint"
+        },
+        "STATE_TRANSITION": {
+          "$ref": "mirror-plan-v1.schema.json#/$defs/fingerprint"
+        }
+      }
+    }
+  }
+}

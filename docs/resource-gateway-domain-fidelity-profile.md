@@ -505,7 +505,7 @@ cursor，`limit` 为 1..1000；调用方必须根据 `hasMore` 继续取页，�
 | `ReadOnlyShadowKillSwitchAuthority` | exact current scope/switch generation、enabled 状态、短有效窗与签名 authority attestation | signed current-head adapter；因 trust store unavailable 而 fail-closed |
 | `MirrorDeploymentIsolationRunTrustAuthority` | 执行前/后的同一 egress decision、keyset、status 与 agent snapshot | unavailable |
 | `ReadOnlyShadowExecutionGuard` | 跨副本并发、窗口速率、熔断、唯一半开探针和 fenced lease | database-authoritative / ready |
-| `ReadOnlyShadowBaselineConnector` / `ReadOnlyShadowCandidateConnector` | 同一 request context 的 payload-free source observation 与零写测量 | 默认 unavailable；`--shadow-detached-data-plane` 安装 exact source-binding/candidate-evidence connector |
+| `ReadOnlyShadowBaselineConnector` / `ReadOnlyShadowCandidateConnector` | 同一 request context 的 payload-free source observation 与零写测量 | 默认 unavailable；`--shadow-detached-data-plane` 安装 exact detached pair；显式 online-baseline 配置和三个独立 trust bean 只安装 regional TEE baseline connector |
 | `ReadOnlyShadowSourceResolutionVerifier` | 两侧 exact artifact 二次拉取、内容地址/签名/scope/target/authority closure，并签发 append-only proof | 默认 unavailable；`--shadow-detached-data-plane` 安装真实 detached verifier |
 | `ReadOnlyShadowComparisonEngine` | exact comparison policy 下的规范化 typed diff | 内置 content-addressed `payload-free-equality-v1` / ready |
 
@@ -552,6 +552,33 @@ detached source binding 也遵守这一边界。`ReadOnlyShadowSourceBindingVeri
 authority key/seal，并调用 `MirrorEvidenceVerifier` 关闭 candidate bundle 的 run/scope/plan/target/
 request/completion 坐标。它证明“这对离线来源不可歧义且未被篡改”，不证明在线 baseline connector、
 egress 或 comparison policy 已可运行。
+
+online baseline 模式与 detached 模式互斥。Resource Gateway 只向 regional TEE sidecar 发送
+`OnlineReadOnlyShadowBaselineCommand`：execution/request/scope、immutable artifact refs、
+admission fingerprint、sampling/egress/kill-switch 坐标与 deadline。scenario request、生产
+endpoint、workload credential 和 request/response payload 均没有可表达字段。sidecar 在
+自己的 payload vault 与 workload identity 边界中完成只读调用，并返回签名
+`OnlineReadOnlyShadowBaselineObservation`。该证据闭合 command/idempotency、read-only identity、
+identity/transport attestation、opaque vault receipt、response Schema、hash-only source I/O、
+normalized facts 和写能力实测。
+
+HTTP authority 只接受 private-PKI + SPKI pin + mTLS + certificate identity binding，禁用
+redirect，并严格协商
+`application/vnd.bloge.online-read-only-shadow-baseline+json` /
+`X-BLOGE-Online-Baseline-Protocol: 1.0`。`ready()` 每次读取最多 5 分钟有效的 capability，
+同时要求 payload isolation、read-only identity、execution idempotency、vault receipt、
+write-credential prohibition 和 exact artifact read 全部为真。调用 timeout 取本地配置和
+durable deadline 的较早者；网络 unavailable 与 deterministic protocol rejection 使用不同
+失败分类。
+
+运行时配置前缀是
+`gateway.testing.mirror.read-only-shadow.online-baseline`，至少设置 `enabled=true` 与
+HTTPS `base-uri`；部署方还必须提供 role-separated
+`OnlineReadOnlyShadowBaselineTransport`、
+`HttpOnlineReadOnlyShadowBaselineAuthority.RequestHeadersProvider` 和
+`OnlineReadOnlyShadowBaselineEvidenceAuthority`。缺任一角色时保持 fail closed。当前纵切没有
+online candidate 和 online source-resolution verifier，因此 baseline 可连接不等于 worker/data-plane/
+serving ready；公共 capability 也暂未单列 baseline readiness。
 
 签名 authority 也遵守同一原则：database publication source ready 只表示 append-only current-head
 读写和内容地址可用，不表示 issuer 已受信。`ReadOnlyShadowAuthorityTrustStore` 必须由独立 managed
@@ -709,6 +736,9 @@ code，不输出 Scenario fixture、请求、响应或原始诊断。
 - [`read-only-shadow-source-binding-registration-request-v1.schema.json`](schemas/resource-gateway-mirror/read-only-shadow-source-binding-registration-request-v1.schema.json)
 - [`read-only-shadow-source-binding-v1.schema.json`](schemas/resource-gateway-mirror/read-only-shadow-source-binding-v1.schema.json)
 - [`read-only-shadow-source-resolution-attestation-v1.schema.json`](schemas/resource-gateway-mirror/read-only-shadow-source-resolution-attestation-v1.schema.json)
+- [`online-read-only-shadow-baseline-command-v1.schema.json`](schemas/resource-gateway-mirror/online-read-only-shadow-baseline-command-v1.schema.json)
+- [`online-read-only-shadow-baseline-observation-v1.schema.json`](schemas/resource-gateway-mirror/online-read-only-shadow-baseline-observation-v1.schema.json)
+- [`online-read-only-shadow-baseline-capability-v1.schema.json`](schemas/resource-gateway-mirror/online-read-only-shadow-baseline-capability-v1.schema.json)
 - [`read-only-shadow-job-v1.schema.json`](schemas/resource-gateway-mirror/read-only-shadow-job-v1.schema.json)
 - [`read-only-shadow-job-lifecycle-event-v1.schema.json`](schemas/resource-gateway-mirror/read-only-shadow-job-lifecycle-event-v1.schema.json)
 - [`read-only-shadow-job-lifecycle-page-v1.schema.json`](schemas/resource-gateway-mirror/read-only-shadow-job-lifecycle-page-v1.schema.json)

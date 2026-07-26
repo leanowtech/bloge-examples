@@ -52,6 +52,12 @@ implementation. The JAR packages the authoritative v1 JSON Schema and provides:
   rechecks the exact comparison-bound proof, stable execution identity, deterministic proof id,
   source-binding/candidate evidence, built-in comparison-policy identity, normalized facts,
   temporal/zero-write closure, key policy, content address, and detached signature;
+  strict `OnlineReadOnlyShadowBaselineCommand.v1`,
+  `OnlineReadOnlyShadowBaselineObservation.v1`, and
+  `OnlineReadOnlyShadowBaselineCapability.v1` Schemas plus public resource/version
+  constants for regional sidecar integration. These three online protocols are
+  structurally validated and packaged, but do not yet have an independent
+  observation signature verifier or fixed public-key fixture in this Test Kit;
   strict Shadow authority key-set publication/page Schemas plus an independent
   root-threshold verifier that reconstructs content addresses, exact enterprise
   binding, frozen high-water cursor continuity, online terminal freshness, and

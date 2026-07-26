@@ -420,6 +420,18 @@ public final class CapabilityMirrorProtocol {
     public static final String
     READ_ONLY_SHADOW_SOURCE_RESOLUTION_ATTESTATION_V1 =
             "resourceGateway.readOnlyShadowSourceResolutionAttestation.v1";
+    /** Payload-free command sent to one regional online baseline sidecar. */
+    public static final String
+    ONLINE_READ_ONLY_SHADOW_BASELINE_COMMAND_V1 =
+            "resourceGateway.onlineReadOnlyShadowBaselineCommand.v1";
+    /** Independently signed payload-free regional baseline observation. */
+    public static final String
+    ONLINE_READ_ONLY_SHADOW_BASELINE_OBSERVATION_V1 =
+            "resourceGateway.onlineReadOnlyShadowBaselineObservation.v1";
+    /** Live regional sidecar safety-capability projection. */
+    public static final String
+    ONLINE_READ_ONLY_SHADOW_BASELINE_CAPABILITY_V1 =
+            "resourceGateway.onlineReadOnlyShadowBaselineCapability.v1";
     /** Fixed three-authority source-resolution compatibility fixture wire version. */
     public static final String
     READ_ONLY_SHADOW_SOURCE_RESOLUTION_COMPATIBILITY_V1 =
@@ -911,6 +923,21 @@ public final class CapabilityMirrorProtocol {
     READ_ONLY_SHADOW_SOURCE_RESOLUTION_ATTESTATION_SCHEMA_RESOURCE =
             SCHEMA_RESOURCE_ROOT
                     + "read-only-shadow-source-resolution-attestation-v1.schema.json";
+    /** Packaged payload-free regional online baseline command schema. */
+    public static final String
+    ONLINE_READ_ONLY_SHADOW_BASELINE_COMMAND_SCHEMA_RESOURCE =
+            SCHEMA_RESOURCE_ROOT
+                    + "online-read-only-shadow-baseline-command-v1.schema.json";
+    /** Packaged signed regional online baseline observation schema. */
+    public static final String
+    ONLINE_READ_ONLY_SHADOW_BASELINE_OBSERVATION_SCHEMA_RESOURCE =
+            SCHEMA_RESOURCE_ROOT
+                    + "online-read-only-shadow-baseline-observation-v1.schema.json";
+    /** Packaged live regional online baseline capability schema. */
+    public static final String
+    ONLINE_READ_ONLY_SHADOW_BASELINE_CAPABILITY_SCHEMA_RESOURCE =
+            SCHEMA_RESOURCE_ROOT
+                    + "online-read-only-shadow-baseline-capability-v1.schema.json";
     /** Packaged durable read-only Shadow job projection schema. */
     public static final String
     READ_ONLY_SHADOW_JOB_SCHEMA_RESOURCE =

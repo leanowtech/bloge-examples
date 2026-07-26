@@ -128,6 +128,9 @@ class CapabilityMirrorSchemaPackagingTest {
                 "scenario-rehearsal-workbook-seed-v1.schema.json",
                 "scenario-rehearsal-batch-workbook-seed-v1.schema.json",
                 "read-only-shadow-comparison-v1.schema.json",
+                "online-read-only-shadow-baseline-command-v1.schema.json",
+                "online-read-only-shadow-baseline-observation-v1.schema.json",
+                "online-read-only-shadow-baseline-capability-v1.schema.json",
                 "read-only-shadow-job-lifecycle-event-v1.schema.json",
                 "read-only-shadow-job-lifecycle-page-v1.schema.json",
                 "scenario-pack-stage7-v1.fixture.schema.json",
@@ -527,6 +530,30 @@ class CapabilityMirrorSchemaPackagingTest {
                 .READ_ONLY_SHADOW_SOURCE_RESOLUTION_ATTESTATION_SCHEMA_RESOURCE)
                 .endsWith(
                         "read-only-shadow-source-resolution-attestation-v1.schema.json");
+        assertThat(CapabilityMirrorProtocol
+                .ONLINE_READ_ONLY_SHADOW_BASELINE_COMMAND_V1)
+                .isEqualTo(
+                        "resourceGateway.onlineReadOnlyShadowBaselineCommand.v1");
+        assertThat(CapabilityMirrorProtocol
+                .ONLINE_READ_ONLY_SHADOW_BASELINE_COMMAND_SCHEMA_RESOURCE)
+                .endsWith(
+                        "online-read-only-shadow-baseline-command-v1.schema.json");
+        assertThat(CapabilityMirrorProtocol
+                .ONLINE_READ_ONLY_SHADOW_BASELINE_OBSERVATION_V1)
+                .isEqualTo(
+                        "resourceGateway.onlineReadOnlyShadowBaselineObservation.v1");
+        assertThat(CapabilityMirrorProtocol
+                .ONLINE_READ_ONLY_SHADOW_BASELINE_OBSERVATION_SCHEMA_RESOURCE)
+                .endsWith(
+                        "online-read-only-shadow-baseline-observation-v1.schema.json");
+        assertThat(CapabilityMirrorProtocol
+                .ONLINE_READ_ONLY_SHADOW_BASELINE_CAPABILITY_V1)
+                .isEqualTo(
+                        "resourceGateway.onlineReadOnlyShadowBaselineCapability.v1");
+        assertThat(CapabilityMirrorProtocol
+                .ONLINE_READ_ONLY_SHADOW_BASELINE_CAPABILITY_SCHEMA_RESOURCE)
+                .endsWith(
+                        "online-read-only-shadow-baseline-capability-v1.schema.json");
         assertThat(CapabilityMirrorProtocol
                 .READ_ONLY_SHADOW_JOB_V1)
                 .isEqualTo(

@@ -1,0 +1,69 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://bloge.dev/schemas/resource-gateway-mirror/online-read-only-shadow-baseline-command-v1.schema.json",
+  "title": "Resource Gateway Online Read-only Shadow Baseline Command v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "executionId",
+    "requestId",
+    "scope",
+    "inventoryRef",
+    "unitId",
+    "scenarioCaseRef",
+    "targetCapabilityRef",
+    "baselineBindingRef",
+    "comparisonPolicyRef",
+    "accessGrant",
+    "admissionFingerprint",
+    "admittedAt",
+    "deadlineAt"
+  ],
+  "properties": {
+    "schemaVersion": {
+      "const": "resourceGateway.onlineReadOnlyShadowBaselineCommand.v1"
+    },
+    "executionId": {
+      "$ref": "read-only-shadow-comparison-v1.schema.json#/$defs/identifier"
+    },
+    "requestId": {
+      "$ref": "read-only-shadow-comparison-v1.schema.json#/$defs/identifier"
+    },
+    "scope": {
+      "$ref": "mirror-plan-v1.schema.json#/$defs/scope"
+    },
+    "inventoryRef": {
+      "$ref": "read-only-shadow-comparison-v1.schema.json#/$defs/inventoryRef"
+    },
+    "unitId": {
+      "$ref": "read-only-shadow-comparison-v1.schema.json#/$defs/identifier"
+    },
+    "scenarioCaseRef": {
+      "$ref": "domain-fidelity-inventory-v1.schema.json#/$defs/scenarioCaseRef"
+    },
+    "targetCapabilityRef": {
+      "$ref": "read-only-shadow-comparison-v1.schema.json#/$defs/capabilityRef"
+    },
+    "baselineBindingRef": {
+      "$ref": "read-only-shadow-job-request-v1.schema.json#/$defs/baselineBindingRef"
+    },
+    "comparisonPolicyRef": {
+      "$ref": "read-only-shadow-comparison-v2.schema.json#/$defs/comparisonPolicyRef"
+    },
+    "accessGrant": {
+      "$ref": "read-only-shadow-job-request-v1.schema.json#/$defs/accessGrant"
+    },
+    "admissionFingerprint": {
+      "$ref": "mirror-plan-v1.schema.json#/$defs/fingerprint"
+    },
+    "admittedAt": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "deadlineAt": {
+      "type": "string",
+      "format": "date-time"
+    }
+  }
+}
