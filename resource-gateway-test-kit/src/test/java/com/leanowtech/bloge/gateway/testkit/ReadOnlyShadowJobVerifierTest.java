@@ -190,7 +190,7 @@ class ReadOnlyShadowJobVerifierTest {
         grant.set(
                 "egressAuthorityRef",
                 ref(
-                        "MIRROR_DEPLOYMENT_ISOLATION_ATTESTATION",
+                        "DEPLOYMENT_ISOLATION_ATTESTATION",
                         "egress-1",
                         '8'));
         grant.set(

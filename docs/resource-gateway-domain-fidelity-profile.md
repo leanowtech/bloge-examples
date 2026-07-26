@@ -33,6 +33,9 @@
   reservation、数据库时钟 deadline、owner/epoch/expiry lease、bounded retry 和 worker；
 - protected Shadow submit/read/request/comparison/lifecycle API、同事务 operation/lifecycle audit、
   可选 bounded regional scheduler，以及 API/worker/scheduler/serving 独立 readiness；
+- governed Shadow data-plane composition kernel：grant/kill-switch/egress 双重观测、
+  独立共享 execution guard、baseline/candidate 隔离 connector、source-resolution verifier、
+  typed comparison engine 与逐外部边界 durable heartbeat；
 - strict lifecycle event/page Schema，Test Kit 可独立重算 comparison、job/request/comparison
   闭包与完整 admission-to-head lifecycle；
 - Shadow source adapter：重验 comparison 内容地址/签名、采样授权、kill switch、egress、
@@ -47,7 +50,8 @@
 
 - authoritative outcome 到 `Measurement` 的独立来源适配器；
 - request-space sampling proof 与 error-distribution cohort adapter；
-- 真实 baseline/candidate connector、流量采样/限流/熔断、drift 自动降级、
+- 真实 baseline/candidate connector、在线 grant/kill-switch authority、跨副本 execution
+  guard、source resolver/comparison policy adapter、drift 自动降级、
   outcome reconciliation 和工作台。
 
 因此在 managed signer、Scenario authority 或 signed Shadow comparison authority 可用时，
@@ -55,8 +59,8 @@
 abstention debt 的**部分 profile**。Shadow adapter ready 表示已提供的合法 comparison 可以
 独立验真和投影，不表示 Resource Gateway 已具备生产流量复制与 shadow job。请求空间覆盖和业务
 结果校准仍必须分别读取 typed adapter flag、source artifact 与 profile limitations。durable
-job API/lifecycle/scheduler ready 也只表示控制面状态机可用；默认 worker/data plane 仍
-fail-closed，不代表生产流量复制已启用。
+job API/lifecycle/scheduler ready 也只表示控制面状态机可用；默认 governed data plane 因所有
+深层 adapter 均为 fail-closed placeholder 而保持 `ready=false`，不代表生产流量复制已启用。
 
 ## 2. 为什么需要两个对象
 
@@ -317,8 +321,9 @@ typed outcome 不能由 producer 随意填写：
 当前 `projectShadow` 是内部 Java 投影边界，不接受调用方直接上传 comparison。durable
 queue/worker 已具备受保护的 job submit/read/request/comparison/lifecycle API、同事务 operation
 audit、append-only lifecycle audit、数据库时钟 claim/retry/expire、owner/epoch/expiry fence 和
-显式开启的 bounded scheduler。默认 `ReadOnlyShadowDataPlane.unavailable()` 仍使 worker 与
-end-to-end serving readiness 为 false；因此 control plane 可用绝不表示“Resource Gateway 已能
+显式开启的 bounded scheduler。默认 `GovernedReadOnlyShadowDataPlane` 已固定权威、护栏、
+connector、来源验真与 comparison 的安全顺序，但其深层 adapter 均默认不可用，所以 worker 与
+end-to-end serving readiness 仍为 false；因此 control plane 可用绝不表示“Resource Gateway 已能
 复制生产流量”。
 
 ### 5.1 受保护 API 用法
@@ -435,8 +440,23 @@ exception message、stack trace 在模型和表结构中都不可表示。`after
 cursor，`limit` 为 1..1000；调用方必须根据 `hasMore` 继续取页，不能把单页前缀宣称为完整证据。
 
 默认数据面不可用时，scheduler 只得到 no-work，不 claim、不增加 attempt。要使 worker ready，
-客户必须注入 operator-owned `ReadOnlyShadowDataPlane`，并在每次 baseline read、candidate
-execution 和 evidence resolution 前校验 grant/kill switch/egress authority、预算和 heartbeat。
+客户可以整体注入 operator-owned `ReadOnlyShadowDataPlane`，也可以保留默认治理型组合内核并逐个
+提供下表 adapter：
+
+| Adapter | 必须证明 | 默认 |
+|---|---|---|
+| `ReadOnlyShadowSamplingGrantAuthority` | exact scope/grant、sample 上限、有效窗、共享 guard limits 与签名 authority attestation | unavailable |
+| `ReadOnlyShadowKillSwitchAuthority` | exact scope/switch generation、enabled 状态、有效窗与签名 authority attestation | unavailable |
+| `MirrorDeploymentIsolationRunTrustAuthority` | 执行前/后的同一 egress decision、keyset、status 与 agent snapshot | unavailable |
+| `ReadOnlyShadowExecutionGuard` | 跨副本并发、窗口速率、熔断、半开探针和 fenced lease | unavailable |
+| `ReadOnlyShadowBaselineConnector` / `ReadOnlyShadowCandidateConnector` | 同一 request context 的 payload-free source observation 与零写测量 | unavailable |
+| `ReadOnlyShadowSourceResolutionVerifier` | 两侧 exact artifact 拉取、内容地址/签名/scope/target/authority closure | unavailable |
+| `ReadOnlyShadowComparisonEngine` | exact comparison policy 下的规范化 typed diff | unavailable |
+
+组合内核在 baseline、candidate、终态 authority 和 source resolution 前分别续 durable job lease，
+并把 shared guard lease 限定到不晚于新的 job lease。任何依赖不可用、权威漂移、写凭据、写尝试、
+来源 context 漂移或 policy 漂移都会以稳定 failure reason 失败关闭。`AccessGrant` 中 egress
+证明的 artifact kind 是实际部署隔离协议的 `DEPLOYMENT_ISOLATION_ATTESTATION`。
 
 ### 5.3 Capability probe
 
@@ -459,9 +479,10 @@ execution 和 evidence resolution 前校验 grant/kill switch/egress authority�
 
 调用方不得用 projection flag 推导 shadow/outcome flag；readable history、available key、
 可生成部分 profile、真实行为对照和业务结果校准是不同生命周期事实。
-当前 Shadow source adapter 重验 comparison 根签名及其 exact artifact refs，但不会主动拉取并
-重验底层 baseline/candidate artifact；这项 source-resolution closure 属于下一轮 durable
-data-plane connector。
+当前已定义 `ReadOnlyShadowSourceResolutionVerifier` 且 governed data plane 强制调用它，但默认
+resolver 仍不可用。只有生产 adapter 主动拉取并重验底层 baseline/candidate exact revision、签名、
+scope、target、request context 与双重观测 authority closure 后，source-resolution readiness 才能
+为 true；comparison 根签名中的 ref 本身不是来源证明。
 
 ## 6. 治理侧离线验真
 
@@ -620,16 +641,19 @@ Schema 使用 `additionalProperties: false`。profile 不允许业务 payload、
 
 repository、managed signer、受保护 inventory/read API、Scenario source adapter、signed
 read-only Shadow comparison adapter、durable queue/worker、protected Shadow API、lifecycle audit、
-bounded scheduler、独立 readiness 和 lifecycle verifier 已完成。
+bounded scheduler、独立 readiness、lifecycle verifier，以及 governed data-plane composition
+kernel 已完成。
 下一步按来源信任依赖推进：
 
-1. 接入真实 baseline/candidate connector、grant/kill-switch 在线权威、来源证据拉取重验、外部
-   系统速率/并发预算与熔断。
-2. 把 signed typed diff 接入 drift budget，自动 stale/downgrade/revoke serving conclusion。
-3. 实现 authoritative outcome observation 与 delayed/censored reconciliation。
-4. 为 `ERROR_DISTRIBUTION` 和 `REQUEST_SPACE` 增加 cohort/sampling proof，而不是借用单次
+1. 先实现数据库权威的跨副本 execution guard，覆盖并发、窗口速率、circuit open/cool-down、
+   单一 half-open probe、lease epoch 与 idempotent retry。
+2. 定义并接入签名 grant/kill-switch 在线协议、真实 baseline/candidate connector、来源 artifact
+   拉取重验和 exact comparison policy adapter。
+3. 把 signed typed diff 接入 drift budget，自动 stale/downgrade/revoke serving conclusion。
+4. 实现 authoritative outcome observation 与 delayed/censored reconciliation。
+5. 为 `ERROR_DISTRIBUTION` 和 `REQUEST_SPACE` 增加 cohort/sampling proof，而不是借用单次
    Scenario PASS。
-5. 把 profile limitations/stale/debt 接入 ANEKE gate 与 Owner workbench。
+6. 把 profile limitations/stale/debt 接入 ANEKE gate 与 Owner workbench。
 
 在真实 data-plane connector 与 outcome 未完成前，不能把 queue、API、scheduler 或 adapter
 readiness 描述为“已接入生产流量”或“业务结果已校准”。

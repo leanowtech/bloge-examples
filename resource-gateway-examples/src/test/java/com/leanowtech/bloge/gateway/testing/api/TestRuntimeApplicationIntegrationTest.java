@@ -19,6 +19,7 @@ import com.leanowtech.bloge.gateway.integration.CapabilityCorpusClusterControlle
 import com.leanowtech.bloge.gateway.integration.mirror.CapabilityObservationAdmissionService;
 import com.leanowtech.bloge.gateway.integration.mirror.DomainFidelityRepository;
 import com.leanowtech.bloge.gateway.integration.mirror.DomainFidelityService;
+import com.leanowtech.bloge.gateway.integration.mirror.GovernedReadOnlyShadowDataPlane;
 import com.leanowtech.bloge.gateway.integration.mirror.ReadOnlyShadowComparisonIntegrity;
 import com.leanowtech.bloge.gateway.integration.mirror.ReadOnlyShadowDataPlane;
 import com.leanowtech.bloge.gateway.integration.mirror.ReadOnlyShadowDomainFidelitySource;
@@ -169,8 +170,12 @@ class TestRuntimeApplicationIntegrationTest {
                 ReadOnlyShadowJobService.class))
                 .hasSize(1);
         assertThat(context.getBeansOfType(
-                ReadOnlyShadowDataPlane.class))
-                .hasSize(1);
+                ReadOnlyShadowDataPlane.class).values())
+                .singleElement()
+                .isInstanceOf(
+                        GovernedReadOnlyShadowDataPlane.class)
+                .satisfies(dataPlane ->
+                        assertThat(dataPlane.ready()).isFalse());
         assertThat(context.getBeansOfType(
                 ReadOnlyShadowJobWorker.class).values())
                 .singleElement()

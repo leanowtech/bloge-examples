@@ -110,7 +110,8 @@ final class ReadOnlyShadowJobTestFixtures {
                                 "grant-2026-07",
                                 '7'),
                         ref(
-                                "MIRROR_DEPLOYMENT_ISOLATION_ATTESTATION",
+                                MirrorDeploymentIsolationAttestation
+                                        .ARTIFACT_KIND,
                                 "shadow-deployment",
                                 '8'),
                         ref(

@@ -178,7 +178,8 @@ class ReadOnlyShadowDomainFidelitySourceTest {
                                 "grant",
                                 '1'),
                         ref(
-                                "MIRROR_DEPLOYMENT_ISOLATION_ATTESTATION",
+                                MirrorDeploymentIsolationAttestation
+                                        .ARTIFACT_KIND,
                                 "egress",
                                 '2'),
                         ref(
@@ -356,7 +357,8 @@ class ReadOnlyShadowDomainFidelitySourceTest {
                                 "grant",
                                 '1'),
                         ref(
-                                "MIRROR_DEPLOYMENT_ISOLATION_ATTESTATION",
+                                MirrorDeploymentIsolationAttestation
+                                        .ARTIFACT_KIND,
                                 "egress",
                                 '2'),
                         ref(

@@ -114,7 +114,17 @@ import com.leanowtech.bloge.gateway.integration.mirror.ScenarioRehearsalLifecycl
 import com.leanowtech.bloge.gateway.integration.mirror.ScenarioRehearsalRetentionRepository;
 import com.leanowtech.bloge.gateway.integration.mirror.ScenarioRehearsalRunRepository;
 import com.leanowtech.bloge.gateway.integration.mirror.ReadOnlyShadowComparisonIntegrity;
+import com.leanowtech.bloge.gateway.integration.mirror.ReadOnlyShadowComparisonEngine;
+import com.leanowtech.bloge.gateway.integration.mirror.ReadOnlyShadowAccessAuthority;
+import com.leanowtech.bloge.gateway.integration.mirror.ReadOnlyShadowBaselineConnector;
+import com.leanowtech.bloge.gateway.integration.mirror.ReadOnlyShadowCandidateConnector;
 import com.leanowtech.bloge.gateway.integration.mirror.ReadOnlyShadowDataPlane;
+import com.leanowtech.bloge.gateway.integration.mirror.ReadOnlyShadowExecutionGuard;
+import com.leanowtech.bloge.gateway.integration.mirror.ReadOnlyShadowKillSwitchAuthority;
+import com.leanowtech.bloge.gateway.integration.mirror.ReadOnlyShadowSamplingGrantAuthority;
+import com.leanowtech.bloge.gateway.integration.mirror.ReadOnlyShadowSourceResolutionVerifier;
+import com.leanowtech.bloge.gateway.integration.mirror.ComposedReadOnlyShadowAccessAuthority;
+import com.leanowtech.bloge.gateway.integration.mirror.GovernedReadOnlyShadowDataPlane;
 import com.leanowtech.bloge.gateway.integration.mirror.ReadOnlyShadowDomainFidelitySource;
 import com.leanowtech.bloge.gateway.integration.mirror.ReadOnlyShadowJobPolicy;
 import com.leanowtech.bloge.gateway.integration.mirror.ReadOnlyShadowJobRepository;
@@ -1377,15 +1387,102 @@ public class MirrorRuntimeConfiguration {
                 observability);
     }
 
+    /** Provides a fail-closed sampling authority until a verified online adapter is installed. */
+    @Bean
+    @ConditionalOnMissingBean
+    public ReadOnlyShadowSamplingGrantAuthority
+    readOnlyShadowSamplingGrantAuthority() {
+        return ReadOnlyShadowSamplingGrantAuthority
+                .unavailable();
+    }
+
+    /** Provides a fail-closed kill-switch authority until an online adapter is installed. */
+    @Bean
+    @ConditionalOnMissingBean
+    public ReadOnlyShadowKillSwitchAuthority
+    readOnlyShadowKillSwitchAuthority() {
+        return ReadOnlyShadowKillSwitchAuthority
+                .unavailable();
+    }
+
+    /** Joins sampling, kill-switch, and deployment egress decisions around each paired run. */
+    @Bean
+    @ConditionalOnMissingBean
+    public ReadOnlyShadowAccessAuthority
+    readOnlyShadowAccessAuthority(
+            ReadOnlyShadowSamplingGrantAuthority sampling,
+            ReadOnlyShadowKillSwitchAuthority killSwitch,
+            MirrorDeploymentIsolationRunTrustAuthority egress) {
+        return new ComposedReadOnlyShadowAccessAuthority(
+                sampling,
+                killSwitch,
+                egress,
+                Clock.systemUTC());
+    }
+
+    /** Provides a fail-closed shared budget/circuit guard until a durable adapter is installed. */
+    @Bean
+    @ConditionalOnMissingBean
+    public ReadOnlyShadowExecutionGuard
+    readOnlyShadowExecutionGuard() {
+        return ReadOnlyShadowExecutionGuard.unavailable();
+    }
+
+    /** Provides a fail-closed baseline connector until an isolated read adapter is installed. */
+    @Bean
+    @ConditionalOnMissingBean
+    public ReadOnlyShadowBaselineConnector
+    readOnlyShadowBaselineConnector() {
+        return ReadOnlyShadowBaselineConnector.unavailable();
+    }
+
+    /** Provides a fail-closed candidate connector until a sealed runtime adapter is installed. */
+    @Bean
+    @ConditionalOnMissingBean
+    public ReadOnlyShadowCandidateConnector
+    readOnlyShadowCandidateConnector() {
+        return ReadOnlyShadowCandidateConnector.unavailable();
+    }
+
+    /** Provides fail-closed source resolution until both artifact trust adapters are installed. */
+    @Bean
+    @ConditionalOnMissingBean
+    public ReadOnlyShadowSourceResolutionVerifier
+    readOnlyShadowSourceResolutionVerifier() {
+        return ReadOnlyShadowSourceResolutionVerifier
+                .unavailable();
+    }
+
+    /** Provides fail-closed normalized comparison until an exact policy runtime is installed. */
+    @Bean
+    @ConditionalOnMissingBean
+    public ReadOnlyShadowComparisonEngine
+    readOnlyShadowComparisonEngine() {
+        return ReadOnlyShadowComparisonEngine.unavailable();
+    }
+
     /**
-     * Fails closed until an operator-owned payload-isolated source and candidate connector is
-     * installed.
+     * Assembles the governed data plane while every missing deep dependency remains fail-closed.
      */
     @Bean
     @ConditionalOnMissingBean
     public ReadOnlyShadowDataPlane
-    readOnlyShadowDataPlane() {
-        return ReadOnlyShadowDataPlane.unavailable();
+    readOnlyShadowDataPlane(
+            ReadOnlyShadowAccessAuthority authority,
+            ReadOnlyShadowExecutionGuard guard,
+            ReadOnlyShadowBaselineConnector baseline,
+            ReadOnlyShadowCandidateConnector candidate,
+            ReadOnlyShadowSourceResolutionVerifier
+                    sourceVerifier,
+            ReadOnlyShadowComparisonEngine comparisonEngine) {
+        return new GovernedReadOnlyShadowDataPlane(
+                authority,
+                guard,
+                baseline,
+                candidate,
+                sourceVerifier,
+                comparisonEngine,
+                Clock.systemUTC());
     }
 
     /** Creates the owner/epoch fenced one-step durable Shadow worker. */

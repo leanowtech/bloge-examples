@@ -32,7 +32,7 @@ integration something the business flow can see, reason about, test, and change.
 | Governed capability observations | Signed payload-free invocation facts, operator-owned admission policy, external vault/proof verification, durable admitted-or-quarantined decisions, full-scope idempotency, and independent offline verification |
 | Governed capability corpora | Immutable quarantine review, exact admitted-source candidates, metadata risk gates, independent owner-reviewed publication lineage, second source-authority verification, and honest resolver readiness |
 | Governed scenario rehearsal | Append-only Scenario assets, exact compilation, durable per-case execution, independently signed aggregate and batch evidence, multi-hold retention/deletion proof at both levels, deterministic ANEKE workbook seeds, separate opt-in regional DAG/KMS schedulers, and a server-authorized two-person remediation transaction kernel |
-| Reconstructable domain fidelity | Owner-approved content-addressed coverage inventory, append-only full-scope persistence, managed signed payload-free seven-dimension profiles, protected register/read APIs, independently re-verified Scenario projection, v2 signed read-only Shadow comparison with exact normalization/source-resolution closure, a protected full-scope durable sample-ordinal queue, append-only lifecycle API, optional bounded scheduler, owner/epoch fenced worker kernel, typed dynamic readiness, fail-closed freshness/abstention/low-sample semantics, Wilson 95% confidence, exact source lineage, and independent Test Kit verification without a composite score |
+| Reconstructable domain fidelity | Owner-approved content-addressed coverage inventory, append-only full-scope persistence, managed signed payload-free seven-dimension profiles, protected register/read APIs, independently re-verified Scenario projection, v2 signed read-only Shadow comparison with exact normalization/source-resolution closure, a protected full-scope durable sample-ordinal queue, append-only lifecycle API, optional bounded scheduler, owner/epoch fenced worker kernel, a governed fail-closed data-plane composition with double-observed grant/kill-switch/egress authority and isolated connector boundaries, typed dynamic readiness, fail-closed freshness/abstention/low-sample semantics, Wilson 95% confidence, exact source lineage, and independent Test Kit verification without a composite score |
 | Stateful mirror sessions | Versioned entity/write/session/checkpoint/write-attempt protocols, atomic multi-entity mutations, exact replay, AES-GCM isolated persistence, lease/fence/CAS concurrency, durable crash-window reconciliation, TTL/destroy, payload-free signed state evidence, signed same-data-plane restart recovery admission, ANEKE workbook seeds, and independently verified clients |
 | Governed replay payloads | Payload values detached from immutable evidence, classification ABAC, selective retention, legal hold, bounded expiry, and signed deletion proof |
 | Workbook and gate evidence loop | Deterministic sanitized workbook seeds, exact suite/run evidence refs, versioned gate decision basis, stale detection, and transactional gate events |
@@ -56,8 +56,10 @@ DAG workers plus isolated evidence-finalization lanes for one exact
 `test`/`staging` regional queue partition.
 Add `--shadow-jobs` to assemble the durable read-only Shadow submit/read/lifecycle
 API. `--shadow-scheduler` also starts bounded pollers, but the demo deliberately
-keeps the trusted baseline/candidate data plane unavailable, so worker and
-end-to-end serving readiness remain false until an operator-owned connector is installed.
+keeps the governed data plane's online authorities, shared guard, trusted
+baseline/candidate connectors, source resolver, and comparison engine
+unavailable, so worker and end-to-end serving readiness remain false until
+operator-owned adapters are installed.
 
 | Open | Best first move |
 | --- | --- |
@@ -569,8 +571,18 @@ identity and waits for `mirrorReadOnlyShadowJobApi=true`,
 `mirrorReadOnlyShadowLifecycleAudit=true`, and
 `mirrorReadOnlyShadowScheduling=true`. It does not wait for or claim
 `mirrorReadOnlyShadowWorkerReady` or `mirrorReadOnlyShadowServingReady`: the
-default `ReadOnlyShadowDataPlane` is intentionally unavailable and therefore
-does not consume an attempt or touch an external system.
+default `GovernedReadOnlyShadowDataPlane` is assembled, but each deep
+authority/guard/connector/verifier adapter is intentionally fail-closed.
+Therefore it does not consume an attempt or touch an external system.
+
+The default composition fixes the production call order: heartbeat, exact
+grant/kill-switch/egress admission, shared guard acquisition, isolated baseline,
+isolated candidate, terminal authority confirmation, independent source
+resolution, typed comparison, and guard completion. Its connector result type
+cannot carry raw request/response payloads; only signed source coordinates,
+normalized fact fingerprints, and measured write-capability counters cross the
+boundary. The egress proof kind is the deployment-isolation protocol's exact
+`DEPLOYMENT_ISOLATION_ATTESTATION`.
 
 Submit a request that validates against
 [`read-only-shadow-job-request-v1.schema.json`](../docs/schemas/resource-gateway-mirror/read-only-shadow-job-request-v1.schema.json):

@@ -109,8 +109,8 @@ offline artifact verification live in the independent `resource-gateway-test-kit
 | `domain-fidelity-inventory-registration-request-v1.schema.json` | `DomainFidelityInventoryRegistrationRequest` | Strict Owner command for one immutable full-scope coverage-denominator revision |
 | `domain-fidelity-inventory-v1.schema.json` | `DomainFidelityInventory` | Owner-approved content-addressed domain coverage denominator with exact Scenario/capability units |
 | `domain-fidelity-profile-v1.schema.json` | `DomainFidelityProfile` | Signed payload-free seven-dimension fidelity vector with complete denominator, confidence, source, and abstention debt |
-| `read-only-shadow-comparison-v1.schema.json` | `ReadOnlyShadowComparison` | Legacy signed payload-free single-request typed baseline/candidate comparison |
-| `read-only-shadow-comparison-v2.schema.json` | `ReadOnlyShadowComparison` | Current comparison adding exact normalization policy and source-resolution attestation closure |
+| `read-only-shadow-comparison-v1.schema.json` | `ReadOnlyShadowComparison` | Legacy signed payload-free single-request typed baseline/candidate comparison; egress proof closes to the exact `DEPLOYMENT_ISOLATION_ATTESTATION` protocol kind |
+| `read-only-shadow-comparison-v2.schema.json` | `ReadOnlyShadowComparison` | Current comparison adding exact normalization policy and source-resolution attestation closure; inherits the exact deployment-isolation proof kind |
 | `read-only-shadow-job-request-v1.schema.json` | `ReadOnlyShadowJobRequest` | Immutable payload-free Shadow admission command with exact grant ordinal, authority coordinates, and deadline |
 | `read-only-shadow-job-v1.schema.json` | `ReadOnlyShadowJob` | Integrity-addressed public durable queue projection without payload or raw lease owner |
 | `read-only-shadow-job-lifecycle-event-v1.schema.json` | `ReadOnlyShadowJobLifecycleEvent` | Append-only payload-free committed transition fact with database time and fencing coordinates |

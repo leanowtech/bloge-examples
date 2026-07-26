@@ -134,6 +134,8 @@ public interface ReadOnlyShadowDataPlane {
         GRANT_REVOKED(false),
         KILL_SWITCH_OPEN(false),
         EGRESS_DENIED(false),
+        BUDGET_EXHAUSTED(true),
+        CIRCUIT_OPEN(true),
         WRITE_CAPABILITY_DETECTED(false),
         WRITE_ATTEMPT_DETECTED(false),
         NORMALIZATION_POLICY_UNAVAILABLE(true),

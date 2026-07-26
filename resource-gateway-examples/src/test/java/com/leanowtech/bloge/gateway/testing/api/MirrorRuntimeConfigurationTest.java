@@ -15,17 +15,27 @@ import com.leanowtech.bloge.gateway.integration.mirror.MirrorOperationTelemetry;
 import com.leanowtech.bloge.gateway.integration.mirror.MirrorPlanRepository;
 import com.leanowtech.bloge.gateway.integration.mirror.MirrorRunRequestRepository;
 import com.leanowtech.bloge.gateway.integration.mirror.CompiledScenarioRehearsalPlanRepository;
+import com.leanowtech.bloge.gateway.integration.mirror.ComposedReadOnlyShadowAccessAuthority;
 import com.leanowtech.bloge.gateway.integration.mirror.DomainFidelityProfileIntegrity;
 import com.leanowtech.bloge.gateway.integration.mirror.DomainFidelityRepository;
 import com.leanowtech.bloge.gateway.integration.mirror.DomainFidelityService;
+import com.leanowtech.bloge.gateway.integration.mirror.GovernedReadOnlyShadowDataPlane;
+import com.leanowtech.bloge.gateway.integration.mirror.ReadOnlyShadowAccessAuthority;
+import com.leanowtech.bloge.gateway.integration.mirror.ReadOnlyShadowBaselineConnector;
+import com.leanowtech.bloge.gateway.integration.mirror.ReadOnlyShadowCandidateConnector;
 import com.leanowtech.bloge.gateway.integration.mirror.ReadOnlyShadowComparisonIntegrity;
+import com.leanowtech.bloge.gateway.integration.mirror.ReadOnlyShadowComparisonEngine;
 import com.leanowtech.bloge.gateway.integration.mirror.ReadOnlyShadowDataPlane;
 import com.leanowtech.bloge.gateway.integration.mirror.ReadOnlyShadowDomainFidelitySource;
+import com.leanowtech.bloge.gateway.integration.mirror.ReadOnlyShadowExecutionGuard;
 import com.leanowtech.bloge.gateway.integration.mirror.ReadOnlyShadowJobPolicy;
 import com.leanowtech.bloge.gateway.integration.mirror.ReadOnlyShadowJobRepository;
 import com.leanowtech.bloge.gateway.integration.mirror.ReadOnlyShadowJobScheduler;
 import com.leanowtech.bloge.gateway.integration.mirror.ReadOnlyShadowJobService;
 import com.leanowtech.bloge.gateway.integration.mirror.ReadOnlyShadowJobWorker;
+import com.leanowtech.bloge.gateway.integration.mirror.ReadOnlyShadowKillSwitchAuthority;
+import com.leanowtech.bloge.gateway.integration.mirror.ReadOnlyShadowSamplingGrantAuthority;
+import com.leanowtech.bloge.gateway.integration.mirror.ReadOnlyShadowSourceResolutionVerifier;
 import com.leanowtech.bloge.gateway.integration.mirror.MirrorSessionCheckpointIntegrityService;
 import com.leanowtech.bloge.gateway.integration.mirror.ScenarioArtifactRepository;
 import com.leanowtech.bloge.gateway.integration.mirror.ScenarioRehearsalBatchCompiler;
@@ -428,7 +438,54 @@ class MirrorRuntimeConfigurationTest {
         assertThat(context.getBeansOfType(
                 ReadOnlyShadowJobService.class)).hasSize(1);
         assertThat(context.getBeansOfType(
-                ReadOnlyShadowDataPlane.class)).hasSize(1);
+                ReadOnlyShadowSamplingGrantAuthority.class).values())
+                .singleElement()
+                .satisfies(authority ->
+                        assertThat(authority.available()).isFalse());
+        assertThat(context.getBeansOfType(
+                ReadOnlyShadowKillSwitchAuthority.class).values())
+                .singleElement()
+                .satisfies(authority ->
+                        assertThat(authority.available()).isFalse());
+        assertThat(context.getBeansOfType(
+                ReadOnlyShadowAccessAuthority.class).values())
+                .singleElement()
+                .isInstanceOf(
+                        ComposedReadOnlyShadowAccessAuthority.class)
+                .satisfies(authority ->
+                        assertThat(authority.ready()).isFalse());
+        assertThat(context.getBeansOfType(
+                ReadOnlyShadowExecutionGuard.class).values())
+                .singleElement()
+                .satisfies(guard ->
+                        assertThat(guard.ready()).isFalse());
+        assertThat(context.getBeansOfType(
+                ReadOnlyShadowBaselineConnector.class).values())
+                .singleElement()
+                .satisfies(connector ->
+                        assertThat(connector.ready()).isFalse());
+        assertThat(context.getBeansOfType(
+                ReadOnlyShadowCandidateConnector.class).values())
+                .singleElement()
+                .satisfies(connector ->
+                        assertThat(connector.ready()).isFalse());
+        assertThat(context.getBeansOfType(
+                ReadOnlyShadowSourceResolutionVerifier.class).values())
+                .singleElement()
+                .satisfies(verifier ->
+                        assertThat(verifier.ready()).isFalse());
+        assertThat(context.getBeansOfType(
+                ReadOnlyShadowComparisonEngine.class).values())
+                .singleElement()
+                .satisfies(engine ->
+                        assertThat(engine.ready()).isFalse());
+        assertThat(context.getBeansOfType(
+                ReadOnlyShadowDataPlane.class).values())
+                .singleElement()
+                .isInstanceOf(
+                        GovernedReadOnlyShadowDataPlane.class)
+                .satisfies(dataPlane ->
+                        assertThat(dataPlane.ready()).isFalse());
         assertThat(context.getBeansOfType(
                 ReadOnlyShadowJobWorker.class).values())
                 .singleElement()

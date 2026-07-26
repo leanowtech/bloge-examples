@@ -315,7 +315,7 @@ class ReadOnlyShadowComparisonVerifierTest {
         access.set(
                 "egressAuthorityRef",
                 ref(
-                        "MIRROR_DEPLOYMENT_ISOLATION_ATTESTATION",
+                        "DEPLOYMENT_ISOLATION_ATTESTATION",
                         "egress-1",
                         '5'));
         access.set(

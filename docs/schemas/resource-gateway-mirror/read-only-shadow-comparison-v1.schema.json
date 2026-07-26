@@ -169,7 +169,7 @@
         {
           "properties": {
             "kind": {
-              "const": "MIRROR_DEPLOYMENT_ISOLATION_ATTESTATION"
+              "const": "DEPLOYMENT_ISOLATION_ATTESTATION"
             }
           }
         }

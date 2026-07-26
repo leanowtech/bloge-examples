@@ -110,7 +110,8 @@ public record ReadOnlyShadowJobRequest(
                     "samplingGrantRef");
             egressAuthorityRef = requireKind(
                     egressAuthorityRef,
-                    "MIRROR_DEPLOYMENT_ISOLATION_ATTESTATION",
+                    MirrorDeploymentIsolationAttestation
+                            .ARTIFACT_KIND,
                     "egressAuthorityRef");
             killSwitchRef = requireKind(
                     killSwitchRef,
