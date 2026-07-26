@@ -93,6 +93,9 @@ silently consuming work.
 | `POST http://localhost:8080/api/mirror/domain-fidelity/inventories` | Register one immutable owner-approved coverage denominator revision (`X-Purpose: MIRROR_FIDELITY_GOVERNANCE`; trusted human owner identity required) |
 | `GET http://localhost:8080/api/mirror/domain-fidelity/inventories/{inventoryId}/latest` | Read and revalidate the current full-scope denominator (`X-Purpose: GOVERNANCE_EVIDENCE_INGESTION` or `MIRROR_FIDELITY_GOVERNANCE`) |
 | `GET http://localhost:8080/api/mirror/domain-fidelity/domains/{domainId}/profiles/latest` | Read and revalidate the newest managed-signed profile; profile projection remains unavailable until verified source adapters are assembled |
+| `POST http://localhost:8080/api/mirror/outcome-observations` | Verify, sign, and append one immutable outcome revision from an authorized customer connector (`X-Purpose: MIRROR_OUTCOME_INGESTION`; independent authority bean required) |
+| `GET http://localhost:8080/api/mirror/outcome-observations/{observationId}/head` | Reverify the current business-authority closure and read its durable reconciliation head |
+| `GET http://localhost:8080/api/mirror/outcome-observations/{observationId}/lifecycle?afterOrdinal=0&limit=100` | Read one bounded append-only lifecycle suffix for offline audit |
 | `POST http://localhost:8080/api/mirror/shadow/source-bindings` | Resolve an exact candidate evidence bundle, double-address and sign one payload-free detached source pair (`X-Purpose: MIRROR_SHADOW_SOURCE_ADMIN`; explicit source-binding protocol header required) |
 | `GET http://localhost:8080/api/mirror/shadow/source-bindings/{bindingId}/revisions/{revision}?fingerprint=...` | Read one exact currently valid detached source pair without latest-revision fallback (`X-Purpose: MIRROR_SHADOW`, `MIRROR_SHADOW_SOURCE_ADMIN`, or `GOVERNANCE_EVIDENCE_INGESTION`) |
 | `GET http://localhost:8080/api/mirror/shadow/source-resolutions/{attestationId}/revisions/{revision}?fingerprint=...` | Read one exact signed proof that both detached sources were independently re-resolved for a stable `executionId` (`X-Purpose: MIRROR_SHADOW` or `GOVERNANCE_EVIDENCE_INGESTION`; explicit source-resolution protocol header required) |
@@ -1141,7 +1144,8 @@ projection, persistence, and success audit. Pending, censored, and conflicting
 facts remain distinct abstention debt, while omitted inventory units remain
 missing.
 
-The first durable reconciliation core is also available for host composition:
+The durable reconciliation product boundary is assembled only after that
+independent authority bean exists:
 
 - `DatabaseAuthoritativeOutcomeInboxRepository` appends immutable signed
   revisions and maintains a full-scope, content-addressed head;
@@ -1155,17 +1159,74 @@ The first durable reconciliation core is also available for host composition:
   lease expiry, external successor fencing, commit replay, and chained
   lifecycle integrity have separate tested behavior.
 
-The repository verifies the local Resource Gateway seal inside short
-transactions and repeats the external business authority boundary outside the
-row lock. This core is not yet Spring-wired or exposed through protected
-ingest/read/lifecycle routes, and there is no default connector or autonomous
-scheduler. A selected-population completeness manifest is also still required
-before a supplied cohort can be treated as bias-resistant.
+The repository verifies the local Resource Gateway seal inside short database
+transactions. Admission and reads repeat the external business-authority
+verification outside those transactions, so a slow customer ledger cannot
+hold database locks. An unsigned initial command or exact unsigned retry is
+verified and signed by Resource Gateway; signed successors must carry the
+exact current predecessor. The service distinguishes unsigned idempotent retry
+by a material fingerprint that excludes only the server signature,
+`attestedAt`, and seal. It never treats different business facts as a replay.
 
-`mirrorDomainFidelityOutcomeAdapterReady=true` means only that the supplied
-authority verifier, signer, and typed source adapter are usable at probe time.
-It does not certify a customer connector, autonomous scheduling, cohort
-completeness, causality, or production calibration. Exact protocol,
+The protected API is physically absent from production and exists in `test` or
+`staging` only when Mirror is enabled and the authority bean is present:
+
+| Operation | Route | Purpose |
+|---|---|---|
+| Admit one revision | `POST /api/mirror/outcome-observations` | `MIRROR_OUTCOME_INGESTION`; `SERVICE`/`WORKLOAD` in `RESOURCE_GATEWAY_OUTCOME_CONNECTOR` |
+| Read exact revision | `GET /api/mirror/outcome-observations/{id}/revisions/{revision}` | ingestion, Fidelity governance, or governance evidence |
+| Read current revision | `GET /api/mirror/outcome-observations/{id}/latest` | same read purposes |
+| Read durable head | `GET /api/mirror/outcome-observations/{id}/head` | same read purposes |
+| Read lifecycle suffix | `GET /api/mirror/outcome-observations/{id}/lifecycle?afterOrdinal=0&limit=100` | same read purposes |
+
+Requests are authenticated before strict JSON decoding. Duplicate or unknown
+fields, trailing JSON, oversized/deep documents, caller-scope drift, invalid
+authority closure, revision gaps, forks, rollback, or corrupt stored state fail
+closed. There is deliberately no `run-now` HTTP route: connector execution is
+owned by the durable worker and its database lease.
+
+Supply a payload-isolated `AuthoritativeOutcomeConnector` to install that
+worker. Autonomous polling is opt-in:
+
+```yaml
+gateway:
+  testing:
+    mirror:
+      enabled: true
+      outcome-reconciliation:
+        scheduler:
+          enabled: true
+          instance-id: outcome-reconciler-sg-1
+          region: sg
+          environment-id: staging
+          maximum-pollers: 2
+          initial-delay-millis: 1000
+          poll-interval-millis: 1000
+          drain-timeout-millis: 30000
+```
+
+`prod`, `production`, and `live` scheduler targets are rejected. Spring also
+publishes six non-equivalent capability facts:
+`mirrorAuthoritativeOutcomeInboxApi`,
+`mirrorAuthoritativeOutcomeLifecycleAudit`,
+`mirrorAuthoritativeOutcomeConnectorReady`,
+`mirrorAuthoritativeOutcomeWorkerReady`,
+`mirrorAuthoritativeOutcomeScheduling`, and
+`mirrorAuthoritativeOutcomeContinuousReady`. The last is true only when API,
+lifecycle, connector, worker, and scheduler are all ready.
+`mirrorDomainFidelityOutcomeAdapterReady` remains a separate projection fact.
+
+The standalone Test Kit packages all five strict inbox Schemas and
+`AuthoritativeOutcomeInboxLifecycleVerifier`. It recomputes entry/event content
+addresses and verifies ordinal, predecessor-event, observation-revision, scope,
+time, and current-head closure without linking Spring or server classes. A
+valid suffix page is not mislabeled as complete history.
+
+No default customer connector or permissive business authority is installed.
+A selected-population completeness manifest, customer authority/key
+distribution, production connector, cross-region/HA certification, and
+Fidelity-to-outcome calibration are still required before a cohort can be
+called bias-resistant or a deployment production-ready. Exact protocol,
 integration, and offline-verification rules are in the
 [domain fidelity guide](../docs/resource-gateway-domain-fidelity-profile.md).
 The server-produced public-only

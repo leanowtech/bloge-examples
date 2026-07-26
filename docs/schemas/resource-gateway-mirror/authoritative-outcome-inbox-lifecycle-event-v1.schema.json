@@ -1,0 +1,105 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://bloge.dev/schemas/resource-gateway-mirror/authoritative-outcome-inbox-lifecycle-event-v1.schema.json",
+  "title": "Resource Gateway Authoritative Outcome Inbox Lifecycle Event v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "scope",
+    "observationId",
+    "eventOrdinal",
+    "transition",
+    "status",
+    "observationRevision",
+    "observationFingerprint",
+    "predecessorObservationFingerprint",
+    "reconciliation",
+    "attemptCount",
+    "consecutiveFailures",
+    "leaseEpoch",
+    "ownerFingerprint",
+    "occurredAt",
+    "failureCode",
+    "previousEventFingerprint",
+    "eventFingerprint"
+  ],
+  "properties": {
+    "schemaVersion": {
+      "const": "resourceGateway.authoritativeOutcomeInboxLifecycle.v1"
+    },
+    "scope": {
+      "$ref": "mirror-plan-v1.schema.json#/$defs/scope"
+    },
+    "observationId": {
+      "$ref": "read-only-shadow-comparison-v1.schema.json#/$defs/identifier"
+    },
+    "eventOrdinal": {
+      "type": "integer",
+      "minimum": 1
+    },
+    "transition": {
+      "enum": [
+        "OBSERVATION_APPENDED",
+        "CLAIMED",
+        "HEARTBEAT",
+        "NO_CHANGE",
+        "RETRY_SCHEDULED",
+        "LEASE_EXPIRED",
+        "SUCCESSOR_APPENDED",
+        "SETTLED",
+        "QUARANTINED"
+      ]
+    },
+    "status": {
+      "enum": [
+        "QUEUED",
+        "RUNNING",
+        "SETTLED",
+        "QUARANTINED"
+      ]
+    },
+    "observationRevision": {
+      "type": "integer",
+      "minimum": 1
+    },
+    "observationFingerprint": {
+      "$ref": "mirror-plan-v1.schema.json#/$defs/fingerprint"
+    },
+    "predecessorObservationFingerprint": {
+      "$ref": "authoritative-outcome-inbox-entry-v1.schema.json#/$defs/optionalFingerprint"
+    },
+    "reconciliation": {
+      "$ref": "authoritative-outcome-inbox-entry-v1.schema.json#/$defs/reconciliation"
+    },
+    "attemptCount": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "consecutiveFailures": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 1000
+    },
+    "leaseEpoch": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "ownerFingerprint": {
+      "$ref": "authoritative-outcome-inbox-entry-v1.schema.json#/$defs/optionalFingerprint"
+    },
+    "occurredAt": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "failureCode": {
+      "$ref": "authoritative-outcome-inbox-entry-v1.schema.json#/$defs/optionalFailureCode"
+    },
+    "previousEventFingerprint": {
+      "$ref": "authoritative-outcome-inbox-entry-v1.schema.json#/$defs/optionalFingerprint"
+    },
+    "eventFingerprint": {
+      "$ref": "mirror-plan-v1.schema.json#/$defs/fingerprint"
+    }
+  }
+}

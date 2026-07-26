@@ -90,6 +90,14 @@ public class ToolStudioIntegrationService {
                     () -> false,
                     new DomainFidelitySourceAvailability(
                             List.of()));
+    private AuthoritativeOutcomeRuntimeAvailability
+            authoritativeOutcomeRuntimeAvailability =
+            new AuthoritativeOutcomeRuntimeAvailability(
+                    false,
+                    false,
+                    () -> false,
+                    () -> false,
+                    () -> false);
     private ReadOnlyShadowRuntimeAvailability
             readOnlyShadowRuntimeAvailability =
             new ReadOnlyShadowRuntimeAvailability(
@@ -221,6 +229,21 @@ public class ToolStudioIntegrationService {
                         () -> false,
                         new DomainFidelitySourceAvailability(
                                 List.of()))
+                        : availability;
+    }
+
+    /** Receives the marker only when protected outcome inbox routes are assembled. */
+    @Autowired(required = false)
+    void configureAuthoritativeOutcomeRuntime(
+            AuthoritativeOutcomeRuntimeAvailability availability) {
+        this.authoritativeOutcomeRuntimeAvailability =
+                availability == null
+                        ? new AuthoritativeOutcomeRuntimeAvailability(
+                        false,
+                        false,
+                        () -> false,
+                        () -> false,
+                        () -> false)
                         : availability;
     }
 
@@ -669,6 +692,30 @@ public class ToolStudioIntegrationService {
                 "mirrorDomainFidelityOutcomeAdapterReady",
                 domainFidelityRuntimeAvailability
                         .outcomeAdapterReady());
+        features.put(
+                "mirrorAuthoritativeOutcomeInboxApi",
+                authoritativeOutcomeRuntimeAvailability
+                        .inboxApi());
+        features.put(
+                "mirrorAuthoritativeOutcomeLifecycleAudit",
+                authoritativeOutcomeRuntimeAvailability
+                        .lifecycleAudit());
+        features.put(
+                "mirrorAuthoritativeOutcomeConnectorReady",
+                authoritativeOutcomeRuntimeAvailability
+                        .connectorReady());
+        features.put(
+                "mirrorAuthoritativeOutcomeWorkerReady",
+                authoritativeOutcomeRuntimeAvailability
+                        .workerReady());
+        features.put(
+                "mirrorAuthoritativeOutcomeScheduling",
+                authoritativeOutcomeRuntimeAvailability
+                        .schedulerReady());
+        features.put(
+                "mirrorAuthoritativeOutcomeContinuousReady",
+                authoritativeOutcomeRuntimeAvailability
+                        .continuousReady());
         features.put(
                 "mirrorReadOnlyShadowJobApi",
                 readOnlyShadowRuntimeAvailability
@@ -1144,6 +1191,44 @@ public class ToolStudioIntegrationService {
                                     .DomainFidelityProfile
                                     .SCHEMA_VERSION));
         }
+        if (authoritativeOutcomeRuntimeAvailability.inboxApi()) {
+            supportedObjects.put(
+                    "authoritativeOutcomeObservationAdmissionRequest",
+                    List.of(
+                            com.leanowtech.bloge.gateway.integration.mirror
+                                    .AuthoritativeOutcomeObservationAdmissionRequest
+                                    .SCHEMA_VERSION));
+            supportedObjects.put(
+                    "authoritativeOutcomeInboxAdmission",
+                    List.of(
+                            com.leanowtech.bloge.gateway.integration.mirror
+                                    .AuthoritativeOutcomeInboxAdmission
+                                    .SCHEMA_VERSION));
+            supportedObjects.put(
+                    "authoritativeOutcomeObservation",
+                    List.of(
+                            com.leanowtech.bloge.gateway.integration.mirror
+                                    .AuthoritativeOutcomeObservation
+                                    .SCHEMA_VERSION));
+            supportedObjects.put(
+                    "authoritativeOutcomeInboxEntry",
+                    List.of(
+                            com.leanowtech.bloge.gateway.integration.mirror
+                                    .AuthoritativeOutcomeInboxEntry
+                                    .SCHEMA_VERSION));
+            supportedObjects.put(
+                    "authoritativeOutcomeInboxLifecycleEvent",
+                    List.of(
+                            com.leanowtech.bloge.gateway.integration.mirror
+                                    .AuthoritativeOutcomeInboxLifecycleEvent
+                                    .SCHEMA_VERSION));
+            supportedObjects.put(
+                    "authoritativeOutcomeInboxLifecyclePage",
+                    List.of(
+                            com.leanowtech.bloge.gateway.integration.mirror
+                                    .AuthoritativeOutcomeInboxLifecyclePage
+                                    .SCHEMA_VERSION));
+        }
         if (domainFidelityRuntimeAvailability.profileReadApi()
                 || readOnlyShadowRuntimeAvailability.jobApi()) {
             supportedObjects.put(
@@ -1581,6 +1666,23 @@ public class ToolStudioIntegrationService {
             endpoints.add(new IntegrationCapabilities.Endpoint(
                     "GET",
                     "/api/mirror/domain-fidelity/domains/{domainId}/profiles/latest"));
+        }
+        if (authoritativeOutcomeRuntimeAvailability.inboxApi()) {
+            endpoints.add(new IntegrationCapabilities.Endpoint(
+                    "POST",
+                    "/api/mirror/outcome-observations"));
+            endpoints.add(new IntegrationCapabilities.Endpoint(
+                    "GET",
+                    "/api/mirror/outcome-observations/{observationId}/revisions/{revision}"));
+            endpoints.add(new IntegrationCapabilities.Endpoint(
+                    "GET",
+                    "/api/mirror/outcome-observations/{observationId}/latest"));
+            endpoints.add(new IntegrationCapabilities.Endpoint(
+                    "GET",
+                    "/api/mirror/outcome-observations/{observationId}/head"));
+            endpoints.add(new IntegrationCapabilities.Endpoint(
+                    "GET",
+                    "/api/mirror/outcome-observations/{observationId}/lifecycle"));
         }
         if (readOnlyShadowRuntimeAvailability.jobApi()) {
             endpoints.add(new IntegrationCapabilities.Endpoint(

@@ -5,6 +5,9 @@ import com.leanowtech.bloge.core.spi.DefaultOperatorRegistry;
 import com.leanowtech.bloge.core.spi.OperatorRegistry;
 import com.leanowtech.bloge.gateway.expression.BlgeExpressionEvaluator;
 import com.leanowtech.bloge.gateway.exception.ResourceNotFoundException;
+import com.leanowtech.bloge.gateway.integration.AuthoritativeOutcomeInboxController;
+import com.leanowtech.bloge.gateway.integration.AuthoritativeOutcomeObservationRequestDecoder;
+import com.leanowtech.bloge.gateway.integration.IntegrationRequestAuthenticator;
 import com.leanowtech.bloge.gateway.integration.mirror.MirrorEvidenceIntegrityService;
 import com.leanowtech.bloge.gateway.integration.mirror.MirrorEvidenceRepository;
 import com.leanowtech.bloge.gateway.integration.mirror.MirrorFixtureScopeRepository;
@@ -17,8 +20,15 @@ import com.leanowtech.bloge.gateway.integration.mirror.MirrorRunRequestRepositor
 import com.leanowtech.bloge.gateway.integration.mirror.CompiledScenarioRehearsalPlanRepository;
 import com.leanowtech.bloge.gateway.integration.mirror.ComposedReadOnlyShadowAccessAuthority;
 import com.leanowtech.bloge.gateway.integration.mirror.AuthoritativeOutcomeAuthorityVerifier;
+import com.leanowtech.bloge.gateway.integration.mirror.AuthoritativeOutcomeConnector;
 import com.leanowtech.bloge.gateway.integration.mirror.AuthoritativeOutcomeDomainFidelitySource;
+import com.leanowtech.bloge.gateway.integration.mirror.AuthoritativeOutcomeInboxAccessPolicy;
+import com.leanowtech.bloge.gateway.integration.mirror.AuthoritativeOutcomeInboxPolicy;
+import com.leanowtech.bloge.gateway.integration.mirror.AuthoritativeOutcomeInboxRepository;
+import com.leanowtech.bloge.gateway.integration.mirror.AuthoritativeOutcomeInboxService;
 import com.leanowtech.bloge.gateway.integration.mirror.AuthoritativeOutcomeObservationIntegrity;
+import com.leanowtech.bloge.gateway.integration.mirror.AuthoritativeOutcomeReconciliationScheduler;
+import com.leanowtech.bloge.gateway.integration.mirror.AuthoritativeOutcomeReconciliationWorker;
 import com.leanowtech.bloge.gateway.integration.mirror.DomainFidelityProfileIntegrity;
 import com.leanowtech.bloge.gateway.integration.mirror.DomainFidelityRepository;
 import com.leanowtech.bloge.gateway.integration.mirror.DomainFidelityService;
@@ -110,6 +120,7 @@ import com.leanowtech.bloge.gateway.integration.mirror.CapabilityCorpusSourceVer
 import com.leanowtech.bloge.gateway.integration.mirror.CapabilityRetryPolicyProvider;
 import com.leanowtech.bloge.gateway.integration.mirror.CapabilityObservationReviewRepository;
 import com.leanowtech.bloge.gateway.integration.MirrorRuntimeAvailability;
+import com.leanowtech.bloge.gateway.integration.AuthoritativeOutcomeRuntimeAvailability;
 import com.leanowtech.bloge.gateway.integration.DomainFidelityRuntimeAvailability;
 import com.leanowtech.bloge.gateway.integration.OnlineReadOnlyShadowBaselineRuntimeAvailability;
 import com.leanowtech.bloge.gateway.integration.OnlineReadOnlyShadowDataPlaneRuntimeAvailability;
@@ -165,7 +176,7 @@ class MirrorRuntimeConfigurationTest {
     }
 
     @Test
-    void outcomeAdapterRequiresAnExplicitHealthyBusinessAuthority() {
+    void outcomeInboxRequiresExplicitAuthorityConnectorAndAutonomousScheduling() {
         try (var absent = context(true, "test");
              var configured = context(
                      Map.of(
@@ -175,7 +186,41 @@ class MirrorRuntimeConfigurationTest {
                              true,
                              "test.available-signer",
                              true),
-                     "test")) {
+                     "test");
+             var connected = context(
+                     Map.of(
+                             "gateway.testing.mirror.enabled",
+                             true,
+                             "test.outcome-authority",
+                             true,
+                             "test.available-signer",
+                             true,
+                             "test.outcome-connector",
+                             true),
+                     "staging");
+             var scheduled = context(
+                     Map.of(
+                             "gateway.testing.mirror.enabled",
+                             true,
+                             "test.outcome-authority",
+                             true,
+                             "test.available-signer",
+                             true,
+                             "test.outcome-connector",
+                             true,
+                             AuthoritativeOutcomeReconciliationSchedulerProperties
+                                     .PREFIX + ".enabled",
+                             true,
+                             AuthoritativeOutcomeReconciliationSchedulerProperties
+                                     .PREFIX + ".instance-id",
+                             "outcome-replica-a",
+                             AuthoritativeOutcomeReconciliationSchedulerProperties
+                                     .PREFIX + ".region",
+                             "sg",
+                             AuthoritativeOutcomeReconciliationSchedulerProperties
+                                     .PREFIX + ".environment-id",
+                             "outcome-staging"),
+                     "staging")) {
             assertThat(absent.getBeansOfType(
                     AuthoritativeOutcomeObservationIntegrity.class))
                     .isEmpty();
@@ -185,6 +230,18 @@ class MirrorRuntimeConfigurationTest {
             assertThat(absent.getBean(
                     DomainFidelityRuntimeAvailability.class)
                     .outcomeAdapterReady()).isFalse();
+            assertThat(absent.getBeansOfType(
+                    AuthoritativeOutcomeInboxRepository.class))
+                    .isEmpty();
+            assertThat(absent.getBeansOfType(
+                    AuthoritativeOutcomeInboxService.class))
+                    .isEmpty();
+            assertThat(absent.getBeansOfType(
+                    AuthoritativeOutcomeRuntimeAvailability.class))
+                    .isEmpty();
+            assertThat(absent.getBeansOfType(
+                    AuthoritativeOutcomeInboxController.class))
+                    .isEmpty();
 
             assertThat(configured.getBeansOfType(
                     AuthoritativeOutcomeObservationIntegrity.class))
@@ -195,6 +252,65 @@ class MirrorRuntimeConfigurationTest {
             assertThat(configured.getBean(
                     DomainFidelityRuntimeAvailability.class)
                     .outcomeAdapterReady()).isTrue();
+            assertThat(configured.getBeansOfType(
+                    AuthoritativeOutcomeInboxPolicy.class))
+                    .hasSize(1);
+            assertThat(configured.getBeansOfType(
+                    AuthoritativeOutcomeInboxAccessPolicy.class))
+                    .hasSize(1);
+            assertThat(configured.getBeansOfType(
+                    AuthoritativeOutcomeInboxRepository.class))
+                    .hasSize(1);
+            assertThat(configured.getBeansOfType(
+                    AuthoritativeOutcomeInboxService.class))
+                    .hasSize(1);
+            assertThat(configured.getBeansOfType(
+                    AuthoritativeOutcomeObservationRequestDecoder.class))
+                    .hasSize(1);
+            assertThat(configured.getBeansOfType(
+                    AuthoritativeOutcomeInboxController.class))
+                    .hasSize(1);
+            assertThat(configured.getBeansOfType(
+                    AuthoritativeOutcomeReconciliationWorker.class))
+                    .isEmpty();
+            assertThat(configured.getBean(
+                    AuthoritativeOutcomeRuntimeAvailability.class))
+                    .satisfies(availability -> {
+                        assertThat(availability.inboxApi()).isTrue();
+                        assertThat(availability.lifecycleAudit())
+                                .isTrue();
+                        assertThat(availability.connectorReady())
+                                .isFalse();
+                        assertThat(availability.workerReady())
+                                .isFalse();
+                        assertThat(availability.schedulerReady())
+                                .isFalse();
+                        assertThat(availability.continuousReady())
+                                .isFalse();
+                    });
+            assertThat(connected.getBeansOfType(
+                    AuthoritativeOutcomeReconciliationWorker.class))
+                    .hasSize(1);
+            assertThat(connected.getBean(
+                    AuthoritativeOutcomeRuntimeAvailability.class))
+                    .satisfies(availability -> {
+                        assertThat(availability.connectorReady())
+                                .isTrue();
+                        assertThat(availability.workerReady()).isTrue();
+                        assertThat(availability.schedulerReady())
+                                .isFalse();
+                        assertThat(availability.continuousReady())
+                                .isFalse();
+                    });
+            assertThat(scheduled.getBeansOfType(
+                    AuthoritativeOutcomeReconciliationScheduler.class)
+                    .values())
+                    .singleElement()
+                    .satisfies(scheduler ->
+                            assertThat(scheduler.ready()).isTrue());
+            assertThat(scheduled.getBean(
+                    AuthoritativeOutcomeRuntimeAvailability.class)
+                    .continuousReady()).isTrue();
         }
     }
 
@@ -560,6 +676,10 @@ class MirrorRuntimeConfigurationTest {
         context.registerBean(BlgeExpressionEvaluator.class,
                 () -> new BlgeExpressionEvaluator());
         context.registerBean(
+                IntegrationRequestAuthenticator.class,
+                () -> mock(
+                        IntegrationRequestAuthenticator.class));
+        context.registerBean(
                 VisualEvidenceSigner.class,
                 () -> Boolean.TRUE.equals(
                         properties.get("test.available-signer"))
@@ -580,6 +700,27 @@ class MirrorRuntimeConfigurationTest {
                                 com.leanowtech.bloge.gateway.integration.mirror
                                         .AuthoritativeOutcomeObservation
                                         observation) {
+                        }
+                    });
+        }
+        if (Boolean.TRUE.equals(
+                properties.get("test.outcome-connector"))) {
+            context.registerBean(
+                    AuthoritativeOutcomeConnector.class,
+                    () -> new AuthoritativeOutcomeConnector() {
+                        @Override
+                        public boolean ready() {
+                            return true;
+                        }
+
+                        @Override
+                        public Result reconcile(
+                                com.leanowtech.bloge.gateway.integration.mirror
+                                        .AuthoritativeOutcomeObservation
+                                        current,
+                                java.time.Instant observedAt,
+                                ExecutionControl control) {
+                            return Result.noChange();
                         }
                     });
         }
@@ -643,6 +784,10 @@ class MirrorRuntimeConfigurationTest {
                 () -> new JdbcTemplate(context.getBean(EmbeddedDatabase.class)));
         context.register(TransactionConfiguration.class);
         context.register(MirrorRuntimeConfiguration.class);
+        context.register(
+                AuthoritativeOutcomeObservationRequestDecoder.class);
+        context.register(
+                AuthoritativeOutcomeInboxController.class);
         context.refresh();
         return context;
     }

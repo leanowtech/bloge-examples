@@ -6,6 +6,7 @@ import com.fasterxml.jackson.databind.node.ObjectNode;
 import org.junit.jupiter.api.Test;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 class AuthoritativeOutcomeObservationCompatibilityFixtureTest {
     @Test
@@ -72,5 +73,53 @@ class AuthoritativeOutcomeObservationCompatibilityFixtureTest {
                 .verify()
                 .verified())
                 .isTrue();
+    }
+
+    @Test
+    void strictAdmissionSchemaAcceptsSignedAndExactUnsignedForms() {
+        AuthoritativeOutcomeObservationCompatibilityFixture fixture =
+                CapabilityMirrorProtocol
+                        .authoritativeOutcomeObservationCompatibilityFixture();
+        ObjectMapper mapper = new ObjectMapper()
+                .findAndRegisterModules();
+        ObjectNode request = mapper.createObjectNode();
+        request.put(
+                "schemaVersion",
+                CapabilityMirrorProtocol
+                        .AUTHORITATIVE_OUTCOME_OBSERVATION_ADMISSION_REQUEST_V1);
+        request.put("expectedPredecessorFingerprint", "");
+        request.set("observation", fixture.observation());
+
+        CapabilityMirrorSchemaValidator.require(
+                request,
+                CapabilityMirrorProtocol
+                        .AUTHORITATIVE_OUTCOME_OBSERVATION_ADMISSION_REQUEST_SCHEMA_RESOURCE,
+                "SIGNED_REQUEST_INVALID");
+
+        ObjectNode unsigned = request.deepCopy();
+        ObjectNode observation =
+                (ObjectNode) unsigned.path("observation");
+        observation.put("observationFingerprint", "");
+        ObjectNode seal =
+                (ObjectNode) observation.path("observationSeal");
+        seal.put("materialFingerprint", "");
+        seal.put("algorithm", "");
+        seal.put("keyId", "");
+        seal.put("signedAt", "1970-01-01T00:00:00Z");
+        seal.put("signature", "");
+        CapabilityMirrorSchemaValidator.require(
+                unsigned,
+                CapabilityMirrorProtocol
+                        .AUTHORITATIVE_OUTCOME_OBSERVATION_ADMISSION_REQUEST_SCHEMA_RESOURCE,
+                "UNSIGNED_REQUEST_INVALID");
+
+        unsigned.put("callerClaimedOutcome", "MATCH");
+        assertThatThrownBy(() ->
+                CapabilityMirrorSchemaValidator.require(
+                        unsigned,
+                        CapabilityMirrorProtocol
+                                .AUTHORITATIVE_OUTCOME_OBSERVATION_ADMISSION_REQUEST_SCHEMA_RESOURCE,
+                        "RG.MIRROR.CLIENT.UNKNOWN_FIELD_ACCEPTED"))
+                .isInstanceOf(IllegalArgumentException.class);
     }
 }

@@ -1,0 +1,170 @@
+package com.leanowtech.bloge.gateway.integration.mirror;
+
+import org.junit.jupiter.api.Test;
+
+import java.time.Duration;
+import java.util.List;
+import java.util.concurrent.CopyOnWriteArrayList;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.Executors;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.TimeoutException;
+import java.util.concurrent.atomic.AtomicInteger;
+
+import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.when;
+
+class AuthoritativeOutcomeReconciliationSchedulerTest {
+
+    @Test
+    void pollsOnlyTheConfiguredPartitionWithStableLaneOwners()
+            throws Exception {
+        AuthoritativeOutcomeReconciliationWorker worker =
+                mock(AuthoritativeOutcomeReconciliationWorker.class);
+        CountDownLatch observed = new CountDownLatch(2);
+        List<List<String>> calls = new CopyOnWriteArrayList<>();
+        when(worker.runOne(
+                anyString(), anyString(), anyString()))
+                .thenAnswer(invocation -> {
+                    calls.add(List.of(
+                            invocation.getArgument(0),
+                            invocation.getArgument(1),
+                            invocation.getArgument(2)));
+                    observed.countDown();
+                    return noWork();
+                });
+
+        try (AuthoritativeOutcomeReconciliationScheduler scheduler =
+                     scheduler(worker, 2)) {
+            assertThat(observed.await(3, TimeUnit.SECONDS))
+                    .isTrue();
+            assertThat(scheduler.ready()).isTrue();
+            assertThat(scheduler.region()).isEqualTo("sg");
+            assertThat(scheduler.environmentId())
+                    .isEqualTo("outcome-staging");
+            assertThat(calls).allSatisfy(call -> {
+                assertThat(call.get(0)).isEqualTo("sg");
+                assertThat(call.get(1))
+                        .isEqualTo("outcome-staging");
+                assertThat(call.get(2))
+                        .startsWith("replica-a/lane-");
+            });
+            assertThat(calls.stream()
+                    .map(call -> call.get(2))
+                    .distinct()
+                    .count()).isEqualTo(2);
+        }
+    }
+
+    @Test
+    void catchesAnAmbiguousTurnWithoutKillingTheLane()
+            throws Exception {
+        AuthoritativeOutcomeReconciliationWorker worker =
+                mock(AuthoritativeOutcomeReconciliationWorker.class);
+        AtomicInteger attempts = new AtomicInteger();
+        CountDownLatch recovered = new CountDownLatch(1);
+        when(worker.runOne(
+                anyString(), anyString(), anyString()))
+                .thenAnswer(invocation -> {
+                    if (attempts.incrementAndGet() == 1) {
+                        throw new IllegalStateException(
+                                "payload-must-not-be-logged");
+                    }
+                    recovered.countDown();
+                    return noWork();
+                });
+
+        try (AuthoritativeOutcomeReconciliationScheduler scheduler =
+                     scheduler(worker, 1)) {
+            assertThat(recovered.await(3, TimeUnit.SECONDS))
+                    .isTrue();
+            assertThat(attempts.get()).isGreaterThanOrEqualTo(2);
+            assertThat(scheduler.ready()).isTrue();
+        }
+    }
+
+    @Test
+    void closeStopsNewClaimsAndDrainsTheActiveTurn()
+            throws Exception {
+        AuthoritativeOutcomeReconciliationWorker worker =
+                mock(AuthoritativeOutcomeReconciliationWorker.class);
+        CountDownLatch entered = new CountDownLatch(1);
+        CountDownLatch release = new CountDownLatch(1);
+        when(worker.runOne(
+                anyString(), anyString(), anyString()))
+                .thenAnswer(invocation -> {
+                    entered.countDown();
+                    release.await(3, TimeUnit.SECONDS);
+                    return noWork();
+                });
+        AuthoritativeOutcomeReconciliationScheduler scheduler =
+                scheduler(worker, 1);
+        assertThat(entered.await(3, TimeUnit.SECONDS)).isTrue();
+        assertThat(scheduler.activePolls()).isEqualTo(1);
+
+        try (var closer = Executors.newSingleThreadExecutor()) {
+            var closed = closer.submit(scheduler::close);
+            assertThatThrownBy(() ->
+                    closed.get(100, TimeUnit.MILLISECONDS))
+                    .isInstanceOf(TimeoutException.class);
+            release.countDown();
+            closed.get(3, TimeUnit.SECONDS);
+        }
+        assertThat(scheduler.ready()).isFalse();
+        assertThat(scheduler.activePolls()).isZero();
+        scheduler.close();
+    }
+
+    @Test
+    void rejectsProductionAndUnboundedPolicies() {
+        AuthoritativeOutcomeReconciliationWorker worker =
+                mock(AuthoritativeOutcomeReconciliationWorker.class);
+
+        assertThatThrownBy(() ->
+                new AuthoritativeOutcomeReconciliationScheduler(
+                        worker,
+                        "sg",
+                        "production",
+                        "replica-a",
+                        1,
+                        Duration.ZERO,
+                        Duration.ofSeconds(1),
+                        Duration.ofSeconds(1)))
+                .isInstanceOf(IllegalArgumentException.class);
+        assertThatThrownBy(() ->
+                new AuthoritativeOutcomeReconciliationScheduler(
+                        worker,
+                        "sg",
+                        "staging",
+                        "replica-a",
+                        0,
+                        Duration.ZERO,
+                        Duration.ofSeconds(1),
+                        Duration.ofSeconds(1)))
+                .isInstanceOf(IllegalArgumentException.class);
+    }
+
+    private static AuthoritativeOutcomeReconciliationScheduler
+    scheduler(
+            AuthoritativeOutcomeReconciliationWorker worker,
+            int pollers) {
+        return new AuthoritativeOutcomeReconciliationScheduler(
+                worker,
+                "sg",
+                "outcome-staging",
+                "replica-a",
+                pollers,
+                Duration.ZERO,
+                Duration.ofMillis(100),
+                Duration.ofSeconds(1));
+    }
+
+    private static AuthoritativeOutcomeInboxRepository.Claim
+    noWork() {
+        return AuthoritativeOutcomeInboxRepository.Claim
+                .noWork(DomainFidelityTestFixtures.NOW);
+    }
+}

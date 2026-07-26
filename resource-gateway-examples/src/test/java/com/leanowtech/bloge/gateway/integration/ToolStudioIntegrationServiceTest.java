@@ -397,6 +397,77 @@ class ToolStudioIntegrationServiceTest {
     }
 
     @Test
+    void capabilitiesExposeOutcomeInboxProtocolAndHonestContinuousReadiness() {
+        AtomicBoolean connector = new AtomicBoolean(true);
+        AtomicBoolean worker = new AtomicBoolean(true);
+        AtomicBoolean scheduler = new AtomicBoolean(false);
+        ToolStudioIntegrationService service =
+                service(null, null, null, null);
+        service.configureAuthoritativeOutcomeRuntime(
+                new AuthoritativeOutcomeRuntimeAvailability(
+                        true,
+                        true,
+                        connector::get,
+                        worker::get,
+                        scheduler::get));
+
+        IntegrationCapabilities assembled =
+                service.capabilities().payload();
+
+        assertThat(assembled.features())
+                .containsEntry(
+                        "mirrorAuthoritativeOutcomeInboxApi",
+                        true)
+                .containsEntry(
+                        "mirrorAuthoritativeOutcomeLifecycleAudit",
+                        true)
+                .containsEntry(
+                        "mirrorAuthoritativeOutcomeConnectorReady",
+                        true)
+                .containsEntry(
+                        "mirrorAuthoritativeOutcomeWorkerReady",
+                        true)
+                .containsEntry(
+                        "mirrorAuthoritativeOutcomeScheduling",
+                        false)
+                .containsEntry(
+                        "mirrorAuthoritativeOutcomeContinuousReady",
+                        false);
+        assertThat(assembled.supportedObjects())
+                .containsKeys(
+                        "authoritativeOutcomeObservationAdmissionRequest",
+                        "authoritativeOutcomeInboxAdmission",
+                        "authoritativeOutcomeObservation",
+                        "authoritativeOutcomeInboxEntry",
+                        "authoritativeOutcomeInboxLifecycleEvent",
+                        "authoritativeOutcomeInboxLifecyclePage");
+        assertThat(assembled.endpoints())
+                .extracting(endpoint ->
+                        endpoint.method() + " "
+                                + endpoint.path())
+                .contains(
+                        "POST /api/mirror/outcome-observations",
+                        "GET /api/mirror/outcome-observations/{observationId}/revisions/{revision}",
+                        "GET /api/mirror/outcome-observations/{observationId}/latest",
+                        "GET /api/mirror/outcome-observations/{observationId}/head",
+                        "GET /api/mirror/outcome-observations/{observationId}/lifecycle");
+
+        scheduler.set(true);
+        assertThat(service.capabilities().payload().features())
+                .containsEntry(
+                        "mirrorAuthoritativeOutcomeContinuousReady",
+                        true);
+        connector.set(false);
+        assertThat(service.capabilities().payload().features())
+                .containsEntry(
+                        "mirrorAuthoritativeOutcomeConnectorReady",
+                        false)
+                .containsEntry(
+                        "mirrorAuthoritativeOutcomeContinuousReady",
+                        false);
+    }
+
+    @Test
     void capabilitiesSeparateShadowControlDataAndSchedulerReadiness() {
         AtomicBoolean worker =
                 new AtomicBoolean(false);

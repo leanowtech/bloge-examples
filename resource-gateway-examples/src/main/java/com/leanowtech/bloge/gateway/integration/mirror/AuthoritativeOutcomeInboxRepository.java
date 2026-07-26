@@ -161,6 +161,21 @@ public interface AuthoritativeOutcomeInboxRepository {
             AuthoritativeOutcomeObservation observation,
             String expectedPredecessorFingerprint);
 
+    /**
+     * Appends a revision already verified through the external business-authority boundary.
+     *
+     * <p>The repository must still repeat structural, content-address, local signature, and
+     * signed-time verification before mutation, but must not perform external authority I/O. This
+     * entry point lets an application transaction atomically commit observation and audit after
+     * full verification has completed outside the database transaction.</p>
+     *
+     * @param observation externally verified immutable signed revision
+     * @param expectedPredecessorFingerprint blank for revision one, exact current head otherwise
+     */
+    Admission appendPreverified(
+            AuthoritativeOutcomeObservation observation,
+            String expectedPredecessorFingerprint);
+
     /** Reads one exact immutable revision after local integrity verification. */
     Optional<AuthoritativeOutcomeObservation> findObservation(
             CapabilitySnapshot.Scope scope,

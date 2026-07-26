@@ -397,6 +397,24 @@ public final class CapabilityMirrorProtocol {
     /** Signed payload-free authoritative business-outcome observation wire version. */
     public static final String AUTHORITATIVE_OUTCOME_OBSERVATION_V1 =
             "resourceGateway.authoritativeOutcomeObservation.v1";
+    /** Strict connector admission command for one outcome observation revision. */
+    public static final String
+    AUTHORITATIVE_OUTCOME_OBSERVATION_ADMISSION_REQUEST_V1 =
+            "resourceGateway.authoritativeOutcomeObservationAdmission.v1";
+    /** Protected signed outcome admission result wire version. */
+    public static final String AUTHORITATIVE_OUTCOME_INBOX_ADMISSION_V1 =
+            "resourceGateway.authoritativeOutcomeInboxAdmission.v1";
+    /** Durable current outcome reconciliation head wire version. */
+    public static final String AUTHORITATIVE_OUTCOME_INBOX_ENTRY_V1 =
+            "resourceGateway.authoritativeOutcomeInboxEntry.v1";
+    /** Append-only outcome inbox lifecycle event wire version. */
+    public static final String
+    AUTHORITATIVE_OUTCOME_INBOX_LIFECYCLE_EVENT_V1 =
+            "resourceGateway.authoritativeOutcomeInboxLifecycle.v1";
+    /** Bounded outcome inbox lifecycle page wire version. */
+    public static final String
+    AUTHORITATIVE_OUTCOME_INBOX_LIFECYCLE_PAGE_V1 =
+            "resourceGateway.authoritativeOutcomeInboxLifecyclePage.v1";
     /** Fixed server-produced authoritative outcome compatibility fixture wire version. */
     public static final String
     AUTHORITATIVE_OUTCOME_OBSERVATION_COMPATIBILITY_V1 =
@@ -940,6 +958,31 @@ public final class CapabilityMirrorProtocol {
     AUTHORITATIVE_OUTCOME_OBSERVATION_SCHEMA_RESOURCE =
             SCHEMA_RESOURCE_ROOT
                     + "authoritative-outcome-observation-v1.schema.json";
+    /** Packaged strict outcome observation admission command schema. */
+    public static final String
+    AUTHORITATIVE_OUTCOME_OBSERVATION_ADMISSION_REQUEST_SCHEMA_RESOURCE =
+            SCHEMA_RESOURCE_ROOT
+                    + "authoritative-outcome-observation-admission-request-v1.schema.json";
+    /** Packaged signed outcome inbox admission result schema. */
+    public static final String
+    AUTHORITATIVE_OUTCOME_INBOX_ADMISSION_SCHEMA_RESOURCE =
+            SCHEMA_RESOURCE_ROOT
+                    + "authoritative-outcome-inbox-admission-v1.schema.json";
+    /** Packaged durable outcome inbox current-head schema. */
+    public static final String
+    AUTHORITATIVE_OUTCOME_INBOX_ENTRY_SCHEMA_RESOURCE =
+            SCHEMA_RESOURCE_ROOT
+                    + "authoritative-outcome-inbox-entry-v1.schema.json";
+    /** Packaged append-only outcome inbox lifecycle event schema. */
+    public static final String
+    AUTHORITATIVE_OUTCOME_INBOX_LIFECYCLE_EVENT_SCHEMA_RESOURCE =
+            SCHEMA_RESOURCE_ROOT
+                    + "authoritative-outcome-inbox-lifecycle-event-v1.schema.json";
+    /** Packaged bounded outcome inbox lifecycle page schema. */
+    public static final String
+    AUTHORITATIVE_OUTCOME_INBOX_LIFECYCLE_PAGE_SCHEMA_RESOURCE =
+            SCHEMA_RESOURCE_ROOT
+                    + "authoritative-outcome-inbox-lifecycle-page-v1.schema.json";
     /** Packaged signed payload-free read-only Shadow comparison schema. */
     public static final String
     READ_ONLY_SHADOW_COMPARISON_SCHEMA_RESOURCE =

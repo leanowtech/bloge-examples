@@ -79,8 +79,16 @@ import com.leanowtech.bloge.gateway.integration.mirror.MirrorRunRequestRepositor
 import com.leanowtech.bloge.gateway.integration.mirror.DomainFidelityPolicy;
 import com.leanowtech.bloge.gateway.integration.mirror.DomainFidelityMeasurementSource;
 import com.leanowtech.bloge.gateway.integration.mirror.AuthoritativeOutcomeAuthorityVerifier;
+import com.leanowtech.bloge.gateway.integration.mirror.AuthoritativeOutcomeConnector;
 import com.leanowtech.bloge.gateway.integration.mirror.AuthoritativeOutcomeDomainFidelitySource;
+import com.leanowtech.bloge.gateway.integration.mirror.AuthoritativeOutcomeInboxAccessPolicy;
+import com.leanowtech.bloge.gateway.integration.mirror.AuthoritativeOutcomeInboxPolicy;
+import com.leanowtech.bloge.gateway.integration.mirror.AuthoritativeOutcomeInboxRepository;
+import com.leanowtech.bloge.gateway.integration.mirror.AuthoritativeOutcomeInboxService;
 import com.leanowtech.bloge.gateway.integration.mirror.AuthoritativeOutcomeObservationIntegrity;
+import com.leanowtech.bloge.gateway.integration.mirror.AuthoritativeOutcomeReconciliationScheduler;
+import com.leanowtech.bloge.gateway.integration.mirror.AuthoritativeOutcomeReconciliationWorker;
+import com.leanowtech.bloge.gateway.integration.mirror.DatabaseAuthoritativeOutcomeInboxRepository;
 import com.leanowtech.bloge.gateway.integration.mirror.DomainFidelityProfileIntegrity;
 import com.leanowtech.bloge.gateway.integration.mirror.DomainFidelityRepository;
 import com.leanowtech.bloge.gateway.integration.mirror.DomainFidelityService;
@@ -176,6 +184,7 @@ import com.leanowtech.bloge.gateway.integration.mirror.MirrorServingGenerationSe
 import com.leanowtech.bloge.gateway.integration.mirror.MirrorServingGenerationTelemetry;
 import com.leanowtech.bloge.gateway.integration.mirror.MirrorServingGenerationTrustProvider;
 import com.leanowtech.bloge.gateway.integration.MirrorRuntimeAvailability;
+import com.leanowtech.bloge.gateway.integration.AuthoritativeOutcomeRuntimeAvailability;
 import com.leanowtech.bloge.gateway.integration.DomainFidelityRuntimeAvailability;
 import com.leanowtech.bloge.gateway.integration.OnlineReadOnlyShadowBaselineRuntimeAvailability;
 import com.leanowtech.bloge.gateway.integration.OnlineReadOnlyShadowDataPlaneRuntimeAvailability;
@@ -222,6 +231,7 @@ import java.time.Clock;
         ScenarioRehearsalBatchFinalizationSchedulerProperties.class,
         ScenarioRehearsalBatchFinalizationSloProperties.class,
         ReadOnlyShadowJobSchedulerProperties.class,
+        AuthoritativeOutcomeReconciliationSchedulerProperties.class,
         OnlineReadOnlyShadowBaselineProperties.class,
         OnlineReadOnlyShadowCandidateProperties.class
 })
@@ -2196,6 +2206,135 @@ public class MirrorRuntimeConfiguration {
                 objectMapper,
                 signer,
                 authorityVerifier);
+    }
+
+    /** Freezes conservative server-owned outcome polling, lease, retry, and ageing controls. */
+    @Bean
+    @ConditionalOnMissingBean
+    @ConditionalOnBean(AuthoritativeOutcomeObservationIntegrity.class)
+    public AuthoritativeOutcomeInboxPolicy
+    authoritativeOutcomeInboxPolicy() {
+        return AuthoritativeOutcomeInboxPolicy.DEFAULT;
+    }
+
+    /** Freezes the workload group allowed to append externally verified outcome closures. */
+    @Bean
+    @ConditionalOnMissingBean
+    @ConditionalOnBean(AuthoritativeOutcomeObservationIntegrity.class)
+    public AuthoritativeOutcomeInboxAccessPolicy
+    authoritativeOutcomeInboxAccessPolicy() {
+        return AuthoritativeOutcomeInboxAccessPolicy.defaults();
+    }
+
+    /** Creates the append-only observation log, mutable head, lifecycle, and fenced queue. */
+    @Bean
+    @ConditionalOnMissingBean
+    @ConditionalOnBean(AuthoritativeOutcomeObservationIntegrity.class)
+    public AuthoritativeOutcomeInboxRepository
+    authoritativeOutcomeInboxRepository(
+            JdbcTemplate jdbc,
+            ObjectMapper objectMapper,
+            AuthoritativeOutcomeObservationIntegrity integrity,
+            PlatformTransactionManager transactionManager) {
+        return new DatabaseAuthoritativeOutcomeInboxRepository(
+                jdbc,
+                objectMapper,
+                integrity,
+                transactionManager);
+    }
+
+    /** Creates the audited exact-scope outcome admission and read boundary. */
+    @Bean
+    @ConditionalOnMissingBean
+    @ConditionalOnBean(AuthoritativeOutcomeObservationIntegrity.class)
+    public AuthoritativeOutcomeInboxService
+    authoritativeOutcomeInboxService(
+            AuthoritativeOutcomeInboxRepository repository,
+            AuthoritativeOutcomeObservationIntegrity integrity,
+            AuthoritativeOutcomeInboxAccessPolicy accessPolicy,
+            ObjectMapper objectMapper,
+            MirrorOperationObservability observability,
+            PlatformTransactionManager transactionManager) {
+        return new AuthoritativeOutcomeInboxService(
+                repository,
+                integrity,
+                accessPolicy,
+                objectMapper,
+                observability,
+                transactionManager);
+    }
+
+    /** Creates the owner/epoch-fenced one-step reconciliation worker when a connector exists. */
+    @Bean
+    @ConditionalOnMissingBean
+    @ConditionalOnBean(AuthoritativeOutcomeConnector.class)
+    public AuthoritativeOutcomeReconciliationWorker
+    authoritativeOutcomeReconciliationWorker(
+            AuthoritativeOutcomeInboxRepository repository,
+            AuthoritativeOutcomeConnector connector,
+            AuthoritativeOutcomeObservationIntegrity integrity,
+            AuthoritativeOutcomeInboxPolicy policy) {
+        return new AuthoritativeOutcomeReconciliationWorker(
+                repository,
+                connector,
+                integrity,
+                policy);
+    }
+
+    /** Starts explicitly enabled bounded outcome worker lanes for one regional partition. */
+    @Bean(destroyMethod = "close")
+    @ConditionalOnMissingBean
+    @ConditionalOnBean(AuthoritativeOutcomeReconciliationWorker.class)
+    @ConditionalOnProperty(
+            prefix = AuthoritativeOutcomeReconciliationSchedulerProperties.PREFIX,
+            name = "enabled",
+            havingValue = "true")
+    public AuthoritativeOutcomeReconciliationScheduler
+    authoritativeOutcomeReconciliationScheduler(
+            AuthoritativeOutcomeReconciliationWorker worker,
+            AuthoritativeOutcomeReconciliationSchedulerProperties
+                    properties) {
+        return new AuthoritativeOutcomeReconciliationScheduler(
+                worker,
+                properties.region(),
+                properties.environmentId(),
+                properties.instanceId(),
+                properties.maximumPollers(),
+                properties.initialDelay(),
+                properties.pollInterval(),
+                properties.drainTimeout());
+    }
+
+    /** Publishes independent outcome API, lifecycle, connector, worker, and scheduler readiness. */
+    @Bean
+    @ConditionalOnMissingBean
+    @ConditionalOnBean(AuthoritativeOutcomeInboxService.class)
+    public AuthoritativeOutcomeRuntimeAvailability
+    authoritativeOutcomeRuntimeAvailability(
+            AuthoritativeOutcomeInboxService service,
+            ObjectProvider<AuthoritativeOutcomeConnector> connector,
+            ObjectProvider<AuthoritativeOutcomeReconciliationWorker>
+                    worker,
+            ObjectProvider<AuthoritativeOutcomeReconciliationScheduler>
+                    scheduler) {
+        return new AuthoritativeOutcomeRuntimeAvailability(
+                service != null,
+                true,
+                () -> {
+                    AuthoritativeOutcomeConnector current =
+                            connector.getIfAvailable();
+                    return current != null && current.ready();
+                },
+                () -> {
+                    AuthoritativeOutcomeReconciliationWorker current =
+                            worker.getIfAvailable();
+                    return current != null && current.ready();
+                },
+                () -> {
+                    AuthoritativeOutcomeReconciliationScheduler current =
+                            scheduler.getIfAvailable();
+                    return current != null && current.ready();
+                });
     }
 
     /** Creates the authoritative outcome Fidelity adapter only after its trust boundary exists. */

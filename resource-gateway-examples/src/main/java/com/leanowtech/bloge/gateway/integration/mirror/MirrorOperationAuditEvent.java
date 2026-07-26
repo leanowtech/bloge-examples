@@ -142,6 +142,12 @@ public record MirrorOperationAuditEvent(
         FIDELITY_PROFILE_PROJECT,
         /** Read one arithmetic- and signature-reverified Domain Fidelity profile. */
         FIDELITY_PROFILE_READ,
+        /** Verify, sign, and append one authoritative outcome observation revision. */
+        OUTCOME_OBSERVATION_INGEST,
+        /** Read one locally and externally reverified outcome observation or durable head. */
+        OUTCOME_OBSERVATION_READ,
+        /** Read one bounded hash-chained outcome inbox lifecycle page. */
+        OUTCOME_LIFECYCLE_READ,
         /** Durably reserve one read-only Shadow sample and immutable request. */
         SHADOW_JOB_CREATE,
         /** Read one integrity-verified durable Shadow job or immutable request. */

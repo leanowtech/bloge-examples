@@ -266,6 +266,18 @@ public final class DatabaseAuthoritativeOutcomeInboxRepository
                 integrity.verify(
                         Objects.requireNonNull(
                                 observation, "observation"));
+        return appendPreverified(
+                exact, expectedPredecessorFingerprint);
+    }
+
+    @Override
+    public Admission appendPreverified(
+            AuthoritativeOutcomeObservation observation,
+            String expectedPredecessorFingerprint) {
+        AuthoritativeOutcomeObservation exact =
+                integrity.verifyLocally(
+                        Objects.requireNonNull(
+                                observation, "observation"));
         String expected = optionalFingerprint(
                 expectedPredecessorFingerprint);
         return Objects.requireNonNull(
@@ -713,7 +725,7 @@ public final class DatabaseAuthoritativeOutcomeInboxRepository
             int limit) {
         if (afterOrdinal < 0
                 || limit < 1
-                || limit > 1_000) {
+                || limit > 1_001) {
             throw new IllegalArgumentException(
                     "lifecycle cursor or limit is invalid");
         }

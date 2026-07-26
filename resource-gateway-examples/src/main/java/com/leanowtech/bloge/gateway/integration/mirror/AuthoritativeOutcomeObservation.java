@@ -448,6 +448,47 @@ public record AuthoritativeOutcomeObservation(
                 MAXIMUM_ATTESTATION_BYTES);
     }
 
+    /**
+     * Calculates the stable connector-ingestion identity before Resource Gateway attestation.
+     *
+     * <p>The material excludes the Resource Gateway content address, trusted {@code attestedAt},
+     * and detached seal. A caller can therefore retry the same unsigned authority closure after a
+     * lost response without producing a second signing-time-dependent artifact. It still binds
+     * every business, cohort, watermark, fact, reconciliation, and evidence-completeness field.</p>
+     *
+     * @param mapper canonical protocol mapper
+     * @return domain-separated immutable ingestion fingerprint
+     */
+    public String ingestionMaterialFingerprint(
+            ObjectMapper mapper) {
+        return ProtocolFingerprint.ofBounded(
+                Objects.requireNonNull(mapper, "mapper"),
+                new IngestionMaterial(
+                        "RESOURCE_GATEWAY_AUTHORITATIVE_OUTCOME_INGESTION_V1",
+                        schemaVersion,
+                        observationId,
+                        revision,
+                        scope,
+                        inventoryRef,
+                        unitId,
+                        scenarioCaseRef,
+                        targetCapabilityRef,
+                        outcomeDefinitionRef,
+                        attributionPolicyRef,
+                        authoritySetRef,
+                        selectionProof,
+                        subjectFingerprint,
+                        attributionKeyFingerprint,
+                        modelOutcomeFingerprint,
+                        attributionWindow,
+                        reconciledAt,
+                        authorityWatermarks,
+                        authorityFacts,
+                        reconciliation,
+                        evidenceComplete),
+                MAXIMUM_CANONICAL_BYTES);
+    }
+
     /** @return exact content-addressed artifact reference */
     public MirrorArtifactRef artifactRef() {
         if (observationFingerprint.isBlank()) {
@@ -674,6 +715,32 @@ public record AuthoritativeOutcomeObservation(
             Instant reconciledAt,
             Instant attestedAt,
             String observationFingerprint
+    ) {
+    }
+
+    private record IngestionMaterial(
+            String domain,
+            String schemaVersion,
+            String observationId,
+            long revision,
+            CapabilitySnapshot.Scope scope,
+            MirrorArtifactRef inventoryRef,
+            String unitId,
+            MirrorArtifactRef scenarioCaseRef,
+            MirrorArtifactRef targetCapabilityRef,
+            MirrorArtifactRef outcomeDefinitionRef,
+            MirrorArtifactRef attributionPolicyRef,
+            MirrorArtifactRef authoritySetRef,
+            SelectionProof selectionProof,
+            String subjectFingerprint,
+            String attributionKeyFingerprint,
+            String modelOutcomeFingerprint,
+            AttributionWindow attributionWindow,
+            Instant reconciledAt,
+            List<AuthorityWatermark> authorityWatermarks,
+            List<AuthorityFact> authorityFacts,
+            Reconciliation reconciliation,
+            boolean evidenceComplete
     ) {
     }
 

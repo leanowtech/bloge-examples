@@ -1,0 +1,27 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://bloge.dev/schemas/resource-gateway-mirror/authoritative-outcome-inbox-admission-v1.schema.json",
+  "title": "Resource Gateway Authoritative Outcome Inbox Admission v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "observation",
+    "entry",
+    "idempotentReplay"
+  ],
+  "properties": {
+    "schemaVersion": {
+      "const": "resourceGateway.authoritativeOutcomeInboxAdmission.v1"
+    },
+    "observation": {
+      "$ref": "authoritative-outcome-observation-v1.schema.json"
+    },
+    "entry": {
+      "$ref": "authoritative-outcome-inbox-entry-v1.schema.json"
+    },
+    "idempotentReplay": {
+      "type": "boolean"
+    }
+  }
+}

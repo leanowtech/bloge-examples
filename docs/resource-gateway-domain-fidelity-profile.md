@@ -440,10 +440,30 @@ Outcome observation 已增加第一层 durable inbox 与连续 successor 内核�
 - 存储事务只调用 `verifyLocally` 复验 semantics/content address/RG seal/signed time；完整
   business authority I/O 在入库前或 claim 后执行，避免客户账本延迟放大数据库锁。
 
-`projectOutcomes` 仍是内部 Java 边界。当前提交尚未提供受保护的 observation ingest/read/
-lifecycle API、自动 scheduler、Spring 条件装配、客户 connector、跨进程 PostgreSQL 认证或
-selected-population completeness manifest；这些完成前不得把 durable-core-ready 描述为生产
-outcome 已持续接入或已校准。
+宿主提供独立 authority verifier 后，Spring 才装配 integrity、durable repository、受保护
+service/controller、outcome source adapter 和细粒度 readiness；再提供
+`AuthoritativeOutcomeConnector` 才装配 worker，显式开启 scheduler 后才开始自动轮询。没有任一
+前置 bean 时，对应能力物理缺席而不是返回一个虚假的 ready。
+
+受保护 API 已覆盖 observation admission、exact/latest revision、durable head 和 lifecycle suffix。
+首次 unsigned observation 由 Resource Gateway 在外部 authority 验真后签发；同一 unsigned 正文
+可作为响应丢失后的 exact retry，服务端按排除 `attestedAt`、RG fingerprint 和 seal 的业务材料
+指纹识别并返回同一个已签名 artifact。这个规则不能把不同 fact、watermark、cut、cohort 或
+attribution 内容归并成幂等。签名 successor 仍必须引用 exact current predecessor。
+
+外部 business authority I/O 在数据库事务之前完成，事务内只执行本地完整性复验、append/head/
+lifecycle 和 success audit；audit 失败会整体回滚。读取 exact/latest/head/lifecycle 先完成本地存储
+完整性闭包，再在事务外重新访问客户 authority，避免“曾经可信”被错误解释为“当前仍可信”。
+
+PostgreSQL 14.22 的两个独立 datasource/transaction manager 已复验同 observation 并发首次 admission
+只产生一个新记录和一个 exact replay；lease 过期会先记录 `LEASE_EXPIRED`、增加失败预算并进入
+bounded backoff，随后 replacement owner 以更高 epoch 接管，旧 owner 发布稳定 `LEASE_LOST`。
+这关闭数据库方言和同进程双副本语义，但仍不等于多进程、主从切换、网络分区或跨区域认证。
+
+`projectOutcomes` 仍是内部 Java 投影边界，没有 public run-now/project endpoint。当前仍缺客户生产
+connector、selected-population completeness manifest、definition/policy/authority-set successor
+stale 传播、跨区域/HA/撤销轮换认证和 calibration correlation；这些完成前不得把
+`mirrorAuthoritativeOutcomeContinuousReady` 或 adapter-ready 描述成生产 outcome 已完成校准。
 
 当前 `projectShadow` 是内部 Java 投影边界，不接受调用方直接上传 comparison。durable
 queue/worker 已具备受保护的 job submit/read/request/comparison/lifecycle API、同事务 operation
@@ -465,6 +485,8 @@ scope、actor、owner、approval time、provenance、lifecycle 和 fingerprint �
 | 读取 inventory | `MIRROR_FIDELITY_GOVERNANCE` 或 `GOVERNANCE_EVIDENCE_INGESTION` | 完整企业 scope |
 | 读取 signed profile | `MIRROR_FIDELITY_GOVERNANCE` 或 `GOVERNANCE_EVIDENCE_INGESTION` | 完整企业 scope |
 | 投影新 profile | `MIRROR_FIDELITY_PROJECTION` | 仅内部 source adapter；无 HTTP endpoint |
+| 提交 outcome observation revision | `MIRROR_OUTCOME_INGESTION` | `SERVICE/WORKLOAD`，属于 `RESOURCE_GATEWAY_OUTCOME_CONNECTOR`，完整企业 scope |
+| 读取 outcome revision/head/lifecycle | `MIRROR_OUTCOME_INGESTION`、`MIRROR_FIDELITY_GOVERNANCE` 或 `GOVERNANCE_EVIDENCE_INGESTION` | 完整企业 scope；每次重验外部 business authority |
 | 提交 Shadow job | `MIRROR_SHADOW` | 完整企业 scope 与 command scope 精确一致 |
 | 读取 Shadow job/request/comparison/lifecycle | `MIRROR_SHADOW` 或 `GOVERNANCE_EVIDENCE_INGESTION` | 完整企业 scope |
 
@@ -505,7 +527,65 @@ curl http://localhost:8080/api/mirror/domain-fidelity/domains/refund-domain/prof
 OIDC/mTLS adapter 或显式配置的测试身份 resolver 提供 human principal、owner group 和治理 purpose；
 仅修改 `X-Actor-Type`、`X-Groups` 或 scope header 不会改变受信 claims。
 
-### 5.2 Shadow job 与生命周期 API
+### 5.2 Outcome inbox 与连续 reconciliation API
+
+admission body 必须匹配
+[`authoritative-outcome-observation-admission-request-v1.schema.json`](schemas/resource-gateway-mirror/authoritative-outcome-observation-admission-request-v1.schema.json)。
+响应、head 与 lifecycle 分别匹配
+[`authoritative-outcome-inbox-admission-v1.schema.json`](schemas/resource-gateway-mirror/authoritative-outcome-inbox-admission-v1.schema.json)、
+[`authoritative-outcome-inbox-entry-v1.schema.json`](schemas/resource-gateway-mirror/authoritative-outcome-inbox-entry-v1.schema.json) 和
+[`authoritative-outcome-inbox-lifecycle-page-v1.schema.json`](schemas/resource-gateway-mirror/authoritative-outcome-inbox-lifecycle-page-v1.schema.json)。
+
+```bash
+curl -i -X POST http://localhost:8080/api/mirror/outcome-observations \
+  -H "Authorization: Bearer $OUTCOME_CONNECTOR_TOKEN" \
+  -H "X-Purpose: MIRROR_OUTCOME_INGESTION" \
+  -H "Content-Type: application/json" \
+  --data @authoritative-outcome-admission.json
+
+curl http://localhost:8080/api/mirror/outcome-observations/$OBSERVATION_ID/latest \
+  -H "Authorization: Bearer $GOVERNANCE_TOKEN" \
+  -H "X-Purpose: GOVERNANCE_EVIDENCE_INGESTION"
+
+curl http://localhost:8080/api/mirror/outcome-observations/$OBSERVATION_ID/head \
+  -H "Authorization: Bearer $GOVERNANCE_TOKEN" \
+  -H "X-Purpose: GOVERNANCE_EVIDENCE_INGESTION"
+
+curl "http://localhost:8080/api/mirror/outcome-observations/$OBSERVATION_ID/lifecycle?afterOrdinal=0&limit=100" \
+  -H "Authorization: Bearer $GOVERNANCE_TOKEN" \
+  -H "X-Purpose: GOVERNANCE_EVIDENCE_INGESTION"
+```
+
+传输层先认证再解码，拒绝 duplicate/unknown/missing fields、尾随 JSON、raw/canonical byte
+超限、depth/node 超限和 scope 漂移。`afterOrdinal` 是 exclusive cursor；调用方必须根据
+`hasMore` 继续读取。Test Kit 的 `AuthoritativeOutcomeInboxLifecycleVerifier` 可离线验证完整
+历史或诚实标记的 suffix page，不能把单页前缀升级为完整证据。
+
+自动 reconciliation 不接受 HTTP `run-now`。宿主必须提供 payload-isolated
+`AuthoritativeOutcomeConnector`，并显式配置单 region/environment 的 bounded scheduler：
+
+```yaml
+gateway:
+  testing:
+    mirror:
+      enabled: true
+      outcome-reconciliation:
+        scheduler:
+          enabled: true
+          instance-id: outcome-reconciler-sg-1
+          region: sg
+          environment-id: staging
+          maximum-pollers: 2
+          initial-delay-millis: 1000
+          poll-interval-millis: 1000
+          drain-timeout-millis: 30000
+```
+
+配置只允许 `test/staging` profile，`prod/production/live` partition 会启动失败。scheduler 关闭时
+API 和 lifecycle 仍可用；connector 缺席时 worker/scheduler 不装配。关闭 scheduler 会先停止新
+poll，再在 bounded drain timeout 内等待在途 turn，数据库 lease 仍是跨副本唯一性权威。
+
+### 5.3 Shadow job 与生命周期 API
 
 仅演示 control plane：
 
@@ -625,7 +705,7 @@ cursor，`limit` 为 1..1000；调用方必须根据 `hasMore` 继续取页，�
 来源 context 漂移或 policy 漂移都会以稳定 failure reason 失败关闭。`AccessGrant` 中 egress
 证明的 artifact kind 是实际部署隔离协议的 `DEPLOYMENT_ISOLATION_ATTESTATION`。
 
-### 5.3 Capability probe
+### 5.4 Capability probe
 
 `GET /api/integration/capabilities` 暴露以下独立事实：
 
@@ -638,6 +718,12 @@ cursor，`limit` 为 1..1000；调用方必须根据 `hasMore` 继续取页，�
 | `mirrorDomainFidelityScenarioAdapterReady` | Scenario aggregate/workbook/retention 验真链当前可用 |
 | `mirrorDomainFidelityShadowAdapterReady` | signed read-only comparison 可独立验真和投影；不代表生产 shadow job 已装配 |
 | `mirrorDomainFidelityOutcomeAdapterReady` | 独立业务 authority verifier、RG signer 和 outcome source adapter 同时可用；默认 `false`，为 `true` 也只证明适配器可验真和投影，不证明客户 connector、持续摄取或校准结论已认证 |
+| `mirrorAuthoritativeOutcomeInboxApi` | 受保护 admission/exact/latest/head/lifecycle route 已装配 |
+| `mirrorAuthoritativeOutcomeLifecycleAudit` | 每个已提交 observation/head transition 同事务进入 append-only hash chain |
+| `mirrorAuthoritativeOutcomeConnectorReady` | 客户 connector bean 存在且当前 readiness 通过 |
+| `mirrorAuthoritativeOutcomeWorkerReady` | connector、integrity、repository 和 fenced worker 当前可运行 |
+| `mirrorAuthoritativeOutcomeScheduling` | bounded single-partition scheduler 当前运行；不代表 connector ready |
+| `mirrorAuthoritativeOutcomeContinuousReady` | API、lifecycle、connector、worker、scheduler 同时 ready |
 | `mirrorReadOnlyShadowJobApi` | protected submit/read/request/comparison/lifecycle route 已装配 |
 | `mirrorReadOnlyShadowSourceBindingApi` | detached source-pair register/exact-read route 与 v1/v2 request protocol 已装配 |
 | `mirrorReadOnlyShadowSourceBindingReady` | source-binding signer 与 repository 当前可用；不代表 baseline/candidate connector ready |
@@ -985,6 +1071,11 @@ code，不输出 Scenario fixture、请求、响应或原始诊断。
 - [`domain-fidelity-inventory-registration-request-v1.schema.json`](schemas/resource-gateway-mirror/domain-fidelity-inventory-registration-request-v1.schema.json)
 - [`domain-fidelity-profile-v1.schema.json`](schemas/resource-gateway-mirror/domain-fidelity-profile-v1.schema.json)
 - [`authoritative-outcome-observation-v1.schema.json`](schemas/resource-gateway-mirror/authoritative-outcome-observation-v1.schema.json)
+- [`authoritative-outcome-observation-admission-request-v1.schema.json`](schemas/resource-gateway-mirror/authoritative-outcome-observation-admission-request-v1.schema.json)
+- [`authoritative-outcome-inbox-admission-v1.schema.json`](schemas/resource-gateway-mirror/authoritative-outcome-inbox-admission-v1.schema.json)
+- [`authoritative-outcome-inbox-entry-v1.schema.json`](schemas/resource-gateway-mirror/authoritative-outcome-inbox-entry-v1.schema.json)
+- [`authoritative-outcome-inbox-lifecycle-event-v1.schema.json`](schemas/resource-gateway-mirror/authoritative-outcome-inbox-lifecycle-event-v1.schema.json)
+- [`authoritative-outcome-inbox-lifecycle-page-v1.schema.json`](schemas/resource-gateway-mirror/authoritative-outcome-inbox-lifecycle-page-v1.schema.json)
 - [`read-only-shadow-comparison-v1.schema.json`](schemas/resource-gateway-mirror/read-only-shadow-comparison-v1.schema.json)
 - [`read-only-shadow-comparison-v2.schema.json`](schemas/resource-gateway-mirror/read-only-shadow-comparison-v2.schema.json)
 - [`read-only-shadow-comparison-v3.schema.json`](schemas/resource-gateway-mirror/read-only-shadow-comparison-v3.schema.json)
@@ -1009,6 +1100,11 @@ CapabilityMirrorProtocol.DOMAIN_FIDELITY_INVENTORY_SCHEMA_RESOURCE
 CapabilityMirrorProtocol.DOMAIN_FIDELITY_INVENTORY_REGISTRATION_SCHEMA_RESOURCE
 CapabilityMirrorProtocol.DOMAIN_FIDELITY_PROFILE_SCHEMA_RESOURCE
 CapabilityMirrorProtocol.AUTHORITATIVE_OUTCOME_OBSERVATION_SCHEMA_RESOURCE
+CapabilityMirrorProtocol.AUTHORITATIVE_OUTCOME_OBSERVATION_ADMISSION_REQUEST_SCHEMA_RESOURCE
+CapabilityMirrorProtocol.AUTHORITATIVE_OUTCOME_INBOX_ADMISSION_SCHEMA_RESOURCE
+CapabilityMirrorProtocol.AUTHORITATIVE_OUTCOME_INBOX_ENTRY_SCHEMA_RESOURCE
+CapabilityMirrorProtocol.AUTHORITATIVE_OUTCOME_INBOX_LIFECYCLE_EVENT_SCHEMA_RESOURCE
+CapabilityMirrorProtocol.AUTHORITATIVE_OUTCOME_INBOX_LIFECYCLE_PAGE_SCHEMA_RESOURCE
 CapabilityMirrorProtocol.AUTHORITATIVE_OUTCOME_OBSERVATION_FIXTURE_RESOURCE
 CapabilityMirrorProtocol.READ_ONLY_SHADOW_COMPARISON_SCHEMA_RESOURCE
 CapabilityMirrorProtocol.READ_ONLY_SHADOW_COMPARISON_V2_SCHEMA_RESOURCE

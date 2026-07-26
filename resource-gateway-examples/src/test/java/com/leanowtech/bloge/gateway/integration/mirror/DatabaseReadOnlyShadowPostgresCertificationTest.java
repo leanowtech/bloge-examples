@@ -1,6 +1,7 @@
 package com.leanowtech.bloge.gateway.integration.mirror;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.leanowtech.bloge.gateway.visual.runtime.InMemoryVisualEvidenceSigner;
 import io.zonky.test.db.postgres.embedded.EmbeddedPostgres;
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.BeforeAll;
@@ -12,7 +13,9 @@ import org.springframework.jdbc.datasource.DataSourceTransactionManager;
 
 import javax.sql.DataSource;
 import java.time.Duration;
+import java.time.Clock;
 import java.time.Instant;
+import java.time.ZoneOffset;
 import java.time.temporal.ChronoUnit;
 import java.util.List;
 import java.util.concurrent.BrokenBarrierException;
@@ -179,6 +182,142 @@ class DatabaseReadOnlyShadowPostgresCertificationTest {
                 now,
                 () -> awaitBarrier(
                         initializationRace));
+    }
+
+    @Test
+    void serializesOutcomeAdmissionAndFencesExpiredOwnersAcrossReplicas()
+            throws Exception {
+        Replica first = replica(postgres.getPostgresDatabase());
+        Replica second = replica(postgres.getPostgresDatabase());
+        AtomicReference<Instant> now =
+                new AtomicReference<>(
+                        DomainFidelityTestFixtures.NOW);
+        Clock clock = Clock.fixed(
+                DomainFidelityTestFixtures.NOW,
+                ZoneOffset.UTC);
+        AuthoritativeOutcomeObservationIntegrity integrity =
+                new AuthoritativeOutcomeObservationIntegrity(
+                        mapper,
+                        InMemoryVisualEvidenceSigner
+                                .usingClock(clock),
+                        new AuthoritativeOutcomeAuthorityVerifier() {
+                            @Override
+                            public boolean available() {
+                                return true;
+                            }
+
+                            @Override
+                            public void verify(
+                                    AuthoritativeOutcomeObservation
+                                            observation) {
+                            }
+                        },
+                        clock);
+        CyclicBarrier initializationRace =
+                new CyclicBarrier(2);
+        DatabaseAuthoritativeOutcomeInboxRepository firstInbox =
+                outcomeInbox(
+                        first,
+                        integrity,
+                        now,
+                        () -> awaitBarrier(
+                                initializationRace));
+        DatabaseAuthoritativeOutcomeInboxRepository secondInbox =
+                outcomeInbox(
+                        second,
+                        integrity,
+                        now,
+                        () -> awaitBarrier(
+                                initializationRace));
+        firstInbox.init();
+        secondInbox.init();
+        AuthoritativeOutcomeObservation pending =
+                integrity.sign(
+                        AuthoritativeOutcomeTestFixtures
+                                .pending());
+
+        try (var executor = Executors.newFixedThreadPool(2)) {
+            Future<AuthoritativeOutcomeInboxRepository.Admission>
+                    firstAdmission = executor.submit(() ->
+                    firstInbox.append(pending, ""));
+            Future<AuthoritativeOutcomeInboxRepository.Admission>
+                    secondAdmission = executor.submit(() ->
+                    secondInbox.append(pending, ""));
+            assertThat(List.of(
+                    awaitFuture(firstAdmission)
+                            .idempotentReplay(),
+                    awaitFuture(secondAdmission)
+                            .idempotentReplay()))
+                    .containsExactlyInAnyOrder(false, true);
+        }
+
+        AuthoritativeOutcomeInboxRepository.Claim stale =
+                firstInbox.claimNext(
+                        pending.scope().region(),
+                        pending.scope().environmentId(),
+                        "postgres-outcome-stale",
+                        AuthoritativeOutcomeInboxPolicy.DEFAULT);
+        assertThat(stale.outcome()).isEqualTo(
+                AuthoritativeOutcomeInboxRepository
+                        .Claim.Outcome.ACQUIRED);
+        now.set(now.get().plusSeconds(31));
+        AuthoritativeOutcomeInboxRepository.Claim deferredReplacement =
+                secondInbox.claimNext(
+                        pending.scope().region(),
+                        pending.scope().environmentId(),
+                        "postgres-outcome-replacement",
+                        AuthoritativeOutcomeInboxPolicy.DEFAULT);
+        assertThat(deferredReplacement.outcome()).isEqualTo(
+                AuthoritativeOutcomeInboxRepository
+                        .Claim.Outcome.NO_WORK);
+        now.set(now.get().plusSeconds(5));
+        AuthoritativeOutcomeInboxRepository.Claim replacement =
+                secondInbox.claimNext(
+                        pending.scope().region(),
+                        pending.scope().environmentId(),
+                        "postgres-outcome-replacement",
+                        AuthoritativeOutcomeInboxPolicy.DEFAULT);
+
+        assertThat(replacement.outcome()).isEqualTo(
+                AuthoritativeOutcomeInboxRepository
+                        .Claim.Outcome.ACQUIRED);
+        assertThat(replacement.lease().epoch())
+                .isGreaterThan(stale.lease().epoch());
+        assertThatThrownBy(() ->
+                firstInbox.noChange(
+                        stale.lease(),
+                        AuthoritativeOutcomeInboxPolicy.DEFAULT))
+                .isInstanceOf(
+                        AuthoritativeOutcomeInboxRepository
+                                .Violation.class)
+                .extracting("reason")
+                .isEqualTo(
+                        AuthoritativeOutcomeInboxRepository
+                                .Reason.LEASE_LOST);
+        assertThat(secondInbox.noChange(
+                replacement.lease(),
+                AuthoritativeOutcomeInboxPolicy.DEFAULT)
+                .status()).isEqualTo(
+                AuthoritativeOutcomeInboxEntry.Status.QUEUED);
+        assertThat(firstInbox.lifecycle(
+                pending.scope(),
+                pending.observationId(),
+                0,
+                20))
+                .extracting(
+                        AuthoritativeOutcomeInboxLifecycleEvent
+                                ::transition)
+                .containsExactly(
+                        AuthoritativeOutcomeInboxLifecycleEvent
+                                .Transition.OBSERVATION_APPENDED,
+                        AuthoritativeOutcomeInboxLifecycleEvent
+                                .Transition.CLAIMED,
+                        AuthoritativeOutcomeInboxLifecycleEvent
+                                .Transition.LEASE_EXPIRED,
+                        AuthoritativeOutcomeInboxLifecycleEvent
+                                .Transition.CLAIMED,
+                        AuthoritativeOutcomeInboxLifecycleEvent
+                                .Transition.NO_CHANGE);
     }
 
     private JobFixture jobFixture() {
@@ -610,6 +749,21 @@ class DatabaseReadOnlyShadowPostgresCertificationTest {
                         "%08d",
                         guardTokens.incrementAndGet()),
                 beforeStateInsert);
+    }
+
+    private DatabaseAuthoritativeOutcomeInboxRepository
+    outcomeInbox(
+            Replica replica,
+            AuthoritativeOutcomeObservationIntegrity integrity,
+            AtomicReference<Instant> now,
+            Runnable beforeLockRowInsert) {
+        return new DatabaseAuthoritativeOutcomeInboxRepository(
+                replica.jdbc(),
+                mapper,
+                integrity,
+                replica.transactions(),
+                now::get,
+                beforeLockRowInsert);
     }
 
     private static Replica replica(

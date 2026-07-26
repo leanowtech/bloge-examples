@@ -618,6 +618,46 @@ class CapabilityMirrorSchemaPackagingTest {
                 .isEqualTo(
                         "resourceGateway.readOnlyShadowJob.v1");
         assertThat(CapabilityMirrorProtocol
+                .AUTHORITATIVE_OUTCOME_OBSERVATION_ADMISSION_REQUEST_V1)
+                .isEqualTo(
+                        "resourceGateway.authoritativeOutcomeObservationAdmission.v1");
+        assertThat(CapabilityMirrorProtocol
+                .AUTHORITATIVE_OUTCOME_INBOX_ADMISSION_V1)
+                .isEqualTo(
+                        "resourceGateway.authoritativeOutcomeInboxAdmission.v1");
+        assertThat(CapabilityMirrorProtocol
+                .AUTHORITATIVE_OUTCOME_INBOX_ENTRY_V1)
+                .isEqualTo(
+                        "resourceGateway.authoritativeOutcomeInboxEntry.v1");
+        assertThat(CapabilityMirrorProtocol
+                .AUTHORITATIVE_OUTCOME_INBOX_LIFECYCLE_EVENT_V1)
+                .isEqualTo(
+                        "resourceGateway.authoritativeOutcomeInboxLifecycle.v1");
+        assertThat(CapabilityMirrorProtocol
+                .AUTHORITATIVE_OUTCOME_INBOX_LIFECYCLE_PAGE_V1)
+                .isEqualTo(
+                        "resourceGateway.authoritativeOutcomeInboxLifecyclePage.v1");
+        assertThat(getClass().getResource(
+                CapabilityMirrorProtocol
+                        .AUTHORITATIVE_OUTCOME_OBSERVATION_ADMISSION_REQUEST_SCHEMA_RESOURCE))
+                .isNotNull();
+        assertThat(getClass().getResource(
+                CapabilityMirrorProtocol
+                        .AUTHORITATIVE_OUTCOME_INBOX_ADMISSION_SCHEMA_RESOURCE))
+                .isNotNull();
+        assertThat(getClass().getResource(
+                CapabilityMirrorProtocol
+                        .AUTHORITATIVE_OUTCOME_INBOX_ENTRY_SCHEMA_RESOURCE))
+                .isNotNull();
+        assertThat(getClass().getResource(
+                CapabilityMirrorProtocol
+                        .AUTHORITATIVE_OUTCOME_INBOX_LIFECYCLE_EVENT_SCHEMA_RESOURCE))
+                .isNotNull();
+        assertThat(getClass().getResource(
+                CapabilityMirrorProtocol
+                        .AUTHORITATIVE_OUTCOME_INBOX_LIFECYCLE_PAGE_SCHEMA_RESOURCE))
+                .isNotNull();
+        assertThat(CapabilityMirrorProtocol
                 .READ_ONLY_SHADOW_JOB_SCHEMA_RESOURCE)
                 .endsWith(
                         "read-only-shadow-job-v1.schema.json");

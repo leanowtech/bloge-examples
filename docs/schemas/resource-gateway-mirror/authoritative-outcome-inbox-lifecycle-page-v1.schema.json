@@ -1,0 +1,41 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://bloge.dev/schemas/resource-gateway-mirror/authoritative-outcome-inbox-lifecycle-page-v1.schema.json",
+  "title": "Resource Gateway Authoritative Outcome Inbox Lifecycle Page v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "observationId",
+    "afterOrdinal",
+    "nextOrdinal",
+    "hasMore",
+    "events"
+  ],
+  "properties": {
+    "schemaVersion": {
+      "const": "resourceGateway.authoritativeOutcomeInboxLifecyclePage.v1"
+    },
+    "observationId": {
+      "$ref": "read-only-shadow-comparison-v1.schema.json#/$defs/identifier"
+    },
+    "afterOrdinal": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "nextOrdinal": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "hasMore": {
+      "type": "boolean"
+    },
+    "events": {
+      "type": "array",
+      "maxItems": 1000,
+      "items": {
+        "$ref": "authoritative-outcome-inbox-lifecycle-event-v1.schema.json"
+      }
+    }
+  }
+}
