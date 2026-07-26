@@ -424,6 +424,10 @@ public final class CapabilityMirrorProtocol {
     public static final String
     ONLINE_READ_ONLY_SHADOW_BASELINE_COMMAND_V1 =
             "resourceGateway.onlineReadOnlyShadowBaselineCommand.v1";
+    /** Payload-free command binding a sealed candidate to one verified baseline request. */
+    public static final String
+    ONLINE_READ_ONLY_SHADOW_CANDIDATE_COMMAND_V1 =
+            "resourceGateway.onlineReadOnlyShadowCandidateCommand.v1";
     /** Independently signed payload-free regional baseline observation. */
     public static final String
     ONLINE_READ_ONLY_SHADOW_BASELINE_OBSERVATION_V1 =
@@ -937,6 +941,11 @@ public final class CapabilityMirrorProtocol {
     ONLINE_READ_ONLY_SHADOW_BASELINE_COMMAND_SCHEMA_RESOURCE =
             SCHEMA_RESOURCE_ROOT
                     + "online-read-only-shadow-baseline-command-v1.schema.json";
+    /** Packaged same-input sealed online candidate command schema. */
+    public static final String
+    ONLINE_READ_ONLY_SHADOW_CANDIDATE_COMMAND_SCHEMA_RESOURCE =
+            SCHEMA_RESOURCE_ROOT
+                    + "online-read-only-shadow-candidate-command-v1.schema.json";
     /** Packaged signed regional online baseline observation schema. */
     public static final String
     ONLINE_READ_ONLY_SHADOW_BASELINE_OBSERVATION_SCHEMA_RESOURCE =

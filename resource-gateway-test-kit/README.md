@@ -53,11 +53,14 @@ implementation. The JAR packages the authoritative v1 JSON Schema and provides:
   source-binding/candidate evidence, built-in comparison-policy identity, normalized facts,
   temporal/zero-write closure, key policy, content address, and detached signature;
   strict `OnlineReadOnlyShadowBaselineCommand.v1`,
+  `OnlineReadOnlyShadowCandidateCommand.v1`,
   `OnlineReadOnlyShadowBaselineObservation.v1`, and
   `OnlineReadOnlyShadowBaselineCapability.v1` Schemas plus public resource/version
-  constants for regional sidecar integration. These three online protocols are
-  structurally validated and packaged, but do not yet have an independent
-  observation signature verifier or fixed public-key fixture in this Test Kit;
+  constants for regional data-plane integration. Baseline observations also have
+  an independent content-address/signature verifier and a server-produced
+  public-key compatibility fixture. The candidate command binds a sealed plan to
+  the exact verified baseline observation, vault receipt, request-context
+  fingerprint, grant, admission, and deadline without carrying business payload;
   strict Shadow authority key-set publication/page Schemas plus an independent
   root-threshold verifier that reconstructs content addresses, exact enterprise
   binding, frozen high-water cursor continuity, online terminal freshness, and
@@ -624,6 +627,14 @@ authenticates the measured write facts; inspect `zeroWrite()` separately.
 Passing the fixture proves producer/consumer wire compatibility, not current
 sidecar capability, workload identity, data-use permission, paired online
 candidate execution, or production readiness.
+
+`ONLINE_READ_ONLY_SHADOW_CANDIDATE_COMMAND_V1` and
+`ONLINE_READ_ONLY_SHADOW_CANDIDATE_COMMAND_SCHEMA_RESOURCE` expose the strict
+same-input candidate command. Candidate authorities must place the complete
+command fingerprint in signed `MirrorRunEvidence.requestId`; consumers must
+still verify the Mirror bundle independently. Packaging the schema proves only
+wire availability. It does not prove that a candidate authority or online
+paired-source resolver is installed.
 
 Capability observations use a separate producer authority and verifier. Run the packaged public-only
 fixture whenever upgrading the protocol, JSON stack, crypto provider, or consumer:

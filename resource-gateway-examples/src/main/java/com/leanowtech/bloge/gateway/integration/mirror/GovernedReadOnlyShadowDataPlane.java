@@ -101,7 +101,9 @@ public final class GovernedReadOnlyShadowDataPlane
 
             heartbeat(exact, guardLease);
             ReadOnlyShadowConnectorObservation candidateResult =
-                    observeCandidate(invocation);
+                    observeCandidate(
+                            invocation,
+                            baselineResult);
             requireZeroWrite(candidateResult);
             requirePair(
                     exact.request(),
@@ -240,10 +242,13 @@ public final class GovernedReadOnlyShadowDataPlane
     }
 
     private ReadOnlyShadowConnectorObservation observeCandidate(
-            ReadOnlyShadowConnectorInvocation invocation) {
+            ReadOnlyShadowConnectorInvocation invocation,
+            ReadOnlyShadowConnectorObservation baselineResult) {
         try {
             return Objects.requireNonNull(
-                    candidate.observe(invocation),
+                    candidate.observePaired(
+                            invocation,
+                            baselineResult),
                     "candidate observation");
         } catch (ReadOnlyShadowDataPlane.Failure known) {
             throw known;

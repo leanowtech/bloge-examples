@@ -21,6 +21,25 @@ public interface ReadOnlyShadowCandidateConnector {
     ReadOnlyShadowConnectorObservation observe(
             ReadOnlyShadowConnectorInvocation invocation);
 
+    /**
+     * Produces a candidate observation bound to the exact verified baseline source.
+     *
+     * <p>Detached connectors ignore the supplied baseline because their signed source binding
+     * already closes the pair. Online connectors override this method to resolve the baseline
+     * payload-vault receipt and prove that the sealed candidate consumed the same request
+     * context.</p>
+     *
+     * @param invocation exact governed invocation coordinates
+     * @param baseline exact verified baseline connector observation
+     * @return payload-free candidate result
+     */
+    default ReadOnlyShadowConnectorObservation observePaired(
+            ReadOnlyShadowConnectorInvocation invocation,
+            ReadOnlyShadowConnectorObservation baseline) {
+        Objects.requireNonNull(baseline, "baseline");
+        return observe(invocation);
+    }
+
     /** Creates a fail-closed placeholder. */
     static ReadOnlyShadowCandidateConnector unavailable() {
         return Unavailable.INSTANCE;

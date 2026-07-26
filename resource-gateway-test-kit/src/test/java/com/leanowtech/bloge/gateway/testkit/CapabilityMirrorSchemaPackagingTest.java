@@ -129,6 +129,7 @@ class CapabilityMirrorSchemaPackagingTest {
                 "scenario-rehearsal-batch-workbook-seed-v1.schema.json",
                 "read-only-shadow-comparison-v1.schema.json",
                 "online-read-only-shadow-baseline-command-v1.schema.json",
+                "online-read-only-shadow-candidate-command-v1.schema.json",
                 "online-read-only-shadow-baseline-observation-v1.schema.json",
                 "online-read-only-shadow-baseline-capability-v1.schema.json",
                 "read-only-shadow-job-lifecycle-event-v1.schema.json",
@@ -538,6 +539,14 @@ class CapabilityMirrorSchemaPackagingTest {
                 .ONLINE_READ_ONLY_SHADOW_BASELINE_COMMAND_SCHEMA_RESOURCE)
                 .endsWith(
                         "online-read-only-shadow-baseline-command-v1.schema.json");
+        assertThat(CapabilityMirrorProtocol
+                .ONLINE_READ_ONLY_SHADOW_CANDIDATE_COMMAND_V1)
+                .isEqualTo(
+                        "resourceGateway.onlineReadOnlyShadowCandidateCommand.v1");
+        assertThat(CapabilityMirrorProtocol
+                .ONLINE_READ_ONLY_SHADOW_CANDIDATE_COMMAND_SCHEMA_RESOURCE)
+                .endsWith(
+                        "online-read-only-shadow-candidate-command-v1.schema.json");
         assertThat(CapabilityMirrorProtocol
                 .ONLINE_READ_ONLY_SHADOW_BASELINE_OBSERVATION_V1)
                 .isEqualTo(

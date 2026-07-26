@@ -133,6 +133,7 @@ final class CapabilityMirrorSchemaValidator {
             "read-only-shadow-source-binding-v1.schema.json",
             "read-only-shadow-source-resolution-attestation-v1.schema.json",
             "online-read-only-shadow-baseline-command-v1.schema.json",
+            "online-read-only-shadow-candidate-command-v1.schema.json",
             "online-read-only-shadow-baseline-observation-v1.schema.json",
             "online-read-only-shadow-baseline-capability-v1.schema.json",
             "read-only-shadow-job-v1.schema.json",

@@ -150,6 +150,8 @@ import com.leanowtech.bloge.gateway.integration.mirror.DetachedReadOnlyShadowSou
 import com.leanowtech.bloge.gateway.integration.mirror.HttpOnlineReadOnlyShadowBaselineAuthority;
 import com.leanowtech.bloge.gateway.integration.mirror.OnlineReadOnlyShadowBaselineAuthority;
 import com.leanowtech.bloge.gateway.integration.mirror.OnlineReadOnlyShadowBaselineConnector;
+import com.leanowtech.bloge.gateway.integration.mirror.OnlineReadOnlyShadowCandidateAuthority;
+import com.leanowtech.bloge.gateway.integration.mirror.OnlineReadOnlyShadowCandidateConnector;
 import com.leanowtech.bloge.gateway.integration.mirror.OnlineReadOnlyShadowBaselineEvidenceAuthority;
 import com.leanowtech.bloge.gateway.integration.mirror.OnlineReadOnlyShadowBaselineObservationIntegrity;
 import com.leanowtech.bloge.gateway.integration.mirror.OnlineReadOnlyShadowBaselineTransport;
@@ -1796,6 +1798,51 @@ public class MirrorRuntimeConfiguration {
                 connector != null,
                 authority::ready,
                 integrity::available);
+    }
+
+    /**
+     * Installs same-input sealed candidate execution when its isolated authority is supplied.
+     *
+     * @param baselineAuthority exact online baseline artifact resolver
+     * @param baselineIntegrity independently governed baseline evidence verifier
+     * @param candidateAuthority isolated candidate runtime and evidence authority
+     * @param evidenceIntegrity independently governed Mirror evidence verifier
+     * @param policy exact payload-free normalization policy
+     * @param objectMapper canonical protocol mapper
+     * @return online candidate connector bound to the verified baseline vault receipt
+     */
+    @Bean
+    @ConditionalOnBean({
+            OnlineReadOnlyShadowBaselineAuthority.class,
+            OnlineReadOnlyShadowBaselineObservationIntegrity
+                    .class,
+            OnlineReadOnlyShadowCandidateAuthority.class,
+            MirrorEvidenceIntegrityService.class
+    })
+    @ConditionalOnProperty(
+            prefix = OnlineReadOnlyShadowBaselineProperties
+                    .PREFIX,
+            name = "enabled",
+            havingValue = "true")
+    public OnlineReadOnlyShadowCandidateConnector
+    onlineReadOnlyShadowCandidateConnector(
+            OnlineReadOnlyShadowBaselineAuthority
+                    baselineAuthority,
+            OnlineReadOnlyShadowBaselineObservationIntegrity
+                    baselineIntegrity,
+            OnlineReadOnlyShadowCandidateAuthority
+                    candidateAuthority,
+            MirrorEvidenceIntegrityService evidenceIntegrity,
+            PayloadFreeEqualityReadOnlyShadowPolicy policy,
+            ObjectMapper objectMapper) {
+        return new OnlineReadOnlyShadowCandidateConnector(
+                baselineAuthority,
+                baselineIntegrity,
+                candidateAuthority,
+                evidenceIntegrity,
+                policy,
+                objectMapper,
+                Clock.systemUTC());
     }
 
     /** Installs the exact signed-binding baseline connector only behind its explicit switch. */

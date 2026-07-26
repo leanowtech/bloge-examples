@@ -317,6 +317,9 @@ public record IntegrationCapabilities(
         objects.put("onlineReadOnlyShadowBaselineCommand", List.of(
                 com.leanowtech.bloge.gateway.integration.mirror
                         .OnlineReadOnlyShadowBaselineCommand.SCHEMA_VERSION));
+        objects.put("onlineReadOnlyShadowCandidateCommand", List.of(
+                com.leanowtech.bloge.gateway.integration.mirror
+                        .OnlineReadOnlyShadowCandidateCommand.SCHEMA_VERSION));
         objects.put("onlineReadOnlyShadowBaselineObservation", List.of(
                 com.leanowtech.bloge.gateway.integration.mirror
                         .OnlineReadOnlyShadowBaselineObservation.SCHEMA_VERSION));

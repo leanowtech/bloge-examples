@@ -29,6 +29,8 @@ import com.leanowtech.bloge.gateway.integration.mirror.HttpOnlineReadOnlyShadowB
 import com.leanowtech.bloge.gateway.integration.mirror.OnlineReadOnlyShadowBaselineConnector;
 import com.leanowtech.bloge.gateway.integration.mirror.OnlineReadOnlyShadowBaselineEvidenceAuthority;
 import com.leanowtech.bloge.gateway.integration.mirror.OnlineReadOnlyShadowBaselineTransport;
+import com.leanowtech.bloge.gateway.integration.mirror.OnlineReadOnlyShadowCandidateAuthority;
+import com.leanowtech.bloge.gateway.integration.mirror.OnlineReadOnlyShadowCandidateConnector;
 import com.leanowtech.bloge.gateway.integration.mirror.GovernedReadOnlyShadowDataPlane;
 import com.leanowtech.bloge.gateway.integration.mirror.PayloadFreeEqualityReadOnlyShadowPolicy;
 import com.leanowtech.bloge.gateway.integration.mirror.ReadOnlyShadowAccessAuthority;
@@ -217,6 +219,33 @@ class MirrorRuntimeConfigurationTest {
                     });
             assertThat(context.getBean(
                     ReadOnlyShadowCandidateConnector.class)
+                    .ready()).isFalse();
+            assertThat(context.getBean(
+                    ReadOnlyShadowDataPlane.class)
+                    .ready()).isFalse();
+        }
+    }
+
+    @Test
+    void onlineCandidateRequiresItsExplicitIsolatedRuntimeAuthority() {
+        try (var context = context(
+                Map.of(
+                        "gateway.testing.mirror.enabled", true,
+                        OnlineReadOnlyShadowBaselineProperties.PREFIX
+                                + ".enabled", true,
+                        OnlineReadOnlyShadowBaselineProperties.PREFIX
+                                + ".base-uri",
+                        "https://baseline.ap.example.test",
+                        "test.online-candidate-authority",
+                        true),
+                "staging")) {
+            assertThat(context.getBean(
+                    ReadOnlyShadowCandidateConnector.class))
+                    .isInstanceOf(
+                            OnlineReadOnlyShadowCandidateConnector
+                                    .class);
+            assertThat(context.getBean(
+                    ReadOnlyShadowSourceResolutionVerifier.class)
                     .ready()).isFalse();
             assertThat(context.getBean(
                     ReadOnlyShadowDataPlane.class)
@@ -425,6 +454,16 @@ class MirrorRuntimeConfigurationTest {
                     () -> OnlineReadOnlyShadowBaselineEvidenceAuthority
                             .from(
                                     new InMemoryVisualEvidenceSigner()));
+        }
+        if (Boolean.TRUE.equals(
+                properties.get(
+                        "test.online-candidate-authority"))) {
+            context.registerBean(
+                    OnlineReadOnlyShadowCandidateAuthority
+                            .class,
+                    () -> mock(
+                            OnlineReadOnlyShadowCandidateAuthority
+                                    .class));
         }
         context.registerBean(
                 ScenarioRehearsalIntegrationService.class,

@@ -7,7 +7,7 @@
 
 | 文档属性 | 内容 |
 |---|---|
-| 状态 | Accepted / In implementation；Stage 0 至 Stage 4 的协议、执行、状态世界、Scenario rehearsal、证据与治理闭环已完成。Stage 5 已完成 owner-approved Fidelity inventory、无总分 profile、signed Scenario 与 Shadow source adapter、durable Shadow queue/worker/lifecycle、双重观测 online authority、数据库共享 execution guard、managed trust distribution、在线 v1/detached v2 job、exact signed source binding、detached 双 connector/source resolution，以及 regional TEE online-baseline consumer、严格传输、动态 readiness、独立 Test Kit verifier 和 public-only 固定签名 fixture。企业 root-policy/control-plane connector、regional sidecar provider、online candidate/paired resolver、跨区域认证、outcome/cohort、drift/calibration、零 DSL case 调整和企业身份任务认证继续实施；任何 protocol/API/connector/readiness 子项均不得冒充完整生产数据面 readiness |
+| 状态 | Accepted / In implementation；Stage 0 至 Stage 4 的协议、执行、状态世界、Scenario rehearsal、证据与治理闭环已完成。Stage 5 已完成 owner-approved Fidelity inventory、无总分 profile、signed Scenario 与 Shadow source adapter、durable Shadow queue/worker/lifecycle、双重观测 online authority、数据库共享 execution guard、managed trust distribution、在线 v1/detached v2 job、exact signed source binding、detached 双 connector/source resolution，以及 regional TEE online-baseline consumer、严格传输、动态 readiness、独立 Test Kit verifier、public-only 固定签名 fixture 和 same-input online candidate SPI/connector。企业 root-policy/control-plane connector、regional provider/production candidate authority、online paired resolver、跨区域认证、outcome/cohort、drift/calibration、零 DSL case 调整和企业身份任务认证继续实施；任何 protocol/API/connector/readiness 子项均不得冒充完整生产数据面 readiness |
 | 目标读者 | Resource Gateway、BLOGE Runtime、ANEKE、TEE/数据平台、QA、SRE、安全与业务运营团队 |
 | 设计范围 | external/composed 能力建模、镜像运行、保真语料、有状态世界、场景演练、证据、保真度与结果校准 |
 | 非目标 | 不重做 ANEKE 的资产治理和发布门禁；不允许测试控制进入生产业务请求；不把观测频率直接当成业务正确性 |
@@ -577,7 +577,7 @@ Resource Gateway 已有的工业底座应直接复用：
 | 日志蒸馏与语料 | 82% | payload-free signed observation、准入/隔离、immutable review、candidate/publication/trajectory/cluster 独立 lineage、元数据风险门禁、fixture exact/trajectory/cluster binding、在线 revalidation、test/staging `RECORDED_EXACT`/`RECORDED_TRAJECTORY`/`RECORDED_CLUSTER`、BLOGE 原生 retry loop、identity-safe projection、Wilson confidence、Session state read 与独立 verifier 已落地；缺生产 payload authority、漂移、偏差、outcome 校准和删除证明 |
 | 有状态业务世界 | 91% | 协议、read/write 退款 fixture、独立 verifier/sealer/client、事务内核、受保护 Session API、独立 AES-GCM 数据面、lease/fence/CAS、durable write-attempt journal/reconciliation、TTL/destroy、全局/scope 容量、保留字节、命令背压、过期擦除、固定 read head、run-scoped virtual write、真实 DAG read-write-read、payload-free v1/v2/v3 state evidence、read-only/successful-transition/write-outcome ANEKE seed、签名 HASH_ONLY checkpoint 与同数据面代际精确恢复准入已落地；缺 TEE/KMS、跨区域数据恢复、真实 process-kill/network parity、目标数据库容量认证和 HA/DR certification |
 | Scenario/Rehearsal | 99.3% | ScenarioPack/Case/Assertion、exact compiler、可恢复逐 case runtime、签名 aggregate、audit/retention、ANEKE seed、durable batch manifest/queue/API/worker、region-local DAG/KMS 双 scheduler、逐 case cooperative control、v1/v2 签名 batch evidence/index、批次 operation/lifecycle audit、retention/multi-hold/逻辑删除证明、durable finalization outbox/lease/retry/quarantine/status、受控 remediation、聚合 health/SLO，以及 root-sealed ANEKE batch workbook 已落地；缺 hard kill、企业策略/WORM/anchor、异构消费者和目标环境认证 |
-| Fidelity/Outcome | 90% | owner-approved inventory、无总分七维 profile、fail-closed freshness/低样本/abstention/source debt、Wilson 95%、exact lineage、strict Schema、managed signing、受保护 API、Scenario source、v3 Shadow authority/policy/source closure、durable queue/worker/lifecycle、shared guard、root-threshold managed trust、在线 v1/detached v2 job、exact signed source binding 与 detached data-plane 已落地；regional TEE online-baseline consumer 已具备 payload-free command/signed observation、严格 private-PKI/SPKI/mTLS、动态 readiness、独立 Test Kit verifier 与 public-only 固定签名 fixture；缺企业 root-policy/control-plane connector、跨区域传播/轮换认证、regional sidecar provider、online candidate/paired resolver、outcome/cohort adapter、drift 降级和校准闭环 |
+| Fidelity/Outcome | 90% | owner-approved inventory、无总分七维 profile、fail-closed freshness/低样本/abstention/source debt、Wilson 95%、exact lineage、strict Schema、managed signing、受保护 API、Scenario source、v3 Shadow authority/policy/source closure、durable queue/worker/lifecycle、shared guard、root-threshold managed trust、在线 v1/detached v2 job、exact signed source binding 与 detached data-plane 已落地；regional TEE online-baseline consumer 已具备 payload-free command/signed observation、严格 private-PKI/SPKI/mTLS、动态 readiness、独立 Test Kit verifier/public-only fixture，same-input online candidate command/SPI/connector 已落地；缺企业 root-policy/control-plane connector、跨区域传播/轮换认证、regional provider/production candidate authority、online paired resolver、outcome/cohort adapter、drift 降级和校准闭环 |
 | 业务运营工作台 | 72% | exact-scope keyset 队列、证据分诊/deep link/响应式 UI，以及 reviewed remediation 八对象协议、server-owned 双角色策略、durable approval ledger、CAS、successor 原子准入、签名前后继对账、角色隔离 Owner/Reviewer 控件、auth-before-decode API 和 capability probe 已落地；仍缺零 DSL case 调整、256-item 密度/性能、任务分派与 SLA、复杂业务样例、可访问性及真实企业 IdP/委派/Owner 认证 |
 
 结论：基础设施准备度约 95%，固定权重理想态完成度为 88.96%。剩余差距 11.04%，主要矛盾已经
@@ -2682,6 +2682,48 @@ paired-source resolver，使一条 v1 online job 在认证 profile 中真正产�
 source-resolution proof。并行生产支线继续关闭 enterprise root-policy connector、证书/key
 轮换、PostgreSQL 多副本与 network partition；不能再用更多静态 protocol flag 替代这些环境证明。
 
+### 3.41 2026-07-26 Same-input online candidate 纵切差距复评
+
+3.40 只有 baseline consumer。若 candidate connector 仅凭 job 中的 plan ref 独立运行，它无法证明
+候选消费了 baseline 实际读取的那一份请求；若直接信任前一个 connector 投影的 context hash，又会让
+connector 自述成为来源证据。病根不是缺一个 Java 接口，而是 baseline payload authority、candidate
+idempotency 和 sealed Mirror evidence 尚未形成同一内容地址闭包。
+
+本轮完成以下约束：
+
+- `OnlineReadOnlyShadowCandidateCommand.v1` 只携带 exact plan、已验真的 baseline observation ref、
+  opaque payload-vault receipt、request-context fingerprint、grant、admission 和 deadline，不携带
+  request/response、endpoint、credential 或自由文本；
+- candidate authority 必须把完整 command fingerprint 写入签名
+  `MirrorRunEvidence.requestId`。baseline ref、vault receipt、plan、grant 或时间任一漂移都会形成不同
+  request identity，不能静默命中旧 run；
+- `ReadOnlyShadowCandidateConnector.observePaired` 使 data plane 显式把 baseline 结果交给
+  candidate。detached connector 继续依赖既有 signed binding，保持兼容；
+- `OnlineReadOnlyShadowCandidateConnector` 不信任该投影本身，而是按 exact artifact ref 再次从
+  baseline authority 读取并验签 observation，然后才提取 vault receipt；
+- candidate 返回的 bundle 再经独立 `MirrorEvidenceIntegrityService` 验证，并关闭 scope、plan id/
+  fingerprint、target capability、request context、command identity 和 execution window；
+- Mirror evidence 的 isolation model 继续禁止 production context carrier、external credential、
+  real external call 和 network egress，因此 candidate connector 才能报告零外部写；
+- Spring 只在 online switch、baseline resolve/integrity、candidate authority 与 Mirror evidence
+  integrity 同时存在时装配 connector；没有默认 candidate authority，也不会回退到普通 runtime；
+- strict Schema 已加入 Test Kit 的公共 version/resource 常量、ref allowlist 与发布包。聚焦 server
+  门禁 `58/58`、Test Kit packaging `11/11` 全绿，Mirror 协议资源增至 159 份。
+
+本轮故意没有把 `mirrorReadOnlyShadowOnlineDataPlaneReady` 打开。candidate connector 仍不是 paired
+source proof：当前没有第二个组件在 connector 之后重新读取 baseline observation 与 candidate bundle，
+也没有 online source-resolution attestation 将二者、admission/confirmation 和 typed comparison
+绑定起来；默认部署也没有 synthetic/production candidate authority。
+
+因此 `Fidelity/Outcome` 维持 `90%`，固定权重总分维持 `88.96%`，距理想态仍为 `11.04%`。本轮增加的
+是下一闭环所需的 same-input correctness invariant，不把“SPI/connector 已存在”重复计算为工业级
+online data-plane 完成度。
+
+下一步直接实现 online source-resolution attestation v2 与 resolver：它必须独立调用 baseline/
+candidate exact-read authority，分别验签 observation/bundle，重建 candidate command，并把 online
+source mode、两份 exact artifact、request context、authority confirmation 和零写事实签成 proof。
+随后用 synthetic regional provider 跑通一条 durable v1 job；在此之前 readiness 继续失败关闭。
+
 ## 4. 目标架构与系统责任
 
 ![Resource Gateway 业务能力镜像目标架构](assets/resource-gateway-capability-mirror-target-architecture.svg)
@@ -4016,7 +4058,7 @@ permit、v1/v2/v3 双向兼容读取和独立 test-kit 语义复验；非 Java v
 | 1 | RG-MIR-SCEN-005 ANEKE batch workbook | 已完成 | RG Evidence + ANEKE Correctness | signed batch v2、child seed、batch retention | batch seed/Schema、projector、root seal、独立 verifier/client、受保护 API、audit、capability | 1..256 个 item 全闭合；普通门禁读取无 N+1；deep audit 对漏项/重复/child drift 失败关闭 |
 | 2 | RG-MIR-SCEN-006 Owner rehearsal workbench | P0 / 进行中（证据分诊与 reviewed remediation 纵切完成） | Author UX + RG Scenario + 业务 Owner | Work package 1 | batch 列表、shape summary、证据分诊/deep link、remediation protocol/policy/repository/service/API、双角色控件、原子 successor admission 和签名对账已完成；待零 DSL case 调整、任务分派/SLA、256-item 性能/可访问性及企业 IdP/Owner 认证 | owner 能在 15 分钟内定位失败、区分执行/断言/低保真/证据故障并完成审阅；浏览器 E2E 覆盖 256-item 复杂批次 |
 | 3 | RG-MIR-FID-001 Fidelity protocol/kernel | P0 / 进行中（Scenario + Shadow control-plane 纵切完成） | RG Domain + ANEKE Governance + 数据科学 | Work package 1；owner 冻结 coverage taxonomy | 已完成 `DomainFidelityInventoryRegistrationRequest/Inventory/Profile.v1`、strict Schema、完整 denominator、七维 metric、Wilson 95%、freshness、abstention/source debt、exact lineage、fail-closed projector、独立 Test Kit verifier、full-scope append-only repository、managed signer、受保护 register/read API、同事务 audit、typed capability、Scenario source、signed Shadow v1/v2/v3 comparison/source adapter、v3 AuthorityProof、durable request/job/lifecycle verifier；待 outcome/cohort source adapter | 空分母/低样本/缺失/陈旧不能高分；合法重签的伪造 metric/expiry/denominator/shadow MATCH/job/lifecycle/authority closure 仍被独立拒绝；审计失败回滚资产；每个 profile 分量可回到 exact inventory/source generation；单次 Scenario/Shadow 不得冒充 outcome/request-space/error-distribution |
-| 4 | RG-MIR-FID-002 Read-only shadow/diff | P1 / 进行中（detached data-plane、regional baseline consumer 与跨产物认证完成） | RG Runtime + TEE/Data Plane + SRE | Work package 3；数据使用授权 | 已完成 signed comparison v1/v2 兼容读取与 v3 当前产出、v3 AuthorityProof、policy/source-resolution closure、同请求双边 closure、零写/采样/egress/kill-switch proof、typed diff、grant ordinal 唯一占用、数据库时钟 deadline、lease/retry/crash recovery、worker、protected API、同事务 operation/lifecycle audit、bounded scheduler、独立 readiness/verifier、数据库共享 guard、signed grant/kill-switch/guard-policy protocol、root-threshold-signed authority key-set、完整 scope/kind/issuer binding、durable generation/revocation floor、不可逆 retained key lifecycle、root-policy-before-append、无正向缓存 managed trust store、受保护 publish/page API、冻结 high-water 连续游标、在线 v1/detached v2 job、双层内容寻址 exact source binding、detached baseline/candidate connector、独立 source re-resolution、signed proof/exact-read API、三 authority 固定签名 fixture，以及 regional TEE baseline command/observation、严格 HTTP authority、动态 readiness、独立 Test Kit verifier/public-only fixture；待企业 root-policy/control-plane connector、跨区域传播与轮换认证、regional sidecar provider、online candidate/paired resolver、drift downgrade/revoke | 真实写和凭据为 0；同 grant ordinal 不重复 admission；旧 lease 不发布；authority outage/revocation 不耗业务 attempt；未验根候选不能占据 key-set head；离线消费者不跳过撤销代；REVOKED key 不可消失或复活；空终态页不能掩盖过期 head；detached job 不猜 latest run；v3 证据可证明 exact admission/confirmation authority；schema/branch/retry/state/effect 差异可归因；protocol/connector/baseline/full-data-plane readiness 不混淆；producer/consumer canonicalization 漂移在升级前失败关闭；来源漂移自动使 readiness/gate stale |
+| 4 | RG-MIR-FID-002 Read-only shadow/diff | P1 / 进行中（detached data-plane、regional baseline consumer、same-input candidate SPI 与跨产物认证完成） | RG Runtime + TEE/Data Plane + SRE | Work package 3；数据使用授权 | 已完成 signed comparison v1/v2 兼容读取与 v3 当前产出、v3 AuthorityProof、policy/source-resolution closure、同请求双边 closure、零写/采样/egress/kill-switch proof、typed diff、grant ordinal 唯一占用、数据库时钟 deadline、lease/retry/crash recovery、worker、protected API、同事务 operation/lifecycle audit、bounded scheduler、独立 readiness/verifier、数据库共享 guard、signed grant/kill-switch/guard-policy protocol、root-threshold-signed authority key-set、完整 scope/kind/issuer binding、durable generation/revocation floor、不可逆 retained key lifecycle、root-policy-before-append、无正向缓存 managed trust store、受保护 publish/page API、冻结 high-water 连续游标、在线 v1/detached v2 job、双层内容寻址 exact source binding、detached baseline/candidate connector、独立 source re-resolution、signed proof/exact-read API、三 authority 固定签名 fixture，以及 regional TEE baseline command/observation、严格 HTTP authority、动态 readiness、独立 Test Kit verifier/public-only fixture、same-input candidate command/SPI/connector；待企业 root-policy/control-plane connector、跨区域传播与轮换认证、regional provider/production candidate authority、online paired resolver、drift downgrade/revoke | 真实写和凭据为 0；同 grant ordinal 不重复 admission；旧 lease 不发布；authority outage/revocation 不耗业务 attempt；未验根候选不能占据 key-set head；离线消费者不跳过撤销代；REVOKED key 不可消失或复活；空终态页不能掩盖过期 head；detached job 不猜 latest run；v3 证据可证明 exact admission/confirmation authority；schema/branch/retry/state/effect 差异可归因；protocol/connector/baseline/full-data-plane readiness 不混淆；producer/consumer canonicalization 漂移在升级前失败关闭；来源漂移自动使 readiness/gate stale |
 | 5 | RG-MIR-OUT-001 Outcome calibration | P1 / 2 sprints | ANEKE + 业务分析 + RG Domain | Work package 3；权威 outcome owner | versioned outcome definition/connector、delayed/censored reconciliation、calibration cohort、candidate assertion | 多源冲突和迟到结果不覆盖历史；候选不经 owner 不 serving；能证明或否证 fidelity 与业务结果关系 |
 | 6 | RG-MIR-CERT-001 Runtime certification harness | P0 并行 / 3-4 sprints | SRE + Security + RG Runtime | 当前 Stage 3/4 runtime | PostgreSQL 多副本、真实 KMS、forked JVM kill、network partition、rolling upgrade、backup/restore、capacity 工具与证据包 | 每个故障点有期望状态/恢复上限/数据不变量；旧 owner/epoch 永不发布；结果可在 CI/nightly/客户环境重放 |
 | 7 | RG-MIR-GOV-001 Enterprise evidence governance | P0 并行 / 2-3 sprints | Security + Legal/Data Governance + RG Evidence | 企业 policy authority 与 WORM/anchor | retention policy generation、external anchor、legal hold authority、物理删除/备份证明、delegated approval | 本地逻辑删除不冒充物理删除；policy/anchor 不可用时 certifiable readiness 关闭；跨组织委派可撤销且有审计 |

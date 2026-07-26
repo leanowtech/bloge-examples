@@ -68,7 +68,7 @@
 - authoritative outcome 到 `Measurement` 的独立来源适配器；
 - request-space sampling proof 与 error-distribution cohort adapter；
 - 企业 root-policy/control-plane connector、跨区域传播 SLO 与轮换认证、
-  regional sidecar provider、online candidate connector、paired-source resolver、
+  regional sidecar provider/production candidate authority、paired-source resolver、
   drift 自动降级、
   outcome reconciliation 和工作台。
 
@@ -587,8 +587,9 @@ HTTPS `base-uri`；部署方还必须提供 role-separated
 `OnlineReadOnlyShadowBaselineTransport`、
 `HttpOnlineReadOnlyShadowBaselineAuthority.RequestHeadersProvider` 和
 `OnlineReadOnlyShadowBaselineEvidenceAuthority`。缺任一角色时保持 fail closed。当前纵切没有
-online candidate 和 online source-resolution verifier，因此 baseline 可连接不等于 worker/data-plane/
-serving ready。公共 capability 分开报告 protocol、connector installed、live authority、
+默认 `OnlineReadOnlyShadowCandidateAuthority`；部署方提供该隔离 authority 后会装配
+same-input candidate connector，但仍没有 online source-resolution verifier，因此 baseline/candidate
+可连接不等于 worker/data-plane/serving ready。公共 capability 分开报告 protocol、connector installed、live authority、
 evidence verification、baseline ready 和 full online data-plane ready；每个动态 dependency
 在单次响应中只采样一次，异常即 `false`，不能由任一子项推导完整数据面。
 
@@ -863,7 +864,8 @@ fixture，以及 regional TEE online-baseline consumer、动态 readiness、独�
 1. 接入企业 root-policy/control-plane connector，并认证 authority successor/revocation 的
    跨区域传播时限、outage 和 rolling rotation。
 2. 交付第一个获授权的 regional sidecar provider、payload-isolated production read binding、
-   online candidate connector 与 paired-source resolver；现有 baseline consumer 只证明可安全接入，
+   production candidate authority 与 paired-source resolver；现有 baseline consumer 和 candidate
+   SPI 只证明可安全接入，
    不得误报为完整在线生产采样。
 3. 把 signed typed diff 接入 drift budget，自动 stale/downgrade/revoke serving conclusion。
 4. 实现 authoritative outcome observation 与 delayed/censored reconciliation。

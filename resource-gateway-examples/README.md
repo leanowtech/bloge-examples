@@ -787,11 +787,31 @@ authority signature. Repeating the same command must resolve the same immutable
 observation. Measured write exposure is not erased by the connector; it crosses
 as a boolean/count so `GovernedReadOnlyShadowDataPlane` can fail closed.
 
+An online candidate is installed only when the deployment additionally provides
+an `OnlineReadOnlyShadowCandidateAuthority`. Resource Gateway then emits
+`resourceGateway.onlineReadOnlyShadowCandidateCommand.v1`. The command contains
+no business value; it binds the sealed plan to the independently verified
+baseline observation, opaque payload-vault receipt, request-context fingerprint,
+access grant, admission, and deadline. The authority must use the command
+fingerprint as the signed `MirrorRunEvidence.requestId`, so a changed source,
+plan, grant, or time coordinate cannot idempotently reuse an older candidate
+run. `OnlineReadOnlyShadowCandidateConnector` independently verifies the
+returned Mirror bundle and its scope, plan, target, request context, and time
+window before projecting payload-free normalized facts.
+
+The candidate connector re-resolves and re-verifies the baseline artifact
+instead of trusting the preceding connector projection. It also requires the
+Mirror evidence isolation model to prove that no production context carrier,
+external credential, real external call, or network egress reached the
+candidate runtime. Calling it without the exact baseline observation fails
+closed.
+
 Do not enable this mode together with
 `gateway.testing.mirror.read-only-shadow.detached-data-plane.enabled`; startup
-rejects the conflict. This slice supplies only the baseline connector. The
-online candidate adapter and online source-resolution verifier are still
-unavailable, so worker and serving readiness remain false.
+rejects the conflict. The online candidate SPI and connector are available, but
+no default candidate authority is installed. The online paired-source resolver
+is still unavailable, so worker and serving readiness remain false even when a
+deployment supplies both source connectors.
 
 `GET /api/integration/capabilities` reports the online-baseline boundary as
 separate facts:
