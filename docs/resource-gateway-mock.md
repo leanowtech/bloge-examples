@@ -3222,6 +3222,42 @@ match/mismatch/censored/conflict，迟到事实不能重写历史 revision；def
 set successor 必须使旧 calibration conclusion stale。随后才能计算带 cohort bias disclosure 的
 fidelity-to-outcome correlation，并进入 Owner review，而不能直接宣称因果关系。
 
+### 3.51 2026-07-27 Durable outcome inbox/reconciliation core
+
+本轮先关闭生产 outcome 纵切中最容易被低估的持久状态机内核，没有用一个定时线程冒充可靠
+摄取：
+
+- 新增 full-scope `DatabaseAuthoritativeOutcomeInboxRepository`，以 append-only observation、
+  mutable/rebuildable head、region/environment partition lock 和 per-observation chained lifecycle
+  四类表组成 durable inbox；
+- revision 1 只接受空 predecessor，后续只接受 `currentRevision + 1` 且 exact current
+  fingerprint 的 successor；同 revision 同正文幂等，正文或 predecessor 漂移冲突。历史 JSON
+  只追加，迟到与纠正事实不能覆盖旧 revision；
+- successor 必须保持 inventory/unit/case/capability、definition、attribution policy、
+  authority set、selection proof、subject/attribution/model identity 和 attribution window，
+  reconciliation cut、attestation time 与每个 authority watermark 单调前进；
+- `QUEUED -> RUNNING -> QUEUED/SETTLED/QUARANTINED` 由数据库时钟、owner/epoch/expiry fence
+  驱动。无变化轮询不计失败，依赖失败有界指数退避，lease expiry 可接管，外部 successor 会
+  fence 在途旧 worker，非法结果或失败超预算只隔离 head，不伪造业务终态；
+- `AuthoritativeOutcomeReconciliationWorker` 在 claim 后重做完整双重 authority 验证，
+  connector 只返回 unsigned candidate，Resource Gateway 再验真、签名并与 head/lifecycle
+  原子提交；successor commit acknowledgement 丢失可按 exact artifact 认回；
+- head 额外锚定 latest lifecycle fingerprint；删除 event tail、篡改 observation duplicated
+  index、篡改 head mutable index 都在普通读取或审计读取时 fail closed；
+- `verifyLocally` 把 canonical/address/RG seal/signed-time 复验与客户 authority I/O 分开。
+  短数据库事务不访问客户账本，worker 与业务投影仍必须执行完整 verifier，避免以性能优化削弱
+  business truth 边界。
+
+H2 真事务 focused gate 当前覆盖 initial/replay/restart、并发初始准入、连续 successor、错误
+predecessor/immutable drift、no-change、lease takeover/stale fence、failure quarantine、
+worker heartbeat、外部 successor fencing、commit replay、head/observation/lifecycle tamper 和
+原始异常脱敏，共 `24/24` 通过。
+
+本节是中间纵切，不调整 3.50 的固定权重成熟度分。当前尚缺受保护 ingest/read/lifecycle API、
+Spring 条件装配、自动 scheduler、客户 connector、PostgreSQL 双连接/双 worker 认证、
+selected-population completeness manifest、definition/policy/authority-set successor stale
+传播和 calibration correlation。只有这些边界继续闭合后，才能把 durable core 计入产品 readiness。
+
 ## 4. 目标架构与系统责任
 
 ![Resource Gateway 业务能力镜像目标架构](assets/resource-gateway-capability-mirror-target-architecture.svg)

@@ -107,6 +107,27 @@ public final class AuthoritativeOutcomeObservationIntegrity {
     public AuthoritativeOutcomeObservation verify(
             AuthoritativeOutcomeObservation observation) {
         AuthoritativeOutcomeObservation exact =
+                verifyLocally(observation);
+        verifyAuthority(exact);
+        return exact;
+    }
+
+    /**
+     * Verifies protocol semantics, content address, local seal, and signed time without customer
+     * authority I/O.
+     *
+     * <p>This boundary exists for short database transactions and append-only storage reads. It is
+     * not sufficient for Fidelity projection or connector execution; every consumer that relies
+     * on business truth must subsequently call {@link #verify(AuthoritativeOutcomeObservation)}.
+     * Keeping the external authority lookup outside a row lock prevents customer-ledger latency
+     * from becoming database lock amplification.</p>
+     *
+     * @param observation untrusted signed observation
+     * @return observation passing the local Resource Gateway trust boundary
+     */
+    public AuthoritativeOutcomeObservation verifyLocally(
+            AuthoritativeOutcomeObservation observation) {
+        AuthoritativeOutcomeObservation exact =
                 Objects.requireNonNull(
                         observation, "observation");
         exact.verify(mapper);
@@ -141,7 +162,6 @@ public final class AuthoritativeOutcomeObservationIntegrity {
             throw new Violation(
                     Reason.SIGNING_TIME_INVALID);
         }
-        verifyAuthority(exact);
         return exact;
     }
 

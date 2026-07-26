@@ -416,11 +416,34 @@ sampling frame 和 `selectedAt` selection cut，同 stratum 的总体/样本量�
 一致，sample ordinal 和 inclusion fingerprint 唯一。这样可以阻止已提交成员跨 cohort 或
 跨选择时点混装；`observationId` 在批内也必须唯一，不能跨 inventory unit 复用稳定身份。
 未提交成员不会被当成完整样本，而会因固定 inventory denominator 保留为 missing debt。
-生产环境仍需 durable inbox 与选中总体到齐证明，才能关闭“采集方只提交更好结果”的风险。
+生产环境仍需选中总体到齐证明，才能关闭“采集方只提交更好结果”的风险。
 
-`projectOutcomes` 是内部 Java 边界，没有 HTTP route。当前协议和投影内核已完成，客户级
-connector、observation inbox、延迟重算调度和 durable lineage repository 仍由后续纵切实现；
-在这些能力与真实 authority 未认证前，不得把 adapter-ready 描述为生产 outcome 已校准。
+Outcome observation 已增加第一层 durable inbox 与连续 successor 内核：
+
+- `DatabaseAuthoritativeOutcomeInboxRepository` 使用完整企业 scope 的 append-only observation
+  表、可重建 head、region/environment 协调锁和逐 observation hash-chained lifecycle；
+- revision 1 只能使用空 predecessor；后续 revision 必须是当前 head 的连续 successor，并携带
+  exact predecessor fingerprint。exact retry 幂等，旧 revision JSON 永不覆盖；
+- successor 固定 inventory/unit、ScenarioCase/capability、definition、attribution policy、
+  authority set、selection proof、subject/attribution/model fingerprints 和 attribution window；
+  reconciliation cut 与 authority watermark 只能前进。迟到或纠正事实进入新 revision，不能
+  改写旧结论；
+- `QUEUED/RUNNING/SETTLED/QUARANTINED` head 使用数据库时钟、owner/epoch/expiry fence、
+  bounded polling/retry/ageing policy。外部 successor 可原子推进 head 并使在途旧 worker
+  `LEASE_LOST`；
+- `AuthoritativeOutcomeReconciliationWorker` 在行锁外重做完整业务 authority 验证，调用
+  payload-isolated connector，再由 Resource Gateway 验真、签名并原子发布 successor；
+  `NO_CHANGE` 不消耗失败预算，依赖失败指数退避，超预算或非法结果只隔离当前 head，绝不把
+  未知结果伪造成 `CENSORED/MISMATCH`；
+- head 在同一事务中锚定 latest lifecycle fingerprint。状态提交或 lifecycle append 任一步失败
+  都整体回滚，删改 observation/head/event 任一重复索引或 hash chain 会在读取时 fail closed；
+- 存储事务只调用 `verifyLocally` 复验 semantics/content address/RG seal/signed time；完整
+  business authority I/O 在入库前或 claim 后执行，避免客户账本延迟放大数据库锁。
+
+`projectOutcomes` 仍是内部 Java 边界。当前提交尚未提供受保护的 observation ingest/read/
+lifecycle API、自动 scheduler、Spring 条件装配、客户 connector、跨进程 PostgreSQL 认证或
+selected-population completeness manifest；这些完成前不得把 durable-core-ready 描述为生产
+outcome 已持续接入或已校准。
 
 当前 `projectShadow` 是内部 Java 投影边界，不接受调用方直接上传 comparison。durable
 queue/worker 已具备受保护的 job submit/read/request/comparison/lifecycle API、同事务 operation

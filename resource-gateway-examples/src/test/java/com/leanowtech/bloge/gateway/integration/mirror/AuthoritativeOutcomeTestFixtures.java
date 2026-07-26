@@ -32,6 +32,16 @@ final class AuthoritativeOutcomeTestFixtures {
                         WINDOW_CLOSES_AT)));
     }
 
+    static AuthoritativeOutcomeObservation pending() {
+        return observation(
+                AuthoritativeOutcomeObservation
+                        .Reconciliation.PENDING,
+                List.of(),
+                List.of(watermark(
+                        "settlement-ledger",
+                        WINDOW_CLOSES_AT.minusSeconds(1))));
+    }
+
     static AuthoritativeOutcomeObservation observation(
             AuthoritativeOutcomeObservation.Reconciliation
                     reconciliation,
@@ -91,6 +101,44 @@ final class AuthoritativeOutcomeTestFixtures {
                         WINDOW_CLOSES_AT),
                 RECONCILED_AT,
                 DomainFidelityTestFixtures.NOW,
+                watermarks,
+                facts,
+                reconciliation,
+                facts.stream().allMatch(
+                        AuthoritativeOutcomeObservation
+                                .AuthorityFact::evidenceComplete),
+                VisualRunEvidenceSeal.unsigned());
+    }
+
+    static AuthoritativeOutcomeObservation successor(
+            AuthoritativeOutcomeObservation previous,
+            AuthoritativeOutcomeObservation.Reconciliation
+                    reconciliation,
+            List<AuthoritativeOutcomeObservation.AuthorityFact>
+                    facts,
+            List<AuthoritativeOutcomeObservation
+                    .AuthorityWatermark> watermarks,
+            Instant reconciledAt) {
+        return new AuthoritativeOutcomeObservation(
+                previous.schemaVersion(),
+                previous.observationId(),
+                previous.revision() + 1,
+                "",
+                previous.scope(),
+                previous.inventoryRef(),
+                previous.unitId(),
+                previous.scenarioCaseRef(),
+                previous.targetCapabilityRef(),
+                previous.outcomeDefinitionRef(),
+                previous.attributionPolicyRef(),
+                previous.authoritySetRef(),
+                previous.selectionProof(),
+                previous.subjectFingerprint(),
+                previous.attributionKeyFingerprint(),
+                previous.modelOutcomeFingerprint(),
+                previous.attributionWindow(),
+                reconciledAt,
+                reconciledAt,
                 watermarks,
                 facts,
                 reconciliation,

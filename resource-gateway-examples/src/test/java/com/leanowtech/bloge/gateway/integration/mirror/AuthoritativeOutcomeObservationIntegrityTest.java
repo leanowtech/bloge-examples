@@ -142,6 +142,36 @@ class AuthoritativeOutcomeObservationIntegrityTest {
     }
 
     @Test
+    void localStorageVerificationDoesNotCallTheExternalAuthority() {
+        InMemoryVisualEvidenceSigner signer =
+                InMemoryVisualEvidenceSigner.usingClock(
+                        DomainFidelityTestFixtures.CLOCK);
+        AuthoritativeOutcomeObservation signed =
+                new AuthoritativeOutcomeObservationIntegrity(
+                        mapper,
+                        signer,
+                        authority(new AtomicInteger(), true),
+                        DomainFidelityTestFixtures.CLOCK)
+                        .sign(
+                                AuthoritativeOutcomeTestFixtures
+                                        .matched());
+        AtomicInteger externalCalls =
+                new AtomicInteger();
+        AuthoritativeOutcomeObservationIntegrity reader =
+                new AuthoritativeOutcomeObservationIntegrity(
+                        mapper,
+                        signer,
+                        authority(externalCalls, true),
+                        DomainFidelityTestFixtures.CLOCK);
+
+        assertThat(reader.verifyLocally(signed))
+                .isEqualTo(signed);
+        assertThat(externalCalls).hasValue(0);
+        assertThat(reader.verify(signed)).isEqualTo(signed);
+        assertThat(externalCalls).hasValue(1);
+    }
+
+    @Test
     void rejectsUnavailableAuthorityBeforeTrustingTheGatewaySeal() {
         AuthoritativeOutcomeAuthorityVerifier unavailable =
                 new AuthoritativeOutcomeAuthorityVerifier() {

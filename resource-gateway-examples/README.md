@@ -1134,17 +1134,38 @@ AuthoritativeOutcomeAuthorityVerifier authoritativeOutcomes(
 Only then does Spring assemble
 `AuthoritativeOutcomeObservationIntegrity` and
 `AuthoritativeOutcomeDomainFidelitySource`. Internal projector workloads call
-`DomainFidelityService.projectOutcomes(...)`; there is no public observation
-ingest or projection endpoint. The transaction rechecks current inventory,
+`DomainFidelityService.projectOutcomes(...)`; there is no public projection
+endpoint. The transaction rechecks current inventory,
 authority closure, cohort consistency, content address, Resource Gateway seal,
 projection, persistence, and success audit. Pending, censored, and conflicting
 facts remain distinct abstention debt, while omitted inventory units remain
 missing.
 
+The first durable reconciliation core is also available for host composition:
+
+- `DatabaseAuthoritativeOutcomeInboxRepository` appends immutable signed
+  revisions and maintains a full-scope, content-addressed head;
+- every successor requires the exact current predecessor fingerprint, preserves
+  immutable attribution coordinates, and advances authority watermarks;
+- `AuthoritativeOutcomeReconciliationWorker` claims one pending head with a
+  database-time owner/epoch fence, invokes a host
+  `AuthoritativeOutcomeConnector`, signs a verified successor, and atomically
+  advances or settles the head;
+- valid no-change polls, retryable dependency failures, invalid results,
+  lease expiry, external successor fencing, commit replay, and chained
+  lifecycle integrity have separate tested behavior.
+
+The repository verifies the local Resource Gateway seal inside short
+transactions and repeats the external business authority boundary outside the
+row lock. This core is not yet Spring-wired or exposed through protected
+ingest/read/lifecycle routes, and there is no default connector or autonomous
+scheduler. A selected-population completeness manifest is also still required
+before a supplied cohort can be treated as bias-resistant.
+
 `mirrorDomainFidelityOutcomeAdapterReady=true` means only that the supplied
 authority verifier, signer, and typed source adapter are usable at probe time.
-It does not certify a customer connector, durable outcome inbox, continuous
-watermark reconciliation, causality, or production calibration. Exact protocol,
+It does not certify a customer connector, autonomous scheduling, cohort
+completeness, causality, or production calibration. Exact protocol,
 integration, and offline-verification rules are in the
 [domain fidelity guide](../docs/resource-gateway-domain-fidelity-profile.md).
 The server-produced public-only
