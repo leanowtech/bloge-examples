@@ -137,6 +137,7 @@ final class CapabilityMirrorSchemaValidator {
             "online-read-only-shadow-candidate-command-v1.schema.json",
             "online-read-only-shadow-baseline-observation-v1.schema.json",
             "online-read-only-shadow-baseline-capability-v1.schema.json",
+            "online-read-only-shadow-candidate-capability-v1.schema.json",
             "read-only-shadow-job-v1.schema.json",
             "read-only-shadow-job-lifecycle-event-v1.schema.json",
             "read-only-shadow-job-lifecycle-page-v1.schema.json",

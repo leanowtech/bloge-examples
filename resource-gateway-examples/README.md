@@ -755,6 +755,11 @@ gateway:
           base-uri: https://baseline-sidecar.ap.example.test
           request-timeout-millis: 5000
           maximum-response-bytes: 524288
+        online-candidate:
+          enabled: true
+          base-uri: https://candidate-sidecar.ap.example.test
+          request-timeout-millis: 5000
+          maximum-response-bytes: 8388608
 ```
 
 The deployment must also provide exactly one bean for each role:
@@ -767,6 +772,15 @@ The deployment must also provide exactly one bean for each role:
   sidecar observation verification authority. It is intentionally not a
   `VisualEvidenceSigner`, so it cannot be injected as the Resource Gateway
   local evidence signer.
+- `OnlineReadOnlyShadowCandidateTransport`: a second role-separated private
+  trust store, exact server SPKI pin, mTLS identity, and certificate binding;
+- `HttpOnlineReadOnlyShadowCandidateAuthority.RequestHeadersProvider`: fresh
+  candidate-sidecar authorization for each exact URI.
+
+`online-candidate.enabled=true` without `online-baseline.enabled=true` is a
+startup error. The two transport role types are deliberate: adapting one
+underlying client or certificate to both roles is an explicit deployment
+decision and must survive independent security review.
 
 The adapter performs a live
 `GET /api/mirror/shadow/online-baseline/capabilities` probe and requires every
@@ -787,8 +801,9 @@ authority signature. Repeating the same command must resolve the same immutable
 observation. Measured write exposure is not erased by the connector; it crosses
 as a boolean/count so `GovernedReadOnlyShadowDataPlane` can fail closed.
 
-An online candidate is installed only when the deployment additionally provides
-an `OnlineReadOnlyShadowCandidateAuthority`. Resource Gateway then emits
+An online candidate is installed when the deployment either provides an
+`OnlineReadOnlyShadowCandidateAuthority` or enables the built-in strict HTTP
+adapter and supplies its transport and request-header roles. Resource Gateway then emits
 `resourceGateway.onlineReadOnlyShadowCandidateCommand.v1`. The command contains
 no business value; it binds the sealed plan to the independently verified
 baseline observation, opaque payload-vault receipt, request-context fingerprint,
@@ -806,9 +821,29 @@ external credential, real external call, or network egress reached the
 candidate runtime. Calling it without the exact baseline observation fails
 closed.
 
+The HTTP candidate adapter probes
+`GET /api/mirror/shadow/online-candidate/capabilities`, submits
+`POST /api/mirror/shadow/online-candidate/executions`, and exact-reads
+`GET /api/mirror/shadow/online-candidate/evidence/{runId}/revisions/{revision}`.
+Every response must use:
+
+```text
+Content-Type: application/vnd.bloge.online-read-only-shadow-candidate+json
+X-BLOGE-Online-Candidate-Protocol: 1.0
+```
+
+The capability must freshly assert payload isolation, sealed-plan execution,
+idempotency, signed evidence, production-credential prohibition, and exact
+artifact reads. The client rejects redirects, public system trust, missing
+pin/mTLS/identity binding, wrong media/version, duplicate or unknown JSON,
+empty/oversized bodies, stale deadlines, response coordinate drift, and an
+exact read whose returned scope or content address differs from the requested
+coordinates. Timeout/overload stays retryable; deterministic protocol rejection
+does not.
+
 Do not enable this mode together with
 `gateway.testing.mirror.read-only-shadow.detached-data-plane.enabled`; startup
-rejects the conflict. No default candidate authority is installed. When the
+rejects the conflict. No permissive candidate authority is installed. When the
 deployment supplies the baseline authority/integrity, candidate authority/
 integrity, source-resolution repository/signer, and built-in policy,
 `OnlineReadOnlyShadowSourceResolutionVerifier` is assembled after both
@@ -818,12 +853,17 @@ reconstructs both commands, reruns normalization, and signs
 command fingerprints and records `confirmedAt <= resolvedAt <= issuedAt`, so a
 historical source completion cannot masquerade as the current exact read.
 
-`SyntheticRegionalReadOnlyShadowProvider` is a bounded in-process certification
-provider for tests and staging. It offers role-separated baseline/candidate
-authorities, append-only exact reads, full command pairing, fixed capacity, and
-atomic idempotency under concurrent retries. It is never auto-configured and is
-not a payload vault, network sidecar, production read binding, or production
-candidate authority.
+`SyntheticRegionalReadOnlyShadowProvider` is a bounded certification provider
+for tests and staging. It offers role-separated baseline/candidate authorities,
+append-only exact reads, full command pairing, fixed capacity, and atomic
+idempotency under concurrent retries. The certification suite now puts its two
+roles behind separate real loopback HTTP servers and drives the complete
+governed data plane through one baseline POST, one candidate POST, two baseline
+exact reads, one candidate exact read, independent evidence verification, and a
+signed v2 source-resolution proof. This proves the wire adapters and composed
+network call graph; the provider still shares one JVM and memory store and is
+never auto-configured. It is not a payload vault, separately deployed regional
+sidecar, production read binding, or production candidate authority.
 
 The v2 proof is persisted by the same append-only source-resolution repository
 used by detached v1 evidence. Fresh tables index `source_mode` and both online
@@ -843,15 +883,18 @@ case terminates the first worker after the data plane has produced its v2 proof
 but before terminal job commit. The old lease remains `RUNNING`; only after its
 database deadline can a new owner and higher epoch emit `TAKEN_OVER`, rerun the
 same execution identity, reuse the one append-only proof, and atomically commit
-the final comparison plus `SUCCEEDED` lifecycle head. This certifies the
-in-process reference path. It does not certify PostgreSQL multi-replica
-partitions, a networked regional sidecar, KMS/HSM, or production data use.
+the final comparison plus `SUCCEEDED` lifecycle head. This certifies the durable
+in-process reference path plus the dual-role HTTP protocol path. It does not
+certify PostgreSQL multi-replica partitions, cross-process sidecar failure,
+private-PKI rotation, KMS/HSM, or production data use.
 
 `GET /api/integration/capabilities` reports the online-baseline boundary as
 separate facts:
 
 - `mirrorReadOnlyShadowOnlineBaselineProtocol`: the three public protocol
   versions and schemas are supported;
+- `mirrorReadOnlyShadowOnlineCandidateProtocol`: the candidate command and
+  live-capability protocols and strict Schemas are supported;
 - `mirrorReadOnlyShadowOnlineBaselineConnectorInstalled`: the configured
   baseline connector bean exists;
 - `mirrorReadOnlyShadowOnlineBaselineAuthorityReady`: the live regional

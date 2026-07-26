@@ -440,6 +440,10 @@ public final class CapabilityMirrorProtocol {
     public static final String
     ONLINE_READ_ONLY_SHADOW_BASELINE_CAPABILITY_V1 =
             "resourceGateway.onlineReadOnlyShadowBaselineCapability.v1";
+    /** Live isolated online candidate capability wire version. */
+    public static final String
+    ONLINE_READ_ONLY_SHADOW_CANDIDATE_CAPABILITY_V1 =
+            "resourceGateway.onlineReadOnlyShadowCandidateCapability.v1";
     /** Fixed public-only online baseline compatibility fixture wire version. */
     public static final String
     ONLINE_READ_ONLY_SHADOW_BASELINE_COMPATIBILITY_V1 =
@@ -983,6 +987,11 @@ public final class CapabilityMirrorProtocol {
     ONLINE_READ_ONLY_SHADOW_BASELINE_CAPABILITY_SCHEMA_RESOURCE =
             SCHEMA_RESOURCE_ROOT
                     + "online-read-only-shadow-baseline-capability-v1.schema.json";
+    /** Packaged live isolated online candidate capability schema. */
+    public static final String
+    ONLINE_READ_ONLY_SHADOW_CANDIDATE_CAPABILITY_SCHEMA_RESOURCE =
+            SCHEMA_RESOURCE_ROOT
+                    + "online-read-only-shadow-candidate-capability-v1.schema.json";
     /** Packaged durable read-only Shadow job projection schema. */
     public static final String
     READ_ONLY_SHADOW_JOB_SCHEMA_RESOURCE =

@@ -14,6 +14,8 @@ import static org.assertj.core.api.Assertions.assertThat;
 class OnlineReadOnlyShadowCandidateProtocolSchemaTest {
     private static final String COMMAND_SCHEMA =
             "online-read-only-shadow-candidate-command-v1.schema.json";
+    private static final String CAPABILITY_SCHEMA =
+            "online-read-only-shadow-candidate-capability-v1.schema.json";
     private final ObjectMapper mapper =
             OnlineReadOnlyShadowBaselineTestFixtures
                     .mapper();
@@ -23,7 +25,7 @@ class OnlineReadOnlyShadowCandidateProtocolSchemaTest {
             throws Exception {
         OnlineReadOnlyShadowCandidateCommand command =
                 command();
-        JsonNode schema = schema();
+        JsonNode schema = schema(COMMAND_SCHEMA);
 
         assertThat(schema.path("additionalProperties")
                 .asBoolean(true)).isFalse();
@@ -39,6 +41,29 @@ class OnlineReadOnlyShadowCandidateProtocolSchemaTest {
                                 schema.path("required")));
         assertThat(command.commandFingerprint(mapper))
                 .matches("sha256:[a-f0-9]{64}");
+
+        OnlineReadOnlyShadowCandidateProtocol.Capability
+                capability =
+                new OnlineReadOnlyShadowCandidateProtocol
+                        .Capability(
+                        OnlineReadOnlyShadowCandidateProtocol
+                                .Capability.SCHEMA_VERSION,
+                        OnlineReadOnlyShadowCandidateProtocol
+                                .VERSION,
+                        OnlineReadOnlyShadowBaselineTestFixtures
+                                .NOW,
+                        OnlineReadOnlyShadowBaselineTestFixtures
+                                .NOW.plusSeconds(60),
+                        true,
+                        true,
+                        true,
+                        true,
+                        true,
+                        true,
+                        true);
+        assertExact(
+                mapper.valueToTree(capability),
+                schema(CAPABILITY_SCHEMA));
     }
 
     @Test
@@ -65,7 +90,9 @@ class OnlineReadOnlyShadowCandidateProtocolSchemaTest {
                 new LinkedHashSet<>();
 
         collectPropertyNames(
-                schema(), propertyNames);
+                schema(COMMAND_SCHEMA), propertyNames);
+        collectPropertyNames(
+                schema(CAPABILITY_SCHEMA), propertyNames);
 
         assertThat(propertyNames)
                 .doesNotContainAnyElementsOf(
@@ -111,23 +138,41 @@ class OnlineReadOnlyShadowCandidateProtocolSchemaTest {
                 baseline.deadlineAt());
     }
 
-    private JsonNode schema() throws Exception {
+    private JsonNode schema(
+            String name) throws Exception {
         return mapper.readTree(
                 Files.readString(
-                        schemaPath()));
+                        schemaPath(name)));
     }
 
-    private static Path schemaPath() {
+    private static Path schemaPath(
+            String name) {
         Path moduleRelative = Path.of(
                 "..", "docs", "schemas",
                 "resource-gateway-mirror",
-                COMMAND_SCHEMA);
+                name);
         return Files.exists(moduleRelative)
                 ? moduleRelative
                 : Path.of(
                         "docs", "schemas",
                         "resource-gateway-mirror",
-                        COMMAND_SCHEMA);
+                        name);
+    }
+
+    private static void assertExact(
+            JsonNode value,
+            JsonNode schema) {
+        assertThat(schema.path("additionalProperties")
+                .asBoolean(true)).isFalse();
+        assertThat(fieldNames(value))
+                .containsExactlyInAnyOrderElementsOf(
+                        fieldNames(
+                                schema.path("properties")));
+        assertThat(fieldNames(
+                schema.path("properties")))
+                .containsExactlyInAnyOrderElementsOf(
+                        textValues(
+                                schema.path("required")));
     }
 
     private static void collectPropertyNames(

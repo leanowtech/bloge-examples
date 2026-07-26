@@ -1,0 +1,57 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://bloge.dev/schemas/resource-gateway-mirror/online-read-only-shadow-candidate-capability-v1.schema.json",
+  "title": "Resource Gateway Online Read-only Shadow Candidate Capability v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "protocolVersion",
+    "checkedAt",
+    "validUntil",
+    "serviceReady",
+    "payloadIsolated",
+    "sealedPlanExecution",
+    "idempotentExecution",
+    "signedEvidence",
+    "productionCredentialProhibited",
+    "exactArtifactRead"
+  ],
+  "properties": {
+    "schemaVersion": {
+      "const": "resourceGateway.onlineReadOnlyShadowCandidateCapability.v1"
+    },
+    "protocolVersion": {
+      "const": "1.0"
+    },
+    "checkedAt": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "validUntil": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "serviceReady": {
+      "type": "boolean"
+    },
+    "payloadIsolated": {
+      "type": "boolean"
+    },
+    "sealedPlanExecution": {
+      "type": "boolean"
+    },
+    "idempotentExecution": {
+      "type": "boolean"
+    },
+    "signedEvidence": {
+      "type": "boolean"
+    },
+    "productionCredentialProhibited": {
+      "type": "boolean"
+    },
+    "exactArtifactRead": {
+      "type": "boolean"
+    }
+  }
+}

@@ -26,10 +26,14 @@ import java.util.Set;
 import java.util.regex.Pattern;
 
 /**
- * Strict pinned-mTLS HTTP authority for one regional online baseline TEE sidecar.
+ * Strict pinned-mTLS HTTP authority for one isolated online candidate sidecar.
+ *
+ * <p>The adapter transports only a bounded payload-free command and a signed evidence bundle.
+ * Returned values remain untrusted until the candidate connector independently verifies the
+ * evidence content address and signature.</p>
  */
-public final class HttpOnlineReadOnlyShadowBaselineAuthority
-        implements OnlineReadOnlyShadowBaselineAuthority {
+public final class HttpOnlineReadOnlyShadowCandidateAuthority
+        implements OnlineReadOnlyShadowCandidateAuthority {
     private static final Pattern PATH_IDENTIFIER =
             Pattern.compile(
                     "[A-Za-z0-9][A-Za-z0-9@._:-]{0,511}");
@@ -43,10 +47,10 @@ public final class HttpOnlineReadOnlyShadowBaselineAuthority
                     "host",
                     "content-length",
                     "connection",
-                    OnlineReadOnlyShadowBaselineProtocol
+                    OnlineReadOnlyShadowCandidateProtocol
                             .VERSION_HEADER
                             .toLowerCase(Locale.ROOT),
-                    OnlineReadOnlyShadowBaselineProtocol
+                    OnlineReadOnlyShadowCandidateProtocol
                             .EXECUTION_ID_HEADER
                             .toLowerCase(Locale.ROOT));
 
@@ -57,7 +61,7 @@ public final class HttpOnlineReadOnlyShadowBaselineAuthority
     private final RequestHeadersProvider requestHeaders;
 
     /**
-     * Creates one strict sidecar authority behind a dedicated workload identity.
+     * Creates one strict candidate authority behind a dedicated workload identity.
      *
      * @param mapper canonical protocol mapper
      * @param clock trusted consumer clock
@@ -65,10 +69,10 @@ public final class HttpOnlineReadOnlyShadowBaselineAuthority
      * @param settings bounded endpoint and body policy
      * @param requestHeaders fresh application authorization for each request
      */
-    public HttpOnlineReadOnlyShadowBaselineAuthority(
+    public HttpOnlineReadOnlyShadowCandidateAuthority(
             ObjectMapper mapper,
             Clock clock,
-            OnlineReadOnlyShadowBaselineTransport transport,
+            OnlineReadOnlyShadowCandidateTransport transport,
             Settings settings,
             RequestHeadersProvider requestHeaders) {
         this.mapper = Objects.requireNonNull(
@@ -86,7 +90,7 @@ public final class HttpOnlineReadOnlyShadowBaselineAuthority
                 clock, "clock");
         this.settings = Objects.requireNonNull(
                 settings, "settings").validated();
-        OnlineReadOnlyShadowBaselineTransport exact =
+        OnlineReadOnlyShadowCandidateTransport exact =
                 Objects.requireNonNull(
                         transport, "transport");
         ControlPlaneHttpTransport.Descriptor security =
@@ -97,12 +101,12 @@ public final class HttpOnlineReadOnlyShadowBaselineAuthority
                 || !security.mutualTls()
                 || !security.certificateIdentityBound()) {
             throw new IllegalArgumentException(
-                    "online baseline authority requires private pinned mTLS workload identity");
+                    "online candidate authority requires private pinned mTLS workload identity");
         }
         this.client = Objects.requireNonNull(
                 exact.client(
                         this.settings.requestTimeout()),
-                "online baseline client");
+                "online candidate client");
         this.requestHeaders = Objects.requireNonNull(
                 requestHeaders, "requestHeaders");
     }
@@ -112,18 +116,18 @@ public final class HttpOnlineReadOnlyShadowBaselineAuthority
         try {
             HttpRequest.Builder request =
                     request(endpoint(
-                            "/api/mirror/shadow/online-baseline/capabilities",
+                            "/api/mirror/shadow/online-candidate/capabilities",
                             Map.of()), settings.requestTimeout())
                             .GET();
             authorize(
                     request,
                     IntegrationOperation
-                            .MIRROR_SHADOW_ONLINE_BASELINE_CAPABILITY,
+                            .MIRROR_SHADOW_ONLINE_CANDIDATE_CAPABILITY,
                     request.build().uri());
-            OnlineReadOnlyShadowBaselineProtocol.Capability
+            OnlineReadOnlyShadowCandidateProtocol.Capability
                     capability = exchange(
                     request.build(),
-                    OnlineReadOnlyShadowBaselineProtocol
+                    OnlineReadOnlyShadowCandidateProtocol
                             .Capability.class);
             return capability.ready(clock);
         } catch (RuntimeException unavailable) {
@@ -132,25 +136,25 @@ public final class HttpOnlineReadOnlyShadowBaselineAuthority
     }
 
     @Override
-    public OnlineReadOnlyShadowBaselineObservation observe(
-            OnlineReadOnlyShadowBaselineCommand command) {
-        OnlineReadOnlyShadowBaselineCommand exact =
+    public MirrorEvidenceBundle execute(
+            OnlineReadOnlyShadowCandidateCommand command) {
+        OnlineReadOnlyShadowCandidateCommand exact =
                 Objects.requireNonNull(
                         command, "command");
         Duration timeout = requestTimeout(
                 exact.deadlineAt());
         URI uri = endpoint(
-                "/api/mirror/shadow/online-baseline/observations",
+                "/api/mirror/shadow/online-candidate/executions",
                 Map.of());
         byte[] body = encode(exact);
         HttpRequest.Builder request =
                 request(uri, timeout)
                         .header(
                                 "Content-Type",
-                                OnlineReadOnlyShadowBaselineProtocol
+                                OnlineReadOnlyShadowCandidateProtocol
                                         .MEDIA_TYPE)
                         .header(
-                                OnlineReadOnlyShadowBaselineProtocol
+                                OnlineReadOnlyShadowCandidateProtocol
                                         .EXECUTION_ID_HEADER,
                                 exact.executionId())
                         .POST(
@@ -159,40 +163,34 @@ public final class HttpOnlineReadOnlyShadowBaselineAuthority
         authorize(
                 request,
                 IntegrationOperation
-                        .MIRROR_SHADOW_ONLINE_BASELINE_EXECUTE,
+                        .MIRROR_SHADOW_ONLINE_CANDIDATE_EXECUTE,
                 uri);
-        OnlineReadOnlyShadowBaselineObservation
-                observation = exchange(
+        MirrorEvidenceBundle bundle = exchange(
                 request.build(),
-                OnlineReadOnlyShadowBaselineObservation
-                        .class);
-        if (!exact.scope().equals(observation.scope())
-                || !exact.executionId().equals(
-                observation.executionId())
-                || !exact.commandFingerprint(mapper)
-                .equals(
-                        observation.commandFingerprint())) {
+                MirrorEvidenceBundle.class);
+        if (!executionCoordinatesMatch(
+                exact, bundle)) {
             throw rejected(
-                    "ONLINE_BASELINE_EXECUTION_COORDINATES_MISMATCH");
+                    "ONLINE_CANDIDATE_EXECUTION_COORDINATES_MISMATCH");
         }
-        return observation;
+        return bundle;
     }
 
     @Override
-    public OnlineReadOnlyShadowBaselineObservation resolve(
+    public MirrorEvidenceBundle resolve(
             CapabilitySnapshot.Scope scope,
-            MirrorArtifactRef observationRef) {
+            MirrorArtifactRef evidenceRef) {
         CapabilitySnapshot.Scope exactScope =
                 Objects.requireNonNull(scope, "scope");
         MirrorArtifactRef ref = Objects.requireNonNull(
-                observationRef, "observationRef");
-        if (!OnlineReadOnlyShadowBaselineObservation
-                .ARTIFACT_KIND.equals(ref.kind())) {
+                evidenceRef, "evidenceRef");
+        if (!"MIRROR_EVIDENCE_BUNDLE".equals(
+                ref.kind())) {
             throw rejected(
-                    "ONLINE_BASELINE_OBSERVATION_REFERENCE_INVALID");
+                    "ONLINE_CANDIDATE_EVIDENCE_REFERENCE_INVALID");
         }
         URI uri = endpoint(
-                "/api/mirror/shadow/online-baseline/observations/"
+                "/api/mirror/shadow/online-candidate/evidence/"
                         + path(ref.id())
                         + "/revisions/" + ref.revision(),
                 scopeQuery(exactScope, ref.fingerprint()));
@@ -202,20 +200,17 @@ public final class HttpOnlineReadOnlyShadowBaselineAuthority
         authorize(
                 request,
                 IntegrationOperation
-                        .MIRROR_SHADOW_ONLINE_BASELINE_READ,
+                        .MIRROR_SHADOW_ONLINE_CANDIDATE_READ,
                 uri);
-        OnlineReadOnlyShadowBaselineObservation
-                observation = exchange(
+        MirrorEvidenceBundle bundle = exchange(
                 request.build(),
-                OnlineReadOnlyShadowBaselineObservation
-                        .class);
-        if (!exactScope.equals(observation.scope())
-                || !ref.equals(
-                        observation.artifactRef())) {
+                MirrorEvidenceBundle.class);
+        if (!exactScope.equals(bundle.evidence().scope())
+                || !ref.equals(reference(bundle))) {
             throw rejected(
-                    "ONLINE_BASELINE_EXACT_READ_MISMATCH");
+                    "ONLINE_CANDIDATE_EXACT_READ_MISMATCH");
         }
-        return observation;
+        return bundle;
     }
 
     private HttpRequest.Builder request(
@@ -225,12 +220,12 @@ public final class HttpOnlineReadOnlyShadowBaselineAuthority
                 .timeout(timeout)
                 .header(
                         "Accept",
-                        OnlineReadOnlyShadowBaselineProtocol
+                        OnlineReadOnlyShadowCandidateProtocol
                                 .MEDIA_TYPE)
                 .header(
-                        OnlineReadOnlyShadowBaselineProtocol
+                        OnlineReadOnlyShadowCandidateProtocol
                                 .VERSION_HEADER,
-                        OnlineReadOnlyShadowBaselineProtocol
+                        OnlineReadOnlyShadowCandidateProtocol
                                 .VERSION);
     }
 
@@ -247,11 +242,11 @@ public final class HttpOnlineReadOnlyShadowBaselineAuthority
                 if (response.statusCode() != 200) {
                     throw new AuthorityException(
                             failure(response.statusCode()),
-                            "ONLINE_BASELINE_HTTP_STATUS");
+                            "ONLINE_CANDIDATE_HTTP_STATUS");
                 }
                 if (!exactProtocol(response)) {
                     throw rejected(
-                            "ONLINE_BASELINE_PROTOCOL_DOWNGRADE");
+                            "ONLINE_CANDIDATE_PROTOCOL_DOWNGRADE");
                 }
                 long declared = response.headers()
                         .firstValueAsLong("Content-Length")
@@ -259,7 +254,7 @@ public final class HttpOnlineReadOnlyShadowBaselineAuthority
                 if (declared > settings
                         .maximumResponseBytes()) {
                     throw rejected(
-                            "ONLINE_BASELINE_BODY_TOO_LARGE");
+                            "ONLINE_CANDIDATE_BODY_TOO_LARGE");
                 }
                 return decode(
                         bounded(body), type);
@@ -269,15 +264,15 @@ public final class HttpOnlineReadOnlyShadowBaselineAuthority
         } catch (InterruptedException interrupted) {
             Thread.currentThread().interrupt();
             throw unavailable(
-                    "ONLINE_BASELINE_INTERRUPTED",
+                    "ONLINE_CANDIDATE_INTERRUPTED",
                     interrupted);
         } catch (IOException unavailable) {
             throw unavailable(
-                    "ONLINE_BASELINE_UNAVAILABLE",
+                    "ONLINE_CANDIDATE_UNAVAILABLE",
                     unavailable);
         } catch (RuntimeException invalid) {
             throw rejected(
-                    "ONLINE_BASELINE_RESPONSE_INVALID",
+                    "ONLINE_CANDIDATE_RESPONSE_INVALID",
                     invalid);
         }
     }
@@ -289,33 +284,29 @@ public final class HttpOnlineReadOnlyShadowBaselineAuthority
             return mapper.readValue(bytes, type);
         } catch (IOException | RuntimeException invalid) {
             throw rejected(
-                    "ONLINE_BASELINE_RESPONSE_INVALID",
+                    "ONLINE_CANDIDATE_RESPONSE_INVALID",
                     invalid);
         }
     }
 
     private byte[] encode(
-            OnlineReadOnlyShadowBaselineCommand command) {
+            OnlineReadOnlyShadowCandidateCommand command) {
         try {
             byte[] body = mapper.writeValueAsBytes(
                     command);
             if (body.length == 0
                     || body.length
-                    > OnlineReadOnlyShadowBaselineCommand
+                    > OnlineReadOnlyShadowCandidateCommand
                     .MAXIMUM_CANONICAL_BYTES) {
                 throw rejected(
-                        "ONLINE_BASELINE_COMMAND_TOO_LARGE");
+                        "ONLINE_CANDIDATE_COMMAND_TOO_LARGE");
             }
             return body;
         } catch (AuthorityException rejected) {
             throw rejected;
-        } catch (RuntimeException invalid) {
+        } catch (IOException | RuntimeException invalid) {
             throw rejected(
-                    "ONLINE_BASELINE_COMMAND_INVALID",
-                    invalid);
-        } catch (IOException invalid) {
-            throw rejected(
-                    "ONLINE_BASELINE_COMMAND_INVALID",
+                    "ONLINE_CANDIDATE_COMMAND_INVALID",
                     invalid);
         }
     }
@@ -329,7 +320,7 @@ public final class HttpOnlineReadOnlyShadowBaselineAuthority
         if (supplied == null
                 || supplied.size() > 16) {
             throw rejected(
-                    "ONLINE_BASELINE_AUTHORIZATION_HEADERS_INVALID");
+                    "ONLINE_CANDIDATE_AUTHORIZATION_HEADERS_INVALID");
         }
         Map<String, String> accepted =
                 new LinkedHashMap<>();
@@ -353,13 +344,13 @@ public final class HttpOnlineReadOnlyShadowBaselineAuthority
                             existing -> existing
                                     .equalsIgnoreCase(name))) {
                 throw rejected(
-                        "ONLINE_BASELINE_AUTHORIZATION_HEADERS_INVALID");
+                        "ONLINE_CANDIDATE_AUTHORIZATION_HEADERS_INVALID");
             }
             accepted.put(name, value);
         }
         if (bytes > 16 * 1024) {
             throw rejected(
-                    "ONLINE_BASELINE_AUTHORIZATION_HEADERS_INVALID");
+                    "ONLINE_CANDIDATE_AUTHORIZATION_HEADERS_INVALID");
         }
         accepted.forEach(request::header);
     }
@@ -373,7 +364,7 @@ public final class HttpOnlineReadOnlyShadowBaselineAuthority
         if (remaining.isZero()
                 || remaining.isNegative()) {
             throw rejected(
-                    "ONLINE_BASELINE_DEADLINE_EXCEEDED");
+                    "ONLINE_CANDIDATE_DEADLINE_EXCEEDED");
         }
         return remaining.compareTo(
                 settings.requestTimeout()) < 0
@@ -395,13 +386,13 @@ public final class HttpOnlineReadOnlyShadowBaselineAuthority
             if (total > settings
                     .maximumResponseBytes()) {
                 throw rejected(
-                        "ONLINE_BASELINE_BODY_TOO_LARGE");
+                        "ONLINE_CANDIDATE_BODY_TOO_LARGE");
             }
             output.write(buffer, 0, read);
         }
         if (total == 0) {
             throw rejected(
-                    "ONLINE_BASELINE_BODY_EMPTY");
+                    "ONLINE_CANDIDATE_BODY_EMPTY");
         }
         return output.toByteArray();
     }
@@ -441,24 +432,52 @@ public final class HttpOnlineReadOnlyShadowBaselineAuthority
         return Map.copyOf(values);
     }
 
+    private boolean executionCoordinatesMatch(
+            OnlineReadOnlyShadowCandidateCommand command,
+            MirrorEvidenceBundle bundle) {
+        MirrorRunEvidence evidence = bundle.evidence();
+        return evidence.scope().equals(command.scope())
+                && evidence.requestId().equals(
+                command.commandFingerprint(mapper))
+                && evidence.planId().equals(
+                command.candidatePlanRef().id())
+                && evidence.planFingerprint().equals(
+                command.candidatePlanRef().fingerprint())
+                && evidence.rootCapability().equals(
+                command.targetCapabilityRef())
+                && evidence.requestContextFingerprint()
+                .equals(
+                        command.requestContextFingerprint());
+    }
+
+    private static MirrorArtifactRef reference(
+            MirrorEvidenceBundle bundle) {
+        return new MirrorArtifactRef(
+                "MIRROR_EVIDENCE_BUNDLE",
+                bundle.evidence().runId(),
+                1,
+                bundle.bundleFingerprint());
+    }
+
     private static boolean exactProtocol(
             HttpResponse<?> response) {
         List<String> contentTypes = response.headers()
                 .allValues("Content-Type");
         List<String> versions = response.headers()
                 .allValues(
-                        OnlineReadOnlyShadowBaselineProtocol
+                        OnlineReadOnlyShadowCandidateProtocol
                                 .VERSION_HEADER);
         if (contentTypes.size() != 1
                 || versions.size() != 1
-                || !OnlineReadOnlyShadowBaselineProtocol
-                .VERSION.equals(versions.getFirst().trim())) {
+                || !OnlineReadOnlyShadowCandidateProtocol
+                .VERSION.equals(
+                        versions.getFirst().trim())) {
             return false;
         }
         String actual = contentTypes.getFirst()
                 .trim().toLowerCase(Locale.ROOT);
         String expected =
-                OnlineReadOnlyShadowBaselineProtocol
+                OnlineReadOnlyShadowCandidateProtocol
                         .MEDIA_TYPE;
         return actual.equals(expected)
                 || actual.startsWith(expected + ";");
@@ -481,7 +500,7 @@ public final class HttpOnlineReadOnlyShadowBaselineAuthority
         if (value == null
                 || !PATH_IDENTIFIER.matcher(value).matches()) {
             throw rejected(
-                    "ONLINE_BASELINE_PATH_IDENTIFIER_INVALID");
+                    "ONLINE_CANDIDATE_PATH_IDENTIFIER_INVALID");
         }
         return encoded(value);
     }
@@ -556,10 +575,10 @@ public final class HttpOnlineReadOnlyShadowBaselineAuthority
                     Duration.ofSeconds(30)) > 0
                     || maximumResponseBytes < 1024
                     || maximumResponseBytes
-                    > OnlineReadOnlyShadowBaselineObservation
-                    .MAXIMUM_CANONICAL_BYTES) {
+                    > MirrorEvidenceIntegrityService
+                    .MAXIMUM_BUNDLE_BYTES) {
                 throw new IllegalArgumentException(
-                        "online baseline authority settings are invalid");
+                        "online candidate authority settings are invalid");
             }
             String exact = baseUri.toString();
             while (exact.endsWith("/")) {

@@ -55,7 +55,8 @@ implementation. The JAR packages the authoritative v1 JSON Schema and provides:
   strict `OnlineReadOnlyShadowBaselineCommand.v1`,
   `OnlineReadOnlyShadowCandidateCommand.v1`,
   `OnlineReadOnlyShadowBaselineObservation.v1`, and
-  `OnlineReadOnlyShadowBaselineCapability.v1` Schemas plus public resource/version
+  `OnlineReadOnlyShadowBaselineCapability.v1` /
+  `OnlineReadOnlyShadowCandidateCapability.v1` Schemas plus public resource/version
   constants for regional data-plane integration. Baseline observations also have
   an independent content-address/signature verifier and a server-produced
   public-key compatibility fixture. The candidate command binds a sealed plan to
@@ -633,6 +634,10 @@ candidate execution, or production readiness.
 same-input candidate command. Candidate authorities must place the complete
 command fingerprint in signed `MirrorRunEvidence.requestId`; consumers must
 still verify the Mirror bundle independently.
+`ONLINE_READ_ONLY_SHADOW_CANDIDATE_CAPABILITY_V1` and its Schema resource expose
+the short-lived live probe contract for payload isolation, sealed-plan
+execution, idempotency, signed evidence, production-credential prohibition, and
+exact artifact reads. Protocol support is not runtime readiness.
 
 Verify the complete online pair with the second fixed public-only fixture:
 

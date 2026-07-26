@@ -1,10 +1,12 @@
 package com.leanowtech.bloge.gateway.integration.mirror;
 
+import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import com.leanowtech.bloge.gateway.testing.api.ControlPlaneHttpTransport;
 import com.sun.net.httpserver.HttpExchange;
 import com.sun.net.httpserver.HttpServer;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
 import java.io.IOException;
@@ -12,7 +14,12 @@ import java.net.InetSocketAddress;
 import java.net.URI;
 import java.net.http.HttpClient;
 import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.time.Clock;
 import java.time.Duration;
+import java.time.Instant;
+import java.time.ZoneOffset;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
@@ -22,22 +29,39 @@ import java.util.concurrent.atomic.AtomicReference;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
-class HttpOnlineReadOnlyShadowBaselineAuthorityTest {
+class HttpOnlineReadOnlyShadowCandidateAuthorityTest {
+    private static final String FIXTURE =
+            "online-read-only-shadow-source-resolution-stage1-v1.fixture.json";
     private final ObjectMapper mapper =
             OnlineReadOnlyShadowBaselineTestFixtures
                     .mapper();
-    private final OnlineReadOnlyShadowBaselineObservationIntegrity
-            integrity =
-            OnlineReadOnlyShadowBaselineTestFixtures
-                    .integrity(mapper);
+    private OnlineReadOnlyShadowCandidateCommand command;
+    private MirrorEvidenceBundle bundle;
+    private Clock clock;
+
+    @BeforeEach
+    void setUp() throws Exception {
+        JsonNode fixture = mapper.readTree(
+                Files.readString(fixturePath()));
+        command = mapper.treeToValue(
+                fixture.path("candidateCommand"),
+                OnlineReadOnlyShadowCandidateCommand
+                        .class);
+        bundle = mapper.treeToValue(
+                fixture.path("candidateEvidenceBundle"),
+                MirrorEvidenceBundle.class);
+        clock = Clock.fixed(
+                Instant.parse(
+                        fixture.path("verificationTime")
+                                .asText()),
+                ZoneOffset.UTC);
+    }
 
     @Test
     void probesExecutesIdempotentlyAndReadsExactPayloadFreeEvidence()
             throws Exception {
         AtomicReference<byte[]> commandBody =
                 new AtomicReference<>();
-        AtomicReference<OnlineReadOnlyShadowBaselineObservation>
-                stored = new AtomicReference<>();
         AtomicInteger posts = new AtomicInteger();
         List<URI> requests = new ArrayList<>();
         AtomicReference<String> executionHeader =
@@ -63,51 +87,35 @@ class HttpOnlineReadOnlyShadowBaselineAuthorityTest {
                 executionHeader.set(
                         exchange.getRequestHeaders()
                                 .getFirst(
-                                        OnlineReadOnlyShadowBaselineProtocol
+                                        OnlineReadOnlyShadowCandidateProtocol
                                                 .EXECUTION_ID_HEADER));
-                OnlineReadOnlyShadowBaselineCommand
-                        command = mapper.readValue(
+                assertThat(mapper.readValue(
                         commandBody.get(),
-                        OnlineReadOnlyShadowBaselineCommand
-                                .class);
-                OnlineReadOnlyShadowBaselineObservation
-                        observation = integrity.sign(
-                        OnlineReadOnlyShadowBaselineTestFixtures
-                                .unsigned(
-                                        mapper, command));
-                stored.compareAndSet(
-                        null, observation);
-                respond(
-                        exchange,
-                        200,
-                        mapper.writeValueAsBytes(
-                                stored.get()),
-                        protocolHeaders());
-                return;
+                        OnlineReadOnlyShadowCandidateCommand
+                                .class))
+                        .isEqualTo(command);
             }
             respond(
                     exchange,
                     200,
-                    mapper.writeValueAsBytes(
-                            stored.get()),
+                    mapper.writeValueAsBytes(bundle),
                     protocolHeaders());
         })) {
-            HttpOnlineReadOnlyShadowBaselineAuthority
+            HttpOnlineReadOnlyShadowCandidateAuthority
                     authority = authority(
-                    server.uri(), 512 * 1024);
-            OnlineReadOnlyShadowBaselineCommand command =
-                    OnlineReadOnlyShadowBaselineTestFixtures
-                            .command(mapper);
+                    server.uri(),
+                    Duration.ofSeconds(2),
+                    2 * 1024 * 1024);
 
             assertThat(authority.ready()).isTrue();
-            OnlineReadOnlyShadowBaselineObservation first =
-                    authority.observe(command);
-            OnlineReadOnlyShadowBaselineObservation retry =
-                    authority.observe(command);
-            OnlineReadOnlyShadowBaselineObservation resolved =
+            MirrorEvidenceBundle first =
+                    authority.execute(command);
+            MirrorEvidenceBundle retry =
+                    authority.execute(command);
+            MirrorEvidenceBundle resolved =
                     authority.resolve(
                             command.scope(),
-                            first.artifactRef());
+                            reference(bundle));
 
             assertThat(posts).hasValue(2);
             assertThat(first).isEqualTo(retry)
@@ -128,9 +136,9 @@ class HttpOnlineReadOnlyShadowBaselineAuthorityTest {
             assertThat(requests.getLast()
                     .getRawQuery())
                     .contains(
-                            "tenantId=support",
-                            "organizationId=customer-operations",
-                            "environmentId=staging",
+                            "tenantId=tenant-a",
+                            "organizationId=support",
+                            "environmentId=test",
                             "fingerprint=sha256%3A");
             assertThat(server.failure()).isNull();
         }
@@ -140,16 +148,14 @@ class HttpOnlineReadOnlyShadowBaselineAuthorityTest {
     void failsReadinessForStaleOrIncompleteCapability()
             throws Exception {
         var stale =
-                new OnlineReadOnlyShadowBaselineProtocol
+                new OnlineReadOnlyShadowCandidateProtocol
                         .Capability(
-                        OnlineReadOnlyShadowBaselineProtocol
+                        OnlineReadOnlyShadowCandidateProtocol
                                 .Capability.SCHEMA_VERSION,
-                        OnlineReadOnlyShadowBaselineProtocol
+                        OnlineReadOnlyShadowCandidateProtocol
                                 .VERSION,
-                        OnlineReadOnlyShadowBaselineTestFixtures
-                                .NOW.minusSeconds(60),
-                        OnlineReadOnlyShadowBaselineTestFixtures
-                                .NOW.minusSeconds(1),
+                        clock.instant().minusSeconds(60),
+                        clock.instant().minusSeconds(1),
                         true,
                         true,
                         true,
@@ -161,71 +167,88 @@ class HttpOnlineReadOnlyShadowBaselineAuthorityTest {
                 mapper.writeValueAsBytes(stale),
                 protocolHeaders())) {
             assertThat(authority(
-                    server.uri(), 1024).ready())
-                    .isFalse();
+                    server.uri(),
+                    Duration.ofSeconds(2),
+                    4096).ready()).isFalse();
         }
         var incomplete =
-                new OnlineReadOnlyShadowBaselineProtocol
+                new OnlineReadOnlyShadowCandidateProtocol
                         .Capability(
-                        OnlineReadOnlyShadowBaselineProtocol
+                        OnlineReadOnlyShadowCandidateProtocol
                                 .Capability.SCHEMA_VERSION,
-                        OnlineReadOnlyShadowBaselineProtocol
+                        OnlineReadOnlyShadowCandidateProtocol
                                 .VERSION,
-                        OnlineReadOnlyShadowBaselineTestFixtures
-                                .NOW,
-                        OnlineReadOnlyShadowBaselineTestFixtures
-                                .NOW.plusSeconds(30),
-                        true,
-                        true,
-                        true,
+                        clock.instant(),
+                        clock.instant().plusSeconds(30),
                         true,
                         true,
                         false,
+                        true,
+                        true,
+                        true,
                         true);
         try (TestServer server = fixed(
                 mapper.writeValueAsBytes(incomplete),
                 protocolHeaders())) {
             assertThat(authority(
-                    server.uri(), 1024).ready())
-                    .isFalse();
+                    server.uri(),
+                    Duration.ofSeconds(2),
+                    4096).ready()).isFalse();
         }
     }
 
     @Test
-    void rejectsProtocolDowngradeUnknownPayloadFieldAndOversize()
+    void rejectsDowngradeUnknownFieldsDuplicateFieldsAndOversize()
             throws Exception {
-        OnlineReadOnlyShadowBaselineCommand command =
-                OnlineReadOnlyShadowBaselineTestFixtures
-                        .command(mapper);
-        byte[] signed = mapper.writeValueAsBytes(
-                integrity.sign(
-                        OnlineReadOnlyShadowBaselineTestFixtures
-                                .unsigned(mapper, command)));
+        byte[] exact = mapper.writeValueAsBytes(bundle);
         try (TestServer server = fixed(
-                signed,
+                exact,
                 Map.of(
                         "Content-Type",
                         "application/json",
-                        OnlineReadOnlyShadowBaselineProtocol
+                        OnlineReadOnlyShadowCandidateProtocol
                                 .VERSION_HEADER,
-                        OnlineReadOnlyShadowBaselineProtocol
+                        OnlineReadOnlyShadowCandidateProtocol
                                 .VERSION))) {
-            assertReason(
-                    authority(server.uri(), 1024),
-                    command,
-                    "ONLINE_BASELINE_PROTOCOL_DOWNGRADE");
+            assertExecuteReason(
+                    authority(
+                            server.uri(),
+                            Duration.ofSeconds(2),
+                            2 * 1024 * 1024),
+                    "ONLINE_CANDIDATE_PROTOCOL_DOWNGRADE");
         }
 
         ObjectNode unknown = (ObjectNode) mapper
-                .readTree(signed);
+                .readTree(exact);
         unknown.put("payload", "must-not-cross");
         try (TestServer server = fixed(
                 mapper.writeValueAsBytes(unknown),
                 protocolHeaders())) {
-            assertReason(
-                    authority(server.uri(), 512 * 1024),
-                    command,
-                    "ONLINE_BASELINE_RESPONSE_INVALID");
+            assertExecuteReason(
+                    authority(
+                            server.uri(),
+                            Duration.ofSeconds(2),
+                            2 * 1024 * 1024),
+                    "ONLINE_CANDIDATE_RESPONSE_INVALID");
+        }
+
+        String duplicate =
+                mapper.writeValueAsString(bundle)
+                        .replaceFirst(
+                                "\\{",
+                                "{\"schemaVersion\":\""
+                                        + bundle.schemaVersion()
+                                        + "\",");
+        try (TestServer server = fixed(
+                duplicate.getBytes(
+                        StandardCharsets.UTF_8),
+                protocolHeaders())) {
+            assertExecuteReason(
+                    authority(
+                            server.uri(),
+                            Duration.ofSeconds(2),
+                            2 * 1024 * 1024),
+                    "ONLINE_CANDIDATE_RESPONSE_INVALID");
         }
 
         byte[] oversized = ("{"
@@ -236,16 +259,34 @@ class HttpOnlineReadOnlyShadowBaselineAuthorityTest {
         try (TestServer server = fixed(
                 oversized,
                 protocolHeaders())) {
-            assertReason(
-                    authority(server.uri(), 1024),
-                    command,
-                    "ONLINE_BASELINE_BODY_TOO_LARGE");
+            assertExecuteReason(
+                    authority(
+                            server.uri(),
+                            Duration.ofSeconds(2),
+                            1024),
+                    "ONLINE_CANDIDATE_BODY_TOO_LARGE");
         }
     }
 
     @Test
-    void doesNotFollowRedirectAndRejectsAnUnpinnedTransport()
+    void classifiesTimeoutAndHttpFailuresWithoutFollowingRedirects()
             throws Exception {
+        try (TestServer server = new TestServer(exchange -> {
+            Thread.sleep(500);
+            respond(
+                    exchange,
+                    200,
+                    mapper.writeValueAsBytes(bundle),
+                    protocolHeaders());
+        })) {
+            assertExecuteReason(
+                    authority(
+                            server.uri(),
+                            Duration.ofMillis(100),
+                            2 * 1024 * 1024),
+                    "ONLINE_CANDIDATE_UNAVAILABLE");
+        }
+
         AtomicInteger redirected = new AtomicInteger();
         try (TestServer server = new TestServer(exchange -> {
             if (exchange.getRequestURI().getPath()
@@ -266,13 +307,66 @@ class HttpOnlineReadOnlyShadowBaselineAuthorityTest {
                     Map.of("Location", "/redirected"));
         })) {
             assertThat(authority(
-                    server.uri(), 1024).ready())
-                    .isFalse();
+                    server.uri(),
+                    Duration.ofSeconds(2),
+                    4096).ready()).isFalse();
             assertThat(redirected).hasValue(0);
         }
 
-        OnlineReadOnlyShadowBaselineTransport insecure =
-                OnlineReadOnlyShadowBaselineTransport
+        try (TestServer server = new TestServer(exchange ->
+                respond(
+                        exchange,
+                        429,
+                        "{}".getBytes(
+                                StandardCharsets.UTF_8),
+                        protocolHeaders()))) {
+            assertThatThrownBy(() ->
+                    authority(
+                            server.uri(),
+                            Duration.ofSeconds(2),
+                            4096)
+                            .execute(command))
+                    .isInstanceOf(
+                            OnlineReadOnlyShadowCandidateAuthority
+                                    .AuthorityException.class)
+                    .extracting("failure")
+                    .isEqualTo(
+                            OnlineReadOnlyShadowCandidateAuthority
+                                    .Failure.UNAVAILABLE);
+        }
+    }
+
+    @Test
+    void rejectsExactReadCoordinateDriftAndUnpinnedTransport()
+            throws Exception {
+        try (TestServer server = fixed(
+                mapper.writeValueAsBytes(bundle),
+                protocolHeaders())) {
+            MirrorArtifactRef wrong =
+                    new MirrorArtifactRef(
+                            "MIRROR_EVIDENCE_BUNDLE",
+                            bundle.evidence().runId(),
+                            1,
+                            OnlineReadOnlyShadowBaselineTestFixtures
+                                    .fingerprint('f'));
+            assertThatThrownBy(() ->
+                    authority(
+                            server.uri(),
+                            Duration.ofSeconds(2),
+                            2 * 1024 * 1024)
+                            .resolve(
+                                    command.scope(),
+                                    wrong))
+                    .isInstanceOf(
+                            OnlineReadOnlyShadowCandidateAuthority
+                                    .AuthorityException.class)
+                    .extracting("reasonCode")
+                    .isEqualTo(
+                            "ONLINE_CANDIDATE_EXACT_READ_MISMATCH");
+        }
+
+        OnlineReadOnlyShadowCandidateTransport insecure =
+                OnlineReadOnlyShadowCandidateTransport
                         .from(
                                 new ControlPlaneHttpTransport() {
                                     @Override
@@ -295,15 +389,15 @@ class HttpOnlineReadOnlyShadowBaselineAuthorityTest {
                                     }
                                 });
         assertThatThrownBy(() ->
-                new HttpOnlineReadOnlyShadowBaselineAuthority(
+                new HttpOnlineReadOnlyShadowCandidateAuthority(
                         mapper,
-                        OnlineReadOnlyShadowBaselineTestFixtures
-                                .CLOCK,
+                        clock,
                         insecure,
                         settings(
                                 URI.create(
-                                        "https://baseline.example.test"),
-                                1024,
+                                        "https://candidate.example.test"),
+                                Duration.ofSeconds(2),
+                                4096,
                                 false),
                         (operation, uri) -> Map.of()))
                 .isInstanceOf(
@@ -313,72 +407,103 @@ class HttpOnlineReadOnlyShadowBaselineAuthorityTest {
     }
 
     @Test
-    void rejectsAnExactReadThatReturnsDifferentCoordinates()
+    void rejectsExecutionCoordinateDriftAndReservedAuthorizationHeaders()
             throws Exception {
-        OnlineReadOnlyShadowBaselineCommand command =
-                OnlineReadOnlyShadowBaselineTestFixtures
-                        .command(mapper);
-        OnlineReadOnlyShadowBaselineObservation observation =
-                integrity.sign(
-                        OnlineReadOnlyShadowBaselineTestFixtures
-                                .unsigned(mapper, command));
-        MirrorArtifactRef wrong =
-                new MirrorArtifactRef(
-                        OnlineReadOnlyShadowBaselineObservation
-                                .ARTIFACT_KIND,
-                        observation.observationId(),
-                        observation.revision(),
-                        OnlineReadOnlyShadowBaselineTestFixtures
-                                .fingerprint('f'));
+        OnlineReadOnlyShadowCandidateCommand altered =
+                new OnlineReadOnlyShadowCandidateCommand(
+                        command.schemaVersion(),
+                        command.executionId() + "-other",
+                        command.requestId(),
+                        command.scope(),
+                        command.inventoryRef(),
+                        command.unitId(),
+                        command.scenarioCaseRef(),
+                        command.targetCapabilityRef(),
+                        command.candidatePlanRef(),
+                        command.comparisonPolicyRef(),
+                        command.baselineObservationRef(),
+                        command.payloadVaultReceiptRef(),
+                        command.requestContextFingerprint(),
+                        command.accessGrant(),
+                        command.admissionFingerprint(),
+                        command.admittedAt(),
+                        command.deadlineAt());
         try (TestServer server = fixed(
-                mapper.writeValueAsBytes(observation),
+                mapper.writeValueAsBytes(bundle),
                 protocolHeaders())) {
             assertThatThrownBy(() ->
                     authority(
                             server.uri(),
-                            512 * 1024)
-                            .resolve(
-                                    command.scope(),
-                                    wrong))
+                            Duration.ofSeconds(2),
+                            2 * 1024 * 1024)
+                            .execute(altered))
                     .isInstanceOf(
-                            OnlineReadOnlyShadowBaselineAuthority
+                            OnlineReadOnlyShadowCandidateAuthority
                                     .AuthorityException.class)
                     .extracting("reasonCode")
                     .isEqualTo(
-                            "ONLINE_BASELINE_EXACT_READ_MISMATCH");
+                            "ONLINE_CANDIDATE_EXECUTION_COORDINATES_MISMATCH");
+
+            HttpOnlineReadOnlyShadowCandidateAuthority
+                    headerOverride =
+                    new HttpOnlineReadOnlyShadowCandidateAuthority(
+                            mapper,
+                            clock,
+                            secureTransport(),
+                            settings(
+                                    server.uri(),
+                                    Duration.ofSeconds(2),
+                                    2 * 1024 * 1024,
+                                    true),
+                            (operation, uri) -> Map.of(
+                                    "Content-Type",
+                                    "application/json"));
+            assertThatThrownBy(() ->
+                    headerOverride.execute(command))
+                    .isInstanceOf(
+                            OnlineReadOnlyShadowCandidateAuthority
+                                    .AuthorityException.class)
+                    .extracting("reasonCode")
+                    .isEqualTo(
+                            "ONLINE_CANDIDATE_AUTHORIZATION_HEADERS_INVALID");
         }
     }
 
-    private HttpOnlineReadOnlyShadowBaselineAuthority authority(
+    private HttpOnlineReadOnlyShadowCandidateAuthority authority(
             URI uri,
+            Duration timeout,
             int maximumBytes) {
-        return new HttpOnlineReadOnlyShadowBaselineAuthority(
+        return new HttpOnlineReadOnlyShadowCandidateAuthority(
                 mapper,
-                OnlineReadOnlyShadowBaselineTestFixtures
-                        .CLOCK,
+                clock,
                 secureTransport(),
-                settings(uri, maximumBytes, true),
+                settings(
+                        uri,
+                        timeout,
+                        maximumBytes,
+                        true),
                 (operation, target) -> Map.of(
                         "Authorization",
                         "BLOGE workload-signature"));
     }
 
-    private static HttpOnlineReadOnlyShadowBaselineAuthority
+    private static HttpOnlineReadOnlyShadowCandidateAuthority
             .Settings settings(
             URI uri,
+            Duration timeout,
             int maximumBytes,
             boolean loopback) {
-        return new HttpOnlineReadOnlyShadowBaselineAuthority
+        return new HttpOnlineReadOnlyShadowCandidateAuthority
                 .Settings(
                 uri,
-                Duration.ofSeconds(2),
+                timeout,
                 maximumBytes,
                 loopback);
     }
 
-    private static OnlineReadOnlyShadowBaselineTransport
+    private static OnlineReadOnlyShadowCandidateTransport
     secureTransport() {
-        return new OnlineReadOnlyShadowBaselineTransport() {
+        return new OnlineReadOnlyShadowCandidateTransport() {
             @Override
             public HttpClient client(
                     Duration connectTimeout) {
@@ -402,18 +527,16 @@ class HttpOnlineReadOnlyShadowBaselineAuthorityTest {
         };
     }
 
-    private OnlineReadOnlyShadowBaselineProtocol.Capability
+    private OnlineReadOnlyShadowCandidateProtocol.Capability
     readyCapability() {
-        return new OnlineReadOnlyShadowBaselineProtocol
+        return new OnlineReadOnlyShadowCandidateProtocol
                 .Capability(
-                OnlineReadOnlyShadowBaselineProtocol
+                OnlineReadOnlyShadowCandidateProtocol
                         .Capability.SCHEMA_VERSION,
-                OnlineReadOnlyShadowBaselineProtocol
+                OnlineReadOnlyShadowCandidateProtocol
                         .VERSION,
-                OnlineReadOnlyShadowBaselineTestFixtures
-                        .NOW.plusSeconds(3),
-                OnlineReadOnlyShadowBaselineTestFixtures
-                        .NOW.plusSeconds(60),
+                clock.instant(),
+                clock.instant().plusSeconds(60),
                 true,
                 true,
                 true,
@@ -423,18 +546,39 @@ class HttpOnlineReadOnlyShadowBaselineAuthorityTest {
                 true);
     }
 
-    private static void assertReason(
-            HttpOnlineReadOnlyShadowBaselineAuthority
+    private void assertExecuteReason(
+            HttpOnlineReadOnlyShadowCandidateAuthority
                     authority,
-            OnlineReadOnlyShadowBaselineCommand command,
             String reason) {
         assertThatThrownBy(() ->
-                authority.observe(command))
+                authority.execute(command))
                 .isInstanceOf(
-                        OnlineReadOnlyShadowBaselineAuthority
+                        OnlineReadOnlyShadowCandidateAuthority
                                 .AuthorityException.class)
                 .extracting("reasonCode")
                 .isEqualTo(reason);
+    }
+
+    private static MirrorArtifactRef reference(
+            MirrorEvidenceBundle value) {
+        return new MirrorArtifactRef(
+                "MIRROR_EVIDENCE_BUNDLE",
+                value.evidence().runId(),
+                1,
+                value.bundleFingerprint());
+    }
+
+    private static Path fixturePath() {
+        Path moduleRelative = Path.of(
+                "..", "docs", "schemas",
+                "resource-gateway-mirror",
+                FIXTURE);
+        return Files.exists(moduleRelative)
+                ? moduleRelative
+                : Path.of(
+                        "docs", "schemas",
+                        "resource-gateway-mirror",
+                        FIXTURE);
     }
 
     private static TestServer fixed(
@@ -452,11 +596,11 @@ class HttpOnlineReadOnlyShadowBaselineAuthorityTest {
     private static Map<String, String> protocolHeaders() {
         return Map.of(
                 "Content-Type",
-                OnlineReadOnlyShadowBaselineProtocol
+                OnlineReadOnlyShadowCandidateProtocol
                         .MEDIA_TYPE,
-                OnlineReadOnlyShadowBaselineProtocol
+                OnlineReadOnlyShadowCandidateProtocol
                         .VERSION_HEADER,
-                OnlineReadOnlyShadowBaselineProtocol
+                OnlineReadOnlyShadowCandidateProtocol
                         .VERSION);
     }
 

@@ -546,10 +546,17 @@ class ToolStudioIntegrationServiceTest {
                 .containsEntry(
                         "onlineReadOnlyShadowBaselineCapability",
                         List.of(
-                                "resourceGateway.onlineReadOnlyShadowBaselineCapability.v1"));
+                                "resourceGateway.onlineReadOnlyShadowBaselineCapability.v1"))
+                .containsEntry(
+                        "onlineReadOnlyShadowCandidateCapability",
+                        List.of(
+                                "resourceGateway.onlineReadOnlyShadowCandidateCapability.v1"));
         assertThat(unavailable.features())
                 .containsEntry(
                         "mirrorReadOnlyShadowOnlineBaselineProtocol",
+                        true)
+                .containsEntry(
+                        "mirrorReadOnlyShadowOnlineCandidateProtocol",
                         true)
                 .containsEntry(
                         "mirrorReadOnlyShadowOnlineBaselineConnectorInstalled",

@@ -1,8 +1,11 @@
 package com.leanowtech.bloge.gateway.integration.mirror;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.leanowtech.bloge.gateway.testing.api.ControlPlaneHttpTransport;
 import com.leanowtech.bloge.gateway.visual.runtime.InMemoryVisualEvidenceSigner;
 import com.leanowtech.bloge.gateway.visual.runtime.VisualEvidenceSigner;
+import com.sun.net.httpserver.HttpExchange;
+import com.sun.net.httpserver.HttpServer;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.jdbc.core.JdbcTemplate;
@@ -11,6 +14,12 @@ import org.springframework.jdbc.datasource.embedded.EmbeddedDatabase;
 import org.springframework.jdbc.datasource.embedded.EmbeddedDatabaseBuilder;
 import org.springframework.jdbc.datasource.embedded.EmbeddedDatabaseType;
 
+import java.io.IOException;
+import java.net.InetSocketAddress;
+import java.net.URI;
+import java.net.URLDecoder;
+import java.net.http.HttpClient;
+import java.nio.charset.StandardCharsets;
 import java.time.Clock;
 import java.time.Duration;
 import java.time.Instant;
@@ -375,6 +384,86 @@ class SyntheticRegionalReadOnlyShadowProviderTest {
     }
 
     @Test
+    void certifiesTheCompletePairedDataPlaneAcrossTwoHttpBoundaries()
+            throws Exception {
+        ReadOnlyShadowSourceResolutionAttestationRepository
+                attestations =
+                mock(
+                        ReadOnlyShadowSourceResolutionAttestationRepository
+                                .class);
+        when(attestations.create(any()))
+                .thenAnswer(answer ->
+                        answer.getArgument(0));
+        try (ProviderHttpServer baselineServer =
+                     new ProviderHttpServer(
+                             ProviderRole.BASELINE);
+             ProviderHttpServer candidateServer =
+                     new ProviderHttpServer(
+                             ProviderRole.CANDIDATE)) {
+            OnlineReadOnlyShadowBaselineAuthority
+                    baselineAuthority =
+                    baselineServer.baselineAuthority();
+            OnlineReadOnlyShadowCandidateAuthority
+                    candidateAuthority =
+                    candidateServer.candidateAuthority();
+            GovernedReadOnlyShadowDataPlane dataPlane =
+                    onlineDataPlane(
+                            attestations,
+                            baselineAuthority,
+                            candidateAuthority);
+
+            ReadOnlyShadowDataPlane.ExecutionResult result =
+                    dataPlane.execute(
+                            new ReadOnlyShadowDataPlane.Permit(
+                                    "execution-synthetic-pair",
+                                    request,
+                                    1,
+                                    request.deadlineAt(),
+                                    new ReadOnlyShadowDataPlane
+                                            .ExecutionControl() {
+                                        @Override
+                                        public Instant
+                                        leaseExpiresAt() {
+                                            return request
+                                                    .deadlineAt();
+                                        }
+
+                                        @Override
+                                        public Instant heartbeat() {
+                                            return request
+                                                    .deadlineAt();
+                                        }
+                                    }));
+
+            assertThat(result.baseline().role())
+                    .isEqualTo(
+                            ReadOnlyShadowComparison.SourceRole
+                                    .BASELINE);
+            assertThat(result.candidate().role())
+                    .isEqualTo(
+                            ReadOnlyShadowComparison.SourceRole
+                                    .CANDIDATE);
+            assertThat(result.sourceResolutionAttestationRef()
+                    .kind())
+                    .isEqualTo(
+                            ReadOnlyShadowSourceResolutionAttestation
+                                    .ARTIFACT_KIND);
+            assertThat(baselineServer.executions())
+                    .isEqualTo(1);
+            assertThat(baselineServer.exactReads())
+                    .isEqualTo(2);
+            assertThat(candidateServer.executions())
+                    .isEqualTo(1);
+            assertThat(candidateServer.exactReads())
+                    .isEqualTo(1);
+            assertThat(candidateFactoryInvocations)
+                    .hasValue(1);
+            assertThat(baselineServer.failure()).isNull();
+            assertThat(candidateServer.failure()).isNull();
+        }
+    }
+
+    @Test
     void durableWorkerRecoversOneOnlineExecutionAfterProcessCrash() {
         AtomicReference<Instant> databaseNow =
                 new AtomicReference<>(NOW);
@@ -708,15 +797,28 @@ class SyntheticRegionalReadOnlyShadowProviderTest {
                     attestations,
             OnlineReadOnlyShadowCandidateAuthority
                     candidateAuthority) {
+        return onlineDataPlane(
+                attestations,
+                provider.baselineAuthority(),
+                candidateAuthority);
+    }
+
+    private GovernedReadOnlyShadowDataPlane onlineDataPlane(
+            ReadOnlyShadowSourceResolutionAttestationRepository
+                    attestations,
+            OnlineReadOnlyShadowBaselineAuthority
+                    baselineAuthority,
+            OnlineReadOnlyShadowCandidateAuthority
+                    candidateAuthority) {
         OnlineReadOnlyShadowBaselineConnector baseline =
                 new OnlineReadOnlyShadowBaselineConnector(
-                        provider.baselineAuthority(),
+                        baselineAuthority,
                         baselineIntegrity,
                         mapper,
                         RESOLUTION_CLOCK);
         OnlineReadOnlyShadowCandidateConnector candidate =
                 new OnlineReadOnlyShadowCandidateConnector(
-                        provider.baselineAuthority(),
+                        baselineAuthority,
                         baselineIntegrity,
                         candidateAuthority,
                         candidateIntegrity,
@@ -725,7 +827,7 @@ class SyntheticRegionalReadOnlyShadowProviderTest {
                         RESOLUTION_CLOCK);
         OnlineReadOnlyShadowSourceResolutionVerifier resolver =
                 new OnlineReadOnlyShadowSourceResolutionVerifier(
-                        provider.baselineAuthority(),
+                        baselineAuthority,
                         baselineIntegrity,
                         candidateAuthority,
                         candidateIntegrity,
@@ -1030,6 +1132,406 @@ class SyntheticRegionalReadOnlyShadowProviderTest {
             char material) {
         return "sha256:"
                 + String.valueOf(material).repeat(64);
+    }
+
+    private enum ProviderRole {
+        BASELINE,
+        CANDIDATE
+    }
+
+    /**
+     * Real loopback HTTP boundary around one role of the in-process certification provider.
+     */
+    private final class ProviderHttpServer
+            implements AutoCloseable {
+        private final ProviderRole role;
+        private final HttpServer server;
+        private final AtomicInteger executions =
+                new AtomicInteger();
+        private final AtomicInteger exactReads =
+                new AtomicInteger();
+        private final AtomicReference<Throwable> failure =
+                new AtomicReference<>();
+
+        private ProviderHttpServer(
+                ProviderRole role) throws IOException {
+            this.role = role;
+            server = HttpServer.create(
+                    new InetSocketAddress(
+                            "127.0.0.1", 0),
+                    0);
+            server.createContext("/", exchange -> {
+                try {
+                    handle(exchange);
+                } catch (Throwable failed) {
+                    failure.compareAndSet(
+                            null, failed);
+                    try {
+                        respond(
+                                exchange,
+                                500,
+                                new byte[0],
+                                Map.of());
+                    } catch (IOException ignored) {
+                        exchange.close();
+                    }
+                }
+            });
+            server.start();
+        }
+
+        private OnlineReadOnlyShadowBaselineAuthority
+        baselineAuthority() {
+            if (role != ProviderRole.BASELINE) {
+                throw new IllegalStateException(
+                        "provider server role is not baseline");
+            }
+            return new HttpOnlineReadOnlyShadowBaselineAuthority(
+                    mapper,
+                    RESOLUTION_CLOCK,
+                    OnlineReadOnlyShadowBaselineTransport
+                            .from(secureTransport()),
+                    new HttpOnlineReadOnlyShadowBaselineAuthority
+                            .Settings(
+                            uri(),
+                            Duration.ofSeconds(2),
+                            512 * 1024,
+                            true),
+                    (operation, target) -> Map.of(
+                            "Authorization",
+                            "BLOGE baseline-workload"));
+        }
+
+        private OnlineReadOnlyShadowCandidateAuthority
+        candidateAuthority() {
+            if (role != ProviderRole.CANDIDATE) {
+                throw new IllegalStateException(
+                        "provider server role is not candidate");
+            }
+            return new HttpOnlineReadOnlyShadowCandidateAuthority(
+                    mapper,
+                    RESOLUTION_CLOCK,
+                    OnlineReadOnlyShadowCandidateTransport
+                            .from(secureTransport()),
+                    new HttpOnlineReadOnlyShadowCandidateAuthority
+                            .Settings(
+                            uri(),
+                            Duration.ofSeconds(2),
+                            2 * 1024 * 1024,
+                            true),
+                    (operation, target) -> Map.of(
+                            "Authorization",
+                            "BLOGE candidate-workload"));
+        }
+
+        private void handle(
+                HttpExchange exchange) throws Exception {
+            requireRequestHeaders(exchange);
+            String path = exchange.getRequestURI()
+                    .getPath();
+            if (path.endsWith("/capabilities")) {
+                if (!"GET".equals(
+                        exchange.getRequestMethod())) {
+                    throw new IllegalArgumentException(
+                            "capability method is invalid");
+                }
+                respond(
+                        exchange,
+                        200,
+                        mapper.writeValueAsBytes(
+                                capability()),
+                        protocolHeaders());
+                return;
+            }
+            if ("POST".equals(
+                    exchange.getRequestMethod())) {
+                executions.incrementAndGet();
+                requireExecutionHeader(exchange);
+                if (role == ProviderRole.BASELINE) {
+                    OnlineReadOnlyShadowBaselineCommand
+                            command = mapper.readValue(
+                            exchange.getRequestBody()
+                                    .readAllBytes(),
+                            OnlineReadOnlyShadowBaselineCommand
+                                    .class);
+                    respond(
+                            exchange,
+                            200,
+                            mapper.writeValueAsBytes(
+                                    provider.baselineAuthority()
+                                            .observe(command)),
+                            protocolHeaders());
+                    return;
+                }
+                OnlineReadOnlyShadowCandidateCommand
+                        command = mapper.readValue(
+                        exchange.getRequestBody()
+                                .readAllBytes(),
+                        OnlineReadOnlyShadowCandidateCommand
+                                .class);
+                respond(
+                        exchange,
+                        200,
+                        mapper.writeValueAsBytes(
+                                provider.candidateAuthority()
+                                        .execute(command)),
+                        protocolHeaders());
+                return;
+            }
+            if (!"GET".equals(
+                    exchange.getRequestMethod())) {
+                throw new IllegalArgumentException(
+                        "provider method is invalid");
+            }
+            exactReads.incrementAndGet();
+            MirrorArtifactRef ref =
+                    requestedReference(
+                            exchange.getRequestURI(),
+                            role == ProviderRole.BASELINE
+                                    ? OnlineReadOnlyShadowBaselineObservation
+                                    .ARTIFACT_KIND
+                                    : "MIRROR_EVIDENCE_BUNDLE");
+            requireScope(exchange.getRequestURI());
+            Object value = role == ProviderRole.BASELINE
+                    ? provider.baselineAuthority()
+                    .resolve(request.scope(), ref)
+                    : provider.candidateAuthority()
+                    .resolve(request.scope(), ref);
+            respond(
+                    exchange,
+                    200,
+                    mapper.writeValueAsBytes(value),
+                    protocolHeaders());
+        }
+
+        private Object capability() {
+            Instant now = RESOLUTION_CLOCK.instant();
+            if (role == ProviderRole.BASELINE) {
+                return new OnlineReadOnlyShadowBaselineProtocol
+                        .Capability(
+                        OnlineReadOnlyShadowBaselineProtocol
+                                .Capability.SCHEMA_VERSION,
+                        OnlineReadOnlyShadowBaselineProtocol
+                                .VERSION,
+                        now,
+                        now.plusSeconds(60),
+                        true,
+                        true,
+                        true,
+                        true,
+                        true,
+                        true,
+                        true);
+            }
+            return new OnlineReadOnlyShadowCandidateProtocol
+                    .Capability(
+                    OnlineReadOnlyShadowCandidateProtocol
+                            .Capability.SCHEMA_VERSION,
+                    OnlineReadOnlyShadowCandidateProtocol
+                            .VERSION,
+                    now,
+                    now.plusSeconds(60),
+                    true,
+                    true,
+                    true,
+                    true,
+                    true,
+                    true,
+                    true);
+        }
+
+        private void requireRequestHeaders(
+                HttpExchange exchange) {
+            String mediaType = role
+                    == ProviderRole.BASELINE
+                    ? OnlineReadOnlyShadowBaselineProtocol
+                    .MEDIA_TYPE
+                    : OnlineReadOnlyShadowCandidateProtocol
+                    .MEDIA_TYPE;
+            String versionHeader = role
+                    == ProviderRole.BASELINE
+                    ? OnlineReadOnlyShadowBaselineProtocol
+                    .VERSION_HEADER
+                    : OnlineReadOnlyShadowCandidateProtocol
+                    .VERSION_HEADER;
+            String authorization = exchange
+                    .getRequestHeaders()
+                    .getFirst("Authorization");
+            if (!mediaType.equals(
+                    exchange.getRequestHeaders()
+                            .getFirst("Accept"))
+                    || !"1.0".equals(
+                    exchange.getRequestHeaders()
+                            .getFirst(versionHeader))
+                    || authorization == null
+                    || authorization.isBlank()) {
+                throw new IllegalArgumentException(
+                        "provider request headers are invalid");
+            }
+        }
+
+        private void requireExecutionHeader(
+                HttpExchange exchange) {
+            String expected = role
+                    == ProviderRole.BASELINE
+                    ? OnlineReadOnlyShadowBaselineProtocol
+                    .EXECUTION_ID_HEADER
+                    : OnlineReadOnlyShadowCandidateProtocol
+                    .EXECUTION_ID_HEADER;
+            if (!"execution-synthetic-pair".equals(
+                    exchange.getRequestHeaders()
+                            .getFirst(expected))) {
+                throw new IllegalArgumentException(
+                        "provider execution identity is invalid");
+            }
+        }
+
+        private void requireScope(
+                URI target) {
+            Map<String, String> query = query(target);
+            CapabilitySnapshot.Scope scope =
+                    request.scope();
+            if (!scope.tenantId().equals(
+                    query.get("tenantId"))
+                    || !scope.organizationId().equals(
+                    query.get("organizationId"))
+                    || !scope.projectId().equals(
+                    query.get("projectId"))
+                    || !scope.environmentId().equals(
+                    query.get("environmentId"))
+                    || !scope.region().equals(
+                    query.get("region"))) {
+                throw new IllegalArgumentException(
+                        "provider exact-read scope is invalid");
+            }
+        }
+
+        private MirrorArtifactRef requestedReference(
+                URI target,
+                String kind) {
+            String[] segments = target.getPath()
+                    .split("/");
+            if (segments.length < 4
+                    || !"revisions".equals(
+                    segments[segments.length - 2])) {
+                throw new IllegalArgumentException(
+                        "provider exact-read path is invalid");
+            }
+            return new MirrorArtifactRef(
+                    kind,
+                    segments[segments.length - 3],
+                    Integer.parseInt(
+                            segments[segments.length - 1]),
+                    query(target).get("fingerprint"));
+        }
+
+        private Map<String, String> protocolHeaders() {
+            return role == ProviderRole.BASELINE
+                    ? Map.of(
+                    "Content-Type",
+                    OnlineReadOnlyShadowBaselineProtocol
+                            .MEDIA_TYPE,
+                    OnlineReadOnlyShadowBaselineProtocol
+                            .VERSION_HEADER,
+                    OnlineReadOnlyShadowBaselineProtocol
+                            .VERSION)
+                    : Map.of(
+                    "Content-Type",
+                    OnlineReadOnlyShadowCandidateProtocol
+                            .MEDIA_TYPE,
+                    OnlineReadOnlyShadowCandidateProtocol
+                            .VERSION_HEADER,
+                    OnlineReadOnlyShadowCandidateProtocol
+                            .VERSION);
+        }
+
+        private URI uri() {
+            return URI.create(
+                    "http://127.0.0.1:"
+                            + server.getAddress()
+                            .getPort());
+        }
+
+        private int executions() {
+            return executions.get();
+        }
+
+        private int exactReads() {
+            return exactReads.get();
+        }
+
+        private Throwable failure() {
+            return failure.get();
+        }
+
+        @Override
+        public void close() {
+            server.stop(0);
+        }
+    }
+
+    private static ControlPlaneHttpTransport
+    secureTransport() {
+        return new ControlPlaneHttpTransport() {
+            @Override
+            public HttpClient client(
+                    Duration connectTimeout) {
+                return HttpClient.newBuilder()
+                        .connectTimeout(connectTimeout)
+                        .followRedirects(
+                                HttpClient.Redirect.NEVER)
+                        .build();
+            }
+
+            @Override
+            public Descriptor descriptor() {
+                return new Descriptor(
+                        Descriptor.SCHEMA_VERSION,
+                        false,
+                        true,
+                        true,
+                        true,
+                        true);
+            }
+        };
+    }
+
+    private static Map<String, String> query(
+            URI uri) {
+        java.util.LinkedHashMap<String, String> values =
+                new java.util.LinkedHashMap<>();
+        String raw = uri.getRawQuery();
+        if (raw == null || raw.isBlank()) {
+            return Map.of();
+        }
+        for (String pair : raw.split("&")) {
+            String[] parts = pair.split("=", 2);
+            values.put(
+                    URLDecoder.decode(
+                            parts[0],
+                            StandardCharsets.UTF_8),
+                    URLDecoder.decode(
+                            parts.length == 2
+                                    ? parts[1] : "",
+                            StandardCharsets.UTF_8));
+        }
+        return Map.copyOf(values);
+    }
+
+    private static void respond(
+            HttpExchange exchange,
+            int status,
+            byte[] body,
+            Map<String, String> headers)
+            throws IOException {
+        headers.forEach(
+                (name, value) ->
+                        exchange.getResponseHeaders()
+                                .set(name, value));
+        exchange.sendResponseHeaders(
+                status, body.length);
+        exchange.getResponseBody().write(body);
+        exchange.close();
     }
 
     private static final class SimulatedProcessCrash

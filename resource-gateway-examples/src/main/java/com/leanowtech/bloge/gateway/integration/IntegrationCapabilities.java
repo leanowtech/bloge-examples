@@ -326,6 +326,9 @@ public record IntegrationCapabilities(
         objects.put("onlineReadOnlyShadowBaselineCapability", List.of(
                 com.leanowtech.bloge.gateway.integration.mirror
                         .OnlineReadOnlyShadowBaselineProtocol.Capability.SCHEMA_VERSION));
+        objects.put("onlineReadOnlyShadowCandidateCapability", List.of(
+                com.leanowtech.bloge.gateway.integration.mirror
+                        .OnlineReadOnlyShadowCandidateProtocol.Capability.SCHEMA_VERSION));
         objects.put("mirrorDeploymentIsolationAttestationRevocationRequest", List.of(
                 com.leanowtech.bloge.gateway.integration.mirror
                         .MirrorDeploymentIsolationAttestationRevocationRequest.SCHEMA_VERSION));
@@ -825,6 +828,7 @@ public record IntegrationCapabilities(
         features.put("mirrorCertifiableEvidenceServingReady", false);
         features.put("mirrorObservationProtocol", true);
         features.put("mirrorReadOnlyShadowOnlineBaselineProtocol", true);
+        features.put("mirrorReadOnlyShadowOnlineCandidateProtocol", true);
         features.put("mirrorReadOnlyShadowOnlineBaselineConnectorInstalled", false);
         features.put("mirrorReadOnlyShadowOnlineBaselineAuthorityReady", false);
         features.put("mirrorReadOnlyShadowOnlineBaselineEvidenceVerificationReady", false);

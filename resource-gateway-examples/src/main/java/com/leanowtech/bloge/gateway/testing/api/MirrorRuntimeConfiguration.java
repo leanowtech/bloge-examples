@@ -148,10 +148,12 @@ import com.leanowtech.bloge.gateway.integration.mirror.DetachedReadOnlyShadowBas
 import com.leanowtech.bloge.gateway.integration.mirror.DetachedReadOnlyShadowCandidateConnector;
 import com.leanowtech.bloge.gateway.integration.mirror.DetachedReadOnlyShadowSourceResolutionVerifier;
 import com.leanowtech.bloge.gateway.integration.mirror.HttpOnlineReadOnlyShadowBaselineAuthority;
+import com.leanowtech.bloge.gateway.integration.mirror.HttpOnlineReadOnlyShadowCandidateAuthority;
 import com.leanowtech.bloge.gateway.integration.mirror.OnlineReadOnlyShadowBaselineAuthority;
 import com.leanowtech.bloge.gateway.integration.mirror.OnlineReadOnlyShadowBaselineConnector;
 import com.leanowtech.bloge.gateway.integration.mirror.OnlineReadOnlyShadowCandidateAuthority;
 import com.leanowtech.bloge.gateway.integration.mirror.OnlineReadOnlyShadowCandidateConnector;
+import com.leanowtech.bloge.gateway.integration.mirror.OnlineReadOnlyShadowCandidateTransport;
 import com.leanowtech.bloge.gateway.integration.mirror.OnlineReadOnlyShadowSourceResolutionVerifier;
 import com.leanowtech.bloge.gateway.integration.mirror.OnlineReadOnlyShadowBaselineEvidenceAuthority;
 import com.leanowtech.bloge.gateway.integration.mirror.OnlineReadOnlyShadowBaselineObservationIntegrity;
@@ -217,7 +219,8 @@ import java.time.Clock;
         ScenarioRehearsalBatchFinalizationSchedulerProperties.class,
         ScenarioRehearsalBatchFinalizationSloProperties.class,
         ReadOnlyShadowJobSchedulerProperties.class,
-        OnlineReadOnlyShadowBaselineProperties.class
+        OnlineReadOnlyShadowBaselineProperties.class,
+        OnlineReadOnlyShadowCandidateProperties.class
 })
 public class MirrorRuntimeConfiguration {
 
@@ -1673,11 +1676,17 @@ public class MirrorRuntimeConfiguration {
     ReadOnlyShadowDataPlaneModeSelection
     readOnlyShadowDataPlaneModeSelection(
             OnlineReadOnlyShadowBaselineProperties online,
+            OnlineReadOnlyShadowCandidateProperties candidate,
             Environment environment) {
         boolean detached = environment.getProperty(
                 "gateway.testing.mirror.read-only-shadow.detached-data-plane.enabled",
                 Boolean.class,
                 false);
+        if (candidate.enabled()
+                && !online.enabled()) {
+            throw new IllegalArgumentException(
+                    "online candidate requires online baseline mode");
+        }
         return new ReadOnlyShadowDataPlaneModeSelection(
                 online.enabled(),
                 detached);
@@ -1712,6 +1721,42 @@ public class MirrorRuntimeConfiguration {
             HttpOnlineReadOnlyShadowBaselineAuthority
                     .RequestHeadersProvider requestHeaders) {
         return new HttpOnlineReadOnlyShadowBaselineAuthority(
+                objectMapper,
+                Clock.systemUTC(),
+                transport,
+                properties.settings(),
+                requestHeaders);
+    }
+
+    /**
+     * Creates the strict isolated-candidate HTTP authority when its trust role is supplied.
+     *
+     * @param objectMapper strict protocol mapper
+     * @param transport dedicated private-PKI candidate transport
+     * @param properties validated endpoint and resource policy
+     * @param requestHeaders fresh per-request workload authorization
+     * @return payload-free online candidate authority
+     */
+    @Bean
+    @ConditionalOnMissingBean
+    @ConditionalOnBean({
+            OnlineReadOnlyShadowCandidateTransport.class,
+            HttpOnlineReadOnlyShadowCandidateAuthority
+                    .RequestHeadersProvider.class
+    })
+    @ConditionalOnProperty(
+            prefix = OnlineReadOnlyShadowCandidateProperties
+                    .PREFIX,
+            name = "enabled",
+            havingValue = "true")
+    public OnlineReadOnlyShadowCandidateAuthority
+    onlineReadOnlyShadowCandidateAuthority(
+            ObjectMapper objectMapper,
+            OnlineReadOnlyShadowCandidateTransport transport,
+            OnlineReadOnlyShadowCandidateProperties properties,
+            HttpOnlineReadOnlyShadowCandidateAuthority
+                    .RequestHeadersProvider requestHeaders) {
+        return new HttpOnlineReadOnlyShadowCandidateAuthority(
                 objectMapper,
                 Clock.systemUTC(),
                 transport,

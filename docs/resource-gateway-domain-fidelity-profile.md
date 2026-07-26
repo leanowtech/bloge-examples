@@ -46,9 +46,9 @@
 - regional TEE online-baseline consumer：payload-free command、signed observation、严格
   private-PKI/SPKI/mTLS HTTP authority、动态 readiness 投影、独立 Test Kit verifier
   与 public-only 固定签名 fixture；
-- same-input online candidate command/SPI/connector、独立 online paired-source
-  exact-read resolver、v2 signed proof、完整动态 readiness，以及显式非生产的 bounded
-  synthetic regional certification provider；
+- same-input online candidate command/SPI/connector、严格 private-PKI/SPKI/mTLS HTTP
+  authority、独立 online paired-source exact-read resolver、v2 signed proof、完整动态
+  readiness，以及双 loopback HTTP role 认证的显式非生产 bounded synthetic regional provider；
 - v1/v2 source-resolution 共用的 append-only 数据库仓储：旧 v1 表原位补充
   `source_mode` 与双 command fingerprint 索引，v1 签名 JSON 不重写，v2 无 detached binding
   也可落库，读取时逐索引对账；
@@ -78,7 +78,7 @@
 - request-space sampling proof 与 error-distribution cohort adapter；
 - 企业 root-policy/control-plane connector、跨区域传播 SLO 与轮换认证、
   获授权的 production regional sidecar provider/candidate authority、
-  durable worker 跨进程复合固定 fixture、PostgreSQL 多副本/网络分区认证、drift 自动降级、
+  PostgreSQL 多副本/网络分区认证、drift 自动降级、
   outcome reconciliation 和工作台。
 
 因此在 managed signer、Scenario authority 或 signed Shadow comparison authority 可用时，
@@ -546,6 +546,7 @@ cursor，`limit` 为 1..1000；调用方必须根据 `hasMore` 继续取页，�
 | `mirrorReadOnlyShadowSourceResolutionApi` | exact signed source-resolution attestation read route 已装配 |
 | `mirrorReadOnlyShadowDetachedDataPlaneReady` | exact detached connector、二次来源复核、proof signer、online authority 与 shared guard 整条链 ready；不会由单个 API 或 policy ready 推导 |
 | `mirrorReadOnlyShadowOnlineBaselineProtocol` | command/observation/capability 三个版本化协议和 strict Schema 已支持；不代表运行时连接 |
+| `mirrorReadOnlyShadowOnlineCandidateProtocol` | candidate command/capability 两个版本化协议和 strict Schema 已支持；不代表远端 sidecar ready |
 | `mirrorReadOnlyShadowOnlineBaselineConnectorInstalled` | regional baseline connector bean 已装配；不代表远端 authority 或证据验签可用 |
 | `mirrorReadOnlyShadowOnlineBaselineAuthorityReady` | 当前一次 sidecar live capability probe 通过全部安全事实 |
 | `mirrorReadOnlyShadowOnlineBaselineEvidenceVerificationReady` | 独立 observation authority 当前可验签 |
@@ -601,19 +602,31 @@ durable deadline 的较早者；网络 unavailable 与 deterministic protocol re
 HTTPS `base-uri`；部署方还必须提供 role-separated
 `OnlineReadOnlyShadowBaselineTransport`、
 `HttpOnlineReadOnlyShadowBaselineAuthority.RequestHeadersProvider` 和
-`OnlineReadOnlyShadowBaselineEvidenceAuthority`。缺任一角色时保持 fail closed。当前纵切没有
-默认 `OnlineReadOnlyShadowCandidateAuthority`；部署方提供该隔离 authority 后会装配
-same-input candidate connector。两侧 authority/integrity、proof repository/signer 与内置 policy
+`OnlineReadOnlyShadowBaselineEvidenceAuthority`。缺任一角色时保持 fail closed。
+
+candidate 可由部署方直接提供 `OnlineReadOnlyShadowCandidateAuthority`，也可启用
+`gateway.testing.mirror.read-only-shadow.online-candidate` 并配置 HTTPS `base-uri`，同时提供
+`OnlineReadOnlyShadowCandidateTransport` 和
+`HttpOnlineReadOnlyShadowCandidateAuthority.RequestHeadersProvider`。candidate capability
+必须同时证明 payload isolation、sealed-plan execution、idempotency、signed evidence、
+production-credential prohibition 与 exact artifact read。只开 candidate 而未开 baseline
+会拒绝启动；两种 role transport 不会被 Spring 隐式互换。
+
+两侧 authority/integrity、proof repository/signer 与内置 policy
 完整时，Spring 还会装配 `OnlineReadOnlyShadowSourceResolutionVerifier`：它在 terminal authority
 confirmation 后重新 exact-read 两份 signed artifact、重建两份 command、重跑 normalization，
 再签发 `resourceGateway.readOnlyShadowSourceResolutionAttestation.v2`。v2 使用
 `confirmedAt <= resolvedAt <= issuedAt`，并冻结两份 command fingerprint。
 
 `SyntheticRegionalReadOnlyShadowProvider` 只用于 test/staging 认证：它有统一锁下的并发幂等、
-完整 baseline/candidate command pairing、append-only exact read 与固定容量，但不自动配置，
-也不是 payload vault、网络 sidecar 或 production authority。公共 capability 分开报告 baseline、
-candidate、paired resolver 和 full online data-plane；每个动态 dependency 在单次响应中只采样
-一次，异常即 `false`，不能由任一子项推导完整数据面。
+完整 baseline/candidate command pairing、append-only exact read 与固定容量，但不自动配置。
+测试把两个 role 放在不同端口的真实 loopback HTTP server 后，完整 data plane 必须完成 baseline
+POST、candidate POST、两次 baseline exact-read、一次 candidate exact-read、独立验签和 v2 proof
+才通过。这关闭了协议协商、网络 timeout、redirect、媒体类型、body bound、幂等响应和 exact-read
+坐标门禁，但两个 server 仍与 provider 同 JVM、同内存，不是获授权的外部 regional sidecar 或
+production authority。公共 capability 分开报告 baseline、candidate、paired resolver 和 full
+online data-plane；每个动态 dependency 在单次响应中只采样一次，异常即 `false`，不能由任一
+子项推导完整数据面。
 
 签名 authority 也遵守同一原则：database publication source ready 只表示 append-only current-head
 读写和内容地址可用，不表示 issuer 已受信。`ReadOnlyShadowAuthorityTrustStore` 必须由独立 managed
@@ -923,8 +936,9 @@ append-only current-head repository、managed trust distribution、server adapte
 job request、exact detached source-binding repository/API、真实 detached connector/policy/source
 resolver、signed source-resolution proof API、独立 Test Kit verifier 与三 authority 跨产物固定签名
 fixture，以及 regional TEE online-baseline consumer、动态 readiness、独立 observation verifier
-与 public-only 固定签名 fixture、same-input candidate、online paired-source v2 resolver、
-synthetic regional certification provider、第二份三 authority public-only fixture、v1/v2 proof
+与 public-only 固定签名 fixture、same-input candidate strict HTTP authority、online paired-source
+v2 resolver、双 loopback HTTP role synthetic regional certification provider、第二份三
+authority public-only fixture、v1/v2 proof
 数据库兼容迁移，以及 synthetic composition 到真实 durable worker 的 retry/crash/takeover
 认证和四 authority durable-worker 复合 fixture/独立 Test Kit 联合验证已完成。
 下一步按来源信任依赖推进：
