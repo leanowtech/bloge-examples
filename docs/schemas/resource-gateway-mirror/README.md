@@ -46,6 +46,7 @@ offline artifact verification live in the independent `resource-gateway-test-kit
 | `read-only-shadow-guard-policy-publication-v1.schema.json` | `ReadOnlyShadowGuardPolicyPublication` | Short-lived signed current-head policy for one authority-owned shared concurrency, rate, and circuit budget |
 | `read-only-shadow-sampling-grant-publication-v1.schema.json` | `ReadOnlyShadowSamplingGrantPublication` | Short-lived signed current-head logical-sampling authorization joining an exact execution scope to one exact shared guard policy |
 | `read-only-shadow-kill-switch-publication-v1.schema.json` | `ReadOnlyShadowKillSwitchPublication` | Fifteen-minute signed current-head operational enable/deny decision for one exact execution scope |
+| `read-only-shadow-authority-key-set-publication-v1.schema.json` | `ReadOnlyShadowAuthorityKeySetPublication` | Root-threshold-signed, scope/kind/issuer-bound current key set with monotonic revocation cursor and irreversible retained key lifecycle |
 | `capability-observation-v1.schema.json` | `CapabilityObservationEnvelope` | Signed payload-free capability invocation with exact sanitized-payload, proof, schema, purpose, trace, and state references |
 | `capability-observation-admission-v1.schema.json` | `CapabilityObservationAdmission` | Content-addressed local `ADMITTED` or terminal `QUARANTINED` decision |
 | `capability-observation-receipt-v1.schema.json` | `CapabilityObservationReceipt` | Atomic ingest result linking the exact producer envelope to its immutable local decision |

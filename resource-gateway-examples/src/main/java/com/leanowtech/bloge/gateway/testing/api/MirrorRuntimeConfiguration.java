@@ -12,6 +12,7 @@ import com.leanowtech.bloge.gateway.integration.mirror.DatabaseMirrorDeploymentI
 import com.leanowtech.bloge.gateway.integration.mirror.DatabaseMirrorRunRequestRepository;
 import com.leanowtech.bloge.gateway.integration.mirror.DatabaseDomainFidelityRepository;
 import com.leanowtech.bloge.gateway.integration.mirror.DatabaseReadOnlyShadowAuthorityPublicationRepository;
+import com.leanowtech.bloge.gateway.integration.mirror.DatabaseReadOnlyShadowAuthorityKeySetRepository;
 import com.leanowtech.bloge.gateway.integration.mirror.DatabaseReadOnlyShadowJobRepository;
 import com.leanowtech.bloge.gateway.integration.mirror.DatabaseCompiledScenarioRehearsalPlanRepository;
 import com.leanowtech.bloge.gateway.integration.mirror.DatabaseScenarioArtifactRepository;
@@ -119,8 +120,13 @@ import com.leanowtech.bloge.gateway.integration.mirror.DatabaseReadOnlyShadowExe
 import com.leanowtech.bloge.gateway.integration.mirror.ReadOnlyShadowComparisonEngine;
 import com.leanowtech.bloge.gateway.integration.mirror.ReadOnlyShadowAccessAuthority;
 import com.leanowtech.bloge.gateway.integration.mirror.ReadOnlyShadowAuthorityIntegrity;
+import com.leanowtech.bloge.gateway.integration.mirror.ReadOnlyShadowAuthorityKeySetIntegrity;
+import com.leanowtech.bloge.gateway.integration.mirror.ReadOnlyShadowAuthorityKeySetRepository;
+import com.leanowtech.bloge.gateway.integration.mirror.ReadOnlyShadowAuthorityKeySetService;
+import com.leanowtech.bloge.gateway.integration.mirror.ReadOnlyShadowAuthorityKeySetTrustPolicyProvider;
 import com.leanowtech.bloge.gateway.integration.mirror.ReadOnlyShadowAuthorityPublicationSource;
 import com.leanowtech.bloge.gateway.integration.mirror.ReadOnlyShadowAuthorityTrustStore;
+import com.leanowtech.bloge.gateway.integration.mirror.ManagedReadOnlyShadowAuthorityTrustStore;
 import com.leanowtech.bloge.gateway.integration.mirror.ReadOnlyShadowBaselineConnector;
 import com.leanowtech.bloge.gateway.integration.mirror.ReadOnlyShadowCandidateConnector;
 import com.leanowtech.bloge.gateway.integration.mirror.ReadOnlyShadowDataPlane;
@@ -1404,6 +1410,71 @@ public class MirrorRuntimeConfiguration {
                 objectMapper);
     }
 
+    /** Creates canonical root-signature verification for managed Shadow authority key sets. */
+    @Bean
+    @ConditionalOnMissingBean
+    public ReadOnlyShadowAuthorityKeySetIntegrity
+    readOnlyShadowAuthorityKeySetIntegrity(
+            ObjectMapper objectMapper) {
+        return new ReadOnlyShadowAuthorityKeySetIntegrity(
+                objectMapper);
+    }
+
+    /** Provides fail-closed bootstrap trust until a security control plane is connected. */
+    @Bean
+    @ConditionalOnMissingBean
+    public ReadOnlyShadowAuthorityKeySetTrustPolicyProvider
+    readOnlyShadowAuthorityKeySetTrustPolicyProvider() {
+        return ReadOnlyShadowAuthorityKeySetTrustPolicyProvider
+                .unavailable();
+    }
+
+    /** Creates the append-only managed authority key-set log and durable revocation cursor. */
+    @Bean
+    @ConditionalOnMissingBean
+    public ReadOnlyShadowAuthorityKeySetRepository
+    readOnlyShadowAuthorityKeySetRepository(
+            JdbcTemplate jdbc,
+            ObjectMapper objectMapper,
+            ReadOnlyShadowAuthorityKeySetIntegrity integrity,
+            PlatformTransactionManager transactionManager) {
+        return new DatabaseReadOnlyShadowAuthorityKeySetRepository(
+                jdbc,
+                objectMapper,
+                integrity,
+                transactionManager);
+    }
+
+    /** Creates the root-trust admission boundary for authority key-set successors. */
+    @Bean
+    @ConditionalOnMissingBean
+    public ReadOnlyShadowAuthorityKeySetService
+    readOnlyShadowAuthorityKeySetService(
+            ReadOnlyShadowAuthorityKeySetRepository repository,
+            ReadOnlyShadowAuthorityKeySetTrustPolicyProvider trustPolicies,
+            ReadOnlyShadowAuthorityKeySetIntegrity integrity) {
+        return new ReadOnlyShadowAuthorityKeySetService(
+                repository,
+                trustPolicies,
+                integrity,
+                Clock.systemUTC());
+    }
+
+    /** Resolves every authority signature from the root-verified database-current key-set head. */
+    @Bean
+    @ConditionalOnMissingBean
+    public ReadOnlyShadowAuthorityTrustStore
+    readOnlyShadowAuthorityTrustStore(
+            ReadOnlyShadowAuthorityKeySetRepository repository,
+            ReadOnlyShadowAuthorityKeySetTrustPolicyProvider trustPolicies,
+            ReadOnlyShadowAuthorityKeySetIntegrity integrity) {
+        return new ManagedReadOnlyShadowAuthorityTrustStore(
+                repository,
+                trustPolicies,
+                integrity,
+                Clock.systemUTC());
+    }
+
     /** Creates the database-authoritative signed Shadow publication log and current-head source. */
     @Bean
     @ConditionalOnMissingBean(
@@ -1422,15 +1493,6 @@ public class MirrorRuntimeConfiguration {
                 trustStore,
                 Clock.systemUTC(),
                 transactionManager);
-    }
-
-    /** Provides fail-closed key trust until a managed rotation and revocation source is installed. */
-    @Bean
-    @ConditionalOnMissingBean
-    public ReadOnlyShadowAuthorityTrustStore
-    readOnlyShadowAuthorityTrustStore() {
-        return ReadOnlyShadowAuthorityTrustStore
-                .unavailable();
     }
 
     /** Verifies the current signed grant and guard-policy heads on every authority observation. */

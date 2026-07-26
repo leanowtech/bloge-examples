@@ -621,10 +621,27 @@ publication type; retired keys accept only signatures created before
 `retiredAt`, and revoked keys accept none. A sampling decision preserves both
 the grant and current guard-policy attestation: an inactive/disabled successor, policy
 successor, key revocation, source outage, expiry, or any exact-ref drift takes
-effect without a long-lived positive cache. The default
-`ReadOnlyShadowAuthorityTrustStore` is unavailable, so this infrastructure does
-not authorize real sampling until an operator supplies a managed current key
-and revocation source. The wire schemas and independent offline verifier are
+effect without a long-lived positive cache.
+
+`resourceGateway.readOnlyShadowAuthorityKeySetPublication.v1` now provides the
+managed trust core behind that lookup. One short-lived stream binds the complete
+enterprise scope, one publication kind, one issuer, a root trust domain, an
+M-of-N threshold, and an accepted policy generation. Its `generation` is the
+durable revocation cursor. Every previous key must remain in later generations;
+key material and validity cannot be rebound, `ACTIVE -> RETIRED/REVOKED` is
+one-way, and `REVOKED` can never reactivate. The database repository commits the
+immutable publication and floor together, including a PostgreSQL-safe genesis
+race retry. `ReadOnlyShadowAuthorityKeySetService` verifies local root policy,
+all supplied root signatures, freshness, and the current floor before append,
+so untrusted content cannot poison the head. The default
+`ManagedReadOnlyShadowAuthorityTrustStore` re-verifies the database-current
+publication on every lookup. Its bootstrap policy provider remains unavailable
+by default, so no real sampling is authorized until the operator connects a
+separately governed root-policy source. The strict key-set schema is packaged by
+`resource-gateway-test-kit`; protected cross-process distribution and an
+independent key-set verifier are the next delivery increment.
+
+The decision-publication wire schemas and independent offline verifier are
 packaged by `resource-gateway-test-kit`.
 
 Submit a request that validates against
