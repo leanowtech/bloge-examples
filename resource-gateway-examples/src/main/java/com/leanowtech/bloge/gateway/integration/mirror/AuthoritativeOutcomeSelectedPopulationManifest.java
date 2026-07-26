@@ -282,6 +282,41 @@ public record AuthoritativeOutcomeSelectedPopulationManifest(
                 MAXIMUM_ATTESTATION_BYTES);
     }
 
+    /**
+     * Calculates a stable connector-ingestion identity before Resource Gateway attestation.
+     *
+     * <p>The material excludes only the Resource Gateway content address, trusted
+     * {@code attestedAt}, and detached seal. A response-loss retry of the same authority closure
+     * therefore resolves to the first signed revision, while any denominator, policy, authority,
+     * chunk, or member-set change conflicts.</p>
+     *
+     * @param mapper canonical protocol mapper
+     * @return domain-separated immutable ingestion fingerprint
+     */
+    public String ingestionMaterialFingerprint(
+            ObjectMapper mapper) {
+        return ProtocolFingerprint.ofBounded(
+                Objects.requireNonNull(mapper, "mapper"),
+                new IngestionMaterial(
+                        "RESOURCE_GATEWAY_AUTHORITATIVE_OUTCOME_SELECTED_POPULATION_INGESTION_V1",
+                        schemaVersion,
+                        populationId,
+                        revision,
+                        scope,
+                        inventoryRef,
+                        cohortRef,
+                        samplingFrameRef,
+                        selectionPolicyRef,
+                        selectionAuthoritySetRef,
+                        selectionAttestationRef,
+                        selectedAt,
+                        strata,
+                        chunks,
+                        totalEligiblePopulation,
+                        totalSelectedPopulation),
+                MAXIMUM_CANONICAL_BYTES);
+    }
+
     /** @return exact selected-population root reference after signing */
     public MirrorArtifactRef artifactRef() {
         if (manifestFingerprint.isBlank()) {
@@ -509,6 +544,26 @@ public record AuthoritativeOutcomeSelectedPopulationManifest(
             Instant selectedAt,
             Instant attestedAt,
             String manifestFingerprint
+    ) {
+    }
+
+    private record IngestionMaterial(
+            String domain,
+            String schemaVersion,
+            String populationId,
+            long revision,
+            CapabilitySnapshot.Scope scope,
+            MirrorArtifactRef inventoryRef,
+            MirrorArtifactRef cohortRef,
+            MirrorArtifactRef samplingFrameRef,
+            MirrorArtifactRef selectionPolicyRef,
+            MirrorArtifactRef selectionAuthoritySetRef,
+            MirrorArtifactRef selectionAttestationRef,
+            Instant selectedAt,
+            List<Stratum> strata,
+            List<ChunkDescriptor> chunks,
+            long totalEligiblePopulation,
+            long totalSelectedPopulation
     ) {
     }
 }

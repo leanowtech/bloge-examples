@@ -230,6 +230,40 @@ class DatabaseAuthoritativeOutcomeSelectedPopulationRepositoryTest {
                 population.manifest().scope(),
                 "assessment-current"))
                 .contains(admitted.assessment());
+        AuthoritativeOutcomeSelectedPopulationAssessmentSourcePage
+                firstPage = repository.assessmentSources(
+                population.manifest().scope(),
+                "assessment-current",
+                1,
+                0,
+                2);
+        AuthoritativeOutcomeSelectedPopulationAssessmentSourcePage
+                secondPage = repository.assessmentSources(
+                population.manifest().scope(),
+                "assessment-current",
+                1,
+                firstPage.nextGlobalOrdinal(),
+                2);
+        firstPage.verify(mapper);
+        secondPage.verify(mapper);
+        assertThat(firstPage.complete()).isFalse();
+        assertThat(firstPage.nextGlobalOrdinal())
+                .isEqualTo(2);
+        assertThat(firstPage.entries())
+                .extracting(
+                        AuthoritativeOutcomeSelectedPopulationAssessmentSourcePage
+                                .Entry::globalOrdinal)
+                .containsExactly(1L, 2L);
+        assertThat(secondPage.complete()).isTrue();
+        assertThat(secondPage.entries())
+                .singleElement()
+                .extracting(
+                        AuthoritativeOutcomeSelectedPopulationAssessmentSourcePage
+                                .Entry::sourceKind)
+                .isEqualTo(
+                        AuthoritativeOutcomeSelectedPopulationAssessmentSourcePage
+                                .SourceKind
+                                .LEGAL_DISPOSITION);
     }
 
     @Test
@@ -449,6 +483,44 @@ class DatabaseAuthoritativeOutcomeSelectedPopulationRepositoryTest {
                 () -> repository.findLatestAssessment(
                         population.manifest().scope(),
                         "assessment-tampered"),
+                AuthoritativeOutcomeSelectedPopulationRepository
+                        .Reason.STORED_STATE_CORRUPT);
+    }
+
+    @Test
+    void failsClosedWhenHistoricalAssessmentSourceReferenceIsTampered() {
+        registerPopulation();
+        appendObservation(
+                0,
+                "observation-member-1",
+                AuthoritativeOutcomeObservation
+                        .Reconciliation.MATCH);
+        new AuthoritativeOutcomeSelectedPopulationService(
+                repository,
+                populationIntegrity,
+                dispositionIntegrity,
+                projector).assess(
+                population.manifest().scope(),
+                population.manifest().populationId(),
+                1,
+                "assessment-source-tampered",
+                1,
+                "");
+        jdbc.update("""
+                UPDATE mirror_outcome_population_assessment_sources
+                SET source_fingerprint = ?
+                WHERE assessment_id = 'assessment-source-tampered'
+                """,
+                AuthoritativeOutcomeSelectedPopulationTestFixtures
+                        .fingerprint('f'));
+
+        assertReason(
+                () -> repository.assessmentSources(
+                        population.manifest().scope(),
+                        "assessment-source-tampered",
+                        1,
+                        0,
+                        100),
                 AuthoritativeOutcomeSelectedPopulationRepository
                         .Reason.STORED_STATE_CORRUPT);
     }

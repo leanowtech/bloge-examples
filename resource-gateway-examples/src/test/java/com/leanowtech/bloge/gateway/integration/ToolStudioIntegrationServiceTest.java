@@ -1105,6 +1105,73 @@ class ToolStudioIntegrationServiceTest {
     }
 
     @Test
+    void capabilitiesAdvertiseCompleteSelectedPopulationProtocolAndDynamicReadiness() {
+        AtomicBoolean authoritiesReady =
+                new AtomicBoolean(true);
+        ToolStudioIntegrationService service =
+                service(null, null, null, null);
+        service.configureAuthoritativeOutcomeSelectedPopulationRuntime(
+                new
+                        AuthoritativeOutcomeSelectedPopulationRuntimeAvailability(
+                        true,
+                        true,
+                        true,
+                        authoritiesReady::get));
+
+        IntegrationCapabilities ready =
+                service.capabilities().payload();
+
+        assertThat(ready.features())
+                .containsEntry(
+                        "mirrorAuthoritativeOutcomeSelectedPopulationApi",
+                        true)
+                .containsEntry(
+                        "mirrorAuthoritativeOutcomeSelectedPopulationDurable",
+                        true)
+                .containsEntry(
+                        "mirrorAuthoritativeOutcomeSelectedPopulationSourceClosure",
+                        true)
+                .containsEntry(
+                        "mirrorAuthoritativeOutcomeSelectedPopulationReady",
+                        true);
+        assertThat(ready.supportedObjects())
+                .containsKeys(
+                        "authoritativeOutcomeSelectedPopulationAdmissionRequest",
+                        "authoritativeOutcomeSelectedPopulationAdmission",
+                        "authoritativeOutcomeSelectedPopulationManifest",
+                        "authoritativeOutcomeSelectedPopulationChunk",
+                        "authoritativeOutcomeSelectedPopulationBundle",
+                        "authoritativeOutcomeSelectedPopulationDispositionAdmissionRequest",
+                        "authoritativeOutcomeSelectedPopulationDispositionAdmission",
+                        "authoritativeOutcomeSelectedPopulationDisposition",
+                        "authoritativeOutcomeSelectedPopulationAssessmentRequest",
+                        "authoritativeOutcomeSelectedPopulationAssessmentAdmission",
+                        "authoritativeOutcomeSelectedPopulationAssessment",
+                        "authoritativeOutcomeSelectedPopulationAssessmentSourcePage");
+        assertThat(ready.endpoints())
+                .extracting(
+                        IntegrationCapabilities.Endpoint::method,
+                        IntegrationCapabilities.Endpoint::path)
+                .contains(
+                        org.assertj.core.groups.Tuple.tuple(
+                                "POST",
+                                "/api/mirror/outcome-selected-populations"),
+                        org.assertj.core.groups.Tuple.tuple(
+                                "GET",
+                                "/api/mirror/outcome-selected-populations/{populationId}/assessments/{assessmentId}/revisions/{revision}/sources"));
+
+        authoritiesReady.set(false);
+        assertThat(service.capabilities()
+                .payload().features())
+                .containsEntry(
+                        "mirrorAuthoritativeOutcomeSelectedPopulationApi",
+                        true)
+                .containsEntry(
+                        "mirrorAuthoritativeOutcomeSelectedPopulationReady",
+                        false);
+    }
+
+    @Test
     void capabilitiesRecheckDynamicMirrorServingWithoutProducingMixedResponses() {
         ToolStudioIntegrationService service = service(null, null, null, null);
         java.util.concurrent.atomic.AtomicBoolean ready =

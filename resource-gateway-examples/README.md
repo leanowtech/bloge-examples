@@ -1235,6 +1235,103 @@ the server model and standalone Test Kit to catch canonical JSON, reconciliation
 signature-domain, signed-attestation-time, and trusted-time drift. Its permissive authority callback is
 strictly a wire-compatibility stub, not business evidence.
 
+#### Selected-population completeness
+
+The outcome inbox proves every submitted result, but it cannot detect a producer
+that omits selected members. The selected-population product freezes that
+denominator under an independent selection authority, preserves legal deletion
+inside the denominator, and signs a coherent assessment over current outcome
+and disposition heads.
+
+Spring assembles this surface only in `test` or `staging` when Mirror is enabled
+and all three independent external trust boundaries exist:
+
+```java
+@Bean
+AuthoritativeOutcomeSelectedPopulationAuthorityVerifier selectionAuthority(
+        CustomerSelectionLedger ledger) {
+    return new AuthoritativeOutcomeSelectedPopulationAuthorityVerifier() {
+        public boolean available() {
+            return ledger.ready();
+        }
+
+        public void verify(
+                AuthoritativeOutcomeSelectedPopulationManifest manifest,
+                List<AuthoritativeOutcomeSelectedPopulationChunk> chunks) {
+            ledger.verifyExactSelection(manifest, chunks);
+        }
+    };
+}
+
+@Bean
+AuthoritativeOutcomeSelectedPopulationDispositionAuthorityVerifier deletionAuthority(
+        CustomerDeletionLedger ledger) {
+    return new AuthoritativeOutcomeSelectedPopulationDispositionAuthorityVerifier() {
+        public boolean available() {
+            return ledger.ready();
+        }
+
+        public void verify(
+                AuthoritativeOutcomeSelectedPopulationDisposition disposition) {
+            ledger.verifyExactApproval(disposition);
+        }
+    };
+}
+```
+
+The existing `AuthoritativeOutcomeAuthorityVerifier` remains the third,
+business-outcome authority. Resource Gateway signing is a fourth trust boundary;
+it never substitutes for any customer authority.
+
+| Operation | Route | Purpose / default group |
+|---|---|---|
+| Submit population | `POST /api/mirror/outcome-selected-populations` | `MIRROR_OUTCOME_SELECTION` / `RESOURCE_GATEWAY_OUTCOME_SELECTION_AUTHORITY` |
+| Submit legal disposition | `POST .../{populationId}/dispositions` | `MIRROR_OUTCOME_DISPOSITION` / `RESOURCE_GATEWAY_OUTCOME_DELETION_AUTHORITY` |
+| Project assessment | `POST .../{populationId}/assessments` | `MIRROR_FIDELITY_GOVERNANCE` / `RESOURCE_GATEWAY_FIDELITY_PROJECTOR` |
+| Read exact/current facts and source pages | population, disposition, assessment and `/sources` GET routes | `GOVERNANCE_EVIDENCE_INGESTION` or another admitted read purpose |
+
+Writes authenticate before strict decoding. Scope comes only from the workload
+identity. Unsigned commands are independently verified, content-addressed and
+signed by the server. An exact retry, including the race where another replica
+commits after the first recovery lookup, returns the original fact with
+`idempotentReplay=true`; changed unsigned material fails closed.
+
+Assessment uses a two-phase database cut. The first short transaction freezes
+member-ordered observation/disposition fingerprints, external authorities are
+called outside the transaction, and commit rechecks the cut under the shared
+partition lock. Historical source rows are committed with the assessment and
+are read with a bounded content-addressed cursor; current heads are never used
+to fill holes in old evidence.
+
+The capability probe reports four separate facts:
+
+- `mirrorAuthoritativeOutcomeSelectedPopulationApi`
+- `mirrorAuthoritativeOutcomeSelectedPopulationDurable`
+- `mirrorAuthoritativeOutcomeSelectedPopulationSourceClosure`
+- `mirrorAuthoritativeOutcomeSelectedPopulationReady`
+
+The final fact is true only while the API, durable registry, source closure,
+selection authority, outcome authority, deletion authority and signer are all
+usable. The normal demo scripts intentionally do not install fake customer
+authorities, so the product remains absent:
+
+```bash
+./scripts/start-visual-canvas-demo.sh --profile test
+curl -fsS http://localhost:8080/api/integration/capabilities | jq \
+  '.payload.features
+   | with_entries(select(.key | startswith(
+       "mirrorAuthoritativeOutcomeSelectedPopulation")))'
+./scripts/stop-visual-canvas-demo.sh
+```
+
+Install the three host-owned authority beans in a staging deployment, then use
+the same scripts (or the packaged Boot JAR) to start and stop it. Do not add a
+permissive authority merely to make readiness green. The current complete
+population command is bounded to 64 MiB; large customer populations still need
+the planned staged chunk upload/finalize protocol. Twelve strict Schemas and
+the standalone Test Kit client/verifier are described in the
+[Test Kit guide](../resource-gateway-test-kit/README.md#verify-selected-population-completeness).
+
 ### Stateful mirror Session data plane and DAG reads
 
 The Stage 3 vertical freezes `StateModel`, `StateReadSpec`, `WriteEffectSpec`,

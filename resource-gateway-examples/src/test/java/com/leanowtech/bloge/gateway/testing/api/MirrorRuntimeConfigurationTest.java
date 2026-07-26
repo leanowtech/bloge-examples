@@ -7,6 +7,9 @@ import com.leanowtech.bloge.gateway.expression.BlgeExpressionEvaluator;
 import com.leanowtech.bloge.gateway.exception.ResourceNotFoundException;
 import com.leanowtech.bloge.gateway.integration.AuthoritativeOutcomeInboxController;
 import com.leanowtech.bloge.gateway.integration.AuthoritativeOutcomeObservationRequestDecoder;
+import com.leanowtech.bloge.gateway.integration.AuthoritativeOutcomeSelectedPopulationController;
+import com.leanowtech.bloge.gateway.integration.AuthoritativeOutcomeSelectedPopulationRequestDecoder;
+import com.leanowtech.bloge.gateway.integration.AuthoritativeOutcomeSelectedPopulationRuntimeAvailability;
 import com.leanowtech.bloge.gateway.integration.IntegrationRequestAuthenticator;
 import com.leanowtech.bloge.gateway.integration.mirror.MirrorEvidenceIntegrityService;
 import com.leanowtech.bloge.gateway.integration.mirror.MirrorEvidenceRepository;
@@ -20,6 +23,10 @@ import com.leanowtech.bloge.gateway.integration.mirror.MirrorRunRequestRepositor
 import com.leanowtech.bloge.gateway.integration.mirror.CompiledScenarioRehearsalPlanRepository;
 import com.leanowtech.bloge.gateway.integration.mirror.ComposedReadOnlyShadowAccessAuthority;
 import com.leanowtech.bloge.gateway.integration.mirror.AuthoritativeOutcomeAuthorityVerifier;
+import com.leanowtech.bloge.gateway.integration.mirror.AuthoritativeOutcomeSelectedPopulationApplicationService;
+import com.leanowtech.bloge.gateway.integration.mirror.AuthoritativeOutcomeSelectedPopulationAuthorityVerifier;
+import com.leanowtech.bloge.gateway.integration.mirror.AuthoritativeOutcomeSelectedPopulationDispositionAuthorityVerifier;
+import com.leanowtech.bloge.gateway.integration.mirror.AuthoritativeOutcomeSelectedPopulationRepository;
 import com.leanowtech.bloge.gateway.integration.mirror.AuthoritativeOutcomeConnector;
 import com.leanowtech.bloge.gateway.integration.mirror.AuthoritativeOutcomeDomainFidelitySource;
 import com.leanowtech.bloge.gateway.integration.mirror.AuthoritativeOutcomeInboxAccessPolicy;
@@ -311,6 +318,67 @@ class MirrorRuntimeConfigurationTest {
             assertThat(scheduled.getBean(
                     AuthoritativeOutcomeRuntimeAvailability.class)
                     .continuousReady()).isTrue();
+        }
+    }
+
+    @Test
+    void selectedPopulationProductRequiresAllThreeExternalAuthorities() {
+        Map<String, Object> observationOnly = Map.of(
+                "gateway.testing.mirror.enabled", true,
+                "test.available-signer", true,
+                "test.outcome-authority", true);
+        Map<String, Object> missingDeletion = Map.of(
+                "gateway.testing.mirror.enabled", true,
+                "test.available-signer", true,
+                "test.outcome-authority", true,
+                "test.population-authority", true);
+        Map<String, Object> complete = Map.of(
+                "gateway.testing.mirror.enabled", true,
+                "test.available-signer", true,
+                "test.outcome-authority", true,
+                "test.population-authority", true,
+                "test.disposition-authority", true);
+
+        try (var absent = context(
+                observationOnly, "staging");
+             var partial = context(
+                     missingDeletion, "staging");
+             var assembled = context(
+                     complete, "staging")) {
+            assertThat(absent.getBeansOfType(
+                    AuthoritativeOutcomeSelectedPopulationRepository
+                            .class)).isEmpty();
+            assertThat(partial.getBeansOfType(
+                    AuthoritativeOutcomeSelectedPopulationApplicationService
+                            .class)).isEmpty();
+            assertThat(partial.getBeansOfType(
+                    AuthoritativeOutcomeSelectedPopulationController
+                            .class)).isEmpty();
+            assertThat(partial.getBeansOfType(
+                    AuthoritativeOutcomeSelectedPopulationRuntimeAvailability
+                            .class)).isEmpty();
+
+            assertThat(assembled.getBeansOfType(
+                    AuthoritativeOutcomeSelectedPopulationRepository
+                            .class)).hasSize(1);
+            assertThat(assembled.getBeansOfType(
+                    AuthoritativeOutcomeSelectedPopulationApplicationService
+                            .class)).hasSize(1);
+            assertThat(assembled.getBeansOfType(
+                    AuthoritativeOutcomeSelectedPopulationController
+                            .class)).hasSize(1);
+            assertThat(assembled.getBean(
+                    AuthoritativeOutcomeSelectedPopulationRuntimeAvailability
+                            .class))
+                    .satisfies(availability -> {
+                        assertThat(availability.api()).isTrue();
+                        assertThat(availability.durableRegistry())
+                                .isTrue();
+                        assertThat(availability.sourceClosure())
+                                .isTrue();
+                        assertThat(availability.continuousReady())
+                                .isTrue();
+                    });
         }
     }
 
@@ -704,6 +772,51 @@ class MirrorRuntimeConfigurationTest {
                     });
         }
         if (Boolean.TRUE.equals(
+                properties.get(
+                        "test.population-authority"))) {
+            context.registerBean(
+                    AuthoritativeOutcomeSelectedPopulationAuthorityVerifier
+                            .class,
+                    () -> new
+                            AuthoritativeOutcomeSelectedPopulationAuthorityVerifier() {
+                        @Override
+                        public boolean available() {
+                            return true;
+                        }
+
+                        @Override
+                        public void verify(
+                                com.leanowtech.bloge.gateway.integration.mirror
+                                        .AuthoritativeOutcomeSelectedPopulationManifest
+                                        manifest,
+                                List<com.leanowtech.bloge.gateway.integration.mirror
+                                        .AuthoritativeOutcomeSelectedPopulationChunk>
+                                        chunks) {
+                        }
+                    });
+        }
+        if (Boolean.TRUE.equals(
+                properties.get(
+                        "test.disposition-authority"))) {
+            context.registerBean(
+                    AuthoritativeOutcomeSelectedPopulationDispositionAuthorityVerifier
+                            .class,
+                    () -> new
+                            AuthoritativeOutcomeSelectedPopulationDispositionAuthorityVerifier() {
+                        @Override
+                        public boolean available() {
+                            return true;
+                        }
+
+                        @Override
+                        public void verify(
+                                com.leanowtech.bloge.gateway.integration.mirror
+                                        .AuthoritativeOutcomeSelectedPopulationDisposition
+                                        disposition) {
+                        }
+                    });
+        }
+        if (Boolean.TRUE.equals(
                 properties.get("test.outcome-connector"))) {
             context.registerBean(
                     AuthoritativeOutcomeConnector.class,
@@ -788,6 +901,12 @@ class MirrorRuntimeConfigurationTest {
                 AuthoritativeOutcomeObservationRequestDecoder.class);
         context.register(
                 AuthoritativeOutcomeInboxController.class);
+        context.register(
+                AuthoritativeOutcomeSelectedPopulationRequestDecoder
+                        .class);
+        context.register(
+                AuthoritativeOutcomeSelectedPopulationController
+                        .class);
         context.refresh();
         return context;
     }

@@ -89,6 +89,15 @@ import com.leanowtech.bloge.gateway.integration.mirror.AuthoritativeOutcomeObser
 import com.leanowtech.bloge.gateway.integration.mirror.AuthoritativeOutcomeReconciliationScheduler;
 import com.leanowtech.bloge.gateway.integration.mirror.AuthoritativeOutcomeReconciliationWorker;
 import com.leanowtech.bloge.gateway.integration.mirror.DatabaseAuthoritativeOutcomeInboxRepository;
+import com.leanowtech.bloge.gateway.integration.mirror.AuthoritativeOutcomeSelectedPopulationAccessPolicy;
+import com.leanowtech.bloge.gateway.integration.mirror.AuthoritativeOutcomeSelectedPopulationApplicationService;
+import com.leanowtech.bloge.gateway.integration.mirror.AuthoritativeOutcomeSelectedPopulationAuthorityVerifier;
+import com.leanowtech.bloge.gateway.integration.mirror.AuthoritativeOutcomeSelectedPopulationCompletenessProjector;
+import com.leanowtech.bloge.gateway.integration.mirror.AuthoritativeOutcomeSelectedPopulationDispositionAuthorityVerifier;
+import com.leanowtech.bloge.gateway.integration.mirror.AuthoritativeOutcomeSelectedPopulationDispositionIntegrity;
+import com.leanowtech.bloge.gateway.integration.mirror.AuthoritativeOutcomeSelectedPopulationIntegrity;
+import com.leanowtech.bloge.gateway.integration.mirror.AuthoritativeOutcomeSelectedPopulationRepository;
+import com.leanowtech.bloge.gateway.integration.mirror.DatabaseAuthoritativeOutcomeSelectedPopulationRepository;
 import com.leanowtech.bloge.gateway.integration.mirror.DomainFidelityProfileIntegrity;
 import com.leanowtech.bloge.gateway.integration.mirror.DomainFidelityRepository;
 import com.leanowtech.bloge.gateway.integration.mirror.DomainFidelityService;
@@ -185,6 +194,7 @@ import com.leanowtech.bloge.gateway.integration.mirror.MirrorServingGenerationTe
 import com.leanowtech.bloge.gateway.integration.mirror.MirrorServingGenerationTrustProvider;
 import com.leanowtech.bloge.gateway.integration.MirrorRuntimeAvailability;
 import com.leanowtech.bloge.gateway.integration.AuthoritativeOutcomeRuntimeAvailability;
+import com.leanowtech.bloge.gateway.integration.AuthoritativeOutcomeSelectedPopulationRuntimeAvailability;
 import com.leanowtech.bloge.gateway.integration.DomainFidelityRuntimeAvailability;
 import com.leanowtech.bloge.gateway.integration.OnlineReadOnlyShadowBaselineRuntimeAvailability;
 import com.leanowtech.bloge.gateway.integration.OnlineReadOnlyShadowDataPlaneRuntimeAvailability;
@@ -2335,6 +2345,165 @@ public class MirrorRuntimeConfiguration {
                             scheduler.getIfAvailable();
                     return current != null && current.ready();
                 });
+    }
+
+    /** Creates the independent selection-authority and RG signing boundary when supplied. */
+    @Bean
+    @ConditionalOnMissingBean
+    @ConditionalOnBean(
+            AuthoritativeOutcomeSelectedPopulationAuthorityVerifier
+                    .class)
+    public AuthoritativeOutcomeSelectedPopulationIntegrity
+    authoritativeOutcomeSelectedPopulationIntegrity(
+            ObjectMapper objectMapper,
+            VisualEvidenceSigner signer,
+            AuthoritativeOutcomeSelectedPopulationAuthorityVerifier
+                    authorityVerifier) {
+        return new
+                AuthoritativeOutcomeSelectedPopulationIntegrity(
+                objectMapper,
+                signer,
+                authorityVerifier);
+    }
+
+    /** Creates the independent legal-deletion authority and RG signing boundary when supplied. */
+    @Bean
+    @ConditionalOnMissingBean
+    @ConditionalOnBean(
+            AuthoritativeOutcomeSelectedPopulationDispositionAuthorityVerifier
+                    .class)
+    public AuthoritativeOutcomeSelectedPopulationDispositionIntegrity
+    authoritativeOutcomeSelectedPopulationDispositionIntegrity(
+            ObjectMapper objectMapper,
+            VisualEvidenceSigner signer,
+            AuthoritativeOutcomeSelectedPopulationDispositionAuthorityVerifier
+                    authorityVerifier) {
+        return new
+                AuthoritativeOutcomeSelectedPopulationDispositionIntegrity(
+                objectMapper,
+                signer,
+                authorityVerifier);
+    }
+
+    /** Creates the three-authority denominator-preserving completeness projector. */
+    @Bean
+    @ConditionalOnMissingBean
+    @ConditionalOnBean({
+            AuthoritativeOutcomeSelectedPopulationIntegrity.class,
+            AuthoritativeOutcomeObservationIntegrity.class,
+            AuthoritativeOutcomeSelectedPopulationDispositionIntegrity
+                    .class
+    })
+    public AuthoritativeOutcomeSelectedPopulationCompletenessProjector
+    authoritativeOutcomeSelectedPopulationCompletenessProjector(
+            ObjectMapper objectMapper,
+            AuthoritativeOutcomeSelectedPopulationIntegrity
+                    populationIntegrity,
+            AuthoritativeOutcomeObservationIntegrity
+                    observationIntegrity,
+            AuthoritativeOutcomeSelectedPopulationDispositionIntegrity
+                    dispositionIntegrity,
+            VisualEvidenceSigner signer) {
+        return new
+                AuthoritativeOutcomeSelectedPopulationCompletenessProjector(
+                objectMapper,
+                populationIntegrity,
+                observationIntegrity,
+                dispositionIntegrity,
+                signer);
+    }
+
+    /** Freezes the three independent workload roles allowed to mutate completeness evidence. */
+    @Bean
+    @ConditionalOnMissingBean
+    @ConditionalOnBean(
+            AuthoritativeOutcomeSelectedPopulationCompletenessProjector
+                    .class)
+    public AuthoritativeOutcomeSelectedPopulationAccessPolicy
+    authoritativeOutcomeSelectedPopulationAccessPolicy() {
+        return AuthoritativeOutcomeSelectedPopulationAccessPolicy
+                .defaults();
+    }
+
+    /** Creates append-only population, disposition, assessment, and source-closure storage. */
+    @Bean
+    @ConditionalOnMissingBean
+    @ConditionalOnBean(
+            AuthoritativeOutcomeSelectedPopulationCompletenessProjector
+                    .class)
+    public AuthoritativeOutcomeSelectedPopulationRepository
+    authoritativeOutcomeSelectedPopulationRepository(
+            JdbcTemplate jdbc,
+            ObjectMapper objectMapper,
+            AuthoritativeOutcomeSelectedPopulationIntegrity
+                    populationIntegrity,
+            AuthoritativeOutcomeObservationIntegrity
+                    observationIntegrity,
+            AuthoritativeOutcomeSelectedPopulationDispositionIntegrity
+                    dispositionIntegrity,
+            AuthoritativeOutcomeSelectedPopulationCompletenessProjector
+                    projector,
+            PlatformTransactionManager transactionManager) {
+        return new
+                DatabaseAuthoritativeOutcomeSelectedPopulationRepository(
+                jdbc,
+                objectMapper,
+                populationIntegrity,
+                observationIntegrity,
+                dispositionIntegrity,
+                projector,
+                transactionManager);
+    }
+
+    /** Creates the audited exact-scope selected-population product boundary. */
+    @Bean
+    @ConditionalOnMissingBean
+    @ConditionalOnBean(
+            AuthoritativeOutcomeSelectedPopulationRepository
+                    .class)
+    public AuthoritativeOutcomeSelectedPopulationApplicationService
+    authoritativeOutcomeSelectedPopulationApplicationService(
+            AuthoritativeOutcomeSelectedPopulationRepository
+                    repository,
+            AuthoritativeOutcomeSelectedPopulationIntegrity
+                    populationIntegrity,
+            AuthoritativeOutcomeSelectedPopulationDispositionIntegrity
+                    dispositionIntegrity,
+            AuthoritativeOutcomeSelectedPopulationCompletenessProjector
+                    projector,
+            AuthoritativeOutcomeSelectedPopulationAccessPolicy
+                    accessPolicy,
+            ObjectMapper objectMapper,
+            MirrorOperationObservability observability,
+            PlatformTransactionManager transactionManager) {
+        return new
+                AuthoritativeOutcomeSelectedPopulationApplicationService(
+                repository,
+                populationIntegrity,
+                dispositionIntegrity,
+                projector,
+                accessPolicy,
+                objectMapper,
+                observability,
+                transactionManager);
+    }
+
+    /** Publishes separate route, storage, source-closure, and authority readiness facts. */
+    @Bean
+    @ConditionalOnMissingBean
+    @ConditionalOnBean(
+            AuthoritativeOutcomeSelectedPopulationApplicationService
+                    .class)
+    public AuthoritativeOutcomeSelectedPopulationRuntimeAvailability
+    authoritativeOutcomeSelectedPopulationRuntimeAvailability(
+            AuthoritativeOutcomeSelectedPopulationApplicationService
+                    service) {
+        return new
+                AuthoritativeOutcomeSelectedPopulationRuntimeAvailability(
+                true,
+                true,
+                true,
+                service::available);
     }
 
     /** Creates the authoritative outcome Fidelity adapter only after its trust boundary exists. */

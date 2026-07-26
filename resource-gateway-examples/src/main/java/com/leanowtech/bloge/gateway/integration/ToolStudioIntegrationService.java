@@ -98,6 +98,14 @@ public class ToolStudioIntegrationService {
                     () -> false,
                     () -> false,
                     () -> false);
+    private AuthoritativeOutcomeSelectedPopulationRuntimeAvailability
+            authoritativeOutcomeSelectedPopulationRuntimeAvailability =
+            new
+                    AuthoritativeOutcomeSelectedPopulationRuntimeAvailability(
+                    false,
+                    false,
+                    false,
+                    () -> false);
     private ReadOnlyShadowRuntimeAvailability
             readOnlyShadowRuntimeAvailability =
             new ReadOnlyShadowRuntimeAvailability(
@@ -243,6 +251,22 @@ public class ToolStudioIntegrationService {
                         false,
                         () -> false,
                         () -> false,
+                        () -> false)
+                        : availability;
+    }
+
+    /** Receives the marker only when protected selected-population routes are assembled. */
+    @Autowired(required = false)
+    void configureAuthoritativeOutcomeSelectedPopulationRuntime(
+            AuthoritativeOutcomeSelectedPopulationRuntimeAvailability
+                    availability) {
+        this.authoritativeOutcomeSelectedPopulationRuntimeAvailability =
+                availability == null
+                        ? new
+                        AuthoritativeOutcomeSelectedPopulationRuntimeAvailability(
+                        false,
+                        false,
+                        false,
                         () -> false)
                         : availability;
     }
@@ -715,6 +739,22 @@ public class ToolStudioIntegrationService {
         features.put(
                 "mirrorAuthoritativeOutcomeContinuousReady",
                 authoritativeOutcomeRuntimeAvailability
+                        .continuousReady());
+        features.put(
+                "mirrorAuthoritativeOutcomeSelectedPopulationApi",
+                authoritativeOutcomeSelectedPopulationRuntimeAvailability
+                        .api());
+        features.put(
+                "mirrorAuthoritativeOutcomeSelectedPopulationDurable",
+                authoritativeOutcomeSelectedPopulationRuntimeAvailability
+                        .durableRegistry());
+        features.put(
+                "mirrorAuthoritativeOutcomeSelectedPopulationSourceClosure",
+                authoritativeOutcomeSelectedPopulationRuntimeAvailability
+                        .sourceClosure());
+        features.put(
+                "mirrorAuthoritativeOutcomeSelectedPopulationReady",
+                authoritativeOutcomeSelectedPopulationRuntimeAvailability
                         .continuousReady());
         features.put(
                 "mirrorReadOnlyShadowJobApi",
@@ -1229,6 +1269,81 @@ public class ToolStudioIntegrationService {
                                     .AuthoritativeOutcomeInboxLifecyclePage
                                     .SCHEMA_VERSION));
         }
+        if (authoritativeOutcomeSelectedPopulationRuntimeAvailability
+                .api()) {
+            supportedObjects.put(
+                    "authoritativeOutcomeSelectedPopulationAdmissionRequest",
+                    List.of(
+                            com.leanowtech.bloge.gateway.integration.mirror
+                                    .AuthoritativeOutcomeSelectedPopulationAdmissionRequest
+                                    .SCHEMA_VERSION));
+            supportedObjects.put(
+                    "authoritativeOutcomeSelectedPopulationAdmission",
+                    List.of(
+                            com.leanowtech.bloge.gateway.integration.mirror
+                                    .AuthoritativeOutcomeSelectedPopulationAdmission
+                                    .SCHEMA_VERSION));
+            supportedObjects.put(
+                    "authoritativeOutcomeSelectedPopulationManifest",
+                    List.of(
+                            com.leanowtech.bloge.gateway.integration.mirror
+                                    .AuthoritativeOutcomeSelectedPopulationManifest
+                                    .SCHEMA_VERSION));
+            supportedObjects.put(
+                    "authoritativeOutcomeSelectedPopulationChunk",
+                    List.of(
+                            com.leanowtech.bloge.gateway.integration.mirror
+                                    .AuthoritativeOutcomeSelectedPopulationChunk
+                                    .SCHEMA_VERSION));
+            supportedObjects.put(
+                    "authoritativeOutcomeSelectedPopulationBundle",
+                    List.of(
+                            com.leanowtech.bloge.gateway.integration.mirror
+                                    .AuthoritativeOutcomeSelectedPopulationBundle
+                                    .SCHEMA_VERSION));
+            supportedObjects.put(
+                    "authoritativeOutcomeSelectedPopulationDisposition",
+                    List.of(
+                            com.leanowtech.bloge.gateway.integration.mirror
+                                    .AuthoritativeOutcomeSelectedPopulationDisposition
+                                    .SCHEMA_VERSION));
+            supportedObjects.put(
+                    "authoritativeOutcomeSelectedPopulationDispositionAdmissionRequest",
+                    List.of(
+                            com.leanowtech.bloge.gateway.integration.mirror
+                                    .AuthoritativeOutcomeSelectedPopulationDispositionAdmissionRequest
+                                    .SCHEMA_VERSION));
+            supportedObjects.put(
+                    "authoritativeOutcomeSelectedPopulationDispositionAdmission",
+                    List.of(
+                            com.leanowtech.bloge.gateway.integration.mirror
+                                    .AuthoritativeOutcomeSelectedPopulationDispositionAdmission
+                                    .SCHEMA_VERSION));
+            supportedObjects.put(
+                    "authoritativeOutcomeSelectedPopulationAssessmentRequest",
+                    List.of(
+                            com.leanowtech.bloge.gateway.integration.mirror
+                                    .AuthoritativeOutcomeSelectedPopulationAssessmentRequest
+                                    .SCHEMA_VERSION));
+            supportedObjects.put(
+                    "authoritativeOutcomeSelectedPopulationAssessment",
+                    List.of(
+                            com.leanowtech.bloge.gateway.integration.mirror
+                                    .AuthoritativeOutcomeSelectedPopulationCompletenessAssessment
+                                    .SCHEMA_VERSION));
+            supportedObjects.put(
+                    "authoritativeOutcomeSelectedPopulationAssessmentAdmission",
+                    List.of(
+                            com.leanowtech.bloge.gateway.integration.mirror
+                                    .AuthoritativeOutcomeSelectedPopulationAssessmentAdmission
+                                    .SCHEMA_VERSION));
+            supportedObjects.put(
+                    "authoritativeOutcomeSelectedPopulationAssessmentSourcePage",
+                    List.of(
+                            com.leanowtech.bloge.gateway.integration.mirror
+                                    .AuthoritativeOutcomeSelectedPopulationAssessmentSourcePage
+                                    .SCHEMA_VERSION));
+        }
         if (domainFidelityRuntimeAvailability.profileReadApi()
                 || readOnlyShadowRuntimeAvailability.jobApi()) {
             supportedObjects.put(
@@ -1683,6 +1798,33 @@ public class ToolStudioIntegrationService {
             endpoints.add(new IntegrationCapabilities.Endpoint(
                     "GET",
                     "/api/mirror/outcome-observations/{observationId}/lifecycle"));
+        }
+        if (authoritativeOutcomeSelectedPopulationRuntimeAvailability
+                .api()) {
+            endpoints.add(new IntegrationCapabilities.Endpoint(
+                    "POST",
+                    "/api/mirror/outcome-selected-populations"));
+            endpoints.add(new IntegrationCapabilities.Endpoint(
+                    "GET",
+                    "/api/mirror/outcome-selected-populations/{populationId}/revisions/{revision}"));
+            endpoints.add(new IntegrationCapabilities.Endpoint(
+                    "GET",
+                    "/api/mirror/outcome-selected-populations/{populationId}/latest"));
+            endpoints.add(new IntegrationCapabilities.Endpoint(
+                    "POST",
+                    "/api/mirror/outcome-selected-populations/{populationId}/dispositions"));
+            endpoints.add(new IntegrationCapabilities.Endpoint(
+                    "GET",
+                    "/api/mirror/outcome-selected-populations/{populationId}/dispositions/{dispositionId}/revisions/{revision}"));
+            endpoints.add(new IntegrationCapabilities.Endpoint(
+                    "POST",
+                    "/api/mirror/outcome-selected-populations/{populationId}/assessments"));
+            endpoints.add(new IntegrationCapabilities.Endpoint(
+                    "GET",
+                    "/api/mirror/outcome-selected-populations/{populationId}/assessments/{assessmentId}/revisions/{revision}"));
+            endpoints.add(new IntegrationCapabilities.Endpoint(
+                    "GET",
+                    "/api/mirror/outcome-selected-populations/{populationId}/assessments/{assessmentId}/revisions/{revision}/sources"));
         }
         if (readOnlyShadowRuntimeAvailability.jobApi()) {
             endpoints.add(new IntegrationCapabilities.Endpoint(

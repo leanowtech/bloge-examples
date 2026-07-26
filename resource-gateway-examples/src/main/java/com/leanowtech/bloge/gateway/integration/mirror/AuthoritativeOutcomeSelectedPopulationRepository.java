@@ -212,6 +212,17 @@ public interface AuthoritativeOutcomeSelectedPopulationRepository {
             String dispositionId);
 
     /**
+     * Recovers one exact disposition admission after a lost response.
+     *
+     * @return empty when the revision was never committed
+     */
+    Optional<DispositionAdmission> recoverDisposition(
+            CapabilitySnapshot.Scope scope,
+            String dispositionId,
+            long revision,
+            String expectedPredecessorFingerprint);
+
+    /**
      * Freezes matching current outcome and disposition heads under the shared database lock.
      */
     AssessmentCut prepareAssessment(
@@ -245,11 +256,41 @@ public interface AuthoritativeOutcomeSelectedPopulationRepository {
             CapabilitySnapshot.Scope scope,
             String assessmentId);
 
+    /**
+     * Recovers one exact assessment admission after a lost response.
+     *
+     * @return empty when the revision was never committed
+     */
+    Optional<AssessmentAdmission> recoverAssessment(
+            CapabilitySnapshot.Scope scope,
+            String assessmentId,
+            long revision,
+            String expectedPredecessorFingerprint);
+
+    /**
+     * Reads one content-addressed suffix of the exact historical assessment source closure.
+     *
+     * @param scope authenticated enterprise namespace
+     * @param assessmentId stable assessment identity
+     * @param revision exact immutable assessment revision
+     * @param afterGlobalOrdinal exclusive selected-member cursor
+     * @param limit bounded page size
+     * @return member-ordered source page bound to the signed assessment
+     */
+    AuthoritativeOutcomeSelectedPopulationAssessmentSourcePage
+    assessmentSources(
+            CapabilitySnapshot.Scope scope,
+            String assessmentId,
+            long revision,
+            long afterGlobalOrdinal,
+            int limit);
+
     /** Closed payload-free durable-registry rejection vocabulary. */
     enum Reason {
         LINEAGE_CONFLICT,
         CONTENT_CONFLICT,
         POPULATION_NOT_FOUND,
+        ASSESSMENT_NOT_FOUND,
         MEMBER_CONFLICT,
         SOURCE_CONFLICT,
         CUT_STALE,

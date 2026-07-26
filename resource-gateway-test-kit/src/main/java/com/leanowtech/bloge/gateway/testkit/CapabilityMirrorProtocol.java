@@ -415,6 +415,54 @@ public final class CapabilityMirrorProtocol {
     public static final String
     AUTHORITATIVE_OUTCOME_INBOX_LIFECYCLE_PAGE_V1 =
             "resourceGateway.authoritativeOutcomeInboxLifecyclePage.v1";
+    /** Content-addressed selected authoritative-outcome member chunk wire version. */
+    public static final String
+    AUTHORITATIVE_OUTCOME_SELECTED_POPULATION_CHUNK_V1 =
+            "resourceGateway.authoritativeOutcomeSelectedPopulationChunk.v1";
+    /** Selection-authority signed complete population root wire version. */
+    public static final String
+    AUTHORITATIVE_OUTCOME_SELECTED_POPULATION_MANIFEST_V1 =
+            "resourceGateway.authoritativeOutcomeSelectedPopulationManifest.v1";
+    /** Strict complete population admission command wire version. */
+    public static final String
+    AUTHORITATIVE_OUTCOME_SELECTED_POPULATION_ADMISSION_REQUEST_V1 =
+            "resourceGateway.authoritativeOutcomeSelectedPopulationAdmission.v1";
+    /** Complete immutable selected-population revision wire version. */
+    public static final String
+    AUTHORITATIVE_OUTCOME_SELECTED_POPULATION_BUNDLE_V1 =
+            "resourceGateway.authoritativeOutcomeSelectedPopulationBundle.v1";
+    /** Durable complete population admission result wire version. */
+    public static final String
+    AUTHORITATIVE_OUTCOME_SELECTED_POPULATION_ADMISSION_RESULT_V1 =
+            "resourceGateway.authoritativeOutcomeSelectedPopulationAdmissionResult.v1";
+    /** Deletion-authority signed legal disposition wire version. */
+    public static final String
+    AUTHORITATIVE_OUTCOME_SELECTED_POPULATION_DISPOSITION_V1 =
+            "resourceGateway.authoritativeOutcomeSelectedPopulationDisposition.v1";
+    /** Strict legal-disposition admission command wire version. */
+    public static final String
+    AUTHORITATIVE_OUTCOME_SELECTED_POPULATION_DISPOSITION_ADMISSION_REQUEST_V1 =
+            "resourceGateway.authoritativeOutcomeSelectedPopulationDispositionAdmission.v1";
+    /** Durable legal-disposition admission result wire version. */
+    public static final String
+    AUTHORITATIVE_OUTCOME_SELECTED_POPULATION_DISPOSITION_ADMISSION_RESULT_V1 =
+            "resourceGateway.authoritativeOutcomeSelectedPopulationDispositionAdmissionResult.v1";
+    /** Signed exact selected-population completeness assessment wire version. */
+    public static final String
+    AUTHORITATIVE_OUTCOME_SELECTED_POPULATION_COMPLETENESS_ASSESSMENT_V1 =
+            "resourceGateway.authoritativeOutcomeSelectedPopulationCompletenessAssessment.v1";
+    /** Strict exact-current-head completeness command wire version. */
+    public static final String
+    AUTHORITATIVE_OUTCOME_SELECTED_POPULATION_ASSESSMENT_REQUEST_V1 =
+            "resourceGateway.authoritativeOutcomeSelectedPopulationAssessmentRequest.v1";
+    /** Durable completeness assessment admission result wire version. */
+    public static final String
+    AUTHORITATIVE_OUTCOME_SELECTED_POPULATION_ASSESSMENT_ADMISSION_V1 =
+            "resourceGateway.authoritativeOutcomeSelectedPopulationAssessmentAdmission.v1";
+    /** Content-addressed historical completeness source-closure page wire version. */
+    public static final String
+    AUTHORITATIVE_OUTCOME_SELECTED_POPULATION_ASSESSMENT_SOURCE_PAGE_V1 =
+            "resourceGateway.authoritativeOutcomeSelectedPopulationAssessmentSourcePage.v1";
     /** Fixed server-produced authoritative outcome compatibility fixture wire version. */
     public static final String
     AUTHORITATIVE_OUTCOME_OBSERVATION_COMPATIBILITY_V1 =
@@ -983,6 +1031,66 @@ public final class CapabilityMirrorProtocol {
     AUTHORITATIVE_OUTCOME_INBOX_LIFECYCLE_PAGE_SCHEMA_RESOURCE =
             SCHEMA_RESOURCE_ROOT
                     + "authoritative-outcome-inbox-lifecycle-page-v1.schema.json";
+    /** Packaged selected authoritative-outcome member chunk schema. */
+    public static final String
+    AUTHORITATIVE_OUTCOME_SELECTED_POPULATION_CHUNK_SCHEMA_RESOURCE =
+            SCHEMA_RESOURCE_ROOT
+                    + "authoritative-outcome-selected-population-chunk-v1.schema.json";
+    /** Packaged signed selected authoritative-outcome population root schema. */
+    public static final String
+    AUTHORITATIVE_OUTCOME_SELECTED_POPULATION_MANIFEST_SCHEMA_RESOURCE =
+            SCHEMA_RESOURCE_ROOT
+                    + "authoritative-outcome-selected-population-manifest-v1.schema.json";
+    /** Packaged complete selected-population admission command schema. */
+    public static final String
+    AUTHORITATIVE_OUTCOME_SELECTED_POPULATION_ADMISSION_REQUEST_SCHEMA_RESOURCE =
+            SCHEMA_RESOURCE_ROOT
+                    + "authoritative-outcome-selected-population-admission-request-v1.schema.json";
+    /** Packaged complete immutable selected-population bundle schema. */
+    public static final String
+    AUTHORITATIVE_OUTCOME_SELECTED_POPULATION_BUNDLE_SCHEMA_RESOURCE =
+            SCHEMA_RESOURCE_ROOT
+                    + "authoritative-outcome-selected-population-bundle-v1.schema.json";
+    /** Packaged durable selected-population admission result schema. */
+    public static final String
+    AUTHORITATIVE_OUTCOME_SELECTED_POPULATION_ADMISSION_RESULT_SCHEMA_RESOURCE =
+            SCHEMA_RESOURCE_ROOT
+                    + "authoritative-outcome-selected-population-admission-result-v1.schema.json";
+    /** Packaged signed legal-disposition schema. */
+    public static final String
+    AUTHORITATIVE_OUTCOME_SELECTED_POPULATION_DISPOSITION_SCHEMA_RESOURCE =
+            SCHEMA_RESOURCE_ROOT
+                    + "authoritative-outcome-selected-population-disposition-v1.schema.json";
+    /** Packaged strict legal-disposition command schema. */
+    public static final String
+    AUTHORITATIVE_OUTCOME_SELECTED_POPULATION_DISPOSITION_ADMISSION_REQUEST_SCHEMA_RESOURCE =
+            SCHEMA_RESOURCE_ROOT
+                    + "authoritative-outcome-selected-population-disposition-admission-request-v1.schema.json";
+    /** Packaged durable legal-disposition admission result schema. */
+    public static final String
+    AUTHORITATIVE_OUTCOME_SELECTED_POPULATION_DISPOSITION_ADMISSION_RESULT_SCHEMA_RESOURCE =
+            SCHEMA_RESOURCE_ROOT
+                    + "authoritative-outcome-selected-population-disposition-admission-result-v1.schema.json";
+    /** Packaged signed selected-population completeness assessment schema. */
+    public static final String
+    AUTHORITATIVE_OUTCOME_SELECTED_POPULATION_COMPLETENESS_ASSESSMENT_SCHEMA_RESOURCE =
+            SCHEMA_RESOURCE_ROOT
+                    + "authoritative-outcome-selected-population-completeness-assessment-v1.schema.json";
+    /** Packaged exact-current-head completeness command schema. */
+    public static final String
+    AUTHORITATIVE_OUTCOME_SELECTED_POPULATION_ASSESSMENT_REQUEST_SCHEMA_RESOURCE =
+            SCHEMA_RESOURCE_ROOT
+                    + "authoritative-outcome-selected-population-assessment-request-v1.schema.json";
+    /** Packaged durable completeness assessment admission result schema. */
+    public static final String
+    AUTHORITATIVE_OUTCOME_SELECTED_POPULATION_ASSESSMENT_ADMISSION_SCHEMA_RESOURCE =
+            SCHEMA_RESOURCE_ROOT
+                    + "authoritative-outcome-selected-population-assessment-admission-v1.schema.json";
+    /** Packaged historical completeness source-closure page schema. */
+    public static final String
+    AUTHORITATIVE_OUTCOME_SELECTED_POPULATION_ASSESSMENT_SOURCE_PAGE_SCHEMA_RESOURCE =
+            SCHEMA_RESOURCE_ROOT
+                    + "authoritative-outcome-selected-population-assessment-source-page-v1.schema.json";
     /** Packaged signed payload-free read-only Shadow comparison schema. */
     public static final String
     READ_ONLY_SHADOW_COMPARISON_SCHEMA_RESOURCE =

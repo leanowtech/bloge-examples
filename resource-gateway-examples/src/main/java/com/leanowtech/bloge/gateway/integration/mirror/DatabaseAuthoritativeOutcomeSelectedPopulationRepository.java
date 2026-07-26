@@ -263,6 +263,36 @@ DatabaseAuthoritativeOutcomeSelectedPopulationRepository
                 )
             )
             """;
+    private static final String CREATE_ASSESSMENT_SOURCES = """
+            CREATE TABLE IF NOT EXISTS mirror_outcome_population_assessment_sources (
+                tenant_id VARCHAR(255) NOT NULL,
+                organization_id VARCHAR(255) NOT NULL,
+                project_id VARCHAR(255) NOT NULL,
+                environment_id VARCHAR(255) NOT NULL,
+                region VARCHAR(96) NOT NULL,
+                assessment_id VARCHAR(512) NOT NULL,
+                assessment_revision BIGINT NOT NULL,
+                global_ordinal BIGINT NOT NULL,
+                source_kind VARCHAR(32) NOT NULL,
+                source_id VARCHAR(512) NOT NULL,
+                source_revision BIGINT NOT NULL,
+                source_fingerprint VARCHAR(71) NOT NULL,
+                population_id VARCHAR(512) NOT NULL,
+                population_revision BIGINT NOT NULL,
+                population_fingerprint VARCHAR(71) NOT NULL,
+                PRIMARY KEY (
+                    tenant_id, organization_id, project_id,
+                    environment_id, region, assessment_id,
+                    assessment_revision, global_ordinal
+                ),
+                CONSTRAINT uq_mirror_outcome_population_assessment_source UNIQUE (
+                    tenant_id, organization_id, project_id,
+                    environment_id, region, assessment_id,
+                    assessment_revision, source_kind,
+                    source_id, source_revision
+                )
+            )
+            """;
 
     private final JdbcTemplate jdbc;
     private final ObjectMapper mapper;
@@ -392,6 +422,7 @@ DatabaseAuthoritativeOutcomeSelectedPopulationRepository
         jdbc.execute(CREATE_DISPOSITION_HEADS);
         jdbc.execute(CREATE_ASSESSMENTS);
         jdbc.execute(CREATE_ASSESSMENT_HEADS);
+        jdbc.execute(CREATE_ASSESSMENT_SOURCES);
     }
 
     @Override
@@ -561,6 +592,35 @@ DatabaseAuthoritativeOutcomeSelectedPopulationRepository
     }
 
     @Override
+    public Optional<DispositionAdmission> recoverDisposition(
+            CapabilitySnapshot.Scope scope,
+            String dispositionId,
+            long revision,
+            String expectedPredecessorFingerprint) {
+        if (revision < 1) {
+            throw new IllegalArgumentException(
+                    "disposition revision must be positive");
+        }
+        String expected = optionalFingerprint(
+                expectedPredecessorFingerprint);
+        return findStoredDisposition(
+                Objects.requireNonNull(scope, "scope"),
+                identifier(dispositionId),
+                revision)
+                .map(stored -> {
+                    if (!stored.predecessorFingerprint()
+                            .equals(expected)) {
+                        throw new Violation(
+                                Reason.CONTENT_CONFLICT);
+                    }
+                    return new DispositionAdmission(
+                            stored.disposition(),
+                            stored.predecessorFingerprint(),
+                            true);
+                });
+    }
+
+    @Override
     public AssessmentCut prepareAssessment(
             CapabilitySnapshot.Scope scope,
             String populationId,
@@ -637,8 +697,10 @@ DatabaseAuthoritativeOutcomeSelectedPopulationRepository
                     }
                     verifyAssessmentMatches(
                             current, exact);
-                    return appendAssessment(
-                            exact, expected);
+                    return appendAssessmentStored(
+                            current,
+                            exact,
+                            expected);
                 }),
                 "assessment admission");
     }
@@ -657,7 +719,11 @@ DatabaseAuthoritativeOutcomeSelectedPopulationRepository
         return findStoredAssessment(
                 Objects.requireNonNull(scope, "scope"),
                 identifier(assessmentId),
-                revision).map(StoredAssessment::assessment);
+                revision).map(stored -> {
+                    verifyHistoricalAssessmentSources(
+                            stored.assessment());
+                    return stored.assessment();
+                });
     }
 
     @Override
@@ -689,7 +755,117 @@ DatabaseAuthoritativeOutcomeSelectedPopulationRepository
             throw new Violation(
                     Reason.STORED_STATE_CORRUPT);
         }
+        verifyHistoricalAssessmentSources(
+                stored.assessment());
         return Optional.of(stored.assessment());
+    }
+
+    @Override
+    public Optional<AssessmentAdmission> recoverAssessment(
+            CapabilitySnapshot.Scope scope,
+            String assessmentId,
+            long revision,
+            String expectedPredecessorFingerprint) {
+        if (revision < 1) {
+            throw new IllegalArgumentException(
+                    "assessment revision must be positive");
+        }
+        CapabilitySnapshot.Scope exactScope =
+                Objects.requireNonNull(scope, "scope");
+        String exactId = identifier(assessmentId);
+        String expected = optionalFingerprint(
+                expectedPredecessorFingerprint);
+        return findStoredAssessment(
+                exactScope,
+                exactId,
+                revision)
+                .map(stored -> {
+                    if (!stored.predecessorFingerprint()
+                            .equals(expected)) {
+                        throw new Violation(
+                                Reason.CONTENT_CONFLICT);
+                    }
+                    verifyHistoricalAssessmentSources(
+                            stored.assessment());
+                    return new AssessmentAdmission(
+                            stored.assessment(),
+                            stored.predecessorFingerprint(),
+                            true);
+                });
+    }
+
+    @Override
+    public AuthoritativeOutcomeSelectedPopulationAssessmentSourcePage
+    assessmentSources(
+            CapabilitySnapshot.Scope scope,
+            String assessmentId,
+            long revision,
+            long afterGlobalOrdinal,
+            int limit) {
+        if (revision < 1
+                || afterGlobalOrdinal < 0
+                || limit < 1
+                || limit
+                > AuthoritativeOutcomeSelectedPopulationAssessmentSourcePage
+                .MAXIMUM_ENTRIES) {
+            throw new IllegalArgumentException(
+                    "assessment source cursor or limit is invalid");
+        }
+        CapabilitySnapshot.Scope exactScope =
+                Objects.requireNonNull(scope, "scope");
+        String exactId = identifier(assessmentId);
+        AuthoritativeOutcomeSelectedPopulationCompletenessAssessment
+                assessment = findStoredAssessment(
+                exactScope,
+                exactId,
+                revision)
+                .map(StoredAssessment::assessment)
+                .orElseThrow(() ->
+                        new Violation(
+                                Reason.ASSESSMENT_NOT_FOUND));
+        List<AuthoritativeOutcomeSelectedPopulationAssessmentSourcePage
+                .Entry> values = jdbc.query("""
+                        SELECT *
+                        FROM mirror_outcome_population_assessment_sources
+                        WHERE tenant_id = ? AND organization_id = ?
+                          AND project_id = ? AND environment_id = ?
+                          AND region = ? AND assessment_id = ?
+                          AND assessment_revision = ?
+                          AND global_ordinal > ?
+                        ORDER BY global_ordinal
+                        FETCH FIRST ? ROWS ONLY
+                        """,
+                        (row, ignored) ->
+                                mapAssessmentSource(
+                                        row, assessment),
+                        exactScope.tenantId(),
+                        exactScope.organizationId(),
+                        exactScope.projectId(),
+                        exactScope.environmentId(),
+                        exactScope.region(),
+                        exactId,
+                        revision,
+                        afterGlobalOrdinal,
+                        limit + 1);
+        boolean complete = values.size() <= limit;
+        List<AuthoritativeOutcomeSelectedPopulationAssessmentSourcePage
+                .Entry> page = complete
+                ? values : values.subList(0, limit);
+        long next = page.isEmpty()
+                ? afterGlobalOrdinal
+                : page.getLast().globalOrdinal();
+        return new
+                AuthoritativeOutcomeSelectedPopulationAssessmentSourcePage(
+                AuthoritativeOutcomeSelectedPopulationAssessmentSourcePage
+                        .SCHEMA_VERSION,
+                "",
+                exactScope,
+                assessment.artifactRef(),
+                assessment.populationRef(),
+                afterGlobalOrdinal,
+                next,
+                complete,
+                page).seal(mapper);
     }
 
     private PopulationAdmission appendPopulation(
@@ -1511,7 +1687,8 @@ DatabaseAuthoritativeOutcomeSelectedPopulationRepository
                 disposition.sampleOrdinal()));
     }
 
-    private AssessmentAdmission appendAssessment(
+    private AssessmentAdmission appendAssessmentStored(
+            AssessmentCut cut,
             AuthoritativeOutcomeSelectedPopulationCompletenessAssessment
                     assessment,
             String expectedPredecessor) {
@@ -1529,6 +1706,8 @@ DatabaseAuthoritativeOutcomeSelectedPopulationRepository
                 throw new Violation(
                         Reason.CONTENT_CONFLICT);
             }
+            verifyStoredAssessmentSources(
+                    cut, assessment);
             return new AssessmentAdmission(
                     stored.assessment(),
                     stored.predecessorFingerprint(),
@@ -1556,6 +1735,8 @@ DatabaseAuthoritativeOutcomeSelectedPopulationRepository
         }
         insertAssessment(
                 assessment, expectedPredecessor);
+        insertAssessmentSources(
+                cut, assessment);
         if (head.isEmpty()) {
             insertAssessmentHead(assessment);
         } else {
@@ -1566,6 +1747,248 @@ DatabaseAuthoritativeOutcomeSelectedPopulationRepository
                 assessment,
                 expectedPredecessor,
                 false);
+    }
+
+    private void insertAssessmentSources(
+            AssessmentCut cut,
+            AuthoritativeOutcomeSelectedPopulationCompletenessAssessment
+                    assessment) {
+        CapabilitySnapshot.Scope scope =
+                assessment.scope();
+        Map<MemberKey, MemberCoordinate> members =
+                members(cut.population());
+        List<AssessmentSource> sources =
+                assessmentSources(cut, members);
+        try {
+            for (AssessmentSource source : sources) {
+                MirrorArtifactRef reference =
+                        source.reference();
+                jdbc.update("""
+                                INSERT INTO mirror_outcome_population_assessment_sources (
+                                    tenant_id, organization_id, project_id,
+                                    environment_id, region, assessment_id,
+                                    assessment_revision, global_ordinal,
+                                    source_kind, source_id, source_revision,
+                                    source_fingerprint, population_id,
+                                    population_revision,
+                                    population_fingerprint
+                                ) VALUES (
+                                    ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
+                                    ?
+                                )
+                                """,
+                        scope.tenantId(),
+                        scope.organizationId(),
+                        scope.projectId(),
+                        scope.environmentId(),
+                        scope.region(),
+                        assessment.assessmentId(),
+                        assessment.revision(),
+                        source.globalOrdinal(),
+                        source.kind().name(),
+                        reference.id(),
+                        reference.revision(),
+                        reference.fingerprint(),
+                        assessment.populationRef().id(),
+                        assessment.populationRef().revision(),
+                        assessment.populationRef()
+                                .fingerprint());
+            }
+        } catch (DuplicateKeyException conflict) {
+            throw new Violation(
+                    Reason.CONTENT_CONFLICT);
+        }
+    }
+
+    private void verifyStoredAssessmentSources(
+            AssessmentCut cut,
+            AuthoritativeOutcomeSelectedPopulationCompletenessAssessment
+                    assessment) {
+        List<AssessmentSource> expected =
+                assessmentSources(
+                        cut, members(cut.population()));
+        List<AssessmentSource> stored = jdbc.query("""
+                SELECT global_ordinal, source_kind, source_id,
+                       source_revision, source_fingerprint
+                FROM mirror_outcome_population_assessment_sources
+                WHERE tenant_id = ? AND organization_id = ?
+                  AND project_id = ? AND environment_id = ?
+                  AND region = ? AND assessment_id = ?
+                  AND assessment_revision = ?
+                ORDER BY global_ordinal
+                """,
+                (row, ignored) ->
+                        new AssessmentSource(
+                                row.getLong(
+                                        "global_ordinal"),
+                                AuthoritativeOutcomeSelectedPopulationAssessmentSourcePage
+                                        .SourceKind.valueOf(
+                                        row.getString(
+                                                "source_kind")),
+                                sourceRef(
+                                        AuthoritativeOutcomeSelectedPopulationAssessmentSourcePage
+                                                .SourceKind.valueOf(
+                                                row.getString(
+                                                        "source_kind")),
+                                        row.getString(
+                                                "source_id"),
+                                        row.getLong(
+                                                "source_revision"),
+                                        row.getString(
+                                                "source_fingerprint"))),
+                assessment.scope().tenantId(),
+                assessment.scope().organizationId(),
+                assessment.scope().projectId(),
+                assessment.scope().environmentId(),
+                assessment.scope().region(),
+                assessment.assessmentId(),
+                assessment.revision());
+        if (!stored.equals(expected)) {
+            throw new Violation(
+                    Reason.STORED_STATE_CORRUPT);
+        }
+    }
+
+    private void verifyHistoricalAssessmentSources(
+            AuthoritativeOutcomeSelectedPopulationCompletenessAssessment
+                    assessment) {
+        List<AuthoritativeOutcomeSelectedPopulationAssessmentSourcePage
+                .Entry> sources = jdbc.query("""
+                SELECT *
+                FROM mirror_outcome_population_assessment_sources
+                WHERE tenant_id = ? AND organization_id = ?
+                  AND project_id = ? AND environment_id = ?
+                  AND region = ? AND assessment_id = ?
+                  AND assessment_revision = ?
+                ORDER BY global_ordinal
+                """,
+                (row, ignored) ->
+                        mapAssessmentSource(
+                                row, assessment),
+                assessment.scope().tenantId(),
+                assessment.scope().organizationId(),
+                assessment.scope().projectId(),
+                assessment.scope().environmentId(),
+                assessment.scope().region(),
+                assessment.assessmentId(),
+                assessment.revision());
+        long previous = 0;
+        List<AuthoritativeOutcomeSelectedPopulationSourceSet
+                .Entry> observations = new ArrayList<>();
+        List<AuthoritativeOutcomeSelectedPopulationSourceSet
+                .Entry> dispositions = new ArrayList<>();
+        for (AuthoritativeOutcomeSelectedPopulationAssessmentSourcePage
+                .Entry source : sources) {
+            if (source.globalOrdinal() <= previous) {
+                throw new Violation(
+                        Reason.STORED_STATE_CORRUPT);
+            }
+            previous = source.globalOrdinal();
+            AuthoritativeOutcomeSelectedPopulationSourceSet
+                    .Entry entry =
+                    new AuthoritativeOutcomeSelectedPopulationSourceSet
+                            .Entry(
+                            source.globalOrdinal(),
+                            source.sourceRef());
+            if (source.sourceKind()
+                    == AuthoritativeOutcomeSelectedPopulationAssessmentSourcePage
+                    .SourceKind.OBSERVATION) {
+                observations.add(entry);
+            } else {
+                dispositions.add(entry);
+            }
+        }
+        AuthoritativeOutcomeSelectedPopulationCompletenessAssessment
+                .Counts totals = assessment.totals();
+        long expectedSources = Math.subtractExact(
+                totals.expected(), totals.missing());
+        long expectedObservations = Math.subtractExact(
+                expectedSources, totals.legallyDeleted());
+        if (sources.size() != expectedSources
+                || observations.size()
+                != expectedObservations
+                || dispositions.size()
+                != totals.legallyDeleted()
+                || !assessment
+                .observationSetFingerprint()
+                .equals(
+                        AuthoritativeOutcomeSelectedPopulationSourceSet
+                                .fingerprint(
+                                mapper,
+                                AuthoritativeOutcomeSelectedPopulationSourceSet
+                                        .OBSERVATION_DOMAIN,
+                                assessment.populationRef(),
+                                observations))
+                || !assessment
+                .dispositionSetFingerprint()
+                .equals(
+                        AuthoritativeOutcomeSelectedPopulationSourceSet
+                                .fingerprint(
+                                mapper,
+                                AuthoritativeOutcomeSelectedPopulationSourceSet
+                                        .DISPOSITION_DOMAIN,
+                                assessment.populationRef(),
+                                dispositions))) {
+            throw new Violation(
+                    Reason.STORED_STATE_CORRUPT);
+        }
+    }
+
+    private static List<AssessmentSource> assessmentSources(
+            AssessmentCut cut,
+            Map<MemberKey, MemberCoordinate> members) {
+        List<AssessmentSource> sources =
+                new ArrayList<>();
+        for (AuthoritativeOutcomeObservation observation
+                : cut.observations()) {
+            MemberCoordinate member = members.get(
+                    new MemberKey(
+                            observation.unitId(),
+                            observation.selectionProof()
+                                    .stratumId(),
+                            observation.selectionProof()
+                                    .sampleOrdinal()));
+            if (member == null) {
+                throw new Violation(
+                        Reason.ASSESSMENT_MISMATCH);
+            }
+            sources.add(
+                    new AssessmentSource(
+                            member.globalOrdinal(),
+                            AuthoritativeOutcomeSelectedPopulationAssessmentSourcePage
+                                    .SourceKind.OBSERVATION,
+                            observation.artifactRef()));
+        }
+        for (AuthoritativeOutcomeSelectedPopulationDisposition
+                disposition : cut.dispositions()) {
+            MemberCoordinate member = members.get(
+                    new MemberKey(
+                            disposition.unitId(),
+                            disposition.stratumId(),
+                            disposition.sampleOrdinal()));
+            if (member == null) {
+                throw new Violation(
+                        Reason.ASSESSMENT_MISMATCH);
+            }
+            sources.add(
+                    new AssessmentSource(
+                            member.globalOrdinal(),
+                            AuthoritativeOutcomeSelectedPopulationAssessmentSourcePage
+                                    .SourceKind
+                                    .LEGAL_DISPOSITION,
+                            disposition.artifactRef()));
+        }
+        sources.sort(Comparator.comparingLong(
+                AssessmentSource::globalOrdinal));
+        long previous = 0;
+        for (AssessmentSource source : sources) {
+            if (source.globalOrdinal() <= previous) {
+                throw new Violation(
+                        Reason.ASSESSMENT_MISMATCH);
+            }
+            previous = source.globalOrdinal();
+        }
+        return List.copyOf(sources);
     }
 
     private void insertAssessment(
@@ -2252,6 +2675,140 @@ DatabaseAuthoritativeOutcomeSelectedPopulationRepository
         return Map.copyOf(result);
     }
 
+    private AuthoritativeOutcomeSelectedPopulationAssessmentSourcePage
+            .Entry mapAssessmentSource(
+            ResultSet row,
+            AuthoritativeOutcomeSelectedPopulationCompletenessAssessment
+                    assessment) throws SQLException {
+        try {
+            AuthoritativeOutcomeSelectedPopulationAssessmentSourcePage
+                    .SourceKind kind =
+                    AuthoritativeOutcomeSelectedPopulationAssessmentSourcePage
+                            .SourceKind.valueOf(
+                            row.getString(
+                                    "source_kind"));
+            MirrorArtifactRef reference = sourceRef(
+                    kind,
+                    row.getString("source_id"),
+                    row.getLong("source_revision"),
+                    row.getString(
+                            "source_fingerprint"));
+            CapabilitySnapshot.Scope scope =
+                    assessment.scope();
+            if (!scope.tenantId().equals(
+                    row.getString("tenant_id"))
+                    || !scope.organizationId().equals(
+                    row.getString("organization_id"))
+                    || !scope.projectId().equals(
+                    row.getString("project_id"))
+                    || !scope.environmentId().equals(
+                    row.getString("environment_id"))
+                    || !scope.region().equals(
+                    row.getString("region"))
+                    || !assessment.assessmentId().equals(
+                    row.getString("assessment_id"))
+                    || assessment.revision()
+                    != row.getLong(
+                    "assessment_revision")
+                    || !assessment.populationRef().id()
+                    .equals(
+                            row.getString(
+                                    "population_id"))
+                    || assessment.populationRef()
+                    .revision()
+                    != row.getLong(
+                    "population_revision")
+                    || !assessment.populationRef()
+                    .fingerprint()
+                    .equals(
+                            row.getString(
+                                    "population_fingerprint"))
+                    || !sourceExists(
+                    scope, kind, reference)) {
+                throw new Violation(
+                        Reason.STORED_STATE_CORRUPT);
+            }
+            return new
+                    AuthoritativeOutcomeSelectedPopulationAssessmentSourcePage
+                            .Entry(
+                            row.getLong(
+                                    "global_ordinal"),
+                            kind,
+                            reference);
+        } catch (Violation invalid) {
+            throw invalid;
+        } catch (RuntimeException invalid) {
+            throw new Violation(
+                    Reason.STORED_STATE_CORRUPT);
+        }
+    }
+
+    private boolean sourceExists(
+            CapabilitySnapshot.Scope scope,
+            AuthoritativeOutcomeSelectedPopulationAssessmentSourcePage
+                    .SourceKind kind,
+            MirrorArtifactRef reference) {
+        if (kind
+                == AuthoritativeOutcomeSelectedPopulationAssessmentSourcePage
+                .SourceKind.LEGAL_DISPOSITION) {
+            return findStoredDisposition(
+                    scope,
+                    reference.id(),
+                    reference.revision())
+                    .map(StoredDisposition::disposition)
+                    .map(
+                            AuthoritativeOutcomeSelectedPopulationDisposition
+                                    ::artifactRef)
+                    .filter(reference::equals)
+                    .isPresent();
+        }
+        List<AuthoritativeOutcomeObservation> values =
+                jdbc.query("""
+                        SELECT observation_json
+                        FROM mirror_outcome_observations
+                        WHERE tenant_id = ? AND organization_id = ?
+                          AND project_id = ? AND environment_id = ?
+                          AND region = ? AND observation_id = ?
+                          AND revision = ?
+                        """,
+                        (row, ignored) ->
+                                readObservation(
+                                        row.getString(
+                                                "observation_json")),
+                        scope.tenantId(),
+                        scope.organizationId(),
+                        scope.projectId(),
+                        scope.environmentId(),
+                        scope.region(),
+                        reference.id(),
+                        reference.revision());
+        return one(values)
+                .map(
+                        AuthoritativeOutcomeObservation
+                                ::artifactRef)
+                .filter(reference::equals)
+                .isPresent();
+    }
+
+    private static MirrorArtifactRef sourceRef(
+            AuthoritativeOutcomeSelectedPopulationAssessmentSourcePage
+                    .SourceKind kind,
+            String id,
+            long revision,
+            String fingerprint) {
+        return new MirrorArtifactRef(
+                kind
+                        == AuthoritativeOutcomeSelectedPopulationAssessmentSourcePage
+                        .SourceKind.OBSERVATION
+                        ? AuthoritativeOutcomeObservation
+                        .ARTIFACT_KIND
+                        : AuthoritativeOutcomeSelectedPopulationDisposition
+                        .ARTIFACT_KIND,
+                id,
+                revision,
+                fingerprint);
+    }
+
     private AuthoritativeOutcomeSelectedPopulationManifest
     readManifest(String json) {
         try {
@@ -2594,5 +3151,13 @@ DatabaseAuthoritativeOutcomeSelectedPopulationRepository
                     member.subjectFingerprint(),
                     member.attributionKeyFingerprint());
         }
+    }
+
+    private record AssessmentSource(
+            long globalOrdinal,
+            AuthoritativeOutcomeSelectedPopulationAssessmentSourcePage
+                    .SourceKind kind,
+            MirrorArtifactRef reference
+    ) {
     }
 }

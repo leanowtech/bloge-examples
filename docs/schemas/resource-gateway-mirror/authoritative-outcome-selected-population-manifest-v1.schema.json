@@ -1,0 +1,195 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://bloge.dev/schemas/resource-gateway-mirror/authoritative-outcome-selected-population-manifest-v1.schema.json",
+  "title": "Resource Gateway Authoritative Outcome Selected Population Manifest v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "populationId",
+    "revision",
+    "manifestFingerprint",
+    "scope",
+    "inventoryRef",
+    "cohortRef",
+    "samplingFrameRef",
+    "selectionPolicyRef",
+    "selectionAuthoritySetRef",
+    "selectionAttestationRef",
+    "selectedAt",
+    "strata",
+    "chunks",
+    "totalEligiblePopulation",
+    "totalSelectedPopulation",
+    "attestedAt",
+    "manifestSeal"
+  ],
+  "properties": {
+    "schemaVersion": {
+      "const": "resourceGateway.authoritativeOutcomeSelectedPopulationManifest.v1"
+    },
+    "populationId": {
+      "$ref": "read-only-shadow-comparison-v1.schema.json#/$defs/identifier"
+    },
+    "revision": {
+      "type": "integer",
+      "minimum": 1
+    },
+    "manifestFingerprint": {
+      "$ref": "mirror-plan-v1.schema.json#/$defs/fingerprint"
+    },
+    "scope": {
+      "$ref": "mirror-plan-v1.schema.json#/$defs/scope"
+    },
+    "inventoryRef": {
+      "$ref": "authoritative-outcome-observation-v1.schema.json#/$defs/inventoryRef"
+    },
+    "cohortRef": {
+      "$ref": "authoritative-outcome-observation-v1.schema.json#/$defs/cohortRef"
+    },
+    "samplingFrameRef": {
+      "$ref": "authoritative-outcome-observation-v1.schema.json#/$defs/samplingFrameRef"
+    },
+    "selectionPolicyRef": {
+      "$ref": "#/$defs/artifactRef"
+    },
+    "selectionAuthoritySetRef": {
+      "$ref": "#/$defs/artifactRef"
+    },
+    "selectionAttestationRef": {
+      "$ref": "#/$defs/artifactRef"
+    },
+    "selectedAt": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "strata": {
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 65536,
+      "items": {
+        "$ref": "#/$defs/stratum"
+      }
+    },
+    "chunks": {
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 4096,
+      "items": {
+        "$ref": "#/$defs/chunkDescriptor"
+      }
+    },
+    "totalEligiblePopulation": {
+      "type": "integer",
+      "minimum": 1
+    },
+    "totalSelectedPopulation": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 16777216
+    },
+    "attestedAt": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "manifestSeal": {
+      "$ref": "domain-fidelity-profile-v1.schema.json#/$defs/evidenceSeal"
+    }
+  },
+  "$defs": {
+    "artifactRef": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "id",
+        "revision",
+        "fingerprint"
+      ],
+      "properties": {
+        "kind": {
+          "$ref": "read-only-shadow-comparison-v1.schema.json#/$defs/identifier"
+        },
+        "id": {
+          "$ref": "read-only-shadow-comparison-v1.schema.json#/$defs/identifier"
+        },
+        "revision": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "fingerprint": {
+          "$ref": "mirror-plan-v1.schema.json#/$defs/fingerprint"
+        }
+      }
+    },
+    "stratum": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "unitId",
+        "stratumId",
+        "eligiblePopulationSize",
+        "selectedPopulationSize",
+        "selectionMode"
+      ],
+      "properties": {
+        "unitId": {
+          "$ref": "read-only-shadow-comparison-v1.schema.json#/$defs/identifier"
+        },
+        "stratumId": {
+          "$ref": "read-only-shadow-comparison-v1.schema.json#/$defs/identifier"
+        },
+        "eligiblePopulationSize": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "selectedPopulationSize": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "selectionMode": {
+          "type": "string",
+          "enum": [
+            "CENSUS",
+            "HASH_PARTITION",
+            "STRATIFIED_RANDOM"
+          ]
+        }
+      }
+    },
+    "chunkDescriptor": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "chunkIndex",
+        "chunkRef",
+        "firstGlobalOrdinal",
+        "lastGlobalOrdinal",
+        "memberCount"
+      ],
+      "properties": {
+        "chunkIndex": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 4095
+        },
+        "chunkRef": {
+          "$ref": "#/$defs/artifactRef"
+        },
+        "firstGlobalOrdinal": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "lastGlobalOrdinal": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "memberCount": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 4096
+        }
+      }
+    }
+  }
+}

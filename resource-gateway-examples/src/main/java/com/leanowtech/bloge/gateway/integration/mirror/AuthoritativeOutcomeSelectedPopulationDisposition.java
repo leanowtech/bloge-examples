@@ -204,6 +204,42 @@ public record AuthoritativeOutcomeSelectedPopulationDisposition(
                 MAXIMUM_ATTESTATION_BYTES);
     }
 
+    /**
+     * Calculates stable deletion-authority ingestion material before RG attestation.
+     *
+     * <p>The material excludes only the Resource Gateway address, trusted {@code attestedAt}, and
+     * seal. Exact unsigned response-loss retries remain stable; changing the selected member,
+     * retention policy, approval, authority set, reason, or effective time conflicts.</p>
+     *
+     * @param mapper canonical protocol mapper
+     * @return domain-separated immutable ingestion fingerprint
+     */
+    public String ingestionMaterialFingerprint(
+            ObjectMapper mapper) {
+        return ProtocolFingerprint.ofBounded(
+                Objects.requireNonNull(mapper, "mapper"),
+                new IngestionMaterial(
+                        "RESOURCE_GATEWAY_AUTHORITATIVE_OUTCOME_MEMBER_DISPOSITION_INGESTION_V1",
+                        schemaVersion,
+                        dispositionId,
+                        revision,
+                        scope,
+                        populationRef,
+                        unitId,
+                        stratumId,
+                        sampleOrdinal,
+                        inclusionFingerprint,
+                        subjectFingerprint,
+                        attributionKeyFingerprint,
+                        disposition,
+                        reason,
+                        retentionPolicyRef,
+                        deletionApprovalRef,
+                        deletionAuthoritySetRef,
+                        effectiveAt),
+                MAXIMUM_CANONICAL_BYTES);
+    }
+
     /** @return exact disposition reference after signing */
     public MirrorArtifactRef artifactRef() {
         if (dispositionFingerprint.isBlank()) {
@@ -369,6 +405,28 @@ public record AuthoritativeOutcomeSelectedPopulationDisposition(
             Instant effectiveAt,
             Instant attestedAt,
             String dispositionFingerprint
+    ) {
+    }
+
+    private record IngestionMaterial(
+            String domain,
+            String schemaVersion,
+            String dispositionId,
+            long revision,
+            CapabilitySnapshot.Scope scope,
+            MirrorArtifactRef populationRef,
+            String unitId,
+            String stratumId,
+            long sampleOrdinal,
+            String inclusionFingerprint,
+            String subjectFingerprint,
+            String attributionKeyFingerprint,
+            Disposition disposition,
+            DeletionReason reason,
+            MirrorArtifactRef retentionPolicyRef,
+            MirrorArtifactRef deletionApprovalRef,
+            MirrorArtifactRef deletionAuthoritySetRef,
+            Instant effectiveAt
     ) {
     }
 }

@@ -1017,6 +1017,103 @@ explicitly exploratory. The fixed compatibility fixture is v1, while generated v
 strictly validated and independently verified by this kit. A fixed non-Java v2 compatibility
 fixture remains future work.
 
+### Verify selected-population completeness
+
+Selected-population commands and evidence use twelve strict Draft 2020-12
+Schemas packaged in both Test Kit JARs. `CapabilityMirrorProtocol` exposes the
+version and resource constants; `CapabilityMirrorSchemaValidator` resolves the
+complete local `$ref` closure without fetching a network resource.
+
+The typed HTTP client applies the command Schema before transport, chooses the
+dedicated workload purpose, validates the integration envelope, and applies the
+fact Schema before returning a defensive `JsonNode`:
+
+```java
+JsonNode admission =
+        client.submitAuthoritativeOutcomeSelectedPopulation(
+                populationCommand);
+String populationId = admission.path("population")
+        .path("manifest").path("populationId").asText();
+
+client.submitAuthoritativeOutcomeSelectedPopulationDisposition(
+        populationId, dispositionCommand);
+JsonNode assessmentAdmission =
+        client.assessAuthoritativeOutcomeSelectedPopulation(
+                populationId, assessmentCommand);
+
+String assessmentId = assessmentAdmission.path("assessment")
+        .path("assessmentId").asText();
+long revision = assessmentAdmission.path("assessment")
+        .path("revision").asLong();
+
+JsonNode population =
+        client.findAuthoritativeOutcomeSelectedPopulation(
+                populationId, 1);
+JsonNode assessment =
+        client.findAuthoritativeOutcomeSelectedPopulationAssessment(
+                populationId, assessmentId, revision);
+List<JsonNode> sourcePages =
+        client.findCompleteAuthoritativeOutcomeSelectedPopulationAssessmentSources(
+                populationId, assessmentId, revision, 500, 10_000);
+```
+
+The complete-source helper starts at cursor zero and requires a page carrying
+`complete=true`. It rejects cursor drift, stalls, premature empty pages, invalid
+page size, and exhaustion of the caller-owned page budget. A syntactically valid
+suffix is not evidence of a complete assessment.
+
+Perform independent verification after transport and before ANEKE workbook,
+registry, or publish-gate ingestion:
+
+```java
+AuthoritativeOutcomeSelectedPopulationVerifier verifier =
+        new AuthoritativeOutcomeSelectedPopulationVerifier();
+
+var populationResult = verifier.verifyPopulation(
+        population,
+        keyId -> governedKeyHistory.resolveExact(keyId),
+        (manifest, chunks) ->
+                selectionAuthority.verifyExact(manifest, chunks),
+        trustedClock.instant());
+
+var assessmentResult = verifier.verifyAssessment(
+        assessment,
+        sourcePages,
+        population,
+        keyId -> governedKeyHistory.resolveExact(keyId),
+        (manifest, chunks) ->
+                selectionAuthority.verifyExact(manifest, chunks),
+        (kind, sourceRef, selectedMember) ->
+                outcomeRegistry.verifyExact(
+                        kind, sourceRef, selectedMember),
+        trustedClock.instant());
+
+if (!populationResult.verified()
+        || !assessmentResult.verified()) {
+    throw new IllegalStateException(
+            "Selected-population evidence is not independently verifiable");
+}
+```
+
+The verifier has no Spring or Resource Gateway server-model dependency. Before
+calling customer authorities it verifies bounded Schema, canonical addresses,
+chunk/member/root closure, denominator arithmetic, Resource Gateway Ed25519
+seal and key lifecycle, page cursor continuity, source-set count/fingerprint,
+and exact population binding. Authority callbacks receive defensive copies.
+
+Automation should branch only on the bounded result:
+`VERIFIED`, `INVALID`, `AUTHORITY_UNAVAILABLE`, `KEY_UNAVAILABLE`, or
+`POLICY_REJECTED`, plus its stable reason code. Do not log input JSON or enrich
+errors with member identifiers. Selection, deletion, and source authority
+callbacks are distinct by design; a Resource Gateway verification key proves
+custody, not business selection or deletion authority.
+
+The current server accepts a complete population command up to 64 MiB. For a
+larger denominator, wait for the staged chunk upload/finalize protocol rather
+than splitting one logical population into unrelated revisions. The ordinary
+demo startup intentionally has no permissive customer authority and therefore
+does not expose these routes or report selected-population readiness.
+
 ## Use
 
 Start Resource Gateway with its `test` or `staging` profile, then discover the

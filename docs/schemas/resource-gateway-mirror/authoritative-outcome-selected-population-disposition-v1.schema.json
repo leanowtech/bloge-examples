@@ -1,0 +1,101 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://bloge.dev/schemas/resource-gateway-mirror/authoritative-outcome-selected-population-disposition-v1.schema.json",
+  "title": "Resource Gateway Authoritative Outcome Selected Population Disposition v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "dispositionId",
+    "revision",
+    "dispositionFingerprint",
+    "scope",
+    "populationRef",
+    "unitId",
+    "stratumId",
+    "sampleOrdinal",
+    "inclusionFingerprint",
+    "subjectFingerprint",
+    "attributionKeyFingerprint",
+    "disposition",
+    "reason",
+    "retentionPolicyRef",
+    "deletionApprovalRef",
+    "deletionAuthoritySetRef",
+    "effectiveAt",
+    "attestedAt",
+    "dispositionSeal"
+  ],
+  "properties": {
+    "schemaVersion": {
+      "const": "resourceGateway.authoritativeOutcomeSelectedPopulationDisposition.v1"
+    },
+    "dispositionId": {
+      "$ref": "read-only-shadow-comparison-v1.schema.json#/$defs/identifier"
+    },
+    "revision": {
+      "type": "integer",
+      "minimum": 1
+    },
+    "dispositionFingerprint": {
+      "$ref": "mirror-plan-v1.schema.json#/$defs/fingerprint"
+    },
+    "scope": {
+      "$ref": "mirror-plan-v1.schema.json#/$defs/scope"
+    },
+    "populationRef": {
+      "$ref": "authoritative-outcome-selected-population-manifest-v1.schema.json#/$defs/artifactRef"
+    },
+    "unitId": {
+      "$ref": "read-only-shadow-comparison-v1.schema.json#/$defs/identifier"
+    },
+    "stratumId": {
+      "$ref": "read-only-shadow-comparison-v1.schema.json#/$defs/identifier"
+    },
+    "sampleOrdinal": {
+      "type": "integer",
+      "minimum": 1
+    },
+    "inclusionFingerprint": {
+      "$ref": "mirror-plan-v1.schema.json#/$defs/fingerprint"
+    },
+    "subjectFingerprint": {
+      "$ref": "mirror-plan-v1.schema.json#/$defs/fingerprint"
+    },
+    "attributionKeyFingerprint": {
+      "$ref": "mirror-plan-v1.schema.json#/$defs/fingerprint"
+    },
+    "disposition": {
+      "const": "LEGALLY_DELETED"
+    },
+    "reason": {
+      "type": "string",
+      "enum": [
+        "DATA_SUBJECT_REQUEST",
+        "LEGAL_RETENTION_EXPIRY",
+        "REGULATORY_ERASURE",
+        "SOURCE_SYSTEM_AUTHORIZED_PURGE"
+      ]
+    },
+    "retentionPolicyRef": {
+      "$ref": "authoritative-outcome-selected-population-manifest-v1.schema.json#/$defs/artifactRef"
+    },
+    "deletionApprovalRef": {
+      "$ref": "authoritative-outcome-selected-population-manifest-v1.schema.json#/$defs/artifactRef"
+    },
+    "deletionAuthoritySetRef": {
+      "$ref": "authoritative-outcome-selected-population-manifest-v1.schema.json#/$defs/artifactRef"
+    },
+    "effectiveAt": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "attestedAt": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "dispositionSeal": {
+      "$ref": "domain-fidelity-profile-v1.schema.json#/$defs/evidenceSeal"
+    }
+  }
+}

@@ -1205,6 +1205,68 @@ class ResourceGatewayTestClientTest {
                 });
     }
 
+    @Test
+    void selectedPopulationClientUsesDedicatedPurposeAndEncodedAssessmentPath() {
+        ResourceGatewayTestClient client = client();
+        ObjectNode command = JSON.createObjectNode();
+        command.put(
+                "schemaVersion",
+                CapabilityMirrorProtocol
+                        .AUTHORITATIVE_OUTCOME_SELECTED_POPULATION_ASSESSMENT_REQUEST_V1);
+        command.put("populationRevision", 3);
+        command.put("assessmentId", "assessment/refunds");
+        command.put("assessmentRevision", 1);
+        command.put("expectedPredecessorFingerprint", "");
+
+        assertThatThrownBy(() ->
+                client.assessAuthoritativeOutcomeSelectedPopulation(
+                        "population/refunds",
+                        command))
+                .isInstanceOfSatisfying(
+                        ResourceGatewayTestException.class,
+                        failure -> assertThat(
+                                failure.code())
+                                .isEqualTo(
+                                        "RG.TESTKIT.RESPONSE_CONTRACT_INVALID"));
+
+        assertThat(requests)
+                .singleElement()
+                .satisfies(request -> {
+                    assertThat(request.method()).isEqualTo("POST");
+                    assertThat(request.rawPath())
+                            .isEqualTo(
+                                    "/api/mirror/outcome-selected-populations/population%2Frefunds/assessments");
+                    assertThat(request.purpose())
+                            .isEqualTo(
+                                    "MIRROR_FIDELITY_GOVERNANCE");
+                    assertThat(request.body())
+                            .isEqualTo(command);
+                });
+    }
+
+    @Test
+    void selectedPopulationClientRejectsInvalidCommandBeforeTransportAndBoundsSourceCursor() {
+        ResourceGatewayTestClient client = client();
+
+        assertThatThrownBy(() ->
+                client.submitAuthoritativeOutcomeSelectedPopulation(
+                        JSON.createObjectNode()))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessage(
+                        "RG.MIRROR.CLIENT.OUTCOME_POPULATION_COMMAND_INVALID");
+        assertThatThrownBy(() ->
+                client.findAuthoritativeOutcomeSelectedPopulationAssessmentSources(
+                        "population-a",
+                        "assessment-a",
+                        1,
+                        -1,
+                        100))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining(
+                        "cursor or limit");
+        assertThat(requests).isEmpty();
+    }
+
     private ResourceGatewayTestClient client() {
         return ResourceGatewayTestClient.builder(baseUri())
                 .bearerToken(() -> "super-secret-token")

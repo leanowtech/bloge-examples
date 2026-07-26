@@ -2748,6 +2748,346 @@ public final class ResourceGatewayTestClient {
     }
 
     /**
+     * Submits one complete selected authoritative-outcome population as a selection authority.
+     *
+     * <p>The strict command Schema is applied before transport and the immutable admission result
+     * Schema is applied after envelope validation. An unsigned candidate is permitted because
+     * Resource Gateway independently verifies selection authority, assigns trusted attestation
+     * time, content-addresses the root, and applies its own seal.</p>
+     *
+     * @param request complete population admission command
+     * @return defensive immutable admission-result JSON
+     */
+    public JsonNode submitAuthoritativeOutcomeSelectedPopulation(
+            JsonNode request) {
+        JsonNode command = requiredObject(request, "request");
+        CapabilityMirrorSchemaValidator.require(
+                command,
+                CapabilityMirrorProtocol
+                        .AUTHORITATIVE_OUTCOME_SELECTED_POPULATION_ADMISSION_REQUEST_SCHEMA_RESOURCE,
+                "RG.MIRROR.CLIENT.OUTCOME_POPULATION_COMMAND_INVALID");
+        JsonNode response = exchange(
+                "POST",
+                "/api/mirror/outcome-selected-populations",
+                "",
+                "MIRROR_OUTCOME_SELECTION",
+                command);
+        JsonNode payload = requireMirrorEnvelope(
+                response,
+                "AUTHORITATIVE_OUTCOME_SELECTED_POPULATION_ADMISSION",
+                CapabilityMirrorProtocol
+                        .AUTHORITATIVE_OUTCOME_SELECTED_POPULATION_ADMISSION_RESULT_V1);
+        requireMirrorSchema(
+                payload,
+                CapabilityMirrorProtocol
+                        .AUTHORITATIVE_OUTCOME_SELECTED_POPULATION_ADMISSION_RESULT_SCHEMA_RESOURCE,
+                "OUTCOME_POPULATION_ADMISSION");
+        return payload.deepCopy();
+    }
+
+    /**
+     * Reads one exact complete selected-population revision.
+     *
+     * @param populationId stable population identity
+     * @param revision positive immutable revision
+     * @return defensive complete population bundle
+     */
+    public JsonNode findAuthoritativeOutcomeSelectedPopulation(
+            String populationId,
+            long revision) {
+        String exactPopulationId =
+                mirrorArtifactId(populationId, "populationId");
+        requirePositiveRevision(revision);
+        return selectedPopulationBundle(
+                "/api/mirror/outcome-selected-populations/"
+                        + segment(exactPopulationId, 512)
+                        + "/revisions/" + revision);
+    }
+
+    /**
+     * Reads the current complete selected-population revision.
+     *
+     * @param populationId stable population identity
+     * @return defensive complete current population bundle
+     */
+    public JsonNode findLatestAuthoritativeOutcomeSelectedPopulation(
+            String populationId) {
+        String exactPopulationId =
+                mirrorArtifactId(populationId, "populationId");
+        return selectedPopulationBundle(
+                "/api/mirror/outcome-selected-populations/"
+                        + segment(exactPopulationId, 512)
+                        + "/latest");
+    }
+
+    /**
+     * Submits one independently authorized legal disposition for a selected member.
+     *
+     * @param populationId exact selected-population identity
+     * @param request strict legal-disposition command
+     * @return defensive immutable disposition admission result
+     */
+    public JsonNode submitAuthoritativeOutcomeSelectedPopulationDisposition(
+            String populationId,
+            JsonNode request) {
+        String exactPopulationId =
+                mirrorArtifactId(populationId, "populationId");
+        JsonNode command = requiredObject(request, "request");
+        CapabilityMirrorSchemaValidator.require(
+                command,
+                CapabilityMirrorProtocol
+                        .AUTHORITATIVE_OUTCOME_SELECTED_POPULATION_DISPOSITION_ADMISSION_REQUEST_SCHEMA_RESOURCE,
+                "RG.MIRROR.CLIENT.OUTCOME_DISPOSITION_COMMAND_INVALID");
+        JsonNode response = exchange(
+                "POST",
+                "/api/mirror/outcome-selected-populations/"
+                        + segment(exactPopulationId, 512)
+                + "/dispositions",
+                "",
+                "MIRROR_OUTCOME_DISPOSITION",
+                command);
+        JsonNode payload = requireMirrorEnvelope(
+                response,
+                "AUTHORITATIVE_OUTCOME_SELECTED_POPULATION_DISPOSITION_ADMISSION",
+                CapabilityMirrorProtocol
+                        .AUTHORITATIVE_OUTCOME_SELECTED_POPULATION_DISPOSITION_ADMISSION_RESULT_V1);
+        requireMirrorSchema(
+                payload,
+                CapabilityMirrorProtocol
+                        .AUTHORITATIVE_OUTCOME_SELECTED_POPULATION_DISPOSITION_ADMISSION_RESULT_SCHEMA_RESOURCE,
+                "OUTCOME_DISPOSITION_ADMISSION");
+        return payload.deepCopy();
+    }
+
+    /**
+     * Reads one exact signed legal-disposition revision.
+     *
+     * @param populationId exact selected-population identity
+     * @param dispositionId stable disposition identity
+     * @param revision positive immutable revision
+     * @return defensive signed disposition
+     */
+    public JsonNode findAuthoritativeOutcomeSelectedPopulationDisposition(
+            String populationId,
+            String dispositionId,
+            long revision) {
+        String exactPopulationId =
+                mirrorArtifactId(populationId, "populationId");
+        String exactDispositionId =
+                mirrorArtifactId(dispositionId, "dispositionId");
+        requirePositiveRevision(revision);
+        JsonNode response = exchange(
+                "GET",
+                "/api/mirror/outcome-selected-populations/"
+                        + segment(exactPopulationId, 512)
+                        + "/dispositions/"
+                        + segment(exactDispositionId, 512)
+                        + "/revisions/" + revision,
+                "",
+                "GOVERNANCE_EVIDENCE_INGESTION",
+                null);
+        JsonNode payload = requireMirrorEnvelope(
+                response,
+                "AUTHORITATIVE_OUTCOME_SELECTED_POPULATION_DISPOSITION",
+                CapabilityMirrorProtocol
+                        .AUTHORITATIVE_OUTCOME_SELECTED_POPULATION_DISPOSITION_V1);
+        requireMirrorSchema(
+                payload,
+                CapabilityMirrorProtocol
+                        .AUTHORITATIVE_OUTCOME_SELECTED_POPULATION_DISPOSITION_SCHEMA_RESOURCE,
+                "OUTCOME_DISPOSITION");
+        return payload.deepCopy();
+    }
+
+    /**
+     * Projects one coherent current-head completeness assessment.
+     *
+     * @param populationId exact selected-population identity
+     * @param request strict assessment command
+     * @return defensive immutable assessment admission result
+     */
+    public JsonNode assessAuthoritativeOutcomeSelectedPopulation(
+            String populationId,
+            JsonNode request) {
+        String exactPopulationId =
+                mirrorArtifactId(populationId, "populationId");
+        JsonNode command = requiredObject(request, "request");
+        CapabilityMirrorSchemaValidator.require(
+                command,
+                CapabilityMirrorProtocol
+                        .AUTHORITATIVE_OUTCOME_SELECTED_POPULATION_ASSESSMENT_REQUEST_SCHEMA_RESOURCE,
+                "RG.MIRROR.CLIENT.OUTCOME_ASSESSMENT_COMMAND_INVALID");
+        JsonNode response = exchange(
+                "POST",
+                "/api/mirror/outcome-selected-populations/"
+                        + segment(exactPopulationId, 512)
+                + "/assessments",
+                "",
+                "MIRROR_FIDELITY_GOVERNANCE",
+                command);
+        JsonNode payload = requireMirrorEnvelope(
+                response,
+                "AUTHORITATIVE_OUTCOME_SELECTED_POPULATION_ASSESSMENT_ADMISSION",
+                CapabilityMirrorProtocol
+                        .AUTHORITATIVE_OUTCOME_SELECTED_POPULATION_ASSESSMENT_ADMISSION_V1);
+        requireMirrorSchema(
+                payload,
+                CapabilityMirrorProtocol
+                        .AUTHORITATIVE_OUTCOME_SELECTED_POPULATION_ASSESSMENT_ADMISSION_SCHEMA_RESOURCE,
+                "OUTCOME_ASSESSMENT_ADMISSION");
+        return payload.deepCopy();
+    }
+
+    /**
+     * Reads one exact signed completeness assessment.
+     *
+     * @param populationId exact selected-population identity
+     * @param assessmentId stable assessment identity
+     * @param revision positive immutable revision
+     * @return defensive signed completeness assessment
+     */
+    public JsonNode findAuthoritativeOutcomeSelectedPopulationAssessment(
+            String populationId,
+            String assessmentId,
+            long revision) {
+        String exactPopulationId =
+                mirrorArtifactId(populationId, "populationId");
+        String exactAssessmentId =
+                mirrorArtifactId(assessmentId, "assessmentId");
+        requirePositiveRevision(revision);
+        JsonNode response = exchange(
+                "GET",
+                assessmentPath(
+                        exactPopulationId,
+                        exactAssessmentId,
+                        revision),
+                "",
+                "GOVERNANCE_EVIDENCE_INGESTION",
+                null);
+        JsonNode payload = requireMirrorEnvelope(
+                response,
+                "AUTHORITATIVE_OUTCOME_SELECTED_POPULATION_COMPLETENESS",
+                CapabilityMirrorProtocol
+                        .AUTHORITATIVE_OUTCOME_SELECTED_POPULATION_COMPLETENESS_ASSESSMENT_V1);
+        requireMirrorSchema(
+                payload,
+                CapabilityMirrorProtocol
+                        .AUTHORITATIVE_OUTCOME_SELECTED_POPULATION_COMPLETENESS_ASSESSMENT_SCHEMA_RESOURCE,
+                "OUTCOME_ASSESSMENT");
+        return payload.deepCopy();
+    }
+
+    /**
+     * Reads one bounded content-addressed assessment-source page.
+     *
+     * @param populationId exact selected-population identity
+     * @param assessmentId stable assessment identity
+     * @param revision positive immutable assessment revision
+     * @param afterGlobalOrdinal exclusive source cursor, zero for genesis
+     * @param limit page size from 1 through 1000
+     * @return defensive source page
+     */
+    public JsonNode findAuthoritativeOutcomeSelectedPopulationAssessmentSources(
+            String populationId,
+            String assessmentId,
+            long revision,
+            long afterGlobalOrdinal,
+            int limit) {
+        String exactPopulationId =
+                mirrorArtifactId(populationId, "populationId");
+        String exactAssessmentId =
+                mirrorArtifactId(assessmentId, "assessmentId");
+        requirePositiveRevision(revision);
+        if (afterGlobalOrdinal < 0
+                || limit < 1 || limit > 1_000) {
+            throw new IllegalArgumentException(
+                    "Assessment source cursor or limit is invalid");
+        }
+        JsonNode response = exchange(
+                "GET",
+                assessmentPath(
+                        exactPopulationId,
+                        exactAssessmentId,
+                        revision) + "/sources",
+                "afterGlobalOrdinal=" + afterGlobalOrdinal
+                        + "&limit=" + limit,
+                "GOVERNANCE_EVIDENCE_INGESTION",
+                null);
+        JsonNode payload = requireMirrorEnvelope(
+                response,
+                "AUTHORITATIVE_OUTCOME_SELECTED_POPULATION_ASSESSMENT_SOURCE_PAGE",
+                CapabilityMirrorProtocol
+                        .AUTHORITATIVE_OUTCOME_SELECTED_POPULATION_ASSESSMENT_SOURCE_PAGE_V1);
+        requireMirrorSchema(
+                payload,
+                CapabilityMirrorProtocol
+                        .AUTHORITATIVE_OUTCOME_SELECTED_POPULATION_ASSESSMENT_SOURCE_PAGE_SCHEMA_RESOURCE,
+                "OUTCOME_ASSESSMENT_SOURCE_PAGE");
+        return payload.deepCopy();
+    }
+
+    /**
+     * Follows assessment-source cursors to a complete historical closure.
+     *
+     * <p>The client rejects cursor stalls, premature empty pages, and a server that exceeds the
+     * caller-owned page budget. The returned pages still require independent verification through
+     * {@link AuthoritativeOutcomeSelectedPopulationVerifier#verifyAssessment}.</p>
+     *
+     * @param populationId exact selected-population identity
+     * @param assessmentId stable assessment identity
+     * @param revision positive immutable assessment revision
+     * @param pageSize page size from 1 through 1000
+     * @param maximumPages caller-owned positive safety budget
+     * @return complete ordered defensive source pages
+     */
+    public List<JsonNode>
+    findCompleteAuthoritativeOutcomeSelectedPopulationAssessmentSources(
+            String populationId,
+            String assessmentId,
+            long revision,
+            int pageSize,
+            int maximumPages) {
+        if (maximumPages < 1 || maximumPages > 100_000) {
+            throw new IllegalArgumentException(
+                    "maximumPages must be from 1 through 100000");
+        }
+        List<JsonNode> pages = new ArrayList<>();
+        long cursor = 0;
+        for (int pageIndex = 0;
+             pageIndex < maximumPages;
+             pageIndex++) {
+            JsonNode page =
+                    findAuthoritativeOutcomeSelectedPopulationAssessmentSources(
+                            populationId,
+                            assessmentId,
+                            revision,
+                            cursor,
+                            pageSize);
+            if (page.path("afterGlobalOrdinal").asLong(-1)
+                    != cursor) {
+                throw responseContractInvalid(
+                        "The assessment source page did not preserve the requested cursor.");
+            }
+            pages.add(page.deepCopy());
+            if (page.path("complete").asBoolean()) {
+                return List.copyOf(pages);
+            }
+            long next =
+                    page.path("nextGlobalOrdinal").asLong(-1);
+            if (next <= cursor
+                    || page.path("entries").isEmpty()) {
+                throw responseContractInvalid(
+                        "The assessment source cursor did not advance.");
+            }
+            cursor = next;
+        }
+        throw ResourceGatewayTestException.local(
+                "RG.MIRROR.CLIENT.OUTCOME_ASSESSMENT_SOURCE_PAGE_BUDGET_EXHAUSTED",
+                "The assessment source closure exceeded the configured page budget.",
+                null);
+    }
+
+    /**
      * Retrieves one atomic signed evidence-key lifecycle snapshot.
      *
      * <p>Retrieval alone does not establish trust. Callers must verify the returned value against
@@ -3411,6 +3751,73 @@ public final class ResourceGatewayTestClient {
                     "The server returned an invalid stateful-mirror envelope.");
         }
         return response.path("payload");
+    }
+
+    private static void requireMirrorSchema(
+            JsonNode payload,
+            String schemaResource,
+            String artifact) {
+        try {
+            CapabilityMirrorSchemaValidator.require(
+                    payload,
+                    schemaResource,
+                    "RG.MIRROR.CLIENT." + artifact
+                            + "_SCHEMA_INVALID");
+        } catch (IllegalArgumentException invalid) {
+            throw responseContractInvalid(
+                    "The server returned an invalid selected-outcome population artifact.");
+        }
+    }
+
+    private JsonNode selectedPopulationBundle(String path) {
+        JsonNode response = exchange(
+                "GET",
+                path,
+                "",
+                "GOVERNANCE_EVIDENCE_INGESTION",
+                null);
+        JsonNode payload = requireMirrorEnvelope(
+                response,
+                "AUTHORITATIVE_OUTCOME_SELECTED_POPULATION_BUNDLE",
+                CapabilityMirrorProtocol
+                        .AUTHORITATIVE_OUTCOME_SELECTED_POPULATION_BUNDLE_V1);
+        requireMirrorSchema(
+                payload,
+                CapabilityMirrorProtocol
+                        .AUTHORITATIVE_OUTCOME_SELECTED_POPULATION_BUNDLE_SCHEMA_RESOURCE,
+                "OUTCOME_POPULATION_BUNDLE");
+        return payload.deepCopy();
+    }
+
+    private static String assessmentPath(
+            String populationId,
+            String assessmentId,
+            long revision) {
+        return "/api/mirror/outcome-selected-populations/"
+                + segment(populationId, 512)
+                + "/assessments/"
+                + segment(assessmentId, 512)
+                + "/revisions/" + revision;
+    }
+
+    private static String mirrorArtifactId(
+            String value,
+            String field) {
+        String exact = normalized(value);
+        if (!exact.matches(
+                "[A-Za-z0-9][A-Za-z0-9@._:/-]{0,511}")) {
+            throw new IllegalArgumentException(
+                    field
+                            + " must be a bounded protocol identifier");
+        }
+        return exact;
+    }
+
+    private static void requirePositiveRevision(long revision) {
+        if (revision < 1) {
+            throw new IllegalArgumentException(
+                    "revision must be at least 1");
+        }
     }
 
     private static String mirrorSessionId(String value) {

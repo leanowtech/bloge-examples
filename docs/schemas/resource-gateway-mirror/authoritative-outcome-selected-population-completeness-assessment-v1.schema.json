@@ -1,0 +1,144 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://bloge.dev/schemas/resource-gateway-mirror/authoritative-outcome-selected-population-completeness-assessment-v1.schema.json",
+  "title": "Resource Gateway Authoritative Outcome Selected Population Completeness Assessment v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "assessmentId",
+    "revision",
+    "assessmentFingerprint",
+    "scope",
+    "populationRef",
+    "assessedAt",
+    "observationSetFingerprint",
+    "dispositionSetFingerprint",
+    "strata",
+    "totals",
+    "submissionComplete",
+    "terminalComplete",
+    "assessmentSeal"
+  ],
+  "properties": {
+    "schemaVersion": {
+      "const": "resourceGateway.authoritativeOutcomeSelectedPopulationCompletenessAssessment.v1"
+    },
+    "assessmentId": {
+      "$ref": "read-only-shadow-comparison-v1.schema.json#/$defs/identifier"
+    },
+    "revision": {
+      "type": "integer",
+      "minimum": 1
+    },
+    "assessmentFingerprint": {
+      "$ref": "mirror-plan-v1.schema.json#/$defs/fingerprint"
+    },
+    "scope": {
+      "$ref": "mirror-plan-v1.schema.json#/$defs/scope"
+    },
+    "populationRef": {
+      "$ref": "authoritative-outcome-selected-population-manifest-v1.schema.json#/$defs/artifactRef"
+    },
+    "assessedAt": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "observationSetFingerprint": {
+      "$ref": "mirror-plan-v1.schema.json#/$defs/fingerprint"
+    },
+    "dispositionSetFingerprint": {
+      "$ref": "mirror-plan-v1.schema.json#/$defs/fingerprint"
+    },
+    "strata": {
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 65536,
+      "items": {
+        "$ref": "#/$defs/stratumAssessment"
+      }
+    },
+    "totals": {
+      "$ref": "#/$defs/counts"
+    },
+    "submissionComplete": {
+      "type": "boolean"
+    },
+    "terminalComplete": {
+      "type": "boolean"
+    },
+    "assessmentSeal": {
+      "$ref": "domain-fidelity-profile-v1.schema.json#/$defs/evidenceSeal"
+    }
+  },
+  "$defs": {
+    "stratumAssessment": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "unitId",
+        "stratumId",
+        "counts"
+      ],
+      "properties": {
+        "unitId": {
+          "$ref": "read-only-shadow-comparison-v1.schema.json#/$defs/identifier"
+        },
+        "stratumId": {
+          "$ref": "read-only-shadow-comparison-v1.schema.json#/$defs/identifier"
+        },
+        "counts": {
+          "$ref": "#/$defs/counts"
+        }
+      }
+    },
+    "counts": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "expected",
+        "matched",
+        "mismatched",
+        "pending",
+        "censored",
+        "conflicting",
+        "legallyDeleted",
+        "missing"
+      ],
+      "properties": {
+        "expected": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "matched": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "mismatched": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "pending": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "censored": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "conflicting": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "legallyDeleted": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "missing": {
+          "type": "integer",
+          "minimum": 0
+        }
+      }
+    }
+  }
+}

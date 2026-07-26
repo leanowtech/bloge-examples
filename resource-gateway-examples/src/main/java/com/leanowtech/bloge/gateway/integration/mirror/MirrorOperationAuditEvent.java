@@ -148,6 +148,14 @@ public record MirrorOperationAuditEvent(
         OUTCOME_OBSERVATION_READ,
         /** Read one bounded hash-chained outcome inbox lifecycle page. */
         OUTCOME_LIFECYCLE_READ,
+        /** Verify, sign, and append one complete pre-treatment selected population. */
+        OUTCOME_POPULATION_INGEST,
+        /** Verify, sign, and append one independently authorized legal disposition. */
+        OUTCOME_DISPOSITION_INGEST,
+        /** Project and append one coherent current-head population completeness assessment. */
+        OUTCOME_POPULATION_ASSESS,
+        /** Read one selected population, disposition, assessment, or source closure. */
+        OUTCOME_POPULATION_READ,
         /** Durably reserve one read-only Shadow sample and immutable request. */
         SHADOW_JOB_CREATE,
         /** Read one integrity-verified durable Shadow job or immutable request. */

@@ -320,6 +320,221 @@ class DatabaseReadOnlyShadowPostgresCertificationTest {
                                 .Transition.NO_CHANGE);
     }
 
+    @Test
+    void certifiesSelectedPopulationAdmissionAndAssessmentCutsAcrossReplicas()
+            throws Exception {
+        Replica first = replica(
+                postgres.getPostgresDatabase());
+        Replica second = replica(
+                postgres.getPostgresDatabase());
+        Clock clock = Clock.fixed(
+                DomainFidelityTestFixtures.NOW,
+                ZoneOffset.UTC);
+        InMemoryVisualEvidenceSigner signer =
+                InMemoryVisualEvidenceSigner.usingClock(clock);
+        AuthoritativeOutcomeSelectedPopulationIntegrity
+                populationIntegrity =
+                new
+                        AuthoritativeOutcomeSelectedPopulationIntegrity(
+                        mapper,
+                        signer,
+                        AuthoritativeOutcomeSelectedPopulationTestFixtures
+                                .populationAuthority(),
+                        clock);
+        AuthoritativeOutcomeObservationIntegrity
+                observationIntegrity =
+                new AuthoritativeOutcomeObservationIntegrity(
+                        mapper,
+                        signer,
+                        AuthoritativeOutcomeSelectedPopulationTestFixtures
+                                .outcomeAuthority(),
+                        clock);
+        AuthoritativeOutcomeSelectedPopulationDispositionIntegrity
+                dispositionIntegrity =
+                new
+                        AuthoritativeOutcomeSelectedPopulationDispositionIntegrity(
+                        mapper,
+                        signer,
+                        AuthoritativeOutcomeSelectedPopulationTestFixtures
+                                .dispositionAuthority(),
+                        clock);
+        AuthoritativeOutcomeSelectedPopulationCompletenessProjector
+                projector =
+                new
+                        AuthoritativeOutcomeSelectedPopulationCompletenessProjector(
+                        mapper,
+                        populationIntegrity,
+                        observationIntegrity,
+                        dispositionIntegrity,
+                        signer,
+                        clock);
+        DatabaseAuthoritativeOutcomeInboxRepository
+                firstInbox =
+                new DatabaseAuthoritativeOutcomeInboxRepository(
+                        first.jdbc(),
+                        mapper,
+                        observationIntegrity,
+                        first.transactions());
+        DatabaseAuthoritativeOutcomeInboxRepository
+                secondInbox =
+                new DatabaseAuthoritativeOutcomeInboxRepository(
+                        second.jdbc(),
+                        mapper,
+                        observationIntegrity,
+                        second.transactions());
+        firstInbox.init();
+        secondInbox.init();
+        DatabaseAuthoritativeOutcomeSelectedPopulationRepository
+                firstPopulation =
+                selectedPopulationRepository(
+                        first,
+                        populationIntegrity,
+                        observationIntegrity,
+                        dispositionIntegrity,
+                        projector);
+        DatabaseAuthoritativeOutcomeSelectedPopulationRepository
+                secondPopulation =
+                selectedPopulationRepository(
+                        second,
+                        populationIntegrity,
+                        observationIntegrity,
+                        dispositionIntegrity,
+                        projector);
+        firstPopulation.init();
+        secondPopulation.init();
+        AuthoritativeOutcomeSelectedPopulationTestFixtures
+                .Population population =
+                AuthoritativeOutcomeSelectedPopulationTestFixtures
+                        .signedPopulation(
+                                populationIntegrity);
+
+        try (var executor =
+                     Executors.newFixedThreadPool(2)) {
+            Future<AuthoritativeOutcomeSelectedPopulationRepository
+                    .PopulationAdmission> firstAdmission =
+                    executor.submit(() ->
+                            firstPopulation.register(
+                                    population.manifest(),
+                                    population.chunks(),
+                                    ""));
+            Future<AuthoritativeOutcomeSelectedPopulationRepository
+                    .PopulationAdmission> secondAdmission =
+                    executor.submit(() ->
+                            secondPopulation.register(
+                                    population.manifest(),
+                                    population.chunks(),
+                                    ""));
+            assertThat(List.of(
+                    awaitFuture(firstAdmission)
+                            .idempotentReplay(),
+                    awaitFuture(secondAdmission)
+                            .idempotentReplay()))
+                    .containsExactlyInAnyOrder(
+                            false, true);
+        }
+
+        AuthoritativeOutcomeSelectedPopulationDisposition
+                disposition =
+                AuthoritativeOutcomeSelectedPopulationTestFixtures
+                        .signedDisposition(
+                                dispositionIntegrity,
+                                population.manifest(),
+                                population.members().get(2),
+                                "postgres-deletion-member-3");
+        firstPopulation.appendDisposition(
+                disposition, "");
+        AuthoritativeOutcomeSelectedPopulationRepository
+                .AssessmentCut stale =
+                firstPopulation.prepareAssessment(
+                        population.manifest().scope(),
+                        population.manifest().populationId(),
+                        1);
+        AuthoritativeOutcomeObservation observation =
+                AuthoritativeOutcomeSelectedPopulationTestFixtures
+                        .signedObservation(
+                                observationIntegrity,
+                                population.manifest(),
+                                population.members().getFirst(),
+                                "postgres-observation-member-1",
+                                AuthoritativeOutcomeObservation
+                                        .Reconciliation.MATCH);
+        secondInbox.append(observation, "");
+        AuthoritativeOutcomeSelectedPopulationCompletenessAssessment
+                staleAssessment =
+                projector.assess(
+                        "postgres-assessment-stale",
+                        1,
+                        population.manifest(),
+                        population.chunks(),
+                        stale.observations(),
+                        stale.dispositions());
+
+        assertThatThrownBy(() ->
+                firstPopulation.appendAssessment(
+                        stale,
+                        staleAssessment,
+                        ""))
+                .isInstanceOfSatisfying(
+                        AuthoritativeOutcomeSelectedPopulationRepository
+                                .Violation.class,
+                        failure -> assertThat(
+                                failure.reason())
+                                .isEqualTo(
+                                        AuthoritativeOutcomeSelectedPopulationRepository
+                                                .Reason.CUT_STALE));
+
+        AuthoritativeOutcomeSelectedPopulationService service =
+                new AuthoritativeOutcomeSelectedPopulationService(
+                        firstPopulation,
+                        populationIntegrity,
+                        dispositionIntegrity,
+                        projector);
+        AuthoritativeOutcomeSelectedPopulationCompletenessAssessment
+                current =
+                service.assess(
+                        population.manifest().scope(),
+                        population.manifest().populationId(),
+                        1,
+                        "postgres-assessment-current",
+                        1,
+                        "").assessment();
+        assertThat(current.totals())
+                .isEqualTo(
+                        new
+                                AuthoritativeOutcomeSelectedPopulationCompletenessAssessment.Counts(
+                                3,
+                                1,
+                                0,
+                                0,
+                                0,
+                                0,
+                                1,
+                                1));
+        assertThat(secondPopulation.findAssessment(
+                population.manifest().scope(),
+                "postgres-assessment-current",
+                1)).contains(current);
+        AuthoritativeOutcomeSelectedPopulationAssessmentSourcePage
+                page =
+                secondPopulation.assessmentSources(
+                        population.manifest().scope(),
+                        "postgres-assessment-current",
+                        1,
+                        0,
+                        100);
+        page.verify(mapper);
+        assertThat(page.complete()).isTrue();
+        assertThat(page.entries())
+                .extracting(
+                        AuthoritativeOutcomeSelectedPopulationAssessmentSourcePage
+                                .Entry::sourceKind)
+                .containsExactly(
+                        AuthoritativeOutcomeSelectedPopulationAssessmentSourcePage
+                                .SourceKind.OBSERVATION,
+                        AuthoritativeOutcomeSelectedPopulationAssessmentSourcePage
+                                .SourceKind.LEGAL_DISPOSITION);
+    }
+
     private JobFixture jobFixture() {
         return jobFixture(
                 () -> {
@@ -764,6 +979,29 @@ class DatabaseReadOnlyShadowPostgresCertificationTest {
                 replica.transactions(),
                 now::get,
                 beforeLockRowInsert);
+    }
+
+    private
+    DatabaseAuthoritativeOutcomeSelectedPopulationRepository
+    selectedPopulationRepository(
+            Replica replica,
+            AuthoritativeOutcomeSelectedPopulationIntegrity
+                    populationIntegrity,
+            AuthoritativeOutcomeObservationIntegrity
+                    observationIntegrity,
+            AuthoritativeOutcomeSelectedPopulationDispositionIntegrity
+                    dispositionIntegrity,
+            AuthoritativeOutcomeSelectedPopulationCompletenessProjector
+                    projector) {
+        return new
+                DatabaseAuthoritativeOutcomeSelectedPopulationRepository(
+                replica.jdbc(),
+                mapper,
+                populationIntegrity,
+                observationIntegrity,
+                dispositionIntegrity,
+                projector,
+                replica.transactions());
     }
 
     private static Replica replica(

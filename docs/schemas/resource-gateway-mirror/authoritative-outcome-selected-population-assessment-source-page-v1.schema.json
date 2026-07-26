@@ -1,0 +1,80 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://bloge.dev/schemas/resource-gateway-mirror/authoritative-outcome-selected-population-assessment-source-page-v1.schema.json",
+  "title": "Resource Gateway Authoritative Outcome Selected Population Assessment Source Page v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "pageFingerprint",
+    "scope",
+    "assessmentRef",
+    "populationRef",
+    "afterGlobalOrdinal",
+    "nextGlobalOrdinal",
+    "complete",
+    "entries"
+  ],
+  "properties": {
+    "schemaVersion": {
+      "const": "resourceGateway.authoritativeOutcomeSelectedPopulationAssessmentSourcePage.v1"
+    },
+    "pageFingerprint": {
+      "$ref": "mirror-plan-v1.schema.json#/$defs/fingerprint"
+    },
+    "scope": {
+      "$ref": "mirror-plan-v1.schema.json#/$defs/scope"
+    },
+    "assessmentRef": {
+      "$ref": "authoritative-outcome-selected-population-manifest-v1.schema.json#/$defs/artifactRef"
+    },
+    "populationRef": {
+      "$ref": "authoritative-outcome-selected-population-manifest-v1.schema.json#/$defs/artifactRef"
+    },
+    "afterGlobalOrdinal": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "nextGlobalOrdinal": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "complete": {
+      "type": "boolean"
+    },
+    "entries": {
+      "type": "array",
+      "maxItems": 1000,
+      "items": {
+        "$ref": "#/$defs/entry"
+      }
+    }
+  },
+  "$defs": {
+    "entry": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "globalOrdinal",
+        "sourceKind",
+        "sourceRef"
+      ],
+      "properties": {
+        "globalOrdinal": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "sourceKind": {
+          "type": "string",
+          "enum": [
+            "OBSERVATION",
+            "LEGAL_DISPOSITION"
+          ]
+        },
+        "sourceRef": {
+          "$ref": "authoritative-outcome-selected-population-manifest-v1.schema.json#/$defs/artifactRef"
+        }
+      }
+    }
+  }
+}
