@@ -21,7 +21,12 @@ import com.leanowtech.bloge.gateway.integration.mirror.DomainFidelityRepository;
 import com.leanowtech.bloge.gateway.integration.mirror.DomainFidelityService;
 import com.leanowtech.bloge.gateway.integration.mirror.DatabaseReadOnlyShadowExecutionGuard;
 import com.leanowtech.bloge.gateway.integration.mirror.DatabaseReadOnlyShadowAuthorityPublicationRepository;
+import com.leanowtech.bloge.gateway.integration.mirror.DatabaseReadOnlyShadowSourceResolutionAttestationRepository;
+import com.leanowtech.bloge.gateway.integration.mirror.DetachedReadOnlyShadowBaselineConnector;
+import com.leanowtech.bloge.gateway.integration.mirror.DetachedReadOnlyShadowCandidateConnector;
+import com.leanowtech.bloge.gateway.integration.mirror.DetachedReadOnlyShadowSourceResolutionVerifier;
 import com.leanowtech.bloge.gateway.integration.mirror.GovernedReadOnlyShadowDataPlane;
+import com.leanowtech.bloge.gateway.integration.mirror.PayloadFreeEqualityReadOnlyShadowPolicy;
 import com.leanowtech.bloge.gateway.integration.mirror.ReadOnlyShadowAccessAuthority;
 import com.leanowtech.bloge.gateway.integration.mirror.ReadOnlyShadowAuthorityIntegrity;
 import com.leanowtech.bloge.gateway.integration.mirror.ReadOnlyShadowAuthorityPublicationSource;
@@ -43,6 +48,9 @@ import com.leanowtech.bloge.gateway.integration.mirror.ReadOnlyShadowSamplingGra
 import com.leanowtech.bloge.gateway.integration.mirror.SignedReadOnlyShadowKillSwitchAuthority;
 import com.leanowtech.bloge.gateway.integration.mirror.SignedReadOnlyShadowSamplingGrantAuthority;
 import com.leanowtech.bloge.gateway.integration.mirror.ReadOnlyShadowSourceResolutionVerifier;
+import com.leanowtech.bloge.gateway.integration.mirror.ReadOnlyShadowSourceResolutionAttestationIntegrity;
+import com.leanowtech.bloge.gateway.integration.mirror.ReadOnlyShadowSourceResolutionAttestationRepository;
+import com.leanowtech.bloge.gateway.integration.mirror.ReadOnlyShadowSourceResolutionAttestationService;
 import com.leanowtech.bloge.gateway.integration.mirror.ReadOnlyShadowSourceBindingIntegrity;
 import com.leanowtech.bloge.gateway.integration.mirror.ReadOnlyShadowSourceBindingRepository;
 import com.leanowtech.bloge.gateway.integration.mirror.ReadOnlyShadowSourceBindingService;
@@ -136,6 +144,35 @@ class MirrorRuntimeConfigurationTest {
              var staging = context(true, "staging")) {
             assertMirrorKernelPresent(test);
             assertMirrorKernelPresent(staging);
+        }
+    }
+
+    @Test
+    void detachedDataPlaneSwitchInstallsExactArtifactConnectorsButRemainsFailClosed() {
+        try (var context = context(
+                Map.of(
+                        "gateway.testing.mirror.enabled", true,
+                        "gateway.testing.mirror.read-only-shadow.detached-data-plane.enabled",
+                        true),
+                "test")) {
+            assertThat(context.getBean(ReadOnlyShadowBaselineConnector.class))
+                    .isInstanceOf(DetachedReadOnlyShadowBaselineConnector.class)
+                    .satisfies(connector -> assertThat(connector.ready()).isFalse());
+            assertThat(context.getBean(ReadOnlyShadowCandidateConnector.class))
+                    .isInstanceOf(DetachedReadOnlyShadowCandidateConnector.class)
+                    .satisfies(connector -> assertThat(connector.ready()).isFalse());
+            assertThat(context.getBean(ReadOnlyShadowSourceResolutionVerifier.class))
+                    .isInstanceOf(DetachedReadOnlyShadowSourceResolutionVerifier.class)
+                    .satisfies(verifier -> assertThat(verifier.ready()).isFalse());
+            assertThat(context.getBean(ReadOnlyShadowComparisonEngine.class))
+                    .isInstanceOf(PayloadFreeEqualityReadOnlyShadowPolicy.class)
+                    .satisfies(engine -> assertThat(engine.ready()).isTrue());
+            assertThat(context.getBean(ReadOnlyShadowRuntimeAvailability.class))
+                    .satisfies(availability -> {
+                        assertThat(availability.sourceResolutionApi()).isTrue();
+                        assertThat(availability.detachedDataPlaneReady()).isFalse();
+                        assertThat(availability.servingReady()).isFalse();
+                    });
         }
     }
 
@@ -457,6 +494,19 @@ class MirrorRuntimeConfigurationTest {
                 .satisfies(service ->
                         assertThat(service.ready()).isFalse());
         assertThat(context.getBeansOfType(
+                ReadOnlyShadowSourceResolutionAttestationIntegrity.class))
+                .hasSize(1);
+        assertThat(context.getBeansOfType(
+                ReadOnlyShadowSourceResolutionAttestationRepository.class)
+                .values())
+                .singleElement()
+                .isInstanceOf(
+                        DatabaseReadOnlyShadowSourceResolutionAttestationRepository
+                                .class);
+        assertThat(context.getBeansOfType(
+                ReadOnlyShadowSourceResolutionAttestationService.class))
+                .hasSize(1);
+        assertThat(context.getBeansOfType(
                 ReadOnlyShadowAuthorityIntegrity.class))
                 .hasSize(1);
         assertThat(context.getBeansOfType(
@@ -522,8 +572,10 @@ class MirrorRuntimeConfigurationTest {
         assertThat(context.getBeansOfType(
                 ReadOnlyShadowComparisonEngine.class).values())
                 .singleElement()
+                .isInstanceOf(
+                        PayloadFreeEqualityReadOnlyShadowPolicy.class)
                 .satisfies(engine ->
-                        assertThat(engine.ready()).isFalse());
+                        assertThat(engine.ready()).isTrue());
         assertThat(context.getBeansOfType(
                 ReadOnlyShadowDataPlane.class).values())
                 .singleElement()
@@ -548,6 +600,8 @@ class MirrorRuntimeConfigurationTest {
                     assertThat(availability.schedulerReady()).isFalse();
                     assertThat(availability.sourceBindingApi()).isTrue();
                     assertThat(availability.sourceBindingReady()).isFalse();
+                    assertThat(availability.sourceResolutionApi()).isTrue();
+                    assertThat(availability.detachedDataPlaneReady()).isFalse();
                     assertThat(availability.servingReady()).isFalse();
                 });
         assertThat(context.getBeansOfType(
@@ -700,6 +754,15 @@ class MirrorRuntimeConfigurationTest {
                 ReadOnlyShadowJobPolicy.class)).isEmpty();
         assertThat(context.getBeansOfType(
                 ReadOnlyShadowJobService.class)).isEmpty();
+        assertThat(context.getBeansOfType(
+                ReadOnlyShadowSourceResolutionAttestationIntegrity.class))
+                .isEmpty();
+        assertThat(context.getBeansOfType(
+                ReadOnlyShadowSourceResolutionAttestationRepository.class))
+                .isEmpty();
+        assertThat(context.getBeansOfType(
+                ReadOnlyShadowSourceResolutionAttestationService.class))
+                .isEmpty();
         assertThat(context.getBeansOfType(
                 ReadOnlyShadowDataPlane.class)).isEmpty();
         assertThat(context.getBeansOfType(

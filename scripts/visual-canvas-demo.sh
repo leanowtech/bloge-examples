@@ -22,6 +22,7 @@ STATEFUL_MIRROR="${BLOGE_VISUAL_CANVAS_STATEFUL:-${RG_MIRROR_STATEFUL_ENABLED:-0
 SCENARIO_BATCH="${BLOGE_VISUAL_CANVAS_SCENARIO_BATCH:-${RG_MIRROR_SCENARIO_BATCH_SCHEDULER_ENABLED:-0}}"
 SHADOW_JOBS="${BLOGE_VISUAL_CANVAS_SHADOW_JOBS:-0}"
 SHADOW_SCHEDULER="${BLOGE_VISUAL_CANVAS_SHADOW_SCHEDULER:-${RG_MIRROR_SHADOW_JOB_SCHEDULER_ENABLED:-0}}"
+SHADOW_DETACHED_DATA_PLANE="${BLOGE_VISUAL_CANVAS_SHADOW_DETACHED_DATA_PLANE:-0}"
 STATEFUL_KEY_FILE="${BLOGE_VISUAL_CANVAS_STATEFUL_KEY_FILE:-${ROOT_DIR}/target/example-state/mirror-aes256.key}"
 
 if [ -z "${MVN:-}" ]; then
@@ -51,6 +52,7 @@ Options:
   --scenario-batch  Enable regional Scenario workers and isolated evidence finalizers.
   --shadow-jobs     Enable the durable read-only Shadow submit/read/lifecycle API.
   --shadow-scheduler  Also enable bounded Shadow polling; the default data plane remains unavailable.
+  --shadow-detached-data-plane  Install exact detached source connectors and verifier; authorities still fail closed.
   --open            Open /author/ in the default browser after startup.
   -h, --help        Show this help.
 
@@ -66,6 +68,7 @@ Environment:
   BLOGE_VISUAL_CANVAS_SCENARIO_BATCH   default: 0; same effect as --scenario-batch
   BLOGE_VISUAL_CANVAS_SHADOW_JOBS      default: 0; same effect as --shadow-jobs
   BLOGE_VISUAL_CANVAS_SHADOW_SCHEDULER default: 0; same effect as --shadow-scheduler
+  BLOGE_VISUAL_CANVAS_SHADOW_DETACHED_DATA_PLANE default: 0; same effect as --shadow-detached-data-plane
   BLOGE_VISUAL_CANVAS_STATEFUL_KEY_FILE  local demo AES-256 key file; never printed
   RG_MIRROR_SHADOW_JOB_INSTANCE_ID     stable local Shadow scheduler replica id
   RG_MIRROR_SHADOW_JOB_REGION          exact regional queue partition
@@ -258,6 +261,7 @@ Examples:
   scripts/start-visual-canvas-demo.sh --scenario-batch
   scripts/start-visual-canvas-demo.sh --shadow-jobs
   scripts/start-visual-canvas-demo.sh --shadow-scheduler
+  scripts/start-visual-canvas-demo.sh --shadow-detached-data-plane
   scripts/start-visual-canvas-demo.sh --port 18080 -- --gateway.base-url=http://localhost:9091
   scripts/visual-canvas-demo.sh status
 EOF
@@ -271,7 +275,8 @@ truthy() {
 }
 
 configure_shadow_jobs() {
-    if truthy "${SHADOW_SCHEDULER}"; then
+    if truthy "${SHADOW_SCHEDULER}" ||
+        truthy "${SHADOW_DETACHED_DATA_PLANE}"; then
         SHADOW_JOBS=1
     fi
     if ! truthy "${SHADOW_JOBS}"; then
@@ -304,6 +309,10 @@ configure_shadow_jobs() {
             return 1
             ;;
     esac
+    if truthy "${SHADOW_DETACHED_DATA_PLANE}"; then
+        APP_ARGS+=(
+            "--gateway.testing.mirror.read-only-shadow.detached-data-plane.enabled=true")
+    fi
     if ! truthy "${SHADOW_SCHEDULER}"; then
         return 0
     fi
@@ -2065,6 +2074,7 @@ Integration API templates:
   Finalizer health: GET  /api/mirror/rehearsal-jobs/finalization-health
   Shadow admission: POST /api/mirror/shadow-jobs (--shadow-jobs; Bearer token + X-Purpose: MIRROR_SHADOW)
   Shadow lifecycle: GET  /api/mirror/shadow-jobs/{jobId}/lifecycle
+  Source proof:     GET  /api/mirror/shadow/source-resolutions/{attestationId}/revisions/{revision}?fingerprint=...
 EOF
 }
 
@@ -2120,6 +2130,7 @@ wait_for_ready() {
                         --argjson scheduler "$(truthy "${RG_MIRROR_SHADOW_JOB_SCHEDULER_ENABLED:-false}" && printf true || printf false)" '
                         .payload.features.mirrorReadOnlyShadowJobApi == true
                         and .payload.features.mirrorReadOnlyShadowLifecycleAudit == true
+                        and .payload.features.mirrorReadOnlyShadowSourceResolutionApi == true
                         and ($scheduler == false or .payload.features.mirrorReadOnlyShadowScheduling == true)
                     ' >/dev/null 2>&1; then
                         sleep 2
@@ -2128,7 +2139,9 @@ wait_for_ready() {
                 elif ! printf '%s' "${response}" |
                     grep -Eq '"mirrorReadOnlyShadowJobApi"[[:space:]]*:[[:space:]]*true' ||
                     ! printf '%s' "${response}" |
-                    grep -Eq '"mirrorReadOnlyShadowLifecycleAudit"[[:space:]]*:[[:space:]]*true'; then
+                    grep -Eq '"mirrorReadOnlyShadowLifecycleAudit"[[:space:]]*:[[:space:]]*true' ||
+                    ! printf '%s' "${response}" |
+                    grep -Eq '"mirrorReadOnlyShadowSourceResolutionApi"[[:space:]]*:[[:space:]]*true'; then
                     sleep 2
                     continue
                 elif truthy "${RG_MIRROR_SHADOW_JOB_SCHEDULER_ENABLED:-false}" &&
@@ -2222,7 +2235,7 @@ wait_for_ready() {
                 return 0
             fi
             if truthy "${SHADOW_JOBS}"; then
-                echo "Demo service ready; Shadow job API and lifecycle probes passed: ${url}"
+                echo "Demo service ready; Shadow job, lifecycle, and source-resolution API probes passed: ${url}"
                 return 0
             fi
             echo "Demo service ready; integration capability probe passed: ${url}"
@@ -2395,6 +2408,11 @@ parse_options() {
             --shadow-scheduler)
                 SHADOW_JOBS=1
                 SHADOW_SCHEDULER=1
+                shift
+                ;;
+            --shadow-detached-data-plane)
+                SHADOW_JOBS=1
+                SHADOW_DETACHED_DATA_PLANE=1
                 shift
                 ;;
             --open)

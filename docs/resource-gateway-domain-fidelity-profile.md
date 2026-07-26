@@ -408,6 +408,15 @@ OIDC/mTLS adapter 或显式配置的测试身份 resolver 提供 human principal
 ./scripts/start-visual-canvas-demo.sh --shadow-scheduler
 ```
 
+安装 exact detached source connector、独立复核器和 payload-free equality policy：
+
+```bash
+./scripts/start-visual-canvas-demo.sh --shadow-detached-data-plane
+```
+
+该开关只安装 v2 detached 数据面纵切，不伪造 signer、企业 root-policy、sampling/kill-switch
+current head 或 egress authority。上述 authority 未就绪时，worker 仍在调用 connector 前失败关闭。
+
 `--shadow-scheduler` 会把 scheduler partition 与受信 demo identity 的 region/environment
 对齐，并拒绝 `prod`、`production`、`live`。企业可以使用 `qa-sg`、`shadow-staging` 等自定义
 非生产环境名；真正的隔离根是 `@Profile("!production & (test | staging)")` 和显式
@@ -469,6 +478,12 @@ curl http://localhost:8080/api/mirror/shadow-jobs/$JOB_ID/request \
 curl "http://localhost:8080/api/mirror/shadow-jobs/$JOB_ID/lifecycle?afterSequence=0&limit=100" \
   -H "Authorization: Bearer $GOVERNANCE_TOKEN" \
   -H "X-Purpose: GOVERNANCE_EVIDENCE_INGESTION"
+
+curl "http://localhost:8080/api/mirror/shadow/source-resolutions/$ATTESTATION_ID/revisions/$REVISION?fingerprint=$FINGERPRINT" \
+  -H "Authorization: Bearer $GOVERNANCE_TOKEN" \
+  -H "X-Purpose: GOVERNANCE_EVIDENCE_INGESTION" \
+  -H "X-BLOGE-Shadow-Source-Resolution-Protocol: read-only-shadow-source-resolution-attestation-v1" \
+  -H "Accept: application/vnd.bloge.read-only-shadow-source-resolution-attestation.v1+json"
 ```
 
 生命周期是 database-ordered append-only fact stream，转移闭集为 `ADMITTED`、`CLAIMED`、
@@ -490,9 +505,9 @@ cursor，`limit` 为 1..1000；调用方必须根据 `hasMore` 继续取页，�
 | `ReadOnlyShadowKillSwitchAuthority` | exact current scope/switch generation、enabled 状态、短有效窗与签名 authority attestation | signed current-head adapter；因 trust store unavailable 而 fail-closed |
 | `MirrorDeploymentIsolationRunTrustAuthority` | 执行前/后的同一 egress decision、keyset、status 与 agent snapshot | unavailable |
 | `ReadOnlyShadowExecutionGuard` | 跨副本并发、窗口速率、熔断、唯一半开探针和 fenced lease | database-authoritative / ready |
-| `ReadOnlyShadowBaselineConnector` / `ReadOnlyShadowCandidateConnector` | 同一 request context 的 payload-free source observation 与零写测量 | unavailable |
-| `ReadOnlyShadowSourceResolutionVerifier` | 两侧 exact artifact 拉取、内容地址/签名/scope/target/authority closure | unavailable |
-| `ReadOnlyShadowComparisonEngine` | exact comparison policy 下的规范化 typed diff | unavailable |
+| `ReadOnlyShadowBaselineConnector` / `ReadOnlyShadowCandidateConnector` | 同一 request context 的 payload-free source observation 与零写测量 | 默认 unavailable；`--shadow-detached-data-plane` 安装 exact source-binding/candidate-evidence connector |
+| `ReadOnlyShadowSourceResolutionVerifier` | 两侧 exact artifact 二次拉取、内容地址/签名/scope/target/authority closure，并签发 append-only proof | 默认 unavailable；`--shadow-detached-data-plane` 安装真实 detached verifier |
+| `ReadOnlyShadowComparisonEngine` | exact comparison policy 下的规范化 typed diff | 内置 content-addressed `payload-free-equality-v1` / ready |
 
 组合内核在 baseline、candidate、终态 authority 和 source resolution 前分别续 durable job lease，
 并把 shared guard lease 限定到不晚于新的 job lease。任何依赖不可用、权威漂移、写凭据、写尝试、
@@ -515,6 +530,8 @@ cursor，`limit` 为 1..1000；调用方必须根据 `hasMore` 继续取页，�
 | `mirrorReadOnlyShadowJobApi` | protected submit/read/request/comparison/lifecycle route 已装配 |
 | `mirrorReadOnlyShadowSourceBindingApi` | detached source-pair register/exact-read route 与 v1/v2 request protocol 已装配 |
 | `mirrorReadOnlyShadowSourceBindingReady` | source-binding signer 与 repository 当前可用；不代表 baseline/candidate connector ready |
+| `mirrorReadOnlyShadowSourceResolutionApi` | exact signed source-resolution attestation read route 已装配 |
+| `mirrorReadOnlyShadowDetachedDataPlaneReady` | exact detached connector、二次来源复核、proof signer、online authority 与 shared guard 整条链 ready；不会由单个 API 或 policy ready 推导 |
 | `mirrorReadOnlyShadowLifecycleAudit` | 每个 committed job transition 同事务写入 append-only journal |
 | `mirrorReadOnlyShadowWorkerReady` | managed signer 与受信 baseline/candidate data plane 当前可执行 |
 | `mirrorReadOnlyShadowScheduling` | bounded regional poller 当前运行；不代表 worker ready |
@@ -522,10 +539,13 @@ cursor，`limit` 为 1..1000；调用方必须根据 `hasMore` 继续取页，�
 
 调用方不得用 projection flag 推导 shadow/outcome flag；readable history、available key、
 可生成部分 profile、真实行为对照和业务结果校准是不同生命周期事实。
-当前已定义 `ReadOnlyShadowSourceResolutionVerifier` 且 governed data plane 强制调用它，但默认
-resolver 仍不可用。只有生产 adapter 主动拉取并重验底层 baseline/candidate exact revision、签名、
-scope、target、request context 与双重观测 authority closure 后，source-resolution readiness 才能
-为 true；comparison 根签名中的 ref 本身不是来源证明。
+`--shadow-detached-data-plane` 安装的 `DetachedReadOnlyShadowSourceResolutionVerifier` 不信任
+两个 connector 的标签，而会再次精确拉取 source binding 与 candidate bundle、重验两者签名和
+content address、重跑同一个 policy normalization，并逐项对比 scope、target、request context、
+evidence class/completeness 与零写计数。验证通过后才签发
+`resourceGateway.readOnlyShadowSourceResolutionAttestation.v1` 并 append-only 落库。proof 显式携带
+稳定 `executionId`，区分历史 source completion 与本次 resolution time；comparison 中的 ref
+只是入口，治理消费者仍必须读取并独立验真 proof。
 
 detached source binding 也遵守这一边界。`ReadOnlyShadowSourceBindingVerifier` 在独立 Test Kit
 中先重算 baseline/binding 双层 content address，再验证 exact v2 job reference、有效窗、binding
@@ -580,6 +600,23 @@ ReadOnlyShadowComparisonVerifier.VerificationResult result =
 它会独立拒绝重新签名后的请求错配、sample ordinal 越权、写凭据或写尝试、伪造
 `MATCH/MISMATCH/INDETERMINATE`、跨维度 diff type、内容地址、签名、key lifecycle 和
 签名时间漂移。
+
+detached source proof 还必须单独验真：
+
+```java
+ReadOnlyShadowSourceResolutionAttestationVerifier.VerificationResult result =
+        new ReadOnlyShadowSourceResolutionAttestationVerifier().verify(
+                sourceResolutionJson,
+                sourceResolutionAuthorityKey,
+                resolutionContext);
+```
+
+`resolutionContext` 由 comparison 的 exact source-resolution ref、认证 scope、job request id、
+durable `executionId`、v3 admission fingerprint、已读取的 exact source binding 及其独立
+verification context 组成。验证器重新执行 source-binding/candidate evidence 验真，重算确定性
+proof id、content address、`payload-free-equality-v1` policy ref 和 candidate
+behavior/contract/effect/state facts，再检查 source/resolution/authority 时间序、零写事实、key policy
+与签名。它按数值比较 artifact revision，不依赖 Jackson `IntNode`/`LongNode` 实现细节。
 
 durable job export 使用第二个独立 verifier：
 
@@ -655,6 +692,7 @@ code，不输出 Scenario fixture、请求、响应或原始诊断。
 - [`read-only-shadow-job-request-v2.schema.json`](schemas/resource-gateway-mirror/read-only-shadow-job-request-v2.schema.json)
 - [`read-only-shadow-source-binding-registration-request-v1.schema.json`](schemas/resource-gateway-mirror/read-only-shadow-source-binding-registration-request-v1.schema.json)
 - [`read-only-shadow-source-binding-v1.schema.json`](schemas/resource-gateway-mirror/read-only-shadow-source-binding-v1.schema.json)
+- [`read-only-shadow-source-resolution-attestation-v1.schema.json`](schemas/resource-gateway-mirror/read-only-shadow-source-resolution-attestation-v1.schema.json)
 - [`read-only-shadow-job-v1.schema.json`](schemas/resource-gateway-mirror/read-only-shadow-job-v1.schema.json)
 - [`read-only-shadow-job-lifecycle-event-v1.schema.json`](schemas/resource-gateway-mirror/read-only-shadow-job-lifecycle-event-v1.schema.json)
 - [`read-only-shadow-job-lifecycle-page-v1.schema.json`](schemas/resource-gateway-mirror/read-only-shadow-job-lifecycle-page-v1.schema.json)
@@ -672,6 +710,7 @@ CapabilityMirrorProtocol.READ_ONLY_SHADOW_JOB_REQUEST_SCHEMA_RESOURCE
 CapabilityMirrorProtocol.READ_ONLY_SHADOW_JOB_REQUEST_V2_SCHEMA_RESOURCE
 CapabilityMirrorProtocol.READ_ONLY_SHADOW_SOURCE_BINDING_REGISTRATION_REQUEST_SCHEMA_RESOURCE
 CapabilityMirrorProtocol.READ_ONLY_SHADOW_SOURCE_BINDING_SCHEMA_RESOURCE
+CapabilityMirrorProtocol.READ_ONLY_SHADOW_SOURCE_RESOLUTION_ATTESTATION_SCHEMA_RESOURCE
 CapabilityMirrorProtocol.READ_ONLY_SHADOW_JOB_SCHEMA_RESOURCE
 CapabilityMirrorProtocol.READ_ONLY_SHADOW_JOB_LIFECYCLE_EVENT_SCHEMA_RESOURCE
 CapabilityMirrorProtocol.READ_ONLY_SHADOW_JOB_LIFECYCLE_PAGE_SCHEMA_RESOURCE
@@ -737,13 +776,14 @@ read-only Shadow comparison adapter、durable queue/worker、protected Shadow AP
 bounded scheduler、独立 readiness、lifecycle verifier，以及 governed data-plane composition
 kernel、database-authoritative execution guard、三类签名 online authority protocol、
 append-only current-head repository、managed trust distribution、server adapter、v1/v2
-job request、exact detached source-binding repository/API 与独立 Test Kit verifier 已完成。
+job request、exact detached source-binding repository/API、真实 detached connector/policy/source
+resolver、signed source-resolution proof API 与独立 Test Kit verifier 已完成。
 下一步按来源信任依赖推进：
 
 1. 接入企业 root-policy/control-plane connector，并认证 authority successor/revocation 的
    跨区域传播时限、outage 和 rolling rotation。
-2. 让第一个真实 detached baseline/candidate connector 消费 exact source binding，并完成来源 artifact
-   拉取重验和 exact comparison policy adapter。
+2. 为第一个获授权的真实在线 baseline connector 接入 payload-isolated read adapter；detached
+   evidence path 已完成，不得把它误报为在线生产采样。
 3. 把 signed typed diff 接入 drift budget，自动 stale/downgrade/revoke serving conclusion。
 4. 实现 authoritative outcome observation 与 delayed/censored reconciliation。
 5. 为 `ERROR_DISTRIBUTION` 和 `REQUEST_SPACE` 增加 cohort/sampling proof，而不是借用单次

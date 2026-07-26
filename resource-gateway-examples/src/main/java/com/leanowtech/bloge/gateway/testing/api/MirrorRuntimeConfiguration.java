@@ -15,6 +15,7 @@ import com.leanowtech.bloge.gateway.integration.mirror.DatabaseReadOnlyShadowAut
 import com.leanowtech.bloge.gateway.integration.mirror.DatabaseReadOnlyShadowAuthorityKeySetRepository;
 import com.leanowtech.bloge.gateway.integration.mirror.DatabaseReadOnlyShadowJobRepository;
 import com.leanowtech.bloge.gateway.integration.mirror.DatabaseReadOnlyShadowSourceBindingRepository;
+import com.leanowtech.bloge.gateway.integration.mirror.DatabaseReadOnlyShadowSourceResolutionAttestationRepository;
 import com.leanowtech.bloge.gateway.integration.mirror.DatabaseCompiledScenarioRehearsalPlanRepository;
 import com.leanowtech.bloge.gateway.integration.mirror.DatabaseScenarioArtifactRepository;
 import com.leanowtech.bloge.gateway.integration.mirror.DatabaseScenarioRehearsalBatchEvidenceRepository;
@@ -140,6 +141,13 @@ import com.leanowtech.bloge.gateway.integration.mirror.ReadOnlyShadowSourceResol
 import com.leanowtech.bloge.gateway.integration.mirror.ReadOnlyShadowSourceBindingIntegrity;
 import com.leanowtech.bloge.gateway.integration.mirror.ReadOnlyShadowSourceBindingRepository;
 import com.leanowtech.bloge.gateway.integration.mirror.ReadOnlyShadowSourceBindingService;
+import com.leanowtech.bloge.gateway.integration.mirror.ReadOnlyShadowSourceResolutionAttestationIntegrity;
+import com.leanowtech.bloge.gateway.integration.mirror.ReadOnlyShadowSourceResolutionAttestationRepository;
+import com.leanowtech.bloge.gateway.integration.mirror.ReadOnlyShadowSourceResolutionAttestationService;
+import com.leanowtech.bloge.gateway.integration.mirror.DetachedReadOnlyShadowBaselineConnector;
+import com.leanowtech.bloge.gateway.integration.mirror.DetachedReadOnlyShadowCandidateConnector;
+import com.leanowtech.bloge.gateway.integration.mirror.DetachedReadOnlyShadowSourceResolutionVerifier;
+import com.leanowtech.bloge.gateway.integration.mirror.PayloadFreeEqualityReadOnlyShadowPolicy;
 import com.leanowtech.bloge.gateway.integration.mirror.ComposedReadOnlyShadowAccessAuthority;
 import com.leanowtech.bloge.gateway.integration.mirror.GovernedReadOnlyShadowDataPlane;
 import com.leanowtech.bloge.gateway.integration.mirror.ReadOnlyShadowDomainFidelitySource;
@@ -1407,6 +1415,45 @@ public class MirrorRuntimeConfiguration {
                 Clock.systemUTC());
     }
 
+    /** Creates the source-resolution content-addressing and signing boundary. */
+    @Bean
+    @ConditionalOnMissingBean
+    public ReadOnlyShadowSourceResolutionAttestationIntegrity
+    readOnlyShadowSourceResolutionAttestationIntegrity(
+            ObjectMapper objectMapper,
+            VisualEvidenceSigner signer) {
+        return new ReadOnlyShadowSourceResolutionAttestationIntegrity(
+                objectMapper,
+                signer,
+                Clock.systemUTC());
+    }
+
+    /** Creates the append-only exact-revision source-resolution attestation store. */
+    @Bean
+    @ConditionalOnMissingBean
+    public ReadOnlyShadowSourceResolutionAttestationRepository
+    readOnlyShadowSourceResolutionAttestationRepository(
+            JdbcTemplate jdbc,
+            ObjectMapper objectMapper,
+            ReadOnlyShadowSourceResolutionAttestationIntegrity
+                    integrity) {
+        return new DatabaseReadOnlyShadowSourceResolutionAttestationRepository(
+                jdbc,
+                objectMapper,
+                integrity);
+    }
+
+    /** Creates the exact source-resolution governance evidence read boundary. */
+    @Bean
+    @ConditionalOnMissingBean
+    public ReadOnlyShadowSourceResolutionAttestationService
+    readOnlyShadowSourceResolutionAttestationService(
+            ReadOnlyShadowSourceResolutionAttestationRepository
+                    attestations) {
+        return new ReadOnlyShadowSourceResolutionAttestationService(
+                attestations);
+    }
+
     /** Creates the database-authoritative Shadow queue and signed comparison store. */
     @Bean
     @ConditionalOnMissingBean
@@ -1599,6 +1646,80 @@ public class MirrorRuntimeConfiguration {
                 transactionManager);
     }
 
+    /** Creates the immutable built-in payload-free equality policy. */
+    @Bean
+    @ConditionalOnMissingBean
+    public PayloadFreeEqualityReadOnlyShadowPolicy
+    payloadFreeEqualityReadOnlyShadowPolicy(
+            ObjectMapper objectMapper) {
+        return new PayloadFreeEqualityReadOnlyShadowPolicy(
+                objectMapper);
+    }
+
+    /** Installs the exact signed-binding baseline connector only behind its explicit switch. */
+    @Bean
+    @ConditionalOnProperty(
+            prefix = "gateway.testing.mirror.read-only-shadow.detached-data-plane",
+            name = "enabled",
+            havingValue = "true")
+    public ReadOnlyShadowBaselineConnector
+    detachedReadOnlyShadowBaselineConnector(
+            ReadOnlyShadowSourceBindingService bindings,
+            PayloadFreeEqualityReadOnlyShadowPolicy policy) {
+        return new DetachedReadOnlyShadowBaselineConnector(
+                bindings,
+                policy,
+                Clock.systemUTC());
+    }
+
+    /** Installs the independently verified detached candidate connector behind its switch. */
+    @Bean
+    @ConditionalOnProperty(
+            prefix = "gateway.testing.mirror.read-only-shadow.detached-data-plane",
+            name = "enabled",
+            havingValue = "true")
+    public ReadOnlyShadowCandidateConnector
+    detachedReadOnlyShadowCandidateConnector(
+            ReadOnlyShadowSourceBindingService bindings,
+            MirrorEvidenceRepository evidence,
+            MirrorEvidenceIntegrityService evidenceIntegrity,
+            PayloadFreeEqualityReadOnlyShadowPolicy policy) {
+        return new DetachedReadOnlyShadowCandidateConnector(
+                bindings,
+                evidence,
+                evidenceIntegrity,
+                policy,
+                Clock.systemUTC());
+    }
+
+    /** Installs independent paired-source re-resolution and attestation behind its switch. */
+    @Bean
+    @ConditionalOnProperty(
+            prefix = "gateway.testing.mirror.read-only-shadow.detached-data-plane",
+            name = "enabled",
+            havingValue = "true")
+    public ReadOnlyShadowSourceResolutionVerifier
+    detachedReadOnlyShadowSourceResolutionVerifier(
+            ReadOnlyShadowSourceBindingService bindings,
+            MirrorEvidenceRepository evidence,
+            MirrorEvidenceIntegrityService evidenceIntegrity,
+            PayloadFreeEqualityReadOnlyShadowPolicy policy,
+            ReadOnlyShadowSourceResolutionAttestationRepository
+                    attestations,
+            ReadOnlyShadowSourceResolutionAttestationIntegrity
+                    attestationIntegrity,
+            ObjectMapper objectMapper) {
+        return new DetachedReadOnlyShadowSourceResolutionVerifier(
+                bindings,
+                evidence,
+                evidenceIntegrity,
+                policy,
+                attestations,
+                attestationIntegrity,
+                objectMapper,
+                Clock.systemUTC());
+    }
+
     /** Provides a fail-closed baseline connector until an isolated read adapter is installed. */
     @Bean
     @ConditionalOnMissingBean
@@ -1704,6 +1825,7 @@ public class MirrorRuntimeConfiguration {
             ReadOnlyShadowAuthorityKeySetTrustPolicyProvider
                     authorityTrustPolicies,
             ReadOnlyShadowSourceBindingService sourceBindings,
+            ReadOnlyShadowDataPlane dataPlane,
             ObjectProvider<ReadOnlyShadowJobScheduler>
                     scheduler) {
         return new ReadOnlyShadowRuntimeAvailability(
@@ -1719,7 +1841,9 @@ public class MirrorRuntimeConfiguration {
                 true,
                 authorityTrustPolicies::available,
                 true,
-                sourceBindings::ready);
+                sourceBindings::ready,
+                true,
+                dataPlane::ready);
     }
 
     /** Creates the independently verified read-only Shadow Fidelity source adapter. */

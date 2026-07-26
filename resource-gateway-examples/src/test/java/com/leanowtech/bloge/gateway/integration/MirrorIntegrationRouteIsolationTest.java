@@ -14,6 +14,7 @@ import com.leanowtech.bloge.gateway.integration.mirror.CapabilityObservationAdmi
 import com.leanowtech.bloge.gateway.integration.mirror.CapabilityCorpusGovernanceService;
 import com.leanowtech.bloge.gateway.integration.mirror.ReadOnlyShadowAuthorityKeySetService;
 import com.leanowtech.bloge.gateway.integration.mirror.ReadOnlyShadowSourceBindingService;
+import com.leanowtech.bloge.gateway.integration.mirror.ReadOnlyShadowSourceResolutionAttestationService;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.junit.jupiter.api.Test;
 import org.springframework.context.ApplicationContext;
@@ -73,6 +74,7 @@ class MirrorIntegrationRouteIsolationTest {
                     "GET /api/mirror/trust/read-only-shadow/authority-key-sets/pages",
                     "POST /api/mirror/shadow/source-bindings",
                     "GET /api/mirror/shadow/source-bindings/{bindingId}/revisions/{revision}",
+                    "GET /api/mirror/shadow/source-resolutions/{attestationId}/revisions/{revision}",
                     "POST /api/mirror/trust/deployment-isolation/attestations",
                     "GET /api/mirror/trust/deployment-isolation/attestations/{attestationId}/latest",
                     "GET /api/mirror/trust/deployment-isolation/attestations/{attestationId}/revisions/{revision}",
@@ -117,6 +119,7 @@ class MirrorIntegrationRouteIsolationTest {
                     "GET /api/mirror/trust/read-only-shadow/authority-key-sets/pages",
                     "POST /api/mirror/shadow/source-bindings",
                     "GET /api/mirror/shadow/source-bindings/{bindingId}/revisions/{revision}",
+                    "GET /api/mirror/shadow/source-resolutions/{attestationId}/revisions/{revision}",
                     "POST /api/mirror/trust/deployment-isolation/attestations",
                     "GET /api/mirror/trust/deployment-isolation/attestations/{attestationId}/latest",
                     "GET /api/mirror/trust/deployment-isolation/attestations/{attestationId}/revisions/{revision}",
@@ -166,6 +169,12 @@ class MirrorIntegrationRouteIsolationTest {
             assertThat(mixed.getBeansOfType(
                     ReadOnlyShadowSourceBindingController.class)).isEmpty();
             assertThat(production.getBeansOfType(
+                    ReadOnlyShadowSourceResolutionAttestationController.class))
+                    .isEmpty();
+            assertThat(mixed.getBeansOfType(
+                    ReadOnlyShadowSourceResolutionAttestationController.class))
+                    .isEmpty();
+            assertThat(production.getBeansOfType(
                     MirrorDeploymentIsolationAttestationController.class)).isEmpty();
             assertThat(mixed.getBeansOfType(
                     MirrorDeploymentIsolationAttestationController.class)).isEmpty();
@@ -199,6 +208,7 @@ class MirrorIntegrationRouteIsolationTest {
                 MirrorDeploymentIsolationAuthorityPublicationController.class,
                 ReadOnlyShadowAuthorityKeySetController.class,
                 ReadOnlyShadowSourceBindingController.class,
+                ReadOnlyShadowSourceResolutionAttestationController.class,
                 MirrorDeploymentIsolationAttestationController.class,
                 CapabilityObservationController.class,
                 CapabilityCorpusGovernanceController.class);
@@ -280,6 +290,13 @@ class MirrorIntegrationRouteIsolationTest {
         ReadOnlyShadowSourceBindingService
         readOnlyShadowSourceBindingService() {
             return mock(ReadOnlyShadowSourceBindingService.class);
+        }
+
+        @Bean
+        ReadOnlyShadowSourceResolutionAttestationService
+        readOnlyShadowSourceResolutionAttestationService() {
+            return mock(
+                    ReadOnlyShadowSourceResolutionAttestationService.class);
         }
 
         @Bean

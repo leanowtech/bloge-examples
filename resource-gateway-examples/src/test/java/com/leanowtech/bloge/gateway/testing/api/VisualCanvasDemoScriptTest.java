@@ -86,7 +86,34 @@ class VisualCanvasDemoScriptTest {
                 "RG_MIRROR_SCENARIO_BATCH_ENVIRONMENT",
                 "RG_MIRROR_SCENARIO_BATCH_FINALIZATION_INSTANCE_ID",
                 "RG_MIRROR_SCENARIO_BATCH_FINALIZATION_MAXIMUM_POLLERS",
-                "scripts/start-visual-canvas-demo.sh --scenario-batch");
+                "scripts/start-visual-canvas-demo.sh --scenario-batch",
+                "--shadow-detached-data-plane",
+                "BLOGE_VISUAL_CANVAS_SHADOW_DETACHED_DATA_PLANE",
+                "scripts/start-visual-canvas-demo.sh --shadow-detached-data-plane");
+    }
+
+    @Test
+    void detachedShadowDataPlaneIsRejectedForProductionBeforeBuild()
+            throws Exception {
+        Process process = new ProcessBuilder(
+                "bash", SCRIPT.toString(), "start",
+                "--profile", "production",
+                "--shadow-detached-data-plane", "--no-build")
+                .redirectErrorStream(true)
+                .start();
+
+        assertThat(process.waitFor(
+                Duration.ofSeconds(5))).isTrue();
+        String output = new String(
+                process.getInputStream().readAllBytes(),
+                StandardCharsets.UTF_8);
+
+        assertThat(process.exitValue()).isEqualTo(1);
+        assertThat(output).contains(
+                "Read-only Shadow jobs are physically unavailable in the production profile.");
+        assertThat(output).doesNotContain(
+                "Packaging Resource Gateway demo",
+                "Starting Visual Canvas demo");
     }
 
     @Test

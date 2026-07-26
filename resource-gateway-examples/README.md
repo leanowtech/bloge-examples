@@ -55,11 +55,13 @@ dedicated local data plane. Add `--scenario-batch` to start bounded autonomous
 DAG workers plus isolated evidence-finalization lanes for one exact
 `test`/`staging` regional queue partition.
 Add `--shadow-jobs` to assemble the durable read-only Shadow submit/read/lifecycle
-API. `--shadow-scheduler` also starts bounded pollers, but the demo deliberately
-keeps the governed data plane's online authorities, trusted baseline/candidate
-connectors, source resolver, and comparison engine unavailable. The shared
-database guard is ready, but worker and end-to-end serving readiness remain
-false until the remaining operator-owned adapters are installed.
+API. `--shadow-detached-data-plane` additionally installs the exact signed-binding
+baseline/candidate connectors, independent source resolver, source-resolution
+attestation store, and immutable payload-free equality policy.
+`--shadow-scheduler` also starts bounded pollers. The demo still leaves the
+managed signer, enterprise root-policy trust, and online egress authority
+unavailable, so worker and end-to-end serving readiness remain false instead of
+silently consuming work.
 
 | Open | Best first move |
 | --- | --- |
@@ -93,6 +95,7 @@ false until the remaining operator-owned adapters are installed.
 | `GET http://localhost:8080/api/mirror/domain-fidelity/domains/{domainId}/profiles/latest` | Read and revalidate the newest managed-signed profile; profile projection remains unavailable until verified source adapters are assembled |
 | `POST http://localhost:8080/api/mirror/shadow/source-bindings` | Resolve an exact candidate evidence bundle, double-address and sign one payload-free detached source pair (`X-Purpose: MIRROR_SHADOW_SOURCE_ADMIN`; explicit source-binding protocol header required) |
 | `GET http://localhost:8080/api/mirror/shadow/source-bindings/{bindingId}/revisions/{revision}?fingerprint=...` | Read one exact currently valid detached source pair without latest-revision fallback (`X-Purpose: MIRROR_SHADOW`, `MIRROR_SHADOW_SOURCE_ADMIN`, or `GOVERNANCE_EVIDENCE_INGESTION`) |
+| `GET http://localhost:8080/api/mirror/shadow/source-resolutions/{attestationId}/revisions/{revision}?fingerprint=...` | Read one exact signed proof that both detached sources were independently re-resolved for a stable `executionId` (`X-Purpose: MIRROR_SHADOW` or `GOVERNANCE_EVIDENCE_INGESTION`; explicit source-resolution protocol header required) |
 | `POST http://localhost:8080/api/mirror/shadow-jobs` | Admit one immutable, payload-free read-only Shadow command after starting with `--shadow-jobs` (`X-Purpose: MIRROR_SHADOW`) |
 | `GET http://localhost:8080/api/mirror/shadow-jobs/{jobId}` | Read the exact-scope, integrity-verified durable projection without worker owner or payload |
 | `GET http://localhost:8080/api/mirror/shadow-jobs/{jobId}/request` | Read the immutable command needed for independent job verification |
@@ -570,18 +573,27 @@ To demonstrate autonomous bounded polling as a separate readiness fact:
 ./scripts/start-visual-canvas-demo.sh --shadow-scheduler
 ```
 
+To install the first real payload-free detached-source data-plane slice:
+
+```bash
+./scripts/start-visual-canvas-demo.sh --shadow-detached-data-plane
+```
+
 The second command sets an exact scheduler region/environment equal to the demo
 identity and waits for `mirrorReadOnlyShadowJobApi=true`,
 `mirrorReadOnlyShadowLifecycleAudit=true`, and
 `mirrorReadOnlyShadowScheduling=true`. It does not wait for or claim
 `mirrorReadOnlyShadowWorkerReady` or `mirrorReadOnlyShadowServingReady`: the
-default `GovernedReadOnlyShadowDataPlane` and database-authoritative execution
-guard are assembled. Signed current-head sampling-grant, kill-switch, and shared
+default `GovernedReadOnlyShadowDataPlane`, immutable payload-free comparison
+policy, and database-authoritative execution guard are assembled. With
+`--shadow-detached-data-plane`, exact source-binding baseline/candidate
+connectors plus independent source re-resolution and attestation are also
+assembled. Signed current-head sampling-grant, kill-switch, and shared
 guard-policy protocols plus their database publication source are also
-installed, but the default dynamic authority trust store and every real
-connector/verifier remain intentionally unavailable. Therefore the signed
-authority adapters fail closed, the scheduler does not consume an attempt, and
-no external system is touched.
+installed, but the default dynamic authority trust store, managed signer, and
+deployment egress authority remain intentionally unavailable. Therefore the
+signed authority adapters fail closed before connector use, the scheduler does
+not consume an attempt, and no external system is touched.
 
 The default composition fixes the production call order: heartbeat, exact
 grant/kill-switch/egress admission, shared guard acquisition, isolated baseline,
@@ -696,6 +708,28 @@ job request remains the online-source protocol and cannot carry a detached
 reference. Neither endpoint performs latest-run inference, and a valid source
 binding does not by itself make the baseline/candidate runtime connectors
 ready.
+
+When `--shadow-detached-data-plane` is enabled, the connector path accepts only
+v2 `DETACHED_EVIDENCE` jobs. It resolves the exact signed binding revision,
+independently verifies the exact candidate bundle, and normalizes only
+payload-free evidence facts. A second resolver repeats those reads and checks
+before signing
+`resourceGateway.readOnlyShadowSourceResolutionAttestation.v1`. The proof binds
+the stable `executionId`, request, authority admission, source binding,
+comparison policy, historical source completion times, current resolution
+times, normalized facts, evidence class/completeness, and zero-write counters.
+It is append-only and has no latest fallback.
+
+Read the exact proof referenced by a successful v3 comparison:
+
+```bash
+curl -i \
+  "http://localhost:8080/api/mirror/shadow/source-resolutions/$ATTESTATION_ID/revisions/$REVISION?fingerprint=$FINGERPRINT" \
+  -H "Authorization: Bearer $GOVERNANCE_TOKEN" \
+  -H "X-Purpose: GOVERNANCE_EVIDENCE_INGESTION" \
+  -H "X-BLOGE-Shadow-Source-Resolution-Protocol: read-only-shadow-source-resolution-attestation-v1" \
+  -H "Accept: application/vnd.bloge.read-only-shadow-source-resolution-attestation.v1+json"
+```
 
 Submit an online request that validates against
 [`read-only-shadow-job-request-v1.schema.json`](../docs/schemas/resource-gateway-mirror/read-only-shadow-job-request-v1.schema.json),

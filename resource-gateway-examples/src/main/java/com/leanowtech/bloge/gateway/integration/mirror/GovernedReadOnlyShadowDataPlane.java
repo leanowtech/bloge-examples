@@ -123,6 +123,7 @@ public final class GovernedReadOnlyShadowDataPlane
                     verifySources(
                             new ReadOnlyShadowSourceResolutionVerifier
                                     .Verification(
+                                    exact.executionId(),
                                     exact.request(),
                                     admission,
                                     confirmation,

@@ -1,0 +1,217 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://bloge.dev/schemas/resource-gateway-mirror/read-only-shadow-source-resolution-attestation-v1.schema.json",
+  "title": "Resource Gateway Read-only Shadow Source Resolution Attestation v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "attestationFingerprint",
+    "attestationId",
+    "revision",
+    "scope",
+    "requestId",
+    "executionId",
+    "sourceBindingRef",
+    "comparisonPolicyRef",
+    "requestContextFingerprint",
+    "admissionFingerprint",
+    "admittedAt",
+    "confirmedAt",
+    "baseline",
+    "candidate",
+    "issuedAt",
+    "attestationSeal"
+  ],
+  "properties": {
+    "schemaVersion": {
+      "const": "resourceGateway.readOnlyShadowSourceResolutionAttestation.v1"
+    },
+    "attestationFingerprint": {
+      "$ref": "mirror-plan-v1.schema.json#/$defs/fingerprint"
+    },
+    "attestationId": {
+      "$ref": "read-only-shadow-comparison-v1.schema.json#/$defs/identifier"
+    },
+    "revision": {
+      "type": "integer",
+      "minimum": 1
+    },
+    "scope": {
+      "$ref": "mirror-plan-v1.schema.json#/$defs/scope"
+    },
+    "requestId": {
+      "$ref": "read-only-shadow-comparison-v1.schema.json#/$defs/identifier"
+    },
+    "executionId": {
+      "$ref": "read-only-shadow-comparison-v1.schema.json#/$defs/identifier"
+    },
+    "sourceBindingRef": {
+      "$ref": "read-only-shadow-job-request-v2.schema.json#/$defs/sourceBindingRef"
+    },
+    "comparisonPolicyRef": {
+      "$ref": "read-only-shadow-comparison-v2.schema.json#/$defs/comparisonPolicyRef"
+    },
+    "requestContextFingerprint": {
+      "$ref": "mirror-plan-v1.schema.json#/$defs/fingerprint"
+    },
+    "admissionFingerprint": {
+      "$ref": "mirror-plan-v1.schema.json#/$defs/fingerprint"
+    },
+    "admittedAt": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "confirmedAt": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "baseline": {
+      "allOf": [
+        {
+          "$ref": "#/$defs/sourceResolution"
+        },
+        {
+          "properties": {
+            "role": {
+              "const": "BASELINE"
+            },
+            "artifactRef": {
+              "$ref": "#/$defs/baselineArtifactRef"
+            }
+          }
+        }
+      ]
+    },
+    "candidate": {
+      "allOf": [
+        {
+          "$ref": "#/$defs/sourceResolution"
+        },
+        {
+          "properties": {
+            "role": {
+              "const": "CANDIDATE"
+            },
+            "artifactRef": {
+              "$ref": "#/$defs/candidateArtifactRef"
+            }
+          }
+        }
+      ]
+    },
+    "issuedAt": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "attestationSeal": {
+      "$ref": "domain-fidelity-profile-v1.schema.json#/$defs/evidenceSeal"
+    }
+  },
+  "$defs": {
+    "baselineArtifactRef": {
+      "allOf": [
+        {
+          "$ref": "domain-fidelity-inventory-v1.schema.json#/$defs/artifactRef"
+        },
+        {
+          "properties": {
+            "kind": {
+              "const": "SHADOW_BASELINE_OBSERVATION"
+            }
+          }
+        }
+      ]
+    },
+    "candidateArtifactRef": {
+      "allOf": [
+        {
+          "$ref": "domain-fidelity-inventory-v1.schema.json#/$defs/artifactRef"
+        },
+        {
+          "properties": {
+            "kind": {
+              "const": "MIRROR_EVIDENCE_BUNDLE"
+            },
+            "revision": {
+              "const": 1
+            }
+          }
+        }
+      ]
+    },
+    "sourceResolution": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "role",
+        "artifactRef",
+        "semanticResultFingerprint",
+        "normalizedFactFingerprints",
+        "sourceCompletedAt",
+        "resolvedAt",
+        "evidenceClass",
+        "evidenceComplete",
+        "writeCredentialExposed",
+        "writeAttemptCount"
+      ],
+      "properties": {
+        "role": {
+          "enum": [
+            "BASELINE",
+            "CANDIDATE"
+          ]
+        },
+        "artifactRef": {
+          "$ref": "domain-fidelity-inventory-v1.schema.json#/$defs/artifactRef"
+        },
+        "semanticResultFingerprint": {
+          "$ref": "mirror-plan-v1.schema.json#/$defs/fingerprint"
+        },
+        "normalizedFactFingerprints": {
+          "type": "object",
+          "additionalProperties": false,
+          "minProperties": 1,
+          "maxProperties": 4,
+          "properties": {
+            "BEHAVIOR": {
+              "$ref": "mirror-plan-v1.schema.json#/$defs/fingerprint"
+            },
+            "CONTRACT": {
+              "$ref": "mirror-plan-v1.schema.json#/$defs/fingerprint"
+            },
+            "EFFECT": {
+              "$ref": "mirror-plan-v1.schema.json#/$defs/fingerprint"
+            },
+            "STATE_TRANSITION": {
+              "$ref": "mirror-plan-v1.schema.json#/$defs/fingerprint"
+            }
+          }
+        },
+        "sourceCompletedAt": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "resolvedAt": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "evidenceClass": {
+          "enum": [
+            "EXPLORATORY",
+            "CERTIFIABLE"
+          ]
+        },
+        "evidenceComplete": {
+          "type": "boolean"
+        },
+        "writeCredentialExposed": {
+          "const": false
+        },
+        "writeAttemptCount": {
+          "const": 0
+        }
+      }
+    }
+  }
+}

@@ -131,6 +131,7 @@ final class CapabilityMirrorSchemaValidator {
             "read-only-shadow-job-request-v2.schema.json",
             "read-only-shadow-source-binding-registration-request-v1.schema.json",
             "read-only-shadow-source-binding-v1.schema.json",
+            "read-only-shadow-source-resolution-attestation-v1.schema.json",
             "read-only-shadow-job-v1.schema.json",
             "read-only-shadow-job-lifecycle-event-v1.schema.json",
             "read-only-shadow-job-lifecycle-page-v1.schema.json",

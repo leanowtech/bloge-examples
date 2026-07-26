@@ -181,6 +181,19 @@ public final class MirrorEvidenceIntegrityService {
     }
 
     /**
+     * Probes the configured evidence signing and verification authority.
+     *
+     * @return whether detached evidence signatures can currently be verified
+     */
+    public boolean available() {
+        try {
+            return signer.available();
+        } catch (RuntimeException unavailable) {
+            return false;
+        }
+    }
+
+    /**
      * Returns a canonical independently owned snapshot before any identity is trusted.
      *
      * @param evidence caller-owned evidence

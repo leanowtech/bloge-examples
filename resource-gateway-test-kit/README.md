@@ -47,7 +47,11 @@ implementation. The JAR packages the authoritative v1 JSON Schema and provides:
   `ReadOnlyShadowSourceBindingVerifier`, which independently verifies the nested baseline and
   outer binding addresses, exact v2 job reference, validity window, candidate evidence signature
   and source/plan/capability/request closure, local key policy, and detached Ed25519 seal without
-  returning payload;
+  returning payload; strict signed
+  `ReadOnlyShadowSourceResolutionAttestation.v1` Schema plus an independent verifier that
+  rechecks the exact comparison-bound proof, stable execution identity, deterministic proof id,
+  source-binding/candidate evidence, built-in comparison-policy identity, normalized facts,
+  temporal/zero-write closure, key policy, content address, and detached signature;
   strict Shadow authority key-set publication/page Schemas plus an independent
   root-threshold verifier that reconstructs content addresses, exact enterprise
   binding, frozen high-water cursor continuity, online terminal freshness, and
@@ -520,6 +524,42 @@ content address. A valid binding seal is insufficient: the referenced candidate
 bundle must also pass `MirrorEvidenceVerifier` and match the exact run, bundle,
 scope, plan, target capability, request-context fingerprint, and completion
 time. Results contain bounded identities and reason codes only.
+
+After a successful v3 comparison, verify its exact source-resolution proof as a
+separate artifact. Do not infer it from a comparison label:
+
+```java
+ReadOnlyShadowSourceResolutionAttestationVerifier.VerificationContext resolutionContext =
+        new ReadOnlyShadowSourceResolutionAttestationVerifier.VerificationContext(
+                authenticatedScope,
+                comparison.path("sourceResolutionAttestationRef"),
+                jobRequest.path("requestId").asText(),
+                lifecycleExecutionId,
+                comparison.at("/authorityProof/admissionFingerprint").asText(),
+                sourceBinding,
+                sourceBindingAuthorityKey,
+                context,
+                trustedClock.instant());
+
+ReadOnlyShadowSourceResolutionAttestationVerifier.VerificationResult resolution =
+        new ReadOnlyShadowSourceResolutionAttestationVerifier().verify(
+                sourceResolutionAttestation,
+                sourceResolutionAuthorityKey,
+                resolutionContext);
+if (!resolution.verified()) {
+    throw new IllegalStateException(resolution.reasonCode());
+}
+```
+
+The verifier replaces the source-binding context's current time with the signed
+resolution issue time, so historical evidence remains verifiable after the
+binding's active window closes. It then re-runs
+`ReadOnlyShadowSourceBindingVerifier`, recomputes the immutable
+`payload-free-equality-v1` policy and candidate behavior/contract/effect/state
+facts, and verifies the source-resolution content address, deterministic
+`executionId`-bound identity, time order, zero-write claims, key lifecycle, and
+Ed25519 seal. Artifact revisions are compared numerically rather than by
+Jackson node class, preserving interoperability across JSON decoders.
 
 Capability observations use a separate producer authority and verifier. Run the packaged public-only
 fixture whenever upgrading the protocol, JSON stack, crypto provider, or consumer:

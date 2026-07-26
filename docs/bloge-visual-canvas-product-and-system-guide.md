@@ -1163,6 +1163,21 @@ curl -sS 'http://localhost:8080/api/integration/reconciliation' \
 `mirrorScenarioRehearsalBatchScheduling=true` 后才报告 ready。默认仍不开启后台
 worker，普通画布演示不会意外消费历史队列。
 
+需要演示 detached Shadow 的精确来源链时使用：
+
+```bash
+./scripts/start-visual-canvas-demo.sh --shadow-detached-data-plane
+```
+
+该模式安装 exact signed-binding baseline/candidate connector、payload-free equality policy、
+独立二次来源复核器与 source-resolution proof exact-read API。它不会生成企业 root-policy、
+online grant/kill-switch 或 egress authority；这些依赖缺失时 worker 仍失败关闭，不会为了演示而
+读取外部系统。成功 comparison 所引用的 proof 可从
+`/api/mirror/shadow/source-resolutions/{attestationId}/revisions/{revision}?fingerprint=...`
+读取，并用独立 Test Kit 复核 `executionId`、source binding、candidate evidence、policy facts、
+零写闭包、内容地址和签名。详细协议见
+[领域保真度与 Shadow 证据指南](resource-gateway-domain-fidelity-profile.md)。
+
 批次运行期间，系统会在每个 Scenario case 前后写入 payload-free heartbeat 与
 next-case cursor，并读取数据库权威的 cancel/deadline 决策。点击取消后，当前
 受 case timeout 限制的调用会先完成并写入可恢复进度，随后任务停止；画面上当前项

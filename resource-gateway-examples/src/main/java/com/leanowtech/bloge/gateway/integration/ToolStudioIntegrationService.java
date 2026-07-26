@@ -659,6 +659,14 @@ public class ToolStudioIntegrationService {
                 "mirrorReadOnlyShadowSourceBindingReady",
                 readOnlyShadowRuntimeAvailability
                         .sourceBindingReady());
+        features.put(
+                "mirrorReadOnlyShadowSourceResolutionApi",
+                readOnlyShadowRuntimeAvailability
+                        .sourceResolutionApi());
+        features.put(
+                "mirrorReadOnlyShadowDetachedDataPlaneReady",
+                readOnlyShadowRuntimeAvailability
+                        .detachedDataPlaneReady());
         features.put("mirrorStatefulSessionApi", mirrorStatefulSessionApi);
         features.put("mirrorStatefulStateStoreReady", mirrorStatefulStoreReady);
         features.put("mirrorStateCheckpointProtocol",
@@ -1106,6 +1114,15 @@ public class ToolStudioIntegrationService {
                                     .SCHEMA_VERSION));
         }
         if (readOnlyShadowRuntimeAvailability
+                .sourceResolutionApi()) {
+            supportedObjects.put(
+                    "readOnlyShadowSourceResolutionAttestation",
+                    List.of(
+                            com.leanowtech.bloge.gateway.integration.mirror
+                                    .ReadOnlyShadowSourceResolutionAttestation
+                                    .SCHEMA_VERSION));
+        }
+        if (readOnlyShadowRuntimeAvailability
                 .authorityTrustDistributionApi()) {
             supportedObjects.put(
                     "readOnlyShadowAuthorityKeySetPublication",
@@ -1506,6 +1523,12 @@ public class ToolStudioIntegrationService {
             endpoints.add(new IntegrationCapabilities.Endpoint(
                     "GET",
                     "/api/mirror/shadow/source-bindings/{bindingId}/revisions/{revision}"));
+        }
+        if (readOnlyShadowRuntimeAvailability
+                .sourceResolutionApi()) {
+            endpoints.add(new IntegrationCapabilities.Endpoint(
+                    "GET",
+                    "/api/mirror/shadow/source-resolutions/{attestationId}/revisions/{revision}"));
         }
         if (mirrorPlanReady) {
             endpoints.add(new IntegrationCapabilities.Endpoint("POST", "/api/mirror/plans"));

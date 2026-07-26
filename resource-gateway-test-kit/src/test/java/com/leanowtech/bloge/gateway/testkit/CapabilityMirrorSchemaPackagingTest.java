@@ -520,6 +520,14 @@ class CapabilityMirrorSchemaPackagingTest {
                 .endsWith(
                         "read-only-shadow-source-binding-v1.schema.json");
         assertThat(CapabilityMirrorProtocol
+                .READ_ONLY_SHADOW_SOURCE_RESOLUTION_ATTESTATION_V1)
+                .isEqualTo(
+                        "resourceGateway.readOnlyShadowSourceResolutionAttestation.v1");
+        assertThat(CapabilityMirrorProtocol
+                .READ_ONLY_SHADOW_SOURCE_RESOLUTION_ATTESTATION_SCHEMA_RESOURCE)
+                .endsWith(
+                        "read-only-shadow-source-resolution-attestation-v1.schema.json");
+        assertThat(CapabilityMirrorProtocol
                 .READ_ONLY_SHADOW_JOB_V1)
                 .isEqualTo(
                         "resourceGateway.readOnlyShadowJob.v1");

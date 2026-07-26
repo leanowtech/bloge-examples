@@ -1,6 +1,7 @@
 package com.leanowtech.bloge.gateway.integration.mirror;
 
 import java.util.Objects;
+import java.util.regex.Pattern;
 
 /**
  * Independent resolver and signature verifier for both terminal Shadow source artifacts.
@@ -25,6 +26,7 @@ public interface ReadOnlyShadowSourceResolutionVerifier {
     /**
      * Complete payload-free source verification command.
      *
+     * @param executionId stable connector idempotency identity
      * @param request immutable durable request
      * @param admission pre-execution online authority closure
      * @param confirmation post-execution authority closure
@@ -32,14 +34,21 @@ public interface ReadOnlyShadowSourceResolutionVerifier {
      * @param candidate candidate connector result
      */
     record Verification(
+            String executionId,
             ReadOnlyShadowJobRequest request,
             ReadOnlyShadowAccessAuthority.Admission admission,
             ReadOnlyShadowAccessAuthority.Confirmation confirmation,
             ReadOnlyShadowConnectorObservation baseline,
             ReadOnlyShadowConnectorObservation candidate
     ) {
+        private static final Pattern IDENTIFIER =
+                Pattern.compile(
+                        "[A-Za-z0-9][A-Za-z0-9@._:/-]{0,511}");
+
         /** Validates exact policy, scope, role, and paired request-context closure. */
         public Verification {
+            executionId = executionId == null
+                    ? "" : executionId.trim();
             request = Objects.requireNonNull(
                     request, "request");
             admission = Objects.requireNonNull(
@@ -50,7 +59,8 @@ public interface ReadOnlyShadowSourceResolutionVerifier {
                     baseline, "baseline");
             candidate = Objects.requireNonNull(
                     candidate, "candidate");
-            if (!request.scope().equals(
+            if (!IDENTIFIER.matcher(executionId).matches()
+                    || !request.scope().equals(
                     admission.scope())
                     || !admission.admissionFingerprint()
                     .equals(confirmation
@@ -91,7 +101,15 @@ public interface ReadOnlyShadowSourceResolutionVerifier {
                             .targetCapabilityRef())
                     || !request.targetCapabilityRef()
                     .equals(candidate.source()
-                            .targetCapabilityRef())) {
+                            .targetCapabilityRef())
+                    || baseline.source().completedAt()
+                    .isBefore(admission.admittedAt())
+                    || candidate.source().completedAt()
+                    .isBefore(admission.admittedAt())
+                    || confirmation.confirmedAt().isBefore(
+                    baseline.source().completedAt())
+                    || confirmation.confirmedAt().isBefore(
+                    candidate.source().completedAt())) {
                 throw new IllegalArgumentException(
                         "read-only Shadow source verification is inconsistent");
             }

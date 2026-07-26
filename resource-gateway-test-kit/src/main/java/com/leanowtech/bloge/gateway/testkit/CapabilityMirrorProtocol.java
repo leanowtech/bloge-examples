@@ -416,6 +416,10 @@ public final class CapabilityMirrorProtocol {
     /** Signed payload-free detached source-binding wire version. */
     public static final String READ_ONLY_SHADOW_SOURCE_BINDING_V1 =
             "resourceGateway.readOnlyShadowSourceBinding.v1";
+    /** Signed proof of independent exact detached-source resolution. */
+    public static final String
+    READ_ONLY_SHADOW_SOURCE_RESOLUTION_ATTESTATION_V1 =
+            "resourceGateway.readOnlyShadowSourceResolutionAttestation.v1";
     /** Durable payload-free read-only Shadow job projection wire version. */
     public static final String READ_ONLY_SHADOW_JOB_V1 =
             "resourceGateway.readOnlyShadowJob.v1";
@@ -893,6 +897,11 @@ public final class CapabilityMirrorProtocol {
     READ_ONLY_SHADOW_SOURCE_BINDING_SCHEMA_RESOURCE =
             SCHEMA_RESOURCE_ROOT
                     + "read-only-shadow-source-binding-v1.schema.json";
+    /** Packaged signed exact detached-source resolution attestation schema. */
+    public static final String
+    READ_ONLY_SHADOW_SOURCE_RESOLUTION_ATTESTATION_SCHEMA_RESOURCE =
+            SCHEMA_RESOURCE_ROOT
+                    + "read-only-shadow-source-resolution-attestation-v1.schema.json";
     /** Packaged durable read-only Shadow job projection schema. */
     public static final String
     READ_ONLY_SHADOW_JOB_SCHEMA_RESOURCE =

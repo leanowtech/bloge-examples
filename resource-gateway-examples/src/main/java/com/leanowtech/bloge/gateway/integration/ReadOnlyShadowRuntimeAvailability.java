@@ -19,6 +19,8 @@ public final class ReadOnlyShadowRuntimeAvailability {
     private final BooleanSupplier authorityTrustDistributionReadiness;
     private final boolean sourceBindingApi;
     private final BooleanSupplier sourceBindingReadiness;
+    private final boolean sourceResolutionApi;
+    private final BooleanSupplier detachedDataPlaneReadiness;
 
     /**
      * Creates one dynamically probed Shadow runtime marker.
@@ -34,7 +36,8 @@ public final class ReadOnlyShadowRuntimeAvailability {
             BooleanSupplier workerReadiness,
             BooleanSupplier schedulerReadiness) {
         this(jobApi, lifecycleAudit, workerReadiness, schedulerReadiness,
-                false, () -> false, false, () -> false);
+                false, () -> false, false, () -> false,
+                false, () -> false);
     }
 
     /**
@@ -57,6 +60,7 @@ public final class ReadOnlyShadowRuntimeAvailability {
         this(jobApi, lifecycleAudit, workerReadiness, schedulerReadiness,
                 authorityTrustDistributionApi,
                 authorityTrustDistributionReadiness,
+                false, () -> false,
                 false, () -> false);
     }
 
@@ -81,6 +85,41 @@ public final class ReadOnlyShadowRuntimeAvailability {
             BooleanSupplier authorityTrustDistributionReadiness,
             boolean sourceBindingApi,
             BooleanSupplier sourceBindingReadiness) {
+        this(jobApi, lifecycleAudit, workerReadiness,
+                schedulerReadiness,
+                authorityTrustDistributionApi,
+                authorityTrustDistributionReadiness,
+                sourceBindingApi,
+                sourceBindingReadiness,
+                false,
+                () -> false);
+    }
+
+    /**
+     * Creates the complete marker including exact source-resolution evidence and data plane.
+     *
+     * @param jobApi protected submit/read/evidence routes are assembled
+     * @param lifecycleAudit append-only lifecycle publication is assembled
+     * @param workerReadiness dynamic signer and trusted data-plane readiness
+     * @param schedulerReadiness dynamic autonomous regional scheduler readiness
+     * @param authorityTrustDistributionApi protected authority routes are assembled
+     * @param authorityTrustDistributionReadiness dynamic bootstrap-root policy readiness
+     * @param sourceBindingApi protected detached source-binding routes are assembled
+     * @param sourceBindingReadiness dynamic binding signer and candidate resolver readiness
+     * @param sourceResolutionApi protected exact source-resolution read route is assembled
+     * @param detachedDataPlaneReadiness dynamic complete detached connector readiness
+     */
+    public ReadOnlyShadowRuntimeAvailability(
+            boolean jobApi,
+            boolean lifecycleAudit,
+            BooleanSupplier workerReadiness,
+            BooleanSupplier schedulerReadiness,
+            boolean authorityTrustDistributionApi,
+            BooleanSupplier authorityTrustDistributionReadiness,
+            boolean sourceBindingApi,
+            BooleanSupplier sourceBindingReadiness,
+            boolean sourceResolutionApi,
+            BooleanSupplier detachedDataPlaneReadiness) {
         this.jobApi = jobApi;
         this.lifecycleAudit = lifecycleAudit;
         this.workerReadiness = Objects.requireNonNull(
@@ -98,6 +137,11 @@ public final class ReadOnlyShadowRuntimeAvailability {
                 Objects.requireNonNull(
                         sourceBindingReadiness,
                         "sourceBindingReadiness");
+        this.sourceResolutionApi = sourceResolutionApi;
+        this.detachedDataPlaneReadiness =
+                Objects.requireNonNull(
+                        detachedDataPlaneReadiness,
+                        "detachedDataPlaneReadiness");
     }
 
     /**
@@ -172,6 +216,25 @@ public final class ReadOnlyShadowRuntimeAvailability {
     public boolean sourceBindingReady() {
         return sourceBindingApi
                 && probe(sourceBindingReadiness);
+    }
+
+    /**
+     * Reports exact source-resolution attestation API assembly.
+     *
+     * @return whether protected exact source-resolution reads are assembled
+     */
+    public boolean sourceResolutionApi() {
+        return sourceResolutionApi;
+    }
+
+    /**
+     * Probes the complete detached binding, connector, verifier, and policy path.
+     *
+     * @return whether exact detached evidence can currently produce a comparison
+     */
+    public boolean detachedDataPlaneReady() {
+        return sourceResolutionApi
+                && probe(detachedDataPlaneReadiness);
     }
 
     /**
