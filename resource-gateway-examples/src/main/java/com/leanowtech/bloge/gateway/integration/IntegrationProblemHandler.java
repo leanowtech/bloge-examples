@@ -18,6 +18,7 @@ import org.springframework.web.bind.annotation.RestControllerAdvice;
         ScenarioRehearsalBatchController.class,
         MirrorDeploymentIsolationAuthorityPublicationController.class,
         MirrorDeploymentIsolationAttestationController.class,
+        ReadOnlyShadowAuthorityKeySetController.class,
         CapabilityObservationController.class,
         CapabilityCorpusGovernanceController.class,
         DomainFidelityController.class,

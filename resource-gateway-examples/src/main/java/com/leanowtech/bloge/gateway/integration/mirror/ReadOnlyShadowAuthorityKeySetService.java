@@ -100,6 +100,71 @@ public final class ReadOnlyShadowAuthorityKeySetService {
         return Optional.of(publication);
     }
 
+    /**
+     * Reads and re-verifies one contiguous trusted-distribution cursor page.
+     *
+     * <p>Historical successors are verified at their activation instant so a temporarily offline
+     * consumer can catch up after their online freshness window. A terminal page additionally
+     * requires the high-water publication to be current now; an expired head is never advertised
+     * as usable trust.</p>
+     *
+     * @param scope complete enterprise scope
+     * @param publicationKind exact authority protocol
+     * @param issuer exact delegated authority
+     * @param afterGeneration caller checkpoint generation
+     * @param afterPublicationFingerprint checkpoint fingerprint, blank before genesis
+     * @param limit requested bounded page size
+     * @return contiguous independently re-verified cursor page
+     */
+    public ReadOnlyShadowAuthorityKeySetPage page(
+            CapabilitySnapshot.Scope scope,
+            ReadOnlyShadowAuthorityIntegrity.PublicationKind publicationKind,
+            String issuer,
+            long afterGeneration,
+            String afterPublicationFingerprint,
+            int limit) {
+        CapabilitySnapshot.Scope exactScope =
+                ReadOnlyShadowAuthoritySeal.scope(scope, "scope");
+        ReadOnlyShadowAuthorityIntegrity.PublicationKind exactKind =
+                Objects.requireNonNull(publicationKind, "publicationKind");
+        String exactIssuer = ReadOnlyShadowAuthoritySeal.identifier(issuer, "issuer");
+        ReadOnlyShadowAuthorityKeySetTrustPolicyProvider.TrustPolicy policy =
+                resolvePolicy(exactScope, exactKind, exactIssuer)
+                        .orElseThrow(() -> rejected(Reason.TRUST_POLICY_UNAVAILABLE));
+        var stream = new ReadOnlyShadowAuthorityKeySetRepository.StreamIdentity(
+                exactScope, exactKind, exactIssuer, policy.binding().keySetId());
+        var page = publications.page(stream, afterGeneration, afterPublicationFingerprint,
+                limit, clock.instant());
+        ReadOnlyShadowAuthorityKeySetIntegrity.TrustedFloor rolling =
+                afterGeneration == 0 ? null
+                        : new ReadOnlyShadowAuthorityKeySetIntegrity.TrustedFloor(
+                        stream.keySetId(), afterGeneration, afterPublicationFingerprint);
+        for (ReadOnlyShadowAuthorityKeySetPublication publication : page.publications()) {
+            var verification = integrity.verify(
+                    publication, policy.binding(), policy.roots(), rolling,
+                    publication.material().notBefore());
+            if (!verification.verified()) {
+                throw rejected(map(verification.outcome()));
+            }
+            rolling = new ReadOnlyShadowAuthorityKeySetIntegrity.TrustedFloor(
+                    stream.keySetId(), publication.material().generation(),
+                    publication.publicationFingerprint());
+        }
+        if (!page.hasMore() && page.highWaterGeneration() > 0) {
+            ReadOnlyShadowAuthorityKeySetPublication head = page.highWaterPublication();
+            var current = integrity.verify(
+                    head, policy.binding(), policy.roots(),
+                    new ReadOnlyShadowAuthorityKeySetIntegrity.TrustedFloor(
+                            stream.keySetId(), head.material().generation(),
+                            head.publicationFingerprint()),
+                    clock.instant());
+            if (!current.verified()) {
+                throw rejected(map(current.outcome()));
+            }
+        }
+        return page;
+    }
+
     private Optional<ReadOnlyShadowAuthorityKeySetTrustPolicyProvider.TrustPolicy> resolvePolicy(
             CapabilitySnapshot.Scope scope,
             ReadOnlyShadowAuthorityIntegrity.PublicationKind kind,

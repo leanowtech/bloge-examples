@@ -643,6 +643,14 @@ public class ToolStudioIntegrationService {
                 "mirrorReadOnlyShadowServingReady",
                 readOnlyShadowRuntimeAvailability
                         .servingReady());
+        features.put(
+                "mirrorReadOnlyShadowAuthorityTrustDistributionApi",
+                readOnlyShadowRuntimeAvailability
+                        .authorityTrustDistributionApi());
+        features.put(
+                "mirrorReadOnlyShadowAuthorityTrustDistributionReady",
+                readOnlyShadowRuntimeAvailability
+                        .authorityTrustDistributionReady());
         features.put("mirrorStatefulSessionApi", mirrorStatefulSessionApi);
         features.put("mirrorStatefulStateStoreReady", mirrorStatefulStoreReady);
         features.put("mirrorStateCheckpointProtocol",
@@ -1072,6 +1080,21 @@ public class ToolStudioIntegrationService {
                                     .ReadOnlyShadowJobLifecyclePage
                                     .SCHEMA_VERSION));
         }
+        if (readOnlyShadowRuntimeAvailability
+                .authorityTrustDistributionApi()) {
+            supportedObjects.put(
+                    "readOnlyShadowAuthorityKeySetPublication",
+                    List.of(
+                            com.leanowtech.bloge.gateway.integration.mirror
+                                    .ReadOnlyShadowAuthorityKeySetPublication
+                                    .SCHEMA_VERSION));
+            supportedObjects.put(
+                    "readOnlyShadowAuthorityKeySetPage",
+                    List.of(
+                            com.leanowtech.bloge.gateway.integration.mirror
+                                    .ReadOnlyShadowAuthorityKeySetPage
+                                    .SCHEMA_VERSION));
+        }
         if (mirrorPlanReady) {
             supportedObjects.put("mirrorPlanCreateRequest", List.of(
                     com.leanowtech.bloge.gateway.integration.mirror
@@ -1441,6 +1464,15 @@ public class ToolStudioIntegrationService {
             endpoints.add(new IntegrationCapabilities.Endpoint(
                     "GET",
                     "/api/mirror/shadow-jobs/{jobId}/lifecycle"));
+        }
+        if (readOnlyShadowRuntimeAvailability
+                .authorityTrustDistributionApi()) {
+            endpoints.add(new IntegrationCapabilities.Endpoint(
+                    "POST",
+                    "/api/mirror/trust/read-only-shadow/authority-key-sets"));
+            endpoints.add(new IntegrationCapabilities.Endpoint(
+                    "GET",
+                    "/api/mirror/trust/read-only-shadow/authority-key-sets/pages"));
         }
         if (mirrorPlanReady) {
             endpoints.add(new IntegrationCapabilities.Endpoint("POST", "/api/mirror/plans"));

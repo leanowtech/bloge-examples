@@ -1,5 +1,6 @@
 package com.leanowtech.bloge.gateway.integration.mirror;
 
+import java.time.Instant;
 import java.util.Objects;
 import java.util.Optional;
 
@@ -35,6 +36,23 @@ public interface ReadOnlyShadowAuthorityKeySetRepository {
      * @return current floor, or empty before bootstrap
      */
     Optional<ReadOnlyShadowAuthorityKeySetIntegrity.TrustedFloor> floor(StreamIdentity stream);
+
+    /**
+     * Reads one bounded contiguous page under a frozen durable high-water floor.
+     *
+     * @param stream exact locally governed stream identity
+     * @param afterGeneration caller checkpoint generation
+     * @param afterPublicationFingerprint checkpoint fingerprint, blank only before genesis
+     * @param limit requested page size
+     * @param generatedAt trusted response observation time
+     * @return atomic bounded cursor page
+     */
+    ReadOnlyShadowAuthorityKeySetPage page(
+            StreamIdentity stream,
+            long afterGeneration,
+            String afterPublicationFingerprint,
+            int limit,
+            Instant generatedAt);
 
     /** @return whether the durable publication log and floor tables are currently readable */
     boolean available();
@@ -91,6 +109,8 @@ public interface ReadOnlyShadowAuthorityKeySetRepository {
         KEY_LIFECYCLE_INVALID,
         /** One content address was associated with different coordinates. */
         CONTENT_ADDRESS_CONFLICT,
+        /** Caller checkpoint does not exist or its fingerprint does not match. */
+        CHECKPOINT_INVALID,
         /** Concurrent genesis did not converge after a fresh transaction retry. */
         CONCURRENT_INITIALIZATION,
         /** Indexed coordinates and canonical JSON disagree. */

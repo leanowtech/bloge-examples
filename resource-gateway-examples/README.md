@@ -152,6 +152,8 @@ false until the remaining operator-owned adapters are installed.
 | `GET http://localhost:8080/api/mirror/runs/{runId}/state-write-outcome-workbook-seed` | Export every terminal state-write attempt and its governance blockers from one verified stateful v5 bundle |
 | `POST http://localhost:8080/api/mirror/trust/deployment-isolation/authority-key-sets` | Verify and append one current isolation-authority key-set generation |
 | `GET http://localhost:8080/api/mirror/trust/deployment-isolation/authority-key-sets/{keySetId}/latest` | Distribute the re-verified current authority floor |
+| `POST http://localhost:8080/api/mirror/trust/read-only-shadow/authority-key-sets` | Root-verify and atomically append one Shadow authority key-set successor |
+| `GET http://localhost:8080/api/mirror/trust/read-only-shadow/authority-key-sets/pages` | Read one frozen, contiguous Shadow authority trust-distribution page |
 | `POST http://localhost:8080/api/mirror/trust/deployment-isolation/attestations` | Verify and append an operator-pinned attestation bootstrap or continuous successor |
 | `GET http://localhost:8080/api/mirror/trust/deployment-isolation/attestations/{attestationId}/latest` | Read one atomic current attestation and local status bundle |
 | `POST http://localhost:8080/api/mirror/trust/deployment-isolation/attestations/{attestationId}/revocations` | Irreversibly revoke one exact current attestation status |
@@ -638,8 +640,32 @@ so untrusted content cannot poison the head. The default
 publication on every lookup. Its bootstrap policy provider remains unavailable
 by default, so no real sampling is authorized until the operator connects a
 separately governed root-policy source. The strict key-set schema is packaged by
-`resource-gateway-test-kit`; protected cross-process distribution and an
-independent key-set verifier are the next delivery increment.
+`resource-gateway-test-kit`.
+
+Protected cross-process trust distribution is available only in explicit
+test/staging Mirror composition. `POST
+/api/mirror/trust/read-only-shadow/authority-key-sets` requires
+`MIRROR_TRUST_ADMIN`; authentication and complete-scope binding happen before
+strict JSON decoding. `GET
+/api/mirror/trust/read-only-shadow/authority-key-sets/pages` requires
+`MIRROR_TRUST_DISTRIBUTION` or `MIRROR_SHADOW`, plus:
+
+```text
+Accept: application/vnd.bloge.read-only-shadow-authority-trust.v1+json
+X-BLOGE-Shadow-Authority-Trust-Protocol: read-only-shadow-authority-trust-v1
+```
+
+The page query identifies `publicationKind` and `issuer`, then supplies the
+durable `afterGeneration` and `afterPublicationFingerprint` checkpoint. The
+repository freezes one high-water head under lock and returns at most 128
+contiguous successors. Consumers must independently verify every successor
+before persisting `throughGeneration`; terminal pages include the complete
+`highWaterPublication`, which is re-verified against the current clock so an
+empty page cannot disguise an expired trust head. The standalone
+`ReadOnlyShadowAuthorityKeySetVerifier` in `resource-gateway-test-kit` performs
+strict Schema validation, content-address reconstruction, M-of-N root
+verification, exact binding, cursor continuity, freshness, and irreversible
+key-lifecycle checks without linking server or Spring classes.
 
 The decision-publication wire schemas and independent offline verifier are
 packaged by `resource-gateway-test-kit`.

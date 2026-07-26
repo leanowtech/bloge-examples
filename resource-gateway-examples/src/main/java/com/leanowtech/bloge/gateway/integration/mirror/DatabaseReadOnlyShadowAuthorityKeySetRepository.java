@@ -12,6 +12,7 @@ import org.springframework.transaction.support.TransactionTemplate;
 
 import java.sql.ResultSet;
 import java.sql.SQLException;
+import java.time.Instant;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -212,6 +213,56 @@ public final class DatabaseReadOnlyShadowAuthorityKeySetRepository
     }
 
     @Override
+    public ReadOnlyShadowAuthorityKeySetPage page(
+            StreamIdentity stream,
+            long afterGeneration,
+            String afterPublicationFingerprint,
+            int limit,
+            Instant generatedAt) {
+        StreamIdentity exact = Objects.requireNonNull(stream, "stream");
+        String checkpoint = ReadOnlyShadowAuthoritySeal.normalized(
+                afterPublicationFingerprint);
+        if (afterGeneration < 0
+                || afterGeneration == 0 && !checkpoint.isBlank()
+                || afterGeneration > 0 && !checkpoint.matches("sha256:[a-f0-9]{64}")) {
+            throw violation(Reason.CHECKPOINT_INVALID);
+        }
+        int boundedLimit = Math.max(1, Math.min(
+                ReadOnlyShadowAuthorityKeySetPage.MAXIMUM_PUBLICATIONS, limit));
+        ReadOnlyShadowAuthorityKeySetPage page = transactions.execute(status -> {
+            Head head = selectHead(exact, true).orElseThrow(
+                    () -> violation(Reason.CHECKPOINT_INVALID));
+            if (afterGeneration > head.generation()) {
+                throw violation(Reason.CHECKPOINT_INVALID);
+            }
+            if (afterGeneration > 0) {
+                ReadOnlyShadowAuthorityKeySetPublication checkpointPublication =
+                        findGeneration(exact, afterGeneration).orElseThrow(
+                                () -> violation(Reason.CHECKPOINT_INVALID));
+                if (!checkpointPublication.publicationFingerprint().equals(checkpoint)) {
+                    throw violation(Reason.CHECKPOINT_INVALID);
+                }
+            }
+            List<ReadOnlyShadowAuthorityKeySetPublication> values =
+                    readRange(exact, afterGeneration, head.generation(), boundedLimit);
+            long through = values.isEmpty()
+                    ? afterGeneration : values.getLast().material().generation();
+            ReadOnlyShadowAuthorityKeySetPublication highWater = head.generation() == 0
+                    ? null : findGeneration(exact, head.generation()).orElseThrow(
+                    () -> violation(Reason.STORED_STATE_CORRUPT));
+            return new ReadOnlyShadowAuthorityKeySetPage(
+                    "", generatedAt, exact.scope(), exact.publicationKind(), exact.issuer(),
+                    exact.keySetId(), afterGeneration, checkpoint, through, head.generation(),
+                    head.publicationFingerprint(), highWater,
+                    through < head.generation(), values);
+        });
+        if (page == null) {
+            throw violation(Reason.STORED_STATE_CORRUPT);
+        }
+        return page;
+    }
+
+    @Override
     public boolean available() {
         try {
             jdbc.queryForObject(
@@ -339,6 +390,36 @@ public final class DatabaseReadOnlyShadowAuthorityKeySetRepository
             throw violation(Reason.STORED_STATE_CORRUPT);
         }
         return rows.stream().findFirst();
+    }
+
+    private List<ReadOnlyShadowAuthorityKeySetPublication> readRange(
+            StreamIdentity stream,
+            long afterGeneration,
+            long throughGeneration,
+            int limit) {
+        CapabilitySnapshot.Scope scope = stream.scope();
+        List<ReadOnlyShadowAuthorityKeySetPublication> rows = jdbc.query("""
+                        SELECT generation, publication_fingerprint, material_fingerprint,
+                               schema_version, publication_json
+                        FROM mirror_shadow_authority_key_set_publications
+                        WHERE tenant_id = ? AND organization_id = ? AND project_id = ?
+                          AND environment_id = ? AND region = ? AND publication_kind = ?
+                          AND issuer = ? AND key_set_id = ?
+                          AND generation > ? AND generation <= ?
+                        ORDER BY generation ASC
+                        LIMIT ?
+                        """,
+                (rs, rowNumber) -> deserialize(rs, stream),
+                scope.tenantId(), scope.organizationId(), scope.projectId(),
+                scope.environmentId(), scope.region(), stream.publicationKind().name(),
+                stream.issuer(), stream.keySetId(), afterGeneration, throughGeneration, limit);
+        long expected = afterGeneration + 1;
+        for (ReadOnlyShadowAuthorityKeySetPublication publication : rows) {
+            if (publication.material().generation() != expected++) {
+                throw violation(Reason.STORED_STATE_CORRUPT);
+            }
+        }
+        return List.copyOf(rows);
     }
 
     private ReadOnlyShadowAuthorityKeySetPublication deserialize(

@@ -45,6 +45,11 @@
   predecessor chain 与 payload-free attestation；
 - full-scope database current-head repository、动态 key/revocation lookup、无正向缓存的
   sampling/kill-switch adapter，以及不依赖 server/Spring 的 Test Kit 独立 current-head verifier；
+- root-threshold-signed Shadow authority key-set、完整 scope/kind/issuer binding、单调
+  generation/revocation floor、不可逆 retained-key lifecycle、root-policy-before-append、
+  database-current managed trust store；
+- test/staging 受保护 authority publish/page API、冻结 high-water 的有界连续游标、显式媒体
+  协议协商，以及不依赖 server/Spring 的 Test Kit key-set/page 独立验签与离线追赶；
 - strict lifecycle event/page Schema，Test Kit 可独立重算 comparison、job/request/comparison
   闭包与完整 admission-to-head lifecycle；
 - Shadow source adapter：重验 comparison 内容地址/签名、采样授权、kill switch、egress、
@@ -59,7 +64,7 @@
 
 - authoritative outcome 到 `Measurement` 的独立来源适配器；
 - request-space sampling proof 与 error-distribution cohort adapter；
-- managed authority key/revocation publication、跨区域 authority distribution/API、
+- 企业 root-policy/control-plane connector、跨区域传播 SLO 与轮换认证、
   真实 baseline/candidate connector、source resolver/comparison policy adapter、drift 自动降级、
   outcome reconciliation 和工作台。
 
@@ -70,7 +75,7 @@ abstention debt 的**部分 profile**。Shadow adapter ready 表示已提供的�
 结果校准仍必须分别读取 typed adapter flag、source artifact 与 profile limitations。durable
 job API/lifecycle/scheduler ready 也只表示控制面状态机可用；默认 governed data plane 已具备
 database guard、签名 authority 协议、current-head repository 和在线 adapter，但动态 trust
-store、connector、source verifier 与 comparison engine 仍为 fail-closed，因此保持
+policy provider、真实 connector、source verifier 与 comparison engine 仍为 fail-closed，因此保持
 `ready=false`，不代表生产流量复制已启用。
 
 ## 2. 为什么需要两个对象

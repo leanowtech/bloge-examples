@@ -47,6 +47,7 @@ offline artifact verification live in the independent `resource-gateway-test-kit
 | `read-only-shadow-sampling-grant-publication-v1.schema.json` | `ReadOnlyShadowSamplingGrantPublication` | Short-lived signed current-head logical-sampling authorization joining an exact execution scope to one exact shared guard policy |
 | `read-only-shadow-kill-switch-publication-v1.schema.json` | `ReadOnlyShadowKillSwitchPublication` | Fifteen-minute signed current-head operational enable/deny decision for one exact execution scope |
 | `read-only-shadow-authority-key-set-publication-v1.schema.json` | `ReadOnlyShadowAuthorityKeySetPublication` | Root-threshold-signed, scope/kind/issuer-bound current key set with monotonic revocation cursor and irreversible retained key lifecycle |
+| `read-only-shadow-authority-key-set-page-v1.schema.json` | `ReadOnlyShadowAuthorityKeySetPage` | Frozen high-water, bounded contiguous cursor page for independently verified cross-process authority trust distribution |
 | `capability-observation-v1.schema.json` | `CapabilityObservationEnvelope` | Signed payload-free capability invocation with exact sanitized-payload, proof, schema, purpose, trace, and state references |
 | `capability-observation-admission-v1.schema.json` | `CapabilityObservationAdmission` | Content-addressed local `ADMITTED` or terminal `QUARANTINED` decision |
 | `capability-observation-receipt-v1.schema.json` | `CapabilityObservationReceipt` | Atomic ingest result linking the exact producer envelope to its immutable local decision |
@@ -140,6 +141,14 @@ Verification keys are independent local trust inputs delegated to one exact ente
 one publication type. A retired key verifies only signatures created strictly before its recorded
 retirement; a revoked key verifies none. Sampling-grant consumers must independently verify the
 referenced current guard-policy publication and preserve both attestations.
+
+Authority key-set consumers persist the pair `throughGeneration +
+publicationFingerprint` only after independently verifying every contiguous
+successor. A page freezes one repository high-water; its complete
+`highWaterPublication` is mandatory whenever the stream is non-empty. Terminal
+and empty catch-up pages must re-verify that head at the consumer's current
+trusted time. `highWaterGeneration` is therefore not, by itself, a trust
+statement or a valid revocation cursor.
 
 `mirror-evidence-stage1-v1.fixture.json` is the fixed Stage 1 cryptographic compatibility fixture.
 It contains a server-produced `HASH_ONLY` bundle and public Ed25519 key, but no private key or
@@ -687,6 +696,8 @@ The protected Tool Studio integration surface exposes:
 | `POST /api/mirror/trust/deployment-isolation/authority-key-sets` | Verify local trust and append one generation plus durable floor | `MIRROR_TRUST_ADMIN` |
 | `GET /api/mirror/trust/deployment-isolation/authority-key-sets/{keySetId}/latest` | Re-verify and read the current floor | `MIRROR_TRUST_DISTRIBUTION` or `MIRROR_REHEARSAL` |
 | `GET /api/mirror/trust/deployment-isolation/authority-key-sets/{keySetId}/generations/{generation}` | Read an exact address only while it remains current | `MIRROR_TRUST_DISTRIBUTION` or `MIRROR_REHEARSAL` |
+| `POST /api/mirror/trust/read-only-shadow/authority-key-sets` | Root-verify and atomically append one scope-bound authority key-set successor | `MIRROR_TRUST_ADMIN` |
+| `GET /api/mirror/trust/read-only-shadow/authority-key-sets/pages` | Read a frozen contiguous cursor page for one authenticated Shadow authority stream | `MIRROR_TRUST_DISTRIBUTION` or `MIRROR_SHADOW` |
 | `POST /api/mirror/trust/deployment-isolation/attestations` | Verify current authority and atomically append one external proof plus active status | `MIRROR_TRUST_ADMIN` |
 | `GET /api/mirror/trust/deployment-isolation/attestations/{attestationId}/latest` | Re-verify and read the atomic current active/revoked bundle | `MIRROR_TRUST_DISTRIBUTION` or `MIRROR_REHEARSAL` |
 | `GET /api/mirror/trust/deployment-isolation/attestations/{attestationId}/revisions/{revision}` | Read exact coordinates only while they remain the current head | `MIRROR_TRUST_DISTRIBUTION` or `MIRROR_REHEARSAL` |

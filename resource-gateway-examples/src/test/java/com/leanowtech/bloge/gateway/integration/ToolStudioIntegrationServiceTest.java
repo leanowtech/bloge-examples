@@ -402,6 +402,8 @@ class ToolStudioIntegrationServiceTest {
                 new AtomicBoolean(false);
         AtomicBoolean scheduler =
                 new AtomicBoolean(false);
+        AtomicBoolean authorityTrust =
+                new AtomicBoolean(false);
         ToolStudioIntegrationService service =
                 service(null, null, null, null);
         service.configureReadOnlyShadowRuntime(
@@ -409,7 +411,9 @@ class ToolStudioIntegrationServiceTest {
                         true,
                         true,
                         worker::get,
-                        scheduler::get));
+                        scheduler::get,
+                        true,
+                        authorityTrust::get));
 
         IntegrationCapabilities assembled =
                 service.capabilities().payload();
@@ -429,6 +433,12 @@ class ToolStudioIntegrationServiceTest {
                         false)
                 .containsEntry(
                         "mirrorReadOnlyShadowServingReady",
+                        false)
+                .containsEntry(
+                        "mirrorReadOnlyShadowAuthorityTrustDistributionApi",
+                        true)
+                .containsEntry(
+                        "mirrorReadOnlyShadowAuthorityTrustDistributionReady",
                         false);
         assertThat(assembled.supportedObjects())
                 .containsKeys(
@@ -436,7 +446,9 @@ class ToolStudioIntegrationServiceTest {
                         "readOnlyShadowJobRequest",
                         "readOnlyShadowJob",
                         "readOnlyShadowJobLifecycleEvent",
-                        "readOnlyShadowJobLifecyclePage");
+                        "readOnlyShadowJobLifecyclePage",
+                        "readOnlyShadowAuthorityKeySetPublication",
+                        "readOnlyShadowAuthorityKeySetPage");
         assertThat(assembled.endpoints())
                 .extracting(endpoint ->
                         endpoint.method() + " "
@@ -446,7 +458,9 @@ class ToolStudioIntegrationServiceTest {
                         "GET /api/mirror/shadow-jobs/{jobId}",
                         "GET /api/mirror/shadow-jobs/{jobId}/request",
                         "GET /api/mirror/shadow-jobs/{jobId}/comparison",
-                        "GET /api/mirror/shadow-jobs/{jobId}/lifecycle");
+                        "GET /api/mirror/shadow-jobs/{jobId}/lifecycle",
+                        "POST /api/mirror/trust/read-only-shadow/authority-key-sets",
+                        "GET /api/mirror/trust/read-only-shadow/authority-key-sets/pages");
 
         worker.set(true);
         assertThat(service.capabilities()
@@ -465,6 +479,12 @@ class ToolStudioIntegrationServiceTest {
                         true)
                 .containsEntry(
                         "mirrorReadOnlyShadowServingReady",
+                        true);
+        authorityTrust.set(true);
+        assertThat(service.capabilities()
+                .payload().features())
+                .containsEntry(
+                        "mirrorReadOnlyShadowAuthorityTrustDistributionReady",
                         true);
     }
 

@@ -15,6 +15,8 @@ public final class ReadOnlyShadowRuntimeAvailability {
     private final boolean lifecycleAudit;
     private final BooleanSupplier workerReadiness;
     private final BooleanSupplier schedulerReadiness;
+    private final boolean authorityTrustDistributionApi;
+    private final BooleanSupplier authorityTrustDistributionReadiness;
 
     /**
      * Creates one dynamically probed Shadow runtime marker.
@@ -29,12 +31,39 @@ public final class ReadOnlyShadowRuntimeAvailability {
             boolean lifecycleAudit,
             BooleanSupplier workerReadiness,
             BooleanSupplier schedulerReadiness) {
+        this(jobApi, lifecycleAudit, workerReadiness, schedulerReadiness,
+                false, () -> false);
+    }
+
+    /**
+     * Creates a marker that also probes the managed Shadow authority trust-distribution path.
+     *
+     * @param jobApi protected submit/read/evidence routes are assembled
+     * @param lifecycleAudit append-only lifecycle publication is assembled
+     * @param workerReadiness dynamic signer and trusted data-plane readiness
+     * @param schedulerReadiness dynamic autonomous regional scheduler readiness
+     * @param authorityTrustDistributionApi protected authority publish/page routes are assembled
+     * @param authorityTrustDistributionReadiness dynamic bootstrap-root policy readiness
+     */
+    public ReadOnlyShadowRuntimeAvailability(
+            boolean jobApi,
+            boolean lifecycleAudit,
+            BooleanSupplier workerReadiness,
+            BooleanSupplier schedulerReadiness,
+            boolean authorityTrustDistributionApi,
+            BooleanSupplier authorityTrustDistributionReadiness) {
         this.jobApi = jobApi;
         this.lifecycleAudit = lifecycleAudit;
         this.workerReadiness = Objects.requireNonNull(
                 workerReadiness, "workerReadiness");
         this.schedulerReadiness = Objects.requireNonNull(
                 schedulerReadiness, "schedulerReadiness");
+        this.authorityTrustDistributionApi =
+                authorityTrustDistributionApi;
+        this.authorityTrustDistributionReadiness =
+                Objects.requireNonNull(
+                        authorityTrustDistributionReadiness,
+                        "authorityTrustDistributionReadiness");
     }
 
     /** @return whether the protected durable job routes are physically assembled */
@@ -55,6 +84,17 @@ public final class ReadOnlyShadowRuntimeAvailability {
     /** @return whether autonomous bounded polling is active */
     public boolean schedulerReady() {
         return probe(schedulerReadiness);
+    }
+
+    /** @return whether protected authority publish/page routes are physically assembled */
+    public boolean authorityTrustDistributionApi() {
+        return authorityTrustDistributionApi;
+    }
+
+    /** @return whether local bootstrap-root policy can verify authority key-set publications */
+    public boolean authorityTrustDistributionReady() {
+        return authorityTrustDistributionApi
+                && probe(authorityTrustDistributionReadiness);
     }
 
     /** @return whether the complete autonomous protected Shadow path is currently usable */

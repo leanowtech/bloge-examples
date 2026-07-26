@@ -58,6 +58,7 @@ class CapabilityMirrorSchemaPackagingTest {
                 "mirror-deployment-isolation-run-trust-v1.schema.json",
                 "mirror-deployment-isolation-authority-key-set-publication-v1.schema.json",
                 "read-only-shadow-authority-key-set-publication-v1.schema.json",
+                "read-only-shadow-authority-key-set-page-v1.schema.json",
                 "read-only-shadow-guard-policy-publication-v1.schema.json",
                 "read-only-shadow-sampling-grant-publication-v1.schema.json",
                 "read-only-shadow-kill-switch-publication-v1.schema.json",
@@ -655,6 +656,9 @@ class CapabilityMirrorSchemaPackagingTest {
         assertThat(CapabilityMirrorProtocol
                 .READ_ONLY_SHADOW_AUTHORITY_KEY_SET_SCHEMA_RESOURCE)
                 .endsWith("read-only-shadow-authority-key-set-publication-v1.schema.json");
+        assertThat(CapabilityMirrorProtocol
+                .READ_ONLY_SHADOW_AUTHORITY_KEY_SET_PAGE_SCHEMA_RESOURCE)
+                .endsWith("read-only-shadow-authority-key-set-page-v1.schema.json");
     }
 
     @Test

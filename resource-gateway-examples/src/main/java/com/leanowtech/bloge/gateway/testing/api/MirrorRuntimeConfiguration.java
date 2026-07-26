@@ -1656,6 +1656,8 @@ public class MirrorRuntimeConfiguration {
     readOnlyShadowRuntimeAvailability(
             ReadOnlyShadowJobService service,
             ReadOnlyShadowJobWorker worker,
+            ReadOnlyShadowAuthorityKeySetTrustPolicyProvider
+                    authorityTrustPolicies,
             ObjectProvider<ReadOnlyShadowJobScheduler>
                     scheduler) {
         return new ReadOnlyShadowRuntimeAvailability(
@@ -1667,7 +1669,9 @@ public class MirrorRuntimeConfiguration {
                             scheduler.getIfAvailable();
                     return current != null
                             && current.ready();
-                });
+                },
+                true,
+                authorityTrustPolicies::available);
     }
 
     /** Creates the independently verified read-only Shadow Fidelity source adapter. */

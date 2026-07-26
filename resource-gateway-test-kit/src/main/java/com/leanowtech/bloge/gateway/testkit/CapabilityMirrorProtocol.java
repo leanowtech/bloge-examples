@@ -143,6 +143,9 @@ public final class CapabilityMirrorProtocol {
     /** Threshold-signed read-only Shadow authority key-set publication wire version. */
     public static final String READ_ONLY_SHADOW_AUTHORITY_KEY_SET_PUBLICATION_V1 =
             "resourceGateway.readOnlyShadowAuthorityKeySetPublication.v1";
+    /** Bounded read-only Shadow authority key-set distribution page wire version. */
+    public static final String READ_ONLY_SHADOW_AUTHORITY_KEY_SET_PAGE_V1 =
+            "resourceGateway.readOnlyShadowAuthorityKeySetPage.v1";
     /** Signed deployment-isolation authority key-set compatibility fixture version. */
     public static final String MIRROR_DEPLOYMENT_ISOLATION_AUTHORITY_KEY_SET_COMPATIBILITY_V1 =
             "resourceGateway.mirrorDeploymentIsolationAuthorityKeySetCompatibility.v1";
@@ -583,6 +586,10 @@ public final class CapabilityMirrorProtocol {
     public static final String READ_ONLY_SHADOW_AUTHORITY_KEY_SET_SCHEMA_RESOURCE =
             SCHEMA_RESOURCE_ROOT
                     + "read-only-shadow-authority-key-set-publication-v1.schema.json";
+    /** Packaged bounded read-only Shadow authority key-set page schema. */
+    public static final String READ_ONLY_SHADOW_AUTHORITY_KEY_SET_PAGE_SCHEMA_RESOURCE =
+            SCHEMA_RESOURCE_ROOT
+                    + "read-only-shadow-authority-key-set-page-v1.schema.json";
     /** Packaged signed read-only Shadow shared guard-policy schema. */
     public static final String READ_ONLY_SHADOW_GUARD_POLICY_PUBLICATION_SCHEMA_RESOURCE =
             SCHEMA_RESOURCE_ROOT

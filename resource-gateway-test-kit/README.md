@@ -43,6 +43,10 @@ implementation. The JAR packages the authoritative v1 JSON Schema and provides:
   source-resolution, online-authority closure, content-address, key-policy, and signature drift; durable
   `ReadOnlyShadowJobRequest.v1` / `ReadOnlyShadowJob.v1` Schemas plus an independent verifier
   that reconstructs request/job fingerprints, lifecycle, signed comparison, and exact closure;
+  strict Shadow authority key-set publication/page Schemas plus an independent
+  root-threshold verifier that reconstructs content addresses, exact enterprise
+  binding, frozen high-water cursor continuity, online terminal freshness, and
+  irreversible retained-key lifecycle across bounded catch-up pages;
 - packaged validation and version constants for the payload-free
   `bloge.executionServiceStateSnapshot.v1` durable-resume building block;
 - payload-safe typed child/suite-run summaries and JUnit 5 assertions;

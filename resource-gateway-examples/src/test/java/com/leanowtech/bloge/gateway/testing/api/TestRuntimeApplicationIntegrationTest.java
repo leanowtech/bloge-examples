@@ -201,6 +201,10 @@ class TestRuntimeApplicationIntegrationTest {
                     assertThat(availability.workerReady()).isFalse();
                     assertThat(availability.schedulerReady()).isFalse();
                     assertThat(availability.servingReady()).isFalse();
+                    assertThat(availability
+                            .authorityTrustDistributionApi()).isTrue();
+                    assertThat(availability
+                            .authorityTrustDistributionReady()).isFalse();
                 });
         assertThat(context.getBeansOfType(
                 DomainFidelityRuntimeAvailability.class).values())
@@ -383,6 +387,10 @@ class TestRuntimeApplicationIntegrationTest {
                 endpoint.method().equals("POST")
                         && endpoint.path().equals(
                         "/api/mirror/trust/deployment-isolation/authority-key-sets"));
+        assertThat(capabilities.getBody().payload().endpoints()).anyMatch(endpoint ->
+                endpoint.method().equals("GET")
+                        && endpoint.path().equals(
+                        "/api/mirror/trust/read-only-shadow/authority-key-sets/pages"));
         assertThat(capabilities.getBody().payload().endpoints()).anyMatch(endpoint ->
                 endpoint.method().equals("POST")
                         && endpoint.path().equals(

@@ -173,6 +173,56 @@ class ManagedReadOnlyShadowAuthorityTrustStoreTest {
                 Integer.class)).isZero();
     }
 
+    @Test
+    void returnsAtomicContiguousPagesAndRejectsCheckpointFingerprintDrift() {
+        var firstKey = authorityKey(
+                authority, ReadOnlyShadowAuthorityIntegrity.KeyState.ACTIVE, null);
+        var genesis = publication(1, "", List.of(firstKey));
+        service.publish(genesis);
+        var secondKey = authorityKey(
+                replacement, ReadOnlyShadowAuthorityIntegrity.KeyState.ACTIVE, null);
+        List<ReadOnlyShadowAuthorityKeySetPublication.AuthorityKey> twoKeys =
+                List.of(firstKey, secondKey).stream()
+                        .sorted(java.util.Comparator.comparing(
+                                ReadOnlyShadowAuthorityKeySetPublication.AuthorityKey::keyId))
+                        .toList();
+        var second = publication(2, genesis.publicationFingerprint(), twoKeys);
+        service.publish(second);
+        var revokedFirst = new ReadOnlyShadowAuthorityKeySetPublication.AuthorityKey(
+                firstKey.keyId(), firstKey.algorithm(), firstKey.encodedPublicKey(),
+                firstKey.notBefore(), firstKey.notAfter(), null,
+                ReadOnlyShadowAuthorityIntegrity.KeyState.REVOKED);
+        List<ReadOnlyShadowAuthorityKeySetPublication.AuthorityKey> revokedKeys =
+                List.of(revokedFirst, secondKey).stream()
+                        .sorted(java.util.Comparator.comparing(
+                                ReadOnlyShadowAuthorityKeySetPublication.AuthorityKey::keyId))
+                        .toList();
+        var third = publication(3, second.publicationFingerprint(), revokedKeys);
+        service.publish(third);
+
+        var firstPage = service.page(scope(),
+                ReadOnlyShadowAuthorityIntegrity.PublicationKind.SAMPLING_GRANT,
+                ISSUER, 0, "", 2);
+        assertThat(firstPage.publications()).containsExactly(genesis, second);
+        assertThat(firstPage.throughGeneration()).isEqualTo(2);
+        assertThat(firstPage.highWaterGeneration()).isEqualTo(3);
+        assertThat(firstPage.hasMore()).isTrue();
+
+        var terminal = service.page(scope(),
+                ReadOnlyShadowAuthorityIntegrity.PublicationKind.SAMPLING_GRANT,
+                ISSUER, firstPage.throughGeneration(),
+                second.publicationFingerprint(), 2);
+        assertThat(terminal.publications()).containsExactly(third);
+        assertThat(terminal.hasMore()).isFalse();
+        assertThat(terminal.highWaterPublicationFingerprint())
+                .isEqualTo(third.publicationFingerprint());
+
+        assertRepositoryReason(() -> service.page(scope(),
+                        ReadOnlyShadowAuthorityIntegrity.PublicationKind.SAMPLING_GRANT,
+                        ISSUER, 2, fingerprint('f'), 2),
+                ReadOnlyShadowAuthorityKeySetRepository.Reason.CHECKPOINT_INVALID);
+    }
+
     private ReadOnlyShadowAuthorityKeySetPublication publication(
             long generation,
             String previous,

@@ -12,6 +12,7 @@ import com.leanowtech.bloge.gateway.integration.mirror.MirrorDeploymentIsolation
 import com.leanowtech.bloge.gateway.integration.mirror.MirrorDeploymentIsolationAttestationService;
 import com.leanowtech.bloge.gateway.integration.mirror.CapabilityObservationAdmissionService;
 import com.leanowtech.bloge.gateway.integration.mirror.CapabilityCorpusGovernanceService;
+import com.leanowtech.bloge.gateway.integration.mirror.ReadOnlyShadowAuthorityKeySetService;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.junit.jupiter.api.Test;
 import org.springframework.context.ApplicationContext;
@@ -67,6 +68,8 @@ class MirrorIntegrationRouteIsolationTest {
                     "POST /api/mirror/trust/deployment-isolation/authority-key-sets",
                     "GET /api/mirror/trust/deployment-isolation/authority-key-sets/{keySetId}/latest",
                     "GET /api/mirror/trust/deployment-isolation/authority-key-sets/{keySetId}/generations/{generation}",
+                    "POST /api/mirror/trust/read-only-shadow/authority-key-sets",
+                    "GET /api/mirror/trust/read-only-shadow/authority-key-sets/pages",
                     "POST /api/mirror/trust/deployment-isolation/attestations",
                     "GET /api/mirror/trust/deployment-isolation/attestations/{attestationId}/latest",
                     "GET /api/mirror/trust/deployment-isolation/attestations/{attestationId}/revisions/{revision}",
@@ -107,6 +110,8 @@ class MirrorIntegrationRouteIsolationTest {
                     "POST /api/mirror/trust/deployment-isolation/authority-key-sets",
                     "GET /api/mirror/trust/deployment-isolation/authority-key-sets/{keySetId}/latest",
                     "GET /api/mirror/trust/deployment-isolation/authority-key-sets/{keySetId}/generations/{generation}",
+                    "POST /api/mirror/trust/read-only-shadow/authority-key-sets",
+                    "GET /api/mirror/trust/read-only-shadow/authority-key-sets/pages",
                     "POST /api/mirror/trust/deployment-isolation/attestations",
                     "GET /api/mirror/trust/deployment-isolation/attestations/{attestationId}/latest",
                     "GET /api/mirror/trust/deployment-isolation/attestations/{attestationId}/revisions/{revision}",
@@ -148,6 +153,10 @@ class MirrorIntegrationRouteIsolationTest {
             assertThat(mixed.getBeansOfType(
                     MirrorDeploymentIsolationAuthorityPublicationController.class)).isEmpty();
             assertThat(production.getBeansOfType(
+                    ReadOnlyShadowAuthorityKeySetController.class)).isEmpty();
+            assertThat(mixed.getBeansOfType(
+                    ReadOnlyShadowAuthorityKeySetController.class)).isEmpty();
+            assertThat(production.getBeansOfType(
                     MirrorDeploymentIsolationAttestationController.class)).isEmpty();
             assertThat(mixed.getBeansOfType(
                     MirrorDeploymentIsolationAttestationController.class)).isEmpty();
@@ -179,6 +188,7 @@ class MirrorIntegrationRouteIsolationTest {
                 ScenarioRehearsalController.class,
                 ScenarioRehearsalRemediationController.class,
                 MirrorDeploymentIsolationAuthorityPublicationController.class,
+                ReadOnlyShadowAuthorityKeySetController.class,
                 MirrorDeploymentIsolationAttestationController.class,
                 CapabilityObservationController.class,
                 CapabilityCorpusGovernanceController.class);
@@ -251,6 +261,12 @@ class MirrorIntegrationRouteIsolationTest {
         }
 
         @Bean
+        ReadOnlyShadowAuthorityKeySetService
+        readOnlyShadowAuthorityKeySetService() {
+            return mock(ReadOnlyShadowAuthorityKeySetService.class);
+        }
+
+        @Bean
         MirrorDeploymentIsolationAttestationService
         mirrorDeploymentIsolationAttestationService() {
             return mock(MirrorDeploymentIsolationAttestationService.class);
@@ -300,6 +316,13 @@ class MirrorIntegrationRouteIsolationTest {
         MirrorDeploymentIsolationAuthorityPublicationDecoder
         mirrorDeploymentIsolationAuthorityPublicationDecoder() {
             return new MirrorDeploymentIsolationAuthorityPublicationDecoder(
+                    new ObjectMapper().findAndRegisterModules());
+        }
+
+        @Bean
+        ReadOnlyShadowAuthorityKeySetDecoder
+        readOnlyShadowAuthorityKeySetDecoder() {
+            return new ReadOnlyShadowAuthorityKeySetDecoder(
                     new ObjectMapper().findAndRegisterModules());
         }
 
