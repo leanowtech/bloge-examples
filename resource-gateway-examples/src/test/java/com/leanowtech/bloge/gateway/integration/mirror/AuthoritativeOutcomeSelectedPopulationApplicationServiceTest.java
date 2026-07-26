@@ -247,6 +247,41 @@ class AuthoritativeOutcomeSelectedPopulationApplicationServiceTest {
     }
 
     @Test
+    void reservesContinuousAssessmentNamespaceForInternalWorker() {
+        AuthoritativeOutcomeSelectedPopulationAdmission
+                admitted = service.ingestPopulation(
+                new AuthoritativeOutcomeSelectedPopulationAdmissionRequest(
+                        "",
+                        "",
+                        unsignedManifest(),
+                        fixture.chunks()),
+                selectionIdentity("staging"));
+        AuthoritativeOutcomeSelectedPopulationAssessmentRequest request =
+                new AuthoritativeOutcomeSelectedPopulationAssessmentRequest(
+                        "",
+                        admitted.population().manifest().revision(),
+                        AuthoritativeOutcomeContinuousAssessmentRequest
+                                .ASSESSMENT_ID_PREFIX
+                                + "refund-completeness",
+                        1,
+                        "");
+
+        assertProblem(
+                () -> service.assess(
+                        admitted.population().manifest()
+                                .populationId(),
+                        request,
+                        assessmentIdentity("staging")),
+                "RG.MIRROR.OUTCOME.ASSESSMENT_NAMESPACE_FORBIDDEN");
+        assertThat(service.assessContinuous(
+                admitted.population().manifest().populationId(),
+                request,
+                assessmentIdentity("staging"))
+                .assessment().assessmentId())
+                .isEqualTo(request.assessmentId());
+    }
+
+    @Test
     void recoversConcurrentUnsignedCommandsAfterTheInitialRecoveryWindow() {
         AuthoritativeOutcomeSelectedPopulationRepository
                 concurrentRepository = mock(

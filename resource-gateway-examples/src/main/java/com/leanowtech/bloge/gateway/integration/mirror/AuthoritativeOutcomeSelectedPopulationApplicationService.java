@@ -241,6 +241,41 @@ AuthoritativeOutcomeSelectedPopulationApplicationService {
             AuthoritativeOutcomeSelectedPopulationAssessmentRequest
                     request,
             IntegrationRequestContext identity) {
+        return assessInternal(
+                populationId,
+                request,
+                identity,
+                false);
+    }
+
+    /**
+     * Projects one server-owned continuous-assessment revision.
+     *
+     * <p>Package visibility keeps the reserved assessment namespace inaccessible to HTTP
+     * adapters. The continuous worker still traverses the same authorization, authority,
+     * coherent-cut, immutable admission, and mandatory-audit boundary as a user-triggered
+     * assessment.</p>
+     */
+    AuthoritativeOutcomeSelectedPopulationAssessmentAdmission
+    assessContinuous(
+            String populationId,
+            AuthoritativeOutcomeSelectedPopulationAssessmentRequest
+                    request,
+            IntegrationRequestContext identity) {
+        return assessInternal(
+                populationId,
+                request,
+                identity,
+                true);
+    }
+
+    private AuthoritativeOutcomeSelectedPopulationAssessmentAdmission
+    assessInternal(
+            String populationId,
+            AuthoritativeOutcomeSelectedPopulationAssessmentRequest
+                    request,
+            IntegrationRequestContext identity,
+            boolean continuous) {
         IntegrationRequestContext governance =
                 requireIdentity(
                         identity,
@@ -250,6 +285,9 @@ AuthoritativeOutcomeSelectedPopulationApplicationService {
         AuthoritativeOutcomeSelectedPopulationAssessmentRequest
                 command = Objects.requireNonNull(
                 request, "request");
+        boolean reserved = command.assessmentId().startsWith(
+                AuthoritativeOutcomeContinuousAssessmentRequest
+                        .ASSESSMENT_ID_PREFIX);
         MirrorOperationObservability.Observation audit =
                 observability.start(
                         MirrorOperationAuditEvent.Operation
@@ -259,6 +297,12 @@ AuthoritativeOutcomeSelectedPopulationApplicationService {
                         populationId,
                         "");
         try {
+            if (reserved != continuous) {
+                throw forbidden(
+                        governance,
+                        "RG.MIRROR.OUTCOME.ASSESSMENT_NAMESPACE_FORBIDDEN",
+                        "The assessment stream namespace is reserved by its owning runtime.");
+            }
             if (!accessPolicy.mayAssess(governance)) {
                 throw forbidden(
                         governance,

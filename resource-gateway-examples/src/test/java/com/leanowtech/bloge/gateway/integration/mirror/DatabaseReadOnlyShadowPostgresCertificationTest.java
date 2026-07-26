@@ -536,6 +536,156 @@ class DatabaseReadOnlyShadowPostgresCertificationTest {
     }
 
     @Test
+    void certifiesContinuousAssessmentFencingAcrossReplicas() {
+        Replica first = replica(
+                postgres.getPostgresDatabase());
+        Replica second = replica(
+                postgres.getPostgresDatabase());
+        Clock clock = Clock.fixed(
+                DomainFidelityTestFixtures.NOW,
+                ZoneOffset.UTC);
+        InMemoryVisualEvidenceSigner signer =
+                InMemoryVisualEvidenceSigner.usingClock(clock);
+        AuthoritativeOutcomeSelectedPopulationIntegrity
+                populationIntegrity =
+                new AuthoritativeOutcomeSelectedPopulationIntegrity(
+                        mapper,
+                        signer,
+                        AuthoritativeOutcomeSelectedPopulationTestFixtures
+                                .populationAuthority(),
+                        clock);
+        AuthoritativeOutcomeObservationIntegrity
+                observationIntegrity =
+                new AuthoritativeOutcomeObservationIntegrity(
+                        mapper,
+                        signer,
+                        AuthoritativeOutcomeSelectedPopulationTestFixtures
+                                .outcomeAuthority(),
+                        clock);
+        AuthoritativeOutcomeSelectedPopulationDispositionIntegrity
+                dispositionIntegrity =
+                new AuthoritativeOutcomeSelectedPopulationDispositionIntegrity(
+                        mapper,
+                        signer,
+                        AuthoritativeOutcomeSelectedPopulationTestFixtures
+                                .dispositionAuthority(),
+                        clock);
+        AuthoritativeOutcomeSelectedPopulationCompletenessProjector
+                projector =
+                new AuthoritativeOutcomeSelectedPopulationCompletenessProjector(
+                        mapper,
+                        populationIntegrity,
+                        observationIntegrity,
+                        dispositionIntegrity,
+                        signer,
+                        clock);
+        DatabaseAuthoritativeOutcomeInboxRepository inbox =
+                new DatabaseAuthoritativeOutcomeInboxRepository(
+                        first.jdbc(),
+                        mapper,
+                        observationIntegrity,
+                        first.transactions());
+        inbox.init();
+        DatabaseAuthoritativeOutcomeSelectedPopulationRepository
+                populations =
+                selectedPopulationRepository(
+                        first,
+                        populationIntegrity,
+                        observationIntegrity,
+                        dispositionIntegrity,
+                        projector);
+        populations.init();
+        AuthoritativeOutcomeSelectedPopulationTestFixtures.Population
+                population =
+                AuthoritativeOutcomeSelectedPopulationTestFixtures
+                        .signedPopulation(populationIntegrity);
+        populations.register(
+                population.manifest(),
+                population.chunks(),
+                "");
+        DatabaseAuthoritativeOutcomeContinuousAssessmentRepository
+                firstProjection =
+                new DatabaseAuthoritativeOutcomeContinuousAssessmentRepository(
+                        first.jdbc(),
+                        mapper,
+                        first.transactions());
+        DatabaseAuthoritativeOutcomeContinuousAssessmentRepository
+                secondProjection =
+                new DatabaseAuthoritativeOutcomeContinuousAssessmentRepository(
+                        second.jdbc(),
+                        mapper,
+                        second.transactions());
+        firstProjection.init();
+        secondProjection.init();
+        AuthoritativeOutcomeContinuousAssessmentRequest command =
+                new AuthoritativeOutcomeContinuousAssessmentRequest(
+                        "",
+                        "postgres-continuous-assessment",
+                        population.manifest().artifactRef());
+        assertThat(firstProjection.register(
+                population.manifest().scope(),
+                command).idempotentReplay()).isFalse();
+        assertThat(secondProjection.register(
+                population.manifest().scope(),
+                command).idempotentReplay()).isTrue();
+        AuthoritativeOutcomeContinuousAssessmentPolicy policy =
+                new AuthoritativeOutcomeContinuousAssessmentPolicy(
+                        Duration.ofMinutes(5),
+                        Duration.ofMinutes(1),
+                        Duration.ofSeconds(2),
+                        Duration.ofSeconds(8),
+                        3);
+        AuthoritativeOutcomeContinuousAssessmentRepository.Claim claim =
+                firstProjection.claimNext(
+                        "sg",
+                        "staging",
+                        "postgres-projection-worker",
+                        policy);
+        AuthoritativeOutcomeSelectedPopulationCompletenessAssessment
+                assessment =
+                new AuthoritativeOutcomeSelectedPopulationService(
+                        populations,
+                        populationIntegrity,
+                        dispositionIntegrity,
+                        projector)
+                        .assess(
+                                population.manifest().scope(),
+                                population.manifest()
+                                        .populationId(),
+                                population.manifest().revision(),
+                                command.assessmentId(),
+                                1,
+                                "")
+                        .assessment();
+
+        AuthoritativeOutcomeContinuousAssessmentProjection published =
+                secondProjection.publish(
+                        claim.lease(),
+                        assessment.artifactRef(),
+                        assessment.observationSetFingerprint(),
+                        assessment.dispositionSetFingerprint(),
+                        policy);
+
+        assertThat(published.lastAssessmentRef())
+                .isEqualTo(assessment.artifactRef());
+        assertThat(firstProjection.find(
+                population.manifest().scope(),
+                command.projectionId())
+                .orElseThrow().freshness())
+                .isEqualTo(
+                        AuthoritativeOutcomeContinuousAssessmentProjection
+                                .Freshness.CURRENT);
+        assertThat(secondProjection.claimNext(
+                "sg",
+                "staging",
+                "postgres-projection-worker-2",
+                policy).outcome())
+                .isEqualTo(
+                        AuthoritativeOutcomeContinuousAssessmentRepository
+                                .Claim.Outcome.NO_WORK);
+    }
+
+    @Test
     void certifiesResumablePopulationUploadAcrossReplicas()
             throws Exception {
         Replica first = replica(
