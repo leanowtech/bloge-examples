@@ -1,7 +1,6 @@
 package com.leanowtech.bloge.gateway.integration.mirror;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
-import com.fasterxml.jackson.databind.node.ObjectNode;
 import com.leanowtech.bloge.gateway.testing.evidence.ProtocolFingerprint;
 import com.leanowtech.bloge.gateway.visual.runtime.VisualRunEvidenceSeal;
 
@@ -281,17 +280,25 @@ public record ReadOnlyShadowSourceResolutionAttestation(
 
     String calculateFingerprint(
             ObjectMapper mapper) {
-        ObjectNode material =
-                Objects.requireNonNull(mapper, "mapper")
-                        .valueToTree(
-                                copy(
-                                        "",
-                                        VisualRunEvidenceSeal
-                                                .unsigned()));
-        material.remove("attestationSeal");
         return ProtocolFingerprint.ofBounded(
-                mapper,
-                material,
+                Objects.requireNonNull(mapper, "mapper"),
+                new FingerprintMaterial(
+                        schemaVersion,
+                        "",
+                        attestationId,
+                        revision,
+                        scope,
+                        requestId,
+                        executionId,
+                        sourceBindingRef,
+                        comparisonPolicyRef,
+                        requestContextFingerprint,
+                        admissionFingerprint,
+                        admittedAt,
+                        confirmedAt,
+                        baseline,
+                        candidate,
+                        issuedAt),
                 MAXIMUM_CANONICAL_BYTES);
     }
 
@@ -406,6 +413,26 @@ public record ReadOnlyShadowSourceResolutionAttestation(
             CapabilitySnapshot.Scope scope,
             Instant issuedAt,
             String attestationFingerprint
+    ) {
+    }
+
+    private record FingerprintMaterial(
+            String schemaVersion,
+            String attestationFingerprint,
+            String attestationId,
+            long revision,
+            CapabilitySnapshot.Scope scope,
+            String requestId,
+            String executionId,
+            MirrorArtifactRef sourceBindingRef,
+            MirrorArtifactRef comparisonPolicyRef,
+            String requestContextFingerprint,
+            String admissionFingerprint,
+            Instant admittedAt,
+            Instant confirmedAt,
+            SourceResolution baseline,
+            SourceResolution candidate,
+            Instant issuedAt
     ) {
     }
 }

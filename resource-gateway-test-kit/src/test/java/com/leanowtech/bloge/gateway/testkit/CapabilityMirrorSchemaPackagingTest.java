@@ -672,6 +672,24 @@ class CapabilityMirrorSchemaPackagingTest {
     }
 
     @Test
+    void packagesOneFixedThreeAuthoritySourceResolutionFixture() {
+        ReadOnlyShadowSourceResolutionCompatibilityFixture fixture =
+                CapabilityMirrorProtocol
+                        .readOnlyShadowSourceResolutionCompatibilityFixture();
+
+        assertThat(fixture.verify().verified()).isTrue();
+        assertThat(CapabilityMirrorProtocol
+                .READ_ONLY_SHADOW_SOURCE_RESOLUTION_COMPATIBILITY_V1)
+                .isEqualTo(
+                        ReadOnlyShadowSourceResolutionCompatibilityFixture
+                                .SCHEMA_VERSION);
+        assertThat(CapabilityMirrorProtocol
+                .READ_ONLY_SHADOW_SOURCE_RESOLUTION_FIXTURE_RESOURCE)
+                .endsWith(
+                        "read-only-shadow-source-resolution-stage1-v1.fixture.json");
+    }
+
+    @Test
     void packagesOneFixedThresholdSignedIsolationAuthorityFixture() {
         var fixture = CapabilityMirrorProtocol
                 .mirrorDeploymentIsolationAuthorityKeySetCompatibilityFixture();

@@ -1,7 +1,6 @@
 package com.leanowtech.bloge.gateway.integration.mirror;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
-import com.fasterxml.jackson.databind.node.ObjectNode;
 import com.leanowtech.bloge.gateway.testing.evidence.ProtocolFingerprint;
 import com.leanowtech.bloge.gateway.visual.runtime.VisualRunEvidenceSeal;
 
@@ -301,16 +300,26 @@ public record ReadOnlyShadowSourceBinding(
     }
 
     String calculateFingerprint(ObjectMapper mapper) {
-        ObjectNode material = Objects.requireNonNull(
-                mapper, "mapper").valueToTree(
-                copy(
-                        baselineObservationFingerprint,
-                        "",
-                        VisualRunEvidenceSeal.unsigned()));
-        material.remove("bindingSeal");
         return ProtocolFingerprint.ofBounded(
-                mapper,
-                material,
+                Objects.requireNonNull(mapper, "mapper"),
+                new BindingFingerprintMaterial(
+                        schemaVersion,
+                        "",
+                        bindingId,
+                        revision,
+                        scope,
+                        scenarioCaseRef,
+                        targetCapabilityRef,
+                        candidatePlanRef,
+                        baselineBindingRef,
+                        comparisonPolicyRef,
+                        requestContextFingerprint,
+                        baselineObservationFingerprint,
+                        baseline,
+                        candidateEvidenceRef,
+                        validFrom,
+                        expiresAt,
+                        issuedAt),
                 MAXIMUM_CANONICAL_BYTES);
     }
 
@@ -441,6 +450,27 @@ public record ReadOnlyShadowSourceBinding(
             CapabilitySnapshot.Scope scope,
             Instant issuedAt,
             String bindingFingerprint
+    ) {
+    }
+
+    private record BindingFingerprintMaterial(
+            String schemaVersion,
+            String bindingFingerprint,
+            String bindingId,
+            long revision,
+            CapabilitySnapshot.Scope scope,
+            MirrorArtifactRef scenarioCaseRef,
+            MirrorArtifactRef targetCapabilityRef,
+            MirrorArtifactRef candidatePlanRef,
+            MirrorArtifactRef baselineBindingRef,
+            MirrorArtifactRef comparisonPolicyRef,
+            String requestContextFingerprint,
+            String baselineObservationFingerprint,
+            BaselineObservation baseline,
+            MirrorArtifactRef candidateEvidenceRef,
+            Instant validFrom,
+            Instant expiresAt,
+            Instant issuedAt
     ) {
     }
 }

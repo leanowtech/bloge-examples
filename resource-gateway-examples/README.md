@@ -720,6 +720,17 @@ comparison policy, historical source completion times, current resolution
 times, normalized facts, evidence class/completeness, and zero-write counters.
 It is append-only and has no latest fallback.
 
+Producer/consumer compatibility is frozen by
+[`read-only-shadow-source-resolution-stage1-v1.fixture.json`](../docs/schemas/resource-gateway-mirror/read-only-shadow-source-resolution-stage1-v1.fixture.json).
+The server rehydrates and verifies the candidate evidence, source binding, and
+source-resolution proof under three distinct public keys; the standalone Test
+Kit independently recomputes every content address, deterministic identity,
+policy fact, time relation, zero-write claim, and signature from the same file.
+Run `CapabilityMirrorProtocol.readOnlyShadowSourceResolutionCompatibilityFixture().verify()`
+in dependency and crypto-provider upgrade probes. A passing fixture proves wire
+compatibility only; it does not claim current authority, data-use permission,
+or online connector readiness.
+
 Read the exact proof referenced by a successful v3 comparison:
 
 ```bash

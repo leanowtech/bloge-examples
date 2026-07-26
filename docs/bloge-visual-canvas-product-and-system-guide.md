@@ -1175,7 +1175,15 @@ online grant/kill-switch 或 egress authority；这些依赖缺失时 worker 仍
 读取外部系统。成功 comparison 所引用的 proof 可从
 `/api/mirror/shadow/source-resolutions/{attestationId}/revisions/{revision}?fingerprint=...`
 读取，并用独立 Test Kit 复核 `executionId`、source binding、candidate evidence、policy facts、
-零写闭包、内容地址和签名。详细协议见
+零写闭包、内容地址和签名。
+
+升级 Test Kit、Jackson、JDK 或 crypto provider 时，执行
+`CapabilityMirrorProtocol.readOnlyShadowSourceResolutionCompatibilityFixture().verify()`。
+该 public-only fixture 由服务端生成并以 candidate evidence、source binding、source resolution
+三把独立公钥闭合，可在启动前发现 deterministic id、canonicalization、key role 和签名协议漂移；
+通过只代表 wire compatibility，不代表在线 authority 或真实 baseline 已 ready。
+
+详细协议见
 [领域保真度与 Shadow 证据指南](resource-gateway-domain-fidelity-profile.md)。
 
 批次运行期间，系统会在每个 Scenario case 前后写入 payload-free heartbeat 与

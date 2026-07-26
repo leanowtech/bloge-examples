@@ -160,6 +160,18 @@ business payload. The server rehydrates and verifies it through its Java protoco
 standalone test-kit validates the strict schemas and independently re-derives every nested seal,
 closure, aggregate fingerprint, key policy, and signature from the same file.
 
+`read-only-shadow-source-resolution-stage1-v1.fixture.json` is the fixed
+three-authority detached-source compatibility fixture. It contains one
+server-produced candidate evidence bundle, exact source binding, and
+source-resolution attestation plus separate public keys for each authority
+role. The server rehydrates all three protocol models and rejects key-role
+swaps; the standalone Test Kit recursively canonicalizes and independently
+recomputes the candidate/binding/proof content addresses, deterministic
+`executionId`-bound identity, built-in policy facts, temporal closure,
+zero-write claims, and Ed25519 signatures. It contains no private key or
+business payload. A passing fixture proves producer/consumer wire
+compatibility, not current online authority or data-plane certification.
+
 The producer emits v2 for stateless runs, v3 for read-only Session runs, and v5
 for new Session runs containing virtual writes. V4 remains the compatible
 successful-transition generation. Readers and the standalone test-kit

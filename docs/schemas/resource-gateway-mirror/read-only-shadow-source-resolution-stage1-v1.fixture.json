@@ -1,0 +1,295 @@
+{
+  "schemaVersion" : "resourceGateway.readOnlyShadowSourceResolutionCompatibility.v1",
+  "verificationTime" : "2026-07-26T00:00:30Z",
+  "verificationKeys" : {
+    "candidateEvidence" : {
+      "schemaVersion" : "toolStudio.resourceGateway.evidenceVerificationKey.v1",
+      "keyId" : "memory-ed25519:15d2eb92-72d5-4c0f-aaf0-d58c6745fb0b",
+      "algorithm" : "Ed25519",
+      "encodedPublicKey" : "MCowBQYDK2VwAyEAj2DXlKyngGotuXP7Ttrc1/Xb3kgAQRUMq5RVo2TMDIw=",
+      "createdAt" : "2026-07-23T00:00:12Z",
+      "state" : "ACTIVE",
+      "provider" : "IN_MEMORY"
+    },
+    "sourceBinding" : {
+      "schemaVersion" : "toolStudio.resourceGateway.evidenceVerificationKey.v1",
+      "keyId" : "memory-ed25519:bab2f591-28e6-47ea-b613-9f8a019b5bce",
+      "algorithm" : "Ed25519",
+      "encodedPublicKey" : "MCowBQYDK2VwAyEAWdGcqDR7kOjZIPxrc/gPbtyEJYVBTGgrMTZsDTEixsQ=",
+      "createdAt" : "2026-07-26T00:00:00Z",
+      "state" : "ACTIVE",
+      "provider" : "IN_MEMORY"
+    },
+    "sourceResolution" : {
+      "schemaVersion" : "toolStudio.resourceGateway.evidenceVerificationKey.v1",
+      "keyId" : "memory-ed25519:7351a6f6-7be0-42b7-900f-39827681f480",
+      "algorithm" : "Ed25519",
+      "encodedPublicKey" : "MCowBQYDK2VwAyEA5Ahl1qcTvIauV14SPIXTantxb2HXzw0vOEu/lbUjkzE=",
+      "createdAt" : "2026-07-26T00:00:04Z",
+      "state" : "ACTIVE",
+      "provider" : "IN_MEMORY"
+    }
+  },
+  "expected" : {
+    "scope" : {
+      "tenantId" : "tenant-a",
+      "organizationId" : "support",
+      "projectId" : "support",
+      "environmentId" : "test",
+      "region" : "sg"
+    },
+    "attestationRef" : {
+      "kind" : "SHADOW_SOURCE_RESOLUTION_ATTESTATION",
+      "id" : "source-resolution-317426521dd7dd55fdf6215c5b989e195c799fcaad439e622254af0a9f5de359",
+      "revision" : 1,
+      "fingerprint" : "sha256:db29e3d3db2f220ff0461bb6575903877605f4a43ed287771e7b734a4ae2533f"
+    },
+    "requestId" : "shadow-compatibility-job",
+    "executionId" : "shadow-compatibility-execution",
+    "admissionFingerprint" : "sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"
+  },
+  "candidateEvidenceBundle" : {
+    "schemaVersion" : "resourceGateway.mirrorEvidenceBundle.v2",
+    "bundleFingerprint" : "sha256:a61424e37ad30414ee8a011fc18092f8dfb1dc961ff85b35bcca04a3a0a1f9d7",
+    "payloadPolicy" : "HASH_ONLY",
+    "attestation" : {
+      "schemaVersion" : "resourceGateway.mirrorEvidenceAttestation.v2",
+      "signatureStatus" : "VERIFIED",
+      "runId" : "shadow-compatibility-candidate",
+      "planFingerprint" : "sha256:a6db369b64b9a0d8148facf8300a260980f6277685226e9fc46599c45c00c16a",
+      "evidenceFingerprint" : "sha256:afb3b5f298b202b1604c51fa36c9a7b7ec0e686d72739b46d6e1a85a07932310",
+      "signedAt" : "2026-07-23T00:00:12Z",
+      "keyId" : "memory-ed25519:15d2eb92-72d5-4c0f-aaf0-d58c6745fb0b",
+      "algorithm" : "Ed25519",
+      "signature" : "AgJ3rTdOau+x5uGtdC/NXLgWV1Fuyi6S//gqPO+9DI+KV+LHV4N15k1+zt08q4/hQ1KqIsHJgLsKyqbE7nLvCg==",
+      "independentlyVerifiable" : true
+    },
+    "evidence" : {
+      "schemaVersion" : "resourceGateway.mirrorRunEvidence.v2",
+      "runId" : "shadow-compatibility-candidate",
+      "requestId" : "shadow-compatibility-request",
+      "requestContextFingerprint" : "sha256:9999999999999999999999999999999999999999999999999999999999999999",
+      "planId" : "shadow-compatibility-plan",
+      "planFingerprint" : "sha256:a6db369b64b9a0d8148facf8300a260980f6277685226e9fc46599c45c00c16a",
+      "capabilityClosureFingerprint" : "sha256:e01acfa38807a11b7d64396437fac1d1b3026b587fa271defe0ff4e0767fb5f0",
+      "executionControlFingerprint" : "sha256:4444444444444444444444444444444444444444444444444444444444444444",
+      "rootCapability" : {
+        "kind" : "CAPABILITY",
+        "id" : "graph:customer-view",
+        "revision" : 1,
+        "fingerprint" : "sha256:bdc56f8261629777688e23a116c2c45c36393d21954d7c0d3d04addf207c62b0"
+      },
+      "fixtureBundleRef" : {
+        "kind" : "FIXTURE_BUNDLE",
+        "id" : "customer-fixture",
+        "revision" : 1,
+        "fingerprint" : "sha256:eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee"
+      },
+      "externalBindings" : [ {
+        "parentCapabilityRef" : {
+          "kind" : "CAPABILITY",
+          "id" : "graph:customer-view",
+          "revision" : 1,
+          "fingerprint" : "sha256:bdc56f8261629777688e23a116c2c45c36393d21954d7c0d3d04addf207c62b0"
+        },
+        "dependencyNodeId" : "loadCustomer",
+        "capabilityRef" : {
+          "kind" : "CAPABILITY",
+          "id" : "resource:customers.get",
+          "revision" : 1,
+          "fingerprint" : "sha256:4bea3ca0ed191da100c5276c7a7641fbe3f9bd6fff36400000244b4d5e4cf31d"
+        },
+        "invocationSiteId" : "/root/loadCustomer#RESOURCE",
+        "graphPath" : "/root"
+      } ],
+      "scope" : {
+        "tenantId" : "tenant-a",
+        "organizationId" : "support",
+        "projectId" : "support",
+        "environmentId" : "test",
+        "region" : "sg"
+      },
+      "authorizedPurpose" : "MIRROR_REHEARSAL",
+      "status" : "PASSED",
+      "evidenceClass" : "EXPLORATORY",
+      "semanticResultFingerprint" : "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "startedAt" : "2026-07-23T00:00:10Z",
+      "completedAt" : "2026-07-23T00:00:11Z",
+      "nodeTraces" : [ ],
+      "edgeTraces" : [ ],
+      "resolutions" : [ ],
+      "isolation" : {
+        "engineMode" : "INDEPENDENT_TEST_ENGINE",
+        "interceptorTypes" : [ ],
+        "listenerTypes" : [ "InvocationRecorder" ],
+        "durableStoresAttached" : false,
+        "productionContextCarriersAttached" : false,
+        "productionExtensionListenersAttached" : false,
+        "realExternalCallsAllowed" : false,
+        "externalCredentialsAllowed" : false,
+        "networkEgressAllowed" : false,
+        "deploymentEgressEnforced" : false,
+        "deploymentIsolationRef" : null,
+        "limitations" : [ "DEPLOYMENT_EGRESS_NOT_ATTESTED" ]
+      },
+      "limitations" : [ "DEPLOYMENT_EGRESS_NOT_ATTESTED" ]
+    }
+  },
+  "sourceBinding" : {
+    "schemaVersion" : "resourceGateway.readOnlyShadowSourceBinding.v1",
+    "bindingFingerprint" : "sha256:c461286b54845d0d3e5fbf7fa8660c1e007de6dd05da5fad05c3d26e7d70bddd",
+    "bindingId" : "shadow-compatibility-pair",
+    "revision" : 1,
+    "scope" : {
+      "tenantId" : "tenant-a",
+      "organizationId" : "support",
+      "projectId" : "support",
+      "environmentId" : "test",
+      "region" : "sg"
+    },
+    "scenarioCaseRef" : {
+      "kind" : "SCENARIO_CASE",
+      "id" : "shadow-compatibility-case",
+      "revision" : 1,
+      "fingerprint" : "sha256:2222222222222222222222222222222222222222222222222222222222222222"
+    },
+    "targetCapabilityRef" : {
+      "kind" : "CAPABILITY",
+      "id" : "graph:customer-view",
+      "revision" : 1,
+      "fingerprint" : "sha256:bdc56f8261629777688e23a116c2c45c36393d21954d7c0d3d04addf207c62b0"
+    },
+    "candidatePlanRef" : {
+      "kind" : "MIRROR_PLAN",
+      "id" : "shadow-compatibility-plan",
+      "revision" : 1,
+      "fingerprint" : "sha256:a6db369b64b9a0d8148facf8300a260980f6277685226e9fc46599c45c00c16a"
+    },
+    "baselineBindingRef" : {
+      "kind" : "SHADOW_BASELINE_BINDING",
+      "id" : "shadow-compatibility-baseline",
+      "revision" : 1,
+      "fingerprint" : "sha256:5555555555555555555555555555555555555555555555555555555555555555"
+    },
+    "comparisonPolicyRef" : {
+      "kind" : "SHADOW_COMPARISON_POLICY",
+      "id" : "payload-free-equality-v1",
+      "revision" : 1,
+      "fingerprint" : "sha256:66cb081470a0492453c5a35bbf7e9b2bb530abc2dbaaf86be8a564bec4c11f43"
+    },
+    "requestContextFingerprint" : "sha256:9999999999999999999999999999999999999999999999999999999999999999",
+    "baselineObservationFingerprint" : "sha256:c3eeef81e5505966723eda07bbc1e3b869cc81d57a6c014e9740c27518207b47",
+    "baseline" : {
+      "semanticResultFingerprint" : "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "normalizedFactFingerprints" : {
+        "BEHAVIOR" : "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "CONTRACT" : "sha256:e01acfa38807a11b7d64396437fac1d1b3026b587fa271defe0ff4e0767fb5f0",
+        "EFFECT" : "sha256:07d70daa98ca4cb35cc8941bd837303d5d5e38666c60913e26e7835c240b991d"
+      },
+      "observedAt" : "2026-07-25T23:59:40Z",
+      "evidenceClass" : "CERTIFIABLE",
+      "evidenceComplete" : true,
+      "writeCredentialExposed" : false,
+      "writeAttemptCount" : 0
+    },
+    "candidateEvidenceRef" : {
+      "kind" : "MIRROR_EVIDENCE_BUNDLE",
+      "id" : "shadow-compatibility-candidate",
+      "revision" : 1,
+      "fingerprint" : "sha256:a61424e37ad30414ee8a011fc18092f8dfb1dc961ff85b35bcca04a3a0a1f9d7"
+    },
+    "validFrom" : "2026-07-26T00:00:00Z",
+    "expiresAt" : "2026-07-26T01:00:00Z",
+    "issuedAt" : "2026-07-25T23:59:50Z",
+    "bindingSeal" : {
+      "schemaVersion" : "bloge.visualRunEvidenceSeal.v1",
+      "materialFingerprint" : "sha256:7ccf0bb9ecb668832b7c35b4586bbd78f3197acf8f92fc203c4abc2f2bd22b35",
+      "algorithm" : "Ed25519",
+      "keyId" : "memory-ed25519:bab2f591-28e6-47ea-b613-9f8a019b5bce",
+      "signedAt" : "2026-07-26T00:00:00Z",
+      "signature" : "HXGC2FXQQJiNfWwHeZGhTN75f2qPLAlveJjMJ72glrK/hTzDTyR9upnQR5tE8FRL78oC9Bl8hu/nDn1WdPJfBg=="
+    }
+  },
+  "attestation" : {
+    "schemaVersion" : "resourceGateway.readOnlyShadowSourceResolutionAttestation.v1",
+    "attestationFingerprint" : "sha256:db29e3d3db2f220ff0461bb6575903877605f4a43ed287771e7b734a4ae2533f",
+    "attestationId" : "source-resolution-317426521dd7dd55fdf6215c5b989e195c799fcaad439e622254af0a9f5de359",
+    "revision" : 1,
+    "scope" : {
+      "tenantId" : "tenant-a",
+      "organizationId" : "support",
+      "projectId" : "support",
+      "environmentId" : "test",
+      "region" : "sg"
+    },
+    "requestId" : "shadow-compatibility-job",
+    "executionId" : "shadow-compatibility-execution",
+    "sourceBindingRef" : {
+      "kind" : "SHADOW_SOURCE_BINDING",
+      "id" : "shadow-compatibility-pair",
+      "revision" : 1,
+      "fingerprint" : "sha256:c461286b54845d0d3e5fbf7fa8660c1e007de6dd05da5fad05c3d26e7d70bddd"
+    },
+    "comparisonPolicyRef" : {
+      "kind" : "SHADOW_COMPARISON_POLICY",
+      "id" : "payload-free-equality-v1",
+      "revision" : 1,
+      "fingerprint" : "sha256:66cb081470a0492453c5a35bbf7e9b2bb530abc2dbaaf86be8a564bec4c11f43"
+    },
+    "requestContextFingerprint" : "sha256:9999999999999999999999999999999999999999999999999999999999999999",
+    "admissionFingerprint" : "sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+    "admittedAt" : "2026-07-26T00:00:00Z",
+    "confirmedAt" : "2026-07-26T00:00:03Z",
+    "baseline" : {
+      "role" : "BASELINE",
+      "artifactRef" : {
+        "kind" : "SHADOW_BASELINE_OBSERVATION",
+        "id" : "shadow-compatibility-pair:baseline",
+        "revision" : 1,
+        "fingerprint" : "sha256:c3eeef81e5505966723eda07bbc1e3b869cc81d57a6c014e9740c27518207b47"
+      },
+      "semanticResultFingerprint" : "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "normalizedFactFingerprints" : {
+        "BEHAVIOR" : "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "CONTRACT" : "sha256:e01acfa38807a11b7d64396437fac1d1b3026b587fa271defe0ff4e0767fb5f0",
+        "EFFECT" : "sha256:07d70daa98ca4cb35cc8941bd837303d5d5e38666c60913e26e7835c240b991d"
+      },
+      "sourceCompletedAt" : "2026-07-25T23:59:40Z",
+      "resolvedAt" : "2026-07-26T00:00:02Z",
+      "evidenceClass" : "CERTIFIABLE",
+      "evidenceComplete" : true,
+      "writeCredentialExposed" : false,
+      "writeAttemptCount" : 0
+    },
+    "candidate" : {
+      "role" : "CANDIDATE",
+      "artifactRef" : {
+        "kind" : "MIRROR_EVIDENCE_BUNDLE",
+        "id" : "shadow-compatibility-candidate",
+        "revision" : 1,
+        "fingerprint" : "sha256:a61424e37ad30414ee8a011fc18092f8dfb1dc961ff85b35bcca04a3a0a1f9d7"
+      },
+      "semanticResultFingerprint" : "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "normalizedFactFingerprints" : {
+        "BEHAVIOR" : "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "CONTRACT" : "sha256:e01acfa38807a11b7d64396437fac1d1b3026b587fa271defe0ff4e0767fb5f0",
+        "EFFECT" : "sha256:07d70daa98ca4cb35cc8941bd837303d5d5e38666c60913e26e7835c240b991d"
+      },
+      "sourceCompletedAt" : "2026-07-23T00:00:11Z",
+      "resolvedAt" : "2026-07-26T00:00:02Z",
+      "evidenceClass" : "EXPLORATORY",
+      "evidenceComplete" : true,
+      "writeCredentialExposed" : false,
+      "writeAttemptCount" : 0
+    },
+    "issuedAt" : "2026-07-26T00:00:04Z",
+    "attestationSeal" : {
+      "schemaVersion" : "bloge.visualRunEvidenceSeal.v1",
+      "materialFingerprint" : "sha256:03d1b9c68e45c8191fffea6d8802be7260d6e128281a7796b747858f5199ecb0",
+      "algorithm" : "Ed25519",
+      "keyId" : "memory-ed25519:7351a6f6-7be0-42b7-900f-39827681f480",
+      "signedAt" : "2026-07-26T00:00:04Z",
+      "signature" : "MIAKgkNGdFW2AXxwQkCtf1GbDPfakxgsBgpNvdMxdYu1ObMh/kLqiD8j9zh5PcFtDMQBB7maNW+MCHGnvlx4Cw=="
+    }
+  }
+}

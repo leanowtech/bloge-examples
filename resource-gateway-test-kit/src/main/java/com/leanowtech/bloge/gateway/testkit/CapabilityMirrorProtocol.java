@@ -420,6 +420,10 @@ public final class CapabilityMirrorProtocol {
     public static final String
     READ_ONLY_SHADOW_SOURCE_RESOLUTION_ATTESTATION_V1 =
             "resourceGateway.readOnlyShadowSourceResolutionAttestation.v1";
+    /** Fixed three-authority source-resolution compatibility fixture wire version. */
+    public static final String
+    READ_ONLY_SHADOW_SOURCE_RESOLUTION_COMPATIBILITY_V1 =
+            "resourceGateway.readOnlyShadowSourceResolutionCompatibility.v1";
     /** Durable payload-free read-only Shadow job projection wire version. */
     public static final String READ_ONLY_SHADOW_JOB_V1 =
             "resourceGateway.readOnlyShadowJob.v1";
@@ -443,6 +447,11 @@ public final class CapabilityMirrorProtocol {
     /** Packaged signed Stage 1 mirror evidence compatibility fixture. */
     public static final String MIRROR_EVIDENCE_FIXTURE_RESOURCE =
             SCHEMA_RESOURCE_ROOT + "mirror-evidence-stage1-v1.fixture.json";
+    /** Packaged three-authority detached source-resolution compatibility fixture. */
+    public static final String
+    READ_ONLY_SHADOW_SOURCE_RESOLUTION_FIXTURE_RESOURCE =
+            SCHEMA_RESOURCE_ROOT
+                    + "read-only-shadow-source-resolution-stage1-v1.fixture.json";
     /** Packaged signed deployment-isolation compatibility fixture. */
     public static final String MIRROR_DEPLOYMENT_ISOLATION_FIXTURE_RESOURCE =
             SCHEMA_RESOURCE_ROOT + "mirror-deployment-isolation-stage1-v1.fixture.json";
@@ -1056,6 +1065,23 @@ public final class CapabilityMirrorProtocol {
     }
 
     /**
+     * Returns the fixed independently verified detached source-resolution compatibility fixture.
+     *
+     * <p>The fixture closes one server-produced candidate evidence bundle, exact source binding,
+     * and source-resolution attestation under three distinct public authority keys. Loading it
+     * executes the standalone verifier, so producer/consumer canonicalization, deterministic
+     * identity, signature-domain, policy, temporal, and zero-write drift fail immediately.</p>
+     *
+     * @return detached three-authority compatibility fixture
+     * @throws IllegalStateException when the packaged fixture is absent, malformed, or unverifiable
+     */
+    public static ReadOnlyShadowSourceResolutionCompatibilityFixture
+    readOnlyShadowSourceResolutionCompatibilityFixture() {
+        return SourceResolutionFixtureHolder.FIXTURE
+                .detachedCopy();
+    }
+
+    /**
      * Returns the fixed independently verified deployment-isolation compatibility fixture.
      *
      * <p>The fixture proves strict-schema loading, canonical nested fingerprints, immutable local
@@ -1327,6 +1353,43 @@ public final class CapabilityMirrorProtocol {
             java.util.HashSet<String> names = new java.util.HashSet<>();
             value.fieldNames().forEachRemaining(names::add);
             return Set.copyOf(names);
+        }
+    }
+
+    private static final class SourceResolutionFixtureHolder {
+        private static final
+        ReadOnlyShadowSourceResolutionCompatibilityFixture
+                FIXTURE = load();
+
+        private static
+        ReadOnlyShadowSourceResolutionCompatibilityFixture load() {
+            try (InputStream input =
+                         CapabilityMirrorProtocol.class
+                                 .getResourceAsStream(
+                                         READ_ONLY_SHADOW_SOURCE_RESOLUTION_FIXTURE_RESOURCE)) {
+                if (input == null) {
+                    throw new IOException(
+                            "Shadow source-resolution fixture is absent");
+                }
+                JsonNode value = JSON.readTree(input);
+                ReadOnlyShadowSourceResolutionCompatibilityFixture
+                        fixture =
+                        ReadOnlyShadowSourceResolutionCompatibilityFixture
+                                .from(value);
+                ReadOnlyShadowSourceResolutionAttestationVerifier
+                        .VerificationResult verification =
+                        fixture.verify();
+                if (!verification.verified()) {
+                    throw new IOException(
+                            "Shadow source-resolution fixture cannot be verified: "
+                                    + verification.reasonCode());
+                }
+                return fixture;
+            } catch (IOException | RuntimeException failure) {
+                throw new IllegalStateException(
+                        "RG.MIRROR.CLIENT.SHADOW_SOURCE_RESOLUTION_FIXTURE_UNAVAILABLE",
+                        failure);
+            }
         }
     }
 

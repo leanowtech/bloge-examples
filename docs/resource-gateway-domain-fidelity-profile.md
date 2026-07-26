@@ -618,6 +618,22 @@ proof id、content address、`payload-free-equality-v1` policy ref 和 candidate
 behavior/contract/effect/state facts，再检查 source/resolution/authority 时间序、零写事实、key policy
 与签名。它按数值比较 artifact revision，不依赖 Jackson `IntNode`/`LongNode` 实现细节。
 
+升级 JSON/JDK/crypto provider 时还必须执行固定跨产物 fixture：
+
+```java
+ReadOnlyShadowSourceResolutionCompatibilityFixture fixture =
+        CapabilityMirrorProtocol
+                .readOnlyShadowSourceResolutionCompatibilityFixture();
+if (!fixture.verify().verified()) {
+    throw new IllegalStateException("source-resolution wire drift");
+}
+```
+
+fixture 由服务端真实生成 candidate evidence、source binding 与 source-resolution proof，并以
+三把独立 Ed25519 key 签名；Test Kit 从同一 public-only 文件递归重算三层 content address、
+deterministic id、policy facts、时间序和签名。它用于发现两边“各自自测全绿”的
+canonicalization/domain/key-role 双重假绿，不代表当前 online authority 或数据使用授权已通过。
+
 durable job export 使用第二个独立 verifier：
 
 ```java
@@ -777,7 +793,8 @@ bounded scheduler、独立 readiness、lifecycle verifier，以及 governed data
 kernel、database-authoritative execution guard、三类签名 online authority protocol、
 append-only current-head repository、managed trust distribution、server adapter、v1/v2
 job request、exact detached source-binding repository/API、真实 detached connector/policy/source
-resolver、signed source-resolution proof API 与独立 Test Kit verifier 已完成。
+resolver、signed source-resolution proof API、独立 Test Kit verifier 与三 authority 跨产物固定签名
+fixture 已完成。
 下一步按来源信任依赖推进：
 
 1. 接入企业 root-policy/control-plane connector，并认证 authority successor/revocation 的

@@ -561,6 +561,31 @@ facts, and verifies the source-resolution content address, deterministic
 Ed25519 seal. Artifact revisions are compared numerically rather than by
 Jackson node class, preserving interoperability across JSON decoders.
 
+Run the complete producer/consumer fixture in every Test Kit dependency,
+Jackson, JDK, and crypto-provider upgrade:
+
+```java
+ReadOnlyShadowSourceResolutionCompatibilityFixture fixture =
+        CapabilityMirrorProtocol
+                .readOnlyShadowSourceResolutionCompatibilityFixture();
+
+ReadOnlyShadowSourceResolutionAttestationVerifier.VerificationResult
+        compatibility = fixture.verify();
+if (!compatibility.verified()) {
+    throw new IllegalStateException(compatibility.reasonCode());
+}
+```
+
+The packaged fixture was produced by the server data plane and contains one
+candidate evidence bundle, one source binding, one source-resolution
+attestation, and three distinct public authority keys. Loading it verifies the
+whole nested closure before returning. It catches deterministic-id domain,
+recursive canonicalization, policy fingerprint, authority-role, signature,
+numeric revision, and time-encoding drift that can remain invisible when the
+producer and consumer test only self-generated artifacts. The fixture contains
+no private key or business payload; passing it proves wire compatibility, not
+current online authority, data-use permission, or production readiness.
+
 Capability observations use a separate producer authority and verifier. Run the packaged public-only
 fixture whenever upgrading the protocol, JSON stack, crypto provider, or consumer:
 
