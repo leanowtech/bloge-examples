@@ -42,6 +42,7 @@ public interface ReadOnlyShadowSamplingGrantAuthority {
      * @param guardPolicyRef exact shared pressure and circuit policy generation
      * @param limits shared external-system pressure policy
      * @param authorityAttestationRef independently signed authority decision
+     * @param guardPolicyAttestationRef independently signed shared-policy publication
      * @param observedAt authority observation time
      */
     record Grant(
@@ -54,6 +55,7 @@ public interface ReadOnlyShadowSamplingGrantAuthority {
             MirrorArtifactRef guardPolicyRef,
             ReadOnlyShadowExecutionGuard.Limits limits,
             MirrorArtifactRef authorityAttestationRef,
+            MirrorArtifactRef guardPolicyAttestationRef,
             Instant observedAt
     ) {
         /** Validates a bounded, time-ordered, payload-free grant decision. */
@@ -79,11 +81,21 @@ public interface ReadOnlyShadowSamplingGrantAuthority {
                     authorityAttestationRef,
                     "SHADOW_SAMPLING_GRANT_ATTESTATION",
                     "authorityAttestationRef");
+            guardPolicyAttestationRef = kind(
+                    guardPolicyAttestationRef,
+                    "SHADOW_EXECUTION_GUARD_POLICY_ATTESTATION",
+                    "guardPolicyAttestationRef");
             observedAt = Objects.requireNonNull(
                     observedAt, "observedAt");
             if (maximumSamples < 1
                     || maximumSamples > 1_000_000_000L
-                    || !expiresAt.isAfter(validFrom)) {
+                    || !expiresAt.isAfter(validFrom)
+                    || !sameCoordinates(
+                    grantRef,
+                    authorityAttestationRef)
+                    || !sameCoordinates(
+                    guardPolicyRef,
+                    guardPolicyAttestationRef)) {
                 throw new IllegalArgumentException(
                         "read-only Shadow sampling grant is invalid");
             }
@@ -127,5 +139,13 @@ public interface ReadOnlyShadowSamplingGrantAuthority {
                     field + " has an invalid artifact kind");
         }
         return exact;
+    }
+
+    private static boolean sameCoordinates(
+            MirrorArtifactRef material,
+            MirrorArtifactRef attestation) {
+        return material.id().equals(attestation.id())
+                && material.revision()
+                == attestation.revision();
     }
 }

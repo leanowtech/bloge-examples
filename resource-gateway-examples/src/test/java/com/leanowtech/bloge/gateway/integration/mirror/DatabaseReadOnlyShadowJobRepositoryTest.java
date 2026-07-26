@@ -347,8 +347,9 @@ class DatabaseReadOnlyShadowJobRepositoryTest {
                         ReadOnlyShadowJobTestFixtures.ref(
                                 "SHADOW_COMPARISON_POLICY",
                                 "forged-policy",
-                                'f'),
+                        'f'),
                         source.sourceResolutionAttestationRef(),
+                        source.authorityProof(),
                         source.accessProof(),
                         source.baseline(),
                         source.candidate(),

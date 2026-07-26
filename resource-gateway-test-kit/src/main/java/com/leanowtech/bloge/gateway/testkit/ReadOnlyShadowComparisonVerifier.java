@@ -17,10 +17,11 @@ import java.util.Set;
  * Dependency-light independent verifier for one signed read-only Shadow comparison.
  *
  * <p>The verifier links no Resource Gateway server implementation class. It validates the strict
- * packaged Schema, proves exact request pairing and zero-write access, derives each typed match
- * outcome from normalized fact fingerprints, recomputes the content address, enforces key
- * lifecycle policy, and verifies the domain-separated Ed25519 seal. The bounded result contains no
- * request, response, or business payload.</p>
+ * packaged Schema, proves exact request pairing, zero-write access, and v3 double-observed online
+ * authority closure, derives each typed match outcome from normalized fact fingerprints,
+ * recomputes the content address, enforces key lifecycle policy, and verifies the
+ * domain-separated Ed25519 seal. The bounded result contains no request, response, or business
+ * payload.</p>
  */
 public final class ReadOnlyShadowComparisonVerifier {
     /** Maximum canonical comparison bytes admitted to hashing. */
@@ -138,6 +139,10 @@ public final class ReadOnlyShadowComparisonVerifier {
                     .READ_ONLY_SHADOW_COMPARISON_V2 ->
                     CapabilityMirrorProtocol
                             .READ_ONLY_SHADOW_COMPARISON_V2_SCHEMA_RESOURCE;
+            case CapabilityMirrorProtocol
+                    .READ_ONLY_SHADOW_COMPARISON_V3 ->
+                    CapabilityMirrorProtocol
+                            .READ_ONLY_SHADOW_COMPARISON_V3_SCHEMA_RESOURCE;
             default -> "";
         };
         try {
@@ -279,6 +284,37 @@ public final class ReadOnlyShadowComparisonVerifier {
         Instant observedAt = instant(
                 comparison.path("observedAt"),
                 "SHADOW_COMPARISON_TIME_INVALID");
+        if (CapabilityMirrorProtocol
+                .READ_ONLY_SHADOW_COMPARISON_V3
+                .equals(text(
+                        comparison, "schemaVersion"))) {
+            JsonNode authority =
+                    comparison.path("authorityProof");
+            Instant admittedAt = instant(
+                    authority.path("admittedAt"),
+                    "SHADOW_COMPARISON_AUTHORITY_TIME_INVALID");
+            Instant confirmedAt = instant(
+                    authority.path("confirmedAt"),
+                    "SHADOW_COMPARISON_AUTHORITY_TIME_INVALID");
+            if (confirmedAt.isBefore(admittedAt)
+                    || observedAt.isBefore(confirmedAt)) {
+                fail("SHADOW_COMPARISON_AUTHORITY_TIME_INVALID");
+            }
+            if (!sameCoordinates(
+                    access.path("samplingGrantRef"),
+                    authority.path(
+                            "samplingGrantAttestationRef"))
+                    || !sameCoordinates(
+                    access.path("killSwitchRef"),
+                    authority.path(
+                            "killSwitchAttestationRef"))
+                    || !sameCoordinates(
+                    authority.path("guardPolicyRef"),
+                    authority.path(
+                            "guardPolicyAttestationRef"))) {
+                fail("SHADOW_COMPARISON_AUTHORITY_CLOSURE_INVALID");
+            }
+        }
         if (observedAt.isBefore(
                 instant(
                         baseline.path("completedAt"),
@@ -304,6 +340,15 @@ public final class ReadOnlyShadowComparisonVerifier {
             verifyResult(result, dimension);
         }
         return observedAt;
+    }
+
+    private static boolean sameCoordinates(
+            JsonNode material,
+            JsonNode attestation) {
+        return text(material, "id").equals(
+                text(attestation, "id"))
+                && material.path("revision").asLong()
+                == attestation.path("revision").asLong();
     }
 
     private static void verifyResult(
@@ -370,13 +415,17 @@ public final class ReadOnlyShadowComparisonVerifier {
                 JsonNodeFactory.instance.objectNode();
         String version = text(
                 comparison, "schemaVersion");
-        material.put(
-                "domain",
-                CapabilityMirrorProtocol
-                        .READ_ONLY_SHADOW_COMPARISON_V1
-                        .equals(version)
-                        ? "RESOURCE_GATEWAY_READ_ONLY_SHADOW_COMPARISON_V1"
-                        : "RESOURCE_GATEWAY_READ_ONLY_SHADOW_COMPARISON_V2");
+        String domain = switch (version) {
+            case CapabilityMirrorProtocol
+                    .READ_ONLY_SHADOW_COMPARISON_V1 ->
+                    "RESOURCE_GATEWAY_READ_ONLY_SHADOW_COMPARISON_V1";
+            case CapabilityMirrorProtocol
+                    .READ_ONLY_SHADOW_COMPARISON_V2 ->
+                    "RESOURCE_GATEWAY_READ_ONLY_SHADOW_COMPARISON_V2";
+            default ->
+                    "RESOURCE_GATEWAY_READ_ONLY_SHADOW_COMPARISON_V3";
+        };
+        material.put("domain", domain);
         for (String field : List.of(
                 "schemaVersion",
                 "comparisonId",

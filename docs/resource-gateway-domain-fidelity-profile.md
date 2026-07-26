@@ -27,8 +27,9 @@
 - Scenario workbook source adapter：重验 aggregate/retention 双签名、workbook/assertion
   内容地址、signed aggregate 对账与 exact inventory case closure；
 - Scenario assertion 到 `BEHAVIOR/CONTRACT/EFFECT/STATE_TRANSITION` 的保守映射；
-- signed `resourceGateway.readOnlyShadowComparison.v1/v2`、strict Schema 与 typed diff；
-  v2 额外冻结 exact normalization policy 与 source-resolution attestation；
+- signed `resourceGateway.readOnlyShadowComparison.v1/v2/v3`、strict Schema 与 typed diff；
+  v1/v2 保持兼容读取，v2 冻结 exact normalization policy 与 source-resolution attestation，
+  v3 当前产出进一步冻结 admission fingerprint、grant/policy/kill-switch authority proof 与确认时序；
 - durable `ReadOnlyShadowJobRequest.v1/ReadOnlyShadowJob.v1`、full-scope sample ordinal
   reservation、数据库时钟 deadline、owner/epoch/expiry lease、bounded retry 和 worker；
 - protected Shadow submit/read/request/comparison/lifecycle API、同事务 operation/lifecycle audit、
@@ -39,6 +40,11 @@
 - database-authoritative Shadow execution guard：authority-owned `guardScope`、stable
   guard-policy id/revision、跨副本 concurrency/fixed-window budget、token/epoch lease、
   circuit cool-down 与全局唯一 half-open probe；
+- signed online Shadow authority protocol：sampling grant、kill switch 与 shared guard
+  policy 使用独立签名域、短有效窗、exact current-head、完整 scope、append-only
+  predecessor chain 与 payload-free attestation；
+- full-scope database current-head repository、动态 key/revocation lookup、无正向缓存的
+  sampling/kill-switch adapter，以及不依赖 server/Spring 的 Test Kit 独立 current-head verifier；
 - strict lifecycle event/page Schema，Test Kit 可独立重算 comparison、job/request/comparison
   闭包与完整 admission-to-head lifecycle；
 - Shadow source adapter：重验 comparison 内容地址/签名、采样授权、kill switch、egress、
@@ -53,8 +59,8 @@
 
 - authoritative outcome 到 `Measurement` 的独立来源适配器；
 - request-space sampling proof 与 error-distribution cohort adapter；
-- 真实 baseline/candidate connector、在线签名 grant/kill-switch/guard-policy authority、
-  source resolver/comparison policy adapter、drift 自动降级、
+- managed authority key/revocation publication、跨区域 authority distribution/API、
+  真实 baseline/candidate connector、source resolver/comparison policy adapter、drift 自动降级、
   outcome reconciliation 和工作台。
 
 因此在 managed signer、Scenario authority 或 signed Shadow comparison authority 可用时，
@@ -62,9 +68,10 @@
 abstention debt 的**部分 profile**。Shadow adapter ready 表示已提供的合法 comparison 可以
 独立验真和投影，不表示 Resource Gateway 已具备生产流量复制与 shadow job。请求空间覆盖和业务
 结果校准仍必须分别读取 typed adapter flag、source artifact 与 profile limitations。durable
-job API/lifecycle/scheduler ready 也只表示控制面状态机可用；默认 governed data plane 虽已具备
-database guard，但在线 authority、connector、source verifier 与 comparison engine 仍是
-fail-closed placeholder，因此保持 `ready=false`，不代表生产流量复制已启用。
+job API/lifecycle/scheduler ready 也只表示控制面状态机可用；默认 governed data plane 已具备
+database guard、签名 authority 协议、current-head repository 和在线 adapter，但动态 trust
+store、connector、source verifier 与 comparison engine 仍为 fail-closed，因此保持
+`ready=false`，不代表生产流量复制已启用。
 
 ## 2. 为什么需要两个对象
 
@@ -449,8 +456,10 @@ cursor，`limit` 为 1..1000；调用方必须根据 `hasMore` 继续取页，�
 
 | Adapter | 必须证明 | 默认 |
 |---|---|---|
-| `ReadOnlyShadowSamplingGrantAuthority` | exact execution scope/grant、authority-owned `guardScope`、exact guard-policy ref、sample 上限、有效窗、共享 limits 与签名 authority attestation | unavailable |
-| `ReadOnlyShadowKillSwitchAuthority` | exact scope/switch generation、enabled 状态、有效窗与签名 authority attestation | unavailable |
+| `ReadOnlyShadowAuthorityPublicationSource` | exact full-scope current head；不向 runtime 暴露历史 predecessor | database-authoritative / ready |
+| `ReadOnlyShadowAuthorityTrustStore` | 每次观测动态解析 exact issuer/key 和当前 ACTIVE/RETIRED/REVOKED 生命周期 | unavailable |
+| `ReadOnlyShadowSamplingGrantAuthority` | exact execution scope/grant、authority-owned `guardScope`、exact current guard-policy ref、sample 上限、有效窗、共享 limits 与两份签名 authority attestation | signed current-head adapter；因 trust store unavailable 而 fail-closed |
+| `ReadOnlyShadowKillSwitchAuthority` | exact current scope/switch generation、enabled 状态、短有效窗与签名 authority attestation | signed current-head adapter；因 trust store unavailable 而 fail-closed |
 | `MirrorDeploymentIsolationRunTrustAuthority` | 执行前/后的同一 egress decision、keyset、status 与 agent snapshot | unavailable |
 | `ReadOnlyShadowExecutionGuard` | 跨副本并发、窗口速率、熔断、唯一半开探针和 fenced lease | database-authoritative / ready |
 | `ReadOnlyShadowBaselineConnector` / `ReadOnlyShadowCandidateConnector` | 同一 request context 的 payload-free source observation 与零写测量 | unavailable |
@@ -487,6 +496,10 @@ cursor，`limit` 为 1..1000；调用方必须根据 `hasMore` 继续取页，�
 resolver 仍不可用。只有生产 adapter 主动拉取并重验底层 baseline/candidate exact revision、签名、
 scope、target、request context 与双重观测 authority closure 后，source-resolution readiness 才能
 为 true；comparison 根签名中的 ref 本身不是来源证明。
+
+签名 authority 也遵守同一原则：database publication source ready 只表示 append-only current-head
+读写和内容地址可用，不表示 issuer 已受信。`ReadOnlyShadowAuthorityTrustStore` 必须由独立 managed
+key/revocation authority 提供，并满足企业传播时限后，sampling/kill-switch authority 才会 ready。
 
 ## 6. 治理侧离线验真
 
@@ -543,9 +556,34 @@ ReadOnlyShadowJobVerifier.VerificationResult result =
 ```
 
 它重算 request fingerprint、确定性 job id、mutable record fingerprint、lifecycle、scope 和
-deadline，并在 `SUCCEEDED` 时继续重验 v2 comparison 签名、artifact ref、grant proof、policy
-与 source-resolution closure。单行离线导出无法证明数据库中的 sample ordinal 唯一性或实时 lease
-owner；这两项仍由在线数据库事务证明。
+deadline，并在 `SUCCEEDED` 时继续重验 comparison 签名、artifact ref、grant proof、policy
+与 source-resolution closure。当前 v3 还重验 admission fingerprint、grant/policy/switch
+publication attestation、guard scope、三组 material/attestation `id + revision` 闭包，以及
+`admittedAt <= confirmedAt <= observedAt`。单行离线导出无法证明数据库中的 sample ordinal
+唯一性或实时 lease owner；这两项仍由在线数据库事务证明。
+
+三类在线 authority publication 使用另一个独立 current-head verifier：
+
+```java
+ReadOnlyShadowAuthorityPublicationVerifier verifier =
+        new ReadOnlyShadowAuthorityPublicationVerifier();
+
+ReadOnlyShadowAuthorityPublicationVerifier.VerificationResult result =
+        verifier.verify(
+                publicationJson,
+                locallyPinnedCurrentHeadBinding,
+                authorityVerificationKey,
+                trustedNow);
+```
+
+本地 binding 必须包含 publication type、stream id、revision、完整 publication fingerprint、
+完整企业 scope 与 issuer；本地 key delegation 也必须精确绑定同一 scope 和 publication type。
+verifier 独立执行 strict Schema、协议域分离材料指纹、完整 publication 指纹、current-head
+binding、短时窗、guard duration 上限、ACTIVE/RETIRED/REVOKED 生命周期、canonical padded
+Base64 和 Ed25519 校验。`RETIRED` key 只接受 `retiredAt` 之前的签名。grant 引用的 guard policy
+必须作为第二份 publication 用自己的 current-head binding 和 policy key 独立验证；运行期 grant
+同时保留 grant 与 policy 两份 attestation ref，只验证或只传播 grant 内的一段 ref 不构成 policy
+authority。
 
 生命周期页使用独立 verifier：
 
@@ -576,6 +614,7 @@ code，不输出 Scenario fixture、请求、响应或原始诊断。
 - [`domain-fidelity-profile-v1.schema.json`](schemas/resource-gateway-mirror/domain-fidelity-profile-v1.schema.json)
 - [`read-only-shadow-comparison-v1.schema.json`](schemas/resource-gateway-mirror/read-only-shadow-comparison-v1.schema.json)
 - [`read-only-shadow-comparison-v2.schema.json`](schemas/resource-gateway-mirror/read-only-shadow-comparison-v2.schema.json)
+- [`read-only-shadow-comparison-v3.schema.json`](schemas/resource-gateway-mirror/read-only-shadow-comparison-v3.schema.json)
 - [`read-only-shadow-job-request-v1.schema.json`](schemas/resource-gateway-mirror/read-only-shadow-job-request-v1.schema.json)
 - [`read-only-shadow-job-v1.schema.json`](schemas/resource-gateway-mirror/read-only-shadow-job-v1.schema.json)
 - [`read-only-shadow-job-lifecycle-event-v1.schema.json`](schemas/resource-gateway-mirror/read-only-shadow-job-lifecycle-event-v1.schema.json)
@@ -588,6 +627,8 @@ CapabilityMirrorProtocol.DOMAIN_FIDELITY_INVENTORY_SCHEMA_RESOURCE
 CapabilityMirrorProtocol.DOMAIN_FIDELITY_INVENTORY_REGISTRATION_SCHEMA_RESOURCE
 CapabilityMirrorProtocol.DOMAIN_FIDELITY_PROFILE_SCHEMA_RESOURCE
 CapabilityMirrorProtocol.READ_ONLY_SHADOW_COMPARISON_SCHEMA_RESOURCE
+CapabilityMirrorProtocol.READ_ONLY_SHADOW_COMPARISON_V2_SCHEMA_RESOURCE
+CapabilityMirrorProtocol.READ_ONLY_SHADOW_COMPARISON_V3_SCHEMA_RESOURCE
 CapabilityMirrorProtocol.READ_ONLY_SHADOW_JOB_SCHEMA_RESOURCE
 CapabilityMirrorProtocol.READ_ONLY_SHADOW_JOB_LIFECYCLE_EVENT_SCHEMA_RESOURCE
 CapabilityMirrorProtocol.READ_ONLY_SHADOW_JOB_LIFECYCLE_PAGE_SCHEMA_RESOURCE
@@ -607,6 +648,7 @@ Schema 使用 `additionalProperties: false`。profile 不允许业务 payload、
 | Workbook 与 signed aggregate、retention 或 assertion 指纹不一致 | 拒绝整次来源投影 |
 | Shadow comparison 的请求双边、scope、inventory、unit 或 capability 漂移 | 拒绝整次来源投影 |
 | Shadow grant 越界、kill switch/egress ref 缺失、存在写凭据或写尝试 | Schema/构造阶段拒绝 |
+| v3 authority proof 缺失、时间倒序，或 grant/policy/switch material 与 attestation 坐标错配 | 服务端与 Test Kit 都拒绝 |
 | Shadow MATCH 与 fact fingerprint 不一致或 diff type 跨维度 | 服务端与 Test Kit 都拒绝 |
 | Shadow comparison 仅覆盖部分 inventory | 保留完整分母，遗漏 unit 为 `MISSING` |
 | Shadow API purpose/scope 不符 | 认证后返回 forbidden/not found，不触发 repository lookup 泄漏 |
@@ -646,11 +688,12 @@ Schema 使用 `additionalProperties: false`。profile 不允许业务 payload、
 repository、managed signer、受保护 inventory/read API、Scenario source adapter、signed
 read-only Shadow comparison adapter、durable queue/worker、protected Shadow API、lifecycle audit、
 bounded scheduler、独立 readiness、lifecycle verifier，以及 governed data-plane composition
-kernel 与 database-authoritative execution guard 已完成。
+kernel、database-authoritative execution guard、三类签名 online authority protocol、
+append-only current-head repository、server adapter 与独立 Test Kit verifier 已完成。
 下一步按来源信任依赖推进：
 
-1. 定义并接入签名 grant/kill-switch/guard-policy 在线协议，覆盖 stable id、revision、
-   `guardScope`、有效窗、撤销、轮换、缓存上限与 authority outage。
+1. 接入 managed authority key/revocation publication、跨区域分发与受保护发布 API，认证
+   successor/revocation 传播时限、outage 和 rolling rotation。
 2. 接入真实 baseline/candidate connector、来源 artifact
    拉取重验和 exact comparison policy adapter。
 3. 把 signed typed diff 接入 drift budget，自动 stale/downgrade/revoke serving conclusion。

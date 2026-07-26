@@ -116,7 +116,9 @@ public interface ReadOnlyShadowSourceResolutionVerifier {
                     && admitted.limits().equals(
                     confirmed.limits())
                     && admitted.authorityAttestationRef().equals(
-                    confirmed.authorityAttestationRef());
+                    confirmed.authorityAttestationRef())
+                    && admitted.guardPolicyAttestationRef().equals(
+                    confirmed.guardPolicyAttestationRef());
         }
 
         private static boolean sameKillSwitchDecision(

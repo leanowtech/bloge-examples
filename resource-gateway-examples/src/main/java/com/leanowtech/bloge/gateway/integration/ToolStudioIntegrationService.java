@@ -1041,6 +1041,9 @@ public class ToolStudioIntegrationService {
                                     .V1_SCHEMA_VERSION,
                             com.leanowtech.bloge.gateway.integration.mirror
                                     .ReadOnlyShadowComparison
+                                    .V2_SCHEMA_VERSION,
+                            com.leanowtech.bloge.gateway.integration.mirror
+                                    .ReadOnlyShadowComparison
                                     .SCHEMA_VERSION));
         }
         if (readOnlyShadowRuntimeAvailability.jobApi()) {

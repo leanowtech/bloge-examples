@@ -62,6 +62,18 @@ class GovernedReadOnlyShadowDataPlaneTest {
                 .isEqualTo(
                         request.accessGrant()
                                 .zeroWriteProof());
+        assertThat(result.authorityProof()
+                .guardPolicyAttestationRef()
+                .kind()).isEqualTo(
+                "SHADOW_EXECUTION_GUARD_POLICY_ATTESTATION");
+        assertThat(result.authorityProof()
+                .samplingGrantAttestationRef()
+                .kind()).isEqualTo(
+                "SHADOW_SAMPLING_GRANT_ATTESTATION");
+        assertThat(result.authorityProof()
+                .killSwitchAttestationRef()
+                .kind()).isEqualTo(
+                "SHADOW_KILL_SWITCH_ATTESTATION");
         assertThat(result.baseline().role())
                 .isEqualTo(
                         ReadOnlyShadowComparison
@@ -568,6 +580,7 @@ class GovernedReadOnlyShadowDataPlaneTest {
                                     3,
                                     Duration.ofSeconds(30)),
                             grant.authorityAttestationRef(),
+                            grant.guardPolicyAttestationRef(),
                             NOW.plusSeconds(8)),
                     exact.killSwitch(),
                     exact.egressBinding(),
@@ -716,8 +729,14 @@ class GovernedReadOnlyShadowDataPlaneTest {
                         limits,
                         ReadOnlyShadowJobTestFixtures.ref(
                                 "SHADOW_SAMPLING_GRANT_ATTESTATION",
-                                "sampling-authority",
+                                request.accessGrant()
+                                        .samplingGrantRef()
+                                        .id(),
                                 '1'),
+                        ReadOnlyShadowJobTestFixtures.ref(
+                                "SHADOW_EXECUTION_GUARD_POLICY_ATTESTATION",
+                                "baseline-pressure",
+                                '2'),
                         NOW);
         ReadOnlyShadowKillSwitchAuthority.State killSwitch =
                 new ReadOnlyShadowKillSwitchAuthority.State(
@@ -729,7 +748,9 @@ class GovernedReadOnlyShadowDataPlaneTest {
                         NOW.plusSeconds(60),
                         ReadOnlyShadowJobTestFixtures.ref(
                                 "SHADOW_KILL_SWITCH_ATTESTATION",
-                                "kill-authority",
+                                request.accessGrant()
+                                        .killSwitchRef()
+                                        .id(),
                                 '2'),
                         NOW);
         MirrorDeploymentIsolationRunTrust.Admission egress =

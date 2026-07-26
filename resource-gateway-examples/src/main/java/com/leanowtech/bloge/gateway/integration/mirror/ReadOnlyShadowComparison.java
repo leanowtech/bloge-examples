@@ -1,6 +1,8 @@
 package com.leanowtech.bloge.gateway.integration.mirror;
 
+import com.fasterxml.jackson.annotation.JsonInclude;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.node.ObjectNode;
 import com.leanowtech.bloge.gateway.testing.evidence.ProtocolFingerprint;
 import com.leanowtech.bloge.gateway.visual.runtime.VisualRunEvidenceSeal;
 
@@ -35,6 +37,7 @@ import java.util.regex.Pattern;
  * @param comparisonPolicyRef exact normalized-fact and typed-diff policy; absent only in legacy v1
  * @param sourceResolutionAttestationRef exact proof that both source artifacts were fetched and
  *                                        independently verified; absent only in legacy v1
+ * @param authorityProof exact double-observed online-authority closure; present only in v3
  * @param accessProof zero-write sampling, egress, and kill-switch closure
  * @param baseline independently signed read-only baseline source
  * @param candidate independently signed mirror candidate source
@@ -52,8 +55,12 @@ public record ReadOnlyShadowComparison(
         String unitId,
         MirrorArtifactRef scenarioCaseRef,
         MirrorArtifactRef targetCapabilityRef,
+        @JsonInclude(JsonInclude.Include.NON_NULL)
         MirrorArtifactRef comparisonPolicyRef,
+        @JsonInclude(JsonInclude.Include.NON_NULL)
         MirrorArtifactRef sourceResolutionAttestationRef,
+        @JsonInclude(JsonInclude.Include.NON_NULL)
+        AuthorityProof authorityProof,
         AccessProof accessProof,
         SourceObservation baseline,
         SourceObservation candidate,
@@ -64,9 +71,12 @@ public record ReadOnlyShadowComparison(
     /** Legacy comparison protocol without an exact normalization-policy reference. */
     public static final String V1_SCHEMA_VERSION =
             "resourceGateway.readOnlyShadowComparison.v1";
-    /** Current comparison protocol binding normalized facts to one exact governed policy. */
-    public static final String SCHEMA_VERSION =
+    /** Legacy comparison generation adding policy and source-resolution closure. */
+    public static final String V2_SCHEMA_VERSION =
             "resourceGateway.readOnlyShadowComparison.v2";
+    /** Current comparison protocol adding complete online-authority evidence closure. */
+    public static final String SCHEMA_VERSION =
+            "resourceGateway.readOnlyShadowComparison.v3";
     /** Artifact kind admitted by the Domain Fidelity projection kernel. */
     public static final String ARTIFACT_KIND =
             "FIDELITY_SHADOW_COMPARISON";
@@ -114,7 +124,7 @@ public record ReadOnlyShadowComparison(
                 targetCapabilityRef,
                 "CAPABILITY",
                 "targetCapabilityRef");
-        if (SCHEMA_VERSION.equals(schemaVersion)) {
+        if (!V1_SCHEMA_VERSION.equals(schemaVersion)) {
             comparisonPolicyRef = requireKind(
                     comparisonPolicyRef,
                     "SHADOW_COMPARISON_POLICY",
@@ -128,8 +138,27 @@ public record ReadOnlyShadowComparison(
             throw new IllegalArgumentException(
                     "legacy shadow comparison must not declare v2 authority references");
         }
+        if (SCHEMA_VERSION.equals(schemaVersion)) {
+            authorityProof = Objects.requireNonNull(
+                    authorityProof, "authorityProof");
+        } else if (authorityProof != null) {
+            throw new IllegalArgumentException(
+                    "legacy shadow comparison must not declare v3 authority proof");
+        }
         accessProof = Objects.requireNonNull(
                 accessProof, "accessProof");
+        if (authorityProof != null
+                && (!sameCoordinates(
+                accessProof.samplingGrantRef(),
+                authorityProof
+                        .samplingGrantAttestationRef())
+                || !sameCoordinates(
+                accessProof.killSwitchRef(),
+                authorityProof
+                        .killSwitchAttestationRef()))) {
+            throw new IllegalArgumentException(
+                    "shadow authority proof does not close the access coordinates");
+        }
         baseline = Objects.requireNonNull(
                 baseline, "baseline");
         candidate = Objects.requireNonNull(
@@ -152,7 +181,10 @@ public record ReadOnlyShadowComparison(
         observedAt = Objects.requireNonNull(
                 observedAt, "observedAt");
         if (observedAt.isBefore(baseline.completedAt())
-                || observedAt.isBefore(candidate.completedAt())) {
+                || observedAt.isBefore(candidate.completedAt())
+                || authorityProof != null
+                && observedAt.isBefore(
+                authorityProof.confirmedAt())) {
             throw new IllegalArgumentException(
                     "shadow comparison cannot precede either source observation");
         }
@@ -225,6 +257,65 @@ public record ReadOnlyShadowComparison(
                     || writeAttemptCount != 0) {
                 throw new IllegalArgumentException(
                         "shadow access proof violates the bounded zero-write policy");
+            }
+        }
+    }
+
+    /**
+     * Double-observed online-authority closure required by comparison v3.
+     *
+     * @param admissionFingerprint exact joined pre-execution authority decision
+     * @param samplingGrantAttestationRef signed sampling-grant publication
+     * @param guardScope authority-owned shared-pressure namespace
+     * @param guardPolicyRef exact current shared-pressure policy material
+     * @param guardPolicyAttestationRef signed shared-pressure policy publication
+     * @param killSwitchAttestationRef signed operational switch publication
+     * @param admittedAt trusted pre-execution observation time
+     * @param confirmedAt trusted post-execution observation time
+     */
+    public record AuthorityProof(
+            String admissionFingerprint,
+            MirrorArtifactRef samplingGrantAttestationRef,
+            CapabilitySnapshot.Scope guardScope,
+            MirrorArtifactRef guardPolicyRef,
+            MirrorArtifactRef guardPolicyAttestationRef,
+            MirrorArtifactRef killSwitchAttestationRef,
+            Instant admittedAt,
+            Instant confirmedAt
+    ) {
+        /** Requires a complete, ordered, payload-free publication closure. */
+        public AuthorityProof {
+            admissionFingerprint = fingerprint(
+                    admissionFingerprint,
+                    "admissionFingerprint");
+            samplingGrantAttestationRef = requireKind(
+                    samplingGrantAttestationRef,
+                    "SHADOW_SAMPLING_GRANT_ATTESTATION",
+                    "samplingGrantAttestationRef");
+            guardScope = Objects.requireNonNull(
+                    guardScope, "guardScope");
+            guardPolicyRef = requireKind(
+                    guardPolicyRef,
+                    "SHADOW_EXECUTION_GUARD_POLICY",
+                    "guardPolicyRef");
+            guardPolicyAttestationRef = requireKind(
+                    guardPolicyAttestationRef,
+                    "SHADOW_EXECUTION_GUARD_POLICY_ATTESTATION",
+                    "guardPolicyAttestationRef");
+            killSwitchAttestationRef = requireKind(
+                    killSwitchAttestationRef,
+                    "SHADOW_KILL_SWITCH_ATTESTATION",
+                    "killSwitchAttestationRef");
+            admittedAt = Objects.requireNonNull(
+                    admittedAt, "admittedAt");
+            confirmedAt = Objects.requireNonNull(
+                    confirmedAt, "confirmedAt");
+            if (confirmedAt.isBefore(admittedAt)
+                    || !sameCoordinates(
+                    guardPolicyRef,
+                    guardPolicyAttestationRef)) {
+                throw new IllegalArgumentException(
+                        "shadow authority publication closure is invalid");
             }
         }
     }
@@ -406,15 +497,41 @@ public record ReadOnlyShadowComparison(
     public void verify(ObjectMapper mapper) {
         if (comparisonFingerprint.isBlank()
                 || !comparisonFingerprint.equals(
-                ProtocolFingerprint.ofBounded(
-                        Objects.requireNonNull(mapper, "mapper"),
-                        withFingerprintAndSeal(
-                                "",
-                                VisualRunEvidenceSeal.unsigned()),
-                        MAXIMUM_CANONICAL_BYTES))) {
+                calculateFingerprint(mapper))) {
             throw new IllegalArgumentException(
                     "shadow comparison fingerprint mismatch");
         }
+    }
+
+    /**
+     * Reconstructs the exact wire projection used by the declared protocol generation.
+     *
+     * <p>Legacy generations never contained fields introduced by their successors. Explicitly
+     * removing those fields keeps historic v1/v2 content addresses stable even when a caller's
+     * {@link ObjectMapper} includes null properties.</p>
+     *
+     * @param mapper canonical protocol mapper
+     * @return version-stable canonical comparison fingerprint
+     */
+    String calculateFingerprint(ObjectMapper mapper) {
+        ObjectMapper exactMapper =
+                Objects.requireNonNull(mapper, "mapper");
+        ObjectNode material = exactMapper.valueToTree(
+                withFingerprintAndSeal(
+                        "",
+                        VisualRunEvidenceSeal.unsigned()));
+        if (V1_SCHEMA_VERSION.equals(schemaVersion)) {
+            material.remove(List.of(
+                    "comparisonPolicyRef",
+                    "sourceResolutionAttestationRef",
+                    "authorityProof"));
+        } else if (V2_SCHEMA_VERSION.equals(schemaVersion)) {
+            material.remove("authorityProof");
+        }
+        return ProtocolFingerprint.ofBounded(
+                exactMapper,
+                material,
+                MAXIMUM_CANONICAL_BYTES);
     }
 
     /**
@@ -429,12 +546,18 @@ public record ReadOnlyShadowComparison(
             throw new IllegalStateException(
                     "shadow comparison must be content-addressed before signing");
         }
+        String domain = switch (schemaVersion) {
+            case V1_SCHEMA_VERSION ->
+                    "RESOURCE_GATEWAY_READ_ONLY_SHADOW_COMPARISON_V1";
+            case V2_SCHEMA_VERSION ->
+                    "RESOURCE_GATEWAY_READ_ONLY_SHADOW_COMPARISON_V2";
+            default ->
+                    "RESOURCE_GATEWAY_READ_ONLY_SHADOW_COMPARISON_V3";
+        };
         return ProtocolFingerprint.ofBounded(
                 Objects.requireNonNull(mapper, "mapper"),
                 new AttestationMaterial(
-                        V1_SCHEMA_VERSION.equals(schemaVersion)
-                                ? "RESOURCE_GATEWAY_READ_ONLY_SHADOW_COMPARISON_V1"
-                                : "RESOURCE_GATEWAY_READ_ONLY_SHADOW_COMPARISON_V2",
+                        domain,
                         schemaVersion,
                         comparisonId,
                         revision,
@@ -460,7 +583,7 @@ public record ReadOnlyShadowComparison(
 
     /** @return whether both independently signed sources qualify as certifiable */
     public boolean certifiable() {
-        return SCHEMA_VERSION.equals(schemaVersion)
+        return !V1_SCHEMA_VERSION.equals(schemaVersion)
                 && comparisonPolicyRef != null
                 && sourceResolutionAttestationRef != null
                 && baseline.evidenceClass()
@@ -518,6 +641,7 @@ public record ReadOnlyShadowComparison(
                 targetCapabilityRef,
                 comparisonPolicyRef,
                 sourceResolutionAttestationRef,
+                authorityProof,
                 accessProof,
                 baseline,
                 candidate,
@@ -542,6 +666,7 @@ public record ReadOnlyShadowComparison(
         String normalized = value == null
                 ? "" : value.trim();
         if (!V1_SCHEMA_VERSION.equals(normalized)
+                && !V2_SCHEMA_VERSION.equals(normalized)
                 && !SCHEMA_VERSION.equals(normalized)) {
             throw new IllegalArgumentException(
                     "unsupported shadow comparison schemaVersion");
@@ -594,5 +719,13 @@ public record ReadOnlyShadowComparison(
                     field + " must reference " + kind);
         }
         return exact;
+    }
+
+    private static boolean sameCoordinates(
+            MirrorArtifactRef material,
+            MirrorArtifactRef attestation) {
+        return material.id().equals(attestation.id())
+                && material.revision()
+                == attestation.revision();
     }
 }

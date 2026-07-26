@@ -140,6 +140,7 @@ public final class GovernedReadOnlyShadowDataPlane
             ExecutionResult result =
                     result(
                             admission,
+                            confirmation,
                             sourceAttestation,
                             baselineResult,
                             candidateResult,
@@ -300,6 +301,7 @@ public final class GovernedReadOnlyShadowDataPlane
 
     private static ExecutionResult result(
             ReadOnlyShadowAccessAuthority.Admission admission,
+            ReadOnlyShadowAccessAuthority.Confirmation confirmation,
             MirrorArtifactRef sourceAttestation,
             ReadOnlyShadowConnectorObservation baselineResult,
             ReadOnlyShadowConnectorObservation candidateResult,
@@ -309,6 +311,7 @@ public final class GovernedReadOnlyShadowDataPlane
         try {
             return new ExecutionResult(
                     admission.accessProof(),
+                    authorityProof(admission, confirmation),
                     sourceAttestation,
                     baselineResult.source(),
                     candidateResult.source(),
@@ -319,6 +322,24 @@ public final class GovernedReadOnlyShadowDataPlane
                     ReadOnlyShadowDataPlane.FailureReason
                             .NORMALIZATION_FAILED);
         }
+    }
+
+    private static ReadOnlyShadowComparison.AuthorityProof
+    authorityProof(
+            ReadOnlyShadowAccessAuthority.Admission admission,
+            ReadOnlyShadowAccessAuthority.Confirmation confirmation) {
+        ReadOnlyShadowSamplingGrantAuthority.Grant grant =
+                confirmation.samplingGrant();
+        return new ReadOnlyShadowComparison.AuthorityProof(
+                confirmation.admissionFingerprint(),
+                grant.authorityAttestationRef(),
+                grant.guardScope(),
+                grant.guardPolicyRef(),
+                grant.guardPolicyAttestationRef(),
+                confirmation.killSwitch()
+                        .authorityAttestationRef(),
+                admission.admittedAt(),
+                confirmation.confirmedAt());
     }
 
     private void heartbeat(

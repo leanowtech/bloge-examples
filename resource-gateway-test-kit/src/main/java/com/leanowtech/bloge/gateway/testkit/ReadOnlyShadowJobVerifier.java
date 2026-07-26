@@ -11,9 +11,10 @@ import java.util.Objects;
  *
  * <p>The verifier recomputes the immutable request fingerprint, deterministic job id, mutable job
  * record fingerprint, lifecycle correspondence, and exact request/job scope. A successful job
- * additionally requires a v2 comparison whose signature, policy, source-resolution attestation,
- * grant proof, and artifact reference independently verify. Queue uniqueness and live lease
- * ownership remain online database properties and cannot be inferred from one exported row.</p>
+ * additionally requires a certifiable v2 or v3 comparison whose signature, policy,
+ * source-resolution attestation, grant proof, authority closure, and artifact reference
+ * independently verify. Queue uniqueness and live lease ownership remain online database
+ * properties and cannot be inferred from one exported row.</p>
  */
 public final class ReadOnlyShadowJobVerifier {
     /** Maximum request bytes admitted to canonical hashing. */
@@ -277,10 +278,14 @@ public final class ReadOnlyShadowJobVerifier {
                 request.path("accessGrant");
         JsonNode accessProof =
                 comparison.path("accessProof");
+        String comparisonVersion =
+                text(comparison, "schemaVersion");
         if (!CapabilityMirrorProtocol
                 .READ_ONLY_SHADOW_COMPARISON_V2
-                .equals(text(
-                        comparison, "schemaVersion"))
+                .equals(comparisonVersion)
+                && !CapabilityMirrorProtocol
+                .READ_ONLY_SHADOW_COMPARISON_V3
+                .equals(comparisonVersion)
                 || !text(job, "jobId").equals(
                 text(comparison, "comparisonId"))
                 || comparison.path("revision").asLong()

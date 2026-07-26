@@ -394,6 +394,9 @@ public final class CapabilityMirrorProtocol {
     /** Signed read-only Shadow comparison with exact policy and source-resolution closure. */
     public static final String READ_ONLY_SHADOW_COMPARISON_V2 =
             "resourceGateway.readOnlyShadowComparison.v2";
+    /** Current signed Shadow comparison with complete online-authority closure. */
+    public static final String READ_ONLY_SHADOW_COMPARISON_V3 =
+            "resourceGateway.readOnlyShadowComparison.v3";
     /** Durable payload-free read-only Shadow job submission wire version. */
     public static final String READ_ONLY_SHADOW_JOB_REQUEST_V1 =
             "resourceGateway.readOnlyShadowJobRequest.v1";
@@ -573,6 +576,18 @@ public final class CapabilityMirrorProtocol {
     public static final String MIRROR_DEPLOYMENT_ISOLATION_AUTHORITY_KEY_SET_SCHEMA_RESOURCE =
             SCHEMA_RESOURCE_ROOT
                     + "mirror-deployment-isolation-authority-key-set-publication-v1.schema.json";
+    /** Packaged signed read-only Shadow shared guard-policy schema. */
+    public static final String READ_ONLY_SHADOW_GUARD_POLICY_PUBLICATION_SCHEMA_RESOURCE =
+            SCHEMA_RESOURCE_ROOT
+                    + "read-only-shadow-guard-policy-publication-v1.schema.json";
+    /** Packaged signed read-only Shadow sampling-grant schema. */
+    public static final String READ_ONLY_SHADOW_SAMPLING_GRANT_PUBLICATION_SCHEMA_RESOURCE =
+            SCHEMA_RESOURCE_ROOT
+                    + "read-only-shadow-sampling-grant-publication-v1.schema.json";
+    /** Packaged signed read-only Shadow kill-switch schema. */
+    public static final String READ_ONLY_SHADOW_KILL_SWITCH_PUBLICATION_SCHEMA_RESOURCE =
+            SCHEMA_RESOURCE_ROOT
+                    + "read-only-shadow-kill-switch-publication-v1.schema.json";
     /** Packaged signed capability-observation schema. */
     public static final String CAPABILITY_OBSERVATION_SCHEMA_RESOURCE =
             SCHEMA_RESOURCE_ROOT + "capability-observation-v1.schema.json";
@@ -829,6 +844,11 @@ public final class CapabilityMirrorProtocol {
     READ_ONLY_SHADOW_COMPARISON_V2_SCHEMA_RESOURCE =
             SCHEMA_RESOURCE_ROOT
                     + "read-only-shadow-comparison-v2.schema.json";
+    /** Packaged v3 Shadow comparison schema with double-observed online-authority closure. */
+    public static final String
+    READ_ONLY_SHADOW_COMPARISON_V3_SCHEMA_RESOURCE =
+            SCHEMA_RESOURCE_ROOT
+                    + "read-only-shadow-comparison-v3.schema.json";
     /** Packaged durable read-only Shadow job submission schema. */
     public static final String
     READ_ONLY_SHADOW_JOB_REQUEST_SCHEMA_RESOURCE =

@@ -150,6 +150,7 @@ public final class ReadOnlyShadowJobWorker {
                 request.targetCapabilityRef(),
                 request.comparisonPolicyRef(),
                 result.sourceResolutionAttestationRef(),
+                result.authorityProof(),
                 result.accessProof(),
                 result.baseline(),
                 result.candidate(),

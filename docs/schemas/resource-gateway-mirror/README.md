@@ -43,6 +43,9 @@ offline artifact verification live in the independent `resource-gateway-test-kit
 | `mirror-deployment-isolation-run-trust-v1.schema.json` | `MirrorDeploymentIsolationRunTrust.Binding` | Stable decision plus admitted/committed local agent observations signed into v2 evidence |
 | `mirror-deployment-isolation-attestation-revocation-request-v1.schema.json` | `MirrorDeploymentIsolationAttestationRevocationRequest` | Exact-current optimistic command for one irreversible status transition |
 | `mirror-deployment-isolation-authority-key-set-publication-v1.schema.json` | `MirrorDeploymentIsolationAuthorityKeySetPublication` | Full-scope, monotonic, M-of-N bootstrap-root-signed publication of isolation-attestation authority keys |
+| `read-only-shadow-guard-policy-publication-v1.schema.json` | `ReadOnlyShadowGuardPolicyPublication` | Short-lived signed current-head policy for one authority-owned shared concurrency, rate, and circuit budget |
+| `read-only-shadow-sampling-grant-publication-v1.schema.json` | `ReadOnlyShadowSamplingGrantPublication` | Short-lived signed current-head logical-sampling authorization joining an exact execution scope to one exact shared guard policy |
+| `read-only-shadow-kill-switch-publication-v1.schema.json` | `ReadOnlyShadowKillSwitchPublication` | Fifteen-minute signed current-head operational enable/deny decision for one exact execution scope |
 | `capability-observation-v1.schema.json` | `CapabilityObservationEnvelope` | Signed payload-free capability invocation with exact sanitized-payload, proof, schema, purpose, trace, and state references |
 | `capability-observation-admission-v1.schema.json` | `CapabilityObservationAdmission` | Content-addressed local `ADMITTED` or terminal `QUARANTINED` decision |
 | `capability-observation-receipt-v1.schema.json` | `CapabilityObservationReceipt` | Atomic ingest result linking the exact producer envelope to its immutable local decision |
@@ -110,7 +113,8 @@ offline artifact verification live in the independent `resource-gateway-test-kit
 | `domain-fidelity-inventory-v1.schema.json` | `DomainFidelityInventory` | Owner-approved content-addressed domain coverage denominator with exact Scenario/capability units |
 | `domain-fidelity-profile-v1.schema.json` | `DomainFidelityProfile` | Signed payload-free seven-dimension fidelity vector with complete denominator, confidence, source, and abstention debt |
 | `read-only-shadow-comparison-v1.schema.json` | `ReadOnlyShadowComparison` | Legacy signed payload-free single-request typed baseline/candidate comparison; egress proof closes to the exact `DEPLOYMENT_ISOLATION_ATTESTATION` protocol kind |
-| `read-only-shadow-comparison-v2.schema.json` | `ReadOnlyShadowComparison` | Current comparison adding exact normalization policy and source-resolution attestation closure; inherits the exact deployment-isolation proof kind |
+| `read-only-shadow-comparison-v2.schema.json` | `ReadOnlyShadowComparison` | Legacy certifiable comparison adding exact normalization policy and source-resolution attestation closure |
+| `read-only-shadow-comparison-v3.schema.json` | `ReadOnlyShadowComparison` | Current comparison adding double-observed grant, guard-policy, and kill-switch publication evidence with exact material/attestation coordinate closure |
 | `read-only-shadow-job-request-v1.schema.json` | `ReadOnlyShadowJobRequest` | Immutable payload-free Shadow admission command with exact grant ordinal, authority coordinates, and deadline |
 | `read-only-shadow-job-v1.schema.json` | `ReadOnlyShadowJob` | Integrity-addressed public durable queue projection without payload or raw lease owner |
 | `read-only-shadow-job-lifecycle-event-v1.schema.json` | `ReadOnlyShadowJobLifecycleEvent` | Append-only payload-free committed transition fact with database time and fencing coordinates |
@@ -129,6 +133,12 @@ offline artifact verification live in the independent `resource-gateway-test-kit
 `capability-mirror-stage0-v1.fixture.json` is the authoritative Stage 0 compatibility fixture. The
 server capability test and standalone test-kit both consume this exact file, preventing either side
 from passing against a separately maintained expectation.
+
+Read-only Shadow authority signatures use canonical padded Base64 and distinct signature domains.
+Verification keys are independent local trust inputs delegated to one exact enterprise scope and
+one publication type. A retired key verifies only signatures created strictly before its recorded
+retirement; a revoked key verifies none. Sampling-grant consumers must independently verify the
+referenced current guard-policy publication and preserve both attestations.
 
 `mirror-evidence-stage1-v1.fixture.json` is the fixed Stage 1 cryptographic compatibility fixture.
 It contains a server-produced `HASH_ONLY` bundle and public Ed25519 key, but no private key or

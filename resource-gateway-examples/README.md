@@ -32,7 +32,7 @@ integration something the business flow can see, reason about, test, and change.
 | Governed capability observations | Signed payload-free invocation facts, operator-owned admission policy, external vault/proof verification, durable admitted-or-quarantined decisions, full-scope idempotency, and independent offline verification |
 | Governed capability corpora | Immutable quarantine review, exact admitted-source candidates, metadata risk gates, independent owner-reviewed publication lineage, second source-authority verification, and honest resolver readiness |
 | Governed scenario rehearsal | Append-only Scenario assets, exact compilation, durable per-case execution, independently signed aggregate and batch evidence, multi-hold retention/deletion proof at both levels, deterministic ANEKE workbook seeds, separate opt-in regional DAG/KMS schedulers, and a server-authorized two-person remediation transaction kernel |
-| Reconstructable domain fidelity | Owner-approved content-addressed coverage inventory, append-only full-scope persistence, managed signed payload-free seven-dimension profiles, protected register/read APIs, independently re-verified Scenario projection, v2 signed read-only Shadow comparison with exact normalization/source-resolution closure, a protected full-scope durable sample-ordinal queue, append-only lifecycle API, optional bounded scheduler, owner/epoch fenced worker kernel, a governed fail-closed data-plane composition with double-observed grant/kill-switch/egress authority and isolated connector boundaries, typed dynamic readiness, fail-closed freshness/abstention/low-sample semantics, Wilson 95% confidence, exact source lineage, and independent Test Kit verification without a composite score |
+| Reconstructable domain fidelity | Owner-approved content-addressed coverage inventory, append-only full-scope persistence, managed signed payload-free seven-dimension profiles, protected register/read APIs, independently re-verified Scenario projection, v3 signed read-only Shadow comparison with exact normalization/source-resolution and double-observed online-authority closure, a protected full-scope durable sample-ordinal queue, append-only lifecycle API, optional bounded scheduler, owner/epoch fenced worker kernel, a governed fail-closed data-plane composition with double-observed grant/kill-switch/egress authority and isolated connector boundaries, typed dynamic readiness, fail-closed freshness/abstention/low-sample semantics, Wilson 95% confidence, exact source lineage, and independent Test Kit verification without a composite score |
 | Stateful mirror sessions | Versioned entity/write/session/checkpoint/write-attempt protocols, atomic multi-entity mutations, exact replay, AES-GCM isolated persistence, lease/fence/CAS concurrency, durable crash-window reconciliation, TTL/destroy, payload-free signed state evidence, signed same-data-plane restart recovery admission, ANEKE workbook seeds, and independently verified clients |
 | Governed replay payloads | Payload values detached from immutable evidence, classification ABAC, selective retention, legal hold, bounded expiry, and signed deletion proof |
 | Workbook and gate evidence loop | Deterministic sanitized workbook seeds, exact suite/run evidence refs, versioned gate decision basis, stale detection, and transactional gate events |
@@ -94,7 +94,7 @@ false until the remaining operator-owned adapters are installed.
 | `POST http://localhost:8080/api/mirror/shadow-jobs` | Admit one immutable, payload-free read-only Shadow command after starting with `--shadow-jobs` (`X-Purpose: MIRROR_SHADOW`) |
 | `GET http://localhost:8080/api/mirror/shadow-jobs/{jobId}` | Read the exact-scope, integrity-verified durable projection without worker owner or payload |
 | `GET http://localhost:8080/api/mirror/shadow-jobs/{jobId}/request` | Read the immutable command needed for independent job verification |
-| `GET http://localhost:8080/api/mirror/shadow-jobs/{jobId}/comparison` | Read the signed v2 comparison after terminal success |
+| `GET http://localhost:8080/api/mirror/shadow-jobs/{jobId}/comparison` | Read the signed v3 comparison with complete online-authority proof after terminal success |
 | `GET http://localhost:8080/api/mirror/shadow-jobs/{jobId}/lifecycle?afterSequence=0&limit=100` | Read append-ordered, payload-free transition facts with a monotonic cursor |
 | `GET http://localhost:8080/api/integration/capability-snapshots/{capabilityId}?revision=0` | Read the latest authorized capability snapshot; use a positive revision for an exact read |
 | `PUT http://localhost:8080/api/integration/capability-snapshots/{capabilityId}/revisions/{revision}` | Append one exact sealed capability snapshot revision |
@@ -572,9 +572,12 @@ identity and waits for `mirrorReadOnlyShadowJobApi=true`,
 `mirrorReadOnlyShadowScheduling=true`. It does not wait for or claim
 `mirrorReadOnlyShadowWorkerReady` or `mirrorReadOnlyShadowServingReady`: the
 default `GovernedReadOnlyShadowDataPlane` and database-authoritative execution
-guard are assembled, but online authority/connector/verifier adapters remain
-intentionally fail-closed. Therefore it does not consume an attempt or touch an
-external system.
+guard are assembled. Signed current-head sampling-grant, kill-switch, and shared
+guard-policy protocols plus their database publication source are also
+installed, but the default dynamic authority trust store and every real
+connector/verifier remain intentionally unavailable. Therefore the signed
+authority adapters fail closed, the scheduler does not consume an attempt, and
+no external system is touched.
 
 The default composition fixes the production call order: heartbeat, exact
 grant/kill-switch/egress admission, shared guard acquisition, isolated baseline,
@@ -592,6 +595,37 @@ The signed sampling decision owns a physical `guardScope` and exact
 share one real-source budget without allowing request JSON to choose that pool.
 Random lease tokens plus monotonic epochs fence crashed workers; retries of the
 same immutable execution id do not double-charge logical starts.
+
+The online authority boundary uses three strict, payload-free publications:
+
+- `resourceGateway.readOnlyShadowSamplingGrantPublication.v1` binds one exact
+  execution scope, active state, sample ceiling, authority-owned `guardScope`,
+  and exact guard-policy material;
+- `resourceGateway.readOnlyShadowKillSwitchPublication.v1` carries a short-lived
+  operational enable/deny decision;
+- `resourceGateway.readOnlyShadowGuardPolicyPublication.v1` owns the shared
+  concurrency, fixed-window rate, and circuit limits.
+
+`DatabaseReadOnlyShadowAuthorityPublicationRepository` persists append-only
+current heads under complete scope, kind, and stream identity. It serializes
+competing successors, rejects rollback/fork/gap/wrong-predecessor writes, and
+admits a publication only after dynamic trust verifies its exact scope, kind,
+issuer, key, signature, and time window. A valid content address alone therefore
+cannot create or poison a head. Concurrent first-generation writers retry the
+whole transaction after a head-initialization uniqueness race; the repository
+does not continue inside a database-aborted transaction. It revalidates indexed
+identity against strict canonical JSON on every read. Runtime
+adapters deliberately fetch only the current head and dynamically resolve the
+public key on every observation. Each key is delegated to one exact scope and
+publication type; retired keys accept only signatures created before
+`retiredAt`, and revoked keys accept none. A sampling decision preserves both
+the grant and current guard-policy attestation: an inactive/disabled successor, policy
+successor, key revocation, source outage, expiry, or any exact-ref drift takes
+effect without a long-lived positive cache. The default
+`ReadOnlyShadowAuthorityTrustStore` is unavailable, so this infrastructure does
+not authorize real sampling until an operator supplies a managed current key
+and revocation source. The wire schemas and independent offline verifier are
+packaged by `resource-gateway-test-kit`.
 
 Submit a request that validates against
 [`read-only-shadow-job-request-v1.schema.json`](../docs/schemas/resource-gateway-mirror/read-only-shadow-job-request-v1.schema.json):

@@ -1,7 +1,6 @@
 package com.leanowtech.bloge.gateway.integration.mirror;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
-import com.leanowtech.bloge.gateway.testing.evidence.ProtocolFingerprint;
 import com.leanowtech.bloge.gateway.visual.runtime.VisualEvidenceSigner;
 import com.leanowtech.bloge.gateway.visual.runtime.VisualRunEvidenceSeal;
 
@@ -62,11 +61,7 @@ public final class ReadOnlyShadowComparisonIntegrity {
         ReadOnlyShadowComparison addressed =
                 source.comparisonFingerprint().isBlank()
                         ? source.withFingerprint(
-                        ProtocolFingerprint.ofBounded(
-                                mapper,
-                                source.withFingerprint(""),
-                                ReadOnlyShadowComparison
-                                        .MAXIMUM_CANONICAL_BYTES))
+                        source.calculateFingerprint(mapper))
                         : source;
         addressed.verify(mapper);
         if (addressed.comparisonSeal().signed()) {

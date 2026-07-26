@@ -57,6 +57,9 @@ class CapabilityMirrorSchemaPackagingTest {
                 "mirror-deployment-isolation-agent-snapshot-v1.schema.json",
                 "mirror-deployment-isolation-run-trust-v1.schema.json",
                 "mirror-deployment-isolation-authority-key-set-publication-v1.schema.json",
+                "read-only-shadow-guard-policy-publication-v1.schema.json",
+                "read-only-shadow-sampling-grant-publication-v1.schema.json",
+                "read-only-shadow-kill-switch-publication-v1.schema.json",
                 "capability-observation-v1.schema.json",
                 "capability-observation-admission-v1.schema.json",
                 "capability-observation-receipt-v1.schema.json",
@@ -475,6 +478,14 @@ class CapabilityMirrorSchemaPackagingTest {
                 .endsWith(
                         "read-only-shadow-comparison-v2.schema.json");
         assertThat(CapabilityMirrorProtocol
+                .READ_ONLY_SHADOW_COMPARISON_V3)
+                .isEqualTo(
+                        "resourceGateway.readOnlyShadowComparison.v3");
+        assertThat(CapabilityMirrorProtocol
+                .READ_ONLY_SHADOW_COMPARISON_V3_SCHEMA_RESOURCE)
+                .endsWith(
+                        "read-only-shadow-comparison-v3.schema.json");
+        assertThat(CapabilityMirrorProtocol
                 .READ_ONLY_SHADOW_JOB_REQUEST_V1)
                 .isEqualTo(
                         "resourceGateway.readOnlyShadowJobRequest.v1");
@@ -509,6 +520,10 @@ class CapabilityMirrorSchemaPackagingTest {
         assertThat(getClass().getResource(
                 CapabilityMirrorProtocol
                         .READ_ONLY_SHADOW_COMPARISON_V2_SCHEMA_RESOURCE))
+                .isNotNull();
+        assertThat(getClass().getResource(
+                CapabilityMirrorProtocol
+                        .READ_ONLY_SHADOW_COMPARISON_V3_SCHEMA_RESOURCE))
                 .isNotNull();
         assertThat(getClass().getResource(
                 CapabilityMirrorProtocol

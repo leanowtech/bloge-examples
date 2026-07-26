@@ -302,7 +302,9 @@ public final class ComposedReadOnlyShadowAccessAuthority
                 right.guardPolicyRef())
                 && left.limits().equals(right.limits())
                 && left.authorityAttestationRef().equals(
-                right.authorityAttestationRef());
+                right.authorityAttestationRef())
+                && left.guardPolicyAttestationRef().equals(
+                right.guardPolicyAttestationRef());
     }
 
     private static boolean sameKillSwitchDecision(
@@ -346,6 +348,8 @@ public final class ComposedReadOnlyShadowAccessAuthority
                         + grant.guardPolicyRef()
                         .fingerprint() + "\n"
                         + grant.authorityAttestationRef()
+                        .fingerprint() + "\n"
+                        + grant.guardPolicyAttestationRef()
                         .fingerprint() + "\n"
                         + state.killSwitchRef().fingerprint() + "\n"
                         + state.authorityAttestationRef()

@@ -67,7 +67,11 @@ public interface ReadOnlyShadowKillSwitchAuthority {
                     "authorityAttestationRef");
             observedAt = Objects.requireNonNull(
                     observedAt, "observedAt");
-            if (!expiresAt.isAfter(effectiveAt)) {
+            if (!expiresAt.isAfter(effectiveAt)
+                    || !killSwitchRef.id().equals(
+                    authorityAttestationRef.id())
+                    || killSwitchRef.revision()
+                    != authorityAttestationRef.revision()) {
                 throw new IllegalArgumentException(
                         "read-only Shadow kill-switch state is invalid");
             }

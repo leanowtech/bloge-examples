@@ -155,6 +155,7 @@ final class ReadOnlyShadowJobTestFixtures {
                         "SHADOW_SOURCE_RESOLUTION_ATTESTATION",
                         "sources-" + request.requestId(),
                         'c'),
+                authorityProof(request),
                 request.accessGrant().zeroWriteProof(),
                 baseline,
                 candidate,
@@ -181,11 +182,40 @@ final class ReadOnlyShadowJobTestFixtures {
                         request);
         return new ReadOnlyShadowDataPlane.ExecutionResult(
                 comparison.accessProof(),
+                comparison.authorityProof(),
                 comparison.sourceResolutionAttestationRef(),
                 comparison.baseline(),
                 comparison.candidate(),
                 comparison.observedAt(),
                 comparison.results());
+    }
+
+    static ReadOnlyShadowComparison.AuthorityProof
+    authorityProof(
+            ReadOnlyShadowJobRequest request) {
+        return new ReadOnlyShadowComparison.AuthorityProof(
+                fingerprint('0'),
+                ref(
+                        "SHADOW_SAMPLING_GRANT_ATTESTATION",
+                        request.accessGrant()
+                                .samplingGrantRef().id(),
+                        '1'),
+                request.scope(),
+                ref(
+                        "SHADOW_EXECUTION_GUARD_POLICY",
+                        "guard-policy",
+                        '2'),
+                ref(
+                        "SHADOW_EXECUTION_GUARD_POLICY_ATTESTATION",
+                        "guard-policy",
+                        '3'),
+                ref(
+                        "SHADOW_KILL_SWITCH_ATTESTATION",
+                        request.accessGrant()
+                                .killSwitchRef().id(),
+                        '4'),
+                NOW,
+                NOW.plusSeconds(5));
     }
 
     static MirrorArtifactRef ref(

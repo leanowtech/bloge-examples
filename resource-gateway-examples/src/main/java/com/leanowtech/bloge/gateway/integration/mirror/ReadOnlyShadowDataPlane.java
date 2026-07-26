@@ -86,6 +86,7 @@ public interface ReadOnlyShadowDataPlane {
      * Payload-free verified result from the isolated data plane.
      *
      * @param accessProof runtime-observed zero-write proof matching the admitted grant
+     * @param authorityProof double-observed grant, policy, and switch publication closure
      * @param sourceResolutionAttestationRef exact signed proof that both source refs were fetched
      *                                       and independently reverified
      * @param baseline exact verified baseline observation
@@ -95,6 +96,7 @@ public interface ReadOnlyShadowDataPlane {
      */
     record ExecutionResult(
             ReadOnlyShadowComparison.AccessProof accessProof,
+            ReadOnlyShadowComparison.AuthorityProof authorityProof,
             MirrorArtifactRef sourceResolutionAttestationRef,
             ReadOnlyShadowComparison.SourceObservation baseline,
             ReadOnlyShadowComparison.SourceObservation candidate,
@@ -105,6 +107,8 @@ public interface ReadOnlyShadowDataPlane {
         public ExecutionResult {
             accessProof = Objects.requireNonNull(
                     accessProof, "accessProof");
+            authorityProof = Objects.requireNonNull(
+                    authorityProof, "authorityProof");
             sourceResolutionAttestationRef =
                     requireKind(
                             sourceResolutionAttestationRef,

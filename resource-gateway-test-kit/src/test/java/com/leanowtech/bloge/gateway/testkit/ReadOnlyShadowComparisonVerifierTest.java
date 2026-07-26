@@ -12,6 +12,7 @@ import java.security.KeyPairGenerator;
 import java.security.Signature;
 import java.time.Instant;
 import java.util.Base64;
+import java.util.List;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
@@ -91,6 +92,63 @@ class ReadOnlyShadowComparisonVerifierTest {
                 comparison, key).reasonCode())
                 .isEqualTo(
                         "SHADOW_COMPARISON_SCHEMA_INVALID");
+    }
+
+    @Test
+    void verifiesV3DoubleObservedAuthorityClosure()
+            throws Exception {
+        comparison = comparisonV3();
+        resign(comparison);
+
+        assertThat(verifier.verify(
+                comparison, key).verified()).isTrue();
+
+        comparison.withObject("/authorityProof")
+                .remove("guardPolicyAttestationRef");
+        resign(comparison);
+        assertThat(verifier.verify(
+                comparison, key).reasonCode())
+                .isEqualTo(
+                        "SHADOW_COMPARISON_SCHEMA_INVALID");
+
+        comparison = comparisonV3();
+        comparison.withObject("/authorityProof")
+                .put(
+                        "confirmedAt",
+                        OBSERVED_AT.plusSeconds(1)
+                                .toString());
+        resign(comparison);
+        assertThat(verifier.verify(
+                comparison, key).reasonCode())
+                .isEqualTo(
+                        "SHADOW_COMPARISON_AUTHORITY_TIME_INVALID");
+
+        for (String pointer : List.of(
+                "/authorityProof/samplingGrantAttestationRef",
+                "/authorityProof/guardPolicyAttestationRef",
+                "/authorityProof/killSwitchAttestationRef")) {
+            for (String coordinate : List.of(
+                    "id", "revision")) {
+                comparison = comparisonV3();
+                ObjectNode attestation =
+                        comparison.withObject(pointer);
+                if ("id".equals(coordinate)) {
+                    attestation.put(
+                            "id", "unrelated-authority");
+                } else {
+                    attestation.put(
+                            "revision",
+                            attestation.path(
+                                    "revision").asLong() + 1);
+                }
+                resign(comparison);
+                assertThat(verifier.verify(
+                        comparison, key).reasonCode())
+                        .as(pointer + ":" + coordinate)
+                        .isEqualTo(
+                                "SHADOW_COMPARISON_AUTHORITY_CLOSURE_INVALID");
+            }
+        }
     }
 
     @Test
@@ -396,6 +454,52 @@ class ReadOnlyShadowComparisonVerifierTest {
         return value;
     }
 
+    private static ObjectNode comparisonV3() {
+        ObjectNode value = comparisonV2();
+        value.put(
+                "schemaVersion",
+                CapabilityMirrorProtocol
+                        .READ_ONLY_SHADOW_COMPARISON_V3);
+        ObjectNode authority =
+                value.putObject("authorityProof");
+        authority.put(
+                "admissionFingerprint",
+                fingerprint('0'));
+        authority.set(
+                "samplingGrantAttestationRef",
+                ref(
+                        "SHADOW_SAMPLING_GRANT_ATTESTATION",
+                        "grant-1",
+                        '1'));
+        authority.set("guardScope", scope());
+        authority.set(
+                "guardPolicyRef",
+                ref(
+                        "SHADOW_EXECUTION_GUARD_POLICY",
+                        "guard-policy-1",
+                        '2'));
+        authority.set(
+                "guardPolicyAttestationRef",
+                ref(
+                        "SHADOW_EXECUTION_GUARD_POLICY_ATTESTATION",
+                        "guard-policy-1",
+                        '3'));
+        authority.set(
+                "killSwitchAttestationRef",
+                ref(
+                        "SHADOW_KILL_SWITCH_ATTESTATION",
+                        "kill-switch-1",
+                        '4'));
+        authority.put(
+                "admittedAt",
+                COMPLETED_AT.minusSeconds(1)
+                        .toString());
+        authority.put(
+                "confirmedAt",
+                OBSERVED_AT.toString());
+        return value;
+    }
+
     private static ObjectNode observation(
             String role,
             String kind,
@@ -430,14 +534,19 @@ class ReadOnlyShadowComparisonVerifierTest {
             ObjectNode value) {
         ObjectNode material =
                 JsonNodeFactory.instance.objectNode();
-        material.put(
-                "domain",
-                CapabilityMirrorProtocol
-                        .READ_ONLY_SHADOW_COMPARISON_V1
-                        .equals(value.path(
-                                "schemaVersion").asText())
-                        ? "RESOURCE_GATEWAY_READ_ONLY_SHADOW_COMPARISON_V1"
-                        : "RESOURCE_GATEWAY_READ_ONLY_SHADOW_COMPARISON_V2");
+        String version = value.path(
+                "schemaVersion").asText();
+        String domain = switch (version) {
+            case CapabilityMirrorProtocol
+                    .READ_ONLY_SHADOW_COMPARISON_V1 ->
+                    "RESOURCE_GATEWAY_READ_ONLY_SHADOW_COMPARISON_V1";
+            case CapabilityMirrorProtocol
+                    .READ_ONLY_SHADOW_COMPARISON_V2 ->
+                    "RESOURCE_GATEWAY_READ_ONLY_SHADOW_COMPARISON_V2";
+            default ->
+                    "RESOURCE_GATEWAY_READ_ONLY_SHADOW_COMPARISON_V3";
+        };
+        material.put("domain", domain);
         for (String field : new String[]{
                 "schemaVersion",
                 "comparisonId",

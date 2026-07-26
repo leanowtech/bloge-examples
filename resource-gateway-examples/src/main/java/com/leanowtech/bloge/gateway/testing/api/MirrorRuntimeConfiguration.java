@@ -11,6 +11,7 @@ import com.leanowtech.bloge.gateway.integration.mirror.DatabaseMirrorDeploymentI
 import com.leanowtech.bloge.gateway.integration.mirror.DatabaseMirrorDeploymentIsolationAttestationRepository;
 import com.leanowtech.bloge.gateway.integration.mirror.DatabaseMirrorRunRequestRepository;
 import com.leanowtech.bloge.gateway.integration.mirror.DatabaseDomainFidelityRepository;
+import com.leanowtech.bloge.gateway.integration.mirror.DatabaseReadOnlyShadowAuthorityPublicationRepository;
 import com.leanowtech.bloge.gateway.integration.mirror.DatabaseReadOnlyShadowJobRepository;
 import com.leanowtech.bloge.gateway.integration.mirror.DatabaseCompiledScenarioRehearsalPlanRepository;
 import com.leanowtech.bloge.gateway.integration.mirror.DatabaseScenarioArtifactRepository;
@@ -117,12 +118,17 @@ import com.leanowtech.bloge.gateway.integration.mirror.ReadOnlyShadowComparisonI
 import com.leanowtech.bloge.gateway.integration.mirror.DatabaseReadOnlyShadowExecutionGuard;
 import com.leanowtech.bloge.gateway.integration.mirror.ReadOnlyShadowComparisonEngine;
 import com.leanowtech.bloge.gateway.integration.mirror.ReadOnlyShadowAccessAuthority;
+import com.leanowtech.bloge.gateway.integration.mirror.ReadOnlyShadowAuthorityIntegrity;
+import com.leanowtech.bloge.gateway.integration.mirror.ReadOnlyShadowAuthorityPublicationSource;
+import com.leanowtech.bloge.gateway.integration.mirror.ReadOnlyShadowAuthorityTrustStore;
 import com.leanowtech.bloge.gateway.integration.mirror.ReadOnlyShadowBaselineConnector;
 import com.leanowtech.bloge.gateway.integration.mirror.ReadOnlyShadowCandidateConnector;
 import com.leanowtech.bloge.gateway.integration.mirror.ReadOnlyShadowDataPlane;
 import com.leanowtech.bloge.gateway.integration.mirror.ReadOnlyShadowExecutionGuard;
 import com.leanowtech.bloge.gateway.integration.mirror.ReadOnlyShadowKillSwitchAuthority;
 import com.leanowtech.bloge.gateway.integration.mirror.ReadOnlyShadowSamplingGrantAuthority;
+import com.leanowtech.bloge.gateway.integration.mirror.SignedReadOnlyShadowKillSwitchAuthority;
+import com.leanowtech.bloge.gateway.integration.mirror.SignedReadOnlyShadowSamplingGrantAuthority;
 import com.leanowtech.bloge.gateway.integration.mirror.ReadOnlyShadowSourceResolutionVerifier;
 import com.leanowtech.bloge.gateway.integration.mirror.ComposedReadOnlyShadowAccessAuthority;
 import com.leanowtech.bloge.gateway.integration.mirror.GovernedReadOnlyShadowDataPlane;
@@ -1388,22 +1394,73 @@ public class MirrorRuntimeConfiguration {
                 observability);
     }
 
-    /** Provides a fail-closed sampling authority until a verified online adapter is installed. */
+    /** Creates canonical verification for signed sampling, switch, and guard-policy publications. */
     @Bean
     @ConditionalOnMissingBean
-    public ReadOnlyShadowSamplingGrantAuthority
-    readOnlyShadowSamplingGrantAuthority() {
-        return ReadOnlyShadowSamplingGrantAuthority
+    public ReadOnlyShadowAuthorityIntegrity
+    readOnlyShadowAuthorityIntegrity(
+            ObjectMapper objectMapper) {
+        return new ReadOnlyShadowAuthorityIntegrity(
+                objectMapper);
+    }
+
+    /** Creates the database-authoritative signed Shadow publication log and current-head source. */
+    @Bean
+    @ConditionalOnMissingBean(
+            ReadOnlyShadowAuthorityPublicationSource.class)
+    public DatabaseReadOnlyShadowAuthorityPublicationRepository
+    readOnlyShadowAuthorityPublicationSource(
+            JdbcTemplate jdbc,
+            ObjectMapper objectMapper,
+            ReadOnlyShadowAuthorityIntegrity integrity,
+            ReadOnlyShadowAuthorityTrustStore trustStore,
+            PlatformTransactionManager transactionManager) {
+        return new DatabaseReadOnlyShadowAuthorityPublicationRepository(
+                jdbc,
+                objectMapper,
+                integrity,
+                trustStore,
+                Clock.systemUTC(),
+                transactionManager);
+    }
+
+    /** Provides fail-closed key trust until a managed rotation and revocation source is installed. */
+    @Bean
+    @ConditionalOnMissingBean
+    public ReadOnlyShadowAuthorityTrustStore
+    readOnlyShadowAuthorityTrustStore() {
+        return ReadOnlyShadowAuthorityTrustStore
                 .unavailable();
     }
 
-    /** Provides a fail-closed kill-switch authority until an online adapter is installed. */
+    /** Verifies the current signed grant and guard-policy heads on every authority observation. */
+    @Bean
+    @ConditionalOnMissingBean
+    public ReadOnlyShadowSamplingGrantAuthority
+    readOnlyShadowSamplingGrantAuthority(
+            ReadOnlyShadowAuthorityPublicationSource source,
+            ReadOnlyShadowAuthorityTrustStore trustStore,
+            ReadOnlyShadowAuthorityIntegrity integrity) {
+        return new SignedReadOnlyShadowSamplingGrantAuthority(
+                source,
+                trustStore,
+                integrity,
+                Clock.systemUTC());
+    }
+
+    /** Verifies the current signed kill-switch head on every authority observation. */
     @Bean
     @ConditionalOnMissingBean
     public ReadOnlyShadowKillSwitchAuthority
-    readOnlyShadowKillSwitchAuthority() {
-        return ReadOnlyShadowKillSwitchAuthority
-                .unavailable();
+    readOnlyShadowKillSwitchAuthority(
+            ReadOnlyShadowAuthorityPublicationSource source,
+            ReadOnlyShadowAuthorityTrustStore trustStore,
+            ReadOnlyShadowAuthorityIntegrity integrity) {
+        return new SignedReadOnlyShadowKillSwitchAuthority(
+                source,
+                trustStore,
+                integrity,
+                Clock.systemUTC());
     }
 
     /** Joins sampling, kill-switch, and deployment egress decisions around each paired run. */

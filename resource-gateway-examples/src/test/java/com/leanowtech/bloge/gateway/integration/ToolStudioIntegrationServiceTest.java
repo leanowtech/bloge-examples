@@ -367,7 +367,8 @@ class ToolStudioIntegrationServiceTest {
                 .get("readOnlyShadowComparison"))
                 .containsExactly(
                         "resourceGateway.readOnlyShadowComparison.v1",
-                        "resourceGateway.readOnlyShadowComparison.v2");
+                        "resourceGateway.readOnlyShadowComparison.v2",
+                        "resourceGateway.readOnlyShadowComparison.v3");
         assertThat(assembled.endpoints())
                 .extracting(endpoint ->
                         endpoint.method() + " " + endpoint.path())

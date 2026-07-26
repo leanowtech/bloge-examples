@@ -7,6 +7,7 @@ import com.leanowtech.bloge.gateway.visual.runtime.VisualEvidenceSigner;
 import org.junit.jupiter.api.Test;
 
 import java.time.Duration;
+import java.time.Instant;
 import java.util.List;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -94,6 +95,54 @@ class ReadOnlyShadowDomainFidelitySourceTest {
                         result.outcome()
                                 == DomainFidelityProfile
                                 .MeasurementOutcome.MISSING);
+    }
+
+    @Test
+    void preservesLegacyWireProjectionAcrossSignedV1AndV2RoundTrips()
+            throws Exception {
+        DomainFidelityInventory inventory = inventory();
+        ReadOnlyShadowComparison current = comparison(
+                inventory,
+                inventory.units().getFirst(),
+                List.of(match(
+                        DomainFidelityProfile.Dimension.BEHAVIOR,
+                        '1')),
+                true,
+                true);
+        ReadOnlyShadowComparisonIntegrity integrity = integrity();
+
+        for (String version : List.of(
+                ReadOnlyShadowComparison.V1_SCHEMA_VERSION,
+                ReadOnlyShadowComparison.V2_SCHEMA_VERSION)) {
+            ReadOnlyShadowComparison signed = integrity.sign(
+                    legacyComparison(current, version));
+            var wire = mapper.readTree(
+                    mapper.writeValueAsBytes(signed));
+
+            assertThat(wire.has("authorityProof"))
+                    .as(version)
+                    .isFalse();
+            assertThat(wire.has("comparisonPolicyRef"))
+                    .as(version)
+                    .isEqualTo(
+                            ReadOnlyShadowComparison
+                                    .V2_SCHEMA_VERSION
+                                    .equals(version));
+            assertThat(wire.has(
+                    "sourceResolutionAttestationRef"))
+                    .as(version)
+                    .isEqualTo(
+                            ReadOnlyShadowComparison
+                                    .V2_SCHEMA_VERSION
+                                    .equals(version));
+
+            ReadOnlyShadowComparison decoded =
+                    mapper.treeToValue(
+                            wire,
+                            ReadOnlyShadowComparison.class);
+            assertThat(integrity.verify(decoded))
+                    .isEqualTo(signed);
+        }
     }
 
     @Test
@@ -271,6 +320,7 @@ class ReadOnlyShadowDomainFidelitySourceTest {
                         signed.targetCapabilityRef(),
                         signed.comparisonPolicyRef(),
                         signed.sourceResolutionAttestationRef(),
+                        signed.authorityProof(),
                         signed.accessProof(),
                         signed.baseline(),
                         signed.candidate(),
@@ -349,6 +399,7 @@ class ReadOnlyShadowDomainFidelitySourceTest {
                         "SHADOW_SOURCE_RESOLUTION_ATTESTATION",
                         "sources",
                         '9'),
+                authorityProof(inventory.scope()),
                 new ReadOnlyShadowComparison.AccessProof(
                         ReadOnlyShadowComparison
                                 .AccessMode.READ_ONLY,
@@ -482,12 +533,69 @@ class ReadOnlyShadowDomainFidelitySourceTest {
                 source.targetCapabilityRef(),
                 source.comparisonPolicyRef(),
                 source.sourceResolutionAttestationRef(),
+                source.authorityProof(),
                 access,
                 baseline,
                 candidate,
                 source.observedAt(),
                 results,
                 source.comparisonSeal());
+    }
+
+    private static ReadOnlyShadowComparison legacyComparison(
+            ReadOnlyShadowComparison source,
+            String version) {
+        boolean v1 = ReadOnlyShadowComparison
+                .V1_SCHEMA_VERSION.equals(version);
+        return new ReadOnlyShadowComparison(
+                version,
+                source.comparisonId(),
+                source.revision(),
+                "",
+                source.scope(),
+                source.inventoryRef(),
+                source.unitId(),
+                source.scenarioCaseRef(),
+                source.targetCapabilityRef(),
+                v1 ? null : source.comparisonPolicyRef(),
+                v1
+                        ? null
+                        : source.sourceResolutionAttestationRef(),
+                null,
+                source.accessProof(),
+                source.baseline(),
+                source.candidate(),
+                source.observedAt(),
+                source.results(),
+                null);
+    }
+
+    private static ReadOnlyShadowComparison.AuthorityProof
+    authorityProof(CapabilitySnapshot.Scope scope) {
+        Instant confirmedAt =
+                DomainFidelityTestFixtures.NOW.minus(
+                        Duration.ofMinutes(1));
+        return new ReadOnlyShadowComparison.AuthorityProof(
+                fingerprint('0'),
+                ref(
+                        "SHADOW_SAMPLING_GRANT_ATTESTATION",
+                        "grant",
+                        '1'),
+                scope,
+                ref(
+                        "SHADOW_EXECUTION_GUARD_POLICY",
+                        "guard-policy",
+                        '2'),
+                ref(
+                        "SHADOW_EXECUTION_GUARD_POLICY_ATTESTATION",
+                        "guard-policy",
+                        '3'),
+                ref(
+                        "SHADOW_KILL_SWITCH_ATTESTATION",
+                        "kill-switch",
+                        '4'),
+                confirmedAt.minusSeconds(30),
+                confirmedAt);
     }
 
     private static MirrorArtifactRef ref(

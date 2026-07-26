@@ -20,8 +20,12 @@ import com.leanowtech.bloge.gateway.integration.mirror.DomainFidelityProfileInte
 import com.leanowtech.bloge.gateway.integration.mirror.DomainFidelityRepository;
 import com.leanowtech.bloge.gateway.integration.mirror.DomainFidelityService;
 import com.leanowtech.bloge.gateway.integration.mirror.DatabaseReadOnlyShadowExecutionGuard;
+import com.leanowtech.bloge.gateway.integration.mirror.DatabaseReadOnlyShadowAuthorityPublicationRepository;
 import com.leanowtech.bloge.gateway.integration.mirror.GovernedReadOnlyShadowDataPlane;
 import com.leanowtech.bloge.gateway.integration.mirror.ReadOnlyShadowAccessAuthority;
+import com.leanowtech.bloge.gateway.integration.mirror.ReadOnlyShadowAuthorityIntegrity;
+import com.leanowtech.bloge.gateway.integration.mirror.ReadOnlyShadowAuthorityPublicationSource;
+import com.leanowtech.bloge.gateway.integration.mirror.ReadOnlyShadowAuthorityTrustStore;
 import com.leanowtech.bloge.gateway.integration.mirror.ReadOnlyShadowBaselineConnector;
 import com.leanowtech.bloge.gateway.integration.mirror.ReadOnlyShadowCandidateConnector;
 import com.leanowtech.bloge.gateway.integration.mirror.ReadOnlyShadowComparisonIntegrity;
@@ -36,6 +40,8 @@ import com.leanowtech.bloge.gateway.integration.mirror.ReadOnlyShadowJobService;
 import com.leanowtech.bloge.gateway.integration.mirror.ReadOnlyShadowJobWorker;
 import com.leanowtech.bloge.gateway.integration.mirror.ReadOnlyShadowKillSwitchAuthority;
 import com.leanowtech.bloge.gateway.integration.mirror.ReadOnlyShadowSamplingGrantAuthority;
+import com.leanowtech.bloge.gateway.integration.mirror.SignedReadOnlyShadowKillSwitchAuthority;
+import com.leanowtech.bloge.gateway.integration.mirror.SignedReadOnlyShadowSamplingGrantAuthority;
 import com.leanowtech.bloge.gateway.integration.mirror.ReadOnlyShadowSourceResolutionVerifier;
 import com.leanowtech.bloge.gateway.integration.mirror.MirrorSessionCheckpointIntegrityService;
 import com.leanowtech.bloge.gateway.integration.mirror.ScenarioArtifactRepository;
@@ -439,13 +445,37 @@ class MirrorRuntimeConfigurationTest {
         assertThat(context.getBeansOfType(
                 ReadOnlyShadowJobService.class)).hasSize(1);
         assertThat(context.getBeansOfType(
+                ReadOnlyShadowAuthorityIntegrity.class))
+                .hasSize(1);
+        assertThat(context.getBeansOfType(
+                ReadOnlyShadowAuthorityPublicationSource.class)
+                .values())
+                .singleElement()
+                .isInstanceOf(
+                        DatabaseReadOnlyShadowAuthorityPublicationRepository
+                                .class)
+                .satisfies(source ->
+                        assertThat(source.available()).isTrue());
+        assertThat(context.getBeansOfType(
+                ReadOnlyShadowAuthorityTrustStore.class)
+                .values())
+                .singleElement()
+                .satisfies(trust ->
+                        assertThat(trust.available()).isFalse());
+        assertThat(context.getBeansOfType(
                 ReadOnlyShadowSamplingGrantAuthority.class).values())
                 .singleElement()
+                .isInstanceOf(
+                        SignedReadOnlyShadowSamplingGrantAuthority
+                                .class)
                 .satisfies(authority ->
                         assertThat(authority.available()).isFalse());
         assertThat(context.getBeansOfType(
                 ReadOnlyShadowKillSwitchAuthority.class).values())
                 .singleElement()
+                .isInstanceOf(
+                        SignedReadOnlyShadowKillSwitchAuthority
+                                .class)
                 .satisfies(authority ->
                         assertThat(authority.available()).isFalse());
         assertThat(context.getBeansOfType(

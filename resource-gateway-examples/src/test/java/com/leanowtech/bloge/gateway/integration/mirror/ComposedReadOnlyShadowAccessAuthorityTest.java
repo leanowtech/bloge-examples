@@ -108,6 +108,7 @@ class ComposedReadOnlyShadowAccessAuthorityTest {
                         5,
                         Duration.ofSeconds(30)),
                 original.authorityAttestationRef(),
+                original.guardPolicyAttestationRef(),
                 NOW.plusSeconds(2)));
 
         assertThatThrownBy(() -> authority.confirm(
@@ -327,8 +328,13 @@ class ComposedReadOnlyShadowAccessAuthorityTest {
                 LIMITS,
                 ReadOnlyShadowJobTestFixtures.ref(
                         "SHADOW_SAMPLING_GRANT_ATTESTATION",
-                        "grant-attestation",
+                        request.accessGrant()
+                                .samplingGrantRef().id(),
                         '1'),
+                ReadOnlyShadowJobTestFixtures.ref(
+                        "SHADOW_EXECUTION_GUARD_POLICY_ATTESTATION",
+                        "baseline-pressure",
+                        '2'),
                 NOW);
     }
 
@@ -345,7 +351,8 @@ class ComposedReadOnlyShadowAccessAuthorityTest {
                 NOW.plusSeconds(60),
                 ReadOnlyShadowJobTestFixtures.ref(
                         "SHADOW_KILL_SWITCH_ATTESTATION",
-                        "kill-switch-attestation",
+                        request.accessGrant()
+                                .killSwitchRef().id(),
                         '2'),
                 NOW);
     }

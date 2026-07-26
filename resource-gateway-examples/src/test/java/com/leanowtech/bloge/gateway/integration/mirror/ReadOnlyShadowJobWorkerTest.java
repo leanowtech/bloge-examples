@@ -151,6 +151,7 @@ class ReadOnlyShadowJobWorkerTest {
         ReadOnlyShadowDataPlane dataPlane =
                 fixed(new ReadOnlyShadowDataPlane.ExecutionResult(
                         mismatch,
+                        source.authorityProof(),
                         source.sourceResolutionAttestationRef(),
                         source.baseline(),
                         source.candidate(),

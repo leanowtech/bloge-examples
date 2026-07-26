@@ -74,9 +74,9 @@
   不表示部署级 egress attestation 或 certification 已完成。客户环境的数据
   使用授权、跨系统 schema owner、部署/namespace 形态等组织决策仍是生产准入前置，不由仓库测试冒充完成。
 - 当前验证基线：前端 Vitest `165/165` 全绿并完成 TypeScript/Vite 生产构建；带
-  `-Pfrontend` 的 Resource Gateway 完整门禁为 `5309` 项 Java 测试、0 失败、0 错误、
+  `-Pfrontend` 的 Resource Gateway 完整门禁为 `5335` 项 Java 测试、0 失败、0 错误、
   0 跳过，其中真实 Chrome DOM/工作流 `36/36` 全绿，可执行 Boot JAR 同步通过。独立 test-kit
-  `429/429` 全绿，143 份打包 Mirror 资源（其中 131 份 JSON Schema）完成 fail-closed
+  `436/436` 全绿，147 份打包 Mirror 资源（其中 135 份 JSON Schema）完成 fail-closed
   引用闭包与打包验证，公共
   JavaDoc、普通 JAR 与 shaded JAR 均成功生成。
 - Stage 1 第二增量已实现 `MirrorPlanCompiler`、`MirrorPlanCompilationRequest`、`CompiledMirrorPlan` 和
@@ -577,12 +577,12 @@ Resource Gateway 已有的工业底座应直接复用：
 | 日志蒸馏与语料 | 82% | payload-free signed observation、准入/隔离、immutable review、candidate/publication/trajectory/cluster 独立 lineage、元数据风险门禁、fixture exact/trajectory/cluster binding、在线 revalidation、test/staging `RECORDED_EXACT`/`RECORDED_TRAJECTORY`/`RECORDED_CLUSTER`、BLOGE 原生 retry loop、identity-safe projection、Wilson confidence、Session state read 与独立 verifier 已落地；缺生产 payload authority、漂移、偏差、outcome 校准和删除证明 |
 | 有状态业务世界 | 91% | 协议、read/write 退款 fixture、独立 verifier/sealer/client、事务内核、受保护 Session API、独立 AES-GCM 数据面、lease/fence/CAS、durable write-attempt journal/reconciliation、TTL/destroy、全局/scope 容量、保留字节、命令背压、过期擦除、固定 read head、run-scoped virtual write、真实 DAG read-write-read、payload-free v1/v2/v3 state evidence、read-only/successful-transition/write-outcome ANEKE seed、签名 HASH_ONLY checkpoint 与同数据面代际精确恢复准入已落地；缺 TEE/KMS、跨区域数据恢复、真实 process-kill/network parity、目标数据库容量认证和 HA/DR certification |
 | Scenario/Rehearsal | 99.3% | ScenarioPack/Case/Assertion、exact compiler、可恢复逐 case runtime、签名 aggregate、audit/retention、ANEKE seed、durable batch manifest/queue/API/worker、region-local DAG/KMS 双 scheduler、逐 case cooperative control、v1/v2 签名 batch evidence/index、批次 operation/lifecycle audit、retention/multi-hold/逻辑删除证明、durable finalization outbox/lease/retry/quarantine/status、受控 remediation、聚合 health/SLO，以及 root-sealed ANEKE batch workbook 已落地；缺 hard kill、企业策略/WORM/anchor、异构消费者和目标环境认证 |
-| Fidelity/Outcome | 70% | owner-approved content-addressed inventory、无总分七维 profile、fail-closed freshness/低样本/abstention/source debt、Wilson 95%、exact lineage、strict Schema、独立 Test Kit 重算验真、full-scope append-only repository、managed signing、受保护 inventory/profile read API、同事务 audit、independently re-verified Scenario source、v2 Shadow policy/source-resolution closure、grant ordinal 唯一占用、数据库时钟 deadline、lease/retry/crash recovery、protected Shadow API、append-only lifecycle、bounded scheduler、独立 readiness、双重观测 access authority、隔离 connector/source verifier/comparison engine，以及数据库权威的跨副本 concurrency/rate/circuit/fenced-lease guard 已落地；缺真实 baseline/candidate connector、在线签名 grant/kill-switch adapter、outcome/cohort adapter、drift 降级和校准闭环 |
+| Fidelity/Outcome | 76% | owner-approved content-addressed inventory、无总分七维 profile、fail-closed freshness/低样本/abstention/source debt、Wilson 95%、exact lineage、strict Schema、独立 Test Kit 重算验真、full-scope append-only repository、managed signing、受保护 inventory/profile read API、同事务 audit、independently re-verified Scenario source、v3 Shadow policy/source-resolution 与双次 online-authority evidence closure、grant ordinal 唯一占用、数据库时钟 deadline、lease/retry/crash recovery、protected Shadow API、append-only lifecycle、bounded scheduler、独立 readiness、双重观测 access authority、隔离 connector/source verifier/comparison engine、数据库权威的跨副本 concurrency/rate/circuit/fenced-lease guard，以及三类 signed current-head authority protocol/repository/adapter 已落地；缺 managed authority trust/distribution、真实 baseline/candidate connector、outcome/cohort adapter、drift 降级和校准闭环 |
 | 业务运营工作台 | 72% | exact-scope keyset 队列、证据分诊/deep link/响应式 UI，以及 reviewed remediation 八对象协议、server-owned 双角色策略、durable approval ledger、CAS、successor 原子准入、签名前后继对账、角色隔离 Owner/Reviewer 控件、auth-before-decode API 和 capability probe 已落地；仍缺零 DSL case 调整、256-item 密度/性能、任务分派与 SLA、复杂业务样例、可访问性及真实企业 IdP/委派/Owner 认证 |
 
-结论：基础设施准备度约 94%，固定权重理想态完成度为 84.16%。剩余差距 15.84%，主要矛盾已经
-从“能否在多副本下守住真实源预算和熔断状态”转向“如何实现真实、可认证且可轮换的
-authority/connector adapter，在数据使用授权、数据库共享预算、kill switch 与外部 egress 证明下持续生成 comparison，
+结论：基础设施准备度约 94%，固定权重理想态完成度为 85.60%。剩余差距 14.40%，主要矛盾已经
+从“如何定义并在线重验 grant/kill-switch/guard-policy”转向“如何接入真实、可认证且可轮换的
+managed authority trust/distribution 与 connector adapter，在数据使用授权、数据库共享预算、kill switch 与外部 egress 证明下持续生成 comparison，
 并用 cohort sampling 和 authoritative outcome
 校准模拟与真实业务之间的差距，在来源漂移后自动撤销 serving 结论”。
 
@@ -2034,13 +2034,16 @@ bucket 分片 authority row；分片键、bucket 数和迁移 epoch 必须成为
 `ReadOnlyShadowJobWorker` 只向受信 `ReadOnlyShadowDataPlane` 传递 payload-free permit。稳定
 `jobId` 同时作为跨 crash attempt 的 data-plane idempotency identity；connector 必须在每次外部读
 和 candidate execution 前 heartbeat。worker 从 immutable request 与数据面返回的 runtime
-`AccessProof` 重建 v2 comparison，强制 proof 与 admitted grant 精确相等，再通过 managed signer
+`AccessProof` 与 `AuthorityProof` 重建 v3 comparison，强制零写 proof 与 admitted grant 精确
+相等，并冻结 admission fingerprint、grant/policy/switch 三份 publication attestation、guard scope
+和前后观测时间，再通过 managed signer
 签署并和 terminal job 原子发布。未知异常只落稳定 code，不保存 exception message。data plane 或
 signer readiness 不可用时 worker 在 claim 前返回 no-work，不消耗业务 attempt。
 
 独立 Test Kit 新增 `ReadOnlyShadowJobVerifier`，重算 request fingerprint、确定性 job id、mutable
-record fingerprint 和 lifecycle；成功态继续验 v2 comparison 的 Ed25519 seal、artifact ref、
-grant proof、policy 与 source-resolution closure。该增量当时把打包 Mirror 资源由 138 增至 141；
+record fingerprint 和 lifecycle；成功态继续验 comparison 的 Ed25519 seal、artifact ref、
+grant proof、policy 与 source-resolution closure；v3 还独立复验三类 authority publication 坐标与
+双次观测时间。该增量当时把打包 Mirror 资源由 138 增至 141；
 本轮新增 lifecycle event/page 后总数为 143。
 专项测试覆盖：
 
@@ -2246,6 +2249,83 @@ authority expiry clamp、表结构 payload exclusion 与数据库篡改失败关
 下一最短路径是把 grant、kill switch 与 guard policy 冻结成可跨进程/跨语言独立验真的签名
 wire protocol，并实现轮换、撤销、缓存上限和 outage 语义明确的在线 adapter；在此基础上才能安全
 接真实 baseline/candidate connector。
+
+### 3.34 2026-07-26 Signed current-head Shadow authority 迭代差距复评
+
+共享 guard 关闭了多副本预算分裂，却仍不能回答“谁在此刻允许这次真实读、谁能紧急叫停、
+限额来自哪一代策略”。如果直接让业务配置或 job request 提供这些值，会留下五个结构性问题：
+
+1. **合法签名不等于当前授权**：历史 grant 在密码学上仍然合法；若 runtime 能按 fingerprint
+   回查历史版本，发布 inactive successor 也无法撤销队列内和运行中的旧授权。
+2. **grant 与物理预算策略可能各自漂移**：只验证 grant 内的 policy ref，不能证明该 policy
+   仍是当前 guard head；旧宽松 limits 会在 policy 收紧后继续运行。
+3. **key rotation 容易被正向缓存穿透**：进程缓存“该 key/grant 已验证”会让紧急 revocation
+   直到 TTL 结束才生效，多副本缓存还会形成不一致撤销窗口。
+4. **多种 authority 共用签名域会产生类型混淆**：相同 envelope 形状下，grant signature
+   可能被重放为 kill-switch 或 policy decision。
+5. **本地 Map/单行 upsert 无法证明单调 head**：并发发布会产生 fork、revision gap、rollback
+   或索引与 JSON 不一致，重启后也无法解释哪一代是权威 current state。
+
+本轮沿这些病根实现 signed current-head authority：
+
+- 新增 `ReadOnlyShadowSamplingGrantPublication.v1`、
+  `ReadOnlyShadowKillSwitchPublication.v1` 与
+  `ReadOnlyShadowGuardPolicyPublication.v1`。三者分别使用独立 signature domain，冻结 stable
+  stream id、positive revision、exact predecessor、完整 enterprise scope、issuer、短有效窗和
+  detached Ed25519 seal；协议不能表示 payload、credential、endpoint 或异常。
+- sampling grant 额外冻结 active、maximum samples、authority-owned `guardScope` 与 exact
+  guard-policy material ref；guard policy 冻结共享 concurrency/rate/circuit limits；kill switch
+  的最大 freshness window 只有 15 分钟。签名时间、activation delay、exclusive expiry 和
+  policy duration 都有独立语义校验，不能只依赖 transport Schema。
+- `ReadOnlyShadowAuthorityIntegrity` 独立重算 domain-separated material fingerprint、完整
+  publication fingerprint、issuer/key identity、签名时 key window 与当前 key lifecycle。
+  每把 key 的本地 delegation 必须同时精确绑定 enterprise scope 与 publication kind，不能拿
+  tenant A 的 sampling key 验 tenant B，也不能拿 grant key 验 policy。`RETIRED` key 必须带
+  `retiredAt`，只接受严格早于该时刻的签名；`REVOKED` 永不正向验真。grant、kill switch 和
+  policy 的签名不能跨协议复用。
+- `DatabaseReadOnlyShadowAuthorityPublicationRepository` 以完整
+  `scope + artifact kind + stream id` 保存 append-only publication 与单独 head。事务内 row lock
+  和 compare-and-set 严格拒绝 bootstrap gap、revision gap、wrong predecessor、rollback 与
+  same-revision fork。publication 必须先经动态 trust store 按 exact scope/kind/key 验真后才能
+  创建或推进 head，未受信但内容地址合法的输入不能投毒 current stream。并发创建 revision-one
+  head 遇唯一键竞争时回滚并在新的事务中重试完整 append，避免在 PostgreSQL 已 abort 的事务内
+  继续执行；H2 双实例测试已验证这个事务形状，但真实 PostgreSQL 多副本认证仍属于
+  `RG-MIR-CERT-001`。每次读取都把索引与 strict canonical JSON 交叉验真，数据库只保存
+  payload-free authority material。
+- `SignedReadOnlyShadowSamplingGrantAuthority` 与
+  `SignedReadOnlyShadowKillSwitchAuthority` 每次准入和终态确认都重新读取 current head、重新从
+  `ReadOnlyShadowAuthorityTrustStore` 解析 key，并独立验签。sampling adapter 还会以 grant
+  签入的 `guardScope` 读取并验证当前 policy，并把 grant publication 与 guard-policy
+  publication 的两份独立 attestation ref 一起带入运行期决策；后续 closure 不能只保留 grant
+  证明。inactive/disabled successor、policy successor、key revocation、source outage、
+  cross-scope 或 exact-ref drift 都立即失败关闭。runtime 不提供历史 publication lookup，也不
+  持有正向验证缓存。
+- 当前 `ReadOnlyShadowComparison.v3` 把这条运行期事实闭合到终态证据：记录 joined
+  admission fingerprint、grant/policy/switch 三份 publication attestation、authority-owned
+  guard scope，以及前后两次 authority 观测时间。producer 模型和独立 Test Kit 都要求每份
+  attestation 与对应 material ref 的 `id + revision` 精确一致，并检查
+  `admittedAt <= confirmedAt <= observedAt`；v1/v2 继续兼容读取，但 worker 不再新产出缺少
+  online-authority proof 的 v2。
+- Spring 默认安装数据库 publication source 和 signed adapter，但 trust store 仍是 unavailable。
+  这使协议与持久化可以被集成和测试，同时 `dataPlane/worker/serving ready` 在企业 key/revocation
+  authority 未接入前继续为 false。
+- 三份 Draft 2020-12 strict Schema 已进入 wire-contract authority。独立 Test Kit 新增本地
+  current-head binding、外部 verification key 与 verifier，不链接 server/Spring，独立执行 Schema、
+  双层 content address、完整 scope/current-head、短时窗、scope/type key delegation、retirement
+  boundary、canonical padded Base64 和 Ed25519 校验。
+
+专项测试覆盖三协议正常验签、未知字段、material tamper、跨协议重放、stale head、跨租户、
+inactive/disabled successor、guard-policy successor、动态 key revocation、source/trust outage、
+exclusive expiry、retirement boundary、策略 duration 上限、三类重启持久化、并发 successor、
+并发 revision-one head、未受信 publication 零 head 副作用、strict JSON、索引/JSON 损坏、
+canonical Base64 和 payload-excluding table shape；真实 Spring 组合仍验证默认 fail-closed。
+
+本轮将 `Fidelity/Outcome` 从 `70%` 上调到 `76%`。按固定 `24%` 权重，加权贡献从
+`16.80` 提高到 `18.24`，总分从 `84.16%` 提高到 `85.60%`，距理想态 `14.40%`。
+没有继续上调的原因同样明确：当前 repository 是本地 current-head 工程协议，不是企业 managed
+authority service；默认 trust store 没有 root-signed key set、跨区域 revocation cursor、传播 SLO、
+mTLS 发布 API 或 rotation certification。下一最短路径是先完成这条 trust/distribution 链，再接
+第一个真实 baseline/candidate connector 和 source-resolution/comparison policy adapter。
 
 ## 4. 目标架构与系统责任
 
@@ -3039,7 +3119,7 @@ session 重放造成重复状态、运行时依赖漂移。
 | `POST /api/mirror/shadow-jobs` | 提交 payload-free Shadow command | job/request fingerprint 幂等、grant ordinal 唯一、scope 来自受信 identity | 已实现（test/staging + 显式 Mirror 开关） |
 | `GET /api/mirror/shadow-jobs/{jobId}` | 读取 integrity-verified durable job | exact scope、只读 | 已实现 |
 | `GET /api/mirror/shadow-jobs/{jobId}/request` | 读取独立 job 验真所需 immutable command | exact scope、只读 | 已实现 |
-| `GET /api/mirror/shadow-jobs/{jobId}/comparison` | 读取 terminal signed v2 comparison | exact scope、只读；非成功态 not found | 已实现 |
+| `GET /api/mirror/shadow-jobs/{jobId}/comparison` | 读取 terminal signed comparison（当前产出 v3，兼容读取 v1/v2） | exact scope、只读；非成功态 not found；v3 固化 admission fingerprint、grant/policy/kill-switch attestation 与确认时序 | 已实现 |
 | `GET /api/mirror/shadow-jobs/{jobId}/lifecycle` | 读取 append-only payload-free lifecycle page | exclusive sequence cursor、1..1000 bounded page | 已实现 |
 | `GET /api/mirror/fidelity/domains/{domainId}` | 查询 fidelity profile | 只读 | 待实现 |
 | `POST /api/mirror/outcomes` | 回填 outcome | outcome identity 幂等 | 待实现 |
@@ -3467,7 +3547,8 @@ case 微调和结果解释；发布门禁能区分执行失败、断言失败、
 
 - DomainFidelityInventory/Profile 协议、confidence、coverage、独立验真、durable repository、
   managed signing、受保护 API、signed Scenario workbook source adapter，以及 signed
-  read-only Shadow comparison/typed diff/source adapter；durable Shadow request/job
+  read-only Shadow comparison v1/v2/v3、typed diff/source adapter 和 v3 AuthorityProof；
+  durable Shadow request/job
   protocol、queue/worker、protected API、operation/lifecycle audit、bounded scheduler 与
   独立 readiness（真实 data plane authority 与 outcome/cohort adapter 尚未完成）；
 - 只读 shadow jobs 的真实采样数据面 admission 和 drift debt；
@@ -3579,8 +3660,8 @@ permit、v1/v2/v3 双向兼容读取和独立 test-kit 语义复验；非 Java v
 | 0 | RG-MIR-SCEN-OPS-003 finalization health/SLO | 已完成 | RG Runtime + SRE | durable finalization/remediation | strict health v1、exact-scope API、Actuator、固定基数 metric、Test Kit、脚本/运行文档 | unknown state/policy drift/store failure 不误绿；API/monitor/probe 使用同一 evaluator |
 | 1 | RG-MIR-SCEN-005 ANEKE batch workbook | 已完成 | RG Evidence + ANEKE Correctness | signed batch v2、child seed、batch retention | batch seed/Schema、projector、root seal、独立 verifier/client、受保护 API、audit、capability | 1..256 个 item 全闭合；普通门禁读取无 N+1；deep audit 对漏项/重复/child drift 失败关闭 |
 | 2 | RG-MIR-SCEN-006 Owner rehearsal workbench | P0 / 进行中（证据分诊与 reviewed remediation 纵切完成） | Author UX + RG Scenario + 业务 Owner | Work package 1 | batch 列表、shape summary、证据分诊/deep link、remediation protocol/policy/repository/service/API、双角色控件、原子 successor admission 和签名对账已完成；待零 DSL case 调整、任务分派/SLA、256-item 性能/可访问性及企业 IdP/Owner 认证 | owner 能在 15 分钟内定位失败、区分执行/断言/低保真/证据故障并完成审阅；浏览器 E2E 覆盖 256-item 复杂批次 |
-| 3 | RG-MIR-FID-001 Fidelity protocol/kernel | P0 / 进行中（Scenario + Shadow control-plane 纵切完成） | RG Domain + ANEKE Governance + 数据科学 | Work package 1；owner 冻结 coverage taxonomy | 已完成 `DomainFidelityInventoryRegistrationRequest/Inventory/Profile.v1`、strict Schema、完整 denominator、七维 metric、Wilson 95%、freshness、abstention/source debt、exact lineage、fail-closed projector、独立 Test Kit verifier、full-scope append-only repository、managed signer、受保护 register/read API、同事务 audit、typed capability、Scenario source、signed Shadow v1/v2 comparison/source adapter、durable request/job/lifecycle verifier；待 outcome/cohort source adapter | 空分母/低样本/缺失/陈旧不能高分；合法重签的伪造 metric/expiry/denominator/shadow MATCH/job/lifecycle closure 仍被独立拒绝；审计失败回滚资产；每个 profile 分量可回到 exact inventory/source generation；单次 Scenario/Shadow 不得冒充 outcome/request-space/error-distribution |
-| 4 | RG-MIR-FID-002 Read-only shadow/diff | P1 / 进行中（protected control plane 完成） | RG Runtime + TEE/Data Plane + SRE | Work package 3；数据使用授权 | 已完成 signed v2 comparison、policy/source-resolution closure、同请求双边 closure、零写/采样/egress/kill-switch proof、typed diff、grant ordinal 唯一占用、数据库时钟 deadline、lease/retry/crash recovery、worker、protected API、同事务 operation/lifecycle audit、bounded scheduler、独立 readiness 和 verifier；待 baseline/candidate/authority connector、预算/熔断/运行时 kill switch、drift downgrade/revoke | 真实写和凭据为 0；同 grant ordinal 不重复 admission；旧 lease 不发布；authority outage 不耗业务 attempt；schema/branch/retry/state/effect 差异可归因；API/queue/scheduler/adapter readiness 不冒充 data-plane readiness；漂移自动使 readiness/gate stale |
+| 3 | RG-MIR-FID-001 Fidelity protocol/kernel | P0 / 进行中（Scenario + Shadow control-plane 纵切完成） | RG Domain + ANEKE Governance + 数据科学 | Work package 1；owner 冻结 coverage taxonomy | 已完成 `DomainFidelityInventoryRegistrationRequest/Inventory/Profile.v1`、strict Schema、完整 denominator、七维 metric、Wilson 95%、freshness、abstention/source debt、exact lineage、fail-closed projector、独立 Test Kit verifier、full-scope append-only repository、managed signer、受保护 register/read API、同事务 audit、typed capability、Scenario source、signed Shadow v1/v2/v3 comparison/source adapter、v3 AuthorityProof、durable request/job/lifecycle verifier；待 outcome/cohort source adapter | 空分母/低样本/缺失/陈旧不能高分；合法重签的伪造 metric/expiry/denominator/shadow MATCH/job/lifecycle/authority closure 仍被独立拒绝；审计失败回滚资产；每个 profile 分量可回到 exact inventory/source generation；单次 Scenario/Shadow 不得冒充 outcome/request-space/error-distribution |
+| 4 | RG-MIR-FID-002 Read-only shadow/diff | P1 / 进行中（signed authority current-head 纵切完成） | RG Runtime + TEE/Data Plane + SRE | Work package 3；数据使用授权 | 已完成 signed comparison v1/v2 兼容读取与 v3 当前产出、v3 AuthorityProof、policy/source-resolution closure、同请求双边 closure、零写/采样/egress/kill-switch proof、typed diff、grant ordinal 唯一占用、数据库时钟 deadline、lease/retry/crash recovery、worker、protected API、同事务 operation/lifecycle audit、bounded scheduler、独立 readiness/verifier、数据库共享 guard，以及 signed grant/kill-switch/guard-policy protocol、append-only current-head repository 和无正向缓存 adapter；待 managed authority trust/distribution、真实 baseline/candidate/source resolver/comparison connector 与 drift downgrade/revoke | 真实写和凭据为 0；同 grant ordinal 不重复 admission；旧 lease 不发布；authority outage/revocation 不耗业务 attempt；v3 证据可证明 exact admission/confirmation authority；schema/branch/retry/state/effect 差异可归因；API/queue/scheduler/adapter readiness 不冒充 data-plane readiness；漂移自动使 readiness/gate stale |
 | 5 | RG-MIR-OUT-001 Outcome calibration | P1 / 2 sprints | ANEKE + 业务分析 + RG Domain | Work package 3；权威 outcome owner | versioned outcome definition/connector、delayed/censored reconciliation、calibration cohort、candidate assertion | 多源冲突和迟到结果不覆盖历史；候选不经 owner 不 serving；能证明或否证 fidelity 与业务结果关系 |
 | 6 | RG-MIR-CERT-001 Runtime certification harness | P0 并行 / 3-4 sprints | SRE + Security + RG Runtime | 当前 Stage 3/4 runtime | PostgreSQL 多副本、真实 KMS、forked JVM kill、network partition、rolling upgrade、backup/restore、capacity 工具与证据包 | 每个故障点有期望状态/恢复上限/数据不变量；旧 owner/epoch 永不发布；结果可在 CI/nightly/客户环境重放 |
 | 7 | RG-MIR-GOV-001 Enterprise evidence governance | P0 并行 / 2-3 sprints | Security + Legal/Data Governance + RG Evidence | 企业 policy authority 与 WORM/anchor | retention policy generation、external anchor、legal hold authority、物理删除/备份证明、delegated approval | 本地逻辑删除不冒充物理删除；policy/anchor 不可用时 certifiable readiness 关闭；跨组织委派可撤销且有审计 |

@@ -38,9 +38,9 @@ implementation. The JAR packages the authoritative v1 JSON Schema and provides:
   reconstructs every unit denominator, dimension metric, Wilson 95% interval,
   freshness boundary, abstention debt, source composition, limitation, content
   address, and Ed25519 seal without accepting a composite score; signed
-  `ReadOnlyShadowComparison.v1/v2` Schemas and an independent verifier that rejects
+  `ReadOnlyShadowComparison.v1/v2/v3` Schemas and an independent verifier that rejects
   paired-request, zero-write, sampling-budget, typed-diff, normalization-policy,
-  source-resolution, content-address, key-policy, and signature drift; durable
+  source-resolution, online-authority closure, content-address, key-policy, and signature drift; durable
   `ReadOnlyShadowJobRequest.v1` / `ReadOnlyShadowJob.v1` Schemas plus an independent verifier
   that reconstructs request/job fingerprints, lifecycle, signed comparison, and exact closure;
 - packaged validation and version constants for the payload-free

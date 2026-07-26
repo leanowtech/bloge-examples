@@ -760,9 +760,16 @@ class DatabaseReadOnlyShadowExecutionGuardTest {
                         limits,
                         ReadOnlyShadowJobTestFixtures.ref(
                                 "SHADOW_SAMPLING_GRANT_ATTESTATION",
-                                "guard-grant-attestation-"
-                                        + policyRevision,
+                                request.accessGrant()
+                                        .samplingGrantRef()
+                                        .id(),
                                 '1'),
+                        new MirrorArtifactRef(
+                                "SHADOW_EXECUTION_GUARD_POLICY_ATTESTATION",
+                                policyRef.id(),
+                                policyRef.revision(),
+                                ReadOnlyShadowJobTestFixtures
+                                        .fingerprint('2')),
                         NOW);
         ReadOnlyShadowKillSwitchAuthority.State killSwitch =
                 new ReadOnlyShadowKillSwitchAuthority.State(
@@ -774,7 +781,9 @@ class DatabaseReadOnlyShadowExecutionGuardTest {
                         validUntil,
                         ReadOnlyShadowJobTestFixtures.ref(
                                 "SHADOW_KILL_SWITCH_ATTESTATION",
-                                "guard-kill-attestation",
+                                request.accessGrant()
+                                        .killSwitchRef()
+                                        .id(),
                                 '2'),
                         NOW);
         MirrorDeploymentIsolationRunTrust.Admission egress =

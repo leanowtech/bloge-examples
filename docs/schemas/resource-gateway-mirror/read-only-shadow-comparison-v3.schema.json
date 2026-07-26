@@ -1,0 +1,185 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://bloge.dev/schemas/resource-gateway-mirror/read-only-shadow-comparison-v3.schema.json",
+  "title": "Resource Gateway Read-only Shadow Comparison v3",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "comparisonId",
+    "revision",
+    "comparisonFingerprint",
+    "scope",
+    "inventoryRef",
+    "unitId",
+    "scenarioCaseRef",
+    "targetCapabilityRef",
+    "comparisonPolicyRef",
+    "sourceResolutionAttestationRef",
+    "authorityProof",
+    "accessProof",
+    "baseline",
+    "candidate",
+    "observedAt",
+    "results",
+    "comparisonSeal"
+  ],
+  "properties": {
+    "schemaVersion": {
+      "const": "resourceGateway.readOnlyShadowComparison.v3"
+    },
+    "comparisonId": {
+      "$ref": "read-only-shadow-comparison-v1.schema.json#/$defs/identifier"
+    },
+    "revision": {
+      "type": "integer",
+      "minimum": 1
+    },
+    "comparisonFingerprint": {
+      "$ref": "mirror-plan-v1.schema.json#/$defs/fingerprint"
+    },
+    "scope": {
+      "$ref": "mirror-plan-v1.schema.json#/$defs/scope"
+    },
+    "inventoryRef": {
+      "$ref": "read-only-shadow-comparison-v1.schema.json#/$defs/inventoryRef"
+    },
+    "unitId": {
+      "$ref": "read-only-shadow-comparison-v1.schema.json#/$defs/identifier"
+    },
+    "scenarioCaseRef": {
+      "$ref": "domain-fidelity-inventory-v1.schema.json#/$defs/scenarioCaseRef"
+    },
+    "targetCapabilityRef": {
+      "$ref": "read-only-shadow-comparison-v1.schema.json#/$defs/capabilityRef"
+    },
+    "comparisonPolicyRef": {
+      "$ref": "read-only-shadow-comparison-v2.schema.json#/$defs/comparisonPolicyRef"
+    },
+    "sourceResolutionAttestationRef": {
+      "$ref": "read-only-shadow-comparison-v2.schema.json#/$defs/sourceResolutionAttestationRef"
+    },
+    "authorityProof": {
+      "$ref": "#/$defs/authorityProof"
+    },
+    "accessProof": {
+      "$ref": "read-only-shadow-comparison-v1.schema.json#/$defs/accessProof"
+    },
+    "baseline": {
+      "$ref": "read-only-shadow-comparison-v1.schema.json#/properties/baseline"
+    },
+    "candidate": {
+      "$ref": "read-only-shadow-comparison-v1.schema.json#/properties/candidate"
+    },
+    "observedAt": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "results": {
+      "$ref": "read-only-shadow-comparison-v1.schema.json#/properties/results"
+    },
+    "comparisonSeal": {
+      "$ref": "domain-fidelity-profile-v1.schema.json#/$defs/evidenceSeal"
+    }
+  },
+  "$defs": {
+    "authorityProof": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "admissionFingerprint",
+        "samplingGrantAttestationRef",
+        "guardScope",
+        "guardPolicyRef",
+        "guardPolicyAttestationRef",
+        "killSwitchAttestationRef",
+        "admittedAt",
+        "confirmedAt"
+      ],
+      "properties": {
+        "admissionFingerprint": {
+          "$ref": "mirror-plan-v1.schema.json#/$defs/fingerprint"
+        },
+        "samplingGrantAttestationRef": {
+          "$ref": "#/$defs/samplingGrantAttestationRef"
+        },
+        "guardScope": {
+          "$ref": "mirror-plan-v1.schema.json#/$defs/scope"
+        },
+        "guardPolicyRef": {
+          "$ref": "#/$defs/guardPolicyRef"
+        },
+        "guardPolicyAttestationRef": {
+          "$ref": "#/$defs/guardPolicyAttestationRef"
+        },
+        "killSwitchAttestationRef": {
+          "$ref": "#/$defs/killSwitchAttestationRef"
+        },
+        "admittedAt": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "confirmedAt": {
+          "type": "string",
+          "format": "date-time"
+        }
+      }
+    },
+    "samplingGrantAttestationRef": {
+      "allOf": [
+        {
+          "$ref": "domain-fidelity-inventory-v1.schema.json#/$defs/artifactRef"
+        },
+        {
+          "properties": {
+            "kind": {
+              "const": "SHADOW_SAMPLING_GRANT_ATTESTATION"
+            }
+          }
+        }
+      ]
+    },
+    "guardPolicyRef": {
+      "allOf": [
+        {
+          "$ref": "domain-fidelity-inventory-v1.schema.json#/$defs/artifactRef"
+        },
+        {
+          "properties": {
+            "kind": {
+              "const": "SHADOW_EXECUTION_GUARD_POLICY"
+            }
+          }
+        }
+      ]
+    },
+    "guardPolicyAttestationRef": {
+      "allOf": [
+        {
+          "$ref": "domain-fidelity-inventory-v1.schema.json#/$defs/artifactRef"
+        },
+        {
+          "properties": {
+            "kind": {
+              "const": "SHADOW_EXECUTION_GUARD_POLICY_ATTESTATION"
+            }
+          }
+        }
+      ]
+    },
+    "killSwitchAttestationRef": {
+      "allOf": [
+        {
+          "$ref": "domain-fidelity-inventory-v1.schema.json#/$defs/artifactRef"
+        },
+        {
+          "properties": {
+            "kind": {
+              "const": "SHADOW_KILL_SWITCH_ATTESTATION"
+            }
+          }
+        }
+      ]
+    }
+  }
+}
