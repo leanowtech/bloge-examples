@@ -591,6 +591,20 @@ class CapabilityMirrorSchemaPackagingTest {
                 .endsWith(
                         "online-read-only-shadow-source-resolution-stage1-v1.fixture.json");
         assertThat(CapabilityMirrorProtocol
+                .ONLINE_READ_ONLY_SHADOW_WORKER_COMPATIBILITY_V1)
+                .isEqualTo(
+                        OnlineReadOnlyShadowWorkerCompatibilityFixture
+                                .SCHEMA_VERSION);
+        assertThat(CapabilityMirrorProtocol
+                .ONLINE_READ_ONLY_SHADOW_WORKER_FIXTURE_RESOURCE)
+                .endsWith(
+                        "online-read-only-shadow-worker-stage1-v1.fixture.json");
+        assertThat(CapabilityMirrorProtocol
+                .onlineReadOnlyShadowWorkerCompatibilityFixture()
+                .verify()
+                .verified())
+                .isTrue();
+        assertThat(CapabilityMirrorProtocol
                 .READ_ONLY_SHADOW_JOB_V1)
                 .isEqualTo(
                         "resourceGateway.readOnlyShadowJob.v1");

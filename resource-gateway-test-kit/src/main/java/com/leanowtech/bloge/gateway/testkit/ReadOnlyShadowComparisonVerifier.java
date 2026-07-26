@@ -1,6 +1,7 @@
 package com.leanowtech.bloge.gateway.testkit;
 
 import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.node.ArrayNode;
 import com.fasterxml.jackson.databind.node.JsonNodeFactory;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 
@@ -394,18 +395,251 @@ public final class ReadOnlyShadowComparisonVerifier {
 
     private static void verifyFingerprint(
             JsonNode comparison) {
-        ObjectNode material =
-                comparison.deepCopy();
-        material.put("comparisonFingerprint", "");
-        material.set(
-                "comparisonSeal", unsignedSeal());
         if (!text(
                 comparison,
                 "comparisonFingerprint").equals(
-                EvidenceVerificationSupport.sha256Bounded(
-                        material,
+                EvidenceVerificationSupport
+                        .sha256OrderedBounded(
+                        producerFingerprintMaterial(
+                                comparison),
                         MAXIMUM_COMPARISON_BYTES))) {
             fail("SHADOW_COMPARISON_FINGERPRINT_INVALID");
+        }
+    }
+
+    /**
+     * Rebuilds the producer's historical version-specific wire order from untrusted JSON.
+     *
+     * <p>Resource Gateway comparison v1-v3 content addresses were defined over an ordered
+     * {@code ObjectNode} projection. Reconstructing every nested object preserves compatibility
+     * without trusting the field order chosen by a JSON parser or intermediary.</p>
+     */
+    static ObjectNode
+    producerFingerprintMaterial(
+            JsonNode comparison) {
+        ObjectNode material =
+                JsonNodeFactory.instance
+                        .objectNode();
+        copy(material, comparison,
+                "schemaVersion");
+        copy(material, comparison,
+                "comparisonId");
+        copy(material, comparison, "revision");
+        material.put("comparisonFingerprint", "");
+        material.set(
+                "scope",
+                ordered(
+                        comparison.path("scope"),
+                        "tenantId",
+                        "organizationId",
+                        "projectId",
+                        "environmentId",
+                        "region"));
+        material.set(
+                "inventoryRef",
+                artifactRef(
+                        comparison.path(
+                                "inventoryRef")));
+        copy(material, comparison, "unitId");
+        material.set(
+                "scenarioCaseRef",
+                artifactRef(
+                        comparison.path(
+                                "scenarioCaseRef")));
+        material.set(
+                "targetCapabilityRef",
+                artifactRef(
+                        comparison.path(
+                                "targetCapabilityRef")));
+        String version = text(
+                comparison, "schemaVersion");
+        if (!CapabilityMirrorProtocol
+                .READ_ONLY_SHADOW_COMPARISON_V1
+                .equals(version)) {
+            material.set(
+                    "comparisonPolicyRef",
+                    artifactRef(
+                            comparison.path(
+                                    "comparisonPolicyRef")));
+            material.set(
+                    "sourceResolutionAttestationRef",
+                    artifactRef(
+                            comparison.path(
+                                    "sourceResolutionAttestationRef")));
+        }
+        if (CapabilityMirrorProtocol
+                .READ_ONLY_SHADOW_COMPARISON_V3
+                .equals(version)) {
+            JsonNode authority =
+                    comparison.path(
+                            "authorityProof");
+            ObjectNode orderedAuthority =
+                    JsonNodeFactory.instance
+                            .objectNode();
+            copy(
+                    orderedAuthority,
+                    authority,
+                    "admissionFingerprint");
+            orderedAuthority.set(
+                    "samplingGrantAttestationRef",
+                    artifactRef(authority.path(
+                            "samplingGrantAttestationRef")));
+            orderedAuthority.set(
+                    "guardScope",
+                    ordered(
+                            authority.path(
+                                    "guardScope"),
+                            "tenantId",
+                            "organizationId",
+                            "projectId",
+                            "environmentId",
+                            "region"));
+            orderedAuthority.set(
+                    "guardPolicyRef",
+                    artifactRef(authority.path(
+                            "guardPolicyRef")));
+            orderedAuthority.set(
+                    "guardPolicyAttestationRef",
+                    artifactRef(authority.path(
+                            "guardPolicyAttestationRef")));
+            orderedAuthority.set(
+                    "killSwitchAttestationRef",
+                    artifactRef(authority.path(
+                            "killSwitchAttestationRef")));
+            copy(
+                    orderedAuthority,
+                    authority,
+                    "admittedAt",
+                    "confirmedAt");
+            material.set(
+                    "authorityProof",
+                    orderedAuthority);
+        }
+        material.set(
+                "accessProof",
+                orderedAccessProof(
+                        comparison.path(
+                                "accessProof")));
+        material.set(
+                "baseline",
+                orderedObservation(
+                        comparison.path(
+                                "baseline")));
+        material.set(
+                "candidate",
+                orderedObservation(
+                        comparison.path(
+                                "candidate")));
+        copy(material, comparison, "observedAt");
+        ArrayNode results =
+                material.putArray("results");
+        comparison.path("results")
+                .forEach(value ->
+                        results.add(
+                                ordered(
+                                        value,
+                                        "dimension",
+                                        "baselineFingerprint",
+                                        "candidateFingerprint",
+                                        "outcome",
+                                        "diffTypes")));
+        material.set(
+                "comparisonSeal",
+                unsignedSeal());
+        return material;
+    }
+
+    private static ObjectNode orderedAccessProof(
+            JsonNode source) {
+        ObjectNode value =
+                JsonNodeFactory.instance
+                        .objectNode();
+        copy(value, source, "accessMode");
+        value.set(
+                "samplingGrantRef",
+                artifactRef(source.path(
+                        "samplingGrantRef")));
+        value.set(
+                "egressAuthorityRef",
+                artifactRef(source.path(
+                        "egressAuthorityRef")));
+        value.set(
+                "killSwitchRef",
+                artifactRef(source.path(
+                        "killSwitchRef")));
+        copy(
+                value,
+                source,
+                "sampleOrdinal",
+                "maximumSamples",
+                "writeCredentialExposed",
+                "writeAttemptCount");
+        return value;
+    }
+
+    private static ObjectNode orderedObservation(
+            JsonNode source) {
+        ObjectNode value =
+                JsonNodeFactory.instance
+                        .objectNode();
+        copy(value, source, "role");
+        value.set(
+                "artifactRef",
+                artifactRef(source.path(
+                        "artifactRef")));
+        value.set(
+                "scope",
+                ordered(
+                        source.path("scope"),
+                        "tenantId",
+                        "organizationId",
+                        "projectId",
+                        "environmentId",
+                        "region"));
+        value.set(
+                "targetCapabilityRef",
+                artifactRef(source.path(
+                        "targetCapabilityRef")));
+        copy(
+                value,
+                source,
+                "requestContextFingerprint",
+                "semanticResultFingerprint",
+                "completedAt",
+                "evidenceClass",
+                "evidenceComplete");
+        return value;
+    }
+
+    private static ObjectNode artifactRef(
+            JsonNode source) {
+        return ordered(
+                source,
+                "kind",
+                "id",
+                "revision",
+                "fingerprint");
+    }
+
+    private static ObjectNode ordered(
+            JsonNode source,
+            String... fields) {
+        ObjectNode value =
+                JsonNodeFactory.instance
+                        .objectNode();
+        copy(value, source, fields);
+        return value;
+    }
+
+    private static void copy(
+            ObjectNode target,
+            JsonNode source,
+            String... fields) {
+        for (String field : fields) {
+            target.set(
+                    field,
+                    source.path(field)
+                            .deepCopy());
         }
     }
 

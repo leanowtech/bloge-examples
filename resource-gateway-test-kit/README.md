@@ -673,6 +673,40 @@ compatibility. It does not prove that a production candidate authority,
 regional payload vault, enterprise trust distribution, or full online data
 plane is currently installed and authorized.
 
+Use the complete durable-worker fixture as the one-shot ANEKE/CI gate:
+
+```java
+OnlineReadOnlyShadowWorkerCompatibilityFixture fixture =
+        CapabilityMirrorProtocol
+                .onlineReadOnlyShadowWorkerCompatibilityFixture();
+
+OnlineReadOnlyShadowWorkerCompatibilityFixture.VerificationResult result =
+        fixture.verify();
+if (!result.verified()) {
+    throw new IllegalStateException(result.reasonCode());
+}
+```
+
+The public-only file was produced by the server's real H2 durable worker after
+a simulated process crash, exact lease expiry, higher-epoch takeover, and
+terminal success. The loader verifies the immutable request, job fingerprint,
+complete lifecycle head, signed v3 comparison, two exact commands, both signed
+source artifacts, signed v2 source-resolution proof, and four role-separated
+public keys. It then joins scope, request/job/execution identities, comparison
+and proof references, source observations, authority admission, zero-write
+facts, and time order.
+
+Comparison v1-v3 fingerprints predate recursively sorted JSON. The verifier
+therefore reconstructs the exact versioned producer wire projection before
+hashing instead of trusting the input document's field order. This preserves
+existing signatures, accepts semantically equivalent field reordering, and
+still rejects missing, extra, or changed fields.
+
+`VerificationResult` is bounded and payload-free. A pass proves that a
+consumer can independently verify one complete exported durable execution; it
+does not prove current production authorization, a networked regional
+provider, PostgreSQL HA, or business outcome calibration.
+
 Capability observations use a separate producer authority and verifier. Run the packaged public-only
 fixture whenever upgrading the protocol, JSON stack, crypto provider, or consumer:
 

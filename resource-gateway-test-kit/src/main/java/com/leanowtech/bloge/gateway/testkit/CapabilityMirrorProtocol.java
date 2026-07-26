@@ -448,6 +448,10 @@ public final class CapabilityMirrorProtocol {
     public static final String
     ONLINE_READ_ONLY_SHADOW_SOURCE_RESOLUTION_COMPATIBILITY_V1 =
             "resourceGateway.onlineReadOnlyShadowSourceResolutionCompatibility.v1";
+    /** Fixed public-only complete durable online worker compatibility fixture wire version. */
+    public static final String
+    ONLINE_READ_ONLY_SHADOW_WORKER_COMPATIBILITY_V1 =
+            "resourceGateway.onlineReadOnlyShadowWorkerCompatibility.v1";
     /** Fixed three-authority source-resolution compatibility fixture wire version. */
     public static final String
     READ_ONLY_SHADOW_SOURCE_RESOLUTION_COMPATIBILITY_V1 =
@@ -490,6 +494,11 @@ public final class CapabilityMirrorProtocol {
     ONLINE_READ_ONLY_SHADOW_SOURCE_RESOLUTION_FIXTURE_RESOURCE =
             SCHEMA_RESOURCE_ROOT
                     + "online-read-only-shadow-source-resolution-stage1-v1.fixture.json";
+    /** Packaged public-only complete durable online worker compatibility fixture. */
+    public static final String
+    ONLINE_READ_ONLY_SHADOW_WORKER_FIXTURE_RESOURCE =
+            SCHEMA_RESOURCE_ROOT
+                    + "online-read-only-shadow-worker-stage1-v1.fixture.json";
     /** Packaged signed deployment-isolation compatibility fixture. */
     public static final String MIRROR_DEPLOYMENT_ISOLATION_FIXTURE_RESOURCE =
             SCHEMA_RESOURCE_ROOT + "mirror-deployment-isolation-stage1-v1.fixture.json";
@@ -1180,6 +1189,24 @@ public final class CapabilityMirrorProtocol {
     }
 
     /**
+     * Returns the complete server-produced durable online worker compatibility fixture.
+     *
+     * <p>Loading the public-only file independently verifies the immutable request, terminal job,
+     * complete append-only lifecycle, signed comparison, two exact online source commands, two
+     * independently signed source artifacts, v2 source-resolution proof, four separated authority
+     * keys, and every cross-artifact reference and execution coordinate.</p>
+     *
+     * @return detached complete durable online worker compatibility fixture
+     * @throws IllegalStateException when the packaged fixture is absent or unverifiable
+     */
+    public static
+    OnlineReadOnlyShadowWorkerCompatibilityFixture
+    onlineReadOnlyShadowWorkerCompatibilityFixture() {
+        return OnlineWorkerFixtureHolder
+                .FIXTURE.detachedCopy();
+    }
+
+    /**
      * Returns the fixed independently verified deployment-isolation compatibility fixture.
      *
      * <p>The fixture proves strict-schema loading, canonical nested fingerprints, immutable local
@@ -1562,6 +1589,44 @@ public final class CapabilityMirrorProtocol {
             } catch (IOException | RuntimeException failure) {
                 throw new IllegalStateException(
                         "RG.MIRROR.CLIENT.ONLINE_SOURCE_RESOLUTION_FIXTURE_UNAVAILABLE",
+                        failure);
+            }
+        }
+    }
+
+    private static final class
+    OnlineWorkerFixtureHolder {
+        private static final
+        OnlineReadOnlyShadowWorkerCompatibilityFixture
+                FIXTURE = load();
+
+        private static
+        OnlineReadOnlyShadowWorkerCompatibilityFixture
+        load() {
+            try (InputStream input =
+                         CapabilityMirrorProtocol.class
+                                 .getResourceAsStream(
+                                         ONLINE_READ_ONLY_SHADOW_WORKER_FIXTURE_RESOURCE)) {
+                if (input == null) {
+                    throw new IOException(
+                            "Online worker fixture is absent");
+                }
+                OnlineReadOnlyShadowWorkerCompatibilityFixture
+                        fixture =
+                        OnlineReadOnlyShadowWorkerCompatibilityFixture
+                                .from(JSON.readTree(input));
+                OnlineReadOnlyShadowWorkerCompatibilityFixture
+                        .VerificationResult verification =
+                        fixture.verify();
+                if (!verification.verified()) {
+                    throw new IOException(
+                            "Online worker fixture cannot be verified: "
+                                    + verification.reasonCode());
+                }
+                return fixture;
+            } catch (IOException | RuntimeException failure) {
+                throw new IllegalStateException(
+                        "RG.MIRROR.CLIENT.ONLINE_WORKER_FIXTURE_UNAVAILABLE",
                         failure);
             }
         }

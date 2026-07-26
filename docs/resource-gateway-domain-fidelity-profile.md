@@ -733,6 +733,26 @@ same-input pairing、post-confirmation exact-read 时间、built-in policy facts
 完整 content address、零写事实和第三把 authority key/seal。服务端也重验同一固定文件并拒绝
 key-role swap。通过不代表 production regional provider、企业 trust distribution 或数据授权。
 
+durable online worker 使用第四份 public-only 复合 fixture：
+
+```java
+OnlineReadOnlyShadowWorkerCompatibilityFixture fixture =
+        CapabilityMirrorProtocol
+                .onlineReadOnlyShadowWorkerCompatibilityFixture();
+if (!fixture.verify().verified()) {
+    throw new IllegalStateException(
+            "durable online worker evidence-chain drift");
+}
+```
+
+该文件由真实 H2 job/proof/comparison/lifecycle repository 与 worker 在
+`process crash -> exact lease expiry -> TAKEN_OVER -> SUCCEEDED` 路径上生成，包含 request、terminal
+job、完整 14-event lifecycle、v3 comparison、两份 command/source 与 v2 proof，以及四把角色隔离
+公钥。Test Kit 先分别验每个工件，再关闭 scope/request/job/execution id、artifact ref、source
+observation、authority admission、zero-write 和时间序。历史 comparison v1-v3 的指纹按版本化
+producer wire projection 重建，不信任输入 JSON 字段顺序。通过只证明完整公开证据链跨进程可验，
+不证明 PostgreSQL 多副本、networked regional provider、当前数据授权或业务 outcome 已认证。
+
 durable job export 使用第二个独立 verifier：
 
 ```java
@@ -906,22 +926,19 @@ fixture，以及 regional TEE online-baseline consumer、动态 readiness、独�
 与 public-only 固定签名 fixture、same-input candidate、online paired-source v2 resolver、
 synthetic regional certification provider、第二份三 authority public-only fixture、v1/v2 proof
 数据库兼容迁移，以及 synthetic composition 到真实 durable worker 的 retry/crash/takeover
-认证已完成。
+认证和四 authority durable-worker 复合 fixture/独立 Test Kit 联合验证已完成。
 下一步按来源信任依赖推进：
 
-1. 导出一份 server-produced、public-only 的 durable online worker 复合固定 fixture，让 Test Kit
-   在单次门禁中联合验证 request/job/comparison/lifecycle、两份 source artifact 和 v2 proof，
-   关闭当前“服务端组合已认证但跨进程 consumer 仍需拼接”的缺口。
-2. 接入企业 root-policy/control-plane connector，并认证 authority successor/revocation 的
+1. 接入企业 root-policy/control-plane connector，并认证 authority successor/revocation 的
    跨区域传播时限、outage 和 rolling rotation。
-3. 交付第一个获授权的 networked regional sidecar provider、payload-isolated production read
+2. 交付第一个获授权的 networked regional sidecar provider、payload-isolated production read
    binding 与 production candidate authority，并在 PostgreSQL 多副本、网络分区和滚动重启中
    认证 claim/lease/guard/connector 的组合语义；现有 in-process provider 只证明协议和执行闭包。
-4. 把 signed typed diff 接入 drift budget，自动 stale/downgrade/revoke serving conclusion。
-5. 实现 authoritative outcome observation 与 delayed/censored reconciliation。
-6. 为 `ERROR_DISTRIBUTION` 和 `REQUEST_SPACE` 增加 cohort/sampling proof，而不是借用单次
+3. 把 signed typed diff 接入 drift budget，自动 stale/downgrade/revoke serving conclusion。
+4. 实现 authoritative outcome observation 与 delayed/censored reconciliation。
+5. 为 `ERROR_DISTRIBUTION` 和 `REQUEST_SPACE` 增加 cohort/sampling proof，而不是借用单次
    Scenario PASS。
-7. 把 profile limitations/stale/debt 接入 ANEKE gate 与 Owner workbench。
+6. 把 profile limitations/stale/debt 接入 ANEKE gate 与 Owner workbench。
 
 在真实 data-plane connector 与 outcome 未完成前，不能把 queue、API、scheduler 或 adapter
 readiness 描述为“已接入生产流量”或“业务结果已校准”。

@@ -741,9 +741,7 @@ class SyntheticRegionalReadOnlyShadowProviderTest {
                 candidate,
                 resolver,
                 policy,
-                Clock.fixed(
-                        NOW,
-                        ZoneOffset.UTC));
+                RESOLUTION_CLOCK);
     }
 
     private OnlineReadOnlyShadowCandidateAuthority

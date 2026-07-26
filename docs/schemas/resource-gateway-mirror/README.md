@@ -202,6 +202,24 @@ rejects key-role swaps. It contains no private key, endpoint, credential,
 customer request, or customer response. Passing it proves cross-implementation
 wire/crypto compatibility, not a production provider or current authorization.
 
+`online-read-only-shadow-worker-stage1-v1.fixture.json` is the fixed public-only
+complete durable online-worker compatibility fixture. It was produced by the
+real H2 job/proof/comparison/lifecycle repositories and worker after a simulated
+process crash, exact lease expiry, higher-epoch takeover, source-proof reuse,
+and terminal success. The file closes the immutable request, terminal job,
+complete 14-event lifecycle, signed v3 comparison, both exact online commands,
+signed baseline observation, signed candidate Mirror bundle, and signed v2
+source-resolution proof under four distinct public authority keys. The
+standalone Test Kit first verifies every artifact and then enforces exact
+scope/request/job/execution/reference/source/time/key-role joins. It also
+reconstructs the historical comparison v1-v3 producer wire projection before
+hashing, so JSON field reordering is accepted while canonicalization drift is
+rejected. The fixture contains no private key, endpoint, credential, worker
+identity, customer request, or customer response. Passing it proves complete
+producer/consumer evidence-chain compatibility, not PostgreSQL HA, a networked
+regional provider, current data-use authorization, or business outcome
+calibration.
+
 The producer emits v2 for stateless runs, v3 for read-only Session runs, and v5
 for new Session runs containing virtual writes. V4 remains the compatible
 successful-transition generation. Readers and the standalone test-kit

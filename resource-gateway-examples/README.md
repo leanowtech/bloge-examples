@@ -879,7 +879,7 @@ The probe samples each dynamic dependency once per response and fails closed on
 exceptions. `Protocol`, `Installed`, `BaselineReady`, and `OnlineDataPlaneReady`
 are intentionally different lifecycle facts.
 
-The five strict online schemas and two server-produced public-only fixtures are
+The five strict online schemas and three server-produced public-only fixtures are
 packaged in `resource-gateway-test-kit`. Run both probes on every JSON, JDK,
 crypto provider, or Test Kit upgrade:
 
@@ -900,6 +900,15 @@ if (!pairedVerification.verified()) {
     throw new IllegalStateException(
             pairedVerification.reasonCode());
 }
+
+OnlineReadOnlyShadowWorkerCompatibilityFixture worker =
+        CapabilityMirrorProtocol
+                .onlineReadOnlyShadowWorkerCompatibilityFixture();
+var workerVerification = worker.verify();
+if (!workerVerification.verified()) {
+    throw new IllegalStateException(
+            workerVerification.reasonCode());
+}
 ```
 
 The standalone verifier does not link server or Spring classes. It independently
@@ -911,6 +920,15 @@ built-in normalization, v2 identity/content address, zero-write facts, and the
 third authority signature. Passing either fixture proves wire compatibility,
 not current sidecar, data-use, workload-identity, enterprise trust propagation,
 or production readiness.
+
+The worker fixture adds the immutable request, terminal job, complete
+admission/claim/heartbeat/takeover/success lifecycle, signed comparison, and a
+fourth comparison authority key. Its one-shot verifier rejects individually
+valid artifacts from different executions, incomplete lifecycle pages,
+consumer expectation drift, source-role drift, and authority-key aliasing. It
+is the preferred ANEKE/CI compatibility gate because it verifies the complete
+public evidence chain without starting Resource Gateway. A pass still does not
+certify PostgreSQL multi-replica behavior or a production regional sidecar.
 
 Read the exact proof referenced by a successful v3 comparison:
 

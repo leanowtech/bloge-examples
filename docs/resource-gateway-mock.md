@@ -7,7 +7,7 @@
 
 | 文档属性 | 内容 |
 |---|---|
-| 状态 | Accepted / In implementation；Stage 0 至 Stage 4 的协议、执行、状态世界、Scenario rehearsal、证据与治理闭环已完成。Stage 5 已完成 owner-approved Fidelity inventory、无总分 profile、signed Scenario 与 Shadow source adapter、durable Shadow queue/worker/lifecycle、双重观测 online authority、数据库共享 execution guard、managed trust distribution、在线 v1/detached v2 job、exact signed source binding、detached 双 connector/source resolution，以及 regional TEE online-baseline consumer、strict transport、same-input online candidate、独立 online paired-source v2 resolver、动态 readiness、synthetic regional certification provider、v1/v2 proof 数据库兼容迁移、durable worker retry/crash/takeover 组合认证、独立 Test Kit verifier 和两份 public-only online 固定签名 fixture。企业 root-policy/control-plane connector、获授权的 production regional provider/candidate authority、durable worker 跨进程复合 fixture、PostgreSQL 多副本/网络分区认证、跨区域认证、outcome/cohort、drift/calibration、零 DSL case 调整和企业身份任务认证继续实施；任何 protocol/API/connector/readiness 子项均不得冒充完整生产数据面 readiness |
+| 状态 | Accepted / In implementation；Stage 0 至 Stage 4 的协议、执行、状态世界、Scenario rehearsal、证据与治理闭环已完成。Stage 5 已完成 owner-approved Fidelity inventory、无总分 profile、signed Scenario 与 Shadow source adapter、durable Shadow queue/worker/lifecycle、双重观测 online authority、数据库共享 execution guard、managed trust distribution、在线 v1/detached v2 job、exact signed source binding、detached 双 connector/source resolution，以及 regional TEE online-baseline consumer、strict transport、same-input online candidate、独立 online paired-source v2 resolver、动态 readiness、synthetic regional certification provider、v1/v2 proof 数据库兼容迁移、durable worker retry/crash/takeover 组合认证、独立 Test Kit verifier 和四份 public-only 固定签名 compatibility fixture，其中 durable worker 复合 fixture 已关闭跨进程消费门禁。企业 root-policy/control-plane connector、获授权的 production regional provider/candidate authority、PostgreSQL 多副本/网络分区认证、跨区域认证、outcome/cohort、drift/calibration、零 DSL case 调整和企业身份任务认证继续实施；任何 protocol/API/connector/readiness 子项均不得冒充完整生产数据面 readiness |
 | 目标读者 | Resource Gateway、BLOGE Runtime、ANEKE、TEE/数据平台、QA、SRE、安全与业务运营团队 |
 | 设计范围 | external/composed 能力建模、镜像运行、保真语料、有状态世界、场景演练、证据、保真度与结果校准 |
 | 非目标 | 不重做 ANEKE 的资产治理和发布门禁；不允许测试控制进入生产业务请求；不把观测频率直接当成业务正确性 |
@@ -74,9 +74,9 @@
   不表示部署级 egress attestation 或 certification 已完成。客户环境的数据
   使用授权、跨系统 schema owner、部署/namespace 形态等组织决策仍是生产准入前置，不由仓库测试冒充完成。
 - 当前验证基线：前端 Vitest `165/165` 全绿并完成 TypeScript/Vite 生产构建；带
-  `-Pfrontend` 的 Resource Gateway 完整门禁为 `5436` 项 Java 测试、0 失败、0 错误、
+  `-Pfrontend` 的 Resource Gateway 完整门禁为 `5439` 项 Java 测试、0 失败、0 错误、
   0 跳过，其中真实 Chrome DOM/工作流 `36/36` 全绿，可执行 Boot JAR 同步通过。独立 test-kit
-  `464/464` 全绿，161 份打包 Mirror 资源（其中 146 份 JSON Schema）完成 fail-closed
+  `474/474` 全绿，162 份打包 Mirror 资源（其中 146 份 JSON Schema）完成 fail-closed
   引用闭包与打包验证，公共
   JavaDoc、普通 JAR 与 shaded JAR 均成功生成。
 - Stage 1 第二增量已实现 `MirrorPlanCompiler`、`MirrorPlanCompilationRequest`、`CompiledMirrorPlan` 和
@@ -577,13 +577,13 @@ Resource Gateway 已有的工业底座应直接复用：
 | 日志蒸馏与语料 | 82% | payload-free signed observation、准入/隔离、immutable review、candidate/publication/trajectory/cluster 独立 lineage、元数据风险门禁、fixture exact/trajectory/cluster binding、在线 revalidation、test/staging `RECORDED_EXACT`/`RECORDED_TRAJECTORY`/`RECORDED_CLUSTER`、BLOGE 原生 retry loop、identity-safe projection、Wilson confidence、Session state read 与独立 verifier 已落地；缺生产 payload authority、漂移、偏差、outcome 校准和删除证明 |
 | 有状态业务世界 | 91% | 协议、read/write 退款 fixture、独立 verifier/sealer/client、事务内核、受保护 Session API、独立 AES-GCM 数据面、lease/fence/CAS、durable write-attempt journal/reconciliation、TTL/destroy、全局/scope 容量、保留字节、命令背压、过期擦除、固定 read head、run-scoped virtual write、真实 DAG read-write-read、payload-free v1/v2/v3 state evidence、read-only/successful-transition/write-outcome ANEKE seed、签名 HASH_ONLY checkpoint 与同数据面代际精确恢复准入已落地；缺 TEE/KMS、跨区域数据恢复、真实 process-kill/network parity、目标数据库容量认证和 HA/DR certification |
 | Scenario/Rehearsal | 99.3% | ScenarioPack/Case/Assertion、exact compiler、可恢复逐 case runtime、签名 aggregate、audit/retention、ANEKE seed、durable batch manifest/queue/API/worker、region-local DAG/KMS 双 scheduler、逐 case cooperative control、v1/v2 签名 batch evidence/index、批次 operation/lifecycle audit、retention/multi-hold/逻辑删除证明、durable finalization outbox/lease/retry/quarantine/status、受控 remediation、聚合 health/SLO，以及 root-sealed ANEKE batch workbook 已落地；缺 hard kill、企业策略/WORM/anchor、异构消费者和目标环境认证 |
-| Fidelity/Outcome | 94% | owner-approved inventory、无总分七维 profile、fail-closed freshness/低样本/abstention/source debt、Wilson 95%、exact lineage、strict Schema、managed signing、受保护 API、Scenario source、v3 Shadow authority/policy/source closure、durable queue/worker/lifecycle、shared guard、root-threshold managed trust、在线 v1/detached v2 job、exact signed source binding 与 detached data-plane 已落地；regional TEE baseline consumer、same-input candidate、独立 online paired-source v2 resolver、分层动态 readiness、synthetic regional certification provider、v1/v2 proof 数据库迁移、durable worker transient retry/crash/takeover、独立 Test Kit verifier 与三 authority public-only fixture 已闭合；缺企业 root-policy/control-plane connector、跨区域传播/轮换认证、获授权的 production regional provider/candidate authority、durable worker 跨进程复合 fixture、PostgreSQL 多副本/网络分区认证、outcome/cohort adapter、drift 降级和校准闭环 |
+| Fidelity/Outcome | 95% | owner-approved inventory、无总分七维 profile、fail-closed freshness/低样本/abstention/source debt、Wilson 95%、exact lineage、strict Schema、managed signing、受保护 API、Scenario source、v3 Shadow authority/policy/source closure、durable queue/worker/lifecycle、shared guard、root-threshold managed trust、在线 v1/detached v2 job、exact signed source binding 与 detached data-plane 已落地；regional TEE baseline consumer、same-input candidate、独立 online paired-source v2 resolver、分层动态 readiness、synthetic regional certification provider、v1/v2 proof 数据库迁移、durable worker transient retry/crash/takeover、四角色公钥隔离，以及 request/job/comparison/lifecycle/source/proof 一次性跨进程复验已闭合；缺企业 root-policy/control-plane connector、跨区域传播/轮换认证、获授权的 production regional provider/candidate authority、PostgreSQL 多副本/网络分区认证、outcome/cohort adapter、drift 降级和校准闭环 |
 | 业务运营工作台 | 72% | exact-scope keyset 队列、证据分诊/deep link/响应式 UI，以及 reviewed remediation 八对象协议、server-owned 双角色策略、durable approval ledger、CAS、successor 原子准入、签名前后继对账、角色隔离 Owner/Reviewer 控件、auth-before-decode API 和 capability probe 已落地；仍缺零 DSL case 调整、256-item 密度/性能、任务分派与 SLA、复杂业务样例、可访问性及真实企业 IdP/委派/Owner 认证 |
 
-结论：基础设施准备度约 95%，固定权重理想态完成度为 89.92%。剩余差距 10.08%，主要矛盾已经
+结论：基础设施准备度约 95%，固定权重理想态完成度为 90.16%。剩余差距 9.84%，主要矛盾已经
 从“如何定义并分发可撤销 authority trust”转向“如何接入企业 root-policy/control plane、证明
-跨区域传播和轮换 SLO，并把已闭合的 synthetic paired data plane 接入 durable worker 与获授权的
-networked production regional provider，在数据使用授权、数据库共享预算、kill switch 与外部 egress 证明下持续生成 comparison，
+跨区域传播和轮换 SLO，并把已闭合且可跨进程复验的 synthetic durable worker 接入获授权的
+networked production regional provider，在数据使用授权、PostgreSQL 多副本共享预算、kill switch 与外部 egress 证明下持续生成 comparison，
 并用 cohort sampling 和 authoritative outcome
 校准模拟与真实业务之间的差距，在来源漂移后自动撤销 serving 结论”。
 
@@ -2850,6 +2850,67 @@ Java 测试，0 失败、0 错误、0 跳过，包含真实 Chrome DOM/工作流
 一次性联合验证 request/job/comparison/lifecycle、baseline/candidate source 与 v2 proof；随后
 进入 PostgreSQL 多副本 + networked regional provider 认证。企业 trust control plane 与
 outcome/drift 主线并行推进，不能用更多 H2 用例替代目标环境证书。
+
+### 3.44 2026-07-26 Durable online worker 跨进程复合证据差距复评
+
+3.43 已证明 durable worker 能在 H2 上经历 crash、租约到期、接管和成功，但消费端仍只能分别
+验证 job/comparison/lifecycle 与 online paired-source proof。每个工件各自合法并不等于它们属于
+同一次执行：不同 scope、request、execution 或 authority key 的合法证据仍可能被拼成一份假闭环。
+病根是缺少由生产侧生成、由独立实现一次性关闭所有 join 的固定兼容证书。
+
+把真实 worker 产物交给 Test Kit 后，又暴露出两个此前被双边自生成测试遮住的协议债务：
+
+1. server 的 comparison v1-v3 content address 使用历史 `ObjectNode` producer wire 顺序，
+   Test Kit 却递归按字段名排序。双方各自用自己的 builder 造数据时都全绿，一旦消费同一份
+   server-produced fixture 就无法验真；
+2. synthetic online data plane 的 comparison clock 早于 resolver proof 的签发时钟，使“comparison
+   已观察到 proof”在时间上不可能成立。放宽 verifier 会把因果倒置合法化。
+
+本轮针对病根闭合：
+
+- Test Kit 按 comparison schema 版本显式重建 v1/v2/v3 producer fingerprint projection，
+  只消除输入 JSON 字段顺序差异，不改变任何已发布 server fingerprint 或签名；
+- synthetic provider 的 data-plane 时钟改为与 source-resolution authority 同一受控时钟，
+  comparison `observedAt` 不再早于 proof `issuedAt`，没有降低时间门禁；
+- 新增
+  `resourceGateway.onlineReadOnlyShadowWorkerCompatibility.v1` 严格 envelope 和固定
+  `online-read-only-shadow-worker-stage1-v1.fixture.json`。文件由真实 H2 repository 与 worker
+  在 `process crash -> exact lease expiry -> TAKEN_OVER -> SUCCEEDED` 路径生成，只含公开、
+  payload-free 工件；
+- fixture 冻结 request、terminal job、完整 14-event lifecycle、v3 comparison、baseline/candidate
+  command/source、v2 source-resolution proof 和四把用途隔离的 Ed25519 公钥；
+- `OnlineReadOnlyShadowWorkerCompatibilityFixture.verify()` 先复用 job、lifecycle、online source
+  三个独立 verifier，再关闭 scope、request fingerprint、job/execution id、artifact ref、
+  authority admission、source observation、zero-write、时间序与 key-role separation；
+- envelope 拒绝未知字段，访问器返回 defensive copy，结果只输出 bounded reason code 和公开
+  fingerprint。任一 job 篡改、lifecycle 截断、source seal 篡改、head drift 或 key alias 都失败关闭；
+- 服务端从同一文件反向重建并验签全部协议对象，同时验证跨角色换钥失败。另有静态门禁确认
+  fixture 不包含 private key、endpoint、credential、owner id、request/response 或 node payload。
+
+完整 `mvn -f resource-gateway-examples/pom.xml -Pfrontend clean verify` 通过 `5439/5439`
+项 Java 测试，0 失败、0 错误、0 跳过，其中真实 Chrome DOM/工作流 `36/36`，TypeScript/Vite
+生产构建与可执行 Boot JAR 均通过。独立 Test Kit `clean verify` 通过 `474/474`，162 份 Mirror
+资源完成打包闭包，公共 API JavaDoc、普通 JAR 与 shaded JAR 均成功生成。
+
+当前证书仍有清晰边界：
+
+1. fixture 的 producer 与 durable repository 仍在同一 JVM 和 H2 中，不证明 PostgreSQL
+   多副本、进程间竞争、网络分区、连接池故障或滚动升级；
+2. synthetic regional provider 不是获授权的 networked sidecar，也没有 production payload
+   vault、workload identity broker、KMS/HSM、真实 egress 或数据使用授权；
+3. 四把 fixture key 证明角色隔离协议，不证明企业 root-policy 分发、撤销、跨区域收敛与轮换 SLO；
+4. typed comparison 尚未进入 drift budget、serving downgrade/revoke，也没有 authoritative
+   outcome/cohort 校准。
+
+因此把 `Fidelity/Outcome` 从 `94%` 调至 `95%`。按固定 `24%` 权重，加权贡献从 `22.56`
+提高到 `22.80`，总分从 `89.92%` 提高到 `90.16%`，剩余差距 `9.84%`。这 1% 只计入
+“生产侧完整 durable online worker 证据链可被不链接 Spring/server 的消费者一次性独立复验”，
+不计入真实网络、目标数据库、企业信任或业务结果。
+
+下一最短纵切是把 synthetic regional provider 移到真实 HTTP 边界并形成首个 networked
+provider certification，随后用 PostgreSQL 多连接/多 worker 覆盖唯一 claim、lease fencing、
+crash recovery 与 network partition。企业 root-policy connector 和 outcome/drift 闭环继续并行；
+从本轮起，新增内存/H2 协议用例不再提升生产数据面成熟度。
 
 ## 4. 目标架构与系统责任
 

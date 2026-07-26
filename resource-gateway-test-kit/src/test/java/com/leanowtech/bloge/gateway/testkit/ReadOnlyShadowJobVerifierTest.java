@@ -396,8 +396,10 @@ class ReadOnlyShadowJobVerifierTest {
         value.put(
                 "comparisonFingerprint",
                 EvidenceVerificationSupport
-                        .sha256Bounded(
-                                value,
+                        .sha256OrderedBounded(
+                                ReadOnlyShadowComparisonVerifier
+                                        .producerFingerprintMaterial(
+                                                value),
                                 ReadOnlyShadowComparisonVerifier
                                         .MAXIMUM_COMPARISON_BYTES));
         ObjectNode material =

@@ -48,6 +48,40 @@ final class EvidenceVerificationSupport {
         }
     }
 
+    /**
+     * Hashes an explicitly reconstructed historical wire projection without reordering fields.
+     *
+     * <p>This is reserved for protocols whose producer content address predates recursive JSON
+     * key sorting. Callers must rebuild the complete version-specific projection themselves so
+     * untrusted input field order cannot affect the digest.</p>
+     */
+    static String sha256OrderedBounded(
+            JsonNode value,
+            int maximumBytes) {
+        if (value == null || maximumBytes < 1) {
+            throw new IllegalArgumentException(
+                    "Ordered evidence and a positive byte limit are required");
+        }
+        try {
+            byte[] bytes = JSON.writeValueAsBytes(
+                    value);
+            if (bytes.length > maximumBytes) {
+                throw new IllegalArgumentException(
+                        "Ordered evidence exceeds its byte limit");
+            }
+            return "sha256:"
+                    + HexFormat.of().formatHex(
+                    MessageDigest.getInstance(
+                                    "SHA-256")
+                            .digest(bytes));
+        } catch (JsonProcessingException
+                 | GeneralSecurityException failure) {
+            throw new IllegalArgumentException(
+                    "Ordered evidence cannot be fingerprinted",
+                    failure);
+        }
+    }
+
     static boolean verifyEd25519(
             String materialFingerprint,
             String encodedSignature,

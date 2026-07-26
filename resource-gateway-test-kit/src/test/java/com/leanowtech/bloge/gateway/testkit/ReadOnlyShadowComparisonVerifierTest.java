@@ -284,6 +284,28 @@ class ReadOnlyShadowComparisonVerifierTest {
                 "SHADOW_COMPARISON_INVALID");
     }
 
+    @Test
+    void verifiesHistoricalProducerProjectionIndependentOfInputFieldOrder()
+            throws Exception {
+        ObjectNode reordered =
+                JsonNodeFactory.instance.objectNode();
+        java.util.ArrayList<String> fields =
+                new java.util.ArrayList<>();
+        comparison.fieldNames()
+                .forEachRemaining(fields::add);
+        fields.sort(
+                java.util.Comparator.reverseOrder());
+        fields.forEach(field ->
+                reordered.set(
+                        field,
+                        comparison.path(field)
+                                .deepCopy()));
+
+        assertThat(verifier.verify(
+                reordered, key).verified())
+                .isTrue();
+    }
+
     private void resign(ObjectNode value)
             throws Exception {
         resign(value, SIGNED_AT);
@@ -297,8 +319,11 @@ class ReadOnlyShadowComparisonVerifierTest {
                 "comparisonSeal", unsignedSeal());
         value.put("comparisonFingerprint", "");
         String fingerprint =
-                EvidenceVerificationSupport.sha256Bounded(
-                        value,
+                EvidenceVerificationSupport
+                        .sha256OrderedBounded(
+                        ReadOnlyShadowComparisonVerifier
+                                .producerFingerprintMaterial(
+                                        value),
                         ReadOnlyShadowComparisonVerifier
                                 .MAXIMUM_COMPARISON_BYTES);
         value.put(
