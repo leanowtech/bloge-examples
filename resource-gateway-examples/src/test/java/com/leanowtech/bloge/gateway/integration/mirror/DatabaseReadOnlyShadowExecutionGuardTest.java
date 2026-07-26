@@ -110,6 +110,16 @@ class DatabaseReadOnlyShadowExecutionGuardTest {
     }
 
     @Test
+    void rejectsATransactionManagerWithoutNestedSavepoints() {
+        transactions.setNestedTransactionAllowed(false);
+
+        assertThatThrownBy(this::guard)
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining(
+                        "nested-savepoint DataSourceTransactionManager");
+    }
+
+    @Test
     void enforcesAndThenResetsTheSharedFixedStartWindow() {
         ReadOnlyShadowExecutionGuard.Limits limits =
                 new ReadOnlyShadowExecutionGuard.Limits(

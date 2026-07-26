@@ -5,6 +5,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import jakarta.annotation.PostConstruct;
 import org.springframework.dao.DuplicateKeyException;
 import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.jdbc.datasource.DataSourceTransactionManager;
 import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.transaction.TransactionDefinition;
 import org.springframework.transaction.support.TransactionTemplate;
@@ -25,7 +26,9 @@ import java.util.regex.Pattern;
  * JDBC durable queue for one-sample read-only Shadow jobs.
  *
  * <p>A region/environment lock serializes admission, sample-ordinal reservation, crash recovery,
- * and claim across replicas. Full enterprise scope is duplicated into every job key; request id
+ * and claim across replicas. Lock-row initialization uses a nested savepoint transaction so a
+ * concurrent unique-key conflict cannot poison the caller transaction on PostgreSQL or consume
+ * an extra pooled connection. Full enterprise scope is duplicated into every job key; request id
  * and {@code samplingGrantFingerprint + sampleOrdinal} are independently unique inside that scope.
  * All time decisions use the application database clock. Request JSON, job JSON, and signed
  * comparison JSON are revalidated against duplicated indexes on every read.</p>
@@ -38,6 +41,9 @@ public final class DatabaseReadOnlyShadowJobRepository
     private static final Pattern IDENTIFIER =
             Pattern.compile("[A-Za-z0-9][A-Za-z0-9@._:/-]{0,511}");
     private static final int RECONCILIATION_LIMIT = 1_000;
+    private static final Runnable NO_INITIALIZATION_PROBE =
+            () -> {
+            };
 
     private static final String CREATE_LOCKS = """
             CREATE TABLE IF NOT EXISTS mirror_shadow_job_locks (
@@ -58,7 +64,7 @@ public final class DatabaseReadOnlyShadowJobRepository
                 request_fingerprint VARCHAR(71) NOT NULL,
                 sampling_grant_fingerprint VARCHAR(71) NOT NULL,
                 sample_ordinal BIGINT NOT NULL,
-                request_json CLOB NOT NULL,
+                request_json TEXT NOT NULL,
                 status VARCHAR(32) NOT NULL,
                 attempt_count INTEGER NOT NULL,
                 maximum_attempts INTEGER NOT NULL,
@@ -68,13 +74,13 @@ public final class DatabaseReadOnlyShadowJobRepository
                 lease_epoch BIGINT NOT NULL,
                 lease_expires_at TIMESTAMP WITH TIME ZONE NOT NULL,
                 comparison_fingerprint VARCHAR(71) NOT NULL,
-                comparison_json CLOB,
+                comparison_json TEXT,
                 failure_code VARCHAR(255) NOT NULL,
                 created_at TIMESTAMP WITH TIME ZONE NOT NULL,
                 updated_at TIMESTAMP WITH TIME ZONE NOT NULL,
                 completed_at TIMESTAMP WITH TIME ZONE,
                 record_fingerprint VARCHAR(71) NOT NULL,
-                job_json CLOB NOT NULL,
+                job_json TEXT NOT NULL,
                 PRIMARY KEY (
                     tenant_id, organization_id, project_id,
                     environment_id, region, job_id
@@ -133,6 +139,8 @@ public final class DatabaseReadOnlyShadowJobRepository
     private final ReadOnlyShadowComparisonIntegrity comparisonIntegrity;
     private final Supplier<Instant> coordinationClock;
     private final TransactionTemplate mutations;
+    private final TransactionTemplate lockRowInitialization;
+    private final Runnable beforeLockRowInsert;
 
     /**
      * Creates a production repository using the application database clock.
@@ -140,7 +148,8 @@ public final class DatabaseReadOnlyShadowJobRepository
      * @param jdbc transaction-aware JDBC boundary
      * @param mapper canonical protocol mapper
      * @param comparisonIntegrity signed comparison verifier
-     * @param transactionManager manager for the same datasource
+     * @param transactionManager JDBC manager for the same datasource with nested savepoints enabled
+     * @throws IllegalArgumentException when the manager cannot provide the required savepoint scope
      */
     public DatabaseReadOnlyShadowJobRepository(
             JdbcTemplate jdbc,
@@ -152,7 +161,8 @@ public final class DatabaseReadOnlyShadowJobRepository
                 mapper,
                 comparisonIntegrity,
                 transactionManager,
-                null);
+                null,
+                NO_INITIALIZATION_PROBE);
     }
 
     /** Deterministic database-clock seam for lease, retry, and deadline tests. */
@@ -162,6 +172,23 @@ public final class DatabaseReadOnlyShadowJobRepository
             ReadOnlyShadowComparisonIntegrity comparisonIntegrity,
             PlatformTransactionManager transactionManager,
             Supplier<Instant> coordinationClock) {
+        this(
+                jdbc,
+                mapper,
+                comparisonIntegrity,
+                transactionManager,
+                coordinationClock,
+                NO_INITIALIZATION_PROBE);
+    }
+
+    /** Deterministic clock and pre-insert race seam for target-database certification. */
+    DatabaseReadOnlyShadowJobRepository(
+            JdbcTemplate jdbc,
+            ObjectMapper mapper,
+            ReadOnlyShadowComparisonIntegrity comparisonIntegrity,
+            PlatformTransactionManager transactionManager,
+            Supplier<Instant> coordinationClock,
+            Runnable beforeLockRowInsert) {
         this.jdbc = Objects.requireNonNull(jdbc, "jdbc");
         this.mapper = Objects.requireNonNull(mapper, "mapper");
         this.comparisonIntegrity = Objects.requireNonNull(
@@ -170,12 +197,23 @@ public final class DatabaseReadOnlyShadowJobRepository
                 ? () -> databaseNow(this.jdbc)
                 : Objects.requireNonNull(
                 coordinationClock, "coordinationClock");
+        this.beforeLockRowInsert = Objects.requireNonNull(
+                beforeLockRowInsert, "beforeLockRowInsert");
+        DataSourceTransactionManager exactTransactions =
+                requireSavepointTransactions(
+                        this.jdbc,
+                        transactionManager);
         mutations = new TransactionTemplate(
-                Objects.requireNonNull(
-                        transactionManager, "transactionManager"));
+                exactTransactions);
         mutations.setPropagationBehavior(
                 TransactionDefinition.PROPAGATION_REQUIRED);
         mutations.setIsolationLevel(
+                TransactionDefinition.ISOLATION_READ_COMMITTED);
+        lockRowInitialization = new TransactionTemplate(
+                exactTransactions);
+        lockRowInitialization.setPropagationBehavior(
+                TransactionDefinition.PROPAGATION_NESTED);
+        lockRowInitialization.setIsolationLevel(
                 TransactionDefinition.ISOLATION_READ_COMMITTED);
     }
 
@@ -232,6 +270,10 @@ public final class DatabaseReadOnlyShadowJobRepository
                 return new Submission(
                         stored.job(), true);
             }
+            if (findBySample(exact).isPresent()) {
+                throw new Violation(
+                        Reason.SAMPLE_ORDINAL_CONFLICT);
+            }
             String jobId =
                     ReadOnlyShadowJobIntegrity.jobId(
                             requestFingerprint);
@@ -266,25 +308,8 @@ public final class DatabaseReadOnlyShadowJobRepository
                         "");
                 return new Submission(job, false);
             } catch (DuplicateKeyException conflict) {
-                Optional<StoredJob> concurrent =
-                        findByRequestId(
-                                exact.scope(),
-                                exact.requestId(),
-                                false);
-                if (concurrent.isPresent()
-                        && concurrent.orElseThrow()
-                        .job().requestFingerprint()
-                        .equals(requestFingerprint)
-                        && concurrent.orElseThrow()
-                        .request().equals(exact)) {
-                    return new Submission(
-                            concurrent.orElseThrow().job(),
-                            true);
-                }
-                if (findBySample(exact).isPresent()) {
-                    throw new Violation(
-                            Reason.SAMPLE_ORDINAL_CONFLICT);
-                }
+                // A partition lock made both unique dimensions observable before INSERT.
+                // Do not query after a PostgreSQL constraint violation: the transaction is aborted.
                 throw new Violation(
                         Reason.REQUEST_CONFLICT);
             }
@@ -1278,16 +1303,28 @@ public final class DatabaseReadOnlyShadowJobRepository
     private void lockPartition(
             String region,
             String environmentId) {
-        try {
-            jdbc.update("""
-                    INSERT INTO mirror_shadow_job_locks (
-                        region, environment_id
-                    ) VALUES (?, ?)
-                    """,
-                    region,
-                    environmentId);
-        } catch (DuplicateKeyException exists) {
-            // The row is the durable serialization primitive.
+        Long existing = jdbc.queryForObject("""
+                SELECT COUNT(*)
+                FROM mirror_shadow_job_locks
+                WHERE region = ? AND environment_id = ?
+                """,
+                Long.class,
+                region,
+                environmentId);
+        if (existing == null || existing == 0) {
+            beforeLockRowInsert.run();
+            try {
+                lockRowInitialization.executeWithoutResult(ignored ->
+                        jdbc.update("""
+                                INSERT INTO mirror_shadow_job_locks (
+                                    region, environment_id
+                                ) VALUES (?, ?)
+                                """,
+                                region,
+                                environmentId));
+            } catch (DuplicateKeyException exists) {
+                // A concurrent initializer won; rollback to the savepoint keeps the caller usable.
+            }
         }
         jdbc.queryForObject("""
                 SELECT region
@@ -1314,6 +1351,24 @@ public final class DatabaseReadOnlyShadowJobRepository
         return Objects.requireNonNull(
                 value,
                 "database clock returned null").toInstant();
+    }
+
+    private static DataSourceTransactionManager
+    requireSavepointTransactions(
+            JdbcTemplate jdbc,
+            PlatformTransactionManager transactionManager) {
+        if (!(Objects.requireNonNull(
+                transactionManager,
+                "transactionManager")
+                instanceof DataSourceTransactionManager exact)
+                || !exact.isNestedTransactionAllowed()
+                || exact.getDataSource()
+                != jdbc.getDataSource()) {
+            throw new IllegalArgumentException(
+                    "Shadow queue requires one nested-savepoint "
+                            + "DataSourceTransactionManager for its JdbcTemplate");
+        }
+        return exact;
     }
 
     private static Timestamp timestamp(

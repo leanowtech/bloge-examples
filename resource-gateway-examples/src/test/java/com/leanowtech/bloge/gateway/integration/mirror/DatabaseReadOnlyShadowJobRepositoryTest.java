@@ -110,6 +110,22 @@ class DatabaseReadOnlyShadowJobRepositoryTest {
     }
 
     @Test
+    void rejectsATransactionManagerWithoutNestedSavepoints() {
+        transactions.setNestedTransactionAllowed(false);
+
+        assertThatThrownBy(() ->
+                new DatabaseReadOnlyShadowJobRepository(
+                        jdbc,
+                        mapper,
+                        comparisonIntegrity,
+                        transactions,
+                        now::get))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining(
+                        "nested-savepoint DataSourceTransactionManager");
+    }
+
+    @Test
     void reservesOneGrantOrdinalAcrossConcurrentRequestIds()
             throws Exception {
         ReadOnlyShadowJobRequest left =

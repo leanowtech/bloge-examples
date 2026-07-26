@@ -4,6 +4,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import jakarta.annotation.PostConstruct;
 import org.springframework.dao.DuplicateKeyException;
 import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.jdbc.datasource.DataSourceTransactionManager;
 import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.transaction.TransactionDefinition;
 import org.springframework.transaction.support.TransactionTemplate;
@@ -23,10 +24,12 @@ import java.util.regex.Pattern;
  * Database-authoritative cross-replica pressure and circuit guard for read-only Shadow work.
  *
  * <p>Every acquisition for one stable guard-policy id is serialized through the same scoped
- * state row. The row owns fixed-window start accounting, active concurrency, consecutive failure
- * state, circuit cool-down, and the single half-open probe. Per-execution rows own a random token
- * and monotonically increasing epoch so an expired process cannot renew or complete a replacement
- * lease.</p>
+ * state row. State-row initialization uses a nested savepoint transaction so a concurrent
+ * unique-key conflict cannot poison the caller transaction on PostgreSQL or consume an extra
+ * pooled connection. The row owns fixed-window start accounting, active concurrency, consecutive
+ * failure state, circuit cool-down, and the single half-open probe. Per-execution rows own a
+ * random token and monotonically increasing epoch so an expired process cannot renew or complete
+ * a replacement lease.</p>
  *
  * <p>The stable policy id deliberately spans grant revisions. A newer signed policy generation
  * may replace the current generation only after all older leases are inactive; rate and circuit
@@ -39,6 +42,9 @@ public final class DatabaseReadOnlyShadowExecutionGuard
             Pattern.compile("[A-Za-z0-9-]{16,128}");
     private static final String POLICY_KIND =
             "SHADOW_EXECUTION_GUARD_POLICY";
+    private static final Runnable NO_INITIALIZATION_PROBE =
+            () -> {
+            };
 
     private static final String CREATE_STATES = """
             CREATE TABLE IF NOT EXISTS mirror_shadow_execution_guard_states (
@@ -136,13 +142,16 @@ public final class DatabaseReadOnlyShadowExecutionGuard
     private final Supplier<Instant> coordinationClock;
     private final Supplier<String> tokenSupplier;
     private final TransactionTemplate mutations;
+    private final TransactionTemplate stateInitialization;
+    private final Runnable beforeStateInsert;
 
     /**
      * Creates a shared guard using the application database clock and random lease tokens.
      *
      * @param jdbc transaction-aware JDBC boundary
      * @param mapper canonical immutable-request fingerprint boundary
-     * @param transactionManager manager for the same datasource
+     * @param transactionManager JDBC manager for the same datasource with nested savepoints enabled
+     * @throws IllegalArgumentException when the manager cannot provide the required savepoint scope
      */
     public DatabaseReadOnlyShadowExecutionGuard(
             JdbcTemplate jdbc,
@@ -153,7 +162,8 @@ public final class DatabaseReadOnlyShadowExecutionGuard
                 mapper,
                 transactionManager,
                 null,
-                () -> UUID.randomUUID().toString());
+                () -> UUID.randomUUID().toString(),
+                NO_INITIALIZATION_PROBE);
     }
 
     /** Deterministic database-clock and token seam used by concurrency and fencing tests. */
@@ -163,6 +173,23 @@ public final class DatabaseReadOnlyShadowExecutionGuard
             PlatformTransactionManager transactionManager,
             Supplier<Instant> coordinationClock,
             Supplier<String> tokenSupplier) {
+        this(
+                jdbc,
+                mapper,
+                transactionManager,
+                coordinationClock,
+                tokenSupplier,
+                NO_INITIALIZATION_PROBE);
+    }
+
+    /** Deterministic clock, token, and pre-insert race seams for database certification. */
+    DatabaseReadOnlyShadowExecutionGuard(
+            JdbcTemplate jdbc,
+            ObjectMapper mapper,
+            PlatformTransactionManager transactionManager,
+            Supplier<Instant> coordinationClock,
+            Supplier<String> tokenSupplier,
+            Runnable beforeStateInsert) {
         this.jdbc = Objects.requireNonNull(jdbc, "jdbc");
         this.mapper = Objects.requireNonNull(mapper, "mapper");
         this.coordinationClock = coordinationClock == null
@@ -171,12 +198,23 @@ public final class DatabaseReadOnlyShadowExecutionGuard
                 coordinationClock, "coordinationClock");
         this.tokenSupplier = Objects.requireNonNull(
                 tokenSupplier, "tokenSupplier");
+        this.beforeStateInsert = Objects.requireNonNull(
+                beforeStateInsert, "beforeStateInsert");
+        DataSourceTransactionManager exactTransactions =
+                requireSavepointTransactions(
+                        this.jdbc,
+                        transactionManager);
         mutations = new TransactionTemplate(
-                Objects.requireNonNull(
-                        transactionManager, "transactionManager"));
+                exactTransactions);
         mutations.setPropagationBehavior(
                 TransactionDefinition.PROPAGATION_REQUIRED);
         mutations.setIsolationLevel(
+                TransactionDefinition.ISOLATION_READ_COMMITTED);
+        stateInitialization = new TransactionTemplate(
+                exactTransactions);
+        stateInitialization.setPropagationBehavior(
+                TransactionDefinition.PROPAGATION_NESTED);
+        stateInitialization.setIsolationLevel(
                 TransactionDefinition.ISOLATION_READ_COMMITTED);
     }
 
@@ -787,42 +825,58 @@ public final class DatabaseReadOnlyShadowExecutionGuard
             MirrorArtifactRef baselineRef,
             Limits limits,
             Instant now) {
-        try {
-            jdbc.update("""
-                            INSERT INTO mirror_shadow_execution_guard_states (
-                                tenant_id, organization_id, project_id,
-                                environment_id, region, guard_policy_id,
-                                guard_policy_revision, guard_policy_fingerprint,
-                                baseline_binding_id, baseline_binding_revision,
-                                baseline_binding_fingerprint,
-                                maximum_concurrent, maximum_starts_per_window,
-                                start_window_millis, circuit_failure_threshold,
-                                circuit_cool_down_millis, circuit_state,
-                                consecutive_failures, circuit_opened_at,
-                                half_open_execution_id, window_started_at,
-                                starts_in_window, updated_at
-                            ) VALUES (
-                                ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
-                                ?, ?, ?, ?, ?, 'CLOSED', 0, NULL,
-                                '', ?, 0, ?
-                            )
-                            """,
-                    key.scopeParametersWith(
-                            key.policyId(),
-                            policyRef.revision(),
-                            policyRef.fingerprint(),
-                            baselineRef.id(),
-                            baselineRef.revision(),
-                            baselineRef.fingerprint(),
-                            limits.maximumConcurrent(),
-                            limits.maximumStartsPerWindow(),
-                            limits.startWindow().toMillis(),
-                            limits.circuitFailureThreshold(),
-                            limits.circuitCoolDown().toMillis(),
-                            timestamp(now),
-                            timestamp(now)));
-        } catch (DuplicateKeyException exists) {
-            // The scoped row is the durable cross-replica serialization primitive.
+        Long existing = jdbc.queryForObject("""
+                SELECT COUNT(*)
+                FROM mirror_shadow_execution_guard_states
+                WHERE tenant_id = ?
+                  AND organization_id = ?
+                  AND project_id = ?
+                  AND environment_id = ?
+                  AND region = ?
+                  AND guard_policy_id = ?
+                """,
+                Long.class,
+                key.parameters());
+        if (existing == null || existing == 0) {
+            beforeStateInsert.run();
+            try {
+                stateInitialization.executeWithoutResult(ignored ->
+                        jdbc.update("""
+                                        INSERT INTO mirror_shadow_execution_guard_states (
+                                            tenant_id, organization_id, project_id,
+                                            environment_id, region, guard_policy_id,
+                                            guard_policy_revision, guard_policy_fingerprint,
+                                            baseline_binding_id, baseline_binding_revision,
+                                            baseline_binding_fingerprint,
+                                            maximum_concurrent, maximum_starts_per_window,
+                                            start_window_millis, circuit_failure_threshold,
+                                            circuit_cool_down_millis, circuit_state,
+                                            consecutive_failures, circuit_opened_at,
+                                            half_open_execution_id, window_started_at,
+                                            starts_in_window, updated_at
+                                        ) VALUES (
+                                            ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
+                                            ?, ?, ?, ?, ?, 'CLOSED', 0, NULL,
+                                            '', ?, 0, ?
+                                        )
+                                        """,
+                                key.scopeParametersWith(
+                                        key.policyId(),
+                                        policyRef.revision(),
+                                        policyRef.fingerprint(),
+                                        baselineRef.id(),
+                                        baselineRef.revision(),
+                                        baselineRef.fingerprint(),
+                                        limits.maximumConcurrent(),
+                                        limits.maximumStartsPerWindow(),
+                                        limits.startWindow().toMillis(),
+                                        limits.circuitFailureThreshold(),
+                                        limits.circuitCoolDown().toMillis(),
+                                        timestamp(now),
+                                        timestamp(now))));
+            } catch (DuplicateKeyException exists) {
+                // A concurrent initializer won; rollback to the savepoint keeps the caller usable.
+            }
         }
     }
 
@@ -1275,6 +1329,24 @@ public final class DatabaseReadOnlyShadowExecutionGuard
         return Objects.requireNonNull(
                 value,
                 "database clock returned null").toInstant();
+    }
+
+    private static DataSourceTransactionManager
+    requireSavepointTransactions(
+            JdbcTemplate jdbc,
+            PlatformTransactionManager transactionManager) {
+        if (!(Objects.requireNonNull(
+                transactionManager,
+                "transactionManager")
+                instanceof DataSourceTransactionManager exact)
+                || !exact.isNestedTransactionAllowed()
+                || exact.getDataSource()
+                != jdbc.getDataSource()) {
+            throw new IllegalArgumentException(
+                    "Shadow execution guard requires one nested-savepoint "
+                            + "DataSourceTransactionManager for its JdbcTemplate");
+        }
+        return exact;
     }
 
     private static Timestamp timestamp(

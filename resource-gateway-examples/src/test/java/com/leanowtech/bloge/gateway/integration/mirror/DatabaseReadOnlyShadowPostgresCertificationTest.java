@@ -1,0 +1,852 @@
+package com.leanowtech.bloge.gateway.integration.mirror;
+
+import com.fasterxml.jackson.databind.ObjectMapper;
+import io.zonky.test.db.postgres.embedded.EmbeddedPostgres;
+import org.junit.jupiter.api.AfterAll;
+import org.junit.jupiter.api.BeforeAll;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.TestInstance;
+import org.junit.jupiter.api.Timeout;
+import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.jdbc.datasource.DataSourceTransactionManager;
+
+import javax.sql.DataSource;
+import java.time.Duration;
+import java.time.Instant;
+import java.time.temporal.ChronoUnit;
+import java.util.List;
+import java.util.concurrent.BrokenBarrierException;
+import java.util.concurrent.Callable;
+import java.util.concurrent.CyclicBarrier;
+import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.TimeoutException;
+import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.atomic.AtomicReference;
+
+import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.times;
+import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.when;
+
+/**
+ * Certifies shared Shadow queue and guard fencing against a native PostgreSQL process.
+ *
+ * <p>Two independent data sources model separate Resource Gateway replicas. The test keeps
+ * PostgreSQL durability controls enabled and proves unique ordinal admission, single worker
+ * publication, lease takeover fencing, and guard-state initialization under concurrent access.</p>
+ */
+@TestInstance(TestInstance.Lifecycle.PER_CLASS)
+@Timeout(120)
+class DatabaseReadOnlyShadowPostgresCertificationTest {
+    private final ObjectMapper mapper =
+            new ObjectMapper().findAndRegisterModules();
+    private final AtomicInteger guardTokens =
+            new AtomicInteger();
+
+    private EmbeddedPostgres postgres;
+
+    @BeforeAll
+    void startPostgres() throws Exception {
+        postgres = EmbeddedPostgres.builder()
+                .setServerConfig("fsync", "on")
+                .setServerConfig(
+                        "synchronous_commit", "on")
+                .setServerConfig(
+                        "full_page_writes", "on")
+                .setServerConfig(
+                        "lock_timeout", "5s")
+                .setServerConfig(
+                        "statement_timeout", "15s")
+                .start();
+    }
+
+    @AfterAll
+    void stopPostgres() throws Exception {
+        if (postgres != null) {
+            postgres.close();
+        }
+    }
+
+    @Test
+    void runsWithDurablePostgresSettingsAndDatabaseClock() {
+        Replica first = replica(
+                postgres.getPostgresDatabase());
+        JdbcTemplate jdbc = first.jdbc();
+        assertThat(jdbc.queryForObject(
+                "SHOW server_version_num",
+                String.class))
+                .startsWith("14");
+        assertThat(jdbc.queryForObject(
+                "SHOW fsync",
+                String.class))
+                .isEqualTo("on");
+        assertThat(jdbc.queryForObject(
+                "SHOW synchronous_commit",
+                String.class))
+                .isEqualTo("on");
+        assertThat(jdbc.queryForObject(
+                "SHOW full_page_writes",
+                String.class))
+                .isEqualTo("on");
+        assertThat(jdbc.queryForObject(
+                "SHOW lock_timeout",
+                String.class))
+                .isEqualTo("5s");
+        assertThat(jdbc.queryForObject(
+                "SHOW statement_timeout",
+                String.class))
+                .isEqualTo("15s");
+
+        ReadOnlyShadowComparisonIntegrity integrity =
+                ReadOnlyShadowJobTestFixtures
+                        .integrity(mapper);
+        DatabaseReadOnlyShadowJobRepository
+                databaseClockRepository =
+                new DatabaseReadOnlyShadowJobRepository(
+                        first.jdbc(),
+                        mapper,
+                        integrity,
+                        first.transactions());
+        databaseClockRepository.init();
+        Instant before = Instant.now()
+                .minusSeconds(2);
+        Instant databaseNow =
+                databaseClockRepository
+                        .observedAt();
+        assertThat(databaseNow)
+                .isBetween(
+                        before,
+                        Instant.now()
+                                .plusSeconds(2));
+    }
+
+    @Test
+    void reservesOneSamplingOrdinalAcrossConnections()
+            throws Exception {
+        CyclicBarrier initializationRace =
+                new CyclicBarrier(2);
+        JobFixture fixture = jobFixture(
+                () -> awaitBarrier(
+                        initializationRace));
+        certifiesUniqueOrdinalAcrossReplicas(
+                fixture.firstJobs(),
+                fixture.secondJobs(),
+                fixture.now().get());
+    }
+
+    @Test
+    void publishesOneTerminalComparisonAcrossWorkers()
+            throws Exception {
+        JobFixture fixture = jobFixture();
+        certifiesOneWorkerPublication(
+                fixture.firstJobs(),
+                fixture.secondJobs(),
+                fixture.integrity(),
+                fixture.now().get());
+    }
+
+    @Test
+    void fencesAStaleOwnerAfterLeaseTakeover() {
+        JobFixture fixture = jobFixture();
+        certifiesExpiredLeaseTakeover(
+                fixture.firstJobs(),
+                fixture.secondJobs(),
+                fixture.integrity(),
+                fixture.now());
+    }
+
+    @Test
+    void sharesGuardInitializationAndConcurrencyBudget()
+            throws Exception {
+        Replica first = replica(
+                postgres.getPostgresDatabase());
+        Replica second = replica(
+                postgres.getPostgresDatabase());
+        AtomicReference<Instant> now =
+                new AtomicReference<>(
+                        Instant.now().truncatedTo(
+                                ChronoUnit.MILLIS));
+        CyclicBarrier initializationRace =
+                new CyclicBarrier(2);
+        certifiesGuardStateAndBudgetAcrossReplicas(
+                first,
+                second,
+                now,
+                () -> awaitBarrier(
+                        initializationRace));
+    }
+
+    private JobFixture jobFixture() {
+        return jobFixture(
+                () -> {
+                });
+    }
+
+    private JobFixture jobFixture(
+            Runnable beforeLockRowInsert) {
+        Replica first = replica(
+                postgres.getPostgresDatabase());
+        Replica second = replica(
+                postgres.getPostgresDatabase());
+        ReadOnlyShadowComparisonIntegrity integrity =
+                ReadOnlyShadowJobTestFixtures
+                        .integrity(mapper);
+        DatabaseReadOnlyShadowJobRepository
+                databaseClockRepository =
+                new DatabaseReadOnlyShadowJobRepository(
+                        first.jdbc(),
+                        mapper,
+                        integrity,
+                        first.transactions());
+        databaseClockRepository.init();
+        AtomicReference<Instant> now =
+                new AtomicReference<>(
+                        databaseClockRepository.observedAt()
+                                .truncatedTo(
+                                        ChronoUnit.MILLIS));
+        DatabaseReadOnlyShadowJobRepository firstJobs =
+                jobs(
+                        first,
+                        integrity,
+                        now,
+                        beforeLockRowInsert);
+        DatabaseReadOnlyShadowJobRepository secondJobs =
+                jobs(
+                        second,
+                        integrity,
+                        now,
+                        beforeLockRowInsert);
+        firstJobs.init();
+        secondJobs.init();
+        return new JobFixture(
+                firstJobs,
+                secondJobs,
+                integrity,
+                now);
+    }
+
+    private void certifiesUniqueOrdinalAcrossReplicas(
+            DatabaseReadOnlyShadowJobRepository first,
+            DatabaseReadOnlyShadowJobRepository second,
+            Instant now) throws Exception {
+        ReadOnlyShadowJobRequest left =
+                request(
+                        "postgres-ordinal-left",
+                        71,
+                        now.plus(
+                                Duration.ofMinutes(30)),
+                        "postgres-ordinal");
+        ReadOnlyShadowJobRequest right =
+                request(
+                        "postgres-ordinal-right",
+                        71,
+                        left.deadlineAt(),
+                        "postgres-ordinal");
+        try (var executor =
+                     Executors.newFixedThreadPool(2)) {
+            Future<Object> leftResult =
+                    executor.submit(() ->
+                            repositoryOutcome(() ->
+                                    first.submit(
+                                            left,
+                                            ReadOnlyShadowJobTestFixtures
+                                                    .POLICY)));
+            Future<Object> rightResult =
+                    executor.submit(() ->
+                            repositoryOutcome(() ->
+                                    second.submit(
+                                            right,
+                                            ReadOnlyShadowJobTestFixtures
+                                                    .POLICY)));
+            List<Object> outcomes =
+                    List.of(
+                            awaitFuture(leftResult),
+                            awaitFuture(rightResult));
+            assertThat(outcomes)
+                    .filteredOn(
+                            ReadOnlyShadowJobRepository
+                                    .Submission.class
+                                    ::isInstance)
+                    .hasSize(1);
+            assertThat(outcomes)
+                    .filteredOn(value -> value
+                            == ReadOnlyShadowJobRepository
+                            .Reason.SAMPLE_ORDINAL_CONFLICT)
+                    .hasSize(1);
+        }
+    }
+
+    private void certifiesOneWorkerPublication(
+            DatabaseReadOnlyShadowJobRepository first,
+            DatabaseReadOnlyShadowJobRepository second,
+            ReadOnlyShadowComparisonIntegrity integrity,
+            Instant now) throws Exception {
+        ReadOnlyShadowJobRequest request =
+                request(
+                        "postgres-worker-publication",
+                        72,
+                        now.plus(
+                                Duration.ofMinutes(30)),
+                        "postgres-worker");
+        ReadOnlyShadowJob job =
+                first.submit(
+                        request,
+                        ReadOnlyShadowJobTestFixtures
+                                .POLICY)
+                        .job();
+        ReadOnlyShadowDataPlane dataPlane =
+                mock(ReadOnlyShadowDataPlane.class);
+        when(dataPlane.ready())
+                .thenReturn(true);
+        when(dataPlane.execute(any()))
+                .thenReturn(
+                        ReadOnlyShadowJobTestFixtures
+                                .executionResult(request));
+        ReadOnlyShadowJobWorker firstWorker =
+                new ReadOnlyShadowJobWorker(
+                        first,
+                        dataPlane,
+                        integrity,
+                        ReadOnlyShadowJobTestFixtures
+                                .POLICY);
+        ReadOnlyShadowJobWorker secondWorker =
+                new ReadOnlyShadowJobWorker(
+                        second,
+                        dataPlane,
+                        integrity,
+                        ReadOnlyShadowJobTestFixtures
+                                .POLICY);
+
+        try (var executor =
+                     Executors.newFixedThreadPool(2)) {
+            CyclicBarrier workerStart =
+                    new CyclicBarrier(2);
+            Future<ReadOnlyShadowJobRepository.Claim>
+                    firstResult =
+                    executor.submit(() -> {
+                        awaitBarrier(workerStart);
+                        return
+                            firstWorker.runOne(
+                                    request.scope()
+                                            .region(),
+                                    request.scope()
+                                            .environmentId(),
+                                    "postgres-worker-a");
+                    });
+            Future<ReadOnlyShadowJobRepository.Claim>
+                    secondResult =
+                    executor.submit(() -> {
+                        awaitBarrier(workerStart);
+                        return
+                            secondWorker.runOne(
+                                    request.scope()
+                                            .region(),
+                                    request.scope()
+                                            .environmentId(),
+                                    "postgres-worker-b");
+                    });
+            assertThat(List.of(
+                    awaitFuture(firstResult)
+                            .outcome(),
+                    awaitFuture(secondResult)
+                            .outcome()))
+                    .containsExactlyInAnyOrder(
+                            ReadOnlyShadowJobRepository
+                                    .ClaimOutcome.ACQUIRED,
+                            ReadOnlyShadowJobRepository
+                                    .ClaimOutcome.NO_WORK);
+        }
+
+        verify(dataPlane, times(1))
+                .execute(any());
+        assertThat(second.find(
+                request.scope(),
+                job.jobId()).orElseThrow()
+                .status())
+                .isEqualTo(
+                        ReadOnlyShadowJob.Status
+                                .SUCCEEDED);
+        assertThat(second.findComparison(
+                request.scope(),
+                job.jobId()))
+                .isPresent();
+        assertThat(second.lifecycle(
+                request.scope(),
+                job.jobId(),
+                0,
+                10))
+                .extracting(
+                        ReadOnlyShadowJobLifecycleEvent
+                                ::transition)
+                .containsExactly(
+                        ReadOnlyShadowJobLifecycleEvent
+                                .Transition.ADMITTED,
+                        ReadOnlyShadowJobLifecycleEvent
+                                .Transition.CLAIMED,
+                        ReadOnlyShadowJobLifecycleEvent
+                                .Transition.SUCCEEDED);
+    }
+
+    private void certifiesExpiredLeaseTakeover(
+            DatabaseReadOnlyShadowJobRepository first,
+            DatabaseReadOnlyShadowJobRepository second,
+            ReadOnlyShadowComparisonIntegrity integrity,
+            AtomicReference<Instant> now) {
+        Instant initialNow = now.get();
+        ReadOnlyShadowJobRequest request =
+                request(
+                        "postgres-lease-takeover",
+                        73,
+                        initialNow.plus(
+                                Duration.ofMinutes(30)),
+                        "postgres-takeover");
+        ReadOnlyShadowJob job =
+                first.submit(
+                        request,
+                        ReadOnlyShadowJobTestFixtures
+                                .POLICY)
+                        .job();
+        ReadOnlyShadowJobRepository.Claim stale =
+                first.claimNext(
+                        request.scope().region(),
+                        request.scope()
+                                .environmentId(),
+                        "postgres-stale-worker",
+                        ReadOnlyShadowJobTestFixtures
+                                .POLICY);
+
+        now.set(initialNow.plusSeconds(61));
+        ReadOnlyShadowJobRepository.Claim replacement =
+                second.claimNext(
+                        request.scope().region(),
+                        request.scope()
+                                .environmentId(),
+                        "postgres-replacement-worker",
+                        ReadOnlyShadowJobTestFixtures
+                                .POLICY);
+        ReadOnlyShadowComparison comparison =
+                integrity.sign(
+                        ReadOnlyShadowJobTestFixtures
+                                .unsignedComparison(
+                                        job.jobId(),
+                                        request));
+
+        assertThat(replacement.job()
+                .attemptCount())
+                .isEqualTo(2);
+        assertThat(replacement.lease()
+                .epoch())
+                .isGreaterThan(
+                        stale.lease().epoch());
+        assertThatThrownBy(() ->
+                first.complete(
+                        stale.lease(),
+                        comparison))
+                .isInstanceOf(
+                        ReadOnlyShadowJobRepository
+                                .Violation.class)
+                .extracting("reason")
+                .isEqualTo(
+                        ReadOnlyShadowJobRepository
+                                .Reason.LEASE_LOST);
+
+        assertThat(second.complete(
+                replacement.lease(),
+                comparison).status())
+                .isEqualTo(
+                        ReadOnlyShadowJob.Status
+                                .SUCCEEDED);
+        assertThat(first.lifecycle(
+                request.scope(),
+                job.jobId(),
+                0,
+                10).stream()
+                .filter(event -> event.transition()
+                        == ReadOnlyShadowJobLifecycleEvent
+                        .Transition.SUCCEEDED)
+                .count())
+                .isEqualTo(1L);
+        assertThat(first.findComparison(
+                request.scope(),
+                job.jobId()))
+                .contains(comparison);
+    }
+
+    private void certifiesGuardStateAndBudgetAcrossReplicas(
+            Replica first,
+            Replica second,
+            AtomicReference<Instant> now,
+            Runnable beforeStateInsert)
+            throws Exception {
+        DatabaseReadOnlyShadowExecutionGuard firstGuard =
+                guard(
+                        first,
+                        now,
+                        beforeStateInsert);
+        DatabaseReadOnlyShadowExecutionGuard secondGuard =
+                guard(
+                        second,
+                        now,
+                        beforeStateInsert);
+        firstGuard.init();
+        secondGuard.init();
+        ReadOnlyShadowExecutionGuard.Limits limits =
+                new ReadOnlyShadowExecutionGuard.Limits(
+                        1,
+                        10,
+                        Duration.ofMinutes(1),
+                        3,
+                        Duration.ofSeconds(30));
+        ReadOnlyShadowJobRequest left =
+                request(
+                        "postgres-guard-left",
+                        74,
+                        now.get().plus(
+                                Duration.ofMinutes(20)),
+                        "postgres-guard");
+        ReadOnlyShadowJobRequest right =
+                request(
+                        "postgres-guard-right",
+                        75,
+                        left.deadlineAt(),
+                        "postgres-guard");
+
+        try (var executor =
+                     Executors.newFixedThreadPool(2)) {
+            Future<Object> leftResult =
+                    executor.submit(() ->
+                            guardOutcome(() ->
+                                    firstGuard.acquire(
+                                            permit(
+                                                    "postgres-guard-left",
+                                                    left,
+                                                    now.get()),
+                                            admission(
+                                                    left,
+                                                    limits,
+                                                    now.get()))));
+            Future<Object> rightResult =
+                    executor.submit(() ->
+                            guardOutcome(() ->
+                                    secondGuard.acquire(
+                                            permit(
+                                                    "postgres-guard-right",
+                                                    right,
+                                                    now.get()),
+                                            admission(
+                                                    right,
+                                                    limits,
+                                                    now.get()))));
+            List<Object> outcomes =
+                    List.of(
+                            awaitFuture(leftResult),
+                            awaitFuture(rightResult));
+            assertThat(outcomes)
+                    .filteredOn(
+                            ReadOnlyShadowExecutionGuard
+                                    .Lease.class
+                                    ::isInstance)
+                    .hasSize(1);
+            assertThat(outcomes)
+                    .filteredOn(value -> value
+                            == ReadOnlyShadowDataPlane
+                            .FailureReason.BUDGET_EXHAUSTED)
+                    .hasSize(1);
+            outcomes.stream()
+                    .filter(
+                            ReadOnlyShadowExecutionGuard
+                                    .Lease.class
+                                    ::isInstance)
+                    .map(
+                            ReadOnlyShadowExecutionGuard
+                                    .Lease.class
+                                    ::cast)
+                    .forEach(lease -> {
+                        lease.succeeded();
+                        lease.close();
+                    });
+        }
+
+        assertThat(first.jdbc().queryForObject(
+                """
+                SELECT COUNT(*)
+                FROM mirror_shadow_execution_guard_states
+                WHERE guard_policy_id = 'postgres-pressure-policy'
+                """,
+                Long.class))
+                .isEqualTo(1L);
+    }
+
+    private DatabaseReadOnlyShadowJobRepository jobs(
+            Replica replica,
+            ReadOnlyShadowComparisonIntegrity integrity,
+            AtomicReference<Instant> now,
+            Runnable beforeLockRowInsert) {
+        return new DatabaseReadOnlyShadowJobRepository(
+                replica.jdbc(),
+                mapper,
+                integrity,
+                replica.transactions(),
+                now::get,
+                beforeLockRowInsert);
+    }
+
+    private DatabaseReadOnlyShadowExecutionGuard guard(
+            Replica replica,
+            AtomicReference<Instant> now,
+            Runnable beforeStateInsert) {
+        return new DatabaseReadOnlyShadowExecutionGuard(
+                replica.jdbc(),
+                mapper,
+                replica.transactions(),
+                now::get,
+                () -> "postgres-guard-token-"
+                        + String.format(
+                        "%08d",
+                        guardTokens.incrementAndGet()),
+                beforeStateInsert);
+    }
+
+    private static Replica replica(
+            DataSource dataSource) {
+        return new Replica(
+                new JdbcTemplate(dataSource),
+                new DataSourceTransactionManager(
+                        dataSource));
+    }
+
+    private static ReadOnlyShadowJobRequest request(
+            String requestId,
+            long ordinal,
+            Instant deadlineAt,
+            String environmentId) {
+        ReadOnlyShadowJobRequest source =
+                ReadOnlyShadowJobTestFixtures
+                        .request(
+                                requestId,
+                                ordinal);
+        CapabilitySnapshot.Scope scope =
+                new CapabilitySnapshot.Scope(
+                        source.scope().tenantId(),
+                        source.scope()
+                                .organizationId(),
+                        source.scope().projectId(),
+                        environmentId,
+                        source.scope().region());
+        return new ReadOnlyShadowJobRequest(
+                source.schemaVersion(),
+                source.requestId(),
+                scope,
+                source.inventoryRef(),
+                source.unitId(),
+                source.scenarioCaseRef(),
+                source.targetCapabilityRef(),
+                source.candidatePlanRef(),
+                source.baselineBindingRef(),
+                source.comparisonPolicyRef(),
+                source.accessGrant(),
+                deadlineAt);
+    }
+
+    private static ReadOnlyShadowDataPlane.Permit permit(
+            String executionId,
+            ReadOnlyShadowJobRequest request,
+            Instant now) {
+        Instant leaseExpiresAt =
+                now.plusSeconds(20);
+        return new ReadOnlyShadowDataPlane.Permit(
+                executionId,
+                request,
+                1,
+                request.deadlineAt(),
+                new ReadOnlyShadowDataPlane
+                        .ExecutionControl() {
+                    @Override
+                    public Instant leaseExpiresAt() {
+                        return leaseExpiresAt;
+                    }
+
+                    @Override
+                    public Instant heartbeat() {
+                        return leaseExpiresAt;
+                    }
+                });
+    }
+
+    private static ReadOnlyShadowAccessAuthority.Admission
+    admission(
+            ReadOnlyShadowJobRequest request,
+            ReadOnlyShadowExecutionGuard.Limits limits,
+            Instant now) {
+        Instant validUntil =
+                now.plusSeconds(600);
+        MirrorArtifactRef policyRef =
+                new MirrorArtifactRef(
+                        "SHADOW_EXECUTION_GUARD_POLICY",
+                        "postgres-pressure-policy",
+                        1,
+                        ReadOnlyShadowJobTestFixtures
+                                .fingerprint('a'));
+        ReadOnlyShadowSamplingGrantAuthority.Grant grant =
+                new ReadOnlyShadowSamplingGrantAuthority
+                        .Grant(
+                        request.scope(),
+                        request.scope(),
+                        request.accessGrant()
+                                .samplingGrantRef(),
+                        request.accessGrant()
+                                .maximumSamples(),
+                        now.minusSeconds(30),
+                        validUntil,
+                        policyRef,
+                        limits,
+                        ReadOnlyShadowJobTestFixtures.ref(
+                                "SHADOW_SAMPLING_GRANT_ATTESTATION",
+                                request.accessGrant()
+                                        .samplingGrantRef()
+                                        .id(),
+                                '1'),
+                        new MirrorArtifactRef(
+                                "SHADOW_EXECUTION_GUARD_POLICY_ATTESTATION",
+                                policyRef.id(),
+                                policyRef.revision(),
+                                ReadOnlyShadowJobTestFixtures
+                                        .fingerprint('2')),
+                        now);
+        ReadOnlyShadowKillSwitchAuthority.State
+                killSwitch =
+                new ReadOnlyShadowKillSwitchAuthority
+                        .State(
+                        request.scope(),
+                        request.accessGrant()
+                                .killSwitchRef(),
+                        true,
+                        now.minusSeconds(30),
+                        validUntil,
+                        ReadOnlyShadowJobTestFixtures.ref(
+                                "SHADOW_KILL_SWITCH_ATTESTATION",
+                                request.accessGrant()
+                                        .killSwitchRef()
+                                        .id(),
+                                '2'),
+                        now);
+        MirrorDeploymentIsolationRunTrust.Admission
+                egress =
+                new MirrorDeploymentIsolationRunTrust
+                        .Admission(
+                        request.scope(),
+                        ReadOnlyShadowJobTestFixtures.ref(
+                                MirrorDeploymentIsolationAttestationBundle
+                                        .ARTIFACT_KIND,
+                                "postgres-egress-decision",
+                                '3'),
+                        ReadOnlyShadowJobTestFixtures.ref(
+                                MirrorDeploymentIsolationAuthorityKeySetPublication
+                                        .ARTIFACT_KIND,
+                                "postgres-egress-authority",
+                                '4'),
+                        request.accessGrant()
+                                .egressAuthorityRef(),
+                        ReadOnlyShadowJobTestFixtures.ref(
+                                MirrorDeploymentIsolationAttestationStatusPublication
+                                        .ARTIFACT_KIND,
+                                "postgres-egress-status",
+                                '5'),
+                        ReadOnlyShadowJobTestFixtures.ref(
+                                MirrorDeploymentIsolationAgentSnapshot
+                                        .ARTIFACT_KIND,
+                                "postgres-egress-snapshot",
+                                '6'),
+                        now,
+                        validUntil);
+        return new ReadOnlyShadowAccessAuthority.Admission(
+                ReadOnlyShadowJobTestFixtures
+                        .fingerprint('f'),
+                request.accessGrant()
+                        .zeroWriteProof(),
+                limits,
+                grant,
+                killSwitch,
+                egress,
+                now,
+                validUntil);
+    }
+
+    private static Object repositoryOutcome(
+            Callable<ReadOnlyShadowJobRepository
+                    .Submission> action) {
+        try {
+            return action.call();
+        } catch (ReadOnlyShadowJobRepository
+                 .Violation rejected) {
+            return rejected.reason();
+        } catch (Exception failure) {
+            throw new IllegalStateException(
+                    "PostgreSQL admission task failed",
+                    failure);
+        }
+    }
+
+    private static Object guardOutcome(
+            Callable<ReadOnlyShadowExecutionGuard
+                    .Lease> action) {
+        try {
+            return action.call();
+        } catch (ReadOnlyShadowDataPlane
+                 .Failure rejected) {
+            return rejected.reason();
+        } catch (Exception failure) {
+            throw new IllegalStateException(
+                    "PostgreSQL guard task failed",
+                    failure);
+        }
+    }
+
+    private static void awaitBarrier(
+            CyclicBarrier barrier) {
+        try {
+            barrier.await(
+                    10,
+                    TimeUnit.SECONDS);
+        } catch (InterruptedException interrupted) {
+            Thread.currentThread().interrupt();
+            throw new IllegalStateException(
+                    "PostgreSQL concurrency barrier interrupted",
+                    interrupted);
+        } catch (BrokenBarrierException
+                 | TimeoutException unavailable) {
+            throw new IllegalStateException(
+                    "PostgreSQL concurrency barrier unavailable",
+                    unavailable);
+        }
+    }
+
+    private static <T> T awaitFuture(
+            Future<T> future) throws Exception {
+        try {
+            return future.get(
+                    15,
+                    TimeUnit.SECONDS);
+        } catch (TimeoutException timeout) {
+            future.cancel(true);
+            throw timeout;
+        }
+    }
+
+    private record Replica(
+            JdbcTemplate jdbc,
+            DataSourceTransactionManager transactions) {
+    }
+
+    private record JobFixture(
+            DatabaseReadOnlyShadowJobRepository firstJobs,
+            DatabaseReadOnlyShadowJobRepository secondJobs,
+            ReadOnlyShadowComparisonIntegrity integrity,
+            AtomicReference<Instant> now) {
+    }
+}

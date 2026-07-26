@@ -923,8 +923,44 @@ the final comparison plus `SUCCEEDED` lifecycle head. This certifies the durable
 in-process reference path plus the dual-role HTTP protocol path. The
 independent-process suite separately certifies child JVM failure, private-PKI
 role separation, and committed-response-loss recovery. It does not certify
-PostgreSQL multi-replica partitions, network partitions, private-PKI
+PostgreSQL multi-process or HA behavior, network partitions, private-PKI
 rotation/revocation, KMS/HSM, or production data use.
+
+`DatabaseReadOnlyShadowPostgresCertificationTest` closes the first target
+database gap with a real PostgreSQL 14.22 process. Two independent data sources
+and transaction managers concurrently drive the shared queue and execution
+guard. The test proves one admission for a sampling-grant ordinal, one worker
+publication, higher-epoch lease takeover with stale-owner rejection, one
+terminal comparison, and one guard lease when the shared concurrency limit is
+one. PostgreSQL durability settings (`fsync`, `synchronous_commit`, and
+`full_page_writes`) stay enabled.
+
+Lock/state initialization uses a nested JDBC savepoint. This matters because a
+PostgreSQL constraint violation aborts the current transaction unless it is
+rolled back to a savepoint; H2-only tests did not expose that difference.
+Steady-state calls first observe the existing row, so ordinary traffic does not
+manufacture duplicate-key errors. Queue JSON columns use portable `TEXT`, and
+the runtime includes the PostgreSQL JDBC driver. Construction fails fast unless
+the transaction manager owns the same datasource and enables nested
+savepoints. The certification uses an exact pre-insert barrier plus PostgreSQL
+lock/statement timeouts and bounded Futures, so the initialization race is
+forced and a lock regression cannot wait indefinitely. Re-run the 26-case
+target-database/H2 gate with:
+
+```bash
+mvn -f resource-gateway-examples/pom.xml \
+  -Dtest=DatabaseReadOnlyShadowPostgresCertificationTest,DatabaseReadOnlyShadowJobRepositoryTest,DatabaseReadOnlyShadowExecutionGuardTest \
+  test
+```
+
+This is a single PostgreSQL process with two connection boundaries and two
+workers in one JVM. It does not certify worker-process kill, database restart
+or failover, replication, network blackholes, rolling schema upgrades,
+backup/restore, or capacity. Terminal job, comparison, and lifecycle rows share
+one database transaction; this path has no outbox and makes no outbox claim.
+The certification covers this Shadow queue/guard slice, not every repository
+or migration in the example application. A PostgreSQL deployment must also set
+the Spring datasource URL, username, password, and driver class explicitly.
 
 `GET /api/integration/capabilities` reports the online-baseline boundary as
 separate facts:
@@ -1009,7 +1045,7 @@ valid artifacts from different executions, incomplete lifecycle pages,
 consumer expectation drift, source-role drift, and authority-key aliasing. It
 is the preferred ANEKE/CI compatibility gate because it verifies the complete
 public evidence chain without starting Resource Gateway. A pass still does not
-certify PostgreSQL multi-replica behavior or a production regional sidecar.
+certify PostgreSQL multi-process/HA behavior or a production regional sidecar.
 
 Read the exact proof referenced by a successful v3 comparison:
 

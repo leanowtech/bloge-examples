@@ -79,7 +79,9 @@
   comparison 集合并把未覆盖 unit 保留为 missing debt；
 - 可组合、动态、fail-closed 的 typed source readiness；
 - 分开报告 route、signing、各 source adapter 和 partial-profile projection readiness 的
-  capability probe。
+  capability probe；
+- PostgreSQL 14.22 双独立连接/事务管理器认证：同 ordinal 唯一 admission、双 worker 单次
+  publication、lease takeover fencing、唯一 terminal comparison，以及 shared guard 单并发预算。
 
 尚未实现：
 
@@ -87,7 +89,7 @@
 - request-space sampling proof 与 error-distribution cohort adapter；
 - 企业 root-policy/control-plane connector、跨区域传播 SLO 与 client/CA 撤销轮换认证、
   获授权的 production regional sidecar provider/candidate authority、
-  PostgreSQL 多副本/网络分区认证、drift 自动降级、
+  PostgreSQL 多进程/HA/网络分区认证、drift 自动降级、
   outcome reconciliation 和工作台。
 
 因此在 managed signer、Scenario authority 或 signed Shadow comparison authority 可用时，
@@ -775,6 +777,16 @@ observation、authority admission、zero-write 和时间序。历史 comparison 
 producer wire projection 重建，不信任输入 JSON 字段顺序。通过只证明完整公开证据链跨进程可验，
 不证明 PostgreSQL 多副本、networked regional provider、当前数据授权或业务 outcome 已认证。
 
+服务器侧另有真实 PostgreSQL 14.22 认证：两套独立连接和事务管理器同时操作 shared queue 与
+execution guard，验证同 ordinal 唯一 admission、双 worker 单 claim/单 data-plane invocation、
+lease takeover 后旧 epoch 不能发布、唯一 terminal comparison，以及 guard state 首次并发建行和
+单并发预算。初始化唯一键竞态在 nested savepoint 内回滚，避免 PostgreSQL aborted transaction
+污染外层业务事务，也避免 `REQUIRES_NEW` 额外连接造成连接池饥饿；构造器会拒绝 datasource
+不一致或未启用 nested savepoint 的 transaction manager。测试在两个连接完成缺行读取之后以
+barrier 强制首次 insert 竞态，并用数据库 lock/statement timeout 与 Future timeout 限定失败时间。
+该证书仍是同 JVM、单数据库进程，不替代 forked worker、数据库 restart/failover、网络分区、
+WAL/备份恢复或容量认证。
+
 durable job export 使用第二个独立 verifier：
 
 ```java
@@ -956,7 +968,7 @@ public-only fixture、v1/v2 proof
 1. 接入企业 root-policy/control-plane connector，并认证 authority successor/revocation 的
    跨区域传播时限、outage 和 rolling rotation。
 2. 交付第一个获授权的 networked regional sidecar provider、payload-isolated production read
-   binding 与 production candidate authority，并在 PostgreSQL 多副本、网络分区和滚动重启中
+   binding 与 production candidate authority，并在 PostgreSQL 多进程/HA、网络分区和滚动重启中
    认证 claim/lease/guard/connector 的组合语义；现有 child-JVM provider 已证明协议、角色
    私有信任域和一次 committed-response-loss 恢复，但仍是固定 command、本地状态的测试夹具。
 3. 把 signed typed diff 接入 drift budget，自动 stale/downgrade/revoke serving conclusion。

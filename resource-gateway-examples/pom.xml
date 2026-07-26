@@ -41,6 +41,11 @@
         <jackson.version>2.18.2</jackson.version>
         <selenium.version>4.45.0</selenium.version>
         <bouncycastle.version>1.80</bouncycastle.version>
+        <embedded-postgres.version>2.2.2</embedded-postgres.version>
+        <embedded-postgres-binaries.version>14.22.0</embedded-postgres-binaries.version>
+        <!-- The full frontend gate currently takes about 18 minutes on a developer machine. -->
+        <surefire.fork-timeout-seconds>2400</surefire.fork-timeout-seconds>
+        <surefire.fork-exit-timeout-seconds>60</surefire.fork-exit-timeout-seconds>
     </properties>
 
     <dependencyManagement>
@@ -120,6 +125,11 @@
             <artifactId>h2</artifactId>
             <scope>runtime</scope>
         </dependency>
+        <dependency>
+            <groupId>org.postgresql</groupId>
+            <artifactId>postgresql</artifactId>
+            <scope>runtime</scope>
+        </dependency>
 
         <!-- ── Jackson (JSON processing for PayloadExtractor + YAML config) -->
         <dependency>
@@ -171,6 +181,12 @@
             <version>${selenium.version}</version>
             <scope>test</scope>
         </dependency>
+        <dependency>
+            <groupId>io.zonky.test</groupId>
+            <artifactId>embedded-postgres</artifactId>
+            <version>${embedded-postgres.version}</version>
+            <scope>test</scope>
+        </dependency>
     </dependencies>
 
     <build>
@@ -203,7 +219,8 @@
                 <version>3.5.2</version>
                 <configuration>
                     <argLine>--enable-preview</argLine>
-                    <forkedProcessTimeoutInSeconds>900</forkedProcessTimeoutInSeconds>
+                    <forkedProcessTimeoutInSeconds>${surefire.fork-timeout-seconds}</forkedProcessTimeoutInSeconds>
+                    <forkedProcessExitTimeoutInSeconds>${surefire.fork-exit-timeout-seconds}</forkedProcessExitTimeoutInSeconds>
                     <includes>
                         <include>**/*Test.java</include>
                         <include>**/*Tests.java</include>
@@ -238,6 +255,40 @@
         and /showcase/, coexisting with the vanilla /examples/gateway showcase).
     -->
     <profiles>
+        <profile>
+            <id>embedded-postgres-darwin-arm64</id>
+            <activation>
+                <os>
+                    <family>mac</family>
+                    <arch>aarch64</arch>
+                </os>
+            </activation>
+            <dependencies>
+                <dependency>
+                    <groupId>io.zonky.test.postgres</groupId>
+                    <artifactId>embedded-postgres-binaries-darwin-arm64v8</artifactId>
+                    <version>${embedded-postgres-binaries.version}</version>
+                    <scope>test</scope>
+                </dependency>
+            </dependencies>
+        </profile>
+        <profile>
+            <id>embedded-postgres-linux-arm64</id>
+            <activation>
+                <os>
+                    <name>linux</name>
+                    <arch>aarch64</arch>
+                </os>
+            </activation>
+            <dependencies>
+                <dependency>
+                    <groupId>io.zonky.test.postgres</groupId>
+                    <artifactId>embedded-postgres-binaries-linux-arm64v8</artifactId>
+                    <version>${embedded-postgres-binaries.version}</version>
+                    <scope>test</scope>
+                </dependency>
+            </dependencies>
+        </profile>
         <profile>
             <id>frontend</id>
             <build>
