@@ -753,6 +753,10 @@ public class ToolStudioIntegrationService {
                 authoritativeOutcomeSelectedPopulationRuntimeAvailability
                         .sourceClosure());
         features.put(
+                "mirrorAuthoritativeOutcomeSelectedPopulationStagedUpload",
+                authoritativeOutcomeSelectedPopulationRuntimeAvailability
+                        .stagedUpload());
+        features.put(
                 "mirrorAuthoritativeOutcomeSelectedPopulationReady",
                 authoritativeOutcomeSelectedPopulationRuntimeAvailability
                         .continuousReady());
@@ -1343,6 +1347,33 @@ public class ToolStudioIntegrationService {
                             com.leanowtech.bloge.gateway.integration.mirror
                                     .AuthoritativeOutcomeSelectedPopulationAssessmentSourcePage
                                     .SCHEMA_VERSION));
+            if (authoritativeOutcomeSelectedPopulationRuntimeAvailability
+                    .stagedUpload()) {
+                supportedObjects.put(
+                        "authoritativeOutcomeSelectedPopulationUploadRequest",
+                        List.of(
+                                com.leanowtech.bloge.gateway.integration.mirror
+                                        .AuthoritativeOutcomeSelectedPopulationUploadRequest
+                                        .SCHEMA_VERSION));
+                supportedObjects.put(
+                        "authoritativeOutcomeSelectedPopulationUploadAdmission",
+                        List.of(
+                                com.leanowtech.bloge.gateway.integration.mirror
+                                        .AuthoritativeOutcomeSelectedPopulationUploadAdmission
+                                        .SCHEMA_VERSION));
+                supportedObjects.put(
+                        "authoritativeOutcomeSelectedPopulationUploadChunkAdmission",
+                        List.of(
+                                com.leanowtech.bloge.gateway.integration.mirror
+                                        .AuthoritativeOutcomeSelectedPopulationUploadChunkAdmission
+                                        .SCHEMA_VERSION));
+                supportedObjects.put(
+                        "authoritativeOutcomeSelectedPopulationUploadStatus",
+                        List.of(
+                                com.leanowtech.bloge.gateway.integration.mirror
+                                        .AuthoritativeOutcomeSelectedPopulationUploadStatus
+                                        .SCHEMA_VERSION));
+            }
         }
         if (domainFidelityRuntimeAvailability.profileReadApi()
                 || readOnlyShadowRuntimeAvailability.jobApi()) {
@@ -1825,6 +1856,24 @@ public class ToolStudioIntegrationService {
             endpoints.add(new IntegrationCapabilities.Endpoint(
                     "GET",
                     "/api/mirror/outcome-selected-populations/{populationId}/assessments/{assessmentId}/revisions/{revision}/sources"));
+        }
+        if (authoritativeOutcomeSelectedPopulationRuntimeAvailability
+                .stagedUpload()) {
+            endpoints.add(new IntegrationCapabilities.Endpoint(
+                    "POST",
+                    "/api/mirror/outcome-selected-populations/uploads"));
+            endpoints.add(new IntegrationCapabilities.Endpoint(
+                    "PUT",
+                    "/api/mirror/outcome-selected-populations/uploads/{uploadId}/chunks/{chunkIndex}"));
+            endpoints.add(new IntegrationCapabilities.Endpoint(
+                    "GET",
+                    "/api/mirror/outcome-selected-populations/uploads/{uploadId}"));
+            endpoints.add(new IntegrationCapabilities.Endpoint(
+                    "POST",
+                    "/api/mirror/outcome-selected-populations/uploads/{uploadId}/finalize"));
+            endpoints.add(new IntegrationCapabilities.Endpoint(
+                    "DELETE",
+                    "/api/mirror/outcome-selected-populations/uploads/{uploadId}"));
         }
         if (readOnlyShadowRuntimeAvailability.jobApi()) {
             endpoints.add(new IntegrationCapabilities.Endpoint(

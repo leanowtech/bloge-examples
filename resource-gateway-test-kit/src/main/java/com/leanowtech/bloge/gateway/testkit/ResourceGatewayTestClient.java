@@ -2786,6 +2786,142 @@ public final class ResourceGatewayTestClient {
     }
 
     /**
+     * Creates or exactly replays one resumable selected-population upload intent.
+     *
+     * @param request stable upload id, predecessor fence, and complete unsigned manifest
+     * @return defensive payload-free upload admission
+     */
+    public JsonNode beginAuthoritativeOutcomeSelectedPopulationUpload(
+            JsonNode request) {
+        JsonNode command = requiredObject(request, "request");
+        CapabilityMirrorSchemaValidator.require(
+                command,
+                CapabilityMirrorProtocol
+                        .AUTHORITATIVE_OUTCOME_SELECTED_POPULATION_UPLOAD_REQUEST_SCHEMA_RESOURCE,
+                "RG.MIRROR.CLIENT.OUTCOME_POPULATION_UPLOAD_COMMAND_INVALID");
+        JsonNode response = exchange(
+                "POST",
+                "/api/mirror/outcome-selected-populations/uploads",
+                "",
+                "MIRROR_OUTCOME_SELECTION",
+                command);
+        JsonNode payload = requireMirrorEnvelope(
+                response,
+                "AUTHORITATIVE_OUTCOME_SELECTED_POPULATION_UPLOAD_ADMISSION",
+                CapabilityMirrorProtocol
+                        .AUTHORITATIVE_OUTCOME_SELECTED_POPULATION_UPLOAD_ADMISSION_V1);
+        requireMirrorSchema(
+                payload,
+                CapabilityMirrorProtocol
+                        .AUTHORITATIVE_OUTCOME_SELECTED_POPULATION_UPLOAD_ADMISSION_SCHEMA_RESOURCE,
+                "OUTCOME_POPULATION_UPLOAD_ADMISSION");
+        return payload.deepCopy();
+    }
+
+    /**
+     * Stages or exactly replays one content-addressed population chunk.
+     *
+     * @param uploadId stable upload intent identity
+     * @param chunkIndex exact manifest-declared zero-based chunk index
+     * @param chunk signed selection-authority member chunk
+     * @return defensive payload-free chunk admission
+     */
+    public JsonNode stageAuthoritativeOutcomeSelectedPopulationUploadChunk(
+            String uploadId,
+            int chunkIndex,
+            JsonNode chunk) {
+        String exactUploadId =
+                mirrorArtifactId(uploadId, "uploadId");
+        if (chunkIndex < 0 || chunkIndex > 4_095) {
+            throw new IllegalArgumentException(
+                    "chunkIndex must be between 0 and 4095");
+        }
+        JsonNode command = requiredObject(chunk, "chunk");
+        CapabilityMirrorSchemaValidator.require(
+                command,
+                CapabilityMirrorProtocol
+                        .AUTHORITATIVE_OUTCOME_SELECTED_POPULATION_CHUNK_SCHEMA_RESOURCE,
+                "RG.MIRROR.CLIENT.OUTCOME_POPULATION_UPLOAD_CHUNK_INVALID");
+        JsonNode response = exchange(
+                "PUT",
+                selectedPopulationUploadPath(
+                        exactUploadId)
+                        + "/chunks/" + chunkIndex,
+                "",
+                "MIRROR_OUTCOME_SELECTION",
+                command);
+        JsonNode payload = requireMirrorEnvelope(
+                response,
+                "AUTHORITATIVE_OUTCOME_SELECTED_POPULATION_UPLOAD_CHUNK_ADMISSION",
+                CapabilityMirrorProtocol
+                        .AUTHORITATIVE_OUTCOME_SELECTED_POPULATION_UPLOAD_CHUNK_ADMISSION_V1);
+        requireMirrorSchema(
+                payload,
+                CapabilityMirrorProtocol
+                        .AUTHORITATIVE_OUTCOME_SELECTED_POPULATION_UPLOAD_CHUNK_ADMISSION_SCHEMA_RESOURCE,
+                "OUTCOME_POPULATION_UPLOAD_CHUNK_ADMISSION");
+        return payload.deepCopy();
+    }
+
+    /**
+     * Reads resumable progress without returning staged member payloads.
+     *
+     * @param uploadId stable upload intent identity
+     * @return defensive payload-free upload status
+     */
+    public JsonNode findAuthoritativeOutcomeSelectedPopulationUpload(
+            String uploadId) {
+        String exactUploadId =
+                mirrorArtifactId(uploadId, "uploadId");
+        return selectedPopulationUploadStatus(
+                "GET", exactUploadId);
+    }
+
+    /**
+     * Finalizes one complete upload through the governed population admission boundary.
+     *
+     * @param uploadId stable upload intent identity
+     * @return defensive immutable selected-population admission
+     */
+    public JsonNode finalizeAuthoritativeOutcomeSelectedPopulationUpload(
+            String uploadId) {
+        String exactUploadId =
+                mirrorArtifactId(uploadId, "uploadId");
+        JsonNode response = exchange(
+                "POST",
+                selectedPopulationUploadPath(
+                        exactUploadId) + "/finalize",
+                "",
+                "MIRROR_OUTCOME_SELECTION",
+                null);
+        JsonNode payload = requireMirrorEnvelope(
+                response,
+                "AUTHORITATIVE_OUTCOME_SELECTED_POPULATION_ADMISSION",
+                CapabilityMirrorProtocol
+                        .AUTHORITATIVE_OUTCOME_SELECTED_POPULATION_ADMISSION_RESULT_V1);
+        requireMirrorSchema(
+                payload,
+                CapabilityMirrorProtocol
+                        .AUTHORITATIVE_OUTCOME_SELECTED_POPULATION_ADMISSION_RESULT_SCHEMA_RESOURCE,
+                "OUTCOME_POPULATION_ADMISSION");
+        return payload.deepCopy();
+    }
+
+    /**
+     * Aborts one open upload and destroys its staged member payloads.
+     *
+     * @param uploadId stable upload intent identity
+     * @return defensive terminal payload-free upload status
+     */
+    public JsonNode abortAuthoritativeOutcomeSelectedPopulationUpload(
+            String uploadId) {
+        String exactUploadId =
+                mirrorArtifactId(uploadId, "uploadId");
+        return selectedPopulationUploadStatus(
+                "DELETE", exactUploadId);
+    }
+
+    /**
      * Reads one exact complete selected-population revision.
      *
      * @param populationId stable population identity
@@ -3787,6 +3923,34 @@ public final class ResourceGatewayTestClient {
                         .AUTHORITATIVE_OUTCOME_SELECTED_POPULATION_BUNDLE_SCHEMA_RESOURCE,
                 "OUTCOME_POPULATION_BUNDLE");
         return payload.deepCopy();
+    }
+
+    private JsonNode selectedPopulationUploadStatus(
+            String method,
+            String uploadId) {
+        JsonNode response = exchange(
+                method,
+                selectedPopulationUploadPath(uploadId),
+                "",
+                "MIRROR_OUTCOME_SELECTION",
+                null);
+        JsonNode payload = requireMirrorEnvelope(
+                response,
+                "AUTHORITATIVE_OUTCOME_SELECTED_POPULATION_UPLOAD_STATUS",
+                CapabilityMirrorProtocol
+                        .AUTHORITATIVE_OUTCOME_SELECTED_POPULATION_UPLOAD_STATUS_V1);
+        requireMirrorSchema(
+                payload,
+                CapabilityMirrorProtocol
+                        .AUTHORITATIVE_OUTCOME_SELECTED_POPULATION_UPLOAD_STATUS_SCHEMA_RESOURCE,
+                "OUTCOME_POPULATION_UPLOAD_STATUS");
+        return payload.deepCopy();
+    }
+
+    private static String selectedPopulationUploadPath(
+            String uploadId) {
+        return "/api/mirror/outcome-selected-populations/uploads/"
+                + segment(uploadId, 512);
     }
 
     private static String assessmentPath(

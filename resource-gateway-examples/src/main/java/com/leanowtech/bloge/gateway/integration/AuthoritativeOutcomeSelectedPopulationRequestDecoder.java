@@ -6,7 +6,9 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.leanowtech.bloge.gateway.integration.mirror.AuthoritativeOutcomeSelectedPopulationAdmissionRequest;
 import com.leanowtech.bloge.gateway.integration.mirror.AuthoritativeOutcomeSelectedPopulationAssessmentRequest;
+import com.leanowtech.bloge.gateway.integration.mirror.AuthoritativeOutcomeSelectedPopulationChunk;
 import com.leanowtech.bloge.gateway.integration.mirror.AuthoritativeOutcomeSelectedPopulationDispositionAdmissionRequest;
+import com.leanowtech.bloge.gateway.integration.mirror.AuthoritativeOutcomeSelectedPopulationUploadRequest;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.context.annotation.Profile;
 import org.springframework.stereotype.Component;
@@ -23,8 +25,7 @@ import java.util.Set;
  *
  * <p>Duplicate, unknown, missing, trailing, oversized, or structurally unbounded JSON is rejected
  * before Jackson constructs a protocol record. The initial complete-population route is capped at
- * 64 MiB; larger populations require the future staged chunk upload/finalize protocol rather than
- * unbounded request buffering.</p>
+ * 64 MiB. Resumable uploads decode only the bounded root or one independently bounded chunk.</p>
  */
 @Component
 @Profile("!production & (test | staging)")
@@ -43,6 +44,15 @@ AuthoritativeOutcomeSelectedPopulationRequestDecoder {
     /** Largest completeness-assessment command. */
     public static final int MAXIMUM_ASSESSMENT_REQUEST_BYTES =
             64 * 1024;
+    /** Largest staged-upload root intent. */
+    public static final int MAXIMUM_UPLOAD_REQUEST_BYTES =
+            AuthoritativeOutcomeSelectedPopulationUploadRequest
+                    .MAXIMUM_CANONICAL_BYTES;
+    /** Largest encoded staged chunk, including modest JSON overhead. */
+    public static final int MAXIMUM_UPLOAD_CHUNK_REQUEST_BYTES =
+            AuthoritativeOutcomeSelectedPopulationChunk
+                    .MAXIMUM_CANONICAL_BYTES
+                    + 64 * 1024;
     /** Deepest admitted JSON structure. */
     public static final int MAXIMUM_DEPTH = 64;
     /** Largest admitted node count for one buffered command. */
@@ -65,6 +75,27 @@ AuthoritativeOutcomeSelectedPopulationRequestDecoder {
                     "assessmentId",
                     "assessmentRevision",
                     "expectedPredecessorFingerprint");
+    private static final Set<String> UPLOAD_FIELDS =
+            Set.of(
+                    "schemaVersion",
+                    "uploadId",
+                    "expectedPredecessorFingerprint",
+                    "manifest");
+    private static final Set<String> CHUNK_FIELDS =
+            Set.of(
+                    "schemaVersion",
+                    "chunkId",
+                    "chunkFingerprint",
+                    "populationId",
+                    "populationRevision",
+                    "scope",
+                    "inventoryRef",
+                    "cohortRef",
+                    "samplingFrameRef",
+                    "selectedAt",
+                    "chunkIndex",
+                    "firstGlobalOrdinal",
+                    "members");
 
     private final ObjectMapper strictMapper;
 
@@ -129,6 +160,38 @@ AuthoritativeOutcomeSelectedPopulationRequestDecoder {
                 AuthoritativeOutcomeSelectedPopulationAssessmentRequest
                         .SCHEMA_VERSION,
                 AuthoritativeOutcomeSelectedPopulationAssessmentRequest
+                        .class);
+    }
+
+    /** Decodes one resumable-upload root intent after authentication. */
+    public AuthoritativeOutcomeSelectedPopulationUploadRequest
+    decodeUpload(
+            byte[] value,
+            IntegrationRequestContext identity) {
+        return decode(
+                value,
+                identity,
+                MAXIMUM_UPLOAD_REQUEST_BYTES,
+                UPLOAD_FIELDS,
+                AuthoritativeOutcomeSelectedPopulationUploadRequest
+                        .SCHEMA_VERSION,
+                AuthoritativeOutcomeSelectedPopulationUploadRequest
+                        .class);
+    }
+
+    /** Decodes one independently bounded content-addressed chunk after authentication. */
+    public AuthoritativeOutcomeSelectedPopulationChunk
+    decodeUploadChunk(
+            byte[] value,
+            IntegrationRequestContext identity) {
+        return decode(
+                value,
+                identity,
+                MAXIMUM_UPLOAD_CHUNK_REQUEST_BYTES,
+                CHUNK_FIELDS,
+                AuthoritativeOutcomeSelectedPopulationChunk
+                        .SCHEMA_VERSION,
+                AuthoritativeOutcomeSelectedPopulationChunk
                         .class);
     }
 

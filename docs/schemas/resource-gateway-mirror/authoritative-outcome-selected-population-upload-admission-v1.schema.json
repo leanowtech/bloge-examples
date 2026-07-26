@@ -1,0 +1,23 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://bloge.dev/schemas/resource-gateway-mirror/authoritative-outcome-selected-population-upload-admission-v1.schema.json",
+  "title": "Resource Gateway Authoritative Outcome Selected Population Upload Admission v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "status",
+    "idempotentReplay"
+  ],
+  "properties": {
+    "schemaVersion": {
+      "const": "resourceGateway.authoritativeOutcomeSelectedPopulationUploadAdmission.v1"
+    },
+    "status": {
+      "$ref": "authoritative-outcome-selected-population-upload-status-v1.schema.json"
+    },
+    "idempotentReplay": {
+      "type": "boolean"
+    }
+  }
+}

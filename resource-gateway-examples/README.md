@@ -96,6 +96,11 @@ silently consuming work.
 | `POST http://localhost:8080/api/mirror/outcome-observations` | Verify, sign, and append one immutable outcome revision from an authorized customer connector (`X-Purpose: MIRROR_OUTCOME_INGESTION`; independent authority bean required) |
 | `GET http://localhost:8080/api/mirror/outcome-observations/{observationId}/head` | Reverify the current business-authority closure and read its durable reconciliation head |
 | `GET http://localhost:8080/api/mirror/outcome-observations/{observationId}/lifecycle?afterOrdinal=0&limit=100` | Read one bounded append-only lifecycle suffix for offline audit |
+| `POST http://localhost:8080/api/mirror/outcome-selected-populations/uploads` | Begin or exactly replay one resumable selected-population upload intent (`X-Purpose: MIRROR_OUTCOME_SELECTION`) |
+| `PUT http://localhost:8080/api/mirror/outcome-selected-populations/uploads/{uploadId}/chunks/{chunkIndex}` | Stage or exactly replay one manifest-declared content-addressed chunk |
+| `GET http://localhost:8080/api/mirror/outcome-selected-populations/uploads/{uploadId}` | Read payload-free durable progress, expiry, and finalization state |
+| `POST http://localhost:8080/api/mirror/outcome-selected-populations/uploads/{uploadId}/finalize` | Finalize a complete upload through the existing governed population admission |
+| `DELETE http://localhost:8080/api/mirror/outcome-selected-populations/uploads/{uploadId}` | Abort an open upload and destroy its staged chunks |
 | `POST http://localhost:8080/api/mirror/shadow/source-bindings` | Resolve an exact candidate evidence bundle, double-address and sign one payload-free detached source pair (`X-Purpose: MIRROR_SHADOW_SOURCE_ADMIN`; explicit source-binding protocol header required) |
 | `GET http://localhost:8080/api/mirror/shadow/source-bindings/{bindingId}/revisions/{revision}?fingerprint=...` | Read one exact currently valid detached source pair without latest-revision fallback (`X-Purpose: MIRROR_SHADOW`, `MIRROR_SHADOW_SOURCE_ADMIN`, or `GOVERNANCE_EVIDENCE_INGESTION`) |
 | `GET http://localhost:8080/api/mirror/shadow/source-resolutions/{attestationId}/revisions/{revision}?fingerprint=...` | Read one exact signed proof that both detached sources were independently re-resolved for a stable `executionId` (`X-Purpose: MIRROR_SHADOW` or `GOVERNANCE_EVIDENCE_INGESTION`; explicit source-resolution protocol header required) |
@@ -1326,9 +1331,69 @@ curl -fsS http://localhost:8080/api/integration/capabilities | jq \
 
 Install the three host-owned authority beans in a staging deployment, then use
 the same scripts (or the packaged Boot JAR) to start and stop it. Do not add a
-permissive authority merely to make readiness green. The current complete
-population command is bounded to 64 MiB; large customer populations still need
-the planned staged chunk upload/finalize protocol.
+permissive authority merely to make readiness green. The original complete
+population command remains bounded to 64 MiB. For a larger retryable transfer,
+use the staged protocol while preserving one logical population revision:
+
+```java
+JsonNode upload = client
+        .beginAuthoritativeOutcomeSelectedPopulationUpload(uploadRequest);
+
+for (int index = 0; index < chunks.size(); index++) {
+    client.stageAuthoritativeOutcomeSelectedPopulationUploadChunk(
+            uploadId, index, chunks.get(index));
+}
+
+JsonNode status = client
+        .findAuthoritativeOutcomeSelectedPopulationUpload(uploadId);
+if (status.path("nextMissingChunkIndex").asInt() != -1) {
+    throw new IllegalStateException(
+            "population upload is incomplete");
+}
+
+JsonNode populationAdmission = client
+        .finalizeAuthoritativeOutcomeSelectedPopulationUpload(uploadId);
+```
+
+Chunks may be uploaded out of order. Begin and chunk PUT are exact-replay
+idempotent, so a caller should retry the same `uploadId`, index, and bytes after
+an ambiguous response. Never generate a new upload id for each transport retry.
+`nextMissingChunkIndex` is the lowest durable gap and status never returns
+selected-member data. Use
+`abortAuthoritativeOutcomeSelectedPopulationUpload(uploadId)` to abandon an
+`OPEN` upload.
+
+The closed lifecycle is `OPEN -> FINALIZING -> FINALIZED`, with `ABORTED` and
+`EXPIRED` terminal alternatives. A two-minute database lease and monotonic
+epoch let another replica recover a crashed finalizer. Finalize reuses the
+existing idempotent population admission, so a crash after population commit
+but before upload terminalization is recoverable without creating a second
+revision.
+
+Default server-owned bounds are 16 active uploads and 1 GiB staged bytes per
+exact scope, 256 MiB per upload, a 24-hour incomplete TTL, and seven-day
+terminal retention. Capacity exhaustion returns 429 with a bounded retry hint.
+Override the
+`AuthoritativeOutcomeSelectedPopulationUploadPolicy` bean to apply a reviewed
+deployment policy; requests cannot override capacity or lifecycle. Cleanup
+defaults to 100 candidates every 60 seconds:
+
+```properties
+gateway.testing.mirror.selected-population.upload-cleanup-batch-size=100
+gateway.testing.mirror.selected-population.upload-cleanup-interval-ms=60000
+```
+
+The capability probe advertises
+`mirrorAuthoritativeOutcomeSelectedPopulationStagedUpload=true` only when the
+staging repository, service, controller, selection authority, and population
+admission boundary are assembled.
+
+This is resumable transport, not an unlimited streaming data plane. The
+default 256 MiB policy is intentional, and finalize currently materializes the
+bounded chunk closure in one JVM before governed admission. Million-scale
+deployments must certify heap, database, authority latency, and policy bounds;
+populations beyond those bounds require the planned object-store/streaming
+projection lifecycle rather than a larger bean value.
 
 The public-only
 `authoritative-outcome-selected-population-stage1-v1.fixture.json` is generated
@@ -1336,7 +1401,7 @@ from the server model and consumed independently by the Test Kit. It freezes
 population/chunk addressing, `MATCH`/`MISMATCH` observations, one legal
 disposition, zero-missing assessment arithmetic, source pagination, and all
 Resource Gateway Ed25519 signatures without carrying a private key or business
-payload. Twelve strict Schemas, the fixed fixture, and the standalone Test Kit
+payload. Sixteen strict Schemas, the fixed fixture, resumable-upload client, and the standalone Test Kit
 client/verifier are described in the
 [Test Kit guide](../resource-gateway-test-kit/README.md#verify-selected-population-completeness).
 

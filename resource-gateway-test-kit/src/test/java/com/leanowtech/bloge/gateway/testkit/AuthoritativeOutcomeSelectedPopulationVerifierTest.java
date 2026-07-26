@@ -295,6 +295,79 @@ class AuthoritativeOutcomeSelectedPopulationVerifierTest {
         dispositionCommand.set(
                 "disposition", unsignedDisposition);
 
+        ObjectNode uploadCommand =
+                JsonNodeFactory.instance.objectNode();
+        uploadCommand.put(
+                "schemaVersion",
+                CapabilityMirrorProtocol
+                        .AUTHORITATIVE_OUTCOME_SELECTED_POPULATION_UPLOAD_REQUEST_V1);
+        uploadCommand.put("uploadId", "refund-upload-1");
+        uploadCommand.put(
+                "expectedPredecessorFingerprint", "");
+        uploadCommand.set(
+                "manifest", unsignedManifest.deepCopy());
+
+        ObjectNode uploadStatus =
+                JsonNodeFactory.instance.objectNode();
+        uploadStatus.put(
+                "schemaVersion",
+                CapabilityMirrorProtocol
+                        .AUTHORITATIVE_OUTCOME_SELECTED_POPULATION_UPLOAD_STATUS_V1);
+        uploadStatus.put("uploadId", "refund-upload-1");
+        uploadStatus.put(
+                "requestFingerprint",
+                "sha256:" + "1".repeat(64));
+        uploadStatus.put(
+                "populationId",
+                bundle.path("manifest")
+                        .path("populationId").asText());
+        uploadStatus.put("populationRevision", 1);
+        uploadStatus.put("state", "OPEN");
+        uploadStatus.put(
+                "expectedChunkCount",
+                bundle.path("chunks").size());
+        uploadStatus.put("receivedChunkCount", 0);
+        uploadStatus.put("receivedBytes", 0);
+        uploadStatus.put("nextMissingChunkIndex", 0);
+        uploadStatus.put("finalizeEpoch", 0);
+        uploadStatus.put(
+                "createdAt", CREATED_AT.toString());
+        uploadStatus.put(
+                "updatedAt", CREATED_AT.toString());
+        uploadStatus.put(
+                "expiresAt",
+                CREATED_AT.plusSeconds(3_600).toString());
+        uploadStatus.put(
+                "finalizeLeaseUntil",
+                Instant.EPOCH.toString());
+        uploadStatus.put(
+                "finalizedPopulationFingerprint", "");
+
+        ObjectNode uploadAdmission =
+                JsonNodeFactory.instance.objectNode();
+        uploadAdmission.put(
+                "schemaVersion",
+                CapabilityMirrorProtocol
+                        .AUTHORITATIVE_OUTCOME_SELECTED_POPULATION_UPLOAD_ADMISSION_V1);
+        uploadAdmission.set(
+                "status", uploadStatus.deepCopy());
+        uploadAdmission.put("idempotentReplay", false);
+
+        ObjectNode chunkAdmission =
+                JsonNodeFactory.instance.objectNode();
+        chunkAdmission.put(
+                "schemaVersion",
+                CapabilityMirrorProtocol
+                        .AUTHORITATIVE_OUTCOME_SELECTED_POPULATION_UPLOAD_CHUNK_ADMISSION_V1);
+        chunkAdmission.set(
+                "status", uploadStatus.deepCopy());
+        chunkAdmission.put("chunkIndex", 0);
+        chunkAdmission.put(
+                "chunkFingerprint",
+                bundle.path("chunks").get(0)
+                        .path("chunkFingerprint").asText());
+        chunkAdmission.put("idempotentReplay", false);
+
         assertThatNoException().isThrownBy(() -> {
             CapabilityMirrorSchemaValidator.require(
                     populationCommand,
@@ -305,6 +378,26 @@ class AuthoritativeOutcomeSelectedPopulationVerifierTest {
                     dispositionCommand,
                     CapabilityMirrorProtocol
                             .AUTHORITATIVE_OUTCOME_SELECTED_POPULATION_DISPOSITION_ADMISSION_REQUEST_SCHEMA_RESOURCE,
+                    "RG.MIRROR.CLIENT.TEST_INVALID");
+            CapabilityMirrorSchemaValidator.require(
+                    uploadCommand,
+                    CapabilityMirrorProtocol
+                            .AUTHORITATIVE_OUTCOME_SELECTED_POPULATION_UPLOAD_REQUEST_SCHEMA_RESOURCE,
+                    "RG.MIRROR.CLIENT.TEST_INVALID");
+            CapabilityMirrorSchemaValidator.require(
+                    uploadStatus,
+                    CapabilityMirrorProtocol
+                            .AUTHORITATIVE_OUTCOME_SELECTED_POPULATION_UPLOAD_STATUS_SCHEMA_RESOURCE,
+                    "RG.MIRROR.CLIENT.TEST_INVALID");
+            CapabilityMirrorSchemaValidator.require(
+                    uploadAdmission,
+                    CapabilityMirrorProtocol
+                            .AUTHORITATIVE_OUTCOME_SELECTED_POPULATION_UPLOAD_ADMISSION_SCHEMA_RESOURCE,
+                    "RG.MIRROR.CLIENT.TEST_INVALID");
+            CapabilityMirrorSchemaValidator.require(
+                    chunkAdmission,
+                    CapabilityMirrorProtocol
+                            .AUTHORITATIVE_OUTCOME_SELECTED_POPULATION_UPLOAD_CHUNK_ADMISSION_SCHEMA_RESOURCE,
                     "RG.MIRROR.CLIENT.TEST_INVALID");
         });
 

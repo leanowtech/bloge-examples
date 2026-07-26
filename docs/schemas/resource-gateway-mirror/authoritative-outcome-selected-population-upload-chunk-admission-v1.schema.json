@@ -1,0 +1,33 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://bloge.dev/schemas/resource-gateway-mirror/authoritative-outcome-selected-population-upload-chunk-admission-v1.schema.json",
+  "title": "Resource Gateway Authoritative Outcome Selected Population Upload Chunk Admission v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "status",
+    "chunkIndex",
+    "chunkFingerprint",
+    "idempotentReplay"
+  ],
+  "properties": {
+    "schemaVersion": {
+      "const": "resourceGateway.authoritativeOutcomeSelectedPopulationUploadChunkAdmission.v1"
+    },
+    "status": {
+      "$ref": "authoritative-outcome-selected-population-upload-status-v1.schema.json"
+    },
+    "chunkIndex": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 4095
+    },
+    "chunkFingerprint": {
+      "$ref": "mirror-plan-v1.schema.json#/$defs/fingerprint"
+    },
+    "idempotentReplay": {
+      "type": "boolean"
+    }
+  }
+}

@@ -15,6 +15,7 @@ AuthoritativeOutcomeSelectedPopulationRuntimeAvailability {
     private final boolean api;
     private final boolean durableRegistry;
     private final boolean sourceClosure;
+    private final boolean stagedUpload;
     private final BooleanSupplier authorityReadiness;
 
     /** Creates one profile-owned selected-population runtime marker. */
@@ -23,9 +24,25 @@ AuthoritativeOutcomeSelectedPopulationRuntimeAvailability {
             boolean durableRegistry,
             boolean sourceClosure,
             BooleanSupplier authorityReadiness) {
+        this(
+                api,
+                durableRegistry,
+                sourceClosure,
+                false,
+                authorityReadiness);
+    }
+
+    /** Creates one profile-owned marker including resumable staged upload. */
+    public AuthoritativeOutcomeSelectedPopulationRuntimeAvailability(
+            boolean api,
+            boolean durableRegistry,
+            boolean sourceClosure,
+            boolean stagedUpload,
+            BooleanSupplier authorityReadiness) {
         this.api = api;
         this.durableRegistry = durableRegistry;
         this.sourceClosure = sourceClosure;
+        this.stagedUpload = stagedUpload;
         this.authorityReadiness = Objects.requireNonNull(
                 authorityReadiness, "authorityReadiness");
     }
@@ -45,6 +62,11 @@ AuthoritativeOutcomeSelectedPopulationRuntimeAvailability {
         return sourceClosure;
     }
 
+    /** @return whether durable resumable chunk upload and fenced finalize are assembled */
+    public boolean stagedUpload() {
+        return stagedUpload;
+    }
+
     /** @return whether selection, outcome, deletion, and signing boundaries are currently usable */
     public boolean authoritiesReady() {
         try {
@@ -59,6 +81,7 @@ AuthoritativeOutcomeSelectedPopulationRuntimeAvailability {
         return api
                 && durableRegistry
                 && sourceClosure
+                && stagedUpload
                 && authoritiesReady();
     }
 }

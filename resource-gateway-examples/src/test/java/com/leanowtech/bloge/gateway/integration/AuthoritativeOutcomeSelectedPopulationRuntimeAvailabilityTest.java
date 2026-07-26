@@ -19,6 +19,7 @@ class AuthoritativeOutcomeSelectedPopulationRuntimeAvailabilityTest {
                         true,
                         true,
                         true,
+                        true,
                         authorities::get);
 
         assertThat(availability.api()).isTrue();
@@ -38,11 +39,28 @@ class AuthoritativeOutcomeSelectedPopulationRuntimeAvailabilityTest {
     }
 
     @Test
+    void stagedUploadIsRequiredForContinuousReadiness() {
+        AuthoritativeOutcomeSelectedPopulationRuntimeAvailability
+                availability =
+                new
+                        AuthoritativeOutcomeSelectedPopulationRuntimeAvailability(
+                        true,
+                        true,
+                        true,
+                        false,
+                        () -> true);
+
+        assertThat(availability.stagedUpload()).isFalse();
+        assertThat(availability.continuousReady()).isFalse();
+    }
+
+    @Test
     void failedAuthorityProbeFailsClosed() {
         AuthoritativeOutcomeSelectedPopulationRuntimeAvailability
                 availability =
                 new
                         AuthoritativeOutcomeSelectedPopulationRuntimeAvailability(
+                        true,
                         true,
                         true,
                         true,

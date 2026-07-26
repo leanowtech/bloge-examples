@@ -1,0 +1,94 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://bloge.dev/schemas/resource-gateway-mirror/authoritative-outcome-selected-population-upload-status-v1.schema.json",
+  "title": "Resource Gateway Authoritative Outcome Selected Population Upload Status v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "uploadId",
+    "requestFingerprint",
+    "populationId",
+    "populationRevision",
+    "state",
+    "expectedChunkCount",
+    "receivedChunkCount",
+    "receivedBytes",
+    "nextMissingChunkIndex",
+    "finalizeEpoch",
+    "createdAt",
+    "updatedAt",
+    "expiresAt",
+    "finalizeLeaseUntil",
+    "finalizedPopulationFingerprint"
+  ],
+  "properties": {
+    "schemaVersion": {
+      "const": "resourceGateway.authoritativeOutcomeSelectedPopulationUploadStatus.v1"
+    },
+    "uploadId": {
+      "$ref": "read-only-shadow-comparison-v1.schema.json#/$defs/identifier"
+    },
+    "requestFingerprint": {
+      "$ref": "mirror-plan-v1.schema.json#/$defs/fingerprint"
+    },
+    "populationId": {
+      "$ref": "read-only-shadow-comparison-v1.schema.json#/$defs/identifier"
+    },
+    "populationRevision": {
+      "type": "integer",
+      "minimum": 1
+    },
+    "state": {
+      "enum": [
+        "OPEN",
+        "FINALIZING",
+        "FINALIZED",
+        "ABORTED",
+        "EXPIRED"
+      ]
+    },
+    "expectedChunkCount": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 4096
+    },
+    "receivedChunkCount": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 4096
+    },
+    "receivedBytes": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "nextMissingChunkIndex": {
+      "type": "integer",
+      "minimum": -1,
+      "maximum": 4095
+    },
+    "finalizeEpoch": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "createdAt": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "updatedAt": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "expiresAt": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "finalizeLeaseUntil": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "finalizedPopulationFingerprint": {
+      "$ref": "authoritative-outcome-selected-population-admission-request-v1.schema.json#/$defs/optionalFingerprint"
+    }
+  }
+}

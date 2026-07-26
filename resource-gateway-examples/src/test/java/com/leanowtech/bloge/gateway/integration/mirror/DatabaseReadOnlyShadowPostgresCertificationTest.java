@@ -535,6 +535,189 @@ class DatabaseReadOnlyShadowPostgresCertificationTest {
                                 .SourceKind.LEGAL_DISPOSITION);
     }
 
+    @Test
+    void certifiesResumablePopulationUploadAcrossReplicas()
+            throws Exception {
+        Replica first = replica(
+                postgres.getPostgresDatabase());
+        Replica second = replica(
+                postgres.getPostgresDatabase());
+        AtomicReference<Instant> now =
+                new AtomicReference<>(
+                        DomainFidelityTestFixtures.NOW);
+        AuthoritativeOutcomeSelectedPopulationUploadPolicy policy =
+                new
+                        AuthoritativeOutcomeSelectedPopulationUploadPolicy(
+                        1,
+                        16 * 1024 * 1024,
+                        32 * 1024 * 1024,
+                        Duration.ofHours(1),
+                        Duration.ofMinutes(2),
+                        Duration.ofDays(1));
+        CyclicBarrier initializationRace =
+                new CyclicBarrier(2);
+        Runnable beforeLockRowInsert = () ->
+                awaitBarrier(initializationRace);
+        DatabaseAuthoritativeOutcomeSelectedPopulationUploadRepository
+                firstUploads =
+                new
+                        DatabaseAuthoritativeOutcomeSelectedPopulationUploadRepository(
+                        first.jdbc(),
+                        mapper,
+                        policy,
+                        first.transactions(),
+                        now::get,
+                        beforeLockRowInsert);
+        DatabaseAuthoritativeOutcomeSelectedPopulationUploadRepository
+                secondUploads =
+                new
+                        DatabaseAuthoritativeOutcomeSelectedPopulationUploadRepository(
+                        second.jdbc(),
+                        mapper,
+                        policy,
+                        second.transactions(),
+                        now::get,
+                        beforeLockRowInsert);
+        firstUploads.init();
+        secondUploads.init();
+        Clock clock = Clock.fixed(
+                DomainFidelityTestFixtures.NOW,
+                ZoneOffset.UTC);
+        AuthoritativeOutcomeSelectedPopulationIntegrity integrity =
+                new
+                        AuthoritativeOutcomeSelectedPopulationIntegrity(
+                        mapper,
+                        InMemoryVisualEvidenceSigner
+                                .usingClock(clock),
+                        AuthoritativeOutcomeSelectedPopulationTestFixtures
+                                .populationAuthority(),
+                        clock);
+        AuthoritativeOutcomeSelectedPopulationTestFixtures.Population
+                fixture =
+                AuthoritativeOutcomeSelectedPopulationTestFixtures
+                        .signedPopulation(integrity);
+        AuthoritativeOutcomeSelectedPopulationUploadRequest request =
+                new
+                        AuthoritativeOutcomeSelectedPopulationUploadRequest(
+                        "",
+                        "postgres-population-upload",
+                        "",
+                        fixture.manifest());
+
+        try (var executor =
+                     Executors.newFixedThreadPool(2)) {
+            Future<AuthoritativeOutcomeSelectedPopulationUploadRepository
+                    .Admission> firstAdmission =
+                    executor.submit(() ->
+                            firstUploads.begin(request));
+            Future<AuthoritativeOutcomeSelectedPopulationUploadRepository
+                    .Admission> secondAdmission =
+                    executor.submit(() ->
+                            secondUploads.begin(request));
+            assertThat(List.of(
+                    awaitFuture(firstAdmission)
+                            .idempotentReplay(),
+                    awaitFuture(secondAdmission)
+                            .idempotentReplay()))
+                    .containsExactlyInAnyOrder(
+                            false, true);
+        }
+
+        assertThatThrownBy(() ->
+                secondUploads.begin(
+                        uploadRequestForPopulation(
+                                fixture,
+                                "postgres-quota-probe",
+                                "postgres-quota-population")))
+                .isInstanceOfSatisfying(
+                        AuthoritativeOutcomeSelectedPopulationUploadRepository
+                                .Violation.class,
+                        failure -> assertThat(
+                                failure.reason())
+                                .isEqualTo(
+                                        AuthoritativeOutcomeSelectedPopulationUploadRepository
+                                                .Reason.ACTIVE_UPLOAD_QUOTA_EXCEEDED));
+
+        secondUploads.stageChunk(
+                fixture.manifest().scope(),
+                request.uploadId(),
+                1,
+                fixture.chunks().get(1),
+                2_048);
+        firstUploads.stageChunk(
+                fixture.manifest().scope(),
+                request.uploadId(),
+                0,
+                fixture.chunks().getFirst(),
+                1_024);
+        AuthoritativeOutcomeSelectedPopulationUploadRepository
+                .FinalizationClaim claim =
+                secondUploads.claimFinalize(
+                        fixture.manifest().scope(),
+                        request.uploadId(),
+                        "postgres-finalizer");
+        AuthoritativeOutcomeSelectedPopulationAdmission admission =
+                new
+                        AuthoritativeOutcomeSelectedPopulationAdmission(
+                        "",
+                        new
+                                AuthoritativeOutcomeSelectedPopulationBundle(
+                                "",
+                                fixture.manifest(),
+                                fixture.chunks(),
+                                ""),
+                        false);
+        firstUploads.completeFinalize(
+                claim, admission);
+        AuthoritativeOutcomeSelectedPopulationUploadRepository
+                .FinalizationClaim replay =
+                secondUploads.claimFinalize(
+                        fixture.manifest().scope(),
+                        request.uploadId(),
+                        "postgres-replay");
+
+        assertThat(replay.requiresExecution())
+                .isFalse();
+        assertThat(replay.upload().admission())
+                .contains(admission);
+    }
+
+    private static
+    AuthoritativeOutcomeSelectedPopulationUploadRequest
+    uploadRequestForPopulation(
+            AuthoritativeOutcomeSelectedPopulationTestFixtures.Population
+                    fixture,
+            String uploadId,
+            String populationId) {
+        AuthoritativeOutcomeSelectedPopulationManifest source =
+                fixture.manifest();
+        return new
+                AuthoritativeOutcomeSelectedPopulationUploadRequest(
+                "",
+                uploadId,
+                "",
+                new
+                        AuthoritativeOutcomeSelectedPopulationManifest(
+                        "",
+                        populationId,
+                        source.revision(),
+                        "",
+                        source.scope(),
+                        source.inventoryRef(),
+                        source.cohortRef(),
+                        source.samplingFrameRef(),
+                        source.selectionPolicyRef(),
+                        source.selectionAuthoritySetRef(),
+                        source.selectionAttestationRef(),
+                        source.selectedAt(),
+                        source.strata(),
+                        source.chunks(),
+                        source.totalEligiblePopulation(),
+                        source.totalSelectedPopulation(),
+                        source.attestedAt(),
+                        null));
+    }
+
     private JobFixture jobFixture() {
         return jobFixture(
                 () -> {

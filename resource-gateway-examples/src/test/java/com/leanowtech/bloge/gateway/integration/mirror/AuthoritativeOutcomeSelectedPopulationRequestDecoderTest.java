@@ -110,6 +110,13 @@ class AuthoritativeOutcomeSelectedPopulationRequestDecoderTest {
                         "assessment-1",
                         1,
                         "");
+        AuthoritativeOutcomeSelectedPopulationUploadRequest
+                uploadRequest =
+                new AuthoritativeOutcomeSelectedPopulationUploadRequest(
+                        "",
+                        "upload-1",
+                        "",
+                        population.manifest());
 
         assertThat(decoder.decodePopulation(
                 mapper.writeValueAsBytes(
@@ -123,6 +130,15 @@ class AuthoritativeOutcomeSelectedPopulationRequestDecoderTest {
                 mapper.writeValueAsBytes(
                         assessmentRequest),
                 identity)).isEqualTo(assessmentRequest);
+        assertThat(decoder.decodeUpload(
+                mapper.writeValueAsBytes(
+                        uploadRequest),
+                identity)).isEqualTo(uploadRequest);
+        assertThat(decoder.decodeUploadChunk(
+                mapper.writeValueAsBytes(
+                        population.chunks().getFirst()),
+                identity)).isEqualTo(
+                population.chunks().getFirst());
     }
 
     @Test

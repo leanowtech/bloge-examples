@@ -463,6 +463,22 @@ public final class CapabilityMirrorProtocol {
     public static final String
     AUTHORITATIVE_OUTCOME_SELECTED_POPULATION_ASSESSMENT_SOURCE_PAGE_V1 =
             "resourceGateway.authoritativeOutcomeSelectedPopulationAssessmentSourcePage.v1";
+    /** Resumable selected-population upload intent wire version. */
+    public static final String
+    AUTHORITATIVE_OUTCOME_SELECTED_POPULATION_UPLOAD_REQUEST_V1 =
+            "resourceGateway.authoritativeOutcomeSelectedPopulationUploadRequest.v1";
+    /** Payload-free selected-population upload status wire version. */
+    public static final String
+    AUTHORITATIVE_OUTCOME_SELECTED_POPULATION_UPLOAD_STATUS_V1 =
+            "resourceGateway.authoritativeOutcomeSelectedPopulationUploadStatus.v1";
+    /** Durable resumable-upload intent admission wire version. */
+    public static final String
+    AUTHORITATIVE_OUTCOME_SELECTED_POPULATION_UPLOAD_ADMISSION_V1 =
+            "resourceGateway.authoritativeOutcomeSelectedPopulationUploadAdmission.v1";
+    /** Durable staged-chunk admission wire version. */
+    public static final String
+    AUTHORITATIVE_OUTCOME_SELECTED_POPULATION_UPLOAD_CHUNK_ADMISSION_V1 =
+            "resourceGateway.authoritativeOutcomeSelectedPopulationUploadChunkAdmission.v1";
     /** Fixed server-produced selected-population completeness compatibility fixture version. */
     public static final String
     AUTHORITATIVE_OUTCOME_SELECTED_POPULATION_COMPATIBILITY_V1 =
@@ -1101,6 +1117,26 @@ public final class CapabilityMirrorProtocol {
     AUTHORITATIVE_OUTCOME_SELECTED_POPULATION_ASSESSMENT_SOURCE_PAGE_SCHEMA_RESOURCE =
             SCHEMA_RESOURCE_ROOT
                     + "authoritative-outcome-selected-population-assessment-source-page-v1.schema.json";
+    /** Packaged resumable selected-population upload intent schema. */
+    public static final String
+    AUTHORITATIVE_OUTCOME_SELECTED_POPULATION_UPLOAD_REQUEST_SCHEMA_RESOURCE =
+            SCHEMA_RESOURCE_ROOT
+                    + "authoritative-outcome-selected-population-upload-request-v1.schema.json";
+    /** Packaged payload-free selected-population upload status schema. */
+    public static final String
+    AUTHORITATIVE_OUTCOME_SELECTED_POPULATION_UPLOAD_STATUS_SCHEMA_RESOURCE =
+            SCHEMA_RESOURCE_ROOT
+                    + "authoritative-outcome-selected-population-upload-status-v1.schema.json";
+    /** Packaged durable upload-intent admission schema. */
+    public static final String
+    AUTHORITATIVE_OUTCOME_SELECTED_POPULATION_UPLOAD_ADMISSION_SCHEMA_RESOURCE =
+            SCHEMA_RESOURCE_ROOT
+                    + "authoritative-outcome-selected-population-upload-admission-v1.schema.json";
+    /** Packaged durable staged-chunk admission schema. */
+    public static final String
+    AUTHORITATIVE_OUTCOME_SELECTED_POPULATION_UPLOAD_CHUNK_ADMISSION_SCHEMA_RESOURCE =
+            SCHEMA_RESOURCE_ROOT
+                    + "authoritative-outcome-selected-population-upload-chunk-admission-v1.schema.json";
     /** Packaged signed payload-free read-only Shadow comparison schema. */
     public static final String
     READ_ONLY_SHADOW_COMPARISON_SCHEMA_RESOURCE =

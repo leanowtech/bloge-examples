@@ -98,6 +98,11 @@ import com.leanowtech.bloge.gateway.integration.mirror.AuthoritativeOutcomeSelec
 import com.leanowtech.bloge.gateway.integration.mirror.AuthoritativeOutcomeSelectedPopulationIntegrity;
 import com.leanowtech.bloge.gateway.integration.mirror.AuthoritativeOutcomeSelectedPopulationRepository;
 import com.leanowtech.bloge.gateway.integration.mirror.DatabaseAuthoritativeOutcomeSelectedPopulationRepository;
+import com.leanowtech.bloge.gateway.integration.mirror.AuthoritativeOutcomeSelectedPopulationUploadPolicy;
+import com.leanowtech.bloge.gateway.integration.mirror.AuthoritativeOutcomeSelectedPopulationUploadRepository;
+import com.leanowtech.bloge.gateway.integration.mirror.AuthoritativeOutcomeSelectedPopulationUploadService;
+import com.leanowtech.bloge.gateway.integration.mirror.AuthoritativeOutcomeSelectedPopulationUploadCleanupScheduler;
+import com.leanowtech.bloge.gateway.integration.mirror.DatabaseAuthoritativeOutcomeSelectedPopulationUploadRepository;
 import com.leanowtech.bloge.gateway.integration.mirror.DomainFidelityProfileIntegrity;
 import com.leanowtech.bloge.gateway.integration.mirror.DomainFidelityRepository;
 import com.leanowtech.bloge.gateway.integration.mirror.DomainFidelityService;
@@ -207,6 +212,7 @@ import com.leanowtech.bloge.gateway.visual.runtime.VisualEvidenceSigner;
 import io.micrometer.core.instrument.MeterRegistry;
 import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import org.springframework.beans.factory.ObjectProvider;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnMissingBean;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnBean;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
@@ -2488,18 +2494,97 @@ public class MirrorRuntimeConfiguration {
                 transactionManager);
     }
 
-    /** Publishes separate route, storage, source-closure, and authority readiness facts. */
+    /** Freezes bounded resumable-upload quotas and lifecycle windows. */
     @Bean
     @ConditionalOnMissingBean
     @ConditionalOnBean(
             AuthoritativeOutcomeSelectedPopulationApplicationService
                     .class)
+    public AuthoritativeOutcomeSelectedPopulationUploadPolicy
+    authoritativeOutcomeSelectedPopulationUploadPolicy() {
+        return AuthoritativeOutcomeSelectedPopulationUploadPolicy
+                .defaults();
+    }
+
+    /** Creates durable resumable intent, chunk, quota, and finalizer-fence storage. */
+    @Bean
+    @ConditionalOnMissingBean
+    @ConditionalOnBean(
+            AuthoritativeOutcomeSelectedPopulationApplicationService
+                    .class)
+    public AuthoritativeOutcomeSelectedPopulationUploadRepository
+    authoritativeOutcomeSelectedPopulationUploadRepository(
+            JdbcTemplate jdbc,
+            ObjectMapper objectMapper,
+            AuthoritativeOutcomeSelectedPopulationUploadPolicy
+                    policy,
+            PlatformTransactionManager transactionManager) {
+        return new
+                DatabaseAuthoritativeOutcomeSelectedPopulationUploadRepository(
+                jdbc,
+                objectMapper,
+                policy,
+                transactionManager);
+    }
+
+    /** Creates the audited resumable upload and idempotent finalization boundary. */
+    @Bean
+    @ConditionalOnMissingBean
+    @ConditionalOnBean(
+            AuthoritativeOutcomeSelectedPopulationUploadRepository
+                    .class)
+    public AuthoritativeOutcomeSelectedPopulationUploadService
+    authoritativeOutcomeSelectedPopulationUploadService(
+            AuthoritativeOutcomeSelectedPopulationUploadRepository
+                    repository,
+            AuthoritativeOutcomeSelectedPopulationApplicationService
+                    populationService,
+            AuthoritativeOutcomeSelectedPopulationAccessPolicy
+                    accessPolicy,
+            MirrorOperationObservability observability,
+            PlatformTransactionManager transactionManager) {
+        return new
+                AuthoritativeOutcomeSelectedPopulationUploadService(
+                repository,
+                populationService,
+                accessPolicy,
+                observability,
+                transactionManager);
+    }
+
+    /** Runs bounded expiry and terminal-retention turns for durable staged uploads. */
+    @Bean
+    @ConditionalOnMissingBean
+    @ConditionalOnBean(
+            AuthoritativeOutcomeSelectedPopulationUploadService
+                    .class)
+    public AuthoritativeOutcomeSelectedPopulationUploadCleanupScheduler
+    authoritativeOutcomeSelectedPopulationUploadCleanupScheduler(
+            AuthoritativeOutcomeSelectedPopulationUploadService
+                    service,
+            @Value("${gateway.testing.mirror.selected-population.upload-cleanup-batch-size:100}")
+            int batchSize) {
+        return new
+                AuthoritativeOutcomeSelectedPopulationUploadCleanupScheduler(
+                service, batchSize);
+    }
+
+    /** Publishes separate route, storage, source-closure, and authority readiness facts. */
+    @Bean
+    @ConditionalOnMissingBean
+    @ConditionalOnBean({
+            AuthoritativeOutcomeSelectedPopulationApplicationService
+                    .class,
+            AuthoritativeOutcomeSelectedPopulationUploadService
+                    .class
+    })
     public AuthoritativeOutcomeSelectedPopulationRuntimeAvailability
     authoritativeOutcomeSelectedPopulationRuntimeAvailability(
             AuthoritativeOutcomeSelectedPopulationApplicationService
                     service) {
         return new
                 AuthoritativeOutcomeSelectedPopulationRuntimeAvailability(
+                true,
                 true,
                 true,
                 true,

@@ -150,6 +150,16 @@ public record MirrorOperationAuditEvent(
         OUTCOME_LIFECYCLE_READ,
         /** Verify, sign, and append one complete pre-treatment selected population. */
         OUTCOME_POPULATION_INGEST,
+        /** Create or exactly replay one immutable selected-population upload intent. */
+        OUTCOME_POPULATION_UPLOAD_BEGIN,
+        /** Stage or exactly replay one manifest-declared population chunk. */
+        OUTCOME_POPULATION_UPLOAD_CHUNK,
+        /** Read one exact-scope payload-free population upload status. */
+        OUTCOME_POPULATION_UPLOAD_READ,
+        /** Finalize one complete upload through the governed population admission boundary. */
+        OUTCOME_POPULATION_UPLOAD_FINALIZE,
+        /** Abort one open upload and destroy its staged chunks. */
+        OUTCOME_POPULATION_UPLOAD_ABORT,
         /** Verify, sign, and append one independently authorized legal disposition. */
         OUTCOME_DISPOSITION_INGEST,
         /** Project and append one coherent current-head population completeness assessment. */

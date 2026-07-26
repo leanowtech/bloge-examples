@@ -1116,6 +1116,7 @@ class ToolStudioIntegrationServiceTest {
                         true,
                         true,
                         true,
+                        true,
                         authoritiesReady::get));
 
         IntegrationCapabilities ready =
@@ -1130,6 +1131,9 @@ class ToolStudioIntegrationServiceTest {
                         true)
                 .containsEntry(
                         "mirrorAuthoritativeOutcomeSelectedPopulationSourceClosure",
+                        true)
+                .containsEntry(
+                        "mirrorAuthoritativeOutcomeSelectedPopulationStagedUpload",
                         true)
                 .containsEntry(
                         "mirrorAuthoritativeOutcomeSelectedPopulationReady",
@@ -1147,7 +1151,11 @@ class ToolStudioIntegrationServiceTest {
                         "authoritativeOutcomeSelectedPopulationAssessmentRequest",
                         "authoritativeOutcomeSelectedPopulationAssessmentAdmission",
                         "authoritativeOutcomeSelectedPopulationAssessment",
-                        "authoritativeOutcomeSelectedPopulationAssessmentSourcePage");
+                        "authoritativeOutcomeSelectedPopulationAssessmentSourcePage",
+                        "authoritativeOutcomeSelectedPopulationUploadRequest",
+                        "authoritativeOutcomeSelectedPopulationUploadAdmission",
+                        "authoritativeOutcomeSelectedPopulationUploadChunkAdmission",
+                        "authoritativeOutcomeSelectedPopulationUploadStatus");
         assertThat(ready.endpoints())
                 .extracting(
                         IntegrationCapabilities.Endpoint::method,
@@ -1158,7 +1166,16 @@ class ToolStudioIntegrationServiceTest {
                                 "/api/mirror/outcome-selected-populations"),
                         org.assertj.core.groups.Tuple.tuple(
                                 "GET",
-                                "/api/mirror/outcome-selected-populations/{populationId}/assessments/{assessmentId}/revisions/{revision}/sources"));
+                                "/api/mirror/outcome-selected-populations/{populationId}/assessments/{assessmentId}/revisions/{revision}/sources"),
+                        org.assertj.core.groups.Tuple.tuple(
+                                "POST",
+                                "/api/mirror/outcome-selected-populations/uploads"),
+                        org.assertj.core.groups.Tuple.tuple(
+                                "PUT",
+                                "/api/mirror/outcome-selected-populations/uploads/{uploadId}/chunks/{chunkIndex}"),
+                        org.assertj.core.groups.Tuple.tuple(
+                                "POST",
+                                "/api/mirror/outcome-selected-populations/uploads/{uploadId}/finalize"));
 
         authoritiesReady.set(false);
         assertThat(service.capabilities()

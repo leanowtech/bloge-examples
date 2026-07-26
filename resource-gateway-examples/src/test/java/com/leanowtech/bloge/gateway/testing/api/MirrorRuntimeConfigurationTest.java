@@ -14,6 +14,9 @@ import com.leanowtech.bloge.gateway.integration.IntegrationRequestAuthenticator;
 import com.leanowtech.bloge.gateway.integration.mirror.MirrorEvidenceIntegrityService;
 import com.leanowtech.bloge.gateway.integration.mirror.MirrorEvidenceRepository;
 import com.leanowtech.bloge.gateway.integration.mirror.MirrorFixtureScopeRepository;
+import com.leanowtech.bloge.gateway.integration.mirror.AuthoritativeOutcomeSelectedPopulationUploadCleanupScheduler;
+import com.leanowtech.bloge.gateway.integration.mirror.AuthoritativeOutcomeSelectedPopulationUploadRepository;
+import com.leanowtech.bloge.gateway.integration.mirror.AuthoritativeOutcomeSelectedPopulationUploadService;
 import com.leanowtech.bloge.gateway.integration.mirror.MirrorOperationAuditRepository;
 import com.leanowtech.bloge.gateway.integration.mirror.MirrorOperationFailureAuditService;
 import com.leanowtech.bloge.gateway.integration.mirror.MirrorOperationObservability;
@@ -357,6 +360,12 @@ class MirrorRuntimeConfigurationTest {
             assertThat(partial.getBeansOfType(
                     AuthoritativeOutcomeSelectedPopulationRuntimeAvailability
                             .class)).isEmpty();
+            assertThat(partial.getBeansOfType(
+                    AuthoritativeOutcomeSelectedPopulationUploadRepository
+                            .class)).isEmpty();
+            assertThat(partial.getBeansOfType(
+                    AuthoritativeOutcomeSelectedPopulationUploadCleanupScheduler
+                            .class)).isEmpty();
 
             assertThat(assembled.getBeansOfType(
                     AuthoritativeOutcomeSelectedPopulationRepository
@@ -367,6 +376,15 @@ class MirrorRuntimeConfigurationTest {
             assertThat(assembled.getBeansOfType(
                     AuthoritativeOutcomeSelectedPopulationController
                             .class)).hasSize(1);
+            assertThat(assembled.getBeansOfType(
+                    AuthoritativeOutcomeSelectedPopulationUploadRepository
+                            .class)).hasSize(1);
+            assertThat(assembled.getBeansOfType(
+                    AuthoritativeOutcomeSelectedPopulationUploadService
+                            .class)).hasSize(1);
+            assertThat(assembled.getBeansOfType(
+                    AuthoritativeOutcomeSelectedPopulationUploadCleanupScheduler
+                            .class)).hasSize(1);
             assertThat(assembled.getBean(
                     AuthoritativeOutcomeSelectedPopulationRuntimeAvailability
                             .class))
@@ -375,6 +393,8 @@ class MirrorRuntimeConfigurationTest {
                         assertThat(availability.durableRegistry())
                                 .isTrue();
                         assertThat(availability.sourceClosure())
+                                .isTrue();
+                        assertThat(availability.stagedUpload())
                                 .isTrue();
                         assertThat(availability.continuousReady())
                                 .isTrue();

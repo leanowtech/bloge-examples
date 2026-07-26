@@ -1019,7 +1019,7 @@ fixture remains future work.
 
 ### Verify selected-population completeness
 
-Selected-population commands and evidence use twelve strict Draft 2020-12
+Selected-population commands, evidence, and resumable transport use sixteen strict Draft 2020-12
 Schemas packaged in both Test Kit JARs. `CapabilityMirrorProtocol` exposes the
 version and resource constants; `CapabilityMirrorSchemaValidator` resolves the
 complete local `$ref` closure without fetching a network resource.
@@ -1136,11 +1136,56 @@ source-closure tests. Passing the Java fixture proves server/Test Kit
 compatibility; it does not certify another language implementation or replace
 live customer authority callbacks.
 
-The current server accepts a complete population command up to 64 MiB. For a
-larger denominator, wait for the staged chunk upload/finalize protocol rather
-than splitting one logical population into unrelated revisions. The ordinary
-demo startup intentionally has no permissive customer authority and therefore
-does not expose these routes or report selected-population readiness.
+The original complete-population route remains bounded to 64 MiB. For a larger
+retryable transfer, stage the same manifest and chunks without splitting one
+logical population into unrelated revisions:
+
+```java
+JsonNode uploadAdmission =
+        client.beginAuthoritativeOutcomeSelectedPopulationUpload(
+                uploadRequest);
+
+for (int chunkIndex = 0;
+        chunkIndex < chunks.size();
+        chunkIndex++) {
+    client.stageAuthoritativeOutcomeSelectedPopulationUploadChunk(
+            uploadId,
+            chunkIndex,
+            chunks.get(chunkIndex));
+}
+
+JsonNode progress =
+        client.findAuthoritativeOutcomeSelectedPopulationUpload(
+                uploadId);
+if (progress.path("nextMissingChunkIndex").asInt() != -1) {
+    throw new IllegalStateException(
+            "selected-population upload is incomplete");
+}
+
+JsonNode populationAdmission =
+        client.finalizeAuthoritativeOutcomeSelectedPopulationUpload(
+                uploadId);
+```
+
+Chunks may be sent out of order. Repeat the exact begin command or exact
+index/chunk after an ambiguous response; both methods validate their strict
+request and response schemas and expose `idempotentReplay`. Status is
+payload-free. Call
+`abortAuthoritativeOutcomeSelectedPopulationUpload(uploadId)` only when the
+caller intends to abandon an open upload and destroy its staged chunks.
+
+The server defaults to 16 active uploads and 1 GiB staged bytes per exact scope,
+256 MiB per upload, a 24-hour incomplete TTL, a two-minute finalizer lease, and
+seven-day terminal retention. Capacity and lifecycle are server-owned. A 429
+means the caller should preserve the same upload identity and retry after the
+bounded hint, not fan out more uploads.
+
+Staged upload removes one-request retry amplification, but it is not unlimited
+streaming projection. Finalize currently materializes the policy-bounded chunk
+closure in one Resource Gateway JVM before invoking the governed selection
+authority and immutable population admission. The ordinary demo startup also
+has no permissive customer authority and therefore does not expose these routes
+or report selected-population readiness.
 
 ## Use
 

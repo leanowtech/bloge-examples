@@ -1245,6 +1245,96 @@ class ResourceGatewayTestClientTest {
     }
 
     @Test
+    void drivesSchemaValidatedResumableSelectedPopulationUploadLifecycle() {
+        ResourceGatewayTestClient client = client();
+        AuthoritativeOutcomeSelectedPopulationCompatibilityFixture fixture =
+                CapabilityMirrorProtocol
+                        .authoritativeOutcomeSelectedPopulationCompatibilityFixture();
+        ObjectNode manifest =
+                ((ObjectNode) fixture.populationBundle()
+                        .path("manifest")).deepCopy();
+        manifest.put("manifestFingerprint", "");
+        ObjectNode unsignedSeal = JSON.createObjectNode();
+        unsignedSeal.put(
+                "schemaVersion",
+                "bloge.visualRunEvidenceSeal.v1");
+        unsignedSeal.put("materialFingerprint", "");
+        unsignedSeal.put("algorithm", "");
+        unsignedSeal.put("keyId", "");
+        unsignedSeal.put(
+                "signedAt", Instant.EPOCH.toString());
+        unsignedSeal.put("signature", "");
+        manifest.set("manifestSeal", unsignedSeal);
+        ObjectNode command = JSON.createObjectNode();
+        command.put(
+                "schemaVersion",
+                CapabilityMirrorProtocol
+                        .AUTHORITATIVE_OUTCOME_SELECTED_POPULATION_UPLOAD_REQUEST_V1);
+        command.put("uploadId", "upload/refunds");
+        command.put(
+                "expectedPredecessorFingerprint", "");
+        command.set("manifest", manifest);
+
+        JsonNode created =
+                client.beginAuthoritativeOutcomeSelectedPopulationUpload(
+                        command);
+        JsonNode staged =
+                client.stageAuthoritativeOutcomeSelectedPopulationUploadChunk(
+                        "upload/refunds",
+                        0,
+                        fixture.populationBundle()
+                                .path("chunks").get(0));
+        JsonNode status =
+                client.findAuthoritativeOutcomeSelectedPopulationUpload(
+                        "upload/refunds");
+        JsonNode finalized =
+                client.finalizeAuthoritativeOutcomeSelectedPopulationUpload(
+                        "upload/refunds");
+        JsonNode aborted =
+                client.abortAuthoritativeOutcomeSelectedPopulationUpload(
+                        "upload/refunds");
+
+        assertThat(created.path("status")
+                .path("state").asText()).isEqualTo("OPEN");
+        assertThat(staged.path("chunkIndex").asInt())
+                .isZero();
+        assertThat(status.path("receivedChunkCount")
+                .asInt()).isOne();
+        assertThat(finalized.path("population")
+                .path("manifest")
+                .path("populationId").asText())
+                .isEqualTo("refund-selected-population");
+        assertThat(aborted.path("state").asText())
+                .isEqualTo("ABORTED");
+        assertThat(requests)
+                .extracting(
+                        CapturedRequest::method,
+                        CapturedRequest::rawPath,
+                        CapturedRequest::purpose)
+                .containsExactly(
+                        org.assertj.core.groups.Tuple.tuple(
+                                "POST",
+                                "/api/mirror/outcome-selected-populations/uploads",
+                                "MIRROR_OUTCOME_SELECTION"),
+                        org.assertj.core.groups.Tuple.tuple(
+                                "PUT",
+                                "/api/mirror/outcome-selected-populations/uploads/upload%2Frefunds/chunks/0",
+                                "MIRROR_OUTCOME_SELECTION"),
+                        org.assertj.core.groups.Tuple.tuple(
+                                "GET",
+                                "/api/mirror/outcome-selected-populations/uploads/upload%2Frefunds",
+                                "MIRROR_OUTCOME_SELECTION"),
+                        org.assertj.core.groups.Tuple.tuple(
+                                "POST",
+                                "/api/mirror/outcome-selected-populations/uploads/upload%2Frefunds/finalize",
+                                "MIRROR_OUTCOME_SELECTION"),
+                        org.assertj.core.groups.Tuple.tuple(
+                                "DELETE",
+                                "/api/mirror/outcome-selected-populations/uploads/upload%2Frefunds",
+                                "MIRROR_OUTCOME_SELECTION"));
+    }
+
+    @Test
     void selectedPopulationClientRejectsInvalidCommandBeforeTransportAndBoundsSourceCursor() {
         ResourceGatewayTestClient client = client();
 
@@ -1305,6 +1395,12 @@ class ResourceGatewayTestClientTest {
         if (path.endsWith("/malformed")) {
             respond(exchange, 200, "{\"schemaVersion\":\"bloge.testExecutionResponse.v1\","
                     + "\"runId\":\"private-child-payload\",\"evidence\":{\"status\":\"NOT_A_STATUS\"}}");
+            return;
+        }
+        if (path.startsWith(
+                "/api/mirror/outcome-selected-populations/uploads")) {
+            respondSelectedPopulationUpload(
+                    exchange, path);
             return;
         }
         if ("GET".equals(exchange.getRequestMethod())
@@ -1489,6 +1585,188 @@ class ResourceGatewayTestClientTest {
         } else {
             respond(exchange, 200, runResponse());
         }
+    }
+
+    private void respondSelectedPopulationUpload(
+            HttpExchange exchange,
+            String path) throws IOException {
+        String method = exchange.getRequestMethod();
+        String uploadRoot =
+                "/api/mirror/outcome-selected-populations/uploads";
+        if ("POST".equals(method)
+                && path.equals(uploadRoot)) {
+            ObjectNode payload = JSON.createObjectNode();
+            payload.put(
+                    "schemaVersion",
+                    CapabilityMirrorProtocol
+                            .AUTHORITATIVE_OUTCOME_SELECTED_POPULATION_UPLOAD_ADMISSION_V1);
+            payload.set(
+                    "status",
+                    selectedPopulationUploadStatus(
+                            "OPEN", 0));
+            payload.put("idempotentReplay", false);
+            respond(
+                    exchange,
+                    200,
+                    mirrorEnvelope(
+                            "AUTHORITATIVE_OUTCOME_SELECTED_POPULATION_UPLOAD_ADMISSION",
+                            CapabilityMirrorProtocol
+                                    .AUTHORITATIVE_OUTCOME_SELECTED_POPULATION_UPLOAD_ADMISSION_V1,
+                            payload));
+            return;
+        }
+        if ("PUT".equals(method)
+                && path.endsWith("/chunks/0")) {
+            JsonNode firstChunk =
+                    selectedPopulationFixture()
+                            .populationBundle()
+                            .path("chunks").get(0);
+            ObjectNode payload = JSON.createObjectNode();
+            payload.put(
+                    "schemaVersion",
+                    CapabilityMirrorProtocol
+                            .AUTHORITATIVE_OUTCOME_SELECTED_POPULATION_UPLOAD_CHUNK_ADMISSION_V1);
+            payload.set(
+                    "status",
+                    selectedPopulationUploadStatus(
+                            "OPEN", 1));
+            payload.put("chunkIndex", 0);
+            payload.put(
+                    "chunkFingerprint",
+                    firstChunk.path(
+                            "chunkFingerprint").asText());
+            payload.put("idempotentReplay", false);
+            respond(
+                    exchange,
+                    200,
+                    mirrorEnvelope(
+                            "AUTHORITATIVE_OUTCOME_SELECTED_POPULATION_UPLOAD_CHUNK_ADMISSION",
+                            CapabilityMirrorProtocol
+                                    .AUTHORITATIVE_OUTCOME_SELECTED_POPULATION_UPLOAD_CHUNK_ADMISSION_V1,
+                            payload));
+            return;
+        }
+        if ("GET".equals(method)) {
+            respond(
+                    exchange,
+                    200,
+                    mirrorEnvelope(
+                            "AUTHORITATIVE_OUTCOME_SELECTED_POPULATION_UPLOAD_STATUS",
+                            CapabilityMirrorProtocol
+                                    .AUTHORITATIVE_OUTCOME_SELECTED_POPULATION_UPLOAD_STATUS_V1,
+                            selectedPopulationUploadStatus(
+                                    "OPEN", 1)));
+            return;
+        }
+        if ("POST".equals(method)
+                && path.endsWith("/finalize")) {
+            ObjectNode payload = JSON.createObjectNode();
+            payload.put(
+                    "schemaVersion",
+                    CapabilityMirrorProtocol
+                            .AUTHORITATIVE_OUTCOME_SELECTED_POPULATION_ADMISSION_RESULT_V1);
+            payload.set(
+                    "population",
+                    selectedPopulationFixture()
+                            .populationBundle());
+            payload.put("idempotentReplay", false);
+            respond(
+                    exchange,
+                    200,
+                    mirrorEnvelope(
+                            "AUTHORITATIVE_OUTCOME_SELECTED_POPULATION_ADMISSION",
+                            CapabilityMirrorProtocol
+                                    .AUTHORITATIVE_OUTCOME_SELECTED_POPULATION_ADMISSION_RESULT_V1,
+                            payload));
+            return;
+        }
+        if ("DELETE".equals(method)) {
+            respond(
+                    exchange,
+                    200,
+                    mirrorEnvelope(
+                            "AUTHORITATIVE_OUTCOME_SELECTED_POPULATION_UPLOAD_STATUS",
+                            CapabilityMirrorProtocol
+                                    .AUTHORITATIVE_OUTCOME_SELECTED_POPULATION_UPLOAD_STATUS_V1,
+                            selectedPopulationUploadStatus(
+                                    "ABORTED", 0)));
+            return;
+        }
+        respond(exchange, 404, "{}");
+    }
+
+    private static ObjectNode selectedPopulationUploadStatus(
+            String state,
+            int receivedChunkCount) {
+        JsonNode population =
+                selectedPopulationFixture()
+                        .populationBundle();
+        int expectedChunkCount =
+                population.path("chunks").size();
+        ObjectNode status = JSON.createObjectNode();
+        status.put(
+                "schemaVersion",
+                CapabilityMirrorProtocol
+                        .AUTHORITATIVE_OUTCOME_SELECTED_POPULATION_UPLOAD_STATUS_V1);
+        status.put("uploadId", "upload/refunds");
+        status.put("requestFingerprint", FINGERPRINT);
+        status.put(
+                "populationId",
+                population.path("manifest")
+                        .path("populationId").asText());
+        status.put("populationRevision", 1);
+        status.put("state", state);
+        status.put(
+                "expectedChunkCount", expectedChunkCount);
+        status.put(
+                "receivedChunkCount", receivedChunkCount);
+        status.put(
+                "receivedBytes",
+                receivedChunkCount * 1_024L);
+        status.put(
+                "nextMissingChunkIndex",
+                receivedChunkCount == expectedChunkCount
+                        ? -1 : receivedChunkCount);
+        status.put("finalizeEpoch", 0);
+        status.put(
+                "createdAt", "2026-07-27T00:00:00Z");
+        status.put(
+                "updatedAt", "2026-07-27T00:01:00Z");
+        status.put(
+                "expiresAt", "2026-07-28T00:00:00Z");
+        status.put(
+                "finalizeLeaseUntil",
+                Instant.EPOCH.toString());
+        status.put(
+                "finalizedPopulationFingerprint", "");
+        return status;
+    }
+
+    private static
+    AuthoritativeOutcomeSelectedPopulationCompatibilityFixture
+    selectedPopulationFixture() {
+        return CapabilityMirrorProtocol
+                .authoritativeOutcomeSelectedPopulationCompatibilityFixture();
+    }
+
+    private static String mirrorEnvelope(
+            String kind,
+            String version,
+            JsonNode payload) {
+        ObjectNode envelope = JSON.createObjectNode();
+        envelope.put(
+                "protocol",
+                CapabilityMirrorProtocol
+                        .INTEGRATION_PROTOCOL);
+        envelope.put(
+                "protocolVersion",
+                CapabilityMirrorProtocol
+                        .INTEGRATION_PROTOCOL_V1);
+        envelope.put("payloadKind", kind);
+        envelope.put(
+                "payloadSchemaVersion", version);
+        envelope.set("payload", payload);
+        return envelope.toString();
     }
 
     private static String stabilityProgressResponse() {

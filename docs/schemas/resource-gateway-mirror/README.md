@@ -141,6 +141,58 @@ offline artifact verification live in the independent `resource-gateway-test-kit
 | `stateful-refund-stage3-v1.fixture.schema.json` | compatibility fixture envelope | Exact state model, write effect, initial session, and executable refund expectation |
 | `capability-lifecycle-transition-v1.schema.json` | `CapabilityLifecycleTransitionRequest` | Optimistically fenced governance transition for one exact revision |
 | `capability-mirror-compatibility-v1.schema.json` | `CapabilityMirrorCompatibility` | Minimum protocol/object/feature baseline a mirror consumer can negotiate |
+| `authoritative-outcome-selected-population-manifest-v1.schema.json` | `AuthoritativeOutcomeSelectedPopulationManifest` | Unsigned complete denominator root with exact chunk descriptors, strata, selection cut, and authority coordinates |
+| `authoritative-outcome-selected-population-chunk-v1.schema.json` | `AuthoritativeOutcomeSelectedPopulationChunk` | Content-addressed bounded member chunk with globally unique ordinals and selection coordinates |
+| `authoritative-outcome-selected-population-bundle-v1.schema.json` | `AuthoritativeOutcomeSelectedPopulationBundle` | Signed immutable manifest plus complete ordered chunk closure |
+| `authoritative-outcome-selected-population-admission-request-v1.schema.json` | `AuthoritativeOutcomeSelectedPopulationAdmissionRequest` | Exact predecessor-fenced complete-population command |
+| `authoritative-outcome-selected-population-admission-result-v1.schema.json` | `AuthoritativeOutcomeSelectedPopulationAdmission` | Durable population admission and idempotent-replay result |
+| `authoritative-outcome-selected-population-disposition-v1.schema.json` | `AuthoritativeOutcomeSelectedPopulationDisposition` | Signed legal-deletion fact that preserves one selected member in the denominator |
+| `authoritative-outcome-selected-population-disposition-admission-request-v1.schema.json` | `AuthoritativeOutcomeSelectedPopulationDispositionAdmissionRequest` | Exact predecessor-fenced legal-disposition command |
+| `authoritative-outcome-selected-population-disposition-admission-result-v1.schema.json` | `AuthoritativeOutcomeSelectedPopulationDispositionAdmission` | Durable disposition admission and idempotent-replay result |
+| `authoritative-outcome-selected-population-assessment-request-v1.schema.json` | `AuthoritativeOutcomeSelectedPopulationAssessmentRequest` | Exact-current population and source-head command for one coherent assessment cut |
+| `authoritative-outcome-selected-population-completeness-assessment-v1.schema.json` | `AuthoritativeOutcomeSelectedPopulationCompletenessAssessment` | Signed total/per-stratum outcome partition with explicit missing, pending, conflicting, censored, and deleted debt |
+| `authoritative-outcome-selected-population-assessment-admission-v1.schema.json` | `AuthoritativeOutcomeSelectedPopulationAssessmentAdmission` | Durable assessment admission and idempotent-replay result |
+| `authoritative-outcome-selected-population-assessment-source-page-v1.schema.json` | `AuthoritativeOutcomeSelectedPopulationAssessmentSourcePage` | Content-addressed bounded historical source-closure page |
+| `authoritative-outcome-selected-population-upload-request-v1.schema.json` | `AuthoritativeOutcomeSelectedPopulationUploadRequest` | Caller-stable resumable upload intent with exact predecessor and complete manifest |
+| `authoritative-outcome-selected-population-upload-status-v1.schema.json` | `AuthoritativeOutcomeSelectedPopulationUploadStatus` | Payload-free `OPEN`/`FINALIZING`/terminal progress, expiry, and fencing projection |
+| `authoritative-outcome-selected-population-upload-admission-v1.schema.json` | `AuthoritativeOutcomeSelectedPopulationUploadAdmission` | Durable begin result with exact-replay signal |
+| `authoritative-outcome-selected-population-upload-chunk-admission-v1.schema.json` | `AuthoritativeOutcomeSelectedPopulationUploadChunkAdmission` | Durable chunk result with exact index, fingerprint, progress, and replay signal |
+
+### Selected-population staged-upload lifecycle
+
+The four upload schemas extend the twelve immutable population, disposition,
+assessment, and source-closure schemas. They do not create a second population
+authority. A client creates one immutable upload intent, stages each
+manifest-declared chunk by zero-based index, reads payload-free progress, and
+then invokes finalize. Finalize succeeds only by replaying the reconstructed
+complete command through the existing selection-authority population
+admission.
+
+`uploadId` is a caller-owned idempotency key inside one authenticated enterprise
+scope. Reusing it with different request material is a conflict. Reusing a
+chunk index with the exact chunk fingerprint is a replay; changing that
+fingerprint is a conflict. Chunks may arrive out of order, while
+`nextMissingChunkIndex` always exposes the lowest missing index without
+returning member data.
+
+The closed state machine is:
+
+```text
+OPEN -> FINALIZING -> FINALIZED
+  |          |
+  +-> ABORTED
+  +-> EXPIRED
+```
+
+Only `OPEN` accepts new chunks. A finalizer owns a database lease and monotonic
+epoch; its lease is valid on `[claimedAt, leaseUntil)`. A takeover after expiry
+fences the old epoch. `FINALIZED`, `ABORTED`, and `EXPIRED` are payload-free
+terminal states retained for a server-owned period before bounded purge.
+
+The upload schemas deliberately carry no runtime owner, database key, member
+payload in status, quota override, TTL override, finalizer override, or
+production enable switch. Capacity, lifecycle, authority, complete scope, and
+environment isolation remain server-owned.
 
 `capability-mirror-stage0-v1.fixture.json` is the authoritative Stage 0 compatibility fixture. The
 server capability test and standalone test-kit both consume this exact file, preventing either side
