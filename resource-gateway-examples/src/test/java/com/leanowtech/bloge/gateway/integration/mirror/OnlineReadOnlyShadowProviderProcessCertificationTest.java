@@ -283,6 +283,251 @@ class OnlineReadOnlyShadowProviderProcessCertificationTest {
     }
 
     @Test
+    void preservesTheDataPlaneAcrossDualPinnedServerLeafRotation()
+            throws Exception {
+        RecoveryFleetPublicationTlsFixture.Material
+                nextBaselineTls =
+                baselineTls.rotateServer(
+                        directory.resolve(
+                                "baseline-tls"),
+                        "online-baseline-next");
+        RecoveryFleetPublicationTlsFixture.Material
+                nextCandidateTls =
+                candidateTls.rotateServer(
+                        directory.resolve(
+                                "candidate-tls"),
+                        "online-candidate-next");
+        Set<String> baselineOldPins =
+                Set.of(spkiPin(
+                        baselineTls
+                                .serverCertificate()));
+        Set<String> baselineNewPins =
+                Set.of(spkiPin(
+                        nextBaselineTls
+                                .serverCertificate()));
+        Set<String> baselineRollingPins =
+                Set.of(
+                        baselineOldPins.iterator()
+                                .next(),
+                        baselineNewPins.iterator()
+                                .next());
+        Set<String> candidateOldPins =
+                Set.of(spkiPin(
+                        candidateTls
+                                .serverCertificate()));
+        Set<String> candidateNewPins =
+                Set.of(spkiPin(
+                        nextCandidateTls
+                                .serverCertificate()));
+        Set<String> candidateRollingPins =
+                Set.of(
+                        candidateOldPins.iterator()
+                                .next(),
+                        candidateNewPins.iterator()
+                                .next());
+
+        assertThat(baselineOldPins)
+                .doesNotContainAnyElementsOf(
+                        baselineNewPins);
+        assertThat(candidateOldPins)
+                .doesNotContainAnyElementsOf(
+                        candidateNewPins);
+        assertThat(nextBaselineTls
+                .certificateAuthority())
+                .isEqualTo(
+                        baselineTls
+                                .certificateAuthority());
+        assertThat(nextCandidateTls
+                .certificateAuthority())
+                .isEqualTo(
+                        candidateTls
+                                .certificateAuthority());
+        assertThat(nextBaselineTls.serverUriSan())
+                .isEqualTo(
+                        baselineTls.serverUriSan());
+        assertThat(nextCandidateTls.serverUriSan())
+                .isEqualTo(
+                        candidateTls.serverUriSan());
+
+        ChildProvider baseline =
+                ChildProvider.start(
+                        mapper,
+                        baselineConfiguration(
+                                baselineTls,
+                                0),
+                        directory.resolve(
+                                "rotation-baseline-old.log"));
+        ChildProvider candidate = null;
+        try {
+            int baselinePort =
+                    baseline.ready().port();
+            long baselineOldPid =
+                    baseline.pid();
+            OnlineReadOnlyShadowBaselineAuthority
+                    baselineOldOnly =
+                    baselineAuthority(
+                            baseline.uri(),
+                            baselineTls,
+                            baselineOldPins);
+            OnlineReadOnlyShadowBaselineAuthority
+                    baselineNewOnly =
+                    baselineAuthority(
+                            baseline.uri(),
+                            baselineTls,
+                            baselineNewPins);
+            OnlineReadOnlyShadowBaselineAuthority
+                    baselineRolling =
+                    baselineAuthority(
+                            baseline.uri(),
+                            baselineTls,
+                            baselineRollingPins);
+            assertThat(baselineOldOnly.ready())
+                    .isTrue();
+            assertThat(baselineNewOnly.ready())
+                    .isFalse();
+            assertThat(baselineRolling.ready())
+                    .isTrue();
+
+            OnlineReadOnlyShadowBaselineObservation
+                    seed =
+                    baselineIntegrity.requireVerified(
+                            baselineRolling.observe(
+                                    baselineCommand));
+            OnlineReadOnlyShadowCandidateCommand
+                    command =
+                    candidateCommand(seed);
+            candidate =
+                    ChildProvider.start(
+                            mapper,
+                            candidateConfiguration(
+                                    command,
+                                    false,
+                                    0,
+                                    candidateTls),
+                            directory.resolve(
+                                    "rotation-candidate-old.log"));
+            int candidatePort =
+                    candidate.ready().port();
+            long candidateOldPid =
+                    candidate.pid();
+            OnlineReadOnlyShadowCandidateAuthority
+                    candidateOldOnly =
+                    candidateAuthority(
+                            candidate.uri(),
+                            candidateTls,
+                            candidateOldPins);
+            OnlineReadOnlyShadowCandidateAuthority
+                    candidateNewOnly =
+                    candidateAuthority(
+                            candidate.uri(),
+                            candidateTls,
+                            candidateNewPins);
+            OnlineReadOnlyShadowCandidateAuthority
+                    candidateRolling =
+                    candidateAuthority(
+                            candidate.uri(),
+                            candidateTls,
+                            candidateRollingPins);
+            assertThat(candidateOldOnly.ready())
+                    .isTrue();
+            assertThat(candidateNewOnly.ready())
+                    .isFalse();
+            assertThat(candidateRolling.ready())
+                    .isTrue();
+            assertCompleteResult(
+                    dataPlane(
+                            baselineRolling,
+                            candidateRolling)
+                            .execute(permit(1)));
+            assertThat(baseline.audit(mapper)
+                    .executions())
+                    .isEqualTo(2);
+            assertThat(candidate.audit(mapper)
+                    .candidateGenerations())
+                    .isEqualTo(1);
+
+            candidate.close();
+            candidate = null;
+            baseline.close();
+
+            baseline =
+                    ChildProvider.start(
+                            mapper,
+                            baselineConfiguration(
+                                    nextBaselineTls,
+                                    baselinePort),
+                            directory.resolve(
+                                    "rotation-baseline-next.log"));
+            candidate =
+                    ChildProvider.start(
+                            mapper,
+                            candidateConfiguration(
+                                    command,
+                                    false,
+                                    candidatePort,
+                                    nextCandidateTls),
+                            directory.resolve(
+                                    "rotation-candidate-next.log"));
+
+            assertThat(baseline.pid())
+                    .isNotEqualTo(
+                            baselineOldPid);
+            assertThat(candidate.pid())
+                    .isNotEqualTo(
+                            candidateOldPid);
+            assertThat(baselineOldOnly.ready())
+                    .isFalse();
+            assertThat(baselineNewOnly.ready())
+                    .isTrue();
+            assertThat(baselineRolling.ready())
+                    .isTrue();
+            assertThat(candidateOldOnly.ready())
+                    .isFalse();
+            assertThat(candidateNewOnly.ready())
+                    .isTrue();
+            assertThat(candidateRolling.ready())
+                    .isTrue();
+
+            ReadOnlyShadowDataPlane.ExecutionResult
+                    afterRotation =
+                    dataPlane(
+                            baselineRolling,
+                            candidateRolling)
+                            .execute(permit(2));
+            assertCompleteResult(afterRotation);
+
+            OnlineReadOnlyShadowProviderProcess.Audit
+                    baselineAudit =
+                    baseline.audit(mapper);
+            OnlineReadOnlyShadowProviderProcess.Audit
+                    candidateAudit =
+                    candidate.audit(mapper);
+            assertThat(baselineAudit.executions())
+                    .isEqualTo(1);
+            assertThat(baselineAudit.exactReads())
+                    .isEqualTo(2);
+            assertPeer(
+                    baselineAudit,
+                    nextBaselineTls);
+            assertThat(candidateAudit.executions())
+                    .isEqualTo(1);
+            assertThat(candidateAudit.exactReads())
+                    .isEqualTo(1);
+            assertThat(candidateAudit
+                    .candidateGenerations())
+                    .isEqualTo(1);
+            assertPeer(
+                    candidateAudit,
+                    nextCandidateTls);
+        } finally {
+            if (candidate != null) {
+                candidate.close();
+            }
+            baseline.close();
+        }
+    }
+
+    @Test
     void recoversCommittedCandidateAfterResponseLossWithoutRegeneration()
             throws Exception {
         try (ChildProvider baseline =
@@ -529,11 +774,27 @@ class OnlineReadOnlyShadowProviderProcessCertificationTest {
             URI uri,
             RecoveryFleetPublicationTlsFixture.Material
                     material) {
+        return baselineAuthority(
+                uri,
+                material,
+                Set.of(spkiPin(
+                        material
+                                .serverCertificate())));
+    }
+
+    private OnlineReadOnlyShadowBaselineAuthority
+    baselineAuthority(
+            URI uri,
+            RecoveryFleetPublicationTlsFixture.Material
+                    material,
+            Set<String> serverSpkiPins) {
         return new HttpOnlineReadOnlyShadowBaselineAuthority(
                 mapper,
                 RESOLUTION_CLOCK,
                 OnlineReadOnlyShadowBaselineTransport.from(
-                        transport(material)),
+                        transport(
+                                material,
+                                serverSpkiPins)),
                 new HttpOnlineReadOnlyShadowBaselineAuthority
                         .Settings(
                         uri,
@@ -550,11 +811,27 @@ class OnlineReadOnlyShadowProviderProcessCertificationTest {
             URI uri,
             RecoveryFleetPublicationTlsFixture.Material
                     material) {
+        return candidateAuthority(
+                uri,
+                material,
+                Set.of(spkiPin(
+                        material
+                                .serverCertificate())));
+    }
+
+    private OnlineReadOnlyShadowCandidateAuthority
+    candidateAuthority(
+            URI uri,
+            RecoveryFleetPublicationTlsFixture.Material
+                    material,
+            Set<String> serverSpkiPins) {
         return new HttpOnlineReadOnlyShadowCandidateAuthority(
                 mapper,
                 RESOLUTION_CLOCK,
                 OnlineReadOnlyShadowCandidateTransport.from(
-                        transport(material)),
+                        transport(
+                                material,
+                                serverSpkiPins)),
                 new HttpOnlineReadOnlyShadowCandidateAuthority
                         .Settings(
                         uri,
@@ -569,7 +846,8 @@ class OnlineReadOnlyShadowProviderProcessCertificationTest {
     private static PinnedMutualTlsRecoveryFleetPublicationTransport
     transport(
             RecoveryFleetPublicationTlsFixture.Material
-                    material) {
+                    material,
+            Set<String> serverSpkiPins) {
         String issuerPin =
                 spkiPin(
                         material.certificateAuthority());
@@ -589,9 +867,7 @@ class OnlineReadOnlyShadowProviderProcessCertificationTest {
                         "test:trust",
                         material.clientKeyStore(),
                         "test:client",
-                        Set.of(spkiPin(
-                                material
-                                        .serverCertificate())),
+                        serverSpkiPins,
                         policy);
         return new PinnedMutualTlsRecoveryFleetPublicationTransport(
                 settings,
@@ -602,6 +878,16 @@ class OnlineReadOnlyShadowProviderProcessCertificationTest {
 
     private OnlineReadOnlyShadowProviderProcess.Configuration
     baselineConfiguration() {
+        return baselineConfiguration(
+                baselineTls,
+                0);
+    }
+
+    private OnlineReadOnlyShadowProviderProcess.Configuration
+    baselineConfiguration(
+            RecoveryFleetPublicationTlsFixture.Material
+                    serverMaterial,
+            int port) {
         Path process =
                 directory.resolve("baseline-process");
         return new OnlineReadOnlyShadowProviderProcess
@@ -610,10 +896,10 @@ class OnlineReadOnlyShadowProviderProcessCertificationTest {
                         .Configuration.SCHEMA_VERSION,
                 OnlineReadOnlyShadowProviderProcess.Role
                         .BASELINE,
-                0,
-                baselineTls.serverKeyStore()
+                port,
+                serverMaterial.serverKeyStore()
                         .toAbsolutePath().toString(),
-                baselineTls.trustStore()
+                serverMaterial.trustStore()
                         .toAbsolutePath().toString(),
                 new String(
                         RecoveryFleetPublicationTlsFixture
@@ -645,6 +931,20 @@ class OnlineReadOnlyShadowProviderProcessCertificationTest {
             OnlineReadOnlyShadowCandidateCommand command,
             boolean crashAfterCommit,
             int port) {
+        return candidateConfiguration(
+                command,
+                crashAfterCommit,
+                port,
+                candidateTls);
+    }
+
+    private OnlineReadOnlyShadowProviderProcess.Configuration
+    candidateConfiguration(
+            OnlineReadOnlyShadowCandidateCommand command,
+            boolean crashAfterCommit,
+            int port,
+            RecoveryFleetPublicationTlsFixture.Material
+                    serverMaterial) {
         Path process =
                 directory.resolve("candidate-process");
         return new OnlineReadOnlyShadowProviderProcess
@@ -654,9 +954,9 @@ class OnlineReadOnlyShadowProviderProcessCertificationTest {
                 OnlineReadOnlyShadowProviderProcess.Role
                         .CANDIDATE,
                 port,
-                candidateTls.serverKeyStore()
+                serverMaterial.serverKeyStore()
                         .toAbsolutePath().toString(),
-                candidateTls.trustStore()
+                serverMaterial.trustStore()
                         .toAbsolutePath().toString(),
                 new String(
                         RecoveryFleetPublicationTlsFixture

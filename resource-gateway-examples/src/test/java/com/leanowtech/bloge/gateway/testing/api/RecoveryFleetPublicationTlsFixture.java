@@ -251,7 +251,19 @@ public final class RecoveryFleetPublicationTlsFixture {
                     caKey, ca, clientKey, client, serverUriSan, clientUriSan);
         }
 
-        Material rotateServer(Path directory, String suffix) throws Exception {
+        /**
+         * Issues a replacement server leaf under the same CA and URI SAN.
+         *
+         * <p>The replacement carries a fresh key pair while retaining the client identity and
+         * trust store. This models a rolling leaf rotation without weakening the trust-domain or
+         * workload-identity boundaries.</p>
+         *
+         * @param directory destination for the replacement PKCS#12 key store
+         * @param suffix unique key-store and certificate label
+         * @return copied material carrying the replacement server leaf and key
+         */
+        public Material rotateServer(Path directory, String suffix) throws Exception {
+            Files.createDirectories(directory);
             KeyPair nextServerKey = keyPair();
             X509Certificate nextServer = certificate(
                     "localhost", nextServerKey, certificateAuthority,

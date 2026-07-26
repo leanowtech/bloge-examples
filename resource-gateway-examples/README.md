@@ -874,6 +874,17 @@ child with exit 86 before the HTTP response, restarts a new JVM on the same
 port, and proves the retry returns the original bundle with one physical
 generation.
 
+The same process certification also exercises a rolling server-leaf change for
+both roles. During overlap, configure each transport with both the incumbent
+and successor server SPKI pins while retaining the exact CA and server URI SAN.
+The suite warms each `HttpClient`, stops both providers, restarts them on the
+same ports with fresh server keys, and reuses the original authority objects to
+complete another governed data-plane run. An old-only client succeeds before
+the change and fails afterward; a new-only client has the inverse result. This
+certifies leaf-key rollover and pooled-connection re-handshake, not CA
+replacement, certificate revocation, client-certificate hot reload, or
+cross-region convergence.
+
 Together these tests prove the wire adapters, composed network call graph,
 physical process separation, private-PKI role isolation, and one committed
 response-loss recovery path. The child provider is never auto-configured and

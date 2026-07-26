@@ -52,6 +52,9 @@
 - baseline/candidate 双独立 JVM 认证 provider：角色独立 private CA、server/client workload
   identity、SPKI pin、Ed25519 evidence key、跨角色信任与错误 client identity 拒绝，以及
   candidate committed-response-loss 后同端口重启、durable exact bundle 恢复和单次物理生成；
+- baseline/candidate 双角色 server leaf 滚动认证：同 CA/同 URI SAN 下替换 server key，
+  old/new SPKI 双 pin 过渡、old-only/new-only 前后门禁、同端口双进程重启，以及复用既有
+  HTTP authority/连接池后的重新握手与完整 data-plane 连续性；
 - v1/v2 source-resolution 共用的 append-only 数据库仓储：旧 v1 表原位补充
   `source_mode` 与双 command fingerprint 索引，v1 签名 JSON 不重写，v2 无 detached binding
   也可落库，读取时逐索引对账；
@@ -79,7 +82,7 @@
 
 - authoritative outcome 到 `Measurement` 的独立来源适配器；
 - request-space sampling proof 与 error-distribution cohort adapter；
-- 企业 root-policy/control-plane connector、跨区域传播 SLO 与轮换认证、
+- 企业 root-policy/control-plane connector、跨区域传播 SLO 与 client/CA 撤销轮换认证、
   获授权的 production regional sidecar provider/candidate authority、
   PostgreSQL 多副本/网络分区认证、drift 自动降级、
   outcome reconciliation 和工作台。
