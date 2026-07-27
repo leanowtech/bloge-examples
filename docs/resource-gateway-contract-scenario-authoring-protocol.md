@@ -181,6 +181,50 @@ Compilation fails closed before registry writes when:
 The publication transaction must still register, independently re-read, and fingerprint-check every
 fixture and the suite. A successful compilation plan is not publication evidence.
 
+## Governed Publication Saga
+
+`ScenarioPublicationService` implements publication as a recoverable saga because Scenario
+storage, the FixtureBundle registry, and the TestSuite registry are independent durability
+boundaries:
+
+1. Resolve one retained Scenario revision in the verified five-dimensional enterprise scope.
+2. Resolve the current Graph and Contract again.
+3. Ask the testing control plane for the current runtime target; callers cannot supply its
+   fingerprint.
+4. Compile and fingerprint the complete compilation plan.
+5. Persist an `IN_PROGRESS` payload-free report before the first external write.
+6. Register each content-addressed fixture, independently read it, and compare identity,
+   fingerprint, and complete canonical content.
+7. Persist each verified fixture reference.
+8. Register the dependency-closed suite, independently read it, and perform the same checks.
+9. Persist `PUBLISHED` only after all dependencies are independently verified.
+
+Failures leave `FAILED` or `PARTIAL` state with stage, machine code, and retryability, but without
+Scenario input, dependency response, assertion expected value, or runtime payload. Retrying an
+exact partial publication reuses the same asset identities and is therefore convergent. A completed
+publication is independently re-read again on subsequent publish calls.
+
+The publication identity binds:
+
+- stored Scenario id, revision, and fingerprint;
+- visual target and Contract fingerprints;
+- independently discovered runtime target;
+- compiler plan schema version;
+- canonical fingerprint of the complete compilation plan.
+
+The plan fingerprint is essential: a compiler semantic change creates a different publication
+coordinate instead of silently reusing a receipt produced by an older lowering algorithm. Bounded
+fixture, suite, and publication ids always retain the complete 64-character digest suffix.
+
+Publication uses `X-Purpose: TEST_SCENARIO_PUBLISH`; authoring uses `TEST_SUITE_WRITE`, receipt reads
+use `TEST_SUITE_READ`, and execution uses `TEST_EXECUTION`. The controller and its testing-control-
+plane adapter are physically absent outside `test` and `staging`.
+
+Authoritative wire schemas:
+
+- `docs/schemas/bloge-scenario-publication-report-v1.schema.json`
+- `docs/schemas/bloge-stored-scenario-publication-v1.schema.json`
+
 ## Schema Round-Trip Policy
 
 The eventual field workbench classifies a schema before editing:

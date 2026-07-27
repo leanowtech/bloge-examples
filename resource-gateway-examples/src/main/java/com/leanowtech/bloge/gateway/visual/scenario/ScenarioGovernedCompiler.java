@@ -275,9 +275,9 @@ public class ScenarioGovernedCompiler {
                 metadata);
         String digest = suffix(ProtocolFingerprint.ofBounded(
                 objectMapper, idMaterial, MAX_PROTOCOL_BYTES));
-        String id = boundedId(
-                "scenario-" + draftSet.scenarioDraftSetId() + "-" + scenario.scenarioId()
-                        + "-" + digest);
+        String id = contentAddressedId(
+                "scenario-" + draftSet.scenarioDraftSetId() + "-" + scenario.scenarioId(),
+                digest);
         return new FixtureBundle(
                 "",
                 id,
@@ -334,7 +334,8 @@ public class ScenarioGovernedCompiler {
                 suiteMetadata(draftSet));
         String digest = suffix(ProtocolFingerprint.ofBounded(
                 objectMapper, idMaterial, MAX_PROTOCOL_BYTES));
-        String id = boundedId("scenario-suite-" + draftSet.scenarioDraftSetId() + "-" + digest);
+        String id = contentAddressedId(
+                "scenario-suite-" + draftSet.scenarioDraftSetId(), digest);
         return new TestSuite(
                 "",
                 id,
@@ -458,11 +459,16 @@ public class ScenarioGovernedCompiler {
         return path == null ? "" : path.trim();
     }
 
-    private static String boundedId(String value) {
-        String normalized = value.toLowerCase(Locale.ROOT)
+    private static String contentAddressedId(String prefix, String digest) {
+        String normalizedPrefix = prefix.toLowerCase(Locale.ROOT)
                 .replaceAll("[^a-z0-9._-]+", "-")
                 .replaceAll("^-+|-+$", "");
-        return normalized.substring(0, Math.min(255, normalized.length()));
+        String normalizedDigest = digest.toLowerCase(Locale.ROOT)
+                .replaceAll("[^a-f0-9]+", "");
+        int prefixLimit = Math.max(0, 255 - normalizedDigest.length() - 1);
+        String boundedPrefix = normalizedPrefix.substring(
+                0, Math.min(prefixLimit, normalizedPrefix.length()));
+        return boundedPrefix + "-" + normalizedDigest;
     }
 
     private static String suffix(String fingerprint) {

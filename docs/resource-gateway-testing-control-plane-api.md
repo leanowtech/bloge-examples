@@ -3,6 +3,36 @@
 > Status: Stage 2 public control plane, protocol `bloge.testing.v1`
 >
 > Runtime profiles: `test`, `staging` only
+
+## Scenario Authoring Publication
+
+The visual authoring layer reuses this control plane instead of creating a second fixture or suite
+runtime. One exact retained Scenario revision is published through:
+
+```text
+POST /api/visual/scenario-draft-sets/{scenarioDraftSetId}/publications?revision={revision}
+GET  /api/visual/scenario-draft-sets/publications/{publicationId}
+GET  /api/visual/scenario-draft-sets/publications/{publicationId}/history
+```
+
+The write endpoint requires `X-Purpose: TEST_SCENARIO_PUBLISH`; receipt reads require
+`TEST_SUITE_READ`. Authoring save, publication, and execution are separate permissions. These routes
+and their testing-control-plane adapter are assembled only in `test` and `staging`.
+
+Publication is a durable, optimistic saga:
+
+- the server independently discovers the exact graph runtime fingerprint;
+- the complete governed compilation plan is fingerprinted into the publication coordinate;
+- every FixtureBundle and TestSuite create is followed by an independent registry read;
+- id, revision, fingerprint, and full canonical content must all match;
+- partial writes leave a payload-free retryable report and exact retries converge on the same
+  content-addressed assets;
+- a `PUBLISHED` receipt is returned only after the entire dependency closure is reverified.
+
+The receipt intentionally excludes Scenario input, fixture output, assertion expected values, and
+runtime payload. Its strict protocols are
+`bloge.scenarioPublicationReport.v1` and `bloge.storedScenarioPublication.v1`; authoritative schemas
+live under `docs/schemas/`.
 >
 > Production invariant: ordinary run APIs reject fixture/control fields before DTO deserialization
 

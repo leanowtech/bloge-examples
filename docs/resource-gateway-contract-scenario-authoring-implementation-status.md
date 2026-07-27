@@ -233,6 +233,60 @@ Round 4 focused verification:
 - `ScenarioValidationServiceTest`: 4 passed;
 - all 10 focused tests passed with no failures or errors.
 
+## Round 5
+
+Implemented evidence:
+
+- a dedicated `TEST_SCENARIO_PUBLISH` purpose separates author, publisher, reader, and runner;
+- publication independently discovers the runtime Graph target and never trusts a caller-supplied
+  runtime fingerprint;
+- the complete compilation-plan fingerprint and compiler schema version are part of the
+  publication coordinate, preventing semantic reuse after compiler evolution;
+- an optimistic, full-scope H2 repository persists current saga state and every immutable
+  transition;
+- every FixtureBundle and TestSuite write is followed by an independent read plus id, revision,
+  fingerprint, and canonical-content comparison;
+- `PARTIAL` and `FAILED` receipts record only stage, machine code, and retryability; exact retries
+  converge on content-addressed registry assets;
+- completed publications are independently reverified on repeated publish calls;
+- fixture, suite, and publication ids preserve their complete digest suffix even when source ids
+  approach protocol limits;
+- controller and control-plane adapter are physically absent outside test/staging;
+- strict report/envelope schemas and API/startup documentation are synchronized.
+
+Weighted assessment:
+
+| Workstream | Achieved | Change from Round 4 |
+|---|---:|---:|
+| Product information architecture | 14/18 | 0 |
+| Schema workbench | 9/15 | 0 |
+| Scenario builder | 11/17 | 0 |
+| Compiler and adapters | 15/15 | +2 |
+| Persistence and protocol | 9/10 | +2 |
+| Compatibility and lineage | 5/10 | +2 |
+| Security and governance | 7/8 | +2 |
+| Samples, documentation, observability | 5/7 | +1 |
+| Total achieved | **75/100** | **+9** |
+
+**Residual gap: 25%.**
+
+The backend governed-publication exit gate is now met. The remaining gap is deliberately
+user-facing and integration-facing: graphical controls for every behavior/assertion, browser
+save/load/publish state, operator targets, portable workspace bundles, richer Contract
+compatibility/lineage, code splitting, and repository-owned visual regression evidence.
+
+Round 5 verification:
+
+- `ScenarioPublicationServiceTest`: 6 passed, covering success, independent reads, payload
+  non-disclosure, partial recovery, corrupt read rejection, compile blocking, permission/profile
+  policy, exact revisions, restart, and scope isolation;
+- `ScenarioGovernedCompilerTest`: 7 passed;
+- `ContractScenarioProtocolSchemaTest`: 1 passed;
+- `ResourceGatewayApplicationTest`: 8 passed;
+- 30 focused tests passed with no failures or errors;
+- a real Spring Boot process with the `test` profile assembled the complete testing control plane
+  and Scenario publisher, reached `Started`, and then shut down gracefully.
+
 ## Round 2 Verification
 
 - frontend `npm test`: 204 tests passed across 10 files;

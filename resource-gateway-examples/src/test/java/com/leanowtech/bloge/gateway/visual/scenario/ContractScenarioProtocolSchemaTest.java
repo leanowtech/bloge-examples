@@ -34,6 +34,9 @@ class ContractScenarioProtocolSchemaTest {
         JsonNode draftSetSchema = schema("bloge-scenario-draft-set-v1.schema.json");
         JsonNode reportSchema = schema("bloge-scenario-validation-report-v1.schema.json");
         JsonNode storedSchema = schema("bloge-stored-scenario-draft-set-v1.schema.json");
+        JsonNode publicationSchema = schema("bloge-scenario-publication-report-v1.schema.json");
+        JsonNode storedPublicationSchema =
+                schema("bloge-stored-scenario-publication-v1.schema.json");
         StoredScenarioDraftSet stored = new StoredScenarioDraftSet(
                 "",
                 draftSet.scenarioDraftSetId(),
@@ -42,6 +45,30 @@ class ContractScenarioProtocolSchemaTest {
                 draftSet,
                 Instant.parse("2026-07-27T00:00:00Z"),
                 "author-a");
+        ScenarioPublicationReport publication = new ScenarioPublicationReport(
+                "",
+                "scenario-publication-loan-scenarios-r3-abc",
+                draftSet.scope(),
+                new ScenarioPublicationReport.SourceRef(
+                        draftSet.scenarioDraftSetId(), draftSet.revision(),
+                        ScenarioValidationServiceTest.fingerprint('b'),
+                        draftSet.target().fingerprint(), draftSet.contractFingerprint(),
+                        ScenarioGovernedCompilationPlan.SCHEMA_VERSION,
+                        ScenarioValidationServiceTest.fingerprint('e')),
+                new com.leanowtech.bloge.gateway.testing.api.TestExecutionApiRequest.Target(
+                        "GRAPH", "loanPolicy", ScenarioValidationServiceTest.fingerprint('c')),
+                ScenarioPublicationReport.Status.IN_PROGRESS,
+                1,
+                List.of(),
+                null,
+                List.of(),
+                ScenarioPublicationReport.Failure.none(),
+                Instant.parse("2026-07-27T00:00:00Z"),
+                Instant.parse("2026-07-27T00:00:00Z"),
+                null,
+                "publisher-a");
+        StoredScenarioPublication storedPublication = new StoredScenarioPublication(
+                "", 1, ScenarioValidationServiceTest.fingerprint('d'), publication);
 
         assertProperties(mapper.valueToTree(contract), contractSchema.path("properties"));
         assertProperties(mapper.valueToTree(contract.target()), contractSchema.at("/$defs/target/properties"));
@@ -52,11 +79,16 @@ class ContractScenarioProtocolSchemaTest {
                 draftSetSchema.at("/$defs/dependency/properties"));
         assertProperties(mapper.valueToTree(report), reportSchema.path("properties"));
         assertProperties(mapper.valueToTree(stored), storedSchema.path("properties"));
+        assertProperties(mapper.valueToTree(publication), publicationSchema.path("properties"));
+        assertProperties(mapper.valueToTree(storedPublication),
+                storedPublicationSchema.path("properties"));
 
         assertThat(contractSchema.path("additionalProperties").asBoolean(true)).isFalse();
         assertThat(draftSetSchema.path("additionalProperties").asBoolean(true)).isFalse();
         assertThat(reportSchema.path("additionalProperties").asBoolean(true)).isFalse();
         assertThat(storedSchema.path("additionalProperties").asBoolean(true)).isFalse();
+        assertThat(publicationSchema.path("additionalProperties").asBoolean(true)).isFalse();
+        assertThat(storedPublicationSchema.path("additionalProperties").asBoolean(true)).isFalse();
         assertThat(storedSchema.at("/properties/draftSet/$ref").asText())
                 .isEqualTo("bloge-scenario-draft-set-v1.schema.json");
         assertThat(reportSchema.at("/$defs/diagnostic/required"))
@@ -69,6 +101,13 @@ class ContractScenarioProtocolSchemaTest {
                 .extracting(JsonNode::asText)
                 .containsExactly("REAL", "RETURN", "ERROR", "DELAY", "TIMEOUT", "REPLAY",
                         "OBSERVE", "MUST_NOT_CALL");
+        assertThat(storedPublicationSchema.at("/properties/report/$ref").asText())
+                .isEqualTo("bloge-scenario-publication-report-v1.schema.json");
+        assertThat(publicationSchema.path("properties").has("given")).isFalse();
+        assertThat(publicationSchema.path("properties").has("input")).isFalse();
+        assertThat(publicationSchema.path("properties").has("output")).isFalse();
+        assertThat(publicationSchema.path("properties").has("expected")).isFalse();
+        assertThat(publicationSchema.path("properties").has("payload")).isFalse();
     }
 
     private ScenarioDraftSet draftSet(ContractDraft contract) {

@@ -184,7 +184,8 @@ public enum IntegrationOperation {
     TEST_SUITE_STABILITY_JOB_CANCEL(Set.of("TEST_EXECUTION", "TEST_REPLAY")),
     TEST_SUITE_STABILITY_TREND_READ(Set.of("TEST_EXECUTION", "TEST_REPLAY")),
     TEST_SUITE_READ(Set.of("TEST_SUITE_READ")),
-    TEST_SUITE_WRITE(Set.of("TEST_SUITE_WRITE"));
+    TEST_SUITE_WRITE(Set.of("TEST_SUITE_WRITE")),
+    TEST_SCENARIO_PUBLISH(Set.of("TEST_SCENARIO_PUBLISH"));
 
     private final Set<String> acceptedPurposes;
 

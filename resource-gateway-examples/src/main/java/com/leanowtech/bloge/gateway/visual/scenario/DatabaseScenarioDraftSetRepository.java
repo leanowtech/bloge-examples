@@ -111,6 +111,29 @@ public class DatabaseScenarioDraftSetRepository implements ScenarioDraftSetRepos
     }
 
     @Override
+    public Optional<StoredScenarioDraftSet> findRevision(
+            ScenarioDraftSet.EnterpriseScope scope,
+            String scenarioDraftSetId,
+            long revision) {
+        if (revision <= 0) {
+            return Optional.empty();
+        }
+        return jdbc.query("""
+                        SELECT stored_json
+                        FROM visual_scenario_draft_set_revisions
+                        WHERE tenant_id = ? AND organization_id = ? AND project_id = ?
+                          AND environment_id = ? AND region_id = ?
+                          AND scenario_draft_set_id = ? AND revision = ?
+                        """,
+                (rs, rowNum) -> read(rs.getString("stored_json")),
+                scope.tenantId(), scope.organizationId(), scope.projectId(),
+                scope.environment(), scope.region(), normalized(scenarioDraftSetId), revision)
+                .stream()
+                .flatMap(Optional::stream)
+                .findFirst();
+    }
+
+    @Override
     @Transactional
     public synchronized Optional<StoredScenarioDraftSet> saveIfRevision(
             long expectedRevision,

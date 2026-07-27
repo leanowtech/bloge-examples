@@ -1553,11 +1553,14 @@ visual/contract/
 
 visual/scenario/
   ScenarioDraftSet
-  ScenarioDraftRepository
+  ScenarioDraftSetRepository
   ScenarioValidationService
   ScenarioSimulationCompiler
-  ScenarioPublicationCompiler
-  ScenarioAuthoringController
+  ScenarioGovernedCompiler
+  ScenarioPublicationService
+  ScenarioPublicationRepository
+  ScenarioDraftSetController
+  ScenarioPublicationController
 ```
 
 testing control plane 保持：
@@ -1581,6 +1584,9 @@ docs/schemas/
   bloge-contract-draft-v1.schema.json
   bloge-scenario-draft-set-v1.schema.json
   bloge-scenario-validation-report-v1.schema.json
+  bloge-stored-scenario-draft-set-v1.schema.json
+  bloge-scenario-publication-report-v1.schema.json
+  bloge-stored-scenario-publication-v1.schema.json
   bloge-contract-compatibility-report-v1.schema.json
   bloge-visual-authoring-workspace-bundle-v1.schema.json
 ```

@@ -206,6 +206,37 @@ class ScenarioGovernedCompilerTest {
                 .contains("visual.scenario.compile.runtimeTargetInvalid");
     }
 
+    @Test
+    void boundedContentAddressesRetainTheCompleteDigestForLongSourceIds() {
+        GraphDraft graph = ScenarioValidationServiceTest.graphDraft();
+        ContractDraft contract = contract(graph);
+        ScenarioDraftSet base = draftSet(graph, contract, dependencies(), assertions());
+        String longSetId = "s".repeat(240);
+        String longScenarioId = "c".repeat(240);
+        ScenarioDraftSet longIds = new ScenarioDraftSet(
+                base.schemaVersion(),
+                longSetId,
+                base.revision(),
+                base.scope(),
+                base.target(),
+                base.contractFingerprint(),
+                List.of(scenario(
+                        longScenarioId, ScenarioDraftSet.CaseType.GOLDEN,
+                        dependencies(), assertions())),
+                base.metadata());
+
+        ScenarioGovernedCompilationPlan plan =
+                compiler.compile(graph, contract, longIds, runtimeTarget());
+        String fixtureId = plan.fixtures().getFirst().request()
+                .fixtureBundle().fixtureBundleId();
+        String suiteId = plan.suite().testSuite().suiteId();
+
+        assertThat(fixtureId).hasSizeLessThanOrEqualTo(255)
+                .matches(".*-[0-9a-f]{64}$");
+        assertThat(suiteId).hasSizeLessThanOrEqualTo(255)
+                .matches(".*-[0-9a-f]{64}$");
+    }
+
     private ContractDraft contract(GraphDraft graph) {
         return new ContractDraftProjectionService().project(
                 graph, ScenarioValidationServiceTest.fingerprint('a'));

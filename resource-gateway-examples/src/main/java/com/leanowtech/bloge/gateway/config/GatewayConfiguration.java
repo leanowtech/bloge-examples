@@ -79,10 +79,18 @@ import com.leanowtech.bloge.gateway.visual.runtime.VisualGraphRunService;
 import com.leanowtech.bloge.gateway.visual.runtime.VisualRuntimeAdapterActivationRepository;
 import com.leanowtech.bloge.gateway.visual.runtime.VisualRuntimeRolloutObservationRepository;
 import com.leanowtech.bloge.gateway.visual.scenario.DatabaseScenarioDraftSetRepository;
+import com.leanowtech.bloge.gateway.visual.scenario.DatabaseScenarioPublicationRepository;
+import com.leanowtech.bloge.gateway.visual.scenario.ScenarioGovernedCompiler;
+import com.leanowtech.bloge.gateway.visual.scenario.ScenarioGovernedRegistryGateway;
 import com.leanowtech.bloge.gateway.visual.scenario.ScenarioDraftSetAuthoringService;
 import com.leanowtech.bloge.gateway.visual.scenario.ScenarioDraftSetRepository;
+import com.leanowtech.bloge.gateway.visual.scenario.ScenarioPublicationRepository;
+import com.leanowtech.bloge.gateway.visual.scenario.ScenarioPublicationService;
 import com.leanowtech.bloge.gateway.visual.scenario.ScenarioValidationService;
+import com.leanowtech.bloge.gateway.visual.scenario.TestingControlPlaneScenarioGovernedRegistryGateway;
 import com.leanowtech.bloge.gateway.visual.contract.ContractDraftProjectionService;
+import com.leanowtech.bloge.gateway.testing.api.TestExecutionApiService;
+import com.leanowtech.bloge.gateway.testing.api.TestSuiteRegistryService;
 import com.leanowtech.bloge.gateway.example.DatabaseDynamicRunControlRepository;
 import com.leanowtech.bloge.gateway.example.DynamicRunControlRepository;
 import com.leanowtech.bloge.gateway.visual.testing.DatabaseVisualOperatorContractTestSuiteRepository;
@@ -97,6 +105,7 @@ import org.springframework.boot.autoconfigure.condition.ConditionalOnMissingBean
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
+import org.springframework.context.annotation.Profile;
 import org.springframework.scheduling.annotation.EnableScheduling;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.transaction.PlatformTransactionManager;
@@ -484,6 +493,65 @@ public class GatewayConfiguration {
             ObjectMapper objectMapper) {
         return new ScenarioDraftSetAuthoringService(
                 repository, graphDrafts, contracts, validation, objectMapper);
+    }
+
+    /**
+     * Durable payload-free Scenario publication saga state.
+     *
+     * @param jdbc JDBC template for scope-isolated state transitions
+     * @param objectMapper canonical report serializer
+     * @return publication repository
+     */
+    @Bean
+    @ConditionalOnMissingBean
+    public ScenarioPublicationRepository scenarioPublicationRepository(
+            JdbcTemplate jdbc,
+            ObjectMapper objectMapper) {
+        return new DatabaseScenarioPublicationRepository(jdbc, objectMapper);
+    }
+
+    /**
+     * Narrow adapter to the existing authoritative testing-control-plane services.
+     *
+     * @param executions target and fixture registry service
+     * @param suites immutable suite registry service
+     * @return governed registry gateway
+     */
+    @Bean
+    @ConditionalOnMissingBean
+    @Profile("!production & (test | staging)")
+    public ScenarioGovernedRegistryGateway scenarioGovernedRegistryGateway(
+            TestExecutionApiService executions,
+            TestSuiteRegistryService suites) {
+        return new TestingControlPlaneScenarioGovernedRegistryGateway(executions, suites);
+    }
+
+    /**
+     * Recoverable Scenario publication saga.
+     *
+     * @param scenarioDrafts retained Scenario source revisions
+     * @param publications durable saga reports
+     * @param graphDrafts current visual graph repository
+     * @param contracts current Contract projector
+     * @param compiler deterministic governed compiler
+     * @param registry governed testing registry gateway
+     * @param objectMapper canonical serializer
+     * @return Scenario publisher
+     */
+    @Bean
+    @ConditionalOnMissingBean
+    @Profile("!production & (test | staging)")
+    public ScenarioPublicationService scenarioPublicationService(
+            ScenarioDraftSetRepository scenarioDrafts,
+            ScenarioPublicationRepository publications,
+            GraphDraftRepository graphDrafts,
+            ContractDraftProjectionService contracts,
+            ScenarioGovernedCompiler compiler,
+            ScenarioGovernedRegistryGateway registry,
+            ObjectMapper objectMapper) {
+        return new ScenarioPublicationService(
+                scenarioDrafts, publications, graphDrafts, contracts,
+                compiler, registry, objectMapper);
     }
 
     /**

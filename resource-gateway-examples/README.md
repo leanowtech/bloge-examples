@@ -3909,12 +3909,23 @@ POST /api/visual/scenario-draft-sets/validate
 PUT  /api/visual/scenario-draft-sets/{id}?expectedRevision=0
 GET  /api/visual/scenario-draft-sets/{id}
 GET  /api/visual/scenario-draft-sets/{id}/revisions
+POST /api/visual/scenario-draft-sets/{id}/publications?revision=1
+GET  /api/visual/scenario-draft-sets/publications/{publicationId}
+GET  /api/visual/scenario-draft-sets/publications/{publicationId}/history
 ```
 
 Use `X-Purpose: TEST_SUITE_WRITE` for validate/save and `X-Purpose: TEST_SUITE_READ` for reads.
 The body enterprise scope must match the verified credential. Every save rechecks the current graph
 and Contract, rejects raw secrets, retains immutable history, and fails with a revision conflict
 instead of overwriting concurrent edits.
+
+Publication requires the separate `X-Purpose: TEST_SCENARIO_PUBLISH`. It resolves the runtime target
+from the testing control plane, compiles content-addressed fixtures and suite, independently re-reads
+every registry write, and retains an optimistic `IN_PROGRESS` / `PARTIAL` / `FAILED` / `PUBLISHED`
+transition history. The receipt contains fingerprints and registry references only, never Scenario
+inputs, dependency outputs, or expected values. Retrying an exact partial publication converges on
+the same immutable assets. The normal demo start script already uses the required `test` profile;
+the publication service and routes are absent from `production`.
 
 The implementation contract and current residual gap are documented in
 [Contract & Scenario Authoring Protocol](../docs/resource-gateway-contract-scenario-authoring-protocol.md)

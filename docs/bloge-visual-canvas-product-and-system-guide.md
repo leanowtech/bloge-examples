@@ -2096,7 +2096,8 @@ numeric tolerance 和结构 coverage。
 resource 行的 Expected output 表示算子应交付的逻辑 payload；Transport response 表示外部系统原始协议响应。系统首次生成时会保持二者联动，但一旦用户手工编辑 Transport response，后续修改 Expected output 不会覆盖这份自定义 fixture。
 
 演示服务以 `test` profile 启动时使用专用 demo identity；运行使用 `X-Purpose: TEST_EXECUTION`，fixture 写入使用
-`X-Purpose: TEST_FIXTURE_WRITE`，suite 写入使用 `X-Purpose: TEST_SUITE_WRITE`。VSCode/嵌入式宿主必须替换凭证 provider，并应把 author 与 runner 权限拆分；production profile
+`X-Purpose: TEST_FIXTURE_WRITE`，suite 写入使用 `X-Purpose: TEST_SUITE_WRITE`，从 Scenario
+发布受治理测试资产则使用独立的 `X-Purpose: TEST_SCENARIO_PUBLISH`。VSCode/嵌入式宿主必须替换凭证 provider，并应把 author、publisher 与 runner 权限拆分；production profile
 不暴露测试 endpoint。因而不能通过复制前端请求把控制字段带入生产运行面。
 
 因此，当你要验证某个 http resource、transform 或 decision table 的真实可组合 runtime 行为时，优先在双击浮层里运行 Executable Operator Suite；当你要验证整张图的 happy path、fallback path 或分支组合时，再进入右侧全图 Test Suite。

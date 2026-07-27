@@ -1,0 +1,29 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://leanowtech.com/schemas/bloge-stored-scenario-publication-v1.schema.json",
+  "title": "BLOGE Stored Scenario Publication v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "stateVersion",
+    "fingerprint",
+    "report"
+  ],
+  "properties": {
+    "schemaVersion": {
+      "const": "bloge.storedScenarioPublication.v1"
+    },
+    "stateVersion": {
+      "type": "integer",
+      "minimum": 1
+    },
+    "fingerprint": {
+      "type": "string",
+      "pattern": "^sha256:[0-9a-f]{64}$"
+    },
+    "report": {
+      "$ref": "bloge-scenario-publication-report-v1.schema.json"
+    }
+  }
+}

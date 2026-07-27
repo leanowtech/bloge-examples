@@ -31,6 +31,23 @@ public interface ScenarioDraftSetRepository {
             String scenarioDraftSetId);
 
     /**
+     * Resolves one retained exact source revision.
+     *
+     * @param scope complete enterprise scope
+     * @param scenarioDraftSetId stable authoring asset id
+     * @param revision positive retained revision
+     * @return exact immutable source snapshot
+     */
+    default Optional<StoredScenarioDraftSet> findRevision(
+            ScenarioDraftSet.EnterpriseScope scope,
+            String scenarioDraftSetId,
+            long revision) {
+        return revisions(scope, scenarioDraftSetId).stream()
+                .filter(candidate -> candidate.revision() == revision)
+                .findFirst();
+    }
+
+    /**
      * Stores the next revision only when the current revision equals the caller's expectation.
      *
      * <p>An expected revision of zero creates a new asset. Returning empty means another author
