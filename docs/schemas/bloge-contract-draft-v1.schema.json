@@ -1,0 +1,333 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://leanowtech.com/schemas/bloge-contract-draft-v1.schema.json",
+  "title": "BLOGE Contract Draft v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "target",
+    "inputSchema",
+    "outputSchema",
+    "errorContract",
+    "executionSemantics",
+    "invariants",
+    "compatibilityPolicy",
+    "fieldMetadata",
+    "source",
+    "confidence"
+  ],
+  "properties": {
+    "schemaVersion": {
+      "const": "bloge.contractDraft.v1"
+    },
+    "target": {
+      "$ref": "#/$defs/target"
+    },
+    "inputSchema": {
+      "$ref": "#/$defs/schemaEnvelope"
+    },
+    "outputSchema": {
+      "$ref": "#/$defs/schemaEnvelope"
+    },
+    "errorContract": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/errorVariant"
+      }
+    },
+    "executionSemantics": {
+      "$ref": "#/$defs/executionSemantics"
+    },
+    "invariants": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/invariant"
+      }
+    },
+    "compatibilityPolicy": {
+      "$ref": "#/$defs/compatibilityPolicy"
+    },
+    "fieldMetadata": {
+      "type": "object",
+      "propertyNames": {
+        "pattern": "^(/([^/~]|~0|~1)*)*$"
+      },
+      "additionalProperties": {
+        "$ref": "#/$defs/fieldMetadata"
+      }
+    },
+    "source": {
+      "$ref": "#/$defs/source"
+    },
+    "confidence": {
+      "$ref": "#/$defs/confidence"
+    }
+  },
+  "$defs": {
+    "fingerprint": {
+      "type": "string",
+      "pattern": "^sha256:[0-9a-f]{64}$"
+    },
+    "target": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "id",
+        "revision",
+        "fingerprint"
+      ],
+      "properties": {
+        "kind": {
+          "enum": [
+            "GRAPH",
+            "OPERATOR"
+          ]
+        },
+        "id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 256
+        },
+        "revision": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "fingerprint": {
+          "$ref": "#/$defs/fingerprint"
+        }
+      }
+    },
+    "schemaEnvelope": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "format",
+        "version",
+        "schema"
+      ],
+      "properties": {
+        "format": {
+          "const": "json-schema"
+        },
+        "version": {
+          "const": "2020-12"
+        },
+        "schema": {
+          "type": "object"
+        }
+      }
+    },
+    "source": {
+      "enum": [
+        "AUTHORED",
+        "DSL",
+        "IMPORTED",
+        "INFERRED"
+      ]
+    },
+    "confidence": {
+      "enum": [
+        "EXACT",
+        "INFERRED",
+        "OPAQUE"
+      ]
+    },
+    "errorVariant": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "code",
+        "type",
+        "description",
+        "retryable"
+      ],
+      "properties": {
+        "code": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        },
+        "type": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 256
+        },
+        "description": {
+          "type": "string",
+          "maxLength": 2048
+        },
+        "retryable": {
+          "type": "boolean"
+        }
+      }
+    },
+    "executionSemantics": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "effect",
+        "idempotency",
+        "streaming",
+        "durable"
+      ],
+      "properties": {
+        "effect": {
+          "enum": [
+            "PURE",
+            "READ",
+            "WRITE",
+            "UNKNOWN"
+          ]
+        },
+        "idempotency": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 256
+        },
+        "streaming": {
+          "type": [
+            "boolean",
+            "null"
+          ]
+        },
+        "durable": {
+          "type": [
+            "boolean",
+            "null"
+          ]
+        },
+        "sideEffectProtocol": {
+          "$ref": "#/$defs/sideEffectProtocol"
+        }
+      }
+    },
+    "sideEffectProtocol": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "protocol",
+        "reconcilerRef",
+        "reversible",
+        "metadata"
+      ],
+      "properties": {
+        "protocol": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 256
+        },
+        "reconcilerRef": {
+          "type": "string",
+          "maxLength": 512
+        },
+        "reversible": {
+          "type": "boolean"
+        },
+        "metadata": {
+          "type": "object"
+        }
+      }
+    },
+    "invariant": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "invariantId",
+        "phase",
+        "expression",
+        "description",
+        "severity"
+      ],
+      "properties": {
+        "invariantId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        },
+        "phase": {
+          "enum": [
+            "PRECONDITION",
+            "POSTCONDITION"
+          ]
+        },
+        "expression": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 4096
+        },
+        "description": {
+          "type": "string",
+          "maxLength": 2048
+        },
+        "severity": {
+          "enum": [
+            "ERROR",
+            "WARNING"
+          ]
+        }
+      }
+    },
+    "compatibilityPolicy": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "mode",
+        "unknownBlocksAutomaticMigration"
+      ],
+      "properties": {
+        "mode": {
+          "enum": [
+            "STRICT",
+            "BACKWARD",
+            "FORWARD",
+            "NONE"
+          ]
+        },
+        "unknownBlocksAutomaticMigration": {
+          "type": "boolean"
+        }
+      }
+    },
+    "fieldMetadata": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "displayName",
+        "description",
+        "classification",
+        "source",
+        "confidence",
+        "extensions"
+      ],
+      "properties": {
+        "displayName": {
+          "type": "string",
+          "maxLength": 256
+        },
+        "description": {
+          "type": "string",
+          "maxLength": 2048
+        },
+        "classification": {
+          "enum": [
+            "PUBLIC",
+            "INTERNAL",
+            "CONFIDENTIAL",
+            "RESTRICTED"
+          ]
+        },
+        "source": {
+          "$ref": "#/$defs/source"
+        },
+        "confidence": {
+          "$ref": "#/$defs/confidence"
+        },
+        "extensions": {
+          "type": "object"
+        }
+      }
+    }
+  }
+}

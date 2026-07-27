@@ -1,0 +1,248 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://leanowtech.com/schemas/bloge-scenario-validation-report-v1.schema.json",
+  "title": "BLOGE Scenario Validation Report v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "targetFingerprint",
+    "contractFingerprint",
+    "scenarioDraftSetRevision",
+    "status",
+    "diagnostics",
+    "compatibility",
+    "impactedBindings",
+    "impactedScenarios",
+    "publicationImpact"
+  ],
+  "properties": {
+    "schemaVersion": {
+      "const": "bloge.scenarioValidationReport.v1"
+    },
+    "targetFingerprint": {
+      "$ref": "#/$defs/optionalFingerprint"
+    },
+    "contractFingerprint": {
+      "$ref": "#/$defs/optionalFingerprint"
+    },
+    "scenarioDraftSetRevision": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "status": {
+      "enum": [
+        "VALID",
+        "INVALID",
+        "STALE",
+        "UNKNOWN"
+      ]
+    },
+    "diagnostics": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/diagnostic"
+      }
+    },
+    "compatibility": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/compatibilityFinding"
+      }
+    },
+    "impactedBindings": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/bindingRef"
+      }
+    },
+    "impactedScenarios": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/scenarioRef"
+      }
+    },
+    "publicationImpact": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/publishedAssetRef"
+      }
+    }
+  },
+  "allOf": [
+    {
+      "if": {
+        "properties": {
+          "status": {
+            "enum": [
+              "VALID",
+              "STALE"
+            ]
+          }
+        },
+        "required": [
+          "status"
+        ]
+      },
+      "then": {
+        "properties": {
+          "targetFingerprint": {
+            "$ref": "#/$defs/fingerprint"
+          },
+          "contractFingerprint": {
+            "$ref": "#/$defs/fingerprint"
+          }
+        }
+      }
+    }
+  ],
+  "$defs": {
+    "fingerprint": {
+      "type": "string",
+      "pattern": "^sha256:[0-9a-f]{64}$"
+    },
+    "optionalFingerprint": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/fingerprint"
+        },
+        {
+          "const": ""
+        }
+      ]
+    },
+    "diagnostic": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "level",
+        "code",
+        "message",
+        "target",
+        "line",
+        "column"
+      ],
+      "properties": {
+        "level": {
+          "enum": [
+            "ERROR",
+            "WARNING",
+            "INFO"
+          ]
+        },
+        "code": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 256
+        },
+        "message": {
+          "type": "string",
+          "maxLength": 4096
+        },
+        "target": {
+          "type": "string",
+          "maxLength": 2048
+        },
+        "line": {
+          "type": "integer"
+        },
+        "column": {
+          "type": "integer"
+        },
+        "metadata": {
+          "type": "object"
+        }
+      }
+    },
+    "compatibilityFinding": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "code",
+        "severity",
+        "path",
+        "message"
+      ],
+      "properties": {
+        "code": {
+          "type": "string"
+        },
+        "severity": {
+          "enum": [
+            "BREAKING",
+            "WARNING",
+            "INFO",
+            "UNKNOWN"
+          ]
+        },
+        "path": {
+          "type": "string"
+        },
+        "message": {
+          "type": "string"
+        }
+      }
+    },
+    "bindingRef": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "nodeId",
+        "bindingKey",
+        "path"
+      ],
+      "properties": {
+        "nodeId": {
+          "type": "string"
+        },
+        "bindingKey": {
+          "type": "string"
+        },
+        "path": {
+          "type": "string"
+        }
+      }
+    },
+    "scenarioRef": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "scenarioId",
+        "path"
+      ],
+      "properties": {
+        "scenarioId": {
+          "type": "string"
+        },
+        "path": {
+          "type": "string"
+        }
+      }
+    },
+    "publishedAssetRef": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "id",
+        "revision",
+        "fingerprint"
+      ],
+      "properties": {
+        "kind": {
+          "type": "string"
+        },
+        "id": {
+          "type": "string"
+        },
+        "revision": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "fingerprint": {
+          "$ref": "#/$defs/fingerprint"
+        }
+      }
+    }
+  }
+}

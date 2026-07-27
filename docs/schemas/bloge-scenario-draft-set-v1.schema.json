@@ -1,0 +1,730 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://leanowtech.com/schemas/bloge-scenario-draft-set-v1.schema.json",
+  "title": "BLOGE Scenario Draft Set v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "scenarioDraftSetId",
+    "revision",
+    "scope",
+    "target",
+    "contractFingerprint",
+    "scenarios",
+    "metadata"
+  ],
+  "properties": {
+    "schemaVersion": {
+      "const": "bloge.scenarioDraftSet.v1"
+    },
+    "scenarioDraftSetId": {
+      "type": "string",
+      "maxLength": 256
+    },
+    "revision": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "scope": {
+      "$ref": "#/$defs/scope"
+    },
+    "target": {
+      "$ref": "#/$defs/target"
+    },
+    "contractFingerprint": {
+      "$ref": "#/$defs/fingerprint"
+    },
+    "scenarios": {
+      "type": "array",
+      "maxItems": 1000,
+      "items": {
+        "$ref": "#/$defs/scenario"
+      }
+    },
+    "metadata": {
+      "$ref": "#/$defs/metadata"
+    }
+  },
+  "$defs": {
+    "fingerprint": {
+      "type": "string",
+      "pattern": "^sha256:[0-9a-f]{64}$"
+    },
+    "scope": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "tenantId",
+        "organizationId",
+        "projectId",
+        "environment",
+        "region"
+      ],
+      "properties": {
+        "tenantId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 256
+        },
+        "organizationId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 256
+        },
+        "projectId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 256
+        },
+        "environment": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        },
+        "region": {
+          "type": "string",
+          "maxLength": 128
+        }
+      }
+    },
+    "target": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "id",
+        "revision",
+        "fingerprint"
+      ],
+      "properties": {
+        "kind": {
+          "enum": [
+            "GRAPH",
+            "OPERATOR"
+          ]
+        },
+        "id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 256
+        },
+        "revision": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "fingerprint": {
+          "$ref": "#/$defs/fingerprint"
+        }
+      }
+    },
+    "metadata": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "owner",
+        "classification",
+        "createdAt",
+        "updatedAt",
+        "provenance"
+      ],
+      "properties": {
+        "owner": {
+          "type": "string",
+          "maxLength": 256
+        },
+        "classification": {
+          "$ref": "#/$defs/classification"
+        },
+        "createdAt": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "format": "date-time"
+        },
+        "updatedAt": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "format": "date-time"
+        },
+        "provenance": {
+          "type": "object"
+        }
+      }
+    },
+    "classification": {
+      "enum": [
+        "PUBLIC",
+        "INTERNAL",
+        "CONFIDENTIAL",
+        "RESTRICTED"
+      ]
+    },
+    "scenario": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "scenarioId",
+        "name",
+        "description",
+        "caseType",
+        "tags",
+        "given",
+        "dependencies",
+        "then"
+      ],
+      "properties": {
+        "scenarioId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 256
+        },
+        "name": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 512
+        },
+        "description": {
+          "type": "string",
+          "maxLength": 4096
+        },
+        "caseType": {
+          "enum": [
+            "GOLDEN",
+            "NEGATIVE",
+            "BOUNDARY",
+            "REGRESSION",
+            "PROPERTY"
+          ]
+        },
+        "tags": {
+          "type": "array",
+          "uniqueItems": true,
+          "maxItems": 64,
+          "items": {
+            "type": "string",
+            "maxLength": 128
+          }
+        },
+        "given": {
+          "$ref": "#/$defs/given"
+        },
+        "dependencies": {
+          "type": "array",
+          "maxItems": 512,
+          "items": {
+            "$ref": "#/$defs/dependency"
+          }
+        },
+        "then": {
+          "$ref": "#/$defs/then"
+        }
+      }
+    },
+    "given": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "input",
+        "provenance"
+      ],
+      "properties": {
+        "input": true,
+        "provenance": {
+          "enum": [
+            "AUTHORED",
+            "GENERATED",
+            "IMPORTED",
+            "CAPTURED",
+            "MIGRATED"
+          ]
+        }
+      }
+    },
+    "dependency": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "dependencyId",
+        "selector",
+        "behavior",
+        "consumption",
+        "schemaCheck",
+        "origin"
+      ],
+      "properties": {
+        "dependencyId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 256
+        },
+        "selector": {
+          "$ref": "#/$defs/selector"
+        },
+        "behavior": {
+          "$ref": "#/$defs/behavior"
+        },
+        "consumption": {
+          "$ref": "#/$defs/consumption"
+        },
+        "schemaCheck": {
+          "$ref": "#/$defs/schemaCheck"
+        },
+        "origin": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        }
+      }
+    },
+    "selector": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "graphPath",
+        "nodeId",
+        "operatorRef",
+        "resourceRef",
+        "functionRef",
+        "attempts",
+        "occurrences",
+        "correlationKey",
+        "pathEquals"
+      ],
+      "properties": {
+        "graphPath": {
+          "type": "string",
+          "maxLength": 2048
+        },
+        "nodeId": {
+          "type": "string",
+          "maxLength": 256
+        },
+        "operatorRef": {
+          "type": "string",
+          "maxLength": 512
+        },
+        "resourceRef": {
+          "type": "string",
+          "maxLength": 512
+        },
+        "functionRef": {
+          "type": "string",
+          "maxLength": 512
+        },
+        "attempts": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": {
+            "type": "integer",
+            "minimum": 1
+          }
+        },
+        "occurrences": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": {
+            "type": "integer",
+            "minimum": 1
+          }
+        },
+        "correlationKey": {
+          "type": "string",
+          "maxLength": 512
+        },
+        "pathEquals": {
+          "type": "object",
+          "propertyNames": {
+            "pattern": "^(/([^/~]|~0|~1)*)*$"
+          }
+        }
+      },
+      "anyOf": [
+        {
+          "properties": {
+            "nodeId": {
+              "minLength": 1
+            }
+          }
+        },
+        {
+          "properties": {
+            "operatorRef": {
+              "minLength": 1
+            }
+          }
+        },
+        {
+          "properties": {
+            "resourceRef": {
+              "minLength": 1
+            }
+          }
+        },
+        {
+          "properties": {
+            "functionRef": {
+              "minLength": 1
+            }
+          }
+        }
+      ]
+    },
+    "behavior": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "boundary"
+      ],
+      "properties": {
+        "kind": {
+          "enum": [
+            "REAL",
+            "RETURN",
+            "ERROR",
+            "DELAY",
+            "TIMEOUT",
+            "REPLAY",
+            "OBSERVE",
+            "MUST_NOT_CALL"
+          ]
+        },
+        "boundary": {
+          "enum": [
+            "NODE",
+            "TRANSPORT"
+          ]
+        },
+        "output": true,
+        "expectedInput": true,
+        "rawBody": {
+          "type": "string",
+          "maxLength": 1048576
+        },
+        "statusCode": {
+          "type": "integer",
+          "minimum": 100,
+          "maximum": 599
+        },
+        "headers": {
+          "type": "object",
+          "propertyNames": {
+            "maxLength": 256
+          },
+          "additionalProperties": {
+            "type": "string",
+            "maxLength": 8192
+          }
+        },
+        "errorCode": {
+          "type": "string",
+          "maxLength": 128
+        },
+        "errorType": {
+          "type": "string",
+          "maxLength": 256
+        },
+        "errorMessage": {
+          "type": "string",
+          "maxLength": 2048
+        },
+        "after": {
+          "type": "string",
+          "format": "duration"
+        },
+        "replayRef": {
+          "type": "string",
+          "maxLength": 1024
+        }
+      },
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "kind": {
+                "const": "ERROR"
+              }
+            },
+            "required": [
+              "kind"
+            ]
+          },
+          "then": {
+            "required": [
+              "errorCode"
+            ],
+            "properties": {
+              "errorCode": {
+                "minLength": 1
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "kind": {
+                "enum": [
+                  "DELAY",
+                  "TIMEOUT"
+                ]
+              }
+            },
+            "required": [
+              "kind"
+            ]
+          },
+          "then": {
+            "required": [
+              "after"
+            ]
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "kind": {
+                "const": "REPLAY"
+              }
+            },
+            "required": [
+              "kind"
+            ]
+          },
+          "then": {
+            "required": [
+              "replayRef"
+            ],
+            "properties": {
+              "replayRef": {
+                "minLength": 1
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "kind": {
+                "const": "RETURN"
+              },
+              "boundary": {
+                "const": "TRANSPORT"
+              }
+            },
+            "required": [
+              "kind",
+              "boundary"
+            ]
+          },
+          "then": {
+            "required": [
+              "statusCode"
+            ]
+          }
+        }
+      ]
+    },
+    "consumption": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "required",
+        "minUses",
+        "maxUses",
+        "onExhausted",
+        "onUnmatched"
+      ],
+      "properties": {
+        "required": {
+          "type": "boolean"
+        },
+        "minUses": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "maxUses": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "onExhausted": {
+          "enum": [
+            "FAIL",
+            "FALLBACK_TO_REAL"
+          ]
+        },
+        "onUnmatched": {
+          "enum": [
+            "FAIL",
+            "WARN",
+            "ALLOW_REAL"
+          ]
+        }
+      }
+    },
+    "schemaCheck": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "mode",
+        "waiverReason"
+      ],
+      "properties": {
+        "mode": {
+          "enum": [
+            "STRICT",
+            "WAIVED"
+          ]
+        },
+        "waiverReason": {
+          "type": "string",
+          "maxLength": 2048
+        }
+      },
+      "if": {
+        "properties": {
+          "mode": {
+            "const": "WAIVED"
+          }
+        },
+        "required": [
+          "mode"
+        ]
+      },
+      "then": {
+        "properties": {
+          "waiverReason": {
+            "minLength": 1
+          }
+        }
+      }
+    },
+    "then": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "assertions"
+      ],
+      "properties": {
+        "assertions": {
+          "type": "array",
+          "maxItems": 1024,
+          "items": {
+            "$ref": "#/$defs/assertion"
+          }
+        }
+      }
+    },
+    "assertion": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "assertionId",
+        "scope",
+        "nodeId",
+        "fromNodeId",
+        "toNodeId",
+        "path",
+        "operator"
+      ],
+      "properties": {
+        "assertionId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 256
+        },
+        "scope": {
+          "enum": [
+            "OUTPUT_PATH",
+            "NODE_OUTPUT",
+            "NODE_STATUS",
+            "EDGE_TRANSFER",
+            "INVOCATION"
+          ]
+        },
+        "nodeId": {
+          "type": "string",
+          "maxLength": 256
+        },
+        "fromNodeId": {
+          "type": "string",
+          "maxLength": 256
+        },
+        "toNodeId": {
+          "type": "string",
+          "maxLength": 256
+        },
+        "path": {
+          "type": "string",
+          "maxLength": 2048
+        },
+        "operator": {
+          "enum": [
+            "EQUALS",
+            "MATCHES_SCHEMA",
+            "EXISTS",
+            "ABSENT",
+            "STATUS",
+            "USED",
+            "NOT_USED"
+          ]
+        },
+        "expected": true,
+        "numericTolerance": {
+          "type": "number",
+          "minimum": 0
+        }
+      },
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "scope": {
+                "enum": [
+                  "NODE_OUTPUT",
+                  "NODE_STATUS"
+                ]
+              }
+            },
+            "required": [
+              "scope"
+            ]
+          },
+          "then": {
+            "properties": {
+              "nodeId": {
+                "minLength": 1
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "scope": {
+                "const": "EDGE_TRANSFER"
+              }
+            },
+            "required": [
+              "scope"
+            ]
+          },
+          "then": {
+            "properties": {
+              "fromNodeId": {
+                "minLength": 1
+              },
+              "toNodeId": {
+                "minLength": 1
+              }
+            }
+          }
+        }
+      ]
+    }
+  }
+}

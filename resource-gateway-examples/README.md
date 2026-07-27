@@ -19,6 +19,7 @@ integration something the business flow can see, reason about, test, and change.
 | Descriptor-first resources | Add most APIs by changing contracts, not cloning Java operators |
 | Graph-level contracts | Every built-in resource graph exposes formal input/output JSON Schema for system integration |
 | Schema-aware canvas | Drag, connect, validate, simulate, and publish under server-side schema checks |
+| Contract and Scenario authoring protocol | Versioned Contract/Scenario drafts, exact target and contract fingerprints, strict schemas, deterministic transient compilation, and fail-closed routing of advanced dependency behavior to the governed testing control plane |
 | Runtime-backed demos | Local upstreams, real gateway execution, mock simulation, SSE examples, and reusable publications |
 | Schema-gated table tests | Run 14 built-in cases across all seven resource graphs with F3 transport fixtures, bounded retry consumption, coverage gates, and fidelity evidence |
 | Isolated testing control plane | Test/staging-only graph/operator discovery, validator-proven boundary-case planning, reviewed plan-to-suite materialization, immutable fixture registry, caller-driven DAG and operator micro-graph execution, attempt/occurrence-specific doubles, sanitized evidence retention, batch runs, and production control-field guard |

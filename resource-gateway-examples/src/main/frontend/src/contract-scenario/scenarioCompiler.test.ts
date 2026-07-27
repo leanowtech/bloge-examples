@@ -1,0 +1,280 @@
+import { describe, expect, it } from 'vitest';
+import type { GraphDraft } from '../types';
+import {
+  contractDraftFromGraphDraft,
+  emptyScenarioDraftSet,
+  type DependencyBehaviorDraft,
+  type ScenarioDraft,
+  type ScenarioDraftSet,
+} from './domain';
+import { compileScenarioForSimulation } from './scenarioCompiler';
+
+const TARGET_FINGERPRINT = `sha256:${'a'.repeat(64)}`;
+const CONTRACT_FINGERPRINT = `sha256:${'b'.repeat(64)}`;
+
+describe('Contract and Scenario authoring domain', () => {
+  it('projects graph schemas while preserving unknown execution semantics', () => {
+    const contract = contractDraftFromGraphDraft(graphDraft(), TARGET_FINGERPRINT);
+
+    expect(contract.target).toEqual({
+      kind: 'GRAPH',
+      id: 'draft-a',
+      revision: 4,
+      fingerprint: TARGET_FINGERPRINT,
+    });
+    expect(contract.inputSchema.schema).toMatchObject({
+      type: 'object',
+      required: ['applicantId'],
+    });
+    expect(contract.executionSemantics).toEqual({
+      effect: 'UNKNOWN',
+      idempotency: 'UNKNOWN',
+      streaming: null,
+      durable: null,
+    });
+    expect(contract.confidence).toBe('EXACT');
+  });
+
+  it('creates a separate mutable Scenario asset with complete enterprise scope', () => {
+    const target = contractDraftFromGraphDraft(graphDraft(), TARGET_FINGERPRINT).target;
+    const draftSet = emptyScenarioDraftSet(target, CONTRACT_FINGERPRINT, {
+      tenantId: 'tenant-a',
+      organizationId: 'org-a',
+      projectId: 'project-a',
+      environment: 'test',
+      region: 'sg',
+    });
+
+    expect(draftSet.schemaVersion).toBe('bloge.scenarioDraftSet.v1');
+    expect(draftSet.scope).toMatchObject({
+      tenantId: 'tenant-a',
+      organizationId: 'org-a',
+      projectId: 'project-a',
+    });
+    expect(draftSet.scenarios).toEqual([]);
+  });
+});
+
+describe('Scenario transient compiler', () => {
+  it('compiles exact node RETURN and Expected Result into the existing simulation request', () => {
+    const result = compileScenarioForSimulation(
+      graphDraft(),
+      draftSet([returnDependency()]),
+      'fallback',
+      TARGET_FINGERPRINT,
+      CONTRACT_FINGERPRINT,
+    );
+
+    expect(result.compiled).toBe(true);
+    expect(result.request?.context).toEqual({ applicantId: 'A-1' });
+    expect(result.request?.fixtures?.crm).toEqual({
+      output: { score: 720 },
+      expectedInput: { applicantId: 'A-1' },
+    });
+    expect(result.assertions.map((assertion) => assertion.assertionId))
+      .toEqual(['decision-approved']);
+  });
+
+  it('removes a persisted fixture when the Scenario explicitly requests REAL behavior', () => {
+    const real = returnDependency();
+    real.behavior = { kind: 'REAL', boundary: 'NODE' };
+
+    const result = compileScenarioForSimulation(
+      graphDraft(),
+      draftSet([real]),
+      'fallback',
+      TARGET_FINGERPRINT,
+      CONTRACT_FINGERPRINT,
+    );
+
+    expect(result.compiled).toBe(true);
+    expect(result.request?.draft.nodeFixtures).toEqual({});
+    expect(result.request?.fixtures).toBeUndefined();
+  });
+
+  it.each(['ERROR', 'DELAY', 'TIMEOUT', 'REPLAY', 'OBSERVE', 'MUST_NOT_CALL'] as const)(
+    'fails closed for advanced %s behavior',
+    (kind) => {
+      const advanced = returnDependency();
+      advanced.behavior = { kind, boundary: 'NODE' };
+
+      const result = compileScenarioForSimulation(
+        graphDraft(),
+        draftSet([advanced]),
+        'fallback',
+        TARGET_FINGERPRINT,
+        CONTRACT_FINGERPRINT,
+      );
+
+      expect(result.compiled).toBe(false);
+      expect(result.request).toBeUndefined();
+      expect(result.diagnostics.map((diagnostic) => diagnostic.code))
+        .toContain('visual.scenario.compile.governedBehaviorRequired');
+    },
+  );
+
+  it('reports stale target, stale contract, and missing Scenario together', () => {
+    const result = compileScenarioForSimulation(
+      graphDraft(),
+      draftSet([returnDependency()]),
+      'missing',
+      `sha256:${'c'.repeat(64)}`,
+      `sha256:${'d'.repeat(64)}`,
+    );
+
+    expect(result.compiled).toBe(false);
+    expect(result.diagnostics.map((diagnostic) => diagnostic.code)).toEqual(expect.arrayContaining([
+      'visual.scenario.target.fingerprintStale',
+      'visual.scenario.contract.stale',
+      'visual.scenario.compile.scenarioMissing',
+    ]));
+  });
+
+  it('rejects transport selectors and duplicate controls instead of applying ambiguous overrides', () => {
+    const first = returnDependency();
+    const transport = returnDependency();
+    transport.dependencyId = 'crm-transport';
+    transport.behavior.boundary = 'TRANSPORT';
+
+    const result = compileScenarioForSimulation(
+      graphDraft(),
+      draftSet([first, transport]),
+      'fallback',
+      TARGET_FINGERPRINT,
+      CONTRACT_FINGERPRINT,
+    );
+
+    expect(result.compiled).toBe(false);
+    expect(result.diagnostics.map((diagnostic) => diagnostic.code))
+      .toContain('visual.scenario.compile.governedBehaviorRequired');
+  });
+});
+
+function graphDraft(): GraphDraft {
+  return {
+    schemaVersion: 'bloge.visualGraphDraft.v1',
+    draftId: 'draft-a',
+    revision: 4,
+    graphName: 'loanPolicy',
+    tenantId: 'tenant-a',
+    namespace: 'local',
+    environment: 'test',
+    inputSchema: {
+      format: 'json-schema',
+      version: '2020-12',
+      schema: {
+        type: 'object',
+        properties: { applicantId: { type: 'string' } },
+        required: ['applicantId'],
+        additionalProperties: false,
+      },
+    },
+    outputSchema: {
+      format: 'json-schema',
+      version: '2020-12',
+      schema: {
+        type: 'object',
+        properties: { decision: { type: 'string' } },
+        required: ['decision'],
+        additionalProperties: false,
+      },
+    },
+    nodes: [
+      { id: 'crm', operatorRef: 'crm:lookup', label: 'CRM' },
+      { id: 'decision', operatorRef: 'bloge:transform', label: 'Decision' },
+    ],
+    edges: [{
+      id: 'crm-decision',
+      kind: 'data',
+      source: { nodeId: 'crm', port: 'profile' },
+      target: { nodeId: 'decision', port: 'applicant' },
+    }],
+    output: { nodeId: 'decision' },
+    nodeFixtures: { crm: { output: { score: 600 } } },
+  };
+}
+
+function draftSet(dependencies: DependencyBehaviorDraft[]): ScenarioDraftSet {
+  const target = contractDraftFromGraphDraft(graphDraft(), TARGET_FINGERPRINT).target;
+  const scenario: ScenarioDraft = {
+    scenarioId: 'fallback',
+    name: 'CRM fallback',
+    description: 'Return a controlled CRM response.',
+    caseType: 'REGRESSION',
+    tags: ['crm'],
+    given: {
+      input: { applicantId: 'A-1' },
+      provenance: 'AUTHORED',
+    },
+    dependencies,
+    then: {
+      assertions: [{
+        assertionId: 'decision-approved',
+        scope: 'OUTPUT_PATH',
+        nodeId: '',
+        fromNodeId: '',
+        toNodeId: '',
+        path: '/decision',
+        operator: 'EQUALS',
+        expected: 'APPROVED',
+      }],
+    },
+  };
+  return {
+    schemaVersion: 'bloge.scenarioDraftSet.v1',
+    scenarioDraftSetId: 'loan-scenarios',
+    revision: 3,
+    scope: {
+      tenantId: 'tenant-a',
+      organizationId: 'org-a',
+      projectId: 'project-a',
+      environment: 'test',
+      region: 'sg',
+    },
+    target,
+    contractFingerprint: CONTRACT_FINGERPRINT,
+    scenarios: [scenario],
+    metadata: {
+      owner: 'credit-platform',
+      classification: 'INTERNAL',
+      createdAt: null,
+      updatedAt: null,
+      provenance: {},
+    },
+  };
+}
+
+function returnDependency(): DependencyBehaviorDraft {
+  return {
+    dependencyId: 'crm-return',
+    selector: {
+      graphPath: '/root',
+      nodeId: 'crm',
+      operatorRef: '',
+      resourceRef: '',
+      functionRef: '',
+      attempts: [],
+      occurrences: [],
+      correlationKey: '',
+      pathEquals: {},
+    },
+    behavior: {
+      kind: 'RETURN',
+      boundary: 'NODE',
+      output: { score: 720 },
+      expectedInput: { applicantId: 'A-1' },
+    },
+    consumption: {
+      required: true,
+      minUses: 1,
+      maxUses: 1,
+      onExhausted: 'FAIL',
+      onUnmatched: 'FAIL',
+    },
+    schemaCheck: {
+      mode: 'STRICT',
+      waiverReason: '',
+    },
+    origin: 'AUTHORED',
+  };
+}

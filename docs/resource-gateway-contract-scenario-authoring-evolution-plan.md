@@ -6,6 +6,11 @@
 > 适用范围：`/author/`、VS Code 轻量宿主、Resource Gateway testing control plane、ANEKE Tool Studio 集成  
 > 核心决策：保留现有 wire protocol 的权威语义，在其上建立面向业务作者的 Contract → Scenario → Run Evidence 产品模型
 
+实现进度与当前差距见
+[Contract & Scenario Authoring Implementation Status](resource-gateway-contract-scenario-authoring-implementation-status.md)；
+已落地协议和编译边界见
+[Contract & Scenario Authoring Protocol](resource-gateway-contract-scenario-authoring-protocol.md)。
+
 相关文档：
 
 - [BLOGE Visual Canvas 产品与系统说明](bloge-visual-canvas-product-and-system-guide.md)
