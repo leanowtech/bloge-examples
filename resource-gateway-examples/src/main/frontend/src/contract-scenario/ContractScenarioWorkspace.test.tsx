@@ -108,13 +108,103 @@ describe('ContractScenarioWorkspace', () => {
     expect(text()).toContain('eligible');
   });
 
-  it('exposes stale coordinates and delegates explicit rebase', async () => {
+  it('routes stale coordinates through compatibility review instead of blind rebase', async () => {
     const onRebase = vi.fn();
     await renderWorkspace({ stale: true, onRebase });
 
     expect(text()).toContain('Scenarios target an older graph or Contract.');
-    await act(async () => button('Rebase scenarios').click());
+    await act(async () => button('Review compatibility').click());
+    expect(text()).toContain('Review this local draft before establishing its first baseline');
+    expect(button('Rebase local draft').disabled).toBe(true);
+    const acknowledgement = document.querySelector(
+      '.compatibility-resolution input[type="checkbox"]',
+    );
+    await act(async () => (acknowledgement as HTMLInputElement).click());
+    await act(async () => button('Rebase local draft').click());
     expect(onRebase).toHaveBeenCalledOnce();
+  });
+
+  it('shows exact findings and requires acknowledgement before a breaking rebase', async () => {
+    const onChange = vi.fn();
+    vi.stubGlobal('fetch', vi.fn().mockImplementation(async (request) => {
+      const url = String(request);
+      if (url.includes('/compatibility?revision=1')) {
+        return new Response(JSON.stringify({
+          schemaVersion: 'bloge.contractCompatibilityReport.v1',
+          scenarioDraftSetId: 'loanGraph-scenarios',
+          scenarioRevision: 1,
+          target: {
+            kind: 'GRAPH',
+            id: 'loan-graph',
+            revision: 2,
+            fingerprint: fingerprint('a'),
+          },
+          baselineContractFingerprint: fingerprint('d'),
+          currentContractFingerprint: fingerprint('b'),
+          policy: 'STRICT',
+          classification: 'BREAKING',
+          findings: [{
+            findingId: 'F-001',
+            scope: 'INPUT',
+            path: '/country',
+            previousPath: '',
+            change: 'ADDED',
+            classification: 'BREAKING',
+            code: 'RG.CONTRACT.FIELD_ADDED',
+            message: 'Field /country was added.',
+            details: { currentRequired: true },
+          }],
+          impactedScenarios: [{
+            scenarioId: 'approved',
+            status: 'BLOCKED',
+            findingIds: ['F-001'],
+            paths: ['/country'],
+          }],
+          migrations: [{
+            actionId: 'M-001',
+            kind: 'SET_REQUIRED_VALUE',
+            scope: 'INPUT',
+            fromPath: '',
+            toPath: '/country',
+            automatic: false,
+            scenarioIds: ['approved'],
+            rationale: 'Provide an explicit value for the new required input.',
+          }],
+          generatedAt: '2026-07-27T00:00:00Z',
+          reportFingerprint: fingerprint('e'),
+        }));
+      }
+      return new Response('{}', { status: 404, statusText: 'Not Found' });
+    }));
+    await renderWorkspace({ stale: true, scenarioRevision: 1, onChange });
+
+    await act(async () => {
+      button('Review compatibility').click();
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+    expect(text()).toContain('Field /country was added.');
+    expect(text()).toContain('Approved applicant');
+    expect(button('Record review & rebase').disabled).toBe(true);
+
+    const acknowledgement = document.querySelector(
+      '.compatibility-resolution input[type="checkbox"]',
+    );
+    expect(acknowledgement).toBeInstanceOf(HTMLInputElement);
+    await act(async () => (acknowledgement as HTMLInputElement).click());
+    expect(button('Record review & rebase').disabled).toBe(false);
+    await act(async () => button('Record review & rebase').click());
+    expect(onChange).toHaveBeenCalledWith(expect.objectContaining({
+      target: expect.objectContaining({ fingerprint: fingerprint('a') }),
+      contractFingerprint: fingerprint('b'),
+      metadata: expect.objectContaining({
+        provenance: expect.objectContaining({
+          compatibilityResolution: expect.objectContaining({
+            reportFingerprint: fingerprint('e'),
+          }),
+        }),
+      }),
+    }));
   });
 
   it('presents an authoritative Operator Contract through the shared Scenario workspace', async () => {
@@ -329,6 +419,7 @@ describe('ContractScenarioWorkspace', () => {
   async function renderWorkspace(options: {
     stale?: boolean;
     unsaved?: boolean;
+    scenarioRevision?: number;
     onChange?: ReturnType<typeof vi.fn>;
     onRebase?: ReturnType<typeof vi.fn>;
     onRun?: ReturnType<typeof vi.fn>;
@@ -339,7 +430,7 @@ describe('ContractScenarioWorkspace', () => {
     const targetFingerprint = fingerprint('a');
     const contractFingerprint = fingerprint('b');
     const contract = contractDraftFromGraphDraft(draft, targetFingerprint);
-    const draftSet = scenarioDraftSetFromCanvas(
+    const projectedDraftSet = scenarioDraftSetFromCanvas(
       options.stale ? { ...contract.target, fingerprint: fingerprint('c') } : contract.target,
       contractFingerprint,
       draft,
@@ -356,6 +447,10 @@ describe('ContractScenarioWorkspace', () => {
         expectedOutput: successfulResponse().output,
       }],
     );
+    const draftSet = {
+      ...projectedDraftSet,
+      revision: options.scenarioRevision ?? projectedDraftSet.revision,
+    };
     await act(async () => {
       root = createRoot(host);
       root.render(

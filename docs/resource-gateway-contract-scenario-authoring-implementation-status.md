@@ -464,3 +464,64 @@ Round 8 focused verification:
 Stage 2 is functionally closed, but the goal requires a residual gap below 8%, not equal to it.
 The next slice therefore implements Stage 3 semantic compatibility, field lineage, exact Scenario
 impact, and guided migration before claiming completion.
+
+## Round 9
+
+Implemented evidence:
+
+- every authoring-service save now persists the exact authoritative Contract as an immutable,
+  integrity-verified baseline beside the accepted Scenario revision without changing
+  `ScenarioDraftSet v1`;
+- a versioned `bloge.contractCompatibilityReport.v1` binds the retained revision, current target,
+  old/new Contract fingerprints, policy, deterministic findings, exact Scenario impacts, migration
+  actions, and a canonical report fingerprint;
+- the analyzer classifies input and output field addition, removal, explicit rename, requiredness,
+  type, enum, and constraint drift in the correct compatibility direction;
+- unknown Schema composition, unsupported keywords, non-schema semantic changes, target changes,
+  and legacy revisions without baselines fail closed as `REVIEW_REQUIRED`;
+- Given values and output assertions are traced to findings, so impact names exact Scenario ids and
+  paths instead of reporting only coordinate staleness;
+- safe migration supports declared defaults, removed inputs, `x-bloge-renamed-from` input moves,
+  and output assertion rebinds; collisions and value conversions remain manual;
+- stale banners route into Compatibility instead of performing a blind rebase;
+- applying safe edits leaves the draft stale, while explicit review records report/revision/
+  fingerprint/finding lineage before rebasing; save, run evidence, and publication remain separate
+  gates;
+- revision-zero local drafts have a separate acknowledged first-baseline path, avoiding a lifecycle
+  dead end without weakening stored-revision policy.
+
+Weighted assessment:
+
+| Workstream | Achieved | Change from Round 8 |
+|---|---:|---:|
+| Product information architecture | 18/18 | +1 |
+| Schema workbench | 13/15 | +1 |
+| Scenario builder | 17/17 | 0 |
+| Compiler and adapters | 15/15 | 0 |
+| Persistence and protocol | 10/10 | 0 |
+| Compatibility and lineage | 8/10 | +2 |
+| Security and governance | 8/8 | 0 |
+| Samples, documentation, observability | 7/7 | 0 |
+| Total achieved | **95/100** | **+3** |
+
+**Residual gap: 5%.**
+
+Round 9 focused verification:
+
+- compatibility analyzer and baseline persistence: 16 Java tests passed;
+- compatibility protocol, existing Scenario publication, and architecture boundary: 26 Java tests
+  passed together;
+- frontend Compatibility migration, API, and workspace: 52 tests passed;
+- the complete frontend suite passed 229 tests and the production Vite build succeeded with a
+  70 kB lazy Contract/Scenario workspace chunk;
+- final `mvn clean verify` passed 5,665 tests with zero failures/errors and four
+  environment-conditional skips, including 36 Selenium/Chrome DOM cases;
+- high-load verification exposed and fixed two pre-existing test-fixture races: process capture now
+  waits for the forked child to complete `exec`, and late-receipt verification derives provider
+  confirmation from the durable preparation timestamp. The process case also passed 20 independent
+  stability reruns before the final full build.
+
+Remaining work is deliberately bounded: historical publication reverse indexing and ANEKE report
+delivery, finding-to-canvas deep-link highlighting, broader deterministic support for advanced JSON
+Schema semantics, and repository-owned accessibility/performance browser gates. These are follow-up
+hardening items; the implemented v1 path is fail-closed when it cannot decide.

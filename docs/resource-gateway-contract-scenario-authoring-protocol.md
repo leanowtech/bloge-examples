@@ -1,10 +1,11 @@
 # Resource Gateway Contract & Scenario Authoring Protocol
 
-> Status: Stage 2 graphical authoring and governed publication implemented for Graph and Operator
-> targets; portable workspace v1 remains Graph-scoped
+> Status: Stage 3 semantic compatibility and guided Scenario migration implemented for Graph and
+> Operator targets; portable workspace v1 remains Graph-scoped
 > Protocols: `bloge.contractDraft.v1`, `bloge.scenarioDraftSet.v1`,
 > `bloge.graphContractSemantics.v1`, `bloge.scenarioContractProjection.v1`,
-> `bloge.visualAuthoringWorkspaceBundle.v1`, `bloge.scenarioPublicationReport.v1`
+> `bloge.visualAuthoringWorkspaceBundle.v1`, `bloge.scenarioPublicationReport.v1`,
+> `bloge.contractCompatibilityReport.v1`
 
 This document is the code-facing companion to
 [the evolution plan](resource-gateway-contract-scenario-authoring-evolution-plan.md).
@@ -74,6 +75,9 @@ identity with exact SHA-256 fingerprints.
 | Server-authoritative Contract coordinate | `authoring.scenario.ScenarioContractProjection` |
 | Governed compiler | `authoring.scenario.ScenarioGovernedCompiler` |
 | Recoverable publication saga | `authoring.scenario.ScenarioPublicationService` |
+| Immutable Contract baseline | `authoring.scenario.ScenarioContractBaseline` |
+| Compatibility analyzer | `authoring.scenario.ScenarioContractCompatibilityService` |
+| Compatibility report | `authoring.scenario.ContractCompatibilityReport` |
 
 The Java records deeply freeze payload-bearing maps and lists. Cyclic values fail closed before
 serialization or fingerprinting.
@@ -90,6 +94,7 @@ The Stage 2 persistence slice is available only in `test` and `staging` profiles
 | `GET` | `/api/visual/scenario-draft-sets/{id}/revisions` | `TEST_SUITE_READ` | Read immutable retained history newest first |
 | `GET` | `/api/visual/scenario-draft-sets/targets/graphs/{draftId}/contract` | `TEST_SUITE_READ` | Reproject the exact stored Graph as a server-authoritative Contract coordinate |
 | `GET` | `/api/visual/scenario-draft-sets/targets/operators/{operatorRef}/contract` | `TEST_SUITE_READ` | Project one policy-visible catalog Operator as a server-authoritative Contract coordinate |
+| `GET` | `/api/visual/scenario-draft-sets/{id}/compatibility?revision=N` | `TEST_SUITE_READ` | Compare one retained Contract baseline with the current authoritative target |
 | `POST` | `/api/visual/scenario-draft-sets/{id}/publications?revision=N` | `TEST_SCENARIO_PUBLISH` | Publish one exact retained revision as immutable fixtures and suite |
 
 The body scope must exactly match the authenticated tenant, organization, project, environment, and
@@ -172,6 +177,38 @@ assets.
 
 Dependencies can be added and removed graphically. A new Operator-target dependency starts with an
 Operator selector, so its normal authoring path never requires Advanced JSON.
+
+## Contract Compatibility And Guided Migration
+
+Every Scenario revision saved through the authoring service captures the exact server-authoritative
+Contract in `visual_scenario_contract_baselines`, keyed by the same enterprise scope, asset id, and
+revision. The snapshot is integrity-verified when read. It is not embedded in
+`bloge.scenarioDraftSet.v1`, so existing strict v1 clients do not receive a new field.
+
+`bloge.contractCompatibilityReport.v1` contains:
+
+- exact retained Scenario revision and old/new Contract fingerprints;
+- current target coordinate and applied compatibility policy;
+- field-level INPUT, OUTPUT, and CONTRACT findings;
+- deterministic `UNCHANGED`, `COMPATIBLE`, `BREAKING`, or `REVIEW_REQUIRED` classification;
+- exact impacted Scenario ids and paths;
+- safe or manual migration actions;
+- a canonical report fingerprint that excludes `generatedAt`.
+
+The deterministic subset handles object fields, requiredness, scalar type sets, enum sets, bounded
+constraints, arrays, and explicit `x-bloge-renamed-from`. Input and output changes are classified in
+their correct variance direction. A remaining `$ref`, conditional/composition keyword, unsupported
+array tuple, unknown keyword, non-schema semantic change, changed runtime target, or missing legacy
+baseline is never guessed compatible; it becomes `REVIEW_REQUIRED`.
+
+The UI applies only edits that do not invent values: declared defaults, removed Given fields,
+explicit input renames, and explicit output assertion rebinds. It leaves the draft stale until the
+author records a review. That rebase stores the report fingerprint, source revision, old/new
+Contract fingerprints, finding ids, and review time in Scenario provenance. The returned draft must
+still pass current Contract validation, be saved as a new revision, rerun, and republished.
+
+The report does not yet contain historical publication reverse indexes or an ANEKE gate decision.
+Those require exact publication lineage indexing rather than inference.
 
 ## Editable Contract Semantics
 

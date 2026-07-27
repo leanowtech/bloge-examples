@@ -182,6 +182,66 @@ export interface ScenarioValidationReport {
   publicationImpact: unknown[];
 }
 
+export interface ContractCompatibilityReport {
+  schemaVersion: 'bloge.contractCompatibilityReport.v1';
+  scenarioDraftSetId: string;
+  scenarioRevision: number;
+  target: ExactTargetRef;
+  baselineContractFingerprint: string;
+  currentContractFingerprint: string;
+  policy: ContractDraft['compatibilityPolicy']['mode'];
+  classification: 'UNCHANGED' | 'COMPATIBLE' | 'BREAKING' | 'REVIEW_REQUIRED';
+  findings: ContractCompatibilityFinding[];
+  impactedScenarios: Array<{
+    scenarioId: string;
+    status: 'MIGRATION_AVAILABLE' | 'BLOCKED' | 'REVIEW_REQUIRED';
+    findingIds: string[];
+    paths: string[];
+  }>;
+  migrations: ContractCompatibilityMigration[];
+  generatedAt: string;
+  reportFingerprint: string;
+}
+
+export interface ContractCompatibilityFinding {
+  findingId: string;
+  scope: 'INPUT' | 'OUTPUT' | 'CONTRACT';
+  path: string;
+  previousPath: string;
+  change:
+    'ADDED'
+    | 'REMOVED'
+    | 'RENAMED'
+    | 'REQUIRED_CHANGED'
+    | 'TYPE_CHANGED'
+    | 'ENUM_CHANGED'
+    | 'CONSTRAINT_CHANGED'
+    | 'TARGET_CHANGED'
+    | 'OPAQUE';
+  classification: 'COMPATIBLE' | 'BREAKING' | 'REVIEW_REQUIRED';
+  code: string;
+  message: string;
+  details: Record<string, unknown>;
+}
+
+export interface ContractCompatibilityMigration {
+  actionId: string;
+  kind:
+    'ADD_DEFAULT'
+    | 'REMOVE_INPUT'
+    | 'RENAME_INPUT'
+    | 'REBIND_OUTPUT_ASSERTION'
+    | 'SET_REQUIRED_VALUE'
+    | 'CONVERT_VALUE'
+    | 'MANUAL_REVIEW';
+  scope: 'INPUT' | 'OUTPUT' | 'CONTRACT';
+  fromPath: string;
+  toPath: string;
+  automatic: boolean;
+  scenarioIds: string[];
+  rationale: string;
+}
+
 export interface ScenarioDiagnostic {
   level: 'ERROR' | 'WARNING' | 'INFO';
   code: string;

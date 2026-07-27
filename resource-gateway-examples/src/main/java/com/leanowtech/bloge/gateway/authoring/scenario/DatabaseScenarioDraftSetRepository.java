@@ -2,6 +2,7 @@ package com.leanowtech.bloge.gateway.authoring.scenario;
 
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.leanowtech.bloge.gateway.visual.contract.ContractDraft;
 import com.leanowtech.bloge.gateway.visual.model.VisualBundleFingerprint;
 
 import jakarta.annotation.PostConstruct;
@@ -51,6 +52,22 @@ public class DatabaseScenarioDraftSetRepository implements ScenarioDraftSetRepos
                 )
             )
             """;
+    private static final String CREATE_CONTRACT_BASELINES = """
+            CREATE TABLE IF NOT EXISTS visual_scenario_contract_baselines (
+                tenant_id VARCHAR(255) NOT NULL,
+                organization_id VARCHAR(255) NOT NULL,
+                project_id VARCHAR(255) NOT NULL,
+                environment_id VARCHAR(128) NOT NULL,
+                region_id VARCHAR(128) NOT NULL,
+                scenario_draft_set_id VARCHAR(255) NOT NULL,
+                revision BIGINT NOT NULL,
+                baseline_json CLOB NOT NULL,
+                PRIMARY KEY (
+                    tenant_id, organization_id, project_id, environment_id, region_id,
+                    scenario_draft_set_id, revision
+                )
+            )
+            """;
 
     private final JdbcTemplate jdbc;
     private final ObjectMapper objectMapper;
@@ -69,6 +86,7 @@ public class DatabaseScenarioDraftSetRepository implements ScenarioDraftSetRepos
     void init() {
         jdbc.execute(CREATE_CURRENT);
         jdbc.execute(CREATE_HISTORY);
+        jdbc.execute(CREATE_CONTRACT_BASELINES);
     }
 
     @Override
@@ -134,13 +152,27 @@ public class DatabaseScenarioDraftSetRepository implements ScenarioDraftSetRepos
     }
 
     @Override
+    public Optional<StoredScenarioDraftSet> saveIfRevision(
+            long expectedRevision,
+            ScenarioDraftSet candidate,
+            String actor) {
+        return saveIfRevision(expectedRevision, candidate, null, actor);
+    }
+
+    @Override
     @Transactional
     public synchronized Optional<StoredScenarioDraftSet> saveIfRevision(
             long expectedRevision,
             ScenarioDraftSet candidate,
+            ContractDraft contractBaseline,
             String actor) {
         if (candidate == null || expectedRevision < 0) {
             throw new IllegalArgumentException("Scenario draft set and non-negative expected revision are required");
+        }
+        if (contractBaseline != null
+                && !contractBaseline.fingerprint(objectMapper).equals(candidate.contractFingerprint())) {
+            throw new IllegalArgumentException(
+                    "Scenario Contract fingerprint does not match the supplied authoritative baseline");
         }
         ScenarioDraftSet.EnterpriseScope scope = candidate.scope();
         String id = normalized(candidate.scenarioDraftSetId());
@@ -199,7 +231,49 @@ public class DatabaseScenarioDraftSetRepository implements ScenarioDraftSetRepos
                         """,
                 scope.tenantId(), scope.organizationId(), scope.projectId(),
                 scope.environment(), scope.region(), id, nextRevision, json);
+        if (contractBaseline != null) {
+            ScenarioContractBaseline baseline = new ScenarioContractBaseline(
+                    "",
+                    id,
+                    nextRevision,
+                    candidate.contractFingerprint(),
+                    contractBaseline,
+                    now,
+                    actor);
+            jdbc.update("""
+                            INSERT INTO visual_scenario_contract_baselines (
+                                tenant_id, organization_id, project_id, environment_id, region_id,
+                                scenario_draft_set_id, revision, baseline_json
+                            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                            """,
+                    scope.tenantId(), scope.organizationId(), scope.projectId(),
+                    scope.environment(), scope.region(), id, nextRevision,
+                    serialize(baseline, id));
+        }
         return Optional.of(stored);
+    }
+
+    @Override
+    public Optional<ScenarioContractBaseline> findContractBaseline(
+            ScenarioDraftSet.EnterpriseScope scope,
+            String scenarioDraftSetId,
+            long revision) {
+        if (revision <= 0) {
+            return Optional.empty();
+        }
+        return jdbc.query("""
+                        SELECT baseline_json
+                        FROM visual_scenario_contract_baselines
+                        WHERE tenant_id = ? AND organization_id = ? AND project_id = ?
+                          AND environment_id = ? AND region_id = ?
+                          AND scenario_draft_set_id = ? AND revision = ?
+                        """,
+                (rs, rowNum) -> readBaseline(rs.getString("baseline_json")),
+                scope.tenantId(), scope.organizationId(), scope.projectId(),
+                scope.environment(), scope.region(), normalized(scenarioDraftSetId), revision)
+                .stream()
+                .flatMap(Optional::stream)
+                .findFirst();
     }
 
     private Optional<StoredScenarioDraftSet> read(String json) {
@@ -214,12 +288,30 @@ public class DatabaseScenarioDraftSetRepository implements ScenarioDraftSetRepos
     }
 
     private String serialize(StoredScenarioDraftSet stored) {
+        return serialize(stored, stored.scenarioDraftSetId());
+    }
+
+    private Optional<ScenarioContractBaseline> readBaseline(String json) {
         try {
-            return objectMapper.writeValueAsString(stored);
+            ScenarioContractBaseline baseline =
+                    objectMapper.readValue(json, ScenarioContractBaseline.class);
+            if (baseline.contract() == null
+                    || !baseline.contractFingerprint().equals(
+                    baseline.contract().fingerprint(objectMapper))) {
+                return Optional.empty();
+            }
+            return Optional.of(baseline);
+        } catch (JsonProcessingException | IllegalArgumentException invalid) {
+            return Optional.empty();
+        }
+    }
+
+    private String serialize(Object value, String id) {
+        try {
+            return objectMapper.writeValueAsString(value);
         } catch (JsonProcessingException failure) {
             throw new IllegalStateException(
-                    "Failed to serialize Scenario draft set '" + stored.scenarioDraftSetId() + "'.",
-                    failure);
+                    "Failed to serialize Scenario authoring asset '" + id + "'.", failure);
         }
     }
 

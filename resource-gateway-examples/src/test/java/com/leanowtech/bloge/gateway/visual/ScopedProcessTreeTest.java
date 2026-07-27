@@ -150,7 +150,16 @@ class ScopedProcessTreeTest {
         long deadline = System.nanoTime() + Duration.ofSeconds(2).toNanos();
         while (System.nanoTime() < deadline) {
             try (var children = root.children()) {
-                var child = children.findFirst();
+                var child = children
+                        .filter(ProcessHandle::isAlive)
+                        .filter(process -> process.info().startInstant().isPresent())
+                        .filter(process -> process.info().command()
+                                .map(Path::of)
+                                .map(Path::getFileName)
+                                .map(Path::toString)
+                                .filter("sleep"::equals)
+                                .isPresent())
+                        .findFirst();
                 if (child.isPresent()) {
                     return child.orElseThrow();
                 }

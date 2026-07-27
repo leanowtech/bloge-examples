@@ -19,6 +19,7 @@ import {
   fetchScenarioRehearsalRemediationComparison,
   fetchScenarioRehearsalRemediationLineage,
   fetchScenarioRehearsalWorkbook,
+  fetchScenarioCompatibility,
   fetchScenarioDraftSet,
   fetchScenarioGraphContract,
   fetchVisualGraphRun,
@@ -123,6 +124,21 @@ describe('operator library API client', () => {
         actor: 'canvas-author',
       },
     };
+    const compatibility = {
+      schemaVersion: 'bloge.contractCompatibilityReport.v1' as const,
+      scenarioDraftSetId: draftSet.scenarioDraftSetId,
+      scenarioRevision: 4,
+      target: draftSet.target,
+      baselineContractFingerprint: draftSet.contractFingerprint,
+      currentContractFingerprint: draftSet.contractFingerprint,
+      policy: 'STRICT' as const,
+      classification: 'UNCHANGED' as const,
+      findings: [],
+      impactedScenarios: [],
+      migrations: [],
+      generatedAt: '2026-07-27T00:00:00Z',
+      reportFingerprint: `sha256:${'9'.repeat(64)}`,
+    };
     const fetchMock = vi.spyOn(globalThis, 'fetch').mockImplementation(async (input, init) => {
       const url = String(input);
       if (url.includes('?expectedRevision=3')) {
@@ -147,13 +163,18 @@ describe('operator library API client', () => {
         });
         return new Response(JSON.stringify(publication));
       }
+      if (url.endsWith('/loan-scenarios/compatibility?revision=4')) {
+        expect(init?.headers).toMatchObject({ 'X-Purpose': 'TEST_SUITE_READ' });
+        return new Response(JSON.stringify(compatibility));
+      }
       throw new Error(`Unexpected fetch: ${url}`);
     });
 
     await expect(saveScenarioDraftSet(draftSet)).resolves.toEqual(stored);
     await expect(fetchScenarioDraftSet('loan-scenarios')).resolves.toEqual(stored);
+    await expect(fetchScenarioCompatibility('loan-scenarios', 4)).resolves.toEqual(compatibility);
     await expect(publishScenarioDraftSet('loan-scenarios', 4)).resolves.toEqual(publication);
-    expect(fetchMock).toHaveBeenCalledTimes(3);
+    expect(fetchMock).toHaveBeenCalledTimes(4);
   });
 
   it('persists a Graph before loading its authoritative Scenario Contract coordinate', async () => {

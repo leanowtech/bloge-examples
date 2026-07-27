@@ -81,6 +81,18 @@ public class ScenarioDraftSetController {
                 context(headers, IntegrationOperation.TEST_SUITE_READ));
     }
 
+    /** Returns semantic Contract drift and exact Scenario impact for one retained revision. */
+    @GetMapping("/{scenarioDraftSetId}/compatibility")
+    public ContractCompatibilityReport compatibility(
+            @PathVariable String scenarioDraftSetId,
+            @RequestParam long revision,
+            @RequestHeader HttpHeaders headers) {
+        return service.compatibility(
+                scenarioDraftSetId,
+                revision,
+                context(headers, IntegrationOperation.TEST_SUITE_READ));
+    }
+
     /** Returns the server-authoritative Contract coordinate for one retained Graph draft. */
     @GetMapping("/targets/graphs/{draftId}/contract")
     public ScenarioContractProjection projectGraphContract(

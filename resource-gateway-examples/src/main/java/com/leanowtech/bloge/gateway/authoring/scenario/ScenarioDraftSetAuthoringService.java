@@ -41,6 +41,7 @@ public final class ScenarioDraftSetAuthoringService {
     private final VisualOperatorCatalog operators;
     private final ContractDraftProjectionService contracts;
     private final ScenarioValidationService validation;
+    private final ScenarioContractCompatibilityService compatibility;
     private final ObjectMapper objectMapper;
 
     /**
@@ -64,6 +65,7 @@ public final class ScenarioDraftSetAuthoringService {
         this.contracts = Objects.requireNonNull(contracts, "contracts");
         this.validation = Objects.requireNonNull(validation, "validation");
         this.objectMapper = Objects.requireNonNull(objectMapper, "objectMapper");
+        this.compatibility = new ScenarioContractCompatibilityService(objectMapper);
     }
 
     /**
@@ -109,14 +111,17 @@ public final class ScenarioDraftSetAuthoringService {
                     Map.of("paths", secrets.stream().map(VisualDiagnostic::target)
                             .distinct().sorted().toList()));
         }
-        ScenarioValidationReport report = validateCurrent(normalized, identity);
+        ResolvedTarget resolved = resolveCurrent(normalized.target(), identity);
+        ScenarioValidationReport report = validation.validate(
+                normalized, resolved.contract(), resolved.graph());
         if (!report.valid()) {
             throw badRequest(identity, "RG.SCENARIO.VALIDATION_FAILED",
                     "Scenario draft set is invalid or stale and was not stored.",
                     Map.of("diagnosticCodes", report.diagnostics().stream()
                             .map(VisualDiagnostic::code).distinct().sorted().toList()));
         }
-        return repository.saveIfRevision(expectedRevision, normalized, identity.actorId())
+        return repository.saveIfRevision(
+                        expectedRevision, normalized, resolved.contract(), identity.actorId())
                 .orElseThrow(() -> conflict(identity, id));
     }
 
@@ -137,7 +142,8 @@ public final class ScenarioDraftSetAuthoringService {
         }
         requireScope(candidate.scope(), identity);
         requireClassification(candidate.metadata().classification(), identity);
-        return validateCurrent(candidate, identity);
+        ResolvedTarget resolved = resolveCurrent(candidate.target(), identity);
+        return validation.validate(candidate, resolved.contract(), resolved.graph());
     }
 
     /**
@@ -179,6 +185,42 @@ public final class ScenarioDraftSetAuthoringService {
         revisions.forEach(stored ->
                 requireClassification(stored.draftSet().metadata().classification(), identity));
         return revisions;
+    }
+
+    /**
+     * Explains current Contract drift for one retained Scenario revision.
+     *
+     * <p>The service resolves both the immutable Contract captured at save time and the current
+     * authoritative target inside the verified scope. Legacy revisions without a baseline return a
+     * fail-closed REVIEW_REQUIRED report instead of manufacturing a safe classification.</p>
+     *
+     * @param scenarioDraftSetId stable authoring asset id
+     * @param revision exact positive retained revision
+     * @param identity verified workload identity
+     * @return deterministic compatibility, impact, and migration report
+     */
+    public ContractCompatibilityReport compatibility(
+            String scenarioDraftSetId,
+            long revision,
+            IntegrationRequestContext identity) {
+        requireIdentity(identity);
+        String id = requireId(scenarioDraftSetId, identity);
+        if (revision <= 0) {
+            throw badRequest(identity, "RG.CONTRACT.COMPATIBILITY_REVISION_INVALID",
+                    "Compatibility requires an exact retained Scenario revision.", Map.of());
+        }
+        ScenarioDraftSet.EnterpriseScope scope = scope(identity);
+        StoredScenarioDraftSet source = repository.findRevision(scope, id, revision)
+                .orElseThrow(() -> new IntegrationProblemException(IntegrationProblem.notFound(
+                        "RG.SCENARIO.REVISION_NOT_FOUND",
+                        "The exact retained Scenario revision was not found.",
+                        identity.correlationId(),
+                        Map.of("scenarioDraftSetId", id, "revision", revision))));
+        requireClassification(source.draftSet().metadata().classification(), identity);
+        ScenarioContractBaseline baseline =
+                repository.findContractBaseline(scope, id, revision).orElse(null);
+        ResolvedTarget current = resolveCurrent(source.draftSet().target(), identity);
+        return compatibility.analyze(source, baseline, current.contract());
     }
 
     /**
@@ -239,24 +281,24 @@ public final class ScenarioDraftSetAuthoringService {
                 contract.fingerprint(objectMapper));
     }
 
-    private ScenarioValidationReport validateCurrent(
-            ScenarioDraftSet candidate,
+    private ResolvedTarget resolveCurrent(
+            ContractDraft.Target target,
             IntegrationRequestContext identity) {
-        if (candidate.target().kind() == ContractDraft.TargetKind.OPERATOR) {
-            OperatorDefinition operator = findOperator(candidate.target().id(), identity);
+        if (target.kind() == ContractDraft.TargetKind.OPERATOR) {
+            OperatorDefinition operator = findOperator(target.id(), identity);
             requireOperatorScope(operator, identity);
-            return validation.validate(candidate, contracts.project(operator), null);
+            return new ResolvedTarget(contracts.project(operator), null);
         }
-        GraphDraft graph = graphDrafts.find(candidate.target().id())
+        GraphDraft graph = graphDrafts.find(target.id())
                 .orElseThrow(() -> new IntegrationProblemException(IntegrationProblem.notFound(
                         "RG.SCENARIO.TARGET_NOT_FOUND",
                         "The exact graph draft target was not found.",
-                        identity.correlationId(), Map.of("targetId", candidate.target().id()))));
+                        identity.correlationId(), Map.of("targetId", target.id()))));
         requireGraphScope(graph, identity);
         String targetFingerprint = VisualBundleFingerprint.fromCanonicalValue(
                 objectMapper, graph, MAX_TARGET_BYTES);
         ContractDraft contract = contracts.project(graph, targetFingerprint);
-        return validation.validate(candidate, contract, graph);
+        return new ResolvedTarget(contract, graph);
     }
 
     private OperatorDefinition findOperator(
@@ -382,5 +424,8 @@ public final class ScenarioDraftSetAuthoringService {
             Map<String, Object> details) {
         return new IntegrationProblemException(IntegrationProblem.badRequest(
                 code, title, identity.correlationId(), details));
+    }
+
+    private record ResolvedTarget(ContractDraft contract, GraphDraft graph) {
     }
 }

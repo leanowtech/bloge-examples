@@ -279,14 +279,20 @@ class DatabaseTestSuiteStabilityPhysicalAttemptStartJournalTest {
     @Test
     void timelyProviderConfirmationRemainsAcceptableAfterLocalDeadline() throws Exception {
         Instant now = databaseTime();
+        Instant confirmationDeadline = now.plusSeconds(2);
         TestSuiteStabilityPhysicalAttemptStartCommand command = command(
-                reserved('a', '1').identity(), 'a', now, now.plusMillis(200));
+                reserved('a', '1').identity(), 'a', now, confirmationDeadline);
         var fastDescriptor = descriptor(Duration.ofMillis(100));
         journal.prepare(command, fastDescriptor);
+        Instant preparedAt = journal.find("tenant-a", "test", command.commandId())
+                .orElseThrow()
+                .preparedAt();
         var timely = attestation(
                 command, 11, TestSuiteStabilityPhysicalAttemptStartReceipt.Outcome.STARTED,
-                keyPair, now.plusMillis(100));
-        Thread.sleep(250L);
+                keyPair, preparedAt.plusMillis(1));
+        long untilAfterDeadline = Math.max(
+                0L, Duration.between(databaseTime(), confirmationDeadline).toMillis() + 50L);
+        Thread.sleep(untilAfterDeadline);
 
         assertThat(journal.accept(command.commandId(), timely).status()).isEqualTo(
                 TestSuiteStabilityPhysicalAttemptStartJournal.AcceptanceStatus.CONFIRMED);

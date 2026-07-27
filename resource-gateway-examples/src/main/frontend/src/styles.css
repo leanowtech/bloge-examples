@@ -2740,6 +2740,179 @@ button.primary:disabled {
   font-weight: 850;
 }
 
+.compatibility-report-state {
+  display: grid;
+  gap: 4px;
+  padding: 10px 12px;
+  border-left: 3px solid #64748b;
+  background: #f1f5f9;
+  color: #334155;
+  font-size: 11px;
+}
+
+.compatibility-report-state.error {
+  border-left-color: #b42318;
+  background: #fff1f0;
+  color: #8f1d16;
+}
+
+.compatibility-report-state.current {
+  border-left-color: #18864b;
+  background: #edf8f1;
+  color: #155f37;
+}
+
+.compatibility-summary {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(110px, 1fr));
+  border-block: 1px solid #d4dce7;
+}
+
+.compatibility-summary > span {
+  display: grid;
+  gap: 3px;
+  padding: 9px 10px;
+  border-right: 1px solid #e2e8f0;
+}
+
+.compatibility-summary > span:last-child {
+  border-right: 0;
+}
+
+.compatibility-summary small {
+  color: #64748b;
+  font-size: 10px;
+}
+
+.compatibility-summary strong {
+  color: #172033;
+  font-size: 15px;
+}
+
+.compatibility-findings,
+.compatibility-impacts,
+.compatibility-migrations,
+.compatibility-resolution {
+  display: grid;
+  gap: 8px;
+}
+
+.compatibility-findings h4,
+.compatibility-impacts h4,
+.compatibility-migrations h4 {
+  margin: 0;
+  color: #283548;
+  font-size: 12px;
+}
+
+.compatibility-finding {
+  min-width: 0;
+  display: grid;
+  grid-template-columns: 112px minmax(0, 1fr) 52px;
+  gap: 10px;
+  align-items: center;
+  padding: 9px 10px;
+  border-bottom: 1px solid #e2e8f0;
+}
+
+.compatibility-finding > div {
+  min-width: 0;
+  display: grid;
+  gap: 3px;
+}
+
+.compatibility-finding strong,
+.compatibility-finding code {
+  overflow: hidden;
+  font-size: 11px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.compatibility-finding > small {
+  color: #64748b;
+  font-size: 10px;
+  text-align: right;
+}
+
+.compatibility-severity {
+  font-size: 9px;
+  font-weight: 850;
+}
+
+.compatibility-severity.compatible {
+  color: #176b36;
+}
+
+.compatibility-severity.breaking {
+  color: #9b2c2c;
+}
+
+.compatibility-severity.review_required {
+  color: #8a4b08;
+}
+
+.compatibility-impact-row,
+.compatibility-migration-row {
+  min-width: 0;
+  display: grid;
+  grid-template-columns: minmax(150px, 0.7fr) 170px minmax(180px, 1fr);
+  gap: 10px;
+  align-items: center;
+  padding: 8px 10px;
+  border-bottom: 1px solid #e2e8f0;
+  font-size: 11px;
+}
+
+.compatibility-impact-row > *,
+.compatibility-migration-row > * {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.compatibility-migration-row > span {
+  color: #44546a;
+  font-size: 9px;
+  font-weight: 850;
+}
+
+.compatibility-migration-row > div {
+  display: grid;
+  gap: 2px;
+}
+
+.compatibility-migration-row small {
+  color: #64748b;
+}
+
+.compatibility-resolution {
+  grid-template-columns: auto minmax(240px, 1fr) auto;
+  align-items: center;
+  padding: 12px 0 2px;
+  border-top: 1px solid #cbd5e1;
+}
+
+.compatibility-resolution label {
+  min-width: 0;
+  display: flex;
+  gap: 8px;
+  align-items: flex-start;
+  color: #334155;
+  font-size: 11px;
+}
+
+.compatibility-resolution label input {
+  margin: 1px 0 0;
+}
+
+.compatibility-resolution > small {
+  grid-column: 1 / -1;
+  color: #64748b;
+  font-size: 10px;
+}
+
 .compatibility-unknowns {
   display: flex;
   flex-wrap: wrap;
@@ -7902,6 +8075,40 @@ button.primary:disabled {
 
   .compatibility-table {
     overflow-x: auto;
+  }
+
+  .compatibility-summary {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .compatibility-summary > span:nth-child(2) {
+    border-right: 0;
+  }
+
+  .compatibility-summary > span:nth-child(-n + 2) {
+    border-bottom: 1px solid #e2e8f0;
+  }
+
+  .compatibility-finding {
+    grid-template-columns: 96px minmax(0, 1fr);
+  }
+
+  .compatibility-finding > small {
+    display: none;
+  }
+
+  .compatibility-impact-row,
+  .compatibility-migration-row {
+    grid-template-columns: minmax(120px, 0.7fr) minmax(160px, 1fr);
+  }
+
+  .compatibility-impact-row code,
+  .compatibility-migration-row code {
+    grid-column: 1 / -1;
+  }
+
+  .compatibility-resolution {
+    grid-template-columns: minmax(0, 1fr);
   }
 
   .connection-notice {

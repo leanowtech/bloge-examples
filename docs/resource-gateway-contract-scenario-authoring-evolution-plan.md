@@ -1197,6 +1197,31 @@ Current implementation note (Round 8):
 
 建议投入：12-18 engineer-weeks。
 
+Current implementation note (Round 9):
+
+- RG-CS-301 is implemented by a deterministic, direction-aware JSON Schema classifier for input
+  and output fields. Added/removed/renamed/required/type/enum/constraint changes are classified
+  under the Contract policy; unsupported composition and unknown semantics fail closed as
+  `REVIEW_REQUIRED`.
+- Every accepted Scenario revision now captures an immutable, integrity-verified Contract baseline
+  in a side table. `ScenarioDraftSet v1` is unchanged, so baseline capture does not tighten the
+  existing authoring wire contract.
+- RG-CS-303 is implemented as exact per-Scenario impact derived from Given paths and output
+  assertion paths. A legacy revision without a baseline impacts every Scenario and cannot be
+  reported compatible.
+- RG-CS-305 supports explicit `x-bloge-renamed-from`, Contract defaults, removed inputs, and output
+  assertion rebinds. Only edits that do not invent values are machine-applicable; conversions,
+  constraints, and opaque changes remain manual.
+- The stale banner no longer performs a blind rebase. Authors enter Compatibility, inspect
+  findings and impacted Scenarios, apply safe edits, acknowledge unresolved changes, then record a
+  provenance-bearing rebase. Save, rerun, and publish remain independent gates.
+- `bloge.contractCompatibilityReport.v1` is authoritative and fingerprinted independently of its
+  generation timestamp. `GET /api/visual/scenario-draft-sets/{id}/compatibility?revision=N`
+  resolves both baseline and current target under the verified enterprise scope.
+- RG-CS-302 canvas-node highlighting, RG-CS-304 historical publication reverse indexing, and
+  RG-CS-306 ANEKE delivery remain follow-up work; the report is intentionally not described as a
+  publish-gate decision until those exact refs exist.
+
 ### Stage 4：企业级数据来源与规模化
 
 目标：降低大规模 Scenario 建设成本，并在复杂组织中安全运行。

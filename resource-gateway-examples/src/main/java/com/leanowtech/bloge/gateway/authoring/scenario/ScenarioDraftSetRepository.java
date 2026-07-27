@@ -1,5 +1,7 @@
 package com.leanowtech.bloge.gateway.authoring.scenario;
 
+import com.leanowtech.bloge.gateway.visual.contract.ContractDraft;
+
 import java.util.List;
 import java.util.Optional;
 
@@ -62,4 +64,39 @@ public interface ScenarioDraftSetRepository {
             long expectedRevision,
             ScenarioDraftSet candidate,
             String actor);
+
+    /**
+     * Stores a Scenario revision and its server-authoritative Contract baseline atomically.
+     *
+     * <p>The default preserves compatibility with simple adapters. Industrial repositories should
+     * override it so compatibility reports remain available across process restarts.</p>
+     *
+     * @param expectedRevision revision observed by the caller
+     * @param candidate authoring payload
+     * @param contractBaseline exact Contract accepted by validation
+     * @param actor verified workload actor
+     * @return stored next revision, or empty on optimistic-concurrency conflict
+     */
+    default Optional<StoredScenarioDraftSet> saveIfRevision(
+            long expectedRevision,
+            ScenarioDraftSet candidate,
+            ContractDraft contractBaseline,
+            String actor) {
+        return saveIfRevision(expectedRevision, candidate, actor);
+    }
+
+    /**
+     * Reads the immutable Contract baseline captured with one Scenario revision.
+     *
+     * @param scope complete enterprise scope
+     * @param scenarioDraftSetId stable authoring asset id
+     * @param revision exact retained Scenario revision
+     * @return integrity-verified baseline when the adapter supports capture
+     */
+    default Optional<ScenarioContractBaseline> findContractBaseline(
+            ScenarioDraftSet.EnterpriseScope scope,
+            String scenarioDraftSetId,
+            long revision) {
+        return Optional.empty();
+    }
 }

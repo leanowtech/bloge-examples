@@ -2083,6 +2083,28 @@ Operator Scenario 的存储 id 使用可读前缀和完整 operator-ref SHA-256 
 归一化后相似的算子名不会互相覆盖。自动恢复与手动加载都会再次核对 exact target；若响应
 属于另一个算子，工作台拒绝接纳并明确报错。
 
+#### Contract 变化后如何迁移 Scenario
+
+已有 Scenario revision 绑定的 Graph 或 Operator Contract 变化后，顶部不会再提供直接
+rebase。正确操作是：
+
+1. 点击 **Review compatibility** 进入 Compatibility。
+2. 先看顶部 `UNCHANGED / COMPATIBLE / BREAKING / REVIEW_REQUIRED` 结论，再看每条 INPUT、
+   OUTPUT 或 CONTRACT finding 的字段路径。
+3. **Scenario impact** 会列出受影响的具体场景，而不是只显示“Contract 已变化”。
+4. **Migration plan** 中的 `SAFE EDIT` 只包括 Contract default、删除不再接收的输入、
+   `x-bloge-renamed-from` 明确声明的改名和输出断言重绑定；点击 **Apply safe migrations**
+   后草稿仍保持 stale，便于检查。
+5. `MANUAL` 项需要在 Scenarios 中补值或调整断言。对 BREAKING/REVIEW_REQUIRED，勾选人工
+   复核确认后才能点击 **Record review & rebase**。
+6. rebase 只更新草稿坐标并记录 report fingerprint、源 revision、finding ids 和时间；
+   之后仍须 **Save Scenario**、**Run & Compare**，通过后才可 **Publish**。
+
+Scenario revision 1 起，服务端会随 revision 保存不可变 Contract baseline。旧数据没有
+baseline 时统一显示 `REVIEW_REQUIRED`。未知 Schema keyword、组合/条件 Schema 也不会被
+误判为 compatible。尚未保存的 revision 0 需要人工核对当前 Contract 后执行
+**Rebase local draft**，首次保存会建立 baseline。
+
 | 算子族 | 双击后的浮层能力 | 写入 draft 的配置 |
 | --- | --- | --- |
 | `bloge:decisionTable` | 详情 + 规则矩阵 + 节点级 Executable Operator Suite。可编辑 hit policy、output type、条件列、输出列、规则行和 otherwise fallback | `config.hitPolicy`、`config.outputType`、`config.conditionColumns`、`config.outputColumns`、`config.rules[]`、`nodeFixtures[nodeId]` |

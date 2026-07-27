@@ -78,6 +78,10 @@ class ScenarioDraftSetPersistenceTest {
         assertThat(stored.savedBy()).isEqualTo("author-a");
         assertThat(stored.draftSet().metadata().owner()).isEqualTo("credit-platform");
         assertThat(service.find("loan-scenarios", identity())).isEqualTo(stored);
+        assertThat(repository.findContractBaseline(scope(), "loan-scenarios", 1))
+                .get()
+                .extracting(ScenarioContractBaseline::contractFingerprint)
+                .isEqualTo(contract.fingerprint(objectMapper));
     }
 
     @Test
@@ -180,6 +184,24 @@ class ScenarioDraftSetPersistenceTest {
 
         assertThat(reloaded.find(scope(), "loan-scenarios")).contains(stored);
         assertThat(reloaded.revisions(scope(), "loan-scenarios")).containsExactly(stored);
+        assertThat(reloaded.findContractBaseline(scope(), "loan-scenarios", stored.revision()))
+                .get()
+                .extracting(ScenarioContractBaseline::contract)
+                .isEqualTo(contract);
+    }
+
+    @Test
+    void exposesAnUnchangedCompatibilityReportForTheCapturedContract() {
+        StoredScenarioDraftSet stored = service.save(
+                "loan-scenarios", 0, draftSet(scope(), Map.of("applicantId", "A-1")), identity());
+
+        ContractCompatibilityReport report =
+                service.compatibility("loan-scenarios", stored.revision(), identity());
+
+        assertThat(report.classification())
+                .isEqualTo(ContractCompatibilityReport.Classification.UNCHANGED);
+        assertThat(report.scenarioRevision()).isEqualTo(stored.revision());
+        assertThat(report.reportFingerprint()).matches("sha256:[0-9a-f]{64}");
     }
 
     @Test

@@ -3933,6 +3933,20 @@ Publication verifies every registry read at its own trust boundary using canonic
 fingerprints. It does not depend on Java object equality after a database round-trip, and Scenario
 HTTP conflicts/errors use the stable integration problem response instead of generic HTTP 500.
 
+When a saved Graph or Operator Contract changes, choose **Review compatibility** instead of
+rebasing from the banner. The Compatibility view loads the retained revision's immutable Contract
+baseline and shows field findings, affected Scenarios, and a migration plan. **Apply safe
+migrations** only performs explicit defaults, removals, declared renames, and assertion rebinds.
+Breaking or opaque changes require acknowledgement before **Record review & rebase**. The rebased
+draft must then be saved and rerun; no compatibility action creates passing evidence.
+
+```text
+GET /api/visual/scenario-draft-sets/{id}/compatibility?revision={revision}
+```
+
+The response is `bloge.contractCompatibilityReport.v1`. Unknown Schema semantics and legacy
+revisions without a captured baseline are `REVIEW_REQUIRED`, never silently compatible.
+
 The portable format is `bloge.visualAuthoringWorkspaceBundle.v1`. It contains publication
 references, not fixture or test payload duplication, and permits secret references but rejects raw
 credentials. Its authoritative schema is

@@ -3,6 +3,7 @@ import { useEffect, useRef, useState } from 'react';
 import { sampleFromSchemaEnvelope } from '../draftModel';
 import {
   BlogeApiRequestError,
+  fetchScenarioCompatibility,
   fetchScenarioDraftSet,
   publishScenarioDraftSet,
   saveScenarioDraftSet,
@@ -10,6 +11,7 @@ import {
 import type { GraphDraft, SimulationRequest, SimulationResponse } from '../types';
 import type {
   AssertionDraft,
+  ContractCompatibilityReport,
   ContractDraft,
   ScenarioDraft,
   ScenarioDraftSet,
@@ -17,6 +19,10 @@ import type {
   VisualAuthoringWorkspaceBundle,
 } from './domain';
 import AssertionBuilder from './AssertionBuilder';
+import {
+  applyAutomaticCompatibilityMigrations,
+  rebaseAfterCompatibilityReview,
+} from './compatibility';
 import ContractSemanticsEditor from './ContractSemanticsEditor';
 import DependencyBehaviorEditor from './DependencyBehaviorEditor';
 import { compileScenarioForSimulation } from './scenarioCompiler';
@@ -90,6 +96,11 @@ export default function ContractScenarioWorkspace({
   >('');
   const [assetNotice, setAssetNotice] = useState<{ level: 'ok' | 'error'; message: string } | null>(null);
   const [publication, setPublication] = useState<StoredScenarioPublication | null>(null);
+  const [compatibilityReport, setCompatibilityReport] =
+    useState<ContractCompatibilityReport | null>(null);
+  const [compatibilityLoading, setCompatibilityLoading] = useState(false);
+  const [compatibilityError, setCompatibilityError] = useState('');
+  const [compatibilityReviewed, setCompatibilityReviewed] = useState(false);
   const workspaceInputRef = useRef<HTMLInputElement>(null);
   const autoLoadAttemptRef = useRef('');
   const scenarioChangeRef = useRef(onScenarioDraftSetChange);
@@ -151,6 +162,43 @@ export default function ContractScenarioWorkspace({
   }, [
     scenarioDraftSet?.scenarioDraftSetId,
     scenarioDraftSet?.target.fingerprint,
+  ]);
+
+  useEffect(() => {
+    if (!open || activeTab !== 'compatibility' || !scenarioDraftSet
+      || scenarioDraftSet.revision < 1 || !assetStored) {
+      return undefined;
+    }
+    let cancelled = false;
+    setCompatibilityLoading(true);
+    setCompatibilityError('');
+    setCompatibilityReviewed(false);
+    fetchScenarioCompatibility(
+      scenarioDraftSet.scenarioDraftSetId,
+      scenarioDraftSet.revision,
+    )
+      .then((report) => {
+        if (!cancelled) setCompatibilityReport(report);
+      })
+      .catch((cause: unknown) => {
+        if (!cancelled) {
+          setCompatibilityReport(null);
+          setCompatibilityError(errorMessage(cause));
+        }
+      })
+      .finally(() => {
+        if (!cancelled) setCompatibilityLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [
+    activeTab,
+    assetStored,
+    contractFingerprint,
+    open,
+    scenarioDraftSet?.revision,
+    scenarioDraftSet?.scenarioDraftSetId,
   ]);
 
   useEffect(() => {
@@ -249,6 +297,48 @@ export default function ContractScenarioWorkspace({
       scenarios: nextScenarios,
     });
     setSelectedScenarioId(nextScenarios[0]?.scenarioId ?? '');
+  };
+
+  const applyCompatibilityMigrations = () => {
+    if (!compatibilityReport) return;
+    const application = applyAutomaticCompatibilityMigrations(
+      scenarioDraftSet,
+      compatibilityReport,
+      contract,
+    );
+    onScenarioDraftSetChange(application.draftSet);
+    setPublication(null);
+    setRunResponse(null);
+    setComparison(null);
+    setAssetNotice({
+      level: application.blockedActionIds.length > 0 ? 'error' : 'ok',
+      message: application.blockedActionIds.length > 0
+        ? `Applied ${application.appliedActionIds.length} safe migrations; ${application.blockedActionIds.length} require manual resolution.`
+        : `Applied ${application.appliedActionIds.length} safe migrations. Review the draft before rebasing.`,
+    });
+  };
+
+  const resolveCompatibility = () => {
+    if (!compatibilityReport) {
+      onRebase();
+      return;
+    }
+    const requiresAcknowledgement = compatibilityReport.classification === 'BREAKING'
+      || compatibilityReport.classification === 'REVIEW_REQUIRED';
+    if (requiresAcknowledgement && !compatibilityReviewed) return;
+    onScenarioDraftSetChange(rebaseAfterCompatibilityReview(
+      scenarioDraftSet,
+      compatibilityReport,
+      contract.target,
+      contractFingerprint,
+    ));
+    setPublication(null);
+    setRunResponse(null);
+    setComparison(null);
+    setAssetNotice({
+      level: 'ok',
+      message: 'Compatibility review recorded. Save and rerun the rebased Scenario revision.',
+    });
   };
 
   const runSelectedScenario = async () => {
@@ -542,10 +632,9 @@ export default function ContractScenarioWorkspace({
               <span>Review the interface change, then explicitly rebase before running.</span>
             </div>
             <button type="button" className="secondary compact" onClick={() => {
-              setPublication(null);
-              onRebase();
+              setActiveTab('compatibility');
             }}>
-              Rebase scenarios
+              Review compatibility
             </button>
           </div>
         )}
@@ -618,6 +707,13 @@ export default function ContractScenarioWorkspace({
               scenarioDraftSet={scenarioDraftSet}
               contractFingerprint={contractFingerprint}
               current={current}
+              report={compatibilityReport}
+              loading={compatibilityLoading}
+              error={compatibilityError}
+              reviewed={compatibilityReviewed}
+              onReviewedChange={setCompatibilityReviewed}
+              onApplyMigrations={applyCompatibilityMigrations}
+              onResolve={resolveCompatibility}
             />
           )}
           {activeTab === 'evidence' && (
@@ -934,11 +1030,25 @@ function CompatibilityTab({
   scenarioDraftSet,
   contractFingerprint,
   current,
+  report,
+  loading,
+  error,
+  reviewed,
+  onReviewedChange,
+  onApplyMigrations,
+  onResolve,
 }: {
   contract: ContractDraft;
   scenarioDraftSet: ScenarioDraftSet;
   contractFingerprint: string;
   current: boolean;
+  report: ContractCompatibilityReport | null;
+  loading: boolean;
+  error: string;
+  reviewed: boolean;
+  onReviewedChange: (reviewed: boolean) => void;
+  onApplyMigrations: () => void;
+  onResolve: () => void;
 }) {
   const checks = [
     {
@@ -954,14 +1064,24 @@ function CompatibilityTab({
       actual: scenarioDraftSet.contractFingerprint,
     },
   ];
+  const safeMigrations = report?.migrations.filter((migration) => migration.automatic) ?? [];
+  const manualMigrations = report?.migrations.filter((migration) => !migration.automatic) ?? [];
+  const requiresAcknowledgement = report?.classification === 'BREAKING'
+    || report?.classification === 'REVIEW_REQUIRED';
+  const reportCurrent = Boolean(
+    report
+      && report.scenarioDraftSetId === scenarioDraftSet.scenarioDraftSetId
+      && report.scenarioRevision === scenarioDraftSet.revision
+      && report.currentContractFingerprint === contractFingerprint,
+  );
   return (
     <div className="compatibility-workbench">
       <header>
         <span className={`contract-current-badge ${current ? 'current' : 'stale'}`}>
-          {current ? 'No coordinate drift' : 'Review required'}
+          {report?.classification ?? (current ? 'UNCHANGED' : 'REVIEW REQUIRED')}
         </span>
         <h3>{contract.compatibilityPolicy.mode} compatibility policy</h3>
-        <p>Unknown semantic changes block automatic migration.</p>
+        <p>Unknown semantics block automatic migration; a rebase never claims a test pass.</p>
       </header>
       <div className="compatibility-table">
         {checks.map((check) => (
@@ -975,6 +1095,135 @@ function CompatibilityTab({
           </div>
         ))}
       </div>
+      {loading && (
+        <div className="compatibility-report-state" role="status">
+          <strong>Analyzing retained Contract baseline...</strong>
+        </div>
+      )}
+      {error && (
+        <div className="compatibility-report-state error" role="alert">
+          <strong>Compatibility report unavailable</strong>
+          <span>{error}</span>
+        </div>
+      )}
+      {!loading && !error && scenarioDraftSet.revision < 1 && (
+        <>
+          <div className="compatibility-report-state">
+            <strong>Review this local draft before establishing its first baseline</strong>
+            <span>Semantic comparison starts after revision 1; the current draft has no retained Contract snapshot.</span>
+          </div>
+          {!current && (
+            <section className="compatibility-resolution">
+              <label>
+                <input
+                  type="checkbox"
+                  checked={reviewed}
+                  onChange={(event) => onReviewedChange(event.target.checked)}
+                />
+                <span>I reviewed the current Contract and this unsaved local Scenario.</span>
+              </label>
+              <button
+                type="button"
+                className="primary"
+                disabled={!reviewed}
+                onClick={onResolve}
+              >
+                Rebase local draft
+              </button>
+              <small>Saving the rebased draft creates revision 1 and its immutable Contract baseline.</small>
+            </section>
+          )}
+        </>
+      )}
+      {report && reportCurrent && (
+        <>
+          <div className="compatibility-summary">
+            <span><small>Findings</small><strong>{report.findings.length}</strong></span>
+            <span><small>Impacted Scenarios</small><strong>{report.impactedScenarios.length}</strong></span>
+            <span><small>Safe migrations</small><strong>{safeMigrations.length}</strong></span>
+            <span><small>Manual actions</small><strong>{manualMigrations.length}</strong></span>
+          </div>
+          {report.findings.length > 0 ? (
+            <section className="compatibility-findings">
+              <h4>Contract findings</h4>
+              {report.findings.map((finding) => (
+                <article className="compatibility-finding" key={finding.findingId}>
+                  <span className={`compatibility-severity ${finding.classification.toLowerCase()}`}>
+                    {finding.classification}
+                  </span>
+                  <div>
+                    <strong>{finding.message}</strong>
+                    <code>{finding.scope} {finding.previousPath && `${finding.previousPath} -> `}{finding.path || '/'}</code>
+                  </div>
+                  <small>{finding.findingId}</small>
+                </article>
+              ))}
+            </section>
+          ) : (
+            <div className="compatibility-report-state current">
+              <strong>No semantic Contract drift</strong>
+              <span>The retained baseline and current Contract are identical.</span>
+            </div>
+          )}
+          {report.impactedScenarios.length > 0 && (
+            <section className="compatibility-impacts">
+              <h4>Scenario impact</h4>
+              {report.impactedScenarios.map((impact) => (
+                <div className="compatibility-impact-row" key={impact.scenarioId}>
+                  <strong>{scenarioDraftSet.scenarios.find(
+                    (scenario) => scenario.scenarioId === impact.scenarioId,
+                  )?.name ?? impact.scenarioId}</strong>
+                  <span>{impact.status}</span>
+                  <code>{impact.paths.join(', ') || '/'}</code>
+                </div>
+              ))}
+            </section>
+          )}
+          {report.migrations.length > 0 && (
+            <section className="compatibility-migrations">
+              <h4>Migration plan</h4>
+              {report.migrations.map((migration) => (
+                <div className="compatibility-migration-row" key={migration.actionId}>
+                  <span>{migration.automatic ? 'SAFE EDIT' : 'MANUAL'}</span>
+                  <div>
+                    <strong>{migration.kind}</strong>
+                    <small>{migration.rationale}</small>
+                  </div>
+                  <code>{migration.fromPath && `${migration.fromPath} -> `}{migration.toPath || '/'}</code>
+                </div>
+              ))}
+            </section>
+          )}
+          {!current && (
+            <section className="compatibility-resolution">
+              {safeMigrations.length > 0 && (
+                <button type="button" className="secondary" onClick={onApplyMigrations}>
+                  Apply {safeMigrations.length} safe migration{safeMigrations.length === 1 ? '' : 's'}
+                </button>
+              )}
+              {requiresAcknowledgement && (
+                <label>
+                  <input
+                    type="checkbox"
+                    checked={reviewed}
+                    onChange={(event) => onReviewedChange(event.target.checked)}
+                  />
+                  <span>I reviewed unresolved Contract changes and updated affected Scenario values.</span>
+                </label>
+              )}
+              <button
+                type="button"
+                className="primary"
+                disabled={Boolean(requiresAcknowledgement && !reviewed)}
+                onClick={onResolve}
+              >
+                Record review & rebase
+              </button>
+              <small>Save and rerun are still required before publication.</small>
+            </section>
+          )}
+        </>
+      )}
       <div className="compatibility-unknowns">
         <strong>Semantic facts still unknown</strong>
         <span>Effect: {contract.executionSemantics.effect}</span>

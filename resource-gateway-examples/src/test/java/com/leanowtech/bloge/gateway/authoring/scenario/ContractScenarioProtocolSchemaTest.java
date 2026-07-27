@@ -44,6 +44,8 @@ class ContractScenarioProtocolSchemaTest {
                 schema("bloge-graph-contract-semantics-v1.schema.json");
         JsonNode workspaceSchema =
                 schema("bloge-visual-authoring-workspace-bundle-v1.schema.json");
+        JsonNode compatibilitySchema =
+                schema("bloge-contract-compatibility-report-v1.schema.json");
         StoredScenarioDraftSet stored = new StoredScenarioDraftSet(
                 "",
                 draftSet.scenarioDraftSetId(),
@@ -88,6 +90,14 @@ class ContractScenarioProtocolSchemaTest {
                 contract.invariants(),
                 contract.compatibilityPolicy(),
                 contract.fieldMetadata());
+        ContractCompatibilityReport compatibility = new ScenarioContractCompatibilityService(mapper)
+                .analyze(
+                        stored,
+                        new ScenarioContractBaseline(
+                                "", draftSet.scenarioDraftSetId(), draftSet.revision(),
+                                contract.fingerprint(mapper), contract,
+                                Instant.parse("2026-07-27T00:00:00Z"), "author-a"),
+                        contract);
 
         assertProperties(mapper.valueToTree(contract), contractSchema.path("properties"));
         assertProperties(mapper.valueToTree(contract.target()), contractSchema.at("/$defs/target/properties"));
@@ -103,6 +113,8 @@ class ContractScenarioProtocolSchemaTest {
                 storedPublicationSchema.path("properties"));
         assertProperties(mapper.valueToTree(projection), projectionSchema.path("properties"));
         assertProperties(mapper.valueToTree(semantics), semanticsSchema.path("properties"));
+        assertProperties(mapper.valueToTree(compatibility),
+                compatibilitySchema.path("properties"));
 
         assertThat(contractSchema.path("additionalProperties").asBoolean(true)).isFalse();
         assertThat(draftSetSchema.path("additionalProperties").asBoolean(true)).isFalse();
@@ -113,6 +125,7 @@ class ContractScenarioProtocolSchemaTest {
         assertThat(projectionSchema.path("additionalProperties").asBoolean(true)).isFalse();
         assertThat(semanticsSchema.path("additionalProperties").asBoolean(true)).isFalse();
         assertThat(workspaceSchema.path("additionalProperties").asBoolean(true)).isFalse();
+        assertThat(compatibilitySchema.path("additionalProperties").asBoolean(true)).isFalse();
         assertThat(storedSchema.at("/properties/draftSet/$ref").asText())
                 .isEqualTo("bloge-scenario-draft-set-v1.schema.json");
         assertThat(reportSchema.at("/$defs/diagnostic/required"))
@@ -150,6 +163,14 @@ class ContractScenarioProtocolSchemaTest {
                 .asText()).isEqualTo("bloge.visualGraphDraft.v1");
         assertThat(workspaceSchema.at("/$defs/operatorSnapshotRef/additionalProperties")
                 .asBoolean(true)).isFalse();
+        assertThat(compatibilitySchema.at("/properties/target/$ref").asText())
+                .isEqualTo("bloge-contract-draft-v1.schema.json#/$defs/target");
+        assertThat(compatibilitySchema.at("/$defs/migration/properties/kind/enum"))
+                .extracting(JsonNode::asText)
+                .containsExactly(
+                        "ADD_DEFAULT", "REMOVE_INPUT", "RENAME_INPUT",
+                        "REBIND_OUTPUT_ASSERTION", "SET_REQUIRED_VALUE",
+                        "CONVERT_VALUE", "MANUAL_REVIEW");
         assertThat(publicationSchema.path("properties").has("given")).isFalse();
         assertThat(publicationSchema.path("properties").has("input")).isFalse();
         assertThat(publicationSchema.path("properties").has("output")).isFalse();

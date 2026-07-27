@@ -50,6 +50,7 @@ import type {
   VisualGraphRunRecord,
 } from './types';
 import type {
+  ContractCompatibilityReport,
   ScenarioDraftSet,
   ScenarioContractProjection,
   StoredScenarioDraftSet,
@@ -424,6 +425,20 @@ export async function fetchScenarioDraftSet(
   return readTestingJson<StoredScenarioDraftSet>(
     await sendRequest(
       `/api/visual/scenario-draft-sets/${encodeURIComponent(scenarioDraftSetId)}`,
+      { headers: operatorTestingHeaders('TEST_SUITE_READ') },
+    ),
+  );
+}
+
+/** Reads semantic Contract drift and exact Scenario impact for one retained revision. */
+export async function fetchScenarioCompatibility(
+  scenarioDraftSetId: string,
+  revision: number,
+): Promise<ContractCompatibilityReport> {
+  const id = encodeURIComponent(scenarioDraftSetId);
+  return readTestingJson<ContractCompatibilityReport>(
+    await sendRequest(
+      `/api/visual/scenario-draft-sets/${id}/compatibility?revision=${revision}`,
       { headers: operatorTestingHeaders('TEST_SUITE_READ') },
     ),
   );

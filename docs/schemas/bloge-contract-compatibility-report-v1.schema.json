@@ -1,0 +1,263 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://leanowtech.com/schemas/bloge-contract-compatibility-report-v1.schema.json",
+  "title": "BLOGE Contract Compatibility Report v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "scenarioDraftSetId",
+    "scenarioRevision",
+    "target",
+    "baselineContractFingerprint",
+    "currentContractFingerprint",
+    "policy",
+    "classification",
+    "findings",
+    "impactedScenarios",
+    "migrations",
+    "generatedAt",
+    "reportFingerprint"
+  ],
+  "properties": {
+    "schemaVersion": {
+      "const": "bloge.contractCompatibilityReport.v1"
+    },
+    "scenarioDraftSetId": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 256
+    },
+    "scenarioRevision": {
+      "type": "integer",
+      "minimum": 1
+    },
+    "target": {
+      "$ref": "bloge-contract-draft-v1.schema.json#/$defs/target"
+    },
+    "baselineContractFingerprint": {
+      "$ref": "#/$defs/fingerprint"
+    },
+    "currentContractFingerprint": {
+      "$ref": "#/$defs/fingerprint"
+    },
+    "policy": {
+      "enum": [
+        "STRICT",
+        "BACKWARD",
+        "FORWARD",
+        "NONE"
+      ]
+    },
+    "classification": {
+      "enum": [
+        "UNCHANGED",
+        "COMPATIBLE",
+        "BREAKING",
+        "REVIEW_REQUIRED"
+      ]
+    },
+    "findings": {
+      "type": "array",
+      "maxItems": 4096,
+      "items": {
+        "$ref": "#/$defs/finding"
+      }
+    },
+    "impactedScenarios": {
+      "type": "array",
+      "maxItems": 1000,
+      "items": {
+        "$ref": "#/$defs/scenarioImpact"
+      }
+    },
+    "migrations": {
+      "type": "array",
+      "maxItems": 4096,
+      "items": {
+        "$ref": "#/$defs/migration"
+      }
+    },
+    "generatedAt": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "reportFingerprint": {
+      "$ref": "#/$defs/fingerprint"
+    }
+  },
+  "$defs": {
+    "fingerprint": {
+      "type": "string",
+      "pattern": "^sha256:[0-9a-f]{64}$"
+    },
+    "scope": {
+      "enum": [
+        "INPUT",
+        "OUTPUT",
+        "CONTRACT"
+      ]
+    },
+    "finding": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "findingId",
+        "scope",
+        "path",
+        "previousPath",
+        "change",
+        "classification",
+        "code",
+        "message",
+        "details"
+      ],
+      "properties": {
+        "findingId": {
+          "type": "string",
+          "pattern": "^F-[0-9]{3,}$"
+        },
+        "scope": {
+          "$ref": "#/$defs/scope"
+        },
+        "path": {
+          "type": "string",
+          "maxLength": 4096
+        },
+        "previousPath": {
+          "type": "string",
+          "maxLength": 4096
+        },
+        "change": {
+          "enum": [
+            "ADDED",
+            "REMOVED",
+            "RENAMED",
+            "REQUIRED_CHANGED",
+            "TYPE_CHANGED",
+            "ENUM_CHANGED",
+            "CONSTRAINT_CHANGED",
+            "TARGET_CHANGED",
+            "OPAQUE"
+          ]
+        },
+        "classification": {
+          "enum": [
+            "COMPATIBLE",
+            "BREAKING",
+            "REVIEW_REQUIRED"
+          ]
+        },
+        "code": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 256
+        },
+        "message": {
+          "type": "string",
+          "maxLength": 2048
+        },
+        "details": {
+          "type": "object"
+        }
+      }
+    },
+    "scenarioImpact": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "scenarioId",
+        "status",
+        "findingIds",
+        "paths"
+      ],
+      "properties": {
+        "scenarioId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 256
+        },
+        "status": {
+          "enum": [
+            "MIGRATION_AVAILABLE",
+            "BLOCKED",
+            "REVIEW_REQUIRED"
+          ]
+        },
+        "findingIds": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": {
+            "type": "string",
+            "pattern": "^F-[0-9]{3,}$"
+          }
+        },
+        "paths": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": {
+            "type": "string",
+            "maxLength": 4096
+          }
+        }
+      }
+    },
+    "migration": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "actionId",
+        "kind",
+        "scope",
+        "fromPath",
+        "toPath",
+        "automatic",
+        "scenarioIds",
+        "rationale"
+      ],
+      "properties": {
+        "actionId": {
+          "type": "string",
+          "pattern": "^M-[0-9]{3,}$"
+        },
+        "kind": {
+          "enum": [
+            "ADD_DEFAULT",
+            "REMOVE_INPUT",
+            "RENAME_INPUT",
+            "REBIND_OUTPUT_ASSERTION",
+            "SET_REQUIRED_VALUE",
+            "CONVERT_VALUE",
+            "MANUAL_REVIEW"
+          ]
+        },
+        "scope": {
+          "$ref": "#/$defs/scope"
+        },
+        "fromPath": {
+          "type": "string",
+          "maxLength": 4096
+        },
+        "toPath": {
+          "type": "string",
+          "maxLength": 4096
+        },
+        "automatic": {
+          "type": "boolean"
+        },
+        "scenarioIds": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": {
+            "type": "string",
+            "maxLength": 256
+          }
+        },
+        "rationale": {
+          "type": "string",
+          "maxLength": 2048
+        }
+      }
+    }
+  }
+}
