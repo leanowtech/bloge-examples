@@ -175,6 +175,38 @@ public final class ScenarioDraftSetAuthoringService {
         return revisions;
     }
 
+    /**
+     * Projects the server-authoritative Contract coordinate for one retained Graph draft.
+     *
+     * <p>Clients must use this result after Graph persistence instead of hashing their pre-save
+     * browser model. The read remains scope- and clearance-bound by the verified workload
+     * identity.</p>
+     *
+     * @param draftId retained Graph draft id
+     * @param identity verified authoring workload identity
+     * @return exact Contract projection and canonical fingerprint
+     */
+    public ScenarioContractProjection projectGraphContract(
+            String draftId,
+            IntegrationRequestContext identity) {
+        requireIdentity(identity);
+        String id = requireId(draftId, identity);
+        GraphDraft graph = graphDrafts.find(id)
+                .orElseThrow(() -> new IntegrationProblemException(IntegrationProblem.notFound(
+                        "RG.SCENARIO.TARGET_NOT_FOUND",
+                        "The exact graph draft target was not found.",
+                        identity.correlationId(), Map.of("targetId", id))));
+        requireGraphScope(graph, identity);
+        String targetFingerprint = VisualBundleFingerprint.fromCanonicalValue(
+                objectMapper, graph, MAX_TARGET_BYTES);
+        ContractDraft contract = contracts.project(graph, targetFingerprint);
+        return new ScenarioContractProjection(
+                "",
+                scope(identity),
+                contract,
+                contract.fingerprint(objectMapper));
+    }
+
     private ScenarioValidationReport validateCurrent(
             ScenarioDraftSet candidate,
             IntegrationRequestContext identity) {

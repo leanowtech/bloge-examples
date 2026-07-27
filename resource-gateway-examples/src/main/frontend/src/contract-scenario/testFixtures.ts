@@ -73,6 +73,7 @@ export function nodes(): ScenarioNodeOption[] {
       id: 'score',
       label: 'Risk Score',
       operatorRef: 'risk:score',
+      inputSchema: inputSchema(),
       outputSchema: {
         format: 'json-schema',
         version: '2020-12',
@@ -86,6 +87,7 @@ export function nodes(): ScenarioNodeOption[] {
       id: 'decide',
       label: 'Decide',
       operatorRef: 'risk:decide',
+      inputSchema: inputSchema(),
       outputSchema: outputSchema(),
     },
   ];

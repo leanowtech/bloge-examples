@@ -20,6 +20,7 @@ export interface ScenarioNodeOption {
   id: string;
   label: string;
   operatorRef: string;
+  inputSchema?: SchemaEnvelope;
   outputSchema?: SchemaEnvelope;
 }
 
@@ -47,9 +48,9 @@ export function scenarioDraftSetFromCanvas(
   tableCases: SimulationTableTestCase[],
 ): ScenarioDraftSet {
   const draftSet = emptyScenarioDraftSet(target, contractFingerprint, {
-    tenantId: 'local-demo',
-    organizationId: 'resource-gateway',
-    projectId: graphDraft.graphName,
+    tenantId: graphDraft.tenantId || 'tenant-a',
+    organizationId: 'knowledge-governance',
+    projectId: 'tool-studio',
     environment: 'test',
     region: 'local',
   });
@@ -86,7 +87,6 @@ export function rebaseScenarioDraftSet(
 ): ScenarioDraftSet {
   return {
     ...draftSet,
-    revision: draftSet.revision + 1,
     target: { ...target },
     contractFingerprint,
     metadata: {

@@ -3886,20 +3886,26 @@ the design can be integrated instead of remaining a diagram-only artifact.
    projected automatically.
 3. Click the **Contract** rail above the canvas.
 4. Use **Interface** to inspect every graph input/output field and its required/type constraints.
-5. Open **Scenarios**. Fill **Given** with schema-driven controls, choose **Real call** or
-   **Return fixture** for each dependency, and add whole-output or path equality assertions under
-   **Then**.
-6. Click **Run & Compare**. The **Run Evidence** tab shows assertion results, terminal output, and
+5. Open **Scenarios**. Fill **Given** with schema-driven controls. For every dependency choose
+   **Real**, **Return**, **Error**, **Delay**, **Timeout**, **Replay**, **Observe**, or **Deny**.
+   Expand **Selector, matching & consumption** only when the behavior must target an
+   operator/resource/built-in function, one attempt/occurrence, matching input, or bounded use.
+6. Under **Then**, add graph output, node output, node status, edge transfer, or dependency-use
+   assertions. Expected values are generated from the relevant schema.
+7. Click **Run & Compare** for behavior representable by the transient simulation path. The **Run
+   Evidence** tab shows assertion results, terminal output, and
    per-node status.
-7. After the graph or Contract changes, review **Compatibility** and explicitly rebase the Scenario
+8. To retain and govern the work, use **Save Graph**, review and rebase to the returned server
+   Contract, then **Save Scenario**, and finally **Publish**. Load/Save/Publish remain disabled until
+   their exact prerequisites exist.
+9. After the graph or Contract changes, review **Compatibility** and explicitly rebase the Scenario
    set. Stale coordinates cannot run silently.
 
-Normal Stage 1 authoring does not require JSON. **Advanced Contract JSON** and **Advanced Scenario
-JSON** remain available as lossless expert paths. The exploratory browser compiler keeps ERROR,
-DELAY, TIMEOUT, REPLAY, OBSERVE, MUST_NOT_CALL, transport responses, and advanced selectors
-fail-closed. The server-side governed compiler now maps the complete set to content-addressed
-FixtureBundle and TestSuite registration requests; durable publication remains a separate
-permission and transaction.
+Normal authoring does not require JSON. **Advanced Contract JSON** and **Advanced Scenario JSON**
+remain available as lossless expert paths. The exploratory browser compiler keeps behavior that
+cannot be represented by transient `NodeFixture` fail-closed. The server-side governed compiler maps
+the complete set to content-addressed FixtureBundle and TestSuite registration requests; durable
+publication remains a separate permission and recoverable transaction.
 
 In `test` and `staging`, authenticated hosts can persist Scenario authoring assets without granting
 publication or execution authority:
@@ -3909,6 +3915,7 @@ POST /api/visual/scenario-draft-sets/validate
 PUT  /api/visual/scenario-draft-sets/{id}?expectedRevision=0
 GET  /api/visual/scenario-draft-sets/{id}
 GET  /api/visual/scenario-draft-sets/{id}/revisions
+GET  /api/visual/scenario-draft-sets/targets/graphs/{draftId}/contract
 POST /api/visual/scenario-draft-sets/{id}/publications?revision=1
 GET  /api/visual/scenario-draft-sets/publications/{publicationId}
 GET  /api/visual/scenario-draft-sets/publications/{publicationId}/history

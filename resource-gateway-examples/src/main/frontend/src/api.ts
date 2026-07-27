@@ -49,6 +49,12 @@ import type {
   VisualValidationResult,
   VisualGraphRunRecord,
 } from './types';
+import type {
+  ScenarioDraftSet,
+  ScenarioContractProjection,
+  StoredScenarioDraftSet,
+  StoredScenarioPublication,
+} from './contract-scenario/domain';
 
 /** Structured transport failure that lets optional product surfaces distinguish capability absence. */
 export class BlogeApiRequestError extends Error {
@@ -394,13 +400,98 @@ export async function simulate(request: SimulationRequest): Promise<SimulationRe
   );
 }
 
+/** Stores the next exact mutable Scenario revision through optimistic concurrency. */
+export async function saveScenarioDraftSet(
+  draftSet: ScenarioDraftSet,
+): Promise<StoredScenarioDraftSet> {
+  const id = encodeURIComponent(draftSet.scenarioDraftSetId);
+  return readTestingJson<StoredScenarioDraftSet>(
+    await sendRequest(
+      `/api/visual/scenario-draft-sets/${id}?expectedRevision=${draftSet.revision}`,
+      {
+        method: 'PUT',
+        headers: operatorTestingHeaders('TEST_SUITE_WRITE', true),
+        body: JSON.stringify(draftSet),
+      },
+    ),
+  );
+}
+
+/** Loads the latest retained mutable Scenario revision in the authenticated scope. */
+export async function fetchScenarioDraftSet(
+  scenarioDraftSetId: string,
+): Promise<StoredScenarioDraftSet> {
+  return readTestingJson<StoredScenarioDraftSet>(
+    await sendRequest(
+      `/api/visual/scenario-draft-sets/${encodeURIComponent(scenarioDraftSetId)}`,
+      { headers: operatorTestingHeaders('TEST_SUITE_READ') },
+    ),
+  );
+}
+
+/** Publishes one exact stored Scenario revision into governed FixtureBundle/TestSuite assets. */
+export async function publishScenarioDraftSet(
+  scenarioDraftSetId: string,
+  revision: number,
+): Promise<StoredScenarioPublication> {
+  const id = encodeURIComponent(scenarioDraftSetId);
+  return readTestingJson<StoredScenarioPublication>(
+    await sendRequest(
+      `/api/visual/scenario-draft-sets/${id}/publications?revision=${revision}`,
+      {
+        method: 'POST',
+        headers: operatorTestingHeaders('TEST_SCENARIO_PUBLISH'),
+      },
+    ),
+  );
+}
+
+/** Creates or updates the retained Graph revision that Scenario assets address. */
+export async function saveGraphDraft(draft: GraphDraft): Promise<GraphDraft> {
+  const query = new URLSearchParams({
+    actor: 'author-canvas',
+    changeSource: 'contract-scenario-workspace',
+    changeSummary: draft.draftId
+      ? 'Saved Graph before Scenario authoring.'
+      : 'Created Graph for Scenario authoring.',
+    reason: 'Establish an exact server Contract coordinate.',
+  });
+  const path = draft.draftId
+    ? `/api/visual/drafts/${encodeURIComponent(draft.draftId)}`
+    : '/api/visual/drafts';
+  return readJsonMutation<GraphDraft>(
+    await sendRequest(`${path}?${query.toString()}`, {
+      method: draft.draftId ? 'PUT' : 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(draft),
+    }),
+  );
+}
+
+/** Reads the authoritative Contract and fingerprints derived from one retained Graph revision. */
+export async function fetchScenarioGraphContract(
+  draftId: string,
+): Promise<ScenarioContractProjection> {
+  return readTestingJson<ScenarioContractProjection>(
+    await sendRequest(
+      `/api/visual/scenario-draft-sets/targets/graphs/${encodeURIComponent(draftId)}/contract`,
+      { headers: operatorTestingHeaders('TEST_SUITE_READ') },
+    ),
+  );
+}
+
 function recordValue(value: unknown): Record<string, unknown> | null {
   return value !== null && typeof value === 'object' && !Array.isArray(value)
     ? value as Record<string, unknown>
     : null;
 }
 
-type OperatorTestingPurpose = 'TEST_EXECUTION' | 'TEST_FIXTURE_WRITE' | 'TEST_SUITE_WRITE';
+type OperatorTestingPurpose =
+  'TEST_EXECUTION'
+  | 'TEST_FIXTURE_WRITE'
+  | 'TEST_SUITE_READ'
+  | 'TEST_SUITE_WRITE'
+  | 'TEST_SCENARIO_PUBLISH';
 
 function operatorTestingHeaders(purpose: OperatorTestingPurpose, json = false): Record<string, string> {
   return {

@@ -2,7 +2,7 @@
 
 > Goal: residual gap below 8% against the approved evolution plan
 > Measurement: weighted, evidence-based capability matrix
-> Latest round: Stage 2 governed compilation
+> Latest round: Stage 2 graphical governance loop
 
 ## Assessment Method
 
@@ -297,3 +297,57 @@ Round 5 verification:
 - Spring Boot demo startup and `/api/integration/capabilities` readiness probe succeeded;
 - bundle warning remains: main JavaScript is approximately 604 kB minified and requires Stage 2
   code splitting.
+
+## Round 6
+
+Implemented evidence:
+
+- all eight governed dependency behaviors now have direct segmented controls and structure-aware
+  output, transport, error, duration, and replay forms;
+- the advanced dependency editor covers node/operator/resource/function selectors, graph path,
+  correlation, attempts, occurrences, typed input matches, expected input, consumption, and schema
+  waiver without requiring raw JSON;
+- the assertion builder covers graph output, node output, node status, edge transfer, and dependency
+  invocation with scope-valid operators and schema-derived expected values;
+- selector-kind editing preserves an intentionally empty resource/function coordinate while the
+  user is still typing, without weakening the final unique-coordinate validation;
+- the browser workspace now saves the Graph, reads a server-authoritative Contract projection,
+  loads/saves optimistic Scenario revisions, and publishes only a clean retained revision;
+- local edits and rebases no longer impersonate server revisions;
+- `bloge.scenarioContractProjection.v1` has a strict machine schema and Java/TypeScript protocol
+  synchronization tests;
+- the workspace is lazy-loaded and React/React Flow are split into stable vendor chunks; the
+  production build has no 500 kB chunk warning;
+- disabled governed actions use a neutral visual state instead of a misleading active blue.
+
+Weighted assessment:
+
+| Workstream | Achieved | Change from Round 5 |
+|---|---:|---:|
+| Product information architecture | 15/18 | +1 |
+| Schema workbench | 9/15 | 0 |
+| Scenario builder | 16/17 | +5 |
+| Compiler and adapters | 15/15 | 0 |
+| Persistence and protocol | 9/10 | 0 |
+| Compatibility and lineage | 5/10 | 0 |
+| Security and governance | 7/8 | 0 |
+| Samples, documentation, observability | 6/7 | +1 |
+| Total achieved | **82/100** | **+7** |
+
+**Residual gap: 18%.**
+
+Round 6 verification:
+
+- frontend: 212 tests passed across 12 files;
+- focused Java protocol/persistence tests: 10 passed;
+- production build: 43 kB lazy Scenario workspace, 143 kB React runtime, 149 kB React Flow,
+  289 kB application chunk; no oversize warning;
+- packaged Spring Boot application started with the `test` profile and passed readiness;
+- real Chrome verification loaded **Loan policy fallback**, opened the Contract workspace, selected
+  ERROR, verified the canonical error code, and found no console warning/error;
+- 1472×768 desktop and 390×844 mobile visual inspection found no incoherent overlap; mobile body
+  and dialog widths were exactly 390 px and no sampled command overflowed the viewport.
+
+The next iteration must close the remaining Stage 2 contract surface: unified Graph/Operator targets,
+portable secret-safe workspace bundles, and editable error/effect/idempotency/invariant semantics.
+Stage 3 then owns semantic compatibility, exact impact/lineage, and guided migration.

@@ -1,14 +1,21 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useState } from 'react';
 
 import { sampleFromSchemaEnvelope } from '../draftModel';
+import {
+  fetchScenarioDraftSet,
+  publishScenarioDraftSet,
+  saveScenarioDraftSet,
+} from '../api';
 import type { GraphDraft, SimulationRequest, SimulationResponse } from '../types';
 import type {
   AssertionDraft,
   ContractDraft,
-  DependencyBehaviorKind,
   ScenarioDraft,
   ScenarioDraftSet,
+  StoredScenarioPublication,
 } from './domain';
+import AssertionBuilder from './AssertionBuilder';
+import DependencyBehaviorEditor from './DependencyBehaviorEditor';
 import { compileScenarioForSimulation } from './scenarioCompiler';
 import SchemaFieldTree from './SchemaFieldTree';
 import SchemaValueForm from './SchemaValueForm';
@@ -19,7 +26,6 @@ import {
   type ScenarioComparison,
   type ScenarioNodeOption,
 } from './scenarioAuthoring';
-import { schemaAtPath } from './schemaWorkbench';
 
 type WorkspaceTab = 'interface' | 'scenarios' | 'compatibility' | 'evidence';
 
@@ -32,6 +38,7 @@ interface ContractScenarioWorkspaceProps {
   nodes: ScenarioNodeOption[];
   lastRun: SimulationResponse | null;
   onScenarioDraftSetChange: (draftSet: ScenarioDraftSet) => void;
+  onSaveGraphDraft: () => Promise<void>;
   onRebase: () => void;
   onRun: (request: SimulationRequest) => Promise<SimulationResponse>;
   onClose: () => void;
@@ -47,6 +54,7 @@ export default function ContractScenarioWorkspace({
   nodes,
   lastRun,
   onScenarioDraftSetChange,
+  onSaveGraphDraft,
   onRebase,
   onRun,
   onClose,
@@ -59,6 +67,10 @@ export default function ContractScenarioWorkspace({
   const [compileMessages, setCompileMessages] = useState<string[]>([]);
   const [advancedText, setAdvancedText] = useState('');
   const [advancedError, setAdvancedError] = useState('');
+  const [savedSnapshot, setSavedSnapshot] = useState('');
+  const [assetBusy, setAssetBusy] = useState<'graph' | 'load' | 'save' | 'publish' | ''>('');
+  const [assetNotice, setAssetNotice] = useState<{ level: 'ok' | 'error'; message: string } | null>(null);
+  const [publication, setPublication] = useState<StoredScenarioPublication | null>(null);
 
   const scenarios = scenarioDraftSet?.scenarios ?? [];
   const selectedScenario = scenarios.find((scenario) => scenario.scenarioId === selectedScenarioId)
@@ -74,6 +86,9 @@ export default function ContractScenarioWorkspace({
       ),
   );
   const visibleRun = runResponse ?? lastRun;
+  const serializedDraftSet = scenarioDraftSet ? JSON.stringify(scenarioDraftSet) : '';
+  const dirty = Boolean(scenarioDraftSet && savedSnapshot !== serializedDraftSet);
+  const graphStored = Boolean(graphDraft.draftId && (graphDraft.revision ?? 0) > 0);
 
   useEffect(() => {
     if (!open) {
@@ -99,6 +114,19 @@ export default function ContractScenarioWorkspace({
     setAdvancedError('');
   }, [selectedScenario]);
 
+  useEffect(() => {
+    if (!scenarioDraftSet) {
+      setSavedSnapshot('');
+      return;
+    }
+    setSavedSnapshot(scenarioDraftSet.revision > 0 ? JSON.stringify(scenarioDraftSet) : '');
+    setPublication(null);
+    setAssetNotice(null);
+  }, [
+    scenarioDraftSet?.scenarioDraftSetId,
+    scenarioDraftSet?.target.fingerprint,
+  ]);
+
   if (!open || !contract || !scenarioDraftSet) {
     return null;
   }
@@ -110,7 +138,6 @@ export default function ContractScenarioWorkspace({
     const nextScenario = update(selectedScenario);
     onScenarioDraftSetChange({
       ...scenarioDraftSet,
-      revision: scenarioDraftSet.revision + 1,
       scenarios: scenarioDraftSet.scenarios.map((scenario) => (
         scenario.scenarioId === selectedScenario.scenarioId ? nextScenario : scenario
       )),
@@ -122,6 +149,7 @@ export default function ContractScenarioWorkspace({
     setRunResponse(null);
     setComparison(null);
     setCompileMessages([]);
+    setPublication(null);
   };
 
   const addScenario = () => {
@@ -133,7 +161,6 @@ export default function ContractScenarioWorkspace({
     const next = newScenarioDraft(sequence, graphDraft, nodes);
     onScenarioDraftSetChange({
       ...scenarioDraftSet,
-      revision: scenarioDraftSet.revision + 1,
       scenarios: [...scenarioDraftSet.scenarios, next],
     });
     setSelectedScenarioId(next.scenarioId);
@@ -147,7 +174,6 @@ export default function ContractScenarioWorkspace({
     const nextScenarios = scenarios.filter((scenario) => scenario.scenarioId !== selectedScenario.scenarioId);
     onScenarioDraftSetChange({
       ...scenarioDraftSet,
-      revision: scenarioDraftSet.revision + 1,
       scenarios: nextScenarios,
     });
     setSelectedScenarioId(nextScenarios[0]?.scenarioId ?? '');
@@ -204,6 +230,82 @@ export default function ContractScenarioWorkspace({
     }
   };
 
+  const saveGraph = async () => {
+    setAssetBusy('graph');
+    setAssetNotice(null);
+    try {
+      await onSaveGraphDraft();
+      setAssetNotice({
+        level: 'ok',
+        message: 'Graph revision saved. Rebase Scenarios to the server Contract coordinate.',
+      });
+    } catch (cause: unknown) {
+      setAssetNotice({ level: 'error', message: errorMessage(cause) });
+    } finally {
+      setAssetBusy('');
+    }
+  };
+
+  const loadDraftSet = async () => {
+    setAssetBusy('load');
+    setAssetNotice(null);
+    try {
+      const stored = await fetchScenarioDraftSet(scenarioDraftSet.scenarioDraftSetId);
+      onScenarioDraftSetChange(stored.draftSet);
+      setSavedSnapshot(JSON.stringify(stored.draftSet));
+      setPublication(null);
+      setAssetNotice({
+        level: 'ok',
+        message: `Loaded Scenario revision ${stored.revision}.`,
+      });
+    } catch (cause: unknown) {
+      setAssetNotice({ level: 'error', message: errorMessage(cause) });
+    } finally {
+      setAssetBusy('');
+    }
+  };
+
+  const saveDraftSet = async () => {
+    setAssetBusy('save');
+    setAssetNotice(null);
+    try {
+      const stored = await saveScenarioDraftSet(scenarioDraftSet);
+      onScenarioDraftSetChange(stored.draftSet);
+      setSavedSnapshot(JSON.stringify(stored.draftSet));
+      setPublication(null);
+      setAssetNotice({
+        level: 'ok',
+        message: `Scenario revision ${stored.revision} saved by ${stored.savedBy}.`,
+      });
+    } catch (cause: unknown) {
+      setAssetNotice({ level: 'error', message: errorMessage(cause) });
+    } finally {
+      setAssetBusy('');
+    }
+  };
+
+  const publishDraftSet = async () => {
+    setAssetBusy('publish');
+    setAssetNotice(null);
+    try {
+      const stored = await publishScenarioDraftSet(
+        scenarioDraftSet.scenarioDraftSetId,
+        scenarioDraftSet.revision,
+      );
+      setPublication(stored);
+      setAssetNotice({
+        level: stored.report.status === 'PUBLISHED' ? 'ok' : 'error',
+        message: stored.report.status === 'PUBLISHED'
+          ? `Published ${stored.report.fixtures.length} fixture revisions and suite ${stored.report.suite?.id ?? 'pending'}.`
+          : `Publication ${stored.report.status.toLowerCase()}: ${stored.report.failure.code || 'retry required'}.`,
+      });
+    } catch (cause: unknown) {
+      setAssetNotice({ level: 'error', message: errorMessage(cause) });
+    } finally {
+      setAssetBusy('');
+    }
+  };
+
   return (
     <div className="contract-workspace-backdrop" role="presentation" onMouseDown={(event) => {
       if (event.target === event.currentTarget) {
@@ -226,9 +328,47 @@ export default function ContractScenarioWorkspace({
             </p>
           </div>
           <div className="contract-workspace-header-actions">
-            <span className={`contract-current-badge ${current ? 'current' : 'stale'}`}>
-              {current ? 'Exact inputs current' : 'Contract changed'}
+            <span className={`contract-current-badge ${!dirty && current ? 'current' : 'stale'}`}>
+              {!graphStored
+                ? 'Graph not saved'
+                : dirty
+                  ? 'Unsaved Scenario changes'
+                  : current
+                    ? `Scenario r${scenarioDraftSet.revision} saved`
+                    : 'Contract changed'}
             </span>
+            <button
+              type="button"
+              className="secondary compact"
+              onClick={() => void saveGraph()}
+              disabled={Boolean(assetBusy)}
+            >
+              {assetBusy === 'graph' ? 'Saving Graph...' : 'Save Graph'}
+            </button>
+            <button
+              type="button"
+              className="secondary compact"
+              onClick={() => void loadDraftSet()}
+              disabled={Boolean(assetBusy) || !graphStored}
+            >
+              {assetBusy === 'load' ? 'Loading...' : 'Load Scenario'}
+            </button>
+            <button
+              type="button"
+              className="secondary compact"
+              onClick={() => void saveDraftSet()}
+              disabled={Boolean(assetBusy) || !graphStored || !current || !dirty || scenarios.length === 0}
+            >
+              {assetBusy === 'save' ? 'Saving...' : 'Save Scenario'}
+            </button>
+            <button
+              type="button"
+              className="primary compact"
+              onClick={() => void publishDraftSet()}
+              disabled={Boolean(assetBusy) || dirty || !current || scenarioDraftSet.revision < 1}
+            >
+              {assetBusy === 'publish' ? 'Publishing...' : 'Publish'}
+            </button>
             <button
               type="button"
               className="icon-button"
@@ -247,9 +387,24 @@ export default function ContractScenarioWorkspace({
               <strong>Scenarios target an older graph or Contract.</strong>
               <span>Review the interface change, then explicitly rebase before running.</span>
             </div>
-            <button type="button" className="secondary compact" onClick={onRebase}>
+            <button type="button" className="secondary compact" onClick={() => {
+              setPublication(null);
+              onRebase();
+            }}>
               Rebase scenarios
             </button>
+          </div>
+        )}
+
+        {assetNotice && (
+          <div className={`scenario-asset-notice ${assetNotice.level}`} role={assetNotice.level === 'error' ? 'alert' : 'status'}>
+            <strong>{assetNotice.level === 'ok' ? 'Asset state' : 'Action blocked'}</strong>
+            <span>{assetNotice.message}</span>
+            {publication && (
+              <code title={publication.report.publicationId}>
+                {publication.report.status} · attempt {publication.report.attempt}
+              </code>
+            )}
           </div>
         )}
 
@@ -467,70 +622,18 @@ function ScenarioTab({
               </div>
               <div className="scenario-dependencies">
                 {selectedScenario.dependencies.map((dependency, index) => {
-                  const node = nodes.find((candidate) => candidate.id === dependency.selector.nodeId);
                   return (
-                    <div className="scenario-dependency-row" key={dependency.dependencyId}>
-                      <div className="scenario-dependency-identity">
-                        <strong>{node?.label ?? dependency.selector.nodeId}</strong>
-                        <code>{node?.operatorRef ?? 'unknown operator'}</code>
-                      </div>
-                      <select
-                        aria-label={`Behavior for ${node?.label ?? dependency.selector.nodeId}`}
-                        value={dependency.behavior.kind}
-                        onChange={(event) => {
-                          const kind = event.target.value as DependencyBehaviorKind;
-                          onUpdateScenario((scenario) => ({
-                            ...scenario,
-                            dependencies: scenario.dependencies.map((entry, candidate) => (
-                              candidate === index
-                                ? {
-                                    ...entry,
-                                    behavior: kind === 'RETURN'
-                                      ? {
-                                          kind,
-                                          boundary: 'NODE',
-                                          output: node?.outputSchema
-                                            ? sampleFromSchemaEnvelope(node.outputSchema)
-                                            : {},
-                                        }
-                                      : { kind, boundary: 'NODE' },
-                                  }
-                                : entry
-                            )),
-                          }));
-                        }}
-                      >
-                        <option value="REAL">Real call</option>
-                        <option value="RETURN">Return fixture</option>
-                        <option value="ERROR">Error (governed)</option>
-                        <option value="DELAY">Delay (governed)</option>
-                        <option value="TIMEOUT">Timeout (governed)</option>
-                        <option value="REPLAY">Replay (governed)</option>
-                        <option value="OBSERVE">Observe (governed)</option>
-                        <option value="MUST_NOT_CALL">Must not call (governed)</option>
-                      </select>
-                      {dependency.behavior.kind === 'RETURN' && (
-                        <SchemaValueForm
-                          envelope={node?.outputSchema}
-                          value={dependency.behavior.output}
-                          onChange={(output) => onUpdateScenario((scenario) => ({
-                            ...scenario,
-                            dependencies: scenario.dependencies.map((entry, candidate) => (
-                              candidate === index
-                                ? { ...entry, behavior: { ...entry.behavior, output } }
-                                : entry
-                            )),
-                          }))}
-                          label="Returned output"
-                          compact
-                        />
-                      )}
-                      {!['REAL', 'RETURN'].includes(dependency.behavior.kind) && (
-                        <p className="governed-behavior-note">
-                          This behavior is preserved but runs only through the governed Scenario engine.
-                        </p>
-                      )}
-                    </div>
+                    <DependencyBehaviorEditor
+                      dependency={dependency}
+                      nodes={nodes}
+                      key={dependency.dependencyId}
+                      onChange={(next) => onUpdateScenario((scenario) => ({
+                        ...scenario,
+                        dependencies: scenario.dependencies.map((entry, candidate) => (
+                          candidate === index ? next : entry
+                        )),
+                      }))}
+                    />
                   );
                 })}
               </div>
@@ -558,9 +661,11 @@ function ScenarioTab({
               </div>
               <div className="scenario-assertions">
                 {selectedScenario.then.assertions.map((assertion, index) => (
-                  <AssertionEditor
+                  <AssertionBuilder
                     assertion={assertion}
                     contract={contract}
+                    dependencies={selectedScenario.dependencies}
+                    nodes={nodes}
                     key={assertion.assertionId}
                     onChange={(next) => onUpdateScenario((scenario) => ({
                       ...scenario,
@@ -627,51 +732,6 @@ function ScenarioTab({
           </div>
         )}
       </div>
-    </div>
-  );
-}
-
-function AssertionEditor({
-  assertion,
-  contract,
-  onChange,
-  onRemove,
-}: {
-  assertion: AssertionDraft;
-  contract: ContractDraft;
-  onChange: (assertion: AssertionDraft) => void;
-  onRemove: () => void;
-}) {
-  const expectedSchema = useMemo(
-    () => schemaAtPath(contract.outputSchema, assertion.path),
-    [assertion.path, contract.outputSchema],
-  );
-  return (
-    <div className="scenario-assertion-row">
-      <label>
-        <span>Output path</span>
-        <input
-          value={assertion.path}
-          placeholder="Whole output"
-          onChange={(event) => onChange({ ...assertion, path: event.target.value })}
-        />
-      </label>
-      <SchemaValueForm
-        schema={expectedSchema}
-        value={assertion.expected}
-        onChange={(expected) => onChange({ ...assertion, expected })}
-        label="Expected value"
-        compact
-      />
-      <button
-        type="button"
-        className="icon-button danger"
-        title="Remove assertion"
-        aria-label="Remove assertion"
-        onClick={onRemove}
-      >
-        ×
-      </button>
     </div>
   );
 }
@@ -811,4 +871,8 @@ function newOutputAssertion(sequence: number, contract: ContractDraft): Assertio
 
 function shortFingerprint(fingerprint: string): string {
   return fingerprint ? `${fingerprint.slice(0, 13)}…${fingerprint.slice(-6)}` : 'missing';
+}
+
+function errorMessage(cause: unknown): string {
+  return cause instanceof Error ? cause.message : String(cause);
 }

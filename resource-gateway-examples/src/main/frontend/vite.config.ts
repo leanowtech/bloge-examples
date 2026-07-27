@@ -9,6 +9,22 @@ export default defineConfig({
   build: {
     outDir: 'dist',
     emptyOutDir: true,
+    rollupOptions: {
+      output: {
+        manualChunks(id) {
+          if (id.includes('/node_modules/reactflow/')
+              || id.includes('/node_modules/@reactflow/')) {
+            return 'react-flow';
+          }
+          if (id.includes('/node_modules/react/')
+              || id.includes('/node_modules/react-dom/')
+              || id.includes('/node_modules/scheduler/')) {
+            return 'react-runtime';
+          }
+          return undefined;
+        },
+      },
+    },
   },
   server: {
     // During local dev (npm run dev) proxy API calls to the running Spring app.

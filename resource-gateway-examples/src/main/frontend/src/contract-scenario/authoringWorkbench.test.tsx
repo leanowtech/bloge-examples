@@ -113,6 +113,7 @@ describe('Contract Scenario authoring workbench', () => {
 
     expect(scenarioSetIsCurrent(draftSet, fingerprint('c'), fingerprint('d'))).toBe(false);
     expect(scenarioSetIsCurrent(rebased, fingerprint('c'), fingerprint('d'))).toBe(true);
+    expect(rebased.revision).toBe(draftSet.revision);
     expect(rebased.metadata.provenance.rebasedFromTargetFingerprint).toBe(fingerprint('a'));
   });
 

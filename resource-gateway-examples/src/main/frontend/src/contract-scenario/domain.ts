@@ -189,6 +189,71 @@ export interface ScenarioDiagnostic {
   target: string;
 }
 
+export interface StoredScenarioDraftSet {
+  schemaVersion: 'bloge.storedScenarioDraftSet.v1';
+  scenarioDraftSetId: string;
+  revision: number;
+  fingerprint: string;
+  draftSet: ScenarioDraftSet;
+  savedAt: string;
+  savedBy: string;
+}
+
+export interface ScenarioContractProjection {
+  schemaVersion: 'bloge.scenarioContractProjection.v1';
+  scope: EnterpriseScope;
+  contract: ContractDraft;
+  contractFingerprint: string;
+}
+
+export interface ScenarioPublicationAssetRef {
+  kind: 'FIXTURE_BUNDLE' | 'TEST_SUITE';
+  id: string;
+  revision: number;
+  fingerprint: string;
+}
+
+export interface ScenarioPublicationReport {
+  schemaVersion: 'bloge.scenarioPublicationReport.v1';
+  publicationId: string;
+  scope: EnterpriseScope;
+  source: {
+    scenarioDraftSetId: string;
+    revision: number;
+    fingerprint: string;
+    targetFingerprint: string;
+    contractFingerprint: string;
+    compilerSchemaVersion: 'bloge.scenarioGovernedCompilationPlan.v1';
+    compilationPlanFingerprint: string;
+  };
+  runtimeTarget: {
+    kind: 'GRAPH';
+    id: string;
+    fingerprint: string;
+  };
+  status: 'IN_PROGRESS' | 'PARTIAL' | 'FAILED' | 'PUBLISHED';
+  attempt: number;
+  fixtures: ScenarioPublicationAssetRef[];
+  suite: ScenarioPublicationAssetRef | null;
+  diagnostics: string[];
+  failure: {
+    stage: string;
+    code: string;
+    retryable: boolean;
+  };
+  startedAt: string;
+  updatedAt: string;
+  completedAt: string | null;
+  actor: string;
+}
+
+export interface StoredScenarioPublication {
+  schemaVersion: 'bloge.storedScenarioPublication.v1';
+  stateVersion: number;
+  fingerprint: string;
+  report: ScenarioPublicationReport;
+}
+
 const OPAQUE_SCHEMA: SchemaEnvelope = {
   format: 'json-schema',
   version: '2020-12',

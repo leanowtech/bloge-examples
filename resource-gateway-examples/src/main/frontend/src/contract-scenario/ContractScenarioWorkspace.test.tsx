@@ -38,6 +38,18 @@ describe('ContractScenarioWorkspace', () => {
     expect(text()).toContain('applicantId');
     expect(text()).toContain('approved');
     expect(tabs()).toEqual(['Interface', 'Scenarios 1', 'Compatibility', 'Run Evidence']);
+    expect(button('Load Scenario').disabled).toBe(false);
+    expect(button('Save Scenario').disabled).toBe(false);
+    expect(button('Publish').disabled).toBe(true);
+  });
+
+  it('blocks Scenario lifecycle actions until the Graph has an exact stored revision', async () => {
+    await renderWorkspace({ unsaved: true });
+
+    expect(button('Save Graph').disabled).toBe(false);
+    expect(button('Load Scenario').disabled).toBe(true);
+    expect(button('Save Scenario').disabled).toBe(true);
+    expect(button('Publish').disabled).toBe(true);
   });
 
   it('edits Given graph input through native form controls', async () => {
@@ -102,11 +114,14 @@ describe('ContractScenarioWorkspace', () => {
 
   async function renderWorkspace(options: {
     stale?: boolean;
+    unsaved?: boolean;
     onChange?: ReturnType<typeof vi.fn>;
     onRebase?: ReturnType<typeof vi.fn>;
     onRun?: ReturnType<typeof vi.fn>;
   } = {}) {
-    const draft = graphDraft();
+    const draft = options.unsaved
+      ? { ...graphDraft(), draftId: '', revision: 0 }
+      : graphDraft();
     const targetFingerprint = fingerprint('a');
     const contractFingerprint = fingerprint('b');
     const contract = contractDraftFromGraphDraft(draft, targetFingerprint);
@@ -139,6 +154,7 @@ describe('ContractScenarioWorkspace', () => {
           nodes={nodes()}
           lastRun={null}
           onScenarioDraftSetChange={options.onChange ?? vi.fn()}
+          onSaveGraphDraft={vi.fn().mockResolvedValue(undefined)}
           onRebase={options.onRebase ?? vi.fn()}
           onRun={options.onRun ?? vi.fn().mockResolvedValue(successfulResponse())}
           onClose={vi.fn()}
@@ -179,6 +195,7 @@ describe('ContractScenarioWorkspace', () => {
           nodes={nodes()}
           lastRun={null}
           onScenarioDraftSetChange={setDraftSet}
+          onSaveGraphDraft={vi.fn().mockResolvedValue(undefined)}
           onRebase={vi.fn()}
           onRun={vi.fn().mockResolvedValue(successfulResponse())}
           onClose={vi.fn()}

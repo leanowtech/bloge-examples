@@ -76,6 +76,9 @@ export interface CanvasDraftProjection {
 export interface GraphDraftExportOptions {
   draftId?: string;
   revision?: number;
+  tenantId?: string;
+  namespace?: string;
+  environment?: string;
   outputSchema?: SchemaEnvelope;
   visualLayout?: Record<string, unknown>;
   operatorFingerprints?: Record<string, string>;
@@ -545,6 +548,9 @@ export function toExportableGraphDraft(
     schemaVersion: GRAPH_DRAFT_SCHEMA_VERSION,
     ...(options.draftId ? { draftId: options.draftId } : {}),
     ...(typeof options.revision === 'number' && options.revision > 0 ? { revision: options.revision } : {}),
+    ...(options.tenantId ? { tenantId: options.tenantId } : {}),
+    ...(options.namespace ? { namespace: options.namespace } : {}),
+    ...(options.environment ? { environment: options.environment } : {}),
     ...draft,
     ...(options.visualLayout && Object.keys(options.visualLayout).length > 0
       ? { visualLayout: options.visualLayout }

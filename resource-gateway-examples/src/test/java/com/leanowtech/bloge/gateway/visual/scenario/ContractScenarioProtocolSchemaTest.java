@@ -37,6 +37,8 @@ class ContractScenarioProtocolSchemaTest {
         JsonNode publicationSchema = schema("bloge-scenario-publication-report-v1.schema.json");
         JsonNode storedPublicationSchema =
                 schema("bloge-stored-scenario-publication-v1.schema.json");
+        JsonNode projectionSchema =
+                schema("bloge-scenario-contract-projection-v1.schema.json");
         StoredScenarioDraftSet stored = new StoredScenarioDraftSet(
                 "",
                 draftSet.scenarioDraftSetId(),
@@ -69,6 +71,11 @@ class ContractScenarioProtocolSchemaTest {
                 "publisher-a");
         StoredScenarioPublication storedPublication = new StoredScenarioPublication(
                 "", 1, ScenarioValidationServiceTest.fingerprint('d'), publication);
+        ScenarioContractProjection projection = new ScenarioContractProjection(
+                "",
+                draftSet.scope(),
+                contract,
+                contract.fingerprint(mapper));
 
         assertProperties(mapper.valueToTree(contract), contractSchema.path("properties"));
         assertProperties(mapper.valueToTree(contract.target()), contractSchema.at("/$defs/target/properties"));
@@ -82,6 +89,7 @@ class ContractScenarioProtocolSchemaTest {
         assertProperties(mapper.valueToTree(publication), publicationSchema.path("properties"));
         assertProperties(mapper.valueToTree(storedPublication),
                 storedPublicationSchema.path("properties"));
+        assertProperties(mapper.valueToTree(projection), projectionSchema.path("properties"));
 
         assertThat(contractSchema.path("additionalProperties").asBoolean(true)).isFalse();
         assertThat(draftSetSchema.path("additionalProperties").asBoolean(true)).isFalse();
@@ -89,6 +97,7 @@ class ContractScenarioProtocolSchemaTest {
         assertThat(storedSchema.path("additionalProperties").asBoolean(true)).isFalse();
         assertThat(publicationSchema.path("additionalProperties").asBoolean(true)).isFalse();
         assertThat(storedPublicationSchema.path("additionalProperties").asBoolean(true)).isFalse();
+        assertThat(projectionSchema.path("additionalProperties").asBoolean(true)).isFalse();
         assertThat(storedSchema.at("/properties/draftSet/$ref").asText())
                 .isEqualTo("bloge-scenario-draft-set-v1.schema.json");
         assertThat(reportSchema.at("/$defs/diagnostic/required"))
@@ -103,6 +112,10 @@ class ContractScenarioProtocolSchemaTest {
                         "OBSERVE", "MUST_NOT_CALL");
         assertThat(storedPublicationSchema.at("/properties/report/$ref").asText())
                 .isEqualTo("bloge-scenario-publication-report-v1.schema.json");
+        assertThat(projectionSchema.at("/properties/scope/$ref").asText())
+                .isEqualTo("bloge-scenario-draft-set-v1.schema.json#/$defs/scope");
+        assertThat(projectionSchema.at("/properties/contract/$ref").asText())
+                .isEqualTo("bloge-contract-draft-v1.schema.json");
         assertThat(publicationSchema.path("properties").has("given")).isFalse();
         assertThat(publicationSchema.path("properties").has("input")).isFalse();
         assertThat(publicationSchema.path("properties").has("output")).isFalse();

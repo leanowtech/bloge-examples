@@ -81,6 +81,16 @@ public class ScenarioDraftSetController {
                 context(headers, IntegrationOperation.TEST_SUITE_READ));
     }
 
+    /** Returns the server-authoritative Contract coordinate for one retained Graph draft. */
+    @GetMapping("/targets/graphs/{draftId}/contract")
+    public ScenarioContractProjection projectGraphContract(
+            @PathVariable String draftId,
+            @RequestHeader HttpHeaders headers) {
+        return service.projectGraphContract(
+                draftId,
+                context(headers, IntegrationOperation.TEST_SUITE_READ));
+    }
+
     private IntegrationRequestContext context(
             HttpHeaders headers,
             IntegrationOperation operation) {

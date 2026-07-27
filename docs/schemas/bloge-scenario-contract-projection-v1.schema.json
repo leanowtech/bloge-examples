@@ -1,0 +1,29 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://leanowtech.com/schemas/bloge-scenario-contract-projection-v1.schema.json",
+  "title": "BLOGE Scenario Contract Projection v1",
+  "description": "Server-authoritative enterprise scope and Contract coordinate for Scenario authoring.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "scope",
+    "contract",
+    "contractFingerprint"
+  ],
+  "properties": {
+    "schemaVersion": {
+      "const": "bloge.scenarioContractProjection.v1"
+    },
+    "scope": {
+      "$ref": "bloge-scenario-draft-set-v1.schema.json#/$defs/scope"
+    },
+    "contract": {
+      "$ref": "bloge-contract-draft-v1.schema.json"
+    },
+    "contractFingerprint": {
+      "type": "string",
+      "pattern": "^sha256:[0-9a-f]{64}$"
+    }
+  }
+}

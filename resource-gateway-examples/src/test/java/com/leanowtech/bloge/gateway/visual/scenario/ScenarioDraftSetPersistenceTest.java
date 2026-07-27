@@ -73,6 +73,18 @@ class ScenarioDraftSetPersistenceTest {
     }
 
     @Test
+    void projectsTheAuthoritativeStoredGraphContractCoordinate() {
+        ScenarioContractProjection projection =
+                service.projectGraphContract(graph.draftId(), identity());
+
+        assertThat(projection.scope()).isEqualTo(scope());
+        assertThat(projection.contract()).isEqualTo(contract);
+        assertThat(projection.contractFingerprint()).isEqualTo(contract.fingerprint(objectMapper));
+        assertThat(projection.contract().target().fingerprint())
+                .matches("sha256:[0-9a-f]{64}");
+    }
+
+    @Test
     void retainsHistoryAndRejectsSilentLastWriteWins() {
         StoredScenarioDraftSet first = service.save(
                 "loan-scenarios", 0, draftSet(scope(), Map.of("applicantId", "A-1")), identity());

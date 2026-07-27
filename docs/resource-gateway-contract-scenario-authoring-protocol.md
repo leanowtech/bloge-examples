@@ -1,7 +1,8 @@
 # Resource Gateway Contract & Scenario Authoring Protocol
 
-> Status: Stage 1 authoring vertical slice implemented
-> Protocols: `bloge.contractDraft.v1`, `bloge.scenarioDraftSet.v1`, `bloge.scenarioValidationReport.v1`
+> Status: Stage 2 graphical authoring and governed publication implemented for Graph targets
+> Protocols: `bloge.contractDraft.v1`, `bloge.scenarioDraftSet.v1`,
+> `bloge.scenarioContractProjection.v1`, `bloge.scenarioPublicationReport.v1`
 
 This document is the code-facing companion to
 [the evolution plan](resource-gateway-contract-scenario-authoring-evolution-plan.md).
@@ -43,9 +44,12 @@ Author-facing names and wire names intentionally differ:
 - [Scenario Draft Set](schemas/bloge-scenario-draft-set-v1.schema.json)
 - [Scenario Validation Report](schemas/bloge-scenario-validation-report-v1.schema.json)
 - [Stored Scenario Draft Set](schemas/bloge-stored-scenario-draft-set-v1.schema.json)
+- [Scenario Contract Projection](schemas/bloge-scenario-contract-projection-v1.schema.json)
+- [Scenario Publication Report](schemas/bloge-scenario-publication-report-v1.schema.json)
+- [Stored Scenario Publication](schemas/bloge-stored-scenario-publication-v1.schema.json)
 
-All three schemas use JSON Schema 2020-12, reject unknown top-level fields, and bind target and
-contract identity with exact SHA-256 fingerprints.
+All schemas use JSON Schema 2020-12, reject unknown top-level fields, and bind target and Contract
+identity with exact SHA-256 fingerprints.
 
 ## Java Boundaries
 
@@ -62,6 +66,9 @@ contract identity with exact SHA-256 fingerprints.
 | H2 persistence adapter | `visual.scenario.DatabaseScenarioDraftSetRepository` |
 | Authenticated authoring service | `visual.scenario.ScenarioDraftSetAuthoringService` |
 | Authoring HTTP surface | `visual.scenario.ScenarioDraftSetController` |
+| Server-authoritative Contract coordinate | `visual.scenario.ScenarioContractProjection` |
+| Governed compiler | `visual.scenario.ScenarioGovernedCompiler` |
+| Recoverable publication saga | `visual.scenario.ScenarioPublicationService` |
 
 The Java records deeply freeze payload-bearing maps and lists. Cyclic values fail closed before
 serialization or fingerprinting.
@@ -76,6 +83,8 @@ The Stage 2 persistence slice is available only in `test` and `staging` profiles
 | `PUT` | `/api/visual/scenario-draft-sets/{id}?expectedRevision=N` | `TEST_SUITE_WRITE` | Create at revision `0` or update the exact revision observed by the caller |
 | `GET` | `/api/visual/scenario-draft-sets/{id}` | `TEST_SUITE_READ` | Read the current revision in the authenticated enterprise scope |
 | `GET` | `/api/visual/scenario-draft-sets/{id}/revisions` | `TEST_SUITE_READ` | Read immutable retained history newest first |
+| `GET` | `/api/visual/scenario-draft-sets/targets/graphs/{draftId}/contract` | `TEST_SUITE_READ` | Reproject the exact stored Graph as a server-authoritative Contract coordinate |
+| `POST` | `/api/visual/scenario-draft-sets/{id}/publications?revision=N` | `TEST_SCENARIO_PUBLISH` | Publish one exact retained revision as immutable fixtures and suite |
 
 The body scope must exactly match the authenticated tenant, organization, project, environment, and
 region. The service independently resolves the stored GraphDraft, recomputes its fingerprint,
@@ -87,6 +96,12 @@ author's work.
 The stored envelope carries a canonical fingerprint and is re-verified when read from persistence.
 Scenario authoring storage is mutable by revision, while every retained revision remains immutable.
 Saving is not publishing: it grants no fixture, suite, execution, or certification status.
+
+The browser must not hash its pre-save Graph and assume that coordinate remains authoritative.
+Saving a Graph can add the retained revision and resolved operator snapshots. The client therefore
+reads `bloge.scenarioContractProjection.v1` after Graph save, rebases explicitly to that exact
+target/Contract coordinate, and only then saves the Scenario. The workspace enables publication
+only for a clean retained Scenario revision.
 
 ## Frontend Boundaries
 
@@ -100,20 +115,30 @@ Saving is not publishing: it grants no fixture, suite, execution, or certificati
 | Contract rail | `src/contract-scenario/ContractRail.tsx` |
 | Contract/Scenario workspace | `src/contract-scenario/ContractScenarioWorkspace.tsx` |
 | Schema field tree and value form | `src/contract-scenario/SchemaFieldTree.tsx`, `SchemaValueForm.tsx` |
+| Complete dependency behavior editor | `src/contract-scenario/DependencyBehaviorEditor.tsx` |
+| Scope-aware assertion builder | `src/contract-scenario/AssertionBuilder.tsx` |
 
 `AuthorCanvas.tsx` does not own these protocol definitions. It opens the workspace, supplies the
 current exact target, projects existing canvas examples/table cases, executes compiled simulation
 requests, and applies the resulting canvas state.
 
-The Stage 1 workspace provides four views:
+The workspace provides four views:
 
 1. **Interface** projects graph input/output schemas as field trees while preserving the complete
    Contract in Advanced JSON.
-2. **Scenarios** edits Given input, exact-node REAL/RETURN dependencies, and whole-output/path
-   equality assertions through schema-driven controls.
+2. **Scenarios** edits Given input; REAL, RETURN, ERROR, DELAY, TIMEOUT, REPLAY, OBSERVE, and
+   MUST_NOT_CALL dependency behavior; node/operator/resource/function selectors; attempts,
+   occurrences, input matches, consumption and schema waiver; plus output, node, edge, status, and
+   invocation assertions through schema-driven controls.
 3. **Compatibility** exposes exact target and Contract coordinate drift and requires explicit
    rebase.
 4. **Run Evidence** compares assertions with the latest exploratory response and shows node status.
+
+The workspace header exposes four independent lifecycle actions. **Save Graph** establishes the
+server coordinate; **Load Scenario** reads the current retained authoring revision; **Save
+Scenario** applies optimistic concurrency only when the Scenario is current and dirty; **Publish**
+requires a clean saved revision and the separate publisher purpose. Disabled controls use a neutral
+visual state so an unavailable governed action is not mistaken for an active command.
 
 Selecting an advanced dependency behavior never produces a weaker simulation. The frontend
 transient compiler retains the behavior and returns a fail-closed diagnostic; the server-side

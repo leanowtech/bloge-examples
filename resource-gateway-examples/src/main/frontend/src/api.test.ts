@@ -19,12 +19,15 @@ import {
   fetchScenarioRehearsalRemediationComparison,
   fetchScenarioRehearsalRemediationLineage,
   fetchScenarioRehearsalWorkbook,
+  fetchScenarioDraftSet,
+  fetchScenarioGraphContract,
   fetchVisualGraphRun,
   governOperatorTestCase,
   governOperatorTestSuite,
   importOperatorLibraryText,
   previewDslImport,
   previewScenarioRehearsalRemediation,
+  publishScenarioDraftSet,
   resetOperatorTestHeadersProvider,
   resetRehearsalRemediationCredentialsProvider,
   runOperatorTestCase,
@@ -32,6 +35,8 @@ import {
   resetBlogeApiTransport,
   setBlogeApiTransport,
   setRehearsalRemediationCredentialsProvider,
+  saveGraphDraft,
+  saveScenarioDraftSet,
   submitScenarioRehearsalRemediation,
   validateDraft,
   validateOperatorLibraryText,
@@ -43,6 +48,177 @@ describe('operator library API client', () => {
     resetOperatorTestHeadersProvider();
     resetRehearsalRemediationCredentialsProvider();
     vi.restoreAllMocks();
+  });
+
+  it('saves, loads, and publishes an exact Scenario revision with separate purposes', async () => {
+    const draftSet = {
+      schemaVersion: 'bloge.scenarioDraftSet.v1' as const,
+      scenarioDraftSetId: 'loan-scenarios',
+      revision: 3,
+      scope: {
+        tenantId: 'local-demo',
+        organizationId: 'resource-gateway',
+        projectId: 'loanGraph',
+        environment: 'test',
+        region: 'local',
+      },
+      target: {
+        kind: 'GRAPH' as const,
+        id: 'loan-graph',
+        revision: 2,
+        fingerprint: `sha256:${'a'.repeat(64)}`,
+      },
+      contractFingerprint: `sha256:${'b'.repeat(64)}`,
+      scenarios: [],
+      metadata: {
+        owner: 'canvas-author',
+        classification: 'INTERNAL' as const,
+        createdAt: null,
+        updatedAt: null,
+        provenance: {},
+      },
+    };
+    const stored = {
+      schemaVersion: 'bloge.storedScenarioDraftSet.v1' as const,
+      scenarioDraftSetId: draftSet.scenarioDraftSetId,
+      revision: 4,
+      fingerprint: `sha256:${'c'.repeat(64)}`,
+      draftSet: { ...draftSet, revision: 4 },
+      savedAt: '2026-07-27T00:00:00Z',
+      savedBy: 'canvas-author',
+    };
+    const publication = {
+      schemaVersion: 'bloge.storedScenarioPublication.v1' as const,
+      stateVersion: 2,
+      fingerprint: `sha256:${'d'.repeat(64)}`,
+      report: {
+        schemaVersion: 'bloge.scenarioPublicationReport.v1' as const,
+        publicationId: 'scenario-publication-1',
+        scope: draftSet.scope,
+        source: {
+          scenarioDraftSetId: draftSet.scenarioDraftSetId,
+          revision: 4,
+          fingerprint: stored.fingerprint,
+          targetFingerprint: draftSet.target.fingerprint,
+          contractFingerprint: draftSet.contractFingerprint,
+          compilerSchemaVersion: 'bloge.scenarioGovernedCompilationPlan.v1' as const,
+          compilationPlanFingerprint: `sha256:${'e'.repeat(64)}`,
+        },
+        runtimeTarget: {
+          kind: 'GRAPH' as const,
+          id: 'loanGraph',
+          fingerprint: `sha256:${'f'.repeat(64)}`,
+        },
+        status: 'PUBLISHED' as const,
+        attempt: 1,
+        fixtures: [],
+        suite: null,
+        diagnostics: [],
+        failure: { stage: '', code: '', retryable: false },
+        startedAt: '2026-07-27T00:00:00Z',
+        updatedAt: '2026-07-27T00:00:01Z',
+        completedAt: '2026-07-27T00:00:01Z',
+        actor: 'canvas-author',
+      },
+    };
+    const fetchMock = vi.spyOn(globalThis, 'fetch').mockImplementation(async (input, init) => {
+      const url = String(input);
+      if (url.includes('?expectedRevision=3')) {
+        expect(init).toMatchObject({
+          method: 'PUT',
+          headers: expect.objectContaining({
+            'X-Purpose': 'TEST_SUITE_WRITE',
+            'Content-Type': 'application/json',
+          }),
+        });
+        expect(JSON.parse(String(init?.body))).toEqual(draftSet);
+        return new Response(JSON.stringify(stored));
+      }
+      if (url.endsWith('/loan-scenarios')) {
+        expect(init?.headers).toMatchObject({ 'X-Purpose': 'TEST_SUITE_READ' });
+        return new Response(JSON.stringify(stored));
+      }
+      if (url.endsWith('/loan-scenarios/publications?revision=4')) {
+        expect(init).toMatchObject({
+          method: 'POST',
+          headers: expect.objectContaining({ 'X-Purpose': 'TEST_SCENARIO_PUBLISH' }),
+        });
+        return new Response(JSON.stringify(publication));
+      }
+      throw new Error(`Unexpected fetch: ${url}`);
+    });
+
+    await expect(saveScenarioDraftSet(draftSet)).resolves.toEqual(stored);
+    await expect(fetchScenarioDraftSet('loan-scenarios')).resolves.toEqual(stored);
+    await expect(publishScenarioDraftSet('loan-scenarios', 4)).resolves.toEqual(publication);
+    expect(fetchMock).toHaveBeenCalledTimes(3);
+  });
+
+  it('persists a Graph before loading its authoritative Scenario Contract coordinate', async () => {
+    const draft = {
+      schemaVersion: 'bloge.visualGraphDraft.v1',
+      graphName: 'loanGraph',
+      tenantId: 'tenant-a',
+      environment: 'test',
+      nodes: [],
+      edges: [],
+      output: { nodeId: '' },
+    };
+    const stored = { ...draft, draftId: 'loan-graph', revision: 1 };
+    const projection = {
+      schemaVersion: 'bloge.scenarioContractProjection.v1' as const,
+      scope: {
+        tenantId: 'tenant-a',
+        organizationId: 'knowledge-governance',
+        projectId: 'tool-studio',
+        environment: 'test',
+        region: 'local',
+      },
+      contract: {
+        schemaVersion: 'bloge.contractDraft.v1' as const,
+        target: {
+          kind: 'GRAPH' as const,
+          id: 'loan-graph',
+          revision: 1,
+          fingerprint: `sha256:${'a'.repeat(64)}`,
+        },
+        inputSchema: { format: 'json-schema', version: '2020-12', schema: {} },
+        outputSchema: { format: 'json-schema', version: '2020-12', schema: {} },
+        errorContract: [],
+        executionSemantics: {
+          effect: 'UNKNOWN' as const,
+          idempotency: 'UNKNOWN',
+          streaming: null,
+          durable: null,
+        },
+        invariants: [],
+        compatibilityPolicy: {
+          mode: 'STRICT' as const,
+          unknownBlocksAutomaticMigration: true,
+        },
+        fieldMetadata: {},
+        source: 'AUTHORED' as const,
+        confidence: 'OPAQUE' as const,
+      },
+      contractFingerprint: `sha256:${'b'.repeat(64)}`,
+    };
+    const fetchMock = vi.spyOn(globalThis, 'fetch').mockImplementation(async (input, init) => {
+      const url = String(input);
+      if (url.startsWith('/api/visual/drafts?')) {
+        expect(init?.method).toBe('POST');
+        expect(JSON.parse(String(init?.body))).toEqual(draft);
+        return new Response(JSON.stringify(stored));
+      }
+      if (url.endsWith('/scenario-draft-sets/targets/graphs/loan-graph/contract')) {
+        expect(init?.headers).toMatchObject({ 'X-Purpose': 'TEST_SUITE_READ' });
+        return new Response(JSON.stringify(projection));
+      }
+      throw new Error(`Unexpected fetch: ${url}`);
+    });
+
+    await expect(saveGraphDraft(draft)).resolves.toEqual(stored);
+    await expect(fetchScenarioGraphContract('loan-graph')).resolves.toEqual(projection);
+    expect(fetchMock).toHaveBeenCalledTimes(2);
   });
 
   it('runs a native operator through target discovery and a SPY micro-graph fixture', async () => {
