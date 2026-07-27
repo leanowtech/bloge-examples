@@ -2,7 +2,7 @@
 
 > Goal: residual gap below 8% against the approved evolution plan
 > Measurement: weighted, evidence-based capability matrix
-> Latest round: Stage 1 first authoring vertical slice
+> Latest round: Stage 2 governed compilation
 
 ## Assessment Method
 
@@ -187,6 +187,51 @@ Round 3 focused verification:
 - `ContractScenarioProtocolSchemaTest`: 1 passed;
 - `ResourceGatewayApplicationTest`: 8 passed, including Spring bean and application startup wiring;
 - total focused Java tests: 21 passed, 0 failures.
+
+## Round 4
+
+Implemented evidence:
+
+- `ScenarioGovernedCompiler` deterministically lowers one exact Scenario revision into one
+  content-addressed FixtureBundle per case and one dependency-closed TestSuite;
+- all eight authoring behaviors map without semantic downgrade to REAL, RETURN, THROW, DELAY,
+  TIMEOUT, REPLAY, SPY, and DENY;
+- node, operator, resource, and built-in function coordinates preserve attempt, occurrence,
+  correlation, input-match, consumption, and schema-check policy;
+- output, node output, node status, invocation-use, and edge-transfer assertions compile into
+  executable assertion or coverage-policy semantics;
+- source target and Contract fingerprints remain in immutable fixture/suite metadata while the
+  runtime target is supplied independently;
+- canonical content determines every fixture and suite id, making retries convergent;
+- empty suites, case-count overflow, hand-authored PROPERTY cases, malformed runtime fingerprints,
+  invalid JSON Pointers, and incompatible policy enums fail closed before any registry write.
+
+Weighted assessment:
+
+| Workstream | Achieved | Change from Round 3 |
+|---|---:|---:|
+| Product information architecture | 14/18 | 0 |
+| Schema workbench | 9/15 | 0 |
+| Scenario builder | 11/17 | 0 |
+| Compiler and adapters | 13/15 | +5 |
+| Persistence and protocol | 7/10 | 0 |
+| Compatibility and lineage | 3/10 | +1 |
+| Security and governance | 5/8 | +1 |
+| Samples, documentation, observability | 4/7 | 0 |
+| Total achieved | **66/100** | **+7** |
+
+**Residual gap: 34%.**
+
+Compilation is now complete, but publication credit remains deliberately withheld. The next slice
+must use a dedicated publisher permission, discover the runtime target independently, register and
+re-read every immutable dependency, persist a payload-free lineage receipt, and prove retry and
+partial-failure convergence.
+
+Round 4 focused verification:
+
+- `ScenarioGovernedCompilerTest`: 6 passed;
+- `ScenarioValidationServiceTest`: 4 passed;
+- all 10 focused tests passed with no failures or errors.
 
 ## Round 2 Verification
 

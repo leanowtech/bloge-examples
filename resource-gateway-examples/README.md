@@ -3895,9 +3895,11 @@ the design can be integrated instead of remaining a diagram-only artifact.
    set. Stale coordinates cannot run silently.
 
 Normal Stage 1 authoring does not require JSON. **Advanced Contract JSON** and **Advanced Scenario
-JSON** remain available as lossless expert paths. ERROR, DELAY, TIMEOUT, REPLAY, OBSERVE, and
-MUST_NOT_CALL are retained but intentionally fail closed until compiled through the governed
-testing control plane.
+JSON** remain available as lossless expert paths. The exploratory browser compiler keeps ERROR,
+DELAY, TIMEOUT, REPLAY, OBSERVE, MUST_NOT_CALL, transport responses, and advanced selectors
+fail-closed. The server-side governed compiler now maps the complete set to content-addressed
+FixtureBundle and TestSuite registration requests; durable publication remains a separate
+permission and transaction.
 
 In `test` and `staging`, authenticated hosts can persist Scenario authoring assets without granting
 publication or execution authority:

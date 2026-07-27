@@ -86,6 +86,11 @@ public class ScenarioValidationService {
                     "Environment scope is required before Scenario persistence or execution.",
                     "/scope/environment"));
         }
+        if (scope.region().isBlank()) {
+            diagnostics.add(error("visual.scenario.scope.regionMissing",
+                    "Region scope is required before Scenario persistence or execution.",
+                    "/scope/region"));
+        }
     }
 
     private static void validateTarget(ScenarioDraftSet draftSet,
@@ -148,6 +153,11 @@ public class ScenarioValidationService {
                                           ContractDraft contract,
                                           GraphDraft graphDraft,
                                           List<VisualDiagnostic> diagnostics) {
+        if (draftSet.scenarios().isEmpty()) {
+            diagnostics.add(error("visual.scenario.scenarios.empty",
+                    "At least one Scenario is required.", "/scenarios"));
+            return;
+        }
         Set<String> scenarioIds = new HashSet<>();
         for (int index = 0; index < draftSet.scenarios().size(); index++) {
             ScenarioDraftSet.ScenarioDraft scenario = draftSet.scenarios().get(index);
@@ -202,13 +212,39 @@ public class ScenarioValidationService {
                         "Dependency node '%s' does not exist in the GraphDraft.".formatted(selector.nodeId()),
                         path + "/selector/nodeId"));
             }
+            validateSelector(selector, path, diagnostics);
             validateBehavior(dependency, path, diagnostics);
-            if ("WAIVED".equals(dependency.schemaCheck().mode())
+            if (!Set.of("STRICT", "WAIVED").contains(dependency.schemaCheck().mode())) {
+                diagnostics.add(error("visual.scenario.dependency.schemaCheckModeInvalid",
+                        "Schema-check mode must be STRICT or WAIVED.", path + "/schemaCheck/mode"));
+            } else if ("WAIVED".equals(dependency.schemaCheck().mode())
                     && dependency.schemaCheck().waiverReason().isBlank()) {
                 diagnostics.add(error("visual.scenario.dependency.waiverReasonMissing",
                         "Schema-check waiver requires a reason.", path + "/schemaCheck/waiverReason"));
             }
         }
+    }
+
+    private static void validateSelector(ScenarioDraftSet.DependencySelector selector,
+                                         String path,
+                                         List<VisualDiagnostic> diagnostics) {
+        if (!strictlyIncreasingPositive(selector.attempts())) {
+            diagnostics.add(error("visual.scenario.dependency.attemptsInvalid",
+                    "Attempt selectors must be strictly increasing positive integers.",
+                    path + "/selector/attempts"));
+        }
+        if (!strictlyIncreasingPositive(selector.occurrences())) {
+            diagnostics.add(error("visual.scenario.dependency.occurrencesInvalid",
+                    "Occurrence selectors must be strictly increasing positive integers.",
+                    path + "/selector/occurrences"));
+        }
+        selector.pathEquals().keySet().stream()
+                .filter(pointer -> !pointer.isEmpty() && !pointer.startsWith("/"))
+                .findFirst()
+                .ifPresent(pointer -> diagnostics.add(error(
+                        "visual.scenario.dependency.matchPathInvalid",
+                        "Input match paths must use JSON Pointer syntax.",
+                        path + "/selector/pathEquals")));
     }
 
     private static void validateBehavior(ScenarioDraftSet.DependencyBehaviorDraft dependency,
@@ -243,6 +279,16 @@ public class ScenarioValidationService {
         if (consumption.maxUses() > 0 && consumption.minUses() > consumption.maxUses()) {
             diagnostics.add(error("visual.scenario.dependency.consumptionInvalid",
                     "Dependency minUses must not exceed maxUses.", path + "/consumption"));
+        }
+        if (!Set.of("FAIL", "FALLBACK_TO_REAL").contains(consumption.onExhausted())) {
+            diagnostics.add(error("visual.scenario.dependency.onExhaustedInvalid",
+                    "onExhausted must be FAIL or FALLBACK_TO_REAL.",
+                    path + "/consumption/onExhausted"));
+        }
+        if (!Set.of("FAIL", "WARN", "ALLOW_REAL").contains(consumption.onUnmatched())) {
+            diagnostics.add(error("visual.scenario.dependency.onUnmatchedInvalid",
+                    "onUnmatched must be FAIL, WARN, or ALLOW_REAL.",
+                    path + "/consumption/onUnmatched"));
         }
     }
 
@@ -279,7 +325,61 @@ public class ScenarioValidationService {
                 diagnostics.add(error("visual.scenario.assertion.edgeMissing",
                         "Edge assertion requires fromNodeId and toNodeId.", path));
             }
+            if (assertion.scope() == ScenarioDraftSet.AssertionScope.EDGE_TRANSFER
+                    && graphDraft != null
+                    && (!knownNode(graphDraft, assertion.fromNodeId())
+                    || !knownNode(graphDraft, assertion.toNodeId()))) {
+                diagnostics.add(error("visual.scenario.assertion.edgeNodeUnknown",
+                        "Edge assertion endpoints must exist in the GraphDraft.", path));
+            }
+            if (!assertion.path().isBlank() && !assertion.path().startsWith("/")) {
+                diagnostics.add(error("visual.scenario.assertion.pathInvalid",
+                        "Assertion paths must use JSON Pointer syntax.", path + "/path"));
+            }
+            validateAssertionOperator(assertion, path, diagnostics);
         }
+    }
+
+    private static void validateAssertionOperator(
+            ScenarioDraftSet.AssertionDraft assertion,
+            String path,
+            List<VisualDiagnostic> diagnostics) {
+        Set<ScenarioDraftSet.AssertionOperator> supported = switch (assertion.scope()) {
+            case OUTPUT_PATH, NODE_OUTPUT -> Set.of(
+                    ScenarioDraftSet.AssertionOperator.EQUALS,
+                    ScenarioDraftSet.AssertionOperator.MATCHES_SCHEMA,
+                    ScenarioDraftSet.AssertionOperator.EXISTS,
+                    ScenarioDraftSet.AssertionOperator.ABSENT);
+            case NODE_STATUS -> Set.of(
+                    ScenarioDraftSet.AssertionOperator.STATUS,
+                    ScenarioDraftSet.AssertionOperator.EQUALS);
+            case EDGE_TRANSFER -> Set.of(ScenarioDraftSet.AssertionOperator.USED);
+            case INVOCATION -> Set.of(
+                    ScenarioDraftSet.AssertionOperator.USED,
+                    ScenarioDraftSet.AssertionOperator.NOT_USED);
+        };
+        if (!supported.contains(assertion.operator())) {
+            diagnostics.add(error("visual.scenario.assertion.operatorUnsupported",
+                    "Assertion operator '%s' is not supported for scope '%s'."
+                            .formatted(assertion.operator(), assertion.scope()),
+                    path + "/operator"));
+        }
+    }
+
+    private static boolean knownNode(GraphDraft graphDraft, String nodeId) {
+        return !nodeId.isBlank()
+                && graphDraft.nodes().stream().anyMatch(node -> node.id().equals(nodeId));
+    }
+
+    private static boolean strictlyIncreasingPositive(List<Integer> values) {
+        int previous = 0;
+        for (Integer value : values) {
+            if (value == null || value <= previous) {
+                return false;
+            }
+            previous = value;
+        }
+        return true;
     }
 
     private static ScenarioValidationReport report(ScenarioDraftSet draftSet,

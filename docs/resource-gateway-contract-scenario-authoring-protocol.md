@@ -115,8 +115,10 @@ The Stage 1 workspace provides four views:
    rebase.
 4. **Run Evidence** compares assertions with the latest exploratory response and shows node status.
 
-Selecting an advanced dependency behavior never produces a weaker simulation. The frontend compiler
-retains the behavior and returns a fail-closed diagnostic until the governed compiler is available.
+Selecting an advanced dependency behavior never produces a weaker simulation. The frontend
+transient compiler retains the behavior and returns a fail-closed diagnostic; the server-side
+governed compiler is the only path that may lower those semantics into testing-control-plane
+assets.
 
 ## Transient Compiler
 
@@ -140,6 +142,44 @@ The following values are not representable by `NodeFixture` and therefore fail c
 
 These controls must compile through `FixtureRule` and the governed testing control plane. No adapter
 may replace them with a superficially similar fixed output.
+
+## Governed Compiler
+
+`ScenarioGovernedCompiler` is deterministic and side-effect free. It receives the current visual
+Graph, its projected Contract, one exact Scenario revision, and a runtime target independently
+discovered from the testing control plane. It produces registration requests, but does not itself
+write either registry.
+
+| Authoring semantic | Governed protocol |
+|---|---|
+| Scenario | one `FixtureBundle` plus one `TestSuite.TestCase` |
+| REAL / RETURN | `FixtureRule` REAL / RETURN |
+| ERROR | `FixtureRule` THROW |
+| DELAY / TIMEOUT | deterministic logical clock plus DELAY / TIMEOUT |
+| REPLAY | exact replay reference |
+| OBSERVE / MUST_NOT_CALL | SPY / DENY |
+| node/operator/resource/function selector | exact `FixtureRule.Selector` coordinate |
+| attempt/occurrence/correlation/path match | selector and `Match.pathEquals` |
+| consumption and schema waiver | `FixtureRule.Consumption` and `SchemaCheck` |
+| output/node/status assertion | `FixtureBundle.Assertion` |
+| invocation assertion | fixture-rule use assertion |
+| edge assertion | suite edge-transfer coverage requirement |
+
+Fixture and suite identifiers are derived from canonical content. The same source revision and
+runtime target therefore produce byte-equivalent registration requests and converge on the same
+immutable identities after a retry.
+
+Compilation fails closed before registry writes when:
+
+- the Scenario or Contract coordinate is stale;
+- no Scenario exists or the control-plane limit of 100 cases is exceeded;
+- a runtime target is not an exact `sha256:` GRAPH target for the same graph name;
+- an assertion path is not a JSON Pointer;
+- selector order, consumption policy, schema-check mode, or assertion pairing is invalid;
+- a hand-authored `PROPERTY` case tries to bypass the validator-proven property materializer.
+
+The publication transaction must still register, independently re-read, and fingerprint-check every
+fixture and the suite. A successful compilation plan is not publication evidence.
 
 ## Schema Round-Trip Policy
 
@@ -180,7 +220,7 @@ The authoring layer is payload-bearing, while Run Evidence remains payload-free 
 npm --prefix resource-gateway-examples/src/main/frontend test
 npm --prefix resource-gateway-examples/src/main/frontend run build
 mvn -f resource-gateway-examples/pom.xml \
-  -Dtest=ContractDraftTest,ScenarioValidationServiceTest,ScenarioSimulationCompilerTest,ContractScenarioProtocolSchemaTest \
+  -Dtest=ContractDraftTest,ScenarioValidationServiceTest,ScenarioSimulationCompilerTest,ScenarioGovernedCompilerTest,ContractScenarioProtocolSchemaTest \
   test
 ```
 
