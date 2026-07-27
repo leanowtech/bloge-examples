@@ -30,6 +30,8 @@ interface DependencyBehaviorEditorProps {
   dependency: DependencyBehaviorDraft;
   nodes: ScenarioNodeOption[];
   onChange: (dependency: DependencyBehaviorDraft) => void;
+  onRemove?: () => void;
+  defaultSelectorKind?: DependencySelectorKind;
 }
 
 /** Graphical projection of the complete Scenario dependency behavior protocol. */
@@ -37,9 +39,13 @@ export default function DependencyBehaviorEditor({
   dependency,
   nodes,
   onChange,
+  onRemove,
+  defaultSelectorKind = 'NODE',
 }: DependencyBehaviorEditorProps) {
   const inferredSelectorKind = dependencySelectorKind(dependency);
-  const [selectorKind, setSelectorKind] = useState<DependencySelectorKind>(inferredSelectorKind);
+  const [selectorKind, setSelectorKind] = useState<DependencySelectorKind>(
+    hasSelector(dependency) ? inferredSelectorKind : defaultSelectorKind,
+  );
   const hasSelectorCoordinate = Boolean(
     dependency.selector.nodeId
       || dependency.selector.operatorRef
@@ -50,8 +56,10 @@ export default function DependencyBehaviorEditor({
     if (hasSelectorCoordinate) setSelectorKind(inferredSelectorKind);
   }, [hasSelectorCoordinate, inferredSelectorKind]);
   useEffect(() => {
-    setSelectorKind(dependencySelectorKind(dependency));
-  }, [dependency.dependencyId]);
+    setSelectorKind(hasSelector(dependency)
+      ? dependencySelectorKind(dependency)
+      : defaultSelectorKind);
+  }, [defaultSelectorKind, dependency.dependencyId]);
   const selectorValue = selectorValueFor(dependency, selectorKind);
   const node = nodes.find((candidate) => candidate.id === dependency.selector.nodeId)
     ?? nodes.find((candidate) => candidate.operatorRef === dependency.selector.operatorRef);
@@ -67,6 +75,17 @@ export default function DependencyBehaviorEditor({
           <strong>{(node?.label ?? selectorValue) || dependency.dependencyId}</strong>
           <code>{(node?.operatorRef ?? selectorValue) || 'unbound selector'}</code>
         </div>
+        {onRemove && (
+          <button
+            type="button"
+            className="icon-button"
+            aria-label={`Remove dependency ${dependency.dependencyId}`}
+            title="Remove dependency"
+            onClick={onRemove}
+          >
+            ×
+          </button>
+        )}
         <div className="scenario-behavior-segments" role="group" aria-label={`Behavior for ${dependency.dependencyId}`}>
           {BEHAVIORS.map(([kind, label]) => (
             <button
@@ -615,6 +634,15 @@ function JsonValueEditor({
         />
       )}
     </span>
+  );
+}
+
+function hasSelector(dependency: DependencyBehaviorDraft): boolean {
+  return Boolean(
+    dependency.selector.nodeId
+      || dependency.selector.operatorRef
+      || dependency.selector.resourceRef
+      || dependency.selector.functionRef,
   );
 }
 

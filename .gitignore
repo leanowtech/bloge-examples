@@ -68,6 +68,7 @@ worknotes/
 .opencode/
 node_modules/
 resource-gateway-examples/src/main/frontend/dist/
+resource-gateway-examples/data/
 bloge-studio/dist/
 bloge-studio/node_modules/
 bloge-lang/dist/

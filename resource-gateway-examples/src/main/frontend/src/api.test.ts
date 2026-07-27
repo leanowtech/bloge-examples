@@ -99,6 +99,8 @@ describe('operator library API client', () => {
           scenarioDraftSetId: draftSet.scenarioDraftSetId,
           revision: 4,
           fingerprint: stored.fingerprint,
+          targetKind: 'GRAPH' as const,
+          targetId: draftSet.target.id,
           targetFingerprint: draftSet.target.fingerprint,
           contractFingerprint: draftSet.contractFingerprint,
           compilerSchemaVersion: 'bloge.scenarioGovernedCompilationPlan.v1' as const,

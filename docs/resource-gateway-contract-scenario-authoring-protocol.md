@@ -1,7 +1,7 @@
 # Resource Gateway Contract & Scenario Authoring Protocol
 
-> Status: Stage 2 graphical authoring, portable workspaces, and governed publication implemented
-> for Graph targets
+> Status: Stage 2 graphical authoring and governed publication implemented for Graph and Operator
+> targets; portable workspace v1 remains Graph-scoped
 > Protocols: `bloge.contractDraft.v1`, `bloge.scenarioDraftSet.v1`,
 > `bloge.graphContractSemantics.v1`, `bloge.scenarioContractProjection.v1`,
 > `bloge.visualAuthoringWorkspaceBundle.v1`, `bloge.scenarioPublicationReport.v1`
@@ -60,20 +60,20 @@ identity with exact SHA-256 fingerprints.
 | Responsibility | Implementation |
 |---|---|
 | Contract protocol | `visual.contract.ContractDraft` |
-| Graph projection | `visual.contract.ContractDraftProjectionService` |
+| Graph/Operator projection | `visual.contract.ContractDraftProjectionService` |
 | Embedded graph semantics | `visual.contract.GraphContractSemantics` |
-| Scenario protocol | `visual.scenario.ScenarioDraftSet` |
-| Exact-input validation | `visual.scenario.ScenarioValidationService` |
-| Validation report | `visual.scenario.ScenarioValidationReport` |
-| Transient compilation | `visual.scenario.ScenarioSimulationCompiler` |
-| Compiled transient plan | `visual.scenario.ScenarioSimulationPlan` |
-| Mutable Scenario repository | `visual.scenario.ScenarioDraftSetRepository` |
-| H2 persistence adapter | `visual.scenario.DatabaseScenarioDraftSetRepository` |
-| Authenticated authoring service | `visual.scenario.ScenarioDraftSetAuthoringService` |
-| Authoring HTTP surface | `visual.scenario.ScenarioDraftSetController` |
-| Server-authoritative Contract coordinate | `visual.scenario.ScenarioContractProjection` |
-| Governed compiler | `visual.scenario.ScenarioGovernedCompiler` |
-| Recoverable publication saga | `visual.scenario.ScenarioPublicationService` |
+| Scenario protocol | `authoring.scenario.ScenarioDraftSet` |
+| Exact-input validation | `authoring.scenario.ScenarioValidationService` |
+| Validation report | `authoring.scenario.ScenarioValidationReport` |
+| Transient compilation | `authoring.scenario.ScenarioSimulationCompiler` |
+| Compiled transient plan | `authoring.scenario.ScenarioSimulationPlan` |
+| Mutable Scenario repository | `authoring.scenario.ScenarioDraftSetRepository` |
+| H2 persistence adapter | `authoring.scenario.DatabaseScenarioDraftSetRepository` |
+| Authenticated authoring service | `authoring.scenario.ScenarioDraftSetAuthoringService` |
+| Authoring HTTP surface | `authoring.scenario.ScenarioDraftSetController` |
+| Server-authoritative Contract coordinate | `authoring.scenario.ScenarioContractProjection` |
+| Governed compiler | `authoring.scenario.ScenarioGovernedCompiler` |
+| Recoverable publication saga | `authoring.scenario.ScenarioPublicationService` |
 
 The Java records deeply freeze payload-bearing maps and lists. Cyclic values fail closed before
 serialization or fingerprinting.
@@ -89,12 +89,15 @@ The Stage 2 persistence slice is available only in `test` and `staging` profiles
 | `GET` | `/api/visual/scenario-draft-sets/{id}` | `TEST_SUITE_READ` | Read the current revision in the authenticated enterprise scope |
 | `GET` | `/api/visual/scenario-draft-sets/{id}/revisions` | `TEST_SUITE_READ` | Read immutable retained history newest first |
 | `GET` | `/api/visual/scenario-draft-sets/targets/graphs/{draftId}/contract` | `TEST_SUITE_READ` | Reproject the exact stored Graph as a server-authoritative Contract coordinate |
+| `GET` | `/api/visual/scenario-draft-sets/targets/operators/{operatorRef}/contract` | `TEST_SUITE_READ` | Project one policy-visible catalog Operator as a server-authoritative Contract coordinate |
 | `POST` | `/api/visual/scenario-draft-sets/{id}/publications?revision=N` | `TEST_SCENARIO_PUBLISH` | Publish one exact retained revision as immutable fixtures and suite |
 
 The body scope must exactly match the authenticated tenant, organization, project, environment, and
-region. The service independently resolves the stored GraphDraft, recomputes its fingerprint,
-projects the current Contract, verifies the Contract fingerprint, validates Scenario values, scans
-for raw credentials, and then applies optimistic concurrency. A conflict returns
+region. The service independently resolves the stored GraphDraft or catalog Operator, recomputes or
+reads its authoritative fingerprint, projects the current Contract, verifies the Contract
+fingerprint, validates Scenario values, scans for raw credentials, and then applies optimistic
+concurrency. Operator tenant/environment policy is enforced; namespace-only policy fails closed
+until the Scenario target scope has an explicit namespace coordinate. A conflict returns
 `RG.SCENARIO.REVISION_CONFLICT` with the current revision; it never silently overwrites another
 author's work.
 
@@ -143,10 +146,19 @@ The workspace provides four views:
 4. **Run Evidence** compares assertions with the latest exploratory response and shows node status.
 
 The workspace header exposes four independent lifecycle actions. **Save Graph** establishes the
-server coordinate; **Load Scenario** reads the current retained authoring revision; **Save
-Scenario** applies optimistic concurrency only when the Scenario is current and dirty; **Publish**
-requires a clean saved revision and the separate publisher purpose. Disabled controls use a neutral
-visual state so an unavailable governed action is not mistaken for an active command.
+server coordinate; opening a stored target automatically attempts to resume the latest retained
+Scenario revision, while **Load Scenario** remains the explicit refresh command; **Save Scenario**
+applies optimistic concurrency only when the Scenario is current and dirty; **Publish** requires a
+clean saved revision and the separate publisher purpose. A missing retained Scenario is a normal
+first-authoring state and is silent. A real optimistic-concurrency conflict is returned through the
+stable integration problem contract as retryable HTTP 409 rather than leaking as HTTP 500. Disabled
+controls use a neutral visual state so an unavailable governed action is not mistaken for an active
+command.
+
+Operator Scenario asset ids contain a bounded readable prefix plus the complete SHA-256 digest of
+the exact operator reference. This prevents normalized references such as `risk:score` and
+`risk-score` from colliding. Every automatic or manual load also verifies the returned asset id and
+exact target kind/id before accepting the payload.
 
 The header also exposes **Export Workspace** and **Import Workspace**. Export constructs the bundle
 from the exact authoritative Graph object whenever the canvas still matches its saved snapshot.
@@ -157,6 +169,9 @@ Selecting an advanced dependency behavior never produces a weaker simulation. Th
 transient compiler retains the behavior and returns a fail-closed diagnostic; the server-side
 governed compiler is the only path that may lower those semantics into testing-control-plane
 assets.
+
+Dependencies can be added and removed graphically. A new Operator-target dependency starts with an
+Operator selector, so its normal authoring path never requires Advanced JSON.
 
 ## Editable Contract Semantics
 
@@ -225,9 +240,24 @@ may replace them with a superficially similar fixed output.
 ## Governed Compiler
 
 `ScenarioGovernedCompiler` is deterministic and side-effect free. It receives the current visual
-Graph, its projected Contract, one exact Scenario revision, and a runtime target independently
+Graph when the target kind is GRAPH, or the authoritative catalog Operator when the target kind is
+OPERATOR, the projected Contract, one exact Scenario revision, and a runtime target independently
 discovered from the testing control plane. It produces registration requests, but does not itself
 write either registry.
+
+For a virtual Operator, `OperatorExecutionLowering` resolves two distinct coordinates:
+
+- the design target remains the business-facing catalog ref and fingerprint, for example
+  `resource:user-service.getProfile`;
+- the runtime target is the catalog-declared executable ref and independently discovered
+  fingerprint, for example `httpResource`;
+- Scenario Given values are validated against the design Contract, then deterministically lowered
+  into the runtime input. A resource descriptor adds its governed `resourceId`, retains `params`,
+  and preserves supported transport test overrides.
+
+The compilation plan, Fixture metadata, TestSuite metadata, TestCase metadata, and publication
+report retain enough design/runtime lineage to audit this translation. A runtime id that disagrees
+with catalog lowering fails closed.
 
 | Authoring semantic | Governed protocol |
 |---|---|
@@ -252,7 +282,9 @@ Compilation fails closed before registry writes when:
 
 - the Scenario or Contract coordinate is stale;
 - no Scenario exists or the control-plane limit of 100 cases is exceeded;
-- a runtime target is not an exact `sha256:` GRAPH target for the same graph name;
+- a runtime target is not an exact `sha256:` target of the same kind and the Graph name or
+  catalog-declared lowered Operator ref;
+- an Operator Scenario uses Graph-only node or edge selectors/assertions;
 - an assertion path is not a JSON Pointer;
 - selector order, consumption policy, schema-check mode, or assertion pairing is invalid;
 - a hand-authored `PROPERTY` case tries to bypass the validator-proven property materializer.
@@ -267,7 +299,7 @@ storage, the FixtureBundle registry, and the TestSuite registry are independent 
 boundaries:
 
 1. Resolve one retained Scenario revision in the verified five-dimensional enterprise scope.
-2. Resolve the current Graph and Contract again.
+2. Resolve the current Graph or Operator and Contract again.
 3. Ask the testing control plane for the current runtime target; callers cannot supply its
    fingerprint.
 4. Compile and fingerprint the complete compilation plan.
@@ -283,10 +315,16 @@ Scenario input, dependency response, assertion expected value, or runtime payloa
 exact partial publication reuses the same asset identities and is therefore convergent. A completed
 publication is independently re-read again on subsequent publish calls.
 
+Canonical content equality is fingerprint equality over canonical JSON, not Java object
+`equals`. This deliberately tolerates representation-only JSON round-trip changes such as an
+integral metadata value deserializing as `Integer` instead of `Long`, while still detecting any
+semantic byte change. The publisher recomputes the returned asset fingerprint at its own trust
+boundary instead of trusting the registry envelope.
+
 The publication identity binds:
 
 - stored Scenario id, revision, and fingerprint;
-- visual target and Contract fingerprints;
+- visual target kind, id, and fingerprint plus the Contract fingerprint;
 - independently discovered runtime target;
 - compiler plan schema version;
 - canonical fingerprint of the complete compilation plan.

@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 
 import { sampleFromSchemaEnvelope } from '../draftModel';
 import {
+  BlogeApiRequestError,
   fetchScenarioDraftSet,
   publishScenarioDraftSet,
   saveScenarioDraftSet,
@@ -50,6 +51,9 @@ interface ContractScenarioWorkspaceProps {
   onRebase: () => void;
   onRun: (request: SimulationRequest) => Promise<SimulationResponse>;
   onClose: () => void;
+  targetStored?: boolean;
+  contractEditable?: boolean;
+  workspaceTransferEnabled?: boolean;
 }
 
 /** Dedicated Contract → Scenario → Run Evidence authoring workspace. */
@@ -68,6 +72,9 @@ export default function ContractScenarioWorkspace({
   onRebase,
   onRun,
   onClose,
+  targetStored,
+  contractEditable = true,
+  workspaceTransferEnabled = true,
 }: ContractScenarioWorkspaceProps) {
   const [activeTab, setActiveTab] = useState<WorkspaceTab>('interface');
   const [selectedScenarioId, setSelectedScenarioId] = useState('');
@@ -84,6 +91,9 @@ export default function ContractScenarioWorkspace({
   const [assetNotice, setAssetNotice] = useState<{ level: 'ok' | 'error'; message: string } | null>(null);
   const [publication, setPublication] = useState<StoredScenarioPublication | null>(null);
   const workspaceInputRef = useRef<HTMLInputElement>(null);
+  const autoLoadAttemptRef = useRef('');
+  const scenarioChangeRef = useRef(onScenarioDraftSetChange);
+  scenarioChangeRef.current = onScenarioDraftSetChange;
 
   const scenarios = scenarioDraftSet?.scenarios ?? [];
   const selectedScenario = scenarios.find((scenario) => scenario.scenarioId === selectedScenarioId)
@@ -102,6 +112,9 @@ export default function ContractScenarioWorkspace({
   const serializedDraftSet = scenarioDraftSet ? JSON.stringify(scenarioDraftSet) : '';
   const dirty = Boolean(scenarioDraftSet && savedSnapshot !== serializedDraftSet);
   const graphStored = Boolean(graphDraft.draftId && (graphDraft.revision ?? 0) > 0);
+  const assetStored = targetStored ?? graphStored;
+  const targetKind = contract?.target.kind ?? 'GRAPH';
+  const targetLabel = targetKind === 'OPERATOR' ? 'Operator' : 'Graph';
 
   useEffect(() => {
     if (!open) {
@@ -136,6 +149,52 @@ export default function ContractScenarioWorkspace({
     setPublication(null);
     setAssetNotice(null);
   }, [
+    scenarioDraftSet?.scenarioDraftSetId,
+    scenarioDraftSet?.target.fingerprint,
+  ]);
+
+  useEffect(() => {
+    if (!open || !assetStored || !scenarioDraftSet || scenarioDraftSet.revision > 0) {
+      return undefined;
+    }
+    const coordinate = `${scenarioDraftSet.scenarioDraftSetId}:${scenarioDraftSet.target.fingerprint}`;
+    if (autoLoadAttemptRef.current === coordinate) {
+      return undefined;
+    }
+    autoLoadAttemptRef.current = coordinate;
+    let cancelled = false;
+    setAssetBusy('load');
+    void fetchScenarioDraftSet(scenarioDraftSet.scenarioDraftSetId)
+      .then((stored) => {
+        if (cancelled) {
+          return;
+        }
+        requireLoadedScenarioCoordinate(stored.draftSet, scenarioDraftSet);
+        scenarioChangeRef.current(stored.draftSet);
+        setSavedSnapshot(JSON.stringify(stored.draftSet));
+        setPublication(null);
+        setAssetNotice({
+          level: 'ok',
+          message: `Loaded Scenario revision ${stored.revision}.`,
+        });
+      })
+      .catch((cause: unknown) => {
+        if (!cancelled && (!(cause instanceof BlogeApiRequestError) || cause.status !== 404)) {
+          setAssetNotice({ level: 'error', message: errorMessage(cause) });
+        }
+      })
+      .finally(() => {
+        if (!cancelled) {
+          setAssetBusy('');
+        }
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [
+    assetStored,
+    open,
+    scenarioDraftSet?.revision,
     scenarioDraftSet?.scenarioDraftSetId,
     scenarioDraftSet?.target.fingerprint,
   ]);
@@ -264,6 +323,7 @@ export default function ContractScenarioWorkspace({
     setAssetNotice(null);
     try {
       const stored = await fetchScenarioDraftSet(scenarioDraftSet.scenarioDraftSetId);
+      requireLoadedScenarioCoordinate(stored.draftSet, scenarioDraftSet);
       onScenarioDraftSetChange(stored.draftSet);
       setSavedSnapshot(JSON.stringify(stored.draftSet));
       setPublication(null);
@@ -385,7 +445,7 @@ export default function ContractScenarioWorkspace({
       >
         <header className="contract-workspace-header">
           <div>
-            <span>Graph Contract</span>
+            <span>{targetLabel} Contract</span>
             <h2>{contract.target.id}</h2>
             <p>
               Revision {contract.target.revision} · {contract.confidence.toLowerCase()} projection
@@ -393,27 +453,29 @@ export default function ContractScenarioWorkspace({
           </div>
           <div className="contract-workspace-header-actions">
             <span className={`contract-current-badge ${!dirty && current ? 'current' : 'stale'}`}>
-              {!graphStored
-                ? 'Graph not saved'
+              {!assetStored
+                ? `${targetLabel} not saved`
                 : dirty
                   ? 'Unsaved Scenario changes'
                   : current
                     ? `Scenario r${scenarioDraftSet.revision} saved`
                     : 'Contract changed'}
             </span>
-            <button
-              type="button"
-              className="secondary compact"
-              onClick={() => void saveGraph()}
-              disabled={Boolean(assetBusy)}
-            >
-              {assetBusy === 'graph' ? 'Saving Graph...' : 'Save Graph'}
-            </button>
+            {targetKind === 'GRAPH' && (
+              <button
+                type="button"
+                className="secondary compact"
+                onClick={() => void saveGraph()}
+                disabled={Boolean(assetBusy)}
+              >
+                {assetBusy === 'graph' ? 'Saving Graph...' : 'Save Graph'}
+              </button>
+            )}
             <button
               type="button"
               className="secondary compact"
               onClick={() => void loadDraftSet()}
-              disabled={Boolean(assetBusy) || !graphStored}
+              disabled={Boolean(assetBusy) || !assetStored}
             >
               {assetBusy === 'load' ? 'Loading...' : 'Load Scenario'}
             </button>
@@ -421,7 +483,7 @@ export default function ContractScenarioWorkspace({
               type="button"
               className="secondary compact"
               onClick={() => void saveDraftSet()}
-              disabled={Boolean(assetBusy) || !graphStored || !current || !dirty || scenarios.length === 0}
+              disabled={Boolean(assetBusy) || !assetStored || !current || !dirty || scenarios.length === 0}
             >
               {assetBusy === 'save' ? 'Saving...' : 'Save Scenario'}
             </button>
@@ -433,30 +495,34 @@ export default function ContractScenarioWorkspace({
             >
               {assetBusy === 'publish' ? 'Publishing...' : 'Publish'}
             </button>
-            <button
-              type="button"
-              className="secondary compact"
-              onClick={() => void exportWorkspace()}
-              disabled={Boolean(assetBusy) || !current}
-            >
-              {assetBusy === 'export' ? 'Exporting...' : 'Export Workspace'}
-            </button>
-            <button
-              type="button"
-              className="secondary compact"
-              onClick={() => workspaceInputRef.current?.click()}
-              disabled={Boolean(assetBusy)}
-            >
-              {assetBusy === 'import' ? 'Importing...' : 'Import Workspace'}
-            </button>
-            <input
-              ref={workspaceInputRef}
-              className="visually-hidden"
-              type="file"
-              accept="application/json,.json"
-              aria-label="Workspace bundle file"
-              onChange={(event) => void importWorkspace(event.target.files?.[0])}
-            />
+            {workspaceTransferEnabled && (
+              <>
+                <button
+                  type="button"
+                  className="secondary compact"
+                  onClick={() => void exportWorkspace()}
+                  disabled={Boolean(assetBusy) || !current}
+                >
+                  {assetBusy === 'export' ? 'Exporting...' : 'Export Workspace'}
+                </button>
+                <button
+                  type="button"
+                  className="secondary compact"
+                  onClick={() => workspaceInputRef.current?.click()}
+                  disabled={Boolean(assetBusy)}
+                >
+                  {assetBusy === 'import' ? 'Importing...' : 'Import Workspace'}
+                </button>
+                <input
+                  ref={workspaceInputRef}
+                  className="visually-hidden"
+                  type="file"
+                  accept="application/json,.json"
+                  aria-label="Workspace bundle file"
+                  onChange={(event) => void importWorkspace(event.target.files?.[0])}
+                />
+              </>
+            )}
             <button
               type="button"
               className="icon-button"
@@ -472,7 +538,7 @@ export default function ContractScenarioWorkspace({
         {!current && (
           <div className="contract-stale-banner" role="alert">
             <div>
-              <strong>Scenarios target an older graph or Contract.</strong>
+              <strong>Scenarios target an older {targetLabel.toLowerCase()} or Contract.</strong>
               <span>Review the interface change, then explicitly rebase before running.</span>
             </div>
             <button type="button" className="secondary compact" onClick={() => {
@@ -522,6 +588,7 @@ export default function ContractScenarioWorkspace({
               contract={contract}
               contractFingerprint={contractFingerprint}
               onContractChange={onContractChange}
+              contractEditable={contractEditable}
             />
           )}
           {activeTab === 'scenarios' && (
@@ -571,10 +638,12 @@ function InterfaceTab({
   contract,
   contractFingerprint,
   onContractChange,
+  contractEditable,
 }: {
   contract: ContractDraft;
   contractFingerprint: string;
   onContractChange: (contract: ContractDraft) => void;
+  contractEditable: boolean;
 }) {
   return (
     <div className="contract-interface-tab">
@@ -588,7 +657,16 @@ function InterfaceTab({
         <SchemaFieldTree envelope={contract.inputSchema} label="Input" rootLabel="ctx" />
         <SchemaFieldTree envelope={contract.outputSchema} label="Output" rootLabel="public result" />
       </div>
-      <ContractSemanticsEditor contract={contract} onChange={onContractChange} />
+      {contractEditable ? (
+        <ContractSemanticsEditor contract={contract} onChange={onContractChange} />
+      ) : (
+        <div className="contract-stale-banner operator-contract-source" role="note">
+          <div>
+            <strong>Operator Contract is projected from the catalog.</strong>
+            <span>Edit the operator library definition to change ports or runtime semantics.</span>
+          </div>
+        </div>
+      )}
       <details className="contract-advanced-json">
         <summary>Advanced Contract JSON</summary>
         <pre>{JSON.stringify(contract, null, 2)}</pre>
@@ -697,7 +775,7 @@ function ScenarioTab({
             <section className="scenario-stage">
               <div className="scenario-stage-title">
                 <span>1</span>
-                <div><strong>Given</strong><small>Graph input from the Contract</small></div>
+                <div><strong>Given</strong><small>Target input from the Contract</small></div>
               </div>
               <SchemaValueForm
                 envelope={contract.inputSchema}
@@ -706,7 +784,7 @@ function ScenarioTab({
                   ...scenario,
                   given: { input, provenance: 'AUTHORED' },
                 }))}
-                label="Graph input"
+                label="Target input"
               />
             </section>
 
@@ -714,6 +792,19 @@ function ScenarioTab({
               <div className="scenario-stage-title">
                 <span>2</span>
                 <div><strong>Dependencies</strong><small>Choose real calls or deterministic returns</small></div>
+                <button
+                  type="button"
+                  className="secondary compact"
+                  onClick={() => onUpdateScenario((scenario) => ({
+                    ...scenario,
+                    dependencies: [
+                      ...scenario.dependencies,
+                      newDependency(scenario.dependencies, nodes),
+                    ],
+                  }))}
+                >
+                  + Dependency
+                </button>
               </div>
               <div className="scenario-dependencies">
                 {selectedScenario.dependencies.map((dependency, index) => {
@@ -722,10 +813,17 @@ function ScenarioTab({
                       dependency={dependency}
                       nodes={nodes}
                       key={dependency.dependencyId}
+                      defaultSelectorKind={contract.target.kind === 'OPERATOR' ? 'OPERATOR' : 'NODE'}
                       onChange={(next) => onUpdateScenario((scenario) => ({
                         ...scenario,
                         dependencies: scenario.dependencies.map((entry, candidate) => (
                           candidate === index ? next : entry
+                        )),
+                      }))}
+                      onRemove={() => onUpdateScenario((scenario) => ({
+                        ...scenario,
+                        dependencies: scenario.dependencies.filter((_, candidate) => (
+                          candidate !== index
                         )),
                       }))}
                     />
@@ -844,7 +942,7 @@ function CompatibilityTab({
 }) {
   const checks = [
     {
-      label: 'Graph target',
+      label: `${contract.target.kind === 'OPERATOR' ? 'Operator' : 'Graph'} target`,
       current: scenarioDraftSet.target.fingerprint === contract.target.fingerprint,
       expected: contract.target.fingerprint,
       actual: scenarioDraftSet.target.fingerprint,
@@ -962,6 +1060,52 @@ function newOutputAssertion(sequence: number, contract: ContractDraft): Assertio
     operator: 'EQUALS',
     expected: sampleFromSchemaEnvelope(contract.outputSchema),
   };
+}
+
+function newDependency(
+  dependencies: ScenarioDraft['dependencies'],
+  nodes: ScenarioNodeOption[],
+): ScenarioDraft['dependencies'][number] {
+  const usedIds = new Set(dependencies.map((dependency) => dependency.dependencyId));
+  let sequence = dependencies.length + 1;
+  while (usedIds.has(`dependency-${sequence}`)) {
+    sequence += 1;
+  }
+  return {
+    dependencyId: `dependency-${sequence}`,
+    selector: {
+      graphPath: '',
+      nodeId: nodes[0]?.id ?? '',
+      operatorRef: '',
+      resourceRef: '',
+      functionRef: '',
+      attempts: [],
+      occurrences: [],
+      correlationKey: '',
+      pathEquals: {},
+    },
+    behavior: { kind: 'REAL', boundary: 'NODE' },
+    consumption: {
+      required: true,
+      minUses: 1,
+      maxUses: 1,
+      onExhausted: 'FAIL',
+      onUnmatched: 'FAIL',
+    },
+    schemaCheck: { mode: 'STRICT', waiverReason: '' },
+    origin: 'AUTHORED',
+  };
+}
+
+function requireLoadedScenarioCoordinate(
+  loaded: ScenarioDraftSet,
+  expected: ScenarioDraftSet,
+): void {
+  if (loaded.scenarioDraftSetId !== expected.scenarioDraftSetId
+    || loaded.target.kind !== expected.target.kind
+    || loaded.target.id !== expected.target.id) {
+    throw new Error('Stored Scenario target does not match the open Contract workspace.');
+  }
 }
 
 function shortFingerprint(fingerprint: string): string {

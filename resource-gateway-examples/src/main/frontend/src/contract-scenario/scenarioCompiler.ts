@@ -18,11 +18,12 @@ export interface ScenarioSimulationCompilation {
 }
 
 /**
- * Compiles one graph-target Scenario into the existing transient simulation request.
+ * Compiles one Graph or Operator Scenario into the existing transient simulation request.
  *
  * Only exact node-level REAL and RETURN behaviors are lossless in NodeFixture. Advanced selectors,
  * transport behavior, and failure/replay/observation controls fail closed and must use governed
- * Scenario execution.
+ * Scenario execution. Operator targets execute through a synthetic one-node GraphDraft whose
+ * operator reference remains the exact visual catalog coordinate.
  */
 export function compileScenarioForSimulation(
   graphDraft: GraphDraft,
@@ -117,13 +118,33 @@ function validateExactInputs(
   currentContractFingerprint: string,
   diagnostics: ScenarioDiagnostic[],
 ): void {
-  const expectedTargetId = graphDraft.draftId || graphDraft.graphName;
-  if (draftSet.target.kind !== 'GRAPH' || draftSet.target.id !== expectedTargetId) {
-    diagnostics.push(error(
-      'visual.scenario.target.graphIdMismatch',
-      `Scenario target '${draftSet.target.id}' does not match GraphDraft '${expectedTargetId}'.`,
-      '/target/id',
-    ));
+  if (draftSet.target.kind === 'GRAPH') {
+    const expectedTargetId = graphDraft.draftId || graphDraft.graphName;
+    if (draftSet.target.id !== expectedTargetId) {
+      diagnostics.push(error(
+        'visual.scenario.target.graphIdMismatch',
+        `Scenario target '${draftSet.target.id}' does not match GraphDraft '${expectedTargetId}'.`,
+        '/target/id',
+      ));
+    }
+    if (draftSet.target.revision > 0 && draftSet.target.revision !== (graphDraft.revision ?? 0)) {
+      diagnostics.push(error(
+        'visual.scenario.target.revisionStale',
+        'Scenario target revision is stale.',
+        '/target/revision',
+      ));
+    }
+  } else {
+    const executableNodes = graphDraft.nodes.filter(
+      (node) => node.operatorRef === draftSet.target.id,
+    );
+    if (executableNodes.length !== 1 || graphDraft.output.nodeId !== executableNodes[0]?.id) {
+      diagnostics.push(error(
+        'visual.scenario.target.operatorIdMismatch',
+        `Scenario target '${draftSet.target.id}' does not match the executable Operator projection.`,
+        '/target/id',
+      ));
+    }
   }
   if (!draftSet.target.fingerprint || draftSet.target.fingerprint !== currentTargetFingerprint) {
     diagnostics.push(error(
@@ -139,13 +160,6 @@ function validateExactInputs(
       '/contractFingerprint',
     ));
   }
-  if (draftSet.target.revision > 0 && draftSet.target.revision !== (graphDraft.revision ?? 0)) {
-    diagnostics.push(error(
-      'visual.scenario.target.revisionStale',
-      'Scenario target revision is stale.',
-      '/target/revision',
-    ));
-  }
 }
 
 function graphInput(
@@ -156,7 +170,7 @@ function graphInput(
   if (!input || Array.isArray(input) || typeof input !== 'object') {
     diagnostics.push(error(
       'visual.scenario.compile.graphInputNotObject',
-      'Graph-target Scenario input must be a JSON object.',
+      'Scenario input must be a JSON object.',
       '/given/input',
     ));
     return {};

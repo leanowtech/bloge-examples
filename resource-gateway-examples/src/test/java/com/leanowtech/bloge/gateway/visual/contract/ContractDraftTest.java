@@ -1,6 +1,7 @@
 package com.leanowtech.bloge.gateway.visual.contract;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.leanowtech.bloge.gateway.visual.ScenarioOperatorTestSupport;
 import com.leanowtech.bloge.gateway.visual.draft.GraphDraft;
 import com.leanowtech.bloge.gateway.visual.model.SchemaEnvelope;
 import com.leanowtech.bloge.gateway.visual.model.VisualAuthoringJsonValue;
@@ -30,6 +31,31 @@ class ContractDraftTest {
         assertThat(contract.inputSchema().required()).containsExactly("applicantId");
         assertThat(contract.outputSchema().properties()).containsKey("decision");
         assertThat(contract.executionSemantics()).isEqualTo(ContractDraft.ExecutionSemantics.unknown());
+        assertThat(contract.confidence()).isEqualTo(ContractDraft.Confidence.EXACT);
+    }
+
+    @Test
+    void projectsOperatorPortsAndDeclaredRuntimeSemanticsWithoutGraphAdaptation() {
+        var operator = ScenarioOperatorTestSupport.operator();
+
+        ContractDraft contract = projector.project(operator);
+
+        assertThat(contract.target()).isEqualTo(new ContractDraft.Target(
+                ContractDraft.TargetKind.OPERATOR,
+                operator.operatorRef(),
+                0,
+                operator.fingerprint()));
+        assertThat(contract.inputSchema().properties())
+                .containsKeys("applicantId", "amount");
+        assertThat(contract.inputSchema().required()).containsExactly("applicantId");
+        assertThat(contract.outputSchema().required()).containsExactly("decision", "score");
+        assertThat(contract.executionSemantics()).isEqualTo(
+                new ContractDraft.ExecutionSemantics(
+                        ContractDraft.Effect.READ,
+                        "REQUEST_KEY",
+                        false,
+                        true,
+                        null));
         assertThat(contract.confidence()).isEqualTo(ContractDraft.Confidence.EXACT);
     }
 

@@ -3909,11 +3909,29 @@ the design can be integrated instead of remaining a diagram-only artifact.
     import rechecks the Contract fingerprint, Graph target fingerprint, enterprise scope, operator
     index, classification, nested protocol shape, and raw-secret policy before changing the canvas.
 
+For a single Operator, double-click its node and choose **Contract & Scenarios**. The same workspace
+projects the authoritative catalog port Contract, builds schema-driven Given values, persists
+operator-target Scenario revisions, and publishes them through an independently discovered
+`OPERATOR` runtime target. Catalog-derived Contract semantics are read-only in this view; update the
+operator library to change them. Graph-only node/edge selectors and the Graph workspace bundle are
+intentionally unavailable for an Operator target. Opening a stored target automatically resumes its
+latest Scenario revision; **Load Scenario** remains an explicit refresh. A resource-backed business
+Operator such as `resource:user-service.getProfile` keeps that ref as its design target while the
+governed compiler lowers Given `{params: ...}` into `{resourceId, params}` for the independently
+fingerprinted `httpResource` runtime target. Publication lineage retains both coordinates.
+Operator dependencies can be added and removed in the graphical Scenario editor. Their durable
+asset ids include the complete digest of the exact operator ref, and loaded assets are accepted only
+after the target kind/id is reverified, so normalized-name collisions cannot cross-load Scenarios.
+
 Normal authoring does not require JSON. **Advanced Contract JSON** and **Advanced Scenario JSON**
 remain available as lossless expert paths. The exploratory browser compiler keeps behavior that
 cannot be represented by transient `NodeFixture` fail-closed. The server-side governed compiler maps
 the complete set to content-addressed FixtureBundle and TestSuite registration requests; durable
 publication remains a separate permission and recoverable transaction.
+
+Publication verifies every registry read at its own trust boundary using canonical JSON
+fingerprints. It does not depend on Java object equality after a database round-trip, and Scenario
+HTTP conflicts/errors use the stable integration problem response instead of generic HTTP 500.
 
 The portable format is `bloge.visualAuthoringWorkspaceBundle.v1`. It contains publication
 references, not fixture or test payload duplication, and permits secret references but rejects raw
@@ -3929,6 +3947,7 @@ PUT  /api/visual/scenario-draft-sets/{id}?expectedRevision=0
 GET  /api/visual/scenario-draft-sets/{id}
 GET  /api/visual/scenario-draft-sets/{id}/revisions
 GET  /api/visual/scenario-draft-sets/targets/graphs/{draftId}/contract
+GET  /api/visual/scenario-draft-sets/targets/operators/{operatorRef}/contract
 POST /api/visual/scenario-draft-sets/{id}/publications?revision=1
 GET  /api/visual/scenario-draft-sets/publications/{publicationId}
 GET  /api/visual/scenario-draft-sets/publications/{publicationId}/history

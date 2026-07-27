@@ -49,6 +49,7 @@ import com.leanowtech.bloge.gateway.visual.asset.DatabaseVisualRuntimeBindingImp
 import com.leanowtech.bloge.gateway.visual.asset.VisualRuntimeBindingImplementationRepository;
 import com.leanowtech.bloge.gateway.visual.catalog.DatabaseOperatorLibraryRegistry;
 import com.leanowtech.bloge.gateway.visual.catalog.OperatorLibraryRegistry;
+import com.leanowtech.bloge.gateway.visual.catalog.VisualOperatorCatalog;
 import com.leanowtech.bloge.gateway.visual.draft.DatabaseGraphDraftRepository;
 import com.leanowtech.bloge.gateway.visual.draft.GraphDraftRepository;
 import com.leanowtech.bloge.gateway.visual.golden.DatabaseVisualGraphGoldenCertificationRepository;
@@ -78,16 +79,16 @@ import com.leanowtech.bloge.gateway.visual.runtime.VisualEvidenceSigner;
 import com.leanowtech.bloge.gateway.visual.runtime.VisualGraphRunService;
 import com.leanowtech.bloge.gateway.visual.runtime.VisualRuntimeAdapterActivationRepository;
 import com.leanowtech.bloge.gateway.visual.runtime.VisualRuntimeRolloutObservationRepository;
-import com.leanowtech.bloge.gateway.visual.scenario.DatabaseScenarioDraftSetRepository;
-import com.leanowtech.bloge.gateway.visual.scenario.DatabaseScenarioPublicationRepository;
-import com.leanowtech.bloge.gateway.visual.scenario.ScenarioGovernedCompiler;
-import com.leanowtech.bloge.gateway.visual.scenario.ScenarioGovernedRegistryGateway;
-import com.leanowtech.bloge.gateway.visual.scenario.ScenarioDraftSetAuthoringService;
-import com.leanowtech.bloge.gateway.visual.scenario.ScenarioDraftSetRepository;
-import com.leanowtech.bloge.gateway.visual.scenario.ScenarioPublicationRepository;
-import com.leanowtech.bloge.gateway.visual.scenario.ScenarioPublicationService;
-import com.leanowtech.bloge.gateway.visual.scenario.ScenarioValidationService;
-import com.leanowtech.bloge.gateway.visual.scenario.TestingControlPlaneScenarioGovernedRegistryGateway;
+import com.leanowtech.bloge.gateway.authoring.scenario.DatabaseScenarioDraftSetRepository;
+import com.leanowtech.bloge.gateway.authoring.scenario.DatabaseScenarioPublicationRepository;
+import com.leanowtech.bloge.gateway.authoring.scenario.ScenarioGovernedCompiler;
+import com.leanowtech.bloge.gateway.authoring.scenario.ScenarioGovernedRegistryGateway;
+import com.leanowtech.bloge.gateway.authoring.scenario.ScenarioDraftSetAuthoringService;
+import com.leanowtech.bloge.gateway.authoring.scenario.ScenarioDraftSetRepository;
+import com.leanowtech.bloge.gateway.authoring.scenario.ScenarioPublicationRepository;
+import com.leanowtech.bloge.gateway.authoring.scenario.ScenarioPublicationService;
+import com.leanowtech.bloge.gateway.authoring.scenario.ScenarioValidationService;
+import com.leanowtech.bloge.gateway.authoring.scenario.TestingControlPlaneScenarioGovernedRegistryGateway;
 import com.leanowtech.bloge.gateway.visual.contract.ContractDraftProjectionService;
 import com.leanowtech.bloge.gateway.testing.api.TestExecutionApiService;
 import com.leanowtech.bloge.gateway.testing.api.TestSuiteRegistryService;
@@ -478,6 +479,7 @@ public class GatewayConfiguration {
      *
      * @param repository mutable Scenario asset store
      * @param graphDrafts current visual graph drafts
+     * @param operators current visual operator catalog
      * @param contracts current Contract projector
      * @param validation exact-input Scenario validator
      * @param objectMapper canonical protocol serializer
@@ -488,11 +490,12 @@ public class GatewayConfiguration {
     public ScenarioDraftSetAuthoringService scenarioDraftSetAuthoringService(
             ScenarioDraftSetRepository repository,
             GraphDraftRepository graphDrafts,
+            VisualOperatorCatalog operators,
             ContractDraftProjectionService contracts,
             ScenarioValidationService validation,
             ObjectMapper objectMapper) {
         return new ScenarioDraftSetAuthoringService(
-                repository, graphDrafts, contracts, validation, objectMapper);
+                repository, graphDrafts, operators, contracts, validation, objectMapper);
     }
 
     /**
@@ -532,6 +535,7 @@ public class GatewayConfiguration {
      * @param scenarioDrafts retained Scenario source revisions
      * @param publications durable saga reports
      * @param graphDrafts current visual graph repository
+     * @param operators current visual operator catalog
      * @param contracts current Contract projector
      * @param compiler deterministic governed compiler
      * @param registry governed testing registry gateway
@@ -545,12 +549,13 @@ public class GatewayConfiguration {
             ScenarioDraftSetRepository scenarioDrafts,
             ScenarioPublicationRepository publications,
             GraphDraftRepository graphDrafts,
+            VisualOperatorCatalog operators,
             ContractDraftProjectionService contracts,
             ScenarioGovernedCompiler compiler,
             ScenarioGovernedRegistryGateway registry,
             ObjectMapper objectMapper) {
         return new ScenarioPublicationService(
-                scenarioDrafts, publications, graphDrafts, contracts,
+                scenarioDrafts, publications, graphDrafts, operators, contracts,
                 compiler, registry, objectMapper);
     }
 

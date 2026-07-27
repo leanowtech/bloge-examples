@@ -2048,6 +2048,41 @@ POST /api/visual/connections/check
 6. **Schema 摘要优先**：每个端口先显示 schema 类型、字段数和字段表；Raw schema 仍可展开查看，避免用户一上来就读大段 JSON。
 7. **专属交互区**：decision table 和 transform 会在同一浮层内展开可编辑区域；foreach 会展开循环向导；generic/design operator 保留高级 config JSON 入口。
 
+#### 直接为单个 Operator 编写 Contract Scenario
+
+Operator Detail 标题栏现在提供 **Contract & Scenarios**。它不是旧表格测试的别名，而是把
+Operator 当成一等 Contract target，复用与 Graph 相同的四页工作台：
+
+1. 双击任意目录中存在的节点，点击 **Contract & Scenarios**。
+2. **Interface** 从服务端算子目录读取权威 input/output port Schema，并显示 effect、
+   idempotency、streaming 和 durable 语义。Operator Contract 在这里只读；要修改定义，
+   应更新算子库而不是在某一个 Graph 节点上制造分叉。
+3. **Scenarios** 根据 input Contract 自动生成 Given 表单。Operator target 没有 Graph
+   node/edge scope，因此只提供 target output 与 invocation 语义，不允许伪造 node/edge
+   selector。
+4. **Run & Compare** 用一个临时单节点图提供快速反馈；需要证明真实单算子 runtime
+   composability 时，仍使用同一详情浮层中的 **Executable Operator Suite**。
+5. **Save Scenario** 将草稿绑定到 operator fingerprint 和 Contract fingerprint；
+   **Publish** 通过独立 publisher 权限生成不可变 FixtureBundle + TestSuite，并从 testing
+   control plane 独立发现 OPERATOR runtime target。
+6. 已经保存过的 Operator Scenario 会在工作台打开时自动恢复最新 revision；**Load
+   Scenario** 仍可用于显式刷新。首次创建时服务端 404 会被当作正常空状态，不显示报错。
+7. 对 resource virtual operator，Given 仍按业务 Contract 填写，例如
+   `{params: {userId}}`；发布编译器会根据 catalog lowering 自动生成
+   `{resourceId, params}` 并绑定 `httpResource` runtime。发布回执同时保留业务
+   operator target 和 runtime target，不能把二者混为一个 ref。
+8. 算子库版本、端口或 capability 变化后，旧 Scenario 会显示 stale，必须显式 rebase。
+9. **+ Dependency** 可直接添加 operator/resource/built-in function 依赖；Operator 工作台
+   默认打开 Operator selector。每条依赖都可以移除，不需要通过 Advanced JSON 维护列表。
+
+Graph 的 **Save Graph** 和 Graph workspace bundle 导入导出不会出现在 Operator 工作台。
+这是有意的生命周期边界：Operator 定义归算子目录所有，Scenario 是独立 authoring asset；
+当前 `bloge.visualAuthoringWorkspaceBundle.v1` 仍是 Graph bundle。
+
+Operator Scenario 的存储 id 使用可读前缀和完整 operator-ref SHA-256 摘要，因此标点不同但
+归一化后相似的算子名不会互相覆盖。自动恢复与手动加载都会再次核对 exact target；若响应
+属于另一个算子，工作台拒绝接纳并明确报错。
+
 | 算子族 | 双击后的浮层能力 | 写入 draft 的配置 |
 | --- | --- | --- |
 | `bloge:decisionTable` | 详情 + 规则矩阵 + 节点级 Executable Operator Suite。可编辑 hit policy、output type、条件列、输出列、规则行和 otherwise fallback | `config.hitPolicy`、`config.outputType`、`config.conditionColumns`、`config.outputColumns`、`config.rules[]`、`nodeFixtures[nodeId]` |
@@ -2068,6 +2103,12 @@ Operator Test Suite 和右侧全图 Test Suite 的边界不同：
 native operator 使用 `SPY` 观察真实主体；resource operator 降级到 `httpResource`，只以表格中的 Transport response 替换
 transport I/O，因此 request mapping、协议解析和 payload extraction 仍会执行。`OPAQUE_RUNTIME`、不支持的 execution model
 或缺失 runtime lowering 会在执行前 fail closed。
+
+Contract Scenario 的 governed publish 与上面的快速表格试跑使用同一条 lowering 语义：
+resource descriptor 的 `resourceId` 来自权威 catalog，不要求用户在 Given 里重复填写；
+testing control plane 返回的 fixture/suite 会被再次读取并按 canonical JSON 指纹复验。
+因此数据库 JSON round-trip 带来的 Java 数字类型变化不会造成假冲突，任何真正的协议内容
+变化仍会失败关闭。
 
 `Run Case / Run Exploratory` 使用 inline fixture，适合快速试验，因此 passing 行显示真实 run id 和 `EXPLORATORY` evidence，不等于可发布认证。
 `Publish Case + Run / Publish Suite + Run` 会冻结同一 target，为每行把 lowered input、fixture 和 case metadata 规范化成内容寻址的

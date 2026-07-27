@@ -41,6 +41,8 @@ export interface OperatorCapabilities {
 /** A visual operator definition (bloge.visualOperator.v1). */
 export interface OperatorDefinition {
   operatorRef: string;
+  operatorVersion?: string;
+  fingerprint?: string;
   display?: { name?: string; description?: string; tags?: string[] };
   source?: { kind?: string; libraryId?: string };
   ports?: { inputs: OperatorPort[]; outputs: OperatorPort[] };

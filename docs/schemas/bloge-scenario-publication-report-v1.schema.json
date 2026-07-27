@@ -181,6 +181,18 @@
         "fingerprint": {
           "$ref": "#/$defs/fingerprint"
         },
+        "targetKind": {
+          "enum": [
+            "",
+            "GRAPH",
+            "OPERATOR"
+          ]
+        },
+        "targetId": {
+          "type": "string",
+          "minLength": 0,
+          "maxLength": 512
+        },
         "targetFingerprint": {
           "$ref": "#/$defs/fingerprint"
         },
@@ -205,7 +217,10 @@
       ],
       "properties": {
         "kind": {
-          "const": "GRAPH"
+          "enum": [
+            "GRAPH",
+            "OPERATOR"
+          ]
         },
         "id": {
           "type": "string",

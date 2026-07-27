@@ -1143,14 +1143,26 @@ ANEKE 可以消费 report，但最终 publish gate policy 仍由 ANEKE 管理。
 | RG-CS-208 | workspace bundle | VS Code/offline export |
 | RG-CS-209 | contract semantics projection | error/effect/idempotency/invariants |
 
-Current implementation note (Round 7):
+Current implementation note (Round 8):
 
 - RG-CS-208 is implemented as `bloge.visualAuthoringWorkspaceBundle.v1`, with browser export/import,
   exact fingerprint/scope/operator-index verification, raw-secret rejection, and preserved layout;
 - RG-CS-209 is implemented as `bloge.graphContractSemantics.v1`, with graphical editing and strict
   server-side projection/validation;
-- RG-CS-207 remains the final Stage 2 target-model gap: Graph uses the shared workspace today, while
-  Operator authoring still uses its older test-suite dialog.
+- RG-CS-207 is implemented through an authoritative Operator Contract projection, one shared
+  Contract/Scenario workspace, exact operator-target validation, governed compilation, and
+  recoverable publication against an independently discovered OPERATOR runtime target;
+- virtual resource Operators now preserve the business-facing design target while resolving and
+  fingerprinting the catalog-declared runtime target independently; Given input is lowered
+  server-side to the runtime shape, and both coordinates remain in publication/test lineage;
+- a stored workspace automatically resumes its current Scenario revision, optimistic conflicts use
+  the stable HTTP 409 problem contract, and governed asset verification compares recomputed
+  canonical JSON fingerprints after a real registry round-trip;
+- catalog-derived Operator semantics are intentionally read-only in the target workspace, while
+  Graph semantics remain graph-authored;
+- namespace-restricted operators fail closed until Scenario target scope gains an explicit
+  namespace coordinate; Graph-only node and edge assertion scopes are rejected for Operator
+  targets.
 
 退出门禁：
 
@@ -1560,7 +1572,7 @@ visual/contract/
   ContractCompatibilityService
   FieldLineageService
 
-visual/scenario/
+authoring/scenario/
   ScenarioDraftSet
   ScenarioDraftSetRepository
   ScenarioValidationService
@@ -1582,7 +1594,10 @@ testing/execution/*
 testing/evidence/*
 ```
 
-ScenarioPublicationCompiler 依赖 testing control plane，不反向让 testing domain 依赖 visual UI model。
+`authoring.scenario` 是 visual-owned Contract/Graph ports 与 testing control plane 之间的应用层。
+它可以依赖两侧协议，但 `visual` 内核不得依赖 gateway testing/integration 实现；
+`VisualRuntimeBoundaryTest` 对该依赖方向做构建期守卫。Scenario compiler 不反向让
+testing domain 依赖 visual UI model。
 
 ### 17.3 Schema
 

@@ -43,6 +43,7 @@ import {
   fetchGraphDraft,
   fetchOperatorCatalog,
   fetchScenarioGraphContract,
+  fetchScenarioOperatorContract,
   fetchVisualGraphRun,
   governOperatorTestSuite,
   importOperatorLibraryText,
@@ -172,6 +173,14 @@ interface NodeData {
 interface ConnectionNotice {
   level: 'ok' | 'warning' | 'error' | 'pending';
   message: string;
+}
+
+interface OperatorContractWorkspaceState {
+  graphDraft: GraphDraft;
+  contract: ContractDraft;
+  contractFingerprint: string;
+  scenarioDraftSet: ScenarioDraftSet;
+  nodes: ScenarioNodeOption[];
 }
 
 interface ConnectionStartParams {
@@ -3206,6 +3215,7 @@ function OperatorDetailDialog({
   operatorTestsRunning,
   operatorTestRunDisabledReason,
   onClose,
+  onOpenContract,
   onLabelChange,
   onConfigPatch,
   onConfigReplace,
@@ -3244,6 +3254,7 @@ function OperatorDetailDialog({
   operatorTestsRunning: boolean;
   operatorTestRunDisabledReason?: string;
   onClose: () => void;
+  onOpenContract: () => void;
   onLabelChange: (value: string) => void;
   onConfigPatch: (patch: Record<string, unknown>) => void;
   onConfigReplace: (config: Record<string, unknown>) => void;
@@ -3283,6 +3294,14 @@ function OperatorDetailDialog({
         <div className="operator-detail-heading">
           <span>{node.data.summary.visualLabel}</span>
           <strong id="operator-detail-title">{node.data.label}</strong>
+          <button
+            type="button"
+            className="secondary compact"
+            onClick={onOpenContract}
+            disabled={!operator}
+          >
+            Contract &amp; Scenarios
+          </button>
           <button
             type="button"
             className="secondary compact"
@@ -3432,6 +3451,65 @@ function operatorInputSchema(operator: OperatorDefinition | undefined): SchemaEn
     });
   }
   return undefined;
+}
+
+function operatorScenarioGraphDraft(
+  operator: OperatorDefinition,
+  contract: ContractDraft,
+  tenantId: string,
+  environment: string,
+): GraphDraft {
+  const properties = contract.inputSchema.schema.properties;
+  const inputNames = properties && typeof properties === 'object' && !Array.isArray(properties)
+    ? Object.keys(properties)
+    : operator.ports?.inputs.map((port) => port.name) ?? [];
+  const safeRef = operator.operatorRef.replace(/[^A-Za-z0-9._-]+/g, '-');
+  return {
+    schemaVersion: 'bloge.visualGraphDraft.v1',
+    graphName: `operator-${safeRef}`,
+    tenantId,
+    namespace: 'operator-contract',
+    environment,
+    inputSchema: contract.inputSchema,
+    outputSchema: contract.outputSchema,
+    nodes: [{
+      id: 'operator',
+      operatorRef: operator.operatorRef,
+      label: operator.display?.name || operator.operatorRef,
+      inputs: Object.fromEntries(inputNames.map((name) => [
+        name,
+        {
+          kind: 'contextPath',
+          path: name,
+          targetPort: name,
+          targetPath: name,
+        },
+      ])),
+      config: {},
+      position: { x: 160, y: 120 },
+    }],
+    edges: [],
+    visualLayout: {
+      authoringMode: 'operator-contract-scenario',
+    },
+    nodeFixtures: {},
+    output: { nodeId: 'operator', path: '' },
+    operatorFingerprints: {
+      operator: contract.target.fingerprint,
+    },
+    operatorSnapshots: {
+      operator,
+    },
+  };
+}
+
+async function operatorScenarioDraftSetId(operatorRef: string): Promise<string> {
+  const digest = (await sha256Fingerprint(operatorRef)).replace(/^sha256:/, '');
+  const safeRef = operatorRef.replace(/[^A-Za-z0-9._-]+/g, '-').replace(/^-+|-+$/g, '')
+    || 'operator';
+  const fixed = `operator--${digest}-scenarios`;
+  const prefixLimit = Math.max(1, 255 - fixed.length);
+  return `operator-${safeRef.slice(0, prefixLimit)}-${digest}-scenarios`;
 }
 
 interface OperatorLibraryExample {
@@ -4252,6 +4330,8 @@ export default function AuthorCanvas() {
   const [contractDraft, setContractDraft] = useState<ContractDraft | null>(null);
   const [contractFingerprint, setContractFingerprint] = useState('');
   const [scenarioDraftSet, setScenarioDraftSet] = useState<ScenarioDraftSet | null>(null);
+  const [operatorContractWorkspace, setOperatorContractWorkspace] =
+    useState<OperatorContractWorkspaceState | null>(null);
   const [explicitOutputNodeId, setExplicitOutputNodeId] = useState('');
   const [fixtureDrafts, setFixtureDrafts] = useState<Record<string, string>>({});
   const [fixtureInputDrafts, setFixtureInputDrafts] = useState<Record<string, string>>({});
@@ -5196,6 +5276,50 @@ export default function AuthorCanvas() {
     setContractFingerprint(projection.contractFingerprint);
   }, [exportableDraft]);
 
+  const openOperatorContractWorkspace = useCallback(async (
+    operator: OperatorDefinition,
+  ) => {
+    setError('');
+    try {
+      const projection = await fetchScenarioOperatorContract(operator.operatorRef);
+      const syntheticGraph = operatorScenarioGraphDraft(
+        operator,
+        projection.contract,
+        projection.scope.tenantId,
+        projection.scope.environment,
+      );
+      const draftSet = scenarioDraftSetFromCanvas(
+        projection.contract.target,
+        projection.contractFingerprint,
+        syntheticGraph,
+        [],
+        [],
+      );
+      const scenarioDraftSetId = await operatorScenarioDraftSetId(operator.operatorRef);
+      setOperatorContractWorkspace({
+        graphDraft: syntheticGraph,
+        contract: projection.contract,
+        contractFingerprint: projection.contractFingerprint,
+        scenarioDraftSet: {
+          ...draftSet,
+          scenarioDraftSetId,
+          metadata: {
+            ...draftSet.metadata,
+            provenance: {
+              source: 'operator-contract-workspace',
+              operatorRef: operator.operatorRef,
+            },
+          },
+        },
+        nodes: [],
+      });
+      setContractWorkspaceOpen(false);
+      setOperatorDetailNodeId('');
+    } catch (cause: unknown) {
+      setError(`Operator Contract projection failed: ${String(cause)}`);
+    }
+  }, []);
+
   const updateContractSemantics = useCallback((nextContract: ContractDraft) => {
     authoritativeContractRef.current = null;
     setGraphVisualLayout((current) => visualLayoutWithContractSemantics(current, nextContract));
@@ -5595,6 +5719,7 @@ export default function AuthorCanvas() {
     setExplicitOutputNodeId(imported.outputNodeId);
     setSelectedNodeId(imported.outputNodeId || imported.nodes[0]?.id || '');
     setOperatorDetailNodeId('');
+    setOperatorContractWorkspace(null);
     setTestSuiteOpen(false);
     setConnectionGuide(null);
     setConnectionGuideNotice(null);
@@ -7589,7 +7714,10 @@ export default function AuthorCanvas() {
           outputFieldCount={graphOutputSummary.fieldCount}
           inputFields={graphInputSummary.fields.map((field) => field.name)}
           outputFields={graphOutputSummary.fields.map((field) => field.name)}
-          onOpen={() => setContractWorkspaceOpen(true)}
+          onOpen={() => {
+            setOperatorContractWorkspace(null);
+            setContractWorkspaceOpen(true);
+          }}
         />
         <div
           ref={flowRef}
@@ -8067,7 +8195,49 @@ export default function AuthorCanvas() {
           </>
         )}
       </aside>
-      {contractWorkspaceOpen && (
+      {operatorContractWorkspace && (
+        <Suspense
+          fallback={(
+            <div className="canvas-loading-state" role="status">
+              Opening Operator Contract workspace...
+            </div>
+          )}
+        >
+          <ContractScenarioWorkspace
+            open
+            graphDraft={operatorContractWorkspace.graphDraft}
+            contract={operatorContractWorkspace.contract}
+            contractFingerprint={operatorContractWorkspace.contractFingerprint}
+            scenarioDraftSet={operatorContractWorkspace.scenarioDraftSet}
+            nodes={operatorContractWorkspace.nodes}
+            lastRun={null}
+            targetStored
+            contractEditable={false}
+            workspaceTransferEnabled={false}
+            onContractChange={() => undefined}
+            onImportWorkspace={async () => undefined}
+            onScenarioDraftSetChange={(next) => setOperatorContractWorkspace((current) => (
+              current ? { ...current, scenarioDraftSet: next } : current
+            ))}
+            onSaveGraphDraft={async () => undefined}
+            onRebase={() => setOperatorContractWorkspace((current) => (
+              current
+                ? {
+                    ...current,
+                    scenarioDraftSet: rebaseScenarioDraftSet(
+                      current.scenarioDraftSet,
+                      current.contract.target,
+                      current.contractFingerprint,
+                    ),
+                  }
+                : current
+            ))}
+            onRun={runScenarioSimulation}
+            onClose={() => setOperatorContractWorkspace(null)}
+          />
+        </Suspense>
+      )}
+      {contractWorkspaceOpen && !operatorContractWorkspace && (
         <Suspense
           fallback={(
             <div className="canvas-loading-state" role="status">
@@ -8134,6 +8304,11 @@ export default function AuthorCanvas() {
           operatorTestsRunning={operatorDetailTestsRunning}
           operatorTestRunDisabledReason={operatorDetailTestRunDisabledReason}
           onClose={() => setOperatorDetailNodeId('')}
+          onOpenContract={() => {
+            if (operatorDetailDefinition) {
+              void openOperatorContractWorkspace(operatorDetailDefinition);
+            }
+          }}
           onLabelChange={(value) => updateNodeLabel(operatorDetailNode.id, value)}
           onConfigPatch={(patch) => mergeNodeConfigPatch(operatorDetailNode.id, patch)}
           onConfigReplace={(config) => replaceNodeConfig(operatorDetailNode.id, config)}

@@ -92,6 +92,66 @@ describe('Scenario transient compiler', () => {
     expect(result.request?.fixtures).toBeUndefined();
   });
 
+  it('runs an Operator target through its exact one-node executable projection', () => {
+    const graph: GraphDraft = {
+      ...graphDraft(),
+      draftId: undefined,
+      revision: undefined,
+      graphName: 'operator-risk-score',
+      nodes: [{ id: 'operator', operatorRef: 'risk:score', label: 'Risk score' }],
+      edges: [],
+      output: { nodeId: 'operator' },
+      nodeFixtures: {},
+    };
+    const scenarios: ScenarioDraftSet = {
+      ...draftSet([]),
+      target: {
+        kind: 'OPERATOR',
+        id: 'risk:score',
+        revision: 7,
+        fingerprint: TARGET_FINGERPRINT,
+      },
+    };
+
+    const result = compileScenarioForSimulation(
+      graph,
+      scenarios,
+      'fallback',
+      TARGET_FINGERPRINT,
+      CONTRACT_FINGERPRINT,
+    );
+
+    expect(result.compiled).toBe(true);
+    expect(result.request?.draft.nodes).toEqual([
+      expect.objectContaining({ id: 'operator', operatorRef: 'risk:score' }),
+    ]);
+    expect(result.request?.context).toEqual({ applicantId: 'A-1' });
+  });
+
+  it('rejects an Operator projection for a different catalog coordinate', () => {
+    const scenarios: ScenarioDraftSet = {
+      ...draftSet([]),
+      target: {
+        kind: 'OPERATOR',
+        id: 'risk:other',
+        revision: 1,
+        fingerprint: TARGET_FINGERPRINT,
+      },
+    };
+
+    const result = compileScenarioForSimulation(
+      graphDraft(),
+      scenarios,
+      'fallback',
+      TARGET_FINGERPRINT,
+      CONTRACT_FINGERPRINT,
+    );
+
+    expect(result.compiled).toBe(false);
+    expect(result.diagnostics.map((diagnostic) => diagnostic.code))
+      .toContain('visual.scenario.target.operatorIdMismatch');
+  });
+
   it.each(['ERROR', 'DELAY', 'TIMEOUT', 'REPLAY', 'OBSERVE', 'MUST_NOT_CALL'] as const)(
     'fails closed for advanced %s behavior',
     (kind) => {

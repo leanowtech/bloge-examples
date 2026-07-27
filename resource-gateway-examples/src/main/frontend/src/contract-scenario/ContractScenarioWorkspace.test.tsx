@@ -19,6 +19,10 @@ describe('ContractScenarioWorkspace', () => {
 
   beforeEach(() => {
     (globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(new Response(
+      JSON.stringify({ code: 'RG.SCENARIO.DRAFT_NOT_FOUND' }),
+      { status: 404, statusText: 'Not Found', headers: { 'Content-Type': 'application/json' } },
+    )));
     host = document.createElement('div');
     document.body.appendChild(host);
   });
@@ -29,6 +33,7 @@ describe('ContractScenarioWorkspace', () => {
       root = null;
     }
     host.remove();
+    vi.unstubAllGlobals();
   });
 
   it('opens with a searchable Contract field tree and four workspace views', async () => {
@@ -110,6 +115,215 @@ describe('ContractScenarioWorkspace', () => {
     expect(text()).toContain('Scenarios target an older graph or Contract.');
     await act(async () => button('Rebase scenarios').click());
     expect(onRebase).toHaveBeenCalledOnce();
+  });
+
+  it('presents an authoritative Operator Contract through the shared Scenario workspace', async () => {
+    const draft = graphDraft();
+    const contractFingerprint = fingerprint('b');
+    const graphContract = contractDraftFromGraphDraft(draft, fingerprint('a'));
+    const contract = {
+      ...graphContract,
+      target: {
+        kind: 'OPERATOR' as const,
+        id: 'risk:score',
+        revision: 0,
+        fingerprint: fingerprint('a'),
+      },
+    };
+    const operatorDraft = {
+      ...draft,
+      draftId: undefined,
+      revision: undefined,
+      graphName: 'operator-risk-score',
+      nodes: [{ id: 'operator', operatorRef: 'risk:score', label: 'Risk score' }],
+      edges: [],
+      output: { nodeId: 'operator' },
+      nodeFixtures: {},
+    };
+    const draftSet = scenarioDraftSetFromCanvas(
+      contract.target,
+      contractFingerprint,
+      operatorDraft,
+      [],
+      [],
+    );
+    const onRun = vi.fn().mockResolvedValue(successfulResponse());
+    function ControlledOperatorWorkspace() {
+      const [controlledDraftSet, setControlledDraftSet] = useState(draftSet);
+      return (
+        <ContractScenarioWorkspace
+          open
+          graphDraft={operatorDraft}
+          contract={contract}
+          contractFingerprint={contractFingerprint}
+          scenarioDraftSet={controlledDraftSet}
+          nodes={[]}
+          lastRun={null}
+          targetStored
+          contractEditable={false}
+          workspaceTransferEnabled={false}
+          onScenarioDraftSetChange={setControlledDraftSet}
+          onContractChange={vi.fn()}
+          onImportWorkspace={vi.fn().mockResolvedValue(undefined)}
+          onSaveGraphDraft={vi.fn().mockResolvedValue(undefined)}
+          onRebase={vi.fn()}
+          onRun={onRun}
+          onClose={vi.fn()}
+        />
+      );
+    }
+    await act(async () => {
+      root = createRoot(host);
+      root.render(<ControlledOperatorWorkspace />);
+    });
+
+    expect(text()).toContain('Operator Contract');
+    expect(text()).toContain('projected from the catalog');
+    expect(text()).not.toContain('Save Graph');
+    expect(text()).not.toContain('Export Workspace');
+    expect(button('Load Scenario').disabled).toBe(false);
+
+    await clickTab('Scenarios 1');
+    await act(async () => {
+      button('Run & Compare').click();
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+    expect(onRun).toHaveBeenCalledWith(expect.objectContaining({
+      draft: expect.objectContaining({
+        nodes: [expect.objectContaining({ operatorRef: 'risk:score' })],
+      }),
+    }));
+
+    await clickTab('Scenarios 1');
+    await act(async () => button('+ Dependency').click());
+    expect(input('Operator reference for dependency-1').value).toBe('');
+    const removeDependency = document.querySelector(
+      '[aria-label="Remove dependency dependency-1"]',
+    );
+    expect(removeDependency).toBeInstanceOf(HTMLButtonElement);
+    await act(async () => (removeDependency as HTMLButtonElement).click());
+    expect(document.querySelector('[aria-label="Operator reference for dependency-1"]')).toBeNull();
+  });
+
+  it('automatically resumes the latest stored Scenario revision for a stored target', async () => {
+    const draft = graphDraft();
+    const targetFingerprint = fingerprint('a');
+    const contractFingerprint = fingerprint('b');
+    const contract = contractDraftFromGraphDraft(draft, targetFingerprint);
+    const localDraftSet = scenarioDraftSetFromCanvas(
+      contract.target,
+      contractFingerprint,
+      draft,
+      nodes(),
+      [],
+    );
+    const storedDraftSet = {
+      ...localDraftSet,
+      revision: 4,
+      scenarios: [{ ...localDraftSet.scenarios[0], name: 'Stored happy path' }],
+    };
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(new Response(
+      JSON.stringify({
+        schemaVersion: 'bloge.storedScenarioDraftSet.v1',
+        scenarioDraftSetId: storedDraftSet.scenarioDraftSetId,
+        revision: 4,
+        fingerprint: fingerprint('c'),
+        draftSet: storedDraftSet,
+        savedAt: '2026-07-27T00:00:00Z',
+        savedBy: 'author-a',
+      }),
+      { status: 200, headers: { 'Content-Type': 'application/json' } },
+    )));
+    const onChange = vi.fn();
+
+    await act(async () => {
+      root = createRoot(host);
+      root.render(
+        <ContractScenarioWorkspace
+          open
+          graphDraft={draft}
+          contract={contract}
+          contractFingerprint={contractFingerprint}
+          scenarioDraftSet={localDraftSet}
+          nodes={nodes()}
+          lastRun={null}
+          targetStored
+          onScenarioDraftSetChange={onChange}
+          onContractChange={vi.fn()}
+          onImportWorkspace={vi.fn().mockResolvedValue(undefined)}
+          onSaveGraphDraft={vi.fn().mockResolvedValue(undefined)}
+          onRebase={vi.fn()}
+          onRun={vi.fn().mockResolvedValue(successfulResponse())}
+          onClose={vi.fn()}
+        />,
+      );
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+    expect(onChange).toHaveBeenCalledWith(expect.objectContaining({
+      revision: 4,
+      scenarios: [expect.objectContaining({ name: 'Stored happy path' })],
+    }));
+    expect(text()).toContain('Loaded Scenario revision 4.');
+  });
+
+  it('rejects a stored Scenario asset for a different target coordinate', async () => {
+    const draft = graphDraft();
+    const contract = contractDraftFromGraphDraft(draft, fingerprint('a'));
+    const localDraftSet = scenarioDraftSetFromCanvas(
+      contract.target,
+      fingerprint('b'),
+      draft,
+      nodes(),
+      [],
+    );
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(new Response(
+      JSON.stringify({
+        schemaVersion: 'bloge.storedScenarioDraftSet.v1',
+        scenarioDraftSetId: localDraftSet.scenarioDraftSetId,
+        revision: 2,
+        fingerprint: fingerprint('c'),
+        draftSet: {
+          ...localDraftSet,
+          revision: 2,
+          target: { ...localDraftSet.target, id: 'another-draft' },
+        },
+        savedAt: '2026-07-27T00:00:00Z',
+        savedBy: 'author-a',
+      }),
+      { status: 200, headers: { 'Content-Type': 'application/json' } },
+    )));
+    const onChange = vi.fn();
+
+    await act(async () => {
+      root = createRoot(host);
+      root.render(
+        <ContractScenarioWorkspace
+          open
+          graphDraft={draft}
+          contract={contract}
+          contractFingerprint={fingerprint('b')}
+          scenarioDraftSet={localDraftSet}
+          nodes={nodes()}
+          lastRun={null}
+          targetStored
+          onScenarioDraftSetChange={onChange}
+          onContractChange={vi.fn()}
+          onImportWorkspace={vi.fn().mockResolvedValue(undefined)}
+          onSaveGraphDraft={vi.fn().mockResolvedValue(undefined)}
+          onRebase={vi.fn()}
+          onRun={vi.fn().mockResolvedValue(successfulResponse())}
+          onClose={vi.fn()}
+        />,
+      );
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+    expect(onChange).not.toHaveBeenCalled();
+    expect(text()).toContain('Stored Scenario target does not match');
   });
 
   async function renderWorkspace(options: {

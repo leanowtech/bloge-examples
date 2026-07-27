@@ -221,13 +221,15 @@ export interface ScenarioPublicationReport {
     scenarioDraftSetId: string;
     revision: number;
     fingerprint: string;
+    targetKind?: 'GRAPH' | 'OPERATOR' | '';
+    targetId?: string;
     targetFingerprint: string;
     contractFingerprint: string;
     compilerSchemaVersion: 'bloge.scenarioGovernedCompilationPlan.v1';
     compilationPlanFingerprint: string;
   };
   runtimeTarget: {
-    kind: 'GRAPH';
+    kind: 'GRAPH' | 'OPERATOR';
     id: string;
     fingerprint: string;
   };

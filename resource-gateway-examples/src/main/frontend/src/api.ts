@@ -480,6 +480,18 @@ export async function fetchScenarioGraphContract(
   );
 }
 
+/** Reads the authoritative Contract and fingerprint for one catalog Operator. */
+export async function fetchScenarioOperatorContract(
+  operatorRef: string,
+): Promise<ScenarioContractProjection> {
+  return readTestingJson<ScenarioContractProjection>(
+    await sendRequest(
+      `/api/visual/scenario-draft-sets/targets/operators/${encodeURIComponent(operatorRef)}/contract`,
+      { headers: operatorTestingHeaders('TEST_SUITE_READ') },
+    ),
+  );
+}
+
 function recordValue(value: unknown): Record<string, unknown> | null {
   return value !== null && typeof value === 'object' && !Array.isArray(value)
     ? value as Record<string, unknown>

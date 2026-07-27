@@ -2,7 +2,7 @@
 
 > Goal: residual gap below 8% against the approved evolution plan
 > Measurement: weighted, evidence-based capability matrix
-> Latest round: Stage 2 graphical governance loop
+> Latest round: Stage 2 unified Graph/Operator authoring targets
 
 ## Assessment Method
 
@@ -401,3 +401,66 @@ Round 7 focused verification:
 The next iteration must close unified Graph/Operator targets in the same workspace. Stage 3 then
 owns semantic compatibility, exact impact/lineage, and guided migration; repository-owned
 accessibility/performance gates remain the final cross-cutting hardening slice.
+
+## Round 8
+
+Implemented evidence:
+
+- Graph and Operator now use the same Contract/Scenario workspace, authoring model, durable
+  Scenario API, governed compiler, publication saga, and evidence view;
+- the server projects an authoritative Operator Contract from the policy-visible catalog, with
+  exact input/output ports and catalog capability semantics;
+- Operator workspaces automatically resume the latest stored Scenario revision, while missing
+  drafts remain a clean first-use state and optimistic conflicts retain the stable HTTP 409
+  problem contract;
+- catalog-derived Operator semantics are read-only, so the UI does not imply that changing a
+  Scenario mutates the operator library;
+- virtual resource Operators preserve the business-facing design coordinate and independently
+  lower to the declared runtime operator/input shape; both coordinates are retained in immutable
+  publication lineage;
+- governed registry verification recomputes canonical JSON fingerprints after a real serialization
+  round-trip instead of relying on JVM numeric representation equality;
+- Operator target validation rejects Graph-only node/edge scopes and namespace-restricted
+  operators without an explicit namespace coordinate;
+- Operator exploratory runs compile through an exact one-node projection, and dependencies can be
+  added or removed graphically with an Operator selector as the target-aware default;
+- Operator Scenario ids bind a readable prefix to the full SHA-256 operator-ref digest, and every
+  load rechecks the exact asset and target coordinate before accepting stored content;
+- publication-report v1 keeps its new target lineage fields optional for legacy readers and stored
+  reports, avoiding an in-place protocol compatibility break;
+- Scenario application services now live in `authoring.scenario`, outside the dependency-clean
+  `visual` kernel; the existing architecture guard proves the kernel does not import gateway
+  testing or integration implementations.
+
+Weighted assessment:
+
+| Workstream | Achieved | Change from Round 7 |
+|---|---:|---:|
+| Product information architecture | 17/18 | +2 |
+| Schema workbench | 12/15 | 0 |
+| Scenario builder | 17/17 | +1 |
+| Compiler and adapters | 15/15 | 0 |
+| Persistence and protocol | 10/10 | 0 |
+| Compatibility and lineage | 6/10 | +1 |
+| Security and governance | 8/8 | 0 |
+| Samples, documentation, observability | 7/7 | +1 |
+| Total achieved | **92/100** | **+5** |
+
+**Residual gap: 8%.**
+
+Round 8 focused verification:
+
+- Java Scenario publication, compiler, persistence, validation, protocol, problem-contract,
+  Contract projection, and architecture-boundary tests: 44 passed;
+- frontend API/workspace/editor/compiler/AuthorCanvas tests: 101 passed;
+- production frontend build and Maven focused build succeeded;
+- a real browser opened the Operator workspace, restored revision 1, published its governed suite,
+  and displayed `PUBLISHED` without a manual load;
+- 1440x900 desktop and 390x844 mobile inspection found no body/dialog overflow;
+- the 5,660-test Maven verification reached two failures: the architecture failure exposed and
+  drove the `authoring.scenario` boundary correction; the unrelated provider-process readiness
+  case passed immediately when rerun in isolation.
+
+Stage 2 is functionally closed, but the goal requires a residual gap below 8%, not equal to it.
+The next slice therefore implements Stage 3 semantic compatibility, field lineage, exact Scenario
+impact, and guided migration before claiming completion.

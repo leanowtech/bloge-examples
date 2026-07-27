@@ -1,7 +1,10 @@
 package com.leanowtech.bloge.gateway.integration;
 
-import org.springframework.http.ResponseEntity;
+import com.leanowtech.bloge.gateway.authoring.scenario.ScenarioDraftSetController;
+import com.leanowtech.bloge.gateway.authoring.scenario.ScenarioPublicationController;
+
 import org.springframework.http.HttpHeaders;
+import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
 
@@ -24,7 +27,9 @@ import org.springframework.web.bind.annotation.RestControllerAdvice;
         CapabilityObservationController.class,
         CapabilityCorpusGovernanceController.class,
         DomainFidelityController.class,
-        ReadOnlyShadowJobController.class
+        ReadOnlyShadowJobController.class,
+        ScenarioDraftSetController.class,
+        ScenarioPublicationController.class
 })
 public class IntegrationProblemHandler {
 

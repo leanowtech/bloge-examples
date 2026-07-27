@@ -1159,6 +1159,15 @@ describe('AuthorCanvas connection guide', () => {
       if (url === '/api/visual/operators') {
         return jsonResponse({ operators: [scoreOperator(), decisionOperator()] });
       }
+      if (url === '/api/visual/scenario-draft-sets/targets/operators/risk%3Ascore/contract') {
+        return jsonResponse(operatorContractProjection());
+      }
+      if (url.startsWith('/api/visual/scenario-draft-sets/operator-risk-score-')) {
+        return jsonResponse(
+          { code: 'RG.SCENARIO.DRAFT_NOT_FOUND' },
+          { status: 404, statusText: 'Not Found' },
+        );
+      }
       if (url === '/api/visual/connections/candidates') {
         const body = JSON.parse(String(init?.body));
         expect(body.source).toEqual({ nodeId: 'n1', port: 'decision' });
@@ -1279,6 +1288,37 @@ describe('AuthorCanvas connection guide', () => {
     expect(query('[data-testid="operator-detail-dialog"]').textContent).toContain('Input schema');
     expect(query('[data-testid="operator-detail-dialog"]').textContent).toContain('Output schema');
     expect(query('[data-testid="operator-detail-schema:output:0"]').textContent).toContain('"score"');
+  });
+
+  it('opens the shared Contract and Scenario workspace from operator details', async () => {
+    await act(async () => {
+      root = createRoot(host);
+      root.render(<AuthorCanvas />);
+    });
+
+    await waitFor(() =>
+      expect(query('[data-testid="operator-button:risk:score"]').textContent).toContain('Risk Score'),
+    );
+    await click(query<HTMLButtonElement>('[data-testid="operator-button:risk:score"]'));
+    await doubleClick(query<HTMLElement>('[data-testid="node-wrapper:n1"]'));
+    const contractButton = Array.from(document.querySelectorAll<HTMLButtonElement>('button'))
+      .find((candidate) => candidate.textContent?.trim() === 'Contract & Scenarios');
+    expect(contractButton).toBeDefined();
+    await click(contractButton as HTMLButtonElement);
+
+    await waitFor(() =>
+      expect(query('[data-testid="contract-workspace"]').textContent).toContain('Operator Contract'),
+    );
+    expect(query('[data-testid="contract-workspace"]').textContent).toContain('risk:score');
+    expect(query('[data-testid="contract-workspace"]').textContent)
+      .toContain('projected from the catalog');
+    expect(document.querySelector('[data-testid="operator-detail-dialog"]')).toBeNull();
+    const scenarioLoad = fetchMock.mock.calls
+      .map(([input]) => String(input))
+      .find((url) => url.startsWith('/api/visual/scenario-draft-sets/operator-risk-score-'));
+    expect(scenarioLoad).toMatch(
+      /^\/api\/visual\/scenario-draft-sets\/operator-risk-score-[a-f0-9]{64}-scenarios$/,
+    );
   });
 
   it('opens compatible targets from the in-canvas coach action', async () => {
@@ -3088,6 +3128,60 @@ function operatorSuiteExecution(
       diagnostics: [],
       metadata: {},
     },
+  };
+}
+
+function operatorContractProjection() {
+  return {
+    schemaVersion: 'bloge.scenarioContractProjection.v1',
+    scope: {
+      tenantId: 'tenant-a',
+      organizationId: 'knowledge-governance',
+      projectId: 'tool-studio',
+      environment: 'test',
+      region: 'local',
+    },
+    contract: {
+      schemaVersion: 'bloge.contractDraft.v1',
+      target: {
+        kind: 'OPERATOR',
+        id: 'risk:score',
+        revision: 0,
+        fingerprint: `sha256:${'a'.repeat(64)}`,
+      },
+      inputSchema: schema({
+        type: 'object',
+        properties: {
+          applicantId: { type: 'string' },
+        },
+        required: ['applicantId'],
+        additionalProperties: false,
+      }),
+      outputSchema: schema({
+        type: 'object',
+        properties: {
+          score: { type: 'number' },
+        },
+        required: ['score'],
+        additionalProperties: false,
+      }),
+      errorContract: [],
+      executionSemantics: {
+        effect: 'READ',
+        idempotency: 'REQUEST_KEY',
+        streaming: false,
+        durable: false,
+      },
+      invariants: [],
+      compatibilityPolicy: {
+        mode: 'STRICT',
+        unknownBlocksAutomaticMigration: true,
+      },
+      fieldMetadata: {},
+      source: 'AUTHORED',
+      confidence: 'EXACT',
+    },
+    contractFingerprint: `sha256:${'b'.repeat(64)}`,
   };
 }
 
