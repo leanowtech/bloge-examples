@@ -254,6 +254,29 @@ export interface StoredScenarioPublication {
   report: ScenarioPublicationReport;
 }
 
+export interface GraphContractSemantics {
+  schemaVersion: 'bloge.graphContractSemantics.v1';
+  errorContract: ErrorVariant[];
+  executionSemantics: ContractDraft['executionSemantics'];
+  invariants: ContractInvariant[];
+  compatibilityPolicy: ContractDraft['compatibilityPolicy'];
+  fieldMetadata: Record<string, FieldMetadata>;
+}
+
+export interface VisualAuthoringWorkspaceBundle {
+  schemaVersion: 'bloge.visualAuthoringWorkspaceBundle.v1';
+  classification: ScenarioDraftSet['metadata']['classification'];
+  graphDraft: GraphDraft;
+  contractProjection: ScenarioContractProjection;
+  scenarioDraftSet: ScenarioDraftSet;
+  operatorSnapshotRefs: Array<{
+    nodeId: string;
+    operatorRef: string;
+    fingerprint?: string;
+  }>;
+  publicationRefs: ScenarioPublicationAssetRef[];
+}
+
 const OPAQUE_SCHEMA: SchemaEnvelope = {
   format: 'json-schema',
   version: '2020-12',
@@ -267,6 +290,7 @@ export function contractDraftFromGraphDraft(
 ): ContractDraft {
   const inputSchema = draft.inputSchema ?? OPAQUE_SCHEMA;
   const outputSchema = draft.outputSchema ?? OPAQUE_SCHEMA;
+  const semantics = contractSemanticsFromVisualLayout(draft.visualLayout);
   const confidence: ContractConfidence = schemaIsOpaque(inputSchema) || schemaIsOpaque(outputSchema)
     ? 'OPAQUE'
     : 'EXACT';
@@ -280,21 +304,56 @@ export function contractDraftFromGraphDraft(
     },
     inputSchema,
     outputSchema,
-    errorContract: [],
-    executionSemantics: {
+    errorContract: semantics?.errorContract ?? [],
+    executionSemantics: semantics?.executionSemantics ?? {
       effect: 'UNKNOWN',
       idempotency: 'UNKNOWN',
       streaming: null,
       durable: null,
     },
-    invariants: [],
-    compatibilityPolicy: {
+    invariants: semantics?.invariants ?? [],
+    compatibilityPolicy: semantics?.compatibilityPolicy ?? {
       mode: 'STRICT',
       unknownBlocksAutomaticMigration: true,
     },
-    fieldMetadata: {},
+    fieldMetadata: semantics?.fieldMetadata ?? {},
     source: 'AUTHORED',
     confidence,
+  };
+}
+
+/** Stores editable non-schema Contract semantics inside the versioned graph Contract layout. */
+export function graphDraftWithContractSemantics(
+  draft: GraphDraft,
+  contract: ContractDraft,
+): GraphDraft {
+  const visualLayout = isRecord(draft.visualLayout) ? draft.visualLayout : {};
+  return {
+    ...draft,
+    visualLayout: visualLayoutWithContractSemantics(visualLayout, contract),
+  };
+}
+
+/** Merges Contract semantics without disturbing canvas layout or graph schema extensions. */
+export function visualLayoutWithContractSemantics(
+  visualLayout: Record<string, unknown>,
+  contract: ContractDraft,
+): Record<string, unknown> {
+  const graphContract = isRecord(visualLayout.graphContract) ? visualLayout.graphContract : {};
+  const semantics: GraphContractSemantics = {
+    schemaVersion: 'bloge.graphContractSemantics.v1',
+    errorContract: contract.errorContract,
+    executionSemantics: contract.executionSemantics,
+    invariants: contract.invariants,
+    compatibilityPolicy: contract.compatibilityPolicy,
+    fieldMetadata: contract.fieldMetadata,
+  };
+  return {
+    ...visualLayout,
+    graphContract: {
+      ...graphContract,
+      contractSemantics: semantics,
+    },
   };
 }
 
@@ -325,4 +384,25 @@ export function emptyScenarioDraftSet(
 function schemaIsOpaque(envelope: SchemaEnvelope): boolean {
   const type = envelope.schema?.type;
   return Object.keys(envelope.schema ?? {}).length === 0 || type === 'opaque';
+}
+
+function contractSemanticsFromVisualLayout(
+  visualLayout: Record<string, unknown> | undefined,
+): GraphContractSemantics | null {
+  if (!isRecord(visualLayout) || !isRecord(visualLayout.graphContract)) return null;
+  const candidate = visualLayout.graphContract.contractSemantics;
+  if (!isRecord(candidate)
+      || candidate.schemaVersion !== 'bloge.graphContractSemantics.v1'
+      || !Array.isArray(candidate.errorContract)
+      || !isRecord(candidate.executionSemantics)
+      || !Array.isArray(candidate.invariants)
+      || !isRecord(candidate.compatibilityPolicy)
+      || !isRecord(candidate.fieldMetadata)) {
+    return null;
+  }
+  return candidate as unknown as GraphContractSemantics;
+}
+
+function isRecord(value: unknown): value is Record<string, any> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
 }

@@ -142,6 +142,8 @@ import {
   contractDraftFromGraphDraft,
   type ContractDraft,
   type ScenarioDraftSet,
+  type VisualAuthoringWorkspaceBundle,
+  visualLayoutWithContractSemantics,
 } from './contract-scenario/domain';
 import { canonicalJson, sha256Fingerprint } from './contract-scenario/fingerprint';
 import {
@@ -4302,6 +4304,7 @@ export default function AuthorCanvas() {
   const scenarioGraphNameRef = useRef('');
   const authoritativeContractRef = useRef<{
     canvasSnapshot: string;
+    graphDraft: GraphDraft;
     contract: ContractDraft;
     contractFingerprint: string;
   } | null>(null);
@@ -5178,6 +5181,7 @@ export default function AuthorCanvas() {
     };
     authoritativeContractRef.current = {
       canvasSnapshot: canonicalJson(savedCanvasDraft),
+      graphDraft: stored,
       contract: projection.contract,
       contractFingerprint: projection.contractFingerprint,
     };
@@ -5191,6 +5195,11 @@ export default function AuthorCanvas() {
     setContractDraft(projection.contract);
     setContractFingerprint(projection.contractFingerprint);
   }, [exportableDraft]);
+
+  const updateContractSemantics = useCallback((nextContract: ContractDraft) => {
+    authoritativeContractRef.current = null;
+    setGraphVisualLayout((current) => visualLayoutWithContractSemantics(current, nextContract));
+  }, []);
 
   const journey = useMemo(
     () => authoringJourney(operators.length, canvasSummary, fixtureRows, result),
@@ -5445,7 +5454,11 @@ export default function AuthorCanvas() {
     }
   }, [librarySourceText, libraryWarningReason, libraryWarningsAcknowledged, reloadOperators]);
 
-  const applyDslProjection = useCallback((projection: DslVisualProjection, contractSource?: string) => {
+  const applyDslProjection = useCallback((
+    projection: DslVisualProjection,
+    contractSource?: string,
+    workspaceBundle?: VisualAuthoringWorkspaceBundle,
+  ) => {
     const imported = fromGraphDraft(projection.draft);
     const nextNodes: Node<NodeData>[] = [];
     const nextOperatorTestSuites: Record<string, OperatorTestSuiteDraftRow[]> = {};
@@ -5520,14 +5533,19 @@ export default function AuthorCanvas() {
     const nextOutputSchema = imported.outputSchema ?? null;
     const nextContextVariables = importedContextVariables(nextInputSchema);
     const nextSimulationTableRows = [emptySimulationTableRow('table-case-1', nextInputSchema)];
-    const notice = dslProjectionNotice(projection);
+    const notice = workspaceBundle
+      ? {
+          level: 'ok' as const,
+          message: `Imported verified workspace with ${workspaceBundle.scenarioDraftSet.scenarios.length} Scenarios.`,
+        }
+      : dslProjectionNotice(projection);
 
     clearRunResult();
     counter.current = maxCanvasNodeSequence(imported.nodes);
     contextVariableCounter.current = nextContextVariables.length;
     tableTestCounter.current = nextSimulationTableRows.length;
     operatorTestCounter.current = 0;
-    setNodes(autoLayoutFlowNodes(nextNodes, nextEdges));
+    setNodes(workspaceBundle ? nextNodes : autoLayoutFlowNodes(nextNodes, nextEdges));
     setEdges(nextEdges);
     setFixtureDrafts(nextFixtureDrafts);
     setFixtureInputDrafts(nextFixtureInputDrafts);
@@ -5542,19 +5560,34 @@ export default function AuthorCanvas() {
     setGraphTenantId(projection.draft.tenantId || 'tenant-a');
     setGraphNamespace(projection.draft.namespace || 'local');
     setGraphEnvironment(projection.draft.environment || 'test');
-    authoritativeContractRef.current = null;
+    if (workspaceBundle) {
+      scenarioGraphNameRef.current = imported.graphName;
+      setScenarioDraftSet(workspaceBundle.scenarioDraftSet);
+      authoritativeContractRef.current = {
+        canvasSnapshot: canonicalJson(projection.draft),
+        graphDraft: projection.draft,
+        contract: workspaceBundle.contractProjection.contract,
+        contractFingerprint: workspaceBundle.contractProjection.contractFingerprint,
+      };
+    } else {
+      authoritativeContractRef.current = null;
+    }
     setGraphInputSchema(nextInputSchema);
     setGraphOutputSchema(nextOutputSchema);
-    setGraphContractSource(contractSource ?? `DSL ${projection.sourceId || imported.graphName}`);
-    setGraphVisualLayout(visualLayoutWithImportSourceMap(
-      visualLayoutWithGraphContract(
-        imported.visualLayout ?? {},
-        nextInputSchema,
-        nextOutputSchema,
-        'dsl',
-      ),
-      projection.sourceMap,
+    setGraphContractSource(contractSource ?? (
+      workspaceBundle ? 'Workspace bundle' : `DSL ${projection.sourceId || imported.graphName}`
     ));
+    setGraphVisualLayout(workspaceBundle
+      ? imported.visualLayout ?? {}
+      : visualLayoutWithImportSourceMap(
+          visualLayoutWithGraphContract(
+            imported.visualLayout ?? {},
+            nextInputSchema,
+            nextOutputSchema,
+            'dsl',
+          ),
+          projection.sourceMap,
+        ));
     setGraphOperatorFingerprints(imported.operatorFingerprints);
     setGraphOperatorSnapshots(imported.operatorSnapshots);
     setSimulationContextDraft(JSON.stringify(sampleFromSchemaEnvelope(nextInputSchema), null, 2));
@@ -5583,6 +5616,18 @@ export default function AuthorCanvas() {
       fitCanvasToView(graphSize);
     }
   }, [clearRunResult, fitCanvasToView, operatorByRef]);
+
+  const importScenarioWorkspace = useCallback(async (
+    bundle: VisualAuthoringWorkspaceBundle,
+  ) => {
+    applyDslProjection({
+      schemaVersion: 'bloge.dslVisualProjection.v1',
+      sourceId: `${bundle.scenarioDraftSet.scenarioDraftSetId}.workspace.json`,
+      draft: bundle.graphDraft,
+      diagnostics: [],
+    }, 'Workspace bundle', bundle);
+    setContractWorkspaceOpen(true);
+  }, [applyDslProjection]);
   const applyDslProjectionRef = useRef(applyDslProjection);
 
   useEffect(() => {
@@ -6839,6 +6884,12 @@ export default function AuthorCanvas() {
     </section>
   );
 
+  const authoritativeContract = authoritativeContractRef.current;
+  const scenarioWorkspaceGraphDraft = authoritativeContract
+    && authoritativeContract.canvasSnapshot === canonicalJson(exportableDraft)
+    ? authoritativeContract.graphDraft
+    : exportableDraft;
+
   return (
     <div
       className={['workspace', canvasFocusMode ? 'canvas-focus' : ''].filter(Boolean).join(' ')}
@@ -8026,12 +8077,14 @@ export default function AuthorCanvas() {
         >
           <ContractScenarioWorkspace
             open
-            graphDraft={exportableDraft}
+            graphDraft={scenarioWorkspaceGraphDraft}
             contract={contractDraft}
             contractFingerprint={contractFingerprint}
             scenarioDraftSet={scenarioDraftSet}
             nodes={scenarioNodeOptions}
             lastRun={result}
+            onContractChange={updateContractSemantics}
+            onImportWorkspace={importScenarioWorkspace}
             onScenarioDraftSetChange={setScenarioDraftSet}
             onSaveGraphDraft={saveGraphForScenario}
             onRebase={rebaseScenariosToCurrentContract}

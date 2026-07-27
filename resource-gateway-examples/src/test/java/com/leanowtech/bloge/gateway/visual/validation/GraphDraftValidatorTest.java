@@ -158,6 +158,36 @@ class GraphDraftValidatorTest {
     }
 
     @Test
+    void rejectsUnknownEmbeddedGraphContractSemanticsBeforePersistence() {
+        GraphDraftValidator validator = new GraphDraftValidator(
+                VisualCatalogTestSupport.catalogWithLibrary(
+                        VisualCatalogTestSupport.eligibilityLibrary("integer")));
+        GraphDraft validDraft = contextEligibilityDraft(graphInputSchema(
+                Map.of(
+                        "score", Map.of("type", "integer"),
+                        "amount", Map.of("type", "number")
+                ),
+                List.of("score", "amount")
+        ), Map.of(
+                "score", GraphDraft.Binding.contextPath("score"),
+                "amount", GraphDraft.Binding.contextPath("amount")
+        ));
+        GraphDraft futureSemantics = draftWithVisualLayout(validDraft, Map.of(
+                "graphContract", Map.of(
+                        "contractSemantics", Map.of(
+                                "schemaVersion", "bloge.graphContractSemantics.v2"))));
+
+        VisualValidationResult result = validator.validate(futureSemantics);
+
+        assertThat(result.valid()).isFalse();
+        assertThat(result.diagnostics()).anySatisfy(diagnostic -> {
+            assertThat(diagnostic.code()).isEqualTo("visual.contract.semantics.invalid");
+            assertThat(diagnostic.target())
+                    .isEqualTo("/visualLayout/graphContract/contractSemantics");
+        });
+    }
+
+    @Test
     void rejectsUnsupportedDraftStatus() {
         GraphDraftValidator validator = new GraphDraftValidator(
                 VisualCatalogTestSupport.catalogWithLibrary(

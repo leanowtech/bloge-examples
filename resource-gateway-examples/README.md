@@ -3886,6 +3886,10 @@ the design can be integrated instead of remaining a diagram-only artifact.
    projected automatically.
 3. Click the **Contract** rail above the canvas.
 4. Use **Interface** to inspect every graph input/output field and its required/type constraints.
+   Declare effect, idempotency, streaming/durability, compatibility, stable errors, and Contract
+   invariants in the structured **Contract semantics** editor. A WRITE Contract also exposes its
+   reconciliation protocol and compensation declaration. These edits become part of the Graph
+   fingerprint, so save the Graph and explicitly rebase stale Scenarios afterward.
 5. Open **Scenarios**. Fill **Given** with schema-driven controls. For every dependency choose
    **Real**, **Return**, **Error**, **Delay**, **Timeout**, **Replay**, **Observe**, or **Deny**.
    Expand **Selector, matching & consumption** only when the behavior must target an
@@ -3900,12 +3904,21 @@ the design can be integrated instead of remaining a diagram-only artifact.
    their exact prerequisites exist.
 9. After the graph or Contract changes, review **Compatibility** and explicitly rebase the Scenario
    set. Stale coordinates cannot run silently.
+10. Use **Export Workspace** to download one verified, secret-safe Graph + Contract + Scenario
+    bundle for offline or VS Code work. Use **Import Workspace** to restore it without re-layout;
+    import rechecks the Contract fingerprint, Graph target fingerprint, enterprise scope, operator
+    index, classification, nested protocol shape, and raw-secret policy before changing the canvas.
 
 Normal authoring does not require JSON. **Advanced Contract JSON** and **Advanced Scenario JSON**
 remain available as lossless expert paths. The exploratory browser compiler keeps behavior that
 cannot be represented by transient `NodeFixture` fail-closed. The server-side governed compiler maps
 the complete set to content-addressed FixtureBundle and TestSuite registration requests; durable
 publication remains a separate permission and recoverable transaction.
+
+The portable format is `bloge.visualAuthoringWorkspaceBundle.v1`. It contains publication
+references, not fixture or test payload duplication, and permits secret references but rejects raw
+credentials. Its authoritative schema is
+[`bloge-visual-authoring-workspace-bundle-v1.schema.json`](../docs/schemas/bloge-visual-authoring-workspace-bundle-v1.schema.json).
 
 In `test` and `staging`, authenticated hosts can persist Scenario authoring assets without granting
 publication or execution authority:

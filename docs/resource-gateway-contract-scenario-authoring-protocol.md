@@ -1,8 +1,10 @@
 # Resource Gateway Contract & Scenario Authoring Protocol
 
-> Status: Stage 2 graphical authoring and governed publication implemented for Graph targets
+> Status: Stage 2 graphical authoring, portable workspaces, and governed publication implemented
+> for Graph targets
 > Protocols: `bloge.contractDraft.v1`, `bloge.scenarioDraftSet.v1`,
-> `bloge.scenarioContractProjection.v1`, `bloge.scenarioPublicationReport.v1`
+> `bloge.graphContractSemantics.v1`, `bloge.scenarioContractProjection.v1`,
+> `bloge.visualAuthoringWorkspaceBundle.v1`, `bloge.scenarioPublicationReport.v1`
 
 This document is the code-facing companion to
 [the evolution plan](resource-gateway-contract-scenario-authoring-evolution-plan.md).
@@ -45,6 +47,8 @@ Author-facing names and wire names intentionally differ:
 - [Scenario Validation Report](schemas/bloge-scenario-validation-report-v1.schema.json)
 - [Stored Scenario Draft Set](schemas/bloge-stored-scenario-draft-set-v1.schema.json)
 - [Scenario Contract Projection](schemas/bloge-scenario-contract-projection-v1.schema.json)
+- [Graph Contract Semantics](schemas/bloge-graph-contract-semantics-v1.schema.json)
+- [Visual Authoring Workspace Bundle](schemas/bloge-visual-authoring-workspace-bundle-v1.schema.json)
 - [Scenario Publication Report](schemas/bloge-scenario-publication-report-v1.schema.json)
 - [Stored Scenario Publication](schemas/bloge-stored-scenario-publication-v1.schema.json)
 
@@ -57,6 +61,7 @@ identity with exact SHA-256 fingerprints.
 |---|---|
 | Contract protocol | `visual.contract.ContractDraft` |
 | Graph projection | `visual.contract.ContractDraftProjectionService` |
+| Embedded graph semantics | `visual.contract.GraphContractSemantics` |
 | Scenario protocol | `visual.scenario.ScenarioDraftSet` |
 | Exact-input validation | `visual.scenario.ScenarioValidationService` |
 | Validation report | `visual.scenario.ScenarioValidationReport` |
@@ -117,6 +122,8 @@ only for a clean retained Scenario revision.
 | Schema field tree and value form | `src/contract-scenario/SchemaFieldTree.tsx`, `SchemaValueForm.tsx` |
 | Complete dependency behavior editor | `src/contract-scenario/DependencyBehaviorEditor.tsx` |
 | Scope-aware assertion builder | `src/contract-scenario/AssertionBuilder.tsx` |
+| Structured Contract semantics | `src/contract-scenario/ContractSemanticsEditor.tsx` |
+| Portable workspace verification | `src/contract-scenario/workspaceBundle.ts` |
 
 `AuthorCanvas.tsx` does not own these protocol definitions. It opens the workspace, supplies the
 current exact target, projects existing canvas examples/table cases, executes compiled simulation
@@ -124,8 +131,9 @@ requests, and applies the resulting canvas state.
 
 The workspace provides four views:
 
-1. **Interface** projects graph input/output schemas as field trees while preserving the complete
-   Contract in Advanced JSON.
+1. **Interface** projects graph input/output schemas as field trees, provides structured controls
+   for execution effect, idempotency, stable errors, compatibility, and invariants, and preserves
+   the complete Contract in Advanced JSON.
 2. **Scenarios** edits Given input; REAL, RETURN, ERROR, DELAY, TIMEOUT, REPLAY, OBSERVE, and
    MUST_NOT_CALL dependency behavior; node/operator/resource/function selectors; attempts,
    occurrences, input matches, consumption and schema waiver; plus output, node, edge, status, and
@@ -140,10 +148,56 @@ Scenario** applies optimistic concurrency only when the Scenario is current and 
 requires a clean saved revision and the separate publisher purpose. Disabled controls use a neutral
 visual state so an unavailable governed action is not mistaken for an active command.
 
+The header also exposes **Export Workspace** and **Import Workspace**. Export constructs the bundle
+from the exact authoritative Graph object whenever the canvas still matches its saved snapshot.
+Import preserves authored node positions, installs the bundled Scenario revision and Contract
+coordinate atomically in the browser, and never silently runs auto-layout over reviewed diagrams.
+
 Selecting an advanced dependency behavior never produces a weaker simulation. The frontend
 transient compiler retains the behavior and returns a fail-closed diagnostic; the server-side
 governed compiler is the only path that may lower those semantics into testing-control-plane
 assets.
+
+## Editable Contract Semantics
+
+Graph input/output schemas remain first-class `GraphDraft` fields. Non-schema promises are stored
+under the versioned `visualLayout.graphContract.contractSemantics` extension as
+`bloge.graphContractSemantics.v1`:
+
+- stable error code, type, meaning, and retryability;
+- PURE, READ, WRITE, or UNKNOWN effect;
+- idempotency, streaming, and durability declarations;
+- WRITE reconciliation protocol, reconciler reference, reversibility, and extension metadata;
+- preconditions and postconditions;
+- compatibility mode and UNKNOWN migration policy;
+- JSON-Pointer keyed field governance metadata.
+
+The server projects these fields into the authoritative `ContractDraft` and rejects unsupported or
+malformed embedded semantics before Graph persistence. The browser preview deliberately ignores an
+unknown future semantics version so a newer bundle remains inspectable, but it cannot be saved as a
+valid current Graph until the server recognizes that version. Editing semantics changes the Graph
+and Contract fingerprints; existing Scenario coordinates therefore become stale and require an
+explicit rebase.
+
+## Portable Authoring Workspace
+
+`bloge.visualAuthoringWorkspaceBundle.v1` is the service-independent handoff format for the browser,
+VS Code, and offline review.
+
+| Asset | Bundle rule |
+|---|---|
+| GraphDraft | Exact object used to calculate the target fingerprint |
+| Contract projection | Exact enterprise scope, Contract, and Contract fingerprint |
+| ScenarioDraftSet | Exact mutable authoring revision bound to that Contract |
+| Operator index | Node id, operator ref, and optional snapshot fingerprint |
+| Publication references | Immutable fixture/suite coordinates only |
+| Classification | Must equal Scenario metadata classification |
+
+Import parses JSON, rejects unknown top-level fields and malformed nested authoring assets, scans
+for raw credential material, recomputes the Contract and Graph fingerprints, and compares target,
+scope, classification, and operator indexes before mutating the canvas. A failure returns a stable
+`WorkspaceBundleError.code` and value-free JSON Pointer paths. Secret references are allowed; raw
+secrets are not. Publication references do not make an offline bundle published or executable.
 
 ## Transient Compiler
 

@@ -1143,6 +1143,15 @@ ANEKE 可以消费 report，但最终 publish gate policy 仍由 ANEKE 管理。
 | RG-CS-208 | workspace bundle | VS Code/offline export |
 | RG-CS-209 | contract semantics projection | error/effect/idempotency/invariants |
 
+Current implementation note (Round 7):
+
+- RG-CS-208 is implemented as `bloge.visualAuthoringWorkspaceBundle.v1`, with browser export/import,
+  exact fingerprint/scope/operator-index verification, raw-secret rejection, and preserved layout;
+- RG-CS-209 is implemented as `bloge.graphContractSemantics.v1`, with graphical editing and strict
+  server-side projection/validation;
+- RG-CS-207 remains the final Stage 2 target-model gap: Graph uses the shared workspace today, while
+  Operator authoring still uses its older test-suite dialog.
+
 退出门禁：
 
 - 每种 v1 FixtureRule behavior 都有可视化表达；

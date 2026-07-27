@@ -10,6 +10,18 @@
   --danger: #b3261e;
 }
 
+.visually-hidden {
+  position: absolute !important;
+  width: 1px !important;
+  height: 1px !important;
+  padding: 0 !important;
+  margin: -1px !important;
+  overflow: hidden !important;
+  clip: rect(0, 0, 0, 0) !important;
+  white-space: nowrap !important;
+  border: 0 !important;
+}
+
 * {
   box-sizing: border-box;
 }
@@ -1852,6 +1864,97 @@ button.primary:disabled {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 12px;
+}
+
+.contract-semantics-editor {
+  min-width: 0;
+  display: grid;
+  gap: 12px;
+  padding: 12px 0;
+  border-block: 1px solid #d5dde8;
+}
+
+.contract-semantics-grid {
+  display: grid;
+  grid-template-columns: repeat(6, minmax(130px, 1fr));
+  gap: 9px;
+}
+
+.contract-side-effect-fields {
+  min-width: 0;
+  display: grid;
+  grid-template-columns: repeat(2, minmax(180px, 1fr)) minmax(180px, auto);
+  align-items: end;
+  gap: 9px;
+  margin: 0;
+  padding: 10px;
+  border: 1px solid #d4dce7;
+  border-radius: 6px;
+  background: #f8fafc;
+}
+
+.contract-side-effect-fields legend {
+  padding-inline: 5px;
+  color: #475569;
+  font-size: 11px;
+  font-weight: 850;
+}
+
+.contract-semantic-table {
+  min-width: 0;
+  display: grid;
+  gap: 7px;
+}
+
+.contract-semantic-table > header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.contract-semantic-table h3,
+.contract-semantic-table p {
+  margin: 0;
+}
+
+.contract-semantic-table h3 {
+  font-size: 13px;
+}
+
+.contract-semantic-table p {
+  color: #64748b;
+  font-size: 11px;
+}
+
+.contract-semantic-row {
+  min-width: 0;
+  display: grid;
+  align-items: end;
+  gap: 8px;
+  padding: 9px;
+  border: 1px solid #d8e0ea;
+  border-radius: 6px;
+  background: #fff;
+}
+
+.contract-semantic-row.error {
+  grid-template-columns:
+    minmax(150px, 0.8fr)
+    minmax(130px, 0.7fr)
+    minmax(220px, 1.5fr)
+    minmax(110px, auto)
+    28px;
+}
+
+.contract-semantic-row.invariant {
+  grid-template-columns:
+    minmax(150px, 0.8fr)
+    minmax(130px, 0.7fr)
+    minmax(220px, 1.4fr)
+    minmax(110px, 0.6fr)
+    minmax(220px, 1.2fr)
+    28px;
 }
 
 .contract-schema-tree {
@@ -7710,6 +7813,20 @@ button.primary:disabled {
   .contract-schema-columns,
   .scenario-evidence-grid {
     grid-template-columns: minmax(0, 1fr);
+  }
+
+  .contract-semantics-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .contract-side-effect-fields,
+  .contract-semantic-row.error,
+  .contract-semantic-row.invariant {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .contract-semantic-row > .icon-button {
+    justify-self: end;
   }
 
   .contract-schema-tree-head {

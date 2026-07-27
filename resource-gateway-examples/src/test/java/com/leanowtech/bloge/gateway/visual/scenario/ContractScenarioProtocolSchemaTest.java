@@ -4,6 +4,7 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.leanowtech.bloge.gateway.visual.contract.ContractDraft;
 import com.leanowtech.bloge.gateway.visual.contract.ContractDraftProjectionService;
+import com.leanowtech.bloge.gateway.visual.contract.GraphContractSemantics;
 import com.leanowtech.bloge.gateway.visual.draft.GraphDraft;
 
 import org.junit.jupiter.api.Test;
@@ -39,6 +40,10 @@ class ContractScenarioProtocolSchemaTest {
                 schema("bloge-stored-scenario-publication-v1.schema.json");
         JsonNode projectionSchema =
                 schema("bloge-scenario-contract-projection-v1.schema.json");
+        JsonNode semanticsSchema =
+                schema("bloge-graph-contract-semantics-v1.schema.json");
+        JsonNode workspaceSchema =
+                schema("bloge-visual-authoring-workspace-bundle-v1.schema.json");
         StoredScenarioDraftSet stored = new StoredScenarioDraftSet(
                 "",
                 draftSet.scenarioDraftSetId(),
@@ -76,6 +81,13 @@ class ContractScenarioProtocolSchemaTest {
                 draftSet.scope(),
                 contract,
                 contract.fingerprint(mapper));
+        GraphContractSemantics semantics = new GraphContractSemantics(
+                "",
+                contract.errorContract(),
+                contract.executionSemantics(),
+                contract.invariants(),
+                contract.compatibilityPolicy(),
+                contract.fieldMetadata());
 
         assertProperties(mapper.valueToTree(contract), contractSchema.path("properties"));
         assertProperties(mapper.valueToTree(contract.target()), contractSchema.at("/$defs/target/properties"));
@@ -90,6 +102,7 @@ class ContractScenarioProtocolSchemaTest {
         assertProperties(mapper.valueToTree(storedPublication),
                 storedPublicationSchema.path("properties"));
         assertProperties(mapper.valueToTree(projection), projectionSchema.path("properties"));
+        assertProperties(mapper.valueToTree(semantics), semanticsSchema.path("properties"));
 
         assertThat(contractSchema.path("additionalProperties").asBoolean(true)).isFalse();
         assertThat(draftSetSchema.path("additionalProperties").asBoolean(true)).isFalse();
@@ -98,6 +111,8 @@ class ContractScenarioProtocolSchemaTest {
         assertThat(publicationSchema.path("additionalProperties").asBoolean(true)).isFalse();
         assertThat(storedPublicationSchema.path("additionalProperties").asBoolean(true)).isFalse();
         assertThat(projectionSchema.path("additionalProperties").asBoolean(true)).isFalse();
+        assertThat(semanticsSchema.path("additionalProperties").asBoolean(true)).isFalse();
+        assertThat(workspaceSchema.path("additionalProperties").asBoolean(true)).isFalse();
         assertThat(storedSchema.at("/properties/draftSet/$ref").asText())
                 .isEqualTo("bloge-scenario-draft-set-v1.schema.json");
         assertThat(reportSchema.at("/$defs/diagnostic/required"))
@@ -116,6 +131,16 @@ class ContractScenarioProtocolSchemaTest {
                 .isEqualTo("bloge-scenario-draft-set-v1.schema.json#/$defs/scope");
         assertThat(projectionSchema.at("/properties/contract/$ref").asText())
                 .isEqualTo("bloge-contract-draft-v1.schema.json");
+        assertThat(semanticsSchema.at("/properties/executionSemantics/$ref").asText())
+                .isEqualTo("bloge-contract-draft-v1.schema.json#/$defs/executionSemantics");
+        assertThat(workspaceSchema.at("/properties/contractProjection/$ref").asText())
+                .isEqualTo("bloge-scenario-contract-projection-v1.schema.json");
+        assertThat(workspaceSchema.at("/properties/scenarioDraftSet/$ref").asText())
+                .isEqualTo("bloge-scenario-draft-set-v1.schema.json");
+        assertThat(workspaceSchema.at("/properties/graphDraft/properties/schemaVersion/const")
+                .asText()).isEqualTo("bloge.visualGraphDraft.v1");
+        assertThat(workspaceSchema.at("/$defs/operatorSnapshotRef/additionalProperties")
+                .asBoolean(true)).isFalse();
         assertThat(publicationSchema.path("properties").has("given")).isFalse();
         assertThat(publicationSchema.path("properties").has("input")).isFalse();
         assertThat(publicationSchema.path("properties").has("output")).isFalse();

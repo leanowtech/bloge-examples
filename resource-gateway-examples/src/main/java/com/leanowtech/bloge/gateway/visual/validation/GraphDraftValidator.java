@@ -2,6 +2,7 @@ package com.leanowtech.bloge.gateway.visual.validation;
 
 import com.leanowtech.bloge.gateway.visual.catalog.OperatorDefinition;
 import com.leanowtech.bloge.gateway.visual.catalog.VisualOperatorCatalog;
+import com.leanowtech.bloge.gateway.visual.contract.GraphContractSemantics;
 import com.leanowtech.bloge.gateway.visual.diagnostic.VisualDiagnostic;
 import com.leanowtech.bloge.gateway.visual.draft.GraphDraft;
 import com.leanowtech.bloge.gateway.visual.draft.GraphDraftDependencies;
@@ -169,6 +170,14 @@ public class GraphDraftValidator {
             diagnostics.add(VisualDiagnostic.error("visual.graph.empty", "Graph must contain at least one node.", "/nodes"));
         }
         validateGraphIdentifier(draft.graphName(), diagnostics);
+        try {
+            GraphContractSemantics.fromVisualLayout(draft.visualLayout());
+        } catch (IllegalArgumentException exception) {
+            diagnostics.add(VisualDiagnostic.error(
+                    "visual.contract.semantics.invalid",
+                    exception.getMessage(),
+                    "/visualLayout/graphContract/contractSemantics"));
+        }
         diagnostics.addAll(VisualSecretGuard.detectDraftSecrets(draft));
         diagnostics.addAll(VisualSchemaValidator.validateEnvelope(draft.inputSchema(), "/inputSchema"));
         diagnostics.addAll(VisualSchemaValidator.validateEnvelope(draft.outputSchema(), "/outputSchema"));

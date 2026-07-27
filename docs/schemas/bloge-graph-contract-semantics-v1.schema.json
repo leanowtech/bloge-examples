@@ -1,0 +1,50 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://leanowtech.com/schemas/bloge-graph-contract-semantics-v1.schema.json",
+  "title": "BLOGE Graph Contract Semantics v1",
+  "description": "Versioned non-schema Contract promises embedded at GraphDraft.visualLayout.graphContract.contractSemantics.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "errorContract",
+    "executionSemantics",
+    "invariants",
+    "compatibilityPolicy",
+    "fieldMetadata"
+  ],
+  "properties": {
+    "schemaVersion": {
+      "const": "bloge.graphContractSemantics.v1"
+    },
+    "errorContract": {
+      "type": "array",
+      "maxItems": 1000,
+      "items": {
+        "$ref": "bloge-contract-draft-v1.schema.json#/$defs/errorVariant"
+      }
+    },
+    "executionSemantics": {
+      "$ref": "bloge-contract-draft-v1.schema.json#/$defs/executionSemantics"
+    },
+    "invariants": {
+      "type": "array",
+      "maxItems": 1000,
+      "items": {
+        "$ref": "bloge-contract-draft-v1.schema.json#/$defs/invariant"
+      }
+    },
+    "compatibilityPolicy": {
+      "$ref": "bloge-contract-draft-v1.schema.json#/$defs/compatibilityPolicy"
+    },
+    "fieldMetadata": {
+      "type": "object",
+      "propertyNames": {
+        "pattern": "^(/([^/~]|~0|~1)*)*$"
+      },
+      "additionalProperties": {
+        "$ref": "bloge-contract-draft-v1.schema.json#/$defs/fieldMetadata"
+      }
+    }
+  }
+}

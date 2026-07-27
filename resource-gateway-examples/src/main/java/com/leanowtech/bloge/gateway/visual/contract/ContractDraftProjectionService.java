@@ -32,17 +32,24 @@ public class ContractDraftProjectionService {
         ContractDraft.Confidence confidence = schemaIsOpaque(draft)
                 ? ContractDraft.Confidence.OPAQUE
                 : ContractDraft.Confidence.EXACT;
+        GraphContractSemantics semantics = GraphContractSemantics
+                .fromVisualLayout(draft.visualLayout())
+                .orElse(null);
         return new ContractDraft(
                 ContractDraft.SCHEMA_VERSION,
                 new ContractDraft.Target(ContractDraft.TargetKind.GRAPH, targetId, draft.revision(),
                         targetFingerprint),
                 draft.inputSchema(),
                 draft.outputSchema(),
-                List.of(),
-                ContractDraft.ExecutionSemantics.unknown(),
-                List.of(),
-                ContractDraft.CompatibilityPolicy.strict(),
-                Map.of(),
+                semantics == null ? List.of() : semantics.errorContract(),
+                semantics == null
+                        ? ContractDraft.ExecutionSemantics.unknown()
+                        : semantics.executionSemantics(),
+                semantics == null ? List.of() : semantics.invariants(),
+                semantics == null
+                        ? ContractDraft.CompatibilityPolicy.strict()
+                        : semantics.compatibilityPolicy(),
+                semantics == null ? Map.of() : semantics.fieldMetadata(),
                 ContractDraft.Source.AUTHORED,
                 confidence
         );

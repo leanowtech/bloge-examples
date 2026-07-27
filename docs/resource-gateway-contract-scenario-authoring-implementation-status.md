@@ -348,6 +348,56 @@ Round 6 verification:
 - 1472×768 desktop and 390×844 mobile visual inspection found no incoherent overlap; mobile body
   and dialog widths were exactly 390 px and no sampled command overflowed the viewport.
 
-The next iteration must close the remaining Stage 2 contract surface: unified Graph/Operator targets,
-portable secret-safe workspace bundles, and editable error/effect/idempotency/invariant semantics.
-Stage 3 then owns semantic compatibility, exact impact/lineage, and guided migration.
+## Round 7
+
+Implemented evidence:
+
+- the Interface tab now edits effect, idempotency, streaming/durability, compatibility, stable
+  errors, WRITE reconciliation, and pre/post invariants with structured controls;
+- non-schema promises round-trip through the versioned
+  `visualLayout.graphContract.contractSemantics` extension and server-authoritative Contract
+  projection;
+- malformed or unsupported embedded semantics fail Graph validation with a stable diagnostic;
+- `bloge.graphContractSemantics.v1` has a strict authoritative schema synchronized to serialized
+  Java fields;
+- the workspace exports and imports `bloge.visualAuthoringWorkspaceBundle.v1` for browser/VS Code
+  handoff without requiring a Scenario server;
+- import independently re-verifies Graph target and Contract fingerprints, complete enterprise
+  scope, Scenario coordinate, classification, operator snapshot index, nested shape, and raw-secret
+  policy before changing the canvas;
+- exact server Graph objects are retained for export while the local canvas remains unchanged;
+  authored node positions survive import instead of being auto-laid out;
+- Contract semantics and workspace logic have focused component, round-trip, tamper, malformed
+  input, credential, projection, and persistence validation tests.
+
+Weighted assessment:
+
+| Workstream | Achieved | Change from Round 6 |
+|---|---:|---:|
+| Product information architecture | 15/18 | 0 |
+| Schema workbench | 12/15 | +3 |
+| Scenario builder | 16/17 | 0 |
+| Compiler and adapters | 15/15 | 0 |
+| Persistence and protocol | 10/10 | +1 |
+| Compatibility and lineage | 5/10 | 0 |
+| Security and governance | 8/8 | +1 |
+| Samples, documentation, observability | 6/7 | 0 |
+| Total achieved | **87/100** | **+5** |
+
+**Residual gap: 13%.**
+
+Round 7 focused verification:
+
+- frontend Contract/workspace/AuthorCanvas tests: 49 passed;
+- Java Contract projection, Graph validation, and protocol-schema tests: 247 passed;
+- production Vite build: 59 kB lazy workspace, 143 kB React runtime, 149 kB React Flow, and
+  291 kB application chunks; no oversize warning;
+- packaged Chrome verification authored a WRITE Contract, reconciliation protocol, stable error,
+  and invariant, then rebased the two bundled Scenarios and restored workspace export eligibility;
+- 1472px desktop and 390x844 mobile inspection found no incoherent overlap or browser
+  warning/error; mobile body, dialog, and header widths remained exactly 390 px and semantic rows
+  stayed within their containers.
+
+The next iteration must close unified Graph/Operator targets in the same workspace. Stage 3 then
+owns semantic compatibility, exact impact/lineage, and guided migration; repository-owned
+accessibility/performance gates remain the final cross-cutting hardening slice.

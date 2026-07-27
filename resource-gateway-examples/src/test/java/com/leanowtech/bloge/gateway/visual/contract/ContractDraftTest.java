@@ -34,6 +34,91 @@ class ContractDraftTest {
     }
 
     @Test
+    void projectsCompleteAuthoredSemanticsFromTheVersionedGraphContractLayout() {
+        GraphDraft graph = graphDraft();
+        Map<String, Object> semantics = Map.of(
+                "schemaVersion", "bloge.graphContractSemantics.v1",
+                "errorContract", List.of(Map.of(
+                        "code", "CRM_UNAVAILABLE",
+                        "type", "DEPENDENCY",
+                        "description", "CRM could not be reached.",
+                        "retryable", true)),
+                "executionSemantics", Map.of(
+                        "effect", "WRITE",
+                        "idempotency", "IDEMPOTENCY_KEY:/requestId",
+                        "streaming", false,
+                        "durable", true,
+                        "sideEffectProtocol", Map.of(
+                                "protocol", "bloge.sideEffectProtocol.v1",
+                                "reconcilerRef", "crm.reconcile",
+                                "reversible", true,
+                                "metadata", Map.of("owner", "customer-platform"))),
+                "invariants", List.of(Map.of(
+                        "invariantId", "request-id-required",
+                        "phase", "PRECONDITION",
+                        "expression", "exists(ctx.requestId)",
+                        "description", "Every write has an idempotency coordinate.",
+                        "severity", "ERROR")),
+                "compatibilityPolicy", Map.of(
+                        "mode", "BACKWARD",
+                        "unknownBlocksAutomaticMigration", true),
+                "fieldMetadata", Map.of());
+        GraphDraft withSemantics = new GraphDraft(
+                graph.schemaVersion(), graph.draftId(), graph.revision(), graph.graphName(),
+                graph.tenantId(), graph.namespace(), graph.environment(), graph.status(),
+                graph.inputSchema(), graph.outputSchema(), graph.nodes(), graph.edges(),
+                Map.of("graphContract", Map.of("contractSemantics", semantics)),
+                graph.nodeFixtures(), graph.output(), graph.operatorFingerprints(),
+                graph.operatorSnapshots(), graph.revisionMetadata());
+
+        ContractDraft projected = projector.project(withSemantics, fingerprint('a'));
+
+        assertThat(projected.errorContract()).singleElement().satisfies(error -> {
+            assertThat(error.code()).isEqualTo("CRM_UNAVAILABLE");
+            assertThat(error.retryable()).isTrue();
+        });
+        assertThat(projected.executionSemantics().effect()).isEqualTo(ContractDraft.Effect.WRITE);
+        assertThat(projected.executionSemantics().sideEffectProtocol().reconcilerRef())
+                .isEqualTo("crm.reconcile");
+        assertThat(projected.invariants()).singleElement()
+                .extracting(ContractDraft.ContractInvariant::invariantId)
+                .isEqualTo("request-id-required");
+        assertThat(projected.compatibilityPolicy().mode()).isEqualTo("BACKWARD");
+    }
+
+    @Test
+    void rejectsIncompleteOrWronglyTypedEmbeddedSemanticsInsteadOfDefaultingThem() {
+        Map<String, Object> incomplete = Map.of(
+                "schemaVersion", GraphContractSemantics.SCHEMA_VERSION,
+                "errorContract", List.of(),
+                "executionSemantics", Map.of(
+                        "effect", "READ",
+                        "idempotency", "REQUEST_KEY",
+                        "streaming", false,
+                        "durable", true),
+                "invariants", List.of(),
+                "compatibilityPolicy", Map.of(
+                        "mode", "STRICT",
+                        "unknownBlocksAutomaticMigration", true));
+        Map<String, Object> wrongType = new LinkedHashMap<>(incomplete);
+        wrongType.put("fieldMetadata", Map.of());
+        wrongType.put("executionSemantics", Map.of(
+                "effect", "READ",
+                "idempotency", 42,
+                "streaming", false,
+                "durable", true));
+
+        assertThatThrownBy(() -> GraphContractSemantics.fromVisualLayout(
+                Map.of("graphContract", Map.of("contractSemantics", incomplete))))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("missing required fields");
+        assertThatThrownBy(() -> GraphContractSemantics.fromVisualLayout(
+                Map.of("graphContract", Map.of("contractSemantics", wrongType))))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("idempotency must be a string");
+    }
+
+    @Test
     void canonicalFingerprintIsStableAndChangesWithContractSemantics() {
         ContractDraft original = projector.project(graphDraft(), fingerprint('a'));
         ContractDraft equivalent = projector.project(graphDraft(), fingerprint('a'));
