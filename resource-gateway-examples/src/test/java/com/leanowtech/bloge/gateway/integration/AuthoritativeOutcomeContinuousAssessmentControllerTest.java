@@ -4,6 +4,8 @@ import com.leanowtech.bloge.gateway.integration.mirror.AuthoritativeOutcomeConti
 import com.leanowtech.bloge.gateway.integration.mirror.AuthoritativeOutcomeContinuousAssessmentLifecyclePage;
 import com.leanowtech.bloge.gateway.integration.mirror.AuthoritativeOutcomeContinuousAssessmentProjection;
 import com.leanowtech.bloge.gateway.integration.mirror.AuthoritativeOutcomeContinuousAssessmentRequest;
+import com.leanowtech.bloge.gateway.integration.mirror.AuthoritativeOutcomeContinuousAssessmentRemediationReceipt;
+import com.leanowtech.bloge.gateway.integration.mirror.AuthoritativeOutcomeContinuousAssessmentRemediationRequest;
 import com.leanowtech.bloge.gateway.integration.mirror.AuthoritativeOutcomeContinuousAssessmentService;
 import com.leanowtech.bloge.gateway.integration.mirror.AuthoritativeOutcomeContinuousAssessmentStatus;
 import org.junit.jupiter.api.Test;
@@ -52,6 +54,14 @@ class AuthoritativeOutcomeContinuousAssessmentControllerTest {
                 mock(
                         AuthoritativeOutcomeContinuousAssessmentLifecyclePage
                                 .class);
+        AuthoritativeOutcomeContinuousAssessmentRemediationRequest
+                remediationCommand = mock(
+                AuthoritativeOutcomeContinuousAssessmentRemediationRequest
+                        .class);
+        AuthoritativeOutcomeContinuousAssessmentRemediationReceipt
+                remediationReceipt = mock(
+                AuthoritativeOutcomeContinuousAssessmentRemediationReceipt
+                        .class);
         HttpHeaders headers = new HttpHeaders();
         byte[] body = "{}".getBytes(
                 StandardCharsets.UTF_8);
@@ -70,6 +80,11 @@ class AuthoritativeOutcomeContinuousAssessmentControllerTest {
                 headers,
                 IntegrationOperation
                         .MIRROR_OUTCOME_CONTINUOUS_ASSESSMENT_LIFECYCLE_READ))
+                .thenReturn(identity);
+        when(authenticator.authenticate(
+                headers,
+                IntegrationOperation
+                        .MIRROR_OUTCOME_CONTINUOUS_ASSESSMENT_REMEDIATE))
                 .thenReturn(identity);
         when(decoder.decodeContinuousAssessment(
                 body, identity)).thenReturn(command);
@@ -96,6 +111,17 @@ class AuthoritativeOutcomeContinuousAssessmentControllerTest {
         when(lifecycle.schemaVersion()).thenReturn(
                 AuthoritativeOutcomeContinuousAssessmentLifecyclePage
                         .SCHEMA_VERSION);
+        when(decoder.decodeContinuousAssessmentRemediation(
+                body, identity))
+                .thenReturn(remediationCommand);
+        when(service.remediate(
+                "refund-completeness",
+                remediationCommand,
+                identity))
+                .thenReturn(remediationReceipt);
+        when(remediationReceipt.schemaVersion()).thenReturn(
+                AuthoritativeOutcomeContinuousAssessmentRemediationReceipt
+                        .SCHEMA_VERSION);
 
         AuthoritativeOutcomeContinuousAssessmentController controller =
                 new AuthoritativeOutcomeContinuousAssessmentController(
@@ -112,6 +138,10 @@ class AuthoritativeOutcomeContinuousAssessmentControllerTest {
                 1,
                 25,
                 headers);
+        var remediated = controller.remediate(
+                "refund-completeness",
+                body,
+                headers);
 
         assertThat(created.getStatusCode())
                 .isEqualTo(HttpStatus.CREATED);
@@ -121,6 +151,8 @@ class AuthoritativeOutcomeContinuousAssessmentControllerTest {
                         "/api/mirror/outcome-continuous-assessments/refund-completeness");
         assertThat(found.payload()).isSameAs(status);
         assertThat(history.payload()).isSameAs(lifecycle);
+        assertThat(remediated.payload())
+                .isSameAs(remediationReceipt);
         InOrder order = inOrder(
                 authenticator, decoder, service);
         order.verify(authenticator).authenticate(
@@ -146,6 +178,17 @@ class AuthoritativeOutcomeContinuousAssessmentControllerTest {
                 "refund-completeness",
                 1,
                 25,
+                identity);
+        order.verify(authenticator).authenticate(
+                headers,
+                IntegrationOperation
+                        .MIRROR_OUTCOME_CONTINUOUS_ASSESSMENT_REMEDIATE);
+        order.verify(decoder)
+                .decodeContinuousAssessmentRemediation(
+                        body, identity);
+        order.verify(service).remediate(
+                "refund-completeness",
+                remediationCommand,
                 identity);
     }
 }

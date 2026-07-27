@@ -503,6 +503,14 @@ public final class CapabilityMirrorProtocol {
     public static final String
     AUTHORITATIVE_OUTCOME_CONTINUOUS_ASSESSMENT_LIFECYCLE_PAGE_V1 =
             "resourceGateway.authoritativeOutcomeContinuousAssessmentLifecyclePage.v1";
+    /** Exact quarantine remediation command wire version. */
+    public static final String
+    AUTHORITATIVE_OUTCOME_CONTINUOUS_ASSESSMENT_REMEDIATION_REQUEST_V1 =
+            "resourceGateway.authoritativeOutcomeContinuousAssessmentRemediationRequest.v1";
+    /** Immutable quarantine remediation proof receipt wire version. */
+    public static final String
+    AUTHORITATIVE_OUTCOME_CONTINUOUS_ASSESSMENT_REMEDIATION_RECEIPT_V1 =
+            "resourceGateway.authoritativeOutcomeContinuousAssessmentRemediationReceipt.v1";
     /** Fixed server-produced selected-population completeness compatibility fixture version. */
     public static final String
     AUTHORITATIVE_OUTCOME_SELECTED_POPULATION_COMPATIBILITY_V1 =
@@ -1191,6 +1199,16 @@ public final class CapabilityMirrorProtocol {
     AUTHORITATIVE_OUTCOME_CONTINUOUS_ASSESSMENT_LIFECYCLE_PAGE_SCHEMA_RESOURCE =
             SCHEMA_RESOURCE_ROOT
                     + "authoritative-outcome-continuous-assessment-lifecycle-page-v1.schema.json";
+    /** Packaged exact quarantine remediation command schema. */
+    public static final String
+    AUTHORITATIVE_OUTCOME_CONTINUOUS_ASSESSMENT_REMEDIATION_REQUEST_SCHEMA_RESOURCE =
+            SCHEMA_RESOURCE_ROOT
+                    + "authoritative-outcome-continuous-assessment-remediation-request-v1.schema.json";
+    /** Packaged immutable quarantine remediation receipt schema. */
+    public static final String
+    AUTHORITATIVE_OUTCOME_CONTINUOUS_ASSESSMENT_REMEDIATION_RECEIPT_SCHEMA_RESOURCE =
+            SCHEMA_RESOURCE_ROOT
+                    + "authoritative-outcome-continuous-assessment-remediation-receipt-v1.schema.json";
     /** Packaged signed payload-free read-only Shadow comparison schema. */
     public static final String
     READ_ONLY_SHADOW_COMPARISON_SCHEMA_RESOURCE =

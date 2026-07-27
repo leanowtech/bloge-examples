@@ -3,6 +3,8 @@ package com.leanowtech.bloge.gateway.integration;
 import com.leanowtech.bloge.gateway.integration.mirror.AuthoritativeOutcomeContinuousAssessmentAdmission;
 import com.leanowtech.bloge.gateway.integration.mirror.AuthoritativeOutcomeContinuousAssessmentLifecyclePage;
 import com.leanowtech.bloge.gateway.integration.mirror.AuthoritativeOutcomeContinuousAssessmentRequest;
+import com.leanowtech.bloge.gateway.integration.mirror.AuthoritativeOutcomeContinuousAssessmentRemediationReceipt;
+import com.leanowtech.bloge.gateway.integration.mirror.AuthoritativeOutcomeContinuousAssessmentRemediationRequest;
 import com.leanowtech.bloge.gateway.integration.mirror.AuthoritativeOutcomeContinuousAssessmentService;
 import com.leanowtech.bloge.gateway.integration.mirror.AuthoritativeOutcomeContinuousAssessmentStatus;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnBean;
@@ -145,5 +147,33 @@ AuthoritativeOutcomeContinuousAssessmentController {
                 "AUTHORITATIVE_OUTCOME_CONTINUOUS_ASSESSMENT_LIFECYCLE_PAGE",
                 page.schemaVersion(),
                 page);
+    }
+
+    /** Requeues one exact reviewed quarantine and returns an immutable proof receipt. */
+    @PostMapping("/{projectionId}/remediations")
+    public IntegrationEnvelope<
+            AuthoritativeOutcomeContinuousAssessmentRemediationReceipt>
+    remediate(
+            @PathVariable String projectionId,
+            @RequestBody byte[] request,
+            @RequestHeader HttpHeaders headers) {
+        IntegrationRequestContext identity =
+                authenticator.authenticate(
+                        headers,
+                        IntegrationOperation
+                                .MIRROR_OUTCOME_CONTINUOUS_ASSESSMENT_REMEDIATE);
+        AuthoritativeOutcomeContinuousAssessmentRemediationRequest
+                command =
+                decoder.decodeContinuousAssessmentRemediation(
+                        request, identity);
+        AuthoritativeOutcomeContinuousAssessmentRemediationReceipt
+                receipt = service.remediate(
+                projectionId,
+                command,
+                identity);
+        return IntegrationEnvelope.of(
+                "AUTHORITATIVE_OUTCOME_CONTINUOUS_ASSESSMENT_REMEDIATION_RECEIPT",
+                receipt.schemaVersion(),
+                receipt);
     }
 }

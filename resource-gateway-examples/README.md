@@ -104,6 +104,7 @@ silently consuming work.
 | `POST http://localhost:8080/api/mirror/outcome-continuous-assessments` | Register or exactly replay one server-owned continuous completeness projection (`X-Purpose: MIRROR_FIDELITY_GOVERNANCE`) |
 | `GET http://localhost:8080/api/mirror/outcome-continuous-assessments/{projectionId}` | Read database-observed freshness, authority readiness, worker state, and the latest immutable assessment reference |
 | `GET http://localhost:8080/api/mirror/outcome-continuous-assessments/{projectionId}/lifecycle?afterOrdinal=0&limit=100` | Read and independently chain one bounded append-only projection lifecycle page |
+| `POST http://localhost:8080/api/mirror/outcome-continuous-assessments/{projectionId}/remediations` | Requeue one exact reviewed quarantine under projection/lifecycle double CAS (`X-Purpose: MIRROR_OUTCOME_CONTINUOUS_ASSESSMENT_ADMIN`) |
 | `POST http://localhost:8080/api/mirror/shadow/source-bindings` | Resolve an exact candidate evidence bundle, double-address and sign one payload-free detached source pair (`X-Purpose: MIRROR_SHADOW_SOURCE_ADMIN`; explicit source-binding protocol header required) |
 | `GET http://localhost:8080/api/mirror/shadow/source-bindings/{bindingId}/revisions/{revision}?fingerprint=...` | Read one exact currently valid detached source pair without latest-revision fallback (`X-Purpose: MIRROR_SHADOW`, `MIRROR_SHADOW_SOURCE_ADMIN`, or `GOVERNANCE_EVIDENCE_INGESTION`) |
 | `GET http://localhost:8080/api/mirror/shadow/source-resolutions/{attestationId}/revisions/{revision}?fingerprint=...` | Read one exact signed proof that both detached sources were independently re-resolved for a stable `executionId` (`X-Purpose: MIRROR_SHADOW` or `GOVERNANCE_EVIDENCE_INGESTION`; explicit source-resolution protocol header required) |
@@ -1299,6 +1300,7 @@ it never substitutes for any customer authority.
 | Register continuous assessment | `POST /api/mirror/outcome-continuous-assessments` | `MIRROR_FIDELITY_GOVERNANCE` / `RESOURCE_GATEWAY_FIDELITY_PROJECTOR`; server owns the assessment stream and revisions |
 | Read continuous status | `GET /api/mirror/outcome-continuous-assessments/{projectionId}` | `MIRROR_FIDELITY_GOVERNANCE` or `GOVERNANCE_EVIDENCE_INGESTION` |
 | Read continuous lifecycle | `GET .../{projectionId}/lifecycle?afterOrdinal=0&limit=100` | `GOVERNANCE_EVIDENCE_INGESTION`; caller owns the exclusive ordinal and predecessor checkpoint |
+| Remediate continuous quarantine | `POST .../{projectionId}/remediations` | `MIRROR_OUTCOME_CONTINUOUS_ASSESSMENT_ADMIN` / `RESOURCE_GATEWAY_FIDELITY_PROJECTOR`; exact reviewed projection and lifecycle head are mandatory |
 | Read exact/current facts and source pages | population, disposition, assessment and `/sources` GET routes | `GOVERNANCE_EVIDENCE_INGESTION` or another admitted read purpose |
 
 Writes authenticate before strict decoding. Scope comes only from the workload
@@ -1322,6 +1324,8 @@ The capability probe reports independent immutable-registry and continuous-runti
 - `mirrorAuthoritativeOutcomeSelectedPopulationStagedUpload`
 - `mirrorAuthoritativeOutcomeContinuousAssessmentApi`
 - `mirrorAuthoritativeOutcomeContinuousAssessmentDurable`
+- `mirrorAuthoritativeOutcomeContinuousAssessmentLifecycle`
+- `mirrorAuthoritativeOutcomeContinuousAssessmentRemediation`
 - `mirrorAuthoritativeOutcomeContinuousAssessmentWorkerReady`
 - `mirrorAuthoritativeOutcomeContinuousAssessmentScheduling`
 - `mirrorAuthoritativeOutcomeSelectedPopulationReady`
@@ -1451,6 +1455,38 @@ fingerprint. A pre-upgrade projection receives one explicit `MIGRATED`
 baseline on its first later transition; the gateway never invents historical
 events.
 
+`QUARANTINED` stops autonomous scheduling and is never cleared by a blind
+retry. An authorized operator must first read and independently verify the
+current status and complete lifecycle head, repair the external cause, then
+submit one command carrying all three reviewed fences:
+
+```json
+{
+  "schemaVersion": "resourceGateway.authoritativeOutcomeContinuousAssessmentRemediationRequest.v1",
+  "commandId": "incident-4821-recovery-1",
+  "expectedProjectionFingerprint": "sha256:<quarantined projection>",
+  "expectedLifecycleHeadOrdinal": 17,
+  "expectedLifecycleHeadFingerprint": "sha256:<verified event 17>",
+  "reasonCode": "OUTCOME_AUTHORITY_REPAIRED"
+}
+```
+
+Send it to
+`POST /api/mirror/outcome-continuous-assessments/{projectionId}/remediations`
+with purpose `MIRROR_OUTCOME_CONTINUOUS_ASSESSMENT_ADMIN`. The existing
+`RESOURCE_GATEWAY_FIDELITY_PROJECTOR` group is reused, but the dedicated
+purpose prevents ordinary projection and read credentials from performing
+recovery. Authentication occurs before strict JSON decoding.
+
+Acceptance appends `REMEDIATION_ACCEPTED`, changes only the work status to
+`QUEUED`, clears the current failure streak, and sets `nextEligibleAt` to
+database commit time. It does not change cumulative attempts, lease epoch,
+population, assessment/source closure, or the old freshness deadline. The
+immutable receipt embeds the reviewed quarantined projection and accepted
+lifecycle event. Exact retries by the same actor return the same receipt even
+after a later worker transition; a reused command id with changed content or
+actor fails closed.
+
 Read lifecycle pages from ordinal zero and retain the last verified
 `nextOrdinal` plus event fingerprint as the continuation checkpoint:
 
@@ -1522,7 +1558,8 @@ from the server model and consumed independently by the Test Kit. It freezes
 population/chunk addressing, `MATCH`/`MISMATCH` observations, one legal
 disposition, zero-missing assessment arithmetic, source pagination, and all
 Resource Gateway Ed25519 signatures without carrying a private key or business
-payload. Twenty-two strict Schemas, the fixed fixture, resumable-upload and
+payload. Twenty-four strict Schemas, the fixed fixture, resumable-upload,
+controlled quarantine-remediation, and
 continuous-assessment clients, and the standalone Test Kit verifier are
 described in the
 [Test Kit guide](../resource-gateway-test-kit/README.md#verify-selected-population-completeness).

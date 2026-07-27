@@ -348,6 +348,84 @@ class AuthoritativeOutcomeContinuousAssessmentServiceTest {
     }
 
     @Test
+    void remediatesReviewedQuarantineUnderDedicatedAuthority() {
+        service.register(
+                request,
+                projectorIdentity(
+                        "support",
+                        "staging",
+                        Set.of(
+                                AuthoritativeOutcomeSelectedPopulationAccessPolicy
+                                        .DEFAULT_ASSESSMENT_GROUP)));
+        AuthoritativeOutcomeContinuousAssessmentRepository.Claim
+                claim = projections.claimNext(
+                "sg",
+                "staging",
+                "service-test-worker",
+                POLICY);
+        AuthoritativeOutcomeContinuousAssessmentProjection
+                quarantined = projections.fail(
+                claim.lease(),
+                "DEPENDENCY_FAILED",
+                false,
+                POLICY);
+        AuthoritativeOutcomeContinuousAssessmentLifecycleEvent
+                head = projections.lifecycle(
+                population.manifest().scope(),
+                request.projectionId(),
+                0,
+                100)
+                .events()
+                .getLast();
+        AuthoritativeOutcomeContinuousAssessmentRemediationRequest
+                command =
+                new AuthoritativeOutcomeContinuousAssessmentRemediationRequest(
+                        "",
+                        "owner-reviewed-1",
+                        quarantined.recordFingerprint(),
+                        head.eventOrdinal(),
+                        head.eventFingerprint(),
+                        "DEPENDENCY_REPAIRED");
+
+        AuthoritativeOutcomeContinuousAssessmentRemediationReceipt
+                receipt = service.remediate(
+                request.projectionId(),
+                command,
+                remediationIdentity(
+                        Set.of(
+                                AuthoritativeOutcomeSelectedPopulationAccessPolicy
+                                        .DEFAULT_ASSESSMENT_GROUP)));
+
+        receipt.verify(mapper);
+        assertThat(receipt.lifecycleEvent()
+                .projection().status())
+                .isEqualTo(
+                        AuthoritativeOutcomeContinuousAssessmentProjection
+                                .Status.QUEUED);
+        assertThat(receipt.lifecycleEvent()
+                .actorFingerprint())
+                .startsWith("sha256:");
+        assertProblem(
+                () -> service.remediate(
+                        request.projectionId(),
+                        command,
+                        projectorIdentity(
+                                "support",
+                                "staging",
+                                Set.of(
+                                        AuthoritativeOutcomeSelectedPopulationAccessPolicy
+                                                .DEFAULT_ASSESSMENT_GROUP))),
+                "RG.MIRROR.OUTCOME.CONTINUOUS_ASSESSMENT_REMEDIATION_FORBIDDEN");
+        assertProblem(
+                () -> service.remediate(
+                        request.projectionId(),
+                        command,
+                        remediationIdentity(
+                                Set.of("WRONG_GROUP"))),
+                "RG.MIRROR.OUTCOME.CONTINUOUS_ASSESSMENT_REMEDIATION_FORBIDDEN");
+    }
+
+    @Test
     void rejectsWrongGroupScopePurposeAndProductionEnvironment() {
         assertProblem(
                 () -> service.register(
@@ -438,6 +516,16 @@ class AuthoritativeOutcomeContinuousAssessmentServiceTest {
                 environment,
                 Set.of(),
                 "GOVERNANCE_EVIDENCE_INGESTION");
+    }
+
+    private static IntegrationRequestContext remediationIdentity(
+            Set<String> groups) {
+        return projectorIdentity(
+                "support",
+                "staging",
+                groups,
+                AuthoritativeOutcomeSelectedPopulationAccessPolicy
+                        .REMEDIATION_PURPOSE);
     }
 
     private static void assertProblem(

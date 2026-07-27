@@ -686,6 +686,73 @@ class DatabaseReadOnlyShadowPostgresCertificationTest {
                 .isEqualTo(
                         AuthoritativeOutcomeContinuousAssessmentRepository
                                 .Claim.Outcome.NO_WORK);
+
+        AuthoritativeOutcomeContinuousAssessmentRequest
+                remediationStream =
+                new AuthoritativeOutcomeContinuousAssessmentRequest(
+                        "",
+                        "postgres-continuous-remediation",
+                        population.manifest().artifactRef());
+        firstProjection.register(
+                population.manifest().scope(),
+                remediationStream);
+        AuthoritativeOutcomeContinuousAssessmentRepository.Claim
+                remediationClaim =
+                secondProjection.claimNext(
+                        "sg",
+                        "staging",
+                        "postgres-remediation-worker",
+                        policy);
+        AuthoritativeOutcomeContinuousAssessmentProjection
+                quarantined = firstProjection.fail(
+                remediationClaim.lease(),
+                "DEPENDENCY_FAILED",
+                false,
+                policy);
+        AuthoritativeOutcomeContinuousAssessmentLifecycleEvent
+                quarantineHead = secondProjection.lifecycle(
+                population.manifest().scope(),
+                remediationStream.projectionId(),
+                0,
+                100)
+                .events()
+                .getLast();
+        AuthoritativeOutcomeContinuousAssessmentRemediationRequest
+                remediation =
+                new AuthoritativeOutcomeContinuousAssessmentRemediationRequest(
+                        "",
+                        "postgres-remediation-1",
+                        quarantined.recordFingerprint(),
+                        quarantineHead.eventOrdinal(),
+                        quarantineHead.eventFingerprint(),
+                        "DEPENDENCY_REPAIRED");
+
+        AuthoritativeOutcomeContinuousAssessmentRepository.Remediation
+                remediated = secondProjection.remediate(
+                population.manifest().scope(),
+                remediationStream.projectionId(),
+                remediation,
+                "SERVICE:postgres-operator");
+
+        remediated.receipt().verify(mapper);
+        assertThat(remediated.idempotentReplay())
+                .isFalse();
+        assertThat(firstProjection.find(
+                population.manifest().scope(),
+                remediationStream.projectionId())
+                .orElseThrow()
+                .projection()
+                .status())
+                .isEqualTo(
+                        AuthoritativeOutcomeContinuousAssessmentProjection
+                                .Status.QUEUED);
+        assertThat(firstProjection.remediate(
+                population.manifest().scope(),
+                remediationStream.projectionId(),
+                remediation,
+                "SERVICE:postgres-operator")
+                .idempotentReplay())
+                .isTrue();
     }
 
     @Test

@@ -51,7 +51,9 @@ public record AuthoritativeOutcomeContinuousAssessmentLifecycleEvent(
         /** An expired worker lease was fenced and requeued. */
         LEASE_EXPIRED,
         /** A non-retryable or exhausted projection entered terminal quarantine. */
-        QUARANTINED
+        QUARANTINED,
+        /** An authorized compare-and-set command restored scheduling after quarantine. */
+        REMEDIATION_ACCEPTED
     }
 
     /** Enforces ordinal, transition, actor, projection, and chain shape. */
@@ -192,6 +194,19 @@ public record AuthoritativeOutcomeContinuousAssessmentLifecycleEvent(
                         || actorFingerprint.isBlank()
                         || projection.failureCode().isBlank()
                         || projection.terminalAt() == null) {
+                    invalidShape();
+                }
+            }
+            case REMEDIATION_ACCEPTED -> {
+                if (status
+                        != AuthoritativeOutcomeContinuousAssessmentProjection
+                        .Status.QUEUED
+                        || actorFingerprint.isBlank()
+                        || projection.consecutiveFailures() != 0
+                        || !projection.failureCode().isBlank()
+                        || projection.terminalAt() != null
+                        || !projection.nextEligibleAt().equals(
+                        projection.updatedAt())) {
                     invalidShape();
                 }
             }

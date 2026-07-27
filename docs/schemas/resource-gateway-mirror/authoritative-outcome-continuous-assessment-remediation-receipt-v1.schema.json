@@ -1,0 +1,87 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://bloge.dev/schemas/resource-gateway-mirror/authoritative-outcome-continuous-assessment-remediation-receipt-v1.schema.json",
+  "title": "Resource Gateway Authoritative Outcome Continuous Assessment Remediation Receipt v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "receiptFingerprint",
+    "commandFingerprint",
+    "scope",
+    "projectionId",
+    "remediationGeneration",
+    "command",
+    "previousProjection",
+    "lifecycleEvent"
+  ],
+  "properties": {
+    "schemaVersion": {
+      "const": "resourceGateway.authoritativeOutcomeContinuousAssessmentRemediationReceipt.v1"
+    },
+    "receiptFingerprint": {
+      "$ref": "mirror-plan-v1.schema.json#/$defs/fingerprint"
+    },
+    "commandFingerprint": {
+      "$ref": "mirror-plan-v1.schema.json#/$defs/fingerprint"
+    },
+    "scope": {
+      "$ref": "mirror-plan-v1.schema.json#/$defs/scope"
+    },
+    "projectionId": {
+      "type": "string",
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9@._:/-]{0,511}$"
+    },
+    "remediationGeneration": {
+      "type": "integer",
+      "minimum": 1
+    },
+    "command": {
+      "$ref": "authoritative-outcome-continuous-assessment-remediation-request-v1.schema.json"
+    },
+    "previousProjection": {
+      "allOf": [
+        {
+          "$ref": "authoritative-outcome-continuous-assessment-projection-v1.schema.json"
+        },
+        {
+          "properties": {
+            "status": {
+              "const": "QUARANTINED"
+            }
+          }
+        }
+      ]
+    },
+    "lifecycleEvent": {
+      "allOf": [
+        {
+          "$ref": "authoritative-outcome-continuous-assessment-lifecycle-event-v1.schema.json"
+        },
+        {
+          "properties": {
+            "transition": {
+              "const": "REMEDIATION_ACCEPTED"
+            },
+            "projection": {
+              "properties": {
+                "status": {
+                  "const": "QUEUED"
+                },
+                "consecutiveFailures": {
+                  "const": 0
+                },
+                "failureCode": {
+                  "const": ""
+                },
+                "terminalAt": {
+                  "type": "null"
+                }
+              }
+            }
+          }
+        }
+      ]
+    }
+  }
+}

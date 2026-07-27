@@ -123,6 +123,15 @@ class AuthoritativeOutcomeSelectedPopulationRequestDecoderTest {
                         "",
                         "refund-completeness",
                         population.manifest().artifactRef());
+        AuthoritativeOutcomeContinuousAssessmentRemediationRequest
+                remediationRequest =
+                new AuthoritativeOutcomeContinuousAssessmentRemediationRequest(
+                        "",
+                        "remediation-1",
+                        "sha256:" + "a".repeat(64),
+                        4,
+                        "sha256:" + "b".repeat(64),
+                        "DEPENDENCY_REPAIRED");
 
         assertThat(decoder.decodePopulation(
                 mapper.writeValueAsBytes(
@@ -150,6 +159,11 @@ class AuthoritativeOutcomeSelectedPopulationRequestDecoderTest {
                         continuousRequest),
                 identity)).isEqualTo(
                 continuousRequest);
+        assertThat(decoder.decodeContinuousAssessmentRemediation(
+                mapper.writeValueAsBytes(
+                        remediationRequest),
+                identity)).isEqualTo(
+                remediationRequest);
     }
 
     @Test
@@ -237,6 +251,21 @@ class AuthoritativeOutcomeSelectedPopulationRequestDecoderTest {
                         duplicate.getBytes(
                                 StandardCharsets.UTF_8),
                         identity));
+
+        ObjectNode remediation = mapper.valueToTree(
+                new AuthoritativeOutcomeContinuousAssessmentRemediationRequest(
+                        "",
+                        "remediation-1",
+                        "sha256:" + "a".repeat(64),
+                        4,
+                        "sha256:" + "b".repeat(64),
+                        "DEPENDENCY_REPAIRED"));
+        remediation.put("resetFailureBudget", true);
+        assertMalformed(
+                () -> decoder
+                        .decodeContinuousAssessmentRemediation(
+                                bytes(remediation),
+                                identity));
     }
 
     @Test

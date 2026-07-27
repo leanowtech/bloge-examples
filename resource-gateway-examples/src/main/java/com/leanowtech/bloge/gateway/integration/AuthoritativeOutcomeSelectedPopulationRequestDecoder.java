@@ -6,6 +6,7 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.leanowtech.bloge.gateway.integration.mirror.AuthoritativeOutcomeSelectedPopulationAdmissionRequest;
 import com.leanowtech.bloge.gateway.integration.mirror.AuthoritativeOutcomeContinuousAssessmentRequest;
+import com.leanowtech.bloge.gateway.integration.mirror.AuthoritativeOutcomeContinuousAssessmentRemediationRequest;
 import com.leanowtech.bloge.gateway.integration.mirror.AuthoritativeOutcomeSelectedPopulationAssessmentRequest;
 import com.leanowtech.bloge.gateway.integration.mirror.AuthoritativeOutcomeSelectedPopulationChunk;
 import com.leanowtech.bloge.gateway.integration.mirror.AuthoritativeOutcomeSelectedPopulationDispositionAdmissionRequest;
@@ -48,6 +49,10 @@ AuthoritativeOutcomeSelectedPopulationRequestDecoder {
     /** Largest continuous-assessment registration command. */
     public static final int MAXIMUM_CONTINUOUS_ASSESSMENT_REQUEST_BYTES =
             64 * 1024;
+    /** Largest continuous-assessment quarantine-remediation command. */
+    public static final int MAXIMUM_CONTINUOUS_ASSESSMENT_REMEDIATION_REQUEST_BYTES =
+            AuthoritativeOutcomeContinuousAssessmentRemediationRequest
+                    .MAXIMUM_CANONICAL_BYTES;
     /** Largest staged-upload root intent. */
     public static final int MAXIMUM_UPLOAD_REQUEST_BYTES =
             AuthoritativeOutcomeSelectedPopulationUploadRequest
@@ -84,6 +89,14 @@ AuthoritativeOutcomeSelectedPopulationRequestDecoder {
                     "schemaVersion",
                     "projectionId",
                     "populationRef");
+    private static final Set<String> CONTINUOUS_ASSESSMENT_REMEDIATION_FIELDS =
+            Set.of(
+                    "schemaVersion",
+                    "commandId",
+                    "expectedProjectionFingerprint",
+                    "expectedLifecycleHeadOrdinal",
+                    "expectedLifecycleHeadFingerprint",
+                    "reasonCode");
     private static final Set<String> UPLOAD_FIELDS =
             Set.of(
                     "schemaVersion",
@@ -185,6 +198,22 @@ AuthoritativeOutcomeSelectedPopulationRequestDecoder {
                 AuthoritativeOutcomeContinuousAssessmentRequest
                         .SCHEMA_VERSION,
                 AuthoritativeOutcomeContinuousAssessmentRequest
+                        .class);
+    }
+
+    /** Decodes one exact reviewed quarantine-remediation command after authentication. */
+    public AuthoritativeOutcomeContinuousAssessmentRemediationRequest
+    decodeContinuousAssessmentRemediation(
+            byte[] value,
+            IntegrationRequestContext identity) {
+        return decode(
+                value,
+                identity,
+                MAXIMUM_CONTINUOUS_ASSESSMENT_REMEDIATION_REQUEST_BYTES,
+                CONTINUOUS_ASSESSMENT_REMEDIATION_FIELDS,
+                AuthoritativeOutcomeContinuousAssessmentRemediationRequest
+                        .SCHEMA_VERSION,
+                AuthoritativeOutcomeContinuousAssessmentRemediationRequest
                         .class);
     }
 

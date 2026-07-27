@@ -139,6 +139,39 @@ DatabaseAuthoritativeOutcomeContinuousAssessmentRepository
                     UNIQUE (event_fingerprint)
             )
             """;
+    private static final String CREATE_REMEDIATIONS = """
+            CREATE TABLE IF NOT EXISTS mirror_outcome_continuous_remediations (
+                tenant_id VARCHAR(255) NOT NULL,
+                organization_id VARCHAR(255) NOT NULL,
+                project_id VARCHAR(255) NOT NULL,
+                environment_id VARCHAR(255) NOT NULL,
+                region VARCHAR(96) NOT NULL,
+                projection_id VARCHAR(512) NOT NULL,
+                command_id VARCHAR(128) NOT NULL,
+                command_fingerprint VARCHAR(71) NOT NULL,
+                remediation_generation BIGINT NOT NULL,
+                previous_projection_fingerprint VARCHAR(71) NOT NULL,
+                current_projection_fingerprint VARCHAR(71) NOT NULL,
+                lifecycle_event_fingerprint VARCHAR(71) NOT NULL,
+                accepted_at TIMESTAMP WITH TIME ZONE NOT NULL,
+                actor_fingerprint VARCHAR(71) NOT NULL,
+                reason_code VARCHAR(128) NOT NULL,
+                receipt_fingerprint VARCHAR(71) NOT NULL,
+                receipt_json TEXT NOT NULL,
+                PRIMARY KEY (
+                    tenant_id, organization_id, project_id,
+                    environment_id, region, projection_id, command_id
+                ),
+                CONSTRAINT uq_mirror_outcome_continuous_remediation_generation
+                    UNIQUE (
+                        tenant_id, organization_id, project_id,
+                        environment_id, region, projection_id,
+                        remediation_generation
+                    ),
+                CONSTRAINT uq_mirror_outcome_continuous_remediation_receipt
+                    UNIQUE (receipt_fingerprint)
+            )
+            """;
 
     private final JdbcTemplate jdbc;
     private final ObjectMapper mapper;
@@ -220,6 +253,7 @@ DatabaseAuthoritativeOutcomeContinuousAssessmentRepository
         jdbc.execute(ADD_LIFECYCLE_HEAD_FINGERPRINT);
         jdbc.execute(CREATE_SCHEDULE_INDEX);
         jdbc.execute(CREATE_LIFECYCLE);
+        jdbc.execute(CREATE_REMEDIATIONS);
     }
 
     @Override
@@ -740,6 +774,154 @@ DatabaseAuthoritativeOutcomeContinuousAssessmentRepository
                 "continuous assessment failure transition returned null");
     }
 
+    @Override
+    public Remediation remediate(
+            CapabilitySnapshot.Scope scope,
+            String projectionId,
+            AuthoritativeOutcomeContinuousAssessmentRemediationRequest
+                    request,
+            String actorId) {
+        CapabilitySnapshot.Scope exactScope =
+                Objects.requireNonNull(scope, "scope");
+        String exactProjectionId =
+                identifier(projectionId);
+        AuthoritativeOutcomeContinuousAssessmentRemediationRequest
+                command = Objects.requireNonNull(
+                request, "request");
+        String exactActor = owner(actorId);
+        String actorFingerprint =
+                ReadOnlyShadowJobIntegrity.ownerFingerprint(
+                        mapper, exactActor);
+        String commandFingerprint =
+                AuthoritativeOutcomeContinuousAssessmentRemediationReceipt
+                        .commandFingerprint(
+                                mapper,
+                                exactScope,
+                                exactProjectionId,
+                                actorFingerprint,
+                                command);
+        return required(
+                mutations.execute(ignored -> {
+                    lockPartition(
+                            exactScope.region(),
+                            exactScope.environmentId());
+                    Optional<StoredRemediation> replay =
+                            remediation(
+                                    exactScope,
+                                    exactProjectionId,
+                                    command.commandId());
+                    if (replay.isPresent()) {
+                        StoredRemediation retained =
+                                replay.orElseThrow();
+                        if (!retained.commandFingerprint()
+                                .equals(commandFingerprint)) {
+                            throw new Violation(
+                                    Reason.REMEDIATION_COMMAND_CONFLICT);
+                        }
+                        return new Remediation(
+                                retained.receipt(),
+                                true);
+                    }
+                    StoredProjection current =
+                            findStored(
+                                    exactScope,
+                                    exactProjectionId,
+                                    true)
+                                    .orElseThrow(() ->
+                                            new Violation(
+                                                    Reason.PROJECTION_NOT_FOUND));
+                    if (current.projection().status()
+                            != AuthoritativeOutcomeContinuousAssessmentProjection
+                            .Status.QUARANTINED) {
+                        throw new Violation(
+                                Reason.REMEDIATION_NOT_QUARANTINED);
+                    }
+                    if (!current.projection()
+                            .recordFingerprint()
+                            .equals(
+                                    command
+                                            .expectedProjectionFingerprint())
+                            || current.lifecycleHeadOrdinal()
+                            != command
+                            .expectedLifecycleHeadOrdinal()
+                            || !current.lifecycleHeadFingerprint()
+                            .equals(
+                                    command
+                                            .expectedLifecycleHeadFingerprint())) {
+                        throw new Violation(
+                                Reason.REMEDIATION_FENCE_MISMATCH);
+                    }
+                    Instant now = coordinationNow();
+                    AuthoritativeOutcomeContinuousAssessmentProjection
+                            queued = copy(
+                            current.projection(),
+                            AuthoritativeOutcomeContinuousAssessmentProjection
+                                    .Status.QUEUED,
+                            current.projection()
+                                    .lastAssessmentRef(),
+                            current.projection()
+                                    .observationSetFingerprint(),
+                            current.projection()
+                                    .dispositionSetFingerprint(),
+                            current.projection()
+                                    .currentThrough(),
+                            current.projection()
+                                    .freshUntil(),
+                            current.projection()
+                                    .attemptCount(),
+                            0,
+                            now,
+                            "",
+                            current.projection()
+                                    .leaseEpoch(),
+                            Instant.EPOCH,
+                            "",
+                            now,
+                            null);
+                    StoredProjection restored = update(
+                            current,
+                            queued,
+                            exactActor,
+                            AuthoritativeOutcomeContinuousAssessmentLifecycleEvent
+                                    .Transition.REMEDIATION_ACCEPTED);
+                    AuthoritativeOutcomeContinuousAssessmentLifecycleEvent
+                            event = lifecycleEvent(
+                            exactScope,
+                            exactProjectionId,
+                            restored.lifecycleHeadOrdinal())
+                            .orElseThrow(() ->
+                                    new Violation(
+                                            Reason.STORED_STATE_CORRUPT));
+                    long generation =
+                            nextRemediationGeneration(
+                                    exactScope,
+                                    exactProjectionId);
+                    AuthoritativeOutcomeContinuousAssessmentRemediationReceipt
+                            receipt =
+                            new AuthoritativeOutcomeContinuousAssessmentRemediationReceipt(
+                                    "",
+                                    "",
+                                    "",
+                                    exactScope,
+                                    exactProjectionId,
+                                    generation,
+                                    command,
+                                    current.projection(),
+                                    event)
+                                    .seal(mapper);
+                    if (!receipt.commandFingerprint()
+                            .equals(commandFingerprint)) {
+                        throw new Violation(
+                                Reason.STORED_STATE_CORRUPT);
+                    }
+                    insertRemediation(receipt);
+                    return new Remediation(
+                            receipt,
+                            false);
+                }),
+                "continuous assessment remediation returned null");
+    }
+
     private void recoverExpired(
             String region,
             String environmentId,
@@ -1104,18 +1286,25 @@ DatabaseAuthoritativeOutcomeContinuousAssessmentRepository
                         ? owner(leaseOwner)
                         : "";
         try {
+            String actorFingerprint =
+                    !before.projection()
+                            .leaseOwnerFingerprint()
+                            .isBlank()
+                            ? before.projection()
+                            .leaseOwnerFingerprint()
+                            : !after.leaseOwnerFingerprint()
+                            .isBlank()
+                            ? after.leaseOwnerFingerprint()
+                            : ReadOnlyShadowJobIntegrity
+                            .ownerFingerprint(
+                                    mapper, leaseOwner);
             AuthoritativeOutcomeContinuousAssessmentLifecycleEvent
                     lifecycleHead = appendLifecycle(
                     before,
                     after,
                     Objects.requireNonNull(
                             transition, "transition"),
-                    before.projection()
-                            .leaseOwnerFingerprint()
-                            .isBlank()
-                            ? after.leaseOwnerFingerprint()
-                            : before.projection()
-                            .leaseOwnerFingerprint());
+                    actorFingerprint);
             int changed = jdbc.update("""
                             UPDATE mirror_outcome_continuous_assessments
                             SET status = ?,
@@ -1415,6 +1604,183 @@ DatabaseAuthoritativeOutcomeContinuousAssessmentRepository
                 projectionId,
                 ordinal);
         return one(values);
+    }
+
+    private Optional<StoredRemediation> remediation(
+            CapabilitySnapshot.Scope scope,
+            String projectionId,
+            String commandId) {
+        List<StoredRemediation> values = jdbc.query("""
+                        SELECT *
+                        FROM mirror_outcome_continuous_remediations
+                        WHERE tenant_id = ? AND organization_id = ?
+                          AND project_id = ? AND environment_id = ?
+                          AND region = ? AND projection_id = ?
+                          AND command_id = ?
+                        """,
+                this::mapRemediation,
+                scope.tenantId(),
+                scope.organizationId(),
+                scope.projectId(),
+                scope.environmentId(),
+                scope.region(),
+                projectionId,
+                commandId);
+        return one(values);
+    }
+
+    private StoredRemediation mapRemediation(
+            ResultSet row,
+            int ignored) throws SQLException {
+        try {
+            AuthoritativeOutcomeContinuousAssessmentRemediationReceipt
+                    receipt = mapper.readValue(
+                    row.getString("receipt_json"),
+                    AuthoritativeOutcomeContinuousAssessmentRemediationReceipt
+                            .class);
+            receipt.verify(mapper);
+            CapabilitySnapshot.Scope scope =
+                    receipt.scope();
+            if (!scope.tenantId().equals(
+                    row.getString("tenant_id"))
+                    || !scope.organizationId().equals(
+                    row.getString("organization_id"))
+                    || !scope.projectId().equals(
+                    row.getString("project_id"))
+                    || !scope.environmentId().equals(
+                    row.getString("environment_id"))
+                    || !scope.region().equals(
+                    row.getString("region"))
+                    || !receipt.projectionId().equals(
+                    row.getString("projection_id"))
+                    || !receipt.command().commandId().equals(
+                    row.getString("command_id"))
+                    || !receipt.commandFingerprint().equals(
+                    row.getString("command_fingerprint"))
+                    || receipt.remediationGeneration()
+                    != row.getLong(
+                    "remediation_generation")
+                    || !receipt.previousProjection()
+                    .recordFingerprint().equals(
+                            row.getString(
+                                    "previous_projection_fingerprint"))
+                    || !receipt.lifecycleEvent()
+                    .projection()
+                    .recordFingerprint().equals(
+                            row.getString(
+                                    "current_projection_fingerprint"))
+                    || !receipt.lifecycleEvent()
+                    .eventFingerprint().equals(
+                            row.getString(
+                                    "lifecycle_event_fingerprint"))
+                    || !receipt.lifecycleEvent()
+                    .occurredAt().equals(
+                            instant(
+                                    row,
+                                    "accepted_at"))
+                    || !receipt.lifecycleEvent()
+                    .actorFingerprint().equals(
+                            row.getString(
+                                    "actor_fingerprint"))
+                    || !receipt.command()
+                    .reasonCode().equals(
+                            row.getString(
+                                    "reason_code"))
+                    || !receipt.receiptFingerprint().equals(
+                    row.getString("receipt_fingerprint"))) {
+                throw new Violation(
+                        Reason.STORED_STATE_CORRUPT);
+            }
+            return new StoredRemediation(
+                    receipt.commandFingerprint(),
+                    receipt);
+        } catch (JsonProcessingException
+                 | IllegalArgumentException invalid) {
+            throw new Violation(
+                    Reason.STORED_STATE_CORRUPT);
+        }
+    }
+
+    private long nextRemediationGeneration(
+            CapabilitySnapshot.Scope scope,
+            String projectionId) {
+        Long current = jdbc.queryForObject("""
+                        SELECT COALESCE(MAX(remediation_generation), 0)
+                        FROM mirror_outcome_continuous_remediations
+                        WHERE tenant_id = ? AND organization_id = ?
+                          AND project_id = ? AND environment_id = ?
+                          AND region = ? AND projection_id = ?
+                        """,
+                Long.class,
+                scope.tenantId(),
+                scope.organizationId(),
+                scope.projectId(),
+                scope.environmentId(),
+                scope.region(),
+                projectionId);
+        return Math.addExact(
+                Objects.requireNonNullElse(current, 0L),
+                1L);
+    }
+
+    private void insertRemediation(
+            AuthoritativeOutcomeContinuousAssessmentRemediationReceipt
+                    receipt) {
+        CapabilitySnapshot.Scope scope =
+                receipt.scope();
+        try {
+            int inserted = jdbc.update("""
+                            INSERT INTO mirror_outcome_continuous_remediations (
+                                tenant_id, organization_id, project_id,
+                                environment_id, region, projection_id,
+                                command_id, command_fingerprint,
+                                remediation_generation,
+                                previous_projection_fingerprint,
+                                current_projection_fingerprint,
+                                lifecycle_event_fingerprint,
+                                accepted_at, actor_fingerprint,
+                                reason_code, receipt_fingerprint,
+                                receipt_json
+                            ) VALUES (
+                                ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
+                                ?, ?
+                            )
+                            """,
+                    scope.tenantId(),
+                    scope.organizationId(),
+                    scope.projectId(),
+                    scope.environmentId(),
+                    scope.region(),
+                    receipt.projectionId(),
+                    receipt.command().commandId(),
+                    receipt.commandFingerprint(),
+                    receipt.remediationGeneration(),
+                    receipt.previousProjection()
+                            .recordFingerprint(),
+                    receipt.lifecycleEvent()
+                            .projection()
+                            .recordFingerprint(),
+                    receipt.lifecycleEvent()
+                            .eventFingerprint(),
+                    timestamp(
+                            receipt.lifecycleEvent()
+                                    .occurredAt()),
+                    receipt.lifecycleEvent()
+                            .actorFingerprint(),
+                    receipt.command().reasonCode(),
+                    receipt.receiptFingerprint(),
+                    mapper.writeValueAsString(receipt));
+            if (inserted != 1) {
+                throw new Violation(
+                        Reason.STORED_STATE_CORRUPT);
+            }
+        } catch (DuplicateKeyException conflict) {
+            throw new Violation(
+                    Reason.REMEDIATION_COMMAND_CONFLICT);
+        } catch (JsonProcessingException invalid) {
+            throw new Violation(
+                    Reason.STORED_STATE_CORRUPT);
+        }
     }
 
     private AuthoritativeOutcomeContinuousAssessmentLifecycleEvent
@@ -1852,6 +2218,19 @@ DatabaseAuthoritativeOutcomeContinuousAssessmentRepository
                 throw new IllegalArgumentException(
                         "continuous assessment lifecycle head is invalid");
             }
+        }
+    }
+
+    private record StoredRemediation(
+            String commandFingerprint,
+            AuthoritativeOutcomeContinuousAssessmentRemediationReceipt
+                    receipt
+    ) {
+        private StoredRemediation {
+            commandFingerprint = fingerprint(
+                    commandFingerprint);
+            receipt = Objects.requireNonNull(
+                    receipt, "receipt");
         }
     }
 }

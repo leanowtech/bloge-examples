@@ -137,7 +137,7 @@ class AuthoritativeOutcomeContinuousAssessmentVerifierTest {
                 true);
     }
 
-    private static ObjectNode baseProjection() {
+    static ObjectNode baseProjection() {
         ObjectNode projection =
                 JSON.createObjectNode();
         projection.put(

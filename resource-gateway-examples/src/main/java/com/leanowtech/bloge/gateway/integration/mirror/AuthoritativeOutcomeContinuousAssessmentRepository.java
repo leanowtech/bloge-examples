@@ -196,12 +196,41 @@ public interface AuthoritativeOutcomeContinuousAssessmentRepository {
         }
     }
 
+    /** Accepted immutable remediation receipt plus exact-retry disposition. */
+    record Remediation(
+            AuthoritativeOutcomeContinuousAssessmentRemediationReceipt
+                    receipt,
+            boolean idempotentReplay
+    ) {
+        /** Requires one complete immutable receipt. */
+        public Remediation {
+            receipt = Objects.requireNonNull(
+                    receipt, "receipt");
+        }
+    }
+
+    /**
+     * Requeues one exact quarantined head under an actor-bound idempotency command.
+     *
+     * <p>The raw actor coordinate is used only to derive an opaque fingerprint and must never be
+     * stored or returned.</p>
+     */
+    Remediation remediate(
+            CapabilitySnapshot.Scope scope,
+            String projectionId,
+            AuthoritativeOutcomeContinuousAssessmentRemediationRequest
+                    request,
+            String actorId);
+
     /** Closed payload-free repository rejection vocabulary. */
     enum Reason {
         CONTENT_CONFLICT,
         PROJECTION_NOT_FOUND,
         LEASE_LOST,
         ASSESSMENT_INVALID,
+        REMEDIATION_NOT_QUARANTINED,
+        REMEDIATION_FENCE_MISMATCH,
+        REMEDIATION_COMMAND_CONFLICT,
         LIFECYCLE_CURSOR_INVALID,
         STORED_STATE_CORRUPT
     }

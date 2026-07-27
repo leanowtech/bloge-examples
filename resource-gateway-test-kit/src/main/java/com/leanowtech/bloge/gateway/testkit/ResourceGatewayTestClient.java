@@ -54,6 +54,10 @@ public final class ResourceGatewayTestClient {
     AuthoritativeOutcomeContinuousAssessmentLifecycleVerifier
             OUTCOME_CONTINUOUS_ASSESSMENT_LIFECYCLE_VERIFIER =
             new AuthoritativeOutcomeContinuousAssessmentLifecycleVerifier();
+    private static final
+    AuthoritativeOutcomeContinuousAssessmentRemediationVerifier
+            OUTCOME_CONTINUOUS_ASSESSMENT_REMEDIATION_VERIFIER =
+            new AuthoritativeOutcomeContinuousAssessmentRemediationVerifier();
     private static final int DEFAULT_MAX_BODY_BYTES = 16 * 1024 * 1024;
     private static final Duration MAX_RETRY_AFTER = Duration.ofHours(24);
 
@@ -3397,6 +3401,66 @@ public final class ResourceGatewayTestClient {
                 verified.projectionId())) {
             throw responseContractInvalid(
                     "The server returned an invalid continuous assessment lifecycle page.");
+        }
+        return payload.deepCopy();
+    }
+
+    /**
+     * Requeues one exact reviewed continuous-assessment quarantine.
+     *
+     * <p>The client validates the command before transport and independently verifies the returned
+     * immutable receipt, actor-bound idempotency identity, old/new projections, and appended
+     * lifecycle event. The caller should obtain both expected fences from a previously verified
+     * status and lifecycle page.</p>
+     *
+     * @param projectionId stable path-safe projection identity
+     * @param request exact compare-and-set remediation command
+     * @return defensive independently verified remediation receipt
+     */
+    public JsonNode remediateAuthoritativeOutcomeContinuousAssessment(
+            String projectionId,
+            JsonNode request) {
+        String exactProjectionId =
+                mirrorArtifactId(
+                        projectionId, "projectionId");
+        JsonNode command =
+                requiredObject(request, "request");
+        CapabilityMirrorSchemaValidator.require(
+                command,
+                CapabilityMirrorProtocol
+                        .AUTHORITATIVE_OUTCOME_CONTINUOUS_ASSESSMENT_REMEDIATION_REQUEST_SCHEMA_RESOURCE,
+                "RG.MIRROR.CLIENT.OUTCOME_CONTINUOUS_ASSESSMENT_REMEDIATION_COMMAND_INVALID");
+        JsonNode response = exchange(
+                "POST",
+                "/api/mirror/outcome-continuous-assessments/"
+                        + segment(
+                                exactProjectionId,
+                                512)
+                        + "/remediations",
+                "",
+                "MIRROR_OUTCOME_CONTINUOUS_ASSESSMENT_ADMIN",
+                command);
+        JsonNode payload = requireMirrorEnvelope(
+                response,
+                "AUTHORITATIVE_OUTCOME_CONTINUOUS_ASSESSMENT_REMEDIATION_RECEIPT",
+                CapabilityMirrorProtocol
+                        .AUTHORITATIVE_OUTCOME_CONTINUOUS_ASSESSMENT_REMEDIATION_RECEIPT_V1);
+        requireMirrorSchema(
+                payload,
+                CapabilityMirrorProtocol
+                        .AUTHORITATIVE_OUTCOME_CONTINUOUS_ASSESSMENT_REMEDIATION_RECEIPT_SCHEMA_RESOURCE,
+                "OUTCOME_CONTINUOUS_ASSESSMENT_REMEDIATION_RECEIPT");
+        AuthoritativeOutcomeContinuousAssessmentRemediationVerifier
+                .VerificationResult verified =
+                OUTCOME_CONTINUOUS_ASSESSMENT_REMEDIATION_VERIFIER
+                        .verify(payload);
+        if (!verified.verified()
+                || !exactProjectionId.equals(
+                verified.projectionId())
+                || !command.equals(
+                payload.path("command"))) {
+            throw responseContractInvalid(
+                    "The server returned an invalid continuous assessment remediation receipt.");
         }
         return payload.deepCopy();
     }

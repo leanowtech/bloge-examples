@@ -1149,6 +1149,9 @@ class ToolStudioIntegrationServiceTest {
                         "mirrorAuthoritativeOutcomeContinuousAssessmentLifecycle",
                         true)
                 .containsEntry(
+                        "mirrorAuthoritativeOutcomeContinuousAssessmentRemediation",
+                        true)
+                .containsEntry(
                         "mirrorAuthoritativeOutcomeContinuousAssessmentWorkerReady",
                         true)
                 .containsEntry(
@@ -1180,7 +1183,9 @@ class ToolStudioIntegrationServiceTest {
                         "authoritativeOutcomeContinuousAssessmentStatus",
                         "authoritativeOutcomeContinuousAssessmentAdmission",
                         "authoritativeOutcomeContinuousAssessmentLifecycleEvent",
-                        "authoritativeOutcomeContinuousAssessmentLifecyclePage");
+                        "authoritativeOutcomeContinuousAssessmentLifecyclePage",
+                        "authoritativeOutcomeContinuousAssessmentRemediationRequest",
+                        "authoritativeOutcomeContinuousAssessmentRemediationReceipt");
         assertThat(ready.endpoints())
                 .extracting(
                         IntegrationCapabilities.Endpoint::method,
@@ -1209,7 +1214,10 @@ class ToolStudioIntegrationServiceTest {
                                 "/api/mirror/outcome-continuous-assessments/{projectionId}"),
                         org.assertj.core.groups.Tuple.tuple(
                                 "GET",
-                                "/api/mirror/outcome-continuous-assessments/{projectionId}/lifecycle"));
+                                "/api/mirror/outcome-continuous-assessments/{projectionId}/lifecycle"),
+                        org.assertj.core.groups.Tuple.tuple(
+                                "POST",
+                                "/api/mirror/outcome-continuous-assessments/{projectionId}/remediations"));
 
         authoritiesReady.set(false);
         assertThat(service.capabilities()

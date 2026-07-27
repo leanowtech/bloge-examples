@@ -513,6 +513,191 @@ class DatabaseAuthoritativeOutcomeContinuousAssessmentRepositoryTest {
                                 .Status.RUNNING);
     }
 
+    @Test
+    void remediatesExactQuarantineAndExactlyReplaysAfterLaterClaim() {
+        AuthoritativeOutcomeContinuousAssessmentProjection
+                quarantined = quarantine();
+        AuthoritativeOutcomeContinuousAssessmentLifecycleEvent
+                head = lifecycleHead();
+        AuthoritativeOutcomeContinuousAssessmentRemediationRequest
+                command = remediationCommand(
+                "remediation-1",
+                quarantined,
+                head,
+                "DEPENDENCY_REPAIRED");
+
+        AuthoritativeOutcomeContinuousAssessmentRepository
+                .Remediation accepted = repository.remediate(
+                population.manifest().scope(),
+                request.projectionId(),
+                command,
+                "SERVICE:outcome-operator");
+
+        assertThat(accepted.idempotentReplay())
+                .isFalse();
+        AuthoritativeOutcomeContinuousAssessmentRemediationReceipt
+                receipt = accepted.receipt();
+        receipt.verify(mapper);
+        assertThat(receipt.previousProjection())
+                .isEqualTo(quarantined);
+        assertThat(receipt.lifecycleEvent().transition())
+                .isEqualTo(
+                        AuthoritativeOutcomeContinuousAssessmentLifecycleEvent
+                                .Transition.REMEDIATION_ACCEPTED);
+        assertThat(receipt.lifecycleEvent()
+                .projection().status())
+                .isEqualTo(
+                        AuthoritativeOutcomeContinuousAssessmentProjection
+                                .Status.QUEUED);
+        assertThat(receipt.lifecycleEvent()
+                .projection().consecutiveFailures())
+                .isZero();
+        assertThat(receipt.lifecycleEvent()
+                .projection().attemptCount())
+                .isEqualTo(quarantined.attemptCount());
+        assertThat(receipt.lifecycleEvent()
+                .projection().leaseEpoch())
+                .isEqualTo(quarantined.leaseEpoch());
+        assertThat(receipt.lifecycleEvent()
+                .previousEventFingerprint())
+                .isEqualTo(head.eventFingerprint());
+
+        claim("owner-after-remediation");
+        AuthoritativeOutcomeContinuousAssessmentRepository
+                .Remediation replay = repository.remediate(
+                population.manifest().scope(),
+                request.projectionId(),
+                command,
+                "SERVICE:outcome-operator");
+
+        assertThat(replay.idempotentReplay())
+                .isTrue();
+        assertThat(replay.receipt())
+                .isEqualTo(receipt);
+    }
+
+    @Test
+    void rejectsBlindWrongStateAndReusedRemediationCommands() {
+        repository.register(
+                population.manifest().scope(),
+                request);
+        AuthoritativeOutcomeContinuousAssessmentProjection
+                queued = repository.find(
+                population.manifest().scope(),
+                request.projectionId())
+                .orElseThrow()
+                .projection();
+        AuthoritativeOutcomeContinuousAssessmentLifecycleEvent
+                registered = lifecycleHead();
+        assertReason(
+                () -> repository.remediate(
+                        population.manifest().scope(),
+                        request.projectionId(),
+                        remediationCommand(
+                                "not-quarantined",
+                                queued,
+                                registered,
+                                "REVIEWED"),
+                        "SERVICE:outcome-operator"),
+                AuthoritativeOutcomeContinuousAssessmentRepository
+                        .Reason.REMEDIATION_NOT_QUARANTINED);
+
+        AuthoritativeOutcomeContinuousAssessmentProjection
+                quarantined = repository.fail(
+                claim("owner-a").lease(),
+                "DEPENDENCY_FAILED",
+                false,
+                POLICY);
+        AuthoritativeOutcomeContinuousAssessmentLifecycleEvent
+                head = lifecycleHead();
+        AuthoritativeOutcomeContinuousAssessmentRemediationRequest
+                wrongFence = new
+                AuthoritativeOutcomeContinuousAssessmentRemediationRequest(
+                "",
+                "wrong-fence",
+                "sha256:" + "a".repeat(64),
+                head.eventOrdinal(),
+                head.eventFingerprint(),
+                "REVIEWED");
+        assertReason(
+                () -> repository.remediate(
+                        population.manifest().scope(),
+                        request.projectionId(),
+                        wrongFence,
+                        "SERVICE:outcome-operator"),
+                AuthoritativeOutcomeContinuousAssessmentRepository
+                        .Reason.REMEDIATION_FENCE_MISMATCH);
+
+        AuthoritativeOutcomeContinuousAssessmentRemediationRequest
+                accepted = remediationCommand(
+                "stable-command",
+                quarantined,
+                head,
+                "DEPENDENCY_REPAIRED");
+        repository.remediate(
+                population.manifest().scope(),
+                request.projectionId(),
+                accepted,
+                "SERVICE:outcome-operator");
+        AuthoritativeOutcomeContinuousAssessmentRemediationRequest
+                changed = remediationCommand(
+                "stable-command",
+                quarantined,
+                head,
+                "OPERATOR_OVERRIDE");
+        assertReason(
+                () -> repository.remediate(
+                        population.manifest().scope(),
+                        request.projectionId(),
+                        changed,
+                        "SERVICE:outcome-operator"),
+                AuthoritativeOutcomeContinuousAssessmentRepository
+                        .Reason.REMEDIATION_COMMAND_CONFLICT);
+        assertReason(
+                () -> repository.remediate(
+                        population.manifest().scope(),
+                        request.projectionId(),
+                        accepted,
+                        "SERVICE:different-operator"),
+                AuthoritativeOutcomeContinuousAssessmentRepository
+                        .Reason.REMEDIATION_COMMAND_CONFLICT);
+    }
+
+    @Test
+    void failsClosedWhenRetainedRemediationReceiptIsTampered() {
+        AuthoritativeOutcomeContinuousAssessmentProjection
+                quarantined = quarantine();
+        AuthoritativeOutcomeContinuousAssessmentLifecycleEvent
+                head = lifecycleHead();
+        AuthoritativeOutcomeContinuousAssessmentRemediationRequest
+                command = remediationCommand(
+                "tamper-check",
+                quarantined,
+                head,
+                "DEPENDENCY_REPAIRED");
+        repository.remediate(
+                population.manifest().scope(),
+                request.projectionId(),
+                command,
+                "SERVICE:outcome-operator");
+        jdbc.update("""
+                UPDATE mirror_outcome_continuous_remediations
+                SET reason_code = 'TAMPERED'
+                WHERE projection_id = ? AND command_id = ?
+                """,
+                request.projectionId(),
+                command.commandId());
+
+        assertReason(
+                () -> repository.remediate(
+                        population.manifest().scope(),
+                        request.projectionId(),
+                        command,
+                        "SERVICE:outcome-operator"),
+                AuthoritativeOutcomeContinuousAssessmentRepository
+                        .Reason.STORED_STATE_CORRUPT);
+    }
+
     private AuthoritativeOutcomeContinuousAssessmentRepository.Claim
     claim(String owner) {
         AuthoritativeOutcomeContinuousAssessmentRepository.Claim
@@ -521,6 +706,48 @@ class DatabaseAuthoritativeOutcomeContinuousAssessmentRepositoryTest {
                 AuthoritativeOutcomeContinuousAssessmentRepository
                         .Claim.Outcome.ACQUIRED);
         return claim;
+    }
+
+    private AuthoritativeOutcomeContinuousAssessmentProjection
+    quarantine() {
+        repository.register(
+                population.manifest().scope(),
+                request);
+        return repository.fail(
+                claim("quarantine-owner").lease(),
+                "DEPENDENCY_FAILED",
+                false,
+                POLICY);
+    }
+
+    private AuthoritativeOutcomeContinuousAssessmentLifecycleEvent
+    lifecycleHead() {
+        return repository.lifecycle(
+                population.manifest().scope(),
+                request.projectionId(),
+                0,
+                100)
+                .events()
+                .getLast();
+    }
+
+    private static
+    AuthoritativeOutcomeContinuousAssessmentRemediationRequest
+    remediationCommand(
+            String commandId,
+            AuthoritativeOutcomeContinuousAssessmentProjection
+                    projection,
+            AuthoritativeOutcomeContinuousAssessmentLifecycleEvent
+                    head,
+            String reasonCode) {
+        return new
+                AuthoritativeOutcomeContinuousAssessmentRemediationRequest(
+                "",
+                commandId,
+                projection.recordFingerprint(),
+                head.eventOrdinal(),
+                head.eventFingerprint(),
+                reasonCode);
     }
 
     private AuthoritativeOutcomeContinuousAssessmentRepository.Claim

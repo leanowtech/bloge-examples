@@ -1395,6 +1395,12 @@ class ResourceGatewayTestClientTest {
                         0,
                         "",
                         100);
+        ObjectNode remediationCommand =
+                continuousAssessmentRemediationCommand();
+        JsonNode remediation =
+                client.remediateAuthoritativeOutcomeContinuousAssessment(
+                        "refunds/continuous",
+                        remediationCommand);
 
         assertThat(admission.path("idempotentReplay")
                 .asBoolean()).isFalse();
@@ -1410,6 +1416,12 @@ class ResourceGatewayTestClientTest {
                 .get(0)
                 .path("transition").asText())
                 .isEqualTo("REGISTERED");
+        assertThat(remediation.path(
+                "remediationGeneration")
+                .asLong()).isEqualTo(1);
+        assertThat(remediation.path("lifecycleEvent")
+                .path("transition").asText())
+                .isEqualTo("REMEDIATION_ACCEPTED");
         assertThat(requests)
                 .extracting(
                         CapturedRequest::method,
@@ -1427,8 +1439,12 @@ class ResourceGatewayTestClientTest {
                         org.assertj.core.groups.Tuple.tuple(
                                 "GET",
                                 "/api/mirror/outcome-continuous-assessments/refunds%2Fcontinuous/lifecycle",
-                                "GOVERNANCE_EVIDENCE_INGESTION"));
-        assertThat(requests.getLast().rawQuery())
+                                "GOVERNANCE_EVIDENCE_INGESTION"),
+                        org.assertj.core.groups.Tuple.tuple(
+                                "POST",
+                                "/api/mirror/outcome-continuous-assessments/refunds%2Fcontinuous/remediations",
+                                "MIRROR_OUTCOME_CONTINUOUS_ASSESSMENT_ADMIN"));
+        assertThat(requests.get(2).rawQuery())
                 .isEqualTo(
                         "afterOrdinal=0&limit=100");
     }
@@ -1453,6 +1469,14 @@ class ResourceGatewayTestClientTest {
                         IllegalArgumentException.class)
                 .hasMessageContaining(
                         "lifecycle cursor");
+        assertThatThrownBy(() ->
+                client.remediateAuthoritativeOutcomeContinuousAssessment(
+                        "refunds/continuous",
+                        JSON.createObjectNode()))
+                .isInstanceOf(
+                        IllegalArgumentException.class)
+                .hasMessage(
+                        "RG.MIRROR.CLIENT.OUTCOME_CONTINUOUS_ASSESSMENT_REMEDIATION_COMMAND_INVALID");
         assertThat(requests).isEmpty();
     }
 
@@ -1821,6 +1845,21 @@ class ResourceGatewayTestClientTest {
             return;
         }
         if ("POST".equals(exchange.getRequestMethod())
+                && path.endsWith("/remediations")) {
+            ObjectNode receipt =
+                    continuousAssessmentRemediationReceipt(
+                            body);
+            respond(
+                    exchange,
+                    200,
+                    mirrorEnvelope(
+                            "AUTHORITATIVE_OUTCOME_CONTINUOUS_ASSESSMENT_REMEDIATION_RECEIPT",
+                            CapabilityMirrorProtocol
+                                    .AUTHORITATIVE_OUTCOME_CONTINUOUS_ASSESSMENT_REMEDIATION_RECEIPT_V1,
+                            receipt));
+            return;
+        }
+        if ("POST".equals(exchange.getRequestMethod())
                 && path.equals(
                 "/api/mirror/outcome-continuous-assessments")) {
             ObjectNode admission = JSON.createObjectNode();
@@ -1974,6 +2013,189 @@ class ResourceGatewayTestClientTest {
         status.put("authoritiesReady", true);
         status.put("ready", false);
         return status;
+    }
+
+    private static ObjectNode
+    continuousAssessmentRemediationCommand() {
+        ObjectNode previous =
+                continuousAssessmentQuarantinedProjection();
+        ObjectNode command =
+                JSON.createObjectNode();
+        command.put(
+                "schemaVersion",
+                CapabilityMirrorProtocol
+                        .AUTHORITATIVE_OUTCOME_CONTINUOUS_ASSESSMENT_REMEDIATION_REQUEST_V1);
+        command.put(
+                "commandId", "remediation-1");
+        command.put(
+                "expectedProjectionFingerprint",
+                previous.path(
+                        "recordFingerprint")
+                        .asText());
+        command.put(
+                "expectedLifecycleHeadOrdinal", 3);
+        command.put(
+                "expectedLifecycleHeadFingerprint",
+                "sha256:" + "b".repeat(64));
+        command.put(
+                "reasonCode",
+                "DEPENDENCY_REPAIRED");
+        return command;
+    }
+
+    private static ObjectNode
+    continuousAssessmentRemediationReceipt(
+            JsonNode command) {
+        ObjectNode previous =
+                continuousAssessmentQuarantinedProjection();
+        ObjectNode current =
+                previous.deepCopy();
+        current.put("status", "QUEUED");
+        current.put("consecutiveFailures", 0);
+        current.put(
+                "nextEligibleAt",
+                "2026-07-27T00:00:03Z");
+        current.put("failureCode", "");
+        current.put(
+                "updatedAt",
+                "2026-07-27T00:00:03Z");
+        current.putNull("terminalAt");
+        sealContinuousAssessmentProjection(current);
+
+        String actor =
+                "sha256:" + "c".repeat(64);
+        ObjectNode event =
+                JSON.createObjectNode();
+        event.put(
+                "schemaVersion",
+                CapabilityMirrorProtocol
+                        .AUTHORITATIVE_OUTCOME_CONTINUOUS_ASSESSMENT_LIFECYCLE_EVENT_V1);
+        event.put("eventOrdinal", 4);
+        event.put(
+                "transition",
+                "REMEDIATION_ACCEPTED");
+        event.put(
+                "occurredAt",
+                current.path("updatedAt")
+                        .asText());
+        event.put(
+                "actorFingerprint", actor);
+        event.set(
+                "projection", current);
+        event.put(
+                "previousEventFingerprint",
+                command.path(
+                        "expectedLifecycleHeadFingerprint")
+                        .asText());
+        event.put("eventFingerprint", "");
+        event.put(
+                "eventFingerprint",
+                EvidenceVerificationSupport
+                        .sha256Bounded(
+                                event,
+                                AuthoritativeOutcomeContinuousAssessmentLifecycleVerifier
+                                        .MAXIMUM_EVENT_BYTES));
+
+        ObjectNode receipt =
+                JSON.createObjectNode();
+        receipt.put(
+                "schemaVersion",
+                CapabilityMirrorProtocol
+                        .AUTHORITATIVE_OUTCOME_CONTINUOUS_ASSESSMENT_REMEDIATION_RECEIPT_V1);
+        receipt.put("receiptFingerprint", "");
+        receipt.put("commandFingerprint", "");
+        receipt.set(
+                "scope",
+                previous.path("scope")
+                        .deepCopy());
+        receipt.put(
+                "projectionId",
+                "refunds/continuous");
+        receipt.put(
+                "remediationGeneration", 1);
+        receipt.set(
+                "command",
+                command.deepCopy());
+        receipt.set(
+                "previousProjection",
+                previous);
+        receipt.set(
+                "lifecycleEvent", event);
+        ObjectNode binding =
+                JSON.createObjectNode();
+        binding.put(
+                "schemaVersion",
+                AuthoritativeOutcomeContinuousAssessmentRemediationVerifier
+                        .COMMAND_BINDING_SCHEMA_VERSION);
+        binding.set(
+                "scope",
+                receipt.path("scope")
+                        .deepCopy());
+        binding.put(
+                "projectionId",
+                "refunds/continuous");
+        binding.put(
+                "actorFingerprint", actor);
+        binding.set(
+                "command",
+                command.deepCopy());
+        receipt.put(
+                "commandFingerprint",
+                EvidenceVerificationSupport
+                        .sha256Bounded(
+                                binding,
+                                AuthoritativeOutcomeContinuousAssessmentRemediationVerifier
+                                        .MAXIMUM_COMMAND_BINDING_BYTES));
+        receipt.put(
+                "receiptFingerprint",
+                EvidenceVerificationSupport
+                        .sha256Bounded(
+                                receipt,
+                                AuthoritativeOutcomeContinuousAssessmentRemediationVerifier
+                                        .MAXIMUM_RECEIPT_BYTES));
+        return receipt;
+    }
+
+    private static ObjectNode
+    continuousAssessmentQuarantinedProjection() {
+        ObjectNode projection =
+                (ObjectNode) continuousAssessmentStatus(
+                        "refunds/continuous")
+                        .path("projection")
+                        .deepCopy();
+        projection.put(
+                "status", "QUARANTINED");
+        projection.put("attemptCount", 1);
+        projection.put(
+                "consecutiveFailures", 1);
+        projection.put(
+                "nextEligibleAt",
+                "2026-07-27T00:00:02Z");
+        projection.put("leaseEpoch", 1);
+        projection.put(
+                "failureCode",
+                "DEPENDENCY_FAILED");
+        projection.put(
+                "updatedAt",
+                "2026-07-27T00:00:02Z");
+        projection.put(
+                "terminalAt",
+                "2026-07-27T00:00:02Z");
+        sealContinuousAssessmentProjection(
+                projection);
+        return projection;
+    }
+
+    private static void sealContinuousAssessmentProjection(
+            ObjectNode projection) {
+        projection.put("recordFingerprint", "");
+        projection.put(
+                "recordFingerprint",
+                EvidenceVerificationSupport
+                        .sha256Bounded(
+                                projection,
+                                AuthoritativeOutcomeContinuousAssessmentVerifier
+                                        .MAXIMUM_PROJECTION_BYTES));
     }
 
     private static ObjectNode selectedPopulationUploadStatus(

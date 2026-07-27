@@ -31,7 +31,8 @@
         "SOURCE_UNCHANGED",
         "RETRY_SCHEDULED",
         "LEASE_EXPIRED",
-        "QUARANTINED"
+        "QUARANTINED",
+        "REMEDIATION_ACCEPTED"
       ]
     },
     "occurredAt": {
@@ -176,6 +177,38 @@
             "properties": {
               "status": {
                 "const": "QUARANTINED"
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "transition": {
+            "const": "REMEDIATION_ACCEPTED"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "actorFingerprint": {
+            "$ref": "mirror-plan-v1.schema.json#/$defs/fingerprint"
+          },
+          "projection": {
+            "properties": {
+              "status": {
+                "const": "QUEUED"
+              },
+              "consecutiveFailures": {
+                "const": 0
+              },
+              "failureCode": {
+                "const": ""
+              },
+              "terminalAt": {
+                "type": "null"
               }
             }
           }

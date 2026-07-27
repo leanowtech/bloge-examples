@@ -163,10 +163,12 @@ offline artifact verification live in the independent `resource-gateway-test-kit
 | `authoritative-outcome-continuous-assessment-admission-v1.schema.json` | `AuthoritativeOutcomeContinuousAssessmentAdmission` | Durable registration result with effective status and exact-replay signal |
 | `authoritative-outcome-continuous-assessment-lifecycle-event-v1.schema.json` | `AuthoritativeOutcomeContinuousAssessmentLifecycleEvent` | Content-addressed projection transition with ordinal, opaque actor, and predecessor binding |
 | `authoritative-outcome-continuous-assessment-lifecycle-page-v1.schema.json` | `AuthoritativeOutcomeContinuousAssessmentLifecyclePage` | Bounded caller-cursor-owned contiguous lifecycle suffix for offline audit |
+| `authoritative-outcome-continuous-assessment-remediation-request-v1.schema.json` | `AuthoritativeOutcomeContinuousAssessmentRemediationRequest` | Actor-bound idempotent admin command fenced by one reviewed quarantined projection and lifecycle head |
+| `authoritative-outcome-continuous-assessment-remediation-receipt-v1.schema.json` | `AuthoritativeOutcomeContinuousAssessmentRemediationReceipt` | Content-addressed immutable receipt binding the command, previous projection, and accepted lifecycle transition |
 
 ### Selected-population continuous-assessment lifecycle
 
-The six continuous schemas extend the immutable assessment protocol without
+The eight continuous schemas extend the immutable assessment protocol without
 creating a mutable evidence object. `Projection` is a rebuildable coordination
 head; `lastAssessmentRef` always points to the separately signed immutable
 assessment stream. Its `recordFingerprint` detects storage drift but is not a
@@ -208,9 +210,9 @@ optimistic projection-and-head fence. Each event embeds the complete resulting
 projection, so replay does not depend on reconstructing historical mutable
 columns. The closed transition vocabulary is `REGISTERED`, `MIGRATED`,
 `CLAIMED`, `ASSESSMENT_PUBLISHED`, `SOURCE_UNCHANGED`, `RETRY_SCHEDULED`,
-`LEASE_EXPIRED`, and `QUARANTINED`. `MIGRATED` records the first observed
-baseline for a pre-lifecycle row without claiming that unrecorded history
-occurred.
+`LEASE_EXPIRED`, `QUARANTINED`, and `REMEDIATION_ACCEPTED`. `MIGRATED`
+records the first observed baseline for a pre-lifecycle row without claiming
+that unrecorded history occurred.
 
 Lifecycle pages are oldest-first and use an exclusive `afterOrdinal`.
 `predecessorFingerprint` is blank only at ordinal zero and otherwise identifies
@@ -220,6 +222,28 @@ caller continues with `nextOrdinal` and the last verified event fingerprint;
 the server does not get to choose an unverified continuation. Projection-head
 verification detects lifecycle head deletion or truncation even when a
 requested suffix is otherwise syntactically valid.
+
+`QUARANTINED` is deliberately not cleared by retrying the worker. The
+admin-only remediation request must carry the exact reviewed projection
+fingerprint and the exact verified lifecycle head ordinal/fingerprint. The
+repository compares both fences while holding the projection row, then appends
+`REMEDIATION_ACCEPTED`, advances the projection head, stores the immutable
+receipt, and commits the mandatory operation audit in one transaction.
+
+The accepted transition changes only scheduling eligibility: work becomes
+`QUEUED`, the current consecutive-failure streak and failure code are cleared,
+and `nextEligibleAt` becomes database commit time. It cannot alter the
+population, assessment stream, source closure, cumulative attempt count, lease
+epoch, creation time, or historical freshness deadline. The next worker must
+therefore re-observe authoritative sources before any current claim can be
+renewed.
+
+The command id is idempotent only for the same authenticated actor and exact
+canonical command. Exact replay returns the original receipt even after a later
+worker transition. Reusing it with different content or authority fails with a
+stable conflict; stale projection/lifecycle fences and non-quarantined state
+also fail closed. This makes remediation a reviewed state transition, not an
+unbounded `force=true` escape hatch.
 
 ### Selected-population staged-upload lifecycle
 

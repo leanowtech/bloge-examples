@@ -1033,7 +1033,8 @@ fixture remains future work.
 
 ### Verify selected-population completeness
 
-Selected-population commands, evidence, resumable transport, and continuous projection use twenty-two strict Draft 2020-12
+Selected-population commands, evidence, resumable transport, continuous
+projection, and controlled quarantine remediation use twenty-four strict Draft 2020-12
 Schemas packaged in both Test Kit JARs. `CapabilityMirrorProtocol` exposes the
 version and resource constants; `CapabilityMirrorSchemaValidator` resolves the
 complete local `$ref` closure without fetching a network resource.
@@ -1255,6 +1256,51 @@ do {
     }
 } while (true);
 ```
+
+`QUARANTINED` is a terminal autonomous-scheduling state, not a retry hint.
+After repairing the external cause, an authorized operations workflow must
+construct the remediation command from the independently verified status and
+lifecycle checkpoint:
+
+```java
+ObjectNode remediation = json.createObjectNode();
+remediation.put(
+        "schemaVersion",
+        CapabilityMirrorProtocol
+                .AUTHORITATIVE_OUTCOME_CONTINUOUS_ASSESSMENT_REMEDIATION_REQUEST_V1);
+remediation.put("commandId", "incident-4821-recovery-1");
+remediation.put(
+        "expectedProjectionFingerprint",
+        status.path("projection")
+                .path("recordFingerprint").asText());
+remediation.put("expectedLifecycleHeadOrdinal", afterOrdinal);
+remediation.put(
+        "expectedLifecycleHeadFingerprint",
+        predecessorFingerprint);
+remediation.put("reasonCode", "OUTCOME_AUTHORITY_REPAIRED");
+
+JsonNode receipt =
+        client.remediateAuthoritativeOutcomeContinuousAssessment(
+                "refund-completeness",
+                remediation);
+var remediationVerification =
+        new AuthoritativeOutcomeContinuousAssessmentRemediationVerifier()
+                .verify(receipt);
+if (!remediationVerification.verified()) {
+    throw new IllegalStateException(
+            remediationVerification.reasonCode());
+}
+```
+
+The client uses the dedicated
+`MIRROR_OUTCOME_CONTINUOUS_ASSESSMENT_ADMIN` purpose, applies both strict
+Schemas, verifies the integration envelope, and independently verifies both
+projection content addresses, the appended `REMEDIATION_ACCEPTED` event,
+projection/lifecycle double CAS, actor-bound command fingerprint, allowed
+state delta, and receipt content address. Exact retries by the same actor and
+command return the same receipt. A changed command, actor, projection, or
+lifecycle head is rejected; there is deliberately no force or blind-retry
+variant.
 
 Both methods validate strict Schema and integration-envelope versions. The
 registration method also requires the returned projection id and exact

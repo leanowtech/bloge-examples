@@ -201,6 +201,52 @@ public final class AuthoritativeOutcomeContinuousAssessmentService {
         }
     }
 
+    /** Requeues one exact reviewed quarantine and returns its immutable receipt. */
+    public AuthoritativeOutcomeContinuousAssessmentRemediationReceipt
+    remediate(
+            String projectionId,
+            AuthoritativeOutcomeContinuousAssessmentRemediationRequest
+                    request,
+            IntegrationRequestContext identity) {
+        IntegrationRequestContext operator =
+                requireRemediator(identity);
+        AuthoritativeOutcomeContinuousAssessmentRemediationRequest
+                command = Objects.requireNonNull(
+                request, "request");
+        MirrorOperationObservability.Observation audit =
+                observability.start(
+                        MirrorOperationAuditEvent.Operation
+                                .OUTCOME_CONTINUOUS_ASSESSMENT_REMEDIATE,
+                        operator,
+                        projectionId,
+                        command.commandId(),
+                        "");
+        try {
+            AuthoritativeOutcomeContinuousAssessmentRepository
+                    .Remediation result = required(
+                    mutations.execute(ignored -> {
+                        AuthoritativeOutcomeContinuousAssessmentRepository
+                                .Remediation value =
+                                repository.remediate(
+                                        scope(operator),
+                                        projectionId,
+                                        command,
+                                        operator.actorType()
+                                                + ":"
+                                                + operator.actorId());
+                        audit.succeeded(
+                                value.receipt()
+                                        .receiptFingerprint());
+                        return value;
+                    }),
+                    "continuous assessment remediation");
+            return result.receipt();
+        } catch (RuntimeException failure) {
+            throw audit.failed(
+                    mapFailure(failure, operator));
+        }
+    }
+
     /** @return whether all authorities and the assessment signer are currently usable */
     public boolean authoritiesReady() {
         try {
@@ -246,6 +292,22 @@ public final class AuthoritativeOutcomeContinuousAssessmentService {
                     exact,
                     "RG.MIRROR.OUTCOME.CONTINUOUS_ASSESSMENT_READ_FORBIDDEN",
                     "The authenticated purpose cannot read continuous assessment status.");
+        }
+        return exact;
+    }
+
+    private IntegrationRequestContext requireRemediator(
+            IntegrationRequestContext identity) {
+        IntegrationRequestContext exact =
+                requireIdentity(identity);
+        if (!AuthoritativeOutcomeSelectedPopulationAccessPolicy
+                .REMEDIATION_PURPOSE.equals(
+                        exact.purpose())
+                || !accessPolicy.mayRemediate(exact)) {
+            throw forbidden(
+                    exact,
+                    "RG.MIRROR.OUTCOME.CONTINUOUS_ASSESSMENT_REMEDIATION_FORBIDDEN",
+                    "The workload is not an authorized continuous assessment remediator.");
         }
         return exact;
     }
@@ -300,6 +362,27 @@ public final class AuthoritativeOutcomeContinuousAssessmentService {
                                         Map.of()));
                 case STORED_STATE_CORRUPT ->
                         unavailable(identity);
+                case REMEDIATION_NOT_QUARANTINED ->
+                        new IntegrationProblemException(
+                                IntegrationProblem.conflict(
+                                        "RG.MIRROR.OUTCOME.CONTINUOUS_ASSESSMENT_REMEDIATION_NOT_QUARANTINED",
+                                        "The continuous assessment is not quarantined.",
+                                        identity.correlationId(),
+                                        Map.of()));
+                case REMEDIATION_FENCE_MISMATCH ->
+                        new IntegrationProblemException(
+                                IntegrationProblem.conflict(
+                                        "RG.MIRROR.OUTCOME.CONTINUOUS_ASSESSMENT_REMEDIATION_FENCE_MISMATCH",
+                                        "The continuous assessment changed after remediation review.",
+                                        identity.correlationId(),
+                                        Map.of()));
+                case REMEDIATION_COMMAND_CONFLICT ->
+                        new IntegrationProblemException(
+                                IntegrationProblem.conflict(
+                                        "RG.MIRROR.OUTCOME.CONTINUOUS_ASSESSMENT_REMEDIATION_COMMAND_CONFLICT",
+                                        "The remediation command identity was reused with different content.",
+                                        identity.correlationId(),
+                                        Map.of()));
                 default ->
                         new IntegrationProblemException(
                                 IntegrationProblem.conflict(

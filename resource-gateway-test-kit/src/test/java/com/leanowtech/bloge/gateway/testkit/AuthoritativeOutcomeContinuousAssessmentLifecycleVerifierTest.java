@@ -168,7 +168,7 @@ class AuthoritativeOutcomeContinuousAssessmentLifecycleVerifierTest {
         return page;
     }
 
-    private static ObjectNode event(
+    static ObjectNode event(
             long ordinal,
             String transition,
             String actorFingerprint,

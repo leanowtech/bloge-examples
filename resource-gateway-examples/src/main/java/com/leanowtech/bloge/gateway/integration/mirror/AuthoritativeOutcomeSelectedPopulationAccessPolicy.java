@@ -30,6 +30,9 @@ public record AuthoritativeOutcomeSelectedPopulationAccessPolicy(
     /** Governance purpose allowed to project completeness. */
     public static final String ASSESSMENT_PURPOSE =
             "MIRROR_FIDELITY_GOVERNANCE";
+    /** Dedicated operator purpose for reviewed continuous-assessment quarantine recovery. */
+    public static final String REMEDIATION_PURPOSE =
+            "MIRROR_OUTCOME_CONTINUOUS_ASSESSMENT_ADMIN";
     /** Default customer selection-authority workload group. */
     public static final String DEFAULT_SELECTION_GROUP =
             "RESOURCE_GATEWAY_OUTCOME_SELECTION_AUTHORITY";
@@ -86,6 +89,15 @@ public record AuthoritativeOutcomeSelectedPopulationAccessPolicy(
         return permits(
                 identity,
                 ASSESSMENT_PURPOSE,
+                assessmentProjectorGroups);
+    }
+
+    /** @return whether a workload may requeue one exact reviewed quarantine */
+    public boolean mayRemediate(
+            IntegrationRequestContext identity) {
+        return permits(
+                identity,
+                REMEDIATION_PURPOSE,
                 assessmentProjectorGroups);
     }
 

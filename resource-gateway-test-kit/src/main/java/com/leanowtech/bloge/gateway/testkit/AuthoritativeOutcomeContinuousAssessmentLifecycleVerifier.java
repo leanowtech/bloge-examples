@@ -282,6 +282,26 @@ AuthoritativeOutcomeContinuousAssessmentLifecycleVerifier {
                             .isBlank()
                             && projection.hasNonNull(
                             "terminalAt");
+            case "REMEDIATION_ACCEPTED" ->
+                    "QUEUED".equals(status)
+                            && !actor.isBlank()
+                            && projection.path(
+                            "consecutiveFailures")
+                            .asInt(-1) == 0
+                            && projection.path(
+                            "failureCode")
+                            .asText("")
+                            .isBlank()
+                            && projection.path(
+                            "terminalAt")
+                            .isNull()
+                            && projection.path(
+                            "nextEligibleAt")
+                            .asText("")
+                            .equals(
+                                    projection.path(
+                                            "updatedAt")
+                                            .asText(""));
             default -> false;
         };
         if (!valid) {
