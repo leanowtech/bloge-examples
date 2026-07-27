@@ -2,7 +2,7 @@
 
 > Goal: residual gap below 8% against the approved evolution plan
 > Measurement: weighted, evidence-based capability matrix
-> Latest round: Stage 0 semantic foundation
+> Latest round: Stage 1 first authoring vertical slice
 
 ## Assessment Method
 
@@ -82,3 +82,71 @@ Stage 0 established the following green baseline on 2026-07-27:
 The Maven verification includes the existing database, Spring application, protocol, and real-browser
 integration suites. Each later round must preserve this baseline and add focused tests for its new
 behavior.
+
+## Round 2
+
+Implemented evidence:
+
+- the canvas exposes an always-visible, clickable Contract rail with input/output/scenario status;
+- a dedicated four-view workspace covers Interface, Scenarios, Compatibility, and Run Evidence;
+- graph input/output schemas are projected into searchable field trees;
+- Scenario Given, exact-node REAL/RETURN dependencies, and whole-output/path equality assertions use
+  schema-driven native controls;
+- open-schema JSON controls retain incomplete local text without corrupting the last canonical value;
+- existing built-in example table cases project automatically into first-class Scenario drafts;
+- deterministic browser SHA-256 coordinates bind Scenario sets to the exact graph and Contract;
+- graph or Contract drift blocks runs until the user performs an explicit, provenance-recorded rebase;
+- Run & Compare reuses the simulation API and renders actual-versus-expected evidence and node status;
+- unsupported governed behavior remains visible and fails closed in the transient compiler;
+- graphical edits and Advanced Scenario JSON stay synchronized on the same canonical model;
+- desktop, tablet, and narrow-screen layout rules are included for the workspace and rail.
+
+Weighted assessment:
+
+| Workstream | Achieved | Evidence | Largest remaining gap |
+|---|---:|---|---|
+| Product information architecture | 14/18 | Contract rail and four-view lifecycle workspace | operator target unification and deep-link focus |
+| Schema workbench | 9/15 | field tree, schema forms, arrays/enums/scalars, open JSON fallback | Contract mutation, hybrid/raw classification and semantic validation |
+| Scenario builder | 11/17 | Given/Dependencies/Then, examples, run and compare | full behavior, selector, match and assertion builders |
+| Compiler and adapters | 8/15 | transient compiler, legacy case projection, fail-closed advanced routing | governed FixtureBundle/TestSuite compiler and bidirectional adapters |
+| Persistence and protocol | 1/10 | authoritative schemas only | durable API, concurrency, revisions and portable workspace |
+| Compatibility and lineage | 2/10 | exact stale coordinates and explicit rebase | semantic diff, field lineage, impact and guided migration |
+| Security and governance | 2/8 | exact-coordinate and advanced-behavior fail-closed checks | principal/environment policy, secrets, publication separation |
+| Samples, documentation, observability | 3/7 | built-in case projection, user flow and 204 frontend tests | guided samples, telemetry, performance and automated visual evidence |
+| Total achieved | **50/100** |  |  |
+
+**Residual gap: 50%.**
+
+The Stage 1 product path is implemented, but its real-browser exit gate is not claimed complete in
+this environment. The packaged application started successfully and the capability probe passed;
+the in-app browser then blocked local-page inspection under its URL safety policy. Component
+interaction tests and responsive CSS constraints are green, but reproducible screenshot and overlap
+checks must be added to the repository before the browser gate receives credit.
+
+## Next Targeted Iteration
+
+Stage 2 must close the industrial Scenario and governed-publication loop:
+
+1. add durable, scoped, optimistic-concurrency ScenarioDraftSet storage and APIs;
+2. support every v1 dependency behavior, selector, matcher, consumption rule and schema check;
+3. expand assertions to node, edge, invocation, schema, error and governance scopes;
+4. compile exact Scenario drafts into immutable FixtureBundle and TestSuite revisions;
+5. keep author, runner and publisher permissions separate and record publication lineage;
+6. support graph and operator targets through one workspace model;
+7. export/import a self-contained, secret-safe workspace bundle for VS Code and offline editing;
+8. lazy-load the workspace to remove the current 604 kB main-bundle warning;
+9. add deterministic browser screenshot, overflow and desktop/mobile interaction checks.
+
+Stage 2 receives no publication credit until compiled assets are independently re-read, fingerprints
+are re-verified, and a governed execution proves the same Scenario semantics end to end.
+
+## Round 2 Verification
+
+- frontend `npm test`: 204 tests passed across 10 files;
+- frontend `npm run build`: production bundle built successfully;
+- focused Contract/Scenario workbench tests: 15 passed;
+- `mvn -Pfrontend package -DskipTests`: packaged application built and copied the frontend to
+  `/author`, `/rehearsals`, and `/showcase`;
+- Spring Boot demo startup and `/api/integration/capabilities` readiness probe succeeded;
+- bundle warning remains: main JavaScript is approximately 604 kB minified and requires Stage 2
+  code splitting.

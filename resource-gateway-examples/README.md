@@ -3879,6 +3879,30 @@ The `/author/` built-in canvas examples also carry their own graph-level
 input/output schemas, and exported drafts include the current `inputSchema` so
 the design can be integrated instead of remaining a diagram-only artifact.
 
+### Try Contract And Scenario Authoring
+
+1. Start the demo and open `http://localhost:8080/author/`.
+2. Load one of the built-in complex canvas examples. Its graph Contract and table cases are
+   projected automatically.
+3. Click the **Contract** rail above the canvas.
+4. Use **Interface** to inspect every graph input/output field and its required/type constraints.
+5. Open **Scenarios**. Fill **Given** with schema-driven controls, choose **Real call** or
+   **Return fixture** for each dependency, and add whole-output or path equality assertions under
+   **Then**.
+6. Click **Run & Compare**. The **Run Evidence** tab shows assertion results, terminal output, and
+   per-node status.
+7. After the graph or Contract changes, review **Compatibility** and explicitly rebase the Scenario
+   set. Stale coordinates cannot run silently.
+
+Normal Stage 1 authoring does not require JSON. **Advanced Contract JSON** and **Advanced Scenario
+JSON** remain available as lossless expert paths. ERROR, DELAY, TIMEOUT, REPLAY, OBSERVE, and
+MUST_NOT_CALL are retained but intentionally fail closed until compiled through the governed
+testing control plane.
+
+The implementation contract and current residual gap are documented in
+[Contract & Scenario Authoring Protocol](../docs/resource-gateway-contract-scenario-authoring-protocol.md)
+and [Implementation Status](../docs/resource-gateway-contract-scenario-authoring-implementation-status.md).
+
 ## Build And Verify
 
 This is a standalone Maven project. BLOGE artifacts must already exist in the

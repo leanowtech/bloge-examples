@@ -124,6 +124,19 @@ import {
   type CanvasExampleTestCase,
   type CanvasExampleTemplate,
 } from './canvasExamples';
+import ContractRail from './contract-scenario/ContractRail';
+import ContractScenarioWorkspace from './contract-scenario/ContractScenarioWorkspace';
+import {
+  contractDraftFromGraphDraft,
+  type ContractDraft,
+  type ScenarioDraftSet,
+} from './contract-scenario/domain';
+import { sha256Fingerprint } from './contract-scenario/fingerprint';
+import {
+  rebaseScenarioDraftSet,
+  scenarioDraftSetFromCanvas,
+  type ScenarioNodeOption,
+} from './contract-scenario/scenarioAuthoring';
 
 interface NodeData {
   label: string;
@@ -3362,7 +3375,11 @@ function outputSchemaForCanvas(
   if (!node) {
     return undefined;
   }
-  const outputs = operatorByRef.get(node.data.operatorRef)?.ports?.outputs ?? [];
+  return operatorOutputSchema(operatorByRef.get(node.data.operatorRef));
+}
+
+function operatorOutputSchema(operator: OperatorDefinition | undefined): SchemaEnvelope | undefined {
+  const outputs = operator?.ports?.outputs ?? [];
   if (outputs.length === 1) {
     return outputs[0].schema;
   }
@@ -4194,6 +4211,10 @@ export default function AuthorCanvas() {
   const [selectedNodeId, setSelectedNodeId] = useState('');
   const [operatorDetailNodeId, setOperatorDetailNodeId] = useState('');
   const [testSuiteOpen, setTestSuiteOpen] = useState(false);
+  const [contractWorkspaceOpen, setContractWorkspaceOpen] = useState(false);
+  const [contractDraft, setContractDraft] = useState<ContractDraft | null>(null);
+  const [contractFingerprint, setContractFingerprint] = useState('');
+  const [scenarioDraftSet, setScenarioDraftSet] = useState<ScenarioDraftSet | null>(null);
   const [explicitOutputNodeId, setExplicitOutputNodeId] = useState('');
   const [fixtureDrafts, setFixtureDrafts] = useState<Record<string, string>>({});
   const [fixtureInputDrafts, setFixtureInputDrafts] = useState<Record<string, string>>({});
@@ -4239,6 +4260,8 @@ export default function AuthorCanvas() {
   const operatorTestCounter = useRef(0);
   const candidatePreviewSequence = useRef(0);
   const connectionGuideSequence = useRef(0);
+  const contractProjectionSequence = useRef(0);
+  const scenarioGraphNameRef = useRef('');
 
   const reloadOperators = useCallback(async () => {
     const catalog = await fetchOperatorCatalog();
@@ -5023,6 +5046,58 @@ export default function AuthorCanvas() {
     () => `data:application/json;charset=utf-8,${encodeURIComponent(draftExportJson)}`,
     [draftExportJson],
   );
+  const scenarioNodeOptions = useMemo<ScenarioNodeOption[]>(
+    () => canvasNodes.map((node) => ({
+      id: node.id,
+      label: node.label || node.id,
+      operatorRef: node.operatorRef,
+      outputSchema: operatorOutputSchema(operatorByRef.get(node.operatorRef)),
+    })),
+    [canvasNodes, operatorByRef],
+  );
+
+  useEffect(() => {
+    const sequence = contractProjectionSequence.current + 1;
+    contractProjectionSequence.current = sequence;
+    let active = true;
+
+    const project = async () => {
+      const targetFingerprint = await sha256Fingerprint(exportableDraft);
+      const nextContract = contractDraftFromGraphDraft(exportableDraft, targetFingerprint);
+      const nextContractFingerprint = await sha256Fingerprint(nextContract);
+      if (!active || contractProjectionSequence.current !== sequence) {
+        return;
+      }
+      setContractDraft(nextContract);
+      setContractFingerprint(nextContractFingerprint);
+      setScenarioDraftSet((current) => {
+        const graphChanged = scenarioGraphNameRef.current !== exportableDraft.graphName;
+        scenarioGraphNameRef.current = exportableDraft.graphName;
+        if (current && !graphChanged) {
+          return current;
+        }
+        return scenarioDraftSetFromCanvas(
+          nextContract.target,
+          nextContractFingerprint,
+          exportableDraft,
+          scenarioNodeOptions,
+          simulationTableCompilation.cases,
+        );
+      });
+    };
+
+    project().catch((cause: unknown) => {
+      if (active && contractProjectionSequence.current === sequence) {
+        setContractDraft(null);
+        setContractFingerprint('');
+        setError(`Contract projection failed: ${String(cause)}`);
+      }
+    });
+    return () => {
+      active = false;
+    };
+  }, [exportableDraft, scenarioNodeOptions, simulationTableCompilation.cases]);
+
   const journey = useMemo(
     () => authoringJourney(operators.length, canvasSummary, fixtureRows, result),
     [canvasSummary, fixtureRows, operators.length, result],
@@ -6128,6 +6203,32 @@ export default function AuthorCanvas() {
       }),
     );
   }, []);
+
+  const runScenarioSimulation = useCallback(async (request: Parameters<typeof simulate>[0]) => {
+    setBusy(true);
+    setError('');
+    try {
+      const response = await simulate(request);
+      showSimulationResponse(response);
+      return response;
+    } catch (cause: unknown) {
+      setError(String(cause));
+      throw cause;
+    } finally {
+      setBusy(false);
+    }
+  }, [showSimulationResponse]);
+
+  const rebaseScenariosToCurrentContract = useCallback(() => {
+    if (!contractDraft || !contractFingerprint || !scenarioDraftSet) {
+      return;
+    }
+    setScenarioDraftSet(rebaseScenarioDraftSet(
+      scenarioDraftSet,
+      contractDraft.target,
+      contractFingerprint,
+    ));
+  }, [contractDraft, contractFingerprint, scenarioDraftSet]);
 
   const runOperatorTestRows = useCallback(async (
     nodeId: string,
@@ -7330,43 +7431,17 @@ export default function AuthorCanvas() {
             <span className="swatch real" /> real
           </span>
         </div>
-        <section className="graph-contract-strip" aria-label="Graph contract" data-testid="author-graph-contract">
-          <div className="graph-contract-heading">
-            <span>Graph Contract</span>
-            <strong>{graphContractSource}</strong>
-          </div>
-          {[
-            { key: 'input', label: 'Input', root: 'ctx', summary: graphInputSummary },
-            { key: 'output', label: 'Output', root: 'public result', summary: graphOutputSummary },
-          ].map((item) => (
-            <article className="graph-contract-card" key={item.key}>
-              <div className="graph-contract-card-head">
-                <strong>{item.label}</strong>
-                <span>{item.root}</span>
-              </div>
-              <div className="graph-contract-stat">
-                {item.summary.type} · {item.summary.fieldCount} fields · {item.summary.requiredCount} required
-              </div>
-              <div className="graph-contract-fields">
-                {item.summary.fields.length > 0 ? (
-                  <>
-                    {item.summary.fields.slice(0, 6).map((field) => (
-                      <span className="graph-contract-field" key={field.name}>
-                        <strong>{field.name}</strong>
-                        <small>{field.type}{field.required ? ' · required' : ''}</small>
-                      </span>
-                    ))}
-                    {item.summary.fields.length > 6 && (
-                      <span className="graph-contract-more">+{item.summary.fields.length - 6} more</span>
-                    )}
-                  </>
-                ) : (
-                  <span className="graph-contract-more">No named fields</span>
-                )}
-              </div>
-            </article>
-          ))}
-        </section>
+        <ContractRail
+          source={graphContractSource}
+          contract={contractDraft}
+          contractFingerprint={contractFingerprint}
+          scenarioDraftSet={scenarioDraftSet}
+          inputFieldCount={graphInputSummary.fieldCount}
+          outputFieldCount={graphOutputSummary.fieldCount}
+          inputFields={graphInputSummary.fields.map((field) => field.name)}
+          outputFields={graphOutputSummary.fields.map((field) => field.name)}
+          onOpen={() => setContractWorkspaceOpen(true)}
+        />
         <div
           ref={flowRef}
           className="flow"
@@ -7843,6 +7918,19 @@ export default function AuthorCanvas() {
           </>
         )}
       </aside>
+      <ContractScenarioWorkspace
+        open={contractWorkspaceOpen}
+        graphDraft={exportableDraft}
+        contract={contractDraft}
+        contractFingerprint={contractFingerprint}
+        scenarioDraftSet={scenarioDraftSet}
+        nodes={scenarioNodeOptions}
+        lastRun={result}
+        onScenarioDraftSetChange={setScenarioDraftSet}
+        onRebase={rebaseScenariosToCurrentContract}
+        onRun={runScenarioSimulation}
+        onClose={() => setContractWorkspaceOpen(false)}
+      />
       {testSuiteOpen && (
         <div className="rule-editor-backdrop" role="presentation">
           <section

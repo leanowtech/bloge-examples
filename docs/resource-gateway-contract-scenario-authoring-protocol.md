@@ -1,6 +1,6 @@
 # Resource Gateway Contract & Scenario Authoring Protocol
 
-> Status: Stage 0 implemented
+> Status: Stage 1 authoring vertical slice implemented
 > Protocols: `bloge.contractDraft.v1`, `bloge.scenarioDraftSet.v1`, `bloge.scenarioValidationReport.v1`
 
 This document is the code-facing companion to
@@ -66,15 +66,34 @@ serialization or fingerprinting.
 | Responsibility | Implementation |
 |---|---|
 | Contract/Scenario domain | `src/contract-scenario/domain.ts` |
+| Canonical browser fingerprint | `src/contract-scenario/fingerprint.ts` |
+| Schema projection and path access | `src/contract-scenario/schemaWorkbench.ts` |
+| Existing test-case projection and result comparison | `src/contract-scenario/scenarioAuthoring.ts` |
 | Transient compiler | `src/contract-scenario/scenarioCompiler.ts` |
+| Contract rail | `src/contract-scenario/ContractRail.tsx` |
+| Contract/Scenario workspace | `src/contract-scenario/ContractScenarioWorkspace.tsx` |
+| Schema field tree and value form | `src/contract-scenario/SchemaFieldTree.tsx`, `SchemaValueForm.tsx` |
 
-`AuthorCanvas.tsx` does not own these protocol definitions. Later UI work consumes the module and
-keeps the canvas responsible only for opening the workspace, supplying the current target, and
-applying highlights or saved projections.
+`AuthorCanvas.tsx` does not own these protocol definitions. It opens the workspace, supplies the
+current exact target, projects existing canvas examples/table cases, executes compiled simulation
+requests, and applies the resulting canvas state.
+
+The Stage 1 workspace provides four views:
+
+1. **Interface** projects graph input/output schemas as field trees while preserving the complete
+   Contract in Advanced JSON.
+2. **Scenarios** edits Given input, exact-node REAL/RETURN dependencies, and whole-output/path
+   equality assertions through schema-driven controls.
+3. **Compatibility** exposes exact target and Contract coordinate drift and requires explicit
+   rebase.
+4. **Run Evidence** compares assertions with the latest exploratory response and shows node status.
+
+Selecting an advanced dependency behavior never produces a weaker simulation. The frontend compiler
+retains the behavior and returns a fail-closed diagnostic until the governed compiler is available.
 
 ## Transient Compiler
 
-The Stage 0 compiler maps:
+The transient compiler maps:
 
 | Scenario value | Existing simulation request |
 |---|---|
