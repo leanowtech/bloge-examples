@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 
 import {
+  BlogeApiRequestError,
   fetchScenarioRehearsalBatchItems,
   fetchScenarioRehearsalBatchJobs,
   fetchScenarioRehearsalBatchWorkbook,
@@ -230,6 +231,7 @@ export default function RehearsalWorkbench() {
   const [loadingJobs, setLoadingJobs] = useState(true);
   const [loadingJob, setLoadingJob] = useState(false);
   const [loadingChild, setLoadingChild] = useState(false);
+  const [batchApiAvailable, setBatchApiAvailable] = useState(true);
   const [error, setError] = useState('');
   const [detailError, setDetailError] = useState('');
 
@@ -269,6 +271,7 @@ export default function RehearsalWorkbench() {
 
   const discoverJobs = useCallback(async (keepSelection = true) => {
     setLoadingJobs(true);
+    setBatchApiAvailable(true);
     setError('');
     try {
       const accumulated: ScenarioRehearsalBatchJob[] = [];
@@ -288,6 +291,7 @@ export default function RehearsalWorkbench() {
         }
       }
       const uniqueJobs = Array.from(new Map(accumulated.map((job) => [job.jobId, job])).values());
+      setBatchApiAvailable(true);
       setJobs(uniqueJobs);
       setNextCursor(page?.nextCursor ?? null);
       const selectionExists = soughtJobId && uniqueJobs.some((job) => job.jobId === soughtJobId);
@@ -305,7 +309,16 @@ export default function RehearsalWorkbench() {
         );
       }
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : 'Unable to discover rehearsal batches.');
+      if (cause instanceof BlogeApiRequestError && cause.status === 404) {
+        setBatchApiAvailable(false);
+        setJobs([]);
+        setNextCursor(null);
+        setSelectedJobId('');
+        setSelectedEntryIndex(null);
+        setSelectedRemediationId('');
+      } else {
+        setError(cause instanceof Error ? cause.message : 'Unable to discover rehearsal batches.');
+      }
     } finally {
       setLoadingJobs(false);
     }
@@ -509,8 +522,13 @@ export default function RehearsalWorkbench() {
               <span>{formatDate(job.createdAt)}</span>
             </button>
           ))}
-          {!loadingJobs && jobs.length === 0 && (
+          {!loadingJobs && jobs.length === 0 && batchApiAvailable && (
             <p className="empty-workbench">No Scenario rehearsal batches are visible in this scope.</p>
+          )}
+          {!loadingJobs && !batchApiAvailable && (
+            <p className="empty-workbench" data-testid="rehearsal-api-unavailable">
+              Scenario rehearsals are not enabled for this deployment.
+            </p>
           )}
         </div>
         {nextCursor && (
@@ -665,8 +683,12 @@ export default function RehearsalWorkbench() {
           </>
         ) : !loadingJobs && (
           <div className="workbench-welcome">
-            <h2>No batch selected</h2>
-            <p>Choose a Scenario rehearsal batch to inspect its execution and evidence state.</p>
+            <h2>{batchApiAvailable ? 'No batch selected' : 'Rehearsals unavailable'}</h2>
+            <p>
+              {batchApiAvailable
+                ? 'Choose a Scenario rehearsal batch to inspect its execution and evidence state.'
+                : 'This deployment does not advertise the Scenario rehearsal batch API.'}
+            </p>
           </div>
         )}
       </section>

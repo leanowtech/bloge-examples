@@ -50,9 +50,20 @@ import type {
   VisualGraphRunRecord,
 } from './types';
 
+/** Structured transport failure that lets optional product surfaces distinguish capability absence. */
+export class BlogeApiRequestError extends Error {
+  constructor(
+    readonly status: number,
+    readonly detail: string,
+  ) {
+    super(`Request failed: ${status} ${detail}`);
+    this.name = 'BlogeApiRequestError';
+  }
+}
+
 async function readJson<T>(response: Response): Promise<T> {
   if (!response.ok) {
-    throw new Error(`Request failed: ${response.status} ${response.statusText}`);
+    throw new BlogeApiRequestError(response.status, response.statusText);
   }
   return (await response.json()) as T;
 }
@@ -74,10 +85,10 @@ async function readJsonMutation<T>(response: Response): Promise<T> {
   if (!response.ok) {
     const firstDiagnostic = payload?.diagnostics?.find((diagnostic) => diagnostic.message || diagnostic.code);
     const detail = firstDiagnostic?.message || firstDiagnostic?.code || response.statusText;
-    throw new Error(`Request failed: ${response.status} ${detail}`);
+    throw new BlogeApiRequestError(response.status, detail);
   }
   if (!payload) {
-    throw new Error(`Request failed: ${response.status} empty response`);
+    throw new BlogeApiRequestError(response.status, 'empty response');
   }
   return payload;
 }
@@ -92,10 +103,10 @@ async function readTestingJson<T>(response: Response): Promise<T> {
     const firstDiagnostic = payload?.diagnostics?.find((diagnostic) => diagnostic.message || diagnostic.code);
     const detail = payload?.detail || firstDiagnostic?.message || firstDiagnostic?.code
       || payload?.code || response.statusText;
-    throw new Error(`Request failed: ${response.status} ${detail}`);
+    throw new BlogeApiRequestError(response.status, detail);
   }
   if (!payload) {
-    throw new Error(`Request failed: ${response.status} empty response`);
+    throw new BlogeApiRequestError(response.status, 'empty response');
   }
   return payload;
 }

@@ -4,6 +4,7 @@ import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import {
+  BlogeApiRequestError,
   fetchScenarioRehearsalBatchItems,
   fetchScenarioRehearsalBatchJobs,
   fetchScenarioRehearsalBatchWorkbook,
@@ -18,6 +19,14 @@ import type {
 } from './types';
 
 vi.mock('./api', () => ({
+  BlogeApiRequestError: class BlogeApiRequestError extends Error {
+    constructor(
+      readonly status: number,
+      readonly detail: string,
+    ) {
+      super(`Request failed: ${status} ${detail}`);
+    }
+  },
   fetchScenarioRehearsalBatchItems: vi.fn(),
   fetchScenarioRehearsalBatchJobs: vi.fn(),
   fetchScenarioRehearsalBatchWorkbook: vi.fn(),
@@ -65,6 +74,42 @@ describe('RehearsalWorkbench', () => {
       root = null;
     }
     host.remove();
+  });
+
+  it('renders an unavailable empty state when the optional batch API is absent', async () => {
+    mockJobs.mockRejectedValue(new BlogeApiRequestError(404, 'Not Found'));
+
+    await render();
+    await waitFor(() => text().includes('Scenario rehearsals are not enabled for this deployment.'));
+
+    expect(document.querySelector('[role="alert"]')).toBeNull();
+    expect(text()).not.toContain('Request failed: 404');
+    expect(mockJobs).toHaveBeenCalledOnce();
+  });
+
+  it('recovers from an unavailable API when an explicit refresh succeeds', async () => {
+    mockJobs
+      .mockRejectedValueOnce(new BlogeApiRequestError(404, 'Not Found'))
+      .mockResolvedValueOnce(jobPage([]));
+
+    await render();
+    await waitFor(() => document.querySelector('[data-testid="rehearsal-api-unavailable"]') !== null);
+    await clickText('Refresh');
+    await waitFor(() => text().includes('No Scenario rehearsal batches are visible in this scope.'));
+
+    expect(document.querySelector('[data-testid="rehearsal-api-unavailable"]')).toBeNull();
+    expect(document.querySelector('[role="alert"]')).toBeNull();
+    expect(mockJobs).toHaveBeenCalledTimes(2);
+  });
+
+  it('keeps non-404 transport failures visible as operational errors', async () => {
+    mockJobs.mockRejectedValue(new BlogeApiRequestError(503, 'Service Unavailable'));
+
+    await render();
+    await waitFor(() => text().includes('Request failed: 503 Service Unavailable'));
+
+    expect(query('[role="alert"]').textContent).toContain('Request failed: 503 Service Unavailable');
+    expect(document.querySelector('[data-testid="rehearsal-api-unavailable"]')).toBeNull();
   });
 
   it('labels an active batch as mutable and never requests terminal evidence', async () => {
