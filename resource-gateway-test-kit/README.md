@@ -1033,7 +1033,7 @@ fixture remains future work.
 
 ### Verify selected-population completeness
 
-Selected-population commands, evidence, resumable transport, and continuous projection use twenty strict Draft 2020-12
+Selected-population commands, evidence, resumable transport, and continuous projection use twenty-two strict Draft 2020-12
 Schemas packaged in both Test Kit JARs. `CapabilityMirrorProtocol` exposes the
 version and resource constants; `CapabilityMirrorSchemaValidator` resolves the
 complete local `$ref` closure without fetching a network resource.
@@ -1227,6 +1227,33 @@ if (!statusVerification.verified()) {
     throw new IllegalStateException(
             statusVerification.reasonCode());
 }
+
+long afterOrdinal = 0;
+String predecessorFingerprint = "";
+do {
+    JsonNode page =
+            client.findAuthoritativeOutcomeContinuousAssessmentLifecycle(
+                    "refund-completeness",
+                    afterOrdinal,
+                    predecessorFingerprint,
+                    100);
+    var lifecycleVerification =
+            new AuthoritativeOutcomeContinuousAssessmentLifecycleVerifier()
+                    .verify(
+                            page,
+                            afterOrdinal,
+                            predecessorFingerprint);
+    if (!lifecycleVerification.verified()) {
+        throw new IllegalStateException(
+                lifecycleVerification.reasonCode());
+    }
+    afterOrdinal = lifecycleVerification.nextOrdinal();
+    predecessorFingerprint =
+            lifecycleVerification.eventFingerprint();
+    if (!lifecycleVerification.hasMore()) {
+        break;
+    }
+} while (true);
 ```
 
 Both methods validate strict Schema and integration-envelope versions. The
@@ -1244,6 +1271,14 @@ when `lastAssessmentRef` points to valid historical evidence. Fetch that exact
 assessment and all source pages with the methods above, then run
 `AuthoritativeOutcomeSelectedPopulationVerifier`; status Schema validation is
 not independent verification of the referenced immutable assessment.
+
+The lifecycle method validates the strict page and event schemas, the
+integration envelope, projection identity, caller-owned cursor, every embedded
+projection content address, every event content address, contiguous ordinals,
+and predecessor links before returning. Persist the verified ordinal and event
+fingerprint together. Restarting from an ordinal with a different predecessor
+or trusting a server-selected continuation would weaken truncation and
+substitution detection.
 
 The Test Kit intentionally exposes no `runNow` call and accepts no polling,
 lease, retry, assessment-id, or revision controls. Those are server-owned so a

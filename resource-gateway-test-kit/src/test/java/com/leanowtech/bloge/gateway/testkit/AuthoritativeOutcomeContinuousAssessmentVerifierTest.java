@@ -69,7 +69,7 @@ class AuthoritativeOutcomeContinuousAssessmentVerifierTest {
                 .verified()).isTrue();
     }
 
-    private static ObjectNode uninitializedStatus() {
+    static ObjectNode uninitializedStatus() {
         ObjectNode projection =
                 baseProjection();
         projection.put("status", "QUEUED");
@@ -203,7 +203,7 @@ class AuthoritativeOutcomeContinuousAssessmentVerifierTest {
         return status;
     }
 
-    private static void seal(
+    static void seal(
             ObjectNode projection) {
         projection.put("recordFingerprint", "");
         projection.put(

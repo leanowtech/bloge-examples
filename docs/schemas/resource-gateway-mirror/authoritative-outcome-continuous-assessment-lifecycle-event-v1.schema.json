@@ -1,0 +1,192 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://bloge.dev/schemas/resource-gateway-mirror/authoritative-outcome-continuous-assessment-lifecycle-event-v1.schema.json",
+  "title": "Resource Gateway Authoritative Outcome Continuous Assessment Lifecycle Event v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "eventOrdinal",
+    "transition",
+    "occurredAt",
+    "actorFingerprint",
+    "projection",
+    "previousEventFingerprint",
+    "eventFingerprint"
+  ],
+  "properties": {
+    "schemaVersion": {
+      "const": "resourceGateway.authoritativeOutcomeContinuousAssessmentLifecycleEvent.v1"
+    },
+    "eventOrdinal": {
+      "type": "integer",
+      "minimum": 1
+    },
+    "transition": {
+      "enum": [
+        "REGISTERED",
+        "MIGRATED",
+        "CLAIMED",
+        "ASSESSMENT_PUBLISHED",
+        "SOURCE_UNCHANGED",
+        "RETRY_SCHEDULED",
+        "LEASE_EXPIRED",
+        "QUARANTINED"
+      ]
+    },
+    "occurredAt": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "actorFingerprint": {
+      "$ref": "#/$defs/optionalFingerprint"
+    },
+    "projection": {
+      "$ref": "authoritative-outcome-continuous-assessment-projection-v1.schema.json"
+    },
+    "previousEventFingerprint": {
+      "$ref": "#/$defs/optionalFingerprint"
+    },
+    "eventFingerprint": {
+      "$ref": "mirror-plan-v1.schema.json#/$defs/fingerprint"
+    }
+  },
+  "allOf": [
+    {
+      "if": {
+        "properties": {
+          "transition": {
+            "const": "REGISTERED"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "actorFingerprint": {
+            "const": ""
+          },
+          "projection": {
+            "properties": {
+              "status": {
+                "const": "QUEUED"
+              },
+              "attemptCount": {
+                "const": 0
+              },
+              "leaseEpoch": {
+                "const": 0
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "transition": {
+            "const": "CLAIMED"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "actorFingerprint": {
+            "$ref": "mirror-plan-v1.schema.json#/$defs/fingerprint"
+          },
+          "projection": {
+            "properties": {
+              "status": {
+                "const": "RUNNING"
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "transition": {
+            "enum": [
+              "ASSESSMENT_PUBLISHED",
+              "SOURCE_UNCHANGED"
+            ]
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "actorFingerprint": {
+            "$ref": "mirror-plan-v1.schema.json#/$defs/fingerprint"
+          },
+          "projection": {
+            "properties": {
+              "status": {
+                "const": "QUEUED"
+              },
+              "lastAssessmentRef": {
+                "type": "object"
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "transition": {
+            "enum": [
+              "RETRY_SCHEDULED",
+              "LEASE_EXPIRED"
+            ]
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "actorFingerprint": {
+            "$ref": "mirror-plan-v1.schema.json#/$defs/fingerprint"
+          },
+          "projection": {
+            "properties": {
+              "status": {
+                "const": "RETRY_WAIT"
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "transition": {
+            "const": "QUARANTINED"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "actorFingerprint": {
+            "$ref": "mirror-plan-v1.schema.json#/$defs/fingerprint"
+          },
+          "projection": {
+            "properties": {
+              "status": {
+                "const": "QUARANTINED"
+              }
+            }
+          }
+        }
+      }
+    }
+  ],
+  "$defs": {
+    "optionalFingerprint": {
+      "type": "string",
+      "pattern": "^(|sha256:[a-f0-9]{64})$"
+    }
+  }
+}

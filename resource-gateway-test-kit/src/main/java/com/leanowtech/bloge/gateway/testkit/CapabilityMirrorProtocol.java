@@ -495,6 +495,14 @@ public final class CapabilityMirrorProtocol {
     public static final String
     AUTHORITATIVE_OUTCOME_CONTINUOUS_ASSESSMENT_ADMISSION_V1 =
             "resourceGateway.authoritativeOutcomeContinuousAssessmentAdmission.v1";
+    /** Hash-chained continuous assessment lifecycle event wire version. */
+    public static final String
+    AUTHORITATIVE_OUTCOME_CONTINUOUS_ASSESSMENT_LIFECYCLE_EVENT_V1 =
+            "resourceGateway.authoritativeOutcomeContinuousAssessmentLifecycleEvent.v1";
+    /** Bounded continuous assessment lifecycle page wire version. */
+    public static final String
+    AUTHORITATIVE_OUTCOME_CONTINUOUS_ASSESSMENT_LIFECYCLE_PAGE_V1 =
+            "resourceGateway.authoritativeOutcomeContinuousAssessmentLifecyclePage.v1";
     /** Fixed server-produced selected-population completeness compatibility fixture version. */
     public static final String
     AUTHORITATIVE_OUTCOME_SELECTED_POPULATION_COMPATIBILITY_V1 =
@@ -1173,6 +1181,16 @@ public final class CapabilityMirrorProtocol {
     AUTHORITATIVE_OUTCOME_CONTINUOUS_ASSESSMENT_ADMISSION_SCHEMA_RESOURCE =
             SCHEMA_RESOURCE_ROOT
                     + "authoritative-outcome-continuous-assessment-admission-v1.schema.json";
+    /** Packaged hash-chained continuous assessment lifecycle event schema. */
+    public static final String
+    AUTHORITATIVE_OUTCOME_CONTINUOUS_ASSESSMENT_LIFECYCLE_EVENT_SCHEMA_RESOURCE =
+            SCHEMA_RESOURCE_ROOT
+                    + "authoritative-outcome-continuous-assessment-lifecycle-event-v1.schema.json";
+    /** Packaged bounded continuous assessment lifecycle page schema. */
+    public static final String
+    AUTHORITATIVE_OUTCOME_CONTINUOUS_ASSESSMENT_LIFECYCLE_PAGE_SCHEMA_RESOURCE =
+            SCHEMA_RESOURCE_ROOT
+                    + "authoritative-outcome-continuous-assessment-lifecycle-page-v1.schema.json";
     /** Packaged signed payload-free read-only Shadow comparison schema. */
     public static final String
     READ_ONLY_SHADOW_COMPARISON_SCHEMA_RESOURCE =

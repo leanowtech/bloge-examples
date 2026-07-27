@@ -394,6 +394,125 @@ class DatabaseAuthoritativeOutcomeContinuousAssessmentRepositoryTest {
                         .Reason.CONTENT_CONFLICT);
     }
 
+    @Test
+    void writesBoundedHashChainedLifecycleAndRejectsDeletedHead() {
+        repository.register(
+                population.manifest().scope(),
+                request);
+        AuthoritativeOutcomeContinuousAssessmentLifecyclePage
+                registered = repository.lifecycle(
+                population.manifest().scope(),
+                request.projectionId(),
+                0,
+                1);
+        assertThat(registered.events())
+                .extracting(
+                        AuthoritativeOutcomeContinuousAssessmentLifecycleEvent
+                                ::transition)
+                .containsExactly(
+                        AuthoritativeOutcomeContinuousAssessmentLifecycleEvent
+                                .Transition.REGISTERED);
+        assertThat(registered.predecessorFingerprint())
+                .isBlank();
+        assertThat(registered.hasMore()).isFalse();
+
+        AuthoritativeOutcomeContinuousAssessmentRepository.Claim
+                claim = claim("owner-a");
+        AuthoritativeOutcomeContinuousAssessmentLifecyclePage
+                first = repository.lifecycle(
+                population.manifest().scope(),
+                request.projectionId(),
+                0,
+                1);
+        AuthoritativeOutcomeContinuousAssessmentLifecyclePage
+                second = repository.lifecycle(
+                population.manifest().scope(),
+                request.projectionId(),
+                first.nextOrdinal(),
+                10);
+
+        assertThat(first.hasMore()).isTrue();
+        assertThat(second.predecessorFingerprint())
+                .isEqualTo(first.events()
+                        .getLast()
+                        .eventFingerprint());
+        assertThat(second.events())
+                .extracting(
+                        AuthoritativeOutcomeContinuousAssessmentLifecycleEvent
+                                ::transition)
+                .containsExactly(
+                        AuthoritativeOutcomeContinuousAssessmentLifecycleEvent
+                                .Transition.CLAIMED);
+        assertThat(second.events().getFirst()
+                .actorFingerprint())
+                .isEqualTo(claim.projection()
+                        .leaseOwnerFingerprint());
+        assertThat(second.events().getFirst()
+                .previousEventFingerprint())
+                .isEqualTo(first.events().getLast()
+                        .eventFingerprint());
+
+        jdbc.update("""
+                DELETE FROM mirror_outcome_continuous_lifecycle
+                WHERE projection_id = ? AND event_ordinal = ?
+                """,
+                request.projectionId(),
+                second.nextOrdinal());
+        assertReason(
+                () -> repository.find(
+                        population.manifest().scope(),
+                        request.projectionId()),
+                AuthoritativeOutcomeContinuousAssessmentRepository
+                        .Reason.STORED_STATE_CORRUPT);
+    }
+
+    @Test
+    void adoptsExplicitMigratedBaselineOnlyForLegacyHeadZero() {
+        repository.register(
+                population.manifest().scope(),
+                request);
+        jdbc.update("""
+                DELETE FROM mirror_outcome_continuous_lifecycle
+                WHERE projection_id = ?
+                """,
+                request.projectionId());
+        jdbc.update("""
+                UPDATE mirror_outcome_continuous_assessments
+                SET lifecycle_head_ordinal = 0,
+                    lifecycle_head_fingerprint = ''
+                WHERE projection_id = ?
+                """,
+                request.projectionId());
+
+        claim("owner-after-upgrade");
+        AuthoritativeOutcomeContinuousAssessmentLifecyclePage page =
+                repository.lifecycle(
+                        population.manifest().scope(),
+                        request.projectionId(),
+                        0,
+                        10);
+
+        assertThat(page.events())
+                .extracting(
+                        AuthoritativeOutcomeContinuousAssessmentLifecycleEvent
+                                ::transition)
+                .containsExactly(
+                        AuthoritativeOutcomeContinuousAssessmentLifecycleEvent
+                                .Transition.MIGRATED,
+                        AuthoritativeOutcomeContinuousAssessmentLifecycleEvent
+                                .Transition.CLAIMED);
+        assertThat(page.events().getFirst()
+                .projection().status())
+                .isEqualTo(
+                        AuthoritativeOutcomeContinuousAssessmentProjection
+                                .Status.QUEUED);
+        assertThat(page.events().getLast()
+                .projection().status())
+                .isEqualTo(
+                        AuthoritativeOutcomeContinuousAssessmentProjection
+                                .Status.RUNNING);
+    }
+
     private AuthoritativeOutcomeContinuousAssessmentRepository.Claim
     claim(String owner) {
         AuthoritativeOutcomeContinuousAssessmentRepository.Claim

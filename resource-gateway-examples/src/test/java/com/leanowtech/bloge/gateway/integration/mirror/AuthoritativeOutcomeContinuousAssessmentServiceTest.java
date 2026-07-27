@@ -279,6 +279,75 @@ class AuthoritativeOutcomeContinuousAssessmentServiceTest {
     }
 
     @Test
+    void servesBoundedLifecyclePagesAndRejectsUnknownCursor() {
+        service.register(
+                request,
+                projectorIdentity(
+                        "support",
+                        "staging",
+                        Set.of(
+                                AuthoritativeOutcomeSelectedPopulationAccessPolicy
+                                        .DEFAULT_ASSESSMENT_GROUP)));
+        new AuthoritativeOutcomeContinuousAssessmentWorker(
+                projections,
+                populations,
+                populationService,
+                POLICY)
+                .runOne(
+                        "sg",
+                        "staging",
+                        "service-test-worker");
+
+        AuthoritativeOutcomeContinuousAssessmentLifecyclePage first =
+                service.lifecycle(
+                        request.projectionId(),
+                        0,
+                        2,
+                        reader(
+                                "support",
+                                "staging"));
+        AuthoritativeOutcomeContinuousAssessmentLifecyclePage second =
+                service.lifecycle(
+                        request.projectionId(),
+                        first.nextOrdinal(),
+                        2,
+                        reader(
+                                "support",
+                                "staging"));
+
+        assertThat(first.events())
+                .extracting(
+                        AuthoritativeOutcomeContinuousAssessmentLifecycleEvent
+                                ::transition)
+                .containsExactly(
+                        AuthoritativeOutcomeContinuousAssessmentLifecycleEvent
+                                .Transition.REGISTERED,
+                        AuthoritativeOutcomeContinuousAssessmentLifecycleEvent
+                                .Transition.CLAIMED);
+        assertThat(first.hasMore()).isTrue();
+        assertThat(second.events())
+                .extracting(
+                        AuthoritativeOutcomeContinuousAssessmentLifecycleEvent
+                                ::transition)
+                .containsExactly(
+                        AuthoritativeOutcomeContinuousAssessmentLifecycleEvent
+                                .Transition.ASSESSMENT_PUBLISHED);
+        assertThat(second.predecessorFingerprint())
+                .isEqualTo(first.events()
+                        .getLast()
+                        .eventFingerprint());
+        assertProblem(
+                () -> service.lifecycle(
+                        request.projectionId(),
+                        99,
+                        10,
+                        reader(
+                                "support",
+                                "staging")),
+                "RG.MIRROR.OUTCOME.CONTINUOUS_ASSESSMENT_LIFECYCLE_CURSOR_INVALID");
+    }
+
+    @Test
     void rejectsWrongGroupScopePurposeAndProductionEnvironment() {
         assertProblem(
                 () -> service.register(

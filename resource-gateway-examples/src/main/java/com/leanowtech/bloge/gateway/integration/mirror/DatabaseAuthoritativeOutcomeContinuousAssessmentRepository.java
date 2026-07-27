@@ -39,6 +39,8 @@ DatabaseAuthoritativeOutcomeContinuousAssessmentRepository
         implements AuthoritativeOutcomeContinuousAssessmentRepository {
     private static final Pattern IDENTIFIER =
             Pattern.compile("[A-Za-z0-9][A-Za-z0-9@._:/#-]{0,511}");
+    private static final Pattern FINGERPRINT =
+            Pattern.compile("sha256:[a-f0-9]{64}");
     private static final int RECOVERY_LIMIT = 1_000;
     private static final Runnable NO_INITIALIZATION_PROBE =
             () -> {
@@ -81,6 +83,8 @@ DatabaseAuthoritativeOutcomeContinuousAssessmentRepository
                 updated_at TIMESTAMP WITH TIME ZONE NOT NULL,
                 terminal_at TIMESTAMP WITH TIME ZONE,
                 record_fingerprint VARCHAR(71) NOT NULL,
+                lifecycle_head_ordinal BIGINT NOT NULL,
+                lifecycle_head_fingerprint VARCHAR(71) NOT NULL,
                 projection_json TEXT NOT NULL,
                 PRIMARY KEY (
                     tenant_id, organization_id, project_id,
@@ -92,12 +96,47 @@ DatabaseAuthoritativeOutcomeContinuousAssessmentRepository
                 )
             )
             """;
+    private static final String ADD_LIFECYCLE_HEAD_ORDINAL = """
+            ALTER TABLE mirror_outcome_continuous_assessments
+            ADD COLUMN IF NOT EXISTS lifecycle_head_ordinal
+                BIGINT NOT NULL DEFAULT 0
+            """;
+    private static final String ADD_LIFECYCLE_HEAD_FINGERPRINT = """
+            ALTER TABLE mirror_outcome_continuous_assessments
+            ADD COLUMN IF NOT EXISTS lifecycle_head_fingerprint
+                VARCHAR(71) NOT NULL DEFAULT ''
+            """;
     private static final String CREATE_SCHEDULE_INDEX = """
             CREATE INDEX IF NOT EXISTS idx_mirror_outcome_continuous_schedule
             ON mirror_outcome_continuous_assessments (
                 region, environment_id, status,
                 next_eligible_at, lease_expires_at,
                 created_at, projection_id
+            )
+            """;
+    private static final String CREATE_LIFECYCLE = """
+            CREATE TABLE IF NOT EXISTS mirror_outcome_continuous_lifecycle (
+                tenant_id VARCHAR(255) NOT NULL,
+                organization_id VARCHAR(255) NOT NULL,
+                project_id VARCHAR(255) NOT NULL,
+                environment_id VARCHAR(255) NOT NULL,
+                region VARCHAR(96) NOT NULL,
+                projection_id VARCHAR(512) NOT NULL,
+                event_ordinal BIGINT NOT NULL,
+                transition VARCHAR(48) NOT NULL,
+                occurred_at TIMESTAMP WITH TIME ZONE NOT NULL,
+                actor_fingerprint VARCHAR(71) NOT NULL,
+                projection_fingerprint VARCHAR(71) NOT NULL,
+                previous_event_fingerprint VARCHAR(71) NOT NULL,
+                event_fingerprint VARCHAR(71) NOT NULL,
+                event_json TEXT NOT NULL,
+                PRIMARY KEY (
+                    tenant_id, organization_id, project_id,
+                    environment_id, region, projection_id,
+                    event_ordinal
+                ),
+                CONSTRAINT uq_mirror_outcome_continuous_lifecycle_event
+                    UNIQUE (event_fingerprint)
             )
             """;
 
@@ -177,7 +216,10 @@ DatabaseAuthoritativeOutcomeContinuousAssessmentRepository
     void init() {
         jdbc.execute(CREATE_LOCKS);
         jdbc.execute(CREATE_PROJECTIONS);
+        jdbc.execute(ADD_LIFECYCLE_HEAD_ORDINAL);
+        jdbc.execute(ADD_LIFECYCLE_HEAD_FINGERPRINT);
         jdbc.execute(CREATE_SCHEDULE_INDEX);
+        jdbc.execute(CREATE_LIFECYCLE);
     }
 
     @Override
@@ -250,7 +292,11 @@ DatabaseAuthoritativeOutcomeContinuousAssessmentRepository
                                     null,
                                     "").seal(mapper);
                     try {
-                        insert(projection, "");
+                        insert(
+                                projection,
+                                "",
+                                AuthoritativeOutcomeContinuousAssessmentLifecycleEvent
+                                        .Transition.REGISTERED);
                     } catch (DuplicateKeyException conflict) {
                         StoredProjection concurrent =
                                 findStored(
@@ -302,6 +348,87 @@ DatabaseAuthoritativeOutcomeContinuousAssessmentRepository
     @Override
     public Instant observedAt() {
         return coordinationNow();
+    }
+
+    @Override
+    public AuthoritativeOutcomeContinuousAssessmentLifecyclePage
+    lifecycle(
+            CapabilitySnapshot.Scope scope,
+            String projectionId,
+            long afterOrdinal,
+            int limit) {
+        CapabilitySnapshot.Scope exactScope =
+                Objects.requireNonNull(scope, "scope");
+        String exactProjectionId =
+                identifier(projectionId);
+        if (afterOrdinal < 0
+                || limit < 1
+                || limit
+                > AuthoritativeOutcomeContinuousAssessmentLifecyclePage
+                .MAXIMUM_EVENTS) {
+            throw new IllegalArgumentException(
+                    "continuous assessment lifecycle cursor or limit is invalid");
+        }
+        if (findStored(
+                exactScope,
+                exactProjectionId,
+                false).isEmpty()) {
+            throw new Violation(
+                    Reason.PROJECTION_NOT_FOUND);
+        }
+        String predecessor = "";
+        if (afterOrdinal > 0) {
+            predecessor = lifecycleEvent(
+                    exactScope,
+                    exactProjectionId,
+                    afterOrdinal)
+                    .orElseThrow(() ->
+                            new Violation(
+                                    Reason.LIFECYCLE_CURSOR_INVALID))
+                    .eventFingerprint();
+        }
+        List<AuthoritativeOutcomeContinuousAssessmentLifecycleEvent>
+                suffix = jdbc.query("""
+                        SELECT *
+                        FROM mirror_outcome_continuous_lifecycle
+                        WHERE tenant_id = ? AND organization_id = ?
+                          AND project_id = ? AND environment_id = ?
+                          AND region = ? AND projection_id = ?
+                          AND event_ordinal > ?
+                        ORDER BY event_ordinal
+                        FETCH FIRST ? ROWS ONLY
+                        """,
+                this::mapLifecycle,
+                exactScope.tenantId(),
+                exactScope.organizationId(),
+                exactScope.projectId(),
+                exactScope.environmentId(),
+                exactScope.region(),
+                exactProjectionId,
+                afterOrdinal,
+                limit + 1);
+        boolean hasMore = suffix.size() > limit;
+        List<AuthoritativeOutcomeContinuousAssessmentLifecycleEvent>
+                events = hasMore
+                ? List.copyOf(
+                suffix.subList(0, limit))
+                : List.copyOf(suffix);
+        long nextOrdinal = events.isEmpty()
+                ? afterOrdinal
+                : events.getLast().eventOrdinal();
+        try {
+            return new AuthoritativeOutcomeContinuousAssessmentLifecyclePage(
+                    "",
+                    exactProjectionId,
+                    afterOrdinal,
+                    predecessor,
+                    nextOrdinal,
+                    hasMore,
+                    events);
+        } catch (RuntimeException corrupt) {
+            throw new Violation(
+                    Reason.STORED_STATE_CORRUPT);
+        }
     }
 
     @Override
@@ -379,7 +506,11 @@ DatabaseAuthoritativeOutcomeContinuousAssessmentRepository
                             now,
                             null);
                     StoredProjection stored = update(
-                            current, running, exactOwner);
+                            current,
+                            running,
+                            exactOwner,
+                            AuthoritativeOutcomeContinuousAssessmentLifecycleEvent
+                                    .Transition.CLAIMED);
                     Lease lease = new Lease(
                             running.scope(),
                             running.projectionId(),
@@ -464,7 +595,11 @@ DatabaseAuthoritativeOutcomeContinuousAssessmentRepository
                             now,
                             null);
                     return update(
-                            current, queued, "")
+                            current,
+                            queued,
+                            "",
+                            AuthoritativeOutcomeContinuousAssessmentLifecycleEvent
+                                    .Transition.ASSESSMENT_PUBLISHED)
                             .projection();
                 }),
                 "continuous assessment publication returned null");
@@ -520,7 +655,11 @@ DatabaseAuthoritativeOutcomeContinuousAssessmentRepository
                             now,
                             null);
                     return update(
-                            current, queued, "")
+                            current,
+                            queued,
+                            "",
+                            AuthoritativeOutcomeContinuousAssessmentLifecycleEvent
+                                    .Transition.SOURCE_UNCHANGED)
                             .projection();
                 }),
                 "continuous assessment unchanged transition returned null");
@@ -588,7 +727,14 @@ DatabaseAuthoritativeOutcomeContinuousAssessmentRepository
                             now,
                             retry ? null : now);
                     return update(
-                            current, failed, "")
+                            current,
+                            failed,
+                            "",
+                            retry
+                                    ? AuthoritativeOutcomeContinuousAssessmentLifecycleEvent
+                                    .Transition.RETRY_SCHEDULED
+                                    : AuthoritativeOutcomeContinuousAssessmentLifecycleEvent
+                                    .Transition.QUARANTINED)
                             .projection();
                 }),
                 "continuous assessment failure transition returned null");
@@ -616,6 +762,7 @@ DatabaseAuthoritativeOutcomeContinuousAssessmentRepository
                 timestamp(now),
                 RECOVERY_LIMIT);
         for (StoredProjection current : expired) {
+            verifyLifecycleHead(current);
             int failures = Math.addExact(
                     current.projection()
                             .consecutiveFailures(),
@@ -652,7 +799,15 @@ DatabaseAuthoritativeOutcomeContinuousAssessmentRepository
                     "RG.MIRROR.OUTCOME.CONTINUOUS_ASSESSMENT_LEASE_EXPIRED",
                     now,
                     retry ? null : now);
-            update(current, recovered, "");
+            update(
+                    current,
+                    recovered,
+                    "",
+                    retry
+                            ? AuthoritativeOutcomeContinuousAssessmentLifecycleEvent
+                            .Transition.LEASE_EXPIRED
+                            : AuthoritativeOutcomeContinuousAssessmentLifecycleEvent
+                            .Transition.QUARANTINED);
         }
     }
 
@@ -674,6 +829,7 @@ DatabaseAuthoritativeOutcomeContinuousAssessmentRepository
                 region,
                 environmentId,
                 timestamp(now));
+        values.forEach(this::verifyLifecycleHead);
         return one(values);
     }
 
@@ -820,16 +976,19 @@ DatabaseAuthoritativeOutcomeContinuousAssessmentRepository
                 scope.environmentId(),
                 scope.region(),
                 identifier(projectionId));
+        values.forEach(this::verifyLifecycleHead);
         return one(values);
     }
 
     private void insert(
             AuthoritativeOutcomeContinuousAssessmentProjection
                     projection,
-            String leaseOwner) {
+            String leaseOwner,
+            AuthoritativeOutcomeContinuousAssessmentLifecycleEvent
+                    .Transition transition) {
         CapabilitySnapshot.Scope scope = projection.scope();
         try {
-            jdbc.update("""
+            int inserted = jdbc.update("""
                             INSERT INTO mirror_outcome_continuous_assessments (
                                 tenant_id, organization_id, project_id,
                                 environment_id, region, projection_id,
@@ -845,10 +1004,14 @@ DatabaseAuthoritativeOutcomeContinuousAssessmentRepository
                                 lease_owner_fingerprint, lease_epoch,
                                 lease_expires_at, failure_code,
                                 created_at, updated_at, terminal_at,
-                                record_fingerprint, projection_json
+                                record_fingerprint,
+                                lifecycle_head_ordinal,
+                                lifecycle_head_fingerprint,
+                                projection_json
                             ) VALUES (
                                 ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
-                                ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?
+                                ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
+                                ?
                             )
                             """,
                     scope.tenantId(),
@@ -882,7 +1045,44 @@ DatabaseAuthoritativeOutcomeContinuousAssessmentRepository
                             ? null
                             : timestamp(projection.terminalAt()),
                     projection.recordFingerprint(),
+                    0L,
+                    "",
                     mapper.writeValueAsString(projection));
+            if (inserted != 1) {
+                throw new Violation(
+                        Reason.STORED_STATE_CORRUPT);
+            }
+            AuthoritativeOutcomeContinuousAssessmentLifecycleEvent
+                    lifecycleHead = appendLifecycle(
+                    null,
+                    projection,
+                    Objects.requireNonNull(
+                            transition, "transition"),
+                    "");
+            int advanced = jdbc.update("""
+                            UPDATE mirror_outcome_continuous_assessments
+                            SET lifecycle_head_ordinal = ?,
+                                lifecycle_head_fingerprint = ?
+                            WHERE tenant_id = ? AND organization_id = ?
+                              AND project_id = ? AND environment_id = ?
+                              AND region = ? AND projection_id = ?
+                              AND record_fingerprint = ?
+                              AND lifecycle_head_ordinal = 0
+                              AND lifecycle_head_fingerprint = ''
+                            """,
+                    lifecycleHead.eventOrdinal(),
+                    lifecycleHead.eventFingerprint(),
+                    scope.tenantId(),
+                    scope.organizationId(),
+                    scope.projectId(),
+                    scope.environmentId(),
+                    scope.region(),
+                    projection.projectionId(),
+                    projection.recordFingerprint());
+            if (advanced != 1) {
+                throw new Violation(
+                        Reason.STORED_STATE_CORRUPT);
+            }
         } catch (JsonProcessingException invalid) {
             throw new Violation(
                     Reason.STORED_STATE_CORRUPT);
@@ -893,7 +1093,9 @@ DatabaseAuthoritativeOutcomeContinuousAssessmentRepository
             StoredProjection before,
             AuthoritativeOutcomeContinuousAssessmentProjection
                     after,
-            String leaseOwner) {
+            String leaseOwner,
+            AuthoritativeOutcomeContinuousAssessmentLifecycleEvent
+                    .Transition transition) {
         CapabilitySnapshot.Scope scope = after.scope();
         String exactOwner =
                 after.status()
@@ -902,6 +1104,18 @@ DatabaseAuthoritativeOutcomeContinuousAssessmentRepository
                         ? owner(leaseOwner)
                         : "";
         try {
+            AuthoritativeOutcomeContinuousAssessmentLifecycleEvent
+                    lifecycleHead = appendLifecycle(
+                    before,
+                    after,
+                    Objects.requireNonNull(
+                            transition, "transition"),
+                    before.projection()
+                            .leaseOwnerFingerprint()
+                            .isBlank()
+                            ? after.leaseOwnerFingerprint()
+                            : before.projection()
+                            .leaseOwnerFingerprint());
             int changed = jdbc.update("""
                             UPDATE mirror_outcome_continuous_assessments
                             SET status = ?,
@@ -917,11 +1131,15 @@ DatabaseAuthoritativeOutcomeContinuousAssessmentRepository
                                 lease_epoch = ?, lease_expires_at = ?,
                                 failure_code = ?, updated_at = ?,
                                 terminal_at = ?, record_fingerprint = ?,
+                                lifecycle_head_ordinal = ?,
+                                lifecycle_head_fingerprint = ?,
                                 projection_json = ?
                             WHERE tenant_id = ? AND organization_id = ?
                               AND project_id = ? AND environment_id = ?
                               AND region = ? AND projection_id = ?
                               AND record_fingerprint = ?
+                              AND lifecycle_head_ordinal = ?
+                              AND lifecycle_head_fingerprint = ?
                             """,
                     after.status().name(),
                     assessmentRevision(after),
@@ -943,6 +1161,8 @@ DatabaseAuthoritativeOutcomeContinuousAssessmentRepository
                             ? null
                             : timestamp(after.terminalAt()),
                     after.recordFingerprint(),
+                    lifecycleHead.eventOrdinal(),
+                    lifecycleHead.eventFingerprint(),
                     mapper.writeValueAsString(after),
                     scope.tenantId(),
                     scope.organizationId(),
@@ -951,13 +1171,306 @@ DatabaseAuthoritativeOutcomeContinuousAssessmentRepository
                     scope.region(),
                     after.projectionId(),
                     before.projection()
-                            .recordFingerprint());
+                            .recordFingerprint(),
+                    before.lifecycleHeadOrdinal(),
+                    before.lifecycleHeadFingerprint());
             if (changed != 1) {
                 throw new Violation(
                         Reason.LEASE_LOST);
             }
-            return new StoredProjection(after, exactOwner);
+            return new StoredProjection(
+                    after,
+                    exactOwner,
+                    lifecycleHead.eventOrdinal(),
+                    lifecycleHead.eventFingerprint());
         } catch (JsonProcessingException invalid) {
+            throw new Violation(
+                    Reason.STORED_STATE_CORRUPT);
+        }
+    }
+
+    private AuthoritativeOutcomeContinuousAssessmentLifecycleEvent
+    appendLifecycle(
+            StoredProjection before,
+            AuthoritativeOutcomeContinuousAssessmentProjection
+                    after,
+            AuthoritativeOutcomeContinuousAssessmentLifecycleEvent
+                    .Transition transition,
+            String actorFingerprint) {
+        Optional<AuthoritativeOutcomeContinuousAssessmentLifecycleEvent>
+                current = latestLifecycle(
+                after.scope(),
+                after.projectionId());
+        if (before == null) {
+            if (current.isPresent()) {
+                throw new Violation(
+                        Reason.STORED_STATE_CORRUPT);
+            }
+        } else if (before.lifecycleHeadOrdinal() == 0) {
+            if (!before.lifecycleHeadFingerprint().isBlank()
+                    || current.isPresent()) {
+                throw new Violation(
+                        Reason.STORED_STATE_CORRUPT);
+            }
+            current = Optional.of(
+                    appendLifecycleEvent(
+                            before.projection(),
+                            AuthoritativeOutcomeContinuousAssessmentLifecycleEvent
+                                    .Transition.MIGRATED,
+                            before.projection()
+                                    .leaseOwnerFingerprint(),
+                            null));
+        } else {
+            AuthoritativeOutcomeContinuousAssessmentLifecycleEvent
+                    exactHead = current.orElseThrow(() ->
+                    new Violation(
+                            Reason.STORED_STATE_CORRUPT));
+            if (exactHead.eventOrdinal()
+                    != before.lifecycleHeadOrdinal()
+                    || !exactHead.eventFingerprint()
+                    .equals(
+                            before.lifecycleHeadFingerprint())
+                    || !exactHead.projection()
+                    .recordFingerprint()
+                    .equals(
+                            before.projection()
+                                    .recordFingerprint())) {
+                throw new Violation(
+                        Reason.STORED_STATE_CORRUPT);
+            }
+        }
+        return appendLifecycleEvent(
+                after,
+                transition,
+                actorFingerprint,
+                current.orElse(null));
+    }
+
+    private AuthoritativeOutcomeContinuousAssessmentLifecycleEvent
+    appendLifecycleEvent(
+            AuthoritativeOutcomeContinuousAssessmentProjection
+                    projection,
+            AuthoritativeOutcomeContinuousAssessmentLifecycleEvent
+                    .Transition transition,
+            String actorFingerprint,
+            AuthoritativeOutcomeContinuousAssessmentLifecycleEvent
+                    predecessor) {
+        long ordinal = predecessor == null
+                ? 1L
+                : Math.addExact(
+                predecessor.eventOrdinal(), 1L);
+        AuthoritativeOutcomeContinuousAssessmentLifecycleEvent event =
+                new AuthoritativeOutcomeContinuousAssessmentLifecycleEvent(
+                        "",
+                        ordinal,
+                        transition,
+                        projection.updatedAt(),
+                        actorFingerprint,
+                        projection,
+                        predecessor == null
+                                ? ""
+                                : predecessor.eventFingerprint(),
+                        "")
+                        .seal(mapper);
+        CapabilitySnapshot.Scope scope =
+                projection.scope();
+        try {
+            int inserted = jdbc.update("""
+                            INSERT INTO mirror_outcome_continuous_lifecycle (
+                                tenant_id, organization_id, project_id,
+                                environment_id, region, projection_id,
+                                event_ordinal, transition, occurred_at,
+                                actor_fingerprint, projection_fingerprint,
+                                previous_event_fingerprint,
+                                event_fingerprint, event_json
+                            ) VALUES (
+                                ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?
+                            )
+                            """,
+                    scope.tenantId(),
+                    scope.organizationId(),
+                    scope.projectId(),
+                    scope.environmentId(),
+                    scope.region(),
+                    projection.projectionId(),
+                    event.eventOrdinal(),
+                    event.transition().name(),
+                    timestamp(event.occurredAt()),
+                    event.actorFingerprint(),
+                    projection.recordFingerprint(),
+                    event.previousEventFingerprint(),
+                    event.eventFingerprint(),
+                    mapper.writeValueAsString(event));
+            if (inserted != 1) {
+                throw new Violation(
+                        Reason.STORED_STATE_CORRUPT);
+            }
+            return event;
+        } catch (DuplicateKeyException
+                 | JsonProcessingException invalid) {
+            throw new Violation(
+                    Reason.STORED_STATE_CORRUPT);
+        }
+    }
+
+    private Optional<
+            AuthoritativeOutcomeContinuousAssessmentLifecycleEvent>
+    latestLifecycle(
+            CapabilitySnapshot.Scope scope,
+            String projectionId) {
+        List<AuthoritativeOutcomeContinuousAssessmentLifecycleEvent>
+                values = jdbc.query("""
+                        SELECT *
+                        FROM mirror_outcome_continuous_lifecycle
+                        WHERE tenant_id = ? AND organization_id = ?
+                          AND project_id = ? AND environment_id = ?
+                          AND region = ? AND projection_id = ?
+                        ORDER BY event_ordinal DESC
+                        FETCH FIRST 1 ROWS ONLY
+                        """,
+                this::mapLifecycle,
+                scope.tenantId(),
+                scope.organizationId(),
+                scope.projectId(),
+                scope.environmentId(),
+                scope.region(),
+                projectionId);
+        Optional<
+                AuthoritativeOutcomeContinuousAssessmentLifecycleEvent>
+                latest = one(values);
+        if (latest.isPresent()
+                && latest.orElseThrow()
+                .eventOrdinal() > 1) {
+            AuthoritativeOutcomeContinuousAssessmentLifecycleEvent
+                    predecessor = lifecycleEvent(
+                    scope,
+                    projectionId,
+                    latest.orElseThrow()
+                            .eventOrdinal() - 1)
+                    .orElseThrow(() ->
+                            new Violation(
+                                    Reason.STORED_STATE_CORRUPT));
+            if (!latest.orElseThrow()
+                    .previousEventFingerprint()
+                    .equals(
+                            predecessor
+                                    .eventFingerprint())) {
+                throw new Violation(
+                        Reason.STORED_STATE_CORRUPT);
+            }
+        }
+        return latest;
+    }
+
+    private void verifyLifecycleHead(
+            StoredProjection stored) {
+        Optional<AuthoritativeOutcomeContinuousAssessmentLifecycleEvent>
+                latest = latestLifecycle(
+                stored.projection().scope(),
+                stored.projection().projectionId());
+        if (stored.lifecycleHeadOrdinal() == 0) {
+            if (latest.isPresent()) {
+                throw new Violation(
+                        Reason.STORED_STATE_CORRUPT);
+            }
+            return;
+        }
+        AuthoritativeOutcomeContinuousAssessmentLifecycleEvent
+                head = latest.orElseThrow(() ->
+                new Violation(
+                        Reason.STORED_STATE_CORRUPT));
+        if (head.eventOrdinal()
+                != stored.lifecycleHeadOrdinal()
+                || !head.eventFingerprint().equals(
+                stored.lifecycleHeadFingerprint())
+                || !head.projection().recordFingerprint()
+                .equals(stored.projection()
+                        .recordFingerprint())) {
+            throw new Violation(
+                    Reason.STORED_STATE_CORRUPT);
+        }
+    }
+
+    private Optional<
+            AuthoritativeOutcomeContinuousAssessmentLifecycleEvent>
+    lifecycleEvent(
+            CapabilitySnapshot.Scope scope,
+            String projectionId,
+            long ordinal) {
+        List<AuthoritativeOutcomeContinuousAssessmentLifecycleEvent>
+                values = jdbc.query("""
+                        SELECT *
+                        FROM mirror_outcome_continuous_lifecycle
+                        WHERE tenant_id = ? AND organization_id = ?
+                          AND project_id = ? AND environment_id = ?
+                          AND region = ? AND projection_id = ?
+                          AND event_ordinal = ?
+                        """,
+                this::mapLifecycle,
+                scope.tenantId(),
+                scope.organizationId(),
+                scope.projectId(),
+                scope.environmentId(),
+                scope.region(),
+                projectionId,
+                ordinal);
+        return one(values);
+    }
+
+    private AuthoritativeOutcomeContinuousAssessmentLifecycleEvent
+    mapLifecycle(
+            ResultSet row,
+            int ignored) throws SQLException {
+        try {
+            AuthoritativeOutcomeContinuousAssessmentLifecycleEvent
+                    event = mapper.readValue(
+                    row.getString("event_json"),
+                    AuthoritativeOutcomeContinuousAssessmentLifecycleEvent
+                            .class);
+            event.verify(mapper);
+            CapabilitySnapshot.Scope scope =
+                    event.projection().scope();
+            if (!scope.tenantId().equals(
+                    row.getString("tenant_id"))
+                    || !scope.organizationId().equals(
+                    row.getString("organization_id"))
+                    || !scope.projectId().equals(
+                    row.getString("project_id"))
+                    || !scope.environmentId().equals(
+                    row.getString("environment_id"))
+                    || !scope.region().equals(
+                    row.getString("region"))
+                    || !event.projection()
+                    .projectionId().equals(
+                            row.getString(
+                                    "projection_id"))
+                    || event.eventOrdinal()
+                    != row.getLong("event_ordinal")
+                    || !event.transition().name().equals(
+                    row.getString("transition"))
+                    || !event.occurredAt().equals(
+                    instant(row, "occurred_at"))
+                    || !event.actorFingerprint().equals(
+                    row.getString(
+                            "actor_fingerprint"))
+                    || !event.projection()
+                    .recordFingerprint().equals(
+                            row.getString(
+                                    "projection_fingerprint"))
+                    || !event.previousEventFingerprint()
+                    .equals(row.getString(
+                            "previous_event_fingerprint"))
+                    || !event.eventFingerprint().equals(
+                    row.getString(
+                            "event_fingerprint"))) {
+                throw new Violation(
+                        Reason.STORED_STATE_CORRUPT);
+            }
+            return event;
+        } catch (Violation invalid) {
+            throw invalid;
+        } catch (JsonProcessingException
+                 | RuntimeException invalid) {
             throw new Violation(
                     Reason.STORED_STATE_CORRUPT);
         }
@@ -1046,6 +1559,12 @@ DatabaseAuthoritativeOutcomeContinuousAssessmentRepository
             }
             String owner = normalized(
                     row.getString("lease_owner"));
+            long lifecycleHeadOrdinal =
+                    row.getLong(
+                            "lifecycle_head_ordinal");
+            String lifecycleHeadFingerprint =
+                    normalized(row.getString(
+                            "lifecycle_head_fingerprint"));
             boolean running = projection.status()
                     == AuthoritativeOutcomeContinuousAssessmentProjection
                     .Status.RUNNING;
@@ -1058,8 +1577,20 @@ DatabaseAuthoritativeOutcomeContinuousAssessmentRepository
                 throw new Violation(
                         Reason.STORED_STATE_CORRUPT);
             }
+            if (lifecycleHeadOrdinal < 0
+                    || (lifecycleHeadOrdinal == 0)
+                    != lifecycleHeadFingerprint.isBlank()
+                    || !lifecycleHeadFingerprint.isBlank()
+                    && !FINGERPRINT.matcher(
+                    lifecycleHeadFingerprint).matches()) {
+                throw new Violation(
+                        Reason.STORED_STATE_CORRUPT);
+            }
             return new StoredProjection(
-                    projection, owner);
+                    projection,
+                    owner,
+                    lifecycleHeadOrdinal,
+                    lifecycleHeadFingerprint);
         } catch (Violation invalid) {
             throw invalid;
         } catch (JsonProcessingException
@@ -1305,12 +1836,22 @@ DatabaseAuthoritativeOutcomeContinuousAssessmentRepository
     private record StoredProjection(
             AuthoritativeOutcomeContinuousAssessmentProjection
                     projection,
-            String leaseOwner
+            String leaseOwner,
+            long lifecycleHeadOrdinal,
+            String lifecycleHeadFingerprint
     ) {
         private StoredProjection {
             projection = Objects.requireNonNull(
                     projection, "projection");
             leaseOwner = normalized(leaseOwner);
+            lifecycleHeadFingerprint = normalized(
+                    lifecycleHeadFingerprint);
+            if (lifecycleHeadOrdinal < 0
+                    || (lifecycleHeadOrdinal == 0)
+                    != lifecycleHeadFingerprint.isBlank()) {
+                throw new IllegalArgumentException(
+                        "continuous assessment lifecycle head is invalid");
+            }
         }
     }
 }

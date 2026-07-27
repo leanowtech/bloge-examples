@@ -103,6 +103,7 @@ silently consuming work.
 | `DELETE http://localhost:8080/api/mirror/outcome-selected-populations/uploads/{uploadId}` | Abort an open upload and destroy its staged chunks |
 | `POST http://localhost:8080/api/mirror/outcome-continuous-assessments` | Register or exactly replay one server-owned continuous completeness projection (`X-Purpose: MIRROR_FIDELITY_GOVERNANCE`) |
 | `GET http://localhost:8080/api/mirror/outcome-continuous-assessments/{projectionId}` | Read database-observed freshness, authority readiness, worker state, and the latest immutable assessment reference |
+| `GET http://localhost:8080/api/mirror/outcome-continuous-assessments/{projectionId}/lifecycle?afterOrdinal=0&limit=100` | Read and independently chain one bounded append-only projection lifecycle page |
 | `POST http://localhost:8080/api/mirror/shadow/source-bindings` | Resolve an exact candidate evidence bundle, double-address and sign one payload-free detached source pair (`X-Purpose: MIRROR_SHADOW_SOURCE_ADMIN`; explicit source-binding protocol header required) |
 | `GET http://localhost:8080/api/mirror/shadow/source-bindings/{bindingId}/revisions/{revision}?fingerprint=...` | Read one exact currently valid detached source pair without latest-revision fallback (`X-Purpose: MIRROR_SHADOW`, `MIRROR_SHADOW_SOURCE_ADMIN`, or `GOVERNANCE_EVIDENCE_INGESTION`) |
 | `GET http://localhost:8080/api/mirror/shadow/source-resolutions/{attestationId}/revisions/{revision}?fingerprint=...` | Read one exact signed proof that both detached sources were independently re-resolved for a stable `executionId` (`X-Purpose: MIRROR_SHADOW` or `GOVERNANCE_EVIDENCE_INGESTION`; explicit source-resolution protocol header required) |
@@ -1297,6 +1298,7 @@ it never substitutes for any customer authority.
 | Project one assessment | `POST .../{populationId}/assessments` | `MIRROR_FIDELITY_GOVERNANCE` / `RESOURCE_GATEWAY_FIDELITY_PROJECTOR`; caller owns the explicit revision |
 | Register continuous assessment | `POST /api/mirror/outcome-continuous-assessments` | `MIRROR_FIDELITY_GOVERNANCE` / `RESOURCE_GATEWAY_FIDELITY_PROJECTOR`; server owns the assessment stream and revisions |
 | Read continuous status | `GET /api/mirror/outcome-continuous-assessments/{projectionId}` | `MIRROR_FIDELITY_GOVERNANCE` or `GOVERNANCE_EVIDENCE_INGESTION` |
+| Read continuous lifecycle | `GET .../{projectionId}/lifecycle?afterOrdinal=0&limit=100` | `GOVERNANCE_EVIDENCE_INGESTION`; caller owns the exclusive ordinal and predecessor checkpoint |
 | Read exact/current facts and source pages | population, disposition, assessment and `/sources` GET routes | `GOVERNANCE_EVIDENCE_INGESTION` or another admitted read purpose |
 
 Writes authenticate before strict decoding. Scope comes only from the workload
@@ -1440,6 +1442,33 @@ field, which is true only when freshness is `CURRENT` and all four trust
 boundaries are currently usable. A historical `lastAssessmentRef` remains
 auditable when `ready=false`; it must not be treated as a current gate fact.
 
+Every committed coordination transition is also appended as a payload-free,
+content-addressed lifecycle event. `REGISTERED`, `CLAIMED`,
+`ASSESSMENT_PUBLISHED`, `SOURCE_UNCHANGED`, `RETRY_SCHEDULED`,
+`LEASE_EXPIRED`, and `QUARANTINED` expose the complete resulting projection,
+an opaque actor fingerprint, a monotonic ordinal, and the previous event
+fingerprint. A pre-upgrade projection receives one explicit `MIGRATED`
+baseline on its first later transition; the gateway never invents historical
+events.
+
+Read lifecycle pages from ordinal zero and retain the last verified
+`nextOrdinal` plus event fingerprint as the continuation checkpoint:
+
+```bash
+curl -fsS \
+  -H "Authorization: Bearer ${RESOURCE_GATEWAY_TEST_TOKEN}" \
+  -H "X-Purpose: GOVERNANCE_EVIDENCE_INGESTION" \
+  "http://localhost:8080/api/mirror/outcome-continuous-assessments/refund-completeness/lifecycle?afterOrdinal=0&limit=100"
+```
+
+The page repeats the caller's `afterOrdinal`, returns the fingerprint at that
+cursor as `predecessorFingerprint`, and then returns a contiguous oldest-first
+suffix. Continue with the returned `nextOrdinal`; independently retain the
+last event's `eventFingerprint`. Deleting or rewriting the lifecycle head,
+breaking an ordinal, substituting another projection, or presenting a stale
+checkpoint fails closed. The Test Kit performs these checks before returning a
+page.
+
 Enable autonomous workers only after installing all customer authorities:
 
 ```bash
@@ -1493,7 +1522,7 @@ from the server model and consumed independently by the Test Kit. It freezes
 population/chunk addressing, `MATCH`/`MISMATCH` observations, one legal
 disposition, zero-missing assessment arithmetic, source pagination, and all
 Resource Gateway Ed25519 signatures without carrying a private key or business
-payload. Twenty strict Schemas, the fixed fixture, resumable-upload and
+payload. Twenty-two strict Schemas, the fixed fixture, resumable-upload and
 continuous-assessment clients, and the standalone Test Kit verifier are
 described in the
 [Test Kit guide](../resource-gateway-test-kit/README.md#verify-selected-population-completeness).

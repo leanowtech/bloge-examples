@@ -765,6 +765,12 @@ public class ToolStudioIntegrationService {
                 authoritativeOutcomeSelectedPopulationRuntimeAvailability
                         .durableProjection());
         features.put(
+                "mirrorAuthoritativeOutcomeContinuousAssessmentLifecycle",
+                authoritativeOutcomeSelectedPopulationRuntimeAvailability
+                        .continuousAssessmentApi()
+                        && authoritativeOutcomeSelectedPopulationRuntimeAvailability
+                        .durableProjection());
+        features.put(
                 "mirrorAuthoritativeOutcomeContinuousAssessmentWorkerReady",
                 authoritativeOutcomeSelectedPopulationRuntimeAvailability
                         .projectionWorkerReady());
@@ -1416,6 +1422,18 @@ public class ToolStudioIntegrationService {
                                 com.leanowtech.bloge.gateway.integration.mirror
                                         .AuthoritativeOutcomeContinuousAssessmentAdmission
                                         .SCHEMA_VERSION));
+                supportedObjects.put(
+                        "authoritativeOutcomeContinuousAssessmentLifecycleEvent",
+                        List.of(
+                                com.leanowtech.bloge.gateway.integration.mirror
+                                        .AuthoritativeOutcomeContinuousAssessmentLifecycleEvent
+                                        .SCHEMA_VERSION));
+                supportedObjects.put(
+                        "authoritativeOutcomeContinuousAssessmentLifecyclePage",
+                        List.of(
+                                com.leanowtech.bloge.gateway.integration.mirror
+                                        .AuthoritativeOutcomeContinuousAssessmentLifecyclePage
+                                        .SCHEMA_VERSION));
             }
         }
         if (domainFidelityRuntimeAvailability.profileReadApi()
@@ -1926,6 +1944,9 @@ public class ToolStudioIntegrationService {
             endpoints.add(new IntegrationCapabilities.Endpoint(
                     "GET",
                     "/api/mirror/outcome-continuous-assessments/{projectionId}"));
+            endpoints.add(new IntegrationCapabilities.Endpoint(
+                    "GET",
+                    "/api/mirror/outcome-continuous-assessments/{projectionId}/lifecycle"));
         }
         if (readOnlyShadowRuntimeAvailability.jobApi()) {
             endpoints.add(new IntegrationCapabilities.Endpoint(

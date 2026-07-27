@@ -1389,6 +1389,12 @@ class ResourceGatewayTestClientTest {
         JsonNode status =
                 client.findAuthoritativeOutcomeContinuousAssessment(
                         "refunds/continuous");
+        JsonNode lifecycle =
+                client.findAuthoritativeOutcomeContinuousAssessmentLifecycle(
+                        "refunds/continuous",
+                        0,
+                        "",
+                        100);
 
         assertThat(admission.path("idempotentReplay")
                 .asBoolean()).isFalse();
@@ -1400,6 +1406,10 @@ class ResourceGatewayTestClientTest {
                 .isEqualTo("refunds/continuous");
         assertThat(status.path("ready").asBoolean())
                 .isFalse();
+        assertThat(lifecycle.path("events")
+                .get(0)
+                .path("transition").asText())
+                .isEqualTo("REGISTERED");
         assertThat(requests)
                 .extracting(
                         CapturedRequest::method,
@@ -1413,7 +1423,14 @@ class ResourceGatewayTestClientTest {
                         org.assertj.core.groups.Tuple.tuple(
                                 "GET",
                                 "/api/mirror/outcome-continuous-assessments/refunds%2Fcontinuous",
+                                "GOVERNANCE_EVIDENCE_INGESTION"),
+                        org.assertj.core.groups.Tuple.tuple(
+                                "GET",
+                                "/api/mirror/outcome-continuous-assessments/refunds%2Fcontinuous/lifecycle",
                                 "GOVERNANCE_EVIDENCE_INGESTION"));
+        assertThat(requests.getLast().rawQuery())
+                .isEqualTo(
+                        "afterOrdinal=0&limit=100");
     }
 
     @Test
@@ -1426,6 +1443,16 @@ class ResourceGatewayTestClientTest {
                 .isInstanceOf(IllegalArgumentException.class)
                 .hasMessage(
                         "RG.MIRROR.CLIENT.OUTCOME_CONTINUOUS_ASSESSMENT_COMMAND_INVALID");
+        assertThatThrownBy(() ->
+                client.findAuthoritativeOutcomeContinuousAssessmentLifecycle(
+                        "refunds/continuous",
+                        1,
+                        "",
+                        100))
+                .isInstanceOf(
+                        IllegalArgumentException.class)
+                .hasMessageContaining(
+                        "lifecycle cursor");
         assertThat(requests).isEmpty();
     }
 
@@ -1780,6 +1807,19 @@ class ResourceGatewayTestClientTest {
         String projectionId = "refunds/continuous";
         ObjectNode status =
                 continuousAssessmentStatus(projectionId);
+        if ("GET".equals(exchange.getRequestMethod())
+                && path.endsWith("/lifecycle")) {
+            respond(
+                    exchange,
+                    200,
+                    mirrorEnvelope(
+                            "AUTHORITATIVE_OUTCOME_CONTINUOUS_ASSESSMENT_LIFECYCLE_PAGE",
+                            CapabilityMirrorProtocol
+                                    .AUTHORITATIVE_OUTCOME_CONTINUOUS_ASSESSMENT_LIFECYCLE_PAGE_V1,
+                            continuousAssessmentLifecyclePage(
+                                    status)));
+            return;
+        }
         if ("POST".equals(exchange.getRequestMethod())
                 && path.equals(
                 "/api/mirror/outcome-continuous-assessments")) {
@@ -1812,6 +1852,58 @@ class ResourceGatewayTestClientTest {
             return;
         }
         respond(exchange, 404, "{}");
+    }
+
+    private static ObjectNode
+    continuousAssessmentLifecyclePage(
+            ObjectNode status) {
+        ObjectNode event =
+                JSON.createObjectNode();
+        event.put(
+                "schemaVersion",
+                CapabilityMirrorProtocol
+                        .AUTHORITATIVE_OUTCOME_CONTINUOUS_ASSESSMENT_LIFECYCLE_EVENT_V1);
+        event.put("eventOrdinal", 1);
+        event.put(
+                "transition", "REGISTERED");
+        event.put(
+                "occurredAt",
+                status.path("projection")
+                        .path("updatedAt").asText());
+        event.put(
+                "actorFingerprint", "");
+        event.set(
+                "projection",
+                status.path("projection")
+                        .deepCopy());
+        event.put(
+                "previousEventFingerprint", "");
+        event.put("eventFingerprint", "");
+        event.put(
+                "eventFingerprint",
+                EvidenceVerificationSupport
+                        .sha256Bounded(
+                                event,
+                                AuthoritativeOutcomeContinuousAssessmentLifecycleVerifier
+                                        .MAXIMUM_EVENT_BYTES));
+        ObjectNode page =
+                JSON.createObjectNode();
+        page.put(
+                "schemaVersion",
+                CapabilityMirrorProtocol
+                        .AUTHORITATIVE_OUTCOME_CONTINUOUS_ASSESSMENT_LIFECYCLE_PAGE_V1);
+        page.put(
+                "projectionId",
+                status.path("projection")
+                        .path("projectionId")
+                        .asText());
+        page.put("afterOrdinal", 0);
+        page.put(
+                "predecessorFingerprint", "");
+        page.put("nextOrdinal", 1);
+        page.put("hasMore", false);
+        page.putArray("events").add(event);
+        return page;
     }
 
     private static ObjectNode continuousAssessmentStatus(

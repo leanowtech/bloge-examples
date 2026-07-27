@@ -161,10 +161,12 @@ offline artifact verification live in the independent `resource-gateway-test-kit
 | `authoritative-outcome-continuous-assessment-projection-v1.schema.json` | `AuthoritativeOutcomeContinuousAssessmentProjection` | Payload-free database work/freshness head with immutable assessment cursor and owner/epoch lease fence |
 | `authoritative-outcome-continuous-assessment-status-v1.schema.json` | `AuthoritativeOutcomeContinuousAssessmentStatus` | Database-observed source freshness, live authority readiness, and derived governance-safe `ready` |
 | `authoritative-outcome-continuous-assessment-admission-v1.schema.json` | `AuthoritativeOutcomeContinuousAssessmentAdmission` | Durable registration result with effective status and exact-replay signal |
+| `authoritative-outcome-continuous-assessment-lifecycle-event-v1.schema.json` | `AuthoritativeOutcomeContinuousAssessmentLifecycleEvent` | Content-addressed projection transition with ordinal, opaque actor, and predecessor binding |
+| `authoritative-outcome-continuous-assessment-lifecycle-page-v1.schema.json` | `AuthoritativeOutcomeContinuousAssessmentLifecyclePage` | Bounded caller-cursor-owned contiguous lifecycle suffix for offline audit |
 
 ### Selected-population continuous-assessment lifecycle
 
-The four continuous schemas extend the immutable assessment protocol without
+The six continuous schemas extend the immutable assessment protocol without
 creating a mutable evidence object. `Projection` is a rebuildable coordination
 head; `lastAssessmentRef` always points to the separately signed immutable
 assessment stream. Its `recordFingerprint` detects storage drift but is not a
@@ -199,6 +201,25 @@ The status schema permits `ready=true` only with `CURRENT` plus
 from database `observedAt`, checks all temporal/state correspondence, and
 verifies the projection content address. Schema-valid JSON alone is not
 authority or evidence verification.
+
+Every successful projection mutation appends a lifecycle event in the same
+database transaction and advances the projection row's lifecycle head with an
+optimistic projection-and-head fence. Each event embeds the complete resulting
+projection, so replay does not depend on reconstructing historical mutable
+columns. The closed transition vocabulary is `REGISTERED`, `MIGRATED`,
+`CLAIMED`, `ASSESSMENT_PUBLISHED`, `SOURCE_UNCHANGED`, `RETRY_SCHEDULED`,
+`LEASE_EXPIRED`, and `QUARANTINED`. `MIGRATED` records the first observed
+baseline for a pre-lifecycle row without claiming that unrecorded history
+occurred.
+
+Lifecycle pages are oldest-first and use an exclusive `afterOrdinal`.
+`predecessorFingerprint` is blank only at ordinal zero and otherwise identifies
+the event at the caller's checkpoint. Events must start at
+`afterOrdinal + 1`, remain contiguous, and chain from that predecessor. The
+caller continues with `nextOrdinal` and the last verified event fingerprint;
+the server does not get to choose an unverified continuation. Projection-head
+verification detects lifecycle head deletion or truncation even when a
+requested suffix is otherwise syntactically valid.
 
 ### Selected-population staged-upload lifecycle
 

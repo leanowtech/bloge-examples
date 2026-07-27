@@ -1,6 +1,7 @@
 package com.leanowtech.bloge.gateway.integration;
 
 import com.leanowtech.bloge.gateway.integration.mirror.AuthoritativeOutcomeContinuousAssessmentAdmission;
+import com.leanowtech.bloge.gateway.integration.mirror.AuthoritativeOutcomeContinuousAssessmentLifecyclePage;
 import com.leanowtech.bloge.gateway.integration.mirror.AuthoritativeOutcomeContinuousAssessmentRequest;
 import com.leanowtech.bloge.gateway.integration.mirror.AuthoritativeOutcomeContinuousAssessmentService;
 import com.leanowtech.bloge.gateway.integration.mirror.AuthoritativeOutcomeContinuousAssessmentStatus;
@@ -15,6 +16,7 @@ import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestHeader;
 import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
 import java.net.URI;
@@ -115,5 +117,33 @@ AuthoritativeOutcomeContinuousAssessmentController {
                 "AUTHORITATIVE_OUTCOME_CONTINUOUS_ASSESSMENT_STATUS",
                 status.schemaVersion(),
                 status);
+    }
+
+    /** Reads one bounded hash-chained projection lifecycle page. */
+    @GetMapping("/{projectionId}/lifecycle")
+    public IntegrationEnvelope<
+            AuthoritativeOutcomeContinuousAssessmentLifecyclePage>
+    lifecycle(
+            @PathVariable String projectionId,
+            @RequestParam(defaultValue = "0")
+            long afterOrdinal,
+            @RequestParam(defaultValue = "100")
+            int limit,
+            @RequestHeader HttpHeaders headers) {
+        IntegrationRequestContext identity =
+                authenticator.authenticate(
+                        headers,
+                        IntegrationOperation
+                                .MIRROR_OUTCOME_CONTINUOUS_ASSESSMENT_LIFECYCLE_READ);
+        AuthoritativeOutcomeContinuousAssessmentLifecyclePage page =
+                service.lifecycle(
+                projectionId,
+                afterOrdinal,
+                limit,
+                identity);
+        return IntegrationEnvelope.of(
+                "AUTHORITATIVE_OUTCOME_CONTINUOUS_ASSESSMENT_LIFECYCLE_PAGE",
+                page.schemaVersion(),
+                page);
     }
 }

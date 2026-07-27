@@ -97,7 +97,7 @@ AuthoritativeOutcomeContinuousAssessmentVerifier {
                     "RG.MIRROR.CLIENT.OUTCOME_CONTINUOUS_ASSESSMENT_STATUS_SCHEMA_INVALID");
             JsonNode projection =
                     status.path("projection");
-            verifyProjection(
+            requireProjection(
                     projection,
                     instant(status, "observedAt"));
             String derivedFreshness =
@@ -135,9 +135,14 @@ AuthoritativeOutcomeContinuousAssessmentVerifier {
         }
     }
 
-    private static void verifyProjection(
+    static void requireProjection(
             JsonNode projection,
             Instant observedAt) {
+        CapabilityMirrorSchemaValidator.require(
+                projection,
+                CapabilityMirrorProtocol
+                        .AUTHORITATIVE_OUTCOME_CONTINUOUS_ASSESSMENT_PROJECTION_SCHEMA_RESOURCE,
+                "RG.MIRROR.CLIENT.OUTCOME_CONTINUOUS_ASSESSMENT_PROJECTION_SCHEMA_INVALID");
         ObjectNode material = object(projection);
         String claimed =
                 text(projection, "recordFingerprint");

@@ -1146,6 +1146,9 @@ class ToolStudioIntegrationServiceTest {
                         "mirrorAuthoritativeOutcomeContinuousAssessmentDurable",
                         true)
                 .containsEntry(
+                        "mirrorAuthoritativeOutcomeContinuousAssessmentLifecycle",
+                        true)
+                .containsEntry(
                         "mirrorAuthoritativeOutcomeContinuousAssessmentWorkerReady",
                         true)
                 .containsEntry(
@@ -1175,7 +1178,9 @@ class ToolStudioIntegrationServiceTest {
                         "authoritativeOutcomeContinuousAssessmentRequest",
                         "authoritativeOutcomeContinuousAssessmentProjection",
                         "authoritativeOutcomeContinuousAssessmentStatus",
-                        "authoritativeOutcomeContinuousAssessmentAdmission");
+                        "authoritativeOutcomeContinuousAssessmentAdmission",
+                        "authoritativeOutcomeContinuousAssessmentLifecycleEvent",
+                        "authoritativeOutcomeContinuousAssessmentLifecyclePage");
         assertThat(ready.endpoints())
                 .extracting(
                         IntegrationCapabilities.Endpoint::method,
@@ -1201,7 +1206,10 @@ class ToolStudioIntegrationServiceTest {
                                 "/api/mirror/outcome-continuous-assessments"),
                         org.assertj.core.groups.Tuple.tuple(
                                 "GET",
-                                "/api/mirror/outcome-continuous-assessments/{projectionId}"));
+                                "/api/mirror/outcome-continuous-assessments/{projectionId}"),
+                        org.assertj.core.groups.Tuple.tuple(
+                                "GET",
+                                "/api/mirror/outcome-continuous-assessments/{projectionId}/lifecycle"));
 
         authoritiesReady.set(false);
         assertThat(service.capabilities()

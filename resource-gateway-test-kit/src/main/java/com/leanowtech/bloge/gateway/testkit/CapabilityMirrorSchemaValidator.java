@@ -150,6 +150,8 @@ final class CapabilityMirrorSchemaValidator {
             "authoritative-outcome-continuous-assessment-projection-v1.schema.json",
             "authoritative-outcome-continuous-assessment-status-v1.schema.json",
             "authoritative-outcome-continuous-assessment-admission-v1.schema.json",
+            "authoritative-outcome-continuous-assessment-lifecycle-event-v1.schema.json",
+            "authoritative-outcome-continuous-assessment-lifecycle-page-v1.schema.json",
             "read-only-shadow-comparison-v1.schema.json",
             "read-only-shadow-comparison-v2.schema.json",
             "read-only-shadow-comparison-v3.schema.json",

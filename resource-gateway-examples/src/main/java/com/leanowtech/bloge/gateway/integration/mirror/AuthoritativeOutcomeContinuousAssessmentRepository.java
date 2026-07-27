@@ -168,6 +168,13 @@ public interface AuthoritativeOutcomeContinuousAssessmentRepository {
             AuthoritativeOutcomeContinuousAssessmentPolicy
                     policy);
 
+    /** Reads one bounded oldest-first hash-chained lifecycle suffix. */
+    AuthoritativeOutcomeContinuousAssessmentLifecyclePage lifecycle(
+            CapabilitySnapshot.Scope scope,
+            String projectionId,
+            long afterOrdinal,
+            int limit);
+
     /** Projection plus the exact database time used to interpret its half-open freshness window. */
     record ObservedProjection(
             AuthoritativeOutcomeContinuousAssessmentProjection
@@ -195,6 +202,7 @@ public interface AuthoritativeOutcomeContinuousAssessmentRepository {
         PROJECTION_NOT_FOUND,
         LEASE_LOST,
         ASSESSMENT_INVALID,
+        LIFECYCLE_CURSOR_INVALID,
         STORED_STATE_CORRUPT
     }
 

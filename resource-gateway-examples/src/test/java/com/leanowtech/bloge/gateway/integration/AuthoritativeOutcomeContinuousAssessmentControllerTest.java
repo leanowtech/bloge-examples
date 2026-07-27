@@ -1,6 +1,7 @@
 package com.leanowtech.bloge.gateway.integration;
 
 import com.leanowtech.bloge.gateway.integration.mirror.AuthoritativeOutcomeContinuousAssessmentAdmission;
+import com.leanowtech.bloge.gateway.integration.mirror.AuthoritativeOutcomeContinuousAssessmentLifecyclePage;
 import com.leanowtech.bloge.gateway.integration.mirror.AuthoritativeOutcomeContinuousAssessmentProjection;
 import com.leanowtech.bloge.gateway.integration.mirror.AuthoritativeOutcomeContinuousAssessmentRequest;
 import com.leanowtech.bloge.gateway.integration.mirror.AuthoritativeOutcomeContinuousAssessmentService;
@@ -47,6 +48,10 @@ class AuthoritativeOutcomeContinuousAssessmentControllerTest {
                 mock(
                         AuthoritativeOutcomeContinuousAssessmentProjection
                                 .class);
+        AuthoritativeOutcomeContinuousAssessmentLifecyclePage lifecycle =
+                mock(
+                        AuthoritativeOutcomeContinuousAssessmentLifecyclePage
+                                .class);
         HttpHeaders headers = new HttpHeaders();
         byte[] body = "{}".getBytes(
                 StandardCharsets.UTF_8);
@@ -60,6 +65,11 @@ class AuthoritativeOutcomeContinuousAssessmentControllerTest {
                 headers,
                 IntegrationOperation
                         .MIRROR_OUTCOME_CONTINUOUS_ASSESSMENT_READ))
+                .thenReturn(identity);
+        when(authenticator.authenticate(
+                headers,
+                IntegrationOperation
+                        .MIRROR_OUTCOME_CONTINUOUS_ASSESSMENT_LIFECYCLE_READ))
                 .thenReturn(identity);
         when(decoder.decodeContinuousAssessment(
                 body, identity)).thenReturn(command);
@@ -78,6 +88,14 @@ class AuthoritativeOutcomeContinuousAssessmentControllerTest {
         when(status.schemaVersion()).thenReturn(
                 AuthoritativeOutcomeContinuousAssessmentStatus
                         .SCHEMA_VERSION);
+        when(service.lifecycle(
+                "refund-completeness",
+                1,
+                25,
+                identity)).thenReturn(lifecycle);
+        when(lifecycle.schemaVersion()).thenReturn(
+                AuthoritativeOutcomeContinuousAssessmentLifecyclePage
+                        .SCHEMA_VERSION);
 
         AuthoritativeOutcomeContinuousAssessmentController controller =
                 new AuthoritativeOutcomeContinuousAssessmentController(
@@ -89,6 +107,11 @@ class AuthoritativeOutcomeContinuousAssessmentControllerTest {
         var found = controller.find(
                 "refund-completeness",
                 headers);
+        var history = controller.lifecycle(
+                "refund-completeness",
+                1,
+                25,
+                headers);
 
         assertThat(created.getStatusCode())
                 .isEqualTo(HttpStatus.CREATED);
@@ -97,6 +120,7 @@ class AuthoritativeOutcomeContinuousAssessmentControllerTest {
                 .isEqualTo(
                         "/api/mirror/outcome-continuous-assessments/refund-completeness");
         assertThat(found.payload()).isSameAs(status);
+        assertThat(history.payload()).isSameAs(lifecycle);
         InOrder order = inOrder(
                 authenticator, decoder, service);
         order.verify(authenticator).authenticate(
@@ -113,6 +137,15 @@ class AuthoritativeOutcomeContinuousAssessmentControllerTest {
                         .MIRROR_OUTCOME_CONTINUOUS_ASSESSMENT_READ);
         order.verify(service).find(
                 "refund-completeness",
+                identity);
+        order.verify(authenticator).authenticate(
+                headers,
+                IntegrationOperation
+                        .MIRROR_OUTCOME_CONTINUOUS_ASSESSMENT_LIFECYCLE_READ);
+        order.verify(service).lifecycle(
+                "refund-completeness",
+                1,
+                25,
                 identity);
     }
 }

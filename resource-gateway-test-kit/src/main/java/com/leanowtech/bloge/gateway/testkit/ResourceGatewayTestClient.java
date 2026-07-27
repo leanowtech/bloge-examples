@@ -50,6 +50,10 @@ public final class ResourceGatewayTestClient {
     AuthoritativeOutcomeContinuousAssessmentVerifier
             OUTCOME_CONTINUOUS_ASSESSMENT_VERIFIER =
             new AuthoritativeOutcomeContinuousAssessmentVerifier();
+    private static final
+    AuthoritativeOutcomeContinuousAssessmentLifecycleVerifier
+            OUTCOME_CONTINUOUS_ASSESSMENT_LIFECYCLE_VERIFIER =
+            new AuthoritativeOutcomeContinuousAssessmentLifecycleVerifier();
     private static final int DEFAULT_MAX_BODY_BYTES = 16 * 1024 * 1024;
     private static final Duration MAX_RETRY_AFTER = Duration.ofHours(24);
 
@@ -3323,6 +3327,76 @@ public final class ResourceGatewayTestClient {
                         .path("projectionId").asText())) {
             throw responseContractInvalid(
                     "The server returned a different continuous assessment projection.");
+        }
+        return payload.deepCopy();
+    }
+
+    /**
+     * Reads and independently verifies one bounded continuous-assessment lifecycle page.
+     *
+     * <p>The caller owns the exclusive cursor and predecessor checkpoint. A continuation must
+     * pass the {@code nextOrdinal} and {@code eventFingerprint} returned by the previously
+     * verified page; producer-selected cursor drift is rejected.</p>
+     *
+     * @param projectionId stable path-safe projection identity
+     * @param afterOrdinal exclusive caller-owned event cursor
+     * @param predecessorFingerprint fingerprint at the cursor, blank only for ordinal zero
+     * @param limit requested page size from 1 through 1000
+     * @return defensive strict lifecycle page
+     */
+    public JsonNode findAuthoritativeOutcomeContinuousAssessmentLifecycle(
+            String projectionId,
+            long afterOrdinal,
+            String predecessorFingerprint,
+            int limit) {
+        String exactProjectionId =
+                mirrorArtifactId(
+                        projectionId, "projectionId");
+        String exactPredecessor =
+                normalized(
+                        predecessorFingerprint);
+        if (afterOrdinal < 0
+                || limit < 1
+                || limit > 1_000
+                || (afterOrdinal == 0)
+                != exactPredecessor.isBlank()
+                || !exactPredecessor.isBlank()
+                && !exactPredecessor.matches(
+                "sha256:[a-f0-9]{64}")) {
+            throw new IllegalArgumentException(
+                    "continuous assessment lifecycle cursor is invalid");
+        }
+        JsonNode response = exchange(
+                "GET",
+                "/api/mirror/outcome-continuous-assessments/"
+                        + segment(exactProjectionId, 512)
+                        + "/lifecycle",
+                "afterOrdinal=" + afterOrdinal
+                        + "&limit=" + limit,
+                "GOVERNANCE_EVIDENCE_INGESTION",
+                null);
+        JsonNode payload = requireMirrorEnvelope(
+                response,
+                "AUTHORITATIVE_OUTCOME_CONTINUOUS_ASSESSMENT_LIFECYCLE_PAGE",
+                CapabilityMirrorProtocol
+                        .AUTHORITATIVE_OUTCOME_CONTINUOUS_ASSESSMENT_LIFECYCLE_PAGE_V1);
+        requireMirrorSchema(
+                payload,
+                CapabilityMirrorProtocol
+                        .AUTHORITATIVE_OUTCOME_CONTINUOUS_ASSESSMENT_LIFECYCLE_PAGE_SCHEMA_RESOURCE,
+                "OUTCOME_CONTINUOUS_ASSESSMENT_LIFECYCLE_PAGE");
+        AuthoritativeOutcomeContinuousAssessmentLifecycleVerifier
+                .VerificationResult verified =
+                OUTCOME_CONTINUOUS_ASSESSMENT_LIFECYCLE_VERIFIER
+                        .verify(
+                                payload,
+                                afterOrdinal,
+                                exactPredecessor);
+        if (!verified.verified()
+                || !exactProjectionId.equals(
+                verified.projectionId())) {
+            throw responseContractInvalid(
+                    "The server returned an invalid continuous assessment lifecycle page.");
         }
         return payload.deepCopy();
     }

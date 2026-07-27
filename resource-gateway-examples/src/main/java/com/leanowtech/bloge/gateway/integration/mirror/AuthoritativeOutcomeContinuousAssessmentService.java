@@ -162,6 +162,45 @@ public final class AuthoritativeOutcomeContinuousAssessmentService {
         }
     }
 
+    /** Reads one bounded hash-chained lifecycle page in the authenticated enterprise scope. */
+    public AuthoritativeOutcomeContinuousAssessmentLifecyclePage
+    lifecycle(
+            String projectionId,
+            long afterOrdinal,
+            int limit,
+            IntegrationRequestContext identity) {
+        IntegrationRequestContext reader =
+                requireReader(identity);
+        MirrorOperationObservability.Observation audit =
+                observability.start(
+                        MirrorOperationAuditEvent.Operation
+                                .OUTCOME_CONTINUOUS_ASSESSMENT_LIFECYCLE_READ,
+                        reader,
+                        projectionId,
+                        "",
+                        "");
+        try {
+            AuthoritativeOutcomeContinuousAssessmentLifecyclePage
+                    page = repository.lifecycle(
+                    scope(reader),
+                    projectionId,
+                    afterOrdinal,
+                    limit);
+            String auditCoordinate = page.events().isEmpty()
+                    ? page.predecessorFingerprint()
+                    : page.events().getLast()
+                    .eventFingerprint();
+            audit.succeeded(
+                    auditCoordinate.isBlank()
+                            ? page.projectionId()
+                            : auditCoordinate);
+            return page;
+        } catch (RuntimeException failure) {
+            throw audit.failed(
+                    mapFailure(failure, reader));
+        }
+    }
+
     /** @return whether all authorities and the assessment signer are currently usable */
     public boolean authoritiesReady() {
         try {
@@ -252,6 +291,13 @@ public final class AuthoritativeOutcomeContinuousAssessmentService {
             return switch (violation.reason()) {
                 case PROJECTION_NOT_FOUND ->
                         notFound(identity);
+                case LIFECYCLE_CURSOR_INVALID ->
+                        new IntegrationProblemException(
+                                IntegrationProblem.badRequest(
+                                        "RG.MIRROR.OUTCOME.CONTINUOUS_ASSESSMENT_LIFECYCLE_CURSOR_INVALID",
+                                        "The continuous assessment lifecycle cursor is invalid.",
+                                        identity.correlationId(),
+                                        Map.of()));
                 case STORED_STATE_CORRUPT ->
                         unavailable(identity);
                 default ->

@@ -168,6 +168,8 @@ public record MirrorOperationAuditEvent(
         OUTCOME_CONTINUOUS_ASSESSMENT_REGISTER,
         /** Read one database-observed continuous projection and its effective readiness. */
         OUTCOME_CONTINUOUS_ASSESSMENT_READ,
+        /** Read one bounded hash-chained continuous projection lifecycle page. */
+        OUTCOME_CONTINUOUS_ASSESSMENT_LIFECYCLE_READ,
         /** Read one selected population, disposition, assessment, or source closure. */
         OUTCOME_POPULATION_READ,
         /** Durably reserve one read-only Shadow sample and immutable request. */
