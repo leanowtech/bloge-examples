@@ -1,0 +1,11 @@
+{
+  "name": "resource-gateway-protocol-certification-typescript",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "test": "node --test outcome-observation-verifier.test.ts"
+  },
+  "engines": {
+    "node": ">=22.18"
+  }
+}

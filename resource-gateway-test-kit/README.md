@@ -95,11 +95,15 @@ From the repository root:
 ```bash
 mvn -f resource-gateway-test-kit/pom.xml clean verify
 mvn -f resource-gateway-test-kit/pom.xml install
+bash resource-gateway-test-kit/scripts/verify-polyglot-protocols.sh
 ```
 
 The module is intentionally independent of `resource-gateway-examples`. The
 server and client can therefore build and release separately against the
-versioned wire schema.
+versioned wire schema. The polyglot gate uses only Node.js and the Go standard
+library; it performs no package download and independently verifies the same
+server-produced public fixture in TypeScript and Go. See the
+[polyglot certification boundary](polyglot/README.md).
 
 The fidelity profile protocol and offline verification flow are documented in
 the [domain fidelity profile guide](../docs/resource-gateway-domain-fidelity-profile.md).
@@ -156,6 +160,16 @@ if (!fixture.verify().verified()) {
 The fixture's internal permissive authority callback is intentionally bounded
 to producer/consumer compatibility. It cannot replace the customer-governed
 callback used for live evidence.
+
+Non-Java release consumers should also run:
+
+```bash
+bash resource-gateway-test-kit/scripts/verify-polyglot-protocols.sh
+```
+
+The TypeScript and Go implementations do not call the Java verifier. They
+independently reject canonicalization, authority-identity, reconciliation,
+signature, and unknown-field drift against the same public-only fixture.
 
 Resource Gateway now exposes authenticated durable create/query/claim/heartbeat/recovery endpoints
 backed by BLOGE suspend state. This test-kit deliberately does not yet expose that broad control
