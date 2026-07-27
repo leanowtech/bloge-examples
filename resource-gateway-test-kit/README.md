@@ -2,7 +2,48 @@
 
 `bloge-resource-gateway-test-kit` lets Java and JUnit 5 suites drive the
 Resource Gateway testing control plane without depending on its Spring Boot
-implementation. The JAR packages the authoritative v1 JSON Schema and provides:
+implementation.
+
+It turns a DSL-native graph into a repeatable engineering test workflow:
+
+```text
+discover exact target
+  -> control runtime data with fixtures
+  -> execute an immutable suite
+  -> assert business behavior
+  -> verify signed evidence
+  -> feed CI or a governance gate
+```
+
+> **New to the Test Kit?** Start with the
+> [整体设计与使用手册](../docs/resource-gateway-test-kit-design-and-user-guide.md).
+> It explains the architecture, trust boundaries, five-minute Java path, CI command,
+> failure decisions, and which advanced verifier to use. The reference below is intentionally
+> exhaustive and is best used after the main path works.
+
+## Start Here
+
+| Goal | Start with |
+|---|---|
+| Run one Graph or Operator locally | `ResourceGatewayTestClient` + inline `FixtureBundleBuilder` |
+| Build a repeatable regression suite | immutable Fixture revision + `TestSuiteBuilder` |
+| Gate a release in CI | `ResourceGatewaySuiteCli` + payload-free JUnit XML |
+| Verify release-grade evidence | exact Suite revision + caller-pinned trust material |
+| Integrate Mirror, Shadow, Scenario, or Fidelity governance | the specialized verifier named in the [capability map](../docs/resource-gateway-test-kit-design-and-user-guide.md#11-高级能力导航) |
+
+Build the library and start the local test-profile Gateway:
+
+```bash
+mvn -f resource-gateway-test-kit/pom.xml clean verify
+./scripts/start-visual-canvas-demo.sh
+```
+
+The local demo uses `http://localhost:8080` and the test-only bearer token
+`bloge-aneke-demo-token`. Do not reuse that credential outside the local demo.
+
+## Capability Inventory
+
+The JAR packages the authoritative v1 JSON Schema and provides:
 
 - a bounded JDK HTTP client for graph/operator target discovery, fixture and immutable-suite
   registries, deterministic property planning/materialization/execution, pure-DSL mutation

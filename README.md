@@ -188,9 +188,9 @@ bloge-examples/
 - `graph-engine-examples/README.md` for module-by-module graph-engine details
 - `resource-gateway-examples/README.md` for the focused Resource Gateway overview
   and `resource-gateway-examples/REFERENCE.md` for the full API/test reference
-- `resource-gateway-test-kit/README.md` for Java/JUnit controlled execution,
-  immutable suite integration, pinned suite-stability verification, offline fleet rollout verification,
-  and the fail-closed CI command
+- `docs/resource-gateway-test-kit-design-and-user-guide.md` for the Test Kit
+  architecture, five-minute Java path, CI usage, trust boundaries, and troubleshooting;
+  `resource-gateway-test-kit/README.md` remains the exhaustive API and protocol reference
 - `docs/bloge-visual-canvas-product-and-system-guide.md` for the visual canvas
   product guide, demo scripts, and system usage notes
 - `docs/bloge-vscode-extension-lightweight-authoring-plan.md` for the lighter
