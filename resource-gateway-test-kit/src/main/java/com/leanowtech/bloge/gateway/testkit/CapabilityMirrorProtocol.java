@@ -479,6 +479,22 @@ public final class CapabilityMirrorProtocol {
     public static final String
     AUTHORITATIVE_OUTCOME_SELECTED_POPULATION_UPLOAD_CHUNK_ADMISSION_V1 =
             "resourceGateway.authoritativeOutcomeSelectedPopulationUploadChunkAdmission.v1";
+    /** Server-owned continuous selected-population assessment registration version. */
+    public static final String
+    AUTHORITATIVE_OUTCOME_CONTINUOUS_ASSESSMENT_REQUEST_V1 =
+            "resourceGateway.authoritativeOutcomeContinuousAssessmentRequest.v1";
+    /** Durable payload-free continuous assessment work projection version. */
+    public static final String
+    AUTHORITATIVE_OUTCOME_CONTINUOUS_ASSESSMENT_PROJECTION_V1 =
+            "resourceGateway.authoritativeOutcomeContinuousAssessmentProjection.v1";
+    /** Database-observed effective continuous assessment status version. */
+    public static final String
+    AUTHORITATIVE_OUTCOME_CONTINUOUS_ASSESSMENT_STATUS_V1 =
+            "resourceGateway.authoritativeOutcomeContinuousAssessmentStatus.v1";
+    /** Durable continuous assessment registration result version. */
+    public static final String
+    AUTHORITATIVE_OUTCOME_CONTINUOUS_ASSESSMENT_ADMISSION_V1 =
+            "resourceGateway.authoritativeOutcomeContinuousAssessmentAdmission.v1";
     /** Fixed server-produced selected-population completeness compatibility fixture version. */
     public static final String
     AUTHORITATIVE_OUTCOME_SELECTED_POPULATION_COMPATIBILITY_V1 =
@@ -1137,6 +1153,26 @@ public final class CapabilityMirrorProtocol {
     AUTHORITATIVE_OUTCOME_SELECTED_POPULATION_UPLOAD_CHUNK_ADMISSION_SCHEMA_RESOURCE =
             SCHEMA_RESOURCE_ROOT
                     + "authoritative-outcome-selected-population-upload-chunk-admission-v1.schema.json";
+    /** Packaged strict continuous assessment registration command schema. */
+    public static final String
+    AUTHORITATIVE_OUTCOME_CONTINUOUS_ASSESSMENT_REQUEST_SCHEMA_RESOURCE =
+            SCHEMA_RESOURCE_ROOT
+                    + "authoritative-outcome-continuous-assessment-request-v1.schema.json";
+    /** Packaged durable continuous assessment work projection schema. */
+    public static final String
+    AUTHORITATIVE_OUTCOME_CONTINUOUS_ASSESSMENT_PROJECTION_SCHEMA_RESOURCE =
+            SCHEMA_RESOURCE_ROOT
+                    + "authoritative-outcome-continuous-assessment-projection-v1.schema.json";
+    /** Packaged database-observed continuous assessment status schema. */
+    public static final String
+    AUTHORITATIVE_OUTCOME_CONTINUOUS_ASSESSMENT_STATUS_SCHEMA_RESOURCE =
+            SCHEMA_RESOURCE_ROOT
+                    + "authoritative-outcome-continuous-assessment-status-v1.schema.json";
+    /** Packaged durable continuous assessment registration result schema. */
+    public static final String
+    AUTHORITATIVE_OUTCOME_CONTINUOUS_ASSESSMENT_ADMISSION_SCHEMA_RESOURCE =
+            SCHEMA_RESOURCE_ROOT
+                    + "authoritative-outcome-continuous-assessment-admission-v1.schema.json";
     /** Packaged signed payload-free read-only Shadow comparison schema. */
     public static final String
     READ_ONLY_SHADOW_COMPARISON_SCHEMA_RESOURCE =

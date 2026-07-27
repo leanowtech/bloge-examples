@@ -1253,6 +1253,20 @@ curl -fsS http://localhost:8080/api/integration/capabilities
 ./scripts/stop-visual-canvas-demo.sh
 ```
 
+停止脚本默认等待 40 秒，以覆盖后台 worker 默认 30 秒的有界排空窗口；可通过
+`BLOGE_VISUAL_CANVAS_STOP_TIMEOUT=60` 调整，但脚本只接受 `1..300` 秒，超时后才会强制终止。
+
+已经安装企业 source cut、scope、disposition、outcome authority 的客户装配，可以在
+`test/staging` 启用 selected-population 持续 assessment：
+
+```bash
+./scripts/start-visual-canvas-demo.sh --profile staging \
+  --outcome-continuous-assessment
+```
+
+该开关不会伪造客户 authority。stock demo 会因 capability readiness 不完整而 fail-closed；
+`production` profile 会在构建和启动前直接拒绝该模式。
+
 #### 3.8.1 使用 Owner 演练工作台
 
 启动时增加 `--scenario-batch`，然后打开

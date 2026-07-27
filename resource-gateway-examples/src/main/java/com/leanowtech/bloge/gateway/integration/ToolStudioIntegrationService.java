@@ -757,6 +757,22 @@ public class ToolStudioIntegrationService {
                 authoritativeOutcomeSelectedPopulationRuntimeAvailability
                         .stagedUpload());
         features.put(
+                "mirrorAuthoritativeOutcomeContinuousAssessmentApi",
+                authoritativeOutcomeSelectedPopulationRuntimeAvailability
+                        .continuousAssessmentApi());
+        features.put(
+                "mirrorAuthoritativeOutcomeContinuousAssessmentDurable",
+                authoritativeOutcomeSelectedPopulationRuntimeAvailability
+                        .durableProjection());
+        features.put(
+                "mirrorAuthoritativeOutcomeContinuousAssessmentWorkerReady",
+                authoritativeOutcomeSelectedPopulationRuntimeAvailability
+                        .projectionWorkerReady());
+        features.put(
+                "mirrorAuthoritativeOutcomeContinuousAssessmentScheduling",
+                authoritativeOutcomeSelectedPopulationRuntimeAvailability
+                        .projectionSchedulerReady());
+        features.put(
                 "mirrorAuthoritativeOutcomeSelectedPopulationReady",
                 authoritativeOutcomeSelectedPopulationRuntimeAvailability
                         .continuousReady());
@@ -1374,6 +1390,33 @@ public class ToolStudioIntegrationService {
                                         .AuthoritativeOutcomeSelectedPopulationUploadStatus
                                         .SCHEMA_VERSION));
             }
+            if (authoritativeOutcomeSelectedPopulationRuntimeAvailability
+                    .continuousAssessmentApi()) {
+                supportedObjects.put(
+                        "authoritativeOutcomeContinuousAssessmentRequest",
+                        List.of(
+                                com.leanowtech.bloge.gateway.integration.mirror
+                                        .AuthoritativeOutcomeContinuousAssessmentRequest
+                                        .SCHEMA_VERSION));
+                supportedObjects.put(
+                        "authoritativeOutcomeContinuousAssessmentProjection",
+                        List.of(
+                                com.leanowtech.bloge.gateway.integration.mirror
+                                        .AuthoritativeOutcomeContinuousAssessmentProjection
+                                        .SCHEMA_VERSION));
+                supportedObjects.put(
+                        "authoritativeOutcomeContinuousAssessmentStatus",
+                        List.of(
+                                com.leanowtech.bloge.gateway.integration.mirror
+                                        .AuthoritativeOutcomeContinuousAssessmentStatus
+                                        .SCHEMA_VERSION));
+                supportedObjects.put(
+                        "authoritativeOutcomeContinuousAssessmentAdmission",
+                        List.of(
+                                com.leanowtech.bloge.gateway.integration.mirror
+                                        .AuthoritativeOutcomeContinuousAssessmentAdmission
+                                        .SCHEMA_VERSION));
+            }
         }
         if (domainFidelityRuntimeAvailability.profileReadApi()
                 || readOnlyShadowRuntimeAvailability.jobApi()) {
@@ -1874,6 +1917,15 @@ public class ToolStudioIntegrationService {
             endpoints.add(new IntegrationCapabilities.Endpoint(
                     "DELETE",
                     "/api/mirror/outcome-selected-populations/uploads/{uploadId}"));
+        }
+        if (authoritativeOutcomeSelectedPopulationRuntimeAvailability
+                .continuousAssessmentApi()) {
+            endpoints.add(new IntegrationCapabilities.Endpoint(
+                    "POST",
+                    "/api/mirror/outcome-continuous-assessments"));
+            endpoints.add(new IntegrationCapabilities.Endpoint(
+                    "GET",
+                    "/api/mirror/outcome-continuous-assessments/{projectionId}"));
         }
         if (readOnlyShadowRuntimeAvailability.jobApi()) {
             endpoints.add(new IntegrationCapabilities.Endpoint(

@@ -117,6 +117,12 @@ class AuthoritativeOutcomeSelectedPopulationRequestDecoderTest {
                         "upload-1",
                         "",
                         population.manifest());
+        AuthoritativeOutcomeContinuousAssessmentRequest
+                continuousRequest =
+                new AuthoritativeOutcomeContinuousAssessmentRequest(
+                        "",
+                        "refund-completeness",
+                        population.manifest().artifactRef());
 
         assertThat(decoder.decodePopulation(
                 mapper.writeValueAsBytes(
@@ -139,6 +145,11 @@ class AuthoritativeOutcomeSelectedPopulationRequestDecoderTest {
                         population.chunks().getFirst()),
                 identity)).isEqualTo(
                 population.chunks().getFirst());
+        assertThat(decoder.decodeContinuousAssessment(
+                mapper.writeValueAsBytes(
+                        continuousRequest),
+                identity)).isEqualTo(
+                continuousRequest);
     }
 
     @Test
@@ -192,6 +203,39 @@ class AuthoritativeOutcomeSelectedPopulationRequestDecoderTest {
         assertMalformed(
                 () -> decoder.decodeAssessment(
                         trailing,
+                        identity));
+    }
+
+    @Test
+    void rejectsMalformedContinuousAssessmentBeforeConstruction()
+            throws Exception {
+        AuthoritativeOutcomeContinuousAssessmentRequest request =
+                new AuthoritativeOutcomeContinuousAssessmentRequest(
+                        "",
+                        "refund-completeness",
+                        population.manifest().artifactRef());
+        ObjectNode unknown = mapper.valueToTree(request);
+        unknown.put("pollIntervalSeconds", 1);
+        assertMalformed(
+                () -> decoder.decodeContinuousAssessment(
+                        bytes(unknown), identity));
+
+        ObjectNode missing = mapper.valueToTree(request);
+        missing.remove("populationRef");
+        assertMalformed(
+                () -> decoder.decodeContinuousAssessment(
+                        bytes(missing), identity));
+
+        String duplicate =
+                mapper.writeValueAsString(request)
+                        .replaceFirst(
+                                "\"projectionId\":\"refund-completeness\"",
+                                "\"projectionId\":\"refund-completeness\","
+                                        + "\"projectionId\":\"forged\"");
+        assertMalformed(
+                () -> decoder.decodeContinuousAssessment(
+                        duplicate.getBytes(
+                                StandardCharsets.UTF_8),
                         identity));
     }
 

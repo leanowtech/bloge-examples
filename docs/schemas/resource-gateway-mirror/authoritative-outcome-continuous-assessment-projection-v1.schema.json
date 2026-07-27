@@ -1,0 +1,296 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://bloge.dev/schemas/resource-gateway-mirror/authoritative-outcome-continuous-assessment-projection-v1.schema.json",
+  "title": "Resource Gateway Authoritative Outcome Continuous Assessment Projection v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "scope",
+    "projectionId",
+    "populationRef",
+    "assessmentId",
+    "status",
+    "lastAssessmentRef",
+    "observationSetFingerprint",
+    "dispositionSetFingerprint",
+    "currentThrough",
+    "freshUntil",
+    "attemptCount",
+    "consecutiveFailures",
+    "nextEligibleAt",
+    "leaseOwnerFingerprint",
+    "leaseEpoch",
+    "leaseExpiresAt",
+    "failureCode",
+    "createdAt",
+    "updatedAt",
+    "terminalAt",
+    "recordFingerprint"
+  ],
+  "properties": {
+    "schemaVersion": {
+      "const": "resourceGateway.authoritativeOutcomeContinuousAssessmentProjection.v1"
+    },
+    "scope": {
+      "$ref": "mirror-plan-v1.schema.json#/$defs/scope"
+    },
+    "projectionId": {
+      "$ref": "read-only-shadow-comparison-v1.schema.json#/$defs/identifier"
+    },
+    "populationRef": {
+      "$ref": "authoritative-outcome-continuous-assessment-request-v1.schema.json#/$defs/populationRef"
+    },
+    "assessmentId": {
+      "type": "string",
+      "pattern": "^continuous-assessment:[A-Za-z0-9][A-Za-z0-9@._:/-]{0,479}$"
+    },
+    "status": {
+      "enum": [
+        "QUEUED",
+        "RUNNING",
+        "RETRY_WAIT",
+        "QUARANTINED"
+      ]
+    },
+    "lastAssessmentRef": {
+      "oneOf": [
+        {
+          "type": "null"
+        },
+        {
+          "$ref": "#/$defs/assessmentRef"
+        }
+      ]
+    },
+    "observationSetFingerprint": {
+      "$ref": "#/$defs/optionalFingerprint"
+    },
+    "dispositionSetFingerprint": {
+      "$ref": "#/$defs/optionalFingerprint"
+    },
+    "currentThrough": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "freshUntil": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "attemptCount": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "consecutiveFailures": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "nextEligibleAt": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "leaseOwnerFingerprint": {
+      "$ref": "#/$defs/optionalFingerprint"
+    },
+    "leaseEpoch": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "leaseExpiresAt": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "failureCode": {
+      "type": "string",
+      "pattern": "^(|[A-Z][A-Z0-9_.-]{0,254})$"
+    },
+    "createdAt": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "updatedAt": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "terminalAt": {
+      "oneOf": [
+        {
+          "type": "null"
+        },
+        {
+          "type": "string",
+          "format": "date-time"
+        }
+      ]
+    },
+    "recordFingerprint": {
+      "$ref": "mirror-plan-v1.schema.json#/$defs/fingerprint"
+    }
+  },
+  "allOf": [
+    {
+      "if": {
+        "properties": {
+          "lastAssessmentRef": {
+            "type": "null"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "observationSetFingerprint": {
+            "const": ""
+          },
+          "dispositionSetFingerprint": {
+            "const": ""
+          },
+          "currentThrough": {
+            "const": "1970-01-01T00:00:00Z"
+          },
+          "freshUntil": {
+            "const": "1970-01-01T00:00:00Z"
+          }
+        }
+      },
+      "else": {
+        "properties": {
+          "observationSetFingerprint": {
+            "$ref": "mirror-plan-v1.schema.json#/$defs/fingerprint"
+          },
+          "dispositionSetFingerprint": {
+            "$ref": "mirror-plan-v1.schema.json#/$defs/fingerprint"
+          },
+          "currentThrough": {
+            "not": {
+              "const": "1970-01-01T00:00:00Z"
+            }
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "status": {
+            "const": "RUNNING"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "leaseOwnerFingerprint": {
+            "$ref": "mirror-plan-v1.schema.json#/$defs/fingerprint"
+          },
+          "failureCode": {
+            "const": ""
+          },
+          "terminalAt": {
+            "type": "null"
+          }
+        }
+      },
+      "else": {
+        "properties": {
+          "leaseOwnerFingerprint": {
+            "const": ""
+          },
+          "leaseExpiresAt": {
+            "const": "1970-01-01T00:00:00Z"
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "status": {
+            "const": "QUARANTINED"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "failureCode": {
+            "type": "string",
+            "pattern": "^[A-Z][A-Z0-9_.-]{0,254}$"
+          },
+          "terminalAt": {
+            "type": "string",
+            "format": "date-time"
+          }
+        }
+      },
+      "else": {
+        "properties": {
+          "terminalAt": {
+            "type": "null"
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "status": {
+            "const": "QUEUED"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "failureCode": {
+            "const": ""
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "status": {
+            "const": "RETRY_WAIT"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "failureCode": {
+            "type": "string",
+            "pattern": "^[A-Z][A-Z0-9_.-]{0,254}$"
+          }
+        }
+      }
+    }
+  ],
+  "$defs": {
+    "optionalFingerprint": {
+      "type": "string",
+      "pattern": "^(|sha256:[a-f0-9]{64})$"
+    },
+    "assessmentRef": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "id",
+        "revision",
+        "fingerprint"
+      ],
+      "properties": {
+        "kind": {
+          "const": "AUTHORITATIVE_OUTCOME_SELECTED_POPULATION_COMPLETENESS"
+        },
+        "id": {
+          "$ref": "read-only-shadow-comparison-v1.schema.json#/$defs/identifier"
+        },
+        "revision": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "fingerprint": {
+          "$ref": "mirror-plan-v1.schema.json#/$defs/fingerprint"
+        }
+      }
+    }
+  }
+}

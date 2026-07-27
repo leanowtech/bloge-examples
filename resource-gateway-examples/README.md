@@ -101,6 +101,8 @@ silently consuming work.
 | `GET http://localhost:8080/api/mirror/outcome-selected-populations/uploads/{uploadId}` | Read payload-free durable progress, expiry, and finalization state |
 | `POST http://localhost:8080/api/mirror/outcome-selected-populations/uploads/{uploadId}/finalize` | Finalize a complete upload through the existing governed population admission |
 | `DELETE http://localhost:8080/api/mirror/outcome-selected-populations/uploads/{uploadId}` | Abort an open upload and destroy its staged chunks |
+| `POST http://localhost:8080/api/mirror/outcome-continuous-assessments` | Register or exactly replay one server-owned continuous completeness projection (`X-Purpose: MIRROR_FIDELITY_GOVERNANCE`) |
+| `GET http://localhost:8080/api/mirror/outcome-continuous-assessments/{projectionId}` | Read database-observed freshness, authority readiness, worker state, and the latest immutable assessment reference |
 | `POST http://localhost:8080/api/mirror/shadow/source-bindings` | Resolve an exact candidate evidence bundle, double-address and sign one payload-free detached source pair (`X-Purpose: MIRROR_SHADOW_SOURCE_ADMIN`; explicit source-binding protocol header required) |
 | `GET http://localhost:8080/api/mirror/shadow/source-bindings/{bindingId}/revisions/{revision}?fingerprint=...` | Read one exact currently valid detached source pair without latest-revision fallback (`X-Purpose: MIRROR_SHADOW`, `MIRROR_SHADOW_SOURCE_ADMIN`, or `GOVERNANCE_EVIDENCE_INGESTION`) |
 | `GET http://localhost:8080/api/mirror/shadow/source-resolutions/{attestationId}/revisions/{revision}?fingerprint=...` | Read one exact signed proof that both detached sources were independently re-resolved for a stable `executionId` (`X-Purpose: MIRROR_SHADOW` or `GOVERNANCE_EVIDENCE_INGESTION`; explicit source-resolution protocol header required) |
@@ -1292,7 +1294,9 @@ it never substitutes for any customer authority.
 |---|---|---|
 | Submit population | `POST /api/mirror/outcome-selected-populations` | `MIRROR_OUTCOME_SELECTION` / `RESOURCE_GATEWAY_OUTCOME_SELECTION_AUTHORITY` |
 | Submit legal disposition | `POST .../{populationId}/dispositions` | `MIRROR_OUTCOME_DISPOSITION` / `RESOURCE_GATEWAY_OUTCOME_DELETION_AUTHORITY` |
-| Project assessment | `POST .../{populationId}/assessments` | `MIRROR_FIDELITY_GOVERNANCE` / `RESOURCE_GATEWAY_FIDELITY_PROJECTOR` |
+| Project one assessment | `POST .../{populationId}/assessments` | `MIRROR_FIDELITY_GOVERNANCE` / `RESOURCE_GATEWAY_FIDELITY_PROJECTOR`; caller owns the explicit revision |
+| Register continuous assessment | `POST /api/mirror/outcome-continuous-assessments` | `MIRROR_FIDELITY_GOVERNANCE` / `RESOURCE_GATEWAY_FIDELITY_PROJECTOR`; server owns the assessment stream and revisions |
+| Read continuous status | `GET /api/mirror/outcome-continuous-assessments/{projectionId}` | `MIRROR_FIDELITY_GOVERNANCE` or `GOVERNANCE_EVIDENCE_INGESTION` |
 | Read exact/current facts and source pages | population, disposition, assessment and `/sources` GET routes | `GOVERNANCE_EVIDENCE_INGESTION` or another admitted read purpose |
 
 Writes authenticate before strict decoding. Scope comes only from the workload
@@ -1308,17 +1312,23 @@ partition lock. Historical source rows are committed with the assessment and
 are read with a bounded content-addressed cursor; current heads are never used
 to fill holes in old evidence.
 
-The capability probe reports four separate facts:
+The capability probe reports independent immutable-registry and continuous-runtime facts:
 
 - `mirrorAuthoritativeOutcomeSelectedPopulationApi`
 - `mirrorAuthoritativeOutcomeSelectedPopulationDurable`
 - `mirrorAuthoritativeOutcomeSelectedPopulationSourceClosure`
+- `mirrorAuthoritativeOutcomeSelectedPopulationStagedUpload`
+- `mirrorAuthoritativeOutcomeContinuousAssessmentApi`
+- `mirrorAuthoritativeOutcomeContinuousAssessmentDurable`
+- `mirrorAuthoritativeOutcomeContinuousAssessmentWorkerReady`
+- `mirrorAuthoritativeOutcomeContinuousAssessmentScheduling`
 - `mirrorAuthoritativeOutcomeSelectedPopulationReady`
 
 The final fact is true only while the API, durable registry, source closure,
-selection authority, outcome authority, deletion authority and signer are all
+staged transport, continuous projection store, selection authority, outcome
+authority, deletion authority, signer, worker, and bounded scheduler are all
 usable. The normal demo scripts intentionally do not install fake customer
-authorities, so the product remains absent:
+authorities, so these routes remain absent:
 
 ```bash
 ./scripts/start-visual-canvas-demo.sh --profile test
@@ -1392,8 +1402,90 @@ This is resumable transport, not an unlimited streaming data plane. The
 default 256 MiB policy is intentional, and finalize currently materializes the
 bounded chunk closure in one JVM before governed admission. Million-scale
 deployments must certify heap, database, authority latency, and policy bounds;
-populations beyond those bounds require the planned object-store/streaming
-projection lifecycle rather than a larger bean value.
+populations beyond those bounds require an object-store/streaming admission
+data plane rather than a larger bean value.
+
+##### Continuous completeness projection
+
+An explicit assessment proves one coherent source cut once. It does not prove
+that the conclusion is still current after a late outcome, conflict resolution,
+or legal disposition changes a member head. Continuous assessment closes that
+gap without letting callers control freshness or revision allocation.
+
+Registration contains only a stable `projectionId` and one exact immutable
+population artifact reference. Resource Gateway derives
+`continuous-assessment:{projectionId}`, checks the population through the
+external selection authority, and stores a payload-free database projection.
+The request cannot set polling, lease, retry, freshness, assessment id, or
+assessment revision.
+
+Each worker turn takes a database-time owner/epoch lease, freezes the current
+observation and disposition source closure, and compares it with the latest
+immutable assessment:
+
+- an unchanged closure renews `currentThrough` and the exclusive
+  `freshUntil` deadline without manufacturing another evidence revision;
+- a changed closure calls the existing audited three-authority assessment
+  service and publishes the next immutable assessment revision;
+- a committed assessment whose response was lost is adopted from the
+  immutable assessment head before any successor is allocated;
+- retryable authority/cut failures use bounded exponential backoff and never
+  extend old freshness; structural corruption or eight consecutive failures
+  enter `QUARANTINED`.
+
+`QUEUED`, `RUNNING`, `RETRY_WAIT`, and `QUARANTINED` describe durable work.
+`UNINITIALIZED`, `CURRENT`, `REFRESHING`, `STALE`, and `QUARANTINED` describe
+consumer-visible source freshness. Governance must use the top-level `ready`
+field, which is true only when freshness is `CURRENT` and all four trust
+boundaries are currently usable. A historical `lastAssessmentRef` remains
+auditable when `ready=false`; it must not be treated as a current gate fact.
+
+Enable autonomous workers only after installing all customer authorities:
+
+```bash
+export RG_MIRROR_RUNTIME_ENABLED=true
+export RG_MIRROR_OUTCOME_CONTINUOUS_ASSESSMENT_SCHEDULER_ENABLED=true
+export RG_MIRROR_OUTCOME_CONTINUOUS_ASSESSMENT_INSTANCE_ID=outcome-projector-sg-1
+export RG_MIRROR_OUTCOME_CONTINUOUS_ASSESSMENT_REGION=sg
+export RG_MIRROR_OUTCOME_CONTINUOUS_ASSESSMENT_ENVIRONMENT=staging
+export RG_MIRROR_OUTCOME_CONTINUOUS_ASSESSMENT_MAXIMUM_POLLERS=2
+
+./scripts/start-visual-canvas-demo.sh --profile staging \
+  --outcome-continuous-assessment
+./scripts/visual-canvas-demo.sh status
+curl -fsS http://localhost:8080/api/integration/capabilities | jq \
+  '.payload.features
+   | with_entries(select(.key | contains(
+       "OutcomeContinuousAssessment")))'
+./scripts/stop-visual-canvas-demo.sh --port 8080
+```
+
+The script passes these variables into the Spring configuration. Stop waits up
+to `BLOGE_VISUAL_CANVAS_STOP_TIMEOUT` seconds (default `40`), leaving the
+scheduler's default 30-second drain window intact before forcing termination.
+`prod`, `production`, and `live` partitions
+are rejected at both configuration and service boundaries. Merely setting the
+environment variables does not install customer authority beans; in the stock
+demo the capability remains false and startup with
+`--outcome-continuous-assessment` fails its readiness probe. Use this flag only
+in a customer assembly that supplies all advertised authorities.
+
+The default server policy is a five-minute lease, one-minute source freshness,
+five-second initial retry, five-minute maximum retry, and quarantine after
+eight consecutive failures. Override
+`AuthoritativeOutcomeContinuousAssessmentPolicy` as reviewed deployment code,
+not request data. Scheduler timing and process-local concurrency use:
+
+```properties
+gateway.testing.mirror.outcome-continuous-assessment.scheduler.enabled=true
+gateway.testing.mirror.outcome-continuous-assessment.scheduler.instance-id=outcome-projector-sg-1
+gateway.testing.mirror.outcome-continuous-assessment.scheduler.region=sg
+gateway.testing.mirror.outcome-continuous-assessment.scheduler.environment-id=staging
+gateway.testing.mirror.outcome-continuous-assessment.scheduler.maximum-pollers=2
+gateway.testing.mirror.outcome-continuous-assessment.scheduler.initial-delay-millis=1000
+gateway.testing.mirror.outcome-continuous-assessment.scheduler.poll-interval-millis=1000
+gateway.testing.mirror.outcome-continuous-assessment.scheduler.drain-timeout-millis=30000
+```
 
 The public-only
 `authoritative-outcome-selected-population-stage1-v1.fixture.json` is generated
@@ -1401,8 +1493,9 @@ from the server model and consumed independently by the Test Kit. It freezes
 population/chunk addressing, `MATCH`/`MISMATCH` observations, one legal
 disposition, zero-missing assessment arithmetic, source pagination, and all
 Resource Gateway Ed25519 signatures without carrying a private key or business
-payload. Sixteen strict Schemas, the fixed fixture, resumable-upload client, and the standalone Test Kit
-client/verifier are described in the
+payload. Twenty strict Schemas, the fixed fixture, resumable-upload and
+continuous-assessment clients, and the standalone Test Kit verifier are
+described in the
 [Test Kit guide](../resource-gateway-test-kit/README.md#verify-selected-population-completeness).
 
 ### Stateful mirror Session data plane and DAG reads

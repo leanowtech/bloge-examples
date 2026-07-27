@@ -157,6 +157,48 @@ offline artifact verification live in the independent `resource-gateway-test-kit
 | `authoritative-outcome-selected-population-upload-status-v1.schema.json` | `AuthoritativeOutcomeSelectedPopulationUploadStatus` | Payload-free `OPEN`/`FINALIZING`/terminal progress, expiry, and fencing projection |
 | `authoritative-outcome-selected-population-upload-admission-v1.schema.json` | `AuthoritativeOutcomeSelectedPopulationUploadAdmission` | Durable begin result with exact-replay signal |
 | `authoritative-outcome-selected-population-upload-chunk-admission-v1.schema.json` | `AuthoritativeOutcomeSelectedPopulationUploadChunkAdmission` | Durable chunk result with exact index, fingerprint, progress, and replay signal |
+| `authoritative-outcome-continuous-assessment-request-v1.schema.json` | `AuthoritativeOutcomeContinuousAssessmentRequest` | Exact population registration with no caller-owned freshness, lease, retry, stream, or revision controls |
+| `authoritative-outcome-continuous-assessment-projection-v1.schema.json` | `AuthoritativeOutcomeContinuousAssessmentProjection` | Payload-free database work/freshness head with immutable assessment cursor and owner/epoch lease fence |
+| `authoritative-outcome-continuous-assessment-status-v1.schema.json` | `AuthoritativeOutcomeContinuousAssessmentStatus` | Database-observed source freshness, live authority readiness, and derived governance-safe `ready` |
+| `authoritative-outcome-continuous-assessment-admission-v1.schema.json` | `AuthoritativeOutcomeContinuousAssessmentAdmission` | Durable registration result with effective status and exact-replay signal |
+
+### Selected-population continuous-assessment lifecycle
+
+The four continuous schemas extend the immutable assessment protocol without
+creating a mutable evidence object. `Projection` is a rebuildable coordination
+head; `lastAssessmentRef` always points to the separately signed immutable
+assessment stream. Its `recordFingerprint` detects storage drift but is not a
+business-evidence signature.
+
+The strict request deliberately contains only `projectionId` and an exact
+population reference. Resource Gateway owns
+`continuous-assessment:{projectionId}`, revision allocation, polling,
+freshness, leases, retries, and quarantine. A consumer therefore cannot lower
+the polling interval on paper, extend a stale result, or create two writers for
+one projection.
+
+Work status and source freshness are different axes:
+
+| Work status | Meaning |
+|---|---|
+| `QUEUED` | Eligible at `nextEligibleAt`; no lease fields may be present |
+| `RUNNING` | One opaque owner fingerprint and monotonic epoch own the half-open lease |
+| `RETRY_WAIT` | A bounded stable failure code and retry cursor are durable |
+| `QUARANTINED` | Terminal projection state with failure code and `terminalAt` |
+
+| Source freshness | Meaning |
+|---|---|
+| `UNINITIALIZED` | No immutable assessment has been published |
+| `CURRENT` | The latest source-head check is before the exclusive freshness deadline |
+| `REFRESHING` | A fenced worker is checking or publishing a replacement |
+| `STALE` | Historical evidence exists but is outside the source freshness bound |
+| `QUARANTINED` | Autonomous production stopped after terminal failure |
+
+The status schema permits `ready=true` only with `CURRENT` plus
+`authoritiesReady=true`. Java construction additionally recomputes freshness
+from database `observedAt`, checks all temporal/state correspondence, and
+verifies the projection content address. Schema-valid JSON alone is not
+authority or evidence verification.
 
 ### Selected-population staged-upload lifecycle
 

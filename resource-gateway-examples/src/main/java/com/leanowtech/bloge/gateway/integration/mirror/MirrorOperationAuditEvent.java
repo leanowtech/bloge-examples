@@ -164,6 +164,10 @@ public record MirrorOperationAuditEvent(
         OUTCOME_DISPOSITION_INGEST,
         /** Project and append one coherent current-head population completeness assessment. */
         OUTCOME_POPULATION_ASSESS,
+        /** Register or exactly replay one server-owned continuous completeness projection. */
+        OUTCOME_CONTINUOUS_ASSESSMENT_REGISTER,
+        /** Read one database-observed continuous projection and its effective readiness. */
+        OUTCOME_CONTINUOUS_ASSESSMENT_READ,
         /** Read one selected population, disposition, assessment, or source closure. */
         OUTCOME_POPULATION_READ,
         /** Durably reserve one read-only Shadow sample and immutable request. */

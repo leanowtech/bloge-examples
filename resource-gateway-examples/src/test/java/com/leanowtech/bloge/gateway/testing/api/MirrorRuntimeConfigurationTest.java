@@ -8,6 +8,7 @@ import com.leanowtech.bloge.gateway.exception.ResourceNotFoundException;
 import com.leanowtech.bloge.gateway.integration.AuthoritativeOutcomeInboxController;
 import com.leanowtech.bloge.gateway.integration.AuthoritativeOutcomeObservationRequestDecoder;
 import com.leanowtech.bloge.gateway.integration.AuthoritativeOutcomeSelectedPopulationController;
+import com.leanowtech.bloge.gateway.integration.AuthoritativeOutcomeContinuousAssessmentController;
 import com.leanowtech.bloge.gateway.integration.AuthoritativeOutcomeSelectedPopulationRequestDecoder;
 import com.leanowtech.bloge.gateway.integration.AuthoritativeOutcomeSelectedPopulationRuntimeAvailability;
 import com.leanowtech.bloge.gateway.integration.IntegrationRequestAuthenticator;
@@ -39,6 +40,10 @@ import com.leanowtech.bloge.gateway.integration.mirror.AuthoritativeOutcomeInbox
 import com.leanowtech.bloge.gateway.integration.mirror.AuthoritativeOutcomeObservationIntegrity;
 import com.leanowtech.bloge.gateway.integration.mirror.AuthoritativeOutcomeReconciliationScheduler;
 import com.leanowtech.bloge.gateway.integration.mirror.AuthoritativeOutcomeReconciliationWorker;
+import com.leanowtech.bloge.gateway.integration.mirror.AuthoritativeOutcomeContinuousAssessmentRepository;
+import com.leanowtech.bloge.gateway.integration.mirror.AuthoritativeOutcomeContinuousAssessmentScheduler;
+import com.leanowtech.bloge.gateway.integration.mirror.AuthoritativeOutcomeContinuousAssessmentService;
+import com.leanowtech.bloge.gateway.integration.mirror.AuthoritativeOutcomeContinuousAssessmentWorker;
 import com.leanowtech.bloge.gateway.integration.mirror.DomainFidelityProfileIntegrity;
 import com.leanowtech.bloge.gateway.integration.mirror.DomainFidelityRepository;
 import com.leanowtech.bloge.gateway.integration.mirror.DomainFidelityService;
@@ -341,13 +346,29 @@ class MirrorRuntimeConfigurationTest {
                 "test.outcome-authority", true,
                 "test.population-authority", true,
                 "test.disposition-authority", true);
+        Map<String, Object> scheduledComplete = Map.of(
+                "gateway.testing.mirror.enabled", true,
+                "test.available-signer", true,
+                "test.outcome-authority", true,
+                "test.population-authority", true,
+                "test.disposition-authority", true,
+                "gateway.testing.mirror.outcome-continuous-assessment.scheduler.enabled",
+                true,
+                "gateway.testing.mirror.outcome-continuous-assessment.scheduler.instance-id",
+                "instance-1",
+                "gateway.testing.mirror.outcome-continuous-assessment.scheduler.region",
+                "sg",
+                "gateway.testing.mirror.outcome-continuous-assessment.scheduler.environment-id",
+                "staging");
 
         try (var absent = context(
                 observationOnly, "staging");
              var partial = context(
                      missingDeletion, "staging");
              var assembled = context(
-                     complete, "staging")) {
+                     complete, "staging");
+             var scheduled = context(
+                     scheduledComplete, "staging")) {
             assertThat(absent.getBeansOfType(
                     AuthoritativeOutcomeSelectedPopulationRepository
                             .class)).isEmpty();
@@ -385,6 +406,21 @@ class MirrorRuntimeConfigurationTest {
             assertThat(assembled.getBeansOfType(
                     AuthoritativeOutcomeSelectedPopulationUploadCleanupScheduler
                             .class)).hasSize(1);
+            assertThat(assembled.getBeansOfType(
+                    AuthoritativeOutcomeContinuousAssessmentRepository
+                            .class)).hasSize(1);
+            assertThat(assembled.getBeansOfType(
+                    AuthoritativeOutcomeContinuousAssessmentService
+                            .class)).hasSize(1);
+            assertThat(assembled.getBeansOfType(
+                    AuthoritativeOutcomeContinuousAssessmentWorker
+                            .class)).hasSize(1);
+            assertThat(assembled.getBeansOfType(
+                    AuthoritativeOutcomeContinuousAssessmentController
+                            .class)).hasSize(1);
+            assertThat(assembled.getBeansOfType(
+                    AuthoritativeOutcomeContinuousAssessmentScheduler
+                            .class)).isEmpty();
             assertThat(assembled.getBean(
                     AuthoritativeOutcomeSelectedPopulationRuntimeAvailability
                             .class))
@@ -396,9 +432,29 @@ class MirrorRuntimeConfigurationTest {
                                 .isTrue();
                         assertThat(availability.stagedUpload())
                                 .isTrue();
-                        assertThat(availability.continuousReady())
+                        assertThat(availability
+                                .continuousAssessmentApi())
                                 .isTrue();
+                        assertThat(availability
+                                .durableProjection())
+                                .isTrue();
+                        assertThat(availability
+                                .projectionWorkerReady())
+                                .isTrue();
+                        assertThat(availability
+                                .projectionSchedulerReady())
+                                .isFalse();
+                        assertThat(availability.continuousReady())
+                                .isFalse();
                     });
+            assertThat(scheduled.getBeansOfType(
+                    AuthoritativeOutcomeContinuousAssessmentScheduler
+                            .class))
+                    .hasSize(1);
+            assertThat(scheduled.getBean(
+                    AuthoritativeOutcomeSelectedPopulationRuntimeAvailability
+                            .class)
+                    .continuousReady()).isTrue();
         }
     }
 
@@ -926,6 +982,9 @@ class MirrorRuntimeConfigurationTest {
                         .class);
         context.register(
                 AuthoritativeOutcomeSelectedPopulationController
+                        .class);
+        context.register(
+                AuthoritativeOutcomeContinuousAssessmentController
                         .class);
         context.refresh();
         return context;

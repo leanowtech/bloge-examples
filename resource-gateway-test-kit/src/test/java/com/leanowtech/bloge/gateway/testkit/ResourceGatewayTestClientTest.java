@@ -1357,6 +1357,78 @@ class ResourceGatewayTestClientTest {
         assertThat(requests).isEmpty();
     }
 
+    @Test
+    void drivesSchemaValidatedContinuousAssessmentRegistrationAndRead() {
+        ResourceGatewayTestClient client = client();
+        JsonNode manifest = selectedPopulationFixture()
+                .populationBundle().path("manifest");
+        ObjectNode populationRef =
+                JSON.createObjectNode();
+        populationRef.put(
+                "kind",
+                "AUTHORITATIVE_OUTCOME_SELECTED_POPULATION_MANIFEST");
+        populationRef.put(
+                "id", manifest.path("populationId").asText());
+        populationRef.put(
+                "revision", manifest.path("revision").asInt());
+        populationRef.put(
+                "fingerprint",
+                manifest.path("manifestFingerprint").asText());
+        ObjectNode command = JSON.createObjectNode();
+        command.put(
+                "schemaVersion",
+                CapabilityMirrorProtocol
+                        .AUTHORITATIVE_OUTCOME_CONTINUOUS_ASSESSMENT_REQUEST_V1);
+        command.put(
+                "projectionId", "refunds/continuous");
+        command.set("populationRef", populationRef);
+
+        JsonNode admission =
+                client.registerAuthoritativeOutcomeContinuousAssessment(
+                        command);
+        JsonNode status =
+                client.findAuthoritativeOutcomeContinuousAssessment(
+                        "refunds/continuous");
+
+        assertThat(admission.path("idempotentReplay")
+                .asBoolean()).isFalse();
+        assertThat(admission.path("status")
+                .path("sourceFreshness").asText())
+                .isEqualTo("UNINITIALIZED");
+        assertThat(status.path("projection")
+                .path("projectionId").asText())
+                .isEqualTo("refunds/continuous");
+        assertThat(status.path("ready").asBoolean())
+                .isFalse();
+        assertThat(requests)
+                .extracting(
+                        CapturedRequest::method,
+                        CapturedRequest::rawPath,
+                        CapturedRequest::purpose)
+                .containsExactly(
+                        org.assertj.core.groups.Tuple.tuple(
+                                "POST",
+                                "/api/mirror/outcome-continuous-assessments",
+                                "MIRROR_FIDELITY_GOVERNANCE"),
+                        org.assertj.core.groups.Tuple.tuple(
+                                "GET",
+                                "/api/mirror/outcome-continuous-assessments/refunds%2Fcontinuous",
+                                "GOVERNANCE_EVIDENCE_INGESTION"));
+    }
+
+    @Test
+    void continuousAssessmentClientRejectsInvalidCommandBeforeTransport() {
+        ResourceGatewayTestClient client = client();
+
+        assertThatThrownBy(() ->
+                client.registerAuthoritativeOutcomeContinuousAssessment(
+                        JSON.createObjectNode()))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessage(
+                        "RG.MIRROR.CLIENT.OUTCOME_CONTINUOUS_ASSESSMENT_COMMAND_INVALID");
+        assertThat(requests).isEmpty();
+    }
+
     private ResourceGatewayTestClient client() {
         return ResourceGatewayTestClient.builder(baseUri())
                 .bearerToken(() -> "super-secret-token")
@@ -1401,6 +1473,12 @@ class ResourceGatewayTestClientTest {
                 "/api/mirror/outcome-selected-populations/uploads")) {
             respondSelectedPopulationUpload(
                     exchange, path);
+            return;
+        }
+        if (path.startsWith(
+                "/api/mirror/outcome-continuous-assessments")) {
+            respondContinuousAssessment(
+                    exchange, path, body);
             return;
         }
         if ("GET".equals(exchange.getRequestMethod())
@@ -1693,6 +1771,117 @@ class ResourceGatewayTestClientTest {
             return;
         }
         respond(exchange, 404, "{}");
+    }
+
+    private void respondContinuousAssessment(
+            HttpExchange exchange,
+            String path,
+            JsonNode body) throws IOException {
+        String projectionId = "refunds/continuous";
+        ObjectNode status =
+                continuousAssessmentStatus(projectionId);
+        if ("POST".equals(exchange.getRequestMethod())
+                && path.equals(
+                "/api/mirror/outcome-continuous-assessments")) {
+            ObjectNode admission = JSON.createObjectNode();
+            admission.put(
+                    "schemaVersion",
+                    CapabilityMirrorProtocol
+                            .AUTHORITATIVE_OUTCOME_CONTINUOUS_ASSESSMENT_ADMISSION_V1);
+            admission.set("status", status);
+            admission.put("idempotentReplay", false);
+            respond(
+                    exchange,
+                    201,
+                    mirrorEnvelope(
+                            "AUTHORITATIVE_OUTCOME_CONTINUOUS_ASSESSMENT_ADMISSION",
+                            CapabilityMirrorProtocol
+                                    .AUTHORITATIVE_OUTCOME_CONTINUOUS_ASSESSMENT_ADMISSION_V1,
+                            admission));
+            return;
+        }
+        if ("GET".equals(exchange.getRequestMethod())) {
+            respond(
+                    exchange,
+                    200,
+                    mirrorEnvelope(
+                            "AUTHORITATIVE_OUTCOME_CONTINUOUS_ASSESSMENT_STATUS",
+                            CapabilityMirrorProtocol
+                                    .AUTHORITATIVE_OUTCOME_CONTINUOUS_ASSESSMENT_STATUS_V1,
+                            status));
+            return;
+        }
+        respond(exchange, 404, "{}");
+    }
+
+    private static ObjectNode continuousAssessmentStatus(
+            String projectionId) {
+        JsonNode manifest = selectedPopulationFixture()
+                .populationBundle().path("manifest");
+        ObjectNode populationRef =
+                JSON.createObjectNode();
+        populationRef.put(
+                "kind",
+                "AUTHORITATIVE_OUTCOME_SELECTED_POPULATION_MANIFEST");
+        populationRef.put(
+                "id", manifest.path("populationId").asText());
+        populationRef.put(
+                "revision", manifest.path("revision").asLong());
+        populationRef.put(
+                "fingerprint",
+                manifest.path("manifestFingerprint").asText());
+        ObjectNode projection = JSON.createObjectNode();
+        projection.put(
+                "schemaVersion",
+                CapabilityMirrorProtocol
+                        .AUTHORITATIVE_OUTCOME_CONTINUOUS_ASSESSMENT_PROJECTION_V1);
+        projection.set(
+                "scope",
+                manifest.path("scope").deepCopy());
+        projection.put("projectionId", projectionId);
+        projection.set("populationRef", populationRef);
+        projection.put(
+                "assessmentId",
+                "continuous-assessment:" + projectionId);
+        projection.put("status", "QUEUED");
+        projection.putNull("lastAssessmentRef");
+        projection.put("observationSetFingerprint", "");
+        projection.put("dispositionSetFingerprint", "");
+        projection.put(
+                "currentThrough", Instant.EPOCH.toString());
+        projection.put(
+                "freshUntil", Instant.EPOCH.toString());
+        projection.put("attemptCount", 0);
+        projection.put("consecutiveFailures", 0);
+        projection.put(
+                "nextEligibleAt", "2026-07-27T00:00:00Z");
+        projection.put("leaseOwnerFingerprint", "");
+        projection.put("leaseEpoch", 0);
+        projection.put(
+                "leaseExpiresAt", Instant.EPOCH.toString());
+        projection.put("failureCode", "");
+        projection.put(
+                "createdAt", "2026-07-27T00:00:00Z");
+        projection.put(
+                "updatedAt", "2026-07-27T00:00:00Z");
+        projection.putNull("terminalAt");
+        projection.put("recordFingerprint", "");
+        projection.put(
+                "recordFingerprint",
+                EvidenceVerificationSupport.sha256Bounded(
+                        projection, 256 * 1024));
+        ObjectNode status = JSON.createObjectNode();
+        status.put(
+                "schemaVersion",
+                CapabilityMirrorProtocol
+                        .AUTHORITATIVE_OUTCOME_CONTINUOUS_ASSESSMENT_STATUS_V1);
+        status.set("projection", projection);
+        status.put(
+                "observedAt", "2026-07-27T00:00:00Z");
+        status.put("sourceFreshness", "UNINITIALIZED");
+        status.put("authoritiesReady", true);
+        status.put("ready", false);
+        return status;
     }
 
     private static ObjectNode selectedPopulationUploadStatus(

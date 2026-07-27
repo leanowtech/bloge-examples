@@ -24,12 +24,20 @@ public interface AuthoritativeOutcomeContinuousAssessmentRepository {
     record Admission(
             AuthoritativeOutcomeContinuousAssessmentProjection
                     projection,
+            Instant observedAt,
             boolean idempotentReplay
     ) {
-        /** Requires one concrete projection. */
+        /** Requires one concrete projection and its database-clock observation. */
         public Admission {
             projection = Objects.requireNonNull(
                     projection, "projection");
+            observedAt = Objects.requireNonNull(
+                    observedAt, "observedAt");
+            if (observedAt.isBefore(
+                    projection.updatedAt())) {
+                throw new IllegalArgumentException(
+                        "admission observation predates projection");
+            }
         }
     }
 

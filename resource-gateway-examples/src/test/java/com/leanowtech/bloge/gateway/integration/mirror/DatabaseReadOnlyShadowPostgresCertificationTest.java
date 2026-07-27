@@ -598,7 +598,10 @@ class DatabaseReadOnlyShadowPostgresCertificationTest {
         AuthoritativeOutcomeSelectedPopulationTestFixtures.Population
                 population =
                 AuthoritativeOutcomeSelectedPopulationTestFixtures
-                        .signedPopulation(populationIntegrity);
+                        .signedPopulation(
+                                populationIntegrity,
+                                DomainFidelityTestFixtures.scope(
+                                        "support-continuous"));
         populations.register(
                 population.manifest(),
                 population.chunks(),

@@ -585,6 +585,27 @@ gateway:
 API 和 lifecycle 仍可用；connector 缺席时 worker/scheduler 不装配。关闭 scheduler 会先停止新
 poll，再在 bounded drain timeout 内等待在途 turn，数据库 lease 仍是跨副本唯一性权威。
 
+### 5.2.1 Selected-population 持续 assessment
+
+一次性 assessment 只能证明某个 source cut 在当时完整。持续门禁必须注册 server-owned
+projection，由 worker 在 `freshUntil` 前重评 selected population，并把结果写成 immutable
+assessment revision：
+
+```bash
+./scripts/start-visual-canvas-demo.sh --profile staging \
+  --outcome-continuous-assessment
+```
+
+`POST /api/mirror/outcome-continuous-assessments` 只接受
+`AUTHORITATIVE_OUTCOME_SELECTED_POPULATION_MANIFEST`，`GET` 返回数据库观察时刻下的
+`CURRENT/REFRESHING/STALE/QUARANTINED` freshness、work state、四类 authority readiness
+和最新 immutable assessment ref。治理消费者只能使用顶层 `ready`；历史 ref 在
+`ready=false` 时仍可审计，但不能继续作为发布事实。
+
+该模式物理限定于 `test/staging`，要求 identity 与 scheduler 的 region/environment 完全一致，
+且不会安装或替代客户 source-cut、scope、disposition、outcome authority。stock demo 会
+fail-closed；生产装配不得通过改 environment 字符串绕过 profile 隔离。
+
 ### 5.3 Shadow job 与生命周期 API
 
 仅演示 control plane：

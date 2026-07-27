@@ -46,6 +46,10 @@ public final class ResourceGatewayTestClient {
     private static final MirrorStateWriteAttemptVerifier
             MIRROR_WRITE_ATTEMPT_VERIFIER =
             new MirrorStateWriteAttemptVerifier();
+    private static final
+    AuthoritativeOutcomeContinuousAssessmentVerifier
+            OUTCOME_CONTINUOUS_ASSESSMENT_VERIFIER =
+            new AuthoritativeOutcomeContinuousAssessmentVerifier();
     private static final int DEFAULT_MAX_BODY_BYTES = 16 * 1024 * 1024;
     private static final Duration MAX_RETRY_AFTER = Duration.ofHours(24);
 
@@ -3224,6 +3228,106 @@ public final class ResourceGatewayTestClient {
     }
 
     /**
+     * Registers or exactly replays one server-owned continuous completeness projection.
+     *
+     * <p>The client validates the command before transport, validates the returned admission and
+     * nested projection after transport, and rejects projection-id or population-root
+     * substitution. Polling cadence, leases, retry policy, and assessment revisions remain
+     * server-owned.</p>
+     *
+     * @param request strict projection id and exact selected-population reference
+     * @return defensive database-observed registration result
+     */
+    public JsonNode registerAuthoritativeOutcomeContinuousAssessment(
+            JsonNode request) {
+        JsonNode command = requiredObject(request, "request");
+        CapabilityMirrorSchemaValidator.require(
+                command,
+                CapabilityMirrorProtocol
+                        .AUTHORITATIVE_OUTCOME_CONTINUOUS_ASSESSMENT_REQUEST_SCHEMA_RESOURCE,
+                "RG.MIRROR.CLIENT.OUTCOME_CONTINUOUS_ASSESSMENT_COMMAND_INVALID");
+        JsonNode response = exchange(
+                "POST",
+                "/api/mirror/outcome-continuous-assessments",
+                "",
+                "MIRROR_FIDELITY_GOVERNANCE",
+                command);
+        JsonNode payload = requireMirrorEnvelope(
+                response,
+                "AUTHORITATIVE_OUTCOME_CONTINUOUS_ASSESSMENT_ADMISSION",
+                CapabilityMirrorProtocol
+                        .AUTHORITATIVE_OUTCOME_CONTINUOUS_ASSESSMENT_ADMISSION_V1);
+        requireMirrorSchema(
+                payload,
+                CapabilityMirrorProtocol
+                        .AUTHORITATIVE_OUTCOME_CONTINUOUS_ASSESSMENT_ADMISSION_SCHEMA_RESOURCE,
+                "OUTCOME_CONTINUOUS_ASSESSMENT_ADMISSION");
+        if (!OUTCOME_CONTINUOUS_ASSESSMENT_VERIFIER
+                .verify(payload.path("status"))
+                .verified()) {
+            throw responseContractInvalid(
+                    "The server returned an invalid continuous assessment status.");
+        }
+        JsonNode projection = payload.path("status")
+                .path("projection");
+        if (!command.path("projectionId").equals(
+                projection.path("projectionId"))
+                || !sameArtifactRef(
+                command.path("populationRef"),
+                projection.path("populationRef"))) {
+            throw responseContractInvalid(
+                    "The server returned a continuous assessment for different registration coordinates.");
+        }
+        return payload.deepCopy();
+    }
+
+    /**
+     * Reads one database-observed effective continuous completeness status.
+     *
+     * <p>{@code ready} is the governance-safe claim: it is true only while the source-head check
+     * is current and every external authority is currently available. Historical immutable
+     * assessments remain separately readable when this status is stale or quarantined.</p>
+     *
+     * @param projectionId stable path-safe projection identity
+     * @return defensive effective status
+     */
+    public JsonNode findAuthoritativeOutcomeContinuousAssessment(
+            String projectionId) {
+        String exactProjectionId =
+                mirrorArtifactId(
+                        projectionId, "projectionId");
+        JsonNode response = exchange(
+                "GET",
+                "/api/mirror/outcome-continuous-assessments/"
+                        + segment(exactProjectionId, 512),
+                "",
+                "GOVERNANCE_EVIDENCE_INGESTION",
+                null);
+        JsonNode payload = requireMirrorEnvelope(
+                response,
+                "AUTHORITATIVE_OUTCOME_CONTINUOUS_ASSESSMENT_STATUS",
+                CapabilityMirrorProtocol
+                        .AUTHORITATIVE_OUTCOME_CONTINUOUS_ASSESSMENT_STATUS_V1);
+        requireMirrorSchema(
+                payload,
+                CapabilityMirrorProtocol
+                        .AUTHORITATIVE_OUTCOME_CONTINUOUS_ASSESSMENT_STATUS_SCHEMA_RESOURCE,
+                "OUTCOME_CONTINUOUS_ASSESSMENT_STATUS");
+        if (!OUTCOME_CONTINUOUS_ASSESSMENT_VERIFIER
+                .verify(payload).verified()) {
+            throw responseContractInvalid(
+                    "The server returned an invalid continuous assessment status.");
+        }
+        if (!exactProjectionId.equals(
+                payload.path("projection")
+                        .path("projectionId").asText())) {
+            throw responseContractInvalid(
+                    "The server returned a different continuous assessment projection.");
+        }
+        return payload.deepCopy();
+    }
+
+    /**
      * Retrieves one atomic signed evidence-key lifecycle snapshot.
      *
      * <p>Retrieval alone does not establish trust. Callers must verify the returned value against
@@ -3982,6 +4086,19 @@ public final class ResourceGatewayTestClient {
             throw new IllegalArgumentException(
                     "revision must be at least 1");
         }
+    }
+
+    private static boolean sameArtifactRef(
+            JsonNode expected,
+            JsonNode actual) {
+        return expected.path("kind").asText()
+                .equals(actual.path("kind").asText())
+                && expected.path("id").asText()
+                .equals(actual.path("id").asText())
+                && expected.path("revision").asLong(-1)
+                == actual.path("revision").asLong(-2)
+                && expected.path("fingerprint").asText()
+                .equals(actual.path("fingerprint").asText());
     }
 
     private static String mirrorSessionId(String value) {

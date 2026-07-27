@@ -213,7 +213,10 @@ DatabaseAuthoritativeOutcomeContinuousAssessmentRepository
                         requirePopulation(
                                 exactScope,
                                 command.populationRef());
-                        return new Admission(value, true);
+                        return new Admission(
+                                value,
+                                coordinationNow(),
+                                true);
                     }
                     requirePopulation(
                             exactScope, command.populationRef());
@@ -259,14 +262,22 @@ DatabaseAuthoritativeOutcomeContinuousAssessmentRepository
                                                         Reason.CONTENT_CONFLICT));
                         if (!concurrent.projection()
                                 .populationRef().equals(
-                                        command.populationRef())) {
+                                        command.populationRef())
+                                || !concurrent.projection()
+                                .assessmentId().equals(
+                                        command.assessmentId())) {
                             throw new Violation(
                                     Reason.CONTENT_CONFLICT);
                         }
                         return new Admission(
-                                concurrent.projection(), true);
+                                concurrent.projection(),
+                                coordinationNow(),
+                                true);
                     }
-                    return new Admission(projection, false);
+                    return new Admission(
+                            projection,
+                            now,
+                            false);
                 }),
                 "continuous assessment registration returned null");
     }

@@ -1019,7 +1019,7 @@ fixture remains future work.
 
 ### Verify selected-population completeness
 
-Selected-population commands, evidence, and resumable transport use sixteen strict Draft 2020-12
+Selected-population commands, evidence, resumable transport, and continuous projection use twenty strict Draft 2020-12
 Schemas packaged in both Test Kit JARs. `CapabilityMirrorProtocol` exposes the
 version and resource constants; `CapabilityMirrorSchemaValidator` resolves the
 complete local `$ref` closure without fetching a network resource.
@@ -1186,6 +1186,55 @@ closure in one Resource Gateway JVM before invoking the governed selection
 authority and immutable population admission. The ordinary demo startup also
 has no permissive customer authority and therefore does not expose these routes
 or report selected-population readiness.
+
+After one exact population revision is admitted, register a server-owned
+continuous completeness stream:
+
+```java
+ObjectNode command = json.createObjectNode();
+command.put(
+        "schemaVersion",
+        CapabilityMirrorProtocol
+                .AUTHORITATIVE_OUTCOME_CONTINUOUS_ASSESSMENT_REQUEST_V1);
+command.put("projectionId", "refund-completeness");
+command.set("populationRef", exactPopulationRef);
+
+JsonNode registered =
+        client.registerAuthoritativeOutcomeContinuousAssessment(
+                command);
+JsonNode status =
+        client.findAuthoritativeOutcomeContinuousAssessment(
+                "refund-completeness");
+
+var statusVerification =
+        new AuthoritativeOutcomeContinuousAssessmentVerifier()
+                .verify(status);
+if (!statusVerification.verified()) {
+    throw new IllegalStateException(
+            statusVerification.reasonCode());
+}
+```
+
+Both methods validate strict Schema and integration-envelope versions. The
+registration method also requires the returned projection id and exact
+population reference to equal the command; the read method rejects cross-id
+substitution. Both invoke the independent verifier to recompute the projection
+content address, server-owned assessment stream, state/lease/time closure,
+exclusive freshness boundary, and effective readiness. The caller must
+preserve the same `projectionId` for an ambiguous registration response.
+
+Treat only `status.ready=true` as a current governance fact. That field is
+derived from `sourceFreshness=CURRENT` and live external-authority readiness.
+`UNINITIALIZED`, `REFRESHING`, `STALE`, and `QUARANTINED` are fail-closed even
+when `lastAssessmentRef` points to valid historical evidence. Fetch that exact
+assessment and all source pages with the methods above, then run
+`AuthoritativeOutcomeSelectedPopulationVerifier`; status Schema validation is
+not independent verification of the referenced immutable assessment.
+
+The Test Kit intentionally exposes no `runNow` call and accepts no polling,
+lease, retry, assessment-id, or revision controls. Those are server-owned so a
+governance client cannot create a false freshness claim or competing
+assessment writer.
 
 ## Use
 

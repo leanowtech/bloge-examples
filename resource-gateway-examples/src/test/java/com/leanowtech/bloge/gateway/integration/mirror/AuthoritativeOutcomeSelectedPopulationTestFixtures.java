@@ -23,9 +23,17 @@ final class AuthoritativeOutcomeSelectedPopulationTestFixtures {
     static Population signedPopulation(
             AuthoritativeOutcomeSelectedPopulationIntegrity
                     integrity) {
+        return signedPopulation(integrity, scope());
+    }
+
+    static Population signedPopulation(
+            AuthoritativeOutcomeSelectedPopulationIntegrity
+                    integrity,
+            CapabilitySnapshot.Scope scope) {
         AuthoritativeOutcomeSelectedPopulationChunk first =
                 integrity.sealChunk(
                         chunk(
+                                scope,
                                 0,
                                 1,
                                 List.of(
@@ -44,6 +52,7 @@ final class AuthoritativeOutcomeSelectedPopulationTestFixtures {
         AuthoritativeOutcomeSelectedPopulationChunk second =
                 integrity.sealChunk(
                         chunk(
+                                scope,
                                 1,
                                 3,
                                 List.of(member(
@@ -61,7 +70,7 @@ final class AuthoritativeOutcomeSelectedPopulationTestFixtures {
                         "refund-selected-population",
                         1,
                         "",
-                        scope(),
+                        scope,
                         inventoryRef(),
                         cohortRef(),
                         samplingFrameRef(),
@@ -415,6 +424,7 @@ final class AuthoritativeOutcomeSelectedPopulationTestFixtures {
 
     private static AuthoritativeOutcomeSelectedPopulationChunk
     chunk(
+            CapabilitySnapshot.Scope scope,
             int chunkIndex,
             long firstGlobalOrdinal,
             List<AuthoritativeOutcomeSelectedPopulationChunk
@@ -427,7 +437,7 @@ final class AuthoritativeOutcomeSelectedPopulationTestFixtures {
                 "",
                 "refund-selected-population",
                 1,
-                scope(),
+                scope,
                 inventoryRef(),
                 cohortRef(),
                 samplingFrameRef(),

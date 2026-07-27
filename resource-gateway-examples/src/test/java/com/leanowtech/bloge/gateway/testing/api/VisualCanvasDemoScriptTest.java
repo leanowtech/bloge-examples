@@ -58,6 +58,25 @@ class VisualCanvasDemoScriptTest {
     }
 
     @Test
+    void continuousAssessmentReadinessRequiresApiDurabilityWorkersAndAuthorities()
+            throws Exception {
+        String source = Files.readString(
+                SCRIPT, StandardCharsets.UTF_8);
+
+        assertThat(source).contains(
+                ".payload.features.mirrorAuthoritativeOutcomeContinuousAssessmentApi == true",
+                "\"mirrorAuthoritativeOutcomeContinuousAssessmentApi\"",
+                ".payload.features.mirrorAuthoritativeOutcomeContinuousAssessmentDurable == true",
+                "\"mirrorAuthoritativeOutcomeContinuousAssessmentDurable\"",
+                ".payload.features.mirrorAuthoritativeOutcomeContinuousAssessmentWorkerReady == true",
+                "\"mirrorAuthoritativeOutcomeContinuousAssessmentWorkerReady\"",
+                ".payload.features.mirrorAuthoritativeOutcomeContinuousAssessmentScheduling == true",
+                "\"mirrorAuthoritativeOutcomeContinuousAssessmentScheduling\"",
+                ".payload.features.mirrorAuthoritativeOutcomeSelectedPopulationReady == true",
+                "\"mirrorAuthoritativeOutcomeSelectedPopulationReady\"");
+    }
+
+    @Test
     void helpDocumentsTheOneFlagStatefulDemoMode() throws Exception {
         Process process = new ProcessBuilder(
                 "bash", SCRIPT.toString(), "--help")
@@ -89,7 +108,82 @@ class VisualCanvasDemoScriptTest {
                 "scripts/start-visual-canvas-demo.sh --scenario-batch",
                 "--shadow-detached-data-plane",
                 "BLOGE_VISUAL_CANVAS_SHADOW_DETACHED_DATA_PLANE",
-                "scripts/start-visual-canvas-demo.sh --shadow-detached-data-plane");
+                "scripts/start-visual-canvas-demo.sh --shadow-detached-data-plane",
+                "--outcome-continuous-assessment",
+                "BLOGE_VISUAL_CANVAS_OUTCOME_CONTINUOUS_ASSESSMENT",
+                "RG_MIRROR_OUTCOME_CONTINUOUS_ASSESSMENT_INSTANCE_ID",
+                "RG_MIRROR_OUTCOME_CONTINUOUS_ASSESSMENT_REGION",
+                "RG_MIRROR_OUTCOME_CONTINUOUS_ASSESSMENT_ENVIRONMENT",
+                "RG_MIRROR_OUTCOME_CONTINUOUS_ASSESSMENT_MAXIMUM_POLLERS",
+                "scripts/start-visual-canvas-demo.sh --outcome-continuous-assessment",
+                "BLOGE_VISUAL_CANVAS_STOP_TIMEOUT");
+    }
+
+    @Test
+    void continuousAssessmentIsRejectedForProductionBeforeBuild()
+            throws Exception {
+        Process process = new ProcessBuilder(
+                "bash", SCRIPT.toString(), "start",
+                "--profile", "production",
+                "--outcome-continuous-assessment", "--no-build")
+                .redirectErrorStream(true)
+                .start();
+
+        assertThat(process.waitFor(Duration.ofSeconds(5))).isTrue();
+        String output = new String(
+                process.getInputStream().readAllBytes(),
+                StandardCharsets.UTF_8);
+
+        assertThat(process.exitValue()).isEqualTo(1);
+        assertThat(output).contains(
+                "Continuous outcome assessment is physically unavailable in the production profile.");
+        assertThat(output).doesNotContain(
+                "Packaging Resource Gateway demo",
+                "Starting Visual Canvas demo");
+    }
+
+    @Test
+    void continuousAssessmentRejectsAnIdentityPartitionMismatchBeforeBuild()
+            throws Exception {
+        ProcessBuilder builder = new ProcessBuilder(
+                "bash", SCRIPT.toString(), "start",
+                "--outcome-continuous-assessment", "--no-build")
+                .redirectErrorStream(true);
+        builder.environment().put(
+                "RG_INTEGRATION_REGION", "us");
+        builder.environment().put(
+                "RG_MIRROR_OUTCOME_CONTINUOUS_ASSESSMENT_REGION", "sg");
+
+        Process process = builder.start();
+        assertThat(process.waitFor(Duration.ofSeconds(5))).isTrue();
+        String output = new String(
+                process.getInputStream().readAllBytes(),
+                StandardCharsets.UTF_8);
+
+        assertThat(process.exitValue()).isEqualTo(1);
+        assertThat(output).contains(
+                "Continuous outcome assessment region must match the integration identity region.");
+        assertThat(output).doesNotContain(
+                "Packaging Resource Gateway demo",
+                "Starting Visual Canvas demo");
+    }
+
+    @Test
+    void stopRejectsAnUnsafeGracefulShutdownTimeout() throws Exception {
+        ProcessBuilder builder = new ProcessBuilder(
+                "bash", SCRIPT.toString(), "stop")
+                .redirectErrorStream(true);
+        builder.environment().put("BLOGE_VISUAL_CANVAS_STOP_TIMEOUT", "301");
+
+        Process process = builder.start();
+        assertThat(process.waitFor(Duration.ofSeconds(5))).isTrue();
+        String output = new String(
+                process.getInputStream().readAllBytes(),
+                StandardCharsets.UTF_8);
+
+        assertThat(process.exitValue()).isEqualTo(1);
+        assertThat(output).contains(
+                "Visual canvas stop timeout must be between 1 and 300 seconds.");
     }
 
     @Test

@@ -1117,6 +1117,10 @@ class ToolStudioIntegrationServiceTest {
                         true,
                         true,
                         true,
+                        true,
+                        true,
+                        authoritiesReady::get,
+                        authoritiesReady::get,
                         authoritiesReady::get));
 
         IntegrationCapabilities ready =
@@ -1134,6 +1138,18 @@ class ToolStudioIntegrationServiceTest {
                         true)
                 .containsEntry(
                         "mirrorAuthoritativeOutcomeSelectedPopulationStagedUpload",
+                        true)
+                .containsEntry(
+                        "mirrorAuthoritativeOutcomeContinuousAssessmentApi",
+                        true)
+                .containsEntry(
+                        "mirrorAuthoritativeOutcomeContinuousAssessmentDurable",
+                        true)
+                .containsEntry(
+                        "mirrorAuthoritativeOutcomeContinuousAssessmentWorkerReady",
+                        true)
+                .containsEntry(
+                        "mirrorAuthoritativeOutcomeContinuousAssessmentScheduling",
                         true)
                 .containsEntry(
                         "mirrorAuthoritativeOutcomeSelectedPopulationReady",
@@ -1155,7 +1171,11 @@ class ToolStudioIntegrationServiceTest {
                         "authoritativeOutcomeSelectedPopulationUploadRequest",
                         "authoritativeOutcomeSelectedPopulationUploadAdmission",
                         "authoritativeOutcomeSelectedPopulationUploadChunkAdmission",
-                        "authoritativeOutcomeSelectedPopulationUploadStatus");
+                        "authoritativeOutcomeSelectedPopulationUploadStatus",
+                        "authoritativeOutcomeContinuousAssessmentRequest",
+                        "authoritativeOutcomeContinuousAssessmentProjection",
+                        "authoritativeOutcomeContinuousAssessmentStatus",
+                        "authoritativeOutcomeContinuousAssessmentAdmission");
         assertThat(ready.endpoints())
                 .extracting(
                         IntegrationCapabilities.Endpoint::method,
@@ -1175,7 +1195,13 @@ class ToolStudioIntegrationServiceTest {
                                 "/api/mirror/outcome-selected-populations/uploads/{uploadId}/chunks/{chunkIndex}"),
                         org.assertj.core.groups.Tuple.tuple(
                                 "POST",
-                                "/api/mirror/outcome-selected-populations/uploads/{uploadId}/finalize"));
+                                "/api/mirror/outcome-selected-populations/uploads/{uploadId}/finalize"),
+                        org.assertj.core.groups.Tuple.tuple(
+                                "POST",
+                                "/api/mirror/outcome-continuous-assessments"),
+                        org.assertj.core.groups.Tuple.tuple(
+                                "GET",
+                                "/api/mirror/outcome-continuous-assessments/{projectionId}"));
 
         authoritiesReady.set(false);
         assertThat(service.capabilities()

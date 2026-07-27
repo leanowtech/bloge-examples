@@ -88,6 +88,12 @@ import com.leanowtech.bloge.gateway.integration.mirror.AuthoritativeOutcomeInbox
 import com.leanowtech.bloge.gateway.integration.mirror.AuthoritativeOutcomeObservationIntegrity;
 import com.leanowtech.bloge.gateway.integration.mirror.AuthoritativeOutcomeReconciliationScheduler;
 import com.leanowtech.bloge.gateway.integration.mirror.AuthoritativeOutcomeReconciliationWorker;
+import com.leanowtech.bloge.gateway.integration.mirror.AuthoritativeOutcomeContinuousAssessmentPolicy;
+import com.leanowtech.bloge.gateway.integration.mirror.AuthoritativeOutcomeContinuousAssessmentRepository;
+import com.leanowtech.bloge.gateway.integration.mirror.AuthoritativeOutcomeContinuousAssessmentScheduler;
+import com.leanowtech.bloge.gateway.integration.mirror.AuthoritativeOutcomeContinuousAssessmentService;
+import com.leanowtech.bloge.gateway.integration.mirror.AuthoritativeOutcomeContinuousAssessmentWorker;
+import com.leanowtech.bloge.gateway.integration.mirror.DatabaseAuthoritativeOutcomeContinuousAssessmentRepository;
 import com.leanowtech.bloge.gateway.integration.mirror.DatabaseAuthoritativeOutcomeInboxRepository;
 import com.leanowtech.bloge.gateway.integration.mirror.AuthoritativeOutcomeSelectedPopulationAccessPolicy;
 import com.leanowtech.bloge.gateway.integration.mirror.AuthoritativeOutcomeSelectedPopulationApplicationService;
@@ -248,6 +254,7 @@ import java.time.Clock;
         ScenarioRehearsalBatchFinalizationSloProperties.class,
         ReadOnlyShadowJobSchedulerProperties.class,
         AuthoritativeOutcomeReconciliationSchedulerProperties.class,
+        AuthoritativeOutcomeContinuousAssessmentSchedulerProperties.class,
         OnlineReadOnlyShadowBaselineProperties.class,
         OnlineReadOnlyShadowCandidateProperties.class
 })
@@ -2494,6 +2501,111 @@ public class MirrorRuntimeConfiguration {
                 transactionManager);
     }
 
+    /** Freezes conservative server-owned continuous freshness, lease, and retry controls. */
+    @Bean
+    @ConditionalOnMissingBean
+    @ConditionalOnBean(
+            AuthoritativeOutcomeSelectedPopulationApplicationService
+                    .class)
+    public AuthoritativeOutcomeContinuousAssessmentPolicy
+    authoritativeOutcomeContinuousAssessmentPolicy() {
+        return AuthoritativeOutcomeContinuousAssessmentPolicy
+                .DEFAULT;
+    }
+
+    /** Creates database-authoritative continuous projection and worker-fencing storage. */
+    @Bean
+    @ConditionalOnMissingBean
+    @ConditionalOnBean(
+            AuthoritativeOutcomeSelectedPopulationApplicationService
+                    .class)
+    public AuthoritativeOutcomeContinuousAssessmentRepository
+    authoritativeOutcomeContinuousAssessmentRepository(
+            JdbcTemplate jdbc,
+            ObjectMapper objectMapper,
+            PlatformTransactionManager transactionManager) {
+        return new
+                DatabaseAuthoritativeOutcomeContinuousAssessmentRepository(
+                jdbc,
+                objectMapper,
+                transactionManager);
+    }
+
+    /** Creates the audited continuous projection registration and status boundary. */
+    @Bean
+    @ConditionalOnMissingBean
+    @ConditionalOnBean(
+            AuthoritativeOutcomeContinuousAssessmentRepository
+                    .class)
+    public AuthoritativeOutcomeContinuousAssessmentService
+    authoritativeOutcomeContinuousAssessmentService(
+            AuthoritativeOutcomeContinuousAssessmentRepository
+                    repository,
+            AuthoritativeOutcomeSelectedPopulationApplicationService
+                    populationService,
+            AuthoritativeOutcomeSelectedPopulationAccessPolicy
+                    accessPolicy,
+            MirrorOperationObservability observability,
+            PlatformTransactionManager transactionManager) {
+        return new AuthoritativeOutcomeContinuousAssessmentService(
+                repository,
+                populationService,
+                accessPolicy,
+                observability,
+                transactionManager);
+    }
+
+    /** Creates the owner/epoch-fenced one-step continuous projection worker. */
+    @Bean
+    @ConditionalOnMissingBean
+    @ConditionalOnBean(
+            AuthoritativeOutcomeContinuousAssessmentService
+                    .class)
+    public AuthoritativeOutcomeContinuousAssessmentWorker
+    authoritativeOutcomeContinuousAssessmentWorker(
+            AuthoritativeOutcomeContinuousAssessmentRepository
+                    projections,
+            AuthoritativeOutcomeSelectedPopulationRepository
+                    populations,
+            AuthoritativeOutcomeSelectedPopulationApplicationService
+                    populationService,
+            AuthoritativeOutcomeContinuousAssessmentPolicy
+                    policy) {
+        return new AuthoritativeOutcomeContinuousAssessmentWorker(
+                projections,
+                populations,
+                populationService,
+                policy);
+    }
+
+    /** Starts explicitly enabled bounded continuous projection lanes. */
+    @Bean(destroyMethod = "close")
+    @ConditionalOnMissingBean
+    @ConditionalOnBean(
+            AuthoritativeOutcomeContinuousAssessmentWorker
+                    .class)
+    @ConditionalOnProperty(
+            prefix = AuthoritativeOutcomeContinuousAssessmentSchedulerProperties
+                    .PREFIX,
+            name = "enabled",
+            havingValue = "true")
+    public AuthoritativeOutcomeContinuousAssessmentScheduler
+    authoritativeOutcomeContinuousAssessmentScheduler(
+            AuthoritativeOutcomeContinuousAssessmentWorker
+                    worker,
+            AuthoritativeOutcomeContinuousAssessmentSchedulerProperties
+                    properties) {
+        return new AuthoritativeOutcomeContinuousAssessmentScheduler(
+                worker,
+                properties.region(),
+                properties.environmentId(),
+                properties.instanceId(),
+                properties.maximumPollers(),
+                properties.initialDelay(),
+                properties.pollInterval(),
+                properties.drainTimeout());
+    }
+
     /** Freezes bounded resumable-upload quotas and lifecycle windows. */
     @Bean
     @ConditionalOnMissingBean
@@ -2581,14 +2693,34 @@ public class MirrorRuntimeConfiguration {
     public AuthoritativeOutcomeSelectedPopulationRuntimeAvailability
     authoritativeOutcomeSelectedPopulationRuntimeAvailability(
             AuthoritativeOutcomeSelectedPopulationApplicationService
-                    service) {
+                    service,
+            AuthoritativeOutcomeContinuousAssessmentService
+                    continuousService,
+            ObjectProvider<AuthoritativeOutcomeContinuousAssessmentWorker>
+                    worker,
+            ObjectProvider<AuthoritativeOutcomeContinuousAssessmentScheduler>
+                    scheduler) {
         return new
                 AuthoritativeOutcomeSelectedPopulationRuntimeAvailability(
                 true,
                 true,
                 true,
                 true,
-                service::available);
+                continuousService != null,
+                true,
+                service::available,
+                () -> {
+                    AuthoritativeOutcomeContinuousAssessmentWorker
+                            current = worker.getIfAvailable();
+                    return current != null
+                            && current.ready();
+                },
+                () -> {
+                    AuthoritativeOutcomeContinuousAssessmentScheduler
+                            current = scheduler.getIfAvailable();
+                    return current != null
+                            && current.ready();
+                });
     }
 
     /** Creates the authoritative outcome Fidelity adapter only after its trust boundary exists. */

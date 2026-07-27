@@ -12,6 +12,7 @@ JAR_NAME="bloge-examples-resource-gateway-1.0.0.jar"
 PORT="${BLOGE_VISUAL_CANVAS_PORT:-8080}"
 PORT_EXPLICIT=0
 STARTUP_TIMEOUT="${BLOGE_VISUAL_CANVAS_STARTUP_TIMEOUT:-180}"
+STOP_TIMEOUT="${BLOGE_VISUAL_CANVAS_STOP_TIMEOUT:-40}"
 BUILD_FRONTEND="${BLOGE_VISUAL_CANVAS_BUILD_FRONTEND:-1}"
 SKIP_BUILD="${BLOGE_VISUAL_CANVAS_SKIP_BUILD:-0}"
 RUN_TESTS="${BLOGE_VISUAL_CANVAS_RUN_TESTS:-0}"
@@ -23,6 +24,7 @@ SCENARIO_BATCH="${BLOGE_VISUAL_CANVAS_SCENARIO_BATCH:-${RG_MIRROR_SCENARIO_BATCH
 SHADOW_JOBS="${BLOGE_VISUAL_CANVAS_SHADOW_JOBS:-0}"
 SHADOW_SCHEDULER="${BLOGE_VISUAL_CANVAS_SHADOW_SCHEDULER:-${RG_MIRROR_SHADOW_JOB_SCHEDULER_ENABLED:-0}}"
 SHADOW_DETACHED_DATA_PLANE="${BLOGE_VISUAL_CANVAS_SHADOW_DETACHED_DATA_PLANE:-0}"
+OUTCOME_CONTINUOUS_ASSESSMENT="${BLOGE_VISUAL_CANVAS_OUTCOME_CONTINUOUS_ASSESSMENT:-${RG_MIRROR_OUTCOME_CONTINUOUS_ASSESSMENT_SCHEDULER_ENABLED:-0}}"
 STATEFUL_KEY_FILE="${BLOGE_VISUAL_CANVAS_STATEFUL_KEY_FILE:-${ROOT_DIR}/target/example-state/mirror-aes256.key}"
 
 if [ -z "${MVN:-}" ]; then
@@ -53,12 +55,14 @@ Options:
   --shadow-jobs     Enable the durable read-only Shadow submit/read/lifecycle API.
   --shadow-scheduler  Also enable bounded Shadow polling; the default data plane remains unavailable.
   --shadow-detached-data-plane  Install exact detached source connectors and verifier; authorities still fail closed.
+  --outcome-continuous-assessment  Enable selected-population freshness workers; customer authorities are still required.
   --open            Open /author/ in the default browser after startup.
   -h, --help        Show this help.
 
 Environment:
   BLOGE_VISUAL_CANVAS_PORT             default: 8080
   BLOGE_VISUAL_CANVAS_STARTUP_TIMEOUT  default: 180
+  BLOGE_VISUAL_CANVAS_STOP_TIMEOUT     default: 40; bounded graceful shutdown wait (1..300 seconds)
   BLOGE_VISUAL_CANVAS_SKIP_BUILD       default: 0
   BLOGE_VISUAL_CANVAS_BUILD_FRONTEND   default: 1
   BLOGE_VISUAL_CANVAS_RUN_TESTS        default: 0
@@ -69,6 +73,7 @@ Environment:
   BLOGE_VISUAL_CANVAS_SHADOW_JOBS      default: 0; same effect as --shadow-jobs
   BLOGE_VISUAL_CANVAS_SHADOW_SCHEDULER default: 0; same effect as --shadow-scheduler
   BLOGE_VISUAL_CANVAS_SHADOW_DETACHED_DATA_PLANE default: 0; same effect as --shadow-detached-data-plane
+  BLOGE_VISUAL_CANVAS_OUTCOME_CONTINUOUS_ASSESSMENT default: 0; same effect as --outcome-continuous-assessment
   BLOGE_VISUAL_CANVAS_STATEFUL_KEY_FILE  local demo AES-256 key file; never printed
   RG_MIRROR_SHADOW_JOB_INSTANCE_ID     stable local Shadow scheduler replica id
   RG_MIRROR_SHADOW_JOB_REGION          exact regional queue partition
@@ -80,6 +85,11 @@ Environment:
   RG_MIRROR_SCENARIO_BATCH_MAXIMUM_POLLERS  local bounded worker lanes (1..256)
   RG_MIRROR_SCENARIO_BATCH_FINALIZATION_INSTANCE_ID  stable evidence-finalizer replica id
   RG_MIRROR_SCENARIO_BATCH_FINALIZATION_MAXIMUM_POLLERS  isolated KMS lanes (1..32)
+  RG_MIRROR_OUTCOME_CONTINUOUS_ASSESSMENT_SCHEDULER_ENABLED  opt-in selected-population freshness workers
+  RG_MIRROR_OUTCOME_CONTINUOUS_ASSESSMENT_INSTANCE_ID  stable continuous-assessment replica id
+  RG_MIRROR_OUTCOME_CONTINUOUS_ASSESSMENT_REGION  exact regional projection partition
+  RG_MIRROR_OUTCOME_CONTINUOUS_ASSESSMENT_ENVIRONMENT  exact test or staging partition
+  RG_MIRROR_OUTCOME_CONTINUOUS_ASSESSMENT_MAXIMUM_POLLERS  local bounded lanes (1..64)
   RG_MIRROR_STATEFUL_JDBC_URL          optional dedicated state-plane JDBC URL
   RG_MIRROR_STATEFUL_INSTANCE_ID       optional stable replica id
   RG_MIRROR_STATEFUL_ACTIVE_KEY_ID     optional active AES key id
@@ -262,6 +272,7 @@ Examples:
   scripts/start-visual-canvas-demo.sh --shadow-jobs
   scripts/start-visual-canvas-demo.sh --shadow-scheduler
   scripts/start-visual-canvas-demo.sh --shadow-detached-data-plane
+  scripts/start-visual-canvas-demo.sh --outcome-continuous-assessment
   scripts/start-visual-canvas-demo.sh --port 18080 -- --gateway.base-url=http://localhost:9091
   scripts/visual-canvas-demo.sh status
 EOF
@@ -464,6 +475,84 @@ validate_scenario_batch() {
         grep -Eq '^[1-9][0-9]*$' ||
         [ "${finalization_pollers}" -gt 32 ]; then
         echo "Scenario batch finalization pollers must be between 1 and 32." >&2
+        return 1
+    fi
+}
+
+configure_outcome_continuous_assessment() {
+    if ! truthy "${OUTCOME_CONTINUOUS_ASSESSMENT}"; then
+        return 0
+    fi
+    local default_environment
+    case ",${SPRING_PROFILE}," in
+        *,production,*)
+            echo "Continuous outcome assessment is physically unavailable in the production profile." >&2
+            return 1
+            ;;
+        *,staging,*)
+            default_environment="staging"
+            ;;
+        *,test,*)
+            default_environment="test"
+            ;;
+        *)
+            echo "Continuous outcome assessment requires the test or staging profile." >&2
+            return 1
+            ;;
+    esac
+
+    export RG_MIRROR_RUNTIME_ENABLED=true
+    export RG_MIRROR_OUTCOME_CONTINUOUS_ASSESSMENT_SCHEDULER_ENABLED=true
+    export RG_MIRROR_OUTCOME_CONTINUOUS_ASSESSMENT_INSTANCE_ID="${RG_MIRROR_OUTCOME_CONTINUOUS_ASSESSMENT_INSTANCE_ID:-visual-canvas-outcome-$(configured_port)}"
+    export RG_MIRROR_OUTCOME_CONTINUOUS_ASSESSMENT_REGION="${RG_MIRROR_OUTCOME_CONTINUOUS_ASSESSMENT_REGION:-${RG_INTEGRATION_REGION:-sg}}"
+    export RG_MIRROR_OUTCOME_CONTINUOUS_ASSESSMENT_ENVIRONMENT="${RG_MIRROR_OUTCOME_CONTINUOUS_ASSESSMENT_ENVIRONMENT:-${RG_INTEGRATION_ENVIRONMENT_ID:-${default_environment}}}"
+    if [ -n "${RG_INTEGRATION_REGION:-}" ] &&
+        [ "${RG_INTEGRATION_REGION}" != "${RG_MIRROR_OUTCOME_CONTINUOUS_ASSESSMENT_REGION}" ]; then
+        echo "Continuous outcome assessment region must match the integration identity region." >&2
+        return 1
+    fi
+    if [ -n "${RG_INTEGRATION_ENVIRONMENT_ID:-}" ] &&
+        [ "${RG_INTEGRATION_ENVIRONMENT_ID}" != "${RG_MIRROR_OUTCOME_CONTINUOUS_ASSESSMENT_ENVIRONMENT}" ]; then
+        echo "Continuous outcome assessment environment must match the integration identity environment." >&2
+        return 1
+    fi
+    export RG_INTEGRATION_REGION="${RG_MIRROR_OUTCOME_CONTINUOUS_ASSESSMENT_REGION}"
+    export RG_INTEGRATION_ENVIRONMENT_ID="${RG_MIRROR_OUTCOME_CONTINUOUS_ASSESSMENT_ENVIRONMENT}"
+}
+
+validate_outcome_continuous_assessment() {
+    if ! truthy "${RG_MIRROR_OUTCOME_CONTINUOUS_ASSESSMENT_SCHEDULER_ENABLED:-false}"; then
+        return 0
+    fi
+    if ! truthy "${RG_MIRROR_RUNTIME_ENABLED:-false}"; then
+        echo "Continuous outcome assessment requires RG_MIRROR_RUNTIME_ENABLED=true." >&2
+        return 1
+    fi
+    if ! printf '%s' "${RG_MIRROR_OUTCOME_CONTINUOUS_ASSESSMENT_INSTANCE_ID:-}" |
+        grep -Eq '^[A-Za-z0-9][A-Za-z0-9._:/#-]{0,254}$' ||
+        ! printf '%s' "${RG_MIRROR_OUTCOME_CONTINUOUS_ASSESSMENT_REGION:-}" |
+        grep -Eq '^[A-Za-z0-9][A-Za-z0-9._:/#-]{0,95}$' ||
+        ! printf '%s' "${RG_MIRROR_OUTCOME_CONTINUOUS_ASSESSMENT_ENVIRONMENT:-}" |
+        grep -Eq '^[A-Za-z0-9][A-Za-z0-9._:/#-]{0,254}$'; then
+        echo "Continuous outcome assessment instance or partition identity is invalid." >&2
+        return 1
+    fi
+    case "${RG_MIRROR_OUTCOME_CONTINUOUS_ASSESSMENT_ENVIRONMENT}" in
+        test|staging) ;;
+        *)
+            echo "Continuous outcome assessment environment must be test or staging." >&2
+            return 1
+            ;;
+    esac
+    if [ "${RG_INTEGRATION_REGION:-}" != "${RG_MIRROR_OUTCOME_CONTINUOUS_ASSESSMENT_REGION}" ] ||
+        [ "${RG_INTEGRATION_ENVIRONMENT_ID:-}" != "${RG_MIRROR_OUTCOME_CONTINUOUS_ASSESSMENT_ENVIRONMENT}" ]; then
+        echo "Continuous outcome assessment partition must match the integration identity scope." >&2
+        return 1
+    fi
+    local pollers="${RG_MIRROR_OUTCOME_CONTINUOUS_ASSESSMENT_MAXIMUM_POLLERS:-2}"
+    if ! printf '%s' "${pollers}" | grep -Eq '^[1-9][0-9]*$' ||
+        [ "${pollers}" -gt 64 ]; then
+        echo "Continuous outcome assessment maximum pollers must be between 1 and 64." >&2
         return 1
     fi
 }
@@ -2075,6 +2164,7 @@ Integration API templates:
   Shadow admission: POST /api/mirror/shadow-jobs (--shadow-jobs; Bearer token + X-Purpose: MIRROR_SHADOW)
   Shadow lifecycle: GET  /api/mirror/shadow-jobs/{jobId}/lifecycle
   Source proof:     GET  /api/mirror/shadow/source-resolutions/{attestationId}/revisions/{revision}?fingerprint=...
+  Continuous outcome: POST /api/mirror/outcome-continuous-assessments (--outcome-continuous-assessment; customer authorities required)
 EOF
 }
 
@@ -2204,6 +2294,32 @@ wait_for_ready() {
                     continue
                 fi
             fi
+            if truthy "${RG_MIRROR_OUTCOME_CONTINUOUS_ASSESSMENT_SCHEDULER_ENABLED:-false}"; then
+                if command -v jq >/dev/null 2>&1; then
+                    if ! printf '%s' "${response}" | jq -e '
+                        .payload.features.mirrorAuthoritativeOutcomeContinuousAssessmentApi == true
+                        and .payload.features.mirrorAuthoritativeOutcomeContinuousAssessmentDurable == true
+                        and .payload.features.mirrorAuthoritativeOutcomeContinuousAssessmentWorkerReady == true
+                        and .payload.features.mirrorAuthoritativeOutcomeContinuousAssessmentScheduling == true
+                        and .payload.features.mirrorAuthoritativeOutcomeSelectedPopulationReady == true
+                    ' >/dev/null 2>&1; then
+                        sleep 2
+                        continue
+                    fi
+                elif ! printf '%s' "${response}" |
+                    grep -Eq '"mirrorAuthoritativeOutcomeContinuousAssessmentApi"[[:space:]]*:[[:space:]]*true' ||
+                    ! printf '%s' "${response}" |
+                    grep -Eq '"mirrorAuthoritativeOutcomeContinuousAssessmentDurable"[[:space:]]*:[[:space:]]*true' ||
+                    ! printf '%s' "${response}" |
+                    grep -Eq '"mirrorAuthoritativeOutcomeContinuousAssessmentWorkerReady"[[:space:]]*:[[:space:]]*true' ||
+                    ! printf '%s' "${response}" |
+                    grep -Eq '"mirrorAuthoritativeOutcomeContinuousAssessmentScheduling"[[:space:]]*:[[:space:]]*true' ||
+                    ! printf '%s' "${response}" |
+                    grep -Eq '"mirrorAuthoritativeOutcomeSelectedPopulationReady"[[:space:]]*:[[:space:]]*true'; then
+                    sleep 2
+                    continue
+                fi
+            fi
             if truthy "${RG_MIRROR_STATEFUL_ENABLED:-false}"; then
                 if command -v jq >/dev/null 2>&1; then
                     if ! printf '%s' "${response}" | jq -e '
@@ -2232,6 +2348,10 @@ wait_for_ready() {
             fi
             if truthy "${RG_MIRROR_SCENARIO_BATCH_SCHEDULER_ENABLED:-false}"; then
                 echo "Demo service ready; Scenario batch API and scheduler probes passed: ${url}"
+                return 0
+            fi
+            if truthy "${RG_MIRROR_OUTCOME_CONTINUOUS_ASSESSMENT_SCHEDULER_ENABLED:-false}"; then
+                echo "Demo service ready; continuous outcome assessment API, worker, authority, and scheduler probes passed: ${url}"
                 return 0
             fi
             if truthy "${SHADOW_JOBS}"; then
@@ -2266,6 +2386,8 @@ start_service() {
     validate_shadow_jobs
     configure_scenario_batch
     validate_scenario_batch
+    configure_outcome_continuous_assessment
+    validate_outcome_continuous_assessment
     configure_stateful_mirror
     validate_stateful_mirror
     validate_profile_secrets
@@ -2310,6 +2432,12 @@ start_service() {
 }
 
 stop_service() {
+    if ! printf '%s' "${STOP_TIMEOUT}" | grep -Eq '^[1-9][0-9]*$' ||
+        [ "${STOP_TIMEOUT}" -gt 300 ]; then
+        echo "Visual canvas stop timeout must be between 1 and 300 seconds." >&2
+        return 1
+    fi
+
     local pid
     pid="$(running_pid 2>/dev/null || true)"
 
@@ -2328,7 +2456,7 @@ stop_service() {
     kill "${pid}" 2>/dev/null || true
 
     local i
-    for i in $(seq 1 20); do
+    for i in $(seq 1 "${STOP_TIMEOUT}"); do
         if ! kill -0 "${pid}" 2>/dev/null; then
             rm -f "$(pid_file)" "$(port_file)"
             echo "Visual canvas demo stopped."
@@ -2337,7 +2465,7 @@ stop_service() {
         sleep 1
     done
 
-    echo "Visual canvas demo did not stop gracefully; forcing stop."
+    echo "Visual canvas demo did not stop within ${STOP_TIMEOUT}s; forcing stop."
     kill -9 "${pid}" 2>/dev/null || true
     rm -f "$(pid_file)" "$(port_file)"
 }
@@ -2413,6 +2541,10 @@ parse_options() {
             --shadow-detached-data-plane)
                 SHADOW_JOBS=1
                 SHADOW_DETACHED_DATA_PLANE=1
+                shift
+                ;;
+            --outcome-continuous-assessment)
+                OUTCOME_CONTINUOUS_ASSESSMENT=1
                 shift
                 ;;
             --open)

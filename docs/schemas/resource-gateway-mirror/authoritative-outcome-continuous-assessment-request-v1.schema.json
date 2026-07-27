@@ -1,0 +1,51 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://bloge.dev/schemas/resource-gateway-mirror/authoritative-outcome-continuous-assessment-request-v1.schema.json",
+  "title": "Resource Gateway Authoritative Outcome Continuous Assessment Request v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "projectionId",
+    "populationRef"
+  ],
+  "properties": {
+    "schemaVersion": {
+      "const": "resourceGateway.authoritativeOutcomeContinuousAssessmentRequest.v1"
+    },
+    "projectionId": {
+      "type": "string",
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9@._:/-]{0,479}$"
+    },
+    "populationRef": {
+      "$ref": "#/$defs/populationRef"
+    }
+  },
+  "$defs": {
+    "populationRef": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "id",
+        "revision",
+        "fingerprint"
+      ],
+      "properties": {
+        "kind": {
+          "const": "AUTHORITATIVE_OUTCOME_SELECTED_POPULATION_MANIFEST"
+        },
+        "id": {
+          "$ref": "read-only-shadow-comparison-v1.schema.json#/$defs/identifier"
+        },
+        "revision": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "fingerprint": {
+          "$ref": "mirror-plan-v1.schema.json#/$defs/fingerprint"
+        }
+      }
+    }
+  }
+}

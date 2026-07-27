@@ -1,0 +1,92 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://bloge.dev/schemas/resource-gateway-mirror/authoritative-outcome-continuous-assessment-status-v1.schema.json",
+  "title": "Resource Gateway Authoritative Outcome Continuous Assessment Status v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "projection",
+    "observedAt",
+    "sourceFreshness",
+    "authoritiesReady",
+    "ready"
+  ],
+  "properties": {
+    "schemaVersion": {
+      "const": "resourceGateway.authoritativeOutcomeContinuousAssessmentStatus.v1"
+    },
+    "projection": {
+      "$ref": "authoritative-outcome-continuous-assessment-projection-v1.schema.json"
+    },
+    "observedAt": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "sourceFreshness": {
+      "enum": [
+        "UNINITIALIZED",
+        "CURRENT",
+        "REFRESHING",
+        "STALE",
+        "QUARANTINED"
+      ]
+    },
+    "authoritiesReady": {
+      "type": "boolean"
+    },
+    "ready": {
+      "type": "boolean"
+    }
+  },
+  "allOf": [
+    {
+      "if": {
+        "properties": {
+          "ready": {
+            "const": true
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "sourceFreshness": {
+            "const": "CURRENT"
+          },
+          "authoritiesReady": {
+            "const": true
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "anyOf": [
+          {
+            "properties": {
+              "sourceFreshness": {
+                "not": {
+                  "const": "CURRENT"
+                }
+              }
+            }
+          },
+          {
+            "properties": {
+              "authoritiesReady": {
+                "const": false
+              }
+            }
+          }
+        ]
+      },
+      "then": {
+        "properties": {
+          "ready": {
+            "const": false
+          }
+        }
+      }
+    }
+  ]
+}

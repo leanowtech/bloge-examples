@@ -5,6 +5,7 @@ import com.fasterxml.jackson.databind.DeserializationFeature;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.leanowtech.bloge.gateway.integration.mirror.AuthoritativeOutcomeSelectedPopulationAdmissionRequest;
+import com.leanowtech.bloge.gateway.integration.mirror.AuthoritativeOutcomeContinuousAssessmentRequest;
 import com.leanowtech.bloge.gateway.integration.mirror.AuthoritativeOutcomeSelectedPopulationAssessmentRequest;
 import com.leanowtech.bloge.gateway.integration.mirror.AuthoritativeOutcomeSelectedPopulationChunk;
 import com.leanowtech.bloge.gateway.integration.mirror.AuthoritativeOutcomeSelectedPopulationDispositionAdmissionRequest;
@@ -44,6 +45,9 @@ AuthoritativeOutcomeSelectedPopulationRequestDecoder {
     /** Largest completeness-assessment command. */
     public static final int MAXIMUM_ASSESSMENT_REQUEST_BYTES =
             64 * 1024;
+    /** Largest continuous-assessment registration command. */
+    public static final int MAXIMUM_CONTINUOUS_ASSESSMENT_REQUEST_BYTES =
+            64 * 1024;
     /** Largest staged-upload root intent. */
     public static final int MAXIMUM_UPLOAD_REQUEST_BYTES =
             AuthoritativeOutcomeSelectedPopulationUploadRequest
@@ -75,6 +79,11 @@ AuthoritativeOutcomeSelectedPopulationRequestDecoder {
                     "assessmentId",
                     "assessmentRevision",
                     "expectedPredecessorFingerprint");
+    private static final Set<String> CONTINUOUS_ASSESSMENT_FIELDS =
+            Set.of(
+                    "schemaVersion",
+                    "projectionId",
+                    "populationRef");
     private static final Set<String> UPLOAD_FIELDS =
             Set.of(
                     "schemaVersion",
@@ -160,6 +169,22 @@ AuthoritativeOutcomeSelectedPopulationRequestDecoder {
                 AuthoritativeOutcomeSelectedPopulationAssessmentRequest
                         .SCHEMA_VERSION,
                 AuthoritativeOutcomeSelectedPopulationAssessmentRequest
+                        .class);
+    }
+
+    /** Decodes one continuous completeness projection registration after authentication. */
+    public AuthoritativeOutcomeContinuousAssessmentRequest
+    decodeContinuousAssessment(
+            byte[] value,
+            IntegrationRequestContext identity) {
+        return decode(
+                value,
+                identity,
+                MAXIMUM_CONTINUOUS_ASSESSMENT_REQUEST_BYTES,
+                CONTINUOUS_ASSESSMENT_FIELDS,
+                AuthoritativeOutcomeContinuousAssessmentRequest
+                        .SCHEMA_VERSION,
+                AuthoritativeOutcomeContinuousAssessmentRequest
                         .class);
     }
 
