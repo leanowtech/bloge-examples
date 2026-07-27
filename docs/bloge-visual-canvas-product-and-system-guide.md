@@ -1280,6 +1280,28 @@ curl -fsS http://localhost:8080/api/integration/capabilities
 不是另一套治理系统，而是 Resource Gateway 对受保护 Scenario 运行与签名证据的
 证据优先任务投影：
 
+首次打开不再停在空白队列。左侧 `Live / Samples` 是显式数据源切换：
+
+- `Live` 读取当前认证 scope 中的真实批次。存在真实批次时默认进入该模式。
+- `Samples` 使用浏览器内置、与正式展示协议同形的只读样例。API 未启用或当前
+  scope 没有批次时会自动进入该模式。
+- 样例顶部始终显示 `Illustrative sample`，不会调用 batch、child workbook 或
+  remediation 写接口，也不产生服务端签名、审批事实或发布证据。
+- 点击 `Retry live` 会重新探测服务端；发现真实批次后自动回到 `Live`。
+
+内置样例不是四份同质的成功数据，而是四种常见工作状态：
+
+| 样例 | 状态 | 可观察内容 |
+| --- | --- | --- |
+| Grounding policy regression | `PARTIAL` | 同批覆盖执行失败、证据不完整、blocker assertion、治理阻断、warning 和通过项 |
+| Release candidate ready | `SUCCEEDED` | gate ready、全部 blocker 通过、保留一个不阻断发布的 freshness warning |
+| Live dependency degradation | `RUNNING` | 运行中、排队、已通过与 CRM 限流失败并存；明确标记为非发布证据 |
+| Evidence finalization quarantine | `QUARANTINED` | 业务子运行与 evidence signer、retention proof 故障分离展示 |
+
+样例也支持可分享定位：
+`/rehearsals/?sample=sample-release-ready&entry=1` 会直接恢复指定样例和证据抽屉。
+这个链接只用于产品讲解；真实治理协作仍使用 `jobId` deep link。
+
 1. 左侧选择当前认证 tenant/organization/project/environment/region 中的批次；
    `Load older batches` 使用稳定 keyset，不会因运行进度变化而重复或漏项。
 2. 中间先看批次进度和 gate。运行中标为 `Live projection`，不能用于发布门禁；

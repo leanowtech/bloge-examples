@@ -59,7 +59,7 @@ describe('RehearsalWorkbench', () => {
     window.history.replaceState({}, '', '/rehearsals/');
     host = document.createElement('div');
     document.body.appendChild(host);
-    vi.clearAllMocks();
+    vi.resetAllMocks();
     mockCredentialStatus.mockImplementation((slot) => ({
       slot,
       configured: false,
@@ -76,40 +76,211 @@ describe('RehearsalWorkbench', () => {
     host.remove();
   });
 
-  it('renders an unavailable empty state when the optional batch API is absent', async () => {
+  it('falls back to clearly labelled samples when the optional batch API is absent', async () => {
     mockJobs.mockRejectedValue(new BlogeApiRequestError(404, 'Not Found'));
 
     await render();
-    await waitFor(() => text().includes('Scenario rehearsals are not enabled for this deployment.'));
+    await waitFor(() => document.querySelector('[data-testid="sample-workbook-banner"]') !== null);
 
     expect(document.querySelector('[role="alert"]')).toBeNull();
     expect(text()).not.toContain('Request failed: 404');
+    expect(query('[data-testid="sample-data-notice"]').textContent)
+      .toContain('Batch API unavailable');
+    expect(text()).toContain('Grounding policy regression');
+    expect(text()).toContain('Triage every failure category');
+    expect(text()).toContain('Execution 1');
+    expect(text()).toContain('Evidence 1');
+    expect(text()).toContain('Assertions 1');
+    expect(text()).toContain('Governance 1');
+    expect(text()).toContain('Warnings 1');
+    expect(text()).toContain('Passed 1');
+    expect(mockBatchWorkbook).not.toHaveBeenCalled();
+    expect(mockChildWorkbook).not.toHaveBeenCalled();
     expect(mockJobs).toHaveBeenCalledOnce();
   });
 
-  it('recovers from an unavailable API when an explicit refresh succeeds', async () => {
+  it('returns from samples to live data when an explicit retry succeeds', async () => {
     mockJobs
       .mockRejectedValueOnce(new BlogeApiRequestError(404, 'Not Found'))
-      .mockResolvedValueOnce(jobPage([]));
+      .mockResolvedValueOnce(jobPage([batchJob('job-recovered', 'RUNNING')]));
+    mockItems.mockResolvedValue({
+      schemaVersion: 'resourceGateway.scenarioRehearsalBatchItemPage.v1',
+      jobId: 'job-recovered',
+      manifestFingerprint: fingerprint('manifest-recovered'),
+      items: [],
+      nextIndex: null,
+    });
 
     await render();
-    await waitFor(() => document.querySelector('[data-testid="rehearsal-api-unavailable"]') !== null);
-    await clickText('Refresh');
-    await waitFor(() => text().includes('No Scenario rehearsal batches are visible in this scope.'));
+    await waitFor(() => document.querySelector('[data-testid="sample-data-notice"]') !== null);
+    await clickText('Retry live');
+    await waitFor(() => document.querySelector('[data-testid="batch-job-recovered"]') !== null);
 
-    expect(document.querySelector('[data-testid="rehearsal-api-unavailable"]')).toBeNull();
+    expect(document.querySelector('[data-testid="sample-data-notice"]')).toBeNull();
     expect(document.querySelector('[role="alert"]')).toBeNull();
     expect(mockJobs).toHaveBeenCalledTimes(2);
+    expect(mockItems).toHaveBeenCalledWith('job-recovered', 0, 100);
   });
 
-  it('keeps non-404 transport failures visible as operational errors', async () => {
+  it('keeps samples usable while surfacing non-404 live-data failures', async () => {
     mockJobs.mockRejectedValue(new BlogeApiRequestError(503, 'Service Unavailable'));
 
     await render();
-    await waitFor(() => text().includes('Request failed: 503 Service Unavailable'));
+    await waitFor(() => document.querySelector('[data-testid="sample-workbook-banner"]') !== null);
 
     expect(query('[role="alert"]').textContent).toContain('Request failed: 503 Service Unavailable');
     expect(document.querySelector('[data-testid="rehearsal-api-unavailable"]')).toBeNull();
+    expect(query('[data-testid="sample-data-notice"]').textContent)
+      .toContain('Live data is unavailable');
+    expect(text()).toContain('Grounding policy regression');
+  });
+
+  it('uses samples when the live scope is empty and drills into local child evidence', async () => {
+    mockJobs.mockResolvedValue(jobPage([]));
+
+    await render();
+    await waitFor(() => text().includes('Grounding policy regression'));
+    await click('[data-testid="batch-sample-release-ready"]');
+    await waitFor(() => text().includes('Release candidate ready'));
+
+    expect(text()).toContain('Sample workbook');
+    expect(text()).toContain('GateReady');
+    expect(query('[data-testid="entry-0"]').textContent).toContain('View');
+    expect(window.location.search).toContain('sample=sample-release-ready');
+
+    await click('[data-testid="entry-0"]');
+    await waitFor(() => document.querySelector('[data-testid="child-cases"]') !== null);
+
+    expect(query('[data-testid="child-summary"]').textContent).toContain('GATE READY');
+    expect(query('[data-testid="child-cases"]').textContent).toContain('account-lookup');
+    expect(query('.sample-drawer-label').textContent).toContain('Not server evidence');
+    expect(mockBatchWorkbook).not.toHaveBeenCalled();
+    expect(mockChildWorkbook).not.toHaveBeenCalled();
+    expect(window.location.search).toContain('entry=0');
+  });
+
+  it('restores a shareable sample deep link without querying the server', async () => {
+    window.history.replaceState(
+      {},
+      '',
+      '/rehearsals/?sample=sample-release-ready&entry=1',
+    );
+
+    await render();
+    await waitFor(() => document.querySelector('[data-testid="child-summary"]') !== null);
+
+    expect(text()).toContain('Release candidate ready');
+    expect(query('[data-testid="entry-1"]').classList.contains('selected')).toBe(true);
+    expect(query('[data-testid="child-cases"]').textContent).toContain('refund-eligibility');
+    expect(mockJobs).not.toHaveBeenCalled();
+    expect(mockBatchWorkbook).not.toHaveBeenCalled();
+    expect(mockChildWorkbook).not.toHaveBeenCalled();
+  });
+
+  it('does not let a stale live discovery override an explicit Samples choice', async () => {
+    const pending = deferred<ReturnType<typeof jobPage>>();
+    mockJobs.mockReturnValue(pending.promise);
+
+    await render();
+    await waitFor(() => mockJobs.mock.calls.length === 1);
+    await clickText('Samples');
+    await waitFor(() => text().includes('Grounding policy regression'));
+
+    pending.resolve(jobPage([batchJob('late-live-job', 'RUNNING')]));
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 1));
+    });
+
+    expect(query('[data-testid="sample-data-notice"]')).toBeTruthy();
+    expect(window.location.search).toContain('sample=sample-governance-blocked');
+    expect(window.location.search).not.toContain('jobId=late-live-job');
+  });
+
+  it('preserves the selected live batch and evidence coordinate on refresh', async () => {
+    const jobs = [
+      batchJob('job-first', 'RUNNING'),
+      batchJob('job-selected', 'RUNNING'),
+    ];
+    mockJobs.mockResolvedValue(jobPage(jobs));
+    mockItems.mockImplementation(async (jobId) => ({
+      schemaVersion: 'resourceGateway.scenarioRehearsalBatchItemPage.v1',
+      jobId,
+      manifestFingerprint: fingerprint(`manifest-${jobId}`),
+      items: [],
+      nextIndex: null,
+    }));
+
+    await render();
+    await waitFor(() => document.querySelector('[data-testid="batch-job-selected"]') !== null);
+    await click('[data-testid="batch-job-selected"]');
+    await clickText('Refresh');
+    await waitFor(() => mockJobs.mock.calls.length === 2);
+
+    expect(query('[data-testid="batch-job-selected"]').getAttribute('aria-pressed')).toBe('true');
+    expect(window.location.search).toContain('jobId=job-selected');
+  });
+
+  it('does not let a pending refresh undo a newer live selection', async () => {
+    const jobs = [
+      batchJob('job-first', 'RUNNING'),
+      batchJob('job-second', 'RUNNING'),
+    ];
+    const pending = deferred<ReturnType<typeof jobPage>>();
+    mockJobs
+      .mockResolvedValueOnce(jobPage(jobs))
+      .mockReturnValueOnce(pending.promise);
+    mockItems.mockImplementation(async (jobId) => ({
+      schemaVersion: 'resourceGateway.scenarioRehearsalBatchItemPage.v1',
+      jobId,
+      manifestFingerprint: fingerprint(`manifest-${jobId}`),
+      items: [],
+      nextIndex: null,
+    }));
+
+    await render();
+    await waitFor(() => document.querySelector('[data-testid="batch-job-second"]') !== null);
+    await click('[data-testid="batch-job-second"]');
+    await clickText('Refresh');
+    await waitFor(() => mockJobs.mock.calls.length === 2);
+    await click('[data-testid="batch-job-first"]');
+
+    pending.resolve(jobPage(jobs));
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 1));
+    });
+
+    expect(query('[data-testid="batch-job-first"]').getAttribute('aria-pressed')).toBe('true');
+    expect(window.location.search).toContain('jobId=job-first');
+  });
+
+  it('keeps evidence-plane quarantine failures out of the execution category', async () => {
+    mockJobs.mockResolvedValue(jobPage([]));
+
+    await render();
+    await waitFor(() => text().includes('Grounding policy regression'));
+    await click('[data-testid="batch-sample-evidence-quarantined"]');
+    await waitFor(() => text().includes('Evidence finalization quarantine'));
+
+    expect(text()).toContain('Execution 0');
+    expect(text()).toContain('Evidence 2');
+    expect(text()).toContain('EVIDENCE_SIGNER_UNAVAILABLE');
+    expect(text()).toContain('RETENTION_PROOF_INCOMPLETE');
+    expect(mockBatchWorkbook).not.toHaveBeenCalled();
+  });
+
+  it('renders the running sample as a mutable projection without backend calls', async () => {
+    mockJobs.mockResolvedValue(jobPage([]));
+
+    await render();
+    await waitFor(() => text().includes('Grounding policy regression'));
+    await click('[data-testid="batch-sample-live-dependency-degradation"]');
+    await waitFor(() => text().includes('Sample live projection'));
+
+    expect(text()).toContain('CRM_RATE_LIMITED');
+    expect(text()).toContain('Mutable running projection');
+    expect(text()).toContain('GatePending');
+    expect(mockItems).not.toHaveBeenCalled();
+    expect(mockBatchWorkbook).not.toHaveBeenCalled();
   });
 
   it('labels an active batch as mutable and never requests terminal evidence', async () => {
@@ -217,6 +388,73 @@ describe('RehearsalWorkbench', () => {
       createdAt: '2026-07-25T09:00:00Z',
       jobId: 'job-new',
     });
+  });
+
+  it('keeps an explicitly requested older page when the live selection changes', async () => {
+    const pendingPage = deferred<ReturnType<typeof jobPage>>();
+    mockJobs
+      .mockResolvedValueOnce(jobPage(
+        [
+          batchJob('job-new', 'RUNNING'),
+          batchJob('job-selected', 'RUNNING'),
+        ],
+        { createdAt: '2026-07-25T09:00:00Z', jobId: 'job-selected' },
+      ))
+      .mockReturnValueOnce(pendingPage.promise);
+    mockItems.mockImplementation(async (jobId) => ({
+      schemaVersion: 'resourceGateway.scenarioRehearsalBatchItemPage.v1',
+      jobId,
+      manifestFingerprint: fingerprint(`manifest-${jobId}`),
+      items: [],
+      nextIndex: null,
+    }));
+
+    await render();
+    await waitFor(() => text().includes('Load older batches'));
+    await clickText('Load older batches');
+    await waitFor(() => mockJobs.mock.calls.length === 2);
+    await click('[data-testid="batch-job-selected"]');
+
+    pendingPage.resolve(jobPage([batchJob('job-old', 'SUCCEEDED')]));
+    await waitFor(() => document.querySelector('[data-testid="batch-job-old"]') !== null);
+
+    expect(query('[data-testid="batch-job-selected"]').getAttribute('aria-pressed')).toBe('true');
+    expect(window.location.search).toContain('jobId=job-selected');
+  });
+
+  it('clears stale pagination busy state when live discovery refreshes', async () => {
+    const pendingPage = deferred<ReturnType<typeof jobPage>>();
+    const cursor = { createdAt: '2026-07-25T09:00:00Z', jobId: 'job-new' };
+    mockJobs
+      .mockResolvedValueOnce(jobPage([batchJob('job-new', 'RUNNING')], cursor))
+      .mockReturnValueOnce(pendingPage.promise)
+      .mockResolvedValueOnce(jobPage([batchJob('job-new', 'RUNNING')], cursor));
+    mockItems.mockResolvedValue({
+      schemaVersion: 'resourceGateway.scenarioRehearsalBatchItemPage.v1',
+      jobId: 'job-new',
+      manifestFingerprint: fingerprint('manifest-new'),
+      items: [],
+      nextIndex: null,
+    });
+
+    await render();
+    await waitFor(() => text().includes('Load older batches'));
+    await clickText('Load older batches');
+    expect(text()).toContain('Loading older batches...');
+
+    await clickText('Refresh');
+    await waitFor(() => mockJobs.mock.calls.length === 3);
+    await waitFor(() => text().includes('Load older batches'));
+
+    const loadOlder = Array.from(document.querySelectorAll('button'))
+      .find((button) => button.textContent?.includes('Load older batches'));
+    expect(loadOlder?.hasAttribute('disabled')).toBe(false);
+
+    pendingPage.resolve(jobPage([batchJob('stale-job', 'SUCCEEDED')]));
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 1));
+    });
+    expect(document.querySelector('[data-testid="batch-stale-job"]')).toBeNull();
   });
 
   async function render() {
@@ -415,6 +653,14 @@ function artifact(kind: string, id: string) {
 
 function fingerprint(seed: string): string {
   return `sha256:${seed.padEnd(64, seed[0] ?? '0').slice(0, 64)}`;
+}
+
+function deferred<T>() {
+  let resolve!: (value: T) => void;
+  const promise = new Promise<T>((next) => {
+    resolve = next;
+  });
+  return { promise, resolve };
 }
 
 async function waitFor(predicate: () => boolean) {

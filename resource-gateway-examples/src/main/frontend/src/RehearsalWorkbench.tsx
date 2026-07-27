@@ -1,4 +1,10 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from 'react';
 
 import {
   BlogeApiRequestError,
@@ -8,6 +14,12 @@ import {
   fetchScenarioRehearsalWorkbook,
 } from './api';
 import RehearsalRemediationPanel from './RehearsalRemediationPanel';
+import {
+  DEFAULT_REHEARSAL_DEMO_ID,
+  findRehearsalDemoScenario,
+  REHEARSAL_DEMO_SCENARIOS,
+} from './rehearsalDemoData';
+import { isTerminalRehearsalStatus } from './rehearsalStatus';
 import type {
   ScenarioRehearsalBatchItem,
   ScenarioRehearsalBatchJob,
@@ -17,15 +29,6 @@ import type {
   ScenarioRehearsalChildWorkbook,
   ScenarioRehearsalWorkbookSeed,
 } from './types';
-
-const TERMINAL_STATUSES = new Set<ScenarioRehearsalBatchJob['status']>([
-  'SUCCEEDED',
-  'PARTIAL',
-  'FAILED',
-  'CANCELLED',
-  'EXPIRED',
-  'QUARANTINED',
-]);
 
 const CATEGORY_ORDER = [
   'EXECUTION',
@@ -38,6 +41,7 @@ const CATEGORY_ORDER = [
 
 type WorkbenchCategory = (typeof CATEGORY_ORDER)[number];
 type WorkbenchFilter = 'ALL' | WorkbenchCategory;
+type WorkbenchMode = 'LIVE' | 'SAMPLES';
 
 interface WorkbenchEntry {
   index: number;
@@ -62,7 +66,7 @@ interface EntryDiagnosis {
 }
 
 function isTerminal(job: ScenarioRehearsalBatchJob | undefined): boolean {
-  return job !== undefined && TERMINAL_STATUSES.has(job.status);
+  return job !== undefined && isTerminalRehearsalStatus(job.status);
 }
 
 function asWorkbenchEntry(
@@ -107,6 +111,12 @@ function asLiveWorkbenchEntry(item: ScenarioRehearsalBatchItem): WorkbenchEntry 
 
 function diagnoseEntry(entry: WorkbenchEntry): EntryDiagnosis {
   const child = entry.childWorkbook;
+  if (entry.failureCode && isEvidenceFailureCode(entry.failureCode)) {
+    return {
+      category: 'EVIDENCE',
+      reason: entry.failureCode,
+    };
+  }
   if (entry.status === 'FAILED' || entry.status === 'CANCELLED' || entry.failureCode) {
     return {
       category: 'EXECUTION',
@@ -144,6 +154,18 @@ function diagnoseEntry(entry: WorkbenchEntry): EntryDiagnosis {
   return { category: 'EVIDENCE', reason: `Mutable ${entry.status.toLowerCase()} projection` };
 }
 
+function isEvidenceFailureCode(code: string): boolean {
+  return [
+    'ATTESTATION',
+    'EVIDENCE',
+    'KMS',
+    'RETENTION',
+    'SEAL',
+    'SIGNER',
+    'WORKBOOK',
+  ].some((token) => code.includes(token));
+}
+
 function shortFingerprint(value: string): string {
   if (!value) {
     return 'Not available';
@@ -165,6 +187,16 @@ function formatDate(value: string | null | undefined): string {
   }).format(date);
 }
 
+function formatEntryDate(
+  value: string | null,
+  terminal: boolean,
+  liveFallback: string,
+): string {
+  return value
+    ? formatDate(value)
+    : terminal ? 'Not included in workbook' : liveFallback;
+}
+
 function statusTone(status: string): string {
   if (status === 'SUCCEEDED' || status === 'PASSED' || status === 'PASS') {
     return 'success';
@@ -178,12 +210,18 @@ function statusTone(status: string): string {
   return 'neutral';
 }
 
-function querySelection(): { jobId: string; entry: number | null; remediationId: string } {
+function querySelection(): {
+  jobId: string;
+  sampleId: string;
+  entry: number | null;
+  remediationId: string;
+} {
   const query = new URLSearchParams(window.location.search);
   const rawEntry = query.get('entry');
   const entry = rawEntry === null ? Number.NaN : Number(rawEntry);
   return {
     jobId: query.get('jobId') ?? '',
+    sampleId: query.get('sample') ?? '',
     entry: Number.isInteger(entry) && entry >= 0 ? entry : null,
     remediationId: query.get('remediationId') ?? '',
   };
@@ -193,18 +231,26 @@ function updateDeepLink(
   jobId: string,
   entry: number | null,
   remediationId: string,
+  mode: WorkbenchMode,
 ): void {
   const url = new URL(window.location.href);
-  url.searchParams.set('jobId', jobId);
+  if (mode === 'SAMPLES') {
+    url.searchParams.set('sample', jobId);
+    url.searchParams.delete('jobId');
+    url.searchParams.delete('remediationId');
+  } else {
+    url.searchParams.set('jobId', jobId);
+    url.searchParams.delete('sample');
+    if (remediationId) {
+      url.searchParams.set('remediationId', remediationId);
+    } else {
+      url.searchParams.delete('remediationId');
+    }
+  }
   if (entry === null) {
     url.searchParams.delete('entry');
   } else {
     url.searchParams.set('entry', String(entry));
-  }
-  if (remediationId) {
-    url.searchParams.set('remediationId', remediationId);
-  } else {
-    url.searchParams.delete('remediationId');
   }
   window.history.replaceState({}, '', `${url.pathname}${url.search}${url.hash}`);
 }
@@ -217,9 +263,13 @@ function updateDeepLink(
  */
 export default function RehearsalWorkbench() {
   const initialSelection = useMemo(querySelection, []);
-  const [jobs, setJobs] = useState<ScenarioRehearsalBatchJob[]>([]);
+  const initialSample = findRehearsalDemoScenario(initialSelection.sampleId);
+  const [mode, setMode] = useState<WorkbenchMode>(initialSample ? 'SAMPLES' : 'LIVE');
+  const [liveJobs, setLiveJobs] = useState<ScenarioRehearsalBatchJob[]>([]);
   const [nextCursor, setNextCursor] = useState<ScenarioRehearsalBatchJobPage['nextCursor']>(null);
-  const [selectedJobId, setSelectedJobId] = useState(initialSelection.jobId);
+  const [selectedJobId, setSelectedJobId] = useState(
+    initialSample?.job.jobId ?? initialSelection.jobId,
+  );
   const [selectedEntryIndex, setSelectedEntryIndex] = useState<number | null>(initialSelection.entry);
   const [selectedRemediationId, setSelectedRemediationId] =
     useState(initialSelection.remediationId);
@@ -229,13 +279,25 @@ export default function RehearsalWorkbench() {
   const [childWorkbook, setChildWorkbook] = useState<ScenarioRehearsalWorkbookSeed | null>(null);
   const [filter, setFilter] = useState<WorkbenchFilter>('ALL');
   const [loadingJobs, setLoadingJobs] = useState(true);
+  const [loadingOlderJobs, setLoadingOlderJobs] = useState(false);
   const [loadingJob, setLoadingJob] = useState(false);
+  const [loadingMoreItems, setLoadingMoreItems] = useState(false);
   const [loadingChild, setLoadingChild] = useState(false);
   const [batchApiAvailable, setBatchApiAvailable] = useState(true);
   const [error, setError] = useState('');
   const [detailError, setDetailError] = useState('');
+  const discoveryGeneration = useRef(0);
+  const jobPageGeneration = useRef(0);
+  const itemPageGeneration = useRef(0);
 
+  const sampleMode = mode === 'SAMPLES';
+  const jobs = sampleMode
+    ? REHEARSAL_DEMO_SCENARIOS.map((scenario) => scenario.job)
+    : liveJobs;
   const selectedJob = jobs.find((job) => job.jobId === selectedJobId);
+  const selectedDemoScenario = sampleMode
+    ? findRehearsalDemoScenario(selectedJobId)
+    : undefined;
   const terminal = isTerminal(selectedJob);
   const entries = useMemo(
     () => terminal
@@ -270,6 +332,12 @@ export default function RehearsalWorkbench() {
   );
 
   const discoverJobs = useCallback(async (keepSelection = true) => {
+    const generation = discoveryGeneration.current + 1;
+    discoveryGeneration.current = generation;
+    jobPageGeneration.current += 1;
+    itemPageGeneration.current += 1;
+    setLoadingOlderJobs(false);
+    setLoadingMoreItems(false);
     setLoadingJobs(true);
     setBatchApiAvailable(true);
     setError('');
@@ -277,23 +345,40 @@ export default function RehearsalWorkbench() {
       const accumulated: ScenarioRehearsalBatchJob[] = [];
       let cursor: ScenarioRehearsalBatchJobPage['nextCursor'] = null;
       let page: ScenarioRehearsalBatchJobPage | null = null;
-      const soughtJobId = keepSelection ? selectedJobId || initialSelection.jobId : '';
+      const soughtJobId = keepSelection && mode === 'LIVE'
+        ? selectedJobId || initialSelection.jobId
+        : '';
       const soughtEntry = keepSelection ? selectedEntryIndex : null;
       const soughtRemediation = keepSelection
         ? selectedRemediationId || initialSelection.remediationId
         : '';
       for (let pageNumber = 0; pageNumber < 20; pageNumber += 1) {
         page = await fetchScenarioRehearsalBatchJobs(50, cursor);
+        if (generation !== discoveryGeneration.current) {
+          return;
+        }
         accumulated.push(...page.jobs);
         cursor = page.nextCursor;
         if (!soughtJobId || accumulated.some((job) => job.jobId === soughtJobId) || !cursor) {
           break;
         }
       }
+      if (generation !== discoveryGeneration.current) {
+        return;
+      }
       const uniqueJobs = Array.from(new Map(accumulated.map((job) => [job.jobId, job])).values());
       setBatchApiAvailable(true);
-      setJobs(uniqueJobs);
+      setLiveJobs(uniqueJobs);
       setNextCursor(page?.nextCursor ?? null);
+      if (uniqueJobs.length === 0) {
+        setMode('SAMPLES');
+        setSelectedJobId(DEFAULT_REHEARSAL_DEMO_ID);
+        setSelectedEntryIndex(null);
+        setSelectedRemediationId('');
+        updateDeepLink(DEFAULT_REHEARSAL_DEMO_ID, null, '', 'SAMPLES');
+        return;
+      }
+      setMode('LIVE');
       const selectionExists = soughtJobId && uniqueJobs.some((job) => job.jobId === soughtJobId);
       const nextJobId = selectionExists ? soughtJobId : uniqueJobs[0]?.jobId ?? '';
       setSelectedJobId(nextJobId);
@@ -306,32 +391,52 @@ export default function RehearsalWorkbench() {
           nextJobId,
           selectionExists ? soughtEntry : null,
           selectionExists ? soughtRemediation : '',
+          'LIVE',
         );
       }
     } catch (cause) {
+      if (generation !== discoveryGeneration.current) {
+        return;
+      }
+      const fallbackSampleId = sampleMode && selectedDemoScenario
+        ? selectedDemoScenario.job.jobId
+        : DEFAULT_REHEARSAL_DEMO_ID;
+      const fallbackEntry = sampleMode ? selectedEntryIndex : null;
       if (cause instanceof BlogeApiRequestError && cause.status === 404) {
         setBatchApiAvailable(false);
-        setJobs([]);
+        setLiveJobs([]);
         setNextCursor(null);
-        setSelectedJobId('');
-        setSelectedEntryIndex(null);
-        setSelectedRemediationId('');
       } else {
         setError(cause instanceof Error ? cause.message : 'Unable to discover rehearsal batches.');
       }
+      setMode('SAMPLES');
+      setSelectedJobId(fallbackSampleId);
+      setSelectedEntryIndex(fallbackEntry);
+      setSelectedRemediationId('');
+      updateDeepLink(fallbackSampleId, fallbackEntry, '', 'SAMPLES');
     } finally {
-      setLoadingJobs(false);
+      if (generation === discoveryGeneration.current) {
+        setLoadingJobs(false);
+      }
     }
   }, [
     initialSelection.jobId,
     initialSelection.remediationId,
+    mode,
+    sampleMode,
+    selectedDemoScenario,
     selectedEntryIndex,
     selectedJobId,
     selectedRemediationId,
   ]);
 
   useEffect(() => {
-    void discoverJobs();
+    if (initialSample) {
+      setLoadingJobs(false);
+      updateDeepLink(initialSample.job.jobId, initialSelection.entry, '', 'SAMPLES');
+    } else {
+      void discoverJobs();
+    }
     // Initial discovery owns deep-link resolution; subsequent refreshes are explicit.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
@@ -345,7 +450,9 @@ export default function RehearsalWorkbench() {
     }
     let cancelled = false;
     setLoadingJob(true);
-    setError('');
+    if (!sampleMode) {
+      setError('');
+    }
     setWorkbook(null);
     setLiveItems([]);
     setNextItemIndex(null);
@@ -353,6 +460,18 @@ export default function RehearsalWorkbench() {
     setDetailError('');
     const load = async () => {
       try {
+        if (sampleMode) {
+          if (!selectedDemoScenario) {
+            throw new Error('The selected sample scenario is unavailable.');
+          }
+          if (selectedDemoScenario.kind === 'TERMINAL') {
+            setWorkbook(selectedDemoScenario.workbook);
+          } else {
+            setLiveItems(selectedDemoScenario.itemPage.items);
+            setNextItemIndex(selectedDemoScenario.itemPage.nextIndex);
+          }
+          return;
+        }
         if (isTerminal(selectedJob)) {
           const nextWorkbook = await fetchScenarioRehearsalBatchWorkbook(selectedJob.jobId);
           if (!cancelled) {
@@ -379,7 +498,7 @@ export default function RehearsalWorkbench() {
     return () => {
       cancelled = true;
     };
-  }, [selectedJob]);
+  }, [sampleMode, selectedDemoScenario, selectedJob]);
 
   useEffect(() => {
     if (!selectedEntry || !terminal || !selectedEntry.runId) {
@@ -391,6 +510,16 @@ export default function RehearsalWorkbench() {
     setLoadingChild(true);
     setChildWorkbook(null);
     setDetailError('');
+    if (sampleMode) {
+      const sampleChild = selectedDemoScenario?.childWorkbooks[selectedEntry.runId];
+      if (sampleChild) {
+        setChildWorkbook(sampleChild);
+      } else {
+        setDetailError('This sample intentionally has no complete signed child workbook.');
+      }
+      setLoadingChild(false);
+      return;
+    }
     void fetchScenarioRehearsalWorkbook(selectedEntry.runId)
       .then((nextWorkbook) => {
         if (!cancelled) {
@@ -410,65 +539,127 @@ export default function RehearsalWorkbench() {
     return () => {
       cancelled = true;
     };
-  }, [selectedEntry, terminal]);
+  }, [sampleMode, selectedDemoScenario, selectedEntry, terminal]);
 
   async function loadOlderJobs() {
-    if (!nextCursor) {
+    if (sampleMode || !nextCursor) {
       return;
     }
-    setLoadingJobs(true);
+    const generation = jobPageGeneration.current + 1;
+    jobPageGeneration.current = generation;
+    setLoadingOlderJobs(true);
     setError('');
     try {
       const page = await fetchScenarioRehearsalBatchJobs(50, nextCursor);
-      setJobs((current) => Array.from(
+      if (generation !== jobPageGeneration.current) {
+        return;
+      }
+      setLiveJobs((current) => Array.from(
         new Map([...current, ...page.jobs].map((job) => [job.jobId, job])).values(),
       ));
       setNextCursor(page.nextCursor);
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : 'Unable to load older batches.');
+      if (generation === jobPageGeneration.current) {
+        setError(cause instanceof Error ? cause.message : 'Unable to load older batches.');
+      }
     } finally {
-      setLoadingJobs(false);
+      if (generation === jobPageGeneration.current) {
+        setLoadingOlderJobs(false);
+      }
     }
   }
 
   async function loadMoreItems() {
-    if (!selectedJob || nextItemIndex === null) {
+    if (sampleMode || !selectedJob || nextItemIndex === null) {
       return;
     }
-    setLoadingJob(true);
+    const generation = itemPageGeneration.current + 1;
+    itemPageGeneration.current = generation;
+    setLoadingMoreItems(true);
     setError('');
     try {
       const page = await fetchScenarioRehearsalBatchItems(selectedJob.jobId, nextItemIndex, 100);
+      if (generation !== itemPageGeneration.current) {
+        return;
+      }
       setLiveItems((current) => [...current, ...page.items]);
       setNextItemIndex(page.nextIndex);
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : 'Unable to load more batch items.');
+      if (generation === itemPageGeneration.current) {
+        setError(cause instanceof Error ? cause.message : 'Unable to load more batch items.');
+      }
     } finally {
-      setLoadingJob(false);
+      if (generation === itemPageGeneration.current) {
+        setLoadingMoreItems(false);
+      }
     }
   }
 
+  function cancelPendingDiscovery() {
+    discoveryGeneration.current += 1;
+    setLoadingJobs(false);
+  }
+
   function selectJob(jobId: string) {
+    cancelPendingDiscovery();
+    itemPageGeneration.current += 1;
+    setLoadingMoreItems(false);
     setSelectedJobId(jobId);
     setSelectedEntryIndex(null);
     setSelectedRemediationId('');
     setFilter('ALL');
-    updateDeepLink(jobId, null, '');
+    updateDeepLink(jobId, null, '', mode);
   }
 
   function selectEntry(index: number) {
+    cancelPendingDiscovery();
     setSelectedEntryIndex(index);
-    updateDeepLink(selectedJobId, index, selectedRemediationId);
+    updateDeepLink(selectedJobId, index, selectedRemediationId, mode);
   }
 
   function closeEvidence() {
+    cancelPendingDiscovery();
     setSelectedEntryIndex(null);
-    updateDeepLink(selectedJobId, null, selectedRemediationId);
+    updateDeepLink(selectedJobId, null, selectedRemediationId, mode);
   }
 
   function selectRemediation(remediationId: string) {
+    cancelPendingDiscovery();
     setSelectedRemediationId(remediationId);
-    updateDeepLink(selectedJobId, selectedEntryIndex, remediationId);
+    updateDeepLink(selectedJobId, selectedEntryIndex, remediationId, mode);
+  }
+
+  function showSamples() {
+    cancelPendingDiscovery();
+    jobPageGeneration.current += 1;
+    setLoadingOlderJobs(false);
+    itemPageGeneration.current += 1;
+    setLoadingMoreItems(false);
+    setMode('SAMPLES');
+    setSelectedJobId(DEFAULT_REHEARSAL_DEMO_ID);
+    setSelectedEntryIndex(null);
+    setSelectedRemediationId('');
+    setFilter('ALL');
+    setError('');
+    updateDeepLink(DEFAULT_REHEARSAL_DEMO_ID, null, '', 'SAMPLES');
+  }
+
+  function showLiveData() {
+    itemPageGeneration.current += 1;
+    setLoadingMoreItems(false);
+    if (liveJobs.length > 0) {
+      cancelPendingDiscovery();
+      const nextJobId = liveJobs[0].jobId;
+      setMode('LIVE');
+      setSelectedJobId(nextJobId);
+      setSelectedEntryIndex(null);
+      setSelectedRemediationId('');
+      setFilter('ALL');
+      setError('');
+      updateDeepLink(nextJobId, null, '', 'LIVE');
+      return;
+    }
+    void discoverJobs(false);
   }
 
   const summary = workbook?.summary ?? selectedJob?.summary;
@@ -484,18 +675,55 @@ export default function RehearsalWorkbench() {
       <aside className="rehearsal-queue" aria-label="Rehearsal batch queue">
         <div className="workbench-pane-heading">
           <div>
-            <p className="workbench-kicker">Exact scope</p>
-            <h2>Rehearsal batches</h2>
+            <p className="workbench-kicker">{sampleMode ? 'Guided sample data' : 'Exact scope'}</p>
+            <h2>{sampleMode ? 'Scenario gallery' : 'Rehearsal batches'}</h2>
           </div>
-          <button
-            className="compact-command"
-            type="button"
-            onClick={() => void discoverJobs()}
-            disabled={loadingJobs}
-          >
-            Refresh
-          </button>
+          <div className="workbench-pane-actions">
+            <div className="workbench-mode-switch" role="group" aria-label="Rehearsal data source">
+              <button
+                type="button"
+                className={!sampleMode ? 'active' : ''}
+                onClick={showLiveData}
+                aria-pressed={!sampleMode}
+              >
+                Live
+              </button>
+              <button
+                type="button"
+                className={sampleMode ? 'active' : ''}
+                onClick={showSamples}
+                aria-pressed={sampleMode}
+              >
+                Samples
+              </button>
+            </div>
+            <button
+              className="compact-command"
+              type="button"
+              onClick={() => void discoverJobs(!sampleMode)}
+              disabled={loadingJobs}
+            >
+              {sampleMode ? 'Retry live' : 'Refresh'}
+            </button>
+          </div>
         </div>
+        {sampleMode && (
+          <div
+            className="sample-data-notice"
+            data-testid="sample-data-notice"
+            role="status"
+            aria-live="polite"
+          >
+            <strong>Sample data</strong>
+            <span>
+              {error
+                ? 'Live data is unavailable; the local preview remains active.'
+                : batchApiAvailable
+                ? 'Protocol-shaped preview; not server evidence.'
+                : 'Batch API unavailable; using a local protocol-shaped preview.'}
+            </span>
+          </div>
+        )}
         {jobs[0] && (
           <dl className="scope-coordinates" data-testid="scope-coordinates">
             <div><dt>Tenant</dt><dd>{jobs[0].scope.tenantId}</dd></div>
@@ -505,40 +733,49 @@ export default function RehearsalWorkbench() {
           </dl>
         )}
         <div className="batch-queue-list">
-          {jobs.map((job) => (
-            <button
-              className={`batch-queue-row ${job.jobId === selectedJobId ? 'selected' : ''}`}
-              type="button"
-              key={job.jobId}
-              onClick={() => selectJob(job.jobId)}
-              aria-pressed={job.jobId === selectedJobId}
-              data-testid={`batch-${job.jobId}`}
-            >
-              <span className="batch-queue-row-top">
-                <strong>{job.jobId}</strong>
-                <span className={`status-label ${statusTone(job.status)}`}>{job.status}</span>
-              </span>
-              <span>{job.summary.completedItems} / {job.summary.totalItems} complete</span>
-              <span>{formatDate(job.createdAt)}</span>
-            </button>
-          ))}
-          {!loadingJobs && jobs.length === 0 && batchApiAvailable && (
-            <p className="empty-workbench">No Scenario rehearsal batches are visible in this scope.</p>
+          {jobs.map((job) => {
+            const demo = sampleMode ? findRehearsalDemoScenario(job.jobId) : undefined;
+            return (
+              <button
+                className={`batch-queue-row ${job.jobId === selectedJobId ? 'selected' : ''}`}
+                type="button"
+                key={job.jobId}
+                onClick={() => selectJob(job.jobId)}
+                aria-pressed={job.jobId === selectedJobId}
+                data-testid={`batch-${job.jobId}`}
+              >
+                <span className="batch-queue-row-top">
+                  <strong>{demo?.title ?? job.jobId}</strong>
+                  <span className={`status-label ${statusTone(job.status)}`}>{job.status}</span>
+                </span>
+                {demo && <span className="sample-row-focus">{demo.focus}</span>}
+                <span>{job.summary.completedItems} / {job.summary.totalItems} complete</span>
+                {!demo && <span>{formatDate(job.createdAt)}</span>}
+              </button>
+            );
+          })}
+          {!sampleMode && !loadingJobs && jobs.length === 0 && batchApiAvailable && (
+            <div className="empty-workbench">
+              <p>No Scenario rehearsal batches are visible in this scope.</p>
+              <button className="compact-command" type="button" onClick={showSamples}>
+                Explore samples
+              </button>
+            </div>
           )}
-          {!loadingJobs && !batchApiAvailable && (
+          {!sampleMode && !loadingJobs && !batchApiAvailable && (
             <p className="empty-workbench" data-testid="rehearsal-api-unavailable">
               Scenario rehearsals are not enabled for this deployment.
             </p>
           )}
         </div>
-        {nextCursor && (
+        {!sampleMode && nextCursor && (
           <button
             className="pane-command"
             type="button"
             onClick={() => void loadOlderJobs()}
-            disabled={loadingJobs}
+            disabled={loadingJobs || loadingOlderJobs}
           >
-            Load older batches
+            {loadingOlderJobs ? 'Loading older batches...' : 'Load older batches'}
           </button>
         )}
       </aside>
@@ -548,19 +785,36 @@ export default function RehearsalWorkbench() {
         {selectedJob ? (
           <>
             <header className="batch-overview">
+              {sampleMode && (
+                <div className="sample-workbook-banner" data-testid="sample-workbook-banner">
+                  <strong>Illustrative sample</strong>
+                  <span>No server signature, governance approval, or release evidence is produced.</span>
+                </div>
+              )}
               <div className="batch-overview-title">
                 <div>
                   <p className="workbench-kicker">
-                    {terminal ? 'Root-sealed terminal evidence' : 'Integrity-protected live state'}
+                    {sampleMode
+                      ? selectedDemoScenario?.focus
+                      : terminal ? 'Root-sealed terminal evidence' : 'Integrity-protected live state'}
                   </p>
-                  <h2>{selectedJob.jobId}</h2>
+                  <h2>{selectedDemoScenario?.title ?? selectedJob.jobId}</h2>
+                  {selectedDemoScenario && (
+                    <p className="sample-situation">{selectedDemoScenario.situation}</p>
+                  )}
                 </div>
                 <div className="evidence-mode" data-testid="evidence-mode">
-                  <strong>{terminal ? 'Signed workbook' : 'Live projection'}</strong>
+                  <strong>
+                    {sampleMode
+                      ? terminal ? 'Sample workbook' : 'Sample live projection'
+                      : terminal ? 'Signed workbook' : 'Live projection'}
+                  </strong>
                   <span>
-                    {terminal
-                      ? 'Immutable and eligible for governance review'
-                      : 'Mutable and not publish-gate evidence'}
+                    {sampleMode
+                      ? selectedJob.jobId
+                      : terminal
+                        ? 'Immutable and eligible for governance review'
+                        : 'Mutable and not publish-gate evidence'}
                   </span>
                 </div>
               </div>
@@ -587,7 +841,7 @@ export default function RehearsalWorkbench() {
               )}
             </header>
 
-            {terminal && workbook && !workbook.gateReady && (
+            {terminal && workbook && !workbook.gateReady && !sampleMode && (
               <RehearsalRemediationPanel
                 key={workbook.jobId}
                 workbook={workbook}
@@ -657,11 +911,14 @@ export default function RehearsalWorkbench() {
                           </span>
                           <span className="entry-diagnosis">{diagnosis?.reason}</span>
                           <span className="entry-evidence-state">
-                            {entry.workbookFingerprint
-                              ? 'Signed child workbook'
-                              : entry.evidenceFingerprint
-                                ? 'Evidence bundle'
-                                : 'Not sealed'}
+                            <span>
+                              {entry.workbookFingerprint
+                                ? sampleMode ? 'Sample child workbook' : 'Signed child workbook'
+                                : entry.evidenceFingerprint
+                                  ? 'Evidence bundle'
+                                  : 'Not sealed'}
+                            </span>
+                            <strong>View</strong>
                           </span>
                         </button>
                       );
@@ -670,14 +927,14 @@ export default function RehearsalWorkbench() {
                 </section>
               ))}
             </div>
-            {!terminal && nextItemIndex !== null && (
+            {!sampleMode && !terminal && nextItemIndex !== null && (
               <button
                 className="pane-command load-more-items"
                 type="button"
                 onClick={() => void loadMoreItems()}
-                disabled={loadingJob}
+                disabled={loadingJob || loadingMoreItems}
               >
-                Load more items
+                {loadingMoreItems ? 'Loading more items...' : 'Load more items'}
               </button>
             )}
           </>
@@ -702,8 +959,11 @@ export default function RehearsalWorkbench() {
           <>
             <header className="evidence-drawer-heading">
               <div>
-                <p className="workbench-kicker">Batch item #{selectedEntry.index}</p>
-                <h2>Evidence</h2>
+                <p className="workbench-kicker">
+                  {sampleMode ? 'Illustrative sample' : `Batch item #${selectedEntry.index}`}
+                </p>
+                <h2>{sampleMode ? 'Sample evidence' : 'Evidence'}</h2>
+                {sampleMode && <span className="sample-drawer-label">Not server evidence</span>}
               </div>
               <button className="drawer-close" type="button" onClick={closeEvidence} aria-label="Close evidence">
                 Close
@@ -715,8 +975,14 @@ export default function RehearsalWorkbench() {
                 <div><dt>Compiled plan</dt><dd>{selectedEntry.planId}@{selectedEntry.planRevision}</dd></div>
                 <div><dt>Run</dt><dd>{selectedEntry.runId || 'Not assigned'}</dd></div>
                 <div><dt>Outcome</dt><dd>{selectedEntry.status}</dd></div>
-                <div><dt>Started</dt><dd>{formatDate(selectedEntry.startedAt)}</dd></div>
-                <div><dt>Completed</dt><dd>{formatDate(selectedEntry.completedAt)}</dd></div>
+                <div>
+                  <dt>Started</dt>
+                  <dd>{formatEntryDate(selectedEntry.startedAt, terminal, 'Not started')}</dd>
+                </div>
+                <div>
+                  <dt>Completed</dt>
+                  <dd>{formatEntryDate(selectedEntry.completedAt, terminal, 'Not complete')}</dd>
+                </div>
               </dl>
             </section>
             <section className="evidence-section">
