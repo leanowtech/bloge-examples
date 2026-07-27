@@ -3899,6 +3899,21 @@ JSON** remain available as lossless expert paths. ERROR, DELAY, TIMEOUT, REPLAY,
 MUST_NOT_CALL are retained but intentionally fail closed until compiled through the governed
 testing control plane.
 
+In `test` and `staging`, authenticated hosts can persist Scenario authoring assets without granting
+publication or execution authority:
+
+```text
+POST /api/visual/scenario-draft-sets/validate
+PUT  /api/visual/scenario-draft-sets/{id}?expectedRevision=0
+GET  /api/visual/scenario-draft-sets/{id}
+GET  /api/visual/scenario-draft-sets/{id}/revisions
+```
+
+Use `X-Purpose: TEST_SUITE_WRITE` for validate/save and `X-Purpose: TEST_SUITE_READ` for reads.
+The body enterprise scope must match the verified credential. Every save rechecks the current graph
+and Contract, rejects raw secrets, retains immutable history, and fails with a revision conflict
+instead of overwriting concurrent edits.
+
 The implementation contract and current residual gap are documented in
 [Contract & Scenario Authoring Protocol](../docs/resource-gateway-contract-scenario-authoring-protocol.md)
 and [Implementation Status](../docs/resource-gateway-contract-scenario-authoring-implementation-status.md).

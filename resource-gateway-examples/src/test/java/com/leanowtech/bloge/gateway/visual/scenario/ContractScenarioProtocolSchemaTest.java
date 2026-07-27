@@ -10,6 +10,7 @@ import org.junit.jupiter.api.Test;
 
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.time.Instant;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
@@ -32,6 +33,15 @@ class ContractScenarioProtocolSchemaTest {
         JsonNode contractSchema = schema("bloge-contract-draft-v1.schema.json");
         JsonNode draftSetSchema = schema("bloge-scenario-draft-set-v1.schema.json");
         JsonNode reportSchema = schema("bloge-scenario-validation-report-v1.schema.json");
+        JsonNode storedSchema = schema("bloge-stored-scenario-draft-set-v1.schema.json");
+        StoredScenarioDraftSet stored = new StoredScenarioDraftSet(
+                "",
+                draftSet.scenarioDraftSetId(),
+                draftSet.revision(),
+                ScenarioValidationServiceTest.fingerprint('b'),
+                draftSet,
+                Instant.parse("2026-07-27T00:00:00Z"),
+                "author-a");
 
         assertProperties(mapper.valueToTree(contract), contractSchema.path("properties"));
         assertProperties(mapper.valueToTree(contract.target()), contractSchema.at("/$defs/target/properties"));
@@ -41,10 +51,14 @@ class ContractScenarioProtocolSchemaTest {
         assertProperties(mapper.valueToTree(draftSet.scenarios().getFirst().dependencies().getFirst()),
                 draftSetSchema.at("/$defs/dependency/properties"));
         assertProperties(mapper.valueToTree(report), reportSchema.path("properties"));
+        assertProperties(mapper.valueToTree(stored), storedSchema.path("properties"));
 
         assertThat(contractSchema.path("additionalProperties").asBoolean(true)).isFalse();
         assertThat(draftSetSchema.path("additionalProperties").asBoolean(true)).isFalse();
         assertThat(reportSchema.path("additionalProperties").asBoolean(true)).isFalse();
+        assertThat(storedSchema.path("additionalProperties").asBoolean(true)).isFalse();
+        assertThat(storedSchema.at("/properties/draftSet/$ref").asText())
+                .isEqualTo("bloge-scenario-draft-set-v1.schema.json");
         assertThat(reportSchema.at("/$defs/diagnostic/required"))
                 .extracting(JsonNode::asText)
                 .doesNotContain("metadata");

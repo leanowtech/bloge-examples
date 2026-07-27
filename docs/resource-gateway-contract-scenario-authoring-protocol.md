@@ -42,6 +42,7 @@ Author-facing names and wire names intentionally differ:
 - [Contract Draft](schemas/bloge-contract-draft-v1.schema.json)
 - [Scenario Draft Set](schemas/bloge-scenario-draft-set-v1.schema.json)
 - [Scenario Validation Report](schemas/bloge-scenario-validation-report-v1.schema.json)
+- [Stored Scenario Draft Set](schemas/bloge-stored-scenario-draft-set-v1.schema.json)
 
 All three schemas use JSON Schema 2020-12, reject unknown top-level fields, and bind target and
 contract identity with exact SHA-256 fingerprints.
@@ -57,9 +58,35 @@ contract identity with exact SHA-256 fingerprints.
 | Validation report | `visual.scenario.ScenarioValidationReport` |
 | Transient compilation | `visual.scenario.ScenarioSimulationCompiler` |
 | Compiled transient plan | `visual.scenario.ScenarioSimulationPlan` |
+| Mutable Scenario repository | `visual.scenario.ScenarioDraftSetRepository` |
+| H2 persistence adapter | `visual.scenario.DatabaseScenarioDraftSetRepository` |
+| Authenticated authoring service | `visual.scenario.ScenarioDraftSetAuthoringService` |
+| Authoring HTTP surface | `visual.scenario.ScenarioDraftSetController` |
 
 The Java records deeply freeze payload-bearing maps and lists. Cyclic values fail closed before
 serialization or fingerprinting.
+
+## Durable Authoring API
+
+The Stage 2 persistence slice is available only in `test` and `staging` profiles:
+
+| Method | Path | Purpose | Meaning |
+|---|---|---|---|
+| `POST` | `/api/visual/scenario-draft-sets/validate` | `TEST_SUITE_WRITE` | Validate a local draft against the current exact graph and Contract |
+| `PUT` | `/api/visual/scenario-draft-sets/{id}?expectedRevision=N` | `TEST_SUITE_WRITE` | Create at revision `0` or update the exact revision observed by the caller |
+| `GET` | `/api/visual/scenario-draft-sets/{id}` | `TEST_SUITE_READ` | Read the current revision in the authenticated enterprise scope |
+| `GET` | `/api/visual/scenario-draft-sets/{id}/revisions` | `TEST_SUITE_READ` | Read immutable retained history newest first |
+
+The body scope must exactly match the authenticated tenant, organization, project, environment, and
+region. The service independently resolves the stored GraphDraft, recomputes its fingerprint,
+projects the current Contract, verifies the Contract fingerprint, validates Scenario values, scans
+for raw credentials, and then applies optimistic concurrency. A conflict returns
+`RG.SCENARIO.REVISION_CONFLICT` with the current revision; it never silently overwrites another
+author's work.
+
+The stored envelope carries a canonical fingerprint and is re-verified when read from persistence.
+Scenario authoring storage is mutable by revision, while every retained revision remains immutable.
+Saving is not publishing: it grants no fixture, suite, execution, or certification status.
 
 ## Frontend Boundaries
 

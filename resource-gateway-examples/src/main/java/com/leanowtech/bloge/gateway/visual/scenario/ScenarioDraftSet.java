@@ -53,6 +53,30 @@ public record ScenarioDraftSet(
         metadata = metadata == null ? Metadata.empty() : metadata;
     }
 
+    /**
+     * Returns the server-owned persistence projection for one optimistic-concurrency revision.
+     *
+     * <p>Callers cannot use this helper to change enterprise scope or payload content. The
+     * repository supplies the stable id, revision, creation time, update time, and accountable
+     * owner after it has checked the current stored revision.</p>
+     *
+     * @param id stable Scenario draft-set id
+     * @param storedRevision assigned mutable-asset revision
+     * @param createdAt original creation time
+     * @param updatedAt current persistence time
+     * @param owner accountable owner retained or derived by the service
+     * @return copied draft set with server-owned persistence identity
+     */
+    public ScenarioDraftSet withStorageIdentity(String id,
+                                                long storedRevision,
+                                                Instant createdAt,
+                                                Instant updatedAt,
+                                                String owner) {
+        return new ScenarioDraftSet(schemaVersion, id, storedRevision, scope, target,
+                contractFingerprint, scenarios, new Metadata(owner, metadata.classification(),
+                createdAt, updatedAt, metadata.provenance()));
+    }
+
     /** Supported governed test case intents. */
     public enum CaseType {
         GOLDEN,

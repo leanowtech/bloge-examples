@@ -78,6 +78,11 @@ import com.leanowtech.bloge.gateway.visual.runtime.VisualEvidenceSigner;
 import com.leanowtech.bloge.gateway.visual.runtime.VisualGraphRunService;
 import com.leanowtech.bloge.gateway.visual.runtime.VisualRuntimeAdapterActivationRepository;
 import com.leanowtech.bloge.gateway.visual.runtime.VisualRuntimeRolloutObservationRepository;
+import com.leanowtech.bloge.gateway.visual.scenario.DatabaseScenarioDraftSetRepository;
+import com.leanowtech.bloge.gateway.visual.scenario.ScenarioDraftSetAuthoringService;
+import com.leanowtech.bloge.gateway.visual.scenario.ScenarioDraftSetRepository;
+import com.leanowtech.bloge.gateway.visual.scenario.ScenarioValidationService;
+import com.leanowtech.bloge.gateway.visual.contract.ContractDraftProjectionService;
 import com.leanowtech.bloge.gateway.example.DatabaseDynamicRunControlRepository;
 import com.leanowtech.bloge.gateway.example.DynamicRunControlRepository;
 import com.leanowtech.bloge.gateway.visual.testing.DatabaseVisualOperatorContractTestSuiteRepository;
@@ -442,6 +447,43 @@ public class GatewayConfiguration {
                                                      ObjectMapper objectMapper,
                                                      IntegrationChangeEventOutbox outbox) {
         return new DatabaseGraphDraftRepository(jdbc, objectMapper, outbox);
+    }
+
+    /**
+     * Database-backed mutable Scenario authoring repository with retained revision history.
+     *
+     * @param jdbc JDBC template for scope-isolated storage
+     * @param objectMapper protocol serializer and fingerprint input
+     * @return Scenario draft-set repository
+     */
+    @Bean
+    @ConditionalOnMissingBean
+    public ScenarioDraftSetRepository scenarioDraftSetRepository(
+            JdbcTemplate jdbc,
+            ObjectMapper objectMapper) {
+        return new DatabaseScenarioDraftSetRepository(jdbc, objectMapper);
+    }
+
+    /**
+     * Authenticated Scenario authoring application boundary.
+     *
+     * @param repository mutable Scenario asset store
+     * @param graphDrafts current visual graph drafts
+     * @param contracts current Contract projector
+     * @param validation exact-input Scenario validator
+     * @param objectMapper canonical protocol serializer
+     * @return Scenario authoring service
+     */
+    @Bean
+    @ConditionalOnMissingBean
+    public ScenarioDraftSetAuthoringService scenarioDraftSetAuthoringService(
+            ScenarioDraftSetRepository repository,
+            GraphDraftRepository graphDrafts,
+            ContractDraftProjectionService contracts,
+            ScenarioValidationService validation,
+            ObjectMapper objectMapper) {
+        return new ScenarioDraftSetAuthoringService(
+                repository, graphDrafts, contracts, validation, objectMapper);
     }
 
     /**

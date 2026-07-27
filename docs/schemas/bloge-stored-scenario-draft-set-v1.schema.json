@@ -1,0 +1,47 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://leanowtech.com/schemas/bloge-stored-scenario-draft-set-v1.schema.json",
+  "title": "BLOGE Stored Scenario Draft Set v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "scenarioDraftSetId",
+    "revision",
+    "fingerprint",
+    "draftSet",
+    "savedAt",
+    "savedBy"
+  ],
+  "properties": {
+    "schemaVersion": {
+      "const": "bloge.storedScenarioDraftSet.v1"
+    },
+    "scenarioDraftSetId": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 255,
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]*$"
+    },
+    "revision": {
+      "type": "integer",
+      "minimum": 1
+    },
+    "fingerprint": {
+      "type": "string",
+      "pattern": "^sha256:[0-9a-f]{64}$"
+    },
+    "draftSet": {
+      "$ref": "bloge-scenario-draft-set-v1.schema.json"
+    },
+    "savedAt": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "savedBy": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 256
+    }
+  }
+}

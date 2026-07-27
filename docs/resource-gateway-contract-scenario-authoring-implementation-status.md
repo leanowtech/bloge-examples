@@ -140,6 +140,54 @@ Stage 2 must close the industrial Scenario and governed-publication loop:
 Stage 2 receives no publication credit until compiled assets are independently re-read, fingerprints
 are re-verified, and a governed execution proves the same Scenario semantics end to end.
 
+## Round 3
+
+Implemented evidence:
+
+- `ScenarioDraftSetRepository` defines scope-isolated current reads, retained history, and
+  optimistic-concurrency writes;
+- the H2 adapter uses the complete tenant/organization/project/environment/region/id coordinate as
+  its key and stores every accepted revision as an immutable snapshot;
+- every stored envelope carries a canonical Scenario fingerprint that is recomputed during reads;
+- `ScenarioDraftSetAuthoringService` derives scope from verified identity, permits only test/staging,
+  enforces classification clearance, and never accepts body scope as authority;
+- every write resolves the current GraphDraft, recomputes the exact target fingerprint, projects the
+  current Contract, validates inputs and behavior, and rejects stale coordinates;
+- raw-secret scanning precedes structural validation and returns paths/codes without payload values;
+- the API separates read and write purposes and is absent from the production profile;
+- save, validate, current-read, and revision-history endpoints now have a strict stored-envelope
+  JSON Schema;
+- persistence tests cover restart, fingerprint verification, scope isolation, stale writes, stale
+  target/Contract, clearance boundary, production denial, and secret non-disclosure.
+
+Weighted assessment:
+
+| Workstream | Achieved | Change from Round 2 |
+|---|---:|---:|
+| Product information architecture | 14/18 | 0 |
+| Schema workbench | 9/15 | 0 |
+| Scenario builder | 11/17 | 0 |
+| Compiler and adapters | 8/15 | 0 |
+| Persistence and protocol | 7/10 | +6 |
+| Compatibility and lineage | 2/10 | 0 |
+| Security and governance | 4/8 | +2 |
+| Samples, documentation, observability | 4/7 | +1 |
+| Total achieved | **59/100** | **+9** |
+
+**Residual gap: 41%.**
+
+The next slice must connect this durable asset to the full FixtureRule/TestSuite compiler and the
+existing independently governed registries. Persistence alone is intentionally not described as
+publication or evidence.
+
+Round 3 focused verification:
+
+- `ScenarioDraftSetPersistenceTest`: 8 passed;
+- `ScenarioValidationServiceTest`: 4 passed;
+- `ContractScenarioProtocolSchemaTest`: 1 passed;
+- `ResourceGatewayApplicationTest`: 8 passed, including Spring bean and application startup wiring;
+- total focused Java tests: 21 passed, 0 failures.
+
 ## Round 2 Verification
 
 - frontend `npm test`: 204 tests passed across 10 files;
