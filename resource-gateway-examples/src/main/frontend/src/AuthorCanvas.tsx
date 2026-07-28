@@ -148,6 +148,7 @@ import {
   visualLayoutWithContractSemantics,
 } from './contract-scenario/domain';
 import { canonicalJson, sha256Fingerprint } from './contract-scenario/fingerprint';
+import type { ScenarioEvidenceTrustContext } from './contract-scenario/evidenceModel';
 import {
   rebaseScenarioDraftSet,
   scenarioDraftSetFromCanvas,
@@ -7306,6 +7307,43 @@ export default function AuthorCanvas({ workspaceVersion = 'v1' }: AuthorCanvasPr
       validationResult,
     ],
   );
+  const scenarioEvidenceTrustContext = useMemo<ScenarioEvidenceTrustContext>(
+    () => ({
+      contractStatus,
+      governanceStatus,
+      diagnostics: diagnosticItems
+        .filter((item) => item.scope === 'CONTRACT' || item.scope === 'GOVERNANCE')
+        .map((item) => ({
+          id: item.id,
+          severity: item.severity,
+          scope: item.scope,
+          code: item.code,
+          message: item.message,
+          coordinate: item.coordinate,
+          nodeId: item.nodeId,
+        })),
+    }),
+    [contractStatus, diagnosticItems, governanceStatus],
+  );
+
+  const openAuthorDiagnostic = useCallback((item: { scope: string; nodeId?: string }) => {
+    setAuthorMode('review');
+    if (item.nodeId && nodes.some((node) => node.id === item.nodeId)) {
+      setSelectedNodeId(item.nodeId);
+      setContractWorkspaceOpen(false);
+      setOperatorContractWorkspace(null);
+    } else if (item.scope === 'SCENARIO') {
+      setAuthorMode('test');
+      setTestSuiteOpen(true);
+    } else if (item.scope === 'CONTRACT') {
+      setOperatorContractWorkspace(null);
+      setContractWorkspaceOpen(true);
+    } else {
+      setDiagnosticsOpen(true);
+      setContractWorkspaceOpen(false);
+      setOperatorContractWorkspace(null);
+    }
+  }, [nodes]);
 
   const changeAuthorMode = useCallback((nextMode: AuthorMode) => {
     setAuthorMode(nextMode);
@@ -8943,18 +8981,7 @@ export default function AuthorCanvas({ workspaceVersion = 'v1' }: AuthorCanvasPr
           open={diagnosticsOpen}
           items={diagnosticItems}
           onToggle={() => setDiagnosticsOpen((current) => !current)}
-          onSelect={(item: AuthorDiagnosticItem) => {
-            setAuthorMode('review');
-            if (item.nodeId && nodes.some((node) => node.id === item.nodeId)) {
-              setSelectedNodeId(item.nodeId);
-            } else if (item.scope === 'SCENARIO') {
-              setAuthorMode('test');
-              setTestSuiteOpen(true);
-            } else if (item.scope === 'CONTRACT') {
-              setOperatorContractWorkspace(null);
-              setContractWorkspaceOpen(true);
-            }
-          }}
+          onSelect={(item: AuthorDiagnosticItem) => openAuthorDiagnostic(item)}
         />
       )}
       {operatorContractWorkspace && (
@@ -9026,6 +9053,8 @@ export default function AuthorCanvas({ workspaceVersion = 'v1' }: AuthorCanvasPr
             onSaveGraphDraft={saveGraphForScenario}
             onRebase={rebaseScenariosToCurrentContract}
             onRun={runScenarioSimulation}
+            trustContext={scenarioEvidenceTrustContext}
+            onSelectEvidenceDiagnostic={openAuthorDiagnostic}
             onClose={() => {
               setContractWorkspaceOpen(false);
               if (isTaskWorkspace) {

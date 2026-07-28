@@ -25,6 +25,12 @@ import {
 } from './compatibility';
 import ContractSemanticsEditor from './ContractSemanticsEditor';
 import DependencyBehaviorEditor from './DependencyBehaviorEditor';
+import {
+  scenarioEvidenceView,
+  type EvidenceIssue,
+  type ScenarioEvidenceDiagnostic,
+  type ScenarioEvidenceTrustContext,
+} from './evidenceModel';
 import { compileScenarioForSimulation } from './scenarioCompiler';
 import SchemaFieldTree from './SchemaFieldTree';
 import SchemaValueForm from './SchemaValueForm';
@@ -60,6 +66,8 @@ interface ContractScenarioWorkspaceProps {
   targetStored?: boolean;
   contractEditable?: boolean;
   workspaceTransferEnabled?: boolean;
+  trustContext?: ScenarioEvidenceTrustContext;
+  onSelectEvidenceDiagnostic?: (diagnostic: ScenarioEvidenceDiagnostic) => void;
 }
 
 /** Dedicated Contract → Scenario → Run Evidence authoring workspace. */
@@ -81,6 +89,8 @@ export default function ContractScenarioWorkspace({
   targetStored,
   contractEditable = true,
   workspaceTransferEnabled = true,
+  trustContext,
+  onSelectEvidenceDiagnostic,
 }: ContractScenarioWorkspaceProps) {
   const [activeTab, setActiveTab] = useState<WorkspaceTab>('interface');
   const [selectedScenarioId, setSelectedScenarioId] = useState('');
@@ -102,6 +112,7 @@ export default function ContractScenarioWorkspace({
   const [compatibilityError, setCompatibilityError] = useState('');
   const [compatibilityReviewed, setCompatibilityReviewed] = useState(false);
   const workspaceInputRef = useRef<HTMLInputElement>(null);
+  const workspaceBodyRef = useRef<HTMLDivElement>(null);
   const autoLoadAttemptRef = useRef('');
   const scenarioChangeRef = useRef(onScenarioDraftSetChange);
   scenarioChangeRef.current = onScenarioDraftSetChange;
@@ -145,6 +156,12 @@ export default function ContractScenarioWorkspace({
       setSelectedScenarioId(selectedScenario.scenarioId);
     }
   }, [selectedScenario?.scenarioId, selectedScenarioId]);
+
+  useEffect(() => {
+    if (open && workspaceBodyRef.current) {
+      workspaceBodyRef.current.scrollTop = 0;
+    }
+  }, [activeTab, open]);
 
   useEffect(() => {
     setAdvancedText(selectedScenario ? JSON.stringify(selectedScenario, null, 2) : '');
@@ -671,7 +688,7 @@ export default function ContractScenarioWorkspace({
           ))}
         </nav>
 
-        <div className="contract-workspace-body">
+        <div className="contract-workspace-body" ref={workspaceBodyRef}>
           {activeTab === 'interface' && (
             <InterfaceTab
               contract={contract}
@@ -721,7 +738,9 @@ export default function ContractScenarioWorkspace({
               response={visibleRun}
               comparison={comparison}
               compileMessages={compileMessages}
+              trustContext={trustContext}
               onBackToScenario={() => setActiveTab('scenarios')}
+              onSelectDiagnostic={onSelectEvidenceDiagnostic}
             />
           )}
         </div>
@@ -1239,12 +1258,16 @@ function EvidenceTab({
   response,
   comparison,
   compileMessages,
+  trustContext,
   onBackToScenario,
+  onSelectDiagnostic,
 }: {
   response: SimulationResponse | null;
   comparison: ScenarioComparison | null;
   compileMessages: string[];
+  trustContext?: ScenarioEvidenceTrustContext;
   onBackToScenario: () => void;
+  onSelectDiagnostic?: (diagnostic: ScenarioEvidenceDiagnostic) => void;
 }) {
   if (!response) {
     return (
@@ -1256,30 +1279,86 @@ function EvidenceTab({
       </div>
     );
   }
+  const evidence = scenarioEvidenceView(response, comparison, trustContext);
   return (
-    <div className="scenario-evidence">
-      <header>
-        <span className={`contract-current-badge ${comparison?.passed ? 'current' : 'stale'}`}>
-          {comparison ? (comparison.passed ? 'All assertions passed' : 'Comparison failed') : 'Latest canvas run'}
+    <div className="scenario-evidence" data-testid="scenario-evidence">
+      <header className={`scenario-evidence-heading ${evidence.tone}`}>
+        <span className={`contract-current-badge ${evidence.tone === 'success' ? 'current' : 'stale'}`}>
+          {evidence.headline}
         </span>
         <h3>{response.graphName}</h3>
-        <p>{response.mockedNodeIds.length} mocked · {response.realNodeIds.length} real</p>
+        <p>{evidence.summary}</p>
       </header>
-      {comparison && comparison.results.length > 0 && (
-        <div className="scenario-comparison-table">
-          <div className="scenario-comparison-row heading">
-            <span>Path</span><span>Result</span><span>Expected</span><span>Actual</span>
-          </div>
-          {comparison.results.map((entry) => (
-            <div className="scenario-comparison-row" key={entry.assertionId}>
-              <code>{entry.path || '$'}</code>
-              <strong className={entry.passed ? 'passed' : 'failed'}>{entry.passed ? 'Pass' : 'Fail'}</strong>
-              <pre>{JSON.stringify(entry.expected, null, 2)}</pre>
-              <pre>{JSON.stringify(entry.actual, null, 2)}</pre>
+
+      <div className="scenario-trust-dimensions" aria-label="Evidence trust dimensions">
+        {evidence.dimensions.map((dimension) => (
+          <section
+            key={dimension.key}
+            data-state={dimension.state}
+            data-testid={`scenario-trust:${dimension.key}`}
+          >
+            <span>{dimension.label}</span>
+            <strong>{dimension.status}</strong>
+            <small>{dimension.detail}</small>
+          </section>
+        ))}
+      </div>
+
+      {evidence.blockers.length > 0 && (
+        <EvidenceIssueList
+          title={`Blocking findings (${evidence.blockers.length})`}
+          issues={evidence.blockers}
+          tone="danger"
+          onSelectDiagnostic={onSelectDiagnostic}
+        />
+      )}
+      {evidence.warnings.length > 0 && (
+        <EvidenceIssueList
+          title={`Warnings (${evidence.warnings.length})`}
+          issues={evidence.warnings}
+          tone="warning"
+          onSelectDiagnostic={onSelectDiagnostic}
+        />
+      )}
+
+      {evidence.failedAssertions.length > 0 && (
+        <section className="scenario-assertion-evidence failed" data-testid="failed-assertions">
+          <header>
+            <div>
+              <span>Failed assertions</span>
+              <strong>{evidence.failedAssertions.length} need repair</strong>
             </div>
+            <button type="button" className="secondary compact" onClick={onBackToScenario}>
+              Edit assertions
+            </button>
+          </header>
+          {evidence.failedAssertions.map((entry) => (
+            <AssertionEvidence key={entry.assertionId} entry={entry} />
           ))}
+        </section>
+      )}
+
+      {evidence.passedAssertions.length > 0 && (
+        <details className="scenario-passed-evidence" data-testid="passed-assertions">
+          <summary>Passed assertions ({evidence.passedAssertions.length})</summary>
+          <div>
+            {evidence.passedAssertions.map((entry) => (
+              <AssertionEvidence key={entry.assertionId} entry={entry} />
+            ))}
+          </div>
+        </details>
+      )}
+
+      {comparison && comparison.results.length === 0 && (
+        <div className="scenario-no-assertions">
+          <strong>No business assertions configured</strong>
+          <span>A successful process run is not sufficient promotion evidence.</span>
+          <button type="button" className="secondary compact" onClick={onBackToScenario}>
+            Add assertion
+          </button>
         </div>
       )}
+
       <div className="scenario-evidence-grid">
         <section>
           <strong>Terminal output</strong>
@@ -1295,6 +1374,69 @@ function EvidenceTab({
         </section>
       </div>
     </div>
+  );
+}
+
+function EvidenceIssueList({
+  title,
+  issues,
+  tone,
+  onSelectDiagnostic,
+}: {
+  title: string;
+  issues: EvidenceIssue[];
+  tone: 'danger' | 'warning';
+  onSelectDiagnostic?: (diagnostic: ScenarioEvidenceDiagnostic) => void;
+}) {
+  return (
+    <section className={`scenario-evidence-issues ${tone}`}>
+      <strong>{title}</strong>
+      <ul>
+        {issues.map((issue) => (
+          <li key={issue.id}>
+            <span>
+              <b>{issue.code}</b>
+              <small>{issue.scope}{issue.coordinate ? ` · ${issue.coordinate}` : ''}</small>
+              <span>{issue.message}</span>
+            </span>
+            {issue.diagnostic && onSelectDiagnostic && (
+              <button
+                type="button"
+                className="secondary compact"
+                onClick={() => onSelectDiagnostic(issue.diagnostic as ScenarioEvidenceDiagnostic)}
+              >
+                Open source
+              </button>
+            )}
+          </li>
+        ))}
+      </ul>
+    </section>
+  );
+}
+
+function AssertionEvidence({
+  entry,
+}: {
+  entry: ScenarioComparison['results'][number];
+}) {
+  return (
+    <article className={`scenario-assertion-result ${entry.passed ? 'passed' : 'failed'}`}>
+      <header>
+        <code>{entry.path || '$'}</code>
+        <strong>{entry.passed ? 'Pass' : 'Fail'}</strong>
+      </header>
+      <div>
+        <label>
+          <span>Expected</span>
+          <pre>{JSON.stringify(entry.expected, null, 2)}</pre>
+        </label>
+        <label>
+          <span>Actual</span>
+          <pre>{JSON.stringify(entry.actual, null, 2)}</pre>
+        </label>
+      </div>
+    </article>
   );
 }
 

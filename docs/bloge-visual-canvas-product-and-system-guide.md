@@ -2077,6 +2077,33 @@ POST /api/visual/connections/check
 6. **Schema 摘要优先**：每个端口先显示 schema 类型、字段数和字段表；Raw schema 仍可展开查看，避免用户一上来就读大段 JSON。
 7. **专属交互区**：decision table 和 transform 会在同一浮层内展开可编辑区域；foreach 会展开循环向导；generic/design operator 保留高级 config JSON 入口。
 
+#### 用 Scenario 固化业务正确性并阅读 Run Evidence
+
+在 v2 工作区加载内置复杂示例后，点击顶部 **Contract**，再进入 **Scenarios**。示例自带
+两个可运行场景；每个场景都由三段组成：
+
+1. **Given** 按 Graph/Operator input Contract 生成业务输入控件。
+2. **Dependencies** 的 Target type、具体 Canvas node / Operator / Resource / Built-in
+   function，以及 `Real / Return / Error / Delay / Timeout / Replay / Observe / Deny` 都在
+   卡片首屏。只有 graph path、correlation、attempt/occurrence、input matching 和
+   consumption 才放在 **Selector, matching & consumption**。
+3. **Then** 的 Result field / Node output field 来自对应 output schema。用户选择字段后，
+   系统按字段类型生成 expected value；只有 schema 外路径才需要 **Custom path**。
+
+点击 **Run & Compare** 后会自动进入 **Run Evidence**。阅读顺序固定为：
+
+1. 先看全局结论：`Promotion blocked`、`Review required`、`Evidence incomplete` 或
+   `Ready for promotion`；
+2. 再看 Execution、Assertions、Contract、Governance 四维状态；
+3. blocking finding 与 warning 位于通过证据之前；
+4. 失败断言默认展开 Expected/Actual，并可回到 **Edit assertions**；
+5. 通过断言默认折叠，Terminal output 与 Node status 作为底层明细。
+
+只有四个维度都通过且没有 blocking/warning 时，页面才显示 `Ready for promotion`。
+Assertion 通过但 Contract 或 Governance 尚未检查时只能显示 `Evidence incomplete`；服务端
+返回 warning 时显示 `Review required`。这一规则同时用于 Graph 和 Operator workspace，
+避免“试跑成功”被误解为“可以发布”。
+
 #### 直接为单个 Operator 编写 Contract Scenario
 
 Operator Detail 标题栏现在提供 **Contract & Scenarios**。它不是旧表格测试的别名，而是把

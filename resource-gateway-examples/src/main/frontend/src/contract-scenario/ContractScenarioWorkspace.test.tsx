@@ -6,6 +6,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { contractDraftFromGraphDraft } from './domain';
 import ContractScenarioWorkspace from './ContractScenarioWorkspace';
+import type { ScenarioEvidenceTrustContext } from './evidenceModel';
 import { scenarioDraftSetFromCanvas } from './scenarioAuthoring';
 import {
   graphDraft,
@@ -46,6 +47,16 @@ describe('ContractScenarioWorkspace', () => {
     expect(button('Load Scenario').disabled).toBe(false);
     expect(button('Save Scenario').disabled).toBe(false);
     expect(button('Publish').disabled).toBe(true);
+  });
+
+  it('starts each workspace view at its conclusion instead of retaining the previous scroll', async () => {
+    await renderWorkspace();
+    const body = document.querySelector('.contract-workspace-body') as HTMLDivElement;
+    body.scrollTop = 240;
+
+    await clickTab('Scenarios 1');
+
+    expect(body.scrollTop).toBe(0);
   });
 
   it('blocks Scenario lifecycle actions until the Graph has an exact stored revision', async () => {
@@ -103,9 +114,88 @@ describe('ContractScenarioWorkspace', () => {
       context: expect.objectContaining({ applicantId: '' }),
       outputNode: 'decide',
     }));
-    expect(text()).toContain('All assertions passed');
+    expect(text()).toContain('Evidence incomplete');
+    expect(text()).not.toContain('Ready for promotion');
     expect(text()).toContain('Terminal output');
     expect(text()).toContain('eligible');
+    expect((document.querySelector('[data-testid="passed-assertions"]') as HTMLDetailsElement).open)
+      .toBe(false);
+  });
+
+  it('claims readiness only when execution, assertions, Contract, and Governance pass', async () => {
+    await renderWorkspace({
+      onRun: vi.fn().mockResolvedValue(successfulResponse()),
+      trustContext: {
+        contractStatus: 'VALID',
+        governanceStatus: 'APPROVED',
+      },
+    });
+    await clickTab('Scenarios 1');
+
+    await act(async () => {
+      button('Run & Compare').click();
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+    expect(text()).toContain('Ready for promotion');
+    expect(text()).toContain('ExecutionPASSED');
+    expect(text()).toContain('AssertionsPASSED');
+    expect(text()).toContain('ContractVALID');
+    expect(text()).toContain('GovernanceAPPROVED');
+  });
+
+  it('requires review when assertions pass but the Contract has a warning', async () => {
+    await renderWorkspace({
+      onRun: vi.fn().mockResolvedValue(successfulResponse()),
+      trustContext: {
+        contractStatus: 'WARNING',
+        governanceStatus: 'APPROVED',
+      },
+    });
+    await clickTab('Scenarios 1');
+
+    await act(async () => {
+      button('Run & Compare').click();
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+    expect(text()).toContain('Review required');
+    expect(text()).toContain('CONTRACT_WARNING');
+    expect(text()).not.toContain('Ready for promotion');
+  });
+
+  it('routes governed evidence findings back to their shared authoring source', async () => {
+    const onSelectEvidenceDiagnostic = vi.fn();
+    const diagnostic = {
+      id: 'gate-owner',
+      severity: 'WARNING',
+      scope: 'GOVERNANCE',
+      code: 'OWNER_APPROVAL_MISSING',
+      message: 'Owner approval is required.',
+      coordinate: '/owner',
+      nodeId: '',
+    };
+    await renderWorkspace({
+      onRun: vi.fn().mockResolvedValue(successfulResponse()),
+      trustContext: {
+        contractStatus: 'VALID',
+        governanceStatus: 'APPROVED',
+        diagnostics: [diagnostic],
+      },
+      onSelectEvidenceDiagnostic,
+    });
+    await clickTab('Scenarios 1');
+
+    await act(async () => {
+      button('Run & Compare').click();
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+    await act(async () => button('Open source').click());
+
+    expect(onSelectEvidenceDiagnostic).toHaveBeenCalledWith(diagnostic);
   });
 
   it('routes stale coordinates through compatibility review instead of blind rebase', async () => {
@@ -423,6 +513,8 @@ describe('ContractScenarioWorkspace', () => {
     onChange?: ReturnType<typeof vi.fn>;
     onRebase?: ReturnType<typeof vi.fn>;
     onRun?: ReturnType<typeof vi.fn>;
+    trustContext?: ScenarioEvidenceTrustContext;
+    onSelectEvidenceDiagnostic?: ReturnType<typeof vi.fn>;
   } = {}) {
     const draft = options.unsaved
       ? { ...graphDraft(), draftId: '', revision: 0 }
@@ -469,6 +561,8 @@ describe('ContractScenarioWorkspace', () => {
           onRebase={options.onRebase ?? vi.fn()}
           onRun={options.onRun ?? vi.fn().mockResolvedValue(successfulResponse())}
           onClose={vi.fn()}
+          trustContext={options.trustContext}
+          onSelectEvidenceDiagnostic={options.onSelectEvidenceDiagnostic}
         />,
       );
     });

@@ -564,3 +564,66 @@ Stage 3 的第一条纵切先消除 Scenario 编辑时最频繁的两类手写�
 差距仍高于 8%，不能停止。Round 3b 只处理可信结果病根：构建统一 evidence view
 model，把执行、断言、Contract、Governance 四维状态同时纳入结论；失败优先展开、
 通过项折叠，并提供回到具体 assertion/node/edge 的修复入口。
+
+## Round 3b：四维可信 Evidence 与失败优先结果
+
+### 本轮目标
+
+旧 Run Evidence 只看 `comparison.passed` 就显示 `All assertions passed`，会把一次局部
+断言成功误报成整体可发布。Round 3b 把结论改为四维合取，并统一 Graph/Operator 结果模型。
+
+### 已实现
+
+| 能力 | 实现 |
+|---|---|
+| 纯 Evidence view model | `scenarioEvidenceView` 独立投影执行、断言、Contract、Governance，不修改权威资产 |
+| Fail-closed 结论 | 依次输出 `Promotion blocked / Review required / Evidence incomplete / Ready for promotion` |
+| 四维状态 | 每个维度显示原始 status、归一化 state 和可执行解释 |
+| 问题去重 | runtime/comparison/governance diagnostics 统一去重，标题计数与可见列表严格一致 |
+| Failures first | blocking、warning、失败断言依次前置；失败 Expected/Actual 默认展开 |
+| Passed collapse | 通过断言进入默认关闭的 `details`，不抢占故障排查首屏 |
+| 修复回路 | 失败断言返回 Scenarios；Contract/Governance finding 的 `Open source` 复用统一诊断定位 |
+| 阅读位置恢复 | workspace tab 切换与自动进入 Evidence 时滚动到顶部，先读结论而不是落在明细中段 |
+| 统一目标 | Graph 与 Operator Contract workspace 消费同一判定和呈现组件 |
+
+### 测试与浏览器证据
+
+纯模型测试覆盖：
+
+- assertion 通过但 Contract/Governance 未检查时不能全绿；
+- assertion failed、Contract warning、Governance blocked 的优先级；
+- 四维全通过才产生 `Ready for promotion`；
+- 重复 diagnostics 的展示与摘要计数一致。
+
+组件测试覆盖：
+
+- 通过断言默认折叠；
+- Contract warning 时不显示 promotion ready；
+- 四维全通过的唯一绿色路径；
+- `Open source` 回调携带原始治理坐标；
+- workspace view 切换后滚动位置归零。
+
+真实应用内浏览器用 Loan 示例验证：
+
+- 运行完成后 Execution 与 Assertions 分开呈现；
+- 服务端 3 条 DSL warning 使结论保持 `Review required`；
+- warning 去重后标题与列表均为 3；
+- Contract/Governance 未检查状态明确可见；
+- `1280 × 720` 下无横向溢出，结果页从顶部结论开始。
+
+### 本轮差距评估
+
+| 维度 | 已实现 | 权重 | 判断 |
+|---|---:|---:|---|
+| 任务式 Shell 与信息架构 | 19 | 20 | 四维结果进入任务主路径 |
+| Start/Import 入口 | 9 | 10 | 不变 |
+| 上下文与节点专属编辑 | 15 | 15 | 不变 |
+| Schema-driven Input/Test | 15 | 15 | input、dependency、assertion 主路径完整 |
+| 可信状态与错误恢复 | 14 | 15 | failures-first、四维合取与 source 回跳成立；edge/field 精确聚焦仍可增强 |
+| Canvas 与复杂图可读性 | 7 | 15 | Stage 4 尚未进入 |
+| 工程边界、测试和灰度 | 10 | 10 | 纯模型、组件、集成、浏览器和文档同步 |
+| 合计 | **89** | **100** | **剩余差距 11%** |
+
+Stage 3 已完成主要退出门禁，但总体差距仍高于 8%。Round 4 必须集中处理复杂图可读性：
+semantic zoom、关键 edge label、Focus Path、overlay-aware layout、layout undo，以及
+25/100 节点的重叠与性能证据。

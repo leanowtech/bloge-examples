@@ -3911,14 +3911,17 @@ classification are masked in the generated input form.
    reconciliation protocol and compensation declaration. These edits become part of the Graph
    fingerprint, so save the Graph and explicitly rebase stale Scenarios afterward.
 5. Open **Scenarios**. Fill **Given** with schema-driven controls. For every dependency choose
-   **Real**, **Return**, **Error**, **Delay**, **Timeout**, **Replay**, **Observe**, or **Deny**.
-   Expand **Selector, matching & consumption** only when the behavior must target an
-   operator/resource/built-in function, one attempt/occurrence, matching input, or bounded use.
+   a Canvas node, Operator, Resource, or built-in function target, then choose **Real**, **Return**,
+   **Error**, **Delay**, **Timeout**, **Replay**, **Observe**, or **Deny**. Expand **Selector,
+   matching & consumption** only for graph path, correlation, attempt/occurrence, matching input,
+   or bounded use.
 6. Under **Then**, add graph output, node output, node status, edge transfer, or dependency-use
-   assertions. Expected values are generated from the relevant schema.
-7. Click **Run & Compare** for behavior representable by the transient simulation path. The **Run
-   Evidence** tab shows assertion results, terminal output, and
-   per-node status.
+   assertions. Pick a schema-projected result field; expected values are generated with the
+   relevant field type. Use **Custom path** only for schema-external coordinates.
+7. Click **Run & Compare** for behavior representable by the transient simulation path. **Run
+   Evidence** presents Execution, Assertions, Contract, and Governance separately, expands blockers
+   and failed assertions first, collapses passed assertions, then shows terminal output and per-node
+   status. It reports **Ready for promotion** only when every dimension passes without warnings.
 8. To retain and govern the work, use **Save Graph**, review and rebase to the returned server
    Contract, then **Save Scenario**, and finally **Publish**. Load/Save/Publish remain disabled until
    their exact prerequisites exist.
