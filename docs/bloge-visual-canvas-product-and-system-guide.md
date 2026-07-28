@@ -50,7 +50,9 @@ BLOGE 通用可视化编排画布是一套面向复杂业务编排的 topology-f
 3. **内置复杂示例**：直接加载可编辑的复杂业务 graph，适合第一次理解 fan-out、decision table、transform、fixture 的组合方式。
 4. **编排动作条**：执行 Simulate、Auto Layout、Canvas Focus、Validate、Export Draft，并查看节点数、边数、输出节点和 fixture 数。
 5. **Graph Contract**：显示当前 graph 的 input/output schema 摘要，告诉系统集成方这张图需要什么上下文、会产出什么结果。
-6. **Runtime Context**：以图形化变量表维护本次模拟的 context；高级用户也可以展开 Advanced JSON。
+6. **Contract / Data**：`Contract` 定义 graph input/output schema；`Data` 根据 input schema
+   生成这次运行的 Run Input controls，并在选中节点后显示真实入边和直接绑定。额外
+   context 与 Raw JSON 只在 `Advanced` 中按需展开。
 7. **Mock Setup / Test Suite**：右侧 inspector 保持轻量，只展示节点级 mock fixture 和 Test Suite 摘要；点击 `Test Suite` 后用浮层表格组织多行 context、fixture overrides 和 expected output。
 
 当业务图已经有多层依赖或边标签较多时，优先点击工具条里的 **Canvas Focus**。它会临时收起左侧 Library/Legacy DSL/Palette、右侧 Checklist/Runtime/Test Suite inspector、顶部 workflow 和示例卡，只保留 toolbar、Graph Contract 和主画布。这个模式适合做拓扑审阅、Auto Layout 后验收、拖线调试和演示复杂图。
@@ -1966,21 +1968,37 @@ selection。坐标、source map、fixtures、描述文本和 `visualLayout.graph
 
 如果 Auto Layout 后仍需要更大视野审阅拓扑，点击工具条里的 `Canvas Focus`。Focus 模式会收起左右辅助栏、顶部 workflow 和示例卡，保留 toolbar、Graph Contract 与主画布；退出时点击 `Exit Focus`。这个模式适合检查跨层依赖、边标签、复杂 decision table 上下游，以及给业务方演示图结构。
 
-### 5.3.1 配置起始节点输入
+### 5.3.1 定义 Graph Input、填写 Run Input、绑定节点输入
 
-起始节点通常没有上游边，但它仍然需要业务入参，例如 `userId`、`orderId`、`applicant.score` 或请求上下文里的租户信息。新版 `/author/` 在右侧 inspector 中提供图形化的 `Runtime Context -> Context Variables`：
+起始节点通常没有上游边，但仍然需要 `userId`、`orderId`、`applicant.score` 或租户
+信息。任务式工作台把过去容易混淆的“schema、样例值、节点绑定”拆成三个独立问题：
 
-![Author Context Variables 绑定标注](assets/bloge-author-context-binding-annotated.svg)
+- **Graph Input Contract**：这张图允许调用方传什么，是可导出、可版本化的接口定义。
+- **Run Input Values**：这一次模拟实际传什么，是短生命周期的运行数据。
+- **Node Input Source**：某个算子字段来自 Graph Input、上游节点还是常量，是
+  GraphDraft 中持久化的依赖语义。
+
+使用 `http://localhost:8080/author/?authorWorkspace=v2`，加载 `Loan Decision Policy`
+示例、选中 `Decision response`，再打开右侧 `Data`，页面应与下图一致：
+
+![Graph Run Input 与节点绑定标注](assets/bloge-author-graph-run-input-v2-annotated.png)
 
 对着图操作：
 
-1. **Graph 输入字段**：先看 Graph Contract 的 Input 区，确认这张图需要哪些 ctx 字段。示例中 graph input 需要 `applicantId`。
-2. **Context 变量表**：在 `Runtime Context -> Context Variables` 点击 Add Variable，新增一行变量，Path 填 `applicantId` 或 `applicant.score` 这类上下文路径。
-3. **Bind 到节点输入**：选中需要配置输入的节点，再点击变量行上的 Bind；也可以把 `ctx.applicantId` chip 直接拖到右侧 inspector 或双击浮层里的 `Node Inputs` 区域。
-4. **Preview JSON**：Sample 值会即时汇总成最终模拟 context，图中生成的是 `{ "applicantId": "prime" }`。
-5. **起始节点/字段来源**：画布中的起始节点可以从 ctx 字段获得输入，不必为了“没有上游边”再造一个假节点。
+1. **稳定任务页签**：`Config / Data / Test / Contract / Advanced` 不随内容跳动。
+   修改接口定义进入 `Contract`；准备运行数据和检查来源进入 `Data`。
+2. **来源与输入绑定**：`Connected sources` 汇总所有入边，折叠后不会挤走主任务；
+   `Node Inputs` 显示直接 `ctx`/constant 绑定。选择节点后，Run Input 字段旁出现
+   `Bind`，点击即可把该 Graph Input 绑定到当前节点的默认 target port/path。
+3. **Schema 生成运行输入**：`Run Input Values` 由 Graph Input Contract 自动生成
+   string、number、enum、boolean、array/object 等控件；状态条显示
+   `N required, M missing` 或 `N required, complete`。缺必填值、类型不匹配、
+   enum/范围不合法或出现 schema 禁止的额外字段时，运行准备状态会 fail closed。
 
-画布会自动创建 `contextPath` 输入绑定，并把 Target port 默认设为算子的第一个输入端口、Target path 默认设为上下文路径最后一段。如果需要常量或复杂目标字段，仍可在 `Node Inputs` 中手动调整 Source、Target port 和 Target path。对起始节点，推荐直接双击节点打开 Operator Detail，在同一个浮层里完成关键属性、输入绑定、输出样例和 schema 对照。
+`Bind` 不是再叠一条模糊的数据来源。如果目标 port/path 已有上游边或直接绑定，画布
+会替换该来源并删除冲突入边，确保导出的 GraphDraft 只有一个有效来源。默认 target
+port 取算子的第一个输入端口，target path 取 Graph Input 路径的最后一段；复杂映射
+仍可在 `Node Inputs` 中显式调整。
 
 例如，一个风控起始节点要从运行上下文读取 `applicant.score`，导出的 draft 会包含：
 
@@ -1997,7 +2015,7 @@ selection。坐标、source map、fixtures、描述文本和 `visualLayout.graph
 }
 ```
 
-模拟时，`Context Variables` 会生成本次 run 的 JSON context，例如：
+模拟时，`Run Input Values` 会生成本次 run 的 JSON context，例如：
 
 ```json
 {
@@ -2007,9 +2025,20 @@ selection。坐标、source map、fixtures、描述文本和 `visualLayout.graph
 }
 ```
 
-`Runtime Context` 会进入 `POST /api/visual/graphs/simulate` 的 `context` 字段；它不会写进导出的 `GraphDraft`。导出的 draft 只保存 `contextPath` / `constant` 等输入绑定语义，方便后续在真实网关运行时由外部请求上下文提供变量。
+Run Input 会进入 `POST /api/visual/graphs/simulate` 的 `context` 字段，但不会写进导出的
+`GraphDraft`。导出的 draft 只保存 `contextPath` / `constant` 等输入绑定语义，真实运行
+时由调用方提供对应值。
 
-`Advanced JSON` 仍然保留给专家模式。没有配置 Context Variables 时，模拟会使用 `Advanced JSON` 中的对象；一旦配置了变量，模拟优先使用变量表生成的 context。
+`Advanced` 中有两层逃生口：
+
+1. `Context Extras` 用于 schema 允许但暂未建模为主要业务字段的附加 context；它与
+   Run Input 合并，字段冲突会 fail closed，不会静默覆盖。
+2. `Use raw runtime context` 是显式 takeover。勾选后 raw JSON 完全替代 Run Input 和
+   Context Extras；默认关闭，避免普通用户在无意间绕过 schema-driven controls。
+
+敏感字段通过 `writeOnly`、`format: password`、`x-sensitive` 或数据分类标记识别，
+控件默认遮罩且关闭浏览器自动填充。旧版 `authorWorkspace=v1` 的 Context Variables
+只保留用于兼容和回滚，不再是 v2 的推荐工作流。
 
 ### 5.4 第四步：连线
 

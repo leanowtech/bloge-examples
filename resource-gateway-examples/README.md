@@ -3879,6 +3879,26 @@ The `/author/` built-in canvas examples also carry their own graph-level
 input/output schemas, and exported drafts include the current `inputSchema` so
 the design can be integrated instead of remaining a diagram-only artifact.
 
+### Try The Task-Oriented Author Workspace
+
+Open `http://localhost:8080/author/?authorWorkspace=v2`, load a built-in example,
+and use the fixed `Compose / Contract / Test / Review` task modes. The URL keeps
+the selected mode and node so a browser refresh or a deep link restores the same
+working context.
+
+The right inspector has stable `Config / Data / Test / Contract / Advanced`
+tabs. Edit the graph input/output interface in **Contract**. In **Data**, fill the
+schema-generated **Run Input Values**, inspect the selected node's incoming
+sources, and use **Bind** to connect a Graph Input field to that node without
+typing a `ctx.*` path. A bind replaces any existing source for the same target
+port/path, so export cannot retain two competing sources.
+
+Run Input and optional Context Extras are transient simulation data; exported
+GraphDrafts retain only the input binding semantics. Raw runtime JSON is an
+explicit **Advanced** takeover and is off by default. Fields declared with
+`writeOnly`, password format, `x-sensitive`, or restricted/confidential
+classification are masked in the generated input form.
+
 ### Try Contract And Scenario Authoring
 
 1. Start the demo and open `http://localhost:8080/author/`.

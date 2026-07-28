@@ -129,6 +129,21 @@ export function normalizeSchema(schema: Record<string, unknown>): Record<string,
   }, { ...schema });
 }
 
+/** Detects schema fields that should use masked controls in authoring surfaces. */
+export function isSensitiveSchema(schema: Record<string, unknown>): boolean {
+  const classification = String(
+    schema['x-classification']
+      ?? schema.classification
+      ?? schema['x-data-classification']
+      ?? '',
+  ).toUpperCase();
+  return schema.writeOnly === true
+    || schema.format === 'password'
+    || classification === 'CONFIDENTIAL'
+    || classification === 'RESTRICTED'
+    || schema['x-sensitive'] === true;
+}
+
 function visitSchema(
   rawSchema: Record<string, unknown>,
   path: string,

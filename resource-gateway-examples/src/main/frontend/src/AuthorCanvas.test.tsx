@@ -1021,6 +1021,67 @@ describe('AuthorCanvas built-in canvas examples', () => {
       .toHaveLength(2);
   });
 
+  it('authors schema-driven run input and binds it to the selected node without raw JSON', async () => {
+    await act(async () => {
+      root = createRoot(host);
+      root.render(<AuthorCanvas workspaceVersion="v2" />);
+    });
+
+    await click(query<HTMLButtonElement>('[data-testid="author-start-choice:examples"]'));
+    await waitFor(() =>
+      expect(query<HTMLButtonElement>('[data-testid="author-start-example:loan-policy-fallback"]').disabled)
+        .toBe(false),
+    );
+    await click(query<HTMLButtonElement>('[data-testid="author-start-example:loan-policy-fallback"]'));
+    await click(query<HTMLButtonElement>('[data-testid="inspector-tab:data"]'));
+
+    expect(query('[data-testid="graph-run-input-panel"]').textContent)
+      .toContain('Generated from the Graph Input Contract');
+    expect(query('[data-testid="node-input-editor"]').textContent)
+      .toContain('Connected sources7');
+    expect(query('[data-testid="run-input-readiness"]').textContent)
+      .toContain('1 required, complete');
+    expect(query('[data-testid="author-context-inspector"]')
+      .querySelector('[data-testid="simulation-context-json"]')).toBeNull();
+
+    await setControlValue(query<HTMLInputElement>('input[aria-label="applicantId"]'), 'applicant-2002');
+    const bindButton = Array.from(
+      query('[data-testid="graph-run-input-panel"]').querySelectorAll<HTMLButtonElement>('button'),
+    ).find((button) => (
+      button.textContent?.trim() === 'Bind'
+      && button.title.includes('ctx.applicantId')
+    ));
+    expect(bindButton).toBeDefined();
+    await click(bindButton as HTMLButtonElement);
+
+    const exported = authorDraftExport(
+      query<HTMLAnchorElement>('[data-testid="author-draft-export-v2"]'),
+    );
+    const boundInput = Object.values(
+      exported.nodes.find((node: { id: string }) => node.id === 'n5')?.inputs ?? {},
+    ).find((binding: any) => binding.kind === 'contextPath' && binding.path === 'applicantId');
+    expect(boundInput).toMatchObject({
+        kind: 'contextPath',
+        path: 'applicantId',
+        targetPort: 'inputs',
+        targetPath: 'applicantId',
+      });
+
+    await click(query<HTMLButtonElement>('[data-testid="author-mode:test"]'));
+    await waitFor(() => expect(query('[data-testid="test-suite-dialog"]')).toBeDefined());
+    await click(query<HTMLButtonElement>('[data-testid="test-table-clear"]'));
+    await click(query<HTMLButtonElement>('[aria-label="Close test suite"]'));
+    await click(query<HTMLButtonElement>('[data-testid="author-primary-action"]'));
+
+    await waitFor(() =>
+      expect(query('.workspace').getAttribute('data-author-mode')).toBe('review'),
+    );
+    const simulateCalls = fetchMock.mock.calls
+      .filter(([input]) => String(input) === '/api/visual/graphs/simulate');
+    const request = JSON.parse(String(simulateCalls[simulateCalls.length - 1]?.[1]?.body));
+    expect(request.context).toEqual({ applicantId: 'applicant-2002' });
+  });
+
   it('keeps v2 mode and selection shareable while panels remain local workspace state', async () => {
     await act(async () => {
       root = createRoot(host);

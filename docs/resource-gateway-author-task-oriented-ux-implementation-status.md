@@ -417,3 +417,92 @@ VisualAuthoringBrowserDomTest
 
 Round 2a 解决了节点编辑器的结构病根，但 Stage 2 尚未完成。下一步集中处理 Graph Input
 Contract、Run Input Values、Context extra values 和 node binding 的认知边界。
+
+## Round 2b：Graph Contract、运行数据与节点来源分离
+
+### 本轮目标
+
+旧 Runtime Context 把接口 schema、本次输入值、额外 context 和 raw JSON 混在同一块，
+用户既不知道修改是否会进入 GraphDraft，也无法在选中节点后回答“这个字段到底来自
+哪里”。本轮以三层模型根治：
+
+1. Graph Input Contract 是持久化的接口定义；
+2. Run Input Values 是瞬时运行数据；
+3. Node Input Source 是持久化的依赖/绑定语义。
+
+### 已实现
+
+| 能力 | 实现 |
+|---|---|
+| Schema-driven Run Input | `GraphRunInputPanel` 复用 `SchemaValueForm`，按 Graph Input Contract 生成类型化控件 |
+| 精确 readiness | `assessRunInput` 校验 required、type、enum、数值/字符串约束和 `additionalProperties` |
+| Schema 演进协调 | `reconcileRunInputWithSchema` 保留仍合法字段、生成新增字段，并在禁止额外属性时清理已删除字段 |
+| 三层 context 编译 | `compileTaskRunContext` 合并 Run Input 与 Context Extras；冲突 fail closed；raw takeover 显式且互斥 |
+| 敏感字段保护 | password/writeOnly、`x-sensitive`、restricted/confidential 字段使用 password control 且关闭 autocomplete |
+| 稳定 Inspector | `Config / Data / Test / Contract / Advanced` 固定为 3+2 网格，不因 220px 侧栏发生文字挤压 |
+| 来源可见 | 选中节点的 Data 页折叠汇总真实 incoming edges，并显示 `ctx`/constant 直接绑定 |
+| 一键绑定 | Graph Input chip 的 `Bind` 生成 `contextPath`，并删除同 target port/path 的冲突入边或旧直接绑定 |
+| 生命周期清晰 | 示例和 DSL import 自动生成 Run Input；Contract 修改会协调 Run Input；GraphDraft export 不携带运行值 |
+| 回滚安全 | 新模型只在 `authorWorkspace=v2` 启用；v1 保持旧 Runtime Context 行为 |
+
+### 测试与浏览器证据
+
+纯模型测试覆盖：
+
+- required/missing/type/enum/constraint 和额外字段；
+- structured context 合并、字段冲突与 raw takeover；
+- schema 修改后的保留、补齐和清理；
+- 敏感 schema 识别。
+
+组件与集成测试覆盖：
+
+- Graph Input 生成控件、readiness 和 Bind；
+- Loan 示例在不编辑 raw JSON 的情况下修改 `applicantId` 并直接运行；
+- Bind 后冲突 edge 从 12 条降为 11 条，导出绑定为 `contextPath`；
+- 运行请求最终 context 为结构化 Run Input。
+
+完整前端结果：
+
+```text
+24 test files passed
+270 tests passed
+tsc --noEmit passed
+vite production build passed
+```
+
+packaged Chrome：
+
+```text
+VisualAuthoringBrowserDomTest
+  #taskWorkspaceBindsSchemaGeneratedRunInputWithoutCompetingNodeSourceInRealBrowser
+1 passed
+```
+
+真实应用内浏览器在 `1280 × 720` 验证：
+
+- 5 个 Inspector tab 无溢出或重叠；
+- 7 条 incoming source 默认折叠，不挤走 Run Input 主任务；
+- required 状态、值控件和 Bind 在首屏可见；
+- Bind 后 edge 计数 12 → 11、direct source 显示为 `ctx`；
+- raw textarea 只有勾选显式 takeover 后出现。
+
+视觉证据：
+
+![Graph Run Input 与节点绑定标注](assets/bloge-author-graph-run-input-v2-annotated.png)
+
+### 本轮差距评估
+
+| 维度 | 已实现 | 权重 | 判断 |
+|---|---:|---:|---|
+| 任务式 Shell 与信息架构 | 19 | 20 | 固定模式与稳定 Inspector 成立 |
+| Start/Import 入口 | 9 | 10 | 不变 |
+| 上下文与节点专属编辑 | 15 | 15 | Registry、专属 editor、来源可见和无路径绑定闭环 |
+| Schema-driven Input/Test | 10 | 15 | Graph/Run Input 已分离；Dependency Behavior 与 Assertion Builder 仍需收口 |
+| 可信状态与错误恢复 | 10 | 15 | context 冲突 fail closed；测试结果仍缺 failures-first projection |
+| Canvas 与复杂图可读性 | 7 | 15 | 本轮未处理 edge label、semantic zoom 与 Overview |
+| 工程边界、测试和灰度 | 10 | 10 | context 规则为纯模型，v1/v2 隔离且测试完整 |
+| 合计 | **80** | **100** | **剩余差距 20%** |
+
+Stage 2 的“节点怎么配、数据从哪里来、这次传什么”已经闭环。差距仍高于 8%，下一轮
+进入 Stage 3：图形化 Dependency Behavior、Assertion Builder、failures-first 结果
+投影，以及从诊断项跳回具体修复位置。

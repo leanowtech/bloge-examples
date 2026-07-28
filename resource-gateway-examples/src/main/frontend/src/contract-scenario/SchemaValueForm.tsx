@@ -1,7 +1,11 @@
 import { useEffect, useState, type ReactNode } from 'react';
 
 import type { SchemaEnvelope } from '../types';
-import { normalizeSchema, schemaType } from './schemaWorkbench';
+import {
+  isSensitiveSchema,
+  normalizeSchema,
+  schemaType,
+} from './schemaWorkbench';
 
 interface SchemaValueFormProps {
   envelope?: SchemaEnvelope;
@@ -198,12 +202,20 @@ function SchemaValueControl(props: SchemaValueControlProps): ReactNode {
   }
 
   if (type === 'string') {
+    const sensitive = isSensitiveSchema(schema);
     return (
       <label className="schema-value-field">
         <FieldLabel title={title} required={props.required} description={description} />
         <input
-          type={schema.format === 'date' ? 'date' : schema.format === 'date-time' ? 'datetime-local' : 'text'}
+          type={sensitive
+            ? 'password'
+            : schema.format === 'date'
+              ? 'date'
+              : schema.format === 'date-time'
+                ? 'datetime-local'
+                : 'text'}
           aria-label={props.path}
+          autoComplete={sensitive ? 'off' : undefined}
           value={typeof props.value === 'string' ? props.value : ''}
           minLength={typeof schema.minLength === 'number' ? schema.minLength : undefined}
           maxLength={typeof schema.maxLength === 'number' ? schema.maxLength : undefined}

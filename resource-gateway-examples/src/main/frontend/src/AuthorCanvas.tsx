@@ -175,6 +175,15 @@ import {
   resolveNodeEditor,
   type NodeEditorTab,
 } from './author/node-editor/nodeEditorRegistry';
+import GraphRunInputPanel, {
+  ContextExtrasPanel,
+  RawRunContextPanel,
+} from './author/input/GraphRunInputPanel';
+import {
+  assessRunInput,
+  compileTaskRunContext,
+  reconcileRunInputWithSchema,
+} from './author/input/authorRunInput';
 
 const ContractScenarioWorkspace = lazy(
   () => import('./contract-scenario/ContractScenarioWorkspace'),
@@ -1047,6 +1056,8 @@ function editableInputBindingKind(binding: DraftNodeBinding): 'contextPath' | 'c
 
 function NodeInputBindingsEditor({
   node,
+  incomingEdges = [],
+  graphNodes = [],
   onAdd,
   onRemove,
   onRename,
@@ -1055,6 +1066,8 @@ function NodeInputBindingsEditor({
   onDropContextPath,
 }: {
   node: Node<NodeData>;
+  incomingEdges?: Edge<CanvasEdgeData>[];
+  graphNodes?: Node<NodeData>[];
   onAdd: () => void;
   onRemove: (bindingKey: string) => void;
   onRename: (bindingKey: string, value: string) => void;
@@ -1064,6 +1077,16 @@ function NodeInputBindingsEditor({
 }) {
   const inputPorts = node.data.summary.inputNames.length ? node.data.summary.inputNames : ['inputs'];
   const rows = Object.entries(node.data.inputs ?? {});
+  const edgeRows = incomingEdges
+    .filter((edge) => edge.target === node.id && (!edge.data?.kind || edge.data.kind === 'data'))
+    .map((edge) => ({
+      id: edge.id,
+      sourceLabel: graphNodes.find((candidate) => candidate.id === edge.source)?.data.label ?? edge.source,
+      sourcePort: portNameFromHandle(edge.sourceHandle, 'out'),
+      sourcePath: edge.data?.sourcePath ?? (edge as CanvasFlowEdge).sourcePath ?? '',
+      targetPort: portNameFromHandle(edge.targetHandle, 'in'),
+      targetPath: edge.data?.targetPath ?? (edge as CanvasFlowEdge).targetPath ?? '',
+    }));
   return (
     <div
       className="input-binding-editor"
@@ -1094,6 +1117,26 @@ function NodeInputBindingsEditor({
           Add Binding
         </button>
       </div>
+      {edgeRows.length > 0 && (
+        <details className="incoming-edge-bindings">
+          <summary>
+            <strong>Connected sources</strong>
+            <span>{edgeRows.length}</span>
+          </summary>
+          <ul>
+            {edgeRows.map((edge) => (
+              <li key={edge.id}>
+                <span>{edge.sourceLabel}</span>
+                <code>
+                  {endpointLabel(edge.sourcePort, edge.sourcePath, 'output')}
+                  {' -> '}
+                  {endpointLabel(edge.targetPort, edge.targetPath, 'input')}
+                </code>
+              </li>
+            ))}
+          </ul>
+        </details>
+      )}
       {rows.length > 0 ? (
         <ol className="input-binding-list">
           {rows.map(([bindingKey, binding], index) => {
@@ -1190,7 +1233,9 @@ function NodeInputBindingsEditor({
           })}
         </ol>
       ) : (
-        <p className="muted">No input bindings.</p>
+        <p className="muted">
+          {edgeRows.length > 0 ? 'No direct context or constant bindings.' : 'No input bindings.'}
+        </p>
       )}
     </div>
   );
@@ -4496,6 +4541,8 @@ export default function AuthorCanvas({ workspaceVersion = 'v1' }: AuthorCanvasPr
   const [simulationTableResults, setSimulationTableResults] = useState<Record<string, SimulationTableCaseResult>>({});
   const [tableTestingBusy, setTableTestingBusy] = useState(false);
   const [simulationContextDraft, setSimulationContextDraft] = useState('{}');
+  const [runInputValue, setRunInputValue] = useState<Record<string, unknown>>({});
+  const [rawContextMode, setRawContextMode] = useState(false);
   const [contextVariables, setContextVariables] = useState<ContextVariableRow[]>([]);
   const [graphName, setGraphName] = useState('visualGraph');
   const [graphDraftId, setGraphDraftId] = useState('');
@@ -5056,15 +5103,35 @@ export default function AuthorCanvas({ workspaceVersion = 'v1' }: AuthorCanvasPr
     setSimulationContextDraft(value);
   }, [clearRunResult]);
 
+  const updateRunInputValue = useCallback((value: Record<string, unknown>) => {
+    clearRunResult();
+    setRunInputValue(value);
+  }, [clearRunResult]);
+
   const bindContextPathToNode = useCallback((nodeId: string, path: string) => {
     const normalizedPath = normalizedContextPath(path);
-    if (!normalizedPath) {
+    const targetNode = nodes.find((node) => node.id === nodeId);
+    if (!normalizedPath || !targetNode) {
       return;
     }
-    updateNodeInputs(nodeId, (inputs, node) => {
-      const targetPort = defaultInputTargetPort(node);
-      const targetPath = contextBindingKey(normalizedPath);
-      const bindingKey = uniqueInputBindingKey(inputs, targetPath);
+    const targetPort = defaultInputTargetPort(targetNode);
+    const targetPath = contextBindingKey(normalizedPath);
+    setEdges((current) => current.filter((edge) => {
+      if (edge.target !== nodeId) {
+        return true;
+      }
+      const edgeTargetPort = portNameFromHandle(edge.targetHandle, 'in');
+      const edgeTargetPath = edge.data?.targetPath ?? (edge as CanvasFlowEdge).targetPath ?? '';
+      return edgeTargetPort !== targetPort || edgeTargetPath !== targetPath;
+    }));
+    updateNodeInputs(nodeId, (inputs) => {
+      const existingTarget = Object.entries(inputs).find(([bindingKey, binding]) =>
+        bindingKey === targetPath
+        || (
+          (binding.targetPort || targetPort) === targetPort
+          && (binding.targetPath || bindingKey) === targetPath
+        ));
+      const bindingKey = existingTarget?.[0] ?? uniqueInputBindingKey(inputs, targetPath);
       return {
         ...inputs,
         [bindingKey]: {
@@ -5075,7 +5142,7 @@ export default function AuthorCanvas({ workspaceVersion = 'v1' }: AuthorCanvasPr
         },
       };
     });
-  }, [updateNodeInputs]);
+  }, [nodes, updateNodeInputs]);
 
   const bindContextVariableToSelectedNode = useCallback((path: string) => {
     if (!selectedNodeId) {
@@ -5260,7 +5327,10 @@ export default function AuthorCanvas({ workspaceVersion = 'v1' }: AuthorCanvasPr
     setDslImportRoundTrip(null);
     setDslRewriteGateResult(null);
     setDslImportNotice(null);
-    setSimulationContextDraft(JSON.stringify(sampleFromSchemaEnvelope(template.inputSchema), null, 2));
+    const nextRunInput = sampleFromSchemaEnvelope(template.inputSchema);
+    setRunInputValue(isRecord(nextRunInput) ? nextRunInput : {});
+    setSimulationContextDraft(JSON.stringify(nextRunInput, null, 2));
+    setRawContextMode(false);
     setContextVariables([]);
     setExplicitOutputNodeId(template.outputNodeId);
     setSelectedNodeId(template.outputNodeId);
@@ -5330,7 +5400,31 @@ export default function AuthorCanvas({ workspaceVersion = 'v1' }: AuthorCanvasPr
     [contextVariables],
   );
   const hasContextVariables = contextVariables.some((row) => row.path.trim());
-  const contextCompilation = hasContextVariables ? variableContextCompilation : rawContextCompilation;
+  const taskContextCompilation = useMemo(
+    () => compileTaskRunContext({
+      runInput: runInputValue,
+      extras: variableContextCompilation,
+      raw: rawContextCompilation,
+      rawMode: rawContextMode,
+    }),
+    [rawContextCompilation, rawContextMode, runInputValue, variableContextCompilation],
+  );
+  const contextCompilation = isTaskWorkspace
+    ? taskContextCompilation
+    : hasContextVariables
+      ? variableContextCompilation
+      : rawContextCompilation;
+  const runInputAssessment = useMemo(
+    () => assessRunInput(graphInputSchema, contextCompilation.value),
+    [contextCompilation.value, graphInputSchema],
+  );
+  const updateRawContextMode = useCallback((enabled: boolean) => {
+    clearRunResult();
+    if (enabled) {
+      setSimulationContextDraft(JSON.stringify(contextCompilation.value, null, 2));
+    }
+    setRawContextMode(enabled);
+  }, [clearRunResult, contextCompilation.value]);
   const fixtureRows = useMemo(
     () => simulationFixtureRows(
       canvasNodes,
@@ -5542,6 +5636,12 @@ export default function AuthorCanvas({ workspaceVersion = 'v1' }: AuthorCanvasPr
 
   const updateContractSemantics = useCallback((nextContract: ContractDraft) => {
     authoritativeContractRef.current = null;
+    setContractDraft(nextContract);
+    setGraphInputSchema(nextContract.inputSchema);
+    setGraphOutputSchema(nextContract.outputSchema);
+    const sample = sampleFromSchemaEnvelope(nextContract.inputSchema);
+    setRunInputValue((current) =>
+      reconcileRunInputWithSchema(nextContract.inputSchema, current, sample));
     setGraphVisualLayout((current) => visualLayoutWithContractSemantics(current, nextContract));
   }, []);
 
@@ -5561,7 +5661,10 @@ export default function AuthorCanvas({ workspaceVersion = 'v1' }: AuthorCanvasPr
     .length;
   const hasFixtureErrors = fixtureErrorCount > 0;
   const hasSimulationTableErrors = Object.keys(simulationTableCompilation.errors).length > 0;
-  const hasContextError = Boolean(contextCompilation.error);
+  const hasContextError = Boolean(
+    contextCompilation.error
+    || (isTaskWorkspace && !runInputAssessment.ready),
+  );
   const selectedFixtureDraft = selectedNode ? fixtureDrafts[selectedNode.id] ?? '' : '';
   const selectedExpectedInputDraft = selectedNode ? fixtureInputDrafts[selectedNode.id] ?? '' : '';
   const selectedFixtureHasDraft =
@@ -5908,7 +6011,7 @@ export default function AuthorCanvas({ workspaceVersion = 'v1' }: AuthorCanvasPr
 
     clearRunResult();
     counter.current = maxCanvasNodeSequence(imported.nodes);
-    contextVariableCounter.current = nextContextVariables.length;
+    contextVariableCounter.current = isTaskWorkspace ? 0 : nextContextVariables.length;
     tableTestCounter.current = nextSimulationTableRows.length;
     operatorTestCounter.current = 0;
     setNodes(workspaceBundle ? nextNodes : autoLayoutFlowNodes(nextNodes, nextEdges));
@@ -5956,8 +6059,11 @@ export default function AuthorCanvas({ workspaceVersion = 'v1' }: AuthorCanvasPr
         ));
     setGraphOperatorFingerprints(imported.operatorFingerprints);
     setGraphOperatorSnapshots(imported.operatorSnapshots);
-    setSimulationContextDraft(JSON.stringify(sampleFromSchemaEnvelope(nextInputSchema), null, 2));
-    setContextVariables(nextContextVariables);
+    const nextRunInput = sampleFromSchemaEnvelope(nextInputSchema);
+    setRunInputValue(isRecord(nextRunInput) ? nextRunInput : {});
+    setSimulationContextDraft(JSON.stringify(nextRunInput, null, 2));
+    setRawContextMode(false);
+    setContextVariables(isTaskWorkspace ? [] : nextContextVariables);
     setExplicitOutputNodeId(imported.outputNodeId);
     setSelectedNodeId(imported.outputNodeId || imported.nodes[0]?.id || '');
     setOperatorDetailNodeId('');
@@ -7226,6 +7332,12 @@ export default function AuthorCanvas({ workspaceVersion = 'v1' }: AuthorCanvasPr
       return;
     }
     if (primaryAction.kind === 'fix-input') {
+      if (isTaskWorkspace && hasContextError) {
+        setSelectedNodeId('');
+        setAuthorMode('compose');
+        setInspectorCollapsed(false);
+        return;
+      }
       setTestSuiteOpen(true);
       return;
     }
@@ -7236,7 +7348,14 @@ export default function AuthorCanvas({ workspaceVersion = 'v1' }: AuthorCanvasPr
         void runSimulation();
       }
     }
-  }, [primaryAction, runSimulation, runSimulationTable, simulationTableRows.length]);
+  }, [
+    hasContextError,
+    isTaskWorkspace,
+    primaryAction,
+    runSimulation,
+    runSimulationTable,
+    simulationTableRows.length,
+  ]);
 
   useEffect(() => {
     if (isTaskWorkspace && hasRunResult && !busy && !tableTestingBusy) {
@@ -8380,6 +8499,58 @@ export default function AuthorCanvas({ workspaceVersion = 'v1' }: AuthorCanvasPr
             contractStatus={contractStatus}
             governanceStatus={governanceStatus}
             resultMessage={resultMessage}
+            dataContent={(
+              <div className="author-inspector-data">
+                {selectedNode && (
+                  <NodeInputBindingsEditor
+                    node={selectedNode}
+                    incomingEdges={edges}
+                    graphNodes={nodes}
+                    onAdd={addSelectedInputBinding}
+                    onRemove={removeSelectedInputBinding}
+                    onRename={renameSelectedInputBinding}
+                    onChange={updateSelectedInputBinding}
+                    onKindChange={updateSelectedInputBindingKind}
+                    onDropContextPath={bindContextVariableToSelectedNode}
+                  />
+                )}
+                <GraphRunInputPanel
+                  inputSchema={graphInputSchema}
+                  value={runInputValue}
+                  assessmentValue={contextCompilation.value}
+                  readOnly={rawContextMode}
+                  selectedNodeLabel={selectedNode?.data.label ?? ''}
+                  onChange={updateRunInputValue}
+                  onBind={bindContextVariableToSelectedNode}
+                  onOpenContract={() => {
+                    setAuthorMode('contract');
+                    setOperatorContractWorkspace(null);
+                    setContractWorkspaceOpen(true);
+                  }}
+                />
+              </div>
+            )}
+            advancedContent={(
+              <div className="author-inspector-advanced">
+                <ContextExtrasPanel
+                  rows={contextVariables}
+                  compilation={variableContextCompilation}
+                  selectedNodeLabel={selectedNode?.data.label ?? ''}
+                  onAdd={addContextVariable}
+                  onUpdate={updateContextVariable}
+                  onRemove={removeContextVariable}
+                  onBind={bindContextVariableToSelectedNode}
+                />
+                <RawRunContextPanel
+                  rawMode={rawContextMode}
+                  rawText={simulationContextDraft}
+                  effectiveValue={contextCompilation.value}
+                  error={contextCompilation.error}
+                  onRawModeChange={updateRawContextMode}
+                  onRawTextChange={updateSimulationContextDraft}
+                />
+              </div>
+            )}
             onEditNode={() => {
               if (selectedNode) {
                 openNodeEditor(selectedNode);
@@ -8495,6 +8666,8 @@ export default function AuthorCanvas({ workspaceVersion = 'v1' }: AuthorCanvasPr
             </div>
             <NodeInputBindingsEditor
               node={selectedNode}
+              incomingEdges={edges}
+              graphNodes={nodes}
               onAdd={addSelectedInputBinding}
               onRemove={removeSelectedInputBinding}
               onRename={renameSelectedInputBinding}

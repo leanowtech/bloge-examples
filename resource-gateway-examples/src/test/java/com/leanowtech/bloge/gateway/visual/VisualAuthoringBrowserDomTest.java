@@ -768,6 +768,96 @@ class VisualAuthoringBrowserDomTest {
         assertNoHorizontalOverflow(wait, By.cssSelector(".workspace-v2"));
     }
 
+    /**
+     * Verifies the packaged task workspace keeps graph interface, one-run values, and node source
+     * semantics separate.
+     *
+     * <p>The browser loads a real example, opens the selected node's Data task, and binds one Graph
+     * Input field. The assertion on the edge count is deliberate: a direct context binding must
+     * replace an existing edge targeting the same port/path instead of leaving two competing
+     * sources for export or execution.</p>
+     */
+    @Test
+    void taskWorkspaceBindsSchemaGeneratedRunInputWithoutCompetingNodeSourceInRealBrowser()
+            throws Exception {
+        assumeReactAuthorBundlePresent();
+        driver = newChromeDriverOrSkip();
+        WebDriverWait wait = new WebDriverWait(driver, WAIT_TIMEOUT);
+        setViewport(wait, 1280, 720);
+        driver.get("http://localhost:" + port + "/author/?authorWorkspace=v2");
+
+        wait.until(ExpectedConditions.elementToBeClickable(By.cssSelector(
+                "[aria-label='Close start dialog']"
+        ))).click();
+        driver.findElement(By.cssSelector(".author-secondary-actions button:first-child")).click();
+        wait.until(ExpectedConditions.elementToBeClickable(By.cssSelector(
+                "[data-testid='author-start-choice:examples']"
+        ))).click();
+        wait.until(ExpectedConditions.elementToBeClickable(By.cssSelector(
+                "[data-testid='author-start-example:loan-policy-fallback']"
+        ))).click();
+        wait.until(ExpectedConditions.invisibilityOfElementLocated(
+                By.cssSelector("[data-testid='author-start-dialog']")
+        ));
+        wait.until(ExpectedConditions.numberOfElementsToBe(
+                By.cssSelector("[data-testid='canvas-edge-label']"),
+                12
+        ));
+
+        wait.until(ExpectedConditions.elementToBeClickable(By.cssSelector(
+                "[data-testid='inspector-tab:data']"
+        ))).click();
+        waitForText(wait, By.cssSelector("[data-testid='graph-run-input-panel']"),
+                "Run Input Values");
+        waitForText(wait, By.cssSelector("[data-testid='run-input-readiness']"),
+                "1 required, complete");
+        waitForText(wait, By.cssSelector("[data-testid='node-input-editor']"),
+                "Connected sources");
+        waitForText(wait, By.cssSelector("[data-testid='node-input-editor']"), "7");
+
+        wait.until(ExpectedConditions.elementToBeClickable(By.cssSelector(
+                "[data-testid='graph-input-bind:applicantId']"
+        ))).click();
+        wait.until(ExpectedConditions.numberOfElementsToBe(
+                By.cssSelector("[data-testid='canvas-edge-label']"),
+                11
+        ));
+        wait.until(ExpectedConditions.attributeToBe(
+                By.cssSelector("[data-testid='node-input-key:0']"),
+                "value",
+                "applicantId"
+        ));
+        wait.until(ExpectedConditions.attributeToBe(
+                By.cssSelector("[data-testid='node-input-kind:0']"),
+                "value",
+                "contextPath"
+        ));
+        wait.until(ExpectedConditions.attributeToBe(
+                By.cssSelector("[data-testid='node-input-context-path:0']"),
+                "value",
+                "applicantId"
+        ));
+
+        WebElement export = driver.findElement(By.cssSelector(
+                ".author-command-bar a[download$='-draft.json']"
+        ));
+        String draftJson = URLDecoder.decode(
+                export.getAttribute("href").replace("data:application/json;charset=utf-8,", ""),
+                StandardCharsets.UTF_8);
+        JsonNode draft = OBJECT_MAPPER.readTree(draftJson);
+        JsonNode selectedNode = java.util.stream.StreamSupport.stream(
+                        draft.path("nodes").spliterator(), false)
+                .filter(node -> "n5".equals(node.path("id").asText()))
+                .findFirst()
+                .orElseThrow();
+        assertThat(selectedNode.path("inputs").path("applicantId").path("kind").asText())
+                .isEqualTo("contextPath");
+        assertThat(selectedNode.path("inputs").path("applicantId").path("path").asText())
+                .isEqualTo("applicantId");
+        assertThat(draft.path("edges").size()).isEqualTo(11);
+        assertNoHorizontalOverflow(wait, By.cssSelector(".workspace-v2"));
+    }
+
     @Test
     void everyBuiltInCanvasExampleProjectsAStableCapabilityClosureInRealBrowser() throws Exception {
         assumeReactAuthorBundlePresent();
