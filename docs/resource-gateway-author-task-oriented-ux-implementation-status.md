@@ -506,3 +506,61 @@ VisualAuthoringBrowserDomTest
 Stage 2 的“节点怎么配、数据从哪里来、这次传什么”已经闭环。差距仍高于 8%，下一轮
 进入 Stage 3：图形化 Dependency Behavior、Assertion Builder、failures-first 结果
 投影，以及从诊断项跳回具体修复位置。
+
+## Round 3a：图形化依赖行为与断言字段
+
+### 本轮目标
+
+Stage 3 的第一条纵切先消除 Scenario 编辑时最频繁的两类手写协议：
+
+1. 依赖目标和失败/延迟/回放行为不再藏在 Advanced JSON；
+2. 输出断言不再要求用户记忆 dotted path 或 JSON Pointer；
+3. 内置复杂示例加载后必须立即拥有可运行的 Scenario，而不是空白兜底用例。
+
+### 已实现
+
+| 能力 | 实现 |
+|---|---|
+| 依赖目标前置 | `Canvas node / Operator / Resource / Built-in function` 目标选择位于依赖卡首屏 |
+| 行为分段选择 | `Real / Return / Error / Delay / Timeout / Replay / Observe / Deny` 直接切换，并生成完整合法 payload |
+| 渐进式复杂度 | graph path、correlation、attempt/occurrence、path matching 和 consumption 仍在 Advanced 折叠区 |
+| Schema 驱动断言 | Graph/Node output 的字段选择来自对应 output schema，显示路径与类型 |
+| 类型正确默认值 | 选择字段后按该字段 schema 重新生成 expected value；未知路径仍可显式进入 Custom path |
+| 示例 Scenario 修复 | 每次明确加载示例时重置旧派生 Scenario，等待完整节点、fixture 和 Run Table 后重新投影 |
+| 用户草稿保护 | 普通 Graph/Contract 编辑仍保留现有 Scenario，由 compatibility/rebase 流程处理，不静默覆盖 |
+
+### 测试与浏览器证据
+
+纯模型和组件测试覆盖：
+
+- selector scope 切换时清理竞争坐标；
+- 8 种 dependency behavior 的默认 payload；
+- schema 路径选项与 nested field type；
+- dependency target 无需打开 Advanced 即可切换；
+- assertion 字段选择后生成类型正确的 expected value；
+- Loan 示例投影为 2 个 Scenario，当前场景包含 5 个节点依赖、3 个 Return fixture 和
+  1 条整图输出断言。
+
+真实应用内浏览器在 `1280 × 720` 验证：
+
+- `Start → Examples → Loan policy fallback → Contract → Scenarios 2` 全链路成立；
+- 目标与 8 种行为均在依赖卡首屏，无横向溢出；
+- `Prime approval path` 与 `Policy decline path` 初次打开即存在；
+- Return 行为直接显示 schema 表单，复杂 selector 参数默认折叠。
+
+### 本轮差距评估
+
+| 维度 | 已实现 | 权重 | 判断 |
+|---|---:|---:|---|
+| 任务式 Shell 与信息架构 | 19 | 20 | 不变 |
+| Start/Import 入口 | 9 | 10 | 示例进入 Scenario 的链路已修复 |
+| 上下文与节点专属编辑 | 15 | 15 | 不变 |
+| Schema-driven Input/Test | 13 | 15 | dependency 与 assertion 主路径已图形化；复杂 assertion 仍需结果联动 |
+| 可信状态与错误恢复 | 10 | 15 | 结果区仍未完成 failures-first 和四维可信状态 |
+| Canvas 与复杂图可读性 | 7 | 15 | Stage 4 尚未进入 |
+| 工程边界、测试和灰度 | 10 | 10 | 纯模型、组件、集成和真实浏览器证据齐全 |
+| 合计 | **83** | **100** | **剩余差距 17%** |
+
+差距仍高于 8%，不能停止。Round 3b 只处理可信结果病根：构建统一 evidence view
+model，把执行、断言、Contract、Governance 四维状态同时纳入结论；失败优先展开、
+通过项折叠，并提供回到具体 assertion/node/edge 的修复入口。

@@ -67,9 +67,23 @@ export default function DependencyBehaviorEditor({
   const updateBehavior = (patch: Partial<DependencyBehaviorDraft['behavior']>) => {
     onChange({ ...dependency, behavior: { ...behavior, ...patch } });
   };
+  const updateSelectorKind = (nextKind: DependencySelectorKind) => {
+    setSelectorKind(nextKind);
+    onChange(selectDependencyTarget(
+      dependency,
+      nextKind,
+      defaultSelectorValue(nextKind, node, dependency),
+    ));
+  };
+  const updateSelectorValue = (value: string) => {
+    onChange(selectDependencyTarget(dependency, selectorKind, value));
+  };
 
   return (
-    <article className="scenario-dependency-card">
+    <article
+      className="scenario-dependency-card"
+      data-testid={`scenario-dependency:${dependency.dependencyId}`}
+    >
       <header className="scenario-dependency-heading">
         <div className="scenario-dependency-identity">
           <strong>{(node?.label ?? selectorValue) || dependency.dependencyId}</strong>
@@ -86,6 +100,46 @@ export default function DependencyBehaviorEditor({
             ×
           </button>
         )}
+      </header>
+      <div className="scenario-dependency-primary">
+        <div className="scenario-dependency-target">
+          <Field label="Target type">
+            <select
+              aria-label={`Selector kind for ${dependency.dependencyId}`}
+              data-testid={`dependency-selector-kind:${dependency.dependencyId}`}
+              value={selectorKind}
+              onChange={(event) => updateSelectorKind(
+                event.target.value as DependencySelectorKind,
+              )}
+            >
+              <option value="NODE">Canvas node</option>
+              <option value="OPERATOR">Operator</option>
+              <option value="RESOURCE">Resource</option>
+              <option value="FUNCTION">Built-in function</option>
+            </select>
+          </Field>
+          <Field label={selectorLabel(selectorKind)}>
+            {selectorKind === 'NODE' ? (
+              <select
+                aria-label={`Selector value for ${dependency.dependencyId}`}
+                data-testid={`dependency-selector-value:${dependency.dependencyId}`}
+                value={selectorValue}
+                onChange={(event) => updateSelectorValue(event.target.value)}
+              >
+                {nodes.map((candidate) => (
+                  <option key={candidate.id} value={candidate.id}>{candidate.label}</option>
+                ))}
+              </select>
+            ) : (
+              <input
+                aria-label={`${selectorLabel(selectorKind)} for ${dependency.dependencyId}`}
+                data-testid={`dependency-selector-value:${dependency.dependencyId}`}
+                value={selectorValue}
+                onChange={(event) => updateSelectorValue(event.target.value)}
+              />
+            )}
+          </Field>
+        </div>
         <div className="scenario-behavior-segments" role="group" aria-label={`Behavior for ${dependency.dependencyId}`}>
           {BEHAVIORS.map(([kind, label]) => (
             <button
@@ -93,6 +147,7 @@ export default function DependencyBehaviorEditor({
               key={kind}
               className={behavior.kind === kind ? 'active' : ''}
               aria-pressed={behavior.kind === kind}
+              title={behaviorTitle(kind)}
               onClick={() => onChange({
                 ...dependency,
                 behavior: behaviorForKind(kind, node),
@@ -102,7 +157,7 @@ export default function DependencyBehaviorEditor({
             </button>
           ))}
         </div>
-      </header>
+      </div>
 
       <div className="scenario-behavior-fields">
         {behavior.kind !== 'REAL' && (
@@ -220,49 +275,6 @@ export default function DependencyBehaviorEditor({
       <details className="scenario-dependency-advanced">
         <summary>Selector, matching & consumption</summary>
         <div className="scenario-advanced-grid">
-          <Field label="Selector kind">
-            <select
-              aria-label={`Selector kind for ${dependency.dependencyId}`}
-              value={selectorKind}
-              onChange={(event) => {
-                const nextKind = event.target.value as DependencySelectorKind;
-                setSelectorKind(nextKind);
-                onChange(selectDependencyTarget(
-                  dependency,
-                  nextKind,
-                  defaultSelectorValue(nextKind, node, dependency),
-                ));
-              }}
-            >
-              <option value="NODE">Canvas node</option>
-              <option value="OPERATOR">Operator</option>
-              <option value="RESOURCE">Resource</option>
-              <option value="FUNCTION">Built-in function</option>
-            </select>
-          </Field>
-          <Field label={selectorLabel(selectorKind)}>
-            {selectorKind === 'NODE' ? (
-              <select
-                aria-label={`Selector value for ${dependency.dependencyId}`}
-                value={selectorValue}
-                onChange={(event) => onChange(
-                  selectDependencyTarget(dependency, selectorKind, event.target.value),
-                )}
-              >
-                {nodes.map((candidate) => (
-                  <option key={candidate.id} value={candidate.id}>{candidate.label}</option>
-                ))}
-              </select>
-            ) : (
-              <input
-                aria-label={`${selectorLabel(selectorKind)} for ${dependency.dependencyId}`}
-                value={selectorValue}
-                onChange={(event) => onChange(
-                  selectDependencyTarget(dependency, selectorKind, event.target.value),
-                )}
-              />
-            )}
-          </Field>
           <Field label="Graph path">
             <input
               value={dependency.selector.graphPath}
@@ -661,6 +673,19 @@ function selectorLabel(kind: DependencySelectorKind): string {
   if (kind === 'RESOURCE') return 'Resource reference';
   if (kind === 'FUNCTION') return 'Function reference';
   return 'Canvas node';
+}
+
+function behaviorTitle(kind: DependencyBehaviorKind): string {
+  switch (kind) {
+    case 'REAL': return 'Call the real dependency';
+    case 'RETURN': return 'Return deterministic data';
+    case 'ERROR': return 'Return a controlled error';
+    case 'DELAY': return 'Return data after a controlled delay';
+    case 'TIMEOUT': return 'Simulate a timeout';
+    case 'REPLAY': return 'Replay a governed recording';
+    case 'OBSERVE': return 'Observe without replacing the call';
+    case 'MUST_NOT_CALL': return 'Fail if this dependency is called';
+  }
 }
 
 function defaultSelectorValue(

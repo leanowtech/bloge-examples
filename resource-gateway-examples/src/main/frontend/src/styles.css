@@ -2356,7 +2356,7 @@ button.primary:disabled {
 .scenario-dependency-heading {
   min-width: 0;
   display: grid;
-  grid-template-columns: minmax(150px, 0.55fr) minmax(480px, 1.45fr);
+  grid-template-columns: minmax(0, 1fr) auto;
   align-items: center;
   gap: 10px;
 }
@@ -2378,6 +2378,21 @@ button.primary:disabled {
   font-size: 10px;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.scenario-dependency-primary {
+  min-width: 0;
+  display: grid;
+  grid-template-columns: minmax(300px, 0.65fr) minmax(480px, 1.35fr);
+  align-items: end;
+  gap: 10px;
+}
+
+.scenario-dependency-target {
+  min-width: 0;
+  display: grid;
+  grid-template-columns: 128px minmax(0, 1fr);
+  gap: 8px;
 }
 
 .scenario-behavior-segments {
@@ -8865,7 +8880,11 @@ button.primary:disabled {
   }
 
   .scenario-dependency-heading {
-    grid-template-columns: minmax(150px, 0.35fr) minmax(460px, 1fr);
+    grid-template-columns: minmax(0, 1fr) auto;
+  }
+
+  .scenario-dependency-primary {
+    grid-template-columns: minmax(280px, 0.55fr) minmax(460px, 1fr);
   }
 
   .scenario-assertion-controls {
@@ -9337,6 +9356,8 @@ button.primary:disabled {
 
   .scenario-editor-head,
   .scenario-dependency-heading,
+  .scenario-dependency-primary,
+  .scenario-dependency-target,
   .scenario-behavior-fields,
   .scenario-transport-fields,
   .scenario-field-grid,

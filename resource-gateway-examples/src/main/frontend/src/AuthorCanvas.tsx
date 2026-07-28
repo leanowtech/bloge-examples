@@ -5308,6 +5308,8 @@ export default function AuthorCanvas({ workspaceVersion = 'v1' }: AuthorCanvasPr
     setOperatorTestPublications({});
     setSimulationTableRows(nextSimulationTableRows);
     setSimulationTableResults({});
+    scenarioGraphNameRef.current = '';
+    setScenarioDraftSet(null);
     setGraphName(template.graphName);
     setGraphDraftId('');
     setGraphDraftRevision(0);

@@ -8,8 +8,15 @@ import type {
   ScenarioDraft,
 } from './domain';
 import type { ScenarioNodeOption } from './scenarioAuthoring';
+import { projectSchemaFields, schemaType } from './schemaWorkbench';
 
 export type DependencySelectorKind = 'NODE' | 'OPERATOR' | 'RESOURCE' | 'FUNCTION';
+
+export interface AssertionPathOption {
+  path: string;
+  label: string;
+  type: string;
+}
 
 /** Creates a complete, immediately editable behavior payload for the selected business intent. */
 export function behaviorForKind(
@@ -171,4 +178,20 @@ export function assertionOperators(scope: AssertionScope): AssertionDraft['opera
     case 'INVOCATION':
       return ['USED', 'NOT_USED'];
   }
+}
+
+/** Projects the selected result schema into stable business-field choices for assertion authoring. */
+export function assertionPathOptions(
+  schema: ContractDraft['outputSchema'],
+): AssertionPathOption[] {
+  return [
+    { path: '', label: 'Whole result', type: schemaType(schema.schema) },
+    ...projectSchemaFields(schema)
+      .filter((field) => !field.path.includes('[]'))
+      .map((field) => ({
+        path: field.path,
+        label: field.path,
+        type: field.type,
+      })),
+  ];
 }

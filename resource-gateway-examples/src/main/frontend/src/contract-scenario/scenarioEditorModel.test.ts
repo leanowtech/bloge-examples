@@ -3,6 +3,7 @@ import { describe, expect, it } from 'vitest';
 import { contractDraftFromGraphDraft } from './domain';
 import {
   assertionForScope,
+  assertionPathOptions,
   behaviorForKind,
   durationFromMilliseconds,
   selectDependencyTarget,
@@ -97,6 +98,17 @@ describe('Scenario graphical editor model', () => {
       operator: 'USED',
       expected: 1,
     });
+  });
+
+  it('projects nested result fields into assertion choices without array pseudo-paths', () => {
+    const contract = contractDraftFromGraphDraft(graphDraft(), fingerprint('a'));
+
+    expect(assertionPathOptions(contract.outputSchema)).toEqual([
+      { path: '', label: 'Whole result', type: 'object' },
+      { path: 'decision', label: 'decision', type: 'object' },
+      { path: 'decision.approved', label: 'decision.approved', type: 'boolean' },
+      { path: 'decision.reason', label: 'decision.reason', type: 'string' },
+    ]);
   });
 });
 

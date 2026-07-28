@@ -11,6 +11,7 @@ import SchemaValueForm from './SchemaValueForm';
 import {
   assertionForScope,
   assertionOperators,
+  assertionPathOptions,
 } from './scenarioEditorModel';
 import type { ScenarioNodeOption } from './scenarioAuthoring';
 import { schemaAtPath } from './schemaWorkbench';
@@ -42,9 +43,25 @@ export default function AssertionBuilder({
     () => schemaAtPath(expectedEnvelope, assertion.path),
     [assertion.path, expectedEnvelope],
   );
+  const pathOptions = useMemo(
+    () => assertionPathOptions(expectedEnvelope),
+    [expectedEnvelope],
+  );
   const takesPath = assertion.scope === 'OUTPUT_PATH' || assertion.scope === 'NODE_OUTPUT';
   const takesExpected = takesPath
     && (assertion.operator === 'EQUALS' || assertion.operator === 'MATCHES_SCHEMA');
+  const knownPath = pathOptions.some((option) => option.path === assertion.path);
+  const pathPickerValue = knownPath ? assertion.path : '__custom__';
+  const changePath = (path: string) => {
+    const nextSchema = schemaAtPath(expectedEnvelope, path);
+    onChange({
+      ...assertion,
+      path,
+      ...(assertion.operator === 'EQUALS'
+        ? { expected: sampleFromSchemaEnvelope({ schema: nextSchema }) }
+        : {}),
+    });
+  };
 
   return (
     <article className="scenario-assertion-card">
@@ -133,14 +150,36 @@ export default function AssertionBuilder({
         )}
 
         {takesPath && (
-          <Field label="JSON Pointer">
-            <input
-              aria-label={`Assertion path for ${assertion.assertionId}`}
-              value={assertion.path}
-              placeholder="/decision/approved"
-              onChange={(event) => onChange({ ...assertion, path: event.target.value })}
-            />
-          </Field>
+          <>
+            <Field label={assertion.scope === 'NODE_OUTPUT' ? 'Node output field' : 'Result field'}>
+              <select
+                aria-label={`Assertion path for ${assertion.assertionId}`}
+                data-testid={`assertion-path-picker:${assertion.assertionId}`}
+                value={pathPickerValue}
+                onChange={(event) => {
+                  const value = event.target.value;
+                  changePath(value === '__custom__' ? '/' : value);
+                }}
+              >
+                {pathOptions.map((option) => (
+                  <option key={option.path || '$'} value={option.path}>
+                    {option.label} · {option.type}
+                  </option>
+                ))}
+                <option value="__custom__">Custom path...</option>
+              </select>
+            </Field>
+            {!knownPath && (
+              <Field label="Custom path">
+                <input
+                  aria-label={`Custom assertion path for ${assertion.assertionId}`}
+                  value={assertion.path}
+                  placeholder="/decision/approved"
+                  onChange={(event) => changePath(event.target.value)}
+                />
+              </Field>
+            )}
+          </>
         )}
 
         <Field label="Check">

@@ -60,12 +60,6 @@ describe('Scenario graphical editors', () => {
       errorCode: 'SCENARIO_TIMEOUT',
     });
 
-    await act(async () => {
-      const details = document.querySelector('details');
-      if (!(details instanceof HTMLDetailsElement)) throw new Error('Missing advanced editor');
-      details.open = true;
-      details.dispatchEvent(new Event('toggle', { bubbles: true }));
-    });
     await select(selectElement(`Selector kind for ${dependency.dependencyId}`), 'FUNCTION');
     await change(input(`Function reference for ${dependency.dependencyId}`), 'money.round');
 
@@ -75,6 +69,7 @@ describe('Scenario graphical editors', () => {
       resourceRef: '',
       functionRef: 'money.round',
     });
+    expect(document.querySelector('details')?.open).toBe(false);
   });
 
   it('switches node, edge, and invocation assertions with valid scope coordinates', async () => {
@@ -117,6 +112,19 @@ describe('Scenario graphical editors', () => {
     }
 
     await render(<ControlledBuilder />);
+    expect(options('Assertion path for assertion-1')).toEqual([
+      '',
+      'decision',
+      'decision.approved',
+      'decision.reason',
+      '__custom__',
+    ]);
+    await select(selectElement('Assertion path for assertion-1'), 'decision.approved');
+    expect(lastAssertion(changes)).toMatchObject({
+      path: 'decision.approved',
+      expected: false,
+    });
+
     await select(selectElement('Assertion scope for assertion-1'), 'NODE_STATUS');
     expect(lastAssertion(changes)).toMatchObject({
       scope: 'NODE_STATUS',

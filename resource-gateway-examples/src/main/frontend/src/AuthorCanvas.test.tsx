@@ -1384,6 +1384,36 @@ describe('AuthorCanvas built-in canvas examples', () => {
       segment: 'watchlist',
     });
   });
+
+  it('projects a loaded example into complete graphical Scenarios', async () => {
+    await act(async () => {
+      root = createRoot(host);
+      root.render(<AuthorCanvas />);
+    });
+
+    await waitFor(() =>
+      expect(query('[data-testid="canvas-example-load:loan-policy-fallback"]').textContent).toContain('Load'),
+    );
+    await click(query<HTMLButtonElement>('[data-testid="canvas-example-load:loan-policy-fallback"]'));
+    await waitFor(() =>
+      expect(query('[data-testid="contract-workspace-open"]').textContent).toContain('Current'),
+    );
+    await click(query<HTMLButtonElement>('[data-testid="contract-workspace-open"]'));
+    await waitFor(() =>
+      expect(query('[data-testid="contract-workspace"]').textContent).toContain('Graph Contract'),
+    );
+    await click(Array.from(query('[role="tablist"]').querySelectorAll<HTMLButtonElement>('button'))
+      .find((button) => button.textContent === 'Scenarios 2') as HTMLButtonElement);
+
+    await waitFor(() =>
+      expect(query('[data-testid="contract-workspace"]').textContent).toContain('Prime approval path'),
+    );
+    expect(query('[data-testid="contract-workspace"]').textContent).toContain('3 controlled dependencies');
+    expect(query('[data-testid="contract-workspace"]').textContent).toContain('1 assertion');
+    expect(query('[data-testid="contract-workspace"]').textContent).toContain('Fetch applicant');
+    expect(query('[data-testid="contract-workspace"]').textContent).toContain('Whole result');
+    expect(document.querySelectorAll('[data-testid^="scenario-dependency:"]')).toHaveLength(5);
+  });
 });
 
 describe('AuthorCanvas connection guide', () => {
