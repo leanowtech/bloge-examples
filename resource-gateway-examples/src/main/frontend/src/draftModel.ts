@@ -165,6 +165,19 @@ export interface CanvasSummary {
   disconnectedNodeIds: string[];
 }
 
+export type CanvasZoomTier = 'detail' | 'compact' | 'overview';
+
+export interface CanvasZoomPresentation {
+  tier: CanvasZoomTier;
+  showNodeDetails: boolean;
+  edgeLabelMode: 'full' | 'summary' | 'hidden';
+}
+
+export interface CanvasFocusPath {
+  nodeIds: Set<string>;
+  edgeIds: Set<string>;
+}
+
 /** One row in the simulation readiness checklist. */
 export interface SimulationChecklistItem {
   key: string;
@@ -1387,6 +1400,105 @@ export function autoLayoutCanvas(nodes: CanvasNode[], edges: CanvasEdge[]): Canv
       },
     };
   });
+}
+
+/** Converts one numeric viewport zoom into the stable semantic-detail policy used by the canvas. */
+export function canvasZoomPresentation(zoom: number): CanvasZoomPresentation {
+  const normalized = Number.isFinite(zoom) ? zoom : 1;
+  if (normalized >= 0.7) {
+    return { tier: 'detail', showNodeDetails: true, edgeLabelMode: 'full' };
+  }
+  if (normalized >= 0.45) {
+    return { tier: 'compact', showNodeDetails: false, edgeLabelMode: 'summary' };
+  }
+  return { tier: 'overview', showNodeDetails: false, edgeLabelMode: 'hidden' };
+}
+
+/**
+ * Chooses the edge copy for the current semantic zoom.
+ *
+ * Selected and Focus Path edges retain full coordinates at every zoom; ordinary edges collapse to
+ * terminal field names and then disappear so a topology overview never becomes a cloud of text.
+ */
+export function canvasEdgeLabelForZoom(
+  label: string,
+  zoom: number,
+  emphasized: boolean,
+): string {
+  if (!label || emphasized) {
+    return label;
+  }
+  const presentation = canvasZoomPresentation(zoom);
+  if (presentation.edgeLabelMode === 'full') {
+    return label;
+  }
+  if (presentation.edgeLabelMode === 'hidden') {
+    return '';
+  }
+  const [source, target] = label.split(/\s*->\s*/, 2);
+  if (!target) {
+    return label.length > 28 ? `${label.slice(0, 25)}...` : label;
+  }
+  return `${edgeLabelLastSegment(source)} -> ${edgeLabelLastSegment(target)}`;
+}
+
+/**
+ * Returns the selected node's complete upstream and downstream business path.
+ *
+ * Side branches that are neither predecessors nor successors are excluded. Cycles are bounded by
+ * visited sets, so the projection remains deterministic for partially invalid drafts.
+ */
+export function canvasFocusPath(
+  nodes: CanvasNode[],
+  edges: CanvasEdge[],
+  anchorNodeId: string,
+): CanvasFocusPath {
+  const nodeIds = new Set(nodes.map((node) => node.id));
+  if (!anchorNodeId || !nodeIds.has(anchorNodeId)) {
+    return { nodeIds: new Set(), edgeIds: new Set() };
+  }
+  const outgoing = new Map<string, CanvasEdge[]>();
+  const incoming = new Map<string, CanvasEdge[]>();
+  for (const edge of edges) {
+    if (!nodeIds.has(edge.source) || !nodeIds.has(edge.target)) continue;
+    outgoing.set(edge.source, [...(outgoing.get(edge.source) ?? []), edge]);
+    incoming.set(edge.target, [...(incoming.get(edge.target) ?? []), edge]);
+  }
+  const focusedNodes = new Set<string>([anchorNodeId]);
+  visitFocusDirection(anchorNodeId, outgoing, (edge) => edge.target, focusedNodes);
+  visitFocusDirection(anchorNodeId, incoming, (edge) => edge.source, focusedNodes);
+  const focusedEdges = new Set(
+    edges
+      .filter((edge) => focusedNodes.has(edge.source) && focusedNodes.has(edge.target))
+      .map((edge) => edge.id),
+  );
+  return { nodeIds: focusedNodes, edgeIds: focusedEdges };
+}
+
+function visitFocusDirection(
+  anchorNodeId: string,
+  adjacency: Map<string, CanvasEdge[]>,
+  nextNode: (edge: CanvasEdge) => string,
+  visited: Set<string>,
+): void {
+  const queue = [anchorNodeId];
+  const traversed = new Set<string>([anchorNodeId]);
+  for (let index = 0; index < queue.length; index += 1) {
+    for (const edge of adjacency.get(queue[index]) ?? []) {
+      const next = nextNode(edge);
+      visited.add(next);
+      if (!traversed.has(next)) {
+        traversed.add(next);
+        queue.push(next);
+      }
+    }
+  }
+}
+
+function edgeLabelLastSegment(endpoint: string): string {
+  const normalized = endpoint.trim();
+  const segments = normalized.split('.');
+  return segments[segments.length - 1] || normalized;
 }
 
 function layoutTopLanePlan(

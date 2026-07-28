@@ -59,9 +59,13 @@ import {
   authoringJourney,
   autoLayoutCanvas,
   canvasEdgeBindingKey,
+  canvasEdgeLabelForZoom,
   canvasCoachPrompt,
+  canvasFocusPath,
   canvasNodeFocusState,
+  canvasZoomPresentation,
   type CanvasEdge,
+  type CanvasFocusPath,
   type CanvasNodeFocusState,
   type CanvasNode,
   type AuthoringJourneyAction,
@@ -201,6 +205,12 @@ interface NodeData {
   candidateStatus?: ConnectionCandidateStatus;
   candidatePorts?: Record<string, ConnectionCandidateStatus>;
   focusState?: CanvasNodeFocusState;
+  pathFocus?: 'active' | 'dimmed';
+}
+
+interface LayoutUndoSnapshot {
+  positions: Record<string, { x: number; y: number }>;
+  movedNodeCount: number;
 }
 
 interface OperatorDetailBaseline {
@@ -281,6 +291,8 @@ interface CanvasEdgeData {
   kind?: string;
   condition?: string;
   labelLane?: number;
+  viewportZoom?: number;
+  pathFocus?: 'active' | 'dimmed';
 }
 
 type CanvasFlowEdge = Edge<CanvasEdgeData> & {
@@ -330,7 +342,14 @@ function CanvasDataEdge({
     borderRadius: 18,
     offset: 42,
   });
-  const labelText = typeof label === 'string' || typeof label === 'number' ? String(label) : '';
+  const rawLabelText = typeof label === 'string' || typeof label === 'number' ? String(label) : '';
+  const labelText = data?.pathFocus === 'dimmed'
+    ? ''
+    : canvasEdgeLabelForZoom(
+        rawLabelText,
+        data?.viewportZoom ?? 1,
+        selected || data?.pathFocus === 'active',
+      );
   const labelLane = data?.labelLane ?? 0;
   const labelOffsetX = Math.abs(targetY - sourceY) > 60
     ? targetY > sourceY
@@ -434,15 +453,15 @@ function edgeLaneFor(index: number, count: number): number {
 }
 
 function edgeParallelKey(edge: Edge): string {
-  return [
-    edge.source,
-    edge.target,
-    edge.sourceHandle ?? '',
-    edge.targetHandle ?? '',
-  ].join('::');
+  return `${edge.source}::${edge.target}`;
 }
 
-function withEdgeLabelLanes(edges: Edge<CanvasEdgeData>[]): Edge<CanvasEdgeData>[] {
+function withEdgeLabelLanes(
+  edges: Edge<CanvasEdgeData>[],
+  viewportZoom: number,
+  focusPath: CanvasFocusPath,
+  focusActive: boolean,
+): Edge<CanvasEdgeData>[] {
   const groups = new Map<string, Edge<CanvasEdgeData>[]>();
   for (const edge of edges) {
     const key = edgeParallelKey(edge);
@@ -453,14 +472,23 @@ function withEdgeLabelLanes(edges: Edge<CanvasEdgeData>[]): Edge<CanvasEdgeData>
     const group = groups.get(edgeParallelKey(edge)) ?? [edge];
     const index = group.findIndex((candidate) => candidate.id === edge.id);
     const count = group.length;
+    const pathFocus = focusActive
+      ? focusPath.edgeIds.has(edge.id) ? 'active' : 'dimmed'
+      : undefined;
     return {
       ...edge,
       type: CANVAS_DATA_EDGE_TYPE,
+      className: [
+        edge.className,
+        pathFocus ? `focus-${pathFocus}` : '',
+      ].filter(Boolean).join(' '),
       interactionWidth: edge.interactionWidth ?? EDGE_LABEL_OPTIONS.interactionWidth,
       labelShowBg: false,
       data: {
         ...(edge.data ?? {}),
         labelLane: edgeLaneFor(Math.max(0, index), count),
+        viewportZoom,
+        pathFocus,
       },
     };
   });
@@ -1402,7 +1430,15 @@ function OperatorNode({ id, data, selected }: NodeProps<NodeData>) {
   const kindClass = `kind-${data.summary.visualKind}`;
   return (
     <div
-      className={`operator-node ${kindClass} ${status} ${candidateClass} ${focusClass} ${selected ? 'selected' : ''}`}
+      className={[
+        'operator-node',
+        kindClass,
+        status,
+        candidateClass,
+        focusClass,
+        data.pathFocus ? `path-${data.pathFocus}` : '',
+        selected ? 'selected' : '',
+      ].filter(Boolean).join(' ')}
       data-testid={`canvas-node:${id}`}
       data-operator-ref={data.operatorRef}
     >
@@ -4571,6 +4607,9 @@ export default function AuthorCanvas({ workspaceVersion = 'v1' }: AuthorCanvasPr
   const [canvasFocusMode, setCanvasFocusMode] = useState(false);
   const [overviewVisible, setOverviewVisible] = useState(true);
   const [viewportZoom, setViewportZoom] = useState(1);
+  const [focusPathNodeId, setFocusPathNodeId] = useState('');
+  const [layoutUndo, setLayoutUndo] = useState<LayoutUndoSnapshot | null>(null);
+  const [layoutNotice, setLayoutNotice] = useState('');
   const searchInputRef = useRef<HTMLInputElement>(null);
   const flowRef = useRef<HTMLDivElement>(null);
   const flowInstanceRef = useRef<ReactFlowInstance<NodeData, CanvasEdgeData> | null>(null);
@@ -4721,6 +4760,12 @@ export default function AuthorCanvas({ workspaceVersion = 'v1' }: AuthorCanvasPr
       if (changes.some((change) => change.type === 'remove' || change.type === 'add')) {
         clearRunResult();
         setConnectionGuide(null);
+        setLayoutUndo(null);
+        setLayoutNotice('');
+      }
+      if (changes.some((change) => change.type === 'position')) {
+        setLayoutUndo(null);
+        setLayoutNotice('');
       }
       if (removedNodeIds.length > 0) {
         setFixtureDrafts((current) => {
@@ -4759,6 +4804,7 @@ export default function AuthorCanvas({ workspaceVersion = 'v1' }: AuthorCanvasPr
           return next;
         });
         setSelectedNodeId((current) => (removedNodeIds.includes(current) ? '' : current));
+        setFocusPathNodeId((current) => (removedNodeIds.includes(current) ? '' : current));
         setOperatorDetailNodeId((current) => (removedNodeIds.includes(current) ? '' : current));
         setOperatorDetailBaseline((current) =>
           current && removedNodeIds.includes(current.nodeId) ? null : current);
@@ -4781,6 +4827,8 @@ export default function AuthorCanvas({ workspaceVersion = 'v1' }: AuthorCanvasPr
   const addOperator = useCallback((operator: OperatorDefinition, position?: { x: number; y: number }) => {
     clearRunResult();
     setConnectionGuide(null);
+    setLayoutUndo(null);
+    setLayoutNotice('');
     const nextIndex = counter.current + 1;
     counter.current = nextIndex;
     const id = `n${nextIndex}`;
@@ -5174,6 +5222,14 @@ export default function AuthorCanvas({ workspaceVersion = 'v1' }: AuthorCanvasPr
     () => summarizeCanvas(canvasNodes, canvasEdges, outputNodeId),
     [canvasEdges, canvasNodes, outputNodeId],
   );
+  const zoomPresentation = useMemo(
+    () => canvasZoomPresentation(viewportZoom),
+    [viewportZoom],
+  );
+  const focusedCanvasPath = useMemo(
+    () => canvasFocusPath(canvasNodes, canvasEdges, focusPathNodeId),
+    [canvasEdges, canvasNodes, focusPathNodeId],
+  );
   const viewportZoomPercent = `${Math.round(viewportZoom * 100)}%`;
   const overviewLabel = isComplexGraph ? 'Large Map' : 'Map';
   const checklist = useMemo(
@@ -5309,6 +5365,9 @@ export default function AuthorCanvas({ workspaceVersion = 'v1' }: AuthorCanvasPr
     setOperatorTestPublications({});
     setSimulationTableRows(nextSimulationTableRows);
     setSimulationTableResults({});
+    setLayoutUndo(null);
+    setLayoutNotice('');
+    setFocusPathNodeId('');
     scenarioGraphNameRef.current = '';
     setScenarioDraftSet(null);
     setGraphName(template.graphName);
@@ -5726,13 +5785,32 @@ export default function AuthorCanvas({ workspaceVersion = 'v1' }: AuthorCanvasPr
             candidateStatus,
             candidatePorts,
             focusState,
+            pathFocus: focusPathNodeId
+              ? focusedCanvasPath.nodeIds.has(node.id) ? 'active' : 'dimmed'
+              : undefined,
             isOutput: node.id === outputNodeId,
           },
         };
       }),
-    [candidatePreview, coachPrompt, nodes, outputNodeId, selectedNodeId],
+    [
+      candidatePreview,
+      coachPrompt,
+      focusPathNodeId,
+      focusedCanvasPath.nodeIds,
+      nodes,
+      outputNodeId,
+      selectedNodeId,
+    ],
   );
-  const flowEdges = useMemo(() => withEdgeLabelLanes(edges), [edges]);
+  const flowEdges = useMemo(
+    () => withEdgeLabelLanes(
+      edges,
+      viewportZoom,
+      focusedCanvasPath,
+      Boolean(focusPathNodeId),
+    ),
+    [edges, focusPathNodeId, focusedCanvasPath, viewportZoom],
+  );
 
   const focusGovernanceIssue = useCallback((issue: GovernanceGateIssue) => {
     const nodeId = governanceIssueNodeId(issue);
@@ -6018,6 +6096,9 @@ export default function AuthorCanvas({ workspaceVersion = 'v1' }: AuthorCanvasPr
     tableTestCounter.current = nextSimulationTableRows.length;
     operatorTestCounter.current = 0;
     setNodes(workspaceBundle ? nextNodes : autoLayoutFlowNodes(nextNodes, nextEdges));
+    setLayoutUndo(null);
+    setLayoutNotice('');
+    setFocusPathNodeId('');
     setEdges(nextEdges);
     setFixtureDrafts(nextFixtureDrafts);
     setFixtureInputDrafts(nextFixtureInputDrafts);
@@ -7200,13 +7281,71 @@ export default function AuthorCanvas({ workspaceVersion = 'v1' }: AuthorCanvasPr
   );
 
   const autoLayout = useCallback(() => {
-    setNodes((current) => autoLayoutFlowNodes(current, edges));
+    const nextNodes = autoLayoutFlowNodes(nodes, edges);
+    const movedNodeCount = nextNodes.filter((node, index) => {
+      const current = nodes[index];
+      return !current
+        || current.position.x !== node.position.x
+        || current.position.y !== node.position.y;
+    }).length;
+    if (movedNodeCount > 0) {
+      setLayoutUndo({
+        positions: Object.fromEntries(nodes.map((node) => [node.id, { ...node.position }])),
+        movedNodeCount,
+      });
+      setLayoutNotice(`Moved ${movedNodeCount} node${movedNodeCount === 1 ? '' : 's'}.`);
+      setNodes(nextNodes);
+    } else {
+      setLayoutUndo(null);
+      setLayoutNotice('Layout already optimal.');
+    }
     if (typeof window.requestAnimationFrame === 'function') {
       window.requestAnimationFrame(() => fitCanvasToView());
     } else {
       fitCanvasToView();
     }
-  }, [edges, fitCanvasToView]);
+  }, [edges, fitCanvasToView, nodes]);
+
+  const undoAutoLayout = useCallback(() => {
+    if (!layoutUndo) return;
+    setNodes((current) => current.map((node) => ({
+      ...node,
+      position: layoutUndo.positions[node.id] ?? node.position,
+    })));
+    setLayoutNotice(`Restored ${layoutUndo.movedNodeCount} node position${
+      layoutUndo.movedNodeCount === 1 ? '' : 's'
+    }.`);
+    setLayoutUndo(null);
+    if (typeof window.requestAnimationFrame === 'function') {
+      window.requestAnimationFrame(() => fitCanvasToView());
+    } else {
+      fitCanvasToView();
+    }
+  }, [fitCanvasToView, layoutUndo]);
+
+  const toggleFocusPath = useCallback(() => {
+    if (focusPathNodeId) {
+      setFocusPathNodeId('');
+      fitCanvasToView();
+      return;
+    }
+    if (!selectedNodeId) return;
+    const path = canvasFocusPath(canvasNodes, canvasEdges, selectedNodeId);
+    setFocusPathNodeId(selectedNodeId);
+    const pathNodes = nodes.filter((node) => path.nodeIds.has(node.id));
+    flowInstanceRef.current?.fitView({
+      nodes: pathNodes,
+      padding: 0.2,
+      duration: 240,
+    });
+  }, [
+    canvasEdges,
+    canvasNodes,
+    fitCanvasToView,
+    focusPathNodeId,
+    nodes,
+    selectedNodeId,
+  ]);
 
   const beginPanelResize = useCallback((
     panel: 'palette' | 'inspector',
@@ -7597,6 +7736,8 @@ export default function AuthorCanvas({ workspaceVersion = 'v1' }: AuthorCanvasPr
         '--author-inspector-track': inspectorCollapsed ? '36px' : `${inspectorWidth}px`,
       } as CSSProperties : undefined}
       data-layout-mode={canvasFocusMode ? 'focus' : 'standard'}
+      data-canvas-zoom-tier={zoomPresentation.tier}
+      data-focus-path={focusPathNodeId ? 'active' : 'inactive'}
       data-author-workspace-version={workspaceVersion}
       data-author-mode={authorMode}
       data-start-section={startOpen ? startSection : 'closed'}
@@ -8438,6 +8579,12 @@ export default function AuthorCanvas({ workspaceVersion = 'v1' }: AuthorCanvasPr
               <div className="canvas-navigator-stats">
                 <span>{canvasSummary.nodeCount} nodes</span>
                 <span>{canvasSummary.edgeCount} edges</span>
+                {focusPathNodeId && <span>{focusedCanvasPath.nodeIds.size} in path</span>}
+                {layoutNotice && (
+                  <span data-testid="layout-notice" role="status" aria-live="polite">
+                    {layoutNotice}
+                  </span>
+                )}
               </div>
               <div className="canvas-navigator-actions">
                 <button
@@ -8448,6 +8595,30 @@ export default function AuthorCanvas({ workspaceVersion = 'v1' }: AuthorCanvasPr
                 >
                   Fit All
                 </button>
+                <button
+                  type="button"
+                  className="secondary compact"
+                  data-testid="navigator-focus-path"
+                  aria-pressed={Boolean(focusPathNodeId)}
+                  onClick={toggleFocusPath}
+                  disabled={!selectedNodeId && !focusPathNodeId}
+                  title={focusPathNodeId
+                    ? 'Restore the complete graph'
+                    : 'Emphasize this node, its predecessors, and its successors'}
+                >
+                  {focusPathNodeId ? 'Show All' : 'Focus Path'}
+                </button>
+                {layoutUndo && (
+                  <button
+                    type="button"
+                    className="secondary compact"
+                    data-testid="navigator-undo-layout"
+                    onClick={undoAutoLayout}
+                    title="Restore positions from before the last Auto Layout"
+                  >
+                    Undo layout
+                  </button>
+                )}
                 <button
                   type="button"
                   className="secondary compact"
@@ -8475,9 +8646,17 @@ export default function AuthorCanvas({ workspaceVersion = 'v1' }: AuthorCanvasPr
               refreshViewportZoom();
             }}
             onMove={(_, viewport) => setViewportZoom(viewport.zoom)}
-            onNodeClick={(_, node) => setSelectedNodeId(node.id)}
+            onNodeClick={(_, node) => {
+              setSelectedNodeId(node.id);
+              if (focusPathNodeId && focusPathNodeId !== node.id) {
+                setFocusPathNodeId('');
+              }
+            }}
             onNodeDoubleClick={(_, node) => openNodeEditor(node)}
-            onPaneClick={() => setSelectedNodeId('')}
+            onPaneClick={() => {
+              setSelectedNodeId('');
+              setFocusPathNodeId('');
+            }}
             fitView
             fitViewOptions={{ padding: 0.12, minZoom: CANVAS_MIN_ZOOM, maxZoom: CANVAS_MAX_ZOOM }}
             minZoom={CANVAS_MIN_ZOOM}

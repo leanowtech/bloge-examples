@@ -3899,6 +3899,16 @@ explicit **Advanced** takeover and is off by default. Fields declared with
 `writeOnly`, password format, `x-sensitive`, or restricted/confidential
 classification are masked in the generated input form.
 
+For a complex graph, use **Canvas Focus** to give the topology the full workspace,
+then **Auto Layout** and inspect its shape through **Map** or the Overview zoom
+tier. Select a business-critical node and click **Focus Path** to emphasize its
+complete upstream/downstream dependency path while dimming side branches.
+Zooming below 70% progressively removes node detail and summarizes edge labels;
+below 45%, ordinary labels are hidden so the whole graph remains legible.
+Focused and selected paths keep their full field coordinates. **Undo layout**
+restores the exact pre-layout positions until a node is added, removed, or
+manually moved.
+
 ### Try Contract And Scenario Authoring
 
 1. Start the demo and open `http://localhost:8080/author/`.

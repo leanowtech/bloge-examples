@@ -64,6 +64,33 @@ BLOGE 通用可视化编排画布是一套面向复杂业务编排的 topology-f
 3. **示例区压缩/隐藏**：默认态示例卡更紧凑，Focus 模式完全隐藏示例区，把垂直空间还给 React Flow。
 4. **主画布高度目标**：桌面真实浏览器回归要求标准态 author flow 至少 620px 高，Focus 态至少 760px 且比标准态多 100px 以上。
 
+#### 复杂图导航：先看形状，再看路径，最后看字段
+
+新版画布不会在所有缩放比例下同时展示全部信息。它按当前缩放比例切换三档语义密度，
+避免节点摘要、端口和边字段在复杂图中互相遮挡：
+
+| 缩放档位 | 画布保留的信息 | 适合任务 |
+| --- | --- | --- |
+| Detail（`>= 70%`） | 完整节点 contract、端口、状态和 edge field label | 配置节点、核对字段映射 |
+| Compact（`45% - 69%`） | 节点身份与核心状态、精简后的 edge label | 阅读中型图和一条业务路径 |
+| Overview（`< 45%`） | 节点类型、名称和拓扑形状；普通 edge label 隐藏 | 判断 25/100 节点图的整体结构 |
+
+推荐按下面的顺序审阅复杂图：
+
+1. 点击 **Auto Layout**。画布会在保留信息密度的前提下重新分层，并报告移动了多少节点。
+2. 用 **Map** 或缩放到 Overview 判断全图形状。这个阶段不需要辨认每个字段。
+3. 选中关键节点，再点击 **Focus Path**。画布只强调该节点完整的上游和下游闭包，
+   旁路节点与边会降噪；关键路径的 edge label 即使在低缩放下也保留完整字段坐标。
+4. 点击 **Show All** 返回全图。Focus Path 只改变阅读视图，不删除节点、边或 fixture。
+5. 如果布局结果不合适，立即点击 **Undo layout** 恢复布局前的精确坐标。新增、删除或手动
+   移动节点后，旧撤销快照会失效，防止把后来编辑的图错误回滚。
+6. 放大到 Detail 后再检查端口、contract 和字段映射。并行边的标签会分配不同 label lane，
+   不再叠成一行。
+
+`Canvas Focus` 与 `Focus Path` 不是同一能力：前者扩大可用画布面积，后者从业务语义上
+筛选当前要读的依赖路径。复杂图通常先进入 Canvas Focus，再使用 Auto Layout、Overview
+和 Focus Path。
+
 ### 3.1 调用 Integration API 前先建立受信身份
 
 `/api/integration/capabilities` 和 evidence 验签公钥是公开探针；其余 `/api/integration/*` 接口必须先验证 workload credential。`X-Tenant-Id`、`X-Organization-Id`、`X-Environment-Id` 和 `X-Actor-Id` 不再构成身份，只是迁移期一致性 hint：缺失不影响服务端 claims，填入值与受信 claims 冲突则返回 `403 RG.INTEGRATION.IDENTITY_CLAIM_MISMATCH`。

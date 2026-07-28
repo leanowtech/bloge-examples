@@ -20,13 +20,24 @@ const reactFlowMocks = vi.hoisted(() => ({
   zoomIn: vi.fn(),
   zoomOut: vi.fn(),
   zoomTo: vi.fn(),
+  onMove: null as null | ((event: unknown, viewport: { zoom: number }) => void),
 }));
 
 vi.mock('reactflow', async () => {
   const React = await import('react');
 
   return {
-    default: function ReactFlowMock({ children, nodes, nodeTypes, onInit, onNodeClick, onNodeDoubleClick }: any) {
+    default: function ReactFlowMock({
+      children,
+      nodes,
+      edges,
+      nodeTypes,
+      onInit,
+      onMove,
+      onNodeClick,
+      onNodeDoubleClick,
+    }: any) {
+      reactFlowMocks.onMove = onMove;
       React.useEffect(() => {
         onInit?.({
           fitView: reactFlowMocks.fitView,
@@ -35,7 +46,10 @@ vi.mock('reactflow', async () => {
           zoomOut: reactFlowMocks.zoomOut,
           zoomTo: reactFlowMocks.zoomTo,
         });
-      }, [onInit]);
+        return () => {
+          reactFlowMocks.onMove = null;
+        };
+      }, []);
       return React.createElement(
         'div',
         { 'data-testid': 'react-flow' },
@@ -57,6 +71,12 @@ vi.mock('reactflow', async () => {
             }),
           );
         }),
+        edges.map((edge: any) => React.createElement('span', {
+          key: `edge:${edge.id}`,
+          'data-testid': `mock-edge:${edge.id}`,
+          'data-label-lane': String(edge.data?.labelLane ?? 0),
+          'data-path-focus': edge.data?.pathFocus ?? '',
+        })),
         children,
       );
     },
@@ -91,6 +111,7 @@ describe('AuthorCanvas operator-library intake', () => {
     reactFlowMocks.zoomIn.mockReset();
     reactFlowMocks.zoomOut.mockReset();
     reactFlowMocks.zoomTo.mockReset();
+    reactFlowMocks.onMove = null;
     imported = false;
     host = document.createElement('div');
     document.body.appendChild(host);
@@ -437,6 +458,13 @@ describe('AuthorCanvas operator-library intake', () => {
     await waitFor(() => expect(document.body.textContent).toContain('1 nodes'));
     expect(query('[data-testid="canvas-navigator"]').textContent).toContain('Map');
     expect(query('[data-testid="canvas-zoom-readout"]').textContent).toBe('100%');
+    expect(query('.workspace').getAttribute('data-canvas-zoom-tier')).toBe('detail');
+
+    await act(async () => reactFlowMocks.onMove?.({}, { zoom: 0.55 }));
+    expect(query('.workspace').getAttribute('data-canvas-zoom-tier')).toBe('compact');
+    await act(async () => reactFlowMocks.onMove?.({}, { zoom: 0.3 }));
+    expect(query('.workspace').getAttribute('data-canvas-zoom-tier')).toBe('overview');
+    await act(async () => reactFlowMocks.onMove?.({}, { zoom: 1 }));
 
     await click(query<HTMLButtonElement>('[data-testid="author-fit-all"]'));
     expect(reactFlowMocks.fitView).toHaveBeenCalledWith({ padding: 0.18, duration: 240 });
@@ -1414,6 +1442,49 @@ describe('AuthorCanvas built-in canvas examples', () => {
     expect(query('[data-testid="contract-workspace"]').textContent).toContain('Whole result');
     expect(document.querySelectorAll('[data-testid^="scenario-dependency:"]')).toHaveLength(5);
   });
+
+  it('focuses one complete business path without hiding its edge coordinates', async () => {
+    await act(async () => {
+      root = createRoot(host);
+      root.render(<AuthorCanvas />);
+    });
+    await waitFor(() =>
+      expect(query('[data-testid="canvas-example-load:loan-policy-fallback"]').textContent).toContain('Load'),
+    );
+    await click(query<HTMLButtonElement>('[data-testid="canvas-example-load:loan-policy-fallback"]'));
+    await click(query<HTMLElement>('[data-testid="node-wrapper:n2"]'));
+
+    await click(query<HTMLButtonElement>('[data-testid="navigator-focus-path"]'));
+
+    expect(query('[data-testid="canvas-node:n1"]').className).toContain('path-active');
+    expect(query('[data-testid="canvas-node:n2"]').className).toContain('path-active');
+    expect(query('[data-testid="canvas-node:n4"]').className).toContain('path-active');
+    expect(query('[data-testid="canvas-node:n5"]').className).toContain('path-active');
+    expect(query('[data-testid="canvas-node:n3"]').className).toContain('path-dimmed');
+    expect(query('[data-testid="canvas-navigator"]').textContent).toContain('4 in path');
+    expect([
+      query('[data-testid="mock-edge:n4:output.decision->n5:inputs.decision"]').getAttribute('data-label-lane'),
+      query('[data-testid="mock-edge:n4:output.tier->n5:inputs.tier"]').getAttribute('data-label-lane'),
+      query('[data-testid="mock-edge:n4:output.reason->n5:inputs.reason"]').getAttribute('data-label-lane'),
+    ]).toEqual(['-1', '0', '1']);
+    expect(
+      query('[data-testid="mock-edge:n3:payload.score->n5:inputs.secondaryScore"]')
+        .getAttribute('data-path-focus'),
+    ).toBe('dimmed');
+    expect(reactFlowMocks.fitView).toHaveBeenCalledWith(expect.objectContaining({
+      nodes: expect.arrayContaining([
+        expect.objectContaining({ id: 'n1' }),
+        expect.objectContaining({ id: 'n2' }),
+        expect.objectContaining({ id: 'n4' }),
+        expect.objectContaining({ id: 'n5' }),
+      ]),
+      padding: 0.2,
+      duration: 240,
+    }));
+
+    await click(query<HTMLButtonElement>('[data-testid="navigator-focus-path"]'));
+    expect(query('[data-testid="canvas-node:n3"]').className).not.toContain('path-dimmed');
+  });
 });
 
 describe('AuthorCanvas connection guide', () => {
@@ -1538,6 +1609,38 @@ describe('AuthorCanvas connection guide', () => {
     await waitFor(() =>
       expect(reactFlowMocks.fitView).toHaveBeenCalledWith({ padding: 0.18, duration: 240 }),
     );
+  });
+
+  it('reports moved nodes and can undo the last automatic layout', async () => {
+    await act(async () => {
+      root = createRoot(host);
+      root.render(<AuthorCanvas />);
+    });
+    await waitFor(() =>
+      expect(query('[data-testid="operator-button:risk:score"]').textContent).toContain('Risk Score'),
+    );
+    await click(query<HTMLButtonElement>('[data-testid="operator-button:risk:score"]'));
+    await click(query<HTMLButtonElement>('[data-testid="operator-button:risk:decision"]'));
+    const before = authorDraftExport(query<HTMLAnchorElement>('[data-testid="author-draft-export"]'))
+      .nodes.map((node: { id: string; position: { x: number; y: number } }) => ({
+        id: node.id,
+        position: node.position,
+      }));
+
+    await click(buttonByText('Auto Layout'));
+
+    expect(query('[data-testid="layout-notice"]').textContent).toMatch(/Moved \d+ nodes?\./);
+    expect(document.querySelector('[data-testid="navigator-undo-layout"]')).not.toBeNull();
+    await click(query<HTMLButtonElement>('[data-testid="navigator-undo-layout"]'));
+    const restored = authorDraftExport(query<HTMLAnchorElement>('[data-testid="author-draft-export"]'))
+      .nodes.map((node: { id: string; position: { x: number; y: number } }) => ({
+        id: node.id,
+        position: node.position,
+      }));
+
+    expect(restored).toEqual(before);
+    expect(query('[data-testid="layout-notice"]').textContent).toContain('Restored');
+    expect(document.querySelector('[data-testid="navigator-undo-layout"]')).toBeNull();
   });
 
   it('opens operator details for a regular canvas node on double click', async () => {
@@ -3535,6 +3638,13 @@ function authorDraftExport(link: HTMLAnchorElement): any {
     throw new Error(`Unexpected export URL: ${link.href}`);
   }
   return JSON.parse(decodeURIComponent(link.href.slice(prefix.length)));
+}
+
+function buttonByText(label: string): HTMLButtonElement {
+  const button = Array.from(document.querySelectorAll<HTMLButtonElement>('button'))
+    .find((candidate) => candidate.textContent?.trim() === label);
+  expect(button, `Expected button ${label}`).toBeDefined();
+  return button as HTMLButtonElement;
 }
 
 async function click(element: HTMLElement): Promise<void> {

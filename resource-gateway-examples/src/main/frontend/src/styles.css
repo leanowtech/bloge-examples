@@ -3263,6 +3263,11 @@ button.primary:disabled {
   gap: 7px;
 }
 
+.canvas-navigator-stats,
+.canvas-navigator-actions {
+  flex-wrap: wrap;
+}
+
 .canvas-navigator-head strong {
   min-width: 0;
   overflow: hidden;
@@ -3287,7 +3292,7 @@ button.primary:disabled {
 }
 
 .canvas-navigator.collapsed .canvas-navigator-stats,
-.canvas-navigator.collapsed .canvas-navigator-actions button:first-child {
+.canvas-navigator.collapsed .canvas-navigator-actions button:not(:last-child) {
   display: none;
 }
 
@@ -3396,6 +3401,55 @@ button.primary:disabled {
   border-radius: 7px;
   background: #fff;
   box-shadow: 0 6px 16px rgb(28 35 48 / 10%);
+  transition: opacity 120ms ease, border-color 120ms ease, box-shadow 120ms ease;
+}
+
+.operator-node.path-dimmed {
+  opacity: 0.16;
+  filter: grayscale(0.65);
+}
+
+.operator-node.path-active {
+  box-shadow: 0 0 0 2px rgb(26 86 219 / 20%), 0 8px 22px rgb(28 35 48 / 14%);
+}
+
+.workspace[data-canvas-zoom-tier="compact"] .operator-node {
+  min-width: 184px;
+  max-width: 210px;
+  padding: 8px;
+}
+
+.workspace[data-canvas-zoom-tier="compact"] .operator-node-contract,
+.workspace[data-canvas-zoom-tier="compact"] .operator-node-port-grid,
+.workspace[data-canvas-zoom-tier="compact"] .operator-node-warning {
+  display: none;
+}
+
+.workspace[data-canvas-zoom-tier="compact"] .operator-node-metrics {
+  margin-top: 5px;
+}
+
+.workspace[data-canvas-zoom-tier="overview"] .operator-node {
+  min-width: 148px;
+  max-width: 172px;
+  padding: 7px;
+}
+
+.workspace[data-canvas-zoom-tier="overview"] .operator-node-ref,
+.workspace[data-canvas-zoom-tier="overview"] .operator-node-contract,
+.workspace[data-canvas-zoom-tier="overview"] .operator-node-metrics,
+.workspace[data-canvas-zoom-tier="overview"] .operator-node-port-grid,
+.workspace[data-canvas-zoom-tier="overview"] .operator-node-warning,
+.workspace[data-canvas-zoom-tier="overview"] .operator-side-effect-pill {
+  display: none;
+}
+
+.workspace[data-canvas-zoom-tier="overview"] .operator-node-title {
+  font-size: 12px;
+}
+
+.workspace[data-canvas-zoom-tier="overview"] .react-flow__handle {
+  visibility: hidden;
 }
 
 .operator-node.kind-decision-table {
@@ -3701,6 +3755,14 @@ button.primary:disabled {
 .react-flow__edge.accepted-edge path {
   stroke: var(--accent);
   stroke-width: 2;
+}
+
+.react-flow__edge.focus-dimmed {
+  opacity: 0.1;
+}
+
+.react-flow__edge.focus-active path {
+  stroke-width: 3;
 }
 
 .react-flow__edge.route-edge path {

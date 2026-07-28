@@ -4,7 +4,10 @@ import {
   authoringJourney,
   autoLayoutCanvas,
   canvasCoachPrompt,
+  canvasEdgeLabelForZoom,
+  canvasFocusPath,
   canvasNodeFocusState,
+  canvasZoomPresentation,
   compileFixtureDrafts,
   compileSimulationTableRows,
   connectionCandidatesMessage,
@@ -1241,6 +1244,88 @@ describe('autoLayoutCanvas', () => {
     );
 
     expect(layout[1].position.x - layout[0].position.x).toBeGreaterThanOrEqual(680);
+  });
+
+  it.each([
+    { nodeCount: 25, width: 5 },
+    { nodeCount: 100, width: 10 },
+  ])('keeps $nodeCount-node fixtures overlap-free and deterministic', ({ nodeCount, width }) => {
+    const depth = nodeCount / width;
+    const nodes = Array.from({ length: nodeCount }, (_, index) => ({
+      id: `n${index}`,
+      operatorRef: `operator:${index}`,
+      position: { x: 0, y: 0 },
+    }));
+    const edges = Array.from({ length: (depth - 1) * width }, (_, index) => {
+      const layer = Math.floor(index / width);
+      const row = index % width;
+      return {
+        id: `e${index}`,
+        source: `n${layer * width + row}`,
+        target: `n${(layer + 1) * width + row}`,
+        sourcePort: 'payload',
+        sourcePath: `business.field${row}`,
+        targetPort: 'inputs',
+        targetPath: `business.field${row}`,
+      };
+    });
+
+    const first = autoLayoutCanvas(nodes, edges);
+    const second = autoLayoutCanvas(nodes, edges);
+
+    expect(second).toEqual(first);
+    for (let left = 0; left < first.length; left += 1) {
+      for (let right = left + 1; right < first.length; right += 1) {
+        const horizontalGap = Math.abs(first[left].position.x - first[right].position.x);
+        const verticalGap = Math.abs(first[left].position.y - first[right].position.y);
+        expect(
+          horizontalGap >= 260 || verticalGap >= 164,
+          `${first[left].id} overlaps ${first[right].id}`,
+        ).toBe(true);
+      }
+    }
+  });
+});
+
+describe('canvas semantic zoom and focus path', () => {
+  it('reduces detail at stable zoom thresholds while preserving emphasized edge coordinates', () => {
+    expect(canvasZoomPresentation(0.7)).toMatchObject({ tier: 'detail', edgeLabelMode: 'full' });
+    expect(canvasZoomPresentation(0.5)).toMatchObject({ tier: 'compact', edgeLabelMode: 'summary' });
+    expect(canvasZoomPresentation(0.2)).toMatchObject({ tier: 'overview', edgeLabelMode: 'hidden' });
+    expect(canvasEdgeLabelForZoom('payload.score -> inputs.primaryScore', 0.5, false))
+      .toBe('score -> primaryScore');
+    expect(canvasEdgeLabelForZoom('payload.score -> inputs.primaryScore', 0.2, false)).toBe('');
+    expect(canvasEdgeLabelForZoom('payload.score -> inputs.primaryScore', 0.2, true))
+      .toBe('payload.score -> inputs.primaryScore');
+  });
+
+  it('focuses complete upstream and downstream paths without unrelated side branches', () => {
+    const nodes = ['root', 'left', 'selected', 'output', 'side']
+      .map((id) => ({ id, operatorRef: id, position: { x: 0, y: 0 } }));
+    const edges = [
+      { id: 'root-left', source: 'root', target: 'left' },
+      { id: 'left-selected', source: 'left', target: 'selected' },
+      { id: 'selected-output', source: 'selected', target: 'output' },
+      { id: 'root-side', source: 'root', target: 'side' },
+    ];
+
+    const path = canvasFocusPath(nodes, edges, 'selected');
+
+    expect([...path.nodeIds]).toEqual(['selected', 'output', 'left', 'root']);
+    expect([...path.edgeIds]).toEqual(['root-left', 'left-selected', 'selected-output']);
+  });
+
+  it('bounds focus traversal for cycles and rejects an unknown anchor', () => {
+    const nodes = ['a', 'b', 'c']
+      .map((id) => ({ id, operatorRef: id, position: { x: 0, y: 0 } }));
+    const edges = [
+      { id: 'a-b', source: 'a', target: 'b' },
+      { id: 'b-a', source: 'b', target: 'a' },
+      { id: 'b-c', source: 'b', target: 'c' },
+    ];
+
+    expect([...canvasFocusPath(nodes, edges, 'a').nodeIds]).toEqual(['a', 'b', 'c']);
+    expect(canvasFocusPath(nodes, edges, 'missing').nodeIds.size).toBe(0);
   });
 });
 
