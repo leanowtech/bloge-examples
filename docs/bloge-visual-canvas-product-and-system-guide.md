@@ -131,9 +131,11 @@ window.addEventListener('bloge:author-task', ({ detail }) => {
 `dsl`、`config`、`input/output`、secret/token/credential 的 key 会被拒绝；字符串还有
 64 字符上限。无效遥测被丢弃，不能中断作者操作。
 
-灰度仍由 URL 控制：`?authorWorkspace=v2` 进入任务式工作台，
-`?authorWorkspace=v1` 立即回到旧 Shell。切换只改变 UI 投影，不迁移或回滚
-GraphDraft、Contract、Scenario 和运行证据。
+`/author/` 默认进入 Author Workspace v2。顶栏的 **Legacy** 入口或
+`?authorWorkspace=legacy` 会立即回到旧 Shell；`?authorWorkspace=v1` 继续作为历史书签
+兼容别名。切换链接会保留 `draftId`、`nodeId`、`runId` 等 deep-link 坐标，只改变 UI
+投影，不迁移或回滚 GraphDraft、Contract、Scenario 和运行证据。未知或格式错误的显式
+`authorWorkspace` 值仍 fail closed 到 Legacy，避免错误灰度参数静默进入新版。
 
 ### 3.1 调用 Integration API 前先建立受信身份
 
@@ -2049,7 +2051,7 @@ selection。坐标、source map、fixtures、描述文本和 `visualLayout.graph
 - **Node Input Source**：某个算子字段来自 Graph Input、上游节点还是常量，是
   GraphDraft 中持久化的依赖语义。
 
-使用 `http://localhost:8080/author/?authorWorkspace=v2`，加载 `Loan Decision Policy`
+使用 `http://localhost:8080/author/`，加载 `Loan Decision Policy`
 示例、选中 `Decision response`，再打开右侧 `Data`，页面应与下图一致：
 
 ![Graph Run Input 与节点绑定标注](assets/bloge-author-graph-run-input-v2-annotated.png)
@@ -2108,7 +2110,7 @@ Run Input 会进入 `POST /api/visual/graphs/simulate` 的 `context` 字段，�
    Context Extras；默认关闭，避免普通用户在无意间绕过 schema-driven controls。
 
 敏感字段通过 `writeOnly`、`format: password`、`x-sensitive` 或数据分类标记识别，
-控件默认遮罩且关闭浏览器自动填充。旧版 `authorWorkspace=v1` 的 Context Variables
+控件默认遮罩且关闭浏览器自动填充。旧版 `authorWorkspace=legacy` 的 Context Variables
 只保留用于兼容和回滚，不再是 v2 的推荐工作流。
 
 ### 5.4 第四步：连线
@@ -2184,16 +2186,19 @@ Operator 当成一等 Contract target，复用与 Graph 相同的四页工作台
 2. **Interface** 从服务端算子目录读取权威 input/output port Schema，并显示 effect、
    idempotency、streaming 和 durable 语义。Operator Contract 在这里只读；要修改定义，
    应更新算子库而不是在某一个 Graph 节点上制造分叉。
-3. **Scenarios** 根据 input Contract 自动生成 Given 表单。Operator target 没有 Graph
-   node/edge scope，因此只提供 target output 与 invocation 语义，不允许伪造 node/edge
-   selector。
+3. **Scenarios** 根据 input Contract 自动生成 Given 表单，并用 output Contract 生成
+   Happy path 的 expected-output 断言；即使该 Operator 从未保存过 Scenario，也能直接看到
+   一条输入、输出均完整的可编辑演示数据。Operator target 没有 Graph node/edge scope，
+   因此只提供 target output 与 invocation 语义，不允许伪造 node/edge selector。
 4. **Run & Compare** 用一个临时单节点图提供快速反馈；需要证明真实单算子 runtime
    composability 时，仍使用同一详情浮层中的 **Executable Operator Suite**。
 5. **Save Scenario** 将草稿绑定到 operator fingerprint 和 Contract fingerprint；
    **Publish** 通过独立 publisher 权限生成不可变 FixtureBundle + TestSuite，并从 testing
    control plane 独立发现 OPERATOR runtime target。
 6. 已经保存过的 Operator Scenario 会在工作台打开时自动恢复最新 revision；**Load
-   Scenario** 仍可用于显式刷新。首次创建时服务端 404 会被当作正常空状态，不显示报错。
+   Scenario** 仍可用于显式刷新。首次创建时，自动探测或手动点击 **Load Scenario** 得到的
+   服务端 404 都会被解释为正常的“尚无已保存 revision”，保留当前 Happy path 并提示点击
+   **Save Scenario** 创建 revision 1，不再显示 `RG.SCENARIO.NOT_FOUND` 请求错误。
 7. 对 resource virtual operator，Given 仍按业务 Contract 填写，例如
    `{params: {userId}}`；发布编译器会根据 catalog lowering 自动生成
    `{resourceId, params}` 并绑定 `httpResource` runtime。发布回执同时保留业务

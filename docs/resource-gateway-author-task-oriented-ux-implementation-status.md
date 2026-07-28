@@ -727,7 +727,7 @@ Auto Layout 变成可撤销操作。
 - Author 端到端组件测试实际执行 `Load example → Auto Layout → Run`，验证 9 类事件和
   metadata key 安全；
 - axe-core 在 Start 与完整 Loan 编排态扫描 WCAG 2 A/AA，serious/critical 为 0；
-- 全量前端为 `27` 个测试文件、`295` 项测试全部通过；
+- 全量前端为 `27` 个测试文件、`298` 项测试全部通过；
 - production build 成功，`npm audit` 为 0；
 - packaged Chrome 完成 `1280 x 720` 全任务链后缩到 `390 x 844`，验证页面无横向溢出、
   单一主操作仍可见、画布高度不少于 420px；
@@ -767,3 +767,11 @@ v1 当前仍保留为显式回滚路径。只有同时满足以下条件才进�
 - 真实用户研究需要进入灰度后由四类参与者执行，不能用工程测试伪造；
 - pinned node、100 节点布局进度/取消和 edge/field 精确定位属于下一轮效率增强；
 - v1 下线必须等待上述组织门禁，不能随代码提交自动发生。
+
+### 默认入口晋级
+
+完成上述工程门禁后，`/author/` 已晋级为 Author Workspace v2 默认入口。旧 Shell 通过
+顶栏 **Legacy** 或 `?authorWorkspace=legacy` 显式进入；原
+`?authorWorkspace=v1` 继续可读，避免历史书签失效。切换链接保留 draft/node/run 等
+deep-link 坐标，未知显式版本仍 fail closed 到 Legacy。该变更只调整 UI 投影，不改变
+GraphDraft、Contract、Scenario 或运行证据。

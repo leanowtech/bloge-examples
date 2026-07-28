@@ -108,6 +108,13 @@ describe('Contract Scenario authoring workbench', () => {
       nodes(),
       [],
     );
+    expect(draftSet.scenarios[0].then.assertions).toEqual([
+      expect.objectContaining({
+        scope: 'OUTPUT_PATH',
+        operator: 'EQUALS',
+        expected: { decision: { approved: false, reason: 'string' } },
+      }),
+    ]);
     const nextTarget = { ...contract.target, revision: 3, fingerprint: fingerprint('c') };
     const rebased = rebaseScenarioDraftSet(draftSet, nextTarget, fingerprint('d'));
 

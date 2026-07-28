@@ -61,7 +61,8 @@ export function scenarioDraftSetFromCanvas(
         name: 'Happy path',
         context: sampleObject(graphDraft.inputSchema),
         fixtures: {},
-        hasExpectedOutput: false,
+        hasExpectedOutput: Boolean(graphDraft.outputSchema),
+        expectedOutput: sampleFromSchemaEnvelope(graphDraft.outputSchema),
       }];
   return {
     ...draftSet,

@@ -3,7 +3,10 @@ import { useEffect } from 'react';
 import AuthorCanvas from './AuthorCanvas';
 import RehearsalWorkbench from './RehearsalWorkbench';
 import Showcase from './Showcase';
-import { resolveAuthorWorkspaceVersion } from './author/authorWorkspaceVersion';
+import {
+  authorWorkspaceEntryHref,
+  resolveAuthorWorkspaceVersion,
+} from './author/authorWorkspaceVersion';
 import './styles.css';
 
 type WorkspaceRoute = 'author' | 'rehearsals' | 'showcase';
@@ -19,6 +22,12 @@ export default function App() {
     ? 'Rehearsals'
     : route === 'showcase' ? 'Showcase' : 'Author';
   const authorWorkspaceVersion = resolveAuthorWorkspaceVersion(window.location.search);
+  const authorHref = route === 'author'
+    ? authorWorkspaceEntryHref(window.location.search, 'v2')
+    : '/author/';
+  const legacyAuthorHref = authorWorkspaceEntryHref(window.location.search, 'v1');
+  const authorIsCurrent = route === 'author' && authorWorkspaceVersion === 'v2';
+  const legacyAuthorIsCurrent = route === 'author' && authorWorkspaceVersion === 'v1';
 
   useEffect(() => {
     document.title = `BLOGE Visual Canvas - ${title}`;
@@ -32,9 +41,19 @@ export default function App() {
           <h1>{title}</h1>
         </div>
         <nav className="topbar-nav" aria-label="Workspace views">
-          <a className={`topbar-link ${route === 'author' ? 'active' : ''}`} href="/author/" aria-current={route === 'author' ? 'page' : undefined}>
+          <a className={`topbar-link ${authorIsCurrent ? 'active' : ''}`} href={authorHref} aria-current={authorIsCurrent ? 'page' : undefined}>
             Author
           </a>
+          {route === 'author' && (
+            <a
+              className={`topbar-link ${legacyAuthorIsCurrent ? 'active' : ''}`}
+              href={legacyAuthorHref}
+              aria-current={legacyAuthorIsCurrent ? 'page' : undefined}
+              title="Open the legacy Author workspace"
+            >
+              Legacy
+            </a>
+          )}
           <a className={`topbar-link ${route === 'rehearsals' ? 'active' : ''}`} href="/rehearsals/" aria-current={route === 'rehearsals' ? 'page' : undefined}>
             Rehearsals
           </a>

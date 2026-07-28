@@ -3881,8 +3881,9 @@ the design can be integrated instead of remaining a diagram-only artifact.
 
 ### Try The Task-Oriented Author Workspace
 
-Open `http://localhost:8080/author/?authorWorkspace=v2`, load a built-in example,
-and use the fixed `Compose / Contract / Test / Review` task modes. The URL keeps
+Open `http://localhost:8080/author/`, load a built-in example, and use the fixed
+`Compose / Contract / Test / Review` task modes. Author Workspace v2 is the
+default page. The URL keeps
 the selected mode and node so a browser refresh or a deep link restores the same
 working context.
 
@@ -3919,8 +3920,10 @@ Workspace v2 dispatches payload-free `bloge:author-task` browser events using th
 `bloge.authorTaskEvent.v1` envelope. A host shell may consume counts, modes,
 status, duration, and first-success timing; context, fixture, payload, schema,
 DSL, config, input/output, and credential-like metadata are rejected. The UI
-does not transmit these events itself. Use `?authorWorkspace=v1` for immediate
-UI rollback; GraphDraft and Scenario assets are shared and remain untouched.
+does not transmit these events itself. Use the visible **Legacy** link or
+`?authorWorkspace=legacy` for immediate UI rollback; `v1` remains a compatibility
+alias for existing bookmarks. GraphDraft and Scenario assets are shared and
+remain untouched.
 
 ### Try Contract And Scenario Authoring
 
@@ -3961,7 +3964,10 @@ operator-target Scenario revisions, and publishes them through an independently 
 `OPERATOR` runtime target. Catalog-derived Contract semantics are read-only in this view; update the
 operator library to change them. Graph-only node/edge selectors and the Graph workspace bundle are
 intentionally unavailable for an Operator target. Opening a stored target automatically resumes its
-latest Scenario revision; **Load Scenario** remains an explicit refresh. A resource-backed business
+latest Scenario revision; **Load Scenario** remains an explicit refresh. Before revision 1 exists,
+the workspace keeps its schema-generated Happy path, including Given input and an expected-output
+assertion, and reports the 404 as the normal “not saved yet” state with a **Save Scenario** action
+instead of exposing a request error. A resource-backed business
 Operator such as `resource:user-service.getProfile` keeps that ref as its design target while the
 governed compiler lowers Given `{params: ...}` into `{resourceId, params}` for the independently
 fingerprinted `httpResource` runtime target. Publication lineage retains both coordinates.

@@ -20,8 +20,8 @@ describe('ContractScenarioWorkspace', () => {
 
   beforeEach(() => {
     (globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
-    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(new Response(
-      JSON.stringify({ code: 'RG.SCENARIO.DRAFT_NOT_FOUND' }),
+    vi.stubGlobal('fetch', vi.fn().mockImplementation(async () => new Response(
+      JSON.stringify({ code: 'RG.SCENARIO.NOT_FOUND' }),
       { status: 404, statusText: 'Not Found', headers: { 'Content-Type': 'application/json' } },
     )));
     host = document.createElement('div');
@@ -363,7 +363,16 @@ describe('ContractScenarioWorkspace', () => {
     expect(text()).not.toContain('Export Workspace');
     expect(button('Load Scenario').disabled).toBe(false);
 
+    await act(async () => {
+      button('Load Scenario').click();
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+    expect(text()).not.toContain('Request failed: 404');
+    expect(text()).toContain('No saved Scenario revision yet');
+
     await clickTab('Scenarios 1');
+    expect(text()).toContain('Happy path');
     await act(async () => {
       button('Run & Compare').click();
       await Promise.resolve();

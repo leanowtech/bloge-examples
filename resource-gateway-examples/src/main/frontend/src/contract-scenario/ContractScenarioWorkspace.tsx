@@ -434,7 +434,12 @@ export default function ContractScenarioWorkspace({
         message: `Loaded Scenario revision ${stored.revision}.`,
       });
     } catch (cause: unknown) {
-      setAssetNotice({ level: 'error', message: errorMessage(cause) });
+      setAssetNotice(isScenarioNotFound(cause)
+        ? {
+            level: 'ok',
+            message: 'No saved Scenario revision yet. The generated example remains available; use Save Scenario to create revision 1.',
+          }
+        : { level: 'error', message: errorMessage(cause) });
     } finally {
       setAssetBusy('');
     }
@@ -1503,4 +1508,8 @@ function shortFingerprint(fingerprint: string): string {
 
 function errorMessage(cause: unknown): string {
   return cause instanceof Error ? cause.message : String(cause);
+}
+
+function isScenarioNotFound(cause: unknown): boolean {
+  return cause instanceof BlogeApiRequestError && cause.status === 404;
 }

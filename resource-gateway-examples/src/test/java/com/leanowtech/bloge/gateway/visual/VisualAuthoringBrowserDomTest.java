@@ -5,6 +5,8 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.dataformat.yaml.YAMLMapper;
 import com.leanowtech.bloge.gateway.ResourceGatewayApplication;
+import com.leanowtech.bloge.gateway.authoring.scenario.ScenarioContractProjection;
+import com.leanowtech.bloge.gateway.authoring.scenario.ScenarioDraftSet;
 import com.leanowtech.bloge.gateway.gateway.GatewayProperties;
 import com.leanowtech.bloge.gateway.gateway.ResourceDescriptorBootstrap;
 import com.leanowtech.bloge.gateway.resource.WritableResourceRegistry;
@@ -12,6 +14,7 @@ import com.leanowtech.bloge.gateway.visual.catalog.OperatorDefinition;
 import com.leanowtech.bloge.gateway.visual.catalog.OperatorLibrary;
 import com.leanowtech.bloge.gateway.visual.catalog.OperatorLibraryRegistry;
 import com.leanowtech.bloge.gateway.visual.catalog.VisualCatalogTestSupport;
+import com.leanowtech.bloge.gateway.visual.contract.ContractDraft;
 import com.leanowtech.bloge.gateway.visual.draft.GraphDraftRepository;
 import com.leanowtech.bloge.gateway.visual.model.SchemaEnvelope;
 
@@ -104,6 +107,13 @@ class VisualAuthoringBrowserDomTest {
         RehearsalBrowserFixtureController
         rehearsalBrowserFixtureController() {
             return new RehearsalBrowserFixtureController();
+        }
+
+        /** Supplies an exact read-only Operator Contract without enabling mutable profile routes. */
+        @Bean
+        OperatorScenarioBrowserFixtureController
+        operatorScenarioBrowserFixtureController() {
+            return new OperatorScenarioBrowserFixtureController();
         }
     }
 
@@ -305,6 +315,86 @@ class VisualAuthoringBrowserDomTest {
         }
     }
 
+    /** Test-only Contract projection; Scenario reads deliberately remain real 404 responses. */
+    @RestController
+    @RequestMapping("/api/visual/scenario-draft-sets/targets/operators")
+    static final class OperatorScenarioBrowserFixtureController {
+        private static final String TARGET_FINGERPRINT =
+                "sha256:" + "d".repeat(64);
+        private static final String CONTRACT_FINGERPRINT =
+                "sha256:" + "e".repeat(64);
+
+        /** Returns a complete schema-backed Contract for the selected catalog Operator. */
+        @GetMapping("/{operatorRef}/contract")
+        ScenarioContractProjection contract(@PathVariable String operatorRef) {
+            SchemaEnvelope input = SchemaEnvelope.object(
+                    Map.of("params", Map.of(
+                            "type", "object",
+                            "properties", Map.of(
+                                    "userId", Map.of("type", "string", "examples", List.of("user-1001"))
+                            ),
+                            "required", List.of("userId"),
+                            "additionalProperties", false
+                    )),
+                    List.of("params")
+            );
+            SchemaEnvelope output = SchemaEnvelope.object(
+                    Map.of("payload", Map.of(
+                            "type", "object",
+                            "properties", Map.of(
+                                    "displayName", Map.of(
+                                            "type", "string",
+                                            "examples", List.of("Ada Lovelace")
+                                    ),
+                                    "tier", Map.of(
+                                            "type", "string",
+                                            "examples", List.of("gold")
+                                    )
+                            ),
+                            "required", List.of("displayName", "tier"),
+                            "additionalProperties", false
+                    )),
+                    List.of("payload")
+            );
+            ContractDraft contract = new ContractDraft(
+                    ContractDraft.SCHEMA_VERSION,
+                    new ContractDraft.Target(
+                            ContractDraft.TargetKind.OPERATOR,
+                            operatorRef,
+                            0,
+                            TARGET_FINGERPRINT
+                    ),
+                    input,
+                    output,
+                    List.of(),
+                    new ContractDraft.ExecutionSemantics(
+                            ContractDraft.Effect.READ,
+                            "NOT_APPLICABLE",
+                            false,
+                            false,
+                            null
+                    ),
+                    List.of(),
+                    ContractDraft.CompatibilityPolicy.strict(),
+                    Map.of(),
+                    ContractDraft.Source.INFERRED,
+                    ContractDraft.Confidence.EXACT
+            );
+            return new ScenarioContractProjection(
+                    ScenarioContractProjection.SCHEMA_VERSION,
+                    new ScenarioDraftSet.EnterpriseScope(
+                            "tenant-a",
+                            "knowledge-governance",
+                            "tool-studio",
+                            "test",
+                            "local"
+                    ),
+                    contract,
+                    CONTRACT_FINGERPRINT
+            );
+        }
+    }
+
     @Autowired
     private WritableResourceRegistry resourceRegistry;
 
@@ -449,17 +539,18 @@ class VisualAuthoringBrowserDomTest {
     }
 
     /**
-     * Proves the author-shell rollout coordinate is URL-only and that the desktop operator dialog
-     * keeps both actions on the title row. The latter checks a shared vertical center line and
-     * horizontal clearance rather than equal top coordinates because the kind badge intentionally
-     * has two text rows. The historical three-column grid silently wrapped the close action.
+     * Proves task-oriented Author is the default, the named legacy coordinate remains a URL-only
+     * rollback, and the desktop operator dialog keeps both actions on the title row. The latter
+     * checks a shared vertical center line and horizontal clearance rather than equal top
+     * coordinates because the kind badge intentionally has two text rows. The historical
+     * three-column grid silently wrapped the close action.
      */
     @Test
     void authorWorkspaceVersionAndOperatorDialogHeadingRemainRollbackSafeInRealBrowser() {
         assumeReactAuthorBundlePresent();
         driver = newChromeDriverOrSkip();
         WebDriverWait wait = new WebDriverWait(driver, WAIT_TIMEOUT);
-        driver.get("http://localhost:" + port + "/author/?authorWorkspace=v2");
+        driver.get("http://localhost:" + port + "/author/");
 
         wait.until(ExpectedConditions.attributeToBe(
                 By.cssSelector(".workspace"),
@@ -512,11 +603,68 @@ class VisualAuthoringBrowserDomTest {
                     .isGreaterThanOrEqualTo(childBounds.get(index - 1).get("right").doubleValue());
         }
 
+        driver.get("http://localhost:" + port + "/author/?authorWorkspace=legacy");
+        wait.until(ExpectedConditions.attributeToBe(
+                By.cssSelector(".workspace"),
+                "data-author-workspace-version",
+                "v1"
+        ));
+        assertThat(wait.until(ExpectedConditions.visibilityOfElementLocated(
+                By.cssSelector(".topbar-link.active")
+        )).getText()).isEqualTo("Legacy");
+
         driver.get("http://localhost:" + port + "/author/?authorWorkspace=experimental");
         wait.until(ExpectedConditions.attributeToBe(
                 By.cssSelector(".workspace"),
                 "data-author-workspace-version",
                 "v1"
+        ));
+    }
+
+    @Test
+    void operatorScenarioLoadKeepsCompleteGeneratedExampleWhenNoRevisionExistsInRealBrowser() {
+        assumeReactAuthorBundlePresent();
+        driver = newChromeDriverOrSkip();
+        WebDriverWait wait = new WebDriverWait(driver, WAIT_TIMEOUT);
+        driver.get("http://localhost:" + port + "/author/");
+
+        wait.until(ExpectedConditions.elementToBeClickable(By.cssSelector(
+                "[aria-label='Close start dialog']"
+        ))).click();
+        wait.until(ExpectedConditions.elementToBeClickable(By.cssSelector(
+                "[data-testid='operator-button:resource:user-service.getProfile']"
+        ))).click();
+        WebElement operatorNode = wait.until(ExpectedConditions.visibilityOfElementLocated(
+                By.cssSelector("[data-testid='canvas-node:n1']")
+        ));
+        new Actions(driver).doubleClick(operatorNode).perform();
+        wait.until(ExpectedConditions.elementToBeClickable(By.xpath(
+                "//button[normalize-space()='Contract & Scenarios']"
+        ))).click();
+
+        WebElement workspace = wait.until(ExpectedConditions.visibilityOfElementLocated(
+                By.cssSelector("[data-testid='contract-workspace']")
+        ));
+        wait.until(ExpectedConditions.elementToBeClickable(By.xpath(
+                "//button[normalize-space()='Load Scenario']"
+        ))).click();
+        waitForText(
+                wait,
+                By.cssSelector(".scenario-asset-notice"),
+                "No saved Scenario revision yet"
+        );
+        assertThat(workspace.getText())
+                .doesNotContain("Request failed: 404")
+                .doesNotContain("RG.SCENARIO.NOT_FOUND");
+
+        wait.until(ExpectedConditions.elementToBeClickable(By.xpath(
+                "//button[starts-with(normalize-space(), 'Scenarios ')]"
+        ))).click();
+        waitForText(wait, By.cssSelector(".scenario-list"), "Happy path");
+        waitForText(wait, By.cssSelector(".scenario-workbench"), "Given");
+        wait.until(ExpectedConditions.numberOfElementsToBeMoreThan(
+                By.cssSelector(".scenario-assertions > *"),
+                0
         ));
     }
 

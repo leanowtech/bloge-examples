@@ -44,21 +44,34 @@ describe('App route shell', () => {
     expect(document.body.textContent).toContain('Author');
     expect(document.title).toBe('BLOGE Visual Canvas - Author');
     expect(query('[data-testid="author-mock"]').textContent).toContain('Author canvas');
-    expect(query('[data-testid="author-mock"]').getAttribute('data-workspace-version')).toBe('v1');
-    expect(query<HTMLAnchorElement>('.topbar-link.active').getAttribute('href')).toBe('/author/');
-  });
-
-  it('opts into the v2 author shell without changing the route', async () => {
-    await renderAt('/author/?authorWorkspace=v2&draftId=draft-1');
-
     expect(query('[data-testid="author-mock"]').getAttribute('data-workspace-version')).toBe('v2');
     expect(query<HTMLAnchorElement>('.topbar-link.active').getAttribute('href')).toBe('/author/');
   });
 
-  it('falls back to v1 for an unknown author shell version', async () => {
+  it('canonicalizes an explicit v2 link while preserving its deep-link context', async () => {
+    await renderAt('/author/?authorWorkspace=v2&draftId=draft-1');
+
+    expect(query('[data-testid="author-mock"]').getAttribute('data-workspace-version')).toBe('v2');
+    expect(query<HTMLAnchorElement>('.topbar-link.active').getAttribute('href'))
+      .toBe('/author/?draftId=draft-1');
+  });
+
+  it('keeps the legacy author reachable without discarding deep-link context', async () => {
+    await renderAt('/author/?authorWorkspace=legacy&draftId=draft-1&nodeId=policy');
+
+    expect(query('[data-testid="author-mock"]').getAttribute('data-workspace-version')).toBe('v1');
+    expect(query<HTMLAnchorElement>('.topbar-link.active').textContent).toContain('Legacy');
+    expect(query<HTMLAnchorElement>('.topbar-link.active').getAttribute('href'))
+      .toBe('/author/?authorWorkspace=legacy&draftId=draft-1&nodeId=policy');
+    expect(query<HTMLAnchorElement>('.topbar-link:not(.active)').getAttribute('href'))
+      .toBe('/author/?draftId=draft-1&nodeId=policy');
+  });
+
+  it('falls back to legacy for an unknown explicit author shell version', async () => {
     await renderAt('/author/?authorWorkspace=experimental');
 
     expect(query('[data-testid="author-mock"]').getAttribute('data-workspace-version')).toBe('v1');
+    expect(query<HTMLAnchorElement>('.topbar-link.active').textContent).toContain('Legacy');
   });
 
   it('renders the rehearsal workbench for /rehearsals/', async () => {
@@ -68,6 +81,7 @@ describe('App route shell', () => {
     expect(document.title).toBe('BLOGE Visual Canvas - Rehearsals');
     expect(query('[data-testid="rehearsals-mock"]').textContent).toContain('Rehearsal workbench');
     expect(query<HTMLAnchorElement>('.topbar-link.active').getAttribute('href')).toBe('/rehearsals/');
+    expect(query<HTMLAnchorElement>('.topbar-link[href="/author/"]').textContent).toContain('Author');
     expect(document.querySelectorAll('.topbar-link')).toHaveLength(3);
   });
 
