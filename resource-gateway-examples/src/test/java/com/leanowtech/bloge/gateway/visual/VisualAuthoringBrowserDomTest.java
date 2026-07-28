@@ -448,6 +448,68 @@ class VisualAuthoringBrowserDomTest {
         assertNoHorizontalOverflow(wait, By.cssSelector(".workspace"));
     }
 
+    /**
+     * Proves the author-shell rollout coordinate is URL-only and that the desktop operator dialog
+     * keeps both actions on the title row. The latter is a geometry assertion, not merely a DOM
+     * presence check, because the historical three-column grid silently wrapped the close action.
+     */
+    @Test
+    void authorWorkspaceVersionAndOperatorDialogHeadingRemainRollbackSafeInRealBrowser() {
+        assumeReactAuthorBundlePresent();
+        driver = newChromeDriverOrSkip();
+        WebDriverWait wait = new WebDriverWait(driver, WAIT_TIMEOUT);
+        driver.get("http://localhost:" + port + "/author/?authorWorkspace=v2");
+
+        wait.until(ExpectedConditions.attributeToBe(
+                By.cssSelector(".workspace"),
+                "data-author-workspace-version",
+                "v2"
+        ));
+        wait.until(ExpectedConditions.elementToBeClickable(By.cssSelector(
+                "[data-testid^='operator-button:']"
+        ))).click();
+        WebElement operatorNode = wait.until(ExpectedConditions.visibilityOfElementLocated(
+                By.cssSelector("[data-testid='canvas-node:n1']")
+        ));
+        new Actions(driver).doubleClick(operatorNode).perform();
+
+        WebElement heading = wait.until(ExpectedConditions.visibilityOfElementLocated(
+                By.cssSelector(".operator-detail-heading")
+        ));
+        @SuppressWarnings("unchecked")
+        List<Map<String, Number>> childBounds = (List<Map<String, Number>>)
+                ((JavascriptExecutor) driver).executeScript("""
+                        return [...arguments[0].children].map((child) => {
+                          const rect = child.getBoundingClientRect();
+                          return {
+                            left: rect.left,
+                            right: rect.right,
+                            top: rect.top,
+                            bottom: rect.bottom
+                          };
+                        });
+                        """, heading);
+        assertThat(childBounds).hasSize(4);
+        assertThat(childBounds)
+                .extracting(bounds -> bounds.get("top").doubleValue())
+                .allSatisfy(top -> assertThat(top)
+                        .as("operator dialog heading child top")
+                        .isCloseTo(childBounds.get(0).get("top").doubleValue(),
+                                org.assertj.core.data.Offset.offset(2.0)));
+        for (int index = 1; index < childBounds.size(); index++) {
+            assertThat(childBounds.get(index).get("left").doubleValue())
+                    .as("operator dialog heading child %s follows its predecessor", index)
+                    .isGreaterThanOrEqualTo(childBounds.get(index - 1).get("right").doubleValue());
+        }
+
+        driver.get("http://localhost:" + port + "/author/?authorWorkspace=experimental");
+        wait.until(ExpectedConditions.attributeToBe(
+                By.cssSelector(".workspace"),
+                "data-author-workspace-version",
+                "v1"
+        ));
+    }
+
     @Test
     void everyBuiltInCanvasExampleProjectsAStableCapabilityClosureInRealBrowser() throws Exception {
         assumeReactAuthorBundlePresent();

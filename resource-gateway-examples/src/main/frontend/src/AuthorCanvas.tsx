@@ -4290,7 +4290,11 @@ function maxCanvasNodeSequence(nodes: CanvasNode[]): number {
  * the mock-run (simulate) endpoint. Non-trivial graph<->request logic lives in the pure, unit-tested
  * {@link ./draftModel} module; this component is thin glue.
  */
-export default function AuthorCanvas() {
+export interface AuthorCanvasProps {
+  workspaceVersion?: 'v1' | 'v2';
+}
+
+export default function AuthorCanvas({ workspaceVersion = 'v1' }: AuthorCanvasProps = {}) {
   const [operators, setOperators] = useState<OperatorDefinition[]>([]);
   const [builtInFunctions, setBuiltInFunctions] = useState<BuiltInFunctionDefinition[]>([]);
   const [nodes, setNodes] = useState<Node<NodeData>[]>([]);
@@ -7019,6 +7023,7 @@ export default function AuthorCanvas() {
     <div
       className={['workspace', canvasFocusMode ? 'canvas-focus' : ''].filter(Boolean).join(' ')}
       data-layout-mode={canvasFocusMode ? 'focus' : 'standard'}
+      data-author-workspace-version={workspaceVersion}
     >
       <aside className="palette" id="operator-palette">
         <div className="palette-heading">

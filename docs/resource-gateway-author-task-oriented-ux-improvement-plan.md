@@ -12,6 +12,7 @@
 
 相关文档：
 
+- [Author 任务式交互 UX 实现状态](resource-gateway-author-task-oriented-ux-implementation-status.md)
 - [Contract & Scenario Authoring 工业级体验演进计划](resource-gateway-contract-scenario-authoring-evolution-plan.md)
 - [Contract & Scenario Authoring 实现状态](resource-gateway-contract-scenario-authoring-implementation-status.md)
 - [BLOGE 通用可视化编排画布产品与系统说明](bloge-visual-canvas-product-and-system-guide.md)

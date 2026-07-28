@@ -6,7 +6,9 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import App from './App';
 
 vi.mock('./AuthorCanvas', () => ({
-  default: () => <div data-testid="author-mock">Author canvas</div>,
+  default: ({ workspaceVersion }: { workspaceVersion: string }) => (
+    <div data-testid="author-mock" data-workspace-version={workspaceVersion}>Author canvas</div>
+  ),
 }));
 
 vi.mock('./Showcase', () => ({
@@ -42,7 +44,21 @@ describe('App route shell', () => {
     expect(document.body.textContent).toContain('Author');
     expect(document.title).toBe('BLOGE Visual Canvas - Author');
     expect(query('[data-testid="author-mock"]').textContent).toContain('Author canvas');
+    expect(query('[data-testid="author-mock"]').getAttribute('data-workspace-version')).toBe('v1');
     expect(query<HTMLAnchorElement>('.topbar-link.active').getAttribute('href')).toBe('/author/');
+  });
+
+  it('opts into the v2 author shell without changing the route', async () => {
+    await renderAt('/author/?authorWorkspace=v2&draftId=draft-1');
+
+    expect(query('[data-testid="author-mock"]').getAttribute('data-workspace-version')).toBe('v2');
+    expect(query<HTMLAnchorElement>('.topbar-link.active').getAttribute('href')).toBe('/author/');
+  });
+
+  it('falls back to v1 for an unknown author shell version', async () => {
+    await renderAt('/author/?authorWorkspace=experimental');
+
+    expect(query('[data-testid="author-mock"]').getAttribute('data-workspace-version')).toBe('v1');
   });
 
   it('renders the rehearsal workbench for /rehearsals/', async () => {

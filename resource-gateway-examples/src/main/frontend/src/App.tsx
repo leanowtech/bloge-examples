@@ -3,6 +3,7 @@ import { useEffect } from 'react';
 import AuthorCanvas from './AuthorCanvas';
 import RehearsalWorkbench from './RehearsalWorkbench';
 import Showcase from './Showcase';
+import { resolveAuthorWorkspaceVersion } from './author/authorWorkspaceVersion';
 import './styles.css';
 
 type WorkspaceRoute = 'author' | 'rehearsals' | 'showcase';
@@ -17,6 +18,7 @@ export default function App() {
   const title = route === 'rehearsals'
     ? 'Rehearsals'
     : route === 'showcase' ? 'Showcase' : 'Author';
+  const authorWorkspaceVersion = resolveAuthorWorkspaceVersion(window.location.search);
 
   useEffect(() => {
     document.title = `BLOGE Visual Canvas - ${title}`;
@@ -43,7 +45,9 @@ export default function App() {
       </header>
       {route === 'showcase'
         ? <Showcase />
-        : route === 'rehearsals' ? <RehearsalWorkbench /> : <AuthorCanvas />}
+        : route === 'rehearsals'
+          ? <RehearsalWorkbench />
+          : <AuthorCanvas workspaceVersion={authorWorkspaceVersion} />}
     </div>
   );
 }
