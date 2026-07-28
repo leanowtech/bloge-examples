@@ -1,9 +1,14 @@
 // @vitest-environment jsdom
 import { act, StrictMode } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
+import axe, { type AxeResults } from 'axe-core';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import AuthorCanvas from './AuthorCanvas';
+import {
+  AUTHOR_TASK_EVENT_TYPE,
+  type AuthorTaskEvent,
+} from './author/telemetry/authorTaskTelemetry';
 import { CANVAS_EXAMPLE_TEMPLATES } from './canvasExamples';
 import type {
   BuiltInFunctionDefinition,
@@ -998,6 +1003,114 @@ describe('AuthorCanvas built-in canvas examples', () => {
     expect(query('[data-testid="author-start-dialog"]').textContent).toContain('Load a complete example');
     expect(query('[data-testid="author-start-dialog"]').textContent).toContain('5 nodes / 12 edges');
     expect(query('[data-testid="author-start-dialog"]').textContent).toContain('1 in / 7 out');
+  });
+
+  it('contains keyboard focus in the start dialog and restores the Import trigger on Escape', async () => {
+    await act(async () => {
+      root = createRoot(host);
+      root.render(<AuthorCanvas workspaceVersion="v2" />);
+    });
+
+    await click(query<HTMLButtonElement>('[aria-label="Close start dialog"]'));
+    const importButton = buttonByText('Import');
+    importButton.focus();
+    await click(importButton);
+    await waitFor(() =>
+      expect(document.activeElement)
+        .toBe(query<HTMLButtonElement>('[data-testid="author-start-choice:examples"]')),
+    );
+
+    const dialog = query<HTMLElement>('[data-testid="author-start-dialog"]');
+    const focusable = Array.from(dialog.querySelectorAll<HTMLButtonElement>('button:not([disabled])'));
+    focusable[focusable.length - 1].focus();
+    await act(async () => {
+      document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Tab', bubbles: true }));
+    });
+    expect(document.activeElement).toBe(focusable[0]);
+
+    await act(async () => {
+      document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+    });
+    await waitFor(() => expect(document.querySelector('[data-testid="author-start-dialog"]')).toBeNull());
+    expect(document.activeElement).toBe(importButton);
+  });
+
+  it('emits a payload-free task funnel while loading, laying out, and running an example', async () => {
+    const events: AuthorTaskEvent[] = [];
+    const listener = (event: Event) => {
+      events.push((event as CustomEvent<AuthorTaskEvent>).detail);
+    };
+    window.addEventListener(AUTHOR_TASK_EVENT_TYPE, listener);
+    try {
+      await act(async () => {
+        root = createRoot(host);
+        root.render(<AuthorCanvas workspaceVersion="v2" />);
+      });
+      await click(query<HTMLButtonElement>('[data-testid="author-start-choice:examples"]'));
+      await waitFor(() =>
+        expect(query<HTMLButtonElement>('[data-testid="author-start-example:loan-policy-fallback"]').disabled)
+          .toBe(false),
+      );
+      await click(query<HTMLButtonElement>('[data-testid="author-start-example:loan-policy-fallback"]'));
+      await waitFor(() => expect(document.querySelector('[data-testid="author-start-dialog"]')).toBeNull());
+
+      await click(buttonByText('Auto Layout'));
+      await click(query<HTMLButtonElement>('[data-testid="author-primary-action"]'));
+      await waitFor(() =>
+        expect(events.some((event) =>
+          event.name === 'RUN_COMPLETED' && event.metadata.status === 'PASSED')).toBe(true),
+      );
+
+      expect(events.map((event) => event.name)).toEqual(expect.arrayContaining([
+        'WORKSPACE_OPENED',
+        'START_CHOICE_SELECTED',
+        'EXAMPLE_LOADED',
+        'AUTO_LAYOUT_COMPLETED',
+        'RUN_STARTED',
+        'RUN_COMPLETED',
+        'FIRST_SUCCESS',
+      ]));
+      expect(events.every((event) =>
+        Object.keys(event.metadata).every((key) =>
+          !/(context|fixture|payload|schema|dsl|config|input|output|secret|token|credential)/i
+            .test(key)))).toBe(true);
+    } finally {
+      window.removeEventListener(AUTHOR_TASK_EVENT_TYPE, listener);
+    }
+  });
+
+  it('has no serious or critical automated accessibility violations in primary v2 states', async () => {
+    await act(async () => {
+      root = createRoot(host);
+      root.render(<AuthorCanvas workspaceVersion="v2" />);
+    });
+
+    const assertNoSevereViolations = async () => {
+      let result: AxeResults | undefined;
+      await act(async () => {
+        result = await axe.run(host, {
+          runOnly: { type: 'tag', values: ['wcag2a', 'wcag2aa'] },
+          rules: { 'color-contrast': { enabled: false } },
+        });
+      });
+      const completed = result as AxeResults;
+      const severe = completed.violations.filter((violation) =>
+        violation.impact === 'serious' || violation.impact === 'critical');
+      expect(severe.map((violation) => ({
+        id: violation.id,
+        targets: violation.nodes.map((node) => node.target),
+      }))).toEqual([]);
+    };
+
+    await assertNoSevereViolations();
+    await click(query<HTMLButtonElement>('[data-testid="author-start-choice:examples"]'));
+    await waitFor(() =>
+      expect(query<HTMLButtonElement>('[data-testid="author-start-example:loan-policy-fallback"]').disabled)
+        .toBe(false),
+    );
+    await click(query<HTMLButtonElement>('[data-testid="author-start-example:loan-policy-fallback"]'));
+    await waitFor(() => expect(document.querySelector('[data-testid="author-start-dialog"]')).toBeNull());
+    await assertNoSevereViolations();
   });
 
   it('routes v2 start choices to the existing validated import forms', async () => {

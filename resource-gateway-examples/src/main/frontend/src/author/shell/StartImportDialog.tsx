@@ -1,3 +1,7 @@
+import { useRef } from 'react';
+
+import useDialogFocusTrap from '../accessibility/useDialogFocusTrap';
+
 export type StartImportSection = 'menu' | 'examples' | 'library' | 'dsl';
 
 export interface StartExample {
@@ -34,6 +38,14 @@ export default function StartImportDialog({
   onBlankGraph,
   onClose,
 }: StartImportDialogProps) {
+  const dialogRef = useRef<HTMLElement>(null);
+  useDialogFocusTrap({
+    open,
+    dialogRef,
+    onDismiss: onClose,
+    initialFocusKey: section,
+  });
+
   if (!open) {
     return null;
   }
@@ -41,10 +53,12 @@ export default function StartImportDialog({
   return (
     <div className="author-start-backdrop" role="presentation" data-testid="author-start-backdrop">
       <section
+        ref={dialogRef}
         className={`author-start-dialog section-${section}`}
         role="dialog"
         aria-modal="true"
         aria-labelledby="author-start-title"
+        tabIndex={-1}
         data-testid="author-start-dialog"
       >
         <header>
@@ -80,6 +94,7 @@ export default function StartImportDialog({
           <div className="author-start-options">
             <button
               type="button"
+              data-dialog-initial-focus
               data-testid="author-start-choice:examples"
               onClick={() => onSectionChange('examples')}
             >
@@ -125,6 +140,7 @@ export default function StartImportDialog({
                 <button
                   type="button"
                   className="primary compact"
+                  {...(example === examples[0] ? { 'data-dialog-initial-focus': true } : {})}
                   data-testid={`author-start-example:${example.key}`}
                   disabled={!example.available}
                   title={example.available

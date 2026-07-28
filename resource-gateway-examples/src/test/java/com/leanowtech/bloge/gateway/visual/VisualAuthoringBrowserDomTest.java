@@ -526,7 +526,9 @@ class VisualAuthoringBrowserDomTest {
      * <p>The test protects behavior that component tests cannot prove: the command bar has one
      * visible primary action, legacy chrome is physically absent from layout, the canvas receives
      * at least 65% of the post-command-bar workspace, and a complete example can move from Start
-     * through a real Scenario run into Review without node overlap.</p>
+     * through a real Scenario run into Review without node overlap. The same completed task is then
+     * reduced to the supported 390 by 844 light-editing viewport to prove that the primary action
+     * remains reachable without page-level horizontal overflow.</p>
      */
     @Test
     void taskOrientedAuthorShellLoadsRunsAndReviewsWithoutCompetingChromeInRealBrowser() {
@@ -766,6 +768,39 @@ class VisualAuthoringBrowserDomTest {
         waitForText(wait, By.cssSelector("[data-testid='author-diagnostics-drawer']"), "9 warnings");
         waitForText(wait, By.cssSelector("[data-testid='author-diagnostics-drawer']"), "bloge.dsl");
         assertNoHorizontalOverflow(wait, By.cssSelector(".workspace-v2"));
+
+        diagnosticsToggle.click();
+        wait.until(ExpectedConditions.attributeToBe(
+                By.cssSelector(
+                        "[data-testid='author-diagnostics-drawer'] .author-diagnostics-toggle"),
+                "aria-expanded",
+                "false"
+        ));
+        setViewport(wait, 390, 844);
+        assertNoHorizontalOverflow(wait, By.cssSelector(".workspace-v2"));
+        assertThat(driver.findElement(By.cssSelector(
+                "[data-testid='author-primary-action']")).isDisplayed())
+                .as("mobile-degraded primary author action")
+                .isTrue();
+        assertThat(elementClientHeight(driver.findElement(
+                By.cssSelector(".workspace-v2 > .canvas"))))
+                .as("mobile-degraded canvas height")
+                .isGreaterThanOrEqualTo(420.0);
+        Number mobilePrimaryCount = (Number) ((JavascriptExecutor) driver).executeScript("""
+                return [...document.querySelectorAll(
+                  '[data-testid="author-primary-action"]'
+                )].filter((element) => {
+                  const rect = element.getBoundingClientRect();
+                  const style = getComputedStyle(element);
+                  return style.display !== 'none'
+                    && style.visibility !== 'hidden'
+                    && rect.width > 0
+                    && rect.height > 0;
+                }).length;
+                """);
+        assertThat(mobilePrimaryCount.intValue())
+                .as("mobile-degraded visible primary action count")
+                .isEqualTo(1);
     }
 
     /**

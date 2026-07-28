@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 
+import useDialogFocusTrap from '../author/accessibility/useDialogFocusTrap';
 import { sampleFromSchemaEnvelope } from '../draftModel';
 import {
   BlogeApiRequestError,
@@ -113,6 +114,7 @@ export default function ContractScenarioWorkspace({
   const [compatibilityReviewed, setCompatibilityReviewed] = useState(false);
   const workspaceInputRef = useRef<HTMLInputElement>(null);
   const workspaceBodyRef = useRef<HTMLDivElement>(null);
+  const workspaceDialogRef = useRef<HTMLElement>(null);
   const autoLoadAttemptRef = useRef('');
   const scenarioChangeRef = useRef(onScenarioDraftSetChange);
   scenarioChangeRef.current = onScenarioDraftSetChange;
@@ -138,18 +140,11 @@ export default function ContractScenarioWorkspace({
   const targetKind = contract?.target.kind ?? 'GRAPH';
   const targetLabel = targetKind === 'OPERATOR' ? 'Operator' : 'Graph';
 
-  useEffect(() => {
-    if (!open) {
-      return undefined;
-    }
-    const onKeyDown = (event: KeyboardEvent) => {
-      if (event.key === 'Escape') {
-        onClose();
-      }
-    };
-    window.addEventListener('keydown', onKeyDown);
-    return () => window.removeEventListener('keydown', onKeyDown);
-  }, [onClose, open]);
+  useDialogFocusTrap({
+    open,
+    dialogRef: workspaceDialogRef,
+    onDismiss: onClose,
+  });
 
   useEffect(() => {
     if (selectedScenario && selectedScenario.scenarioId !== selectedScenarioId) {
@@ -544,10 +539,12 @@ export default function ContractScenarioWorkspace({
       }
     }}>
       <section
+        ref={workspaceDialogRef}
         className="contract-workspace"
         role="dialog"
         aria-modal="true"
         aria-label="Contract and Scenario workspace"
+        tabIndex={-1}
         data-testid="contract-workspace"
       >
         <header className="contract-workspace-header">
@@ -678,6 +675,7 @@ export default function ContractScenarioWorkspace({
             <button
               type="button"
               role="tab"
+              {...(tab === 'interface' ? { 'data-dialog-initial-focus': true } : {})}
               aria-selected={activeTab === tab}
               className={activeTab === tab ? 'active' : ''}
               key={tab}

@@ -1270,10 +1270,14 @@ describe('autoLayoutCanvas', () => {
       };
     });
 
+    const startedAt = performance.now();
     const first = autoLayoutCanvas(nodes, edges);
+    const layoutDurationMs = performance.now() - startedAt;
     const second = autoLayoutCanvas(nodes, edges);
 
     expect(second).toEqual(first);
+    expect(layoutDurationMs, `${nodeCount}-node layout exceeded its interaction budget`)
+      .toBeLessThan(200);
     for (let left = 0; left < first.length; left += 1) {
       for (let right = left + 1; right < first.length; right += 1) {
         const horizontalGap = Math.abs(first[left].position.x - first[right].position.x);

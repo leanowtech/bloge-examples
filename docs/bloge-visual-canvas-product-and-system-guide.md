@@ -91,6 +91,50 @@ BLOGE 通用可视化编排画布是一套面向复杂业务编排的 topology-f
 筛选当前要读的依赖路径。复杂图通常先进入 Canvas Focus，再使用 Auto Layout、Overview
 和 Focus Path。
 
+下图是 `Loan policy fallback` 在 49% Compact 档选择 `Primary credit` 后的真实页面：
+Map 显示全图 5 个节点、当前路径 4 个节点；`Show All` 用于退出路径聚焦；不在路径上的
+secondary credit 被降为背景层，关键路径字段坐标仍然完整显示。
+
+![Author 语义缩放与 Focus Path](assets/bloge-author-semantic-navigation-v2.png)
+
+#### 键盘、窄视口和宿主遥测
+
+Start/Import、Operator details、Test Suite、Contract & Scenario 四类主浮层遵循同一个
+键盘协议：
+
+1. 打开后焦点进入当前主任务，而不是留在被遮挡的页面；
+2. `Tab` / `Shift+Tab` 被约束在当前浮层；
+3. `Escape` 等价于该浮层的取消/关闭动作；
+4. 关闭后焦点回到打开浮层的控件，作者可以继续键盘操作；
+5. 所有 Author v2 主控件使用统一的高对比 `focus-visible` 轮廓，状态同时有文字，
+   不依赖颜色单独表达。
+
+在 `390 x 844` 视口，命令条改为单列、状态与辅助动作改为两列，Start 和 Contract
+workspace 使用全屏浮层，画布保留至少 420px 高度。这个模式定位为**查看、运行、轻量修改
+和故障回看**；大规模拖拽、密集字段连线和 100 节点结构调整仍建议使用桌面视口。
+
+Author Workspace v2 会在浏览器中派发 `bloge:author-task` `CustomEvent`。宿主应用或
+VS Code webview 可以选择监听它来计算任务漏斗，Resource Gateway 前端本身不会把事件
+主动发送到网络：
+
+```javascript
+window.addEventListener('bloge:author-task', ({ detail }) => {
+  taskMetrics.accept(detail);
+});
+```
+
+事件 envelope 固定为 `bloge.authorTaskEvent.v1`，当前事件包括
+`WORKSPACE_OPENED`、`START_CHOICE_SELECTED`、`EXAMPLE_LOADED`、`MODE_CHANGED`、
+`AUTO_LAYOUT_COMPLETED`、`AUTO_LAYOUT_UNDONE`、`RUN_STARTED`、`RUN_COMPLETED` 和
+`FIRST_SUCCESS`。metadata 只允许 workspace 版本、模式、入口类型、节点/边/用例数量、
+运行类型、状态和耗时等低基数信息。包含 `context`、`fixture`、`payload`、`schema`、
+`dsl`、`config`、`input/output`、secret/token/credential 的 key 会被拒绝；字符串还有
+64 字符上限。无效遥测被丢弃，不能中断作者操作。
+
+灰度仍由 URL 控制：`?authorWorkspace=v2` 进入任务式工作台，
+`?authorWorkspace=v1` 立即回到旧 Shell。切换只改变 UI 投影，不迁移或回滚
+GraphDraft、Contract、Scenario 和运行证据。
+
 ### 3.1 调用 Integration API 前先建立受信身份
 
 `/api/integration/capabilities` 和 evidence 验签公钥是公开探针；其余 `/api/integration/*` 接口必须先验证 workload credential。`X-Tenant-Id`、`X-Organization-Id`、`X-Environment-Id` 和 `X-Actor-Id` 不再构成身份，只是迁移期一致性 hint：缺失不影响服务端 claims，填入值与受信 claims 冲突则返回 `403 RG.INTEGRATION.IDENTITY_CLAIM_MISMATCH`。

@@ -3909,6 +3909,19 @@ Focused and selected paths keep their full field coordinates. **Undo layout**
 restores the exact pre-layout positions until a node is added, removed, or
 manually moved.
 
+The primary Start, Operator, Test Suite, and Contract dialogs share one keyboard
+contract: focus enters the current task, Tab stays inside the modal, Escape
+closes it, and focus returns to the opener. At 390 x 844 the command bar and
+status controls stack into a supported read/light-edit layout with a 420px
+minimum canvas.
+
+Workspace v2 dispatches payload-free `bloge:author-task` browser events using the
+`bloge.authorTaskEvent.v1` envelope. A host shell may consume counts, modes,
+status, duration, and first-success timing; context, fixture, payload, schema,
+DSL, config, input/output, and credential-like metadata are rejected. The UI
+does not transmit these events itself. Use `?authorWorkspace=v1` for immediate
+UI rollback; GraphDraft and Scenario assets are shared and remain untouched.
+
 ### Try Contract And Scenario Authoring
 
 1. Start the demo and open `http://localhost:8080/author/`.

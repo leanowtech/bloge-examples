@@ -695,3 +695,75 @@ Auto Layout 变成可撤销操作。
 2. 为浮层补齐初始焦点、Tab 环和关闭后焦点恢复；
 3. 对灰度开关、键盘路径和窄视口做最终回归；
 4. 完成操作手册、实现状态和验收矩阵的终态同步。
+
+## Round 5：可访问任务协议、无载荷遥测与灰度收口
+
+### 本轮目标
+
+最后一轮不再增加 Author 业务对象，而是补齐企业宿主真正需要的运行边界：键盘用户能
+完成主任务，宿主能测任务漏斗但拿不到业务 payload，窄视口有明确降级，v1/v2 可以
+无损回滚。
+
+### 已实现
+
+| 能力 | 实现 |
+|---|---|
+| 统一浮层焦点协议 | Start、Operator、Test Suite、Contract & Scenario 共用 `useDialogFocusTrap` |
+| 键盘闭环 | 初始焦点进入主任务，Tab/Shift+Tab 环回，Escape 关闭，卸载时恢复 opener |
+| 可见焦点 | Author v2 和主浮层统一 3px 高对比 focus-visible 轮廓 |
+| 非颜色状态 | 主操作、四维 evidence、diagnostics、run/layout notice 均保留文字状态 |
+| 390px 降级 | 命令条单列、状态/辅助动作两列、全屏主浮层、画布最小高度 420px |
+| 任务事件协议 | `bloge.authorTaskEvent.v1` 通过 `bloge:author-task` CustomEvent 交给宿主 |
+| 漏斗覆盖 | workspace、start choice、example、mode、layout/undo、run start/end、first success |
+| Payload 隔离 | 每类事件 metadata allowlist；业务 payload 类 key、长字符串和非法数值 fail closed |
+| 非阻断遥测 | instrumentation 错误返回 null，不得阻断 authoring |
+| 灰度回滚 | `authorWorkspace=v1/v2` 只切 UI，不改 GraphDraft/Scenario 资产 |
+| 依赖安全 | axe-core 仅用于测试；修复 transitive PostCSS advisory 后 `npm audit` 为 0 |
+
+### 测试与真实浏览器证据
+
+- focus hook 单测验证初始焦点、正反向 Tab 环、Escape 和 opener 恢复；
+- telemetry 单测验证合法 envelope、事件派发、payload key 拒绝、长度/数值边界和非阻断；
+- Author 端到端组件测试实际执行 `Load example → Auto Layout → Run`，验证 9 类事件和
+  metadata key 安全；
+- axe-core 在 Start 与完整 Loan 编排态扫描 WCAG 2 A/AA，serious/critical 为 0；
+- 全量前端为 `27` 个测试文件、`295` 项测试全部通过；
+- production build 成功，`npm audit` 为 0；
+- packaged Chrome 完成 `1280 x 720` 全任务链后缩到 `390 x 844`，验证页面无横向溢出、
+  单一主操作仍可见、画布高度不少于 420px；
+- `mvn -Pfrontend clean verify` 完成全栈门禁，共 `5,668` 项测试，失败与错误均为 0，
+  总耗时 11 分 22 秒；
+- 应用内真实浏览器验证 Start 浮层焦点进入 `Load example`、末控件 Tab 环回 Close、
+  Escape 后焦点恢复到 Import；
+- 新截图：`assets/bloge-author-semantic-navigation-v2.png`。
+
+### 旧 Shell 下线条件
+
+v1 当前仍保留为显式回滚路径。只有同时满足以下条件才进入下线评审：
+
+1. 四类目标用户每类至少 3 人完成固定任务，v2 的首次成功时间、求助次数和错误路径达到
+   第 15 节指标；
+2. v1/v2 对同一 fixture 的 GraphDraft、Contract、Scenario canonical round-trip 无差异；
+3. 连续两个发布批次没有 P0/P1 数据丢失、键盘阻断或无法回滚问题；
+4. telemetry 显示 Start → first success 漏斗稳定，且安全审计确认事件中无业务 payload；
+5. Deep Link、VS Code webview 和 ANEKE 回跳都已把 v2 设为默认；
+6. 运维手册保留一个发布周期的紧急 v1 回退步骤。
+
+### 最终差距评估
+
+| 维度 | 已实现 | 权重 | 判断 |
+|---|---:|---:|---|
+| 任务式 Shell 与信息架构 | 19 | 20 | 四模式、单主操作和 URL 上下文稳定；真实用户术语调优继续随灰度进行 |
+| Start/Import 入口 | 9 | 10 | 四入口和焦点协议完整；大 library 增量搜索仍可深化 |
+| 上下文与节点专属编辑 | 15 | 15 | 完成 |
+| Schema-driven Input/Test | 15 | 15 | 完成 |
+| 可信状态与错误恢复 | 14 | 15 | fail-closed 四维状态完整；edge/field 级精确诊断聚焦仍可增强 |
+| Canvas 与复杂图可读性 | 13 | 15 | 语义缩放、Focus Path、label lane、undo 与 100 节点预算成立；pinned node/可取消布局待产品化 |
+| 工程边界、测试和灰度 | 10 | 10 | 纯模型、组件、axe、packaged Chrome、390px、遥测协议与 v1/v2 回滚均有门禁 |
+| 合计 | **95** | **100** | **剩余差距 5%** |
+
+相对目标差距已严格低于 8%，达到本轮完成门槛。剩余 5% 不是被隐藏的阻断项：
+
+- 真实用户研究需要进入灰度后由四类参与者执行，不能用工程测试伪造；
+- pinned node、100 节点布局进度/取消和 edge/field 精确定位属于下一轮效率增强；
+- v1 下线必须等待上述组织门禁，不能随代码提交自动发生。

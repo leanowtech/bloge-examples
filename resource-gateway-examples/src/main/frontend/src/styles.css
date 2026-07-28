@@ -3413,6 +3413,14 @@ button.primary:disabled {
   box-shadow: 0 0 0 2px rgb(26 86 219 / 20%), 0 8px 22px rgb(28 35 48 / 14%);
 }
 
+.workspace .react-flow__edge.focus-dimmed {
+  opacity: 0.1;
+}
+
+.workspace .react-flow__edge.focus-active .react-flow__edge-path {
+  stroke-width: 2.4;
+}
+
 .workspace[data-canvas-zoom-tier="compact"] .operator-node {
   min-width: 184px;
   max-width: 210px;
@@ -9846,5 +9854,84 @@ button.primary:disabled {
 
   .decision-table-heading {
     display: grid;
+  }
+}
+
+.workspace-v2 :is(button, a, input, select, textarea, [tabindex]):focus-visible,
+.author-start-backdrop :is(button, a, input, select, textarea, [tabindex]):focus-visible,
+.contract-workspace-backdrop :is(button, a, input, select, textarea, [tabindex]):focus-visible,
+.rule-editor-backdrop :is(button, a, input, select, textarea, [tabindex]):focus-visible {
+  outline: 3px solid #1a56db;
+  outline-offset: 2px;
+}
+
+@media (max-width: 420px) {
+  .workspace.workspace-v2 {
+    grid-template-rows: auto minmax(420px, 58vh) auto auto;
+  }
+
+  .workspace-v2 > .author-command-bar {
+    position: static;
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-areas:
+      "identity"
+      "primary"
+      "modes"
+      "truth"
+      "secondary";
+  }
+
+  .author-primary-action {
+    width: 100%;
+  }
+
+  .author-truth-status,
+  .author-secondary-actions {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .author-start-backdrop {
+    align-items: start;
+    padding: 0;
+  }
+
+  .author-start-dialog {
+    width: 100%;
+    min-height: 100dvh;
+    max-height: 100dvh;
+    border: 0;
+    border-radius: 0;
+  }
+
+  .author-start-dialog > header {
+    position: sticky;
+    z-index: 2;
+    top: 0;
+    background: #fff;
+  }
+
+  .canvas-navigator {
+    width: min(196px, calc(100% - 16px));
+  }
+
+  .contract-workspace-header-actions {
+    flex-wrap: nowrap;
+    max-width: 100%;
+    overflow-x: auto;
+    padding: 2px;
+  }
+
+  .contract-interface-summary,
+  .scenario-trust-dimensions,
+  .contract-semantics-grid,
+  .compatibility-summary {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .contract-interface-summary > span,
+  .scenario-trust-dimensions > section,
+  .compatibility-summary > span {
+    border-right: 0;
+    border-bottom: 1px solid #e2e8f0;
   }
 }

@@ -1,0 +1,61 @@
+import { describe, expect, it, vi } from 'vitest';
+
+import {
+  AUTHOR_TASK_EVENT_TYPE,
+  authorTaskElapsedMs,
+  createAuthorTaskEvent,
+  recordAuthorTaskEvent,
+} from './authorTaskTelemetry';
+
+describe('author task telemetry', () => {
+  it('emits a versioned payload-free task event', () => {
+    const target = new EventTarget();
+    const listener = vi.fn();
+    target.addEventListener(AUTHOR_TASK_EVENT_TYPE, listener);
+
+    const event = recordAuthorTaskEvent('AUTO_LAYOUT_COMPLETED', {
+      nodeCount: 100,
+      edgeCount: 160,
+      movedNodeCount: 92,
+      durationMs: 24,
+    }, target);
+
+    expect(event).toMatchObject({
+      schema: 'bloge.authorTaskEvent.v1',
+      name: 'AUTO_LAYOUT_COMPLETED',
+      metadata: {
+        nodeCount: 100,
+        edgeCount: 160,
+        movedNodeCount: 92,
+        durationMs: 24,
+      },
+    });
+    expect(listener).toHaveBeenCalledOnce();
+  });
+
+  it('rejects payload-like, unknown, unbounded, and invalid metadata', () => {
+    expect(() => createAuthorTaskEvent('RUN_COMPLETED', {
+      inputPayload: '{"customerId":"secret"}',
+    })).toThrow(/not allowed/);
+    expect(() => createAuthorTaskEvent('RUN_COMPLETED', {
+      graphName: 'customer-approval',
+    })).toThrow(/not allowed/);
+    expect(() => createAuthorTaskEvent('RUN_COMPLETED', {
+      status: 'x'.repeat(65),
+    })).toThrow(/64/);
+    expect(() => createAuthorTaskEvent('RUN_COMPLETED', {
+      status: 'customer-42',
+    })).toThrow(/unsupported enum/);
+    expect(() => createAuthorTaskEvent('RUN_COMPLETED', {
+      durationMs: -1,
+    })).toThrow(/non-negative/);
+  });
+
+  it('drops invalid instrumentation instead of breaking authoring', () => {
+    expect(recordAuthorTaskEvent('RUN_STARTED', {
+      context: 'classified',
+    }, new EventTarget())).toBeNull();
+    expect(authorTaskElapsedMs(100.4, 124.8)).toBe(24);
+    expect(authorTaskElapsedMs(200, 100)).toBe(0);
+  });
+});

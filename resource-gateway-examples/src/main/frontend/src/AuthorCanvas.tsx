@@ -189,6 +189,11 @@ import {
   compileTaskRunContext,
   reconcileRunInputWithSchema,
 } from './author/input/authorRunInput';
+import useDialogFocusTrap from './author/accessibility/useDialogFocusTrap';
+import {
+  authorTaskElapsedMs,
+  recordAuthorTaskEvent,
+} from './author/telemetry/authorTaskTelemetry';
 
 const ContractScenarioWorkspace = lazy(
   () => import('./contract-scenario/ContractScenarioWorkspace'),
@@ -3405,31 +3410,31 @@ function OperatorDetailDialog({
   const focusRows = operatorFocusRows(node.data.summary, inputs, outputs, operator);
   const editorDefinition = resolveNodeEditor(node.data.summary.visualKind);
   const [activeTab, setActiveTab] = useState<NodeEditorTab>(editorDefinition.defaultTab);
-  const bodyFocusRef = useRef<HTMLDivElement>(null);
+  const dialogRef = useRef<HTMLElement>(null);
 
   useEffect(() => {
     setActiveTab(editorDefinition.defaultTab);
-    window.requestAnimationFrame(() => bodyFocusRef.current?.focus());
   }, [editorDefinition.defaultTab, node.id]);
+  useDialogFocusTrap({
+    open: true,
+    dialogRef,
+    onDismiss: onCancel,
+    initialFocusKey: node.id,
+  });
 
   return (
     <div className="rule-editor-backdrop" role="presentation">
       <section
+        ref={dialogRef}
         className="operator-detail-dialog"
         role="dialog"
         aria-modal="true"
         aria-labelledby="operator-detail-title"
+        tabIndex={-1}
         data-testid="operator-detail-dialog"
         data-editor-kind={editorDefinition.visualKind}
         data-default-tab={editorDefinition.defaultTab}
         data-dirty={dirty}
-        onKeyDown={(event) => {
-          if (event.key === 'Escape') {
-            event.preventDefault();
-            event.stopPropagation();
-            onCancel();
-          }
-        }}
       >
         <div className="operator-detail-heading">
           <span>
@@ -3478,7 +3483,7 @@ function OperatorDetailDialog({
             </button>
           ))}
         </nav>
-        <div className="operator-detail-body" ref={bodyFocusRef} tabIndex={-1}>
+        <div className="operator-detail-body" data-dialog-initial-focus tabIndex={-1}>
           <div
             className="operator-editor-pane config"
             role="tabpanel"
@@ -4612,7 +4617,13 @@ export default function AuthorCanvas({ workspaceVersion = 'v1' }: AuthorCanvasPr
   const [layoutNotice, setLayoutNotice] = useState('');
   const searchInputRef = useRef<HTMLInputElement>(null);
   const flowRef = useRef<HTMLDivElement>(null);
+  const testSuiteDialogRef = useRef<HTMLElement>(null);
   const flowInstanceRef = useRef<ReactFlowInstance<NodeData, CanvasEdgeData> | null>(null);
+  const authorSessionStartedAtRef = useRef(performance.now());
+  const authorWorkspaceEventRecordedRef = useRef(false);
+  const firstAuthorSuccessRecordedRef = useRef(false);
+  const successfulRunKindRef = useRef('');
+  const previousAuthorModeRef = useRef(authorMode);
   const counter = useRef(0);
   const contextVariableCounter = useRef(0);
   const tableTestCounter = useRef(0);
@@ -4638,6 +4649,28 @@ export default function AuthorCanvas({ workspaceVersion = 'v1' }: AuthorCanvasPr
     reloadOperators()
       .catch((cause: unknown) => setError(String(cause)));
   }, [reloadOperators]);
+
+  useEffect(() => {
+    if (!isTaskWorkspace || authorWorkspaceEventRecordedRef.current) {
+      return;
+    }
+    authorWorkspaceEventRecordedRef.current = true;
+    recordAuthorTaskEvent('WORKSPACE_OPENED', {
+      workspaceVersion,
+      nodeCount: nodes.length,
+    });
+  }, [isTaskWorkspace, nodes.length, workspaceVersion]);
+
+  useEffect(() => {
+    const previousMode = previousAuthorModeRef.current;
+    previousAuthorModeRef.current = authorMode;
+    if (isTaskWorkspace && previousMode !== authorMode) {
+      recordAuthorTaskEvent('MODE_CHANGED', {
+        previousMode,
+        nextMode: authorMode,
+      });
+    }
+  }, [authorMode, isTaskWorkspace]);
 
   useEffect(() => {
     if (!graphDraftId) {
@@ -6917,19 +6950,40 @@ export default function AuthorCanvas({ workspaceVersion = 'v1' }: AuthorCanvasPr
   }, []);
 
   const runScenarioSimulation = useCallback(async (request: Parameters<typeof simulate>[0]) => {
+    const startedAt = performance.now();
+    if (isTaskWorkspace) {
+      recordAuthorTaskEvent('RUN_STARTED', {
+        runKind: 'scenario',
+        nodeCount: canvasNodes.length,
+        caseCount: 1,
+      });
+    }
+    let status = 'FAILED';
     setBusy(true);
     setError('');
     try {
       const response = await simulate(request);
       showSimulationResponse(response);
+      status = isRunSuccessful(response) ? 'PASSED' : 'FAILED';
       return response;
     } catch (cause: unknown) {
       setError(String(cause));
       throw cause;
     } finally {
       setBusy(false);
+      if (isTaskWorkspace) {
+        if (status === 'PASSED') {
+          successfulRunKindRef.current = 'scenario';
+        }
+        recordAuthorTaskEvent('RUN_COMPLETED', {
+          runKind: 'scenario',
+          status,
+          caseCount: 1,
+          durationMs: authorTaskElapsedMs(startedAt),
+        });
+      }
     }
-  }, [showSimulationResponse]);
+  }, [canvasNodes.length, isTaskWorkspace, showSimulationResponse]);
 
   const rebaseScenariosToCurrentContract = useCallback(() => {
     if (!contractDraft || !contractFingerprint || !scenarioDraftSet) {
@@ -7136,6 +7190,15 @@ export default function AuthorCanvas({ workspaceVersion = 'v1' }: AuthorCanvasPr
   }, [canvasNodes, operatorByRef]);
 
   const runSimulation = useCallback(async () => {
+    const startedAt = performance.now();
+    if (isTaskWorkspace) {
+      recordAuthorTaskEvent('RUN_STARTED', {
+        runKind: 'graph',
+        nodeCount: canvasNodes.length,
+        caseCount: 1,
+      });
+    }
+    let status = 'FAILED';
     setBusy(true);
     setError('');
     try {
@@ -7150,10 +7213,22 @@ export default function AuthorCanvas({ workspaceVersion = 'v1' }: AuthorCanvasPr
         effectiveGraphOutputSchema,
       ));
       showSimulationResponse(response);
+      status = isRunSuccessful(response) ? 'PASSED' : 'FAILED';
     } catch (cause: unknown) {
       setError(String(cause));
     } finally {
       setBusy(false);
+      if (isTaskWorkspace) {
+        if (status === 'PASSED') {
+          successfulRunKindRef.current = 'graph';
+        }
+        recordAuthorTaskEvent('RUN_COMPLETED', {
+          runKind: 'graph',
+          status,
+          caseCount: 1,
+          durationMs: authorTaskElapsedMs(startedAt),
+        });
+      }
     }
   }, [
     canvasEdges,
@@ -7163,11 +7238,20 @@ export default function AuthorCanvas({ workspaceVersion = 'v1' }: AuthorCanvasPr
     effectiveGraphOutputSchema,
     graphName,
     graphInputSchema,
+    isTaskWorkspace,
     outputNodeId,
     showSimulationResponse,
   ]);
 
   const runSimulationTable = useCallback(async () => {
+    const startedAt = performance.now();
+    if (isTaskWorkspace) {
+      recordAuthorTaskEvent('RUN_STARTED', {
+        runKind: 'table',
+        nodeCount: canvasNodes.length,
+        caseCount: simulationTableRows.length,
+      });
+    }
     setTableTestingBusy(true);
     setError('');
     const initialResults: Record<string, SimulationTableCaseResult> = {};
@@ -7182,6 +7266,7 @@ export default function AuthorCanvas({ workspaceVersion = 'v1' }: AuthorCanvasPr
         };
       }
     }
+    let failedCount = Object.keys(initialResults).length;
     setSimulationTableResults(initialResults);
 
     try {
@@ -7208,11 +7293,15 @@ export default function AuthorCanvas({ workspaceVersion = 'v1' }: AuthorCanvasPr
           ));
           showSimulationResponse(response);
           const rowResult = evaluateSimulationTableResult(testCase, response);
+          if (rowResult.status !== 'passed') {
+            failedCount += 1;
+          }
           setSimulationTableResults((current) => ({
             ...current,
             [testCase.id]: rowResult,
           }));
         } catch (cause: unknown) {
+          failedCount += 1;
           setSimulationTableResults((current) => ({
             ...current,
             [testCase.id]: {
@@ -7227,6 +7316,18 @@ export default function AuthorCanvas({ workspaceVersion = 'v1' }: AuthorCanvasPr
       }
     } finally {
       setTableTestingBusy(false);
+      if (isTaskWorkspace) {
+        const status = failedCount === 0 ? 'PASSED' : 'FAILED';
+        if (status === 'PASSED') {
+          successfulRunKindRef.current = 'table';
+        }
+        recordAuthorTaskEvent('RUN_COMPLETED', {
+          runKind: 'table',
+          status,
+          caseCount: simulationTableRows.length,
+          durationMs: authorTaskElapsedMs(startedAt),
+        });
+      }
     }
   }, [
     canvasEdges,
@@ -7235,6 +7336,7 @@ export default function AuthorCanvas({ workspaceVersion = 'v1' }: AuthorCanvasPr
     effectiveGraphOutputSchema,
     graphName,
     graphInputSchema,
+    isTaskWorkspace,
     outputNodeId,
     showSimulationResponse,
     simulationTableCompilation,
@@ -7281,6 +7383,7 @@ export default function AuthorCanvas({ workspaceVersion = 'v1' }: AuthorCanvasPr
   );
 
   const autoLayout = useCallback(() => {
+    const startedAt = performance.now();
     const nextNodes = autoLayoutFlowNodes(nodes, edges);
     const movedNodeCount = nextNodes.filter((node, index) => {
       const current = nodes[index];
@@ -7304,7 +7407,15 @@ export default function AuthorCanvas({ workspaceVersion = 'v1' }: AuthorCanvasPr
     } else {
       fitCanvasToView();
     }
-  }, [edges, fitCanvasToView, nodes]);
+    if (isTaskWorkspace) {
+      recordAuthorTaskEvent('AUTO_LAYOUT_COMPLETED', {
+        nodeCount: nodes.length,
+        edgeCount: edges.length,
+        movedNodeCount,
+        durationMs: authorTaskElapsedMs(startedAt),
+      });
+    }
+  }, [edges, fitCanvasToView, isTaskWorkspace, nodes]);
 
   const undoAutoLayout = useCallback(() => {
     if (!layoutUndo) return;
@@ -7315,13 +7426,18 @@ export default function AuthorCanvas({ workspaceVersion = 'v1' }: AuthorCanvasPr
     setLayoutNotice(`Restored ${layoutUndo.movedNodeCount} node position${
       layoutUndo.movedNodeCount === 1 ? '' : 's'
     }.`);
+    if (isTaskWorkspace) {
+      recordAuthorTaskEvent('AUTO_LAYOUT_UNDONE', {
+        movedNodeCount: layoutUndo.movedNodeCount,
+      });
+    }
     setLayoutUndo(null);
     if (typeof window.requestAnimationFrame === 'function') {
       window.requestAnimationFrame(() => fitCanvasToView());
     } else {
       fitCanvasToView();
     }
-  }, [fitCanvasToView, layoutUndo]);
+  }, [fitCanvasToView, isTaskWorkspace, layoutUndo]);
 
   const toggleFocusPath = useCallback(() => {
     if (focusPathNodeId) {
@@ -7411,6 +7527,36 @@ export default function AuthorCanvas({ workspaceVersion = 'v1' }: AuthorCanvasPr
     (result ? isRunSuccessful(result) : Object.keys(simulationTableResults).length > 0)
     && Object.values(simulationTableResults).every((row) => row.status === 'passed'),
   );
+  const closeTestSuite = useCallback(() => {
+    setTestSuiteOpen(false);
+    if (isTaskWorkspace) {
+      setAuthorMode(hasRunResult ? 'review' : 'compose');
+    }
+  }, [hasRunResult, isTaskWorkspace]);
+  useDialogFocusTrap({
+    open: testSuiteOpen,
+    dialogRef: testSuiteDialogRef,
+    onDismiss: closeTestSuite,
+  });
+
+  useEffect(() => {
+    if (
+      isTaskWorkspace
+      && hasRunResult
+      && runSuccessful
+      && !busy
+      && !tableTestingBusy
+      && successfulRunKindRef.current
+      && !firstAuthorSuccessRecordedRef.current
+    ) {
+      firstAuthorSuccessRecordedRef.current = true;
+      recordAuthorTaskEvent('FIRST_SUCCESS', {
+        elapsedMs: authorTaskElapsedMs(authorSessionStartedAtRef.current),
+        runKind: successfulRunKindRef.current,
+      });
+    }
+  }, [busy, hasRunResult, isTaskWorkspace, runSuccessful, tableTestingBusy]);
+
   const primaryAction = resolveAuthorPrimaryAction({
     nodeCount: nodes.length,
     busy: busy || tableTestingBusy,
@@ -7587,6 +7733,7 @@ export default function AuthorCanvas({ workspaceVersion = 'v1' }: AuthorCanvasPr
           <button
             type="button"
             className="primary compact"
+            data-dialog-initial-focus
             data-testid="test-table-run"
             onClick={runSimulationTable}
             disabled={
@@ -7786,14 +7933,26 @@ export default function AuthorCanvas({ workspaceVersion = 'v1' }: AuthorCanvasPr
               available: missingOperatorRefs.length === 0,
               missingOperatorRefs,
             }))}
-            onSectionChange={setStartSection}
+            onSectionChange={(section) => {
+              if (section !== 'menu') {
+                recordAuthorTaskEvent('START_CHOICE_SELECTED', { choice: section });
+              }
+              setStartSection(section);
+            }}
             onLoadExample={(key) => {
               const template = CANVAS_EXAMPLE_TEMPLATES.find((candidate) => candidate.key === key);
               if (template) {
+                recordAuthorTaskEvent('EXAMPLE_LOADED', {
+                  source: 'built-in',
+                  nodeCount: template.nodes.length,
+                  edgeCount: template.edges.length,
+                  scenarioCount: template.testCases?.length ?? 0,
+                });
                 loadCanvasExample(template);
               }
             }}
             onBlankGraph={() => {
+              recordAuthorTaskEvent('START_CHOICE_SELECTED', { choice: 'blank' });
               setStartOpen(false);
               setStartSection('menu');
               setAuthorMode('compose');
@@ -9246,10 +9405,12 @@ export default function AuthorCanvas({ workspaceVersion = 'v1' }: AuthorCanvasPr
       {testSuiteOpen && (
         <div className="rule-editor-backdrop" role="presentation">
           <section
+            ref={testSuiteDialogRef}
             className="test-suite-dialog"
             role="dialog"
             aria-modal="true"
             aria-labelledby="test-suite-dialog-title"
+            tabIndex={-1}
             data-testid="test-suite-dialog"
           >
             <div className="operator-detail-heading">
@@ -9259,12 +9420,7 @@ export default function AuthorCanvas({ workspaceVersion = 'v1' }: AuthorCanvasPr
                 type="button"
                 className="secondary compact"
                 aria-label="Close test suite"
-                onClick={() => {
-                  setTestSuiteOpen(false);
-                  if (isTaskWorkspace) {
-                    setAuthorMode(hasRunResult ? 'review' : 'compose');
-                  }
-                }}
+                onClick={closeTestSuite}
               >
                 Done
               </button>
