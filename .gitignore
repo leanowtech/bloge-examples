@@ -92,3 +92,5 @@ benchmarks/baseline.json
 benchmarks/results.json
 .gstack/
 .flattened-pom.xml
+
+.codegraph/
