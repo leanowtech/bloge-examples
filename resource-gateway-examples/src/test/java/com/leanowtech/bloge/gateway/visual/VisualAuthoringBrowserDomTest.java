@@ -466,6 +466,9 @@ class VisualAuthoringBrowserDomTest {
                 "v2"
         ));
         wait.until(ExpectedConditions.elementToBeClickable(By.cssSelector(
+                "[aria-label='Close start dialog']"
+        ))).click();
+        wait.until(ExpectedConditions.elementToBeClickable(By.cssSelector(
                 "[data-testid^='operator-button:']"
         ))).click();
         WebElement operatorNode = wait.until(ExpectedConditions.visibilityOfElementLocated(
@@ -508,6 +511,146 @@ class VisualAuthoringBrowserDomTest {
                 "data-author-workspace-version",
                 "v1"
         ));
+    }
+
+    /**
+     * Exercises the first complete task-oriented authoring slice in packaged Chrome.
+     *
+     * <p>The test protects behavior that component tests cannot prove: the command bar has one
+     * visible primary action, legacy chrome is physically absent from layout, the canvas receives
+     * at least 65% of the post-command-bar workspace, and a complete example can move from Start
+     * through a real Scenario run into Review without node overlap.</p>
+     */
+    @Test
+    void taskOrientedAuthorShellLoadsRunsAndReviewsWithoutCompetingChromeInRealBrowser() {
+        assumeReactAuthorBundlePresent();
+        driver = newChromeDriverOrSkip();
+        WebDriverWait wait = new WebDriverWait(driver, WAIT_TIMEOUT);
+        setViewport(wait, 1280, 720);
+        driver.get("http://localhost:" + port + "/author/?authorWorkspace=v2");
+
+        WebElement workspace = wait.until(ExpectedConditions.visibilityOfElementLocated(
+                By.cssSelector(".workspace-v2")
+        ));
+        WebElement startDialog = wait.until(ExpectedConditions.visibilityOfElementLocated(
+                By.cssSelector("[data-testid='author-start-dialog']")
+        ));
+        assertThat(startDialog.getText())
+                .contains("Load example")
+                .contains("Import DSL")
+                .contains("Import operator library")
+                .contains("Blank graph");
+
+        driver.findElement(By.cssSelector("[aria-label='Close start dialog']")).click();
+        wait.until(ExpectedConditions.invisibilityOfElementLocated(
+                By.cssSelector("[data-testid='author-start-dialog']")
+        ));
+
+        @SuppressWarnings("unchecked")
+        Map<String, Number> shellMetrics = (Map<String, Number>)
+                ((JavascriptExecutor) driver).executeScript("""
+                        const visible = (element) => {
+                          const rect = element.getBoundingClientRect();
+                          const style = getComputedStyle(element);
+                          return style.display !== 'none'
+                            && style.visibility !== 'hidden'
+                            && rect.width > 0
+                            && rect.height > 0;
+                        };
+                        const workspace = document.querySelector('.workspace-v2');
+                        const command = document.querySelector('.author-command-bar');
+                        const canvas = document.querySelector('.workspace-v2 > .canvas');
+                        const availableHeight = workspace.clientHeight - command.clientHeight;
+                        return {
+                          primaryCount: [...document.querySelectorAll(
+                            '[data-testid="author-primary-action"]'
+                          )].filter(visible).length,
+                          commandCount: [...command.querySelectorAll('button, a')]
+                            .filter(visible).length,
+                          canvasAreaRatio: (canvas.clientWidth * canvas.clientHeight)
+                            / (workspace.clientWidth * availableHeight),
+                          hiddenLegacyChrome: [
+                            '.journey-bar',
+                            '.canvas-examples',
+                            '.toolbar',
+                            '.contract-rail'
+                          ].filter((selector) => {
+                            const element = document.querySelector(selector);
+                            return element && !visible(element);
+                          }).length
+                        };
+                        """);
+        assertThat(shellMetrics.get("primaryCount").intValue())
+                .as("visible primary author action")
+                .isEqualTo(1);
+        assertThat(shellMetrics.get("commandCount").intValue())
+                .as("persistent command-bar controls")
+                .isLessThanOrEqualTo(9);
+        assertThat(shellMetrics.get("canvasAreaRatio").doubleValue())
+                .as("canvas share of post-command-bar workspace")
+                .isGreaterThanOrEqualTo(0.65);
+        assertThat(shellMetrics.get("hiddenLegacyChrome").intValue())
+                .as("legacy journey/examples/toolbar/contract rail removed from v2 layout")
+                .isEqualTo(4);
+        assertNoHorizontalOverflow(wait, By.cssSelector(".workspace-v2"));
+
+        driver.findElement(By.cssSelector(".author-secondary-actions button:first-child")).click();
+        wait.until(ExpectedConditions.elementToBeClickable(By.cssSelector(
+                "[data-testid='author-start-choice:examples']"
+        ))).click();
+        wait.until(ExpectedConditions.elementToBeClickable(By.cssSelector(
+                "[data-testid='author-start-example:loan-policy-fallback']"
+        ))).click();
+
+        wait.until(ExpectedConditions.invisibilityOfElementLocated(
+                By.cssSelector("[data-testid='author-start-dialog']")
+        ));
+        wait.until(ExpectedConditions.numberOfElementsToBe(
+                By.cssSelector(".react-flow__node"),
+                5
+        ));
+        waitForText(wait, By.cssSelector("[data-testid='author-primary-action']"), "Run scenario");
+        waitForText(wait, By.cssSelector("[data-testid='author-context-inspector']"), "Decision response");
+
+        Number nodeOverlapCount = (Number) ((JavascriptExecutor) driver).executeScript("""
+                const nodes = [...document.querySelectorAll('.react-flow__node')]
+                  .map((node) => node.getBoundingClientRect());
+                let overlaps = 0;
+                for (let left = 0; left < nodes.length; left += 1) {
+                  for (let right = left + 1; right < nodes.length; right += 1) {
+                    const width = Math.max(
+                      0,
+                      Math.min(nodes[left].right, nodes[right].right)
+                        - Math.max(nodes[left].left, nodes[right].left)
+                    );
+                    const height = Math.max(
+                      0,
+                      Math.min(nodes[left].bottom, nodes[right].bottom)
+                        - Math.max(nodes[left].top, nodes[right].top)
+                    );
+                    if (width * height > 1) {
+                      overlaps += 1;
+                    }
+                  }
+                }
+                return overlaps;
+                """);
+        assertThat(nodeOverlapCount.intValue())
+                .as("loaded example node-node overlap")
+                .isZero();
+
+        driver.findElement(By.cssSelector("[data-testid='author-primary-action']")).click();
+        wait.until(ExpectedConditions.attributeToBe(
+                By.cssSelector(".workspace-v2"),
+                "data-author-mode",
+                "review"
+        ));
+        wait.until(ignored -> {
+            String text = textOf(By.cssSelector("[data-testid='author-primary-action']"));
+            return text.contains("Review result") || text.contains("Review failures");
+        });
+        assertThat(workspace.getAttribute("data-author-mode")).isEqualTo("review");
+        assertNoHorizontalOverflow(wait, By.cssSelector(".workspace-v2"));
     }
 
     @Test

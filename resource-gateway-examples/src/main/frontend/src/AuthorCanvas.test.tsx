@@ -659,6 +659,7 @@ describe('AuthorCanvas built-in canvas examples', () => {
 
   beforeEach(() => {
     (globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
+    window.history.replaceState({}, '', '/author/?authorWorkspace=v2');
     host = document.createElement('div');
     document.body.appendChild(host);
     const governedTargetFingerprint = `sha256:${'a'.repeat(64)}`;
@@ -940,6 +941,76 @@ describe('AuthorCanvas built-in canvas examples', () => {
     expect(order?.testCases?.[1].fixtureOverrides?.n2?.output).toMatchObject({
       items: expect.any(Array),
     });
+  });
+
+  it('starts workspace v2 with one task chooser and a single primary next action', async () => {
+    await act(async () => {
+      root = createRoot(host);
+      root.render(<AuthorCanvas workspaceVersion="v2" />);
+    });
+
+    expect(query('[data-testid="author-command-bar"]').textContent).toContain('visualGraph');
+    expect(query('[data-testid="author-primary-action"]').textContent).toBe('Add first operator');
+    expect(document.querySelectorAll('[data-testid="author-primary-action"]')).toHaveLength(1);
+    expect(query('[data-testid="author-start-dialog"]').textContent).toContain('Start authoring');
+
+    await click(query<HTMLButtonElement>('[data-testid="author-start-choice:examples"]'));
+    await waitFor(() =>
+      expect(query<HTMLButtonElement>('[data-testid="author-start-example:loan-policy-fallback"]').disabled)
+        .toBe(false),
+    );
+    expect(query('[data-testid="author-start-dialog"]').textContent).toContain('Load a complete example');
+    expect(query('[data-testid="author-start-dialog"]').textContent).toContain('5 nodes / 12 edges');
+    expect(query('[data-testid="author-start-dialog"]').textContent).toContain('1 in / 7 out');
+  });
+
+  it('routes v2 start choices to the existing validated import forms', async () => {
+    await act(async () => {
+      root = createRoot(host);
+      root.render(<AuthorCanvas workspaceVersion="v2" />);
+    });
+
+    await click(query<HTMLButtonElement>('[data-testid="author-start-choice:dsl"]'));
+    expect(query('.workspace').getAttribute('data-start-section')).toBe('dsl');
+    expect(query('[data-testid="legacy-dsl-import"]').textContent).toContain('Legacy DSL');
+
+    await click(query<HTMLButtonElement>('[aria-label="Close start dialog"]'));
+    await click(query<HTMLButtonElement>('.author-secondary-actions button:first-child'));
+    await click(query<HTMLButtonElement>('[data-testid="author-start-choice:library"]'));
+    expect(query('.workspace').getAttribute('data-start-section')).toBe('library');
+    expect(query('[data-testid="library-intake"]').textContent).toContain('Library');
+  });
+
+  it('loads, runs, and reviews a complete example through the v2 primary action', async () => {
+    await act(async () => {
+      root = createRoot(host);
+      root.render(<AuthorCanvas workspaceVersion="v2" />);
+    });
+
+    await click(query<HTMLButtonElement>('[data-testid="author-start-choice:examples"]'));
+    await waitFor(() =>
+      expect(query<HTMLButtonElement>('[data-testid="author-start-example:loan-policy-fallback"]').disabled)
+        .toBe(false),
+    );
+    await click(query<HTMLButtonElement>('[data-testid="author-start-example:loan-policy-fallback"]'));
+
+    await waitFor(() => {
+      expect(document.querySelector('[data-testid="author-start-dialog"]')).toBeNull();
+      expect(query('[data-testid="author-primary-action"]').textContent).toBe('Run scenario');
+      expect(query('[data-testid="author-context-inspector"]').textContent).toContain('Decision response');
+    });
+    await click(query<HTMLButtonElement>('[data-testid="author-primary-action"]'));
+
+    await waitFor(() => {
+      expect(query('.workspace').getAttribute('data-author-mode')).toBe('review');
+      expect(query('[data-testid="author-primary-action"]').textContent).toBe('Review result');
+      expect(query('[data-testid="author-command-bar"]').textContent).toContain('PASSED');
+      expect(query('[data-testid="author-context-inspector"]').textContent).toContain(
+        '2/2 scenario assertions passed.',
+      );
+    });
+    expect(fetchMock.mock.calls.filter(([input]) => String(input) === '/api/visual/graphs/simulate'))
+      .toHaveLength(2);
   });
 
   it('loads a complex built-in example into the editable canvas draft', async () => {

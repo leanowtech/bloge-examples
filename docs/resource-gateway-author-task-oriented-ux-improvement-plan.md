@@ -1,6 +1,6 @@
 # Resource Gateway Author 任务式交互 UX 改善计划
 
-> 状态：Proposed for Review
+> 状态：In Implementation
 >
 > 日期：2026-07-28
 >

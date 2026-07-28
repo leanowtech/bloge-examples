@@ -152,6 +152,15 @@ import {
   scenarioDraftSetFromCanvas,
   type ScenarioNodeOption,
 } from './contract-scenario/scenarioAuthoring';
+import AuthorCommandBar from './author/shell/AuthorCommandBar';
+import AuthorContextInspector from './author/shell/AuthorContextInspector';
+import StartImportDialog, {
+  type StartImportSection,
+} from './author/shell/StartImportDialog';
+import {
+  resolveAuthorPrimaryAction,
+  type AuthorMode,
+} from './author/shell/authorWorkspaceState';
 
 const ContractScenarioWorkspace = lazy(
   () => import('./contract-scenario/ContractScenarioWorkspace'),
@@ -4295,6 +4304,10 @@ export interface AuthorCanvasProps {
 }
 
 export default function AuthorCanvas({ workspaceVersion = 'v1' }: AuthorCanvasProps = {}) {
+  const isTaskWorkspace = workspaceVersion === 'v2';
+  const [authorMode, setAuthorMode] = useState<AuthorMode>('compose');
+  const [startOpen, setStartOpen] = useState(isTaskWorkspace);
+  const [startSection, setStartSection] = useState<StartImportSection>('menu');
   const [operators, setOperators] = useState<OperatorDefinition[]>([]);
   const [builtInFunctions, setBuiltInFunctions] = useState<BuiltInFunctionDefinition[]>([]);
   const [nodes, setNodes] = useState<Node<NodeData>[]>([]);
@@ -5029,7 +5042,7 @@ export default function AuthorCanvas({ workspaceVersion = 'v1' }: AuthorCanvasPr
     clearRunResult();
     counter.current = maxNumericNodeId(template.nodes);
     tableTestCounter.current = nextSimulationTableRows.length;
-    setNodes(nextNodes);
+    setNodes(isTaskWorkspace ? autoLayoutFlowNodes(nextNodes, nextEdges) : nextNodes);
     setEdges(nextEdges);
     setFixtureDrafts(nextFixtureDrafts);
     setFixtureInputDrafts(nextFixtureInputDrafts);
@@ -5072,11 +5085,24 @@ export default function AuthorCanvas({ workspaceVersion = 'v1' }: AuthorCanvasPr
     setPaletteFacet('all');
     setSourceFilter('all');
     setTagFilter('all');
+    if (isTaskWorkspace) {
+      setAuthorMode('compose');
+      setStartOpen(false);
+      setStartSection('menu');
+    }
     setConnectionNotice({
       level: 'ok',
       message: `Loaded ${template.label}: ${template.nodes.length} nodes / ${template.edges.length} edges.`,
     });
-  }, [clearRunResult, operatorByRef]);
+    if (isTaskWorkspace) {
+      const graphSize = { nodeCount: nextNodes.length, edgeCount: nextEdges.length };
+      if (typeof window.requestAnimationFrame === 'function') {
+        window.requestAnimationFrame(() => fitCanvasToView(graphSize));
+      } else {
+        fitCanvasToView(graphSize);
+      }
+    }
+  }, [clearRunResult, fitCanvasToView, isTaskWorkspace, operatorByRef]);
   const selectedNode = nodes.find((node) => node.id === selectedNodeId);
   const selectedOperator = selectedNode ? operatorByRef.get(selectedNode.data.operatorRef) : undefined;
   const operatorDetailNode = nodes.find((node) => node.id === operatorDetailNodeId);
@@ -5574,13 +5600,24 @@ export default function AuthorCanvas({ workspaceVersion = 'v1' }: AuthorCanvasPr
       setPaletteFacet('all');
       setSourceFilter('all');
       setTagFilter('all');
+      if (isTaskWorkspace) {
+        setAuthorMode('compose');
+        setStartOpen(false);
+        setStartSection('menu');
+      }
     } catch (cause: unknown) {
       setLibraryDiagnostics([]);
       setLibraryNotice({ level: 'error', message: String(cause) });
     } finally {
       setLibraryBusy(false);
     }
-  }, [librarySourceText, libraryWarningReason, libraryWarningsAcknowledged, reloadOperators]);
+  }, [
+    isTaskWorkspace,
+    librarySourceText,
+    libraryWarningReason,
+    libraryWarningsAcknowledged,
+    reloadOperators,
+  ]);
 
   const applyDslProjection = useCallback((
     projection: DslVisualProjection,
@@ -5737,6 +5774,11 @@ export default function AuthorCanvas({ workspaceVersion = 'v1' }: AuthorCanvasPr
     setDslRewriteGateResult(null);
     setDslImportNotice(notice);
     setConnectionNotice(notice);
+    if (isTaskWorkspace) {
+      setAuthorMode('compose');
+      setStartOpen(false);
+      setStartSection('menu');
+    }
 
     const graphSize = { nodeCount: imported.nodes.length, edgeCount: imported.edges.length };
     if (typeof window.requestAnimationFrame === 'function') {
@@ -5744,7 +5786,7 @@ export default function AuthorCanvas({ workspaceVersion = 'v1' }: AuthorCanvasPr
     } else {
       fitCanvasToView(graphSize);
     }
-  }, [clearRunResult, fitCanvasToView, operatorByRef]);
+  }, [clearRunResult, fitCanvasToView, isTaskWorkspace, operatorByRef]);
 
   const importScenarioWorkspace = useCallback(async (
     bundle: VisualAuthoringWorkspaceBundle,
@@ -6849,6 +6891,94 @@ export default function AuthorCanvas({ workspaceVersion = 'v1' }: AuthorCanvasPr
     }
   }, [edges, fitCanvasToView]);
 
+  const executionStatus = busy || tableTestingBusy
+    ? 'RUNNING'
+    : result
+      ? isRunSuccessful(result) ? 'PASSED' : 'FAILED'
+      : 'NOT RUN';
+  const assertionStatus = tableTestingBusy
+    ? 'RUNNING'
+    : simulationTableRows.length === 0
+      ? 'NOT CONFIGURED'
+      : Object.keys(simulationTableResults).length === 0
+        ? 'NOT RUN'
+        : simulationTableRunSummary.state.toUpperCase();
+  const contractStatus = validatingDraft
+    ? 'CHECKING'
+    : validationResult
+      ? validationResult.valid ? 'VALID' : 'BLOCKED'
+      : 'NOT CHECKED';
+  const governanceStatus = governanceGateBusy
+    ? 'CHECKING'
+    : governanceGateView?.result?.status?.trim().toUpperCase() || 'NOT CHECKED';
+  const hasRunResult = result !== null || Object.keys(simulationTableResults).length > 0;
+  const runSuccessful = Boolean(
+    (result ? isRunSuccessful(result) : Object.keys(simulationTableResults).length > 0)
+    && Object.values(simulationTableResults).every((row) => row.status === 'passed'),
+  );
+  const primaryAction = resolveAuthorPrimaryAction({
+    nodeCount: nodes.length,
+    busy: busy || tableTestingBusy,
+    hasInputErrors: hasFixtureErrors || hasContextError || hasSimulationTableErrors,
+    hasRunResult,
+    runSuccessful,
+  });
+  const resultMessage = error
+    || (hasRunResult
+      ? runSuccessful
+        ? simulationTableRows.length > 0
+          ? `${simulationTableRunSummary.passed}/${simulationTableRunSummary.total} scenario assertions passed.`
+          : 'Execution completed successfully.'
+        : simulationTableRunSummary.failed > 0
+          ? `${simulationTableRunSummary.failed}/${simulationTableRunSummary.total} scenario assertions failed.`
+          : 'Execution completed with failures.'
+      : '');
+
+  const changeAuthorMode = useCallback((nextMode: AuthorMode) => {
+    setAuthorMode(nextMode);
+    if (nextMode === 'contract') {
+      setOperatorContractWorkspace(null);
+      setContractWorkspaceOpen(true);
+    } else if (nextMode === 'test') {
+      setTestSuiteOpen(true);
+    }
+  }, []);
+
+  const runPrimaryAuthorAction = useCallback(() => {
+    setAuthorMode(primaryAction.targetMode);
+    if (primaryAction.kind === 'focus-palette') {
+      setStartOpen(false);
+      setStartSection('menu');
+      const focusSearch = () => {
+        searchInputRef.current?.focus();
+        searchInputRef.current?.select();
+      };
+      if (typeof window.requestAnimationFrame === 'function') {
+        window.requestAnimationFrame(focusSearch);
+      } else {
+        focusSearch();
+      }
+      return;
+    }
+    if (primaryAction.kind === 'fix-input') {
+      setTestSuiteOpen(true);
+      return;
+    }
+    if (primaryAction.kind === 'run') {
+      if (simulationTableRows.length > 0) {
+        void runSimulationTable();
+      } else {
+        void runSimulation();
+      }
+    }
+  }, [primaryAction, runSimulation, runSimulationTable, simulationTableRows.length]);
+
+  useEffect(() => {
+    if (isTaskWorkspace && hasRunResult && !busy && !tableTestingBusy) {
+      setAuthorMode('review');
+    }
+  }, [busy, hasRunResult, isTaskWorkspace, tableTestingBusy]);
+
   const paletteView = useMemo(
     () => operatorPaletteView(operators, {
       search,
@@ -7021,10 +7151,80 @@ export default function AuthorCanvas({ workspaceVersion = 'v1' }: AuthorCanvasPr
 
   return (
     <div
-      className={['workspace', canvasFocusMode ? 'canvas-focus' : ''].filter(Boolean).join(' ')}
+      className={[
+        'workspace',
+        isTaskWorkspace ? 'workspace-v2' : '',
+        canvasFocusMode ? 'canvas-focus' : '',
+      ].filter(Boolean).join(' ')}
       data-layout-mode={canvasFocusMode ? 'focus' : 'standard'}
       data-author-workspace-version={workspaceVersion}
+      data-author-mode={authorMode}
+      data-start-section={startOpen ? startSection : 'closed'}
     >
+      {isTaskWorkspace && (
+        <>
+          <AuthorCommandBar
+            graphName={graphName}
+            draftRevision={graphDraftRevision}
+            nodeCount={canvasSummary.nodeCount}
+            edgeCount={canvasSummary.edgeCount}
+            mode={authorMode}
+            primaryAction={primaryAction}
+            primaryDisabled={busy || tableTestingBusy}
+            executionStatus={executionStatus}
+            assertionStatus={assertionStatus}
+            contractStatus={contractStatus}
+            governanceStatus={governanceStatus}
+            exportUrl={draftExportUrl}
+            exportName={`${graphName}-draft.json`}
+            exportDisabled={nodes.length === 0 || hasFixtureErrors}
+            layoutDisabled={nodes.length < 2}
+            validationDisabled={validatingDraft || nodes.length === 0}
+            onModeChange={changeAuthorMode}
+            onPrimaryAction={runPrimaryAuthorAction}
+            onImport={() => {
+              setStartSection('menu');
+              setStartOpen(true);
+            }}
+            onAutoLayout={autoLayout}
+            onValidate={() => void runDraftValidation()}
+          />
+          <StartImportDialog
+            open={startOpen}
+            section={startSection}
+            examples={canvasExamples.map(({ template, missingOperatorRefs }) => ({
+              key: template.key,
+              label: template.label,
+              domain: template.domain,
+              description: template.description,
+              pattern: template.pattern,
+              nodeCount: template.nodes.length,
+              edgeCount: template.edges.length,
+              inputFieldCount: graphSchemaSummary(template.inputSchema).fieldCount,
+              outputFieldCount: graphSchemaSummary(template.outputSchema).fieldCount,
+              available: missingOperatorRefs.length === 0,
+              missingOperatorRefs,
+            }))}
+            onSectionChange={setStartSection}
+            onLoadExample={(key) => {
+              const template = CANVAS_EXAMPLE_TEMPLATES.find((candidate) => candidate.key === key);
+              if (template) {
+                loadCanvasExample(template);
+              }
+            }}
+            onBlankGraph={() => {
+              setStartOpen(false);
+              setStartSection('menu');
+              setAuthorMode('compose');
+              window.requestAnimationFrame(() => searchInputRef.current?.focus());
+            }}
+            onClose={() => {
+              setStartOpen(false);
+              setStartSection('menu');
+            }}
+          />
+        </>
+      )}
       <aside className="palette" id="operator-palette">
         <div className="palette-heading">
           <h2>Operators</h2>
@@ -7839,6 +8039,50 @@ export default function AuthorCanvas({ workspaceVersion = 'v1' }: AuthorCanvasPr
       </main>
 
       <aside className="inspector">
+        {isTaskWorkspace && (
+          <AuthorContextInspector
+            mode={authorMode}
+            selectedNode={selectedNode ? {
+              id: selectedNode.id,
+              label: selectedNode.data.label,
+              operatorRef: selectedNode.data.operatorRef,
+              visualLabel: selectedNode.data.summary.visualLabel,
+              readiness: selectedNode.data.summary.readinessBadgeLabel
+                || selectedNode.data.summary.readinessState
+                || 'Unknown',
+              inputCount: selectedNode.data.summary.inputCount,
+              outputCount: selectedNode.data.summary.outputCount,
+            } : null}
+            graphName={graphName}
+            inputFieldCount={graphInputSummary.fieldCount}
+            outputFieldCount={graphOutputSummary.fieldCount}
+            executionStatus={executionStatus}
+            assertionStatus={assertionStatus}
+            contractStatus={contractStatus}
+            governanceStatus={governanceStatus}
+            resultMessage={resultMessage}
+            onEditNode={() => {
+              if (selectedNode) {
+                openNodeEditor(selectedNode);
+              }
+            }}
+            onOpenNodeContract={() => {
+              if (selectedOperator) {
+                setAuthorMode('contract');
+                void openOperatorContractWorkspace(selectedOperator);
+              }
+            }}
+            onOpenTest={() => {
+              setAuthorMode('test');
+              setTestSuiteOpen(true);
+            }}
+            onOpenGraphContract={() => {
+              setAuthorMode('contract');
+              setOperatorContractWorkspace(null);
+              setContractWorkspaceOpen(true);
+            }}
+          />
+        )}
         <h2>Checklist</h2>
         <ol className="checklist">
           {checklist.map((item) => (
@@ -8238,7 +8482,12 @@ export default function AuthorCanvas({ workspaceVersion = 'v1' }: AuthorCanvasPr
                 : current
             ))}
             onRun={runScenarioSimulation}
-            onClose={() => setOperatorContractWorkspace(null)}
+            onClose={() => {
+              setOperatorContractWorkspace(null);
+              if (isTaskWorkspace) {
+                setAuthorMode('compose');
+              }
+            }}
           />
         </Suspense>
       )}
@@ -8264,7 +8513,12 @@ export default function AuthorCanvas({ workspaceVersion = 'v1' }: AuthorCanvasPr
             onSaveGraphDraft={saveGraphForScenario}
             onRebase={rebaseScenariosToCurrentContract}
             onRun={runScenarioSimulation}
-            onClose={() => setContractWorkspaceOpen(false)}
+            onClose={() => {
+              setContractWorkspaceOpen(false);
+              if (isTaskWorkspace) {
+                setAuthorMode('compose');
+              }
+            }}
           />
         </Suspense>
       )}
@@ -8284,7 +8538,12 @@ export default function AuthorCanvas({ workspaceVersion = 'v1' }: AuthorCanvasPr
                 type="button"
                 className="secondary compact"
                 aria-label="Close test suite"
-                onClick={() => setTestSuiteOpen(false)}
+                onClick={() => {
+                  setTestSuiteOpen(false);
+                  if (isTaskWorkspace) {
+                    setAuthorMode(hasRunResult ? 'review' : 'compose');
+                  }
+                }}
               >
                 Done
               </button>
