@@ -1,0 +1,171 @@
+import type {
+  GovernanceGateView,
+  SimulationResponse,
+  VisualDiagnostic,
+  VisualValidationResult,
+} from '../../types';
+import type { SimulationTableCaseResult } from '../../draftModel';
+
+export type AuthorDiagnosticSeverity = 'BLOCKING' | 'ERROR' | 'WARNING' | 'INFO';
+export type AuthorDiagnosticScope =
+  | 'GRAPH'
+  | 'CONTRACT'
+  | 'NODE'
+  | 'EDGE'
+  | 'SCENARIO'
+  | 'RUN'
+  | 'GOVERNANCE'
+  | 'DSL';
+
+export interface AuthorDiagnosticItem {
+  id: string;
+  severity: AuthorDiagnosticSeverity;
+  scope: AuthorDiagnosticScope;
+  source: string;
+  code: string;
+  message: string;
+  coordinate: string;
+  nodeId: string;
+  recommendedAction: string;
+}
+
+export interface AuthorDiagnosticsInput {
+  error: string;
+  validation: VisualValidationResult | null;
+  run: SimulationResponse | null;
+  scenarioResults: Record<string, SimulationTableCaseResult>;
+  governance: GovernanceGateView | null;
+  dslDiagnostics: VisualDiagnostic[];
+}
+
+function severityOf(level: string | undefined): AuthorDiagnosticSeverity {
+  const normalized = level?.trim().toUpperCase();
+  if (normalized === 'BLOCKING' || normalized === 'BLOCKED' || normalized === 'FATAL') {
+    return 'BLOCKING';
+  }
+  if (normalized === 'ERROR' || normalized === 'FAILED' || normalized === 'FAILURE') {
+    return 'ERROR';
+  }
+  if (normalized === 'WARNING' || normalized === 'WARN') {
+    return 'WARNING';
+  }
+  return 'INFO';
+}
+
+function nodeIdFromCoordinate(coordinate: string): string {
+  const pointerMatch = coordinate.match(/\/nodes\/([^/]+)/);
+  if (pointerMatch) {
+    return decodeURIComponent(pointerMatch[1].replace(/~1/g, '/').replace(/~0/g, '~'));
+  }
+  const nodeMatch = coordinate.match(/(?:^|[.:/])node(?:Id)?[=:/.]([A-Za-z0-9_.:-]+)/i);
+  return nodeMatch?.[1] ?? '';
+}
+
+function visualDiagnostic(
+  diagnostic: VisualDiagnostic,
+  index: number,
+  scope: AuthorDiagnosticScope,
+  source: string,
+): AuthorDiagnosticItem {
+  const coordinate = diagnostic.target?.trim() || (
+    [diagnostic.line, diagnostic.column].some((value) => value !== undefined)
+      ? `line ${diagnostic.line ?? '?'}:${diagnostic.column ?? '?'}`
+      : ''
+  );
+  const metadataNodeId = typeof diagnostic.metadata?.nodeId === 'string'
+    ? diagnostic.metadata.nodeId
+    : '';
+  return {
+    id: `${source}:${diagnostic.code || index}:${index}`,
+    severity: severityOf(diagnostic.level),
+    scope,
+    source,
+    code: diagnostic.code || 'DIAGNOSTIC',
+    message: diagnostic.message || 'No diagnostic message.',
+    coordinate,
+    nodeId: metadataNodeId || nodeIdFromCoordinate(coordinate),
+    recommendedAction: '',
+  };
+}
+
+/**
+ * Projects scattered protocol results into one ordered, scope-aware review queue.
+ *
+ * This is intentionally a projection only: it never mutates or reinterprets the authoritative
+ * GraphDraft, run, Contract, or governance records.
+ */
+export function projectAuthorDiagnostics(input: AuthorDiagnosticsInput): AuthorDiagnosticItem[] {
+  const items: AuthorDiagnosticItem[] = [];
+  if (input.error.trim()) {
+    items.push({
+      id: 'client:error',
+      severity: 'ERROR',
+      scope: 'RUN',
+      source: 'client',
+      code: 'REQUEST_FAILED',
+      message: input.error.trim(),
+      coordinate: '',
+      nodeId: '',
+      recommendedAction: 'Review the request and retry.',
+    });
+  }
+  input.validation?.diagnostics.forEach((diagnostic, index) => {
+    items.push(visualDiagnostic(diagnostic, index, 'CONTRACT', 'graph-validation'));
+  });
+  input.run?.diagnostics.forEach((diagnostic, index) => {
+    items.push(visualDiagnostic(diagnostic, index, 'RUN', 'runtime'));
+  });
+  input.run?.errors.forEach((message, index) => {
+    items.push({
+      id: `runtime:error:${index}`,
+      severity: 'ERROR',
+      scope: 'RUN',
+      source: 'runtime',
+      code: 'RUN_FAILED',
+      message,
+      coordinate: '',
+      nodeId: '',
+      recommendedAction: 'Inspect the failed trace and rerun the same Scenario.',
+    });
+  });
+  Object.values(input.scenarioResults)
+    .filter((result) => result.status === 'failed')
+    .forEach((result) => {
+      items.push({
+        id: `scenario:${result.id}`,
+        severity: 'ERROR',
+        scope: 'SCENARIO',
+        source: 'assertion',
+        code: 'ASSERTION_FAILED',
+        message: `${result.name}: ${result.detail}`,
+        coordinate: result.id,
+        nodeId: '',
+        recommendedAction: 'Open Test and compare expected with actual output.',
+      });
+    });
+  input.governance?.result?.issues.forEach((issue) => {
+    const coordinate = issue.targetPath || issue.deepLink || issue.issueId;
+    items.push({
+      id: `governance:${issue.issueId}`,
+      severity: severityOf(issue.severity),
+      scope: 'GOVERNANCE',
+      source: 'governance',
+      code: issue.code || issue.issueId,
+      message: issue.message,
+      coordinate,
+      nodeId: nodeIdFromCoordinate(coordinate),
+      recommendedAction: issue.recommendedAction || '',
+    });
+  });
+  input.dslDiagnostics.forEach((diagnostic, index) => {
+    items.push(visualDiagnostic(diagnostic, index, 'DSL', 'dsl-import'));
+  });
+
+  const rank: Record<AuthorDiagnosticSeverity, number> = {
+    BLOCKING: 0,
+    ERROR: 1,
+    WARNING: 2,
+    INFO: 3,
+  };
+  return items.sort((left, right) => rank[left.severity] - rank[right.severity]);
+}

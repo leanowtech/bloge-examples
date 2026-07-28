@@ -188,7 +188,11 @@ describe('AuthorCanvas operator-library intake', () => {
   it('opens a run deep link, restores its draft, focuses a node, and displays governance feedback', async () => {
     const projection = dslProjection() as { draft: Record<string, unknown> };
     const draft = { ...projection.draft, draftId: 'draft-42', revision: 7 };
-    window.history.replaceState({}, '', '/author/?runId=run-99&nodeId=eligibility');
+    window.history.replaceState(
+      {},
+      '',
+      '/author/?authorWorkspace=v2&authorMode=review&runId=run-99&nodeId=eligibility',
+    );
     fetchMock.mockImplementation(async (input: RequestInfo | URL) => {
       const url = String(input);
       if (url === '/api/visual/operators') {
@@ -235,7 +239,7 @@ describe('AuthorCanvas operator-library intake', () => {
 
     await act(async () => {
       root = createRoot(host);
-      root.render(<StrictMode><AuthorCanvas /></StrictMode>);
+      root.render(<StrictMode><AuthorCanvas workspaceVersion="v2" /></StrictMode>);
     });
 
     await waitFor(() => {
@@ -246,6 +250,10 @@ describe('AuthorCanvas operator-library intake', () => {
     expect(query('[data-testid="run-context-strip"]').textContent).toContain('FAILED');
     expect(query('[data-testid="governance-gate-strip"]').textContent).toContain('BLOCKED');
     expect(query('[data-testid="governance-gate-strip"]').textContent).toContain('CURRENT');
+    expect(document.querySelector('[data-testid="author-start-dialog"]')).toBeNull();
+    expect(query('.workspace').getAttribute('data-author-mode')).toBe('review');
+    expect(query('[data-testid="author-diagnostics-drawer"]').textContent)
+      .toContain('OWNER_APPROVAL_REQUIRED');
 
     await click(query('[data-testid="governance-issue:missing-owner"]'));
 
@@ -1011,6 +1019,107 @@ describe('AuthorCanvas built-in canvas examples', () => {
     });
     expect(fetchMock.mock.calls.filter(([input]) => String(input) === '/api/visual/graphs/simulate'))
       .toHaveLength(2);
+  });
+
+  it('keeps v2 mode and selection shareable while panels remain local workspace state', async () => {
+    await act(async () => {
+      root = createRoot(host);
+      root.render(<AuthorCanvas workspaceVersion="v2" />);
+    });
+
+    await click(query<HTMLButtonElement>('[data-testid="author-start-choice:examples"]'));
+    await waitFor(() =>
+      expect(query<HTMLButtonElement>('[data-testid="author-start-example:loan-policy-fallback"]').disabled)
+        .toBe(false),
+    );
+    await click(query<HTMLButtonElement>('[data-testid="author-start-example:loan-policy-fallback"]'));
+
+    await waitFor(() => {
+      expect(window.location.search).toContain('nodeId=n5');
+      expect(window.location.search).toContain('authorMode=compose');
+    });
+    await click(query<HTMLButtonElement>('[data-testid="author-mode:review"]'));
+    expect(window.location.search).toContain('authorMode=review');
+
+    await click(query<HTMLButtonElement>('[aria-label="Collapse operator palette"]'));
+    await click(query<HTMLButtonElement>('[aria-label="Collapse context inspector"]'));
+    expect(query('.workspace').classList.contains('palette-collapsed')).toBe(true);
+    expect(query('.workspace').classList.contains('inspector-collapsed')).toBe(true);
+    expect(query<HTMLElement>('.workspace').style.getPropertyValue('--author-palette-track')).toBe('36px');
+    expect(query<HTMLElement>('.workspace').style.getPropertyValue('--author-inspector-track')).toBe('36px');
+    expect(window.location.search).not.toContain('palette');
+    expect(window.location.search).not.toContain('inspector');
+  });
+
+  it('auto-opens scope-aware diagnostics when a Scenario assertion fails', async () => {
+    await act(async () => {
+      root = createRoot(host);
+      root.render(<AuthorCanvas workspaceVersion="v2" />);
+    });
+
+    await click(query<HTMLButtonElement>('[data-testid="author-start-choice:examples"]'));
+    await waitFor(() =>
+      expect(query<HTMLButtonElement>('[data-testid="author-start-example:loan-policy-fallback"]').disabled)
+        .toBe(false),
+    );
+    await click(query<HTMLButtonElement>('[data-testid="author-start-example:loan-policy-fallback"]'));
+    expect(query('[data-testid="author-diagnostics-drawer"]').className).toContain('collapsed');
+
+    await click(query<HTMLButtonElement>('[data-testid="author-mode:test"]'));
+    await waitFor(() =>
+      expect(query('[data-testid="test-suite-dialog"]').textContent).toContain('Test Suite'),
+    );
+    await setControlValue(
+      query<HTMLTextAreaElement>('[data-testid="test-table-expected:0"]'),
+      '{"decision":"force-mismatch"}',
+    );
+    await click(query<HTMLButtonElement>('[aria-label="Close test suite"]'));
+    await click(query<HTMLButtonElement>('[data-testid="author-primary-action"]'));
+
+    await waitFor(() => {
+      const drawer = query('[data-testid="author-diagnostics-drawer"]');
+      expect(drawer.className).toContain('open');
+      expect(drawer.textContent).toContain('ASSERTION_FAILED');
+      expect(drawer.textContent).toContain('SCENARIO');
+      expect(drawer.textContent).toContain('Prime approval path: Output mismatch.');
+    });
+    expect(query('.workspace').getAttribute('data-author-mode')).toBe('review');
+    expect(query('[data-testid="author-primary-action"]').textContent).toBe('Review failures');
+  });
+
+  it('exports the same GraphDraft domain payload through v1 and v2 shells', async () => {
+    await act(async () => {
+      root = createRoot(host);
+      root.render(<AuthorCanvas workspaceVersion="v1" />);
+    });
+    await waitFor(() =>
+      expect(query('[data-testid="canvas-example-load:loan-policy-fallback"]').textContent).toContain('Load'),
+    );
+    await click(query<HTMLButtonElement>('[data-testid="canvas-example-load:loan-policy-fallback"]'));
+    const v1Draft = authorDraftExport(
+      query<HTMLAnchorElement>('[data-testid="author-draft-export"]'),
+    );
+
+    await act(async () => {
+      root?.unmount();
+      root = null;
+    });
+    window.history.replaceState({}, '', '/author/?authorWorkspace=v2');
+    await act(async () => {
+      root = createRoot(host);
+      root.render(<AuthorCanvas workspaceVersion="v2" />);
+    });
+    await click(query<HTMLButtonElement>('[data-testid="author-start-choice:examples"]'));
+    await waitFor(() =>
+      expect(query<HTMLButtonElement>('[data-testid="author-start-example:loan-policy-fallback"]').disabled)
+        .toBe(false),
+    );
+    await click(query<HTMLButtonElement>('[data-testid="author-start-example:loan-policy-fallback"]'));
+    const v2Draft = authorDraftExport(
+      query<HTMLAnchorElement>('[data-testid="author-draft-export-v2"]'),
+    );
+
+    expect(v2Draft).toEqual(v1Draft);
   });
 
   it('loads a complex built-in example into the editable canvas draft', async () => {

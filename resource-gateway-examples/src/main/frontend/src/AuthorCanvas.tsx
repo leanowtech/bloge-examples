@@ -1,6 +1,7 @@
 import {
   type CSSProperties,
   type DragEvent,
+  type PointerEvent as ReactPointerEvent,
   lazy,
   Suspense,
   useCallback,
@@ -161,6 +162,15 @@ import {
   resolveAuthorPrimaryAction,
   type AuthorMode,
 } from './author/shell/authorWorkspaceState';
+import {
+  authorWorkspaceUrl,
+  parseAuthorWorkspaceLocation,
+} from './author/shell/authorWorkspaceLocation';
+import AuthorDiagnosticsDrawer from './author/review/AuthorDiagnosticsDrawer';
+import {
+  projectAuthorDiagnostics,
+  type AuthorDiagnosticItem,
+} from './author/review/authorDiagnostics';
 
 const ContractScenarioWorkspace = lazy(
   () => import('./contract-scenario/ContractScenarioWorkspace'),
@@ -4305,9 +4315,17 @@ export interface AuthorCanvasProps {
 
 export default function AuthorCanvas({ workspaceVersion = 'v1' }: AuthorCanvasProps = {}) {
   const isTaskWorkspace = workspaceVersion === 'v2';
-  const [authorMode, setAuthorMode] = useState<AuthorMode>('compose');
-  const [startOpen, setStartOpen] = useState(isTaskWorkspace);
+  const initialWorkspaceLocation = parseAuthorWorkspaceLocation(window.location.search);
+  const [authorMode, setAuthorMode] = useState<AuthorMode>(initialWorkspaceLocation.mode);
+  const [startOpen, setStartOpen] = useState(
+    isTaskWorkspace && !initialWorkspaceLocation.hasDeepLinkTarget,
+  );
   const [startSection, setStartSection] = useState<StartImportSection>('menu');
+  const [paletteWidth, setPaletteWidth] = useState(220);
+  const [inspectorWidth, setInspectorWidth] = useState(220);
+  const [paletteCollapsed, setPaletteCollapsed] = useState(false);
+  const [inspectorCollapsed, setInspectorCollapsed] = useState(false);
+  const [diagnosticsOpen, setDiagnosticsOpen] = useState(false);
   const [operators, setOperators] = useState<OperatorDefinition[]>([]);
   const [builtInFunctions, setBuiltInFunctions] = useState<BuiltInFunctionDefinition[]>([]);
   const [nodes, setNodes] = useState<Node<NodeData>[]>([]);
@@ -4340,7 +4358,7 @@ export default function AuthorCanvas({ workspaceVersion = 'v1' }: AuthorCanvasPr
   const [paletteFacet, setPaletteFacet] = useState<OperatorPaletteFacet>('all');
   const [sourceFilter, setSourceFilter] = useState('all');
   const [tagFilter, setTagFilter] = useState('all');
-  const [selectedNodeId, setSelectedNodeId] = useState('');
+  const [selectedNodeId, setSelectedNodeId] = useState(initialWorkspaceLocation.selectedNodeId);
   const [operatorDetailNodeId, setOperatorDetailNodeId] = useState('');
   const [testSuiteOpen, setTestSuiteOpen] = useState(false);
   const [contractWorkspaceOpen, setContractWorkspaceOpen] = useState(false);
@@ -5042,7 +5060,7 @@ export default function AuthorCanvas({ workspaceVersion = 'v1' }: AuthorCanvasPr
     clearRunResult();
     counter.current = maxNumericNodeId(template.nodes);
     tableTestCounter.current = nextSimulationTableRows.length;
-    setNodes(isTaskWorkspace ? autoLayoutFlowNodes(nextNodes, nextEdges) : nextNodes);
+    setNodes(autoLayoutFlowNodes(nextNodes, nextEdges));
     setEdges(nextEdges);
     setFixtureDrafts(nextFixtureDrafts);
     setFixtureInputDrafts(nextFixtureInputDrafts);
@@ -5094,13 +5112,11 @@ export default function AuthorCanvas({ workspaceVersion = 'v1' }: AuthorCanvasPr
       level: 'ok',
       message: `Loaded ${template.label}: ${template.nodes.length} nodes / ${template.edges.length} edges.`,
     });
-    if (isTaskWorkspace) {
-      const graphSize = { nodeCount: nextNodes.length, edgeCount: nextEdges.length };
-      if (typeof window.requestAnimationFrame === 'function') {
-        window.requestAnimationFrame(() => fitCanvasToView(graphSize));
-      } else {
-        fitCanvasToView(graphSize);
-      }
+    const graphSize = { nodeCount: nextNodes.length, edgeCount: nextEdges.length };
+    if (typeof window.requestAnimationFrame === 'function') {
+      window.requestAnimationFrame(() => fitCanvasToView(graphSize));
+    } else {
+      fitCanvasToView(graphSize);
     }
   }, [clearRunResult, fitCanvasToView, isTaskWorkspace, operatorByRef]);
   const selectedNode = nodes.find((node) => node.id === selectedNodeId);
@@ -5798,7 +5814,10 @@ export default function AuthorCanvas({ workspaceVersion = 'v1' }: AuthorCanvasPr
       diagnostics: [],
     }, 'Workspace bundle', bundle);
     setContractWorkspaceOpen(true);
-  }, [applyDslProjection]);
+    if (isTaskWorkspace) {
+      setAuthorMode('contract');
+    }
+  }, [applyDslProjection, isTaskWorkspace]);
   const applyDslProjectionRef = useRef(applyDslProjection);
 
   useEffect(() => {
@@ -5859,6 +5878,9 @@ export default function AuthorCanvas({ workspaceVersion = 'v1' }: AuthorCanvasPr
         draft,
         diagnostics: [],
       }, `Stored draft ${resolvedDraftId}@${draft.revision ?? 0}`);
+      if (isTaskWorkspace) {
+        setAuthorMode(initialWorkspaceLocation.mode);
+      }
 
       const gateIssue = requestedGateIssueId
         ? gateView?.result?.issues.find((issue) => issue.issueId === requestedGateIssueId)
@@ -5900,7 +5922,7 @@ export default function AuthorCanvas({ workspaceVersion = 'v1' }: AuthorCanvasPr
     return () => {
       active = false;
     };
-  }, []);
+  }, [initialWorkspaceLocation.mode, isTaskWorkspace]);
 
   const previewLegacyDsl = useCallback(async () => {
     if (!dslSourceText.trim()) {
@@ -6891,6 +6913,45 @@ export default function AuthorCanvas({ workspaceVersion = 'v1' }: AuthorCanvasPr
     }
   }, [edges, fitCanvasToView]);
 
+  const beginPanelResize = useCallback((
+    panel: 'palette' | 'inspector',
+    event: ReactPointerEvent<HTMLButtonElement>,
+  ) => {
+    event.preventDefault();
+    const startX = event.clientX;
+    const startWidth = panel === 'palette' ? paletteWidth : inspectorWidth;
+    const move = (moveEvent: PointerEvent) => {
+      const delta = panel === 'palette'
+        ? moveEvent.clientX - startX
+        : startX - moveEvent.clientX;
+      const nextWidth = Math.max(220, Math.min(360, startWidth + delta));
+      if (panel === 'palette') {
+        setPaletteWidth(nextWidth);
+      } else {
+        setInspectorWidth(nextWidth);
+      }
+    };
+    const stop = () => {
+      window.removeEventListener('pointermove', move);
+      window.removeEventListener('pointerup', stop);
+      document.body.style.cursor = '';
+    };
+    document.body.style.cursor = 'col-resize';
+    window.addEventListener('pointermove', move);
+    window.addEventListener('pointerup', stop, { once: true });
+  }, [inspectorWidth, paletteWidth]);
+
+  useEffect(() => {
+    if (!isTaskWorkspace) {
+      return;
+    }
+    const nextUrl = authorWorkspaceUrl(window.location.href, authorMode, selectedNodeId);
+    const currentUrl = `${window.location.pathname}${window.location.search}${window.location.hash}`;
+    if (nextUrl !== currentUrl) {
+      window.history.replaceState(window.history.state, '', nextUrl);
+    }
+  }, [authorMode, isTaskWorkspace, selectedNodeId]);
+
   const executionStatus = busy || tableTestingBusy
     ? 'RUNNING'
     : result
@@ -6933,6 +6994,24 @@ export default function AuthorCanvas({ workspaceVersion = 'v1' }: AuthorCanvasPr
           ? `${simulationTableRunSummary.failed}/${simulationTableRunSummary.total} scenario assertions failed.`
           : 'Execution completed with failures.'
       : '');
+  const diagnosticItems = useMemo(
+    () => projectAuthorDiagnostics({
+      error,
+      validation: validationResult,
+      run: result,
+      scenarioResults: simulationTableResults,
+      governance: governanceGateView,
+      dslDiagnostics: dslImportDiagnostics,
+    }),
+    [
+      dslImportDiagnostics,
+      error,
+      governanceGateView,
+      result,
+      simulationTableResults,
+      validationResult,
+    ],
+  );
 
   const changeAuthorMode = useCallback((nextMode: AuthorMode) => {
     setAuthorMode(nextMode);
@@ -6978,6 +7057,15 @@ export default function AuthorCanvas({ workspaceVersion = 'v1' }: AuthorCanvasPr
       setAuthorMode('review');
     }
   }, [busy, hasRunResult, isTaskWorkspace, tableTestingBusy]);
+
+  useEffect(() => {
+    if (
+      isTaskWorkspace
+      && diagnosticItems.some((item) => item.severity === 'BLOCKING' || item.severity === 'ERROR')
+    ) {
+      setDiagnosticsOpen(true);
+    }
+  }, [diagnosticItems, isTaskWorkspace]);
 
   const paletteView = useMemo(
     () => operatorPaletteView(operators, {
@@ -7154,8 +7242,15 @@ export default function AuthorCanvas({ workspaceVersion = 'v1' }: AuthorCanvasPr
       className={[
         'workspace',
         isTaskWorkspace ? 'workspace-v2' : '',
+        paletteCollapsed ? 'palette-collapsed' : '',
+        inspectorCollapsed ? 'inspector-collapsed' : '',
+        diagnosticsOpen ? 'diagnostics-open' : '',
         canvasFocusMode ? 'canvas-focus' : '',
       ].filter(Boolean).join(' ')}
+      style={isTaskWorkspace ? {
+        '--author-palette-track': paletteCollapsed ? '36px' : `${paletteWidth}px`,
+        '--author-inspector-track': inspectorCollapsed ? '36px' : `${inspectorWidth}px`,
+      } as CSSProperties : undefined}
       data-layout-mode={canvasFocusMode ? 'focus' : 'standard'}
       data-author-workspace-version={workspaceVersion}
       data-author-mode={authorMode}
@@ -7225,7 +7320,34 @@ export default function AuthorCanvas({ workspaceVersion = 'v1' }: AuthorCanvasPr
           />
         </>
       )}
+      {isTaskWorkspace && !paletteCollapsed && (
+        <button
+          type="button"
+          className="author-panel-resizer palette-resizer"
+          aria-label="Resize operator palette"
+          onPointerDown={(event) => beginPanelResize('palette', event)}
+        />
+      )}
+      {isTaskWorkspace && !inspectorCollapsed && (
+        <button
+          type="button"
+          className="author-panel-resizer inspector-resizer"
+          aria-label="Resize context inspector"
+          onPointerDown={(event) => beginPanelResize('inspector', event)}
+        />
+      )}
       <aside className="palette" id="operator-palette">
+        {isTaskWorkspace && (
+          <button
+            type="button"
+            className="author-panel-toggle palette-panel-toggle"
+            aria-label={paletteCollapsed ? 'Expand operator palette' : 'Collapse operator palette'}
+            aria-expanded={!paletteCollapsed}
+            onClick={() => setPaletteCollapsed((current) => !current)}
+          >
+            <span aria-hidden="true">{paletteCollapsed ? '>' : '<'}</span>
+          </button>
+        )}
         <div className="palette-heading">
           <h2>Operators</h2>
           <span>
@@ -8040,6 +8162,17 @@ export default function AuthorCanvas({ workspaceVersion = 'v1' }: AuthorCanvasPr
 
       <aside className="inspector">
         {isTaskWorkspace && (
+          <button
+            type="button"
+            className="author-panel-toggle inspector-panel-toggle"
+            aria-label={inspectorCollapsed ? 'Expand context inspector' : 'Collapse context inspector'}
+            aria-expanded={!inspectorCollapsed}
+            onClick={() => setInspectorCollapsed((current) => !current)}
+          >
+            <span aria-hidden="true">{inspectorCollapsed ? '<' : '>'}</span>
+          </button>
+        )}
+        {isTaskWorkspace && (
           <AuthorContextInspector
             mode={authorMode}
             selectedNode={selectedNode ? {
@@ -8444,6 +8577,25 @@ export default function AuthorCanvas({ workspaceVersion = 'v1' }: AuthorCanvasPr
           </>
         )}
       </aside>
+      {isTaskWorkspace && (
+        <AuthorDiagnosticsDrawer
+          open={diagnosticsOpen}
+          items={diagnosticItems}
+          onToggle={() => setDiagnosticsOpen((current) => !current)}
+          onSelect={(item: AuthorDiagnosticItem) => {
+            setAuthorMode('review');
+            if (item.nodeId && nodes.some((node) => node.id === item.nodeId)) {
+              setSelectedNodeId(item.nodeId);
+            } else if (item.scope === 'SCENARIO') {
+              setAuthorMode('test');
+              setTestSuiteOpen(true);
+            } else if (item.scope === 'CONTRACT') {
+              setOperatorContractWorkspace(null);
+              setContractWorkspaceOpen(true);
+            }
+          }}
+        />
+      )}
       {operatorContractWorkspace && (
         <Suspense
           fallback={(

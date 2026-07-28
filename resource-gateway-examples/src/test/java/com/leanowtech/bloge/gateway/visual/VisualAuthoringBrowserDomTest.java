@@ -594,6 +594,54 @@ class VisualAuthoringBrowserDomTest {
                 .isEqualTo(4);
         assertNoHorizontalOverflow(wait, By.cssSelector(".workspace-v2"));
 
+        double canvasWidthBeforeCollapse = elementClientWidth(
+                driver.findElement(By.cssSelector(".workspace-v2 > .canvas")));
+        driver.findElement(By.cssSelector("[aria-label='Collapse operator palette']")).click();
+        driver.findElement(By.cssSelector("[aria-label='Collapse context inspector']")).click();
+        wait.until(ExpectedConditions.attributeContains(
+                By.cssSelector(".workspace-v2"), "class", "palette-collapsed"));
+        wait.until(ExpectedConditions.attributeContains(
+                By.cssSelector(".workspace-v2"), "class", "inspector-collapsed"));
+        assertThat(elementClientWidth(driver.findElement(By.cssSelector(".workspace-v2 > .canvas"))))
+                .as("canvas expands when both context panels collapse")
+                .isGreaterThan(canvasWidthBeforeCollapse + 300.0);
+        driver.findElement(By.cssSelector("[aria-label='Expand operator palette']")).click();
+        driver.findElement(By.cssSelector("[aria-label='Expand context inspector']")).click();
+
+        WebElement paletteResizer = wait.until(ExpectedConditions.visibilityOfElementLocated(
+                By.cssSelector("[aria-label='Resize operator palette']")
+        ));
+        ((JavascriptExecutor) driver).executeScript("""
+                const handle = arguments[0];
+                const startX = handle.getBoundingClientRect().left + 3;
+                handle.dispatchEvent(new PointerEvent('pointerdown', {
+                  bubbles: true,
+                  cancelable: true,
+                  pointerId: 7,
+                  pointerType: 'mouse',
+                  clientX: startX
+                }));
+                window.dispatchEvent(new PointerEvent('pointermove', {
+                  bubbles: true,
+                  pointerId: 7,
+                  pointerType: 'mouse',
+                  clientX: startX + 52
+                }));
+                window.dispatchEvent(new PointerEvent('pointerup', {
+                  bubbles: true,
+                  pointerId: 7,
+                  pointerType: 'mouse',
+                  clientX: startX + 52
+                }));
+                """, paletteResizer);
+        String resizedPaletteTrack = String.valueOf(((JavascriptExecutor) driver).executeScript(
+                "return getComputedStyle(arguments[0]).getPropertyValue('--author-palette-track');",
+                workspace));
+        assertThat(Double.parseDouble(resizedPaletteTrack.replace("px", "").trim()))
+                .as("drag-resized palette width")
+                .isBetween(220.0, 360.0)
+                .isGreaterThan(220.0);
+
         driver.findElement(By.cssSelector(".author-secondary-actions button:first-child")).click();
         wait.until(ExpectedConditions.elementToBeClickable(By.cssSelector(
                 "[data-testid='author-start-choice:examples']"
@@ -611,6 +659,9 @@ class VisualAuthoringBrowserDomTest {
         ));
         waitForText(wait, By.cssSelector("[data-testid='author-primary-action']"), "Run scenario");
         waitForText(wait, By.cssSelector("[data-testid='author-context-inspector']"), "Decision response");
+        assertThat(driver.getCurrentUrl())
+                .contains("authorMode=compose")
+                .contains("nodeId=n5");
 
         Number nodeOverlapCount = (Number) ((JavascriptExecutor) driver).executeScript("""
                 const nodes = [...document.querySelectorAll('.react-flow__node')]
@@ -650,6 +701,23 @@ class VisualAuthoringBrowserDomTest {
             return text.contains("Review result") || text.contains("Review failures");
         });
         assertThat(workspace.getAttribute("data-author-mode")).isEqualTo("review");
+        assertThat(driver.getCurrentUrl())
+                .contains("authorMode=review")
+                .contains("nodeId=n5");
+        WebElement diagnosticsToggle = driver.findElement(By.cssSelector(
+                "[data-testid='author-diagnostics-drawer'] .author-diagnostics-toggle"
+        ));
+        if (!"true".equals(diagnosticsToggle.getAttribute("aria-expanded"))) {
+            diagnosticsToggle.click();
+        }
+        wait.until(ExpectedConditions.attributeToBe(
+                By.cssSelector(
+                        "[data-testid='author-diagnostics-drawer'] .author-diagnostics-toggle"),
+                "aria-expanded",
+                "true"
+        ));
+        waitForText(wait, By.cssSelector("[data-testid='author-diagnostics-drawer']"), "9 warnings");
+        waitForText(wait, By.cssSelector("[data-testid='author-diagnostics-drawer']"), "bloge.dsl");
         assertNoHorizontalOverflow(wait, By.cssSelector(".workspace-v2"));
     }
 
@@ -3986,6 +4054,20 @@ class VisualAuthoringBrowserDomTest {
                 element
         );
         return height.doubleValue();
+    }
+
+    /**
+     * Reads the rendered width in CSS pixels without Selenium's integer size rounding.
+     *
+     * @param element rendered browser element to measure
+     * @return fractional CSS-pixel width reported by the browser layout engine
+     */
+    private double elementClientWidth(WebElement element) {
+        Number width = (Number) ((JavascriptExecutor) driver).executeScript(
+                "return arguments[0].getBoundingClientRect().width;",
+                element
+        );
+        return width.doubleValue();
     }
 
     private void assertVisibleElementsNoHorizontalOverflow(WebDriverWait wait, By locator) {

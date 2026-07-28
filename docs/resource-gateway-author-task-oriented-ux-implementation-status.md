@@ -219,3 +219,112 @@ Round 1a 是可演示纵切，不是 Stage 1 全量完成，更不是总体完�
 4. 为 Example、DSL、Library 三条开始路径补齐 packaged Chrome 任务门禁；
 5. 增加 v1/v2 GraphDraft serialization 等价断言；
 6. Round 1b 退出后再判断 Stage 1 是否真正满足全部门禁。
+
+## Round 1b：可恢复工作区与统一诊断入口
+
+### 本轮目标
+
+Round 1a 已经证明主任务纵切，但 Workspace 仍缺少工程工具应有的可恢复性和空间控制。
+本轮补齐 Stage 1 的四个结构性缺口：
+
+1. Palette/Inspector 可以独立折叠和调整宽度；
+2. mode 与 selected node 可以通过 URL 恢复；
+3. validation、run、Scenario、governance 和 DSL 问题进入同一个 Diagnostics Drawer；
+4. v1/v2 对相同操作生成完全相同的 GraphDraft。
+
+### 已实现
+
+| 能力 | 实现 |
+|---|---|
+| 面板空间控制 | Palette 与 Inspector 可独立折叠；展开宽度可在 `220–360px` 拖动；偏好只存在 UI local state，不污染 GraphDraft/URL |
+| URL 工作状态 | `authorWorkspaceLocation.ts` 负责解析和写入 `authorMode`、`nodeId`，同时保留 `draftId`、`runId`、`operatorRef`、`gate` 等既有 deep-link 坐标 |
+| Deep-link 首屏 | 含业务目标的 URL 不再弹 Start Dialog；恢复 Draft 后仍保留请求的 mode，并聚焦目标 node |
+| 统一 Diagnostics | `authorDiagnostics.ts` 将 graph validation、run error/diagnostics、Scenario assertion、governance gate 和 DSL compiler warning 投影成 scope-aware failure queue |
+| 严重度模型 | Drawer 独立统计 `BLOCKING / ERROR / WARNING / INFO`；出现 blocking/error 时自动展开，warning 保持可发现但不强制打断 |
+| 定位恢复 | 点击 node diagnostic 聚焦节点；Scenario diagnostic 进入 Test；Contract/governance diagnostic 进入 Contract |
+| 布局边界 | Drawer 使用工作区底部保留区，不覆盖左右面板；展开时 Canvas 增加稳定 bottom inset |
+| 协议等价 | 组件测试对同一 Library、示例加载和布局操作导出的 v1/v2 完整 GraphDraft 做深度等价比较 |
+
+### 测试与真实浏览器证据
+
+新增纯模型测试：
+
+```text
+authorWorkspaceLocation.test.ts   4 passed
+authorDiagnostics.test.ts         2 passed
+```
+
+`AuthorCanvas.test.tsx` 增加：
+
+1. URL mode/node 恢复，panel collapse 不进入 URL；
+2. Scenario assertion mismatch 自动进入统一 Diagnostics；
+3. v1/v2 完整 GraphDraft 严格等价；
+4. run deep link 恢复 Draft、selection、Review mode 和 governance feedback。
+
+完整前端验证：
+
+```text
+21 test files passed
+257 tests passed
+tsc --noEmit passed
+vite production build passed
+```
+
+真实 packaged Chrome 纵切：
+
+```text
+VisualAuthoringBrowserDomTest
+  #taskOrientedAuthorShellLoadsRunsAndReviewsWithoutCompetingChromeInRealBrowser
+1 passed
+```
+
+该用例在真实服务和真实 React Flow 上验证：
+
+- 两侧面板同时折叠后 Canvas 宽度增加超过 `300px`；
+- Pointer Event 拖动 Palette 后 CSS track 从 `220px` 增长且保持在 `220–360px`；
+- 示例载入后 URL 为 Compose + `nodeId=n5`；
+- 运行后 URL 为 Review + `nodeId=n5`；
+- Diagnostics Drawer 汇总出 9 条 `bloge.dsl` warning；
+- 整个 Workspace 横向溢出为 `0px`。
+
+应用内浏览器在 `1280 × 720` 的最终几何复核：
+
+| 区域 | 几何结果 |
+|---|---|
+| Palette | `220 × 579`，`x=0` |
+| Canvas | `840 × 579`，`x=220` |
+| Inspector | `220 × 579`，`x=1060` |
+| collapsed Diagnostics | `1060 × 33`，仅覆盖 Canvas/Inspector 下方保留带 |
+| Workspace horizontal overflow | `0px` |
+| node-node overlap | `0` |
+
+视觉复核同时测得 12 条边中仍有 4 个 edge-label/node 相交、3 个
+edge-label/edge-label 相交。它们已经被固化为 Stage 4 的量化阻断条件，不归因于
+Workspace Shell，也不能在最终验收中豁免。
+
+### 本轮差距评估
+
+| 维度 | 已实现 | 权重 | 判断 |
+|---|---:|---:|---|
+| 任务式 Shell 与信息架构 | 19 | 20 | 固定壳层、单主操作、四模式、折叠/拖宽、URL 恢复和 Drawer 成立 |
+| Start/Import 入口 | 9 | 10 | 四入口及完整示例成立；DSL/Library 仍缺各自的 packaged Chrome 完整任务门禁 |
+| 上下文与节点专属编辑 | 9 | 15 | selection-scoped Inspector 稳定；类型化默认 editor 和统一 dirty close 尚未完成 |
+| Schema-driven Input/Test | 6 | 15 | 复用现有工作台，但 Graph Input/Run Input 与 required value 体验尚未重构 |
+| 可信状态与错误恢复 | 10 | 15 | 多来源统一 projection 和跳转成立；尚缺服务端数量对账和 failures-first 结果 |
+| Canvas 与复杂图可读性 | 7 | 15 | Shell inset 正确；edge label、semantic zoom、Overview 仍是主要缺口 |
+| 工程边界、测试和灰度 | 10 | 10 | 状态/URL/diagnostics 均拆为纯模型，v1/v2 等价且真实 Chrome 通过 |
+| 合计 | **70** | **100** | **剩余差距 30%** |
+
+Stage 1 的产品结构和回滚边界已经成立。未完成的两条独立 import 浏览器任务纳入最终
+任务矩阵，不阻塞进入 Stage 2；总体差距仍远高于 8%，不能停。
+
+### Round 2 针对性计划
+
+1. 建立 `NodeEditorRegistry`，覆盖所有内置 visual kind 并冻结默认 editor/tab；
+2. Decision Table 双击直达 Rules，Transform 双击直达 Mapping；
+3. Inspector 固定为 `Config / Data / Test / Contract / Advanced`，无内容 Tab 明确 disabled；
+4. 将 Graph Input Contract 与 Run Input Values 分离；
+5. required Graph Input 自动生成 schema-driven value control，并复用现有
+   `SchemaValueForm`；
+6. Graph Input 到 node input 的绑定不要求用户手写 `ctx.*` path；
+7. 用组件与真实 Chrome 检查 keyboard focus、Escape、Apply/Cancel 和脏状态。
