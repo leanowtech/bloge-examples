@@ -1,5 +1,12 @@
 # BLOGE Resource Gateway 画布 UX 目标与差距迭代日志
 
+> 说明（2026-07-28）：本文中的 `99/100` 评分衡量的是算子表达、Schema 连线、
+> 浏览器可操作性和页面级无溢出，不代表 `/author/` 端到端任务体验已经达到
+> 99%。真实浏览器全流程审计发现的信息架构、主操作、测试可信度和复杂图可读性
+> 问题，统一进入
+> [Resource Gateway Author 任务式交互 UX 改善计划](resource-gateway-author-task-oriented-ux-improvement-plan.md)。
+> 本文继续保留为历史迭代与算子覆盖证据。
+
 状态：Iteration Log
 日期：2026-07-06
 范围：`resource-gateway-examples` / `/author/` React Flow 画布

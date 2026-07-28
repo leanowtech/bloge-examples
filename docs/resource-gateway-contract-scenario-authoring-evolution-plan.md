@@ -13,6 +13,7 @@
 
 相关文档：
 
+- [Resource Gateway Author 任务式交互 UX 改善计划](resource-gateway-author-task-oriented-ux-improvement-plan.md)
 - [BLOGE Visual Canvas 产品与系统说明](bloge-visual-canvas-product-and-system-guide.md)
 - [Resource Gateway 工业级可测试性演进方案](resource-gateway-industrial-testability-evolution-plan.md)
 - [Resource Gateway 长期能力镜像设计](resource-gateway-mock.md)
