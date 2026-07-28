@@ -450,8 +450,9 @@ class VisualAuthoringBrowserDomTest {
 
     /**
      * Proves the author-shell rollout coordinate is URL-only and that the desktop operator dialog
-     * keeps both actions on the title row. The latter is a geometry assertion, not merely a DOM
-     * presence check, because the historical three-column grid silently wrapped the close action.
+     * keeps both actions on the title row. The latter checks a shared vertical center line and
+     * horizontal clearance rather than equal top coordinates because the kind badge intentionally
+     * has two text rows. The historical three-column grid silently wrapped the close action.
      */
     @Test
     void authorWorkspaceVersionAndOperatorDialogHeadingRemainRollbackSafeInRealBrowser() {
@@ -493,11 +494,17 @@ class VisualAuthoringBrowserDomTest {
                         });
                         """, heading);
         assertThat(childBounds).hasSize(4);
+        double firstCenter = (
+                childBounds.getFirst().get("top").doubleValue()
+                        + childBounds.getFirst().get("bottom").doubleValue()
+        ) / 2.0;
         assertThat(childBounds)
-                .extracting(bounds -> bounds.get("top").doubleValue())
-                .allSatisfy(top -> assertThat(top)
-                        .as("operator dialog heading child top")
-                        .isCloseTo(childBounds.get(0).get("top").doubleValue(),
+                .extracting(bounds -> (
+                        bounds.get("top").doubleValue() + bounds.get("bottom").doubleValue()
+                ) / 2.0)
+                .allSatisfy(center -> assertThat(center)
+                        .as("operator dialog heading child vertical center")
+                        .isCloseTo(firstCenter,
                                 org.assertj.core.data.Offset.offset(2.0)));
         for (int index = 1; index < childBounds.size(); index++) {
             assertThat(childBounds.get(index).get("left").doubleValue())
@@ -689,6 +696,46 @@ class VisualAuthoringBrowserDomTest {
         assertThat(nodeOverlapCount.intValue())
                 .as("loaded example node-node overlap")
                 .isZero();
+
+        WebElement decisionTableNode = wait.until(ExpectedConditions.visibilityOfElementLocated(
+                By.cssSelector("[data-testid='canvas-node:n4']")
+        ));
+        new Actions(driver).doubleClick(decisionTableNode).perform();
+        wait.until(ExpectedConditions.attributeToBe(
+                By.cssSelector("[data-testid='operator-detail-dialog']"),
+                "data-default-tab",
+                "rules"
+        ));
+        assertThat(driver.findElement(By.cssSelector(
+                "[data-testid='operator-editor-pane:rules']"
+        )).isDisplayed()).isTrue();
+        assertThat(driver.findElement(By.cssSelector(
+                "[data-testid='decision-table-editor']"
+        )).isDisplayed()).isTrue();
+        driver.findElement(By.cssSelector("[aria-label='Close operator details']")).click();
+        wait.until(ExpectedConditions.invisibilityOfElementLocated(
+                By.cssSelector("[data-testid='operator-detail-dialog']")
+        ));
+
+        WebElement transformNode = wait.until(ExpectedConditions.visibilityOfElementLocated(
+                By.cssSelector("[data-testid='canvas-node:n5']")
+        ));
+        new Actions(driver).doubleClick(transformNode).perform();
+        wait.until(ExpectedConditions.attributeToBe(
+                By.cssSelector("[data-testid='operator-detail-dialog']"),
+                "data-default-tab",
+                "mapping"
+        ));
+        assertThat(driver.findElement(By.cssSelector(
+                "[data-testid='operator-editor-pane:mapping']"
+        )).isDisplayed()).isTrue();
+        assertThat(driver.findElement(By.cssSelector(
+                "[data-testid='transform-assignment-editor']"
+        )).isDisplayed()).isTrue();
+        driver.findElement(By.cssSelector("[data-testid='operator-detail-apply']")).click();
+        wait.until(ExpectedConditions.invisibilityOfElementLocated(
+                By.cssSelector("[data-testid='operator-detail-dialog']")
+        ));
 
         driver.findElement(By.cssSelector("[data-testid='author-primary-action']")).click();
         wait.until(ExpectedConditions.attributeToBe(

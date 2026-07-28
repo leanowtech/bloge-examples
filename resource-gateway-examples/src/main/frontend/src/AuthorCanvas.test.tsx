@@ -1470,6 +1470,59 @@ describe('AuthorCanvas connection guide', () => {
     expect(query('[data-testid="operator-detail-schema:output:0"]').textContent).toContain('"score"');
   });
 
+  it('treats node detail edits as a cancelable draft session', async () => {
+    await act(async () => {
+      root = createRoot(host);
+      root.render(<AuthorCanvas />);
+    });
+
+    await waitFor(() =>
+      expect(query('[data-testid="operator-button:risk:score"]').textContent).toContain('Risk Score'),
+    );
+    await click(query<HTMLButtonElement>('[data-testid="operator-button:risk:score"]'));
+    await doubleClick(query<HTMLElement>('[data-testid="node-wrapper:n1"]'));
+
+    const dialog = query('[data-testid="operator-detail-dialog"]');
+    expect(dialog.getAttribute('data-default-tab')).toBe('contract');
+    expect(query<HTMLDivElement>('[data-testid="operator-editor-pane:contract"]').hidden).toBe(false);
+    await click(query<HTMLButtonElement>('[data-testid="operator-editor-tab:config"]'));
+    expect(query<HTMLDivElement>('[data-testid="operator-editor-pane:config"]').hidden).toBe(false);
+    await setControlValue(query<HTMLInputElement>('[data-testid="operator-detail-label"]'), 'Canceled label');
+    expect(dialog.getAttribute('data-dirty')).toBe('true');
+    await click(query<HTMLButtonElement>('[aria-label="Close operator details"]'));
+
+    await waitFor(() =>
+      expect(document.querySelector('[data-testid="operator-detail-dialog"]')).toBeNull(),
+    );
+    expect(authorDraftExport(query<HTMLAnchorElement>('[data-testid="author-draft-export"]')).nodes[0].label)
+      .toBe('Risk Score');
+
+    await doubleClick(query<HTMLElement>('[data-testid="node-wrapper:n1"]'));
+    await click(query<HTMLButtonElement>('[data-testid="operator-editor-tab:config"]'));
+    await setControlValue(query<HTMLInputElement>('[data-testid="operator-detail-label"]'), 'Applied label');
+    await click(query<HTMLButtonElement>('[data-testid="operator-detail-apply"]'));
+
+    await waitFor(() =>
+      expect(document.querySelector('[data-testid="operator-detail-dialog"]')).toBeNull(),
+    );
+    expect(authorDraftExport(query<HTMLAnchorElement>('[data-testid="author-draft-export"]')).nodes[0].label)
+      .toBe('Applied label');
+
+    await doubleClick(query<HTMLElement>('[data-testid="node-wrapper:n1"]'));
+    await click(query<HTMLButtonElement>('[data-testid="operator-editor-tab:config"]'));
+    await setControlValue(query<HTMLInputElement>('[data-testid="operator-detail-label"]'), 'Escape label');
+    await act(async () => {
+      query('[data-testid="operator-detail-dialog"]').dispatchEvent(
+        new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }),
+      );
+    });
+    await waitFor(() =>
+      expect(document.querySelector('[data-testid="operator-detail-dialog"]')).toBeNull(),
+    );
+    expect(authorDraftExport(query<HTMLAnchorElement>('[data-testid="author-draft-export"]')).nodes[0].label)
+      .toBe('Applied label');
+  });
+
   it('opens the shared Contract and Scenario workspace from operator details', async () => {
     await act(async () => {
       root = createRoot(host);
@@ -1776,6 +1829,9 @@ describe('AuthorCanvas connection guide', () => {
     await waitFor(() =>
       expect(query('[data-testid="decision-table-editor"]').textContent).toContain('Decision Table'),
     );
+    expect(query('[data-testid="operator-detail-dialog"]').getAttribute('data-default-tab')).toBe('rules');
+    expect(query<HTMLDivElement>('[data-testid="operator-editor-pane:rules"]').hidden).toBe(false);
+    expect(query<HTMLDivElement>('[data-testid="operator-editor-pane:config"]').hidden).toBe(true);
     expect(query('[data-testid="operator-detail-dialog"]').textContent).toContain('Input schema');
     expect(query('[data-testid="decision-table-editor"]').textContent).toContain('Condition');
     expect(query('[data-testid="decision-table-editor"]').textContent).toContain('Output');
@@ -1793,7 +1849,7 @@ describe('AuthorCanvas connection guide', () => {
     await setControlValue(query<HTMLInputElement>('[data-testid="decision-rule-output:0:ruleId"]'), 'prime');
     await setControlValue(query<HTMLInputElement>('[data-testid="decision-rule-output:0:tier"]'), 'platinum');
 
-    await click(query<HTMLButtonElement>('[aria-label="Close decision table editor"]'));
+    await click(query<HTMLButtonElement>('[data-testid="operator-detail-apply"]'));
     await waitFor(() =>
       expect(document.querySelector('[data-testid="decision-table-editor"]')).toBeNull(),
     );
@@ -2118,6 +2174,9 @@ describe('AuthorCanvas connection guide', () => {
     await waitFor(() =>
       expect(query('[data-testid="transform-assignment-editor"]').textContent).toContain('Transform mapping'),
     );
+    expect(query('[data-testid="operator-detail-dialog"]').getAttribute('data-default-tab')).toBe('mapping');
+    expect(query<HTMLDivElement>('[data-testid="operator-editor-pane:mapping"]').hidden).toBe(false);
+    expect(query<HTMLDivElement>('[data-testid="operator-editor-pane:config"]').hidden).toBe(true);
     expect(query('[data-testid="transform-assignment-editor"]').textContent).toContain('Output Field');
     expect(query('[data-testid="transform-assignment-editor"]').textContent).toContain('Expression');
 

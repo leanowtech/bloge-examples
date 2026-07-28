@@ -328,3 +328,92 @@ Stage 1 的产品结构和回滚边界已经成立。未完成的两条独立 im
    `SchemaValueForm`；
 6. Graph Input 到 node input 的绑定不要求用户手写 `ctx.*` path；
 7. 用组件与真实 Chrome 检查 keyboard focus、Escape、Apply/Cancel 和脏状态。
+
+## Round 2a：类型化节点编辑器与可取消草稿会话
+
+### 本轮目标
+
+旧节点浮层虽然拥有专属能力，但所有内容按组件顺序平铺。用户双击 Decision Table
+需要越过 properties、bindings、fixture、test 和 schema 才能找到规则；`Done` 也无法
+解释修改是否已经进入 GraphDraft。本轮先根治编辑器路由和会话语义：
+
+1. 每种 visual kind 有唯一、可测试的默认任务；
+2. 专属编辑器是首屏，不再是长页面末尾；
+3. 节点编辑作为一个可 Cancel/Apply 的草稿会话；
+4. 新结构不改变 GraphDraft、Operator Test 和 Contract 协议。
+
+### 已实现
+
+| 能力 | 实现 |
+|---|---|
+| NodeEditorRegistry | `nodeEditorRegistry.ts` 覆盖 `decision-table / transform / foreach / resource / http / streaming / design / generic` 八类 visual kind |
+| 类型化默认任务 | Decision Table → Rules；Transform → Mapping；Design → Contract；其余执行类算子 → Config |
+| 稳定 Tab | 专属 Tab 加 `Config / Data / Test / Contract / Advanced`；每次打开按 registry 重置，不继承上一个算子的偶然状态 |
+| Progressive disclosure | 原 Key Properties、binding、fixture/test、schemas 和 raw config 继续复用，但只在对应 Tab 可见 |
+| 草稿事务 | 打开时快照 NodeData、fixture input/output 和 Operator Test rows；Cancel 或 Escape 恢复快照；Apply 保留当前草稿 |
+| 单一动作组 | 浮层标题只有 `Cancel / Apply to draft`；embedded Decision Table/Transform 不再重复显示 `Done` |
+| 键盘行为 | 浮层打开后内容区获得焦点；`Escape` 阻止事件外泄并执行 Cancel |
+| 回滚安全 | Editor 状态只影响前端草稿；v1/v2、GraphDraft wire model 和服务端执行 API 均未增加分叉 |
+
+### 测试与视觉证据
+
+纯 registry 测试验证：
+
+- 八个内置 kind 无遗漏、无重复 Tab；
+- default Tab 必须属于该 editor；
+- Decision Table/Transform 必须直达 domain editor；
+- 未知未来 kind fail safe 到 Generic。
+
+组件测试新增真实事务断言：
+
+1. 修改 label 后 Cancel，GraphDraft 保持原值；
+2. 修改后 Apply，GraphDraft 保存新值；
+3. 再次修改后 Escape，恢复到上次 Apply 的值；
+4. Design 默认 Contract；
+5. Decision Table 默认 Rules 且 Config hidden；
+6. Transform 默认 Mapping 且 Config hidden。
+
+完整前端结果：
+
+```text
+22 test files passed
+261 tests passed
+tsc --noEmit passed
+vite production build passed
+```
+
+packaged Chrome：
+
+```text
+VisualAuthoringBrowserDomTest
+  #authorWorkspaceVersionAndOperatorDialogHeadingRemainRollbackSafeInRealBrowser
+  #taskOrientedAuthorShellLoadsRunsAndReviewsWithoutCompetingChromeInRealBrowser
+2 passed
+```
+
+真实 Chrome 验证 Decision Table 的 Rules pane 和 Transform 的 Mapping pane 均直接可见；
+标题四个布局 child 共享垂直中心线且水平无重叠。几何门禁使用 center line 而不是错误地
+要求不同高度元素 top 相等。
+
+`1280 × 720` 应用内浏览器复核显示：
+
+- Rules 首屏完整展示 hit policy、incoming condition chips、规则矩阵和 Add Rule；
+- 表格超出浮层时在 matrix 内水平滚动，不扩张页面；
+- Contract、Cancel、Apply 不换行；
+- 删除 embedded `Done` 后，浮层只剩一套提交动作。
+
+### 本轮差距评估
+
+| 维度 | 已实现 | 权重 | 判断 |
+|---|---:|---:|---|
+| 任务式 Shell 与信息架构 | 19 | 20 | 不变 |
+| Start/Import 入口 | 9 | 10 | 不变 |
+| 上下文与节点专属编辑 | 13 | 15 | Registry、专属首屏、Tab 和草稿事务成立；Inspector Data 与图形化绑定待完成 |
+| Schema-driven Input/Test | 6 | 15 | 本轮只重新组织既有能力，Graph/Run Input 仍未分离 |
+| 可信状态与错误恢复 | 10 | 15 | 不变 |
+| Canvas 与复杂图可读性 | 7 | 15 | 不变 |
+| 工程边界、测试和灰度 | 10 | 10 | Registry 成为纯模块，组件与真实 Chrome 门禁齐全 |
+| 合计 | **74** | **100** | **剩余差距 26%** |
+
+Round 2a 解决了节点编辑器的结构病根，但 Stage 2 尚未完成。下一步集中处理 Graph Input
+Contract、Run Input Values、Context extra values 和 node binding 的认知边界。

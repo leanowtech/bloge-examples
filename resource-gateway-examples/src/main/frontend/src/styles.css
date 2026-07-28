@@ -4019,7 +4019,7 @@ button.primary:disabled {
   width: min(1180px, 100%);
   max-height: min(840px, calc(100vh - 36px));
   display: grid;
-  grid-template-rows: auto minmax(0, 1fr);
+  grid-template-rows: auto auto minmax(0, 1fr);
   gap: 12px;
   overflow: hidden;
   padding: 14px;
@@ -4047,6 +4047,15 @@ button.primary:disabled {
   text-transform: uppercase;
 }
 
+.operator-detail-heading span small {
+  display: block;
+  margin-top: 2px;
+  color: #64748b;
+  font-size: 9px;
+  font-weight: 700;
+  text-transform: none;
+}
+
 .operator-detail-heading strong {
   min-width: 0;
   color: var(--ink);
@@ -4054,13 +4063,66 @@ button.primary:disabled {
   overflow-wrap: anywhere;
 }
 
+.operator-detail-heading-actions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.operator-editor-tabs {
+  min-width: 0;
+  display: flex;
+  gap: 2px;
+  overflow-x: auto;
+  padding: 3px;
+  border: 1px solid #cbd5e1;
+  border-radius: 6px;
+  background: #f1f5f9;
+}
+
+.operator-editor-tabs button {
+  min-width: 76px;
+  min-height: 30px;
+  flex: 0 0 auto;
+  border: 0;
+  border-radius: 4px;
+  background: transparent;
+  color: #475569;
+  font-size: 11px;
+  font-weight: 800;
+}
+
+.operator-editor-tabs button[aria-selected='true'] {
+  background: #fff;
+  color: #134e9b;
+  box-shadow: 0 1px 3px rgb(15 23 42 / 14%);
+}
+
 .operator-detail-body {
   min-height: 0;
-  display: grid;
-  grid-template-columns: minmax(320px, 0.9fr) minmax(460px, 1.1fr);
-  gap: 12px;
   overflow: auto;
   padding-right: 4px;
+  outline: none;
+}
+
+.operator-editor-pane {
+  min-width: 0;
+  display: grid;
+  gap: 12px;
+}
+
+.operator-editor-pane[hidden] {
+  display: none;
+}
+
+.operator-editor-pane.config,
+.operator-editor-pane.contract {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.operator-editor-pane.rules,
+.operator-editor-pane.mapping {
+  min-height: 420px;
 }
 
 .operator-detail-section {
@@ -8995,9 +9057,17 @@ button.primary:disabled {
   }
 
   .operator-detail-body,
+  .operator-editor-pane.config,
+  .operator-editor-pane.contract,
   .foreach-loop-steps,
   .operator-test-table .test-table-row {
     grid-template-columns: minmax(0, 1fr);
+  }
+
+  .operator-detail-heading-actions {
+    width: 100%;
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
   .operator-test-suite .operator-detail-section-heading {

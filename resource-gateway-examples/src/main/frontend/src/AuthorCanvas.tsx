@@ -171,6 +171,10 @@ import {
   projectAuthorDiagnostics,
   type AuthorDiagnosticItem,
 } from './author/review/authorDiagnostics';
+import {
+  resolveNodeEditor,
+  type NodeEditorTab,
+} from './author/node-editor/nodeEditorRegistry';
 
 const ContractScenarioWorkspace = lazy(
   () => import('./contract-scenario/ContractScenarioWorkspace'),
@@ -187,6 +191,14 @@ interface NodeData {
   candidateStatus?: ConnectionCandidateStatus;
   candidatePorts?: Record<string, ConnectionCandidateStatus>;
   focusState?: CanvasNodeFocusState;
+}
+
+interface OperatorDetailBaseline {
+  nodeId: string;
+  nodeData: NodeData;
+  fixtureDraft?: string;
+  fixtureInputDraft?: string;
+  testRows?: OperatorTestSuiteDraftRow[];
 }
 
 interface ConnectionNotice {
@@ -2022,14 +2034,16 @@ function DecisionTableRuleEditor({
         <div className="rule-editor-heading">
           <span>Decision table</span>
           <strong id="decision-rule-editor-title">{node.data.label}</strong>
-          <button
-            type="button"
-            className="secondary compact"
-            onClick={onClose}
-            aria-label="Close decision table editor"
-          >
-            Done
-          </button>
+          {!embedded && (
+            <button
+              type="button"
+              className="secondary compact"
+              onClick={onClose}
+              aria-label="Close decision table editor"
+            >
+              Done
+            </button>
+          )}
         </div>
         <div className="rule-editor-meta">
           <label>
@@ -2295,14 +2309,16 @@ function TransformAssignmentEditor({
         <div className="rule-editor-heading">
           <span>Transform mapping</span>
           <strong id="transform-assignment-editor-title">{node.data.label}</strong>
-          <button
-            type="button"
-            className="secondary compact"
-            onClick={onClose}
-            aria-label="Close transform mapping editor"
-          >
-            Done
-          </button>
+          {!embedded && (
+            <button
+              type="button"
+              className="secondary compact"
+              onClick={onClose}
+              aria-label="Close transform mapping editor"
+            >
+              Done
+            </button>
+          )}
         </div>
         <div className="rule-editor-table-wrap">
           <table className="rule-editor-table transform-editor-table">
@@ -3233,7 +3249,9 @@ function OperatorDetailDialog({
   operatorTestPublication,
   operatorTestsRunning,
   operatorTestRunDisabledReason,
-  onClose,
+  onCancel,
+  onApply,
+  dirty,
   onOpenContract,
   onLabelChange,
   onConfigPatch,
@@ -3272,7 +3290,9 @@ function OperatorDetailDialog({
   operatorTestPublication?: OperatorTestSuitePublicationResult;
   operatorTestsRunning: boolean;
   operatorTestRunDisabledReason?: string;
-  onClose: () => void;
+  onCancel: () => void;
+  onApply: () => void;
+  dirty: boolean;
   onOpenContract: () => void;
   onLabelChange: (value: string) => void;
   onConfigPatch: (patch: Record<string, unknown>) => void;
@@ -3301,6 +3321,15 @@ function OperatorDetailDialog({
   const inputs = operator?.ports?.inputs ?? [];
   const outputs = operator?.ports?.outputs ?? [];
   const focusRows = operatorFocusRows(node.data.summary, inputs, outputs, operator);
+  const editorDefinition = resolveNodeEditor(node.data.summary.visualKind);
+  const [activeTab, setActiveTab] = useState<NodeEditorTab>(editorDefinition.defaultTab);
+  const bodyFocusRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    setActiveTab(editorDefinition.defaultTab);
+    window.requestAnimationFrame(() => bodyFocusRef.current?.focus());
+  }, [editorDefinition.defaultTab, node.id]);
+
   return (
     <div className="rule-editor-backdrop" role="presentation">
       <section
@@ -3309,9 +3338,22 @@ function OperatorDetailDialog({
         aria-modal="true"
         aria-labelledby="operator-detail-title"
         data-testid="operator-detail-dialog"
+        data-editor-kind={editorDefinition.visualKind}
+        data-default-tab={editorDefinition.defaultTab}
+        data-dirty={dirty}
+        onKeyDown={(event) => {
+          if (event.key === 'Escape') {
+            event.preventDefault();
+            event.stopPropagation();
+            onCancel();
+          }
+        }}
       >
         <div className="operator-detail-heading">
-          <span>{node.data.summary.visualLabel}</span>
+          <span>
+            {node.data.summary.visualLabel}
+            <small>{editorDefinition.primaryTask}</small>
+          </span>
           <strong id="operator-detail-title">{node.data.label}</strong>
           <button
             type="button"
@@ -3321,100 +3363,173 @@ function OperatorDetailDialog({
           >
             Contract &amp; Scenarios
           </button>
-          <button
-            type="button"
-            className="secondary compact"
-            onClick={onClose}
-            aria-label="Close operator details"
-          >
-            Done
-          </button>
+          <div className="operator-detail-heading-actions">
+            <button
+              type="button"
+              className="secondary compact"
+              onClick={onCancel}
+              aria-label="Close operator details"
+            >
+              Cancel
+            </button>
+            <button
+              type="button"
+              className="primary compact"
+              onClick={onApply}
+              data-testid="operator-detail-apply"
+            >
+              Apply to draft
+            </button>
+          </div>
         </div>
-        <div className="operator-detail-body">
-          <OperatorKeyPropertiesEditor
-            node={node}
-            operator={operator}
-            onLabelChange={onLabelChange}
-            onConfigPatch={onConfigPatch}
-          />
+        <nav className="operator-editor-tabs" role="tablist" aria-label="Node editor sections">
+          {editorDefinition.tabs.map((tab) => (
+            <button
+              type="button"
+              role="tab"
+              key={tab.id}
+              aria-selected={activeTab === tab.id}
+              data-testid={`operator-editor-tab:${tab.id}`}
+              onClick={() => setActiveTab(tab.id)}
+            >
+              {tab.label}
+            </button>
+          ))}
+        </nav>
+        <div className="operator-detail-body" ref={bodyFocusRef} tabIndex={-1}>
+          <div
+            className="operator-editor-pane config"
+            role="tabpanel"
+            hidden={activeTab !== 'config'}
+            data-testid="operator-editor-pane:config"
+          >
+            <OperatorKeyPropertiesEditor
+              node={node}
+              operator={operator}
+              onLabelChange={onLabelChange}
+              onConfigPatch={onConfigPatch}
+            />
 
-          <section className="operator-detail-section">
-            <h3>{operatorFocusTitle(node.data.summary.visualKind)}</h3>
-            <div className="operator-detail-focus">
-              {focusRows.map((row) => (
-                <div key={row.key}>
-                  <span>{row.label}</span>
-                  <strong>{row.value}</strong>
-                </div>
-              ))}
-            </div>
-          </section>
+            <section className="operator-detail-section">
+              <h3>{operatorFocusTitle(node.data.summary.visualKind)}</h3>
+              <div className="operator-detail-focus">
+                {focusRows.map((row) => (
+                  <div key={row.key}>
+                    <span>{row.label}</span>
+                    <strong>{row.value}</strong>
+                  </div>
+                ))}
+              </div>
+            </section>
 
-          {node.data.summary.visualKind === 'foreach' && (
-            <ForeachLoopGuide inputs={inputs} outputs={outputs} />
-          )}
+            {node.data.summary.visualKind === 'foreach' && (
+              <ForeachLoopGuide inputs={inputs} outputs={outputs} />
+            )}
+          </div>
 
-          <NodeInputBindingsEditor
-            node={node}
-            onAdd={onInputAdd}
-            onRemove={onInputRemove}
-            onRename={onInputRename}
-            onChange={onInputChange}
-            onKindChange={onInputKindChange}
-            onDropContextPath={onDropContextPath}
-          />
+          <div
+            className="operator-editor-pane data"
+            role="tabpanel"
+            hidden={activeTab !== 'data'}
+            data-testid="operator-editor-pane:data"
+          >
+            <NodeInputBindingsEditor
+              node={node}
+              onAdd={onInputAdd}
+              onRemove={onInputRemove}
+              onRename={onInputRename}
+              onChange={onInputChange}
+              onKindChange={onInputKindChange}
+              onDropContextPath={onDropContextPath}
+            />
+          </div>
 
-          <OperatorFixtureEditor
-            fixtureDraft={fixtureDraft}
-            expectedInputDraft={expectedInputDraft}
-            hasFixtureDraft={hasFixtureDraft}
-            fixtureError={fixtureError}
-            onOutputChange={onFixtureOutputChange}
-            onExpectedInputChange={onExpectedInputChange}
-            onUseSample={onUseFixtureSample}
-            onClear={onClearFixture}
-          />
+          <div
+            className="operator-editor-pane test"
+            role="tabpanel"
+            hidden={activeTab !== 'test'}
+            data-testid="operator-editor-pane:test"
+          >
+            <OperatorFixtureEditor
+              fixtureDraft={fixtureDraft}
+              expectedInputDraft={expectedInputDraft}
+              hasFixtureDraft={hasFixtureDraft}
+              fixtureError={fixtureError}
+              onOutputChange={onFixtureOutputChange}
+              onExpectedInputChange={onExpectedInputChange}
+              onUseSample={onUseFixtureSample}
+              onClear={onClearFixture}
+            />
 
-          <OperatorTestSuiteEditor
-            operator={operator}
-            rows={operatorTestRows}
-            results={operatorTestResults}
-            publication={operatorTestPublication}
-            running={operatorTestsRunning}
-            runDisabledReason={operatorTestRunDisabledReason}
-            onAdd={onOperatorTestAdd}
-            onUpdate={onOperatorTestUpdate}
-            onRemove={onOperatorTestRemove}
-            onApplyFixture={onOperatorTestApplyFixture}
-            onRun={onOperatorTestRun}
-            onRunAll={onOperatorTestRunAll}
-            onGovern={onOperatorTestGovern}
-            onGovernAll={onOperatorTestGovernAll}
-          />
+            <OperatorTestSuiteEditor
+              operator={operator}
+              rows={operatorTestRows}
+              results={operatorTestResults}
+              publication={operatorTestPublication}
+              running={operatorTestsRunning}
+              runDisabledReason={operatorTestRunDisabledReason}
+              onAdd={onOperatorTestAdd}
+              onUpdate={onOperatorTestUpdate}
+              onRemove={onOperatorTestRemove}
+              onApplyFixture={onOperatorTestApplyFixture}
+              onRun={onOperatorTestRun}
+              onRunAll={onOperatorTestRunAll}
+              onGovern={onOperatorTestGovern}
+              onGovernAll={onOperatorTestGovernAll}
+            />
+          </div>
 
-          <SchemaPortCards title="Input schema" direction="input" ports={inputs} />
-          <SchemaPortCards title="Output schema" direction="output" ports={outputs} />
+          <div
+            className="operator-editor-pane contract"
+            role="tabpanel"
+            hidden={activeTab !== 'contract'}
+            data-testid="operator-editor-pane:contract"
+          >
+            <SchemaPortCards title="Input schema" direction="input" ports={inputs} />
+            <SchemaPortCards title="Output schema" direction="output" ports={outputs} />
+          </div>
 
-          <OperatorConfigEditor config={node.data.config} onApply={onConfigReplace} />
+          <div
+            className="operator-editor-pane advanced"
+            role="tabpanel"
+            hidden={activeTab !== 'advanced'}
+            data-testid="operator-editor-pane:advanced"
+          >
+            <OperatorConfigEditor config={node.data.config} onApply={onConfigReplace} />
+          </div>
 
           {node.data.summary.visualKind === 'decision-table' && (
+            <div
+              className="operator-editor-pane rules"
+              role="tabpanel"
+              hidden={activeTab !== 'rules'}
+              data-testid="operator-editor-pane:rules"
+            >
             <DecisionTableRuleEditor
               node={node}
               incomingColumns={incomingColumns}
-              onClose={onClose}
+              onClose={onApply}
               onChange={onDecisionChange}
               embedded
             />
+            </div>
           )}
 
           {node.data.summary.visualKind === 'transform' && (
+            <div
+              className="operator-editor-pane mapping"
+              role="tabpanel"
+              hidden={activeTab !== 'mapping'}
+              data-testid="operator-editor-pane:mapping"
+            >
             <TransformAssignmentEditor
               node={node}
-              onClose={onClose}
+              onClose={onApply}
               onChange={onTransformChange}
               builtInFunctions={builtInFunctions}
               embedded
             />
+            </div>
           )}
         </div>
       </section>
@@ -4360,6 +4475,8 @@ export default function AuthorCanvas({ workspaceVersion = 'v1' }: AuthorCanvasPr
   const [tagFilter, setTagFilter] = useState('all');
   const [selectedNodeId, setSelectedNodeId] = useState(initialWorkspaceLocation.selectedNodeId);
   const [operatorDetailNodeId, setOperatorDetailNodeId] = useState('');
+  const [operatorDetailBaseline, setOperatorDetailBaseline] =
+    useState<OperatorDetailBaseline | null>(null);
   const [testSuiteOpen, setTestSuiteOpen] = useState(false);
   const [contractWorkspaceOpen, setContractWorkspaceOpen] = useState(false);
   const [contractDraft, setContractDraft] = useState<ContractDraft | null>(null);
@@ -4595,6 +4712,8 @@ export default function AuthorCanvas({ workspaceVersion = 'v1' }: AuthorCanvasPr
         });
         setSelectedNodeId((current) => (removedNodeIds.includes(current) ? '' : current));
         setOperatorDetailNodeId((current) => (removedNodeIds.includes(current) ? '' : current));
+        setOperatorDetailBaseline((current) =>
+          current && removedNodeIds.includes(current.nodeId) ? null : current);
         setExplicitOutputNodeId((current) => (removedNodeIds.includes(current) ? '' : current));
       }
       setNodes((current) => applyNodeChanges(changes, current) as Node<NodeData>[]);
@@ -4636,8 +4755,61 @@ export default function AuthorCanvas({ workspaceVersion = 'v1' }: AuthorCanvasPr
 
   const openNodeEditor = useCallback((node: Node<NodeData>) => {
     setSelectedNodeId(node.id);
+    setOperatorDetailBaseline({
+      nodeId: node.id,
+      nodeData: structuredClone(node.data),
+      fixtureDraft: fixtureDrafts[node.id],
+      fixtureInputDraft: fixtureInputDrafts[node.id],
+      testRows: operatorTestSuites[node.id]
+        ? structuredClone(operatorTestSuites[node.id])
+        : undefined,
+    });
     setOperatorDetailNodeId(node.id);
+  }, [fixtureDrafts, fixtureInputDrafts, operatorTestSuites]);
+
+  const applyOperatorDetail = useCallback(() => {
+    setOperatorDetailNodeId('');
+    setOperatorDetailBaseline(null);
   }, []);
+
+  const cancelOperatorDetail = useCallback(() => {
+    if (operatorDetailBaseline) {
+      setNodes((current) => current.map((node) => (
+        node.id === operatorDetailBaseline.nodeId
+          ? { ...node, data: structuredClone(operatorDetailBaseline.nodeData) }
+          : node
+      )));
+      setFixtureDrafts((current) => {
+        const next = { ...current };
+        if (operatorDetailBaseline.fixtureDraft === undefined) {
+          delete next[operatorDetailBaseline.nodeId];
+        } else {
+          next[operatorDetailBaseline.nodeId] = operatorDetailBaseline.fixtureDraft;
+        }
+        return next;
+      });
+      setFixtureInputDrafts((current) => {
+        const next = { ...current };
+        if (operatorDetailBaseline.fixtureInputDraft === undefined) {
+          delete next[operatorDetailBaseline.nodeId];
+        } else {
+          next[operatorDetailBaseline.nodeId] = operatorDetailBaseline.fixtureInputDraft;
+        }
+        return next;
+      });
+      setOperatorTestSuites((current) => {
+        const next = { ...current };
+        if (operatorDetailBaseline.testRows === undefined) {
+          delete next[operatorDetailBaseline.nodeId];
+        } else {
+          next[operatorDetailBaseline.nodeId] = structuredClone(operatorDetailBaseline.testRows);
+        }
+        return next;
+      });
+    }
+    setOperatorDetailNodeId('');
+    setOperatorDetailBaseline(null);
+  }, [operatorDetailBaseline]);
 
   const updateDecisionTableRules = useCallback((nodeId: string, editor: DecisionTableEditorModel) => {
     clearRunResult();
@@ -5093,6 +5265,7 @@ export default function AuthorCanvas({ workspaceVersion = 'v1' }: AuthorCanvasPr
     setExplicitOutputNodeId(template.outputNodeId);
     setSelectedNodeId(template.outputNodeId);
     setOperatorDetailNodeId('');
+    setOperatorDetailBaseline(null);
     setTestSuiteOpen(false);
     setConnectionGuide(null);
     setConnectionGuideNotice(null);
@@ -5361,6 +5534,7 @@ export default function AuthorCanvas({ workspaceVersion = 'v1' }: AuthorCanvasPr
       });
       setContractWorkspaceOpen(false);
       setOperatorDetailNodeId('');
+      setOperatorDetailBaseline(null);
     } catch (cause: unknown) {
       setError(`Operator Contract projection failed: ${String(cause)}`);
     }
@@ -5414,6 +5588,17 @@ export default function AuthorCanvas({ workspaceVersion = 'v1' }: AuthorCanvasPr
     ? operatorDetailDefinition.runtimeReadiness.summary
       || 'This visual operator has no executable runtime binding.'
     : undefined;
+  const operatorDetailDirty = Boolean(
+    operatorDetailNode
+    && operatorDetailBaseline?.nodeId === operatorDetailNode.id
+    && (
+      canonicalJson(operatorDetailBaseline.nodeData) !== canonicalJson(operatorDetailNode.data)
+      || (operatorDetailBaseline.fixtureDraft ?? '') !== operatorDetailFixtureDraft
+      || (operatorDetailBaseline.fixtureInputDraft ?? '') !== operatorDetailExpectedInputDraft
+      || canonicalJson(operatorDetailBaseline.testRows ?? null)
+        !== canonicalJson(operatorTestSuites[operatorDetailNode.id] ?? null)
+    )
+  );
   const selectedGuideRows = useMemo(
     () =>
       connectionGuide?.nodeId === selectedNodeId
@@ -5776,6 +5961,7 @@ export default function AuthorCanvas({ workspaceVersion = 'v1' }: AuthorCanvasPr
     setExplicitOutputNodeId(imported.outputNodeId);
     setSelectedNodeId(imported.outputNodeId || imported.nodes[0]?.id || '');
     setOperatorDetailNodeId('');
+    setOperatorDetailBaseline(null);
     setOperatorContractWorkspace(null);
     setTestSuiteOpen(false);
     setConnectionGuide(null);
@@ -8719,7 +8905,9 @@ export default function AuthorCanvas({ workspaceVersion = 'v1' }: AuthorCanvasPr
           operatorTestPublication={operatorDetailTestPublication}
           operatorTestsRunning={operatorDetailTestsRunning}
           operatorTestRunDisabledReason={operatorDetailTestRunDisabledReason}
-          onClose={() => setOperatorDetailNodeId('')}
+          onCancel={cancelOperatorDetail}
+          onApply={applyOperatorDetail}
+          dirty={operatorDetailDirty}
           onOpenContract={() => {
             if (operatorDetailDefinition) {
               void openOperatorContractWorkspace(operatorDetailDefinition);
