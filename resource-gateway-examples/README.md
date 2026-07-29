@@ -3897,12 +3897,23 @@ run, and node so a browser refresh or integration deep link restores the same
 working context. Old `authorMode=test|review` bookmarks remain readable and map
 to `scenarios|evidence`.
 
-The right inspector has stable `Config / Data / Test / Contract / Advanced`
-tabs. Edit the graph input/output interface in **Contract**. In **Data**, fill the
-schema-generated **Run Input Values**, inspect the selected node's incoming
-sources, and use **Bind** to connect a Graph Input field to that node without
-typing a `ctx.*` path. A bind replaces any existing source for the same target
-port/path, so export cannot retain two competing sources.
+The right inspector has stable `Config / Data / Scenarios / Contract / Advanced`
+tabs. Edit the graph input/output interface in **Contract**. In **Data**, the
+**Effective data contract** keeps declared, inferred, bound, and observed facts
+separate. Its source rows show every target field and its edge/context/constant
+origin; use the arrow to focus the upstream node. Transform assignments and
+Decision Table outputs are projected with explicit confidence, while runtime
+observations remain non-authoritative. The full Contract tab can explicitly
+accept inferred output fields into an open Graph Output Contract; it never
+infers requiredness.
+
+Below the projection, fill the schema-generated **Run Input Values** and use
+**Bind** to connect a Graph Input field to the selected node without typing a
+`ctx.*` path. Low-level direct bindings are available under **Edit direct
+bindings**. A bind replaces any existing source for the same target port/path,
+so export cannot retain two competing sources. Effective Contract also
+deduplicates the edge plus its canonical `nodePath` projection, while reporting
+genuinely different sources or incompatible types in shared Diagnostics.
 
 Run Input and optional Context Extras are transient simulation data; exported
 GraphDrafts retain only the input binding semantics. Raw runtime JSON is an

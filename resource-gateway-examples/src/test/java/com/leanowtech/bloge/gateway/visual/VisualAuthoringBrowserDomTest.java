@@ -1004,13 +1004,13 @@ class VisualAuthoringBrowserDomTest {
     }
 
     /**
-     * Verifies the packaged task workspace keeps graph interface, one-run values, and node source
-     * semantics separate.
+     * Verifies the packaged task workspace projects the effective Contract before editing sources.
      *
-     * <p>The browser loads a real example, opens the selected node's Data task, and binds one Graph
-     * Input field. The assertion on the edge count is deliberate: a direct context binding must
-     * replace an existing edge targeting the same port/path instead of leaving two competing
-     * sources for export or execution.</p>
+     * <p>The browser loads a real example and proves that the selected transform exposes seven
+     * visible, deduplicated edge sources with upstream coordinates. It then binds one Graph Input
+     * field. The edge-count assertion is deliberate: a direct context binding must replace the
+     * existing edge targeting the same port/path instead of leaving two competing sources for
+     * export, diagnostics, or execution.</p>
      */
     @Test
     void taskWorkspaceBindsSchemaGeneratedRunInputWithoutCompetingNodeSourceInRealBrowser()
@@ -1046,9 +1046,17 @@ class VisualAuthoringBrowserDomTest {
                 "Run Input Values");
         waitForText(wait, By.cssSelector("[data-testid='run-input-readiness']"),
                 "1 required, complete");
-        waitForText(wait, By.cssSelector("[data-testid='node-input-editor']"),
-                "Connected sources");
-        waitForText(wait, By.cssSelector("[data-testid='node-input-editor']"), "7");
+        waitForText(wait, By.cssSelector("[data-testid='effective-contract-panel']"),
+                "Effective data contract");
+        waitForText(wait, By.cssSelector("[data-testid='effective-contract-panel']"),
+                "bound");
+        wait.until(ExpectedConditions.numberOfElementsToBe(
+                By.cssSelector("[data-testid='effective-input-source-row']"),
+                7
+        ));
+        assertThat(textOf(By.cssSelector("[data-testid='effective-input-sources']")))
+                .contains("Fetch applicant.payload.applicantId")
+                .contains("Policy decision.output.decision");
 
         wait.until(ExpectedConditions.elementToBeClickable(By.cssSelector(
                 "[data-testid='graph-input-bind:applicantId']"
@@ -1090,6 +1098,8 @@ class VisualAuthoringBrowserDomTest {
         assertThat(selectedNode.path("inputs").path("applicantId").path("path").asText())
                 .isEqualTo("applicantId");
         assertThat(draft.path("edges").size()).isEqualTo(11);
+        waitForText(wait, By.cssSelector("[data-testid='effective-input-sources']"),
+                "ctx.applicantId");
         assertNoHorizontalOverflow(wait, By.cssSelector(".workspace-v2"));
     }
 

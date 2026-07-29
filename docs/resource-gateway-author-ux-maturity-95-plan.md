@@ -1571,3 +1571,68 @@ Packaged Chrome              complete task journey covers direct Evidence and no
 
 当前距 95 分仍差 `17` 分，即 `17.9%`，不能停止。Stage 2 必须处理 Effective Contract、
 字段来源/置信度、stale 传播与 Schema 直观性；Stage 3 再处理复杂图导航、恢复和实测效率。
+
+### 25.7 Stage 2：Effective Contract 与 Field Lineage（已完成）
+
+Stage 2 根治“Schema 面板与真实数据流是两套事实”的问题。UI 现在只消费一个纯
+`EffectiveContractProjection`，并且始终保留 declared、inferred、bound、observed
+四类来源的边界。
+
+| 工作项 | 实现结果 | 防错边界 |
+|---|---|---|
+| UX95-201 | 新增确定性 Effective Contract 纯投影 | 不修改 GraphDraft、Operator schema 或 run payload |
+| UX95-202 | 所有 data edge 投影为 target/source/type/confidence/status | edge 与 canonical `nodePath` 镜像语义去重；真实多源才报错 |
+| UX95-203 | Transform assignments 投影为 inferred output fields | expression 无法确定类型时标为 OPAQUE |
+| UX95-204 | Decision Table output columns 从规则样本和 output signature 推断 | 混合样本不伪装为 exact |
+| UX95-205 | 汇总 EXACT / INFERRED / OPAQUE / CONFLICTED confidence | 来源类型在每一行保持可见 |
+| UX95-206 | Data 行尾箭头聚焦上游节点并同步 deep link | 1024px 使用纵向行；宽浮层保留完整表格 |
+| UX95-207 | 显式 Accept inference 写 Graph Output Contract | 只接受 inferred；schema 保持 open，required 永不臆造 |
+| UX95-208 | 多源和类型不兼容同时进入局部警告与统一 Diagnostics | observed 与 declared 冲突可见，但 observed 不成为 authored schema |
+
+真实浏览器证据：
+
+![Stage 2 Effective Contract 与字段血缘](assets/resource-gateway-author-ux-stage2-effective-contract-1024.png)
+
+图中可验证：
+
+- `Decision response` 的四源摘要是 `1 declared / 7 inferred / 7 bound / 0 observed`；
+- 7 个 target field 均能看见上游业务节点与 source path；
+- 1024px 检查器使用两行紧凑布局，没有依赖横向滚动才能理解来源；
+- 点击任一 `>` 会聚焦上游节点并把 URL 更新为对应 `nodeId`；
+- 低频直接绑定编辑器折叠，Graph Run Input 仍由 schema 生成。
+
+### 25.8 Stage 2 验证清单
+
+```text
+Projection unit tests        deterministic, conflicts, open schema, observed isolation
+25-node / 50-edge fixture    projection under 100ms
+Author component tests       7 field sources, trace, explicit inference acceptance
+Shared diagnostics tests     effective Contract conflicts enter one repair queue
+Frontend full suite          29 files / 313 tests passed
+Frontend production build    passed
+In-app browser               1024px compact lineage and exact upstream trace passed
+Packaged Chrome              7 visible sources, context replacement, no inspector obstruction
+```
+
+实现期间真实发现 GraphDraft 会同时携带一条 data edge 和由该 edge 投影出的 canonical
+`nodePath` binding。若按记录数相加，Loan 示例会把 7 条来源误报为 14 条冲突。投影层现在
+只消除 source node、source path、target path 完全相同的 edge/binding 镜像；两个真实
+edge、context 与 edge 并存等情况仍 fail closed。
+
+### 25.9 Stage 2 差距复评
+
+| 权威维度 | Stage 1 | Stage 2 | 95 分目标 | 本轮变化 |
+|---|---:|---:|---:|---|
+| 产品模型与信息架构 | 12 | 12 | 14 | 生命周期状态留待 Stage 3 |
+| 核心任务效率 | 14 | 14 | 14 | 保持 |
+| 数据与 Contract 直观性 | 9 | 14 | 14 | 四源投影、7 条血缘、推断接受闭环 |
+| 测试与结果可信度 | 13 | 13 | 17 | stale/evidence verdict 留待 Stage 3 |
+| 复杂图阅读与操控 | 8 | 8 | 11 | 任务视图留待 Stage 4 |
+| 反馈、恢复与防错 | 8 | 9 | 10 | 多源/类型冲突进入统一 Diagnostics |
+| 可访问性与响应式 | 6 | 7 | 7 | 1024px 紧凑血缘行与可访问追溯按钮 |
+| 企业生命周期与宿主一致性 | 8 | 8 | 8 | 保持 |
+| **合计** | **78** | **85** | **95** | **+7** |
+
+当前距 95 分仍差 `10` 分，即 `10.5%`，不能停止。下一轮优先完成 Stage 3 的统一
+Draft/Run/Evidence 状态机与 fail-closed Readiness Verdict，再以 Stage 4 的复杂图任务
+导航和 1024px 渐进披露将剩余差距压到 5% 以下。

@@ -8276,6 +8276,11 @@ button.primary:disabled {
   padding-bottom: 32px;
 }
 
+.workspace-v2 > .inspector {
+  padding-bottom: 44px;
+  scroll-padding-bottom: 44px;
+}
+
 .author-context-inspector-v2 {
   display: grid;
   gap: 9px;
@@ -8479,6 +8484,318 @@ button.primary:disabled {
   margin: 0;
   font-size: 10px;
   line-height: 1.35;
+}
+
+.effective-contract-panel {
+  min-width: 0;
+  display: grid;
+  gap: 10px;
+  padding: 10px;
+  border: 1px solid #cbd5e1;
+  border-radius: 6px;
+  background: #fff;
+}
+
+.effective-contract-panel.compact {
+  padding: 9px;
+}
+
+.effective-contract-heading,
+.effective-contract-section-title,
+.effective-output-sources > summary,
+.effective-contract-actions {
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.effective-contract-heading > div {
+  min-width: 0;
+  display: grid;
+  gap: 2px;
+}
+
+.effective-contract-heading strong,
+.effective-contract-section-title strong,
+.effective-output-sources > summary strong {
+  color: #162234;
+  font-size: 12px;
+}
+
+.effective-contract-heading > div > span,
+.effective-contract-section-title > span,
+.effective-output-sources > summary > span,
+.effective-contract-actions > span {
+  color: #64748b;
+  font-size: 10px;
+  line-height: 1.35;
+}
+
+.effective-confidence {
+  flex: 0 0 auto;
+  padding: 3px 5px;
+  border: 1px solid #94a3b8;
+  border-radius: 4px;
+  background: #f8fafc;
+  color: #475569;
+  font-size: 9px;
+  font-weight: 900;
+}
+
+.effective-confidence.exact {
+  border-color: #7aa68b;
+  background: #eef8f1;
+  color: #23643c;
+}
+
+.effective-confidence.inferred {
+  border-color: #7da2c8;
+  background: #eef6ff;
+  color: #174f82;
+}
+
+.effective-confidence.conflicted {
+  border-color: #d18b83;
+  background: #fff3f1;
+  color: #9c2f27;
+}
+
+.effective-source-summary {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  border: 1px solid #dbe3ed;
+  border-radius: 5px;
+  background: #f8fafc;
+}
+
+.effective-source-summary span {
+  min-width: 0;
+  display: grid;
+  gap: 1px;
+  padding: 6px 5px;
+  border-right: 1px solid #dbe3ed;
+  color: #64748b;
+  font-size: 9px;
+  text-align: center;
+}
+
+.effective-source-summary span:last-child {
+  border-right: 0;
+}
+
+.effective-source-summary strong {
+  color: #162234;
+  font-size: 14px;
+  line-height: 1;
+}
+
+.effective-contract-section {
+  min-width: 0;
+  display: grid;
+  gap: 6px;
+}
+
+.effective-output-sources > summary {
+  cursor: pointer;
+}
+
+.effective-output-sources[open] > summary {
+  margin-bottom: 2px;
+}
+
+.effective-contract-table-wrap {
+  min-width: 0;
+  overflow-x: auto;
+  border: 1px solid #dbe3ed;
+  border-radius: 5px;
+}
+
+.effective-contract-table {
+  width: 100%;
+  min-width: 660px;
+  border-collapse: collapse;
+  font-size: 10px;
+}
+
+.effective-contract-panel.compact .effective-contract-table {
+  min-width: 720px;
+}
+
+.effective-binding-list {
+  min-width: 0;
+  display: grid;
+  border: 1px solid #dbe3ed;
+  border-radius: 5px;
+  background: #fff;
+}
+
+.effective-binding-row {
+  min-width: 0;
+  display: grid;
+  gap: 4px;
+  padding: 7px 6px;
+  border-bottom: 1px solid #e2e8f0;
+}
+
+.effective-binding-row:last-child {
+  border-bottom: 0;
+}
+
+.effective-binding-row[data-state="conflict"] {
+  background: #fff3f1;
+}
+
+.effective-binding-row[data-state="unbound"] {
+  background: #fffbeb;
+}
+
+.effective-binding-paths {
+  min-width: 0;
+  display: grid;
+  gap: 2px;
+}
+
+.effective-binding-paths code {
+  display: block;
+  max-width: 100%;
+  overflow: hidden;
+  font-size: 9px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.effective-binding-paths strong code {
+  color: #162234;
+}
+
+.effective-binding-paths span code {
+  color: #475569;
+}
+
+.effective-binding-meta {
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  color: #64748b;
+  font-size: 8px;
+}
+
+.effective-binding-meta > span:not(:last-of-type)::after {
+  margin-left: 5px;
+  color: #cbd5e1;
+  content: "·";
+}
+
+.effective-binding-meta strong {
+  color: #23643c;
+  font-size: 8px;
+}
+
+.effective-binding-meta button {
+  margin-left: auto;
+}
+
+.effective-trace-button {
+  width: 20px;
+  min-width: 20px;
+  height: 20px;
+  padding: 0;
+  line-height: 18px;
+}
+
+.effective-contract-table th,
+.effective-contract-table td {
+  max-width: 210px;
+  padding: 6px;
+  border-bottom: 1px solid #e2e8f0;
+  color: #475569;
+  text-align: left;
+  vertical-align: top;
+}
+
+.effective-contract-table thead th {
+  background: #f8fafc;
+  color: #64748b;
+  font-size: 9px;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+
+.effective-contract-table tbody th {
+  color: #162234;
+  font-weight: 700;
+}
+
+.effective-contract-table tbody tr:last-child > * {
+  border-bottom: 0;
+}
+
+.effective-contract-table code {
+  display: block;
+  max-width: 100%;
+  overflow: hidden;
+  color: inherit;
+  font-size: 9px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.effective-contract-table tr[data-state="conflict"] {
+  background: #fff3f1;
+}
+
+.effective-contract-table tr[data-state="unbound"] {
+  background: #fffbeb;
+}
+
+.effective-contract-actions {
+  align-items: flex-start;
+  padding-top: 6px;
+}
+
+.effective-contract-actions button {
+  flex: 0 0 auto;
+}
+
+.effective-contract-conflicts {
+  display: grid;
+  gap: 4px;
+  padding: 7px 8px;
+  border-left: 3px solid #bd4036;
+  background: #fff3f1;
+  color: #8c2c25;
+  font-size: 10px;
+  line-height: 1.4;
+}
+
+.effective-contract-conflicts span {
+  overflow-wrap: anywhere;
+}
+
+.direct-binding-tools {
+  min-width: 0;
+  padding: 7px;
+  border: 1px solid #dbe3ed;
+  border-radius: 6px;
+  background: #f8fafc;
+}
+
+.direct-binding-tools > summary {
+  cursor: pointer;
+  color: #475569;
+  font-size: 10px;
+  font-weight: 800;
+}
+
+.direct-binding-tools[open] > summary {
+  margin-bottom: 8px;
+}
+
+.direct-binding-tools .input-binding-editor {
+  margin-top: 0;
 }
 
 .incoming-edge-bindings {
@@ -9004,7 +9321,7 @@ button.primary:disabled {
 .author-diagnostics-drawer {
   position: absolute;
   z-index: 30;
-  right: 0;
+  right: var(--author-inspector-track, 220px);
   bottom: 0;
   left: var(--author-palette-track, 220px);
   display: grid;
@@ -9311,6 +9628,7 @@ button.primary:disabled {
 
   .author-diagnostics-drawer {
     position: fixed;
+    right: 0;
     left: 0;
   }
 

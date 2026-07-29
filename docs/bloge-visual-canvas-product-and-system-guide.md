@@ -2059,19 +2059,28 @@ selection。坐标、source map、fixtures、描述文本和 `visualLayout.graph
 - **Node Input Source**：某个算子字段来自 Graph Input、上游节点还是常量，是
   GraphDraft 中持久化的依赖语义。
 
-使用 `http://localhost:8080/author/`，加载 `Loan Decision Policy`
+使用 `http://localhost:8080/author/`，加载 `Loan policy fallback`
 示例、选中 `Decision response`，再打开右侧 `Data`，页面应与下图一致：
 
-![Graph Run Input 与节点绑定标注](assets/bloge-author-graph-run-input-v2-annotated.png)
+![Effective Contract、字段来源与 Graph Run Input](assets/resource-gateway-author-ux-stage2-effective-contract-1024.png)
 
 对着图操作：
 
-1. **稳定任务页签**：`Config / Data / Test / Contract / Advanced` 不随内容跳动。
+1. **稳定任务页签**：`Config / Data / Scenarios / Contract / Advanced` 不随内容跳动。
    修改接口定义进入 `Contract`；准备运行数据和检查来源进入 `Data`。
-2. **来源与输入绑定**：`Connected sources` 汇总所有入边，折叠后不会挤走主任务；
-   `Node Inputs` 显示直接 `ctx`/constant 绑定。选择节点后，Run Input 字段旁出现
-   `Bind`，点击即可把该 Graph Input 绑定到当前节点的默认 target port/path。
-3. **Schema 生成运行输入**：`Run Input Values` 由 Graph Input Contract 自动生成
+2. **Effective Contract 摘要**：四个数字分别是 declared、inferred、bound、observed。
+   它们不会合并成一个看似精确的 schema。Loan 示例应稳定显示 `1 / 7 / 7 / 0`；
+   运行后 observed 单独增加，不能静默进入 authored Contract。
+3. **字段来源与追溯**：Input sources 逐字段显示 target、上游 source、类型、置信度和
+   连接状态。点击行尾 `>` 会选中真实上游节点并更新 URL 的 `nodeId`，便于分享和排障。
+   GraphDraft 同时携带 edge 与其 `nodePath` 投影时只显示一次；不同来源才报告冲突。
+4. **推断输出与显式接受**：双击 Transform 或 Decision Table，进入 `Contract` 可比较
+   declared / inferred / observed 输出。点击 **Accept as Graph Output Contract** 才会把
+   inferred 字段写入开放式 output schema；系统不会推断 required，也不会接受 observed。
+5. **来源编辑与输入绑定**：低频 `ctx`/constant/expression 配置收在
+   **Edit direct bindings**。选择节点后，Run Input 字段旁出现 `Bind`，点击即可把该
+   Graph Input 绑定到当前节点的默认 target port/path。
+6. **Schema 生成运行输入**：`Run Input Values` 由 Graph Input Contract 自动生成
    string、number、enum、boolean、array/object 等控件；状态条显示
    `N required, M missing` 或 `N required, complete`。缺必填值、类型不匹配、
    enum/范围不合法或出现 schema 禁止的额外字段时，运行准备状态会 fail closed。

@@ -203,6 +203,14 @@ import {
   authorTaskElapsedMs,
   recordAuthorTaskEvent,
 } from './author/telemetry/authorTaskTelemetry';
+import EffectiveContractPanel from './author/contract/EffectiveContractPanel';
+import {
+  projectEffectiveContract,
+  schemaFromAcceptedInference,
+  type EffectiveContractField,
+  type EffectiveContractProjection,
+  type EffectiveInputBinding,
+} from './author/contract/effectiveContractProjection';
 
 const ContractScenarioWorkspace = lazy(
   () => import('./contract-scenario/ContractScenarioWorkspace'),
@@ -2768,6 +2776,15 @@ function schemaEnvelope(schema: Record<string, unknown>): SchemaEnvelope {
   };
 }
 
+function acceptedInferenceAddsFields(
+  current: SchemaEnvelope | undefined,
+  candidate: SchemaEnvelope,
+): boolean {
+  const currentProperties = schemaProperties(current?.schema);
+  const candidateProperties = schemaProperties(candidate.schema);
+  return Object.keys(candidateProperties).some((field) => !(field in currentProperties));
+}
+
 function schemaProperties(schema: Record<string, unknown> | undefined): Record<string, Record<string, unknown>> {
   const properties = schema?.properties;
   return isRecord(properties)
@@ -3435,6 +3452,7 @@ function OperatorDetailDialog({
   operatorTestsRunning,
   operatorTestRunDisabledReason,
   canonicalScenarios,
+  effectiveContract,
   onCancel,
   onApply,
   dirty,
@@ -3462,6 +3480,7 @@ function OperatorDetailDialog({
   onOperatorTestGovernAll,
   onDecisionChange,
   onTransformChange,
+  onAcceptInference,
 }: {
   node: Node<NodeData>;
   operator: OperatorDefinition | undefined;
@@ -3477,6 +3496,7 @@ function OperatorDetailDialog({
   operatorTestsRunning: boolean;
   operatorTestRunDisabledReason?: string;
   canonicalScenarios: boolean;
+  effectiveContract: EffectiveContractProjection;
   onCancel: () => void;
   onApply: () => void;
   dirty: boolean;
@@ -3504,6 +3524,7 @@ function OperatorDetailDialog({
   onOperatorTestGovernAll: () => void;
   onDecisionChange: (editor: DecisionTableEditorModel) => void;
   onTransformChange: (editor: TransformEditorModel) => void;
+  onAcceptInference?: () => void;
 }) {
   const inputs = operator?.ports?.inputs ?? [];
   const outputs = operator?.ports?.outputs ?? [];
@@ -3682,6 +3703,18 @@ function OperatorDetailDialog({
             hidden={activeTab !== 'contract'}
             data-testid="operator-editor-pane:contract"
           >
+            <EffectiveContractPanel
+              projection={effectiveContract}
+              onTraceField={() => setActiveTab(
+                node.data.summary.visualKind === 'transform'
+                  ? 'mapping'
+                  : node.data.summary.visualKind === 'decision-table'
+                    ? 'rules'
+                    : 'config',
+              )}
+              onAcceptInference={onAcceptInference}
+              acceptInferenceLabel="Accept as Graph Output Contract"
+            />
             <SchemaPortCards title="Input schema" direction="input" ports={inputs} />
             <SchemaPortCards title="Output schema" direction="output" ports={outputs} />
           </div>
@@ -5729,6 +5762,92 @@ export default function AuthorCanvas({ workspaceVersion = 'v1' }: AuthorCanvasPr
     () => `data:application/json;charset=utf-8,${encodeURIComponent(draftExportJson)}`,
     [draftExportJson],
   );
+  const selectedEffectiveContract = useMemo(
+    () => selectedNode
+      ? projectEffectiveContract({
+          graphDraft: exportableDraft,
+          nodeId: selectedNode.id,
+          operator: selectedOperator,
+          operators: [...operatorByRef.values()],
+          run: result,
+        })
+      : null,
+    [exportableDraft, operatorByRef, result, selectedNode, selectedOperator],
+  );
+  const operatorDetailEffectiveContract = useMemo(
+    () => operatorDetailNode
+      ? projectEffectiveContract({
+          graphDraft: exportableDraft,
+          nodeId: operatorDetailNode.id,
+          operator: operatorDetailDefinition,
+          operators: [...operatorByRef.values()],
+          run: result,
+        })
+      : null,
+    [
+      exportableDraft,
+      operatorByRef,
+      operatorDetailDefinition,
+      operatorDetailNode,
+      result,
+    ],
+  );
+  const selectedAcceptedInference = selectedEffectiveContract
+    ? schemaFromAcceptedInference(selectedEffectiveContract)
+    : null;
+  const operatorDetailAcceptedInference = operatorDetailEffectiveContract
+    ? schemaFromAcceptedInference(operatorDetailEffectiveContract)
+    : null;
+  const selectedInferenceAcceptable = Boolean(
+    selectedNode?.id === outputNodeId
+    && selectedAcceptedInference
+    && acceptedInferenceAddsFields(effectiveGraphOutputSchema, selectedAcceptedInference),
+  );
+  const operatorDetailInferenceAcceptable = Boolean(
+    operatorDetailNode?.id === outputNodeId
+    && operatorDetailAcceptedInference
+    && acceptedInferenceAddsFields(effectiveGraphOutputSchema, operatorDetailAcceptedInference),
+  );
+  const acceptSelectedInference = useCallback(() => {
+    if (!selectedNode || selectedNode.id !== outputNodeId || !selectedAcceptedInference) {
+      return;
+    }
+    clearRunResult();
+    setGraphOutputSchema(selectedAcceptedInference);
+    setGraphContractSource(`Accepted inference from ${selectedNode.id}`);
+  }, [
+    clearRunResult,
+    outputNodeId,
+    selectedAcceptedInference,
+    selectedNode,
+  ]);
+  const acceptOperatorDetailInference = useCallback(() => {
+    if (!operatorDetailNode
+      || operatorDetailNode.id !== outputNodeId
+      || !operatorDetailAcceptedInference) {
+      return;
+    }
+    clearRunResult();
+    setGraphOutputSchema(operatorDetailAcceptedInference);
+    setGraphContractSource(`Accepted inference from ${operatorDetailNode.id}`);
+  }, [
+    clearRunResult,
+    operatorDetailAcceptedInference,
+    operatorDetailNode,
+    outputNodeId,
+  ]);
+  const traceEffectiveBinding = useCallback((binding: EffectiveInputBinding) => {
+    if (!binding.sourceNodeId) {
+      return;
+    }
+    setFocusPathNodeId(selectedNodeId);
+    setSelectedNodeId(binding.sourceNodeId);
+  }, [selectedNodeId]);
+  const traceEffectiveField = useCallback((_field: EffectiveContractField) => {
+    if (selectedNode) {
+      openNodeEditor(selectedNode);
+    }
+  }, [openNodeEditor, selectedNode]);
   const scenarioNodeOptions = useMemo<ScenarioNodeOption[]>(
     () => canvasNodes.map((node) => ({
       id: node.id,
@@ -7844,6 +7963,7 @@ export default function AuthorCanvas({ workspaceVersion = 'v1' }: AuthorCanvasPr
       scenarioResults: authorScenarioResults,
       governance: governanceGateView,
       dslDiagnostics: dslImportDiagnostics,
+      effectiveContract: selectedEffectiveContract,
     }),
     [
       dslImportDiagnostics,
@@ -7851,6 +7971,7 @@ export default function AuthorCanvas({ workspaceVersion = 'v1' }: AuthorCanvasPr
       governanceGateView,
       result,
       authorScenarioResults,
+      selectedEffectiveContract,
       validationResult,
     ],
   );
@@ -9256,18 +9377,33 @@ export default function AuthorCanvas({ workspaceVersion = 'v1' }: AuthorCanvasPr
             runProvenance={runProvenance}
             dataContent={(
               <div className="author-inspector-data">
-                {selectedNode && (
-                  <NodeInputBindingsEditor
-                    node={selectedNode}
-                    incomingEdges={edges}
-                    graphNodes={nodes}
-                    onAdd={addSelectedInputBinding}
-                    onRemove={removeSelectedInputBinding}
-                    onRename={renameSelectedInputBinding}
-                    onChange={updateSelectedInputBinding}
-                    onKindChange={updateSelectedInputBindingKind}
-                    onDropContextPath={bindContextVariableToSelectedNode}
-                  />
+                {selectedNode && selectedEffectiveContract && (
+                  <>
+                    <EffectiveContractPanel
+                      projection={selectedEffectiveContract}
+                      compact
+                      onTraceBinding={traceEffectiveBinding}
+                      onTraceField={traceEffectiveField}
+                      onAcceptInference={
+                        selectedInferenceAcceptable ? acceptSelectedInference : undefined
+                      }
+                      acceptInferenceLabel="Accept as Graph Output Contract"
+                    />
+                    <details className="direct-binding-tools">
+                      <summary>Edit direct bindings</summary>
+                      <NodeInputBindingsEditor
+                        node={selectedNode}
+                        incomingEdges={edges}
+                        graphNodes={nodes}
+                        onAdd={addSelectedInputBinding}
+                        onRemove={removeSelectedInputBinding}
+                        onRename={renameSelectedInputBinding}
+                        onChange={updateSelectedInputBinding}
+                        onKindChange={updateSelectedInputBindingKind}
+                        onDropContextPath={bindContextVariableToSelectedNode}
+                      />
+                    </details>
+                  </>
                 )}
                 <GraphRunInputPanel
                   inputSchema={graphInputSchema}
@@ -9839,6 +9975,13 @@ export default function AuthorCanvas({ workspaceVersion = 'v1' }: AuthorCanvasPr
           operatorTestsRunning={operatorDetailTestsRunning}
           operatorTestRunDisabledReason={operatorDetailTestRunDisabledReason}
           canonicalScenarios={isTaskWorkspace}
+          effectiveContract={operatorDetailEffectiveContract ?? projectEffectiveContract({
+            graphDraft: exportableDraft,
+            nodeId: operatorDetailNode.id,
+            operator: operatorDetailDefinition,
+            operators: [...operatorByRef.values()],
+            run: result,
+          })}
           onCancel={cancelOperatorDetail}
           onApply={applyOperatorDetail}
           dirty={operatorDetailDirty}
@@ -9885,6 +10028,9 @@ export default function AuthorCanvas({ workspaceVersion = 'v1' }: AuthorCanvasPr
           }}
           onDecisionChange={(editor) => updateDecisionTableRules(operatorDetailNode.id, editor)}
           onTransformChange={(editor) => updateTransformAssignments(operatorDetailNode.id, editor)}
+          onAcceptInference={
+            operatorDetailInferenceAcceptable ? acceptOperatorDetailInference : undefined
+          }
         />
       )}
     </div>

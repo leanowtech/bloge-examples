@@ -5,6 +5,7 @@ import type {
   VisualValidationResult,
 } from '../../types';
 import type { SimulationTableCaseResult } from '../../draftModel';
+import type { EffectiveContractProjection } from '../contract/effectiveContractProjection';
 
 export type AuthorDiagnosticSeverity = 'BLOCKING' | 'ERROR' | 'WARNING' | 'INFO';
 export type AuthorDiagnosticScope =
@@ -38,6 +39,7 @@ export interface AuthorDiagnosticsInput {
   scenarioResults: Record<string, SimulationTableCaseResult>;
   governance: GovernanceGateView | null;
   dslDiagnostics: VisualDiagnostic[];
+  effectiveContract?: EffectiveContractProjection | null;
 }
 
 function severityOf(level: string | undefined): AuthorDiagnosticSeverity {
@@ -173,6 +175,24 @@ export function projectAuthorDiagnostics(input: AuthorDiagnosticsInput): AuthorD
   });
   input.dslDiagnostics.forEach((diagnostic, index) => {
     items.push(visualDiagnostic(diagnostic, index, 'DSL', 'dsl-import'));
+  });
+  input.effectiveContract?.conflicts.forEach((conflict) => {
+    const coordinate = `/nodes/${input.effectiveContract?.target.nodeId}/contract/${conflict.path}`;
+    items.push({
+      id: `effective-contract:${conflict.code}:${conflict.path}`,
+      severity: 'ERROR',
+      scope: 'CONTRACT',
+      source: 'effective-contract',
+      code: `EFFECTIVE_CONTRACT_${conflict.code}`,
+      message: conflict.message,
+      coordinate,
+      coordinates: [coordinate],
+      nodeId: input.effectiveContract?.target.nodeId ?? '',
+      recommendedAction: conflict.code === 'MULTIPLE_SOURCES'
+        ? 'Keep one authoritative source for this target field.'
+        : 'Align the bound source type with the declared target type.',
+      occurrenceCount: 1,
+    });
   });
 
   const rank: Record<AuthorDiagnosticSeverity, number> = {

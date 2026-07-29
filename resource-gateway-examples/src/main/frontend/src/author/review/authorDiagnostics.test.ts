@@ -128,4 +128,46 @@ describe('projectAuthorDiagnostics', () => {
       }),
     ]);
   });
+
+  it('promotes effective Contract conflicts into the shared repair queue', () => {
+    const items = projectAuthorDiagnostics({
+      error: '',
+      validation: null,
+      run: null,
+      scenarioResults: {},
+      governance: null,
+      dslDiagnostics: [],
+      effectiveContract: {
+        target: { nodeId: 'decision', operatorRef: 'decision-table' },
+        declaredInputs: [],
+        declaredOutputs: [],
+        inferredOutputs: [],
+        observedOutputs: [],
+        activeBindings: [],
+        conflicts: [{
+          path: 'inputs.score',
+          code: 'MULTIPLE_SOURCES',
+          message: 'The target receives two authoritative sources.',
+          types: ['number'],
+        }],
+        confidence: 'CONFLICTED',
+        provenance: {
+          declared: 'Operator catalog',
+          inferred: [],
+          bound: ['edge-1', 'edge-2'],
+          observed: 'No run observation',
+        },
+      },
+    });
+
+    expect(items).toEqual([
+      expect.objectContaining({
+        severity: 'ERROR',
+        scope: 'CONTRACT',
+        code: 'EFFECTIVE_CONTRACT_MULTIPLE_SOURCES',
+        nodeId: 'decision',
+        coordinate: '/nodes/decision/contract/inputs.score',
+      }),
+    ]);
+  });
 });

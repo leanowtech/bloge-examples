@@ -1247,13 +1247,31 @@ describe('AuthorCanvas built-in canvas examples', () => {
 
     expect(query('[data-testid="graph-run-input-panel"]').textContent)
       .toContain('Generated from the Graph Input Contract');
-    expect(query('[data-testid="node-input-editor"]').textContent)
-      .toContain('Connected sources7');
+    expect(query('[data-testid="effective-contract-panel"]').textContent)
+      .toContain('7 bound');
+    const inputSources = query('[data-testid="effective-input-sources"]');
+    expect(inputSources.querySelectorAll('[data-testid="effective-input-source-row"]'))
+      .toHaveLength(7);
+    expect(inputSources.textContent).toContain('Fetch applicant.payload.applicantId');
+    expect(inputSources.textContent).toContain('Policy decision.output.decision');
+    expect(query('[data-testid="effective-output-sources"]').textContent)
+      .toContain('output.applicantId');
+    expect(query('[data-testid="effective-output-sources"]').textContent)
+      .toContain('INFERRED');
     expect(query('[data-testid="run-input-readiness"]').textContent)
       .toContain('1 required, complete');
     expect(query('[data-testid="author-context-inspector"]')
       .querySelector('[data-testid="simulation-context-json"]')).toBeNull();
 
+    const traceButton = inputSources.querySelector<HTMLButtonElement>(
+      'button[aria-label^="Trace source"]',
+    );
+    expect(traceButton).not.toBeNull();
+    await click(traceButton as HTMLButtonElement);
+    await waitFor(() => expect(window.location.search).toContain('nodeId=n1'));
+
+    await click(query<HTMLElement>('[data-testid="node-wrapper:n5"]'));
+    await click(query<HTMLButtonElement>('[data-testid="inspector-tab:data"]'));
     await setControlValue(query<HTMLInputElement>('input[aria-label="applicantId"]'), 'applicant-2002');
     const bindButton = Array.from(
       query('[data-testid="graph-run-input-panel"]').querySelectorAll<HTMLButtonElement>('button'),
@@ -2568,6 +2586,22 @@ describe('AuthorCanvas connection guide', () => {
       assignments: {
         tier: 'inputs.score >= 700 ? "prime" : "standard"',
         reason: '"score policy"',
+      },
+    });
+
+    await click(query<HTMLButtonElement>('[data-testid="operator-editor-tab:contract"]'));
+    expect(query('[data-testid="effective-contract-panel"]').textContent).toContain('2 inferred');
+    await click(buttonByText('Accept as Graph Output Contract'));
+
+    expect(authorDraftExport(exportLink).outputSchema).toMatchObject({
+      schema: {
+        type: 'object',
+        properties: {
+          tier: {},
+          reason: { type: 'string' },
+        },
+        required: [],
+        additionalProperties: true,
       },
     });
   });
