@@ -1112,6 +1112,13 @@ describe('AuthorCanvas built-in canvas examples', () => {
       await waitFor(() => expect(document.querySelector('[data-testid="author-start-dialog"]')).toBeNull());
 
       await click(buttonByText('Auto Layout'));
+      await waitFor(() =>
+        expect(events.some((event) => event.name === 'AUTO_LAYOUT_COMPLETED')).toBe(true),
+      );
+      await waitFor(() =>
+        expect(query<HTMLButtonElement>('[data-testid="author-primary-action"]').disabled)
+          .toBe(false),
+      );
       await click(query<HTMLButtonElement>('[data-testid="author-primary-action"]'));
       await waitFor(() =>
         expect(events.some((event) =>
@@ -1384,10 +1391,12 @@ describe('AuthorCanvas built-in canvas examples', () => {
       expect(window.location.search).toContain('authorMode=compose');
     });
     await click(query<HTMLButtonElement>('[data-testid="author-mode:evidence"]'));
-    expect(window.location.search).toContain('authorMode=evidence');
-    expect(window.location.search).toContain('target=graph');
-    expect(window.location.search).toContain('workspaceView=evidence');
-    expect(window.location.search).toContain('scenarioId=loan-prime-approval');
+    await waitFor(() => {
+      expect(window.location.search).toContain('authorMode=evidence');
+      expect(window.location.search).toContain('target=graph');
+      expect(window.location.search).toContain('workspaceView=evidence');
+      expect(window.location.search).toContain('scenarioId=loan-prime-approval');
+    });
 
     await click(query<HTMLButtonElement>('[aria-label="Collapse operator palette"]'));
     await click(query<HTMLButtonElement>('[aria-label="Collapse context inspector"]'));
@@ -1397,6 +1406,121 @@ describe('AuthorCanvas built-in canvas examples', () => {
     expect(query<HTMLElement>('.workspace').style.getPropertyValue('--author-inspector-track')).toBe('36px');
     expect(window.location.search).not.toContain('palette');
     expect(window.location.search).not.toContain('inspector');
+  });
+
+  it('searches, pins, previews, cancels, applies, and undoes layout from one canvas task strip', async () => {
+    await act(async () => {
+      root = createRoot(host);
+      root.render(<AuthorCanvas workspaceVersion="v2" />);
+    });
+
+    await click(query<HTMLButtonElement>('[data-testid="author-start-choice:examples"]'));
+    await waitFor(() =>
+      expect(query<HTMLButtonElement>('[data-testid="author-start-example:loan-policy-fallback"]').disabled)
+        .toBe(false),
+    );
+    await click(query<HTMLButtonElement>('[data-testid="author-start-example:loan-policy-fallback"]'));
+
+    expect(query('.workspace').getAttribute('data-canvas-task-mode')).toBe('inspect');
+    expect(query<HTMLButtonElement>('[data-testid="navigator-map-toggle"]')
+      .getAttribute('aria-pressed')).toBe('false');
+    await setControlValue(
+      query<HTMLInputElement>('input[aria-label="Find canvas node"]'),
+      'Primary credit',
+    );
+    await click(query<HTMLButtonElement>('[data-testid="canvas-node-result:n2"]'));
+    await waitFor(() => expect(window.location.search).toContain('nodeId=n2'));
+
+    const pinnedPosition = query('[data-testid="node-wrapper:n2"]').getAttribute('data-position');
+    await click(query<HTMLButtonElement>('[data-testid="navigator-pin-node"]'));
+    expect(query('[data-testid="canvas-node:n2"]').className).toContain('pinned');
+
+    await click(query<HTMLButtonElement>('[data-testid="operator-button:bloge:transform"]'));
+    await click(buttonByText('Auto Layout'));
+    await waitFor(() =>
+      expect(query('.workspace').getAttribute('data-layout-preview')).toBe('active'),
+    );
+    expect(query('[data-testid="canvas-layout-review"]').textContent)
+      .toContain('0 node overlaps · 0 label collisions · 1 pinned');
+    expect(query('[data-testid="node-wrapper:n2"]').getAttribute('data-position'))
+      .toBe(pinnedPosition);
+    expect(query<HTMLButtonElement>('[data-testid="operator-button:bloge:transform"]').disabled)
+      .toBe(true);
+    expect(query<HTMLButtonElement>('[data-testid="author-primary-action"]').disabled).toBe(true);
+    expect(query<HTMLAnchorElement>('[data-testid="author-draft-export-v2"]')
+      .getAttribute('aria-disabled')).toBe('true');
+
+    await click(query<HTMLButtonElement>('[data-testid="layout-cancel"]'));
+    expect(query('.workspace').getAttribute('data-layout-preview')).toBe('inactive');
+    expect(query('[data-testid="node-wrapper:n2"]').getAttribute('data-position'))
+      .toBe(pinnedPosition);
+    expect(query('[data-testid="layout-notice"]').textContent).toContain('canceled');
+    expect(query<HTMLAnchorElement>('[data-testid="author-draft-export-v2"]')
+      .getAttribute('aria-disabled')).toBe('false');
+
+    await click(buttonByText('Auto Layout'));
+    await waitFor(() =>
+      expect(query('.workspace').getAttribute('data-layout-preview')).toBe('active'),
+    );
+    await click(query<HTMLButtonElement>('[data-testid="layout-apply"]'));
+    expect(query('.workspace').getAttribute('data-layout-preview')).toBe('inactive');
+    expect(query('[data-testid="layout-notice"]').textContent).toContain('Applied');
+    expect(document.querySelector('[data-testid="navigator-undo-layout"]')).not.toBeNull();
+    await click(query<HTMLButtonElement>('[data-testid="navigator-undo-layout"]'));
+    expect(query('[data-testid="layout-notice"]').textContent).toContain('Restored');
+  });
+
+  it('uses mutually exclusive canvas drawers in the compact author workspace', async () => {
+    const originalMatchMedia = window.matchMedia;
+    const listeners = new Set<(event: MediaQueryListEvent) => void>();
+    Object.defineProperty(window, 'matchMedia', {
+      configurable: true,
+      value: vi.fn(() => ({
+        matches: true,
+        media: '(max-width: 1100px)',
+        onchange: null,
+        addEventListener: (_type: string, listener: (event: MediaQueryListEvent) => void) => {
+          listeners.add(listener);
+        },
+        removeEventListener: (_type: string, listener: (event: MediaQueryListEvent) => void) => {
+          listeners.delete(listener);
+        },
+        addListener: vi.fn(),
+        removeListener: vi.fn(),
+        dispatchEvent: vi.fn(),
+      })),
+    });
+    try {
+      await act(async () => {
+        root = createRoot(host);
+        root.render(<AuthorCanvas workspaceVersion="v2" />);
+      });
+      await waitFor(() => {
+        expect(query('.workspace').getAttribute('data-compact-workspace')).toBe('true');
+        expect(query('.workspace').classList.contains('palette-collapsed')).toBe(true);
+        expect(query('.workspace').classList.contains('inspector-collapsed')).toBe(true);
+      });
+
+      await click(query<HTMLButtonElement>('[data-testid="author-start-choice:examples"]'));
+      await waitFor(() =>
+        expect(query<HTMLButtonElement>('[data-testid="author-start-example:loan-policy-fallback"]').disabled)
+          .toBe(false),
+      );
+      await click(query<HTMLButtonElement>('[data-testid="author-start-example:loan-policy-fallback"]'));
+
+      await click(query<HTMLButtonElement>('[data-testid="compact-open-palette"]'));
+      expect(query('.workspace').classList.contains('palette-collapsed')).toBe(false);
+      expect(query('.workspace').classList.contains('inspector-collapsed')).toBe(true);
+
+      await click(query<HTMLButtonElement>('[data-testid="compact-open-inspector"]'));
+      expect(query('.workspace').classList.contains('palette-collapsed')).toBe(true);
+      expect(query('.workspace').classList.contains('inspector-collapsed')).toBe(false);
+    } finally {
+      Object.defineProperty(window, 'matchMedia', {
+        configurable: true,
+        value: originalMatchMedia,
+      });
+    }
   });
 
   it('auto-opens scope-aware diagnostics when a Scenario assertion fails', async () => {

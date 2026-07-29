@@ -1,10 +1,10 @@
 # Resource Gateway Author UX 体验成熟度 95 分提升计划
 
-> 状态：Implementation in Progress — Stage 3 completed, Stage 4 in progress
+> 状态：Engineering Implementation Complete — Stage 0-4 completed, Stage 5 user validation pending
 >
 > 日期：2026-07-29
 >
-> 目标：将 Author Workspace v2 从基线约 61 分提升到可被真实任务证据证明的 95 分；Stage 3 工程复评为 92 分，E2 证据上限仍为 89 分
+> 目标：将 Author Workspace v2 从基线约 61 分提升到可被真实任务证据证明的 95 分；Stage 4 工程复评为 95 分，E2 证据上限仍为 89 分
 >
 > 适用范围：`/author/`、Operator Contract、Graph Contract、Scenario、Run Evidence、VS Code 宿主和 ANEKE deep link
 >
@@ -29,7 +29,8 @@ Author Workspace v2 已经完成了重要的结构升级：
 - 内置复杂示例可以完成加载、运行和结果展示；
 - 键盘焦点、无 payload 遥测、真实浏览器测试和 Legacy 回滚路径已经建立。
 
-但这些能力“分别存在”不等于用户已经获得成熟体验。2026-07-29 的真实浏览器走查显示，当前系统仍存在四个结构性问题：
+但这些能力“分别存在”不等于用户已经获得成熟体验。2026-07-29 的 Stage 0 真实浏览器
+基线走查显示，当时系统仍存在四个结构性问题：
 
 1. **测试入口分裂**：结构化 `Contract -> Scenarios` 与 Raw JSON `Test Suite` 同时作为正式入口。
 2. **状态真相分裂**：运行通过、9 个 DSL warning、Graph 未保存和 Evidence 未绑定同时出现，用户无法形成唯一结论。
@@ -1719,3 +1720,121 @@ Stage 4 继续执行，原因不是再堆功能，而是消除真实走查已经
 4. Map 控制卡与 minimap 仍形成重复导航感；
 5. Auto Layout 尚无 pinned constraint、质量报告和可取消 preview；
 6. 复杂图的 search -> focus -> breadcrumb 尚未形成可测闭环。
+
+### 25.13 Stage 4：复杂图任务视图与紧凑工作区（已完成）
+
+Stage 4 不再把“缩小整张图”当作复杂图体验，而是建立了独立于图形渲染面的任务导航。
+Author 可以先选择阅读任务，再决定显示多少拓扑信息：
+
+| 工作项 | 实现结果 | 工业级边界 |
+|---|---|---|
+| UX95-401 | 显式提供 Overview / Focus / Inspect 三种任务模式 | 模式决定阅读意图，不再让单一 zoom threshold 决定全部信息 |
+| UX95-402 | v2 删除覆盖在图上的 Map card，小图默认关闭 minimap | Navigator 位于 graph surface 外，边和标签不会被导航浮层遮挡 |
+| UX95-403 | 5 节点示例默认保留可读缩放，并在容器尺寸稳定后 Fit | 质量条、Diagnostics 或抽屉改变高度后会重新适配 |
+| UX95-404 | 节点搜索、精确 focus、完整上下游闭包和 breadcrumb 形成闭环 | 搜索结果直接恢复 node deep link，Focus 显示 path 节点数 |
+| UX95-405 | 支持多个 pinned node，Auto Layout 保留其精确坐标 | 第一个 pin 锚定整体平移，其余 pin 均不可被算法覆盖 |
+| UX95-406 | Auto Layout 变为 planning -> preview -> apply/cancel，可 undo | 预览期间冻结新增、拖拽、连线和删除，避免质量报告对应旧拓扑 |
+| UX95-407 | 报告 node overlap、route-aware label collision 和 pin 数量 | 检测复用实际 diagonal offset 与 parallel lane，避免假阳性拉散全图 |
+| UX95-408 | `<=1100px` 使用 Canvas + 单侧互斥 drawer | 1024/820 下 Palette、Inspector 不再纵向堆叠，也不永久挤压 Canvas |
+| UX95-409 | 390px 改为 review-first modal shell | Evidence 标题、动作条、tabs 和坐标卡无页面级横向溢出 |
+
+布局评审被定义为一个**原子会话**：
+
+```text
+Author topology
+  -> compute constrained candidate
+  -> close compact drawers
+  -> freeze topology mutation
+  -> render candidate + quality report
+  -> Apply: create one undo point
+     Cancel: restore every original position
+```
+
+实现期间通过真实浏览器发现并根治了五个比视觉样式更深的问题：
+
+1. **评审对象漂移**：预览期间仍可新增 operator 或导出临时坐标，会让质量报告与持久化
+   结果不一致。现在拓扑 mutation、主操作和 Draft Export 在 preview 中全部冻结，只有
+   Apply 会把候选坐标变成可导出的正式 Draft 状态。
+2. **视觉状态污染业务状态**：节点坐标变化原本会使 Scenario 误判过期。现在完整 Draft
+   fingerprint 继续负责保存脏状态，排除 `node.position` 的 execution projection 负责
+   Contract/Scenario 当前性；视觉整理不会伪造业务变更。
+3. **检测模型与渲染模型分叉**：直线中点估算会把实际已经通过 diagonal offset / lane
+   避让的标签误报为碰撞。质量模型现在与真实 edge renderer 使用同一几何规则。
+4. **以舒展替代可读性**：对误报碰撞盲目下移节点会扩大图高并降低 zoom。现在只移动真实
+   冲突的非 pinned card，并按完整 card pitch 保证可恢复、确定性和零重叠。
+5. **Fit 时序错误**：质量条出现后 Canvas 变矮，过早 Fit 会把末端节点裁到 Diagnostics
+   后面。现在在 preview DOM 稳定后执行二次 Fit，浏览器断言所有 node rect 均在 flow rect
+   内。
+
+1024px 默认紧凑画布：
+
+![Stage 4 紧凑任务画布](assets/resource-gateway-author-ux-stage4-compact-canvas-1024.png)
+
+这张图验证 Navigator 位于图外、5 节点不显示重复 minimap、Palette/Inspector 以临时入口
+存在，并且所有 edge label 保持完整可见。
+
+固定节点后的可取消布局预览：
+
+![Stage 4 零碰撞布局预览](assets/resource-gateway-author-ux-stage4-layout-preview-1024.png)
+
+绿色质量条显示 `0 node overlaps / 0 label collisions / 1 pinned`。Apply/Cancel 与结论相邻，
+预览中的虚线轮廓明确说明当前坐标尚未提交。
+
+390px Evidence：
+
+![Stage 4 移动端 Evidence](assets/resource-gateway-author-ux-stage4-mobile-evidence-390.png)
+
+移动端不承诺完整拖拽编排，但完整保留 Draft、Contract、Scenario、closure、request
+fingerprint 和五维 Verdict；标题与横向可滚动动作条互不覆盖。
+
+### 25.14 Stage 4 验证清单
+
+```text
+Layout pure-model tests     pins, deterministic copies, overlap and routed-label relaxation
+Navigator component tests  mode, search, focus, pin, quality verdict, apply/cancel
+Author component tests     search -> pin -> preview -> cancel/apply -> undo; compact drawers
+Frontend full suite        32 files / 330 tests passed
+Frontend production build  TypeScript + Vite passed
+In-app browser             1024 / 820 / 390; no horizontal overflow
+Browser geometry           no node overlap; all preview nodes inside flow rect
+Packaged Chrome            atomic layout, semantic fingerprint, drawers, mobile Evidence passed
+Resource Gateway verify    5,676 tests; 0 failures; 0 errors; 10 environment skips
+```
+
+新增 Java Chrome 测试
+`taskWorkspacePreviewsCollisionFreeLayoutAndUsesCompactDrawersInRealBrowser` 带有完整 JavaDoc，
+说明测试保护的产品语义、浏览器几何和媒体查询边界。它先真实拖动节点制造偏差，避免依赖
+示例初始坐标“恰好需要布局”的脆弱假设。
+
+### 25.15 Stage 4 差距复评
+
+| 权威维度 | Stage 3 | Stage 4 | 95 分目标 | 本轮变化 |
+|---|---:|---:|---:|---|
+| 产品模型与信息架构 | 14 | 14 | 14 | 保持唯一任务模型 |
+| 核心任务效率 | 14 | 14 | 14 | Search / Focus / breadcrumb 减少大图定位成本 |
+| 数据与 Contract 直观性 | 14 | 14 | 14 | 保持 |
+| 测试与结果可信度 | 17 | 17 | 17 | 布局变化不再错误污染 Scenario 当前性 |
+| 复杂图阅读与操控 | 8 | 11 | 11 | 三种阅读模式、单一 Navigator、受约束布局 |
+| 反馈、恢复与防错 | 10 | 10 | 10 | 原子 preview、cancel、undo 和质量报告 |
+| 可访问性与响应式 | 7 | 7 | 7 | 1024/820 drawer 与 390 review-first 实测 |
+| 企业生命周期与宿主一致性 | 8 | 8 | 8 | 同一 compact shell 可供 VS Code webview 复用 |
+| **合计** | **92** | **95** | **95** | **+3** |
+
+工程实现相对 95 分目标的差距已经从 `3.2%` 降为 `0%`，满足“差距小于 5%”的停止门槛。
+这表示当前设计项和工程验收项已经实现，不表示真实用户研究已经完成。
+
+### 25.16 证据上限与下一阶段
+
+第 3.2 节的证据纪律继续生效：当前最强证据是 E2，因此**对外体验成熟度仍不得宣称超过
+89 分**。工程 95 分与证据成熟度 89 分必须同时保留，不能选择性引用。
+
+Stage 5 不再是继续修改界面的开发阶段，而是验证或推翻当前假设：
+
+1. 招募 API author、业务测试人员、治理 reviewer、VS Code 用户各至少 3 人；
+2. 固定测量首次运行、创建 Scenario、定位失败 root cause 三条任务；
+3. 验证 25 节点 90 秒定位和 100 节点 2 秒可交互门槛；
+4. 在 VS Code webview 和 ANEKE deep link 中复用同一 compact shell；
+5. 连续两个发布周期监控任务漏斗、Legacy 回退率和 P0/P1 UX 回归。
+
+只有 Stage 5 的 E3/E4 数据达到第 11 节门槛，产品才可以正式宣称“体验成熟度 95+”。若
+用户数据未达标，应按失败任务回到相应维度修正，而不是调高自评分。

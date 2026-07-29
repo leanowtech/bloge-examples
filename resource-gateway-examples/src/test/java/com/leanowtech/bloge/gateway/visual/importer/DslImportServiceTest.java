@@ -68,7 +68,7 @@ class DslImportServiceTest {
     }
 
     @Test
-    void marksTransformOnlyDslAsRoundTripSupported() {
+    void blocksRewriteWhenDeclaredDslOutputCannotBeRoundTripped() {
         DslImportService service = service(emptyCatalog());
 
         DslVisualProjection projection = service.preview(new DslImportPreviewRequest(
@@ -96,7 +96,49 @@ class DslImportServiceTest {
         ));
 
         assertThat(projection.diagnostics()).noneMatch(VisualDiagnostic::error);
-        assertThat(projection.roundTrip().supported()).isTrue();
+        assertThat(projection.roundTrip().supported()).isFalse();
+        assertThat(projection.roundTrip().status()).isEqualTo("DRIFT");
+        assertThat(projection.roundTrip().message())
+                .contains("canonical visual semantics differ");
+        assertThat(projection.roundTrip().generatedDsl())
+                .contains("graph transformOnly")
+                .contains("input {")
+                .contains("score: Int")
+                .doesNotContain("output {")
+                .contains("transform response");
+        assertThat(projection.roundTrip().sourceFingerprint()).isNotBlank();
+        assertThat(projection.roundTrip().generatedFingerprint())
+                .isNotEqualTo(projection.roundTrip().sourceFingerprint());
+    }
+
+    @Test
+    void marksTransformWithoutDeclaredOutputAsRoundTripSupported() {
+        DslImportService service = service(emptyCatalog());
+
+        DslVisualProjection projection = service.preview(new DslImportPreviewRequest(
+                "transform-only.bloge",
+                """
+                        graph transformOnly {
+                          input {
+                            score: Int
+                            amount: Decimal
+                          }
+                          transform response {
+                            score = ctx.score
+                            amount = ctx.amount
+                          }
+                        }
+                        """,
+                List.of(),
+                List.of(),
+                "preview",
+                Map.of()
+        ));
+
+        assertThat(projection.diagnostics()).noneMatch(VisualDiagnostic::error);
+        assertThat(projection.roundTrip().supported())
+                .as("round-trip summary: %s", projection.roundTrip())
+                .isTrue();
         assertThat(projection.roundTrip().status()).isEqualTo("SUPPORTED");
         assertThat(projection.roundTrip().message())
                 .contains("same canonical visual semantics");
@@ -104,8 +146,8 @@ class DslImportServiceTest {
                 .contains("graph transformOnly")
                 .contains("input {")
                 .contains("score: Int")
-                .contains("output {")
                 .contains("amount: Decimal")
+                .doesNotContain("output {")
                 .contains("transform response");
         assertThat(projection.roundTrip().sourceFingerprint()).isNotBlank();
         assertThat(projection.roundTrip().generatedFingerprint())

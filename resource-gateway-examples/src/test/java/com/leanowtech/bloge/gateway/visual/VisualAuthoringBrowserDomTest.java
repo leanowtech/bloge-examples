@@ -1113,6 +1113,197 @@ class VisualAuthoringBrowserDomTest {
     }
 
     /**
+     * Protects the task-oriented canvas, constrained layout review, and compact shell in Chrome.
+     *
+     * <p>The journey pins an authored node, opens Auto Layout as an atomic preview, and proves that
+     * the quality report is based on the same topology the author can apply. The preview must close
+     * both compact drawers, freeze operator insertion, keep every rendered node inside the graph
+     * viewport, report zero node and edge-label collisions, and preserve Scenario currentness after
+     * a presentation-only position change. The same session then checks mutually exclusive drawers
+     * at 820 pixels and the 390-pixel review-first Evidence header, including non-overlapping title
+     * and actions. These assertions catch browser geometry and media-query regressions that DOM
+     * component tests cannot establish.</p>
+     */
+    @Test
+    void taskWorkspacePreviewsCollisionFreeLayoutAndUsesCompactDrawersInRealBrowser() {
+        assumeReactAuthorBundlePresent();
+        driver = newChromeDriverOrSkip();
+        WebDriverWait wait = new WebDriverWait(driver, WAIT_TIMEOUT);
+        setViewport(wait, 1024, 768);
+        driver.get("http://localhost:" + port + "/author/?authorWorkspace=v2");
+
+        wait.until(ExpectedConditions.elementToBeClickable(By.cssSelector(
+                "[data-testid='author-start-choice:examples']"
+        ))).click();
+        wait.until(ExpectedConditions.elementToBeClickable(By.cssSelector(
+                "[data-testid='author-start-example:loan-policy-fallback']"
+        ))).click();
+        wait.until(ExpectedConditions.invisibilityOfElementLocated(
+                By.cssSelector("[data-testid='author-start-dialog']")
+        ));
+
+        WebElement workspace = wait.until(ExpectedConditions.visibilityOfElementLocated(
+                By.cssSelector(".workspace-v2")
+        ));
+        wait.until(ExpectedConditions.attributeToBe(
+                By.cssSelector(".workspace-v2"), "data-compact-workspace", "true"
+        ));
+        assertThat(((JavascriptExecutor) driver).executeScript("""
+                const flow = document.querySelector('.flow');
+                const navigator = document.querySelector('.canvas-task-navigator');
+                return {
+                  navigatorInsideFlow: flow.contains(navigator),
+                  minimapCount: document.querySelectorAll('.react-flow__minimap').length,
+                  horizontalOverflow:
+                    document.documentElement.scrollWidth - document.documentElement.clientWidth
+                };
+                """))
+                .as("task navigator is outside graph rendering and small graphs have one overview")
+                .isEqualTo(Map.of(
+                        "navigatorInsideFlow", false,
+                        "minimapCount", 0L,
+                        "horizontalOverflow", 0L
+                ));
+
+        driver.findElement(By.cssSelector("[data-testid='navigator-pin-node']")).click();
+        wait.until(ExpectedConditions.attributeToBe(
+                By.cssSelector("[data-testid='navigator-pin-node']"), "aria-pressed", "true"
+        ));
+        WebElement primaryCreditNode = driver.findElement(By.cssSelector(
+                ".react-flow__node[data-id='n2']"
+        ));
+        String primaryCreditPosition = primaryCreditNode.getAttribute("style");
+        new Actions(driver)
+                .moveToElement(primaryCreditNode)
+                .clickAndHold()
+                .moveByOffset(0, 120)
+                .release()
+                .perform();
+        wait.until(ignored -> !primaryCreditPosition.equals(
+                primaryCreditNode.getAttribute("style")
+        ));
+        driver.findElement(By.xpath("//button[normalize-space()='Auto layout']")).click();
+        wait.until(ExpectedConditions.attributeToBe(
+                By.cssSelector(".workspace-v2"), "data-layout-preview", "active"
+        ));
+
+        WebElement quality = wait.until(ExpectedConditions.visibilityOfElementLocated(
+                By.cssSelector("[data-testid='canvas-layout-review']")
+        ));
+        assertThat(quality.getText())
+                .contains("0 node overlaps")
+                .contains("0 label collisions")
+                .contains("1 pinned");
+        assertThat(elementClientWidth(driver.findElement(By.cssSelector("aside.palette"))))
+                .as("palette closes before geometry review")
+                .isZero();
+        assertThat(elementClientWidth(driver.findElement(By.cssSelector("aside.inspector"))))
+                .as("inspector closes before geometry review")
+                .isZero();
+        assertThat(driver.findElement(By.cssSelector(
+                "[data-testid='operator-button:bloge:transform']"
+        )).isEnabled())
+                .as("topology insertion is frozen during layout review")
+                .isFalse();
+
+        @SuppressWarnings("unchecked")
+        Map<String, Number> geometry = (Map<String, Number>)
+                ((JavascriptExecutor) driver).executeScript("""
+                        const flow = document.querySelector('.flow').getBoundingClientRect();
+                        const nodes = [...document.querySelectorAll('.react-flow__node')]
+                          .map((element) => ({
+                            id: element.dataset.id,
+                            rect: element.getBoundingClientRect()
+                          }));
+                        let overlapPairs = 0;
+                        for (let left = 0; left < nodes.length; left += 1) {
+                          for (let right = left + 1; right < nodes.length; right += 1) {
+                            const a = nodes[left].rect;
+                            const b = nodes[right].rect;
+                            if (a.left < b.right && a.right > b.left
+                                && a.top < b.bottom && a.bottom > b.top) {
+                              overlapPairs += 1;
+                            }
+                          }
+                        }
+                        return {
+                          outsideNodes: nodes.filter(({rect}) =>
+                            rect.left < flow.left || rect.right > flow.right
+                            || rect.top < flow.top || rect.bottom > flow.bottom
+                          ).length,
+                          overlapPairs
+                        };
+                        """);
+        assertThat(geometry.get("outsideNodes").intValue())
+                .as("Auto Fit includes every preview node after the quality strip resizes Canvas")
+                .isZero();
+        assertThat(geometry.get("overlapPairs").intValue())
+                .as("rendered operator cards do not overlap")
+                .isZero();
+
+        driver.findElement(By.cssSelector("[data-testid='layout-apply']")).click();
+        wait.until(ExpectedConditions.attributeToBe(
+                By.cssSelector(".workspace-v2"), "data-layout-preview", "inactive"
+        ));
+        wait.until(ExpectedConditions.attributeToBe(
+                By.cssSelector(".workspace-v2"), "data-canonical-scenario-ready", "true"
+        ));
+        assertThat(driver.findElement(By.cssSelector(
+                "[data-testid='author-primary-action']"
+        )).isEnabled())
+                .as("visual coordinates do not invalidate executable Scenario semantics")
+                .isTrue();
+
+        setViewport(wait, 820, 900);
+        wait.until(ExpectedConditions.attributeToBe(
+                By.cssSelector(".workspace-v2"), "data-compact-workspace", "true"
+        ));
+        driver.findElement(By.cssSelector("[data-testid='compact-open-palette']")).click();
+        wait.until(ignored -> elementClientWidth(
+                driver.findElement(By.cssSelector("aside.palette"))) > 0);
+        assertThat(elementClientWidth(driver.findElement(By.cssSelector("aside.inspector"))))
+                .isZero();
+        driver.findElement(By.cssSelector("[aria-label='Collapse operator palette']")).click();
+        driver.findElement(By.cssSelector("[data-testid='compact-open-inspector']")).click();
+        wait.until(ignored -> elementClientWidth(
+                driver.findElement(By.cssSelector("aside.inspector"))) > 0);
+        assertThat(elementClientWidth(driver.findElement(By.cssSelector("aside.palette"))))
+                .isZero();
+        driver.findElement(By.cssSelector("[aria-label='Collapse context inspector']")).click();
+
+        setViewport(wait, 390, 844);
+        driver.findElement(By.cssSelector("[data-testid='author-primary-action']")).click();
+        WebElement evidence = wait.until(ExpectedConditions.visibilityOfElementLocated(
+                By.cssSelector("[data-testid='contract-workspace']")
+        ));
+        waitForText(wait, By.cssSelector("[data-testid='scenario-evidence']"), "Execution");
+        assertNoHorizontalOverflow(wait, By.cssSelector("[data-testid='contract-workspace']"));
+
+        @SuppressWarnings("unchecked")
+        Map<String, Number> mobileHeader = (Map<String, Number>)
+                ((JavascriptExecutor) driver).executeScript("""
+                        const dialog = arguments[0];
+                        const title = dialog.querySelector('h2').getBoundingClientRect();
+                        const actions = dialog.querySelector(
+                          '.contract-workspace-header-actions'
+                        ).getBoundingClientRect();
+                        return {
+                          titleBottom: title.bottom,
+                          actionsTop: actions.top,
+                          actionsRight: actions.right,
+                          dialogRight: dialog.getBoundingClientRect().right
+                        };
+                        """, evidence);
+        assertThat(mobileHeader.get("actionsTop").doubleValue())
+                .as("mobile Evidence actions start below the graph title")
+                .isGreaterThanOrEqualTo(mobileHeader.get("titleBottom").doubleValue());
+        assertThat(mobileHeader.get("actionsRight").doubleValue())
+                .as("scrollable action strip stays inside the Evidence dialog")
+                .isLessThanOrEqualTo(mobileHeader.get("dialogRight").doubleValue());
+        assertThat(workspace.getAttribute("data-canvas-task-mode")).isEqualTo("inspect");
+    }
+
+    /**
      * Verifies the packaged task workspace projects the effective Contract before editing sources.
      *
      * <p>The browser loads a real example and proves that the selected transform exposes seven

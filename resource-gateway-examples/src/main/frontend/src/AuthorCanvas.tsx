@@ -212,6 +212,14 @@ import {
   type EffectiveInputBinding,
 } from './author/contract/effectiveContractProjection';
 import { projectAuthorReadiness } from './author/readiness/authorReadiness';
+import CanvasTaskNavigator, {
+  type CanvasTaskMode,
+} from './author/canvas/CanvasTaskNavigator';
+import {
+  assessCanvasLayout,
+  constrainCanvasLayout,
+  type CanvasLayoutQualityReport,
+} from './author/canvas/layoutQuality';
 
 const ContractScenarioWorkspace = lazy(
   () => import('./contract-scenario/ContractScenarioWorkspace'),
@@ -229,11 +237,17 @@ interface NodeData {
   candidatePorts?: Record<string, ConnectionCandidateStatus>;
   focusState?: CanvasNodeFocusState;
   pathFocus?: 'active' | 'dimmed';
+  pinned?: boolean;
 }
 
 interface LayoutUndoSnapshot {
   positions: Record<string, { x: number; y: number }>;
   movedNodeCount: number;
+}
+
+interface LayoutPreviewSnapshot extends LayoutUndoSnapshot {
+  quality: CanvasLayoutQualityReport;
+  durationMs: number;
 }
 
 interface OperatorDetailBaseline {
@@ -350,6 +364,7 @@ const CANVAS_MIN_ZOOM = 0.04;
 const CANVAS_MAX_ZOOM = 1.8;
 const COMPLEX_GRAPH_NODE_THRESHOLD = 24;
 const COMPLEX_GRAPH_EDGE_THRESHOLD = 36;
+const COMPACT_AUTHOR_MEDIA = '(max-width: 1100px)';
 
 function compactAuthorFingerprint(value: string | undefined): string {
   const normalized = value?.trim() ?? '';
@@ -507,6 +522,25 @@ function autoLayoutFlowNodes(
   const layout = autoLayoutCanvas(flowNodes.map(canvasNodeFromFlowNode), flowEdges.map(canvasEdgeFromFlowEdge));
   const positions = new Map(layout.map((node) => [node.id, node.position]));
   return flowNodes.map((node) => ({
+    ...node,
+    position: positions.get(node.id) ?? node.position,
+  }));
+}
+
+function constrainedAutoLayoutFlowNodes(
+  flowNodes: Node<NodeData>[],
+  flowEdges: Edge<CanvasEdgeData>[],
+  pinnedNodeIds: ReadonlySet<string>,
+): Node<NodeData>[] {
+  const candidate = autoLayoutFlowNodes(flowNodes, flowEdges);
+  const constrained = constrainCanvasLayout(
+    flowNodes.map(canvasNodeFromFlowNode),
+    candidate.map(canvasNodeFromFlowNode),
+    pinnedNodeIds,
+    flowEdges.map(canvasEdgeFromFlowEdge),
+  );
+  const positions = new Map(constrained.map((node) => [node.id, node.position]));
+  return candidate.map((node) => ({
     ...node,
     position: positions.get(node.id) ?? node.position,
   }));
@@ -1561,6 +1595,7 @@ function OperatorNode({ id, data, selected }: NodeProps<NodeData>) {
         candidateClass,
         focusClass,
         data.pathFocus ? `path-${data.pathFocus}` : '',
+        data.pinned ? 'pinned' : '',
         selected ? 'selected' : '',
       ].filter(Boolean).join(' ')}
       data-testid={`canvas-node:${id}`}
@@ -1590,6 +1625,7 @@ function OperatorNode({ id, data, selected }: NodeProps<NodeData>) {
             </span>
           )}
           {data.isOutput && <span className="output-pill">output</span>}
+          {data.pinned && <span className="pin-pill" title="Pinned for Auto Layout">pinned</span>}
           {status !== 'unknown' && <span className={`run-pill ${status}`}>{status}</span>}
         </span>
       </div>
@@ -4518,6 +4554,19 @@ function visualLayoutWithGraphContract(
   };
 }
 
+/**
+ * Returns the canonical execution projection used to bind Contract and Scenario assets.
+ *
+ * Node coordinates are authoring presentation state: moving a card changes the durable draft and
+ * must still make Save dirty, but it cannot invalidate fixtures, assertions, or runtime evidence.
+ */
+function canonicalExecutionGraphDraft(draft: GraphDraft): string {
+  return canonicalJson({
+    ...draft,
+    nodes: draft.nodes.map(({ position: _position, ...node }) => node),
+  });
+}
+
 function visualLayoutWithImportSourceMap(
   visualLayout: Record<string, unknown>,
   sourceMap: DslSourceMap | undefined,
@@ -4693,6 +4742,11 @@ export default function AuthorCanvas({ workspaceVersion = 'v1' }: AuthorCanvasPr
   const [inspectorWidth, setInspectorWidth] = useState(220);
   const [paletteCollapsed, setPaletteCollapsed] = useState(false);
   const [inspectorCollapsed, setInspectorCollapsed] = useState(false);
+  const [compactWorkspace, setCompactWorkspace] = useState(() => (
+    isTaskWorkspace
+    && typeof window.matchMedia === 'function'
+    && window.matchMedia(COMPACT_AUTHOR_MEDIA).matches
+  ));
   const [diagnosticsOpen, setDiagnosticsOpen] = useState(false);
   const [operators, setOperators] = useState<OperatorDefinition[]>([]);
   const [builtInFunctions, setBuiltInFunctions] = useState<BuiltInFunctionDefinition[]>([]);
@@ -4794,6 +4848,9 @@ export default function AuthorCanvas({ workspaceVersion = 'v1' }: AuthorCanvasPr
   const [overviewVisible, setOverviewVisible] = useState(true);
   const [viewportZoom, setViewportZoom] = useState(1);
   const [focusPathNodeId, setFocusPathNodeId] = useState('');
+  const [pinnedNodeIds, setPinnedNodeIds] = useState<Set<string>>(new Set());
+  const [layoutPlanning, setLayoutPlanning] = useState(false);
+  const [layoutPreview, setLayoutPreview] = useState<LayoutPreviewSnapshot | null>(null);
   const [layoutUndo, setLayoutUndo] = useState<LayoutUndoSnapshot | null>(null);
   const [layoutNotice, setLayoutNotice] = useState('');
   const searchInputRef = useRef<HTMLInputElement>(null);
@@ -4805,6 +4862,8 @@ export default function AuthorCanvas({ workspaceVersion = 'v1' }: AuthorCanvasPr
   const firstAuthorSuccessRecordedRef = useRef(false);
   const successfulRunKindRef = useRef('');
   const previousAuthorModeRef = useRef(authorMode);
+  const layoutPlanSequenceRef = useRef(0);
+  const layoutPlanTimerRef = useRef<number | null>(null);
   const counter = useRef(0);
   const contextVariableCounter = useRef(0);
   const tableTestCounter = useRef(0);
@@ -4812,9 +4871,11 @@ export default function AuthorCanvas({ workspaceVersion = 'v1' }: AuthorCanvasPr
   const candidatePreviewSequence = useRef(0);
   const connectionGuideSequence = useRef(0);
   const contractProjectionSequence = useRef(0);
+  const contractExecutionSnapshotRef = useRef('');
   const scenarioGraphNameRef = useRef('');
   const authoritativeContractRef = useRef<{
     canvasSnapshot: string;
+    executionSnapshot: string;
     graphDraft: GraphDraft;
     contract: ContractDraft;
     contractFingerprint: string;
@@ -4824,6 +4885,29 @@ export default function AuthorCanvas({ workspaceVersion = 'v1' }: AuthorCanvasPr
     const catalog = await fetchOperatorCatalog();
     setOperators(catalog.operators);
     setBuiltInFunctions(catalog.builtInFunctions ?? []);
+  }, []);
+
+  useEffect(() => {
+    if (!isTaskWorkspace || typeof window.matchMedia !== 'function') {
+      return undefined;
+    }
+    const media = window.matchMedia(COMPACT_AUTHOR_MEDIA);
+    const synchronize = (matches: boolean) => {
+      setCompactWorkspace(matches);
+      setPaletteCollapsed(matches);
+      setInspectorCollapsed(matches);
+    };
+    synchronize(media.matches);
+    const onChange = (event: MediaQueryListEvent) => synchronize(event.matches);
+    media.addEventListener?.('change', onChange);
+    return () => media.removeEventListener?.('change', onChange);
+  }, [isTaskWorkspace]);
+
+  useEffect(() => () => {
+    layoutPlanSequenceRef.current += 1;
+    if (layoutPlanTimerRef.current !== null) {
+      window.clearTimeout(layoutPlanTimerRef.current);
+    }
   }, []);
 
   useEffect(() => {
@@ -4945,6 +5029,14 @@ export default function AuthorCanvas({ workspaceVersion = 'v1' }: AuthorCanvasPr
   }, [canvasFocusMode, edges.length, fitCanvasToView, nodes.length]);
 
   useEffect(() => {
+    if (!layoutPreview) {
+      return undefined;
+    }
+    const handle = window.setTimeout(() => fitCanvasToView(), 80);
+    return () => window.clearTimeout(handle);
+  }, [fitCanvasToView, layoutPreview]);
+
+  useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
       if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === 'k') {
         event.preventDefault();
@@ -4963,6 +5055,13 @@ export default function AuthorCanvas({ workspaceVersion = 'v1' }: AuthorCanvasPr
   }, []);
 
   const resetRunResult = useCallback(() => {
+    layoutPlanSequenceRef.current += 1;
+    if (layoutPlanTimerRef.current !== null) {
+      window.clearTimeout(layoutPlanTimerRef.current);
+      layoutPlanTimerRef.current = null;
+    }
+    setLayoutPlanning(false);
+    setLayoutPreview(null);
     setAuthorContentEpoch((current) => current + 1);
     setEvidenceContentEpoch(-1);
     setValidationContentEpoch(-1);
@@ -5030,6 +5129,11 @@ export default function AuthorCanvas({ workspaceVersion = 'v1' }: AuthorCanvasPr
         });
         setSelectedNodeId((current) => (removedNodeIds.includes(current) ? '' : current));
         setFocusPathNodeId((current) => (removedNodeIds.includes(current) ? '' : current));
+        setPinnedNodeIds((current) => {
+          const next = new Set(current);
+          removedNodeIds.forEach((id) => next.delete(id));
+          return next;
+        });
         setOperatorDetailNodeId((current) => (removedNodeIds.includes(current) ? '' : current));
         setOperatorDetailBaseline((current) =>
           current && removedNodeIds.includes(current.nodeId) ? null : current);
@@ -5050,6 +5154,9 @@ export default function AuthorCanvas({ workspaceVersion = 'v1' }: AuthorCanvasPr
     [clearRunResult],
   );
   const addOperator = useCallback((operator: OperatorDefinition, position?: { x: number; y: number }) => {
+    if (layoutPlanning || layoutPreview) {
+      return;
+    }
     clearRunResult();
     setConnectionGuide(null);
     setLayoutUndo(null);
@@ -5072,7 +5179,7 @@ export default function AuthorCanvas({ workspaceVersion = 'v1' }: AuthorCanvasPr
       [id]: defaultOperatorTestSuiteRows(node, operator),
     }));
     setSelectedNodeId(id);
-  }, [clearRunResult]);
+  }, [clearRunResult, layoutPlanning, layoutPreview]);
 
   const openNodeEditor = useCallback((node: Node<NodeData>) => {
     setSelectedNodeId(node.id);
@@ -5455,6 +5562,20 @@ export default function AuthorCanvas({ workspaceVersion = 'v1' }: AuthorCanvasPr
     () => canvasFocusPath(canvasNodes, canvasEdges, focusPathNodeId),
     [canvasEdges, canvasNodes, focusPathNodeId],
   );
+  const canvasTaskMode: CanvasTaskMode = focusPathNodeId
+    ? 'focus'
+    : selectedNodeId
+      ? 'inspect'
+      : 'overview';
+  const canvasTaskNodes = useMemo(
+    () => nodes.map((node) => ({
+      id: node.id,
+      label: node.data.label,
+      operatorRef: node.data.operatorRef,
+      pinned: pinnedNodeIds.has(node.id),
+    })),
+    [nodes, pinnedNodeIds],
+  );
   const viewportZoomPercent = `${Math.round(viewportZoom * 100)}%`;
   const overviewLabel = isComplexGraph ? 'Large Map' : 'Map';
   const checklist = useMemo(
@@ -5599,9 +5720,16 @@ export default function AuthorCanvas({ workspaceVersion = 'v1' }: AuthorCanvasPr
     setOperatorTestPublications({});
     setSimulationTableRows(nextSimulationTableRows);
     setSimulationTableResults({});
+    setPinnedNodeIds(new Set());
+    setLayoutPlanning(false);
+    setLayoutPreview(null);
     setLayoutUndo(null);
     setLayoutNotice('');
     setFocusPathNodeId('');
+    setOverviewVisible(
+      nextNodes.length >= COMPLEX_GRAPH_NODE_THRESHOLD
+      || nextEdges.length >= COMPLEX_GRAPH_EDGE_THRESHOLD,
+    );
     scenarioGraphNameRef.current = '';
     setScenarioDraftSet(null);
     setGraphName(template.graphName);
@@ -5894,8 +6022,13 @@ export default function AuthorCanvas({ workspaceVersion = 'v1' }: AuthorCanvasPr
     let active = true;
 
     const project = async () => {
+      const executionSnapshot = canonicalExecutionGraphDraft(exportableDraft);
+      if (contractExecutionSnapshotRef.current === executionSnapshot) {
+        return;
+      }
       const authoritative = authoritativeContractRef.current;
-      const exactServerProjection = authoritative?.canvasSnapshot === canonicalJson(exportableDraft)
+      const exactServerProjection = authoritative
+        && authoritative.executionSnapshot === executionSnapshot
         ? authoritative
         : null;
       const targetFingerprint = exactServerProjection
@@ -5908,6 +6041,7 @@ export default function AuthorCanvas({ workspaceVersion = 'v1' }: AuthorCanvasPr
       if (!active || contractProjectionSequence.current !== sequence) {
         return;
       }
+      contractExecutionSnapshotRef.current = executionSnapshot;
       setContractDraft(nextContract);
       setContractFingerprint(nextContractFingerprint);
       setScenarioDraftSet((current) => {
@@ -6037,6 +6171,7 @@ export default function AuthorCanvas({ workspaceVersion = 'v1' }: AuthorCanvasPr
       };
       authoritativeContractRef.current = {
         canvasSnapshot: canonicalJson(savedCanvasDraft),
+        executionSnapshot: canonicalExecutionGraphDraft(savedCanvasDraft),
         graphDraft: stored,
         contract: projection.contract,
         contractFingerprint: projection.contractFingerprint,
@@ -6222,6 +6357,7 @@ export default function AuthorCanvas({ workspaceVersion = 'v1' }: AuthorCanvasPr
               ? focusedCanvasPath.nodeIds.has(node.id) ? 'active' : 'dimmed'
               : undefined,
             isOutput: node.id === outputNodeId,
+            pinned: pinnedNodeIds.has(node.id),
           },
         };
       }),
@@ -6232,6 +6368,7 @@ export default function AuthorCanvas({ workspaceVersion = 'v1' }: AuthorCanvasPr
       focusedCanvasPath.nodeIds,
       nodes,
       outputNodeId,
+      pinnedNodeIds,
       selectedNodeId,
     ],
   );
@@ -6271,6 +6408,9 @@ export default function AuthorCanvas({ workspaceVersion = 'v1' }: AuthorCanvasPr
 
   const dropOperatorOnFlow = useCallback((event: DragEvent<HTMLDivElement>) => {
     event.preventDefault();
+    if (layoutPlanning || layoutPreview) {
+      return;
+    }
     const operatorRef =
       event.dataTransfer.getData(OPERATOR_DRAG_MIME) || event.dataTransfer.getData('text/plain');
     const operator = operatorByRef.get(operatorRef);
@@ -6285,7 +6425,7 @@ export default function AuthorCanvas({ workspaceVersion = 'v1' }: AuthorCanvasPr
         }
       : undefined;
     addOperator(operator, position);
-  }, [addOperator, operatorByRef]);
+  }, [addOperator, layoutPlanning, layoutPreview, operatorByRef]);
 
   const updateFixtureDraftForNode = useCallback((nodeId: string, value: string) => {
     clearRunResult();
@@ -6529,9 +6669,16 @@ export default function AuthorCanvas({ workspaceVersion = 'v1' }: AuthorCanvasPr
     tableTestCounter.current = nextSimulationTableRows.length;
     operatorTestCounter.current = 0;
     setNodes(workspaceBundle ? nextNodes : autoLayoutFlowNodes(nextNodes, nextEdges));
+    setPinnedNodeIds(new Set());
+    setLayoutPlanning(false);
+    setLayoutPreview(null);
     setLayoutUndo(null);
     setLayoutNotice('');
     setFocusPathNodeId('');
+    setOverviewVisible(
+      nextNodes.length >= COMPLEX_GRAPH_NODE_THRESHOLD
+      || nextEdges.length >= COMPLEX_GRAPH_EDGE_THRESHOLD,
+    );
     setEdges(nextEdges);
     setFixtureDrafts(nextFixtureDrafts);
     setFixtureInputDrafts(nextFixtureInputDrafts);
@@ -6551,6 +6698,7 @@ export default function AuthorCanvas({ workspaceVersion = 'v1' }: AuthorCanvasPr
       setScenarioDraftSet(workspaceBundle.scenarioDraftSet);
       authoritativeContractRef.current = {
         canvasSnapshot: canonicalJson(projection.draft),
+        executionSnapshot: canonicalExecutionGraphDraft(projection.draft),
         graphDraft: projection.draft,
         contract: workspaceBundle.contractProjection.contract,
         contractFingerprint: workspaceBundle.contractProjection.contractFingerprint,
@@ -7813,6 +7961,58 @@ export default function AuthorCanvas({ workspaceVersion = 'v1' }: AuthorCanvasPr
 
   const autoLayout = useCallback(() => {
     const startedAt = performance.now();
+    if (isTaskWorkspace) {
+      layoutPlanSequenceRef.current += 1;
+      const sequence = layoutPlanSequenceRef.current;
+      if (layoutPlanTimerRef.current !== null) {
+        window.clearTimeout(layoutPlanTimerRef.current);
+      }
+      setLayoutPlanning(true);
+      setLayoutPreview(null);
+      setLayoutNotice('Computing layout preview...');
+      if (compactWorkspace) {
+        setPaletteCollapsed(true);
+        setInspectorCollapsed(true);
+      }
+      layoutPlanTimerRef.current = window.setTimeout(() => {
+        if (layoutPlanSequenceRef.current !== sequence) return;
+        const nextNodes = constrainedAutoLayoutFlowNodes(nodes, edges, pinnedNodeIds);
+        const movedNodeCount = nextNodes.filter((node, index) => {
+          const current = nodes[index];
+          return !current
+            || current.position.x !== node.position.x
+            || current.position.y !== node.position.y;
+        }).length;
+        const quality = assessCanvasLayout(
+          nextNodes.map(canvasNodeFromFlowNode),
+          edges.map(canvasEdgeFromFlowEdge),
+          pinnedNodeIds,
+        );
+        setLayoutPlanning(false);
+        layoutPlanTimerRef.current = null;
+        if (movedNodeCount === 0) {
+          setLayoutPreview(null);
+          setLayoutNotice(`Layout already optimal · ${quality.summary}.`);
+          recordAuthorTaskEvent('AUTO_LAYOUT_COMPLETED', {
+            nodeCount: nodes.length,
+            edgeCount: edges.length,
+            movedNodeCount,
+            durationMs: authorTaskElapsedMs(startedAt),
+          });
+          return;
+        }
+        setNodes(nextNodes);
+        setLayoutPreview({
+          positions: Object.fromEntries(nodes.map((node) => [node.id, { ...node.position }])),
+          movedNodeCount,
+          quality,
+          durationMs: authorTaskElapsedMs(startedAt),
+        });
+        setLayoutNotice(`Preview moves ${movedNodeCount} node${movedNodeCount === 1 ? '' : 's'}.`);
+      }, 0);
+      return;
+    }
+
     const nextNodes = autoLayoutFlowNodes(nodes, edges);
     const movedNodeCount = nextNodes.filter((node, index) => {
       const current = nodes[index];
@@ -7844,7 +8044,47 @@ export default function AuthorCanvas({ workspaceVersion = 'v1' }: AuthorCanvasPr
         durationMs: authorTaskElapsedMs(startedAt),
       });
     }
-  }, [edges, fitCanvasToView, isTaskWorkspace, nodes]);
+  }, [compactWorkspace, edges, fitCanvasToView, isTaskWorkspace, nodes, pinnedNodeIds]);
+
+  const applyLayoutPreview = useCallback(() => {
+    if (!layoutPreview) return;
+    setLayoutUndo({
+      positions: layoutPreview.positions,
+      movedNodeCount: layoutPreview.movedNodeCount,
+    });
+    setLayoutNotice(
+      `Applied ${layoutPreview.movedNodeCount} moved node${
+        layoutPreview.movedNodeCount === 1 ? '' : 's'
+      } · ${layoutPreview.quality.summary}.`,
+    );
+    recordAuthorTaskEvent('AUTO_LAYOUT_COMPLETED', {
+      nodeCount: nodes.length,
+      edgeCount: edges.length,
+      movedNodeCount: layoutPreview.movedNodeCount,
+      durationMs: layoutPreview.durationMs,
+    });
+    setLayoutPreview(null);
+  }, [edges.length, layoutPreview, nodes.length]);
+
+  const cancelLayoutPreview = useCallback(() => {
+    layoutPlanSequenceRef.current += 1;
+    if (layoutPlanTimerRef.current !== null) {
+      window.clearTimeout(layoutPlanTimerRef.current);
+      layoutPlanTimerRef.current = null;
+    }
+    setLayoutPlanning(false);
+    if (layoutPreview) {
+      setNodes((current) => current.map((node) => ({
+        ...node,
+        position: layoutPreview.positions[node.id] ?? node.position,
+      })));
+      setLayoutNotice('Layout preview canceled; original positions restored.');
+      window.requestAnimationFrame?.(() => fitCanvasToView());
+    } else {
+      setLayoutNotice('Layout computation canceled.');
+    }
+    setLayoutPreview(null);
+  }, [fitCanvasToView, layoutPreview]);
 
   const undoAutoLayout = useCallback(() => {
     if (!layoutUndo) return;
@@ -7867,6 +8107,21 @@ export default function AuthorCanvas({ workspaceVersion = 'v1' }: AuthorCanvasPr
       fitCanvasToView();
     }
   }, [fitCanvasToView, isTaskWorkspace, layoutUndo]);
+
+  const toggleSelectedNodePin = useCallback(() => {
+    if (!selectedNodeId) return;
+    setPinnedNodeIds((current) => {
+      const next = new Set(current);
+      if (next.has(selectedNodeId)) {
+        next.delete(selectedNodeId);
+        setLayoutNotice('Selected node will move with Auto Layout.');
+      } else {
+        next.add(selectedNodeId);
+        setLayoutNotice('Selected node pinned to its current position.');
+      }
+      return next;
+    });
+  }, [selectedNodeId]);
 
   const toggleFocusPath = useCallback(() => {
     if (focusPathNodeId) {
@@ -7891,6 +8146,82 @@ export default function AuthorCanvas({ workspaceVersion = 'v1' }: AuthorCanvasPr
     nodes,
     selectedNodeId,
   ]);
+
+  const focusNodeFromNavigator = useCallback((nodeId: string) => {
+    const target = nodes.find((node) => node.id === nodeId);
+    if (!target) return;
+    setSelectedNodeId(nodeId);
+    setFocusPathNodeId('');
+    if (compactWorkspace) {
+      setPaletteCollapsed(true);
+      setInspectorCollapsed(false);
+    }
+    flowInstanceRef.current?.fitView({
+      nodes: [target],
+      padding: 0.72,
+      duration: 220,
+      maxZoom: 1,
+    });
+  }, [compactWorkspace, nodes]);
+
+  const activateCanvasTaskMode = useCallback((mode: CanvasTaskMode) => {
+    if (mode === 'overview') {
+      setFocusPathNodeId('');
+      setSelectedNodeId('');
+      if (compactWorkspace) {
+        setInspectorCollapsed(true);
+      }
+      fitCanvasToView();
+      return;
+    }
+    if (!selectedNodeId) return;
+    if (mode === 'focus') {
+      const path = canvasFocusPath(canvasNodes, canvasEdges, selectedNodeId);
+      setFocusPathNodeId(selectedNodeId);
+      if (compactWorkspace) {
+        setPaletteCollapsed(true);
+        setInspectorCollapsed(true);
+      }
+      flowInstanceRef.current?.fitView({
+        nodes: nodes.filter((node) => path.nodeIds.has(node.id)),
+        padding: 0.2,
+        duration: 240,
+      });
+      return;
+    }
+    setFocusPathNodeId('');
+    if (compactWorkspace) {
+      setPaletteCollapsed(true);
+      setInspectorCollapsed(false);
+    }
+  }, [
+    canvasEdges,
+    canvasNodes,
+    compactWorkspace,
+    fitCanvasToView,
+    nodes,
+    selectedNodeId,
+  ]);
+
+  const togglePalettePanel = useCallback(() => {
+    setPaletteCollapsed((current) => {
+      const opening = current;
+      if (opening && compactWorkspace) {
+        setInspectorCollapsed(true);
+      }
+      return !current;
+    });
+  }, [compactWorkspace]);
+
+  const toggleInspectorPanel = useCallback(() => {
+    setInspectorCollapsed((current) => {
+      const opening = current;
+      if (opening && compactWorkspace) {
+        setPaletteCollapsed(true);
+      }
+      return !current;
+    });
+  }, [compactWorkspace]);
 
   const beginPanelResize = useCallback((
     panel: 'palette' | 'inspector',
@@ -8550,7 +8881,7 @@ export default function AuthorCanvas({ workspaceVersion = 'v1' }: AuthorCanvasPr
 
   const authoritativeContract = authoritativeContractRef.current;
   const scenarioWorkspaceGraphDraft = authoritativeContract
-    && authoritativeContract.canvasSnapshot === canonicalJson(exportableDraft)
+    && authoritativeContract.executionSnapshot === canonicalExecutionGraphDraft(exportableDraft)
     ? authoritativeContract.graphDraft
     : exportableDraft;
 
@@ -8563,6 +8894,8 @@ export default function AuthorCanvas({ workspaceVersion = 'v1' }: AuthorCanvasPr
         inspectorCollapsed ? 'inspector-collapsed' : '',
         diagnosticsOpen ? 'diagnostics-open' : '',
         canvasFocusMode ? 'canvas-focus' : '',
+        compactWorkspace ? 'compact-workspace' : '',
+        layoutPreview ? 'layout-preview-active' : '',
       ].filter(Boolean).join(' ')}
       style={isTaskWorkspace ? {
         '--author-palette-track': paletteCollapsed ? '36px' : `${paletteWidth}px`,
@@ -8571,6 +8904,10 @@ export default function AuthorCanvas({ workspaceVersion = 'v1' }: AuthorCanvasPr
       data-layout-mode={canvasFocusMode ? 'focus' : 'standard'}
       data-canvas-zoom-tier={zoomPresentation.tier}
       data-focus-path={focusPathNodeId ? 'active' : 'inactive'}
+      data-canvas-task-mode={canvasTaskMode}
+      data-compact-workspace={compactWorkspace ? 'true' : 'false'}
+      data-layout-preview={layoutPreview ? 'active' : layoutPlanning ? 'planning' : 'inactive'}
+      data-canonical-scenario-ready={canonicalScenarioReady ? 'true' : 'false'}
       data-author-workspace-version={workspaceVersion}
       data-author-mode={authorMode}
       data-draft-lifecycle={authorReadiness.draft.toLowerCase()}
@@ -8590,6 +8927,8 @@ export default function AuthorCanvas({ workspaceVersion = 'v1' }: AuthorCanvasPr
             primaryDisabled={
               busy
               || tableTestingBusy
+              || layoutPlanning
+              || Boolean(layoutPreview)
               || (primaryAction.kind === 'run' && isTaskWorkspace && !canonicalScenarioReady)
             }
             draftStatus={authorReadiness.draft}
@@ -8601,8 +8940,13 @@ export default function AuthorCanvas({ workspaceVersion = 'v1' }: AuthorCanvasPr
             promotionSummary={`${authorReadiness.headline}. ${authorReadiness.summary}`}
             exportUrl={draftExportUrl}
             exportName={`${graphName}-draft.json`}
-            exportDisabled={nodes.length === 0 || hasFixtureErrors}
-            layoutDisabled={nodes.length < 2}
+            exportDisabled={
+              nodes.length === 0
+              || hasFixtureErrors
+              || layoutPlanning
+              || Boolean(layoutPreview)
+            }
+            layoutDisabled={nodes.length < 2 || layoutPlanning || Boolean(layoutPreview)}
             validationDisabled={validatingDraft || nodes.length === 0}
             onModeChange={changeAuthorMode}
             onPrimaryAction={runPrimaryAuthorAction}
@@ -8684,7 +9028,7 @@ export default function AuthorCanvas({ workspaceVersion = 'v1' }: AuthorCanvasPr
             className="author-panel-toggle palette-panel-toggle"
             aria-label={paletteCollapsed ? 'Expand operator palette' : 'Collapse operator palette'}
             aria-expanded={!paletteCollapsed}
-            onClick={() => setPaletteCollapsed((current) => !current)}
+            onClick={togglePalettePanel}
           >
             <span aria-hidden="true">{paletteCollapsed ? '>' : '<'}</span>
           </button>
@@ -9069,7 +9413,8 @@ export default function AuthorCanvas({ workspaceVersion = 'v1' }: AuthorCanvasPr
                       className="operator-button"
                       data-testid={`operator-button:${operator.operatorRef}`}
                       data-operator-ref={operator.operatorRef}
-                      draggable
+                      draggable={!layoutPlanning && !layoutPreview}
+                      disabled={layoutPlanning || Boolean(layoutPreview)}
                       onDragStart={(event) => startOperatorDrag(event, operator)}
                       onClick={() => addOperator(operator)}
                       title={operator.operatorRef}
@@ -9388,6 +9733,31 @@ export default function AuthorCanvas({ workspaceVersion = 'v1' }: AuthorCanvasPr
             setContractWorkspaceOpen(true);
           }}
         />
+        {isTaskWorkspace && nodes.length > 0 && (
+          <CanvasTaskNavigator
+            mode={canvasTaskMode}
+            nodes={canvasTaskNodes}
+            selectedNodeId={selectedNodeId}
+            nodeCount={canvasSummary.nodeCount}
+            edgeCount={canvasSummary.edgeCount}
+            pathNodeCount={focusedCanvasPath.nodeIds.size}
+            zoomPercent={viewportZoomPercent}
+            mapVisible={overviewVisible}
+            layoutPlanning={layoutPlanning}
+            layoutPreview={Boolean(layoutPreview)}
+            layoutQuality={layoutPreview?.quality ?? null}
+            layoutNotice={layoutNotice}
+            canUndoLayout={Boolean(layoutUndo)}
+            onModeChange={activateCanvasTaskMode}
+            onSelectNode={focusNodeFromNavigator}
+            onFitAll={() => fitCanvasToView()}
+            onToggleMap={() => setOverviewVisible((current) => !current)}
+            onTogglePin={toggleSelectedNodePin}
+            onApplyLayout={applyLayoutPreview}
+            onCancelLayout={cancelLayoutPreview}
+            onUndoLayout={undoAutoLayout}
+          />
+        )}
         <div
           ref={flowRef}
           className="flow"
@@ -9419,7 +9789,7 @@ export default function AuthorCanvas({ workspaceVersion = 'v1' }: AuthorCanvasPr
               )}
             </div>
           )}
-          {nodes.length > 0 && (
+          {!isTaskWorkspace && nodes.length > 0 && (
             <div
               className={[
                 'canvas-navigator',
@@ -9487,6 +9857,33 @@ export default function AuthorCanvas({ workspaceVersion = 'v1' }: AuthorCanvasPr
               </div>
             </div>
           )}
+          {isTaskWorkspace && (
+            <div className="compact-canvas-launchers" aria-label="Compact workspace panels">
+              <button
+                type="button"
+                data-testid="compact-open-palette"
+                aria-pressed={!paletteCollapsed}
+                onClick={() => {
+                  setInspectorCollapsed(true);
+                  setPaletteCollapsed(false);
+                }}
+              >
+                Operators
+              </button>
+              <button
+                type="button"
+                data-testid="compact-open-inspector"
+                aria-pressed={!inspectorCollapsed}
+                disabled={!selectedNodeId}
+                onClick={() => {
+                  setPaletteCollapsed(true);
+                  setInspectorCollapsed(false);
+                }}
+              >
+                Inspect
+              </button>
+            </div>
+          )}
           <ReactFlow
             nodes={flowNodes}
             edges={flowEdges}
@@ -9497,6 +9894,10 @@ export default function AuthorCanvas({ workspaceVersion = 'v1' }: AuthorCanvasPr
             onConnect={onConnect}
             onConnectStart={onConnectStart}
             onConnectEnd={onConnectEnd}
+            nodesDraggable={!layoutPlanning && !layoutPreview}
+            nodesConnectable={!layoutPlanning && !layoutPreview}
+            deleteKeyCode={layoutPlanning || layoutPreview ? null : ['Backspace', 'Delete']}
+            elementsSelectable={!layoutPlanning && !layoutPreview}
             onInit={(instance) => {
               flowInstanceRef.current = instance;
               refreshViewportZoom();
@@ -9547,7 +9948,7 @@ export default function AuthorCanvas({ workspaceVersion = 'v1' }: AuthorCanvasPr
             className="author-panel-toggle inspector-panel-toggle"
             aria-label={inspectorCollapsed ? 'Expand context inspector' : 'Collapse context inspector'}
             aria-expanded={!inspectorCollapsed}
-            onClick={() => setInspectorCollapsed((current) => !current)}
+            onClick={toggleInspectorPanel}
           >
             <span aria-hidden="true">{inspectorCollapsed ? '<' : '>'}</span>
           </button>

@@ -109,9 +109,6 @@ class DslImportControllerTest {
                                           input {
                                             score: Int
                                           }
-                                          output {
-                                            score: Int
-                                          }
                                           transform response {
                                             score = ctx.score
                                           }
@@ -124,6 +121,51 @@ class DslImportControllerTest {
                 .andExpect(jsonPath("$.allowed").value(true))
                 .andExpect(jsonPath("$.decision").value("ALLOW_REWRITE"))
                 .andExpect(jsonPath("$.roundTrip.status").value("SUPPORTED"))
+                .andExpect(jsonPath("$.generatedDsl").isNotEmpty());
+    }
+
+    @Test
+    void rewriteGateBlocksDeclaredTerminalOutputThatCannotBePreserved() throws Exception {
+        OperatorLibrary emptyLibrary = new OperatorLibrary(
+                "bloge.visualOperatorLibrary.v1",
+                "empty-risk-policy",
+                "Empty risk policy operators",
+                "1.0.0",
+                "risk-team",
+                "ACTIVE",
+                List.of()
+        );
+        var catalog = VisualCatalogTestSupport.catalogWithLibrary(emptyLibrary);
+        DslImportService service = new DslImportService(catalog, new OperatorLibraryValidator());
+        MockMvc mockMvc = MockMvcBuilders.standaloneSetup(new DslImportController(
+                service,
+                new InMemoryGraphDraftRepository(),
+                new GraphDraftValidator(catalog),
+                catalog
+        )).build();
+
+        mockMvc.perform(post("/api/visual/dsl-imports/rewrite-gate")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(OBJECT_MAPPER.writeValueAsString(Map.of(
+                                "sourceId", "transform-with-terminal-output.bloge",
+                                "dsl", """
+                                        graph transformWithTerminalOutput {
+                                          input {
+                                            score: Int
+                                          }
+                                          output {
+                                            score: Int
+                                          }
+                                          transform response {
+                                            score = ctx.score
+                                          }
+                                        }
+                                        """
+                        ))))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.allowed").value(false))
+                .andExpect(jsonPath("$.decision").value("BLOCK_SEMANTIC_DRIFT"))
+                .andExpect(jsonPath("$.roundTrip.status").value("DRIFT"))
                 .andExpect(jsonPath("$.generatedDsl").isNotEmpty());
     }
 
@@ -200,9 +242,6 @@ class DslImportControllerTest {
                                                 "dsl", """
                                                         graph supportedTransform {
                                                           input {
-                                                            score: Int
-                                                          }
-                                                          output {
                                                             score: Int
                                                           }
                                                           transform response {
@@ -296,9 +335,6 @@ class DslImportControllerTest {
                                                           input {
                                                             score: Int
                                                           }
-                                                          output {
-                                                            score: Int
-                                                          }
                                                           transform response {
                                                             score = ctx.score
                                                           }
@@ -378,9 +414,6 @@ class DslImportControllerTest {
                                                 "dsl", """
                                                         graph supportedTransform {
                                                           input {
-                                                            score: Int
-                                                          }
-                                                          output {
                                                             score: Int
                                                           }
                                                           transform response {
