@@ -170,4 +170,44 @@ describe('projectAuthorDiagnostics', () => {
       }),
     ]);
   });
+
+  it('projects dirty and stale lifecycle reasons into the shared repair queue', () => {
+    const items = projectAuthorDiagnostics({
+      error: '',
+      validation: null,
+      run: null,
+      scenarioResults: {},
+      governance: null,
+      dslDiagnostics: [],
+      readinessReasons: [
+        {
+          code: 'DRAFT_DIRTY',
+          dimension: 'DRAFT',
+          message: 'The current graph differs from its saved revision.',
+          action: { label: 'Save current draft' },
+        },
+        {
+          code: 'EXECUTION_STALE',
+          dimension: 'EXECUTION',
+          message: 'The retained run targets an older authoring snapshot.',
+          action: { label: 'Run current Scenario' },
+        },
+      ],
+    });
+
+    expect(items).toEqual([
+      expect.objectContaining({
+        scope: 'GRAPH',
+        source: 'readiness',
+        code: 'DRAFT_DIRTY',
+        recommendedAction: 'Save current draft',
+      }),
+      expect.objectContaining({
+        scope: 'EXECUTION',
+        source: 'readiness',
+        code: 'EXECUTION_STALE',
+        recommendedAction: 'Run current Scenario',
+      }),
+    ]);
+  });
 });

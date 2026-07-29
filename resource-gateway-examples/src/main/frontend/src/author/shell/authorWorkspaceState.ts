@@ -19,6 +19,7 @@ export interface AuthorPrimaryActionContext {
   hasInputErrors: boolean;
   hasRunResult: boolean;
   runSuccessful: boolean;
+  runStale?: boolean;
 }
 
 /**
@@ -36,6 +37,13 @@ export function resolveAuthorPrimaryAction(
   }
   if (context.hasInputErrors) {
     return { kind: 'fix-input', label: 'Fix required input', targetMode: 'scenarios' };
+  }
+  if (context.runStale) {
+    return {
+      kind: 'run',
+      label: context.busy ? 'Running scenario...' : 'Rerun current scenario',
+      targetMode: 'scenarios',
+    };
   }
   if (!context.hasRunResult) {
     return {

@@ -1,10 +1,10 @@
 # Resource Gateway Author UX 体验成熟度 95 分提升计划
 
-> 状态：Implementation in Progress — Stage 0 completed
+> 状态：Implementation in Progress — Stage 3 completed, Stage 4 in progress
 >
 > 日期：2026-07-29
 >
-> 目标：将 Author Workspace v2 从基线约 61 分提升到可被真实任务证据证明的 95 分；Stage 0 复评为 68 分
+> 目标：将 Author Workspace v2 从基线约 61 分提升到可被真实任务证据证明的 95 分；Stage 3 工程复评为 92 分，E2 证据上限仍为 89 分
 >
 > 适用范围：`/author/`、Operator Contract、Graph Contract、Scenario、Run Evidence、VS Code 宿主和 ANEKE deep link
 >
@@ -24,7 +24,7 @@ Author Workspace v2 已经完成了重要的结构升级：
 
 - `/author/` 已成为 v2 默认入口；
 - Start / Import 将示例、DSL、Operator Library 和空白画布收敛到统一入口；
-- Compose / Contract / Test / Review 形成了任务式导航；
+- Compose / Contract / Scenarios / Evidence 形成了唯一任务式导航；
 - Graph Input、Context binding、Operator 专属编辑、Scenario、Run Evidence、Diagnostics 和语义缩放均已有实现；
 - 内置复杂示例可以完成加载、运行和结果展示；
 - 键盘焦点、无 payload 遥测、真实浏览器测试和 Legacy 回滚路径已经建立。
@@ -1636,3 +1636,86 @@ edge、context 与 edge 并存等情况仍 fail closed。
 当前距 95 分仍差 `10` 分，即 `10.5%`，不能停止。下一轮优先完成 Stage 3 的统一
 Draft/Run/Evidence 状态机与 fail-closed Readiness Verdict，再以 Stage 4 的复杂图任务
 导航和 1024px 渐进披露将剩余差距压到 5% 以下。
+
+### 25.10 Stage 3：Draft / Run / Evidence 状态机（已完成）
+
+Stage 3 把原先散落在按钮、toast 和结果面板中的状态收敛为一个纯、确定性、fail-closed
+的 `AuthorReadinessVerdict`。顶部状态条显示五个事实维度和一个派生结论：
+Draft、Execution、Assertions、Contract、Governance、Promotion。
+
+| 工作项 | 实现结果 | 防错边界 |
+|---|---|---|
+| UX95-301 | Draft 显式区分 EPHEMERAL / SAVED / DIRTY / CONFLICTED | 409/revision conflict 不覆盖本地编辑，并进入同一修复队列 |
+| UX95-302 | Execution 与 Assertions 独立投影 NOT_RUN / RUNNING / PASSED / FAILED / STALE | 运行绿不再替代业务断言绿；旧结果不能继承到新内容 |
+| UX95-303 | Promotion 只由 NOT_EVALUATED / BLOCKED / REVIEW_REQUIRED / READY 表达 | READY 只有一条全维度合取路径 |
+| UX95-304 | Evidence 显示 draft、Contract、Scenario、dependency closure 和 execution request 指纹 | request 哈希覆盖实际 Graph Input、Scenario context、fixtures 和 GraphDraft |
+| UX95-305 | 内容变更保留旧 Evidence，但同步把 execution/assertions 标为 STALE | 不删除排障证据，也不保留误导性绿色 |
+| UX95-306 | Ephemeral result 明确提示先保存 immutable revision | 探索性 Evidence 不冒充可发布 Evidence |
+| UX95-307 | 五维 Readiness 纯模型驱动状态条、主操作和 Diagnostics | 状态、文案和修复动作不再由三个组件各自推断 |
+| UX95-308 | Warning waiver 校验 owner / reason / scope / future expiry | 画布不能自批 waiver；只有可信治理输入可激活，缺失或过期都 fail closed |
+
+实现中通过真实浏览器发现并根治了一个隐藏的语义缺陷：Graph Run Input 的修改原本会使
+证据失效，但 `Rerun current scenario` 仍只运行 Scenario 内的旧 context。现在当前
+Graph Input 显式覆盖 Scenario 的同名运行上下文，并对最终 `SimulationRequest` 生成
+独立指纹。修改 `applicantId` 后，新的 request fingerprint 必须变化，才允许 Evidence
+恢复为 CURRENT。
+
+当前证据页：
+
+![Stage 3 精确 Evidence 坐标与五维判定](assets/resource-gateway-author-ux-stage3-evidence-lifecycle-1024.png)
+
+内容修改后的即时失效状态：
+
+![Stage 3 修改后保留但失效的 Evidence](assets/resource-gateway-author-ux-stage3-stale-evidence-1024.png)
+
+两张图共同验证：
+
+- 顶部不会把 `Execution PASSED` 等同于 `Promotion READY`；
+- exploratory draft、Contract 未检查和 Governance 未检查都有独立状态；
+- 修改运行输入后，Execution 与 Assertions 在一次 render 内变为 STALE；
+- Promotion 同步变为 BLOCKED，唯一主操作变为 `Rerun current scenario`；
+- Diagnostics 给出同一生命周期模型产生的修复项，而不是另造一套错误解释。
+
+### 25.11 Stage 3 验证清单
+
+```text
+Readiness unit tests         exact-ready, stale, conflict, active/expired waiver
+Evidence model tests         five dimensions, stale retention, exact coordinates
+Author component tests       input edit -> stale -> exact request rerun -> current
+Frontend full suite          30 files / 322 tests passed
+Frontend production build    passed
+In-app browser               1024 and 390; no page-level horizontal overflow
+Packaged Chrome              exact coordinate and stale/rerun journey covered
+```
+
+Warning waiver 当前是**治理输入的验证边界**，不是画布内的自助审批表单。这是有意限制：
+如果作者能在同一画布上自行签发 waiver，`READY` 就会退化为一个绕过按钮。后续接入
+ANEKE 时，Gate Result 应携带经过权限和审计约束的 waiver；Resource Gateway 只验证并
+展示 owner、reason、scope 和 expiry。
+
+### 25.12 Stage 3 差距复评
+
+| 权威维度 | Stage 2 | Stage 3 | 95 分目标 | 本轮变化 |
+|---|---:|---:|---:|---|
+| 产品模型与信息架构 | 12 | 14 | 14 | 六格状态条由统一生命周期模型驱动 |
+| 核心任务效率 | 14 | 14 | 14 | 保持唯一主操作 |
+| 数据与 Contract 直观性 | 14 | 14 | 14 | 保持 |
+| 测试与结果可信度 | 13 | 17 | 17 | stale、五维判定、精确 request coordinate |
+| 复杂图阅读与操控 | 8 | 8 | 11 | 留待 Stage 4 |
+| 反馈、恢复与防错 | 9 | 10 | 10 | 保存冲突、陈旧证据和修复动作收敛 |
+| 可访问性与响应式 | 7 | 7 | 7 | 390 Evidence 可读且无横向溢出 |
+| 企业生命周期与宿主一致性 | 8 | 8 | 8 | 保持 |
+| **合计** | **85** | **92** | **95** | **+7** |
+
+工程实现距 95 分还差 `3` 分，即 `3.2%`。但第 3.3 节的证据上限仍然生效：当前只有
+E2 真实服务和真实浏览器证据，因此**体验成熟度不得对外宣称超过 89 分**。92 分是可审计
+的工程实现评分，不是对真实用户成功率的替代。
+
+Stage 4 继续执行，原因不是再堆功能，而是消除真实走查已经看到的剩余硬伤：
+
+1. 1024px 左右完整侧栏仍挤压 Canvas；
+2. 820px 以下仍缺互斥 drawer；
+3. 390px Evidence 内容可读，但 modal header 的标题和动作会被裁切；
+4. Map 控制卡与 minimap 仍形成重复导航感；
+5. Auto Layout 尚无 pinned constraint、质量报告和可取消 preview；
+6. 复杂图的 search -> focus -> breadcrumb 尚未形成可测闭环。

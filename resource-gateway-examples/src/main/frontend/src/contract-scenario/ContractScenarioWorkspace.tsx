@@ -70,7 +70,11 @@ interface ContractScenarioWorkspaceProps {
   trustContext?: ScenarioEvidenceTrustContext;
   onSelectEvidenceDiagnostic?: (diagnostic: ScenarioEvidenceDiagnostic) => void;
   onCoordinateChange?: (tab: WorkspaceTab, scenarioId: string) => void;
-  onRunEvidence?: (scenarioId: string, comparison: ScenarioComparison) => void;
+  onRunEvidence?: (
+    scenarioId: string,
+    comparison: ScenarioComparison,
+    request: SimulationRequest,
+  ) => void;
   initialTab?: WorkspaceTab;
   initialScenarioId?: string;
   lastRunScenarioId?: string;
@@ -427,7 +431,7 @@ export default function ContractScenarioWorkspace({
       const nextComparison = compareScenarioRun(selectedScenario, response);
       setRunResponse(response);
       setComparison(nextComparison);
-      onRunEvidence?.(selectedScenario.scenarioId, nextComparison);
+      onRunEvidence?.(selectedScenario.scenarioId, nextComparison, compilation.request);
       navigateWorkspace('evidence', selectedScenario.scenarioId);
     } catch (cause: unknown) {
       setCompileMessages([String(cause)]);
@@ -1365,6 +1369,18 @@ function EvidenceTab({
         <h3>{response.graphName}</h3>
         <p>{evidence.summary}</p>
       </header>
+
+      {trustContext?.coordinate && (
+        <dl className="scenario-evidence-coordinate" data-testid="scenario-evidence-coordinate">
+          <div><dt>Draft</dt><dd>{trustContext.coordinate.draftId || 'exploratory'} r{trustContext.coordinate.draftRevision}</dd></div>
+          <div><dt>Draft fingerprint</dt><dd><code>{trustContext.coordinate.draftFingerprint || 'not saved'}</code></dd></div>
+          <div><dt>Contract</dt><dd><code>{trustContext.coordinate.contractFingerprint || 'not checked'}</code></dd></div>
+          <div><dt>Scenario</dt><dd>{trustContext.coordinate.scenarioId} r{trustContext.coordinate.scenarioRevision}</dd></div>
+          <div><dt>Scenario fingerprint</dt><dd><code>{trustContext.coordinate.scenarioFingerprint || 'not projected'}</code></dd></div>
+          <div><dt>Dependency closure</dt><dd><code>{trustContext.coordinate.closureFingerprint || 'not projected'}</code></dd></div>
+          <div><dt>Execution request</dt><dd><code>{trustContext.coordinate.requestFingerprint || 'not captured'}</code></dd></div>
+        </dl>
+      )}
 
       <div className="scenario-trust-dimensions" aria-label="Evidence trust dimensions">
         {evidence.dimensions.map((dimension) => (

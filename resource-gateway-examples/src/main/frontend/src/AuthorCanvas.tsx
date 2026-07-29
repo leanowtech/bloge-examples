@@ -211,6 +211,7 @@ import {
   type EffectiveContractProjection,
   type EffectiveInputBinding,
 } from './author/contract/effectiveContractProjection';
+import { projectAuthorReadiness } from './author/readiness/authorReadiness';
 
 const ContractScenarioWorkspace = lazy(
   () => import('./contract-scenario/ContractScenarioWorkspace'),
@@ -259,6 +260,18 @@ interface OperatorContractWorkspaceState {
 interface ScenarioReviewEvidence {
   scenarioId: string;
   comparison: ScenarioComparison;
+  coordinate: {
+    contentEpoch: number;
+    draftId: string;
+    draftRevision: number;
+    draftFingerprint: string;
+    contractFingerprint: string;
+    scenarioId: string;
+    scenarioRevision: number;
+    scenarioFingerprint: string;
+    closureFingerprint: string;
+    requestFingerprint: string;
+  };
 }
 
 interface ConnectionStartParams {
@@ -4687,6 +4700,10 @@ export default function AuthorCanvas({ workspaceVersion = 'v1' }: AuthorCanvasPr
   const [edges, setEdges] = useState<Edge<CanvasEdgeData>[]>([]);
   const [result, setResult] = useState<SimulationResponse | null>(null);
   const [validationResult, setValidationResult] = useState<VisualValidationResult | null>(null);
+  const [authorContentEpoch, setAuthorContentEpoch] = useState(0);
+  const [evidenceContentEpoch, setEvidenceContentEpoch] = useState(-1);
+  const [validationContentEpoch, setValidationContentEpoch] = useState(-1);
+  const [draftSaveConflict, setDraftSaveConflict] = useState(false);
   const [error, setError] = useState<string>('');
   const [busy, setBusy] = useState(false);
   const [validatingDraft, setValidatingDraft] = useState(false);
@@ -4729,6 +4746,8 @@ export default function AuthorCanvas({ workspaceVersion = 'v1' }: AuthorCanvasPr
   const [contractDraft, setContractDraft] = useState<ContractDraft | null>(null);
   const [contractFingerprint, setContractFingerprint] = useState('');
   const [scenarioDraftSet, setScenarioDraftSet] = useState<ScenarioDraftSet | null>(null);
+  const [scenarioFingerprint, setScenarioFingerprint] = useState('');
+  const [operatorClosureFingerprint, setOperatorClosureFingerprint] = useState('');
   const [lastScenarioReviewEvidence, setLastScenarioReviewEvidence] =
     useState<ScenarioReviewEvidence | null>(null);
   const [operatorContractWorkspace, setOperatorContractWorkspace] =
@@ -4938,10 +4957,20 @@ export default function AuthorCanvas({ workspaceVersion = 'v1' }: AuthorCanvasPr
   }, []);
 
   const clearRunResult = useCallback(() => {
+    setAuthorContentEpoch((current) => current + 1);
+    setSimulationTableResults({});
+    setError('');
+  }, []);
+
+  const resetRunResult = useCallback(() => {
+    setAuthorContentEpoch((current) => current + 1);
+    setEvidenceContentEpoch(-1);
+    setValidationContentEpoch(-1);
     setResult(null);
     setValidationResult(null);
     setSimulationTableResults({});
     setLastScenarioReviewEvidence(null);
+    setDraftSaveConflict(false);
     setError('');
   }, []);
 
@@ -5558,7 +5587,7 @@ export default function AuthorCanvas({ workspaceVersion = 'v1' }: AuthorCanvasPr
     }
     const nextSimulationTableRows = simulationTableRowsFromExample(template.testCases);
 
-    clearRunResult();
+    resetRunResult();
     counter.current = maxNumericNodeId(template.nodes);
     tableTestCounter.current = nextSimulationTableRows.length;
     setNodes(autoLayoutFlowNodes(nextNodes, nextEdges));
@@ -5628,7 +5657,7 @@ export default function AuthorCanvas({ workspaceVersion = 'v1' }: AuthorCanvasPr
     } else {
       fitCanvasToView(graphSize);
     }
-  }, [clearRunResult, fitCanvasToView, isTaskWorkspace, operatorByRef]);
+  }, [fitCanvasToView, isTaskWorkspace, operatorByRef, resetRunResult]);
   const selectedNode = nodes.find((node) => node.id === selectedNodeId);
   const selectedOperator = selectedNode ? operatorByRef.get(selectedNode.data.operatorRef) : undefined;
   const operatorDetailNode = nodes.find((node) => node.id === operatorDetailNodeId);
@@ -5925,37 +5954,109 @@ export default function AuthorCanvas({ workspaceVersion = 'v1' }: AuthorCanvasPr
     scenarioDraftSet?.scenarios,
   ]);
 
-  const saveGraphForScenario = useCallback(async () => {
-    const stored = await saveGraphDraft(exportableDraft);
-    if (!stored.draftId || !stored.revision) {
-      throw new Error('Graph persistence did not return an exact draft revision.');
+  useEffect(() => {
+    let active = true;
+    if (!scenarioDraftSet) {
+      setScenarioFingerprint('');
+      setOperatorClosureFingerprint('');
+      return () => {
+        active = false;
+      };
     }
-    const projection = await fetchScenarioGraphContract(stored.draftId);
-    const savedCanvasDraft: GraphDraft = {
-      ...exportableDraft,
-      draftId: stored.draftId,
-      revision: stored.revision,
-      tenantId: stored.tenantId ?? exportableDraft.tenantId,
-      namespace: stored.namespace ?? exportableDraft.namespace,
-      environment: stored.environment ?? exportableDraft.environment,
-      operatorFingerprints: stored.operatorFingerprints ?? exportableDraft.operatorFingerprints,
-      operatorSnapshots: stored.operatorSnapshots ?? exportableDraft.operatorSnapshots,
+    Promise.all([
+      sha256Fingerprint(scenarioDraftSet),
+      sha256Fingerprint({
+        operatorFingerprints: exportableDraft.operatorFingerprints ?? {},
+        runtimeBindings: Object.fromEntries(exportableDraft.nodes.map((node) => [
+          node.id,
+          {
+            operatorRef: node.operatorRef,
+            inputs: node.inputs ?? {},
+            config: node.config ?? {},
+          },
+        ])),
+      }),
+    ]).then(([nextScenarioFingerprint, nextClosureFingerprint]) => {
+      if (active) {
+        setScenarioFingerprint(nextScenarioFingerprint);
+        setOperatorClosureFingerprint(nextClosureFingerprint);
+      }
+    }).catch((cause: unknown) => {
+      if (active) {
+        setScenarioFingerprint('');
+        setOperatorClosureFingerprint('');
+        setError(`Evidence coordinate projection failed: ${String(cause)}`);
+      }
+    });
+    return () => {
+      active = false;
     };
-    authoritativeContractRef.current = {
-      canvasSnapshot: canonicalJson(savedCanvasDraft),
-      graphDraft: stored,
-      contract: projection.contract,
-      contractFingerprint: projection.contractFingerprint,
-    };
-    setGraphDraftId(stored.draftId);
-    setGraphDraftRevision(stored.revision);
-    setGraphTenantId(savedCanvasDraft.tenantId || 'tenant-a');
-    setGraphNamespace(savedCanvasDraft.namespace || 'local');
-    setGraphEnvironment(savedCanvasDraft.environment || 'test');
-    setGraphOperatorFingerprints(savedCanvasDraft.operatorFingerprints ?? {});
-    setGraphOperatorSnapshots(savedCanvasDraft.operatorSnapshots ?? {});
-    setContractDraft(projection.contract);
-    setContractFingerprint(projection.contractFingerprint);
+  }, [exportableDraft, scenarioDraftSet]);
+
+  const evidenceCoordinateForScenario = useCallback((
+    scenarioId: string,
+    requestFingerprint: string,
+  ) => ({
+    contentEpoch: authorContentEpoch,
+    draftId: graphDraftId,
+    draftRevision: graphDraftRevision,
+    draftFingerprint: contractDraft?.target.fingerprint ?? '',
+    contractFingerprint,
+    scenarioId,
+    scenarioRevision: scenarioDraftSet?.revision ?? 0,
+    scenarioFingerprint,
+    closureFingerprint: operatorClosureFingerprint,
+    requestFingerprint,
+  }), [
+    authorContentEpoch,
+    contractDraft?.target.fingerprint,
+    contractFingerprint,
+    graphDraftId,
+    graphDraftRevision,
+    operatorClosureFingerprint,
+    scenarioFingerprint,
+    scenarioDraftSet?.revision,
+  ]);
+
+  const saveGraphForScenario = useCallback(async () => {
+    try {
+      const stored = await saveGraphDraft(exportableDraft);
+      if (!stored.draftId || !stored.revision) {
+        throw new Error('Graph persistence did not return an exact draft revision.');
+      }
+      const projection = await fetchScenarioGraphContract(stored.draftId);
+      const savedCanvasDraft: GraphDraft = {
+        ...exportableDraft,
+        draftId: stored.draftId,
+        revision: stored.revision,
+        tenantId: stored.tenantId ?? exportableDraft.tenantId,
+        namespace: stored.namespace ?? exportableDraft.namespace,
+        environment: stored.environment ?? exportableDraft.environment,
+        operatorFingerprints: stored.operatorFingerprints ?? exportableDraft.operatorFingerprints,
+        operatorSnapshots: stored.operatorSnapshots ?? exportableDraft.operatorSnapshots,
+      };
+      authoritativeContractRef.current = {
+        canvasSnapshot: canonicalJson(savedCanvasDraft),
+        graphDraft: stored,
+        contract: projection.contract,
+        contractFingerprint: projection.contractFingerprint,
+      };
+      setDraftSaveConflict(false);
+      setGraphDraftId(stored.draftId);
+      setGraphDraftRevision(stored.revision);
+      setGraphTenantId(savedCanvasDraft.tenantId || 'tenant-a');
+      setGraphNamespace(savedCanvasDraft.namespace || 'local');
+      setGraphEnvironment(savedCanvasDraft.environment || 'test');
+      setGraphOperatorFingerprints(savedCanvasDraft.operatorFingerprints ?? {});
+      setGraphOperatorSnapshots(savedCanvasDraft.operatorSnapshots ?? {});
+      setContractDraft(projection.contract);
+      setContractFingerprint(projection.contractFingerprint);
+    } catch (cause: unknown) {
+      if (/conflict|revision|409/i.test(String(cause))) {
+        setDraftSaveConflict(true);
+      }
+      throw cause;
+    }
   }, [exportableDraft]);
 
   const openOperatorContractWorkspace = useCallback(async (
@@ -6422,7 +6523,7 @@ export default function AuthorCanvas({ workspaceVersion = 'v1' }: AuthorCanvasPr
         }
       : dslProjectionNotice(projection);
 
-    clearRunResult();
+    resetRunResult();
     counter.current = maxCanvasNodeSequence(imported.nodes);
     contextVariableCounter.current = isTaskWorkspace ? 0 : nextContextVariables.length;
     tableTestCounter.current = nextSimulationTableRows.length;
@@ -6510,7 +6611,7 @@ export default function AuthorCanvas({ workspaceVersion = 'v1' }: AuthorCanvasPr
     } else {
       fitCanvasToView(graphSize);
     }
-  }, [clearRunResult, fitCanvasToView, isTaskWorkspace, operatorByRef]);
+  }, [fitCanvasToView, isTaskWorkspace, operatorByRef, resetRunResult]);
 
   const importScenarioWorkspace = useCallback(async (
     bundle: VisualAuthoringWorkspaceBundle,
@@ -7243,6 +7344,7 @@ export default function AuthorCanvas({ workspaceVersion = 'v1' }: AuthorCanvasPr
 
   const showSimulationResponse = useCallback((response: SimulationResponse) => {
     setResult(response);
+    setEvidenceContentEpoch(authorContentEpoch);
 
     const statuses = nodeStatuses(response);
     setNodes((current) =>
@@ -7251,10 +7353,10 @@ export default function AuthorCanvas({ workspaceVersion = 'v1' }: AuthorCanvasPr
         return {
           ...node,
           data: { ...node.data, status },
-        };
+      };
       }),
     );
-  }, []);
+  }, [authorContentEpoch]);
 
   const runScenarioSimulation = useCallback(async (request: Parameters<typeof simulate>[0]) => {
     const startedAt = performance.now();
@@ -7272,6 +7374,9 @@ export default function AuthorCanvas({ workspaceVersion = 'v1' }: AuthorCanvasPr
     try {
       const response = await simulate(request);
       showSimulationResponse(response);
+      if (isTaskWorkspace) {
+        setAuthorMode('evidence');
+      }
       status = isRunSuccessful(response) ? 'PASSED' : 'FAILED';
       return response;
     } catch (cause: unknown) {
@@ -7589,7 +7694,7 @@ export default function AuthorCanvas({ workspaceVersion = 'v1' }: AuthorCanvasPr
           },
         }));
         try {
-          const response = await simulate(toSimulationRequest(
+          const request = toSimulationRequest(
             graphName,
             canvasNodes,
             canvasEdges,
@@ -7598,7 +7703,9 @@ export default function AuthorCanvas({ workspaceVersion = 'v1' }: AuthorCanvasPr
             testCase.context,
             graphInputSchema,
             effectiveGraphOutputSchema,
-          ));
+          );
+          const requestFingerprint = await sha256Fingerprint(request);
+          const response = await simulate(request);
           showSimulationResponse(response);
           const rowResult = evaluateSimulationTableResult(testCase, response);
           const scenario = scenarioDraftSet?.scenarios.find(
@@ -7609,6 +7716,7 @@ export default function AuthorCanvas({ workspaceVersion = 'v1' }: AuthorCanvasPr
             comparison: scenario
               ? compareScenarioRun(scenario, response)
               : tableCaseScenarioComparison(testCase, response, rowResult),
+            coordinate: evidenceCoordinateForScenario(testCase.id, requestFingerprint),
           });
           if (rowResult.status !== 'passed') {
             failedCount += 1;
@@ -7649,6 +7757,7 @@ export default function AuthorCanvas({ workspaceVersion = 'v1' }: AuthorCanvasPr
   }, [
     canvasEdges,
     canvasNodes,
+    evidenceCoordinateForScenario,
     fixtureCompilation.fixtures,
     effectiveGraphOutputSchema,
     graphName,
@@ -7666,13 +7775,15 @@ export default function AuthorCanvas({ workspaceVersion = 'v1' }: AuthorCanvasPr
     setError('');
     try {
       setValidationResult(await validateDraft(exportableDraft));
+      setValidationContentEpoch(authorContentEpoch);
     } catch (cause: unknown) {
       setError(String(cause));
       setValidationResult(null);
+      setValidationContentEpoch(-1);
     } finally {
       setValidatingDraft(false);
     }
-  }, [exportableDraft]);
+  }, [authorContentEpoch, exportableDraft]);
 
   const runAuthoringAction = useCallback((action: AuthoringJourneyAction) => {
     if (action.kind === 'focus-palette') {
@@ -7837,34 +7948,88 @@ export default function AuthorCanvas({ workspaceVersion = 'v1' }: AuthorCanvasPr
     workspaceScenarioId,
   ]);
 
-  const executionStatus = busy || tableTestingBusy
-    ? 'RUNNING'
-    : result
-      ? isRunSuccessful(result) ? 'PASSED' : 'FAILED'
-      : 'NOT RUN';
-  const assertionStatus = tableTestingBusy
-    ? 'RUNNING'
-    : lastScenarioReviewEvidence
-      ? lastScenarioReviewEvidence.comparison.passed ? 'PASSED' : 'FAILED'
-    : simulationTableRows.length === 0
-      ? 'NOT CONFIGURED'
-      : Object.keys(simulationTableResults).length === 0
-        ? 'NOT RUN'
-        : simulationTableRunSummary.state.toUpperCase();
-  const contractStatus = validatingDraft
-    ? 'CHECKING'
-    : validationResult
-      ? validationResult.valid ? 'VALID' : 'BLOCKED'
-      : 'NOT CHECKED';
-  const governanceStatus = governanceGateBusy
-    ? 'CHECKING'
-    : governanceGateView?.result?.status?.trim().toUpperCase() || 'NOT CHECKED';
   const hasRunResult = result !== null || Object.keys(simulationTableResults).length > 0;
   const runSuccessful = Boolean(
     (result ? isRunSuccessful(result) : Object.keys(simulationTableResults).length > 0)
     && (!lastScenarioReviewEvidence || lastScenarioReviewEvidence.comparison.passed)
     && Object.values(simulationTableResults).every((row) => row.status === 'passed'),
   );
+  const evidenceStale = hasRunResult && evidenceContentEpoch !== authorContentEpoch;
+  const assertionsEvaluated = Boolean(
+    lastScenarioReviewEvidence || Object.keys(simulationTableResults).length > 0,
+  );
+  const canonicalScenarioReady = Boolean(
+    contractDraft
+    && scenarioDraftSet
+    && scenarioDraftSet.scenarios.length > 0
+    && scenarioFingerprint
+    && operatorClosureFingerprint
+    && scenarioSetIsCurrent(
+      scenarioDraftSet,
+      contractDraft.target.fingerprint,
+      contractFingerprint,
+    ),
+  );
+  const exactSavedDraft = Boolean(
+    graphDraftId
+    && graphDraftRevision > 0
+    && authoritativeContractRef.current?.canvasSnapshot === canonicalJson(exportableDraft),
+  );
+  const authorReadiness = projectAuthorReadiness({
+    draft: {
+      durable: Boolean(graphDraftId && graphDraftRevision > 0),
+      current: exactSavedDraft,
+      conflicted: draftSaveConflict,
+    },
+    execution: {
+      busy: busy || tableTestingBusy,
+      evaluated: hasRunResult,
+      passed: runSuccessful,
+      warnings: Boolean(result?.diagnostics.some(
+        (diagnostic) => diagnostic.level?.trim().toUpperCase() === 'WARNING',
+      )),
+      stale: evidenceStale,
+    },
+    assertions: {
+      configured: Boolean(
+        lastScenarioReviewEvidence?.comparison.results.length
+        || simulationTableRows.length,
+      ),
+      busy: tableTestingBusy,
+      evaluated: assertionsEvaluated,
+      passed: Boolean(
+        lastScenarioReviewEvidence
+          ? lastScenarioReviewEvidence.comparison.passed
+          : Object.keys(simulationTableResults).length > 0
+            && simulationTableRunSummary.state === 'passed',
+      ),
+      stale: evidenceStale,
+    },
+    contract: {
+      busy: validatingDraft,
+      evaluated: validationResult !== null,
+      passed: Boolean(validationResult?.valid),
+      stale: Boolean(
+        validationResult && validationContentEpoch !== authorContentEpoch,
+      ),
+    },
+    governance: {
+      busy: governanceGateBusy,
+      evaluated: Boolean(governanceGateView?.result),
+      status: governanceGateView?.result?.status ?? '',
+      stale: Boolean(
+        governanceGateView?.result
+        && (
+          governanceGateView.freshness !== 'CURRENT'
+          || !exactSavedDraft
+        )
+      ),
+    },
+  });
+  const executionStatus = authorReadiness.execution.replace(/_/g, ' ');
+  const assertionStatus = authorReadiness.assertions.replace(/_/g, ' ');
+  const contractStatus = authorReadiness.contract.replace(/_/g, ' ');
+  const governanceStatus = authorReadiness.governance.replace(/_/g, ' ');
   const closeTestSuite = useCallback(() => {
     setTestSuiteOpen(false);
     if (isTaskWorkspace) {
@@ -7903,17 +8068,8 @@ export default function AuthorCanvas({ workspaceVersion = 'v1' }: AuthorCanvasPr
       || (!isTaskWorkspace && hasSimulationTableErrors),
     hasRunResult,
     runSuccessful,
+    runStale: evidenceStale,
   });
-  const canonicalScenarioReady = Boolean(
-    contractDraft
-    && scenarioDraftSet
-    && scenarioDraftSet.scenarios.length > 0
-    && scenarioSetIsCurrent(
-      scenarioDraftSet,
-      contractDraft.target.fingerprint,
-      contractFingerprint,
-    ),
-  );
   const authorScenarioResults = useMemo<Record<string, SimulationTableCaseResult>>(() => {
     if (!lastScenarioReviewEvidence) {
       return simulationTableResults;
@@ -7934,7 +8090,9 @@ export default function AuthorCanvas({ workspaceVersion = 'v1' }: AuthorCanvasPr
   }, [lastScenarioReviewEvidence, scenarioDraftSet?.scenarios, simulationTableResults]);
   const resultMessage = error
     || (hasRunResult
-      ? runSuccessful
+      ? evidenceStale
+        ? 'Evidence retained but stale. Rerun the current Scenario before relying on it.'
+        : runSuccessful
         ? lastScenarioReviewEvidence
           ? `${lastScenarioReviewEvidence.comparison.results.filter((item) => item.passed).length}`
             + `/${lastScenarioReviewEvidence.comparison.results.length} scenario assertions passed.`
@@ -7950,9 +8108,16 @@ export default function AuthorCanvas({ workspaceVersion = 'v1' }: AuthorCanvasPr
       : '');
   const runProvenance = hasRunResult
     ? [
-        'Exploratory run',
-        compactAuthorFingerprint(contractDraft?.target.fingerprint),
-        'simulation evidence only',
+        lastScenarioReviewEvidence?.coordinate.draftId
+          ? `Draft ${lastScenarioReviewEvidence.coordinate.draftId}`
+            + ` r${lastScenarioReviewEvidence.coordinate.draftRevision}`
+          : 'Exploratory run',
+        compactAuthorFingerprint(
+          lastScenarioReviewEvidence?.coordinate.draftFingerprint
+            || contractDraft?.target.fingerprint,
+        ),
+        evidenceStale ? 'STALE' : 'CURRENT',
+        lastScenarioReviewEvidence?.coordinate.draftId ? 'revision-bound evidence' : 'simulation evidence only',
       ].filter(Boolean).join(' · ')
     : '';
   const diagnosticItems = useMemo(
@@ -7964,12 +8129,14 @@ export default function AuthorCanvas({ workspaceVersion = 'v1' }: AuthorCanvasPr
       governance: governanceGateView,
       dslDiagnostics: dslImportDiagnostics,
       effectiveContract: selectedEffectiveContract,
+      readinessReasons: authorReadiness.reasons,
     }),
     [
       dslImportDiagnostics,
       error,
       governanceGateView,
       result,
+      authorReadiness.reasons,
       authorScenarioResults,
       selectedEffectiveContract,
       validationResult,
@@ -7977,8 +8144,11 @@ export default function AuthorCanvas({ workspaceVersion = 'v1' }: AuthorCanvasPr
   );
   const scenarioEvidenceTrustContext = useMemo<ScenarioEvidenceTrustContext>(
     () => ({
+      draftStatus: authorReadiness.draft,
+      evidenceFreshness: evidenceStale ? 'STALE' : 'CURRENT',
       contractStatus,
       governanceStatus,
+      coordinate: lastScenarioReviewEvidence?.coordinate,
       diagnostics: diagnosticItems
         .filter((item) => item.scope === 'CONTRACT' || item.scope === 'GOVERNANCE')
         .map((item) => ({
@@ -7991,7 +8161,14 @@ export default function AuthorCanvas({ workspaceVersion = 'v1' }: AuthorCanvasPr
           nodeId: item.nodeId,
         })),
     }),
-    [contractStatus, diagnosticItems, governanceStatus],
+    [
+      authorReadiness.draft,
+      contractStatus,
+      diagnosticItems,
+      evidenceStale,
+      governanceStatus,
+      lastScenarioReviewEvidence?.coordinate,
+    ],
   );
 
   const openAuthorDiagnostic = useCallback((item: { scope: string; nodeId?: string }) => {
@@ -8047,10 +8224,19 @@ export default function AuthorCanvas({ workspaceVersion = 'v1' }: AuthorCanvasPr
   const recordScenarioEvidence = useCallback((
     scenarioId: string,
     comparison: ScenarioComparison,
+    request: Parameters<typeof simulate>[0],
   ) => {
-    setLastScenarioReviewEvidence({ scenarioId, comparison });
-    setWorkspaceScenarioId(scenarioId);
-  }, []);
+    sha256Fingerprint(request).then((requestFingerprint) => {
+      setLastScenarioReviewEvidence({
+        scenarioId,
+        comparison,
+        coordinate: evidenceCoordinateForScenario(scenarioId, requestFingerprint),
+      });
+      setWorkspaceScenarioId(scenarioId);
+    }).catch((cause: unknown) => {
+      setError(`Evidence request fingerprint failed: ${String(cause)}`);
+    });
+  }, [evidenceCoordinateForScenario]);
 
   const runFirstCanonicalScenario = useCallback(async () => {
     const selectedScenario = scenarioDraftSet?.scenarios.find(
@@ -8074,11 +8260,23 @@ export default function AuthorCanvas({ workspaceVersion = 'v1' }: AuthorCanvasPr
       setContractWorkspaceOpen(true);
       return;
     }
-    const response = await runScenarioSimulation(compilation.request);
+    const request = {
+      ...compilation.request,
+      context: {
+        ...compilation.request.context,
+        ...contextCompilation.value,
+      },
+    };
+    const requestFingerprint = await sha256Fingerprint(request);
+    const response = await runScenarioSimulation(request);
     const comparison = compareScenarioRun(selectedScenario, response);
     setLastScenarioReviewEvidence({
       scenarioId: selectedScenario.scenarioId,
       comparison,
+      coordinate: evidenceCoordinateForScenario(
+        selectedScenario.scenarioId,
+        requestFingerprint,
+      ),
     });
     setWorkspaceScenarioId(selectedScenario.scenarioId);
     setContractWorkspaceInitialTab('evidence');
@@ -8087,7 +8285,9 @@ export default function AuthorCanvas({ workspaceVersion = 'v1' }: AuthorCanvasPr
     contractDraft,
     contractFingerprint,
     canonicalScenarioReady,
+    contextCompilation.value,
     exportableDraft,
+    evidenceCoordinateForScenario,
     runScenarioSimulation,
     scenarioDraftSet,
     workspaceScenarioId,
@@ -8152,12 +8352,6 @@ export default function AuthorCanvas({ workspaceVersion = 'v1' }: AuthorCanvasPr
     runSimulationTable,
     simulationTableRows.length,
   ]);
-
-  useEffect(() => {
-    if (isTaskWorkspace && hasRunResult && !busy && !tableTestingBusy) {
-      setAuthorMode('evidence');
-    }
-  }, [busy, hasRunResult, isTaskWorkspace, tableTestingBusy]);
 
   useEffect(() => {
     if (
@@ -8379,6 +8573,9 @@ export default function AuthorCanvas({ workspaceVersion = 'v1' }: AuthorCanvasPr
       data-focus-path={focusPathNodeId ? 'active' : 'inactive'}
       data-author-workspace-version={workspaceVersion}
       data-author-mode={authorMode}
+      data-draft-lifecycle={authorReadiness.draft.toLowerCase()}
+      data-evidence-freshness={evidenceStale ? 'stale' : 'current'}
+      data-promotion-lifecycle={authorReadiness.promotion.toLowerCase()}
       data-start-section={startOpen ? startSection : 'closed'}
     >
       {isTaskWorkspace && (
@@ -8395,10 +8592,13 @@ export default function AuthorCanvas({ workspaceVersion = 'v1' }: AuthorCanvasPr
               || tableTestingBusy
               || (primaryAction.kind === 'run' && isTaskWorkspace && !canonicalScenarioReady)
             }
+            draftStatus={authorReadiness.draft}
             executionStatus={executionStatus}
             assertionStatus={assertionStatus}
             contractStatus={contractStatus}
             governanceStatus={governanceStatus}
+            promotionStatus={authorReadiness.promotion.replace(/_/g, ' ')}
+            promotionSummary={`${authorReadiness.headline}. ${authorReadiness.summary}`}
             exportUrl={draftExportUrl}
             exportName={`${graphName}-draft.json`}
             exportDisabled={nodes.length === 0 || hasFixtureErrors}

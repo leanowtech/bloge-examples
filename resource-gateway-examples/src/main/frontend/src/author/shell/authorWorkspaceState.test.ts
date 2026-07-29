@@ -79,4 +79,19 @@ describe('author workspace primary action', () => {
       runSuccessful: true,
     }).targetMode).toBe('evidence');
   });
+
+  it('reruns retained stale evidence instead of presenting it as the current result', () => {
+    expect(resolveAuthorPrimaryAction({
+      nodeCount: 3,
+      busy: false,
+      hasInputErrors: false,
+      hasRunResult: true,
+      runSuccessful: true,
+      runStale: true,
+    })).toEqual({
+      kind: 'run',
+      label: 'Rerun current scenario',
+      targetMode: 'scenarios',
+    });
+  });
 });

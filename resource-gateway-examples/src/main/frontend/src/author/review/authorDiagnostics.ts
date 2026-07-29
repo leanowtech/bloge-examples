@@ -40,6 +40,12 @@ export interface AuthorDiagnosticsInput {
   governance: GovernanceGateView | null;
   dslDiagnostics: VisualDiagnostic[];
   effectiveContract?: EffectiveContractProjection | null;
+  readinessReasons?: Array<{
+    code: string;
+    dimension: string;
+    message: string;
+    action: { label: string };
+  }>;
 }
 
 function severityOf(level: string | undefined): AuthorDiagnosticSeverity {
@@ -194,6 +200,28 @@ export function projectAuthorDiagnostics(input: AuthorDiagnosticsInput): AuthorD
       occurrenceCount: 1,
     });
   });
+  input.readinessReasons
+    ?.filter((reason) => /CONFLICTED|DIRTY|STALE/.test(reason.code))
+    .forEach((reason) => {
+      const scope = reason.dimension === 'DRAFT'
+        ? 'GRAPH'
+        : reason.dimension === 'ASSERTIONS'
+          ? 'SCENARIO'
+          : reason.dimension as AuthorDiagnosticScope;
+      items.push({
+        id: `readiness:${reason.code}`,
+        severity: 'ERROR',
+        scope,
+        source: 'readiness',
+        code: reason.code,
+        message: reason.message,
+        coordinate: '',
+        coordinates: [],
+        nodeId: '',
+        recommendedAction: reason.action.label,
+        occurrenceCount: 1,
+      });
+    });
 
   const rank: Record<AuthorDiagnosticSeverity, number> = {
     BLOCKING: 0,

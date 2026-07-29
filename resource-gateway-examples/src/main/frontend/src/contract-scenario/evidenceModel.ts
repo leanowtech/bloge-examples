@@ -2,7 +2,7 @@ import type { SimulationResponse } from '../types';
 import type { ScenarioComparison } from './scenarioAuthoring';
 
 export type EvidenceTone = 'success' | 'danger' | 'warning' | 'pending';
-export type EvidenceDimensionKey = 'execution' | 'assertions' | 'contract' | 'governance';
+export type EvidenceDimensionKey = 'draft' | 'execution' | 'assertions' | 'contract' | 'governance';
 export type EvidenceDimensionState = 'passed' | 'failed' | 'warning' | 'pending' | 'not-checked';
 
 export interface ScenarioEvidenceDiagnostic {
@@ -16,8 +16,21 @@ export interface ScenarioEvidenceDiagnostic {
 }
 
 export interface ScenarioEvidenceTrustContext {
+  draftStatus?: string;
+  evidenceFreshness?: 'CURRENT' | 'STALE';
   contractStatus: string;
   governanceStatus: string;
+  coordinate?: {
+    draftId: string;
+    draftRevision: number;
+    draftFingerprint: string;
+    contractFingerprint: string;
+    scenarioId: string;
+    scenarioRevision: number;
+    scenarioFingerprint: string;
+    closureFingerprint: string;
+    requestFingerprint: string;
+  };
   diagnostics?: ScenarioEvidenceDiagnostic[];
 }
 
@@ -52,6 +65,8 @@ export interface ScenarioEvidenceView {
 }
 
 const DEFAULT_TRUST_CONTEXT: ScenarioEvidenceTrustContext = {
+  draftStatus: 'SAVED',
+  evidenceFreshness: 'CURRENT',
   contractStatus: 'NOT CHECKED',
   governanceStatus: 'NOT CHECKED',
   diagnostics: [],
@@ -60,7 +75,7 @@ const DEFAULT_TRUST_CONTEXT: ScenarioEvidenceTrustContext = {
 /**
  * Produces the fail-closed trust projection shared by Graph and Operator Scenario workspaces.
  *
- * A green assertion alone is deliberately insufficient: all four dimensions must pass and no
+ * A green assertion alone is deliberately insufficient: all five dimensions must pass and no
  * blocking or warning diagnostic may remain before the view can claim promotion readiness.
  */
 export function scenarioEvidenceView(
@@ -68,9 +83,11 @@ export function scenarioEvidenceView(
   comparison: ScenarioComparison | null,
   trustContext: ScenarioEvidenceTrustContext = DEFAULT_TRUST_CONTEXT,
 ): ScenarioEvidenceView {
+  const evidenceStale = trustContext.evidenceFreshness === 'STALE';
   const dimensions = [
-    executionDimension(response),
-    assertionDimension(comparison),
+    draftDimension(trustContext.draftStatus || 'SAVED'),
+    withEvidenceFreshness(executionDimension(response), evidenceStale),
+    withEvidenceFreshness(assertionDimension(comparison), evidenceStale),
     externalDimension(
       'contract',
       'Contract',
@@ -122,7 +139,7 @@ export function scenarioEvidenceView(
           }
         : {
             headline: 'Ready for promotion',
-            summary: 'Execution, assertions, Contract, and Governance all passed.',
+            summary: 'Draft, execution, assertions, Contract, and Governance all passed.',
             tone: 'success' as const,
           };
 
@@ -133,6 +150,46 @@ export function scenarioEvidenceView(
     warnings,
     failedAssertions: comparison?.results.filter((result) => !result.passed) ?? [],
     passedAssertions: comparison?.results.filter((result) => result.passed) ?? [],
+  };
+}
+
+function draftDimension(status: string): EvidenceDimension {
+  const normalized = status.trim().toUpperCase() || 'EPHEMERAL';
+  if (normalized === 'SAVED') {
+    return dimension('draft', 'Draft', normalized, 'passed', 'Evidence targets a saved revision.');
+  }
+  if (normalized === 'DIRTY' || normalized === 'CONFLICTED') {
+    return dimension(
+      'draft',
+      'Draft',
+      normalized,
+      'failed',
+      normalized === 'DIRTY'
+        ? 'Save the current graph before promotion.'
+        : 'Resolve the concurrent save conflict before promotion.',
+    );
+  }
+  return dimension(
+    'draft',
+    'Draft',
+    normalized,
+    'warning',
+    'Exploratory evidence is not attached to a durable draft revision.',
+  );
+}
+
+function withEvidenceFreshness(
+  source: EvidenceDimension,
+  stale: boolean,
+): EvidenceDimension {
+  if (!stale || (source.key !== 'execution' && source.key !== 'assertions')) {
+    return source;
+  }
+  return {
+    ...source,
+    status: 'STALE',
+    state: 'failed',
+    detail: `Retained ${source.label.toLowerCase()} evidence targets an older authoring snapshot.`,
   };
 }
 
@@ -202,8 +259,8 @@ function externalDimension(
 }
 
 function externalState(status: string): EvidenceDimensionState {
-  if (/(BLOCK|DENY|REJECT|FAIL|INVALID|ERROR)/.test(status)) return 'failed';
-  if (/(WARN|REVIEW|STALE|PARTIAL|CONDITIONAL|EXPIRED|UNVERIFIABLE|MISSING)/.test(status)) {
+  if (/(BLOCK|DENY|REJECT|FAIL|INVALID|ERROR|STALE)/.test(status)) return 'failed';
+  if (/(WARN|REVIEW|PARTIAL|CONDITIONAL|EXPIRED|UNVERIFIABLE|MISSING)/.test(status)) {
     return 'warning';
   }
   if (/(RUNNING|CHECKING|PENDING|LOADING)/.test(status)) return 'pending';

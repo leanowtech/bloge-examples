@@ -2756,9 +2756,53 @@ button.primary:disabled {
   border-left-color: #b7791f;
 }
 
-.scenario-trust-dimensions {
+.scenario-evidence-coordinate {
   display: grid;
   grid-template-columns: repeat(4, minmax(0, 1fr));
+  margin: 0;
+  border: 1px solid #d4dce7;
+  border-radius: 6px;
+  background: #f8fafc;
+}
+
+.scenario-evidence-coordinate > div {
+  min-width: 0;
+  display: grid;
+  gap: 3px;
+  padding: 8px;
+  border-right: 1px solid #e2e8f0;
+}
+
+.scenario-evidence-coordinate > div:last-child {
+  border-right: 0;
+}
+
+.scenario-evidence-coordinate dt,
+.scenario-evidence-coordinate dd {
+  min-width: 0;
+  margin: 0;
+  font-size: 10px;
+}
+
+.scenario-evidence-coordinate dt {
+  color: #64748b;
+}
+
+.scenario-evidence-coordinate dd {
+  overflow: hidden;
+  color: #1e293b;
+  font-weight: 750;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.scenario-evidence-coordinate code {
+  font-size: 9px;
+}
+
+.scenario-trust-dimensions {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
   border: 1px solid #d4dce7;
   border-radius: 7px;
   background: #fff;
@@ -8081,7 +8125,7 @@ button.primary:disabled {
 .author-truth-status {
   grid-area: truth;
   display: grid;
-  grid-template-columns: repeat(4, minmax(72px, 1fr));
+  grid-template-columns: repeat(6, minmax(72px, 1fr));
   min-width: 0;
   border: 1px solid #d8dde6;
   border-radius: 6px;
@@ -8122,12 +8166,18 @@ button.primary:disabled {
 
 .author-truth-status [data-state="failed"] strong,
 .author-truth-status [data-state="blocked"] strong,
-.author-truth-status [data-state="rejected"] strong {
+.author-truth-status [data-state="rejected"] strong,
+.author-truth-status [data-state="conflicted"] strong,
+.author-truth-status [data-state="dirty"] strong,
+.author-truth-status [data-state="stale"] strong {
   color: var(--danger);
 }
 
 .author-truth-status [data-state="running"] strong,
-.author-truth-status [data-state="checking"] strong {
+.author-truth-status [data-state="checking"] strong,
+.author-truth-status [data-state="review required"] strong,
+.author-truth-status [data-state="not evaluated"] strong,
+.author-truth-status [data-state="ephemeral"] strong {
   color: #174ea6;
 }
 
@@ -9483,7 +9533,7 @@ button.primary:disabled {
   }
 
   .author-truth-status {
-    grid-template-columns: repeat(4, minmax(64px, 1fr));
+    grid-template-columns: repeat(6, minmax(64px, 1fr));
   }
 
   .contract-schema-columns {
@@ -9592,6 +9642,10 @@ button.primary:disabled {
   .author-mode-tabs,
   .author-secondary-actions {
     width: 100%;
+  }
+
+  .author-truth-status {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
   }
 
   .author-mode-tabs button {
@@ -9931,6 +9985,10 @@ button.primary:disabled {
   }
 
   .scenario-trust-dimensions {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .scenario-evidence-coordinate {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
@@ -10278,6 +10336,7 @@ button.primary:disabled {
   }
 
   .contract-interface-summary,
+  .scenario-evidence-coordinate,
   .scenario-trust-dimensions,
   .contract-semantics-grid,
   .compatibility-summary {

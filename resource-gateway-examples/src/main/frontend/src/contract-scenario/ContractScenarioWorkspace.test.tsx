@@ -173,17 +173,36 @@ describe('ContractScenarioWorkspace', () => {
       await Promise.resolve();
     });
 
-    expect(onRunEvidence).toHaveBeenCalledWith('approved', expect.objectContaining({ passed: true }));
+    expect(onRunEvidence).toHaveBeenCalledWith(
+      'approved',
+      expect.objectContaining({ passed: true }),
+      expect.objectContaining({
+        draft: expect.objectContaining({ graphName: 'loanGraph' }),
+      }),
+    );
     expect(onCoordinateChange).toHaveBeenLastCalledWith('evidence', 'approved');
     expect(onCoordinateChange).toHaveBeenCalledTimes(2);
   });
 
-  it('claims readiness only when execution, assertions, Contract, and Governance pass', async () => {
+  it('claims readiness only when Draft, execution, assertions, Contract, and Governance pass', async () => {
     await renderWorkspace({
       onRun: vi.fn().mockResolvedValue(successfulResponse()),
       trustContext: {
+        draftStatus: 'SAVED',
+        evidenceFreshness: 'CURRENT',
         contractStatus: 'VALID',
         governanceStatus: 'APPROVED',
+        coordinate: {
+          draftId: 'loan-draft',
+          draftRevision: 4,
+          draftFingerprint: 'sha256:draft-4',
+          contractFingerprint: 'sha256:contract-4',
+          scenarioId: 'approved',
+          scenarioRevision: 2,
+          scenarioFingerprint: 'sha256:scenario-2',
+          closureFingerprint: 'sha256:closure-4',
+          requestFingerprint: 'sha256:request-9',
+        },
       },
     });
     await clickTab('Scenarios 1');
@@ -195,10 +214,66 @@ describe('ContractScenarioWorkspace', () => {
     });
 
     expect(text()).toContain('Ready for promotion');
+    expect(text()).toContain('DraftSAVED');
     expect(text()).toContain('ExecutionPASSED');
     expect(text()).toContain('AssertionsPASSED');
     expect(text()).toContain('ContractVALID');
     expect(text()).toContain('GovernanceAPPROVED');
+    expect(document.querySelector('[data-testid="scenario-evidence-coordinate"]')?.textContent)
+      .toContain('loan-draft r4');
+    expect(document.querySelector('[data-testid="scenario-evidence-coordinate"]')?.textContent)
+      .toContain('approved r2');
+    expect(document.querySelector('[data-testid="scenario-evidence-coordinate"]')?.textContent)
+      .toContain('sha256:request-9');
+  });
+
+  it('keeps stale run evidence visible while blocking the changed authoring snapshot', async () => {
+    await renderWorkspace({
+      initialTab: 'evidence',
+      lastRun: successfulResponse(),
+      lastRunScenarioId: 'approved',
+      lastComparison: {
+        passed: true,
+        diagnostics: [],
+        results: [{
+          assertionId: 'decision',
+          passed: true,
+          path: 'decision.approved',
+          expected: true,
+          actual: true,
+          detail: 'Matched.',
+        }],
+      },
+      trustContext: {
+        draftStatus: 'DIRTY',
+        evidenceFreshness: 'STALE',
+        contractStatus: 'STALE',
+        governanceStatus: 'STALE',
+        coordinate: {
+          draftId: 'loan-draft',
+          draftRevision: 4,
+          draftFingerprint: 'sha256:draft-4',
+          contractFingerprint: 'sha256:contract-4',
+          scenarioId: 'approved',
+          scenarioRevision: 2,
+          scenarioFingerprint: 'sha256:scenario-2',
+          closureFingerprint: 'sha256:closure-4',
+          requestFingerprint: 'sha256:request-9',
+        },
+      },
+    });
+
+    expect(text()).toContain('Promotion blocked');
+    expect(text()).toContain('DraftDIRTY');
+    expect(text()).toContain('ExecutionSTALE');
+    expect(text()).toContain('AssertionsSTALE');
+    expect(text()).toContain('"reason": "eligible"');
+    expect(document.querySelector('[data-testid="scenario-evidence-coordinate"]')?.textContent)
+      .toContain('sha256:draft-4');
+    expect(document.querySelector('[data-testid="scenario-evidence-coordinate"]')?.textContent)
+      .toContain('sha256:closure-4');
+    expect(document.querySelector('[data-testid="scenario-evidence-coordinate"]')?.textContent)
+      .toContain('sha256:request-9');
   });
 
   it('requires review when assertions pass but the Contract has a warning', async () => {

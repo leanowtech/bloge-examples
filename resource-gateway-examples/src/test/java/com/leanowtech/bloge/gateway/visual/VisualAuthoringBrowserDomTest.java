@@ -1004,6 +1004,115 @@ class VisualAuthoringBrowserDomTest {
     }
 
     /**
+     * Proves that evidence is bound to the exact authoring and execution coordinates in Chrome.
+     *
+     * <p>An input edit must retain the prior result for comparison while marking execution and
+     * assertions stale, blocking promotion, and offering one explicit rerun action. The rerun must
+     * consume the edited Graph Input, produce a different execution-request fingerprint, and only
+     * then restore current evidence. This guards against the dangerous UX failure where a green
+     * result survives an authoring change or a rerun silently ignores the value the author edited.</p>
+     */
+    @Test
+    void taskWorkspaceRetainsStaleEvidenceUntilTheEditedInputIsRerunInRealBrowser() {
+        assumeReactAuthorBundlePresent();
+        driver = newChromeDriverOrSkip();
+        WebDriverWait wait = new WebDriverWait(driver, WAIT_TIMEOUT);
+        setViewport(wait, 1024, 768);
+        driver.get("http://localhost:" + port + "/author/?authorWorkspace=v2");
+
+        wait.until(ExpectedConditions.elementToBeClickable(By.cssSelector(
+                "[data-testid='author-start-choice:examples']"
+        ))).click();
+        wait.until(ExpectedConditions.elementToBeClickable(By.cssSelector(
+                "[data-testid='author-start-example:loan-policy-fallback']"
+        ))).click();
+        wait.until(ExpectedConditions.invisibilityOfElementLocated(
+                By.cssSelector("[data-testid='author-start-dialog']")
+        ));
+
+        WebElement workspace = wait.until(ExpectedConditions.visibilityOfElementLocated(
+                By.cssSelector(".workspace-v2")
+        ));
+        WebElement primaryAction = wait.until(ExpectedConditions.elementToBeClickable(
+                By.cssSelector("[data-testid='author-primary-action']")
+        ));
+        primaryAction.click();
+        wait.until(ExpectedConditions.attributeToBe(
+                By.cssSelector(".workspace-v2"),
+                "data-evidence-freshness",
+                "current"
+        ));
+        WebElement firstEvidence = wait.until(ExpectedConditions.visibilityOfElementLocated(
+                By.cssSelector("[data-testid='scenario-evidence']")
+        ));
+        assertThat(firstEvidence.getText())
+                .contains("Draft fingerprint")
+                .contains("Scenario fingerprint")
+                .contains("Dependency closure")
+                .contains("Execution request");
+        String firstRequestFingerprint = driver.findElement(By.xpath(
+                "//dt[normalize-space()='Execution request']/following-sibling::dd/code"
+        )).getText();
+        assertThat(firstRequestFingerprint).startsWith("sha256:");
+
+        driver.findElement(By.cssSelector("[aria-label='Close Contract workspace']")).click();
+        wait.until(ExpectedConditions.invisibilityOfElementLocated(
+                By.cssSelector("[data-testid='contract-workspace']")
+        ));
+        wait.until(ExpectedConditions.elementToBeClickable(By.cssSelector(
+                "[data-testid='inspector-tab:data']"
+        ))).click();
+        WebElement applicantId = wait.until(ExpectedConditions.elementToBeClickable(
+                By.cssSelector("input[aria-label='applicantId']")
+        ));
+        applicantId.clear();
+        applicantId.sendKeys("applicant-1002");
+
+        wait.until(ExpectedConditions.attributeToBe(
+                By.cssSelector(".workspace-v2"),
+                "data-evidence-freshness",
+                "stale"
+        ));
+        wait.until(ExpectedConditions.attributeToBe(
+                By.cssSelector(".workspace-v2"),
+                "data-promotion-lifecycle",
+                "blocked"
+        ));
+        assertThat(textOf(By.cssSelector("[data-testid='author-command-bar']")))
+                .contains("Execution")
+                .contains("STALE")
+                .contains("Assertions")
+                .contains("BLOCKED");
+        waitForText(
+                wait,
+                By.cssSelector("[data-testid='author-primary-action']"),
+                "Rerun current scenario"
+        );
+
+        driver.findElement(By.cssSelector("[data-testid='author-primary-action']")).click();
+        wait.until(ExpectedConditions.attributeToBe(
+                By.cssSelector(".workspace-v2"),
+                "data-evidence-freshness",
+                "current"
+        ));
+        wait.until(ExpectedConditions.visibilityOfElementLocated(
+                By.cssSelector("[data-testid='scenario-evidence-coordinate']")
+        ));
+        String rerunRequestFingerprint = driver.findElement(By.xpath(
+                "//dt[normalize-space()='Execution request']/following-sibling::dd/code"
+        )).getText();
+        assertThat(rerunRequestFingerprint)
+                .startsWith("sha256:")
+                .isNotEqualTo(firstRequestFingerprint);
+        assertThat(workspace.getAttribute("data-promotion-lifecycle"))
+                .as("promotion remains fail-closed until Contract and Governance are current")
+                .isEqualTo("not_evaluated");
+        assertNoHorizontalOverflow(wait, By.cssSelector(
+                "[data-testid='contract-workspace']"
+        ));
+    }
+
+    /**
      * Verifies the packaged task workspace projects the effective Contract before editing sources.
      *
      * <p>The browser loads a real example and proves that the selected transform exposes seven

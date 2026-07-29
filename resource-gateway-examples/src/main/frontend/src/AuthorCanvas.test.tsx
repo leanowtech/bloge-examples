@@ -1231,6 +1231,68 @@ describe('AuthorCanvas built-in canvas examples', () => {
       .toHaveLength(1);
   });
 
+  it('retains prior evidence as stale after an edit and reruns the exact current scenario', async () => {
+    await act(async () => {
+      root = createRoot(host);
+      root.render(<AuthorCanvas workspaceVersion="v2" />);
+    });
+
+    await click(query<HTMLButtonElement>('[data-testid="author-start-choice:examples"]'));
+    await waitFor(() =>
+      expect(query<HTMLButtonElement>('[data-testid="author-start-example:loan-policy-fallback"]').disabled)
+        .toBe(false),
+    );
+    await click(query<HTMLButtonElement>('[data-testid="author-start-example:loan-policy-fallback"]'));
+    await waitFor(() => {
+      expect(query('[data-testid="author-primary-action"]').textContent).toBe('Run scenario');
+      expect(query<HTMLButtonElement>('[data-testid="author-primary-action"]').disabled)
+        .toBe(false);
+    });
+    await click(query<HTMLButtonElement>('[data-testid="author-primary-action"]'));
+    await waitFor(() => {
+      expect(query('.workspace').getAttribute('data-author-mode')).toBe('evidence');
+      expect(query('.workspace').getAttribute('data-evidence-freshness')).toBe('current');
+      expect(query('[data-testid="contract-workspace"]')).toBeDefined();
+      expect(query('[data-testid="scenario-evidence-coordinate"]').textContent)
+        .toContain('Execution request');
+    });
+    const firstCoordinate = query('[data-testid="scenario-evidence-coordinate"]').textContent;
+
+    await click(query<HTMLButtonElement>('[aria-label="Close Contract workspace"]'));
+    await click(query<HTMLButtonElement>('[data-testid="author-mode:compose"]'));
+    await click(query<HTMLButtonElement>('[data-testid="inspector-tab:data"]'));
+    await setControlValue(
+      query<HTMLInputElement>('input[aria-label="applicantId"]'),
+      'applicant-1002',
+    );
+
+    await waitFor(() => {
+      expect(query('.workspace').getAttribute('data-author-mode')).toBe('compose');
+      expect(query('.workspace').getAttribute('data-evidence-freshness')).toBe('stale');
+      expect(query('.workspace').getAttribute('data-promotion-lifecycle')).toBe('blocked');
+      expect(query('[data-testid="author-command-bar"]').textContent).toContain('ExecutionSTALE');
+      expect(query('[data-testid="author-command-bar"]').textContent).toContain('AssertionsSTALE');
+      expect(query('[data-testid="author-primary-action"]').textContent)
+        .toBe('Rerun current scenario');
+    });
+
+    await click(query<HTMLButtonElement>('[data-testid="author-primary-action"]'));
+    await waitFor(() => {
+      expect(query('.workspace').getAttribute('data-author-mode')).toBe('evidence');
+      expect(query('.workspace').getAttribute('data-evidence-freshness')).toBe('current');
+      expect(query('[data-testid="author-command-bar"]').textContent).toContain('ExecutionPASSED');
+      expect(query('[data-testid="scenario-evidence-coordinate"]').textContent)
+        .toContain('loan-prime-approval');
+      expect(query('[data-testid="scenario-evidence-coordinate"]').textContent)
+        .not.toBe(firstCoordinate);
+    });
+    const simulateCalls = fetchMock.mock.calls
+      .filter(([input]) => String(input) === '/api/visual/graphs/simulate');
+    expect(simulateCalls).toHaveLength(2);
+    const secondRequest = JSON.parse(String(simulateCalls[1][1]?.body));
+    expect(secondRequest.context.applicantId).toBe('applicant-1002');
+  });
+
   it('authors schema-driven run input and binds it to the selected node without raw JSON', async () => {
     await act(async () => {
       root = createRoot(host);

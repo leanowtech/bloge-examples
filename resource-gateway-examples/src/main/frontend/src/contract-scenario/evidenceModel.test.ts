@@ -11,6 +11,7 @@ describe('scenarioEvidenceView', () => {
     expect(view.headline).toBe('Evidence incomplete');
     expect(view.tone).toBe('pending');
     expect(view.dimensions.map((dimension) => [dimension.key, dimension.state])).toEqual([
+      ['draft', 'passed'],
       ['execution', 'passed'],
       ['assertions', 'passed'],
       ['contract', 'not-checked'],
@@ -43,7 +44,7 @@ describe('scenarioEvidenceView', () => {
     expect(view.passedAssertions).toHaveLength(1);
   });
 
-  it('claims promotion readiness only after all four dimensions pass', () => {
+  it('claims promotion readiness only after all five dimensions pass', () => {
     const view = scenarioEvidenceView(successfulResponse(), comparison(true), {
       contractStatus: 'VALID',
       governanceStatus: 'APPROVED',
@@ -52,6 +53,31 @@ describe('scenarioEvidenceView', () => {
     expect(view.headline).toBe('Ready for promotion');
     expect(view.tone).toBe('success');
     expect(view.dimensions.every((dimension) => dimension.state === 'passed')).toBe(true);
+  });
+
+  it('retains prior evidence as stale and blocks a dirty draft from promotion', () => {
+    const view = scenarioEvidenceView(successfulResponse(), comparison(true), {
+      draftStatus: 'DIRTY',
+      evidenceFreshness: 'STALE',
+      contractStatus: 'STALE',
+      governanceStatus: 'STALE',
+    });
+
+    expect(view.headline).toBe('Promotion blocked');
+    expect(view.dimensions.map((dimension) => [dimension.key, dimension.status])).toEqual([
+      ['draft', 'DIRTY'],
+      ['execution', 'STALE'],
+      ['assertions', 'STALE'],
+      ['contract', 'STALE'],
+      ['governance', 'STALE'],
+    ]);
+    expect(view.blockers.map((issue) => issue.code)).toEqual(expect.arrayContaining([
+      'DRAFT_DIRTY',
+      'EXECUTION_STALE',
+      'ASSERTIONS_STALE',
+      'CONTRACT_STALE',
+      'GOVERNANCE_STALE',
+    ]));
   });
 
   it('uses the deduplicated diagnostic count in the user-facing summary', () => {

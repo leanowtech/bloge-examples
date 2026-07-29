@@ -8,10 +8,13 @@ interface AuthorCommandBarProps {
   mode: AuthorMode;
   primaryAction: AuthorPrimaryAction;
   primaryDisabled: boolean;
+  draftStatus: string;
   executionStatus: string;
   assertionStatus: string;
   contractStatus: string;
   governanceStatus: string;
+  promotionStatus: string;
+  promotionSummary: string;
   exportUrl: string;
   exportName: string;
   exportDisabled: boolean;
@@ -40,10 +43,13 @@ export default function AuthorCommandBar({
   mode,
   primaryAction,
   primaryDisabled,
+  draftStatus,
   executionStatus,
   assertionStatus,
   contractStatus,
   governanceStatus,
+  promotionStatus,
+  promotionSummary,
   exportUrl,
   exportName,
   exportDisabled,
@@ -76,6 +82,10 @@ export default function AuthorCommandBar({
         ))}
       </nav>
       <div className="author-truth-status" aria-label="Author readiness dimensions">
+        <span data-state={draftStatus.toLowerCase()}>
+          <small>Draft</small>
+          <strong>{draftStatus}</strong>
+        </span>
         <span data-state={executionStatus.toLowerCase()}>
           <small>Execution</small>
           <strong>{executionStatus}</strong>
@@ -91,6 +101,14 @@ export default function AuthorCommandBar({
         <span data-state={governanceStatus.toLowerCase()}>
           <small>Governance</small>
           <strong>{governanceStatus}</strong>
+        </span>
+        <span
+          data-state={promotionStatus.toLowerCase()}
+          data-testid="author-promotion-verdict"
+          title={promotionSummary}
+        >
+          <small>Promotion</small>
+          <strong>{promotionStatus}</strong>
         </span>
       </div>
       <div className="author-secondary-actions">
