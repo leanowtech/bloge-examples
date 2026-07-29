@@ -2002,8 +2002,14 @@ batch API 请求：`--operator-library` 指向已导入的 visual library；
 | --- | --- |
 | `draft` | 可被画布渲染的 `bloge.visualGraphDraft.v1`；普通 node、transform、decision_table 会被投影成可编辑节点 |
 | `draft.inputSchema` | DSL graph 级 `input { ... }` schema |
-| `draft.outputSchema` | DSL graph 级 `output { ... }` schema；这是 graph 对外集成的正式输出合同 |
+| `draft.outputSchema` | Graph 对外集成的正式 selected-payload 输出合同；从 DSL 导入时可来自 `output { ... }` |
 | `draft.visualLayout.graphContract.outputSchema` | 输出 schema 的 UI/历史兼容副本；旧 draft 只有这个字段时，前后端会自动回填到一等 `outputSchema` |
+
+需要区分两个同名但不同层级的概念：GraphDraft `outputSchema` 描述
+`output.nodeId + output.path` 选中后的业务 payload；BLOGE DSL `output { ... }` 描述按 terminal
+node id 聚合的引擎内部 Map。Visual DSL lowering 不会把前者直接写成后者，否则 transform 等
+节点会产生虚假的字段缺失 warning。正式输出合同仍随 GraphDraft、publication 与 integration
+bundle 导出，并由 simulation/publication runtime 在选中 payload 后做精确 schema 校验。
 | `draft.visualLayout.import.projectionMode` | `schema-backed` 表示 operator/function schema 已绑定；`topology-only` 表示系统只从 DSL AST 推演拓扑、绑定和表达式文本 |
 | `draft.visualLayout.import.operatorRefs/functionNames` | 本次 DSL 中扫描到的 operatorRef 与 built-in function 调用名 |
 | `draft.visualLayout.import.missingOperatorRefs/missingFunctionNames` | 当前 effective catalog 中缺失的 operator/function；缺失时仍可看拓扑，但不能当作精确 schema 或自动回写证据 |
@@ -2176,6 +2182,19 @@ POST /api/visual/connections/check
 Assertion 通过但 Contract 或 Governance 尚未检查时只能显示 `Evidence incomplete`；服务端
 返回 warning 时显示 `Review required`。这一规则同时用于 Graph 和 Operator workspace，
 避免“试跑成功”被误解为“可以发布”。
+
+从画布表格批量试跑时，顶部 **Review result** 也会直接打开这一页，并自动选择最后实际
+执行的 Scenario。Evidence 同时绑定该 Scenario 的 assertion comparison 和 terminal
+output，不会把两条 case 的结果混在一起。未保存的示例运行会显示：
+
+```text
+Exploratory run · <content fingerprint> · simulation evidence only
+```
+
+这类运行适合调试和演示，但 Contract / Governance 未检查时仍显示
+`Evidence incomplete`。只有显式保存 Graph、固定 revision 并完成治理闭环后，运行证据
+才具备晋级资格。正常切换 Compose / Contract / Test / Review 或选择节点不会触发
+deep-link 告警；只有 URL 中存在 `draftId` 或 `runId` 时才会恢复外部坐标。
 
 #### 直接为单个 Operator 编写 Contract Scenario
 

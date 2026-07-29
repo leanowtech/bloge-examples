@@ -5,6 +5,7 @@ import com.leanowtech.bloge.core.spi.OperatorRegistry;
 import com.leanowtech.bloge.gateway.visual.catalog.DefaultVisualOperatorCatalog;
 import com.leanowtech.bloge.gateway.visual.catalog.VisualCatalogTestSupport;
 import com.leanowtech.bloge.gateway.visual.draft.GraphDraft;
+import com.leanowtech.bloge.gateway.visual.model.SchemaEnvelope;
 import com.leanowtech.bloge.gateway.visual.runtime.VisualDecisionTable;
 import com.leanowtech.bloge.gateway.visual.runtime.VisualDslRunRequest;
 import com.leanowtech.bloge.gateway.visual.runtime.VisualDslRunResponse;
@@ -110,6 +111,59 @@ class VisualGraphSimulationServiceTest {
         assertThat(response.mockedNodeIds()).containsExactly("eligibility");
         // The author-pinned output takes precedence over the schema-synthesized sample.
         assertThat(response.output()).isEqualTo(pinnedOutput);
+    }
+
+    @Test
+    void fixtureShapeMakesResourcePayloadPathsCompilerVisible() {
+        DefaultVisualOperatorCatalog catalog = VisualCatalogTestSupport.catalogWithLoanApplicantResource();
+        VisualGraphSimulationService service = simulationService(catalog);
+        GraphDraft draft = new GraphDraft(
+                "", "", 0, "resourcePayloadProjection", "", "", "", "",
+                SchemaEnvelope.opaque(),
+                SchemaEnvelope.object(Map.of("score", Map.of("type", "integer")), List.of("score")),
+                List.of(
+                        new GraphDraft.DraftNode(
+                                "applicant",
+                                "resource:" + VisualCatalogTestSupport.RESOURCE_ID,
+                                "",
+                                Map.of("applicantId", GraphDraft.Binding.constant("applicant-1001")),
+                                Map.of(),
+                                null
+                        ),
+                        new GraphDraft.DraftNode(
+                                "response",
+                                "bloge:transform",
+                                "",
+                                Map.of(),
+                                Map.of("assignments", Map.of(
+                                        "score", "applicant.output.payload.score"
+                                )),
+                                null
+                        )
+                ),
+                List.of(),
+                Map.of(),
+                Map.of(),
+                new GraphDraft.OutputSelection("response", ""),
+                Map.of(),
+                Map.of(),
+                null
+        );
+
+        VisualGraphSimulationResponse response = service.simulate(
+                draft,
+                Map.of(),
+                "",
+                Map.of("applicant", new NodeFixture(Map.of(
+                        "payload", Map.of("score", 728, "segment", "prime")
+                )))
+        );
+
+        assertThat(response.success()).isTrue();
+        assertThat(response.output()).isEqualTo(Map.of("score", 728));
+        assertThat(response.diagnostics())
+                .as("fixture-backed resource paths must be checked against the observed fixture shape")
+                .noneMatch(diagnostic -> "bloge.dsl".equals(diagnostic.code()));
     }
 
     @Test

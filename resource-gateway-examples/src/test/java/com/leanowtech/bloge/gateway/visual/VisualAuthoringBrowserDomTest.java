@@ -457,12 +457,20 @@ class VisualAuthoringBrowserDomTest {
         }
     }
 
+    /**
+     * Exercises the dense legacy authoring surface through its explicit rollback coordinate.
+     *
+     * <p>The default route is intentionally reserved for the task-oriented v2 acceptance test.
+     * Keeping this older interaction inventory on {@code authorWorkspace=legacy} prevents a
+     * default-shell migration from silently deleting coverage for legacy focus mode, drag/drop,
+     * validation, navigation, and export behavior.</p>
+     */
     @Test
     void reactAuthorCanvasLoadsPackagedBundleInRealBrowser() {
         assumeReactAuthorBundlePresent();
         driver = newChromeDriverOrSkip();
         WebDriverWait wait = new WebDriverWait(driver, WAIT_TIMEOUT);
-        driver.get("http://localhost:" + port + "/author/");
+        driver.get("http://localhost:" + port + "/author/?authorWorkspace=legacy");
 
         wait.until(ExpectedConditions.visibilityOfElementLocated(By.cssSelector(".workspace")));
         assertThat(driver.getTitle()).contains("BLOGE Visual Canvas");
@@ -674,9 +682,11 @@ class VisualAuthoringBrowserDomTest {
      * <p>The test protects behavior that component tests cannot prove: the command bar has one
      * visible primary action, legacy chrome is physically absent from layout, the canvas receives
      * at least 65% of the post-command-bar workspace, and a complete example can move from Start
-     * through a real Scenario run into Review without node overlap. The same completed task is then
-     * reduced to the supported 390 by 844 light-editing viewport to prove that the primary action
-     * remains reachable without page-level horizontal overflow.</p>
+     * through a real Scenario run into Review without node overlap or false DSL diagnostics. Review
+     * must then open the run-evidence context directly. The completed task is checked at the
+     * supported 1024-pixel desktop floor and finally reduced to the 390 by 844 light-editing
+     * viewport to prove that the primary action remains reachable without page-level horizontal
+     * overflow.</p>
      */
     @Test
     void taskOrientedAuthorShellLoadsRunsAndReviewsWithoutCompetingChromeInRealBrowser() {
@@ -913,8 +923,9 @@ class VisualAuthoringBrowserDomTest {
                 "aria-expanded",
                 "true"
         ));
-        waitForText(wait, By.cssSelector("[data-testid='author-diagnostics-drawer']"), "9 warnings");
-        waitForText(wait, By.cssSelector("[data-testid='author-diagnostics-drawer']"), "bloge.dsl");
+        waitForText(wait, By.cssSelector("[data-testid='author-diagnostics-drawer']"), "No diagnostics");
+        assertThat(textOf(By.cssSelector("[data-testid='author-diagnostics-drawer']")))
+                .doesNotContain("bloge.dsl");
         assertNoHorizontalOverflow(wait, By.cssSelector(".workspace-v2"));
 
         diagnosticsToggle.click();
@@ -924,6 +935,28 @@ class VisualAuthoringBrowserDomTest {
                 "aria-expanded",
                 "false"
         ));
+        setViewport(wait, 1024, 768);
+        assertNoHorizontalOverflow(wait, By.cssSelector(".workspace-v2"));
+        assertThat(driver.findElement(By.cssSelector(
+                "[data-testid='author-primary-action']")).getText()).isEqualTo("Review result");
+        driver.findElement(By.cssSelector("[data-testid='author-primary-action']")).click();
+        wait.until(ExpectedConditions.visibilityOfElementLocated(
+                By.cssSelector("[data-testid='contract-workspace']")
+        ));
+        wait.until(ExpectedConditions.attributeToBe(
+                By.xpath("//button[normalize-space()='Run Evidence']"),
+                "aria-selected",
+                "true"
+        ));
+        wait.until(ExpectedConditions.visibilityOfElementLocated(
+                By.cssSelector("[data-testid='scenario-evidence']")
+        ));
+        assertNoHorizontalOverflow(wait, By.cssSelector("[data-testid='contract-workspace']"));
+        driver.findElement(By.cssSelector("[aria-label='Close Contract workspace']")).click();
+        wait.until(ExpectedConditions.invisibilityOfElementLocated(
+                By.cssSelector("[data-testid='contract-workspace']")
+        ));
+
         setViewport(wait, 390, 844);
         assertNoHorizontalOverflow(wait, By.cssSelector(".workspace-v2"));
         assertThat(driver.findElement(By.cssSelector(
@@ -1041,12 +1074,19 @@ class VisualAuthoringBrowserDomTest {
         assertNoHorizontalOverflow(wait, By.cssSelector(".workspace-v2"));
     }
 
+    /**
+     * Projects capability closures from every built-in example using the legacy example shelf.
+     *
+     * <p>Closure semantics are independent of the surrounding shell. This test therefore names
+     * the legacy coordinate that owns {@code canvas-example-load:*}; v2 example discovery and
+     * execution are covered separately through the Start dialog acceptance journey.</p>
+     */
     @Test
     void everyBuiltInCanvasExampleProjectsAStableCapabilityClosureInRealBrowser() throws Exception {
         assumeReactAuthorBundlePresent();
         driver = newChromeDriverOrSkip();
         WebDriverWait wait = new WebDriverWait(driver, WAIT_TIMEOUT);
-        driver.get("http://localhost:" + port + "/author/");
+        driver.get("http://localhost:" + port + "/author/?authorWorkspace=legacy");
 
         wait.until(ExpectedConditions.visibilityOfElementLocated(By.cssSelector(".workspace")));
         Map<String, ExampleClosureExpectation> examples = Map.of(

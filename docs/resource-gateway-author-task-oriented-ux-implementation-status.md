@@ -780,3 +780,37 @@ v1 当前仍保留为显式回滚路径。只有同时满足以下条件才进�
 `?authorWorkspace=v1` 继续可读，避免历史书签失效。切换链接保留 draft/node/run 等
 deep-link 坐标，未知显式版本仍 fail closed 到 Legacy。该变更只调整 UI 投影，不改变
 GraphDraft、Contract、Scenario 或运行证据。
+
+## Round 6：体验成熟度 Stage 0 可信度止血
+
+旧计划的 95 分是工程交付完成度，不代表真实任务体验已经达到 95 分。新的
+[体验成熟度 95 分计划](resource-gateway-author-ux-maturity-95-plan.md) 以 61 分为重新校准
+基线，本轮完成其 Stage 0。
+
+### 已实现
+
+- fixture-backed simulation operator 暴露有界结构化 output schema，消除 Author 中由
+  `Object` schema 造成的虚假 `output.payload.*` path diagnostics；
+- Review 成功主操作打开 `Run Evidence`，失败主操作打开聚合 Diagnostics；
+- 表格批量运行保存精确 `scenarioId + comparison`，Evidence 不再把某个 case 的 output
+  与另一个 case 的断言状态拼接；
+- transient simulate 显示 content fingerprint 和 `simulation evidence only`；
+- diagnostics 按 root cause 聚合并显示 occurrence count；
+- 示例内置算子拥有独立、可运行、有 oracle 的测试输入输出；
+- Scenario 摘要区分 controlled dependencies 与 total dependencies；
+- 显式 `draftId/runId` 才触发 deep-link 恢复，内部 mode/node URL 同步不再产生假警告。
+
+### 验证
+
+```text
+frontend full suite       27 files / 303 tests passed
+frontend production build passed
+simulation focused suite  17 tests passed
+packaged browser           40 tests exercised; 2 stale legacy assumptions corrected
+legacy correction rerun    2 tests passed
+real in-app browser        1024px, Dashboard 2/2, exact last-case Evidence matched
+```
+
+Stage 0 将新的体验成熟度从 `61` 提升到 `68`。剩余差距仍为 `28.4%`，下一轮必须统一
+Contract / Scenario / Evidence 工作台，不能继续让 v2 Test Suite 模态框与结构化 Scenario
+并列竞争。

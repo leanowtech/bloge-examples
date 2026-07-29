@@ -9,6 +9,8 @@ export interface CanvasExampleNode {
   config?: Record<string, unknown>;
   fixtureOutput?: unknown;
   expectedInput?: unknown;
+  operatorTestInput?: unknown;
+  operatorTestExpectedOutput?: unknown;
 }
 
 export interface CanvasExampleEdge {
@@ -163,6 +165,14 @@ export const CANVAS_EXAMPLE_TEMPLATES: CanvasExampleTemplate[] = [
             },
           ],
         },
+        operatorTestInput: {
+          inputs: { score: 728, income: 92000, employmentYears: 4 },
+        },
+        operatorTestExpectedOutput: {
+          decision: 'approve',
+          tier: 'prime',
+          reason: 'strong primary credit',
+        },
       },
       {
         id: 'n5',
@@ -179,6 +189,26 @@ export const CANVAS_EXAMPLE_TEMPLATES: CanvasExampleTemplate[] = [
             tier: 'n4.output.tier',
             reason: 'coalesce(n4.output.reason, "policy fallback")',
           },
+        },
+        operatorTestInput: {
+          inputs: {
+            applicantId: 'applicant-1001',
+            segment: 'prime',
+            primaryScore: 728,
+            secondaryScore: 701,
+            decision: 'approve',
+            tier: 'prime',
+            reason: 'strong primary credit',
+          },
+        },
+        operatorTestExpectedOutput: {
+          applicantId: 'applicant-1001',
+          segment: 'prime',
+          primaryScore: 728,
+          secondaryScore: 701,
+          decision: 'approve',
+          tier: 'prime',
+          reason: 'strong primary credit',
         },
       },
     ],
@@ -407,6 +437,20 @@ export const CANVAS_EXAMPLE_TEMPLATES: CanvasExampleTemplate[] = [
             { orderId: 'order-1002', productId: 'prod-11', priority: 'standard' },
           ],
         },
+        operatorTestInput: {
+          inputs: {
+            items: [
+              { orderId: 'order-1001', productId: 'prod-8', priority: 'expedite' },
+              { orderId: 'order-1002', productId: 'prod-11', priority: 'standard' },
+            ],
+          },
+        },
+        operatorTestExpectedOutput: {
+          items: [
+            { orderId: 'order-1001', productId: 'prod-8', priority: 'expedite' },
+            { orderId: 'order-1002', productId: 'prod-11', priority: 'standard' },
+          ],
+        },
       },
       {
         id: 'n3',
@@ -441,6 +485,14 @@ export const CANVAS_EXAMPLE_TEMPLATES: CanvasExampleTemplate[] = [
             },
           ],
         },
+        operatorTestInput: {
+          inputs: { total: 2, etaDays: 2 },
+        },
+        operatorTestExpectedOutput: {
+          lane: 'expedite',
+          promisedHours: 24,
+          reason: 'multi-order fast lane',
+        },
       },
       {
         id: 'n5',
@@ -456,6 +508,30 @@ export const CANVAS_EXAMPLE_TEMPLATES: CanvasExampleTemplate[] = [
             promisedHours: 'toNumber(coalesce(n4.output.promisedHours, 96))',
             reason: 'coalesce(n4.output.reason, "sla default")',
           },
+        },
+        operatorTestInput: {
+          inputs: {
+            orderCount: 2,
+            enrichedOrders: [
+              { orderId: 'order-1001', productId: 'prod-8', priority: 'expedite' },
+              { orderId: 'order-1002', productId: 'prod-11', priority: 'standard' },
+            ],
+            carrier: 'DHL',
+            lane: 'expedite',
+            promisedHours: 24,
+            reason: 'multi-order fast lane',
+          },
+        },
+        operatorTestExpectedOutput: {
+          orderCount: 2,
+          enrichedOrders: [
+            { orderId: 'order-1001', productId: 'prod-8', priority: 'expedite' },
+            { orderId: 'order-1002', productId: 'prod-11', priority: 'standard' },
+          ],
+          carrier: 'DHL',
+          lane: 'expedite',
+          promisedHours: 24,
+          reason: 'multi-order fast lane',
         },
       },
     ],
@@ -712,6 +788,34 @@ export const CANVAS_EXAMPLE_TEMPLATES: CanvasExampleTemplate[] = [
             recommendations: 'coalesce(n3.output.payload.items, [])',
             unreadCount: 'toNumber(coalesce(n4.output.payload.count, 0))',
           },
+        },
+        operatorTestInput: {
+          inputs: {
+            userId: 'user-42',
+            name: 'Ada Chen',
+            tier: 'pro',
+            segment: 'high-value',
+            walletAmount: 128.45,
+            walletCurrency: 'USD',
+            recommendations: [
+              { productId: 'prod-8', reason: 'segment match' },
+              { productId: 'prod-11', reason: 'recent activity' },
+            ],
+            unreadCount: 3,
+          },
+        },
+        operatorTestExpectedOutput: {
+          userId: 'user-42',
+          name: 'Ada Chen',
+          tier: 'pro',
+          segment: 'high-value',
+          walletAmount: 128,
+          walletCurrency: 'USD',
+          recommendations: [
+            { productId: 'prod-8', reason: 'segment match' },
+            { productId: 'prod-11', reason: 'recent activity' },
+          ],
+          unreadCount: 3,
         },
       },
     ],

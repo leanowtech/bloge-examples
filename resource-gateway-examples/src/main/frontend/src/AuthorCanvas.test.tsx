@@ -289,6 +289,46 @@ describe('AuthorCanvas operator-library intake', () => {
     });
   });
 
+  it('describes a transient run by its immutable fingerprint instead of calling it unlinked', async () => {
+    window.history.replaceState(
+      {},
+      '',
+      '/author/?authorWorkspace=v2&authorMode=review&runId=run-transient',
+    );
+    fetchMock.mockImplementation(async (input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url === '/api/visual/operators') {
+        return jsonResponse({ operators: [eligibilityOperator(), transformOperator()] });
+      }
+      if (url === '/api/visual/runs/run-transient') {
+        return jsonResponse({
+          runId: 'run-transient',
+          sourceKind: 'TRANSIENT_DRAFT',
+          draftId: '',
+          draftRevision: 0,
+          draftFingerprint: `sha256:${'a'.repeat(64)}`,
+          outputNode: 'response',
+          success: true,
+          elapsedMs: 37,
+          errors: [],
+        });
+      }
+      throw new Error(`Unexpected fetch: ${url}`);
+    });
+
+    await act(async () => {
+      root = createRoot(host);
+      root.render(<AuthorCanvas workspaceVersion="v2" />);
+    });
+
+    await waitFor(() => {
+      const notice = query('[data-testid="author-deep-link-notice"]').textContent;
+      expect(notice).toContain('Exploratory run run-transient');
+      expect(notice).toContain('sha256:aaaaaa');
+      expect(notice).not.toContain('not linked');
+    });
+  });
+
   it('resolves an operator deep link and marks stale governance feedback explicitly', async () => {
     const projection = dslProjection() as { draft: Record<string, unknown> };
     const draft = { ...projection.draft, draftId: 'draft-stale', revision: 9 };
@@ -939,6 +979,21 @@ describe('AuthorCanvas built-in canvas examples', () => {
     }
   });
 
+  it('gives every complex-example operator test an input intent and explicit output oracle', () => {
+    for (const template of CANVAS_EXAMPLE_TEMPLATES) {
+      for (const node of template.nodes) {
+        const operatorTestInput = node.operatorTestInput ?? node.expectedInput;
+        const operatorTestExpectedOutput = node.operatorTestExpectedOutput ?? node.fixtureOutput;
+        expect(operatorTestInput, `${template.key}:${node.id}:operatorTestInput`).toBeDefined();
+        expect(operatorTestExpectedOutput, `${template.key}:${node.id}:operatorTestExpectedOutput`).toBeDefined();
+        expect(operatorTestInput, `${template.key}:${node.id}:operatorTestInput`)
+          .not.toEqual({});
+        expect(operatorTestExpectedOutput, `${template.key}:${node.id}:operatorTestExpectedOutput`)
+          .not.toEqual({});
+      }
+    }
+  });
+
   it('keeps built-in run-table examples aligned with executable demo graphs', () => {
     const loan = CANVAS_EXAMPLE_TEMPLATES.find((template) => template.key === 'loan-policy-fallback');
     const loanDecision = loan?.nodes.find((node) => node.id === 'n4');
@@ -1157,9 +1212,24 @@ describe('AuthorCanvas built-in canvas examples', () => {
       expect(query('[data-testid="author-context-inspector"]').textContent).toContain(
         '2/2 scenario assertions passed.',
       );
+      expect(query('.workspace').textContent).not.toContain(
+        'no stored draft revision or immutable fingerprint',
+      );
+      expect(query('[data-testid="author-run-provenance"]').textContent).toContain(
+        'Exploratory run',
+      );
     });
     expect(fetchMock.mock.calls.filter(([input]) => String(input) === '/api/visual/graphs/simulate'))
       .toHaveLength(2);
+
+    await click(query<HTMLButtonElement>('[data-testid="author-primary-action"]'));
+    await waitFor(() => {
+      expect(query('[data-testid="contract-workspace"]')).toBeDefined();
+      expect(buttonByText('Run Evidence').getAttribute('aria-selected')).toBe('true');
+      expect(query('[data-testid="scenario-evidence"]')).toBeDefined();
+      expect(query('[data-testid="scenario-evidence"]').textContent).toContain('1 assertion passed.');
+      expect(query('[data-testid="scenario-evidence"]').textContent).toContain('applicant-2002');
+    });
   });
 
   it('authors schema-driven run input and binds it to the selected node without raw JSON', async () => {
@@ -1549,7 +1619,8 @@ describe('AuthorCanvas built-in canvas examples', () => {
     await waitFor(() =>
       expect(query('[data-testid="contract-workspace"]').textContent).toContain('Prime approval path'),
     );
-    expect(query('[data-testid="contract-workspace"]').textContent).toContain('3 controlled dependencies');
+    expect(query('[data-testid="contract-workspace"]').textContent)
+      .toContain('3 controlled / 5 total dependencies');
     expect(query('[data-testid="contract-workspace"]').textContent).toContain('1 assertion');
     expect(query('[data-testid="contract-workspace"]').textContent).toContain('Fetch applicant');
     expect(query('[data-testid="contract-workspace"]').textContent).toContain('Whole result');

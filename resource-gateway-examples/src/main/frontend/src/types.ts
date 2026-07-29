@@ -897,6 +897,7 @@ export interface VisualGraphRunRecord {
   sourceKind?: string;
   draftId?: string;
   draftRevision?: number;
+  draftFingerprint?: string;
   publicationId?: string;
   graphName?: string;
   outputNode?: string;

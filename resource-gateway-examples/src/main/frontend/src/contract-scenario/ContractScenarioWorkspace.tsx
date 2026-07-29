@@ -69,6 +69,9 @@ interface ContractScenarioWorkspaceProps {
   workspaceTransferEnabled?: boolean;
   trustContext?: ScenarioEvidenceTrustContext;
   onSelectEvidenceDiagnostic?: (diagnostic: ScenarioEvidenceDiagnostic) => void;
+  initialTab?: WorkspaceTab;
+  lastRunScenarioId?: string;
+  lastComparison?: ScenarioComparison | null;
 }
 
 /** Dedicated Contract → Scenario → Run Evidence authoring workspace. */
@@ -92,9 +95,12 @@ export default function ContractScenarioWorkspace({
   workspaceTransferEnabled = true,
   trustContext,
   onSelectEvidenceDiagnostic,
+  initialTab = 'interface',
+  lastRunScenarioId = '',
+  lastComparison = null,
 }: ContractScenarioWorkspaceProps) {
-  const [activeTab, setActiveTab] = useState<WorkspaceTab>('interface');
-  const [selectedScenarioId, setSelectedScenarioId] = useState('');
+  const [activeTab, setActiveTab] = useState<WorkspaceTab>(initialTab);
+  const [selectedScenarioId, setSelectedScenarioId] = useState(lastRunScenarioId);
   const [running, setRunning] = useState(false);
   const [runResponse, setRunResponse] = useState<SimulationResponse | null>(null);
   const [comparison, setComparison] = useState<ScenarioComparison | null>(null);
@@ -132,7 +138,15 @@ export default function ContractScenarioWorkspace({
         contractFingerprint,
       ),
   );
-  const visibleRun = runResponse ?? lastRun;
+  const externalEvidenceMatchesSelection = Boolean(
+    lastRunScenarioId && selectedScenario?.scenarioId === lastRunScenarioId,
+  );
+  const visibleRun = runResponse ?? (
+    !lastRunScenarioId || externalEvidenceMatchesSelection ? lastRun : null
+  );
+  const visibleComparison = comparison ?? (
+    externalEvidenceMatchesSelection ? lastComparison : null
+  );
   const serializedDraftSet = scenarioDraftSet ? JSON.stringify(scenarioDraftSet) : '';
   const dirty = Boolean(scenarioDraftSet && savedSnapshot !== serializedDraftSet);
   const graphStored = Boolean(graphDraft.draftId && (graphDraft.revision ?? 0) > 0);
@@ -157,6 +171,15 @@ export default function ContractScenarioWorkspace({
       workspaceBodyRef.current.scrollTop = 0;
     }
   }, [activeTab, open]);
+
+  useEffect(() => {
+    if (open) {
+      setActiveTab(initialTab);
+      if (lastRunScenarioId) {
+        setSelectedScenarioId(lastRunScenarioId);
+      }
+    }
+  }, [initialTab, lastRunScenarioId, open]);
 
   useEffect(() => {
     setAdvancedText(selectedScenario ? JSON.stringify(selectedScenario, null, 2) : '');
@@ -563,7 +586,7 @@ export default function ContractScenarioWorkspace({
           <div className="contract-workspace-header-actions">
             <span className={`contract-current-badge ${!dirty && current ? 'current' : 'stale'}`}>
               {!assetStored
-                ? `${targetLabel} not saved`
+                ? 'Exploratory draft'
                 : dirty
                   ? 'Unsaved Scenario changes'
                   : current
@@ -680,7 +703,7 @@ export default function ContractScenarioWorkspace({
             <button
               type="button"
               role="tab"
-              {...(tab === 'interface' ? { 'data-dialog-initial-focus': true } : {})}
+              {...(tab === initialTab ? { 'data-dialog-initial-focus': true } : {})}
               aria-selected={activeTab === tab}
               className={activeTab === tab ? 'active' : ''}
               key={tab}
@@ -739,7 +762,7 @@ export default function ContractScenarioWorkspace({
           {activeTab === 'evidence' && (
             <EvidenceTab
               response={visibleRun}
-              comparison={comparison}
+              comparison={visibleComparison}
               compileMessages={compileMessages}
               trustContext={trustContext}
               onBackToScenario={() => setActiveTab('scenarios')}
@@ -849,7 +872,12 @@ function ScenarioTab({
           >
             <span>{scenario.caseType}</span>
             <strong>{scenario.name}</strong>
-            <small>{scenario.dependencies.filter((entry) => entry.behavior.kind !== 'REAL').length} controlled dependencies</small>
+            <small>
+              {scenario.dependencies.filter((entry) => entry.behavior.kind !== 'REAL').length}
+              {' controlled / '}
+              {scenario.dependencies.length}
+              {' total dependencies'}
+            </small>
           </button>
         ))}
         {scenarios.length === 0 && <p className="scenario-list-empty">No Scenarios yet.</p>}

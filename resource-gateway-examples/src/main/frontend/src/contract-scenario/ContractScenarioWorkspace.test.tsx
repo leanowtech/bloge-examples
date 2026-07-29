@@ -7,7 +7,8 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { contractDraftFromGraphDraft } from './domain';
 import ContractScenarioWorkspace from './ContractScenarioWorkspace';
 import type { ScenarioEvidenceTrustContext } from './evidenceModel';
-import { scenarioDraftSetFromCanvas } from './scenarioAuthoring';
+import { scenarioDraftSetFromCanvas, type ScenarioComparison } from './scenarioAuthoring';
+import type { SimulationResponse } from '../types';
 import {
   graphDraft,
   nodes,
@@ -83,6 +84,38 @@ describe('ContractScenarioWorkspace', () => {
     expect(onChange).toHaveBeenCalled();
     const latest = onChange.mock.calls[onChange.mock.calls.length - 1]?.[0];
     expect(latest.scenarios[0].given.input.applicantId).toBe('A-42');
+  });
+
+  it('states controlled and total dependency counts with one unambiguous denominator', async () => {
+    await renderWorkspace();
+    await clickTab('Scenarios 1');
+
+    expect(text()).toContain('2 controlled / 2 total dependencies');
+  });
+
+  it('can open directly on Run Evidence for a result-review task', async () => {
+    await renderWorkspace({
+      initialTab: 'evidence',
+      lastRun: successfulResponse(),
+      lastRunScenarioId: 'approved',
+      lastComparison: {
+        passed: true,
+        diagnostics: [],
+        results: [{
+          assertionId: 'approved-output',
+          passed: true,
+          path: '',
+          expected: successfulResponse().output,
+          actual: successfulResponse().output,
+          detail: 'Values are equal.',
+        }],
+      },
+    });
+
+    expect(button('Run Evidence').getAttribute('aria-selected')).toBe('true');
+    expect(document.querySelector('[data-testid="scenario-evidence"]')).not.toBeNull();
+    expect(text()).toContain('1 assertion passed.');
+    expect(text()).not.toContain('AssertionsNOT RUN');
   });
 
   it('keeps Advanced JSON synchronized after graphical edits', async () => {
@@ -519,6 +552,10 @@ describe('ContractScenarioWorkspace', () => {
     stale?: boolean;
     unsaved?: boolean;
     scenarioRevision?: number;
+    initialTab?: 'interface' | 'scenarios' | 'compatibility' | 'evidence';
+    lastRun?: SimulationResponse | null;
+    lastRunScenarioId?: string;
+    lastComparison?: ScenarioComparison | null;
     onChange?: ReturnType<typeof vi.fn>;
     onRebase?: ReturnType<typeof vi.fn>;
     onRun?: ReturnType<typeof vi.fn>;
@@ -562,7 +599,10 @@ describe('ContractScenarioWorkspace', () => {
           contractFingerprint={contractFingerprint}
           scenarioDraftSet={draftSet}
           nodes={nodes()}
-          lastRun={null}
+          lastRun={options.lastRun ?? null}
+          lastRunScenarioId={options.lastRunScenarioId}
+          lastComparison={options.lastComparison}
+          initialTab={options.initialTab}
           onScenarioDraftSetChange={options.onChange ?? vi.fn()}
           onContractChange={vi.fn()}
           onImportWorkspace={vi.fn().mockResolvedValue(undefined)}

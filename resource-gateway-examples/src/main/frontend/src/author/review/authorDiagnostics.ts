@@ -25,8 +25,10 @@ export interface AuthorDiagnosticItem {
   code: string;
   message: string;
   coordinate: string;
+  coordinates: string[];
   nodeId: string;
   recommendedAction: string;
+  occurrenceCount: number;
 }
 
 export interface AuthorDiagnosticsInput {
@@ -75,16 +77,20 @@ function visualDiagnostic(
   const metadataNodeId = typeof diagnostic.metadata?.nodeId === 'string'
     ? diagnostic.metadata.nodeId
     : '';
+  const message = diagnostic.message || 'No diagnostic message.';
+  const messageNodeId = message.match(/\bPath\s+['"`]([^.'"`]+)\./i)?.[1] ?? '';
   return {
     id: `${source}:${diagnostic.code || index}:${index}`,
     severity: severityOf(diagnostic.level),
     scope,
     source,
     code: diagnostic.code || 'DIAGNOSTIC',
-    message: diagnostic.message || 'No diagnostic message.',
+    message,
     coordinate,
-    nodeId: metadataNodeId || nodeIdFromCoordinate(coordinate),
+    coordinates: coordinate ? [coordinate] : [],
+    nodeId: metadataNodeId || nodeIdFromCoordinate(coordinate) || messageNodeId,
     recommendedAction: '',
+    occurrenceCount: 1,
   };
 }
 
@@ -105,8 +111,10 @@ export function projectAuthorDiagnostics(input: AuthorDiagnosticsInput): AuthorD
       code: 'REQUEST_FAILED',
       message: input.error.trim(),
       coordinate: '',
+      coordinates: [],
       nodeId: '',
       recommendedAction: 'Review the request and retry.',
+      occurrenceCount: 1,
     });
   }
   input.validation?.diagnostics.forEach((diagnostic, index) => {
@@ -124,8 +132,10 @@ export function projectAuthorDiagnostics(input: AuthorDiagnosticsInput): AuthorD
       code: 'RUN_FAILED',
       message,
       coordinate: '',
+      coordinates: [],
       nodeId: '',
       recommendedAction: 'Inspect the failed trace and rerun the same Scenario.',
+      occurrenceCount: 1,
     });
   });
   Object.values(input.scenarioResults)
@@ -139,8 +149,10 @@ export function projectAuthorDiagnostics(input: AuthorDiagnosticsInput): AuthorD
         code: 'ASSERTION_FAILED',
         message: `${result.name}: ${result.detail}`,
         coordinate: result.id,
+        coordinates: [result.id],
         nodeId: '',
         recommendedAction: 'Open Test and compare expected with actual output.',
+        occurrenceCount: 1,
       });
     });
   input.governance?.result?.issues.forEach((issue) => {
@@ -153,8 +165,10 @@ export function projectAuthorDiagnostics(input: AuthorDiagnosticsInput): AuthorD
       code: issue.code || issue.issueId,
       message: issue.message,
       coordinate,
+      coordinates: coordinate ? [coordinate] : [],
       nodeId: nodeIdFromCoordinate(coordinate),
       recommendedAction: issue.recommendedAction || '',
+      occurrenceCount: 1,
     });
   });
   input.dslDiagnostics.forEach((diagnostic, index) => {
@@ -167,5 +181,30 @@ export function projectAuthorDiagnostics(input: AuthorDiagnosticsInput): AuthorD
     WARNING: 2,
     INFO: 3,
   };
-  return items.sort((left, right) => rank[left.severity] - rank[right.severity]);
+  const grouped = new Map<string, AuthorDiagnosticItem>();
+  items.forEach((item) => {
+    const key = [
+      item.severity,
+      item.scope,
+      item.source,
+      item.code,
+      item.message,
+      item.nodeId,
+      item.recommendedAction,
+    ].join('\u001f');
+    const existing = grouped.get(key);
+    if (!existing) {
+      grouped.set(key, item);
+      return;
+    }
+    existing.occurrenceCount += item.occurrenceCount;
+    item.coordinates.forEach((coordinate) => {
+      if (!existing.coordinates.includes(coordinate)) {
+        existing.coordinates.push(coordinate);
+      }
+    });
+  });
+  return [...grouped.values()].sort(
+    (left, right) => rank[left.severity] - rank[right.severity],
+  );
 }

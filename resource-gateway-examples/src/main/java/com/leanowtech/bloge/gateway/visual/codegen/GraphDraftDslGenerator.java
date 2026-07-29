@@ -70,6 +70,12 @@ public class GraphDraftDslGenerator {
     /**
      * Generates BLOGE DSL for a visual graph draft.
      *
+     * <p>The visual graph's {@code outputSchema} describes the payload selected by
+     * {@link GraphDraft.OutputSelection}. BLOGE DSL's graph-level output declaration instead describes the
+     * engine's terminal-node aggregate map, so this generator deliberately does not lower the public payload
+     * schema into that incompatible declaration. Visual runtime and publication adapters validate the selected
+     * payload against the authoritative graph contract after execution.</p>
+     *
      * @param draft graph draft
      * @return generated DSL and diagnostics
      */
@@ -92,8 +98,6 @@ public class GraphDraftDslGenerator {
         dsl.append("graph ").append(draft.graphName()).append(" {\n");
         boolean emittedSection = false;
         emittedSection = appendBoundarySchema(dsl, "input", draft.inputSchema(), "/inputSchema", diagnostics,
-                emittedSection);
-        emittedSection = appendBoundarySchema(dsl, "output", draft.outputSchema(), "/outputSchema", diagnostics,
                 emittedSection);
         for (GraphDraft.DraftNode node : orderedNodes(draft)) {
             if (!isDslFieldName(node.id())) {

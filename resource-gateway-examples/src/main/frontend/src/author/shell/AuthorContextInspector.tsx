@@ -27,6 +27,7 @@ interface AuthorContextInspectorProps {
   contractStatus: string;
   governanceStatus: string;
   resultMessage: string;
+  runProvenance: string;
   dataContent: ReactNode;
   advancedContent: ReactNode;
   onEditNode: () => void;
@@ -55,6 +56,7 @@ export default function AuthorContextInspector({
   contractStatus,
   governanceStatus,
   resultMessage,
+  runProvenance,
   dataContent,
   advancedContent,
   onEditNode,
@@ -138,6 +140,11 @@ export default function AuthorContextInspector({
                 <div><dt>Governance</dt><dd>{governanceStatus}</dd></div>
               </dl>
               <p>{resultMessage || 'No Scenario result yet.'}</p>
+              {runProvenance && (
+                <small className="author-run-provenance" data-testid="author-run-provenance">
+                  {runProvenance}
+                </small>
+              )}
             </div>
           </>
         )}

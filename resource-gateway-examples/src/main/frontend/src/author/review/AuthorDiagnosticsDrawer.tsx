@@ -66,6 +66,14 @@ export default function AuthorDiagnosticsDrawer({
                     <strong>{item.code}</strong>
                     <small>{item.scope} · {item.source}</small>
                     <p>{item.message}</p>
+                    {item.occurrenceCount > 1 && (
+                      <small className="author-diagnostic-occurrences">
+                        {item.occurrenceCount} occurrences
+                        {item.coordinates.length > 1
+                          ? ` · ${item.coordinates.length} locations`
+                          : ''}
+                      </small>
+                    )}
                     {item.coordinate && <code>{item.coordinate}</code>}
                     {item.recommendedAction && <em>{item.recommendedAction}</em>}
                   </button>

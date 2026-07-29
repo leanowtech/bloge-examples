@@ -88,4 +88,44 @@ describe('projectAuthorDiagnostics', () => {
       expect.objectContaining({ scope: 'SCENARIO', code: 'ASSERTION_FAILED' }),
     ]));
   });
+
+  it('groups repeated diagnostics by root cause and preserves the occurrence count', () => {
+    const repeated = {
+      level: 'warning',
+      code: 'bloge.dsl',
+      message: "Path 'profile.output.payload' - field 'payload' not found.",
+      target: '/nodes/profile/output',
+    };
+    const items = projectAuthorDiagnostics({
+      error: '',
+      validation: null,
+      run: {
+        validated: true,
+        compiled: true,
+        success: true,
+        graphName: 'risk',
+        outputNode: 'response',
+        output: {},
+        results: {},
+        statusMap: {},
+        mockedNodeIds: ['profile'],
+        realNodeIds: ['response'],
+        terminalOutputConforms: true,
+        diagnostics: [repeated, repeated, repeated],
+        errors: [],
+        generatedDsl: '',
+      },
+      scenarioResults: {},
+      governance: null,
+      dslDiagnostics: [],
+    });
+
+    expect(items).toEqual([
+      expect.objectContaining({
+        code: 'bloge.dsl',
+        occurrenceCount: 3,
+        nodeId: 'profile',
+      }),
+    ]);
+  });
 });

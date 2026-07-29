@@ -15,9 +15,13 @@ import com.leanowtech.bloge.gateway.visual.runtime.VisualGraphPublicationOperato
 
 import org.junit.jupiter.api.Test;
 
+import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.logging.Handler;
+import java.util.logging.LogRecord;
+import java.util.logging.Logger;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
@@ -1472,7 +1476,7 @@ class GraphDraftDslGeneratorTest {
     }
 
     @Test
-    void lowersGraphInputAndOutputSchemasIntoDslBoundaryBlocks() {
+    void lowersGraphInputButKeepsSelectedPayloadContractOutOfDslTerminalSchema() {
         GraphDraftDslGenerator generator = new GraphDraftDslGenerator(
                 VisualCatalogTestSupport.catalogWithLibrary(
                         VisualCatalogTestSupport.eligibilityLibrary("integer")));
@@ -1523,12 +1527,40 @@ class GraphDraftDslGeneratorTest {
                 .contains("input {")
                 .contains("applicantId: String")
                 .contains("requestedAmount: Decimal?")
-                .contains("output {")
-                .contains("decision: String")
-                .contains("score: Int")
-                .contains("review: {")
-                .contains("required: Boolean")
-                .contains("}?");
+                .doesNotContain("output {");
+
+        List<String> compilerWarnings = new ArrayList<>();
+        Logger compilerLogger = Logger.getLogger("com.leanowtech.bloge.dsl.compiler.DslCompiler");
+        Handler warningCapture = new Handler() {
+            @Override
+            public void publish(LogRecord record) {
+                if (record != null && record.getMessage() != null) {
+                    compilerWarnings.add(record.getMessage());
+                }
+            }
+
+            @Override
+            public void flush() {
+            }
+
+            @Override
+            public void close() {
+            }
+        };
+        compilerLogger.addHandler(warningCapture);
+        try {
+            GraphLoader loader = new GraphLoader(new DefaultOperatorRegistry());
+            loader.withCompilationMode(CompilationMode.LENIENT);
+            var compilation = loader.loadWithDiagnostics(result.dsl());
+            assertThat(compilation.graph())
+                    .as("compiler diagnostics: %s%nDSL:%n%s", compilation.diagnostics(), result.dsl())
+                    .isNotNull();
+        } finally {
+            compilerLogger.removeHandler(warningCapture);
+        }
+        assertThat(compilerWarnings)
+                .as("the selected payload contract is validated by the visual runtime, not DSL terminal aggregation")
+                .noneMatch(message -> message.contains("declared output"));
     }
 
     private static OperatorLibrary arrayIndexTemplateLibrary() {

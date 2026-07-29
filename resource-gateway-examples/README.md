@@ -98,6 +98,12 @@ silently consuming work.
 | `GET http://localhost:8080/api/mirror/outcome-observations/{observationId}/head` | Reverify the current business-authority closure and read its durable reconciliation head |
 | `GET http://localhost:8080/api/mirror/outcome-observations/{observationId}/lifecycle?afterOrdinal=0&limit=100` | Read one bounded append-only lifecycle suffix for offline audit |
 | `POST http://localhost:8080/api/mirror/outcome-selected-populations/uploads` | Begin or exactly replay one resumable selected-population upload intent (`X-Purpose: MIRROR_OUTCOME_SELECTION`) |
+
+For the shortest trustworthy Author demo, load a built-in graph from **Import → Load example**,
+open **Test**, run the two-row table, close the legacy table overlay, and choose **Review result**.
+The Run Evidence view is bound to the last executed Scenario and shows its assertion comparison,
+terminal output, mocked/real node boundary, and exploratory content fingerprint. A green execution
+is deliberately still `Evidence incomplete` until Contract and Governance are checked.
 | `PUT http://localhost:8080/api/mirror/outcome-selected-populations/uploads/{uploadId}/chunks/{chunkIndex}` | Stage or exactly replay one manifest-declared content-addressed chunk |
 | `GET http://localhost:8080/api/mirror/outcome-selected-populations/uploads/{uploadId}` | Read payload-free durable progress, expiry, and finalization state |
 | `POST http://localhost:8080/api/mirror/outcome-selected-populations/uploads/{uploadId}/finalize` | Finalize a complete upload through the existing governed population admission |

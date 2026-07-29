@@ -1,10 +1,10 @@
 # Resource Gateway Author UX 体验成熟度 95 分提升计划
 
-> 状态：Proposed for Review
+> 状态：Implementation in Progress — Stage 0 completed
 >
 > 日期：2026-07-29
 >
-> 目标：将 Author Workspace v2 从当前约 61 分提升到可被真实任务证据证明的 95 分
+> 目标：将 Author Workspace v2 从基线约 61 分提升到可被真实任务证据证明的 95 分；Stage 0 复评为 68 分
 >
 > 适用范围：`/author/`、Operator Contract、Graph Contract、Scenario、Run Evidence、VS Code 宿主和 ANEKE deep link
 >
@@ -1413,3 +1413,94 @@ Compose / Contract / Test / Review
 6. 分阶段目标分和用户研究门槛是否足够严格。
 
 前三项决定系统能否根治当前体验分裂。后三项决定交付范围和品牌呈现。
+
+## 25. 实施记录
+
+### 25.1 Stage 0：可信度止血（已完成）
+
+Stage 0 不增加新的业务概念，先修复会让用户对绿色结果失去信任的问题。七个工作项均已
+落地：
+
+| 工作项 | 实现结果 | 关键证据 |
+|---|---|---|
+| UX95-001 | Simulation fixture 投影有界结构化 schema；public selected-payload contract 不再错误下沉为 BLOGE terminal aggregate contract | Loan、Order、Dashboard 试跑后 UI 与服务日志均无非预期 schema warning |
+| UX95-002 | `Review result` 直接打开 Contract 工作台的 `Run Evidence`；失败结果仍进入 Diagnostics | 组件测试和 packaged Chrome 均覆盖 |
+| UX95-003 | 三个内置复杂示例的 transform / decision 节点都有独立 Input case 和 Expected output，不再用 Graph fixture 冒充 operator oracle | 示例全节点语义测试覆盖 |
+| UX95-004 | Scenario 依赖摘要改为 `controlled / total dependencies`，不再把受控 mock 数量说成依赖总量 | Contract workspace 组件测试覆盖 |
+| UX95-005 | transient run 明确显示 `Exploratory run · fingerprint · simulation evidence only` | 1024 真实浏览器可见 |
+| UX95-006 | 同根因 diagnostics 聚合为一项并显示 occurrence count，同时保留全部坐标 | 纯投影测试覆盖三次重复诊断 |
+| UX95-007 | 建立 1280、1024、390 三档真实浏览器任务门禁，并保存 Stage 0 Evidence 截图 | Selenium + 应用内浏览器 |
+
+实现过程中额外发现并修复了两个“表面全绿但证据对象不可信”的缺陷：
+
+1. 批量运行两条表格场景后，Evidence 曾显示最后一次运行的 output，却没有绑定最后一个
+   Scenario 的 assertion comparison。现在每次 case 运行都会原子记录
+   `scenarioId + comparison`，Evidence 只在所选 Scenario 与运行坐标一致时展示。
+2. 普通的 `authorMode/nodeId` URL 更新曾被误识别为外部 deep link，产生
+   `Exploratory run has no stored draft` 警告。现在只有显式 `draftId` 或 `runId` 才进入
+   deep-link 恢复流程。
+
+真实浏览器最终证据如下：
+
+![Stage 0 在 1024px 下的最后场景运行证据](assets/resource-gateway-author-ux-stage0-evidence-1024.png)
+
+图中可验证：
+
+- 最后运行场景为 `user-99`，Terminal output 与该场景的 fallback oracle 一致；
+- Execution 与 Assertions 均为 `PASSED`，且明确为 `1 assertion passed`；
+- Contract 与 Governance 仍为 `NOT CHECKED`，因此总判定为 `Evidence incomplete`，没有把
+  exploratory simulate 冒充 promotion evidence；
+- 4 个 mocked node 与 1 个 real transform node 的执行边界可见；
+- 1024px 下 Evidence 无横向溢出。
+
+### 25.2 Stage 0 验证清单
+
+```text
+Frontend unit/component: 27 files, 303 tests passed
+Frontend production build: tsc --noEmit + vite build passed
+SimulationOperator + service integration: 17 tests passed
+Packaged browser class: 40 tests executed; 38 initially passed
+Legacy-route corrections: failing 2 tests re-run, 2 passed
+In-app browser: Dashboard table 2/2 passed; last Scenario evidence matched
+```
+
+浏览器类最后两条失败来自默认入口已晋级 v2 后，旧测试仍寻找 legacy `canvas-coach` 和
+legacy example shelf。测试现已显式绑定 `authorWorkspace=legacy`，并由 JavaDoc 说明这是
+保留旧 surface 回归覆盖，不是把默认入口退回 v1。默认 v2 仍由独立的完整任务旅程验证。
+
+### 25.3 本轮差距复评
+
+本轮继续使用第 3 节的唯一 100 分量尺，不另造一套不可相加的维度：
+
+| 权威维度 | Stage 0 前 | Stage 0 后 | 95 分目标 | 本轮变化 |
+|---|---:|---:|---:|---|
+| 产品模型与信息架构 | 7 | 7 | 14 | 双测试入口留待 Stage 1 |
+| 核心任务效率 | 12 | 13 | 14 | Review 主操作不再空转 |
+| 数据与 Contract 直观性 | 7 | 8 | 14 | fixture schema 与 lowering 语义一致 |
+| 测试与结果可信度 | 8 | 12 | 17 | case oracle、Scenario/run 坐标与日志 warning 根治 |
+| 复杂图阅读与操控 | 8 | 8 | 11 | 本阶段未处理 |
+| 反馈、恢复与防错 | 6 | 7 | 10 | diagnostic 聚合、exploratory provenance |
+| 可访问性与响应式 | 6 | 6 | 7 | 既有门禁保持 |
+| 企业生命周期与宿主一致性 | 7 | 7 | 8 | deep-link coordinate 留待 Stage 1 |
+| **合计** | **61** | **68** | **95** | **+7** |
+
+分数变化可追溯到以下证据：
+
+```text
+Baseline 61
++ trustworthy run/evidence coordinate       3
++ meaningful built-in operator oracles      1
++ schema-aware fixture diagnostics          1
++ root-cause aggregation                    1
++ explicit exploratory provenance           1
+= Stage 0 score 68
+```
+
+当前相对 95 分目标仍差 `27` 分，即 `28.4%`，不能停止。下一轮按既定 Stage 1 执行：
+
+1. 顶层模式改为 `Compose / Contract / Scenarios / Evidence`；
+2. v2 的 Scenarios 直接打开统一 Contract Scenario workspace；
+3. Legacy Test Suite 从 v2 正式路径移到 Advanced / Legacy；
+4. Graph / Operator 旧表格数据通过 adapter 投影到同一个 Scenario model；
+5. URL 增加可恢复的 workspace view 与 scenario coordinate；
+6. packaged Chrome 验证运行结束无需关闭第二个模态浮层即可进入 Evidence。
