@@ -814,3 +814,39 @@ real in-app browser        1024px, Dashboard 2/2, exact last-case Evidence match
 Stage 0 将新的体验成熟度从 `61` 提升到 `68`。剩余差距仍为 `28.4%`，下一轮必须统一
 Contract / Scenario / Evidence 工作台，不能继续让 v2 Test Suite 模态框与结构化 Scenario
 并列竞争。
+
+## Round 7：统一 Scenario / Evidence 工作台
+
+### 已实现
+
+- 顶层模式统一为 `Compose / Contract / Scenarios / Evidence`；
+- v2 的 Graph 与 Operator 都进入 `ContractScenarioWorkspace`，不再打开 Raw Test Suite；
+- Graph/Operator 存量表格行通过 adapter 投影为 Given、Dependency RETURN 和 Then
+  assertion；
+- 无法无损投影的行保留原始 source 与原因，显示在 Advanced migration details，且不
+  产生虚假通过资产；
+- 主操作只运行 URL 当前 Scenario，运行完成直接进入 Run Evidence；
+- 投影与当前 target/Contract fingerprint 对齐前，Run scenario 保持禁用；
+- URL 可恢复 `target/workspaceView/scenarioId/runId/nodeId`，旧 `test/review` 链接自动
+  兼容到 canonical mode；
+- 工作台外部初值与内部导航改为单向协议，修复 `Scenarios/Evidence` 互相回写导致的
+  高频重复渲染；
+- 1024px 下长 Graph target 支持两行与完整 tooltip。
+
+### 验证
+
+```text
+frontend full suite       28 files / 307 tests passed
+frontend production build passed
+focused author/workspace  70 tests passed
+in-app browser            exact Scenario deep link + direct Evidence + no raw dialog
+packaged Chrome            direct Evidence journey and modal-safe diagnostics inspection
+```
+
+真实浏览器截图：
+
+![Round 7 统一 Scenario Evidence](assets/resource-gateway-author-ux-stage1-evidence-1024.png)
+
+新体验成熟度从 `68` 提升到 `78`。剩余差距为 `17.9%`，下一轮进入 Effective Contract 与
+字段来源/置信度治理，不能把 schema inference、observed data 和权威 Contract 继续混成
+一个看似确定的字段树。

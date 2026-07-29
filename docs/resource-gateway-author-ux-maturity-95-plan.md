@@ -1504,3 +1504,70 @@ Baseline 61
 4. Graph / Operator 旧表格数据通过 adapter 投影到同一个 Scenario model；
 5. URL 增加可恢复的 workspace view 与 scenario coordinate；
 6. packaged Chrome 验证运行结束无需关闭第二个模态浮层即可进入 Evidence。
+
+### 25.4 Stage 1：统一 Scenario 工作台（已完成）
+
+Stage 1 根治“同一测试意图存在两套正式入口”的产品模型分裂。v2 只保留
+`Compose / Contract / Scenarios / Evidence`；Graph 与 Operator 的存量表格数据均进入
+同一个 `ScenarioDraftSet`，Raw Test Suite 不再出现在正式路径。
+
+| 工作项 | 实现结果 | 防错边界 |
+|---|---|---|
+| UX95-101 | 顶层模式改为 Compose / Contract / Scenarios / Evidence | `test/review` URL 仅作为兼容 alias 读取，新 URL 只写 canonical mode |
+| UX95-102 | Scenarios 直接打开 `ContractScenarioWorkspace` | v2 不再挂载 Raw Test Suite，也不会留下不可见 focus trap |
+| UX95-103 | Evidence 直接打开最后一次精确 Scenario comparison | 一次 `Run & Compare` 即进入 Evidence，无需关闭第二个浮层 |
+| UX95-104 | Graph 旧 table rows 复用既有 adapter 投影 Scenario | Given、Dependency RETURN 与 terminal assertion 保持原语义 |
+| UX95-105 | 新增 Operator table rows → Scenario adapter | case type、input、expected output、operator target fingerprint 全部保留 |
+| UX95-106 | 无法无损投影的旧行保留 migration diagnostics | Advanced 展示原始 source/reason，且不制造“默认通过”场景 |
+| UX95-107 | URL 增加 target/workspaceView/scenarioId/runId | Graph 切换时自动归一化到有效 Scenario；旧 Scenario id 不串图 |
+| UX95-108 | 运行按钮绑定当前 Contract/target fingerprint | 投影完成前禁用，避免点击后只跳页却没有执行 |
+| UX95-109 | 工作台坐标改为单向事件 | 外部 initial coordinate 与内部主动导航不再互相回写、振荡渲染 |
+| UX95-110 | 1024px 长 target 标题支持两行与 tooltip | 标题完整可读，操作区可换行，页面无横向溢出 |
+
+真实浏览器证据：
+
+![Stage 1 统一 Scenario Evidence](assets/resource-gateway-author-ux-stage1-evidence-1024.png)
+
+图中可验证：
+
+- URL 精确包含 `target=graph`、`workspaceView=evidence` 与
+  `scenarioId=loan-prime-approval`；
+- Evidence 显示 3 个 mocked、2 个 real node 和 1 个通过断言；
+- Contract / Governance 为 `NOT CHECKED`，因此结论是 `Evidence incomplete`；
+- v2 DOM 中不存在 `test-suite-dialog`；
+- 1024px 下长 Graph 名可读，页面没有横向溢出。
+
+### 25.5 Stage 1 验证清单
+
+```text
+Frontend full suite          28 files / 307 tests passed
+Frontend production build    passed
+Author + Contract workspace  70 focused tests passed
+Scenario adapter             valid and unprojectable migration cases covered
+In-app browser               1024px complete path passed; exact URL restored
+Packaged Chrome              complete task journey covers direct Evidence and no raw Test dialog
+```
+
+实现期间真实发现并根治了一次状态振荡：Scenario run 完成时内部 active tab 已切到 Evidence，
+父层尚保留旧 `initialTab=scenarios`，双向 effect 会用相邻两帧互相回写。现在外部坐标只负责
+灌入初值，用户点击、选择 Scenario 和运行完成通过显式导航事件回写 URL；组件测试固定
+`scenarios -> evidence` 只产生两次坐标事件。
+
+### 25.6 Stage 1 差距复评
+
+继续使用第 3 节的 100 分量尺：
+
+| 权威维度 | Stage 0 | Stage 1 | 95 分目标 | 本轮变化 |
+|---|---:|---:|---:|---|
+| 产品模型与信息架构 | 7 | 12 | 14 | 唯一 Scenario/Evidence 工作台与 canonical mode |
+| 核心任务效率 | 13 | 14 | 14 | 一次运行直达 Evidence |
+| 数据与 Contract 直观性 | 8 | 9 | 14 | 存量 rows 转 Given/Dependencies/Then |
+| 测试与结果可信度 | 12 | 13 | 17 | Operator/Graph 同模型，迁移失败 fail closed |
+| 复杂图阅读与操控 | 8 | 8 | 11 | 本阶段未处理 |
+| 反馈、恢复与防错 | 7 | 8 | 10 | readiness 锁、坐标振荡根治 |
+| 可访问性与响应式 | 6 | 6 | 7 | 既有门禁保持 |
+| 企业生命周期与宿主一致性 | 7 | 8 | 8 | target/view/scenario/run deep link 完整 |
+| **合计** | **68** | **78** | **95** | **+10** |
+
+当前距 95 分仍差 `17` 分，即 `17.9%`，不能停止。Stage 2 必须处理 Effective Contract、
+字段来源/置信度、stale 传播与 Schema 直观性；Stage 3 再处理复杂图导航、恢复和实测效率。

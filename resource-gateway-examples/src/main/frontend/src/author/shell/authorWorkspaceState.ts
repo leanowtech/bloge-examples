@@ -1,4 +1,4 @@
-export type AuthorMode = 'compose' | 'contract' | 'test' | 'review';
+export type AuthorMode = 'compose' | 'contract' | 'scenarios' | 'evidence';
 
 export type AuthorPrimaryActionKind =
   | 'focus-palette'
@@ -35,17 +35,17 @@ export function resolveAuthorPrimaryAction(
     return { kind: 'focus-palette', label: 'Add first operator', targetMode: 'compose' };
   }
   if (context.hasInputErrors) {
-    return { kind: 'fix-input', label: 'Fix required input', targetMode: 'test' };
+    return { kind: 'fix-input', label: 'Fix required input', targetMode: 'scenarios' };
   }
   if (!context.hasRunResult) {
     return {
       kind: 'run',
       label: context.busy ? 'Running scenario...' : 'Run scenario',
-      targetMode: 'test',
+      targetMode: 'scenarios',
     };
   }
   if (!context.runSuccessful) {
-    return { kind: 'review-failures', label: 'Review failures', targetMode: 'review' };
+    return { kind: 'review-failures', label: 'Review failures', targetMode: 'evidence' };
   }
-  return { kind: 'review-result', label: 'Review result', targetMode: 'review' };
+  return { kind: 'review-result', label: 'Review result', targetMode: 'evidence' };
 }

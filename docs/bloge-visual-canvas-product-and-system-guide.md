@@ -53,7 +53,9 @@ BLOGE 通用可视化编排画布是一套面向复杂业务编排的 topology-f
 6. **Contract / Data**：`Contract` 定义 graph input/output schema；`Data` 根据 input schema
    生成这次运行的 Run Input controls，并在选中节点后显示真实入边和直接绑定。额外
    context 与 Raw JSON 只在 `Advanced` 中按需展开。
-7. **Mock Setup / Test Suite**：右侧 inspector 保持轻量，只展示节点级 mock fixture 和 Test Suite 摘要；点击 `Test Suite` 后用浮层表格组织多行 context、fixture overrides 和 expected output。
+7. **Mock Setup / Scenarios**：右侧 inspector 保持轻量；点击 `Open Scenarios` 后用
+   schema 表单组织 Given、依赖行为和 Then 断言。旧 Test Suite 浮层只在 Legacy
+   Workspace 保留。
 
 当业务图已经有多层依赖或边标签较多时，优先点击工具条里的 **Canvas Focus**。它会临时收起左侧 Library/Legacy DSL/Palette、右侧 Checklist/Runtime/Test Suite inspector、顶部 workflow 和示例卡，只保留 toolbar、Graph Contract 和主画布。这个模式适合做拓扑审阅、Auto Layout 后验收、拖线调试和演示复杂图。
 
@@ -99,7 +101,7 @@ secondary credit 被降为背景层，关键路径字段坐标仍然完整显示
 
 #### 键盘、窄视口和宿主遥测
 
-Start/Import、Operator details、Test Suite、Contract & Scenario 四类主浮层遵循同一个
+Start/Import、Operator details、Contract & Scenario 三类主浮层遵循同一个
 键盘协议：
 
 1. 打开后焦点进入当前主任务，而不是留在被遮挡的页面；
@@ -2183,9 +2185,10 @@ Assertion 通过但 Contract 或 Governance 尚未检查时只能显示 `Evidenc
 返回 warning 时显示 `Review required`。这一规则同时用于 Graph 和 Operator workspace，
 避免“试跑成功”被误解为“可以发布”。
 
-从画布表格批量试跑时，顶部 **Review result** 也会直接打开这一页，并自动选择最后实际
-执行的 Scenario。Evidence 同时绑定该 Scenario 的 assertion comparison 和 terminal
-output，不会把两条 case 的结果混在一起。未保存的示例运行会显示：
+顶部 **Run scenario** 会运行当前选中的 Scenario，并直接打开这一页，不需要先打开或
+关闭另一个 Test Suite 浮层。顶部 **Review result** 会回到同一份 Evidence，并自动选择
+最后实际执行的 Scenario。Evidence 同时绑定该 Scenario 的 assertion comparison 和
+terminal output，不会把两条 case 的结果混在一起。未保存的示例运行会显示：
 
 ```text
 Exploratory run · <content fingerprint> · simulation evidence only
@@ -2193,8 +2196,16 @@ Exploratory run · <content fingerprint> · simulation evidence only
 
 这类运行适合调试和演示，但 Contract / Governance 未检查时仍显示
 `Evidence incomplete`。只有显式保存 Graph、固定 revision 并完成治理闭环后，运行证据
-才具备晋级资格。正常切换 Compose / Contract / Test / Review 或选择节点不会触发
-deep-link 告警；只有 URL 中存在 `draftId` 或 `runId` 时才会恢复外部坐标。
+才具备晋级资格。正常切换 Compose / Contract / Scenarios / Evidence 或选择节点不会
+触发 deep-link 告警；只有 URL 中存在 `draftId` 或 `runId` 时才会恢复持久化外部坐标。
+工作台 URL 还会保留 `target`、`workspaceView`、`scenarioId` 与 `runId`，便于从
+治理系统直接回到准确的 Graph/Operator、Scenario 和 Evidence。
+
+![Author Workspace v2 的统一 Scenario Evidence](assets/resource-gateway-author-ux-stage1-evidence-1024.png)
+
+上图是 1024px 真实浏览器结果：`loan-prime-approval` 的 Execution 与 Assertions 通过，
+但 Contract / Governance 尚未检查，所以总判定保持 `Evidence incomplete`。顶部没有
+第二套 Test Suite 入口，长 Graph 名完整可读，且页面没有横向溢出。
 
 #### 直接为单个 Operator 编写 Contract Scenario
 
@@ -2443,52 +2454,51 @@ Foreach 的浮层不是另一个隐藏 JSON 编辑器，而是一个循环解释
 
 fixture 会写入 `GraphDraft.nodeFixtures`，属于 authoring/test evidence，不改变 DSL、fingerprint 或生产执行语义。
 
-### 5.6.1 用 Test Suite 做批量 mock 回归
+### 5.6.1 用 Scenarios 做可控 mock 回归
 
-单次 Simulate 适合调试一条路径，但复杂业务编排不能只靠一条样例证明正确。新版 `/author/` 在右侧 inspector 中保留 **Test Suite** 摘要按钮，点击后打开浮层表格，把大规模系统化验证前移到画布内，同时避免右侧栏被大表格挤爆。
+复杂业务编排不能只靠一次 Simulate 证明正确。Author Workspace v2 把 Graph 与 Operator
+测试统一为 **Scenario**：点击顶部 **Scenarios**，或右侧 inspector 的
+**Open Scenarios**，都会进入同一个 Contract/Scenario 工作台，不再打开 Raw JSON
+Test Suite 浮层。
 
-![Author Test Suite 浮层表格标注](assets/bloge-author-test-suite-dialog-annotated.svg)
+每个 Scenario 的结构固定为：
 
-1. **右栏轻量入口**：inspector 只显示 case 数、最新运行状态和 `Test Suite` 按钮。
-2. **浮层表格**：点击按钮后打开完整表格，可批量编辑、运行、清理测试结果。
-3. **行级验证数据**：每一行都包含 Context、Fixture Overrides、Expected Output；运行失败时展示 Actual Output。
-
-每一行 Test Suite 都包含：
-
-| 字段 | 作用 |
-| --- | --- |
-| Case name | 业务路径名称，例如 `Prime approval path` 或 `Fallback defaults` |
-| Context | 本行传给 `POST /api/visual/graphs/simulate` 的 runtime context |
-| Fixture Overrides | 本行覆盖节点级 Mock Setup 的 fixture，格式是 `{ "nodeId": { "output": ..., "expectedInput": ... } }` |
-| Expected Output | 本行断言的 graph terminal output；留空时只要求 simulate 成功 |
-
-资源节点的 fixture 要模拟完整资源输出，而不是只写 payload 本体。例如资源边和 transform 表达式通常读取 `n1.output.payload.score`，因此覆盖行应写成 `{ "n1": { "output": { "payload": { "score": 650 } } } }`。普通 primitive、transform 或 decision 节点则按节点真实输出结构填写。
+| 阶段 | 图形化能力 | 运行语义 |
+| --- | --- | --- |
+| Given | 按 target input schema 生成表单 | 本次 Graph/Operator 业务输入 |
+| Dependencies | 为每个 node/operator/resource/function 选择 Real、Return、Error、Timeout、Replay 等行为 | 调用方控制数据流和失败边界 |
+| Then | 从 output schema 选择字段和断言方式 | 比较 terminal、node、edge 或 invocation evidence |
 
 使用方式：
 
-1. 加载任意内置复杂示例，例如 `Loan policy fallback`。
-2. 在右侧 `Test Suite` 摘要卡查看系统预置的 2 行 case。
-3. 点击 `Test Suite` 打开浮层表格。
-4. 需要新增路径时点击 `Add Case`，填写新的 context、fixture overrides 和 expected output。
-5. 点击 `Run Table`。画布会逐行调用 transient simulate endpoint，并把每行状态标成 `pending/running/passed/failed`。
-6. 如果某行失败，结果区会显示实际 output 和 expected output，便于判断是 mock 数据、decision table 规则、transform 函数还是预期断言错了。
-7. 批量运行后，最后一行的 run trace 会同步到画布节点 badge 和 Result 面板，因此仍可沿 DAG 排查 real/mocked 节点。
+1. 加载 `Loan policy fallback`，点击顶部 **Scenarios**。
+2. 左侧直接看到 `Prime approval path` 与 `Policy decline path`；它们由内置旧表格样例
+   无损投影而来。
+3. 在 **Given** 修改业务输入；在 **Dependencies** 修改节点返回值或切换为真实调用；
+   在 **Then** 选择结果字段并填写期望值。
+4. 点击 **Run & Compare**。页面直接进入 **Run Evidence**，失败断言默认展开
+   Expected/Actual，成功断言默认折叠。
+5. 点击顶部 **Run scenario** 会运行当前 URL 中 `scenarioId` 指向的场景；示例投影尚未
+   与当前 Contract 指纹对齐时按钮保持禁用，避免空运行。
 
-Fixture 合并顺序是：
+节点基础 fixture 与 Scenario 控制行为的合并顺序是：
 
 ```text
-Mock Setup 基础 nodeFixtures
-  -> Test Suite 当前行 fixtureOverrides
-    -> 本行 simulate request
+GraphDraft.nodeFixtures
+  -> Scenario Dependencies 的精确节点行为
+    -> 本次 simulate request
 ```
 
-这使作者可以把“共用的下游 mock 数据”放在节点 Simulation 区，把“某条业务路径特殊的 mock 变化”放在表格行里。工业化测试的关键就在这里：大部分复杂场景不需要真实下游 API，也能稳定跑大量路径验证，避免测试环境被外部系统状态、限流、网络和脏数据拖垮。
+旧 Graph Test Suite 和 Operator Test Suite 数据不会被静默丢弃：可投影行转为
+Scenario；结构非法或无法无损表达的行保留在 **Advanced migration details**，且绝不会被
+当成通过证据。v2 的 Operator Detail 也只在 **Advanced** 折叠区保留旧表格与 fixture
+工具。需要原样操作旧 Raw JSON 表格时，使用顶栏 **Legacy** 进入旧工作区。
 
-Test Suite 是画布内的 authoring-side transient runner。需要把测试资产治理起来时，使用后端已经落地的 schema-gated suite/golden 能力：
+需要把测试资产治理起来时，继续使用后端已经落地的 schema-gated suite/golden 能力：
 
 | 层级 | 入口 | 用途 |
 | --- | --- | --- |
-| 画布内调试 | `/author/` Test Suite | 作者快速构造路径、调试 mock、验证 transform/decision/foreach 编排逻辑 |
+| 画布内调试 | `/author/` Scenarios | 作者用 schema 表单和依赖行为构造路径、调试 mock、验证编排逻辑 |
 | Resource graph compatibility suite | `/api/gateway/graphs/contracts/tests/*` | 编辑或兼容运行旧 table asset；执行内核已统一，但资产身份仍是旧协议 |
 | Governed built-in graph suite | `PUT /api/testing/catalogs/gateway-graph-contract-v1`，再执行返回的 exact suite ref | 把七图/14 case 物化为租户/环境隔离的不可变 fixture/TestSuite，供 API、test-kit、CLI 和 CI 共用 |
 | Operator suite | `/api/visual/operators/tests/*` | 对单个 operator 的 input/config/output schema 和 mock output 断言做表格验证 |

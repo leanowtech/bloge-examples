@@ -32,14 +32,14 @@ interface AuthorContextInspectorProps {
   advancedContent: ReactNode;
   onEditNode: () => void;
   onOpenNodeContract: () => void;
-  onOpenTest: () => void;
+  onOpenScenarios: () => void;
   onOpenGraphContract: () => void;
 }
 
 const TABS: Array<{ key: InspectorTab; label: string }> = [
   { key: 'config', label: 'Config' },
   { key: 'data', label: 'Data' },
-  { key: 'test', label: 'Test' },
+  { key: 'test', label: 'Scenarios' },
   { key: 'contract', label: 'Contract' },
   { key: 'advanced', label: 'Advanced' },
 ];
@@ -61,7 +61,7 @@ export default function AuthorContextInspector({
   advancedContent,
   onEditNode,
   onOpenNodeContract,
-  onOpenTest,
+  onOpenScenarios,
   onOpenGraphContract,
 }: AuthorContextInspectorProps) {
   const [activeTab, setActiveTab] = useState<InspectorTab>(() => defaultTab(mode, selectedNode));
@@ -127,8 +127,8 @@ export default function AuthorContextInspector({
         {activeTab === 'test' && (
           <>
             <div className="author-context-actions">
-              <button type="button" className="primary compact" onClick={onOpenTest}>
-                Open Test Workspace
+              <button type="button" className="primary compact" onClick={onOpenScenarios}>
+                Open Scenarios
               </button>
             </div>
             <div className="author-review-summary">
@@ -187,7 +187,7 @@ function defaultTab(
   if (mode === 'contract') {
     return 'contract';
   }
-  if (mode === 'test' || mode === 'review') {
+  if (mode === 'scenarios' || mode === 'evidence') {
     return 'test';
   }
   return selectedNode ? 'config' : 'data';

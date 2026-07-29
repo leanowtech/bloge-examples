@@ -10,6 +10,7 @@ import type {
   DependencyBehaviorDraft,
   ExactTargetRef,
   ScenarioDiagnostic,
+  ScenarioCaseType,
   ScenarioDraft,
   ScenarioDraftSet,
 } from './domain';
@@ -37,6 +38,20 @@ export interface ScenarioComparison {
   passed: boolean;
   results: ScenarioAssertionResult[];
   diagnostics: ScenarioDiagnostic[];
+}
+
+export interface LegacyOperatorTableCase {
+  id: string;
+  name: string;
+  caseType: ScenarioCaseType;
+  input: unknown;
+  expectedOutput: unknown;
+}
+
+export interface LegacyTableProjectionDiagnostic {
+  caseId: string;
+  message: string;
+  raw: Record<string, unknown>;
 }
 
 /** Projects existing canvas table tests into first-class Scenario drafts for immediate discoverability. */
@@ -76,6 +91,66 @@ export function scenarioDraftSetFromCanvas(
       ...draftSet.metadata,
       owner: 'canvas-author',
       provenance: { source: 'canvas-table-tests' },
+    },
+  };
+}
+
+/**
+ * Adapts executable operator table rows into the same Scenario model used by graph authoring.
+ *
+ * Invalid legacy rows are retained as projection diagnostics in provenance instead of being dropped
+ * or exposed through a second editable model. The caller can show those raw rows under Advanced while
+ * all newly-authored cases continue in the canonical Scenario workspace.
+ */
+export function scenarioDraftSetFromOperatorTableCases(
+  target: ExactTargetRef,
+  contractFingerprint: string,
+  graphDraft: GraphDraft,
+  operatorNode: ScenarioNodeOption,
+  tableCases: LegacyOperatorTableCase[],
+  projectionDiagnostics: LegacyTableProjectionDiagnostic[] = [],
+): ScenarioDraftSet {
+  const projected = scenarioDraftSetFromCanvas(
+    target,
+    contractFingerprint,
+    graphDraft,
+    [operatorNode],
+    tableCases.map((testCase) => ({
+      id: testCase.id,
+      name: testCase.name,
+      context: asContextObject(testCase.input),
+      fixtures: {
+        [operatorNode.id]: {
+          output: testCase.expectedOutput,
+          expectedInput: testCase.input,
+        },
+      },
+      hasExpectedOutput: true,
+      expectedOutput: testCase.expectedOutput,
+    })),
+  );
+  const casesById = new Map(tableCases.map((testCase) => [testCase.id, testCase]));
+  return {
+    ...projected,
+    scenarios: tableCases.length === 0 && projectionDiagnostics.length > 0
+      ? []
+      : projected.scenarios.map((scenario) => ({
+          ...scenario,
+          caseType: casesById.get(scenario.scenarioId)?.caseType ?? scenario.caseType,
+          description: casesById.has(scenario.scenarioId)
+            ? 'Migrated from the legacy operator table.'
+            : scenario.description,
+          tags: casesById.has(scenario.scenarioId)
+            ? ['operator', 'legacy-table-migration']
+            : scenario.tags,
+        })),
+    metadata: {
+      ...projected.metadata,
+      provenance: {
+        source: 'operator-table-adapter',
+        projectedCaseCount: tableCases.length,
+        projectionDiagnostics,
+      },
     },
   };
 }
@@ -268,6 +343,12 @@ function sampleObject(envelope: SchemaEnvelope | undefined): Record<string, unkn
   return sample !== null && typeof sample === 'object' && !Array.isArray(sample)
     ? sample as Record<string, unknown>
     : {};
+}
+
+function asContextObject(input: unknown): Record<string, unknown> {
+  return input !== null && typeof input === 'object' && !Array.isArray(input)
+    ? { ...input as Record<string, unknown> }
+    : { input };
 }
 
 function jsonEqual(left: unknown, right: unknown): boolean {

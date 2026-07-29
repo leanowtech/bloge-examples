@@ -17,7 +17,7 @@ describe('author workspace primary action', () => {
     });
   });
 
-  it('routes invalid runtime values to Test before offering execution', () => {
+  it('routes invalid runtime values to Scenarios before offering execution', () => {
     expect(resolveAuthorPrimaryAction({
       nodeCount: 3,
       busy: false,
@@ -26,7 +26,7 @@ describe('author workspace primary action', () => {
       runSuccessful: false,
     })).toMatchObject({
       kind: 'fix-input',
-      targetMode: 'test',
+      targetMode: 'scenarios',
     });
   });
 
@@ -56,7 +56,7 @@ describe('author workspace primary action', () => {
     });
   });
 
-  it('routes failed and successful runs into Review with honest labels', () => {
+  it('routes failed and successful runs into Evidence with honest labels', () => {
     expect(resolveAuthorPrimaryAction({
       nodeCount: 3,
       busy: false,
@@ -71,5 +71,12 @@ describe('author workspace primary action', () => {
       hasRunResult: true,
       runSuccessful: true,
     }).label).toBe('Review result');
+    expect(resolveAuthorPrimaryAction({
+      nodeCount: 3,
+      busy: false,
+      hasInputErrors: false,
+      hasRunResult: true,
+      runSuccessful: true,
+    }).targetMode).toBe('evidence');
   });
 });

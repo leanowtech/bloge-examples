@@ -217,7 +217,8 @@ describe('AuthorCanvas operator-library intake', () => {
     window.history.replaceState(
       {},
       '',
-      '/author/?authorWorkspace=v2&authorMode=review&runId=run-99&nodeId=eligibility',
+      '/author/?authorWorkspace=v2&authorMode=evidence&target=graph'
+        + '&workspaceView=evidence&runId=run-99&nodeId=eligibility',
     );
     fetchMock.mockImplementation(async (input: RequestInfo | URL) => {
       const url = String(input);
@@ -277,7 +278,7 @@ describe('AuthorCanvas operator-library intake', () => {
     expect(query('[data-testid="governance-gate-strip"]').textContent).toContain('BLOCKED');
     expect(query('[data-testid="governance-gate-strip"]').textContent).toContain('CURRENT');
     expect(document.querySelector('[data-testid="author-start-dialog"]')).toBeNull();
-    expect(query('.workspace').getAttribute('data-author-mode')).toBe('review');
+    expect(query('.workspace').getAttribute('data-author-mode')).toBe('evidence');
     expect(query('[data-testid="author-diagnostics-drawer"]').textContent)
       .toContain('OWNER_APPROVAL_REQUIRED');
 
@@ -293,7 +294,8 @@ describe('AuthorCanvas operator-library intake', () => {
     window.history.replaceState(
       {},
       '',
-      '/author/?authorWorkspace=v2&authorMode=review&runId=run-transient',
+      '/author/?authorWorkspace=v2&authorMode=evidence&target=graph'
+        + '&workspaceView=evidence&runId=run-transient',
     );
     fetchMock.mockImplementation(async (input: RequestInfo | URL) => {
       const url = String(input);
@@ -1201,16 +1203,17 @@ describe('AuthorCanvas built-in canvas examples', () => {
     await waitFor(() => {
       expect(document.querySelector('[data-testid="author-start-dialog"]')).toBeNull();
       expect(query('[data-testid="author-primary-action"]').textContent).toBe('Run scenario');
+      expect(query<HTMLButtonElement>('[data-testid="author-primary-action"]').disabled).toBe(false);
       expect(query('[data-testid="author-context-inspector"]').textContent).toContain('Decision response');
     });
     await click(query<HTMLButtonElement>('[data-testid="author-primary-action"]'));
 
     await waitFor(() => {
-      expect(query('.workspace').getAttribute('data-author-mode')).toBe('review');
+      expect(query('.workspace').getAttribute('data-author-mode')).toBe('evidence');
       expect(query('[data-testid="author-primary-action"]').textContent).toBe('Review result');
       expect(query('[data-testid="author-command-bar"]').textContent).toContain('PASSED');
       expect(query('[data-testid="author-context-inspector"]').textContent).toContain(
-        '2/2 scenario assertions passed.',
+        '1/1 scenario assertions passed.',
       );
       expect(query('.workspace').textContent).not.toContain(
         'no stored draft revision or immutable fingerprint',
@@ -1218,18 +1221,14 @@ describe('AuthorCanvas built-in canvas examples', () => {
       expect(query('[data-testid="author-run-provenance"]').textContent).toContain(
         'Exploratory run',
       );
-    });
-    expect(fetchMock.mock.calls.filter(([input]) => String(input) === '/api/visual/graphs/simulate'))
-      .toHaveLength(2);
-
-    await click(query<HTMLButtonElement>('[data-testid="author-primary-action"]'));
-    await waitFor(() => {
       expect(query('[data-testid="contract-workspace"]')).toBeDefined();
       expect(buttonByText('Run Evidence').getAttribute('aria-selected')).toBe('true');
       expect(query('[data-testid="scenario-evidence"]')).toBeDefined();
       expect(query('[data-testid="scenario-evidence"]').textContent).toContain('1 assertion passed.');
-      expect(query('[data-testid="scenario-evidence"]').textContent).toContain('applicant-2002');
+      expect(query('[data-testid="scenario-evidence"]').textContent).toContain('applicant-1001');
     });
+    expect(fetchMock.mock.calls.filter(([input]) => String(input) === '/api/visual/graphs/simulate'))
+      .toHaveLength(1);
   });
 
   it('authors schema-driven run input and binds it to the selected node without raw JSON', async () => {
@@ -1278,19 +1277,13 @@ describe('AuthorCanvas built-in canvas examples', () => {
         targetPath: 'applicantId',
       });
 
-    await click(query<HTMLButtonElement>('[data-testid="author-mode:test"]'));
-    await waitFor(() => expect(query('[data-testid="test-suite-dialog"]')).toBeDefined());
-    await click(query<HTMLButtonElement>('[data-testid="test-table-clear"]'));
-    await click(query<HTMLButtonElement>('[aria-label="Close test suite"]'));
-    await click(query<HTMLButtonElement>('[data-testid="author-primary-action"]'));
-
-    await waitFor(() =>
-      expect(query('.workspace').getAttribute('data-author-mode')).toBe('review'),
-    );
-    const simulateCalls = fetchMock.mock.calls
-      .filter(([input]) => String(input) === '/api/visual/graphs/simulate');
-    const request = JSON.parse(String(simulateCalls[simulateCalls.length - 1]?.[1]?.body));
-    expect(request.context).toEqual({ applicantId: 'applicant-2002' });
+    await click(query<HTMLButtonElement>('[data-testid="author-mode:scenarios"]'));
+    await waitFor(() => {
+      expect(query('[data-testid="contract-workspace"]')).toBeDefined();
+      expect(buttonByText('Scenarios 2').getAttribute('aria-selected')).toBe('true');
+      expect(window.location.search).toContain('scenarioId=loan-prime-approval');
+    });
+    expect(document.querySelector('[data-testid="test-suite-dialog"]')).toBeNull();
   });
 
   it('keeps v2 mode and selection shareable while panels remain local workspace state', async () => {
@@ -1310,8 +1303,11 @@ describe('AuthorCanvas built-in canvas examples', () => {
       expect(window.location.search).toContain('nodeId=n5');
       expect(window.location.search).toContain('authorMode=compose');
     });
-    await click(query<HTMLButtonElement>('[data-testid="author-mode:review"]'));
-    expect(window.location.search).toContain('authorMode=review');
+    await click(query<HTMLButtonElement>('[data-testid="author-mode:evidence"]'));
+    expect(window.location.search).toContain('authorMode=evidence');
+    expect(window.location.search).toContain('target=graph');
+    expect(window.location.search).toContain('workspaceView=evidence');
+    expect(window.location.search).toContain('scenarioId=loan-prime-approval');
 
     await click(query<HTMLButtonElement>('[aria-label="Collapse operator palette"]'));
     await click(query<HTMLButtonElement>('[aria-label="Collapse context inspector"]'));
@@ -1337,25 +1333,22 @@ describe('AuthorCanvas built-in canvas examples', () => {
     await click(query<HTMLButtonElement>('[data-testid="author-start-example:loan-policy-fallback"]'));
     expect(query('[data-testid="author-diagnostics-drawer"]').className).toContain('collapsed');
 
-    await click(query<HTMLButtonElement>('[data-testid="author-mode:test"]'));
-    await waitFor(() =>
-      expect(query('[data-testid="test-suite-dialog"]').textContent).toContain('Test Suite'),
-    );
+    await click(query<HTMLButtonElement>('[data-testid="author-mode:scenarios"]'));
+    await waitFor(() => expect(buttonByText('Scenarios 2').getAttribute('aria-selected')).toBe('true'));
     await setControlValue(
-      query<HTMLTextAreaElement>('[data-testid="test-table-expected:0"]'),
-      '{"decision":"force-mismatch"}',
+      query<HTMLInputElement>('input[aria-label="decision"]'),
+      'force-mismatch',
     );
-    await click(query<HTMLButtonElement>('[aria-label="Close test suite"]'));
-    await click(query<HTMLButtonElement>('[data-testid="author-primary-action"]'));
+    await click(query<HTMLButtonElement>('[data-testid="scenario-run"]'));
 
     await waitFor(() => {
       const drawer = query('[data-testid="author-diagnostics-drawer"]');
       expect(drawer.className).toContain('open');
       expect(drawer.textContent).toContain('ASSERTION_FAILED');
       expect(drawer.textContent).toContain('SCENARIO');
-      expect(drawer.textContent).toContain('Prime approval path: Output mismatch.');
+      expect(drawer.textContent).toContain('Prime approval path');
     });
-    expect(query('.workspace').getAttribute('data-author-mode')).toBe('review');
+    expect(query('.workspace').getAttribute('data-author-mode')).toBe('evidence');
     expect(query('[data-testid="author-primary-action"]').textContent).toBe('Review failures');
   });
 

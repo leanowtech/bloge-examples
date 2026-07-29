@@ -155,6 +155,29 @@ describe('ContractScenarioWorkspace', () => {
       .toBe(false);
   });
 
+  it('publishes only deliberate tab and evidence coordinates to the author shell', async () => {
+    const onCoordinateChange = vi.fn();
+    const onRunEvidence = vi.fn();
+    await renderWorkspace({
+      onRun: vi.fn().mockResolvedValue(successfulResponse()),
+      onCoordinateChange,
+      onRunEvidence,
+    });
+
+    await clickTab('Scenarios 1');
+    expect(onCoordinateChange).toHaveBeenLastCalledWith('scenarios', 'approved');
+
+    await act(async () => {
+      button('Run & Compare').click();
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+    expect(onRunEvidence).toHaveBeenCalledWith('approved', expect.objectContaining({ passed: true }));
+    expect(onCoordinateChange).toHaveBeenLastCalledWith('evidence', 'approved');
+    expect(onCoordinateChange).toHaveBeenCalledTimes(2);
+  });
+
   it('claims readiness only when execution, assertions, Contract, and Governance pass', async () => {
     await renderWorkspace({
       onRun: vi.fn().mockResolvedValue(successfulResponse()),
@@ -561,6 +584,8 @@ describe('ContractScenarioWorkspace', () => {
     onRun?: ReturnType<typeof vi.fn>;
     trustContext?: ScenarioEvidenceTrustContext;
     onSelectEvidenceDiagnostic?: ReturnType<typeof vi.fn>;
+    onCoordinateChange?: ReturnType<typeof vi.fn>;
+    onRunEvidence?: ReturnType<typeof vi.fn>;
   } = {}) {
     const draft = options.unsaved
       ? { ...graphDraft(), draftId: '', revision: 0 }
@@ -612,6 +637,8 @@ describe('ContractScenarioWorkspace', () => {
           onClose={vi.fn()}
           trustContext={options.trustContext}
           onSelectEvidenceDiagnostic={options.onSelectEvidenceDiagnostic}
+          onCoordinateChange={options.onCoordinateChange}
+          onRunEvidence={options.onRunEvidence}
         />,
       );
     });

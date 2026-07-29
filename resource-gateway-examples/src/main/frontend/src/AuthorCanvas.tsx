@@ -158,9 +158,15 @@ import {
   compareScenarioRun,
   rebaseScenarioDraftSet,
   scenarioDraftSetFromCanvas,
+  scenarioDraftSetFromOperatorTableCases,
+  scenarioSetIsCurrent,
+  type LegacyOperatorTableCase,
+  type LegacyTableProjectionDiagnostic,
   type ScenarioComparison,
   type ScenarioNodeOption,
 } from './contract-scenario/scenarioAuthoring';
+import { compileScenarioForSimulation } from './contract-scenario/scenarioCompiler';
+import type { WorkspaceTab } from './contract-scenario/ContractScenarioWorkspace';
 import AuthorCommandBar from './author/shell/AuthorCommandBar';
 import AuthorContextInspector from './author/shell/AuthorContextInspector';
 import StartImportDialog, {
@@ -330,6 +336,26 @@ function compactAuthorFingerprint(value: string | undefined): string {
     return normalized;
   }
   return `${normalized.slice(0, 13)}...${normalized.slice(-6)}`;
+}
+
+function workspaceTabForMode(mode: AuthorMode): WorkspaceTab {
+  if (mode === 'scenarios') {
+    return 'scenarios';
+  }
+  if (mode === 'evidence') {
+    return 'evidence';
+  }
+  return 'interface';
+}
+
+function authorModeForWorkspaceTab(tab: WorkspaceTab): AuthorMode {
+  if (tab === 'scenarios') {
+    return 'scenarios';
+  }
+  if (tab === 'evidence') {
+    return 'evidence';
+  }
+  return 'contract';
 }
 
 const EDGE_LABEL_OPTIONS = {
@@ -1003,6 +1029,33 @@ function parseOperatorTestSuiteRow(row: OperatorTestSuiteDraftRow): OperatorTest
     transportResponse,
     ...(messages.length > 0 ? { error: messages.join(' ') } : {}),
   };
+}
+
+function projectLegacyOperatorTableRows(rows: OperatorTestSuiteDraftRow[]): {
+  cases: LegacyOperatorTableCase[];
+  diagnostics: LegacyTableProjectionDiagnostic[];
+} {
+  const cases: LegacyOperatorTableCase[] = [];
+  const diagnostics: LegacyTableProjectionDiagnostic[] = [];
+  rows.forEach((row) => {
+    const compilation = parseOperatorTestSuiteRow(row);
+    if (compilation.error) {
+      diagnostics.push({
+        caseId: row.id,
+        message: compilation.error,
+        raw: { ...row },
+      });
+      return;
+    }
+    cases.push({
+      id: row.id,
+      name: row.name.trim() || row.id,
+      caseType: row.caseType,
+      input: compilation.input,
+      expectedOutput: compilation.output,
+    });
+  });
+  return { cases, diagnostics };
 }
 
 function evaluateOperatorTestResult(
@@ -3381,6 +3434,7 @@ function OperatorDetailDialog({
   operatorTestPublication,
   operatorTestsRunning,
   operatorTestRunDisabledReason,
+  canonicalScenarios,
   onCancel,
   onApply,
   dirty,
@@ -3422,6 +3476,7 @@ function OperatorDetailDialog({
   operatorTestPublication?: OperatorTestSuitePublicationResult;
   operatorTestsRunning: boolean;
   operatorTestRunDisabledReason?: string;
+  canonicalScenarios: boolean;
   onCancel: () => void;
   onApply: () => void;
   dirty: boolean;
@@ -3454,8 +3509,42 @@ function OperatorDetailDialog({
   const outputs = operator?.ports?.outputs ?? [];
   const focusRows = operatorFocusRows(node.data.summary, inputs, outputs, operator);
   const editorDefinition = resolveNodeEditor(node.data.summary.visualKind);
+  const visibleTabs = canonicalScenarios
+    ? editorDefinition.tabs.filter((tab) => tab.id !== 'test')
+    : editorDefinition.tabs;
   const [activeTab, setActiveTab] = useState<NodeEditorTab>(editorDefinition.defaultTab);
   const dialogRef = useRef<HTMLElement>(null);
+  const legacyTestTools = (
+    <>
+      <OperatorFixtureEditor
+        fixtureDraft={fixtureDraft}
+        expectedInputDraft={expectedInputDraft}
+        hasFixtureDraft={hasFixtureDraft}
+        fixtureError={fixtureError}
+        onOutputChange={onFixtureOutputChange}
+        onExpectedInputChange={onExpectedInputChange}
+        onUseSample={onUseFixtureSample}
+        onClear={onClearFixture}
+      />
+
+      <OperatorTestSuiteEditor
+        operator={operator}
+        rows={operatorTestRows}
+        results={operatorTestResults}
+        publication={operatorTestPublication}
+        running={operatorTestsRunning}
+        runDisabledReason={operatorTestRunDisabledReason}
+        onAdd={onOperatorTestAdd}
+        onUpdate={onOperatorTestUpdate}
+        onRemove={onOperatorTestRemove}
+        onApplyFixture={onOperatorTestApplyFixture}
+        onRun={onOperatorTestRun}
+        onRunAll={onOperatorTestRunAll}
+        onGovern={onOperatorTestGovern}
+        onGovernAll={onOperatorTestGovernAll}
+      />
+    </>
+  );
 
   useEffect(() => {
     setActiveTab(editorDefinition.defaultTab);
@@ -3515,7 +3604,7 @@ function OperatorDetailDialog({
           </div>
         </div>
         <nav className="operator-editor-tabs" role="tablist" aria-label="Node editor sections">
-          {editorDefinition.tabs.map((tab) => (
+          {visibleTabs.map((tab) => (
             <button
               type="button"
               role="tab"
@@ -3576,40 +3665,16 @@ function OperatorDetailDialog({
             />
           </div>
 
-          <div
-            className="operator-editor-pane test"
-            role="tabpanel"
-            hidden={activeTab !== 'test'}
-            data-testid="operator-editor-pane:test"
-          >
-            <OperatorFixtureEditor
-              fixtureDraft={fixtureDraft}
-              expectedInputDraft={expectedInputDraft}
-              hasFixtureDraft={hasFixtureDraft}
-              fixtureError={fixtureError}
-              onOutputChange={onFixtureOutputChange}
-              onExpectedInputChange={onExpectedInputChange}
-              onUseSample={onUseFixtureSample}
-              onClear={onClearFixture}
-            />
-
-            <OperatorTestSuiteEditor
-              operator={operator}
-              rows={operatorTestRows}
-              results={operatorTestResults}
-              publication={operatorTestPublication}
-              running={operatorTestsRunning}
-              runDisabledReason={operatorTestRunDisabledReason}
-              onAdd={onOperatorTestAdd}
-              onUpdate={onOperatorTestUpdate}
-              onRemove={onOperatorTestRemove}
-              onApplyFixture={onOperatorTestApplyFixture}
-              onRun={onOperatorTestRun}
-              onRunAll={onOperatorTestRunAll}
-              onGovern={onOperatorTestGovern}
-              onGovernAll={onOperatorTestGovernAll}
-            />
-          </div>
+          {!canonicalScenarios && (
+            <div
+              className="operator-editor-pane test"
+              role="tabpanel"
+              hidden={activeTab !== 'test'}
+              data-testid="operator-editor-pane:test"
+            >
+              {legacyTestTools}
+            </div>
+          )}
 
           <div
             className="operator-editor-pane contract"
@@ -3628,6 +3693,16 @@ function OperatorDetailDialog({
             data-testid="operator-editor-pane:advanced"
           >
             <OperatorConfigEditor config={node.data.config} onApply={onConfigReplace} />
+            {canonicalScenarios && (
+              <details className="operator-legacy-test-tools">
+                <summary>Legacy operator table and fixture tools</summary>
+                <p className="muted">
+                  Existing rows are projected into Contract &amp; Scenarios. Keep these controls for
+                  migration or low-level fixture troubleshooting.
+                </p>
+                {legacyTestTools}
+              </details>
+            )}
           </div>
 
           {node.data.summary.visualKind === 'decision-table' && (
@@ -4612,7 +4687,12 @@ export default function AuthorCanvas({ workspaceVersion = 'v1' }: AuthorCanvasPr
   const [testSuiteOpen, setTestSuiteOpen] = useState(false);
   const [contractWorkspaceOpen, setContractWorkspaceOpen] = useState(false);
   const [contractWorkspaceInitialTab, setContractWorkspaceInitialTab] =
-    useState<'interface' | 'evidence'>('interface');
+    useState<WorkspaceTab>(
+      initialWorkspaceLocation.workspaceView
+      || workspaceTabForMode(initialWorkspaceLocation.mode),
+    );
+  const [workspaceScenarioId, setWorkspaceScenarioId] =
+    useState(initialWorkspaceLocation.scenarioId);
   const [contractDraft, setContractDraft] = useState<ContractDraft | null>(null);
   const [contractFingerprint, setContractFingerprint] = useState('');
   const [scenarioDraftSet, setScenarioDraftSet] = useState<ScenarioDraftSet | null>(null);
@@ -5710,6 +5790,22 @@ export default function AuthorCanvas({ workspaceVersion = 'v1' }: AuthorCanvasPr
     };
   }, [exportableDraft, scenarioNodeOptions, simulationTableCompilation.cases]);
 
+  useEffect(() => {
+    if (!scenarioDraftSet) {
+      setWorkspaceScenarioId('');
+      return;
+    }
+    setWorkspaceScenarioId((current) => (
+      scenarioDraftSet.scenarios.some((scenario) => scenario.scenarioId === current)
+        ? current
+        : scenarioDraftSet.scenarios[0]?.scenarioId ?? ''
+    ));
+  }, [
+    scenarioDraftSet?.scenarioDraftSetId,
+    scenarioDraftSet?.target.fingerprint,
+    scenarioDraftSet?.scenarios,
+  ]);
+
   const saveGraphForScenario = useCallback(async () => {
     const stored = await saveGraphDraft(exportableDraft);
     if (!stored.draftId || !stored.revision) {
@@ -5745,8 +5841,11 @@ export default function AuthorCanvas({ workspaceVersion = 'v1' }: AuthorCanvasPr
 
   const openOperatorContractWorkspace = useCallback(async (
     operator: OperatorDefinition,
+    initialTab: WorkspaceTab = 'interface',
+    requestedNodeId = '',
   ) => {
     setError('');
+    setContractWorkspaceInitialTab(initialTab);
     try {
       const projection = await fetchScenarioOperatorContract(operator.operatorRef);
       const syntheticGraph = operatorScenarioGraphDraft(
@@ -5755,38 +5854,60 @@ export default function AuthorCanvas({ workspaceVersion = 'v1' }: AuthorCanvasPr
         projection.scope.tenantId,
         projection.scope.environment,
       );
-      const draftSet = scenarioDraftSetFromCanvas(
+      const sourceNode = nodes.find((node) => (
+        node.id === (requestedNodeId || selectedNodeId)
+        && node.data.operatorRef === operator.operatorRef
+      )) ?? nodes.find((node) => node.data.operatorRef === operator.operatorRef);
+      const legacyRows = sourceNode
+        ? operatorTestSuites[sourceNode.id] ?? defaultOperatorTestSuiteRows(sourceNode, operator)
+        : [];
+      const legacyProjection = projectLegacyOperatorTableRows(legacyRows);
+      const operatorNode: ScenarioNodeOption = {
+        id: 'operator',
+        label: operator.display?.name || operator.operatorRef,
+        operatorRef: operator.operatorRef,
+        inputSchema: operatorInputSchema(operator),
+        outputSchema: operatorOutputSchema(operator),
+      };
+      const draftSet = scenarioDraftSetFromOperatorTableCases(
         projection.contract.target,
         projection.contractFingerprint,
         syntheticGraph,
-        [],
-        [],
+        operatorNode,
+        legacyProjection.cases,
+        legacyProjection.diagnostics,
       );
       const scenarioDraftSetId = await operatorScenarioDraftSetId(operator.operatorRef);
+      const nextDraftSet = {
+        ...draftSet,
+        scenarioDraftSetId,
+        metadata: {
+          ...draftSet.metadata,
+          provenance: {
+            ...draftSet.metadata.provenance,
+            operatorRef: operator.operatorRef,
+            sourceNodeId: sourceNode?.id ?? '',
+          },
+        },
+      };
       setOperatorContractWorkspace({
         graphDraft: syntheticGraph,
         contract: projection.contract,
         contractFingerprint: projection.contractFingerprint,
-        scenarioDraftSet: {
-          ...draftSet,
-          scenarioDraftSetId,
-          metadata: {
-            ...draftSet.metadata,
-            provenance: {
-              source: 'operator-contract-workspace',
-              operatorRef: operator.operatorRef,
-            },
-          },
-        },
-        nodes: [],
+        scenarioDraftSet: nextDraftSet,
+        nodes: [operatorNode],
       });
+      setWorkspaceScenarioId(nextDraftSet.scenarios[0]?.scenarioId ?? '');
       setContractWorkspaceOpen(false);
       setOperatorDetailNodeId('');
       setOperatorDetailBaseline(null);
+      if (isTaskWorkspace) {
+        setAuthorMode(authorModeForWorkspaceTab(initialTab));
+      }
     } catch (cause: unknown) {
       setError(`Operator Contract projection failed: ${String(cause)}`);
     }
-  }, []);
+  }, [isTaskWorkspace, nodes, operatorTestSuites, selectedNodeId]);
 
   const updateContractSemantics = useCallback((nextContract: ContractDraft) => {
     authoritativeContractRef.current = null;
@@ -7573,12 +7694,29 @@ export default function AuthorCanvas({ workspaceVersion = 'v1' }: AuthorCanvasPr
     if (!isTaskWorkspace) {
       return;
     }
-    const nextUrl = authorWorkspaceUrl(window.location.href, authorMode, selectedNodeId);
+    const workspaceOpen = contractWorkspaceOpen || operatorContractWorkspace !== null;
+    const nextUrl = authorWorkspaceUrl(window.location.href, authorMode, selectedNodeId, {
+      target: operatorContractWorkspace
+        ? `operator:${operatorContractWorkspace.contract.target.id}`
+        : authorMode === 'compose' ? '' : 'graph',
+      workspaceView: workspaceOpen
+        ? contractWorkspaceInitialTab
+        : authorMode === 'compose' ? '' : workspaceTabForMode(authorMode),
+      scenarioId: workspaceOpen ? workspaceScenarioId : '',
+    });
     const currentUrl = `${window.location.pathname}${window.location.search}${window.location.hash}`;
     if (nextUrl !== currentUrl) {
       window.history.replaceState(window.history.state, '', nextUrl);
     }
-  }, [authorMode, isTaskWorkspace, selectedNodeId]);
+  }, [
+    authorMode,
+    contractWorkspaceInitialTab,
+    contractWorkspaceOpen,
+    isTaskWorkspace,
+    operatorContractWorkspace,
+    selectedNodeId,
+    workspaceScenarioId,
+  ]);
 
   const executionStatus = busy || tableTestingBusy
     ? 'RUNNING'
@@ -7587,6 +7725,8 @@ export default function AuthorCanvas({ workspaceVersion = 'v1' }: AuthorCanvasPr
       : 'NOT RUN';
   const assertionStatus = tableTestingBusy
     ? 'RUNNING'
+    : lastScenarioReviewEvidence
+      ? lastScenarioReviewEvidence.comparison.passed ? 'PASSED' : 'FAILED'
     : simulationTableRows.length === 0
       ? 'NOT CONFIGURED'
       : Object.keys(simulationTableResults).length === 0
@@ -7603,16 +7743,17 @@ export default function AuthorCanvas({ workspaceVersion = 'v1' }: AuthorCanvasPr
   const hasRunResult = result !== null || Object.keys(simulationTableResults).length > 0;
   const runSuccessful = Boolean(
     (result ? isRunSuccessful(result) : Object.keys(simulationTableResults).length > 0)
+    && (!lastScenarioReviewEvidence || lastScenarioReviewEvidence.comparison.passed)
     && Object.values(simulationTableResults).every((row) => row.status === 'passed'),
   );
   const closeTestSuite = useCallback(() => {
     setTestSuiteOpen(false);
     if (isTaskWorkspace) {
-      setAuthorMode(hasRunResult ? 'review' : 'compose');
+      setAuthorMode(hasRunResult ? 'evidence' : 'compose');
     }
   }, [hasRunResult, isTaskWorkspace]);
   useDialogFocusTrap({
-    open: testSuiteOpen,
+    open: testSuiteOpen && !isTaskWorkspace,
     dialogRef: testSuiteDialogRef,
     onDismiss: closeTestSuite,
   });
@@ -7638,17 +7779,53 @@ export default function AuthorCanvas({ workspaceVersion = 'v1' }: AuthorCanvasPr
   const primaryAction = resolveAuthorPrimaryAction({
     nodeCount: nodes.length,
     busy: busy || tableTestingBusy,
-    hasInputErrors: hasFixtureErrors || hasContextError || hasSimulationTableErrors,
+    hasInputErrors: hasFixtureErrors
+      || hasContextError
+      || (!isTaskWorkspace && hasSimulationTableErrors),
     hasRunResult,
     runSuccessful,
   });
+  const canonicalScenarioReady = Boolean(
+    contractDraft
+    && scenarioDraftSet
+    && scenarioDraftSet.scenarios.length > 0
+    && scenarioSetIsCurrent(
+      scenarioDraftSet,
+      contractDraft.target.fingerprint,
+      contractFingerprint,
+    ),
+  );
+  const authorScenarioResults = useMemo<Record<string, SimulationTableCaseResult>>(() => {
+    if (!lastScenarioReviewEvidence) {
+      return simulationTableResults;
+    }
+    const failed = lastScenarioReviewEvidence.comparison.results.find((comparison) => !comparison.passed);
+    return {
+      [lastScenarioReviewEvidence.scenarioId]: {
+        id: lastScenarioReviewEvidence.scenarioId,
+        name: scenarioDraftSet?.scenarios.find(
+          (scenario) => scenario.scenarioId === lastScenarioReviewEvidence.scenarioId,
+        )?.name ?? lastScenarioReviewEvidence.scenarioId,
+        status: lastScenarioReviewEvidence.comparison.passed ? 'passed' : 'failed',
+        detail: failed?.detail
+          ?? lastScenarioReviewEvidence.comparison.diagnostics[0]?.message
+          ?? 'Scenario assertions passed.',
+      },
+    };
+  }, [lastScenarioReviewEvidence, scenarioDraftSet?.scenarios, simulationTableResults]);
   const resultMessage = error
     || (hasRunResult
       ? runSuccessful
-        ? simulationTableRows.length > 0
+        ? lastScenarioReviewEvidence
+          ? `${lastScenarioReviewEvidence.comparison.results.filter((item) => item.passed).length}`
+            + `/${lastScenarioReviewEvidence.comparison.results.length} scenario assertions passed.`
+          : simulationTableRows.length > 0
           ? `${simulationTableRunSummary.passed}/${simulationTableRunSummary.total} scenario assertions passed.`
           : 'Execution completed successfully.'
-        : simulationTableRunSummary.failed > 0
+        : lastScenarioReviewEvidence
+          ? `${lastScenarioReviewEvidence.comparison.results.filter((item) => !item.passed).length}`
+            + `/${lastScenarioReviewEvidence.comparison.results.length} scenario assertions failed.`
+          : simulationTableRunSummary.failed > 0
           ? `${simulationTableRunSummary.failed}/${simulationTableRunSummary.total} scenario assertions failed.`
           : 'Execution completed with failures.'
       : '');
@@ -7664,7 +7841,7 @@ export default function AuthorCanvas({ workspaceVersion = 'v1' }: AuthorCanvasPr
       error,
       validation: validationResult,
       run: result,
-      scenarioResults: simulationTableResults,
+      scenarioResults: authorScenarioResults,
       governance: governanceGateView,
       dslDiagnostics: dslImportDiagnostics,
     }),
@@ -7673,7 +7850,7 @@ export default function AuthorCanvas({ workspaceVersion = 'v1' }: AuthorCanvasPr
       error,
       governanceGateView,
       result,
-      simulationTableResults,
+      authorScenarioResults,
       validationResult,
     ],
   );
@@ -7697,15 +7874,18 @@ export default function AuthorCanvas({ workspaceVersion = 'v1' }: AuthorCanvasPr
   );
 
   const openAuthorDiagnostic = useCallback((item: { scope: string; nodeId?: string }) => {
-    setAuthorMode('review');
+    setAuthorMode('evidence');
     if (item.nodeId && nodes.some((node) => node.id === item.nodeId)) {
       setSelectedNodeId(item.nodeId);
       setContractWorkspaceOpen(false);
       setOperatorContractWorkspace(null);
     } else if (item.scope === 'SCENARIO') {
-      setAuthorMode('test');
-      setTestSuiteOpen(true);
+      setAuthorMode('scenarios');
+      setOperatorContractWorkspace(null);
+      setContractWorkspaceInitialTab('scenarios');
+      setContractWorkspaceOpen(true);
     } else if (item.scope === 'CONTRACT') {
+      setAuthorMode('contract');
       setOperatorContractWorkspace(null);
       setContractWorkspaceInitialTab('interface');
       setContractWorkspaceOpen(true);
@@ -7718,14 +7898,79 @@ export default function AuthorCanvas({ workspaceVersion = 'v1' }: AuthorCanvasPr
 
   const changeAuthorMode = useCallback((nextMode: AuthorMode) => {
     setAuthorMode(nextMode);
-    if (nextMode === 'contract') {
+    setTestSuiteOpen(false);
+    if (nextMode === 'compose') {
+      setContractWorkspaceOpen(false);
       setOperatorContractWorkspace(null);
+      return;
+    }
+    setOperatorContractWorkspace(null);
+    if (nextMode === 'contract') {
       setContractWorkspaceInitialTab('interface');
       setContractWorkspaceOpen(true);
-    } else if (nextMode === 'test') {
-      setTestSuiteOpen(true);
+    } else if (nextMode === 'scenarios') {
+      setContractWorkspaceInitialTab('scenarios');
+      setContractWorkspaceOpen(true);
+    } else {
+      setContractWorkspaceInitialTab('evidence');
+      setContractWorkspaceOpen(true);
     }
   }, []);
+
+  const updateWorkspaceCoordinate = useCallback((tab: WorkspaceTab, scenarioId: string) => {
+    setContractWorkspaceInitialTab(tab);
+    setWorkspaceScenarioId(scenarioId);
+    setAuthorMode(authorModeForWorkspaceTab(tab));
+  }, []);
+
+  const recordScenarioEvidence = useCallback((
+    scenarioId: string,
+    comparison: ScenarioComparison,
+  ) => {
+    setLastScenarioReviewEvidence({ scenarioId, comparison });
+    setWorkspaceScenarioId(scenarioId);
+  }, []);
+
+  const runFirstCanonicalScenario = useCallback(async () => {
+    const selectedScenario = scenarioDraftSet?.scenarios.find(
+      (scenario) => scenario.scenarioId === workspaceScenarioId,
+    ) ?? scenarioDraftSet?.scenarios[0];
+    if (!contractDraft || !scenarioDraftSet || !selectedScenario || !canonicalScenarioReady) {
+      setContractWorkspaceInitialTab('scenarios');
+      setContractWorkspaceOpen(true);
+      return;
+    }
+    const compilation = compileScenarioForSimulation(
+      exportableDraft,
+      scenarioDraftSet,
+      selectedScenario.scenarioId,
+      contractDraft.target.fingerprint,
+      contractFingerprint,
+    );
+    if (!compilation.compiled || !compilation.request) {
+      setError(compilation.diagnostics[0]?.message ?? 'Scenario cannot be compiled.');
+      setContractWorkspaceInitialTab('scenarios');
+      setContractWorkspaceOpen(true);
+      return;
+    }
+    const response = await runScenarioSimulation(compilation.request);
+    const comparison = compareScenarioRun(selectedScenario, response);
+    setLastScenarioReviewEvidence({
+      scenarioId: selectedScenario.scenarioId,
+      comparison,
+    });
+    setWorkspaceScenarioId(selectedScenario.scenarioId);
+    setContractWorkspaceInitialTab('evidence');
+    setContractWorkspaceOpen(true);
+  }, [
+    contractDraft,
+    contractFingerprint,
+    canonicalScenarioReady,
+    exportableDraft,
+    runScenarioSimulation,
+    scenarioDraftSet,
+    workspaceScenarioId,
+  ]);
 
   const runPrimaryAuthorAction = useCallback(() => {
     setAuthorMode(primaryAction.targetMode);
@@ -7750,11 +7995,14 @@ export default function AuthorCanvas({ workspaceVersion = 'v1' }: AuthorCanvasPr
         setInspectorCollapsed(false);
         return;
       }
-      setTestSuiteOpen(true);
+      setContractWorkspaceInitialTab('scenarios');
+      setContractWorkspaceOpen(true);
       return;
     }
     if (primaryAction.kind === 'run') {
-      if (simulationTableRows.length > 0) {
+      if (isTaskWorkspace) {
+        void runFirstCanonicalScenario();
+      } else if (simulationTableRows.length > 0) {
         void runSimulationTable();
       } else {
         void runSimulation();
@@ -7778,6 +8026,7 @@ export default function AuthorCanvas({ workspaceVersion = 'v1' }: AuthorCanvasPr
     hasContextError,
     isTaskWorkspace,
     primaryAction,
+    runFirstCanonicalScenario,
     runSimulation,
     runSimulationTable,
     simulationTableRows.length,
@@ -7785,9 +8034,30 @@ export default function AuthorCanvas({ workspaceVersion = 'v1' }: AuthorCanvasPr
 
   useEffect(() => {
     if (isTaskWorkspace && hasRunResult && !busy && !tableTestingBusy) {
-      setAuthorMode('review');
+      setAuthorMode('evidence');
     }
   }, [busy, hasRunResult, isTaskWorkspace, tableTestingBusy]);
+
+  useEffect(() => {
+    if (
+      isTaskWorkspace
+      && contractDraft
+      && authorMode !== 'compose'
+      && !contractWorkspaceOpen
+      && !operatorContractWorkspace
+      && !diagnosticsOpen
+    ) {
+      setContractWorkspaceInitialTab(workspaceTabForMode(authorMode));
+      setContractWorkspaceOpen(true);
+    }
+  }, [
+    authorMode,
+    contractDraft,
+    contractWorkspaceOpen,
+    diagnosticsOpen,
+    isTaskWorkspace,
+    operatorContractWorkspace,
+  ]);
 
   useEffect(() => {
     if (
@@ -7999,7 +8269,11 @@ export default function AuthorCanvas({ workspaceVersion = 'v1' }: AuthorCanvasPr
             edgeCount={canvasSummary.edgeCount}
             mode={authorMode}
             primaryAction={primaryAction}
-            primaryDisabled={busy || tableTestingBusy}
+            primaryDisabled={
+              busy
+              || tableTestingBusy
+              || (primaryAction.kind === 'run' && isTaskWorkspace && !canonicalScenarioReady)
+            }
             executionStatus={executionStatus}
             assertionStatus={assertionStatus}
             contractStatus={contractStatus}
@@ -9040,13 +9314,18 @@ export default function AuthorCanvas({ workspaceVersion = 'v1' }: AuthorCanvasPr
             }}
             onOpenNodeContract={() => {
               if (selectedOperator) {
-                setAuthorMode('contract');
-                void openOperatorContractWorkspace(selectedOperator);
+                void openOperatorContractWorkspace(selectedOperator, 'interface', selectedNodeId);
               }
             }}
-            onOpenTest={() => {
-              setAuthorMode('test');
-              setTestSuiteOpen(true);
+            onOpenScenarios={() => {
+              if (selectedOperator) {
+                void openOperatorContractWorkspace(selectedOperator, 'scenarios', selectedNodeId);
+              } else {
+                setAuthorMode('scenarios');
+                setOperatorContractWorkspace(null);
+                setContractWorkspaceInitialTab('scenarios');
+                setContractWorkspaceOpen(true);
+              }
             }}
             onOpenGraphContract={() => {
               setAuthorMode('contract');
@@ -9437,6 +9716,8 @@ export default function AuthorCanvas({ workspaceVersion = 'v1' }: AuthorCanvasPr
         >
           <ContractScenarioWorkspace
             open
+            initialTab={contractWorkspaceInitialTab}
+            initialScenarioId={workspaceScenarioId}
             graphDraft={operatorContractWorkspace.graphDraft}
             contract={operatorContractWorkspace.contract}
             contractFingerprint={operatorContractWorkspace.contractFingerprint}
@@ -9465,6 +9746,8 @@ export default function AuthorCanvas({ workspaceVersion = 'v1' }: AuthorCanvasPr
                 : current
             ))}
             onRun={runScenarioSimulation}
+            onRunEvidence={recordScenarioEvidence}
+            onCoordinateChange={updateWorkspaceCoordinate}
             onClose={() => {
               setOperatorContractWorkspace(null);
               if (isTaskWorkspace) {
@@ -9485,6 +9768,7 @@ export default function AuthorCanvas({ workspaceVersion = 'v1' }: AuthorCanvasPr
           <ContractScenarioWorkspace
             open
             initialTab={contractWorkspaceInitialTab}
+            initialScenarioId={workspaceScenarioId}
             graphDraft={scenarioWorkspaceGraphDraft}
             contract={contractDraft}
             contractFingerprint={contractFingerprint}
@@ -9499,6 +9783,8 @@ export default function AuthorCanvas({ workspaceVersion = 'v1' }: AuthorCanvasPr
             onSaveGraphDraft={saveGraphForScenario}
             onRebase={rebaseScenariosToCurrentContract}
             onRun={runScenarioSimulation}
+            onRunEvidence={recordScenarioEvidence}
+            onCoordinateChange={updateWorkspaceCoordinate}
             trustContext={scenarioEvidenceTrustContext}
             onSelectEvidenceDiagnostic={openAuthorDiagnostic}
             onClose={() => {
@@ -9510,7 +9796,7 @@ export default function AuthorCanvas({ workspaceVersion = 'v1' }: AuthorCanvasPr
           />
         </Suspense>
       )}
-      {testSuiteOpen && (
+      {testSuiteOpen && !isTaskWorkspace && (
         <div className="rule-editor-backdrop" role="presentation">
           <section
             ref={testSuiteDialogRef}
@@ -9552,12 +9838,17 @@ export default function AuthorCanvas({ workspaceVersion = 'v1' }: AuthorCanvasPr
           operatorTestPublication={operatorDetailTestPublication}
           operatorTestsRunning={operatorDetailTestsRunning}
           operatorTestRunDisabledReason={operatorDetailTestRunDisabledReason}
+          canonicalScenarios={isTaskWorkspace}
           onCancel={cancelOperatorDetail}
           onApply={applyOperatorDetail}
           dirty={operatorDetailDirty}
           onOpenContract={() => {
             if (operatorDetailDefinition) {
-              void openOperatorContractWorkspace(operatorDetailDefinition);
+              void openOperatorContractWorkspace(
+                operatorDetailDefinition,
+                'interface',
+                operatorDetailNode.id,
+              );
             }
           }}
           onLabelChange={(value) => updateNodeLabel(operatorDetailNode.id, value)}

@@ -3888,10 +3888,14 @@ the design can be integrated instead of remaining a diagram-only artifact.
 ### Try The Task-Oriented Author Workspace
 
 Open `http://localhost:8080/author/`, load a built-in example, and use the fixed
-`Compose / Contract / Test / Review` task modes. Author Workspace v2 is the
-default page. The URL keeps
-the selected mode and node so a browser refresh or a deep link restores the same
-working context.
+`Compose / Contract / Scenarios / Evidence` task modes. Author Workspace v2 is
+the default page. `Scenarios` is the only formal Graph/Operator testing
+workspace: legacy graph and operator table rows are projected into the same
+Scenario model, while unprojectable source remains visible under Advanced for
+manual migration. The URL keeps the selected target, workspace view, Scenario,
+run, and node so a browser refresh or integration deep link restores the same
+working context. Old `authorMode=test|review` bookmarks remain readable and map
+to `scenarios|evidence`.
 
 The right inspector has stable `Config / Data / Test / Contract / Advanced`
 tabs. Edit the graph input/output interface in **Contract**. In **Data**, fill the
@@ -3916,10 +3920,12 @@ Focused and selected paths keep their full field coordinates. **Undo layout**
 restores the exact pre-layout positions until a node is added, removed, or
 manually moved.
 
-The primary Start, Operator, Test Suite, and Contract dialogs share one keyboard
+The primary Start, Operator, and Contract/Scenario dialogs share one keyboard
 contract: focus enters the current task, Tab stays inside the modal, Escape
-closes it, and focus returns to the opener. At 390 x 844 the command bar and
-status controls stack into a supported read/light-edit layout with a 420px
+closes it, and focus returns to the opener. The old raw Test Suite dialog is
+available only in Legacy Workspace; v2 opens schema-driven Scenarios and moves
+directly to Run Evidence after `Run & Compare`. At 390 x 844 the command bar
+and status controls stack into a supported read/light-edit layout with a 420px
 minimum canvas.
 
 Workspace v2 dispatches payload-free `bloge:author-task` browser events using the

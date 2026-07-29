@@ -7,27 +7,48 @@ describe('authorWorkspaceLocation', () => {
     expect(parseAuthorWorkspaceLocation('?authorMode=unknown')).toEqual({
       mode: 'compose',
       selectedNodeId: '',
+      target: '',
+      workspaceView: '',
+      scenarioId: '',
+      runId: '',
       hasDeepLinkTarget: false,
     });
   });
 
   it('restores mode and selection from an integration deep link', () => {
     expect(parseAuthorWorkspaceLocation(
-      '?authorWorkspace=v2&draftId=draft-7&nodeId=policy&authorMode=review',
+      '?authorWorkspace=v2&draftId=draft-7&nodeId=policy&authorMode=evidence'
+      + '&target=graph&workspaceView=evidence&scenarioId=decline&runId=run-9',
     )).toEqual({
-      mode: 'review',
+      mode: 'evidence',
       selectedNodeId: 'policy',
+      target: 'graph',
+      workspaceView: 'evidence',
+      scenarioId: 'decline',
+      runId: 'run-9',
       hasDeepLinkTarget: true,
     });
+  });
+
+  it('maps old Test and Review links onto the canonical Scenarios and Evidence modes', () => {
+    expect(parseAuthorWorkspaceLocation('?authorMode=test').mode).toBe('scenarios');
+    expect(parseAuthorWorkspaceLocation('?authorMode=review').mode).toBe('evidence');
+    expect(parseAuthorWorkspaceLocation('?workspaceView=scenarios').mode).toBe('scenarios');
   });
 
   it('updates workspace coordinates without dropping draft, run, or hash coordinates', () => {
     expect(authorWorkspaceUrl(
       'http://localhost/author/?authorWorkspace=v2&draftId=draft-7&runId=run-9#evidence',
-      'test',
+      'scenarios',
       'policy',
+      {
+        target: 'graph',
+        workspaceView: 'scenarios',
+        scenarioId: 'decline',
+      },
     )).toBe(
-      '/author/?authorWorkspace=v2&draftId=draft-7&runId=run-9&authorMode=test&nodeId=policy#evidence',
+      '/author/?authorWorkspace=v2&draftId=draft-7&runId=run-9&authorMode=scenarios'
+      + '&nodeId=policy&target=graph&workspaceView=scenarios&scenarioId=decline#evidence',
     );
   });
 
@@ -36,6 +57,9 @@ describe('authorWorkspaceLocation', () => {
       'http://localhost/author/?authorWorkspace=v2&nodeId=old',
       'contract',
       '',
-    )).toBe('/author/?authorWorkspace=v2&authorMode=contract');
+      { target: 'graph', workspaceView: 'interface', scenarioId: '' },
+    )).toBe(
+      '/author/?authorWorkspace=v2&authorMode=contract&target=graph&workspaceView=interface',
+    );
   });
 });

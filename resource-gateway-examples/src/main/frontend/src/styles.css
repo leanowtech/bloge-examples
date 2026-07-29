@@ -1700,6 +1700,7 @@ button.primary:disabled {
 
 .contract-workspace-header > div:first-child {
   min-width: 0;
+  flex: 1 1 260px;
 }
 
 .contract-workspace-header span,
@@ -1715,14 +1716,19 @@ button.primary:disabled {
 }
 
 .contract-workspace-header h2 {
+  display: -webkit-box;
   overflow: hidden;
   font-size: 19px;
+  line-height: 1.08;
+  overflow-wrap: anywhere;
   text-overflow: ellipsis;
-  white-space: nowrap;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
 }
 
 .contract-workspace-header-actions {
   min-width: 0;
+  flex: 1 1 560px;
   display: flex;
   align-items: center;
   justify-content: flex-end;
@@ -2082,6 +2088,23 @@ button.primary:disabled {
 
 .contract-advanced-json button {
   margin: 0 10px 10px;
+}
+
+.operator-legacy-test-tools {
+  margin-top: 14px;
+  border-top: 1px solid #d4dce7;
+  padding-top: 10px;
+}
+
+.operator-legacy-test-tools > summary {
+  color: #475569;
+  font-size: 12px;
+  font-weight: 750;
+  cursor: pointer;
+}
+
+.operator-legacy-test-tools > .muted {
+  margin: 8px 0 12px;
 }
 
 .scenario-workbench {

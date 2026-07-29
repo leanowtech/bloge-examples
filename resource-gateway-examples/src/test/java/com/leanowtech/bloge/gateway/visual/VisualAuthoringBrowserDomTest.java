@@ -682,8 +682,9 @@ class VisualAuthoringBrowserDomTest {
      * <p>The test protects behavior that component tests cannot prove: the command bar has one
      * visible primary action, legacy chrome is physically absent from layout, the canvas receives
      * at least 65% of the post-command-bar workspace, and a complete example can move from Start
-     * through a real Scenario run into Review without node overlap or false DSL diagnostics. Review
-     * must then open the run-evidence context directly. The completed task is checked at the
+     * through a real Scenario run into Evidence without node overlap or false DSL diagnostics. The
+     * evidence view must open directly, without exposing the legacy raw test-table dialog. The
+     * completed task is checked at the
      * supported 1024-pixel desktop floor and finally reduced to the 390 by 844 light-editing
      * viewport to prove that the primary action remains reachable without page-level horizontal
      * overflow.</p>
@@ -897,20 +898,38 @@ class VisualAuthoringBrowserDomTest {
                 By.cssSelector("[data-testid='operator-detail-dialog']")
         ));
 
-        driver.findElement(By.cssSelector("[data-testid='author-primary-action']")).click();
+        WebElement primaryAction = driver.findElement(
+                By.cssSelector("[data-testid='author-primary-action']")
+        );
+        wait.until(ignored -> primaryAction.isEnabled());
+        primaryAction.click();
         wait.until(ExpectedConditions.attributeToBe(
                 By.cssSelector(".workspace-v2"),
                 "data-author-mode",
-                "review"
+                "evidence"
         ));
         wait.until(ignored -> {
             String text = textOf(By.cssSelector("[data-testid='author-primary-action']"));
             return text.contains("Review result") || text.contains("Review failures");
         });
-        assertThat(workspace.getAttribute("data-author-mode")).isEqualTo("review");
+        assertThat(workspace.getAttribute("data-author-mode")).isEqualTo("evidence");
         assertThat(driver.getCurrentUrl())
-                .contains("authorMode=review")
+                .contains("authorMode=evidence")
+                .contains("target=graph")
+                .contains("workspaceView=evidence")
                 .contains("nodeId=n5");
+        assertThat(driver.findElement(By.cssSelector(
+                "[data-testid='scenario-evidence']"
+        )).getText())
+                .contains("Evidence incomplete")
+                .contains("1 assertion passed");
+        assertThat(driver.findElements(By.cssSelector(
+                "[data-testid='test-suite-dialog']"
+        ))).isEmpty();
+        driver.findElement(By.cssSelector("[aria-label='Close Contract workspace']")).click();
+        wait.until(ExpectedConditions.invisibilityOfElementLocated(
+                By.cssSelector("[data-testid='contract-workspace']")
+        ));
         WebElement diagnosticsToggle = driver.findElement(By.cssSelector(
                 "[data-testid='author-diagnostics-drawer'] .author-diagnostics-toggle"
         ));

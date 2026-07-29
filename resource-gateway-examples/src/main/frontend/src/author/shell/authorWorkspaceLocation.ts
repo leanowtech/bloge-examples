@@ -1,11 +1,34 @@
 import type { AuthorMode } from './authorWorkspaceState';
 
-const AUTHOR_MODES = new Set<AuthorMode>(['compose', 'contract', 'test', 'review']);
+export type AuthorWorkspaceView = 'interface' | 'scenarios' | 'compatibility' | 'evidence';
+
+const AUTHOR_MODES = new Set<AuthorMode>(['compose', 'contract', 'scenarios', 'evidence']);
+const WORKSPACE_VIEWS = new Set<AuthorWorkspaceView>([
+  'interface',
+  'scenarios',
+  'compatibility',
+  'evidence',
+]);
+const LEGACY_MODE_ALIASES: Record<string, AuthorMode> = {
+  test: 'scenarios',
+  review: 'evidence',
+};
 
 export interface AuthorWorkspaceLocation {
   mode: AuthorMode;
   selectedNodeId: string;
+  target: string;
+  workspaceView: AuthorWorkspaceView | '';
+  scenarioId: string;
+  runId: string;
   hasDeepLinkTarget: boolean;
+}
+
+export interface AuthorWorkspaceUrlCoordinate {
+  target?: string;
+  workspaceView?: AuthorWorkspaceView | '';
+  scenarioId?: string;
+  runId?: string;
 }
 
 /**
@@ -16,11 +39,23 @@ export interface AuthorWorkspaceLocation {
  */
 export function parseAuthorWorkspaceLocation(search: string): AuthorWorkspaceLocation {
   const params = new URLSearchParams(search);
-  const requestedMode = params.get('authorMode')?.trim().toLowerCase() as AuthorMode | undefined;
+  const rawMode = params.get('authorMode')?.trim().toLowerCase() ?? '';
+  const requestedMode = AUTHOR_MODES.has(rawMode as AuthorMode)
+    ? rawMode as AuthorMode
+    : LEGACY_MODE_ALIASES[rawMode];
+  const rawView = params.get('workspaceView')?.trim().toLowerCase() ?? '';
+  const workspaceView = WORKSPACE_VIEWS.has(rawView as AuthorWorkspaceView)
+    ? rawView as AuthorWorkspaceView
+    : '';
+  const mode = requestedMode || modeForWorkspaceView(workspaceView) || 'compose';
   return {
-    mode: requestedMode && AUTHOR_MODES.has(requestedMode) ? requestedMode : 'compose',
+    mode,
     selectedNodeId: params.get('nodeId')?.trim() ?? '',
-    hasDeepLinkTarget: ['draftId', 'runId', 'operatorRef', 'gateIssueId', 'nodeId']
+    target: params.get('target')?.trim() ?? '',
+    workspaceView,
+    scenarioId: params.get('scenarioId')?.trim() ?? '',
+    runId: params.get('runId')?.trim() ?? '',
+    hasDeepLinkTarget: ['draftId', 'runId', 'operatorRef', 'gateIssueId', 'nodeId', 'scenarioId']
       .some((key) => Boolean(params.get(key)?.trim())),
   };
 }
@@ -33,6 +68,7 @@ export function authorWorkspaceUrl(
   href: string,
   mode: AuthorMode,
   selectedNodeId: string,
+  coordinate: AuthorWorkspaceUrlCoordinate = {},
 ): string {
   const url = new URL(href);
   url.searchParams.set('authorMode', mode);
@@ -41,5 +77,39 @@ export function authorWorkspaceUrl(
   } else {
     url.searchParams.delete('nodeId');
   }
+  setOptionalCoordinate(url, 'target', coordinate.target);
+  setOptionalCoordinate(url, 'workspaceView', coordinate.workspaceView);
+  setOptionalCoordinate(url, 'scenarioId', coordinate.scenarioId);
+  setOptionalCoordinate(url, 'runId', coordinate.runId, true);
   return `${url.pathname}${url.search}${url.hash}`;
+}
+
+function modeForWorkspaceView(view: AuthorWorkspaceView | ''): AuthorMode | '' {
+  if (view === 'interface' || view === 'compatibility') {
+    return 'contract';
+  }
+  if (view === 'scenarios') {
+    return 'scenarios';
+  }
+  if (view === 'evidence') {
+    return 'evidence';
+  }
+  return '';
+}
+
+function setOptionalCoordinate(
+  url: URL,
+  key: string,
+  value: string | undefined,
+  preserveWhenUndefined = false,
+): void {
+  if (value === undefined && preserveWhenUndefined) {
+    return;
+  }
+  const normalized = value?.trim() ?? '';
+  if (normalized) {
+    url.searchParams.set(key, normalized);
+  } else {
+    url.searchParams.delete(key);
+  }
 }

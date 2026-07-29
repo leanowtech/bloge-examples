@@ -27,8 +27,8 @@ interface AuthorCommandBarProps {
 const MODES: Array<{ key: AuthorMode; label: string }> = [
   { key: 'compose', label: 'Compose' },
   { key: 'contract', label: 'Contract' },
-  { key: 'test', label: 'Test' },
-  { key: 'review', label: 'Review' },
+  { key: 'scenarios', label: 'Scenarios' },
+  { key: 'evidence', label: 'Evidence' },
 ];
 
 /** Compact command surface for the task-oriented Author Workspace v2. */

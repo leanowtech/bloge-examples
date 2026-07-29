@@ -47,7 +47,7 @@ import {
   parseWorkspaceBundle,
 } from './workspaceBundle';
 
-type WorkspaceTab = 'interface' | 'scenarios' | 'compatibility' | 'evidence';
+export type WorkspaceTab = 'interface' | 'scenarios' | 'compatibility' | 'evidence';
 
 interface ContractScenarioWorkspaceProps {
   open: boolean;
@@ -69,7 +69,10 @@ interface ContractScenarioWorkspaceProps {
   workspaceTransferEnabled?: boolean;
   trustContext?: ScenarioEvidenceTrustContext;
   onSelectEvidenceDiagnostic?: (diagnostic: ScenarioEvidenceDiagnostic) => void;
+  onCoordinateChange?: (tab: WorkspaceTab, scenarioId: string) => void;
+  onRunEvidence?: (scenarioId: string, comparison: ScenarioComparison) => void;
   initialTab?: WorkspaceTab;
+  initialScenarioId?: string;
   lastRunScenarioId?: string;
   lastComparison?: ScenarioComparison | null;
 }
@@ -95,12 +98,17 @@ export default function ContractScenarioWorkspace({
   workspaceTransferEnabled = true,
   trustContext,
   onSelectEvidenceDiagnostic,
+  onCoordinateChange,
+  onRunEvidence,
   initialTab = 'interface',
+  initialScenarioId = '',
   lastRunScenarioId = '',
   lastComparison = null,
 }: ContractScenarioWorkspaceProps) {
   const [activeTab, setActiveTab] = useState<WorkspaceTab>(initialTab);
-  const [selectedScenarioId, setSelectedScenarioId] = useState(lastRunScenarioId);
+  const [selectedScenarioId, setSelectedScenarioId] = useState(
+    initialScenarioId || lastRunScenarioId,
+  );
   const [running, setRunning] = useState(false);
   const [runResponse, setRunResponse] = useState<SimulationResponse | null>(null);
   const [comparison, setComparison] = useState<ScenarioComparison | null>(null);
@@ -153,6 +161,11 @@ export default function ContractScenarioWorkspace({
   const assetStored = targetStored ?? graphStored;
   const targetKind = contract?.target.kind ?? 'GRAPH';
   const targetLabel = targetKind === 'OPERATOR' ? 'Operator' : 'Graph';
+  const projectionDiagnostics = Array.isArray(
+    scenarioDraftSet?.metadata.provenance.projectionDiagnostics,
+  )
+    ? scenarioDraftSet.metadata.provenance.projectionDiagnostics
+    : [];
 
   useDialogFocusTrap({
     open,
@@ -175,11 +188,11 @@ export default function ContractScenarioWorkspace({
   useEffect(() => {
     if (open) {
       setActiveTab(initialTab);
-      if (lastRunScenarioId) {
-        setSelectedScenarioId(lastRunScenarioId);
+      if (initialScenarioId || lastRunScenarioId) {
+        setSelectedScenarioId(initialScenarioId || lastRunScenarioId);
       }
     }
-  }, [initialTab, lastRunScenarioId, open]);
+  }, [initialScenarioId, initialTab, lastRunScenarioId, open]);
 
   useEffect(() => {
     setAdvancedText(selectedScenario ? JSON.stringify(selectedScenario, null, 2) : '');
@@ -307,6 +320,19 @@ export default function ContractScenarioWorkspace({
     setPublication(null);
   };
 
+  const navigateWorkspace = (
+    tab: WorkspaceTab,
+    scenarioId = selectedScenario?.scenarioId ?? '',
+  ) => {
+    setActiveTab(tab);
+    onCoordinateChange?.(tab, scenarioId);
+  };
+
+  const selectScenario = (scenarioId: string) => {
+    setSelectedScenarioId(scenarioId);
+    onCoordinateChange?.(activeTab, scenarioId);
+  };
+
   const addScenario = () => {
     const usedIds = new Set(scenarios.map((scenario) => scenario.scenarioId));
     let sequence = scenarios.length + 1;
@@ -319,7 +345,7 @@ export default function ContractScenarioWorkspace({
       scenarios: [...scenarioDraftSet.scenarios, next],
     });
     setSelectedScenarioId(next.scenarioId);
-    setActiveTab('scenarios');
+    navigateWorkspace('scenarios', next.scenarioId);
   };
 
   const removeSelectedScenario = () => {
@@ -331,7 +357,9 @@ export default function ContractScenarioWorkspace({
       ...scenarioDraftSet,
       scenarios: nextScenarios,
     });
-    setSelectedScenarioId(nextScenarios[0]?.scenarioId ?? '');
+    const nextScenarioId = nextScenarios[0]?.scenarioId ?? '';
+    setSelectedScenarioId(nextScenarioId);
+    onCoordinateChange?.(activeTab, nextScenarioId);
   };
 
   const applyCompatibilityMigrations = () => {
@@ -396,9 +424,11 @@ export default function ContractScenarioWorkspace({
         return;
       }
       const response = await onRun(compilation.request);
+      const nextComparison = compareScenarioRun(selectedScenario, response);
       setRunResponse(response);
-      setComparison(compareScenarioRun(selectedScenario, response));
-      setActiveTab('evidence');
+      setComparison(nextComparison);
+      onRunEvidence?.(selectedScenario.scenarioId, nextComparison);
+      navigateWorkspace('evidence', selectedScenario.scenarioId);
     } catch (cause: unknown) {
       setCompileMessages([String(cause)]);
     } finally {
@@ -421,6 +451,7 @@ export default function ContractScenarioWorkspace({
       }
       updateSelectedScenario(() => parsed);
       setSelectedScenarioId(parsed.scenarioId);
+      onCoordinateChange?.(activeTab, parsed.scenarioId);
       setAdvancedError('');
     } catch (cause: unknown) {
       setAdvancedError(cause instanceof Error ? cause.message : String(cause));
@@ -578,7 +609,7 @@ export default function ContractScenarioWorkspace({
         <header className="contract-workspace-header">
           <div>
             <span>{targetLabel} Contract</span>
-            <h2>{contract.target.id}</h2>
+            <h2 title={contract.target.id}>{contract.target.id}</h2>
             <p>
               Revision {contract.target.revision} · {contract.confidence.toLowerCase()} projection
             </p>
@@ -674,7 +705,7 @@ export default function ContractScenarioWorkspace({
               <span>Review the interface change, then explicitly rebase before running.</span>
             </div>
             <button type="button" className="secondary compact" onClick={() => {
-              setActiveTab('compatibility');
+              navigateWorkspace('compatibility');
             }}>
               Review compatibility
             </button>
@@ -693,6 +724,20 @@ export default function ContractScenarioWorkspace({
           </div>
         )}
 
+        {projectionDiagnostics.length > 0 && (
+          <div className="scenario-asset-notice error" role="alert" data-testid="scenario-projection-diagnostics">
+            <strong>{projectionDiagnostics.length} legacy case{projectionDiagnostics.length === 1 ? '' : 's'} need review</strong>
+            <span>
+              Valid rows were migrated to Scenarios. Unprojectable source is preserved below and is
+              never treated as passing evidence.
+            </span>
+            <details>
+              <summary>Advanced migration details</summary>
+              <pre>{JSON.stringify(projectionDiagnostics, null, 2)}</pre>
+            </details>
+          </div>
+        )}
+
         <nav className="contract-tabs" role="tablist" aria-label="Contract workspace views">
           {([
             ['interface', 'Interface'],
@@ -707,7 +752,7 @@ export default function ContractScenarioWorkspace({
               aria-selected={activeTab === tab}
               className={activeTab === tab ? 'active' : ''}
               key={tab}
-              onClick={() => setActiveTab(tab)}
+              onClick={() => navigateWorkspace(tab)}
             >
               {label}
             </button>
@@ -737,7 +782,7 @@ export default function ContractScenarioWorkspace({
               advancedError={advancedError}
               onAdvancedTextChange={setAdvancedText}
               onApplyAdvancedJson={applyAdvancedJson}
-              onSelectScenario={setSelectedScenarioId}
+              onSelectScenario={selectScenario}
               onUpdateScenario={updateSelectedScenario}
               onAddScenario={addScenario}
               onRemoveScenario={removeSelectedScenario}
@@ -765,7 +810,7 @@ export default function ContractScenarioWorkspace({
               comparison={visibleComparison}
               compileMessages={compileMessages}
               trustContext={trustContext}
-              onBackToScenario={() => setActiveTab('scenarios')}
+              onBackToScenario={() => navigateWorkspace('scenarios')}
               onSelectDiagnostic={onSelectEvidenceDiagnostic}
             />
           )}
