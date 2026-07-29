@@ -1,0 +1,180 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<mxfile host="drawio" version="30.0.4">
+  <diagram id="resource-gateway-author-ux-95-target-model" name="Author UX 95 Target Model">
+    <mxGraphModel dx="1600" dy="1100" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="1600" pageHeight="1100" math="0" shadow="0">
+      <root>
+        <mxCell id="0" />
+        <mxCell id="1" parent="0" />
+
+        <mxCell id="title" value="Resource Gateway Author UX 95 分目标任务与真相模型" style="text;html=1;strokeColor=none;fillColor=none;align=left;verticalAlign=middle;fontFamily=Arial;fontSize=24;fontStyle=1;fontColor=#1f2937;" vertex="1" parent="1">
+          <mxGeometry x="40" y="20" width="1050" height="40" as="geometry" />
+        </mxCell>
+        <mxCell id="subtitle" value="一个正式任务流、一个 Scenario 模型、一个可信 Verdict；declared / inferred / bound / observed 分层呈现" style="text;html=1;strokeColor=none;fillColor=none;align=left;verticalAlign=middle;fontFamily=Arial;fontSize=12;fontColor=#52606d;" vertex="1" parent="1">
+          <mxGeometry x="40" y="60" width="1250" height="24" as="geometry" />
+        </mxCell>
+
+        <mxCell id="taskLane" value="Canonical Author Journey / 唯一正式任务流" style="swimlane;startSize=34;whiteSpace=wrap;html=1;fillColor=#f7f9fb;strokeColor=#52606d;fontFamily=Arial;fontSize=13;fontStyle=1;container=1;pointerEvents=0;" vertex="1" parent="1">
+          <mxGeometry x="40" y="100" width="1520" height="180" as="geometry" />
+        </mxCell>
+        <mxCell id="compose" value="Compose&#xa;GraphDraft / topology / node config" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#e8f1fb;strokeColor=#2f6b9a;fontFamily=Arial;fontSize=12;fontStyle=1;" vertex="1" parent="taskLane">
+          <mxGeometry x="40" y="64" width="230" height="78" as="geometry" />
+        </mxCell>
+        <mxCell id="contract" value="Contract&#xa;Interface / semantics / lineage" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#e8f1fb;strokeColor=#2f6b9a;fontFamily=Arial;fontSize=12;fontStyle=1;" vertex="1" parent="taskLane">
+          <mxGeometry x="330" y="64" width="230" height="78" as="geometry" />
+        </mxCell>
+        <mxCell id="scenarios" value="Scenarios&#xa;Given / Dependencies / Then" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#fff4d6;strokeColor=#a66a12;fontFamily=Arial;fontSize=12;fontStyle=1;" vertex="1" parent="taskLane">
+          <mxGeometry x="620" y="64" width="230" height="78" as="geometry" />
+        </mxCell>
+        <mxCell id="evidence" value="Evidence&#xa;run / assertions / trace / freshness" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#eaf6ef;strokeColor=#39744a;fontFamily=Arial;fontSize=12;fontStyle=1;" vertex="1" parent="taskLane">
+          <mxGeometry x="910" y="64" width="230" height="78" as="geometry" />
+        </mxCell>
+        <mxCell id="verdict" value="Readiness Verdict&#xa;failed / review / stale / ready" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#eaf6ef;strokeColor=#39744a;fontFamily=Arial;fontSize=12;fontStyle=1;" vertex="1" parent="taskLane">
+          <mxGeometry x="1200" y="64" width="260" height="78" as="geometry" />
+        </mxCell>
+
+        <mxCell id="edgeComposeContract" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;endArrow=classic;endFill=1;strokeColor=#52606d;exitX=1;exitY=0.5;entryX=0;entryY=0.5;" edge="1" parent="taskLane" source="compose" target="contract">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="edgeContractScenarios" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;endArrow=classic;endFill=1;strokeColor=#52606d;exitX=1;exitY=0.5;entryX=0;entryY=0.5;" edge="1" parent="taskLane" source="contract" target="scenarios">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="edgeScenariosEvidence" value="run" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;endArrow=classic;endFill=1;strokeColor=#52606d;labelBackgroundColor=#ffffff;fontFamily=Arial;fontSize=10;exitX=1;exitY=0.5;entryX=0;entryY=0.5;" edge="1" parent="taskLane" source="scenarios" target="evidence">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="edgeEvidenceVerdict" value="five-dimensional truth" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;endArrow=classic;endFill=1;strokeColor=#52606d;labelBackgroundColor=#ffffff;fontFamily=Arial;fontSize=10;exitX=1;exitY=0.5;entryX=0;entryY=0.5;" edge="1" parent="taskLane" source="evidence" target="verdict">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+
+        <mxCell id="truthLane" value="Effective Contract Projection / 数据真相分层" style="swimlane;startSize=34;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#52606d;fontFamily=Arial;fontSize=13;fontStyle=1;container=1;pointerEvents=0;" vertex="1" parent="1">
+          <mxGeometry x="40" y="320" width="1520" height="230" as="geometry" />
+        </mxCell>
+        <mxCell id="declared" value="Declared&#xa;Operator Library / authored Contract&#xa;权威声明" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#e8f1fb;strokeColor=#2f6b9a;fontFamily=Arial;fontSize=11;fontStyle=1;" vertex="1" parent="truthLane">
+          <mxGeometry x="30" y="56" width="240" height="66" as="geometry" />
+        </mxCell>
+        <mxCell id="inferred" value="Inferred&#xa;DSL / Mapping / Decision Table&#xa;带 confidence 的推演" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#fff4d6;strokeColor=#a66a12;fontFamily=Arial;fontSize=11;fontStyle=1;" vertex="1" parent="truthLane">
+          <mxGeometry x="30" y="138" width="240" height="66" as="geometry" />
+        </mxCell>
+        <mxCell id="bound" value="Bound&#xa;edge / ctx / constant / target path&#xa;当前草稿事实" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#f1f3f5;strokeColor=#68737d;fontFamily=Arial;fontSize=11;fontStyle=1;" vertex="1" parent="truthLane">
+          <mxGeometry x="320" y="56" width="240" height="66" as="geometry" />
+        </mxCell>
+        <mxCell id="observed" value="Observed&#xa;latest run trace / actual shape&#xa;观察证据，不自动写 Contract" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#eaf6ef;strokeColor=#39744a;fontFamily=Arial;fontSize=11;fontStyle=1;" vertex="1" parent="truthLane">
+          <mxGeometry x="320" y="138" width="240" height="66" as="geometry" />
+        </mxCell>
+        <mxCell id="projection" value="EffectiveContractProjection&#xa;&#xa;provenance + confidence&#xa;field lineage + conflicts&#xa;declared / inferred / bound / observed" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#2f6b9a;strokeWidth=2;fontFamily=Arial;fontSize=12;fontStyle=1;" vertex="1" parent="truthLane">
+          <mxGeometry x="650" y="76" width="300" height="108" as="geometry" />
+        </mxCell>
+        <mxCell id="unifiedWorkspace" value="Unified Contract / Scenario / Evidence Workspace&#xa;&#xa;Interface: compare sources and accept inference&#xa;Scenarios: Graph and Operator share one model&#xa;Evidence: exact coordinate, stale and verdict&#xa;Advanced: lossless Raw JSON escape hatch" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#f7f9fb;strokeColor=#52606d;fontFamily=Arial;fontSize=12;fontStyle=1;align=left;spacingLeft=18;" vertex="1" parent="truthLane">
+          <mxGeometry x="1040" y="56" width="440" height="148" as="geometry" />
+        </mxCell>
+
+        <mxCell id="edgeDeclaredProjection" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;endArrow=classic;endFill=1;strokeColor=#2f6b9a;exitX=1;exitY=0.5;entryX=0;entryY=0.2;" edge="1" parent="truthLane" source="declared" target="projection">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="edgeInferredProjection" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;endArrow=classic;endFill=1;strokeColor=#a66a12;exitX=1;exitY=0.5;entryX=0;entryY=0.8;" edge="1" parent="truthLane" source="inferred" target="projection">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="edgeBoundProjection" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;endArrow=classic;endFill=1;strokeColor=#68737d;exitX=1;exitY=0.5;entryX=0;entryY=0.4;" edge="1" parent="truthLane" source="bound" target="projection">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="edgeObservedProjection" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;endArrow=classic;endFill=1;strokeColor=#39744a;exitX=1;exitY=0.5;entryX=0;entryY=0.6;" edge="1" parent="truthLane" source="observed" target="projection">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="edgeProjectionWorkspace" value="one truthful projection" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;endArrow=classic;endFill=1;strokeColor=#2f6b9a;labelBackgroundColor=#ffffff;fontFamily=Arial;fontSize=10;exitX=1;exitY=0.5;entryX=0;entryY=0.5;" edge="1" parent="truthLane" source="projection" target="unifiedWorkspace">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+
+        <mxCell id="lifecycleLane" value="Draft / Run / Evidence Lifecycle / 可解释生命周期" style="swimlane;startSize=34;whiteSpace=wrap;html=1;fillColor=#f7f9fb;strokeColor=#52606d;fontFamily=Arial;fontSize=13;fontStyle=1;container=1;pointerEvents=0;" vertex="1" parent="1">
+          <mxGeometry x="40" y="590" width="1520" height="170" as="geometry" />
+        </mxCell>
+        <mxCell id="ephemeral" value="EPHEMERAL&#xa;content fingerprint" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#fff4d6;strokeColor=#a66a12;fontFamily=Arial;fontSize=11;fontStyle=1;" vertex="1" parent="lifecycleLane">
+          <mxGeometry x="30" y="66" width="190" height="64" as="geometry" />
+        </mxCell>
+        <mxCell id="saved" value="SAVED / DIRTY&#xa;draft id + revision" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#e8f1fb;strokeColor=#2f6b9a;fontFamily=Arial;fontSize=11;fontStyle=1;" vertex="1" parent="lifecycleLane">
+          <mxGeometry x="270" y="66" width="190" height="64" as="geometry" />
+        </mxCell>
+        <mxCell id="validated" value="VALIDATED&#xa;graph + Contract" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#e8f1fb;strokeColor=#2f6b9a;fontFamily=Arial;fontSize=11;fontStyle=1;" vertex="1" parent="lifecycleLane">
+          <mxGeometry x="510" y="66" width="190" height="64" as="geometry" />
+        </mxCell>
+        <mxCell id="executed" value="EXECUTED&#xa;Scenario + closure" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#fff4d6;strokeColor=#a66a12;fontFamily=Arial;fontSize=11;fontStyle=1;" vertex="1" parent="lifecycleLane">
+          <mxGeometry x="750" y="66" width="190" height="64" as="geometry" />
+        </mxCell>
+        <mxCell id="evidenceReady" value="EVIDENCE-READY&#xa;fresh exact coordinates" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#eaf6ef;strokeColor=#39744a;fontFamily=Arial;fontSize=11;fontStyle=1;" vertex="1" parent="lifecycleLane">
+          <mxGeometry x="990" y="66" width="200" height="64" as="geometry" />
+        </mxCell>
+        <mxCell id="governed" value="GOVERNED CONSUMER&#xa;ANEKE gate / workbook" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#f1f3f5;strokeColor=#68737d;fontFamily=Arial;fontSize=11;fontStyle=1;dashed=1;" vertex="1" parent="lifecycleLane">
+          <mxGeometry x="1240" y="66" width="230" height="64" as="geometry" />
+        </mxCell>
+
+        <mxCell id="edgeEphemeralSaved" value="first durable action" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;endArrow=classic;endFill=1;strokeColor=#52606d;labelBackgroundColor=#ffffff;fontFamily=Arial;fontSize=9;exitX=1;exitY=0.5;entryX=0;entryY=0.5;" edge="1" parent="lifecycleLane" source="ephemeral" target="saved">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="edgeSavedValidated" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;endArrow=classic;endFill=1;strokeColor=#52606d;exitX=1;exitY=0.5;entryX=0;entryY=0.5;" edge="1" parent="lifecycleLane" source="saved" target="validated">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="edgeValidatedExecuted" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;endArrow=classic;endFill=1;strokeColor=#52606d;exitX=1;exitY=0.5;entryX=0;entryY=0.5;" edge="1" parent="lifecycleLane" source="validated" target="executed">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="edgeExecutedEvidence" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;endArrow=classic;endFill=1;strokeColor=#52606d;exitX=1;exitY=0.5;entryX=0;entryY=0.5;" edge="1" parent="lifecycleLane" source="executed" target="evidenceReady">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="edgeEvidenceGoverned" value="stable protocol" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;endArrow=classic;endFill=1;strokeColor=#52606d;labelBackgroundColor=#ffffff;fontFamily=Arial;fontSize=9;exitX=1;exitY=0.5;entryX=0;entryY=0.5;" edge="1" parent="lifecycleLane" source="evidenceReady" target="governed">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+
+        <mxCell id="guardrailLane" value="Migration and Evidence Gates / 迁移与评分门禁" style="swimlane;startSize=34;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#52606d;fontFamily=Arial;fontSize=13;fontStyle=1;container=1;pointerEvents=0;" vertex="1" parent="1">
+          <mxGeometry x="40" y="800" width="1520" height="160" as="geometry" />
+        </mxCell>
+        <mxCell id="legacy" value="Legacy Raw Test Suite&#xa;read adapter only" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#fdecec;strokeColor=#a94442;fontFamily=Arial;fontSize=11;fontStyle=1;dashed=1;" vertex="1" parent="guardrailLane">
+          <mxGeometry x="40" y="62" width="250" height="62" as="geometry" />
+        </mxCell>
+        <mxCell id="canonical" value="Canonical Scenario Model&#xa;Graph + Operator target scope" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#e8f1fb;strokeColor=#2f6b9a;fontFamily=Arial;fontSize=11;fontStyle=1;" vertex="1" parent="guardrailLane">
+          <mxGeometry x="390" y="62" width="290" height="62" as="geometry" />
+        </mxCell>
+        <mxCell id="taskEvidence" value="Task Evidence&#xa;browser + 12 users + two releases" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#eaf6ef;strokeColor=#39744a;fontFamily=Arial;fontSize=11;fontStyle=1;" vertex="1" parent="guardrailLane">
+          <mxGeometry x="790" y="62" width="290" height="62" as="geometry" />
+        </mxCell>
+        <mxCell id="score95" value="UX MATURITY >= 95&#xa;P0 / P1 = 0" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#eaf6ef;strokeColor=#39744a;strokeWidth=2;fontFamily=Arial;fontSize=13;fontStyle=1;" vertex="1" parent="guardrailLane">
+          <mxGeometry x="1190" y="62" width="270" height="62" as="geometry" />
+        </mxCell>
+
+        <mxCell id="edgeLegacyCanonical" value="deterministic migration" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;endArrow=classic;endFill=1;strokeColor=#a94442;labelBackgroundColor=#ffffff;fontFamily=Arial;fontSize=9;exitX=1;exitY=0.5;entryX=0;entryY=0.5;" edge="1" parent="guardrailLane" source="legacy" target="canonical">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="edgeCanonicalEvidence" value="one product model" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;endArrow=classic;endFill=1;strokeColor=#52606d;labelBackgroundColor=#ffffff;fontFamily=Arial;fontSize=9;exitX=1;exitY=0.5;entryX=0;entryY=0.5;" edge="1" parent="guardrailLane" source="canonical" target="taskEvidence">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="edgeTaskEvidenceScore" value="E3 / E4 gates" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;endArrow=classic;endFill=1;strokeColor=#39744a;labelBackgroundColor=#ffffff;fontFamily=Arial;fontSize=9;exitX=1;exitY=0.5;entryX=0;entryY=0.5;" edge="1" parent="guardrailLane" source="taskEvidence" target="score95">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+
+        <mxCell id="legendTitle" value="Legend" style="text;html=1;strokeColor=none;fillColor=none;align=left;verticalAlign=middle;fontFamily=Arial;fontSize=11;fontStyle=1;fontColor=#52606d;" vertex="1" parent="1">
+          <mxGeometry x="40" y="990" width="70" height="20" as="geometry" />
+        </mxCell>
+        <mxCell id="legendDeclared" value="" style="rounded=0;html=1;fillColor=#e8f1fb;strokeColor=#2f6b9a;" vertex="1" parent="1">
+          <mxGeometry x="120" y="992" width="28" height="14" as="geometry" />
+        </mxCell>
+        <mxCell id="legendDeclaredText" value="Authoring / declared" style="text;html=1;strokeColor=none;fillColor=none;align=left;verticalAlign=middle;fontFamily=Arial;fontSize=10;fontColor=#52606d;" vertex="1" parent="1">
+          <mxGeometry x="155" y="986" width="140" height="26" as="geometry" />
+        </mxCell>
+        <mxCell id="legendScenario" value="" style="rounded=0;html=1;fillColor=#fff4d6;strokeColor=#a66a12;" vertex="1" parent="1">
+          <mxGeometry x="320" y="992" width="28" height="14" as="geometry" />
+        </mxCell>
+        <mxCell id="legendScenarioText" value="Scenario / inferred" style="text;html=1;strokeColor=none;fillColor=none;align=left;verticalAlign=middle;fontFamily=Arial;fontSize=10;fontColor=#52606d;" vertex="1" parent="1">
+          <mxGeometry x="355" y="986" width="140" height="26" as="geometry" />
+        </mxCell>
+        <mxCell id="legendEvidence" value="" style="rounded=0;html=1;fillColor=#eaf6ef;strokeColor=#39744a;" vertex="1" parent="1">
+          <mxGeometry x="520" y="992" width="28" height="14" as="geometry" />
+        </mxCell>
+        <mxCell id="legendEvidenceText" value="Evidence / ready" style="text;html=1;strokeColor=none;fillColor=none;align=left;verticalAlign=middle;fontFamily=Arial;fontSize=10;fontColor=#52606d;" vertex="1" parent="1">
+          <mxGeometry x="555" y="986" width="130" height="26" as="geometry" />
+        </mxCell>
+        <mxCell id="legendLegacy" value="" style="rounded=0;html=1;fillColor=#fdecec;strokeColor=#a94442;dashed=1;" vertex="1" parent="1">
+          <mxGeometry x="710" y="992" width="28" height="14" as="geometry" />
+        </mxCell>
+        <mxCell id="legendLegacyText" value="Legacy / blocker" style="text;html=1;strokeColor=none;fillColor=none;align=left;verticalAlign=middle;fontFamily=Arial;fontSize=10;fontColor=#52606d;" vertex="1" parent="1">
+          <mxGeometry x="745" y="986" width="130" height="26" as="geometry" />
+        </mxCell>
+      </root>
+    </mxGraphModel>
+  </diagram>
+</mxfile>

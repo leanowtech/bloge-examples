@@ -2,6 +2,11 @@
 
 > 对应方案：[Resource Gateway Author 任务式交互 UX 改善计划](resource-gateway-author-task-oriented-ux-improvement-plan.md)
 >
+> 后续体验成熟度校准与真实用户验收：
+> [Resource Gateway Author UX 体验成熟度 95 分提升计划](resource-gateway-author-ux-maturity-95-plan.md)
+>
+> 说明：本文评分衡量既定工程计划的实现完成度，不等同于真实任务下的产品体验成熟度。
+>
 > 状态：Implementation in Progress
 >
 > 最近更新：2026-07-28

@@ -12,6 +12,7 @@
 
 相关文档：
 
+- [Resource Gateway Author UX 体验成熟度 95 分提升计划](resource-gateway-author-ux-maturity-95-plan.md)
 - [Author 任务式交互 UX 实现状态](resource-gateway-author-task-oriented-ux-implementation-status.md)
 - [Contract & Scenario Authoring 工业级体验演进计划](resource-gateway-contract-scenario-authoring-evolution-plan.md)
 - [Contract & Scenario Authoring 实现状态](resource-gateway-contract-scenario-authoring-implementation-status.md)
