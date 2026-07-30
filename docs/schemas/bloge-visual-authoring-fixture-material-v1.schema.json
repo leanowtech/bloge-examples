@@ -1,0 +1,21 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://bloge.leanowtech.com/schemas/bloge-visual-authoring-fixture-material-v1.schema.json",
+  "title": "BLOGE Visual Authoring Fixture Material",
+  "description": "Authorized exact-revision fixture read. This is the only public authoring-fixture contract that carries decrypted payload material.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schemaVersion", "fixture", "payload", "payloadReturned"],
+  "properties": {
+    "schemaVersion": {
+      "const": "bloge.visualAuthoringFixtureMaterial.v1"
+    },
+    "fixture": {
+      "$ref": "bloge-visual-authoring-fixture-receipt-v1.schema.json"
+    },
+    "payload": {},
+    "payloadReturned": {
+      "const": true
+    }
+  }
+}

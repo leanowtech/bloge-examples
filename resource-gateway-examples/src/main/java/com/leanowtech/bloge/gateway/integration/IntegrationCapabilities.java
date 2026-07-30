@@ -426,6 +426,12 @@ public record IntegrationCapabilities(
                 "bloge.visualAuthoringFunctionTestCase.v1",
                 "bloge.visualAuthoringFunctionTestRunRequest.v1",
                 "bloge.visualAuthoringFunctionTestRunEvidence.v1"));
+        objects.put("visualLibraryAuthoringFixtureSaveRequest", List.of(
+                "bloge.visualAuthoringFixtureSaveRequest.v1"));
+        objects.put("visualLibraryAuthoringFixtureReceipt", List.of(
+                "bloge.visualAuthoringFixtureReceipt.v1"));
+        objects.put("visualLibraryAuthoringFixtureMaterial", List.of(
+                "bloge.visualAuthoringFixtureMaterial.v1"));
         objects.put("graphDraftIntegrationBundle", List.of(GraphDraftIntegrationBundle.SCHEMA_VERSION));
         objects.put("graphDraftDependencyProfile", List.of(GraphDraftDependencyProfile.SCHEMA_VERSION_V1,
                 GraphDraftDependencyProfile.SCHEMA_VERSION));
@@ -841,7 +847,9 @@ public record IntegrationCapabilities(
         features.put("visualLibraryAuthoringPreviewFencedCommit", true);
         features.put("visualLibraryAuthoringOperatorTestDraftRunner", true);
         features.put("visualLibraryAuthoringFunctionTestDraftRunner", true);
-        features.put("visualLibraryAuthoringGovernedFixturePersistence", false);
+        features.put(
+                "visualLibraryAuthoringGovernedFixturePersistence",
+                testExecutionEndpointEnabled);
         features.put("visualLibraryAuthoringIsolatedFunctionTestWorker", false);
         features.put("graphDraftConsistentDependencySnapshot", true);
         features.put("graphDraftStructuredDependencyRefs", true);
@@ -1333,6 +1341,12 @@ public record IntegrationCapabilities(
                 new Endpoint("POST", "/api/visual/run-controls/{requestId}/cancel")
         ));
         if (testExecutionEndpointEnabled) {
+            endpoints.add(new Endpoint(
+                    "POST",
+                    "/admin/visual-operator-library-authoring/drafts/{draftId}/fixtures"));
+            endpoints.add(new Endpoint(
+                    "GET",
+                    "/admin/visual-operator-library-authoring/fixtures/{fixtureId}"));
             endpoints.add(new Endpoint("POST", "/api/testing/executions"));
             endpoints.add(new Endpoint("GET", "/api/testing/targets/graphs/{graphName}"));
             endpoints.add(new Endpoint("GET",

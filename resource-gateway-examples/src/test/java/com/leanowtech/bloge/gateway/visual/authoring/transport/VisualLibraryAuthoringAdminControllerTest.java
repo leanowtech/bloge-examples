@@ -104,6 +104,18 @@ class VisualLibraryAuthoringAdminControllerTest {
                 .andExpect(jsonPath("$.limits.maximumAuthoringTestCases").value(50))
                 .andExpect(jsonPath("$.limits.maximumFunctionTestArguments").value(32))
                 .andExpect(jsonPath("$.limits.functionTestTimeoutMillis").value(250))
+                .andExpect(jsonPath("$.limits.maximumAuthoringFixtureRequestBytes")
+                        .value(524288))
+                .andExpect(jsonPath("$.limits.maximumAuthoringFixturePayloadBytes")
+                        .value(262144))
+                .andExpect(jsonPath("$.limits.maximumAuthoringFixturePayloadDepth")
+                        .value(64))
+                .andExpect(jsonPath("$.limits.maximumAuthoringFixturePayloadNodes")
+                        .value(20000))
+                .andExpect(jsonPath("$.limits.maximumAuthoringFixtureRedactionPaths")
+                        .value(64))
+                .andExpect(jsonPath("$.limits.maximumAuthoringFixtureRetentionDays")
+                        .value(30))
                 .andExpect(jsonPath("$.limits.maximumYamlAliases").value(20))
                 .andExpect(jsonPath("$.archetypes.length()").value(9));
     }

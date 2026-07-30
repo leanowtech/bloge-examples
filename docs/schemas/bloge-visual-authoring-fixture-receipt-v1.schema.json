@@ -1,0 +1,134 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://bloge.leanowtech.com/schemas/bloge-visual-authoring-fixture-receipt-v1.schema.json",
+  "title": "BLOGE Visual Authoring Fixture Receipt",
+  "description": "Payload-free immutable lineage and retention receipt for one governed fixture revision.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "tenantId",
+    "organizationId",
+    "projectId",
+    "environmentId",
+    "region",
+    "fixtureId",
+    "revision",
+    "sourceKind",
+    "assetKind",
+    "assetRef",
+    "draftId",
+    "authoringRevision",
+    "authoringFingerprint",
+    "canonicalFingerprint",
+    "artifactFingerprint",
+    "payloadFingerprint",
+    "classification",
+    "retentionPolicyVersion",
+    "expiresAt",
+    "redactionProfileVersion",
+    "redactedPaths",
+    "createdAt",
+    "createdBy",
+    "payloadPersisted",
+    "payloadReturned"
+  ],
+  "properties": {
+    "schemaVersion": {
+      "const": "bloge.visualAuthoringFixtureReceipt.v1"
+    },
+    "tenantId": {"$ref": "#/$defs/identity"},
+    "organizationId": {"$ref": "#/$defs/identity"},
+    "projectId": {"$ref": "#/$defs/identity"},
+    "environmentId": {"$ref": "#/$defs/identity"},
+    "region": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 64
+    },
+    "fixtureId": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 160,
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]*$"
+    },
+    "revision": {
+      "type": "integer",
+      "minimum": 1
+    },
+    "sourceKind": {
+      "enum": ["SAMPLE", "OPERATOR_TEST_CASE", "FUNCTION_TEST_CASE"]
+    },
+    "assetKind": {
+      "enum": ["OPERATOR", "FUNCTION"]
+    },
+    "assetRef": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 320
+    },
+    "draftId": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 160
+    },
+    "authoringRevision": {
+      "type": "integer",
+      "minimum": 1
+    },
+    "authoringFingerprint": {"$ref": "#/$defs/fingerprint"},
+    "canonicalFingerprint": {"$ref": "#/$defs/fingerprint"},
+    "artifactFingerprint": {"$ref": "#/$defs/fingerprint"},
+    "payloadFingerprint": {"$ref": "#/$defs/fingerprint"},
+    "classification": {
+      "enum": ["PUBLIC", "INTERNAL", "CONFIDENTIAL", "RESTRICTED"]
+    },
+    "retentionPolicyVersion": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 160
+    },
+    "expiresAt": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "redactionProfileVersion": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 160
+    },
+    "redactedPaths": {
+      "type": "array",
+      "maxItems": 64,
+      "uniqueItems": true,
+      "items": {
+        "type": "string",
+        "minLength": 1,
+        "maxLength": 512,
+        "pattern": "^/(?:[^~]|~[01])*$"
+      }
+    },
+    "createdAt": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "createdBy": {"$ref": "#/$defs/identity"},
+    "payloadPersisted": {
+      "const": true
+    },
+    "payloadReturned": {
+      "const": false
+    }
+  },
+  "$defs": {
+    "identity": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 255
+    },
+    "fingerprint": {
+      "type": "string",
+      "pattern": "^sha256:[a-f0-9]{64}$"
+    }
+  }
+}

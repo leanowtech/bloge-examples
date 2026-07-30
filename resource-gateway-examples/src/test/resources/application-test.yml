@@ -19,6 +19,13 @@ spring.bloge:
 gateway:
   base-url: http://localhost:${wiremock.server.port:9999}
   seed-descriptors: true
+  testing:
+    authoring-fixtures:
+      payload-protection:
+        active-key-id: test-authoring-v1
+        key-ring: test-authoring-v1=AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8=
+      sweep-interval-ms: 60000
+      sweep-batch-size: 25
 
 logging:
   level:

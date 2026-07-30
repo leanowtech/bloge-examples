@@ -321,6 +321,36 @@ class ToolStudioIntegrationServiceTest {
     }
 
     @Test
+    void testRuntimeAdvertisesGovernedAuthoringFixtureProtocolAndEndpoints() {
+        ToolStudioIntegrationService service = service(null, null, null, null);
+        service.configureTestability(new TestabilityAvailability(true));
+
+        IntegrationCapabilities capabilities = service.capabilities().payload();
+
+        assertThat(capabilities.features())
+                .containsEntry(
+                        "visualLibraryAuthoringGovernedFixturePersistence",
+                        true);
+        assertThat(capabilities.supportedObjects())
+                .containsEntry(
+                        "visualLibraryAuthoringFixtureSaveRequest",
+                        List.of("bloge.visualAuthoringFixtureSaveRequest.v1"))
+                .containsEntry(
+                        "visualLibraryAuthoringFixtureReceipt",
+                        List.of("bloge.visualAuthoringFixtureReceipt.v1"))
+                .containsEntry(
+                        "visualLibraryAuthoringFixtureMaterial",
+                        List.of("bloge.visualAuthoringFixtureMaterial.v1"));
+        assertThat(capabilities.endpoints()).contains(
+                new IntegrationCapabilities.Endpoint(
+                        "POST",
+                        "/admin/visual-operator-library-authoring/drafts/{draftId}/fixtures"),
+                new IntegrationCapabilities.Endpoint(
+                        "GET",
+                        "/admin/visual-operator-library-authoring/fixtures/{fixtureId}"));
+    }
+
+    @Test
     void capabilitiesSeparateDomainFidelityRoutesSigningAndProjectionReadiness() {
         AtomicBoolean signer = new AtomicBoolean(true);
         AtomicBoolean sources = new AtomicBoolean(false);

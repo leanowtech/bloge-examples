@@ -126,8 +126,17 @@ To experience exact-draft tests, open **Customer Support Triage**, select
 uncommitted canonical schemas and is labelled `SCHEMA CONTRACT`. Select the `trim` function and
 run its generated boundary row to see a real `BOUND` BLOGE runtime call; custom
 `support.normalizeText` remains visibly `UNBOUND` instead of producing a false pass. These rows
-are ephemeral and fingerprint-bound. Persisted governed fixtures and production isolation workers
-remain separate testing-control-plane concerns.
+are ephemeral and fingerprint-bound. The `test`/`staging` runtime can now persist an explicitly
+chosen row through the governed fixture API: it binds the exact draft and asset fingerprints,
+redacts sensitive fields, encrypts the payload, appends a payload-free audit event in the same
+transaction, and erases ciphertext at retention expiry. The Workbench **Save as fixture** action
+and production isolation workers remain the next authoring UX/runtime steps.
+
+The `test` profile supplies a deterministic local-only fixture key so the demo script works without
+secret setup. A `staging` start fails closed unless both `RG_AUTHORING_FIXTURE_ACTIVE_KEY_ID` and
+`RG_AUTHORING_FIXTURE_KEY_RING` are supplied; the key ring uses comma-separated
+`keyId=base64Encoded32ByteKey` entries and must retain old read keys during rotation.
+
 | `PUT http://localhost:8080/api/mirror/outcome-selected-populations/uploads/{uploadId}/chunks/{chunkIndex}` | Stage or exactly replay one manifest-declared content-addressed chunk |
 | `GET http://localhost:8080/api/mirror/outcome-selected-populations/uploads/{uploadId}` | Read payload-free durable progress, expiry, and finalization state |
 | `POST http://localhost:8080/api/mirror/outcome-selected-populations/uploads/{uploadId}/finalize` | Finalize a complete upload through the existing governed population admission |
@@ -150,6 +159,8 @@ remain separate testing-control-plane concerns.
 | `POST http://localhost:8080/api/integration/capability-closures/project` | Project a portable visual `GraphDraft` into a sealed, scope-bound root-plus-external-leaf capability closure |
 | `http://localhost:8080/api/gateway/graphs/contracts` | Inspect resource graph input/output contracts |
 | `GET http://localhost:8080/api/testing/targets/graphs/{graphName}` | Freeze the graph/resource target fingerprint before authoring fixtures (test/staging only) |
+| `POST http://localhost:8080/admin/visual-operator-library-authoring/drafts/{draftId}/fixtures` | Save one exact-draft, encrypted, redacted authoring fixture revision (`If-Match`, `X-Purpose: TEST_FIXTURE_WRITE`; test/staging only) |
+| `GET http://localhost:8080/admin/visual-operator-library-authoring/fixtures/{fixtureId}?revision={revision}` | Read one authorized exact fixture material (`X-Purpose: TEST_FIXTURE_READ`; test/staging only) |
 | `GET http://localhost:8080/api/testing/targets/graphs/{graphName}/boundary-cases` | Generate bounded, validator-proven graph input candidates and explicit coverage gaps (test/staging only) |
 | `GET http://localhost:8080/api/testing/targets/graphs/{graphName}/property-cases?seed=...` | Generate reproducible, bounded graph trials with validator-proven shrink paths; this is an authoring plan, not execution evidence (test/staging only) |
 | `GET http://localhost:8080/api/testing/targets/graphs/{graphName}/mutation-cases?maxMutants=...` | Plan bounded, independently compiling pure-DSL graph mutants without changing external operators; planning is not execution, evidence, or a score (test/staging only) |

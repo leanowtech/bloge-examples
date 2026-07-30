@@ -1,6 +1,6 @@
 # Resource Gateway 渐进式算子与 Built-in Function 库创作技术方案
 
-> 状态：Approved；Stage 0、Stage 1 与 Stage 2.4 样本推断/草稿测试表/受限 function runner 已实现，受治理 fixture、生产隔离 runner 及 Stage 3-4 待实施
+> 状态：Approved；Stage 0、Stage 1、Stage 2.4 与 Stage 2.5 治理型 fixture 后端已实现，Workbench fixture 入口、生产隔离 runner 及 Stage 3-4 待实施
 >
 > 日期：2026-07-30
 >
@@ -748,6 +748,23 @@ Source Adapter 统一返回：
 5. 用户显式保存为 fixture 时进入独立 test asset repository；
 6. fixture 使用独立 RBAC、加密、retention 和 evidence redaction；
 7. 日志、metric label、diagnostic message 不包含 payload。
+
+Stage 2.5 已实现上述服务端边界：
+
+- 保存命令固定为
+  [`bloge.visualAuthoringFixtureSaveRequest.v1`](schemas/bloge-visual-authoring-fixture-save-request-v1.schema.json)，
+  要求 exact draft `If-Match`、`TEST_FIXTURE_WRITE` purpose 和完整企业身份；
+- receipt 固定为
+  [`bloge.visualAuthoringFixtureReceipt.v1`](schemas/bloge-visual-authoring-fixture-receipt-v1.schema.json)，
+  只返回 lineage、fingerprint、classification、retention 和 redaction 事实，不返回 payload；
+- 只有 `TEST_FIXTURE_READ` 的 exact revision 查询会返回
+  [`bloge.visualAuthoringFixtureMaterial.v1`](schemas/bloge-visual-authoring-fixture-material-v1.schema.json)；
+- 同一 `fixtureId` 的 source kind、asset kind/ref、draft 和 classification 构成不可变
+  lineage；新修订只能更新 payload/retention 事实，改绑坐标必须使用新的 fixture id；
+- payload 先执行显式 JSON Pointer 与敏感键自动脱敏，再使用带完整 scope/draft/artifact
+  AAD 的 AES-256-GCM envelope 加密；
+- fixture 与 `AUTHORING_FIXTURE_SAVED` 安全事件在独立 test-runtime 数据库的同一事务提交；
+- retention worker 到期后物理清除密文，只保留可校验、payload-free lineage tombstone。
 
 ### 6.6 Inference 请求的幂等性
 
@@ -1542,8 +1559,10 @@ revision-fenced API、observed facts、保守 candidate、confirmation request�
 选择、样本输入、candidate/fact 解释、显式 confirmation queue 和结构化回写。Stage 2.4
 进一步交付 exact-draft operator test 自动生成与 schema-contract run、function test
 机器合同、runtime binding 状态、受限 function runner、单行/批量 UI 和 fingerprint-bound
-临时 evidence。受治理 fixture repository、显式 sample-to-fixture、生产隔离 runner 与
-持久化签名 evidence 仍待完成。详见
+临时 evidence。Stage 2.5 已交付 exact-draft、五维 enterprise-scoped、AES-256-GCM
+加密、自动/显式脱敏、不可变修订、事务安全审计与到期 tombstone 的 fixture 后端协议。
+Workbench 显式 sample/test-row-to-fixture 入口、生产隔离 runner 与持久化签名 evidence
+仍待完成。详见
 [实现状态](resource-gateway-progressive-library-authoring-implementation-status.md)。
 
 交付：

@@ -61,6 +61,9 @@ import com.leanowtech.bloge.gateway.testing.evidence.ProtocolFingerprint;
 import com.leanowtech.bloge.gateway.testing.persistence.DatabaseDurableStateProjectionControlPlane;
 import com.leanowtech.bloge.gateway.testing.persistence.DatabaseDurableWorkerQuarantineControlPlane;
 import com.leanowtech.bloge.gateway.visual.runtime.VisualEvidenceSigner;
+import com.leanowtech.bloge.gateway.testing.authoring.fixture.AuthoringFixtureRepository;
+import com.leanowtech.bloge.gateway.testing.authoring.fixture.AuthoringFixtureRetentionScheduler;
+import com.leanowtech.bloge.gateway.testing.authoring.fixture.VisualLibraryAuthoringFixtureController;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
@@ -289,6 +292,11 @@ class TestRuntimeApplicationIntegrationTest {
         assertThat(context.getBeansOfType(ReplayPayloadRepository.class)).hasSize(1);
         assertThat(context.getBeansOfType(TestReplayPayloadService.class)).hasSize(1);
         assertThat(context.getBeansOfType(ReplayPayloadRetentionScheduler.class)).hasSize(1);
+        assertThat(context.getBeansOfType(AuthoringFixtureRepository.class)).hasSize(1);
+        assertThat(context.getBeansOfType(
+                AuthoringFixtureRetentionScheduler.class)).hasSize(1);
+        assertThat(context.getBeansOfType(
+                VisualLibraryAuthoringFixtureController.class)).hasSize(1);
 
         var capabilities = restTemplate.exchange("/api/integration/capabilities", HttpMethod.GET,
                 HttpEntity.EMPTY,
@@ -302,6 +310,9 @@ class TestRuntimeApplicationIntegrationTest {
         assertThat(capabilities.getBody().payload().features())
                 .containsEntry("bootstrapRootRecoveryFleetConfigured", false)
                 .containsEntry("bootstrapRootRecoveryFleetReady", false)
+                .containsEntry(
+                        "visualLibraryAuthoringGovernedFixturePersistence",
+                        true)
                 .containsEntry("mirrorPlanCompilation", true)
                 .containsEntry("mirrorExternalLeafInterception", true)
                 .containsEntry("mirrorScenarioArtifactRegistry", true)

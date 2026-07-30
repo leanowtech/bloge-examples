@@ -36,7 +36,16 @@ class VisualLibraryAuthoringCapabilityTest {
                                 "bloge.visualAuthoringFunctionTestSuite.v1",
                                 "bloge.visualAuthoringFunctionTestCase.v1",
                                 "bloge.visualAuthoringFunctionTestRunRequest.v1",
-                                "bloge.visualAuthoringFunctionTestRunEvidence.v1"));
+                                "bloge.visualAuthoringFunctionTestRunEvidence.v1"))
+                .containsEntry("visualLibraryAuthoringFixtureSaveRequest",
+                        java.util.List.of(
+                                "bloge.visualAuthoringFixtureSaveRequest.v1"))
+                .containsEntry("visualLibraryAuthoringFixtureReceipt",
+                        java.util.List.of(
+                                "bloge.visualAuthoringFixtureReceipt.v1"))
+                .containsEntry("visualLibraryAuthoringFixtureMaterial",
+                        java.util.List.of(
+                                "bloge.visualAuthoringFixtureMaterial.v1"));
         assertThat(capabilities.features())
                 .containsEntry("visualLibraryAuthoringProtocol", true)
                 .containsEntry("visualLibraryAuthoringStatelessPreview", true)
@@ -75,5 +84,12 @@ class VisualLibraryAuthoringCapabilityTest {
                 new IntegrationCapabilities.Endpoint(
                         "POST", "/admin/visual-operator-library-authoring/drafts/{draftId}/commit")
         );
+        assertThat(capabilities.endpoints()).doesNotContain(
+                new IntegrationCapabilities.Endpoint(
+                        "POST",
+                        "/admin/visual-operator-library-authoring/drafts/{draftId}/fixtures"),
+                new IntegrationCapabilities.Endpoint(
+                        "GET",
+                        "/admin/visual-operator-library-authoring/fixtures/{fixtureId}"));
     }
 }

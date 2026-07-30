@@ -1,0 +1,92 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://bloge.leanowtech.com/schemas/bloge-visual-authoring-fixture-save-request-v1.schema.json",
+  "title": "BLOGE Visual Authoring Fixture Save Request",
+  "description": "Creates one immutable governed fixture revision from an exact progressive-authoring draft.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "fixtureId",
+    "expectedFixtureRevision",
+    "sourceKind",
+    "assetKind",
+    "assetRef",
+    "classification",
+    "retentionDays",
+    "redactionPaths",
+    "payload"
+  ],
+  "properties": {
+    "schemaVersion": {
+      "const": "bloge.visualAuthoringFixtureSaveRequest.v1"
+    },
+    "fixtureId": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 160,
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]*$"
+    },
+    "expectedFixtureRevision": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "sourceKind": {
+      "enum": ["SAMPLE", "OPERATOR_TEST_CASE", "FUNCTION_TEST_CASE"]
+    },
+    "assetKind": {
+      "enum": ["OPERATOR", "FUNCTION"]
+    },
+    "assetRef": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 320
+    },
+    "classification": {
+      "enum": ["PUBLIC", "INTERNAL", "CONFIDENTIAL", "RESTRICTED"]
+    },
+    "retentionDays": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 30
+    },
+    "redactionPaths": {
+      "type": "array",
+      "maxItems": 64,
+      "uniqueItems": true,
+      "items": {
+        "type": "string",
+        "minLength": 1,
+        "maxLength": 512,
+        "pattern": "^/(?:[^~]|~[01])*$"
+      }
+    },
+    "payload": {}
+  },
+  "allOf": [
+    {
+      "if": {
+        "properties": {
+          "sourceKind": {"const": "OPERATOR_TEST_CASE"}
+        }
+      },
+      "then": {
+        "properties": {
+          "assetKind": {"const": "OPERATOR"}
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "sourceKind": {"const": "FUNCTION_TEST_CASE"}
+        }
+      },
+      "then": {
+        "properties": {
+          "assetKind": {"const": "FUNCTION"}
+        }
+      }
+    }
+  ]
+}

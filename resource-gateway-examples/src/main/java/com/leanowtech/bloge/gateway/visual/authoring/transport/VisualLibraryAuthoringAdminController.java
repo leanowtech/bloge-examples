@@ -1,6 +1,7 @@
 package com.leanowtech.bloge.gateway.visual.authoring.transport;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.leanowtech.bloge.gateway.visual.authoring.application.AuthoringFixtureCapability;
 import com.leanowtech.bloge.gateway.visual.authoring.application.AuthoringPreviewService;
 import com.leanowtech.bloge.gateway.visual.authoring.compile.AuthoringCompiler;
 import com.leanowtech.bloge.gateway.visual.authoring.compile.OperatorArchetypeRegistry;
@@ -16,6 +17,7 @@ import com.leanowtech.bloge.gateway.visual.authoring.parse.SampleInferenceReques
 import com.leanowtech.bloge.gateway.visual.authoring.testing.AuthoringTestService;
 
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -40,12 +42,22 @@ public final class VisualLibraryAuthoringAdminController {
     private final FunctionSignatureParser signatureParser;
     private final OperatorArchetypeRegistry archetypes;
     private final ObjectMapper objectMapper;
+    private final boolean governedFixturePersistence;
 
-    @Autowired
     public VisualLibraryAuthoringAdminController(AuthoringPreviewService previewService,
                                                  ObjectMapper objectMapper) {
         this(previewService, objectMapper, new AuthoringDocumentDecoder(),
-                new FunctionSignatureParser(), new OperatorArchetypeRegistry());
+                new FunctionSignatureParser(), new OperatorArchetypeRegistry(), false);
+    }
+
+    @Autowired
+    public VisualLibraryAuthoringAdminController(
+            AuthoringPreviewService previewService,
+            ObjectMapper objectMapper,
+            ObjectProvider<AuthoringFixtureCapability> fixtures) {
+        this(previewService, objectMapper, new AuthoringDocumentDecoder(),
+                new FunctionSignatureParser(), new OperatorArchetypeRegistry(),
+                fixtures.getIfAvailable() != null);
     }
 
     VisualLibraryAuthoringAdminController(AuthoringPreviewService previewService,
@@ -53,12 +65,22 @@ public final class VisualLibraryAuthoringAdminController {
                                           AuthoringDocumentDecoder decoder,
                                           FunctionSignatureParser signatureParser,
                                           OperatorArchetypeRegistry archetypes) {
+        this(previewService, objectMapper, decoder, signatureParser, archetypes, false);
+    }
+
+    VisualLibraryAuthoringAdminController(AuthoringPreviewService previewService,
+                                          ObjectMapper objectMapper,
+                                          AuthoringDocumentDecoder decoder,
+                                          FunctionSignatureParser signatureParser,
+                                          OperatorArchetypeRegistry archetypes,
+                                          boolean governedFixturePersistence) {
         this.previewService = java.util.Objects.requireNonNull(previewService, "previewService");
         this.objectMapper = java.util.Objects.requireNonNull(objectMapper, "objectMapper");
         this.decoder = decoder == null ? new AuthoringDocumentDecoder() : decoder;
         this.signatureParser = signatureParser == null
                 ? new FunctionSignatureParser() : signatureParser;
         this.archetypes = archetypes == null ? new OperatorArchetypeRegistry() : archetypes;
+        this.governedFixturePersistence = governedFixturePersistence;
     }
 
     @PostMapping(
@@ -151,7 +173,19 @@ public final class VisualLibraryAuthoringAdminController {
                         Map.entry("maximumFunctionTestArguments",
                                 AuthoringTestService.MAXIMUM_ARGUMENTS),
                         Map.entry("functionTestTimeoutMillis",
-                                AuthoringTestService.FUNCTION_TIMEOUT_MILLIS)
+                                AuthoringTestService.FUNCTION_TIMEOUT_MILLIS),
+                        Map.entry("maximumAuthoringFixtureRequestBytes",
+                                AuthoringFixtureCapability.MAXIMUM_REQUEST_BYTES),
+                        Map.entry("maximumAuthoringFixturePayloadBytes",
+                                AuthoringFixtureCapability.MAXIMUM_PAYLOAD_BYTES),
+                        Map.entry("maximumAuthoringFixturePayloadDepth",
+                                AuthoringFixtureCapability.MAXIMUM_PAYLOAD_DEPTH),
+                        Map.entry("maximumAuthoringFixturePayloadNodes",
+                                AuthoringFixtureCapability.MAXIMUM_PAYLOAD_NODES),
+                        Map.entry("maximumAuthoringFixtureRedactionPaths",
+                                AuthoringFixtureCapability.MAXIMUM_REDACTION_PATHS),
+                        Map.entry("maximumAuthoringFixtureRetentionDays",
+                                AuthoringFixtureCapability.MAXIMUM_RETENTION_DAYS)
                 ),
                 Map.ofEntries(
                         Map.entry("functionOnlyLibrary", true),
@@ -164,7 +198,8 @@ public final class VisualLibraryAuthoringAdminController {
                         Map.entry("previewFencedCommit", true),
                         Map.entry("operatorTestDraftRunner", true),
                         Map.entry("functionTestDraftRunner", true),
-                        Map.entry("governedFixturePersistence", false),
+                        Map.entry("governedFixturePersistence",
+                                governedFixturePersistence),
                         Map.entry("isolatedFunctionTestWorker", false)
                 )
         );
