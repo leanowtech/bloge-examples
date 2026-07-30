@@ -25,6 +25,7 @@ import com.leanowtech.bloge.gateway.visual.catalog.InMemoryOperatorLibraryRegist
 import com.leanowtech.bloge.gateway.visual.catalog.OperatorLibraryValidator;
 import com.leanowtech.bloge.gateway.visual.catalog.VisualCatalogTestSupport;
 import com.leanowtech.bloge.gateway.visual.simulation.JsonSchemaSampleGenerator;
+import com.leanowtech.bloge.gateway.visual.runtime.InMemoryVisualEvidenceSigner;
 import com.leanowtech.bloge.gateway.visual.testing.VisualOperatorContractTestCase;
 import com.leanowtech.bloge.gateway.visual.testing.VisualOperatorContractTestDraftRequest;
 import com.leanowtech.bloge.gateway.visual.testing.VisualOperatorContractTestService;
@@ -50,6 +51,7 @@ class AuthoringTestServiceTest {
     private final ObjectMapper yaml = new YAMLMapper().findAndRegisterModules();
     private AuthoringDraftService drafts;
     private AuthoringTestService tests;
+    private AuthoringTestEvidenceService testEvidence;
     private AuthoringDraft stored;
 
     @BeforeEach
@@ -69,8 +71,14 @@ class AuthoringTestServiceTest {
                                 VisualCatalogTestSupport.eligibilityLibrary("integer")),
                         new JsonSchemaSampleGenerator(),
                         mapper);
+        DirectFunctionTestWorker functionWorker = new DirectFunctionTestWorker();
+        testEvidence = new AuthoringTestEvidenceService(
+                drafts,
+                new InMemoryAuthoringTestEvidenceRepository(
+                        mapper, new InMemoryVisualEvidenceSigner()),
+                functionWorker);
         tests = new AuthoringTestService(
-                drafts, operatorTests, mapper, new DirectFunctionTestWorker());
+                drafts, operatorTests, mapper, functionWorker, testEvidence);
         stored = drafts.save(
                 "authoring-tests",
                 0,
@@ -112,13 +120,16 @@ class AuthoringTestServiceTest {
                 stored.revision(),
                 new OperatorRunRequest(
                         OperatorRunRequest.SCHEMA_VERSION,
-                        generated.suite()));
+                        generated.suite()),
+                identity());
 
         assertThat(evidence.result().passed()).isTrue();
         assertThat(evidence.result().mode().name()).isEqualTo("SCHEMA_CONTRACT");
         assertThat(evidence.suiteFingerprint()).isEqualTo(generated.suiteFingerprint());
         assertThat(evidence.evidenceFingerprint()).startsWith("sha256:");
         assertThat(evidence.payloadPersisted()).isFalse();
+        assertThat(testEvidence.find(stored.draftId(), evidence.runId(), identity())
+                .evidence().seal().signed()).isTrue();
     }
 
     @Test
@@ -137,7 +148,8 @@ class AuthoringTestServiceTest {
         assertThatThrownBy(() -> tests.runOperator(
                 stored.draftId(),
                 stored.revision(),
-                request))
+                request,
+                identity()))
                 .isInstanceOfSatisfying(AuthoringLifecycleException.class, exception ->
                         assertThat(exception.problem().code())
                                 .isEqualTo("RG.AUTHORING.OPERATOR_TEST_TARGET_NOT_FOUND"));
@@ -152,7 +164,8 @@ class AuthoringTestServiceTest {
         assertThatThrownBy(() -> tests.runOperator(
                 stored.draftId(),
                 stored.revision(),
-                request))
+                request,
+                identity()))
                 .isInstanceOfSatisfying(AuthoringLifecycleException.class, exception -> {
                     assertThat(exception.problem().status()).isEqualTo(400);
                     assertThat(exception.problem().code())
@@ -182,7 +195,8 @@ class AuthoringTestServiceTest {
                 stored.revision(),
                 new FunctionRunRequest(
                         FunctionRunRequest.SCHEMA_VERSION,
-                        draft.suite()));
+                        draft.suite()),
+                identity());
 
         assertThat(evidence.passed()).isTrue();
         assertThat(evidence.results()).singleElement().satisfies(result -> {
@@ -194,6 +208,8 @@ class AuthoringTestServiceTest {
         assertThat(evidence.runtimeFingerprint()).isEqualTo(draft.runtimeFingerprint());
         assertThat(evidence.executionProfile()).isEqualTo(draft.executionProfile());
         assertThat(evidence.payloadPersisted()).isFalse();
+        assertThat(testEvidence.find(stored.draftId(), evidence.runId(), identity())
+                .freshness().name()).isEqualTo("CURRENT");
     }
 
     @Test
@@ -227,7 +243,8 @@ class AuthoringTestServiceTest {
         var evidence = tests.runFunction(
                 stored.draftId(),
                 stored.revision(),
-                new FunctionRunRequest(FunctionRunRequest.SCHEMA_VERSION, suite));
+                new FunctionRunRequest(FunctionRunRequest.SCHEMA_VERSION, suite),
+                identity());
 
         assertThat(evidence.passed()).isFalse();
         assertThat(evidence.results()).singleElement().satisfies(result -> {
@@ -268,7 +285,8 @@ class AuthoringTestServiceTest {
                 stored.revision(),
                 new FunctionRunRequest(
                         FunctionRunRequest.SCHEMA_VERSION,
-                        unbound.suite()));
+                        unbound.suite()),
+                identity());
         assertThat(evidence.passed()).isFalse();
         assertThat(evidence.results()).singleElement()
                 .satisfies(result -> assertThat(result.status())
@@ -293,6 +311,124 @@ class AuthoringTestServiceTest {
                 .isInstanceOfSatisfying(AuthoringLifecycleException.class, exception ->
                         assertThat(exception.problem().code())
                                 .isEqualTo("RG.AUTHORING.DRAFT_REVISION_STALE"));
+    }
+
+    @Test
+    void promotesOnlyCurrentPassingEvidenceToTestEvidenced() throws Exception {
+        AuthoringDraft gateDraft = drafts.save(
+                "evidence-gate",
+                0,
+                "quick",
+                minimalOperatorDocument("string"),
+                "alice");
+        var generated = tests.draftOperator(
+                gateDraft.draftId(),
+                gateDraft.revision(),
+                new OperatorDraftRequest(
+                        OperatorDraftRequest.SCHEMA_VERSION,
+                        new VisualOperatorContractTestDraftRequest(
+                                VisualOperatorContractTestDraftRequest.SCHEMA_VERSION,
+                                "demo:echo",
+                                "passing evidence",
+                                true,
+                                Map.of(),
+                                Map.of(),
+                                Map.of())));
+        var passing = tests.runOperator(
+                gateDraft.draftId(),
+                gateDraft.revision(),
+                new OperatorRunRequest(
+                        OperatorRunRequest.SCHEMA_VERSION,
+                        generated.suite()),
+                identity());
+
+        assertThat(testEvidence.gate(gateDraft.draftId(), identity()))
+                .satisfies(gate -> {
+                    assertThat(gate.status().name()).isEqualTo("PASSED");
+                    assertThat(gate.achievedMaturity()).isEqualTo("TEST_EVIDENCED");
+                    assertThat(gate.satisfiedAssets()).isEqualTo(1);
+                    assertThat(gate.assets()).singleElement()
+                            .satisfies(asset -> {
+                                assertThat(asset.evidenceRunId()).isEqualTo(passing.runId());
+                                assertThat(asset.proofMode()).isEqualTo("SCHEMA_CONTRACT");
+                            });
+                });
+
+        VisualOperatorContractTestCase source = generated.suite().cases().getFirst();
+        VisualOperatorContractTestSuiteRequest failingSuite =
+                new VisualOperatorContractTestSuiteRequest(
+                        "demo:echo",
+                        List.of(new VisualOperatorContractTestCase(
+                                "newest run fails",
+                                source.inputs(),
+                                source.config(),
+                                Map.of("result", 7),
+                                source.outputAssertions())));
+        tests.runOperator(
+                gateDraft.draftId(),
+                gateDraft.revision(),
+                new OperatorRunRequest(
+                        OperatorRunRequest.SCHEMA_VERSION,
+                        failingSuite),
+                identity());
+
+        assertThat(testEvidence.gate(gateDraft.draftId(), identity()))
+                .satisfies(gate -> {
+                    assertThat(gate.status().name()).isEqualTo("BLOCKED");
+                    assertThat(gate.reasons())
+                            .extracting(Enum::name)
+                            .contains("LATEST_RUN_FAILED");
+                });
+    }
+
+    @Test
+    void recalculatesFreshnessAfterTheDraftContractChanges() throws Exception {
+        AuthoringDraft original = drafts.save(
+                "evidence-staleness",
+                0,
+                "quick",
+                minimalOperatorDocument("string"),
+                "alice");
+        var generated = tests.draftOperator(
+                original.draftId(),
+                original.revision(),
+                new OperatorDraftRequest(
+                        OperatorDraftRequest.SCHEMA_VERSION,
+                        new VisualOperatorContractTestDraftRequest(
+                                VisualOperatorContractTestDraftRequest.SCHEMA_VERSION,
+                                "demo:echo",
+                                "staleness baseline",
+                                true,
+                                Map.of(),
+                                Map.of(),
+                                Map.of())));
+        var run = tests.runOperator(
+                original.draftId(),
+                original.revision(),
+                new OperatorRunRequest(
+                        OperatorRunRequest.SCHEMA_VERSION,
+                        generated.suite()),
+                identity());
+
+        drafts.save(
+                original.draftId(),
+                original.revision(),
+                "quick",
+                minimalOperatorDocument("integer"),
+                "bob");
+
+        assertThat(testEvidence.find(original.draftId(), run.runId(), identity()))
+                .satisfies(view -> {
+                    assertThat(view.freshness().name()).isEqualTo("STALE");
+                    assertThat(view.staleReasons())
+                            .extracting(Enum::name)
+                            .contains(
+                                    "AUTHORING_FINGERPRINT_CHANGED",
+                                    "CANONICAL_FINGERPRINT_CHANGED",
+                                    "ARTIFACT_FINGERPRINT_CHANGED");
+                });
+        assertThat(testEvidence.gate(original.draftId(), identity()).status().name())
+                .isEqualTo("BLOCKED");
     }
 
     private VisualLibraryAuthoringDocument document() throws Exception {
@@ -326,6 +462,36 @@ class AuthoringTestServiceTest {
                     signatures:
                       - "() -> string"
                 """, VisualLibraryAuthoringDocument.class);
+    }
+
+    private VisualLibraryAuthoringDocument minimalOperatorDocument(
+            String outputType) throws Exception {
+        return yaml.readValue("""
+                schemaVersion: bloge.visualLibraryAuthoring.v1
+                library:
+                  id: evidence-library
+                  name: Evidence Library
+                  version: 1.0.0
+                  owner: platform-quality
+                operators:
+                  demo:echo:
+                    name: Echo
+                    archetype: pure
+                    input:
+                      request: string
+                    output:
+                      result: %s
+                """.formatted(outputType), VisualLibraryAuthoringDocument.class);
+    }
+
+    private static AuthoringTestPrincipal identity() {
+        return new AuthoringTestPrincipal(
+                "tenant-a",
+                "org-a",
+                "project-a",
+                "test",
+                "sg",
+                "authoring-test-runner");
     }
 
     private static final class DirectFunctionTestWorker

@@ -1,6 +1,16 @@
 package com.leanowtech.bloge.gateway.visual.authoring.testing;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.SerializationFeature;
+import com.leanowtech.bloge.gateway.visual.authoring.testing.AuthoringTestEvidenceProtocol.AssetGate;
+import com.leanowtech.bloge.gateway.visual.authoring.testing.AuthoringTestEvidenceProtocol.AssetKind;
+import com.leanowtech.bloge.gateway.visual.authoring.testing.AuthoringTestEvidenceProtocol.CaseSummary;
+import com.leanowtech.bloge.gateway.visual.authoring.testing.AuthoringTestEvidenceProtocol.Coverage;
+import com.leanowtech.bloge.gateway.visual.authoring.testing.AuthoringTestEvidenceProtocol.DraftGate;
+import com.leanowtech.bloge.gateway.visual.authoring.testing.AuthoringTestEvidenceProtocol.EvidenceRecord;
+import com.leanowtech.bloge.gateway.visual.authoring.testing.AuthoringTestEvidenceProtocol.EvidenceView;
+import com.leanowtech.bloge.gateway.visual.authoring.testing.AuthoringTestEvidenceProtocol.FreshnessStatus;
+import com.leanowtech.bloge.gateway.visual.authoring.testing.AuthoringTestEvidenceProtocol.GateStatus;
 import com.leanowtech.bloge.gateway.visual.authoring.testing.AuthoringTestProtocol.FunctionAssertion;
 import com.leanowtech.bloge.gateway.visual.authoring.testing.AuthoringTestProtocol.FunctionCase;
 import com.leanowtech.bloge.gateway.visual.authoring.testing.AuthoringTestProtocol.FunctionCaseKind;
@@ -13,6 +23,7 @@ import com.leanowtech.bloge.gateway.visual.authoring.testing.AuthoringFunctionWo
 import com.leanowtech.bloge.gateway.visual.authoring.testing.AuthoringFunctionWorkerProtocol.InvocationResponse;
 import com.leanowtech.bloge.gateway.visual.diagnostic.VisualDiagnostic;
 import com.leanowtech.bloge.gateway.visual.model.SchemaEnvelope;
+import com.leanowtech.bloge.gateway.visual.runtime.InMemoryVisualEvidenceSigner;
 import com.leanowtech.bloge.gateway.visual.testing.VisualOperatorContractTestCase;
 import com.leanowtech.bloge.gateway.visual.testing.VisualOperatorContractTestDraftRequest;
 import com.leanowtech.bloge.gateway.visual.testing.VisualOperatorContractTestSuiteRequest;
@@ -22,6 +33,7 @@ import org.junit.jupiter.api.Test;
 
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.time.Instant;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -31,7 +43,9 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 class AuthoringTestMachineSchemaTest {
 
-    private final ObjectMapper mapper = new ObjectMapper().findAndRegisterModules();
+    private final ObjectMapper mapper = new ObjectMapper()
+            .findAndRegisterModules()
+            .disable(SerializationFeature.WRITE_DATES_AS_TIMESTAMPS);
 
     @Test
     void operatorDraftAndRunRequestsMatchTheirMachineContracts() throws Exception {
@@ -135,6 +149,115 @@ class AuthoringTestMachineSchemaTest {
                 "bloge-visual-authoring-function-worker-invocation-response-v1.schema.json",
                 invalid)).extracting(VisualDiagnostic::target)
                 .anyMatch(target -> target.contains("/executionProfile"));
+    }
+
+    @Test
+    void signedEvidenceViewAndDraftGateMatchClosedMachineContracts() throws Exception {
+        String fingerprint = "sha256:" + "a".repeat(64);
+        AuthoringTestScope scope =
+                new AuthoringTestScope("tenant-a", "org-a", "project-a", "test", "sg");
+        EvidenceRecord signed = new InMemoryAuthoringTestEvidenceRepository(
+                mapper, new InMemoryVisualEvidenceSigner()).create(new EvidenceRecord(
+                EvidenceRecord.SCHEMA_VERSION,
+                scope,
+                "run-1",
+                AssetKind.OPERATOR,
+                "demo:echo",
+                "draft-1",
+                3,
+                fingerprint,
+                fingerprint,
+                fingerprint,
+                "",
+                "",
+                fingerprint,
+                fingerprint,
+                AuthoringTestEvidenceProtocol.POLICY_VERSION,
+                "SCHEMA_CONTRACT",
+                "",
+                true,
+                1,
+                1,
+                0,
+                1,
+                new Coverage(1, 1, 1, 1, 1),
+                List.of(new CaseSummary(
+                        "customer-42 golden payload",
+                        "CONTRACT",
+                        "PASSED",
+                        true,
+                        1,
+                        10,
+                        "",
+                        List.of())),
+                List.of("suite://customer-42/private-golden"),
+                List.of(),
+                Instant.parse("2026-07-31T00:00:00Z"),
+                "quality-bot",
+                false,
+                "",
+                null));
+        EvidenceView view = new EvidenceView(
+                EvidenceView.SCHEMA_VERSION,
+                signed,
+                "VERIFIED",
+                FreshnessStatus.CURRENT,
+                List.of(),
+                3,
+                fingerprint,
+                fingerprint,
+                Instant.parse("2026-07-31T00:00:01Z"));
+        DraftGate gate = new DraftGate(
+                DraftGate.SCHEMA_VERSION,
+                scope,
+                "draft-1",
+                3,
+                fingerprint,
+                fingerprint,
+                AuthoringTestEvidenceProtocol.POLICY_VERSION,
+                GateStatus.PASSED,
+                "TEST_EVIDENCED",
+                1,
+                1,
+                List.of(),
+                List.of(new AssetGate(
+                        AssetKind.OPERATOR,
+                        "demo:echo",
+                        GateStatus.PASSED,
+                        List.of(),
+                        signed.runId(),
+                        signed.materialFingerprint(),
+                        FreshnessStatus.CURRENT,
+                        1,
+                        1,
+                        1,
+                        "SCHEMA_CONTRACT")),
+                Instant.parse("2026-07-31T00:00:01Z"));
+
+        assertThat(validate(
+                "bloge-visual-authoring-test-evidence-view-v1.schema.json",
+                mapper.convertValue(view, Object.class))).isEmpty();
+        assertThat(validate(
+                "bloge-visual-authoring-test-evidence-gate-v1.schema.json",
+                mapper.convertValue(gate, Object.class))).isEmpty();
+        String encoded = mapper.writeValueAsString(view);
+        assertThat(signed.cases().getFirst().caseId())
+                .matches("^case:sha256:[a-f0-9]{64}$");
+        assertThat(signed.declaredTestRefs()).singleElement()
+                .satisfies(reference -> assertThat(reference)
+                        .matches("^test-ref:sha256:[a-f0-9]{64}$"));
+        assertThat(encoded)
+                .doesNotContain("customer-42", "private-golden");
+
+        Map<String, Object> invalid = mapper.convertValue(view, Map.class);
+        Map<String, Object> evidenceBody =
+                new LinkedHashMap<>((Map<String, Object>) invalid.get("evidence"));
+        evidenceBody.put("payloadPersisted", true);
+        invalid.put("evidence", evidenceBody);
+        assertThat(validate(
+                "bloge-visual-authoring-test-evidence-view-v1.schema.json",
+                invalid)).extracting(VisualDiagnostic::target)
+                .anyMatch(target -> target.contains("/payloadPersisted"));
     }
 
     @SuppressWarnings("unchecked")

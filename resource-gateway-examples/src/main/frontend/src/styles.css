@@ -12763,6 +12763,23 @@ button.primary:disabled {
   font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
 }
 
+.library-test-meta .library-test-trust,
+.library-test-meta .library-test-gate {
+  padding: 3px 6px;
+  border: 1px solid #9bc9ad;
+  border-radius: 4px;
+  background: #edf8f1;
+  color: #256743;
+  font-weight: 800;
+}
+
+.library-test-meta .library-test-trust.stale,
+.library-test-meta .library-test-gate.blocked {
+  border-color: #dfbd7c;
+  background: #fff7e5;
+  color: #815505;
+}
+
 .library-test-notice,
 .library-test-alerts > .library-inline-error {
   margin: 0;

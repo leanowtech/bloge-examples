@@ -1,6 +1,6 @@
 # Resource Gateway 渐进式算子与 Built-in Function 库创作技术方案
 
-> 状态：Approved；Stage 0、Stage 1、Stage 2.4、Stage 2.5 治理型 fixture 与 Stage 2.6 受信 core function 进程隔离 runner 已实现，持久化签名 evidence 及 Stage 3-4 待实施
+> 状态：Approved；Stage 0、Stage 1、Stage 2.4、Stage 2.5 治理型 fixture、Stage 2.6 受信 core function 进程隔离 runner 与 Stage 2.7 签名 evidence 已实现，Stage 3-4 待实施
 >
 > 日期：2026-07-30
 >
@@ -1607,7 +1607,9 @@ revision-fenced API、observed facts、保守 candidate、confirmation request�
 加密、自动/显式脱敏、不可变修订、事务安全审计与到期 tombstone 的 fixture 后端协议。
 Workbench 也已交付显式 sample/test-row-to-fixture 入口、治理确认和 payload-free receipt；
 受信 core function 已通过 one-shot JVM 隔离并在 UI/evidence 中暴露 execution profile，
-持久化签名 evidence 仍待完成。详见
+Stage 2.7 又将每次 operator/function run 转换为五维企业作用域隔离、不可变持久化、
+Ed25519/KMS 可替换签名的 payload-free evidence，并实时重算 stale 状态与保守
+`TEST_EVIDENCED` gate。详见
 [实现状态](resource-gateway-progressive-library-authoring-implementation-status.md)。
 
 交付：
@@ -1626,6 +1628,63 @@ Exit Gate：
 - fixture 不进入日志或 public catalog；
 - test evidence 绑定 artifact fingerprint；
 - false enum / closed-object inference 有固定回归用例。
+
+#### 15.3.1 Stage 2.7：签名测试证据与创作门禁
+
+一次测试 HTTP 响应只适合即时调试，不能直接成为治理事实。Stage 2.7 固定以下证据链：
+
+```text
+exact draft revision
+  + canonical/artifact/runtime/suite fingerprint
+  + payload-free case summaries and coverage
+  + authenticated five-dimensional enterprise scope
+  -> canonical evidence material fingerprint
+  -> detached evidence seal
+  -> immutable evidence ledger
+  -> live freshness evaluation
+  -> conservative TEST_EVIDENCED draft gate
+```
+
+| 对象 | Schema | 语义 |
+| --- | --- | --- |
+| immutable record | `bloge.visualAuthoringTestEvidenceRecord.v1` | 固定一次运行时看到的 draft、asset、suite、runtime、policy、case status 和 coverage |
+| evidence view | `bloge.visualAuthoringTestEvidenceView.v1` | 先验签，再与当前草稿及 runtime 重算 `CURRENT/STALE` |
+| draft gate | `bloge.visualAuthoringTestEvidenceGate.v1` | 对当前草稿全部 operator/function 取最新证据并给出逐资产阻断原因 |
+
+持久化边界：
+
+1. 主键由 `tenantId + organizationId + projectId + environmentId + region + runId`
+   组成；查询必须携带完整受信身份作用域；
+2. evidence ledger 只允许 insert，不提供 update；正文、查询投影和 detached seal 每次读取
+   都交叉校验，任一投影或 JSON 被篡改均 fail closed；
+3. 不保存 arguments、inputs、outputs、actual、expected 或 fixture payload；case id 与声明的
+   test ref 先稳定散列为不可逆伪名，只保存伪名、kind、status、assertion count、duration、
+   error/diagnostic code 和聚合 coverage；
+4. `executedAt` 使用规范 ISO-8601 文本投影，避免数据库 timestamp 精度截断造成伪篡改；
+5. 签名失败、持久化失败或验签失败时 run API 返回失败，不返回一个无法治理的“成功结果”。
+
+鉴权也通过依赖倒置固化：`visual` core 只认识 `AuthoringTestAccessPort`、
+`AuthoringTestPrincipal` 与五维 `AuthoringTestScope`；gateway integration adapter 负责把
+HTTP credential、purpose policy 和企业身份投影到该端口。架构测试禁止 visual 包重新导入
+integration/testing API，实现可以替换鉴权机制而不污染 authoring domain。
+
+新鲜度不作为可篡改字段持久化。每次读取都比较当前 authoring、canonical、asset、function
+runtime、isolated execution profile 和 evidence policy fingerprint/version。
+
+门禁采用 latest-run-wins，而不是 any-pass-wins。当前资产缺证据、最新运行失败、证据 stale、
+case 数低于声明 test refs、assertion coverage 不足或 function 未绑定，都会阻断。门禁最多把
+草稿提升为 `TEST_EVIDENCED`，明确不代表 runtime binding、owner approval、SLA、secret
+policy、迁移兼容性或 production publish gate 已通过。
+
+| 操作 | Endpoint | Purpose |
+| --- | --- | --- |
+| run and persist | `POST .../tests/operators/run`、`POST .../tests/functions/run` | `TEST_EXECUTION` 或 `TEST_REPLAY` |
+| evidence read | `GET .../tests/evidence/{runId}` | `TEST_SUITE_READ`、`TEST_EXECUTION` 或治理证据读取 |
+| gate read | `GET .../tests/gate` | `TEST_SUITE_READ`、`TEST_EXECUTION` 或治理证据读取 |
+
+Workbench 在行级结果之外显示 `SIGNED CURRENT/STALE`、签名 evidence fingerprint 和
+draft gate 的 `satisfied/required`；阻断原因直接回显在测试浮层。用户修改测试行后，旧的
+evidence/gate 展示立即清空，避免把不同 suite 的结果继续贴在新输入上。
 
 ### 15.4 Stage 3：存量能力发现
 

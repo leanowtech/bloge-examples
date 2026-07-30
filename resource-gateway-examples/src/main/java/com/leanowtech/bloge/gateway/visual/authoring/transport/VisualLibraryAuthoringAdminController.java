@@ -216,7 +216,9 @@ public final class VisualLibraryAuthoringAdminController {
                         Map.entry("governedFixturePersistence",
                                 governedFixturePersistence),
                         Map.entry("isolatedFunctionTestWorker",
-                                isolatedFunctionTestWorker)
+                                isolatedFunctionTestWorker),
+                        Map.entry("signedTestEvidence", true),
+                        Map.entry("testEvidenceGate", true)
                 )
         );
     }

@@ -51,6 +51,8 @@ import com.leanowtech.bloge.gateway.visual.authoring.application.AuthoringDraftR
 import com.leanowtech.bloge.gateway.visual.authoring.application.AuthoringDraftService;
 import com.leanowtech.bloge.gateway.visual.authoring.application.AuthoringPreviewService;
 import com.leanowtech.bloge.gateway.visual.authoring.application.DatabaseAuthoringDraftRepository;
+import com.leanowtech.bloge.gateway.visual.authoring.testing.AuthoringTestEvidenceRepository;
+import com.leanowtech.bloge.gateway.visual.authoring.testing.DatabaseAuthoringTestEvidenceRepository;
 import com.leanowtech.bloge.gateway.visual.catalog.DatabaseOperatorLibraryRegistry;
 import com.leanowtech.bloge.gateway.visual.catalog.OperatorLibraryRegistry;
 import com.leanowtech.bloge.gateway.visual.catalog.VisualOperatorCatalog;
@@ -471,6 +473,19 @@ public class GatewayConfiguration {
     public AuthoringDraftRepository authoringDraftRepository(JdbcTemplate jdbc,
                                                              ObjectMapper objectMapper) {
         return new DatabaseAuthoringDraftRepository(jdbc, objectMapper);
+    }
+
+    /**
+     * Immutable signed governance evidence for progressive-library authoring tests.
+     */
+    @Bean
+    @ConditionalOnMissingBean
+    public AuthoringTestEvidenceRepository authoringTestEvidenceRepository(
+            JdbcTemplate jdbc,
+            ObjectMapper objectMapper,
+            VisualEvidenceSigner evidenceSigner) {
+        return new DatabaseAuthoringTestEvidenceRepository(
+                jdbc, objectMapper, evidenceSigner);
     }
 
     /**

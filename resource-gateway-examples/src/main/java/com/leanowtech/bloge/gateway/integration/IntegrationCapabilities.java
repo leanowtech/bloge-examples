@@ -31,6 +31,7 @@ import com.leanowtech.bloge.gateway.testing.api.WorkerQuarantineChangeAuthorizat
 import com.leanowtech.bloge.gateway.testing.domain.WorkerQuarantineRequestIndexMode;
 import com.leanowtech.bloge.gateway.visual.draft.GraphDraft;
 import com.leanowtech.bloge.gateway.visual.authoring.testing.AuthoringFunctionWorkerProtocol;
+import com.leanowtech.bloge.gateway.visual.authoring.testing.AuthoringTestEvidenceProtocol;
 import com.leanowtech.bloge.gateway.visual.runtime.VisualEvidenceSigner;
 import com.leanowtech.bloge.gateway.visual.runtime.ManagedEvidenceSigningProvider;
 import com.leanowtech.bloge.gateway.visual.runtime.VisualPayloadGovernancePolicy;
@@ -430,6 +431,11 @@ public record IntegrationCapabilities(
         objects.put("visualLibraryAuthoringFunctionTestWorker", List.of(
                 AuthoringFunctionWorkerProtocol.InvocationRequest.SCHEMA_VERSION,
                 AuthoringFunctionWorkerProtocol.InvocationResponse.SCHEMA_VERSION));
+        objects.put("visualLibraryAuthoringTestEvidence", List.of(
+                AuthoringTestEvidenceProtocol.EvidenceRecord.SCHEMA_VERSION,
+                AuthoringTestEvidenceProtocol.EvidenceView.SCHEMA_VERSION));
+        objects.put("visualLibraryAuthoringTestGate", List.of(
+                AuthoringTestEvidenceProtocol.DraftGate.SCHEMA_VERSION));
         objects.put("visualLibraryAuthoringFixtureSaveRequest", List.of(
                 "bloge.visualAuthoringFixtureSaveRequest.v1"));
         objects.put("visualLibraryAuthoringFixtureReceipt", List.of(
@@ -855,6 +861,8 @@ public record IntegrationCapabilities(
                 "visualLibraryAuthoringGovernedFixturePersistence",
                 testExecutionEndpointEnabled);
         features.put("visualLibraryAuthoringIsolatedFunctionTestWorker", true);
+        features.put("visualLibraryAuthoringSignedTestEvidence", true);
+        features.put("visualLibraryAuthoringTestEvidenceGate", true);
         features.put("graphDraftConsistentDependencySnapshot", true);
         features.put("graphDraftStructuredDependencyRefs", true);
         features.put("capabilitySnapshotProtocol", true);
@@ -1340,6 +1348,8 @@ public record IntegrationCapabilities(
                 new Endpoint("POST", "/admin/visual-operator-library-authoring/drafts/{draftId}/tests/operators/run"),
                 new Endpoint("POST", "/admin/visual-operator-library-authoring/drafts/{draftId}/tests/functions/draft"),
                 new Endpoint("POST", "/admin/visual-operator-library-authoring/drafts/{draftId}/tests/functions/run"),
+                new Endpoint("GET", "/admin/visual-operator-library-authoring/drafts/{draftId}/tests/evidence/{runId}"),
+                new Endpoint("GET", "/admin/visual-operator-library-authoring/drafts/{draftId}/tests/gate"),
                 new Endpoint("POST", "/admin/visual-operator-library-authoring/drafts/{draftId}/commit"),
                 new Endpoint("GET", "/api/visual/run-controls/{requestId}"),
                 new Endpoint("POST", "/api/visual/run-controls/{requestId}/cancel")

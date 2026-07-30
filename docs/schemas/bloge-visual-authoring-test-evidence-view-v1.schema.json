@@ -1,0 +1,319 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://bloge.leanowtech.com/schemas/bloge-visual-authoring-test-evidence-view-v1.schema.json",
+  "title": "BLOGE Visual Authoring Test Evidence View v1",
+  "description": "An immutable payload-free signed test record plus freshness recalculated against the live authoring draft.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "evidence",
+    "integrityStatus",
+    "freshness",
+    "staleReasons",
+    "observedDraftRevision",
+    "observedAuthoringFingerprint",
+    "observedCanonicalFingerprint",
+    "evaluatedAt"
+  ],
+  "properties": {
+    "schemaVersion": {
+      "const": "bloge.visualAuthoringTestEvidenceView.v1"
+    },
+    "evidence": {
+      "$ref": "#/$defs/evidenceRecord"
+    },
+    "integrityStatus": {
+      "const": "VERIFIED"
+    },
+    "freshness": {
+      "enum": ["CURRENT", "STALE"]
+    },
+    "staleReasons": {
+      "type": "array",
+      "uniqueItems": true,
+      "maxItems": 7,
+      "items": {
+        "enum": [
+          "POLICY_VERSION_CHANGED",
+          "AUTHORING_FINGERPRINT_CHANGED",
+          "CANONICAL_FINGERPRINT_CHANGED",
+          "ASSET_MISSING",
+          "ARTIFACT_FINGERPRINT_CHANGED",
+          "RUNTIME_FINGERPRINT_CHANGED",
+          "EXECUTION_PROFILE_CHANGED"
+        ]
+      }
+    },
+    "observedDraftRevision": {
+      "type": "integer",
+      "minimum": 1
+    },
+    "observedAuthoringFingerprint": {
+      "$ref": "#/$defs/fingerprint"
+    },
+    "observedCanonicalFingerprint": {
+      "$ref": "#/$defs/fingerprint"
+    },
+    "evaluatedAt": {
+      "type": "string",
+      "format": "date-time"
+    }
+  },
+  "$defs": {
+    "identity": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 255
+    },
+    "boundedText": {
+      "type": "string",
+      "maxLength": 320
+    },
+    "fingerprint": {
+      "type": "string",
+      "pattern": "^sha256:[a-f0-9]{64}$"
+    },
+    "scope": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "tenantId",
+        "organizationId",
+        "projectId",
+        "environmentId",
+        "region"
+      ],
+      "properties": {
+        "tenantId": {"$ref": "#/$defs/identity"},
+        "organizationId": {"$ref": "#/$defs/identity"},
+        "projectId": {"$ref": "#/$defs/identity"},
+        "environmentId": {"$ref": "#/$defs/identity"},
+        "region": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 64
+        }
+      }
+    },
+    "coverage": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "inputPortSchemaValidated",
+        "configSchemaValidated",
+        "mockedOutputSchemaValidated",
+        "mockedOutputCount",
+        "assertionCount"
+      ],
+      "properties": {
+        "inputPortSchemaValidated": {"type": "integer", "minimum": 0},
+        "configSchemaValidated": {"type": "integer", "minimum": 0},
+        "mockedOutputSchemaValidated": {"type": "integer", "minimum": 0},
+        "mockedOutputCount": {"type": "integer", "minimum": 0},
+        "assertionCount": {"type": "integer", "minimum": 0}
+      }
+    },
+    "caseSummary": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "caseId",
+        "kind",
+        "status",
+        "passed",
+        "assertionCount",
+        "durationMicros",
+        "errorCode",
+        "diagnosticCodes"
+      ],
+      "properties": {
+        "caseId": {
+          "type": "string",
+          "pattern": "^case:sha256:[a-f0-9]{64}$"
+        },
+        "kind": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 80
+        },
+        "status": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 80
+        },
+        "passed": {"type": "boolean"},
+        "assertionCount": {"type": "integer", "minimum": 0},
+        "durationMicros": {"type": "integer", "minimum": 0},
+        "errorCode": {"type": "string", "maxLength": 160},
+        "diagnosticCodes": {
+          "type": "array",
+          "uniqueItems": true,
+          "maxItems": 128,
+          "items": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 160
+          }
+        }
+      }
+    },
+    "seal": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "schemaVersion",
+        "materialFingerprint",
+        "algorithm",
+        "keyId",
+        "signedAt",
+        "signature"
+      ],
+      "properties": {
+        "schemaVersion": {"const": "bloge.visualRunEvidenceSeal.v1"},
+        "materialFingerprint": {"$ref": "#/$defs/fingerprint"},
+        "algorithm": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 80
+        },
+        "keyId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 320
+        },
+        "signedAt": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "signature": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 4096
+        }
+      }
+    },
+    "evidenceRecord": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "schemaVersion",
+        "scope",
+        "runId",
+        "assetKind",
+        "assetRef",
+        "draftId",
+        "authoringRevision",
+        "authoringFingerprint",
+        "canonicalFingerprint",
+        "artifactFingerprint",
+        "runtimeFingerprint",
+        "executionProfile",
+        "suiteFingerprint",
+        "sourceEvidenceFingerprint",
+        "policyVersion",
+        "proofMode",
+        "bindingStatus",
+        "passed",
+        "totalCases",
+        "passedCases",
+        "failedCases",
+        "requiredCaseCount",
+        "coverage",
+        "cases",
+        "declaredTestRefs",
+        "diagnosticCodes",
+        "executedAt",
+        "actorId",
+        "payloadPersisted",
+        "materialFingerprint",
+        "seal"
+      ],
+      "properties": {
+        "schemaVersion": {
+          "const": "bloge.visualAuthoringTestEvidenceRecord.v1"
+        },
+        "scope": {"$ref": "#/$defs/scope"},
+        "runId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 160
+        },
+        "assetKind": {"enum": ["OPERATOR", "FUNCTION"]},
+        "assetRef": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 320
+        },
+        "draftId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 255
+        },
+        "authoringRevision": {"type": "integer", "minimum": 1},
+        "authoringFingerprint": {"$ref": "#/$defs/fingerprint"},
+        "canonicalFingerprint": {"$ref": "#/$defs/fingerprint"},
+        "artifactFingerprint": {"$ref": "#/$defs/fingerprint"},
+        "runtimeFingerprint": {
+          "oneOf": [
+            {"const": ""},
+            {"$ref": "#/$defs/fingerprint"}
+          ]
+        },
+        "executionProfile": {"$ref": "#/$defs/boundedText"},
+        "suiteFingerprint": {"$ref": "#/$defs/fingerprint"},
+        "sourceEvidenceFingerprint": {"$ref": "#/$defs/fingerprint"},
+        "policyVersion": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 160
+        },
+        "proofMode": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 80
+        },
+        "bindingStatus": {
+          "type": "string",
+          "maxLength": 80
+        },
+        "passed": {"type": "boolean"},
+        "totalCases": {"type": "integer", "minimum": 1, "maximum": 50},
+        "passedCases": {"type": "integer", "minimum": 0, "maximum": 50},
+        "failedCases": {"type": "integer", "minimum": 0, "maximum": 50},
+        "requiredCaseCount": {"type": "integer", "minimum": 1, "maximum": 50},
+        "coverage": {"$ref": "#/$defs/coverage"},
+        "cases": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 50,
+          "items": {"$ref": "#/$defs/caseSummary"}
+        },
+        "declaredTestRefs": {
+          "type": "array",
+          "uniqueItems": true,
+          "maxItems": 50,
+          "items": {
+            "type": "string",
+            "pattern": "^test-ref:sha256:[a-f0-9]{64}$"
+          }
+        },
+        "diagnosticCodes": {
+          "type": "array",
+          "uniqueItems": true,
+          "maxItems": 128,
+          "items": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 160
+          }
+        },
+        "executedAt": {"type": "string", "format": "date-time"},
+        "actorId": {"$ref": "#/$defs/identity"},
+        "payloadPersisted": {"const": false},
+        "materialFingerprint": {"$ref": "#/$defs/fingerprint"},
+        "seal": {"$ref": "#/$defs/seal"}
+      }
+    }
+  }
+}

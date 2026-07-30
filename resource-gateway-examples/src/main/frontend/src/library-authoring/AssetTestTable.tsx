@@ -9,6 +9,8 @@ import {
   BlogeApiRequestError,
   draftLibraryAuthoringFunctionTest,
   draftLibraryAuthoringOperatorTest,
+  fetchLibraryAuthoringTestEvidence,
+  fetchLibraryAuthoringTestGate,
   runLibraryAuthoringFunctionTest,
   runLibraryAuthoringOperatorTest,
 } from '../api';
@@ -18,6 +20,8 @@ import type {
   VisualAuthoringFunctionTestRunEvidence,
   VisualAuthoringOperatorTestDraft,
   VisualAuthoringOperatorTestRunEvidence,
+  VisualAuthoringTestDraftGate,
+  VisualAuthoringTestEvidenceView,
   VisualFunctionTestAssertion,
   VisualFunctionTestCase,
   VisualFunctionTestKind,
@@ -85,6 +89,10 @@ export default function AssetTestTable({
     message: string;
   }>>({});
   const [lastEvidence, setLastEvidence] = useState('');
+  const [evidenceView, setEvidenceView] =
+    useState<VisualAuthoringTestEvidenceView | null>(null);
+  const [draftGate, setDraftGate] =
+    useState<VisualAuthoringTestDraftGate | null>(null);
   const [fixtureLaunch, setFixtureLaunch] = useState<GovernedFixtureSaveLaunch | null>(null);
   const [busy, setBusy] = useState(true);
   const [error, setError] = useState('');
@@ -149,6 +157,9 @@ export default function AssetTestTable({
     ?? functionDraft?.diagnostics?.[0]?.message
     ?? ''
   ), [functionDraft, operatorDraft]);
+  const assetGate = useMemo(() => draftGate?.assets.find((asset) => (
+    asset.assetKind === kind.toUpperCase() && asset.assetRef === assetRef
+  )) ?? null, [assetRef, draftGate, kind]);
 
   const runOperators = async (indices: number[]) => {
     if (!exactDraft || !operatorDraft) {
@@ -169,6 +180,12 @@ export default function AssetTestTable({
       );
       installOperatorResults(evidence, indices, setOperatorResults);
       setLastEvidence(evidence.evidenceFingerprint);
+      const [verified, gate] = await Promise.all([
+        fetchLibraryAuthoringTestEvidence(exactDraft.draftId, evidence.runId),
+        fetchLibraryAuthoringTestGate(exactDraft.draftId),
+      ]);
+      setEvidenceView(verified);
+      setDraftGate(gate);
     } catch (reason) {
       handleRequestError(reason, setError, onConflict);
     } finally {
@@ -195,6 +212,12 @@ export default function AssetTestTable({
       );
       installFunctionResults(evidence, indices, setFunctionResults);
       setLastEvidence(evidence.evidenceFingerprint);
+      const [verified, gate] = await Promise.all([
+        fetchLibraryAuthoringTestEvidence(exactDraft.draftId, evidence.runId),
+        fetchLibraryAuthoringTestGate(exactDraft.draftId),
+      ]);
+      setEvidenceView(verified);
+      setDraftGate(gate);
     } catch (reason) {
       handleRequestError(reason, setError, onConflict);
     } finally {
@@ -277,9 +300,29 @@ export default function AssetTestTable({
         <div className="library-test-meta">
           <span>Draft revision <strong>{exactDraft?.revision ?? '-'}</strong></span>
           <span>Cases <strong>{kind === 'operator' ? operatorRows.length : functionRows.length}</strong></span>
-          {lastEvidence && (
-            <span title={lastEvidence}>
-              Evidence <strong>{shortFingerprint(lastEvidence)}</strong>
+          {(evidenceView || lastEvidence) && (
+            <span title={evidenceView?.evidence.materialFingerprint ?? lastEvidence}>
+              Evidence <strong>{shortFingerprint(
+                evidenceView?.evidence.materialFingerprint ?? lastEvidence,
+              )}</strong>
+            </span>
+          )}
+          {evidenceView && (
+            <span
+              className={`library-test-trust ${evidenceView.freshness.toLowerCase()}`}
+              data-testid="library-test-evidence-trust"
+              title={`Signed by ${evidenceView.evidence.seal.keyId}`}
+            >
+              <strong>SIGNED</strong> {evidenceView.freshness}
+            </span>
+          )}
+          {draftGate && (
+            <span
+              className={`library-test-gate ${draftGate.status.toLowerCase()}`}
+              data-testid="library-test-draft-gate"
+              title="Conservative authoring-test baseline; not production readiness"
+            >
+              Draft gate <strong>{draftGate.satisfiedAssets}/{draftGate.requiredAssets}</strong>
             </span>
           )}
           {kind === 'function' && functionDraft?.executionProfile && (
@@ -291,6 +334,17 @@ export default function AssetTestTable({
 
         <div className="library-test-alerts">
           {diagnostic && <p className="library-test-notice">{diagnostic}</p>}
+          {evidenceView?.freshness === 'STALE' && (
+            <p className="library-test-notice warning">
+              This signed result no longer matches the current draft: {' '}
+              {evidenceView.staleReasons.map(reasonLabel).join(', ')}.
+            </p>
+          )}
+          {assetGate?.status === 'BLOCKED' && assetGate.reasons.length > 0 && (
+            <p className="library-test-notice warning" data-testid="library-test-gate-reasons">
+              This asset is not test-evidenced: {assetGate.reasons.map(reasonLabel).join(', ')}.
+            </p>
+          )}
           {!fixtureAvailable && (
             <p className="library-test-notice">
               Governed fixture persistence is not advertised by this deployment.
@@ -310,6 +364,8 @@ export default function AssetTestTable({
                 setOperatorRows(rows);
                 setOperatorResults({});
                 setLastEvidence('');
+                setEvidenceView(null);
+                setDraftGate(null);
               }}
               onRun={(index) => void runOperators([index])}
               onSaveFixture={saveOperatorFixture}
@@ -324,6 +380,8 @@ export default function AssetTestTable({
                 setFunctionRows(rows);
                 setFunctionResults({});
                 setLastEvidence('');
+                setEvidenceView(null);
+                setDraftGate(null);
               }}
               onRun={(index) => void runFunctions([index])}
               onSaveFixture={saveFunctionFixture}
@@ -831,6 +889,13 @@ function fixtureId(kind: string, assetRef: string, caseId: string): string {
 
 function shortFingerprint(value: string): string {
   return value.length > 18 ? `${value.slice(0, 14)}...` : value;
+}
+
+function reasonLabel(value: string): string {
+  return value
+    .toLowerCase()
+    .replace(/_/g, ' ')
+    .replace(/^\w/, (letter: string) => letter.toUpperCase());
 }
 
 function executionProfileLabel(value: string): string {

@@ -1158,6 +1158,117 @@ export interface VisualAuthoringFunctionTestRunEvidence {
   payloadPersisted: false;
 }
 
+export type VisualAuthoringTestAssetKind = 'OPERATOR' | 'FUNCTION';
+export type VisualAuthoringTestFreshness = 'CURRENT' | 'STALE';
+export type VisualAuthoringTestGateStatus = 'PASSED' | 'BLOCKED';
+
+export interface VisualAuthoringTestEvidenceSeal {
+  schemaVersion: 'bloge.visualRunEvidenceSeal.v1';
+  materialFingerprint: string;
+  algorithm: string;
+  keyId: string;
+  signedAt: string;
+  signature: string;
+}
+
+export interface VisualAuthoringTestEvidenceRecord {
+  schemaVersion: 'bloge.visualAuthoringTestEvidenceRecord.v1';
+  scope: {
+    tenantId: string;
+    organizationId: string;
+    projectId: string;
+    environmentId: string;
+    region: string;
+  };
+  runId: string;
+  assetKind: VisualAuthoringTestAssetKind;
+  assetRef: string;
+  draftId: string;
+  authoringRevision: number;
+  authoringFingerprint: string;
+  canonicalFingerprint: string;
+  artifactFingerprint: string;
+  runtimeFingerprint: string;
+  executionProfile: string;
+  suiteFingerprint: string;
+  sourceEvidenceFingerprint: string;
+  policyVersion: string;
+  proofMode: string;
+  bindingStatus: string;
+  passed: boolean;
+  totalCases: number;
+  passedCases: number;
+  failedCases: number;
+  requiredCaseCount: number;
+  coverage: {
+    inputPortSchemaValidated: number;
+    configSchemaValidated: number;
+    mockedOutputSchemaValidated: number;
+    mockedOutputCount: number;
+    assertionCount: number;
+  };
+  cases: Array<{
+    caseId: string;
+    kind: string;
+    status: string;
+    passed: boolean;
+    assertionCount: number;
+    durationMicros: number;
+    errorCode: string;
+    diagnosticCodes: string[];
+  }>;
+  declaredTestRefs: string[];
+  diagnosticCodes: string[];
+  executedAt: string;
+  actorId: string;
+  payloadPersisted: false;
+  materialFingerprint: string;
+  seal: VisualAuthoringTestEvidenceSeal;
+}
+
+export interface VisualAuthoringTestEvidenceView {
+  schemaVersion: 'bloge.visualAuthoringTestEvidenceView.v1';
+  evidence: VisualAuthoringTestEvidenceRecord;
+  integrityStatus: 'VERIFIED';
+  freshness: VisualAuthoringTestFreshness;
+  staleReasons: string[];
+  observedDraftRevision: number;
+  observedAuthoringFingerprint: string;
+  observedCanonicalFingerprint: string;
+  evaluatedAt: string;
+}
+
+export interface VisualAuthoringTestAssetGate {
+  assetKind: VisualAuthoringTestAssetKind;
+  assetRef: string;
+  status: VisualAuthoringTestGateStatus;
+  reasons: string[];
+  evidenceRunId: string;
+  evidenceFingerprint: string;
+  freshness: VisualAuthoringTestFreshness;
+  requiredCases: number;
+  observedCases: number;
+  observedAssertions: number;
+  proofMode: string;
+}
+
+export interface VisualAuthoringTestDraftGate {
+  schemaVersion: 'bloge.visualAuthoringTestEvidenceGate.v1';
+  scope: VisualAuthoringTestEvidenceRecord['scope'];
+  draftId: string;
+  authoringRevision: number;
+  authoringFingerprint: string;
+  canonicalFingerprint: string;
+  policyVersion: string;
+  status: VisualAuthoringTestGateStatus;
+  achievedMaturity: 'DESIGN_READY' | 'TEST_EVIDENCED';
+  requiredAssets: number;
+  satisfiedAssets: number;
+  reasons: string[];
+  assets: VisualAuthoringTestAssetGate[];
+  evaluatedAt: string;
+}
+
 export type VisualAuthoringFixtureSourceKind =
   'SAMPLE' | 'OPERATOR_TEST_CASE' | 'FUNCTION_TEST_CASE';
 export type VisualAuthoringFixtureAssetKind = 'OPERATOR' | 'FUNCTION';

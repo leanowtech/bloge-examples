@@ -66,16 +66,19 @@ public final class AuthoringTestService {
     private final VisualOperatorContractTestService operatorTests;
     private final ObjectMapper objectMapper;
     private final AuthoringFunctionTestWorker functionWorker;
+    private final AuthoringTestEvidenceService evidence;
 
     @Autowired
     public AuthoringTestService(AuthoringDraftService drafts,
                                 VisualOperatorContractTestService operatorTests,
                                 ObjectMapper objectMapper,
-                                AuthoringFunctionTestWorker functionWorker) {
+                                AuthoringFunctionTestWorker functionWorker,
+                                AuthoringTestEvidenceService evidence) {
         this.drafts = Objects.requireNonNull(drafts, "drafts");
         this.operatorTests = Objects.requireNonNull(operatorTests, "operatorTests");
         this.objectMapper = Objects.requireNonNull(objectMapper, "objectMapper");
         this.functionWorker = Objects.requireNonNull(functionWorker, "functionWorker");
+        this.evidence = Objects.requireNonNull(evidence, "evidence");
     }
 
     void close() {
@@ -123,7 +126,8 @@ public final class AuthoringTestService {
 
     public OperatorRunEvidence runOperator(String draftId,
                                            long expectedRevision,
-                                           OperatorRunRequest request) {
+                                           OperatorRunRequest request,
+                                           AuthoringTestPrincipal identity) {
         requireVersion(
                 request == null ? "" : request.schemaVersion(),
                 OperatorRunRequest.SCHEMA_VERSION,
@@ -149,7 +153,7 @@ public final class AuthoringTestService {
                 "suiteFingerprint", suiteFingerprint,
                 "result", result
         ), draftId, expectedRevision);
-        return new OperatorRunEvidence(
+        OperatorRunEvidence run = new OperatorRunEvidence(
                 OperatorRunEvidence.SCHEMA_VERSION,
                 runId,
                 draftId,
@@ -163,6 +167,8 @@ public final class AuthoringTestService {
                 result,
                 List.of(),
                 false);
+        evidence.persistOperator(run, identity);
+        return run;
     }
 
     public FunctionDraft draftFunction(String draftId,
@@ -199,7 +205,8 @@ public final class AuthoringTestService {
 
     public FunctionRunEvidence runFunction(String draftId,
                                            long expectedRevision,
-                                           FunctionRunRequest request) {
+                                           FunctionRunRequest request,
+                                           AuthoringTestPrincipal identity) {
         requireVersion(
                 request == null ? "" : request.schemaVersion(),
                 FunctionRunRequest.SCHEMA_VERSION,
@@ -233,7 +240,7 @@ public final class AuthoringTestService {
                 "suiteFingerprint", suiteFingerprint,
                 "results", results
         ), draftId, expectedRevision);
-        return new FunctionRunEvidence(
+        FunctionRunEvidence run = new FunctionRunEvidence(
                 FunctionRunEvidence.SCHEMA_VERSION,
                 UUID.randomUUID().toString(),
                 draftId,
@@ -254,6 +261,8 @@ public final class AuthoringTestService {
                 results,
                 runtime.diagnostics(),
                 false);
+        evidence.persistFunction(run, suite.functionRef(), identity);
+        return run;
     }
 
     private List<FunctionCaseResult> runFunctionCases(OperatorLibrary.BuiltInFunction function,

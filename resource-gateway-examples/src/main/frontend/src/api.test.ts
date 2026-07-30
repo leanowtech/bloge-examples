@@ -19,6 +19,8 @@ import {
   fetchLibraryAuthoringCatalogs,
   fetchLibraryAuthoringDraft,
   fetchLibraryAuthoringDrafts,
+  fetchLibraryAuthoringTestEvidence,
+  fetchLibraryAuthoringTestGate,
   fetchOperatorCatalog,
   fetchScenarioRehearsalBatchItems,
   fetchScenarioRehearsalBatchJobs,
@@ -315,7 +317,13 @@ describe('operator library API client', () => {
       functionRef: 'trim',
       cases: [],
     };
-    const calls: Array<{ url: string; body: unknown; ifMatch: string | null }> = [];
+    const calls: Array<{
+      url: string;
+      body: unknown;
+      ifMatch: string | null;
+      authorization: string | null;
+      purpose: string | null;
+    }> = [];
     setBlogeApiTransport(async (input, init) => {
       const url = String(input);
       const body = JSON.parse(String(init?.body));
@@ -323,6 +331,8 @@ describe('operator library API client', () => {
         url,
         body,
         ifMatch: new Headers(init?.headers).get('If-Match'),
+        authorization: new Headers(init?.headers).get('Authorization'),
+        purpose: new Headers(init?.headers).get('X-Purpose'),
       });
       return jsonResponse({ route: url });
     });
@@ -348,6 +358,8 @@ describe('operator library API client', () => {
           schemaVersion: 'bloge.visualAuthoringOperatorTestRunRequest.v1',
           suite: operatorSuite,
         },
+        authorization: 'Bearer bloge-aneke-demo-token',
+        purpose: 'TEST_EXECUTION',
       }),
       expect.objectContaining({
         url: '/admin/visual-operator-library-authoring/drafts/test%20draft/tests/functions/draft',
@@ -364,7 +376,38 @@ describe('operator library API client', () => {
           schemaVersion: 'bloge.visualAuthoringFunctionTestRunRequest.v1',
           suite: functionSuite,
         },
+        authorization: 'Bearer bloge-aneke-demo-token',
+        purpose: 'TEST_EXECUTION',
       }),
+    ]);
+  });
+
+  it('reads signed authoring evidence and gates under suite-read authority', async () => {
+    const calls: Array<{ url: string; authorization: string | null; purpose: string | null }> = [];
+    setBlogeApiTransport(async (input, init) => {
+      const headers = new Headers(init?.headers);
+      calls.push({
+        url: String(input),
+        authorization: headers.get('Authorization'),
+        purpose: headers.get('X-Purpose'),
+      });
+      return jsonResponse({ schemaVersion: 'test' });
+    });
+
+    await fetchLibraryAuthoringTestEvidence('test draft', 'run/1');
+    await fetchLibraryAuthoringTestGate('test draft');
+
+    expect(calls).toEqual([
+      {
+        url: '/admin/visual-operator-library-authoring/drafts/test%20draft/tests/evidence/run%2F1',
+        authorization: 'Bearer bloge-aneke-demo-token',
+        purpose: 'TEST_SUITE_READ',
+      },
+      {
+        url: '/admin/visual-operator-library-authoring/drafts/test%20draft/tests/gate',
+        authorization: 'Bearer bloge-aneke-demo-token',
+        purpose: 'TEST_SUITE_READ',
+      },
     ]);
   });
 

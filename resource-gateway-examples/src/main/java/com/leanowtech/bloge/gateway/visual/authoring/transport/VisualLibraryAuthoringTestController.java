@@ -3,6 +3,8 @@ package com.leanowtech.bloge.gateway.visual.authoring.transport;
 import com.leanowtech.bloge.gateway.visual.authoring.application.AuthoringLifecycleException;
 import com.leanowtech.bloge.gateway.visual.authoring.model.AuthoringDiagnostic;
 import com.leanowtech.bloge.gateway.visual.authoring.model.AuthoringProblem;
+import com.leanowtech.bloge.gateway.visual.authoring.testing.AuthoringTestAccessPort;
+import com.leanowtech.bloge.gateway.visual.authoring.testing.AuthoringTestAccessPort.Action;
 import com.leanowtech.bloge.gateway.visual.authoring.testing.AuthoringTestProtocol.FunctionDraft;
 import com.leanowtech.bloge.gateway.visual.authoring.testing.AuthoringTestProtocol.FunctionDraftRequest;
 import com.leanowtech.bloge.gateway.visual.authoring.testing.AuthoringTestProtocol.FunctionRunEvidence;
@@ -11,11 +13,15 @@ import com.leanowtech.bloge.gateway.visual.authoring.testing.AuthoringTestProtoc
 import com.leanowtech.bloge.gateway.visual.authoring.testing.AuthoringTestProtocol.OperatorDraftRequest;
 import com.leanowtech.bloge.gateway.visual.authoring.testing.AuthoringTestProtocol.OperatorRunEvidence;
 import com.leanowtech.bloge.gateway.visual.authoring.testing.AuthoringTestProtocol.OperatorRunRequest;
+import com.leanowtech.bloge.gateway.visual.authoring.testing.AuthoringTestEvidenceProtocol.DraftGate;
+import com.leanowtech.bloge.gateway.visual.authoring.testing.AuthoringTestEvidenceProtocol.EvidenceView;
+import com.leanowtech.bloge.gateway.visual.authoring.testing.AuthoringTestEvidenceService;
 import com.leanowtech.bloge.gateway.visual.authoring.testing.AuthoringTestService;
 
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.ExceptionHandler;
+import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
@@ -34,9 +40,16 @@ import java.util.Map;
 public final class VisualLibraryAuthoringTestController {
 
     private final AuthoringTestService tests;
+    private final AuthoringTestEvidenceService evidence;
+    private final AuthoringTestAccessPort access;
 
-    public VisualLibraryAuthoringTestController(AuthoringTestService tests) {
+    public VisualLibraryAuthoringTestController(
+            AuthoringTestService tests,
+            AuthoringTestEvidenceService evidence,
+            AuthoringTestAccessPort access) {
         this.tests = java.util.Objects.requireNonNull(tests, "tests");
+        this.evidence = java.util.Objects.requireNonNull(evidence, "evidence");
+        this.access = java.util.Objects.requireNonNull(access, "access");
     }
 
     @PostMapping("/{draftId}/tests/operators/draft")
@@ -53,12 +66,16 @@ public final class VisualLibraryAuthoringTestController {
     @PostMapping("/{draftId}/tests/operators/run")
     public ResponseEntity<OperatorRunEvidence> runOperator(
             @PathVariable String draftId,
-            @RequestHeader(name = HttpHeaders.IF_MATCH, required = false) String ifMatch,
+            @RequestHeader HttpHeaders headers,
             @RequestBody(required = false) OperatorRunRequest request) {
-        long revision = expectedRevision(ifMatch, draftId);
+        long revision = expectedRevision(headers.getFirst(HttpHeaders.IF_MATCH), draftId);
         return ResponseEntity.ok()
                 .eTag(etag(revision))
-                .body(tests.runOperator(draftId, revision, request));
+                .body(tests.runOperator(
+                        draftId,
+                        revision,
+                        request,
+                        access.authenticate(headers, Action.EXECUTE)));
     }
 
     @PostMapping("/{draftId}/tests/functions/draft")
@@ -75,12 +92,36 @@ public final class VisualLibraryAuthoringTestController {
     @PostMapping("/{draftId}/tests/functions/run")
     public ResponseEntity<FunctionRunEvidence> runFunction(
             @PathVariable String draftId,
-            @RequestHeader(name = HttpHeaders.IF_MATCH, required = false) String ifMatch,
+            @RequestHeader HttpHeaders headers,
             @RequestBody(required = false) FunctionRunRequest request) {
-        long revision = expectedRevision(ifMatch, draftId);
+        long revision = expectedRevision(headers.getFirst(HttpHeaders.IF_MATCH), draftId);
         return ResponseEntity.ok()
                 .eTag(etag(revision))
-                .body(tests.runFunction(draftId, revision, request));
+                .body(tests.runFunction(
+                        draftId,
+                        revision,
+                        request,
+                        access.authenticate(headers, Action.EXECUTE)));
+    }
+
+    @GetMapping("/{draftId}/tests/evidence/{runId}")
+    public EvidenceView evidence(
+            @PathVariable String draftId,
+            @PathVariable String runId,
+            @RequestHeader HttpHeaders headers) {
+        return evidence.find(
+                draftId,
+                runId,
+                access.authenticate(headers, Action.EVIDENCE_READ));
+    }
+
+    @GetMapping("/{draftId}/tests/gate")
+    public DraftGate gate(
+            @PathVariable String draftId,
+            @RequestHeader HttpHeaders headers) {
+        return evidence.gate(
+                draftId,
+                access.authenticate(headers, Action.GATE_READ));
     }
 
     @ExceptionHandler(AuthoringLifecycleException.class)

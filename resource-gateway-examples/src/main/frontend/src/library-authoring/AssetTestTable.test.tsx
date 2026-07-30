@@ -8,6 +8,8 @@ import type {
   VisualAuthoringFunctionTestRunEvidence,
   VisualAuthoringOperatorTestDraft,
   VisualAuthoringOperatorTestRunEvidence,
+  VisualAuthoringTestDraftGate,
+  VisualAuthoringTestEvidenceView,
   VisualLibraryAuthoringDraft,
 } from '../types';
 import AssetTestTable from './AssetTestTable';
@@ -17,6 +19,8 @@ const apiMocks = vi.hoisted(() => ({
   draftOperator: vi.fn(),
   runFunction: vi.fn(),
   runOperator: vi.fn(),
+  fetchEvidence: vi.fn(),
+  fetchGate: vi.fn(),
   saveFixture: vi.fn(),
 }));
 
@@ -32,6 +36,8 @@ vi.mock('../api', () => ({
   },
   draftLibraryAuthoringFunctionTest: apiMocks.draftFunction,
   draftLibraryAuthoringOperatorTest: apiMocks.draftOperator,
+  fetchLibraryAuthoringTestEvidence: apiMocks.fetchEvidence,
+  fetchLibraryAuthoringTestGate: apiMocks.fetchGate,
   runLibraryAuthoringFunctionTest: apiMocks.runFunction,
   runLibraryAuthoringOperatorTest: apiMocks.runOperator,
   saveLibraryAuthoringFixture: apiMocks.saveFixture,
@@ -48,6 +54,8 @@ describe('AssetTestTable', () => {
     document.body.appendChild(host);
     root = null;
     Object.values(apiMocks).forEach((mock) => mock.mockReset());
+    apiMocks.fetchEvidence.mockResolvedValue(evidenceView());
+    apiMocks.fetchGate.mockResolvedValue(draftGate());
   });
 
   afterEach(async () => {
@@ -86,7 +94,11 @@ describe('AssetTestTable', () => {
       }),
     );
     expect(query('[data-testid="library-test-dialog"]').textContent).toContain('Passed');
-    expect(query('[data-testid="library-test-dialog"]').textContent).toContain('sha256:eeeeeee...');
+    expect(query('[data-testid="library-test-dialog"]').textContent).toContain('sha256:mmmmmmm...');
+    expect(query('[data-testid="library-test-evidence-trust"]').textContent)
+      .toContain('SIGNED CURRENT');
+    expect(query('[data-testid="library-test-draft-gate"]').textContent)
+      .toContain('Draft gate 1/1');
   });
 
   it('makes an unbound function visible instead of presenting a false pass', async () => {
@@ -350,6 +362,111 @@ function functionEvidence(): VisualAuthoringFunctionTestRunEvidence {
       message: 'No exact callable was found in the BLOGE runtime inventory.',
     }],
     payloadPersisted: false,
+  };
+}
+
+function evidenceView(): VisualAuthoringTestEvidenceView {
+  return {
+    schemaVersion: 'bloge.visualAuthoringTestEvidenceView.v1',
+    evidence: {
+      schemaVersion: 'bloge.visualAuthoringTestEvidenceRecord.v1',
+      scope: {
+        tenantId: 'tenant-a',
+        organizationId: 'organization-a',
+        projectId: 'project-a',
+        environmentId: 'test',
+        region: 'region-a',
+      },
+      runId: 'operator-run',
+      assetKind: 'OPERATOR',
+      assetRef: 'demo:echo',
+      draftId: 'test-draft',
+      authoringRevision: 3,
+      authoringFingerprint: `sha256:${'a'.repeat(64)}`,
+      canonicalFingerprint: `sha256:${'c'.repeat(64)}`,
+      artifactFingerprint: `sha256:${'o'.repeat(64)}`,
+      runtimeFingerprint: '',
+      executionProfile: '',
+      suiteFingerprint: `sha256:${'s'.repeat(64)}`,
+      sourceEvidenceFingerprint: `sha256:${'e'.repeat(64)}`,
+      policyVersion: 'visual-authoring-test-evidence-gate.v1',
+      proofMode: 'SCHEMA_CONTRACT',
+      bindingStatus: '',
+      passed: true,
+      totalCases: 1,
+      passedCases: 1,
+      failedCases: 0,
+      requiredCaseCount: 1,
+      coverage: {
+        inputPortSchemaValidated: 1,
+        configSchemaValidated: 1,
+        mockedOutputSchemaValidated: 1,
+        mockedOutputCount: 1,
+        assertionCount: 0,
+      },
+      cases: [{
+        caseId: `case:sha256:${'d'.repeat(64)}`,
+        kind: 'CONTRACT',
+        status: 'PASSED',
+        passed: true,
+        assertionCount: 0,
+        durationMicros: 0,
+        errorCode: '',
+        diagnosticCodes: [],
+      }],
+      declaredTestRefs: [],
+      diagnosticCodes: [],
+      executedAt: '2026-07-30T00:00:00Z',
+      actorId: 'tester',
+      payloadPersisted: false,
+      materialFingerprint: `sha256:${'m'.repeat(64)}`,
+      seal: {
+        schemaVersion: 'bloge.visualRunEvidenceSeal.v1',
+        materialFingerprint: `sha256:${'m'.repeat(64)}`,
+        algorithm: 'Ed25519',
+        keyId: 'memory-key',
+        signedAt: '2026-07-30T00:00:00Z',
+        signature: 'detached-signature',
+      },
+    },
+    integrityStatus: 'VERIFIED',
+    freshness: 'CURRENT',
+    staleReasons: [],
+    observedDraftRevision: 3,
+    observedAuthoringFingerprint: `sha256:${'a'.repeat(64)}`,
+    observedCanonicalFingerprint: `sha256:${'c'.repeat(64)}`,
+    evaluatedAt: '2026-07-30T00:00:01Z',
+  };
+}
+
+function draftGate(): VisualAuthoringTestDraftGate {
+  return {
+    schemaVersion: 'bloge.visualAuthoringTestEvidenceGate.v1',
+    scope: evidenceView().evidence.scope,
+    draftId: 'test-draft',
+    authoringRevision: 3,
+    authoringFingerprint: `sha256:${'a'.repeat(64)}`,
+    canonicalFingerprint: `sha256:${'c'.repeat(64)}`,
+    policyVersion: 'visual-authoring-test-evidence-gate.v1',
+    status: 'PASSED',
+    achievedMaturity: 'TEST_EVIDENCED',
+    requiredAssets: 1,
+    satisfiedAssets: 1,
+    reasons: [],
+    assets: [{
+      assetKind: 'OPERATOR',
+      assetRef: 'demo:echo',
+      status: 'PASSED',
+      reasons: [],
+      evidenceRunId: 'operator-run',
+      evidenceFingerprint: `sha256:${'m'.repeat(64)}`,
+      freshness: 'CURRENT',
+      requiredCases: 1,
+      observedCases: 1,
+      observedAssertions: 0,
+      proofMode: 'SCHEMA_CONTRACT',
+    }],
+    evaluatedAt: '2026-07-30T00:00:01Z',
   };
 }
 

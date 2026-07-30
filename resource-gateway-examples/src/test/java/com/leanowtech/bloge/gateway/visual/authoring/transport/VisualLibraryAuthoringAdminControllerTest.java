@@ -96,6 +96,8 @@ class VisualLibraryAuthoringAdminControllerTest {
                 .andExpect(jsonPath("$.features.functionTestDraftRunner").value(true))
                 .andExpect(jsonPath("$.features.governedFixturePersistence").value(false))
                 .andExpect(jsonPath("$.features.isolatedFunctionTestWorker").value(false))
+                .andExpect(jsonPath("$.features.signedTestEvidence").value(true))
+                .andExpect(jsonPath("$.features.testEvidenceGate").value(true))
                 .andExpect(jsonPath("$.limits.maximumSampleInferenceBytes").value(2097152))
                 .andExpect(jsonPath("$.limits.maximumSampleInferenceApplyBytes").value(4194304))
                 .andExpect(jsonPath("$.limits.maximumInferenceSamples").value(100))

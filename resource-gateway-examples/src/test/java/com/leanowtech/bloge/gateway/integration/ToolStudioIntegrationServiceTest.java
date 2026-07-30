@@ -157,6 +157,8 @@ class ToolStudioIntegrationServiceTest {
                 .containsEntry("visualLibraryAuthoringFunctionTestDraftRunner", true)
                 .containsEntry("visualLibraryAuthoringGovernedFixturePersistence", false)
                 .containsEntry("visualLibraryAuthoringIsolatedFunctionTestWorker", true)
+                .containsEntry("visualLibraryAuthoringSignedTestEvidence", true)
+                .containsEntry("visualLibraryAuthoringTestEvidenceGate", true)
                 .containsEntry("mirrorPlanCompilation", false)
                 .containsEntry("mirrorExternalLeafInterception", false)
                 .containsEntry("mirrorOperationObservability", false)
@@ -314,6 +316,8 @@ class ToolStudioIntegrationServiceTest {
                         "POST /admin/visual-operator-library-authoring/drafts/{draftId}/tests/operators/run",
                         "POST /admin/visual-operator-library-authoring/drafts/{draftId}/tests/functions/draft",
                         "POST /admin/visual-operator-library-authoring/drafts/{draftId}/tests/functions/run",
+                        "GET /admin/visual-operator-library-authoring/drafts/{draftId}/tests/evidence/{runId}",
+                        "GET /admin/visual-operator-library-authoring/drafts/{draftId}/tests/gate",
                         "POST /admin/visual-operator-library-authoring/drafts/{draftId}/commit",
                         "GET /api/visual/run-controls/{requestId}",
                         "POST /api/visual/run-controls/{requestId}/cancel"

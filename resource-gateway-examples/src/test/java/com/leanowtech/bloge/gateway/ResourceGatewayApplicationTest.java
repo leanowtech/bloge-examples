@@ -37,6 +37,8 @@ import com.leanowtech.bloge.gateway.visual.authoring.testing.AuthoringTestProtoc
 import com.leanowtech.bloge.gateway.visual.authoring.testing.AuthoringTestProtocol.OperatorDraftRequest;
 import com.leanowtech.bloge.gateway.visual.authoring.testing.AuthoringTestProtocol.OperatorRunEvidence;
 import com.leanowtech.bloge.gateway.visual.authoring.testing.AuthoringTestProtocol.OperatorRunRequest;
+import com.leanowtech.bloge.gateway.visual.authoring.testing.AuthoringTestEvidenceProtocol.DraftGate;
+import com.leanowtech.bloge.gateway.visual.authoring.testing.AuthoringTestEvidenceProtocol.EvidenceView;
 import com.leanowtech.bloge.gateway.visual.authoring.testing.AuthoringFunctionWorkerProtocol;
 import com.leanowtech.bloge.gateway.visual.authoring.transport.VisualLibraryAuthoringDraftController;
 import com.leanowtech.bloge.gateway.visual.testing.VisualOperatorContractTestDraftRequest;
@@ -68,6 +70,9 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
         webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT,
         properties = {
                 "gateway.seed-descriptors=false",
+                "gateway.integration.identity.allowed-purposes="
+                        + "GOVERNANCE_EVIDENCE_INGESTION,CHANGE_SYNC,"
+                        + "TEST_EXECUTION,TEST_SUITE_READ",
                 "spring.datasource.url=jdbc:h2:mem:resource-gateway-startup;DB_CLOSE_DELAY=-1;DB_CLOSE_ON_EXIT=false"
         }
 )
@@ -162,6 +167,8 @@ class ResourceGatewayApplicationTest {
         Map<?, ?> features = (Map<?, ?>) catalogBody.get("features");
         Map<?, ?> limits = (Map<?, ?>) catalogBody.get("limits");
         assertThat(features.get("isolatedFunctionTestWorker")).isEqualTo(true);
+        assertThat(features.get("signedTestEvidence")).isEqualTo(true);
+        assertThat(features.get("testEvidenceGate")).isEqualTo(true);
         assertThat(limits.get("functionTestWorkerHeapMib")).isEqualTo(64);
         assertThat(limits.get("maximumConcurrentFunctionTestWorkers")).isEqualTo(2);
         VisualLibraryAuthoringDocument document = new YAMLMapper().findAndRegisterModules()
@@ -253,6 +260,8 @@ class ResourceGatewayApplicationTest {
             assertThat(generated.payloadPersisted()).isFalse();
         });
 
+        revisionHeaders.setBearerAuth("bloge-aneke-demo-token");
+        revisionHeaders.set("X-Purpose", "TEST_EXECUTION");
         var operatorRun = restTemplate.exchange(
                 "/admin/visual-operator-library-authoring/drafts/" + draftId
                         + "/tests/operators/run",
@@ -310,6 +319,37 @@ class ResourceGatewayApplicationTest {
             assertThat(evidence.results()).singleElement()
                     .satisfies(result -> assertThat(result.actual()).isEqualTo("sample"));
             assertThat(evidence.payloadPersisted()).isFalse();
+        });
+
+        HttpHeaders evidenceHeaders = new HttpHeaders();
+        evidenceHeaders.setBearerAuth("bloge-aneke-demo-token");
+        evidenceHeaders.set("X-Purpose", "TEST_SUITE_READ");
+        var operatorEvidence = restTemplate.exchange(
+                "/admin/visual-operator-library-authoring/drafts/" + draftId
+                        + "/tests/evidence/" + operatorRun.getBody().runId(),
+                HttpMethod.GET,
+                new HttpEntity<>(evidenceHeaders),
+                EvidenceView.class);
+        assertThat(operatorEvidence.getStatusCode().is2xxSuccessful()).isTrue();
+        assertThat(operatorEvidence.getBody()).satisfies(view -> {
+            assertThat(view.integrityStatus()).isEqualTo("VERIFIED");
+            assertThat(view.freshness().name()).isEqualTo("CURRENT");
+            assertThat(view.evidence().seal().signed()).isTrue();
+            assertThat(view.evidence().payloadPersisted()).isFalse();
+        });
+
+        var gate = restTemplate.exchange(
+                "/admin/visual-operator-library-authoring/drafts/" + draftId
+                        + "/tests/gate",
+                HttpMethod.GET,
+                new HttpEntity<>(evidenceHeaders),
+                DraftGate.class);
+        assertThat(gate.getStatusCode().is2xxSuccessful()).isTrue();
+        assertThat(gate.getBody()).satisfies(result -> {
+            assertThat(result.status().name()).isEqualTo("PASSED");
+            assertThat(result.achievedMaturity()).isEqualTo("TEST_EVIDENCED");
+            assertThat(result.requiredAssets()).isEqualTo(2);
+            assertThat(result.satisfiedAssets()).isEqualTo(2);
         });
 
         SampleInferenceRequest inferenceRequest = new SampleInferenceRequest(

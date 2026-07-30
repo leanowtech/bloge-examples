@@ -316,6 +316,8 @@ class TestRuntimeApplicationIntegrationTest {
                 .containsEntry(
                         "visualLibraryAuthoringIsolatedFunctionTestWorker",
                         true)
+                .containsEntry("visualLibraryAuthoringSignedTestEvidence", true)
+                .containsEntry("visualLibraryAuthoringTestEvidenceGate", true)
                 .containsEntry("mirrorPlanCompilation", true)
                 .containsEntry("mirrorExternalLeafInterception", true)
                 .containsEntry("mirrorScenarioArtifactRegistry", true)

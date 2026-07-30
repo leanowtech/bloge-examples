@@ -50,6 +50,8 @@ import type {
   VisualGraphRunRecord,
   VisualAuthoringFunctionTestDraft,
   VisualAuthoringFunctionTestRunEvidence,
+  VisualAuthoringTestDraftGate,
+  VisualAuthoringTestEvidenceView,
   VisualAuthoringFixtureReceipt,
   VisualAuthoringFixtureSaveRequest,
   VisualAuthoringOperatorTestDraft,
@@ -551,7 +553,7 @@ export async function runLibraryAuthoringOperatorTest(
       {
         method: 'POST',
         headers: {
-          'Content-Type': 'application/json',
+          ...operatorTestingHeaders('TEST_EXECUTION', true),
           'If-Match': `"${Math.max(0, revision)}"`,
         },
         body: JSON.stringify({
@@ -599,7 +601,7 @@ export async function runLibraryAuthoringFunctionTest(
       {
         method: 'POST',
         headers: {
-          'Content-Type': 'application/json',
+          ...operatorTestingHeaders('TEST_EXECUTION', true),
           'If-Match': `"${Math.max(0, revision)}"`,
         },
         body: JSON.stringify({
@@ -607,6 +609,32 @@ export async function runLibraryAuthoringFunctionTest(
           suite,
         }),
       },
+    ),
+  );
+}
+
+/** Reads one immutable signed run summary and recalculates freshness against the live draft. */
+export async function fetchLibraryAuthoringTestEvidence(
+  draftId: string,
+  runId: string,
+): Promise<VisualAuthoringTestEvidenceView> {
+  return readTestingJson<VisualAuthoringTestEvidenceView>(
+    await sendRequest(
+      `/admin/visual-operator-library-authoring/drafts/${encodeURIComponent(draftId)}`
+      + `/tests/evidence/${encodeURIComponent(runId)}`,
+      { headers: operatorTestingHeaders('TEST_SUITE_READ') },
+    ),
+  );
+}
+
+/** Evaluates the current draft's conservative TEST_EVIDENCED baseline. */
+export async function fetchLibraryAuthoringTestGate(
+  draftId: string,
+): Promise<VisualAuthoringTestDraftGate> {
+  return readTestingJson<VisualAuthoringTestDraftGate>(
+    await sendRequest(
+      `/admin/visual-operator-library-authoring/drafts/${encodeURIComponent(draftId)}/tests/gate`,
+      { headers: operatorTestingHeaders('TEST_SUITE_READ') },
     ),
   );
 }

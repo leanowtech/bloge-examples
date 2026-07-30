@@ -41,6 +41,13 @@ class VisualLibraryAuthoringCapabilityTest {
                         java.util.List.of(
                                 "bloge.visualAuthoringFunctionWorkerInvocationRequest.v1",
                                 "bloge.visualAuthoringFunctionWorkerInvocationResponse.v1"))
+                .containsEntry("visualLibraryAuthoringTestEvidence",
+                        java.util.List.of(
+                                "bloge.visualAuthoringTestEvidenceRecord.v1",
+                                "bloge.visualAuthoringTestEvidenceView.v1"))
+                .containsEntry("visualLibraryAuthoringTestGate",
+                        java.util.List.of(
+                                "bloge.visualAuthoringTestEvidenceGate.v1"))
                 .containsEntry("visualLibraryAuthoringFixtureSaveRequest",
                         java.util.List.of(
                                 "bloge.visualAuthoringFixtureSaveRequest.v1"))
@@ -61,7 +68,9 @@ class VisualLibraryAuthoringCapabilityTest {
                 .containsEntry("visualLibraryAuthoringOperatorTestDraftRunner", true)
                 .containsEntry("visualLibraryAuthoringFunctionTestDraftRunner", true)
                 .containsEntry("visualLibraryAuthoringGovernedFixturePersistence", false)
-                .containsEntry("visualLibraryAuthoringIsolatedFunctionTestWorker", true);
+                .containsEntry("visualLibraryAuthoringIsolatedFunctionTestWorker", true)
+                .containsEntry("visualLibraryAuthoringSignedTestEvidence", true)
+                .containsEntry("visualLibraryAuthoringTestEvidenceGate", true);
         assertThat(capabilities.endpoints()).contains(
                 new IntegrationCapabilities.Endpoint(
                         "POST", "/admin/visual-operator-library-authoring/preview"),
@@ -85,6 +94,10 @@ class VisualLibraryAuthoringCapabilityTest {
                         "POST", "/admin/visual-operator-library-authoring/drafts/{draftId}/tests/functions/draft"),
                 new IntegrationCapabilities.Endpoint(
                         "POST", "/admin/visual-operator-library-authoring/drafts/{draftId}/tests/functions/run"),
+                new IntegrationCapabilities.Endpoint(
+                        "GET", "/admin/visual-operator-library-authoring/drafts/{draftId}/tests/evidence/{runId}"),
+                new IntegrationCapabilities.Endpoint(
+                        "GET", "/admin/visual-operator-library-authoring/drafts/{draftId}/tests/gate"),
                 new IntegrationCapabilities.Endpoint(
                         "POST", "/admin/visual-operator-library-authoring/drafts/{draftId}/commit")
         );

@@ -2,7 +2,7 @@
 
 > 合同：`bloge.visualLibraryAuthoring.v1`
 >
-> 当前能力：Stage 0 权威编译 + Stage 1 持久化 lifecycle + Stage 2 样本推断、草稿级测试表、治理型 fixture 与进程隔离 function runner
+> 当前能力：Stage 0 权威编译 + Stage 1 持久化 lifecycle + Stage 2 样本推断、草稿级测试表、治理型 fixture、进程隔离 function runner 与签名测试 evidence
 >
 > 机器 Schema：[bloge-visual-library-authoring-v1.schema.json](schemas/bloge-visual-library-authoring-v1.schema.json)
 
@@ -48,7 +48,10 @@
 3. 检查自动生成的 Inputs、Config 和 Mocked outputs，点击单行 **Run** 或 **Run all**；
 4. 注意 operator 的证明强度固定显示为 `SCHEMA CONTRACT`，它验证草稿合同和 mock，不冒充 runtime 执行；
 5. 选择 function `trim`，打开测试表并运行，状态应为 `BOUND` 且 starter case 通过；
-6. 再选择 `support.normalizeText`，状态应为 `UNBOUND`，用于直观看到“已声明”与“runtime 已绑定”的区别。
+6. 运行完成后检查 `SIGNED CURRENT`、Evidence 指纹和 `Draft gate x/y`；它们分别表示验签、
+   对当前草稿仍有效，以及全库已有多少资产满足测试基线；
+7. 再选择 `support.normalizeText`，状态应为 `UNBOUND`，门禁会显示
+   `Function not bound`，用于直观看到“已声明”与“runtime 已绑定”的区别。
 
 预览完整 operator + function 示例：
 
@@ -225,7 +228,8 @@ tests:
 | Operator | 从当前 revision 的 input/config/output Schema 生成 editable mock row 和 output schema assertion | `SCHEMA_CONTRACT`；不调用 runtime binding |
 | Function | 从第一个已解析 overload 生成 arguments 和 `RETURN_TYPE` row | 仅调用 BLOGE runtime inventory 中 exact-name、pure、无 execution-service 依赖且被本地安全 profile 允许的函数 |
 
-所有 draft/run 请求都带当前 `If-Match`。返回证据绑定：
+所有 draft/run 请求都带当前 `If-Match`。run 还必须使用经过认证的
+`X-Purpose: TEST_EXECUTION`。临时响应与持久化证据共同绑定：
 
 - `authoringRevision` 与 `authoringFingerprint`；
 - `canonicalFingerprint`；
@@ -233,6 +237,20 @@ tests:
 - function runtime fingerprint；
 - test suite fingerprint；
 - evidence fingerprint。
+
+run 返回前会同步提交一份不可变签名、payload-free evidence。case id 和声明的 test ref
+会先转换为稳定的 SHA-256 伪名；持久化内容只有伪名、状态、耗时、断言计数、错误/诊断码
+和 aggregate coverage，不包含 arguments、inputs、outputs、actual 或 expected。读取
+evidence 时服务端重新验签并与当前草稿、artifact、function runtime 和 execution profile
+比较：
+
+- `SIGNED CURRENT`：签名有效，且仍对应当前草稿；
+- `SIGNED STALE`：历史记录有效，但当前合同、runtime、profile 或 policy 已变化；
+- `Draft gate n/m`：当前草稿共 `m` 个资产，其中 `n` 个满足 `TEST_EVIDENCED` 基线。
+
+门禁采用 latest-run-wins。旧的通过不能掩盖最新失败；修改测试行后 UI 会立即清除旧证据
+标签。`TEST_EVIDENCED` 不是 production-ready，也不替代 owner approval、迁移兼容性、
+secret/SLA policy、runtime binding 或 ANEKE publish gate。
 
 Function 表支持：
 
@@ -256,6 +274,8 @@ JSON Pointer 脱敏和测试数据声明后加密保存。成功 receipt 不返�
 - [function test run request](schemas/bloge-visual-authoring-function-test-run-request-v1.schema.json)
 - [isolated worker request](schemas/bloge-visual-authoring-function-worker-invocation-request-v1.schema.json)
 - [isolated worker response](schemas/bloge-visual-authoring-function-worker-invocation-response-v1.schema.json)
+- [signed evidence view](schemas/bloge-visual-authoring-test-evidence-view-v1.schema.json)
+- [draft evidence gate](schemas/bloge-visual-authoring-test-evidence-gate-v1.schema.json)
 
 API：
 
@@ -265,6 +285,8 @@ API：
 | `POST` | `/drafts/{draftId}/tests/operators/run` |
 | `POST` | `/drafts/{draftId}/tests/functions/draft` |
 | `POST` | `/drafts/{draftId}/tests/functions/run` |
+| `GET` | `/drafts/{draftId}/tests/evidence/{runId}` |
+| `GET` | `/drafts/{draftId}/tests/gate` |
 
 Function 表头的 `Runner ISOLATED PROCESS` 对应
 `bloge-core-isolated-process.v1`。每一行在全新的 one-shot JVM 中执行：只加载 exact-name、
