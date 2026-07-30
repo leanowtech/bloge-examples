@@ -74,15 +74,12 @@ public class CapabilityCatalogVisualAdapter {
             if (function == null) {
                 continue;
             }
-            String functionKey = function.namespace().isBlank()
-                    ? function.name()
-                    : function.namespace() + "." + function.name();
-            if (!functionNames.add(functionKey)) {
-                diagnostics.add(VisualDiagnostic.warning("visual.capabilityCatalog.function.duplicate",
-                        "Duplicate built-in function '%s' was skipped while adapting capability catalog."
-                                .formatted(functionKey),
+            String callableName = function.name();
+            if (!functionNames.add(callableName)) {
+                diagnostics.add(VisualDiagnostic.error("visual.capabilityCatalog.function.duplicate",
+                        "Duplicate callable function name '%s' cannot be disambiguated by namespace."
+                                .formatted(callableName),
                         "/functions/%d/name".formatted(index)));
-                continue;
             }
             functions.add(function);
         }

@@ -240,6 +240,101 @@ class OperatorLibraryAdminControllerTest {
     }
 
     @Test
+    void validatesAndImportsFunctionOnlyLibrary() throws Exception {
+        OperatorLibrary library = functionLibrary(
+                "risk-functions",
+                function("risk.normalize", "risk", "integer")
+        );
+
+        mockMvc.perform(post("/admin/visual-operator-libraries/validate")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(library)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.valid").value(true))
+                .andExpect(jsonPath("$.profile.operatorCount").value(0))
+                .andExpect(jsonPath("$.diagnostics.length()").value(0));
+
+        mockMvc.perform(post("/admin/visual-operator-libraries")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(library)))
+                .andExpect(status().isCreated())
+                .andExpect(jsonPath("$.libraryId").value("risk-functions"))
+                .andExpect(jsonPath("$.operators.length()").value(0))
+                .andExpect(jsonPath("$.builtInFunctions[0].name").value("risk.normalize"));
+
+        assertThat(registry.find("risk-functions")).contains(library);
+    }
+
+    @Test
+    void rejectsCallableContractThatConflictsWithDefaultCatalog() throws Exception {
+        OperatorLibrary library = functionLibrary(
+                "custom-coalesce",
+                function("coalesce", "custom", "string")
+        );
+
+        mockMvc.perform(post("/admin/visual-operator-libraries/validate")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(library)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.valid").value(false))
+                .andExpect(jsonPath("$.diagnostics[0].code")
+                        .value("visual.library.functionCallableConflict"))
+                .andExpect(jsonPath("$.diagnostics[0].target")
+                        .value("/builtInFunctions/0/name"))
+                .andExpect(jsonPath("$.diagnostics[0].metadata.callableName").value("coalesce"))
+                .andExpect(jsonPath("$.diagnostics[0].metadata.existingOwner").value("builtin"));
+
+        mockMvc.perform(post("/admin/visual-operator-libraries")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(library)))
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.valid").value(false))
+                .andExpect(jsonPath("$.diagnostics[0].code")
+                        .value("visual.library.functionCallableConflict"));
+
+        assertThat(registry.find("custom-coalesce")).isEmpty();
+    }
+
+    @Test
+    void capabilityCatalogProjectionRejectsDuplicateCallableAcrossNamespaces() throws Exception {
+        String capabilityCatalog = """
+                schemaVersion: bloge.capabilityCatalog.v1
+                catalogId: duplicate-functions
+                displayName: Duplicate functions
+                blogeVersion: 1.0.0
+                functions:
+                  - name: risk.normalize
+                    namespace: risk
+                    signatures:
+                      - label: risk.normalize(value)
+                        parameters:
+                          - name: value
+                            type: integer
+                        returns:
+                          type: integer
+                  - name: risk.normalize
+                    namespace: shared
+                    signatures:
+                      - label: risk.normalize(value)
+                        parameters:
+                          - name: value
+                            type: integer
+                        returns:
+                          type: string
+                """;
+
+        mockMvc.perform(post("/admin/visual-operator-libraries/from-capability-catalog-text")
+                        .contentType(MediaType.TEXT_PLAIN)
+                        .content(capabilityCatalog))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.validation.valid").value(false))
+                .andExpect(jsonPath("$.validation.diagnostics[0].code")
+                        .value("visual.capabilityCatalog.function.duplicate"))
+                .andExpect(jsonPath("$.projectionReview.coverageStatus").value("BLOCKED"))
+                .andExpect(jsonPath("$.library.builtInFunctions.length()").value(2));
+    }
+
+    @Test
     void enterpriseDocumentationExampleRemainsValidAndImportableWithFunctions() throws Exception {
         String yaml = Files.readString(Path.of("..", "docs", "examples",
                 "enterprise-knowledge-governance-operator-library.yaml"));
@@ -989,6 +1084,46 @@ class OperatorLibraryAdminControllerTest {
                 bundle.latestRevision(),
                 bundle.validation());
         assertThat(sameMaterialDifferentExportTime.bundleFingerprint()).isEqualTo(bundle.bundleFingerprint());
+    }
+
+    @Test
+    void functionOnlyLibraryRoundTripsThroughExportAndBundleImport() throws Exception {
+        OperatorLibrary library = functionLibrary(
+                "risk-functions",
+                function("risk.normalize", "risk", "integer")
+        );
+        mockMvc.perform(post("/admin/visual-operator-libraries")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(library)))
+                .andExpect(status().isCreated());
+
+        MvcResult exported = mockMvc.perform(get("/admin/visual-operator-libraries/risk-functions/export"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.library.operators.length()").value(0))
+                .andExpect(jsonPath("$.library.builtInFunctions[0].name").value("risk.normalize"))
+                .andExpect(jsonPath("$.latestRevision.library.builtInFunctions[0].name")
+                        .value("risk.normalize"))
+                .andReturn();
+        OperatorLibraryExportBundle bundle = objectMapper.readValue(
+                exported.getResponse().getContentAsString(),
+                OperatorLibraryExportBundle.class);
+        assertThat(bundle.bundleFingerprintVerified()).isTrue();
+
+        mockMvc.perform(delete("/admin/visual-operator-libraries/risk-functions"))
+                .andExpect(status().isNoContent());
+        mockMvc.perform(post("/admin/visual-operator-libraries/import-bundle")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(objectMapper.writeValueAsString(bundle)))
+                .andExpect(status().isCreated())
+                .andExpect(jsonPath("$.mutationAction").value(OperatorLibraryRevision.ACTION_CREATE))
+                .andExpect(jsonPath("$.library.builtInFunctions[0].name").value("risk.normalize"))
+                .andExpect(jsonPath("$.latestRevision.library.operators.length()").value(0));
+
+        assertThat(registry.find("risk-functions"))
+                .map(OperatorLibrary::builtInFunctions)
+                .hasValueSatisfying(functions -> assertThat(functions)
+                        .extracting(OperatorLibrary.BuiltInFunction::name)
+                        .containsExactly("risk.normalize"));
     }
 
     @Test
@@ -2189,6 +2324,82 @@ class OperatorLibraryAdminControllerTest {
                         .value(org.hamcrest.Matchers.containsString("input port 'inputs' schema changed")));
         mockMvc.perform(get("/admin/visual-operator-libraries/risk-policy/revisions/1/diff/99"))
                 .andExpect(status().isNotFound());
+    }
+
+    @Test
+    void functionOnlyRevisionDiffAndRestorePreserveCallableContract() throws Exception {
+        OperatorLibrary original = functionLibrary(
+                "risk-functions",
+                function("risk.normalize", "risk", "integer")
+        );
+        OperatorLibrary replacement = functionLibrary(
+                "risk-functions",
+                "2.0.0",
+                function("risk.normalize", "risk", "string")
+        );
+        mockMvc.perform(post("/admin/visual-operator-libraries")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(original)))
+                .andExpect(status().isCreated());
+        mockMvc.perform(put("/admin/visual-operator-libraries/risk-functions")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(replacement)))
+                .andExpect(status().isOk());
+
+        mockMvc.perform(get("/admin/visual-operator-libraries/risk-functions/revisions/1/diff/2"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.changed").value(true))
+                .andExpect(jsonPath("$.changeRisk")
+                        .value(OperatorDefinitionChangeSummary.RISK_BREAKING_SCHEMA))
+                .andExpect(jsonPath("$.libraryChanges[2].field")
+                        .value("builtInFunctions/risk.normalize"))
+                .andExpect(jsonPath("$.libraryChanges[2].summary").value(
+                        "callable function 'risk.normalize' contract changed"));
+
+        mockMvc.perform(post("/admin/visual-operator-libraries/risk-functions/revisions/1/restore")
+                        .param("allowVersionRegression", "true")
+                        .param("ackWarnings", "true")
+                        .param("actor", "catalog-reviewer")
+                        .param("reason", "Restore the reviewed function contract."))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.builtInFunctions[0].signatures[0].returns.type")
+                        .value("integer"));
+        assertThat(registry.revisions("risk-functions"))
+                .extracting(OperatorLibraryRevision::action)
+                .containsExactly(
+                        OperatorLibraryRevision.ACTION_RESTORE,
+                        OperatorLibraryRevision.ACTION_REPLACE,
+                        OperatorLibraryRevision.ACTION_CREATE
+                );
+    }
+
+    @Test
+    void functionContractBreakingChangeParticipatesInSemverGovernance() throws Exception {
+        OperatorLibrary original = functionLibrary(
+                "risk-functions",
+                function("risk.normalize", "risk", "integer")
+        );
+        OperatorLibrary incompatibleMinor = functionLibrary(
+                "risk-functions",
+                "1.1.0",
+                function("risk.normalize", "risk", "string")
+        );
+        mockMvc.perform(post("/admin/visual-operator-libraries")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(original)))
+                .andExpect(status().isCreated());
+
+        mockMvc.perform(post("/admin/visual-operator-libraries/validate")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(incompatibleMinor)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.valid").value(true))
+                .andExpect(jsonPath("$.diagnostics[0].code")
+                        .value("visual.library.version.breakingRequiresMajor"))
+                .andExpect(jsonPath("$.diagnostics[0].metadata.callableNames[0]")
+                        .value("risk.normalize"))
+                .andExpect(jsonPath("$.diagnostics[0].metadata.changeRisk")
+                        .value(OperatorDefinitionChangeSummary.RISK_BREAKING_SCHEMA));
     }
 
     @Test
@@ -3632,6 +3843,45 @@ class OperatorLibraryAdminControllerTest {
                 "risk-team",
                 "ACTIVE",
                 List.of(operator)
+        );
+    }
+
+    private static OperatorLibrary functionLibrary(String libraryId,
+                                                    OperatorLibrary.BuiltInFunction function) {
+        return functionLibrary(libraryId, "1.0.0", function);
+    }
+
+    private static OperatorLibrary functionLibrary(String libraryId,
+                                                    String version,
+                                                    OperatorLibrary.BuiltInFunction function) {
+        return new OperatorLibrary(
+                "bloge.visualOperatorLibrary.v1",
+                libraryId,
+                libraryId,
+                version,
+                "risk-team",
+                "ACTIVE",
+                List.of(function),
+                List.of()
+        );
+    }
+
+    private static OperatorLibrary.BuiltInFunction function(String name,
+                                                            String namespace,
+                                                            String returnType) {
+        return new OperatorLibrary.BuiltInFunction(
+                name,
+                namespace,
+                name,
+                "",
+                "risk",
+                List.of(new OperatorLibrary.Signature(
+                        name + "(value)",
+                        "",
+                        List.of(new OperatorLibrary.Parameter("value", "any", null, false, false, "")),
+                        new OperatorLibrary.ReturnValue(returnType, null, "")
+                )),
+                List.of()
         );
     }
 

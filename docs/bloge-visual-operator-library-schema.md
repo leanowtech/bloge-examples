@@ -72,8 +72,8 @@ operators: []
 | `version` | 建议 | SemVer：`MAJOR.MINOR.PATCH`，可带 prerelease/build；省略时服务端默认 `1.0.0` |
 | `owner` | 否 | 发布团队、系统或负责人 |
 | `status` | 否 | `ACTIVE`、`DEPRECATED`、`DISABLED`；省略默认 `ACTIVE` |
-| `builtInFunctions` | 否 | 该 library 贡献给表达式编辑器的函数定义；服务端会和系统默认函数合并 |
-| `operators` | 是 | 至少 1 个 `OperatorDefinition` |
+| `builtInFunctions` | 条件必填 | 该 library 贡献给表达式编辑器的函数定义；`builtInFunctions` 与 `operators` 至少一项非空 |
+| `operators` | 条件必填 | 该 library 贡献的 `OperatorDefinition`；`builtInFunctions` 与 `operators` 至少一项非空 |
 
 `libraryId` 和 `operatorRef` 使用同一类 namespace-safe token：
 
@@ -112,7 +112,7 @@ builtInFunctions:
 | 字段 | 必填 | 规则 |
 | --- | --- | --- |
 | `name` | 是 | 函数调用名，可为 `coalesce` 或 `string.trim`，使用 Java/DSL identifier 与点号组合 |
-| `namespace` | 否 | 函数来源命名空间；用于去重、展示和治理，不参与表达式调用文本 |
+| `namespace` | 否 | 函数来源命名空间；用于展示和治理，不参与表达式调用文本或 callable 去重 |
 | `displayName` | 否 | UI 展示名；省略时回退到 `name` |
 | `description` | 否 | 签名提示中的短说明 |
 | `category` | 否 | UI 分组提示，例如 `null-handling`、`string`、`conversion`、`object` |
@@ -130,9 +130,49 @@ builtInFunctions:
 | `variadic` | 可变参数；必须是最后一个参数 |
 | `description` | 参数说明 |
 
-`signatures[].returns` 使用同样的 `type` 和可选 `schema`，省略时默认 `any`。服务端 validator 会拒绝重复函数名、非法函数名、缺失 signature、非法参数名、unsupported type、非末尾 variadic 参数，以及无法通过 `VisualSchemaValidator` 的参数/返回 schema。
+`signatures[].returns` 使用同样的 `type` 和可选 `schema`，省略时默认 `any`。服务端 validator 会拒绝重复 callable name、非法函数名、缺失 signature、非法参数名、unsupported type、非末尾 variadic 参数，以及无法通过 `VisualSchemaValidator` 的参数/返回 schema。
 
-系统默认提供的函数目录由 `BuiltInFunctionCatalog.defaults()` 管理，当前包括 `coalesce`、`defaultIfBlank`、`toNumber`、`toString`、`jsonPath`、`contains`、`round`、`formatDate`。用户 library 可以追加业务函数；同一 `namespace:name` 出现多次时，catalog 保留先出现的定义，避免编辑器出现重复候选。
+系统默认提供的函数目录由 `BuiltInFunctionCatalog.defaults()` 管理，当前包括 `coalesce`、`defaultIfBlank`、`toNumber`、`toString`、`jsonPath`、`contains`、`round`、`formatDate`。用户 library 可以追加业务函数。表达式解析只按 `name` 查找函数，`namespace` 仅是来源与治理元数据，因此不同 namespace 不能用来制造同名重载：
+
+- 同一 library 内重复 `name` 会被 validator 拒绝；
+- 跨 library 或与系统默认函数同名但 callable fingerprint 不同，会在 validate/import 阶段阻断；
+- callable fingerprint 相同的重复贡献可兼容共存，但有效 catalog 只返回一个候选；
+- catalog 若读到历史遗留的冲突数据，会隔离歧义 callable 并返回
+  `visual.catalog.functionCallableQuarantined`，不再静默采用 first-wins 或把整个 catalog 请求变成 500；
+- 业务函数建议使用带点号的稳定调用名，例如 `risk.coalesce`。
+
+callable fingerprint 覆盖函数名、overload 顺序、参数名/顺序/类型/schema/optional/variadic 和返回类型/schema；展示名、说明、示例、category 与 provenance namespace 不参与 callable 兼容判断。
+
+### 3.2 Function-only library
+
+只贡献表达式函数的 library 是合法的一等合同，不需要伪造 operator：
+
+```yaml
+schemaVersion: bloge.visualOperatorLibrary.v1
+libraryId: risk-expression-functions
+displayName: Risk expression functions
+version: 1.0.0
+owner: risk-platform
+builtInFunctions:
+  - name: risk.normalizeScore
+    namespace: risk-platform
+    signatures:
+      - label: risk.normalizeScore(value)
+        parameters:
+          - name: value
+            type: integer
+        returns:
+          type: number
+operators: []
+```
+
+Java validator 与机器 schema 都执行同一条非空规则：
+
+```text
+operators.size + builtInFunctions.size >= 1
+```
+
+旧 peer 是否能接收 function-only library 仍需要后续通过 integration capability probe 协商；在该协商能力落地前，跨系统 producer 不应假设所有历史 consumer 都支持空 `operators`。
 
 ## 4. OperatorDefinition
 

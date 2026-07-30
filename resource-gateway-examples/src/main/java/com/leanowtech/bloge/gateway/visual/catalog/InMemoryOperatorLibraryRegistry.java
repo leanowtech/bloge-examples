@@ -45,6 +45,7 @@ public class InMemoryOperatorLibraryRegistry implements OperatorLibraryRegistry 
     public synchronized OperatorLibrary upsert(OperatorLibrary library,
                                                OperatorLibraryRevision.RevisionMetadata metadata) {
         ensureNoDuplicateOperatorRefs(library);
+        BuiltInFunctionContract.ensureNoLibraryCallableConflicts(all(), library);
         String action = libraries.containsKey(library.libraryId())
                 ? OperatorLibraryRevision.ACTION_REPLACE
                 : OperatorLibraryRevision.ACTION_CREATE;
@@ -59,6 +60,7 @@ public class InMemoryOperatorLibraryRegistry implements OperatorLibraryRegistry 
                                                 OperatorLibraryRevision.RevisionMetadata metadata) {
         OperatorLibrary library = requireRestorableLibrary(revision);
         ensureNoDuplicateOperatorRefs(library);
+        BuiltInFunctionContract.ensureNoLibraryCallableConflicts(all(), library);
         libraries.put(library.libraryId(), library);
         rememberRevision(OperatorLibraryRevision.restore(library, nextRevision(library.libraryId()),
                 revision.revision(), metadata));
@@ -76,7 +78,7 @@ public class InMemoryOperatorLibraryRegistry implements OperatorLibraryRegistry 
 
     private void ensureNoDuplicateOperatorRefs(OperatorLibrary library) {
         Map<String, String> ownerByOperatorRef = new LinkedHashMap<>();
-        libraries.values().stream()
+        all().stream()
                 .filter(existing -> !existing.libraryId().equals(library.libraryId()))
                 .forEach(existing -> existing.operators().stream()
                         .filter(Objects::nonNull)

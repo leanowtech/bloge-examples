@@ -9,6 +9,8 @@
 > 目标合同：新增人类创作合同 `bloge.visualLibraryAuthoring.v1`，确定性编译到既有 `bloge.visualOperatorLibrary.v1`
 >
 > 核心原则：**降低定义成本不能靠削弱标准合同，而要靠增加一层可解释、可验证、可回溯的人类创作模型。**
+>
+> 实施进度：[渐进式 Library Authoring 实现状态](resource-gateway-progressive-library-authoring-implementation-status.md)
 
 相关文档：
 
@@ -17,6 +19,7 @@
 - [BLOGE VS Code 插件轻量化可视化编排方案](bloge-vscode-extension-lightweight-authoring-plan.md)
 - [Resource Gateway Author UX 体验成熟度 95 分提升计划](resource-gateway-author-ux-maturity-95-plan.md)
 - [本方案深度审计记录](resource-gateway-progressive-operator-function-library-authoring-technical-design-audit.md)
+- [本方案实现状态与差距](resource-gateway-progressive-library-authoring-implementation-status.md)
 
 Draw.io 源图：
 

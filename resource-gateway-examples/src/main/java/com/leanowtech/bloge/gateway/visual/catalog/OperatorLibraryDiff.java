@@ -205,6 +205,57 @@ public record OperatorLibraryDiff(
                 OperatorDefinitionChangeSummary.RISK_METADATA, "library display name");
         addLibraryChange(changes, "owner", baseLibrary.owner(), targetLibrary.owner(),
                 OperatorDefinitionChangeSummary.RISK_METADATA, "library owner");
+        changes.addAll(functionChanges(baseLibrary, targetLibrary));
+        return List.copyOf(changes);
+    }
+
+    private static List<LibraryChange> functionChanges(OperatorLibrary baseLibrary,
+                                                       OperatorLibrary targetLibrary) {
+        Map<String, OperatorLibrary.BuiltInFunction> baseByName = functionsByName(baseLibrary);
+        Map<String, OperatorLibrary.BuiltInFunction> targetByName = functionsByName(targetLibrary);
+        Set<String> callableNames = new LinkedHashSet<>();
+        callableNames.addAll(baseByName.keySet());
+        callableNames.addAll(targetByName.keySet());
+        List<LibraryChange> changes = new ArrayList<>();
+        for (String callableName : callableNames) {
+            OperatorLibrary.BuiltInFunction base = baseByName.get(callableName);
+            OperatorLibrary.BuiltInFunction target = targetByName.get(callableName);
+            String field = "builtInFunctions/" + callableName;
+            if (base == null) {
+                changes.add(new LibraryChange(
+                        field,
+                        "",
+                        BuiltInFunctionContract.callableFingerprint(target),
+                        OperatorDefinitionChangeSummary.RISK_COMPATIBLE_SCHEMA,
+                        "callable function '" + callableName + "' added"));
+                continue;
+            }
+            if (target == null) {
+                changes.add(new LibraryChange(
+                        field,
+                        BuiltInFunctionContract.callableFingerprint(base),
+                        "",
+                        OperatorDefinitionChangeSummary.RISK_BREAKING_SCHEMA,
+                        "callable function '" + callableName + "' removed"));
+                continue;
+            }
+            if (base.equals(target)) {
+                continue;
+            }
+            String baseFingerprint = BuiltInFunctionContract.callableFingerprint(base);
+            String targetFingerprint = BuiltInFunctionContract.callableFingerprint(target);
+            boolean contractChanged = !baseFingerprint.equals(targetFingerprint);
+            changes.add(new LibraryChange(
+                    field,
+                    baseFingerprint,
+                    targetFingerprint,
+                    contractChanged
+                            ? OperatorDefinitionChangeSummary.RISK_BREAKING_SCHEMA
+                            : OperatorDefinitionChangeSummary.RISK_METADATA,
+                    contractChanged
+                            ? "callable function '" + callableName + "' contract changed"
+                            : "callable function '" + callableName + "' metadata changed"));
+        }
         return List.copyOf(changes);
     }
 
@@ -281,6 +332,19 @@ public record OperatorLibraryDiff(
             }
         }
         return Collections.unmodifiableMap(byRef);
+    }
+
+    private static Map<String, OperatorLibrary.BuiltInFunction> functionsByName(OperatorLibrary library) {
+        if (library == null || library.builtInFunctions() == null) {
+            return Map.of();
+        }
+        Map<String, OperatorLibrary.BuiltInFunction> byName = new LinkedHashMap<>();
+        for (OperatorLibrary.BuiltInFunction function : library.builtInFunctions()) {
+            if (function != null && !function.name().isBlank()) {
+                byName.putIfAbsent(function.name(), function);
+            }
+        }
+        return Collections.unmodifiableMap(byName);
     }
 
     private static ChangeClassification classify(List<LibraryChange> libraryChanges,

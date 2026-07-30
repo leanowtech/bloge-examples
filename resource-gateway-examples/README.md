@@ -3853,6 +3853,12 @@ To add a user-supplied visual operator library:
    the [operator library schema guide](../docs/bloge-visual-operator-library-schema.md)
    and [machine schema](../docs/schemas/bloge-visual-operator-library.schema.json).
 3. Validate and import it.
+   A library may contribute operators, built-in expression functions, or both;
+   at least one of `operators` and `builtInFunctions` must be non-empty.
+   Function calls are resolved by `name`, not provenance `namespace`.
+   Validate/import therefore rejects an incompatible callable contract already
+   supplied by the default catalog or another library, while the registry and
+   effective catalog enforce the same invariant for non-HTTP and legacy paths.
 4. Use `/api/visual/operators/tests/draft` to generate editable operator mock
    rows from each operator's input/config/output schemas, then save or batch-run
    schema-contract checks through `/api/visual/operators/tests/suites`. This

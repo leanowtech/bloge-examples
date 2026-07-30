@@ -793,6 +793,7 @@ public class OperatorLibraryAdminController {
         VisualValidationResult structural = validator.validate(library);
         List<VisualDiagnostic> diagnostics = new ArrayList<>(structural.diagnostics());
         diagnostics.addAll(operatorRefOwnershipDiagnostics(library));
+        diagnostics.addAll(callableOwnershipDiagnostics(library));
         diagnostics.addAll(runtimeOperatorRefDiagnostics(library));
         diagnostics.addAll(unresolvedNativeLoweringDiagnostics(library));
         diagnostics.addAll(replacementLifecycleDowngradeDiagnostics(library));
@@ -854,6 +855,45 @@ public class OperatorLibraryAdminController {
                         "operatorRef '%s' is already provided by the runtime Java operator inventory."
                                 .formatted(operator.operatorRef()),
                         "/operators/%d/operatorRef".formatted(i)));
+            }
+        }
+        return diagnostics;
+    }
+
+    private List<VisualDiagnostic> callableOwnershipDiagnostics(OperatorLibrary library) {
+        if (library == null || library.builtInFunctions().isEmpty()) {
+            return List.of();
+        }
+        Map<String, FunctionOwner> owners = new LinkedHashMap<>();
+        for (OperatorLibrary.BuiltInFunction function : BuiltInFunctionCatalog.defaults()) {
+            owners.putIfAbsent(function.name(), new FunctionOwner("builtin", function));
+        }
+        registry.all().stream()
+                .filter(existing -> !existing.libraryId().equals(library.libraryId()))
+                .forEach(existing -> existing.builtInFunctions().stream()
+                        .filter(java.util.Objects::nonNull)
+                        .forEach(function -> owners.putIfAbsent(function.name(),
+                                new FunctionOwner(existing.libraryId(), function))));
+        List<VisualDiagnostic> diagnostics = new ArrayList<>();
+        for (int i = 0; i < library.builtInFunctions().size(); i++) {
+            OperatorLibrary.BuiltInFunction function = library.builtInFunctions().get(i);
+            if (function == null || function.name().isBlank()) {
+                continue;
+            }
+            FunctionOwner existing = owners.get(function.name());
+            if (existing != null && !BuiltInFunctionContract.compatible(existing.function(), function)) {
+                diagnostics.add(VisualDiagnostic.error("visual.library.functionCallableConflict",
+                        "Callable function '%s' conflicts with the contract already provided by '%s'; namespace does not change expression resolution."
+                                .formatted(function.name(), existing.owner()),
+                        "/builtInFunctions/%d/name".formatted(i),
+                        Map.of(
+                                "callableName", function.name(),
+                                "existingOwner", existing.owner(),
+                                "existingFingerprint",
+                                BuiltInFunctionContract.callableFingerprint(existing.function()),
+                                "submittedFingerprint",
+                                BuiltInFunctionContract.callableFingerprint(function)
+                        )));
             }
         }
         return diagnostics;
@@ -955,10 +995,14 @@ public class OperatorLibraryAdminController {
         return metadata;
     }
 
+    private record FunctionOwner(String owner, OperatorLibrary.BuiltInFunction function) {
+    }
+
     private static HttpStatus validationFailureStatus(OperatorLibraryValidationResult validation) {
         return validation.diagnostics().stream()
                 .anyMatch(diagnostic -> "visual.library.operatorRefOwned".equals(diagnostic.code())
                         || "visual.library.operatorRefRuntimeOwned".equals(diagnostic.code())
+                        || "visual.library.functionCallableConflict".equals(diagnostic.code())
                         || "visual.library.inUse".equals(diagnostic.code()))
                 ? HttpStatus.CONFLICT
                 : HttpStatus.BAD_REQUEST;
@@ -1256,14 +1300,14 @@ public class OperatorLibraryAdminController {
         }
         if (change.breaking() && next.major() <= previous.major()) {
             return List.of(VisualDiagnostic.warning("visual.library.version.breakingRequiresMajor",
-                    "Operator library '%s' replacement contains breaking operator contract changes but version moves from '%s' to '%s'; use a new major version or acknowledge the governance warning after review."
+                    "Operator library '%s' replacement contains breaking operator or callable contract changes but version moves from '%s' to '%s'; use a new major version or acknowledge the governance warning after review."
                             .formatted(replacement.libraryId(), existing.get().version(), replacement.version()),
                     "/version",
                     changeMetadata(existing.get().version(), replacement.version(), change)));
         }
         if (change.compatible() && !next.hasMinorOrMajorBumpFrom(previous)) {
             return List.of(VisualDiagnostic.warning("visual.library.version.compatibleRequiresMinor",
-                    "Operator library '%s' replacement adds or compatibly changes operator contracts but version moves from '%s' to '%s'; use a minor version bump or acknowledge the governance warning after review."
+                    "Operator library '%s' replacement adds or compatibly changes operator/callable contracts but version moves from '%s' to '%s'; use a minor version bump or acknowledge the governance warning after review."
                             .formatted(replacement.libraryId(), existing.get().version(), replacement.version()),
                     "/version",
                     changeMetadata(existing.get().version(), replacement.version(), change)));
@@ -1288,6 +1332,7 @@ public class OperatorLibraryAdminController {
         metadata.put("changeCategories", change.categories());
         metadata.put("changeSummary", change.summary());
         metadata.put("operatorRefs", change.operatorRefs());
+        metadata.put("callableNames", change.callableNames());
         if (!change.schemaChanges().isEmpty()) {
             metadata.put("schemaChanges", change.schemaChanges());
         }
@@ -1296,6 +1341,7 @@ public class OperatorLibraryAdminController {
 
     private record LibraryReplacementChange(
             Set<String> operatorRefs,
+            Set<String> callableNames,
             List<String> categories,
             String risk,
             String summary,
@@ -1305,6 +1351,9 @@ public class OperatorLibraryAdminController {
             operatorRefs = operatorRefs == null
                     ? Set.of()
                     : java.util.Collections.unmodifiableSet(new LinkedHashSet<>(operatorRefs));
+            callableNames = callableNames == null
+                    ? Set.of()
+                    : java.util.Collections.unmodifiableSet(new LinkedHashSet<>(callableNames));
             categories = categories == null ? List.of() : List.copyOf(categories);
             risk = risk == null || risk.isBlank() ? OperatorDefinitionChangeSummary.RISK_METADATA : risk;
             summary = summary == null ? "" : summary;
@@ -1317,6 +1366,7 @@ public class OperatorLibraryAdminController {
                     ? operatorsByRef(replacement)
                     : Map.of();
             Set<String> refs = new LinkedHashSet<>();
+            Set<String> callableNames = new LinkedHashSet<>();
             Set<String> categories = new LinkedHashSet<>();
             List<String> changes = new ArrayList<>();
             List<OperatorDefinitionChangeSummary.SchemaChange> schemaChanges = new ArrayList<>();
@@ -1347,6 +1397,38 @@ public class OperatorLibraryAdminController {
                 changes.add("operatorRef '" + operatorRef + "' changed: " + report.summary());
                 schemaChanges.addAll(report.schemaChanges());
             });
+            Map<String, OperatorLibrary.BuiltInFunction> existingFunctions = functionsByName(existing);
+            Map<String, OperatorLibrary.BuiltInFunction> replacementFunctions = replacement.visibleInCatalog(true)
+                    ? functionsByName(replacement)
+                    : Map.of();
+            existingFunctions.keySet().stream()
+                    .filter(callableName -> !replacementFunctions.containsKey(callableName))
+                    .forEach(callableName -> {
+                        callableNames.add(callableName);
+                        categories.add(OperatorDefinitionChangeSummary.RISK_BREAKING_SCHEMA);
+                        changes.add("callable function '" + callableName + "' removed");
+                    });
+            replacementFunctions.keySet().stream()
+                    .filter(callableName -> !existingFunctions.containsKey(callableName))
+                    .forEach(callableName -> {
+                        callableNames.add(callableName);
+                        categories.add(OperatorDefinitionChangeSummary.RISK_COMPATIBLE_SCHEMA);
+                        changes.add("callable function '" + callableName + "' added");
+                    });
+            replacementFunctions.forEach((callableName, function) -> {
+                OperatorLibrary.BuiltInFunction previous = existingFunctions.get(callableName);
+                if (previous == null || previous.equals(function)) {
+                    return;
+                }
+                callableNames.add(callableName);
+                if (BuiltInFunctionContract.compatible(previous, function)) {
+                    categories.add(OperatorDefinitionChangeSummary.RISK_METADATA);
+                    changes.add("callable function '" + callableName + "' metadata changed");
+                    return;
+                }
+                categories.add(OperatorDefinitionChangeSummary.RISK_BREAKING_SCHEMA);
+                changes.add("callable function '" + callableName + "' contract changed");
+            });
             List<String> sortedCategories = categories.stream()
                     .sorted((left, right) -> Integer.compare(
                             OperatorDefinitionChangeSummary.riskRank(right),
@@ -1357,6 +1439,7 @@ public class OperatorLibraryAdminController {
                     : sortedCategories.getFirst();
             return new LibraryReplacementChange(
                     java.util.Collections.unmodifiableSet(new LinkedHashSet<>(refs)),
+                    java.util.Collections.unmodifiableSet(new LinkedHashSet<>(callableNames)),
                     sortedCategories,
                     risk,
                     summarize(changes),
@@ -1384,6 +1467,16 @@ public class OperatorLibraryAdminController {
                 }
             }
             return byRef;
+        }
+
+        private static Map<String, OperatorLibrary.BuiltInFunction> functionsByName(OperatorLibrary library) {
+            Map<String, OperatorLibrary.BuiltInFunction> byName = new LinkedHashMap<>();
+            for (OperatorLibrary.BuiltInFunction function : library.builtInFunctions()) {
+                if (function != null && !function.name().isBlank()) {
+                    byName.putIfAbsent(function.name(), function);
+                }
+            }
+            return byName;
         }
 
         private static String summarize(List<String> changes) {

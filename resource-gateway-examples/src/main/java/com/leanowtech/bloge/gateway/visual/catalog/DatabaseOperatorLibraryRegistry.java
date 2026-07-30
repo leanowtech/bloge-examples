@@ -151,6 +151,7 @@ public class DatabaseOperatorLibraryRegistry implements OperatorLibraryRegistry 
     public synchronized OperatorLibrary upsert(OperatorLibrary library,
                                                OperatorLibraryRevision.RevisionMetadata metadata) {
         ensureNoDuplicateOperatorRefs(library);
+        BuiltInFunctionContract.ensureNoLibraryCallableConflicts(all(), library);
         long nextRevision = nextRevision(library.libraryId());
         String action = nextRevision == 1
                 ? OperatorLibraryRevision.ACTION_CREATE
@@ -171,6 +172,7 @@ public class DatabaseOperatorLibraryRegistry implements OperatorLibraryRegistry 
                                                 OperatorLibraryRevision.RevisionMetadata metadata) {
         OperatorLibrary library = requireRestorableLibrary(revision);
         ensureNoDuplicateOperatorRefs(library);
+        BuiltInFunctionContract.ensureNoLibraryCallableConflicts(all(), library);
         OperatorLibraryRevision restored = OperatorLibraryRevision.restore(library,
                 nextRevision(library.libraryId()), revision.revision(), metadata);
         persist(library, restored);
@@ -272,7 +274,7 @@ public class DatabaseOperatorLibraryRegistry implements OperatorLibraryRegistry 
 
     private void ensureNoDuplicateOperatorRefs(OperatorLibrary library) {
         Map<String, String> ownerByOperatorRef = new java.util.LinkedHashMap<>();
-        cache.values().stream()
+        all().stream()
                 .filter(existing -> !existing.libraryId().equals(library.libraryId()))
                 .forEach(existing -> existing.operators().stream()
                         .filter(Objects::nonNull)

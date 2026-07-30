@@ -7,8 +7,29 @@
   "additionalProperties": false,
   "required": [
     "schemaVersion",
-    "libraryId",
-    "operators"
+    "libraryId"
+  ],
+  "anyOf": [
+    {
+      "required": [
+        "operators"
+      ],
+      "properties": {
+        "operators": {
+          "minItems": 1
+        }
+      }
+    },
+    {
+      "required": [
+        "builtInFunctions"
+      ],
+      "properties": {
+        "builtInFunctions": {
+          "minItems": 1
+        }
+      }
+    }
   ],
   "properties": {
     "schemaVersion": {
@@ -44,10 +65,10 @@
     },
     "operators": {
       "type": "array",
-      "minItems": 1,
       "items": {
         "$ref": "#/$defs/operatorDefinition"
-      }
+      },
+      "default": []
     }
   },
   "$defs": {
@@ -149,7 +170,14 @@
           "$ref": "#/$defs/functionValueType"
         },
         "schema": {
-          "$ref": "#/$defs/schemaEnvelope"
+          "anyOf": [
+            {
+              "$ref": "#/$defs/schemaEnvelope"
+            },
+            {
+              "type": "null"
+            }
+          ]
         },
         "optional": {
           "type": "boolean",
@@ -172,7 +200,14 @@
           "$ref": "#/$defs/functionValueType"
         },
         "schema": {
-          "$ref": "#/$defs/schemaEnvelope"
+          "anyOf": [
+            {
+              "$ref": "#/$defs/schemaEnvelope"
+            },
+            {
+              "type": "null"
+            }
+          ]
         },
         "description": {
           "type": "string"

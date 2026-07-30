@@ -47,6 +47,99 @@ class OperatorLibraryValidatorTest {
     }
 
     @Test
+    void acceptsFunctionOnlyLibrary() {
+        OperatorLibrary library = new OperatorLibrary(
+                "bloge.visualOperatorLibrary.v1",
+                "risk-functions",
+                "Risk function helpers",
+                "1.0.0",
+                "risk-team",
+                "ACTIVE",
+                List.of(validFunction("riskDefault")),
+                List.of()
+        );
+
+        VisualValidationResult result = validator.validate(library);
+
+        assertThat(result.valid()).as(result.diagnostics().toString()).isTrue();
+        assertThat(result.diagnostics()).isEmpty();
+    }
+
+    @Test
+    void rejectsLibraryWithoutOperatorsOrFunctions() {
+        OperatorLibrary library = new OperatorLibrary(
+                "bloge.visualOperatorLibrary.v1",
+                "empty-library",
+                "Empty library",
+                "1.0.0",
+                "risk-team",
+                "ACTIVE",
+                List.of(),
+                List.of()
+        );
+
+        VisualValidationResult result = validator.validate(library);
+
+        assertThat(result.valid()).isFalse();
+        assertThat(result.diagnostics())
+                .extracting(VisualDiagnostic::code)
+                .containsExactly("visual.library.empty");
+    }
+
+    @Test
+    void rejectsNullOnlyContributionListsAsEmptyAndMalformed() {
+        OperatorLibrary library = new OperatorLibrary(
+                "bloge.visualOperatorLibrary.v1",
+                "null-only-library",
+                "Null-only library",
+                "1.0.0",
+                "risk-team",
+                "ACTIVE",
+                java.util.Arrays.asList((OperatorLibrary.BuiltInFunction) null),
+                java.util.Arrays.asList((OperatorDefinition) null)
+        );
+
+        VisualValidationResult result = validator.validate(library);
+
+        assertThat(result.valid()).isFalse();
+        assertThat(result.diagnostics())
+                .extracting(VisualDiagnostic::code)
+                .contains("visual.library.empty", "visual.function.missing", "visual.operator.missing");
+    }
+
+    @Test
+    void rejectsDuplicateCallableNameAcrossNamespaces() {
+        OperatorLibrary.BuiltInFunction first = validFunction("riskDefault");
+        OperatorLibrary.BuiltInFunction second = new OperatorLibrary.BuiltInFunction(
+                first.name(),
+                "another-team",
+                first.displayName(),
+                first.description(),
+                first.category(),
+                first.signatures(),
+                first.examples()
+        );
+        OperatorLibrary library = new OperatorLibrary(
+                "bloge.visualOperatorLibrary.v1",
+                "duplicate-functions",
+                "Duplicate functions",
+                "1.0.0",
+                "risk-team",
+                "ACTIVE",
+                List.of(first, second),
+                List.of()
+        );
+
+        VisualValidationResult result = validator.validate(library);
+
+        assertThat(result.valid()).isFalse();
+        assertThat(result.diagnostics())
+                .extracting(VisualDiagnostic::code)
+                .containsExactly("visual.function.name.duplicate");
+        assertThat(result.diagnostics().getFirst().target()).isEqualTo("/builtInFunctions/1/name");
+    }
+
+    @Test
     void rejectsMalformedBuiltInFunctionSignatures() {
         OperatorLibrary.BuiltInFunction malformed = new OperatorLibrary.BuiltInFunction(
                 "bad helper",

@@ -32,6 +32,7 @@ import java.util.ArrayList;
 import java.util.Collection;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
@@ -109,6 +110,62 @@ class DefaultVisualOperatorCatalogTest {
         assertThat(catalog.builtInFunctions(OperatorCatalogQuery.all()))
                 .extracting(OperatorLibrary.BuiltInFunction::name)
                 .contains("coalesce", "riskBand");
+    }
+
+    @Test
+    void deduplicatesCompatibleCallableContractsByExpressionName() {
+        OperatorLibrary first = functionLibrary(
+                "risk-functions",
+                function("risk.normalize", "risk", "integer")
+        );
+        OperatorLibrary second = functionLibrary(
+                "shared-functions",
+                function("risk.normalize", "shared", "integer")
+        );
+        InMemoryOperatorLibraryRegistry libraries = new InMemoryOperatorLibraryRegistry();
+        libraries.upsert(first);
+        libraries.upsert(second);
+        DefaultVisualOperatorCatalog catalog = new DefaultVisualOperatorCatalog(
+                VisualCatalogTestSupport.emptyResourceRegistry(),
+                new InMemoryResourceDesignContractRegistry(),
+                new ResourceVirtualOperatorProjector(),
+                libraries
+        );
+
+        assertThat(catalog.builtInFunctions(OperatorCatalogQuery.all()))
+                .filteredOn(function -> function.name().equals("risk.normalize"))
+                .hasSize(1);
+    }
+
+    @Test
+    void quarantinesIncompatibleCallableContractsFromLegacyRegistry() {
+        OperatorLibrary first = functionLibrary(
+                "risk-functions",
+                function("risk.normalize", "risk", "integer")
+        );
+        OperatorLibrary incompatible = functionLibrary(
+                "shared-functions",
+                function("risk.normalize", "shared", "string")
+        );
+        DefaultVisualOperatorCatalog catalog = new DefaultVisualOperatorCatalog(
+                VisualCatalogTestSupport.emptyResourceRegistry(),
+                new InMemoryResourceDesignContractRegistry(),
+                new ResourceVirtualOperatorProjector(),
+                readOnlyRegistry(first, incompatible)
+        );
+
+        assertThat(catalog.builtInFunctions(OperatorCatalogQuery.all()))
+                .extracting(OperatorLibrary.BuiltInFunction::name)
+                .doesNotContain("risk.normalize");
+        assertThat(catalog.diagnostics(OperatorCatalogQuery.all()))
+                .singleElement()
+                .satisfies(diagnostic -> {
+                    assertThat(diagnostic.code()).isEqualTo("visual.catalog.functionCallableQuarantined");
+                    assertThat(diagnostic.metadata())
+                            .containsEntry("callableName", "risk.normalize")
+                            .containsEntry("existingOwner", "risk-functions")
+                            .containsEntry("conflictingOwner", "shared-functions");
+                });
     }
 
     @Test
@@ -1674,6 +1731,83 @@ class DefaultVisualOperatorCatalogTest {
                 )),
                 List.of(name + "(inputs.score)")
         );
+    }
+
+    private static OperatorLibrary.BuiltInFunction function(String name,
+                                                            String namespace,
+                                                            String returnType) {
+        return new OperatorLibrary.BuiltInFunction(
+                name,
+                namespace,
+                name,
+                "Risk expression helper.",
+                "risk",
+                List.of(new OperatorLibrary.Signature(
+                        name + "(value)",
+                        "",
+                        List.of(new OperatorLibrary.Parameter("value", "any", null, false, false, "")),
+                        new OperatorLibrary.ReturnValue(returnType, null, "")
+                )),
+                List.of(name + "(inputs.score)")
+        );
+    }
+
+    private static OperatorLibrary functionLibrary(String libraryId,
+                                                    OperatorLibrary.BuiltInFunction function) {
+        return new OperatorLibrary(
+                "bloge.visualOperatorLibrary.v1",
+                libraryId,
+                libraryId,
+                "1.0.0",
+                "risk-team",
+                "ACTIVE",
+                List.of(function),
+                List.of()
+        );
+    }
+
+    private static OperatorLibraryRegistry readOnlyRegistry(OperatorLibrary... libraries) {
+        List<OperatorLibrary> snapshots = List.of(libraries);
+        return new OperatorLibraryRegistry() {
+            @Override
+            public Collection<OperatorLibrary> all() {
+                return snapshots;
+            }
+
+            @Override
+            public Optional<OperatorLibrary> find(String libraryId) {
+                return snapshots.stream()
+                        .filter(library -> library.libraryId().equals(libraryId))
+                        .findFirst();
+            }
+
+            @Override
+            public List<OperatorLibraryRevision> revisions(String libraryId) {
+                return List.of();
+            }
+
+            @Override
+            public Optional<OperatorLibraryRevision> findRevision(String libraryId, long revision) {
+                return Optional.empty();
+            }
+
+            @Override
+            public OperatorLibrary upsert(OperatorLibrary library,
+                                          OperatorLibraryRevision.RevisionMetadata metadata) {
+                throw new UnsupportedOperationException("read-only test registry");
+            }
+
+            @Override
+            public OperatorLibrary restore(OperatorLibraryRevision revision,
+                                           OperatorLibraryRevision.RevisionMetadata metadata) {
+                throw new UnsupportedOperationException("read-only test registry");
+            }
+
+            @Override
+            public void delete(String libraryId, OperatorLibraryRevision.RevisionMetadata metadata) {
+                throw new UnsupportedOperationException("read-only test registry");
+            }
+        };
     }
 
     private record SingleResourceRegistry(VisualResourceDescriptor descriptor) implements VisualResourceRegistry {

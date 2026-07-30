@@ -31,6 +31,7 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Optional;
+import java.util.Set;
 
 /**
  * Default catalog combining native visual operators and resource-backed virtual operators.
@@ -214,6 +215,7 @@ public class DefaultVisualOperatorCatalog implements VisualOperatorCatalog {
                 hiddenMalformedPortDiagnostic(library, operator, i).ifPresent(diagnostics::add);
             }
         }
+        diagnostics.addAll(resolveFunctions(effectiveQuery).diagnostics());
         return List.copyOf(diagnostics);
     }
 
@@ -232,14 +234,21 @@ public class DefaultVisualOperatorCatalog implements VisualOperatorCatalog {
 
     @Override
     public List<OperatorLibrary.BuiltInFunction> builtInFunctions(OperatorCatalogQuery query) {
-        OperatorCatalogQuery effectiveQuery = query == null ? OperatorCatalogQuery.all() : query;
+        return resolveFunctions(query == null ? OperatorCatalogQuery.all() : query).functions();
+    }
+
+    private FunctionCatalogResolution resolveFunctions(OperatorCatalogQuery effectiveQuery) {
         Map<String, OperatorLibrary.BuiltInFunction> functions = new LinkedHashMap<>();
+        Map<String, FunctionOwner> owners = new LinkedHashMap<>();
+        Set<String> quarantined = new LinkedHashSet<>();
+        List<VisualDiagnostic> diagnostics = new ArrayList<>();
         for (OperatorLibrary.BuiltInFunction function : BuiltInFunctionCatalog.defaults()) {
-            functions.putIfAbsent(functionKey(function), function);
+            functions.put(function.name(), function);
+            owners.put(function.name(), new FunctionOwner("builtin", true, function));
         }
         if (!effectiveQuery.sourceKinds().isEmpty()
                 && !effectiveQuery.sourceKinds().contains("user-library")) {
-            return List.copyOf(functions.values());
+            return new FunctionCatalogResolution(List.copyOf(functions.values()), diagnostics);
         }
         for (OperatorLibrary library : libraryRegistry.all()) {
             if (!library.visibleInCatalog(effectiveQuery.includeDeprecated())) {
@@ -249,14 +258,59 @@ public class DefaultVisualOperatorCatalog implements VisualOperatorCatalog {
                     && !effectiveQuery.operatorLibraryIds().contains(library.libraryId())) {
                 continue;
             }
-            for (OperatorLibrary.BuiltInFunction function : library.builtInFunctions()) {
+            for (int i = 0; i < library.builtInFunctions().size(); i++) {
+                OperatorLibrary.BuiltInFunction function = library.builtInFunctions().get(i);
                 if (function == null) {
+                    diagnostics.add(VisualDiagnostic.warning(
+                            "visual.catalog.functionHiddenMalformed",
+                            "Operator library '%s' contains a null built-in function hidden from the visual catalog."
+                                    .formatted(library.libraryId()),
+                            "/libraries/%s/builtInFunctions/%d".formatted(library.libraryId(), i)));
                     continue;
                 }
-                functions.putIfAbsent(functionKey(function), function);
+                String callableName = function.name();
+                if (callableName.isBlank()) {
+                    diagnostics.add(VisualDiagnostic.warning(
+                            "visual.catalog.functionHiddenMalformed",
+                            "Operator library '%s' contains a built-in function without a callable name."
+                                    .formatted(library.libraryId()),
+                            "/libraries/%s/builtInFunctions/%d/name".formatted(library.libraryId(), i)));
+                    continue;
+                }
+                if (quarantined.contains(callableName)) {
+                    continue;
+                }
+                FunctionOwner existing = owners.get(callableName);
+                if (existing == null) {
+                    functions.put(callableName, function);
+                    owners.put(callableName, new FunctionOwner(library.libraryId(), false, function));
+                    continue;
+                }
+                if (BuiltInFunctionContract.compatible(existing.function(), function)) {
+                    continue;
+                }
+                diagnostics.add(VisualDiagnostic.warning(
+                        "visual.catalog.functionCallableQuarantined",
+                        "Callable function '%s' from library '%s' conflicts with '%s' and was quarantined from the effective catalog."
+                                .formatted(callableName, library.libraryId(), existing.owner()),
+                        "/libraries/%s/builtInFunctions/%d/name".formatted(library.libraryId(), i),
+                        Map.of(
+                                "callableName", callableName,
+                                "existingOwner", existing.owner(),
+                                "conflictingOwner", library.libraryId(),
+                                "existingFingerprint",
+                                BuiltInFunctionContract.callableFingerprint(existing.function()),
+                                "conflictingFingerprint",
+                                BuiltInFunctionContract.callableFingerprint(function)
+                        )));
+                if (!existing.systemDefault()) {
+                    functions.remove(callableName);
+                    owners.remove(callableName);
+                    quarantined.add(callableName);
+                }
             }
         }
-        return List.copyOf(functions.values());
+        return new FunctionCatalogResolution(List.copyOf(functions.values()), List.copyOf(diagnostics));
     }
 
     @Override
@@ -315,12 +369,17 @@ public class DefaultVisualOperatorCatalog implements VisualOperatorCatalog {
         return Map.copyOf(resolved);
     }
 
-    private static String functionKey(OperatorLibrary.BuiltInFunction function) {
-        if (function == null) {
-            return "";
+    private record FunctionOwner(String owner,
+                                 boolean systemDefault,
+                                 OperatorLibrary.BuiltInFunction function) {
+    }
+
+    private record FunctionCatalogResolution(List<OperatorLibrary.BuiltInFunction> functions,
+                                             List<VisualDiagnostic> diagnostics) {
+        private FunctionCatalogResolution {
+            functions = functions == null ? List.of() : List.copyOf(functions);
+            diagnostics = diagnostics == null ? List.of() : List.copyOf(diagnostics);
         }
-        String namespace = function.namespace().isBlank() ? "default" : function.namespace();
-        return namespace + ":" + function.name();
     }
 
     private static boolean queryCanMatchNullOperator(OperatorCatalogQuery query) {

@@ -260,6 +260,48 @@ class DatabaseOperatorLibraryRegistryTest {
     }
 
     @Test
+    void incompatibleCallableNameAcrossLibrariesIsRejected() {
+        registry.upsert(functionLibrary("risk-functions", function("risk.normalize", "risk", "integer")));
+        OperatorLibrary incompatible = functionLibrary(
+                "shared-functions",
+                function("risk.normalize", "shared", "string")
+        );
+
+        assertThatThrownBy(() -> registry.upsert(incompatible))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("risk.normalize")
+                .hasMessageContaining("risk-functions");
+        assertThat(registry.find("shared-functions")).isEmpty();
+    }
+
+    @Test
+    void incompatibleCallableNameFromSystemDefaultsIsRejected() {
+        OperatorLibrary incompatible = functionLibrary(
+                "custom-coalesce",
+                function("coalesce", "custom", "string")
+        );
+
+        assertThatThrownBy(() -> registry.upsert(incompatible))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("coalesce")
+                .hasMessageContaining("builtin");
+        assertThat(registry.find("custom-coalesce")).isEmpty();
+    }
+
+    @Test
+    void compatibleCallableNameAcrossLibrariesSurvivesReload() {
+        registry.upsert(functionLibrary("risk-functions", function("risk.normalize", "risk", "integer")));
+        registry.upsert(functionLibrary("shared-functions", function("risk.normalize", "shared", "integer")));
+
+        DatabaseOperatorLibraryRegistry reloaded = new DatabaseOperatorLibraryRegistry(jdbc, objectMapper);
+        reloaded.init();
+
+        assertThat(reloaded.all())
+                .extracting(OperatorLibrary::libraryId)
+                .containsExactlyInAnyOrder("risk-functions", "shared-functions");
+    }
+
+    @Test
     void duplicateCheckIgnoresNullOperatorEntries() {
         registry.upsert(libraryWithNullEntry("risk-policy", VisualCatalogTestSupport.eligibilityOperator("integer")));
         OperatorLibrary numeric = libraryWithNullEntry("numeric-policy",
@@ -329,6 +371,40 @@ class DatabaseOperatorLibraryRegistryTest {
                 "risk-team",
                 "ACTIVE",
                 java.util.List.of(malformed)
+        );
+    }
+
+    private static OperatorLibrary functionLibrary(String libraryId,
+                                                    OperatorLibrary.BuiltInFunction function) {
+        return new OperatorLibrary(
+                "bloge.visualOperatorLibrary.v1",
+                libraryId,
+                libraryId,
+                "1.0.0",
+                "risk-team",
+                "ACTIVE",
+                java.util.List.of(function),
+                java.util.List.of()
+        );
+    }
+
+    private static OperatorLibrary.BuiltInFunction function(String name,
+                                                            String namespace,
+                                                            String returnType) {
+        return new OperatorLibrary.BuiltInFunction(
+                name,
+                namespace,
+                name,
+                "",
+                "risk",
+                java.util.List.of(new OperatorLibrary.Signature(
+                        name + "(value)",
+                        "",
+                        java.util.List.of(new OperatorLibrary.Parameter(
+                                "value", "any", null, false, false, "")),
+                        new OperatorLibrary.ReturnValue(returnType, null, "")
+                )),
+                java.util.List.of()
         );
     }
 }

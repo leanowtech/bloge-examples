@@ -178,11 +178,8 @@ public class OperatorLibraryValidator {
                     "/"));
             return new VisualValidationResult(false, diagnostics);
         }
-        if (library.operators().isEmpty()) {
-            diagnostics.add(VisualDiagnostic.error("visual.library.empty",
-                    "Operator library must contain at least one operator.",
-                    "/operators"));
-        }
+        boolean hasOperator = library.operators().stream().anyMatch(java.util.Objects::nonNull);
+        boolean hasFunction = library.builtInFunctions().stream().anyMatch(java.util.Objects::nonNull);
         if (!SUPPORTED_LIBRARY_SCHEMA_VERSIONS.contains(library.schemaVersion())) {
             diagnostics.add(VisualDiagnostic.error("visual.library.schemaVersion.unsupported",
                     "Operator library schemaVersion '%s' is unsupported; visual authoring supports %s."
@@ -261,12 +258,17 @@ public class OperatorLibraryValidator {
             }
             validateOperator(operator, operatorPath, diagnostics);
         }
+        if (!hasOperator && !hasFunction) {
+            diagnostics.add(VisualDiagnostic.error("visual.library.empty",
+                    "Operator library must contain at least one operator or built-in function.",
+                    "/"));
+        }
         return new VisualValidationResult(true, diagnostics);
     }
 
     private static void validateBuiltInFunctions(List<OperatorLibrary.BuiltInFunction> functions,
                                                  List<VisualDiagnostic> diagnostics) {
-        Set<String> names = new LinkedHashSet<>();
+        Set<String> callableNames = new LinkedHashSet<>();
         for (int i = 0; i < functions.size(); i++) {
             OperatorLibrary.BuiltInFunction function = functions.get(i);
             String path = "/builtInFunctions/" + i;
@@ -293,11 +295,9 @@ public class OperatorLibraryValidator {
                                 .formatted(function.namespace()),
                         path + "/namespace"));
             }
-            String key = (function.namespace().isBlank() ? "default" : function.namespace())
-                    + ":" + function.name();
-            if (!function.name().isBlank() && !names.add(key)) {
+            if (!function.name().isBlank() && !callableNames.add(function.name())) {
                 diagnostics.add(VisualDiagnostic.error("visual.function.name.duplicate",
-                        "Operator library declares duplicate built-in function '%s'."
+                        "Operator library declares duplicate callable function name '%s'; namespace is provenance metadata and does not change expression resolution."
                                 .formatted(function.name()),
                         path + "/name"));
             }
