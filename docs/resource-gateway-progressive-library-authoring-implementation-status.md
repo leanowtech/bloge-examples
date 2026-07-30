@@ -8,7 +8,7 @@
 >
 > 说明：方案审计的 97 分评价设计成熟度，不代表本页所述功能已经实现。
 
-## 1. 已完成：Canonical 地基、Stage 0、Stage 1 与 Stage 2.2 原子推断采用后端
+## 1. 已完成：Canonical 地基、Stage 0、Stage 1 与 Stage 2.3 图形化样本推断
 
 先把 Workbench 依赖的语法、编译和诊断协议做成可测试内核；随后完成持久化
 draft、ETag 并发控制和 preview-fenced design catalog commit；当前已补齐可直接体验的
@@ -52,11 +52,14 @@ draft、ETag 并发控制和 preview-fenced design catalog commit；当前已补
 | 推断能力协商 | `/catalogs` 与 `/api/integration/capabilities` 声明 request/result object version、feature flag 与 revision-fenced endpoint | capability contract 测试 |
 | 原子确认采用 | `POST .../infer/samples/apply` 重放原始 inference request、核对 evidence fingerprint、要求当前 confirmation 一一对应且值合法，再以 CAS 写入新 draft revision | applier、service、controller、严格 decoder 与真实 HTTP 测试 |
 | Payload-free provenance | draft 保存 conservative/declared candidate、字段统计与人工决定，不保存 samples；同 target 新证据替换旧证据，手工改变声明 target 时自动失效 | repository round-trip、fingerprint、敏感样本与失效测试 |
+| 图形化样本审阅 | Start 页和每个 operator Input/Output 均可启动；支持 JSON array/object/NDJSON、target 选择、candidate tree、observed fact、显式 confirmation queue、推荐项批量采用与原子 Apply | API/component/parser 状态流测试；真实浏览器 1440px、800px 与 390px 响应式验收 |
+| 结构化 Schema 无损回显 | 推断得到的 object 不再降级为 `any`；字段树展开嵌套字段，同级重命名/required 编辑保留原始结构值 | model round-trip、Workbench apply 回显测试与真实服务持久化检查 |
 
 旧的 operator-only library constructor、raw JSON/YAML validate/import endpoint、revision 和 registry
 存储格式保持兼容。Stage 0 定向回归共 143 个测试通过，其中包含既有 raw import
 控制器的 104 个用例；新增 lifecycle repository/service/controller 与真实 HTTP 闭环
-共 8 个专门用例。Workbench 前端生产构建通过，34 个前端测试文件共 338 个用例全绿。
+共 8 个专门用例。Workbench 前端生产构建通过，35 个前端测试文件共 344 个用例全绿，
+其中包含样本解析、完整推断状态流与结构化 Schema 无损往返测试。
 
 ## 2. 当前权威规则
 
@@ -93,8 +96,8 @@ incompatible duplicate
 
 尚未实现的能力：
 
-1. Sample inference 后端已具备 observed facts、confirmation 和原子显式应用闭环，但
-   Workbench 入口仍是 handoff，尚无图形化样本输入、解释、差异审阅和确认队列；discovery review 未实现；
+1. Sample inference 的图形化审阅与原子应用已经闭环；尚未把采用后的 schema 直接物化为
+   可治理 fixture/test case，也没有 operator/function runner；discovery review 未实现；
 2. diagnostic 已可点击定位，但还没有可审计的自动 Fix-it；没有 fixture 生成/解析及
    operator/function test runner；
 3. `imports` 当前只保留声明，跨 library type resolution 会被明确拒绝；
@@ -111,19 +114,19 @@ incompatible duplicate
 ## 4. 目标差距
 
 以下评分只用于迭代收敛，不等同于产品成熟度评分。按目标方案交付面加权，当前约完成
-**78%**，剩余差距约 **22%**。
+**82%**，剩余差距约 **18%**。
 
 | 交付面 | 权重 | 当前完成 | 主要缺口 |
 | --- | ---: | ---: | --- |
 | Canonical 兼容与安全地基 | 15 | 14 | capability negotiation、compatible alias 的显式 owner/provenance model |
 | Authoring model、grammar、compiler、source map | 20 | 19 | 跨库类型 resolution 与多实现 parity |
 | Draft/preview/commit lifecycle | 12 | 11 | durable revision、ETag 和五重栅栏完成；缺 tenant-scope、多副本原子 ownership |
-| 图形化 Workbench 与渐进披露 | 18 | 14 | Start/Tree/Builder/Preview/Readiness、autosave、冲突恢复和 exact commit 已完成；缺 Fix-it、任务计时与浏览器验收 |
-| Sample inference、confirmation、fixture/test | 10 | 7 | 有界 inferencer、observed facts、服务端重放、原子确认应用、证据失效与隐私边界完成；缺 UI、fixture 与 runner |
+| 图形化 Workbench 与渐进披露 | 18 | 16 | Start/Tree/Builder/Preview/Readiness、autosave、冲突恢复、exact commit 与样本审阅完成；缺可审计 Fix-it、任务计时和固定视觉回归 |
+| Sample inference、confirmation、fixture/test | 10 | 9 | 有界 inferencer、observed facts、图形化显式确认、服务端重放、原子采用、证据失效与隐私边界完成；缺 fixture 与 runner |
 | Discovery adapter 与 runtime parity | 8 | 3 | 已有 adapters；尚未统一 authoring fact projection |
 | 企业级隔离、配额、审计、可观测性 | 10 | 4 | 可复用 registry/revision 基础；缺 authoring 专属控制面 |
-| 文档、golden、browser、parity 证据 | 7 | 6 | 文档与 compiler golden 完成；缺浏览器与跨实现 parity 证据 |
-| **合计** | **100** | **78** | **差距 22%** |
+| 文档、golden、browser、parity 证据 | 7 | 6 | 文档、compiler golden 和本轮真实浏览器证据完成；缺固定视觉回归与跨实现 parity 证据 |
+| **合计** | **100** | **82** | **差距 18%** |
 
 当前数据库 registry 的 callable 冲突检查基于进程内快照，能保护单实例及普通 H2/JDBC 使用，但还不是多副本并发写入下的原子全局约束。工业化阶段仍需引入规范化 callable ownership 表、数据库唯一约束或可证明的串行化事务，不能仅依赖应用层 preflight。
 
@@ -131,11 +134,11 @@ incompatible duplicate
 
 ## 5. 下一迭代
 
-下一步完成 Stage 2 的用户闭环：
+下一步完成 Stage 2 的测试资产闭环：
 
-1. 在 Workbench 接入样本输入、target 选择、推断结果解释、confirmation queue 与 schema diff；
-2. Workbench 调用已实现的原子 apply API；不得在浏览器本地伪造 candidate 或 evidence；
-3. 接入 fixture contract、operator/function runner 与 fingerprint-bound evidence；
+1. 将已确认的 sample evidence 转成待审 fixture draft，而不是自动持久化原始 payload；
+2. 接入 fixture contract、operator/function runner 与 fingerprint-bound evidence；
+3. 在 Workbench 提供 case table、单行/批量试跑、失败定位和 schema drift 提示；
 4. 补可审计 Fix-it、键盘任务流、无障碍扫描与 60/30 秒任务计时；
 5. 将 discovery adapters 收敛为统一 authoring fact projection；
 6. 加入 tenant/RBAC、配额和审计边界，不能让浏览器直接绕过治理调用 raw import。

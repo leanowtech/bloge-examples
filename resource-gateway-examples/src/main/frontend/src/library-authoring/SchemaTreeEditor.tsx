@@ -1,8 +1,9 @@
-import { useMemo, useState } from 'react';
+import { type CSSProperties, useMemo, useState } from 'react';
 
 import {
   compactFieldRows,
   compactFieldsFromRows,
+  nestedCompactFields,
   type CompactFieldRow,
 } from './model';
 
@@ -11,6 +12,7 @@ interface SchemaTreeEditorProps {
   fields: Record<string, unknown>;
   basePath: string;
   onChange: (fields: Record<string, unknown>) => void;
+  onInferSamples?: () => void;
 }
 
 type SchemaView = 'tree' | 'table';
@@ -20,6 +22,7 @@ export default function SchemaTreeEditor({
   fields,
   basePath,
   onChange,
+  onInferSamples,
 }: SchemaTreeEditorProps) {
   const [view, setView] = useState<SchemaView>('tree');
   const rows = useMemo(() => compactFieldRows(fields), [fields]);
@@ -46,23 +49,35 @@ export default function SchemaTreeEditor({
           <h4>{title}</h4>
           <span>{rows.length} fields</span>
         </div>
-        <div className="segmented-control" aria-label={`${title} view`}>
-          <button
-            type="button"
-            className={view === 'tree' ? 'active' : ''}
-            aria-pressed={view === 'tree'}
-            onClick={() => setView('tree')}
-          >
-            Tree
-          </button>
-          <button
-            type="button"
-            className={view === 'table' ? 'active' : ''}
-            aria-pressed={view === 'table'}
-            onClick={() => setView('table')}
-          >
-            Table
-          </button>
+        <div className="schema-tree-actions">
+          {onInferSamples && (
+            <button
+              type="button"
+              className="secondary compact"
+              onClick={onInferSamples}
+              data-testid={`infer-${title.toLowerCase()}-from-samples`}
+            >
+              Infer from samples
+            </button>
+          )}
+          <div className="segmented-control" aria-label={`${title} view`}>
+            <button
+              type="button"
+              className={view === 'tree' ? 'active' : ''}
+              aria-pressed={view === 'tree'}
+              onClick={() => setView('tree')}
+            >
+              Tree
+            </button>
+            <button
+              type="button"
+              className={view === 'table' ? 'active' : ''}
+              aria-pressed={view === 'table'}
+              onClick={() => setView('table')}
+            >
+              Table
+            </button>
+          </div>
         </div>
       </header>
       {view === 'tree' ? (
@@ -72,39 +87,57 @@ export default function SchemaTreeEditor({
             <strong>{title}</strong>
             <small>object</small>
           </div>
-          {rows.map((row, index) => (
-            <div className="schema-tree-field" role="treeitem" key={row.id}>
-              <span className="schema-tree-branch" aria-hidden="true" />
-              <input
-                aria-label={`${title} field ${index + 1} name`}
-                value={row.name}
-                onChange={(event) => patch(index, { name: event.target.value })}
-                data-authoring-path={fieldPath(basePath, row)}
-              />
-              <input
-                aria-label={`${title} field ${row.name} type`}
-                value={row.type}
-                onChange={(event) => patch(index, { type: event.target.value })}
-                data-authoring-path={fieldPath(basePath, row)}
-              />
-              <label title="Required field">
-                <input
-                  type="checkbox"
-                  checked={row.required}
-                  onChange={(event) => patch(index, { required: event.target.checked })}
-                />
-                <span>Required</span>
-              </label>
-              <button
-                type="button"
-                aria-label={`Remove ${row.name}`}
-                title={`Remove ${row.name}`}
-                onClick={() => remove(index)}
-              >
-                x
-              </button>
-            </div>
-          ))}
+          {rows.map((row, index) => {
+            const nested = nestedCompactFields(row.sourceValue);
+            return (
+              <div className="schema-tree-field-group" key={row.id}>
+                <div className="schema-tree-field" role="treeitem" aria-expanded={nested.length ? true : undefined}>
+                  <span className="schema-tree-branch" aria-hidden="true" />
+                  <input
+                    aria-label={`${title} field ${index + 1} name`}
+                    value={row.name}
+                    onChange={(event) => patch(index, { name: event.target.value })}
+                    data-authoring-path={fieldPath(basePath, row)}
+                  />
+                  <input
+                    aria-label={`${title} field ${row.name} type`}
+                    value={row.type}
+                    onChange={(event) => patch(index, { type: event.target.value })}
+                    data-authoring-path={fieldPath(basePath, row)}
+                  />
+                  <label title="Required field">
+                    <input
+                      type="checkbox"
+                      checked={row.required}
+                      onChange={(event) => patch(index, { required: event.target.checked })}
+                    />
+                    <span>Required</span>
+                  </label>
+                  <button
+                    type="button"
+                    aria-label={`Remove ${row.name}`}
+                    title={`Remove ${row.name}`}
+                    onClick={() => remove(index)}
+                  >
+                    x
+                  </button>
+                </div>
+                {nested.map((field) => (
+                  <div
+                    className="schema-tree-nested-field"
+                    role="treeitem"
+                    key={field.path}
+                    style={{ '--schema-indent': `${field.depth * 16}px` } as CSSProperties}
+                  >
+                    <span className="schema-tree-branch" aria-hidden="true" />
+                    <strong>{field.name}</strong>
+                    <code>{field.type}</code>
+                    <small>{field.required ? 'required' : 'optional'}</small>
+                  </div>
+                ))}
+              </div>
+            );
+          })}
         </div>
       ) : (
         <table className="schema-field-table">

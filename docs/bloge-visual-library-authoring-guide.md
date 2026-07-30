@@ -2,7 +2,7 @@
 
 > 合同：`bloge.visualLibraryAuthoring.v1`
 >
-> 当前能力：Stage 0 权威编译 + Stage 1 持久化 draft/ETag/preview-fenced commit
+> 当前能力：Stage 0 权威编译 + Stage 1 持久化 lifecycle + Stage 2 样本推断审阅与原子采用
 >
 > 机器 Schema：[bloge-visual-library-authoring-v1.schema.json](schemas/bloge-visual-library-authoring-v1.schema.json)
 
@@ -28,6 +28,18 @@
 ```bash
 ./scripts/start-visual-canvas-demo.sh
 ```
+
+图形化体验：
+
+1. 打开 `http://localhost:8080/libraries/`；
+2. 选择 **Infer from Samples**，保留内置的两个客服请求样本，点击 **Create and analyze**；
+3. 在浮层确认 operator、Input/Output 和 port name，再点击 **Analyze samples**；
+4. 对照 **Candidate structure**、**Observed facts** 和 **Confirmation queue**；
+5. 逐项决定，或显式点击 **Use recommendations**，然后点击 **Apply declared schema**；
+6. 回到 operator 的 **Inputs / Outputs**，确认嵌套 object 字段和新 draft revision 已回显。
+
+已有 operator 也可以在 **Inputs** 或 **Outputs** 标题右侧直接点击 **Infer from samples**。
+分析不会写 draft；只有确认队列完整且服务端重放通过后，Apply 才会原子产生下一 revision。
 
 预览完整 operator + function 示例：
 
@@ -363,8 +375,20 @@ inferencer 版本或 draft revision 变化时返回 `409/412`；遗漏确认、�
 - [Sample inference result schema](schemas/bloge-visual-sample-inference-result-v1.schema.json)
 - [Sample inference apply request schema](schemas/bloge-visual-sample-inference-apply-request-v1.schema.json)
 
-当前 Workbench 还没有把 confirmation queue 做成可操作界面；服务端原子采用协议已经可用，
-客户端不得绕过它或把 candidate 静默写回 declared schema。
+Workbench 已提供完整图形化流程：
+
+- Start 页的 **Infer from Samples** 可同时创建最小 operator draft 并进入审阅；
+- 已有 operator 的 **Inputs / Outputs** 都有独立 **Infer from samples** 入口；
+- 原始 JSON 只保留在当前 React 组件内存，并只在 infer/apply 请求中发送；
+- **Candidate structure** 显示当前/推断对比与嵌套字段树；
+- **Observed facts** 只展示出现次数、null、distinct、类型和格式等统计；
+- **Confirmation queue** 不预选答案；**Use recommendations** 也是一次可见、显式的用户决定；
+- 所有 blocking confirmation 完成前 **Apply declared schema** 不可用；
+- Apply 成功后安装服务端返回的新 draft revision，结构化 object 在字段树中无损展开；
+- `412` revision 冲突沿用 Workbench 的冲突恢复，不会本地合并或覆盖权威 revision。
+
+客户端仍不得绕过原子 apply 协议或把 candidate 静默写回 declared schema。需要长期保存和复用
+的数据应进入后续受治理 fixture/test asset，不应依赖样本推断会话。
 
 ## 11. 安全与配额
 

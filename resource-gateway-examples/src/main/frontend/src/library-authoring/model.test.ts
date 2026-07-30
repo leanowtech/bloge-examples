@@ -6,6 +6,7 @@ import {
   compactFieldRows,
   compactFieldsFromRows,
   createQuickLibraryDocument,
+  nestedCompactFields,
   renameAsset,
 } from './model';
 
@@ -40,6 +41,45 @@ describe('library authoring model', () => {
       id: 'string',
       'profile?': 'CustomerProfile',
     });
+  });
+
+  it('preserves inferred structured fields through compact edits', () => {
+    const structured = {
+      fields: {
+        createdAt: 'datetime',
+        metadata: {
+          fields: {
+            'channel?': 'string',
+          },
+          additionalProperties: true,
+        },
+      },
+      additionalProperties: true,
+    };
+    const rows = compactFieldRows({
+      request: structured,
+      'tenantId?': 'string',
+    });
+
+    expect(rows[0]).toMatchObject({ name: 'request', type: 'object', required: true });
+    expect(compactFieldsFromRows([
+      rows[0],
+      { ...rows[1], required: true },
+    ])).toEqual({
+      request: structured,
+      tenantId: 'string',
+    });
+    expect(nestedCompactFields(rows[0].sourceValue)).toEqual([
+      { path: 'createdAt', name: 'createdAt', type: 'datetime', required: true, depth: 0 },
+      { path: 'metadata', name: 'metadata', type: 'object', required: true, depth: 0 },
+      {
+        path: 'metadata.channel',
+        name: 'channel',
+        type: 'string',
+        required: false,
+        depth: 1,
+      },
+    ]);
   });
 
   it('uses escaped source paths to select the right builder asset', () => {

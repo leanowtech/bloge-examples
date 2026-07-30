@@ -2,6 +2,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import {
   adaptCapabilityCatalogText,
+  applyLibraryAuthoringSamples,
   batchCommitDslImports,
   batchReportDslImports,
   buildGatewayRunRequest,
@@ -29,6 +30,7 @@ import {
   governOperatorTestCase,
   governOperatorTestSuite,
   importOperatorLibraryText,
+  inferLibraryAuthoringSamples,
   previewDslImport,
   previewLibraryAuthoringDraft,
   previewScenarioRehearsalRemediation,
@@ -50,6 +52,8 @@ import {
 import type {
   VisualLibraryAuthoringCompileResult,
   VisualLibraryAuthoringDocument,
+  VisualSampleInferenceRequest,
+  VisualSampleInferenceResult,
 } from './types';
 
 describe('operator library API client', () => {
@@ -60,7 +64,7 @@ describe('operator library API client', () => {
     vi.restoreAllMocks();
   });
 
-  it('fences progressive library save, preview, and commit with exact revisions and fingerprints', async () => {
+  it('fences progressive library save, inference apply, preview, and commit with exact revisions', async () => {
     const document: VisualLibraryAuthoringDocument = {
       schemaVersion: 'bloge.visualLibraryAuthoring.v1',
       library: { id: 'support-tools', version: '1.0.0', owner: 'support-team' },
@@ -110,6 +114,66 @@ describe('operator library API client', () => {
         changedOperatorCount: 0,
       },
     };
+    const inferenceRequest: VisualSampleInferenceRequest = {
+      schemaVersion: 'bloge.visualSampleInferenceRequest.v1',
+      target: {
+        assetKind: 'OPERATOR',
+        assetRef: 'support:classify',
+        portDirection: 'INPUT',
+        portName: 'request',
+      },
+      samples: [{ priority: 'HIGH' }, { priority: 'LOW' }],
+      options: {
+        suggestEnums: true,
+        suggestFormats: true,
+        persistPayload: false,
+      },
+      idempotencyKey: 'support-inference-1',
+    };
+    const evidenceFingerprint = `sha256:${'a'.repeat(64)}`;
+    const confirmationId = `sha256:${'b'.repeat(64)}`;
+    const inferenceResult: VisualSampleInferenceResult = {
+      schemaVersion: 'bloge.visualSampleInferenceResult.v1',
+      draftId: 'support-draft',
+      authoringRevision: 3,
+      target: inferenceRequest.target,
+      evidenceFingerprint,
+      inferencerVersion: 'sample-inferencer-v1',
+      redactionProfileVersion: 'redaction-v1',
+      sampleCount: 2,
+      candidate: {
+        fields: { priority: 'string' },
+        additionalProperties: true,
+      },
+      observations: [],
+      confirmationRequests: [{
+        confirmationId,
+        factId: `sha256:${'c'.repeat(64)}`,
+        code: 'RG.AUTHORING.INFERENCE_ENUM_CONFIRMATION_REQUIRED',
+        authoringPath: '/operators/support:classify/input/request/priority',
+        question: 'Do the values form a complete enum?',
+        recommendedValue: 'KEEP_STRING',
+        allowedValues: ['KEEP_STRING', 'DECLARE_ENUM'],
+        blocking: false,
+      }],
+      diagnostics: [],
+      payloadPersisted: false,
+    };
+    const decisions = [{ confirmationId, value: 'KEEP_STRING' }];
+    const applied = {
+      ...stored,
+      revision: 4,
+      document: {
+        ...document,
+        operators: {
+          'support:classify': {
+            input: {
+              request: inferenceResult.candidate,
+            },
+          },
+        },
+      },
+    };
     const calls: Array<{ url: string; init?: RequestInit }> = [];
     setBlogeApiTransport(async (input, init) => {
       const url = String(input);
@@ -129,6 +193,22 @@ describe('operator library API client', () => {
           actor: 'visual-library-workbench',
         });
         return jsonResponse(stored);
+      }
+      if (url.endsWith('/drafts/support-draft/infer/samples/apply')) {
+        expect(new Headers(init?.headers).get('If-Match')).toBe('"3"');
+        expect(JSON.parse(String(init?.body))).toEqual({
+          schemaVersion: 'bloge.visualSampleInferenceApplyRequest.v1',
+          inference: inferenceRequest,
+          evidenceFingerprint,
+          decisions,
+          actor: 'visual-library-workbench',
+        });
+        return jsonResponse(applied);
+      }
+      if (url.endsWith('/drafts/support-draft/infer/samples')) {
+        expect(new Headers(init?.headers).get('If-Match')).toBe('"3"');
+        expect(JSON.parse(String(init?.body))).toEqual(inferenceRequest);
+        return jsonResponse(inferenceResult);
       }
       if (url.endsWith('/drafts/support-draft/preview')) {
         expect(new Headers(init?.headers).get('If-Match')).toBe('"3"');
@@ -153,10 +233,19 @@ describe('operator library API client', () => {
     await expect(fetchLibraryAuthoringDrafts()).resolves.toEqual([stored]);
     await expect(fetchLibraryAuthoringDraft('support-draft')).resolves.toEqual(stored);
     await expect(saveLibraryAuthoringDraft('support-draft', 2, document)).resolves.toEqual(stored);
+    await expect(inferLibraryAuthoringSamples('support-draft', 3, inferenceRequest))
+      .resolves.toEqual(inferenceResult);
+    await expect(applyLibraryAuthoringSamples(
+      'support-draft',
+      3,
+      inferenceRequest,
+      evidenceFingerprint,
+      decisions,
+    )).resolves.toEqual(applied);
     await expect(previewLibraryAuthoringDraft('support-draft', 3)).resolves.toEqual(preview);
     await expect(commitLibraryAuthoringDraft('support-draft', 3, preview, 'contract reviewed'))
       .resolves.toMatchObject({ schemaVersion: 'bloge.visualLibraryAuthoringCommitResult.v1' });
-    expect(calls).toHaveLength(5);
+    expect(calls).toHaveLength(7);
   });
 
   it('saves, loads, and publishes an exact Scenario revision with separate purposes', async () => {

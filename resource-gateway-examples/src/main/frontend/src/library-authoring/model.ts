@@ -16,6 +16,7 @@ export interface CompactFieldRow {
   name: string;
   type: string;
   required: boolean;
+  sourceValue?: unknown;
 }
 
 export function createQuickLibraryDocument(
@@ -166,6 +167,7 @@ export function compactFieldRows(fields: Record<string, unknown>): CompactFieldR
       name,
       type: compactTypeLabel(value),
       required,
+      sourceValue: value,
     };
   });
 }
@@ -178,7 +180,26 @@ export function compactFieldsFromRows(rows: CompactFieldRow[]): Record<string, u
       type: row.type.trim() || 'any',
     }))
     .filter((row) => row.name)
-    .map((row) => [row.required ? row.name : `${row.name}?`, row.type]));
+    .map((row) => [
+      row.required ? row.name : `${row.name}?`,
+      row.sourceValue !== undefined && compactTypeLabel(row.sourceValue) === row.type
+        ? row.sourceValue
+        : row.type,
+    ]));
+}
+
+export interface NestedCompactField {
+  path: string;
+  name: string;
+  type: string;
+  required: boolean;
+  depth: number;
+}
+
+export function nestedCompactFields(value: unknown): NestedCompactField[] {
+  const result: NestedCompactField[] = [];
+  collectNestedFields(value, '', 0, result);
+  return result;
 }
 
 export function typeFields(value: unknown): Record<string, unknown> {
@@ -207,15 +228,46 @@ function compactTypeLabel(value: unknown): string {
     return value;
   }
   if (value && typeof value === 'object' && !Array.isArray(value)) {
-    const node = value as { type?: unknown; enum?: unknown };
+    const node = value as { type?: unknown; enum?: unknown; fields?: unknown };
     if (typeof node.type === 'string') {
       return node.type;
     }
     if (Array.isArray(node.enum)) {
       return `enum(${node.enum.map(String).join('|')})`;
     }
+    if (node.fields && typeof node.fields === 'object' && !Array.isArray(node.fields)) {
+      return 'object';
+    }
   }
   return 'any';
+}
+
+function collectNestedFields(
+  value: unknown,
+  parentPath: string,
+  depth: number,
+  result: NestedCompactField[],
+): void {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) {
+    return;
+  }
+  const fields = (value as { fields?: unknown }).fields;
+  if (!fields || typeof fields !== 'object' || Array.isArray(fields)) {
+    return;
+  }
+  Object.entries(fields as Record<string, unknown>).forEach(([rawName, child]) => {
+    const required = !rawName.endsWith('?');
+    const name = required ? rawName : rawName.slice(0, -1);
+    const path = parentPath ? `${parentPath}.${name}` : name;
+    result.push({
+      path,
+      name,
+      type: compactTypeLabel(child),
+      required,
+      depth,
+    });
+    collectNestedFields(child, path, depth + 1, result);
+  });
 }
 
 function uniqueKey(candidate: string, collection: Record<string, unknown>): string {

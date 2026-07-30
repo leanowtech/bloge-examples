@@ -9,12 +9,15 @@ import type {
   VisualLibraryAuthoringCompileResult,
   VisualLibraryAuthoringDocument,
   VisualLibraryAuthoringDraft,
+  VisualSampleInferenceResult,
 } from '../types';
 import LibraryWorkbench from './LibraryWorkbench';
 
 const apiMocks = vi.hoisted(() => ({
+  applyInference: vi.fn(),
   commit: vi.fn(),
   fetchDraft: vi.fn(),
+  infer: vi.fn(),
   preview: vi.fn(),
   save: vi.fn(),
 }));
@@ -29,8 +32,10 @@ vi.mock('../api', () => ({
       this.name = 'BlogeApiRequestError';
     }
   },
+  applyLibraryAuthoringSamples: apiMocks.applyInference,
   commitLibraryAuthoringDraft: apiMocks.commit,
   fetchLibraryAuthoringDraft: apiMocks.fetchDraft,
+  inferLibraryAuthoringSamples: apiMocks.infer,
   previewLibraryAuthoringDraft: apiMocks.preview,
   saveLibraryAuthoringDraft: apiMocks.save,
 }));
@@ -46,7 +51,9 @@ describe('LibraryWorkbench', () => {
     host = document.createElement('div');
     document.body.appendChild(host);
     apiMocks.commit.mockReset();
+    apiMocks.applyInference.mockReset();
     apiMocks.fetchDraft.mockReset();
+    apiMocks.infer.mockReset();
     apiMocks.preview.mockReset();
     apiMocks.save.mockReset();
     vi.useFakeTimers();
@@ -156,6 +163,114 @@ describe('LibraryWorkbench', () => {
       .toContain('Saved revision 4');
   });
 
+  it('turns representative samples into an explicitly confirmed operator port', async () => {
+    let savedDocument: VisualLibraryAuthoringDocument | null = null;
+    apiMocks.save.mockImplementation(async (
+      draftId: string,
+      _revision: number,
+      document: VisualLibraryAuthoringDocument,
+    ) => {
+      savedDocument = document;
+      return storedDraft(draftId, 1, document);
+    });
+    apiMocks.preview.mockImplementation(async (draftId: string, revision: number) => (
+      readyPreview(draftId, revision)
+    ));
+    apiMocks.infer.mockImplementation(async (draftId: string) => sampleInferenceResult(draftId));
+    apiMocks.applyInference.mockImplementation(async (draftId: string) => {
+      const current = savedDocument as VisualLibraryAuthoringDocument;
+      return storedDraft(draftId, 2, {
+        ...current,
+        operators: {
+          ...current.operators,
+          'support:classify-ticket': {
+            ...current.operators?.['support:classify-ticket'],
+            input: {
+              request: {
+                fields: {
+                  customerId: 'string',
+                  priority: 'string',
+                },
+                additionalProperties: true,
+              },
+            },
+          },
+        },
+      });
+    });
+
+    await renderWorkbench();
+    await click(query('[data-testid="library-start-choice:samples"]'));
+    await click(query('[data-testid="library-samples-create"]'));
+
+    expect(query('[data-testid="sample-inference-dialog"]').textContent)
+      .toContain('support:classify-ticket');
+
+    await click(query('[data-testid="sample-inference-analyze"]'));
+    await settle();
+
+    expect(apiMocks.save).toHaveBeenCalledWith(
+      expect.stringMatching(/^team-operator-library-/),
+      0,
+      expect.objectContaining({
+        operators: expect.objectContaining({
+          'support:classify-ticket': expect.objectContaining({ input: {}, output: {} }),
+        }),
+      }),
+      'QUICK',
+    );
+    expect(apiMocks.infer).toHaveBeenCalledWith(
+      expect.stringMatching(/^team-operator-library-/),
+      1,
+      expect.objectContaining({
+        schemaVersion: 'bloge.visualSampleInferenceRequest.v1',
+        target: {
+          assetKind: 'OPERATOR',
+          assetRef: 'support:classify-ticket',
+          portDirection: 'INPUT',
+          portName: 'request',
+        },
+        samples: expect.any(Array),
+        options: {
+          suggestEnums: true,
+          suggestFormats: true,
+          persistPayload: false,
+        },
+      }),
+    );
+    expect(query('[data-testid="sample-inference-dialog"]').textContent)
+      .toContain('Confirmation queue');
+    expect(query<HTMLButtonElement>('[data-testid="sample-inference-apply"]').disabled).toBe(true);
+
+    await click(query('[data-testid="sample-inference-use-recommendations"]'));
+    expect(query<HTMLButtonElement>('[data-testid="sample-inference-apply"]').disabled).toBe(false);
+
+    await click(query('[data-testid="sample-inference-apply"]'));
+    await settle();
+
+    expect(apiMocks.applyInference).toHaveBeenCalledWith(
+      expect.stringMatching(/^team-operator-library-/),
+      1,
+      expect.objectContaining({
+        target: expect.objectContaining({
+          assetRef: 'support:classify-ticket',
+          portName: 'request',
+        }),
+      }),
+      `sha256:${'a'.repeat(64)}`,
+      [
+        { confirmationId: `sha256:${'c'.repeat(64)}`, value: 'OPEN' },
+        { confirmationId: `sha256:${'d'.repeat(64)}`, value: 'KEEP_STRING' },
+      ],
+    );
+    expect(document.querySelector('[data-testid="sample-inference-dialog"]')).toBeNull();
+    expect(query<HTMLInputElement>('[aria-label="Inputs field 1 name"]').value).toBe('request');
+    expect(query<HTMLInputElement>('[aria-label="Inputs field request type"]').value).toBe('object');
+    expect(query('.schema-tree-field-group').textContent).toContain('customerId');
+    expect(query('.schema-tree-field-group').textContent).toContain('priority');
+    expect(query('[data-testid="library-save-state"]').textContent).toContain('Saved revision 2');
+  });
+
   async function renderWorkbench() {
     await act(async () => {
       root = createRoot(host);
@@ -242,6 +357,73 @@ function commitReceipt(
   };
 }
 
+function sampleInferenceResult(draftId: string): VisualSampleInferenceResult {
+  const target = {
+    assetKind: 'OPERATOR' as const,
+    assetRef: 'support:classify-ticket',
+    portDirection: 'INPUT' as const,
+    portName: 'request',
+  };
+  return {
+    schemaVersion: 'bloge.visualSampleInferenceResult.v1',
+    draftId,
+    authoringRevision: 1,
+    target,
+    evidenceFingerprint: `sha256:${'a'.repeat(64)}`,
+    inferencerVersion: 'sample-inferencer-v1',
+    redactionProfileVersion: 'redaction-v1',
+    sampleCount: 2,
+    candidate: {
+      fields: {
+        customerId: 'string',
+        priority: 'string',
+      },
+      additionalProperties: true,
+    },
+    observations: [{
+      factId: `sha256:${'b'.repeat(64)}`,
+      authoringPath: '/operators/support:classify-ticket/input/request/priority',
+      sourceLevel: 'OBSERVED',
+      suggestedType: 'string',
+      sampleCount: 2,
+      presenceCount: 2,
+      nullCount: 0,
+      distinctCount: 2,
+      sensitive: false,
+      requiredCandidate: true,
+      nullableCandidate: false,
+      formatCandidate: '',
+      enumCandidates: ['HIGH', 'LOW'],
+      conflictTypes: [],
+      widenReasons: [],
+    }],
+    confirmationRequests: [
+      {
+        confirmationId: `sha256:${'c'.repeat(64)}`,
+        factId: `sha256:${'b'.repeat(64)}`,
+        code: 'RG.AUTHORING.INFERENCE_OBJECT_CLOSURE_CONFIRMATION_REQUIRED',
+        authoringPath: '/operators/support:classify-ticket/input/request',
+        question: 'Can valid payloads contain other fields?',
+        recommendedValue: 'OPEN',
+        allowedValues: ['OPEN', 'CLOSED'],
+        blocking: false,
+      },
+      {
+        confirmationId: `sha256:${'d'.repeat(64)}`,
+        factId: `sha256:${'b'.repeat(64)}`,
+        code: 'RG.AUTHORING.INFERENCE_ENUM_CONFIRMATION_REQUIRED',
+        authoringPath: '/operators/support:classify-ticket/input/request/priority',
+        question: 'Do the values form a complete business enum?',
+        recommendedValue: 'KEEP_STRING',
+        allowedValues: ['KEEP_STRING', 'DECLARE_ENUM'],
+        blocking: false,
+      },
+    ],
+    diagnostics: [],
+    payloadPersisted: false,
+  };
+}
+
 async function click(element: Element): Promise<void> {
   await act(async () => {
     element.dispatchEvent(new MouseEvent('click', { bubbles: true }));
@@ -251,6 +433,14 @@ async function click(element: Element): Promise<void> {
 async function flushAutosave(): Promise<void> {
   await act(async () => {
     await vi.advanceTimersByTimeAsync(710);
+    await Promise.resolve();
+    await Promise.resolve();
+  });
+}
+
+async function settle(): Promise<void> {
+  await act(async () => {
+    await Promise.resolve();
     await Promise.resolve();
     await Promise.resolve();
   });

@@ -809,6 +809,105 @@ export interface VisualOperatorAuthoring {
   tests?: Array<{ ref: string }>;
 }
 
+export type VisualSamplePortDirection = 'INPUT' | 'OUTPUT';
+
+/** Exact operator port that receives one accepted sample-inference candidate. */
+export interface VisualSampleInferenceTarget {
+  assetKind: 'OPERATOR';
+  assetRef: string;
+  portDirection: VisualSamplePortDirection;
+  portName: string;
+}
+
+/** Ephemeral sample batch. Raw samples are never part of a persisted authoring draft. */
+export interface VisualSampleInferenceRequest {
+  schemaVersion: 'bloge.visualSampleInferenceRequest.v1';
+  target: VisualSampleInferenceTarget;
+  samples: unknown[];
+  options: {
+    suggestEnums: boolean;
+    suggestFormats: boolean;
+    persistPayload: false;
+  };
+  idempotencyKey: string;
+}
+
+export interface VisualSampleFieldObservation {
+  factId: string;
+  authoringPath: string;
+  sourceLevel: 'OBSERVED';
+  suggestedType: string;
+  sampleCount: number;
+  presenceCount: number;
+  nullCount: number;
+  distinctCount: number;
+  sensitive: boolean;
+  requiredCandidate: boolean;
+  nullableCandidate: boolean;
+  formatCandidate: string;
+  enumCandidates: string[];
+  conflictTypes: string[];
+  widenReasons: string[];
+}
+
+export interface VisualSampleInferenceConfirmation {
+  confirmationId: string;
+  factId: string;
+  code: string;
+  authoringPath: string;
+  question: string;
+  recommendedValue: string;
+  allowedValues: string[];
+  blocking: boolean;
+}
+
+/** Payload-free result for one exact persisted authoring revision. */
+export interface VisualSampleInferenceResult {
+  schemaVersion: 'bloge.visualSampleInferenceResult.v1';
+  draftId: string;
+  authoringRevision: number;
+  target: VisualSampleInferenceTarget;
+  evidenceFingerprint: string;
+  inferencerVersion: string;
+  redactionProfileVersion: string;
+  sampleCount: number;
+  candidate: unknown;
+  observations: VisualSampleFieldObservation[];
+  confirmationRequests: VisualSampleInferenceConfirmation[];
+  diagnostics: VisualAuthoringDiagnostic[];
+  payloadPersisted: false;
+}
+
+export interface VisualSampleInferenceDecision {
+  confirmationId: string;
+  value: string;
+}
+
+export interface VisualAuthoringEvidence {
+  evidenceFingerprint: string;
+  evidenceKind: string;
+  target: VisualSampleInferenceTarget;
+  producerVersion: string;
+  redactionProfileVersion: string;
+  sampleCount: number;
+  candidate: unknown;
+  declaredCandidate: unknown;
+  declaredPortName: string;
+  targetRemoved: boolean;
+  observations: VisualSampleFieldObservation[];
+}
+
+export interface VisualAuthoringConfirmation {
+  confirmationId: string;
+  evidenceFingerprint: string;
+  factId: string;
+  code: string;
+  authoringPath: string;
+  decision: string;
+  blocking: boolean;
+  decidedBy: string;
+}
+
 /** Compact built-in function source owned by the Workbench. */
 export interface VisualFunctionAuthoring {
   name?: string;
@@ -828,6 +927,8 @@ export interface VisualLibraryAuthoringDraft {
   revision: number;
   sourceMode: 'QUICK' | 'CANONICAL';
   document: VisualLibraryAuthoringDocument;
+  evidence?: VisualAuthoringEvidence[];
+  confirmations?: VisualAuthoringConfirmation[];
   fingerprint: string;
   createdAt: string;
   updatedAt: string;

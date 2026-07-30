@@ -3,9 +3,17 @@ import { useState } from 'react';
 import type { VisualLibraryAuthoringDocument } from '../types';
 import { LIBRARY_AUTHORING_EXAMPLES } from './examples';
 import { createQuickLibraryDocument } from './model';
+import {
+  DEFAULT_SAMPLE_TEXT,
+  type SampleInferenceLaunch,
+} from './SampleInferenceReview';
 
 interface LibraryStartChoicesProps {
-  onStart: (document: VisualLibraryAuthoringDocument, source: string) => void;
+  onStart: (
+    document: VisualLibraryAuthoringDocument,
+    source: string,
+    inference?: SampleInferenceLaunch,
+  ) => void;
 }
 
 type StartChoice = 'quick' | 'samples' | 'discover' | 'advanced';
@@ -14,6 +22,10 @@ export default function LibraryStartChoices({ onStart }: LibraryStartChoicesProp
   const [choice, setChoice] = useState<StartChoice>('quick');
   const [libraryId, setLibraryId] = useState('team-operator-library');
   const [owner, setOwner] = useState('team-owner');
+  const [sampleOperatorRef, setSampleOperatorRef] = useState('support:classify-ticket');
+  const [sampleDirection, setSampleDirection] = useState<'INPUT' | 'OUTPUT'>('INPUT');
+  const [samplePortName, setSamplePortName] = useState('request');
+  const [sampleText, setSampleText] = useState(DEFAULT_SAMPLE_TEXT);
   const [advancedSource, setAdvancedSource] = useState('');
   const [advancedError, setAdvancedError] = useState('');
 
@@ -29,6 +41,30 @@ export default function LibraryStartChoices({ onStart }: LibraryStartChoicesProp
     } catch (error) {
       setAdvancedError(error instanceof Error ? error.message : 'Invalid JSON source.');
     }
+  };
+
+  const startFromSamples = () => {
+    const nextDocument = createQuickLibraryDocument(libraryId, owner);
+    const defaultOperatorKey = Object.keys(nextDocument.operators ?? {})[0];
+    const operatorKey = sampleOperatorRef.trim();
+    const defaultOperator = nextDocument.operators?.[defaultOperatorKey];
+    const operatorParts = operatorKey.split(':');
+    const operatorName = operatorParts[operatorParts.length - 1];
+    nextDocument.operators = {
+      [operatorKey]: {
+        ...defaultOperator,
+        name: operatorName?.replace(/[-_.]+/g, ' ') || 'Inferred operator',
+        description: 'Contract derived from representative business payloads.',
+        input: {},
+        output: {},
+      },
+    };
+    onStart(nextDocument, 'samples', {
+      operatorKey,
+      direction: sampleDirection,
+      portName: samplePortName.trim(),
+      sampleText,
+    });
   };
 
   return (
@@ -116,9 +152,70 @@ export default function LibraryStartChoices({ onStart }: LibraryStartChoicesProp
           </div>
         )}
         {choice === 'samples' && (
-          <div className="library-stage-handoff" data-testid="library-samples-handoff">
-            <strong>Sample inference is the next guided step.</strong>
-            <p>Open a complete example now; inferred facts will remain reviewable before becoming declared schema.</p>
+          <div className="library-samples-form" data-testid="library-samples-form">
+            <div className="library-samples-fields">
+              <label>
+                <span>Library id</span>
+                <input value={libraryId} onChange={(event) => setLibraryId(event.target.value)} />
+              </label>
+              <label>
+                <span>Owner</span>
+                <input value={owner} onChange={(event) => setOwner(event.target.value)} />
+              </label>
+              <label>
+                <span>Operator ref</span>
+                <input
+                  value={sampleOperatorRef}
+                  onChange={(event) => setSampleOperatorRef(event.target.value)}
+                  data-testid="library-samples-operator-ref"
+                />
+              </label>
+              <label>
+                <span>Port name</span>
+                <input
+                  value={samplePortName}
+                  onChange={(event) => setSamplePortName(event.target.value)}
+                  data-testid="library-samples-port-name"
+                />
+              </label>
+              <fieldset>
+                <legend>Port direction</legend>
+                <div className="segmented-control">
+                  {(['INPUT', 'OUTPUT'] as const).map((direction) => (
+                    <button
+                      key={direction}
+                      type="button"
+                      className={sampleDirection === direction ? 'active' : ''}
+                      aria-pressed={sampleDirection === direction}
+                      onClick={() => setSampleDirection(direction)}
+                    >
+                      {direction === 'INPUT' ? 'Input' : 'Output'}
+                    </button>
+                  ))}
+                </div>
+              </fieldset>
+            </div>
+            <label className="library-samples-source">
+              <span>Representative JSON</span>
+              <textarea
+                value={sampleText}
+                onChange={(event) => setSampleText(event.target.value)}
+                spellCheck={false}
+                data-testid="library-samples-source"
+              />
+            </label>
+            <button
+              type="button"
+              className="primary"
+              onClick={startFromSamples}
+              disabled={!libraryId.trim()
+                || !sampleOperatorRef.trim()
+                || !samplePortName.trim()
+                || !sampleText.trim()}
+              data-testid="library-samples-create"
+            >
+              Create and analyze
+            </button>
           </div>
         )}
         {choice === 'discover' && (

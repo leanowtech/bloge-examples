@@ -1,6 +1,6 @@
 # Resource Gateway 渐进式算子与 Built-in Function 库创作技术方案
 
-> 状态：Approved；Stage 0、Stage 1 与 Stage 2.2 样本推断/确认原子应用后端已实现，Stage 2 UI/测试闭环及 Stage 3-4 待实施
+> 状态：Approved；Stage 0、Stage 1 与 Stage 2.3 样本推断图形化审阅/原子应用已实现，Stage 2 fixture/runner 及 Stage 3-4 待实施
 >
 > 日期：2026-07-30
 >
@@ -1511,10 +1511,10 @@ Exit Gate：
 
 ### 15.3 Stage 2：样例推断与测试闭环
 
-实现状态：**进行中**。Stage 2.2 已交付有界 multi-sample inferencer、机器协议、
+实现状态：**进行中**。Stage 2.3 已交付有界 multi-sample inferencer、机器协议、
 revision-fenced API、observed facts、保守 candidate、confirmation request、服务端重放、
-全量决定校验、原子 draft promotion 与 payload-free 隐私边界；Workbench 图形化确认流程、
-fixture 与 runner 仍待完成。详见
+全量决定校验、原子 draft promotion、payload-free 隐私边界，以及 Workbench 的 target
+选择、样本输入、candidate/fact 解释、显式确认队列和结构化回写；fixture 与 runner 仍待完成。详见
 [实现状态](resource-gateway-progressive-library-authoring-implementation-status.md)。
 
 交付：

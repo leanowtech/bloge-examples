@@ -21,6 +21,7 @@ interface OperatorBuilderProps {
   onRename: (nextKey: string) => void;
   onChange: (operator: VisualOperatorAuthoring) => void;
   onRemove: () => void;
+  onInferSamples: (direction: 'INPUT' | 'OUTPUT') => void;
 }
 
 export default function OperatorBuilder({
@@ -29,6 +30,7 @@ export default function OperatorBuilder({
   onRename,
   onChange,
   onRemove,
+  onInferSamples,
 }: OperatorBuilderProps) {
   const [keyDraft, setKeyDraft] = useState(operatorKey);
   useEffect(() => setKeyDraft(operatorKey), [operatorKey]);
@@ -100,12 +102,14 @@ export default function OperatorBuilder({
           fields={operator.input ?? {}}
           basePath={`/operators/${pointer(operatorKey)}/input`}
           onChange={(input) => patch({ input })}
+          onInferSamples={() => onInferSamples('INPUT')}
         />
         <SchemaTreeEditor
           title="Outputs"
           fields={operator.output ?? {}}
           basePath={`/operators/${pointer(operatorKey)}/output`}
           onChange={(output) => patch({ output })}
+          onInferSamples={() => onInferSamples('OUTPUT')}
         />
       </section>
 

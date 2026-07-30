@@ -23,6 +23,9 @@ import FunctionBuilder from './FunctionBuilder';
 import LibraryStartChoices from './LibraryStartChoices';
 import LibraryTree from './LibraryTree';
 import OperatorBuilder from './OperatorBuilder';
+import SampleInferenceReview, {
+  type SampleInferenceLaunch,
+} from './SampleInferenceReview';
 import SchemaTreeEditor from './SchemaTreeEditor';
 import {
   addAsset,
@@ -50,20 +53,24 @@ export default function LibraryWorkbench() {
   const [commitReason, setCommitReason] = useState('Reviewed in Library Workbench');
   const [commitResult, setCommitResult] = useState<VisualLibraryAuthoringCommitResult | null>(null);
   const [loading, setLoading] = useState(false);
+  const [inferenceLaunch, setInferenceLaunch] = useState<SampleInferenceLaunch | null>(null);
   const revisionRef = useRef(0);
   const currentDraftRef = useRef<VisualLibraryAuthoringDraft | null>(null);
   const lastSavedJsonRef = useRef('');
   const editEpochRef = useRef(0);
   const saveQueueRef = useRef<Promise<void>>(Promise.resolve());
 
-  const installDraft = useCallback((draft: VisualLibraryAuthoringDraft) => {
+  const installDraft = useCallback((
+    draft: VisualLibraryAuthoringDraft,
+    nextSelection: LibraryAssetSelection = { kind: 'library', key: '' },
+  ) => {
     currentDraftRef.current = draft;
     revisionRef.current = draft.revision;
     lastSavedJsonRef.current = JSON.stringify(draft.document);
     setDraftId(draft.draftId);
     setRevision(draft.revision);
     setDocument(draft.document);
-    setSelection({ kind: 'library', key: '' });
+    setSelection(nextSelection);
     setSaveState('saved');
     setSaveMessage(`Saved revision ${draft.revision}`);
     setPreview(null);
@@ -187,7 +194,11 @@ export default function LibraryWorkbench() {
     setCommitResult(null);
   }, []);
 
-  const start = (nextDocument: VisualLibraryAuthoringDocument, source: string) => {
+  const start = (
+    nextDocument: VisualLibraryAuthoringDocument,
+    source: string,
+    inference?: SampleInferenceLaunch,
+  ) => {
     const id = `${nextDocument.library.id}-${draftSuffix()}`;
     editEpochRef.current += 1;
     revisionRef.current = 0;
@@ -196,11 +207,14 @@ export default function LibraryWorkbench() {
     setDraftId(id);
     setRevision(0);
     setDocument(nextDocument);
-    setSelection({ kind: 'library', key: '' });
+    setSelection(inference
+      ? { kind: 'operator', key: inference.operatorKey }
+      : { kind: 'library', key: '' });
     setSaveState('dirty');
     setSaveMessage(`New ${source} draft`);
     setPreview(null);
     setCommitResult(null);
+    setInferenceLaunch(inference ?? null);
     window.history.replaceState({}, '', `/libraries/?draftId=${encodeURIComponent(id)}`);
   };
 
@@ -291,6 +305,13 @@ export default function LibraryWorkbench() {
     changeDocument((current) => removeAsset(current, selection));
     setSelection({ kind: 'library', key: '' });
   };
+  const prepareInferenceDraft = () => persist(document, editEpochRef.current);
+  const installInferenceDraft = (draft: VisualLibraryAuthoringDraft) => {
+    const operatorKey = inferenceLaunch?.operatorKey ?? '';
+    editEpochRef.current += 1;
+    installDraft(draft, { kind: 'operator', key: operatorKey });
+    setInferenceLaunch(null);
+  };
 
   return (
     <main className="library-workbench" data-testid="library-workbench">
@@ -333,7 +354,18 @@ export default function LibraryWorkbench() {
           onAdd={add}
         />
         <section className="library-builder-scroll">
-          {renderBuilder(document, selection, changeDocument, rename, remove)}
+          {renderBuilder(
+            document,
+            selection,
+            changeDocument,
+            rename,
+            remove,
+            (direction) => {
+              if (selection.kind === 'operator') {
+                setInferenceLaunch({ operatorKey: selection.key, direction });
+              }
+            },
+          )}
         </section>
         <CanonicalContractPreview
           preview={preview}
@@ -347,6 +379,19 @@ export default function LibraryWorkbench() {
           onDiagnostic={focusDiagnostic}
         />
       </div>
+      {inferenceLaunch && document.operators?.[inferenceLaunch.operatorKey] && (
+        <SampleInferenceReview
+          {...inferenceLaunch}
+          operator={document.operators[inferenceLaunch.operatorKey]}
+          prepareDraft={prepareInferenceDraft}
+          onApplied={installInferenceDraft}
+          onConflict={() => {
+            setSaveState('conflict');
+            setSaveMessage('A newer revision exists. Reload before continuing.');
+          }}
+          onClose={() => setInferenceLaunch(null)}
+        />
+      )}
     </main>
   );
 }
@@ -359,6 +404,7 @@ function renderBuilder(
   ) => void,
   rename: (nextKey: string) => void,
   remove: () => void,
+  inferSamples: (direction: 'INPUT' | 'OUTPUT') => void,
 ) {
   if (selection.kind === 'operator') {
     const operator = document.operators?.[selection.key];
@@ -373,6 +419,7 @@ function renderBuilder(
             operators: { ...(current.operators ?? {}), [selection.key]: nextOperator },
           }))}
           onRemove={remove}
+          onInferSamples={inferSamples}
         />
       );
     }

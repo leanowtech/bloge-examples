@@ -52,6 +52,9 @@ import type {
   VisualLibraryAuthoringCompileResult,
   VisualLibraryAuthoringDocument,
   VisualLibraryAuthoringDraft,
+  VisualSampleInferenceDecision,
+  VisualSampleInferenceRequest,
+  VisualSampleInferenceResult,
 } from './types';
 import type {
   ContractCompatibilityReport,
@@ -431,6 +434,56 @@ export async function saveLibraryAuthoringDraft(
         body: JSON.stringify({
           sourceMode,
           document,
+          actor: 'visual-library-workbench',
+        }),
+      },
+    ),
+  );
+}
+
+/** Infers payload-free observed facts for one exact persisted operator port. */
+export async function inferLibraryAuthoringSamples(
+  draftId: string,
+  revision: number,
+  request: VisualSampleInferenceRequest,
+): Promise<VisualSampleInferenceResult> {
+  return readJsonMutation<VisualSampleInferenceResult>(
+    await sendRequest(
+      `/admin/visual-operator-library-authoring/drafts/${encodeURIComponent(draftId)}/infer/samples`,
+      {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'If-Match': `"${Math.max(0, revision)}"`,
+        },
+        body: JSON.stringify(request),
+      },
+    ),
+  );
+}
+
+/** Replays the exact sample request and atomically promotes all explicit decisions. */
+export async function applyLibraryAuthoringSamples(
+  draftId: string,
+  revision: number,
+  inference: VisualSampleInferenceRequest,
+  evidenceFingerprint: string,
+  decisions: VisualSampleInferenceDecision[],
+): Promise<VisualLibraryAuthoringDraft> {
+  return readJsonMutation<VisualLibraryAuthoringDraft>(
+    await sendRequest(
+      `/admin/visual-operator-library-authoring/drafts/${encodeURIComponent(draftId)}/infer/samples/apply`,
+      {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'If-Match': `"${Math.max(0, revision)}"`,
+        },
+        body: JSON.stringify({
+          schemaVersion: 'bloge.visualSampleInferenceApplyRequest.v1',
+          inference,
+          evidenceFingerprint,
+          decisions,
           actor: 'visual-library-workbench',
         }),
       },

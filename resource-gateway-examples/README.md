@@ -67,7 +67,7 @@ silently consuming work.
 | Open | Best first move |
 | --- | --- |
 | `http://localhost:8080/author/` | Build a schema-constrained graph on the visual canvas |
-| `http://localhost:8080/libraries/` | Create an operator and built-in function library with structured builders, authoritative preview, autosave, and exact revision commit |
+| `http://localhost:8080/libraries/` | Create an operator/function library, infer nested schemas from samples, review ambiguous facts, and commit exact revisions |
 | `http://localhost:8080/rehearsals/` | Triage exact-scope Scenario batches and inspect signed evidence; without `--scenario-batch`, the page shows a capability-aware unavailable state |
 | `http://localhost:8080/showcase/` | Explore guided product scenarios and sample outputs |
 | `http://localhost:8080/examples/gateway` | Use the legacy Custom Composer regression surface |
@@ -112,6 +112,14 @@ structured fields in the center. The right side is a server-authoritative canoni
 autosave stores an exact revision, diagnostics jump back to their source field, and
 **Import Design Catalog** is enabled only when that exact preview remains importable. An ETag
 conflict blocks further commit until **Reload** restores the latest stored revision.
+
+To experience schema inference, choose **Infer from Samples** on the Library start page and keep
+the two prefilled JSON records. **Create and analyze** creates a minimal operator draft; then
+**Analyze samples** shows the nested candidate, payload-free field observations, and every
+required declaration decision. **Use recommendations** is an explicit bulk choice, not an
+automatic promotion. **Apply declared schema** remains disabled until all decisions are present,
+then the server replays the exact request and atomically returns the next draft revision. The
+operator field tree expands the applied object instead of flattening it to `any`.
 | `PUT http://localhost:8080/api/mirror/outcome-selected-populations/uploads/{uploadId}/chunks/{chunkIndex}` | Stage or exactly replay one manifest-declared content-addressed chunk |
 | `GET http://localhost:8080/api/mirror/outcome-selected-populations/uploads/{uploadId}` | Read payload-free durable progress, expiry, and finalization state |
 | `POST http://localhost:8080/api/mirror/outcome-selected-populations/uploads/{uploadId}/finalize` | Finalize a complete upload through the existing governed population admission |
@@ -3877,6 +3885,9 @@ draft or retains raw samples. After review, `POST .../infer/samples/apply` repla
 same bounded request, verifies its evidence fingerprint and every explicit confirmation,
 then atomically stores the declared port, payload-free evidence, and decisions as one new
 draft revision. Editing that declared port later invalidates its attached evidence.
+The `/libraries/` Workbench exposes this protocol through Input/Output target selection,
+candidate/fact review, an explicit confirmation queue, responsive review layout, and
+lossless nested-object feedback after apply.
 See `/catalogs` for exact limits and feature flags.
 
 For Canonical Advanced import:
