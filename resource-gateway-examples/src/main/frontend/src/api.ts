@@ -56,6 +56,7 @@ import type {
   VisualAuthoringFixtureSaveRequest,
   VisualAuthoringOperatorTestDraft,
   VisualAuthoringOperatorTestRunEvidence,
+  VisualAuthoringFactProjection,
   VisualFunctionTestSuite,
   VisualLibraryAuthoringCommitResult,
   VisualLibraryAuthoringCatalogs,
@@ -421,6 +422,33 @@ export async function fetchLibraryAuthoringDrafts(): Promise<VisualLibraryAuthor
 export async function fetchLibraryAuthoringCatalogs(): Promise<VisualLibraryAuthoringCatalogs> {
   return readJsonMutation<VisualLibraryAuthoringCatalogs>(
     await sendRequest('/admin/visual-operator-library-authoring/catalogs'),
+  );
+}
+
+export type LibraryAuthoringDiscoveryMode =
+  | 'runtime'
+  | 'dsl'
+  | 'capability-catalog'
+  | 'asyncapi'
+  | 'openapi';
+
+/** Discovers existing assets through one source-neutral facts and runtime-parity protocol. */
+export async function discoverLibraryAuthoringAssets(
+  mode: LibraryAuthoringDiscoveryMode,
+  request: Record<string, unknown> = {},
+): Promise<VisualAuthoringFactProjection> {
+  const base = '/admin/visual-operator-library-authoring/discovery';
+  if (mode === 'runtime') {
+    return readJsonMutation<VisualAuthoringFactProjection>(
+      await sendRequest(`${base}/runtime`),
+    );
+  }
+  return readJsonMutation<VisualAuthoringFactProjection>(
+    await sendRequest(`${base}/${mode}`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(request),
+    }),
   );
 }
 

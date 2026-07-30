@@ -28,6 +28,13 @@ export default function CanonicalContractPreview({
 }: CanonicalContractPreviewProps) {
   const errors = preview?.diagnostics.filter((diagnostic) => diagnostic.level === 'ERROR') ?? [];
   const warnings = preview?.diagnostics.filter((diagnostic) => diagnostic.level === 'WARNING') ?? [];
+  const runtimeParity = preview?.runtimeParity ?? [];
+  const boundRuntimeCount = runtimeParity.filter((parity) => parity.executableReady).length;
+  const runtimeLabel = preview?.readiness.productionReady
+    ? 'Ready'
+    : runtimeParity.length > 0
+      ? `${boundRuntimeCount}/${runtimeParity.length} bound`
+      : 'Not checked';
 
   return (
     <aside className="library-contract-preview" aria-label="Canonical contract preview">
@@ -54,9 +61,33 @@ export default function CanonicalContractPreview({
         <dl>
           <div><dt>Design import</dt><dd>{preview?.readiness.importable ? 'Ready' : 'Blocked'}</dd></div>
           <div><dt>Strong schema</dt><dd>{preview?.readiness.strongSchemaReady ? 'Ready' : 'Review'}</dd></div>
-          <div><dt>Runtime</dt><dd>{preview?.readiness.productionReady ? 'Ready' : 'Not bound'}</dd></div>
+          <div><dt>Runtime</dt><dd>{runtimeLabel}</dd></div>
         </dl>
       </section>
+
+      {runtimeParity.length > 0 && (
+        <section className="library-preview-runtime" data-testid="library-preview-runtime">
+          <header>
+            <h3>Runtime parity</h3>
+            <span>{boundRuntimeCount} bound / {runtimeParity.length} total</span>
+          </header>
+          <ol>
+            {runtimeParity.map((parity, index) => (
+              <li
+                key={`${parity.assetKind}:${parity.assetRef}:${parity.runtimeProfile}:${index}`}
+                data-state={parity.state}
+              >
+                <div>
+                  <span>{parity.assetKind}</span>
+                  <strong>{parity.assetRef}</strong>
+                </div>
+                <b>{parity.state.replace(/_/g, ' ')}</b>
+                <small>{parity.message}</small>
+              </li>
+            ))}
+          </ol>
+        </section>
+      )}
 
       <section className="library-preview-diagnostics">
         <header>

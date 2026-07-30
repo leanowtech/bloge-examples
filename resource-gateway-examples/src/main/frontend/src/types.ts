@@ -790,6 +790,79 @@ export interface VisualLibraryAuthoringDocument {
   examples?: Record<string, unknown>;
 }
 
+export type VisualAuthoringDiscoverySourceKind =
+  | 'RUNTIME_INVENTORY'
+  | 'DSL'
+  | 'CAPABILITY_CATALOG'
+  | 'OPEN_API'
+  | 'ASYNC_API';
+
+export interface VisualAuthoringDiscoverySummary {
+  operatorFactCount: number;
+  functionFactCount: number;
+  graphFactCount: number;
+  boundCount: number;
+  driftedCount: number;
+  unresolvedCount: number;
+  runtimeReady: boolean;
+}
+
+export interface VisualAuthoringFact {
+  factId: string;
+  assetKind: 'OPERATOR' | 'FUNCTION' | 'GRAPH' | 'SOURCE';
+  assetRef: string;
+  factKind: 'DECLARATION' | 'USAGE' | 'TOPOLOGY' | 'RUNTIME';
+  evidenceLevel: 'DECLARED' | 'OBSERVED' | 'INFERRED' | 'UNKNOWN';
+  contractFingerprint: string;
+  sourcePath: string;
+  occurrences: number;
+  dependencies: string[];
+  attributes: Record<string, unknown>;
+}
+
+export interface VisualAuthoringRuntimeParity {
+  assetKind: 'OPERATOR' | 'FUNCTION';
+  assetRef: string;
+  runtimeProfile: string;
+  state:
+    | 'BOUND'
+    | 'DRIFTED'
+    | 'DOCUMENTED_ONLY'
+    | 'RUNTIME_DISCOVERED'
+    | 'BLOCKED_BY_POLICY'
+    | 'UNKNOWN';
+  executableReady: boolean;
+  declaredFingerprint: string;
+  runtimeFingerprint: string;
+  reasonCode: string;
+  message: string;
+}
+
+export interface VisualAuthoringReviewItem {
+  code: string;
+  level: 'ERROR' | 'WARNING' | 'INFO';
+  assetKind: string;
+  assetRef: string;
+  message: string;
+  action: string;
+}
+
+/** Source-neutral discovery response used by Library Workbench and external tooling. */
+export interface VisualAuthoringFactProjection {
+  schemaVersion: 'bloge.visualAuthoringFactProjection.v1';
+  sourceKind: VisualAuthoringDiscoverySourceKind;
+  sourceId: string;
+  sourceFingerprint: string;
+  projectionFingerprint: string;
+  accepted: boolean;
+  summary: VisualAuthoringDiscoverySummary;
+  facts: VisualAuthoringFact[];
+  runtimeParity: VisualAuthoringRuntimeParity[];
+  reviewItems: VisualAuthoringReviewItem[];
+  diagnostics: VisualDiagnostic[];
+  authoringDocument?: VisualLibraryAuthoringDocument;
+}
+
 /** Compact operator source owned by the Workbench. */
 export interface VisualOperatorAuthoring {
   name?: string;
@@ -954,6 +1027,8 @@ export interface VisualLibraryAuthoringCompileResult {
   compilerVersion: string;
   grammarVersion: string;
   catalogFingerprint: string;
+  runtimeInventoryFingerprint?: string;
+  runtimeParity?: VisualAuthoringRuntimeParity[];
   previewAuthority: 'SERVER_AUTHORITATIVE' | 'LOCAL_PREVIEW';
   canonicalLibrary?: OperatorLibrary;
   canonicalFingerprint: string;

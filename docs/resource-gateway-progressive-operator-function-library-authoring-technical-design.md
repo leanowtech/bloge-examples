@@ -1,6 +1,6 @@
 # Resource Gateway 渐进式算子与 Built-in Function 库创作技术方案
 
-> 状态：Approved；Stage 0、Stage 1、Stage 2.4、Stage 2.5 治理型 fixture、Stage 2.6 受信 core function 进程隔离 runner 与 Stage 2.7 签名 evidence 已实现，Stage 3-4 待实施
+> 状态：Approved；Stage 0、Stage 1、Stage 2.4-2.7 与 Stage 3 存量能力发现已实现，Stage 4 企业生产化进行中
 >
 > 日期：2026-07-30
 >
@@ -18,6 +18,7 @@
 - [BLOGE 框架算子与函数 Schema 导出需求](bloge-framework-operator-function-schema-export-requirement.md)
 - [BLOGE VS Code 插件轻量化可视化编排方案](bloge-vscode-extension-lightweight-authoring-plan.md)
 - [Resource Gateway Author UX 体验成熟度 95 分提升计划](resource-gateway-author-ux-maturity-95-plan.md)
+- [Authoring Fact Projection 协议与接入说明](resource-gateway-authoring-fact-projection-protocol.md)
 - [本方案深度审计记录](resource-gateway-progressive-operator-function-library-authoring-technical-design-audit.md)
 - [本方案实现状态与差距](resource-gateway-progressive-library-authoring-implementation-status.md)
 
@@ -27,6 +28,7 @@ Draw.io 源图：
 - [创作工作台](assets/drawio/resource-gateway-progressive-library-authoring-workbench.drawio)
 - [确定性编译链路](assets/drawio/resource-gateway-progressive-library-authoring-compile-flow.drawio)
 - [成熟度与发布门禁](assets/drawio/resource-gateway-progressive-library-authoring-readiness-lifecycle.drawio)
+- [存量事实发现与运行时绑定](assets/drawio/resource-gateway-authoring-fact-projection-flow.drawio)
 
 ## 0. 执行摘要
 
@@ -100,7 +102,7 @@ Visual Operator Catalog / Graph / Test / Publish
 | 已有 Java operator 投影 | `JavaOperatorInventoryProjector` | runtime operator schema 可逐步自动化 |
 | 已有 revision、diff、impact、bundle | `OperatorLibraryRevision`、`OperatorLibraryDiff`、`OperatorLibraryExportBundle` | 新流程应接入现有治理链 |
 | Built-in function 目录已有模型 | `OperatorLibrary.BuiltInFunction` | 可复用 canonical 结构 |
-| 默认函数目录仍由 example 层手工维护 | `BuiltInFunctionCatalog.defaults()` | function runtime parity 尚未形成框架级真相 |
+| 框架函数可从 provider SPI 投影运行时 inventory | `FrameworkFunctionInventoryProvider`、`CoreFrameworkFunctionInventoryProvider` | BLOGE core SPI 尚不暴露权威签名，因此 core callable 只能到 `RUNTIME_DISCOVERED`，不能伪造 `BOUND` |
 | Library UI 仍是完整协议文本框 | `AuthorCanvas.tsx` 的 `library-intake` | 复杂度直接暴露给用户 |
 
 ### 1.2 难度来自哪里
@@ -1049,11 +1051,14 @@ library B: namespace=b, name=coalesce
 | --- | --- |
 | `DOCUMENTED_ONLY` | 只用于提示，真实执行不可证明 |
 | `RUNTIME_DISCOVERED` | runtime inventory 发现同名函数 |
-| `SIGNATURE_MATCHED` | 签名兼容 |
 | `BOUND` | target runtime profile 已锁定 |
 | `DRIFTED` | schema 与 runtime 不一致 |
+| `BLOCKED_BY_POLICY` | 实现存在，但 purity 或 execution-service policy 不允许 |
 
-在 BLOGE framework 尚未提供 function inventory export 前，手工函数默认最高只能到 `DOCUMENTED_ONLY`。Resource Gateway 不应伪造更高 readiness。
+当前 provider SPI 已能导出 function inventory。BLOGE core SPI 只暴露实现注册信息、不暴露
+权威签名，因此同名 core function 最高只能到 `RUNTIME_DISCOVERED`；业务 provider 同时提供
+权威合同且精确匹配后，直接进入 `BOUND`。v1 不单独暴露容易被误读为 executable 的
+`SIGNATURE_MATCHED` 中间状态。Resource Gateway 不应伪造更高 readiness。
 
 ### 9.3 Function Test
 
@@ -1548,6 +1553,8 @@ Java 和 TypeScript test suite 消费同一批 vectors。
 14. desktop/mobile receipt 均不回传 payload，且 revision、retention、classification、
     redaction count 与 fingerprint 可见。
 15. 1024px 桌面完成定义，390px 可只读审阅。
+16. 五类存量来源进入同一 fact/runtime parity/review 视图，结构化来源可进入 Builder。
+17. DSL 扫描后进入 Graph Author 自动完成 preview、拓扑渲染、auto-layout 和 fit view。
 
 ## 15. 迁移与交付计划
 
@@ -1688,20 +1695,87 @@ evidence/gate 展示立即清空，避免把不同 suite 的结果继续贴在�
 
 ### 15.4 Stage 3：存量能力发现
 
+实现状态：**已完成可用垂直切片**。
+
+当前实现不再让 Workbench 分别理解五套 source-specific response，而是把来源适配器收敛到
+`bloge.visualAuthoringFactProjection.v1`：
+
+![存量事实发现与运行时绑定](assets/resource-gateway-authoring-fact-projection-flow.svg)
+
+```text
+Capability Catalog / AsyncAPI / OpenAPI / BLOGE DSL / Runtime Inventory
+                                 |
+                                 v
+                 source-specific conservative adapter
+                                 |
+                                 v
+          facts + runtimeParity + reviewItems + diagnostics
+                                 |
+                  +--------------+--------------+
+                  |                             |
+       safe authoringDocument            topology/fact review
+       -> structured Builder             -> Graph Author / manual confirmation
+```
+
+统一投影固定携带 source/projection fingerprint、事实证据等级、依赖、运行时匹配状态和人工
+审阅任务。只有适配器能保守生成合法 `bloge.visualLibraryAuthoring.v1` 时才返回
+`authoringDocument`；DSL 只有调用和依赖事实时不会臆造输入输出 Schema。旧的 Capability
+Catalog、AsyncAPI、OpenAPI 和 DSL endpoint 保持不变，统一协议是新增消费面。
+
+运行时比较采用 fail-closed 语义：
+
+| 状态 | 证明强度 | executable readiness |
+| --- | --- | --- |
+| `BOUND` | 声明合同与目标 runtime 权威合同精确兼容 | 是 |
+| `DRIFTED` | 同名资产存在，但合同或实现声明冲突 | 否 |
+| `DOCUMENTED_ONLY` | 只有设计声明，目标 runtime 不存在 | 否 |
+| `RUNTIME_DISCOVERED` | 实现存在，但缺声明合同或权威签名 | 否 |
+| `BLOCKED_BY_POLICY` | 实现存在，但 purity/execution-service policy 不允许 | 否 |
+
+`FrameworkFunctionInventoryProvider` 是扩展 SPI。provider 故障被隔离成诊断与 review，不拖垮
+整个 inventory；相同 callable 的多个非一致实现会进入 `DRIFTED`。BLOGE core 当前只能枚举
+实现名称、purity 和 execution-service 依赖，不能提供完整参数/返回签名，所以系统诚实停在
+`RUNTIME_DISCOVERED`。业务 runtime 只有通过 provider 输出权威
+`OperatorLibrary.BuiltInFunction` 合同后，函数才有资格进入 `BOUND`。
+
+新增 endpoint：
+
+| Method | Endpoint | 输入 |
+| --- | --- | --- |
+| `GET` | `/admin/visual-operator-library-authoring/discovery/runtime` | 当前进程 runtime inventory |
+| `POST` | `.../discovery/capability-catalog` | `sourceId + catalog` |
+| `POST` | `.../discovery/asyncapi` | 既有 AsyncAPI import request |
+| `POST` | `.../discovery/openapi` | 既有 OpenAPI import request |
+| `POST` | `.../discovery/dsl` | 既有 DSL preview request |
+
+同步发现正文统一限制为 10 MiB，超限返回
+`413 RG.AUTHORING.DISCOVERY_SOURCE_LIMIT_EXCEEDED`。更大的制品仍属于 Stage 4 的异步
+upload/job/配额链路，不能通过扩大同步 controller 内存上限解决。
+
+Workbench 到 Graph Author 的 DSL 交接不把源码塞入 URL，也不把临时源码持久化到服务端。
+同源页面使用版本化、一次性 `sessionStorage` handoff：最长 10 分钟、最多 500,000 字符，
+Author 读取后立即删除并自动调用既有 DSL preview；成功后复用同一 `autoLayoutFlowNodes`
+与 `fitView`，失败则打开显式 DSL import 表单保留人工恢复路径。该 handoff 只是浏览器 UX
+协议，权威服务端边界仍是 `DslImportPreviewRequest` 和 fingerprinted fact projection。
+
 交付：
 
-- Capability Catalog fact adapter；
-- AsyncAPI/OpenAPI preview；
-- DSL operator/function usage scan；
-- Java operator runtime inventory；
-- framework function inventory 对接；
-- callable parity。
+- [x] Capability Catalog fact adapter；
+- [x] AsyncAPI/OpenAPI preview；
+- [x] DSL operator/function usage scan；
+- [x] Java operator runtime inventory；
+- [x] framework function inventory SPI 与 core provider；
+- [x] operator/function callable parity；
+- [x] Workbench Discover 入口、内置来源样例和 review queue；
+- [x] DSL 一次性同源 handoff、自动 preview、auto-layout 与失败恢复；
+- [x] 统一机器 Schema、能力探针和兼容 endpoint。
 
 Exit Gate：
 
 - 无 Schema DSL 可生成 topology-first draft；
 - runtime inventory drift 可见；
 - function schema 不能在 runtime 缺失时进入 executable readiness；
+- DSL 从 Workbench 进入 Graph Author 后自动渲染完整已知拓扑；
 - 旧 adapter endpoint contract 保持兼容。
 
 ### 15.5 Stage 4：企业生产化
@@ -1829,7 +1903,7 @@ docs/bloge-visual-library-authoring-guide.md
 | Archetype 默认值错误 | 隐藏生产风险 | 只自动化安全默认；外部能力保留 unresolved |
 | 推断让用户过度信任 Schema | 业务空间被过度收窄 | observed/confirmed 分层、解释理由、enum/closed object 必须确认 |
 | Java/TS compiler 漂移 | VS Code 所见与服务端不同 | local 只 preview、共享 golden vectors、remote diff |
-| Function runtime 仍无框架真相 | 编辑器提示无法执行 | readiness 上限 DOCUMENTED_ONLY，推动 framework export |
+| Function runtime 缺权威签名真相 | 同名实现可见但合同无法证明 | core readiness 上限 `RUNTIME_DISCOVERED`；业务 provider 必须导出权威合同 |
 | Function-only 放宽冲击旧 consumer | 旧系统假设 operators 非空 | capability negotiation、契约测试、显式拒绝 |
 | Workbench 继续堆叠功能 | UX 再次复杂化 | task builder、渐进披露、固定任务指标 |
 | Draft/fixture 保存业务敏感数据 | 合规风险 | 分库、最小保存、redaction、独立权限和 retention |
@@ -1852,9 +1926,9 @@ docs/bloge-visual-library-authoring-guide.md
 
 - [ ] parser/inferencer 有 fuzz 和资源上限；
 - [ ] fixture/sample 不进入日志；
-- [ ] compiler 输出字节级确定；
+- [x] compiler 输出字节级确定；
 - [ ] local/remote preview 状态不可混淆；
-- [ ] runtime parity 缺失时 executable publish 被阻断；
+- [x] runtime parity 缺失时 executable readiness 被阻断；
 - [ ] browser 固定任务全部通过；
 - [ ] SLO benchmark 达标；
 - [ ] RBAC、audit、tenant isolation 测试通过；

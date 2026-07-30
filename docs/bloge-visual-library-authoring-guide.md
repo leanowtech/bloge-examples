@@ -2,9 +2,11 @@
 
 > 合同：`bloge.visualLibraryAuthoring.v1`
 >
-> 当前能力：Stage 0 权威编译 + Stage 1 持久化 lifecycle + Stage 2 样本推断、草稿级测试表、治理型 fixture、进程隔离 function runner 与签名测试 evidence
+> 当前能力：Stage 0 权威编译 + Stage 1 持久化 lifecycle + Stage 2 推断/测试/fixture/evidence + Stage 3 统一存量发现与 runtime parity
 >
 > 机器 Schema：[bloge-visual-library-authoring-v1.schema.json](schemas/bloge-visual-library-authoring-v1.schema.json)
+>
+> 发现协议：[bloge-visual-authoring-fact-projection-v1.schema.json](schemas/bloge-visual-authoring-fact-projection-v1.schema.json)
 
 ## 1. 什么时候使用
 
@@ -40,6 +42,29 @@
 
 已有 operator 也可以在 **Inputs** 或 **Outputs** 标题右侧直接点击 **Infer from samples**。
 分析不会写 draft；只有确认队列完整且服务端重放通过后，Apply 才会原子产生下一 revision。
+
+存量资产发现体验：
+
+1. 回到 Library Workbench 起始页，打开 **Discover Existing Assets**；
+2. 保持 **Runtime**，点击 **Scan source**，查看当前进程可见的 operator/function、运行 profile
+   和 review queue；
+3. 切换 **Capability**、**AsyncAPI** 或 **OpenAPI**。每个标签都已经放入可运行样例，直接
+   **Scan source**，再点击 **Open structured draft** 进入 Builder；
+4. 切换 **BLOGE DSL** 并扫描，查看 DSL 中的 graph、operator/function 调用和依赖拓扑；
+5. DSL 只证明“用到了什么、如何依赖”，没有声明输入输出合同，所以系统不会伪造一个全是
+   `any` 的算子库；点击 **Open Graph Author** 后，Author 会自动 preview、渲染并
+   auto-layout，不需要再次粘贴 DSL；
+6. 对照 parity：`BOUND` 才表示声明合同与权威 runtime 合同匹配；
+   `RUNTIME_DISCOVERED` 只表示同名实现存在，`DOCUMENTED_ONLY` 表示只有文档声明，
+   `DRIFTED`/`BLOCKED_BY_POLICY` 都会阻断 executable readiness。
+
+发现结果的 **Review required** 不等于解析失败。它表示资产已被理解，但仍缺 Schema、
+权威函数签名、runtime binding 或人工确认。只有来源可以被保守转换成合法创作合同时，
+页面才显示 **Open structured draft**。
+
+DSL 页面交接使用同源、一次性浏览器会话数据，不把源码写入 URL。交接最长保留 10 分钟，
+上限 500,000 字符，Author 读取后立即删除；若浏览器禁止会话存储、正文过大或 preview
+失败，页面会保留明确错误，并回到 Author 的显式 DSL import 表单。
 
 测试表体验：
 
@@ -83,6 +108,8 @@ curl --fail-with-body \
 | `readiness` | 是否可导入、Schema 是否明确、当前成熟度 |
 | `diff` | 与同 `library.id` 当前 registry revision 的差异 |
 | `catalogFingerprint` | 本次冲突判断所依据的目标 catalog 快照 |
+| `runtimeInventoryFingerprint` | 本次 parity 所依据的 operator/function runtime 快照 |
+| `runtimeParity` | 逐资产 `BOUND/DRIFTED/DOCUMENTED_ONLY/RUNTIME_DISCOVERED/BLOCKED_BY_POLICY` 结果 |
 
 顶层 `preview` 是只读操作，不会写入 registry。需要可恢复编辑、自动保存和受保护提交时，
 使用第 9 节的 draft lifecycle。
@@ -322,10 +349,55 @@ curl --fail-with-body \
 - `functionTestDraftRunner=true`
 - `governedFixturePersistence=true`（`test`/`staging`；其他 profile 为 `false`）
 - `isolatedFunctionTestWorker=true`
+- `unifiedDiscoveryFacts=true`
+- `runtimeParity=true`
+- `frameworkFunctionInventory=true`
 
 集成方也可以读取 `/api/integration/capabilities`，确认协议对象、stateless endpoint 和
 draft lifecycle/test endpoint。客户端必须按实际响应协商，不能硬编码 profile 能力；
 `crossLibraryTypeImports=false` 仍是当前明确边界。
+
+`limits.maximumDiscoverySourceBytes=10485760` 是五类同步发现入口的统一规范化正文上限。
+超限返回 `413 RG.AUTHORING.DISCOVERY_SOURCE_LIMIT_EXCEEDED`；大文件不能靠反复提高同步
+内存上限处理，应进入后续异步 upload/job 能力。
+
+### 8.1 存量资产发现 API
+
+| Method | Endpoint | 用途 |
+| --- | --- | --- |
+| `GET` | `/admin/visual-operator-library-authoring/discovery/runtime` | 当前进程 operator/function inventory |
+| `POST` | `.../discovery/capability-catalog` | Capability Catalog 声明事实 |
+| `POST` | `.../discovery/asyncapi` | AsyncAPI operation 声明事实 |
+| `POST` | `.../discovery/openapi` | OpenAPI resource operation 声明事实 |
+| `POST` | `.../discovery/dsl` | BLOGE DSL usage/topology 事实 |
+
+最快可用命令：
+
+```bash
+curl --fail-with-body \
+  http://localhost:8080/admin/visual-operator-library-authoring/discovery/runtime
+```
+
+DSL 扫描示例：
+
+```bash
+curl --fail-with-body \
+  -H 'Content-Type: application/json' \
+  -d '{
+    "sourceId": "support-routing.bloge",
+    "dsl": "graph supportRouting { node classify : \"support:classify-ticket\" {} }",
+    "operatorLibraryIds": [],
+    "inlineLibraries": [],
+    "mode": "preview",
+    "layout": {}
+  }' \
+  http://localhost:8080/admin/visual-operator-library-authoring/discovery/dsl
+```
+
+响应统一为 `bloge.visualAuthoringFactProjection.v1`。消费方应保存 source/projection
+fingerprint，先展示 `facts`，再展示 `runtimeParity` 和 `reviewItems`。完整字段、不变量与
+业务 function provider 接入方式见
+[Authoring Fact Projection 协议与接入说明](resource-gateway-authoring-fact-projection-protocol.md)。
 
 ## 9. 持久化 Draft 与受保护提交
 
@@ -541,3 +613,4 @@ Workbench 已提供完整图形化流程：
 - [实现状态与差距](resource-gateway-progressive-library-authoring-implementation-status.md)
 - [Canonical 算子库 Schema](bloge-visual-operator-library-schema.md)
 - [BLOGE Framework Schema Export 需求](bloge-framework-operator-function-schema-export-requirement.md)
+- [Authoring Fact Projection 协议与接入说明](resource-gateway-authoring-fact-projection-protocol.md)

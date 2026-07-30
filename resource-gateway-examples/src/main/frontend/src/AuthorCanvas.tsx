@@ -167,6 +167,10 @@ import {
 } from './contract-scenario/scenarioAuthoring';
 import { compileScenarioForSimulation } from './contract-scenario/scenarioCompiler';
 import type { WorkspaceTab } from './contract-scenario/ContractScenarioWorkspace';
+import {
+  clearDslAuthorHandoff,
+  peekDslAuthorHandoff,
+} from './author/dslAuthorHandoff';
 import AuthorCommandBar from './author/shell/AuthorCommandBar';
 import AuthorContextInspector from './author/shell/AuthorContextInspector';
 import StartImportDialog, {
@@ -4733,11 +4737,16 @@ export interface AuthorCanvasProps {
 export default function AuthorCanvas({ workspaceVersion = 'v1' }: AuthorCanvasProps = {}) {
   const isTaskWorkspace = workspaceVersion === 'v2';
   const initialWorkspaceLocation = parseAuthorWorkspaceLocation(window.location.search);
+  const [initialDslHandoff] = useState(() => (
+    isTaskWorkspace ? peekDslAuthorHandoff() : null
+  ));
   const [authorMode, setAuthorMode] = useState<AuthorMode>(initialWorkspaceLocation.mode);
   const [startOpen, setStartOpen] = useState(
-    isTaskWorkspace && !initialWorkspaceLocation.hasDeepLinkTarget,
+    isTaskWorkspace && !initialWorkspaceLocation.hasDeepLinkTarget && !initialDslHandoff,
   );
-  const [startSection, setStartSection] = useState<StartImportSection>('menu');
+  const [startSection, setStartSection] = useState<StartImportSection>(
+    initialDslHandoff ? 'dsl' : 'menu',
+  );
   const [paletteWidth, setPaletteWidth] = useState(220);
   const [inspectorWidth, setInspectorWidth] = useState(220);
   const [paletteCollapsed, setPaletteCollapsed] = useState(false);
@@ -4769,8 +4778,12 @@ export default function AuthorCanvas({ workspaceVersion = 'v1' }: AuthorCanvasPr
   const [libraryDiagnostics, setLibraryDiagnostics] = useState<VisualDiagnostic[]>([]);
   const [libraryWarningsAcknowledged, setLibraryWarningsAcknowledged] = useState(false);
   const [libraryWarningReason, setLibraryWarningReason] = useState('');
-  const [dslSourceId, setDslSourceId] = useState(LEGACY_DSL_EXAMPLES[0].sourceId);
-  const [dslSourceText, setDslSourceText] = useState(LEGACY_DSL_EXAMPLES[0].sourceText);
+  const [dslSourceId, setDslSourceId] = useState(
+    initialDslHandoff?.sourceId ?? LEGACY_DSL_EXAMPLES[0].sourceId,
+  );
+  const [dslSourceText, setDslSourceText] = useState(
+    initialDslHandoff?.dsl ?? LEGACY_DSL_EXAMPLES[0].sourceText,
+  );
   const [dslImportBusy, setDslImportBusy] = useState(false);
   const [dslCommitBusy, setDslCommitBusy] = useState(false);
   const [dslRewriteGateBusy, setDslRewriteGateBusy] = useState(false);
@@ -4873,6 +4886,7 @@ export default function AuthorCanvas({ workspaceVersion = 'v1' }: AuthorCanvasPr
   const contractProjectionSequence = useRef(0);
   const contractExecutionSnapshotRef = useRef('');
   const scenarioGraphNameRef = useRef('');
+  const dslHandoffStartedRef = useRef(false);
   const authoritativeContractRef = useRef<{
     canvasSnapshot: string;
     executionSnapshot: string;
@@ -6781,6 +6795,31 @@ export default function AuthorCanvas({ workspaceVersion = 'v1' }: AuthorCanvasPr
   useEffect(() => {
     applyDslProjectionRef.current = applyDslProjection;
   }, [applyDslProjection]);
+
+  useEffect(() => {
+    if (!isTaskWorkspace || !initialDslHandoff || dslHandoffStartedRef.current) {
+      return;
+    }
+    dslHandoffStartedRef.current = true;
+    clearDslAuthorHandoff();
+    setDslImportBusy(true);
+    setDslImportNotice({ level: 'pending', message: 'Rendering discovered DSL...' });
+    setError('');
+    previewDslImport({
+      sourceId: initialDslHandoff.sourceId,
+      dsl: initialDslHandoff.dsl,
+      operatorLibraryIds: operatorLibraryIds(operators),
+      inlineLibraries: inlineLibrariesFromSourceText(librarySourceText),
+      mode: 'preview',
+    })
+      .then((projection) => applyDslProjectionRef.current(projection))
+      .catch((cause: unknown) => {
+        setDslImportNotice({ level: 'error', message: String(cause) });
+        setStartSection('dsl');
+        setStartOpen(true);
+      })
+      .finally(() => setDslImportBusy(false));
+  }, [initialDslHandoff, isTaskWorkspace, librarySourceText, operators]);
 
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);

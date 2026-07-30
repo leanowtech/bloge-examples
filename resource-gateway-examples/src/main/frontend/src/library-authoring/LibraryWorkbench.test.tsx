@@ -22,6 +22,7 @@ const apiMocks = vi.hoisted(() => ({
   fetchTestGate: vi.fn(),
   draftFunctionTest: vi.fn(),
   draftOperatorTest: vi.fn(),
+  discover: vi.fn(),
   infer: vi.fn(),
   preview: vi.fn(),
   runFunctionTest: vi.fn(),
@@ -44,6 +45,7 @@ vi.mock('../api', () => ({
   commitLibraryAuthoringDraft: apiMocks.commit,
   draftLibraryAuthoringFunctionTest: apiMocks.draftFunctionTest,
   draftLibraryAuthoringOperatorTest: apiMocks.draftOperatorTest,
+  discoverLibraryAuthoringAssets: apiMocks.discover,
   fetchLibraryAuthoringDraft: apiMocks.fetchDraft,
   fetchLibraryAuthoringCatalogs: apiMocks.fetchCatalogs,
   fetchLibraryAuthoringTestEvidence: apiMocks.fetchTestEvidence,
@@ -70,6 +72,7 @@ describe('LibraryWorkbench', () => {
     apiMocks.applyInference.mockReset();
     apiMocks.draftFunctionTest.mockReset();
     apiMocks.draftOperatorTest.mockReset();
+    apiMocks.discover.mockReset();
     apiMocks.fetchDraft.mockReset();
     apiMocks.fetchCatalogs.mockReset();
     apiMocks.fetchTestEvidence.mockReset();

@@ -319,6 +319,11 @@ class ToolStudioIntegrationServiceTest {
                         "GET /admin/visual-operator-library-authoring/drafts/{draftId}/tests/evidence/{runId}",
                         "GET /admin/visual-operator-library-authoring/drafts/{draftId}/tests/gate",
                         "POST /admin/visual-operator-library-authoring/drafts/{draftId}/commit",
+                        "GET /admin/visual-operator-library-authoring/discovery/runtime",
+                        "POST /admin/visual-operator-library-authoring/discovery/capability-catalog",
+                        "POST /admin/visual-operator-library-authoring/discovery/asyncapi",
+                        "POST /admin/visual-operator-library-authoring/discovery/openapi",
+                        "POST /admin/visual-operator-library-authoring/discovery/dsl",
                         "GET /api/visual/run-controls/{requestId}",
                         "POST /api/visual/run-controls/{requestId}/cancel"
                 );

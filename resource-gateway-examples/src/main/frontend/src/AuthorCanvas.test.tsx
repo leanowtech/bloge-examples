@@ -9,6 +9,7 @@ import {
   AUTHOR_TASK_EVENT_TYPE,
   type AuthorTaskEvent,
 } from './author/telemetry/authorTaskTelemetry';
+import { stageDslAuthorHandoff } from './author/dslAuthorHandoff';
 import { CANVAS_EXAMPLE_TEMPLATES } from './canvasExamples';
 import type {
   BuiltInFunctionDefinition,
@@ -110,6 +111,7 @@ describe('AuthorCanvas operator-library intake', () => {
   beforeEach(() => {
     (globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
     window.history.replaceState({}, '', '/author/');
+    window.sessionStorage.clear();
     reactFlowMocks.fitView.mockReset();
     reactFlowMocks.getZoom.mockReset();
     reactFlowMocks.getZoom.mockReturnValue(1);
@@ -692,6 +694,30 @@ describe('AuthorCanvas operator-library intake', () => {
       .toEqual({ x: 96, y: 72 });
     expect(storedExport.nodes.find((node: { id: string }) => node.id === 'response')?.position)
       .toEqual({ x: 504, y: 72 });
+  });
+
+  it('consumes a Library Workbench DSL handoff and renders an auto-laid-out graph', async () => {
+    expect(stageDslAuthorHandoff(
+      'migrated-eligibility.bloge',
+      'graph migratedEligibility {}',
+    ).accepted).toBe(true);
+
+    await act(async () => {
+      root = createRoot(host);
+      root.render(<AuthorCanvas workspaceVersion="v2" />);
+    });
+
+    await waitFor(() =>
+      expect(query('[data-testid="canvas-node:eligibility"]').textContent)
+        .toContain('eligibility'),
+    );
+    expect(document.querySelector('[data-testid="author-start-dialog"]')).toBeNull();
+    expect(query('.workspace').getAttribute('data-start-section')).toBe('closed');
+    expect(query('[data-testid="node-wrapper:eligibility"]').getAttribute('data-position'))
+      .toBe('96,72');
+    expect(query('[data-testid="node-wrapper:response"]').getAttribute('data-position'))
+      .toBe('504,72');
+    expect(reactFlowMocks.fitView).toHaveBeenCalled();
   });
 
   it('uses a larger overview and tighter fit padding for complex DSL projections', async () => {

@@ -408,6 +408,8 @@ public record IntegrationCapabilities(
                 "bloge.visualLibraryAuthoringDraft.v1"));
         objects.put("visualLibraryAuthoringCommitResult", List.of(
                 "bloge.visualLibraryAuthoringCommitResult.v1"));
+        objects.put("visualLibraryAuthoringFactProjection", List.of(
+                "bloge.visualAuthoringFactProjection.v1"));
         objects.put("visualLibrarySampleInferenceRequest", List.of(
                 "bloge.visualSampleInferenceRequest.v1"));
         objects.put("visualLibrarySampleInferenceResult", List.of(
@@ -852,6 +854,9 @@ public record IntegrationCapabilities(
         features.put("visualLibraryAuthoringStatelessPreview", true);
         features.put("functionOnlyLibrary", true);
         features.put("visualLibraryAuthoringInference", true);
+        features.put("visualLibraryAuthoringDiscoveryFacts", true);
+        features.put("visualLibraryAuthoringRuntimeParity", true);
+        features.put("visualLibraryAuthoringFrameworkFunctionInventory", true);
         features.put("visualLibraryAuthoringDraftLifecycle", true);
         features.put("visualLibraryAuthoringEnterpriseScopedDrafts", true);
         features.put("visualLibraryAuthoringTrustedActorAttribution", true);
@@ -1353,6 +1358,11 @@ public record IntegrationCapabilities(
                 new Endpoint("GET", "/admin/visual-operator-library-authoring/drafts/{draftId}/tests/evidence/{runId}"),
                 new Endpoint("GET", "/admin/visual-operator-library-authoring/drafts/{draftId}/tests/gate"),
                 new Endpoint("POST", "/admin/visual-operator-library-authoring/drafts/{draftId}/commit"),
+                new Endpoint("GET", "/admin/visual-operator-library-authoring/discovery/runtime"),
+                new Endpoint("POST", "/admin/visual-operator-library-authoring/discovery/capability-catalog"),
+                new Endpoint("POST", "/admin/visual-operator-library-authoring/discovery/asyncapi"),
+                new Endpoint("POST", "/admin/visual-operator-library-authoring/discovery/openapi"),
+                new Endpoint("POST", "/admin/visual-operator-library-authoring/discovery/dsl"),
                 new Endpoint("GET", "/api/visual/run-controls/{requestId}"),
                 new Endpoint("POST", "/api/visual/run-controls/{requestId}/cancel")
         ));

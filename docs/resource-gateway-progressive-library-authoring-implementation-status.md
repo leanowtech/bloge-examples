@@ -8,11 +8,12 @@
 >
 > 说明：方案审计的 97 分评价设计成熟度，不代表本页所述功能已经实现。
 
-## 1. 已完成：Canonical 地基、Stage 0/1、Stage 2 测试链与 Stage 4 企业隔离切片
+## 1. 已完成：Canonical 地基、Stage 0/1、Stage 2 测试链、Stage 3 发现与 Stage 4 隔离切片
 
 先把 Workbench 依赖的语法、编译和诊断协议做成可测试内核；随后完成持久化
 draft、ETag 并发控制和 preview-fenced design catalog commit；当前已补齐样本推断审阅、
-exact-draft operator contract test 和进程隔离 function runner 的可体验垂直切片。
+exact-draft operator contract test、进程隔离 function runner，以及 source-neutral
+存量资产发现和 runtime parity 的可体验垂直切片。
 
 | 能力 | 当前实现 | 验证 |
 | --- | --- | --- |
@@ -35,6 +36,13 @@ exact-draft operator contract test 和进程隔离 function runner 的可体验�
 | Catalog safety | 相同 callable 合同去重；历史遗留不兼容数据被隔离并返回诊断，不再 first-wins 或 500 | effective catalog 测试 |
 | Lifecycle parity | Function-only library 可完成 create、export、bundle import、revision diff、restore；函数合同变化进入 SemVer 治理 | controller 与 diff 测试 |
 | Capability projection | capability catalog 以 `function.name` 检测冲突，不再被不同 namespace 绕过 | adapter/controller 测试 |
+| 统一发现协议 | `bloge.visualAuthoringFactProjection.v1` 统一 source/projection fingerprint、声明/观察/runtime facts、dependency、parity、review 和 diagnostic；机器 Schema 固定 wire contract | projection machine-schema、稳定指纹与 diagnostic 序列化测试 |
+| 五类 Source Adapter | Capability Catalog、AsyncAPI、OpenAPI、BLOGE DSL 与进程内 runtime inventory 进入同一投影；既有 source-specific endpoint 不改 request/response | 五路径 MockMvc 与 legacy controller 回归 |
+| 保守草稿降低 | 只有可证明的声明合同生成 `bloge.visualLibraryAuthoring.v1`；DSL 只输出 topology/usage facts，不用 `any` 伪造 Schema；runtime implementation-only function 不生成空 function 草稿 | projector、DSL 和 runtime discovery 测试 |
+| Runtime parity | operator/function 统一输出 `BOUND`、`DRIFTED`、`DOCUMENTED_ONLY`、`RUNTIME_DISCOVERED`、`BLOCKED_BY_POLICY`；只有 exact authoritative contract 允许 executable ready | operator/function exact-match、drift、unknown signature 和 policy 测试 |
+| Framework function inventory | provider SPI 支持业务 runtime 输出 profile、实现指纹、purity、execution-service 依赖和可选权威合同；core provider 精确枚举 BLOGE 注册函数但因框架缺签名而停在 `RUNTIME_DISCOVERED` | provider 故障隔离、多实现歧义和 core inventory 测试 |
+| Runtime-aware Preview | preview 固定 `runtimeInventoryFingerprint` 并返回逐资产 parity；全部精确绑定时进入 `RUNTIME_BOUND`，否则 production ready 为 false 但设计态可继续 | service exact authoritative function 与 unresolved gate 测试 |
+| 有界同步发现 | 五类来源规范化后统一限制 10 MiB，超限返回 `413 RG.AUTHORING.DISCOVERY_SOURCE_LIMIT_EXCEEDED`，不回显来源正文 | controller 边界测试 |
 | Wire-schema parity | 机器 schema 对 operator-only、function-only、mixed、empty、null-only 文档执行真实校验；可选函数 schema 接受 API 的显式 `null` 表示 | machine-schema 测试 |
 | Durable authoring draft | H2 持久化当前 draft 与不可变 revision history，source mode、author、服务端时间和完整 draft fingerprint 随 revision 保存 | repository H2 测试与应用启动测试 |
 | Enterprise-scoped draft | current/revision 表以 tenant、organization、project、environment、region、draft id 为复合主键；list/find/save/preview/infer/apply/commit 与 test/fixture/evidence 都只读取受信身份的完整作用域，同一 draft id 可被不同企业域独立使用 | H2 同名跨 scope、service、controller 与真实 HTTP lifecycle 测试 |
@@ -44,7 +52,7 @@ exact-draft operator contract test 和进程隔离 function runner 的可体验�
 | Preview-fenced commit | commit 重新读取 exact draft 并重新编译，同时校验 authoring、compiler、catalog、canonical fingerprint 和 target registry revision | source/catalog/canonical drift 负例及真实 registry commit 测试 |
 | Commit audit receipt | 成功提交返回 draft/revision、四类 fingerprint、目标 library revision、canonical snapshot、预览证据、actor 与时间 | service 与 HTTP 集成测试 |
 | Library Workbench | `/libraries/` 提供独立产品路由；Graph Author 的 Operator Library 入口可直接进入 | App route、Spring MVC forward 与打包配置测试 |
-| 渐进式起始页 | Quick Create、Infer from Samples、Discover Existing Assets、Advanced Import 四入口；未实现路径明确标为 handoff，不伪装可用 | route/component 测试 |
+| 渐进式起始页 | Quick Create、Infer from Samples、Discover Existing Assets、Advanced Import 四入口；Discover 已提供 Runtime/DSL/Capability/AsyncAPI/OpenAPI 五标签和有效内置来源 | route/component 与五来源 API 测试 |
 | 完整内置样例 | 客服分流、订单履约、风险决策三个样例均含 named types、operators、built-in functions 与 test refs | model/component 测试 |
 | 结构化 Builder | Library Tree、named type field editor、九类 archetype、input/output tree/table、function overload、example/test ref 编辑器 | model/component 测试 |
 | 权威 Preview UX | debounce autosave 后自动调用服务端 preview；展示 readiness、diagnostics、confirmation、canonical contract 与 exact commit receipt | Workbench 状态流测试 |
@@ -70,6 +78,7 @@ exact-draft operator contract test 和进程隔离 function runner 的可体验�
 | Fixture 隔离与隐私 | 五维 enterprise scope、purpose/clearance、显式 JSON Pointer 与敏感键自动脱敏、256 KiB 上限、最长 30 天 retention | service 正负例、跨 scope 与低 clearance 测试 |
 | 加密仓储与审计 | AES-256-GCM versioned key ring，完整 scope/draft/artifact AAD；fixture 与 payload-free 安全事件同事务；到期擦除密文并保留完整性 tombstone | H2 仓储、rollback、projection/commitment tamper 与真实 Spring profile 测试 |
 | 图形化 Fixture 保存 | 样本推断结果和 operator/function test row 均可显式打开 Save as fixture；必须确认 fixture id、classification、retention、redaction paths 和测试数据声明；脱敏输入按当前 payload 给出可解析 JSON Pointer 示例；成功态只显示版本、到期时间和 fingerprint | API/component 状态流、能力禁用、payload-free receipt 与生产构建测试；真实浏览器分别完成 operator row 与 sample 的加密保存，1440×900、390×844 无横向溢出且 console 无 error/warning |
+| 图形化存量发现 | 起始页直接扫描五类来源，按 summary、asset facts、runtime parity、review queue 分层展示；有安全结构化草稿时一键进入 Builder；DSL 通过一次性同源 handoff 自动进入 Graph Author、投影并布局 | API/component/handoff 测试；真实浏览器证据见本页验收记录 |
 
 旧的 operator-only library constructor、raw JSON/YAML validate/import endpoint、revision 和 registry
 存储格式保持兼容。Stage 0 定向回归共 143 个测试通过，其中包含既有 raw import
@@ -78,8 +87,9 @@ exact-draft operator contract test 和进程隔离 function runner 的可体验�
 Stage 2.5 新增 17 个 fixture service/repository/controller/schema 定向用例，并由完整
 `test` profile 应用启动测试证明 vault、retention worker、controller 与 capability 同时装配。
 Stage 2.6 的 worker、机器 Schema、Spring lifecycle 与能力协议定向回归共 66 个用例全绿；
-完整 Resource Gateway `verify` 共执行 5,825 个测试，0 failure、0 error、10 skipped。
-Workbench 前端生产构建通过，36 个前端测试文件共 350 个用例全绿，其中包含样本解析、
+完整 Resource Gateway `verify` 共执行 5,841 个测试，0 failure、0 error、10 skipped；
+DSL topology-only review 的不可变集合回归修复又通过定向 controller 测试。
+Workbench 前端生产构建通过，38 个前端测试文件共 357 个用例全绿，其中包含样本解析、
 完整推断状态流、结构化 Schema 无损往返、operator/function test table 和显式 fixture 保存。
 完整 frontend profile fat JAR 又经真实浏览器试跑：`trim` 在
 `bloge-core-isolated-process.v1` 下返回 `PASSED` 并生成 evidence fingerprint，desktop
@@ -87,7 +97,11 @@ Workbench 前端生产构建通过，36 个前端测试文件共 350 个用例�
 error/warning。Stage 2.7 进一步以 `support:classify-ticket` 完成桌面和 390×844
 真实 Chrome 端到端复核：运行后显示 `SIGNED CURRENT`、evidence fingerprint、
 `Draft gate 1/5` 与 `PASSED`；浮层不越出移动视口，页面无整体横向溢出，console 无
-error/warning。
+error/warning。Stage 3 使用 frontend profile fat JAR 完成五来源实测：runtime inventory
+返回 6 个 operator 与 75 个 function，Capability Catalog 安全进入结构化 Builder；
+BLOGE DSL 扫描得到 `supportRouting` 的 graph/operator/function/dependency facts，点击
+**Open Graph Author** 后自动投影并布局为 2 nodes / 1 edge。1280×720 和 390×844
+均无页面横向溢出，浏览器 console 为空。
 
 ## 2. 当前权威规则
 
@@ -125,7 +139,10 @@ incompatible duplicate
    `visualLibraryAuthoringSignedTestEvidence=true`、
    `visualLibraryAuthoringTestEvidenceGate=true`、
    `visualLibraryAuthoringEnterpriseScopedDrafts=true` 和
-   `visualLibraryAuthoringTrustedActorAttribution=true`；认证由 gateway integration adapter
+   `visualLibraryAuthoringTrustedActorAttribution=true`；Stage 3 还明确返回
+   `visualLibraryAuthoringDiscoveryFacts=true`、
+   `visualLibraryAuthoringRuntimeParity=true` 和
+   `visualLibraryAuthoringFrameworkFunctionInventory=true`。认证由 gateway integration adapter
    映射到 visual-owned access port，visual authoring 内核不反向依赖 gateway
    integration/testing 类型。
 
@@ -146,30 +163,35 @@ incompatible duplicate
    但 callable name 的跨 library 冲突仍依赖应用层 registry 快照，其他 legacy/admin
    catalog 写入口也尚未统一进入 ownership policy。ownership transfer、双人审批和自动迁移
    工具尚未交付；
-7. 尚未建立 Builder、canonical API、VS Code、本地/远端 compiler 和 BLOGE runtime 的多实现 parity；
+7. 服务端 canonical candidate 与进程内 BLOGE runtime 已建立逐资产 parity，但尚未建立
+   Builder、VS Code、本地/远端 compiler 的 cross-implementation golden parity；
+   BLOGE core inventory 仍缺权威 function signature SPI，因此 core function 只能证明
+   `RUNTIME_DISCOVERED`，不能升级成 `BOUND`；
 8. Workbench 已完成样本推断、测试浮层和治理型 Fixture 保存的真实浏览器
    desktop/mobile 检查：operator
    `SCHEMA_CONTRACT/PASSED`、`trim` 的 `BOUND/PASSED`、自定义函数的
    `UNBOUND/NOT_RUN` 均通过；operator row 与 sample 均产生 encrypted、payload-free
    receipt；390×844 页面无横向溢出，表格局部滚动，Esc 恢复入口焦点，console 无
-   error/warning。尚无固定截图回归、任务计时和独立无障碍验收证据。
+   error/warning。存量 DSL 还完成了一次性 `sessionStorage` handoff、自动 preview、
+   auto-layout 和 mobile/desktop 端到端验收；handoff 最长 10 分钟、500,000 字符，
+   读取后即删除，失败时回到显式 DSL import。尚无固定截图回归、任务计时和独立无障碍验收证据。
 
 ## 4. 目标差距
 
 以下评分只用于迭代收敛，不等同于产品成熟度评分。按目标方案交付面加权，当前约完成
-**90%**，剩余差距约 **10%**。
+**95.1%**，剩余差距约 **4.9%**。
 
 | 交付面 | 权重 | 当前完成 | 主要缺口 |
 | --- | ---: | ---: | --- |
-| Canonical 兼容与安全地基 | 15 | 14 | capability negotiation、compatible alias 的显式 owner/provenance model |
+| Canonical 兼容与安全地基 | 15 | 14.2 | capability negotiation 已覆盖 discovery；仍缺 compatible alias 的显式 owner/provenance model |
 | Authoring model、grammar、compiler、source map | 20 | 19 | 跨库类型 resolution 与多实现 parity |
 | Draft/preview/commit lifecycle | 12 | 11.7 | durable revision、ETag、五重栅栏、五维 scope 和 library-id 原子 ownership 完成；缺受治理 ownership migration/transfer |
-| 图形化 Workbench 与渐进披露 | 18 | 17.4 | 已增加签名、新鲜度和 draft gate 的分层反馈；缺可审计 Fix-it、任务计时和固定视觉回归 |
+| 图形化 Workbench 与渐进披露 | 18 | 17.5 | 已增加发现、签名、新鲜度和 draft gate 的分层反馈；缺可审计 Fix-it、任务计时和固定视觉回归 |
 | Sample inference、confirmation、fixture/test | 10 | 10 | infer/confirmation、operator/function test、governed fixture 与受信 core process runner 闭环完成；签名 evidence 计入治理交付面 |
-| Discovery adapter 与 runtime parity | 8 | 3 | 已有 adapters；尚未统一 authoring fact projection |
+| Discovery adapter 与 runtime parity | 8 | 7.6 | 五来源统一投影、runtime SPI、fail-closed parity 和 DSL 画布 handoff 已完成；缺 core 权威签名、异步大制品与跨 runtime golden |
 | 企业级隔离、配额、审计、可观测性 | 10 | 8.3 | fixture/evidence/draft 已统一五维 scope 与 purpose；Workbench catalog commit 有 DB ownership；缺审批、结果审计、分页、持久配额、分布式限流和指标 |
-| 文档、golden、browser、parity 证据 | 7 | 6.6 | 增加 evidence/gate 封闭机器 Schema、能力协议和操作说明；缺固定视觉回归与跨实现 parity 证据 |
-| **合计** | **100** | **90** | **差距 10%** |
+| 文档、golden、browser、parity 证据 | 7 | 6.8 | 统一发现协议、Draw.io 架构图、操作说明与 desktop/mobile 实测完成；缺固定视觉回归与跨实现 parity 证据 |
+| **合计** | **100** | **95.1** | **差距 4.9%** |
 
 当前数据库 ownership 表原子保护的是 canonical `libraryId`，不是跨 library 的
 function callable name。后者的冲突检查仍基于进程内 registry 快照，能保护单实例及普通
@@ -180,15 +202,17 @@ callable ownership 表、数据库唯一约束或可证明的串行化事务，�
 
 ## 5. 下一迭代
 
-下一步从 Stage 2 的治理基线进入 Stage 3/4：
+下一步集中收敛 Stage 4：
 
 1. 将 operator runtime test 下沉到同等级 worker；自定义 binary function 使用容器/远端 sandbox；
 2. 把 `TEST_EVIDENCED` baseline 作为输入接入 ANEKE workbook/publish gate，保留 owner、migration、
    SLA、secret 和 production readiness 的独立治理权；
-3. 将 discovery adapters 收敛为统一 authoring fact projection，并建立 runtime inventory parity；
+3. 推动 BLOGE framework 暴露权威 function signature inventory，并把业务 provider 的
+   generation/attestation、inventory stale lifecycle 和目标环境 profile 选择补齐；
 4. 为 legacy catalog 提供受治理 ownership migration/transfer，并把 callable ownership、
    mutation outcome audit、分页、持久配额、分布式限流和指标补齐；
-5. 补可审计 Fix-it、键盘任务流、无障碍扫描、60/30 秒任务计时和固定视觉回归。
+5. 补可审计 Fix-it、键盘任务流、无障碍扫描、60/30 秒任务计时和固定视觉回归；
+6. 将同步发现的大制品边界升级为带 quota、进度、取消、隔离解析与审计 receipt 的异步任务。
 
 Stage 1 Exit Gate 是新用户可只用 Builder 完成 pure operator 与 overload function 定义，
 诊断可定位回字段，两个浏览器标签制造 stale preview 时旧标签提交被阻断，提交产物与当前

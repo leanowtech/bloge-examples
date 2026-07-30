@@ -2,6 +2,7 @@ package com.leanowtech.bloge.gateway.visual.authoring.model;
 
 import com.fasterxml.jackson.annotation.JsonInclude;
 import com.leanowtech.bloge.gateway.visual.authoring.compile.AuthoringSourceMap;
+import com.leanowtech.bloge.gateway.visual.authoring.discovery.AuthoringFactProjection;
 import com.leanowtech.bloge.gateway.visual.catalog.OperatorLibrary;
 import com.leanowtech.bloge.gateway.visual.catalog.OperatorLibraryDiff;
 import com.leanowtech.bloge.gateway.visual.catalog.OperatorLibraryImpactReview;
@@ -31,7 +32,9 @@ public record AuthoringCompileResult(
         @JsonInclude(JsonInclude.Include.NON_NULL)
         OperatorLibraryDiff diff,
         @JsonInclude(JsonInclude.Include.NON_NULL)
-        OperatorLibraryImpactReview impact
+        OperatorLibraryImpactReview impact,
+        String runtimeInventoryFingerprint,
+        List<AuthoringFactProjection.RuntimeParity> runtimeParity
 ) {
     public static final String SCHEMA_VERSION = "bloge.visualLibraryCompileResult.v1";
     public static final String SERVER_AUTHORITATIVE = "SERVER_AUTHORITATIVE";
@@ -54,6 +57,8 @@ public record AuthoringCompileResult(
         readiness = readiness == null
                 ? new AuthoringReadiness("INVALID", false, false, false, false, List.of())
                 : readiness;
+        runtimeInventoryFingerprint = normalized(runtimeInventoryFingerprint, "");
+        runtimeParity = runtimeParity == null ? List.of() : List.copyOf(runtimeParity);
     }
 
     public boolean importable() {
@@ -81,7 +86,9 @@ public record AuthoringCompileResult(
                 confirmationRequests,
                 readiness,
                 diff,
-                impact
+                impact,
+                runtimeInventoryFingerprint,
+                runtimeParity
         );
     }
 
@@ -89,7 +96,10 @@ public record AuthoringCompileResult(
                                                      List<AuthoringDiagnostic> additionalDiagnostics,
                                                      OperatorLibraryDiff effectiveDiff,
                                                      OperatorLibraryImpactReview effectiveImpact,
-                                                     AuthoringReadiness effectiveReadiness) {
+                                                     AuthoringReadiness effectiveReadiness,
+                                                     String effectiveRuntimeInventoryFingerprint,
+                                                     List<AuthoringFactProjection.RuntimeParity>
+                                                             effectiveRuntimeParity) {
         List<AuthoringDiagnostic> merged = new java.util.ArrayList<>(diagnostics);
         if (additionalDiagnostics != null) {
             merged.addAll(additionalDiagnostics);
@@ -111,7 +121,9 @@ public record AuthoringCompileResult(
                 confirmationRequests,
                 effectiveReadiness == null ? readiness : effectiveReadiness,
                 effectiveDiff,
-                effectiveImpact
+                effectiveImpact,
+                normalized(effectiveRuntimeInventoryFingerprint, runtimeInventoryFingerprint),
+                effectiveRuntimeParity == null ? runtimeParity : effectiveRuntimeParity
         );
     }
 

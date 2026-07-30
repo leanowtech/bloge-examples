@@ -1,0 +1,355 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://bloge.leanowtech.com/schemas/bloge-visual-authoring-fact-projection-v1.schema.json",
+  "title": "BLOGE Visual Authoring Fact Projection",
+  "description": "Source-neutral discovery facts, runtime parity, and review actions produced from existing runtime, DSL, capability-catalog, OpenAPI, or AsyncAPI assets.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "sourceKind",
+    "sourceId",
+    "sourceFingerprint",
+    "projectionFingerprint",
+    "accepted",
+    "summary",
+    "facts",
+    "runtimeParity",
+    "reviewItems",
+    "diagnostics"
+  ],
+  "properties": {
+    "schemaVersion": {
+      "const": "bloge.visualAuthoringFactProjection.v1"
+    },
+    "sourceKind": {
+      "enum": [
+        "RUNTIME_INVENTORY",
+        "DSL",
+        "CAPABILITY_CATALOG",
+        "OPEN_API",
+        "ASYNC_API"
+      ]
+    },
+    "sourceId": {
+      "type": "string",
+      "maxLength": 1024
+    },
+    "sourceFingerprint": {
+      "$ref": "#/$defs/fingerprint"
+    },
+    "projectionFingerprint": {
+      "$ref": "#/$defs/fingerprint"
+    },
+    "accepted": {
+      "type": "boolean"
+    },
+    "summary": {
+      "$ref": "#/$defs/summary"
+    },
+    "facts": {
+      "type": "array",
+      "maxItems": 10000,
+      "items": {
+        "$ref": "#/$defs/fact"
+      }
+    },
+    "runtimeParity": {
+      "type": "array",
+      "maxItems": 10000,
+      "items": {
+        "$ref": "#/$defs/runtimeParity"
+      }
+    },
+    "reviewItems": {
+      "type": "array",
+      "maxItems": 10000,
+      "items": {
+        "$ref": "#/$defs/reviewItem"
+      }
+    },
+    "diagnostics": {
+      "type": "array",
+      "maxItems": 10000,
+      "items": {
+        "$ref": "#/$defs/diagnostic"
+      }
+    },
+    "authoringDocument": {
+      "type": "object",
+      "description": "Optional bloge.visualLibraryAuthoring.v1 candidate. Its dedicated schema remains authoritative."
+    }
+  },
+  "$defs": {
+    "fingerprint": {
+      "type": "string",
+      "pattern": "^(|sha256:[0-9a-f]{64})$"
+    },
+    "summary": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "operatorFactCount",
+        "functionFactCount",
+        "graphFactCount",
+        "boundCount",
+        "driftedCount",
+        "unresolvedCount",
+        "runtimeReady"
+      ],
+      "properties": {
+        "operatorFactCount": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "functionFactCount": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "graphFactCount": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "boundCount": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "driftedCount": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "unresolvedCount": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "runtimeReady": {
+          "type": "boolean"
+        }
+      }
+    },
+    "fact": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "factId",
+        "assetKind",
+        "assetRef",
+        "factKind",
+        "evidenceLevel",
+        "contractFingerprint",
+        "sourcePath",
+        "occurrences",
+        "dependencies",
+        "attributes"
+      ],
+      "properties": {
+        "factId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 2048
+        },
+        "assetKind": {
+          "enum": [
+            "OPERATOR",
+            "FUNCTION",
+            "GRAPH",
+            "SOURCE"
+          ]
+        },
+        "assetRef": {
+          "type": "string",
+          "maxLength": 1024
+        },
+        "factKind": {
+          "enum": [
+            "DECLARATION",
+            "USAGE",
+            "TOPOLOGY",
+            "RUNTIME"
+          ]
+        },
+        "evidenceLevel": {
+          "enum": [
+            "DECLARED",
+            "OBSERVED",
+            "INFERRED",
+            "UNKNOWN"
+          ]
+        },
+        "contractFingerprint": {
+          "$ref": "#/$defs/fingerprint"
+        },
+        "sourcePath": {
+          "type": "string",
+          "maxLength": 4096
+        },
+        "occurrences": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "dependencies": {
+          "type": "array",
+          "maxItems": 10000,
+          "items": {
+            "type": "string",
+            "maxLength": 2048
+          },
+          "uniqueItems": true
+        },
+        "attributes": {
+          "type": "object",
+          "maxProperties": 200
+        }
+      }
+    },
+    "runtimeParity": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "assetKind",
+        "assetRef",
+        "runtimeProfile",
+        "state",
+        "executableReady",
+        "declaredFingerprint",
+        "runtimeFingerprint",
+        "reasonCode",
+        "message"
+      ],
+      "properties": {
+        "assetKind": {
+          "enum": [
+            "OPERATOR",
+            "FUNCTION"
+          ]
+        },
+        "assetRef": {
+          "type": "string",
+          "maxLength": 1024
+        },
+        "runtimeProfile": {
+          "type": "string",
+          "maxLength": 2048
+        },
+        "state": {
+          "enum": [
+            "BOUND",
+            "DRIFTED",
+            "DOCUMENTED_ONLY",
+            "RUNTIME_DISCOVERED",
+            "BLOCKED_BY_POLICY",
+            "UNKNOWN"
+          ]
+        },
+        "executableReady": {
+          "type": "boolean"
+        },
+        "declaredFingerprint": {
+          "$ref": "#/$defs/fingerprint"
+        },
+        "runtimeFingerprint": {
+          "$ref": "#/$defs/fingerprint"
+        },
+        "reasonCode": {
+          "type": "string",
+          "maxLength": 1024
+        },
+        "message": {
+          "type": "string",
+          "maxLength": 8192
+        }
+      }
+    },
+    "reviewItem": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "code",
+        "level",
+        "assetKind",
+        "assetRef",
+        "message",
+        "action"
+      ],
+      "properties": {
+        "code": {
+          "type": "string",
+          "maxLength": 1024
+        },
+        "level": {
+          "enum": [
+            "ERROR",
+            "WARNING",
+            "INFO"
+          ]
+        },
+        "assetKind": {
+          "enum": [
+            "OPERATOR",
+            "FUNCTION",
+            "GRAPH",
+            "SOURCE",
+            "UNKNOWN"
+          ]
+        },
+        "assetRef": {
+          "type": "string",
+          "maxLength": 1024
+        },
+        "message": {
+          "type": "string",
+          "maxLength": 8192
+        },
+        "action": {
+          "type": "string",
+          "maxLength": 8192
+        }
+      }
+    },
+    "diagnostic": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "level",
+        "code",
+        "message",
+        "target",
+        "line",
+        "column"
+      ],
+      "properties": {
+        "level": {
+          "enum": [
+            "ERROR",
+            "WARNING",
+            "INFO"
+          ]
+        },
+        "code": {
+          "type": "string",
+          "maxLength": 1024
+        },
+        "message": {
+          "type": "string",
+          "maxLength": 8192
+        },
+        "target": {
+          "type": "string",
+          "maxLength": 4096
+        },
+        "line": {
+          "type": "integer",
+          "minimum": -1
+        },
+        "column": {
+          "type": "integer",
+          "minimum": -1
+        },
+        "metadata": {
+          "type": "object",
+          "maxProperties": 200
+        }
+      }
+    }
+  }
+}

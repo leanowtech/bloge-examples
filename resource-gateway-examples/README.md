@@ -67,7 +67,7 @@ silently consuming work.
 | Open | Best first move |
 | --- | --- |
 | `http://localhost:8080/author/` | Build a schema-constrained graph on the visual canvas |
-| `http://localhost:8080/libraries/` | Create an operator/function library, infer nested schemas, run exact-draft test tables, and commit exact revisions |
+| `http://localhost:8080/libraries/` | Discover existing DSL/API/runtime assets, create an operator/function library, infer schemas, run exact-draft tests, and commit exact revisions |
 | `http://localhost:8080/rehearsals/` | Triage exact-scope Scenario batches and inspect signed evidence; without `--scenario-batch`, the page shows a capability-aware unavailable state |
 | `http://localhost:8080/showcase/` | Explore guided product scenarios and sample outputs |
 | `http://localhost:8080/examples/gateway` | Use the legacy Custom Composer regression surface |
@@ -121,6 +121,15 @@ automatic promotion. **Apply declared schema** remains disabled until all decisi
 then the server replays the exact request and atomically returns the next draft revision. The
 operator field tree expands the applied object instead of flattening it to `any`.
 
+To migrate existing assets, choose **Discover Existing Assets**. **Runtime**, **BLOGE DSL**,
+**Capability**, **AsyncAPI**, and **OpenAPI** each have a runnable starting point. **Scan source**
+returns one fingerprinted fact projection with assets, dependencies, runtime parity, and a review
+queue. Declared API/catalog contracts can open directly as a structured draft. DSL scans stay
+topology-first because usage alone cannot prove input/output schemas; **Open Graph Author** uses a
+bounded one-time same-origin handoff, then automatically previews, renders, and lays out the DSL.
+Only exact authoritative contracts show `BOUND`; an implementation with no framework signature
+metadata remains honestly `RUNTIME DISCOVERED`.
+
 To experience exact-draft tests, open **Customer Support Triage**, select
 `support:classify-ticket`, and choose **Open test table**. The generated row checks the
 uncommitted canonical schemas and is labelled `SCHEMA CONTRACT`. Select the `trim` function and
@@ -170,6 +179,8 @@ secret setup. A `staging` start fails closed unless both `RG_AUTHORING_FIXTURE_A
 | `GET http://localhost:8080/admin/visual-operator-library-authoring/fixtures/{fixtureId}?revision={revision}` | Read one authorized exact fixture material (`X-Purpose: TEST_FIXTURE_READ`; test/staging only) |
 | `GET http://localhost:8080/admin/visual-operator-library-authoring/drafts/{draftId}/tests/evidence/{runId}` | Verify one immutable payload-free signed authoring-test record and recalculate `CURRENT/STALE` (`X-Purpose: TEST_SUITE_READ`) |
 | `GET http://localhost:8080/admin/visual-operator-library-authoring/drafts/{draftId}/tests/gate` | Evaluate the current draft's per-asset `TEST_EVIDENCED` baseline; this is not a production publish decision |
+| `GET http://localhost:8080/admin/visual-operator-library-authoring/discovery/runtime` | Discover the process-local operator/function inventory through `bloge.visualAuthoringFactProjection.v1` |
+| `POST http://localhost:8080/admin/visual-operator-library-authoring/discovery/{capability-catalog,asyncapi,openapi,dsl}` | Normalize an existing source into fingerprinted facts, runtime parity, review items, and an optional safe structured draft |
 | `GET http://localhost:8080/api/testing/targets/graphs/{graphName}/boundary-cases` | Generate bounded, validator-proven graph input candidates and explicit coverage gaps (test/staging only) |
 | `GET http://localhost:8080/api/testing/targets/graphs/{graphName}/property-cases?seed=...` | Generate reproducible, bounded graph trials with validator-proven shrink paths; this is an authoring plan, not execution evidence (test/staging only) |
 | `GET http://localhost:8080/api/testing/targets/graphs/{graphName}/mutation-cases?maxMutants=...` | Plan bounded, independently compiling pure-DSL graph mutants without changing external operators; planning is not execution, evidence, or a score (test/staging only) |
@@ -3923,6 +3934,14 @@ draft revision. Editing that declared port later invalidates its attached eviden
 The `/libraries/` Workbench exposes this protocol through Input/Output target selection,
 candidate/fact review, an explicit confirmation queue, responsive review layout, and
 lossless nested-object feedback after apply.
+Its **Discover Existing Assets** path normalizes Capability Catalog, AsyncAPI, OpenAPI, BLOGE DSL,
+and process-local runtime inventory into `bloge.visualAuthoringFactProjection.v1`. Every response
+separates declared/observed facts from runtime parity, carries source/projection fingerprints, and
+returns a structured authoring document only when one can be produced conservatively. Preview then
+binds the candidate to an exact `runtimeInventoryFingerprint`; only an exact authoritative
+operator/function contract can reach `BOUND` and `RUNTIME_BOUND`. Existing source-specific
+endpoints remain compatible. See the
+[fact projection protocol](../docs/resource-gateway-authoring-fact-projection-protocol.md).
 See `/catalogs` for exact limits and feature flags.
 
 For Canonical Advanced import:

@@ -10,6 +10,7 @@ import {
   commitLibraryAuthoringDraft,
   commitDslImport,
   decideScenarioRehearsalRemediation,
+  discoverLibraryAuthoringAssets,
   draftLibraryAuthoringFunctionTest,
   draftLibraryAuthoringOperatorTest,
   fetchGatewayDiagram,
@@ -73,6 +74,56 @@ describe('operator library API client', () => {
     resetOperatorTestHeadersProvider();
     resetRehearsalRemediationCredentialsProvider();
     vi.restoreAllMocks();
+  });
+
+  it('uses one projection contract for runtime and source discovery', async () => {
+    const projection = {
+      schemaVersion: 'bloge.visualAuthoringFactProjection.v1',
+      sourceKind: 'RUNTIME_INVENTORY',
+      sourceId: 'process-local',
+      sourceFingerprint: 'sha256:source',
+      projectionFingerprint: 'sha256:projection',
+      accepted: true,
+      summary: {
+        operatorFactCount: 0,
+        functionFactCount: 1,
+        graphFactCount: 0,
+        boundCount: 0,
+        driftedCount: 0,
+        unresolvedCount: 1,
+        runtimeReady: false,
+      },
+      facts: [],
+      runtimeParity: [],
+      reviewItems: [],
+      diagnostics: [],
+    };
+    const fetchMock = vi.spyOn(globalThis, 'fetch')
+      .mockResolvedValueOnce(jsonResponse(projection))
+      .mockResolvedValueOnce(jsonResponse({ ...projection, sourceKind: 'DSL' }));
+
+    await discoverLibraryAuthoringAssets('runtime');
+    await discoverLibraryAuthoringAssets('dsl', {
+      sourceId: 'demo.bloge',
+      dsl: 'graph demo {}',
+    });
+
+    expect(fetchMock).toHaveBeenNthCalledWith(
+      1,
+      '/admin/visual-operator-library-authoring/discovery/runtime',
+    );
+    expect(fetchMock).toHaveBeenNthCalledWith(
+      2,
+      '/admin/visual-operator-library-authoring/discovery/dsl',
+      expect.objectContaining({
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          sourceId: 'demo.bloge',
+          dsl: 'graph demo {}',
+        }),
+      }),
+    );
   });
 
   it('discovers governed fixture availability and fences explicit fixture saves', async () => {

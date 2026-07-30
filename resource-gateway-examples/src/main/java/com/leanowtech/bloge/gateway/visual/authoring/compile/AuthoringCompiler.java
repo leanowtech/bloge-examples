@@ -515,7 +515,9 @@ public final class AuthoringCompiler {
                 List.copyOf(confirmations),
                 readiness,
                 null,
-                null
+                null,
+                "",
+                List.of()
         );
     }
 

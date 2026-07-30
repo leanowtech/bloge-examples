@@ -1,6 +1,7 @@
 import { useState } from 'react';
 
 import type { VisualLibraryAuthoringDocument } from '../types';
+import ExistingAssetDiscovery from './ExistingAssetDiscovery';
 import { LIBRARY_AUTHORING_EXAMPLES } from './examples';
 import { createQuickLibraryDocument } from './model';
 import {
@@ -219,11 +220,7 @@ export default function LibraryStartChoices({ onStart }: LibraryStartChoicesProp
           </div>
         )}
         {choice === 'discover' && (
-          <div className="library-stage-handoff" data-testid="library-discover-handoff">
-            <strong>Existing DSL import is available in Author.</strong>
-            <p>Render the topology there, then return here to enrich the reusable operator contracts.</p>
-            <a className="primary compact" href="/author/">Open DSL import</a>
-          </div>
+          <ExistingAssetDiscovery onStart={onStart} />
         )}
         {choice === 'advanced' && (
           <div className="library-advanced-import">

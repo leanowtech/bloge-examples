@@ -2,6 +2,8 @@ package com.leanowtech.bloge.gateway.visual.authoring.application;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.leanowtech.bloge.gateway.visual.authoring.compile.AuthoringCompiler;
+import com.leanowtech.bloge.gateway.visual.authoring.discovery.AuthoringFactProjection;
+import com.leanowtech.bloge.gateway.visual.authoring.discovery.RuntimeParityService;
 import com.leanowtech.bloge.gateway.visual.authoring.model.AuthoringCompileResult;
 import com.leanowtech.bloge.gateway.visual.authoring.model.AuthoringDiagnostic;
 import com.leanowtech.bloge.gateway.visual.authoring.model.AuthoringReadiness;
@@ -16,6 +18,7 @@ import com.leanowtech.bloge.gateway.visual.catalog.OperatorLibraryRegistry;
 import com.leanowtech.bloge.gateway.visual.model.VisualBundleFingerprint;
 
 import org.springframework.stereotype.Service;
+import org.springframework.beans.factory.annotation.Autowired;
 
 import java.util.ArrayList;
 import java.util.Comparator;
@@ -35,13 +38,26 @@ public final class AuthoringPreviewService {
     private final AuthoringCompiler compiler;
     private final OperatorLibraryRegistry registry;
     private final ObjectMapper objectMapper;
+    private final RuntimeParityService parityService;
 
+    @Autowired
     public AuthoringPreviewService(AuthoringCompiler compiler,
                                    OperatorLibraryRegistry registry,
-                                   ObjectMapper objectMapper) {
+                                   ObjectMapper objectMapper,
+                                   RuntimeParityService parityService) {
         this.compiler = Objects.requireNonNull(compiler, "compiler");
         this.registry = Objects.requireNonNull(registry, "registry");
         this.objectMapper = Objects.requireNonNull(objectMapper, "objectMapper");
+        this.parityService = parityService;
+    }
+
+    /**
+     * Backward-compatible constructor for focused compiler/registry unit tests.
+     */
+    public AuthoringPreviewService(AuthoringCompiler compiler,
+                                   OperatorLibraryRegistry registry,
+                                   ObjectMapper objectMapper) {
+        this(compiler, registry, objectMapper, null);
     }
 
     public AuthoringCompileResult preview(VisualLibraryAuthoringDocument document) {
@@ -59,13 +75,18 @@ public final class AuthoringPreviewService {
                                 .filter(Objects::nonNull)
                                 .map(OperatorDefinition::operatorRef)
                                 .toList());
-        AuthoringReadiness readiness = readiness(compiled, registryDiagnostics);
+        RuntimeParityService.Snapshot parity = candidate == null || parityService == null
+                ? new RuntimeParityService.Snapshot("", List.of())
+                : parityService.evaluate(candidate);
+        AuthoringReadiness readiness = readiness(compiled, registryDiagnostics, parity.parity());
         return compiled.withPreviewContext(
                 catalogFingerprint(),
                 registryDiagnostics,
                 diff,
                 impact,
-                readiness
+                readiness,
+                parity.inventoryFingerprint(),
+                parity.parity()
         );
     }
 
@@ -163,11 +184,12 @@ public final class AuthoringPreviewService {
     }
 
     private static AuthoringReadiness readiness(AuthoringCompileResult compiled,
-                                                List<AuthoringDiagnostic> additionalDiagnostics) {
+                                                List<AuthoringDiagnostic> additionalDiagnostics,
+                                                List<AuthoringFactProjection.RuntimeParity> runtimeParity) {
         List<AuthoringDiagnostic> diagnostics = new ArrayList<>(compiled.diagnostics());
         diagnostics.addAll(additionalDiagnostics);
         boolean errors = diagnostics.stream().anyMatch(AuthoringDiagnostic::error);
-        List<AuthoringReadiness.Gate> gates = diagnostics.stream()
+        List<AuthoringReadiness.Gate> gates = new ArrayList<>(diagnostics.stream()
                 .map(diagnostic -> new AuthoringReadiness.Gate(
                         diagnostic.code(),
                         diagnostic.level(),
@@ -175,16 +197,40 @@ public final class AuthoringPreviewService {
                         diagnostic.authoringPath(),
                         diagnostic.error()
                 ))
-                .toList();
+                .toList());
+        if (runtimeParity != null) {
+            runtimeParity.stream()
+                    .filter(AuthoringFactProjection.RuntimeParity::unresolved)
+                    .map(parity -> new AuthoringReadiness.Gate(
+                            parity.reasonCode(),
+                            "DRIFTED".equals(parity.state())
+                                    || "BLOCKED_BY_POLICY".equals(parity.state())
+                                    ? "ERROR" : "WARNING",
+                            parity.message(),
+                            parityPath(parity),
+                            false
+                    ))
+                    .forEach(gates::add);
+        }
         AuthoringReadiness current = compiled.readiness();
+        boolean runtimeBound = current.designReady()
+                && runtimeParity != null
+                && !runtimeParity.isEmpty()
+                && runtimeParity.stream()
+                        .allMatch(AuthoringFactProjection.RuntimeParity::executableReady);
         return new AuthoringReadiness(
-                errors ? "INVALID" : current.state(),
+                errors ? "INVALID" : runtimeBound ? "RUNTIME_BOUND" : current.state(),
                 current.importable() && !errors,
                 current.strongSchemaReady(),
                 current.designReady() && !errors,
-                false,
+                runtimeBound,
                 gates
         );
+    }
+
+    private static String parityPath(AuthoringFactProjection.RuntimeParity parity) {
+        String collection = "FUNCTION".equals(parity.assetKind()) ? "functions" : "operators";
+        return "/" + collection + "/" + pointer(parity.assetRef());
     }
 
     private static String pointer(String value) {

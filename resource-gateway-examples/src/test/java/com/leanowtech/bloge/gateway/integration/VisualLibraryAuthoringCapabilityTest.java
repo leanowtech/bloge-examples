@@ -21,6 +21,8 @@ class VisualLibraryAuthoringCapabilityTest {
                         java.util.List.of("bloge.visualLibraryAuthoringDraft.v1"))
                 .containsEntry("visualLibraryAuthoringCommitResult",
                         java.util.List.of("bloge.visualLibraryAuthoringCommitResult.v1"))
+                .containsEntry("visualLibraryAuthoringFactProjection",
+                        java.util.List.of("bloge.visualAuthoringFactProjection.v1"))
                 .containsEntry("visualLibrarySampleInferenceRequest",
                         java.util.List.of("bloge.visualSampleInferenceRequest.v1"))
                 .containsEntry("visualLibrarySampleInferenceResult",
@@ -62,6 +64,9 @@ class VisualLibraryAuthoringCapabilityTest {
                 .containsEntry("visualLibraryAuthoringStatelessPreview", true)
                 .containsEntry("functionOnlyLibrary", true)
                 .containsEntry("visualLibraryAuthoringInference", true)
+                .containsEntry("visualLibraryAuthoringDiscoveryFacts", true)
+                .containsEntry("visualLibraryAuthoringRuntimeParity", true)
+                .containsEntry("visualLibraryAuthoringFrameworkFunctionInventory", true)
                 .containsEntry("visualLibraryAuthoringDraftLifecycle", true)
                 .containsEntry("visualLibraryAuthoringEnterpriseScopedDrafts", true)
                 .containsEntry("visualLibraryAuthoringTrustedActorAttribution", true)
@@ -101,7 +106,17 @@ class VisualLibraryAuthoringCapabilityTest {
                 new IntegrationCapabilities.Endpoint(
                         "GET", "/admin/visual-operator-library-authoring/drafts/{draftId}/tests/gate"),
                 new IntegrationCapabilities.Endpoint(
-                        "POST", "/admin/visual-operator-library-authoring/drafts/{draftId}/commit")
+                        "POST", "/admin/visual-operator-library-authoring/drafts/{draftId}/commit"),
+                new IntegrationCapabilities.Endpoint(
+                        "GET", "/admin/visual-operator-library-authoring/discovery/runtime"),
+                new IntegrationCapabilities.Endpoint(
+                        "POST", "/admin/visual-operator-library-authoring/discovery/capability-catalog"),
+                new IntegrationCapabilities.Endpoint(
+                        "POST", "/admin/visual-operator-library-authoring/discovery/asyncapi"),
+                new IntegrationCapabilities.Endpoint(
+                        "POST", "/admin/visual-operator-library-authoring/discovery/openapi"),
+                new IntegrationCapabilities.Endpoint(
+                        "POST", "/admin/visual-operator-library-authoring/discovery/dsl")
         );
         assertThat(capabilities.endpoints()).doesNotContain(
                 new IntegrationCapabilities.Endpoint(
