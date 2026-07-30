@@ -117,7 +117,8 @@ public record VisualLibraryAuthoringDocument(
             String category,
             String signature,
             List<String> signatures,
-            List<String> examples
+            List<String> examples,
+            List<TestReference> tests
     ) {
         public FunctionAuthoring {
             name = normalized(name, "");
@@ -127,6 +128,7 @@ public record VisualLibraryAuthoringDocument(
             signature = normalized(signature, "");
             signatures = immutableStrings(signatures);
             examples = immutableStrings(examples);
+            tests = immutableList(tests);
         }
 
         public List<String> allSignatures() {

@@ -17,6 +17,7 @@ import com.leanowtech.bloge.gateway.visual.model.SchemaEnvelope;
 import com.leanowtech.bloge.gateway.visual.model.VisualBundleFingerprint;
 import com.leanowtech.bloge.gateway.visual.validation.VisualValidationResult;
 
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 
 import java.util.ArrayList;
@@ -40,8 +41,9 @@ public final class AuthoringCompiler {
     public static final int MAX_CANONICAL_BYTES = 10 * 1024 * 1024;
     public static final int MAX_TYPES = 1_000;
     public static final int MAX_OPERATORS = 1_000;
-    public static final int MAX_FUNCTIONS = 5_000;
-    public static final int MAX_FIELDS_PER_OBJECT = 1_024;
+    public static final int MAX_FUNCTIONS = 2_000;
+    public static final int MAX_SIGNATURES_PER_FUNCTION = 20;
+    public static final int MAX_FIELDS_PER_OBJECT = 2_000;
     public static final int MAX_TYPE_DEPTH = 32;
 
     private static final Set<String> STRUCTURED_TYPE_KEYS = Set.of(
@@ -68,6 +70,7 @@ public final class AuthoringCompiler {
     private final FunctionSignatureParser signatureParser;
     private final OperatorArchetypeRegistry archetypes;
 
+    @Autowired
     public AuthoringCompiler(ObjectMapper objectMapper,
                              OperatorLibraryValidator canonicalValidator) {
         this(objectMapper, canonicalValidator, new CompactTypeParser(),
@@ -371,7 +374,15 @@ public final class AuthoringCompiler {
                         "Function '%s' must declare signature or signatures.".formatted(callableName),
                         authoringPath + "/signatures"));
             }
-            for (int signatureIndex = 0; signatureIndex < signatureSources.size(); signatureIndex++) {
+            if (signatureSources.size() > MAX_SIGNATURES_PER_FUNCTION) {
+                diagnostics.add(AuthoringDiagnostic.error(
+                        "RG.AUTHORING.COLLECTION_LIMIT_EXCEEDED",
+                        "Function '%s' declares %d signatures; the limit is %d."
+                                .formatted(callableName, signatureSources.size(), MAX_SIGNATURES_PER_FUNCTION),
+                        authoringPath + "/signatures"));
+            }
+            int signatureCount = Math.min(signatureSources.size(), MAX_SIGNATURES_PER_FUNCTION);
+            for (int signatureIndex = 0; signatureIndex < signatureCount; signatureIndex++) {
                 String signatureSource = signatureSources.get(signatureIndex);
                 String signaturePath = function.signature().isBlank()
                         ? authoringPath + "/signatures/" + signatureIndex
@@ -865,7 +876,7 @@ public final class AuthoringCompiler {
             boolean strong = true;
             boolean success = fields.size() <= MAX_FIELDS_PER_OBJECT;
             List<Map.Entry<String, JsonNode>> fieldEntries = new ArrayList<>();
-            fields.fields().forEachRemaining(fieldEntries::add);
+            fieldEntries.addAll(fields.properties());
             fieldEntries.sort(Map.Entry.comparingByKey());
             for (Map.Entry<String, JsonNode> field : fieldEntries) {
                 String rawName = field.getKey();

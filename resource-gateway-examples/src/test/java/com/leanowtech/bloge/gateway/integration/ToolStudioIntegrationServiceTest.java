@@ -296,6 +296,9 @@ class ToolStudioIntegrationServiceTest {
                         "GET /api/integration/reconciliation",
                         "GET /api/integration/operator-libraries/{libraryId}",
                         "GET /api/integration/operator-test-suites/{suiteId}",
+                        "POST /admin/visual-operator-library-authoring/preview",
+                        "POST /admin/visual-operator-library-authoring/signature/parse",
+                        "GET /admin/visual-operator-library-authoring/catalogs",
                         "GET /api/visual/run-controls/{requestId}",
                         "POST /api/visual/run-controls/{requestId}/cancel"
                 );

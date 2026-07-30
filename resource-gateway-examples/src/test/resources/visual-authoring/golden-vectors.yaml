@@ -1,0 +1,407 @@
+schemaVersion: bloge.visualLibraryAuthoringGoldenSuite.v1
+compilerVersion: 1.0.0
+archetypeCatalogVersion: bloge.operatorArchetypes.v1
+vectors:
+  - name: operator-only-pure
+    source: |
+      schemaVersion: bloge.visualLibraryAuthoring.v1
+      library: {id: golden-pure, owner: test-team}
+      operators:
+        test:echo:
+          input: {value: string}
+          output: {value: string}
+    expected:
+      importable: true
+      readinessState: DESIGN_READY
+      diagnosticCodes: []
+      authoringFingerprint: sha256:35b7b7934aac85f66313b19baa25ccf9a411161a27dafb474210644ce448933b
+      compileFingerprint: sha256:f997dd0f90c40ece246d9f3825bb57be5c6bc50cf52be12c41d75162023e6889
+      canonicalFingerprint: sha256:af47684041728bec062b5e347e3b8616ebbe763b53a7c000675eaf86e0569dc3
+      sourceMapFingerprint: sha256:bc7e657827aadc3fc0e5001ac0082e9dce4282cc692e3465e799600390eb0555
+
+  - name: function-only
+    source: |
+      schemaVersion: bloge.visualLibraryAuthoring.v1
+      library: {id: golden-functions, owner: test-team}
+      defaults: {namespace: golden}
+      functions:
+        normalize:
+          signature: "(value: string) -> string"
+    expected:
+      importable: true
+      readinessState: DESIGN_READY
+      diagnosticCodes: []
+      authoringFingerprint: sha256:987bc072551f4b1e3fe8e3beff3f459aafb9353453febe8489b9924fead51ec2
+      compileFingerprint: sha256:a391c1771d976370b8de8113422c402e4fbb03186216815c31a740a8987b7dcd
+      canonicalFingerprint: sha256:5dc850d522f1f7f10e686bb790a33717d529380577ca7a805189cebf9a6984b8
+      sourceMapFingerprint: sha256:fee09e44af594ff088df30d9a4dc35779ad58365f74cdd9a35205f6724f3cd1b
+
+  - name: mixed-library
+    source: |
+      schemaVersion: bloge.visualLibraryAuthoring.v1
+      library: {id: golden-mixed, owner: test-team}
+      operators:
+        test:identity:
+          input: {value: any}
+          output: {value: any}
+      functions:
+        golden.identity:
+          signature: "(value: any) -> any"
+    expected:
+      importable: true
+      readinessState: DESIGN_READY
+      diagnosticCodes:
+        - visual.schema.opaque
+        - visual.schema.opaque
+        - visual.schema.opaque
+        - visual.schema.opaque
+      authoringFingerprint: sha256:47a9ae64def976a81a58b457ae5bd92eb32efb24e488cf46397f4482a22ca325
+      compileFingerprint: sha256:0788245929651915fba7f46d16b21606ce8bd28fce832f98a3af4d102008f573
+      canonicalFingerprint: sha256:3a13139bca2ea6aaadcf72758a6910d5c22d3eb8dc695e3c17ac1159fb292330
+      sourceMapFingerprint: sha256:a616dd25e5ae545d4c80fe4b9a0017f2205b9eb66adbf555ff0665947871e8a5
+
+  - name: named-types
+    source: |
+      schemaVersion: bloge.visualLibraryAuthoring.v1
+      library: {id: golden-named, owner: test-team}
+      types:
+        Ticket:
+          fields:
+            id: string
+            subject: string
+        Result:
+          fields:
+            ticket: Ticket
+            accepted: boolean
+      operators:
+        test:accept:
+          input: {ticket: Ticket}
+          output: {result: Result}
+    expected:
+      importable: true
+      readinessState: DESIGN_READY
+      diagnosticCodes: []
+      authoringFingerprint: sha256:e441f0e8a7eea3bb5f9c80300f3e7e1717227c9c1347d4d5259a50a950475e6d
+      compileFingerprint: sha256:7134ee882d6edc395806fa52f2e53505f4225970535b3db88efb98bde07872e3
+      canonicalFingerprint: sha256:61aa8dbaea751255fb848f5e9e6348daef320896f1ecc45cc6536cd29c02a2e0
+      sourceMapFingerprint: sha256:255399dc5088b23585627f8a4592dfa6e54f7ffa04a8b0c4bc0c268f9c5daa94
+
+  - name: optional-nullable
+    source: |
+      schemaVersion: bloge.visualLibraryAuthoring.v1
+      library: {id: golden-optional, owner: test-team}
+      types:
+        Profile:
+          fields:
+            requiredNullable: string?
+            optionalValue?: string
+            optionalNullable?: integer?
+      operators:
+        test:profile:
+          input:
+            profile?: Profile
+          output: {profile: Profile}
+    expected:
+      importable: true
+      readinessState: DESIGN_READY
+      diagnosticCodes: []
+      authoringFingerprint: sha256:248bed01fbce6b3fa599a5e533d5055b73726147b55168142ffd8e84eac89a0c
+      compileFingerprint: sha256:a38bc348d3e64e4738d863c00f928cd3caa1d85ce16c32f62e5d956f7d3fb3e0
+      canonicalFingerprint: sha256:e5c99624c94ee2dac418c11a3c4c6666d5754a88c46afb5e0ce51e13a90c8231
+      sourceMapFingerprint: sha256:30bc83f909b272a63a2e05b578a39b50eac5cc0be064a7f345434ce26dd13edb
+
+  - name: nested-arrays
+    source: |
+      schemaVersion: bloge.visualLibraryAuthoring.v1
+      library: {id: golden-arrays, owner: test-team}
+      operators:
+        test:matrix:
+          input: {values: "integer[][]"}
+          output: {values: "integer[][]"}
+    expected:
+      importable: true
+      readinessState: DESIGN_READY
+      diagnosticCodes: []
+      authoringFingerprint: sha256:fb7b43fcade583417509f013318a96fc9dc95d168b6c8b44b2564dca403c68bf
+      compileFingerprint: sha256:417b76030fe9002182ddc67bb5ed950f82198578f632d94bdb3070726456e590
+      canonicalFingerprint: sha256:ac75de5ec7a489b432d7ec5f63539beca4da7e4dde2ece82161477fffecebf2f
+      sourceMapFingerprint: sha256:681ee823cb52f289259c2cc4cf736faf73dcefd5f7618b001e2e21c07cd363ca
+
+  - name: enum-and-constraints
+    source: |
+      schemaVersion: bloge.visualLibraryAuthoring.v1
+      library: {id: golden-constraints, owner: test-team}
+      types:
+        Score:
+          type: integer
+          minimum: 0
+          maximum: 100
+        Outcome:
+          enum: [approved, rejected, review]
+      operators:
+        test:score:
+          input: {score: Score}
+          output: {outcome: Outcome}
+    expected:
+      importable: true
+      readinessState: DESIGN_READY
+      diagnosticCodes: []
+      authoringFingerprint: sha256:0000e0df4881bc60fe5d7b2615a1553004d7803ed7d72ecd2eb31cf71c9345bc
+      compileFingerprint: sha256:0ce5fc53fa05cfab674e8c9cc8212d56b99cc811923e5a43a723a8bff49d5cfd
+      canonicalFingerprint: sha256:9027ed4d2ed2ba622cb5316ca75781de93c34f7dbb5f85e61f82ecaeb0242386
+      sourceMapFingerprint: sha256:9950e232deee642d7dcc2a6738d8f9a0824ec50692ef9b6d85c8513759ca8b2b
+
+  - name: function-overloads
+    source: |
+      schemaVersion: bloge.visualLibraryAuthoring.v1
+      library: {id: golden-overloads, owner: test-team}
+      functions:
+        golden.coalesce:
+          signatures:
+            - "(value: any, fallback?: any) -> any"
+            - "(values: any[]) -> any"
+    expected:
+      importable: true
+      readinessState: DESIGN_READY
+      diagnosticCodes:
+        - visual.schema.opaque
+        - visual.schema.opaque
+        - visual.schema.opaque
+        - visual.schema.opaque
+        - visual.schema.opaque
+      authoringFingerprint: sha256:52020c9392ae476f8cfae47e68a1ca035b56b5fcc01ea37336aad7c705f7f426
+      compileFingerprint: sha256:11e25990a0142201333b19fddef6bfc9429a201f8dbd9b8cea1d910949cc571f
+      canonicalFingerprint: sha256:3f0fb09dde1ff05158c02c86472294d21b607534091f1ae112e39733984b76f6
+      sourceMapFingerprint: sha256:122998cc5538d9d942125c4d915fafef55534acfc7b8b9fc3d974bcdefe6a69b
+
+  - name: missing-owner-warning
+    source: |
+      schemaVersion: bloge.visualLibraryAuthoring.v1
+      library: {id: golden-owner-warning}
+      functions:
+        golden.owner:
+          signature: "() -> string"
+    expected:
+      importable: true
+      readinessState: DESIGN_READY
+      diagnosticCodes:
+        - RG.AUTHORING.OWNER_CONFIRMATION_REQUIRED
+      authoringFingerprint: sha256:5168888a7ffdd8d88887f5203de9f0b2ca4ba7d7b63478808c388c5991418f97
+      compileFingerprint: sha256:877b4f413675e97d9f220244bb0b2729a5833e107f1df96b288287f855c9e50e
+      canonicalFingerprint: sha256:e00ec7616a7f668e9472c2fac8705726e033f62794539f3d98f08da0ecd79bbf
+      sourceMapFingerprint: sha256:f4edcc5e684963b26dfdd599b698393c2193288838ca68a4f5e1d4179744c482
+
+  - name: unknown-documented-only
+    source: |
+      schemaVersion: bloge.visualLibraryAuthoring.v1
+      library: {id: golden-unknown, owner: test-team}
+      operators:
+        test:unknown:
+          input: {value: unknown}
+          output: {value: unknown}
+    expected:
+      importable: true
+      readinessState: DOCUMENTED_ONLY
+      diagnosticCodes:
+        - RG.AUTHORING.TYPE_UNRESOLVED
+        - RG.AUTHORING.TYPE_UNRESOLVED
+        - visual.schema.opaque
+        - visual.schema.opaque
+      authoringFingerprint: sha256:ff3a06325d933551312be502d9975f836b8791c29f24d263e2a0d7194d42a66a
+      compileFingerprint: sha256:8dcabb8942405807dcfc85636321624d79e4333645768fbaf05f382f902cb8ee
+      canonicalFingerprint: sha256:701a0f9b100b599b4d6db0982b2c699796bf1e5e51ece662941cd582cd2fd5ab
+      sourceMapFingerprint: sha256:86a07e946c6554a039d2486c38f0de636b2a9a03c7aa0e6cc5388bf9a88a5529
+
+  - name: resource-read-confirmed
+    source: |
+      schemaVersion: bloge.visualLibraryAuthoring.v1
+      library: {id: golden-resource-read, owner: test-team}
+      operators:
+        test:load-profile:
+          archetype: resource-read
+          requiresSecrets: false
+          input: {customerId: string}
+          output: {profile: object}
+          runtime:
+            bindingRef: customer-profile
+    expected:
+      importable: true
+      readinessState: DESIGN_READY
+      diagnosticCodes: []
+      authoringFingerprint: sha256:562fb143eb672133df7792fe1faed0d01465da88dbc775e7fd9915965185847a
+      compileFingerprint: sha256:029078c4d75f773eb6ed99b1a31b6a67f345baa74434cab9d5537ac4d0ca3697
+      canonicalFingerprint: sha256:735d2398c5c7f2dd23be15d3d529049ae4b7841685be24abc1c8664ea26630ea
+      sourceMapFingerprint: sha256:4077129a56bc86ccb05c201bbe785b8565d07cc037a05d27f676de80b36a5db8
+
+  - name: missing-named-type
+    source: |
+      schemaVersion: bloge.visualLibraryAuthoring.v1
+      library: {id: golden-missing-type, owner: test-team}
+      operators:
+        test:missing:
+          input: {value: Missing}
+          output: {value: string}
+    expected:
+      importable: false
+      readinessState: INVALID
+      diagnosticCodes:
+        - RG.AUTHORING.TYPE_REF_NOT_FOUND
+      authoringFingerprint: sha256:7fd112a883dff0e0a07fe1d12587154cc8fe7662f701078a1d534c4be08136b6
+      compileFingerprint: sha256:e71dbb16f93f9330cd9865bdcfa14f055b86061cd65817822bb8104053e1111d
+      canonicalFingerprint: ""
+      sourceMapFingerprint: sha256:7035eac533a14d5f54da158f8ae8067b4acfc9b6c16c2c038228aa21f45821ca
+
+  - name: named-type-cycle
+    source: |
+      schemaVersion: bloge.visualLibraryAuthoring.v1
+      library: {id: golden-cycle, owner: test-team}
+      types:
+        A:
+          fields: {b: B}
+        B:
+          fields: {a: A}
+      operators:
+        test:cycle:
+          input: {value: A}
+          output: {value: string}
+    expected:
+      importable: false
+      readinessState: INVALID
+      diagnosticCodes:
+        - RG.AUTHORING.TYPE_CYCLE_UNSUPPORTED
+      authoringFingerprint: sha256:9624f28f8981f0841dc645886e272af4845000a25c20b823ed87711785d61196
+      compileFingerprint: sha256:ef21959eee98231ef1d78d4ab13df007a8b428caef209bbfd525562b132912b4
+      canonicalFingerprint: ""
+      sourceMapFingerprint: sha256:2eeefa36608214c1ef2fa1e88bfb9d4bd8a60159344b67cd54a54d7962879604
+
+  - name: malformed-signature
+    source: |
+      schemaVersion: bloge.visualLibraryAuthoring.v1
+      library: {id: golden-signature-invalid, owner: test-team}
+      functions:
+        golden.invalid:
+          signature: "(value string) string"
+    expected:
+      importable: false
+      readinessState: INVALID
+      diagnosticCodes:
+        - RG.AUTHORING.SIGNATURE_INVALID
+        - RG.AUTHORING.SIGNATURE_INVALID
+        - RG.AUTHORING.SIGNATURE_INVALID
+        - RG.AUTHORING.SIGNATURE_INVALID
+      authoringFingerprint: sha256:d9432766b2d2ad6fb9347b8deb8feff1b170e62c49b63bae1d00c84863ed06fe
+      compileFingerprint: sha256:f0f7a369184e4bd2b6065723c7f09121545edc2c9a4b757ddccef9d21f0869e9
+      canonicalFingerprint: ""
+      sourceMapFingerprint: sha256:54f20aeb6480d5335a573b20e08ae552dbe39f0486f7e9b961aba8d752f7eda9
+
+  - name: duplicate-signature-parameter
+    source: |
+      schemaVersion: bloge.visualLibraryAuthoring.v1
+      library: {id: golden-signature-duplicate, owner: test-team}
+      functions:
+        golden.duplicate:
+          signature: "(value: string, value: string) -> string"
+    expected:
+      importable: false
+      readinessState: INVALID
+      diagnosticCodes:
+        - RG.AUTHORING.SIGNATURE_INVALID
+      authoringFingerprint: sha256:24da8cedab1ac889702ef21de0f6ac79d63826286cb089a6683e344a9e9c435c
+      compileFingerprint: sha256:e16bb7f349374eca6c2305ea734b6668cd2b02afb8ca3b86f8f425b53f2e034c
+      canonicalFingerprint: ""
+      sourceMapFingerprint: sha256:399ddcd039c75ea81f135ea407c33870c570a23ed29a602456ba3e21c034eaa4
+
+  - name: unsupported-schema-ref
+    source: |
+      schemaVersion: bloge.visualLibraryAuthoring.v1
+      library: {id: golden-ref, owner: test-team}
+      operators:
+        test:ref:
+          input:
+            value:
+              $ref: https://example.invalid/schema
+          output: {value: string}
+    expected:
+      importable: false
+      readinessState: INVALID
+      diagnosticCodes:
+        - RG.AUTHORING.TYPE_CONSTRAINT_UNSUPPORTED
+        - RG.AUTHORING.TYPE_INVALID
+      authoringFingerprint: sha256:d069f544c432f10711f2e1b434e13d23e811ae2708530a6a2694857671c423ae
+      compileFingerprint: sha256:30886062c8f14da3371e70989ad0322c8249e3876134edd36a3d1b0e033482af
+      canonicalFingerprint: ""
+      sourceMapFingerprint: sha256:703ed57ebada16d956a23db66cde67822bb9cced912b96f4951885105fc2414d
+
+  - name: external-secret-posture-missing
+    source: |
+      schemaVersion: bloge.visualLibraryAuthoring.v1
+      library: {id: golden-secret, owner: test-team}
+      operators:
+        test:external:
+          archetype: external-write
+          input: {value: string}
+          output: {receipt: string}
+          runtime:
+            bindingRef: external-system
+    expected:
+      importable: false
+      readinessState: INVALID
+      diagnosticCodes:
+        - RG.AUTHORING.SECRET_POSTURE_REQUIRED
+      authoringFingerprint: sha256:d498ce24381ed3413225db2841d02a72e30eacb779d39fcf87f99821c9fbeb78
+      compileFingerprint: sha256:e4ce073ee91b374c186b45e8b614ab088aed80d38fc595a950e425aa910ac877
+      canonicalFingerprint: ""
+      sourceMapFingerprint: sha256:abb209e7ad970c5c2a810aef5c66940cf7a99a710668a4755a54ed90f4e38ba0
+
+  - name: empty-library
+    source: |
+      schemaVersion: bloge.visualLibraryAuthoring.v1
+      library: {id: golden-empty, owner: test-team}
+    expected:
+      importable: false
+      readinessState: INVALID
+      diagnosticCodes:
+        - RG.AUTHORING.LIBRARY_EMPTY
+      authoringFingerprint: sha256:68307dc582d50a3fd81134d8a4fcc2024a0406a069bf1916c9edb25f7fd3d747
+      compileFingerprint: sha256:47fb37715a0450f2150cc3baa738d3d6741bd84dd7a2ca73fffdced4107c2ed0
+      canonicalFingerprint: ""
+      sourceMapFingerprint: sha256:7abbd14bc0408570387384a91db672c3bd4e51beadb144534c60e7521f4952aa
+
+  - name: cross-library-import-unsupported
+    source: |
+      schemaVersion: bloge.visualLibraryAuthoring.v1
+      library: {id: golden-import, owner: test-team}
+      imports:
+        - libraryId: common-contracts
+          version: 1.0.0
+          fingerprint: sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+      functions:
+        golden.imported:
+          signature: "() -> string"
+    expected:
+      importable: false
+      readinessState: INVALID
+      diagnosticCodes:
+        - RG.AUTHORING.CROSS_LIBRARY_IMPORT_UNSUPPORTED
+      authoringFingerprint: sha256:bc1885213d37541cd7b8f6d9c22c9df1af234d5bef48d3da7e4305af6f468aee
+      compileFingerprint: sha256:7522fc3799f2b2f8dab0a370a9330c68ce3d3a9d47dc08c02ac2359e45df52e7
+      canonicalFingerprint: ""
+      sourceMapFingerprint: sha256:5c90ec5814944a1bbde810422d3becb9b56fe227ca8316cfbf6f7466ca54fdf4
+
+  - name: canonical-reserved-operator-ref
+    source: |
+      schemaVersion: bloge.visualLibraryAuthoring.v1
+      library: {id: golden-reserved, owner: test-team}
+      operators:
+        httpResource:
+          input: {value: string}
+          output: {value: string}
+    expected:
+      importable: false
+      readinessState: INVALID
+      diagnosticCodes:
+        - visual.operator.ref.reserved
+      authoringFingerprint: sha256:930da93a1f02bd1bee33da2015b6cfab29c61527eee9dc130452dc9a80bb759a
+      compileFingerprint: sha256:38f4841afa4e494cb290f2c25f56b5672f096cd104104ca260027f6cd63cba51
+      canonicalFingerprint: sha256:a86956befd3771e9cb870b896245334755e6eb14d0a696c0778d75f8817f08e6
+      sourceMapFingerprint: sha256:d666dd6d56e1c39a2e4eeacc2981778b21376b75749089c4d3dde04d64a4711c

@@ -33,12 +33,16 @@ operator library
 | 机器 JSON Schema | `docs/schemas/bloge-visual-operator-library.schema.json` | 为用户手写 JSON/YAML 算子库做结构预检 |
 | Java wire model | `OperatorLibrary` / `OperatorDefinition` | 描述 library、operator、ports、configSchema、capabilities、policy、lowering |
 | Built-in function schema | `OperatorLibrary.BuiltInFunction` | 描述表达式函数名、namespace、signature、parameters、returns、examples |
+| 人类创作合同 | `bloge.visualLibraryAuthoring.v1` | 让用户用紧凑类型、archetype 和签名定义能力，再确定性编译到 visual library；不是 runtime source of truth |
+| 权威预览 API | `/admin/visual-operator-library-authoring/preview` | 安全解析、编译、canonical validate、callable conflict 与 target diff |
 | Catalog API | `GET /api/visual/operators` | 下发 operators + `builtInFunctions` 给画布 |
 | Builtin export | `GET /api/visual-operator-libraries/builtin/export` | 把当前服务端 Java operator registry 投影成可导入的 operator library |
 | 函数目录 | `BuiltInFunctionCatalog.defaults()` | 手工声明 `coalesce`、`toNumber`、`jsonPath`、`round` 等表达式函数 |
 | 画布消费 | `/author/` | 根据 operator/function schema 做 palette、连线校验、详情浮层、transform 函数补全、Test Suite |
 
 这些工作证明了一个事实：**一旦 operator/function schema 被标准化，BLOGE 的可视化、测试、集成和生态扩展能力会明显提升。**
+
+Resource Gateway 已经补出一层面向人的 `bloge.visualLibraryAuthoring.v1`，但它只解决“如何更容易地声明和审阅能力”。Framework export 仍然不可替代：runtime operator/function inventory、implementation fingerprint、determinism 和 profile availability 必须由 BLOGE 框架提供，不能从用户填写的 authoring YAML 反推成运行真相。
 
 但这也暴露出一个更根本的问题：当前 schema 能力是在 resource-gateway example 层“反向补出来”的，不是 BLOGE 框架层的原生能力。
 

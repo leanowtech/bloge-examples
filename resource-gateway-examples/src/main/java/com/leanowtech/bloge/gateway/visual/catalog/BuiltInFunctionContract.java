@@ -59,6 +59,18 @@ public final class BuiltInFunctionContract {
      */
     public static void ensureNoLibraryCallableConflicts(Collection<OperatorLibrary> existingLibraries,
                                                         OperatorLibrary candidate) {
+        List<CallableConflict> conflicts = libraryCallableConflicts(existingLibraries, candidate);
+        if (!conflicts.isEmpty()) {
+            throw new IllegalArgumentException(conflicts.getFirst().message());
+        }
+    }
+
+    /**
+     * Returns deterministic, user-addressable callable conflicts without mutating the registry.
+     */
+    public static List<CallableConflict> libraryCallableConflicts(
+            Collection<OperatorLibrary> existingLibraries,
+            OperatorLibrary candidate) {
         Objects.requireNonNull(candidate, "candidate library is required");
         Map<String, FunctionOwner> ownerByCallableName = new LinkedHashMap<>();
         for (OperatorLibrary.BuiltInFunction function : BuiltInFunctionCatalog.defaults()) {
@@ -75,22 +87,37 @@ public final class BuiltInFunctionContract {
                                     callableName(function),
                                     new FunctionOwner(existing.libraryId(), function))));
         }
+        List<CallableConflict> conflicts = new ArrayList<>();
         Set<String> candidateCallableNames = new LinkedHashSet<>();
         for (OperatorLibrary.BuiltInFunction function : candidate.builtInFunctions()) {
             if (function == null || function.name().isBlank()) {
                 continue;
             }
             if (!candidateCallableNames.add(function.name())) {
-                throw new IllegalArgumentException("callable function '%s' is declared more than once by library '%s'"
-                        .formatted(function.name(), candidate.libraryId()));
+                conflicts.add(new CallableConflict(
+                        function.name(),
+                        candidate.libraryId(),
+                        candidate.libraryId(),
+                        "DUPLICATE_DECLARATION"
+                ));
+                continue;
             }
             FunctionOwner existing = ownerByCallableName.get(function.name());
             if (existing != null && !compatible(existing.function(), function)) {
-                throw new IllegalArgumentException("callable function '%s' conflicts with library '%s'"
-                        .formatted(function.name(), existing.libraryId()));
+                conflicts.add(new CallableConflict(
+                        function.name(),
+                        candidate.libraryId(),
+                        existing.libraryId(),
+                        "INCOMPATIBLE_CONTRACT"
+                ));
             }
             ownerByCallableName.putIfAbsent(function.name(), new FunctionOwner(candidate.libraryId(), function));
         }
+        return conflicts.stream()
+                .sorted(Comparator.comparing(CallableConflict::callableName)
+                        .thenComparing(CallableConflict::existingLibraryId)
+                        .thenComparing(CallableConflict::reason))
+                .toList();
     }
 
     private static Map<String, Object> signatureMaterial(OperatorLibrary.Signature signature) {
@@ -142,5 +169,28 @@ public final class BuiltInFunctionContract {
     }
 
     private record FunctionOwner(String libraryId, OperatorLibrary.BuiltInFunction function) {
+    }
+
+    public record CallableConflict(
+            String callableName,
+            String candidateLibraryId,
+            String existingLibraryId,
+            String reason
+    ) {
+        public CallableConflict {
+            callableName = callableName == null ? "" : callableName;
+            candidateLibraryId = candidateLibraryId == null ? "" : candidateLibraryId;
+            existingLibraryId = existingLibraryId == null ? "" : existingLibraryId;
+            reason = reason == null ? "INCOMPATIBLE_CONTRACT" : reason;
+        }
+
+        public String message() {
+            if ("DUPLICATE_DECLARATION".equals(reason)) {
+                return "callable function '%s' is declared more than once by library '%s'"
+                        .formatted(callableName, candidateLibraryId);
+            }
+            return "callable function '%s' conflicts with library '%s'"
+                    .formatted(callableName, existingLibraryId);
+        }
     }
 }

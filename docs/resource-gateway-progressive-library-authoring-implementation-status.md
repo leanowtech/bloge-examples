@@ -8,12 +8,24 @@
 >
 > 说明：方案审计的 97 分评价设计成熟度，不代表本页所述功能已经实现。
 
-## 1. 本轮已完成
+## 1. 已完成：Canonical 地基与 Stage 0
 
-本轮先修复 canonical 层会阻塞后续 Builder/compiler 的两个根问题。
+本轮完成了从精简 authoring 文档到 canonical library 的无状态权威预览闭环。Stage 0
+不是 UI，也不提供提交事务；它先把后续 Workbench 依赖的语法、编译和诊断协议做成可测试内核。
 
 | 能力 | 当前实现 | 验证 |
 | --- | --- | --- |
+| Authoring 合同 | `bloge.visualLibraryAuthoring.v1` Java model 与机器 Schema 支持 operator-only、function-only、mixed、named type、archetype、测试引用和 import 声明 | model、machine-schema、文档示例测试 |
+| 安全解码 | JSON/YAML 统一进入有界 decoder；限制 5 MiB、深度、token、alias、集合和字符串；拒绝重复键、自定义 tag、递归 alias 与尾随正文 | 正向解析与攻击语料测试 |
+| 类型与签名语法 | 有界 compact type parser 和 function signature parser；区分 optional 与 nullable；限制泛化复杂度、签名数和参数数 | parser 单元测试与 golden vectors |
+| 确定性编译 | pure Java compiler 生成 canonical library、source map、diagnostic、confirmation request、readiness 与稳定 fingerprint | 同输入双编译字节一致测试 |
+| Archetype 降低 | 九类 archetype 提供 effect、secret、binding、durable 等保守默认或待确认项 | compiler 正负向测试 |
+| Stateless Preview API | `/preview` 接受 JSON/YAML，执行安全解码、编译、canonical 校验、目标 catalog 冲突预检、registry diff 与 readiness 合并 | service 与 MockMvc 测试 |
+| 辅助 API | `/signature/parse` 提供即时签名诊断，`/catalogs` 返回语法、archetype、配额、feature flag 与 catalog fingerprint | MockMvc 与 capability 测试 |
+| Source map | canonical path 可回溯到 authoring path，canonical 和冲突诊断可投影回用户输入位置 | compiler 与 service 测试 |
+| Golden corpus | 固化 20 组黄金向量，覆盖 operator/function/mixed、类型、约束、overload、缺失事实、循环、冲突和安全负例 | 20 组向量固定 SHA-256 与诊断/readiness |
+| 集成能力协商 | `/api/integration/capabilities` 声明 authoring 协议对象、端点及已实现/未实现 feature | capability contract 测试 |
+| 使用资料 | 提供完整与 function-only YAML 示例、快速体验指南，并同步 canonical/Framework/VS Code 文档 | 示例实际经过 decoder/compiler 测试 |
 | Function-only library | Java validator 和机器 schema 统一采用 `operators.size + builtInFunctions.size >= 1`，不再要求伪 operator | validator、controller、内存/数据库 registry 测试 |
 | Callable identity | expression callable key 统一为 `function.name`；`namespace` 只保留 provenance/governance 语义 | callable contract 单元测试 |
 | Callable fingerprint | 参数顺序、类型、schema、optional/variadic 和返回合同参与指纹；展示说明、示例和 namespace 不参与 | metadata/schema drift 测试 |
@@ -24,7 +36,9 @@
 | Capability projection | capability catalog 以 `function.name` 检测冲突，不再被不同 namespace 绕过 | adapter/controller 测试 |
 | Wire-schema parity | 机器 schema 对 operator-only、function-only、mixed、empty、null-only 文档执行真实校验；可选函数 schema 接受 API 的显式 `null` 表示 | machine-schema 测试 |
 
-旧的 operator-only library constructor、raw JSON/YAML validate/import endpoint、revision 和 registry 存储格式保持兼容。
+旧的 operator-only library constructor、raw JSON/YAML validate/import endpoint、revision 和 registry
+存储格式保持兼容。Stage 0 定向回归共 143 个测试通过，其中包含既有 raw import
+控制器的 104 个用例。
 
 ## 2. 当前权威规则
 
@@ -50,34 +64,60 @@ incompatible duplicate
 2. registry 防止内部调用、恢复或未来入口绕过校验；
 3. catalog 隔离历史脏数据中的歧义 callable，并用结构化 warning 暴露修复任务。
 
-## 3. 目标差距
+## 3. 当前边界
 
-以下评分只用于迭代收敛，不等同于产品成熟度评分。按目标方案交付面加权，当前约完成 **24%**，剩余差距约 **76%**。
+已经可依赖的能力：
+
+1. 同一合法输入产生字节级稳定 canonical、source map、fingerprint 和诊断；
+2. parser/compiler 不访问 registry，不执行函数或表达式；
+3. 服务层预览明确绑定目标 catalog fingerprint，并暴露 callable 冲突；
+4. feature flag 对未实现能力返回 `false`，客户端不需要猜测部署能力。
+
+尚未实现的能力：
+
+1. 没有 draft、autosave、ETag、stale-preview fencing 或原子 commit；
+2. 没有 Library Workbench、字段树、Builder、Fix-it 和 Readiness 可视化页面；
+3. 没有 sample inference、fixture 生成/解析、operator/function test runner；
+4. `imports` 当前只保留声明，跨 library type resolution 会被明确拒绝；
+5. preview impact 只描述当前 operator ref 与 registry revision 差异，不等同于 graph、
+   publication 或运行时 binding 的全链路影响分析；
+6. 没有 authoring 专属 tenant/RBAC、审批、审计、指标、分布式限流和持久化配额；
+7. 当前 callable 全局冲突仍依赖应用层 registry 快照，多副本并发写入尚无数据库唯一所有权约束；
+8. 尚未建立 Builder、canonical API、VS Code、本地/远端 compiler 和 BLOGE runtime 的多实现 parity；
+9. 尚无浏览器端视觉与无障碍验收证据。
+
+## 4. 目标差距
+
+以下评分只用于迭代收敛，不等同于产品成熟度评分。按目标方案交付面加权，当前约完成
+**49%**，剩余差距约 **51%**。
 
 | 交付面 | 权重 | 当前完成 | 主要缺口 |
 | --- | ---: | ---: | --- |
 | Canonical 兼容与安全地基 | 15 | 14 | capability negotiation、compatible alias 的显式 owner/provenance model |
-| Authoring model、grammar、compiler、source map | 20 | 0 | Stage 0 主体尚未实现 |
-| Draft/preview/commit lifecycle | 12 | 0 | ETag、stale preview、原子 commit |
+| Authoring model、grammar、compiler、source map | 20 | 19 | 跨库类型 resolution 与多实现 parity |
+| Draft/preview/commit lifecycle | 12 | 2 | 只有 stateless preview；缺 ETag、stale preview、原子 commit |
 | 图形化 Workbench 与渐进披露 | 18 | 0 | Start/Tree/Builder/Preview/Readiness |
-| Sample inference、confirmation、fixture/test | 10 | 0 | observed/confirmed 证据链 |
+| Sample inference、confirmation、fixture/test | 10 | 1 | 只有 test ref 与 confirmation contract；缺 observed/confirmed 证据链及 runner |
 | Discovery adapter 与 runtime parity | 8 | 3 | 已有 adapters；尚未统一 authoring fact projection |
 | 企业级隔离、配额、审计、可观测性 | 10 | 4 | 可复用 registry/revision 基础；缺 authoring 专属控制面 |
-| 文档、golden、browser、parity 证据 | 7 | 3 | 本轮 canonical/wire-schema tests；compiler/browser 证据尚缺 |
-| **合计** | **100** | **24** | **差距 76%** |
+| 文档、golden、browser、parity 证据 | 7 | 6 | 文档与 compiler golden 完成；缺浏览器与跨实现 parity 证据 |
+| **合计** | **100** | **49** | **差距 51%** |
 
 当前数据库 registry 的 callable 冲突检查基于进程内快照，能保护单实例及普通 H2/JDBC 使用，但还不是多副本并发写入下的原子全局约束。工业化阶段仍需引入规范化 callable ownership 表、数据库唯一约束或可证明的串行化事务，不能仅依赖应用层 preflight。
 
 兼容的同名 callable 目前会在 effective catalog 中折叠成一份定义，来源 library 仍可分别导出，但 catalog contract 尚不能显式表达多个 owner/alias。它和协议 capability negotiation 都保留为后续兼容性工作，不能视为本轮已经完成。
 
-## 4. 下一迭代
+## 5. 下一迭代
 
-下一步进入 Stage 0 编译内核，不先堆 UI：
+下一步进入 Stage 1 图形化垂直切片：
 
-1. 定义 `bloge.visualLibraryAuthoring.v1` Java model 与 machine schema；
-2. 实现无歧义 compact type grammar 和 function signature grammar；
-3. 实现确定性 `AuthoringCompiler`、canonical normalization 与 source map；
-4. 建立至少 20 组 golden vectors，覆盖 operator-only、function-only、mixed、named type、overload 和负向安全语料；
-5. 提供 stateless preview API，继续复用现有 canonical validator/profile/impact。
+1. 以四种入口创建或导入 library draft；
+2. 实现带稳定节点 identity 的 Library Tree、operator/type/function Builder；
+3. 接入 canonical preview、source-map 跳转、diagnostic Fix-it 与 readiness；
+4. 实现持久化 draft、autosave、ETag 和 stale preview 阻断；
+5. 以 `authoringFingerprint + catalogFingerprint + targetRevision` 实现原子 commit；
+6. 加入 tenant/RBAC、配额和审计边界，不能让浏览器直接绕过治理调用 raw import。
 
-该迭代 Exit Gate 是同一 authoring 输入产生字节级稳定 canonical 输出，所有 diagnostic 能回到 authoring path，旧 raw import 回归保持全绿。
+Stage 1 Exit Gate 是新用户可只用 Builder 完成 pure operator 与 overload function 定义，
+诊断可定位回字段，两个浏览器标签制造 stale preview 时旧标签提交被阻断，提交产物与当前
+compiler golden 输出一致。

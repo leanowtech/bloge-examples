@@ -1,0 +1,85 @@
+schemaVersion: bloge.visualLibraryAuthoring.v1
+
+library:
+  id: customer-service-authoring
+  name: Customer Service Authoring
+  version: 1.0.0
+  owner: customer-operations
+
+defaults:
+  operatorVersion: 1.0.0
+  namespace: support
+
+types:
+  Ticket:
+    description: Customer support request.
+    fields:
+      id: string
+      subject: string
+      body: string
+      customerTier?:
+        enum: [free, pro, enterprise]
+      tags?: "string[]"
+
+  CustomerProfile:
+    fields:
+      customerId: string
+      displayName: string
+      lifetimeValue?: number
+
+  TriageResult:
+    fields:
+      priority:
+        enum: [p0, p1, p2, p3]
+      topic: string
+      confidence:
+        type: number
+        minimum: 0
+        maximum: 1
+
+operators:
+  support:load-customer-profile:
+    name: Load Customer Profile
+    description: Reads the customer profile used during ticket triage.
+    archetype: resource-read
+    requiresSecrets: false
+    input:
+      customerId: string
+    output:
+      profile: CustomerProfile
+    runtime:
+      bindingRef: customer-profile-service
+    tests:
+      - ref: fixtures/load-enterprise-profile
+
+  support:classify-ticket:
+    name: Classify Ticket
+    description: Classifies a support ticket without external side effects.
+    archetype: pure
+    input:
+      ticket: Ticket
+      profile?: CustomerProfile
+    output:
+      triage: TriageResult
+    tests:
+      - ref: fixtures/classify-enterprise-ticket
+      - ref: fixtures/classify-empty-body
+
+functions:
+  support.normalizeText:
+    description: Normalizes customer-provided text.
+    category: string
+    signature: "(text: string) -> string"
+    examples:
+      - support.normalizeText(ctx.ticket.subject)
+    tests:
+      - ref: fixtures/normalize-spaces
+
+  support.firstPresent:
+    description: Returns the first available value.
+    category: null-handling
+    signatures:
+      - "(value: any, fallback?: any) -> any"
+      - "(values: any[]) -> any"
+    tests:
+      - ref: fixtures/first-present

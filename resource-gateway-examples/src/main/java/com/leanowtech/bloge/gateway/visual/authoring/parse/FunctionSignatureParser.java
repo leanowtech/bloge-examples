@@ -1,5 +1,7 @@
 package com.leanowtech.bloge.gateway.visual.authoring.parse;
 
+import com.fasterxml.jackson.annotation.JsonProperty;
+
 import java.util.ArrayList;
 import java.util.LinkedHashSet;
 import java.util.List;
@@ -149,6 +151,7 @@ public final class FunctionSignatureParser {
             parameters = parameters == null ? List.of() : List.copyOf(parameters);
         }
 
+        @JsonProperty("normalized")
         public String normalized() {
             return "(" + parameters.stream()
                     .map(Parameter::canonicalText)

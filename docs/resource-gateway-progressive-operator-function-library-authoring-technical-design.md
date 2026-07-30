@@ -1,6 +1,6 @@
 # Resource Gateway 渐进式算子与 Built-in Function 库创作技术方案
 
-> 状态：Proposed for Review
+> 状态：Approved；Stage 0 已实现，Stage 1-4 待实施
 >
 > 日期：2026-07-30
 >
@@ -1432,6 +1432,9 @@ Java 和 TypeScript test suite 消费同一批 vectors。
 ## 15. 迁移与交付计划
 
 ### 15.1 Stage 0：合同与编译内核
+
+实现状态：**已完成**。权威代码、机器 Schema、20 组黄金向量、安全语料和 API 见
+[实现状态](resource-gateway-progressive-library-authoring-implementation-status.md)。
 
 交付：
 

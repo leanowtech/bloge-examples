@@ -125,6 +125,18 @@ Webview React Canvas
 
 本轮代码已经先落下第一块地基：`resource-gateway-examples/src/main/frontend/src/api.ts` 增加了可替换的 `BlogeApiTransport`。浏览器 demo 默认仍走 `fetch`，VSCode Webview 后续可以安装 postMessage-backed transport。
 
+### 4.1 Library Authoring 共享内核
+
+Resource Gateway 现在还提供：
+
+- `docs/schemas/bloge-visual-library-authoring-v1.schema.json`
+- `bloge.compactType.v1` 与 `bloge.functionSignature.v1`
+- 20 组 `src/test/resources/visual-authoring/golden-vectors.yaml`
+- 服务端权威 `/admin/visual-operator-library-authoring/preview`
+- `/signature/parse` 与 `/catalogs`
+
+VSCode local compiler 必须消费同一机器 Schema、grammar version 和 golden vectors。它只能返回 `LOCAL_PREVIEW`；准备进入 registry 时，插件调用远端 preview 并展示 local/remote diff，不能把本地结果改名成权威结果。当前服务端 capability 明确声明 `statelessPreview=true`、`sampleInference=false`、`draftLifecycle=false`，插件应据此渐进启用操作。
+
 ## 5. 运行模式
 
 ### 5.1 Offline Topology Mode

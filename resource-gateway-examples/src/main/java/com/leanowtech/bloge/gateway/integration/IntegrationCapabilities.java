@@ -396,6 +396,12 @@ public record IntegrationCapabilities(
                 com.leanowtech.bloge.gateway.integration.mirror
                         .CapabilityLifecycleTransitionRequest.SCHEMA_VERSION));
         objects.put("operatorLibrary", List.of("bloge.visualOperatorLibrary.v1"));
+        objects.put("visualLibraryAuthoringDocument", List.of(
+                "bloge.visualLibraryAuthoring.v1"));
+        objects.put("visualLibraryAuthoringCompileResult", List.of(
+                "bloge.visualLibraryCompileResult.v1"));
+        objects.put("visualLibraryAuthoringProblem", List.of(
+                "bloge.visualAuthoringProblem.v1"));
         objects.put("graphDraftIntegrationBundle", List.of(GraphDraftIntegrationBundle.SCHEMA_VERSION));
         objects.put("graphDraftDependencyProfile", List.of(GraphDraftDependencyProfile.SCHEMA_VERSION_V1,
                 GraphDraftDependencyProfile.SCHEMA_VERSION));
@@ -802,6 +808,11 @@ public record IntegrationCapabilities(
 
         Map<String, Boolean> features = new LinkedHashMap<>();
         features.put("draftExportDependencyProfile", true);
+        features.put("visualLibraryAuthoringProtocol", true);
+        features.put("visualLibraryAuthoringStatelessPreview", true);
+        features.put("functionOnlyLibrary", true);
+        features.put("visualLibraryAuthoringInference", false);
+        features.put("visualLibraryAuthoringDraftLifecycle", false);
         features.put("graphDraftConsistentDependencySnapshot", true);
         features.put("graphDraftStructuredDependencyRefs", true);
         features.put("capabilitySnapshotProtocol", true);
@@ -1273,6 +1284,9 @@ public record IntegrationCapabilities(
                 new Endpoint("GET", "/api/integration/reconciliation"),
                 new Endpoint("GET", "/api/integration/operator-libraries/{libraryId}"),
                 new Endpoint("GET", "/api/integration/operator-test-suites/{suiteId}"),
+                new Endpoint("POST", "/admin/visual-operator-library-authoring/preview"),
+                new Endpoint("POST", "/admin/visual-operator-library-authoring/signature/parse"),
+                new Endpoint("GET", "/admin/visual-operator-library-authoring/catalogs"),
                 new Endpoint("GET", "/api/visual/run-controls/{requestId}"),
                 new Endpoint("POST", "/api/visual/run-controls/{requestId}/cancel")
         ));

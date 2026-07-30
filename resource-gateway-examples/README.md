@@ -3846,7 +3846,24 @@ resume is complete. See
 Create a provider-specific Java operator only when the provider behavior cannot
 be expressed cleanly as a descriptor-backed resource.
 
-To add a user-supplied visual operator library:
+For the fastest library definition path, start from
+[`bloge.visualLibraryAuthoring.v1`](../docs/bloge-visual-library-authoring-guide.md)
+and preview one of the runnable examples:
+
+```bash
+curl --fail-with-body \
+  -H 'Content-Type: application/yaml' \
+  --data-binary @docs/examples/customer-service-library-authoring.yaml \
+  http://localhost:8080/admin/visual-operator-library-authoring/preview
+```
+
+The stateless endpoint safely parses compact types and function signatures, expands
+operator archetypes, returns canonical `bloge.visualOperatorLibrary.v1`, source-map
+diagnostics, readiness, callable conflicts, and target registry diff. It does not
+persist a draft or import the library. See `/catalogs` for exact limits and feature
+flags.
+
+For Canonical Advanced import:
 
 1. Open `/author/`.
 2. Paste a `bloge.visualOperatorLibrary.v1` JSON or YAML document that follows

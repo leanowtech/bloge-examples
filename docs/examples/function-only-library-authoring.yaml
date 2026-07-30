@@ -1,0 +1,45 @@
+schemaVersion: bloge.visualLibraryAuthoring.v1
+
+library:
+  id: customer-service-functions
+  name: Customer Service Functions
+  version: 1.0.0
+  owner: customer-operations
+
+defaults:
+  namespace: support
+
+types:
+  TicketSummary:
+    fields:
+      subject: string
+      priority:
+        enum: [p0, p1, p2, p3]
+
+functions:
+  support.normalizeText:
+    description: Trims and normalizes support text.
+    category: string
+    signature: "(text: string) -> string"
+    examples:
+      - support.normalizeText(ctx.subject)
+    tests:
+      - ref: fixtures/normalize-spaces
+
+  support.summarizeTicket:
+    description: Builds a stable support summary.
+    category: support
+    signature: "(ticket: TicketSummary) -> string"
+    examples:
+      - support.summarizeTicket(ctx.ticket)
+    tests:
+      - ref: fixtures/summarize-p0-ticket
+
+  support.pickFirst:
+    description: Demonstrates optional and overload signatures.
+    category: null-handling
+    signatures:
+      - "(value: any, fallback?: any) -> any"
+      - "(values: any[]) -> any"
+    tests:
+      - ref: fixtures/pick-first-non-null

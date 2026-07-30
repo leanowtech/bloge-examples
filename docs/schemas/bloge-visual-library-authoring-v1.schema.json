@@ -1,0 +1,442 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://bloge.leanowtech.com/schemas/bloge-visual-library-authoring-v1.schema.json",
+  "title": "BLOGE Visual Library Authoring Document",
+  "description": "Human-oriented, non-executable authoring source compiled by Resource Gateway into bloge.visualOperatorLibrary.v1. The server compiler and canonical validator remain authoritative.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "library"
+  ],
+  "anyOf": [
+    {
+      "required": [
+        "operators"
+      ],
+      "properties": {
+        "operators": {
+          "minProperties": 1
+        }
+      }
+    },
+    {
+      "required": [
+        "functions"
+      ],
+      "properties": {
+        "functions": {
+          "minProperties": 1
+        }
+      }
+    }
+  ],
+  "properties": {
+    "schemaVersion": {
+      "const": "bloge.visualLibraryAuthoring.v1"
+    },
+    "library": {
+      "$ref": "#/$defs/library"
+    },
+    "defaults": {
+      "$ref": "#/$defs/defaults"
+    },
+    "types": {
+      "type": "object",
+      "maxProperties": 1000,
+      "propertyNames": {
+        "$ref": "#/$defs/identifier"
+      },
+      "additionalProperties": {
+        "$ref": "#/$defs/typeNode"
+      },
+      "default": {}
+    },
+    "operators": {
+      "type": "object",
+      "maxProperties": 1000,
+      "propertyNames": {
+        "$ref": "#/$defs/visualToken"
+      },
+      "additionalProperties": {
+        "$ref": "#/$defs/operator"
+      },
+      "default": {}
+    },
+    "functions": {
+      "type": "object",
+      "maxProperties": 2000,
+      "propertyNames": {
+        "$ref": "#/$defs/functionName"
+      },
+      "additionalProperties": {
+        "$ref": "#/$defs/function"
+      },
+      "default": {}
+    },
+    "imports": {
+      "type": "array",
+      "maxItems": 1000,
+      "items": {
+        "$ref": "#/$defs/importReference"
+      },
+      "default": []
+    },
+    "examples": {
+      "type": "object",
+      "additionalProperties": {
+        "anyOf": [
+          {
+            "type": "string",
+            "minLength": 1
+          },
+          {
+            "$ref": "#/$defs/testReference"
+          }
+        ]
+      },
+      "default": {}
+    }
+  },
+  "$defs": {
+    "identifier": {
+      "type": "string",
+      "pattern": "^[A-Za-z_][A-Za-z0-9_]*$"
+    },
+    "visualToken": {
+      "type": "string",
+      "pattern": "^[A-Za-z_][A-Za-z0-9_]*(?:(?::|\\.|-)[A-Za-z_][A-Za-z0-9_]*)*$"
+    },
+    "functionName": {
+      "type": "string",
+      "pattern": "^[A-Za-z_][A-Za-z0-9_]*(?:\\.[A-Za-z_][A-Za-z0-9_]*)*$"
+    },
+    "semver": {
+      "type": "string",
+      "pattern": "^\\d+\\.\\d+\\.\\d+(?:-[0-9A-Za-z.-]+)?(?:\\+[0-9A-Za-z.-]+)?$"
+    },
+    "compactType": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 256,
+      "pattern": "^[A-Za-z_][A-Za-z0-9_]*(?:\\[\\]){0,8}\\??$"
+    },
+    "library": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id"
+      ],
+      "properties": {
+        "id": {
+          "$ref": "#/$defs/visualToken"
+        },
+        "name": {
+          "type": "string"
+        },
+        "version": {
+          "$ref": "#/$defs/semver"
+        },
+        "owner": {
+          "type": "string"
+        },
+        "status": {
+          "enum": [
+            "ACTIVE",
+            "DEPRECATED",
+            "DISABLED"
+          ]
+        }
+      }
+    },
+    "defaults": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "operatorVersion": {
+          "$ref": "#/$defs/semver"
+        },
+        "namespace": {
+          "$ref": "#/$defs/visualToken"
+        }
+      }
+    },
+    "typeNode": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/compactType"
+        },
+        {
+          "$ref": "#/$defs/structuredType"
+        }
+      ]
+    },
+    "structuredType": {
+      "type": "object",
+      "additionalProperties": false,
+      "anyOf": [
+        {
+          "required": [
+            "type"
+          ]
+        },
+        {
+          "required": [
+            "fields"
+          ]
+        },
+        {
+          "required": [
+            "enum"
+          ]
+        }
+      ],
+      "properties": {
+        "type": {
+          "$ref": "#/$defs/compactType"
+        },
+        "fields": {
+          "type": "object",
+          "maxProperties": 2000,
+          "propertyNames": {
+            "type": "string",
+            "pattern": "^[A-Za-z_][A-Za-z0-9_]*\\??$"
+          },
+          "additionalProperties": {
+            "$ref": "#/$defs/typeNode"
+          }
+        },
+        "enum": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 2000,
+          "items": {
+            "type": [
+              "string",
+              "number",
+              "integer",
+              "boolean",
+              "null"
+            ]
+          }
+        },
+        "description": {
+          "type": "string"
+        },
+        "additionalProperties": {
+          "type": "boolean"
+        },
+        "minimum": {
+          "type": "number"
+        },
+        "maximum": {
+          "type": "number"
+        },
+        "minLength": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "maxLength": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "minItems": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "maxItems": {
+          "type": "integer",
+          "minimum": 0
+        }
+      }
+    },
+    "ports": {
+      "type": "object",
+      "maxProperties": 2000,
+      "propertyNames": {
+        "type": "string",
+        "pattern": "^[A-Za-z_][A-Za-z0-9_]*\\??$"
+      },
+      "additionalProperties": {
+        "$ref": "#/$defs/typeNode"
+      }
+    },
+    "testReference": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "ref"
+      ],
+      "properties": {
+        "ref": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 1024
+        }
+      }
+    },
+    "operator": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "name": {
+          "type": "string"
+        },
+        "description": {
+          "type": "string"
+        },
+        "archetype": {
+          "enum": [
+            "pure",
+            "decision",
+            "resource-read",
+            "external-write",
+            "remote-worker",
+            "ai-tool",
+            "event-source",
+            "message-handler",
+            "webhook"
+          ]
+        },
+        "version": {
+          "$ref": "#/$defs/semver"
+        },
+        "tags": {
+          "type": "array",
+          "maxItems": 100,
+          "uniqueItems": true,
+          "items": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "input": {
+          "$ref": "#/$defs/ports"
+        },
+        "output": {
+          "$ref": "#/$defs/ports"
+        },
+        "config": {
+          "$ref": "#/$defs/typeNode"
+        },
+        "effect": {
+          "enum": [
+            "PURE",
+            "READ_EXTERNAL",
+            "WRITE_EXTERNAL",
+            "EXTERNAL",
+            "UNKNOWN"
+          ]
+        },
+        "idempotency": {
+          "enum": [
+            "DETERMINISTIC",
+            "IDEMPOTENT",
+            "NON_IDEMPOTENT",
+            "UNKNOWN"
+          ]
+        },
+        "streaming": {
+          "type": "boolean"
+        },
+        "durable": {
+          "type": "boolean"
+        },
+        "requiresSecrets": {
+          "type": "boolean"
+        },
+        "runtime": {
+          "type": "object"
+        },
+        "tests": {
+          "type": "array",
+          "maxItems": 1000,
+          "items": {
+            "$ref": "#/$defs/testReference"
+          }
+        }
+      }
+    },
+    "function": {
+      "type": "object",
+      "additionalProperties": false,
+      "anyOf": [
+        {
+          "required": [
+            "signature"
+          ]
+        },
+        {
+          "required": [
+            "signatures"
+          ]
+        }
+      ],
+      "properties": {
+        "name": {
+          "$ref": "#/$defs/functionName"
+        },
+        "namespace": {
+          "$ref": "#/$defs/visualToken"
+        },
+        "description": {
+          "type": "string"
+        },
+        "category": {
+          "type": "string"
+        },
+        "signature": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 1024
+        },
+        "signatures": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 20,
+          "items": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 1024
+          }
+        },
+        "examples": {
+          "type": "array",
+          "maxItems": 100,
+          "items": {
+            "type": "string",
+            "maxLength": 4096
+          }
+        },
+        "tests": {
+          "type": "array",
+          "maxItems": 1000,
+          "items": {
+            "$ref": "#/$defs/testReference"
+          }
+        }
+      }
+    },
+    "importReference": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "libraryId",
+        "version",
+        "fingerprint"
+      ],
+      "properties": {
+        "libraryId": {
+          "$ref": "#/$defs/visualToken"
+        },
+        "version": {
+          "$ref": "#/$defs/semver"
+        },
+        "fingerprint": {
+          "type": "string",
+          "pattern": "^sha256:[0-9a-f]{64}$"
+        }
+      }
+    }
+  }
+}

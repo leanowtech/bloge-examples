@@ -4,6 +4,9 @@
 适用合同：`bloge.visualOperatorLibrary.v1` / `bloge.visualOperator.v1`
 机器 schema：[bloge-visual-operator-library.schema.json](./schemas/bloge-visual-operator-library.schema.json)
 
+普通业务定义现在优先使用更精简的
+[`bloge.visualLibraryAuthoring.v1`](./bloge-visual-library-authoring-guide.md)，由服务端确定性编译到本页 canonical 合同。本页仍是 registry、导出、系统间交换和 Canonical Advanced 编辑的权威说明；精简合同不会削弱或替代它。
+
 ## 1. 定位
 
 算子库是通用 BLOGE 可视化编排画布的外部能力入口。平台或业务团队把自己的业务动作、远程 worker、AI tool、事件入口、webhook 或 schema-only 设计节点描述成 `OperatorLibrary`，也可以把通用数据转换能力描述成 `builtInFunctions`。画布再把它们投影成可搜索、可拖拽、可连线、可校验、可导出、可治理的 `OperatorDefinition`，以及 transform/branch 表达式可补全、可提示签名的函数目录。
@@ -172,7 +175,8 @@ Java validator 与机器 schema 都执行同一条非空规则：
 operators.size + builtInFunctions.size >= 1
 ```
 
-旧 peer 是否能接收 function-only library 仍需要后续通过 integration capability probe 协商；在该协商能力落地前，跨系统 producer 不应假设所有历史 consumer 都支持空 `operators`。
+当前 Resource Gateway 在 `/api/integration/capabilities` 明确声明
+`functionOnlyLibrary=true`，并公布 `bloge.visualLibraryAuthoring.v1`、compile result 与 problem contract。跨系统 producer 仍必须读取 capability probe，不能假设未协商的历史 consumer 支持空 `operators`。
 
 ## 4. OperatorDefinition
 
