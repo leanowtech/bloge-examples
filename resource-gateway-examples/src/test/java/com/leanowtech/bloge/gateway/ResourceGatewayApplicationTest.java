@@ -24,6 +24,7 @@ import com.leanowtech.bloge.gateway.visual.authoring.application.AuthoringDraftS
 import com.leanowtech.bloge.gateway.visual.authoring.model.AuthoringCompileResult;
 import com.leanowtech.bloge.gateway.visual.authoring.model.AuthoringDraft;
 import com.leanowtech.bloge.gateway.visual.authoring.model.AuthoringProblem;
+import com.leanowtech.bloge.gateway.visual.authoring.model.SampleInferenceResult;
 import com.leanowtech.bloge.gateway.visual.authoring.model.VisualLibraryAuthoringDocument;
 import com.leanowtech.bloge.gateway.visual.authoring.transport.VisualLibraryAuthoringDraftController;
 import com.fasterxml.jackson.dataformat.yaml.YAMLMapper;
@@ -197,6 +198,47 @@ class ResourceGatewayApplicationTest {
         assertThat(preview.importable()).isTrue();
         assertThat(preview.draftId()).isEqualTo(draftId);
 
+        revisionHeaders.setContentType(MediaType.APPLICATION_JSON);
+        var inferred = restTemplate.exchange(
+                "/admin/visual-operator-library-authoring/drafts/" + draftId + "/infer/samples",
+                HttpMethod.POST,
+                new HttpEntity<>("""
+                        {
+                          "schemaVersion": "bloge.visualSampleInferenceRequest.v1",
+                          "target": {
+                            "assetKind": "OPERATOR",
+                            "assetRef": "integration:echo",
+                            "portDirection": "INPUT",
+                            "portName": "value"
+                          },
+                          "samples": [
+                            {"id":"one","privateToken":"sensitive-A"},
+                            {"id":"two","privateToken":"sensitive-B"}
+                          ],
+                          "options": {
+                            "suggestEnums": true,
+                            "suggestFormats": true,
+                            "persistPayload": false
+                          },
+                          "idempotencyKey": "integration-inference"
+                        }
+                        """, revisionHeaders),
+                SampleInferenceResult.class
+        );
+        assertThat(inferred.getStatusCode().is2xxSuccessful()).isTrue();
+        assertThat(inferred.getHeaders().getETag()).isEqualTo("\"1\"");
+        assertThat(inferred.getBody()).satisfies(result -> {
+            assertThat(result.draftId()).isEqualTo(draftId);
+            assertThat(result.authoringRevision()).isEqualTo(1);
+            assertThat(result.payloadPersisted()).isFalse();
+            assertThat(result.observations())
+                    .filteredOn(observation -> observation.authoringPath().endsWith("privateToken"))
+                    .allSatisfy(observation -> assertThat(observation.sensitive()).isTrue());
+            assertThat(objectMapper.writeValueAsString(result))
+                    .doesNotContain("sensitive-A")
+                    .doesNotContain("sensitive-B");
+        });
+
         AuthoringDraftService.CommitRequest commitRequest =
                 new AuthoringDraftService.CommitRequest(
                         preview.authoringFingerprint(),
@@ -207,7 +249,6 @@ class ResourceGatewayApplicationTest {
                         "integration-test",
                         "Verified lifecycle integration"
                 );
-        revisionHeaders.setContentType(MediaType.APPLICATION_JSON);
         var committed = restTemplate.exchange(
                 "/admin/visual-operator-library-authoring/drafts/" + draftId + "/commit",
                 HttpMethod.POST,

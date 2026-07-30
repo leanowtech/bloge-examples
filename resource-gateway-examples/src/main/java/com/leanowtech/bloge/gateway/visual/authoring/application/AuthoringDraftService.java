@@ -1,10 +1,14 @@
 package com.leanowtech.bloge.gateway.visual.authoring.application;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.leanowtech.bloge.gateway.visual.authoring.inference.SampleInferenceRejectedException;
+import com.leanowtech.bloge.gateway.visual.authoring.inference.SampleSchemaInferencer;
 import com.leanowtech.bloge.gateway.visual.authoring.model.AuthoringCompileResult;
 import com.leanowtech.bloge.gateway.visual.authoring.model.AuthoringDiagnostic;
 import com.leanowtech.bloge.gateway.visual.authoring.model.AuthoringDraft;
 import com.leanowtech.bloge.gateway.visual.authoring.model.AuthoringProblem;
+import com.leanowtech.bloge.gateway.visual.authoring.model.SampleInferenceRequest;
+import com.leanowtech.bloge.gateway.visual.authoring.model.SampleInferenceResult;
 import com.leanowtech.bloge.gateway.visual.authoring.model.VisualLibraryAuthoringDocument;
 import com.leanowtech.bloge.gateway.visual.catalog.OperatorLibrary;
 import com.leanowtech.bloge.gateway.visual.catalog.OperatorLibraryRegistry;
@@ -37,15 +41,26 @@ public class AuthoringDraftService {
     private final AuthoringPreviewService previews;
     private final OperatorLibraryRegistry libraries;
     private final ObjectMapper objectMapper;
+    private final SampleSchemaInferencer sampleInferencer;
 
     public AuthoringDraftService(AuthoringDraftRepository drafts,
                                  AuthoringPreviewService previews,
                                  OperatorLibraryRegistry libraries,
                                  ObjectMapper objectMapper) {
+        this(drafts, previews, libraries, objectMapper,
+                new SampleSchemaInferencer(objectMapper));
+    }
+
+    public AuthoringDraftService(AuthoringDraftRepository drafts,
+                                 AuthoringPreviewService previews,
+                                 OperatorLibraryRegistry libraries,
+                                 ObjectMapper objectMapper,
+                                 SampleSchemaInferencer sampleInferencer) {
         this.drafts = Objects.requireNonNull(drafts, "drafts");
         this.previews = Objects.requireNonNull(previews, "previews");
         this.libraries = Objects.requireNonNull(libraries, "libraries");
         this.objectMapper = Objects.requireNonNull(objectMapper, "objectMapper");
+        this.sampleInferencer = Objects.requireNonNull(sampleInferencer, "sampleInferencer");
     }
 
     public Collection<AuthoringDraft> all() {
@@ -122,6 +137,38 @@ public class AuthoringDraftService {
         AuthoringDraft draft = exactDraft(draftId, expectedRevision);
         return previews.preview(draft.document())
                 .withDraftContext(draft.draftId(), draft.revision());
+    }
+
+    /**
+     * Infers observed facts for one exact operator port without modifying the draft or retaining payloads.
+     */
+    public SampleInferenceResult inferSamples(String draftId,
+                                              long expectedRevision,
+                                              SampleInferenceRequest request) {
+        AuthoringDraft draft = exactDraft(draftId, expectedRevision);
+        if (request != null && request.target() != null
+                && !draft.document().operators().containsKey(request.target().assetRef())) {
+            throw failure(
+                    404,
+                    "RG.AUTHORING.INFERENCE_TARGET_NOT_FOUND",
+                    "The targeted operator is not present in this exact draft revision.",
+                    draft.draftId(),
+                    draft.revision(),
+                    "/target/assetRef"
+            );
+        }
+        try {
+            return sampleInferencer.infer(draft.draftId(), draft.revision(), request);
+        } catch (SampleInferenceRejectedException exception) {
+            throw failure(
+                    exception.status(),
+                    exception.code(),
+                    exception.getMessage(),
+                    draft.draftId(),
+                    draft.revision(),
+                    exception.authoringPath()
+            );
+        }
     }
 
     @Transactional

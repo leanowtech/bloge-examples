@@ -406,6 +406,10 @@ public record IntegrationCapabilities(
                 "bloge.visualLibraryAuthoringDraft.v1"));
         objects.put("visualLibraryAuthoringCommitResult", List.of(
                 "bloge.visualLibraryAuthoringCommitResult.v1"));
+        objects.put("visualLibrarySampleInferenceRequest", List.of(
+                "bloge.visualSampleInferenceRequest.v1"));
+        objects.put("visualLibrarySampleInferenceResult", List.of(
+                "bloge.visualSampleInferenceResult.v1"));
         objects.put("graphDraftIntegrationBundle", List.of(GraphDraftIntegrationBundle.SCHEMA_VERSION));
         objects.put("graphDraftDependencyProfile", List.of(GraphDraftDependencyProfile.SCHEMA_VERSION_V1,
                 GraphDraftDependencyProfile.SCHEMA_VERSION));
@@ -815,7 +819,7 @@ public record IntegrationCapabilities(
         features.put("visualLibraryAuthoringProtocol", true);
         features.put("visualLibraryAuthoringStatelessPreview", true);
         features.put("functionOnlyLibrary", true);
-        features.put("visualLibraryAuthoringInference", false);
+        features.put("visualLibraryAuthoringInference", true);
         features.put("visualLibraryAuthoringDraftLifecycle", true);
         features.put("visualLibraryAuthoringEtagConcurrency", true);
         features.put("visualLibraryAuthoringPreviewFencedCommit", true);
@@ -1298,6 +1302,7 @@ public record IntegrationCapabilities(
                 new Endpoint("GET", "/admin/visual-operator-library-authoring/drafts/{draftId}/revisions"),
                 new Endpoint("PUT", "/admin/visual-operator-library-authoring/drafts/{draftId}"),
                 new Endpoint("POST", "/admin/visual-operator-library-authoring/drafts/{draftId}/preview"),
+                new Endpoint("POST", "/admin/visual-operator-library-authoring/drafts/{draftId}/infer/samples"),
                 new Endpoint("POST", "/admin/visual-operator-library-authoring/drafts/{draftId}/commit"),
                 new Endpoint("GET", "/api/visual/run-controls/{requestId}"),
                 new Endpoint("POST", "/api/visual/run-controls/{requestId}/cancel")

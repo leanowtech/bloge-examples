@@ -73,6 +73,98 @@ class VisualLibraryAuthoringDraftControllerTest {
             assertThat(result.draftId()).isEqualTo("support-library");
             assertThat(result.authoringRevision()).isEqualTo(1);
         });
+
+        var inference = controller.inferSamples(
+                "support-library",
+                "\"1\"",
+                """
+                {
+                  "schemaVersion": "bloge.visualSampleInferenceRequest.v1",
+                  "target": {
+                    "assetKind": "OPERATOR",
+                    "assetRef": "support:echo",
+                    "portDirection": "INPUT",
+                    "portName": "value"
+                  },
+                  "samples": [
+                    {"id":"one","score":1},
+                    {"id":"two","score":2}
+                  ],
+                  "options": {
+                    "suggestEnums": true,
+                    "suggestFormats": true,
+                    "persistPayload": false
+                  },
+                  "idempotencyKey": "echo-input-inference"
+                }
+                """.getBytes(java.nio.charset.StandardCharsets.UTF_8)
+        );
+        assertThat(inference.getHeaders().getETag()).isEqualTo("\"1\"");
+        assertThat(inference.getBody()).satisfies(result -> {
+            assertThat(result.draftId()).isEqualTo("support-library");
+            assertThat(result.authoringRevision()).isEqualTo(1);
+            assertThat(result.payloadPersisted()).isFalse();
+            assertThat(result.candidate().path("additionalProperties").asBoolean()).isTrue();
+            assertThat(result.observations()).isNotEmpty();
+        });
+
+        assertInferenceFailure(
+                controller,
+                "\"0\"",
+                inferenceRequest("support:echo", false),
+                412,
+                "RG.AUTHORING.DRAFT_REVISION_STALE"
+        );
+        assertInferenceFailure(
+                controller,
+                "\"1\"",
+                inferenceRequest("support:missing", false),
+                404,
+                "RG.AUTHORING.INFERENCE_TARGET_NOT_FOUND"
+        );
+        assertInferenceFailure(
+                controller,
+                "\"1\"",
+                inferenceRequest("support:echo", true),
+                422,
+                "RG.AUTHORING.INFERENCE_PAYLOAD_PERSISTENCE_UNSUPPORTED"
+        );
+    }
+
+    private static byte[] inferenceRequest(String operatorRef, boolean persistPayload) {
+        return """
+                {
+                  "schemaVersion": "bloge.visualSampleInferenceRequest.v1",
+                  "target": {
+                    "assetKind": "OPERATOR",
+                    "assetRef": "%s",
+                    "portDirection": "INPUT",
+                    "portName": "value"
+                  },
+                  "samples": [{"id":"one"}],
+                  "options": {
+                    "suggestEnums": true,
+                    "suggestFormats": true,
+                    "persistPayload": %s
+                  },
+                  "idempotencyKey": "negative-inference"
+                }
+                """.formatted(operatorRef, persistPayload)
+                .getBytes(java.nio.charset.StandardCharsets.UTF_8);
+    }
+
+    private static void assertInferenceFailure(
+            VisualLibraryAuthoringDraftController controller,
+            String ifMatch,
+            byte[] source,
+            int status,
+            String code) {
+        assertThatThrownBy(() -> controller.inferSamples(
+                "support-library", ifMatch, source
+        )).isInstanceOfSatisfying(AuthoringLifecycleException.class, exception -> {
+            assertThat(exception.problem().status()).isEqualTo(status);
+            assertThat(exception.problem().code()).isEqualTo(code);
+        });
     }
 
     private static final class SingleDraftRepository implements AuthoringDraftRepository {

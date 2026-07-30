@@ -210,7 +210,7 @@ curl --fail-with-body \
 - `functionOnlyLibrary=true`
 - `statelessPreview=true`
 - `crossLibraryTypeImports=false`
-- `sampleInference=false`
+- `sampleInference=true`
 - `draftLifecycle=true`
 - `etagConcurrency=true`
 - `previewFencedCommit=true`
@@ -280,7 +280,54 @@ jq '{
 变化都会返回 `409/412`，不会把 stale preview 导入 registry。commit 只产生 design
 catalog revision；它不等于 runtime binding 或 production publish。
 
-## 10. 安全与配额
+## 10. 从多个样本推断字段
+
+样本推断绑定一个已保存 draft 的精确 revision 和 operator input/output 位置。它只产生
+`OBSERVED` facts、保守 candidate 与待确认问题，不修改 draft，也不会把观察结果自动升级
+为 declared contract。
+
+```bash
+curl --fail-with-body \
+  -H 'Content-Type: application/json' \
+  -H 'If-Match: "1"' \
+  -d '{
+    "schemaVersion": "bloge.visualSampleInferenceRequest.v1",
+    "target": {
+      "assetKind": "OPERATOR",
+      "assetRef": "support:echo",
+      "portDirection": "INPUT",
+      "portName": "value"
+    },
+    "samples": [
+      {"ticketId": "T-1001", "score": 1, "status": "open"},
+      {"ticketId": "T-1002", "score": 1.5, "status": "closed"}
+    ],
+    "options": {
+      "suggestEnums": true,
+      "suggestFormats": true,
+      "persistPayload": false
+    },
+    "idempotencyKey": "support-echo-input-1"
+  }' \
+  http://localhost:8080/admin/visual-operator-library-authoring/drafts/support-quick/infer/samples
+```
+
+响应中的 `candidate` 保持 object open；日期格式、enum、required/nullable、敏感字段和类型
+冲突进入 `confirmationRequests`。`observations` 解释样本数、出现次数、null 数、distinct 数、
+类型拓宽原因和敏感性。原始 `samples` 不进入响应、draft、public catalog 或日志，且
+`payloadPersisted` 固定为 `false`。需要长期保存的测试数据应另行进入受治理 fixture。
+
+调用限制为 2 MiB、100 个样本、总计 20,000 个 JSON node、32 层深度、每对象/数组
+2,000 项。过期 `If-Match` 返回 `412`，未知 operator 返回 `404`，请求
+`persistPayload=true` 返回 `422`。机器合同见：
+
+- [Sample inference request schema](schemas/bloge-visual-sample-inference-request-v1.schema.json)
+- [Sample inference result schema](schemas/bloge-visual-sample-inference-result-v1.schema.json)
+
+当前 Workbench 还没有把 confirmation queue 做成可操作界面；本阶段先提供服务端协议与
+推断内核，客户端不得把 candidate 静默写回 declared schema。
+
+## 11. 安全与配额
 
 解析入口执行：
 
@@ -295,7 +342,7 @@ catalog revision；它不等于 runtime binding 或 production publish。
 
 超限返回 `RG.AUTHORING.DOCUMENT_LIMIT_EXCEEDED`；语法或结构问题返回 `RG.AUTHORING.PARSE_FAILED`。错误响应不会回显完整输入 payload。
 
-## 11. 相关资料
+## 12. 相关资料
 
 - [完整技术方案](resource-gateway-progressive-operator-function-library-authoring-technical-design.md)
 - [实现状态与差距](resource-gateway-progressive-library-authoring-implementation-status.md)

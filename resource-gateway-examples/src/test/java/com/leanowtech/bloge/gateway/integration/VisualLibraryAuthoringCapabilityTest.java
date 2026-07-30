@@ -20,12 +20,16 @@ class VisualLibraryAuthoringCapabilityTest {
                 .containsEntry("visualLibraryAuthoringDraft",
                         java.util.List.of("bloge.visualLibraryAuthoringDraft.v1"))
                 .containsEntry("visualLibraryAuthoringCommitResult",
-                        java.util.List.of("bloge.visualLibraryAuthoringCommitResult.v1"));
+                        java.util.List.of("bloge.visualLibraryAuthoringCommitResult.v1"))
+                .containsEntry("visualLibrarySampleInferenceRequest",
+                        java.util.List.of("bloge.visualSampleInferenceRequest.v1"))
+                .containsEntry("visualLibrarySampleInferenceResult",
+                        java.util.List.of("bloge.visualSampleInferenceResult.v1"));
         assertThat(capabilities.features())
                 .containsEntry("visualLibraryAuthoringProtocol", true)
                 .containsEntry("visualLibraryAuthoringStatelessPreview", true)
                 .containsEntry("functionOnlyLibrary", true)
-                .containsEntry("visualLibraryAuthoringInference", false)
+                .containsEntry("visualLibraryAuthoringInference", true)
                 .containsEntry("visualLibraryAuthoringDraftLifecycle", true)
                 .containsEntry("visualLibraryAuthoringEtagConcurrency", true)
                 .containsEntry("visualLibraryAuthoringPreviewFencedCommit", true);
@@ -40,6 +44,8 @@ class VisualLibraryAuthoringCapabilityTest {
                         "PUT", "/admin/visual-operator-library-authoring/drafts/{draftId}"),
                 new IntegrationCapabilities.Endpoint(
                         "POST", "/admin/visual-operator-library-authoring/drafts/{draftId}/preview"),
+                new IntegrationCapabilities.Endpoint(
+                        "POST", "/admin/visual-operator-library-authoring/drafts/{draftId}/infer/samples"),
                 new IntegrationCapabilities.Endpoint(
                         "POST", "/admin/visual-operator-library-authoring/drafts/{draftId}/commit")
         );

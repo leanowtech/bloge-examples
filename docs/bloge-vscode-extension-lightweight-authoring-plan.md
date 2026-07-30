@@ -135,7 +135,7 @@ Resource Gateway 现在还提供：
 - 服务端权威 `/admin/visual-operator-library-authoring/preview`
 - `/signature/parse` 与 `/catalogs`
 
-VSCode local compiler 必须消费同一机器 Schema、grammar version 和 golden vectors。它只能返回 `LOCAL_PREVIEW`；准备进入 registry 时，插件调用远端 preview 并展示 local/remote diff，不能把本地结果改名成权威结果。当前服务端 capability 明确声明 `statelessPreview=true`、`sampleInference=false`、`draftLifecycle=false`，插件应据此渐进启用操作。
+VSCode local compiler 必须消费同一机器 Schema、grammar version 和 golden vectors。它只能返回 `LOCAL_PREVIEW`；准备进入 registry 时，插件调用远端 preview 并展示 local/remote diff，不能把本地结果改名成权威结果。当前服务端 capability 明确声明 `statelessPreview=true`、`sampleInference=true`、`draftLifecycle=true`、`etagConcurrency=true` 和 `previewFencedCommit=true`。插件可以调用远端 multi-sample inference，但仍须把返回值标记为 `OBSERVED`，展示 confirmation queue 后才允许写入 declared contract。
 
 ## 5. 运行模式
 

@@ -90,7 +90,7 @@ class VisualLibraryAuthoringAdminControllerTest {
                         .value("bloge.visualLibraryAuthoring.v1"))
                 .andExpect(jsonPath("$.features.functionOnlyLibrary").value(true))
                 .andExpect(jsonPath("$.features.statelessPreview").value(true))
-                .andExpect(jsonPath("$.features.sampleInference").value(false))
+                .andExpect(jsonPath("$.features.sampleInference").value(true))
                 .andExpect(jsonPath("$.limits.maximumYamlAliases").value(20))
                 .andExpect(jsonPath("$.archetypes.length()").value(9));
     }

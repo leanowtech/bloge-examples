@@ -3871,6 +3871,10 @@ diagnostics, readiness, callable conflicts, and target registry diff. For recove
 authoring, use `/admin/visual-operator-library-authoring/drafts/{draftId}` with
 `If-Match`; its preview and commit endpoints reject stale draft, compiler, catalog,
 canonical, and target-library revisions before importing a design catalog revision.
+The revision-fenced `POST .../infer/samples` endpoint derives payload-free observed
+facts and conservative candidates from at most 100 JSON samples. It never mutates the
+draft or retains raw samples; enum, format, object closure, nullability, and sensitive
+handling remain explicit confirmation work.
 See `/catalogs` for exact limits and feature flags.
 
 For Canonical Advanced import:

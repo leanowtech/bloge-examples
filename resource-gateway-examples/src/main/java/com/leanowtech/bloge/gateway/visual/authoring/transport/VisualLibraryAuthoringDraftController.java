@@ -7,10 +7,14 @@ import com.leanowtech.bloge.gateway.visual.authoring.model.AuthoringCompileResul
 import com.leanowtech.bloge.gateway.visual.authoring.model.AuthoringDiagnostic;
 import com.leanowtech.bloge.gateway.visual.authoring.model.AuthoringDraft;
 import com.leanowtech.bloge.gateway.visual.authoring.model.AuthoringProblem;
+import com.leanowtech.bloge.gateway.visual.authoring.model.SampleInferenceResult;
 import com.leanowtech.bloge.gateway.visual.authoring.model.VisualLibraryAuthoringDocument;
+import com.leanowtech.bloge.gateway.visual.authoring.parse.SampleInferenceRequestDecoder;
 
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
+import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -34,9 +38,18 @@ import java.util.Map;
 public final class VisualLibraryAuthoringDraftController {
 
     private final AuthoringDraftService service;
+    private final SampleInferenceRequestDecoder sampleInferenceDecoder;
 
+    @Autowired
     public VisualLibraryAuthoringDraftController(AuthoringDraftService service) {
+        this(service, new SampleInferenceRequestDecoder());
+    }
+
+    VisualLibraryAuthoringDraftController(AuthoringDraftService service,
+                                          SampleInferenceRequestDecoder sampleInferenceDecoder) {
         this.service = java.util.Objects.requireNonNull(service, "service");
+        this.sampleInferenceDecoder = java.util.Objects.requireNonNull(
+                sampleInferenceDecoder, "sampleInferenceDecoder");
     }
 
     @GetMapping
@@ -87,6 +100,36 @@ public final class VisualLibraryAuthoringDraftController {
             @RequestHeader(name = HttpHeaders.IF_MATCH, required = false) String ifMatch) {
         long expectedRevision = expectedRevision(ifMatch, draftId);
         AuthoringCompileResult result = service.preview(draftId, expectedRevision);
+        return ResponseEntity.ok()
+                .eTag(etag(expectedRevision))
+                .body(result);
+    }
+
+    @PostMapping(
+            value = "/{draftId}/infer/samples",
+            consumes = MediaType.APPLICATION_JSON_VALUE,
+            produces = MediaType.APPLICATION_JSON_VALUE
+    )
+    public ResponseEntity<SampleInferenceResult> inferSamples(
+            @PathVariable String draftId,
+            @RequestHeader(name = HttpHeaders.IF_MATCH, required = false) String ifMatch,
+            @RequestBody(required = false) byte[] source) {
+        long expectedRevision = expectedRevision(ifMatch, draftId);
+        SampleInferenceRequestDecoder.DecodeResult decoded =
+                sampleInferenceDecoder.decode(source);
+        if (!decoded.successful()) {
+            SampleInferenceRequestDecoder.DecodeFailure failure = decoded.failure();
+            throw failure(
+                    failure.status(),
+                    failure.code(),
+                    failure.message(),
+                    draftId,
+                    expectedRevision,
+                    failure.authoringPath()
+            );
+        }
+        SampleInferenceResult result = service.inferSamples(
+                draftId, expectedRevision, decoded.request());
         return ResponseEntity.ok()
                 .eTag(etag(expectedRevision))
                 .body(result);

@@ -132,7 +132,7 @@ public final class VisualLibraryAuthoringAdminController {
                         "functionOnlyLibrary", true,
                         "statelessPreview", true,
                         "crossLibraryTypeImports", false,
-                        "sampleInference", false,
+                        "sampleInference", true,
                         "draftLifecycle", true,
                         "etagConcurrency", true,
                         "previewFencedCommit", true
