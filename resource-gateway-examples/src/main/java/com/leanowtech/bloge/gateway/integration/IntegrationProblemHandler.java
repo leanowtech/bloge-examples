@@ -2,6 +2,8 @@ package com.leanowtech.bloge.gateway.integration;
 
 import com.leanowtech.bloge.gateway.authoring.scenario.ScenarioDraftSetController;
 import com.leanowtech.bloge.gateway.authoring.scenario.ScenarioPublicationController;
+import com.leanowtech.bloge.gateway.visual.authoring.transport.VisualLibraryAuthoringDraftController;
+import com.leanowtech.bloge.gateway.visual.authoring.transport.VisualLibraryAuthoringTestController;
 
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.ResponseEntity;
@@ -29,7 +31,9 @@ import org.springframework.web.bind.annotation.RestControllerAdvice;
         DomainFidelityController.class,
         ReadOnlyShadowJobController.class,
         ScenarioDraftSetController.class,
-        ScenarioPublicationController.class
+        ScenarioPublicationController.class,
+        VisualLibraryAuthoringDraftController.class,
+        VisualLibraryAuthoringTestController.class
 })
 public class IntegrationProblemHandler {
 

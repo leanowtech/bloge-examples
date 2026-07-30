@@ -11,6 +11,8 @@ import com.leanowtech.bloge.gateway.visual.authoring.application.AuthoringDraftR
 import com.leanowtech.bloge.gateway.visual.authoring.application.AuthoringDraftService;
 import com.leanowtech.bloge.gateway.visual.authoring.application.AuthoringLifecycleException;
 import com.leanowtech.bloge.gateway.visual.authoring.application.AuthoringPreviewService;
+import com.leanowtech.bloge.gateway.visual.authoring.application.AuthoringScope;
+import com.leanowtech.bloge.gateway.visual.authoring.application.InMemoryAuthoringCatalogOwnershipRepository;
 import com.leanowtech.bloge.gateway.visual.authoring.compile.AuthoringCompiler;
 import com.leanowtech.bloge.gateway.testing.authoring.fixture.AuthoringFixtureProtocol.AssetKind;
 import com.leanowtech.bloge.gateway.testing.authoring.fixture.AuthoringFixtureProtocol.SaveRequest;
@@ -40,6 +42,8 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 class AuthoringFixtureServiceTest {
 
     private static final Instant NOW = Instant.parse("2026-07-30T12:00:00Z");
+    private static final AuthoringScope SCOPE = new AuthoringScope(
+            "tenant-a", "org-a", "project-a", "test", "region-a");
 
     private final ObjectMapper mapper = new ObjectMapper().findAndRegisterModules();
     private final ObjectMapper yaml = new YAMLMapper().findAndRegisterModules();
@@ -59,8 +63,10 @@ class AuthoringFixtureServiceTest {
                         libraries,
                         mapper),
                 libraries,
+                new InMemoryAuthoringCatalogOwnershipRepository(),
                 mapper);
         draft = drafts.save(
+                SCOPE,
                 "fixture-authoring",
                 0,
                 "quick",
@@ -230,6 +236,7 @@ class AuthoringFixtureServiceTest {
     @Test
     void rejectsStaleDraftAndInsufficientClearanceBeforePersistingPayload() {
         drafts.save(
+                SCOPE,
                 draft.draftId(),
                 draft.revision(),
                 draft.sourceMode(),
@@ -246,7 +253,7 @@ class AuthoringFixtureServiceTest {
                                 .isEqualTo("RG.AUTHORING.DRAFT_REVISION_STALE"));
         assertThat(fixtures.values).isEmpty();
 
-        AuthoringDraft current = drafts.find(draft.draftId());
+        AuthoringDraft current = drafts.find(SCOPE, draft.draftId());
         IntegrationRequestContext publicIdentity = new IntegrationRequestContext(
                 "tenant-a", "org-a", "project-a", "test", "region-a",
                 "HUMAN", "alice", "", "TEST_FIXTURE_WRITE", "corr-public",
@@ -422,30 +429,35 @@ class AuthoringFixtureServiceTest {
 
     private static final class InMemoryDraftRepository
             implements AuthoringDraftRepository {
-        private final Map<String, AuthoringDraft> current = new LinkedHashMap<>();
-        private final Map<String, List<AuthoringDraft>> history = new LinkedHashMap<>();
+        private final Map<Key, AuthoringDraft> current = new LinkedHashMap<>();
+        private final Map<Key, List<AuthoringDraft>> history = new LinkedHashMap<>();
 
         @Override
-        public Collection<AuthoringDraft> all() {
-            return List.copyOf(current.values());
+        public Collection<AuthoringDraft> all(AuthoringScope scope) {
+            return current.entrySet().stream()
+                    .filter(entry -> entry.getKey().scope().equals(scope))
+                    .map(Map.Entry::getValue)
+                    .toList();
         }
 
         @Override
-        public Optional<AuthoringDraft> find(String draftId) {
-            return Optional.ofNullable(current.get(draftId));
+        public Optional<AuthoringDraft> find(AuthoringScope scope, String draftId) {
+            return Optional.ofNullable(current.get(new Key(scope, draftId)));
         }
 
         @Override
-        public List<AuthoringDraft> revisions(String draftId) {
-            return history.getOrDefault(draftId, List.of()).reversed();
+        public List<AuthoringDraft> revisions(AuthoringScope scope, String draftId) {
+            return history.getOrDefault(new Key(scope, draftId), List.of()).reversed();
         }
 
         @Override
         public synchronized Optional<AuthoringDraft> saveIfRevision(
+                AuthoringScope scope,
                 long expectedRevision,
                 AuthoringDraft candidate,
                 String actor) {
-            AuthoringDraft existing = current.get(candidate.draftId());
+            Key key = new Key(scope, candidate.draftId());
+            AuthoringDraft existing = current.get(key);
             if ((existing == null && expectedRevision != 0)
                     || (existing != null && existing.revision() != expectedRevision)) {
                 return Optional.empty();
@@ -458,12 +470,15 @@ class AuthoringFixtureServiceTest {
                     existing == null ? now : existing.createdAt(),
                     now,
                     actor);
-            current.put(stored.draftId(), stored);
+            current.put(key, stored);
             List<AuthoringDraft> revisions =
-                    new ArrayList<>(history.getOrDefault(stored.draftId(), List.of()));
+                    new ArrayList<>(history.getOrDefault(key, List.of()));
             revisions.add(stored);
-            history.put(stored.draftId(), List.copyOf(revisions));
+            history.put(key, List.copyOf(revisions));
             return Optional.of(stored);
+        }
+
+        private record Key(AuthoringScope scope, String draftId) {
         }
     }
 }

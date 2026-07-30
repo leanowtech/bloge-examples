@@ -2,6 +2,7 @@ package com.leanowtech.bloge.gateway.visual.authoring.testing;
 
 import com.leanowtech.bloge.gateway.visual.authoring.application.AuthoringDraftService;
 import com.leanowtech.bloge.gateway.visual.authoring.application.AuthoringLifecycleException;
+import com.leanowtech.bloge.gateway.visual.authoring.application.AuthoringScope;
 import com.leanowtech.bloge.gateway.visual.authoring.model.AuthoringCompileResult;
 import com.leanowtech.bloge.gateway.visual.authoring.model.AuthoringDiagnostic;
 import com.leanowtech.bloge.gateway.visual.authoring.model.AuthoringDraft;
@@ -76,7 +77,8 @@ public final class AuthoringTestEvidenceService {
             OperatorRunEvidence run,
             AuthoringTestPrincipal identity) {
         AuthoringTestScope scope = requireScope(identity);
-        AuthoringDraft draft = exactDraft(run.draftId(), run.authoringRevision());
+        AuthoringDraft draft = exactDraft(
+                authoringScope(scope), run.draftId(), run.authoringRevision());
         List<String> declaredRefs = operatorTestRefs(draft.document(), run.result().operatorRef());
         List<CaseSummary> cases = run.result().results().stream()
                 .map(result -> new CaseSummary(
@@ -136,7 +138,8 @@ public final class AuthoringTestEvidenceService {
             String functionRef,
             AuthoringTestPrincipal identity) {
         AuthoringTestScope scope = requireScope(identity);
-        AuthoringDraft draft = exactDraft(run.draftId(), run.authoringRevision());
+        AuthoringDraft draft = exactDraft(
+                authoringScope(scope), run.draftId(), run.authoringRevision());
         String requiredFunctionRef = normalized(functionRef);
         if (requiredFunctionRef.isBlank()) {
             throw new AuthoringTestEvidenceIntegrityException();
@@ -211,15 +214,17 @@ public final class AuthoringTestEvidenceService {
         } catch (RuntimeException unavailable) {
             throw storeUnavailable(draftId, 0);
         }
-        return evaluate(record);
+        return evaluate(record, authoringScope(scope));
     }
 
     public DraftGate gate(
             String draftId,
             AuthoringTestPrincipal identity) {
         AuthoringTestScope scope = requireScope(identity);
-        AuthoringDraft draft = drafts.find(draftId);
-        AuthoringCompileResult preview = drafts.preview(draft.draftId(), draft.revision());
+        AuthoringScope draftScope = authoringScope(scope);
+        AuthoringDraft draft = drafts.find(draftScope, draftId);
+        AuthoringCompileResult preview = drafts.preview(
+                draftScope, draft.draftId(), draft.revision());
         List<EvidenceRecord> records;
         try {
             records = evidence.findByDraft(scope, draft.draftId());
@@ -347,9 +352,10 @@ public final class AuthoringTestEvidenceService {
                 record.proofMode());
     }
 
-    private EvidenceView evaluate(EvidenceRecord record) {
-        AuthoringDraft draft = drafts.find(record.draftId());
-        AuthoringCompileResult preview = drafts.preview(draft.draftId(), draft.revision());
+    private EvidenceView evaluate(EvidenceRecord record, AuthoringScope scope) {
+        AuthoringDraft draft = drafts.find(scope, record.draftId());
+        AuthoringCompileResult preview = drafts.preview(
+                scope, draft.draftId(), draft.revision());
         String currentArtifact = currentArtifactFingerprint(preview, record);
         return evaluate(record, draft, preview, currentArtifact);
     }
@@ -433,8 +439,11 @@ public final class AuthoringTestEvidenceService {
         }
     }
 
-    private AuthoringDraft exactDraft(String draftId, long revision) {
-        AuthoringDraft draft = drafts.find(draftId);
+    private AuthoringDraft exactDraft(
+            AuthoringScope scope,
+            String draftId,
+            long revision) {
+        AuthoringDraft draft = drafts.find(scope, draftId);
         if (draft.revision() != revision) {
             throw failure(
                     412,
@@ -462,6 +471,15 @@ public final class AuthoringTestEvidenceService {
                     0,
                     "/scope");
         }
+    }
+
+    private static AuthoringScope authoringScope(AuthoringTestScope scope) {
+        return new AuthoringScope(
+                scope.tenantId(),
+                scope.organizationId(),
+                scope.projectId(),
+                scope.environmentId(),
+                scope.region());
     }
 
     private static List<String> operatorTestRefs(

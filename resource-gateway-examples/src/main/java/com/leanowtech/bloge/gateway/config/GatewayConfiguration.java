@@ -47,9 +47,11 @@ import com.leanowtech.bloge.gateway.resource.DatabaseResourceRegistry;
 import com.leanowtech.bloge.gateway.resource.WritableResourceRegistry;
 import com.leanowtech.bloge.gateway.visual.asset.DatabaseVisualRuntimeBindingImplementationRepository;
 import com.leanowtech.bloge.gateway.visual.asset.VisualRuntimeBindingImplementationRepository;
+import com.leanowtech.bloge.gateway.visual.authoring.application.AuthoringCatalogOwnershipRepository;
 import com.leanowtech.bloge.gateway.visual.authoring.application.AuthoringDraftRepository;
 import com.leanowtech.bloge.gateway.visual.authoring.application.AuthoringDraftService;
 import com.leanowtech.bloge.gateway.visual.authoring.application.AuthoringPreviewService;
+import com.leanowtech.bloge.gateway.visual.authoring.application.DatabaseAuthoringCatalogOwnershipRepository;
 import com.leanowtech.bloge.gateway.visual.authoring.application.DatabaseAuthoringDraftRepository;
 import com.leanowtech.bloge.gateway.visual.authoring.testing.AuthoringTestEvidenceRepository;
 import com.leanowtech.bloge.gateway.visual.authoring.testing.DatabaseAuthoringTestEvidenceRepository;
@@ -476,6 +478,16 @@ public class GatewayConfiguration {
     }
 
     /**
+     * Database-unique ownership authority for Workbench commits into the canonical catalog.
+     */
+    @Bean
+    @ConditionalOnMissingBean
+    public AuthoringCatalogOwnershipRepository authoringCatalogOwnershipRepository(
+            JdbcTemplate jdbc) {
+        return new DatabaseAuthoringCatalogOwnershipRepository(jdbc);
+    }
+
+    /**
      * Immutable signed governance evidence for progressive-library authoring tests.
      */
     @Bean
@@ -496,8 +508,10 @@ public class GatewayConfiguration {
     public AuthoringDraftService authoringDraftService(AuthoringDraftRepository drafts,
                                                        AuthoringPreviewService previews,
                                                        OperatorLibraryRegistry libraries,
+                                                       AuthoringCatalogOwnershipRepository ownership,
                                                        ObjectMapper objectMapper) {
-        return new AuthoringDraftService(drafts, previews, libraries, objectMapper);
+        return new AuthoringDraftService(
+                drafts, previews, libraries, ownership, objectMapper);
     }
 
     /**

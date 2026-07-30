@@ -5,7 +5,10 @@ import com.fasterxml.jackson.dataformat.yaml.YAMLMapper;
 import com.leanowtech.bloge.gateway.visual.authoring.application.AuthoringDraftRepository;
 import com.leanowtech.bloge.gateway.visual.authoring.application.AuthoringDraftService;
 import com.leanowtech.bloge.gateway.visual.authoring.application.AuthoringLifecycleException;
+import com.leanowtech.bloge.gateway.visual.authoring.application.AuthoringPrincipal;
 import com.leanowtech.bloge.gateway.visual.authoring.application.AuthoringPreviewService;
+import com.leanowtech.bloge.gateway.visual.authoring.application.AuthoringScope;
+import com.leanowtech.bloge.gateway.visual.authoring.application.InMemoryAuthoringCatalogOwnershipRepository;
 import com.leanowtech.bloge.gateway.visual.authoring.compile.AuthoringCompiler;
 import com.leanowtech.bloge.gateway.visual.authoring.model.AuthoringDraft;
 import com.leanowtech.bloge.gateway.visual.authoring.model.SampleInferenceApplyRequest;
@@ -15,6 +18,7 @@ import com.leanowtech.bloge.gateway.visual.catalog.InMemoryOperatorLibraryRegist
 import com.leanowtech.bloge.gateway.visual.catalog.OperatorLibraryValidator;
 
 import org.junit.jupiter.api.Test;
+import org.springframework.http.HttpHeaders;
 
 import java.time.Instant;
 import java.util.Collection;
@@ -25,6 +29,9 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 class VisualLibraryAuthoringDraftControllerTest {
+
+    private static final AuthoringScope SCOPE = new AuthoringScope(
+            "tenant-a", "knowledge-governance", "tool-studio", "test", "local");
 
     @Test
     void requiresAndReturnsNumericEtags() throws Exception {
@@ -38,10 +45,19 @@ class VisualLibraryAuthoringDraftControllerTest {
                         mapper
                 ),
                 libraries,
+                new InMemoryAuthoringCatalogOwnershipRepository(),
                 mapper
         );
         VisualLibraryAuthoringDraftController controller =
-                new VisualLibraryAuthoringDraftController(service);
+                new VisualLibraryAuthoringDraftController(
+                        service,
+                        (headers, action) -> new AuthoringPrincipal(
+                                SCOPE.tenantId(),
+                                SCOPE.organizationId(),
+                                SCOPE.projectId(),
+                                SCOPE.environmentId(),
+                                SCOPE.region(),
+                                "trusted-actor"));
         VisualLibraryAuthoringDocument document = new YAMLMapper().findAndRegisterModules()
                 .readValue("""
                         schemaVersion: bloge.visualLibraryAuthoring.v1
@@ -54,7 +70,7 @@ class VisualLibraryAuthoringDraftControllerTest {
 
         assertThatThrownBy(() -> controller.save(
                 "support-library",
-                null,
+                headers(null),
                 new VisualLibraryAuthoringDraftController.DraftSaveRequest("QUICK", document, "alice")
         )).isInstanceOfSatisfying(AuthoringLifecycleException.class, exception -> {
             assertThat(exception.problem().status()).isEqualTo(428);
@@ -63,13 +79,14 @@ class VisualLibraryAuthoringDraftControllerTest {
 
         var created = controller.save(
                 "support-library",
-                "\"0\"",
+                headers("\"0\""),
                 new VisualLibraryAuthoringDraftController.DraftSaveRequest("QUICK", document, "alice")
         );
         assertThat(created.getStatusCode().value()).isEqualTo(201);
         assertThat(created.getHeaders().getETag()).isEqualTo("\"1\"");
+        assertThat(created.getBody().savedBy()).isEqualTo("trusted-actor");
 
-        var preview = controller.preview("support-library", "W/\"1\"");
+        var preview = controller.preview("support-library", headers("W/\"1\""));
         assertThat(preview.getHeaders().getETag()).isEqualTo("\"1\"");
         assertThat(preview.getBody()).satisfies(result -> {
             assertThat(result.draftId()).isEqualTo("support-library");
@@ -78,7 +95,7 @@ class VisualLibraryAuthoringDraftControllerTest {
 
         var inference = controller.inferSamples(
                 "support-library",
-                "\"1\"",
+                headers("\"1\""),
                 """
                 {
                   "schemaVersion": "bloge.visualSampleInferenceRequest.v1",
@@ -157,7 +174,7 @@ class VisualLibraryAuthoringDraftControllerTest {
         );
         var applied = controller.applySampleInference(
                 "support-library",
-                "\"1\"",
+                headers("\"1\""),
                 mapper.writeValueAsBytes(apply)
         );
         assertThat(applied.getHeaders().getETag()).isEqualTo("\"2\"");
@@ -199,35 +216,52 @@ class VisualLibraryAuthoringDraftControllerTest {
             int status,
             String code) {
         assertThatThrownBy(() -> controller.inferSamples(
-                "support-library", ifMatch, source
+                "support-library", headers(ifMatch), source
         )).isInstanceOfSatisfying(AuthoringLifecycleException.class, exception -> {
             assertThat(exception.problem().status()).isEqualTo(status);
             assertThat(exception.problem().code()).isEqualTo(code);
         });
     }
 
+    private static HttpHeaders headers(String ifMatch) {
+        HttpHeaders headers = new HttpHeaders();
+        if (ifMatch != null) {
+            headers.set(HttpHeaders.IF_MATCH, ifMatch);
+        }
+        return headers;
+    }
+
     private static final class SingleDraftRepository implements AuthoringDraftRepository {
         private AuthoringDraft current;
+        private AuthoringScope scope;
 
         @Override
-        public Collection<AuthoringDraft> all() {
-            return current == null ? List.of() : List.of(current);
+        public Collection<AuthoringDraft> all(AuthoringScope requiredScope) {
+            return current == null || !requiredScope.equals(scope)
+                    ? List.of()
+                    : List.of(current);
         }
 
         @Override
-        public Optional<AuthoringDraft> find(String draftId) {
-            return Optional.ofNullable(current).filter(draft -> draft.draftId().equals(draftId));
+        public Optional<AuthoringDraft> find(AuthoringScope requiredScope, String draftId) {
+            return Optional.ofNullable(current)
+                    .filter(draft -> requiredScope.equals(scope))
+                    .filter(draft -> draft.draftId().equals(draftId));
         }
 
         @Override
-        public List<AuthoringDraft> revisions(String draftId) {
-            return find(draftId).stream().toList();
+        public List<AuthoringDraft> revisions(AuthoringScope requiredScope, String draftId) {
+            return find(requiredScope, draftId).stream().toList();
         }
 
         @Override
-        public Optional<AuthoringDraft> saveIfRevision(long expectedRevision,
+        public Optional<AuthoringDraft> saveIfRevision(AuthoringScope requiredScope,
+                                                      long expectedRevision,
                                                       AuthoringDraft candidate,
                                                       String actor) {
+            if (current != null && !requiredScope.equals(scope)) {
+                return Optional.empty();
+            }
             long currentRevision = current == null ? 0 : current.revision();
             if (expectedRevision != currentRevision) {
                 return Optional.empty();
@@ -241,6 +275,7 @@ class VisualLibraryAuthoringDraftControllerTest {
                     now,
                     actor
             );
+            scope = requiredScope;
             return Optional.of(current);
         }
     }

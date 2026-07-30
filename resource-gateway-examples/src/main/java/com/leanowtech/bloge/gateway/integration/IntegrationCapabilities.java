@@ -853,6 +853,8 @@ public record IntegrationCapabilities(
         features.put("functionOnlyLibrary", true);
         features.put("visualLibraryAuthoringInference", true);
         features.put("visualLibraryAuthoringDraftLifecycle", true);
+        features.put("visualLibraryAuthoringEnterpriseScopedDrafts", true);
+        features.put("visualLibraryAuthoringTrustedActorAttribution", true);
         features.put("visualLibraryAuthoringEtagConcurrency", true);
         features.put("visualLibraryAuthoringPreviewFencedCommit", true);
         features.put("visualLibraryAuthoringOperatorTestDraftRunner", true);

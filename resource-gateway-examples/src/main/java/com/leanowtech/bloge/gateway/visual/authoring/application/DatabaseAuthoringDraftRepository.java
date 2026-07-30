@@ -16,24 +16,40 @@ import java.util.List;
 import java.util.Optional;
 
 /**
- * H2-backed authoring draft repository with immutable revision history.
+ * H2-backed, enterprise-scoped authoring draft repository with immutable revision history.
  */
 public class DatabaseAuthoringDraftRepository implements AuthoringDraftRepository {
 
     private static final int MAX_FINGERPRINT_BYTES = 16 * 1_048_576;
     private static final String CREATE_CURRENT = """
-            CREATE TABLE IF NOT EXISTS visual_library_authoring_drafts (
-                draft_id VARCHAR(255) PRIMARY KEY,
-                revision BIGINT NOT NULL,
-                stored_json CLOB NOT NULL
-            )
-            """;
-    private static final String CREATE_HISTORY = """
-            CREATE TABLE IF NOT EXISTS visual_library_authoring_draft_revisions (
+            CREATE TABLE IF NOT EXISTS visual_library_authoring_scoped_drafts (
+                tenant_id VARCHAR(255) NOT NULL,
+                organization_id VARCHAR(255) NOT NULL,
+                project_id VARCHAR(255) NOT NULL,
+                environment_id VARCHAR(255) NOT NULL,
+                region VARCHAR(64) NOT NULL,
                 draft_id VARCHAR(255) NOT NULL,
                 revision BIGINT NOT NULL,
                 stored_json CLOB NOT NULL,
-                PRIMARY KEY (draft_id, revision)
+                PRIMARY KEY (
+                    tenant_id, organization_id, project_id, environment_id, region, draft_id
+                )
+            )
+            """;
+    private static final String CREATE_HISTORY = """
+            CREATE TABLE IF NOT EXISTS visual_library_authoring_scoped_draft_revisions (
+                tenant_id VARCHAR(255) NOT NULL,
+                organization_id VARCHAR(255) NOT NULL,
+                project_id VARCHAR(255) NOT NULL,
+                environment_id VARCHAR(255) NOT NULL,
+                region VARCHAR(64) NOT NULL,
+                draft_id VARCHAR(255) NOT NULL,
+                revision BIGINT NOT NULL,
+                stored_json CLOB NOT NULL,
+                PRIMARY KEY (
+                    tenant_id, organization_id, project_id, environment_id, region,
+                    draft_id, revision
+                )
             )
             """;
 
@@ -52,26 +68,47 @@ public class DatabaseAuthoringDraftRepository implements AuthoringDraftRepositor
     }
 
     @Override
-    public Collection<AuthoringDraft> all() {
+    public Collection<AuthoringDraft> all(AuthoringScope scope) {
+        AuthoringScope requiredScope = java.util.Objects.requireNonNull(scope, "scope");
         return jdbc.query("""
-                        SELECT draft_id, stored_json
-                        FROM visual_library_authoring_drafts
+                        SELECT draft_id, revision, stored_json
+                        FROM visual_library_authoring_scoped_drafts
+                        WHERE tenant_id = ? AND organization_id = ? AND project_id = ?
+                          AND environment_id = ? AND region = ?
                         ORDER BY draft_id
                         """,
-                (rs, rowNum) -> read(rs.getString("stored_json"), rs.getString("draft_id")))
+                (rs, rowNum) -> read(
+                        rs.getString("stored_json"),
+                        rs.getString("draft_id"),
+                        rs.getLong("revision")),
+                requiredScope.tenantId(),
+                requiredScope.organizationId(),
+                requiredScope.projectId(),
+                requiredScope.environmentId(),
+                requiredScope.region())
                 .stream()
                 .flatMap(Optional::stream)
                 .toList();
     }
 
     @Override
-    public Optional<AuthoringDraft> find(String draftId) {
+    public Optional<AuthoringDraft> find(AuthoringScope scope, String draftId) {
+        AuthoringScope requiredScope = java.util.Objects.requireNonNull(scope, "scope");
         return jdbc.query("""
-                        SELECT stored_json
-                        FROM visual_library_authoring_drafts
-                        WHERE draft_id = ?
+                        SELECT revision, stored_json
+                        FROM visual_library_authoring_scoped_drafts
+                        WHERE tenant_id = ? AND organization_id = ? AND project_id = ?
+                          AND environment_id = ? AND region = ? AND draft_id = ?
                         """,
-                (rs, rowNum) -> read(rs.getString("stored_json"), normalized(draftId)),
+                (rs, rowNum) -> read(
+                        rs.getString("stored_json"),
+                        normalized(draftId),
+                        rs.getLong("revision")),
+                requiredScope.tenantId(),
+                requiredScope.organizationId(),
+                requiredScope.projectId(),
+                requiredScope.environmentId(),
+                requiredScope.region(),
                 normalized(draftId))
                 .stream()
                 .flatMap(Optional::stream)
@@ -79,14 +116,24 @@ public class DatabaseAuthoringDraftRepository implements AuthoringDraftRepositor
     }
 
     @Override
-    public List<AuthoringDraft> revisions(String draftId) {
+    public List<AuthoringDraft> revisions(AuthoringScope scope, String draftId) {
+        AuthoringScope requiredScope = java.util.Objects.requireNonNull(scope, "scope");
         return jdbc.query("""
-                        SELECT stored_json
-                        FROM visual_library_authoring_draft_revisions
-                        WHERE draft_id = ?
+                        SELECT revision, stored_json
+                        FROM visual_library_authoring_scoped_draft_revisions
+                        WHERE tenant_id = ? AND organization_id = ? AND project_id = ?
+                          AND environment_id = ? AND region = ? AND draft_id = ?
                         ORDER BY revision DESC
                         """,
-                (rs, rowNum) -> read(rs.getString("stored_json"), normalized(draftId)),
+                (rs, rowNum) -> read(
+                        rs.getString("stored_json"),
+                        normalized(draftId),
+                        rs.getLong("revision")),
+                requiredScope.tenantId(),
+                requiredScope.organizationId(),
+                requiredScope.projectId(),
+                requiredScope.environmentId(),
+                requiredScope.region(),
                 normalized(draftId))
                 .stream()
                 .flatMap(Optional::stream)
@@ -95,9 +142,11 @@ public class DatabaseAuthoringDraftRepository implements AuthoringDraftRepositor
 
     @Override
     @Transactional
-    public synchronized Optional<AuthoringDraft> saveIfRevision(long expectedRevision,
+    public synchronized Optional<AuthoringDraft> saveIfRevision(AuthoringScope scope,
+                                                                long expectedRevision,
                                                                 AuthoringDraft candidate,
                                                                 String actor) {
+        AuthoringScope requiredScope = java.util.Objects.requireNonNull(scope, "scope");
         if (candidate == null || candidate.document() == null || expectedRevision < 0) {
             throw new IllegalArgumentException(
                     "Authoring draft, document, and non-negative expected revision are required");
@@ -106,7 +155,7 @@ public class DatabaseAuthoringDraftRepository implements AuthoringDraftRepositor
         if (id.isBlank()) {
             throw new IllegalArgumentException("Authoring draft id is required");
         }
-        AuthoringDraft current = find(id).orElse(null);
+        AuthoringDraft current = find(requiredScope, id).orElse(null);
         if ((current == null && expectedRevision != 0)
                 || (current != null && current.revision() != expectedRevision)) {
             return Optional.empty();
@@ -139,37 +188,68 @@ public class DatabaseAuthoringDraftRepository implements AuthoringDraftRepositor
         if (current == null) {
             try {
                 jdbc.update("""
-                                INSERT INTO visual_library_authoring_drafts
-                                    (draft_id, revision, stored_json)
-                                VALUES (?, ?, ?)
+                                INSERT INTO visual_library_authoring_scoped_drafts (
+                                    tenant_id, organization_id, project_id, environment_id, region,
+                                    draft_id, revision, stored_json
+                                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
                                 """,
-                        id, nextRevision, json);
+                        requiredScope.tenantId(),
+                        requiredScope.organizationId(),
+                        requiredScope.projectId(),
+                        requiredScope.environmentId(),
+                        requiredScope.region(),
+                        id,
+                        nextRevision,
+                        json);
             } catch (DuplicateKeyException concurrentCreate) {
                 return Optional.empty();
             }
         } else {
             int updated = jdbc.update("""
-                            UPDATE visual_library_authoring_drafts
+                            UPDATE visual_library_authoring_scoped_drafts
                             SET revision = ?, stored_json = ?
-                            WHERE draft_id = ? AND revision = ?
+                            WHERE tenant_id = ? AND organization_id = ? AND project_id = ?
+                              AND environment_id = ? AND region = ?
+                              AND draft_id = ? AND revision = ?
                             """,
-                    nextRevision, json, id, expectedRevision);
+                    nextRevision,
+                    json,
+                    requiredScope.tenantId(),
+                    requiredScope.organizationId(),
+                    requiredScope.projectId(),
+                    requiredScope.environmentId(),
+                    requiredScope.region(),
+                    id,
+                    expectedRevision);
             if (updated == 0) {
                 return Optional.empty();
             }
         }
         jdbc.update("""
-                        INSERT INTO visual_library_authoring_draft_revisions
-                            (draft_id, revision, stored_json)
-                        VALUES (?, ?, ?)
+                        INSERT INTO visual_library_authoring_scoped_draft_revisions (
+                            tenant_id, organization_id, project_id, environment_id, region,
+                            draft_id, revision, stored_json
+                        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
                         """,
-                id, nextRevision, json);
+                requiredScope.tenantId(),
+                requiredScope.organizationId(),
+                requiredScope.projectId(),
+                requiredScope.environmentId(),
+                requiredScope.region(),
+                id,
+                nextRevision,
+                json);
         return Optional.of(stored);
     }
 
-    private Optional<AuthoringDraft> read(String json, String draftId) {
+    private Optional<AuthoringDraft> read(String json, String draftId, long revision) {
         try {
-            return Optional.of(objectMapper.readValue(json, AuthoringDraft.class));
+            AuthoringDraft draft = objectMapper.readValue(json, AuthoringDraft.class);
+            if (!draft.draftId().equals(draftId) || draft.revision() != revision) {
+                throw new IllegalStateException(
+                        "Authoring draft projection does not match stored payload: " + draftId);
+            }
+            return Optional.of(draft);
         } catch (JsonProcessingException exception) {
             throw new IllegalStateException("Failed to read authoring draft: " + draftId, exception);
         }

@@ -1,5 +1,7 @@
 package com.leanowtech.bloge.gateway.visual.authoring.testing;
 
+import com.leanowtech.bloge.gateway.visual.authoring.application.AuthoringScope;
+
 /**
  * Trusted identity projection accepted by the visual authoring test core.
  */
@@ -25,6 +27,18 @@ public record AuthoringTestPrincipal(
             throw new IllegalArgumentException("actorId must be present");
         }
         return new AuthoringTestScope(
+                tenantId,
+                organizationId,
+                projectId,
+                environmentId,
+                region);
+    }
+
+    public AuthoringScope requireAuthoringScope() {
+        if (actorId.isBlank()) {
+            throw new IllegalArgumentException("actorId must be present");
+        }
+        return new AuthoringScope(
                 tenantId,
                 organizationId,
                 projectId,

@@ -11,13 +11,14 @@ import java.util.Optional;
  */
 public interface AuthoringDraftRepository {
 
-    Collection<AuthoringDraft> all();
+    Collection<AuthoringDraft> all(AuthoringScope scope);
 
-    Optional<AuthoringDraft> find(String draftId);
+    Optional<AuthoringDraft> find(AuthoringScope scope, String draftId);
 
-    List<AuthoringDraft> revisions(String draftId);
+    List<AuthoringDraft> revisions(AuthoringScope scope, String draftId);
 
-    Optional<AuthoringDraft> saveIfRevision(long expectedRevision,
+    Optional<AuthoringDraft> saveIfRevision(AuthoringScope scope,
+                                            long expectedRevision,
                                             AuthoringDraft candidate,
                                             String actor);
 }

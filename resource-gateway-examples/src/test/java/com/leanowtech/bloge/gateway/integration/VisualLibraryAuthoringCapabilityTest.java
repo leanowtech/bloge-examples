@@ -63,6 +63,8 @@ class VisualLibraryAuthoringCapabilityTest {
                 .containsEntry("functionOnlyLibrary", true)
                 .containsEntry("visualLibraryAuthoringInference", true)
                 .containsEntry("visualLibraryAuthoringDraftLifecycle", true)
+                .containsEntry("visualLibraryAuthoringEnterpriseScopedDrafts", true)
+                .containsEntry("visualLibraryAuthoringTrustedActorAttribution", true)
                 .containsEntry("visualLibraryAuthoringEtagConcurrency", true)
                 .containsEntry("visualLibraryAuthoringPreviewFencedCommit", true)
                 .containsEntry("visualLibraryAuthoringOperatorTestDraftRunner", true)

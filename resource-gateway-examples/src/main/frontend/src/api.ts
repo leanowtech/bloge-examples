@@ -411,7 +411,9 @@ export async function adaptCapabilityCatalogText(sourceText: string): Promise<Ca
 /** Lists durable progressive-library authoring drafts. */
 export async function fetchLibraryAuthoringDrafts(): Promise<VisualLibraryAuthoringDraft[]> {
   return readJson<VisualLibraryAuthoringDraft[]>(
-    await sendRequest('/admin/visual-operator-library-authoring/drafts'),
+    await sendRequest('/admin/visual-operator-library-authoring/drafts', {
+      headers: operatorTestingHeaders('TEST_SUITE_READ'),
+    }),
   );
 }
 
@@ -429,6 +431,7 @@ export async function fetchLibraryAuthoringDraft(
   return readJsonMutation<VisualLibraryAuthoringDraft>(
     await sendRequest(
       `/admin/visual-operator-library-authoring/drafts/${encodeURIComponent(draftId)}`,
+      { headers: operatorTestingHeaders('TEST_SUITE_READ') },
     ),
   );
 }
@@ -446,13 +449,12 @@ export async function saveLibraryAuthoringDraft(
       {
         method: 'PUT',
         headers: {
-          'Content-Type': 'application/json',
+          ...operatorTestingHeaders('TEST_SUITE_WRITE', true),
           'If-Match': `"${Math.max(0, expectedRevision)}"`,
         },
         body: JSON.stringify({
           sourceMode,
           document,
-          actor: 'visual-library-workbench',
         }),
       },
     ),
@@ -471,7 +473,7 @@ export async function inferLibraryAuthoringSamples(
       {
         method: 'POST',
         headers: {
-          'Content-Type': 'application/json',
+          ...operatorTestingHeaders('TEST_SUITE_READ', true),
           'If-Match': `"${Math.max(0, revision)}"`,
         },
         body: JSON.stringify(request),
@@ -494,7 +496,7 @@ export async function applyLibraryAuthoringSamples(
       {
         method: 'POST',
         headers: {
-          'Content-Type': 'application/json',
+          ...operatorTestingHeaders('TEST_SUITE_WRITE', true),
           'If-Match': `"${Math.max(0, revision)}"`,
         },
         body: JSON.stringify({
@@ -502,7 +504,6 @@ export async function applyLibraryAuthoringSamples(
           inference,
           evidenceFingerprint,
           decisions,
-          actor: 'visual-library-workbench',
         }),
       },
     ),
@@ -521,7 +522,7 @@ export async function draftLibraryAuthoringOperatorTest(
       {
         method: 'POST',
         headers: {
-          'Content-Type': 'application/json',
+          ...operatorTestingHeaders('TEST_SUITE_READ', true),
           'If-Match': `"${Math.max(0, revision)}"`,
         },
         body: JSON.stringify({
@@ -577,7 +578,7 @@ export async function draftLibraryAuthoringFunctionTest(
       {
         method: 'POST',
         headers: {
-          'Content-Type': 'application/json',
+          ...operatorTestingHeaders('TEST_SUITE_READ', true),
           'If-Match': `"${Math.max(0, revision)}"`,
         },
         body: JSON.stringify({
@@ -670,7 +671,10 @@ export async function previewLibraryAuthoringDraft(
       `/admin/visual-operator-library-authoring/drafts/${encodeURIComponent(draftId)}/preview`,
       {
         method: 'POST',
-        headers: { 'If-Match': `"${Math.max(0, revision)}"` },
+        headers: {
+          ...operatorTestingHeaders('TEST_SUITE_READ'),
+          'If-Match': `"${Math.max(0, revision)}"`,
+        },
       },
     ),
   );
@@ -689,7 +693,7 @@ export async function commitLibraryAuthoringDraft(
       {
         method: 'POST',
         headers: {
-          'Content-Type': 'application/json',
+          ...operatorTestingHeaders('TEST_SCENARIO_PUBLISH', true),
           'If-Match': `"${Math.max(0, revision)}"`,
         },
         body: JSON.stringify({
@@ -698,7 +702,6 @@ export async function commitLibraryAuthoringDraft(
           catalogFingerprint: preview.catalogFingerprint,
           canonicalFingerprint: preview.canonicalFingerprint,
           targetRevision: preview.diff?.baseRevision ?? 0,
-          actor: 'visual-library-workbench',
           reason,
         }),
       },

@@ -28,6 +28,7 @@ public final class IntegrationAuthoringTestAccessAdapter implements AuthoringTes
         IntegrationRequestContext identity = authenticator.authenticate(
                 headers,
                 switch (Objects.requireNonNull(action, "action")) {
+                    case DRAFT_READ -> IntegrationOperation.AUTHORING_DRAFT_READ;
                     case EXECUTE -> IntegrationOperation.AUTHORING_TEST_EXECUTE;
                     case EVIDENCE_READ ->
                             IntegrationOperation.AUTHORING_TEST_EVIDENCE_READ;

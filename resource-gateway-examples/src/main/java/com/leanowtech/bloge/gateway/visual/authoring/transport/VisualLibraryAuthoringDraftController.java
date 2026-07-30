@@ -1,8 +1,11 @@
 package com.leanowtech.bloge.gateway.visual.authoring.transport;
 
 import com.leanowtech.bloge.gateway.visual.authoring.application.AuthoringCommitResult;
+import com.leanowtech.bloge.gateway.visual.authoring.application.AuthoringDraftAccessPort;
+import com.leanowtech.bloge.gateway.visual.authoring.application.AuthoringDraftAccessPort.Action;
 import com.leanowtech.bloge.gateway.visual.authoring.application.AuthoringDraftService;
 import com.leanowtech.bloge.gateway.visual.authoring.application.AuthoringLifecycleException;
+import com.leanowtech.bloge.gateway.visual.authoring.application.AuthoringPrincipal;
 import com.leanowtech.bloge.gateway.visual.authoring.model.AuthoringCompileResult;
 import com.leanowtech.bloge.gateway.visual.authoring.model.AuthoringDiagnostic;
 import com.leanowtech.bloge.gateway.visual.authoring.model.AuthoringDraft;
@@ -40,40 +43,54 @@ public final class VisualLibraryAuthoringDraftController {
 
     private final AuthoringDraftService service;
     private final SampleInferenceRequestDecoder sampleInferenceDecoder;
+    private final AuthoringDraftAccessPort access;
 
     @Autowired
-    public VisualLibraryAuthoringDraftController(AuthoringDraftService service) {
-        this(service, new SampleInferenceRequestDecoder());
+    public VisualLibraryAuthoringDraftController(
+            AuthoringDraftService service,
+            AuthoringDraftAccessPort access) {
+        this(service, new SampleInferenceRequestDecoder(), access);
     }
 
     VisualLibraryAuthoringDraftController(AuthoringDraftService service,
-                                          SampleInferenceRequestDecoder sampleInferenceDecoder) {
+                                          SampleInferenceRequestDecoder sampleInferenceDecoder,
+                                          AuthoringDraftAccessPort access) {
         this.service = java.util.Objects.requireNonNull(service, "service");
         this.sampleInferenceDecoder = java.util.Objects.requireNonNull(
                 sampleInferenceDecoder, "sampleInferenceDecoder");
+        this.access = java.util.Objects.requireNonNull(access, "access");
     }
 
     @GetMapping
-    public Collection<AuthoringDraft> list() {
-        return service.all();
+    public Collection<AuthoringDraft> list(@RequestHeader HttpHeaders headers) {
+        AuthoringPrincipal principal = access.authenticate(headers, Action.READ);
+        return service.all(principal.requireScope());
     }
 
     @GetMapping("/{draftId}")
-    public ResponseEntity<AuthoringDraft> find(@PathVariable String draftId) {
-        AuthoringDraft draft = service.find(draftId);
+    public ResponseEntity<AuthoringDraft> find(
+            @PathVariable String draftId,
+            @RequestHeader HttpHeaders headers) {
+        AuthoringPrincipal principal = access.authenticate(headers, Action.READ);
+        AuthoringDraft draft = service.find(principal.requireScope(), draftId);
         return withEtag(draft, HttpStatus.OK);
     }
 
     @GetMapping("/{draftId}/revisions")
-    public List<AuthoringDraft> revisions(@PathVariable String draftId) {
-        return service.revisions(draftId);
+    public List<AuthoringDraft> revisions(
+            @PathVariable String draftId,
+            @RequestHeader HttpHeaders headers) {
+        AuthoringPrincipal principal = access.authenticate(headers, Action.READ);
+        return service.revisions(principal.requireScope(), draftId);
     }
 
     @PutMapping("/{draftId}")
     public ResponseEntity<AuthoringDraft> save(
             @PathVariable String draftId,
-            @RequestHeader(name = HttpHeaders.IF_MATCH, required = false) String ifMatch,
+            @RequestHeader HttpHeaders headers,
             @RequestBody(required = false) DraftSaveRequest request) {
+        AuthoringPrincipal principal = access.authenticate(headers, Action.WRITE);
+        String ifMatch = headers.getFirst(HttpHeaders.IF_MATCH);
         long expectedRevision = expectedRevision(ifMatch, draftId);
         if (request == null) {
             throw failure(
@@ -86,11 +103,12 @@ public final class VisualLibraryAuthoringDraftController {
             );
         }
         AuthoringDraft stored = service.save(
+                principal.requireScope(),
                 draftId,
                 expectedRevision,
                 request.sourceMode(),
                 request.document(),
-                request.actor()
+                principal.actorId()
         );
         return withEtag(stored, expectedRevision == 0 ? HttpStatus.CREATED : HttpStatus.OK);
     }
@@ -98,9 +116,12 @@ public final class VisualLibraryAuthoringDraftController {
     @PostMapping("/{draftId}/preview")
     public ResponseEntity<AuthoringCompileResult> preview(
             @PathVariable String draftId,
-            @RequestHeader(name = HttpHeaders.IF_MATCH, required = false) String ifMatch) {
+            @RequestHeader HttpHeaders headers) {
+        AuthoringPrincipal principal = access.authenticate(headers, Action.READ);
+        String ifMatch = headers.getFirst(HttpHeaders.IF_MATCH);
         long expectedRevision = expectedRevision(ifMatch, draftId);
-        AuthoringCompileResult result = service.preview(draftId, expectedRevision);
+        AuthoringCompileResult result = service.preview(
+                principal.requireScope(), draftId, expectedRevision);
         return ResponseEntity.ok()
                 .eTag(etag(expectedRevision))
                 .body(result);
@@ -113,8 +134,10 @@ public final class VisualLibraryAuthoringDraftController {
     )
     public ResponseEntity<SampleInferenceResult> inferSamples(
             @PathVariable String draftId,
-            @RequestHeader(name = HttpHeaders.IF_MATCH, required = false) String ifMatch,
+            @RequestHeader HttpHeaders headers,
             @RequestBody(required = false) byte[] source) {
+        AuthoringPrincipal principal = access.authenticate(headers, Action.READ);
+        String ifMatch = headers.getFirst(HttpHeaders.IF_MATCH);
         long expectedRevision = expectedRevision(ifMatch, draftId);
         SampleInferenceRequestDecoder.DecodeResult decoded =
                 sampleInferenceDecoder.decode(source);
@@ -130,7 +153,7 @@ public final class VisualLibraryAuthoringDraftController {
             );
         }
         SampleInferenceResult result = service.inferSamples(
-                draftId, expectedRevision, decoded.request());
+                principal.requireScope(), draftId, expectedRevision, decoded.request());
         return ResponseEntity.ok()
                 .eTag(etag(expectedRevision))
                 .body(result);
@@ -143,8 +166,10 @@ public final class VisualLibraryAuthoringDraftController {
     )
     public ResponseEntity<AuthoringDraft> applySampleInference(
             @PathVariable String draftId,
-            @RequestHeader(name = HttpHeaders.IF_MATCH, required = false) String ifMatch,
+            @RequestHeader HttpHeaders headers,
             @RequestBody(required = false) byte[] source) {
+        AuthoringPrincipal principal = access.authenticate(headers, Action.WRITE);
+        String ifMatch = headers.getFirst(HttpHeaders.IF_MATCH);
         long expectedRevision = expectedRevision(ifMatch, draftId);
         SampleInferenceRequestDecoder.ApplyDecodeResult decoded =
                 sampleInferenceDecoder.decodeApply(source);
@@ -160,9 +185,11 @@ public final class VisualLibraryAuthoringDraftController {
             );
         }
         AuthoringDraft stored = service.applySampleInference(
+                principal.requireScope(),
                 draftId,
                 expectedRevision,
-                decoded.request()
+                decoded.request(),
+                principal.actorId()
         );
         return withEtag(stored, HttpStatus.OK);
     }
@@ -170,10 +197,17 @@ public final class VisualLibraryAuthoringDraftController {
     @PostMapping("/{draftId}/commit")
     public ResponseEntity<AuthoringCommitResult> commit(
             @PathVariable String draftId,
-            @RequestHeader(name = HttpHeaders.IF_MATCH, required = false) String ifMatch,
+            @RequestHeader HttpHeaders headers,
             @RequestBody(required = false) AuthoringDraftService.CommitRequest request) {
+        AuthoringPrincipal principal = access.authenticate(headers, Action.COMMIT);
+        String ifMatch = headers.getFirst(HttpHeaders.IF_MATCH);
         long expectedRevision = expectedRevision(ifMatch, draftId);
-        AuthoringCommitResult result = service.commit(draftId, expectedRevision, request);
+        AuthoringCommitResult result = service.commit(
+                principal.requireScope(),
+                draftId,
+                expectedRevision,
+                request,
+                principal.actorId());
         return ResponseEntity.ok()
                 .eTag(etag(expectedRevision))
                 .body(result);

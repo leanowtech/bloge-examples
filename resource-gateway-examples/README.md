@@ -3905,8 +3905,15 @@ The stateless endpoint safely parses compact types and function signatures, expa
 operator archetypes, returns canonical `bloge.visualOperatorLibrary.v1`, source-map
 diagnostics, readiness, callable conflicts, and target registry diff. For recoverable
 authoring, use `/admin/visual-operator-library-authoring/drafts/{draftId}` with
-`If-Match`; its preview and commit endpoints reject stale draft, compiler, catalog,
-canonical, and target-library revisions before importing a design catalog revision.
+`If-Match`, Bearer authentication, and an exact purpose: `TEST_SUITE_READ` for reads,
+`TEST_SUITE_WRITE` for mutations, and `TEST_SCENARIO_PUBLISH` for commit. The server derives
+the five-dimensional enterprise scope and actor from the authenticated principal; a body
+`actor` cannot override attribution. Scoped current/history tables permit the same draft id
+in different enterprise scopes. A database-unique ownership record prevents another scope
+from committing the same canonical library id. Existing catalog revisions without ownership
+fail closed until an explicit migration; legacy unscoped draft tables are not silently claimed.
+Preview and commit reject stale draft, compiler, catalog, canonical, and target-library
+revisions before importing a design catalog revision.
 The revision-fenced `POST .../infer/samples` endpoint derives payload-free observed
 facts and conservative candidates from at most 100 JSON samples. It never mutates the
 draft or retains raw samples. After review, `POST .../infer/samples/apply` replays the

@@ -12,6 +12,7 @@ import com.leanowtech.bloge.gateway.testing.api.TestSecurityEvent;
 import com.leanowtech.bloge.gateway.testing.api.TestSecurityEventRepository;
 import com.leanowtech.bloge.gateway.testing.api.TestingArtifactScope;
 import com.leanowtech.bloge.gateway.visual.authoring.application.AuthoringDraftService;
+import com.leanowtech.bloge.gateway.visual.authoring.application.AuthoringScope;
 import com.leanowtech.bloge.gateway.visual.authoring.application.AuthoringLifecycleException;
 import com.leanowtech.bloge.gateway.testing.authoring.fixture.AuthoringFixtureProtocol.AssetKind;
 import com.leanowtech.bloge.gateway.testing.authoring.fixture.AuthoringFixtureProtocol.FixtureMaterial;
@@ -108,7 +109,8 @@ public final class AuthoringFixtureService implements AuthoringFixtureCapability
         TestingArtifactScope scope = requireIdentity(identity, "TEST_FIXTURE_WRITE");
         requireRequest(request, draftId, expectedDraftRevision);
         requireClearance(request.classification(), identity, draftId, expectedDraftRevision);
-        AuthoringCompileResult preview = exactPreview(draftId, expectedDraftRevision);
+        AuthoringCompileResult preview = exactPreview(
+                scope, draftId, expectedDraftRevision);
         requireFixtureLineage(
                 scope, request, draftId, expectedDraftRevision);
         String artifactFingerprint = artifactFingerprint(
@@ -313,8 +315,19 @@ public final class AuthoringFixtureService implements AuthoringFixtureCapability
                 true);
     }
 
-    private AuthoringCompileResult exactPreview(String draftId, long revision) {
-        AuthoringCompileResult preview = drafts.preview(draftId, revision);
+    private AuthoringCompileResult exactPreview(
+            TestingArtifactScope scope,
+            String draftId,
+            long revision) {
+        AuthoringCompileResult preview = drafts.preview(
+                new AuthoringScope(
+                        scope.tenantId(),
+                        scope.organizationId(),
+                        scope.projectId(),
+                        scope.environmentId(),
+                        scope.region()),
+                draftId,
+                revision);
         if (preview.canonicalLibrary() == null) {
             throw failure(
                     422,

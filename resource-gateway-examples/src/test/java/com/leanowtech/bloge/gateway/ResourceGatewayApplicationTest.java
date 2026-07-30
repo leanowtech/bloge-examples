@@ -72,7 +72,8 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
                 "gateway.seed-descriptors=false",
                 "gateway.integration.identity.allowed-purposes="
                         + "GOVERNANCE_EVIDENCE_INGESTION,CHANGE_SYNC,"
-                        + "TEST_EXECUTION,TEST_SUITE_READ",
+                        + "TEST_EXECUTION,TEST_SUITE_READ,TEST_SUITE_WRITE,"
+                        + "TEST_SCENARIO_PUBLISH",
                 "spring.datasource.url=jdbc:h2:mem:resource-gateway-startup;DB_CLOSE_DELAY=-1;DB_CLOSE_ON_EXIT=false"
         }
 )
@@ -186,7 +187,33 @@ class ResourceGatewayApplicationTest {
                             signatures:
                               - "(text: string) -> string"
                         """, VisualLibraryAuthoringDocument.class);
+        var unauthenticatedList = restTemplate.exchange(
+                "/admin/visual-operator-library-authoring/drafts",
+                HttpMethod.GET,
+                new HttpEntity<Void>(new HttpHeaders()),
+                String.class
+        );
+        assertThat(unauthenticatedList.getStatusCode().value()).isEqualTo(401);
+
+        HttpHeaders readOnlyCreateHeaders = new HttpHeaders();
+        readOnlyCreateHeaders.setBearerAuth("bloge-aneke-demo-token");
+        readOnlyCreateHeaders.set("X-Purpose", "TEST_SUITE_READ");
+        readOnlyCreateHeaders.setContentType(MediaType.APPLICATION_JSON);
+        readOnlyCreateHeaders.setIfMatch("\"0\"");
+        var forbiddenCreate = restTemplate.exchange(
+                "/admin/visual-operator-library-authoring/drafts/" + draftId,
+                HttpMethod.PUT,
+                new HttpEntity<>(
+                        new VisualLibraryAuthoringDraftController.DraftSaveRequest(
+                                "QUICK", document, "spoofed-author"),
+                        readOnlyCreateHeaders),
+                String.class
+        );
+        assertThat(forbiddenCreate.getStatusCode().value()).isEqualTo(403);
+
         HttpHeaders createHeaders = new HttpHeaders();
+        createHeaders.setBearerAuth("bloge-aneke-demo-token");
+        createHeaders.set("X-Purpose", "TEST_SUITE_WRITE");
         createHeaders.setContentType(MediaType.APPLICATION_JSON);
         createHeaders.setIfMatch("\"0\"");
         var created = restTemplate.exchange(
@@ -204,7 +231,17 @@ class ResourceGatewayApplicationTest {
         assertThat(created.getBody()).satisfies(draft -> {
             assertThat(draft.draftId()).isEqualTo(draftId);
             assertThat(draft.revision()).isEqualTo(1);
+            assertThat(draft.savedBy()).isEqualTo("aneke-sync");
         });
+
+        var unauthenticatedTestDraft = restTemplate.exchange(
+                "/admin/visual-operator-library-authoring/drafts/" + draftId
+                        + "/tests/operators/draft",
+                HttpMethod.POST,
+                new HttpEntity<Void>(new HttpHeaders()),
+                String.class
+        );
+        assertThat(unauthenticatedTestDraft.getStatusCode().value()).isEqualTo(401);
 
         var staleSave = restTemplate.exchange(
                 "/admin/visual-operator-library-authoring/drafts/" + draftId,
@@ -220,6 +257,8 @@ class ResourceGatewayApplicationTest {
                 assertThat(problem.code()).isEqualTo("RG.AUTHORING.DRAFT_REVISION_STALE"));
 
         HttpHeaders revisionHeaders = new HttpHeaders();
+        revisionHeaders.setBearerAuth("bloge-aneke-demo-token");
+        revisionHeaders.set("X-Purpose", "TEST_SUITE_READ");
         revisionHeaders.setIfMatch("\"1\"");
         var previewed = restTemplate.exchange(
                 "/admin/visual-operator-library-authoring/drafts/" + draftId + "/preview",
@@ -280,6 +319,7 @@ class ResourceGatewayApplicationTest {
             assertThat(evidence.payloadPersisted()).isFalse();
         });
 
+        revisionHeaders.set("X-Purpose", "TEST_SUITE_READ");
         var functionDraft = restTemplate.exchange(
                 "/admin/visual-operator-library-authoring/drafts/" + draftId
                         + "/tests/functions/draft",
@@ -300,6 +340,7 @@ class ResourceGatewayApplicationTest {
             assertThat(generated.payloadPersisted()).isFalse();
         });
 
+        revisionHeaders.set("X-Purpose", "TEST_EXECUTION");
         var functionRun = restTemplate.exchange(
                 "/admin/visual-operator-library-authoring/drafts/" + draftId
                         + "/tests/functions/run",
@@ -365,6 +406,7 @@ class ResourceGatewayApplicationTest {
                 SampleInferenceRequest.Options.defaults(),
                 "integration-inference"
         );
+        revisionHeaders.set("X-Purpose", "TEST_SUITE_READ");
         var inferred = restTemplate.exchange(
                 "/admin/visual-operator-library-authoring/drafts/" + draftId + "/infer/samples",
                 HttpMethod.POST,
@@ -398,6 +440,7 @@ class ResourceGatewayApplicationTest {
                         .toList(),
                 "integration-test"
         );
+        revisionHeaders.set("X-Purpose", "TEST_SUITE_WRITE");
         var applied = restTemplate.exchange(
                 "/admin/visual-operator-library-authoring/drafts/" + draftId
                         + "/infer/samples/apply",
@@ -419,6 +462,8 @@ class ResourceGatewayApplicationTest {
         });
 
         HttpHeaders appliedHeaders = new HttpHeaders();
+        appliedHeaders.setBearerAuth("bloge-aneke-demo-token");
+        appliedHeaders.set("X-Purpose", "TEST_SUITE_READ");
         appliedHeaders.setContentType(MediaType.APPLICATION_JSON);
         appliedHeaders.setIfMatch("\"2\"");
         var promotedPreviewResponse = restTemplate.exchange(
@@ -442,6 +487,7 @@ class ResourceGatewayApplicationTest {
                         "integration-test",
                         "Verified lifecycle integration"
                 );
+        appliedHeaders.set("X-Purpose", "TEST_SCENARIO_PUBLISH");
         var committed = restTemplate.exchange(
                 "/admin/visual-operator-library-authoring/drafts/" + draftId + "/commit",
                 HttpMethod.POST,
@@ -453,6 +499,7 @@ class ResourceGatewayApplicationTest {
             assertThat(result.draftId()).isEqualTo(draftId);
             assertThat(result.targetRevision()).isEqualTo(1);
             assertThat(result.library().libraryId()).isEqualTo(draftId);
+            assertThat(result.committedBy()).isEqualTo("aneke-sync");
         });
     }
 

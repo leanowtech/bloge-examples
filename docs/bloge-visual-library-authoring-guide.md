@@ -329,15 +329,19 @@ draft lifecycle/test endpoint。客户端必须按实际响应协商，不能硬
 
 ## 9. 持久化 Draft 与受保护提交
 
-Workbench 使用 `If-Match` 保存每个可编辑 revision。创建时显式提交 revision `0`：
+Workbench 使用 `If-Match` 保存每个可编辑 revision。所有 draft API 都从 Bearer
+credential 获取 tenant、organization、project、environment、region 和 actor；客户端不能
+通过 request body 指定或覆盖这些身份。创建时使用 `TEST_SUITE_WRITE` 并显式提交
+revision `0`：
 
 ```bash
 curl --fail-with-body -i -X PUT \
+  -H 'Authorization: Bearer bloge-aneke-demo-token' \
+  -H 'X-Purpose: TEST_SUITE_WRITE' \
   -H 'Content-Type: application/json' \
   -H 'If-Match: "0"' \
   -d '{
     "sourceMode": "QUICK",
-    "actor": "demo-author",
     "document": {
       "schemaVersion": "bloge.visualLibraryAuthoring.v1",
       "library": {"id": "support-quick", "owner": "support-team"},
@@ -360,6 +364,8 @@ ETag；两个标签同时编辑时，旧标签收到 `412 RG.AUTHORING.DRAFT_REV
 
 ```bash
 curl --fail-with-body \
+  -H 'Authorization: Bearer bloge-aneke-demo-token' \
+  -H 'X-Purpose: TEST_SUITE_READ' \
   -H 'If-Match: "1"' \
   -X POST \
   http://localhost:8080/admin/visual-operator-library-authoring/drafts/support-quick/preview \
@@ -375,10 +381,11 @@ jq '{
   catalogFingerprint,
   canonicalFingerprint,
   targetRevision: .diff.baseRevision,
-  actor: "demo-author",
   reason: "Reviewed in Library Workbench"
 }' /tmp/support-quick-preview.json \
 | curl --fail-with-body \
+    -H 'Authorization: Bearer bloge-aneke-demo-token' \
+    -H 'X-Purpose: TEST_SCENARIO_PUBLISH' \
     -H 'Content-Type: application/json' \
     -H 'If-Match: "1"' \
     --data-binary @- \
@@ -388,6 +395,29 @@ jq '{
 服务端会重新读取 exact draft、重新编译并重新读取 catalog。任一 revision 或 fingerprint
 变化都会返回 `409/412`，不会把 stale preview 导入 registry。commit 只产生 design
 catalog revision；它不等于 runtime binding 或 production publish。
+
+### 9.1 企业隔离与升级边界
+
+| 操作 | Purpose | 服务端语义 |
+| --- | --- | --- |
+| list/find/revisions/preview/infer/test draft | `TEST_SUITE_READ` | 只读取 credential 对应的完整五维 scope |
+| save/apply | `TEST_SUITE_WRITE` | revision CAS 与 `savedBy` 使用受信 actor |
+| commit | `TEST_SCENARIO_PUBLISH` | 重新验证五重 fingerprint，并以受信 actor 记录提交 |
+
+同一 `draftId` 可以存在于不同企业 scope；跨 scope 查询返回 not found，不泄露对象是否存在。
+第一次提交全新的 canonical `libraryId` 时，数据库会为当前 scope 原子建立 ownership。
+同一 scope 可以继续修订；其他 scope 即使使用相同 draft 内容，也会收到
+`RG.AUTHORING.CATALOG_OWNERSHIP_CONFLICT`。
+
+升级时不会自动猜测历史资产归属：
+
+1. 旧表 `visual_library_authoring_drafts` 和
+   `visual_library_authoring_draft_revisions` 保持隔离，不会自动出现在任何 tenant；
+2. 已有 catalog revision 但缺少 ownership record 时，commit 返回
+   `RG.AUTHORING.LEGACY_CATALOG_OWNERSHIP_REQUIRED`；
+3. 演示环境可用新的 library id 直接体验；生产升级必须先备份，再由资产 owner 审批唯一
+   enterprise scope，最后通过受控迁移写入 scoped draft 与 ownership；
+4. 当前版本没有开放自助 ownership transfer API，也不要用普通 Workbench 请求绕过迁移。
 
 ## 10. 从多个样本推断字段
 
@@ -419,6 +449,8 @@ cat > /tmp/sample-inference-request.json <<'JSON'
 JSON
 
 curl --fail-with-body \
+  -H 'Authorization: Bearer bloge-aneke-demo-token' \
+  -H 'X-Purpose: TEST_SUITE_READ' \
   -H 'Content-Type: application/json' \
   -H 'If-Match: "1"' \
   --data-binary @/tmp/sample-inference-request.json \
@@ -446,10 +478,11 @@ jq -n \
     decisions: [
       $result[0].confirmationRequests[] |
       {confirmationId, value: .recommendedValue}
-    ],
-    actor: "demo-author"
+    ]
   }' \
   | curl --fail-with-body \
+      -H 'Authorization: Bearer bloge-aneke-demo-token' \
+      -H 'X-Purpose: TEST_SUITE_WRITE' \
       -H 'Content-Type: application/json' \
       -H 'If-Match: "1"' \
       --data-binary @- \

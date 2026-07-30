@@ -26,10 +26,15 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 class AuthoringDraftServiceTest {
 
+    private static final AuthoringScope SCOPE = new AuthoringScope(
+            "tenant-a", "knowledge-governance", "tool-studio", "test", "local");
+
     private final ObjectMapper mapper = new ObjectMapper().findAndRegisterModules();
     private final ObjectMapper yaml = new YAMLMapper().findAndRegisterModules();
     private final InMemoryAuthoringDraftRepository drafts = new InMemoryAuthoringDraftRepository();
     private final InMemoryOperatorLibraryRegistry libraries = new InMemoryOperatorLibraryRegistry();
+    private final InMemoryAuthoringCatalogOwnershipRepository ownership =
+            new InMemoryAuthoringCatalogOwnershipRepository();
     private AuthoringDraftService service;
 
     @BeforeEach
@@ -39,6 +44,7 @@ class AuthoringDraftServiceTest {
                 drafts,
                 new AuthoringPreviewService(compiler, libraries, mapper),
                 libraries,
+                ownership,
                 mapper
         );
     }
@@ -46,6 +52,7 @@ class AuthoringDraftServiceTest {
     @Test
     void decoratesPreviewWithExactStoredDraftIdentity() throws Exception {
         AuthoringDraft stored = service.save(
+                SCOPE,
                 "support-library",
                 0,
                 "quick",
@@ -53,7 +60,8 @@ class AuthoringDraftServiceTest {
                 "alice"
         );
 
-        AuthoringCompileResult preview = service.preview(stored.draftId(), stored.revision());
+        AuthoringCompileResult preview = service.preview(
+                SCOPE, stored.draftId(), stored.revision());
 
         assertThat(preview.draftId()).isEqualTo("support-library");
         assertThat(preview.authoringRevision()).isEqualTo(1);
@@ -64,18 +72,22 @@ class AuthoringDraftServiceTest {
     @Test
     void commitsOnlyTheExactAuthoritativePreview() throws Exception {
         AuthoringDraft stored = service.save(
+                SCOPE,
                 "support-library",
                 0,
                 "quick",
                 document("support-library", "1.0.0"),
                 "alice"
         );
-        AuthoringCompileResult preview = service.preview(stored.draftId(), stored.revision());
+        AuthoringCompileResult preview = service.preview(
+                SCOPE, stored.draftId(), stored.revision());
 
         AuthoringCommitResult committed = service.commit(
+                SCOPE,
                 stored.draftId(),
                 stored.revision(),
-                exactCommit(preview, preview.diff().baseRevision())
+                exactCommit(preview, preview.diff().baseRevision()),
+                "alice"
         );
 
         assertThat(committed.targetRevision()).isEqualTo(1);
@@ -84,19 +96,107 @@ class AuthoringDraftServiceTest {
         assertThat(libraries.revisions("support-library")).hasSize(1);
         assertThat(libraries.revisions("support-library").getFirst().revisionMetadata().actor())
                 .isEqualTo("alice");
+        assertThat(ownership.find("support-library")).hasValueSatisfying(claim -> {
+            assertThat(claim.scope()).isEqualTo(SCOPE);
+            assertThat(claim.claimedBy()).isEqualTo("alice");
+        });
+    }
+
+    @Test
+    void preventsAnotherEnterpriseScopeFromCommittingTheSameCanonicalLibraryId()
+            throws Exception {
+        AuthoringDraft owned = service.save(
+                SCOPE,
+                "scope-a-draft",
+                0,
+                "quick",
+                document("shared-library", "1.0.0"),
+                "alice"
+        );
+        AuthoringCompileResult ownedPreview =
+                service.preview(SCOPE, owned.draftId(), owned.revision());
+        service.commit(
+                SCOPE,
+                owned.draftId(),
+                owned.revision(),
+                exactCommit(ownedPreview, 0),
+                "alice"
+        );
+
+        AuthoringScope otherScope = new AuthoringScope(
+                "tenant-b", "knowledge-governance", "tool-studio", "test", "local");
+        AuthoringDraft competing = service.save(
+                otherScope,
+                "scope-b-draft",
+                0,
+                "quick",
+                document("shared-library", "1.0.1"),
+                "mallory"
+        );
+        AuthoringCompileResult competingPreview =
+                service.preview(otherScope, competing.draftId(), competing.revision());
+
+        assertThatThrownBy(() -> service.commit(
+                otherScope,
+                competing.draftId(),
+                competing.revision(),
+                exactCommit(competingPreview, 1),
+                "mallory"
+        )).isInstanceOfSatisfying(AuthoringLifecycleException.class, exception ->
+                assertThat(exception.problem().code())
+                        .isEqualTo("RG.AUTHORING.CATALOG_OWNERSHIP_CONFLICT"));
+        assertThat(libraries.revisions("shared-library")).hasSize(1);
+        assertThat(ownership.find("shared-library"))
+                .get()
+                .extracting(claim -> claim.scope().tenantId())
+                .isEqualTo("tenant-a");
+    }
+
+    @Test
+    void refusesToSilentlyClaimAnExistingCatalogLibraryWithoutOwnership()
+            throws Exception {
+        AuthoringCompileResult legacy = new AuthoringCompiler(
+                mapper, new OperatorLibraryValidator())
+                .compile(document("legacy-library", "1.0.0"));
+        libraries.upsert(legacy.canonicalLibrary());
+        AuthoringDraft draft = service.save(
+                SCOPE,
+                "legacy-library-change",
+                0,
+                "quick",
+                document("legacy-library", "1.0.1"),
+                "alice"
+        );
+        AuthoringCompileResult preview =
+                service.preview(SCOPE, draft.draftId(), draft.revision());
+
+        assertThatThrownBy(() -> service.commit(
+                SCOPE,
+                draft.draftId(),
+                draft.revision(),
+                exactCommit(preview, 1),
+                "alice"
+        )).isInstanceOfSatisfying(AuthoringLifecycleException.class, exception ->
+                assertThat(exception.problem().code())
+                        .isEqualTo("RG.AUTHORING.LEGACY_CATALOG_OWNERSHIP_REQUIRED"));
+        assertThat(ownership.find("legacy-library")).isEmpty();
+        assertThat(libraries.revisions("legacy-library")).hasSize(1);
     }
 
     @Test
     void rejectsStaleDraftAndTamperedCanonicalFingerprint() throws Exception {
         AuthoringDraft first = service.save(
+                SCOPE,
                 "support-library",
                 0,
                 "quick",
                 document("support-library", "1.0.0"),
                 "alice"
         );
-        AuthoringCompileResult preview = service.preview(first.draftId(), first.revision());
+        AuthoringCompileResult preview = service.preview(
+                SCOPE, first.draftId(), first.revision());
         service.save(
+                SCOPE,
                 first.draftId(),
                 first.revision(),
                 "quick",
@@ -105,13 +205,16 @@ class AuthoringDraftServiceTest {
         );
 
         assertThatThrownBy(() -> service.commit(
+                SCOPE,
                 first.draftId(),
                 first.revision(),
-                exactCommit(preview, 0)
+                exactCommit(preview, 0),
+                "alice"
         )).isInstanceOfSatisfying(AuthoringLifecycleException.class, exception ->
                 assertThat(exception.problem().code()).isEqualTo("RG.AUTHORING.DRAFT_REVISION_STALE"));
 
         AuthoringDraft independent = service.save(
+                SCOPE,
                 "other-library",
                 0,
                 "quick",
@@ -119,7 +222,7 @@ class AuthoringDraftServiceTest {
                 "alice"
         );
         AuthoringCompileResult independentPreview =
-                service.preview(independent.draftId(), independent.revision());
+                service.preview(SCOPE, independent.draftId(), independent.revision());
         AuthoringDraftService.CommitRequest tampered = new AuthoringDraftService.CommitRequest(
                 independentPreview.authoringFingerprint(),
                 independentPreview.compileFingerprint(),
@@ -131,9 +234,11 @@ class AuthoringDraftServiceTest {
         );
 
         assertThatThrownBy(() -> service.commit(
+                SCOPE,
                 independent.draftId(),
                 independent.revision(),
-                tampered
+                tampered,
+                "alice"
         )).isInstanceOfSatisfying(AuthoringLifecycleException.class, exception ->
                 assertThat(exception.problem().code()).isEqualTo("RG.AUTHORING.CANONICAL_DRIFT"));
     }
@@ -141,21 +246,25 @@ class AuthoringDraftServiceTest {
     @Test
     void rejectsCatalogDriftBetweenPreviewAndCommit() throws Exception {
         AuthoringDraft stored = service.save(
+                SCOPE,
                 "support-library",
                 0,
                 "quick",
                 document("support-library", "1.0.0"),
                 "alice"
         );
-        AuthoringCompileResult preview = service.preview(stored.draftId(), stored.revision());
+        AuthoringCompileResult preview = service.preview(
+                SCOPE, stored.draftId(), stored.revision());
         AuthoringCompileResult other = new AuthoringCompiler(mapper, new OperatorLibraryValidator())
                 .compile(document("catalog-change", "1.0.0"));
         libraries.upsert(other.canonicalLibrary());
 
         assertThatThrownBy(() -> service.commit(
+                SCOPE,
                 stored.draftId(),
                 stored.revision(),
-                exactCommit(preview, 0)
+                exactCommit(preview, 0),
+                "alice"
         )).isInstanceOfSatisfying(AuthoringLifecycleException.class, exception ->
                 assertThat(exception.problem().code()).isEqualTo("RG.AUTHORING.CATALOG_DRIFT"));
     }
@@ -173,16 +282,18 @@ class AuthoringDraftServiceTest {
                       password: clear-text-secret
                 """, VisualLibraryAuthoringDocument.class);
 
-        assertThatThrownBy(() -> service.save("unsafe-library", 0, "quick", secret, "alice"))
+        assertThatThrownBy(() -> service.save(
+                SCOPE, "unsafe-library", 0, "quick", secret, "alice"))
                 .isInstanceOfSatisfying(AuthoringLifecycleException.class, exception ->
                         assertThat(exception.problem().code())
                                 .isEqualTo("RG.AUTHORING.RAW_SECRET_FORBIDDEN"));
-        assertThat(drafts.all()).isEmpty();
+        assertThat(drafts.all(SCOPE)).isEmpty();
     }
 
     @Test
     void atomicallyReplaysAndPromotesSampleInferenceWithoutPersistingPayloads() throws Exception {
         AuthoringDraft stored = service.save(
+                SCOPE,
                 "support-library",
                 0,
                 "quick",
@@ -200,9 +311,10 @@ class AuthoringDraftServiceTest {
                 """
         );
         SampleInferenceResult inference = service.inferSamples(
-                stored.draftId(), stored.revision(), request);
+                SCOPE, stored.draftId(), stored.revision(), request);
 
         AuthoringDraft promoted = service.applySampleInference(
+                SCOPE,
                 stored.draftId(),
                 stored.revision(),
                 new SampleInferenceApplyRequest(
@@ -211,7 +323,8 @@ class AuthoringDraftServiceTest {
                         inference.evidenceFingerprint(),
                         recommendedDecisions(inference),
                         "alice"
-                )
+                ),
+                "alice"
         );
 
         assertThat(promoted.revision()).isEqualTo(2);
@@ -232,7 +345,7 @@ class AuthoringDraftServiceTest {
                 .doesNotContain("\"samples\"")
                 .doesNotContain("never-store-alpha")
                 .doesNotContain("never-store-beta");
-        assertThat(service.revisions(stored.draftId()))
+        assertThat(service.revisions(SCOPE, stored.draftId()))
                 .extracting(AuthoringDraft::revision)
                 .containsExactly(2L, 1L);
     }
@@ -241,6 +354,7 @@ class AuthoringDraftServiceTest {
     void rejectsStaleEvidenceAndInvalidatesOnlyEvidenceWhoseDeclarationChanged()
             throws Exception {
         AuthoringDraft stored = service.save(
+                SCOPE,
                 "support-library",
                 0,
                 "quick",
@@ -254,7 +368,7 @@ class AuthoringDraftServiceTest {
                 "{\"score\":2}"
         );
         SampleInferenceResult inference = service.inferSamples(
-                stored.draftId(), stored.revision(), request);
+                SCOPE, stored.draftId(), stored.revision(), request);
         SampleInferenceApplyRequest apply = new SampleInferenceApplyRequest(
                 SampleInferenceApplyRequest.SCHEMA_VERSION,
                 request,
@@ -264,6 +378,7 @@ class AuthoringDraftServiceTest {
         );
 
         assertThatThrownBy(() -> service.applySampleInference(
+                SCOPE,
                 stored.draftId(),
                 stored.revision(),
                 new SampleInferenceApplyRequest(
@@ -272,14 +387,16 @@ class AuthoringDraftServiceTest {
                         "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
                         apply.decisions(),
                         apply.actor()
-                )
+                ),
+                "alice"
         )).isInstanceOfSatisfying(AuthoringLifecycleException.class, exception ->
                 assertThat(exception.problem().code())
                         .isEqualTo("RG.AUTHORING.INFERENCE_EVIDENCE_STALE"));
 
         AuthoringDraft promoted = service.applySampleInference(
-                stored.draftId(), stored.revision(), apply);
+                SCOPE, stored.draftId(), stored.revision(), apply, "alice");
         AuthoringDraft unrelatedEdit = service.save(
+                SCOPE,
                 promoted.draftId(),
                 promoted.revision(),
                 promoted.sourceMode(),
@@ -290,6 +407,7 @@ class AuthoringDraftServiceTest {
         assertThat(unrelatedEdit.confirmations()).isNotEmpty();
 
         AuthoringDraft targetEdit = service.save(
+                SCOPE,
                 unrelatedEdit.draftId(),
                 unrelatedEdit.revision(),
                 unrelatedEdit.sourceMode(),
@@ -304,6 +422,7 @@ class AuthoringDraftServiceTest {
     void doesNotPersistObservedEnumValuesUnlessTheyBecomeTheDeclaredSchema()
             throws Exception {
         AuthoringDraft stored = service.save(
+                SCOPE,
                 "support-library",
                 0,
                 "quick",
@@ -323,8 +442,9 @@ class AuthoringDraftServiceTest {
                 "enum-redaction-test"
         );
         SampleInferenceResult inference = service.inferSamples(
-                stored.draftId(), stored.revision(), request);
+                SCOPE, stored.draftId(), stored.revision(), request);
         AuthoringDraft promoted = service.applySampleInference(
+                SCOPE,
                 stored.draftId(),
                 stored.revision(),
                 new SampleInferenceApplyRequest(
@@ -333,7 +453,8 @@ class AuthoringDraftServiceTest {
                         inference.evidenceFingerprint(),
                         recommendedDecisions(inference),
                         "alice"
-                )
+                ),
+                "alice"
         );
 
         assertThat(inference.observations())
@@ -467,29 +588,35 @@ class AuthoringDraftServiceTest {
     }
 
     private static final class InMemoryAuthoringDraftRepository implements AuthoringDraftRepository {
-        private final Map<String, AuthoringDraft> current = new LinkedHashMap<>();
-        private final Map<String, List<AuthoringDraft>> history = new LinkedHashMap<>();
+        private final Map<Key, AuthoringDraft> current = new LinkedHashMap<>();
+        private final Map<Key, List<AuthoringDraft>> history = new LinkedHashMap<>();
 
         @Override
-        public Collection<AuthoringDraft> all() {
-            return List.copyOf(current.values());
+        public Collection<AuthoringDraft> all(AuthoringScope scope) {
+            return current.entrySet().stream()
+                    .filter(entry -> entry.getKey().scope().equals(scope))
+                    .map(Map.Entry::getValue)
+                    .toList();
         }
 
         @Override
-        public Optional<AuthoringDraft> find(String draftId) {
-            return Optional.ofNullable(current.get(draftId));
+        public Optional<AuthoringDraft> find(AuthoringScope scope, String draftId) {
+            return Optional.ofNullable(current.get(new Key(scope, draftId)));
         }
 
         @Override
-        public List<AuthoringDraft> revisions(String draftId) {
-            return history.getOrDefault(draftId, List.of()).reversed();
+        public List<AuthoringDraft> revisions(AuthoringScope scope, String draftId) {
+            return history.getOrDefault(new Key(scope, draftId), List.of()).reversed();
         }
 
         @Override
-        public synchronized Optional<AuthoringDraft> saveIfRevision(long expectedRevision,
+        public synchronized Optional<AuthoringDraft> saveIfRevision(
+                                                                   AuthoringScope scope,
+                                                                   long expectedRevision,
                                                                    AuthoringDraft candidate,
                                                                    String actor) {
-            AuthoringDraft existing = current.get(candidate.draftId());
+            Key key = new Key(scope, candidate.draftId());
+            AuthoringDraft existing = current.get(key);
             if ((existing == null && expectedRevision != 0)
                     || (existing != null && existing.revision() != expectedRevision)) {
                 return Optional.empty();
@@ -503,12 +630,15 @@ class AuthoringDraftServiceTest {
                     now,
                     actor
             );
-            current.put(stored.draftId(), stored);
+            current.put(key, stored);
             List<AuthoringDraft> revisions =
-                    new java.util.ArrayList<>(history.getOrDefault(stored.draftId(), List.of()));
+                    new java.util.ArrayList<>(history.getOrDefault(key, List.of()));
             revisions.add(stored);
-            history.put(stored.draftId(), List.copyOf(revisions));
+            history.put(key, List.copyOf(revisions));
             return Optional.of(stored);
+        }
+
+        private record Key(AuthoringScope scope, String draftId) {
         }
     }
 }

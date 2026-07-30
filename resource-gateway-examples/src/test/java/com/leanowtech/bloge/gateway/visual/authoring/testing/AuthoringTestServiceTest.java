@@ -6,6 +6,8 @@ import com.leanowtech.bloge.gateway.visual.authoring.application.AuthoringDraftS
 import com.leanowtech.bloge.gateway.visual.authoring.application.AuthoringDraftRepository;
 import com.leanowtech.bloge.gateway.visual.authoring.application.AuthoringLifecycleException;
 import com.leanowtech.bloge.gateway.visual.authoring.application.AuthoringPreviewService;
+import com.leanowtech.bloge.gateway.visual.authoring.application.AuthoringScope;
+import com.leanowtech.bloge.gateway.visual.authoring.application.InMemoryAuthoringCatalogOwnershipRepository;
 import com.leanowtech.bloge.gateway.visual.authoring.compile.AuthoringCompiler;
 import com.leanowtech.bloge.gateway.visual.authoring.model.AuthoringDraft;
 import com.leanowtech.bloge.gateway.visual.authoring.model.VisualLibraryAuthoringDocument;
@@ -47,6 +49,9 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 class AuthoringTestServiceTest {
 
+    private static final AuthoringScope SCOPE = new AuthoringScope(
+            "tenant-a", "org-a", "project-a", "test", "sg");
+
     private final ObjectMapper mapper = new ObjectMapper().findAndRegisterModules();
     private final ObjectMapper yaml = new YAMLMapper().findAndRegisterModules();
     private AuthoringDraftService drafts;
@@ -64,6 +69,7 @@ class AuthoringTestServiceTest {
                         libraries,
                         mapper),
                 libraries,
+                new InMemoryAuthoringCatalogOwnershipRepository(),
                 mapper);
         VisualOperatorContractTestService operatorTests =
                 new VisualOperatorContractTestService(
@@ -80,6 +86,7 @@ class AuthoringTestServiceTest {
         tests = new AuthoringTestService(
                 drafts, operatorTests, mapper, functionWorker, testEvidence);
         stored = drafts.save(
+                SCOPE,
                 "authoring-tests",
                 0,
                 "quick",
@@ -106,7 +113,8 @@ class AuthoringTestServiceTest {
                                 true,
                                 Map.of(),
                                 Map.of(),
-                                Map.of())));
+                                Map.of())),
+                identity());
 
         assertThat(generated.suite().cases()).hasSize(1);
         assertThat(generated.suite().cases().getFirst().inputs())
@@ -180,7 +188,8 @@ class AuthoringTestServiceTest {
                 stored.revision(),
                 new FunctionDraftRequest(
                         FunctionDraftRequest.SCHEMA_VERSION,
-                        "trim"));
+                        "trim"),
+                identity());
 
         assertThat(draft.bindingStatus()).isEqualTo(FunctionBindingStatus.BOUND);
         assertThat(draft.runtimeFingerprint()).startsWith("sha256:");
@@ -263,13 +272,15 @@ class AuthoringTestServiceTest {
                 stored.revision(),
                 new FunctionDraftRequest(
                         FunctionDraftRequest.SCHEMA_VERSION,
-                        "teamNormalize"));
+                        "teamNormalize"),
+                identity());
         var blocked = tests.draftFunction(
                 stored.draftId(),
                 stored.revision(),
                 new FunctionDraftRequest(
                         FunctionDraftRequest.SCHEMA_VERSION,
-                        "now"));
+                        "now"),
+                identity());
 
         assertThat(unbound.bindingStatus()).isEqualTo(FunctionBindingStatus.UNBOUND);
         assertThat(unbound.diagnostics())
@@ -296,6 +307,7 @@ class AuthoringTestServiceTest {
     @Test
     void rejectsStaleDraftRevisionBeforeRunningFixtures() {
         drafts.save(
+                SCOPE,
                 stored.draftId(),
                 stored.revision(),
                 stored.sourceMode(),
@@ -307,7 +319,8 @@ class AuthoringTestServiceTest {
                 stored.revision(),
                 new FunctionDraftRequest(
                         FunctionDraftRequest.SCHEMA_VERSION,
-                        "trim")))
+                        "trim"),
+                identity()))
                 .isInstanceOfSatisfying(AuthoringLifecycleException.class, exception ->
                         assertThat(exception.problem().code())
                                 .isEqualTo("RG.AUTHORING.DRAFT_REVISION_STALE"));
@@ -316,6 +329,7 @@ class AuthoringTestServiceTest {
     @Test
     void promotesOnlyCurrentPassingEvidenceToTestEvidenced() throws Exception {
         AuthoringDraft gateDraft = drafts.save(
+                SCOPE,
                 "evidence-gate",
                 0,
                 "quick",
@@ -333,7 +347,8 @@ class AuthoringTestServiceTest {
                                 true,
                                 Map.of(),
                                 Map.of(),
-                                Map.of())));
+                                Map.of())),
+                identity());
         var passing = tests.runOperator(
                 gateDraft.draftId(),
                 gateDraft.revision(),
@@ -384,6 +399,7 @@ class AuthoringTestServiceTest {
     @Test
     void recalculatesFreshnessAfterTheDraftContractChanges() throws Exception {
         AuthoringDraft original = drafts.save(
+                SCOPE,
                 "evidence-staleness",
                 0,
                 "quick",
@@ -401,7 +417,8 @@ class AuthoringTestServiceTest {
                                 true,
                                 Map.of(),
                                 Map.of(),
-                                Map.of())));
+                                Map.of())),
+                identity());
         var run = tests.runOperator(
                 original.draftId(),
                 original.revision(),
@@ -411,6 +428,7 @@ class AuthoringTestServiceTest {
                 identity());
 
         drafts.save(
+                SCOPE,
                 original.draftId(),
                 original.revision(),
                 "quick",
@@ -555,30 +573,35 @@ class AuthoringTestServiceTest {
 
     private static final class InMemoryAuthoringDraftRepository
             implements AuthoringDraftRepository {
-        private final Map<String, AuthoringDraft> current = new LinkedHashMap<>();
-        private final Map<String, List<AuthoringDraft>> history = new LinkedHashMap<>();
+        private final Map<Key, AuthoringDraft> current = new LinkedHashMap<>();
+        private final Map<Key, List<AuthoringDraft>> history = new LinkedHashMap<>();
 
         @Override
-        public Collection<AuthoringDraft> all() {
-            return List.copyOf(current.values());
+        public Collection<AuthoringDraft> all(AuthoringScope scope) {
+            return current.entrySet().stream()
+                    .filter(entry -> entry.getKey().scope().equals(scope))
+                    .map(Map.Entry::getValue)
+                    .toList();
         }
 
         @Override
-        public Optional<AuthoringDraft> find(String draftId) {
-            return Optional.ofNullable(current.get(draftId));
+        public Optional<AuthoringDraft> find(AuthoringScope scope, String draftId) {
+            return Optional.ofNullable(current.get(new Key(scope, draftId)));
         }
 
         @Override
-        public List<AuthoringDraft> revisions(String draftId) {
-            return history.getOrDefault(draftId, List.of()).reversed();
+        public List<AuthoringDraft> revisions(AuthoringScope scope, String draftId) {
+            return history.getOrDefault(new Key(scope, draftId), List.of()).reversed();
         }
 
         @Override
         public synchronized Optional<AuthoringDraft> saveIfRevision(
+                AuthoringScope scope,
                 long expectedRevision,
                 AuthoringDraft candidate,
                 String actor) {
-            AuthoringDraft existing = current.get(candidate.draftId());
+            Key key = new Key(scope, candidate.draftId());
+            AuthoringDraft existing = current.get(key);
             if ((existing == null && expectedRevision != 0)
                     || (existing != null && existing.revision() != expectedRevision)) {
                 return Optional.empty();
@@ -591,12 +614,15 @@ class AuthoringTestServiceTest {
                     existing == null ? now : existing.createdAt(),
                     now,
                     actor);
-            current.put(stored.draftId(), stored);
+            current.put(key, stored);
             List<AuthoringDraft> revisions =
-                    new java.util.ArrayList<>(history.getOrDefault(stored.draftId(), List.of()));
+                    new java.util.ArrayList<>(history.getOrDefault(key, List.of()));
             revisions.add(stored);
-            history.put(stored.draftId(), List.copyOf(revisions));
+            history.put(key, List.copyOf(revisions));
             return Optional.of(stored);
+        }
+
+        private record Key(AuthoringScope scope, String draftId) {
         }
     }
 }

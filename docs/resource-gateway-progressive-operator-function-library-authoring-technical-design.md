@@ -1706,6 +1706,22 @@ Exit Gate：
 
 ### 15.5 Stage 4：企业生产化
 
+实现状态：**进行中**。当前已交付第一段企业隔离闭环：
+
+1. draft current/history 以完整
+   `tenant + organization + project + environment + region + draftId` 为数据库主键；
+2. 所有 list/read/save/preview/infer/apply/commit 与 draft-derived test/fixture/evidence
+   都先经过 visual-owned access port，gateway adapter 只投影受信 scope 与 actor；
+3. READ、WRITE、COMMIT 分别绑定独立 purpose，兼容保留的 body `actor` 不参与审计归因；
+4. Workbench 首次提交新 `libraryId` 时通过数据库唯一键原子 claim canonical ownership，
+   跨 scope 和并发抢占 fail closed；
+5. unscoped draft 表不自动迁移，已有 revision 但无 ownership 的 library 不允许静默认领。
+
+这段实现解决的是 draft 越权读取、actor spoof 和 canonical library id 跨 tenant 覆盖。
+它尚未解决跨 library callable name 的多副本原子冲突，也未交付 ownership
+transfer/双人审批、旧资产自动迁移、mutation outcome 审计、分页、持久配额、分布式限流和
+SLO 指标；因此 Stage 4 仍不能标记完成。
+
 交付：
 
 - durable draft repository；

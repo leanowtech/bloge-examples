@@ -236,51 +236,60 @@ describe('operator library API client', () => {
     setBlogeApiTransport(async (input, init) => {
       const url = String(input);
       calls.push({ url, init });
-      if (url.endsWith('/drafts') && !init) {
+      if (url.endsWith('/drafts') && init?.method === undefined) {
+        expect(new Headers(init?.headers).get('X-Purpose')).toBe('TEST_SUITE_READ');
         return jsonResponse([stored]);
       }
-      if (url.endsWith('/drafts/support-draft') && !init) {
+      if (url.endsWith('/drafts/support-draft') && init?.method === undefined) {
+        expect(new Headers(init?.headers).get('X-Purpose')).toBe('TEST_SUITE_READ');
         return jsonResponse(stored);
       }
       if (url.endsWith('/drafts/support-draft') && init?.method === 'PUT') {
         const headers = new Headers(init.headers);
         expect(headers.get('If-Match')).toBe('"2"');
+        expect(headers.get('Authorization')).toBe('Bearer bloge-aneke-demo-token');
+        expect(headers.get('X-Purpose')).toBe('TEST_SUITE_WRITE');
         expect(JSON.parse(String(init.body))).toEqual({
           sourceMode: 'QUICK',
           document,
-          actor: 'visual-library-workbench',
         });
         return jsonResponse(stored);
       }
       if (url.endsWith('/drafts/support-draft/infer/samples/apply')) {
-        expect(new Headers(init?.headers).get('If-Match')).toBe('"3"');
+        const headers = new Headers(init?.headers);
+        expect(headers.get('If-Match')).toBe('"3"');
+        expect(headers.get('X-Purpose')).toBe('TEST_SUITE_WRITE');
         expect(JSON.parse(String(init?.body))).toEqual({
           schemaVersion: 'bloge.visualSampleInferenceApplyRequest.v1',
           inference: inferenceRequest,
           evidenceFingerprint,
           decisions,
-          actor: 'visual-library-workbench',
         });
         return jsonResponse(applied);
       }
       if (url.endsWith('/drafts/support-draft/infer/samples')) {
-        expect(new Headers(init?.headers).get('If-Match')).toBe('"3"');
+        const headers = new Headers(init?.headers);
+        expect(headers.get('If-Match')).toBe('"3"');
+        expect(headers.get('X-Purpose')).toBe('TEST_SUITE_READ');
         expect(JSON.parse(String(init?.body))).toEqual(inferenceRequest);
         return jsonResponse(inferenceResult);
       }
       if (url.endsWith('/drafts/support-draft/preview')) {
-        expect(new Headers(init?.headers).get('If-Match')).toBe('"3"');
+        const headers = new Headers(init?.headers);
+        expect(headers.get('If-Match')).toBe('"3"');
+        expect(headers.get('X-Purpose')).toBe('TEST_SUITE_READ');
         return jsonResponse(preview);
       }
       if (url.endsWith('/drafts/support-draft/commit')) {
-        expect(new Headers(init?.headers).get('If-Match')).toBe('"3"');
+        const headers = new Headers(init?.headers);
+        expect(headers.get('If-Match')).toBe('"3"');
+        expect(headers.get('X-Purpose')).toBe('TEST_SCENARIO_PUBLISH');
         expect(JSON.parse(String(init?.body))).toMatchObject({
           authoringFingerprint: 'sha256:authoring',
           compileFingerprint: 'sha256:compile',
           catalogFingerprint: 'sha256:catalog',
           canonicalFingerprint: 'sha256:canonical',
           targetRevision: 11,
-          actor: 'visual-library-workbench',
           reason: 'contract reviewed',
         });
         return jsonResponse({ schemaVersion: 'bloge.visualLibraryAuthoringCommitResult.v1' });

@@ -19,6 +19,11 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 class DatabaseAuthoringDraftRepositoryTest {
 
+    private static final AuthoringScope SCOPE = new AuthoringScope(
+            "tenant-a", "knowledge-governance", "tool-studio", "test", "local");
+    private static final AuthoringScope OTHER_SCOPE = new AuthoringScope(
+            "tenant-b", "knowledge-governance", "tool-studio", "test", "local");
+
     private final ObjectMapper yaml = new YAMLMapper().findAndRegisterModules();
     private EmbeddedDatabase database;
     private DatabaseAuthoringDraftRepository repository;
@@ -44,6 +49,7 @@ class DatabaseAuthoringDraftRepositoryTest {
     @Test
     void storesExactRevisionsAndRejectsStaleWriters() throws Exception {
         AuthoringDraft first = repository.saveIfRevision(
+                SCOPE,
                 0,
                 AuthoringDraft.unsaved("support-library", "quick", document("support-library", "1.0.0")),
                 "alice"
@@ -53,12 +59,14 @@ class DatabaseAuthoringDraftRepositoryTest {
         assertThat(first.fingerprint()).startsWith("sha256:");
         assertThat(first.createdAt()).isEqualTo(first.updatedAt());
         assertThat(repository.saveIfRevision(
+                SCOPE,
                 0,
                 AuthoringDraft.unsaved("support-library", "quick", document("support-library", "1.0.1")),
                 "bob"
         )).isEmpty();
 
         AuthoringDraft second = repository.saveIfRevision(
+                SCOPE,
                 1,
                 AuthoringDraft.unsaved("support-library", "quick", document("support-library", "1.0.1")),
                 "alice"
@@ -68,16 +76,16 @@ class DatabaseAuthoringDraftRepositoryTest {
         assertThat(second.fingerprint()).isNotEqualTo(first.fingerprint());
         assertThat(second.createdAt()).isEqualTo(first.createdAt());
         assertThat(second.updatedAt()).isAfterOrEqualTo(first.updatedAt());
-        assertThat(repository.find("support-library")).hasValueSatisfying(found -> {
+        assertThat(repository.find(SCOPE, "support-library")).hasValueSatisfying(found -> {
             assertThat(found.draftId()).isEqualTo(second.draftId());
             assertThat(found.revision()).isEqualTo(second.revision());
             assertThat(found.fingerprint()).isEqualTo(second.fingerprint());
             assertThat(found.document().library().version()).isEqualTo("1.0.1");
         });
-        assertThat(repository.all())
+        assertThat(repository.all(SCOPE))
                 .extracting(AuthoringDraft::draftId, AuthoringDraft::revision)
                 .containsExactly(org.assertj.core.groups.Tuple.tuple("support-library", 2L));
-        assertThat(repository.revisions("support-library"))
+        assertThat(repository.revisions(SCOPE, "support-library"))
                 .extracting(AuthoringDraft::revision)
                 .containsExactly(2L, 1L);
     }
@@ -86,6 +94,7 @@ class DatabaseAuthoringDraftRepositoryTest {
     void includesEvidenceAndConfirmationsInPersistenceAndFingerprintIdentity() throws Exception {
         VisualLibraryAuthoringDocument document = document("support-library", "1.0.0");
         AuthoringDraft withoutEvidence = repository.saveIfRevision(
+                SCOPE,
                 0,
                 AuthoringDraft.unsaved("support-library", "quick", document),
                 "alice"
@@ -116,6 +125,7 @@ class DatabaseAuthoringDraftRepositoryTest {
         );
 
         AuthoringDraft withEvidence = repository.saveIfRevision(
+                SCOPE,
                 withoutEvidence.revision(),
                 AuthoringDraft.unsaved(
                         "support-library",
@@ -128,10 +138,41 @@ class DatabaseAuthoringDraftRepositoryTest {
         ).orElseThrow();
 
         assertThat(withEvidence.fingerprint()).isNotEqualTo(withoutEvidence.fingerprint());
-        assertThat(repository.find("support-library")).hasValueSatisfying(found -> {
+        assertThat(repository.find(SCOPE, "support-library")).hasValueSatisfying(found -> {
             assertThat(found.evidence()).containsExactly(evidence);
             assertThat(found.confirmations()).containsExactly(confirmation);
         });
+    }
+
+    @Test
+    void isolatesTheSameDraftIdAcrossEveryEnterpriseScopeDimension() throws Exception {
+        AuthoringDraft tenantA = repository.saveIfRevision(
+                SCOPE,
+                0,
+                AuthoringDraft.unsaved(
+                        "shared-id", "quick", document("tenant-a-library", "1.0.0")),
+                "alice").orElseThrow();
+        AuthoringDraft tenantB = repository.saveIfRevision(
+                OTHER_SCOPE,
+                0,
+                AuthoringDraft.unsaved(
+                        "shared-id", "quick", document("tenant-b-library", "2.0.0")),
+                "bob").orElseThrow();
+
+        assertThat(tenantA.revision()).isEqualTo(1);
+        assertThat(tenantB.revision()).isEqualTo(1);
+        assertThat(repository.find(SCOPE, "shared-id"))
+                .get()
+                .extracting(draft -> draft.document().library().id())
+                .isEqualTo("tenant-a-library");
+        assertThat(repository.find(OTHER_SCOPE, "shared-id"))
+                .get()
+                .extracting(draft -> draft.document().library().id())
+                .isEqualTo("tenant-b-library");
+        assertThat(repository.all(SCOPE)).extracting(AuthoringDraft::draftId)
+                .containsExactly("shared-id");
+        assertThat(repository.all(OTHER_SCOPE)).extracting(AuthoringDraft::draftId)
+                .containsExactly("shared-id");
     }
 
     private VisualLibraryAuthoringDocument document(String libraryId, String version) throws Exception {

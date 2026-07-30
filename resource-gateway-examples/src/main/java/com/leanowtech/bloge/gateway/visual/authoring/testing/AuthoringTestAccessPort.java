@@ -11,6 +11,7 @@ import org.springframework.http.HttpHeaders;
 public interface AuthoringTestAccessPort {
 
     enum Action {
+        DRAFT_READ,
         EXECUTE,
         EVIDENCE_READ,
         GATE_READ

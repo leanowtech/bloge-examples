@@ -8,7 +8,7 @@
 >
 > 说明：方案审计的 97 分评价设计成熟度，不代表本页所述功能已经实现。
 
-## 1. 已完成：Canonical 地基、Stage 0、Stage 1、Stage 2.5 Fixture、Stage 2.6 隔离 Runner 与 Stage 2.7 签名 Evidence
+## 1. 已完成：Canonical 地基、Stage 0/1、Stage 2 测试链与 Stage 4 企业隔离切片
 
 先把 Workbench 依赖的语法、编译和诊断协议做成可测试内核；随后完成持久化
 draft、ETag 并发控制和 preview-fenced design catalog commit；当前已补齐样本推断审阅、
@@ -37,6 +37,9 @@ exact-draft operator contract test 和进程隔离 function runner 的可体验�
 | Capability projection | capability catalog 以 `function.name` 检测冲突，不再被不同 namespace 绕过 | adapter/controller 测试 |
 | Wire-schema parity | 机器 schema 对 operator-only、function-only、mixed、empty、null-only 文档执行真实校验；可选函数 schema 接受 API 的显式 `null` 表示 | machine-schema 测试 |
 | Durable authoring draft | H2 持久化当前 draft 与不可变 revision history，source mode、author、服务端时间和完整 draft fingerprint 随 revision 保存 | repository H2 测试与应用启动测试 |
+| Enterprise-scoped draft | current/revision 表以 tenant、organization、project、environment、region、draft id 为复合主键；list/find/save/preview/infer/apply/commit 与 test/fixture/evidence 都只读取受信身份的完整作用域，同一 draft id 可被不同企业域独立使用 | H2 同名跨 scope、service、controller 与真实 HTTP lifecycle 测试 |
+| Authoring RBAC 与可信归因 | READ、WRITE、COMMIT 分别绑定 `TEST_SUITE_READ`、`TEST_SUITE_WRITE`、`TEST_SCENARIO_PUBLISH`；scope 与 actor 来自 gateway authenticator，body 中兼容保留的 `actor` 不参与 savedBy/committedBy | 缺凭证、purpose 不匹配、body actor spoof 与可信 actor 测试 |
+| Canonical library ownership | Workbench 首次提交新 library id 时在数据库唯一主键上原子 claim；同 scope 可继续修订，其他 scope 和并发抢占返回结构化冲突；已有 revision 但没有 ownership 的 legacy library 必须显式迁移，禁止静默认领 | 双 repository 实例唯一约束、跨 scope commit、legacy fail-closed 与 actor 归属测试 |
 | ETag concurrency | save/preview/commit 必须携带最后观察到的 `If-Match` revision；并发创建和 stale writer 返回 `412`，无 last-write-wins | controller、service 与 HTTP 集成测试 |
 | Preview-fenced commit | commit 重新读取 exact draft 并重新编译，同时校验 authoring、compiler、catalog、canonical fingerprint 和 target registry revision | source/catalog/canonical drift 负例及真实 registry commit 测试 |
 | Commit audit receipt | 成功提交返回 draft/revision、四类 fingerprint、目标 library revision、canonical snapshot、预览证据、actor 与时间 | service 与 HTTP 集成测试 |
@@ -75,7 +78,7 @@ exact-draft operator contract test 和进程隔离 function runner 的可体验�
 Stage 2.5 新增 17 个 fixture service/repository/controller/schema 定向用例，并由完整
 `test` profile 应用启动测试证明 vault、retention worker、controller 与 capability 同时装配。
 Stage 2.6 的 worker、机器 Schema、Spring lifecycle 与能力协议定向回归共 66 个用例全绿；
-完整 Resource Gateway `clean verify` 共执行 5,820 个测试，0 failure、0 error、10 skipped。
+完整 Resource Gateway `verify` 共执行 5,825 个测试，0 failure、0 error、10 skipped。
 Workbench 前端生产构建通过，36 个前端测试文件共 350 个用例全绿，其中包含样本解析、
 完整推断状态流、结构化 Schema 无损往返、operator/function test table 和显式 fixture 保存。
 完整 frontend profile fat JAR 又经真实浏览器试跑：`trim` 在
@@ -119,10 +122,12 @@ incompatible duplicate
 3. 服务层预览明确绑定目标 catalog fingerprint，并暴露 callable 冲突；
 4. feature flag 对未实现能力返回 `false`，客户端不需要猜测部署能力。
    当前能力探针明确返回 `visualLibraryAuthoringIsolatedFunctionTestWorker=true`、
-   `visualLibraryAuthoringSignedTestEvidence=true` 和
-   `visualLibraryAuthoringTestEvidenceGate=true`，并公布 worker、evidence view 与 gate 的
-   v1 机器协议对象；认证由 gateway integration adapter 映射到 visual-owned access port，
-   visual authoring 内核不反向依赖 gateway integration/testing 类型。
+   `visualLibraryAuthoringSignedTestEvidence=true`、
+   `visualLibraryAuthoringTestEvidenceGate=true`、
+   `visualLibraryAuthoringEnterpriseScopedDrafts=true` 和
+   `visualLibraryAuthoringTrustedActorAttribution=true`；认证由 gateway integration adapter
+   映射到 visual-owned access port，visual authoring 内核不反向依赖 gateway
+   integration/testing 类型。
 
 尚未实现的能力：
 
@@ -135,10 +140,12 @@ incompatible duplicate
 3. `imports` 当前只保留声明，跨 library type resolution 会被明确拒绝；
 4. preview impact 只描述当前 operator ref 与 registry revision 差异，不等同于 graph、
    publication 或运行时 binding 的全链路影响分析；
-5. authoring draft 尚未按 tenant/organization/project/environment/region 隔离，也没有专属
-   RBAC、审批、审计事件、指标、分布式限流和持久化配额；
-6. commit 在单实例事务边界内重新校验所有栅栏，但 callable 全局冲突仍依赖应用层 registry
-   快照，多副本并发写入尚无数据库唯一所有权约束；
+5. authoring draft 已完成五维 scope、purpose 隔离和可信 actor 归因，但还没有审批流、
+   mutation outcome 审计事件、指标、分页、分布式限流和持久化配额；
+6. Workbench commit 已用数据库唯一键保护 canonical library id 的跨 scope ownership；
+   但 callable name 的跨 library 冲突仍依赖应用层 registry 快照，其他 legacy/admin
+   catalog 写入口也尚未统一进入 ownership policy。ownership transfer、双人审批和自动迁移
+   工具尚未交付；
 7. 尚未建立 Builder、canonical API、VS Code、本地/远端 compiler 和 BLOGE runtime 的多实现 parity；
 8. Workbench 已完成样本推断、测试浮层和治理型 Fixture 保存的真实浏览器
    desktop/mobile 检查：operator
@@ -150,21 +157,24 @@ incompatible duplicate
 ## 4. 目标差距
 
 以下评分只用于迭代收敛，不等同于产品成熟度评分。按目标方案交付面加权，当前约完成
-**88%**，剩余差距约 **12%**。
+**90%**，剩余差距约 **10%**。
 
 | 交付面 | 权重 | 当前完成 | 主要缺口 |
 | --- | ---: | ---: | --- |
 | Canonical 兼容与安全地基 | 15 | 14 | capability negotiation、compatible alias 的显式 owner/provenance model |
 | Authoring model、grammar、compiler、source map | 20 | 19 | 跨库类型 resolution 与多实现 parity |
-| Draft/preview/commit lifecycle | 12 | 11 | durable revision、ETag 和五重栅栏完成；缺 tenant-scope、多副本原子 ownership |
+| Draft/preview/commit lifecycle | 12 | 11.7 | durable revision、ETag、五重栅栏、五维 scope 和 library-id 原子 ownership 完成；缺受治理 ownership migration/transfer |
 | 图形化 Workbench 与渐进披露 | 18 | 17.4 | 已增加签名、新鲜度和 draft gate 的分层反馈；缺可审计 Fix-it、任务计时和固定视觉回归 |
 | Sample inference、confirmation、fixture/test | 10 | 10 | infer/confirmation、operator/function test、governed fixture 与受信 core process runner 闭环完成；签名 evidence 计入治理交付面 |
 | Discovery adapter 与 runtime parity | 8 | 3 | 已有 adapters；尚未统一 authoring fact projection |
-| 企业级隔离、配额、审计、可观测性 | 10 | 7 | fixture 与签名 evidence 已有五维 scope、purpose、事务安全、加密/签名和 retention/payload-free 边界；draft/catalog 仍缺同等级控制面 |
+| 企业级隔离、配额、审计、可观测性 | 10 | 8.3 | fixture/evidence/draft 已统一五维 scope 与 purpose；Workbench catalog commit 有 DB ownership；缺审批、结果审计、分页、持久配额、分布式限流和指标 |
 | 文档、golden、browser、parity 证据 | 7 | 6.6 | 增加 evidence/gate 封闭机器 Schema、能力协议和操作说明；缺固定视觉回归与跨实现 parity 证据 |
-| **合计** | **100** | **88** | **差距 12%** |
+| **合计** | **100** | **90** | **差距 10%** |
 
-当前数据库 registry 的 callable 冲突检查基于进程内快照，能保护单实例及普通 H2/JDBC 使用，但还不是多副本并发写入下的原子全局约束。工业化阶段仍需引入规范化 callable ownership 表、数据库唯一约束或可证明的串行化事务，不能仅依赖应用层 preflight。
+当前数据库 ownership 表原子保护的是 canonical `libraryId`，不是跨 library 的
+function callable name。后者的冲突检查仍基于进程内 registry 快照，能保护单实例及普通
+H2/JDBC 使用，但还不是多副本并发写入下的原子全局约束。工业化阶段仍需引入规范化
+callable ownership 表、数据库唯一约束或可证明的串行化事务，不能仅依赖应用层 preflight。
 
 兼容的同名 callable 目前会在 effective catalog 中折叠成一份定义，来源 library 仍可分别导出，但 catalog contract 尚不能显式表达多个 owner/alias。它和协议 capability negotiation 都保留为后续兼容性工作，不能视为本轮已经完成。
 
@@ -176,7 +186,8 @@ incompatible duplicate
 2. 把 `TEST_EVIDENCED` baseline 作为输入接入 ANEKE workbook/publish gate，保留 owner、migration、
    SLA、secret 和 production readiness 的独立治理权；
 3. 将 discovery adapters 收敛为统一 authoring fact projection，并建立 runtime inventory parity；
-4. 把 fixture/evidence 已有的 enterprise scope、RBAC、审计、签名和配额边界扩展到 draft/catalog；
+4. 为 legacy catalog 提供受治理 ownership migration/transfer，并把 callable ownership、
+   mutation outcome audit、分页、持久配额、分布式限流和指标补齐；
 5. 补可审计 Fix-it、键盘任务流、无障碍扫描、60/30 秒任务计时和固定视觉回归。
 
 Stage 1 Exit Gate 是新用户可只用 Builder 完成 pure operator 与 overload function 定义，

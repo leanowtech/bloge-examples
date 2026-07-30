@@ -49,6 +49,7 @@ public class AuthoringDraftService {
     private final AuthoringDraftRepository drafts;
     private final AuthoringPreviewService previews;
     private final OperatorLibraryRegistry libraries;
+    private final AuthoringCatalogOwnershipRepository catalogOwnership;
     private final ObjectMapper objectMapper;
     private final SampleSchemaInferencer sampleInferencer;
     private final SampleInferenceCandidateApplier sampleCandidateApplier;
@@ -56,8 +57,9 @@ public class AuthoringDraftService {
     public AuthoringDraftService(AuthoringDraftRepository drafts,
                                  AuthoringPreviewService previews,
                                  OperatorLibraryRegistry libraries,
+                                 AuthoringCatalogOwnershipRepository catalogOwnership,
                                  ObjectMapper objectMapper) {
-        this(drafts, previews, libraries, objectMapper,
+        this(drafts, previews, libraries, catalogOwnership, objectMapper,
                 new SampleSchemaInferencer(objectMapper),
                 new SampleInferenceCandidateApplier());
     }
@@ -65,52 +67,59 @@ public class AuthoringDraftService {
     public AuthoringDraftService(AuthoringDraftRepository drafts,
                                  AuthoringPreviewService previews,
                                  OperatorLibraryRegistry libraries,
+                                 AuthoringCatalogOwnershipRepository catalogOwnership,
                                  ObjectMapper objectMapper,
                                  SampleSchemaInferencer sampleInferencer) {
-        this(drafts, previews, libraries, objectMapper, sampleInferencer,
+        this(drafts, previews, libraries, catalogOwnership, objectMapper, sampleInferencer,
                 new SampleInferenceCandidateApplier());
     }
 
     public AuthoringDraftService(AuthoringDraftRepository drafts,
                                  AuthoringPreviewService previews,
                                  OperatorLibraryRegistry libraries,
+                                 AuthoringCatalogOwnershipRepository catalogOwnership,
                                  ObjectMapper objectMapper,
                                  SampleSchemaInferencer sampleInferencer,
                                  SampleInferenceCandidateApplier sampleCandidateApplier) {
         this.drafts = Objects.requireNonNull(drafts, "drafts");
         this.previews = Objects.requireNonNull(previews, "previews");
         this.libraries = Objects.requireNonNull(libraries, "libraries");
+        this.catalogOwnership =
+                Objects.requireNonNull(catalogOwnership, "catalogOwnership");
         this.objectMapper = Objects.requireNonNull(objectMapper, "objectMapper");
         this.sampleInferencer = Objects.requireNonNull(sampleInferencer, "sampleInferencer");
         this.sampleCandidateApplier =
                 Objects.requireNonNull(sampleCandidateApplier, "sampleCandidateApplier");
     }
 
-    public Collection<AuthoringDraft> all() {
-        return drafts.all();
+    public Collection<AuthoringDraft> all(AuthoringScope scope) {
+        return drafts.all(requireScope(scope));
     }
 
-    public AuthoringDraft find(String draftId) {
+    public AuthoringDraft find(AuthoringScope scope, String draftId) {
+        AuthoringScope requiredScope = requireScope(scope);
         String id = requireId(draftId);
-        return drafts.find(id).orElseThrow(() -> failure(
+        return drafts.find(requiredScope, id).orElseThrow(() -> failure(
                 404,
                 "RG.AUTHORING.DRAFT_NOT_FOUND",
-                "Visual library authoring draft was not found.",
+                "Visual library authoring draft was not found in the authorized enterprise scope.",
                 id,
                 0,
                 "/"
         ));
     }
 
-    public List<AuthoringDraft> revisions(String draftId) {
-        return drafts.revisions(requireId(draftId));
+    public List<AuthoringDraft> revisions(AuthoringScope scope, String draftId) {
+        return drafts.revisions(requireScope(scope), requireId(draftId));
     }
 
-    public AuthoringDraft save(String draftId,
+    public AuthoringDraft save(AuthoringScope scope,
+                               String draftId,
                                long expectedRevision,
                                String sourceMode,
                                VisualLibraryAuthoringDocument document,
                                String actor) {
+        AuthoringScope requiredScope = requireScope(scope);
         String id = requireId(draftId);
         if (expectedRevision < 0 || document == null) {
             throw failure(
@@ -134,7 +143,7 @@ public class AuthoringDraftService {
             );
         }
         requireSecretFree(id, expectedRevision, document);
-        AuthoringDraft current = currentForSave(id, expectedRevision);
+        AuthoringDraft current = currentForSave(requiredScope, id, expectedRevision);
         EvidenceState retained = retainedEvidence(current, document);
         AuthoringDraft candidate = AuthoringDraft.unsaved(
                 id,
@@ -144,14 +153,18 @@ public class AuthoringDraftService {
                 retained.confirmations()
         );
         return drafts.saveIfRevision(
+                        requiredScope,
                         expectedRevision,
                         candidate,
                         normalized(actor, "visual-library-workbench"))
                 .orElseThrow(() -> stale(id, expectedRevision));
     }
 
-    public AuthoringCompileResult preview(String draftId, long expectedRevision) {
-        AuthoringDraft draft = exactDraft(draftId, expectedRevision);
+    public AuthoringCompileResult preview(
+            AuthoringScope scope,
+            String draftId,
+            long expectedRevision) {
+        AuthoringDraft draft = exactDraft(requireScope(scope), draftId, expectedRevision);
         return previews.preview(draft.document())
                 .withDraftContext(draft.draftId(), draft.revision());
     }
@@ -159,10 +172,11 @@ public class AuthoringDraftService {
     /**
      * Infers observed facts for one exact operator port without modifying the draft or retaining payloads.
      */
-    public SampleInferenceResult inferSamples(String draftId,
+    public SampleInferenceResult inferSamples(AuthoringScope scope,
+                                              String draftId,
                                               long expectedRevision,
                                               SampleInferenceRequest request) {
-        AuthoringDraft draft = exactDraft(draftId, expectedRevision);
+        AuthoringDraft draft = exactDraft(requireScope(scope), draftId, expectedRevision);
         return inferSamples(draft, request);
     }
 
@@ -171,10 +185,13 @@ public class AuthoringDraftService {
      */
     @Transactional
     public synchronized AuthoringDraft applySampleInference(
+            AuthoringScope scope,
             String draftId,
             long expectedRevision,
-            SampleInferenceApplyRequest request) {
-        AuthoringDraft draft = exactDraft(draftId, expectedRevision);
+            SampleInferenceApplyRequest request,
+            String actor) {
+        AuthoringScope requiredScope = requireScope(scope);
+        AuthoringDraft draft = exactDraft(requiredScope, draftId, expectedRevision);
         validateApplyRequest(draft, request);
         SampleInferenceResult inference = inferSamples(draft, request.inference());
         if (!fingerprintsEqual(
@@ -195,7 +212,7 @@ public class AuthoringDraftService {
             applied = sampleCandidateApplier.apply(
                     inference,
                     request.decisions(),
-                    request.actor()
+                    normalized(actor, "visual-library-workbench")
             );
         } catch (SampleInferenceRejectedException exception) {
             throw inferenceFailure(draft, exception);
@@ -225,9 +242,10 @@ public class AuthoringDraftService {
                 promoted.confirmations()
         );
         return drafts.saveIfRevision(
+                        requiredScope,
                         draft.revision(),
                         candidate,
-                        normalized(request.actor(), "visual-library-workbench"))
+                        normalized(actor, "visual-library-workbench"))
                 .orElseThrow(() -> stale(draft.draftId(), draft.revision()));
     }
 
@@ -252,10 +270,13 @@ public class AuthoringDraftService {
     }
 
     @Transactional
-    public synchronized AuthoringCommitResult commit(String draftId,
-                                                     long expectedRevision,
-                                                     CommitRequest request) {
-        AuthoringDraft draft = exactDraft(draftId, expectedRevision);
+    public synchronized AuthoringCommitResult commit(
+            AuthoringScope scope,
+            String draftId,
+            long expectedRevision,
+            CommitRequest request,
+            String actorId) {
+        AuthoringDraft draft = exactDraft(requireScope(scope), draftId, expectedRevision);
         if (request == null) {
             throw failure(
                     400,
@@ -323,7 +344,13 @@ public class AuthoringDraftService {
                     "/targetRevision"
             );
         }
-        String actor = normalized(request.actor(), "visual-library-workbench");
+        String actor = normalized(actorId, "visual-library-workbench");
+        requireCatalogOwnership(
+                requireScope(scope),
+                library.libraryId(),
+                currentTargetRevision,
+                actor,
+                draft);
         libraries.upsert(library, OperatorLibraryRevision.RevisionMetadata.of(
                 actor,
                 "visual-library-workbench",
@@ -345,16 +372,22 @@ public class AuthoringDraftService {
         );
     }
 
-    private AuthoringDraft exactDraft(String draftId, long expectedRevision) {
-        AuthoringDraft draft = find(draftId);
+    private AuthoringDraft exactDraft(
+            AuthoringScope scope,
+            String draftId,
+            long expectedRevision) {
+        AuthoringDraft draft = find(scope, draftId);
         if (expectedRevision <= 0 || draft.revision() != expectedRevision) {
             throw stale(draft.draftId(), expectedRevision);
         }
         return draft;
     }
 
-    private AuthoringDraft currentForSave(String draftId, long expectedRevision) {
-        AuthoringDraft current = drafts.find(draftId).orElse(null);
+    private AuthoringDraft currentForSave(
+            AuthoringScope scope,
+            String draftId,
+            long expectedRevision) {
+        AuthoringDraft current = drafts.find(scope, draftId).orElse(null);
         if ((current == null && expectedRevision != 0)
                 || (current != null && current.revision() != expectedRevision)) {
             throw stale(draftId, expectedRevision);
@@ -403,16 +436,6 @@ public class AuthoringDraftService {
                     draft.draftId(),
                     draft.revision(),
                     "/evidenceFingerprint"
-            );
-        }
-        if (request.actor().length() > 255) {
-            throw failure(
-                    400,
-                    "RG.AUTHORING.INFERENCE_ACTOR_INVALID",
-                    "actor must not exceed 255 characters.",
-                    draft.draftId(),
-                    draft.revision(),
-                    "/actor"
             );
         }
     }
@@ -629,6 +652,48 @@ public class AuthoringDraftService {
                 .orElse(0);
     }
 
+    private void requireCatalogOwnership(
+            AuthoringScope scope,
+            String libraryId,
+            long currentTargetRevision,
+            String actor,
+            AuthoringDraft draft) {
+        var ownership = catalogOwnership.find(libraryId);
+        if (ownership.isPresent()) {
+            if (!ownership.get().scope().equals(scope)) {
+                throw failure(
+                        409,
+                        "RG.AUTHORING.CATALOG_OWNERSHIP_CONFLICT",
+                        "The target library id is owned by another enterprise scope.",
+                        draft.draftId(),
+                        draft.revision(),
+                        "/document/library/id");
+            }
+            return;
+        }
+        if (currentTargetRevision > 0) {
+            throw failure(
+                    409,
+                    "RG.AUTHORING.LEGACY_CATALOG_OWNERSHIP_REQUIRED",
+                    "The existing target library has no enterprise ownership record; "
+                            + "complete an explicit ownership migration before committing.",
+                    draft.draftId(),
+                    draft.revision(),
+                    "/document/library/id");
+        }
+        try {
+            catalogOwnership.claim(scope, libraryId, actor, Instant.now());
+        } catch (AuthoringCatalogOwnershipConflictException conflict) {
+            throw failure(
+                    409,
+                    "RG.AUTHORING.CATALOG_OWNERSHIP_CONFLICT",
+                    "The target library id was concurrently claimed by another enterprise scope.",
+                    draft.draftId(),
+                    draft.revision(),
+                    "/document/library/id");
+        }
+    }
+
     private void requireMatch(String submitted,
                               String actual,
                               String code,
@@ -653,6 +718,10 @@ public class AuthoringDraftService {
             );
         }
         return id;
+    }
+
+    private static AuthoringScope requireScope(AuthoringScope scope) {
+        return Objects.requireNonNull(scope, "scope");
     }
 
     private static AuthoringLifecycleException stale(String draftId, long expectedRevision) {

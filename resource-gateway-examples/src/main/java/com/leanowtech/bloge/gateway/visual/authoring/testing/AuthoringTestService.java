@@ -87,7 +87,8 @@ public final class AuthoringTestService {
 
     public OperatorDraft draftOperator(String draftId,
                                        long expectedRevision,
-                                       OperatorDraftRequest request) {
+                                       OperatorDraftRequest request,
+                                       AuthoringTestPrincipal identity) {
         requireVersion(
                 request == null ? "" : request.schemaVersion(),
                 OperatorDraftRequest.SCHEMA_VERSION,
@@ -104,7 +105,8 @@ public final class AuthoringTestService {
                     expectedRevision,
                     "/draft");
         }
-        AuthoringCompileResult preview = exactPreview(draftId, expectedRevision);
+        AuthoringCompileResult preview = exactPreview(
+                draftId, expectedRevision, identity);
         OperatorDefinition operator = requireOperator(
                 preview, draftRequest.operatorRef(), draftId, expectedRevision);
         VisualOperatorContractTestDraftResponse generated = operatorTests.draft(operator, draftRequest);
@@ -136,7 +138,8 @@ public final class AuthoringTestService {
                 "/schemaVersion");
         VisualOperatorContractTestSuiteRequest suite = request == null ? null : request.suite();
         requireBoundedSuite(suite, draftId, expectedRevision);
-        AuthoringCompileResult preview = exactPreview(draftId, expectedRevision);
+        AuthoringCompileResult preview = exactPreview(
+                draftId, expectedRevision, identity);
         OperatorDefinition operator = requireOperator(
                 preview, suite.operatorRef(), draftId, expectedRevision);
         String suiteFingerprint = suiteFingerprint(suite, draftId, expectedRevision);
@@ -173,7 +176,8 @@ public final class AuthoringTestService {
 
     public FunctionDraft draftFunction(String draftId,
                                        long expectedRevision,
-                                       FunctionDraftRequest request) {
+                                       FunctionDraftRequest request,
+                                       AuthoringTestPrincipal identity) {
         requireVersion(
                 request == null ? "" : request.schemaVersion(),
                 FunctionDraftRequest.SCHEMA_VERSION,
@@ -181,7 +185,8 @@ public final class AuthoringTestService {
                 expectedRevision,
                 "/schemaVersion");
         String functionRef = request == null ? "" : request.functionRef();
-        AuthoringCompileResult preview = exactPreview(draftId, expectedRevision);
+        AuthoringCompileResult preview = exactPreview(
+                draftId, expectedRevision, identity);
         OperatorLibrary.BuiltInFunction function = requireFunction(
                 preview, functionRef, draftId, expectedRevision);
         RuntimeResolution runtime = resolveRuntime(function);
@@ -215,7 +220,8 @@ public final class AuthoringTestService {
                 "/schemaVersion");
         FunctionSuite suite = request == null ? null : request.suite();
         requireBoundedSuite(suite, draftId, expectedRevision);
-        AuthoringCompileResult preview = exactPreview(draftId, expectedRevision);
+        AuthoringCompileResult preview = exactPreview(
+                draftId, expectedRevision, identity);
         OperatorLibrary.BuiltInFunction function = requireFunction(
                 preview, suite.functionRef(), draftId, expectedRevision);
         RuntimeResolution runtime = resolveRuntime(function);
@@ -645,8 +651,14 @@ public final class AuthoringTestService {
                         "/functionRef"));
     }
 
-    private AuthoringCompileResult exactPreview(String draftId, long revision) {
-        AuthoringCompileResult preview = drafts.preview(draftId, revision);
+    private AuthoringCompileResult exactPreview(
+            String draftId,
+            long revision,
+            AuthoringTestPrincipal identity) {
+        AuthoringCompileResult preview = drafts.preview(
+                Objects.requireNonNull(identity, "identity").requireAuthoringScope(),
+                draftId,
+                revision);
         if (preview.canonicalLibrary() == null) {
             throw failure(
                     422,

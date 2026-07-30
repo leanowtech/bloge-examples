@@ -16,6 +16,7 @@ import com.leanowtech.bloge.gateway.visual.authoring.testing.AuthoringTestProtoc
 import com.leanowtech.bloge.gateway.visual.authoring.testing.AuthoringTestEvidenceProtocol.DraftGate;
 import com.leanowtech.bloge.gateway.visual.authoring.testing.AuthoringTestEvidenceProtocol.EvidenceView;
 import com.leanowtech.bloge.gateway.visual.authoring.testing.AuthoringTestEvidenceService;
+import com.leanowtech.bloge.gateway.visual.authoring.testing.AuthoringTestPrincipal;
 import com.leanowtech.bloge.gateway.visual.authoring.testing.AuthoringTestService;
 
 import org.springframework.http.HttpHeaders;
@@ -55,12 +56,18 @@ public final class VisualLibraryAuthoringTestController {
     @PostMapping("/{draftId}/tests/operators/draft")
     public ResponseEntity<OperatorDraft> draftOperator(
             @PathVariable String draftId,
-            @RequestHeader(name = HttpHeaders.IF_MATCH, required = false) String ifMatch,
+            @RequestHeader HttpHeaders headers,
             @RequestBody(required = false) OperatorDraftRequest request) {
+        AuthoringTestPrincipal principal = access.authenticate(headers, Action.DRAFT_READ);
+        String ifMatch = headers.getFirst(HttpHeaders.IF_MATCH);
         long revision = expectedRevision(ifMatch, draftId);
         return ResponseEntity.ok()
                 .eTag(etag(revision))
-                .body(tests.draftOperator(draftId, revision, request));
+                .body(tests.draftOperator(
+                        draftId,
+                        revision,
+                        request,
+                        principal));
     }
 
     @PostMapping("/{draftId}/tests/operators/run")
@@ -68,6 +75,7 @@ public final class VisualLibraryAuthoringTestController {
             @PathVariable String draftId,
             @RequestHeader HttpHeaders headers,
             @RequestBody(required = false) OperatorRunRequest request) {
+        AuthoringTestPrincipal principal = access.authenticate(headers, Action.EXECUTE);
         long revision = expectedRevision(headers.getFirst(HttpHeaders.IF_MATCH), draftId);
         return ResponseEntity.ok()
                 .eTag(etag(revision))
@@ -75,18 +83,24 @@ public final class VisualLibraryAuthoringTestController {
                         draftId,
                         revision,
                         request,
-                        access.authenticate(headers, Action.EXECUTE)));
+                        principal));
     }
 
     @PostMapping("/{draftId}/tests/functions/draft")
     public ResponseEntity<FunctionDraft> draftFunction(
             @PathVariable String draftId,
-            @RequestHeader(name = HttpHeaders.IF_MATCH, required = false) String ifMatch,
+            @RequestHeader HttpHeaders headers,
             @RequestBody(required = false) FunctionDraftRequest request) {
+        AuthoringTestPrincipal principal = access.authenticate(headers, Action.DRAFT_READ);
+        String ifMatch = headers.getFirst(HttpHeaders.IF_MATCH);
         long revision = expectedRevision(ifMatch, draftId);
         return ResponseEntity.ok()
                 .eTag(etag(revision))
-                .body(tests.draftFunction(draftId, revision, request));
+                .body(tests.draftFunction(
+                        draftId,
+                        revision,
+                        request,
+                        principal));
     }
 
     @PostMapping("/{draftId}/tests/functions/run")
@@ -94,6 +108,7 @@ public final class VisualLibraryAuthoringTestController {
             @PathVariable String draftId,
             @RequestHeader HttpHeaders headers,
             @RequestBody(required = false) FunctionRunRequest request) {
+        AuthoringTestPrincipal principal = access.authenticate(headers, Action.EXECUTE);
         long revision = expectedRevision(headers.getFirst(HttpHeaders.IF_MATCH), draftId);
         return ResponseEntity.ok()
                 .eTag(etag(revision))
@@ -101,7 +116,7 @@ public final class VisualLibraryAuthoringTestController {
                         draftId,
                         revision,
                         request,
-                        access.authenticate(headers, Action.EXECUTE)));
+                        principal));
     }
 
     @GetMapping("/{draftId}/tests/evidence/{runId}")
