@@ -33,13 +33,22 @@ public record AuthoringProblem(
                                       String message,
                                       int status,
                                       List<AuthoringDiagnostic> diagnostics) {
+        return of(code, message, status, "", 0, diagnostics);
+    }
+
+    public static AuthoringProblem of(String code,
+                                      String message,
+                                      int status,
+                                      String draftId,
+                                      long authoringRevision,
+                                      List<AuthoringDiagnostic> diagnostics) {
         return new AuthoringProblem(
                 SCHEMA_VERSION,
                 code,
                 message,
                 status,
-                "",
-                0,
+                draftId,
+                authoringRevision,
                 diagnostics,
                 UUID.randomUUID().toString()
         );

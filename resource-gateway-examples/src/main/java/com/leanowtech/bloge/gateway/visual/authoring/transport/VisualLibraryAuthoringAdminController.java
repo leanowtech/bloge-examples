@@ -133,7 +133,9 @@ public final class VisualLibraryAuthoringAdminController {
                         "statelessPreview", true,
                         "crossLibraryTypeImports", false,
                         "sampleInference", false,
-                        "draftLifecycle", false
+                        "draftLifecycle", true,
+                        "etagConcurrency", true,
+                        "previewFencedCommit", true
                 )
         );
     }

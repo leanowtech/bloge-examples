@@ -47,6 +47,10 @@ import com.leanowtech.bloge.gateway.resource.DatabaseResourceRegistry;
 import com.leanowtech.bloge.gateway.resource.WritableResourceRegistry;
 import com.leanowtech.bloge.gateway.visual.asset.DatabaseVisualRuntimeBindingImplementationRepository;
 import com.leanowtech.bloge.gateway.visual.asset.VisualRuntimeBindingImplementationRepository;
+import com.leanowtech.bloge.gateway.visual.authoring.application.AuthoringDraftRepository;
+import com.leanowtech.bloge.gateway.visual.authoring.application.AuthoringDraftService;
+import com.leanowtech.bloge.gateway.visual.authoring.application.AuthoringPreviewService;
+import com.leanowtech.bloge.gateway.visual.authoring.application.DatabaseAuthoringDraftRepository;
 import com.leanowtech.bloge.gateway.visual.catalog.DatabaseOperatorLibraryRegistry;
 import com.leanowtech.bloge.gateway.visual.catalog.OperatorLibraryRegistry;
 import com.leanowtech.bloge.gateway.visual.catalog.VisualOperatorCatalog;
@@ -457,6 +461,28 @@ public class GatewayConfiguration {
                                                      ObjectMapper objectMapper,
                                                      IntegrationChangeEventOutbox outbox) {
         return new DatabaseGraphDraftRepository(jdbc, objectMapper, outbox);
+    }
+
+    /**
+     * Database-backed mutable sources for the visual library workbench.
+     */
+    @Bean
+    @ConditionalOnMissingBean
+    public AuthoringDraftRepository authoringDraftRepository(JdbcTemplate jdbc,
+                                                             ObjectMapper objectMapper) {
+        return new DatabaseAuthoringDraftRepository(jdbc, objectMapper);
+    }
+
+    /**
+     * Exact preview and catalog-commit lifecycle for visual library authoring.
+     */
+    @Bean
+    @ConditionalOnMissingBean
+    public AuthoringDraftService authoringDraftService(AuthoringDraftRepository drafts,
+                                                       AuthoringPreviewService previews,
+                                                       OperatorLibraryRegistry libraries,
+                                                       ObjectMapper objectMapper) {
+        return new AuthoringDraftService(drafts, previews, libraries, objectMapper);
     }
 
     /**

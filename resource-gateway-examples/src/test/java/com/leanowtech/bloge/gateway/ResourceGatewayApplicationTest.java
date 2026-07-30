@@ -19,6 +19,14 @@ import com.leanowtech.bloge.gateway.integration.mirror.CapabilitySnapshot;
 import com.leanowtech.bloge.gateway.integration.mirror.EffectContract;
 import com.leanowtech.bloge.gateway.resource.WritableResourceRegistry;
 import com.leanowtech.bloge.gateway.testing.domain.TestRunEvidence;
+import com.leanowtech.bloge.gateway.visual.authoring.application.AuthoringCommitResult;
+import com.leanowtech.bloge.gateway.visual.authoring.application.AuthoringDraftService;
+import com.leanowtech.bloge.gateway.visual.authoring.model.AuthoringCompileResult;
+import com.leanowtech.bloge.gateway.visual.authoring.model.AuthoringDraft;
+import com.leanowtech.bloge.gateway.visual.authoring.model.AuthoringProblem;
+import com.leanowtech.bloge.gateway.visual.authoring.model.VisualLibraryAuthoringDocument;
+import com.leanowtech.bloge.gateway.visual.authoring.transport.VisualLibraryAuthoringDraftController;
+import com.fasterxml.jackson.dataformat.yaml.YAMLMapper;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -126,6 +134,92 @@ class ResourceGatewayApplicationTest {
     void contextStarts() {
         assertThat(applicationContext).isNotNull();
         assertThat(applicationContext.containsBeanDefinition("gatewayGraphRuntimeConfiguration")).isFalse();
+    }
+
+    @Test
+    void visualLibraryAuthoringDraftLifecycleEnforcesEtagAndPreviewFences() throws Exception {
+        String draftId = "integration-authoring-library";
+        VisualLibraryAuthoringDocument document = new YAMLMapper().findAndRegisterModules()
+                .readValue("""
+                        schemaVersion: bloge.visualLibraryAuthoring.v1
+                        library:
+                          id: integration-authoring-library
+                          owner: integration-team
+                        operators:
+                          integration:echo:
+                            input: {value: string}
+                            output: {value: string}
+                        """, VisualLibraryAuthoringDocument.class);
+        HttpHeaders createHeaders = new HttpHeaders();
+        createHeaders.setContentType(MediaType.APPLICATION_JSON);
+        createHeaders.setIfMatch("\"0\"");
+        var created = restTemplate.exchange(
+                "/admin/visual-operator-library-authoring/drafts/" + draftId,
+                HttpMethod.PUT,
+                new HttpEntity<>(
+                        new VisualLibraryAuthoringDraftController.DraftSaveRequest(
+                                "QUICK", document, "integration-test"),
+                        createHeaders),
+                AuthoringDraft.class
+        );
+
+        assertThat(created.getStatusCode().value()).isEqualTo(201);
+        assertThat(created.getHeaders().getETag()).isEqualTo("\"1\"");
+        assertThat(created.getBody()).satisfies(draft -> {
+            assertThat(draft.draftId()).isEqualTo(draftId);
+            assertThat(draft.revision()).isEqualTo(1);
+        });
+
+        var staleSave = restTemplate.exchange(
+                "/admin/visual-operator-library-authoring/drafts/" + draftId,
+                HttpMethod.PUT,
+                new HttpEntity<>(
+                        new VisualLibraryAuthoringDraftController.DraftSaveRequest(
+                                "QUICK", document, "stale-writer"),
+                        createHeaders),
+                AuthoringProblem.class
+        );
+        assertThat(staleSave.getStatusCode().value()).isEqualTo(412);
+        assertThat(staleSave.getBody()).satisfies(problem ->
+                assertThat(problem.code()).isEqualTo("RG.AUTHORING.DRAFT_REVISION_STALE"));
+
+        HttpHeaders revisionHeaders = new HttpHeaders();
+        revisionHeaders.setIfMatch("\"1\"");
+        var previewed = restTemplate.exchange(
+                "/admin/visual-operator-library-authoring/drafts/" + draftId + "/preview",
+                HttpMethod.POST,
+                new HttpEntity<>(revisionHeaders),
+                AuthoringCompileResult.class
+        );
+        assertThat(previewed.getStatusCode().is2xxSuccessful()).isTrue();
+        AuthoringCompileResult preview = previewed.getBody();
+        assertThat(preview).isNotNull();
+        assertThat(preview.importable()).isTrue();
+        assertThat(preview.draftId()).isEqualTo(draftId);
+
+        AuthoringDraftService.CommitRequest commitRequest =
+                new AuthoringDraftService.CommitRequest(
+                        preview.authoringFingerprint(),
+                        preview.compileFingerprint(),
+                        preview.catalogFingerprint(),
+                        preview.canonicalFingerprint(),
+                        preview.diff().baseRevision(),
+                        "integration-test",
+                        "Verified lifecycle integration"
+                );
+        revisionHeaders.setContentType(MediaType.APPLICATION_JSON);
+        var committed = restTemplate.exchange(
+                "/admin/visual-operator-library-authoring/drafts/" + draftId + "/commit",
+                HttpMethod.POST,
+                new HttpEntity<>(commitRequest, revisionHeaders),
+                AuthoringCommitResult.class
+        );
+        assertThat(committed.getStatusCode().is2xxSuccessful()).isTrue();
+        assertThat(committed.getBody()).satisfies(result -> {
+            assertThat(result.draftId()).isEqualTo(draftId);
+            assertThat(result.targetRevision()).isEqualTo(1);
+            assertThat(result.library().libraryId()).isEqualTo(draftId);
+        });
     }
 
     @Test

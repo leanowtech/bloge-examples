@@ -402,6 +402,10 @@ public record IntegrationCapabilities(
                 "bloge.visualLibraryCompileResult.v1"));
         objects.put("visualLibraryAuthoringProblem", List.of(
                 "bloge.visualAuthoringProblem.v1"));
+        objects.put("visualLibraryAuthoringDraft", List.of(
+                "bloge.visualLibraryAuthoringDraft.v1"));
+        objects.put("visualLibraryAuthoringCommitResult", List.of(
+                "bloge.visualLibraryAuthoringCommitResult.v1"));
         objects.put("graphDraftIntegrationBundle", List.of(GraphDraftIntegrationBundle.SCHEMA_VERSION));
         objects.put("graphDraftDependencyProfile", List.of(GraphDraftDependencyProfile.SCHEMA_VERSION_V1,
                 GraphDraftDependencyProfile.SCHEMA_VERSION));
@@ -812,7 +816,9 @@ public record IntegrationCapabilities(
         features.put("visualLibraryAuthoringStatelessPreview", true);
         features.put("functionOnlyLibrary", true);
         features.put("visualLibraryAuthoringInference", false);
-        features.put("visualLibraryAuthoringDraftLifecycle", false);
+        features.put("visualLibraryAuthoringDraftLifecycle", true);
+        features.put("visualLibraryAuthoringEtagConcurrency", true);
+        features.put("visualLibraryAuthoringPreviewFencedCommit", true);
         features.put("graphDraftConsistentDependencySnapshot", true);
         features.put("graphDraftStructuredDependencyRefs", true);
         features.put("capabilitySnapshotProtocol", true);
@@ -1287,6 +1293,12 @@ public record IntegrationCapabilities(
                 new Endpoint("POST", "/admin/visual-operator-library-authoring/preview"),
                 new Endpoint("POST", "/admin/visual-operator-library-authoring/signature/parse"),
                 new Endpoint("GET", "/admin/visual-operator-library-authoring/catalogs"),
+                new Endpoint("GET", "/admin/visual-operator-library-authoring/drafts"),
+                new Endpoint("GET", "/admin/visual-operator-library-authoring/drafts/{draftId}"),
+                new Endpoint("GET", "/admin/visual-operator-library-authoring/drafts/{draftId}/revisions"),
+                new Endpoint("PUT", "/admin/visual-operator-library-authoring/drafts/{draftId}"),
+                new Endpoint("POST", "/admin/visual-operator-library-authoring/drafts/{draftId}/preview"),
+                new Endpoint("POST", "/admin/visual-operator-library-authoring/drafts/{draftId}/commit"),
                 new Endpoint("GET", "/api/visual/run-controls/{requestId}"),
                 new Endpoint("POST", "/api/visual/run-controls/{requestId}/cancel")
         ));

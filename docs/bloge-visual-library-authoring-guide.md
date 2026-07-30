@@ -2,7 +2,7 @@
 
 > 合同：`bloge.visualLibraryAuthoring.v1`
 >
-> 当前能力：Stage 0 无状态权威预览
+> 当前能力：Stage 0 权威编译 + Stage 1 持久化 draft/ETag/preview-fenced commit
 >
 > 机器 Schema：[bloge-visual-library-authoring-v1.schema.json](schemas/bloge-visual-library-authoring-v1.schema.json)
 
@@ -60,7 +60,8 @@ curl --fail-with-body \
 | `diff` | 与同 `library.id` 当前 registry revision 的差异 |
 | `catalogFingerprint` | 本次冲突判断所依据的目标 catalog 快照 |
 
-`preview` 是只读操作，不会写入 registry。Stage 0 尚未提供 draft autosave、ETag 或 stale-preview commit。
+顶层 `preview` 是只读操作，不会写入 registry。需要可恢复编辑、自动保存和受保护提交时，
+使用第 9 节的 draft lifecycle。
 
 ## 3. 最小文档
 
@@ -210,27 +211,74 @@ curl --fail-with-body \
 - `statelessPreview=true`
 - `crossLibraryTypeImports=false`
 - `sampleInference=false`
-- `draftLifecycle=false`
+- `draftLifecycle=true`
+- `etagConcurrency=true`
+- `previewFencedCommit=true`
 
-集成方也可以读取 `/api/integration/capabilities`，确认协议对象和三个已实现 endpoint。
+集成方也可以读取 `/api/integration/capabilities`，确认协议对象、stateless endpoint 和
+draft lifecycle endpoint。
 
-## 9. 从预览进入现有 Registry
+## 9. 持久化 Draft 与受保护提交
 
-当前安全路径是先审阅 preview，再把 `canonicalLibrary` 交给既有 canonical validate/import API。不要把本地预览当作提交凭证。
+Workbench 使用 `If-Match` 保存每个可编辑 revision。创建时显式提交 revision `0`：
 
 ```bash
-curl --silent --fail-with-body \
-  -H 'Content-Type: application/yaml' \
-  --data-binary @docs/examples/customer-service-library-authoring.yaml \
-  http://localhost:8080/admin/visual-operator-library-authoring/preview \
-  | jq '.canonicalLibrary' \
-  | curl --fail-with-body \
-      -H 'Content-Type: application/json' \
-      --data-binary @- \
-      http://localhost:8080/admin/visual-operator-libraries/validate
+curl --fail-with-body -i -X PUT \
+  -H 'Content-Type: application/json' \
+  -H 'If-Match: "0"' \
+  -d '{
+    "sourceMode": "QUICK",
+    "actor": "demo-author",
+    "document": {
+      "schemaVersion": "bloge.visualLibraryAuthoring.v1",
+      "library": {"id": "support-quick", "owner": "support-team"},
+      "operators": {
+        "support:echo": {
+          "archetype": "pure",
+          "input": {"value": "string"},
+          "output": {"value": "string"}
+        }
+      }
+    }
+  }' \
+  http://localhost:8080/admin/visual-operator-library-authoring/drafts/support-quick
 ```
 
-生产化的原子 `preview -> commit` 仍需 draft revision、ETag、catalog fingerprint、warning acknowledgement 和 target registry revision fencing；这些能力不会由上述命令冒充。
+响应 `ETag: "1"` 与 body `revision=1` 表示服务端已保存第一版。后续保存必须发送最后观察到的
+ETag；两个标签同时编辑时，旧标签收到 `412 RG.AUTHORING.DRAFT_REVISION_STALE`，不会覆盖新版本。
+
+对 revision `1` 获取权威预览：
+
+```bash
+curl --fail-with-body \
+  -H 'If-Match: "1"' \
+  -X POST \
+  http://localhost:8080/admin/visual-operator-library-authoring/drafts/support-quick/preview \
+  > /tmp/support-quick-preview.json
+```
+
+提交到 Design Catalog 时，必须回传这次预览的四个指纹与目标 revision：
+
+```bash
+jq '{
+  authoringFingerprint,
+  compileFingerprint,
+  catalogFingerprint,
+  canonicalFingerprint,
+  targetRevision: .diff.baseRevision,
+  actor: "demo-author",
+  reason: "Reviewed in Library Workbench"
+}' /tmp/support-quick-preview.json \
+| curl --fail-with-body \
+    -H 'Content-Type: application/json' \
+    -H 'If-Match: "1"' \
+    --data-binary @- \
+    http://localhost:8080/admin/visual-operator-library-authoring/drafts/support-quick/commit
+```
+
+服务端会重新读取 exact draft、重新编译并重新读取 catalog。任一 revision 或 fingerprint
+变化都会返回 `409/412`，不会把 stale preview 导入 registry。commit 只产生 design
+catalog revision；它不等于 runtime binding 或 production publish。
 
 ## 10. 安全与配额
 

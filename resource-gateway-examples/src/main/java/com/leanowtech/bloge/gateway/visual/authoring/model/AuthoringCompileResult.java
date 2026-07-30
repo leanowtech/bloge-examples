@@ -62,6 +62,29 @@ public record AuthoringCompileResult(
                 && diagnostics.stream().noneMatch(AuthoringDiagnostic::error);
     }
 
+    public AuthoringCompileResult withDraftContext(String effectiveDraftId,
+                                                   long effectiveAuthoringRevision) {
+        return new AuthoringCompileResult(
+                schemaVersion,
+                effectiveDraftId,
+                effectiveAuthoringRevision,
+                authoringFingerprint,
+                compileFingerprint,
+                compilerVersion,
+                grammarVersion,
+                catalogFingerprint,
+                previewAuthority,
+                canonicalLibrary,
+                canonicalFingerprint,
+                sourceMap,
+                diagnostics,
+                confirmationRequests,
+                readiness,
+                diff,
+                impact
+        );
+    }
+
     public AuthoringCompileResult withPreviewContext(String effectiveCatalogFingerprint,
                                                      List<AuthoringDiagnostic> additionalDiagnostics,
                                                      OperatorLibraryDiff effectiveDiff,

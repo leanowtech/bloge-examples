@@ -3859,9 +3859,11 @@ curl --fail-with-body \
 
 The stateless endpoint safely parses compact types and function signatures, expands
 operator archetypes, returns canonical `bloge.visualOperatorLibrary.v1`, source-map
-diagnostics, readiness, callable conflicts, and target registry diff. It does not
-persist a draft or import the library. See `/catalogs` for exact limits and feature
-flags.
+diagnostics, readiness, callable conflicts, and target registry diff. For recoverable
+authoring, use `/admin/visual-operator-library-authoring/drafts/{draftId}` with
+`If-Match`; its preview and commit endpoints reject stale draft, compiler, catalog,
+canonical, and target-library revisions before importing a design catalog revision.
+See `/catalogs` for exact limits and feature flags.
 
 For Canonical Advanced import:
 

@@ -1,6 +1,6 @@
 # Resource Gateway 渐进式算子与 Built-in Function 库创作技术方案
 
-> 状态：Approved；Stage 0 已实现，Stage 1-4 待实施
+> 状态：Approved；Stage 0 与 Stage 1 lifecycle 已实现，Stage 1 Workbench 及 Stage 2-4 待实施
 >
 > 日期：2026-07-30
 >

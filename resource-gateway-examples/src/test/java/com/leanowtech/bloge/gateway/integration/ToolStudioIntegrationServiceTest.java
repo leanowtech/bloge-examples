@@ -299,6 +299,12 @@ class ToolStudioIntegrationServiceTest {
                         "POST /admin/visual-operator-library-authoring/preview",
                         "POST /admin/visual-operator-library-authoring/signature/parse",
                         "GET /admin/visual-operator-library-authoring/catalogs",
+                        "GET /admin/visual-operator-library-authoring/drafts",
+                        "GET /admin/visual-operator-library-authoring/drafts/{draftId}",
+                        "GET /admin/visual-operator-library-authoring/drafts/{draftId}/revisions",
+                        "PUT /admin/visual-operator-library-authoring/drafts/{draftId}",
+                        "POST /admin/visual-operator-library-authoring/drafts/{draftId}/preview",
+                        "POST /admin/visual-operator-library-authoring/drafts/{draftId}/commit",
                         "GET /api/visual/run-controls/{requestId}",
                         "POST /api/visual/run-controls/{requestId}/cancel"
                 );
