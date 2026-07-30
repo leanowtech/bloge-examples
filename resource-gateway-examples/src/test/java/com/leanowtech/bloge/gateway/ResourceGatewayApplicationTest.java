@@ -28,7 +28,17 @@ import com.leanowtech.bloge.gateway.visual.authoring.model.SampleInferenceApplyR
 import com.leanowtech.bloge.gateway.visual.authoring.model.SampleInferenceRequest;
 import com.leanowtech.bloge.gateway.visual.authoring.model.SampleInferenceResult;
 import com.leanowtech.bloge.gateway.visual.authoring.model.VisualLibraryAuthoringDocument;
+import com.leanowtech.bloge.gateway.visual.authoring.testing.AuthoringTestProtocol.FunctionBindingStatus;
+import com.leanowtech.bloge.gateway.visual.authoring.testing.AuthoringTestProtocol.FunctionDraft;
+import com.leanowtech.bloge.gateway.visual.authoring.testing.AuthoringTestProtocol.FunctionDraftRequest;
+import com.leanowtech.bloge.gateway.visual.authoring.testing.AuthoringTestProtocol.FunctionRunEvidence;
+import com.leanowtech.bloge.gateway.visual.authoring.testing.AuthoringTestProtocol.FunctionRunRequest;
+import com.leanowtech.bloge.gateway.visual.authoring.testing.AuthoringTestProtocol.OperatorDraft;
+import com.leanowtech.bloge.gateway.visual.authoring.testing.AuthoringTestProtocol.OperatorDraftRequest;
+import com.leanowtech.bloge.gateway.visual.authoring.testing.AuthoringTestProtocol.OperatorRunEvidence;
+import com.leanowtech.bloge.gateway.visual.authoring.testing.AuthoringTestProtocol.OperatorRunRequest;
 import com.leanowtech.bloge.gateway.visual.authoring.transport.VisualLibraryAuthoringDraftController;
+import com.leanowtech.bloge.gateway.visual.testing.VisualOperatorContractTestDraftRequest;
 import com.fasterxml.jackson.dataformat.yaml.YAMLMapper;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -152,6 +162,10 @@ class ResourceGatewayApplicationTest {
                           integration:echo:
                             input: {value: string}
                             output: {value: string}
+                        functions:
+                          trim:
+                            signatures:
+                              - "(text: string) -> string"
                         """, VisualLibraryAuthoringDocument.class);
         HttpHeaders createHeaders = new HttpHeaders();
         createHeaders.setContentType(MediaType.APPLICATION_JSON);
@@ -201,6 +215,87 @@ class ResourceGatewayApplicationTest {
         assertThat(preview.draftId()).isEqualTo(draftId);
 
         revisionHeaders.setContentType(MediaType.APPLICATION_JSON);
+        var operatorDraft = restTemplate.exchange(
+                "/admin/visual-operator-library-authoring/drafts/" + draftId
+                        + "/tests/operators/draft",
+                HttpMethod.POST,
+                new HttpEntity<>(
+                        new OperatorDraftRequest(
+                                OperatorDraftRequest.SCHEMA_VERSION,
+                                new VisualOperatorContractTestDraftRequest(
+                                        VisualOperatorContractTestDraftRequest.SCHEMA_VERSION,
+                                        "integration:echo",
+                                        "integration echo",
+                                        true,
+                                        Map.of(),
+                                        Map.of(),
+                                        Map.of())),
+                        revisionHeaders),
+                OperatorDraft.class
+        );
+        assertThat(operatorDraft.getStatusCode().is2xxSuccessful()).isTrue();
+        assertThat(operatorDraft.getHeaders().getETag()).isEqualTo("\"1\"");
+        assertThat(operatorDraft.getBody()).satisfies(generated -> {
+            assertThat(generated.authoringRevision()).isEqualTo(1);
+            assertThat(generated.suite().cases()).hasSize(1);
+            assertThat(generated.payloadPersisted()).isFalse();
+        });
+
+        var operatorRun = restTemplate.exchange(
+                "/admin/visual-operator-library-authoring/drafts/" + draftId
+                        + "/tests/operators/run",
+                HttpMethod.POST,
+                new HttpEntity<>(
+                        new OperatorRunRequest(
+                                OperatorRunRequest.SCHEMA_VERSION,
+                                operatorDraft.getBody().suite()),
+                        revisionHeaders),
+                OperatorRunEvidence.class
+        );
+        assertThat(operatorRun.getStatusCode().is2xxSuccessful()).isTrue();
+        assertThat(operatorRun.getBody()).satisfies(evidence -> {
+            assertThat(evidence.result().passed()).isTrue();
+            assertThat(evidence.evidenceFingerprint()).startsWith("sha256:");
+            assertThat(evidence.payloadPersisted()).isFalse();
+        });
+
+        var functionDraft = restTemplate.exchange(
+                "/admin/visual-operator-library-authoring/drafts/" + draftId
+                        + "/tests/functions/draft",
+                HttpMethod.POST,
+                new HttpEntity<>(
+                        new FunctionDraftRequest(
+                                FunctionDraftRequest.SCHEMA_VERSION,
+                                "trim"),
+                        revisionHeaders),
+                FunctionDraft.class
+        );
+        assertThat(functionDraft.getStatusCode().is2xxSuccessful()).isTrue();
+        assertThat(functionDraft.getBody()).satisfies(generated -> {
+            assertThat(generated.bindingStatus()).isEqualTo(FunctionBindingStatus.BOUND);
+            assertThat(generated.suite().cases()).hasSize(1);
+            assertThat(generated.payloadPersisted()).isFalse();
+        });
+
+        var functionRun = restTemplate.exchange(
+                "/admin/visual-operator-library-authoring/drafts/" + draftId
+                        + "/tests/functions/run",
+                HttpMethod.POST,
+                new HttpEntity<>(
+                        new FunctionRunRequest(
+                                FunctionRunRequest.SCHEMA_VERSION,
+                                functionDraft.getBody().suite()),
+                        revisionHeaders),
+                FunctionRunEvidence.class
+        );
+        assertThat(functionRun.getStatusCode().is2xxSuccessful()).isTrue();
+        assertThat(functionRun.getBody()).satisfies(evidence -> {
+            assertThat(evidence.passed()).isTrue();
+            assertThat(evidence.results()).singleElement()
+                    .satisfies(result -> assertThat(result.actual()).isEqualTo("sample"));
+            assertThat(evidence.payloadPersisted()).isFalse();
+        });
+
         SampleInferenceRequest inferenceRequest = new SampleInferenceRequest(
                 SampleInferenceRequest.SCHEMA_VERSION,
                 new SampleInferenceRequest.Target(

@@ -1,6 +1,6 @@
 # Resource Gateway 渐进式算子与 Built-in Function 库创作技术方案
 
-> 状态：Approved；Stage 0、Stage 1 与 Stage 2.3 样本推断图形化审阅/原子应用已实现，Stage 2 fixture/runner 及 Stage 3-4 待实施
+> 状态：Approved；Stage 0、Stage 1 与 Stage 2.4 样本推断/草稿测试表/受限 function runner 已实现，受治理 fixture、生产隔离 runner 及 Stage 3-4 待实施
 >
 > 日期：2026-07-30
 >
@@ -1027,7 +1027,7 @@ library B: namespace=b, name=coalesce
 
 ### 9.3 Function Test
 
-function test runner 属于下一阶段，但合同先定义：
+Stage 2.4 已实现 draft-scoped function test 合同和受限演示 runner：
 
 ```yaml
 functions:
@@ -1050,6 +1050,27 @@ functions:
 - 不允许网络、文件、secret 访问；
 - non-deterministic function 不能使用普通 golden assertion；
 - run evidence 绑定 function fingerprint 和 test suite fingerprint。
+
+当前实现增加了以下 fail-closed 约束：
+
+- exact `If-Match` draft revision；
+- function/canonical/runtime/suite/evidence fingerprint；
+- `BOUND`、`UNBOUND`、`BLOCKED_BY_POLICY` 三类绑定结果；
+- 最多 50 行、每行最多 32 个参数、suite 256 KiB、result 512 KiB；
+- 单调用 250 ms timeout；
+- 只加载 BLOGE core runtime inventory 中 exact-name、pure、无 execution-service 依赖的函数；
+- TIME、RANDOM、IDENTITY 等 contextual function，以及 regex/range 等高资源风险函数在当前
+  profile 中阻断；
+- arguments、actual result 和错误细节不进入日志，响应固定 `payloadPersisted=false`。
+
+Stage 2.4 的真实链路验收同时覆盖 Spring Boot 四个测试端点和浏览器任务：operator
+自动生成的 optional `null` 输入可完整回显并通过 `SCHEMA_CONTRACT`，绑定的 `trim`
+运行到 `PASSED`，未绑定自定义函数稳定返回 `NOT_RUN`；桌面与 390×844 移动布局均无页面级
+横向溢出，表格只在浮层内部滚动，Esc 关闭后焦点恢复到测试入口。
+
+这里的 in-process profile 只用于 authoring 期快速反馈。线程取消不能证明 CPU/内存强隔离，
+也不能作为 production certification。完整实现仍需独立 worker/container sandbox、硬资源
+配额、网络/文件/secret syscall policy、可验证 runtime inventory 与持久化签名证据。
 
 ## 10. API 设计
 
@@ -1081,6 +1102,10 @@ functions:
 | `POST` | `/drafts/{draftId}/commit` | 原子导入 canonical registry |
 | `POST` | `/drafts/{draftId}/infer/samples` | 从样例生成 observed facts |
 | `POST` | `/drafts/{draftId}/infer/samples/apply` | 服务端重放并原子采用全部显式确认 |
+| `POST` | `/drafts/{draftId}/tests/operators/draft` | 从 exact draft operator 生成 schema-contract 表 |
+| `POST` | `/drafts/{draftId}/tests/operators/run` | 对 exact draft operator 运行临时 schema-contract suite |
+| `POST` | `/drafts/{draftId}/tests/functions/draft` | 生成 function starter suite 并解析 runtime binding |
+| `POST` | `/drafts/{draftId}/tests/functions/run` | 在受限 runtime profile 中运行临时 function suite |
 | `POST` | `/drafts/{draftId}/infer/dsl` | 从 DSL 生成 topology facts |
 | `POST` | `/imports/capability-catalog/preview` | capability catalog 投影 |
 | `POST` | `/imports/asyncapi/preview` | AsyncAPI 投影 |
@@ -1514,7 +1539,11 @@ Exit Gate：
 实现状态：**进行中**。Stage 2.3 已交付有界 multi-sample inferencer、机器协议、
 revision-fenced API、observed facts、保守 candidate、confirmation request、服务端重放、
 全量决定校验、原子 draft promotion、payload-free 隐私边界，以及 Workbench 的 target
-选择、样本输入、candidate/fact 解释、显式确认队列和结构化回写；fixture 与 runner 仍待完成。详见
+选择、样本输入、candidate/fact 解释、显式 confirmation queue 和结构化回写。Stage 2.4
+进一步交付 exact-draft operator test 自动生成与 schema-contract run、function test
+机器合同、runtime binding 状态、受限 function runner、单行/批量 UI 和 fingerprint-bound
+临时 evidence。受治理 fixture repository、显式 sample-to-fixture、生产隔离 runner 与
+持久化签名 evidence 仍待完成。详见
 [实现状态](resource-gateway-progressive-library-authoring-implementation-status.md)。
 
 交付：

@@ -8,11 +8,11 @@
 >
 > 说明：方案审计的 97 分评价设计成熟度，不代表本页所述功能已经实现。
 
-## 1. 已完成：Canonical 地基、Stage 0、Stage 1 与 Stage 2.3 图形化样本推断
+## 1. 已完成：Canonical 地基、Stage 0、Stage 1 与 Stage 2.4 草稿测试闭环
 
 先把 Workbench 依赖的语法、编译和诊断协议做成可测试内核；随后完成持久化
-draft、ETag 并发控制和 preview-fenced design catalog commit；当前已补齐可直接体验的
-图形化 Workbench 垂直切片。
+draft、ETag 并发控制和 preview-fenced design catalog commit；当前已补齐样本推断审阅、
+exact-draft operator contract test 和受限 function runner 的可体验垂直切片。
 
 | 能力 | 当前实现 | 验证 |
 | --- | --- | --- |
@@ -54,12 +54,18 @@ draft、ETag 并发控制和 preview-fenced design catalog commit；当前已补
 | Payload-free provenance | draft 保存 conservative/declared candidate、字段统计与人工决定，不保存 samples；同 target 新证据替换旧证据，手工改变声明 target 时自动失效 | repository round-trip、fingerprint、敏感样本与失效测试 |
 | 图形化样本审阅 | Start 页和每个 operator Input/Output 均可启动；支持 JSON array/object/NDJSON、target 选择、candidate tree、observed fact、显式 confirmation queue、推荐项批量采用与原子 Apply | API/component/parser 状态流测试；真实浏览器 1440px、800px 与 390px 响应式验收 |
 | 结构化 Schema 无损回显 | 推断得到的 object 不再降级为 `any`；字段树展开嵌套字段，同级重命名/required 编辑保留原始结构值 | model round-trip、Workbench apply 回显测试与真实服务持久化检查 |
+| Exact-draft operator tests | 从当前未提交 canonical operator 自动生成 input/config/mock-output row；复用既有 assertion/schema 引擎，结果固定声明 `SCHEMA_CONTRACT` | explicit-definition service、artifact mismatch、机器 Schema 与前端状态流测试 |
+| Function test protocol | `GOLDEN/NEGATIVE/BOUNDARY/REGRESSION` case 与 `EQUALS/RETURN_TYPE/EXPECT_ERROR` assertion；返回 binding/case status 和四层 fingerprint evidence | Java model、四份 request machine schema 与 protocol client 测试 |
+| 受限 function runner | 只运行 BLOGE core inventory 中 exact-name、pure、无 execution-service 依赖并被本地 profile 允许的函数；未绑定和高风险函数 fail closed | `BOUND/UNBOUND/BLOCKED_BY_POLICY`、成功、断言失败、隐私和 stale revision 测试 |
+| 图形化 Test Table | Operator/Function Builder 均可打开独立浮层；支持自动生成、JSON 编辑、case kind/assertion、增加/删除、单行/批量运行、逐行结果与 evidence 摘要 | component/API、真实 HTTP 测试；1440×900 与 390×844 浏览器验收 |
+| 临时测试隐私与边界 | 最多 50 行、32 参数、256 KiB suite、512 KiB result、250 ms function timeout；response 固定 `payloadPersisted=false`，诊断不包含 arguments | machine schema、bounded service 与敏感参数诊断测试 |
 
 旧的 operator-only library constructor、raw JSON/YAML validate/import endpoint、revision 和 registry
 存储格式保持兼容。Stage 0 定向回归共 143 个测试通过，其中包含既有 raw import
-控制器的 104 个用例；新增 lifecycle repository/service/controller 与真实 HTTP 闭环
-共 8 个专门用例。Workbench 前端生产构建通过，35 个前端测试文件共 344 个用例全绿，
-其中包含样本解析、完整推断状态流与结构化 Schema 无损往返测试。
+控制器的 104 个用例；Stage 2.4 新增/扩展 14 个 operator/function service 与机器合同定向用例，
+并由 Spring Boot 真实 HTTP lifecycle 用例覆盖四个测试端点、ETag 和 payload-free evidence。
+Workbench 前端生产构建通过，36 个前端测试文件共 347 个用例全绿，其中包含样本解析、
+完整推断状态流、结构化 Schema 无损往返以及 operator/function test table。
 
 ## 2. 当前权威规则
 
@@ -96,37 +102,41 @@ incompatible duplicate
 
 尚未实现的能力：
 
-1. Sample inference 的图形化审阅与原子应用已经闭环；尚未把采用后的 schema 直接物化为
-   可治理 fixture/test case，也没有 operator/function runner；discovery review 未实现；
-2. diagnostic 已可点击定位，但还没有可审计的自动 Fix-it；没有 fixture 生成/解析及
-   operator/function test runner；
-3. `imports` 当前只保留声明，跨 library type resolution 会被明确拒绝；
-4. preview impact 只描述当前 operator ref 与 registry revision 差异，不等同于 graph、
+1. Sample inference、operator schema-contract runner 和受限 function runner 已闭环；
+   尚未把样本或临时表格显式保存为 tenant-scoped、加密、带 retention 的 governed fixture；
+2. operator runner 当前只证明 schema/mock/assertion 一致性，不调用 runtime binding；
+   function runner 是受信 core inventory 的进程内快速反馈，不是 CPU/内存强隔离的生产证据；
+3. diagnostic 已可点击定位，但还没有可审计的自动 Fix-it；测试 evidence 当前只在响应中，
+   尚未持久化、签名、进入 publish gate 或自动管理 stale lifecycle；
+4. `imports` 当前只保留声明，跨 library type resolution 会被明确拒绝；
+5. preview impact 只描述当前 operator ref 与 registry revision 差异，不等同于 graph、
    publication 或运行时 binding 的全链路影响分析；
-5. authoring draft 尚未按 tenant/organization/project/environment/region 隔离，也没有专属
+6. authoring draft 尚未按 tenant/organization/project/environment/region 隔离，也没有专属
    RBAC、审批、审计事件、指标、分布式限流和持久化配额；
-6. commit 在单实例事务边界内重新校验所有栅栏，但 callable 全局冲突仍依赖应用层 registry
+7. commit 在单实例事务边界内重新校验所有栅栏，但 callable 全局冲突仍依赖应用层 registry
    快照，多副本并发写入尚无数据库唯一所有权约束；
-7. 尚未建立 Builder、canonical API、VS Code、本地/远端 compiler 和 BLOGE runtime 的多实现 parity；
-8. Workbench 已完成一次真实浏览器 desktop/mobile 视觉检查，但尚无固定截图回归、
-   任务计时和独立无障碍验收证据。
+8. 尚未建立 Builder、canonical API、VS Code、本地/远端 compiler 和 BLOGE runtime 的多实现 parity；
+9. Workbench 已完成样本推断与测试浮层的真实浏览器 desktop/mobile 检查：operator
+   `SCHEMA_CONTRACT/PASSED`、`trim` 的 `BOUND/PASSED`、自定义函数的
+   `UNBOUND/NOT_RUN` 均通过；390×844 页面无横向溢出，表格局部滚动，Esc 恢复入口焦点，
+   console 无 error/warning。尚无固定截图回归、任务计时和独立无障碍验收证据。
 
 ## 4. 目标差距
 
 以下评分只用于迭代收敛，不等同于产品成熟度评分。按目标方案交付面加权，当前约完成
-**82%**，剩余差距约 **18%**。
+**84%**，剩余差距约 **16%**。
 
 | 交付面 | 权重 | 当前完成 | 主要缺口 |
 | --- | ---: | ---: | --- |
 | Canonical 兼容与安全地基 | 15 | 14 | capability negotiation、compatible alias 的显式 owner/provenance model |
 | Authoring model、grammar、compiler、source map | 20 | 19 | 跨库类型 resolution 与多实现 parity |
 | Draft/preview/commit lifecycle | 12 | 11 | durable revision、ETag 和五重栅栏完成；缺 tenant-scope、多副本原子 ownership |
-| 图形化 Workbench 与渐进披露 | 18 | 16 | Start/Tree/Builder/Preview/Readiness、autosave、冲突恢复、exact commit 与样本审阅完成；缺可审计 Fix-it、任务计时和固定视觉回归 |
-| Sample inference、confirmation、fixture/test | 10 | 9 | 有界 inferencer、observed facts、图形化显式确认、服务端重放、原子采用、证据失效与隐私边界完成；缺 fixture 与 runner |
+| 图形化 Workbench 与渐进披露 | 18 | 17 | Start/Tree/Builder/Preview/Readiness、autosave、冲突恢复、exact commit、样本审阅和测试表完成；缺可审计 Fix-it、任务计时和固定视觉回归 |
+| Sample inference、confirmation、fixture/test | 10 | 9.5 | infer/confirmation、operator test 和受限 function test 完成；缺 governed fixture、生产隔离 runner 与持久化签名 evidence |
 | Discovery adapter 与 runtime parity | 8 | 3 | 已有 adapters；尚未统一 authoring fact projection |
 | 企业级隔离、配额、审计、可观测性 | 10 | 4 | 可复用 registry/revision 基础；缺 authoring 专属控制面 |
 | 文档、golden、browser、parity 证据 | 7 | 6 | 文档、compiler golden 和本轮真实浏览器证据完成；缺固定视觉回归与跨实现 parity 证据 |
-| **合计** | **100** | **82** | **差距 18%** |
+| **合计** | **100** | **84** | **差距 16%** |
 
 当前数据库 registry 的 callable 冲突检查基于进程内快照，能保护单实例及普通 H2/JDBC 使用，但还不是多副本并发写入下的原子全局约束。工业化阶段仍需引入规范化 callable ownership 表、数据库唯一约束或可证明的串行化事务，不能仅依赖应用层 preflight。
 
@@ -134,14 +144,15 @@ incompatible duplicate
 
 ## 5. 下一迭代
 
-下一步完成 Stage 2 的测试资产闭环：
+下一步完成 Stage 2 的治理型测试资产闭环：
 
-1. 将已确认的 sample evidence 转成待审 fixture draft，而不是自动持久化原始 payload；
-2. 接入 fixture contract、operator/function runner 与 fingerprint-bound evidence；
-3. 在 Workbench 提供 case table、单行/批量试跑、失败定位和 schema drift 提示；
-4. 补可审计 Fix-it、键盘任务流、无障碍扫描与 60/30 秒任务计时；
-5. 将 discovery adapters 收敛为统一 authoring fact projection；
-6. 加入 tenant/RBAC、配额和审计边界，不能让浏览器直接绕过治理调用 raw import。
+1. 增加独立 fixture draft/repository、tenant scope、RBAC、加密、redaction、retention 和 payload-free audit；
+2. 提供显式 **Save as fixture**，将 sample 或临时 case 转成受审 test asset，绝不自动保存；
+3. 将 operator runtime test 与 function test 下沉到独立 worker/container sandbox，硬限制 CPU、内存、网络、文件和 secret；
+4. 持久化并签名 evidence，建立 artifact/suite/runtime drift 后的 stale lifecycle 和 publish gate；
+5. 补可审计 Fix-it、键盘任务流、无障碍扫描与 60/30 秒任务计时；
+6. 将 discovery adapters 收敛为统一 authoring fact projection；
+7. 加入 tenant/RBAC、配额和审计边界，不能让浏览器直接绕过治理调用 raw import。
 
 Stage 1 Exit Gate 是新用户可只用 Builder 完成 pure operator 与 overload function 定义，
 诊断可定位回字段，两个浏览器标签制造 stale preview 时旧标签提交被阻断，提交产物与当前

@@ -67,7 +67,7 @@ silently consuming work.
 | Open | Best first move |
 | --- | --- |
 | `http://localhost:8080/author/` | Build a schema-constrained graph on the visual canvas |
-| `http://localhost:8080/libraries/` | Create an operator/function library, infer nested schemas from samples, review ambiguous facts, and commit exact revisions |
+| `http://localhost:8080/libraries/` | Create an operator/function library, infer nested schemas, run exact-draft test tables, and commit exact revisions |
 | `http://localhost:8080/rehearsals/` | Triage exact-scope Scenario batches and inspect signed evidence; without `--scenario-batch`, the page shows a capability-aware unavailable state |
 | `http://localhost:8080/showcase/` | Explore guided product scenarios and sample outputs |
 | `http://localhost:8080/examples/gateway` | Use the legacy Custom Composer regression surface |
@@ -120,6 +120,14 @@ required declaration decision. **Use recommendations** is an explicit bulk choic
 automatic promotion. **Apply declared schema** remains disabled until all decisions are present,
 then the server replays the exact request and atomically returns the next draft revision. The
 operator field tree expands the applied object instead of flattening it to `any`.
+
+To experience exact-draft tests, open **Customer Support Triage**, select
+`support:classify-ticket`, and choose **Open test table**. The generated row checks the
+uncommitted canonical schemas and is labelled `SCHEMA CONTRACT`. Select the `trim` function and
+run its generated boundary row to see a real `BOUND` BLOGE runtime call; custom
+`support.normalizeText` remains visibly `UNBOUND` instead of producing a false pass. These rows
+are ephemeral and fingerprint-bound. Persisted governed fixtures and production isolation workers
+remain separate testing-control-plane concerns.
 | `PUT http://localhost:8080/api/mirror/outcome-selected-populations/uploads/{uploadId}/chunks/{chunkIndex}` | Stage or exactly replay one manifest-declared content-addressed chunk |
 | `GET http://localhost:8080/api/mirror/outcome-selected-populations/uploads/{uploadId}` | Read payload-free durable progress, expiry, and finalization state |
 | `POST http://localhost:8080/api/mirror/outcome-selected-populations/uploads/{uploadId}/finalize` | Finalize a complete upload through the existing governed population admission |

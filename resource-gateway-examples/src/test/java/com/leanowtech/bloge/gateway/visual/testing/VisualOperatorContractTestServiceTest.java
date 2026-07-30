@@ -2,6 +2,7 @@ package com.leanowtech.bloge.gateway.visual.testing;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.leanowtech.bloge.gateway.visual.catalog.VisualCatalogTestSupport;
+import com.leanowtech.bloge.gateway.visual.diagnostic.VisualDiagnostic;
 import com.leanowtech.bloge.gateway.visual.simulation.JsonSchemaSampleGenerator;
 
 import org.junit.jupiter.api.Test;
@@ -99,6 +100,32 @@ class VisualOperatorContractTestServiceTest {
         assertThat(result.results().getFirst().diagnostics())
                 .anySatisfy(diagnostic -> assertThat(diagnostic.code())
                         .isEqualTo("visual.schema.unsupportedType"));
+    }
+
+    @Test
+    void explicitDraftDefinitionRejectsASuiteForAnotherOperator() {
+        var catalog = VisualCatalogTestSupport.catalogWithLibrary(
+                VisualCatalogTestSupport.eligibilityLibrary("integer"));
+        VisualOperatorContractTestService service = new VisualOperatorContractTestService(
+                catalog,
+                new JsonSchemaSampleGenerator(),
+                objectMapper);
+
+        VisualOperatorContractTestSuiteResult result = service.run(
+                catalog.find("risk:eligibility").orElseThrow(),
+                new VisualOperatorContractTestSuiteRequest(
+                        "risk:another-operator",
+                        List.of(new VisualOperatorContractTestCase(
+                                "wrong exact target",
+                                Map.of(),
+                                Map.of(),
+                                Map.of(),
+                                Map.of()))));
+
+        assertThat(result.passed()).isFalse();
+        assertThat(result.diagnostics())
+                .extracting(VisualDiagnostic::code)
+                .contains("visual.operatorContractTest.operatorRefMismatch");
     }
 
     @Test

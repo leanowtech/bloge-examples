@@ -62,6 +62,14 @@ export const LIBRARY_AUTHORING_EXAMPLES: LibraryAuthoringExample[] = [
         },
       },
       functions: {
+        trim: {
+          name: 'trim',
+          description: 'Uses the bound BLOGE runtime callable to trim surrounding whitespace.',
+          category: 'string',
+          signatures: ['(text: string) -> string'],
+          examples: ['trim(ctx.ticket.subject)'],
+          tests: [{ ref: 'fixtures/trim-subject' }],
+        },
         'support.normalizeText': {
           name: 'support.normalizeText',
           description: 'Normalizes customer-provided text.',

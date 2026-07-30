@@ -13,6 +13,7 @@ import com.leanowtech.bloge.gateway.visual.authoring.parse.AuthoringDocumentDeco
 import com.leanowtech.bloge.gateway.visual.authoring.parse.CompactTypeParser;
 import com.leanowtech.bloge.gateway.visual.authoring.parse.FunctionSignatureParser;
 import com.leanowtech.bloge.gateway.visual.authoring.parse.SampleInferenceRequestDecoder;
+import com.leanowtech.bloge.gateway.visual.authoring.testing.AuthoringTestService;
 
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.MediaType;
@@ -140,17 +141,31 @@ public final class VisualLibraryAuthoringAdminController {
                                 SampleSchemaInferencer.MAXIMUM_SAMPLES),
                         Map.entry("maximumInferenceNodes",
                                 SampleSchemaInferencer.MAXIMUM_TOTAL_NODES),
-                        Map.entry("maximumInferenceDepth", SampleSchemaInferencer.MAXIMUM_DEPTH)
+                        Map.entry("maximumInferenceDepth", SampleSchemaInferencer.MAXIMUM_DEPTH),
+                        Map.entry("maximumAuthoringTestSuiteBytes",
+                                AuthoringTestService.MAXIMUM_SUITE_BYTES),
+                        Map.entry("maximumAuthoringTestResultBytes",
+                                AuthoringTestService.MAXIMUM_RESULT_BYTES),
+                        Map.entry("maximumAuthoringTestCases",
+                                AuthoringTestService.MAXIMUM_CASES),
+                        Map.entry("maximumFunctionTestArguments",
+                                AuthoringTestService.MAXIMUM_ARGUMENTS),
+                        Map.entry("functionTestTimeoutMillis",
+                                AuthoringTestService.FUNCTION_TIMEOUT_MILLIS)
                 ),
-                Map.of(
-                        "functionOnlyLibrary", true,
-                        "statelessPreview", true,
-                        "crossLibraryTypeImports", false,
-                        "sampleInference", true,
-                        "sampleInferenceApply", true,
-                        "draftLifecycle", true,
-                        "etagConcurrency", true,
-                        "previewFencedCommit", true
+                Map.ofEntries(
+                        Map.entry("functionOnlyLibrary", true),
+                        Map.entry("statelessPreview", true),
+                        Map.entry("crossLibraryTypeImports", false),
+                        Map.entry("sampleInference", true),
+                        Map.entry("sampleInferenceApply", true),
+                        Map.entry("draftLifecycle", true),
+                        Map.entry("etagConcurrency", true),
+                        Map.entry("previewFencedCommit", true),
+                        Map.entry("operatorTestDraftRunner", true),
+                        Map.entry("functionTestDraftRunner", true),
+                        Map.entry("governedFixturePersistence", false),
+                        Map.entry("isolatedFunctionTestWorker", false)
                 )
         );
     }

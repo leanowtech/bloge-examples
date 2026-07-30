@@ -17,8 +17,12 @@ const apiMocks = vi.hoisted(() => ({
   applyInference: vi.fn(),
   commit: vi.fn(),
   fetchDraft: vi.fn(),
+  draftFunctionTest: vi.fn(),
+  draftOperatorTest: vi.fn(),
   infer: vi.fn(),
   preview: vi.fn(),
+  runFunctionTest: vi.fn(),
+  runOperatorTest: vi.fn(),
   save: vi.fn(),
 }));
 
@@ -34,9 +38,13 @@ vi.mock('../api', () => ({
   },
   applyLibraryAuthoringSamples: apiMocks.applyInference,
   commitLibraryAuthoringDraft: apiMocks.commit,
+  draftLibraryAuthoringFunctionTest: apiMocks.draftFunctionTest,
+  draftLibraryAuthoringOperatorTest: apiMocks.draftOperatorTest,
   fetchLibraryAuthoringDraft: apiMocks.fetchDraft,
   inferLibraryAuthoringSamples: apiMocks.infer,
   previewLibraryAuthoringDraft: apiMocks.preview,
+  runLibraryAuthoringFunctionTest: apiMocks.runFunctionTest,
+  runLibraryAuthoringOperatorTest: apiMocks.runOperatorTest,
   saveLibraryAuthoringDraft: apiMocks.save,
 }));
 
@@ -52,9 +60,13 @@ describe('LibraryWorkbench', () => {
     document.body.appendChild(host);
     apiMocks.commit.mockReset();
     apiMocks.applyInference.mockReset();
+    apiMocks.draftFunctionTest.mockReset();
+    apiMocks.draftOperatorTest.mockReset();
     apiMocks.fetchDraft.mockReset();
     apiMocks.infer.mockReset();
     apiMocks.preview.mockReset();
+    apiMocks.runFunctionTest.mockReset();
+    apiMocks.runOperatorTest.mockReset();
     apiMocks.save.mockReset();
     vi.useFakeTimers();
   });

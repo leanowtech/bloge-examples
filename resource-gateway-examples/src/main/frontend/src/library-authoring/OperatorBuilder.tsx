@@ -22,6 +22,7 @@ interface OperatorBuilderProps {
   onChange: (operator: VisualOperatorAuthoring) => void;
   onRemove: () => void;
   onInferSamples: (direction: 'INPUT' | 'OUTPUT') => void;
+  onOpenTests: () => void;
 }
 
 export default function OperatorBuilder({
@@ -31,6 +32,7 @@ export default function OperatorBuilder({
   onChange,
   onRemove,
   onInferSamples,
+  onOpenTests,
 }: OperatorBuilderProps) {
   const [keyDraft, setKeyDraft] = useState(operatorKey);
   useEffect(() => setKeyDraft(operatorKey), [operatorKey]);
@@ -114,7 +116,17 @@ export default function OperatorBuilder({
       </section>
 
       <section className="library-builder-section">
-        <header><h3>Examples & Tests</h3><span>{operator.tests?.length ?? 0} references</span></header>
+        <header>
+          <h3>Examples & Tests</h3>
+          <button
+            type="button"
+            className="primary compact"
+            onClick={onOpenTests}
+            data-testid="open-operator-test-table"
+          >
+            Open test table
+          </button>
+        </header>
         <ReferenceEditor
           values={(operator.tests ?? []).map((test) => test.ref)}
           onChange={(values) => patch({ tests: values.map((ref) => ({ ref })) })}

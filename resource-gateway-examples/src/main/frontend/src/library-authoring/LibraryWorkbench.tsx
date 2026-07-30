@@ -18,6 +18,9 @@ import type {
   VisualLibraryAuthoringDocument,
   VisualLibraryAuthoringDraft,
 } from '../types';
+import AssetTestTable, {
+  type AssetTestLaunch,
+} from './AssetTestTable';
 import CanonicalContractPreview from './CanonicalContractPreview';
 import FunctionBuilder from './FunctionBuilder';
 import LibraryStartChoices from './LibraryStartChoices';
@@ -54,6 +57,7 @@ export default function LibraryWorkbench() {
   const [commitResult, setCommitResult] = useState<VisualLibraryAuthoringCommitResult | null>(null);
   const [loading, setLoading] = useState(false);
   const [inferenceLaunch, setInferenceLaunch] = useState<SampleInferenceLaunch | null>(null);
+  const [testLaunch, setTestLaunch] = useState<AssetTestLaunch | null>(null);
   const revisionRef = useRef(0);
   const currentDraftRef = useRef<VisualLibraryAuthoringDraft | null>(null);
   const lastSavedJsonRef = useRef('');
@@ -272,6 +276,17 @@ export default function LibraryWorkbench() {
     }, 0);
   };
 
+  const prepareExactDraft = useCallback(() => {
+    if (!document) {
+      return Promise.reject(new Error('A library draft is required before testing.'));
+    }
+    return persist(document, editEpochRef.current);
+  }, [document, persist]);
+  const markRevisionConflict = useCallback(() => {
+    setSaveState('conflict');
+    setSaveMessage('A newer revision exists. Reload before continuing.');
+  }, []);
+
   if (loading && !document) {
     return <main className="library-workbench-loading">Loading library draft...</main>;
   }
@@ -305,7 +320,6 @@ export default function LibraryWorkbench() {
     changeDocument((current) => removeAsset(current, selection));
     setSelection({ kind: 'library', key: '' });
   };
-  const prepareInferenceDraft = () => persist(document, editEpochRef.current);
   const installInferenceDraft = (draft: VisualLibraryAuthoringDraft) => {
     const operatorKey = inferenceLaunch?.operatorKey ?? '';
     editEpochRef.current += 1;
@@ -365,6 +379,11 @@ export default function LibraryWorkbench() {
                 setInferenceLaunch({ operatorKey: selection.key, direction });
               }
             },
+            () => {
+              if (selection.kind === 'operator' || selection.kind === 'function') {
+                setTestLaunch({ kind: selection.kind, assetRef: selection.key });
+              }
+            },
           )}
         </section>
         <CanonicalContractPreview
@@ -383,13 +402,18 @@ export default function LibraryWorkbench() {
         <SampleInferenceReview
           {...inferenceLaunch}
           operator={document.operators[inferenceLaunch.operatorKey]}
-          prepareDraft={prepareInferenceDraft}
+          prepareDraft={prepareExactDraft}
           onApplied={installInferenceDraft}
-          onConflict={() => {
-            setSaveState('conflict');
-            setSaveMessage('A newer revision exists. Reload before continuing.');
-          }}
+          onConflict={markRevisionConflict}
           onClose={() => setInferenceLaunch(null)}
+        />
+      )}
+      {testLaunch && (
+        <AssetTestTable
+          {...testLaunch}
+          prepareDraft={prepareExactDraft}
+          onConflict={markRevisionConflict}
+          onClose={() => setTestLaunch(null)}
         />
       )}
     </main>
@@ -405,6 +429,7 @@ function renderBuilder(
   rename: (nextKey: string) => void,
   remove: () => void,
   inferSamples: (direction: 'INPUT' | 'OUTPUT') => void,
+  openTests: () => void,
 ) {
   if (selection.kind === 'operator') {
     const operator = document.operators?.[selection.key];
@@ -420,6 +445,7 @@ function renderBuilder(
           }))}
           onRemove={remove}
           onInferSamples={inferSamples}
+          onOpenTests={openTests}
         />
       );
     }
@@ -437,6 +463,7 @@ function renderBuilder(
             functions: { ...(current.functions ?? {}), [selection.key]: nextFunction },
           }))}
           onRemove={remove}
+          onOpenTests={openTests}
         />
       );
     }

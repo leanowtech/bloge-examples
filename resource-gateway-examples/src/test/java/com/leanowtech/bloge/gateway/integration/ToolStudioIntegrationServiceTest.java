@@ -153,6 +153,10 @@ class ToolStudioIntegrationServiceTest {
                 .containsEntry("visualCapabilityClosureProjection", true)
                 .containsEntry("capabilitySnapshotApi", true)
                 .containsEntry("capabilityLifecycleFencing", true)
+                .containsEntry("visualLibraryAuthoringOperatorTestDraftRunner", true)
+                .containsEntry("visualLibraryAuthoringFunctionTestDraftRunner", true)
+                .containsEntry("visualLibraryAuthoringGovernedFixturePersistence", false)
+                .containsEntry("visualLibraryAuthoringIsolatedFunctionTestWorker", false)
                 .containsEntry("mirrorPlanCompilation", false)
                 .containsEntry("mirrorExternalLeafInterception", false)
                 .containsEntry("mirrorOperationObservability", false)
@@ -306,6 +310,10 @@ class ToolStudioIntegrationServiceTest {
                         "POST /admin/visual-operator-library-authoring/drafts/{draftId}/preview",
                         "POST /admin/visual-operator-library-authoring/drafts/{draftId}/infer/samples",
                         "POST /admin/visual-operator-library-authoring/drafts/{draftId}/infer/samples/apply",
+                        "POST /admin/visual-operator-library-authoring/drafts/{draftId}/tests/operators/draft",
+                        "POST /admin/visual-operator-library-authoring/drafts/{draftId}/tests/operators/run",
+                        "POST /admin/visual-operator-library-authoring/drafts/{draftId}/tests/functions/draft",
+                        "POST /admin/visual-operator-library-authoring/drafts/{draftId}/tests/functions/run",
                         "POST /admin/visual-operator-library-authoring/drafts/{draftId}/commit",
                         "GET /api/visual/run-controls/{requestId}",
                         "POST /api/visual/run-controls/{requestId}/cancel"

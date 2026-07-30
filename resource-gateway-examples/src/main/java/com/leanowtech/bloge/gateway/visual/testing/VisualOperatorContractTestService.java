@@ -69,6 +69,45 @@ public class VisualOperatorContractTestService {
         }
 
         OperatorDefinition definition = operator.orElseThrow();
+        return run(definition, safeRequest);
+    }
+
+    /**
+     * Runs a table-driven suite against an explicit canonical definition.
+     *
+     * <p>This path lets authoring surfaces validate an exact, uncommitted draft without
+     * publishing it into the shared visual catalog first.</p>
+     *
+     * @param definition exact canonical operator definition
+     * @param request suite request
+     * @return suite result
+     */
+    public VisualOperatorContractTestSuiteResult run(OperatorDefinition definition,
+                                                     VisualOperatorContractTestSuiteRequest request) {
+        VisualOperatorContractTestSuiteRequest safeRequest = request == null
+                ? new VisualOperatorContractTestSuiteRequest("", List.of())
+                : request;
+        List<VisualDiagnostic> diagnostics = validateSuiteHeader(safeRequest);
+        if (definition == null) {
+            diagnostics.add(VisualDiagnostic.error(
+                    "visual.operatorContractTest.operatorUnknown",
+                    "An exact operator definition is required.",
+                    "/operatorRef"));
+        } else if (!safeRequest.operatorRef().isBlank()
+                && !definition.operatorRef().equals(safeRequest.operatorRef())) {
+            diagnostics.add(VisualDiagnostic.error(
+                    "visual.operatorContractTest.operatorRefMismatch",
+                    "The suite operatorRef does not match the exact operator definition.",
+                    "/operatorRef"));
+        }
+        if (!diagnostics.isEmpty()) {
+            return suiteResult(
+                    safeRequest.operatorRef(),
+                    definition == null ? "" : definition.operatorVersion(),
+                    List.of(),
+                    diagnostics);
+        }
+
         List<VisualOperatorContractTestCaseResult> results = safeRequest.cases().stream()
                 .map(testCase -> runCase(definition, testCase))
                 .toList();
@@ -201,6 +240,43 @@ public class VisualOperatorContractTestService {
         }
 
         OperatorDefinition definition = operator.orElseThrow();
+        return draft(definition, safeRequest);
+    }
+
+    /**
+     * Builds an editable suite draft from an explicit canonical definition.
+     *
+     * @param definition exact canonical operator definition
+     * @param request draft request
+     * @return generated suite draft
+     */
+    public VisualOperatorContractTestDraftResponse draft(
+            OperatorDefinition definition,
+            VisualOperatorContractTestDraftRequest request) {
+        VisualOperatorContractTestDraftRequest safeRequest = request == null
+                ? new VisualOperatorContractTestDraftRequest("", "", "", true, Map.of(), Map.of(), Map.of())
+                : request;
+        List<VisualDiagnostic> diagnostics = validateDraftRequest(safeRequest);
+        if (definition == null) {
+            diagnostics.add(VisualDiagnostic.error(
+                    "visual.operatorContractTest.operatorUnknown",
+                    "An exact operator definition is required.",
+                    "/operatorRef"));
+        } else if (!safeRequest.operatorRef().isBlank()
+                && !definition.operatorRef().equals(safeRequest.operatorRef())) {
+            diagnostics.add(VisualDiagnostic.error(
+                    "visual.operatorContractTest.operatorRefMismatch",
+                    "The draft operatorRef does not match the exact operator definition.",
+                    "/operatorRef"));
+        }
+        if (!diagnostics.isEmpty()) {
+            return new VisualOperatorContractTestDraftResponse(
+                    VisualOperatorContractTestDraftResponse.SCHEMA_VERSION,
+                    safeRequest.operatorRef(),
+                    new VisualOperatorContractTestSuiteRequest(safeRequest.operatorRef(), List.of()),
+                    diagnostics);
+        }
+
         Map<String, Object> inputs = generatedPortValues(
                 definition.ports().inputs(),
                 safeRequest.includeOptionalPorts(),
@@ -226,6 +302,25 @@ public class VisualOperatorContractTestService {
                 definition.operatorRef(),
                 suite,
                 diagnostics);
+    }
+
+    private List<VisualDiagnostic> validateDraftRequest(VisualOperatorContractTestDraftRequest request) {
+        List<VisualDiagnostic> diagnostics = new ArrayList<>();
+        if (!VisualOperatorContractTestDraftRequest.SCHEMA_VERSION.equals(request.schemaVersion())) {
+            diagnostics.add(VisualDiagnostic.error(
+                    "visual.operatorContractTest.draftSchemaVersionUnsupported",
+                    "Operator contract-test draft schemaVersion '%s' is unsupported; expected '%s'."
+                            .formatted(request.schemaVersion(),
+                                    VisualOperatorContractTestDraftRequest.SCHEMA_VERSION),
+                    "/schemaVersion"));
+        }
+        if (request.operatorRef().isBlank()) {
+            diagnostics.add(VisualDiagnostic.error(
+                    "visual.operatorContractTest.operatorRefMissing",
+                    "operatorRef is required.",
+                    "/operatorRef"));
+        }
+        return diagnostics;
     }
 
     private VisualOperatorContractTestCaseResult runCase(OperatorDefinition operator,

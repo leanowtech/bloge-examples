@@ -2,6 +2,8 @@ package com.leanowtech.bloge.gateway.visual.testing;
 
 import com.leanowtech.bloge.gateway.visual.diagnostic.VisualDiagnostic;
 
+import java.util.Collections;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 
@@ -37,8 +39,15 @@ public record VisualOperatorContractTestCaseResult(
     public VisualOperatorContractTestCaseResult {
         name = name == null || name.isBlank() ? "Operator contract test case" : name;
         diagnostics = diagnostics == null ? List.of() : List.copyOf(diagnostics);
-        inputs = inputs == null ? Map.of() : Map.copyOf(inputs);
-        config = config == null ? Map.of() : Map.copyOf(config);
-        mockedOutputs = mockedOutputs == null ? Map.of() : Map.copyOf(mockedOutputs);
+        inputs = immutableJsonObject(inputs);
+        config = immutableJsonObject(config);
+        mockedOutputs = immutableJsonObject(mockedOutputs);
+    }
+
+    private static Map<String, Object> immutableJsonObject(Map<String, Object> source) {
+        if (source == null || source.isEmpty()) {
+            return Map.of();
+        }
+        return Collections.unmodifiableMap(new LinkedHashMap<>(source));
     }
 }

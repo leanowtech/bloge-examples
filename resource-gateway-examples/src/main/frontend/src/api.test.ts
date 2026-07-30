@@ -10,6 +10,8 @@ import {
   commitLibraryAuthoringDraft,
   commitDslImport,
   decideScenarioRehearsalRemediation,
+  draftLibraryAuthoringFunctionTest,
+  draftLibraryAuthoringOperatorTest,
   fetchGatewayDiagram,
   fetchGatewayScenarios,
   fetchGovernanceGateView,
@@ -37,6 +39,8 @@ import {
   publishScenarioDraftSet,
   resetOperatorTestHeadersProvider,
   resetRehearsalRemediationCredentialsProvider,
+  runLibraryAuthoringFunctionTest,
+  runLibraryAuthoringOperatorTest,
   runOperatorTestCase,
   runGatewayScenario,
   resetBlogeApiTransport,
@@ -50,8 +54,10 @@ import {
   validateOperatorLibraryText,
 } from './api';
 import type {
+  VisualFunctionTestSuite,
   VisualLibraryAuthoringCompileResult,
   VisualLibraryAuthoringDocument,
+  VisualOperatorContractTestSuite,
   VisualSampleInferenceRequest,
   VisualSampleInferenceResult,
 } from './types';
@@ -246,6 +252,70 @@ describe('operator library API client', () => {
     await expect(commitLibraryAuthoringDraft('support-draft', 3, preview, 'contract reviewed'))
       .resolves.toMatchObject({ schemaVersion: 'bloge.visualLibraryAuthoringCommitResult.v1' });
     expect(calls).toHaveLength(7);
+  });
+
+  it('fences authoring operator and function test drafts and runs to one exact revision', async () => {
+    const operatorSuite: VisualOperatorContractTestSuite = {
+      schemaVersion: 'bloge.visualOperatorContractTestSuiteRequest.v1',
+      operatorRef: 'demo:echo',
+      cases: [],
+    };
+    const functionSuite: VisualFunctionTestSuite = {
+      schemaVersion: 'bloge.visualAuthoringFunctionTestSuite.v1',
+      functionRef: 'trim',
+      cases: [],
+    };
+    const calls: Array<{ url: string; body: unknown; ifMatch: string | null }> = [];
+    setBlogeApiTransport(async (input, init) => {
+      const url = String(input);
+      const body = JSON.parse(String(init?.body));
+      calls.push({
+        url,
+        body,
+        ifMatch: new Headers(init?.headers).get('If-Match'),
+      });
+      return jsonResponse({ route: url });
+    });
+
+    await draftLibraryAuthoringOperatorTest('test draft', 7, 'demo:echo');
+    await runLibraryAuthoringOperatorTest('test draft', 7, operatorSuite);
+    await draftLibraryAuthoringFunctionTest('test draft', 7, 'trim');
+    await runLibraryAuthoringFunctionTest('test draft', 7, functionSuite);
+
+    expect(calls).toEqual([
+      expect.objectContaining({
+        url: '/admin/visual-operator-library-authoring/drafts/test%20draft/tests/operators/draft',
+        ifMatch: '"7"',
+        body: expect.objectContaining({
+          schemaVersion: 'bloge.visualAuthoringOperatorTestDraftRequest.v1',
+          draft: expect.objectContaining({ operatorRef: 'demo:echo' }),
+        }),
+      }),
+      expect.objectContaining({
+        url: '/admin/visual-operator-library-authoring/drafts/test%20draft/tests/operators/run',
+        ifMatch: '"7"',
+        body: {
+          schemaVersion: 'bloge.visualAuthoringOperatorTestRunRequest.v1',
+          suite: operatorSuite,
+        },
+      }),
+      expect.objectContaining({
+        url: '/admin/visual-operator-library-authoring/drafts/test%20draft/tests/functions/draft',
+        ifMatch: '"7"',
+        body: {
+          schemaVersion: 'bloge.visualAuthoringFunctionTestDraftRequest.v1',
+          functionRef: 'trim',
+        },
+      }),
+      expect.objectContaining({
+        url: '/admin/visual-operator-library-authoring/drafts/test%20draft/tests/functions/run',
+        ifMatch: '"7"',
+        body: {
+          schemaVersion: 'bloge.visualAuthoringFunctionTestRunRequest.v1',
+          suite: functionSuite,
+        },
+      }),
+    ]);
   });
 
   it('saves, loads, and publishes an exact Scenario revision with separate purposes', async () => {

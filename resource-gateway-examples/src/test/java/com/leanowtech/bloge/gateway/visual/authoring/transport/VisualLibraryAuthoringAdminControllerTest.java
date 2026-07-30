@@ -92,9 +92,18 @@ class VisualLibraryAuthoringAdminControllerTest {
                 .andExpect(jsonPath("$.features.statelessPreview").value(true))
                 .andExpect(jsonPath("$.features.sampleInference").value(true))
                 .andExpect(jsonPath("$.features.sampleInferenceApply").value(true))
+                .andExpect(jsonPath("$.features.operatorTestDraftRunner").value(true))
+                .andExpect(jsonPath("$.features.functionTestDraftRunner").value(true))
+                .andExpect(jsonPath("$.features.governedFixturePersistence").value(false))
+                .andExpect(jsonPath("$.features.isolatedFunctionTestWorker").value(false))
                 .andExpect(jsonPath("$.limits.maximumSampleInferenceBytes").value(2097152))
                 .andExpect(jsonPath("$.limits.maximumSampleInferenceApplyBytes").value(4194304))
                 .andExpect(jsonPath("$.limits.maximumInferenceSamples").value(100))
+                .andExpect(jsonPath("$.limits.maximumAuthoringTestSuiteBytes").value(262144))
+                .andExpect(jsonPath("$.limits.maximumAuthoringTestResultBytes").value(524288))
+                .andExpect(jsonPath("$.limits.maximumAuthoringTestCases").value(50))
+                .andExpect(jsonPath("$.limits.maximumFunctionTestArguments").value(32))
+                .andExpect(jsonPath("$.limits.functionTestTimeoutMillis").value(250))
                 .andExpect(jsonPath("$.limits.maximumYamlAliases").value(20))
                 .andExpect(jsonPath("$.archetypes.length()").value(9));
     }

@@ -412,6 +412,20 @@ public record IntegrationCapabilities(
                 "bloge.visualSampleInferenceResult.v1"));
         objects.put("visualLibrarySampleInferenceApplyRequest", List.of(
                 "bloge.visualSampleInferenceApplyRequest.v1"));
+        objects.put("visualLibraryAuthoringOperatorTestDraft", List.of(
+                "bloge.visualAuthoringOperatorTestDraftRequest.v1",
+                "bloge.visualAuthoringOperatorTestDraft.v1"));
+        objects.put("visualLibraryAuthoringOperatorTestRun", List.of(
+                "bloge.visualAuthoringOperatorTestRunRequest.v1",
+                "bloge.visualAuthoringOperatorTestRunEvidence.v1"));
+        objects.put("visualLibraryAuthoringFunctionTestDraft", List.of(
+                "bloge.visualAuthoringFunctionTestDraftRequest.v1",
+                "bloge.visualAuthoringFunctionTestDraft.v1"));
+        objects.put("visualLibraryAuthoringFunctionTestRun", List.of(
+                "bloge.visualAuthoringFunctionTestSuite.v1",
+                "bloge.visualAuthoringFunctionTestCase.v1",
+                "bloge.visualAuthoringFunctionTestRunRequest.v1",
+                "bloge.visualAuthoringFunctionTestRunEvidence.v1"));
         objects.put("graphDraftIntegrationBundle", List.of(GraphDraftIntegrationBundle.SCHEMA_VERSION));
         objects.put("graphDraftDependencyProfile", List.of(GraphDraftDependencyProfile.SCHEMA_VERSION_V1,
                 GraphDraftDependencyProfile.SCHEMA_VERSION));
@@ -825,6 +839,10 @@ public record IntegrationCapabilities(
         features.put("visualLibraryAuthoringDraftLifecycle", true);
         features.put("visualLibraryAuthoringEtagConcurrency", true);
         features.put("visualLibraryAuthoringPreviewFencedCommit", true);
+        features.put("visualLibraryAuthoringOperatorTestDraftRunner", true);
+        features.put("visualLibraryAuthoringFunctionTestDraftRunner", true);
+        features.put("visualLibraryAuthoringGovernedFixturePersistence", false);
+        features.put("visualLibraryAuthoringIsolatedFunctionTestWorker", false);
         features.put("graphDraftConsistentDependencySnapshot", true);
         features.put("graphDraftStructuredDependencyRefs", true);
         features.put("capabilitySnapshotProtocol", true);
@@ -1306,6 +1324,10 @@ public record IntegrationCapabilities(
                 new Endpoint("POST", "/admin/visual-operator-library-authoring/drafts/{draftId}/preview"),
                 new Endpoint("POST", "/admin/visual-operator-library-authoring/drafts/{draftId}/infer/samples"),
                 new Endpoint("POST", "/admin/visual-operator-library-authoring/drafts/{draftId}/infer/samples/apply"),
+                new Endpoint("POST", "/admin/visual-operator-library-authoring/drafts/{draftId}/tests/operators/draft"),
+                new Endpoint("POST", "/admin/visual-operator-library-authoring/drafts/{draftId}/tests/operators/run"),
+                new Endpoint("POST", "/admin/visual-operator-library-authoring/drafts/{draftId}/tests/functions/draft"),
+                new Endpoint("POST", "/admin/visual-operator-library-authoring/drafts/{draftId}/tests/functions/run"),
                 new Endpoint("POST", "/admin/visual-operator-library-authoring/drafts/{draftId}/commit"),
                 new Endpoint("GET", "/api/visual/run-controls/{requestId}"),
                 new Endpoint("POST", "/api/visual/run-controls/{requestId}/cancel")

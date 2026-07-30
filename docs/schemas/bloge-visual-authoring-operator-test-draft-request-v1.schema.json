@@ -1,0 +1,53 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://bloge.leanowtech.com/schemas/bloge-visual-authoring-operator-test-draft-request-v1.schema.json",
+  "title": "BLOGE Visual Authoring Operator Test Draft Request",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schemaVersion", "draft"],
+  "properties": {
+    "schemaVersion": {
+      "const": "bloge.visualAuthoringOperatorTestDraftRequest.v1"
+    },
+    "draft": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "schemaVersion",
+        "operatorRef",
+        "caseName",
+        "includeOptionalPorts",
+        "inputOverrides",
+        "configOverrides",
+        "mockedOutputOverrides"
+      ],
+      "properties": {
+        "schemaVersion": {
+          "const": "bloge.visualOperatorContractTestDraftRequest.v1"
+        },
+        "operatorRef": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 255
+        },
+        "caseName": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 255
+        },
+        "includeOptionalPorts": {
+          "type": "boolean"
+        },
+        "inputOverrides": {
+          "type": "object"
+        },
+        "configOverrides": {
+          "type": "object"
+        },
+        "mockedOutputOverrides": {
+          "type": "object"
+        }
+      }
+    }
+  }
+}

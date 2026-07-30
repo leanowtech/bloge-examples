@@ -2,7 +2,7 @@
 
 > 合同：`bloge.visualLibraryAuthoring.v1`
 >
-> 当前能力：Stage 0 权威编译 + Stage 1 持久化 lifecycle + Stage 2 样本推断审阅与原子采用
+> 当前能力：Stage 0 权威编译 + Stage 1 持久化 lifecycle + Stage 2 样本推断、草稿级测试表与受限 function runner
 >
 > 机器 Schema：[bloge-visual-library-authoring-v1.schema.json](schemas/bloge-visual-library-authoring-v1.schema.json)
 
@@ -40,6 +40,15 @@
 
 已有 operator 也可以在 **Inputs** 或 **Outputs** 标题右侧直接点击 **Infer from samples**。
 分析不会写 draft；只有确认队列完整且服务端重放通过后，Apply 才会原子产生下一 revision。
+
+测试表体验：
+
+1. 从 **Complete examples** 打开 **Customer Support Triage**；
+2. 选择 `support:classify-ticket`，在 **Examples & Tests** 点击 **Open test table**；
+3. 检查自动生成的 Inputs、Config 和 Mocked outputs，点击单行 **Run** 或 **Run all**；
+4. 注意 operator 的证明强度固定显示为 `SCHEMA CONTRACT`，它验证草稿合同和 mock，不冒充 runtime 执行；
+5. 选择 function `trim`，打开测试表并运行，状态应为 `BOUND` 且 starter case 通过；
+6. 再选择 `support.normalizeText`，状态应为 `UNBOUND`，用于直观看到“已声明”与“runtime 已绑定”的区别。
 
 预览完整 operator + function 示例：
 
@@ -208,7 +217,56 @@ tests:
   - ref: fixtures/classify-enterprise-ticket
 ```
 
-引用进入 authoring source，但 fixture payload 不进入公开 operator catalog。Stage 0 只保留引用；测试资产解析、生成与 runner 在后续测试闭环阶段接入。
+引用进入 authoring source，但 fixture payload 不进入公开 operator catalog。当前 Workbench 已提供
+**草稿级临时测试表**：
+
+| 资产 | 自动生成 | 当前执行语义 |
+| --- | --- | --- |
+| Operator | 从当前 revision 的 input/config/output Schema 生成 editable mock row 和 output schema assertion | `SCHEMA_CONTRACT`；不调用 runtime binding |
+| Function | 从第一个已解析 overload 生成 arguments 和 `RETURN_TYPE` row | 仅调用 BLOGE runtime inventory 中 exact-name、pure、无 execution-service 依赖且被本地安全 profile 允许的函数 |
+
+所有 draft/run 请求都带当前 `If-Match`。返回证据绑定：
+
+- `authoringRevision` 与 `authoringFingerprint`；
+- `canonicalFingerprint`；
+- operator/function artifact fingerprint；
+- function runtime fingerprint；
+- test suite fingerprint；
+- evidence fingerprint。
+
+Function 表支持：
+
+| 字段 | 取值 |
+| --- | --- |
+| Kind | `GOLDEN`、`NEGATIVE`、`BOUNDARY`、`REGRESSION` |
+| Assertion | `EQUALS`、`RETURN_TYPE`、`EXPECT_ERROR` |
+| Binding | `BOUND`、`UNBOUND`、`BLOCKED_BY_POLICY` |
+| Row result | `PASSED`、`ASSERTION_FAILED`、`CONTRACT_REJECTED`、`INVOCATION_FAILED`、`TIMEOUT`、`NOT_RUN` |
+
+测试表中的 payload 只在浏览器、当前请求和响应中临时存在；`payloadPersisted=false`。当前尚未
+实现显式 **Save as governed fixture**，因此关闭浮层后表格行不会成为长期测试资产，已有
+`tests[].ref` 也不会被临时 runner 自动改写。
+
+机器合同：
+
+- [operator test draft request](schemas/bloge-visual-authoring-operator-test-draft-request-v1.schema.json)
+- [operator test run request](schemas/bloge-visual-authoring-operator-test-run-request-v1.schema.json)
+- [function test draft request](schemas/bloge-visual-authoring-function-test-draft-request-v1.schema.json)
+- [function test run request](schemas/bloge-visual-authoring-function-test-run-request-v1.schema.json)
+
+API：
+
+| Method | Endpoint |
+| --- | --- |
+| `POST` | `/drafts/{draftId}/tests/operators/draft` |
+| `POST` | `/drafts/{draftId}/tests/operators/run` |
+| `POST` | `/drafts/{draftId}/tests/functions/draft` |
+| `POST` | `/drafts/{draftId}/tests/functions/run` |
+
+这里的 function runner 是演示用受限进程内 profile：最多 50 行、每行最多 32 个参数、
+suite 有 256 KiB 边界、结果有 512 KiB 边界、单次调用 250 ms；TIME/RANDOM/IDENTITY 等 execution
+service 函数以及 regex/range 等高资源风险函数会 fail closed。它不提供进程级 CPU/内存
+强隔离，生产 executable certification 仍需独立 worker/container sandbox。
 
 ## 8. 读取能力边界
 
@@ -223,12 +281,18 @@ curl --fail-with-body \
 - `statelessPreview=true`
 - `crossLibraryTypeImports=false`
 - `sampleInference=true`
+- `sampleInferenceApply=true`
 - `draftLifecycle=true`
 - `etagConcurrency=true`
 - `previewFencedCommit=true`
+- `operatorTestDraftRunner=true`
+- `functionTestDraftRunner=true`
+- `governedFixturePersistence=false`
+- `isolatedFunctionTestWorker=false`
 
 集成方也可以读取 `/api/integration/capabilities`，确认协议对象、stateless endpoint 和
-draft lifecycle endpoint。
+draft lifecycle/test endpoint。两个值为 `false` 的能力是明确的生产边界：当前测试 payload
+只在请求/响应中短暂存在，function runner 也不是进程级隔离沙箱。
 
 ## 9. 持久化 Draft 与受保护提交
 

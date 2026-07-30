@@ -1,0 +1,18 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://bloge.leanowtech.com/schemas/bloge-visual-authoring-function-test-draft-request-v1.schema.json",
+  "title": "BLOGE Visual Authoring Function Test Draft Request",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schemaVersion", "functionRef"],
+  "properties": {
+    "schemaVersion": {
+      "const": "bloge.visualAuthoringFunctionTestDraftRequest.v1"
+    },
+    "functionRef": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 255
+    }
+  }
+}

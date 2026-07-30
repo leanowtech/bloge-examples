@@ -1009,6 +1009,145 @@ export interface VisualLibraryAuthoringCommitResult {
   committedBy: string;
 }
 
+export interface VisualOperatorContractTestCase {
+  schemaVersion: 'bloge.visualOperatorContractTestCase.v1';
+  name: string;
+  description: string;
+  inputs: Record<string, unknown>;
+  config: Record<string, unknown>;
+  mockedOutputs: Record<string, unknown>;
+  outputAssertions: Record<string, Array<{
+    mode: string;
+    path: string;
+    expectedValue: unknown;
+  }>>;
+}
+
+export interface VisualOperatorContractTestSuite {
+  schemaVersion: 'bloge.visualOperatorContractTestSuiteRequest.v1';
+  operatorRef: string;
+  cases: VisualOperatorContractTestCase[];
+}
+
+export interface VisualAuthoringOperatorTestDraft {
+  schemaVersion: 'bloge.visualAuthoringOperatorTestDraft.v1';
+  draftId: string;
+  authoringRevision: number;
+  authoringFingerprint: string;
+  canonicalFingerprint: string;
+  artifactFingerprint: string;
+  suiteFingerprint: string;
+  suite: VisualOperatorContractTestSuite;
+  diagnostics: VisualDiagnostic[];
+  payloadPersisted: false;
+}
+
+export interface VisualAuthoringOperatorTestRunEvidence {
+  schemaVersion: 'bloge.visualAuthoringOperatorTestRunEvidence.v1';
+  runId: string;
+  draftId: string;
+  authoringRevision: number;
+  authoringFingerprint: string;
+  canonicalFingerprint: string;
+  artifactFingerprint: string;
+  suiteFingerprint: string;
+  evidenceFingerprint: string;
+  executedAt: string;
+  result: {
+    schemaVersion: string;
+    operatorRef: string;
+    operatorVersion: string;
+    mode: 'SCHEMA_CONTRACT';
+    passed: boolean;
+    totalCases: number;
+    passedCases: number;
+    failedCases: number;
+    coverage: {
+      inputPortSchemaValidated: number;
+      configSchemaValidated: number;
+      mockedOutputSchemaValidated: number;
+      mockedOutputCount: number;
+      assertionCount: number;
+    };
+    results: Array<{
+      name: string;
+      passed: boolean;
+      diagnostics: VisualDiagnostic[];
+    }>;
+    diagnostics: VisualDiagnostic[];
+  };
+  diagnostics: VisualDiagnostic[];
+  payloadPersisted: false;
+}
+
+export type VisualFunctionTestKind = 'GOLDEN' | 'NEGATIVE' | 'BOUNDARY' | 'REGRESSION';
+export type VisualFunctionTestAssertion = 'EQUALS' | 'RETURN_TYPE' | 'EXPECT_ERROR';
+export type VisualFunctionBindingStatus = 'BOUND' | 'UNBOUND' | 'BLOCKED_BY_POLICY';
+
+export interface VisualFunctionTestCase {
+  schemaVersion: 'bloge.visualAuthoringFunctionTestCase.v1';
+  id: string;
+  kind: VisualFunctionTestKind;
+  args: unknown[];
+  assertion: VisualFunctionTestAssertion;
+  expect: unknown;
+  expectError: { code: string } | null;
+}
+
+export interface VisualFunctionTestSuite {
+  schemaVersion: 'bloge.visualAuthoringFunctionTestSuite.v1';
+  functionRef: string;
+  cases: VisualFunctionTestCase[];
+}
+
+export interface VisualAuthoringFunctionTestDraft {
+  schemaVersion: 'bloge.visualAuthoringFunctionTestDraft.v1';
+  draftId: string;
+  authoringRevision: number;
+  authoringFingerprint: string;
+  canonicalFingerprint: string;
+  functionFingerprint: string;
+  runtimeFingerprint: string;
+  bindingStatus: VisualFunctionBindingStatus;
+  suiteFingerprint: string;
+  suite: VisualFunctionTestSuite;
+  diagnostics: VisualDiagnostic[];
+  payloadPersisted: false;
+}
+
+export interface VisualAuthoringFunctionTestRunEvidence {
+  schemaVersion: 'bloge.visualAuthoringFunctionTestRunEvidence.v1';
+  runId: string;
+  draftId: string;
+  authoringRevision: number;
+  authoringFingerprint: string;
+  canonicalFingerprint: string;
+  functionFingerprint: string;
+  runtimeFingerprint: string;
+  bindingStatus: VisualFunctionBindingStatus;
+  suiteFingerprint: string;
+  evidenceFingerprint: string;
+  executedAt: string;
+  passed: boolean;
+  totalCases: number;
+  passedCases: number;
+  failedCases: number;
+  results: Array<{
+    id: string;
+    kind: VisualFunctionTestKind;
+    passed: boolean;
+    status: 'PASSED' | 'ASSERTION_FAILED' | 'CONTRACT_REJECTED'
+      | 'INVOCATION_FAILED' | 'TIMEOUT' | 'NOT_RUN';
+    actual: unknown;
+    actualType: string;
+    errorCode: string;
+    durationMicros: number;
+    diagnostics: VisualDiagnostic[];
+  }>;
+  diagnostics: VisualDiagnostic[];
+  payloadPersisted: false;
+}
+
 /** Projection review for adapting bloge.capabilityCatalog.v1 into a visual operator library. */
 export interface CapabilityCatalogProjectionReview {
   schemaVersion?: string;

@@ -26,7 +26,17 @@ class VisualLibraryAuthoringCapabilityTest {
                 .containsEntry("visualLibrarySampleInferenceResult",
                         java.util.List.of("bloge.visualSampleInferenceResult.v1"))
                 .containsEntry("visualLibrarySampleInferenceApplyRequest",
-                        java.util.List.of("bloge.visualSampleInferenceApplyRequest.v1"));
+                        java.util.List.of("bloge.visualSampleInferenceApplyRequest.v1"))
+                .containsEntry("visualLibraryAuthoringOperatorTestRun",
+                        java.util.List.of(
+                                "bloge.visualAuthoringOperatorTestRunRequest.v1",
+                                "bloge.visualAuthoringOperatorTestRunEvidence.v1"))
+                .containsEntry("visualLibraryAuthoringFunctionTestRun",
+                        java.util.List.of(
+                                "bloge.visualAuthoringFunctionTestSuite.v1",
+                                "bloge.visualAuthoringFunctionTestCase.v1",
+                                "bloge.visualAuthoringFunctionTestRunRequest.v1",
+                                "bloge.visualAuthoringFunctionTestRunEvidence.v1"));
         assertThat(capabilities.features())
                 .containsEntry("visualLibraryAuthoringProtocol", true)
                 .containsEntry("visualLibraryAuthoringStatelessPreview", true)
@@ -34,7 +44,11 @@ class VisualLibraryAuthoringCapabilityTest {
                 .containsEntry("visualLibraryAuthoringInference", true)
                 .containsEntry("visualLibraryAuthoringDraftLifecycle", true)
                 .containsEntry("visualLibraryAuthoringEtagConcurrency", true)
-                .containsEntry("visualLibraryAuthoringPreviewFencedCommit", true);
+                .containsEntry("visualLibraryAuthoringPreviewFencedCommit", true)
+                .containsEntry("visualLibraryAuthoringOperatorTestDraftRunner", true)
+                .containsEntry("visualLibraryAuthoringFunctionTestDraftRunner", true)
+                .containsEntry("visualLibraryAuthoringGovernedFixturePersistence", false)
+                .containsEntry("visualLibraryAuthoringIsolatedFunctionTestWorker", false);
         assertThat(capabilities.endpoints()).contains(
                 new IntegrationCapabilities.Endpoint(
                         "POST", "/admin/visual-operator-library-authoring/preview"),
@@ -50,6 +64,14 @@ class VisualLibraryAuthoringCapabilityTest {
                         "POST", "/admin/visual-operator-library-authoring/drafts/{draftId}/infer/samples"),
                 new IntegrationCapabilities.Endpoint(
                         "POST", "/admin/visual-operator-library-authoring/drafts/{draftId}/infer/samples/apply"),
+                new IntegrationCapabilities.Endpoint(
+                        "POST", "/admin/visual-operator-library-authoring/drafts/{draftId}/tests/operators/draft"),
+                new IntegrationCapabilities.Endpoint(
+                        "POST", "/admin/visual-operator-library-authoring/drafts/{draftId}/tests/operators/run"),
+                new IntegrationCapabilities.Endpoint(
+                        "POST", "/admin/visual-operator-library-authoring/drafts/{draftId}/tests/functions/draft"),
+                new IntegrationCapabilities.Endpoint(
+                        "POST", "/admin/visual-operator-library-authoring/drafts/{draftId}/tests/functions/run"),
                 new IntegrationCapabilities.Endpoint(
                         "POST", "/admin/visual-operator-library-authoring/drafts/{draftId}/commit")
         );

@@ -48,10 +48,16 @@ import type {
   ToolStudioIntegrationEnvelope,
   VisualValidationResult,
   VisualGraphRunRecord,
+  VisualAuthoringFunctionTestDraft,
+  VisualAuthoringFunctionTestRunEvidence,
+  VisualAuthoringOperatorTestDraft,
+  VisualAuthoringOperatorTestRunEvidence,
+  VisualFunctionTestSuite,
   VisualLibraryAuthoringCommitResult,
   VisualLibraryAuthoringCompileResult,
   VisualLibraryAuthoringDocument,
   VisualLibraryAuthoringDraft,
+  VisualOperatorContractTestSuite,
   VisualSampleInferenceDecision,
   VisualSampleInferenceRequest,
   VisualSampleInferenceResult,
@@ -485,6 +491,110 @@ export async function applyLibraryAuthoringSamples(
           evidenceFingerprint,
           decisions,
           actor: 'visual-library-workbench',
+        }),
+      },
+    ),
+  );
+}
+
+/** Generates an editable schema-contract suite from one exact draft operator. */
+export async function draftLibraryAuthoringOperatorTest(
+  draftId: string,
+  revision: number,
+  operatorRef: string,
+): Promise<VisualAuthoringOperatorTestDraft> {
+  return readJsonMutation<VisualAuthoringOperatorTestDraft>(
+    await sendRequest(
+      `/admin/visual-operator-library-authoring/drafts/${encodeURIComponent(draftId)}/tests/operators/draft`,
+      {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'If-Match': `"${Math.max(0, revision)}"`,
+        },
+        body: JSON.stringify({
+          schemaVersion: 'bloge.visualAuthoringOperatorTestDraftRequest.v1',
+          draft: {
+            schemaVersion: 'bloge.visualOperatorContractTestDraftRequest.v1',
+            operatorRef,
+            caseName: 'generated contract case',
+            includeOptionalPorts: true,
+            inputOverrides: {},
+            configOverrides: {},
+            mockedOutputOverrides: {},
+          },
+        }),
+      },
+    ),
+  );
+}
+
+/** Runs an ephemeral operator suite against the exact uncommitted canonical definition. */
+export async function runLibraryAuthoringOperatorTest(
+  draftId: string,
+  revision: number,
+  suite: VisualOperatorContractTestSuite,
+): Promise<VisualAuthoringOperatorTestRunEvidence> {
+  return readJsonMutation<VisualAuthoringOperatorTestRunEvidence>(
+    await sendRequest(
+      `/admin/visual-operator-library-authoring/drafts/${encodeURIComponent(draftId)}/tests/operators/run`,
+      {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'If-Match': `"${Math.max(0, revision)}"`,
+        },
+        body: JSON.stringify({
+          schemaVersion: 'bloge.visualAuthoringOperatorTestRunRequest.v1',
+          suite,
+        }),
+      },
+    ),
+  );
+}
+
+/** Generates a type-oriented starter suite and reports runtime binding status. */
+export async function draftLibraryAuthoringFunctionTest(
+  draftId: string,
+  revision: number,
+  functionRef: string,
+): Promise<VisualAuthoringFunctionTestDraft> {
+  return readJsonMutation<VisualAuthoringFunctionTestDraft>(
+    await sendRequest(
+      `/admin/visual-operator-library-authoring/drafts/${encodeURIComponent(draftId)}/tests/functions/draft`,
+      {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'If-Match': `"${Math.max(0, revision)}"`,
+        },
+        body: JSON.stringify({
+          schemaVersion: 'bloge.visualAuthoringFunctionTestDraftRequest.v1',
+          functionRef,
+        }),
+      },
+    ),
+  );
+}
+
+/** Runs only a pure, service-free function found in the bounded BLOGE runtime inventory. */
+export async function runLibraryAuthoringFunctionTest(
+  draftId: string,
+  revision: number,
+  suite: VisualFunctionTestSuite,
+): Promise<VisualAuthoringFunctionTestRunEvidence> {
+  return readJsonMutation<VisualAuthoringFunctionTestRunEvidence>(
+    await sendRequest(
+      `/admin/visual-operator-library-authoring/drafts/${encodeURIComponent(draftId)}/tests/functions/run`,
+      {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'If-Match': `"${Math.max(0, revision)}"`,
+        },
+        body: JSON.stringify({
+          schemaVersion: 'bloge.visualAuthoringFunctionTestRunRequest.v1',
+          suite,
         }),
       },
     ),

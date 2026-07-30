@@ -9,6 +9,7 @@ interface FunctionBuilderProps {
   onRename: (nextKey: string) => void;
   onChange: (fn: VisualFunctionAuthoring) => void;
   onRemove: () => void;
+  onOpenTests: () => void;
 }
 
 export default function FunctionBuilder({
@@ -17,6 +18,7 @@ export default function FunctionBuilder({
   onRename,
   onChange,
   onRemove,
+  onOpenTests,
 }: FunctionBuilderProps) {
   const [keyDraft, setKeyDraft] = useState(functionKey);
   useEffect(() => setKeyDraft(functionKey), [functionKey]);
@@ -123,7 +125,17 @@ export default function FunctionBuilder({
       </section>
 
       <section className="library-builder-section">
-        <header><h3>Tests</h3><span>{fn.tests?.length ?? 0} references</span></header>
+        <header>
+          <h3>Tests</h3>
+          <button
+            type="button"
+            className="primary compact"
+            onClick={onOpenTests}
+            data-testid="open-function-test-table"
+          >
+            Open test table
+          </button>
+        </header>
         <ReferenceEditor
           values={(fn.tests ?? []).map((test) => test.ref)}
           onChange={(values) => patch({ tests: values.map((ref) => ({ ref })) })}
