@@ -3,22 +3,27 @@ import { useEffect } from 'react';
 import AuthorCanvas from './AuthorCanvas';
 import RehearsalWorkbench from './RehearsalWorkbench';
 import Showcase from './Showcase';
+import LibraryWorkbench from './library-authoring/LibraryWorkbench';
 import {
   authorWorkspaceEntryHref,
   resolveAuthorWorkspaceVersion,
 } from './author/authorWorkspaceVersion';
 import './styles.css';
 
-type WorkspaceRoute = 'author' | 'rehearsals' | 'showcase';
+type WorkspaceRoute = 'author' | 'libraries' | 'rehearsals' | 'showcase';
 
 /** Top-level app shell shared by the authoring, rehearsal, and showcase routes. */
 export default function App() {
-  const route: WorkspaceRoute = window.location.pathname.startsWith('/showcase')
+  const route: WorkspaceRoute = window.location.pathname.startsWith('/libraries')
+    ? 'libraries'
+    : window.location.pathname.startsWith('/showcase')
     ? 'showcase'
     : window.location.pathname.startsWith('/rehearsals')
       ? 'rehearsals'
       : 'author';
-  const title = route === 'rehearsals'
+  const title = route === 'libraries'
+    ? 'Libraries'
+    : route === 'rehearsals'
     ? 'Rehearsals'
     : route === 'showcase' ? 'Showcase' : 'Author';
   const authorWorkspaceVersion = resolveAuthorWorkspaceVersion(window.location.search);
@@ -54,6 +59,13 @@ export default function App() {
               Legacy
             </a>
           )}
+          <a
+            className={`topbar-link ${route === 'libraries' ? 'active' : ''}`}
+            href="/libraries/"
+            aria-current={route === 'libraries' ? 'page' : undefined}
+          >
+            Libraries
+          </a>
           <a className={`topbar-link ${route === 'rehearsals' ? 'active' : ''}`} href="/rehearsals/" aria-current={route === 'rehearsals' ? 'page' : undefined}>
             Rehearsals
           </a>
@@ -62,7 +74,9 @@ export default function App() {
           </a>
         </nav>
       </header>
-      {route === 'showcase'
+      {route === 'libraries'
+        ? <LibraryWorkbench />
+        : route === 'showcase'
         ? <Showcase />
         : route === 'rehearsals'
           ? <RehearsalWorkbench />

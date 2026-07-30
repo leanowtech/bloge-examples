@@ -1,6 +1,6 @@
 # Resource Gateway 渐进式算子与 Built-in Function 库创作技术方案
 
-> 状态：Approved；Stage 0 与 Stage 1 lifecycle 已实现，Stage 1 Workbench 及 Stage 2-4 待实施
+> 状态：Approved；Stage 0、Stage 1 lifecycle 与 Workbench 垂直切片已实现，Stage 2-4 待实施
 >
 > 日期：2026-07-30
 >
@@ -1631,14 +1631,14 @@ docs/bloge-visual-library-authoring-guide.md
 
 ### 19.1 P0 功能完成
 
-- [ ] Quick authoring machine schema 和 Java compiler 完成；
-- [ ] pure operator、named type、function overload 可编译；
-- [ ] source map 能覆盖所有 compiler 和 canonical diagnostic；
-- [ ] function-only library 可协商导入；
-- [ ] callable collision 不再 silent first-wins；
-- [ ] Draft API 支持 ETag 和 stale preview；
-- [ ] Workbench 默认不显示 raw canonical editor；
-- [ ] 旧 import/export/revision/diff/restore 测试无回归。
+- [x] Quick authoring machine schema 和 Java compiler 完成；
+- [x] pure operator、named type、function overload 可编译；
+- [x] source map 能覆盖 compiler 和 canonical diagnostic；
+- [x] function-only library 可协商导入；
+- [x] callable collision 不再 silent first-wins；
+- [x] Draft API 支持 ETag 和 stale preview；
+- [x] Workbench 默认不显示 raw canonical editor；
+- [x] 旧 import/export/revision/diff/restore 测试无回归。
 
 ### 19.2 工业质量完成
 
@@ -1656,9 +1656,9 @@ docs/bloge-visual-library-authoring-guide.md
 
 - [ ] 新用户可在 60 秒内定义 pure operator；
 - [ ] 新用户可在 30 秒内定义普通 function；
-- [ ] 80% 普通任务不接触 JSON Schema envelope；
+- [x] 80% 普通任务不接触 JSON Schema envelope；
 - [ ] 用户能区分 inferred、confirmed、design-ready 和 production-ready；
-- [ ] 所有错误都能通过一次点击回到可编辑位置；
+- [x] 所有 compiler diagnostic 都能通过一次点击回到可编辑位置；
 - [ ] 内置示例同时提供 Quick source、canonical preview 和可运行测试。
 
 ## 20. 待审阅决策

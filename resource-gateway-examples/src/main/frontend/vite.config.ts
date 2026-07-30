@@ -2,7 +2,7 @@
 import { defineConfig } from 'vite';
 import react from '@vitejs/plugin-react';
 
-// The same SPA is copied under /author/, /rehearsals/, and /showcase/, so assets stay relative.
+// The same SPA is copied under /author/, /libraries/, /rehearsals/, and /showcase/, so assets stay relative.
 export default defineConfig({
   base: './',
   plugins: [react()],
@@ -30,6 +30,7 @@ export default defineConfig({
     // During local dev (npm run dev) proxy API calls to the running Spring app.
     proxy: {
       '/api': 'http://localhost:8080',
+      '/admin': 'http://localhost:8080',
     },
   },
   test: {

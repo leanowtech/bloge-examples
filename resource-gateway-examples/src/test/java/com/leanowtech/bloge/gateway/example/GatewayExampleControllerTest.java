@@ -90,6 +90,15 @@ class GatewayExampleControllerTest {
     }
 
     @Test
+    void pageControllerForwardsCleanUrlToLibraryWorkbench() throws Exception {
+        MockMvc pageMvc = MockMvcBuilders.standaloneSetup(new GatewayExamplePageController()).build();
+
+        pageMvc.perform(get("/libraries"))
+                .andExpect(status().isOk())
+                .andExpect(forwardedUrl("/libraries/index.html"));
+    }
+
+    @Test
     void pageControllerForwardsCleanUrlToScenarioRehearsalWorkbench() throws Exception {
         MockMvc pageMvc = MockMvcBuilders.standaloneSetup(new GatewayExamplePageController()).build();
 

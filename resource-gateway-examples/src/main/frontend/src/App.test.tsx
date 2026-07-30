@@ -19,6 +19,10 @@ vi.mock('./RehearsalWorkbench', () => ({
   default: () => <div data-testid="rehearsals-mock">Rehearsal workbench</div>,
 }));
 
+vi.mock('./library-authoring/LibraryWorkbench', () => ({
+  default: () => <div data-testid="libraries-mock">Library workbench</div>,
+}));
+
 describe('App route shell', () => {
   let root: Root | null = null;
   let host: HTMLDivElement;
@@ -82,7 +86,16 @@ describe('App route shell', () => {
     expect(query('[data-testid="rehearsals-mock"]').textContent).toContain('Rehearsal workbench');
     expect(query<HTMLAnchorElement>('.topbar-link.active').getAttribute('href')).toBe('/rehearsals/');
     expect(query<HTMLAnchorElement>('.topbar-link[href="/author/"]').textContent).toContain('Author');
-    expect(document.querySelectorAll('.topbar-link')).toHaveLength(3);
+    expect(document.querySelectorAll('.topbar-link')).toHaveLength(4);
+  });
+
+  it('renders the library workbench for /libraries/', async () => {
+    await renderAt('/libraries/?draftId=library-1');
+
+    expect(document.body.textContent).toContain('Libraries');
+    expect(document.title).toBe('BLOGE Visual Canvas - Libraries');
+    expect(query('[data-testid="libraries-mock"]').textContent).toContain('Library workbench');
+    expect(query<HTMLAnchorElement>('.topbar-link.active').getAttribute('href')).toBe('/libraries/');
   });
 
   it('renders the showcase catalog for /showcase/', async () => {

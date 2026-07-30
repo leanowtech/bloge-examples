@@ -6,12 +6,15 @@ import {
   batchReportDslImports,
   buildGatewayRunRequest,
   checkDslRewriteGate,
+  commitLibraryAuthoringDraft,
   commitDslImport,
   decideScenarioRehearsalRemediation,
   fetchGatewayDiagram,
   fetchGatewayScenarios,
   fetchGovernanceGateView,
   fetchGraphDraft,
+  fetchLibraryAuthoringDraft,
+  fetchLibraryAuthoringDrafts,
   fetchOperatorCatalog,
   fetchScenarioRehearsalBatchItems,
   fetchScenarioRehearsalBatchJobs,
@@ -27,6 +30,7 @@ import {
   governOperatorTestSuite,
   importOperatorLibraryText,
   previewDslImport,
+  previewLibraryAuthoringDraft,
   previewScenarioRehearsalRemediation,
   publishScenarioDraftSet,
   resetOperatorTestHeadersProvider,
@@ -37,11 +41,16 @@ import {
   setBlogeApiTransport,
   setRehearsalRemediationCredentialsProvider,
   saveGraphDraft,
+  saveLibraryAuthoringDraft,
   saveScenarioDraftSet,
   submitScenarioRehearsalRemediation,
   validateDraft,
   validateOperatorLibraryText,
 } from './api';
+import type {
+  VisualLibraryAuthoringCompileResult,
+  VisualLibraryAuthoringDocument,
+} from './types';
 
 describe('operator library API client', () => {
   afterEach(() => {
@@ -49,6 +58,105 @@ describe('operator library API client', () => {
     resetOperatorTestHeadersProvider();
     resetRehearsalRemediationCredentialsProvider();
     vi.restoreAllMocks();
+  });
+
+  it('fences progressive library save, preview, and commit with exact revisions and fingerprints', async () => {
+    const document: VisualLibraryAuthoringDocument = {
+      schemaVersion: 'bloge.visualLibraryAuthoring.v1',
+      library: { id: 'support-tools', version: '1.0.0', owner: 'support-team' },
+      operators: {},
+      functions: {},
+      types: {},
+    };
+    const stored = {
+      schemaVersion: 'bloge.visualLibraryAuthoringDraft.v1',
+      draftId: 'support-draft',
+      revision: 3,
+      sourceMode: 'QUICK',
+      document,
+      fingerprint: 'sha256:draft',
+      createdAt: '2026-07-30T00:00:00Z',
+      updatedAt: '2026-07-30T00:00:01Z',
+      savedBy: 'visual-library-workbench',
+    };
+    const preview: VisualLibraryAuthoringCompileResult = {
+      schemaVersion: 'bloge.visualLibraryCompileResult.v1',
+      draftId: 'support-draft',
+      authoringRevision: 3,
+      authoringFingerprint: 'sha256:authoring',
+      compileFingerprint: 'sha256:compile',
+      compilerVersion: '1',
+      grammarVersion: '1',
+      catalogFingerprint: 'sha256:catalog',
+      previewAuthority: 'SERVER_AUTHORITATIVE',
+      canonicalFingerprint: 'sha256:canonical',
+      sourceMap: [],
+      diagnostics: [],
+      confirmationRequests: [],
+      readiness: {
+        state: 'READY',
+        importable: true,
+        strongSchemaReady: true,
+        designReady: true,
+        productionReady: false,
+        gates: [],
+      },
+      diff: {
+        libraryId: 'support-tools',
+        baseRevision: 11,
+        changed: true,
+        addedOperatorCount: 0,
+        removedOperatorCount: 0,
+        changedOperatorCount: 0,
+      },
+    };
+    const calls: Array<{ url: string; init?: RequestInit }> = [];
+    setBlogeApiTransport(async (input, init) => {
+      const url = String(input);
+      calls.push({ url, init });
+      if (url.endsWith('/drafts') && !init) {
+        return jsonResponse([stored]);
+      }
+      if (url.endsWith('/drafts/support-draft') && !init) {
+        return jsonResponse(stored);
+      }
+      if (url.endsWith('/drafts/support-draft') && init?.method === 'PUT') {
+        const headers = new Headers(init.headers);
+        expect(headers.get('If-Match')).toBe('"2"');
+        expect(JSON.parse(String(init.body))).toEqual({
+          sourceMode: 'QUICK',
+          document,
+          actor: 'visual-library-workbench',
+        });
+        return jsonResponse(stored);
+      }
+      if (url.endsWith('/drafts/support-draft/preview')) {
+        expect(new Headers(init?.headers).get('If-Match')).toBe('"3"');
+        return jsonResponse(preview);
+      }
+      if (url.endsWith('/drafts/support-draft/commit')) {
+        expect(new Headers(init?.headers).get('If-Match')).toBe('"3"');
+        expect(JSON.parse(String(init?.body))).toMatchObject({
+          authoringFingerprint: 'sha256:authoring',
+          compileFingerprint: 'sha256:compile',
+          catalogFingerprint: 'sha256:catalog',
+          canonicalFingerprint: 'sha256:canonical',
+          targetRevision: 11,
+          actor: 'visual-library-workbench',
+          reason: 'contract reviewed',
+        });
+        return jsonResponse({ schemaVersion: 'bloge.visualLibraryAuthoringCommitResult.v1' });
+      }
+      throw new Error(`Unexpected request: ${url}`);
+    });
+
+    await expect(fetchLibraryAuthoringDrafts()).resolves.toEqual([stored]);
+    await expect(fetchLibraryAuthoringDraft('support-draft')).resolves.toEqual(stored);
+    await expect(saveLibraryAuthoringDraft('support-draft', 2, document)).resolves.toEqual(stored);
+    await expect(previewLibraryAuthoringDraft('support-draft', 3)).resolves.toEqual(preview);
+    await expect(commitLibraryAuthoringDraft('support-draft', 3, preview, 'contract reviewed'))
+      .resolves.toMatchObject({ schemaVersion: 'bloge.visualLibraryAuthoringCommitResult.v1' });
+    expect(calls).toHaveLength(5);
   });
 
   it('saves, loads, and publishes an exact Scenario revision with separate purposes', async () => {
@@ -1617,4 +1725,11 @@ function publishSingleGoldenSuite() {
     expectedOutput: {},
     transportResponse: null,
   }]);
+}
+
+function jsonResponse(body: unknown, init: ResponseInit = {}): Response {
+  return new Response(JSON.stringify(body), {
+    ...init,
+    headers: { 'Content-Type': 'application/json', ...init.headers },
+  });
 }

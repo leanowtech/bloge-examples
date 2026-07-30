@@ -109,14 +109,13 @@ export default function StartImportDialog({
               <strong>Import DSL</strong>
               <span>Visualize an existing BLOGE flow with best-effort schema inference.</span>
             </button>
-            <button
-              type="button"
+            <a
+              href="/libraries/"
               data-testid="author-start-choice:library"
-              onClick={() => onSectionChange('library')}
             >
-              <strong>Import operator library</strong>
-              <span>Add governed operators before composing a new graph.</span>
-            </button>
+              <strong>Create operator library</strong>
+              <span>Use the guided Workbench, examples, preview, and governed commit.</span>
+            </a>
             <button type="button" data-testid="author-start-choice:blank" onClick={onBlankGraph}>
               <strong>Blank graph</strong>
               <span>Open the operator palette and build from an empty canvas.</span>

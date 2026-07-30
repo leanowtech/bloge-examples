@@ -2051,6 +2051,10 @@ author_url() {
     echo "http://localhost:$(configured_port)/author/"
 }
 
+libraries_url() {
+    echo "http://localhost:$(configured_port)/libraries/"
+}
+
 rehearsals_url() {
     echo "http://localhost:$(configured_port)/rehearsals/"
 }
@@ -2142,6 +2146,7 @@ print_urls() {
     cat <<EOF
 Demo URLs:
   Author canvas:   $(author_url)
+  Library author:  $(libraries_url)
   Rehearsals:      $(rehearsals_url)
   Showcase:        $(showcase_url)
   Legacy composer: $(legacy_url)

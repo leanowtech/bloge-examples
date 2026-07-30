@@ -1177,7 +1177,7 @@ describe('AuthorCanvas built-in canvas examples', () => {
     await assertNoSevereViolations();
   });
 
-  it('routes v2 start choices to the existing validated import forms', async () => {
+  it('routes DSL to its validated form and libraries to the guided Workbench', async () => {
     await act(async () => {
       root = createRoot(host);
       root.render(<AuthorCanvas workspaceVersion="v2" />);
@@ -1189,9 +1189,8 @@ describe('AuthorCanvas built-in canvas examples', () => {
 
     await click(query<HTMLButtonElement>('[aria-label="Close start dialog"]'));
     await click(query<HTMLButtonElement>('.author-secondary-actions button:first-child'));
-    await click(query<HTMLButtonElement>('[data-testid="author-start-choice:library"]'));
-    expect(query('.workspace').getAttribute('data-start-section')).toBe('library');
-    expect(query('[data-testid="library-intake"]').textContent).toContain('Library');
+    expect(query<HTMLAnchorElement>('[data-testid="author-start-choice:library"]').getAttribute('href'))
+      .toBe('/libraries/');
   });
 
   it('loads, runs, and reviews a complete example through the v2 primary action', async () => {

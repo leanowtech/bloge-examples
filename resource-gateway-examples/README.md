@@ -67,6 +67,7 @@ silently consuming work.
 | Open | Best first move |
 | --- | --- |
 | `http://localhost:8080/author/` | Build a schema-constrained graph on the visual canvas |
+| `http://localhost:8080/libraries/` | Create an operator and built-in function library with structured builders, authoritative preview, autosave, and exact revision commit |
 | `http://localhost:8080/rehearsals/` | Triage exact-scope Scenario batches and inspect signed evidence; without `--scenario-batch`, the page shows a capability-aware unavailable state |
 | `http://localhost:8080/showcase/` | Explore guided product scenarios and sample outputs |
 | `http://localhost:8080/examples/gateway` | Use the legacy Custom Composer regression surface |
@@ -104,6 +105,13 @@ open **Test**, run the two-row table, close the legacy table overlay, and choose
 The Run Evidence view is bound to the last executed Scenario and shows its assertion comparison,
 terminal output, mocked/real node boundary, and exploratory content fingerprint. A green execution
 is deliberately still `Evidence incomplete` until Contract and Governance are checked.
+
+For the shortest Library demo, open **Libraries**, choose **Customer Support Triage** under
+**Complete examples**, select an operator or built-in function in the left tree, and edit its
+structured fields in the center. The right side is a server-authoritative canonical preview:
+autosave stores an exact revision, diagnostics jump back to their source field, and
+**Import Design Catalog** is enabled only when that exact preview remains importable. An ETag
+conflict blocks further commit until **Reload** restores the latest stored revision.
 | `PUT http://localhost:8080/api/mirror/outcome-selected-populations/uploads/{uploadId}/chunks/{chunkIndex}` | Stage or exactly replay one manifest-declared content-addressed chunk |
 | `GET http://localhost:8080/api/mirror/outcome-selected-populations/uploads/{uploadId}` | Read payload-free durable progress, expiry, and finalization state |
 | `POST http://localhost:8080/api/mirror/outcome-selected-populations/uploads/{uploadId}/finalize` | Finalize a complete upload through the existing governed population admission |

@@ -30,6 +30,16 @@ public class GatewayExamplePageController {
     }
 
     /**
+     * Forwards the progressive operator-library Workbench route to the shared Vite SPA.
+     *
+     * @return static resource forward target
+     */
+    @GetMapping({"/libraries", "/libraries/"})
+    public String libraryWorkbench() {
+        return "forward:/libraries/index.html";
+    }
+
+    /**
      * Forwards the Scenario Owner workbench route to the shared Vite-built SPA.
      *
      * @return static resource forward target

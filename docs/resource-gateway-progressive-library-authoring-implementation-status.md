@@ -8,10 +8,11 @@
 >
 > 说明：方案审计的 97 分评价设计成熟度，不代表本页所述功能已经实现。
 
-## 1. 已完成：Canonical 地基、Stage 0 与 Stage 1 生命周期
+## 1. 已完成：Canonical 地基、Stage 0 与 Stage 1 Workbench
 
 先把 Workbench 依赖的语法、编译和诊断协议做成可测试内核；随后完成持久化
-draft、ETag 并发控制和 preview-fenced design catalog commit。图形化 Workbench 仍在实施。
+draft、ETag 并发控制和 preview-fenced design catalog commit；当前已补齐可直接体验的
+图形化 Workbench 垂直切片。
 
 | 能力 | 当前实现 | 验证 |
 | --- | --- | --- |
@@ -39,11 +40,18 @@ draft、ETag 并发控制和 preview-fenced design catalog commit。图形化 Wo
 | ETag concurrency | save/preview/commit 必须携带最后观察到的 `If-Match` revision；并发创建和 stale writer 返回 `412`，无 last-write-wins | controller、service 与 HTTP 集成测试 |
 | Preview-fenced commit | commit 重新读取 exact draft 并重新编译，同时校验 authoring、compiler、catalog、canonical fingerprint 和 target registry revision | source/catalog/canonical drift 负例及真实 registry commit 测试 |
 | Commit audit receipt | 成功提交返回 draft/revision、四类 fingerprint、目标 library revision、canonical snapshot、预览证据、actor 与时间 | service 与 HTTP 集成测试 |
+| Library Workbench | `/libraries/` 提供独立产品路由；Graph Author 的 Operator Library 入口可直接进入 | App route、Spring MVC forward 与打包配置测试 |
+| 渐进式起始页 | Quick Create、Infer from Samples、Discover Existing Assets、Advanced Import 四入口；未实现路径明确标为 handoff，不伪装可用 | route/component 测试 |
+| 完整内置样例 | 客服分流、订单履约、风险决策三个样例均含 named types、operators、built-in functions 与 test refs | model/component 测试 |
+| 结构化 Builder | Library Tree、named type field editor、九类 archetype、input/output tree/table、function overload、example/test ref 编辑器 | model/component 测试 |
+| 权威 Preview UX | debounce autosave 后自动调用服务端 preview；展示 readiness、diagnostics、confirmation、canonical contract 与 exact commit receipt | Workbench 状态流测试 |
+| 冲突恢复 | UI 可见 dirty/saving/saved/conflict/error 状态；`412` 后禁用预览并要求 Reload 权威 revision | Workbench ETag 冲突测试 |
+| 视觉验收 | 1280×720 三栏无页面横向溢出；390×844 顺序折叠且只有资产树局部横向滚动；完整样例、operator 选择、autosave 和 `DESIGN_READY` preview 实机通过 | 本地打包 JAR + 真实浏览器 desktop/mobile 检查，console 无 error/warning |
 
 旧的 operator-only library constructor、raw JSON/YAML validate/import endpoint、revision 和 registry
 存储格式保持兼容。Stage 0 定向回归共 143 个测试通过，其中包含既有 raw import
 控制器的 104 个用例；新增 lifecycle repository/service/controller 与真实 HTTP 闭环
-共 8 个专门用例，并继续通过完整应用上下文回归。
+共 8 个专门用例。Workbench 前端生产构建通过，34 个前端测试文件共 338 个用例全绿。
 
 ## 2. 当前权威规则
 
@@ -80,9 +88,10 @@ incompatible duplicate
 
 尚未实现的能力：
 
-1. 没有 Library Workbench、字段树、Builder、Fix-it 和 Readiness 可视化页面；autosave
-   协议已经可用，但浏览器端尚未接入；
-2. 没有 sample inference、fixture 生成/解析、operator/function test runner；
+1. Sample inference 与 discovery 入口目前是诚实 handoff；尚未生成 observed facts、
+   confidence、confirmation queue 或 discovery review；
+2. diagnostic 已可点击定位，但还没有可审计的自动 Fix-it；没有 fixture 生成/解析及
+   operator/function test runner；
 3. `imports` 当前只保留声明，跨 library type resolution 会被明确拒绝；
 4. preview impact 只描述当前 operator ref 与 registry revision 差异，不等同于 graph、
    publication 或运行时 binding 的全链路影响分析；
@@ -91,24 +100,25 @@ incompatible duplicate
 6. commit 在单实例事务边界内重新校验所有栅栏，但 callable 全局冲突仍依赖应用层 registry
    快照，多副本并发写入尚无数据库唯一所有权约束；
 7. 尚未建立 Builder、canonical API、VS Code、本地/远端 compiler 和 BLOGE runtime 的多实现 parity；
-8. 尚无浏览器端视觉与无障碍验收证据。
+8. Workbench 已完成一次真实浏览器 desktop/mobile 视觉检查，但尚无固定截图回归、
+   任务计时和独立无障碍验收证据。
 
 ## 4. 目标差距
 
 以下评分只用于迭代收敛，不等同于产品成熟度评分。按目标方案交付面加权，当前约完成
-**58%**，剩余差距约 **42%**。
+**72%**，剩余差距约 **28%**。
 
 | 交付面 | 权重 | 当前完成 | 主要缺口 |
 | --- | ---: | ---: | --- |
 | Canonical 兼容与安全地基 | 15 | 14 | capability negotiation、compatible alias 的显式 owner/provenance model |
 | Authoring model、grammar、compiler、source map | 20 | 19 | 跨库类型 resolution 与多实现 parity |
 | Draft/preview/commit lifecycle | 12 | 11 | durable revision、ETag 和五重栅栏完成；缺 tenant-scope、多副本原子 ownership |
-| 图形化 Workbench 与渐进披露 | 18 | 0 | Start/Tree/Builder/Preview/Readiness |
+| 图形化 Workbench 与渐进披露 | 18 | 14 | Start/Tree/Builder/Preview/Readiness、autosave、冲突恢复和 exact commit 已完成；缺 Fix-it、任务计时与浏览器验收 |
 | Sample inference、confirmation、fixture/test | 10 | 1 | 只有 test ref 与 confirmation contract；缺 observed/confirmed 证据链及 runner |
 | Discovery adapter 与 runtime parity | 8 | 3 | 已有 adapters；尚未统一 authoring fact projection |
 | 企业级隔离、配额、审计、可观测性 | 10 | 4 | 可复用 registry/revision 基础；缺 authoring 专属控制面 |
 | 文档、golden、browser、parity 证据 | 7 | 6 | 文档与 compiler golden 完成；缺浏览器与跨实现 parity 证据 |
-| **合计** | **100** | **58** | **差距 42%** |
+| **合计** | **100** | **72** | **差距 28%** |
 
 当前数据库 registry 的 callable 冲突检查基于进程内快照，能保护单实例及普通 H2/JDBC 使用，但还不是多副本并发写入下的原子全局约束。工业化阶段仍需引入规范化 callable ownership 表、数据库唯一约束或可证明的串行化事务，不能仅依赖应用层 preflight。
 
@@ -116,13 +126,14 @@ incompatible duplicate
 
 ## 5. 下一迭代
 
-下一步进入 Stage 1 图形化垂直切片：
+下一步完成 Stage 1 验收并进入 Stage 2：
 
-1. 以四种入口创建或导入 library draft；
-2. 实现带稳定节点 identity 的 Library Tree、operator/type/function Builder；
-3. 接入 canonical preview、source-map 跳转、diagnostic Fix-it 与 readiness；
-4. 接入 debounce autosave、可见 save state、ETag conflict recovery 和 preview-fenced commit；
-5. 加入 tenant/RBAC、配额和审计边界，不能让浏览器直接绕过治理调用 raw import。
+1. 用真实浏览器在 desktop/mobile 下验收三栏布局、字段表、diagnostic 跳转和 commit；
+2. 补可审计 Fix-it、键盘任务流、无障碍扫描与 60/30 秒任务计时；
+3. 实现 multi-sample inference、observed/declared/confirmed facts 和 confirmation queue；
+4. 接入 fixture contract、operator/function runner 与 fingerprint-bound evidence；
+5. 将 discovery adapters 收敛为统一 authoring fact projection；
+6. 加入 tenant/RBAC、配额和审计边界，不能让浏览器直接绕过治理调用 raw import。
 
 Stage 1 Exit Gate 是新用户可只用 Builder 完成 pure operator 与 overload function 定义，
 诊断可定位回字段，两个浏览器标签制造 stale preview 时旧标签提交被阻断，提交产物与当前

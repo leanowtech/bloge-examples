@@ -769,6 +769,145 @@ export interface OperatorLibraryValidationResult {
   importReadiness?: OperatorLibraryImportReadiness;
 }
 
+/** Human-oriented source model edited by the progressive Library Workbench. */
+export interface VisualLibraryAuthoringDocument {
+  schemaVersion: 'bloge.visualLibraryAuthoring.v1';
+  library: {
+    id: string;
+    name?: string;
+    version?: string;
+    owner?: string;
+    status?: string;
+  };
+  defaults?: {
+    operatorVersion?: string;
+    namespace?: string;
+  };
+  types?: Record<string, unknown>;
+  operators?: Record<string, VisualOperatorAuthoring>;
+  functions?: Record<string, VisualFunctionAuthoring>;
+  imports?: Array<{ libraryId: string; version: string; fingerprint: string }>;
+  examples?: Record<string, unknown>;
+}
+
+/** Compact operator source owned by the Workbench. */
+export interface VisualOperatorAuthoring {
+  name?: string;
+  description?: string;
+  archetype?: string;
+  version?: string;
+  tags?: string[];
+  input?: Record<string, unknown>;
+  output?: Record<string, unknown>;
+  config?: unknown;
+  effect?: string;
+  idempotency?: string;
+  streaming?: boolean;
+  durable?: boolean;
+  requiresSecrets?: boolean;
+  runtime?: unknown;
+  tests?: Array<{ ref: string }>;
+}
+
+/** Compact built-in function source owned by the Workbench. */
+export interface VisualFunctionAuthoring {
+  name?: string;
+  namespace?: string;
+  description?: string;
+  category?: string;
+  signature?: string;
+  signatures?: string[];
+  examples?: string[];
+  tests?: Array<{ ref: string }>;
+}
+
+/** One persisted, optimistically locked Workbench source revision. */
+export interface VisualLibraryAuthoringDraft {
+  schemaVersion: 'bloge.visualLibraryAuthoringDraft.v1';
+  draftId: string;
+  revision: number;
+  sourceMode: 'QUICK' | 'CANONICAL';
+  document: VisualLibraryAuthoringDocument;
+  fingerprint: string;
+  createdAt: string;
+  updatedAt: string;
+  savedBy: string;
+}
+
+export interface VisualAuthoringDiagnostic {
+  level: string;
+  code: string;
+  message: string;
+  authoringPath: string;
+  canonicalPath?: string;
+  fixes?: Array<{ kind: string; label: string; target: string }>;
+  metadata?: Record<string, unknown>;
+}
+
+export interface VisualLibraryAuthoringCompileResult {
+  schemaVersion: 'bloge.visualLibraryCompileResult.v1';
+  draftId: string;
+  authoringRevision: number;
+  authoringFingerprint: string;
+  compileFingerprint: string;
+  compilerVersion: string;
+  grammarVersion: string;
+  catalogFingerprint: string;
+  previewAuthority: 'SERVER_AUTHORITATIVE' | 'LOCAL_PREVIEW';
+  canonicalLibrary?: OperatorLibrary;
+  canonicalFingerprint: string;
+  sourceMap: Array<{
+    authoringPath: string;
+    canonicalPath: string;
+    origin: string;
+    evidenceRef?: string;
+  }>;
+  diagnostics: VisualAuthoringDiagnostic[];
+  confirmationRequests: Array<{
+    code: string;
+    authoringPath: string;
+    question: string;
+    allowedValues: string[];
+  }>;
+  readiness: {
+    state: string;
+    importable: boolean;
+    strongSchemaReady: boolean;
+    designReady: boolean;
+    productionReady: boolean;
+    gates: Array<{
+      code: string;
+      level: string;
+      message: string;
+      authoringPath: string;
+      blocking: boolean;
+    }>;
+  };
+  diff?: {
+    libraryId: string;
+    baseRevision: number;
+    changed: boolean;
+    addedOperatorCount: number;
+    removedOperatorCount: number;
+    changedOperatorCount: number;
+  };
+  impact?: Record<string, unknown>;
+}
+
+export interface VisualLibraryAuthoringCommitResult {
+  schemaVersion: 'bloge.visualLibraryAuthoringCommitResult.v1';
+  draftId: string;
+  authoringRevision: number;
+  authoringFingerprint: string;
+  canonicalFingerprint: string;
+  catalogFingerprintBeforeCommit: string;
+  targetRevision: number;
+  library: OperatorLibrary;
+  preview: VisualLibraryAuthoringCompileResult;
+  committedAt: string;
+  committedBy: string;
+}
+
 /** Projection review for adapting bloge.capabilityCatalog.v1 into a visual operator library. */
 export interface CapabilityCatalogProjectionReview {
   schemaVersion?: string;

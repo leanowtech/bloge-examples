@@ -48,6 +48,10 @@ import type {
   ToolStudioIntegrationEnvelope,
   VisualValidationResult,
   VisualGraphRunRecord,
+  VisualLibraryAuthoringCommitResult,
+  VisualLibraryAuthoringCompileResult,
+  VisualLibraryAuthoringDocument,
+  VisualLibraryAuthoringDraft,
 } from './types';
 import type {
   ContractCompatibilityReport,
@@ -387,6 +391,96 @@ export async function adaptCapabilityCatalogText(sourceText: string): Promise<Ca
       headers: { 'Content-Type': 'text/plain' },
       body: sourceText,
     }),
+  );
+}
+
+/** Lists durable progressive-library authoring drafts. */
+export async function fetchLibraryAuthoringDrafts(): Promise<VisualLibraryAuthoringDraft[]> {
+  return readJson<VisualLibraryAuthoringDraft[]>(
+    await sendRequest('/admin/visual-operator-library-authoring/drafts'),
+  );
+}
+
+/** Loads one exact current progressive-library authoring draft. */
+export async function fetchLibraryAuthoringDraft(
+  draftId: string,
+): Promise<VisualLibraryAuthoringDraft> {
+  return readJsonMutation<VisualLibraryAuthoringDraft>(
+    await sendRequest(
+      `/admin/visual-operator-library-authoring/drafts/${encodeURIComponent(draftId)}`,
+    ),
+  );
+}
+
+/** Stores the next source revision under an If-Match optimistic concurrency fence. */
+export async function saveLibraryAuthoringDraft(
+  draftId: string,
+  expectedRevision: number,
+  document: VisualLibraryAuthoringDocument,
+  sourceMode: VisualLibraryAuthoringDraft['sourceMode'] = 'QUICK',
+): Promise<VisualLibraryAuthoringDraft> {
+  return readJsonMutation<VisualLibraryAuthoringDraft>(
+    await sendRequest(
+      `/admin/visual-operator-library-authoring/drafts/${encodeURIComponent(draftId)}`,
+      {
+        method: 'PUT',
+        headers: {
+          'Content-Type': 'application/json',
+          'If-Match': `"${Math.max(0, expectedRevision)}"`,
+        },
+        body: JSON.stringify({
+          sourceMode,
+          document,
+          actor: 'visual-library-workbench',
+        }),
+      },
+    ),
+  );
+}
+
+/** Compiles the exact persisted revision against the current target catalog. */
+export async function previewLibraryAuthoringDraft(
+  draftId: string,
+  revision: number,
+): Promise<VisualLibraryAuthoringCompileResult> {
+  return readJsonMutation<VisualLibraryAuthoringCompileResult>(
+    await sendRequest(
+      `/admin/visual-operator-library-authoring/drafts/${encodeURIComponent(draftId)}/preview`,
+      {
+        method: 'POST',
+        headers: { 'If-Match': `"${Math.max(0, revision)}"` },
+      },
+    ),
+  );
+}
+
+/** Commits only the exact authoritative preview into the Design Catalog. */
+export async function commitLibraryAuthoringDraft(
+  draftId: string,
+  revision: number,
+  preview: VisualLibraryAuthoringCompileResult,
+  reason: string,
+): Promise<VisualLibraryAuthoringCommitResult> {
+  return readJsonMutation<VisualLibraryAuthoringCommitResult>(
+    await sendRequest(
+      `/admin/visual-operator-library-authoring/drafts/${encodeURIComponent(draftId)}/commit`,
+      {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'If-Match': `"${Math.max(0, revision)}"`,
+        },
+        body: JSON.stringify({
+          authoringFingerprint: preview.authoringFingerprint,
+          compileFingerprint: preview.compileFingerprint,
+          catalogFingerprint: preview.catalogFingerprint,
+          canonicalFingerprint: preview.canonicalFingerprint,
+          targetRevision: preview.diff?.baseRevision ?? 0,
+          actor: 'visual-library-workbench',
+          reason,
+        }),
+      },
+    ),
   );
 }
 
