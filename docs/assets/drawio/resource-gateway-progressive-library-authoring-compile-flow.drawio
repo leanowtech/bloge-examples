@@ -1,0 +1,187 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<mxfile host="drawio" version="30.0.4">
+  <diagram name="Compile Flow">
+    <mxGraphModel dx="1900" dy="1040" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="1900" pageHeight="1040" math="0" shadow="0">
+      <root>
+        <mxCell id="0"/>
+        <mxCell id="1" parent="0"/>
+        <mxCell id="title" value="Authoring Draft → Canonical Contract：确定性编译、诊断回映射与原子导入" style="text;html=1;align=left;verticalAlign=middle;fontFamily=Arial;fontSize=18;fontStyle=1;fontColor=#263238;" vertex="1" parent="1">
+          <mxGeometry x="40" y="20" width="1200" height="40" as="geometry"/>
+        </mxCell>
+        <mxCell id="subtitle" value="编译器只负责把已声明或已确认的事实展开成标准合同；推断证据不会被静默提升为生产事实" style="text;html=1;align=left;verticalAlign=middle;fontFamily=Arial;fontSize=11;fontColor=#546e7a;" vertex="1" parent="1">
+          <mxGeometry x="40" y="60" width="1100" height="30" as="geometry"/>
+        </mxCell>
+        <mxCell id="legend" value="" style="group;pointerEvents=0;" vertex="1" parent="1">
+          <mxGeometry x="1300" y="35" width="560" height="45" as="geometry"/>
+        </mxCell>
+        <mxCell id="legend-orange" value="" style="rounded=0;html=1;fillColor=#fff3e0;strokeColor=#e65100;" vertex="1" parent="legend">
+          <mxGeometry x="0" y="10" width="18" height="18" as="geometry"/>
+        </mxCell>
+        <mxCell id="legend-orange-text" value="编译" style="text;html=1;align=left;verticalAlign=middle;fontFamily=Arial;fontSize=10;fontColor=#455a64;" vertex="1" parent="legend">
+          <mxGeometry x="22" y="7" width="55" height="24" as="geometry"/>
+        </mxCell>
+        <mxCell id="legend-blue" value="" style="rounded=0;html=1;fillColor=#e3f2fd;strokeColor=#1565c0;" vertex="1" parent="legend">
+          <mxGeometry x="100" y="10" width="18" height="18" as="geometry"/>
+        </mxCell>
+        <mxCell id="legend-blue-text" value="合同" style="text;html=1;align=left;verticalAlign=middle;fontFamily=Arial;fontSize=10;fontColor=#455a64;" vertex="1" parent="legend">
+          <mxGeometry x="122" y="7" width="55" height="24" as="geometry"/>
+        </mxCell>
+        <mxCell id="legend-yellow" value="" style="rounded=0;html=1;fillColor=#fff9c4;strokeColor=#f57c00;" vertex="1" parent="legend">
+          <mxGeometry x="200" y="10" width="18" height="18" as="geometry"/>
+        </mxCell>
+        <mxCell id="legend-yellow-text" value="确认" style="text;html=1;align=left;verticalAlign=middle;fontFamily=Arial;fontSize=10;fontColor=#455a64;" vertex="1" parent="legend">
+          <mxGeometry x="222" y="7" width="55" height="24" as="geometry"/>
+        </mxCell>
+        <mxCell id="legend-green" value="" style="rounded=0;html=1;fillColor=#e8f5e9;strokeColor=#2e7d32;" vertex="1" parent="legend">
+          <mxGeometry x="300" y="10" width="18" height="18" as="geometry"/>
+        </mxCell>
+        <mxCell id="legend-green-text" value="提交" style="text;html=1;align=left;verticalAlign=middle;fontFamily=Arial;fontSize=10;fontColor=#455a64;" vertex="1" parent="legend">
+          <mxGeometry x="322" y="7" width="55" height="24" as="geometry"/>
+        </mxCell>
+        <mxCell id="legend-red" value="" style="rounded=0;html=1;fillColor=#ffebee;strokeColor=#c62828;" vertex="1" parent="legend">
+          <mxGeometry x="400" y="10" width="18" height="18" as="geometry"/>
+        </mxCell>
+        <mxCell id="legend-red-text" value="阻断" style="text;html=1;align=left;verticalAlign=middle;fontFamily=Arial;fontSize=10;fontColor=#455a64;" vertex="1" parent="legend">
+          <mxGeometry x="422" y="7" width="55" height="24" as="geometry"/>
+        </mxCell>
+
+        <mxCell id="inputs" value="输入事实" style="swimlane;startSize=32;horizontal=1;rounded=0;whiteSpace=wrap;html=1;container=1;pointerEvents=0;fillColor=#eceff1;strokeColor=#455a64;fontFamily=Arial;fontSize=13;fontStyle=1;fontColor=#263238;" vertex="1" parent="1">
+          <mxGeometry x="40" y="120" width="260" height="610" as="geometry"/>
+        </mxCell>
+        <mxCell id="input-doc" value="Authoring Document&#xa;UI model / quick YAML / canonical" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#e3f2fd;strokeColor=#1565c0;fontFamily=Arial;fontSize=11;fontColor=#263238;" vertex="1" parent="inputs">
+          <mxGeometry x="30" y="60" width="200" height="80" as="geometry"/>
+        </mxCell>
+        <mxCell id="input-evidence" value="Inference Evidence&#xa;sample / DSL / API / registry" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#fff9c4;strokeColor=#f57c00;fontFamily=Arial;fontSize=11;fontColor=#263238;" vertex="1" parent="inputs">
+          <mxGeometry x="30" y="180" width="200" height="80" as="geometry"/>
+        </mxCell>
+        <mxCell id="input-confirm" value="Confirmation Records&#xa;actor + evidence digest + path" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#f3e5f5;strokeColor=#6a1b9a;fontFamily=Arial;fontSize=11;fontColor=#263238;" vertex="1" parent="inputs">
+          <mxGeometry x="30" y="300" width="200" height="80" as="geometry"/>
+        </mxCell>
+        <mxCell id="input-catalog" value="Compiler Catalogs&#xa;types / archetypes / grammar version" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#fff9c4;strokeColor=#f57c00;fontFamily=Arial;fontSize=11;fontColor=#263238;" vertex="1" parent="inputs">
+          <mxGeometry x="30" y="420" width="200" height="80" as="geometry"/>
+        </mxCell>
+
+        <mxCell id="pipeline" value="Pure Authoring Compiler" style="swimlane;startSize=32;horizontal=1;rounded=0;whiteSpace=wrap;html=1;container=1;pointerEvents=0;fillColor=#fff3e0;strokeColor=#e65100;fontFamily=Arial;fontSize=13;fontStyle=1;fontColor=#263238;" vertex="1" parent="1">
+          <mxGeometry x="350" y="120" width="1020" height="610" as="geometry"/>
+        </mxCell>
+        <mxCell id="parse" value="1  Safe Parse&#xa;size / depth / token limits" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#e65100;fontFamily=Arial;fontSize=11;fontColor=#263238;" vertex="1" parent="pipeline">
+          <mxGeometry x="30" y="65" width="180" height="80" as="geometry"/>
+        </mxCell>
+        <mxCell id="normalize" value="2  Normalize AST&#xa;stable order / defaults / aliases" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#e65100;fontFamily=Arial;fontSize=11;fontColor=#263238;" vertex="1" parent="pipeline">
+          <mxGeometry x="280" y="65" width="180" height="80" as="geometry"/>
+        </mxCell>
+        <mxCell id="resolve" value="3  Resolve Types&#xa;named refs / cycles / constraints" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#e65100;fontFamily=Arial;fontSize=11;fontColor=#263238;" vertex="1" parent="pipeline">
+          <mxGeometry x="530" y="65" width="180" height="80" as="geometry"/>
+        </mxCell>
+        <mxCell id="expand" value="4  Expand Archetypes&#xa;safe defaults / required questions" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#e65100;fontFamily=Arial;fontSize=11;fontColor=#263238;" vertex="1" parent="pipeline">
+          <mxGeometry x="780" y="65" width="180" height="80" as="geometry"/>
+        </mxCell>
+        <mxCell id="merge" value="5  Merge Confirmed Facts&#xa;declared &gt; confirmed &gt; observed" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#fff9c4;strokeColor=#f57c00;fontFamily=Arial;fontSize=11;fontColor=#263238;" vertex="1" parent="pipeline">
+          <mxGeometry x="155" y="220" width="220" height="80" as="geometry"/>
+        </mxCell>
+        <mxCell id="signature" value="6  Parse Function Signatures&#xa;overload / optional / variadic" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#e3f2fd;strokeColor=#1565c0;fontFamily=Arial;fontSize=11;fontColor=#263238;" vertex="1" parent="pipeline">
+          <mxGeometry x="400" y="220" width="220" height="80" as="geometry"/>
+        </mxCell>
+        <mxCell id="assemble" value="7  Assemble Canonical Library&#xa;SchemaEnvelope / ports / capabilities" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#e3f2fd;strokeColor=#1565c0;fontFamily=Arial;fontSize=11;fontStyle=1;fontColor=#263238;" vertex="1" parent="pipeline">
+          <mxGeometry x="645" y="220" width="220" height="80" as="geometry"/>
+        </mxCell>
+        <mxCell id="source-map" value="Source Map&#xa;canonical JSON Pointer ↔ authoring path" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#f3e5f5;strokeColor=#6a1b9a;fontFamily=Arial;fontSize=11;fontColor=#263238;" vertex="1" parent="pipeline">
+          <mxGeometry x="155" y="375" width="220" height="80" as="geometry"/>
+        </mxCell>
+        <mxCell id="fingerprint" value="Compile Fingerprint&#xa;source + compiler + catalog digests" style="shape=cylinder3;whiteSpace=wrap;html=1;boundedLbl=1;fillColor=#e8f5e9;strokeColor=#2e7d32;fontFamily=Arial;fontSize=11;fontColor=#263238;" vertex="1" parent="pipeline">
+          <mxGeometry x="400" y="375" width="220" height="80" as="geometry"/>
+        </mxCell>
+        <mxCell id="compile-output" value="Compile Result&#xa;canonical candidate + unresolved facts" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#e8f5e9;strokeColor=#2e7d32;fontFamily=Arial;fontSize=11;fontStyle=1;fontColor=#263238;" vertex="1" parent="pipeline">
+          <mxGeometry x="645" y="375" width="220" height="80" as="geometry"/>
+        </mxCell>
+        <mxCell id="local-note" value="本地 TypeScript 编译器只产生 LOCAL_PREVIEW；服务端 Java 编译器重新编译后才可进入 import / publish" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#eceff1;strokeColor=#455a64;fontFamily=Arial;fontSize=11;fontColor=#263238;" vertex="1" parent="pipeline">
+          <mxGeometry x="155" y="500" width="710" height="55" as="geometry"/>
+        </mxCell>
+
+        <mxCell id="authority" value="权威校验与提交" style="swimlane;startSize=32;horizontal=1;rounded=0;whiteSpace=wrap;html=1;container=1;pointerEvents=0;fillColor=#e8f5e9;strokeColor=#2e7d32;fontFamily=Arial;fontSize=13;fontStyle=1;fontColor=#263238;" vertex="1" parent="1">
+          <mxGeometry x="1420" y="120" width="430" height="610" as="geometry"/>
+        </mxCell>
+        <mxCell id="validator" value="Existing Validators&#xa;library + schema + secret guard" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#e3f2fd;strokeColor=#1565c0;fontFamily=Arial;fontSize=11;fontColor=#263238;" vertex="1" parent="authority">
+          <mxGeometry x="30" y="65" width="170" height="80" as="geometry"/>
+        </mxCell>
+        <mxCell id="impact" value="Registry Diff &amp; Impact&#xa;draft / publication references" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#e3f2fd;strokeColor=#1565c0;fontFamily=Arial;fontSize=11;fontColor=#263238;" vertex="1" parent="authority">
+          <mxGeometry x="230" y="65" width="170" height="80" as="geometry"/>
+        </mxCell>
+        <mxCell id="gate" value="Readiness Gate&#xa;confirmation + function parity + governance" style="rhombus;whiteSpace=wrap;html=1;fillColor=#fff9c4;strokeColor=#f57c00;fontFamily=Arial;fontSize=11;fontStyle=1;fontColor=#263238;" vertex="1" parent="authority">
+          <mxGeometry x="125" y="205" width="180" height="110" as="geometry"/>
+        </mxCell>
+        <mxCell id="reject" value="Reject / Needs Review&#xa;stable code + Fix-it + source path" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#ffebee;strokeColor=#c62828;fontFamily=Arial;fontSize=11;fontColor=#263238;" vertex="1" parent="authority">
+          <mxGeometry x="30" y="370" width="170" height="80" as="geometry"/>
+        </mxCell>
+        <mxCell id="commit" value="Atomic Import&#xa;revision + canonical fingerprint" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#e8f5e9;strokeColor=#2e7d32;fontFamily=Arial;fontSize=11;fontStyle=1;fontColor=#263238;" vertex="1" parent="authority">
+          <mxGeometry x="230" y="370" width="170" height="80" as="geometry"/>
+        </mxCell>
+        <mxCell id="stale" value="Stale Preview Protection&#xa;If-Match authoringRevision + previewFingerprint" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#f3e5f5;strokeColor=#6a1b9a;fontFamily=Arial;fontSize=11;fontColor=#263238;" vertex="1" parent="authority">
+          <mxGeometry x="70" y="500" width="290" height="55" as="geometry"/>
+        </mxCell>
+
+        <mxCell id="feedback" value="反馈闭环：canonical validator diagnostic → source map → authoring field / signature cell → suggested fix；禁止把生成后的 JSON Pointer 直接甩给普通用户" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#f3e5f5;strokeColor=#6a1b9a;fontFamily=Arial;fontSize=11;fontStyle=1;fontColor=#263238;" vertex="1" parent="1">
+          <mxGeometry x="350" y="790" width="1500" height="70" as="geometry"/>
+        </mxCell>
+        <mxCell id="safety" value="确定性约束：相同规范化输入 + compilerVersion + catalogFingerprint 必须产生相同 canonical bytes、source map 与 fingerprint；任何差异都视为编译器回归" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#eceff1;strokeColor=#455a64;fontFamily=Arial;fontSize=11;fontStyle=1;fontColor=#263238;" vertex="1" parent="1">
+          <mxGeometry x="350" y="890" width="1500" height="70" as="geometry"/>
+        </mxCell>
+
+        <mxCell id="e1" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;endArrow=classic;endFill=1;strokeColor=#455a64;exitX=1;exitY=0.35;entryX=0;entryY=0.18;" edge="1" parent="1" source="inputs" target="pipeline">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="e2" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;endArrow=classic;endFill=1;strokeColor=#e65100;exitX=1;exitY=0.5;entryX=0;entryY=0.5;" edge="1" parent="pipeline" source="parse" target="normalize">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="e3" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;endArrow=classic;endFill=1;strokeColor=#e65100;exitX=1;exitY=0.5;entryX=0;entryY=0.5;" edge="1" parent="pipeline" source="normalize" target="resolve">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="e4" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;endArrow=classic;endFill=1;strokeColor=#e65100;exitX=1;exitY=0.5;entryX=0;entryY=0.5;" edge="1" parent="pipeline" source="resolve" target="expand">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="e5" value="normalized facts" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;endArrow=classic;endFill=1;strokeColor=#f57c00;fontFamily=Arial;fontSize=11;labelBackgroundColor=#ffffff;exitX=0.5;exitY=1;entryX=0.5;entryY=0;" edge="1" parent="pipeline" source="normalize" target="merge">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="e6" value="resolved schemas" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;endArrow=classic;endFill=1;strokeColor=#1565c0;fontFamily=Arial;fontSize=11;labelBackgroundColor=#ffffff;exitX=0.5;exitY=1;entryX=0.5;entryY=0;" edge="1" parent="pipeline" source="resolve" target="signature">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="e7" value="expanded defaults" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;endArrow=classic;endFill=1;strokeColor=#1565c0;fontFamily=Arial;fontSize=11;labelBackgroundColor=#ffffff;exitX=0.5;exitY=1;entryX=0.5;entryY=0;" edge="1" parent="pipeline" source="expand" target="assemble">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="e8" value="effective facts" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;endArrow=classic;endFill=1;strokeColor=#1565c0;fontFamily=Arial;fontSize=11;labelBackgroundColor=#ffffff;exitX=1;exitY=0.5;entryX=0;entryY=0.5;" edge="1" parent="pipeline" source="merge" target="signature">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="e9" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;endArrow=classic;endFill=1;strokeColor=#1565c0;exitX=1;exitY=0.5;entryX=0;entryY=0.65;" edge="1" parent="pipeline" source="signature" target="assemble">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="e10" value="path map" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;endArrow=classic;endFill=1;strokeColor=#6a1b9a;fontFamily=Arial;fontSize=11;labelBackgroundColor=#ffffff;exitX=0.25;exitY=1;entryX=0.5;entryY=0;" edge="1" parent="pipeline" source="assemble" target="source-map">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="e11" value="digest" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;endArrow=classic;endFill=1;strokeColor=#2e7d32;fontFamily=Arial;fontSize=11;labelBackgroundColor=#ffffff;exitX=0.5;exitY=1;entryX=0.5;entryY=0;" edge="1" parent="pipeline" source="assemble" target="fingerprint">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="e12" value="candidate" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;endArrow=classic;endFill=1;strokeColor=#2e7d32;fontFamily=Arial;fontSize=11;labelBackgroundColor=#ffffff;exitX=0.75;exitY=1;entryX=0.5;entryY=0;" edge="1" parent="pipeline" source="assemble" target="compile-output">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="e13" value="authoritative preview" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;endArrow=classic;endFill=1;strokeColor=#2e7d32;fontFamily=Arial;fontSize=11;labelBackgroundColor=#ffffff;exitX=1;exitY=0.6;entryX=0;entryY=0.35;" edge="1" parent="1" source="pipeline" target="authority">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="e14" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;endArrow=classic;endFill=1;strokeColor=#1565c0;exitX=0.5;exitY=1;entryX=0.25;entryY=0;" edge="1" parent="authority" source="validator" target="gate">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="e15" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;endArrow=classic;endFill=1;strokeColor=#1565c0;exitX=0.5;exitY=1;entryX=0.75;entryY=0;" edge="1" parent="authority" source="impact" target="gate">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="e16" value="blocked" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;endArrow=classic;endFill=1;strokeColor=#c62828;fontFamily=Arial;fontSize=11;labelBackgroundColor=#ffffff;exitX=0.25;exitY=1;entryX=0.5;entryY=0;" edge="1" parent="authority" source="gate" target="reject">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="e17" value="ready" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;endArrow=classic;endFill=1;strokeColor=#2e7d32;fontFamily=Arial;fontSize=11;labelBackgroundColor=#ffffff;exitX=0.75;exitY=1;entryX=0.5;entryY=0;" edge="1" parent="authority" source="gate" target="commit">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="e18" value="mapped diagnostics" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;endArrow=classic;endFill=1;dashed=1;strokeColor=#6a1b9a;fontFamily=Arial;fontSize=11;labelBackgroundColor=#ffffff;exitX=0.5;exitY=1;entryX=0.9;entryY=0;" edge="1" parent="1" source="reject" target="feedback">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+      </root>
+    </mxGraphModel>
+  </diagram>
+</mxfile>
