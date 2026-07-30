@@ -68,6 +68,7 @@ public final class SampleSchemaInferencer {
                 request.samples().size(),
                 request.target().authoringPath(),
                 "",
+                true,
                 context
         );
         context.observations.sort(Comparator.comparing(
@@ -282,6 +283,7 @@ public final class SampleSchemaInferencer {
                                int populationCount,
                                String authoringPath,
                                String fieldName,
+                               boolean confirmationsSupported,
                                Context context) {
         int presenceCount = presentValues.size();
         int nullCount = (int) presentValues.stream()
@@ -300,8 +302,13 @@ public final class SampleSchemaInferencer {
         List<String> conflictTypes = conflictTypes(kinds);
         String formatCandidate = inferFormat(
                 suggestedType, nonNull, context.options.formatsEnabled());
-        List<String> enumCandidates = inferEnum(
-                suggestedType, nonNull, sensitive, context.options.enumsEnabled());
+        List<String> enumCandidates = nullableCandidate || !formatCandidate.isBlank()
+                ? List.of()
+                : inferEnum(
+                        suggestedType, nonNull, sensitive, context.options.enumsEnabled());
+        boolean nullableObject = "object".equals(suggestedType)
+                && nullableCandidate
+                && conflictTypes.isEmpty();
         int distinctCount = distinctCount(nonNull);
         String factId = fingerprint(Map.of(
                 "evidenceFingerprint", context.evidenceFingerprint,
@@ -326,19 +333,35 @@ public final class SampleSchemaInferencer {
                 conflictTypes,
                 widenReasons
         ));
-        addConfirmations(
-                factId,
-                authoringPath,
-                suggestedType,
-                requiredCandidate,
-                nullableCandidate,
-                formatCandidate,
-                enumCandidates,
-                conflictTypes,
-                sensitive,
-                kinds.contains(ValueKind.OBJECT),
-                context
-        );
+        if (confirmationsSupported) {
+            addConfirmations(
+                    factId,
+                    authoringPath,
+                    suggestedType,
+                    requiredCandidate,
+                    nullableObject ? false : nullableCandidate,
+                    formatCandidate,
+                    enumCandidates,
+                    conflictTypes,
+                    sensitive,
+                    "object".equals(suggestedType)
+                            && conflictTypes.isEmpty()
+                            && !nullableObject,
+                    context
+            );
+            if (nullableObject) {
+                context.confirmations.add(confirmation(
+                        factId,
+                        "RG.AUTHORING.INFERENCE_NULLABILITY_CONFIRMATION_REQUIRED",
+                        authoringPath,
+                        "Nullable objects require a generic JSON contract in Quick authoring. "
+                                + "Keep that conservative contract or review the samples.",
+                        "KEEP_JSON_NULLABLE",
+                        List.of("REVIEW_SAMPLES", "KEEP_JSON_NULLABLE"),
+                        true
+                ));
+            }
+        }
 
         if (sensitive) {
             context.diagnostics.add(AuthoringDiagnostic.compiler(
@@ -361,8 +384,18 @@ public final class SampleSchemaInferencer {
             ));
         }
 
+        if (nullableObject) {
+            inferObject(nonNull, authoringPath, false, context);
+            context.diagnostics.add(AuthoringDiagnostic.warning(
+                    "RG.AUTHORING.INFERENCE_NULLABLE_OBJECT_GENERALIZED",
+                    "Nullable object structure is observed but represented as json? "
+                            + "until a named nullable type is declared.",
+                    authoringPath
+            ));
+            return JsonNodeFactory.instance.textNode("json?");
+        }
         if ("object".equals(suggestedType) && conflictTypes.isEmpty()) {
-            return inferObject(nonNull, authoringPath, context);
+            return inferObject(nonNull, authoringPath, confirmationsSupported, context);
         }
         if ("array".equals(suggestedType) && conflictTypes.isEmpty()) {
             return inferArray(nonNull, authoringPath, context);
@@ -379,6 +412,7 @@ public final class SampleSchemaInferencer {
 
     private JsonNode inferObject(List<JsonNode> values,
                                  String authoringPath,
+                                 boolean confirmationsSupported,
                                  Context context) {
         List<JsonNode> objects = values.stream().filter(JsonNode::isObject).toList();
         Set<String> fieldNames = new java.util.TreeSet<>();
@@ -397,6 +431,7 @@ public final class SampleSchemaInferencer {
                     objects.size(),
                     authoringPath + "/fields/" + pointer(candidateName),
                     name,
+                    confirmationsSupported,
                     context
             ));
         }
@@ -424,6 +459,7 @@ public final class SampleSchemaInferencer {
                 elements.size(),
                 authoringPath + "/items",
                 "items",
+                false,
                 context
         );
         if (elementCandidate.isTextual()) {

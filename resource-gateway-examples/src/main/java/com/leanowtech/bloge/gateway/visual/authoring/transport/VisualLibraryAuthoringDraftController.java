@@ -7,6 +7,7 @@ import com.leanowtech.bloge.gateway.visual.authoring.model.AuthoringCompileResul
 import com.leanowtech.bloge.gateway.visual.authoring.model.AuthoringDiagnostic;
 import com.leanowtech.bloge.gateway.visual.authoring.model.AuthoringDraft;
 import com.leanowtech.bloge.gateway.visual.authoring.model.AuthoringProblem;
+import com.leanowtech.bloge.gateway.visual.authoring.model.SampleInferenceApplyRequest;
 import com.leanowtech.bloge.gateway.visual.authoring.model.SampleInferenceResult;
 import com.leanowtech.bloge.gateway.visual.authoring.model.VisualLibraryAuthoringDocument;
 import com.leanowtech.bloge.gateway.visual.authoring.parse.SampleInferenceRequestDecoder;
@@ -133,6 +134,37 @@ public final class VisualLibraryAuthoringDraftController {
         return ResponseEntity.ok()
                 .eTag(etag(expectedRevision))
                 .body(result);
+    }
+
+    @PostMapping(
+            value = "/{draftId}/infer/samples/apply",
+            consumes = MediaType.APPLICATION_JSON_VALUE,
+            produces = MediaType.APPLICATION_JSON_VALUE
+    )
+    public ResponseEntity<AuthoringDraft> applySampleInference(
+            @PathVariable String draftId,
+            @RequestHeader(name = HttpHeaders.IF_MATCH, required = false) String ifMatch,
+            @RequestBody(required = false) byte[] source) {
+        long expectedRevision = expectedRevision(ifMatch, draftId);
+        SampleInferenceRequestDecoder.ApplyDecodeResult decoded =
+                sampleInferenceDecoder.decodeApply(source);
+        if (!decoded.successful()) {
+            SampleInferenceRequestDecoder.DecodeFailure failure = decoded.failure();
+            throw failure(
+                    failure.status(),
+                    failure.code(),
+                    failure.message(),
+                    draftId,
+                    expectedRevision,
+                    failure.authoringPath()
+            );
+        }
+        AuthoringDraft stored = service.applySampleInference(
+                draftId,
+                expectedRevision,
+                decoded.request()
+        );
+        return withEtag(stored, HttpStatus.OK);
     }
 
     @PostMapping("/{draftId}/commit")

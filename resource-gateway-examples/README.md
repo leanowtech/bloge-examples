@@ -3873,8 +3873,10 @@ authoring, use `/admin/visual-operator-library-authoring/drafts/{draftId}` with
 canonical, and target-library revisions before importing a design catalog revision.
 The revision-fenced `POST .../infer/samples` endpoint derives payload-free observed
 facts and conservative candidates from at most 100 JSON samples. It never mutates the
-draft or retains raw samples; enum, format, object closure, nullability, and sensitive
-handling remain explicit confirmation work.
+draft or retains raw samples. After review, `POST .../infer/samples/apply` replays the
+same bounded request, verifies its evidence fingerprint and every explicit confirmation,
+then atomically stores the declared port, payload-free evidence, and decisions as one new
+draft revision. Editing that declared port later invalidates its attached evidence.
 See `/catalogs` for exact limits and feature flags.
 
 For Canonical Advanced import:

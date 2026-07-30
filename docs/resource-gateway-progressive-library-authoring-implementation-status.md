@@ -8,7 +8,7 @@
 >
 > 说明：方案审计的 97 分评价设计成熟度，不代表本页所述功能已经实现。
 
-## 1. 已完成：Canonical 地基、Stage 0、Stage 1 与 Stage 2.1 推断内核
+## 1. 已完成：Canonical 地基、Stage 0、Stage 1 与 Stage 2.2 原子推断采用后端
 
 先把 Workbench 依赖的语法、编译和诊断协议做成可测试内核；随后完成持久化
 draft、ETag 并发控制和 preview-fenced design catalog commit；当前已补齐可直接体验的
@@ -50,6 +50,8 @@ draft、ETag 并发控制和 preview-fenced design catalog commit；当前已补
 | Multi-sample inference | 精确绑定 draft revision 与 operator port；最多 100 个 JSON 样本，输出稳定 candidate、observed facts、统计、拓宽原因、diagnostic 与 confirmation request | inferencer、decoder、machine-schema、controller 与真实 HTTP 测试 |
 | 推断隐私边界 | 2 MiB/20,000 node/32 层及字段、数组、字符串上限；敏感值不进入 enum；原始 payload 不保存、不回显，`persistPayload=true` 明确拒绝 | 攻击边界、敏感值、错误语义和 HTTP 序列化测试 |
 | 推断能力协商 | `/catalogs` 与 `/api/integration/capabilities` 声明 request/result object version、feature flag 与 revision-fenced endpoint | capability contract 测试 |
+| 原子确认采用 | `POST .../infer/samples/apply` 重放原始 inference request、核对 evidence fingerprint、要求当前 confirmation 一一对应且值合法，再以 CAS 写入新 draft revision | applier、service、controller、严格 decoder 与真实 HTTP 测试 |
+| Payload-free provenance | draft 保存 conservative/declared candidate、字段统计与人工决定，不保存 samples；同 target 新证据替换旧证据，手工改变声明 target 时自动失效 | repository round-trip、fingerprint、敏感样本与失效测试 |
 
 旧的 operator-only library constructor、raw JSON/YAML validate/import endpoint、revision 和 registry
 存储格式保持兼容。Stage 0 定向回归共 143 个测试通过，其中包含既有 raw import
@@ -91,8 +93,8 @@ incompatible duplicate
 
 尚未实现的能力：
 
-1. Sample inference 服务端内核已生成 observed facts 与 confirmation request，但
-   Workbench 入口仍是 handoff，尚无确认、差异审阅和显式应用闭环；discovery review 未实现；
+1. Sample inference 后端已具备 observed facts、confirmation 和原子显式应用闭环，但
+   Workbench 入口仍是 handoff，尚无图形化样本输入、解释、差异审阅和确认队列；discovery review 未实现；
 2. diagnostic 已可点击定位，但还没有可审计的自动 Fix-it；没有 fixture 生成/解析及
    operator/function test runner；
 3. `imports` 当前只保留声明，跨 library type resolution 会被明确拒绝；
@@ -109,7 +111,7 @@ incompatible duplicate
 ## 4. 目标差距
 
 以下评分只用于迭代收敛，不等同于产品成熟度评分。按目标方案交付面加权，当前约完成
-**76%**，剩余差距约 **24%**。
+**78%**，剩余差距约 **22%**。
 
 | 交付面 | 权重 | 当前完成 | 主要缺口 |
 | --- | ---: | ---: | --- |
@@ -117,11 +119,11 @@ incompatible duplicate
 | Authoring model、grammar、compiler、source map | 20 | 19 | 跨库类型 resolution 与多实现 parity |
 | Draft/preview/commit lifecycle | 12 | 11 | durable revision、ETag 和五重栅栏完成；缺 tenant-scope、多副本原子 ownership |
 | 图形化 Workbench 与渐进披露 | 18 | 14 | Start/Tree/Builder/Preview/Readiness、autosave、冲突恢复和 exact commit 已完成；缺 Fix-it、任务计时与浏览器验收 |
-| Sample inference、confirmation、fixture/test | 10 | 5 | 有界 inferencer、observed facts、confirmation request、隐私边界和 API 已完成；缺 UI 确认/应用、fixture 与 runner |
+| Sample inference、confirmation、fixture/test | 10 | 7 | 有界 inferencer、observed facts、服务端重放、原子确认应用、证据失效与隐私边界完成；缺 UI、fixture 与 runner |
 | Discovery adapter 与 runtime parity | 8 | 3 | 已有 adapters；尚未统一 authoring fact projection |
 | 企业级隔离、配额、审计、可观测性 | 10 | 4 | 可复用 registry/revision 基础；缺 authoring 专属控制面 |
 | 文档、golden、browser、parity 证据 | 7 | 6 | 文档与 compiler golden 完成；缺浏览器与跨实现 parity 证据 |
-| **合计** | **100** | **76** | **差距 24%** |
+| **合计** | **100** | **78** | **差距 22%** |
 
 当前数据库 registry 的 callable 冲突检查基于进程内快照，能保护单实例及普通 H2/JDBC 使用，但还不是多副本并发写入下的原子全局约束。工业化阶段仍需引入规范化 callable ownership 表、数据库唯一约束或可证明的串行化事务，不能仅依赖应用层 preflight。
 
@@ -132,7 +134,7 @@ incompatible duplicate
 下一步完成 Stage 2 的用户闭环：
 
 1. 在 Workbench 接入样本输入、target 选择、推断结果解释、confirmation queue 与 schema diff；
-2. 只有显式确认后才把 candidate 应用到 declared contract，并持久化 evidence fingerprint 与决定；
+2. Workbench 调用已实现的原子 apply API；不得在浏览器本地伪造 candidate 或 evidence；
 3. 接入 fixture contract、operator/function runner 与 fingerprint-bound evidence；
 4. 补可审计 Fix-it、键盘任务流、无障碍扫描与 60/30 秒任务计时；
 5. 将 discovery adapters 收敛为统一 authoring fact projection；

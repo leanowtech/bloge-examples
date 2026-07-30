@@ -4,6 +4,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.leanowtech.bloge.gateway.visual.authoring.application.AuthoringPreviewService;
 import com.leanowtech.bloge.gateway.visual.authoring.compile.AuthoringCompiler;
 import com.leanowtech.bloge.gateway.visual.authoring.compile.OperatorArchetypeRegistry;
+import com.leanowtech.bloge.gateway.visual.authoring.inference.SampleSchemaInferencer;
 import com.leanowtech.bloge.gateway.visual.authoring.model.AuthoringCompileResult;
 import com.leanowtech.bloge.gateway.visual.authoring.model.AuthoringDiagnostic;
 import com.leanowtech.bloge.gateway.visual.authoring.model.AuthoringProblem;
@@ -11,6 +12,7 @@ import com.leanowtech.bloge.gateway.visual.authoring.model.VisualLibraryAuthorin
 import com.leanowtech.bloge.gateway.visual.authoring.parse.AuthoringDocumentDecoder;
 import com.leanowtech.bloge.gateway.visual.authoring.parse.CompactTypeParser;
 import com.leanowtech.bloge.gateway.visual.authoring.parse.FunctionSignatureParser;
+import com.leanowtech.bloge.gateway.visual.authoring.parse.SampleInferenceRequestDecoder;
 
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.MediaType;
@@ -118,21 +120,34 @@ public final class VisualLibraryAuthoringAdminController {
                 previewService.catalogFingerprint(),
                 CompactTypeParser.primitives(),
                 archetypes.all(),
-                Map.of(
-                        "maximumAuthoringBytes", AuthoringCompiler.MAX_AUTHORING_BYTES,
-                        "maximumTypes", AuthoringCompiler.MAX_TYPES,
-                        "maximumOperators", AuthoringCompiler.MAX_OPERATORS,
-                        "maximumFunctions", AuthoringCompiler.MAX_FUNCTIONS,
-                        "maximumSignaturesPerFunction", AuthoringCompiler.MAX_SIGNATURES_PER_FUNCTION,
-                        "maximumFieldsPerObject", AuthoringCompiler.MAX_FIELDS_PER_OBJECT,
-                        "maximumTypeDepth", AuthoringCompiler.MAX_TYPE_DEPTH,
-                        "maximumYamlAliases", AuthoringDocumentDecoder.MAXIMUM_ALIASES
+                Map.ofEntries(
+                        Map.entry("maximumAuthoringBytes", AuthoringCompiler.MAX_AUTHORING_BYTES),
+                        Map.entry("maximumTypes", AuthoringCompiler.MAX_TYPES),
+                        Map.entry("maximumOperators", AuthoringCompiler.MAX_OPERATORS),
+                        Map.entry("maximumFunctions", AuthoringCompiler.MAX_FUNCTIONS),
+                        Map.entry("maximumSignaturesPerFunction",
+                                AuthoringCompiler.MAX_SIGNATURES_PER_FUNCTION),
+                        Map.entry("maximumFieldsPerObject",
+                                AuthoringCompiler.MAX_FIELDS_PER_OBJECT),
+                        Map.entry("maximumTypeDepth", AuthoringCompiler.MAX_TYPE_DEPTH),
+                        Map.entry("maximumYamlAliases",
+                                AuthoringDocumentDecoder.MAXIMUM_ALIASES),
+                        Map.entry("maximumSampleInferenceBytes",
+                                SampleSchemaInferencer.MAXIMUM_REQUEST_BYTES),
+                        Map.entry("maximumSampleInferenceApplyBytes",
+                                SampleInferenceRequestDecoder.MAXIMUM_APPLY_REQUEST_BYTES),
+                        Map.entry("maximumInferenceSamples",
+                                SampleSchemaInferencer.MAXIMUM_SAMPLES),
+                        Map.entry("maximumInferenceNodes",
+                                SampleSchemaInferencer.MAXIMUM_TOTAL_NODES),
+                        Map.entry("maximumInferenceDepth", SampleSchemaInferencer.MAXIMUM_DEPTH)
                 ),
                 Map.of(
                         "functionOnlyLibrary", true,
                         "statelessPreview", true,
                         "crossLibraryTypeImports", false,
                         "sampleInference", true,
+                        "sampleInferenceApply", true,
                         "draftLifecycle", true,
                         "etagConcurrency", true,
                         "previewFencedCommit", true

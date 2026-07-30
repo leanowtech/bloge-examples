@@ -24,6 +24,8 @@ import com.leanowtech.bloge.gateway.visual.authoring.application.AuthoringDraftS
 import com.leanowtech.bloge.gateway.visual.authoring.model.AuthoringCompileResult;
 import com.leanowtech.bloge.gateway.visual.authoring.model.AuthoringDraft;
 import com.leanowtech.bloge.gateway.visual.authoring.model.AuthoringProblem;
+import com.leanowtech.bloge.gateway.visual.authoring.model.SampleInferenceApplyRequest;
+import com.leanowtech.bloge.gateway.visual.authoring.model.SampleInferenceRequest;
 import com.leanowtech.bloge.gateway.visual.authoring.model.SampleInferenceResult;
 import com.leanowtech.bloge.gateway.visual.authoring.model.VisualLibraryAuthoringDocument;
 import com.leanowtech.bloge.gateway.visual.authoring.transport.VisualLibraryAuthoringDraftController;
@@ -199,30 +201,23 @@ class ResourceGatewayApplicationTest {
         assertThat(preview.draftId()).isEqualTo(draftId);
 
         revisionHeaders.setContentType(MediaType.APPLICATION_JSON);
+        SampleInferenceRequest inferenceRequest = new SampleInferenceRequest(
+                SampleInferenceRequest.SCHEMA_VERSION,
+                new SampleInferenceRequest.Target(
+                        "OPERATOR", "integration:echo", "INPUT", "value"),
+                List.of(
+                        objectMapper.readTree(
+                                "{\"id\":\"one\",\"privateToken\":\"sensitive-A\"}"),
+                        objectMapper.readTree(
+                                "{\"id\":\"two\",\"privateToken\":\"sensitive-B\"}")
+                ),
+                SampleInferenceRequest.Options.defaults(),
+                "integration-inference"
+        );
         var inferred = restTemplate.exchange(
                 "/admin/visual-operator-library-authoring/drafts/" + draftId + "/infer/samples",
                 HttpMethod.POST,
-                new HttpEntity<>("""
-                        {
-                          "schemaVersion": "bloge.visualSampleInferenceRequest.v1",
-                          "target": {
-                            "assetKind": "OPERATOR",
-                            "assetRef": "integration:echo",
-                            "portDirection": "INPUT",
-                            "portName": "value"
-                          },
-                          "samples": [
-                            {"id":"one","privateToken":"sensitive-A"},
-                            {"id":"two","privateToken":"sensitive-B"}
-                          ],
-                          "options": {
-                            "suggestEnums": true,
-                            "suggestFormats": true,
-                            "persistPayload": false
-                          },
-                          "idempotencyKey": "integration-inference"
-                        }
-                        """, revisionHeaders),
+                new HttpEntity<>(inferenceRequest, revisionHeaders),
                 SampleInferenceResult.class
         );
         assertThat(inferred.getStatusCode().is2xxSuccessful()).isTrue();
@@ -239,20 +234,67 @@ class ResourceGatewayApplicationTest {
                     .doesNotContain("sensitive-B");
         });
 
+        SampleInferenceResult inference = inferred.getBody();
+        SampleInferenceApplyRequest apply = new SampleInferenceApplyRequest(
+                SampleInferenceApplyRequest.SCHEMA_VERSION,
+                inferenceRequest,
+                inference.evidenceFingerprint(),
+                inference.confirmationRequests().stream()
+                        .map(confirmation -> new SampleInferenceApplyRequest.Decision(
+                                confirmation.confirmationId(),
+                                confirmation.recommendedValue()
+                        ))
+                        .toList(),
+                "integration-test"
+        );
+        var applied = restTemplate.exchange(
+                "/admin/visual-operator-library-authoring/drafts/" + draftId
+                        + "/infer/samples/apply",
+                HttpMethod.POST,
+                new HttpEntity<>(apply, revisionHeaders),
+                AuthoringDraft.class
+        );
+        assertThat(applied.getStatusCode().is2xxSuccessful()).isTrue();
+        assertThat(applied.getHeaders().getETag()).isEqualTo("\"2\"");
+        assertThat(applied.getBody()).satisfies(draft -> {
+            assertThat(draft.revision()).isEqualTo(2);
+            assertThat(draft.evidence()).hasSize(1);
+            assertThat(draft.confirmations())
+                    .hasSize(inference.confirmationRequests().size());
+            assertThat(objectMapper.writeValueAsString(draft))
+                    .doesNotContain("\"samples\"")
+                    .doesNotContain("sensitive-A")
+                    .doesNotContain("sensitive-B");
+        });
+
+        HttpHeaders appliedHeaders = new HttpHeaders();
+        appliedHeaders.setContentType(MediaType.APPLICATION_JSON);
+        appliedHeaders.setIfMatch("\"2\"");
+        var promotedPreviewResponse = restTemplate.exchange(
+                "/admin/visual-operator-library-authoring/drafts/" + draftId + "/preview",
+                HttpMethod.POST,
+                new HttpEntity<>(appliedHeaders),
+                AuthoringCompileResult.class
+        );
+        AuthoringCompileResult promotedPreview = promotedPreviewResponse.getBody();
+        assertThat(promotedPreview).isNotNull();
+        assertThat(promotedPreview.authoringRevision()).isEqualTo(2);
+        assertThat(promotedPreview.importable()).isTrue();
+
         AuthoringDraftService.CommitRequest commitRequest =
                 new AuthoringDraftService.CommitRequest(
-                        preview.authoringFingerprint(),
-                        preview.compileFingerprint(),
-                        preview.catalogFingerprint(),
-                        preview.canonicalFingerprint(),
-                        preview.diff().baseRevision(),
+                        promotedPreview.authoringFingerprint(),
+                        promotedPreview.compileFingerprint(),
+                        promotedPreview.catalogFingerprint(),
+                        promotedPreview.canonicalFingerprint(),
+                        promotedPreview.diff().baseRevision(),
                         "integration-test",
                         "Verified lifecycle integration"
                 );
         var committed = restTemplate.exchange(
                 "/admin/visual-operator-library-authoring/drafts/" + draftId + "/commit",
                 HttpMethod.POST,
-                new HttpEntity<>(commitRequest, revisionHeaders),
+                new HttpEntity<>(commitRequest, appliedHeaders),
                 AuthoringCommitResult.class
         );
         assertThat(committed.getStatusCode().is2xxSuccessful()).isTrue();

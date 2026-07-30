@@ -305,6 +305,7 @@ class ToolStudioIntegrationServiceTest {
                         "PUT /admin/visual-operator-library-authoring/drafts/{draftId}",
                         "POST /admin/visual-operator-library-authoring/drafts/{draftId}/preview",
                         "POST /admin/visual-operator-library-authoring/drafts/{draftId}/infer/samples",
+                        "POST /admin/visual-operator-library-authoring/drafts/{draftId}/infer/samples/apply",
                         "POST /admin/visual-operator-library-authoring/drafts/{draftId}/commit",
                         "GET /api/visual/run-controls/{requestId}",
                         "POST /api/visual/run-controls/{requestId}/cancel"

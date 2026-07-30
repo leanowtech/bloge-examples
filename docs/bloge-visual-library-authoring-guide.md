@@ -287,10 +287,8 @@ catalog revision；它不等于 runtime binding 或 production publish。
 为 declared contract。
 
 ```bash
-curl --fail-with-body \
-  -H 'Content-Type: application/json' \
-  -H 'If-Match: "1"' \
-  -d '{
+cat > /tmp/sample-inference-request.json <<'JSON'
+{
     "schemaVersion": "bloge.visualSampleInferenceRequest.v1",
     "target": {
       "assetKind": "OPERATOR",
@@ -308,8 +306,15 @@ curl --fail-with-body \
       "persistPayload": false
     },
     "idempotencyKey": "support-echo-input-1"
-  }' \
-  http://localhost:8080/admin/visual-operator-library-authoring/drafts/support-quick/infer/samples
+}
+JSON
+
+curl --fail-with-body \
+  -H 'Content-Type: application/json' \
+  -H 'If-Match: "1"' \
+  --data-binary @/tmp/sample-inference-request.json \
+  http://localhost:8080/admin/visual-operator-library-authoring/drafts/support-quick/infer/samples \
+  | tee /tmp/sample-inference-result.json
 ```
 
 响应中的 `candidate` 保持 object open；日期格式、enum、required/nullable、敏感字段和类型
@@ -317,15 +322,49 @@ curl --fail-with-body \
 类型拓宽原因和敏感性。原始 `samples` 不进入响应、draft、public catalog 或日志，且
 `payloadPersisted` 固定为 `false`。需要长期保存的测试数据应另行进入受治理 fixture。
 
+推断本身不会修改 draft。审阅后必须为每个 `confirmationRequests` 项选择一个
+`allowedValues`，再调用原子应用端点。下面的命令采用服务端推荐值；生产评审不应把它当成
+无脑默认：
+
+```bash
+jq -n \
+  --slurpfile request /tmp/sample-inference-request.json \
+  --slurpfile result /tmp/sample-inference-result.json \
+  '{
+    schemaVersion: "bloge.visualSampleInferenceApplyRequest.v1",
+    inference: $request[0],
+    evidenceFingerprint: $result[0].evidenceFingerprint,
+    decisions: [
+      $result[0].confirmationRequests[] |
+      {confirmationId, value: .recommendedValue}
+    ],
+    actor: "demo-author"
+  }' \
+  | curl --fail-with-body \
+      -H 'Content-Type: application/json' \
+      -H 'If-Match: "1"' \
+      --data-binary @- \
+      http://localhost:8080/admin/visual-operator-library-authoring/drafts/support-quick/infer/samples/apply
+```
+
+服务端会用提交的原始 request 重新推断并核对 `evidenceFingerprint`。样本、target、选项、
+inferencer 版本或 draft revision 变化时返回 `409/412`；遗漏确认、重复确认、非法选项或仍为
+`REVIEW_SAMPLES` 时返回 `4xx`。成功响应是一个新 revision 的 `AuthoringDraft`，其中只保留
+声明后的 schema、payload-free evidence 和人工决定。后续手工改变该 target 时，对应 evidence
+与 confirmation 会自动失效。响应里用于审阅的 enum candidates 不进入持久化 evidence；
+只有显式选择 `DECLARE_ENUM` 时，它们才作为正式 schema 值进入 declared candidate。
+
 调用限制为 2 MiB、100 个样本、总计 20,000 个 JSON node、32 层深度、每对象/数组
-2,000 项。过期 `If-Match` 返回 `412`，未知 operator 返回 `404`，请求
+2,000 项。原子 apply envelope 为原始请求和决定预留 4 MiB，但其中的 inference request
+仍受 2 MiB 限制。过期 `If-Match` 返回 `412`，未知 operator 返回 `404`，请求
 `persistPayload=true` 返回 `422`。机器合同见：
 
 - [Sample inference request schema](schemas/bloge-visual-sample-inference-request-v1.schema.json)
 - [Sample inference result schema](schemas/bloge-visual-sample-inference-result-v1.schema.json)
+- [Sample inference apply request schema](schemas/bloge-visual-sample-inference-apply-request-v1.schema.json)
 
-当前 Workbench 还没有把 confirmation queue 做成可操作界面；本阶段先提供服务端协议与
-推断内核，客户端不得把 candidate 静默写回 declared schema。
+当前 Workbench 还没有把 confirmation queue 做成可操作界面；服务端原子采用协议已经可用，
+客户端不得绕过它或把 candidate 静默写回 declared schema。
 
 ## 11. 安全与配额
 

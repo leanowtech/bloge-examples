@@ -81,6 +81,44 @@ class SampleInferenceMachineSchemaTest {
                 .doesNotContain("value-B");
     }
 
+    @Test
+    void applySchemaRequiresExactReplayAndExplicitDecisions() throws Exception {
+        SampleInferenceRequest inference = new SampleInferenceRequest(
+                SampleInferenceRequest.SCHEMA_VERSION,
+                new SampleInferenceRequest.Target(
+                        "OPERATOR", "support:classify", "INPUT", "ticket"),
+                List.of(
+                        mapper.readTree("{\"state\":\"active\"}"),
+                        mapper.readTree("{\"state\":\"paused\"}"),
+                        mapper.readTree("{\"state\":\"retired\"}")
+                ),
+                SampleInferenceRequest.Options.defaults(),
+                "apply-request-1"
+        );
+        SampleInferenceResult result = new SampleSchemaInferencer(mapper)
+                .infer("support-draft", 3, inference);
+        SampleInferenceApplyRequest apply = new SampleInferenceApplyRequest(
+                SampleInferenceApplyRequest.SCHEMA_VERSION,
+                inference,
+                result.evidenceFingerprint(),
+                result.confirmationRequests().stream()
+                        .map(confirmation -> new SampleInferenceApplyRequest.Decision(
+                                confirmation.confirmationId(),
+                                confirmation.recommendedValue()
+                        ))
+                        .toList(),
+                "alice"
+        );
+
+        assertThat(validate(
+                applySchema(),
+                mapper.convertValue(apply, Object.class)
+        )).isEmpty();
+        assertThat(mapper.writeValueAsString(apply))
+                .contains("\"samples\"")
+                .doesNotContain("password");
+    }
+
     @SuppressWarnings("unchecked")
     private List<VisualDiagnostic> validate(Path schemaPath, Object value) throws Exception {
         Map<String, Object> schema = mapper.readValue(Files.readString(schemaPath), Map.class);
@@ -99,5 +137,10 @@ class SampleInferenceMachineSchemaTest {
     private static Path resultSchema() {
         return Path.of("..", "docs", "schemas",
                 "bloge-visual-sample-inference-result-v1.schema.json");
+    }
+
+    private static Path applySchema() {
+        return Path.of("..", "docs", "schemas",
+                "bloge-visual-sample-inference-apply-request-v1.schema.json");
     }
 }

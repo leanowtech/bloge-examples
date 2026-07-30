@@ -121,7 +121,9 @@ public class DatabaseAuthoringDraftRepository implements AuthoringDraftRepositor
                         "draftId", id,
                         "revision", nextRevision,
                         "sourceMode", candidate.sourceMode(),
-                        "document", candidate.document()
+                        "document", candidate.document(),
+                        "evidence", candidate.evidence(),
+                        "confirmations", candidate.confirmations()
                 ),
                 MAX_FINGERPRINT_BYTES
         );

@@ -9,6 +9,7 @@ import com.fasterxml.jackson.core.exc.StreamConstraintsException;
 import com.fasterxml.jackson.databind.DeserializationFeature;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.leanowtech.bloge.gateway.visual.authoring.inference.SampleSchemaInferencer;
+import com.leanowtech.bloge.gateway.visual.authoring.model.SampleInferenceApplyRequest;
 import com.leanowtech.bloge.gateway.visual.authoring.model.SampleInferenceRequest;
 
 import java.io.IOException;
@@ -19,13 +20,14 @@ import java.util.Locale;
  */
 public final class SampleInferenceRequestDecoder {
 
+    public static final int MAXIMUM_APPLY_REQUEST_BYTES = 4 * 1_048_576;
     private static final int MAXIMUM_TOKENS = 100_000;
 
     private final ObjectMapper mapper;
 
     public SampleInferenceRequestDecoder() {
         StreamReadConstraints constraints = StreamReadConstraints.builder()
-                .maxDocumentLength(SampleSchemaInferencer.MAXIMUM_REQUEST_BYTES)
+                .maxDocumentLength(MAXIMUM_APPLY_REQUEST_BYTES)
                 .maxNestingDepth(SampleSchemaInferencer.MAXIMUM_DEPTH + 8)
                 .maxTokenCount(MAXIMUM_TOKENS)
                 .maxNameLength(SampleSchemaInferencer.MAXIMUM_FIELD_NAME_LENGTH)
@@ -42,36 +44,66 @@ public final class SampleInferenceRequestDecoder {
     }
 
     public DecodeResult decode(byte[] source) {
+        DecodedValue<SampleInferenceRequest> decoded = decode(
+                source,
+                SampleInferenceRequest.class,
+                SampleSchemaInferencer.MAXIMUM_REQUEST_BYTES,
+                "RG.AUTHORING.INFERENCE_REQUEST_REQUIRED",
+                "Sample inference request is required."
+        );
+        return decoded.failure() == null
+                ? DecodeResult.decoded(decoded.value())
+                : DecodeResult.failed(decoded.failure());
+    }
+
+    public ApplyDecodeResult decodeApply(byte[] source) {
+        DecodedValue<SampleInferenceApplyRequest> decoded = decode(
+                source,
+                SampleInferenceApplyRequest.class,
+                MAXIMUM_APPLY_REQUEST_BYTES,
+                "RG.AUTHORING.INFERENCE_APPLY_REQUEST_REQUIRED",
+                "Sample inference apply request is required."
+        );
+        return decoded.failure() == null
+                ? ApplyDecodeResult.decoded(decoded.value())
+                : ApplyDecodeResult.failed(decoded.failure());
+    }
+
+    private <T> DecodedValue<T> decode(byte[] source,
+                                       Class<T> type,
+                                       int maximumBytes,
+                                       String requiredCode,
+                                       String requiredMessage) {
         if (source == null || source.length == 0) {
-            return DecodeResult.failed(new DecodeFailure(
-                    "RG.AUTHORING.INFERENCE_REQUEST_REQUIRED",
-                    "Sample inference request is required.",
+            return DecodedValue.failed(new DecodeFailure(
+                    requiredCode,
+                    requiredMessage,
                     400,
                     "/"
             ));
         }
-        if (source.length > SampleSchemaInferencer.MAXIMUM_REQUEST_BYTES) {
-            return DecodeResult.failed(limitFailure(
+        if (source.length > maximumBytes) {
+            return DecodedValue.failed(limitFailure(
                     "Sample inference request exceeds the %d byte limit."
-                            .formatted(SampleSchemaInferencer.MAXIMUM_REQUEST_BYTES)));
+                            .formatted(maximumBytes)));
         }
         try {
-            return DecodeResult.decoded(mapper.readValue(source, SampleInferenceRequest.class));
+            return DecodedValue.decoded(mapper.readValue(source, type));
         } catch (JsonProcessingException exception) {
             if (resourceLimitFailure(exception)) {
-                return DecodeResult.failed(limitFailure(safeReason(exception)));
+                return DecodedValue.failed(limitFailure(safeReason(exception)));
             }
             JsonLocation location = exception.getLocation();
             String suffix = location == null ? "" : " at line %d, column %d"
                     .formatted(location.getLineNr(), location.getColumnNr());
-            return DecodeResult.failed(new DecodeFailure(
+            return DecodedValue.failed(new DecodeFailure(
                     "RG.AUTHORING.INFERENCE_PARSE_FAILED",
                     "Sample inference request could not be parsed" + suffix + ".",
                     400,
                     "/"
             ));
         } catch (IOException exception) {
-            return DecodeResult.failed(new DecodeFailure(
+            return DecodedValue.failed(new DecodeFailure(
                     "RG.AUTHORING.INFERENCE_PARSE_FAILED",
                     "Sample inference request could not be read.",
                     400,
@@ -127,6 +159,36 @@ public final class SampleInferenceRequestDecoder {
 
         public boolean successful() {
             return request != null && failure == null;
+        }
+    }
+
+    public record ApplyDecodeResult(
+            SampleInferenceApplyRequest request,
+            DecodeFailure failure
+    ) {
+        public static ApplyDecodeResult decoded(SampleInferenceApplyRequest request) {
+            return new ApplyDecodeResult(request, null);
+        }
+
+        public static ApplyDecodeResult failed(DecodeFailure failure) {
+            return new ApplyDecodeResult(null, failure);
+        }
+
+        public boolean successful() {
+            return request != null && failure == null;
+        }
+    }
+
+    private record DecodedValue<T>(
+            T value,
+            DecodeFailure failure
+    ) {
+        private static <T> DecodedValue<T> decoded(T value) {
+            return new DecodedValue<>(value, null);
+        }
+
+        private static <T> DecodedValue<T> failed(DecodeFailure failure) {
+            return new DecodedValue<>(null, failure);
         }
     }
 

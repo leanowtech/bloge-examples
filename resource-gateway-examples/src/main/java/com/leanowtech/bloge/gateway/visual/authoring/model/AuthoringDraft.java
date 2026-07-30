@@ -1,6 +1,7 @@
 package com.leanowtech.bloge.gateway.visual.authoring.model;
 
 import java.time.Instant;
+import java.util.List;
 import java.util.Locale;
 
 /**
@@ -12,6 +13,8 @@ public record AuthoringDraft(
         long revision,
         String sourceMode,
         VisualLibraryAuthoringDocument document,
+        List<AuthoringEvidence> evidence,
+        List<AuthoringConfirmation> confirmations,
         String fingerprint,
         Instant createdAt,
         Instant updatedAt,
@@ -26,11 +29,37 @@ public record AuthoringDraft(
         draftId = normalized(draftId, "");
         revision = Math.max(0, revision);
         sourceMode = normalized(sourceMode, SOURCE_MODE_QUICK).toUpperCase(Locale.ROOT);
+        evidence = evidence == null ? List.of() : List.copyOf(evidence);
+        confirmations = confirmations == null ? List.of() : List.copyOf(confirmations);
         fingerprint = normalized(fingerprint, "");
         savedBy = normalized(savedBy, "");
         if (!SOURCE_MODE_QUICK.equals(sourceMode) && !SOURCE_MODE_CANONICAL.equals(sourceMode)) {
             throw new IllegalArgumentException("Unsupported authoring sourceMode: " + sourceMode);
         }
+    }
+
+    public AuthoringDraft(String schemaVersion,
+                          String draftId,
+                          long revision,
+                          String sourceMode,
+                          VisualLibraryAuthoringDocument document,
+                          String fingerprint,
+                          Instant createdAt,
+                          Instant updatedAt,
+                          String savedBy) {
+        this(
+                schemaVersion,
+                draftId,
+                revision,
+                sourceMode,
+                document,
+                List.of(),
+                List.of(),
+                fingerprint,
+                createdAt,
+                updatedAt,
+                savedBy
+        );
     }
 
     public AuthoringDraft withStorageIdentity(String id,
@@ -45,6 +74,8 @@ public record AuthoringDraft(
                 storedRevision,
                 sourceMode,
                 document,
+                evidence,
+                confirmations,
                 storedFingerprint,
                 originalCreatedAt,
                 storedAt,
@@ -55,12 +86,22 @@ public record AuthoringDraft(
     public static AuthoringDraft unsaved(String draftId,
                                          String sourceMode,
                                          VisualLibraryAuthoringDocument document) {
+        return unsaved(draftId, sourceMode, document, List.of(), List.of());
+    }
+
+    public static AuthoringDraft unsaved(String draftId,
+                                         String sourceMode,
+                                         VisualLibraryAuthoringDocument document,
+                                         List<AuthoringEvidence> evidence,
+                                         List<AuthoringConfirmation> confirmations) {
         return new AuthoringDraft(
                 SCHEMA_VERSION,
                 draftId,
                 0,
                 sourceMode,
                 document,
+                evidence,
+                confirmations,
                 "",
                 null,
                 null,

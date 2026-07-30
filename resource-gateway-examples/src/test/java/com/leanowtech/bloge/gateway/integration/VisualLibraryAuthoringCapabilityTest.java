@@ -24,7 +24,9 @@ class VisualLibraryAuthoringCapabilityTest {
                 .containsEntry("visualLibrarySampleInferenceRequest",
                         java.util.List.of("bloge.visualSampleInferenceRequest.v1"))
                 .containsEntry("visualLibrarySampleInferenceResult",
-                        java.util.List.of("bloge.visualSampleInferenceResult.v1"));
+                        java.util.List.of("bloge.visualSampleInferenceResult.v1"))
+                .containsEntry("visualLibrarySampleInferenceApplyRequest",
+                        java.util.List.of("bloge.visualSampleInferenceApplyRequest.v1"));
         assertThat(capabilities.features())
                 .containsEntry("visualLibraryAuthoringProtocol", true)
                 .containsEntry("visualLibraryAuthoringStatelessPreview", true)
@@ -46,6 +48,8 @@ class VisualLibraryAuthoringCapabilityTest {
                         "POST", "/admin/visual-operator-library-authoring/drafts/{draftId}/preview"),
                 new IntegrationCapabilities.Endpoint(
                         "POST", "/admin/visual-operator-library-authoring/drafts/{draftId}/infer/samples"),
+                new IntegrationCapabilities.Endpoint(
+                        "POST", "/admin/visual-operator-library-authoring/drafts/{draftId}/infer/samples/apply"),
                 new IntegrationCapabilities.Endpoint(
                         "POST", "/admin/visual-operator-library-authoring/drafts/{draftId}/commit")
         );

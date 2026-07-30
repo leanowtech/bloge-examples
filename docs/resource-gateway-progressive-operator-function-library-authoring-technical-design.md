@@ -1,6 +1,6 @@
 # Resource Gateway 渐进式算子与 Built-in Function 库创作技术方案
 
-> 状态：Approved；Stage 0、Stage 1 与 Stage 2.1 样本推断内核已实现，Stage 2 UI/测试闭环及 Stage 3-4 待实施
+> 状态：Approved；Stage 0、Stage 1 与 Stage 2.2 样本推断/确认原子应用后端已实现，Stage 2 UI/测试闭环及 Stage 3-4 待实施
 >
 > 日期：2026-07-30
 >
@@ -786,6 +786,39 @@ evidenceFingerprint =
 
 响应保留 `evidenceFingerprint`、inferencer version、field statistics 和 confirmation requests。相同 fingerprint 合并证据引用，不重复扩大 presence count。
 
+### 6.7 推断事实的原子采用
+
+`infer/samples` 不写 draft。用户审阅全部 confirmation 后，客户端把**原样 inference
+request**、已观察的 `evidenceFingerprint` 和每项显式决定提交给
+`infer/samples/apply`。服务端必须重新推断，不能信任客户端回传的 candidate：
+
+```text
+read exact draft revision
+  → replay bounded inference from submitted ephemeral samples
+  → constant-time compare evidence fingerprint
+  → require exactly one allowed decision per current confirmation
+  → apply nested decisions deepest-first
+  → update exact operator port
+  → persist declared candidate + payload-free evidence + decisions
+  → CAS write one new draft revision
+```
+
+约束：
+
+- `REVIEW_SAMPLES` 是未解决状态，不能用于 apply；
+- 类型冲突只有显式选择 `KEEP_UNKNOWN` 或修正样本后才能继续；
+- 数组 item 在紧凑 authoring schema 无法无损表达时只产生 observation，不提供伪确认；
+- 同一 target 的新 evidence 替换旧 evidence，防止历史无限增长；
+- 普通编辑若不改变已声明 target，证据继续有效；修改该 target 后证据和决定同步失效；
+- 草稿 fingerprint 覆盖 document、evidence 和 confirmations；
+- draft revision/history 不保存 `samples`，敏感字段观察不保存 enum 值；
+- inference 响应可暂时展示 enum candidates，但持久化 evidence 清空这些样本原值；只有
+  `DECLARE_ENUM` 的显式决定可把它们升级为 declared schema；
+- inference request 上限为 2 MiB；包含原请求与决定的 apply envelope 上限为 4 MiB，
+  但其嵌套 inference 仍独立执行 2 MiB 语义校验；
+- schema 中名为 `accessToken` 的合法字段不是秘密值；raw-secret guard 只扫描 runtime、
+  function examples 和显式 examples 等可能承载值的区域。
+
 ## 7. 确定性编译链路
 
 ![确定性编译与诊断回映射](assets/resource-gateway-progressive-library-authoring-compile-flow.svg)
@@ -1047,6 +1080,7 @@ functions:
 | `POST` | `/drafts/{draftId}/preview` | 权威编译、validate、diff、readiness |
 | `POST` | `/drafts/{draftId}/commit` | 原子导入 canonical registry |
 | `POST` | `/drafts/{draftId}/infer/samples` | 从样例生成 observed facts |
+| `POST` | `/drafts/{draftId}/infer/samples/apply` | 服务端重放并原子采用全部显式确认 |
 | `POST` | `/drafts/{draftId}/infer/dsl` | 从 DSL 生成 topology facts |
 | `POST` | `/imports/capability-catalog/preview` | capability catalog 投影 |
 | `POST` | `/imports/asyncapi/preview` | AsyncAPI 投影 |
@@ -1477,9 +1511,10 @@ Exit Gate：
 
 ### 15.3 Stage 2：样例推断与测试闭环
 
-实现状态：**进行中**。Stage 2.1 已交付有界 multi-sample inferencer、机器协议、
-revision-fenced API、observed facts、保守 candidate、confirmation request 与 payload-free
-隐私边界；Workbench 确认/应用流程、fixture 与 runner 仍待完成。详见
+实现状态：**进行中**。Stage 2.2 已交付有界 multi-sample inferencer、机器协议、
+revision-fenced API、observed facts、保守 candidate、confirmation request、服务端重放、
+全量决定校验、原子 draft promotion 与 payload-free 隐私边界；Workbench 图形化确认流程、
+fixture 与 runner 仍待完成。详见
 [实现状态](resource-gateway-progressive-library-authoring-implementation-status.md)。
 
 交付：

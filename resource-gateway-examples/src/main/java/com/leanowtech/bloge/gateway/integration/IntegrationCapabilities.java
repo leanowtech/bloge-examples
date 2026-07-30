@@ -410,6 +410,8 @@ public record IntegrationCapabilities(
                 "bloge.visualSampleInferenceRequest.v1"));
         objects.put("visualLibrarySampleInferenceResult", List.of(
                 "bloge.visualSampleInferenceResult.v1"));
+        objects.put("visualLibrarySampleInferenceApplyRequest", List.of(
+                "bloge.visualSampleInferenceApplyRequest.v1"));
         objects.put("graphDraftIntegrationBundle", List.of(GraphDraftIntegrationBundle.SCHEMA_VERSION));
         objects.put("graphDraftDependencyProfile", List.of(GraphDraftDependencyProfile.SCHEMA_VERSION_V1,
                 GraphDraftDependencyProfile.SCHEMA_VERSION));
@@ -1303,6 +1305,7 @@ public record IntegrationCapabilities(
                 new Endpoint("PUT", "/admin/visual-operator-library-authoring/drafts/{draftId}"),
                 new Endpoint("POST", "/admin/visual-operator-library-authoring/drafts/{draftId}/preview"),
                 new Endpoint("POST", "/admin/visual-operator-library-authoring/drafts/{draftId}/infer/samples"),
+                new Endpoint("POST", "/admin/visual-operator-library-authoring/drafts/{draftId}/infer/samples/apply"),
                 new Endpoint("POST", "/admin/visual-operator-library-authoring/drafts/{draftId}/commit"),
                 new Endpoint("GET", "/api/visual/run-controls/{requestId}"),
                 new Endpoint("POST", "/api/visual/run-controls/{requestId}/cancel")

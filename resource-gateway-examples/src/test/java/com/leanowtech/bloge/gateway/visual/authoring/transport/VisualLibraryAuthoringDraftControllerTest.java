@@ -8,6 +8,8 @@ import com.leanowtech.bloge.gateway.visual.authoring.application.AuthoringLifecy
 import com.leanowtech.bloge.gateway.visual.authoring.application.AuthoringPreviewService;
 import com.leanowtech.bloge.gateway.visual.authoring.compile.AuthoringCompiler;
 import com.leanowtech.bloge.gateway.visual.authoring.model.AuthoringDraft;
+import com.leanowtech.bloge.gateway.visual.authoring.model.SampleInferenceApplyRequest;
+import com.leanowtech.bloge.gateway.visual.authoring.model.SampleInferenceRequest;
 import com.leanowtech.bloge.gateway.visual.authoring.model.VisualLibraryAuthoringDocument;
 import com.leanowtech.bloge.gateway.visual.catalog.InMemoryOperatorLibraryRegistry;
 import com.leanowtech.bloge.gateway.visual.catalog.OperatorLibraryValidator;
@@ -129,6 +131,43 @@ class VisualLibraryAuthoringDraftControllerTest {
                 422,
                 "RG.AUTHORING.INFERENCE_PAYLOAD_PERSISTENCE_UNSUPPORTED"
         );
+
+        SampleInferenceRequest exactRequest = new SampleInferenceRequest(
+                SampleInferenceRequest.SCHEMA_VERSION,
+                new SampleInferenceRequest.Target(
+                        "OPERATOR", "support:echo", "INPUT", "value"),
+                List.of(
+                        mapper.readTree("{\"id\":\"one\",\"score\":1}"),
+                        mapper.readTree("{\"id\":\"two\",\"score\":2}")
+                ),
+                SampleInferenceRequest.Options.defaults(),
+                "echo-input-inference"
+        );
+        SampleInferenceApplyRequest apply = new SampleInferenceApplyRequest(
+                SampleInferenceApplyRequest.SCHEMA_VERSION,
+                exactRequest,
+                inference.getBody().evidenceFingerprint(),
+                inference.getBody().confirmationRequests().stream()
+                        .map(confirmation -> new SampleInferenceApplyRequest.Decision(
+                                confirmation.confirmationId(),
+                                confirmation.recommendedValue()
+                        ))
+                        .toList(),
+                "alice"
+        );
+        var applied = controller.applySampleInference(
+                "support-library",
+                "\"1\"",
+                mapper.writeValueAsBytes(apply)
+        );
+        assertThat(applied.getHeaders().getETag()).isEqualTo("\"2\"");
+        assertThat(applied.getBody()).satisfies(draft -> {
+            assertThat(draft.revision()).isEqualTo(2);
+            assertThat(draft.evidence()).hasSize(1);
+            assertThat(draft.document().operators().get("support:echo")
+                    .input().get("value").path("fields").path("score").asText())
+                    .isEqualTo("integer");
+        });
     }
 
     private static byte[] inferenceRequest(String operatorRef, boolean persistPayload) {

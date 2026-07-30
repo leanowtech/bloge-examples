@@ -2,6 +2,7 @@ package com.leanowtech.bloge.gateway.visual.authoring.inference;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.leanowtech.bloge.gateway.visual.authoring.model.AuthoringDiagnostic;
 import com.leanowtech.bloge.gateway.visual.authoring.model.SampleInferenceRequest;
 import com.leanowtech.bloge.gateway.visual.authoring.model.SampleInferenceResult;
 
@@ -226,6 +227,41 @@ class SampleSchemaInferencerTest {
     }
 
     @Test
+    void doesNotOfferCombinationsTheQuickGrammarCannotPreserve() throws Exception {
+        SampleInferenceResult formatted = infer(
+                "{\"createdAt\":\"2026-07-01\"}",
+                "{\"createdAt\":\"2026-07-02\"}",
+                "{\"createdAt\":\"2026-07-03\"}"
+        );
+        assertThat(formatted.confirmationRequests())
+                .filteredOn(confirmation -> confirmation.authoringPath()
+                        .endsWith("/fields/createdAt"))
+                .extracting(SampleInferenceResult.InferenceConfirmation::code)
+                .contains("RG.AUTHORING.INFERENCE_FORMAT_CONFIRMATION_REQUIRED")
+                .doesNotContain("RG.AUTHORING.INFERENCE_ENUM_CONFIRMATION_REQUIRED");
+
+        SampleInferenceResult nullableObject = infer(
+                "{\"profile\":{\"id\":\"one\"}}",
+                "{\"profile\":null}"
+        );
+        assertThat(nullableObject.candidate().path("fields").path("profile?").asText())
+                .isEqualTo("json?");
+        assertThat(nullableObject.confirmationRequests())
+                .anySatisfy(confirmation -> {
+                    assertThat(confirmation.code())
+                            .isEqualTo("RG.AUTHORING.INFERENCE_NULLABILITY_CONFIRMATION_REQUIRED");
+                    assertThat(confirmation.recommendedValue())
+                            .isEqualTo("KEEP_JSON_NULLABLE");
+                    assertThat(confirmation.blocking()).isTrue();
+                })
+                .noneSatisfy(confirmation -> assertThat(confirmation.authoringPath())
+                        .contains("/profile?/fields/"));
+        assertThat(nullableObject.diagnostics())
+                .extracting(AuthoringDiagnostic::code)
+                .contains("RG.AUTHORING.INFERENCE_NULLABLE_OBJECT_GENERALIZED");
+    }
+
+    @Test
     void keepsEmptyArrayItemsUnknown() throws Exception {
         SampleInferenceResult result = infer("{\"items\":[]}", "{\"items\":[]}");
 
@@ -234,6 +270,23 @@ class SampleSchemaInferencerTest {
         assertThat(result.diagnostics())
                 .extracting(diagnostic -> diagnostic.code())
                 .contains("RG.AUTHORING.INFERENCE_EMPTY_ARRAY");
+    }
+
+    @Test
+    void explainsArrayItemsWithoutOfferingUnrepresentableConfirmations() throws Exception {
+        SampleInferenceResult result = infer(
+                "{\"events\":[{\"occurredAt\":\"2026-07-01\"}]}",
+                "{\"events\":[{\"occurredAt\":\"2026-07-02\"}]}"
+        );
+
+        assertThat(result.observations())
+                .anySatisfy(observation -> assertThat(observation.authoringPath())
+                        .endsWith("/fields/events/items"))
+                .anySatisfy(observation -> assertThat(observation.authoringPath())
+                        .endsWith("/fields/events/items/fields/occurredAt"));
+        assertThat(result.confirmationRequests())
+                .noneSatisfy(confirmation -> assertThat(confirmation.authoringPath())
+                        .contains("/items"));
     }
 
     @Test

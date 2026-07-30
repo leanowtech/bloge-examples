@@ -91,6 +91,10 @@ class VisualLibraryAuthoringAdminControllerTest {
                 .andExpect(jsonPath("$.features.functionOnlyLibrary").value(true))
                 .andExpect(jsonPath("$.features.statelessPreview").value(true))
                 .andExpect(jsonPath("$.features.sampleInference").value(true))
+                .andExpect(jsonPath("$.features.sampleInferenceApply").value(true))
+                .andExpect(jsonPath("$.limits.maximumSampleInferenceBytes").value(2097152))
+                .andExpect(jsonPath("$.limits.maximumSampleInferenceApplyBytes").value(4194304))
+                .andExpect(jsonPath("$.limits.maximumInferenceSamples").value(100))
                 .andExpect(jsonPath("$.limits.maximumYamlAliases").value(20))
                 .andExpect(jsonPath("$.archetypes.length()").value(9));
     }
