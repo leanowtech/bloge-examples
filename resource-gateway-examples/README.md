@@ -126,11 +126,13 @@ To experience exact-draft tests, open **Customer Support Triage**, select
 uncommitted canonical schemas and is labelled `SCHEMA CONTRACT`. Select the `trim` function and
 run its generated boundary row to see a real `BOUND` BLOGE runtime call; custom
 `support.normalizeText` remains visibly `UNBOUND` instead of producing a false pass. These rows
-are ephemeral and fingerprint-bound. The `test`/`staging` runtime can now persist an explicitly
-chosen row through the governed fixture API: it binds the exact draft and asset fingerprints,
-redacts sensitive fields, encrypts the payload, appends a payload-free audit event in the same
-transaction, and erases ciphertext at retention expiry. The Workbench **Save as fixture** action
-and production isolation workers remain the next authoring UX/runtime steps.
+are ephemeral and fingerprint-bound. In a `test`/`staging` deployment, use **Save fixture** on any
+test row or **Save samples as fixture** after sample analysis. The confirmation panel collects data
+classification, retention, JSON Pointer redaction, and optional prior revision before it binds the
+exact draft and asset fingerprints, redacts sensitive fields, encrypts the payload, appends a
+payload-free audit event in the same transaction, and erases ciphertext at retention expiry. The
+success receipt intentionally shows fingerprints and `Payload returned: No`, never the raw test
+data. Production isolation workers remain the next runtime step.
 
 The `test` profile supplies a deterministic local-only fixture key so the demo script works without
 secret setup. A `staging` start fails closed unless both `RG_AUTHORING_FIXTURE_ACTIVE_KEY_ID` and

@@ -17,6 +17,7 @@ const apiMocks = vi.hoisted(() => ({
   draftOperator: vi.fn(),
   runFunction: vi.fn(),
   runOperator: vi.fn(),
+  saveFixture: vi.fn(),
 }));
 
 vi.mock('../api', () => ({
@@ -33,6 +34,7 @@ vi.mock('../api', () => ({
   draftLibraryAuthoringOperatorTest: apiMocks.draftOperator,
   runLibraryAuthoringFunctionTest: apiMocks.runFunction,
   runLibraryAuthoringOperatorTest: apiMocks.runOperator,
+  saveLibraryAuthoringFixture: apiMocks.saveFixture,
 }));
 
 describe('AssetTestTable', () => {
@@ -115,6 +117,45 @@ describe('AssetTestTable', () => {
     expect(query('[data-testid="library-test-dialog"]').textContent).toContain('NOT_RUN');
   });
 
+  it('requires explicit governance confirmation before persisting one parsed test row', async () => {
+    apiMocks.draftOperator.mockResolvedValue(operatorDraft());
+    apiMocks.saveFixture.mockResolvedValue(fixtureReceipt());
+    await renderTable('operator', 'demo:echo');
+
+    await click(query('[data-testid="operator-fixture-save-0"]'));
+    expect(query('[data-testid="governed-fixture-dialog"]').textContent)
+      .toContain('Save as fixture');
+    expect(query<HTMLButtonElement>('[data-testid="governed-fixture-save"]').disabled).toBe(true);
+    expect(query<HTMLTextAreaElement>('[aria-label="Fixture redaction paths"]').placeholder)
+      .toBe('/inputs/request\n/mockedOutputs/result');
+
+    await click(query('[data-testid="governed-fixture-confirm"]'));
+    expect(query<HTMLButtonElement>('[data-testid="governed-fixture-save"]').disabled).toBe(false);
+    await click(query('[data-testid="governed-fixture-save"]'));
+    await settle();
+
+    expect(apiMocks.saveFixture).toHaveBeenCalledWith(
+      'test-draft',
+      3,
+      expect.objectContaining({
+        schemaVersion: 'bloge.visualAuthoringFixtureSaveRequest.v1',
+        sourceKind: 'OPERATOR_TEST_CASE',
+        assetKind: 'OPERATOR',
+        assetRef: 'demo:echo',
+        classification: 'INTERNAL',
+        retentionDays: 7,
+        payload: expect.objectContaining({
+          inputs: { request: 'sample' },
+          mockedOutputs: { result: 'sample' },
+        }),
+      }),
+    );
+    expect(query('[data-testid="governed-fixture-receipt"]').textContent)
+      .toContain('operator:demo:echo:generated-contract-case');
+    expect(query('[data-testid="governed-fixture-receipt"]').textContent)
+      .toContain('Payload returnedNo');
+  });
+
   async function renderTable(kind: 'operator' | 'function', assetRef: string) {
     root = createRoot(host);
     await act(async () => {
@@ -123,6 +164,7 @@ describe('AssetTestTable', () => {
           kind={kind}
           assetRef={assetRef}
           prepareDraft={async () => storedDraft()}
+          fixtureAvailable
           onConflict={vi.fn()}
           onClose={vi.fn()}
         />,
@@ -304,5 +346,36 @@ function functionEvidence(): VisualAuthoringFunctionTestRunEvidence {
       message: 'No exact callable was found in the BLOGE runtime inventory.',
     }],
     payloadPersisted: false,
+  };
+}
+
+function fixtureReceipt() {
+  return {
+    schemaVersion: 'bloge.visualAuthoringFixtureReceipt.v1',
+    tenantId: 'tenant-a',
+    organizationId: 'organization-a',
+    projectId: 'project-a',
+    environmentId: 'test',
+    region: 'region-a',
+    fixtureId: 'operator:demo:echo:generated-contract-case',
+    revision: 1,
+    sourceKind: 'OPERATOR_TEST_CASE',
+    assetKind: 'OPERATOR',
+    assetRef: 'demo:echo',
+    draftId: 'test-draft',
+    authoringRevision: 3,
+    authoringFingerprint: `sha256:${'a'.repeat(64)}`,
+    canonicalFingerprint: `sha256:${'c'.repeat(64)}`,
+    artifactFingerprint: `sha256:${'o'.repeat(64)}`,
+    payloadFingerprint: `sha256:${'p'.repeat(64)}`,
+    classification: 'INTERNAL',
+    retentionPolicyVersion: 'retention-v1',
+    expiresAt: '2026-08-06T00:00:00Z',
+    redactionProfileVersion: 'redaction-v1',
+    redactedPaths: [],
+    createdAt: '2026-07-30T00:00:00Z',
+    createdBy: 'tester',
+    payloadPersisted: true,
+    payloadReturned: false,
   };
 }

@@ -1,6 +1,6 @@
 # Resource Gateway 渐进式算子与 Built-in Function 库创作技术方案
 
-> 状态：Approved；Stage 0、Stage 1、Stage 2.4 与 Stage 2.5 治理型 fixture 后端已实现，Workbench fixture 入口、生产隔离 runner 及 Stage 3-4 待实施
+> 状态：Approved；Stage 0、Stage 1、Stage 2.4 与 Stage 2.5 治理型 fixture 前后端闭环已实现，生产隔离 runner 及 Stage 3-4 待实施
 >
 > 日期：2026-07-30
 >
@@ -766,6 +766,19 @@ Stage 2.5 已实现上述服务端边界：
 - fixture 与 `AUTHORING_FIXTURE_SAVED` 安全事件在独立 test-runtime 数据库的同一事务提交；
 - retention worker 到期后物理清除密文，只保留可校验、payload-free lineage tombstone。
 
+Workbench 同步实现了显式保存闭环：
+
+1. `/catalogs` 的 `governedFixturePersistence` 为 `true` 时，样本推断审阅页显示
+   **Save samples as fixture**，operator/function Test Table 每一行显示 **Save fixture**；
+2. 入口只由用户点击触发，推断或试跑成功都不会自动持久化 payload；
+3. 保存面板要求确认 fixture id、数据分级、1/7/14/30 天保留期和逐行 JSON Pointer；
+4. 更新既有 fixture 时，Advanced 区要求填写最后观察到的 fixture revision；
+5. 用户必须勾选“这是测试数据且治理选择适当”后才能提交；
+6. 成功态只展示 fixture revision、classification、expiresAt、redacted path 数量和
+   artifact/payload fingerprint，明确显示 `Payload returned: No`；
+7. capability 未发布时入口保持可见但禁用，并说明该部署不支持治理型 fixture，
+   因而 production profile 不会被误导为可保存。
+
 ### 6.6 Inference 请求的幂等性
 
 同一批样例重复提交不应产生不同 fact id 或重复 confirmation：
@@ -1503,7 +1516,11 @@ Java 和 TypeScript test suite 消费同一批 vectors。
 9. Advanced mode 升级；
 10. stale preview 后 commit 被阻断；
 11. VS Code local preview 与 remote authoritative 状态区分；
-12. 1024px 桌面完成定义，390px 可只读审阅。
+12. 从 operator/function test row 显式保存 governed fixture；
+13. 从 sample inference 显式保存 fixture，并确认 payload-aware redaction path；
+14. desktop/mobile receipt 均不回传 payload，且 revision、retention、classification、
+    redaction count 与 fingerprint 可见。
+15. 1024px 桌面完成定义，390px 可只读审阅。
 
 ## 15. 迁移与交付计划
 
@@ -1561,8 +1578,8 @@ revision-fenced API、observed facts、保守 candidate、confirmation request�
 机器合同、runtime binding 状态、受限 function runner、单行/批量 UI 和 fingerprint-bound
 临时 evidence。Stage 2.5 已交付 exact-draft、五维 enterprise-scoped、AES-256-GCM
 加密、自动/显式脱敏、不可变修订、事务安全审计与到期 tombstone 的 fixture 后端协议。
-Workbench 显式 sample/test-row-to-fixture 入口、生产隔离 runner 与持久化签名 evidence
-仍待完成。详见
+Workbench 也已交付显式 sample/test-row-to-fixture 入口、治理确认和 payload-free receipt；
+生产隔离 runner 与持久化签名 evidence 仍待完成。详见
 [实现状态](resource-gateway-progressive-library-authoring-implementation-status.md)。
 
 交付：

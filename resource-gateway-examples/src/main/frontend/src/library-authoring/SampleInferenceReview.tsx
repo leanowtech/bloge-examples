@@ -20,6 +20,9 @@ import type {
   VisualSampleInferenceResult,
   VisualSamplePortDirection,
 } from '../types';
+import GovernedFixtureSavePanel, {
+  type GovernedFixtureSaveLaunch,
+} from './GovernedFixtureSavePanel';
 
 export interface SampleInferenceLaunch {
   operatorKey: string;
@@ -31,6 +34,7 @@ export interface SampleInferenceLaunch {
 interface SampleInferenceReviewProps extends SampleInferenceLaunch {
   operator: VisualOperatorAuthoring;
   prepareDraft: () => Promise<VisualLibraryAuthoringDraft>;
+  fixtureAvailable: boolean;
   onApplied: (draft: VisualLibraryAuthoringDraft) => void;
   onConflict: () => void;
   onClose: () => void;
@@ -60,6 +64,7 @@ export default function SampleInferenceReview({
   portName: initialPortName,
   sampleText: initialSampleText,
   prepareDraft,
+  fixtureAvailable,
   onApplied,
   onConflict,
   onClose,
@@ -76,10 +81,11 @@ export default function SampleInferenceReview({
   const [decisions, setDecisions] = useState<Record<string, string>>({});
   const [busy, setBusy] = useState<'infer' | 'apply' | null>(null);
   const [error, setError] = useState('');
+  const [fixtureLaunch, setFixtureLaunch] = useState<GovernedFixtureSaveLaunch | null>(null);
   const dialogRef = useRef<HTMLDivElement>(null);
 
   useDialogFocusTrap({
-    open: true,
+    open: fixtureLaunch === null,
     dialogRef,
     onDismiss: () => {
       if (busy === null) {
@@ -468,6 +474,32 @@ export default function SampleInferenceReview({
           <button type="button" className="secondary" onClick={onClose} disabled={busy !== null}>
             Cancel
           </button>
+          {result && request && (
+            <button
+              type="button"
+              className="secondary"
+              disabled={busy !== null || !fixtureAvailable}
+              title={fixtureAvailable
+                ? 'Persist these samples as a classified, expiring fixture'
+                : 'Fixture persistence is unavailable in this deployment'}
+              onClick={() => setFixtureLaunch({
+                draftId: result.draftId,
+                authoringRevision: result.authoringRevision,
+                sourceKind: 'SAMPLE',
+                assetKind: 'OPERATOR',
+                assetRef: operatorKey,
+                payload: {
+                  target: request.target,
+                  samples: request.samples,
+                  options: request.options,
+                },
+                suggestedFixtureId: sampleFixtureId(operatorKey, request.target.portName),
+              })}
+              data-testid="sample-inference-save-fixture"
+            >
+              Save samples as fixture
+            </button>
+          )}
           {!result ? (
             <button
               type="button"
@@ -490,6 +522,13 @@ export default function SampleInferenceReview({
             </button>
           )}
         </footer>
+        {fixtureLaunch && (
+          <GovernedFixtureSavePanel
+            {...fixtureLaunch}
+            onConflict={onConflict}
+            onClose={() => setFixtureLaunch(null)}
+          />
+        )}
       </div>
     </div>
   );
@@ -674,6 +713,13 @@ function inferenceId(): string {
     return `visual-${crypto.randomUUID()}`;
   }
   return `visual-${Date.now().toString(36)}`;
+}
+
+function sampleFixtureId(operatorKey: string, portName: string): string {
+  return `sample:${operatorKey}:${portName}`
+    .replace(/[^A-Za-z0-9._:-]+/g, '-')
+    .replace(/^-+/, '')
+    .slice(0, 160);
 }
 
 function shortFingerprint(fingerprint: string): string {

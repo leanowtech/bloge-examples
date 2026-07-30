@@ -50,10 +50,13 @@ import type {
   VisualGraphRunRecord,
   VisualAuthoringFunctionTestDraft,
   VisualAuthoringFunctionTestRunEvidence,
+  VisualAuthoringFixtureReceipt,
+  VisualAuthoringFixtureSaveRequest,
   VisualAuthoringOperatorTestDraft,
   VisualAuthoringOperatorTestRunEvidence,
   VisualFunctionTestSuite,
   VisualLibraryAuthoringCommitResult,
+  VisualLibraryAuthoringCatalogs,
   VisualLibraryAuthoringCompileResult,
   VisualLibraryAuthoringDocument,
   VisualLibraryAuthoringDraft,
@@ -410,6 +413,13 @@ export async function fetchLibraryAuthoringDrafts(): Promise<VisualLibraryAuthor
   );
 }
 
+/** Reads exact Workbench limits and optional runtime feature availability. */
+export async function fetchLibraryAuthoringCatalogs(): Promise<VisualLibraryAuthoringCatalogs> {
+  return readJsonMutation<VisualLibraryAuthoringCatalogs>(
+    await sendRequest('/admin/visual-operator-library-authoring/catalogs'),
+  );
+}
+
 /** Loads one exact current progressive-library authoring draft. */
 export async function fetchLibraryAuthoringDraft(
   draftId: string,
@@ -596,6 +606,27 @@ export async function runLibraryAuthoringFunctionTest(
           schemaVersion: 'bloge.visualAuthoringFunctionTestRunRequest.v1',
           suite,
         }),
+      },
+    ),
+  );
+}
+
+/** Persists one explicit, classified and redacted fixture against an exact draft revision. */
+export async function saveLibraryAuthoringFixture(
+  draftId: string,
+  revision: number,
+  request: VisualAuthoringFixtureSaveRequest,
+): Promise<VisualAuthoringFixtureReceipt> {
+  return readTestingJson<VisualAuthoringFixtureReceipt>(
+    await sendRequest(
+      `/admin/visual-operator-library-authoring/drafts/${encodeURIComponent(draftId)}/fixtures`,
+      {
+        method: 'POST',
+        headers: {
+          ...operatorTestingHeaders('TEST_FIXTURE_WRITE', true),
+          'If-Match': `"${Math.max(0, revision)}"`,
+        },
+        body: JSON.stringify(request),
       },
     ),
   );

@@ -26,6 +26,9 @@ import type {
   VisualOperatorContractTestCase,
   VisualOperatorContractTestSuite,
 } from '../types';
+import GovernedFixtureSavePanel, {
+  type GovernedFixtureSaveLaunch,
+} from './GovernedFixtureSavePanel';
 
 export interface AssetTestLaunch {
   kind: 'operator' | 'function';
@@ -34,6 +37,7 @@ export interface AssetTestLaunch {
 
 interface AssetTestTableProps extends AssetTestLaunch {
   prepareDraft: () => Promise<VisualLibraryAuthoringDraft>;
+  fixtureAvailable: boolean;
   onConflict: () => void;
   onClose: () => void;
 }
@@ -60,6 +64,7 @@ export default function AssetTestTable({
   kind,
   assetRef,
   prepareDraft,
+  fixtureAvailable,
   onConflict,
   onClose,
 }: AssetTestTableProps) {
@@ -80,10 +85,11 @@ export default function AssetTestTable({
     message: string;
   }>>({});
   const [lastEvidence, setLastEvidence] = useState('');
+  const [fixtureLaunch, setFixtureLaunch] = useState<GovernedFixtureSaveLaunch | null>(null);
   const [busy, setBusy] = useState(true);
   const [error, setError] = useState('');
   useDialogFocusTrap({
-    open: true,
+    open: fixtureLaunch === null,
     dialogRef,
     onDismiss: onClose,
     initialFocusKey: `${kind}:${assetRef}`,
@@ -196,6 +202,48 @@ export default function AssetTestTable({
     }
   };
 
+  const saveOperatorFixture = (index: number) => {
+    if (!exactDraft || !fixtureAvailable) {
+      return;
+    }
+    try {
+      const testCase = parseOperatorRow(operatorRows[index], index);
+      setError('');
+      setFixtureLaunch({
+        draftId: exactDraft.draftId,
+        authoringRevision: exactDraft.revision,
+        sourceKind: 'OPERATOR_TEST_CASE',
+        assetKind: 'OPERATOR',
+        assetRef,
+        payload: testCase,
+        suggestedFixtureId: fixtureId('operator', assetRef, testCase.name),
+      });
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : 'Test case is invalid.');
+    }
+  };
+
+  const saveFunctionFixture = (index: number) => {
+    if (!exactDraft || !fixtureAvailable) {
+      return;
+    }
+    try {
+      const testCase = parseFunctionRow(functionRows[index], index);
+      setError('');
+      setFixtureLaunch({
+        draftId: exactDraft.draftId,
+        authoringRevision: exactDraft.revision,
+        sourceKind: 'FUNCTION_TEST_CASE',
+        assetKind: 'FUNCTION',
+        assetRef,
+        payload: testCase,
+        suggestedFixtureId: fixtureId('function', assetRef, testCase.id),
+      });
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : 'Test case is invalid.');
+    }
+  };
+
   return (
     <div className="library-test-overlay" role="presentation">
       <div
@@ -238,6 +286,11 @@ export default function AssetTestTable({
 
         <div className="library-test-alerts">
           {diagnostic && <p className="library-test-notice">{diagnostic}</p>}
+          {!fixtureAvailable && (
+            <p className="library-test-notice">
+              Governed fixture persistence is not advertised by this deployment.
+            </p>
+          )}
           {error && <p className="library-inline-error" role="alert">{error}</p>}
         </div>
 
@@ -247,24 +300,28 @@ export default function AssetTestTable({
               rows={operatorRows}
               results={operatorResults}
               busy={busy}
+              fixtureAvailable={fixtureAvailable}
               onRowsChange={(rows) => {
                 setOperatorRows(rows);
                 setOperatorResults({});
                 setLastEvidence('');
               }}
               onRun={(index) => void runOperators([index])}
+              onSaveFixture={saveOperatorFixture}
             />
           ) : (
             <FunctionTable
               rows={functionRows}
               results={functionResults}
               busy={busy}
+              fixtureAvailable={fixtureAvailable}
               onRowsChange={(rows) => {
                 setFunctionRows(rows);
                 setFunctionResults({});
                 setLastEvidence('');
               }}
               onRun={(index) => void runFunctions([index])}
+              onSaveFixture={saveFunctionFixture}
             />
           )}
         </div>
@@ -306,6 +363,13 @@ export default function AssetTestTable({
             </button>
           </div>
         </footer>
+        {fixtureLaunch && (
+          <GovernedFixtureSavePanel
+            {...fixtureLaunch}
+            onConflict={onConflict}
+            onClose={() => setFixtureLaunch(null)}
+          />
+        )}
       </div>
     </div>
   );
@@ -315,14 +379,18 @@ function OperatorTable({
   rows,
   results,
   busy,
+  fixtureAvailable,
   onRowsChange,
   onRun,
+  onSaveFixture,
 }: {
   rows: OperatorEditor[];
   results: Record<number, { passed: boolean; message: string }>;
   busy: boolean;
+  fixtureAvailable: boolean;
   onRowsChange: (rows: OperatorEditor[]) => void;
   onRun: (index: number) => void;
+  onSaveFixture: (index: number) => void;
 }) {
   const patch = (index: number, value: Partial<OperatorEditor>) => onRowsChange(
     rows.map((row, rowIndex) => rowIndex === index ? { ...row, ...value } : row),
@@ -386,6 +454,18 @@ function OperatorTable({
                 </button>
                 <button
                   type="button"
+                  className="secondary compact"
+                  onClick={() => onSaveFixture(index)}
+                  disabled={busy || !fixtureAvailable}
+                  title={fixtureAvailable
+                    ? 'Save this test row as a governed fixture'
+                    : 'Fixture persistence is unavailable in this deployment'}
+                  data-testid={`operator-fixture-save-${index}`}
+                >
+                  Save fixture
+                </button>
+                <button
+                  type="button"
                   className="icon-button"
                   aria-label={`Remove operator case ${index + 1}`}
                   title="Remove case"
@@ -407,14 +487,18 @@ function FunctionTable({
   rows,
   results,
   busy,
+  fixtureAvailable,
   onRowsChange,
   onRun,
+  onSaveFixture,
 }: {
   rows: FunctionEditor[];
   results: Record<number, { passed: boolean; status: string; actual: unknown; message: string }>;
   busy: boolean;
+  fixtureAvailable: boolean;
   onRowsChange: (rows: FunctionEditor[]) => void;
   onRun: (index: number) => void;
+  onSaveFixture: (index: number) => void;
 }) {
   const patch = (index: number, value: Partial<FunctionEditor>) => onRowsChange(
     rows.map((row, rowIndex) => rowIndex === index ? { ...row, ...value } : row),
@@ -507,6 +591,18 @@ function FunctionTable({
                   disabled={busy}
                 >
                   Run
+                </button>
+                <button
+                  type="button"
+                  className="secondary compact"
+                  onClick={() => onSaveFixture(index)}
+                  disabled={busy || !fixtureAvailable}
+                  title={fixtureAvailable
+                    ? 'Save this test row as a governed fixture'
+                    : 'Fixture persistence is unavailable in this deployment'}
+                  data-testid={`function-fixture-save-${index}`}
+                >
+                  Save fixture
                 </button>
                 <button
                   type="button"
@@ -719,6 +815,13 @@ function pretty(value: unknown): string {
 function compactValue(value: unknown): string {
   const serialized = JSON.stringify(value) ?? 'null';
   return serialized.length > 48 ? `${serialized.slice(0, 45)}...` : serialized;
+}
+
+function fixtureId(kind: string, assetRef: string, caseId: string): string {
+  return `${kind}:${assetRef}:${caseId}`
+    .replace(/[^A-Za-z0-9._:-]+/g, '-')
+    .replace(/^-+/, '')
+    .slice(0, 160);
 }
 
 function shortFingerprint(value: string): string {

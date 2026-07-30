@@ -17,6 +17,7 @@ const apiMocks = vi.hoisted(() => ({
   applyInference: vi.fn(),
   commit: vi.fn(),
   fetchDraft: vi.fn(),
+  fetchCatalogs: vi.fn(),
   draftFunctionTest: vi.fn(),
   draftOperatorTest: vi.fn(),
   infer: vi.fn(),
@@ -24,6 +25,7 @@ const apiMocks = vi.hoisted(() => ({
   runFunctionTest: vi.fn(),
   runOperatorTest: vi.fn(),
   save: vi.fn(),
+  saveFixture: vi.fn(),
 }));
 
 vi.mock('../api', () => ({
@@ -41,11 +43,13 @@ vi.mock('../api', () => ({
   draftLibraryAuthoringFunctionTest: apiMocks.draftFunctionTest,
   draftLibraryAuthoringOperatorTest: apiMocks.draftOperatorTest,
   fetchLibraryAuthoringDraft: apiMocks.fetchDraft,
+  fetchLibraryAuthoringCatalogs: apiMocks.fetchCatalogs,
   inferLibraryAuthoringSamples: apiMocks.infer,
   previewLibraryAuthoringDraft: apiMocks.preview,
   runLibraryAuthoringFunctionTest: apiMocks.runFunctionTest,
   runLibraryAuthoringOperatorTest: apiMocks.runOperatorTest,
   saveLibraryAuthoringDraft: apiMocks.save,
+  saveLibraryAuthoringFixture: apiMocks.saveFixture,
 }));
 
 describe('LibraryWorkbench', () => {
@@ -63,11 +67,18 @@ describe('LibraryWorkbench', () => {
     apiMocks.draftFunctionTest.mockReset();
     apiMocks.draftOperatorTest.mockReset();
     apiMocks.fetchDraft.mockReset();
+    apiMocks.fetchCatalogs.mockReset();
     apiMocks.infer.mockReset();
     apiMocks.preview.mockReset();
     apiMocks.runFunctionTest.mockReset();
     apiMocks.runOperatorTest.mockReset();
     apiMocks.save.mockReset();
+    apiMocks.saveFixture.mockReset();
+    apiMocks.fetchCatalogs.mockResolvedValue({
+      schemaVersion: 'bloge.visualLibraryAuthoringCatalogs.v1',
+      limits: {},
+      features: { governedFixturePersistence: true },
+    });
     vi.useFakeTimers();
   });
 
@@ -189,6 +200,7 @@ describe('LibraryWorkbench', () => {
       readyPreview(draftId, revision)
     ));
     apiMocks.infer.mockImplementation(async (draftId: string) => sampleInferenceResult(draftId));
+    apiMocks.saveFixture.mockResolvedValue(sampleFixtureReceipt());
     apiMocks.applyInference.mockImplementation(async (draftId: string) => {
       const current = savedDocument as VisualLibraryAuthoringDocument;
       return storedDraft(draftId, 2, {
@@ -253,6 +265,28 @@ describe('LibraryWorkbench', () => {
     expect(query('[data-testid="sample-inference-dialog"]').textContent)
       .toContain('Confirmation queue');
     expect(query<HTMLButtonElement>('[data-testid="sample-inference-apply"]').disabled).toBe(true);
+
+    await click(query('[data-testid="sample-inference-save-fixture"]'));
+    await click(query('[data-testid="governed-fixture-confirm"]'));
+    await click(query('[data-testid="governed-fixture-save"]'));
+    await settle();
+
+    expect(apiMocks.saveFixture).toHaveBeenCalledWith(
+      expect.stringMatching(/^team-operator-library-/),
+      1,
+      expect.objectContaining({
+        sourceKind: 'SAMPLE',
+        assetKind: 'OPERATOR',
+        assetRef: 'support:classify-ticket',
+        payload: expect.objectContaining({
+          target: expect.objectContaining({ portName: 'request' }),
+          samples: expect.any(Array),
+        }),
+      }),
+    );
+    expect(query('[data-testid="governed-fixture-receipt"]').textContent)
+      .toContain('Payload returnedNo');
+    await click(buttonByText('Done'));
 
     await click(query('[data-testid="sample-inference-use-recommendations"]'));
     expect(query<HTMLButtonElement>('[data-testid="sample-inference-apply"]').disabled).toBe(false);
@@ -433,6 +467,37 @@ function sampleInferenceResult(draftId: string): VisualSampleInferenceResult {
     ],
     diagnostics: [],
     payloadPersisted: false,
+  };
+}
+
+function sampleFixtureReceipt() {
+  return {
+    schemaVersion: 'bloge.visualAuthoringFixtureReceipt.v1',
+    tenantId: 'tenant-a',
+    organizationId: 'organization-a',
+    projectId: 'project-a',
+    environmentId: 'test',
+    region: 'region-a',
+    fixtureId: 'sample:support:classify-ticket:request',
+    revision: 1,
+    sourceKind: 'SAMPLE',
+    assetKind: 'OPERATOR',
+    assetRef: 'support:classify-ticket',
+    draftId: 'sample-draft',
+    authoringRevision: 1,
+    authoringFingerprint: `sha256:${'a'.repeat(64)}`,
+    canonicalFingerprint: `sha256:${'c'.repeat(64)}`,
+    artifactFingerprint: `sha256:${'o'.repeat(64)}`,
+    payloadFingerprint: `sha256:${'p'.repeat(64)}`,
+    classification: 'INTERNAL',
+    retentionPolicyVersion: 'retention-v1',
+    expiresAt: '2026-08-06T00:00:00Z',
+    redactionProfileVersion: 'redaction-v1',
+    redactedPaths: [],
+    createdAt: '2026-07-30T00:00:00Z',
+    createdBy: 'tester',
+    payloadPersisted: true,
+    payloadReturned: false,
   };
 }
 

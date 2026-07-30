@@ -995,6 +995,13 @@ export interface VisualLibraryAuthoringCompileResult {
   impact?: Record<string, unknown>;
 }
 
+/** Exact runtime catalogs and feature availability for the progressive Workbench. */
+export interface VisualLibraryAuthoringCatalogs {
+  schemaVersion: 'bloge.visualLibraryAuthoringCatalogs.v1';
+  limits: Record<string, number>;
+  features: Record<string, boolean>;
+}
+
 export interface VisualLibraryAuthoringCommitResult {
   schemaVersion: 'bloge.visualLibraryAuthoringCommitResult.v1';
   draftId: string;
@@ -1146,6 +1153,56 @@ export interface VisualAuthoringFunctionTestRunEvidence {
   }>;
   diagnostics: VisualDiagnostic[];
   payloadPersisted: false;
+}
+
+export type VisualAuthoringFixtureSourceKind =
+  'SAMPLE' | 'OPERATOR_TEST_CASE' | 'FUNCTION_TEST_CASE';
+export type VisualAuthoringFixtureAssetKind = 'OPERATOR' | 'FUNCTION';
+export type VisualAuthoringFixtureClassification =
+  'PUBLIC' | 'INTERNAL' | 'CONFIDENTIAL' | 'RESTRICTED';
+
+/** Explicit payload-bearing command for one governed fixture revision. */
+export interface VisualAuthoringFixtureSaveRequest {
+  schemaVersion: 'bloge.visualAuthoringFixtureSaveRequest.v1';
+  fixtureId: string;
+  expectedFixtureRevision: number;
+  sourceKind: VisualAuthoringFixtureSourceKind;
+  assetKind: VisualAuthoringFixtureAssetKind;
+  assetRef: string;
+  classification: VisualAuthoringFixtureClassification;
+  retentionDays: number;
+  redactionPaths: string[];
+  payload: unknown;
+}
+
+/** Payload-free immutable receipt returned after a governed fixture save. */
+export interface VisualAuthoringFixtureReceipt {
+  schemaVersion: 'bloge.visualAuthoringFixtureReceipt.v1';
+  tenantId: string;
+  organizationId: string;
+  projectId: string;
+  environmentId: string;
+  region: string;
+  fixtureId: string;
+  revision: number;
+  sourceKind: VisualAuthoringFixtureSourceKind;
+  assetKind: VisualAuthoringFixtureAssetKind;
+  assetRef: string;
+  draftId: string;
+  authoringRevision: number;
+  authoringFingerprint: string;
+  canonicalFingerprint: string;
+  artifactFingerprint: string;
+  payloadFingerprint: string;
+  classification: VisualAuthoringFixtureClassification;
+  retentionPolicyVersion: string;
+  expiresAt: string;
+  redactionProfileVersion: string;
+  redactedPaths: string[];
+  createdAt: string;
+  createdBy: string;
+  payloadPersisted: true;
+  payloadReturned: false;
 }
 
 /** Projection review for adapting bloge.capabilityCatalog.v1 into a visual operator library. */

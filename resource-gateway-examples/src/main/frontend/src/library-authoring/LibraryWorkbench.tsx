@@ -8,6 +8,7 @@ import {
 import {
   BlogeApiRequestError,
   commitLibraryAuthoringDraft,
+  fetchLibraryAuthoringCatalogs,
   fetchLibraryAuthoringDraft,
   previewLibraryAuthoringDraft,
   saveLibraryAuthoringDraft,
@@ -58,6 +59,7 @@ export default function LibraryWorkbench() {
   const [loading, setLoading] = useState(false);
   const [inferenceLaunch, setInferenceLaunch] = useState<SampleInferenceLaunch | null>(null);
   const [testLaunch, setTestLaunch] = useState<AssetTestLaunch | null>(null);
+  const [fixtureAvailable, setFixtureAvailable] = useState(false);
   const revisionRef = useRef(0);
   const currentDraftRef = useRef<VisualLibraryAuthoringDraft | null>(null);
   const lastSavedJsonRef = useRef('');
@@ -79,6 +81,26 @@ export default function LibraryWorkbench() {
     setSaveMessage(`Saved revision ${draft.revision}`);
     setPreview(null);
     setCommitResult(null);
+  }, []);
+
+  useEffect(() => {
+    let active = true;
+    fetchLibraryAuthoringCatalogs()
+      .then((catalogs) => {
+        if (active) {
+          setFixtureAvailable(
+            catalogs.features.governedFixturePersistence === true,
+          );
+        }
+      })
+      .catch(() => {
+        if (active) {
+          setFixtureAvailable(false);
+        }
+      });
+    return () => {
+      active = false;
+    };
   }, []);
 
   useEffect(() => {
@@ -403,6 +425,7 @@ export default function LibraryWorkbench() {
           {...inferenceLaunch}
           operator={document.operators[inferenceLaunch.operatorKey]}
           prepareDraft={prepareExactDraft}
+          fixtureAvailable={fixtureAvailable}
           onApplied={installInferenceDraft}
           onConflict={markRevisionConflict}
           onClose={() => setInferenceLaunch(null)}
@@ -412,6 +435,7 @@ export default function LibraryWorkbench() {
         <AssetTestTable
           {...testLaunch}
           prepareDraft={prepareExactDraft}
+          fixtureAvailable={fixtureAvailable}
           onConflict={markRevisionConflict}
           onClose={() => setTestLaunch(null)}
         />

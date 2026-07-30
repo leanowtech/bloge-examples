@@ -16,6 +16,7 @@ import {
   fetchGatewayScenarios,
   fetchGovernanceGateView,
   fetchGraphDraft,
+  fetchLibraryAuthoringCatalogs,
   fetchLibraryAuthoringDraft,
   fetchLibraryAuthoringDrafts,
   fetchOperatorCatalog,
@@ -48,12 +49,14 @@ import {
   setRehearsalRemediationCredentialsProvider,
   saveGraphDraft,
   saveLibraryAuthoringDraft,
+  saveLibraryAuthoringFixture,
   saveScenarioDraftSet,
   submitScenarioRehearsalRemediation,
   validateDraft,
   validateOperatorLibraryText,
 } from './api';
 import type {
+  VisualAuthoringFixtureSaveRequest,
   VisualFunctionTestSuite,
   VisualLibraryAuthoringCompileResult,
   VisualLibraryAuthoringDocument,
@@ -68,6 +71,53 @@ describe('operator library API client', () => {
     resetOperatorTestHeadersProvider();
     resetRehearsalRemediationCredentialsProvider();
     vi.restoreAllMocks();
+  });
+
+  it('discovers governed fixture availability and fences explicit fixture saves', async () => {
+    const request: VisualAuthoringFixtureSaveRequest = {
+      schemaVersion: 'bloge.visualAuthoringFixtureSaveRequest.v1',
+      fixtureId: 'operator:demo.echo:golden',
+      expectedFixtureRevision: 0,
+      sourceKind: 'OPERATOR_TEST_CASE',
+      assetKind: 'OPERATOR',
+      assetRef: 'demo:echo',
+      classification: 'INTERNAL',
+      retentionDays: 7,
+      redactionPaths: ['/inputs/token'],
+      payload: { inputs: { token: 'secret' } },
+    };
+    const fetchMock = vi.spyOn(globalThis, 'fetch')
+      .mockResolvedValueOnce(jsonResponse({
+        schemaVersion: 'bloge.visualLibraryAuthoringCatalogs.v1',
+        limits: { maximumAuthoringFixtureRetentionDays: 30 },
+        features: { governedFixturePersistence: true },
+      }))
+      .mockResolvedValueOnce(jsonResponse({
+        schemaVersion: 'bloge.visualAuthoringFixtureReceipt.v1',
+        fixtureId: request.fixtureId,
+        revision: 1,
+        payloadReturned: false,
+      }));
+
+    const catalogs = await fetchLibraryAuthoringCatalogs();
+    const receipt = await saveLibraryAuthoringFixture('draft/one', 4, request);
+
+    expect(catalogs.features.governedFixturePersistence).toBe(true);
+    expect(receipt.payloadReturned).toBe(false);
+    expect(fetchMock).toHaveBeenNthCalledWith(
+      2,
+      '/admin/visual-operator-library-authoring/drafts/draft%2Fone/fixtures',
+      expect.objectContaining({
+        method: 'POST',
+        headers: expect.objectContaining({
+          Authorization: 'Bearer bloge-aneke-demo-token',
+          'X-Purpose': 'TEST_FIXTURE_WRITE',
+          'Content-Type': 'application/json',
+          'If-Match': '"4"',
+        }),
+        body: JSON.stringify(request),
+      }),
+    );
   });
 
   it('fences progressive library save, inference apply, preview, and commit with exact revisions', async () => {

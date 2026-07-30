@@ -12914,6 +12914,7 @@ button.primary:disabled {
 
 .library-test-row-actions {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   gap: 5px;
 }
@@ -12943,6 +12944,339 @@ button.primary:disabled {
 
 .library-test-footer button {
   min-height: 34px;
+}
+
+.governed-fixture-overlay {
+  position: fixed;
+  z-index: 1360;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  padding: 16px;
+  background: rgb(15 24 36 / 66%);
+}
+
+.governed-fixture-dialog {
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr) auto auto;
+  width: min(680px, 100%);
+  max-height: min(760px, calc(100vh - 32px));
+  overflow: hidden;
+  border: 1px solid #95a4b6;
+  border-radius: 8px;
+  background: #fff;
+  box-shadow: 0 24px 60px rgb(8 18 31 / 32%);
+}
+
+.governed-fixture-heading {
+  display: flex;
+  min-height: 72px;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 12px 16px;
+  border-bottom: 1px solid #cbd3df;
+  background: #f7f9fb;
+}
+
+.governed-fixture-heading > div {
+  min-width: 0;
+}
+
+.governed-fixture-heading span {
+  color: #5d6b7e;
+  font-size: 9px;
+  font-weight: 900;
+  text-transform: uppercase;
+}
+
+.governed-fixture-heading h2 {
+  margin: 3px 0;
+  font-size: 18px;
+}
+
+.governed-fixture-heading p {
+  margin: 0;
+  overflow: hidden;
+  color: #57667a;
+  font-size: 10px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.governed-fixture-heading .icon-button {
+  flex: 0 0 32px;
+  width: 32px;
+  height: 32px;
+}
+
+.governed-fixture-form {
+  min-height: 0;
+  overflow: auto;
+}
+
+.governed-fixture-coordinate {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  border-bottom: 1px solid #d9dfe7;
+  background: #eef3f7;
+}
+
+.governed-fixture-coordinate > div {
+  display: grid;
+  min-width: 0;
+  gap: 3px;
+  padding: 10px 14px;
+  border-right: 1px solid #d9dfe7;
+}
+
+.governed-fixture-coordinate > div:last-child {
+  border-right: 0;
+}
+
+.governed-fixture-coordinate span,
+.governed-fixture-receipt span {
+  color: #657387;
+  font-size: 9px;
+  font-weight: 800;
+  text-transform: uppercase;
+}
+
+.governed-fixture-coordinate strong {
+  overflow: hidden;
+  color: #26374c;
+  font-size: 11px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.governed-fixture-fields {
+  display: grid;
+  grid-template-columns: minmax(220px, 1.6fr) minmax(150px, 1fr) minmax(110px, 0.7fr);
+  gap: 12px;
+  padding: 16px;
+  border-bottom: 1px solid #dde2e9;
+}
+
+.governed-fixture-fields label,
+.governed-fixture-advanced label {
+  display: grid;
+  align-content: start;
+  gap: 6px;
+  color: #46576d;
+  font-size: 10px;
+  font-weight: 800;
+}
+
+.governed-fixture-fields :is(input, select),
+.governed-fixture-advanced input {
+  width: 100%;
+  min-height: 36px;
+  font-size: 11px;
+}
+
+.governed-fixture-fields small {
+  color: #a33730;
+  font-size: 9px;
+  line-height: 1.4;
+}
+
+.governed-fixture-redaction {
+  padding: 14px 16px 16px;
+  border-bottom: 1px solid #dde2e9;
+}
+
+.governed-fixture-redaction header {
+  display: flex;
+  align-items: end;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 8px;
+}
+
+.governed-fixture-redaction header > div {
+  display: grid;
+  gap: 2px;
+}
+
+.governed-fixture-redaction h3 {
+  margin: 0;
+  color: #26374c;
+  font-size: 12px;
+}
+
+.governed-fixture-redaction header span,
+.governed-fixture-redaction header strong,
+.governed-fixture-redaction > p {
+  color: #67768a;
+  font-size: 9px;
+}
+
+.governed-fixture-redaction textarea {
+  width: 100%;
+  height: 86px;
+  resize: vertical;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 10px;
+  line-height: 1.45;
+}
+
+.governed-fixture-redaction > p {
+  margin: 6px 0 0;
+}
+
+.governed-fixture-advanced {
+  padding: 12px 16px;
+  border-bottom: 1px solid #dde2e9;
+  background: #fafbfc;
+}
+
+.governed-fixture-advanced summary {
+  cursor: pointer;
+  color: #3d526b;
+  font-size: 10px;
+  font-weight: 850;
+}
+
+.governed-fixture-advanced[open] {
+  display: grid;
+  grid-template-columns: minmax(180px, 240px) minmax(0, 1fr);
+  gap: 10px 16px;
+}
+
+.governed-fixture-advanced[open] summary {
+  grid-column: 1 / -1;
+}
+
+.governed-fixture-advanced p {
+  align-self: end;
+  margin: 0 0 4px;
+  color: #68768a;
+  font-size: 9px;
+  line-height: 1.45;
+}
+
+.governed-fixture-confirmation {
+  display: grid;
+  grid-template-columns: 18px minmax(0, 1fr);
+  gap: 9px;
+  align-items: start;
+  padding: 14px 16px;
+  background: #fff8e8;
+  color: #654d1f;
+  font-size: 10px;
+  font-weight: 700;
+  line-height: 1.5;
+}
+
+.governed-fixture-confirmation input {
+  width: 16px;
+  height: 16px;
+  margin: 0;
+}
+
+.governed-fixture-error {
+  margin: 0;
+  padding: 9px 16px;
+  border-top: 1px solid #dfb7b4;
+  background: #fff0ef;
+  color: #9e2d26;
+  font-size: 10px;
+  font-weight: 750;
+}
+
+.governed-fixture-footer {
+  display: flex;
+  min-height: 62px;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+  padding: 10px 14px;
+  border-top: 1px solid #cbd3df;
+  background: #fff;
+}
+
+.governed-fixture-footer p {
+  flex: 1;
+  margin: 0;
+  color: #69778a;
+  font-size: 9px;
+  line-height: 1.45;
+}
+
+.governed-fixture-footer button {
+  min-height: 36px;
+}
+
+.governed-fixture-receipt {
+  display: grid;
+  min-height: 0;
+  gap: 14px;
+  overflow: auto;
+  padding: 22px;
+  background: #f7faf8;
+}
+
+.governed-fixture-receipt > section {
+  display: grid;
+  gap: 5px;
+  padding-bottom: 16px;
+  border-bottom: 1px solid #b9d5c4;
+}
+
+.governed-fixture-receipt > section strong {
+  color: #1f5639;
+  font-size: 20px;
+  overflow-wrap: anywhere;
+}
+
+.governed-fixture-receipt > section small {
+  color: #4f6c5d;
+  font-size: 10px;
+}
+
+.governed-fixture-receipt dl {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  margin: 0;
+  border-top: 1px solid #d7e3db;
+  border-left: 1px solid #d7e3db;
+}
+
+.governed-fixture-receipt dl > div {
+  display: grid;
+  gap: 4px;
+  padding: 10px;
+  border-right: 1px solid #d7e3db;
+  border-bottom: 1px solid #d7e3db;
+}
+
+.governed-fixture-receipt dt {
+  color: #657569;
+  font-size: 9px;
+  font-weight: 800;
+  text-transform: uppercase;
+}
+
+.governed-fixture-receipt dd {
+  margin: 0;
+  color: #263c2e;
+  font-size: 11px;
+  font-weight: 800;
+}
+
+.governed-fixture-receipt > div {
+  display: grid;
+  gap: 5px;
+}
+
+.governed-fixture-receipt code {
+  padding: 8px 10px;
+  border-left: 3px solid #39825a;
+  background: #fff;
+  color: #284939;
+  font-size: 10px;
+  overflow-wrap: anywhere;
 }
 
 .library-workbench button.danger {
@@ -13117,6 +13451,56 @@ button.primary:disabled {
   .library-test-overlay {
     place-items: stretch;
     padding: 0;
+  }
+
+  .governed-fixture-overlay {
+    place-items: stretch;
+    padding: 0;
+  }
+
+  .governed-fixture-dialog {
+    width: 100%;
+    max-height: none;
+    border: 0;
+    border-radius: 0;
+  }
+
+  .governed-fixture-fields {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .governed-fixture-coordinate {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .governed-fixture-coordinate > div {
+    border-right: 0;
+    border-bottom: 1px solid #d9dfe7;
+  }
+
+  .governed-fixture-coordinate > div:last-child {
+    border-bottom: 0;
+  }
+
+  .governed-fixture-advanced[open] {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .governed-fixture-advanced[open] summary {
+    grid-column: auto;
+  }
+
+  .governed-fixture-footer {
+    flex-wrap: wrap;
+    align-items: stretch;
+  }
+
+  .governed-fixture-footer p {
+    flex: 0 0 100%;
+  }
+
+  .governed-fixture-footer button {
+    flex: 1;
   }
 
   .library-test-dialog {
