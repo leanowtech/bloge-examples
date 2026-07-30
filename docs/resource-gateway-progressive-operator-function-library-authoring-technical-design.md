@@ -1,6 +1,6 @@
 # Resource Gateway 渐进式算子与 Built-in Function 库创作技术方案
 
-> 状态：Approved；Stage 0、Stage 1、Stage 2.4 与 Stage 2.5 治理型 fixture 前后端闭环已实现，生产隔离 runner 及 Stage 3-4 待实施
+> 状态：Approved；Stage 0、Stage 1、Stage 2.4、Stage 2.5 治理型 fixture 与 Stage 2.6 受信 core function 进程隔离 runner 已实现，持久化签名 evidence 及 Stage 3-4 待实施
 >
 > 日期：2026-07-30
 >
@@ -1089,8 +1089,8 @@ functions:
 - 最多 50 行、每行最多 32 个参数、suite 256 KiB、result 512 KiB；
 - 单调用 250 ms timeout；
 - 只加载 BLOGE core runtime inventory 中 exact-name、pure、无 execution-service 依赖的函数；
-- TIME、RANDOM、IDENTITY 等 contextual function，以及 regex/range 等高资源风险函数在当前
-  profile 中阻断；
+- TIME、RANDOM、IDENTITY 等 contextual function 继续阻断；regex/range 等纯函数只能在
+  one-shot worker 内运行，超时或资源耗尽会终止整个子进程；
 - arguments、actual result 和错误细节不进入日志，响应固定 `payloadPersisted=false`。
 
 Stage 2.4 的真实链路验收同时覆盖 Spring Boot 四个测试端点和浏览器任务：operator
@@ -1098,9 +1098,36 @@ Stage 2.4 的真实链路验收同时覆盖 Spring Boot 四个测试端点和浏
 运行到 `PASSED`，未绑定自定义函数稳定返回 `NOT_RUN`；桌面与 390×844 移动布局均无页面级
 横向溢出，表格只在浮层内部滚动，Esc 关闭后焦点恢复到测试入口。
 
-这里的 in-process profile 只用于 authoring 期快速反馈。线程取消不能证明 CPU/内存强隔离，
-也不能作为 production certification。完整实现仍需独立 worker/container sandbox、硬资源
-配额、网络/文件/secret syscall policy、可验证 runtime inventory 与持久化签名证据。
+Stage 2.6 已把受信 core function 调用移出 Resource Gateway 进程：
+
+1. gateway 与 one-shot worker 通过
+   `bloge.visualAuthoringFunctionWorkerInvocationRequest.v1` /
+   `bloge.visualAuthoringFunctionWorkerInvocationResponse.v1` 通信，一次进程只接收一次调用；
+2. request 携带 gateway 观察到的 runtime fingerprint；worker 从自己的 exact trusted
+   inventory 重新计算并比对，版本、request id、execution profile 或 fingerprint 漂移均
+   fail closed；
+3. 子 JVM 固定 64 MiB heap、96 MiB metaspace、16 MiB direct memory、512 KiB stack 和
+   单 active processor；调用开始后由 worker 内 250 ms watchdog 直接 halt，gateway 另有
+   2 秒 supervisor deadline 并强杀整个 descendant tree；
+4. suite 仍最多 50 行，但增加 15 秒总 deadline；全局最多并发 2 个 worker，饱和不排队，
+   固定返回 `WORKER_UNAVAILABLE`；
+5. worker 清空继承环境，只保留无 secret 的 locale/timezone 与调用级临时 HOME/TMPDIR；
+   stdout 512 KiB、stderr 16 KiB，stderr 不进入用户响应或日志；
+6. `SUCCESS`、业务 `INVOCATION_FAILED`、`TIMEOUT`、`RESOURCE_EXHAUSTED`、
+   `WORKER_UNAVAILABLE` 和 `WORKER_FAILED` 分离，基础设施故障不能被 expected business
+   error 断言误吞；
+7. classpath、Surefire/IDE 与 repackaged Spring Boot JAR 三种启动形态分别验证；fat JAR
+   worker 入口在 Spring 启动之前短路，不创建 Web/ApplicationContext。
+8. `/api/integration/capabilities` 公布
+   `visualLibraryAuthoringIsolatedFunctionTestWorker=true`，并列出 worker request/response
+   v1 协议版本；集成方不需要通过错误探测执行器是否存在。
+
+当前 profile 的信任边界是“Resource Gateway 随版本发布的 pure、service-free BLOGE core
+inventory”，不是“允许客户上传任意 JVM bytecode”。因此网络、文件和 secret 能力通过
+**不装载未知实现、不给 execution service、清空环境**来消除；它尚不等价于 cgroup +
+namespace + seccomp 的 syscall sandbox。后续允许客户自定义 binary function 时，必须将
+`AuthoringFunctionTestWorker` 替换成容器或远端实现，补齐只读 rootfs、网络 deny-by-default、
+workload identity 与完整 RSS/CPU quota，不能扩大本地 process profile 的授权范围。
 
 ## 10. API 设计
 
@@ -1575,11 +1602,12 @@ revision-fenced API、observed facts、保守 candidate、confirmation request�
 全量决定校验、原子 draft promotion、payload-free 隐私边界，以及 Workbench 的 target
 选择、样本输入、candidate/fact 解释、显式 confirmation queue 和结构化回写。Stage 2.4
 进一步交付 exact-draft operator test 自动生成与 schema-contract run、function test
-机器合同、runtime binding 状态、受限 function runner、单行/批量 UI 和 fingerprint-bound
+机器合同、runtime binding 状态、进程隔离 function runner、单行/批量 UI 和 fingerprint-bound
 临时 evidence。Stage 2.5 已交付 exact-draft、五维 enterprise-scoped、AES-256-GCM
 加密、自动/显式脱敏、不可变修订、事务安全审计与到期 tombstone 的 fixture 后端协议。
 Workbench 也已交付显式 sample/test-row-to-fixture 入口、治理确认和 payload-free receipt；
-生产隔离 runner 与持久化签名 evidence 仍待完成。详见
+受信 core function 已通过 one-shot JVM 隔离并在 UI/evidence 中暴露 execution profile，
+持久化签名 evidence 仍待完成。详见
 [实现状态](resource-gateway-progressive-library-authoring-implementation-status.md)。
 
 交付：

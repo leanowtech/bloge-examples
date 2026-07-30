@@ -156,7 +156,7 @@ class ToolStudioIntegrationServiceTest {
                 .containsEntry("visualLibraryAuthoringOperatorTestDraftRunner", true)
                 .containsEntry("visualLibraryAuthoringFunctionTestDraftRunner", true)
                 .containsEntry("visualLibraryAuthoringGovernedFixturePersistence", false)
-                .containsEntry("visualLibraryAuthoringIsolatedFunctionTestWorker", false)
+                .containsEntry("visualLibraryAuthoringIsolatedFunctionTestWorker", true)
                 .containsEntry("mirrorPlanCompilation", false)
                 .containsEntry("mirrorExternalLeafInterception", false)
                 .containsEntry("mirrorOperationObservability", false)

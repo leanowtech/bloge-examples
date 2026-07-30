@@ -30,6 +30,7 @@ import com.leanowtech.bloge.gateway.testing.api.TestSuiteStabilityPhysicalAttemp
 import com.leanowtech.bloge.gateway.testing.api.WorkerQuarantineChangeAuthorizationTrustStore;
 import com.leanowtech.bloge.gateway.testing.domain.WorkerQuarantineRequestIndexMode;
 import com.leanowtech.bloge.gateway.visual.draft.GraphDraft;
+import com.leanowtech.bloge.gateway.visual.authoring.testing.AuthoringFunctionWorkerProtocol;
 import com.leanowtech.bloge.gateway.visual.runtime.VisualEvidenceSigner;
 import com.leanowtech.bloge.gateway.visual.runtime.ManagedEvidenceSigningProvider;
 import com.leanowtech.bloge.gateway.visual.runtime.VisualPayloadGovernancePolicy;
@@ -426,6 +427,9 @@ public record IntegrationCapabilities(
                 "bloge.visualAuthoringFunctionTestCase.v1",
                 "bloge.visualAuthoringFunctionTestRunRequest.v1",
                 "bloge.visualAuthoringFunctionTestRunEvidence.v1"));
+        objects.put("visualLibraryAuthoringFunctionTestWorker", List.of(
+                AuthoringFunctionWorkerProtocol.InvocationRequest.SCHEMA_VERSION,
+                AuthoringFunctionWorkerProtocol.InvocationResponse.SCHEMA_VERSION));
         objects.put("visualLibraryAuthoringFixtureSaveRequest", List.of(
                 "bloge.visualAuthoringFixtureSaveRequest.v1"));
         objects.put("visualLibraryAuthoringFixtureReceipt", List.of(
@@ -850,7 +854,7 @@ public record IntegrationCapabilities(
         features.put(
                 "visualLibraryAuthoringGovernedFixturePersistence",
                 testExecutionEndpointEnabled);
-        features.put("visualLibraryAuthoringIsolatedFunctionTestWorker", false);
+        features.put("visualLibraryAuthoringIsolatedFunctionTestWorker", true);
         features.put("graphDraftConsistentDependencySnapshot", true);
         features.put("graphDraftStructuredDependencyRefs", true);
         features.put("capabilitySnapshotProtocol", true);

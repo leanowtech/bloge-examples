@@ -191,6 +191,9 @@ public final class AuthoringTestProtocol {
         CONTRACT_REJECTED,
         INVOCATION_FAILED,
         TIMEOUT,
+        RESOURCE_EXHAUSTED,
+        WORKER_UNAVAILABLE,
+        WORKER_FAILED,
         NOT_RUN
     }
 
@@ -202,6 +205,7 @@ public final class AuthoringTestProtocol {
             String canonicalFingerprint,
             String functionFingerprint,
             String runtimeFingerprint,
+            String executionProfile,
             FunctionBindingStatus bindingStatus,
             String suiteFingerprint,
             FunctionSuite suite,
@@ -218,6 +222,7 @@ public final class AuthoringTestProtocol {
             canonicalFingerprint = normalized(canonicalFingerprint, "");
             functionFingerprint = normalized(functionFingerprint, "");
             runtimeFingerprint = normalized(runtimeFingerprint, "");
+            executionProfile = normalized(executionProfile, "");
             bindingStatus = bindingStatus == null ? FunctionBindingStatus.UNBOUND : bindingStatus;
             suiteFingerprint = normalized(suiteFingerprint, "");
             diagnostics = immutable(diagnostics);
@@ -257,6 +262,7 @@ public final class AuthoringTestProtocol {
             String canonicalFingerprint,
             String functionFingerprint,
             String runtimeFingerprint,
+            String executionProfile,
             FunctionBindingStatus bindingStatus,
             String suiteFingerprint,
             String evidenceFingerprint,
@@ -280,6 +286,7 @@ public final class AuthoringTestProtocol {
             canonicalFingerprint = normalized(canonicalFingerprint, "");
             functionFingerprint = normalized(functionFingerprint, "");
             runtimeFingerprint = normalized(runtimeFingerprint, "");
+            executionProfile = normalized(executionProfile, "");
             bindingStatus = bindingStatus == null ? FunctionBindingStatus.UNBOUND : bindingStatus;
             suiteFingerprint = normalized(suiteFingerprint, "");
             evidenceFingerprint = normalized(evidenceFingerprint, "");

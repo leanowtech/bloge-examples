@@ -132,7 +132,12 @@ classification, retention, JSON Pointer redaction, and optional prior revision b
 exact draft and asset fingerprints, redacts sensitive fields, encrypts the payload, appends a
 payload-free audit event in the same transaction, and erases ciphertext at retention expiry. The
 success receipt intentionally shows fingerprints and `Payload returned: No`, never the raw test
-data. Production isolation workers remain the next runtime step.
+data. Function rows execute through the `bloge-core-isolated-process.v1` one-shot JVM worker;
+the test header shows `Runner ISOLATED PROCESS`, and evidence binds that profile plus the exact
+runtime fingerprint. The local worker has bounded heap/metaspace/direct memory, a 250 ms invocation
+watchdog, a 2 second supervisor kill, a 15 second suite budget, fail-fast concurrency limits, a
+cleared environment, and an ephemeral working directory. It intentionally accepts only trusted
+pure BLOGE core callables; custom binary functions still require a container or remote sandbox.
 
 The `test` profile supplies a deterministic local-only fixture key so the demo script works without
 secret setup. A `staging` start fails closed unless both `RG_AUTHORING_FIXTURE_ACTIVE_KEY_ID` and

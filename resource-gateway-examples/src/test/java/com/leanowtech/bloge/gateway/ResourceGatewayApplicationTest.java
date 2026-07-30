@@ -37,6 +37,7 @@ import com.leanowtech.bloge.gateway.visual.authoring.testing.AuthoringTestProtoc
 import com.leanowtech.bloge.gateway.visual.authoring.testing.AuthoringTestProtocol.OperatorDraftRequest;
 import com.leanowtech.bloge.gateway.visual.authoring.testing.AuthoringTestProtocol.OperatorRunEvidence;
 import com.leanowtech.bloge.gateway.visual.authoring.testing.AuthoringTestProtocol.OperatorRunRequest;
+import com.leanowtech.bloge.gateway.visual.authoring.testing.AuthoringFunctionWorkerProtocol;
 import com.leanowtech.bloge.gateway.visual.authoring.transport.VisualLibraryAuthoringDraftController;
 import com.leanowtech.bloge.gateway.visual.testing.VisualOperatorContractTestDraftRequest;
 import com.fasterxml.jackson.dataformat.yaml.YAMLMapper;
@@ -152,6 +153,17 @@ class ResourceGatewayApplicationTest {
     @Test
     void visualLibraryAuthoringDraftLifecycleEnforcesEtagAndPreviewFences() throws Exception {
         String draftId = "integration-authoring-library";
+        var catalogs = restTemplate.getForEntity(
+                "/admin/visual-operator-library-authoring/catalogs",
+                Map.class);
+        assertThat(catalogs.getStatusCode().is2xxSuccessful()).isTrue();
+        Map<?, ?> catalogBody = catalogs.getBody();
+        assertThat(catalogBody).isNotNull();
+        Map<?, ?> features = (Map<?, ?>) catalogBody.get("features");
+        Map<?, ?> limits = (Map<?, ?>) catalogBody.get("limits");
+        assertThat(features.get("isolatedFunctionTestWorker")).isEqualTo(true);
+        assertThat(limits.get("functionTestWorkerHeapMib")).isEqualTo(64);
+        assertThat(limits.get("maximumConcurrentFunctionTestWorkers")).isEqualTo(2);
         VisualLibraryAuthoringDocument document = new YAMLMapper().findAndRegisterModules()
                 .readValue("""
                         schemaVersion: bloge.visualLibraryAuthoring.v1
@@ -273,6 +285,8 @@ class ResourceGatewayApplicationTest {
         assertThat(functionDraft.getStatusCode().is2xxSuccessful()).isTrue();
         assertThat(functionDraft.getBody()).satisfies(generated -> {
             assertThat(generated.bindingStatus()).isEqualTo(FunctionBindingStatus.BOUND);
+            assertThat(generated.executionProfile())
+                    .isEqualTo(AuthoringFunctionWorkerProtocol.EXECUTION_PROFILE);
             assertThat(generated.suite().cases()).hasSize(1);
             assertThat(generated.payloadPersisted()).isFalse();
         });
@@ -291,6 +305,8 @@ class ResourceGatewayApplicationTest {
         assertThat(functionRun.getStatusCode().is2xxSuccessful()).isTrue();
         assertThat(functionRun.getBody()).satisfies(evidence -> {
             assertThat(evidence.passed()).isTrue();
+            assertThat(evidence.executionProfile())
+                    .isEqualTo(AuthoringFunctionWorkerProtocol.EXECUTION_PROFILE);
             assertThat(evidence.results()).singleElement()
                     .satisfies(result -> assertThat(result.actual()).isEqualTo("sample"));
             assertThat(evidence.payloadPersisted()).isFalse();

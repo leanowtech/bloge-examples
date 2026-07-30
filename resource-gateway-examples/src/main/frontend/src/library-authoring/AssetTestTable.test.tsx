@@ -96,6 +96,8 @@ describe('AssetTestTable', () => {
 
     expect(query('[data-testid="library-test-dialog"]').textContent).toContain('UNBOUND');
     expect(query('[data-testid="library-test-dialog"]').textContent)
+      .toContain('Runner ISOLATED PROCESS');
+    expect(query('[data-testid="library-test-dialog"]').textContent)
       .toContain('No exact callable was found');
 
     await click(query('[data-testid="library-test-run-all"]'));
@@ -286,6 +288,7 @@ function functionDraft(): VisualAuthoringFunctionTestDraft {
     canonicalFingerprint: `sha256:${'c'.repeat(64)}`,
     functionFingerprint: `sha256:${'f'.repeat(64)}`,
     runtimeFingerprint: '',
+    executionProfile: 'bloge-core-isolated-process.v1',
     bindingStatus: 'UNBOUND',
     suiteFingerprint: `sha256:${'s'.repeat(64)}`,
     suite: {
@@ -319,6 +322,7 @@ function functionEvidence(): VisualAuthoringFunctionTestRunEvidence {
     canonicalFingerprint: `sha256:${'c'.repeat(64)}`,
     functionFingerprint: `sha256:${'f'.repeat(64)}`,
     runtimeFingerprint: '',
+    executionProfile: 'bloge-core-isolated-process.v1',
     bindingStatus: 'UNBOUND',
     suiteFingerprint: `sha256:${'s'.repeat(64)}`,
     evidenceFingerprint: `sha256:${'e'.repeat(64)}`,

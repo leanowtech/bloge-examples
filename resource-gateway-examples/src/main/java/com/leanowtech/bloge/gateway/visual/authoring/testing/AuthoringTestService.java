@@ -2,14 +2,11 @@ package com.leanowtech.bloge.gateway.visual.authoring.testing;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
-import com.leanowtech.bloge.core.spi.BuiltInFunctions;
-import com.leanowtech.bloge.core.spi.ExpressionFunction;
 import com.leanowtech.bloge.gateway.visual.authoring.application.AuthoringDraftService;
 import com.leanowtech.bloge.gateway.visual.authoring.application.AuthoringLifecycleException;
 import com.leanowtech.bloge.gateway.visual.authoring.model.AuthoringCompileResult;
 import com.leanowtech.bloge.gateway.visual.authoring.model.AuthoringDiagnostic;
 import com.leanowtech.bloge.gateway.visual.authoring.model.AuthoringProblem;
-import com.leanowtech.bloge.gateway.visual.authoring.testing.AuthoringTestProtocol.ExpectedError;
 import com.leanowtech.bloge.gateway.visual.authoring.testing.AuthoringTestProtocol.FunctionAssertion;
 import com.leanowtech.bloge.gateway.visual.authoring.testing.AuthoringTestProtocol.FunctionBindingStatus;
 import com.leanowtech.bloge.gateway.visual.authoring.testing.AuthoringTestProtocol.FunctionCase;
@@ -24,6 +21,8 @@ import com.leanowtech.bloge.gateway.visual.authoring.testing.AuthoringTestProtoc
 import com.leanowtech.bloge.gateway.visual.authoring.testing.AuthoringTestProtocol.OperatorDraftRequest;
 import com.leanowtech.bloge.gateway.visual.authoring.testing.AuthoringTestProtocol.OperatorRunEvidence;
 import com.leanowtech.bloge.gateway.visual.authoring.testing.AuthoringTestProtocol.OperatorRunRequest;
+import com.leanowtech.bloge.gateway.visual.authoring.testing.AuthoringFunctionWorkerProtocol.InvocationOutcome;
+import com.leanowtech.bloge.gateway.visual.authoring.testing.AuthoringFunctionWorkerProtocol.InvocationResponse;
 import com.leanowtech.bloge.gateway.visual.catalog.BuiltInFunctionContract;
 import com.leanowtech.bloge.gateway.visual.catalog.OperatorDefinition;
 import com.leanowtech.bloge.gateway.visual.catalog.OperatorLibrary;
@@ -35,27 +34,18 @@ import com.leanowtech.bloge.gateway.visual.testing.VisualOperatorContractTestSer
 import com.leanowtech.bloge.gateway.visual.testing.VisualOperatorContractTestSuiteRequest;
 import com.leanowtech.bloge.gateway.visual.testing.VisualOperatorContractTestSuiteResult;
 
-import jakarta.annotation.PreDestroy;
-
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 
 import java.time.Instant;
 import java.util.ArrayList;
-import java.util.LinkedHashMap;
-import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
 import java.util.UUID;
-import java.util.concurrent.ExecutionException;
-import java.util.concurrent.ExecutorService;
-import java.util.concurrent.Executors;
-import java.util.concurrent.Future;
 import java.util.concurrent.TimeUnit;
-import java.util.concurrent.TimeoutException;
 
 /**
  * Runs bounded, ephemeral tests against one exact progressive-library draft revision.
@@ -67,55 +57,29 @@ public final class AuthoringTestService {
     public static final int MAXIMUM_RESULT_BYTES = 512 * 1024;
     public static final int MAXIMUM_CASES = 50;
     public static final int MAXIMUM_ARGUMENTS = 32;
-    public static final int FUNCTION_TIMEOUT_MILLIS = 250;
-    public static final String RUNTIME_PROFILE = "bloge-core-safe-in-process.v1";
-    private static final Set<String> IN_PROCESS_DENYLIST = Set.of(
-            "matches",
-            "replaceAll",
-            "split",
-            "regexExtract",
-            "regexExtractAll",
-            "padLeft",
-            "padRight",
-            "range",
-            "template"
-    );
+    public static final int FUNCTION_TIMEOUT_MILLIS =
+            AuthoringFunctionWorkerProtocol.INVOCATION_TIMEOUT_MILLIS;
+    public static final String RUNTIME_PROFILE =
+            AuthoringFunctionWorkerProtocol.EXECUTION_PROFILE;
 
     private final AuthoringDraftService drafts;
     private final VisualOperatorContractTestService operatorTests;
     private final ObjectMapper objectMapper;
-    private final Map<String, ExpressionFunction> runtimeFunctions;
-    private final ExecutorService functionExecutor;
+    private final AuthoringFunctionTestWorker functionWorker;
 
     @Autowired
     public AuthoringTestService(AuthoringDraftService drafts,
                                 VisualOperatorContractTestService operatorTests,
-                                ObjectMapper objectMapper) {
-        this(
-                drafts,
-                operatorTests,
-                objectMapper,
-                coreRuntimeFunctions(),
-                Executors.newThreadPerTaskExecutor(
-                        Thread.ofVirtual().name("authoring-function-test-", 0).factory())
-        );
-    }
-
-    AuthoringTestService(AuthoringDraftService drafts,
-                         VisualOperatorContractTestService operatorTests,
-                         ObjectMapper objectMapper,
-                         Map<String, ExpressionFunction> runtimeFunctions,
-                         ExecutorService functionExecutor) {
+                                ObjectMapper objectMapper,
+                                AuthoringFunctionTestWorker functionWorker) {
         this.drafts = Objects.requireNonNull(drafts, "drafts");
         this.operatorTests = Objects.requireNonNull(operatorTests, "operatorTests");
         this.objectMapper = Objects.requireNonNull(objectMapper, "objectMapper");
-        this.runtimeFunctions = Map.copyOf(runtimeFunctions);
-        this.functionExecutor = Objects.requireNonNull(functionExecutor, "functionExecutor");
+        this.functionWorker = Objects.requireNonNull(functionWorker, "functionWorker");
     }
 
-    @PreDestroy
     void close() {
-        functionExecutor.shutdownNow();
+        // One-shot workers have no persistent execution state to close.
     }
 
     public OperatorDraft draftOperator(String draftId,
@@ -225,6 +189,7 @@ public final class AuthoringTestService {
                 preview.canonicalFingerprint(),
                 BuiltInFunctionContract.callableFingerprint(function),
                 runtime.runtimeFingerprint(),
+                functionWorker.executionProfile(),
                 runtime.status(),
                 suiteFingerprint(suite, draftId, expectedRevision),
                 suite,
@@ -249,7 +214,7 @@ public final class AuthoringTestService {
         RuntimeResolution runtime = resolveRuntime(function);
         String suiteFingerprint = suiteFingerprint(suite, draftId, expectedRevision);
         List<FunctionCaseResult> results = runtime.status() == FunctionBindingStatus.BOUND
-                ? runFunctionCases(function, runtime.function(), suite.cases())
+                ? runFunctionCases(function, runtime.runtimeFingerprint(), suite.cases())
                 : notRunFunctionCases(suite.cases(), runtime);
         int passedCases = (int) results.stream().filter(FunctionCaseResult::passed).count();
         int failedCases = results.size() - passedCases;
@@ -264,6 +229,7 @@ public final class AuthoringTestService {
                 "canonicalFingerprint", preview.canonicalFingerprint(),
                 "functionFingerprint", BuiltInFunctionContract.callableFingerprint(function),
                 "runtimeFingerprint", runtime.runtimeFingerprint(),
+                "executionProfile", functionWorker.executionProfile(),
                 "suiteFingerprint", suiteFingerprint,
                 "results", results
         ), draftId, expectedRevision);
@@ -276,6 +242,7 @@ public final class AuthoringTestService {
                 preview.canonicalFingerprint(),
                 BuiltInFunctionContract.callableFingerprint(function),
                 runtime.runtimeFingerprint(),
+                functionWorker.executionProfile(),
                 runtime.status(),
                 suiteFingerprint,
                 evidenceFingerprint,
@@ -290,17 +257,41 @@ public final class AuthoringTestService {
     }
 
     private List<FunctionCaseResult> runFunctionCases(OperatorLibrary.BuiltInFunction function,
-                                                      ExpressionFunction runtime,
+                                                      String runtimeFingerprint,
                                                       List<FunctionCase> cases) {
         List<FunctionCaseResult> results = new ArrayList<>();
+        long deadline = System.nanoTime() + TimeUnit.MILLISECONDS.toNanos(
+                AuthoringFunctionWorkerProtocol.SUITE_TIMEOUT_MILLIS);
         for (int index = 0; index < cases.size(); index++) {
-            results.add(runFunctionCase(function, runtime, cases.get(index), index));
+            if (!hasWorkerBudget(System.nanoTime(), deadline)) {
+                results.add(workerFailureResult(
+                        cases.get(index),
+                        new InvocationResponse(
+                                InvocationResponse.SCHEMA_VERSION,
+                                "suite-deadline",
+                                functionWorker.executionProfile(),
+                                runtimeFingerprint,
+                                InvocationOutcome.WORKER_UNAVAILABLE,
+                                null,
+                                "SUITE_DEADLINE_EXCEEDED",
+                                0),
+                        "/suite/cases/" + index));
+                continue;
+            }
+            results.add(runFunctionCase(
+                    function, runtimeFingerprint, cases.get(index), index));
         }
         return results;
     }
 
+    static boolean hasWorkerBudget(long nowNanos, long deadlineNanos) {
+        long requiredNanos = TimeUnit.MILLISECONDS.toNanos(
+                AuthoringFunctionWorkerProtocol.SUPERVISOR_TIMEOUT_MILLIS);
+        return deadlineNanos - nowNanos >= requiredNanos;
+    }
+
     private FunctionCaseResult runFunctionCase(OperatorLibrary.BuiltInFunction function,
-                                               ExpressionFunction runtime,
+                                               String runtimeFingerprint,
                                                FunctionCase testCase,
                                                int index) {
         String target = "/suite/cases/" + index;
@@ -316,41 +307,10 @@ public final class AuthoringTestService {
                     diagnostics);
         }
 
-        long started = System.nanoTime();
-        Future<Object> invocation = functionExecutor.submit(
-                () -> runtime.apply(testCase.args().toArray(Object[]::new)));
-        Object actual;
-        try {
-            actual = invocation.get(FUNCTION_TIMEOUT_MILLIS, TimeUnit.MILLISECONDS);
-        } catch (TimeoutException exception) {
-            invocation.cancel(true);
-            return functionCaseResult(
-                    testCase,
-                    false,
-                    FunctionCaseStatus.TIMEOUT,
-                    null,
-                    "TIMEOUT",
-                    elapsedMicros(started),
-                    List.of(VisualDiagnostic.error(
-                            "visual.authoring.functionTest.timeout",
-                            "Function execution exceeded the isolated test time limit.",
-                            target)));
-        } catch (InterruptedException exception) {
-            Thread.currentThread().interrupt();
-            invocation.cancel(true);
-            return functionCaseResult(
-                    testCase,
-                    false,
-                    FunctionCaseStatus.INVOCATION_FAILED,
-                    null,
-                    "INTERRUPTED",
-                    elapsedMicros(started),
-                    List.of(VisualDiagnostic.error(
-                            "visual.authoring.functionTest.interrupted",
-                            "Function execution was interrupted.",
-                            target)));
-        } catch (ExecutionException exception) {
-            String errorCode = stableErrorCode(exception.getCause());
+        InvocationResponse invocation = functionWorker.invoke(
+                function.name(), runtimeFingerprint, testCase.args());
+        if (invocation.outcome() == InvocationOutcome.INVOCATION_FAILED) {
+            String errorCode = invocation.errorCode();
             boolean expected = testCase.assertion() == FunctionAssertion.EXPECT_ERROR
                     && testCase.expectError() != null
                     && testCase.expectError().code().equals(errorCode);
@@ -360,14 +320,18 @@ public final class AuthoringTestService {
                     expected ? FunctionCaseStatus.PASSED : FunctionCaseStatus.INVOCATION_FAILED,
                     null,
                     errorCode,
-                    elapsedMicros(started),
+                    invocation.durationMicros(),
                     expected ? List.of() : List.of(VisualDiagnostic.error(
                             "visual.authoring.functionTest.unexpectedError",
                             "Function execution returned error code '%s'.".formatted(errorCode),
                             target + "/expectError")));
         }
+        if (invocation.outcome() != InvocationOutcome.SUCCESS) {
+            return workerFailureResult(testCase, invocation, target);
+        }
 
-        long durationMicros = elapsedMicros(started);
+        Object actual = invocation.actual();
+        long durationMicros = invocation.durationMicros();
         if (testCase.assertion() == FunctionAssertion.EXPECT_ERROR) {
             return functionCaseResult(
                     testCase,
@@ -414,6 +378,44 @@ public final class AuthoringTestService {
                                 ? "Function result does not match the declared return type."
                                 : "Function result does not equal the expected value.",
                         target + "/expect")));
+    }
+
+    private FunctionCaseResult workerFailureResult(FunctionCase testCase,
+                                                   InvocationResponse invocation,
+                                                   String target) {
+        FunctionCaseStatus status;
+        String diagnosticCode;
+        String message;
+        switch (invocation.outcome()) {
+            case TIMEOUT -> {
+                status = FunctionCaseStatus.TIMEOUT;
+                diagnosticCode = "visual.authoring.functionTest.timeout";
+                message = "The isolated worker exceeded the function execution time limit.";
+            }
+            case RESOURCE_EXHAUSTED -> {
+                status = FunctionCaseStatus.RESOURCE_EXHAUSTED;
+                diagnosticCode = "visual.authoring.functionTest.resourceExhausted";
+                message = "The isolated worker exceeded its bounded memory or process resources.";
+            }
+            case WORKER_UNAVAILABLE -> {
+                status = FunctionCaseStatus.WORKER_UNAVAILABLE;
+                diagnosticCode = "visual.authoring.functionTest.workerUnavailable";
+                message = "The isolated worker is unavailable or at its concurrency limit.";
+            }
+            default -> {
+                status = FunctionCaseStatus.WORKER_FAILED;
+                diagnosticCode = "visual.authoring.functionTest.workerFailed";
+                message = "The isolated worker failed protocol or launch attestation.";
+            }
+        }
+        return functionCaseResult(
+                testCase,
+                false,
+                status,
+                null,
+                invocation.errorCode(),
+                invocation.durationMicros(),
+                List.of(VisualDiagnostic.error(diagnosticCode, message, target)));
     }
 
     private List<VisualDiagnostic> validateFunctionCase(OperatorLibrary.BuiltInFunction function,
@@ -553,43 +555,30 @@ public final class AuthoringTestService {
     }
 
     private RuntimeResolution resolveRuntime(OperatorLibrary.BuiltInFunction function) {
-        ExpressionFunction runtime = runtimeFunctions.get(function.name());
-        if (runtime == null) {
+        TrustedCoreFunctionRuntime.Resolution runtime =
+                TrustedCoreFunctionRuntime.resolve(function.name());
+        if (runtime.state() == TrustedCoreFunctionRuntime.State.UNBOUND) {
             return new RuntimeResolution(
                     FunctionBindingStatus.UNBOUND,
-                    null,
                     "",
                     List.of(VisualDiagnostic.warning(
                             "visual.authoring.functionTest.runtimeUnbound",
                             "No exact callable was found in the BLOGE runtime inventory.",
                             "/suite/functionRef")));
         }
-        String runtimeFingerprint = VisualBundleFingerprint.fromMaterial(Map.of(
-                "runtimeProfile", RUNTIME_PROFILE,
-                "name", runtime.name(),
-                "implementation", runtime.getClass().getName(),
-                "pure", runtime.isPure(),
-                "requiredExecutionServices", runtime.requiredExecutionServices().stream()
-                        .map(Enum::name)
-                        .sorted()
-                        .toList()
-        ));
-        if (!runtime.isPure()
-                || !runtime.requiredExecutionServices().isEmpty()
-                || IN_PROCESS_DENYLIST.contains(runtime.name())) {
+        if (runtime.state() == TrustedCoreFunctionRuntime.State.BLOCKED_BY_POLICY) {
             return new RuntimeResolution(
                     FunctionBindingStatus.BLOCKED_BY_POLICY,
-                    null,
-                    runtimeFingerprint,
+                    runtime.runtimeFingerprint(),
                     List.of(VisualDiagnostic.warning(
                             "visual.authoring.functionTest.runtimeBlocked",
-                            "The runtime callable requires a stronger isolated worker profile.",
+                            "The runtime callable requires execution services that are not "
+                                    + "available to the isolated worker.",
                             "/suite/functionRef")));
         }
         return new RuntimeResolution(
                 FunctionBindingStatus.BOUND,
-                runtime,
-                runtimeFingerprint,
+                runtime.runtimeFingerprint(),
                 List.of());
     }
 
@@ -884,30 +873,6 @@ public final class AuthoringTestService {
         return value.getClass().getSimpleName();
     }
 
-    private static String stableErrorCode(Throwable throwable) {
-        Throwable cause = throwable == null ? new IllegalStateException() : throwable;
-        if (cause instanceof IllegalArgumentException) {
-            return "INVALID_ARGUMENT";
-        }
-        if (cause instanceof IndexOutOfBoundsException) {
-            return "OUT_OF_RANGE";
-        }
-        if (cause instanceof ArithmeticException) {
-            return "ARITHMETIC_ERROR";
-        }
-        return "FUNCTION_INVOCATION_FAILED";
-    }
-
-    private static long elapsedMicros(long startedNanos) {
-        return TimeUnit.NANOSECONDS.toMicros(Math.max(0, System.nanoTime() - startedNanos));
-    }
-
-    private static Map<String, ExpressionFunction> coreRuntimeFunctions() {
-        Map<String, ExpressionFunction> functions = new LinkedHashMap<>();
-        BuiltInFunctions.registerAll(functions);
-        return functions;
-    }
-
     private static String normalized(String value) {
         return value == null ? "" : value.trim();
     }
@@ -938,7 +903,6 @@ public final class AuthoringTestService {
 
     private record RuntimeResolution(
             FunctionBindingStatus status,
-            ExpressionFunction function,
             String runtimeFingerprint,
             List<VisualDiagnostic> diagnostics
     ) {

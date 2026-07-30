@@ -282,6 +282,11 @@ export default function AssetTestTable({
               Evidence <strong>{shortFingerprint(lastEvidence)}</strong>
             </span>
           )}
+          {kind === 'function' && functionDraft?.executionProfile && (
+            <span title={functionDraft.executionProfile}>
+              Runner <strong>{executionProfileLabel(functionDraft.executionProfile)}</strong>
+            </span>
+          )}
         </div>
 
         <div className="library-test-alerts">
@@ -826,4 +831,8 @@ function fixtureId(kind: string, assetRef: string, caseId: string): string {
 
 function shortFingerprint(value: string): string {
   return value.length > 18 ? `${value.slice(0, 14)}...` : value;
+}
+
+function executionProfileLabel(value: string): string {
+  return value.includes('isolated-process') ? 'ISOLATED PROCESS' : value;
 }

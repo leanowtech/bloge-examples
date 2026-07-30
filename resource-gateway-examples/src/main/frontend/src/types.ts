@@ -1115,6 +1115,7 @@ export interface VisualAuthoringFunctionTestDraft {
   canonicalFingerprint: string;
   functionFingerprint: string;
   runtimeFingerprint: string;
+  executionProfile: string;
   bindingStatus: VisualFunctionBindingStatus;
   suiteFingerprint: string;
   suite: VisualFunctionTestSuite;
@@ -1131,6 +1132,7 @@ export interface VisualAuthoringFunctionTestRunEvidence {
   canonicalFingerprint: string;
   functionFingerprint: string;
   runtimeFingerprint: string;
+  executionProfile: string;
   bindingStatus: VisualFunctionBindingStatus;
   suiteFingerprint: string;
   evidenceFingerprint: string;
@@ -1144,7 +1146,8 @@ export interface VisualAuthoringFunctionTestRunEvidence {
     kind: VisualFunctionTestKind;
     passed: boolean;
     status: 'PASSED' | 'ASSERTION_FAILED' | 'CONTRACT_REJECTED'
-      | 'INVOCATION_FAILED' | 'TIMEOUT' | 'NOT_RUN';
+      | 'INVOCATION_FAILED' | 'TIMEOUT' | 'RESOURCE_EXHAUSTED'
+      | 'WORKER_UNAVAILABLE' | 'WORKER_FAILED' | 'NOT_RUN';
     actual: unknown;
     actualType: string;
     errorCode: string;

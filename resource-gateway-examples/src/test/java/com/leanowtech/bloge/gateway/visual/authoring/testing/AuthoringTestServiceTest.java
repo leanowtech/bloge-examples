@@ -19,6 +19,8 @@ import com.leanowtech.bloge.gateway.visual.authoring.testing.AuthoringTestProtoc
 import com.leanowtech.bloge.gateway.visual.authoring.testing.AuthoringTestProtocol.FunctionSuite;
 import com.leanowtech.bloge.gateway.visual.authoring.testing.AuthoringTestProtocol.OperatorDraftRequest;
 import com.leanowtech.bloge.gateway.visual.authoring.testing.AuthoringTestProtocol.OperatorRunRequest;
+import com.leanowtech.bloge.gateway.visual.authoring.testing.AuthoringFunctionWorkerProtocol.InvocationOutcome;
+import com.leanowtech.bloge.gateway.visual.authoring.testing.AuthoringFunctionWorkerProtocol.InvocationResponse;
 import com.leanowtech.bloge.gateway.visual.catalog.InMemoryOperatorLibraryRegistry;
 import com.leanowtech.bloge.gateway.visual.catalog.OperatorLibraryValidator;
 import com.leanowtech.bloge.gateway.visual.catalog.VisualCatalogTestSupport;
@@ -37,6 +39,7 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.concurrent.TimeUnit;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
@@ -66,7 +69,8 @@ class AuthoringTestServiceTest {
                                 VisualCatalogTestSupport.eligibilityLibrary("integer")),
                         new JsonSchemaSampleGenerator(),
                         mapper);
-        tests = new AuthoringTestService(drafts, operatorTests, mapper);
+        tests = new AuthoringTestService(
+                drafts, operatorTests, mapper, new DirectFunctionTestWorker());
         stored = drafts.save(
                 "authoring-tests",
                 0,
@@ -167,6 +171,8 @@ class AuthoringTestServiceTest {
 
         assertThat(draft.bindingStatus()).isEqualTo(FunctionBindingStatus.BOUND);
         assertThat(draft.runtimeFingerprint()).startsWith("sha256:");
+        assertThat(draft.executionProfile())
+                .isEqualTo(AuthoringFunctionWorkerProtocol.EXECUTION_PROFILE);
         assertThat(draft.suite().cases()).singleElement()
                 .satisfies(testCase -> assertThat(testCase.assertion())
                         .isEqualTo(FunctionAssertion.RETURN_TYPE));
@@ -186,7 +192,22 @@ class AuthoringTestServiceTest {
         });
         assertThat(evidence.functionFingerprint()).startsWith("sha256:");
         assertThat(evidence.runtimeFingerprint()).isEqualTo(draft.runtimeFingerprint());
+        assertThat(evidence.executionProfile()).isEqualTo(draft.executionProfile());
         assertThat(evidence.payloadPersisted()).isFalse();
+    }
+
+    @Test
+    void reservesAFullSupervisorWindowBeforeDispatchingAnotherWorker() {
+        long supervisorNanos = TimeUnit.MILLISECONDS.toNanos(
+                AuthoringFunctionWorkerProtocol.SUPERVISOR_TIMEOUT_MILLIS);
+        long deadlineNanos = TimeUnit.SECONDS.toNanos(20);
+
+        assertThat(AuthoringTestService.hasWorkerBudget(
+                deadlineNanos - supervisorNanos,
+                deadlineNanos)).isTrue();
+        assertThat(AuthoringTestService.hasWorkerBudget(
+                deadlineNanos - supervisorNanos + 1,
+                deadlineNanos)).isFalse();
     }
 
     @Test
@@ -305,6 +326,65 @@ class AuthoringTestServiceTest {
                     signatures:
                       - "() -> string"
                 """, VisualLibraryAuthoringDocument.class);
+    }
+
+    private static final class DirectFunctionTestWorker
+            implements AuthoringFunctionTestWorker {
+
+        @Override
+        public String executionProfile() {
+            return AuthoringFunctionWorkerProtocol.EXECUTION_PROFILE;
+        }
+
+        @Override
+        public InvocationResponse invoke(String functionName,
+                                         String expectedRuntimeFingerprint,
+                                         List<Object> args) {
+            TrustedCoreFunctionRuntime.Resolution runtime =
+                    TrustedCoreFunctionRuntime.resolve(functionName);
+            if (runtime.state() != TrustedCoreFunctionRuntime.State.BOUND
+                    || !runtime.runtimeFingerprint().equals(expectedRuntimeFingerprint)) {
+                return response(
+                        expectedRuntimeFingerprint,
+                        InvocationOutcome.WORKER_FAILED,
+                        null,
+                        "WORKER_ATTESTATION_MISMATCH");
+            }
+            try {
+                return response(
+                        runtime.runtimeFingerprint(),
+                        InvocationOutcome.SUCCESS,
+                        runtime.function().apply(args.toArray(Object[]::new)),
+                        "");
+            } catch (IllegalArgumentException exception) {
+                return response(
+                        runtime.runtimeFingerprint(),
+                        InvocationOutcome.INVOCATION_FAILED,
+                        null,
+                        "INVALID_ARGUMENT");
+            } catch (RuntimeException exception) {
+                return response(
+                        runtime.runtimeFingerprint(),
+                        InvocationOutcome.INVOCATION_FAILED,
+                        null,
+                        "FUNCTION_INVOCATION_FAILED");
+            }
+        }
+
+        private InvocationResponse response(String runtimeFingerprint,
+                                            InvocationOutcome outcome,
+                                            Object actual,
+                                            String errorCode) {
+            return new InvocationResponse(
+                    InvocationResponse.SCHEMA_VERSION,
+                    "direct-test-worker",
+                    executionProfile(),
+                    runtimeFingerprint,
+                    outcome,
+                    actual,
+                    errorCode,
+                    1);
+        }
     }
 
     private static final class InMemoryAuthoringDraftRepository

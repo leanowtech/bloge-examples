@@ -313,6 +313,9 @@ class TestRuntimeApplicationIntegrationTest {
                 .containsEntry(
                         "visualLibraryAuthoringGovernedFixturePersistence",
                         true)
+                .containsEntry(
+                        "visualLibraryAuthoringIsolatedFunctionTestWorker",
+                        true)
                 .containsEntry("mirrorPlanCompilation", true)
                 .containsEntry("mirrorExternalLeafInterception", true)
                 .containsEntry("mirrorScenarioArtifactRegistry", true)

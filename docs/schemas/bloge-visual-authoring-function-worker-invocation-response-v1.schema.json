@@ -1,0 +1,52 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://leanowtech.com/schemas/bloge-visual-authoring-function-worker-invocation-response-v1.schema.json",
+  "title": "BLOGE Visual Authoring Function Worker Invocation Response v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "requestId",
+    "executionProfile",
+    "runtimeFingerprint",
+    "outcome",
+    "actual",
+    "errorCode",
+    "durationMicros"
+  ],
+  "properties": {
+    "schemaVersion": {
+      "const": "bloge.visualAuthoringFunctionWorkerInvocationResponse.v1"
+    },
+    "requestId": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "executionProfile": {
+      "const": "bloge-core-isolated-process.v1"
+    },
+    "runtimeFingerprint": {
+      "type": "string",
+      "pattern": "^sha256:[a-f0-9]{64}$"
+    },
+    "outcome": {
+      "enum": [
+        "SUCCESS",
+        "INVOCATION_FAILED",
+        "TIMEOUT",
+        "RESOURCE_EXHAUSTED",
+        "WORKER_UNAVAILABLE",
+        "WORKER_FAILED"
+      ]
+    },
+    "actual": {},
+    "errorCode": {
+      "type": "string",
+      "maxLength": 80
+    },
+    "durationMicros": {
+      "type": "integer",
+      "minimum": 0
+    }
+  }
+}

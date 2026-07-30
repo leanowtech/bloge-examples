@@ -8,6 +8,9 @@ import com.leanowtech.bloge.gateway.visual.authoring.testing.AuthoringTestProtoc
 import com.leanowtech.bloge.gateway.visual.authoring.testing.AuthoringTestProtocol.FunctionSuite;
 import com.leanowtech.bloge.gateway.visual.authoring.testing.AuthoringTestProtocol.OperatorDraftRequest;
 import com.leanowtech.bloge.gateway.visual.authoring.testing.AuthoringTestProtocol.OperatorRunRequest;
+import com.leanowtech.bloge.gateway.visual.authoring.testing.AuthoringFunctionWorkerProtocol.InvocationOutcome;
+import com.leanowtech.bloge.gateway.visual.authoring.testing.AuthoringFunctionWorkerProtocol.InvocationRequest;
+import com.leanowtech.bloge.gateway.visual.authoring.testing.AuthoringFunctionWorkerProtocol.InvocationResponse;
 import com.leanowtech.bloge.gateway.visual.diagnostic.VisualDiagnostic;
 import com.leanowtech.bloge.gateway.visual.model.SchemaEnvelope;
 import com.leanowtech.bloge.gateway.visual.testing.VisualOperatorContractTestCase;
@@ -22,6 +25,7 @@ import java.nio.file.Path;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
@@ -96,6 +100,41 @@ class AuthoringTestMachineSchemaTest {
         assertThat(validate("bloge-visual-authoring-function-test-run-request-v1.schema.json", invalid))
                 .extracting(VisualDiagnostic::target)
                 .anyMatch(target -> target.contains("/args"));
+    }
+
+    @Test
+    void isolatedWorkerRequestAndResponseMatchTheirClosedMachineContracts() throws Exception {
+        String requestId = UUID.randomUUID().toString();
+        String fingerprint = "sha256:" + "a".repeat(64);
+        InvocationRequest request = new InvocationRequest(
+                InvocationRequest.SCHEMA_VERSION,
+                requestId,
+                "trim",
+                fingerprint,
+                java.util.Arrays.asList(null, "value"));
+        InvocationResponse response = new InvocationResponse(
+                InvocationResponse.SCHEMA_VERSION,
+                requestId,
+                AuthoringFunctionWorkerProtocol.EXECUTION_PROFILE,
+                fingerprint,
+                InvocationOutcome.SUCCESS,
+                "value",
+                "",
+                125);
+
+        assertThat(validate(
+                "bloge-visual-authoring-function-worker-invocation-request-v1.schema.json",
+                mapper.convertValue(request, Object.class))).isEmpty();
+        assertThat(validate(
+                "bloge-visual-authoring-function-worker-invocation-response-v1.schema.json",
+                mapper.convertValue(response, Object.class))).isEmpty();
+
+        Map<String, Object> invalid = mapper.convertValue(response, Map.class);
+        invalid.put("executionProfile", "in-process");
+        assertThat(validate(
+                "bloge-visual-authoring-function-worker-invocation-response-v1.schema.json",
+                invalid)).extracting(VisualDiagnostic::target)
+                .anyMatch(target -> target.contains("/executionProfile"));
     }
 
     @SuppressWarnings("unchecked")

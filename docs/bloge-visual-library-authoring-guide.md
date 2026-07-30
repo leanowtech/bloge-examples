@@ -2,7 +2,7 @@
 
 > 合同：`bloge.visualLibraryAuthoring.v1`
 >
-> 当前能力：Stage 0 权威编译 + Stage 1 持久化 lifecycle + Stage 2 样本推断、草稿级测试表与受限 function runner
+> 当前能力：Stage 0 权威编译 + Stage 1 持久化 lifecycle + Stage 2 样本推断、草稿级测试表、治理型 fixture 与进程隔离 function runner
 >
 > 机器 Schema：[bloge-visual-library-authoring-v1.schema.json](schemas/bloge-visual-library-authoring-v1.schema.json)
 
@@ -241,11 +241,12 @@ Function 表支持：
 | Kind | `GOLDEN`、`NEGATIVE`、`BOUNDARY`、`REGRESSION` |
 | Assertion | `EQUALS`、`RETURN_TYPE`、`EXPECT_ERROR` |
 | Binding | `BOUND`、`UNBOUND`、`BLOCKED_BY_POLICY` |
-| Row result | `PASSED`、`ASSERTION_FAILED`、`CONTRACT_REJECTED`、`INVOCATION_FAILED`、`TIMEOUT`、`NOT_RUN` |
+| Row result | `PASSED`、`ASSERTION_FAILED`、`CONTRACT_REJECTED`、`INVOCATION_FAILED`、`TIMEOUT`、`RESOURCE_EXHAUSTED`、`WORKER_UNAVAILABLE`、`WORKER_FAILED`、`NOT_RUN` |
 
-测试表中的 payload 只在浏览器、当前请求和响应中临时存在；`payloadPersisted=false`。当前尚未
-实现显式 **Save as governed fixture**，因此关闭浮层后表格行不会成为长期测试资产，已有
-`tests[].ref` 也不会被临时 runner 自动改写。
+测试表中的 payload 默认只在浏览器、当前请求和响应中临时存在；`payloadPersisted=false`。
+在 `test`/`staging` 部署中，可以对任意一行点击 **Save fixture**，显式确认数据分级、保留期、
+JSON Pointer 脱敏和测试数据声明后加密保存。成功 receipt 不返回 payload，只显示 revision、
+到期时间、脱敏数量和 fingerprint。临时 runner 不会自动保存，也不会改写 `tests[].ref`。
 
 机器合同：
 
@@ -253,6 +254,8 @@ Function 表支持：
 - [operator test run request](schemas/bloge-visual-authoring-operator-test-run-request-v1.schema.json)
 - [function test draft request](schemas/bloge-visual-authoring-function-test-draft-request-v1.schema.json)
 - [function test run request](schemas/bloge-visual-authoring-function-test-run-request-v1.schema.json)
+- [isolated worker request](schemas/bloge-visual-authoring-function-worker-invocation-request-v1.schema.json)
+- [isolated worker response](schemas/bloge-visual-authoring-function-worker-invocation-response-v1.schema.json)
 
 API：
 
@@ -263,10 +266,18 @@ API：
 | `POST` | `/drafts/{draftId}/tests/functions/draft` |
 | `POST` | `/drafts/{draftId}/tests/functions/run` |
 
-这里的 function runner 是演示用受限进程内 profile：最多 50 行、每行最多 32 个参数、
-suite 有 256 KiB 边界、结果有 512 KiB 边界、单次调用 250 ms；TIME/RANDOM/IDENTITY 等 execution
-service 函数以及 regex/range 等高资源风险函数会 fail closed。它不提供进程级 CPU/内存
-强隔离，生产 executable certification 仍需独立 worker/container sandbox。
+Function 表头的 `Runner ISOLATED PROCESS` 对应
+`bloge-core-isolated-process.v1`。每一行在全新的 one-shot JVM 中执行：只加载 exact-name、
+pure、无 execution-service 依赖的 BLOGE core callable；gateway 与 worker 双方核对 runtime
+fingerprint。子进程使用 64 MiB heap、96 MiB metaspace、16 MiB direct memory、单 active
+processor、250 ms invocation watchdog 和 2 秒 supervisor kill；最多并发 2 个 worker，
+饱和立即失败，整套测试最多 15 秒。环境变量被清空，工作目录为调用级临时目录，stdout、
+stderr 和响应都有上限，异常内容不会回显测试参数。
+
+这是一条适合受信 core inventory 的进程级故障隔离链路，不是任意客户代码的 syscall
+sandbox。未来允许上传自定义 function 二进制时，launcher 必须升级为独立容器或远端 worker，
+补齐 cgroup/namespace/seccomp、只读镜像、网络 deny-by-default 和 workload identity；不能
+因为当前 feature flag 为 `true` 就把未知代码装进本地 JVM worker。
 
 ## 8. 读取能力边界
 
@@ -287,12 +298,12 @@ curl --fail-with-body \
 - `previewFencedCommit=true`
 - `operatorTestDraftRunner=true`
 - `functionTestDraftRunner=true`
-- `governedFixturePersistence=false`
-- `isolatedFunctionTestWorker=false`
+- `governedFixturePersistence=true`（`test`/`staging`；其他 profile 为 `false`）
+- `isolatedFunctionTestWorker=true`
 
 集成方也可以读取 `/api/integration/capabilities`，确认协议对象、stateless endpoint 和
-draft lifecycle/test endpoint。两个值为 `false` 的能力是明确的生产边界：当前测试 payload
-只在请求/响应中短暂存在，function runner 也不是进程级隔离沙箱。
+draft lifecycle/test endpoint。客户端必须按实际响应协商，不能硬编码 profile 能力；
+`crossLibraryTypeImports=false` 仍是当前明确边界。
 
 ## 9. 持久化 Draft 与受保护提交
 

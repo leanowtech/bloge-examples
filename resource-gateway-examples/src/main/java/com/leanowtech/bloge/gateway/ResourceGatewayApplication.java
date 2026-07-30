@@ -1,5 +1,7 @@
 package com.leanowtech.bloge.gateway;
 
+import com.leanowtech.bloge.gateway.visual.authoring.testing.AuthoringFunctionTestWorkerMain;
+
 import org.springframework.boot.SpringApplication;
 import org.springframework.boot.autoconfigure.SpringBootApplication;
 
@@ -41,6 +43,10 @@ public class ResourceGatewayApplication {
      * @param args command-line arguments
      */
     public static void main(String[] args) {
+        if (AuthoringFunctionTestWorkerMain.requested(args)) {
+            AuthoringFunctionTestWorkerMain.main(args);
+            return;
+        }
         SpringApplication.run(ResourceGatewayApplication.class, args);
     }
 }
