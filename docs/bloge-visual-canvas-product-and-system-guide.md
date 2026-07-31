@@ -1452,24 +1452,31 @@ curl -fsS http://localhost:8080/api/integration/capabilities
    终态标为 `Signed workbook`，并显示 root blocker。
 3. 使用 Execution、Evidence、Assertions、Governance、Warnings、Passed 分段控制
    缩小范围。这里按处理责任分组，不改写服务端签名 outcome。
-4. 点击 entry 打开右侧证据抽屉。终态 entry 才会按需拉取 child workbook，
-   展示 case 与 handling assertion；默认打开整批不会产生 N+1。
-5. 将地址栏中的
+4. 点击 entry 打开右侧证据抽屉。首屏先展示 scope-aware verdict、业务影响、责任人
+   和下一动作，再展示 attempt budget、deadline、batch fallback、last observation。
+   `Exact lifecycle` 表示逐次 claim/retry/terminal 来自数据库 audit；
+   `Aggregate projection` 表示旧任务只保留总次数，界面不会猜测缺失历史。
+5. 终态 entry 才会按需拉取 child workbook，展示 case 与 handling assertion；
+   默认打开整批不会产生 N+1。fingerprint 和技术坐标默认折叠。
+6. 只有企业宿主提供 exact compiled-plan 到 source revision/fingerprint 的不可变
+   Author binding 时，失败项才显示 `Open exact Author target`；无绑定、无权限和
+   Illustrative sample 都只显示责任人，不制造一个错误链接。
+7. 将地址栏中的
    `/rehearsals/?jobId=<jobId>&entry=<manifest-index>` 交给 ANEKE 或排障人员，
    对方会回到同一批次和条目；跨 scope 的 job 不会被定位或读取。
 
 被阻断的终态批次会在根 blocker 下显示 `Reviewed remediation`：
 
-6. `Retry exact` 用于暂态执行/证据复查；`Replace plans` 允许勾选 entry，并填写
+8. `Retry exact` 用于暂态执行/证据复查；`Replace plans` 允许勾选 entry，并填写
    已存在 compiled plan 的 exact id、revision 和 fingerprint。两种方式都必须绑定
    exact governance ticket，不能输入自由 DSL/JSON。
-7. `Freeze for review` 把 predecessor workbook fingerprint、完整 successor request、
+9. `Freeze for review` 把 predecessor workbook fingerprint、完整 successor request、
    server policy 和 review deadline 冻结成 content-addressed plan。
-8. Owner 先批准或拒绝。Owner 批准后，独立 Reviewer 使用另一个 human identity
+10. Owner 先批准或拒绝。Owner 批准后，独立 Reviewer 使用另一个 human identity
    追加第二代决定；页面显示的是服务端绑定的 actor/time，而不是表单自报身份。
-9. 两代批准完成后由 Owner 点击 `Admit successor`。拒绝事实不可覆盖，拒绝后不会
+11. 两代批准完成后由 Owner 点击 `Admit successor`。拒绝事实不可覆盖，拒绝后不会
    出现提交按钮。
-10. 后继形成 root-signed terminal workbook 后，点击 `Compare signed evidence`，
+12. 后继形成 root-signed terminal workbook 后，点击 `Compare signed evidence`，
     查看根和逐 entry 的 blocker 集合差、plan changed 和 gate transition。对比没有
     “综合质量分”，只展示两份签名来源可证明的变化。
 
@@ -1484,7 +1491,7 @@ curl -fsS http://localhost:8080/api/integration/capabilities
 万能令牌。VSCode 方案应再通过 `setBlogeApiTransport(...)` 让扩展宿主持有 bearer
 material，Webview 只接收 log-safe principal label。
 
-工作台不读取业务 payload，也不提供取消、quarantine finalization remediation、
+工作台不读取业务 payload、worker identity 或异常文本，也不提供取消、quarantine finalization remediation、
 legal hold、purge、通用 JSON/DSL 或 raw payload 按钮。当前版本闭合“找得到、分得清、
 能取证、双人审阅、准入后继、签名对账”；“零 DSL 调整 case”仍是后续能力。
 

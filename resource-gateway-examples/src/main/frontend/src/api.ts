@@ -34,6 +34,7 @@ import type {
   SimulationRequest,
   SimulationResponse,
   ScenarioRehearsalBatchItemPage,
+  ScenarioRehearsalBatchItemAttemptTimeline,
   ScenarioRehearsalBatchJobPage,
   ScenarioRehearsalBatchWorkbookSeed,
   ScenarioRehearsalRemediationApproval,
@@ -987,6 +988,21 @@ export async function fetchScenarioRehearsalBatchItems(
     ),
     'SCENARIO_REHEARSAL_BATCH_ITEM_PAGE',
     'resourceGateway.scenarioRehearsalBatchItemPage.v1',
+  );
+}
+
+/** Reads database-authoritative retry and terminal observations for one batch item. */
+export async function fetchScenarioRehearsalBatchItemAttempts(
+  jobId: string,
+  itemIndex: number,
+): Promise<ScenarioRehearsalBatchItemAttemptTimeline> {
+  return readMirrorPayload<ScenarioRehearsalBatchItemAttemptTimeline>(
+    await sendRequest(
+      `/api/mirror/rehearsal-jobs/${encodeURIComponent(jobId)}/items/${itemIndex}/attempts`,
+      { headers: mirrorWorkbenchHeaders() },
+    ),
+    'SCENARIO_REHEARSAL_BATCH_ITEM_ATTEMPT_TIMELINE',
+    'resourceGateway.scenarioRehearsalBatchItemAttemptTimeline.v1',
   );
 }
 

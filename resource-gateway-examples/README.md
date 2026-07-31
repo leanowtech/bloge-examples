@@ -79,6 +79,7 @@ silently consuming work.
 | `POST http://localhost:8080/api/mirror/rehearsal-jobs` | Submit an exact-plan batch after starting with `--scenario-batch`; the script aligns the worker partition with the demo identity |
 | `GET http://localhost:8080/api/mirror/rehearsal-jobs?limit=25` | List the authenticated exact scope's newest payload-free batches with immutable creation-time keyset pagination for the Owner workbench |
 | `GET http://localhost:8080/api/mirror/rehearsal-jobs/{jobId}/items` | Read stable payload-free item pages while bounded regional workers progress the batch |
+| `GET http://localhost:8080/api/mirror/rehearsal-jobs/{jobId}/items/{itemIndex}/attempts` | Read the exact payload-free attempt timeline, retry budget, batch fallback, and optional fingerprint-bound Author target; older retained jobs remain explicitly aggregate-only |
 | `GET http://localhost:8080/api/mirror/rehearsal-jobs/{jobId}/evidence` | Read one signed payload-free terminal batch index whose request, manifest, item results, and child evidence references can be verified offline |
 | `GET http://localhost:8080/api/mirror/rehearsal-jobs/{jobId}/workbook-seed` | Read one bounded, root-signed ANEKE batch correctness projection; Test Kit verifies it without one request per child (`X-Purpose: GOVERNANCE_EVIDENCE_INGESTION`) |
 | `GET http://localhost:8080/api/mirror/rehearsal-jobs/{jobId}/finalization` | Inspect payload-free `PENDING`, `SIGNING`, `RETRY_WAIT`, `QUARANTINED`, or `FINALIZED` evidence-publication state without exposing worker or signer diagnostics |

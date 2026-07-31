@@ -232,6 +232,7 @@ ScenarioPack
 | `GET /api/mirror/rehearsal-jobs` | `MIRROR_REHEARSAL_BATCH_READ` | 按 exact scope 与不可变创建坐标 keyset 分页列出最新 payload-free job |
 | `GET /api/mirror/rehearsal-jobs/{jobId}` | `MIRROR_REHEARSAL_BATCH_READ` | 读取并重验 payload-free job projection |
 | `GET /api/mirror/rehearsal-jobs/{jobId}/items` | `MIRROR_REHEARSAL_BATCH_READ` | 使用 `startIndex` + `limit` 读取稳定 manifest-index 页 |
+| `GET /api/mirror/rehearsal-jobs/{jobId}/items/{itemIndex}/attempts` | `MIRROR_REHEARSAL_BATCH_READ` | 从 append-only lifecycle audit 投影精确 claim/retry/terminal 时间线；不返回 payload、worker identity 或异常文本 |
 | `GET /api/mirror/rehearsal-jobs/{jobId}/evidence` | `MIRROR_REHEARSAL_BATCH_EVIDENCE_READ` | 读取并复验请求、manifest、终态 job、全部 item ref 的签名批次闭包 |
 | `GET /api/mirror/rehearsal-jobs/{jobId}/workbook-seed` | `MIRROR_REHEARSAL_BATCH_WORKBOOK_READ` | 从已验签 batch/retention/child closure 投影并签发有界 ANEKE batch seed |
 | `POST /api/mirror/rehearsal-jobs/{jobId}/cancellations` | `MIRROR_REHEARSAL_BATCH_CANCEL` | 记录幂等 cooperative cancellation intent |
@@ -605,6 +606,11 @@ curl -sS \
 
 curl -sS \
   -H 'Authorization: Bearer bloge-aneke-demo-token' \
+  -H 'X-Purpose: MIRROR_REHEARSAL' \
+  'http://localhost:8080/api/mirror/rehearsal-jobs/<jobId>/items/<itemIndex>/attempts'
+
+curl -sS \
+  -H 'Authorization: Bearer bloge-aneke-demo-token' \
   -H 'X-Purpose: GOVERNANCE_EVIDENCE_INGESTION' \
   'http://localhost:8080/api/mirror/rehearsal-jobs/<jobId>/evidence'
 
@@ -629,6 +635,18 @@ curl -sS -X POST \
   }' \
   'http://localhost:8080/api/mirror/rehearsal-jobs/<jobId>/cancellations'
 ```
+
+`attempts` 响应使用
+`resourceGateway.scenarioRehearsalBatchItemAttemptTimeline.v1`。`historyComplete=true`
+才表示每次 claim 都有数据库权威时间和对应 retry/terminal observation；升级前保留的
+旧任务若没有 lifecycle facts，会返回 `historyComplete=false`，界面继续显示明确标注的
+aggregate projection，不补造历史。
+
+`authorTarget` 默认是 `null`。只有部署提供
+`ScenarioRehearsalAuthorTargetResolver`，并能从 exact compiled-plan ref 解析出包含
+source revision 与 fingerprint 的不可变 Author 绑定时，才返回一跳坐标。禁止按
+plan label、当前 latest draft 或模糊名称猜测目标；无法证明关联时应保留 owner
+提示而不是制造错误链接。
 
 默认启动仍只装配队列、协议、API 和 worker turn，不启动后台线程。演示自治批次：
 

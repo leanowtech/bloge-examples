@@ -1644,6 +1644,12 @@ public class ToolStudioIntegrationService {
                                         .ScenarioRehearsalBatchItemPage
                                         .SCHEMA_VERSION));
                 supportedObjects.put(
+                        "scenarioRehearsalBatchItemAttemptTimeline",
+                        List.of(
+                                com.leanowtech.bloge.gateway.integration.mirror
+                                        .ScenarioRehearsalBatchItemAttemptTimeline
+                                        .SCHEMA_VERSION));
+                supportedObjects.put(
                         "scenarioRehearsalBatchFinalizationStatus",
                         List.of(
                                 com.leanowtech.bloge.gateway.integration.mirror
@@ -2057,6 +2063,9 @@ public class ToolStudioIntegrationService {
                         "GET", "/api/mirror/rehearsal-jobs/{jobId}"));
                 endpoints.add(new IntegrationCapabilities.Endpoint(
                         "GET", "/api/mirror/rehearsal-jobs/{jobId}/items"));
+                endpoints.add(new IntegrationCapabilities.Endpoint(
+                        "GET",
+                        "/api/mirror/rehearsal-jobs/{jobId}/items/{itemIndex}/attempts"));
                 endpoints.add(new IntegrationCapabilities.Endpoint(
                         "GET", "/api/mirror/rehearsal-jobs/{jobId}/evidence"));
                 endpoints.add(new IntegrationCapabilities.Endpoint(

@@ -27,4 +27,20 @@ public interface ScenarioRehearsalBatchLifecycleAuditRepository {
             CapabilitySnapshot.Scope scope,
             String jobId,
             int limit);
+
+    /**
+     * Reads the complete bounded lifecycle for one manifest item in append order.
+     *
+     * <p>One item can produce at most two audit facts per server-bounded attempt, so this
+     * projection remains bounded independently of the batch size.</p>
+     *
+     * @param scope complete enterprise scope
+     * @param jobId stable batch job identity
+     * @param itemIndex zero-based immutable manifest position
+     * @return oldest-to-newest item facts
+     */
+    List<ScenarioRehearsalBatchLifecycleAuditEvent> itemLifecycle(
+            CapabilitySnapshot.Scope scope,
+            String jobId,
+            int itemIndex);
 }

@@ -360,6 +360,45 @@ export interface ScenarioRehearsalBatchItemPage {
   nextIndex: number | null;
 }
 
+/** One database-authoritative payload-free attempt observation. */
+export interface ScenarioRehearsalBatchItemAttempt {
+  attempt: number;
+  state: 'RUNNING' | 'RETRY_SCHEDULED' | 'TERMINAL';
+  startedAt: string;
+  observedAt: string | null;
+  outcome: string;
+  reasonCode: string;
+  claimSequence: number;
+  observationSequence: number;
+}
+
+/** Exact bounded attempt evidence for one batch item. */
+export interface ScenarioRehearsalBatchItemAttemptTimeline {
+  schemaVersion: 'resourceGateway.scenarioRehearsalBatchItemAttemptTimeline.v1';
+  jobId: string;
+  itemIndex: number;
+  maximumAttempts: number;
+  attemptsUsed: number;
+  attemptsRemaining: number;
+  deadlineAt: string;
+  failureMode: string;
+  historyComplete: boolean;
+  attempts: ScenarioRehearsalBatchItemAttempt[];
+  authorTarget: {
+    kind: 'GRAPH_DRAFT' | 'OPERATOR' | 'FUNCTION';
+    id: string;
+    label: string;
+    draftId: string;
+    revision: number;
+    sourceFingerprint: string;
+    nodeId: string;
+    scenarioId: string;
+    runId: string;
+    owner: string;
+    requiredRole: string;
+  } | null;
+}
+
 /** Signed child-workbook summary embedded in a terminal batch workbook. */
 export interface ScenarioRehearsalChildWorkbook {
   schemaVersion: 'resourceGateway.scenarioRehearsalWorkbookSeed.v1';

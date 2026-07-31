@@ -5,6 +5,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import {
   BlogeApiRequestError,
+  fetchScenarioRehearsalBatchItemAttempts,
   fetchScenarioRehearsalBatchItems,
   fetchScenarioRehearsalBatchJobs,
   fetchScenarioRehearsalBatchWorkbook,
@@ -28,6 +29,7 @@ vi.mock('./api', () => ({
     }
   },
   fetchScenarioRehearsalBatchItems: vi.fn(),
+  fetchScenarioRehearsalBatchItemAttempts: vi.fn(),
   fetchScenarioRehearsalBatchJobs: vi.fn(),
   fetchScenarioRehearsalBatchWorkbook: vi.fn(),
   fetchScenarioRehearsalWorkbook: vi.fn(),
@@ -46,6 +48,7 @@ vi.mock('./api', () => ({
 
 const mockJobs = vi.mocked(fetchScenarioRehearsalBatchJobs);
 const mockItems = vi.mocked(fetchScenarioRehearsalBatchItems);
+const mockAttempts = vi.mocked(fetchScenarioRehearsalBatchItemAttempts);
 const mockBatchWorkbook = vi.mocked(fetchScenarioRehearsalBatchWorkbook);
 const mockChildWorkbook = vi.mocked(fetchScenarioRehearsalWorkbook);
 const mockCredentialStatus = vi.mocked(getRehearsalRemediationCredentialStatus);
@@ -66,6 +69,7 @@ describe('RehearsalWorkbench', () => {
       principalLabel: '',
       expiresAt: '',
     }));
+    mockAttempts.mockRejectedValue(new BlogeApiRequestError(404, 'Not Found'));
   });
 
   afterEach(async () => {
@@ -175,6 +179,34 @@ describe('RehearsalWorkbench', () => {
     expect(mockJobs).not.toHaveBeenCalled();
     expect(mockBatchWorkbook).not.toHaveBeenCalled();
     expect(mockChildWorkbook).not.toHaveBeenCalled();
+  });
+
+  it('explains timeout attempts, budget, fallback, and unavailable sample actions honestly', async () => {
+    mockJobs.mockResolvedValue(jobPage([]));
+
+    await render();
+    await waitFor(() => text().includes('Grounding policy regression'));
+    await click('[data-testid="entry-0"]');
+    await waitFor(() => document.querySelector('[data-testid="rehearsal-attempts"]') !== null);
+
+    expect(query('[data-testid="rehearsal-entry-verdict"]').textContent)
+      .toContain('Dependency timed out');
+    expect(query('[data-testid="rehearsal-entry-verdict"]').textContent)
+      .toContain('Business impact');
+    expect(query('[data-testid="rehearsal-attempts"]').textContent)
+      .toContain('2 of 3 used');
+    expect(query('[data-testid="rehearsal-attempts"]').textContent)
+      .toContain('Continue the batch and collect every item outcome.');
+    expect(query('[data-testid="rehearsal-attempts"]').textContent)
+      .toContain('Aggregate projection');
+    expect(query('[data-testid="rehearsal-attempts"]').textContent)
+      .toContain('projection limit, not inferred');
+    expect(text()).toContain('Illustrative samples do not have a server-side Author target.');
+    expect(Array.from(document.querySelectorAll('a')).some(
+      (link) => link.textContent?.includes('Open exact Author target'),
+    )).toBe(false);
+    expect(document.querySelector<HTMLDetailsElement>('.rehearsal-technical-details')?.open)
+      .toBe(false);
   });
 
   it('does not let a stale live discovery override an explicit Samples choice', async () => {
@@ -344,6 +376,72 @@ describe('RehearsalWorkbench', () => {
     await click('.drawer-close');
     expect(query('[data-testid="rehearsal-workbench"]').classList.contains('drawer-open')).toBe(false);
     expect(window.location.search).not.toContain('entry=');
+  });
+
+  it('replaces aggregate retry placeholders with exact server lifecycle observations', async () => {
+    mockJobs.mockResolvedValue(jobPage([batchJob('job-terminal', 'PARTIAL')]));
+    mockBatchWorkbook.mockResolvedValue(batchWorkbook());
+    mockChildWorkbook.mockResolvedValue(childWorkbook());
+    mockAttempts.mockResolvedValue({
+      schemaVersion: 'resourceGateway.scenarioRehearsalBatchItemAttemptTimeline.v1',
+      jobId: 'job-terminal',
+      itemIndex: 0,
+      maximumAttempts: 3,
+      attemptsUsed: 2,
+      attemptsRemaining: 1,
+      deadlineAt: '2026-07-25T11:00:00Z',
+      failureMode: 'COLLECT_ALL',
+      historyComplete: true,
+      authorTarget: {
+        kind: 'GRAPH_DRAFT',
+        id: 'answer-graph',
+        label: 'Answer graph',
+        draftId: 'answer-draft',
+        revision: 7,
+        sourceFingerprint: fingerprint('answer-source'),
+        nodeId: 'grounding',
+        scenarioId: 'golden-answer',
+        runId: 'visual-run-44',
+        owner: 'Knowledge Answers',
+        requiredRole: 'Scenario author',
+      },
+      attempts: [{
+        attempt: 1,
+        state: 'RETRY_SCHEDULED',
+        startedAt: '2026-07-25T10:00:01Z',
+        observedAt: '2026-07-25T10:00:04Z',
+        outcome: '',
+        reasonCode: 'TARGET_TIMEOUT',
+        claimSequence: 1,
+        observationSequence: 2,
+      }, {
+        attempt: 2,
+        state: 'TERMINAL',
+        startedAt: '2026-07-25T10:00:09Z',
+        observedAt: '2026-07-25T10:00:12Z',
+        outcome: 'FAILED',
+        reasonCode: 'TARGET_TIMEOUT',
+        claimSequence: 3,
+        observationSequence: 4,
+      }],
+    });
+
+    await render();
+    await waitFor(() => text().includes('Signed workbook'));
+    await click('[data-testid="entry-0"]');
+    await waitFor(() => query('[data-testid="rehearsal-attempts"]').textContent
+      .includes('Exact lifecycle'));
+
+    expect(mockAttempts).toHaveBeenCalledWith('job-terminal', 0);
+    expect(query('[data-testid="rehearsal-attempts"]').textContent)
+      .toContain('Retry scheduled');
+    expect(query('[data-testid="rehearsal-attempts"]').textContent)
+      .not.toContain('projection limit, not inferred');
+    const authorLink = Array.from(document.querySelectorAll<HTMLAnchorElement>('a'))
+      .find((link) => link.textContent?.includes('Open exact Author target'));
+    expect(authorLink?.href).toContain('authorWorkspace=v2');
+    expect(authorLink?.href).toContain('draftId=answer-draft');
+    expect(authorLink?.href).toContain('nodeId=grounding');
   });
 
   it('restores a deep-linked entry and verifies its child workbook after the root workbook loads', async () => {

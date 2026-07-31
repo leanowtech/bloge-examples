@@ -8,12 +8,18 @@ import {
 
 import {
   BlogeApiRequestError,
+  fetchScenarioRehearsalBatchItemAttempts,
   fetchScenarioRehearsalBatchItems,
   fetchScenarioRehearsalBatchJobs,
   fetchScenarioRehearsalBatchWorkbook,
   fetchScenarioRehearsalWorkbook,
 } from './api';
 import RehearsalRemediationPanel from './RehearsalRemediationPanel';
+import RemediationActionList from './remediation/RemediationActionList';
+import {
+  rehearsalEvidencePresentation,
+  type RehearsalAuthorTarget,
+} from './remediation/rehearsalEvidenceModel';
 import {
   DEFAULT_REHEARSAL_DEMO_ID,
   findRehearsalDemoScenario,
@@ -22,6 +28,7 @@ import {
 import { isTerminalRehearsalStatus } from './rehearsalStatus';
 import type {
   ScenarioRehearsalBatchItem,
+  ScenarioRehearsalBatchItemAttemptTimeline,
   ScenarioRehearsalBatchJob,
   ScenarioRehearsalBatchJobPage,
   ScenarioRehearsalBatchWorkbookEntry,
@@ -58,6 +65,7 @@ interface WorkbenchEntry {
   childWorkbook: ScenarioRehearsalChildWorkbook | null;
   startedAt: string | null;
   completedAt: string | null;
+  authorTarget?: RehearsalAuthorTarget;
 }
 
 interface EntryDiagnosis {
@@ -277,6 +285,8 @@ export default function RehearsalWorkbench() {
   const [liveItems, setLiveItems] = useState<ScenarioRehearsalBatchItem[]>([]);
   const [nextItemIndex, setNextItemIndex] = useState<number | null>(null);
   const [childWorkbook, setChildWorkbook] = useState<ScenarioRehearsalWorkbookSeed | null>(null);
+  const [attemptTimeline, setAttemptTimeline] =
+    useState<ScenarioRehearsalBatchItemAttemptTimeline | null>(null);
   const [filter, setFilter] = useState<WorkbenchFilter>('ALL');
   const [loadingJobs, setLoadingJobs] = useState(true);
   const [loadingOlderJobs, setLoadingOlderJobs] = useState(false);
@@ -311,6 +321,29 @@ export default function RehearsalWorkbench() {
     () => new Map(entries.map((entry) => [entry.index, diagnoseEntry(entry)])),
     [entries],
   );
+  const selectedEvidence = useMemo(() => {
+    if (!selectedEntry || !selectedJob) {
+      return null;
+    }
+    return rehearsalEvidencePresentation(
+      attemptTimeline?.authorTarget
+        ? {
+          ...selectedEntry,
+          authorTarget: attemptTimeline.authorTarget,
+        }
+        : selectedEntry,
+      selectedJob,
+      diagnoses.get(selectedEntry.index) ?? {
+        category: 'EVIDENCE',
+        reason: 'Evidence is incomplete',
+      },
+      {
+        sampleMode,
+        currentHref: window.location.href,
+        exactAttempts: attemptTimeline,
+      },
+    );
+  }, [attemptTimeline, diagnoses, sampleMode, selectedEntry, selectedJob]);
   const categoryCounts = useMemo(
     () => Object.fromEntries(
       CATEGORY_ORDER.map((category) => [
@@ -457,6 +490,7 @@ export default function RehearsalWorkbench() {
     setLiveItems([]);
     setNextItemIndex(null);
     setChildWorkbook(null);
+    setAttemptTimeline(null);
     setDetailError('');
     const load = async () => {
       try {
@@ -499,6 +533,30 @@ export default function RehearsalWorkbench() {
       cancelled = true;
     };
   }, [sampleMode, selectedDemoScenario, selectedJob]);
+
+  useEffect(() => {
+    if (sampleMode || !selectedJob || !selectedEntry) {
+      setAttemptTimeline(null);
+      return;
+    }
+    let cancelled = false;
+    setAttemptTimeline(null);
+    void fetchScenarioRehearsalBatchItemAttempts(
+      selectedJob.jobId,
+      selectedEntry.index,
+    )
+      .then((timeline) => {
+        if (!cancelled) {
+          setAttemptTimeline(timeline);
+        }
+      })
+      .catch(() => {
+        // Older compatible deployments fall back to the explicitly labelled aggregate projection.
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [sampleMode, selectedEntry, selectedJob]);
 
   useEffect(() => {
     if (!selectedEntry || !terminal || !selectedEntry.runId) {
@@ -969,39 +1027,77 @@ export default function RehearsalWorkbench() {
                 Close
               </button>
             </header>
-            <section className="evidence-section">
-              <h3>Identity</h3>
-              <dl className="evidence-fields">
-                <div><dt>Compiled plan</dt><dd>{selectedEntry.planId}@{selectedEntry.planRevision}</dd></div>
-                <div><dt>Run</dt><dd>{selectedEntry.runId || 'Not assigned'}</dd></div>
-                <div><dt>Outcome</dt><dd>{selectedEntry.status}</dd></div>
-                <div>
-                  <dt>Started</dt>
-                  <dd>{formatEntryDate(selectedEntry.startedAt, terminal, 'Not started')}</dd>
-                </div>
-                <div>
-                  <dt>Completed</dt>
-                  <dd>{formatEntryDate(selectedEntry.completedAt, terminal, 'Not complete')}</dd>
-                </div>
-              </dl>
-            </section>
-            <section className="evidence-section">
-              <h3>Integrity chain</h3>
-              <dl className="evidence-fields fingerprints">
-                <div>
-                  <dt>Plan</dt>
-                  <dd title={selectedEntry.planFingerprint}>{shortFingerprint(selectedEntry.planFingerprint)}</dd>
-                </div>
-                <div>
-                  <dt>Evidence bundle</dt>
-                  <dd title={selectedEntry.evidenceFingerprint}>{shortFingerprint(selectedEntry.evidenceFingerprint)}</dd>
-                </div>
-                <div>
-                  <dt>Workbook</dt>
-                  <dd title={selectedEntry.workbookFingerprint}>{shortFingerprint(selectedEntry.workbookFingerprint)}</dd>
-                </div>
-              </dl>
-            </section>
+            {selectedEvidence && (
+              <>
+                <section className="rehearsal-entry-verdict" data-testid="rehearsal-entry-verdict">
+                  <span className={`status-label ${selectedEvidence.verdictTone}`}>
+                    {selectedEvidence.verdictLabel}
+                  </span>
+                  <h3>{selectedEvidence.headline}</h3>
+                  <p>{selectedEvidence.rootCause}</p>
+                  <dl>
+                    <div>
+                      <dt>Business impact</dt>
+                      <dd>{selectedEvidence.businessImpact}</dd>
+                    </div>
+                    <div>
+                      <dt>Responsible</dt>
+                      <dd>{selectedEvidence.owner} · {selectedEvidence.requiredRole}</dd>
+                    </div>
+                  </dl>
+                </section>
+                <RemediationActionList
+                  actions={selectedEvidence.action ? [selectedEvidence.action] : []}
+                  onInvoke={() => undefined}
+                />
+                <section className="evidence-section rehearsal-attempts" data-testid="rehearsal-attempts">
+                  <div className="evidence-section-heading">
+                    <h3>Attempt timeline</h3>
+                    <div>
+                      <span className={`attempt-evidence-source ${
+                        selectedEvidence.attemptsExact ? 'exact' : 'aggregate'
+                      }`}>
+                        {selectedEvidence.attemptsExact ? 'Exact lifecycle' : 'Aggregate projection'}
+                      </span>
+                      <strong>
+                        {selectedEvidence.attemptsUsed} of {selectedEvidence.attemptsMaximum} used
+                      </strong>
+                    </div>
+                  </div>
+                  <dl className="rehearsal-attempt-budget">
+                    <div><dt>Remaining</dt><dd>{selectedEvidence.attemptsRemaining}</dd></div>
+                    <div><dt>Deadline</dt><dd>{formatDate(selectedEvidence.deadlineAt)}</dd></div>
+                    <div><dt>Batch policy</dt><dd>{selectedEvidence.batchFallback}</dd></div>
+                    <div><dt>Item fallback</dt><dd>{selectedEvidence.itemFallback}</dd></div>
+                  </dl>
+                  {selectedEvidence.timeline.length > 0 ? (
+                    <ol>
+                      {selectedEvidence.timeline.map((attempt) => (
+                        <li key={attempt.attempt} data-state={attempt.state.toLowerCase()}>
+                          <span>{attempt.attempt}</span>
+                          <div>
+                            <strong>
+                              Attempt {attempt.attempt} · {attemptStateLabel(attempt.state)}
+                            </strong>
+                            <p>{attempt.observation}</p>
+                            <small>
+                              {attempt.observedAt ? formatDate(attempt.observedAt) : 'Timestamp not retained'}
+                              {!attempt.exact ? ' · projection limit, not inferred' : ''}
+                            </small>
+                          </div>
+                        </li>
+                      ))}
+                    </ol>
+                  ) : (
+                    <p className="empty-workbench">No attempt has started.</p>
+                  )}
+                  <div className="rehearsal-last-observation">
+                    <strong>Last observation</strong>
+                    <span>{selectedEvidence.lastObservation}</span>
+                  </div>
+                </section>
+              </>
+            )}
             {!terminal && (
               <div className="workbench-alert warning">
                 This live projection may change. It must not be used as release evidence.
@@ -1065,6 +1161,42 @@ export default function RehearsalWorkbench() {
                 </section>
               </>
             )}
+            <details className="rehearsal-technical-details">
+              <summary>Technical identity and integrity</summary>
+              <section className="evidence-section">
+                <h3>Identity</h3>
+                <dl className="evidence-fields">
+                  <div><dt>Compiled plan</dt><dd>{selectedEntry.planId}@{selectedEntry.planRevision}</dd></div>
+                  <div><dt>Run</dt><dd>{selectedEntry.runId || 'Not assigned'}</dd></div>
+                  <div><dt>Outcome</dt><dd>{selectedEntry.status}</dd></div>
+                  <div>
+                    <dt>Started</dt>
+                    <dd>{formatEntryDate(selectedEntry.startedAt, terminal, 'Not started')}</dd>
+                  </div>
+                  <div>
+                    <dt>Completed</dt>
+                    <dd>{formatEntryDate(selectedEntry.completedAt, terminal, 'Not complete')}</dd>
+                  </div>
+                </dl>
+              </section>
+              <section className="evidence-section">
+                <h3>Integrity chain</h3>
+                <dl className="evidence-fields fingerprints">
+                  <div>
+                    <dt>Plan</dt>
+                    <dd title={selectedEntry.planFingerprint}>{shortFingerprint(selectedEntry.planFingerprint)}</dd>
+                  </div>
+                  <div>
+                    <dt>Evidence bundle</dt>
+                    <dd title={selectedEntry.evidenceFingerprint}>{shortFingerprint(selectedEntry.evidenceFingerprint)}</dd>
+                  </div>
+                  <div>
+                    <dt>Workbook</dt>
+                    <dd title={selectedEntry.workbookFingerprint}>{shortFingerprint(selectedEntry.workbookFingerprint)}</dd>
+                  </div>
+                </dl>
+              </section>
+            </details>
           </>
         )}
       </aside>
@@ -1087,4 +1219,11 @@ function categoryLabel(category: WorkbenchCategory): string {
     case 'PASSED':
       return 'Passed';
   }
+}
+
+function attemptStateLabel(state: 'RETRY SCHEDULED' | 'RUNNING' | 'TERMINAL'): string {
+  if (state === 'RETRY SCHEDULED') {
+    return 'Retry scheduled';
+  }
+  return state === 'RUNNING' ? 'Running' : 'Terminal';
 }

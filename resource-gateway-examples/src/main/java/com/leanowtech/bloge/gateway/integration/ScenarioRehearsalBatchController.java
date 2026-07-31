@@ -7,6 +7,8 @@ import com.leanowtech.bloge.gateway.integration.mirror.ScenarioRehearsalBatchFin
 import com.leanowtech.bloge.gateway.integration.mirror.ScenarioRehearsalBatchFinalizationHealth;
 import com.leanowtech.bloge.gateway.integration.mirror.ScenarioRehearsalBatchFinalizationStatus;
 import com.leanowtech.bloge.gateway.integration.mirror.ScenarioRehearsalBatchItemPage;
+import com.leanowtech.bloge.gateway.integration.mirror.ScenarioRehearsalBatchItemAttemptTimeline;
+import com.leanowtech.bloge.gateway.integration.mirror.ScenarioRehearsalBatchItemAttemptTimelineService;
 import com.leanowtech.bloge.gateway.integration.mirror.ScenarioRehearsalBatchJob;
 import com.leanowtech.bloge.gateway.integration.mirror.ScenarioRehearsalBatchJobPage;
 import com.leanowtech.bloge.gateway.integration.mirror.ScenarioRehearsalBatchRequest;
@@ -46,6 +48,8 @@ public final class ScenarioRehearsalBatchController {
     private final ScenarioRehearsalBatchService batches;
     private final ScenarioRehearsalBatchWorkbookService workbooks;
     private final ScenarioRehearsalBatchRetentionService retention;
+    private final ScenarioRehearsalBatchItemAttemptTimelineService
+            attemptTimelines;
     private final IntegrationRequestAuthenticator authenticator;
     private final ScenarioArtifactRequestDecoder decoder;
 
@@ -54,6 +58,8 @@ public final class ScenarioRehearsalBatchController {
             ScenarioRehearsalBatchService batches,
             ScenarioRehearsalBatchWorkbookService workbooks,
             ScenarioRehearsalBatchRetentionService retention,
+            ScenarioRehearsalBatchItemAttemptTimelineService
+                    attemptTimelines,
             IntegrationRequestAuthenticator authenticator,
             ScenarioArtifactRequestDecoder decoder) {
         this.batches = Objects.requireNonNull(
@@ -62,6 +68,8 @@ public final class ScenarioRehearsalBatchController {
                 workbooks, "workbooks");
         this.retention = Objects.requireNonNull(
                 retention, "retention");
+        this.attemptTimelines = Objects.requireNonNull(
+                attemptTimelines, "attemptTimelines");
         this.authenticator = Objects.requireNonNull(
                 authenticator, "authenticator");
         this.decoder = Objects.requireNonNull(
@@ -177,6 +185,28 @@ public final class ScenarioRehearsalBatchController {
                         identity);
         return IntegrationEnvelope.of(
                 "SCENARIO_REHEARSAL_BATCH_ITEM_PAGE",
+                value.schemaVersion(),
+                value);
+    }
+
+    /** Reads database-authoritative retry and terminal observations for one item. */
+    @GetMapping("/{jobId}/items/{itemIndex}/attempts")
+    public IntegrationEnvelope<
+            ScenarioRehearsalBatchItemAttemptTimeline>
+    attempts(
+            @PathVariable String jobId,
+            @PathVariable int itemIndex,
+            @RequestHeader HttpHeaders headers) {
+        IntegrationRequestContext identity =
+                authenticator.authenticate(
+                        headers,
+                        IntegrationOperation
+                                .MIRROR_REHEARSAL_BATCH_READ);
+        ScenarioRehearsalBatchItemAttemptTimeline value =
+                attemptTimelines.timeline(
+                        jobId, itemIndex, identity);
+        return IntegrationEnvelope.of(
+                "SCENARIO_REHEARSAL_BATCH_ITEM_ATTEMPT_TIMELINE",
                 value.schemaVersion(),
                 value);
     }

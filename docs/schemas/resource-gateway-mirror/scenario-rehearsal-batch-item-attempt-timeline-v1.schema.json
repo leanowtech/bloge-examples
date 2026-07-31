@@ -1,0 +1,232 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://bloge.dev/schemas/resource-gateway-mirror/scenario-rehearsal-batch-item-attempt-timeline-v1.schema.json",
+  "title": "Resource Gateway Scenario Rehearsal Batch Item Attempt Timeline v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "jobId",
+    "itemIndex",
+    "maximumAttempts",
+    "attemptsUsed",
+    "attemptsRemaining",
+    "deadlineAt",
+    "failureMode",
+    "historyComplete",
+    "attempts",
+    "authorTarget"
+  ],
+  "properties": {
+    "schemaVersion": {
+      "const": "resourceGateway.scenarioRehearsalBatchItemAttemptTimeline.v1"
+    },
+    "jobId": {
+      "$ref": "#/$defs/identifier"
+    },
+    "itemIndex": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 999
+    },
+    "maximumAttempts": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 5
+    },
+    "attemptsUsed": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 5
+    },
+    "attemptsRemaining": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 5
+    },
+    "deadlineAt": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "failureMode": {
+      "enum": ["FAIL_FAST", "COLLECT_ALL"]
+    },
+    "historyComplete": {
+      "type": "boolean"
+    },
+    "attempts": {
+      "type": "array",
+      "maxItems": 5,
+      "items": {
+        "$ref": "#/$defs/attempt"
+      }
+    },
+    "authorTarget": {
+      "oneOf": [
+        {
+          "type": "null"
+        },
+        {
+          "$ref": "#/$defs/authorTarget"
+        }
+      ]
+    }
+  },
+  "$defs": {
+    "identifier": {
+      "type": "string",
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,511}$"
+    },
+    "optionalIdentifier": {
+      "type": "string",
+      "pattern": "^$|^[A-Za-z0-9][A-Za-z0-9._:-]{0,511}$"
+    },
+    "optionalCode": {
+      "type": "string",
+      "maxLength": 255,
+      "pattern": "^$|^[A-Z][A-Z0-9_.-]{0,254}$"
+    },
+    "fingerprint": {
+      "type": "string",
+      "pattern": "^sha256:[a-f0-9]{64}$"
+    },
+    "attempt": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "attempt",
+        "state",
+        "startedAt",
+        "observedAt",
+        "outcome",
+        "reasonCode",
+        "claimSequence",
+        "observationSequence"
+      ],
+      "properties": {
+        "attempt": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 5
+        },
+        "state": {
+          "enum": ["RUNNING", "RETRY_SCHEDULED", "TERMINAL"]
+        },
+        "startedAt": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "observedAt": {
+          "oneOf": [
+            {
+              "type": "null"
+            },
+            {
+              "type": "string",
+              "format": "date-time"
+            }
+          ]
+        },
+        "outcome": {
+          "$ref": "#/$defs/optionalCode"
+        },
+        "reasonCode": {
+          "$ref": "#/$defs/optionalCode"
+        },
+        "claimSequence": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "observationSequence": {
+          "type": "integer",
+          "minimum": 0
+        }
+      }
+    },
+    "authorTarget": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "id",
+        "label",
+        "draftId",
+        "revision",
+        "sourceFingerprint",
+        "nodeId",
+        "scenarioId",
+        "runId",
+        "owner",
+        "requiredRole"
+      ],
+      "properties": {
+        "kind": {
+          "enum": ["GRAPH_DRAFT", "OPERATOR", "FUNCTION"]
+        },
+        "id": {
+          "$ref": "#/$defs/identifier"
+        },
+        "label": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 255
+        },
+        "draftId": {
+          "$ref": "#/$defs/optionalIdentifier"
+        },
+        "revision": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "sourceFingerprint": {
+          "$ref": "#/$defs/fingerprint"
+        },
+        "nodeId": {
+          "$ref": "#/$defs/optionalIdentifier"
+        },
+        "scenarioId": {
+          "$ref": "#/$defs/optionalIdentifier"
+        },
+        "runId": {
+          "$ref": "#/$defs/optionalIdentifier"
+        },
+        "owner": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 255
+        },
+        "requiredRole": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 255
+        }
+      },
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "kind": {
+                "const": "GRAPH_DRAFT"
+              }
+            },
+            "required": ["kind"]
+          },
+          "then": {
+            "properties": {
+              "draftId": {
+                "$ref": "#/$defs/identifier"
+              }
+            }
+          },
+          "else": {
+            "properties": {
+              "draftId": {
+                "const": ""
+              }
+            }
+          }
+        }
+      ]
+    }
+  }
+}

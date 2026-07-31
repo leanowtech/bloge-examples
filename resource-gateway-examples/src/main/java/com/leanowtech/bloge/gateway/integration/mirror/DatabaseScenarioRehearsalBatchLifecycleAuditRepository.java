@@ -57,6 +57,13 @@ public final class DatabaseScenarioRehearsalBatchLifecycleAuditRepository
                     environment_id, region, job_id, sequence
                 )
                 """);
+        jdbc.execute("""
+                CREATE INDEX IF NOT EXISTS idx_scenario_rehearsal_batch_lifecycle_scope_item
+                ON scenario_rehearsal_batch_lifecycle_audit (
+                    tenant_id, organization_id, project_id,
+                    environment_id, region, job_id, item_index, sequence
+                )
+                """);
     }
 
     @Override
@@ -145,6 +152,43 @@ public final class DatabaseScenarioRehearsalBatchLifecycleAuditRepository
                 required.region(),
                 job,
                 boundedLimit(limit));
+    }
+
+    @Override
+    public List<ScenarioRehearsalBatchLifecycleAuditEvent> itemLifecycle(
+            CapabilitySnapshot.Scope scope,
+            String jobId,
+            int itemIndex) {
+        CapabilitySnapshot.Scope required =
+                Objects.requireNonNull(scope, "scope");
+        String job = boundedJob(jobId);
+        if (itemIndex < 0
+                || itemIndex
+                >= ScenarioRehearsalBatchRequest.MAXIMUM_ENTRIES) {
+            throw new IllegalArgumentException(
+                    "Scenario batch lifecycle item index is outside policy bounds");
+        }
+        return jdbc.query("""
+                        SELECT sequence, occurred_at, job_id, request_id,
+                               manifest_fingerprint, transition, job_status,
+                               item_index, item_status, attempt_count,
+                               lease_owner, lease_epoch,
+                               evidence_bundle_fingerprint, reason_code
+                        FROM scenario_rehearsal_batch_lifecycle_audit
+                        WHERE tenant_id = ? AND organization_id = ?
+                          AND project_id = ? AND environment_id = ?
+                          AND region = ? AND job_id = ? AND item_index = ?
+                        ORDER BY sequence
+                        LIMIT 16
+                        """,
+                (result, row) -> map(result, required),
+                required.tenantId(),
+                required.organizationId(),
+                required.projectId(),
+                required.environmentId(),
+                required.region(),
+                job,
+                itemIndex);
     }
 
     private ScenarioRehearsalBatchLifecycleAuditEvent find(

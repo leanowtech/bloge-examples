@@ -22,13 +22,15 @@ export type RemediationActionKind =
   | 'OPEN_DIAGNOSTIC'
   | 'REQUEST_GOVERNANCE'
   | 'REVIEW_RUNTIME_DRIFT'
-  | 'RETRY_REHEARSAL';
+  | 'RETRY_REHEARSAL'
+  | 'OPEN_AUTHOR_TARGET';
 
 export type RemediationNavigation =
   | 'SCENARIOS'
   | 'INTERFACE'
   | 'COMPOSE'
   | 'DIAGNOSTIC'
+  | 'AUTHOR'
   | 'EXTERNAL'
   | 'UNAVAILABLE';
 

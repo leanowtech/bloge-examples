@@ -95,6 +95,7 @@ offline artifact verification live in the independent `resource-gateway-test-kit
 | `scenario-rehearsal-workbook-seed-v1.schema.json` | `ScenarioRehearsalWorkbookSeed` | Deterministic payload-free ANEKE input binding exact Plan, signed aggregate, initial signed retention proof, ordered case/assertion closure, and conservatively derived gate blockers |
 | `scenario-rehearsal-batch-workbook-seed-v1.schema.json` | `ScenarioRehearsalBatchWorkbookSeed` | Bounded deterministic ANEKE batch input binding signed terminal batch evidence, signed retention registration, ordered child commitments and correctness projections, conservative blockers, and a domain-separated root seal for no-fan-out verification |
 | `scenario-rehearsal-batch-job-page-v1.schema.json` | `ScenarioRehearsalBatchJobPage` | Exact-scope newest-first payload-free jobs with immutable creation-time keyset pagination for Owner workbench discovery |
+| `scenario-rehearsal-batch-item-attempt-timeline-v1.schema.json` | `ScenarioRehearsalBatchItemAttemptTimeline` | Database-authoritative payload-free claim/retry/terminal timeline with immutable attempt budget, fallback policy, migration-safe completeness, and an optional fingerprint-bound Author source |
 | `scenario-case-v1.schema.json` | `ScenarioCase` | Exact binding from one business intent to an existing TestSuite case, FixtureBundle, MirrorPlan, deterministic services, optional isolated Session checkpoint, explicit fault rules, and handling assertions |
 | `scenario-pack-v1.schema.json` | `ScenarioPack` | Content-addressed ordered scenario closure and fail-closed sequential rehearsal policy |
 | `scenario-rehearsal-compile-request-v1.schema.json` | `ScenarioRehearsalCompileRequest` | Exact registered ScenarioPack revision and fingerprint requested for online closure compilation |
@@ -902,6 +903,7 @@ The protected Tool Studio integration surface exposes:
 | `GET /api/mirror/runs/{runId}/state-write-outcome-workbook-seed` | Derive failure-aware write-attempt assertions from one verified stateful v5 bundle | `MIRROR_REHEARSAL` |
 | `GET /api/mirror/rehearsal-jobs/{jobId}/workbook-seed` | Read one root-sealed, payload-free Scenario batch correctness projection without fetching every child | `MIRROR_REHEARSAL` or `GOVERNANCE_EVIDENCE_INGESTION` |
 | `GET /api/mirror/rehearsal-jobs` | List newest payload-free jobs in exact authenticated scope using `beforeCreatedAt` plus `beforeJobId` keyset pagination | `MIRROR_REHEARSAL` or `GOVERNANCE_EVIDENCE_INGESTION` |
+| `GET /api/mirror/rehearsal-jobs/{jobId}/items/{itemIndex}/attempts` | Read exact database-authoritative attempt facts and an optional proven Author source binding without payload or worker identity | `MIRROR_REHEARSAL` or `GOVERNANCE_EVIDENCE_INGESTION` |
 | `POST /api/mirror/sessions` | Create or exactly replay one sealed encrypted Session | `MIRROR_REHEARSAL` |
 | `GET /api/mirror/sessions/{sessionId}` | Read the current payload-free Session descriptor | `MIRROR_REHEARSAL` |
 | `POST /api/mirror/sessions/{sessionId}/commands` | Execute or exactly replay one admitted virtual write effect | `MIRROR_REHEARSAL` |

@@ -25,6 +25,7 @@ import {
   fetchLibraryAuthoringTestEvidence,
   fetchLibraryAuthoringTestGate,
   fetchOperatorCatalog,
+  fetchScenarioRehearsalBatchItemAttempts,
   fetchScenarioRehearsalBatchItems,
   fetchScenarioRehearsalBatchJobs,
   fetchScenarioRehearsalBatchWorkbook,
@@ -1603,6 +1604,19 @@ describe('operator library API client', () => {
           },
         );
       }
+      if (url.endsWith('/items/7/attempts')) {
+        return mirrorEnvelope(
+          'SCENARIO_REHEARSAL_BATCH_ITEM_ATTEMPT_TIMELINE',
+          'resourceGateway.scenarioRehearsalBatchItemAttemptTimeline.v1',
+          {
+            schemaVersion: 'resourceGateway.scenarioRehearsalBatchItemAttemptTimeline.v1',
+            jobId: 'job-1',
+            itemIndex: 7,
+            attempts: [],
+            authorTarget: null,
+          },
+        );
+      }
       expect(url).toContain('/api/mirror/rehearsal-jobs?limit=10');
       expect(url).toContain('beforeCreatedAt=2026-07-25T10%3A00%3A00Z');
       expect(url).toContain('beforeJobId=job-2');
@@ -1629,10 +1643,12 @@ describe('operator library API client', () => {
       jobId: 'job-2',
     });
     const items = await fetchScenarioRehearsalBatchItems('job-1', 100, 25);
+    const attempts = await fetchScenarioRehearsalBatchItemAttempts('job-1', 7);
 
     expect(jobs.scope.projectId).toBe('tool-studio');
     expect(items.jobId).toBe('job-1');
-    expect(fetchMock).toHaveBeenCalledTimes(2);
+    expect(attempts.itemIndex).toBe(7);
+    expect(fetchMock).toHaveBeenCalledTimes(3);
   });
 
   it('reads terminal root and child workbooks without exposing a write API', async () => {

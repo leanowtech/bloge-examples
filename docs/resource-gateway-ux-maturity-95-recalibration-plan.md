@@ -1,10 +1,10 @@
 # Resource Gateway 体验成熟度 95 分校准与修正计划
 
-> 状态：Implementation in Progress（Stage E2 已完成，Stage E3 进行中）
+> 状态：Engineering Complete（96 / 100）；Stage F 真实用户与企业试点验证待执行
 >
 > 日期：2026-07-31
 >
-> 当前工程实现自评：`94.5 / 100`（E2，真实服务 + 真实浏览器；正式 95 分仍需 E3）
+> 当前工程实现自评：`96 / 100`（E3，协议、自动化与真实浏览器；正式体验 95 分仍需 Stage F）
 >
 > 目标：体验成熟度 `>= 95 / 100`，P0/P1 体验缺陷清零，并取得 E3/E4 使用证据
 >
@@ -1057,42 +1057,44 @@ rehearsalRemediationActions
 
 ## 19. Definition of Done
 
+以下勾选只代表工程与 E2 证据完成。E3/E4 项保持未勾选，不能用自评补齐。
+
 ### 产品模型
 
-- [ ] 顶层任务与中央工作面一一对应；
-- [ ] 不存在同名双层 tabs；
-- [ ] Graph、Operator、Function 共用一个 Scenario 语言；
-- [ ] 一个 scope-aware Verdict；
-- [ ] 一个主操作；
-- [ ] Raw JSON 只在 Advanced。
+- [x] 顶层任务与中央工作面一一对应；
+- [x] 不存在同名双层 tabs；
+- [x] Graph、Operator、Function 共用一个 Scenario 语言；
+- [x] 一个 scope-aware Verdict；
+- [x] 一个主操作；
+- [x] Raw JSON 只在 Advanced。
 
 ### 可信度
 
-- [ ] visible state / plan / request / evidence fingerprint 一致；
-- [ ] proof strength 明确；
-- [ ] stale 自动传播；
-- [ ] 示例零非教学 warning；
-- [ ] mock 与 runtime 不混淆；
-- [ ] Evidence 有 exact remediation。
+- [x] visible state / plan / request / evidence fingerprint 一致；
+- [x] proof strength 明确；
+- [x] stale 自动传播；
+- [x] 示例零非教学 warning；
+- [x] mock 与 runtime 不混淆；
+- [x] Evidence 有 permission-honest exact remediation；无法解析 exact target 时 fail closed。
 
 ### 可用性
 
 - [ ] 核心任务达到第 12 节耗时和成功率；
-- [ ] 5 节点可读；
-- [ ] 25 节点可定位；
-- [ ] 100 节点可交互；
-- [ ] 390px review-first 可用；
-- [ ] Library durable draft 可恢复。
+- [x] 5 节点可读；
+- [ ] 25 节点在 90 秒内可定位；工程导航已完成，等待 E3 用户计时；
+- [x] 100 节点投影在性能预算内可交互；
+- [x] 390px review-first 可用；
+- [x] Library durable draft 可恢复。
 
 ### 工程
 
-- [ ] 新 projection 有纯函数测试；
-- [ ] GraphDraft 和协议 serialization 等价；
-- [ ] 真实浏览器矩阵通过；
-- [ ] visual regression 固定；
-- [ ] axe 无 serious / critical；
-- [ ] feature flag 可回退；
-- [ ] payload-free telemetry 生效。
+- [x] 新 projection 有纯函数测试；
+- [x] GraphDraft 和协议 serialization 等价；
+- [x] 真实浏览器矩阵通过；
+- [x] visual regression 与像素几何门禁固定；
+- [x] 自动 accessibility 门禁无 serious / critical；
+- [x] Legacy 路径与 workspace route 可回退；
+- [x] payload-free telemetry 与 schema 禁止敏感字段生效。
 
 ### 证据
 
@@ -1159,5 +1161,8 @@ Stage E 完成后可以宣称“95 分工程就绪”；只有 E3 通过后才�
 | 可验证性 | 20/20 | E0–E4、任务耗时、成功率、浏览器和 fingerprint 门禁完整 |
 | **合计** | **96/100** | **达到可进入评审和 issue 拆解的门槛** |
 
-仍需通过评审确认 D1–D6。确认后建议按 Stage A–E 拆为 tracer-bullet issues，先完成
-`visible state -> run request -> evidence` 可信纵切，再启动 Surface 重构。
+D1–D5 已按推荐方案实现，D6 继续生效：当前是 `96 / 100` 的 95 分工程就绪态，
+不是已经取得 E3 证据的“体验成熟度 95 分”。Stage A–E 的实现、测试与真实浏览器
+证据见
+[UX 95 分实施状态](resource-gateway-ux-maturity-95-implementation-status.md)；
+下一步仅进入 Stage F 固定任务研究和企业试点，不再把新增 UI 功能混入验证周期。

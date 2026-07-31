@@ -1,10 +1,10 @@
 # Resource Gateway UX 95 分实施状态
 
-> 状态：In Progress
+> 状态：Engineering Complete / External Validation Pending
 >
 > 基准计划：[Resource Gateway 体验成熟度 95 分校准与修正计划](resource-gateway-ux-maturity-95-recalibration-plan.md)
 >
-> 当前实施轮次：Stage E / 资产生命周期与修复闭环
+> 当前实施轮次：Stage F / E3-E4 外部验证准备
 >
 > 评分纪律：代码完成只能获得 E1；真实服务和浏览器验证后最多获得 E2。没有 E3 目标用户
 > 证据时，不宣称体验成熟度达到 95 分。
@@ -18,12 +18,12 @@
 | Stage B：唯一中央工作面 | 85 | 已完成 | B01–B08、真实浏览器断点矩阵，E2 |
 | Stage C：统一 Scenario | 90 | 已完成 | C01–C08、392 条前端回归与三条浏览器纵切，E2 |
 | Stage D：复杂图可读 | 93 | 已完成 | D01–D07、1024/1280/820 真实浏览器矩阵，E2 |
-| Stage E：生命周期闭环 | 95 工程就绪 | 进行中 | E1 Library Home、E2 Evidence remediation 已通过定向测试与真实浏览器；E3 Rehearsal 待完成 |
-| Stage F：E3/E4 | 95–100 | 未开始 | 无 |
+| Stage E：生命周期闭环 | 95 工程就绪 | 已完成 | Durable Library Home、Evidence remediation、Rehearsal timeline 与 exact Author handoff 均达到 E2 |
+| Stage F：E3/E4 | 95–100 | 待外部执行 | 固定任务、观测口径、停止线与试点门禁已定义；尚未取得 12 名用户和双团队证据 |
 
-Stage D 的工程目标分 `93` 已达到 E2，但这不等于整体体验成熟度达到 95。当前剩余
-2 个工程分主要来自 durable asset 恢复与跨 Evidence / Rehearsal / Governance 的修复闭环；
-E3 目标用户证据仍是正式宣称 95 分的必要条件。
+Stage E 已把工程自评推进到 `96 / 100`，但这不等于整体体验成熟度已达到 95。
+E3 目标用户证据仍是正式宣称 95 分的必要条件；E4 双团队、双发布周期证据仍是
+宣称规模化稳定的必要条件。
 
 ## 2. Round A1：Canonical Scenario Run
 
@@ -525,18 +525,111 @@ fingerprint 和 coordinate 仍然存在，但只服务排障与审计。
 - 1280×820 真实浏览器确认失败第一动作、责任人、business impact 和准确 `$.decision` Diff；
 - 390×844 确认 Context rail 默认收起，Verdict、Next actions 和主按钮无覆盖、无截字。
 
-E2 后工程自评为 `94.5`。剩余分数集中在 Rehearsal attempt timeline、exact Author
-handoff、跨来源 action adapter 和大规模 Library server-side query projection。
+E2 后工程自评为 `94.5`。Stage E3 已完成 Rehearsal attempt timeline、exact Author
+handoff 协议和跨来源 action adapter，当前工程自评为 `96 / 100`。大规模 Library
+server-side query projection 是超过 1000 个活跃 draft 后的容量演进项，不再阻断
+当前目标规模下的 95 分工程就绪。
+
+### 8.4 Stage E3：Rehearsal 证据到行动闭环
+
+Rehearsal drawer 现在按以下顺序呈现：
+
+```text
+Scope-aware verdict
+  -> Human root cause / business impact / responsible owner
+  -> One permission-honest RemediationAction
+  -> Attempt budget / deadline / batch fallback / item fallback
+  -> Exact attempt timeline or labelled aggregate projection
+  -> Last observation
+  -> Child evidence
+  -> Technical identity and fingerprints（默认折叠）
+```
+
+服务端新增版本化
+`resourceGateway.scenarioRehearsalBatchItemAttemptTimeline.v1`。它从 append-only
+lifecycle audit 按 exact enterprise scope 和 item index 读取 database-authoritative
+claim、retry 与 terminal facts，并通过 capability probe 广告：
+
+```text
+GET /api/mirror/rehearsal-jobs/{jobId}/items/{itemIndex}/attempts
+```
+
+协议不允许 payload、fixture、worker identity、credential、异常文本或 stack trace。
+升级前任务缺少逐次事实时返回 `historyComplete=false`；客户端保留
+`Aggregate projection` 标识和 “projection limit, not inferred”，不把聚合计数伪装为
+精确历史。
+
+一跳 Author handoff 由 `ScenarioRehearsalAuthorTargetResolver` SPI 提供。默认 resolver
+fail closed；只有宿主能给出 exact compiled plan 对应的 source revision、
+source fingerprint、owner 和 required role 时才返回链接。前端随后生成
+`authorWorkspace=v2` 的 exact deep link。示例、无绑定、无权限或非 authorable
+failure 都不会出现假按钮。
+
+E3 自动证据：
+
+- Java 定向测试 `47` 条通过，覆盖 exact-scope repository、重试/终态投影、Author
+  binding、HTTP 鉴权封装、capability advertisement 与 strict JSON Schema；
+- 前端定向测试 `66` 条通过，覆盖 live exact timeline、旧服务降级、sample
+  permission honesty、one-hop Author deep link、timeout、governance 与 API contract；
+- strict schema：
+  `docs/schemas/resource-gateway-mirror/scenario-rehearsal-batch-item-attempt-timeline-v1.schema.json`；
+- 1280×820 真实浏览器确认 execution failure、governance blocker、Next actions、
+  `Aggregate projection`、attempt budget 与 child evidence 不互相遮挡；
+- 390×844 真实浏览器确认 evidence drawer 无横向溢出，viewport 与 document
+  `scrollWidth` 均为 390px；
+- 两档浏览器 console 均为 0 error。
 
 ## 9. 当前差距与 Stage E 下一步
 
 画布阅读问题已从 P0/P1 缺陷转为受控的 compact Review。剩余工程差距集中在“找到资产”和
 “知道下一步怎么修”：
 
-1. Rehearsal 需要接入现有 `RemediationAction`，补 attempt timeline、预算、fallback、
-   last observation 和准确 Author deep link；
-2. Runtime drift 与 Rehearsal timeout 的 adapter 还需要用真实服务协议验证，不能只复用类型；
-3. P0/P1 diagnostic 的 exact target 需要做一次全来源覆盖审计；
+1. Runtime drift 与 Rehearsal timeout 已使用统一 `RemediationAction` vocabulary；
+2. P0/P1 diagnostic 的 exact target 已执行 fail-closed 来源审计：没有精确目标或权限就不显示动作；
+3. Rehearsal 的真实服务 attempt protocol 与 Author binding SPI 已落地；
 4. Library Home 当前 readiness 聚合适合 bounded work queue；规模超过 1000 个活跃 draft
    时，需要把过滤和 readiness index 下沉为 server query projection；
-5. Stage E3 完成后仍只能宣称“95 分工程就绪”，正式 95 分等待 Stage F 的 E3/E4。
+5. 当前可宣称“95 分工程就绪”，正式体验 95 分仍等待 Stage F 的 E3/E4。
+
+## 10. 最终工程验收
+
+### 10.1 自动化结果
+
+| 门禁 | 结果 |
+|---|---|
+| 前端完整回归 | `50` 个测试文件、`416` 条测试通过 |
+| 前端 production build | TypeScript 与 Vite build 通过；`263` modules transformed |
+| Java 完整回归 | `5847` tests，`0` failure，`0` error，`10` skipped |
+| Maven 发布构建 | `mvn -f resource-gateway-examples/pom.xml clean verify` 成功 |
+| 格式与协议 | `git diff --check`、strict attempt timeline JSON Schema 测试通过 |
+
+Vite 仍报告主 chunk 大于 500kB。这是后续按任务面异步分包的性能演进项；当前浏览器
+交互和正确性门禁均通过，不阻断本轮工程就绪结论。
+
+### 10.2 真实服务与浏览器结果
+
+使用带最新前端的 fat JAR、`test` profile 和 Scenario batch scheduler 验收：
+
+1. Capability Probe 发布
+   `resourceGateway.scenarioRehearsalBatchItemAttemptTimeline.v1`；
+2. Capability Probe 发布
+   `GET /api/mirror/rehearsal-jobs/{jobId}/items/{itemIndex}/attempts`；
+3. 1280×820 下，timeout 与 governance 两类详情均按 Verdict、Action、Timeline、
+   Evidence、Technical details 排序，未发现覆盖；
+4. 390×844 下，详情成为单列全宽任务面，Next actions、attempt budget、timeline
+   和 warning 均完整可读，无横向溢出；
+5. 示例明确显示 `Not server evidence`，缺少 exact Author target 时动作保持禁用；
+6. 旧任务缺少逐次审计事实时明确显示 `Aggregate projection`，不伪造 exact timeline。
+
+### 10.3 剩余差距
+
+工程计划完成度按本计划评分为 `96%`，剩余差距为 `4%`：
+
+| 差距 | 原因 | 不应伪造的结论 | 下一门禁 |
+|---|---|---|---|
+| E3 固定任务研究 | 需要真实目标用户，不可由自动化替代 | 不宣称“体验成熟度已达 95” | 至少 12 名用户、四角色、无协助成功率 >= 90% |
+| E4 企业试点 | 需要组织、权限、真实资产和连续周期 | 不宣称“已规模化稳定” | 两个团队、两个发布周期、P0/P1 为 0 |
+| 千级 Library 查询 | 当前 bounded work queue 足够，超千级需服务端索引投影 | 不宣称无限资产规模 | 1000+ active drafts 压测与 server-side readiness index |
+| 前端分包 | 主 chunk 仍有构建告警 | 不宣称首载性能已最优 | 按 Author/Libraries/Rehearsals 拆包并设性能预算 |
+
+因此本轮可以结束工程实施并进入 Stage F，不能用自动测试数量替代真实用户与企业组织证据。

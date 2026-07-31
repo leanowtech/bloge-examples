@@ -38,7 +38,7 @@ export default function RemediationActionList({
                 {action.technicalCoordinate && <code>{action.technicalCoordinate}</code>}
               </details>
             </div>
-            {action.available && action.navigation === 'EXTERNAL' && (
+            {action.available && (action.navigation === 'EXTERNAL' || action.navigation === 'AUTHOR') && (
               <a
                 className={index === 0 ? 'primary compact' : 'secondary compact'}
                 href={action.deepLink}
@@ -46,7 +46,7 @@ export default function RemediationActionList({
                 {action.actionLabel}
               </a>
             )}
-            {action.available && action.navigation !== 'EXTERNAL' && (
+            {action.available && action.navigation !== 'EXTERNAL' && action.navigation !== 'AUTHOR' && (
               <button
                 type="button"
                 className={index === 0 ? 'primary compact' : 'secondary compact'}

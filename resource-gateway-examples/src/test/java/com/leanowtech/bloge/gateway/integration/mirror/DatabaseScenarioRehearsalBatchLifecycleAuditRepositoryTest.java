@@ -63,6 +63,31 @@ class DatabaseScenarioRehearsalBatchLifecycleAuditRepositoryTest {
     }
 
     @Test
+    void readsOnlyTheRequestedItemLifecycle() {
+        repository.append(admitted());
+        ScenarioRehearsalBatchLifecycleAuditEvent first =
+                repository.append(claimed(0));
+        ScenarioRehearsalBatchLifecycleAuditEvent second =
+                repository.append(claimed(1));
+
+        assertThat(repository.itemLifecycle(
+                SCOPE, "job-001", 0))
+                .containsExactly(first);
+        assertThat(repository.itemLifecycle(
+                SCOPE, "job-001", 1))
+                .containsExactly(second);
+        assertThat(repository.itemLifecycle(
+                new CapabilitySnapshot.Scope(
+                        "tenant-b",
+                        "org-a",
+                        "support",
+                        "test",
+                        "sg"),
+                "job-001",
+                0)).isEmpty();
+    }
+
+    @Test
     void tableCannotRepresentBusinessPayloadOrCredentials() {
         List<String> columns = jdbc.queryForList(
                 """
@@ -143,6 +168,28 @@ class DatabaseScenarioRehearsalBatchLifecycleAuditRepositoryTest {
                 0,
                 "",
                 0,
+                "",
+                "");
+    }
+
+    private static ScenarioRehearsalBatchLifecycleAuditEvent
+    claimed(int itemIndex) {
+        return new ScenarioRehearsalBatchLifecycleAuditEvent(
+                0,
+                null,
+                SCOPE,
+                "job-001",
+                "batch-001",
+                "sha256:" + "a".repeat(64),
+                ScenarioRehearsalBatchLifecycleAuditEvent.Transition
+                        .CLAIMED,
+                ScenarioRehearsalBatchJob.Status.RUNNING,
+                itemIndex,
+                ScenarioRehearsalBatchLifecycleAuditEvent.ItemStatus
+                        .RUNNING,
+                1,
+                "worker-attempt",
+                1,
                 "",
                 "");
     }

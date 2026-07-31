@@ -7,6 +7,8 @@ import com.leanowtech.bloge.gateway.integration.mirror.ScenarioRehearsalBatchFin
 import com.leanowtech.bloge.gateway.integration.mirror.ScenarioRehearsalBatchFinalizationHealth;
 import com.leanowtech.bloge.gateway.integration.mirror.ScenarioRehearsalBatchFinalizationStatus;
 import com.leanowtech.bloge.gateway.integration.mirror.ScenarioRehearsalBatchItemPage;
+import com.leanowtech.bloge.gateway.integration.mirror.ScenarioRehearsalBatchItemAttemptTimeline;
+import com.leanowtech.bloge.gateway.integration.mirror.ScenarioRehearsalBatchItemAttemptTimelineService;
 import com.leanowtech.bloge.gateway.integration.mirror.ScenarioRehearsalBatchJob;
 import com.leanowtech.bloge.gateway.integration.mirror.ScenarioRehearsalBatchJobPage;
 import com.leanowtech.bloge.gateway.integration.mirror.ScenarioRehearsalBatchRepository;
@@ -39,6 +41,9 @@ class ScenarioRehearsalBatchControllerTest {
                 mock(ScenarioRehearsalBatchWorkbookService.class);
         ScenarioRehearsalBatchRetentionService retention =
                 mock(ScenarioRehearsalBatchRetentionService.class);
+        ScenarioRehearsalBatchItemAttemptTimelineService
+                attemptTimelines =
+                mock(ScenarioRehearsalBatchItemAttemptTimelineService.class);
         IntegrationRequestAuthenticator authenticator =
                 mock(IntegrationRequestAuthenticator.class);
         ScenarioArtifactRequestDecoder decoder =
@@ -56,6 +61,8 @@ class ScenarioRehearsalBatchControllerTest {
                 mock(ScenarioRehearsalBatchJob.class);
         ScenarioRehearsalBatchItemPage page =
                 mock(ScenarioRehearsalBatchItemPage.class);
+        ScenarioRehearsalBatchItemAttemptTimeline timeline =
+                mock(ScenarioRehearsalBatchItemAttemptTimeline.class);
         ScenarioRehearsalBatchJobPage jobs =
                 mock(ScenarioRehearsalBatchJobPage.class);
         ScenarioRehearsalBatchEvidenceBundle evidence =
@@ -95,6 +102,9 @@ class ScenarioRehearsalBatchControllerTest {
                 ScenarioRehearsalBatchJob.SCHEMA_VERSION);
         when(page.schemaVersion()).thenReturn(
                 ScenarioRehearsalBatchItemPage.SCHEMA_VERSION);
+        when(timeline.schemaVersion()).thenReturn(
+                ScenarioRehearsalBatchItemAttemptTimeline
+                        .SCHEMA_VERSION);
         when(jobs.schemaVersion()).thenReturn(
                 ScenarioRehearsalBatchJobPage.SCHEMA_VERSION);
         when(evidence.schemaVersion()).thenReturn(
@@ -186,6 +196,9 @@ class ScenarioRehearsalBatchControllerTest {
         when(batches.page(
                 "job-a", 10, 25, identity))
                 .thenReturn(page);
+        when(attemptTimelines.timeline(
+                "job-a", 10, identity))
+                .thenReturn(timeline);
         when(batches.evidence("job-a", identity))
                 .thenReturn(Optional.of(evidence));
         when(workbooks.workbookSeed("job-a", identity))
@@ -222,6 +235,7 @@ class ScenarioRehearsalBatchControllerTest {
         ScenarioRehearsalBatchController controller =
                 new ScenarioRehearsalBatchController(
                         batches, workbooks, retention,
+                        attemptTimelines,
                         authenticator, decoder);
 
         assertThat(controller.submit(raw, headers).payload())
@@ -243,6 +257,18 @@ class ScenarioRehearsalBatchControllerTest {
         assertThat(controller.page(
                 "job-a", 10, 25, headers).payload())
                 .isSameAs(page);
+        assertThat(controller.attempts(
+                "job-a", 10, headers))
+                .satisfies(envelope -> {
+                    assertThat(envelope.payloadKind()).isEqualTo(
+                            "SCENARIO_REHEARSAL_BATCH_ITEM_ATTEMPT_TIMELINE");
+                    assertThat(envelope.payloadSchemaVersion())
+                            .isEqualTo(
+                                    ScenarioRehearsalBatchItemAttemptTimeline
+                                            .SCHEMA_VERSION);
+                    assertThat(envelope.payload())
+                            .isSameAs(timeline);
+                });
         assertThat(controller.evidence(
                 "job-a", headers).payload())
                 .isSameAs(evidence);
@@ -312,7 +338,7 @@ class ScenarioRehearsalBatchControllerTest {
                 IntegrationOperation
                         .MIRROR_REHEARSAL_BATCH_SUBMIT);
         verify(authenticator,
-                org.mockito.Mockito.times(4))
+                org.mockito.Mockito.times(5))
                 .authenticate(
                         headers,
                         IntegrationOperation

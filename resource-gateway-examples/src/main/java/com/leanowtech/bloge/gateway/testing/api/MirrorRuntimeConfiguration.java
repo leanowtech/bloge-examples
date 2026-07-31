@@ -130,6 +130,8 @@ import com.leanowtech.bloge.gateway.integration.mirror.ScenarioRehearsalBatchFin
 import com.leanowtech.bloge.gateway.integration.mirror.ScenarioRehearsalBatchFinalizationSloMonitor;
 import com.leanowtech.bloge.gateway.integration.mirror.ScenarioRehearsalBatchFinalizationWorker;
 import com.leanowtech.bloge.gateway.integration.mirror.ScenarioRehearsalBatchLifecycleAuditRepository;
+import com.leanowtech.bloge.gateway.integration.mirror.ScenarioRehearsalBatchItemAttemptTimelineService;
+import com.leanowtech.bloge.gateway.integration.mirror.ScenarioRehearsalAuthorTargetResolver;
 import com.leanowtech.bloge.gateway.integration.mirror.ScenarioRehearsalBatchCompiler;
 import com.leanowtech.bloge.gateway.integration.mirror.ScenarioRehearsalBatchPolicy;
 import com.leanowtech.bloge.gateway.integration.mirror.ScenarioRehearsalBatchRepository;
@@ -676,6 +678,26 @@ public class MirrorRuntimeConfiguration {
                 evidence,
                 observations,
                 finalizationHealthPolicy);
+    }
+
+    /** Creates the payload-free exact item attempt-timeline projection boundary. */
+    @Bean
+    @ConditionalOnMissingBean
+    public ScenarioRehearsalAuthorTargetResolver
+    scenarioRehearsalAuthorTargetResolver() {
+        return ScenarioRehearsalAuthorTargetResolver.unavailable();
+    }
+
+    /** Creates the payload-free exact item attempt-timeline projection boundary. */
+    @Bean
+    @ConditionalOnMissingBean
+    public ScenarioRehearsalBatchItemAttemptTimelineService
+    scenarioRehearsalBatchItemAttemptTimelineService(
+            ScenarioRehearsalBatchService batches,
+            ScenarioRehearsalBatchLifecycleAuditRepository audit,
+            ScenarioRehearsalAuthorTargetResolver authorTargets) {
+        return new ScenarioRehearsalBatchItemAttemptTimelineService(
+                batches, audit, authorTargets);
     }
 
     /** Creates the signed-source ANEKE batch correctness-workbook projection boundary. */
