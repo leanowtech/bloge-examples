@@ -1,5 +1,12 @@
 # Resource Gateway Author UX 体验成熟度 95 分提升计划
 
+> 历史计划说明：本文保留 2026-07-29 Stage 0–4 的实施记录和当时的工程评分。
+> 2026-07-31 的最新真实浏览器复评发现，后续 Library Authoring、Operator Test、Fixture
+> 与 Evidence 能力重新引入了双层工作台、所见非所得和复杂图可读性回归。当前状态、重新
+> 校准的 `74 / 100` 基线及后续开工计划以
+> [Resource Gateway 体验成熟度 95 分校准与修正计划](resource-gateway-ux-maturity-95-recalibration-plan.md)
+> 为准。
+
 > 状态：Engineering Implementation Complete — Stage 0-4 completed, Stage 5 user validation pending
 >
 > 日期：2026-07-29

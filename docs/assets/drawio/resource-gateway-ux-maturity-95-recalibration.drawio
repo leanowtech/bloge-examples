@@ -1,0 +1,122 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<mxfile host="drawio" version="30.0.4">
+  <diagram id="resource-gateway-ux-maturity-95-recalibration" name="UX 95 Recalibration">
+    <mxGraphModel dx="1600" dy="980" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="1600" pageHeight="980" math="0" shadow="0">
+      <root>
+        <mxCell id="0" />
+        <mxCell id="1" parent="0" />
+
+        <mxCell id="title" value="Resource Gateway UX 95 分校准目标与交付闭环" style="text;html=1;strokeColor=none;fillColor=none;align=left;verticalAlign=middle;fontFamily=Arial;fontSize=24;fontStyle=1;fontColor=#1f2937;" vertex="1" parent="1">
+          <mxGeometry x="40" y="20" width="980" height="40" as="geometry" />
+        </mxCell>
+        <mxCell id="subtitle" value="从 74 分真实任务基线出发：收敛唯一工作面、统一 canonical state、重建可信 Verdict，并用 E3/E4 证据封顶" style="text;html=1;strokeColor=none;fillColor=none;align=left;verticalAlign=middle;fontFamily=Arial;fontSize=12;fontColor=#52606d;" vertex="1" parent="1">
+          <mxGeometry x="40" y="60" width="1350" height="24" as="geometry" />
+        </mxCell>
+
+        <mxCell id="currentLane" value="Current Structural Defects / 当前结构性缺陷" style="swimlane;startSize=34;whiteSpace=wrap;html=1;fillColor=#fff8f7;strokeColor=#9f3a38;fontFamily=Arial;fontSize=13;fontStyle=1;container=1;pointerEvents=0;" vertex="1" parent="1">
+          <mxGeometry x="40" y="100" width="1520" height="150" as="geometry" />
+        </mxCell>
+        <mxCell id="defectNav" value="双层工作台&#xa;Top mode + 同名 mega modal" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#fdecec;strokeColor=#a94442;fontFamily=Arial;fontSize=11;fontStyle=1;" vertex="1" parent="currentLane">
+          <mxGeometry x="35" y="56" width="310" height="66" as="geometry" />
+        </mxCell>
+        <mxCell id="defectState" value="所见非所得&#xa;Editor / plan / run state 分裂" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#fdecec;strokeColor=#a94442;fontFamily=Arial;fontSize=11;fontStyle=1;" vertex="1" parent="currentLane">
+          <mxGeometry x="405" y="56" width="310" height="66" as="geometry" />
+        </mxCell>
+        <mxCell id="defectCanvas" value="复杂图不可读&#xa;5 nodes 已缩放到 49%–51%" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#fdecec;strokeColor=#a94442;fontFamily=Arial;fontSize=11;fontStyle=1;" vertex="1" parent="currentLane">
+          <mxGeometry x="775" y="56" width="310" height="66" as="geometry" />
+        </mxCell>
+        <mxCell id="defectTrust" value="证明强度混淆&#xa;Schema / Mock / Runtime 共用 Passed" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#fdecec;strokeColor=#a94442;fontFamily=Arial;fontSize=11;fontStyle=1;" vertex="1" parent="currentLane">
+          <mxGeometry x="1145" y="56" width="310" height="66" as="geometry" />
+        </mxCell>
+
+        <mxCell id="surfaceLane" value="Target Product Surfaces / 唯一中央工作面" style="swimlane;startSize=34;whiteSpace=wrap;html=1;fillColor=#f7f9fb;strokeColor=#52606d;fontFamily=Arial;fontSize=13;fontStyle=1;container=1;pointerEvents=0;" vertex="1" parent="1">
+          <mxGeometry x="40" y="290" width="1520" height="180" as="geometry" />
+        </mxCell>
+        <mxCell id="compose" value="Compose Surface&#xa;Canvas + contextual inspector" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#e8f1fb;strokeColor=#2f6b9a;fontFamily=Arial;fontSize=12;fontStyle=1;" vertex="1" parent="surfaceLane">
+          <mxGeometry x="40" y="64" width="270" height="78" as="geometry" />
+        </mxCell>
+        <mxCell id="contract" value="Contract Surface&#xa;Interface + semantics + lineage" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#e8f1fb;strokeColor=#2f6b9a;fontFamily=Arial;fontSize=12;fontStyle=1;" vertex="1" parent="surfaceLane">
+          <mxGeometry x="390" y="64" width="270" height="78" as="geometry" />
+        </mxCell>
+        <mxCell id="scenario" value="Scenario Surface&#xa;Given + controlled Dependencies + Then" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#fff4d6;strokeColor=#a66a12;fontFamily=Arial;fontSize=12;fontStyle=1;" vertex="1" parent="surfaceLane">
+          <mxGeometry x="740" y="64" width="300" height="78" as="geometry" />
+        </mxCell>
+        <mxCell id="evidence" value="Evidence Surface&#xa;Verdict + remediation + trace" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#eaf6ef;strokeColor=#39744a;fontFamily=Arial;fontSize=12;fontStyle=1;" vertex="1" parent="surfaceLane">
+          <mxGeometry x="1120" y="64" width="300" height="78" as="geometry" />
+        </mxCell>
+        <mxCell id="surfaceComposeContract" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;endArrow=classic;endFill=1;strokeColor=#52606d;exitX=1;exitY=0.5;entryX=0;entryY=0.5;" edge="1" parent="surfaceLane" source="compose" target="contract">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="surfaceContractScenario" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;endArrow=classic;endFill=1;strokeColor=#52606d;exitX=1;exitY=0.5;entryX=0;entryY=0.5;" edge="1" parent="surfaceLane" source="contract" target="scenario">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="surfaceScenarioEvidence" value="run" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;endArrow=classic;endFill=1;strokeColor=#52606d;labelBackgroundColor=#ffffff;fontFamily=Arial;fontSize=10;exitX=1;exitY=0.5;entryX=0;entryY=0.5;" edge="1" parent="surfaceLane" source="scenario" target="evidence">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+
+        <mxCell id="foundationLane" value="Shared UX Kernel / 跨页面共享体验内核" style="swimlane;startSize=34;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#52606d;fontFamily=Arial;fontSize=13;fontStyle=1;container=1;pointerEvents=0;" vertex="1" parent="1">
+          <mxGeometry x="40" y="510" width="1520" height="170" as="geometry" />
+        </mxCell>
+        <mxCell id="canonical" value="CanonicalEditorSnapshot&#xa;visible = plan = request = evidence" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#e8f1fb;strokeColor=#2f6b9a;fontFamily=Arial;fontSize=11;fontStyle=1;" vertex="1" parent="foundationLane">
+          <mxGeometry x="35" y="62" width="270" height="72" as="geometry" />
+        </mxCell>
+        <mxCell id="schema" value="SchemaValueEditor&#xa;visual form + Advanced round trip" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#e8f1fb;strokeColor=#2f6b9a;fontFamily=Arial;fontSize=11;fontStyle=1;" vertex="1" parent="foundationLane">
+          <mxGeometry x="335" y="62" width="270" height="72" as="geometry" />
+        </mxCell>
+        <mxCell id="verdict" value="VerdictPresentationPolicy&#xa;scope + proof + currentness + action" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#eaf6ef;strokeColor=#39744a;fontFamily=Arial;fontSize=11;fontStyle=1;" vertex="1" parent="foundationLane">
+          <mxGeometry x="635" y="62" width="285" height="72" as="geometry" />
+        </mxCell>
+        <mxCell id="chrome" value="AdaptiveChromePolicy&#xa;task + graph bounds + readability floor" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#fff4d6;strokeColor=#a66a12;fontFamily=Arial;fontSize=11;fontStyle=1;" vertex="1" parent="foundationLane">
+          <mxGeometry x="950" y="62" width="270" height="72" as="geometry" />
+        </mxCell>
+        <mxCell id="remediation" value="RemediationAction&#xa;root cause + business impact + deep link" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#eaf6ef;strokeColor=#39744a;fontFamily=Arial;fontSize=11;fontStyle=1;" vertex="1" parent="foundationLane">
+          <mxGeometry x="1250" y="62" width="270" height="72" as="geometry" />
+        </mxCell>
+
+        <mxCell id="deliveryLane" value="Delivery and Evidence Gates / 分阶段交付与证据门禁" style="swimlane;startSize=34;whiteSpace=wrap;html=1;fillColor=#f7f9fb;strokeColor=#52606d;fontFamily=Arial;fontSize=13;fontStyle=1;container=1;pointerEvents=0;" vertex="1" parent="1">
+          <mxGeometry x="40" y="720" width="1520" height="160" as="geometry" />
+        </mxCell>
+        <mxCell id="stageA" value="A&#xa;可信度止血&#xa;74 → 80" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#fdecec;strokeColor=#a94442;fontFamily=Arial;fontSize=11;fontStyle=1;" vertex="1" parent="deliveryLane">
+          <mxGeometry x="30" y="58" width="175" height="72" as="geometry" />
+        </mxCell>
+        <mxCell id="stageB" value="B&#xa;唯一工作面&#xa;80 → 85" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#e8f1fb;strokeColor=#2f6b9a;fontFamily=Arial;fontSize=11;fontStyle=1;" vertex="1" parent="deliveryLane">
+          <mxGeometry x="235" y="58" width="175" height="72" as="geometry" />
+        </mxCell>
+        <mxCell id="stageC" value="C&#xa;统一 Scenario&#xa;85 → 90" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#fff4d6;strokeColor=#a66a12;fontFamily=Arial;fontSize=11;fontStyle=1;" vertex="1" parent="deliveryLane">
+          <mxGeometry x="440" y="58" width="175" height="72" as="geometry" />
+        </mxCell>
+        <mxCell id="stageD" value="D&#xa;复杂图可读&#xa;90 → 93" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#fff4d6;strokeColor=#a66a12;fontFamily=Arial;fontSize=11;fontStyle=1;" vertex="1" parent="deliveryLane">
+          <mxGeometry x="645" y="58" width="175" height="72" as="geometry" />
+        </mxCell>
+        <mxCell id="stageE" value="E&#xa;生命周期闭环&#xa;93 → 95 ready" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#eaf6ef;strokeColor=#39744a;fontFamily=Arial;fontSize=11;fontStyle=1;" vertex="1" parent="deliveryLane">
+          <mxGeometry x="850" y="58" width="190" height="72" as="geometry" />
+        </mxCell>
+        <mxCell id="stageE3" value="E3&#xa;12 名目标用户&#xa;task success ≥ 90%" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#eaf6ef;strokeColor=#39744a;fontFamily=Arial;fontSize=11;fontStyle=1;" vertex="1" parent="deliveryLane">
+          <mxGeometry x="1070" y="58" width="190" height="72" as="geometry" />
+        </mxCell>
+        <mxCell id="stage95" value="UX MATURITY ≥ 95&#xa;P0 / P1 = 0&#xa;E4 two releases" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#eaf6ef;strokeColor=#39744a;strokeWidth=2;fontFamily=Arial;fontSize=12;fontStyle=1;" vertex="1" parent="deliveryLane">
+          <mxGeometry x="1290" y="58" width="200" height="72" as="geometry" />
+        </mxCell>
+
+        <mxCell id="edgeAB" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;endArrow=classic;endFill=1;strokeColor=#52606d;exitX=1;exitY=0.5;entryX=0;entryY=0.5;" edge="1" parent="deliveryLane" source="stageA" target="stageB"><mxGeometry relative="1" as="geometry" /></mxCell>
+        <mxCell id="edgeBC" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;endArrow=classic;endFill=1;strokeColor=#52606d;exitX=1;exitY=0.5;entryX=0;entryY=0.5;" edge="1" parent="deliveryLane" source="stageB" target="stageC"><mxGeometry relative="1" as="geometry" /></mxCell>
+        <mxCell id="edgeCD" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;endArrow=classic;endFill=1;strokeColor=#52606d;exitX=1;exitY=0.5;entryX=0;entryY=0.5;" edge="1" parent="deliveryLane" source="stageC" target="stageD"><mxGeometry relative="1" as="geometry" /></mxCell>
+        <mxCell id="edgeDE" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;endArrow=classic;endFill=1;strokeColor=#52606d;exitX=1;exitY=0.5;entryX=0;entryY=0.5;" edge="1" parent="deliveryLane" source="stageD" target="stageE"><mxGeometry relative="1" as="geometry" /></mxCell>
+        <mxCell id="edgeEE3" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;endArrow=classic;endFill=1;strokeColor=#39744a;labelBackgroundColor=#ffffff;fontFamily=Arial;fontSize=9;exitX=1;exitY=0.5;entryX=0;entryY=0.5;" edge="1" parent="deliveryLane" source="stageE" target="stageE3"><mxGeometry relative="1" as="geometry" /></mxCell>
+        <mxCell id="edgeE395" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;endArrow=classic;endFill=1;strokeColor=#39744a;labelBackgroundColor=#ffffff;fontFamily=Arial;fontSize=9;exitX=1;exitY=0.5;entryX=0;entryY=0.5;" edge="1" parent="deliveryLane" source="stageE3" target="stage95"><mxGeometry relative="1" as="geometry" /></mxCell>
+
+        <mxCell id="legend" value="Legend" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#cbd5e1;verticalAlign=top;fontFamily=Arial;fontSize=10;fontStyle=1;" vertex="1" parent="1">
+          <mxGeometry x="1040" y="900" width="520" height="54" as="geometry" />
+        </mxCell>
+        <mxCell id="legendRed" value="" style="rounded=0;html=1;fillColor=#fdecec;strokeColor=#a94442;" vertex="1" parent="legend"><mxGeometry x="12" y="29" width="24" height="12" as="geometry" /></mxCell>
+        <mxCell id="legendRedText" value="P0 / blocker" style="text;html=1;strokeColor=none;fillColor=none;align=left;verticalAlign=middle;fontFamily=Arial;fontSize=9;fontColor=#52606d;" vertex="1" parent="legend"><mxGeometry x="42" y="22" width="90" height="26" as="geometry" /></mxCell>
+        <mxCell id="legendBlue" value="" style="rounded=0;html=1;fillColor=#e8f1fb;strokeColor=#2f6b9a;" vertex="1" parent="legend"><mxGeometry x="145" y="29" width="24" height="12" as="geometry" /></mxCell>
+        <mxCell id="legendBlueText" value="Authoring surface" style="text;html=1;strokeColor=none;fillColor=none;align=left;verticalAlign=middle;fontFamily=Arial;fontSize=9;fontColor=#52606d;" vertex="1" parent="legend"><mxGeometry x="175" y="22" width="110" height="26" as="geometry" /></mxCell>
+        <mxCell id="legendYellow" value="" style="rounded=0;html=1;fillColor=#fff4d6;strokeColor=#a66a12;" vertex="1" parent="legend"><mxGeometry x="295" y="29" width="24" height="12" as="geometry" /></mxCell>
+        <mxCell id="legendYellowText" value="Scenario / review" style="text;html=1;strokeColor=none;fillColor=none;align=left;verticalAlign=middle;fontFamily=Arial;fontSize=9;fontColor=#52606d;" vertex="1" parent="legend"><mxGeometry x="325" y="22" width="100" height="26" as="geometry" /></mxCell>
+        <mxCell id="legendGreen" value="" style="rounded=0;html=1;fillColor=#eaf6ef;strokeColor=#39744a;" vertex="1" parent="legend"><mxGeometry x="430" y="29" width="24" height="12" as="geometry" /></mxCell>
+        <mxCell id="legendGreenText" value="Evidence / ready" style="text;html=1;strokeColor=none;fillColor=none;align=left;verticalAlign=middle;fontFamily=Arial;fontSize=9;fontColor=#52606d;" vertex="1" parent="legend"><mxGeometry x="460" y="22" width="58" height="26" as="geometry" /></mxCell>
+      </root>
+    </mxGraphModel>
+  </diagram>
+</mxfile>
