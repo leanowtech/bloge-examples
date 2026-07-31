@@ -52,6 +52,7 @@ import {
 } from './workspaceBundle';
 
 export type WorkspaceTab = 'interface' | 'scenarios' | 'compatibility' | 'evidence';
+export type ContractWorkspacePresentation = 'dialog' | 'surface';
 
 interface ContractScenarioWorkspaceProps {
   open: boolean;
@@ -84,6 +85,7 @@ interface ContractScenarioWorkspaceProps {
   initialScenarioId?: string;
   lastRunScenarioId?: string;
   lastComparison?: ScenarioComparison | null;
+  presentation?: ContractWorkspacePresentation;
 }
 
 /** Dedicated Contract → Scenario → Run Evidence authoring workspace. */
@@ -113,6 +115,7 @@ export default function ContractScenarioWorkspace({
   initialScenarioId = '',
   lastRunScenarioId = '',
   lastComparison = null,
+  presentation = 'dialog',
 }: ContractScenarioWorkspaceProps) {
   const [activeTab, setActiveTab] = useState<WorkspaceTab>(initialTab);
   const [selectedScenarioId, setSelectedScenarioId] = useState(
@@ -177,7 +180,7 @@ export default function ContractScenarioWorkspace({
     : [];
 
   useDialogFocusTrap({
-    open,
+    open: open && presentation === 'dialog',
     dialogRef: workspaceDialogRef,
     onDismiss: onClose,
   });
@@ -615,20 +618,42 @@ export default function ContractScenarioWorkspace({
     }
   };
 
+  const surfacePresentation = presentation === 'surface';
+  const workspaceTabs: Array<[WorkspaceTab, string]> = surfacePresentation
+    ? activeTab === 'interface' || activeTab === 'compatibility'
+      ? [
+          ['interface', 'Contract details'],
+          ['compatibility', 'Compatibility'],
+        ]
+      : []
+    : [
+        ['interface', 'Interface'],
+        ['scenarios', `Scenarios ${scenarios.length}`],
+        ['compatibility', 'Compatibility'],
+        ['evidence', 'Run Evidence'],
+      ];
+
   return (
-    <div className="contract-workspace-backdrop" role="presentation" onMouseDown={(event) => {
-      if (event.target === event.currentTarget) {
-        onClose();
-      }
-    }}>
+    <div
+      className={surfacePresentation
+        ? 'contract-workspace-surface-host'
+        : 'contract-workspace-backdrop'}
+      role="presentation"
+      onMouseDown={(event) => {
+        if (!surfacePresentation && event.target === event.currentTarget) {
+          onClose();
+        }
+      }}
+    >
       <section
         ref={workspaceDialogRef}
-        className="contract-workspace"
-        role="dialog"
-        aria-modal="true"
+        className={`contract-workspace ${surfacePresentation ? 'surface' : 'dialog'}`}
+        role={surfacePresentation ? 'region' : 'dialog'}
+        {...(!surfacePresentation ? { 'aria-modal': true } : {})}
         aria-label="Contract and Scenario workspace"
-        tabIndex={-1}
+        tabIndex={surfacePresentation ? undefined : -1}
         data-testid="contract-workspace"
+        data-presentation={presentation}
       >
         <header className="contract-workspace-header">
           <div>
@@ -710,15 +735,17 @@ export default function ContractScenarioWorkspace({
                 />
               </>
             )}
-            <button
-              type="button"
-              className="icon-button"
-              title="Close Contract workspace"
-              aria-label="Close Contract workspace"
-              onClick={onClose}
-            >
-              ×
-            </button>
+            {!surfacePresentation && (
+              <button
+                type="button"
+                className="icon-button"
+                title="Close Contract workspace"
+                aria-label="Close Contract workspace"
+                onClick={onClose}
+              >
+                ×
+              </button>
+            )}
           </div>
         </header>
 
@@ -762,26 +789,25 @@ export default function ContractScenarioWorkspace({
           </div>
         )}
 
-        <nav className="contract-tabs" role="tablist" aria-label="Contract workspace views">
-          {([
-            ['interface', 'Interface'],
-            ['scenarios', `Scenarios ${scenarios.length}`],
-            ['compatibility', 'Compatibility'],
-            ['evidence', 'Run Evidence'],
-          ] as Array<[WorkspaceTab, string]>).map(([tab, label]) => (
-            <button
-              type="button"
-              role="tab"
-              {...(tab === initialTab ? { 'data-dialog-initial-focus': true } : {})}
-              aria-selected={activeTab === tab}
-              className={activeTab === tab ? 'active' : ''}
-              key={tab}
-              onClick={() => navigateWorkspace(tab)}
-            >
-              {label}
-            </button>
-          ))}
-        </nav>
+        {workspaceTabs.length > 0 && (
+          <nav className="contract-tabs" role="tablist" aria-label="Contract workspace views">
+            {workspaceTabs.map(([tab, label]) => (
+              <button
+                type="button"
+                role="tab"
+                {...(tab === initialTab && !surfacePresentation
+                  ? { 'data-dialog-initial-focus': true }
+                  : {})}
+                aria-selected={activeTab === tab}
+                className={activeTab === tab ? 'active' : ''}
+                key={tab}
+                onClick={() => navigateWorkspace(tab)}
+              >
+                {label}
+              </button>
+            ))}
+          </nav>
+        )}
 
         <div className="contract-workspace-body" ref={workspaceBodyRef}>
           {activeTab === 'interface' && (

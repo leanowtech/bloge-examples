@@ -50,6 +50,30 @@ describe('ContractScenarioWorkspace', () => {
     expect(button('Publish').disabled).toBe(true);
   });
 
+  it('renders v2 Contract as a central surface without duplicate task navigation', async () => {
+    await renderWorkspace({ presentation: 'surface' });
+
+    const workspace = document.querySelector('[data-testid="contract-workspace"]');
+    expect(workspace?.getAttribute('role')).toBe('region');
+    expect(workspace?.getAttribute('aria-modal')).toBeNull();
+    expect(workspace?.getAttribute('data-presentation')).toBe('surface');
+    expect(document.querySelector('.contract-workspace-backdrop')).toBeNull();
+    expect(document.querySelector('.contract-workspace-surface-host')).not.toBeNull();
+    expect(tabs()).toEqual(['Contract details', 'Compatibility']);
+    expect(document.querySelector('[aria-label="Close Contract workspace"]')).toBeNull();
+    expect(text()).not.toContain('Run Evidence');
+  });
+
+  it('renders Scenario as a direct central surface without an inner tab bar', async () => {
+    await renderWorkspace({ presentation: 'surface', initialTab: 'scenarios' });
+
+    expect(tabs()).toEqual([]);
+    expect(text()).toContain('Given');
+    expect(text()).toContain('Dependencies');
+    expect(text()).toContain('Then');
+    expect(button('Run & Compare')).toBeInstanceOf(HTMLButtonElement);
+  });
+
   it('starts each workspace view at its conclusion instead of retaining the previous scroll', async () => {
     await renderWorkspace();
     const body = document.querySelector('.contract-workspace-body') as HTMLDivElement;
@@ -696,6 +720,7 @@ describe('ContractScenarioWorkspace', () => {
     onSelectEvidenceDiagnostic?: ReturnType<typeof vi.fn>;
     onCoordinateChange?: ReturnType<typeof vi.fn>;
     onRunEvidence?: ReturnType<typeof vi.fn>;
+    presentation?: 'dialog' | 'surface';
   } = {}) {
     const draft = options.unsaved
       ? { ...graphDraft(), draftId: '', revision: 0 }
@@ -738,6 +763,7 @@ describe('ContractScenarioWorkspace', () => {
           lastRunScenarioId={options.lastRunScenarioId}
           lastComparison={options.lastComparison}
           initialTab={options.initialTab}
+          presentation={options.presentation}
           onScenarioDraftSetChange={options.onChange ?? vi.fn()}
           onContractChange={vi.fn()}
           onImportWorkspace={vi.fn().mockResolvedValue(undefined)}
