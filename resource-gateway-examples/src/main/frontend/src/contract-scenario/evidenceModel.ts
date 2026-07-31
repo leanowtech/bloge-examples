@@ -30,6 +30,10 @@ export interface ScenarioEvidenceTrustContext {
     scenarioFingerprint: string;
     closureFingerprint: string;
     requestFingerprint: string;
+    editorSnapshotFingerprint?: string;
+    compiledPlanSourceFingerprint?: string;
+    requestSourceFingerprint?: string;
+    evidenceSourceFingerprint?: string;
   };
   diagnostics?: ScenarioEvidenceDiagnostic[];
 }
@@ -50,6 +54,7 @@ export interface EvidenceIssue {
   message: string;
   coordinate: string;
   nodeId: string;
+  occurrences?: number;
   diagnostic?: ScenarioEvidenceDiagnostic;
 }
 
@@ -101,7 +106,10 @@ export function scenarioEvidenceView(
       'Obtain a current publish-gate decision for this exact revision.',
     ),
   ];
-  const diagnosticIssues = diagnosticEvidence(response, comparison, trustContext.diagnostics ?? []);
+  const diagnosticIssues = [
+    ...diagnosticEvidence(response, comparison, trustContext.diagnostics ?? []),
+    ...fingerprintClosureEvidence(trustContext),
+  ];
   const blockers = uniqueIssues([
     ...dimensions
       .filter((dimension) => dimension.state === 'failed')
@@ -358,11 +366,48 @@ function issueSeverity(level: string | undefined): EvidenceIssue['severity'] | n
 }
 
 function uniqueIssues(issues: EvidenceIssue[]): EvidenceIssue[] {
-  const seen = new Set<string>();
-  return issues.filter((issue) => {
+  const grouped = new Map<string, EvidenceIssue>();
+  issues.forEach((issue) => {
     const key = `${issue.scope}:${issue.code}:${issue.message}:${issue.coordinate}`;
-    if (seen.has(key)) return false;
-    seen.add(key);
-    return true;
+    const existing = grouped.get(key);
+    if (existing) {
+      existing.occurrences = (existing.occurrences ?? 1) + 1;
+      return;
+    }
+    grouped.set(key, { ...issue, occurrences: issue.occurrences ?? 1 });
   });
+  return Array.from(grouped.values());
+}
+
+function fingerprintClosureEvidence(
+  trustContext: ScenarioEvidenceTrustContext,
+): EvidenceIssue[] {
+  const coordinate = trustContext.coordinate;
+  if (!coordinate) {
+    return [];
+  }
+  const sourceFingerprints = [
+    coordinate.editorSnapshotFingerprint,
+    coordinate.compiledPlanSourceFingerprint,
+    coordinate.requestSourceFingerprint,
+    coordinate.evidenceSourceFingerprint,
+  ];
+  if (sourceFingerprints.every((fingerprint) => fingerprint === undefined)) {
+    return [];
+  }
+  const complete = sourceFingerprints.every((fingerprint) => Boolean(fingerprint));
+  const consistent = complete && new Set(sourceFingerprints).size === 1;
+  if (consistent) {
+    return [];
+  }
+  return [{
+    id: 'scenario-fingerprint-closure',
+    severity: 'blocking',
+    scope: 'SCENARIO',
+    code: 'SCENARIO_FINGERPRINT_CLOSURE_MISMATCH',
+    message: 'Visible editor state, compiled plan, execution request, and retained evidence do not share one source fingerprint.',
+    coordinate: `/scenarios/${coordinate.scenarioId}`,
+    nodeId: '',
+    occurrences: 1,
+  }];
 }

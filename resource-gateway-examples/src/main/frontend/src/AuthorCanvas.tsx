@@ -165,7 +165,11 @@ import {
   type ScenarioComparison,
   type ScenarioNodeOption,
 } from './contract-scenario/scenarioAuthoring';
-import { compileScenarioForSimulation } from './contract-scenario/scenarioCompiler';
+import {
+  compileScenarioEditorSnapshotForSimulation,
+  type ScenarioCompilationProof,
+} from './contract-scenario/scenarioCompiler';
+import { captureScenarioEditorSnapshot } from './contract-scenario/scenarioEditorModel';
 import type { WorkspaceTab } from './contract-scenario/ContractScenarioWorkspace';
 import {
   clearDslAuthorHandoff,
@@ -289,6 +293,10 @@ interface ScenarioReviewEvidence {
     scenarioFingerprint: string;
     closureFingerprint: string;
     requestFingerprint: string;
+    editorSnapshotFingerprint?: string;
+    compiledPlanSourceFingerprint?: string;
+    requestSourceFingerprint?: string;
+    evidenceSourceFingerprint?: string;
   };
 }
 
@@ -3880,6 +3888,32 @@ function operatorInputSchema(operator: OperatorDefinition | undefined): SchemaEn
   return undefined;
 }
 
+/**
+ * Node fixtures address the complete operator result map, including a single named port.
+ *
+ * Graph and Operator public Contracts intentionally unwrap one-port targets; Scenario dependency
+ * controls must not, otherwise the form edits one shape while SimulationRequest sends another.
+ */
+function operatorNodePortSchema(
+  operator: OperatorDefinition | undefined,
+  direction: 'inputs' | 'outputs',
+): SchemaEnvelope | undefined {
+  const ports = operator?.ports?.[direction] ?? [];
+  if (ports.length === 0) {
+    return undefined;
+  }
+  const fallbackName = direction === 'inputs' ? 'input' : 'output';
+  return schemaEnvelope({
+    type: 'object',
+    properties: Object.fromEntries(ports.map((port) => [
+      port.name || fallbackName,
+      port.schema?.schema ?? {},
+    ])),
+    required: ports.filter((port) => port.required).map((port) => port.name || fallbackName),
+    additionalProperties: false,
+  });
+}
+
 function operatorScenarioGraphDraft(
   operator: OperatorDefinition,
   contract: ContractDraft,
@@ -6024,8 +6058,8 @@ export default function AuthorCanvas({ workspaceVersion = 'v1' }: AuthorCanvasPr
       id: node.id,
       label: node.label || node.id,
       operatorRef: node.operatorRef,
-      inputSchema: operatorInputSchema(operatorByRef.get(node.operatorRef)),
-      outputSchema: operatorOutputSchema(operatorByRef.get(node.operatorRef)),
+      inputSchema: operatorNodePortSchema(operatorByRef.get(node.operatorRef), 'inputs'),
+      outputSchema: operatorNodePortSchema(operatorByRef.get(node.operatorRef), 'outputs'),
     })),
     [canvasNodes, operatorByRef],
   );
@@ -6111,8 +6145,19 @@ export default function AuthorCanvas({ workspaceVersion = 'v1' }: AuthorCanvasPr
         active = false;
       };
     }
+    const selectedScenario = scenarioDraftSet.scenarios.find(
+      (scenario) => scenario.scenarioId === workspaceScenarioId,
+    ) ?? scenarioDraftSet.scenarios[0];
+    const scenarioMaterial = contractDraft && selectedScenario
+      ? captureScenarioEditorSnapshot(
+          scenarioDraftSet,
+          selectedScenario.scenarioId,
+          contractDraft,
+          scenarioNodeOptions,
+        )
+      : scenarioDraftSet;
     Promise.all([
-      sha256Fingerprint(scenarioDraftSet),
+      sha256Fingerprint(scenarioMaterial),
       sha256Fingerprint({
         operatorFingerprints: exportableDraft.operatorFingerprints ?? {},
         runtimeBindings: Object.fromEntries(exportableDraft.nodes.map((node) => [
@@ -6139,11 +6184,18 @@ export default function AuthorCanvas({ workspaceVersion = 'v1' }: AuthorCanvasPr
     return () => {
       active = false;
     };
-  }, [exportableDraft, scenarioDraftSet]);
+  }, [
+    contractDraft,
+    exportableDraft,
+    scenarioDraftSet,
+    scenarioNodeOptions,
+    workspaceScenarioId,
+  ]);
 
   const evidenceCoordinateForScenario = useCallback((
     scenarioId: string,
     requestFingerprint: string,
+    proof?: ScenarioCompilationProof,
   ) => ({
     contentEpoch: authorContentEpoch,
     draftId: graphDraftId,
@@ -6152,9 +6204,15 @@ export default function AuthorCanvas({ workspaceVersion = 'v1' }: AuthorCanvasPr
     contractFingerprint,
     scenarioId,
     scenarioRevision: scenarioDraftSet?.revision ?? 0,
-    scenarioFingerprint,
+    scenarioFingerprint: proof?.editorSnapshotFingerprint ?? scenarioFingerprint,
     closureFingerprint: operatorClosureFingerprint,
     requestFingerprint,
+    ...(proof ? {
+      editorSnapshotFingerprint: proof.editorSnapshotFingerprint,
+      compiledPlanSourceFingerprint: proof.compiledPlanSourceFingerprint,
+      requestSourceFingerprint: proof.requestSourceFingerprint,
+      evidenceSourceFingerprint: proof.evidenceSourceFingerprint,
+    } : {}),
   }), [
     authorContentEpoch,
     contractDraft?.target.fingerprint,
@@ -8324,7 +8382,12 @@ export default function AuthorCanvas({ workspaceVersion = 'v1' }: AuthorCanvasPr
     && (!lastScenarioReviewEvidence || lastScenarioReviewEvidence.comparison.passed)
     && Object.values(simulationTableResults).every((row) => row.status === 'passed'),
   );
-  const evidenceStale = hasRunResult && evidenceContentEpoch !== authorContentEpoch;
+  const evidenceStale = hasRunResult && (
+    lastScenarioReviewEvidence?.coordinate.editorSnapshotFingerprint
+      ? !scenarioFingerprint
+        || lastScenarioReviewEvidence.coordinate.editorSnapshotFingerprint !== scenarioFingerprint
+      : evidenceContentEpoch !== authorContentEpoch
+  );
   const assertionsEvaluated = Boolean(
     lastScenarioReviewEvidence || Object.keys(simulationTableResults).length > 0,
   );
@@ -8595,12 +8658,16 @@ export default function AuthorCanvas({ workspaceVersion = 'v1' }: AuthorCanvasPr
     scenarioId: string,
     comparison: ScenarioComparison,
     request: Parameters<typeof simulate>[0],
+    proof: ScenarioCompilationProof,
   ) => {
     sha256Fingerprint(request).then((requestFingerprint) => {
+      if (requestFingerprint !== proof.requestFingerprint) {
+        throw new Error('Execution request changed after canonical Scenario compilation.');
+      }
       setLastScenarioReviewEvidence({
         scenarioId,
         comparison,
-        coordinate: evidenceCoordinateForScenario(scenarioId, requestFingerprint),
+        coordinate: evidenceCoordinateForScenario(scenarioId, requestFingerprint, proof),
       });
       setWorkspaceScenarioId(scenarioId);
     }).catch((cause: unknown) => {
@@ -8617,28 +8684,30 @@ export default function AuthorCanvas({ workspaceVersion = 'v1' }: AuthorCanvasPr
       setContractWorkspaceOpen(true);
       return;
     }
-    const compilation = compileScenarioForSimulation(
-      exportableDraft,
+    const snapshot = captureScenarioEditorSnapshot(
       scenarioDraftSet,
       selectedScenario.scenarioId,
+      contractDraft,
+      scenarioNodeOptions,
+    );
+    const compilation = await compileScenarioEditorSnapshotForSimulation(
+      exportableDraft,
+      snapshot,
       contractDraft.target.fingerprint,
       contractFingerprint,
     );
-    if (!compilation.compiled || !compilation.request) {
+    if (!compilation.compiled || !compilation.request || !compilation.proof) {
       setError(compilation.diagnostics[0]?.message ?? 'Scenario cannot be compiled.');
       setContractWorkspaceInitialTab('scenarios');
       setContractWorkspaceOpen(true);
       return;
     }
-    const request = {
-      ...compilation.request,
-      context: {
-        ...compilation.request.context,
-        ...contextCompilation.value,
-      },
-    };
-    const requestFingerprint = await sha256Fingerprint(request);
-    const response = await runScenarioSimulation(request);
+    const requestFingerprint = await sha256Fingerprint(compilation.request);
+    if (requestFingerprint !== compilation.proof.requestFingerprint) {
+      setError('Execution request changed after canonical Scenario compilation.');
+      return;
+    }
+    const response = await runScenarioSimulation(compilation.request);
     const comparison = compareScenarioRun(selectedScenario, response);
     setLastScenarioReviewEvidence({
       scenarioId: selectedScenario.scenarioId,
@@ -8646,6 +8715,7 @@ export default function AuthorCanvas({ workspaceVersion = 'v1' }: AuthorCanvasPr
       coordinate: evidenceCoordinateForScenario(
         selectedScenario.scenarioId,
         requestFingerprint,
+        compilation.proof,
       ),
     });
     setWorkspaceScenarioId(selectedScenario.scenarioId);
@@ -8655,11 +8725,11 @@ export default function AuthorCanvas({ workspaceVersion = 'v1' }: AuthorCanvasPr
     contractDraft,
     contractFingerprint,
     canonicalScenarioReady,
-    contextCompilation.value,
     exportableDraft,
     evidenceCoordinateForScenario,
     runScenarioSimulation,
     scenarioDraftSet,
+    scenarioNodeOptions,
     workspaceScenarioId,
   ]);
 

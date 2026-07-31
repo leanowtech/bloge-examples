@@ -16,6 +16,7 @@
 
 相关文档：
 
+- [UX 95 分实施状态](resource-gateway-ux-maturity-95-implementation-status.md)
 - [Author UX 体验成熟度 95 分原计划](resource-gateway-author-ux-maturity-95-plan.md)
 - [Author 任务式交互 UX 改善计划](resource-gateway-author-task-oriented-ux-improvement-plan.md)
 - [Contract & Scenario Authoring 演进计划](resource-gateway-contract-scenario-authoring-evolution-plan.md)

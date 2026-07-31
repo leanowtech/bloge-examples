@@ -1,11 +1,23 @@
 import type { GraphDraft, NodeFixture, SimulationRequest } from '../types';
 import type {
   AssertionDraft,
+  ContractDraft,
   DependencyBehaviorDraft,
   ScenarioDiagnostic,
   ScenarioDraft,
   ScenarioDraftSet,
 } from './domain';
+import { sha256Fingerprint } from './fingerprint';
+import type { ScenarioEditorSnapshot } from './scenarioEditorModel';
+import { normalizeSchema, schemaType } from './schemaWorkbench';
+
+export interface ScenarioCompilationProof {
+  editorSnapshotFingerprint: string;
+  compiledPlanSourceFingerprint: string;
+  requestSourceFingerprint: string;
+  evidenceSourceFingerprint: string;
+  requestFingerprint: string;
+}
 
 export interface ScenarioSimulationCompilation {
   compiled: boolean;
@@ -15,6 +27,54 @@ export interface ScenarioSimulationCompilation {
   request?: SimulationRequest;
   assertions: AssertionDraft[];
   diagnostics: ScenarioDiagnostic[];
+  proof?: ScenarioCompilationProof;
+}
+
+/**
+ * Compiles only an immutable graphical-editor snapshot and binds every local run artifact to it.
+ *
+ * This is the canonical Author UI entry point. The draft-set compiler below remains as a protocol
+ * compatibility adapter for callers that have not yet adopted editor snapshots.
+ */
+export async function compileScenarioEditorSnapshotForSimulation(
+  graphDraft: GraphDraft,
+  snapshot: ScenarioEditorSnapshot,
+  currentTargetFingerprint: string,
+  currentContractFingerprint: string,
+): Promise<ScenarioSimulationCompilation> {
+  const sourceFingerprint = await sha256Fingerprint(snapshot);
+  const diagnostics = validateReturnValues(snapshot);
+  if (diagnostics.length > 0) {
+    return {
+      compiled: false,
+      scenarioId: snapshot.scenario.scenarioId,
+      targetFingerprint: snapshot.target.fingerprint,
+      contractFingerprint: snapshot.contractFingerprint,
+      assertions: [],
+      diagnostics,
+    };
+  }
+  const draftSet = snapshotDraftSet(snapshot);
+  const compilation = compileScenarioForSimulation(
+    graphDraft,
+    draftSet,
+    snapshot.scenario.scenarioId,
+    currentTargetFingerprint,
+    currentContractFingerprint,
+  );
+  if (!compilation.compiled || !compilation.request) {
+    return compilation;
+  }
+  return {
+    ...compilation,
+    proof: {
+      editorSnapshotFingerprint: sourceFingerprint,
+      compiledPlanSourceFingerprint: sourceFingerprint,
+      requestSourceFingerprint: sourceFingerprint,
+      evidenceSourceFingerprint: sourceFingerprint,
+      requestFingerprint: await sha256Fingerprint(compilation.request),
+    },
+  };
 }
 
 /**
@@ -209,4 +269,95 @@ function blocked(
 
 function error(code: string, message: string, target: string): ScenarioDiagnostic {
   return { level: 'ERROR', code, message, target };
+}
+
+function snapshotDraftSet(snapshot: ScenarioEditorSnapshot): ScenarioDraftSet {
+  return {
+    schemaVersion: 'bloge.scenarioDraftSet.v1',
+    scenarioDraftSetId: snapshot.scenarioDraftSetId,
+    revision: snapshot.scenarioRevision,
+    scope: {
+      tenantId: '',
+      organizationId: '',
+      projectId: '',
+      environment: '',
+      region: '',
+    },
+    target: snapshot.target,
+    contractFingerprint: snapshot.contractFingerprint,
+    scenarios: [snapshot.scenario],
+    metadata: {
+      owner: '',
+      classification: 'INTERNAL',
+      createdAt: null,
+      updatedAt: null,
+      provenance: { source: 'scenario-editor-snapshot' },
+    },
+  };
+}
+
+function validateReturnValues(snapshot: ScenarioEditorSnapshot): ScenarioDiagnostic[] {
+  const diagnostics: ScenarioDiagnostic[] = [];
+  snapshot.scenario.dependencies.forEach((dependency) => {
+    if (dependency.behavior.kind !== 'RETURN' && dependency.behavior.kind !== 'DELAY') {
+      return;
+    }
+    const nodeId = dependency.selector.nodeId;
+    const outputSchema = snapshot.nodeSchemas[nodeId]?.outputSchema;
+    if (!outputSchema) {
+      return;
+    }
+    validateRequiredValue(
+      outputSchema.schema,
+      dependency.behavior.output,
+      `/dependencies/${pointerSegment(dependency.dependencyId)}/behavior/output`,
+      diagnostics,
+    );
+  });
+  return diagnostics;
+}
+
+function validateRequiredValue(
+  rawSchema: ContractDraft['outputSchema']['schema'],
+  value: unknown,
+  target: string,
+  diagnostics: ScenarioDiagnostic[],
+): void {
+  const schema = normalizeSchema(rawSchema);
+  if (schemaType(schema) !== 'object') {
+    return;
+  }
+  const record = isRecord(value) ? value : {};
+  const properties = isRecord(schema.properties) ? schema.properties : {};
+  const required = Array.isArray(schema.required)
+    ? schema.required.filter((entry): entry is string => typeof entry === 'string')
+    : [];
+  required.forEach((field) => {
+    const fieldTarget = `${target}/${pointerSegment(field)}`;
+    const fieldValue = record[field];
+    if (missingRequiredValue(fieldValue)) {
+      diagnostics.push(error(
+        'visual.scenario.return.requiredValueMissing',
+        `Required Return value '${field}' is empty.`,
+        fieldTarget,
+      ));
+      return;
+    }
+    const fieldSchema = properties[field];
+    if (isRecord(fieldSchema)) {
+      validateRequiredValue(fieldSchema, fieldValue, fieldTarget, diagnostics);
+    }
+  });
+}
+
+function missingRequiredValue(value: unknown): boolean {
+  return value === undefined || value === null || (typeof value === 'string' && value.trim() === '');
+}
+
+function pointerSegment(value: string): string {
+  return value.replace(/~/g, '~0').replace(/\//g, '~1');
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return value !== null && typeof value === 'object' && !Array.isArray(value);
 }

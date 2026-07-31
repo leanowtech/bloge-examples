@@ -5,6 +5,7 @@ import {
   assertionForScope,
   assertionPathOptions,
   behaviorForKind,
+  captureScenarioEditorSnapshot,
   durationFromMilliseconds,
   selectDependencyTarget,
 } from './scenarioEditorModel';
@@ -109,6 +110,35 @@ describe('Scenario graphical editor model', () => {
       { path: 'decision.approved', label: 'decision.approved', type: 'boolean' },
       { path: 'decision.reason', label: 'decision.reason', type: 'string' },
     ]);
+  });
+
+  it('captures an immutable canonical snapshot of exactly what the graphical editor shows', () => {
+    const draft = {
+      ...graphDraft(),
+      nodeFixtures: { score: { output: { score: 0 } } },
+    };
+    const contract = contractDraftFromGraphDraft(draft, fingerprint('a'));
+    const draftSet = scenarioDraftSetFromCanvas(
+      contract.target,
+      fingerprint('b'),
+      draft,
+      nodes(),
+      [],
+    );
+
+    const snapshot = captureScenarioEditorSnapshot(
+      draftSet,
+      draftSet.scenarios[0].scenarioId,
+      contract,
+      nodes(),
+    );
+    const dependency = draftSet.scenarios[0].dependencies[0];
+    dependency.behavior.output = { score: 999 };
+
+    expect(snapshot.scenario.dependencies[0].behavior.output).toEqual({ score: 0 });
+    expect(snapshot.contract.inputSchema).toEqual(contract.inputSchema);
+    expect(snapshot.nodeSchemas.score.outputSchema).toEqual(nodes()[0].outputSchema);
+    expect(Object.isFrozen(snapshot)).toBe(true);
   });
 });
 

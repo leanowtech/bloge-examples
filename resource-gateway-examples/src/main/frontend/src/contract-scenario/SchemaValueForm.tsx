@@ -66,6 +66,7 @@ function SchemaValueControl(props: SchemaValueControlProps): ReactNode {
         <FieldLabel title={title} required={props.required} description={description} />
         <select
           aria-label={props.path}
+          data-schema-path={props.path}
           value={enumValue(props.value)}
           onChange={(event) => {
             const selected = enumValues.find((entry) => enumValue(entry) === event.target.value);
@@ -98,7 +99,7 @@ function SchemaValueControl(props: SchemaValueControlProps): ReactNode {
             if (!isRecord(propertySchema)) {
               return null;
             }
-            const childPath = props.path === '$' ? propertyName : `${props.path}.${propertyName}`;
+            const childPath = childSchemaPath(props.path, propertyName);
             return (
               <SchemaValueControl
                 key={propertyName}
@@ -171,6 +172,7 @@ function SchemaValueControl(props: SchemaValueControlProps): ReactNode {
         <input
           type="checkbox"
           aria-label={props.path}
+          data-schema-path={props.path}
           checked={Boolean(props.value)}
           onChange={(event) => props.onChange(event.target.checked)}
         />
@@ -186,15 +188,20 @@ function SchemaValueControl(props: SchemaValueControlProps): ReactNode {
         <input
           type="number"
           aria-label={props.path}
+          data-schema-path={props.path}
           step={type === 'integer' ? 1 : 'any'}
           min={typeof schema.minimum === 'number' ? schema.minimum : undefined}
           max={typeof schema.maximum === 'number' ? schema.maximum : undefined}
           value={typeof props.value === 'number' ? props.value : ''}
           onChange={(event) => {
+            if (event.target.value === '') {
+              props.onChange(undefined);
+              return;
+            }
             const parsed = type === 'integer'
               ? Number.parseInt(event.target.value, 10)
               : Number.parseFloat(event.target.value);
-            props.onChange(Number.isFinite(parsed) ? parsed : 0);
+            props.onChange(Number.isFinite(parsed) ? parsed : undefined);
           }}
         />
       </label>
@@ -215,6 +222,7 @@ function SchemaValueControl(props: SchemaValueControlProps): ReactNode {
                 ? 'datetime-local'
                 : 'text'}
           aria-label={props.path}
+          data-schema-path={props.path}
           autoComplete={sensitive ? 'off' : undefined}
           value={typeof props.value === 'string' ? props.value : ''}
           minLength={typeof schema.minLength === 'number' ? schema.minLength : undefined}
@@ -269,6 +277,7 @@ function JsonFallback({
       <FieldLabel title={title} required={required} description={description || 'Open JSON value'} />
       <textarea
         aria-label={path}
+        data-schema-path={path}
         value={text}
         rows={Math.min(8, Math.max(3, text.split('\n').length))}
         onChange={(event) => {
@@ -318,6 +327,13 @@ function sampleForSchema(rawSchema: Record<string, unknown>): unknown {
 
 function enumValue(value: unknown): string {
   return JSON.stringify(value) ?? 'null';
+}
+
+function childSchemaPath(parent: string, propertyName: string): string {
+  if (parent.startsWith('/')) {
+    return `${parent}/${propertyName.replace(/~/g, '~0').replace(/\//g, '~1')}`;
+  }
+  return parent === '$' ? propertyName : `${parent}.${propertyName}`;
 }
 
 function stringArray(value: unknown): string[] {

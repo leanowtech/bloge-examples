@@ -96,7 +96,36 @@ describe('scenarioEvidenceView', () => {
     });
 
     expect(view.warnings).toHaveLength(1);
+    expect(view.warnings[0].occurrences).toBe(3);
     expect(view.summary).toBe('1 warning needs an explicit decision.');
+  });
+
+  it('blocks evidence when any canonical source fingerprint drifts', () => {
+    const view = scenarioEvidenceView(successfulResponse(), comparison(true), {
+      contractStatus: 'VALID',
+      governanceStatus: 'APPROVED',
+      coordinate: {
+        draftId: 'loan',
+        draftRevision: 4,
+        draftFingerprint: fingerprint('d'),
+        contractFingerprint: fingerprint('c'),
+        scenarioId: 'approved',
+        scenarioRevision: 2,
+        scenarioFingerprint: fingerprint('s'),
+        closureFingerprint: fingerprint('o'),
+        requestFingerprint: fingerprint('r'),
+        editorSnapshotFingerprint: fingerprint('a'),
+        compiledPlanSourceFingerprint: fingerprint('a'),
+        requestSourceFingerprint: fingerprint('b'),
+        evidenceSourceFingerprint: fingerprint('a'),
+      },
+    });
+
+    expect(view.headline).toBe('Promotion blocked');
+    expect(view.blockers).toContainEqual(expect.objectContaining({
+      code: 'SCENARIO_FINGERPRINT_CLOSURE_MISMATCH',
+      occurrences: 1,
+    }));
   });
 });
 
@@ -132,4 +161,8 @@ function comparison(passed: boolean): ScenarioComparison {
           },
         ],
   };
+}
+
+function fingerprint(seed: string): string {
+  return `sha256:${seed.repeat(64).slice(0, 64)}`;
 }

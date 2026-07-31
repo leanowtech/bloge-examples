@@ -504,7 +504,7 @@ function OperatorTable({
                 spellCheck={false}
               />
             </td>
-            <td><TestResult result={results[index]} /></td>
+            <td><TestResult result={results[index]} successLabel="Schema valid" /></td>
             <td>
               <div className="library-test-row-actions">
                 <button
@@ -643,7 +643,7 @@ function FunctionTable({
               )}
             </td>
             <td>
-              <TestResult result={results[index]} showActual />
+              <TestResult result={results[index]} successLabel="Runtime passed" showActual />
             </td>
             <td>
               <div className="library-test-row-actions">
@@ -688,6 +688,7 @@ function FunctionTable({
 
 function TestResult({
   result,
+  successLabel,
   showActual = false,
 }: {
   result?: {
@@ -696,6 +697,7 @@ function TestResult({
     actual?: unknown;
     message: string;
   };
+  successLabel: string;
   showActual?: boolean;
 }) {
   if (!result) {
@@ -703,7 +705,7 @@ function TestResult({
   }
   return (
     <div className={`library-test-result ${result.passed ? 'passed' : 'failed'}`}>
-      <strong>{result.passed ? 'Passed' : result.status ?? 'Failed'}</strong>
+      <strong>{result.passed ? successLabel : result.status ?? 'Failed'}</strong>
       {showActual && result.actual !== undefined && (
         <code title={pretty(result.actual)}>{compactValue(result.actual)}</code>
       )}

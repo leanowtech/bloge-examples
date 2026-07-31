@@ -1290,13 +1290,14 @@ describe('AuthorCanvas built-in canvas examples', () => {
     });
     const firstCoordinate = query('[data-testid="scenario-evidence-coordinate"]').textContent;
 
-    await click(query<HTMLButtonElement>('[aria-label="Close Contract workspace"]'));
-    await click(query<HTMLButtonElement>('[data-testid="author-mode:compose"]'));
-    await click(query<HTMLButtonElement>('[data-testid="inspector-tab:data"]'));
+    await click(buttonByText('Scenarios 2'));
     await setControlValue(
-      query<HTMLInputElement>('input[aria-label="applicantId"]'),
+      query<HTMLInputElement>(
+        '[data-testid="contract-workspace"] input[aria-label="applicantId"]',
+      ),
       'applicant-1002',
     );
+    await click(query<HTMLButtonElement>('[aria-label="Close Contract workspace"]'));
 
     await waitFor(() => {
       expect(query('.workspace').getAttribute('data-author-mode')).toBe('compose');

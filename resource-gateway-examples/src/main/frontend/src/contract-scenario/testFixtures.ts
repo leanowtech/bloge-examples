@@ -80,6 +80,7 @@ export function nodes(): ScenarioNodeOption[] {
         schema: {
           type: 'object',
           properties: { score: { type: 'integer', minimum: 0 } },
+          required: ['score'],
         },
       },
     },

@@ -7,7 +7,13 @@ import {
   type ScenarioDraft,
   type ScenarioDraftSet,
 } from './domain';
-import { compileScenarioForSimulation } from './scenarioCompiler';
+import {
+  compileScenarioEditorSnapshotForSimulation,
+  compileScenarioForSimulation,
+} from './scenarioCompiler';
+import { captureScenarioEditorSnapshot } from './scenarioEditorModel';
+import { sha256Fingerprint } from './fingerprint';
+import type { ScenarioNodeOption } from './scenarioAuthoring';
 
 const TARGET_FINGERPRINT = `sha256:${'a'.repeat(64)}`;
 const CONTRACT_FINGERPRINT = `sha256:${'b'.repeat(64)}`;
@@ -56,6 +62,68 @@ describe('Contract and Scenario authoring domain', () => {
 });
 
 describe('Scenario transient compiler', () => {
+  it('binds editor, plan, request source, and request material to one canonical snapshot', async () => {
+    const graph = graphDraft();
+    const scenarios = draftSet([returnDependency()]);
+    const contract = contractDraftFromGraphDraft(graph, TARGET_FINGERPRINT);
+    const snapshot = captureScenarioEditorSnapshot(
+      scenarios,
+      'fallback',
+      contract,
+      scenarioNodes(),
+    );
+
+    const result = await compileScenarioEditorSnapshotForSimulation(
+      graph,
+      snapshot,
+      TARGET_FINGERPRINT,
+      CONTRACT_FINGERPRINT,
+    );
+
+    expect(result.compiled).toBe(true);
+    expect(result.proof).toMatchObject({
+      editorSnapshotFingerprint: expect.stringMatching(/^sha256:/),
+      compiledPlanSourceFingerprint: expect.stringMatching(/^sha256:/),
+      requestSourceFingerprint: expect.stringMatching(/^sha256:/),
+      evidenceSourceFingerprint: expect.stringMatching(/^sha256:/),
+    });
+    expect(new Set([
+      result.proof?.editorSnapshotFingerprint,
+      result.proof?.compiledPlanSourceFingerprint,
+      result.proof?.requestSourceFingerprint,
+      result.proof?.evidenceSourceFingerprint,
+    ]).size).toBe(1);
+    expect(result.proof?.requestFingerprint).toBe(await sha256Fingerprint(result.request));
+  });
+
+  it('blocks an empty required Return field instead of allowing runtime sample generation', async () => {
+    const graph = graphDraft();
+    const dependency = returnDependency();
+    dependency.behavior.output = { score: '' };
+    const scenarios = draftSet([dependency]);
+    const contract = contractDraftFromGraphDraft(graph, TARGET_FINGERPRINT);
+    const snapshot = captureScenarioEditorSnapshot(
+      scenarios,
+      'fallback',
+      contract,
+      scenarioNodes(true),
+    );
+
+    const result = await compileScenarioEditorSnapshotForSimulation(
+      graph,
+      snapshot,
+      TARGET_FINGERPRINT,
+      CONTRACT_FINGERPRINT,
+    );
+
+    expect(result.compiled).toBe(false);
+    expect(result.request).toBeUndefined();
+    expect(result.diagnostics).toContainEqual(expect.objectContaining({
+      code: 'visual.scenario.return.requiredValueMissing',
+      target: '/dependencies/crm-return/behavior/output/score',
+    }));
+  });
+
   it('compiles exact node RETURN and Expected Result into the existing simulation request', () => {
     const result = compileScenarioForSimulation(
       graphDraft(),
@@ -337,4 +405,25 @@ function returnDependency(): DependencyBehaviorDraft {
     },
     origin: 'AUTHORED',
   };
+}
+
+function scenarioNodes(requiredScore = false): ScenarioNodeOption[] {
+  return [{
+    id: 'crm',
+    label: 'CRM',
+    operatorRef: 'crm:lookup',
+    outputSchema: {
+      format: 'json-schema',
+      version: '2020-12',
+      schema: {
+        type: 'object',
+        properties: { score: { type: requiredScore ? 'string' : 'integer' } },
+        required: requiredScore ? ['score'] : [],
+      },
+    },
+  }, {
+    id: 'decision',
+    label: 'Decision',
+    operatorRef: 'bloge:transform',
+  }];
 }

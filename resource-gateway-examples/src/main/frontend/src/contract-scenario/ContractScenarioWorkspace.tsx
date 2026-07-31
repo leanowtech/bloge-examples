@@ -32,7 +32,11 @@ import {
   type ScenarioEvidenceDiagnostic,
   type ScenarioEvidenceTrustContext,
 } from './evidenceModel';
-import { compileScenarioForSimulation } from './scenarioCompiler';
+import {
+  compileScenarioEditorSnapshotForSimulation,
+  type ScenarioCompilationProof,
+} from './scenarioCompiler';
+import { captureScenarioEditorSnapshot } from './scenarioEditorModel';
 import SchemaFieldTree from './SchemaFieldTree';
 import SchemaValueForm from './SchemaValueForm';
 import {
@@ -74,6 +78,7 @@ interface ContractScenarioWorkspaceProps {
     scenarioId: string,
     comparison: ScenarioComparison,
     request: SimulationRequest,
+    proof: ScenarioCompilationProof,
   ) => void;
   initialTab?: WorkspaceTab;
   initialScenarioId?: string;
@@ -416,22 +421,37 @@ export default function ContractScenarioWorkspace({
     setCompileMessages([]);
     setComparison(null);
     try {
-      const compilation = compileScenarioForSimulation(
-        graphDraft,
+      const snapshot = captureScenarioEditorSnapshot(
         scenarioDraftSet,
         selectedScenario.scenarioId,
+        contract,
+        nodes,
+      );
+      const compilation = await compileScenarioEditorSnapshotForSimulation(
+        graphDraft,
+        snapshot,
         contract.target.fingerprint,
         contractFingerprint,
       );
       if (!compilation.compiled || !compilation.request) {
         setCompileMessages(compilation.diagnostics.map((diagnostic) => diagnostic.message));
+        focusSchemaPath(compilation.diagnostics[0]?.target);
+        return;
+      }
+      if (!compilation.proof) {
+        setCompileMessages(['Scenario compilation did not produce fingerprint closure proof.']);
         return;
       }
       const response = await onRun(compilation.request);
       const nextComparison = compareScenarioRun(selectedScenario, response);
       setRunResponse(response);
       setComparison(nextComparison);
-      onRunEvidence?.(selectedScenario.scenarioId, nextComparison, compilation.request);
+      onRunEvidence?.(
+        selectedScenario.scenarioId,
+        nextComparison,
+        compilation.request,
+        compilation.proof,
+      );
       navigateWorkspace('evidence', selectedScenario.scenarioId);
     } catch (cause: unknown) {
       setCompileMessages([String(cause)]);
@@ -1079,7 +1099,9 @@ function ScenarioTab({
 
             {compileMessages.length > 0 && (
               <div className="scenario-run-errors" role="alert">
-                {compileMessages.map((message) => <span key={message}>{message}</span>)}
+                {compileMessages.map((message, index) => (
+                  <span key={`${index}:${message}`}>{message}</span>
+                ))}
               </div>
             )}
 
@@ -1488,7 +1510,11 @@ function EvidenceIssueList({
           <li key={issue.id}>
             <span>
               <b>{issue.code}</b>
-              <small>{issue.scope}{issue.coordinate ? ` · ${issue.coordinate}` : ''}</small>
+              <small>
+                {issue.scope}
+                {issue.coordinate ? ` · ${issue.coordinate}` : ''}
+                {(issue.occurrences ?? 1) > 1 ? ` · ${issue.occurrences} occurrences` : ''}
+              </small>
               <span>{issue.message}</span>
             </span>
             {issue.diagnostic && onSelectDiagnostic && (
@@ -1593,6 +1619,16 @@ function requireLoadedScenarioCoordinate(
 
 function shortFingerprint(fingerprint: string): string {
   return fingerprint ? `${fingerprint.slice(0, 13)}…${fingerprint.slice(-6)}` : 'missing';
+}
+
+function focusSchemaPath(path: string | undefined): void {
+  if (!path) {
+    return;
+  }
+  const control = Array.from(
+    document.querySelectorAll<HTMLElement>('[data-schema-path]'),
+  ).find((candidate) => candidate.dataset.schemaPath === path);
+  control?.focus();
 }
 
 function errorMessage(cause: unknown): string {

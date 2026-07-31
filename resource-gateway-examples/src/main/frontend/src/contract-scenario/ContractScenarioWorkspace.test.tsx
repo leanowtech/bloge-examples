@@ -132,6 +132,31 @@ describe('ContractScenarioWorkspace', () => {
     expect(textarea('Advanced Scenario JSON').value).toContain('"applicantId": "A-99"');
   });
 
+  it('blocks and focuses an empty required Return field before calling the runtime', async () => {
+    const onRun = vi.fn().mockResolvedValue(successfulResponse());
+    await renderControlledWorkspace(onRun);
+    await clickTab('Scenarios 1');
+    const score = document.querySelector<HTMLInputElement>(
+      '[data-schema-path="/dependencies/score-behavior/behavior/output/score"]',
+    );
+    expect(score).not.toBeNull();
+
+    await act(async () => {
+      const setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')?.set;
+      setter?.call(score, '');
+      score?.dispatchEvent(new Event('input', { bubbles: true }));
+    });
+    await act(async () => {
+      button('Run & Compare').click();
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+    expect(onRun).not.toHaveBeenCalled();
+    expect(text()).toContain('Required Return value');
+    expect(document.activeElement).toBe(score);
+  });
+
   it('compiles, runs, and presents assertion evidence', async () => {
     const onRun = vi.fn().mockResolvedValue(successfulResponse());
     await renderWorkspace({ onRun });
@@ -142,6 +167,7 @@ describe('ContractScenarioWorkspace', () => {
       await Promise.resolve();
       await Promise.resolve();
     });
+    await settleAsyncWork();
 
     expect(onRun).toHaveBeenCalledWith(expect.objectContaining({
       context: expect.objectContaining({ applicantId: '' }),
@@ -172,12 +198,17 @@ describe('ContractScenarioWorkspace', () => {
       await Promise.resolve();
       await Promise.resolve();
     });
+    await settleAsyncWork();
 
     expect(onRunEvidence).toHaveBeenCalledWith(
       'approved',
       expect.objectContaining({ passed: true }),
       expect.objectContaining({
         draft: expect.objectContaining({ graphName: 'loanGraph' }),
+      }),
+      expect.objectContaining({
+        editorSnapshotFingerprint: expect.stringMatching(/^sha256:/),
+        requestFingerprint: expect.stringMatching(/^sha256:/),
       }),
     );
     expect(onCoordinateChange).toHaveBeenLastCalledWith('evidence', 'approved');
@@ -212,6 +243,7 @@ describe('ContractScenarioWorkspace', () => {
       await Promise.resolve();
       await Promise.resolve();
     });
+    await settleAsyncWork();
 
     expect(text()).toContain('Ready for promotion');
     expect(text()).toContain('DraftSAVED');
@@ -291,6 +323,7 @@ describe('ContractScenarioWorkspace', () => {
       await Promise.resolve();
       await Promise.resolve();
     });
+    await settleAsyncWork();
 
     expect(text()).toContain('Review required');
     expect(text()).toContain('CONTRACT_WARNING');
@@ -324,6 +357,7 @@ describe('ContractScenarioWorkspace', () => {
       await Promise.resolve();
       await Promise.resolve();
     });
+    await settleAsyncWork();
     await act(async () => button('Open source').click());
 
     expect(onSelectEvidenceDiagnostic).toHaveBeenCalledWith(diagnostic);
@@ -509,6 +543,7 @@ describe('ContractScenarioWorkspace', () => {
       await Promise.resolve();
       await Promise.resolve();
     });
+    await settleAsyncWork();
     expect(onRun).toHaveBeenCalledWith(expect.objectContaining({
       draft: expect.objectContaining({
         nodes: [expect.objectContaining({ operatorRef: 'risk:score' })],
@@ -719,7 +754,7 @@ describe('ContractScenarioWorkspace', () => {
     });
   }
 
-  async function renderControlledWorkspace() {
+  async function renderControlledWorkspace(onRun = vi.fn().mockResolvedValue(successfulResponse())) {
     const draft = graphDraft();
     const targetFingerprint = fingerprint('a');
     const contractFingerprint = fingerprint('b');
@@ -733,7 +768,9 @@ describe('ContractScenarioWorkspace', () => {
         id: 'approved',
         name: 'Approved applicant',
         context: { applicantId: '', profile: { age: 18, tags: [] } },
-        fixtures: {},
+        fixtures: {
+          score: { output: { score: 720 } },
+        },
         hasExpectedOutput: true,
         expectedOutput: successfulResponse().output,
       }],
@@ -755,7 +792,7 @@ describe('ContractScenarioWorkspace', () => {
           onImportWorkspace={vi.fn().mockResolvedValue(undefined)}
           onSaveGraphDraft={vi.fn().mockResolvedValue(undefined)}
           onRebase={vi.fn()}
-          onRun={vi.fn().mockResolvedValue(successfulResponse())}
+          onRun={onRun}
           onClose={vi.fn()}
         />
       );
@@ -775,6 +812,12 @@ function tabs(): string[] {
 
 async function clickTab(label: string) {
   await act(async () => button(label).click());
+}
+
+async function settleAsyncWork() {
+  await act(async () => {
+    await new Promise((resolve) => setTimeout(resolve, 20));
+  });
 }
 
 function button(label: string): HTMLButtonElement {

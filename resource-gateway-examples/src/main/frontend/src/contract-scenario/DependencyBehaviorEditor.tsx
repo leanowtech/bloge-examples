@@ -189,6 +189,7 @@ export default function DependencyBehaviorEditor({
             value={behavior.output}
             onChange={(output) => updateBehavior({ output })}
             label="Returned output"
+            path={`/dependencies/${pointerSegment(dependency.dependencyId)}/behavior/output`}
             compact
           />
         )}
@@ -327,6 +328,7 @@ export default function DependencyBehaviorEditor({
             value={behavior.expectedInput}
             onChange={(expectedInput) => updateBehavior({ expectedInput })}
             label="Expected dependency input"
+            path={`/dependencies/${pointerSegment(dependency.dependencyId)}/behavior/expectedInput`}
             compact
           />
         )}
@@ -656,6 +658,10 @@ function hasSelector(dependency: DependencyBehaviorDraft): boolean {
       || dependency.selector.resourceRef
       || dependency.selector.functionRef,
   );
+}
+
+function pointerSegment(value: string): string {
+  return value.replace(/~/g, '~0').replace(/\//g, '~1');
 }
 
 function selectorValueFor(

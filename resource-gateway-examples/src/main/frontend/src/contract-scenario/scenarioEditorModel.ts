@@ -6,6 +6,7 @@ import type {
   DependencyBehaviorDraft,
   DependencyBehaviorKind,
   ScenarioDraft,
+  ScenarioDraftSet,
 } from './domain';
 import type { ScenarioNodeOption } from './scenarioAuthoring';
 import { projectSchemaFields, schemaType } from './schemaWorkbench';
@@ -16,6 +17,54 @@ export interface AssertionPathOption {
   path: string;
   label: string;
   type: string;
+}
+
+export interface ScenarioEditorSnapshot {
+  schemaVersion: 'bloge.scenarioEditorSnapshot.v1';
+  scenarioDraftSetId: string;
+  scenarioRevision: number;
+  target: ScenarioDraftSet['target'];
+  contractFingerprint: string;
+  contract: Pick<ContractDraft, 'inputSchema' | 'outputSchema'>;
+  scenario: ScenarioDraft;
+  nodeSchemas: Record<string, Pick<ScenarioNodeOption, 'inputSchema' | 'outputSchema'>>;
+}
+
+/**
+ * Freezes the exact protocol values visible in the graphical Scenario editor at Run time.
+ *
+ * The snapshot intentionally excludes mutable React state and timestamps. It is safe to fingerprint,
+ * compile, and retain as evidence provenance without later form edits changing its meaning.
+ */
+export function captureScenarioEditorSnapshot(
+  draftSet: ScenarioDraftSet,
+  scenarioId: string,
+  contract: ContractDraft,
+  nodes: ScenarioNodeOption[],
+): ScenarioEditorSnapshot {
+  const scenario = draftSet.scenarios.find((candidate) => candidate.scenarioId === scenarioId);
+  if (!scenario) {
+    throw new Error(`Scenario '${scenarioId}' does not exist in the draft set.`);
+  }
+  return deepFreeze(cloneJson({
+    schemaVersion: 'bloge.scenarioEditorSnapshot.v1',
+    scenarioDraftSetId: draftSet.scenarioDraftSetId,
+    scenarioRevision: draftSet.revision,
+    target: draftSet.target,
+    contractFingerprint: draftSet.contractFingerprint,
+    contract: {
+      inputSchema: contract.inputSchema,
+      outputSchema: contract.outputSchema,
+    },
+    scenario,
+    nodeSchemas: Object.fromEntries(nodes.map((node) => [
+      node.id,
+      {
+        ...(node.inputSchema ? { inputSchema: node.inputSchema } : {}),
+        ...(node.outputSchema ? { outputSchema: node.outputSchema } : {}),
+      },
+    ])),
+  } satisfies ScenarioEditorSnapshot));
 }
 
 /** Creates a complete, immediately editable behavior payload for the selected business intent. */
@@ -194,4 +243,16 @@ export function assertionPathOptions(
         type: field.type,
       })),
   ];
+}
+
+function cloneJson<T>(value: T): T {
+  return JSON.parse(JSON.stringify(value)) as T;
+}
+
+function deepFreeze<T>(value: T): T {
+  if (value && typeof value === 'object' && !Object.isFrozen(value)) {
+    Object.values(value as Record<string, unknown>).forEach((entry) => deepFreeze(entry));
+    Object.freeze(value);
+  }
+  return value;
 }

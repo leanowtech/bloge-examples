@@ -93,7 +93,8 @@ describe('AssetTestTable', () => {
         ],
       }),
     );
-    expect(query('[data-testid="library-test-dialog"]').textContent).toContain('Passed');
+    expect(query('[data-testid="library-test-dialog"]').textContent).toContain('Schema valid');
+    expect(query('[data-testid="library-test-dialog"]').textContent).not.toContain('Passed');
     expect(query('[data-testid="library-test-dialog"]').textContent).toContain('sha256:mmmmmmm...');
     expect(query('[data-testid="library-test-evidence-trust"]').textContent)
       .toContain('SIGNED CURRENT');
