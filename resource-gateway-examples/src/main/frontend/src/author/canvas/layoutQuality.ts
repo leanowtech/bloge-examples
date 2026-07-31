@@ -9,7 +9,7 @@ const LABEL_MIN_WIDTH = 104;
 const LABEL_MAX_WIDTH = 320;
 const LABEL_CHAR_WIDTH = 6.2;
 const LABEL_DIAGONAL_OFFSET = 48;
-const LABEL_LANE_STEP = 30;
+const LABEL_LANE_STEP = 42;
 
 export interface CanvasLayoutQualityReport {
   nodeOverlaps: number;

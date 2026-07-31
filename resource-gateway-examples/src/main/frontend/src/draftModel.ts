@@ -26,6 +26,8 @@ const AUTO_LAYOUT_NODE_WIDTH = 260;
 const AUTO_LAYOUT_NODE_HEIGHT = 164;
 const AUTO_LAYOUT_NODE_ROW_GAP = 72;
 const AUTO_LAYOUT_MIN_COLUMN_GAP = 148;
+const AUTO_LAYOUT_SMALL_GRAPH_COLUMN_GAP = 28;
+const AUTO_LAYOUT_SMALL_GRAPH_MAX_NODES = 8;
 const AUTO_LAYOUT_MAX_COLUMN_PITCH = 760;
 const AUTO_LAYOUT_EDGE_LABEL_CHAR_WIDTH = 6.2;
 const AUTO_LAYOUT_EDGE_LABEL_PADDING = 160;
@@ -1367,7 +1369,13 @@ export function autoLayoutCanvas(nodes: CanvasNode[], edges: CanvasEdge[]): Canv
 
   const maxLayer = Math.max(0, ...nodes.map((node) => layerByNode.get(node.id) ?? 0));
   const orderedLayers = orderLayoutLayers(nodesByLayer, incoming, outgoing, originalIndex, layerByNode, maxLayer);
-  const topLanePlan = layoutTopLanePlan(edges, layerByNode, nodesByLayer, nodeIds);
+  const topLanePlan = nodes.length <= AUTO_LAYOUT_SMALL_GRAPH_MAX_NODES
+    ? {
+        reserved: false,
+        intermediateLayers: new Set<number>(),
+        endpointNodeIds: new Set<string>(),
+      }
+    : layoutTopLanePlan(edges, layerByNode, nodesByLayer, nodeIds);
   const maxLayerSize = Math.max(
     1,
     ...Array.from(orderedLayers.values()).map((layerNodes) => layerNodes.length),
@@ -1389,7 +1397,7 @@ export function autoLayoutCanvas(nodes: CanvasNode[], edges: CanvasEdge[]): Canv
     });
   }
 
-  const layerX = layoutLayerXPositions(maxLayer, edges, layerByNode, nodeIds);
+  const layerX = layoutLayerXPositions(maxLayer, edges, layerByNode, nodeIds, nodes.length);
   return nodes.map((node, index) => {
     const layer = layerByNode.get(node.id) ?? 0;
     return {
@@ -1604,8 +1612,12 @@ function layoutLayerXPositions(
   edges: CanvasEdge[],
   layerByNode: Map<string, number>,
   nodeIds: Set<string>,
+  nodeCount: number,
 ): Map<number, number> {
-  const minPitch = AUTO_LAYOUT_NODE_WIDTH + AUTO_LAYOUT_MIN_COLUMN_GAP;
+  const compactSmallGraph = nodeCount <= AUTO_LAYOUT_SMALL_GRAPH_MAX_NODES;
+  const minPitch = AUTO_LAYOUT_NODE_WIDTH + (
+    compactSmallGraph ? AUTO_LAYOUT_SMALL_GRAPH_COLUMN_GAP : AUTO_LAYOUT_MIN_COLUMN_GAP
+  );
   const gapPitch = new Map<number, number>();
   for (let layer = 0; layer < maxLayer; layer += 1) {
     gapPitch.set(layer, minPitch);
@@ -1621,7 +1633,9 @@ function layoutLayerXPositions(
       continue;
     }
     const span = targetLayer - sourceLayer;
-    const requiredPitch = Math.ceil(layoutRequiredPitchForEdge(edge) / span);
+    const requiredPitch = compactSmallGraph
+      ? minPitch
+      : Math.ceil(layoutRequiredPitchForEdge(edge) / span);
     for (let layer = sourceLayer; layer < targetLayer; layer += 1) {
       gapPitch.set(layer, Math.max(gapPitch.get(layer) ?? minPitch, requiredPitch));
     }

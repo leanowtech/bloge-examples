@@ -1165,6 +1165,87 @@ class VisualAuthoringBrowserDomTest {
                         "horizontalOverflow", 0L
                 ));
 
+        wait.until(ExpectedConditions.attributeToBe(
+                By.cssSelector(".workspace-v2"), "data-canvas-readability", "pass"
+        ));
+        wait.until(ExpectedConditions.numberOfElementsToBe(
+                By.cssSelector("[data-testid='canvas-edge-label']"), 4
+        ));
+        assertThat(workspace.getAttribute("data-canvas-visible-field-labels")).isEqualTo("12");
+        Map<String, Number> inspectGeometry = canvasReadabilityGeometry();
+        assertThat(inspectGeometry)
+                .as("1024 Inspect keeps all field semantics readable without visual collisions")
+                .containsEntry("outsideNodes", 0L)
+                .containsEntry("outsideLabels", 0L)
+                .containsEntry("nodeLabelCollisions", 0L)
+                .containsEntry("labelLabelCollisions", 0L);
+        assertThat(inspectGeometry.get("effectiveTitleFontPx").doubleValue())
+                .isGreaterThanOrEqualTo(12.0);
+
+        driver.findElement(By.cssSelector("[data-testid='canvas-task-mode:overview']")).click();
+        wait.until(ExpectedConditions.attributeToBe(
+                By.cssSelector(".workspace-v2"), "data-canvas-task-mode", "overview"
+        ));
+        wait.until(ExpectedConditions.numberOfElementsToBe(
+                By.cssSelector("[data-testid='canvas-edge-label']"), 0
+        ));
+        assertThat(workspace.getAttribute("data-canvas-visible-field-labels")).isEqualTo("0");
+
+        driver.findElement(By.cssSelector(".react-flow__node[data-id='n2']")).click();
+        driver.findElement(By.cssSelector("[data-testid='canvas-task-mode:focus']")).click();
+        wait.until(ExpectedConditions.attributeToBe(
+                By.cssSelector(".workspace-v2"), "data-canvas-task-mode", "focus"
+        ));
+        wait.until(ExpectedConditions.attributeToBe(
+                By.cssSelector(".workspace-v2"), "data-canvas-readability", "pass"
+        ));
+        wait.until(ExpectedConditions.numberOfElementsToBe(
+                By.cssSelector("[data-testid='canvas-edge-label']"), 3
+        ));
+        assertThat(workspace.getAttribute("data-canvas-visible-field-labels")).isEqualTo("10");
+        assertThat(canvasReadabilityGeometry())
+                .as("Focus keeps only the complete selected closure and remains collision-free")
+                .containsEntry("outsideNodes", 0L)
+                .containsEntry("outsideLabels", 0L)
+                .containsEntry("nodeLabelCollisions", 0L)
+                .containsEntry("labelLabelCollisions", 0L);
+
+        driver.findElement(By.cssSelector("[data-testid='canvas-task-mode:inspect']")).click();
+        wait.until(ExpectedConditions.attributeToBe(
+                By.cssSelector(".workspace-v2"), "data-canvas-task-mode", "inspect"
+        ));
+        wait.until(ExpectedConditions.numberOfElementsToBe(
+                By.cssSelector("[data-testid='canvas-edge-label']"), 4
+        ));
+        assertThat(workspace.getAttribute("data-canvas-visible-field-labels")).isEqualTo("12");
+
+        setViewport(wait, 1280, 768);
+        wait.until(ExpectedConditions.elementToBeClickable(By.cssSelector(
+                "[data-testid='navigator-fit-all']"
+        ))).click();
+        wait.until(ExpectedConditions.attributeToBe(
+                By.cssSelector(".workspace-v2"), "data-canvas-readability", "pass"
+        ));
+        Map<String, Number> wideGeometry = canvasReadabilityGeometry();
+        assertThat(wideGeometry)
+                .as("1280 Fit is not less readable than the 1024 compact workspace")
+                .containsEntry("outsideNodes", 0L)
+                .containsEntry("outsideLabels", 0L)
+                .containsEntry("nodeLabelCollisions", 0L)
+                .containsEntry("labelLabelCollisions", 0L);
+        assertThat(wideGeometry.get("effectiveTitleFontPx").doubleValue())
+                .isGreaterThanOrEqualTo(12.0);
+        setViewport(wait, 1024, 768);
+        wait.until(ExpectedConditions.attributeToBe(
+                By.cssSelector(".workspace-v2"), "data-compact-workspace", "true"
+        ));
+        wait.until(ExpectedConditions.elementToBeClickable(By.cssSelector(
+                "[data-testid='navigator-fit-all']"
+        ))).click();
+        wait.until(ExpectedConditions.attributeToBe(
+                By.cssSelector(".workspace-v2"), "data-canvas-readability", "pass"
+        ));
+
         driver.findElement(By.cssSelector("[data-testid='navigator-pin-node']")).click();
         wait.until(ExpectedConditions.attributeToBe(
                 By.cssSelector("[data-testid='navigator-pin-node']"), "aria-pressed", "true"
@@ -1205,6 +1286,9 @@ class VisualAuthoringBrowserDomTest {
         )).isEnabled())
                 .as("topology insertion is frozen during layout review")
                 .isFalse();
+        wait.until(ignored -> (
+                canvasReadabilityGeometry().get("outsideNodes").intValue() == 0
+        ));
 
         @SuppressWarnings("unchecked")
         Map<String, Number> geometry = (Map<String, Number>)
@@ -1274,6 +1358,25 @@ class VisualAuthoringBrowserDomTest {
         setViewport(wait, 820, 900);
         wait.until(ExpectedConditions.attributeToBe(
                 By.cssSelector(".workspace-v2"), "data-compact-workspace", "true"
+        ));
+        driver.findElement(By.cssSelector("[data-testid='canvas-task-mode:overview']")).click();
+        wait.until(ExpectedConditions.attributeToBe(
+                By.cssSelector(".workspace-v2"), "data-canvas-task-mode", "overview"
+        ));
+        wait.until(ExpectedConditions.numberOfElementsToBe(
+                By.cssSelector("[data-testid='canvas-edge-label']"), 0
+        ));
+        assertThat(workspace.getAttribute("data-canvas-visible-field-labels")).isEqualTo("0");
+        assertThat(canvasReadabilityGeometry())
+                .as("820 Overview deliberately removes field detail and keeps the graph in bounds")
+                .containsEntry("outsideNodes", 0L)
+                .containsEntry("outsideLabels", 0L)
+                .containsEntry("nodeLabelCollisions", 0L)
+                .containsEntry("labelLabelCollisions", 0L);
+        driver.findElement(By.cssSelector(".react-flow__node[data-id='n2']")).click();
+        driver.findElement(By.cssSelector("[data-testid='canvas-task-mode:inspect']")).click();
+        wait.until(ExpectedConditions.attributeToBe(
+                By.cssSelector(".workspace-v2"), "data-canvas-task-mode", "inspect"
         ));
         driver.findElement(By.cssSelector("[data-testid='compact-open-palette']")).click();
         wait.until(ignored -> elementClientWidth(
@@ -1404,10 +1507,11 @@ class VisualAuthoringBrowserDomTest {
      * Verifies the packaged task workspace projects the effective Contract before editing sources.
      *
      * <p>The browser loads a real example and proves that the selected transform exposes seven
-     * visible, deduplicated edge sources with upstream coordinates. It then binds one Graph Input
-     * field. The edge-count assertion is deliberate: a direct context binding must replace the
-     * existing edge targeting the same port/path instead of leaving two competing sources for
-     * export, diagnostics, or execution.</p>
+     * visible, deduplicated edge sources with upstream coordinates. Four semantic edge bundles
+     * preserve all twelve field dependencies without a label per edge. It then binds one Graph
+     * Input field and verifies the bundle count remains stable while the represented dependency
+     * count drops to eleven, proving that the replaced edge does not survive in export or
+     * execution.</p>
      */
     @Test
     void taskWorkspaceBindsSchemaGeneratedRunInputWithoutCompetingNodeSourceInRealBrowser()
@@ -1433,7 +1537,10 @@ class VisualAuthoringBrowserDomTest {
         ));
         wait.until(ExpectedConditions.numberOfElementsToBe(
                 By.cssSelector("[data-testid='canvas-edge-label']"),
-                12
+                4
+        ));
+        wait.until(ExpectedConditions.attributeToBe(
+                By.cssSelector(".workspace-v2"), "data-canvas-visible-field-labels", "12"
         ));
 
         wait.until(ExpectedConditions.elementToBeClickable(By.cssSelector(
@@ -1460,7 +1567,10 @@ class VisualAuthoringBrowserDomTest {
         ))).click();
         wait.until(ExpectedConditions.numberOfElementsToBe(
                 By.cssSelector("[data-testid='canvas-edge-label']"),
-                11
+                4
+        ));
+        wait.until(ExpectedConditions.attributeToBe(
+                By.cssSelector(".workspace-v2"), "data-canvas-visible-field-labels", "11"
         ));
         wait.until(ExpectedConditions.attributeToBe(
                 By.cssSelector("[data-testid='node-input-key:0']"),
@@ -4854,6 +4964,57 @@ class VisualAuthoringBrowserDomTest {
                 element
         );
         return width.doubleValue();
+    }
+
+    @SuppressWarnings("unchecked")
+    private Map<String, Number> canvasReadabilityGeometry() {
+        return (Map<String, Number>) ((JavascriptExecutor) driver).executeScript("""
+                const flow = document.querySelector('[data-testid="author-flow"]')
+                  .getBoundingClientRect();
+                const nodes = [...document.querySelectorAll('.react-flow__node')]
+                  .filter((element) => getComputedStyle(element).display !== 'none')
+                  .map((element) => element.getBoundingClientRect());
+                const labels = [...document.querySelectorAll(
+                  '[data-testid="canvas-edge-label"]'
+                )]
+                  .filter((element) => getComputedStyle(element).display !== 'none')
+                  .map((element) => element.getBoundingClientRect());
+                const overlaps = (left, right, padding) =>
+                  left.left < right.right - padding
+                  && left.right > right.left + padding
+                  && left.top < right.bottom - padding
+                  && left.bottom > right.top + padding;
+                let nodeLabelCollisions = 0;
+                let labelLabelCollisions = 0;
+                for (const label of labels) {
+                  for (const node of nodes) {
+                    if (overlaps(label, node, 2)) {
+                      nodeLabelCollisions += 1;
+                    }
+                  }
+                }
+                for (let left = 0; left < labels.length; left += 1) {
+                  for (let right = left + 1; right < labels.length; right += 1) {
+                    if (overlaps(labels[left], labels[right], 1)) {
+                      labelLabelCollisions += 1;
+                    }
+                  }
+                }
+                const outside = (rect) =>
+                  rect.left < flow.left - 1 || rect.right > flow.right + 1
+                  || rect.top < flow.top - 1 || rect.bottom > flow.bottom + 1;
+                const workspace = document.querySelector('.workspace-v2');
+                return {
+                  outsideNodes: nodes.filter(outside).length,
+                  outsideLabels: labels.filter(outside).length,
+                  nodeLabelCollisions,
+                  labelLabelCollisions,
+                  effectiveTitleFontPx:
+                    Number(workspace.dataset.canvasEffectiveTitlePx || 0),
+                  visibleFieldLabels:
+                    Number(workspace.dataset.canvasVisibleFieldLabels || 0)
+                };
+                """);
     }
 
     private void assertVisibleElementsNoHorizontalOverflow(WebDriverWait wait, By locator) {

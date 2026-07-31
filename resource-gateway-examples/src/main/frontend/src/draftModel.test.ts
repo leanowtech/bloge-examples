@@ -1162,7 +1162,7 @@ describe('autoLayoutCanvas', () => {
     expect(layout[1].position.y).toBeGreaterThan(layout[0].position.y);
   });
 
-  it('keeps dense fan-out nodes far enough apart to avoid card and edge-label overlap', () => {
+  it('keeps dense small fan-out nodes card-safe while semantic labels use independent lanes', () => {
     const layout = autoLayoutCanvas(
       [
         { id: 'root', operatorRef: 'root', position: { x: 0, y: 0 } },
@@ -1191,11 +1191,11 @@ describe('autoLayoutCanvas', () => {
     for (let index = 1; index < middleLayer.length; index += 1) {
       expect(middleLayer[index] - middleLayer[index - 1]).toBeGreaterThanOrEqual(236);
     }
-    expect((byId.get('profile')?.x ?? 0) - (byId.get('root')?.x ?? 0)).toBeGreaterThanOrEqual(408);
-    expect((byId.get('join')?.x ?? 0) - (byId.get('profile')?.x ?? 0)).toBeGreaterThanOrEqual(408);
+    expect((byId.get('profile')?.x ?? 0) - (byId.get('root')?.x ?? 0)).toBe(288);
+    expect((byId.get('join')?.x ?? 0) - (byId.get('profile')?.x ?? 0)).toBe(288);
   });
 
-  it('reserves a top bus lane for long-span edge labels across populated layers', () => {
+  it('keeps small long-span graphs centered without reserving a permanent bus row', () => {
     const layout = autoLayoutCanvas(
       [
         { id: 'profile', operatorRef: 'resource:user-service.getProfile', position: { x: 0, y: 0 } },
@@ -1217,14 +1217,14 @@ describe('autoLayoutCanvas', () => {
     );
 
     const byId = new Map(layout.map((node) => [node.id, node.position]));
-    const busY = byId.get('profile')?.y ?? 0;
-    expect(byId.get('response')?.y).toBe(busY);
-    expect(byId.get('wallet')?.y).toBeGreaterThanOrEqual(busY + 236);
-    expect(byId.get('recommendations')?.y).toBeGreaterThanOrEqual(busY + 236);
-    expect(byId.get('notifications')?.y).toBeGreaterThanOrEqual(busY + 236);
+    const endpointY = byId.get('profile')?.y ?? 0;
+    expect(byId.get('response')?.y).toBe(endpointY);
+    expect(byId.get('wallet')?.y).toBe(72);
+    expect(byId.get('recommendations')?.y).toBe(endpointY);
+    expect(byId.get('notifications')?.y).toBe(endpointY + 236);
   });
 
-  it('expands column spacing for long edge labels so paths have readable room', () => {
+  it('does not let one long field label destroy the fit zoom of a small graph', () => {
     const layout = autoLayoutCanvas(
       [
         { id: 'source', operatorRef: 'source', position: { x: 0, y: 0 } },
@@ -1243,7 +1243,7 @@ describe('autoLayoutCanvas', () => {
       ],
     );
 
-    expect(layout[1].position.x - layout[0].position.x).toBeGreaterThanOrEqual(680);
+    expect(layout[1].position.x - layout[0].position.x).toBe(288);
   });
 
   it.each([

@@ -4031,15 +4031,15 @@ explicit **Advanced** takeover and is off by default. Fields declared with
 `writeOnly`, password format, `x-sensitive`, or restricted/confidential
 classification are masked in the generated input form.
 
-For a complex graph, use **Canvas Focus** to give the topology the full workspace,
-then **Auto Layout** and inspect its shape through **Map** or the Overview zoom
-tier. Select a business-critical node and click **Focus Path** to emphasize its
-complete upstream/downstream dependency path while dimming side branches.
-Zooming below 70% progressively removes node detail and summarizes edge labels;
-below 45%, ordinary labels are hidden so the whole graph remains legible.
-Focused and selected paths keep their full field coordinates. **Undo layout**
-restores the exact pre-layout positions until a node is added, removed, or
-manually moved.
+For a complex graph, run **Auto Layout**, then use the canvas navigator's three
+reading tasks: **Overview** hides field labels and shows the whole stage shape,
+**Focus** keeps the selected node's complete upstream/downstream closure, and
+**Inspect** restores exact field semantics. Parallel data edges are bundled by
+source without losing their exact coordinates. The Readability verdict includes
+effective text size, density, collision, and viewport bounds; **Fit** never
+enlarges beyond 100%. On compact viewports, start in Overview and select a node
+before entering Inspect. **Undo layout** restores the exact pre-layout positions
+until a node is added, removed, or manually moved.
 
 The temporary Start and Operator dialogs share one keyboard contract: focus
 enters the current task, Tab stays inside the modal, Escape closes it, and focus

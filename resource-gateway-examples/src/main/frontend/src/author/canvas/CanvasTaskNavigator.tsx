@@ -1,8 +1,13 @@
 import { useMemo, useState } from 'react';
 
+import type {
+  CanvasPerceptualQualityReport,
+  CanvasSemanticMode,
+  CanvasTopologyLane,
+} from './canvasSemantics';
 import type { CanvasLayoutQualityReport } from './layoutQuality';
 
-export type CanvasTaskMode = 'overview' | 'focus' | 'inspect';
+export type CanvasTaskMode = CanvasSemanticMode;
 
 export interface CanvasTaskNode {
   id: string;
@@ -23,6 +28,8 @@ interface CanvasTaskNavigatorProps {
   layoutPlanning: boolean;
   layoutPreview: boolean;
   layoutQuality: CanvasLayoutQualityReport | null;
+  perceptualQuality: CanvasPerceptualQualityReport;
+  topologyLanes: CanvasTopologyLane[];
   layoutNotice: string;
   canUndoLayout: boolean;
   onModeChange: (mode: CanvasTaskMode) => void;
@@ -48,6 +55,8 @@ export default function CanvasTaskNavigator({
   layoutPlanning,
   layoutPreview,
   layoutQuality,
+  perceptualQuality,
+  topologyLanes,
   layoutNotice,
   canUndoLayout,
   onModeChange,
@@ -153,6 +162,13 @@ export default function CanvasTaskNavigator({
         <span>{nodeCount} nodes</span>
         <span>{edgeCount} edges</span>
         <strong data-testid="canvas-zoom-readout">{zoomPercent}</strong>
+        <span
+          className={`canvas-readability-verdict ${perceptualQuality.status.toLowerCase()}`}
+          data-testid="canvas-readability-verdict"
+          title={perceptualQuality.reasons.join(' ') || perceptualQuality.summary}
+        >
+          Readability {perceptualQuality.status}
+        </span>
       </div>
 
       <div className="canvas-task-actions">
@@ -185,6 +201,24 @@ export default function CanvasTaskNavigator({
         )}
       </div>
 
+      {nodeCount >= 9 && topologyLanes.length > 0 && (
+        <nav className="canvas-topology-lanes" aria-label="Graph stage overview">
+          <span>Stages</span>
+          {topologyLanes.map((lane) => (
+            <button
+              key={lane.id}
+              type="button"
+              data-testid={`canvas-topology-lane:${lane.id}`}
+              title={lane.nodeIds.join(', ')}
+              onClick={() => onSelectNode(lane.representativeNodeId)}
+            >
+              <strong>{lane.label}</strong>
+              <span>{lane.nodeIds.length}</span>
+            </button>
+          ))}
+        </nav>
+      )}
+
       {(layoutPlanning || layoutPreview || layoutNotice) && (
         <div
           className={`canvas-layout-review ${layoutQuality?.status.toLowerCase() ?? 'pending'}`}
@@ -195,7 +229,9 @@ export default function CanvasTaskNavigator({
           <span data-testid="layout-notice">
             {layoutPlanning
               ? 'Computing layout preview...'
-              : layoutQuality?.summary || layoutNotice}
+              : layoutQuality
+                ? `${layoutQuality.summary} · ${perceptualQuality.summary}`
+                : layoutNotice}
           </span>
           {layoutQuality?.edgeLabelCollisionDetails?.[0] && (
             <small>

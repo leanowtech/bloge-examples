@@ -82,6 +82,8 @@ vi.mock('reactflow', async () => {
           'data-testid': `mock-edge:${edge.id}`,
           'data-label-lane': String(edge.data?.labelLane ?? 0),
           'data-path-focus': edge.data?.pathFocus ?? '',
+          'data-semantic-label': edge.data?.semanticLabel ?? '',
+          'data-bundled-field-count': String(edge.data?.bundledFieldCount ?? 0),
         })),
         children,
       );
@@ -516,7 +518,11 @@ describe('AuthorCanvas operator-library intake', () => {
     await act(async () => reactFlowMocks.onMove?.({}, { zoom: 1 }));
 
     await click(query<HTMLButtonElement>('[data-testid="author-fit-all"]'));
-    expect(reactFlowMocks.fitView).toHaveBeenCalledWith({ padding: 0.18, duration: 240 });
+    expect(reactFlowMocks.fitView).toHaveBeenCalledWith({
+      padding: 0.04,
+      duration: 240,
+      maxZoom: 1,
+    });
 
     await click(query<HTMLButtonElement>('[data-testid="author-zoom-out"]'));
     expect(reactFlowMocks.zoomOut).toHaveBeenCalledWith({ duration: 160 });
@@ -611,7 +617,7 @@ describe('AuthorCanvas operator-library intake', () => {
     expect(query('[data-testid="canvas-node:response"][data-operator-ref="bloge:transform"]').textContent)
       .toContain('response');
     expect(query('[data-testid="node-wrapper:eligibility"]').getAttribute('data-position')).toBe('96,72');
-    expect(query('[data-testid="node-wrapper:response"]').getAttribute('data-position')).toBe('504,72');
+    expect(query('[data-testid="node-wrapper:response"]').getAttribute('data-position')).toBe('384,72');
 
     const exported = authorDraftExport(query<HTMLAnchorElement>('[data-testid="author-draft-export"]'));
     expect(exported).toMatchObject({
@@ -650,7 +656,7 @@ describe('AuthorCanvas operator-library intake', () => {
       },
     });
     expect(exported.nodes.find((node: { id: string }) => node.id === 'eligibility')?.position).toEqual({ x: 96, y: 72 });
-    expect(exported.nodes.find((node: { id: string }) => node.id === 'response')?.position).toEqual({ x: 504, y: 72 });
+    expect(exported.nodes.find((node: { id: string }) => node.id === 'response')?.position).toEqual({ x: 384, y: 72 });
     expect(exported.edges[0]).toMatchObject({
       kind: 'data',
       source: { nodeId: 'eligibility', port: 'output', path: 'eligible' },
@@ -693,7 +699,7 @@ describe('AuthorCanvas operator-library intake', () => {
     expect(storedExport.nodes.find((node: { id: string }) => node.id === 'eligibility')?.position)
       .toEqual({ x: 96, y: 72 });
     expect(storedExport.nodes.find((node: { id: string }) => node.id === 'response')?.position)
-      .toEqual({ x: 504, y: 72 });
+      .toEqual({ x: 384, y: 72 });
   });
 
   it('consumes a Library Workbench DSL handoff and renders an auto-laid-out graph', async () => {
@@ -716,7 +722,7 @@ describe('AuthorCanvas operator-library intake', () => {
     expect(query('[data-testid="node-wrapper:eligibility"]').getAttribute('data-position'))
       .toBe('96,72');
     expect(query('[data-testid="node-wrapper:response"]').getAttribute('data-position'))
-      .toBe('504,72');
+      .toBe('384,72');
     expect(reactFlowMocks.fitView).toHaveBeenCalled();
   });
 
@@ -753,7 +759,11 @@ describe('AuthorCanvas operator-library intake', () => {
     expect(query('[data-testid="canvas-navigator"]').classList.contains('complex')).toBe(true);
     expect(query('[data-testid="canvas-zoom-readout"]').textContent).toBe('100%');
     await waitFor(() =>
-      expect(reactFlowMocks.fitView).toHaveBeenCalledWith({ padding: 0.06, duration: 240 }),
+      expect(reactFlowMocks.fitView).toHaveBeenCalledWith({
+        padding: 0.06,
+        duration: 240,
+        maxZoom: 1,
+      }),
     );
   });
 });
@@ -1138,6 +1148,17 @@ describe('AuthorCanvas built-in canvas examples', () => {
       await waitFor(() => expect(document.querySelector('[data-testid="author-start-dialog"]')).toBeNull());
 
       await click(buttonByText('Auto Layout'));
+      await waitFor(() => {
+        const apply = document.querySelector<HTMLButtonElement>('[data-testid="layout-apply"]');
+        expect(
+          events.some((event) => event.name === 'AUTO_LAYOUT_COMPLETED')
+          || Boolean(apply),
+        ).toBe(true);
+      });
+      const applyLayout = document.querySelector<HTMLButtonElement>('[data-testid="layout-apply"]');
+      if (applyLayout) {
+        await click(applyLayout);
+      }
       await waitFor(() =>
         expect(events.some((event) => event.name === 'AUTO_LAYOUT_COMPLETED')).toBe(true),
       );
@@ -1424,8 +1445,15 @@ describe('AuthorCanvas built-in canvas examples', () => {
       expect(window.location.search).toContain('scenarioId=loan-prime-approval');
     });
 
+    const paletteToggle = query<HTMLButtonElement>('[aria-label="Expand operator palette"]');
+    await click(paletteToggle);
     await click(query<HTMLButtonElement>('[aria-label="Collapse operator palette"]'));
-    await click(query<HTMLButtonElement>('[aria-label="Collapse context inspector"]'));
+    const inspectorToggle = document.querySelector<HTMLButtonElement>(
+      '[aria-label="Collapse context inspector"]',
+    );
+    if (inspectorToggle) {
+      await click(inspectorToggle);
+    }
     expect(query('.workspace').classList.contains('palette-collapsed')).toBe(true);
     expect(query('.workspace').classList.contains('inspector-collapsed')).toBe(true);
     expect(query<HTMLElement>('.workspace').style.getPropertyValue('--author-palette-track')).toBe('36px');
@@ -1601,6 +1629,11 @@ describe('AuthorCanvas built-in canvas examples', () => {
       expect(query('.workspace').classList.contains('inspector-collapsed')).toBe(true);
       expect(query('[data-testid="author-context-rail-launcher"]')
         .getAttribute('aria-expanded')).toBe('false');
+      expect(window.location.search).toBe(taskCoordinate);
+      await click(query<HTMLButtonElement>('[data-testid="author-context-rail-launcher"]'));
+      expect(query('.workspace').classList.contains('inspector-collapsed')).toBe(false);
+      expect(query('[data-testid="author-context-rail-launcher"]')
+        .getAttribute('aria-expanded')).toBe('true');
       expect(window.location.search).toBe(taskCoordinate);
     } finally {
       Object.defineProperty(window, 'matchMedia', {
@@ -1936,11 +1969,19 @@ describe('AuthorCanvas built-in canvas examples', () => {
     expect(query('[data-testid="canvas-node:n5"]').className).toContain('path-active');
     expect(query('[data-testid="canvas-node:n3"]').className).toContain('path-dimmed');
     expect(query('[data-testid="canvas-navigator"]').textContent).toContain('4 in path');
-    expect([
-      query('[data-testid="mock-edge:n4:output.decision->n5:inputs.decision"]').getAttribute('data-label-lane'),
-      query('[data-testid="mock-edge:n4:output.tier->n5:inputs.tier"]').getAttribute('data-label-lane'),
-      query('[data-testid="mock-edge:n4:output.reason->n5:inputs.reason"]').getAttribute('data-label-lane'),
-    ]).toEqual(['-1', '0', '1']);
+    const decisionBundle = query(
+      '[data-testid="mock-edge:n4:output.decision->n5:inputs.decision"]',
+    );
+    expect(decisionBundle.getAttribute('data-semantic-label')).toContain('3 fields');
+    expect(decisionBundle.getAttribute('data-bundled-field-count')).toBe('3');
+    expect(
+      query('[data-testid="mock-edge:n4:output.tier->n5:inputs.tier"]')
+        .getAttribute('data-semantic-label'),
+    ).toBe('');
+    expect(
+      query('[data-testid="mock-edge:n4:output.reason->n5:inputs.reason"]')
+        .getAttribute('data-semantic-label'),
+    ).toBe('');
     expect(
       query('[data-testid="mock-edge:n3:payload.score->n5:inputs.secondaryScore"]')
         .getAttribute('data-path-focus'),
@@ -1952,7 +1993,7 @@ describe('AuthorCanvas built-in canvas examples', () => {
         expect.objectContaining({ id: 'n4' }),
         expect.objectContaining({ id: 'n5' }),
       ]),
-      padding: 0.2,
+      padding: 0.08,
       duration: 240,
     }));
 
@@ -2132,9 +2173,13 @@ describe('AuthorCanvas connection guide', () => {
     await waitFor(() =>
       expect(query('[data-testid="node-wrapper:n1"]').getAttribute('data-position')).toBe('96,72'),
     );
-    expect(query('[data-testid="node-wrapper:n2"]').getAttribute('data-position')).toBe('504,72');
+    expect(query('[data-testid="node-wrapper:n2"]').getAttribute('data-position')).toBe('384,72');
     await waitFor(() =>
-      expect(reactFlowMocks.fitView).toHaveBeenCalledWith({ padding: 0.18, duration: 240 }),
+      expect(reactFlowMocks.fitView).toHaveBeenCalledWith({
+        padding: 0.04,
+        duration: 240,
+        maxZoom: 1,
+      }),
     );
   });
 

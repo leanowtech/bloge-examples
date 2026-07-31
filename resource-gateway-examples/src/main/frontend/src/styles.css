@@ -3646,6 +3646,21 @@ button.primary:disabled {
   font-variant-numeric: tabular-nums;
 }
 
+.canvas-readability-verdict {
+  padding: 2px 5px;
+  border-radius: 4px;
+  background: #e8f5e9;
+  color: #176b36;
+  font-size: 9px;
+  font-weight: 800;
+  text-transform: uppercase;
+}
+
+.canvas-readability-verdict.review {
+  background: #fff3cd;
+  color: #8a4b00;
+}
+
 .canvas-task-actions {
   overflow: hidden;
   border: 1px solid #d4dae4;
@@ -3660,6 +3675,56 @@ button.primary:disabled {
 .canvas-task-actions button[aria-pressed="true"] {
   color: #174ea6;
   background: #edf4ff;
+}
+
+.canvas-topology-lanes {
+  grid-column: 1 / -1;
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  min-width: 0;
+  overflow-x: auto;
+  padding-top: 5px;
+  border-top: 1px solid #e2e8f0;
+}
+
+.canvas-topology-lanes > span {
+  position: sticky;
+  left: 0;
+  z-index: 1;
+  padding-right: 4px;
+  background: #f8fafc;
+  color: var(--muted);
+  font-size: 9px;
+  font-weight: 800;
+  text-transform: uppercase;
+}
+
+.canvas-topology-lanes button {
+  flex: none;
+  min-width: 76px;
+  min-height: 26px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 3px 6px;
+  border: 1px solid #d4dae4;
+  border-radius: 4px;
+  background: #fff;
+  color: #344054;
+  cursor: pointer;
+  font-size: 10px;
+}
+
+.canvas-topology-lanes button:hover {
+  border-color: #8fb2e8;
+  background: #edf4ff;
+}
+
+.canvas-topology-lanes button span {
+  color: #174ea6;
+  font-variant-numeric: tabular-nums;
 }
 
 .canvas-layout-review {
@@ -3954,6 +4019,42 @@ button.primary:disabled {
   visibility: hidden;
 }
 
+.workspace[data-canvas-task-mode="overview"] .operator-node-ref,
+.workspace[data-canvas-task-mode="overview"] .operator-node-contract,
+.workspace[data-canvas-task-mode="overview"] .operator-node-metrics,
+.workspace[data-canvas-task-mode="overview"] .operator-node-port-grid,
+.workspace[data-canvas-task-mode="overview"] .operator-node-warning,
+.workspace[data-canvas-task-mode="overview"] .operator-side-effect-pill {
+  display: none;
+}
+
+.workspace[data-canvas-task-mode="focus"] .operator-node:not(.selected) .operator-node-port-grid,
+.workspace[data-canvas-task-mode="inspect"] .operator-node:not(.selected) .operator-node-port-grid {
+  display: none;
+}
+
+.workspace[data-canvas-task-mode="focus"] .operator-node.selected .operator-node-ref,
+.workspace[data-canvas-task-mode="inspect"] .operator-node.selected .operator-node-ref {
+  display: block;
+}
+
+.workspace[data-canvas-task-mode="focus"] .operator-node.selected .operator-node-contract,
+.workspace[data-canvas-task-mode="inspect"] .operator-node.selected .operator-node-contract,
+.workspace[data-canvas-task-mode="focus"] .operator-node.selected .operator-node-port-grid,
+.workspace[data-canvas-task-mode="inspect"] .operator-node.selected .operator-node-port-grid {
+  display: grid;
+}
+
+.workspace[data-canvas-task-mode="focus"] .operator-node.selected .operator-node-metrics,
+.workspace[data-canvas-task-mode="inspect"] .operator-node.selected .operator-node-metrics {
+  display: flex;
+}
+
+.workspace[data-canvas-task-mode="focus"] .operator-node.selected .operator-node-warning,
+.workspace[data-canvas-task-mode="inspect"] .operator-node.selected .operator-node-warning {
+  display: block;
+}
+
 .operator-node.kind-decision-table {
   border-color: #6cc4b5;
   background: #f3fbf9;
@@ -4036,7 +4137,7 @@ button.primary:disabled {
   justify-content: space-between;
   gap: 8px;
   font-weight: 700;
-  font-size: 13px;
+  font-size: 15px;
 }
 
 .operator-node-pills {
@@ -8700,7 +8801,7 @@ button.primary:disabled {
 .workspace-v2 .contract-rail,
 .workspace-v2 .canvas-coach,
 .workspace-v2 > .inspector
-  > :not(.author-context-inspector-v2):not(.topology-context-rail):not(.author-panel-toggle) {
+  > :not(.author-context-inspector-v2):not(.topology-context-rail):not(.author-panel-toggle):not(.author-panel-pin) {
   display: none;
 }
 
@@ -8749,7 +8850,31 @@ button.primary:disabled {
   padding-right: 30px;
 }
 
+.author-panel-pin {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  color: #64748b;
+  font-size: 9px;
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+.author-panel-pin input {
+  width: 13px;
+  height: 13px;
+  margin: 0;
+}
+
+.inspector-panel-pin {
+  position: absolute;
+  z-index: 13;
+  top: 12px;
+  right: 10px;
+}
+
 .workspace-v2 .author-context-inspector-v2 > header {
+  padding-right: 72px;
   padding-left: 30px;
 }
 

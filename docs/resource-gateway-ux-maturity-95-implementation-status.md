@@ -4,7 +4,7 @@
 >
 > 基准计划：[Resource Gateway 体验成熟度 95 分校准与修正计划](resource-gateway-ux-maturity-95-recalibration-plan.md)
 >
-> 当前实施轮次：Stage D / 复杂图感知可读性
+> 当前实施轮次：Stage E / 资产生命周期与修复闭环
 >
 > 评分纪律：代码完成只能获得 E1；真实服务和浏览器验证后最多获得 E2。没有 E3 目标用户
 > 证据时，不宣称体验成熟度达到 95 分。
@@ -17,12 +17,13 @@
 | Stage A：可信度止血 | 80 | 已完成 | A01–A07、三条浏览器纵切与完整回归，E2 |
 | Stage B：唯一中央工作面 | 85 | 已完成 | B01–B08、真实浏览器断点矩阵，E2 |
 | Stage C：统一 Scenario | 90 | 已完成 | C01–C08、392 条前端回归与三条浏览器纵切，E2 |
-| Stage D：复杂图可读 | 93 | 进行中 | 现有 semantic zoom / Focus Path / layout quality 差距审计，E0 |
-| Stage E：生命周期闭环 | 95 工程就绪 | 未开始 | 无 |
+| Stage D：复杂图可读 | 93 | 已完成 | D01–D07、1024/1280/820 真实浏览器矩阵，E2 |
+| Stage E：生命周期闭环 | 95 工程就绪 | 进行中 | durable asset / remediation 差距审计，E0 |
 | Stage F：E3/E4 | 95–100 | 未开始 | 无 |
 
-Stage C 的工程目标分 `90` 已达到 E2，但这不等于整体体验成熟度达到 95。当前剩余
-5 分主要来自复杂图的感知可读性、100 节点结构导航、资产恢复与诊断修复闭环。
+Stage D 的工程目标分 `93` 已达到 E2，但这不等于整体体验成熟度达到 95。当前剩余
+2 个工程分主要来自 durable asset 恢复与跨 Evidence / Rehearsal / Governance 的修复闭环；
+E3 目标用户证据仍是正式宣称 95 分的必要条件。
 
 ## 2. Round A1：Canonical Scenario Run
 
@@ -364,16 +365,91 @@ npm test
 
 因此 Stage C 目标分 `90` 在 E2 层成立。
 
-## 6. 当前差距与 Stage D 开工点
+## 6. Stage D：复杂图感知可读性
 
-测试创作语言已经收敛，下一轮差距集中在复杂图的“几何正确但感知不可读”：
+### 6.1 已实现
 
-1. quality report 仍主要报告碰撞与间距，缺少有效字号、标签数量和屏幕密度；
-2. semantic zoom 已有三档，但侧栏策略仍主要依赖 CSS breakpoint；
-3. edge label 只做逐条避让，尚无同源/同目标字段 bundle；
-4. 25/100 节点图缺少 group / lane 级 overview；
-5. Focus Path 有闭包语义，但没有明确的可见标签预算；
-6. 浏览器门禁尚未把感知报告作为失败诊断。
+| 计划项 | 实现 |
+|---|---|
+| UX95R-D01 | `CanvasSemanticMode` 明确定义 Overview / Focus / Inspect；三者分别投影拓扑、完整闭包和完整字段语义 |
+| UX95R-D02 | `adaptiveCanvasChromePolicy` 按任务、图规模、zoom、selected node 和用户 panel preference 决定侧栏；明确打开动作覆盖旧偏好 |
+| UX95R-D03 | `CanvasPerceptualQualityReport` 同时报告几何状态、等效标题字号、label/field 数、密度、占用率和可执行原因 |
+| UX95R-D04 | data edge 按 source 聚合为语义 bundle，保留 exact field count、目标数、完整 title 和原 edge id 集合 |
+| UX95R-D05 | 线性复杂度拓扑 lane 为 25/100 节点提供 Inputs / Stage / Outputs 结构导航 |
+| UX95R-D06 | Focus 只显示 selected node 完整上下游闭包，标签预算为 12；Fit 使用同一闭包边界 |
+| UX95R-D07 | Selenium 在 1024 / 1280 / 820 断点读取真实像素，断言节点、标签、视口和等效字号 |
 
-Stage D 将以现有 Auto Layout、semantic zoom、Focus Path 和 Map 为基础补齐感知质量协议，
-不再通过继续拉大节点间距来掩盖信息密度问题。
+布局不再靠持续扩大节点间距。标签规划器遍历无碰撞轨道，并综合轨道距离、图边界溢出和
+上下安全带拥挤度评分；Inspect 可把竞争的长标签分配到上下安全带，Focus 又使用实际闭包
+作为视口边界。Fit All 最大只恢复到 `100%`，不会为了填满宽屏而意外放大并吃掉标签余量。
+
+### 6.2 用户可见行为
+
+1. **Overview**：只看节点、连线和 stage 形状，字段 label 为 0；
+2. **Focus**：点选节点后显示完整上游/下游闭包，旁路降噪；
+3. **Inspect**：恢复完整字段语义；Loan 的 12 条字段依赖显示为 4 个 bundle；
+4. **Readability**：导航条显示 Pass / Review、等效字号和当前 label 密度；
+5. **Adaptive panels**：compact 视口默认回收左右栏，用户明确点开时不会被旧偏好立即关回；
+6. **25/100 节点**：stage overview 按拓扑 lane 导航，不要求在一个视口辨认每条字段。
+
+### 6.3 E2 浏览器证据
+
+以 `Loan policy fallback` 的 5 节点、12 字段依赖图为固定样本：
+
+| 视口 / 模式 | zoom | 等效标题 | label / field | 实际像素结果 |
+|---|---:|---:|---:|---|
+| 1024 Inspect | 89% | 13.4px | 4 / 12 | node/label、label/label、node/label 越界全部 0 |
+| 1024 Focus(n2) | 86% | 12.9px | 3 / 10 | 完整闭包可读，全部碰撞和越界为 0 |
+| 1280 Inspect | >= 89% | >= 13.4px | 4 / 12 | 不低于 1024，全部碰撞和越界为 0 |
+| 820 Overview | 受视口约束 | 明确 Review | 0 / 0 | 双侧栏收起，节点在界内；点节点后可进入 Inspect |
+
+820 不伪装成完整 Inspect 可读：当完整字段视图低于可读性地板时，报告明确显示 Review，
+用户先用 Overview 判断形状，再选择节点进入 Inspect。
+
+纯函数测试还验证：
+
+- 100 节点含回边的 lane 推导在 `50ms` 预算内完成；
+- label bundle 不丢字段依赖和 exact title；
+- 上下安全带在竞争长标签时确定性分流；
+- small graph 低于 80% 或等效标题低于 12px 时不得报告 Pass；
+- 用户 `open / closed / auto` panel preference 不进入 GraphDraft。
+
+真实 Chrome 门禁：
+
+```bash
+mvn -f resource-gateway-examples/pom.xml \
+  -Dtest='VisualAuthoringBrowserDomTest#taskWorkspacePreviewsCollisionFreeLayoutAndUsesCompactDrawersInRealBrowser' \
+  test
+```
+
+结果：通过。浏览器旅程同时覆盖 Auto Layout preview 稳定态、panel 互斥、Topology
+launcher 显式操作优先级、Scenario Run 与 390px Evidence。
+
+### 6.4 Stage D 退出审计
+
+| 退出门槛 | 结果 | 证据等级 |
+|---|---|---|
+| 5 节点图在 1024 / 1280 默认 zoom >= 80% | 通过 | E2 |
+| Overview 无字段 label | 通过 | E1 + E2 |
+| Focus 只显示闭包且 0 collision | 通过 | E1 + E2 |
+| Inspect 恢复完整字段语义 | 通过 | E1 + E2 |
+| 25/100 节点有 lane overview | 通过 | E1；90 秒定位等待 E3 |
+| 100 节点投影 2 秒内可交互 | 通过 | E1 性能预算 |
+| 1280 不比 1024 可读性更低 | 通过 | E2 |
+| quality report 同时覆盖几何与感知 | 通过 | E1 + E2 |
+
+因此 Stage D 目标分 `93` 在 E2 层成立。25 节点 90 秒定位仍需由 E3 用户研究证明。
+
+## 7. 当前差距与 Stage E 开工点
+
+画布阅读问题已从 P0/P1 缺陷转为受控的 compact Review。剩余工程差距集中在“找到资产”和
+“知道下一步怎么修”：
+
+1. Libraries 仍缺 Recent / Mine / Needs confirmation / Runtime drift 等任务队列；
+2. durable draft 缺少 exact revision 的统一 resume 入口；
+3. Contract、Scenario、Evidence、Drift、Rehearsal 与 ANEKE gate 还没有统一
+   `RemediationAction` 投影；
+4. Evidence 首屏仍需进一步把业务 verdict、Expected / Actual / Diff 和 owner 放在
+   fingerprint 之前；
+5. Rehearsal 需要 attempt timeline、准确目标 deep link 和权限诚实的修复动作；
+6. Stage E 完成后仍只能宣称“95 分工程就绪”，正式 95 分等待 E3/E4。

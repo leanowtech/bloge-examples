@@ -59,7 +59,6 @@ import {
   authoringJourney,
   autoLayoutCanvas,
   canvasEdgeBindingKey,
-  canvasEdgeLabelForZoom,
   canvasCoachPrompt,
   canvasFocusPath,
   canvasNodeFocusState,
@@ -226,6 +225,13 @@ import CanvasTaskNavigator, {
   type CanvasTaskMode,
 } from './author/canvas/CanvasTaskNavigator';
 import {
+  adaptiveCanvasChromePolicy,
+  assessCanvasPerceptualQuality,
+  projectCanvasSemantics,
+  type CanvasPanelPreference,
+  type CanvasSemanticProjection,
+} from './author/canvas/canvasSemantics';
+import {
   assessCanvasLayout,
   constrainCanvasLayout,
   type CanvasLayoutQualityReport,
@@ -361,6 +367,11 @@ interface CanvasEdgeData {
   labelLane?: number;
   viewportZoom?: number;
   pathFocus?: 'active' | 'dimmed';
+  semanticLabel?: string;
+  semanticLabelTitle?: string;
+  bundledFieldCount?: number;
+  semanticLabelX?: number;
+  semanticLabelY?: number;
 }
 
 type CanvasFlowEdge = Edge<CanvasEdgeData> & {
@@ -373,12 +384,22 @@ type CanvasFlowEdge = Edge<CanvasEdgeData> & {
 
 const CANVAS_DATA_EDGE_TYPE = 'canvasDataEdge';
 const EDGE_LABEL_DIAGONAL_OFFSET = 48;
-const EDGE_LABEL_LANE_STEP = 30;
+const EDGE_LABEL_LANE_STEP = 42;
 const CANVAS_MIN_ZOOM = 0.04;
 const CANVAS_MAX_ZOOM = 1.8;
 const COMPLEX_GRAPH_NODE_THRESHOLD = 24;
 const COMPLEX_GRAPH_EDGE_THRESHOLD = 36;
 const COMPACT_AUTHOR_MEDIA = '(max-width: 1100px)';
+const CANVAS_PANEL_PREFERENCE_PREFIX = 'resourceGateway.author.canvasPanel.';
+
+function initialCanvasPanelPreference(panel: 'palette' | 'inspector'): CanvasPanelPreference {
+  try {
+    const stored = window.localStorage.getItem(`${CANVAS_PANEL_PREFERENCE_PREFIX}${panel}`);
+    return stored === 'open' || stored === 'closed' ? stored : 'auto';
+  } catch {
+    return 'auto';
+  }
+}
 
 function compactAuthorFingerprint(value: string | undefined): string {
   const normalized = value?.trim() ?? '';
@@ -440,13 +461,9 @@ function CanvasDataEdge({
     offset: 42,
   });
   const rawLabelText = typeof label === 'string' || typeof label === 'number' ? String(label) : '';
-  const labelText = data?.pathFocus === 'dimmed'
-    ? ''
-    : canvasEdgeLabelForZoom(
-        rawLabelText,
-        data?.viewportZoom ?? 1,
-        selected || data?.pathFocus === 'active',
-      );
+  const labelText = data?.semanticLabel !== undefined
+    ? data.semanticLabel
+    : data?.pathFocus === 'dimmed' ? '' : rawLabelText;
   const labelLane = data?.labelLane ?? 0;
   const labelOffsetX = Math.abs(targetY - sourceY) > 60
     ? targetY > sourceY
@@ -454,6 +471,8 @@ function CanvasDataEdge({
       : EDGE_LABEL_DIAGONAL_OFFSET
     : 0;
   const labelOffsetY = labelLane * EDGE_LABEL_LANE_STEP;
+  const renderedLabelX = data?.semanticLabelX ?? labelX + labelOffsetX;
+  const renderedLabelY = data?.semanticLabelY ?? labelY + labelOffsetY;
 
   return (
     <>
@@ -471,8 +490,10 @@ function CanvasDataEdge({
             className={['flow-edge-label', selected ? 'selected' : ''].filter(Boolean).join(' ')}
             data-edge-id={id}
             data-testid="canvas-edge-label"
+            data-field-count={data?.bundledFieldCount ?? 1}
+            title={data?.semanticLabelTitle || labelText}
             style={{
-              transform: `translate(-50%, -50%) translate(${labelX + labelOffsetX}px, ${labelY + labelOffsetY}px)`,
+              transform: `translate(-50%, -50%) translate(${renderedLabelX}px, ${renderedLabelY}px)`,
             }}
           >
             {labelText}
@@ -577,6 +598,7 @@ function withEdgeLabelLanes(
   viewportZoom: number,
   focusPath: CanvasFocusPath,
   focusActive: boolean,
+  semantics: CanvasSemanticProjection,
 ): Edge<CanvasEdgeData>[] {
   const groups = new Map<string, Edge<CanvasEdgeData>[]>();
   for (const edge of edges) {
@@ -591,6 +613,7 @@ function withEdgeLabelLanes(
     const pathFocus = focusActive
       ? focusPath.edgeIds.has(edge.id) ? 'active' : 'dimmed'
       : undefined;
+    const semanticLabel = semantics.edgeLabels.get(edge.id);
     return {
       ...edge,
       type: CANVAS_DATA_EDGE_TYPE,
@@ -605,6 +628,12 @@ function withEdgeLabelLanes(
         labelLane: edgeLaneFor(Math.max(0, index), count),
         viewportZoom,
         pathFocus,
+        semanticLabel: semanticLabel?.text ?? '',
+        semanticLabelTitle: semanticLabel?.title ?? '',
+        bundledFieldCount: semanticLabel?.fieldCount ?? 0,
+        semanticLabelX: semanticLabel?.x,
+        semanticLabelY: semanticLabel?.y,
+        ...(semanticLabel ? { labelLane: semanticLabel.lane } : {}),
       },
     };
   });
@@ -4787,6 +4816,13 @@ export default function AuthorCanvas({ workspaceVersion = 'v1' }: AuthorCanvasPr
   const [inspectorWidth, setInspectorWidth] = useState(220);
   const [paletteCollapsed, setPaletteCollapsed] = useState(false);
   const [inspectorCollapsed, setInspectorCollapsed] = useState(false);
+  const [palettePreference, setPalettePreference] = useState<CanvasPanelPreference>(
+    () => initialCanvasPanelPreference('palette'),
+  );
+  const [inspectorPreference, setInspectorPreference] = useState<CanvasPanelPreference>(
+    () => initialCanvasPanelPreference('inspector'),
+  );
+  const [adaptiveChromeNotice, setAdaptiveChromeNotice] = useState('');
   const [compactWorkspace, setCompactWorkspace] = useState(() => (
     isTaskWorkspace
     && typeof window.matchMedia === 'function'
@@ -4913,6 +4949,7 @@ export default function AuthorCanvas({ workspaceVersion = 'v1' }: AuthorCanvasPr
   const previousAuthorModeRef = useRef(authorMode);
   const layoutPlanSequenceRef = useRef(0);
   const layoutPlanTimerRef = useRef<number | null>(null);
+  const fitCanvasTimerRef = useRef<number | null>(null);
   const counter = useRef(0);
   const contextVariableCounter = useRef(0);
   const tableTestCounter = useRef(0);
@@ -4945,14 +4982,27 @@ export default function AuthorCanvas({ workspaceVersion = 'v1' }: AuthorCanvasPr
     const media = window.matchMedia(COMPACT_AUTHOR_MEDIA);
     const synchronize = (matches: boolean) => {
       setCompactWorkspace(matches);
-      setPaletteCollapsed(matches);
-      setInspectorCollapsed(matches);
     };
     synchronize(media.matches);
     const onChange = (event: MediaQueryListEvent) => synchronize(event.matches);
     media.addEventListener?.('change', onChange);
     return () => media.removeEventListener?.('change', onChange);
   }, [isTaskWorkspace]);
+
+  useEffect(() => {
+    try {
+      window.localStorage.setItem(
+        `${CANVAS_PANEL_PREFERENCE_PREFIX}palette`,
+        palettePreference,
+      );
+      window.localStorage.setItem(
+        `${CANVAS_PANEL_PREFERENCE_PREFIX}inspector`,
+        inspectorPreference,
+      );
+    } catch {
+      // Browser privacy modes may disable local storage; session behavior remains intact.
+    }
+  }, [inspectorPreference, palettePreference]);
 
   useEffect(() => () => {
     layoutPlanSequenceRef.current += 1;
@@ -5036,7 +5086,19 @@ export default function AuthorCanvas({ workspaceVersion = 'v1' }: AuthorCanvasPr
       ? graphSize.nodeCount >= COMPLEX_GRAPH_NODE_THRESHOLD
         || graphSize.edgeCount >= COMPLEX_GRAPH_EDGE_THRESHOLD
       : isComplexGraph;
-    flowInstanceRef.current?.fitView({ padding: complex ? 0.06 : 0.18, duration: 240 });
+    const fitOptions = {
+      padding: complex ? 0.06 : 0.04,
+      duration: 240,
+      maxZoom: 1,
+    };
+    flowInstanceRef.current?.fitView(fitOptions);
+    if (fitCanvasTimerRef.current !== null) {
+      window.clearTimeout(fitCanvasTimerRef.current);
+    }
+    fitCanvasTimerRef.current = window.setTimeout(() => {
+      fitCanvasTimerRef.current = null;
+      flowInstanceRef.current?.fitView(fitOptions);
+    }, 80);
     const updateZoom = () => refreshViewportZoom();
     if (typeof window.requestAnimationFrame === 'function') {
       window.requestAnimationFrame(updateZoom);
@@ -5044,6 +5106,12 @@ export default function AuthorCanvas({ workspaceVersion = 'v1' }: AuthorCanvasPr
       window.setTimeout(updateZoom, 0);
     }
   }, [isComplexGraph, refreshViewportZoom]);
+
+  useEffect(() => () => {
+    if (fitCanvasTimerRef.current !== null) {
+      window.clearTimeout(fitCanvasTimerRef.current);
+    }
+  }, []);
 
   const zoomCanvasBy = useCallback((direction: 'in' | 'out') => {
     if (direction === 'in') {
@@ -5618,6 +5686,102 @@ export default function AuthorCanvas({ workspaceVersion = 'v1' }: AuthorCanvasPr
     : selectedNodeId
       ? 'inspect'
       : 'overview';
+  const canvasSemantics = useMemo(
+    () => projectCanvasSemantics(canvasNodes, canvasEdges, {
+      mode: canvasTaskMode,
+      anchorNodeId: focusPathNodeId,
+      selectedNodeId,
+    }),
+    [canvasEdges, canvasNodes, canvasTaskMode, focusPathNodeId, selectedNodeId],
+  );
+  const currentCanvasGeometry = useMemo(
+    () => assessCanvasLayout(canvasNodes, canvasEdges, pinnedNodeIds),
+    [canvasEdges, canvasNodes, pinnedNodeIds],
+  );
+  const canvasPerceptualQuality = useMemo(
+    () => assessCanvasPerceptualQuality(canvasNodes, {
+      mode: canvasTaskMode,
+      viewportWidth: flowRef.current?.clientWidth || window.innerWidth,
+      viewportHeight: flowRef.current?.clientHeight || window.innerHeight,
+      zoom: viewportZoom,
+      visibleEdgeLabels: canvasSemantics.visibleEdgeLabelCount,
+      visibleFieldLabels: canvasSemantics.visibleFieldCount,
+      nodeOverlaps: currentCanvasGeometry.nodeOverlaps,
+      nodeLabelCollisions: canvasSemantics.nodeLabelCollisionCount,
+      labelLabelCollisions: canvasSemantics.labelLabelCollisionCount,
+    }),
+    [
+      canvasSemantics.visibleEdgeLabelCount,
+      canvasSemantics.visibleFieldCount,
+      canvasSemantics.labelLabelCollisionCount,
+      canvasSemantics.nodeLabelCollisionCount,
+      canvasNodes,
+      canvasTaskMode,
+      compactWorkspace,
+      currentCanvasGeometry.nodeOverlaps,
+      inspectorCollapsed,
+      paletteCollapsed,
+      viewportZoom,
+    ],
+  );
+  const adaptiveChrome = useMemo(
+    () => adaptiveCanvasChromePolicy({
+      authorMode,
+      compactWorkspace,
+      nodeCount: canvasNodes.length,
+      fitZoom: viewportZoom,
+      selectedNodeId,
+      palettePreference,
+      inspectorPreference,
+    }),
+    [
+      authorMode,
+      canvasNodes.length,
+      compactWorkspace,
+      inspectorPreference,
+      palettePreference,
+      selectedNodeId,
+      viewportZoom,
+    ],
+  );
+
+  useEffect(() => {
+    if (!isTaskWorkspace) return undefined;
+    const nextPaletteCollapsed = palettePreference === 'open'
+      ? false
+      : adaptiveChrome.collapsePalette || paletteCollapsed;
+    const nextInspectorCollapsed = inspectorPreference === 'open'
+      ? false
+      : adaptiveChrome.collapseInspector || inspectorCollapsed;
+    const changed = nextPaletteCollapsed !== paletteCollapsed
+      || nextInspectorCollapsed !== inspectorCollapsed;
+    if (nextPaletteCollapsed !== paletteCollapsed) {
+      setPaletteCollapsed(nextPaletteCollapsed);
+    }
+    if (nextInspectorCollapsed !== inspectorCollapsed) {
+      setInspectorCollapsed(nextInspectorCollapsed);
+    }
+    const notice = adaptiveChrome.reason
+      && (adaptiveChrome.collapsePalette || adaptiveChrome.collapseInspector)
+      ? adaptiveChrome.reason
+      : '';
+    setAdaptiveChromeNotice((current) => current === notice ? current : notice);
+    if (!changed || authorMode !== 'compose' || canvasNodes.length === 0) {
+      return undefined;
+    }
+    const handle = window.setTimeout(() => fitCanvasToView(), 90);
+    return () => window.clearTimeout(handle);
+  }, [
+    adaptiveChrome,
+    authorMode,
+    canvasNodes.length,
+    fitCanvasToView,
+    inspectorCollapsed,
+    inspectorPreference,
+    isTaskWorkspace,
+    paletteCollapsed,
+    palettePreference,
+  ]);
   const canvasTaskNodes = useMemo(
     () => nodes.map((node) => ({
       id: node.id,
@@ -6453,8 +6617,9 @@ export default function AuthorCanvas({ workspaceVersion = 'v1' }: AuthorCanvasPr
       viewportZoom,
       focusedCanvasPath,
       Boolean(focusPathNodeId),
+      canvasSemantics,
     ),
-    [edges, focusPathNodeId, focusedCanvasPath, viewportZoom],
+    [canvasSemantics, edges, focusPathNodeId, focusedCanvasPath, viewportZoom],
   );
 
   const focusGovernanceIssue = useCallback((issue: GovernanceGateIssue) => {
@@ -8235,7 +8400,7 @@ export default function AuthorCanvas({ workspaceVersion = 'v1' }: AuthorCanvasPr
     const pathNodes = nodes.filter((node) => path.nodeIds.has(node.id));
     flowInstanceRef.current?.fitView({
       nodes: pathNodes,
-      padding: 0.2,
+      padding: 0.08,
       duration: 240,
     });
   }, [
@@ -8284,7 +8449,7 @@ export default function AuthorCanvas({ workspaceVersion = 'v1' }: AuthorCanvasPr
       }
       flowInstanceRef.current?.fitView({
         nodes: nodes.filter((node) => path.nodeIds.has(node.id)),
-        padding: 0.2,
+        padding: 0.08,
         duration: 240,
       });
       return;
@@ -8308,7 +8473,9 @@ export default function AuthorCanvas({ workspaceVersion = 'v1' }: AuthorCanvasPr
       const opening = current;
       if (opening && compactWorkspace) {
         setInspectorCollapsed(true);
+        setInspectorPreference('closed');
       }
+      setPalettePreference(opening ? 'open' : 'closed');
       return !current;
     });
   }, [compactWorkspace]);
@@ -8318,7 +8485,9 @@ export default function AuthorCanvas({ workspaceVersion = 'v1' }: AuthorCanvasPr
       const opening = current;
       if (opening && compactWorkspace) {
         setPaletteCollapsed(true);
+        setPalettePreference('closed');
       }
+      setInspectorPreference(opening ? 'open' : 'closed');
       return !current;
     });
   }, [compactWorkspace]);
@@ -9120,6 +9289,9 @@ export default function AuthorCanvas({ workspaceVersion = 'v1' }: AuthorCanvasPr
       data-canvas-zoom-tier={zoomPresentation.tier}
       data-focus-path={focusPathNodeId ? 'active' : 'inactive'}
       data-canvas-task-mode={canvasTaskMode}
+      data-canvas-readability={canvasPerceptualQuality.status.toLowerCase()}
+      data-canvas-effective-title-px={canvasPerceptualQuality.effectiveTitleFontPx}
+      data-canvas-visible-field-labels={canvasPerceptualQuality.visibleFieldLabels}
       data-compact-workspace={compactWorkspace ? 'true' : 'false'}
       data-layout-preview={layoutPreview ? 'active' : layoutPlanning ? 'planning' : 'inactive'}
       data-canonical-scenario-ready={canonicalScenarioReady ? 'true' : 'false'}
@@ -9253,6 +9425,19 @@ export default function AuthorCanvas({ workspaceVersion = 'v1' }: AuthorCanvasPr
           <span>
             {paletteView.matchingCount}/{paletteView.totalCount}
           </span>
+          {isTaskWorkspace && (
+            <label className="author-panel-pin" title="Keep this panel open during canvas fitting">
+              <input
+                type="checkbox"
+                checked={palettePreference === 'open'}
+                onChange={(event) => {
+                  setPalettePreference(event.target.checked ? 'open' : 'auto');
+                  if (event.target.checked) setPaletteCollapsed(false);
+                }}
+              />
+              <span>Keep open</span>
+            </label>
+          )}
         </div>
         <section className="library-intake" aria-label="Operator library intake" data-testid="library-intake">
           <div className="library-intake-heading">
@@ -9678,7 +9863,10 @@ export default function AuthorCanvas({ workspaceVersion = 'v1' }: AuthorCanvasPr
             mode={authorMode}
             targetKind={operatorContractWorkspace ? 'operator' : 'graph'}
             contextRailExpanded={!inspectorCollapsed}
-            onOpenContextRail={() => setInspectorCollapsed(false)}
+            onOpenContextRail={() => {
+              setInspectorPreference('open');
+              setInspectorCollapsed(false);
+            }}
           >
             <Suspense
               fallback={(
@@ -10047,7 +10235,9 @@ export default function AuthorCanvas({ workspaceVersion = 'v1' }: AuthorCanvasPr
             layoutPlanning={layoutPlanning}
             layoutPreview={Boolean(layoutPreview)}
             layoutQuality={layoutPreview?.quality ?? null}
-            layoutNotice={layoutNotice}
+            perceptualQuality={canvasPerceptualQuality}
+            topologyLanes={canvasSemantics.lanes}
+            layoutNotice={layoutNotice || adaptiveChromeNotice}
             canUndoLayout={Boolean(layoutUndo)}
             onModeChange={activateCanvasTaskMode}
             onSelectNode={focusNodeFromNavigator}
@@ -10166,7 +10356,9 @@ export default function AuthorCanvas({ workspaceVersion = 'v1' }: AuthorCanvasPr
                 aria-pressed={!paletteCollapsed}
                 onClick={() => {
                   setInspectorCollapsed(true);
+                  setInspectorPreference('closed');
                   setPaletteCollapsed(false);
+                  setPalettePreference('open');
                 }}
               >
                 Operators
@@ -10178,7 +10370,9 @@ export default function AuthorCanvas({ workspaceVersion = 'v1' }: AuthorCanvasPr
                 disabled={!selectedNodeId}
                 onClick={() => {
                   setPaletteCollapsed(true);
+                  setPalettePreference('closed');
                   setInspectorCollapsed(false);
+                  setInspectorPreference('open');
                 }}
               >
                 Inspect
@@ -10216,7 +10410,7 @@ export default function AuthorCanvas({ workspaceVersion = 'v1' }: AuthorCanvasPr
               setFocusPathNodeId('');
             }}
             fitView
-            fitViewOptions={{ padding: 0.12, minZoom: CANVAS_MIN_ZOOM, maxZoom: CANVAS_MAX_ZOOM }}
+            fitViewOptions={{ padding: 0.04, minZoom: CANVAS_MIN_ZOOM, maxZoom: 1 }}
             minZoom={CANVAS_MIN_ZOOM}
             maxZoom={CANVAS_MAX_ZOOM}
           >
@@ -10244,15 +10438,31 @@ export default function AuthorCanvas({ workspaceVersion = 'v1' }: AuthorCanvasPr
 
       <aside className="inspector">
         {isTaskWorkspace && (
-          <button
-            type="button"
-            className="author-panel-toggle inspector-panel-toggle"
-            aria-label={inspectorCollapsed ? 'Expand context inspector' : 'Collapse context inspector'}
-            aria-expanded={!inspectorCollapsed}
-            onClick={toggleInspectorPanel}
-          >
-            <span aria-hidden="true">{inspectorCollapsed ? '<' : '>'}</span>
-          </button>
+          <>
+            <button
+              type="button"
+              className="author-panel-toggle inspector-panel-toggle"
+              aria-label={inspectorCollapsed ? 'Expand context inspector' : 'Collapse context inspector'}
+              aria-expanded={!inspectorCollapsed}
+              onClick={toggleInspectorPanel}
+            >
+              <span aria-hidden="true">{inspectorCollapsed ? '<' : '>'}</span>
+            </button>
+            <label
+              className="author-panel-pin inspector-panel-pin"
+              title="Keep this panel open during canvas fitting"
+            >
+              <input
+                type="checkbox"
+                checked={inspectorPreference === 'open'}
+                onChange={(event) => {
+                  setInspectorPreference(event.target.checked ? 'open' : 'auto');
+                  if (event.target.checked) setInspectorCollapsed(false);
+                }}
+              />
+              <span>Keep open</span>
+            </label>
+          </>
         )}
         {isTaskWorkspace && authorMode === 'compose' && (
           <AuthorContextInspector
