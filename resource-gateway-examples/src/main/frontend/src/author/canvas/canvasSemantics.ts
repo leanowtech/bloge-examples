@@ -353,7 +353,7 @@ export function adaptiveCanvasChromePolicy(
   if (options.authorMode !== 'compose') {
     return {
       collapsePalette: !paletteForcedOpen,
-      collapseInspector: inspectorForcedClosed,
+      collapseInspector: !inspectorForcedOpen,
       reason: 'The active task surface owns the workspace width.',
     };
   }

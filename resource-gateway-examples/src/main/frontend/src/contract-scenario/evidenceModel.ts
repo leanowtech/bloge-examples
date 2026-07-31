@@ -13,6 +13,12 @@ export interface ScenarioEvidenceDiagnostic {
   message: string;
   coordinate?: string;
   nodeId?: string;
+  recommendedAction?: string;
+  deepLink?: string;
+  requiredRole?: string;
+  owner?: string;
+  auditRequirement?: string;
+  expiresAt?: string;
 }
 
 export interface ScenarioEvidenceTrustContext {
@@ -67,6 +73,12 @@ export interface ScenarioEvidenceView {
   warnings: EvidenceIssue[];
   failedAssertions: ScenarioComparison['results'];
   passedAssertions: ScenarioComparison['results'];
+}
+
+export interface AssertionDiffRow {
+  path: string;
+  expected: unknown;
+  actual: unknown;
 }
 
 const DEFAULT_TRUST_CONTEXT: ScenarioEvidenceTrustContext = {
@@ -159,6 +171,18 @@ export function scenarioEvidenceView(
     failedAssertions: comparison?.results.filter((result) => !result.passed) ?? [],
     passedAssertions: comparison?.results.filter((result) => result.passed) ?? [],
   };
+}
+
+/** Produces bounded, path-level differences for a failed business assertion. */
+export function scenarioAssertionDiff(
+  expected: unknown,
+  actual: unknown,
+  rootPath = '$',
+  limit = 24,
+): AssertionDiffRow[] {
+  const rows: AssertionDiffRow[] = [];
+  collectAssertionDiff(expected, actual, rootPath || '$', rows, Math.max(1, limit));
+  return rows;
 }
 
 function draftDimension(status: string): EvidenceDimension {
@@ -410,4 +434,37 @@ function fingerprintClosureEvidence(
     nodeId: '',
     occurrences: 1,
   }];
+}
+
+function collectAssertionDiff(
+  expected: unknown,
+  actual: unknown,
+  path: string,
+  rows: AssertionDiffRow[],
+  limit: number,
+): void {
+  if (rows.length >= limit || Object.is(expected, actual)) {
+    return;
+  }
+  if (isRecord(expected) && isRecord(actual)) {
+    const keys = Array.from(new Set([...Object.keys(expected), ...Object.keys(actual)])).sort();
+    keys.forEach((key) => {
+      if (rows.length < limit) {
+        collectAssertionDiff(expected[key], actual[key], `${path}.${key}`, rows, limit);
+      }
+    });
+    return;
+  }
+  if (Array.isArray(expected) && Array.isArray(actual)) {
+    const length = Math.max(expected.length, actual.length);
+    for (let index = 0; index < length && rows.length < limit; index += 1) {
+      collectAssertionDiff(expected[index], actual[index], `${path}[${index}]`, rows, limit);
+    }
+    return;
+  }
+  rows.push({ path, expected, actual });
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return Boolean(value) && typeof value === 'object' && !Array.isArray(value);
 }

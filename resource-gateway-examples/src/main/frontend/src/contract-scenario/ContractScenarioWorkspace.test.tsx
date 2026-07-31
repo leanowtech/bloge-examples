@@ -322,6 +322,8 @@ describe('ContractScenarioWorkspace', () => {
       .toContain('approved r2');
     expect(document.querySelector('[data-testid="scenario-evidence-coordinate"]')?.textContent)
       .toContain('sha256:request-9');
+    expect(document.querySelector<HTMLDetailsElement>('.scenario-evidence-technical')?.open)
+      .toBe(false);
   });
 
   it('keeps stale run evidence visible while blocking the changed authoring snapshot', async () => {
@@ -423,9 +425,58 @@ describe('ContractScenarioWorkspace', () => {
       await Promise.resolve();
     });
     await settleAsyncWork();
-    await act(async () => button('Open source').click());
+    await act(async () => button('Open governance decision').click());
 
     expect(onSelectEvidenceDiagnostic).toHaveBeenCalledWith(diagnostic);
+  });
+
+  it('puts business remediation before collapsed technical coordinates', async () => {
+    await renderWorkspace({
+      initialTab: 'evidence',
+      lastRun: successfulResponse(),
+      lastRunScenarioId: 'approved',
+      lastComparison: {
+        passed: false,
+        diagnostics: [],
+        results: [{
+          assertionId: 'decision',
+          passed: false,
+          path: 'decision.approved',
+          expected: true,
+          actual: false,
+          detail: 'Expected and actual differ.',
+        }],
+      },
+      trustContext: {
+        draftStatus: 'SAVED',
+        evidenceFreshness: 'CURRENT',
+        contractStatus: 'VALID',
+        governanceStatus: 'APPROVED',
+        coordinate: {
+          draftId: 'loan-draft',
+          draftRevision: 4,
+          draftFingerprint: 'sha256:draft-4',
+          contractFingerprint: 'sha256:contract-4',
+          scenarioId: 'approved',
+          scenarioRevision: 2,
+          scenarioFingerprint: 'sha256:scenario-2',
+          closureFingerprint: 'sha256:closure-4',
+          requestFingerprint: 'sha256:request-9',
+        },
+      },
+    });
+
+    const evidence = document.querySelector('[data-testid="scenario-evidence"]');
+    const remediation = evidence?.querySelector('.remediation-action-list');
+    const coordinates = evidence?.querySelector('.scenario-evidence-technical');
+    expect(remediation).not.toBeNull();
+    expect(coordinates).not.toBeNull();
+    expect(remediation && coordinates
+      ? Boolean(remediation.compareDocumentPosition(coordinates) & Node.DOCUMENT_POSITION_FOLLOWING)
+      : false).toBe(true);
+    expect(text()).toContain('Business impact');
+    expect(text()).toContain('Diff');
+    expect(text()).toContain('decision.approved');
   });
 
   it('routes stale coordinates through compatibility review instead of blind rebase', async () => {

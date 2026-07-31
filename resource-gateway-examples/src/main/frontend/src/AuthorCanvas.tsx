@@ -8840,6 +8840,12 @@ export default function AuthorCanvas({ workspaceVersion = 'v1' }: AuthorCanvasPr
           message: item.message,
           coordinate: item.coordinate,
           nodeId: item.nodeId,
+          recommendedAction: item.recommendedAction,
+          deepLink: item.deepLink,
+          requiredRole: item.requiredRole,
+          owner: item.owner,
+          auditRequirement: item.auditRequirement,
+          expiresAt: item.expiresAt,
         })),
     }),
     [

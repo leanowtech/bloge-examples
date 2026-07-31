@@ -4085,9 +4085,13 @@ remain untouched.
    assertions. Pick a schema-projected result field; expected values are generated with the
    relevant field type. Use **Custom path** only for schema-external coordinates.
 7. Click **Run & Compare** for behavior representable by the transient simulation path. **Run
-   Evidence** presents Execution, Assertions, Contract, and Governance separately, expands blockers
-   and failed assertions first, collapses passed assertions, then shows terminal output and per-node
-   status. It reports **Ready for promotion** only when every dimension passes without warnings.
+   Evidence** starts with the verdict and a shared remediation queue. Each action states root cause,
+   business impact, owner, required role, and an exact Author or external-governance handoff.
+   Execution, Assertions, Contract, and Governance remain separate. Failed assertions show
+   Expected / Actual / bounded path-level Diff; fingerprints and request coordinates are collapsed
+   under technical details. The surface reports **Ready for promotion** only when every dimension
+   passes without warnings. Missing governance handoffs show the accountable owner and do not render
+   a fake action.
 8. To retain and govern the work, use **Save Graph**, review and rebase to the returned server
    Contract, then **Save Scenario**, and finally **Publish**. Load/Save/Publish remain disabled until
    their exact prerequisites exist.

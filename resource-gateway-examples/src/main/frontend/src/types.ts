@@ -1496,6 +1496,10 @@ export interface GovernanceGateIssue {
   targetPath?: string;
   recommendedAction?: string;
   deepLink?: string;
+  requiredRole?: string;
+  owner?: string;
+  auditRequirement?: string;
+  expiresAt?: string;
 }
 
 /** Immutable governance decision submitted by ANEKE Tool Studio. */

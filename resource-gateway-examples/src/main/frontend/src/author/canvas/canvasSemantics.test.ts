@@ -187,4 +187,30 @@ describe('canvas perceptual quality and adaptive chrome', () => {
       reason: 'Panels were reclaimed to keep the graph above its readability floor.',
     });
   });
+
+  it('gives formal task surfaces the full workspace unless context was explicitly pinned', () => {
+    expect(adaptiveCanvasChromePolicy({
+      authorMode: 'evidence',
+      compactWorkspace: true,
+      nodeCount: 5,
+      fitZoom: 1,
+      selectedNodeId: 'decision',
+      palettePreference: 'auto',
+      inspectorPreference: 'auto',
+    })).toEqual({
+      collapsePalette: true,
+      collapseInspector: true,
+      reason: 'The active task surface owns the workspace width.',
+    });
+
+    expect(adaptiveCanvasChromePolicy({
+      authorMode: 'evidence',
+      compactWorkspace: true,
+      nodeCount: 5,
+      fitZoom: 1,
+      selectedNodeId: 'decision',
+      palettePreference: 'auto',
+      inspectorPreference: 'open',
+    }).collapseInspector).toBe(false);
+  });
 });

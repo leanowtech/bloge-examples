@@ -18,7 +18,7 @@
 | Stage B：唯一中央工作面 | 85 | 已完成 | B01–B08、真实浏览器断点矩阵，E2 |
 | Stage C：统一 Scenario | 90 | 已完成 | C01–C08、392 条前端回归与三条浏览器纵切，E2 |
 | Stage D：复杂图可读 | 93 | 已完成 | D01–D07、1024/1280/820 真实浏览器矩阵，E2 |
-| Stage E：生命周期闭环 | 95 工程就绪 | 进行中 | E1 Library Home 已通过定向测试与真实浏览器，E2；remediation 待完成 |
+| Stage E：生命周期闭环 | 95 工程就绪 | 进行中 | E1 Library Home、E2 Evidence remediation 已通过定向测试与真实浏览器；E3 Rehearsal 待完成 |
 | Stage F：E3/E4 | 95–100 | 未开始 | 无 |
 
 Stage D 的工程目标分 `93` 已达到 E2，但这不等于整体体验成熟度达到 95。当前剩余
@@ -483,16 +483,60 @@ head 或 fork。读取不存在 revision 返回 `RG.AUTHORING.DRAFT_REVISION_NOT
 E1 后工程自评从 `93.0` 提升到 `93.8`。仍不宣称整体 95，因为跨 Evidence /
 Rehearsal 的 remediation 协议尚未闭环。
 
-## 8. 当前差距与 Stage E 下一步
+## 8. Round E2：Evidence Remediation
+
+### 8.1 已实现
+
+| 计划项 | 实现 |
+|---|---|
+| 统一动作协议 | `RemediationAction` 统一 source、severity、exact target、root cause、business impact、action kind、deep link、role、owner、audit 和 expiry |
+| 诊断不丢信息 | Author diagnostic 保留 ANEKE `recommendedAction`、`deepLink`、owner、role、audit requirement 和 expiry |
+| Verdict-first | Evidence 首屏固定显示业务结论和 Next actions，fingerprint 默认折叠 |
+| 权限诚实 | 有 handoff 才显示可执行治理动作；缺失时明确 owner、required role 和请求路径缺口 |
+| Exact repair | Scenario、Contract、Compose 和诊断动作保留 draft/scenario/node 坐标并直接切换准确工作面 |
+| Assertion Diff | 失败断言展示 Expected / Actual / path-level Diff；大对象差异有确定顺序和 24 行上限 |
+| Mobile task ownership | formal task surface 在 compact viewport 默认回收 Context rail，Topology 作为显式按需入口 |
+
+### 8.2 用户可见行为
+
+失败 Evidence 不再要求用户先读错误码：
+
+```text
+Promotion blocked
+  -> Repair Scenario assertions
+  -> business impact
+  -> Scenario owner / Scenario author
+  -> Expected / Actual / $.decision Diff
+  -> Technical coordinates（默认折叠）
+```
+
+探索态运行会提供 `Save graph in Compose` 真动作；Contract 未检查会进入当前 Interface；
+Governance 未提供 handoff 时只显示责任人与缺口，不制造一个注定失败的按钮。raw code、
+fingerprint 和 coordinate 仍然存在，但只服务排障与审计。
+
+### 8.3 自动化与 E2 证据
+
+- `remediationAction.test.ts` 覆盖 stale rerun、governance handoff 和无权限/无 handoff；
+- `evidenceModel.test.ts` 覆盖 trust verdict、fingerprint closure 和 bounded path Diff；
+- `ContractScenarioWorkspace.test.tsx` 覆盖 action-first 顺序、technical collapse 和 source routing；
+- `canvasSemantics.test.ts` 固化 formal task surface 的 compact Context rail 策略；
+- 定向 `4` 个测试文件、`41` 条测试通过，TypeScript 与 Vite production build 通过；
+- 完整前端回归 `49` 个测试文件、`410` 条测试通过；
+- 1280×820 真实浏览器确认失败第一动作、责任人、business impact 和准确 `$.decision` Diff；
+- 390×844 确认 Context rail 默认收起，Verdict、Next actions 和主按钮无覆盖、无截字。
+
+E2 后工程自评为 `94.5`。剩余分数集中在 Rehearsal attempt timeline、exact Author
+handoff、跨来源 action adapter 和大规模 Library server-side query projection。
+
+## 9. 当前差距与 Stage E 下一步
 
 画布阅读问题已从 P0/P1 缺陷转为受控的 compact Review。剩余工程差距集中在“找到资产”和
 “知道下一步怎么修”：
 
-1. Contract、Scenario、Evidence、Drift、Rehearsal 与 ANEKE gate 还没有统一
-   `RemediationAction` 投影；
-2. Evidence 首屏仍需进一步把业务 verdict、Expected / Actual / Diff 和 owner 放在
-   fingerprint 之前；
-3. Rehearsal 需要 attempt timeline、准确目标 deep link 和权限诚实的修复动作；
+1. Rehearsal 需要接入现有 `RemediationAction`，补 attempt timeline、预算、fallback、
+   last observation 和准确 Author deep link；
+2. Runtime drift 与 Rehearsal timeout 的 adapter 还需要用真实服务协议验证，不能只复用类型；
+3. P0/P1 diagnostic 的 exact target 需要做一次全来源覆盖审计；
 4. Library Home 当前 readiness 聚合适合 bounded work queue；规模超过 1000 个活跃 draft
    时，需要把过滤和 readiness index 下沉为 server query projection；
-5. Stage E 完成后仍只能宣称“95 分工程就绪”，正式 95 分等待 E3/E4。
+5. Stage E3 完成后仍只能宣称“95 分工程就绪”，正式 95 分等待 Stage F 的 E3/E4。

@@ -27,11 +27,17 @@ import {
 import ContractSemanticsEditor from './ContractSemanticsEditor';
 import DependencyBehaviorEditor from './DependencyBehaviorEditor';
 import {
+  scenarioAssertionDiff,
   scenarioEvidenceView,
   type EvidenceIssue,
   type ScenarioEvidenceDiagnostic,
   type ScenarioEvidenceTrustContext,
 } from './evidenceModel';
+import RemediationActionList from '../remediation/RemediationActionList';
+import {
+  evidenceRemediationActions,
+  type RemediationAction,
+} from '../remediation/remediationAction';
 import {
   compileScenarioEditorSnapshotForSimulation,
   type ScenarioCompilationProof,
@@ -887,6 +893,8 @@ export default function ContractScenarioWorkspace({
               compileMessages={compileMessages}
               trustContext={trustContext}
               onBackToScenario={() => navigateWorkspace('scenarios')}
+              onOpenTab={navigateWorkspace}
+              onOpenCompose={onClose}
               onSelectDiagnostic={onSelectEvidenceDiagnostic}
             />
           )}
@@ -1439,6 +1447,8 @@ function EvidenceTab({
   compileMessages,
   trustContext,
   onBackToScenario,
+  onOpenTab,
+  onOpenCompose,
   onSelectDiagnostic,
 }: {
   response: SimulationResponse | null;
@@ -1446,6 +1456,8 @@ function EvidenceTab({
   compileMessages: string[];
   trustContext?: ScenarioEvidenceTrustContext;
   onBackToScenario: () => void;
+  onOpenTab: (tab: WorkspaceTab) => void;
+  onOpenCompose: () => void;
   onSelectDiagnostic?: (diagnostic: ScenarioEvidenceDiagnostic) => void;
 }) {
   if (!response) {
@@ -1459,6 +1471,35 @@ function EvidenceTab({
     );
   }
   const evidence = scenarioEvidenceView(response, comparison, trustContext);
+  const actions = evidenceRemediationActions(
+    evidence,
+    trustContext,
+    typeof window === 'undefined' ? 'http://localhost/author/' : window.location.href,
+  );
+  const invokeRemediation = (action: RemediationAction) => {
+    if (action.navigation === 'SCENARIOS') {
+      onBackToScenario();
+      return;
+    }
+    if (action.navigation === 'INTERFACE') {
+      onOpenTab('interface');
+      return;
+    }
+    if (action.navigation === 'COMPOSE') {
+      onOpenCompose();
+      return;
+    }
+    if (action.navigation === 'DIAGNOSTIC') {
+      const diagnostic = trustContext?.diagnostics?.find(
+        (candidate) => candidate.id === action.diagnosticId,
+      );
+      if (diagnostic && onSelectDiagnostic) {
+        onSelectDiagnostic(diagnostic);
+        return;
+      }
+    }
+    onBackToScenario();
+  };
   return (
     <div className="scenario-evidence" data-testid="scenario-evidence">
       <header className={`scenario-evidence-heading ${evidence.tone}`}>
@@ -1469,17 +1510,7 @@ function EvidenceTab({
         <p>{evidence.summary}</p>
       </header>
 
-      {trustContext?.coordinate && (
-        <dl className="scenario-evidence-coordinate" data-testid="scenario-evidence-coordinate">
-          <div><dt>Draft</dt><dd>{trustContext.coordinate.draftId || 'exploratory'} r{trustContext.coordinate.draftRevision}</dd></div>
-          <div><dt>Draft fingerprint</dt><dd><code>{trustContext.coordinate.draftFingerprint || 'not saved'}</code></dd></div>
-          <div><dt>Contract</dt><dd><code>{trustContext.coordinate.contractFingerprint || 'not checked'}</code></dd></div>
-          <div><dt>Scenario</dt><dd>{trustContext.coordinate.scenarioId} r{trustContext.coordinate.scenarioRevision}</dd></div>
-          <div><dt>Scenario fingerprint</dt><dd><code>{trustContext.coordinate.scenarioFingerprint || 'not projected'}</code></dd></div>
-          <div><dt>Dependency closure</dt><dd><code>{trustContext.coordinate.closureFingerprint || 'not projected'}</code></dd></div>
-          <div><dt>Execution request</dt><dd><code>{trustContext.coordinate.requestFingerprint || 'not captured'}</code></dd></div>
-        </dl>
-      )}
+      <RemediationActionList actions={actions} onInvoke={invokeRemediation} />
 
       <div className="scenario-trust-dimensions" aria-label="Evidence trust dimensions">
         {evidence.dimensions.map((dimension) => (
@@ -1510,6 +1541,21 @@ function EvidenceTab({
           tone="warning"
           onSelectDiagnostic={onSelectDiagnostic}
         />
+      )}
+
+      {trustContext?.coordinate && (
+        <details className="scenario-evidence-technical">
+          <summary>Technical coordinates</summary>
+          <dl className="scenario-evidence-coordinate" data-testid="scenario-evidence-coordinate">
+            <div><dt>Draft</dt><dd>{trustContext.coordinate.draftId || 'exploratory'} r{trustContext.coordinate.draftRevision}</dd></div>
+            <div><dt>Draft fingerprint</dt><dd><code>{trustContext.coordinate.draftFingerprint || 'not saved'}</code></dd></div>
+            <div><dt>Contract</dt><dd><code>{trustContext.coordinate.contractFingerprint || 'not checked'}</code></dd></div>
+            <div><dt>Scenario</dt><dd>{trustContext.coordinate.scenarioId} r{trustContext.coordinate.scenarioRevision}</dd></div>
+            <div><dt>Scenario fingerprint</dt><dd><code>{trustContext.coordinate.scenarioFingerprint || 'not projected'}</code></dd></div>
+            <div><dt>Dependency closure</dt><dd><code>{trustContext.coordinate.closureFingerprint || 'not projected'}</code></dd></div>
+            <div><dt>Execution request</dt><dd><code>{trustContext.coordinate.requestFingerprint || 'not captured'}</code></dd></div>
+          </dl>
+        </details>
       )}
 
       {evidence.failedAssertions.length > 0 && (
@@ -1586,13 +1632,17 @@ function EvidenceIssueList({
         {issues.map((issue) => (
           <li key={issue.id}>
             <span>
-              <b>{issue.code}</b>
+              <b>{issue.message}</b>
               <small>
-                {issue.scope}
-                {issue.coordinate ? ` · ${issue.coordinate}` : ''}
+                {issue.scope} · {issue.code}
                 {(issue.occurrences ?? 1) > 1 ? ` · ${issue.occurrences} occurrences` : ''}
               </small>
-              <span>{issue.message}</span>
+              {issue.coordinate && (
+                <details>
+                  <summary>Technical target</summary>
+                  <code>{issue.coordinate}</code>
+                </details>
+              )}
             </span>
             {issue.diagnostic && onSelectDiagnostic && (
               <button
@@ -1615,6 +1665,7 @@ function AssertionEvidence({
 }: {
   entry: ScenarioComparison['results'][number];
 }) {
+  const diff = scenarioAssertionDiff(entry.expected, entry.actual, entry.path || '$');
   return (
     <article className={`scenario-assertion-result ${entry.passed ? 'passed' : 'failed'}`}>
       <header>
@@ -1628,11 +1679,32 @@ function AssertionEvidence({
         </label>
         <label>
           <span>Actual</span>
-          <pre>{JSON.stringify(entry.actual, null, 2)}</pre>
+          <pre>{evidenceValue(entry.actual)}</pre>
+        </label>
+        <label className="scenario-assertion-diff">
+          <span>Diff</span>
+          {diff.length === 0
+            ? <strong>No difference</strong>
+            : (
+              <div>
+                {diff.map((row) => (
+                  <span key={row.path}>
+                    <code>{row.path}</code>
+                    <del>{evidenceValue(row.expected)}</del>
+                    <ins>{evidenceValue(row.actual)}</ins>
+                  </span>
+                ))}
+              </div>
+            )}
         </label>
       </div>
     </article>
   );
+}
+
+function evidenceValue(value: unknown): string {
+  const serialized = JSON.stringify(value, null, 2);
+  return serialized === undefined ? String(value) : serialized;
 }
 
 function newOutputAssertion(sequence: number, contract: ContractDraft): AssertionDraft {

@@ -29,6 +29,11 @@ export interface AuthorDiagnosticItem {
   coordinates: string[];
   nodeId: string;
   recommendedAction: string;
+  deepLink: string;
+  requiredRole: string;
+  owner: string;
+  auditRequirement: string;
+  expiresAt: string;
   occurrenceCount: number;
 }
 
@@ -98,6 +103,11 @@ function visualDiagnostic(
     coordinates: coordinate ? [coordinate] : [],
     nodeId: metadataNodeId || nodeIdFromCoordinate(coordinate) || messageNodeId,
     recommendedAction: '',
+    deepLink: '',
+    requiredRole: '',
+    owner: '',
+    auditRequirement: '',
+    expiresAt: '',
     occurrenceCount: 1,
   };
 }
@@ -122,6 +132,11 @@ export function projectAuthorDiagnostics(input: AuthorDiagnosticsInput): AuthorD
       coordinates: [],
       nodeId: '',
       recommendedAction: 'Review the request and retry.',
+      deepLink: '',
+      requiredRole: '',
+      owner: '',
+      auditRequirement: '',
+      expiresAt: '',
       occurrenceCount: 1,
     });
   }
@@ -143,6 +158,11 @@ export function projectAuthorDiagnostics(input: AuthorDiagnosticsInput): AuthorD
       coordinates: [],
       nodeId: '',
       recommendedAction: 'Inspect the failed trace and rerun the same Scenario.',
+      deepLink: '',
+      requiredRole: '',
+      owner: '',
+      auditRequirement: '',
+      expiresAt: '',
       occurrenceCount: 1,
     });
   });
@@ -160,6 +180,11 @@ export function projectAuthorDiagnostics(input: AuthorDiagnosticsInput): AuthorD
         coordinates: [result.id],
         nodeId: '',
         recommendedAction: 'Open Test and compare expected with actual output.',
+        deepLink: '',
+        requiredRole: '',
+        owner: '',
+        auditRequirement: '',
+        expiresAt: '',
         occurrenceCount: 1,
       });
     });
@@ -176,6 +201,11 @@ export function projectAuthorDiagnostics(input: AuthorDiagnosticsInput): AuthorD
       coordinates: coordinate ? [coordinate] : [],
       nodeId: nodeIdFromCoordinate(coordinate),
       recommendedAction: issue.recommendedAction || '',
+      deepLink: issue.deepLink || '',
+      requiredRole: issue.requiredRole || '',
+      owner: issue.owner || '',
+      auditRequirement: issue.auditRequirement || '',
+      expiresAt: issue.expiresAt || input.governance?.result?.expiresAt || '',
       occurrenceCount: 1,
     });
   });
@@ -197,6 +227,11 @@ export function projectAuthorDiagnostics(input: AuthorDiagnosticsInput): AuthorD
       recommendedAction: conflict.code === 'MULTIPLE_SOURCES'
         ? 'Keep one authoritative source for this target field.'
         : 'Align the bound source type with the declared target type.',
+      deepLink: '',
+      requiredRole: '',
+      owner: '',
+      auditRequirement: '',
+      expiresAt: '',
       occurrenceCount: 1,
     });
   });
@@ -219,6 +254,11 @@ export function projectAuthorDiagnostics(input: AuthorDiagnosticsInput): AuthorD
         coordinates: [],
         nodeId: '',
         recommendedAction: reason.action.label,
+        deepLink: '',
+        requiredRole: '',
+        owner: '',
+        auditRequirement: '',
+        expiresAt: '',
         occurrenceCount: 1,
       });
     });

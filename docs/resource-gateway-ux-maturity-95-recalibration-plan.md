@@ -1,10 +1,10 @@
 # Resource Gateway 体验成熟度 95 分校准与修正计划
 
-> 状态：Proposed for Review
+> 状态：Implementation in Progress（Stage E2 已完成，Stage E3 进行中）
 >
 > 日期：2026-07-31
 >
-> 当前真实任务体验基线：`74 / 100`（E2，真实服务 + 真实浏览器）
+> 当前工程实现自评：`94.5 / 100`（E2，真实服务 + 真实浏览器；正式 95 分仍需 E3）
 >
 > 目标：体验成熟度 `>= 95 / 100`，P0/P1 体验缺陷清零，并取得 E3/E4 使用证据
 >
@@ -683,6 +683,28 @@ expiresAt
 - Rehearsal failure 可以一跳回到 Author exact context；
 - 用户不需要复制 fingerprint 或错误码搜索对象；
 - P0/P1 清零，工程评分达到 95。
+
+### 10.5 Stage E2 实施校准（2026-07-31）
+
+Evidence 已落地统一 `RemediationAction` 投影，字段在原计划基础上增加
+`actionLabel`、`navigation`、`owner`、`available`、`unavailableReason`、`diagnosticId`
+和折叠的技术坐标。新增字段不是第二套状态，而是把协议诊断转换为权限诚实的用户动作：
+
+- `Contract warning`、`Scenario compile`、`Run failure`、`Evidence stale`、
+  `Runtime drift`、`Rehearsal timeout`、`ANEKE gate blocker` 使用同一 source vocabulary；
+- Governance issue 的 `recommendedAction`、`deepLink`、role、owner、审计要求和失效时间
+  不再在 Author diagnostic projection 中丢失；
+- Evidence 首屏顺序已改为 Verdict -> Next actions -> trust dimensions -> findings；
+- fingerprint 和错误坐标默认收进 `Technical coordinates` 或 action 的技术明细；
+- assertion 使用路径级、确定性、有上限的 Expected / Actual / Diff；
+- 没有 governance handoff 时显示 owner、required role 和缺失原因，不渲染假按钮；
+- 390px 下 formal task surface 默认回收 Context rail，用户仍可用 `Topology` 显式打开。
+
+真实浏览器已验证 Loan Prime 成功运行与人为修改 `decision` 后的失败运行。失败时
+`Repair Scenario assertions` 成为第一动作，Diff 准确显示
+`$.decision: "decline" -> "approve"`；成功时探索态首先引导 `Save graph in Compose`。
+Rehearsal attempt timeline 和 one-hop exact Author target 仍属于 E3，不能因为 Evidence 已闭环
+而提前宣称 Stage E 完成。
 
 ## 11. Stage F：E3/E4 验证与发布
 

@@ -2252,10 +2252,19 @@ POST /api/visual/connections/check
 
 1. 先看全局结论：`Promotion blocked`、`Review required`、`Evidence incomplete` 或
    `Ready for promotion`；
-2. 再看 Execution、Assertions、Contract、Governance 四维状态；
-3. blocking finding 与 warning 位于通过证据之前；
-4. 失败断言默认展开 Expected/Actual，并可回到 **Edit assertions**；
-5. 通过断言默认折叠，Terminal output 与 Node status 作为底层明细。
+2. 再看 **Next actions**：每条动作直接说明 root cause、business impact、owner、
+   required role 和可执行入口；
+3. 再看 Execution、Assertions、Contract、Governance 四维状态；
+4. blocking finding 与 warning 位于通过证据之前；
+5. 失败断言默认展开 Expected / Actual / 路径级 Diff，并可直接
+   **Repair Scenario assertions**；
+6. `Technical coordinates` 默认折叠，展开后才显示 fingerprint 和 request coordinate；
+7. 通过断言默认折叠，Terminal output 与 Node status 作为底层明细。
+
+动作遵循权限诚实原则。当前工作区能处理的 Scenario、Contract、Compose 或诊断问题会显示
+按钮并保留 exact draft/scenario/node 坐标；外部治理系统提供 `deepLink` 时显示真实
+handoff。若当前 revision 没有 handoff，页面只显示治理 owner、required role 和缺失原因，
+不会提供一个无法完成的假按钮。
 
 只有四个维度都通过且没有 blocking/warning 时，页面才显示 `Ready for promotion`。
 Assertion 通过但 Contract 或 Governance 尚未检查时只能显示 `Evidence incomplete`；服务端

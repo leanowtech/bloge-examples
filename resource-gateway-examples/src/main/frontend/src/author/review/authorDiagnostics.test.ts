@@ -32,6 +32,11 @@ describe('projectAuthorDiagnostics', () => {
             code: 'OWNER_REQUIRED',
             message: 'Owner approval is missing.',
             targetPath: '/nodes/policy',
+            recommendedAction: 'Request owner approval',
+            deepLink: 'https://governance.example/gates/gate-1',
+            requiredRole: 'Business owner',
+            owner: 'Customer Operations',
+            auditRequirement: 'Retain signed approval.',
           }],
         },
       },
@@ -43,6 +48,11 @@ describe('projectAuthorDiagnostics', () => {
       scope: 'GOVERNANCE',
       nodeId: 'policy',
       coordinate: '/nodes/policy',
+      recommendedAction: 'Request owner approval',
+      deepLink: 'https://governance.example/gates/gate-1',
+      requiredRole: 'Business owner',
+      owner: 'Customer Operations',
+      auditRequirement: 'Retain signed approval.',
     });
   });
 

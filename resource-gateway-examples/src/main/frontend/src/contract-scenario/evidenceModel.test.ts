@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
 import { successfulResponse } from './testFixtures';
-import { scenarioEvidenceView } from './evidenceModel';
+import { scenarioAssertionDiff, scenarioEvidenceView } from './evidenceModel';
 import type { ScenarioComparison } from './scenarioAuthoring';
 
 describe('scenarioEvidenceView', () => {
@@ -126,6 +126,28 @@ describe('scenarioEvidenceView', () => {
       code: 'SCENARIO_FINGERPRINT_CLOSURE_MISMATCH',
       occurrences: 1,
     }));
+  });
+});
+
+describe('scenarioAssertionDiff', () => {
+  it('reports only changed leaf paths in deterministic order', () => {
+    expect(scenarioAssertionDiff(
+      { decision: { approved: true, reason: 'eligible' }, score: 80 },
+      { decision: { approved: false, reason: 'eligible' }, score: 72 },
+      '$',
+    )).toEqual([
+      { path: '$.decision.approved', expected: true, actual: false },
+      { path: '$.score', expected: 80, actual: 72 },
+    ]);
+  });
+
+  it('bounds very large diffs', () => {
+    expect(scenarioAssertionDiff(
+      { a: 1, b: 2, c: 3 },
+      { a: 4, b: 5, c: 6 },
+      '$',
+      2,
+    )).toHaveLength(2);
   });
 });
 
