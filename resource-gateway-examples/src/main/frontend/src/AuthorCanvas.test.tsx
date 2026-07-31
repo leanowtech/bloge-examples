@@ -1904,11 +1904,17 @@ describe('AuthorCanvas built-in canvas examples', () => {
       expect(query('[data-testid="contract-workspace"]').textContent).toContain('Prime approval path'),
     );
     expect(query('[data-testid="contract-workspace"]').textContent)
-      .toContain('3 controlled / 5 total dependencies');
+      .toContain('3 controlled dependencies');
+    expect(query('[data-testid="contract-workspace"]').textContent)
+      .not.toContain('total dependencies');
     expect(query('[data-testid="contract-workspace"]').textContent).toContain('1 assertion');
     expect(query('[data-testid="contract-workspace"]').textContent).toContain('Fetch applicant');
     expect(query('[data-testid="contract-workspace"]').textContent).toContain('Whole result');
-    expect(document.querySelectorAll('[data-testid^="scenario-dependency:"]')).toHaveLength(5);
+    const dependencyCards = Array.from(
+      document.querySelectorAll<HTMLDetailsElement>('[data-testid^="scenario-dependency:"]'),
+    );
+    expect(dependencyCards).toHaveLength(3);
+    expect(dependencyCards.every((card) => !card.open)).toBe(true);
   });
 
   it('focuses one complete business path without hiding its edge coordinates', async () => {

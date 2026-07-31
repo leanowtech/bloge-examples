@@ -156,6 +156,40 @@ export function durationMilliseconds(duration: string | undefined): number {
   return match ? Math.max(1, Math.round(Number(match[1]) * 1000)) : 1000;
 }
 
+/** Drives progressive disclosure: incomplete behavior stays open; complete behavior starts compact. */
+export function dependencyNeedsAttention(dependency: DependencyBehaviorDraft): boolean {
+  const selector = dependency.selector;
+  if (!selector.nodeId
+    && !selector.operatorRef
+    && !selector.resourceRef
+    && !selector.functionRef) {
+    return true;
+  }
+  const behavior = dependency.behavior;
+  if ((behavior.kind === 'RETURN' || behavior.kind === 'DELAY') && behavior.output === undefined) {
+    return true;
+  }
+  if ((behavior.kind === 'DELAY' || behavior.kind === 'TIMEOUT')
+    && !/^PT\d+(?:\.\d+)?S$/i.test(behavior.after ?? '')) {
+    return true;
+  }
+  if (behavior.kind === 'REPLAY' && !behavior.replayRef?.trim()) {
+    return true;
+  }
+  if ((behavior.kind === 'ERROR'
+    || behavior.kind === 'TIMEOUT'
+    || behavior.kind === 'MUST_NOT_CALL')
+    && !behavior.errorCode?.trim()) {
+    return true;
+  }
+  if (dependency.schemaCheck.mode === 'WAIVED'
+    && !dependency.schemaCheck.waiverReason.trim()) {
+    return true;
+  }
+  return dependency.consumption.maxUses > 0
+    && dependency.consumption.maxUses < dependency.consumption.minUses;
+}
+
 /** Reinitializes scope-specific assertion coordinates and operators to valid governed defaults. */
 export function assertionForScope(
   assertion: AssertionDraft,

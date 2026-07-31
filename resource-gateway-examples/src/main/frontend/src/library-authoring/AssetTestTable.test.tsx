@@ -74,8 +74,14 @@ describe('AssetTestTable', () => {
 
     expect(query('[data-testid="library-test-dialog"]').textContent)
       .toContain('SCHEMA CONTRACT');
-    expect(query<HTMLTextAreaElement>('[aria-label="Operator case 1 inputs JSON"]').value)
-      .toContain('"request": "sample"');
+    expect(query<HTMLInputElement>('[aria-label="request"]').value).toBe('sample');
+    expect(host.querySelector('[aria-label="Operator case 1 inputs JSON"]')).toBeNull();
+    expect(query('[data-testid="asset-scenario-workspace"]').textContent)
+      .toContain('Given');
+    expect(query('[data-testid="asset-scenario-workspace"]').textContent)
+      .toContain('Then');
+
+    await changeValue(query<HTMLInputElement>('[aria-label="request"]'), 'edited');
 
     await click(query('[data-testid="library-test-run-all"]'));
     await settle();
@@ -87,7 +93,7 @@ describe('AssetTestTable', () => {
         operatorRef: 'demo:echo',
         cases: [
           expect.objectContaining({
-            inputs: { request: 'sample' },
+            inputs: { request: 'edited' },
             mockedOutputs: { result: 'sample' },
           }),
         ],
@@ -112,6 +118,12 @@ describe('AssetTestTable', () => {
       .toContain('Runner ISOLATED PROCESS');
     expect(query('[data-testid="library-test-dialog"]').textContent)
       .toContain('No exact callable was found');
+    expect(query<HTMLInputElement>('[aria-label="value"]').value).toBe('sample');
+    expect(host.querySelector('[aria-label="Function case 1 arguments JSON"]')).toBeNull();
+    expect(query('[data-testid="asset-scenario-workspace"]').textContent)
+      .toContain('DependenciesRuntime binding');
+    expect(query('[data-testid="asset-scenario-workspace"]').textContent)
+      .toContain('UNBOUND');
 
     await click(query('[data-testid="library-test-run-all"]'));
     await settle();
@@ -138,11 +150,22 @@ describe('AssetTestTable', () => {
     await renderTable('operator', 'demo:echo');
 
     await click(query('[data-testid="operator-fixture-save-0"]'));
-    expect(query('[data-testid="governed-fixture-dialog"]').textContent)
+    expect(query('[data-testid="governed-fixture-panel"]').textContent)
       .toContain('Save as fixture');
+    expect(query('[data-testid="governed-fixture-panel"]').getAttribute('role'))
+      .toBe('complementary');
+    expect(host.querySelectorAll('[role="dialog"]')).toHaveLength(1);
     expect(query<HTMLButtonElement>('[data-testid="governed-fixture-save"]').disabled).toBe(true);
     expect(query<HTMLTextAreaElement>('[aria-label="Fixture redaction paths"]').placeholder)
       .toBe('/inputs/request\n/mockedOutputs/result');
+    expect(query('[data-testid="governed-fixture-preview"]').textContent)
+      .toContain('"request": "sample"');
+    await changeValue(
+      query<HTMLTextAreaElement>('[aria-label="Fixture redaction paths"]'),
+      '/inputs/request',
+    );
+    expect(query('[data-testid="governed-fixture-preview"]').textContent)
+      .toContain('"request": "[REDACTED]"');
 
     await click(query('[data-testid="governed-fixture-confirm"]'));
     expect(query<HTMLButtonElement>('[data-testid="governed-fixture-save"]').disabled).toBe(false);
@@ -203,6 +226,19 @@ async function click(element: Element) {
   });
 }
 
+async function changeValue(
+  element: HTMLInputElement | HTMLTextAreaElement,
+  value: string,
+) {
+  await act(async () => {
+    const prototype = element instanceof HTMLTextAreaElement
+      ? HTMLTextAreaElement.prototype
+      : HTMLInputElement.prototype;
+    Object.getOwnPropertyDescriptor(prototype, 'value')?.set?.call(element, value);
+    element.dispatchEvent(new Event('input', { bubbles: true }));
+  });
+}
+
 async function settle() {
   await act(async () => {
     await Promise.resolve();
@@ -219,8 +255,18 @@ function storedDraft(): VisualLibraryAuthoringDraft {
     document: {
       schemaVersion: 'bloge.visualLibraryAuthoring.v1',
       library: { id: 'test-library' },
-      operators: {},
-      functions: {},
+      operators: {
+        'demo:echo': {
+          input: { request: 'string' },
+          config: { fields: { 'timeoutMs?': 'integer' } },
+          output: { result: 'string' },
+        },
+      },
+      functions: {
+        teamNormalize: {
+          signatures: ['(value: string) -> string'],
+        },
+      },
     },
     fingerprint: `sha256:${'d'.repeat(64)}`,
     createdAt: '2026-07-30T00:00:00Z',

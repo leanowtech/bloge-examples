@@ -131,13 +131,16 @@ Only exact authoritative contracts show `BOUND`; an implementation with no frame
 metadata remains honestly `RUNTIME DISCOVERED`.
 
 To experience exact-draft tests, open **Customer Support Triage**, select
-`support:classify-ticket`, and choose **Open test table**. The generated row checks the
-uncommitted canonical schemas and is labelled `SCHEMA CONTRACT`. Select the `trim` function and
-run its generated boundary row to see a real `BOUND` BLOGE runtime call; custom
+`support:classify-ticket`, and choose **Open test table**. Pick a case on the left and edit its
+schema-generated **Given** inputs and **Then** mocked outputs on the right; Raw JSON is available
+only under **Advanced JSON**. The generated case checks the uncommitted canonical schemas and is
+labelled `SCHEMA CONTRACT`. Select the `trim` function to see signature arguments as named fields
+and run its generated boundary case for a real `BOUND` BLOGE runtime call; custom
 `support.normalizeText` remains visibly `UNBOUND` instead of producing a false pass. These rows
 are ephemeral and fingerprint-bound. In a `test`/`staging` deployment, use **Save fixture** on any
-test row or **Save samples as fixture** after sample analysis. The confirmation panel collects data
-classification, retention, JSON Pointer redaction, and optional prior revision before it binds the
+test case or **Save samples as fixture** after sample analysis. A right-side sheet collects data
+classification, retention, JSON Pointer redaction, optional prior revision, and a redacted payload
+preview without opening a second dialog. It then binds the
 exact draft and asset fingerprints, redacts sensitive fields, encrypts the payload, appends a
 payload-free audit event in the same transaction, and erases ciphertext at retention expiry. The
 success receipt intentionally shows fingerprints and `Payload returned: No`, never the raw test
@@ -4072,7 +4075,8 @@ remain untouched.
    a Canvas node, Operator, Resource, or built-in function target, then choose **Real**, **Return**,
    **Error**, **Delay**, **Timeout**, **Replay**, **Observe**, or **Deny**. Expand **Selector,
    matching & consumption** only for graph path, correlation, attempt/occurrence, matching input,
-   or bounded use.
+   or bounded use. Existing cases list only calls they actually control; omitted nodes run normally,
+   and complete dependency cards start collapsed.
 6. Under **Then**, add graph output, node output, node status, edge transfer, or dependency-use
    assertions. Pick a schema-projected result field; expected values are generated with the
    relevant field type. Use **Custom path** only for schema-external coordinates.

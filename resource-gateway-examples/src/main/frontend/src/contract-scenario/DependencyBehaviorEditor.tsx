@@ -7,6 +7,7 @@ import type {
 import SchemaValueForm from './SchemaValueForm';
 import {
   behaviorForKind,
+  dependencyNeedsAttention,
   dependencySelectorKind,
   durationFromMilliseconds,
   durationMilliseconds,
@@ -32,6 +33,7 @@ interface DependencyBehaviorEditorProps {
   onChange: (dependency: DependencyBehaviorDraft) => void;
   onRemove?: () => void;
   defaultSelectorKind?: DependencySelectorKind;
+  defaultOpen?: boolean;
 }
 
 /** Graphical projection of the complete Scenario dependency behavior protocol. */
@@ -41,6 +43,7 @@ export default function DependencyBehaviorEditor({
   onChange,
   onRemove,
   defaultSelectorKind = 'NODE',
+  defaultOpen = false,
 }: DependencyBehaviorEditorProps) {
   const inferredSelectorKind = dependencySelectorKind(dependency);
   const [selectorKind, setSelectorKind] = useState<DependencySelectorKind>(
@@ -64,6 +67,11 @@ export default function DependencyBehaviorEditor({
   const node = nodes.find((candidate) => candidate.id === dependency.selector.nodeId)
     ?? nodes.find((candidate) => candidate.operatorRef === dependency.selector.operatorRef);
   const behavior = dependency.behavior;
+  const needsAttention = dependencyNeedsAttention(dependency);
+  const [expanded, setExpanded] = useState(defaultOpen || needsAttention);
+  useEffect(() => {
+    if (needsAttention) setExpanded(true);
+  }, [needsAttention]);
   const updateBehavior = (patch: Partial<DependencyBehaviorDraft['behavior']>) => {
     onChange({ ...dependency, behavior: { ...behavior, ...patch } });
   };
@@ -80,27 +88,34 @@ export default function DependencyBehaviorEditor({
   };
 
   return (
-    <article
+    <details
       className="scenario-dependency-card"
       data-testid={`scenario-dependency:${dependency.dependencyId}`}
+      open={expanded}
+      onToggle={(event) => setExpanded(event.currentTarget.open)}
     >
-      <header className="scenario-dependency-heading">
+      <summary className="scenario-dependency-heading">
         <div className="scenario-dependency-identity">
           <strong>{(node?.label ?? selectorValue) || dependency.dependencyId}</strong>
           <code>{(node?.operatorRef ?? selectorValue) || 'unbound selector'}</code>
         </div>
+        <span className={`scenario-dependency-summary-status ${needsAttention ? 'attention' : ''}`}>
+          {needsAttention ? 'Needs input' : behaviorLabel(behavior.kind)}
+        </span>
+      </summary>
+      <div className="scenario-dependency-content">
         {onRemove && (
-          <button
-            type="button"
-            className="icon-button"
-            aria-label={`Remove dependency ${dependency.dependencyId}`}
-            title="Remove dependency"
-            onClick={onRemove}
-          >
-            ×
-          </button>
+          <div className="scenario-dependency-content-actions">
+            <button
+              type="button"
+              className="secondary compact danger"
+              aria-label={`Remove dependency ${dependency.dependencyId}`}
+              onClick={onRemove}
+            >
+              Remove dependency
+            </button>
+          </div>
         )}
-      </header>
       <div className="scenario-dependency-primary">
         <div className="scenario-dependency-target">
           <Field label="Target type">
@@ -435,8 +450,13 @@ export default function DependencyBehaviorEditor({
           )}
         </div>
       </details>
-    </article>
+      </div>
+    </details>
   );
+}
+
+function behaviorLabel(kind: DependencyBehaviorKind): string {
+  return BEHAVIORS.find(([candidate]) => candidate === kind)?.[1] ?? kind;
 }
 
 function Field({ label, children }: { label: string; children: React.ReactNode }) {

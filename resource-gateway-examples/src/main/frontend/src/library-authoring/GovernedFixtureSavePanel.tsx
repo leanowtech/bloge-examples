@@ -28,6 +28,7 @@ export interface GovernedFixtureSaveLaunch {
 }
 
 interface GovernedFixtureSavePanelProps extends GovernedFixtureSaveLaunch {
+  presentation?: 'dialog' | 'sheet';
   onConflict: () => void;
   onClose: () => void;
 }
@@ -40,6 +41,7 @@ export default function GovernedFixtureSavePanel({
   assetRef,
   payload,
   suggestedFixtureId,
+  presentation = 'dialog',
   onConflict,
   onClose,
 }: GovernedFixtureSavePanelProps) {
@@ -57,7 +59,7 @@ export default function GovernedFixtureSavePanel({
   const [error, setError] = useState('');
   const [receipt, setReceipt] = useState<VisualAuthoringFixtureReceipt | null>(null);
   useDialogFocusTrap({
-    open: true,
+    open: presentation === 'dialog',
     dialogRef,
     onDismiss: () => {
       if (!busy) {
@@ -71,6 +73,10 @@ export default function GovernedFixtureSavePanel({
   const redactionPlaceholder = useMemo(
     () => suggestedRedactionPaths(payload).join('\n'),
     [payload],
+  );
+  const payloadPreview = useMemo(
+    () => JSON.stringify(redactedFixturePreview(payload, redaction.paths), null, 2),
+    [payload, redaction.paths],
   );
   const fixtureIdValid = /^[A-Za-z0-9][A-Za-z0-9._:-]{0,159}$/.test(fixtureId.trim());
   const canSave = !busy
@@ -116,15 +122,19 @@ export default function GovernedFixtureSavePanel({
   };
 
   return (
-    <div className="governed-fixture-overlay" role="presentation">
+    <div
+      className={`governed-fixture-overlay ${presentation}`}
+      role="presentation"
+      data-testid={`governed-fixture-${presentation}`}
+    >
       <div
         ref={dialogRef}
-        className="governed-fixture-dialog"
-        role="dialog"
-        aria-modal="true"
+        className={`governed-fixture-dialog ${presentation}`}
+        role={presentation === 'dialog' ? 'dialog' : 'complementary'}
+        aria-modal={presentation === 'dialog' ? 'true' : undefined}
         aria-labelledby="governed-fixture-title"
         tabIndex={-1}
-        data-testid="governed-fixture-dialog"
+        data-testid="governed-fixture-panel"
       >
         <header className="governed-fixture-heading">
           <div>
@@ -228,6 +238,16 @@ export default function GovernedFixtureSavePanel({
               ) : (
                 <p>Sensitive key names are also redacted automatically before encryption.</p>
               )}
+            </section>
+
+            <section className="governed-fixture-preview">
+              <header>
+                <div>
+                  <h3>Payload preview</h3>
+                  <span>Automatic and explicit redaction applied</span>
+                </div>
+              </header>
+              <pre data-testid="governed-fixture-preview">{payloadPreview}</pre>
             </section>
 
             <details className="governed-fixture-advanced">
@@ -411,4 +431,38 @@ function shortFingerprint(fingerprint: string): string {
 function formatTimestamp(value: string): string {
   const timestamp = Date.parse(value);
   return Number.isNaN(timestamp) ? value : new Date(timestamp).toLocaleString();
+}
+
+/** Produces a display-only fixture preview without mutating or returning raw sensitive values. */
+export function redactedFixturePreview(
+  payload: unknown,
+  explicitPaths: string[],
+): unknown {
+  const pointers = new Set(explicitPaths);
+  const visit = (value: unknown, pointer: string, key: string): unknown => {
+    if (pointers.has(pointer) || sensitiveKey(key)) {
+      return '[REDACTED]';
+    }
+    if (Array.isArray(value)) {
+      return value.map((entry, index) => visit(entry, `${pointer}/${index}`, String(index)));
+    }
+    if (value !== null && typeof value === 'object') {
+      return Object.fromEntries(Object.entries(value as Record<string, unknown>).map(
+        ([childKey, childValue]) => [
+          childKey,
+          visit(
+            childValue,
+            `${pointer}/${escapeJsonPointer(childKey)}`,
+            childKey,
+          ),
+        ],
+      ));
+    }
+    return value;
+  };
+  return visit(payload, '', '');
+}
+
+function sensitiveKey(value: string): boolean {
+  return /(?:password|passwd|secret|token|credential|api[_-]?key|authorization)/i.test(value);
 }

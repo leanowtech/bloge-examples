@@ -54,6 +54,37 @@ interface SchemaValueControlProps {
 }
 
 function SchemaValueControl(props: SchemaValueControlProps): ReactNode {
+  const nullable = nullableSchema(props.schema);
+  if (nullable) {
+    return (
+      <fieldset className="schema-value-nullable">
+        <legend>{schemaTitle(props.schema, props.label)}</legend>
+        <label className="schema-null-toggle">
+          <input
+            type="checkbox"
+            aria-label={`${props.path} is null`}
+            checked={props.value === null}
+            onChange={(event) => props.onChange(
+              event.target.checked ? null : sampleForSchema(nullable),
+            )}
+          />
+          <span>Use null</span>
+        </label>
+        {props.value !== null && (
+          <SchemaValueControl
+            {...props}
+            schema={nullable}
+          />
+        )}
+      </fieldset>
+    );
+  }
+
+  const union = unionBranches(props.schema);
+  if (union.length > 1) {
+    return <UnionValueControl {...props} branches={union} />;
+  }
+
   const schema = normalizeSchema(props.schema);
   const type = schemaType(schema);
   const description = typeof schema.description === 'string' ? schema.description : '';
@@ -237,6 +268,43 @@ function SchemaValueControl(props: SchemaValueControlProps): ReactNode {
   return <JsonFallback {...props} schema={schema} title={title} description={description} />;
 }
 
+function UnionValueControl({
+  branches,
+  ...props
+}: SchemaValueControlProps & { branches: Record<string, unknown>[] }) {
+  const activeIndex = activeUnionBranch(branches, props.value);
+  const active = branches[activeIndex] ?? branches[0];
+  const title = schemaTitle(props.schema, props.label);
+  return (
+    <fieldset className="schema-value-union">
+      <legend>{title}</legend>
+      <label className="schema-union-selector">
+        <span>Value shape</span>
+        <select
+          aria-label={`${props.path} variant`}
+          value={activeIndex}
+          onChange={(event) => {
+            const branch = branches[Number(event.target.value)] ?? branches[0];
+            props.onChange(sampleForSchema(branch));
+          }}
+        >
+          {branches.map((branch, index) => (
+            <option key={`${branchLabel(branch, index)}:${index}`} value={index}>
+              {branchLabel(branch, index)}
+            </option>
+          ))}
+        </select>
+      </label>
+      {schemaType(normalizeSchema(active)) !== 'null' && (
+        <SchemaValueControl
+          {...props}
+          schema={active}
+        />
+      )}
+    </fieldset>
+  );
+}
+
 function FieldLabel({
   title,
   required,
@@ -294,6 +362,10 @@ function JsonFallback({
 }
 
 function sampleForSchema(rawSchema: Record<string, unknown>): unknown {
+  const branches = unionBranches(rawSchema);
+  if (branches.length > 0) {
+    return sampleForSchema(branches[0]);
+  }
   const schema = normalizeSchema(rawSchema);
   if (schema.default !== undefined) {
     return schema.default;
@@ -323,6 +395,72 @@ function sampleForSchema(rawSchema: Record<string, unknown>): unknown {
     default:
       return {};
   }
+}
+
+function unionBranches(schema: Record<string, unknown>): Record<string, unknown>[] {
+  const explicit = Array.isArray(schema.oneOf)
+    ? schema.oneOf.filter(isRecord)
+    : Array.isArray(schema.anyOf)
+      ? schema.anyOf.filter(isRecord)
+      : [];
+  if (explicit.length > 1) {
+    return explicit;
+  }
+  return Array.isArray(schema.type) && schema.type.length > 1
+    ? schema.type
+      .filter((entry): entry is string => typeof entry === 'string')
+      .map((type) => ({ ...schema, type, oneOf: undefined, anyOf: undefined }))
+    : [];
+}
+
+function nullableSchema(schema: Record<string, unknown>): Record<string, unknown> | null {
+  if (!Array.isArray(schema.type) || !schema.type.includes('null')) {
+    return null;
+  }
+  const concrete = schema.type.filter(
+    (entry): entry is string => typeof entry === 'string' && entry !== 'null',
+  );
+  if (concrete.length !== 1) {
+    return null;
+  }
+  return { ...schema, type: concrete[0] };
+}
+
+function activeUnionBranch(
+  branches: Record<string, unknown>[],
+  value: unknown,
+): number {
+  const exact = branches.findIndex((branch) => valueMatchesSchema(value, branch));
+  return exact >= 0 ? exact : 0;
+}
+
+function valueMatchesSchema(value: unknown, rawSchema: Record<string, unknown>): boolean {
+  const schema = normalizeSchema(rawSchema);
+  const type = schemaType(schema);
+  if (type === 'null') return value === null;
+  if (type === 'array') return Array.isArray(value);
+  if (type === 'object') {
+    if (!isRecord(value)) return false;
+    const required = stringArray(schema.required);
+    return required.every((name) => Object.prototype.hasOwnProperty.call(value, name));
+  }
+  if (type === 'integer') return typeof value === 'number' && Number.isInteger(value);
+  if (type === 'number') return typeof value === 'number';
+  return typeof value === type;
+}
+
+function branchLabel(schema: Record<string, unknown>, index: number): string {
+  if (typeof schema.title === 'string' && schema.title.trim()) {
+    return schema.title;
+  }
+  const type = schemaType(normalizeSchema(schema));
+  return type === 'unknown' ? `Variant ${index + 1}` : type;
+}
+
+function schemaTitle(schema: Record<string, unknown>, fallback: string): string {
+  return typeof schema.title === 'string' && schema.title.trim()
+    ? schema.title
+    : fallback;
 }
 
 function enumValue(value: unknown): string {

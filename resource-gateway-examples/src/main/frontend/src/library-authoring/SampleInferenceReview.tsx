@@ -525,6 +525,7 @@ export default function SampleInferenceReview({
         {fixtureLaunch && (
           <GovernedFixtureSavePanel
             {...fixtureLaunch}
+            presentation="sheet"
             onConflict={onConflict}
             onClose={() => setFixtureLaunch(null)}
           />

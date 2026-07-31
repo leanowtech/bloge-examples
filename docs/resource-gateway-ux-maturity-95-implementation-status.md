@@ -4,7 +4,7 @@
 >
 > 基准计划：[Resource Gateway 体验成熟度 95 分校准与修正计划](resource-gateway-ux-maturity-95-recalibration-plan.md)
 >
-> 当前实施轮次：Stage C / 统一 Scenario 与测试创作
+> 当前实施轮次：Stage D / 复杂图感知可读性
 >
 > 评分纪律：代码完成只能获得 E1；真实服务和浏览器验证后最多获得 E2。没有 E3 目标用户
 > 证据时，不宣称体验成熟度达到 95 分。
@@ -16,14 +16,13 @@
 | 基线 | 74 | 已确认 | 2026-07-31 真实浏览器复评 |
 | Stage A：可信度止血 | 80 | 已完成 | A01–A07、三条浏览器纵切与完整回归，E2 |
 | Stage B：唯一中央工作面 | 85 | 已完成 | B01–B08、真实浏览器断点矩阵，E2 |
-| Stage C：统一 Scenario | 90 | 进行中 | 现有 Schema form、测试资产与 Fixture 差距审计，E0 |
-| Stage D：复杂图可读 | 93 | 未开始 | 无 |
+| Stage C：统一 Scenario | 90 | 已完成 | C01–C08、392 条前端回归与三条浏览器纵切，E2 |
+| Stage D：复杂图可读 | 93 | 进行中 | 现有 semantic zoom / Focus Path / layout quality 差距审计，E0 |
 | Stage E：生命周期闭环 | 95 工程就绪 | 未开始 | 无 |
 | Stage F：E3/E4 | 95–100 | 未开始 | 无 |
 
-Stage B 的工程目标分 `85` 已达到 E2，但这不等于整体体验成熟度达到 95。当前最主要的
-10 分差距来自 Operator/Function 测试仍使用横向 Raw JSON 表格、Fixture 仍表现为第二层
-dialog、复杂图感知可读性不足，以及资产恢复与诊断修复闭环缺失。
+Stage C 的工程目标分 `90` 已达到 E2，但这不等于整体体验成熟度达到 95。当前剩余
+5 分主要来自复杂图的感知可读性、100 节点结构导航、资产恢复与诊断修复闭环。
 
 ## 2. Round A1：Canonical Scenario Run
 
@@ -289,16 +288,92 @@ scroll body、footer 和 Diagnostics 几何，便于以后直接定位响应式�
 
 因此 Stage B 目标分 `85` 在 E2 层成立。
 
-## 5. 当前差距与 Stage C 开工点
+## 5. Stage C：统一 Scenario 与测试创作
 
-工作面位置模型已经收敛，但 Graph 与 Library asset 的测试创作仍不是同一种产品语言：
+### 5.1 已实现
 
-1. Graph Scenario 使用 schema-driven Given / Dependencies / Then；
-2. Operator test table 仍直接编辑 Inputs / Config / Mocked outputs JSON；
-3. Function test table 仍直接编辑 Arguments / Expected JSON；
-4. Fixture Save 仍在测试 dialog 内挂载第二个 dialog；
-5. `SchemaValueForm` 已可用，但尚未成为 Graph、Operator、Function 共享的深模块；
-6. legacy suite 可以读取，却没有明确的 canonical 单写和迁移诊断呈现。
+| 计划项 | 实现 |
+|---|---|
+| UX95R-C01 | `SchemaValueEditor` 作为 Graph、Operator、Function 共享值编辑入口；visual-first，Advanced JSON 显式折叠 |
+| UX95R-C02 | Operator / Function 横向 Raw JSON 表替换为左侧 case list + 右侧 selected case editor |
+| UX95R-C03 | `controllableDependencies` 只投影 fixture 控制的调用；Real 节点继续留在执行计划和证据 |
+| UX95R-C04 | Return / Error / Delay / Timeout / Replay / Observe / Deny 保留完整预设，新增依赖默认 Return |
+| UX95R-C05 | Graph Then 继续支持 output path、schema、node status、edge transfer 和 invocation assertion |
+| UX95R-C06 | Advanced JSON 保留最后一个合法 canonical value，错误 JSON 不污染运行请求 |
+| UX95R-C07 | Fixture Save 在测试 dialog 内改为 complementary side sheet，加入脱敏后 payload preview |
+| UX95R-C08 | 现有 Operator / Function suite 仍按原 wire protocol 读取和运行，具名表单通过无损 adapter 回写 |
 
-Stage C 将先建立共享 `SchemaValueEditor` 与 case list + editor 纵切，再把 Fixture 改为右侧
-sheet，并以现有 wire contract 为输入、canonical Scenario 为唯一新写入模型。
+Function 参数不再要求用户记住数组位置。`functionSignatureSchema` 把
+`(text: string, fallback?: string) -> string` 投影为具名字段，运行前再按声明顺序恢复
+wire `args[]`。Operator 的 input、config、mocked output 同理由 Library compact type 与
+具名类型投影成 JSON Schema。
+
+### 5.2 渐进披露与运行边界
+
+```text
+visible Schema form
+  -> canonical case value
+  -> existing versioned test-suite wire adapter
+  -> exact-draft run
+  -> signed evidence coordinate
+```
+
+- 5 节点图只有 3 个 fixture 时，Scenario 只显示 3 张 controlled dependency 卡；
+- 完整依赖默认折叠为 identity + behavior，缺 selector、Replay ref、Return output、
+  duration、error code 或 waiver reason 时自动展开；
+- `+ Dependency` 创建可立即编辑的 Return override，而不是制造一张无意义的 Real 卡；
+- 未出现在 Scenario 中的节点照常真实执行，其 node/edge trace 不从 Evidence 消失；
+- Fixture sheet 不创建第二个 modal，也不接管父测试工作区的业务坐标；
+- preview 自动遮盖 password、secret、token、credential、API key 等敏感键，并应用用户
+  输入的 JSON Pointer 路径。
+
+### 5.3 自动化与 E2 证据
+
+完整前端回归：
+
+```bash
+cd resource-gateway-examples/src/main/frontend
+npm test
+```
+
+结果：`46` 个测试文件、`392` 条测试全部通过。生产构建的 TypeScript 与 Vite build
+通过。新增 golden 覆盖 object、array、enum、nullable、union、named function args、
+5 节点受控依赖投影、完整/缺失依赖展开策略、side sheet 语义和脱敏 preview。
+
+真实 Spring Boot 服务与浏览器纵切：
+
+| 目标 | 可见结果 |
+|---|---|
+| Operator | `support:classify-ticket` 显示一列 case list；Given 和 Then 是嵌套具名字段，无默认 Raw JSON |
+| Function | `support.normalizeText` 的 `text` 参数按签名显示；Then 明确区分 Equals、Return schema、Error |
+| Fixture | 父级仍只有一个 dialog；右侧 sheet 显示 classification、retention、redaction 和 preview |
+| Graph | Loan Prime 场景显示 `3 controlled dependencies`，三张完整 Return 卡默认折叠 |
+
+### 5.4 Stage C 退出审计
+
+| 退出门槛 | 结果 | 证据等级 |
+|---|---|---|
+| 默认测试路径不出现 Raw JSON | 通过 | E1 + E2 |
+| 从 Schema 创建 meaningful case | 通过 | E1 + E2 |
+| Graph / Operator / Function 使用 Given / Dependencies / Then | 通过 | E2 |
+| Dependency 卡不超过 controlled dependency | 通过 | E1 + E2 |
+| 完整 Dependency 默认折叠、缺失项展开 | 通过 | E1 + E2 |
+| Fixture 不出现 dialog in dialog | 通过 | E1 + E2 |
+| 旧 suite 无损读取，现有 wire 兼容 | 通过 | E1 |
+| object / array / enum / nullable / union parity | 通过 | E1 golden |
+
+因此 Stage C 目标分 `90` 在 E2 层成立。
+
+## 6. 当前差距与 Stage D 开工点
+
+测试创作语言已经收敛，下一轮差距集中在复杂图的“几何正确但感知不可读”：
+
+1. quality report 仍主要报告碰撞与间距，缺少有效字号、标签数量和屏幕密度；
+2. semantic zoom 已有三档，但侧栏策略仍主要依赖 CSS breakpoint；
+3. edge label 只做逐条避让，尚无同源/同目标字段 bundle；
+4. 25/100 节点图缺少 group / lane 级 overview；
+5. Focus Path 有闭包语义，但没有明确的可见标签预算；
+6. 浏览器门禁尚未把感知报告作为失败诊断。
+
+Stage D 将以现有 Auto Layout、semantic zoom、Focus Path 和 Map 为基础补齐感知质量协议，
+不再通过继续拉大节点间距来掩盖信息密度问题。

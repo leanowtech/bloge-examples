@@ -6,6 +6,7 @@ import {
   assertionPathOptions,
   behaviorForKind,
   captureScenarioEditorSnapshot,
+  dependencyNeedsAttention,
   durationFromMilliseconds,
   selectDependencyTarget,
 } from './scenarioEditorModel';
@@ -39,8 +40,48 @@ describe('Scenario graphical editor model', () => {
     expect(durationFromMilliseconds(250)).toBe('PT0.25S');
   });
 
+  it('opens only incomplete dependency behaviors for remediation', () => {
+    const complete = {
+      dependencyId: 'score-behavior',
+      selector: {
+        graphPath: '',
+        nodeId: 'score',
+        operatorRef: '',
+        resourceRef: '',
+        functionRef: '',
+        attempts: [],
+        occurrences: [],
+        correlationKey: '',
+        pathEquals: {},
+      },
+      behavior: behaviorForKind('RETURN', nodes()[0]),
+      consumption: {
+        required: true,
+        minUses: 1,
+        maxUses: 1,
+        onExhausted: 'FAIL' as const,
+        onUnmatched: 'FAIL' as const,
+      },
+      schemaCheck: { mode: 'STRICT' as const, waiverReason: '' },
+      origin: 'TEST',
+    };
+
+    expect(dependencyNeedsAttention(complete)).toBe(false);
+    expect(dependencyNeedsAttention({
+      ...complete,
+      behavior: behaviorForKind('REPLAY', nodes()[0]),
+    })).toBe(true);
+    expect(dependencyNeedsAttention({
+      ...complete,
+      schemaCheck: { mode: 'WAIVED', waiverReason: '' },
+    })).toBe(true);
+  });
+
   it('switches selector kinds without leaving an ambiguous competing coordinate', () => {
-    const draft = graphDraft();
+    const draft = {
+      ...graphDraft(),
+      nodeFixtures: { score: { output: { score: 0 } } },
+    };
     const contract = contractDraftFromGraphDraft(draft, fingerprint('a'));
     const dependency = scenarioDraftSetFromCanvas(
       contract.target,
@@ -61,7 +102,10 @@ describe('Scenario graphical editor model', () => {
   });
 
   it('normalizes each assertion scope to a valid graphical starting point', () => {
-    const draft = graphDraft();
+    const draft = {
+      ...graphDraft(),
+      nodeFixtures: { score: { output: { score: 0 } } },
+    };
     const contract = contractDraftFromGraphDraft(draft, fingerprint('a'));
     const dependencies = scenarioDraftSetFromCanvas(
       contract.target,

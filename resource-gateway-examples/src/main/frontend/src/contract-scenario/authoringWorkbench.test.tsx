@@ -93,7 +93,7 @@ describe('Contract Scenario authoring workbench', () => {
     expect(draftSet.scenarios).toHaveLength(1);
     expect(draftSet.scenarios[0].given.input).toMatchObject({ applicantId: 'A-1' });
     expect(draftSet.scenarios[0].dependencies.map((entry) => entry.behavior.kind))
-      .toEqual(['RETURN', 'REAL']);
+      .toEqual(['RETURN']);
     expect(draftSet.scenarios[0].then.assertions[0].expected)
       .toEqual({ decision: { approved: true, reason: 'eligible' } });
   });

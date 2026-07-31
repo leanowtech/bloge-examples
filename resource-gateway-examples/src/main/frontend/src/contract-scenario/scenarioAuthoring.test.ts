@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 
 import type { GraphDraft } from '../types';
 import {
+  newScenarioDraft,
   scenarioDraftSetFromOperatorTableCases,
   type ScenarioNodeOption,
 } from './scenarioAuthoring';
@@ -90,6 +91,29 @@ describe('operator table Scenario adapter', () => {
         }],
       },
     });
+  });
+
+  it('projects only controlled fixtures instead of one card for every graph node', () => {
+    const fiveNodes = Array.from({ length: 5 }, (_, index): ScenarioNodeOption => ({
+      id: `node-${index + 1}`,
+      label: `Node ${index + 1}`,
+      operatorRef: `demo:node-${index + 1}`,
+    }));
+    const draft = {
+      ...graphDraft,
+      nodeFixtures: {
+        'node-2': { output: { value: 2 } },
+        'node-5': { output: { value: 5 } },
+      },
+    };
+
+    const scenario = newScenarioDraft(1, draft, fiveNodes);
+
+    expect(scenario.dependencies).toHaveLength(2);
+    expect(scenario.dependencies.map((dependency) => dependency.selector.nodeId))
+      .toEqual(['node-2', 'node-5']);
+    expect(scenario.dependencies.every((dependency) => dependency.behavior.kind === 'RETURN'))
+      .toBe(true);
   });
 
   it('preserves unprojectable rows as Advanced provenance instead of inventing a passing case', () => {

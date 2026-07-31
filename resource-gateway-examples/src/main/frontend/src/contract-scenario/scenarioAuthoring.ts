@@ -192,7 +192,7 @@ export function newScenarioDraft(
       input: sampleObject(graphDraft.inputSchema),
       provenance: 'GENERATED',
     },
-    dependencies: nodes.map((node) => dependencyForNode(node, graphDraft.nodeFixtures?.[node.id])),
+    dependencies: controllableDependencies(nodes, graphDraft.nodeFixtures ?? {}),
     then: {
       assertions: [],
     },
@@ -247,13 +247,24 @@ function scenarioFromTableCase(
       input: { ...testCase.context },
       provenance: 'MIGRATED',
     },
-    dependencies: nodes.map((node) => dependencyForNode(node, fixtures[node.id])),
+    dependencies: controllableDependencies(nodes, fixtures),
     then: {
       assertions: testCase.hasExpectedOutput
         ? [outputAssertion(`${testCase.id}-output`, '', testCase.expectedOutput)]
         : [],
     },
   };
+}
+
+/** Keeps Scenario authoring focused on dependencies whose runtime behavior is actually controlled. */
+export function controllableDependencies(
+  nodes: ScenarioNodeOption[],
+  fixtures: Record<string, NodeFixture>,
+): DependencyBehaviorDraft[] {
+  return nodes.flatMap((node) => {
+    const fixture = fixtures[node.id];
+    return fixture ? [dependencyForNode(node, fixture)] : [];
+  });
 }
 
 function dependencyForNode(

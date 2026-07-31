@@ -36,7 +36,11 @@ import {
   compileScenarioEditorSnapshotForSimulation,
   type ScenarioCompilationProof,
 } from './scenarioCompiler';
-import { captureScenarioEditorSnapshot } from './scenarioEditorModel';
+import {
+  behaviorForKind,
+  captureScenarioEditorSnapshot,
+  dependencyNeedsAttention,
+} from './scenarioEditorModel';
 import SchemaFieldTree from './SchemaFieldTree';
 import SchemaValueForm from './SchemaValueForm';
 import {
@@ -1014,9 +1018,7 @@ function ScenarioTab({
             <strong>{scenario.name}</strong>
             <small>
               {scenario.dependencies.filter((entry) => entry.behavior.kind !== 'REAL').length}
-              {' controlled / '}
-              {scenario.dependencies.length}
-              {' total dependencies'}
+              {' controlled dependencies'}
             </small>
           </button>
         ))}
@@ -1077,7 +1079,10 @@ function ScenarioTab({
             <section className="scenario-stage">
               <div className="scenario-stage-title">
                 <span>2</span>
-                <div><strong>Dependencies</strong><small>Choose real calls or deterministic returns</small></div>
+                <div>
+                  <strong>Dependencies</strong>
+                  <small>Override controlled calls; omitted nodes run normally</small>
+                </div>
                 <button
                   type="button"
                   className="secondary compact"
@@ -1100,6 +1105,7 @@ function ScenarioTab({
                       nodes={nodes}
                       key={dependency.dependencyId}
                       defaultSelectorKind={contract.target.kind === 'OPERATOR' ? 'OPERATOR' : 'NODE'}
+                      defaultOpen={dependencyNeedsAttention(dependency)}
                       onChange={(next) => onUpdateScenario((scenario) => ({
                         ...scenario,
                         dependencies: scenario.dependencies.map((entry, candidate) => (
@@ -1664,7 +1670,7 @@ function newDependency(
       correlationKey: '',
       pathEquals: {},
     },
-    behavior: { kind: 'REAL', boundary: 'NODE' },
+    behavior: behaviorForKind('RETURN', nodes[0]),
     consumption: {
       required: true,
       minUses: 1,

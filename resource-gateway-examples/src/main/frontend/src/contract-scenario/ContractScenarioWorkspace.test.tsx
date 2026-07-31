@@ -144,11 +144,17 @@ describe('ContractScenarioWorkspace', () => {
     expect(latest.scenarios[0].given.input.applicantId).toBe('A-42');
   });
 
-  it('states controlled and total dependency counts with one unambiguous denominator', async () => {
+  it('states only controlled dependencies and collapses complete cards by default', async () => {
     await renderWorkspace();
     await clickTab('Scenarios 1');
 
-    expect(text()).toContain('2 controlled / 2 total dependencies');
+    expect(text()).toContain('2 controlled dependencies');
+    expect(text()).not.toContain('total dependencies');
+    const cards = Array.from(
+      document.querySelectorAll<HTMLDetailsElement>('.scenario-dependency-card'),
+    );
+    expect(cards).toHaveLength(2);
+    expect(cards.every((card) => !card.open)).toBe(true);
   });
 
   it('can open directly on Run Evidence for a result-review task', async () => {

@@ -69,12 +69,16 @@ describe('Scenario graphical editors', () => {
       resourceRef: '',
       functionRef: 'money.round',
     });
-    expect(document.querySelector('details')?.open).toBe(false);
+    expect(document.querySelector<HTMLDetailsElement>('.scenario-dependency-advanced')?.open)
+      .toBe(false);
   });
 
   it('switches node, edge, and invocation assertions with valid scope coordinates', async () => {
     const changes = vi.fn();
-    const draft = graphDraft();
+    const draft = {
+      ...graphDraft(),
+      nodeFixtures: { score: { output: { score: 0 } } },
+    };
     const contract = contractDraftFromGraphDraft(draft, fingerprint('a'));
     const dependencies = scenarioDraftSetFromCanvas(
       contract.target,
@@ -160,7 +164,10 @@ describe('Scenario graphical editors', () => {
 });
 
 function initialDependency(): DependencyBehaviorDraft {
-  const draft = graphDraft();
+  const draft = {
+    ...graphDraft(),
+    nodeFixtures: { score: { output: { score: 0 } } },
+  };
   const contract = contractDraftFromGraphDraft(draft, fingerprint('a'));
   return scenarioDraftSetFromCanvas(
     contract.target,

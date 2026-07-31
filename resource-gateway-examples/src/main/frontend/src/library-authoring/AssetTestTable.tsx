@@ -15,6 +15,15 @@ import {
   runLibraryAuthoringOperatorTest,
 } from '../api';
 import useDialogFocusTrap from '../author/accessibility/useDialogFocusTrap';
+import SchemaValueEditor from '../author/shared/SchemaValueEditor';
+import {
+  functionArgsArray,
+  functionArgsObject,
+  functionSignatureSchema,
+  operatorConfigSchema,
+  operatorInputSchema,
+  operatorOutputSchema,
+} from '../author/shared/libraryAssetSchema';
 import type {
   VisualAuthoringFunctionTestDraft,
   VisualAuthoringFunctionTestRunEvidence,
@@ -27,6 +36,7 @@ import type {
   VisualFunctionTestKind,
   VisualFunctionTestSuite,
   VisualLibraryAuthoringDraft,
+  VisualLibraryAuthoringDocument,
   VisualOperatorContractTestCase,
   VisualOperatorContractTestSuite,
 } from '../types';
@@ -49,18 +59,18 @@ interface AssetTestTableProps extends AssetTestLaunch {
 type OperatorEditor = {
   source: VisualOperatorContractTestCase;
   name: string;
-  inputs: string;
-  config: string;
-  outputs: string;
+  inputs: Record<string, unknown>;
+  config: Record<string, unknown>;
+  outputs: Record<string, unknown>;
 };
 
 type FunctionEditor = {
   source: VisualFunctionTestCase;
   id: string;
   kind: VisualFunctionTestKind;
-  args: string;
+  args: unknown[];
   assertion: VisualFunctionTestAssertion;
-  expected: string;
+  expected: unknown;
   errorCode: string;
 };
 
@@ -78,6 +88,7 @@ export default function AssetTestTable({
   const [functionDraft, setFunctionDraft] = useState<VisualAuthoringFunctionTestDraft | null>(null);
   const [operatorRows, setOperatorRows] = useState<OperatorEditor[]>([]);
   const [functionRows, setFunctionRows] = useState<FunctionEditor[]>([]);
+  const [selectedCaseIndex, setSelectedCaseIndex] = useState(0);
   const [operatorResults, setOperatorResults] = useState<Record<number, {
     passed: boolean;
     message: string;
@@ -119,6 +130,7 @@ export default function AssetTestTable({
             setExactDraft(draft);
             setOperatorDraft(generated);
             setOperatorRows(generated.suite.cases.map(operatorEditor));
+            setSelectedCaseIndex(0);
           }
         } else {
           const generated = await draftLibraryAuthoringFunctionTest(
@@ -130,6 +142,7 @@ export default function AssetTestTable({
             setExactDraft(draft);
             setFunctionDraft(generated);
             setFunctionRows(generated.suite.cases.map(functionEditor));
+            setSelectedCaseIndex(0);
           }
         }
       })
@@ -358,8 +371,12 @@ export default function AssetTestTable({
             <OperatorTable
               rows={operatorRows}
               results={operatorResults}
+              document={exactDraft?.document ?? emptyAuthoringDocument()}
+              assetRef={assetRef}
+              selectedIndex={selectedCaseIndex}
               busy={busy}
               fixtureAvailable={fixtureAvailable}
+              onSelect={setSelectedCaseIndex}
               onRowsChange={(rows) => {
                 setOperatorRows(rows);
                 setOperatorResults({});
@@ -374,8 +391,14 @@ export default function AssetTestTable({
             <FunctionTable
               rows={functionRows}
               results={functionResults}
+              document={exactDraft?.document ?? emptyAuthoringDocument()}
+              assetRef={assetRef}
+              selectedIndex={selectedCaseIndex}
+              bindingStatus={functionDraft?.bindingStatus ?? 'UNBOUND'}
+              executionProfile={functionDraft?.executionProfile ?? ''}
               busy={busy}
               fixtureAvailable={fixtureAvailable}
+              onSelect={setSelectedCaseIndex}
               onRowsChange={(rows) => {
                 setFunctionRows(rows);
                 setFunctionResults({});
@@ -396,8 +419,10 @@ export default function AssetTestTable({
             onClick={() => {
               if (kind === 'operator') {
                 setOperatorRows([...operatorRows, newOperatorRow(operatorRows.length)]);
+                setSelectedCaseIndex(operatorRows.length);
               } else {
                 setFunctionRows([...functionRows, newFunctionRow(functionRows.length)]);
+                setSelectedCaseIndex(functionRows.length);
               }
             }}
             disabled={busy}
@@ -429,6 +454,7 @@ export default function AssetTestTable({
         {fixtureLaunch && (
           <GovernedFixtureSavePanel
             {...fixtureLaunch}
+            presentation="sheet"
             onConflict={onConflict}
             onClose={() => setFixtureLaunch(null)}
           />
@@ -441,16 +467,24 @@ export default function AssetTestTable({
 function OperatorTable({
   rows,
   results,
+  document,
+  assetRef,
+  selectedIndex,
   busy,
   fixtureAvailable,
+  onSelect,
   onRowsChange,
   onRun,
   onSaveFixture,
 }: {
   rows: OperatorEditor[];
   results: Record<number, { passed: boolean; message: string }>;
+  document: VisualLibraryAuthoringDocument;
+  assetRef: string;
+  selectedIndex: number;
   busy: boolean;
   fixtureAvailable: boolean;
+  onSelect: (index: number) => void;
   onRowsChange: (rows: OperatorEditor[]) => void;
   onRun: (index: number) => void;
   onSaveFixture: (index: number) => void;
@@ -458,107 +492,139 @@ function OperatorTable({
   const patch = (index: number, value: Partial<OperatorEditor>) => onRowsChange(
     rows.map((row, rowIndex) => rowIndex === index ? { ...row, ...value } : row),
   );
+  const row = rows[selectedIndex];
+  if (!row) {
+    return <EmptyCaseWorkspace />;
+  }
   return (
-    <table className="library-test-table operator">
-      <thead>
-        <tr>
-          <th>Case</th>
-          <th>Inputs</th>
-          <th>Config</th>
-          <th>Mocked outputs</th>
-          <th>Result</th>
-          <th aria-label="Actions" />
-        </tr>
-      </thead>
-      <tbody>
+    <div className="asset-scenario-workspace" data-testid="asset-scenario-workspace">
+      <nav className="asset-scenario-cases" aria-label="Operator test cases">
+        <header>
+          <span>Test cases</span>
+          <strong>{rows.length}</strong>
+        </header>
         {rows.map((row, index) => (
-          <tr key={`${index}:${row.source.name}`}>
-            <td>
-              <input
-                aria-label={`Operator case ${index + 1} name`}
-                value={row.name}
-                onChange={(event) => patch(index, { name: event.target.value })}
-              />
-            </td>
-            <td>
-              <textarea
-                aria-label={`Operator case ${index + 1} inputs JSON`}
-                value={row.inputs}
-                onChange={(event) => patch(index, { inputs: event.target.value })}
-                spellCheck={false}
-              />
-            </td>
-            <td>
-              <textarea
-                aria-label={`Operator case ${index + 1} config JSON`}
-                value={row.config}
-                onChange={(event) => patch(index, { config: event.target.value })}
-                spellCheck={false}
-              />
-            </td>
-            <td>
-              <textarea
-                aria-label={`Operator case ${index + 1} outputs JSON`}
-                value={row.outputs}
-                onChange={(event) => patch(index, { outputs: event.target.value })}
-                spellCheck={false}
-              />
-            </td>
-            <td><TestResult result={results[index]} successLabel="Schema valid" /></td>
-            <td>
-              <div className="library-test-row-actions">
-                <button
-                  type="button"
-                  className="secondary compact"
-                  onClick={() => onRun(index)}
-                  disabled={busy}
-                >
-                  Run
-                </button>
-                <button
-                  type="button"
-                  className="secondary compact"
-                  onClick={() => onSaveFixture(index)}
-                  disabled={busy || !fixtureAvailable}
-                  title={fixtureAvailable
-                    ? 'Save this test row as a governed fixture'
-                    : 'Fixture persistence is unavailable in this deployment'}
-                  data-testid={`operator-fixture-save-${index}`}
-                >
-                  Save fixture
-                </button>
-                <button
-                  type="button"
-                  className="icon-button"
-                  aria-label={`Remove operator case ${index + 1}`}
-                  title="Remove case"
-                  onClick={() => onRowsChange(rows.filter((_, rowIndex) => rowIndex !== index))}
-                  disabled={busy}
-                >
-                  x
-                </button>
-              </div>
-            </td>
-          </tr>
+          <button
+            type="button"
+            key={`${index}:${row.source.name}`}
+            className={selectedIndex === index ? 'selected' : ''}
+            aria-current={selectedIndex === index ? 'true' : undefined}
+            onClick={() => onSelect(index)}
+          >
+            <span>{row.name || `Case ${index + 1}`}</span>
+            <CaseResultBadge result={results[index]} successLabel="Schema valid" />
+          </button>
         ))}
-      </tbody>
-    </table>
+      </nav>
+      <section className="asset-scenario-editor" aria-label="Selected operator test case">
+        <header className="asset-scenario-editor-heading">
+          <label>
+            <span>Case name</span>
+            <input
+              aria-label={`Operator case ${selectedIndex + 1} name`}
+              value={row.name}
+              onChange={(event) => patch(selectedIndex, { name: event.target.value })}
+            />
+          </label>
+          <TestResult result={results[selectedIndex]} successLabel="Schema valid" />
+        </header>
+
+        <section className="asset-scenario-stage">
+          <StageHeading step="Given" title="Operator inputs" />
+          <SchemaValueEditor
+            envelope={operatorInputSchema(document, assetRef)}
+            value={row.inputs}
+            onChange={(value) => patch(selectedIndex, {
+              inputs: objectValue(value),
+            })}
+            label="Inputs"
+          />
+        </section>
+
+        <details className="asset-scenario-dependency">
+          <summary>
+            <span>Dependencies</span>
+            <strong>Operator configuration</strong>
+          </summary>
+          <SchemaValueEditor
+            envelope={operatorConfigSchema(document, assetRef)}
+            value={row.config}
+            onChange={(value) => patch(selectedIndex, {
+              config: objectValue(value),
+            })}
+            label="Configuration"
+          />
+        </details>
+
+        <section className="asset-scenario-stage">
+          <StageHeading step="Then" title="Mocked outputs" />
+          <SchemaValueEditor
+            envelope={operatorOutputSchema(document, assetRef)}
+            value={row.outputs}
+            onChange={(value) => patch(selectedIndex, {
+              outputs: objectValue(value),
+            })}
+            label="Outputs"
+          />
+          <details className="asset-scenario-advanced">
+            <summary>Advanced output assertions</summary>
+            <SchemaValueEditor
+              value={row.source.outputAssertions}
+              onChange={(value) => patch(selectedIndex, {
+                source: {
+                  ...row.source,
+                  outputAssertions: objectValue(value) as VisualOperatorContractTestCase['outputAssertions'],
+                },
+              })}
+              label="Output assertions"
+              advancedOnly
+            />
+          </details>
+        </section>
+
+        <CaseActions
+          kind="operator"
+          index={selectedIndex}
+          busy={busy}
+          fixtureAvailable={fixtureAvailable}
+          onRun={onRun}
+          onSaveFixture={onSaveFixture}
+          onRemove={(index) => {
+            const next = rows.filter((_, rowIndex) => rowIndex !== index);
+            onRowsChange(next);
+            onSelect(Math.max(0, Math.min(index, next.length - 1)));
+          }}
+        />
+      </section>
+    </div>
   );
 }
 
 function FunctionTable({
   rows,
   results,
+  document,
+  assetRef,
+  selectedIndex,
+  bindingStatus,
+  executionProfile,
   busy,
   fixtureAvailable,
+  onSelect,
   onRowsChange,
   onRun,
   onSaveFixture,
 }: {
   rows: FunctionEditor[];
   results: Record<number, { passed: boolean; status: string; actual: unknown; message: string }>;
+  document: VisualLibraryAuthoringDocument;
+  assetRef: string;
+  selectedIndex: number;
+  bindingStatus: string;
+  executionProfile: string;
   busy: boolean;
   fixtureAvailable: boolean;
+  onSelect: (index: number) => void;
   onRowsChange: (rows: FunctionEditor[]) => void;
   onRun: (index: number) => void;
   onSaveFixture: (index: number) => void;
@@ -566,123 +632,236 @@ function FunctionTable({
   const patch = (index: number, value: Partial<FunctionEditor>) => onRowsChange(
     rows.map((row, rowIndex) => rowIndex === index ? { ...row, ...value } : row),
   );
+  const row = rows[selectedIndex];
+  const projection = functionSignatureSchema(document, assetRef);
+  if (!row) {
+    return <EmptyCaseWorkspace />;
+  }
   return (
-    <table className="library-test-table function">
-      <thead>
-        <tr>
-          <th>Case</th>
-          <th>Kind</th>
-          <th>Arguments</th>
-          <th>Assertion</th>
-          <th>Expected</th>
-          <th>Result</th>
-          <th aria-label="Actions" />
-        </tr>
-      </thead>
-      <tbody>
+    <div className="asset-scenario-workspace" data-testid="asset-scenario-workspace">
+      <nav className="asset-scenario-cases" aria-label="Function test cases">
+        <header>
+          <span>Test cases</span>
+          <strong>{rows.length}</strong>
+        </header>
         {rows.map((row, index) => (
-          <tr key={`${index}:${row.source.id}`}>
-            <td>
-              <input
-                aria-label={`Function case ${index + 1} name`}
-                value={row.id}
-                onChange={(event) => patch(index, { id: event.target.value })}
-              />
-            </td>
-            <td>
-              <select
-                aria-label={`Function case ${index + 1} kind`}
-                value={row.kind}
-                onChange={(event) => patch(index, {
-                  kind: event.target.value as VisualFunctionTestKind,
-                })}
-              >
-                <option value="GOLDEN">Golden</option>
-                <option value="NEGATIVE">Negative</option>
-                <option value="BOUNDARY">Boundary</option>
-                <option value="REGRESSION">Regression</option>
-              </select>
-            </td>
-            <td>
-              <textarea
-                aria-label={`Function case ${index + 1} arguments JSON`}
-                value={row.args}
-                onChange={(event) => patch(index, { args: event.target.value })}
-                spellCheck={false}
-              />
-            </td>
-            <td>
-              <select
-                aria-label={`Function case ${index + 1} assertion`}
-                value={row.assertion}
-                onChange={(event) => patch(index, {
-                  assertion: event.target.value as VisualFunctionTestAssertion,
-                })}
-              >
-                <option value="EQUALS">Equals</option>
-                <option value="RETURN_TYPE">Return type</option>
-                <option value="EXPECT_ERROR">Expected error</option>
-              </select>
-            </td>
-            <td>
-              {row.assertion === 'EXPECT_ERROR' ? (
-                <input
-                  aria-label={`Function case ${index + 1} expected error`}
-                  value={row.errorCode}
-                  onChange={(event) => patch(index, { errorCode: event.target.value })}
-                />
-              ) : row.assertion === 'RETURN_TYPE' ? (
-                <span className="library-test-derived">Declared type</span>
-              ) : (
-                <textarea
-                  aria-label={`Function case ${index + 1} expected JSON`}
-                  value={row.expected}
-                  onChange={(event) => patch(index, { expected: event.target.value })}
-                  spellCheck={false}
-                />
-              )}
-            </td>
-            <td>
-              <TestResult result={results[index]} successLabel="Runtime passed" showActual />
-            </td>
-            <td>
-              <div className="library-test-row-actions">
-                <button
-                  type="button"
-                  className="secondary compact"
-                  onClick={() => onRun(index)}
-                  disabled={busy}
-                >
-                  Run
-                </button>
-                <button
-                  type="button"
-                  className="secondary compact"
-                  onClick={() => onSaveFixture(index)}
-                  disabled={busy || !fixtureAvailable}
-                  title={fixtureAvailable
-                    ? 'Save this test row as a governed fixture'
-                    : 'Fixture persistence is unavailable in this deployment'}
-                  data-testid={`function-fixture-save-${index}`}
-                >
-                  Save fixture
-                </button>
-                <button
-                  type="button"
-                  className="icon-button"
-                  aria-label={`Remove function case ${index + 1}`}
-                  title="Remove case"
-                  onClick={() => onRowsChange(rows.filter((_, rowIndex) => rowIndex !== index))}
-                  disabled={busy}
-                >
-                  x
-                </button>
-              </div>
-            </td>
-          </tr>
+          <button
+            type="button"
+            key={`${index}:${row.source.id}`}
+            className={selectedIndex === index ? 'selected' : ''}
+            aria-current={selectedIndex === index ? 'true' : undefined}
+            onClick={() => onSelect(index)}
+          >
+            <span>{row.id || `Case ${index + 1}`}</span>
+            <small>{caseKindLabel(row.kind)}</small>
+            <CaseResultBadge result={results[index]} successLabel="Runtime passed" />
+          </button>
         ))}
-      </tbody>
-    </table>
+      </nav>
+      <section className="asset-scenario-editor" aria-label="Selected function test case">
+        <header className="asset-scenario-editor-heading">
+          <label>
+            <span>Case name</span>
+            <input
+              aria-label={`Function case ${selectedIndex + 1} name`}
+              value={row.id}
+              onChange={(event) => patch(selectedIndex, { id: event.target.value })}
+            />
+          </label>
+          <label>
+            <span>Case type</span>
+            <select
+              aria-label={`Function case ${selectedIndex + 1} kind`}
+              value={row.kind}
+              onChange={(event) => patch(selectedIndex, {
+                kind: event.target.value as VisualFunctionTestKind,
+              })}
+            >
+              <option value="GOLDEN">Golden</option>
+              <option value="NEGATIVE">Negative</option>
+              <option value="BOUNDARY">Boundary</option>
+              <option value="REGRESSION">Regression</option>
+            </select>
+          </label>
+          <TestResult
+            result={results[selectedIndex]}
+            successLabel="Runtime passed"
+            showActual
+          />
+        </header>
+
+        <section className="asset-scenario-stage">
+          <StageHeading step="Given" title="Function arguments" />
+          <SchemaValueEditor
+            envelope={projection.inputSchema}
+            value={functionArgsObject(row.args, projection)}
+            onChange={(value) => patch(selectedIndex, {
+              args: functionArgsArray(value, projection),
+            })}
+            label="Arguments"
+          />
+        </section>
+
+        <details className="asset-scenario-dependency">
+          <summary>
+            <span>Dependencies</span>
+            <strong>Runtime binding</strong>
+          </summary>
+          <dl className="asset-runtime-binding">
+            <div>
+              <dt>Binding</dt>
+              <dd>{bindingStatus}</dd>
+            </div>
+            <div>
+              <dt>Execution profile</dt>
+              <dd>{executionProfileLabel(executionProfile || 'not advertised')}</dd>
+            </div>
+          </dl>
+          <p>
+            Function cases invoke the exact advertised runtime binding; dependency overrides are
+            not inferred from a design-only signature.
+          </p>
+        </details>
+
+        <section className="asset-scenario-stage">
+          <StageHeading step="Then" title="Expected outcome" />
+          <label className="asset-scenario-assertion">
+            <span>Assertion</span>
+            <select
+              aria-label={`Function case ${selectedIndex + 1} assertion`}
+              value={row.assertion}
+              onChange={(event) => patch(selectedIndex, {
+                assertion: event.target.value as VisualFunctionTestAssertion,
+              })}
+            >
+              <option value="EQUALS">Equals</option>
+              <option value="RETURN_TYPE">Matches declared return type</option>
+              <option value="EXPECT_ERROR">Returns an error</option>
+            </select>
+          </label>
+          {row.assertion === 'EXPECT_ERROR' ? (
+            <label className="asset-scenario-assertion">
+              <span>Error code</span>
+              <input
+                aria-label={`Function case ${selectedIndex + 1} expected error`}
+                value={row.errorCode}
+                onChange={(event) => patch(selectedIndex, { errorCode: event.target.value })}
+              />
+            </label>
+          ) : row.assertion === 'RETURN_TYPE' ? (
+            <span className="library-test-derived">Declared return schema</span>
+          ) : (
+            <SchemaValueEditor
+              envelope={projection.outputSchema}
+              value={row.expected}
+              onChange={(expected) => patch(selectedIndex, { expected })}
+              label="Expected value"
+            />
+          )}
+        </section>
+
+        <CaseActions
+          kind="function"
+          index={selectedIndex}
+          busy={busy}
+          fixtureAvailable={fixtureAvailable}
+          onRun={onRun}
+          onSaveFixture={onSaveFixture}
+          onRemove={(index) => {
+            const next = rows.filter((_, rowIndex) => rowIndex !== index);
+            onRowsChange(next);
+            onSelect(Math.max(0, Math.min(index, next.length - 1)));
+          }}
+        />
+      </section>
+    </div>
+  );
+}
+
+function StageHeading({ step, title }: { step: string; title: string }) {
+  return (
+    <header className="asset-scenario-stage-heading">
+      <span>{step}</span>
+      <h3>{title}</h3>
+    </header>
+  );
+}
+
+function CaseActions({
+  kind,
+  index,
+  busy,
+  fixtureAvailable,
+  onRun,
+  onSaveFixture,
+  onRemove,
+}: {
+  kind: 'operator' | 'function';
+  index: number;
+  busy: boolean;
+  fixtureAvailable: boolean;
+  onRun: (index: number) => void;
+  onSaveFixture: (index: number) => void;
+  onRemove: (index: number) => void;
+}) {
+  return (
+    <footer className="asset-scenario-actions">
+      <button
+        type="button"
+        className="danger"
+        onClick={() => onRemove(index)}
+        disabled={busy}
+        aria-label={`Remove ${kind} case ${index + 1}`}
+      >
+        Delete case
+      </button>
+      <div>
+        <button
+          type="button"
+          className="secondary"
+          onClick={() => onSaveFixture(index)}
+          disabled={busy || !fixtureAvailable}
+          title={fixtureAvailable
+            ? 'Save this test case as a governed fixture'
+            : 'Fixture persistence is unavailable in this deployment'}
+          data-testid={`${kind}-fixture-save-${index}`}
+        >
+          Save fixture
+        </button>
+        <button
+          type="button"
+          className="primary"
+          onClick={() => onRun(index)}
+          disabled={busy}
+          data-testid={`${kind}-case-run-${index}`}
+        >
+          Run case
+        </button>
+      </div>
+    </footer>
+  );
+}
+
+function CaseResultBadge({
+  result,
+  successLabel,
+}: {
+  result?: { passed: boolean };
+  successLabel: string;
+}) {
+  return (
+    <strong className={`asset-case-status ${result ? result.passed ? 'passed' : 'failed' : 'idle'}`}>
+      {result ? result.passed ? successLabel : 'Failed' : 'Not run'}
+    </strong>
+  );
+}
+
+function EmptyCaseWorkspace() {
+  return (
+    <div className="asset-scenario-empty">
+      <strong>No test cases yet</strong>
+      <span>Add a case to describe one meaningful business example.</span>
+    </div>
   );
 }
 
@@ -718,9 +897,9 @@ function operatorEditor(testCase: VisualOperatorContractTestCase): OperatorEdito
   return {
     source: testCase,
     name: testCase.name,
-    inputs: pretty(testCase.inputs),
-    config: pretty(testCase.config),
-    outputs: pretty(testCase.mockedOutputs),
+    inputs: structuredClone(testCase.inputs),
+    config: structuredClone(testCase.config),
+    outputs: structuredClone(testCase.mockedOutputs),
   };
 }
 
@@ -729,9 +908,9 @@ function functionEditor(testCase: VisualFunctionTestCase): FunctionEditor {
     source: testCase,
     id: testCase.id,
     kind: testCase.kind,
-    args: pretty(testCase.args),
+    args: structuredClone(testCase.args),
     assertion: testCase.assertion,
-    expected: pretty(testCase.expect),
+    expected: structuredClone(testCase.expect),
     errorCode: testCase.expectError?.code ?? 'INVALID_ARGUMENT',
   };
 }
@@ -767,9 +946,9 @@ function parseOperatorRow(row: OperatorEditor | undefined, index: number): Visua
   return {
     ...row.source,
     name: row.name.trim() || `case-${index + 1}`,
-    inputs: parseObject(row.inputs, `Case ${index + 1} inputs`),
-    config: parseObject(row.config, `Case ${index + 1} config`),
-    mockedOutputs: parseObject(row.outputs, `Case ${index + 1} mocked outputs`),
+    inputs: structuredClone(row.inputs),
+    config: structuredClone(row.config),
+    mockedOutputs: structuredClone(row.outputs),
   };
 }
 
@@ -777,39 +956,19 @@ function parseFunctionRow(row: FunctionEditor | undefined, index: number): Visua
   if (!row) {
     throw new Error(`Function case ${index + 1} is missing.`);
   }
-  const args = parseJson(row.args, `Case ${index + 1} arguments`);
-  if (!Array.isArray(args)) {
-    throw new Error(`Case ${index + 1} arguments must be a JSON array.`);
-  }
   return {
     ...row.source,
     id: row.id.trim() || `case-${index + 1}`,
     kind: row.kind,
-    args,
+    args: structuredClone(row.args),
     assertion: row.assertion,
     expect: row.assertion === 'EQUALS'
-      ? parseJson(row.expected, `Case ${index + 1} expected value`)
+      ? structuredClone(row.expected)
       : null,
     expectError: row.assertion === 'EXPECT_ERROR'
       ? { code: row.errorCode.trim() || 'FUNCTION_INVOCATION_FAILED' }
       : null,
   };
-}
-
-function parseObject(source: string, label: string): Record<string, unknown> {
-  const value = parseJson(source, label);
-  if (!value || Array.isArray(value) || typeof value !== 'object') {
-    throw new Error(`${label} must be a JSON object.`);
-  }
-  return value as Record<string, unknown>;
-}
-
-function parseJson(source: string, label: string): unknown {
-  try {
-    return JSON.parse(source);
-  } catch {
-    throw new Error(`${label} is not valid JSON.`);
-  }
 }
 
 function installOperatorResults(
@@ -902,4 +1061,21 @@ function reasonLabel(value: string): string {
 
 function executionProfileLabel(value: string): string {
   return value.includes('isolated-process') ? 'ISOLATED PROCESS' : value;
+}
+
+function objectValue(value: unknown): Record<string, unknown> {
+  return value !== null && typeof value === 'object' && !Array.isArray(value)
+    ? value as Record<string, unknown>
+    : {};
+}
+
+function emptyAuthoringDocument(): VisualLibraryAuthoringDocument {
+  return {
+    schemaVersion: 'bloge.visualLibraryAuthoring.v1',
+    library: { id: 'unknown' },
+  };
+}
+
+function caseKindLabel(kind: VisualFunctionTestKind): string {
+  return kind.charAt(0) + kind.slice(1).toLowerCase();
 }

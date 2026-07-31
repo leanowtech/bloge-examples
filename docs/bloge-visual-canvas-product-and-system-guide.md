@@ -58,6 +58,27 @@ BLOGE 通用可视化编排画布是一套面向复杂业务编排的 topology-f
    当前 Graph/Operator、节点与直接上下游的轻量拓扑上下文。旧 Test Suite 浮层只在
    Legacy Workspace 保留。
 
+#### 用一套语言创建 Graph、Operator 和 Function 测试
+
+Graph Scenario、Operator contract test 和 built-in Function test 现在共享同一条主路径：
+
+1. 左侧选择或新增一个 case，右侧只编辑当前 case；
+2. **Given** 根据 input schema 或 function signature 生成具名控件；
+3. Graph 的 **Dependencies** 只列出本场景主动控制的调用；未列出的节点照常运行；
+4. **Then** 编辑 mocked output、return schema、expected error 或 Graph assertion；
+5. 点击 **Run case** 或 **Run all**，结论明确区分 `Schema valid` 与 `Runtime passed`；
+6. 只有复杂或暂不可投影的值才展开 **Advanced JSON**。
+
+Loan 示例的 Prime 场景有 5 个节点，但只有 3 个 fixture，因此默认只显示 3 张
+`controlled dependencies` 卡。完整卡以目标和 Return/Error 等行为摘要折叠；缺 selector、
+Return output、Replay reference、duration 或 error code 的卡会自动展开。
+
+在 **Libraries → Complete examples → Customer Support Triage** 中选择 Operator 或
+Function，再点 **Open test table**，可以看到同样的 Given / Dependencies / Then 分段。
+Function signature 会把有序 `args[]` 投影为具名字段，运行时再无损恢复原协议顺序。
+点击 **Save fixture** 时，右侧打开非模态 side sheet；先检查分类、保留期限、脱敏路径和
+脱敏后 payload preview，再确认加密保存。父测试窗口不会再叠加第二个 dialog。
+
 当业务图已经有多层依赖或边标签较多时，优先点击工具条里的 **Canvas Focus**。它会临时收起左侧 Library/Legacy DSL/Palette、右侧 Checklist/Runtime/Test Suite inspector、顶部 workflow 和示例卡，只保留 toolbar、Graph Contract 和主画布。这个模式适合做拓扑审阅、Auto Layout 后验收、拖线调试和演示复杂图。
 
 ![Author Canvas Focus 模式标注](assets/bloge-author-canvas-focus-annotated.svg)
