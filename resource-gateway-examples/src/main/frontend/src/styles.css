@@ -12803,15 +12803,14 @@ button.primary:disabled {
   border-bottom: 1px solid #dfe4eb;
 }
 
-.library-readiness > div:first-child {
-  display: flex;
-  align-items: baseline;
-  justify-content: space-between;
-  gap: 8px;
+.library-readiness-summary {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 4px 8px;
   margin-bottom: 8px;
 }
 
-.library-readiness > div:first-child span,
+.library-readiness-summary span,
 .library-preview-runtime h3,
 .library-preview-diagnostics h3,
 .library-confirmations h3 {
@@ -12821,22 +12820,46 @@ button.primary:disabled {
   text-transform: uppercase;
 }
 
-.library-readiness > div:first-child strong {
+.library-readiness-summary strong {
+  grid-column: 1 / -1;
   color: #6c7787;
   font-size: 12px;
 }
 
-.library-readiness[data-state="READY"] > div:first-child strong {
+.library-readiness-summary small {
+  grid-column: 1 / -1;
+  color: #56657a;
+  font-size: 11px;
+  line-height: 1.45;
+}
+
+.library-readiness-summary code {
+  grid-column: 2;
+  grid-row: 1;
+  color: #667286;
+  font-size: 9px;
+}
+
+.library-readiness[data-state="ready"] .library-readiness-summary strong {
   color: #227146;
 }
 
-.library-readiness[data-state="BLOCKED"] > div:first-child strong {
+.library-readiness[data-state="blocked"] .library-readiness-summary strong {
   color: #a32b24;
 }
 
 .library-readiness dl {
   border: 1px solid #e0e4ea;
   border-radius: 5px;
+}
+
+.library-readiness-action {
+  display: flex;
+  gap: 5px;
+  margin: 8px 0 0;
+  color: #56657a;
+  font-size: 11px;
+  line-height: 1.4;
 }
 
 .library-preview-diagnostics > header,

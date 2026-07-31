@@ -2,6 +2,10 @@ import type {
   VisualLibraryAuthoringCommitResult,
   VisualLibraryAuthoringCompileResult,
 } from '../types';
+import {
+  groupAuthoringDiagnostics,
+  presentLibraryReadiness,
+} from './readinessPresentation';
 
 interface CanonicalContractPreviewProps {
   preview: VisualLibraryAuthoringCompileResult | null;
@@ -26,10 +30,16 @@ export default function CanonicalContractPreview({
   onCommit,
   onDiagnostic,
 }: CanonicalContractPreviewProps) {
-  const errors = preview?.diagnostics.filter((diagnostic) => diagnostic.level === 'ERROR') ?? [];
-  const warnings = preview?.diagnostics.filter((diagnostic) => diagnostic.level === 'WARNING') ?? [];
+  const groupedDiagnostics = groupAuthoringDiagnostics(preview?.diagnostics ?? []);
+  const errors = groupedDiagnostics.filter((diagnostic) => diagnostic.level === 'ERROR');
+  const warnings = groupedDiagnostics.filter((diagnostic) => diagnostic.level === 'WARNING');
+  const diagnosticOccurrences = groupedDiagnostics.reduce(
+    (total, diagnostic) => total + diagnostic.occurrences,
+    0,
+  );
   const runtimeParity = preview?.runtimeParity ?? [];
-  const boundRuntimeCount = runtimeParity.filter((parity) => parity.executableReady).length;
+  const readiness = presentLibraryReadiness(preview);
+  const boundRuntimeCount = readiness.boundRuntimeCount;
   const runtimeLabel = preview?.readiness.productionReady
     ? 'Ready'
     : runtimeParity.length > 0
@@ -39,7 +49,7 @@ export default function CanonicalContractPreview({
   return (
     <aside className="library-contract-preview" aria-label="Canonical contract preview">
       <header>
-        <div>
+        <div className="library-contract-heading">
           <span>Server-authoritative</span>
           <h2>Contract Preview</h2>
         </div>
@@ -53,16 +63,19 @@ export default function CanonicalContractPreview({
         </button>
       </header>
 
-      <section className="library-readiness" data-state={preview?.readiness.state ?? 'PENDING'}>
-        <div>
+      <section className="library-readiness" data-state={readiness.tone}>
+        <div className="library-readiness-summary">
           <span>Readiness</span>
-          <strong>{preview?.readiness.state ?? 'Awaiting preview'}</strong>
+          <strong>{readiness.title}</strong>
+          <small>{readiness.summary}</small>
+          <code>{readiness.machineState}</code>
         </div>
         <dl>
           <div><dt>Design import</dt><dd>{preview?.readiness.importable ? 'Ready' : 'Blocked'}</dd></div>
           <div><dt>Strong schema</dt><dd>{preview?.readiness.strongSchemaReady ? 'Ready' : 'Review'}</dd></div>
           <div><dt>Runtime</dt><dd>{runtimeLabel}</dd></div>
         </dl>
+        <p className="library-readiness-action"><strong>Next</strong>{readiness.nextAction}</p>
       </section>
 
       {runtimeParity.length > 0 && (
@@ -92,17 +105,25 @@ export default function CanonicalContractPreview({
       <section className="library-preview-diagnostics">
         <header>
           <h3>Diagnostics</h3>
-          <span>{errors.length} errors / {warnings.length} warnings</span>
+          <span>
+            {errors.length} error groups / {warnings.length} warning groups
+            {diagnosticOccurrences > groupedDiagnostics.length
+              ? ` · ${diagnosticOccurrences} occurrences`
+              : ''}
+          </span>
         </header>
-        {preview?.diagnostics.length ? (
+        {groupedDiagnostics.length ? (
           <ol>
-            {preview.diagnostics.map((diagnostic, index) => (
-              <li key={`${diagnostic.code}:${diagnostic.authoringPath}:${index}`} data-level={diagnostic.level}>
+            {groupedDiagnostics.map((diagnostic) => (
+              <li key={`${diagnostic.code}:${diagnostic.authoringPath}:${diagnostic.message}`} data-level={diagnostic.level}>
                 <button type="button" onClick={() => onDiagnostic(diagnostic.authoringPath)}>
                   <span>{diagnostic.level}</span>
                   <strong>{diagnostic.code}</strong>
                   <p>{diagnostic.message}</p>
-                  <small>{diagnostic.authoringPath}</small>
+                  <small>
+                    {diagnostic.authoringPath}
+                    {diagnostic.occurrences > 1 ? ` · ${diagnostic.occurrences} occurrences` : ''}
+                  </small>
                 </button>
               </li>
             ))}

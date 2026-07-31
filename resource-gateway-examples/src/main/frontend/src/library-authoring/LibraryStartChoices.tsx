@@ -259,7 +259,7 @@ export default function LibraryStartChoices({ onStart }: LibraryStartChoicesProp
         <div>
           {LIBRARY_AUTHORING_EXAMPLES.map((example) => (
             <article key={example.key}>
-              <span>{example.domain}</span>
+              <span>{example.domain} · Design-only</span>
               <strong>{example.label}</strong>
               <p>{example.description}</p>
               <dl>

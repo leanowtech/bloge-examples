@@ -119,6 +119,8 @@ describe('LibraryWorkbench', () => {
 
     expect(query('[data-testid="library-workbench"]').textContent)
       .toContain('Customer Support Authoring');
+    expect(query('[data-testid="library-workbench"]').textContent)
+      .toContain('Design-only example');
     expect(query('[data-testid="library-tree:operator:support:classify-ticket"]'))
       .toBeTruthy();
     expect(query('[data-testid="library-tree:function:support.firstPresent"]'))
@@ -139,6 +141,11 @@ describe('LibraryWorkbench', () => {
       1,
     );
     expect(query('[data-testid="library-save-state"]').textContent).toContain('Saved revision 1');
+    expect(query('.library-contract-heading').textContent).toContain('Contract Preview');
+    expect(query('.library-readiness-summary').textContent)
+      .toContain('Design valid; runtime not verified');
+    expect(query('.library-readiness-summary').querySelector('small')).toBeTruthy();
+    expect(query('.library-readiness-summary').querySelector('code')).toBeTruthy();
 
     await click(query('[data-testid="library-tree:operator:support:classify-ticket"]'));
     expect(query('[data-testid="operator-builder"]').textContent).toContain('Classify Ticket');

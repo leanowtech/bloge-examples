@@ -5,6 +5,7 @@ export interface LibraryAuthoringExample {
   label: string;
   domain: string;
   description: string;
+  deliveryMode: 'DESIGN_ONLY';
   document: VisualLibraryAuthoringDocument;
 }
 
@@ -14,6 +15,7 @@ export const LIBRARY_AUTHORING_EXAMPLES: LibraryAuthoringExample[] = [
     label: 'Customer Support Triage',
     domain: 'Customer service',
     description: 'Named types, a resource read, a pure classifier, and overloaded support functions.',
+    deliveryMode: 'DESIGN_ONLY',
     document: {
       schemaVersion: 'bloge.visualLibraryAuthoring.v1',
       library: {
@@ -40,6 +42,13 @@ export const LIBRARY_AUTHORING_EXAMPLES: LibraryAuthoringExample[] = [
             confidence: 'number',
           },
         },
+        CustomerProfile: {
+          fields: {
+            customerId: 'string',
+            tier: { enum: ['free', 'pro', 'enterprise'] },
+            openCaseCount: 'integer',
+          },
+        },
       },
       operators: {
         'support:load-profile': {
@@ -48,7 +57,7 @@ export const LIBRARY_AUTHORING_EXAMPLES: LibraryAuthoringExample[] = [
           archetype: 'resource-read',
           requiresSecrets: false,
           input: { customerId: 'string' },
-          output: { profile: 'any' },
+          output: { profile: 'CustomerProfile' },
           runtime: { bindingRef: 'customer-profile-service' },
           tests: [{ ref: 'fixtures/load-enterprise-profile' }],
         },
@@ -56,7 +65,7 @@ export const LIBRARY_AUTHORING_EXAMPLES: LibraryAuthoringExample[] = [
           name: 'Classify Ticket',
           description: 'Classifies a support ticket without external side effects.',
           archetype: 'pure',
-          input: { ticket: 'Ticket', 'profile?': 'any' },
+          input: { ticket: 'Ticket', 'profile?': 'CustomerProfile' },
           output: { triage: 'TriageResult' },
           tests: [{ ref: 'fixtures/classify-enterprise-ticket' }],
         },
@@ -83,8 +92,8 @@ export const LIBRARY_AUTHORING_EXAMPLES: LibraryAuthoringExample[] = [
           description: 'Returns the first available value.',
           category: 'null-handling',
           signatures: [
-            '(value: any, fallback?: any) -> any',
-            '(values: any[]) -> any',
+            '(value: string, fallback?: string) -> string',
+            '(values: string[]) -> string',
           ],
           examples: [],
           tests: [{ ref: 'fixtures/first-present' }],
@@ -99,6 +108,7 @@ export const LIBRARY_AUTHORING_EXAMPLES: LibraryAuthoringExample[] = [
     label: 'Order Fulfillment',
     domain: 'Commerce',
     description: 'Read/write operators with explicit idempotency and a reusable total function.',
+    deliveryMode: 'DESIGN_ONLY',
     document: {
       schemaVersion: 'bloge.visualLibraryAuthoring.v1',
       library: {
@@ -110,11 +120,24 @@ export const LIBRARY_AUTHORING_EXAMPLES: LibraryAuthoringExample[] = [
       },
       defaults: { operatorVersion: '1.0.0', namespace: 'orders' },
       types: {
+        FulfillmentItem: {
+          fields: {
+            sku: 'string',
+            quantity: 'integer',
+          },
+        },
         FulfillmentRequest: {
           fields: {
             orderId: 'string',
             warehouseId: 'string',
-            items: 'any[]',
+            items: 'FulfillmentItem[]',
+          },
+        },
+        OrderRecord: {
+          fields: {
+            orderId: 'string',
+            status: { enum: ['pending', 'confirmed', 'cancelled'] },
+            items: 'FulfillmentItem[]',
           },
         },
       },
@@ -124,7 +147,7 @@ export const LIBRARY_AUTHORING_EXAMPLES: LibraryAuthoringExample[] = [
           archetype: 'resource-read',
           requiresSecrets: false,
           input: { orderId: 'string' },
-          output: { order: 'any' },
+          output: { order: 'OrderRecord' },
           runtime: { bindingRef: 'order-service' },
           tests: [{ ref: 'fixtures/load-order' }],
         },
@@ -132,11 +155,23 @@ export const LIBRARY_AUTHORING_EXAMPLES: LibraryAuthoringExample[] = [
           name: 'Reserve Stock',
           archetype: 'external-write',
           effect: 'WRITE_EXTERNAL',
-          idempotency: 'REQUIRED',
+          idempotency: 'IDEMPOTENT',
           requiresSecrets: false,
           input: { request: 'FulfillmentRequest' },
           output: { reservationId: 'string' },
-          runtime: { bindingRef: 'inventory-service' },
+          runtime: {
+            bindingRef: 'inventory-service',
+            sideEffectProtocol: {
+              schemaVersion: 'bloge.sideEffectProtocol.v1',
+              mode: 'JOURNALED',
+              commitReceiptRequired: true,
+              reconciliationRequired: true,
+              reconcilerRef: 'inventory-service.reservation-status',
+              idempotencyKeySource: 'input.request.orderId',
+              reconciliationLookupSource: 'input.request.orderId',
+              commitReceiptSource: 'output.reservationId',
+            },
+          },
           tests: [{ ref: 'fixtures/reserve-stock' }],
         },
       },
@@ -145,7 +180,7 @@ export const LIBRARY_AUTHORING_EXAMPLES: LibraryAuthoringExample[] = [
           name: 'orders.totalUnits',
           description: 'Counts requested units.',
           category: 'commerce',
-          signatures: ['(items: any[]) -> number'],
+          signatures: ['(items: FulfillmentItem[]) -> number'],
           examples: ['orders.totalUnits(ctx.items)'],
           tests: [{ ref: 'fixtures/total-units' }],
         },
@@ -159,6 +194,7 @@ export const LIBRARY_AUTHORING_EXAMPLES: LibraryAuthoringExample[] = [
     label: 'Risk Decision Policy',
     domain: 'Risk',
     description: 'Pure decision operators, constrained records, and overload-friendly policy helpers.',
+    deliveryMode: 'DESIGN_ONLY',
     document: {
       schemaVersion: 'bloge.visualLibraryAuthoring.v1',
       library: {

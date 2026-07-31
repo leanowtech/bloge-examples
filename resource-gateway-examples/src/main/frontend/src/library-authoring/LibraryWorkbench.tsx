@@ -60,6 +60,7 @@ export default function LibraryWorkbench() {
   const [inferenceLaunch, setInferenceLaunch] = useState<SampleInferenceLaunch | null>(null);
   const [testLaunch, setTestLaunch] = useState<AssetTestLaunch | null>(null);
   const [fixtureAvailable, setFixtureAvailable] = useState(false);
+  const [startSource, setStartSource] = useState('');
   const revisionRef = useRef(0);
   const currentDraftRef = useRef<VisualLibraryAuthoringDraft | null>(null);
   const lastSavedJsonRef = useRef('');
@@ -81,6 +82,7 @@ export default function LibraryWorkbench() {
     setSaveMessage(`Saved revision ${draft.revision}`);
     setPreview(null);
     setCommitResult(null);
+    setStartSource('');
   }, []);
 
   useEffect(() => {
@@ -241,6 +243,7 @@ export default function LibraryWorkbench() {
     setPreview(null);
     setCommitResult(null);
     setInferenceLaunch(inference ?? null);
+    setStartSource(source);
     window.history.replaceState({}, '', `/libraries/?draftId=${encodeURIComponent(id)}`);
   };
 
@@ -356,7 +359,10 @@ export default function LibraryWorkbench() {
           <a href="/libraries/" aria-label="Create another library" title="Create another library">+</a>
           <div>
             <strong>{document.library.name || document.library.id}</strong>
-            <span>{draftId} / revision {revision}</span>
+            <span>
+              {draftId} / revision {revision}
+              {startSource.startsWith('example:') ? ' · Design-only example' : ''}
+            </span>
           </div>
         </div>
         <div className={`library-save-state ${saveState}`} role="status" data-testid="library-save-state">
