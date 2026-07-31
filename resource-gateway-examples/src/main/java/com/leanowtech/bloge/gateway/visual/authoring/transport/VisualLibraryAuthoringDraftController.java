@@ -67,6 +67,20 @@ public final class VisualLibraryAuthoringDraftController {
         return service.all(principal.requireScope());
     }
 
+    @GetMapping("/context")
+    public AuthoringHomeContext context(@RequestHeader HttpHeaders headers) {
+        AuthoringPrincipal principal = access.authenticate(headers, Action.READ);
+        return new AuthoringHomeContext(
+                "bloge.visualLibraryAuthoringHomeContext.v1",
+                principal.actorId(),
+                principal.tenantId(),
+                principal.organizationId(),
+                principal.projectId(),
+                principal.environmentId(),
+                principal.region()
+        );
+    }
+
     @GetMapping("/{draftId}")
     public ResponseEntity<AuthoringDraft> find(
             @PathVariable String draftId,
@@ -82,6 +96,18 @@ public final class VisualLibraryAuthoringDraftController {
             @RequestHeader HttpHeaders headers) {
         AuthoringPrincipal principal = access.authenticate(headers, Action.READ);
         return service.revisions(principal.requireScope(), draftId);
+    }
+
+    @GetMapping("/{draftId}/revisions/{revision}")
+    public ResponseEntity<AuthoringDraft> revision(
+            @PathVariable String draftId,
+            @PathVariable long revision,
+            @RequestHeader HttpHeaders headers) {
+        AuthoringPrincipal principal = access.authenticate(headers, Action.READ);
+        return withEtag(
+                service.findRevision(principal.requireScope(), draftId, revision),
+                HttpStatus.OK
+        );
     }
 
     @PutMapping("/{draftId}")
@@ -294,6 +320,17 @@ public final class VisualLibraryAuthoringDraftController {
             String sourceMode,
             VisualLibraryAuthoringDocument document,
             String actor
+    ) {
+    }
+
+    public record AuthoringHomeContext(
+            String schemaVersion,
+            String actorId,
+            String tenantId,
+            String organizationId,
+            String projectId,
+            String environmentId,
+            String region
     ) {
     }
 }

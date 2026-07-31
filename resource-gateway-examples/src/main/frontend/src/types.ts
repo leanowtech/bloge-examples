@@ -1008,6 +1008,16 @@ export interface VisualLibraryAuthoringDraft {
   savedBy: string;
 }
 
+export interface VisualLibraryAuthoringHomeContext {
+  schemaVersion: 'bloge.visualLibraryAuthoringHomeContext.v1';
+  actorId: string;
+  tenantId: string;
+  organizationId: string;
+  projectId: string;
+  environmentId: string;
+  region: string;
+}
+
 export interface VisualAuthoringDiagnostic {
   level: string;
   code: string;

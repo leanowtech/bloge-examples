@@ -36,6 +36,8 @@ BLOGE 通用可视化编排画布是一套面向复杂业务编排的 topology-f
 | 入口 | 用途 | 推荐人群 |
 | --- | --- | --- |
 | `/author/` | 新版通用可视化编排画布，支持导入算子库、Legacy DSL preview、拖拽、连线、校验、模拟、导出 | 主要使用入口 |
+| `/libraries/` | 从 durable draft 队列恢复 exact revision，创建/发现算子与 built-in function 库，校验 runtime/test readiness | 算子库作者与平台工程师 |
+| `/rehearsals/` | 批量 Scenario 排练、失败分类、签名 evidence 与治理修复 | 测试、质量与治理人员 |
 | `/showcase/` | React 版 resource gateway 场景目录，按后端场景顺序展示案例、图、请求执行和 SSE 流 | 演示与验证 |
 | `/examples/gateway` | 旧版 Custom Composer/Showcase，保留兼容和功能回归价值 | 兼容入口 |
 
@@ -78,6 +80,34 @@ Function，再点 **Open test table**，可以看到同样的 Given / Dependenci
 Function signature 会把有序 `args[]` 投影为具名字段，运行时再无损恢复原协议顺序。
 点击 **Save fixture** 时，右侧打开非模态 side sheet；先检查分类、保留期限、脱敏路径和
 脱敏后 payload preview，再确认加密保存。父测试窗口不会再叠加第二个 dialog。
+
+#### 从 Library Home 恢复存量资产
+
+`/libraries/` 的第一屏现在是资产工作队列，而不是创建向导。先从以下视角收敛任务：
+
+| 队列 | 含义 | 推荐动作 |
+| --- | --- | --- |
+| Recent drafts | 14 天内更新的 durable draft | Resume exact revision |
+| My libraries | owner 或最后保存者是当前认证 actor | 继续编辑或检查 test gate |
+| Needs confirmation | server preview 仍有显式声明决策 | 进入 Workbench 完成确认 |
+| Runtime drift | 声明合同与当前 runtime inventory 不一致 | 核对 runtime binding 后重验 |
+| Test gate incomplete | 当前 exact revision 未达到 TEST_EVIDENCED | 打开 operator/function test table |
+| Ownership conflict | library owner 未解析 | 先补 owner，避免错误发布责任边界 |
+
+每行 `Resume rN` 同时携带 `draftId` 与 `revision`。如果该 revision 仍是 mutable head，
+直接进入 Workbench；如果链接指向历史 revision，则打开只读快照并明确显示当前 head。
+历史页面只能选择 **Resume latest** 或 **Fork this revision**，不会把旧内容用过期
+`If-Match` 写回当前 draft。
+
+Home 的 `My libraries` 使用服务端认证后的 actor：
+
+```text
+GET /admin/visual-operator-library-authoring/drafts/context
+GET /admin/visual-operator-library-authoring/drafts/{draftId}/revisions/{revision}
+```
+
+不存在的历史 revision 返回明确 404，不会退回 latest。fingerprint、创建时间和 source mode
+折叠在 **Technical coordinates**，首屏优先显示 owner、readiness、更新时间和下一步动作。
 
 当业务图已经有多层依赖或边标签较多时，优先点击工具条里的 **Canvas Focus**。它会临时收起左侧 Library/Legacy DSL/Palette、右侧 Checklist/Runtime/Test Suite inspector、顶部 workflow 和示例卡，只保留 toolbar、Graph Contract 和主画布。这个模式适合做拓扑审阅、Auto Layout 后验收、拖线调试和演示复杂图。
 

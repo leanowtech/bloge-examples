@@ -18,7 +18,7 @@
 | Stage B：唯一中央工作面 | 85 | 已完成 | B01–B08、真实浏览器断点矩阵，E2 |
 | Stage C：统一 Scenario | 90 | 已完成 | C01–C08、392 条前端回归与三条浏览器纵切，E2 |
 | Stage D：复杂图可读 | 93 | 已完成 | D01–D07、1024/1280/820 真实浏览器矩阵，E2 |
-| Stage E：生命周期闭环 | 95 工程就绪 | 进行中 | durable asset / remediation 差距审计，E0 |
+| Stage E：生命周期闭环 | 95 工程就绪 | 进行中 | E1 Library Home 已通过定向测试与真实浏览器，E2；remediation 待完成 |
 | Stage F：E3/E4 | 95–100 | 未开始 | 无 |
 
 Stage D 的工程目标分 `93` 已达到 E2，但这不等于整体体验成熟度达到 95。当前剩余
@@ -440,16 +440,59 @@ launcher 显式操作优先级、Scenario Run 与 390px Evidence。
 
 因此 Stage D 目标分 `93` 在 E2 层成立。25 节点 90 秒定位仍需由 E3 用户研究证明。
 
-## 7. 当前差距与 Stage E 开工点
+## 7. Round E1：Durable Library Home
+
+### 7.1 已实现
+
+| 计划项 | 实现 |
+|---|---|
+| Library Home | `/libraries/` 默认显示 durable draft 工作队列，不再直接把用户丢进创建表单 |
+| 资产分组 | Recent、Mine、Needs confirmation、Runtime drift、Test gate incomplete、Ownership conflict |
+| 查询体验 | name/id/owner/draft 搜索、状态过滤、计数和 8 行分页 |
+| 可信 readiness | 对每个 draft 的 exact revision 并发受控地读取 server preview 与 test evidence gate |
+| 当前身份 | `GET .../drafts/context` 返回认证后的 actor 和 enterprise scope，Mine 不靠浏览器猜测 |
+| Exact resume | 每行显式链接 `draftId + revision`；URL 随 autosave head revision 更新 |
+| 历史保护 | exact 历史 revision 使用只读页面，不会被当成 mutable head 保存 |
+| 恢复动作 | 历史页提供 Resume latest 与 Fork this revision；技术 fingerprint 默认折叠 |
+| 主动作 | Create library / Discover existing 保持一级动作，但不再是页面唯一内容 |
+
+### 7.2 协议不变量
+
+```text
+Library Home row
+  = authorized scope
+  + mutable draft head
+  + exact head revision
+  + server-authoritative compile preview
+  + current test-evidence gate
+```
+
+`GET .../drafts/{draftId}/revisions/{revision}` 只读不可变历史；继续编辑必须显式恢复当前
+head 或 fork。读取不存在 revision 返回 `RG.AUTHORING.DRAFT_REVISION_NOT_FOUND`，不会
+静默 fallback 到 latest。
+
+### 7.3 验证证据
+
+- `libraryHomeModel.test.ts` 覆盖 actor、recent、四类 blocker、search、pagination 和 exact URL；
+- `LibraryWorkbench.test.tsx` 覆盖 Home readiness 队列与历史 revision 防误写；
+- `VisualLibraryAuthoringDraftControllerTest` 覆盖 scope context、exact ETag 与 404；
+- 前端定向 7 tests green，production build green；
+- 1280×820 真实浏览器确认 3 个 durable draft 可扫描、可筛选并一跳 Resume exact r1；
+- 390×844 确认 header、主动作、筛选和横向表格均可访问，无内容覆盖。
+
+E1 后工程自评从 `93.0` 提升到 `93.8`。仍不宣称整体 95，因为跨 Evidence /
+Rehearsal 的 remediation 协议尚未闭环。
+
+## 8. 当前差距与 Stage E 下一步
 
 画布阅读问题已从 P0/P1 缺陷转为受控的 compact Review。剩余工程差距集中在“找到资产”和
 “知道下一步怎么修”：
 
-1. Libraries 仍缺 Recent / Mine / Needs confirmation / Runtime drift 等任务队列；
-2. durable draft 缺少 exact revision 的统一 resume 入口；
-3. Contract、Scenario、Evidence、Drift、Rehearsal 与 ANEKE gate 还没有统一
+1. Contract、Scenario、Evidence、Drift、Rehearsal 与 ANEKE gate 还没有统一
    `RemediationAction` 投影；
-4. Evidence 首屏仍需进一步把业务 verdict、Expected / Actual / Diff 和 owner 放在
+2. Evidence 首屏仍需进一步把业务 verdict、Expected / Actual / Diff 和 owner 放在
    fingerprint 之前；
-5. Rehearsal 需要 attempt timeline、准确目标 deep link 和权限诚实的修复动作；
-6. Stage E 完成后仍只能宣称“95 分工程就绪”，正式 95 分等待 E3/E4。
+3. Rehearsal 需要 attempt timeline、准确目标 deep link 和权限诚实的修复动作；
+4. Library Home 当前 readiness 聚合适合 bounded work queue；规模超过 1000 个活跃 draft
+   时，需要把过滤和 readiness index 下沉为 server query projection；
+5. Stage E 完成后仍只能宣称“95 分工程就绪”，正式 95 分等待 E3/E4。

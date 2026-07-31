@@ -18,7 +18,9 @@ import {
   fetchGovernanceGateView,
   fetchGraphDraft,
   fetchLibraryAuthoringCatalogs,
+  fetchLibraryAuthoringContext,
   fetchLibraryAuthoringDraft,
+  fetchLibraryAuthoringDraftRevision,
   fetchLibraryAuthoringDrafts,
   fetchLibraryAuthoringTestEvidence,
   fetchLibraryAuthoringTestGate,
@@ -291,6 +293,22 @@ describe('operator library API client', () => {
         expect(new Headers(init?.headers).get('X-Purpose')).toBe('TEST_SUITE_READ');
         return jsonResponse([stored]);
       }
+      if (url.endsWith('/drafts/context') && init?.method === undefined) {
+        expect(new Headers(init?.headers).get('X-Purpose')).toBe('TEST_SUITE_READ');
+        return jsonResponse({
+          schemaVersion: 'bloge.visualLibraryAuthoringHomeContext.v1',
+          actorId: 'aneke-sync',
+          tenantId: 'tenant-a',
+          organizationId: 'organization-a',
+          projectId: 'project-a',
+          environmentId: 'test',
+          region: 'local',
+        });
+      }
+      if (url.endsWith('/drafts/support-draft/revisions/3') && init?.method === undefined) {
+        expect(new Headers(init?.headers).get('X-Purpose')).toBe('TEST_SUITE_READ');
+        return jsonResponse(stored);
+      }
       if (url.endsWith('/drafts/support-draft') && init?.method === undefined) {
         expect(new Headers(init?.headers).get('X-Purpose')).toBe('TEST_SUITE_READ');
         return jsonResponse(stored);
@@ -349,7 +367,13 @@ describe('operator library API client', () => {
     });
 
     await expect(fetchLibraryAuthoringDrafts()).resolves.toEqual([stored]);
+    await expect(fetchLibraryAuthoringContext()).resolves.toMatchObject({
+      actorId: 'aneke-sync',
+      projectId: 'project-a',
+    });
     await expect(fetchLibraryAuthoringDraft('support-draft')).resolves.toEqual(stored);
+    await expect(fetchLibraryAuthoringDraftRevision('support-draft', 3))
+      .resolves.toEqual(stored);
     await expect(saveLibraryAuthoringDraft('support-draft', 2, document)).resolves.toEqual(stored);
     await expect(inferLibraryAuthoringSamples('support-draft', 3, inferenceRequest))
       .resolves.toEqual(inferenceResult);
@@ -363,7 +387,7 @@ describe('operator library API client', () => {
     await expect(previewLibraryAuthoringDraft('support-draft', 3)).resolves.toEqual(preview);
     await expect(commitLibraryAuthoringDraft('support-draft', 3, preview, 'contract reviewed'))
       .resolves.toMatchObject({ schemaVersion: 'bloge.visualLibraryAuthoringCommitResult.v1' });
-    expect(calls).toHaveLength(7);
+    expect(calls).toHaveLength(9);
   });
 
   it('fences authoring operator and function test drafts and runs to one exact revision', async () => {

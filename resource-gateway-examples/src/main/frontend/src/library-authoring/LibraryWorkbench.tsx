@@ -10,6 +10,7 @@ import {
   commitLibraryAuthoringDraft,
   fetchLibraryAuthoringCatalogs,
   fetchLibraryAuthoringDraft,
+  fetchLibraryAuthoringDraftRevision,
   previewLibraryAuthoringDraft,
   saveLibraryAuthoringDraft,
 } from '../api';
@@ -24,7 +25,7 @@ import AssetTestTable, {
 } from './AssetTestTable';
 import CanonicalContractPreview from './CanonicalContractPreview';
 import FunctionBuilder from './FunctionBuilder';
-import LibraryStartChoices from './LibraryStartChoices';
+import LibraryHome from './LibraryHome';
 import LibraryTree from './LibraryTree';
 import OperatorBuilder from './OperatorBuilder';
 import SampleInferenceReview, {
@@ -61,6 +62,8 @@ export default function LibraryWorkbench() {
   const [testLaunch, setTestLaunch] = useState<AssetTestLaunch | null>(null);
   const [fixtureAvailable, setFixtureAvailable] = useState(false);
   const [startSource, setStartSource] = useState('');
+  const [historicalDraft, setHistoricalDraft] = useState<VisualLibraryAuthoringDraft | null>(null);
+  const [latestDraft, setLatestDraft] = useState<VisualLibraryAuthoringDraft | null>(null);
   const revisionRef = useRef(0);
   const currentDraftRef = useRef<VisualLibraryAuthoringDraft | null>(null);
   const lastSavedJsonRef = useRef('');
@@ -106,17 +109,30 @@ export default function LibraryWorkbench() {
   }, []);
 
   useEffect(() => {
-    const requestedDraftId = new URLSearchParams(window.location.search).get('draftId')?.trim() ?? '';
+    const query = new URLSearchParams(window.location.search);
+    const requestedDraftId = query.get('draftId')?.trim() ?? '';
+    const requestedRevision = positiveRevision(query.get('revision'));
     if (!requestedDraftId) {
       return;
     }
     let active = true;
     setLoading(true);
     fetchLibraryAuthoringDraft(requestedDraftId)
-      .then((draft) => {
-        if (active) {
-          installDraft(draft);
+      .then(async (current) => {
+        if (!active) return;
+        setLatestDraft(current);
+        if (requestedRevision && requestedRevision !== current.revision) {
+          const exact = await fetchLibraryAuthoringDraftRevision(
+            requestedDraftId,
+            requestedRevision,
+          );
+          if (!active) return;
+          setHistoricalDraft(exact);
+          installDraft(exact);
+          return;
         }
+        setHistoricalDraft(null);
+        installDraft(current);
       })
       .catch((error) => {
         if (active) {
@@ -158,6 +174,8 @@ export default function LibraryWorkbench() {
         revisionRef.current = stored.revision;
         lastSavedJsonRef.current = serialized;
         setRevision(stored.revision);
+        setLatestDraft(stored);
+        replaceLibraryDraftLocation(stored.draftId, stored.revision);
         if (epoch === editEpochRef.current) {
           setSaveState('saved');
           setSaveMessage(`Saved revision ${stored.revision}`);
@@ -244,7 +262,9 @@ export default function LibraryWorkbench() {
     setCommitResult(null);
     setInferenceLaunch(inference ?? null);
     setStartSource(source);
-    window.history.replaceState({}, '', `/libraries/?draftId=${encodeURIComponent(id)}`);
+    setHistoricalDraft(null);
+    setLatestDraft(null);
+    replaceLibraryDraftLocation(id, 0);
   };
 
   const reload = async () => {
@@ -253,7 +273,11 @@ export default function LibraryWorkbench() {
     }
     setLoading(true);
     try {
-      installDraft(await fetchLibraryAuthoringDraft(draftId));
+      const current = await fetchLibraryAuthoringDraft(draftId);
+      setHistoricalDraft(null);
+      setLatestDraft(current);
+      installDraft(current);
+      replaceLibraryDraftLocation(current.draftId, current.revision);
     } finally {
       setLoading(false);
     }
@@ -317,10 +341,72 @@ export default function LibraryWorkbench() {
   }
   if (!document) {
     return (
-      <>
-        {saveState === 'error' && <p className="library-route-error">{saveMessage}</p>}
-        <LibraryStartChoices onStart={start} />
-      </>
+      <LibraryHome
+        routeError={saveState === 'error' ? saveMessage : ''}
+        onStart={start}
+      />
+    );
+  }
+  if (historicalDraft) {
+    return (
+      <main className="library-history-view" data-testid="library-history-view">
+        <header>
+          <div>
+            <p className="eyebrow">Immutable authoring history</p>
+            <h2>{document.library.name || document.library.id}</h2>
+            <p>
+              Exact revision {historicalDraft.revision} is open read-only.
+              The mutable head is revision {latestDraft?.revision ?? 'unavailable'}.
+            </p>
+          </div>
+          <a className="secondary compact" href="/libraries/">Library home</a>
+        </header>
+        <section className="library-history-verdict">
+          <span>Historical snapshot</span>
+          <strong>No edits can overwrite this revision</strong>
+          <p>
+            Resume the current head to continue the same draft, or fork this snapshot into a new
+            independently autosaved draft.
+          </p>
+        </section>
+        <dl className="library-history-summary">
+          <div><dt>Draft</dt><dd>{historicalDraft.draftId}</dd></div>
+          <div><dt>Revision</dt><dd>{historicalDraft.revision}</dd></div>
+          <div><dt>Owner</dt><dd>{document.library.owner || 'Unresolved'}</dd></div>
+          <div><dt>Operators</dt><dd>{Object.keys(document.operators ?? {}).length}</dd></div>
+          <div><dt>Functions</dt><dd>{Object.keys(document.functions ?? {}).length}</dd></div>
+          <div><dt>Saved by</dt><dd>{historicalDraft.savedBy || 'Unknown'}</dd></div>
+        </dl>
+        <div className="library-history-actions">
+          {latestDraft && (
+            <a
+              className="primary"
+              href={`/libraries/?draftId=${encodeURIComponent(latestDraft.draftId)}&revision=${latestDraft.revision}`}
+            >
+              Resume latest r{latestDraft.revision}
+            </a>
+          )}
+          <button
+            type="button"
+            className="secondary"
+            onClick={() => start(
+              structuredClone(historicalDraft.document),
+              `fork:r${historicalDraft.revision}`,
+            )}
+          >
+            Fork this revision
+          </button>
+        </div>
+        <details className="library-history-technical">
+          <summary>Technical coordinates</summary>
+          <dl>
+            <div><dt>Fingerprint</dt><dd><code>{historicalDraft.fingerprint}</code></dd></div>
+            <div><dt>Created</dt><dd>{historicalDraft.createdAt}</dd></div>
+            <div><dt>Updated</dt><dd>{historicalDraft.updatedAt}</dd></div>
+            <div><dt>Source mode</dt><dd>{historicalDraft.sourceMode}</dd></div>
+          </dl>
+        </details>
+      </main>
     );
   }
 
@@ -356,7 +442,7 @@ export default function LibraryWorkbench() {
     <main className="library-workbench" data-testid="library-workbench">
       <header className="library-command-bar">
         <div>
-          <a href="/libraries/" aria-label="Create another library" title="Create another library">+</a>
+          <a href="/libraries/" aria-label="Open Library home" title="Open Library home">←</a>
           <div>
             <strong>{document.library.name || document.library.id}</strong>
             <span>
@@ -613,4 +699,15 @@ function documentQueryAll<TElement extends Element>(selector: string): NodeListO
 
 function pointer(value: string): string {
   return value.replace(/~/g, '~0').replace(/\//g, '~1');
+}
+
+function positiveRevision(value: string | null): number {
+  const parsed = Number(value);
+  return Number.isSafeInteger(parsed) && parsed > 0 ? parsed : 0;
+}
+
+function replaceLibraryDraftLocation(draftId: string, revision: number): void {
+  const query = new URLSearchParams({ draftId });
+  if (revision > 0) query.set('revision', String(revision));
+  window.history.replaceState({}, '', `/libraries/?${query.toString()}`);
 }

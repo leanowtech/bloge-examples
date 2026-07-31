@@ -23,8 +23,11 @@ const apiMocks = vi.hoisted(() => ({
   draftFunctionTest: vi.fn(),
   draftOperatorTest: vi.fn(),
   discover: vi.fn(),
+  fetchContext: vi.fn(),
   infer: vi.fn(),
   preview: vi.fn(),
+  fetchDrafts: vi.fn(),
+  fetchDraftRevision: vi.fn(),
   runFunctionTest: vi.fn(),
   runOperatorTest: vi.fn(),
   save: vi.fn(),
@@ -47,6 +50,9 @@ vi.mock('../api', () => ({
   draftLibraryAuthoringOperatorTest: apiMocks.draftOperatorTest,
   discoverLibraryAuthoringAssets: apiMocks.discover,
   fetchLibraryAuthoringDraft: apiMocks.fetchDraft,
+  fetchLibraryAuthoringDraftRevision: apiMocks.fetchDraftRevision,
+  fetchLibraryAuthoringDrafts: apiMocks.fetchDrafts,
+  fetchLibraryAuthoringContext: apiMocks.fetchContext,
   fetchLibraryAuthoringCatalogs: apiMocks.fetchCatalogs,
   fetchLibraryAuthoringTestEvidence: apiMocks.fetchTestEvidence,
   fetchLibraryAuthoringTestGate: apiMocks.fetchTestGate,
@@ -74,6 +80,9 @@ describe('LibraryWorkbench', () => {
     apiMocks.draftOperatorTest.mockReset();
     apiMocks.discover.mockReset();
     apiMocks.fetchDraft.mockReset();
+    apiMocks.fetchDraftRevision.mockReset();
+    apiMocks.fetchDrafts.mockReset();
+    apiMocks.fetchContext.mockReset();
     apiMocks.fetchCatalogs.mockReset();
     apiMocks.fetchTestEvidence.mockReset();
     apiMocks.fetchTestGate.mockReset();
@@ -88,6 +97,21 @@ describe('LibraryWorkbench', () => {
       limits: {},
       features: { governedFixturePersistence: true },
     });
+    apiMocks.fetchDrafts.mockResolvedValue([]);
+    apiMocks.fetchContext.mockResolvedValue({
+      schemaVersion: 'bloge.visualLibraryAuthoringHomeContext.v1',
+      actorId: 'visual-library-workbench',
+      tenantId: 'tenant-a',
+      organizationId: 'organization-a',
+      projectId: 'project-a',
+      environmentId: 'test',
+      region: 'local',
+    });
+    apiMocks.fetchTestGate.mockResolvedValue({
+      status: 'PASSED',
+      reasons: [],
+      assets: [],
+    });
     vi.useFakeTimers();
   });
 
@@ -99,6 +123,102 @@ describe('LibraryWorkbench', () => {
     host.remove();
     vi.useRealTimers();
     vi.restoreAllMocks();
+  });
+
+  it('starts on a durable asset home with readiness queues and exact revision links', async () => {
+    const library = storedDraft('support-library', 7, {
+      schemaVersion: 'bloge.visualLibraryAuthoring.v1',
+      library: {
+        id: 'support-library',
+        name: 'Support Operations',
+        owner: 'visual-library-workbench',
+      },
+      operators: {
+        'support:search': {
+          input: { query: 'string' },
+          output: { answer: 'string' },
+        },
+      },
+      functions: {},
+    });
+    apiMocks.fetchDrafts.mockResolvedValue([library]);
+    apiMocks.preview.mockResolvedValue({
+      ...readyPreview('support-library', 7),
+      confirmationRequests: [{
+        code: 'OWNER_CONFIRMATION_REQUIRED',
+        authoringPath: '/library/owner',
+        question: 'Confirm owner?',
+        allowedValues: ['YES'],
+      }],
+      runtimeParity: [{
+        assetKind: 'OPERATOR',
+        assetRef: 'support:search',
+        runtimeProfile: 'demo',
+        state: 'DRIFTED',
+        executableReady: false,
+        declaredFingerprint: 'declared',
+        runtimeFingerprint: 'runtime',
+        reasonCode: 'RUNTIME_CHANGED',
+        message: 'Runtime changed.',
+      }],
+    });
+    apiMocks.fetchTestGate.mockResolvedValue({
+      status: 'BLOCKED',
+      reasons: ['MISSING_EVIDENCE'],
+      assets: [],
+    });
+
+    await renderWorkbench();
+    await settle();
+
+    const row = query('[data-testid="library-home-row:support-library"]');
+    expect(row.textContent).toContain('Support Operations');
+    expect(row.textContent).toContain('Needs confirmation');
+    expect(row.textContent).toContain('Runtime drift');
+    expect(row.textContent).toContain('Test gate incomplete');
+    expect(query<HTMLAnchorElement>('[data-testid="library-home-row:support-library"] a').href)
+      .toContain('/libraries/?draftId=support-library&revision=7');
+
+    await click(query('[data-testid="library-filter:runtime-drift"]'));
+    expect(query('[data-testid="library-home-row:support-library"]')).toBeTruthy();
+  });
+
+  it('opens an exact historical revision read-only and offers latest or fork', async () => {
+    const current = storedDraft('support-library', 3, {
+      schemaVersion: 'bloge.visualLibraryAuthoring.v1',
+      library: { id: 'support-library', name: 'Current support', owner: 'support-team' },
+      operators: { 'support:current': { input: {}, output: {} } },
+      functions: {},
+    });
+    const historical = storedDraft('support-library', 1, {
+      schemaVersion: 'bloge.visualLibraryAuthoring.v1',
+      library: { id: 'support-library', name: 'Original support', owner: 'support-team' },
+      operators: { 'support:original': { input: {}, output: {} } },
+      functions: {},
+    });
+    window.history.replaceState(
+      {},
+      '',
+      '/libraries/?draftId=support-library&revision=1',
+    );
+    apiMocks.fetchDraft.mockResolvedValue(current);
+    apiMocks.fetchDraftRevision.mockResolvedValue(historical);
+
+    await renderWorkbench();
+    await settle();
+
+    expect(apiMocks.fetchDraftRevision).toHaveBeenCalledWith('support-library', 1);
+    expect(query('[data-testid="library-history-view"]').textContent)
+      .toContain('Exact revision 1 is open read-only');
+    expect(query('[data-testid="library-history-view"]').textContent)
+      .toContain('mutable head is revision 3');
+    expect(query<HTMLAnchorElement>('.library-history-actions a').href)
+      .toContain('draftId=support-library&revision=3');
+
+    await click(buttonByText('Fork this revision'));
+    expect(query('[data-testid="library-workbench"]').textContent).toContain('Original support');
+    expect(window.location.search).toContain('draftId=support-library-');
+    expect(window.location.search).not.toContain('revision=');
   });
 
   it('opens a complete example and preserves the fenced save-preview-commit flow', async () => {
@@ -338,6 +458,7 @@ describe('LibraryWorkbench', () => {
       root = createRoot(host);
       root.render(<LibraryWorkbench />);
     });
+    await settle();
   }
 });
 

@@ -67,7 +67,7 @@ silently consuming work.
 | Open | Best first move |
 | --- | --- |
 | `http://localhost:8080/author/` | Build a schema-constrained graph on the visual canvas |
-| `http://localhost:8080/libraries/` | Discover existing DSL/API/runtime assets, create an operator/function library, infer schemas, run exact-draft tests, and commit exact revisions |
+| `http://localhost:8080/libraries/` | Resume durable exact revisions from status queues, discover existing DSL/API/runtime assets, create libraries, infer schemas, run exact-draft tests, and commit |
 | `http://localhost:8080/rehearsals/` | Triage exact-scope Scenario batches and inspect signed evidence; without `--scenario-batch`, the page shows a capability-aware unavailable state |
 | `http://localhost:8080/showcase/` | Explore guided product scenarios and sample outputs |
 | `http://localhost:8080/examples/gateway` | Use the legacy Custom Composer regression surface |
@@ -106,12 +106,16 @@ The Run Evidence view is bound to the last executed Scenario and shows its asser
 terminal output, mocked/real node boundary, and exploratory content fingerprint. A green execution
 is deliberately still `Evidence incomplete` until Contract and Governance are checked.
 
-For the shortest Library demo, open **Libraries**, choose **Customer Support Triage** under
-**Complete examples**, select an operator or built-in function in the left tree, and edit its
-structured fields in the center. The right side is a server-authoritative canonical preview:
-autosave stores an exact revision, diagnostics jump back to their source field, and
-**Import Design Catalog** is enabled only when that exact preview remains importable. An ETag
-conflict blocks further commit until **Reload** restores the latest stored revision.
+For the shortest Library demo, open **Libraries**. The first screen lists durable drafts with
+Recent, Mine, confirmation, runtime-drift, test-gate, and ownership queues. **Resume rN** opens the
+exact mutable revision; an older deep link opens a read-only snapshot with **Resume latest** and
+**Fork this revision**, so history cannot overwrite the current head. Choose **Create library**,
+then **Customer Support Triage** under **Complete examples**; select an operator or built-in
+function in the left tree and edit its structured fields. The right side is a
+server-authoritative canonical preview: autosave updates the exact revision in the URL,
+diagnostics jump back to their source field, and **Import Design Catalog** is enabled only while
+that exact preview remains importable. An ETag conflict blocks further commit until **Reload**
+restores the latest stored revision.
 
 To experience schema inference, choose **Infer from Samples** on the Library start page and keep
 the two prefilled JSON records. **Create and analyze** creates a minimal operator draft; then

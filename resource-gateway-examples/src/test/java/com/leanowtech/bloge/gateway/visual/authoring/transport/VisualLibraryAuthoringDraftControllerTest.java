@@ -21,6 +21,7 @@ import org.junit.jupiter.api.Test;
 import org.springframework.http.HttpHeaders;
 
 import java.time.Instant;
+import java.util.ArrayList;
 import java.util.Collection;
 import java.util.List;
 import java.util.Optional;
@@ -67,6 +68,14 @@ class VisualLibraryAuthoringDraftControllerTest {
                             input: {value: string}
                             output: {value: string}
                         """, VisualLibraryAuthoringDocument.class);
+
+        assertThat(controller.context(headers(null))).satisfies(context -> {
+            assertThat(context.schemaVersion())
+                    .isEqualTo("bloge.visualLibraryAuthoringHomeContext.v1");
+            assertThat(context.actorId()).isEqualTo("trusted-actor");
+            assertThat(context.organizationId()).isEqualTo("knowledge-governance");
+            assertThat(context.projectId()).isEqualTo("tool-studio");
+        });
 
         assertThatThrownBy(() -> controller.save(
                 "support-library",
@@ -185,6 +194,19 @@ class VisualLibraryAuthoringDraftControllerTest {
                     .input().get("value").path("fields").path("score").asText())
                     .isEqualTo("integer");
         });
+        assertThat(controller.revision("support-library", 1, headers(null)))
+                .satisfies(response -> {
+                    assertThat(response.getHeaders().getETag()).isEqualTo("\"1\"");
+                    assertThat(response.getBody()).isNotNull();
+                    assertThat(response.getBody().revision()).isEqualTo(1);
+                });
+        assertThatThrownBy(() -> controller.revision(
+                "support-library", 99, headers(null)
+        )).isInstanceOfSatisfying(AuthoringLifecycleException.class, exception -> {
+            assertThat(exception.problem().status()).isEqualTo(404);
+            assertThat(exception.problem().code())
+                    .isEqualTo("RG.AUTHORING.DRAFT_REVISION_NOT_FOUND");
+        });
     }
 
     private static byte[] inferenceRequest(String operatorRef, boolean persistPayload) {
@@ -234,6 +256,7 @@ class VisualLibraryAuthoringDraftControllerTest {
     private static final class SingleDraftRepository implements AuthoringDraftRepository {
         private AuthoringDraft current;
         private AuthoringScope scope;
+        private final List<AuthoringDraft> history = new ArrayList<>();
 
         @Override
         public Collection<AuthoringDraft> all(AuthoringScope requiredScope) {
@@ -251,7 +274,13 @@ class VisualLibraryAuthoringDraftControllerTest {
 
         @Override
         public List<AuthoringDraft> revisions(AuthoringScope requiredScope, String draftId) {
-            return find(requiredScope, draftId).stream().toList();
+            if (!requiredScope.equals(scope)) {
+                return List.of();
+            }
+            return history.stream()
+                    .filter(draft -> draft.draftId().equals(draftId))
+                    .sorted(java.util.Comparator.comparingLong(AuthoringDraft::revision).reversed())
+                    .toList();
         }
 
         @Override
@@ -276,6 +305,7 @@ class VisualLibraryAuthoringDraftControllerTest {
                     actor
             );
             scope = requiredScope;
+            history.add(current);
             return Optional.of(current);
         }
     }

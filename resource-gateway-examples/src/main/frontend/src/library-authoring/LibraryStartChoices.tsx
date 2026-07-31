@@ -9,7 +9,10 @@ import {
   type SampleInferenceLaunch,
 } from './SampleInferenceReview';
 
+export type LibraryStartChoice = 'quick' | 'samples' | 'discover' | 'advanced';
+
 interface LibraryStartChoicesProps {
+  initialChoice?: LibraryStartChoice;
   onStart: (
     document: VisualLibraryAuthoringDocument,
     source: string,
@@ -17,10 +20,11 @@ interface LibraryStartChoicesProps {
   ) => void;
 }
 
-type StartChoice = 'quick' | 'samples' | 'discover' | 'advanced';
-
-export default function LibraryStartChoices({ onStart }: LibraryStartChoicesProps) {
-  const [choice, setChoice] = useState<StartChoice>('quick');
+export default function LibraryStartChoices({
+  initialChoice = 'quick',
+  onStart,
+}: LibraryStartChoicesProps) {
+  const [choice, setChoice] = useState<LibraryStartChoice>(initialChoice);
   const [libraryId, setLibraryId] = useState('team-operator-library');
   const [owner, setOwner] = useState('team-owner');
   const [sampleOperatorRef, setSampleOperatorRef] = useState('support:classify-ticket');
@@ -69,7 +73,7 @@ export default function LibraryStartChoices({ onStart }: LibraryStartChoicesProp
   };
 
   return (
-    <main className="library-start" data-testid="library-start">
+    <section className="library-start" data-testid="library-start">
       <header className="library-start-heading">
         <div>
           <p className="eyebrow">Library Workbench</p>
@@ -288,6 +292,6 @@ export default function LibraryStartChoices({ onStart }: LibraryStartChoicesProp
           ))}
         </div>
       </section>
-    </main>
+    </section>
   );
 }

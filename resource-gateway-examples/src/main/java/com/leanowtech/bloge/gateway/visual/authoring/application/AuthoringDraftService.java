@@ -113,6 +113,35 @@ public class AuthoringDraftService {
         return drafts.revisions(requireScope(scope), requireId(draftId));
     }
 
+    public AuthoringDraft findRevision(
+            AuthoringScope scope,
+            String draftId,
+            long revision) {
+        AuthoringScope requiredScope = requireScope(scope);
+        String id = requireId(draftId);
+        if (revision <= 0) {
+            throw failure(
+                    400,
+                    "RG.AUTHORING.DRAFT_REVISION_INVALID",
+                    "An exact positive authoring revision is required.",
+                    id,
+                    Math.max(0, revision),
+                    "/revision"
+            );
+        }
+        return drafts.revisions(requiredScope, id).stream()
+                .filter(candidate -> candidate.revision() == revision)
+                .findFirst()
+                .orElseThrow(() -> failure(
+                        404,
+                        "RG.AUTHORING.DRAFT_REVISION_NOT_FOUND",
+                        "The requested authoring revision was not found in the authorized enterprise scope.",
+                        id,
+                        revision,
+                        "/revision"
+                ));
+    }
+
     public AuthoringDraft save(AuthoringScope scope,
                                String draftId,
                                long expectedRevision,

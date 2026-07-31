@@ -63,6 +63,7 @@ import type {
   VisualLibraryAuthoringCompileResult,
   VisualLibraryAuthoringDocument,
   VisualLibraryAuthoringDraft,
+  VisualLibraryAuthoringHomeContext,
   VisualOperatorContractTestSuite,
   VisualSampleInferenceDecision,
   VisualSampleInferenceRequest,
@@ -418,6 +419,15 @@ export async function fetchLibraryAuthoringDrafts(): Promise<VisualLibraryAuthor
   );
 }
 
+/** Reads the authenticated actor and enterprise scope used by Library Home projections. */
+export async function fetchLibraryAuthoringContext(): Promise<VisualLibraryAuthoringHomeContext> {
+  return readJson<VisualLibraryAuthoringHomeContext>(
+    await sendRequest('/admin/visual-operator-library-authoring/drafts/context', {
+      headers: operatorTestingHeaders('TEST_SUITE_READ'),
+    }),
+  );
+}
+
 /** Reads exact Workbench limits and optional runtime feature availability. */
 export async function fetchLibraryAuthoringCatalogs(): Promise<VisualLibraryAuthoringCatalogs> {
   return readJsonMutation<VisualLibraryAuthoringCatalogs>(
@@ -459,6 +469,20 @@ export async function fetchLibraryAuthoringDraft(
   return readJsonMutation<VisualLibraryAuthoringDraft>(
     await sendRequest(
       `/admin/visual-operator-library-authoring/drafts/${encodeURIComponent(draftId)}`,
+      { headers: operatorTestingHeaders('TEST_SUITE_READ') },
+    ),
+  );
+}
+
+/** Loads one immutable historical authoring revision without advancing the mutable draft head. */
+export async function fetchLibraryAuthoringDraftRevision(
+  draftId: string,
+  revision: number,
+): Promise<VisualLibraryAuthoringDraft> {
+  return readJsonMutation<VisualLibraryAuthoringDraft>(
+    await sendRequest(
+      `/admin/visual-operator-library-authoring/drafts/${encodeURIComponent(draftId)}`
+      + `/revisions/${Math.max(1, revision)}`,
       { headers: operatorTestingHeaders('TEST_SUITE_READ') },
     ),
   );
