@@ -39,7 +39,7 @@ export default function App() {
   }, [title]);
 
   return (
-    <div className="app">
+    <div className={`app app-${route}`}>
       <header className="topbar">
         <div>
           <p className="eyebrow">BLOGE Visual Canvas</p>

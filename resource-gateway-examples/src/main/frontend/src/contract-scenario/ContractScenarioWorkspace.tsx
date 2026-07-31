@@ -632,6 +632,28 @@ export default function ContractScenarioWorkspace({
         ['compatibility', 'Compatibility'],
         ['evidence', 'Run Evidence'],
       ];
+  const contractTask = activeTab === 'interface' || activeTab === 'compatibility';
+  const scenarioTask = activeTab === 'scenarios';
+  const evidenceTask = activeTab === 'evidence';
+  const showGraphSave = targetKind === 'GRAPH'
+    && (!surfacePresentation || contractTask || !assetStored);
+  const showScenarioAssets = !surfacePresentation || scenarioTask;
+  const showPublish = !surfacePresentation || evidenceTask;
+  const assetStateLabel = surfacePresentation && contractTask
+    ? targetKind === 'OPERATOR'
+      ? 'Projected Contract'
+      : !assetStored
+        ? 'Exploratory draft'
+        : `Graph r${contract.target.revision}`
+    : !assetStored
+      ? 'Exploratory draft'
+      : dirty
+        ? evidenceTask
+          ? 'Evidence from unsaved Scenario'
+          : 'Unsaved Scenario changes'
+        : current
+          ? `Scenario r${scenarioDraftSet.revision} saved`
+          : 'Contract changed';
 
   return (
     <div
@@ -665,15 +687,9 @@ export default function ContractScenarioWorkspace({
           </div>
           <div className="contract-workspace-header-actions">
             <span className={`contract-current-badge ${!dirty && current ? 'current' : 'stale'}`}>
-              {!assetStored
-                ? 'Exploratory draft'
-                : dirty
-                  ? 'Unsaved Scenario changes'
-                  : current
-                    ? `Scenario r${scenarioDraftSet.revision} saved`
-                    : 'Contract changed'}
+              {assetStateLabel}
             </span>
-            {targetKind === 'GRAPH' && (
+            {showGraphSave && (
               <button
                 type="button"
                 className="secondary compact"
@@ -683,30 +699,36 @@ export default function ContractScenarioWorkspace({
                 {assetBusy === 'graph' ? 'Saving Graph...' : 'Save Graph'}
               </button>
             )}
-            <button
-              type="button"
-              className="secondary compact"
-              onClick={() => void loadDraftSet()}
-              disabled={Boolean(assetBusy) || !assetStored}
-            >
-              {assetBusy === 'load' ? 'Loading...' : 'Load Scenario'}
-            </button>
-            <button
-              type="button"
-              className="secondary compact"
-              onClick={() => void saveDraftSet()}
-              disabled={Boolean(assetBusy) || !assetStored || !current || !dirty || scenarios.length === 0}
-            >
-              {assetBusy === 'save' ? 'Saving...' : 'Save Scenario'}
-            </button>
-            <button
-              type="button"
-              className="primary compact"
-              onClick={() => void publishDraftSet()}
-              disabled={Boolean(assetBusy) || dirty || !current || scenarioDraftSet.revision < 1}
-            >
-              {assetBusy === 'publish' ? 'Publishing...' : 'Publish'}
-            </button>
+            {showScenarioAssets && (
+              <>
+                <button
+                  type="button"
+                  className="secondary compact"
+                  onClick={() => void loadDraftSet()}
+                  disabled={Boolean(assetBusy) || !assetStored}
+                >
+                  {assetBusy === 'load' ? 'Loading...' : 'Load Scenario'}
+                </button>
+                <button
+                  type="button"
+                  className="secondary compact"
+                  onClick={() => void saveDraftSet()}
+                  disabled={Boolean(assetBusy) || !assetStored || !current || !dirty || scenarios.length === 0}
+                >
+                  {assetBusy === 'save' ? 'Saving...' : 'Save Scenario'}
+                </button>
+              </>
+            )}
+            {showPublish && (
+              <button
+                type="button"
+                className="primary compact"
+                onClick={() => void publishDraftSet()}
+                disabled={Boolean(assetBusy) || dirty || !current || scenarioDraftSet.revision < 1}
+              >
+                {assetBusy === 'publish' ? 'Publishing...' : 'Publish'}
+              </button>
+            )}
             {workspaceTransferEnabled && (
               <>
                 <button
@@ -893,6 +915,29 @@ function InterfaceTab({
         <SchemaFieldTree envelope={contract.inputSchema} label="Input" rootLabel="ctx" />
         <SchemaFieldTree envelope={contract.outputSchema} label="Output" rootLabel="public result" />
       </div>
+      <section className="contract-lineage" aria-label="Contract lineage">
+        <header>
+          <div>
+            <span>Lineage</span>
+            <h3>Exact Contract coordinate</h3>
+          </div>
+          <strong>{contract.target.kind}</strong>
+        </header>
+        <dl>
+          <div><dt>Target ID</dt><dd title={contract.target.id}>{contract.target.id}</dd></div>
+          <div><dt>Revision</dt><dd>{contract.target.revision}</dd></div>
+          <div>
+            <dt>Target fingerprint</dt>
+            <dd><code title={contract.target.fingerprint}>{shortFingerprint(contract.target.fingerprint)}</code></dd>
+          </div>
+          <div>
+            <dt>Contract fingerprint</dt>
+            <dd><code title={contractFingerprint}>{shortFingerprint(contractFingerprint)}</code></dd>
+          </div>
+          <div><dt>Source</dt><dd>{contract.source}</dd></div>
+          <div><dt>Confidence</dt><dd>{contract.confidence}</dd></div>
+        </dl>
+      </section>
       {contractEditable ? (
         <ContractSemanticsEditor contract={contract} onChange={onContractChange} />
       ) : (

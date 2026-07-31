@@ -112,17 +112,21 @@ export default function AuthorCommandBar({
         </span>
       </div>
       <div className="author-secondary-actions">
-        <button type="button" className="secondary compact" onClick={onImport}>
-          Import
-        </button>
-        <button
-          type="button"
-          className="secondary compact"
-          onClick={onAutoLayout}
-          disabled={layoutDisabled}
-        >
-          Auto layout
-        </button>
+        {mode === 'compose' && (
+          <>
+            <button type="button" className="secondary compact" onClick={onImport}>
+              Import
+            </button>
+            <button
+              type="button"
+              className="secondary compact"
+              onClick={onAutoLayout}
+              disabled={layoutDisabled}
+            >
+              Auto layout
+            </button>
+          </>
+        )}
         <button
           type="button"
           className="secondary compact"
@@ -143,7 +147,7 @@ export default function AuthorCommandBar({
             }
           }}
         >
-          Export
+          Export draft
         </a>
       </div>
       <button

@@ -177,6 +177,8 @@ import {
 } from './author/dslAuthorHandoff';
 import AuthorCommandBar from './author/shell/AuthorCommandBar';
 import AuthorContextInspector from './author/shell/AuthorContextInspector';
+import AuthorSurfaceRouter from './author/shell/AuthorSurfaceRouter';
+import TopologyContextRail from './author/shell/TopologyContextRail';
 import StartImportDialog, {
   type StartImportSection,
 } from './author/shell/StartImportDialog';
@@ -4921,6 +4923,7 @@ export default function AuthorCanvas({ workspaceVersion = 'v1' }: AuthorCanvasPr
   const contractExecutionSnapshotRef = useRef('');
   const scenarioGraphNameRef = useRef('');
   const dslHandoffStartedRef = useRef(false);
+  const initialOperatorTargetRestoredRef = useRef(false);
   const authoritativeContractRef = useRef<{
     canvasSnapshot: string;
     executionSnapshot: string;
@@ -8356,7 +8359,12 @@ export default function AuthorCanvas({ workspaceVersion = 'v1' }: AuthorCanvasPr
     const nextUrl = authorWorkspaceUrl(window.location.href, authorMode, selectedNodeId, {
       target: operatorContractWorkspace
         ? `operator:${operatorContractWorkspace.contract.target.id}`
-        : authorMode === 'compose' ? '' : 'graph',
+        : authorMode === 'compose'
+          ? ''
+          : !initialOperatorTargetRestoredRef.current
+              && initialWorkspaceLocation.target.startsWith('operator:')
+            ? initialWorkspaceLocation.target
+            : 'graph',
       workspaceView: workspaceOpen
         ? contractWorkspaceInitialTab
         : authorMode === 'compose' ? '' : workspaceTabForMode(authorMode),
@@ -8374,6 +8382,77 @@ export default function AuthorCanvas({ workspaceVersion = 'v1' }: AuthorCanvasPr
     operatorContractWorkspace,
     selectedNodeId,
     workspaceScenarioId,
+  ]);
+
+  useEffect(() => {
+    if (!isTaskWorkspace) {
+      return undefined;
+    }
+    const restoreLocation = () => {
+      const location = parseAuthorWorkspaceLocation(window.location.search);
+      const nextTab = location.workspaceView || workspaceTabForMode(location.mode);
+      setAuthorMode(location.mode);
+      setSelectedNodeId(location.selectedNodeId);
+      setWorkspaceScenarioId(location.scenarioId);
+      setContractWorkspaceInitialTab(nextTab);
+      if (location.mode === 'compose') {
+        setContractWorkspaceOpen(false);
+        setOperatorContractWorkspace(null);
+        return;
+      }
+      const operatorRef = location.target.startsWith('operator:')
+        ? location.target.slice('operator:'.length)
+        : '';
+      if (operatorRef) {
+        const operator = operators.find((candidate) => candidate.operatorRef === operatorRef);
+        if (operator) {
+          void openOperatorContractWorkspace(operator, nextTab, location.selectedNodeId);
+          return;
+        }
+        setDeepLinkNotice({
+          level: 'warning',
+          message: `Operator target ${operatorRef} is unavailable; opened the Graph target instead.`,
+        });
+      }
+      setOperatorContractWorkspace(null);
+      setContractWorkspaceOpen(true);
+    };
+    window.addEventListener('popstate', restoreLocation);
+    return () => window.removeEventListener('popstate', restoreLocation);
+  }, [isTaskWorkspace, openOperatorContractWorkspace, operators]);
+
+  useEffect(() => {
+    if (
+      !isTaskWorkspace
+      || initialOperatorTargetRestoredRef.current
+      || !initialWorkspaceLocation.target.startsWith('operator:')
+      || initialWorkspaceLocation.mode === 'compose'
+      || operators.length === 0
+    ) {
+      return;
+    }
+    const operatorRef = initialWorkspaceLocation.target.slice('operator:'.length);
+    const operator = operators.find((candidate) => candidate.operatorRef === operatorRef);
+    initialOperatorTargetRestoredRef.current = true;
+    if (operator) {
+      void openOperatorContractWorkspace(
+        operator,
+        initialWorkspaceLocation.workspaceView
+          || workspaceTabForMode(initialWorkspaceLocation.mode),
+        initialWorkspaceLocation.selectedNodeId,
+      );
+      return;
+    }
+    setDeepLinkNotice({
+      level: 'warning',
+      message: `Operator target ${operatorRef} is unavailable; opened the Graph target instead.`,
+    });
+    setContractWorkspaceOpen(true);
+  }, [
+    initialWorkspaceLocation,
+    isTaskWorkspace,
+    openOperatorContractWorkspace,
+    operators,
   ]);
 
   const hasRunResult = result !== null || Object.keys(simulationTableResults).length > 0;
@@ -8628,6 +8707,20 @@ export default function AuthorCanvas({ workspaceVersion = 'v1' }: AuthorCanvasPr
   }, [nodes]);
 
   const changeAuthorMode = useCallback((nextMode: AuthorMode) => {
+    const nextTab = workspaceTabForMode(nextMode);
+    const nextUrl = authorWorkspaceUrl(window.location.href, nextMode, selectedNodeId, {
+      target: nextMode === 'compose'
+        ? ''
+        : operatorContractWorkspace
+          ? `operator:${operatorContractWorkspace.contract.target.id}`
+          : 'graph',
+      workspaceView: nextMode === 'compose' ? '' : nextTab,
+      scenarioId: nextMode === 'compose' ? '' : workspaceScenarioId,
+    });
+    const currentUrl = `${window.location.pathname}${window.location.search}${window.location.hash}`;
+    if (nextUrl !== currentUrl) {
+      window.history.pushState(window.history.state, '', nextUrl);
+    }
     setAuthorMode(nextMode);
     setTestSuiteOpen(false);
     if (nextMode === 'compose') {
@@ -8635,24 +8728,37 @@ export default function AuthorCanvas({ workspaceVersion = 'v1' }: AuthorCanvasPr
       setOperatorContractWorkspace(null);
       return;
     }
-    setOperatorContractWorkspace(null);
     if (nextMode === 'contract') {
       setContractWorkspaceInitialTab('interface');
-      setContractWorkspaceOpen(true);
     } else if (nextMode === 'scenarios') {
       setContractWorkspaceInitialTab('scenarios');
-      setContractWorkspaceOpen(true);
     } else {
       setContractWorkspaceInitialTab('evidence');
-      setContractWorkspaceOpen(true);
     }
-  }, []);
+    setContractWorkspaceOpen(operatorContractWorkspace === null);
+  }, [
+    operatorContractWorkspace,
+    selectedNodeId,
+    workspaceScenarioId,
+  ]);
 
   const updateWorkspaceCoordinate = useCallback((tab: WorkspaceTab, scenarioId: string) => {
+    const nextMode = authorModeForWorkspaceTab(tab);
+    const nextUrl = authorWorkspaceUrl(window.location.href, nextMode, selectedNodeId, {
+      target: operatorContractWorkspace
+        ? `operator:${operatorContractWorkspace.contract.target.id}`
+        : 'graph',
+      workspaceView: tab,
+      scenarioId,
+    });
+    const currentUrl = `${window.location.pathname}${window.location.search}${window.location.hash}`;
+    if (nextUrl !== currentUrl) {
+      window.history.pushState(window.history.state, '', nextUrl);
+    }
     setContractWorkspaceInitialTab(tab);
     setWorkspaceScenarioId(scenarioId);
-    setAuthorMode(authorModeForWorkspaceTab(tab));
-  }, []);
+    setAuthorMode(nextMode);
+  }, [operatorContractWorkspace, selectedNodeId]);
 
   const recordScenarioEvidence = useCallback((
     scenarioId: string,
@@ -9567,6 +9673,92 @@ export default function AuthorCanvas({ workspaceVersion = 'v1' }: AuthorCanvasPr
       </aside>
 
       <main className="canvas">
+        {isTaskWorkspace && (
+          <AuthorSurfaceRouter
+            mode={authorMode}
+            targetKind={operatorContractWorkspace ? 'operator' : 'graph'}
+            contextRailExpanded={!inspectorCollapsed}
+            onOpenContextRail={() => setInspectorCollapsed(false)}
+          >
+            <Suspense
+              fallback={(
+                <div className="author-surface-loading" role="status">
+                  Opening {authorMode} surface...
+                </div>
+              )}
+            >
+              {operatorContractWorkspace ? (
+                <ContractScenarioWorkspace
+                  open
+                  presentation="surface"
+                  initialTab={contractWorkspaceInitialTab}
+                  initialScenarioId={workspaceScenarioId}
+                  graphDraft={operatorContractWorkspace.graphDraft}
+                  contract={operatorContractWorkspace.contract}
+                  contractFingerprint={operatorContractWorkspace.contractFingerprint}
+                  scenarioDraftSet={operatorContractWorkspace.scenarioDraftSet}
+                  nodes={operatorContractWorkspace.nodes}
+                  lastRun={null}
+                  targetStored
+                  contractEditable={false}
+                  workspaceTransferEnabled={false}
+                  onContractChange={() => undefined}
+                  onImportWorkspace={async () => undefined}
+                  onScenarioDraftSetChange={(next) => setOperatorContractWorkspace((current) => (
+                    current ? { ...current, scenarioDraftSet: next } : current
+                  ))}
+                  onSaveGraphDraft={async () => undefined}
+                  onRebase={() => setOperatorContractWorkspace((current) => (
+                    current
+                      ? {
+                          ...current,
+                          scenarioDraftSet: rebaseScenarioDraftSet(
+                            current.scenarioDraftSet,
+                            current.contract.target,
+                            current.contractFingerprint,
+                          ),
+                        }
+                      : current
+                  ))}
+                  onRun={runScenarioSimulation}
+                  onRunEvidence={recordScenarioEvidence}
+                  onCoordinateChange={updateWorkspaceCoordinate}
+                  onClose={() => setAuthorMode('compose')}
+                />
+              ) : contractDraft && scenarioDraftSet ? (
+                <ContractScenarioWorkspace
+                  open
+                  presentation="surface"
+                  initialTab={contractWorkspaceInitialTab}
+                  initialScenarioId={workspaceScenarioId}
+                  graphDraft={scenarioWorkspaceGraphDraft}
+                  contract={contractDraft}
+                  contractFingerprint={contractFingerprint}
+                  scenarioDraftSet={scenarioDraftSet}
+                  nodes={scenarioNodeOptions}
+                  lastRun={result}
+                  lastRunScenarioId={lastScenarioReviewEvidence?.scenarioId}
+                  lastComparison={lastScenarioReviewEvidence?.comparison}
+                  onContractChange={updateContractSemantics}
+                  onImportWorkspace={importScenarioWorkspace}
+                  onScenarioDraftSetChange={setScenarioDraftSet}
+                  onSaveGraphDraft={saveGraphForScenario}
+                  onRebase={rebaseScenariosToCurrentContract}
+                  onRun={runScenarioSimulation}
+                  onRunEvidence={recordScenarioEvidence}
+                  onCoordinateChange={updateWorkspaceCoordinate}
+                  trustContext={scenarioEvidenceTrustContext}
+                  onSelectEvidenceDiagnostic={openAuthorDiagnostic}
+                  onClose={() => setAuthorMode('compose')}
+                />
+              ) : (
+                <div className="author-surface-loading" role="status">
+                  Preparing the canonical Contract...
+                </div>
+              )}
+            </Suspense>
+          </AuthorSurfaceRouter>
+        )}
         <div className="journey-bar" aria-label="Authoring workflow">
           <ol className="journey-steps">
             {journey.steps.map((step) => (
@@ -10062,7 +10254,7 @@ export default function AuthorCanvas({ workspaceVersion = 'v1' }: AuthorCanvasPr
             <span aria-hidden="true">{inspectorCollapsed ? '<' : '>'}</span>
           </button>
         )}
-        {isTaskWorkspace && (
+        {isTaskWorkspace && authorMode === 'compose' && (
           <AuthorContextInspector
             mode={authorMode}
             selectedNode={selectedNode ? {
@@ -10178,6 +10370,28 @@ export default function AuthorCanvas({ workspaceVersion = 'v1' }: AuthorCanvasPr
               setOperatorContractWorkspace(null);
               setContractWorkspaceInitialTab('interface');
               setContractWorkspaceOpen(true);
+            }}
+          />
+        )}
+        {isTaskWorkspace && authorMode !== 'compose' && (
+          <TopologyContextRail
+            mode={authorMode}
+            graphName={graphName}
+            nodes={nodes.map((node) => ({
+              id: node.id,
+              label: node.data.label,
+              operatorRef: node.data.operatorRef,
+            }))}
+            edges={edges.map((edge) => ({ source: edge.source, target: edge.target }))}
+            selectedNodeId={selectedNodeId}
+            scenarioId={workspaceScenarioId}
+            runId={deepLinkRun?.runId ?? ''}
+            onSelectNode={(nodeId) => setSelectedNodeId(nodeId)}
+            onRevealInCompose={() => {
+              setAuthorMode('compose');
+              setContractWorkspaceOpen(false);
+              setOperatorContractWorkspace(null);
+              setInspectorCollapsed(false);
             }}
           />
         )}
@@ -10552,7 +10766,7 @@ export default function AuthorCanvas({ workspaceVersion = 'v1' }: AuthorCanvasPr
           onSelect={(item: AuthorDiagnosticItem) => openAuthorDiagnostic(item)}
         />
       )}
-      {operatorContractWorkspace && (
+      {!isTaskWorkspace && operatorContractWorkspace && (
         <Suspense
           fallback={(
             <div className="canvas-loading-state" role="status">
@@ -10603,7 +10817,7 @@ export default function AuthorCanvas({ workspaceVersion = 'v1' }: AuthorCanvasPr
           />
         </Suspense>
       )}
-      {contractWorkspaceOpen && !operatorContractWorkspace && (
+      {!isTaskWorkspace && contractWorkspaceOpen && !operatorContractWorkspace && (
         <Suspense
           fallback={(
             <div className="canvas-loading-state" role="status">

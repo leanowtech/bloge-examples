@@ -3993,13 +3993,16 @@ the design can be integrated instead of remaining a diagram-only artifact.
 
 Open `http://localhost:8080/author/`, load a built-in example, and use the fixed
 `Compose / Contract / Scenarios / Evidence` task modes. Author Workspace v2 is
-the default page. `Scenarios` is the only formal Graph/Operator testing
+the default page. Each mode owns exactly one central surface; Contract,
+Scenarios, and Evidence no longer open a second full-screen modal or repeat the
+same task tabs. `Scenarios` is the only formal Graph/Operator testing
 workspace: legacy graph and operator table rows are projected into the same
 Scenario model, while unprojectable source remains visible under Advanced for
 manual migration. The URL keeps the selected target, workspace view, Scenario,
 run, and node so a browser refresh or integration deep link restores the same
 working context. Old `authorMode=test|review` bookmarks remain readable and map
-to `scenarios|evidence`.
+to `scenarios|evidence`; legacy `operatorRef` links migrate to the canonical
+`target=operator:<ref>` coordinate.
 
 The right inspector has stable `Config / Data / Scenarios / Contract / Advanced`
 tabs. Edit the graph input/output interface in **Contract**. In **Data**, the
@@ -4035,13 +4038,15 @@ Focused and selected paths keep their full field coordinates. **Undo layout**
 restores the exact pre-layout positions until a node is added, removed, or
 manually moved.
 
-The primary Start, Operator, and Contract/Scenario dialogs share one keyboard
-contract: focus enters the current task, Tab stays inside the modal, Escape
-closes it, and focus returns to the opener. The old raw Test Suite dialog is
-available only in Legacy Workspace; v2 opens schema-driven Scenarios and moves
-directly to Run Evidence after `Run & Compare`. At 390 x 844 the command bar
-and status controls stack into a supported read/light-edit layout with a 420px
-minimum canvas.
+The temporary Start and Operator dialogs share one keyboard contract: focus
+enters the current task, Tab stays inside the modal, Escape closes it, and focus
+returns to the opener. Contract/Scenario/Evidence are central regions, not
+dialogs. The old raw Test Suite dialog is available only in Legacy Workspace;
+v2 opens schema-driven Scenarios and moves directly to Run Evidence after
+`Run & Compare`. On compact viewports the topology context becomes an optional
+drawer whose open/close state does not mutate the authoring URL. At 390 x 844
+the Author shell remains viewport-bound, its central region scrolls
+independently, and Diagnostics cannot cover the Scenario run action.
 
 Workspace v2 dispatches payload-free `bloge:author-task` browser events using the
 `bloge.authorTaskEvent.v1` envelope. A host shell may consume counts, modes,

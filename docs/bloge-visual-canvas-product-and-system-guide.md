@@ -53,9 +53,10 @@ BLOGE 通用可视化编排画布是一套面向复杂业务编排的 topology-f
 6. **Contract / Data**：`Contract` 定义 graph input/output schema；`Data` 根据 input schema
    生成这次运行的 Run Input controls，并在选中节点后显示真实入边和直接绑定。额外
    context 与 Raw JSON 只在 `Advanced` 中按需展开。
-7. **Mock Setup / Scenarios**：右侧 inspector 保持轻量；点击 `Open Scenarios` 后用
-   schema 表单组织 Given、依赖行为和 Then 断言。旧 Test Suite 浮层只在 Legacy
-   Workspace 保留。
+7. **Scenarios / Evidence 正式工作面**：顶部切换 Scenarios 后，中央区域直接显示
+   schema 表单化的 Given、依赖行为和 Then 断言；Run 后原地切换 Evidence。右侧只保留
+   当前 Graph/Operator、节点与直接上下游的轻量拓扑上下文。旧 Test Suite 浮层只在
+   Legacy Workspace 保留。
 
 当业务图已经有多层依赖或边标签较多时，优先点击工具条里的 **Canvas Focus**。它会临时收起左侧 Library/Legacy DSL/Palette、右侧 Checklist/Runtime/Test Suite inspector、顶部 workflow 和示例卡，只保留 toolbar、Graph Contract 和主画布。这个模式适合做拓扑审阅、Auto Layout 后验收、拖线调试和演示复杂图。
 
@@ -101,8 +102,7 @@ secondary credit 被降为背景层，关键路径字段坐标仍然完整显示
 
 #### 键盘、窄视口和宿主遥测
 
-Start/Import、Operator details、Contract & Scenario 三类主浮层遵循同一个
-键盘协议：
+Start/Import 与 Operator details 两类临时浮层遵循同一个键盘协议：
 
 1. 打开后焦点进入当前主任务，而不是留在被遮挡的页面；
 2. `Tab` / `Shift+Tab` 被约束在当前浮层；
@@ -111,9 +111,13 @@ Start/Import、Operator details、Contract & Scenario 三类主浮层遵循同�
 5. 所有 Author v2 主控件使用统一的高对比 `focus-visible` 轮廓，状态同时有文字，
    不依赖颜色单独表达。
 
-在 `390 x 844` 视口，命令条改为单列、状态与辅助动作改为两列，Start 和 Contract
-workspace 使用全屏浮层，画布保留至少 420px 高度。这个模式定位为**查看、运行、轻量修改
-和故障回看**；大规模拖拽、密集字段连线和 100 节点结构调整仍建议使用桌面视口。
+Contract、Scenarios 和 Evidence 不属于临时浮层：它们由顶部任务模式直接占用中央工作面，
+浏览器 Back / Forward 会恢复准确 mode、target、Scenario 和 run。
+
+在 `390 x 844` 视口，命令条改为单列、状态与辅助动作改为两列；Contract、Scenarios 和
+Evidence 继续是中央工作面，Topology Context Rail 变为按需抽屉。Author 使用全高应用壳，
+中央内容独立滚动，底部 Run 与 Diagnostics 不会互相覆盖。这个模式定位为**查看、运行、
+轻量修改和故障回看**；大规模拖拽、密集字段连线和 100 节点结构调整仍建议使用桌面视口。
 
 Author Workspace v2 会在浏览器中派发 `bloge:author-task` `CustomEvent`。宿主应用或
 VS Code webview 可以选择监听它来计算任务漏斗，Resource Gateway 前端本身不会把事件
@@ -2169,7 +2173,8 @@ POST /api/visual/connections/check
 
 #### 用 Scenario 固化业务正确性并阅读 Run Evidence
 
-在 v2 工作区加载内置复杂示例后，点击顶部 **Contract**，再进入 **Scenarios**。示例自带
+在 v2 工作区加载内置复杂示例后，点击顶部 **Contract** 会直接切换中央 Contract 工作面；
+再点击顶部 **Scenarios** 进入同级 Scenario 工作面，不会打开 modal。示例自带
 两个可运行场景；每个场景都由三段组成：
 
 1. **Given** 按 Graph/Operator input Contract 生成业务输入控件。
@@ -2207,7 +2212,8 @@ Exploratory run · <content fingerprint> · simulation evidence only
 `Evidence incomplete`。只有显式保存 Graph、固定 revision 并完成治理闭环后，运行证据
 才具备晋级资格。正常切换 Compose / Contract / Scenarios / Evidence 或选择节点不会
 触发 deep-link 告警；只有 URL 中存在 `draftId` 或 `runId` 时才会恢复持久化外部坐标。
-工作台 URL 还会保留 `target`、`workspaceView`、`scenarioId` 与 `runId`，便于从
+工作台 URL 还会保留 `authorMode`、`target`、`nodeId`、`workspaceView`、`scenarioId`
+与 `runId`，便于从
 治理系统直接回到准确的 Graph/Operator、Scenario 和 Evidence。
 
 ![Author Workspace v2 的统一 Scenario Evidence](assets/resource-gateway-author-ux-stage1-evidence-1024.png)

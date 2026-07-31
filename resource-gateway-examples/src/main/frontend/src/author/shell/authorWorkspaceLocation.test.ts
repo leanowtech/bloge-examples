@@ -34,6 +34,8 @@ describe('authorWorkspaceLocation', () => {
     expect(parseAuthorWorkspaceLocation('?authorMode=test').mode).toBe('scenarios');
     expect(parseAuthorWorkspaceLocation('?authorMode=review').mode).toBe('evidence');
     expect(parseAuthorWorkspaceLocation('?workspaceView=scenarios').mode).toBe('scenarios');
+    expect(parseAuthorWorkspaceLocation('?operatorRef=risk%3Ascore').target)
+      .toBe('operator:risk:score');
   });
 
   it('updates workspace coordinates without dropping draft, run, or hash coordinates', () => {
@@ -60,6 +62,22 @@ describe('authorWorkspaceLocation', () => {
       { target: 'graph', workspaceView: 'interface', scenarioId: '' },
     )).toBe(
       '/author/?authorWorkspace=v2&authorMode=contract&target=graph&workspaceView=interface',
+    );
+  });
+
+  it('rewrites a legacy operatorRef into the canonical target coordinate', () => {
+    expect(authorWorkspaceUrl(
+      'http://localhost/author/?operatorRef=risk%3Ascore&workspaceView=scenarios',
+      'scenarios',
+      'score-node',
+      {
+        target: 'operator:risk:score',
+        workspaceView: 'scenarios',
+        scenarioId: 'golden',
+      },
+    )).toBe(
+      '/author/?workspaceView=scenarios&authorMode=scenarios&nodeId=score-node'
+      + '&target=operator%3Arisk%3Ascore&scenarioId=golden',
     );
   });
 });

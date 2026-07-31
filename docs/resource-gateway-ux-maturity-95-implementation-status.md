@@ -4,7 +4,7 @@
 >
 > 基准计划：[Resource Gateway 体验成熟度 95 分校准与修正计划](resource-gateway-ux-maturity-95-recalibration-plan.md)
 >
-> 当前实施轮次：Stage B / 唯一中央工作面
+> 当前实施轮次：Stage C / 统一 Scenario 与测试创作
 >
 > 评分纪律：代码完成只能获得 E1；真实服务和浏览器验证后最多获得 E2。没有 E3 目标用户
 > 证据时，不宣称体验成熟度达到 95 分。
@@ -15,15 +15,15 @@
 |---|---:|---|---|
 | 基线 | 74 | 已确认 | 2026-07-31 真实浏览器复评 |
 | Stage A：可信度止血 | 80 | 已完成 | A01–A07、三条浏览器纵切与完整回归，E2 |
-| Stage B：唯一中央工作面 | 85 | 进行中 | 源码差距审计已完成，E0 |
-| Stage C：统一 Scenario | 90 | 未开始 | 无 |
+| Stage B：唯一中央工作面 | 85 | 已完成 | B01–B08、真实浏览器断点矩阵，E2 |
+| Stage C：统一 Scenario | 90 | 进行中 | 现有 Schema form、测试资产与 Fixture 差距审计，E0 |
 | Stage D：复杂图可读 | 93 | 未开始 | 无 |
 | Stage E：生命周期闭环 | 95 工程就绪 | 未开始 | 无 |
 | Stage F：E3/E4 | 95–100 | 未开始 | 无 |
 
-Stage A 的工程目标分 `80` 已达到 E2，但这不等于整体体验成熟度达到 95。当前最主要的
-15 分差距来自中央工作面仍使用 mega modal、Scenario 创作语言不统一、复杂图感知可读性
-不足，以及资产恢复与诊断修复闭环缺失。
+Stage B 的工程目标分 `85` 已达到 E2，但这不等于整体体验成熟度达到 95。当前最主要的
+10 分差距来自 Operator/Function 测试仍使用横向 Raw JSON 表格、Fixture 仍表现为第二层
+dialog、复杂图感知可读性不足，以及资产恢复与诊断修复闭环缺失。
 
 ## 2. Round A1：Canonical Scenario Run
 
@@ -202,25 +202,103 @@ Spring Boot 集成测试和仓库自带的真实浏览器工作流，耗时 `14:
 因此 Stage A 目标分 `80` 在 E2 层成立。由于尚未进行目标用户 E3 研究，不能把这一分数外推
 为正式发布体验评分。
 
-## 4. 当前差距与 Stage B 开工点
+## 4. Stage B：唯一中央工作面
 
-Stage A 解决的是“结果是否可信”，并未解决“工作面是否直观”。源码审计确认当前顶层已有
-`Compose / Contract / Scenarios / Evidence`，但后三个 mode 仍会打开
-`ContractScenarioWorkspace` 全屏 dialog，并在弹层内再次提供
-`Interface / Scenarios / Compatibility / Evidence`。这造成：
+### 4.1 已实现
 
-1. 顶层 mode 与弹层 tab 两套任务导航；
-2. URL、modal open state 和 active tab 三个状态源；
-3. 从 Compose 进入 Contract 后，拓扑上下文被遮住；
-4. 1024、820、390 宽度下形成接近 nested dialog 的工作方式；
-5. 关闭弹层会把用户送回 Compose，业务任务状态与视图生命周期耦合。
+| 计划项 | 实现 |
+|---|---|
+| UX95R-B01 | `AuthorSurfaceRouter` 让 Compose / Contract / Scenarios / Evidence 各自只挂载一个中央工作面 |
+| UX95R-B02 | Contract 正式工作面集中展示 Interface、semantics、Compatibility 和完整 lineage |
+| UX95R-B03 | Scenario 正式工作面直接承载 case list、Given / Dependencies / Then 和 Run |
+| UX95R-B04 | Evidence 正式工作面直接展示 Verdict、可信维度、finding、assertion 和 trace |
+| UX95R-B05 | `TopologyContextRail` 保留 graph、节点、直接上下游、Scenario 与 Run 坐标 |
+| UX95R-B06 | 命令条按 mode 收敛；Compose 才显示 Import / Auto layout，每个 mode 只有一个主操作 |
+| UX95R-B07 | URL、History 与 legacy `operatorRef` 迁移统一；缺失 Operator 确定性回退 Graph |
+| UX95R-B08 | v2 主路径不再挂载 Contract/Scenario/Evidence dialog；旧 presentation 只作 legacy adapter |
 
-Stage B 将先完成以下纵切：
+中央工作面中的动作也按任务收敛：
 
-1. 让 `ContractScenarioWorkspace` 支持中央页面与 legacy dialog 两种 presentation；
-2. 由 `authorMode` 唯一控制中央 `Contract / Scenarios / Evidence` surface；
-3. 移除中央页面中的重复任务 tabs，只保留 Contract 内部的 Compatibility 次级入口；
-4. 非 Compose mode 隐藏 Operator palette，保留轻量 `TopologyContextRail`；
-5. URL 直接保存 mode、exact target、scenario 和 run，Back/Forward 可恢复；
-6. 保留旧 `workspaceView` deep link 的确定性迁移；
-7. 在 1280、1024、820、390 做无 nested dialog 的浏览器门禁。
+- Contract：Save Graph、Export / Import Workspace；
+- Scenarios：Load / Save Scenario、Export / Import Workspace；
+- Evidence：Publish、Export / Import Workspace；
+- exploratory 状态下才补充 Save Graph，不在所有工作面重复堆放动作。
+
+Contract 新增正式 Lineage 区，明确 target kind / id / revision、target fingerprint、
+Contract fingerprint、source 与 confidence。作者在离开 Compose 后仍可从右侧拓扑轨看到
+准确节点和直接上下游；紧凑视口下该轨变成可开关抽屉，关闭不会改动 URL 或业务状态。
+
+### 4.2 URL 与恢复不变量
+
+```text
+authorMode + target + nodeId + workspaceView + scenarioId + runId
+  -> one canonical authoring coordinate
+  -> pushState for user navigation
+  -> popstate restores exact mode and target
+```
+
+旧 `operatorRef=x` 会迁移为 `target=operator:x`，下一次 URL 写入会删除旧参数。URL 指向
+不存在的 Operator 时，工作区显示 fallback 提示并回到 Graph target，不会静默落到另一个
+Operator。
+
+### 4.3 E2 浏览器证据
+
+真实浏览器人工纵切覆盖 1280px：
+
+- Contract、Scenarios、Evidence 均在中央区域显示，页面 `role=dialog` 数为 0；
+- Graph target 与 `bloge:transform` Operator target 均保持准确；
+- Scenario `Run & Compare` 成功进入 Evidence；
+- Back / Forward 在 Scenario 与 Evidence 间恢复同一 `n5`、Scenario 和 run；
+- Diagnostics 不再拦截 Scenario 底部 Run。
+
+仓库 Selenium 门禁覆盖 1024、820、390：
+
+- 1024：Contract 只保留 `Contract details / Compatibility` 次级 tabs，Lineage 可见；
+- 820：Topology 抽屉可开关且 URL 不变，Run 按钮与 Diagnostics 几何不相交；
+- 390：Evidence 为中央 `region`，不存在 nested dialog、横向溢出或 header/action 重叠；
+- 移动端 Author 使用全高、可收缩应用壳，旧版通用 `.workspace { flex: none }` 不再使
+  工作区越出视口。
+
+### 4.4 自动化证据
+
+聚焦前端回归覆盖 `AuthorSurfaceRouter`、`AuthorCommandBar`、`TopologyContextRail`、
+URL migration、Contract Scenario workspace 和完整 AuthorCanvas 历史恢复，共 `98` 条测试。
+
+真实浏览器回归：
+
+```bash
+mvn -f resource-gateway-examples/pom.xml \
+  -Dtest=VisualAuthoringBrowserDomTest#taskWorkspacePreviewsCollisionFreeLayoutAndUsesCompactDrawersInRealBrowser \
+  test
+```
+
+结果：`1` 条完整断点纵切通过。失败诊断会输出 viewport、workspace、canvas、surface、
+scroll body、footer 和 Diagnostics 几何，便于以后直接定位响应式回潮。
+
+### 4.5 Stage B 退出审计
+
+| 退出门槛 | 结果 | 证据等级 |
+|---|---|---|
+| Contract / Scenarios / Evidence 不出现 modal | 通过 | E2 |
+| 页面不存在两套同名任务 tabs | 通过 | E1 + E2 |
+| Back / Forward 恢复 mode、target、scenario、run | 通过 | E1 + E2 |
+| Compose 到 Contract 保持 exact selected node | 通过 | E1 + E2 |
+| 关闭 secondary drawer 不改变业务状态 | 通过 | E1 + E2 |
+| 1024、820、390 无 nested dialog | 通过 | E2 |
+| Legacy deep link 有确定性迁移与 fallback | 通过 | E1 |
+
+因此 Stage B 目标分 `85` 在 E2 层成立。
+
+## 5. 当前差距与 Stage C 开工点
+
+工作面位置模型已经收敛，但 Graph 与 Library asset 的测试创作仍不是同一种产品语言：
+
+1. Graph Scenario 使用 schema-driven Given / Dependencies / Then；
+2. Operator test table 仍直接编辑 Inputs / Config / Mocked outputs JSON；
+3. Function test table 仍直接编辑 Arguments / Expected JSON；
+4. Fixture Save 仍在测试 dialog 内挂载第二个 dialog；
+5. `SchemaValueForm` 已可用，但尚未成为 Graph、Operator、Function 共享的深模块；
+6. legacy suite 可以读取，却没有明确的 canonical 单写和迁移诊断呈现。
+
+Stage C 将先建立共享 `SchemaValueEditor` 与 case list + editor 纵切，再把 Fixture 改为右侧
+sheet，并以现有 wire contract 为输入、canonical Scenario 为唯一新写入模型。

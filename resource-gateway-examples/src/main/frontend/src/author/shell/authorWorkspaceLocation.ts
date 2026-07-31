@@ -48,10 +48,12 @@ export function parseAuthorWorkspaceLocation(search: string): AuthorWorkspaceLoc
     ? rawView as AuthorWorkspaceView
     : '';
   const mode = requestedMode || modeForWorkspaceView(workspaceView) || 'compose';
+  const explicitTarget = params.get('target')?.trim() ?? '';
+  const legacyOperatorRef = params.get('operatorRef')?.trim() ?? '';
   return {
     mode,
     selectedNodeId: params.get('nodeId')?.trim() ?? '',
-    target: params.get('target')?.trim() ?? '',
+    target: explicitTarget || (legacyOperatorRef ? `operator:${legacyOperatorRef}` : ''),
     workspaceView,
     scenarioId: params.get('scenarioId')?.trim() ?? '',
     runId: params.get('runId')?.trim() ?? '',
@@ -78,6 +80,9 @@ export function authorWorkspaceUrl(
     url.searchParams.delete('nodeId');
   }
   setOptionalCoordinate(url, 'target', coordinate.target);
+  if (coordinate.target !== undefined) {
+    url.searchParams.delete('operatorRef');
+  }
   setOptionalCoordinate(url, 'workspaceView', coordinate.workspaceView);
   setOptionalCoordinate(url, 'scenarioId', coordinate.scenarioId);
   setOptionalCoordinate(url, 'runId', coordinate.runId, true);

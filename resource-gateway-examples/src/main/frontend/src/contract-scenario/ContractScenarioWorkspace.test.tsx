@@ -45,6 +45,8 @@ describe('ContractScenarioWorkspace', () => {
     expect(text()).toContain('applicantId');
     expect(text()).toContain('approved');
     expect(tabs()).toEqual(['Interface', 'Scenarios 1', 'Compatibility', 'Run Evidence']);
+    expect(queryRegion('Contract lineage').textContent).toContain('loan-graph');
+    expect(queryRegion('Contract lineage').textContent).toContain('EXACT');
     expect(button('Load Scenario').disabled).toBe(false);
     expect(button('Save Scenario').disabled).toBe(false);
     expect(button('Publish').disabled).toBe(true);
@@ -62,6 +64,8 @@ describe('ContractScenarioWorkspace', () => {
     expect(tabs()).toEqual(['Contract details', 'Compatibility']);
     expect(document.querySelector('[aria-label="Close Contract workspace"]')).toBeNull();
     expect(text()).not.toContain('Run Evidence');
+    expect(text()).toContain('Graph r2');
+    expect(text()).not.toContain('Unsaved Scenario changes');
   });
 
   it('renders Scenario as a direct central surface without an inner tab bar', async () => {
@@ -72,6 +76,36 @@ describe('ContractScenarioWorkspace', () => {
     expect(text()).toContain('Dependencies');
     expect(text()).toContain('Then');
     expect(button('Run & Compare')).toBeInstanceOf(HTMLButtonElement);
+  });
+
+  it('limits central-surface asset commands to the active authoring task', async () => {
+    await renderWorkspace({ presentation: 'surface', initialTab: 'interface' });
+
+    expect(text()).toContain('Save Graph');
+    expect(text()).toContain('Export Workspace');
+    expect(text()).not.toContain('Load Scenario');
+    expect(text()).not.toContain('Save Scenario');
+    expect(text()).not.toContain('Publish');
+
+    await act(async () => root?.unmount());
+    root = null;
+    host.replaceChildren();
+    await renderWorkspace({ presentation: 'surface', initialTab: 'scenarios' });
+
+    expect(text()).not.toContain('Save Graph');
+    expect(text()).toContain('Load Scenario');
+    expect(text()).toContain('Save Scenario');
+    expect(text()).not.toContain('Publish');
+
+    await act(async () => root?.unmount());
+    root = null;
+    host.replaceChildren();
+    await renderWorkspace({ presentation: 'surface', initialTab: 'evidence' });
+
+    expect(text()).not.toContain('Save Graph');
+    expect(text()).not.toContain('Load Scenario');
+    expect(text()).not.toContain('Save Scenario');
+    expect(text()).toContain('Publish');
   });
 
   it('starts each workspace view at its conclusion instead of retaining the previous scroll', async () => {
@@ -175,6 +209,7 @@ describe('ContractScenarioWorkspace', () => {
       await Promise.resolve();
       await Promise.resolve();
     });
+    await settleAsyncWork();
 
     expect(onRun).not.toHaveBeenCalled();
     expect(text()).toContain('Required Return value');
@@ -873,6 +908,14 @@ function textarea(label: string): HTMLTextAreaElement {
 
 function text(): string {
   return document.body.textContent ?? '';
+}
+
+function queryRegion(label: string): HTMLElement {
+  const region = document.querySelector(`[aria-label="${label}"]`);
+  if (!(region instanceof HTMLElement)) {
+    throw new Error(`Missing region: ${label}`);
+  }
+  return region;
 }
 
 function fingerprint(seed: string): string {

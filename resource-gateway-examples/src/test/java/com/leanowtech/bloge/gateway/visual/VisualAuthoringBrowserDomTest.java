@@ -1119,10 +1119,10 @@ class VisualAuthoringBrowserDomTest {
      * the quality report is based on the same topology the author can apply. The preview must close
      * both compact drawers, freeze operator insertion, keep every rendered node inside the graph
      * viewport, report zero node and edge-label collisions, and preserve Scenario currentness after
-     * a presentation-only position change. The same session then checks mutually exclusive drawers
-     * at 820 pixels and the 390-pixel review-first Evidence header, including non-overlapping title
-     * and actions. These assertions catch browser geometry and media-query regressions that DOM
-     * component tests cannot establish.</p>
+     * a presentation-only position change. The same session then checks the central Contract at
+     * 1024 pixels, mutually exclusive drawers and an unobstructed Scenario run action at 820 pixels,
+     * and the 390-pixel review-first Evidence region. These assertions catch browser geometry,
+     * modal-retirement, and media-query regressions that DOM component tests cannot establish.</p>
      */
     @Test
     void taskWorkspacePreviewsCollisionFreeLayoutAndUsesCompactDrawersInRealBrowser() {
@@ -1254,6 +1254,23 @@ class VisualAuthoringBrowserDomTest {
                 .as("visual coordinates do not invalidate executable Scenario semantics")
                 .isTrue();
 
+        driver.findElement(By.cssSelector("[data-testid='author-mode:contract']")).click();
+        WebElement contractSurface = wait.until(ExpectedConditions.visibilityOfElementLocated(
+                By.cssSelector("[data-testid='author-surface:contract']")
+        ));
+        assertThat(contractSurface.getAttribute("data-target-kind")).isEqualTo("graph");
+        assertThat(driver.findElements(By.cssSelector(
+                "[data-testid='contract-workspace'][role='dialog']"))).isEmpty();
+        assertThat(driver.findElements(By.cssSelector(".contract-tabs button")))
+                .extracting(WebElement::getText)
+                .containsExactly("Contract details", "Compatibility");
+        waitForText(wait, By.cssSelector("[aria-label='Contract lineage']"), "TARGET FINGERPRINT");
+        assertNoHorizontalOverflow(wait, By.cssSelector(
+                "[data-testid='contract-workspace']"
+        ));
+        driver.findElement(By.cssSelector("[data-testid='author-mode:compose']")).click();
+        wait.until(ExpectedConditions.invisibilityOf(contractSurface));
+
         setViewport(wait, 820, 900);
         wait.until(ExpectedConditions.attributeToBe(
                 By.cssSelector(".workspace-v2"), "data-compact-workspace", "true"
@@ -1271,35 +1288,115 @@ class VisualAuthoringBrowserDomTest {
                 .isZero();
         driver.findElement(By.cssSelector("[aria-label='Collapse context inspector']")).click();
 
+        driver.findElement(By.cssSelector("[data-testid='author-mode:scenarios']")).click();
+        WebElement scenarioSurface = wait.until(ExpectedConditions.visibilityOfElementLocated(
+                By.cssSelector("[data-testid='author-surface:scenarios']")
+        ));
+        assertThat(driver.findElements(By.cssSelector(
+                "[data-testid='contract-workspace'][role='dialog']"))).isEmpty();
+        assertThat(driver.findElements(By.cssSelector(".contract-tabs"))).isEmpty();
+        WebElement topologyLauncher = driver.findElement(By.cssSelector(
+                "[data-testid='author-context-rail-launcher']"
+        ));
+        assertThat(topologyLauncher.isDisplayed()).isTrue();
+        String scenarioCoordinate = driver.getCurrentUrl();
+        topologyLauncher.click();
+        wait.until(ignored -> elementClientWidth(
+                driver.findElement(By.cssSelector("aside.inspector"))) > 0);
+        waitForText(wait, By.cssSelector("[data-testid='topology-context-rail']"),
+                "Decision response");
+        driver.findElement(By.cssSelector("[aria-label='Collapse context inspector']")).click();
+        assertThat(driver.getCurrentUrl())
+                .as("secondary topology drawer does not mutate the authoring coordinate")
+                .isEqualTo(scenarioCoordinate);
+
+        WebElement runButton = driver.findElement(By.cssSelector(
+                "[data-testid='scenario-run']"
+        ));
+        ((JavascriptExecutor) driver).executeScript(
+                "arguments[0].scrollIntoView({block:'end'});", runButton);
+        wait.until(ExpectedConditions.visibilityOf(runButton));
+        @SuppressWarnings("unchecked")
+        Map<String, Number> runActionGeometry = (Map<String, Number>)
+                ((JavascriptExecutor) driver).executeScript("""
+                        const run = arguments[0].getBoundingClientRect();
+                        const app = document.querySelector('.app').getBoundingClientRect();
+                        const workspace = document.querySelector('.workspace-v2').getBoundingClientRect();
+                        const canvas = document.querySelector('.workspace-v2 > .canvas').getBoundingClientRect();
+                        const surface = document.querySelector('.author-central-surface').getBoundingClientRect();
+                        const body = document.querySelector('.contract-workspace-body');
+                        const bodyRect = body.getBoundingClientRect();
+                        const footer = document.querySelector('.scenario-run-bar').getBoundingClientRect();
+                        const diagnostics = document.querySelector(
+                          '[data-testid="author-diagnostics-drawer"]'
+                        ).getBoundingClientRect();
+                        return {
+                          viewportHeight: window.innerHeight,
+                          pageScrollY: window.scrollY,
+                          appBottom: app.bottom,
+                          workspaceBottom: workspace.bottom,
+                          canvasBottom: canvas.bottom,
+                          canvasPaddingBottom: Number.parseFloat(
+                            window.getComputedStyle(document.querySelector(
+                              '.workspace-v2 > .canvas'
+                            )).paddingBottom
+                          ),
+                          surfaceBottom: surface.bottom,
+                          bodyBottom: bodyRect.bottom,
+                          bodyScrollTop: body.scrollTop,
+                          bodyScrollHeight: body.scrollHeight,
+                          bodyClientHeight: body.clientHeight,
+                          footerTop: footer.top,
+                          footerBottom: footer.bottom,
+                          runBottom: run.bottom,
+                          diagnosticsTop: diagnostics.top
+                        };
+                        """, runButton);
+        assertThat(runActionGeometry.get("runBottom").doubleValue())
+                .as(
+                        "Scenario run action remains above the collapsed Diagnostics drawer: %s",
+                        runActionGeometry
+                )
+                .isLessThanOrEqualTo(
+                        runActionGeometry.get("diagnosticsTop").doubleValue());
+        assertNoHorizontalOverflow(wait, By.cssSelector(
+                "[data-testid='contract-workspace']"
+        ));
+
         setViewport(wait, 390, 844);
         driver.findElement(By.cssSelector("[data-testid='author-primary-action']")).click();
         WebElement evidence = wait.until(ExpectedConditions.visibilityOfElementLocated(
                 By.cssSelector("[data-testid='contract-workspace']")
         ));
         waitForText(wait, By.cssSelector("[data-testid='scenario-evidence']"), "Execution");
+        assertThat(evidence.getAttribute("role")).isEqualTo("region");
+        assertThat(evidence.getAttribute("data-presentation")).isEqualTo("surface");
+        assertThat(driver.findElements(By.cssSelector(
+                "[data-testid='contract-workspace'][role='dialog']"))).isEmpty();
+        assertThat(driver.findElements(By.cssSelector(".author-central-surface"))).hasSize(1);
         assertNoHorizontalOverflow(wait, By.cssSelector("[data-testid='contract-workspace']"));
 
         @SuppressWarnings("unchecked")
         Map<String, Number> mobileHeader = (Map<String, Number>)
                 ((JavascriptExecutor) driver).executeScript("""
-                        const dialog = arguments[0];
-                        const title = dialog.querySelector('h2').getBoundingClientRect();
-                        const actions = dialog.querySelector(
+                        const surface = arguments[0];
+                        const title = surface.querySelector('h2').getBoundingClientRect();
+                        const actions = surface.querySelector(
                           '.contract-workspace-header-actions'
                         ).getBoundingClientRect();
                         return {
                           titleBottom: title.bottom,
                           actionsTop: actions.top,
                           actionsRight: actions.right,
-                          dialogRight: dialog.getBoundingClientRect().right
+                          surfaceRight: surface.getBoundingClientRect().right
                         };
                         """, evidence);
         assertThat(mobileHeader.get("actionsTop").doubleValue())
                 .as("mobile Evidence actions start below the graph title")
                 .isGreaterThanOrEqualTo(mobileHeader.get("titleBottom").doubleValue());
         assertThat(mobileHeader.get("actionsRight").doubleValue())
-                .as("scrollable action strip stays inside the Evidence dialog")
-                .isLessThanOrEqualTo(mobileHeader.get("dialogRight").doubleValue());
+                .as("scrollable action strip stays inside the Evidence surface")
+                .isLessThanOrEqualTo(mobileHeader.get("surfaceRight").doubleValue());
         assertThat(workspace.getAttribute("data-canvas-task-mode")).isEqualTo("inspect");
     }
 

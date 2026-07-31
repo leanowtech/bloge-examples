@@ -1244,17 +1244,16 @@ describe('AuthorCanvas built-in canvas examples', () => {
       expect(query('.workspace').getAttribute('data-author-mode')).toBe('evidence');
       expect(query('[data-testid="author-primary-action"]').textContent).toBe('Review result');
       expect(query('[data-testid="author-command-bar"]').textContent).toContain('PASSED');
-      expect(query('[data-testid="author-context-inspector"]').textContent).toContain(
-        '1/1 scenario assertions passed.',
+      expect(query('[data-testid="topology-context-rail"]').textContent).toContain(
+        'Decision response',
       );
       expect(query('.workspace').textContent).not.toContain(
         'no stored draft revision or immutable fingerprint',
       );
-      expect(query('[data-testid="author-run-provenance"]').textContent).toContain(
-        'Exploratory run',
-      );
-      expect(query('[data-testid="contract-workspace"]')).toBeDefined();
-      expect(buttonByText('Run Evidence').getAttribute('aria-selected')).toBe('true');
+      expect(query('[data-testid="contract-workspace"]').getAttribute('role')).toBe('region');
+      expect(query('[data-testid="contract-workspace"]').getAttribute('aria-modal')).toBeNull();
+      expect(document.querySelector('[aria-label="Close Contract workspace"]')).toBeNull();
+      expect(document.querySelector('.contract-workspace-backdrop')).toBeNull();
       expect(query('[data-testid="scenario-evidence"]')).toBeDefined();
       expect(query('[data-testid="scenario-evidence"]').textContent).toContain('1 assertion passed.');
       expect(query('[data-testid="scenario-evidence"]').textContent).toContain('applicant-1001');
@@ -1290,14 +1289,14 @@ describe('AuthorCanvas built-in canvas examples', () => {
     });
     const firstCoordinate = query('[data-testid="scenario-evidence-coordinate"]').textContent;
 
-    await click(buttonByText('Scenarios 2'));
+    await click(query<HTMLButtonElement>('[data-testid="author-mode:scenarios"]'));
     await setControlValue(
       query<HTMLInputElement>(
         '[data-testid="contract-workspace"] input[aria-label="applicantId"]',
       ),
       'applicant-1002',
     );
-    await click(query<HTMLButtonElement>('[aria-label="Close Contract workspace"]'));
+    await click(query<HTMLButtonElement>('[data-testid="author-mode:compose"]'));
 
     await waitFor(() => {
       expect(query('.workspace').getAttribute('data-author-mode')).toBe('compose');
@@ -1393,7 +1392,8 @@ describe('AuthorCanvas built-in canvas examples', () => {
     await click(query<HTMLButtonElement>('[data-testid="author-mode:scenarios"]'));
     await waitFor(() => {
       expect(query('[data-testid="contract-workspace"]')).toBeDefined();
-      expect(buttonByText('Scenarios 2').getAttribute('aria-selected')).toBe('true');
+      expect(query('[data-testid="author-surface:scenarios"]')).toBeDefined();
+      expect(document.querySelector('.contract-tabs')).toBeNull();
       expect(window.location.search).toContain('scenarioId=loan-prime-approval');
     });
     expect(document.querySelector('[data-testid="test-suite-dialog"]')).toBeNull();
@@ -1432,6 +1432,55 @@ describe('AuthorCanvas built-in canvas examples', () => {
     expect(query<HTMLElement>('.workspace').style.getPropertyValue('--author-inspector-track')).toBe('36px');
     expect(window.location.search).not.toContain('palette');
     expect(window.location.search).not.toContain('inspector');
+  });
+
+  it('restores central mode, exact target, and Scenario through browser history', async () => {
+    await act(async () => {
+      root = createRoot(host);
+      root.render(<AuthorCanvas workspaceVersion="v2" />);
+    });
+
+    await click(query<HTMLButtonElement>('[data-testid="author-start-choice:examples"]'));
+    await waitFor(() =>
+      expect(query<HTMLButtonElement>('[data-testid="author-start-example:loan-policy-fallback"]').disabled)
+        .toBe(false),
+    );
+    await click(query<HTMLButtonElement>('[data-testid="author-start-example:loan-policy-fallback"]'));
+    await waitFor(() => expect(window.location.search).toContain('nodeId=n5'));
+
+    await click(query<HTMLButtonElement>('[data-testid="author-mode:contract"]'));
+    await waitFor(() => {
+      expect(query('[data-testid="author-surface:contract"]')).toBeDefined();
+      expect(window.location.search).toContain('workspaceView=interface');
+    });
+    await click(query<HTMLButtonElement>('[data-testid="author-mode:scenarios"]'));
+    await waitFor(() => {
+      expect(query('[data-testid="author-surface:scenarios"]')).toBeDefined();
+      expect(window.location.search).toContain('scenarioId=loan-prime-approval');
+    });
+
+    await act(async () => {
+      window.history.back();
+      await new Promise((resolve) => setTimeout(resolve, 10));
+    });
+    await waitFor(() => {
+      expect(query('.workspace').getAttribute('data-author-mode')).toBe('contract');
+      expect(query('[data-testid="author-surface:contract"]')).toBeDefined();
+      expect(window.location.search).toContain('nodeId=n5');
+      expect(query('[data-testid="topology-context-rail"]').textContent).toContain(
+        'Decision response',
+      );
+    });
+
+    await act(async () => {
+      window.history.forward();
+      await new Promise((resolve) => setTimeout(resolve, 10));
+    });
+    await waitFor(() => {
+      expect(query('.workspace').getAttribute('data-author-mode')).toBe('scenarios');
+      expect(query('[data-testid="author-surface:scenarios"]')).toBeDefined();
+      expect(window.location.search).toContain('scenarioId=loan-prime-approval');
+    });
   });
 
   it('searches, pins, previews, cancels, applies, and undoes layout from one canvas task strip', async () => {
@@ -1541,6 +1590,18 @@ describe('AuthorCanvas built-in canvas examples', () => {
       await click(query<HTMLButtonElement>('[data-testid="compact-open-inspector"]'));
       expect(query('.workspace').classList.contains('palette-collapsed')).toBe(true);
       expect(query('.workspace').classList.contains('inspector-collapsed')).toBe(false);
+
+      await click(query<HTMLButtonElement>('[data-testid="author-mode:scenarios"]'));
+      await waitFor(() =>
+        expect(query('[data-testid="author-surface:scenarios"]')).toBeDefined(),
+      );
+      expect(document.querySelector('[role="dialog"]')).toBeNull();
+      const taskCoordinate = window.location.search;
+      await click(query<HTMLButtonElement>('[aria-label="Collapse context inspector"]'));
+      expect(query('.workspace').classList.contains('inspector-collapsed')).toBe(true);
+      expect(query('[data-testid="author-context-rail-launcher"]')
+        .getAttribute('aria-expanded')).toBe('false');
+      expect(window.location.search).toBe(taskCoordinate);
     } finally {
       Object.defineProperty(window, 'matchMedia', {
         configurable: true,
@@ -1564,7 +1625,7 @@ describe('AuthorCanvas built-in canvas examples', () => {
     expect(query('[data-testid="author-diagnostics-drawer"]').className).toContain('collapsed');
 
     await click(query<HTMLButtonElement>('[data-testid="author-mode:scenarios"]'));
-    await waitFor(() => expect(buttonByText('Scenarios 2').getAttribute('aria-selected')).toBe('true'));
+    await waitFor(() => expect(query('[data-testid="author-surface:scenarios"]')).toBeDefined());
     await setControlValue(
       query<HTMLInputElement>('input[aria-label="decision"]'),
       'force-mismatch',
@@ -1969,6 +2030,59 @@ describe('AuthorCanvas connection guide', () => {
     host.remove();
     vi.unstubAllGlobals();
     vi.restoreAllMocks();
+  });
+
+  it('preserves an exact Operator target across central Contract and Scenario modes', async () => {
+    await act(async () => {
+      root = createRoot(host);
+      root.render(<AuthorCanvas workspaceVersion="v2" />);
+    });
+
+    await click(query<HTMLButtonElement>('[aria-label="Close start dialog"]'));
+    await waitFor(() =>
+      expect(query('[data-testid="operator-button:risk:score"]').textContent).toContain('Risk Score'),
+    );
+    await click(query<HTMLButtonElement>('[data-testid="operator-button:risk:score"]'));
+    await click(query<HTMLElement>('[data-testid="node-wrapper:n1"]'));
+    await click(query<HTMLButtonElement>('[data-testid="inspector-tab:contract"]'));
+    await click(buttonByText('Open Contract Workspace'));
+
+    await waitFor(() => {
+      expect(query('[data-testid="author-surface:contract"]')
+        .getAttribute('data-target-kind')).toBe('operator');
+      expect(window.location.search).toContain('target=operator%3Arisk%3Ascore');
+      expect(query('[data-testid="contract-workspace"]').textContent).toContain('risk:score');
+    });
+
+    await click(query<HTMLButtonElement>('[data-testid="author-mode:scenarios"]'));
+    await waitFor(() => {
+      expect(query('[data-testid="author-surface:scenarios"]')
+        .getAttribute('data-target-kind')).toBe('operator');
+      expect(window.location.search).toContain('target=operator%3Arisk%3Ascore');
+      expect(query('[data-testid="topology-context-rail"]').textContent).toContain('Risk Score');
+    });
+    expect(document.querySelector('[role="dialog"]')).toBeNull();
+  });
+
+  it('migrates an unavailable legacy Operator link to an explicit Graph fallback', async () => {
+    window.history.replaceState(
+      {},
+      '',
+      '/author/?authorWorkspace=v2&authorMode=contract&operatorRef=risk%3Amissing',
+    );
+    await act(async () => {
+      root = createRoot(host);
+      root.render(<AuthorCanvas workspaceVersion="v2" />);
+    });
+
+    await waitFor(() => {
+      expect(query('[data-testid="author-deep-link-notice"]').textContent)
+        .toContain('Operator target risk:missing is unavailable');
+      expect(query('[data-testid="author-surface:contract"]')
+        .getAttribute('data-target-kind')).toBe('graph');
+      expect(window.location.search).toContain('target=graph');
+      expect(window.location.search).not.toContain('operatorRef');
+    });
   });
 
   it('discovers compatible targets for the selected source node and connects one directly', async () => {
