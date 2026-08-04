@@ -2264,6 +2264,38 @@ Diagnostics 不会抢占表格空间。需要审阅一条 case 的完整 request
 点击 **Open** 进入 Case，再执行 **Run & Compare**。单 case 运行完成后才自动进入
 **Run Evidence**。
 
+#### 从 CSV / JSON 导入表格测试数据
+
+外部表格不会成为运行时数据源。系统先把一个受限 source snapshot 物化为 canonical Scenario，
+后续运行只读取 Scenario：
+
+1. 首次加载内置 Graph 时先到 **Contract** 点击 **Save Graph**；若顶部提示 Contract changed，
+   到 **Compatibility** 完成 review 并点击 **Rebase local draft**。未保存或 stale 时 Matrix 的
+   **Import cases** 会禁用，并在悬停时说明阻断原因。
+2. 进入 **Scenarios → Matrix → Import cases**。选择 CSV/JSON 文件、粘贴文本，或点
+   **Load sample** 生成与当前 Scenario template 对齐的 5 行 JSON。
+3. **Inspect source** 只生成 ephemeral preview：显示行列、类型、missing/null/empty 统计、
+   formula warning；敏感字段只显示 `[masked]`。
+4. **Map columns** 自动匹配 case metadata、Given、dependency output 和 assertion expected。
+   exact path/name 自动确认；normalized guess 必须勾选 Confirm。每列可选 converter，并明确
+   empty cell 是保留空串、设 null、删除字段、使用 default，还是普通 value。
+5. **Review plan** 检查行数、binding、业务身份列、classification 与更新 diff，再点击
+   **Materialize N cases**。服务端会用 Commons CSV/Jackson 重新解析原 source，并重新核对
+   source/mapping/Contract/target/selection 指纹。
+6. **Receipt** 显示 accepted/rejected 数、plan/source/mapping/Contract fingerprint 和 actor。
+   点击 **Done** 返回 Matrix；新增 case 自动选中，可立即 **Run selected**。
+
+receipt 不保存文件、cell value 或业务主键原文；每行只保留 `identityFingerprint`、
+`rowFingerprint`、生成的 scenarioId、status 和 payload-free diagnostic code。同一 exact plan
+重试返回同一 durable result。四份协议 schema 位于 `docs/schemas/bloge-scenario-*materialization*`。
+
+![Scenario 表格导入 receipt（桌面）](assets/resource-gateway-scenario-import-receipt-1280.png)
+
+该物化端点为 `POST /api/visual/scenario-imports/materialize`，只在 `test` / `staging` testing
+control plane 组装。`/api/integration/capabilities` 中
+`scenarioImportMaterializationProtocol=true` 表示部署理解协议；只有
+`scenarioImportMaterializationApi=true` 才表示当前部署允许调用。
+
 每个 Case 都由三段组成：
 
 1. **Given** 按 Graph/Operator input Contract 生成业务输入控件。
@@ -2889,6 +2921,7 @@ resource gateway 自身继续保留：
 | `POST` | `/api/visual/drafts/validate` | 校验 transient draft |
 | `GET` | `/api/visual/drafts/{draftId}` | 读取存量 draft，供 Author Deep Link 恢复画布 |
 | `POST` | `/api/visual/graphs/simulate` | 模拟 transient draft |
+| `POST` | `/api/visual/scenario-imports/materialize` | 在 test/staging 中重新解析 exact CSV/JSON plan，并物化 canonical Scenario + payload-free receipt |
 | `GET` | `/api/visual/runs/{runId}` | 读取运行记录并恢复 draft/run Deep Link 上下文 |
 | `GET` | `/api/visual/governance-gates/drafts/{draftId}` | Author 只读获取最新 ANEKE gate result 及快照新鲜度 |
 | `GET` | `/api/integration/capabilities` | 查询 Tool Studio 协议版本、对象版本、端点和 feature flags |

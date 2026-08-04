@@ -92,6 +92,9 @@ import com.leanowtech.bloge.gateway.authoring.scenario.DatabaseScenarioPublicati
 import com.leanowtech.bloge.gateway.authoring.scenario.ScenarioGovernedCompiler;
 import com.leanowtech.bloge.gateway.authoring.scenario.ScenarioGovernedRegistryGateway;
 import com.leanowtech.bloge.gateway.authoring.scenario.ScenarioDraftSetAuthoringService;
+import com.leanowtech.bloge.gateway.authoring.scenario.DatabaseScenarioImportReceiptRepository;
+import com.leanowtech.bloge.gateway.authoring.scenario.ScenarioImportMaterializationService;
+import com.leanowtech.bloge.gateway.authoring.scenario.ScenarioImportReceiptRepository;
 import com.leanowtech.bloge.gateway.authoring.scenario.ScenarioDraftSetRepository;
 import com.leanowtech.bloge.gateway.authoring.scenario.ScenarioPublicationRepository;
 import com.leanowtech.bloge.gateway.authoring.scenario.ScenarioPublicationService;
@@ -122,6 +125,7 @@ import org.springframework.transaction.PlatformTransactionManager;
 import java.lang.reflect.Field;
 import java.lang.reflect.Modifier;
 import java.net.URI;
+import java.time.Clock;
 import java.time.Instant;
 import java.time.Duration;
 import java.util.ArrayList;
@@ -551,6 +555,26 @@ public class GatewayConfiguration {
             ObjectMapper objectMapper) {
         return new ScenarioDraftSetAuthoringService(
                 repository, graphDrafts, operators, contracts, validation, objectMapper);
+    }
+
+    /** Durable idempotency store for payload-free Scenario import receipts. */
+    @Bean
+    @ConditionalOnMissingBean
+    public ScenarioImportReceiptRepository scenarioImportReceiptRepository(
+            JdbcTemplate jdbc,
+            ObjectMapper objectMapper) {
+        return new DatabaseScenarioImportReceiptRepository(jdbc, objectMapper);
+    }
+
+    /** Server-authoritative bounded CSV/JSON Scenario materializer. */
+    @Bean
+    @ConditionalOnMissingBean
+    public ScenarioImportMaterializationService scenarioImportMaterializationService(
+            ObjectMapper objectMapper,
+            ScenarioDraftSetAuthoringService authoring,
+            ScenarioImportReceiptRepository receipts) {
+        return new ScenarioImportMaterializationService(
+                objectMapper, authoring, receipts, Clock.systemUTC());
     }
 
     /**

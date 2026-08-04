@@ -1,6 +1,7 @@
 package com.leanowtech.bloge.gateway.integration;
 
 import com.leanowtech.bloge.gateway.authoring.scenario.ScenarioDraftSetController;
+import com.leanowtech.bloge.gateway.authoring.scenario.ScenarioImportController;
 import com.leanowtech.bloge.gateway.authoring.scenario.ScenarioPublicationController;
 import com.leanowtech.bloge.gateway.visual.authoring.transport.VisualLibraryAuthoringDraftController;
 import com.leanowtech.bloge.gateway.visual.authoring.transport.VisualLibraryAuthoringTestController;
@@ -31,6 +32,7 @@ import org.springframework.web.bind.annotation.RestControllerAdvice;
         DomainFidelityController.class,
         ReadOnlyShadowJobController.class,
         ScenarioDraftSetController.class,
+        ScenarioImportController.class,
         ScenarioPublicationController.class,
         VisualLibraryAuthoringDraftController.class,
         VisualLibraryAuthoringTestController.class

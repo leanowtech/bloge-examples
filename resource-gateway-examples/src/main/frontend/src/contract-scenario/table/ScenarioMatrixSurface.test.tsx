@@ -61,6 +61,17 @@ describe('ScenarioMatrixSurface', () => {
     expect(onOpenCase).toHaveBeenCalledWith('case-1');
   });
 
+  it('explains why import is unavailable before the target is retained', async () => {
+    await render(5, {
+      onImportCases: vi.fn(),
+      importDisabled: true,
+      importDisabledReason: 'Save Graph before importing cases.',
+    });
+
+    expect(button('Import cases').disabled).toBe(true);
+    expect(button('Import cases').title).toBe('Save Graph before importing cases.');
+  });
+
   async function render(size: 5 | 50 | 500, overrides: Partial<Parameters<typeof ScenarioMatrixSurface>[0]> = {}) {
     const projection = buildScenarioTableProjection(tableDrivenScenarioBaseline(size));
     const props: Parameters<typeof ScenarioMatrixSurface>[0] = {

@@ -40,6 +40,7 @@ import {
   governOperatorTestSuite,
   importOperatorLibraryText,
   inferLibraryAuthoringSamples,
+  materializeScenarioImportOnServer,
   previewDslImport,
   previewLibraryAuthoringDraft,
   previewScenarioRehearsalRemediation,
@@ -620,6 +621,35 @@ describe('operator library API client', () => {
     await expect(fetchScenarioCompatibility('loan-scenarios', 4)).resolves.toEqual(compatibility);
     await expect(publishScenarioDraftSet('loan-scenarios', 4)).resolves.toEqual(publication);
     expect(fetchMock).toHaveBeenCalledTimes(4);
+  });
+
+  it('submits the exact Scenario import closure with test-suite write authority', async () => {
+    const request = {
+      schemaVersion: 'bloge.scenarioImportMaterializationRequest.v1',
+      sourceText: 'id,name\nA,Case A',
+      plan: { schemaVersion: 'bloge.scenarioMaterializationPlan.v1' },
+      draftSet: { scenarioDraftSetId: 'loan-scenarios' },
+      templateScenarioId: 'template',
+    } as Parameters<typeof materializeScenarioImportOnServer>[0];
+    const result = {
+      draftSet: request.draftSet,
+      receipt: { schemaVersion: 'bloge.scenarioMaterializationReceipt.v1' },
+    } as Awaited<ReturnType<typeof materializeScenarioImportOnServer>>;
+    const fetchMock = vi.spyOn(globalThis, 'fetch').mockImplementation(async (input, init) => {
+      expect(String(input)).toBe('/api/visual/scenario-imports/materialize');
+      expect(init).toMatchObject({
+        method: 'POST',
+        headers: expect.objectContaining({
+          'X-Purpose': 'TEST_SUITE_WRITE',
+          'Content-Type': 'application/json',
+        }),
+      });
+      expect(JSON.parse(String(init?.body))).toEqual(request);
+      return new Response(JSON.stringify(result));
+    });
+
+    await expect(materializeScenarioImportOnServer(request)).resolves.toEqual(result);
+    expect(fetchMock).toHaveBeenCalledOnce();
   });
 
   it('persists a Graph before loading its authoritative Scenario Contract coordinate', async () => {

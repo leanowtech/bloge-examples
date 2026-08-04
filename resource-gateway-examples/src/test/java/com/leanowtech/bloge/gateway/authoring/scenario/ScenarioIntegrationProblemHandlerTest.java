@@ -18,12 +18,15 @@ import static org.assertj.core.api.Assertions.assertThat;
 class ScenarioIntegrationProblemHandlerTest {
 
     @Test
-    void appliesTheStableProblemContractToBothScenarioControllers() {
+    void appliesTheStableProblemContractToAllScenarioControllers() {
         RestControllerAdvice advice =
                 IntegrationProblemHandler.class.getAnnotation(RestControllerAdvice.class);
 
         assertThat(Arrays.asList(advice.assignableTypes()))
-                .contains(ScenarioDraftSetController.class, ScenarioPublicationController.class);
+                .contains(
+                        ScenarioDraftSetController.class,
+                        ScenarioImportController.class,
+                        ScenarioPublicationController.class);
 
         var response = new IntegrationProblemHandler().handle(
                 new IntegrationProblemException(IntegrationProblem.retryableConflict(

@@ -6,6 +6,7 @@ import {
   BlogeApiRequestError,
   fetchScenarioCompatibility,
   fetchScenarioDraftSet,
+  materializeScenarioImportOnServer,
   publishScenarioDraftSet,
   saveScenarioDraftSet,
 } from '../api';
@@ -61,6 +62,8 @@ import {
   parseWorkspaceBundle,
 } from './workspaceBundle';
 import ScenarioMatrixSurface from './table/ScenarioMatrixSurface';
+import ScenarioImportWorkbench from './import/ScenarioImportWorkbench';
+import type { ScenarioMaterializationResult } from './import/scenarioImportModel';
 import {
   applyScenarioTableCellEdit,
   buildScenarioTableProjection,
@@ -152,6 +155,7 @@ export default function ContractScenarioWorkspace({
   const [scenarioView, setScenarioView] = useState<'matrix' | 'case'>(
     (scenarioDraftSet?.scenarios.length ?? 0) > 1 ? 'matrix' : 'case',
   );
+  const [scenarioImportOpen, setScenarioImportOpen] = useState(false);
   const [tableSelection, setTableSelection] = useState<ScenarioTableSelection>({
     selectedCaseIds: [],
   });
@@ -395,6 +399,20 @@ export default function ContractScenarioWorkspace({
     setCompileMessages([]);
     setPublication(null);
     markTableEvidenceStale(caseId, setTableEvidence);
+  };
+
+  const acceptScenarioImport = (result: ScenarioMaterializationResult) => {
+    onScenarioDraftSetChange(result.draftSet);
+    setTableSelection({ selectedCaseIds: result.receipt.materializedScenarioIds });
+    setTableEvidence({});
+    setPreviousRunCaseIds([]);
+    setRunResponse(null);
+    setComparison(null);
+    setPublication(null);
+    setAssetNotice({
+      level: result.receipt.rejectedRowCount === 0 ? 'ok' : 'error',
+      message: `${result.receipt.acceptedRowCount} imported; ${result.receipt.rejectedRowCount} rejected.`,
+    });
   };
 
   const navigateWorkspace = (
@@ -994,6 +1012,7 @@ export default function ContractScenarioWorkspace({
             />
           )}
           {activeTab === 'scenarios' && (
+            <>
             <ScenarioTab
               graphDraft={graphDraft}
               contract={contract}
@@ -1007,6 +1026,10 @@ export default function ContractScenarioWorkspace({
               tableSelection={tableSelection}
               previousRunCaseIds={previousRunCaseIds}
               runningCaseIds={runningCaseIds}
+              importDisabled={!assetStored || !current}
+              importDisabledReason={!assetStored
+                ? `Save ${targetLabel} before importing cases.`
+                : 'Rebase Scenarios to the current Contract before importing cases.'}
               compileMessages={compileMessages}
               advancedText={advancedText}
               advancedError={advancedError}
@@ -1015,6 +1038,7 @@ export default function ContractScenarioWorkspace({
               onSelectScenario={selectScenario}
               onUpdateScenario={updateSelectedScenario}
               onAddScenario={addScenario}
+              onImportCases={() => setScenarioImportOpen(true)}
               onRemoveScenario={removeSelectedScenario}
               onRun={runSelectedScenario}
               onViewChange={setScenarioView}
@@ -1022,6 +1046,14 @@ export default function ContractScenarioWorkspace({
               onTableCellEdit={updateScenarioFromMatrix}
               onRunTableSelection={runTableSelection}
             />
+            <ScenarioImportWorkbench
+              open={scenarioImportOpen}
+              draftSet={scenarioDraftSet}
+              executeMaterialization={materializeScenarioImportOnServer}
+              onMaterialize={acceptScenarioImport}
+              onClose={() => setScenarioImportOpen(false)}
+            />
+            </>
           )}
           {activeTab === 'compatibility' && (
             <CompatibilityTab
@@ -1133,6 +1165,8 @@ interface ScenarioTabProps {
   tableSelection: ScenarioTableSelection;
   previousRunCaseIds: string[];
   runningCaseIds: string[];
+  importDisabled: boolean;
+  importDisabledReason: string;
   compileMessages: string[];
   advancedText: string;
   advancedError: string;
@@ -1141,6 +1175,7 @@ interface ScenarioTabProps {
   onSelectScenario: (scenarioId: string) => void;
   onUpdateScenario: (update: (scenario: ScenarioDraft) => ScenarioDraft) => void;
   onAddScenario: () => void;
+  onImportCases: () => void;
   onRemoveScenario: () => void;
   onRun: () => void;
   onViewChange: (view: 'matrix' | 'case') => void;
@@ -1161,6 +1196,8 @@ function ScenarioTab({
   tableSelection,
   previousRunCaseIds,
   runningCaseIds,
+  importDisabled,
+  importDisabledReason,
   compileMessages,
   advancedText,
   advancedError,
@@ -1169,6 +1206,7 @@ function ScenarioTab({
   onSelectScenario,
   onUpdateScenario,
   onAddScenario,
+  onImportCases,
   onRemoveScenario,
   onRun,
   onViewChange,
@@ -1209,6 +1247,8 @@ function ScenarioTab({
           previousRunCaseIds={previousRunCaseIds}
           runningCaseIds={runningCaseIds}
           disabled={running}
+          importDisabled={importDisabled}
+          importDisabledReason={importDisabledReason}
           onSelectionChange={onTableSelectionChange}
           onOpenCase={(caseId) => {
             onSelectScenario(caseId);
@@ -1219,6 +1259,7 @@ function ScenarioTab({
             onAddScenario();
             onViewChange('case');
           }}
+          onImportCases={onImportCases}
           onRunSelection={onRunTableSelection}
         />
       ) : (

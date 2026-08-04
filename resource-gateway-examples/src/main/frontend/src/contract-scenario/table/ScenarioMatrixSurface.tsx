@@ -19,10 +19,13 @@ interface ScenarioMatrixSurfaceProps {
   previousRunCaseIds: string[];
   runningCaseIds: string[];
   disabled?: boolean;
+  importDisabled?: boolean;
+  importDisabledReason?: string;
   onSelectionChange: (selection: ScenarioTableSelection) => void;
   onOpenCase: (caseId: string) => void;
   onCellEdit: (caseId: string, column: ScenarioTableColumn, value: unknown) => void;
   onAddCase: () => void;
+  onImportCases?: () => void;
   onRunSelection: (mode: ScenarioRunSelectionMode) => void;
 }
 
@@ -38,10 +41,13 @@ export default function ScenarioMatrixSurface({
   previousRunCaseIds,
   runningCaseIds,
   disabled = false,
+  importDisabled = false,
+  importDisabledReason = '',
   onSelectionChange,
   onOpenCase,
   onCellEdit,
   onAddCase,
+  onImportCases,
   onRunSelection,
 }: ScenarioMatrixSurfaceProps) {
   const [query, setQuery] = useState('');
@@ -157,6 +163,17 @@ export default function ScenarioMatrixSurface({
         <button type="button" className="secondary compact" onClick={onAddCase} disabled={disabled}>
           Add case
         </button>
+        {onImportCases && (
+          <button
+            type="button"
+            className="secondary compact"
+            onClick={onImportCases}
+            disabled={disabled || importDisabled}
+            title={importDisabled ? importDisabledReason : 'Import CSV or JSON cases'}
+          >
+            Import cases
+          </button>
+        )}
       </header>
 
       <div className="scenario-matrix-context" role="status">

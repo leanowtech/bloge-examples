@@ -70,8 +70,10 @@ export default function useDialogFocusTrap({
       return undefined;
     }
     const frame = window.requestAnimationFrame(() => {
-      if (dialogRef.current) {
-        focusInitialElement(dialogRef.current);
+      const dialog = dialogRef.current;
+      const active = document.activeElement;
+      if (dialog && !(active instanceof HTMLElement && dialog.contains(active))) {
+        focusInitialElement(dialog);
       }
     });
     return () => window.cancelAnimationFrame(frame);

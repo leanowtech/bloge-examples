@@ -84,4 +84,16 @@ describe('useDialogFocusTrap', () => {
 
     expect(document.activeElement?.textContent).toBe('Last');
   });
+
+  it('does not steal focus back when the user enters the dialog before the initial frame', async () => {
+    await act(async () => root.render(<DialogHarness open onDismiss={vi.fn()} />));
+    const buttons = host.querySelectorAll<HTMLButtonElement>('button');
+    buttons[1].focus();
+
+    await act(async () => {
+      await new Promise<void>((resolve) => window.requestAnimationFrame(() => resolve()));
+    });
+
+    expect(document.activeElement).toBe(buttons[1]);
+  });
 });

@@ -77,6 +77,10 @@ import type {
   StoredScenarioDraftSet,
   StoredScenarioPublication,
 } from './contract-scenario/domain';
+import type {
+  ScenarioImportExecutionRequest,
+  ScenarioMaterializationResult,
+} from './contract-scenario/import/scenarioImportModel';
 
 /** Structured transport failure that lets optional product surfaces distinguish capability absence. */
 export class BlogeApiRequestError extends Error {
@@ -787,6 +791,19 @@ export async function saveScenarioDraftSet(
         body: JSON.stringify(draftSet),
       },
     ),
+  );
+}
+
+/** Re-parses and materializes one exact CSV/JSON Scenario import on the server. */
+export async function materializeScenarioImportOnServer(
+  request: ScenarioImportExecutionRequest,
+): Promise<ScenarioMaterializationResult> {
+  return readTestingJson<ScenarioMaterializationResult>(
+    await sendRequest('/api/visual/scenario-imports/materialize', {
+      method: 'POST',
+      headers: operatorTestingHeaders('TEST_SUITE_WRITE', true),
+      body: JSON.stringify(request),
+    }),
   );
 }
 

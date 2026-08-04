@@ -110,6 +110,14 @@ from that Case opens the bound Run Evidence with assertion comparison, terminal 
 mocked/real node boundary, and exploratory content fingerprint. A green execution is deliberately
 still `Evidence incomplete` until Contract and Governance are checked.
 
+To import existing test data, save the example Graph first, rebase Scenarios to the returned
+server Contract, then open **Scenarios → Matrix → Import cases**. Choose CSV or JSON, or use
+**Load sample**, and proceed through **Inspect source → Map columns → Review plan → Materialize**.
+The browser masks sensitive preview fields; the server independently re-parses the bounded source,
+checks the exact source/mapping/Contract/target closure, and returns a payload-free durable receipt.
+The receipt stores hashed row identities, never source business keys. This API is advertised and
+available only with the test/staging testing control plane.
+
 For the shortest Library demo, open **Libraries**. The first screen lists durable drafts with
 Recent, Mine, confirmation, runtime-drift, test-gate, and ownership queues. **Resume rN** opens the
 exact mutable revision; an older deep link opens a read-only snapshot with **Resume latest** and

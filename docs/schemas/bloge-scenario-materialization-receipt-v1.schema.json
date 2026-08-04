@@ -1,0 +1,53 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://leanowtech.com/schemas/bloge-scenario-materialization-receipt-v1.schema.json",
+  "title": "BLOGE Scenario Materialization Receipt v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion", "receiptId", "planFingerprint", "sourceFingerprint",
+    "mappingFingerprint", "contractFingerprint", "targetFingerprint", "rowCount",
+    "acceptedRowCount", "rejectedRowCount", "rowIdentityPolicy",
+    "materializedScenarioIds", "rows", "actor", "materializedAt", "classification",
+    "receiptFingerprint"
+  ],
+  "properties": {
+    "schemaVersion": { "const": "bloge.scenarioMaterializationReceipt.v1" },
+    "receiptId": { "type": "string", "minLength": 1, "maxLength": 256 },
+    "planFingerprint": { "$ref": "#/$defs/fingerprint" },
+    "sourceFingerprint": { "$ref": "#/$defs/fingerprint" },
+    "mappingFingerprint": { "$ref": "#/$defs/fingerprint" },
+    "contractFingerprint": { "$ref": "#/$defs/fingerprint" },
+    "targetFingerprint": { "$ref": "#/$defs/fingerprint" },
+    "rowCount": { "type": "integer", "minimum": 0, "maximum": 500 },
+    "acceptedRowCount": { "type": "integer", "minimum": 0, "maximum": 500 },
+    "rejectedRowCount": { "type": "integer", "minimum": 0, "maximum": 500 },
+    "rowIdentityPolicy": { "$ref": "bloge-scenario-materialization-plan-v1.schema.json#/$defs/rowIdentityPolicy" },
+    "materializedScenarioIds": {
+      "type": "array", "maxItems": 500, "uniqueItems": true,
+      "items": { "type": "string", "minLength": 1, "maxLength": 256 }
+    },
+    "rows": {
+      "type": "array", "maxItems": 500,
+      "items": { "$ref": "#/$defs/row" }
+    },
+    "actor": { "type": "string", "minLength": 1, "maxLength": 256 },
+    "materializedAt": { "type": "string", "format": "date-time" },
+    "classification": { "enum": ["PUBLIC", "INTERNAL", "CONFIDENTIAL", "RESTRICTED"] },
+    "receiptFingerprint": { "$ref": "#/$defs/fingerprint" }
+  },
+  "$defs": {
+    "fingerprint": { "type": "string", "pattern": "^sha256:[0-9a-f]{64}$" },
+    "row": {
+      "type": "object", "additionalProperties": false,
+      "required": ["identityFingerprint", "rowFingerprint", "scenarioId", "status", "diagnosticCode"],
+      "properties": {
+        "identityFingerprint": { "$ref": "#/$defs/fingerprint" },
+        "rowFingerprint": { "$ref": "#/$defs/fingerprint" },
+        "scenarioId": { "type": "string", "maxLength": 256 },
+        "status": { "enum": ["CREATED", "REPLACED", "UNCHANGED", "REJECTED"] },
+        "diagnosticCode": { "type": "string", "maxLength": 256 }
+      }
+    }
+  }
+}

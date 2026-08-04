@@ -279,6 +279,16 @@ public record IntegrationCapabilities(
                         ? Objects.requireNonNull(requestIndexMode, "requestIndexMode") : null;
         Map<String, List<String>> objects = new LinkedHashMap<>();
         objects.put("graphDraft", List.of(GraphDraft.SCHEMA_VERSION));
+        objects.put("scenarioImportMaterializationRequest", List.of(
+                com.leanowtech.bloge.gateway.authoring.scenario
+                        .ScenarioImportMaterializationRequest.SCHEMA_VERSION));
+        objects.put("scenarioImportMaterializationPlan", List.of(
+                "bloge.scenarioMaterializationPlan.v1"));
+        objects.put("scenarioImportMaterializationResult", List.of(
+                com.leanowtech.bloge.gateway.authoring.scenario
+                        .ScenarioImportMaterializationResult.SCHEMA_VERSION));
+        objects.put("scenarioImportMaterializationReceipt", List.of(
+                "bloge.scenarioMaterializationReceipt.v1"));
         objects.put("capabilitySnapshot", List.of(
                 com.leanowtech.bloge.gateway.integration.mirror.CapabilitySnapshot.SCHEMA_VERSION));
         objects.put("capabilityClosure", List.of(
@@ -850,6 +860,8 @@ public record IntegrationCapabilities(
 
         Map<String, Boolean> features = new LinkedHashMap<>();
         features.put("draftExportDependencyProfile", true);
+        features.put("scenarioImportMaterializationProtocol", true);
+        features.put("scenarioImportMaterializationApi", testExecutionEndpointEnabled);
         features.put("visualLibraryAuthoringProtocol", true);
         features.put("visualLibraryAuthoringStatelessPreview", true);
         features.put("functionOnlyLibrary", true);
@@ -1369,6 +1381,8 @@ public record IntegrationCapabilities(
                 new Endpoint("POST", "/api/visual/run-controls/{requestId}/cancel")
         ));
         if (testExecutionEndpointEnabled) {
+            endpoints.add(new Endpoint(
+                    "POST", "/api/visual/scenario-imports/materialize"));
             endpoints.add(new Endpoint(
                     "POST",
                     "/admin/visual-operator-library-authoring/drafts/{draftId}/fixtures"));

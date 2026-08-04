@@ -1,0 +1,15 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://leanowtech.com/schemas/bloge-scenario-import-materialization-request-v1.schema.json",
+  "title": "BLOGE Scenario Import Materialization Request v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schemaVersion", "sourceText", "plan", "draftSet", "templateScenarioId"],
+  "properties": {
+    "schemaVersion": { "const": "bloge.scenarioImportMaterializationRequest.v1" },
+    "sourceText": { "type": "string", "maxLength": 1048576 },
+    "plan": { "$ref": "bloge-scenario-materialization-plan-v1.schema.json" },
+    "draftSet": { "$ref": "bloge-scenario-draft-set-v1.schema.json" },
+    "templateScenarioId": { "type": "string", "maxLength": 256 }
+  }
+}

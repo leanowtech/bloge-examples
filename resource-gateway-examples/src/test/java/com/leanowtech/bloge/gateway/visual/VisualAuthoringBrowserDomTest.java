@@ -7,7 +7,12 @@ import com.fasterxml.jackson.dataformat.yaml.YAMLMapper;
 import com.leanowtech.bloge.gateway.ResourceGatewayApplication;
 import com.leanowtech.bloge.gateway.authoring.scenario.ScenarioContractProjection;
 import com.leanowtech.bloge.gateway.authoring.scenario.ScenarioDraftSet;
+import com.leanowtech.bloge.gateway.authoring.scenario.ScenarioDraftSetAuthoringService;
+import com.leanowtech.bloge.gateway.authoring.scenario.ScenarioImportMaterializationRequest;
+import com.leanowtech.bloge.gateway.authoring.scenario.ScenarioImportMaterializationResult;
+import com.leanowtech.bloge.gateway.authoring.scenario.ScenarioImportMaterializationService;
 import com.leanowtech.bloge.gateway.gateway.GatewayProperties;
+import com.leanowtech.bloge.gateway.integration.IntegrationRequestContext;
 import com.leanowtech.bloge.gateway.gateway.ResourceDescriptorBootstrap;
 import com.leanowtech.bloge.gateway.resource.WritableResourceRegistry;
 import com.leanowtech.bloge.gateway.visual.catalog.OperatorDefinition;
@@ -52,6 +57,8 @@ import org.springframework.context.annotation.Bean;
 import org.springframework.core.io.ClassPathResource;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
+import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
@@ -117,12 +124,78 @@ class VisualAuthoringBrowserDomTest {
         operatorScenarioBrowserFixtureController() {
             return new OperatorScenarioBrowserFixtureController();
         }
+
+        /** Exposes the real materializer under a deterministic browser-test identity. */
+        @Bean
+        ScenarioImportBrowserFixtureController scenarioImportBrowserFixtureController(
+                ScenarioImportMaterializationService service) {
+            return new ScenarioImportBrowserFixtureController(service);
+        }
+
+        /** Exposes the authoritative saved-Graph Contract projection in the default test profile. */
+        @Bean
+        GraphScenarioBrowserFixtureController graphScenarioBrowserFixtureController(
+                ScenarioDraftSetAuthoringService service,
+                GraphDraftRepository graphDrafts) {
+            return new GraphScenarioBrowserFixtureController(service, graphDrafts);
+        }
+    }
+
+    /** Test-profile adapter around the real saved Graph Contract projection service. */
+    @RestController
+    @RequestMapping("/api/visual/scenario-draft-sets/targets/graphs")
+    static final class GraphScenarioBrowserFixtureController {
+        private final ScenarioDraftSetAuthoringService service;
+        private final GraphDraftRepository graphDrafts;
+
+        GraphScenarioBrowserFixtureController(
+                ScenarioDraftSetAuthoringService service,
+                GraphDraftRepository graphDrafts) {
+            this.service = service;
+            this.graphDrafts = graphDrafts;
+        }
+
+        /** Projects the exact retained revision without introducing a second Contract algorithm. */
+        @GetMapping("/{draftId}/contract")
+        ScenarioContractProjection contract(@PathVariable String draftId) {
+            var graph = graphDrafts.find(draftId).orElseThrow();
+            IntegrationRequestContext identity = new IntegrationRequestContext(
+                    graph.tenantId(), "browser-organization", "browser-project",
+                    graph.environment(), "local",
+                    "HUMAN", "browser-author", "", "TEST_SUITE_READ",
+                    "browser-graph-contract", java.util.Set.of(), "RESTRICTED", "");
+            return service.projectGraphContract(draftId, identity);
+        }
+    }
+
+    /** Test-only transport adapter; authorization itself remains covered by controller tests. */
+    @RestController
+    @RequestMapping("/api/visual/scenario-imports")
+    static final class ScenarioImportBrowserFixtureController {
+        private final ScenarioImportMaterializationService service;
+
+        ScenarioImportBrowserFixtureController(ScenarioImportMaterializationService service) {
+            this.service = service;
+        }
+
+        /** Materializes with a trusted identity derived from the exact requested enterprise scope. */
+        @PostMapping("/materialize")
+        ScenarioImportMaterializationResult materialize(
+                @RequestBody ScenarioImportMaterializationRequest request) {
+            ScenarioDraftSet.EnterpriseScope scope = request.draftSet().scope();
+            IntegrationRequestContext identity = new IntegrationRequestContext(
+                    scope.tenantId(), scope.organizationId(), scope.projectId(),
+                    scope.environment(), scope.region(),
+                    "HUMAN", "browser-author", "", "TEST_SUITE_WRITE",
+                    "browser-scenario-import", java.util.Set.of(), "RESTRICTED", "");
+            return service.materialize(request, identity);
+        }
     }
 
     /**
      * Test-only Mirror read surface used to exercise the packaged React workbench in real Chrome.
      *
-     * <p>Mutation routes are deliberately absent: the browser must render the reviewed workflow
+     * <p>Mirror mutation routes are deliberately absent: the browser must render the reviewed workflow
      * in its fail-closed identity state without acquiring a test-only authorization bypass.</p>
      */
     @RestController
@@ -831,6 +904,117 @@ class VisualAuthoringBrowserDomTest {
                 ".scenario-view-switch button[aria-pressed='true']"
         )).getText()).isEqualTo("Case");
         assertPageNoHorizontalOverflow();
+    }
+
+    /**
+     * Proves the complete governed import path in packaged Chrome. The source is inspected and
+     * mapped in the browser, then independently re-parsed and materialized by the Java service.
+     */
+    @Test
+    void scenarioImportMaterializesSampleThroughTheServerAndReturnsToMatrixAcrossViewports()
+            throws IOException {
+        assumeReactAuthorBundlePresent();
+        driver = newChromeDriverOrSkip();
+        WebDriverWait wait = new WebDriverWait(driver, WAIT_TIMEOUT);
+        setViewport(wait, 1280, 800);
+        driver.get("http://localhost:" + port + "/author/?authorWorkspace=v2");
+
+        wait.until(ExpectedConditions.elementToBeClickable(By.cssSelector(
+                "[data-testid='author-start-choice:examples']"
+        ))).click();
+        wait.until(ExpectedConditions.elementToBeClickable(By.cssSelector(
+                "[data-testid='author-start-example:loan-policy-fallback']"
+        ))).click();
+        wait.until(ExpectedConditions.invisibilityOfElementLocated(
+                By.cssSelector("[data-testid='author-start-dialog']")
+        ));
+
+        wait.until(ExpectedConditions.elementToBeClickable(By.cssSelector(
+                "[data-testid='author-mode:scenarios']"
+        ))).click();
+        WebElement blockedImport = wait.until(ExpectedConditions.presenceOfElementLocated(
+                By.xpath("//button[normalize-space()='Import cases']")
+        ));
+        assertThat(blockedImport.isEnabled()).isFalse();
+        assertThat(blockedImport.getAttribute("title")).contains("Save Graph");
+
+        driver.findElement(By.cssSelector("[data-testid='author-mode:contract']")).click();
+        wait.until(ExpectedConditions.elementToBeClickable(By.xpath(
+                "//button[normalize-space()='Save Graph']"
+        ))).click();
+        waitForText(wait, By.cssSelector(".scenario-asset-notice"), "Graph revision saved");
+        driver.findElement(By.cssSelector("[data-testid='author-mode:scenarios']")).click();
+
+        if (!driver.findElements(By.cssSelector(".contract-stale-banner")).isEmpty()) {
+            driver.findElement(By.xpath(
+                    "//button[normalize-space()='Review compatibility']"
+            )).click();
+            WebElement acknowledgement = wait.until(ExpectedConditions.elementToBeClickable(
+                    By.cssSelector(".compatibility-resolution input[type='checkbox']")
+            ));
+            acknowledgement.click();
+            wait.until(ExpectedConditions.elementToBeClickable(By.xpath(
+                    "//button[normalize-space()='Rebase local draft']"
+            ))).click();
+            driver.findElement(By.cssSelector("[data-testid='author-mode:scenarios']")).click();
+        }
+
+        wait.until(ExpectedConditions.elementToBeClickable(By.xpath(
+                "//button[normalize-space()='Import cases']"
+        ))).click();
+        WebElement workbench = wait.until(ExpectedConditions.visibilityOfElementLocated(
+                By.cssSelector("[data-testid='scenario-import-workbench']")
+        ));
+        workbench.findElement(By.xpath(".//button[normalize-space()='Load sample']")).click();
+        workbench.findElement(By.xpath(".//button[normalize-space()='Inspect source']")).click();
+        waitForText(wait, By.cssSelector(".scenario-import-metrics"), "Rows");
+        waitForText(wait, By.cssSelector(".scenario-import-metrics"), "5");
+        workbench.findElement(By.xpath(".//button[normalize-space()='Map columns']")).click();
+        wait.until(ExpectedConditions.visibilityOfElementLocated(
+                By.cssSelector(".scenario-import-map-list")
+        ));
+        workbench.findElement(By.xpath(".//button[normalize-space()='Review plan']")).click();
+        waitForText(wait, By.cssSelector(".scenario-import-review"), "5 rows");
+        workbench.findElement(By.xpath(
+                ".//button[normalize-space()='Materialize 5 cases']"
+        )).click();
+        waitForText(wait, By.cssSelector(".scenario-import-receipt"), "5 cases materialized");
+        assertThat(workbench.getText())
+                .contains("0 rejected rows")
+                .contains("scenario-import-")
+                .doesNotContain("Request failed");
+        assertPageNoHorizontalOverflow();
+        captureVisualQa("scenario-import-receipt-1280.png");
+
+        setViewport(wait, 390, 844);
+        assertPageNoHorizontalOverflow();
+        @SuppressWarnings("unchecked")
+        Map<String, Number> geometry = (Map<String, Number>) ((JavascriptExecutor) driver)
+                .executeScript("""
+                        const panel = document.querySelector('[data-testid="scenario-import-workbench"]');
+                        const actions = [...panel.querySelectorAll('.scenario-import-actions button')]
+                          .map((button) => button.getBoundingClientRect());
+                        const rect = panel.getBoundingClientRect();
+                        return {
+                          panelOutside: rect.left < 0 || rect.right > window.innerWidth ? 1 : 0,
+                          actionOutside: actions.filter((item) =>
+                            item.left < 0 || item.right > window.innerWidth
+                          ).length,
+                          minActionHeight: Math.min(...actions.map((item) => item.height))
+                        };
+                        """);
+        assertThat(geometry.get("panelOutside").intValue()).isZero();
+        assertThat(geometry.get("actionOutside").intValue()).isZero();
+        assertThat(geometry.get("minActionHeight").doubleValue()).isGreaterThanOrEqualTo(30.0);
+        captureVisualQa("scenario-import-receipt-390.png");
+
+        workbench.findElement(By.xpath(".//button[normalize-space()='Done']")).click();
+        wait.until(ExpectedConditions.invisibilityOfElementLocated(
+                By.cssSelector("[data-testid='scenario-import-workbench']")
+        ));
+        assertThat(driver.findElements(By.cssSelector(
+                "[data-testid^='scenario-matrix-row-']"
+        ))).hasSizeGreaterThanOrEqualTo(7);
     }
 
     /**

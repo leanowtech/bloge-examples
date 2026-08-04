@@ -1,6 +1,6 @@
 # Resource Gateway 表格驱动测试产品基准、补强设计与实施计划
 
-> 状态：Implementing，Stage 0–1 complete，Stage 2 next
+> 状态：Implementing，Stage 0–2 complete，Stage 3 next
 >
 > 日期：2026-08-04
 >
