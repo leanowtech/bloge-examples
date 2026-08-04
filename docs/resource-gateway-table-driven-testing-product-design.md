@@ -10,6 +10,7 @@
 
 相关文档：
 
+- [表格驱动测试实施状态](resource-gateway-table-driven-testing-implementation-status.md)
 - [体验成熟度 95 分校准计划](resource-gateway-ux-maturity-95-recalibration-plan.md)
 - [Contract 与 Scenario Authoring 演进计划](resource-gateway-contract-scenario-authoring-evolution-plan.md)
 - [测试控制面 API](resource-gateway-testing-control-plane-api.md)

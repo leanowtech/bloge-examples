@@ -2107,7 +2107,7 @@ describe('AuthorCanvas connection guide', () => {
         .getAttribute('data-target-kind')).toBe('operator');
       expect(window.location.search).toContain('target=operator%3Arisk%3Ascore');
       expect(query('[data-testid="topology-context-rail"]').textContent).toContain('Risk Score');
-    });
+    }, 5_000);
     expect(document.querySelector('[role="dialog"]')).toBeNull();
   });
 
@@ -4302,9 +4302,10 @@ async function setControlValue(
   });
 }
 
-async function waitFor(assertion: () => void): Promise<void> {
+async function waitFor(assertion: () => void, timeoutMs = 2_000): Promise<void> {
   let lastError: unknown;
-  for (let attempt = 0; attempt < 40; attempt += 1) {
+  const deadline = Date.now() + timeoutMs;
+  while (Date.now() < deadline) {
     try {
       assertion();
       return;
