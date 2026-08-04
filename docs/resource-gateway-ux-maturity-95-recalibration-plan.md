@@ -22,6 +22,7 @@
 - [Contract & Scenario Authoring 演进计划](resource-gateway-contract-scenario-authoring-evolution-plan.md)
 - [渐进式算子与 Function 库创作方案](resource-gateway-progressive-operator-function-library-authoring-technical-design.md)
 - [渐进式算子与 Function 库实现状态](resource-gateway-progressive-library-authoring-implementation-status.md)
+- [表格驱动测试产品基准、补强设计与实施计划](resource-gateway-table-driven-testing-product-design.md)
 
 ## 0. 执行摘要
 
