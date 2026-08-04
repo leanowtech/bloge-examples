@@ -138,6 +138,22 @@ checks the exact source/mapping/Contract/target closure, and returns a payload-f
 The receipt stores hashed row identities, never source business keys. This API is advertised and
 available only with the test/staging testing control plane.
 
+For 501–10,000-case integrations, do not download the full Scenario set for table navigation. Use
+the source-bound Matrix API. The first request sends the exact stored revision/fingerprint and an
+empty cursor; subsequent requests preserve the same filter/sort and pass `nextCursor` unchanged:
+
+```text
+POST /api/visual/scenario-draft-sets/{id}/matrix/query       X-Purpose: TEST_SUITE_READ
+POST /api/visual/scenario-draft-sets/{id}/matrix/bulk-edits  X-Purpose: TEST_SUITE_WRITE
+```
+
+The query returns at most 200 rows, each with its canonical index and case fingerprint. Bulk edit
+requires both the draft fingerprint and every touched case fingerprint, applies at most 5,000 cells
+as `ALL_OR_NOTHING`, and returns a payload-free receipt. A stale editor receives fingerprint-only
+conflict coordinates and must refresh; it never overwrites another author. A set may contain 10,000
+cases, but one suite run remains limited to an exact 500-case shard. See
+[Stage 5 verification](../docs/resource-gateway-table-driven-testing-stage5-verification.md).
+
 For the shortest Library demo, open **Libraries**. The first screen lists durable drafts with
 Recent, Mine, confirmation, runtime-drift, test-gate, and ownership queues. **Resume rN** opens the
 exact mutable revision; an older deep link opens a read-only snapshot with **Resume latest** and
@@ -4193,6 +4209,8 @@ POST /api/visual/scenario-draft-sets/validate
 PUT  /api/visual/scenario-draft-sets/{id}?expectedRevision=0
 GET  /api/visual/scenario-draft-sets/{id}
 GET  /api/visual/scenario-draft-sets/{id}/revisions
+POST /api/visual/scenario-draft-sets/{id}/matrix/query
+POST /api/visual/scenario-draft-sets/{id}/matrix/bulk-edits
 GET  /api/visual/scenario-draft-sets/targets/graphs/{draftId}/contract
 GET  /api/visual/scenario-draft-sets/targets/operators/{operatorRef}/contract
 POST /api/visual/scenario-draft-sets/{id}/publications?revision=1

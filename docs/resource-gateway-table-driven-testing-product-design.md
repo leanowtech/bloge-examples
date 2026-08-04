@@ -1,6 +1,6 @@
 # Resource Gateway 表格驱动测试产品基准、补强设计与实施计划
 
-> 状态：Implementing，Stage 0–4 complete，Stage 5 next
+> 状态：Stage 0–4 complete，Stage 5 engineering core complete；E3/E4 企业验证 pending
 >
 > 日期：2026-08-04
 >
@@ -18,6 +18,8 @@
 - [测试运行时隔离 ADR](adr/ADR-001-resource-gateway-test-runtime-isolation.md)
 - [Coverage candidate 生成边界 ADR](adr/ADR-005-coverage-candidate-generation-boundary.md)
 - [Stage 4 验证记录](resource-gateway-table-driven-testing-stage4-verification.md)
+- [Stage 5 工程核心验证记录](resource-gateway-table-driven-testing-stage5-verification.md)
+- [规模化查询与并发编辑 ADR](adr/ADR-006-scenario-matrix-scale-and-concurrency-boundary.md)
 
 ## 0. 执行摘要
 
@@ -695,7 +697,7 @@ evidenceMaterialFingerprint = hash(
 |---|---|
 | <= 100 case | 客户端完整 Matrix，实时 schema feedback |
 | 101–500 case | 虚拟化行、延迟详情、增量 Evidence |
-| 501–10,000 case | 服务端筛选/排序/分页，异步 materialization 与 suite run |
+| 501–10,000 case | 服务端筛选/排序/有界分页；suite run 必须按至多 500 case 的 exact shard 冻结 |
 | > 10,000 case | 拆分 governed suite、按标签/风险分片，不承诺单表全量编辑 |
 
 预算至少限制：源字节、行、列、cell 字节、嵌套深度、Scenario 数、fixture rule、assertion、
@@ -703,9 +705,9 @@ evidenceMaterialFingerprint = hash(
 
 ### 7.5 并发与协作
 
-- Matrix 编辑使用 exact revision + optimistic concurrency；
-- bulk command 带 base revision 和 affected case ids；
-- 409 conflict 返回行/字段级 diff，不让最后写入者静默覆盖；
+- Matrix 查询和编辑同时使用 exact revision + draft fingerprint；
+- bulk command 带 base revision/fingerprint、affected case ids 和逐行 fingerprint；
+- 409 conflict 返回 payload-free 行状态与 current fingerprint，不让最后写入者静默覆盖；
 - 评论与 review 绑定 case/assertion coordinate，不绑定可变化的行号；
 - imported dataset 更新先生成 diff 和 impacted Scenario，不自动替换现有 suite；
 - shared column preference 不进入业务版本，个人 preference 不制造 revision noise。
@@ -878,17 +880,26 @@ coverage evidence；Accept 只把候选变成 canonical Scenario draft，缺少�
 ### Stage 5：企业协作与规模化
 
 > 周期：2–3 周
+>
+> 当前状态：规模化查询、原子并发编辑、10,000-case source/500-case run shard、strict schema、
+> capability discovery 与 TypeScript client 已完成；真实企业协作与 pilot 属于外部验证阶段。
 
 工作项：
 
-- 500+ 行 server-side query 与虚拟化；
-- bulk edit optimistic concurrency 与 conflict diff；
+- 500+ 行 server-side query、bounded cursor 与可重建行索引；
+- bulk edit optimistic concurrency、row fingerprint、payload-free conflict diff 与全有或全无提交；
 - dataset/suite owner、review、approval、retention；
 - saved views 与 team views，且不污染业务 revision；
 - payload view/export 细粒度 RBAC；
 - event/webhook：suite changed、run completed、evidence stale、gate changed；
 - ANEKE workbook 映射、deep link 和 gate feedback；
 - two-release-cycle 真实企业 pilot。
+
+已完成的工程边界见 [ADR-006](adr/ADR-006-scenario-matrix-scale-and-concurrency-boundary.md)：
+canonical `ScenarioDraftSet` 仍是唯一事实源；事务性行索引只服务查询；查询每页最多 200 行；一次
+bulk command 最多 5,000 cell；source 最多 10,000 case；一次 suite run 最多 500 case。Author 当前
+500-case Matrix 继续使用 progressive projection，10,000-case 虚拟表格接入和 E3/E4 不能用协议测试
+冒充已经完成。
 
 退出门槛：
 
@@ -1004,10 +1015,9 @@ remediation action。禁止记录列名、字段 path、业务值、DSL、Expect
 | 协议一致性 | 15 / 15 | 与 Contract、Fixture、Suite、Evidence 现状相容 |
 | 正确性与证据 | 15 / 15 | materialization、selection、evidence 三层指纹闭包 |
 | 企业安全治理 | 14 / 15 | 隔离、RBAC、PII、retention、审计完整；待真实合规审查 |
-| 规模与运维 | 8 / 10 | 明确分级、预算、恢复；缺真实 10,000 case 数据 |
+| 规模与运维 | 9 / 10 | 10,000-case server query、事务索引、原子编辑和 500-case shard 已有自动化证据；缺真实浏览器与企业负载数据 |
 | 可实施性 | 5 / 5 | 分阶段、文件边界、退出门槛和测试矩阵明确 |
-| **合计** | **96 / 100** | 达到工程开工标准，不能用自评分替代 E3/E4 证据 |
+| **合计** | **97 / 100** | 工程方案与核心实现闭合；剩余 3 分必须来自 E3/E4、saved/team view 和真实组织负载证据 |
 
-开工顺序必须是 `Stage 0 -> Stage 1 -> Stage 2 -> Stage 3`。不要先做 pairwise、AI 生成或
-JDBC connector；如果 Matrix、物化和 exact selection 三个根基没有稳定，后续能力只会放大
-不可见状态和错误证据。
+后续顺序应是 `10,000-case browser integration -> saved/team view -> governance adapter -> E3/E4`。
+不要先做 AI oracle 或 live JDBC connector；它们会绕过已经冻结的物化、source closure 和证据边界。

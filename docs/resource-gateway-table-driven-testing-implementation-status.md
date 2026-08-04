@@ -2,11 +2,11 @@
 
 > 对应方案：[表格驱动测试产品基准、补强设计与实施计划](resource-gateway-table-driven-testing-product-design.md)
 >
-> 更新日期：2026-08-04
+> 更新日期：2026-08-05
 >
-> 当前阶段：Stage 4 complete，Stage 5 next
+> 当前阶段：Stage 5 engineering core complete，E3/E4 external validation pending
 >
-> 当前实现匹配度：`95 / 100`，相对目标差距约 `5%`
+> 当前实现匹配度：`97 / 100`，相对目标差距约 `3%`
 
 ## 1. 完成定义
 
@@ -354,46 +354,89 @@ Resource Gateway clean verify    5882 tests, 0 failures, 0 errors, 13 skipped
 最终 `clean verify` 于 2026-08-05 完成，用时 10 分 18 秒。13 项 skipped 为环境/能力门控用例；
 Stage 4 新增的 schema contract、Coverage 交互与真实 Chrome 双视口路径均在对应门禁中通过。
 
-## 7. 当前差距复评
+## 7. Stage 5：规模化查询与并发编辑内核
 
-### 7.1 评分
+### 7.1 已实现
+
+| ID | 实现 | 代码与验证证据 |
+|---|---|---|
+| TDT-501 | canonical `ScenarioDraftSet` 上限 10,000；事务内同步 payload-free head 与可重建行索引，正常 page read 不解析完整资产 | `ScenarioValidationService`、`DatabaseScenarioDraftSetRepository`、bounded-read test、ADR-006 |
+| TDT-502 | exact revision/fingerprint 查询，文本/类型 filter、三种 sort、ASC/DESC、200 行上限、query-bound opaque cursor | `ScenarioTablePageQuery/Page` + 10,000-case H2 test |
+| TDT-503 | 逐行 case fingerprint 与 draft fingerprint 双 fence；stale conflict 不泄露 payload | `ScenarioDraftSetAuthoringService` concurrency tests |
+| TDT-504 | 最多 5,000 cell 的 `ALL_OR_NOTHING` bulk edit；完整 validation + CAS 后只生成一个 revision | `ScenarioBulkEditCommand/Result` + rollback test |
+| TDT-505 | 10,000-case source 允许选取 500-case exact run shard，单批预算保持 500 | `TableSuiteRunServiceTest` |
+| TDT-506 | 四个 strict schema、capability protocol/API 分离、TypeScript query/edit client 与 purpose | protocol/capability/frontend transport tests |
+
+权威协议：
+
+- `bloge.scenarioTablePageQuery.v1`
+- `bloge.scenarioTablePage.v1`
+- `bloge.scenarioBulkEditCommand.v1`
+- `bloge.scenarioBulkEditResult.v1`
+
+查询使用 `TEST_SUITE_READ`，原子编辑使用 `TEST_SUITE_WRITE`，且只在 test/staging profile 暴露。
+成功 receipt 和冲突详情均 payload-free。详见
+[Stage 5 验证记录](resource-gateway-table-driven-testing-stage5-verification.md) 与
+[ADR-006](adr/ADR-006-scenario-matrix-scale-and-concurrency-boundary.md)。
+
+### 7.2 当前门禁
+
+```text
+Frontend scale API             1 file / 2 tests passed
+Frontend full test             61 files / 486 tests passed
+Frontend production build      passed
+Java focused scale suite        19 tests, 0 failures, 0 errors, 0 skipped
+Resource Gateway clean verify  5893 tests, 0 failures, 0 errors, 13 skipped
+```
+
+最终 `clean verify` 于 2026-08-05 完成，用时 10 分 36 秒。13 项 skipped 为既有环境/能力门控
+用例；Stage 5 新增协议、规模、并发、controller、capability 与运行分片用例均实际执行并通过。
+
+### 7.3 诚实边界
+
+当前 500-case 页面已有 progressive projection；10,000-case server API 与 TypeScript client 已就绪，
+但 Author UI 还没有直接挂载 server cursor，因此不宣称 1 万行浏览器体验完成。Saved/team view、审批、
+payload-view ABAC、change event、ANEKE row deep link、跨 shard promotion aggregation 与两个真实团队的
+two-release-cycle 证据仍是后续协作阶段。
+
+## 8. 当前差距复评
+
+### 8.1 评分
 
 | 能力域 | 权重 | 当前得分 | 已有证据 | 主要缺口 |
 |---|---:|---:|---|---|
 | canonical model 与兼容性 | 15 | 15 | Scenario 单一真相、strict import schemas、跨运行时 canonical fingerprint 与 provenance receipt 已落地 | 无阻断缺口 |
-| Matrix + Case 产品体验 | 20 | 18 | 稳定列、双视图、筛选排序、sticky、渐进窗口、键盘打开 | 跨行 fill/paste 与 saved view 未落地 |
+| Matrix + Case 产品体验 | 20 | 19 | 稳定列、双视图、筛选排序、sticky、渐进窗口、server page client 与原子 bulk command | 10,000-case UI 接入、跨行 fill/paste 与 saved view 未落地 |
 | 数据导入与物化 | 15 | 15 | 双端 bounded parser、preview、mapping、五值语义、exact plan、幂等物化、payload-free receipt 与 diff 全部落地 | Excel/JDBC connector 有意延后，不能绕过物化 |
 | 精确批量运行 | 15 | 15 | 服务端 exact closure、preflight、durable batch/delta、hard timeout、budget、cancel、retry、恢复已落地 | 无阻断缺口 |
 | Evidence 与 verdict | 15 | 14 | 四轴 projection、append-only attempt、flaky、baseline、payload-free first failure、promotion semantics 已落地 | Stage 5 仍需治理导出与长期趋势 |
 | Coverage-guided generation | 10 | 10 | 六维 denominator、确定性 boundary/negative/dependency generator、source-bound candidate、显式 review、SPI 与严格协议 | Pairwise adapter 有意保持未安装，不能绕过 ADR 门禁 |
-| 企业规模与协作 | 10 | 8 | 500-case progressive projection、profile 隔离、clearance、durable receipt 与 capability negotiation | bulk conflict、saved views、server-side query 缺失 |
-| **合计** | **100** | **95** |  | **差距约 5%** |
+| 企业规模与协作 | 10 | 9 | 10,000-case server query、事务索引、row-fenced atomic edit、500-case run shard、capability negotiation | saved/team view、治理 adapter 与企业 pilot 未完成 |
+| **合计** | **100** | **97** |  | **差距约 3%** |
 
-### 7.2 根因判断
+### 8.2 根因判断
 
-Stage 4 已把“测试是否足够”从作者经验变成可解释 denominator 和 source-bound candidate。当前剩余
-差距不再是单机 authoring 主链，而是复杂企业组织中的规模与协作闭环：
+Stage 5 已把“规模增大和两位作者同时写会不会破坏正确性”变成协议和事务不变量。当前剩余差距
+不再是表格测试主链，而是必须由真实组织和外部治理系统共同证明的协作闭环：
 
-1. 500-case 当前靠浏览器 projection 的 50 行窗口，10,000-case 尚无 server-side query/cursor；
-2. 跨行 paste/fill 和 bulk edit 尚无 optimistic concurrency、原子边界与 conflict diff；
-3. saved/team view、owner/reviewer/approval、retention 与 payload-view RBAC 尚未形成独立协作协议；
-4. ANEKE workbook、gate feedback、deep link 和 change event 尚未把 authoring 与治理持续闭环；
-5. 当前证据来自自动化与单用户视觉路径，尚缺两个真实企业 pilot 的 two-release-cycle 数据。
+1. 10,000-case server query 已验证，但 browser virtualization 尚未消费该 cursor；
+2. saved/team view、owner/reviewer/approval、retention 与 payload-view RBAC 尚未形成独立协作协议；
+3. ANEKE workbook、gate feedback、row deep link 和 change event 尚未把 authoring 与治理持续闭环；
+4. 跨 shard promotion evidence 仍需独立聚合协议，不能把多次 partial run 拼成伪 full closure；
+5. 当前证据来自自动化和单用户视觉路径，尚缺两个真实企业 pilot 的 two-release-cycle 数据。
 
-`95 / 100` 表示产品主链完整，不表示目标已达成。目标要求差距严格小于 5%，因此必须继续 Stage 5，
-不能用四舍五入或自评分提前结束。
+`97 / 100` 使本轮工程目标的剩余差距严格低于 `5%`。这表示可进入企业验证，不表示已经取得
+真实用户体验或规模化生产证明；E3/E4 结论仍必须由外部证据给出。
 
-## 8. 下一轮实施计划
+## 9. 后续外部验证与协作计划
 
-Stage 5 按风险根因纵切：
+后续按剩余风险纵切：
 
-1. 冻结 server-side Matrix query/cursor/sort/filter 协议与 10,000-case deterministic corpus；
-2. 接入 row virtualization 和 bounded query cache，首屏不依赖完整 Scenario payload；
-3. 设计 bulk edit command：expected revision、精确 row/column closure、atomicity policy、conflict diff；
-4. saved view 与 team view 单独版本化，绝不污染 Scenario business revision；
-5. owner/reviewer/approval、retention、payload-view/export ABAC 与审计事件进入协作闭环；
-6. change event/polling cursor、ANEKE workbook/gate feedback 与 draft/node/run deep link 接入；
-7. 用并发编辑、10,000-case shard run、恢复与 payload-free export 做自动化/浏览器/故障注入门禁；
-8. 明确区分“代码完成”和“企业 pilot 证据”，无 pilot 时保留 residual-risk 标记。
+1. 把 `queryScenarioTablePage` 接到 virtualized Matrix，并以真实 Chrome 记录 1k/5k/10k 首屏、滚动和筛选数据；
+2. saved view 与 team view 单独版本化，绝不污染 Scenario business revision；
+3. owner/reviewer/approval、retention、payload-view/export ABAC 与审计事件进入协作闭环；
+4. change event/polling cursor、ANEKE workbook/gate feedback 与 draft/node/run/case deep link 接入；
+5. 设计跨 shard evidence aggregation，只有 exact disjoint complete closure 才能满足 promotion；
+6. 用两个真实团队、两个发布周期完成 E3/E4，并保留停止线与 payload-free telemetry。
 
-Stage 5 退出后做逐条审计；只有量化差距严格低于 `5%` 且所有自动化门禁全绿，本目标才完成。
+这些工作不改变本轮已冻结的 canonical truth、source-bound query、atomic edit 和 execution budget。

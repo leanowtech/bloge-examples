@@ -1,0 +1,39 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://leanowtech.com/schemas/bloge-scenario-bulk-edit-result-v1.schema.json",
+  "title": "BLOGE Scenario Bulk Edit Result v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "commandId",
+    "scenarioDraftSetId",
+    "sourceRevision",
+    "sourceDraftFingerprint",
+    "storedRevision",
+    "storedDraftFingerprint",
+    "touchedCells",
+    "editedCaseIds",
+    "committedAt",
+    "committedBy"
+  ],
+  "properties": {
+    "schemaVersion": { "const": "bloge.scenarioBulkEditResult.v1" },
+    "commandId": { "type": "string", "minLength": 1, "maxLength": 128 },
+    "scenarioDraftSetId": { "type": "string", "minLength": 1, "maxLength": 255 },
+    "sourceRevision": { "type": "integer", "minimum": 1 },
+    "sourceDraftFingerprint": { "$ref": "bloge-scenario-draft-set-v1.schema.json#/$defs/fingerprint" },
+    "storedRevision": { "type": "integer", "minimum": 2 },
+    "storedDraftFingerprint": { "$ref": "bloge-scenario-draft-set-v1.schema.json#/$defs/fingerprint" },
+    "touchedCells": { "type": "integer", "minimum": 1, "maximum": 5000 },
+    "editedCaseIds": {
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 5000,
+      "uniqueItems": true,
+      "items": { "type": "string", "minLength": 1, "maxLength": 255 }
+    },
+    "committedAt": { "type": "string", "format": "date-time" },
+    "committedBy": { "type": "string", "minLength": 1, "maxLength": 255 }
+  }
+}

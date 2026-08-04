@@ -1,6 +1,8 @@
 package com.leanowtech.bloge.gateway.authoring.scenario;
 
+import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.node.ObjectNode;
 import com.leanowtech.bloge.gateway.integration.IntegrationProblem;
 import com.leanowtech.bloge.gateway.integration.IntegrationProblemException;
 import com.leanowtech.bloge.gateway.integration.IntegrationRequestContext;
@@ -14,6 +16,8 @@ import com.leanowtech.bloge.gateway.visual.draft.GraphDraftRepository;
 import com.leanowtech.bloge.gateway.visual.model.VisualBundleFingerprint;
 import com.leanowtech.bloge.gateway.visual.validation.VisualSecretGuard;
 
+import java.util.ArrayList;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
@@ -185,6 +189,124 @@ public final class ScenarioDraftSetAuthoringService {
         revisions.forEach(stored ->
                 requireClassification(stored.draftSet().metadata().classification(), identity));
         return revisions;
+    }
+
+    /**
+     * Returns one bounded, source-bound Matrix page without loading all Scenario payloads.
+     *
+     * @param scenarioDraftSetId stable Scenario asset id
+     * @param query exact source, filters, sort, and opaque cursor
+     * @param identity verified workload identity
+     * @return bounded Matrix page
+     */
+    public ScenarioTablePage queryPage(
+            String scenarioDraftSetId,
+            ScenarioTablePageQuery query,
+            IntegrationRequestContext identity) {
+        requireIdentity(identity);
+        String id = requireId(scenarioDraftSetId, identity);
+        validatePageQuery(query, identity);
+        ScenarioTableHead current = repository.findTableHead(scope(identity), id)
+                .orElseThrow(() -> new IntegrationProblemException(IntegrationProblem.notFound(
+                        "RG.SCENARIO.NOT_FOUND",
+                        "Scenario draft set was not found in the authorized scope.",
+                        identity.correlationId(), Map.of("scenarioDraftSetId", id))));
+        requireClassification(current.classification(), identity);
+        if (current.revision() != query.expectedRevision()
+                || !current.draftFingerprint().equals(query.expectedDraftFingerprint())) {
+            throw sourceConflict(identity, current, "RG.SCENARIO.TABLE_SOURCE_CONFLICT",
+                    "Scenario Matrix source changed after this view was opened.", List.of());
+        }
+        String queryFingerprint = VisualBundleFingerprint.fromCanonicalValue(
+                objectMapper,
+                Map.of(
+                        "scenarioDraftSetId", id,
+                        "revision", query.expectedRevision(),
+                        "draftFingerprint", query.expectedDraftFingerprint(),
+                        "query", query.query(),
+                        "caseTypes", query.caseTypes(),
+                        "sortField", query.sortField(),
+                        "sortDirection", query.sortDirection()),
+                MAX_TARGET_BYTES);
+        try {
+            return repository.queryPage(scope(identity), id, query, queryFingerprint)
+                    .orElseThrow(() -> sourceConflict(
+                            identity,
+                            repository.findTableHead(scope(identity), id).orElse(current),
+                            "RG.SCENARIO.TABLE_SOURCE_CONFLICT",
+                            "Scenario Matrix source changed while the page was being resolved.",
+                            List.of()));
+        } catch (IllegalArgumentException invalidCursor) {
+            throw badRequest(identity, "RG.SCENARIO.TABLE_CURSOR_INVALID",
+                    "Scenario Matrix cursor is invalid or belongs to another exact query.", Map.of());
+        }
+    }
+
+    /**
+     * Applies multiple Matrix cell edits as one validated optimistic-concurrency revision.
+     *
+     * <p>Every touched row is checked against the case fingerprint observed by the author before
+     * any mutation is applied. Conflicts return only coordinates and fingerprints, never payloads.</p>
+     */
+    public ScenarioBulkEditResult bulkEdit(
+            String scenarioDraftSetId,
+            ScenarioBulkEditCommand command,
+            IntegrationRequestContext identity) {
+        requireIdentity(identity);
+        String id = requireId(scenarioDraftSetId, identity);
+        validateBulkCommand(command, identity);
+        StoredScenarioDraftSet current = repository.find(scope(identity), id)
+                .orElseThrow(() -> new IntegrationProblemException(IntegrationProblem.notFound(
+                        "RG.SCENARIO.NOT_FOUND",
+                        "Scenario draft set was not found in the authorized scope.",
+                        identity.correlationId(), Map.of("scenarioDraftSetId", id))));
+        requireClassification(current.draftSet().metadata().classification(), identity);
+        List<String> caseIds = command.edits().stream()
+                .map(ScenarioBulkEditCommand.CellEdit::caseId).distinct().toList();
+        if (current.revision() != command.expectedRevision()
+                || !current.fingerprint().equals(command.expectedDraftFingerprint())) {
+            throw sourceConflict(identity, current, "RG.SCENARIO.BULK_SOURCE_CONFLICT",
+                    "Scenario draft set changed after the selected cells were loaded.",
+                    caseConflicts(current.draftSet(), command));
+        }
+
+        Map<String, ScenarioDraftSet.ScenarioDraft> originals = new LinkedHashMap<>();
+        current.draftSet().scenarios().forEach(scenario -> originals.put(scenario.scenarioId(), scenario));
+        for (ScenarioBulkEditCommand.CellEdit edit : command.edits()) {
+            ScenarioDraftSet.ScenarioDraft scenario = originals.get(edit.caseId());
+            if (scenario == null || !caseFingerprint(scenario).equals(edit.expectedCaseFingerprint())) {
+                throw sourceConflict(identity, current, "RG.SCENARIO.BULK_CASE_CONFLICT",
+                        "One or more selected Scenario rows changed or were deleted.",
+                        caseConflicts(current.draftSet(), command));
+            }
+        }
+
+        Map<String, ScenarioDraftSet.ScenarioDraft> changed = new LinkedHashMap<>(originals);
+        for (ScenarioBulkEditCommand.CellEdit edit : command.edits()) {
+            changed.put(edit.caseId(), applyCellEdit(changed.get(edit.caseId()), edit, identity));
+        }
+        ScenarioDraftSet source = current.draftSet();
+        ScenarioDraftSet candidate = new ScenarioDraftSet(
+                source.schemaVersion(), source.scenarioDraftSetId(), source.revision(),
+                source.scope(), source.target(), source.contractFingerprint(),
+                source.scenarios().stream().map(scenario -> changed.get(scenario.scenarioId())).toList(),
+                source.metadata());
+        StoredScenarioDraftSet stored;
+        try {
+            stored = save(id, current.revision(), candidate, identity);
+        } catch (IntegrationProblemException conflict) {
+            if (!"RG.SCENARIO.REVISION_CONFLICT".equals(conflict.problem().code())) {
+                throw conflict;
+            }
+            StoredScenarioDraftSet latest = repository.find(scope(identity), id).orElse(current);
+            throw sourceConflict(identity, latest, "RG.SCENARIO.BULK_SOURCE_CONFLICT",
+                    "Scenario draft set changed while the atomic edit was being committed.",
+                    caseConflicts(latest.draftSet(), command));
+        }
+        return new ScenarioBulkEditResult(
+                "", command.commandId(), id, current.revision(), current.fingerprint(),
+                stored.revision(), stored.fingerprint(), command.edits().size(), caseIds,
+                stored.savedAt(), stored.savedBy());
     }
 
     /**
@@ -394,6 +516,240 @@ public final class ScenarioDraftSetAuthoringService {
                     "Operator ref must be a bounded catalog identifier.", Map.of());
         }
         return ref;
+    }
+
+    private static void validatePageQuery(
+            ScenarioTablePageQuery query,
+            IntegrationRequestContext identity) {
+        if (query == null || !ScenarioTablePageQuery.SCHEMA_VERSION.equals(query.schemaVersion())
+                || query.expectedRevision() <= 0
+                || !query.expectedDraftFingerprint().matches("sha256:[0-9a-f]{64}")
+                || query.query().length() > 200
+                || query.caseTypes().size() > ScenarioDraftSet.CaseType.values().length
+                || query.cursor().length() > 4096
+                || query.limit() < 1 || query.limit() > 200) {
+            throw badRequest(identity, "RG.SCENARIO.TABLE_QUERY_INVALID",
+                    "Matrix query requires an exact source and bounded filters, cursor, and page size.",
+                    Map.of("maximumLimit", 200));
+        }
+    }
+
+    private static void validateBulkCommand(
+            ScenarioBulkEditCommand command,
+            IntegrationRequestContext identity) {
+        if (command == null
+                || !ScenarioBulkEditCommand.SCHEMA_VERSION.equals(command.schemaVersion())
+                || command.commandId().isBlank() || command.commandId().length() > 128
+                || !command.commandId().matches("[A-Za-z0-9][A-Za-z0-9._:-]*")
+                || command.expectedRevision() <= 0
+                || !command.expectedDraftFingerprint().matches("sha256:[0-9a-f]{64}")
+                || command.atomicity() != ScenarioBulkEditCommand.Atomicity.ALL_OR_NOTHING
+                || command.edits().isEmpty() || command.edits().size() > 5000) {
+            throw badRequest(identity, "RG.SCENARIO.BULK_COMMAND_INVALID",
+                    "Bulk edit requires one exact source and 1..5000 all-or-nothing cell edits.",
+                    Map.of("maximumEdits", 5000));
+        }
+        Set<String> coordinates = new java.util.HashSet<>();
+        for (ScenarioBulkEditCommand.CellEdit edit : command.edits()) {
+            String coordinate = edit.caseId() + "\u001f" + edit.field() + "\u001f" + edit.path();
+            if (edit.caseId().isBlank() || edit.caseId().length() > 255
+                    || !edit.expectedCaseFingerprint().matches("sha256:[0-9a-f]{64}")
+                    || edit.field() == null || edit.operation() == null
+                    || (edit.field() != ScenarioBulkEditCommand.Field.GIVEN_PATH
+                    && (!edit.path().isBlank()
+                    || edit.operation() != ScenarioBulkEditCommand.Operation.SET))
+                    || !coordinates.add(coordinate)) {
+                throw badRequest(identity, "RG.SCENARIO.BULK_EDIT_INVALID",
+                        "Each bulk cell edit must be unique, source-bound, and valid for its field.",
+                        Map.of());
+            }
+        }
+    }
+
+    private ScenarioDraftSet.ScenarioDraft applyCellEdit(
+            ScenarioDraftSet.ScenarioDraft source,
+            ScenarioBulkEditCommand.CellEdit edit,
+            IntegrationRequestContext identity) {
+        return switch (edit.field()) {
+            case NAME -> withName(source, edit.value(), identity);
+            case CASE_TYPE -> withCaseType(source, edit.value(), identity);
+            case TAGS -> withTags(source, edit.value(), identity);
+            case GIVEN_PATH -> withGivenPath(source, edit, identity);
+        };
+    }
+
+    private static ScenarioDraftSet.ScenarioDraft withName(
+            ScenarioDraftSet.ScenarioDraft source,
+            Object value,
+            IntegrationRequestContext identity) {
+        if (!(value instanceof String name) || name.isBlank() || name.length() > 512) {
+            throw badRequest(identity, "RG.SCENARIO.BULK_VALUE_INVALID",
+                    "Scenario name must be a non-blank string of at most 512 characters.", Map.of());
+        }
+        return copy(source, name.trim(), source.caseType(), source.tags(), source.given());
+    }
+
+    private static ScenarioDraftSet.ScenarioDraft withCaseType(
+            ScenarioDraftSet.ScenarioDraft source,
+            Object value,
+            IntegrationRequestContext identity) {
+        try {
+            ScenarioDraftSet.CaseType caseType = ScenarioDraftSet.CaseType.valueOf(
+                    String.valueOf(value).trim().toUpperCase(Locale.ROOT));
+            return copy(source, source.name(), caseType, source.tags(), source.given());
+        } catch (IllegalArgumentException invalid) {
+            throw badRequest(identity, "RG.SCENARIO.BULK_VALUE_INVALID",
+                    "Scenario case type is not supported.", Map.of());
+        }
+    }
+
+    private static ScenarioDraftSet.ScenarioDraft withTags(
+            ScenarioDraftSet.ScenarioDraft source,
+            Object value,
+            IntegrationRequestContext identity) {
+        if (!(value instanceof List<?> values) || values.size() > 64) {
+            throw badRequest(identity, "RG.SCENARIO.BULK_VALUE_INVALID",
+                    "Scenario tags must be an array containing at most 64 strings.", Map.of());
+        }
+        List<String> tags = new ArrayList<>(values.size());
+        for (Object item : values) {
+            if (!(item instanceof String tag) || tag.isBlank() || tag.length() > 128) {
+                throw badRequest(identity, "RG.SCENARIO.BULK_VALUE_INVALID",
+                        "Every Scenario tag must be a non-blank string of at most 128 characters.",
+                        Map.of());
+            }
+            tags.add(tag.trim());
+        }
+        return copy(source, source.name(), source.caseType(), tags, source.given());
+    }
+
+    private ScenarioDraftSet.ScenarioDraft withGivenPath(
+            ScenarioDraftSet.ScenarioDraft source,
+            ScenarioBulkEditCommand.CellEdit edit,
+            IntegrationRequestContext identity) {
+        List<String> path = pointerSegments(edit.path(), identity);
+        JsonNode input = objectMapper.valueToTree(source.given().input());
+        if (!(input instanceof ObjectNode root)) {
+            throw badRequest(identity, "RG.SCENARIO.BULK_PATH_INVALID",
+                    "Matrix Given-path edits require an object input.", Map.of("path", edit.path()));
+        }
+        ObjectNode parent = root;
+        for (int index = 0; index < path.size() - 1; index++) {
+            String segment = path.get(index);
+            JsonNode child = parent.get(segment);
+            if (child == null || child.isNull()) {
+                ObjectNode created = objectMapper.createObjectNode();
+                parent.set(segment, created);
+                parent = created;
+            } else if (child instanceof ObjectNode object) {
+                parent = object;
+            } else {
+                throw badRequest(identity, "RG.SCENARIO.BULK_PATH_INVALID",
+                        "Given path crosses a non-object value.", Map.of("path", edit.path()));
+            }
+        }
+        String leaf = path.getLast();
+        if (edit.operation() == ScenarioBulkEditCommand.Operation.REMOVE) {
+            if (!parent.has(leaf)) {
+                throw badRequest(identity, "RG.SCENARIO.BULK_PATH_INVALID",
+                        "Given path does not exist and cannot be removed.", Map.of("path", edit.path()));
+            }
+            parent.remove(leaf);
+        } else {
+            parent.set(leaf, objectMapper.valueToTree(edit.value()));
+        }
+        ScenarioDraftSet.Given given = new ScenarioDraftSet.Given(
+                objectMapper.convertValue(root, Object.class),
+                ScenarioDraftSet.ValueProvenance.AUTHORED);
+        return copy(source, source.name(), source.caseType(), source.tags(), given);
+    }
+
+    private static List<String> pointerSegments(
+            String pointer,
+            IntegrationRequestContext identity) {
+        if (pointer == null || !pointer.startsWith("/") || pointer.length() > 2048) {
+            throw badRequest(identity, "RG.SCENARIO.BULK_PATH_INVALID",
+                    "Given path must be a bounded JSON Pointer below the input root.", Map.of());
+        }
+        String[] encoded = pointer.substring(1).split("/", -1);
+        if (encoded.length == 0 || encoded.length > 64) {
+            throw badRequest(identity, "RG.SCENARIO.BULK_PATH_INVALID",
+                    "Given path depth must be between 1 and 64.", Map.of());
+        }
+        List<String> result = new ArrayList<>(encoded.length);
+        for (String segment : encoded) {
+            if (segment.isBlank() || segment.matches(".*~(?![01]).*")) {
+                throw badRequest(identity, "RG.SCENARIO.BULK_PATH_INVALID",
+                        "Given path contains an invalid JSON Pointer segment.", Map.of());
+            }
+            result.add(segment.replace("~1", "/").replace("~0", "~"));
+        }
+        return result;
+    }
+
+    private static ScenarioDraftSet.ScenarioDraft copy(
+            ScenarioDraftSet.ScenarioDraft source,
+            String name,
+            ScenarioDraftSet.CaseType caseType,
+            List<String> tags,
+            ScenarioDraftSet.Given given) {
+        return new ScenarioDraftSet.ScenarioDraft(
+                source.scenarioId(), name, source.description(), caseType, tags,
+                given, source.dependencies(), source.then());
+    }
+
+    private String caseFingerprint(ScenarioDraftSet.ScenarioDraft scenario) {
+        return VisualBundleFingerprint.fromCanonicalValue(
+                objectMapper, scenario, MAX_TARGET_BYTES);
+    }
+
+    private List<Map<String, Object>> caseConflicts(
+            ScenarioDraftSet current,
+            ScenarioBulkEditCommand command) {
+        Map<String, ScenarioDraftSet.ScenarioDraft> currentById = new LinkedHashMap<>();
+        current.scenarios().forEach(scenario -> currentById.put(scenario.scenarioId(), scenario));
+        Map<String, String> expected = new LinkedHashMap<>();
+        command.edits().forEach(edit -> expected.putIfAbsent(
+                edit.caseId(), edit.expectedCaseFingerprint()));
+        return expected.entrySet().stream().map(entry -> {
+            ScenarioDraftSet.ScenarioDraft scenario = currentById.get(entry.getKey());
+            String fingerprint = scenario == null ? "" : caseFingerprint(scenario);
+            String status = scenario == null ? "DELETED"
+                    : fingerprint.equals(entry.getValue()) ? "UNCHANGED" : "CHANGED";
+            Map<String, Object> conflict = new LinkedHashMap<>();
+            conflict.put("caseId", entry.getKey());
+            conflict.put("status", status);
+            conflict.put("currentCaseFingerprint", fingerprint);
+            return Map.copyOf(conflict);
+        }).toList();
+    }
+
+    private static IntegrationProblemException sourceConflict(
+            IntegrationRequestContext identity,
+            StoredScenarioDraftSet current,
+            String code,
+            String title,
+            List<Map<String, Object>> caseConflicts) {
+        Map<String, Object> details = new LinkedHashMap<>();
+        details.put("currentRevision", current.revision());
+        details.put("currentDraftFingerprint", current.fingerprint());
+        details.put("caseConflicts", List.copyOf(caseConflicts));
+        return new IntegrationProblemException(IntegrationProblem.retryableConflict(
+                code, title, identity.correlationId(), details));
+    }
+
+    private static IntegrationProblemException sourceConflict(
+            IntegrationRequestContext identity,
+            ScenarioTableHead current,
+            String code,
+            String title,
+            List<Map<String, Object>> caseConflicts) {
+        Map<String, Object> details = new LinkedHashMap<>();
+        details.put("currentRevision", current.revision());
+        details.put("currentDraftFingerprint", current.draftFingerprint());
+        details.put("caseConflicts", List.copyOf(caseConflicts));
+        return new IntegrationProblemException(IntegrationProblem.retryableConflict(
+                code, title, identity.correlationId(), details));
     }
 
     private static ScenarioDraftSet.EnterpriseScope scope(IntegrationRequestContext identity) {

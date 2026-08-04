@@ -81,6 +81,26 @@ public class ScenarioDraftSetController {
                 context(headers, IntegrationOperation.TEST_SUITE_READ));
     }
 
+    /** Queries one exact bounded Matrix page from the server-side Scenario row index. */
+    @PostMapping("/{scenarioDraftSetId}/matrix/query")
+    public ScenarioTablePage queryMatrix(
+            @PathVariable String scenarioDraftSetId,
+            @RequestBody ScenarioTablePageQuery query,
+            @RequestHeader HttpHeaders headers) {
+        return service.queryPage(scenarioDraftSetId, query,
+                context(headers, IntegrationOperation.TEST_SUITE_READ));
+    }
+
+    /** Applies a source-bound group of Matrix edits as one all-or-nothing Scenario revision. */
+    @PostMapping("/{scenarioDraftSetId}/matrix/bulk-edits")
+    public ScenarioBulkEditResult bulkEditMatrix(
+            @PathVariable String scenarioDraftSetId,
+            @RequestBody ScenarioBulkEditCommand command,
+            @RequestHeader HttpHeaders headers) {
+        return service.bulkEdit(scenarioDraftSetId, command,
+                context(headers, IntegrationOperation.TEST_SUITE_WRITE));
+    }
+
     /** Returns semantic Contract drift and exact Scenario impact for one retained revision. */
     @GetMapping("/{scenarioDraftSetId}/compatibility")
     public ContractCompatibilityReport compatibility(

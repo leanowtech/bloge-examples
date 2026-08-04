@@ -1,0 +1,43 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://leanowtech.com/schemas/bloge-scenario-table-page-v1.schema.json",
+  "title": "BLOGE Scenario Table Page v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "scenarioDraftSetId",
+    "revision",
+    "draftFingerprint",
+    "queryFingerprint",
+    "totalMatching",
+    "rows",
+    "nextCursor"
+  ],
+  "properties": {
+    "schemaVersion": { "const": "bloge.scenarioTablePage.v1" },
+    "scenarioDraftSetId": { "type": "string", "minLength": 1, "maxLength": 255 },
+    "revision": { "type": "integer", "minimum": 1 },
+    "draftFingerprint": { "$ref": "bloge-scenario-draft-set-v1.schema.json#/$defs/fingerprint" },
+    "queryFingerprint": { "$ref": "bloge-scenario-draft-set-v1.schema.json#/$defs/fingerprint" },
+    "totalMatching": { "type": "integer", "minimum": 0, "maximum": 10000 },
+    "rows": {
+      "type": "array",
+      "maxItems": 200,
+      "items": { "$ref": "#/$defs/row" }
+    },
+    "nextCursor": { "type": "string", "maxLength": 4096 }
+  },
+  "$defs": {
+    "row": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["canonicalIndex", "caseFingerprint", "scenario"],
+      "properties": {
+        "canonicalIndex": { "type": "integer", "minimum": 0, "maximum": 9999 },
+        "caseFingerprint": { "$ref": "bloge-scenario-draft-set-v1.schema.json#/$defs/fingerprint" },
+        "scenario": { "$ref": "bloge-scenario-draft-set-v1.schema.json#/$defs/scenario" }
+      }
+    }
+  }
+}

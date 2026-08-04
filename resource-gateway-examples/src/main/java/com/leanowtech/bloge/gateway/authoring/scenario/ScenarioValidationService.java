@@ -24,6 +24,9 @@ import java.util.Set;
 @Service
 public class ScenarioValidationService {
 
+    /** Maximum mutable authoring corpus; governed publication and run shards remain smaller. */
+    public static final int MAX_SCENARIOS = 10_000;
+
     private final ObjectMapper objectMapper;
 
     /**
@@ -156,6 +159,12 @@ public class ScenarioValidationService {
         if (draftSet.scenarios().isEmpty()) {
             diagnostics.add(error("visual.scenario.scenarios.empty",
                     "At least one Scenario is required.", "/scenarios"));
+            return;
+        }
+        if (draftSet.scenarios().size() > MAX_SCENARIOS) {
+            diagnostics.add(error("visual.scenario.scenarios.limitExceeded",
+                    "A Scenario authoring corpus may contain at most %d cases."
+                            .formatted(MAX_SCENARIOS), "/scenarios"));
             return;
         }
         Set<String> scenarioIds = new HashSet<>();

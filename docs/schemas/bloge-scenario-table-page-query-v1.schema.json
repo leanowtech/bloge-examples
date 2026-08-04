@@ -1,0 +1,34 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://leanowtech.com/schemas/bloge-scenario-table-page-query-v1.schema.json",
+  "title": "BLOGE Scenario Table Page Query v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "expectedRevision",
+    "expectedDraftFingerprint",
+    "query",
+    "caseTypes",
+    "sortField",
+    "sortDirection",
+    "cursor",
+    "limit"
+  ],
+  "properties": {
+    "schemaVersion": { "const": "bloge.scenarioTablePageQuery.v1" },
+    "expectedRevision": { "type": "integer", "minimum": 1 },
+    "expectedDraftFingerprint": { "$ref": "bloge-scenario-draft-set-v1.schema.json#/$defs/fingerprint" },
+    "query": { "type": "string", "maxLength": 200 },
+    "caseTypes": {
+      "type": "array",
+      "uniqueItems": true,
+      "maxItems": 5,
+      "items": { "enum": ["GOLDEN", "NEGATIVE", "BOUNDARY", "REGRESSION", "PROPERTY"] }
+    },
+    "sortField": { "enum": ["CANONICAL", "NAME", "TYPE"] },
+    "sortDirection": { "enum": ["ASC", "DESC"] },
+    "cursor": { "type": "string", "maxLength": 4096 },
+    "limit": { "type": "integer", "minimum": 1, "maximum": 200 }
+  }
+}

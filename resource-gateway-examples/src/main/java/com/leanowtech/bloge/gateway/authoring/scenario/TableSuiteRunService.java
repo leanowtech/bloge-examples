@@ -26,7 +26,8 @@ import java.util.function.UnaryOperator;
 public final class TableSuiteRunService {
 
     private static final int MAX_COMMAND_BYTES = 16 * 1_048_576;
-    private static final int MAX_CASES = 500;
+    private static final int MAX_SHARD_CASES = 500;
+    private static final int MAX_SOURCE_CASES = ScenarioValidationService.MAX_SCENARIOS;
     private static final int MAX_CAS_RETRIES = 20;
     private static final int MAX_RETAINED_EXECUTION_CONTEXTS = 256;
     private static final int MAX_CONCURRENT_BATCHES = 8;
@@ -417,7 +418,8 @@ public final class TableSuiteRunService {
         if (!command.preflight().environment().equals(scope.environment())
                 || command.preflight().dependencyMode() != TableSuiteRunCommand.DependencyMode.SIMULATED
                 || command.preflight().effectProfile() != TableSuiteRunCommand.EffectProfile.SIDE_EFFECT_FREE
-                || command.preflight().maxCases() < 1 || command.preflight().maxCases() > MAX_CASES
+                || command.preflight().maxCases() < 1
+                || command.preflight().maxCases() > MAX_SHARD_CASES
                 || command.preflight().maxFailures() < 0
                 || command.preflight().maxFailures() > command.preflight().maxCases()
                 || command.preflight().maxConcurrency() != 1
@@ -435,10 +437,10 @@ public final class TableSuiteRunService {
                     "Graph, Contract, and Scenario coordinates do not form one exact current closure.");
         }
         if (command.draftSet().scenarios().isEmpty()
-                || command.draftSet().scenarios().size() > MAX_CASES
+                || command.draftSet().scenarios().size() > MAX_SOURCE_CASES
                 || scenarios(command.draftSet()).size() != command.draftSet().scenarios().size()) {
             throw badRequest(identity, "RG.TABLE_RUN.SCENARIOS_INVALID",
-                    "Scenario ids must be unique and within the server case budget.");
+                    "Scenario ids must be unique and the authoring corpus must be within 10,000 cases.");
         }
     }
 

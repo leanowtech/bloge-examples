@@ -1,0 +1,74 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://leanowtech.com/schemas/bloge-scenario-bulk-edit-command-v1.schema.json",
+  "title": "BLOGE Scenario Bulk Edit Command v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "commandId",
+    "expectedRevision",
+    "expectedDraftFingerprint",
+    "atomicity",
+    "edits"
+  ],
+  "properties": {
+    "schemaVersion": { "const": "bloge.scenarioBulkEditCommand.v1" },
+    "commandId": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 128,
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]*$"
+    },
+    "expectedRevision": { "type": "integer", "minimum": 1 },
+    "expectedDraftFingerprint": { "$ref": "bloge-scenario-draft-set-v1.schema.json#/$defs/fingerprint" },
+    "atomicity": { "const": "ALL_OR_NOTHING" },
+    "edits": {
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 5000,
+      "items": { "$ref": "#/$defs/edit" }
+    }
+  },
+  "$defs": {
+    "edit": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "caseId",
+        "expectedCaseFingerprint",
+        "field",
+        "path",
+        "operation",
+        "value"
+      ],
+      "properties": {
+        "caseId": { "type": "string", "minLength": 1, "maxLength": 255 },
+        "expectedCaseFingerprint": { "$ref": "bloge-scenario-draft-set-v1.schema.json#/$defs/fingerprint" },
+        "field": { "enum": ["NAME", "CASE_TYPE", "TAGS", "GIVEN_PATH"] },
+        "path": { "type": "string", "maxLength": 2048 },
+        "operation": { "enum": ["SET", "REMOVE"] },
+        "value": true
+      },
+      "allOf": [
+        {
+          "if": {
+            "properties": { "field": { "const": "GIVEN_PATH" } },
+            "required": ["field"]
+          },
+          "then": {
+            "properties": {
+              "path": { "type": "string", "minLength": 2, "maxLength": 2048, "pattern": "^/" }
+            }
+          },
+          "else": {
+            "properties": {
+              "path": { "const": "" },
+              "operation": { "const": "SET" }
+            }
+          }
+        }
+      ]
+    }
+  }
+}

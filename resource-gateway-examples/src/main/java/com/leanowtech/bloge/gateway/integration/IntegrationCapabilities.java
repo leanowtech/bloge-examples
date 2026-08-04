@@ -289,6 +289,18 @@ public record IntegrationCapabilities(
                         .ScenarioImportMaterializationResult.SCHEMA_VERSION));
         objects.put("scenarioImportMaterializationReceipt", List.of(
                 "bloge.scenarioMaterializationReceipt.v1"));
+        objects.put("scenarioTablePageQuery", List.of(
+                com.leanowtech.bloge.gateway.authoring.scenario
+                        .ScenarioTablePageQuery.SCHEMA_VERSION));
+        objects.put("scenarioTablePage", List.of(
+                com.leanowtech.bloge.gateway.authoring.scenario
+                        .ScenarioTablePage.SCHEMA_VERSION));
+        objects.put("scenarioBulkEditCommand", List.of(
+                com.leanowtech.bloge.gateway.authoring.scenario
+                        .ScenarioBulkEditCommand.SCHEMA_VERSION));
+        objects.put("scenarioBulkEditResult", List.of(
+                com.leanowtech.bloge.gateway.authoring.scenario
+                        .ScenarioBulkEditResult.SCHEMA_VERSION));
         objects.put("tableSuiteRunCommand", List.of(
                 com.leanowtech.bloge.gateway.authoring.scenario
                         .TableSuiteRunCommand.SCHEMA_VERSION));
@@ -871,6 +883,8 @@ public record IntegrationCapabilities(
         features.put("draftExportDependencyProfile", true);
         features.put("scenarioImportMaterializationProtocol", true);
         features.put("scenarioImportMaterializationApi", testExecutionEndpointEnabled);
+        features.put("scenarioTableScaleProtocol", true);
+        features.put("scenarioTableScaleApi", testExecutionEndpointEnabled);
         features.put("tableSuiteRunProtocol", true);
         features.put("tableSuiteRunApi", testExecutionEndpointEnabled);
         features.put("visualLibraryAuthoringProtocol", true);
@@ -1394,6 +1408,10 @@ public record IntegrationCapabilities(
         if (testExecutionEndpointEnabled) {
             endpoints.add(new Endpoint(
                     "POST", "/api/visual/scenario-imports/materialize"));
+            endpoints.add(new Endpoint(
+                    "POST", "/api/visual/scenario-draft-sets/{scenarioDraftSetId}/matrix/query"));
+            endpoints.add(new Endpoint(
+                    "POST", "/api/visual/scenario-draft-sets/{scenarioDraftSetId}/matrix/bulk-edits"));
             endpoints.add(new Endpoint(
                     "POST", "/api/visual/table-suite-runs"));
             endpoints.add(new Endpoint(

@@ -99,4 +99,30 @@ public interface ScenarioDraftSetRepository {
             long revision) {
         return Optional.empty();
     }
+
+    /**
+     * Reads payload-free current coordinates for a bounded Matrix query.
+     *
+     * <p>Adapters without a head projection retain compatibility by deriving it from the full
+     * asset. Scale-capable adapters override this method so normal page reads remain bounded.</p>
+     */
+    default Optional<ScenarioTableHead> findTableHead(
+            ScenarioDraftSet.EnterpriseScope scope,
+            String scenarioDraftSetId) {
+        return find(scope, scenarioDraftSetId).map(ScenarioTableHead::from);
+    }
+
+    /**
+     * Queries one exact current revision through the repository's bounded row index.
+     *
+     * <p>The expected revision and fingerprint are part of {@code query}. Empty means the source
+     * no longer matches; callers must return a conflict rather than silently paging a new source.</p>
+     */
+    default Optional<ScenarioTablePage> queryPage(
+            ScenarioDraftSet.EnterpriseScope scope,
+            String scenarioDraftSetId,
+            ScenarioTablePageQuery query,
+            String queryFingerprint) {
+        return Optional.empty();
+    }
 }

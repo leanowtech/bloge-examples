@@ -86,6 +86,12 @@ import type {
   TableSuiteRunCommand,
   TableSuiteRunDelta,
 } from './contract-scenario/table/tableSuiteRunModel';
+import type {
+  ScenarioBulkEditCommand,
+  ScenarioBulkEditResult,
+  ScenarioTablePage,
+  ScenarioTablePageQuery,
+} from './contract-scenario/table/scenarioTableScaleModel';
 
 /** Structured transport failure that lets optional product surfaces distinguish capability absence. */
 export class BlogeApiRequestError extends Error {
@@ -794,6 +800,40 @@ export async function saveScenarioDraftSet(
         method: 'PUT',
         headers: operatorTestingHeaders('TEST_SUITE_WRITE', true),
         body: JSON.stringify(draftSet),
+      },
+    ),
+  );
+}
+
+/** Queries one source-bound bounded Matrix page without downloading the full Scenario payload. */
+export async function queryScenarioTablePage(
+  scenarioDraftSetId: string,
+  query: ScenarioTablePageQuery,
+): Promise<ScenarioTablePage> {
+  return readTestingJson<ScenarioTablePage>(
+    await sendRequest(
+      `/api/visual/scenario-draft-sets/${encodeURIComponent(scenarioDraftSetId)}/matrix/query`,
+      {
+        method: 'POST',
+        headers: operatorTestingHeaders('TEST_SUITE_READ', true),
+        body: JSON.stringify(query),
+      },
+    ),
+  );
+}
+
+/** Commits source- and row-fenced Matrix edits as one all-or-nothing Scenario revision. */
+export async function bulkEditScenarioTable(
+  scenarioDraftSetId: string,
+  command: ScenarioBulkEditCommand,
+): Promise<ScenarioBulkEditResult> {
+  return readTestingJson<ScenarioBulkEditResult>(
+    await sendRequest(
+      `/api/visual/scenario-draft-sets/${encodeURIComponent(scenarioDraftSetId)}/matrix/bulk-edits`,
+      {
+        method: 'POST',
+        headers: operatorTestingHeaders('TEST_SUITE_WRITE', true),
+        body: JSON.stringify(command),
       },
     ),
   );

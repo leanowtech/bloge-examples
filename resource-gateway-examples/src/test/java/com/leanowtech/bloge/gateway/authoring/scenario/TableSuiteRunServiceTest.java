@@ -25,6 +25,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Queue;
 import java.util.concurrent.Executor;
+import java.util.stream.IntStream;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
@@ -78,6 +79,24 @@ class TableSuiteRunServiceTest {
                 .contains(TableSuiteRunBatch.EventType.ROW_RUNNING,
                         TableSuiteRunBatch.EventType.ROW_TERMINAL,
                         TableSuiteRunBatch.EventType.BATCH_TERMINAL);
+    }
+
+    @Test
+    void admitsASelectedFiveHundredCaseShardFromATenThousandCaseSource() {
+        List<ScenarioDraftSet.ScenarioDraft> source = IntStream.range(0, 10_000)
+                .mapToObj(index -> scenario("case-%05d".formatted(index)))
+                .toList();
+        List<String> selected = source.stream().limit(500)
+                .map(ScenarioDraftSet.ScenarioDraft::scenarioId).toList();
+
+        TableSuiteRunBatch admitted = service.submit(command(
+                "ten-thousand-source-shard", source,
+                TableSuiteRunCommand.SelectionMode.SELECTED, selected, "", 10), identity);
+
+        assertThat(admitted.selection().caseIds()).containsExactlyElementsOf(selected);
+        assertThat(admitted.selection().fullSuite()).isFalse();
+        assertThat(admitted.rows()).hasSize(500);
+        assertThat(service.find(admitted.batchId(), identity)).isEqualTo(admitted);
     }
 
     @Test

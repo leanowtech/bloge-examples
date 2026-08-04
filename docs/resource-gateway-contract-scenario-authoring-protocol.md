@@ -52,6 +52,10 @@ Author-facing names and wire names intentionally differ:
 - [Visual Authoring Workspace Bundle](schemas/bloge-visual-authoring-workspace-bundle-v1.schema.json)
 - [Scenario Publication Report](schemas/bloge-scenario-publication-report-v1.schema.json)
 - [Stored Scenario Publication](schemas/bloge-stored-scenario-publication-v1.schema.json)
+- [Scenario Table Page Query](schemas/bloge-scenario-table-page-query-v1.schema.json)
+- [Scenario Table Page](schemas/bloge-scenario-table-page-v1.schema.json)
+- [Scenario Bulk Edit Command](schemas/bloge-scenario-bulk-edit-command-v1.schema.json)
+- [Scenario Bulk Edit Result](schemas/bloge-scenario-bulk-edit-result-v1.schema.json)
 
 All schemas use JSON Schema 2020-12, reject unknown top-level fields, and bind target and Contract
 identity with exact SHA-256 fingerprints.
@@ -92,6 +96,8 @@ The Stage 2 persistence slice is available only in `test` and `staging` profiles
 | `PUT` | `/api/visual/scenario-draft-sets/{id}?expectedRevision=N` | `TEST_SUITE_WRITE` | Create at revision `0` or update the exact revision observed by the caller |
 | `GET` | `/api/visual/scenario-draft-sets/{id}` | `TEST_SUITE_READ` | Read the current revision in the authenticated enterprise scope |
 | `GET` | `/api/visual/scenario-draft-sets/{id}/revisions` | `TEST_SUITE_READ` | Read immutable retained history newest first |
+| `POST` | `/api/visual/scenario-draft-sets/{id}/matrix/query` | `TEST_SUITE_READ` | Query at most 200 rows from one exact revision/fingerprint with an opaque query-bound cursor |
+| `POST` | `/api/visual/scenario-draft-sets/{id}/matrix/bulk-edits` | `TEST_SUITE_WRITE` | Apply up to 5,000 row-fenced cell edits as one all-or-nothing revision |
 | `GET` | `/api/visual/scenario-draft-sets/targets/graphs/{draftId}/contract` | `TEST_SUITE_READ` | Reproject the exact stored Graph as a server-authoritative Contract coordinate |
 | `GET` | `/api/visual/scenario-draft-sets/targets/operators/{operatorRef}/contract` | `TEST_SUITE_READ` | Project one policy-visible catalog Operator as a server-authoritative Contract coordinate |
 | `GET` | `/api/visual/scenario-draft-sets/{id}/compatibility?revision=N` | `TEST_SUITE_READ` | Compare one retained Contract baseline with the current authoritative target |
@@ -105,6 +111,12 @@ concurrency. Operator tenant/environment policy is enforced; namespace-only poli
 until the Scenario target scope has an explicit namespace coordinate. A conflict returns
 `RG.SCENARIO.REVISION_CONFLICT` with the current revision; it never silently overwrites another
 author's work.
+
+Large Matrix access does not change ownership of truth. Canonical `ScenarioDraftSet` JSON remains
+authoritative and a transactionally maintained row index is only a repairable query projection. A page query
+must match both current revision and fingerprint; a bulk edit additionally matches each touched case fingerprint.
+Conflict details contain only source coordinates, row status and fingerprints, never Scenario payload. Authoring
+accepts at most 10,000 cases, while one table-suite execution remains bounded to 500 selected cases.
 
 The stored envelope carries a canonical fingerprint and is re-verified when read from persistence.
 Scenario authoring storage is mutable by revision, while every retained revision remains immutable.
