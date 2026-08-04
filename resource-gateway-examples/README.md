@@ -110,6 +110,17 @@ from that Case opens the bound Run Evidence with assertion comparison, terminal 
 mocked/real node boundary, and exploratory content fingerprint. A green execution is deliberately
 still `Evidence incomplete` until Contract and Governance are checked.
 
+Choose **Scenarios -> Coverage** to inspect six separate denominator inventories: Case intent,
+Contract boundaries, DAG paths, dependency behaviors, assertions, and current Evidence. The view
+never hides them behind one percentage. Select **Target gap** when useful, set the deterministic
+seed and case/work-unit budgets, then choose **Generate candidates**. Boundary, invalid-input,
+error-contract, and known dependency-behavior generators create an ephemeral review set; they do
+not edit the Scenario set on open. Every row names its coverage contribution, generator version,
+and `Needs oracle` state. **Accept** is the only transition into canonical Scenario authoring;
+after one acceptance, the remaining source-bound candidates become stale and must be regenerated.
+Open **Case** to author the expected business assertion before any promotion decision. Pairwise is
+shown honestly as `Not installed` until an independently audited generator adapter is configured.
+
 For the server-authoritative batch path, save the example Graph, complete the explicit Contract
 compatibility review/rebase, then choose **Run all**. The Matrix shows one durable Server batch with
 its exact closure, row progress, cancellation, retry attempts, and promotion result. A conclusive

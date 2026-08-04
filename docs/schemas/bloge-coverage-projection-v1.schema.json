@@ -1,0 +1,118 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://leanowtech.com/schemas/bloge-coverage-projection-v1.schema.json",
+  "title": "BLOGE Coverage Projection v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "target",
+    "contractFingerprint",
+    "scenarioDraftSetId",
+    "scenarioDraftSetRevision",
+    "dimensions",
+    "projectionFingerprint"
+  ],
+  "properties": {
+    "schemaVersion": { "const": "bloge.coverageProjection.v1" },
+    "target": { "$ref": "#/$defs/exactTarget" },
+    "contractFingerprint": { "$ref": "#/$defs/fingerprint" },
+    "scenarioDraftSetId": { "type": "string", "minLength": 1, "maxLength": 256 },
+    "scenarioDraftSetRevision": { "type": "integer", "minimum": 0 },
+    "dimensions": {
+      "type": "array",
+      "prefixItems": [
+        { "allOf": [{ "$ref": "#/$defs/dimension" }, { "properties": { "dimension": { "const": "CASE" } } }] },
+        { "allOf": [{ "$ref": "#/$defs/dimension" }, { "properties": { "dimension": { "const": "CONTRACT" } } }] },
+        { "allOf": [{ "$ref": "#/$defs/dimension" }, { "properties": { "dimension": { "const": "DAG" } } }] },
+        { "allOf": [{ "$ref": "#/$defs/dimension" }, { "properties": { "dimension": { "const": "DEPENDENCY" } } }] },
+        { "allOf": [{ "$ref": "#/$defs/dimension" }, { "properties": { "dimension": { "const": "ASSERTION" } } }] },
+        { "allOf": [{ "$ref": "#/$defs/dimension" }, { "properties": { "dimension": { "const": "EVIDENCE" } } }] }
+      ],
+      "items": false,
+      "minItems": 6
+    },
+    "projectionFingerprint": { "$ref": "#/$defs/fingerprint" }
+  },
+  "$defs": {
+    "fingerprint": {
+      "type": "string",
+      "pattern": "^sha256:[a-f0-9]{64}$"
+    },
+    "exactTarget": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["kind", "id", "revision", "fingerprint"],
+      "properties": {
+        "kind": { "enum": ["GRAPH", "OPERATOR"] },
+        "id": { "type": "string", "minLength": 1, "maxLength": 256 },
+        "revision": { "type": "integer", "minimum": 0 },
+        "fingerprint": { "$ref": "#/$defs/fingerprint" }
+      }
+    },
+    "dimension": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["dimension", "covered", "total", "facts", "gaps"],
+      "properties": {
+        "dimension": { "enum": ["CASE", "CONTRACT", "DAG", "DEPENDENCY", "ASSERTION", "EVIDENCE"] },
+        "covered": { "type": "integer", "minimum": 0 },
+        "total": { "type": "integer", "minimum": 0 },
+        "facts": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/fact" }
+        },
+        "gaps": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/fact" }
+        }
+      }
+    },
+    "fact": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "factId",
+        "dimension",
+        "kind",
+        "coordinate",
+        "label",
+        "description",
+        "coveredByCaseIds",
+        "action"
+      ],
+      "properties": {
+        "factId": { "type": "string", "minLength": 1, "maxLength": 1024 },
+        "dimension": { "enum": ["CASE", "CONTRACT", "DAG", "DEPENDENCY", "ASSERTION", "EVIDENCE"] },
+        "kind": { "type": "string", "minLength": 1, "maxLength": 128 },
+        "coordinate": { "type": "string", "minLength": 1, "maxLength": 1024 },
+        "label": { "type": "string", "minLength": 1, "maxLength": 512 },
+        "description": { "type": "string", "minLength": 1, "maxLength": 2048 },
+        "coveredByCaseIds": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": { "type": "string", "minLength": 1, "maxLength": 256 }
+        },
+        "action": { "enum": ["GENERATE", "AUTHOR_CASE", "AUTHOR_ASSERTION", "RUN", "INSTALL_GENERATOR"] },
+        "generation": { "$ref": "#/$defs/generation" }
+      }
+    },
+    "generation": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["kind", "path", "caseType"],
+      "properties": {
+        "kind": { "enum": ["SET_INPUT", "DELETE_INPUT", "DEPENDENCY_BEHAVIOR", "ERROR_CONTRACT"] },
+        "path": {
+          "type": "array",
+          "items": { "type": "string", "minLength": 1, "maxLength": 256 }
+        },
+        "value": true,
+        "caseType": { "enum": ["GOLDEN", "NEGATIVE", "BOUNDARY", "REGRESSION", "PROPERTY"] },
+        "dependencyCoordinate": { "type": "string", "minLength": 1, "maxLength": 512 },
+        "dependencyBehavior": { "enum": ["REAL", "RETURN", "ERROR", "DELAY", "TIMEOUT", "REPLAY", "OBSERVE", "MUST_NOT_CALL"] },
+        "errorCode": { "type": "string", "minLength": 1, "maxLength": 256 }
+      }
+    }
+  }
+}

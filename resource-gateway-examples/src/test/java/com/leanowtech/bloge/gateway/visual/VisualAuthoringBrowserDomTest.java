@@ -849,6 +849,13 @@ class VisualAuthoringBrowserDomTest {
 
         setViewport(wait, 390, 844);
         assertPageNoHorizontalOverflow();
+        WebElement mobileCandidate = driver.findElements(By.cssSelector(
+                ".coverage-candidate-row"
+        )).getFirst();
+        ((JavascriptExecutor) driver).executeScript(
+                "arguments[0].scrollIntoView({block:'center'});",
+                mobileCandidate
+        );
         @SuppressWarnings("unchecked")
         Map<String, Number> mobileGeometry = (Map<String, Number>)
                 ((JavascriptExecutor) driver).executeScript("""
@@ -903,6 +910,109 @@ class VisualAuthoringBrowserDomTest {
         assertThat(driver.findElement(By.cssSelector(
                 ".scenario-view-switch button[aria-pressed='true']"
         )).getText()).isEqualTo("Case");
+        assertPageNoHorizontalOverflow();
+    }
+
+    /**
+     * Protects explainable Coverage projection and explicit candidate review in packaged Chrome.
+     * Generation must remain opt-in, source-bound, bounded, and visibly short of a business oracle.
+     */
+    @Test
+    void scenarioCoverageGeneratesReviewsAndAcceptsOneSourceBoundCandidateAcrossViewports()
+            throws IOException {
+        assumeReactAuthorBundlePresent();
+        driver = newChromeDriverOrSkip();
+        WebDriverWait wait = new WebDriverWait(driver, WAIT_TIMEOUT);
+        setViewport(wait, 1280, 800);
+        driver.get("http://localhost:" + port + "/author/?authorWorkspace=v2");
+
+        wait.until(ExpectedConditions.elementToBeClickable(By.cssSelector(
+                "[data-testid='author-start-choice:examples']"
+        ))).click();
+        wait.until(ExpectedConditions.elementToBeClickable(By.cssSelector(
+                "[data-testid='author-start-example:loan-policy-fallback']"
+        ))).click();
+        wait.until(ExpectedConditions.invisibilityOfElementLocated(
+                By.cssSelector("[data-testid='author-start-dialog']")
+        ));
+        wait.until(ExpectedConditions.elementToBeClickable(By.cssSelector(
+                "[data-testid='author-mode:scenarios']"
+        ))).click();
+        wait.until(ExpectedConditions.elementToBeClickable(By.xpath(
+                "//button[normalize-space()='Coverage']"
+        ))).click();
+
+        WebElement lens = wait.until(ExpectedConditions.visibilityOfElementLocated(
+                By.cssSelector("[data-testid='coverage-lens']")
+        ));
+        assertThat(lens.getText())
+                .contains("Case intent")
+                .contains("Contract")
+                .contains("DAG path")
+                .contains("Dependency")
+                .contains("Assertion")
+                .contains("Evidence")
+                .contains("No generated candidates")
+                .doesNotContain("Overall score")
+                .doesNotContain("Coverage percentage");
+        assertThat(driver.findElements(By.cssSelector(".coverage-candidate-row"))).isEmpty();
+
+        driver.findElement(By.xpath("//button[normalize-space()='Generate candidates']")).click();
+        wait.until(ExpectedConditions.numberOfElementsToBeMoreThan(
+                By.cssSelector(".coverage-candidate-row"),
+                0
+        ));
+        WebElement firstCandidate = driver.findElements(By.cssSelector(
+                ".coverage-candidate-row"
+        )).getFirst();
+        assertThat(firstCandidate.getText())
+                .contains("NEEDS ORACLE")
+                .contains("v1.0.0")
+                .contains("named contribution");
+        assertPageNoHorizontalOverflow();
+        assertNoHorizontalOverflow(wait, By.cssSelector("[data-testid='contract-workspace']"));
+        captureVisualQa("scenario-coverage-1280.png");
+
+        setViewport(wait, 390, 844);
+        assertPageNoHorizontalOverflow();
+        @SuppressWarnings("unchecked")
+        Map<String, Number> mobileGeometry = (Map<String, Number>)
+                ((JavascriptExecutor) driver).executeScript("""
+                        const lens = document.querySelector('[data-testid="coverage-lens"]');
+                        const candidate = lens.querySelector('.coverage-candidate-row');
+                        const buttons = [...candidate.querySelectorAll('button')]
+                          .map((button) => button.getBoundingClientRect());
+                        const rect = candidate.getBoundingClientRect();
+                        return {
+                          candidateOutside: rect.left < 0 || rect.right > window.innerWidth ? 1 : 0,
+                          actionOutside: buttons.filter((button) =>
+                            button.left < 0 || button.right > window.innerWidth
+                          ).length,
+                          actionMinHeight: Math.min(...buttons.map((button) => button.height))
+                        };
+                        """);
+        assertThat(mobileGeometry.get("candidateOutside").intValue()).isZero();
+        assertThat(mobileGeometry.get("actionOutside").intValue()).isZero();
+        assertThat(mobileGeometry.get("actionMinHeight").doubleValue()).isGreaterThanOrEqualTo(28.0);
+        captureVisualQa("scenario-coverage-390.png");
+
+        WebElement accept = driver.findElements(By.cssSelector(
+                ".coverage-candidate-row button.primary"
+        )).getFirst();
+        ((JavascriptExecutor) driver).executeScript("arguments[0].scrollIntoView({block:'center'});", accept);
+        wait.until(ExpectedConditions.elementToBeClickable(accept)).click();
+        waitForText(wait, By.cssSelector(".scenario-asset-notice"), "accepted as a Scenario draft");
+        waitForText(wait, By.cssSelector(".coverage-candidate-stale"), "Source changed");
+        assertThat(driver.findElements(By.cssSelector(
+                ".coverage-candidate-row button.primary:not([disabled])"
+        ))).isEmpty();
+
+        driver.findElement(By.xpath("//button[normalize-space()='Case']")).click();
+        wait.until(ExpectedConditions.visibilityOfElementLocated(By.cssSelector(".scenario-workbench")));
+        assertThat(driver.findElements(By.cssSelector(".scenario-list-row"))).hasSizeGreaterThanOrEqualTo(3);
+        assertThat(driver.findElement(By.cssSelector(".scenario-list-row.selected")).getText()).isNotBlank();
+        assertThat(driver.findElement(By.cssSelector(".scenario-editor")).getText())
+                .contains("Run success is enough until an assertion is added.");
         assertPageNoHorizontalOverflow();
     }
 

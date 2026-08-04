@@ -4,9 +4,9 @@
 >
 > 更新日期：2026-08-04
 >
-> 当前阶段：Stage 3 complete，Stage 4 next
+> 当前阶段：Stage 4 complete，Stage 5 next
 >
-> 当前实现匹配度：`89 / 100`，相对目标差距约 `11%`
+> 当前实现匹配度：`95 / 100`，相对目标差距约 `5%`
 
 ## 1. 完成定义
 
@@ -300,9 +300,63 @@ Resource Gateway clean verify    5880 tests, 0 failures, 0 errors, 12 skipped
 最终 `clean verify` 于 2026-08-04 完成，用时 10 分 09 秒。12 项 skipped 均为既有环境门控用例，
 不包含 table-suite run 的 service、repository、controller、protocol、capability 或浏览器验收路径。
 
-## 6. 当前差距复评
+## 6. Stage 4：Coverage-guided generation
 
-### 6.1 评分
+### 6.1 已实现
+
+| ID | 实现 | 代码与验证证据 |
+|---|---|---|
+| TDT-401 | `CoverageProjection` 固定 CASE/CONTRACT/DAG/DEPENDENCY/ASSERTION/EVIDENCE 六维 denominator；每个 fact 有 coordinate、covered case ids、gap action，不输出总分 | `coverageModel.ts` + model/component/strict schema tests |
+| TDT-402 | required missing/null、min/max、min/max length、enum valid/invalid、oneOf/anyOf variant 的 deterministic boundary templates | boundary coverage tests + 500-case regression |
+| TDT-403 | invalid input、error-contract intent 和已知依赖 RETURN/ERROR/TIMEOUT/MUST_NOT_CALL 候选 | generator tests；候选 assertion 永远为空 |
+| TDT-404 | `CoverageCandidateGenerator` 独立 SPI、版本/seed/order/双预算；pairwise 未安装状态与 ADR 门禁 | deterministic order/budget tests + ADR-005 |
+| TDT-405 | DAG node、ordinary/conditional edge、fallback、retry gap contribution；静态 planning 与 runtime evidence 分离 | DAG projection tests |
+| TDT-406 | 候选展示 rationale、named contribution、generator provenance、Needs oracle；Accept/Reject 与 exact stale 拒绝 | component/workspace/packaged Chrome tests |
+
+严格协议由以下 Schema 固定：
+
+- `docs/schemas/bloge-coverage-projection-v1.schema.json`
+- `docs/schemas/bloge-coverage-candidate-set-v1.schema.json`
+
+Coverage 打开时只做纯 projection，不自动生成。候选集绑定 exact target、Contract、Scenario set
+revision 与 projection fingerprint；一次 Accept 后其余旧候选必须 stale。Accept 只追加 canonical
+Scenario draft，`promotionEligible=false` 由 schema 固定，作者仍需进入 Case 补 business oracle。
+
+Authoring Coverage 是测试规划分母，不是 testing control plane 的 signed semantic coverage；静态 DAG
+可达、schema boundary 或生成 case 数量都不能替代 node/edge/assertion runtime evidence。
+
+### 6.2 测试与真实浏览器证据
+
+```text
+coverageModel.test.ts                 8 passed
+CoverageLensSurface.test.tsx          5 passed
+ContractScenarioWorkspace.test.tsx   25 passed（含 Coverage 第三视图）
+CoverageGenerationProtocolSchemaTest  1 passed
+Packaged Chrome Coverage flow         1 passed / 1280 + 390 viewports
+```
+
+前端全量门禁为 `60 files / 484 tests passed`，生产 TypeScript + Vite build 通过。真实 Chrome 使用
+Loan policy fallback 示例完成 Coverage -> Generate -> multi-viewport -> Accept -> stale -> Case。第一轮
+视觉测试发现 390px 候选按钮只有 24px，产品 CSS 已根治为稳定 32px，并由同一浏览器几何断言复验。
+
+详见 [Stage 4 验证记录](resource-gateway-table-driven-testing-stage4-verification.md) 与
+[ADR-005](adr/ADR-005-coverage-candidate-generation-boundary.md)。
+
+### 6.3 Completion gate
+
+```text
+Frontend full suite              60 files / 484 tests passed
+Frontend production build        passed
+Packaged Chrome Coverage flow     1 test / 2 viewports passed
+Resource Gateway clean verify    5882 tests, 0 failures, 0 errors, 13 skipped
+```
+
+最终 `clean verify` 于 2026-08-05 完成，用时 10 分 18 秒。13 项 skipped 为环境/能力门控用例；
+Stage 4 新增的 schema contract、Coverage 交互与真实 Chrome 双视口路径均在对应门禁中通过。
+
+## 7. 当前差距复评
+
+### 7.1 评分
 
 | 能力域 | 权重 | 当前得分 | 已有证据 | 主要缺口 |
 |---|---:|---:|---|---|
@@ -311,35 +365,35 @@ Resource Gateway clean verify    5880 tests, 0 failures, 0 errors, 12 skipped
 | 数据导入与物化 | 15 | 15 | 双端 bounded parser、preview、mapping、五值语义、exact plan、幂等物化、payload-free receipt 与 diff 全部落地 | Excel/JDBC connector 有意延后，不能绕过物化 |
 | 精确批量运行 | 15 | 15 | 服务端 exact closure、preflight、durable batch/delta、hard timeout、budget、cancel、retry、恢复已落地 | 无阻断缺口 |
 | Evidence 与 verdict | 15 | 14 | 四轴 projection、append-only attempt、flaky、baseline、payload-free first failure、promotion semantics 已落地 | Stage 5 仍需治理导出与长期趋势 |
-| Coverage-guided generation | 10 | 3 | case type、coverage policy、PROPERTY/mutation 基础存在 | Coverage Lens 与候选生成缺失 |
+| Coverage-guided generation | 10 | 10 | 六维 denominator、确定性 boundary/negative/dependency generator、source-bound candidate、显式 review、SPI 与严格协议 | Pairwise adapter 有意保持未安装，不能绕过 ADR 门禁 |
 | 企业规模与协作 | 10 | 8 | 500-case progressive projection、profile 隔离、clearance、durable receipt 与 capability negotiation | bulk conflict、saved views、server-side query 缺失 |
-| **合计** | **100** | **89** |  | **差距约 11%** |
+| **合计** | **100** | **95** |  | **差距约 5%** |
 
-### 6.2 根因判断
+### 7.2 根因判断
 
-Stage 3 已把执行权从浏览器循环迁到服务端，并把精确选择、恢复、取消、重试和 baseline 变成协议。
-当前最大差距转移到“测试是否足够”而非“测试能否可靠运行”：
+Stage 4 已把“测试是否足够”从作者经验变成可解释 denominator 和 source-bound candidate。当前剩余
+差距不再是单机 authoring 主链，而是复杂企业组织中的规模与协作闭环：
 
-1. 作者仍需凭经验判断 Contract 边界、DAG 分支、fallback、dependency behavior 和 assertion 是否覆盖；
-2. 系统还不能解释“下一条候选为何值得增加”和它贡献了哪一格 coverage；
-3. 生成候选尚无 deterministic seed、预算、constraint 和 provenance 闭包；
-4. 企业协作层的 saved/team view、bulk conflict、review/approval、retention 与治理导出仍未接入 Matrix。
+1. 500-case 当前靠浏览器 projection 的 50 行窗口，10,000-case 尚无 server-side query/cursor；
+2. 跨行 paste/fill 和 bulk edit 尚无 optimistic concurrency、原子边界与 conflict diff；
+3. saved/team view、owner/reviewer/approval、retention 与 payload-view RBAC 尚未形成独立协作协议；
+4. ANEKE workbook、gate feedback、deep link 和 change event 尚未把 authoring 与治理持续闭环；
+5. 当前证据来自自动化与单用户视觉路径，尚缺两个真实企业 pilot 的 two-release-cycle 数据。
 
-因此下一轮进入 Stage 4 Coverage Lens 与 deterministic candidate generation。它必须消费当前
-canonical Contract/DAG/Scenario，不得创建第二份测试真相，也不得用生成数量冒充覆盖质量。
+`95 / 100` 表示产品主链完整，不表示目标已达成。目标要求差距严格小于 5%，因此必须继续 Stage 5，
+不能用四舍五入或自评分提前结束。
 
-## 7. 下一轮实施计划
+## 8. 下一轮实施计划
 
-Stage 4 按以下顺序纵切：
+Stage 5 按风险根因纵切：
 
-1. 冻结六维 coverage projection：case intent、Contract field/boundary、DAG path、dependency behavior、
-   assertion target、evidence freshness/proof；
-2. 先做只读 Coverage Lens，所有 denominator 和 contribution 可解释、可定位回 Matrix/Case/Canvas；
-3. 实现 deterministic schema-boundary/negative candidate generator，固定版本、seed、order 与 work budget；
-4. 候选必须显示 provenance、coverage delta、expected-behavior readiness 和阻断原因；
-5. Accept 才生成 canonical Scenario，Reject/Ignore 不偷偷改业务 revision；
-6. pairwise 只作为独立 SPI，在 constraint、稳定顺序和预算通过 ADR/测试后接入；
-7. 500-case 浏览器与服务端压力回归证明 Lens 不破坏渐进渲染和 batch 可操作性。
+1. 冻结 server-side Matrix query/cursor/sort/filter 协议与 10,000-case deterministic corpus；
+2. 接入 row virtualization 和 bounded query cache，首屏不依赖完整 Scenario payload；
+3. 设计 bulk edit command：expected revision、精确 row/column closure、atomicity policy、conflict diff；
+4. saved view 与 team view 单独版本化，绝不污染 Scenario business revision；
+5. owner/reviewer/approval、retention、payload-view/export ABAC 与审计事件进入协作闭环；
+6. change event/polling cursor、ANEKE workbook/gate feedback 与 draft/node/run deep link 接入；
+7. 用并发编辑、10,000-case shard run、恢复与 payload-free export 做自动化/浏览器/故障注入门禁；
+8. 明确区分“代码完成”和“企业 pilot 证据”，无 pilot 时保留 residual-risk 标记。
 
-Stage 4 退出后重新评分；若 coverage 是一个不透明百分数、候选无 expected behavior、相同 seed
-顺序不稳定，或生成器绕过 canonical Scenario command，则不得记为完成。
+Stage 5 退出后做逐条审计；只有量化差距严格低于 `5%` 且所有自动化门禁全绿，本目标才完成。

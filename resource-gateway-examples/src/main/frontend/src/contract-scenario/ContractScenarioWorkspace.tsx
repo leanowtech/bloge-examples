@@ -66,6 +66,12 @@ import {
   createWorkspaceBundle,
   parseWorkspaceBundle,
 } from './workspaceBundle';
+import CoverageLensSurface from './coverage/CoverageLensSurface';
+import {
+  acceptCoverageCandidate,
+  type CoverageCandidate,
+  type CoverageProjection,
+} from './coverage/coverageModel';
 import ScenarioMatrixSurface from './table/ScenarioMatrixSurface';
 import ScenarioImportWorkbench from './import/ScenarioImportWorkbench';
 import type { ScenarioMaterializationResult } from './import/scenarioImportModel';
@@ -169,7 +175,7 @@ export default function ContractScenarioWorkspace({
   const [selectedScenarioId, setSelectedScenarioId] = useState(
     initialScenarioId || lastRunScenarioId,
   );
-  const [scenarioView, setScenarioView] = useState<'matrix' | 'case'>(
+  const [scenarioView, setScenarioView] = useState<'matrix' | 'case' | 'coverage'>(
     (scenarioDraftSet?.scenarios.length ?? 0) > 1 ? 'matrix' : 'case',
   );
   const [scenarioImportOpen, setScenarioImportOpen] = useState(false);
@@ -516,6 +522,23 @@ export default function ContractScenarioWorkspace({
     setCompileMessages([]);
     setPublication(null);
     markTableEvidenceStale(caseId, setTableEvidence);
+  };
+
+  const acceptGeneratedCoverageCandidate = (
+    candidate: CoverageCandidate,
+    projection: CoverageProjection,
+  ) => {
+    const next = acceptCoverageCandidate(scenarioDraftSet, projection, candidate);
+    onScenarioDraftSetChange(next);
+    setSelectedScenarioId(candidate.proposal.scenarioId);
+    setRunResponse(null);
+    setComparison(null);
+    setCompileMessages([]);
+    setPublication(null);
+    setAssetNotice({
+      level: 'ok',
+      message: `${candidate.proposal.name} accepted as a Scenario draft; add its business oracle before promotion.`,
+    });
   };
 
   const acceptScenarioImport = (result: ScenarioMaterializationResult) => {
@@ -1167,6 +1190,7 @@ export default function ContractScenarioWorkspace({
             <ScenarioTab
               graphDraft={graphDraft}
               contract={contract}
+              scenarioDraftSet={scenarioDraftSet}
               scenarios={scenarios}
               selectedScenario={selectedScenario}
               selectedScenarioId={selectedScenarioId}
@@ -1174,6 +1198,7 @@ export default function ContractScenarioWorkspace({
               running={running}
               view={scenarioView}
               tableProjection={tableProjection}
+              tableEvidence={tableEvidence}
               tableSelection={tableSelection}
               previousRunCaseIds={previousRunCaseIds}
               runningCaseIds={runningCaseIds}
@@ -1202,6 +1227,7 @@ export default function ContractScenarioWorkspace({
               onRunTableSelection={runTableSelection}
               onCancelTableRun={cancelTableBatch}
               onRetryFailedTableRun={retryFailedTableBatch}
+              onAcceptCoverageCandidate={acceptGeneratedCoverageCandidate}
             />
             <ScenarioImportWorkbench
               open={scenarioImportOpen}
@@ -1312,13 +1338,15 @@ function InterfaceTab({
 interface ScenarioTabProps {
   graphDraft: GraphDraft;
   contract: ContractDraft;
+  scenarioDraftSet: ScenarioDraftSet;
   scenarios: ScenarioDraft[];
   selectedScenario: ScenarioDraft | null;
   selectedScenarioId: string;
   nodes: ScenarioNodeOption[];
   running: boolean;
-  view: 'matrix' | 'case';
+  view: 'matrix' | 'case' | 'coverage';
   tableProjection: ScenarioTableProjection | null;
+  tableEvidence: ScenarioTableEvidenceByCase;
   tableSelection: ScenarioTableSelection;
   previousRunCaseIds: string[];
   runningCaseIds: string[];
@@ -1339,16 +1367,22 @@ interface ScenarioTabProps {
   onImportCases: () => void;
   onRemoveScenario: () => void;
   onRun: () => void;
-  onViewChange: (view: 'matrix' | 'case') => void;
+  onViewChange: (view: 'matrix' | 'case' | 'coverage') => void;
   onTableSelectionChange: (selection: ScenarioTableSelection) => void;
   onTableCellEdit: (caseId: string, column: ScenarioTableColumn, value: unknown) => void;
   onRunTableSelection: (mode: ScenarioRunSelectionMode) => void;
   onCancelTableRun: () => void;
   onRetryFailedTableRun: () => void;
+  onAcceptCoverageCandidate: (
+    candidate: CoverageCandidate,
+    projection: CoverageProjection,
+  ) => void;
 }
 
 function ScenarioTab({
+  graphDraft,
   contract,
+  scenarioDraftSet,
   scenarios,
   selectedScenario,
   selectedScenarioId,
@@ -1356,6 +1390,7 @@ function ScenarioTab({
   running,
   view,
   tableProjection,
+  tableEvidence,
   tableSelection,
   previousRunCaseIds,
   runningCaseIds,
@@ -1382,6 +1417,7 @@ function ScenarioTab({
   onRunTableSelection,
   onCancelTableRun,
   onRetryFailedTableRun,
+  onAcceptCoverageCandidate,
 }: ScenarioTabProps) {
   return (
     <div className="scenario-table-workspace">
@@ -1401,6 +1437,13 @@ function ScenarioTab({
           >
             Case
           </button>
+          <button
+            type="button"
+            aria-pressed={view === 'coverage'}
+            onClick={() => onViewChange('coverage')}
+          >
+            Coverage
+          </button>
         </div>
         <div className="scenario-view-coordinate">
           <span>{contract.target.kind}</span>
@@ -1409,7 +1452,16 @@ function ScenarioTab({
         </div>
       </header>
 
-      {view === 'matrix' && tableProjection ? (
+      {view === 'coverage' ? (
+        <CoverageLensSurface
+          graphDraft={graphDraft}
+          contract={contract}
+          draftSet={scenarioDraftSet}
+          evidenceByCase={tableEvidence}
+          disabled={running}
+          onAcceptCandidate={onAcceptCoverageCandidate}
+        />
+      ) : view === 'matrix' && tableProjection ? (
         <ScenarioMatrixSurface
           projection={tableProjection}
           selection={tableSelection}

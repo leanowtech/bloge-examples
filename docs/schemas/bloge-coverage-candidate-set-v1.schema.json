@@ -1,0 +1,126 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://leanowtech.com/schemas/bloge-coverage-candidate-set-v1.schema.json",
+  "title": "BLOGE Coverage Candidate Set v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "candidateSetId",
+    "generatorVersions",
+    "seed",
+    "source",
+    "budget",
+    "consideredFactCount",
+    "supportedFactCount",
+    "emittedCandidateCount",
+    "truncated",
+    "unsupportedFactIds",
+    "candidates"
+  ],
+  "properties": {
+    "schemaVersion": { "const": "bloge.coverageCandidateSet.v1" },
+    "candidateSetId": { "$ref": "#/$defs/fingerprint" },
+    "generatorVersions": {
+      "type": "object",
+      "additionalProperties": { "type": "string", "minLength": 1, "maxLength": 64 },
+      "propertyNames": { "minLength": 1, "maxLength": 256 }
+    },
+    "seed": { "type": "integer" },
+    "source": { "$ref": "#/$defs/source" },
+    "budget": { "$ref": "#/$defs/budget" },
+    "consideredFactCount": { "type": "integer", "minimum": 0 },
+    "supportedFactCount": { "type": "integer", "minimum": 0 },
+    "emittedCandidateCount": { "type": "integer", "minimum": 0, "maximum": 500 },
+    "truncated": { "type": "boolean" },
+    "unsupportedFactIds": {
+      "type": "array",
+      "uniqueItems": true,
+      "items": { "type": "string", "minLength": 1, "maxLength": 1024 }
+    },
+    "candidates": {
+      "type": "array",
+      "maxItems": 500,
+      "items": { "$ref": "#/$defs/candidate" }
+    }
+  },
+  "$defs": {
+    "fingerprint": {
+      "type": "string",
+      "pattern": "^sha256:[a-f0-9]{64}$"
+    },
+    "source": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "targetFingerprint",
+        "contractFingerprint",
+        "scenarioDraftSetId",
+        "scenarioDraftSetRevision",
+        "coverageProjectionFingerprint"
+      ],
+      "properties": {
+        "targetFingerprint": { "$ref": "#/$defs/fingerprint" },
+        "contractFingerprint": { "$ref": "#/$defs/fingerprint" },
+        "scenarioDraftSetId": { "type": "string", "minLength": 1, "maxLength": 256 },
+        "scenarioDraftSetRevision": { "type": "integer", "minimum": 0 },
+        "coverageProjectionFingerprint": { "$ref": "#/$defs/fingerprint" }
+      }
+    },
+    "budget": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["maxCandidates", "maxWorkUnits", "consumedWorkUnits"],
+      "properties": {
+        "maxCandidates": { "type": "integer", "minimum": 1, "maximum": 500 },
+        "maxWorkUnits": { "type": "integer", "minimum": 1, "maximum": 10000 },
+        "consumedWorkUnits": { "type": "integer", "minimum": 0, "maximum": 10000 }
+      }
+    },
+    "candidate": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "candidateId",
+        "candidateFingerprint",
+        "generatorId",
+        "generatorVersion",
+        "seed",
+        "source",
+        "rationale",
+        "contributionFactIds",
+        "workUnits",
+        "expectedBehavior",
+        "promotionEligible",
+        "proposal"
+      ],
+      "properties": {
+        "candidateId": { "type": "string", "pattern": "^candidate-[a-f0-9]{16}$" },
+        "candidateFingerprint": { "$ref": "#/$defs/fingerprint" },
+        "generatorId": { "type": "string", "minLength": 1, "maxLength": 256 },
+        "generatorVersion": { "type": "string", "minLength": 1, "maxLength": 64 },
+        "seed": { "type": "integer" },
+        "source": { "$ref": "#/$defs/source" },
+        "rationale": { "type": "string", "minLength": 1, "maxLength": 2048 },
+        "contributionFactIds": {
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": { "type": "string", "minLength": 1, "maxLength": 1024 }
+        },
+        "workUnits": { "type": "integer", "minimum": 1, "maximum": 10000 },
+        "expectedBehavior": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["status", "reason"],
+          "properties": {
+            "status": { "enum": ["READY", "NEEDS_AUTHOR", "BLOCKED"] },
+            "reason": { "type": "string", "minLength": 1, "maxLength": 1024 }
+          }
+        },
+        "promotionEligible": { "const": false },
+        "proposal": { "$ref": "bloge-scenario-draft-set-v1.schema.json#/$defs/scenario" }
+      }
+    }
+  }
+}

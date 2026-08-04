@@ -83,6 +83,19 @@ describe('ContractScenarioWorkspace', () => {
     expect(button('Run & Compare')).toBeInstanceOf(HTMLButtonElement);
   });
 
+  it('opens the Coverage projection beside Matrix and Case without changing Scenario truth', async () => {
+    await renderWorkspace({ presentation: 'surface', initialTab: 'scenarios' });
+
+    await act(async () => button('Coverage').click());
+    await settleAsyncWork();
+
+    expect(document.querySelector('[data-testid="coverage-lens"]')).not.toBeNull();
+    expect(text()).toContain('Case intent');
+    expect(text()).toContain('Contract');
+    expect(text()).toContain('DAG path');
+    expect(text()).toContain('No generated candidates');
+  });
+
   it('runs an exact multi-row Matrix selection and preserves row-level verdicts', async () => {
     const onRun = vi.fn().mockResolvedValue(successfulResponse());
     const submitted: { current: TableSuiteRunCommand | null } = { current: null };

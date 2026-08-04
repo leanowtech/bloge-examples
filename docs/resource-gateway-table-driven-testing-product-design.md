@@ -1,6 +1,6 @@
 # Resource Gateway 表格驱动测试产品基准、补强设计与实施计划
 
-> 状态：Implementing，Stage 0–3 complete，Stage 4 next
+> 状态：Implementing，Stage 0–4 complete，Stage 5 next
 >
 > 日期：2026-08-04
 >
@@ -16,6 +16,8 @@
 - [测试控制面 API](resource-gateway-testing-control-plane-api.md)
 - [Test Kit 设计与使用手册](resource-gateway-test-kit-design-and-user-guide.md)
 - [测试运行时隔离 ADR](adr/ADR-001-resource-gateway-test-runtime-isolation.md)
+- [Coverage candidate 生成边界 ADR](adr/ADR-005-coverage-candidate-generation-boundary.md)
+- [Stage 4 验证记录](resource-gateway-table-driven-testing-stage4-verification.md)
 
 ## 0. 执行摘要
 
@@ -839,6 +841,10 @@ author/scenarios/table/
 ### Stage 4：Coverage-guided generation
 
 > 周期：2 周
+>
+> 实施状态：**Complete**。六维可解释 denominator、schema/error/dependency 确定性候选、
+> source fingerprint、seed/work budget、显式 Accept/Reject 和 generator SPI 已落地；pairwise
+> adapter 按 ADR 有意保持未安装，不用自研算法伪装成组合覆盖。
 
 工作项：
 
@@ -862,6 +868,12 @@ generator SPI 落地，在 ADR 中验证算法正确性、稳定 order、constra
 - 相同输入、版本和 seed 生成相同顺序；
 - 没有 expected behavior 的候选不能 promotion；
 - 删除 generated case 不会在下次打开页面时偷偷再生成。
+
+实现额外冻结了两条边界：Coverage Lens 是 authoring planning projection，不是 signed runtime
+coverage evidence；Accept 只把候选变成 canonical Scenario draft，缺少业务 assertion 时仍然
+`Needs oracle / promotionEligible=false`。严格协议见
+[Coverage Projection v1](schemas/bloge-coverage-projection-v1.schema.json) 与
+[Coverage Candidate Set v1](schemas/bloge-coverage-candidate-set-v1.schema.json)。
 
 ### Stage 5：企业协作与规模化
 
