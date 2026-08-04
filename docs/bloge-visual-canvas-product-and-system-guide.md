@@ -2245,7 +2245,26 @@ POST /api/visual/connections/check
 
 在 v2 工作区加载内置复杂示例后，点击顶部 **Contract** 会直接切换中央 Contract 工作面；
 再点击顶部 **Scenarios** 进入同级 Scenario 工作面，不会打开 modal。示例自带
-两个可运行场景；每个场景都由三段组成：
+两个可运行场景。多场景默认打开 **Matrix**，单场景才默认打开 **Case**：
+
+1. Matrix 按 `CASE / GIVEN / DEPENDENCY / THEN / PROOF` 分组展示。搜索、类型/判定筛选、
+   排序与列显示只改变视图，不改变测试资产或已选 case。
+2. 勾选任意行后使用 **Run selected**；**Run all** 始终按 canonical 顺序运行全部 case；
+   **Run failed** 只重跑上一轮 exact closure 中失败的 case，不会把当前筛选结果误当运行集合。
+3. Name、Case type、tags 和可标量编辑的 Given 单元格直接写回 canonical Scenario。点击
+   **Open** 或聚焦行后按 Enter 进入同一个 case 的详情，不会维护第二份表格值。
+4. 每行 Proof 独立显示 Execution、Assertions、Freshness、Proof strength 和 Duration；
+   **Why** 展开首个失败的类别、路径与原因。`Schema valid`、`Mock behavior matched` 和
+   runtime assertion pass 不会被压扁成含义不清的 `Passed`。
+5. 500 case 只先渲染 50 行，再由 **Show next 50 cases** 显式推进。390px 视口保留表格
+   局部横向滚动和完整批量操作，不让宽表撑宽页面。
+
+点击 Matrix 的 **Run selected / Run all / Run failed** 后仍留在 Matrix，逐行更新结果；全局
+Diagnostics 不会抢占表格空间。需要审阅一条 case 的完整 request/response 与断言证据时，
+点击 **Open** 进入 Case，再执行 **Run & Compare**。单 case 运行完成后才自动进入
+**Run Evidence**。
+
+每个 Case 都由三段组成：
 
 1. **Given** 按 Graph/Operator input Contract 生成业务输入控件。
 2. **Dependencies** 的 Target type、具体 Canvas node / Operator / Resource / Built-in
@@ -2255,7 +2274,7 @@ POST /api/visual/connections/check
 3. **Then** 的 Result field / Node output field 来自对应 output schema。用户选择字段后，
    系统按字段类型生成 expected value；只有 schema 外路径才需要 **Custom path**。
 
-点击 **Run & Compare** 后会自动进入 **Run Evidence**。阅读顺序固定为：
+在 Case 中点击 **Run & Compare** 后会自动进入 **Run Evidence**。阅读顺序固定为：
 
 1. 先看全局结论：`Promotion blocked`、`Review required`、`Evidence incomplete` 或
    `Ready for promotion`；
@@ -2566,13 +2585,14 @@ Test Suite 浮层。
 使用方式：
 
 1. 加载 `Loan policy fallback`，点击顶部 **Scenarios**。
-2. 左侧直接看到 `Prime approval path` 与 `Policy decline path`；它们由内置旧表格样例
-   无损投影而来。
-3. 在 **Given** 修改业务输入；在 **Dependencies** 修改节点返回值或切换为真实调用；
-   在 **Then** 选择结果字段并填写期望值。
-4. 点击 **Run & Compare**。页面直接进入 **Run Evidence**，失败断言默认展开
-   Expected/Actual，成功断言默认折叠。
-5. 点击顶部 **Run scenario** 会运行当前 URL 中 `scenarioId` 指向的场景；示例投影尚未
+2. Matrix 直接看到 `Prime approval path` 与 `Policy decline path`；它们由内置旧表格样例
+   无损投影而来。勾选两行，点击 **Run selected**，两行会按固定顺序试跑并分别保留结果。
+3. 用筛选器缩小视图，确认已选数量不变；点击 **Run failed** 只重跑上一轮失败项。
+4. 点击任一行的 **Open** 进入 Case，在 **Given** 修改业务输入，在 **Dependencies** 修改
+   节点返回值或切换为真实调用，在 **Then** 选择结果字段并填写期望值。
+5. 点击 **Run & Compare**。页面进入 **Run Evidence**，失败断言默认展开 Expected/Actual，
+   成功断言默认折叠。
+6. 点击顶部 **Run scenario** 会运行当前 URL 中 `scenarioId` 指向的场景；示例投影尚未
    与当前 Contract 指纹对齐时按钮保持禁用，避免空运行。
 
 节点基础 fixture 与 Scenario 控制行为的合并顺序是：

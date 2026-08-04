@@ -144,6 +144,42 @@ describe('AssetTestTable', () => {
     expect(query('[data-testid="library-test-dialog"]').textContent).toContain('NOT_RUN');
   });
 
+  it('projects operator cases into the shared Matrix and runs an exact selection', async () => {
+    const generated = operatorDraft();
+    generated.suite.cases.push({
+      ...generated.suite.cases[0],
+      name: 'second contract case',
+      inputs: { request: 'second' },
+      mockedOutputs: { result: 'second' },
+    });
+    const evidence = operatorEvidence();
+    evidence.result.totalCases = 2;
+    evidence.result.passedCases = 2;
+    evidence.result.results.push({ name: 'second contract case', passed: true, diagnostics: [] });
+    apiMocks.draftOperator.mockResolvedValue(generated);
+    apiMocks.runOperator.mockResolvedValue(evidence);
+    await renderTable('operator', 'demo:echo');
+
+    expect(query('[data-testid="scenario-matrix"]').textContent).toContain('2 canonical cases');
+    await click(query('[aria-label="Select generated contract case"]'));
+    await click(query('[aria-label="Select second contract case"]'));
+    await click(query('[data-testid="scenario-run-selected"]'));
+    await settle();
+
+    expect(apiMocks.runOperator).toHaveBeenCalledWith(
+      'test-draft',
+      3,
+      expect.objectContaining({
+        cases: [
+          expect.objectContaining({ name: 'generated contract case', inputs: { request: 'sample' } }),
+          expect.objectContaining({ name: 'second contract case', inputs: { request: 'second' } }),
+        ],
+      }),
+    );
+    expect(query('[data-testid="scenario-matrix-row-operator-case-1"]').textContent)
+      .toContain('Schema contract valid');
+  });
+
   it('requires explicit governance confirmation before persisting one parsed test row', async () => {
     apiMocks.draftOperator.mockResolvedValue(operatorDraft());
     apiMocks.saveFixture.mockResolvedValue(fixtureReceipt());

@@ -29,7 +29,9 @@ import org.openqa.selenium.ElementNotInteractableException;
 import org.openqa.selenium.JavascriptExecutor;
 import org.openqa.selenium.Keys;
 import org.openqa.selenium.NoSuchElementException;
+import org.openqa.selenium.OutputType;
 import org.openqa.selenium.StaleElementReferenceException;
+import org.openqa.selenium.TakesScreenshot;
 import org.openqa.selenium.TimeoutException;
 import org.openqa.selenium.WebDriver;
 import org.openqa.selenium.WebDriverException;
@@ -674,6 +676,161 @@ class VisualAuthoringBrowserDomTest {
                 By.cssSelector(".scenario-assertions > *"),
                 0
         ));
+    }
+
+    /**
+     * Protects the shared table-driven Matrix in packaged Chrome, including its exact-selection
+     * run path and responsive behavior. Wide tables must scroll inside their own surface instead
+     * of widening the page; light editing remains available through the Case view on mobile.
+     */
+    @Test
+    void scenarioMatrixSelectsRunsAndRemainsUsableAcrossViewportsInRealBrowser() throws IOException {
+        assumeReactAuthorBundlePresent();
+        driver = newChromeDriverOrSkip();
+        WebDriverWait wait = new WebDriverWait(driver, WAIT_TIMEOUT);
+        setViewport(wait, 1280, 800);
+        driver.get("http://localhost:" + port + "/author/?authorWorkspace=v2");
+
+        wait.until(ExpectedConditions.elementToBeClickable(By.cssSelector(
+                "[data-testid='author-start-choice:examples']"
+        ))).click();
+        wait.until(ExpectedConditions.elementToBeClickable(By.cssSelector(
+                "[data-testid='author-start-example:loan-policy-fallback']"
+        ))).click();
+        wait.until(ExpectedConditions.invisibilityOfElementLocated(
+                By.cssSelector("[data-testid='author-start-dialog']")
+        ));
+        wait.until(ExpectedConditions.elementToBeClickable(By.cssSelector(
+                "[data-testid='author-mode:scenarios']"
+        ))).click();
+
+        WebElement matrix = wait.until(ExpectedConditions.visibilityOfElementLocated(
+                By.cssSelector("[data-testid='scenario-matrix']")
+        ));
+        assertThat(matrix.getText())
+                .contains("CASE")
+                .contains("GIVEN")
+                .contains("DEPENDENCY")
+                .contains("THEN")
+                .contains("PROOF");
+        assertThat(driver.findElements(By.xpath(
+                "//*[@data-testid='scenario-matrix']//tbody//td[normalize-space()='Passed']"
+        ))).as("row verdicts never collapse four-axis proof into generic Passed").isEmpty();
+        List<WebElement> rows = driver.findElements(By.cssSelector(
+                "[data-testid^='scenario-matrix-row-']"
+        ));
+        assertThat(rows).hasSizeGreaterThanOrEqualTo(2);
+        assertNoHorizontalOverflow(wait, By.cssSelector(
+                "[data-testid='contract-workspace']"
+        ));
+        assertPageNoHorizontalOverflow();
+        captureVisualQa("scenario-matrix-1280.png");
+
+        List<WebElement> rowSelectors = driver.findElements(By.cssSelector(
+                "[data-testid^='scenario-matrix-row-'] .scenario-matrix-select input"
+        ));
+        assertThat(rowSelectors).hasSizeGreaterThanOrEqualTo(2);
+        rowSelectors.get(0).click();
+        rowSelectors.get(1).click();
+        waitForText(wait, By.cssSelector(".scenario-matrix-bulkbar"), "2 selected");
+        driver.findElement(By.cssSelector("[data-testid='scenario-run-selected']")).click();
+        wait.until(ExpectedConditions.textToBePresentInElementLocated(
+                By.cssSelector(".scenario-matrix-bulkbar"),
+                "2 selected"
+        ));
+        wait.until(ignored -> driver.findElements(By.cssSelector(
+                "[data-testid^='scenario-matrix-row-'][data-verdict='passed']"
+        )).size() >= 2);
+        assertThat(driver.findElement(By.cssSelector(
+                "[data-testid='author-mode:scenarios']"
+        )).getAttribute("aria-pressed"))
+                .as("batch execution remains in Matrix instead of opening single-case Evidence")
+                .isEqualTo("true");
+        assertThat(driver.findElement(By.cssSelector(".workspace-v2"))
+                .getAttribute("class"))
+                .as("successful batch execution does not strand an empty Diagnostics drawer open")
+                .doesNotContain("diagnostics-open");
+        assertThat(driver.findElements(By.cssSelector(
+                "[data-testid^='scenario-matrix-row-'][data-verdict='neutral']"
+        ))).hasSize(rows.size() - 2);
+
+        setViewport(wait, 1024, 768);
+        assertPageNoHorizontalOverflow();
+        assertNoHorizontalOverflow(wait, By.cssSelector(
+                "[data-testid='contract-workspace']"
+        ));
+        captureVisualQa("scenario-matrix-1024.png");
+
+        setViewport(wait, 820, 900);
+        assertPageNoHorizontalOverflow();
+        assertThat(((JavascriptExecutor) driver).executeScript("""
+                const matrix = document.querySelector('[data-testid="scenario-matrix"]');
+                const toolbar = matrix.querySelector('.scenario-matrix-toolbar').getBoundingClientRect();
+                const scroll = matrix.querySelector('.scenario-matrix-scroll').getBoundingClientRect();
+                const bulk = matrix.querySelector('.scenario-matrix-bulkbar').getBoundingClientRect();
+                return toolbar.bottom <= scroll.top + 1 && scroll.bottom <= bulk.top + 1;
+                """))
+                .as("Matrix toolbar, table, and bulk actions remain ordered at 820 pixels")
+                .isEqualTo(true);
+        captureVisualQa("scenario-matrix-820.png");
+
+        setViewport(wait, 390, 844);
+        assertPageNoHorizontalOverflow();
+        @SuppressWarnings("unchecked")
+        Map<String, Number> mobileGeometry = (Map<String, Number>)
+                ((JavascriptExecutor) driver).executeScript("""
+                        const matrix = document.querySelector('[data-testid="scenario-matrix"]');
+                        const scroll = matrix.querySelector('.scenario-matrix-scroll');
+                        const actions = [...matrix.querySelectorAll(
+                          '.scenario-matrix-bulkbar button'
+                        )].map((button) => button.getBoundingClientRect());
+                        return {
+                          localOverflow: scroll.scrollWidth - scroll.clientWidth,
+                          actionOutside: actions.filter((rect) =>
+                            rect.left < 0 || rect.right > window.innerWidth
+                          ).length,
+                          actionOutsideVertical: actions.filter((rect) =>
+                            rect.top < 0 || rect.bottom > window.innerHeight
+                          ).length,
+                          visibleTableHeight: Math.min(
+                            window.innerHeight,
+                            scroll.getBoundingClientRect().bottom
+                          ) - Math.max(0, scroll.getBoundingClientRect().top),
+                          actionMinWidth: Math.min(...actions.map((rect) => rect.width)),
+                          actionMinHeight: Math.min(...actions.map((rect) => rect.height))
+                        };
+                        """);
+        assertThat(mobileGeometry.get("localOverflow").doubleValue())
+                .as("wide table uses intentional local horizontal scrolling")
+                .isGreaterThan(500.0);
+        assertThat(mobileGeometry.get("actionOutside").intValue())
+                .as("mobile bulk actions stay inside the viewport")
+                .isZero();
+        assertThat(mobileGeometry.get("actionOutsideVertical").intValue())
+                .as("mobile bulk actions remain vertically reachable without page scrolling")
+                .isZero();
+        assertThat(mobileGeometry.get("visibleTableHeight").doubleValue())
+                .as("mobile retains a useful visible table viewport")
+                .isGreaterThanOrEqualTo(150.0);
+        assertThat(mobileGeometry.get("actionMinWidth").doubleValue())
+                .as("mobile bulk actions retain a usable hit target")
+                .isGreaterThanOrEqualTo(110.0);
+        assertThat(mobileGeometry.get("actionMinHeight").doubleValue())
+                .as("mobile bulk actions retain a usable hit target height")
+                .isGreaterThanOrEqualTo(30.0);
+        captureVisualQa("scenario-matrix-390.png");
+
+        WebElement firstRow = driver.findElements(By.cssSelector(
+                "[data-testid^='scenario-matrix-row-']"
+        )).getFirst();
+        firstRow.findElement(By.xpath(".//button[normalize-space()='Open']")).click();
+        wait.until(ExpectedConditions.visibilityOfElementLocated(
+                By.cssSelector(".scenario-workbench")
+        ));
+        assertThat(driver.findElement(By.cssSelector(
+                ".scenario-view-switch button[aria-pressed='true']"
+        )).getText()).isEqualTo("Case");
+        assertPageNoHorizontalOverflow();
     }
 
     /**
@@ -5116,6 +5273,16 @@ class VisualAuthoringBrowserDomTest {
             Number innerWidth = (Number) ((JavascriptExecutor) driver).executeScript("return window.innerWidth;");
             return innerWidth.doubleValue() <= width + 20;
         });
+    }
+
+    private void captureVisualQa(String fileName) throws IOException {
+        String outputDirectory = System.getProperty("resourceGateway.visualQaOutputDir", "");
+        if (outputDirectory.isBlank()) {
+            return;
+        }
+        Path output = Path.of(outputDirectory).resolve(fileName);
+        Files.createDirectories(output.getParent());
+        Files.write(output, ((TakesScreenshot) driver).getScreenshotAs(OutputType.BYTES));
     }
 
     private List<String> connectabilitySourceRowLabels() {

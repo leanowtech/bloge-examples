@@ -78,6 +78,33 @@ describe('ContractScenarioWorkspace', () => {
     expect(button('Run & Compare')).toBeInstanceOf(HTMLButtonElement);
   });
 
+  it('runs an exact multi-row Matrix selection and preserves row-level verdicts', async () => {
+    const onRun = vi.fn().mockResolvedValue(successfulResponse());
+    await renderMultiScenarioWorkspace(onRun);
+
+    expect(document.querySelector('[data-testid="scenario-matrix"]')).not.toBeNull();
+    expect(text()).toContain('3 canonical cases');
+    await act(async () => {
+      input('Select Approved applicant 1').click();
+      input('Select Approved applicant 3').click();
+    });
+    expect(text()).toContain('2 selected');
+
+    await act(async () => button('Run selected').click());
+    await settleAsyncWork();
+    await settleAsyncWork();
+
+    expect(onRun).toHaveBeenCalledTimes(2);
+    expect(onRun.mock.calls.map((call) => call[0].context.applicantId))
+      .toEqual(['A-1', 'A-3']);
+    expect(onRun.mock.calls.map((call) => call[1]))
+      .toEqual([{ reviewMode: 'MATRIX' }, { reviewMode: 'MATRIX' }]);
+    expect(document.querySelector('[data-testid="scenario-matrix-row-approved-1"]')?.textContent)
+      .toContain('Mock behavior matched');
+    expect(document.querySelector('[data-testid="scenario-matrix-row-approved-3"]')?.textContent)
+      .toContain('Mock behavior matched');
+  });
+
   it('limits central-surface asset commands to the active authoring task', async () => {
     await renderWorkspace({ presentation: 'surface', initialTab: 'interface' });
 
@@ -919,6 +946,52 @@ describe('ContractScenarioWorkspace', () => {
     await act(async () => {
       root = createRoot(host);
       root.render(<ControlledWorkspace />);
+    });
+  }
+
+  async function renderMultiScenarioWorkspace(onRun: ReturnType<typeof vi.fn>) {
+    const draft = graphDraft();
+    const contractFingerprint = fingerprint('b');
+    const contract = contractDraftFromGraphDraft(draft, fingerprint('a'));
+    const draftSet = scenarioDraftSetFromCanvas(
+      contract.target,
+      contractFingerprint,
+      draft,
+      nodes(),
+      [1, 2, 3].map((sequence) => ({
+        id: `approved-${sequence}`,
+        name: `Approved applicant ${sequence}`,
+        context: { applicantId: `A-${sequence}`, profile: { age: 18 + sequence, tags: [] } },
+        fixtures: {
+          score: { output: { score: 720 + sequence } },
+          decide: { output: successfulResponse().output },
+        },
+        hasExpectedOutput: true,
+        expectedOutput: successfulResponse().output,
+      })),
+    );
+    await act(async () => {
+      root = createRoot(host);
+      root.render(
+        <ContractScenarioWorkspace
+          open
+          graphDraft={draft}
+          contract={contract}
+          contractFingerprint={contractFingerprint}
+          scenarioDraftSet={draftSet}
+          nodes={nodes()}
+          lastRun={null}
+          initialTab="scenarios"
+          presentation="surface"
+          onScenarioDraftSetChange={vi.fn()}
+          onContractChange={vi.fn()}
+          onImportWorkspace={vi.fn().mockResolvedValue(undefined)}
+          onSaveGraphDraft={vi.fn().mockResolvedValue(undefined)}
+          onRebase={vi.fn()}
+          onRun={onRun}
+          onClose={vi.fn()}
+        />,
+      );
     });
   }
 });

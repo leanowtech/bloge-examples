@@ -153,6 +153,10 @@ import {
 } from './contract-scenario/domain';
 import { canonicalJson, sha256Fingerprint } from './contract-scenario/fingerprint';
 import type { ScenarioEvidenceTrustContext } from './contract-scenario/evidenceModel';
+import type {
+  ScenarioRunIntent,
+  WorkspaceTab,
+} from './contract-scenario/ContractScenarioWorkspace';
 import {
   compareScenarioRun,
   rebaseScenarioDraftSet,
@@ -169,7 +173,6 @@ import {
   type ScenarioCompilationProof,
 } from './contract-scenario/scenarioCompiler';
 import { captureScenarioEditorSnapshot } from './contract-scenario/scenarioEditorModel';
-import type { WorkspaceTab } from './contract-scenario/ContractScenarioWorkspace';
 import {
   clearDslAuthorHandoff,
   peekDslAuthorHandoff,
@@ -4837,6 +4840,7 @@ export default function AuthorCanvas({ workspaceVersion = 'v1' }: AuthorCanvasPr
   const [validationResult, setValidationResult] = useState<VisualValidationResult | null>(null);
   const [authorContentEpoch, setAuthorContentEpoch] = useState(0);
   const [evidenceContentEpoch, setEvidenceContentEpoch] = useState(-1);
+  const [matrixDiagnosticsSuppressed, setMatrixDiagnosticsSuppressed] = useState(false);
   const [validationContentEpoch, setValidationContentEpoch] = useState(-1);
   const [draftSaveConflict, setDraftSaveConflict] = useState(false);
   const [error, setError] = useState<string>('');
@@ -7771,7 +7775,15 @@ export default function AuthorCanvas({ workspaceVersion = 'v1' }: AuthorCanvasPr
     );
   }, [authorContentEpoch]);
 
-  const runScenarioSimulation = useCallback(async (request: Parameters<typeof simulate>[0]) => {
+  const runScenarioSimulation = useCallback(async (
+    request: Parameters<typeof simulate>[0],
+    intent?: ScenarioRunIntent,
+  ) => {
+    const matrixRun = intent?.reviewMode === 'MATRIX';
+    setMatrixDiagnosticsSuppressed(matrixRun);
+    if (matrixRun) {
+      setDiagnosticsOpen(false);
+    }
     const startedAt = performance.now();
     if (isTaskWorkspace) {
       recordAuthorTaskEvent('RUN_STARTED', {
@@ -7787,7 +7799,7 @@ export default function AuthorCanvas({ workspaceVersion = 'v1' }: AuthorCanvasPr
     try {
       const response = await simulate(request);
       showSimulationResponse(response);
-      if (isTaskWorkspace) {
+      if (isTaskWorkspace && !matrixRun) {
         setAuthorMode('evidence');
       }
       status = isRunSuccessful(response) ? 'PASSED' : 'FAILED';
@@ -7798,6 +7810,9 @@ export default function AuthorCanvas({ workspaceVersion = 'v1' }: AuthorCanvasPr
     } finally {
       setBusy(false);
       if (isTaskWorkspace) {
+        if (matrixRun) {
+          setDiagnosticsOpen(false);
+        }
         if (status === 'PASSED') {
           successfulRunKindRef.current = 'scenario';
         }
@@ -8882,6 +8897,9 @@ export default function AuthorCanvas({ workspaceVersion = 'v1' }: AuthorCanvasPr
   }, [nodes]);
 
   const changeAuthorMode = useCallback((nextMode: AuthorMode) => {
+    if (nextMode !== 'scenarios') {
+      setMatrixDiagnosticsSuppressed(false);
+    }
     const nextTab = workspaceTabForMode(nextMode);
     const nextUrl = authorWorkspaceUrl(window.location.href, nextMode, selectedNodeId, {
       target: nextMode === 'compose'
@@ -9098,11 +9116,12 @@ export default function AuthorCanvas({ workspaceVersion = 'v1' }: AuthorCanvasPr
   useEffect(() => {
     if (
       isTaskWorkspace
+      && !matrixDiagnosticsSuppressed
       && diagnosticItems.some((item) => item.severity === 'BLOCKING' || item.severity === 'ERROR')
     ) {
       setDiagnosticsOpen(true);
     }
-  }, [diagnosticItems, isTaskWorkspace]);
+  }, [diagnosticItems, isTaskWorkspace, matrixDiagnosticsSuppressed]);
 
   const paletteView = useMemo(
     () => operatorPaletteView(operators, {

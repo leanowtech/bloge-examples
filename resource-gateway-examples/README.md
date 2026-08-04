@@ -101,11 +101,14 @@ silently consuming work.
 | `GET http://localhost:8080/api/mirror/outcome-observations/{observationId}/lifecycle?afterOrdinal=0&limit=100` | Read one bounded append-only lifecycle suffix for offline audit |
 | `POST http://localhost:8080/api/mirror/outcome-selected-populations/uploads` | Begin or exactly replay one resumable selected-population upload intent (`X-Purpose: MIRROR_OUTCOME_SELECTION`) |
 
-For the shortest trustworthy Author demo, load a built-in graph from **Import → Load example**,
-open **Test**, run the two-row table, close the legacy table overlay, and choose **Review result**.
-The Run Evidence view is bound to the last executed Scenario and shows its assertion comparison,
-terminal output, mocked/real node boundary, and exploratory content fingerprint. A green execution
-is deliberately still `Evidence incomplete` until Contract and Governance are checked.
+For the shortest trustworthy Author demo, load **Loan policy fallback** from the start dialog and
+open **Scenarios**. Its two canonical cases open in the shared Matrix. Select both rows and choose
+**Run selected**: selection stays exact across filter/sort changes, both rows retain independent
+Execution/Assertions/Freshness/Proof verdicts, and the batch remains in Matrix. Use **Why** for the
+first row-level failure or **Open** to edit one case in Given/Dependencies/Then. **Run & Compare**
+from that Case opens the bound Run Evidence with assertion comparison, terminal output,
+mocked/real node boundary, and exploratory content fingerprint. A green execution is deliberately
+still `Evidence incomplete` until Contract and Governance are checked.
 
 For the shortest Library demo, open **Libraries**. The first screen lists durable drafts with
 Recent, Mine, confirmation, runtime-drift, test-gate, and ownership queues. **Resume rN** opens the

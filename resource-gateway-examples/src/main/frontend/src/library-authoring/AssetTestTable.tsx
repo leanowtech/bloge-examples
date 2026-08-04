@@ -43,6 +43,17 @@ import type {
 import GovernedFixtureSavePanel, {
   type GovernedFixtureSaveLaunch,
 } from './GovernedFixtureSavePanel';
+import ScenarioMatrixSurface from '../contract-scenario/table/ScenarioMatrixSurface';
+import {
+  functionTestScenarioTableProjection,
+  operatorTestScenarioTableProjection,
+} from '../contract-scenario/table/assetScenarioTableAdapter';
+import {
+  resolveExactScenarioRunSelection,
+  type ScenarioRunSelectionMode,
+  type ScenarioTableColumn,
+  type ScenarioTableSelection,
+} from '../contract-scenario/table/scenarioTableModel';
 
 export interface AssetTestLaunch {
   kind: 'operator' | 'function';
@@ -89,6 +100,10 @@ export default function AssetTestTable({
   const [operatorRows, setOperatorRows] = useState<OperatorEditor[]>([]);
   const [functionRows, setFunctionRows] = useState<FunctionEditor[]>([]);
   const [selectedCaseIndex, setSelectedCaseIndex] = useState(0);
+  const [testView, setTestView] = useState<'matrix' | 'case'>('case');
+  const [tableSelection, setTableSelection] = useState<ScenarioTableSelection>({ selectedCaseIds: [] });
+  const [previousRunCaseIds, setPreviousRunCaseIds] = useState<string[]>([]);
+  const [runningCaseIds, setRunningCaseIds] = useState<string[]>([]);
   const [operatorResults, setOperatorResults] = useState<Record<number, {
     passed: boolean;
     message: string;
@@ -131,6 +146,7 @@ export default function AssetTestTable({
             setOperatorDraft(generated);
             setOperatorRows(generated.suite.cases.map(operatorEditor));
             setSelectedCaseIndex(0);
+            setTestView(generated.suite.cases.length > 1 ? 'matrix' : 'case');
           }
         } else {
           const generated = await draftLibraryAuthoringFunctionTest(
@@ -143,6 +159,7 @@ export default function AssetTestTable({
             setFunctionDraft(generated);
             setFunctionRows(generated.suite.cases.map(functionEditor));
             setSelectedCaseIndex(0);
+            setTestView(generated.suite.cases.length > 1 ? 'matrix' : 'case');
           }
         }
       })
@@ -173,12 +190,46 @@ export default function AssetTestTable({
   const assetGate = useMemo(() => draftGate?.assets.find((asset) => (
     asset.assetKind === kind.toUpperCase() && asset.assetRef === assetRef
   )) ?? null, [assetRef, draftGate, kind]);
+  const tableProjection = useMemo(() => {
+    if (!exactDraft) return null;
+    const freshness = evidenceView?.freshness === 'STALE' ? 'STALE' : 'CURRENT';
+    if (kind === 'operator' && operatorDraft) {
+      return operatorTestScenarioTableProjection({
+        assetRef,
+        revision: exactDraft.revision,
+        authoringFingerprint: operatorDraft.authoringFingerprint,
+        artifactFingerprint: operatorDraft.artifactFingerprint,
+      }, operatorRows.map(operatorCaseForProjection), operatorResults, freshness);
+    }
+    if (kind === 'function' && functionDraft) {
+      return functionTestScenarioTableProjection({
+        assetRef,
+        revision: exactDraft.revision,
+        authoringFingerprint: functionDraft.authoringFingerprint,
+        artifactFingerprint: functionDraft.functionFingerprint,
+      }, functionRows.map(functionCaseForProjection), functionResults, freshness);
+    }
+    return null;
+  }, [
+    assetRef,
+    evidenceView?.freshness,
+    exactDraft,
+    functionDraft,
+    functionResults,
+    functionRows,
+    kind,
+    operatorDraft,
+    operatorResults,
+    operatorRows,
+  ]);
 
   const runOperators = async (indices: number[]) => {
     if (!exactDraft || !operatorDraft) {
       return;
     }
     setBusy(true);
+    setPreviousRunCaseIds(indices.map((index) => `operator-case-${index + 1}`));
+    setRunningCaseIds(indices.map((index) => `operator-case-${index + 1}`));
     setError('');
     try {
       const cases = indices.map((index) => parseOperatorRow(operatorRows[index], index));
@@ -202,6 +253,7 @@ export default function AssetTestTable({
     } catch (reason) {
       handleRequestError(reason, setError, onConflict);
     } finally {
+      setRunningCaseIds([]);
       setBusy(false);
     }
   };
@@ -211,6 +263,8 @@ export default function AssetTestTable({
       return;
     }
     setBusy(true);
+    setPreviousRunCaseIds(indices.map((index) => `function-case-${index + 1}`));
+    setRunningCaseIds(indices.map((index) => `function-case-${index + 1}`));
     setError('');
     try {
       const cases = indices.map((index) => parseFunctionRow(functionRows[index], index));
@@ -234,6 +288,7 @@ export default function AssetTestTable({
     } catch (reason) {
       handleRequestError(reason, setError, onConflict);
     } finally {
+      setRunningCaseIds([]);
       setBusy(false);
     }
   };
@@ -278,6 +333,43 @@ export default function AssetTestTable({
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : 'Test case is invalid.');
     }
+  };
+
+  const runTableSelection = (mode: ScenarioRunSelectionMode) => {
+    if (!tableProjection) return;
+    const exact = resolveExactScenarioRunSelection(
+      tableProjection,
+      tableSelection,
+      mode,
+      previousRunCaseIds,
+    );
+    const indices = exact.caseIds.map((caseId) => Number(caseId.split('-').pop()) - 1)
+      .filter((index) => Number.isInteger(index) && index >= 0);
+    if (kind === 'operator') void runOperators(indices);
+    else void runFunctions(indices);
+  };
+
+  const editMatrixCell = (caseId: string, column: ScenarioTableColumn, value: unknown) => {
+    const index = Number(caseId.split('-').pop()) - 1;
+    if (!Number.isInteger(index) || index < 0) return;
+    if (kind === 'operator' && column.binding.kind === 'NAME') {
+      setOperatorRows((rows) => rows.map((row, rowIndex) => (
+        rowIndex === index ? { ...row, name: String(value) } : row
+      )));
+    }
+    if (kind === 'function') {
+      setFunctionRows((rows) => rows.map((row, rowIndex) => {
+        if (rowIndex !== index) return row;
+        if (column.binding.kind === 'NAME') return { ...row, id: String(value) };
+        if (column.binding.kind === 'CASE_TYPE') {
+          return { ...row, kind: value as VisualFunctionTestKind };
+        }
+        return row;
+      }));
+    }
+    setLastEvidence('');
+    setEvidenceView(null);
+    setDraftGate(null);
   };
 
   return (
@@ -366,8 +458,41 @@ export default function AssetTestTable({
           {error && <p className="library-inline-error" role="alert">{error}</p>}
         </div>
 
+        <div className="library-test-viewbar">
+          <div className="scenario-view-switch" role="group" aria-label="Test table view">
+            <button type="button" aria-pressed={testView === 'matrix'} onClick={() => setTestView('matrix')}>Matrix</button>
+            <button type="button" aria-pressed={testView === 'case'} onClick={() => setTestView('case')}>Case</button>
+          </div>
+          <span>{kind === 'operator' ? 'Schema contract proof' : 'Runtime behavior proof'}</span>
+        </div>
+
         <div className="library-test-table-scroll">
-          {kind === 'operator' ? (
+          {testView === 'matrix' && tableProjection ? (
+            <ScenarioMatrixSurface
+              projection={tableProjection}
+              selection={tableSelection}
+              previousRunCaseIds={previousRunCaseIds}
+              runningCaseIds={runningCaseIds}
+              disabled={busy}
+              onSelectionChange={setTableSelection}
+              onOpenCase={(caseId) => {
+                setSelectedCaseIndex(Number(caseId.split('-').pop()) - 1);
+                setTestView('case');
+              }}
+              onCellEdit={editMatrixCell}
+              onAddCase={() => {
+                if (kind === 'operator') {
+                  setOperatorRows([...operatorRows, newOperatorRow(operatorRows.length)]);
+                  setSelectedCaseIndex(operatorRows.length);
+                } else {
+                  setFunctionRows([...functionRows, newFunctionRow(functionRows.length)]);
+                  setSelectedCaseIndex(functionRows.length);
+                }
+                setTestView('case');
+              }}
+              onRunSelection={runTableSelection}
+            />
+          ) : kind === 'operator' ? (
             <OperatorTable
               rows={operatorRows}
               results={operatorResults}
@@ -912,6 +1037,28 @@ function functionEditor(testCase: VisualFunctionTestCase): FunctionEditor {
     assertion: testCase.assertion,
     expected: structuredClone(testCase.expect),
     errorCode: testCase.expectError?.code ?? 'INVALID_ARGUMENT',
+  };
+}
+
+function operatorCaseForProjection(row: OperatorEditor): VisualOperatorContractTestCase {
+  return {
+    ...row.source,
+    name: row.name,
+    inputs: row.inputs,
+    config: row.config,
+    mockedOutputs: row.outputs,
+  };
+}
+
+function functionCaseForProjection(row: FunctionEditor): VisualFunctionTestCase {
+  return {
+    ...row.source,
+    id: row.id,
+    kind: row.kind,
+    args: row.args,
+    assertion: row.assertion,
+    expect: row.assertion === 'EQUALS' ? row.expected : null,
+    expectError: row.assertion === 'EXPECT_ERROR' ? { code: row.errorCode } : null,
   };
 }
 

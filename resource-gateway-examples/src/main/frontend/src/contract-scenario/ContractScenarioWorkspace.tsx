@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 
 import useDialogFocusTrap from '../author/accessibility/useDialogFocusTrap';
 import { sampleFromSchemaEnvelope } from '../draftModel';
@@ -60,9 +60,24 @@ import {
   createWorkspaceBundle,
   parseWorkspaceBundle,
 } from './workspaceBundle';
+import ScenarioMatrixSurface from './table/ScenarioMatrixSurface';
+import {
+  applyScenarioTableCellEdit,
+  buildScenarioTableProjection,
+  resolveExactScenarioRunSelection,
+  type ScenarioRunSelectionMode,
+  type ScenarioTableColumn,
+  type ScenarioTableEvidenceByCase,
+  type ScenarioTableProjection,
+  type ScenarioTableSelection,
+  type TableCaseEvidenceProjection,
+} from './table/scenarioTableModel';
 
 export type WorkspaceTab = 'interface' | 'scenarios' | 'compatibility' | 'evidence';
 export type ContractWorkspacePresentation = 'dialog' | 'surface';
+export interface ScenarioRunIntent {
+  reviewMode: 'EVIDENCE' | 'MATRIX';
+}
 
 interface ContractScenarioWorkspaceProps {
   open: boolean;
@@ -77,7 +92,10 @@ interface ContractScenarioWorkspaceProps {
   onImportWorkspace: (bundle: VisualAuthoringWorkspaceBundle) => Promise<void>;
   onSaveGraphDraft: () => Promise<void>;
   onRebase: () => void;
-  onRun: (request: SimulationRequest) => Promise<SimulationResponse>;
+  onRun: (
+    request: SimulationRequest,
+    intent?: ScenarioRunIntent,
+  ) => Promise<SimulationResponse>;
   onClose: () => void;
   targetStored?: boolean;
   contractEditable?: boolean;
@@ -131,6 +149,15 @@ export default function ContractScenarioWorkspace({
   const [selectedScenarioId, setSelectedScenarioId] = useState(
     initialScenarioId || lastRunScenarioId,
   );
+  const [scenarioView, setScenarioView] = useState<'matrix' | 'case'>(
+    (scenarioDraftSet?.scenarios.length ?? 0) > 1 ? 'matrix' : 'case',
+  );
+  const [tableSelection, setTableSelection] = useState<ScenarioTableSelection>({
+    selectedCaseIds: [],
+  });
+  const [tableEvidence, setTableEvidence] = useState<ScenarioTableEvidenceByCase>({});
+  const [previousRunCaseIds, setPreviousRunCaseIds] = useState<string[]>([]);
+  const [runningCaseIds, setRunningCaseIds] = useState<string[]>([]);
   const [running, setRunning] = useState(false);
   const [runResponse, setRunResponse] = useState<SimulationResponse | null>(null);
   const [comparison, setComparison] = useState<ScenarioComparison | null>(null);
@@ -188,6 +215,9 @@ export default function ContractScenarioWorkspace({
   )
     ? scenarioDraftSet.metadata.provenance.projectionDiagnostics
     : [];
+  const tableProjection = useMemo(() => (
+    scenarioDraftSet ? buildScenarioTableProjection(scenarioDraftSet, tableEvidence) : null
+  ), [scenarioDraftSet, tableEvidence]);
 
   useDialogFocusTrap({
     open: open && presentation === 'dialog',
@@ -220,6 +250,15 @@ export default function ContractScenarioWorkspace({
     setAdvancedText(selectedScenario ? JSON.stringify(selectedScenario, null, 2) : '');
     setAdvancedError('');
   }, [selectedScenario]);
+
+  useEffect(() => {
+    if (!lastRunScenarioId || !lastRun || !lastComparison) return;
+    setTableEvidence((currentEvidence) => ({
+      ...currentEvidence,
+      [lastRunScenarioId]: evidenceFromRun(lastRunScenarioId, lastRun, lastComparison, 1, 0),
+    }));
+    setPreviousRunCaseIds([lastRunScenarioId]);
+  }, [lastComparison, lastRun, lastRunScenarioId]);
 
   useEffect(() => {
     if (!scenarioDraftSet) {
@@ -340,6 +379,22 @@ export default function ContractScenarioWorkspace({
     setComparison(null);
     setCompileMessages([]);
     setPublication(null);
+    markTableEvidenceStale(selectedScenario.scenarioId, setTableEvidence);
+  };
+
+  const updateScenarioFromMatrix = (
+    caseId: string,
+    column: ScenarioTableColumn,
+    value: unknown,
+  ) => {
+    const next = applyScenarioTableCellEdit(scenarioDraftSet, caseId, column, value);
+    if (next === scenarioDraftSet) return;
+    onScenarioDraftSetChange(next);
+    setRunResponse(null);
+    setComparison(null);
+    setCompileMessages([]);
+    setPublication(null);
+    markTableEvidenceStale(caseId, setTableEvidence);
   };
 
   const navigateWorkspace = (
@@ -426,51 +481,139 @@ export default function ContractScenarioWorkspace({
     });
   };
 
-  const runSelectedScenario = async () => {
-    if (!selectedScenario) {
-      return;
-    }
+  const runScenarioClosure = async (caseIds: string[], openEvidenceAfterRun: boolean) => {
+    const closure = scenarios.filter((scenario) => caseIds.includes(scenario.scenarioId));
+    if (closure.length === 0) return;
     setRunning(true);
+    setPreviousRunCaseIds(closure.map((scenario) => scenario.scenarioId));
+    setRunningCaseIds(closure.map((scenario) => scenario.scenarioId));
+    setTableEvidence((currentEvidence) => ({
+      ...currentEvidence,
+      ...Object.fromEntries(closure.map((scenario) => [scenario.scenarioId, {
+        ...(currentEvidence[scenario.scenarioId] ?? emptyQueuedEvidence(scenario.scenarioId)),
+        caseId: scenario.scenarioId,
+        execution: 'QUEUED' as const,
+        assertions: 'NONE' as const,
+        freshness: 'CURRENT' as const,
+        firstFailure: null,
+      }])),
+    }));
     setCompileMessages([]);
     setComparison(null);
-    try {
-      const snapshot = captureScenarioEditorSnapshot(
-        scenarioDraftSet,
-        selectedScenario.scenarioId,
-        contract,
-        nodes,
-      );
-      const compilation = await compileScenarioEditorSnapshotForSimulation(
-        graphDraft,
-        snapshot,
-        contract.target.fingerprint,
-        contractFingerprint,
-      );
-      if (!compilation.compiled || !compilation.request) {
-        setCompileMessages(compilation.diagnostics.map((diagnostic) => diagnostic.message));
-        focusSchemaPath(compilation.diagnostics[0]?.target);
-        return;
+    const messages: string[] = [];
+    let focusTarget = '';
+    let lastCompleted: { scenario: ScenarioDraft; response: SimulationResponse; comparison: ScenarioComparison } | null = null;
+    for (const scenario of closure) {
+      const startedAt = performance.now();
+      setRunningCaseIds([scenario.scenarioId]);
+      setTableEvidence((currentEvidence) => ({
+        ...currentEvidence,
+        [scenario.scenarioId]: {
+          ...(currentEvidence[scenario.scenarioId] ?? emptyQueuedEvidence(scenario.scenarioId)),
+          execution: 'RUNNING',
+        },
+      }));
+      try {
+        const snapshot = captureScenarioEditorSnapshot(
+          scenarioDraftSet,
+          scenario.scenarioId,
+          contract,
+          nodes,
+        );
+        const compilation = await compileScenarioEditorSnapshotForSimulation(
+          graphDraft,
+          snapshot,
+          contract.target.fingerprint,
+          contractFingerprint,
+        );
+        if (!compilation.compiled || !compilation.request || !compilation.proof) {
+          const diagnosticMessages = compilation.diagnostics.map((diagnostic) => diagnostic.message);
+          const message = diagnosticMessages[0]
+            ?? 'Scenario compilation did not produce fingerprint closure proof.';
+          messages.push(`${scenario.name}: ${message}`);
+          setTableEvidence((currentEvidence) => ({
+            ...currentEvidence,
+            [scenario.scenarioId]: {
+              ...emptyQueuedEvidence(scenario.scenarioId),
+              execution: 'ERROR',
+              assertions: 'INCONCLUSIVE',
+              durationMs: Math.round(performance.now() - startedAt),
+              firstFailure: {
+                category: 'COMPILATION',
+                target: compilation.diagnostics[0]?.target ?? '/scenario',
+                message,
+              },
+            },
+          }));
+          if (closure.length === 1) {
+            focusTarget = compilation.diagnostics[0]?.target ?? '';
+          }
+          continue;
+        }
+        const response = openEvidenceAfterRun
+          ? await onRun(compilation.request)
+          : await onRun(compilation.request, { reviewMode: 'MATRIX' });
+        const nextComparison = compareScenarioRun(scenario, response);
+        const durationMs = Math.round(performance.now() - startedAt);
+        setRunResponse(response);
+        setComparison(nextComparison);
+        setTableEvidence((currentEvidence) => ({
+          ...currentEvidence,
+          [scenario.scenarioId]: evidenceFromRun(
+            scenario.scenarioId,
+            response,
+            nextComparison,
+            (currentEvidence[scenario.scenarioId]?.attempt ?? 0) + 1,
+            durationMs,
+          ),
+        }));
+        onRunEvidence?.(
+          scenario.scenarioId,
+          nextComparison,
+          compilation.request,
+          compilation.proof,
+        );
+        lastCompleted = { scenario, response, comparison: nextComparison };
+      } catch (cause: unknown) {
+        const message = cause instanceof Error ? cause.message : String(cause);
+        messages.push(`${scenario.name}: ${message}`);
+        setTableEvidence((currentEvidence) => ({
+          ...currentEvidence,
+          [scenario.scenarioId]: {
+            ...emptyQueuedEvidence(scenario.scenarioId),
+            execution: 'ERROR',
+            assertions: 'INCONCLUSIVE',
+            durationMs: Math.round(performance.now() - startedAt),
+            firstFailure: { category: 'RUNTIME', target: '/run', message },
+          },
+        }));
       }
-      if (!compilation.proof) {
-        setCompileMessages(['Scenario compilation did not produce fingerprint closure proof.']);
-        return;
-      }
-      const response = await onRun(compilation.request);
-      const nextComparison = compareScenarioRun(selectedScenario, response);
-      setRunResponse(response);
-      setComparison(nextComparison);
-      onRunEvidence?.(
-        selectedScenario.scenarioId,
-        nextComparison,
-        compilation.request,
-        compilation.proof,
-      );
-      navigateWorkspace('evidence', selectedScenario.scenarioId);
-    } catch (cause: unknown) {
-      setCompileMessages([String(cause)]);
-    } finally {
-      setRunning(false);
     }
+    setCompileMessages(messages);
+    setRunningCaseIds([]);
+    setRunning(false);
+    if (focusTarget) {
+      queueMicrotask(() => focusSchemaPath(focusTarget));
+    }
+    if (openEvidenceAfterRun && lastCompleted) {
+      setSelectedScenarioId(lastCompleted.scenario.scenarioId);
+      navigateWorkspace('evidence', lastCompleted.scenario.scenarioId);
+    }
+  };
+
+  const runSelectedScenario = () => {
+    if (selectedScenario) void runScenarioClosure([selectedScenario.scenarioId], true);
+  };
+
+  const runTableSelection = (mode: ScenarioRunSelectionMode) => {
+    if (!tableProjection) return;
+    const exact = resolveExactScenarioRunSelection(
+      tableProjection,
+      tableSelection,
+      mode,
+      previousRunCaseIds,
+    );
+    void runScenarioClosure(exact.caseIds, false);
   };
 
   const applyAdvancedJson = () => {
@@ -859,6 +1002,11 @@ export default function ContractScenarioWorkspace({
               selectedScenarioId={selectedScenarioId}
               nodes={nodes}
               running={running}
+              view={scenarioView}
+              tableProjection={tableProjection}
+              tableSelection={tableSelection}
+              previousRunCaseIds={previousRunCaseIds}
+              runningCaseIds={runningCaseIds}
               compileMessages={compileMessages}
               advancedText={advancedText}
               advancedError={advancedError}
@@ -869,6 +1017,10 @@ export default function ContractScenarioWorkspace({
               onAddScenario={addScenario}
               onRemoveScenario={removeSelectedScenario}
               onRun={runSelectedScenario}
+              onViewChange={setScenarioView}
+              onTableSelectionChange={setTableSelection}
+              onTableCellEdit={updateScenarioFromMatrix}
+              onRunTableSelection={runTableSelection}
             />
           )}
           {activeTab === 'compatibility' && (
@@ -976,6 +1128,11 @@ interface ScenarioTabProps {
   selectedScenarioId: string;
   nodes: ScenarioNodeOption[];
   running: boolean;
+  view: 'matrix' | 'case';
+  tableProjection: ScenarioTableProjection | null;
+  tableSelection: ScenarioTableSelection;
+  previousRunCaseIds: string[];
+  runningCaseIds: string[];
   compileMessages: string[];
   advancedText: string;
   advancedError: string;
@@ -986,6 +1143,10 @@ interface ScenarioTabProps {
   onAddScenario: () => void;
   onRemoveScenario: () => void;
   onRun: () => void;
+  onViewChange: (view: 'matrix' | 'case') => void;
+  onTableSelectionChange: (selection: ScenarioTableSelection) => void;
+  onTableCellEdit: (caseId: string, column: ScenarioTableColumn, value: unknown) => void;
+  onRunTableSelection: (mode: ScenarioRunSelectionMode) => void;
 }
 
 function ScenarioTab({
@@ -995,6 +1156,11 @@ function ScenarioTab({
   selectedScenarioId,
   nodes,
   running,
+  view,
+  tableProjection,
+  tableSelection,
+  previousRunCaseIds,
+  runningCaseIds,
   compileMessages,
   advancedText,
   advancedError,
@@ -1005,9 +1171,58 @@ function ScenarioTab({
   onAddScenario,
   onRemoveScenario,
   onRun,
+  onViewChange,
+  onTableSelectionChange,
+  onTableCellEdit,
+  onRunTableSelection,
 }: ScenarioTabProps) {
   return (
-    <div className="scenario-workbench">
+    <div className="scenario-table-workspace">
+      <header className="scenario-viewbar">
+        <div className="scenario-view-switch" role="group" aria-label="Scenario view">
+          <button
+            type="button"
+            aria-pressed={view === 'matrix'}
+            onClick={() => onViewChange('matrix')}
+          >
+            Matrix
+          </button>
+          <button
+            type="button"
+            aria-pressed={view === 'case'}
+            onClick={() => onViewChange('case')}
+          >
+            Case
+          </button>
+        </div>
+        <div className="scenario-view-coordinate">
+          <span>{contract.target.kind}</span>
+          <strong title={contract.target.id}>{contract.target.id}</strong>
+          <code>r{contract.target.revision}</code>
+        </div>
+      </header>
+
+      {view === 'matrix' && tableProjection ? (
+        <ScenarioMatrixSurface
+          projection={tableProjection}
+          selection={tableSelection}
+          previousRunCaseIds={previousRunCaseIds}
+          runningCaseIds={runningCaseIds}
+          disabled={running}
+          onSelectionChange={onTableSelectionChange}
+          onOpenCase={(caseId) => {
+            onSelectScenario(caseId);
+            onViewChange('case');
+          }}
+          onCellEdit={onTableCellEdit}
+          onAddCase={() => {
+            onAddScenario();
+            onViewChange('case');
+          }}
+          onRunSelection={onRunTableSelection}
+        />
+      ) : (
+      <div className="scenario-workbench">
       <aside className="scenario-list">
         <div className="scenario-list-head">
           <strong>Scenarios</strong>
@@ -1227,6 +1442,8 @@ function ScenarioTab({
           </div>
         )}
       </div>
+      </div>
+      )}
     </div>
   );
 }
@@ -1753,6 +1970,71 @@ function newDependency(
     schemaCheck: { mode: 'STRICT', waiverReason: '' },
     origin: 'AUTHORED',
   };
+}
+
+function emptyQueuedEvidence(caseId: string): TableCaseEvidenceProjection {
+  return {
+    caseId,
+    runId: '',
+    attempt: 0,
+    execution: 'QUEUED',
+    assertions: 'NONE',
+    freshness: 'CURRENT',
+    proofStrength: 'SCHEMA',
+    durationMs: null,
+    firstFailure: null,
+  };
+}
+
+function evidenceFromRun(
+  caseId: string,
+  response: SimulationResponse,
+  comparison: ScenarioComparison,
+  attempt: number,
+  durationMs: number,
+): TableCaseEvidenceProjection {
+  const executionSucceeded = response.validated && response.compiled && response.success;
+  const firstAssertionFailure = comparison.results.find((result) => !result.passed);
+  const firstDiagnostic = comparison.diagnostics[0];
+  return {
+    caseId,
+    runId: `local:${caseId}:${attempt}`,
+    attempt,
+    execution: executionSucceeded ? 'SUCCESS' : 'ERROR',
+    assertions: comparison.results.length === 0
+      ? 'NONE'
+      : comparison.passed ? 'PASSED' : 'FAILED',
+    freshness: 'CURRENT',
+    proofStrength: response.mockedNodeIds.length > 0 ? 'MOCK' : 'RUNTIME',
+    durationMs,
+    firstFailure: firstAssertionFailure
+      ? {
+          category: 'ASSERTION',
+          target: firstAssertionFailure.path || '$',
+          message: firstAssertionFailure.detail,
+        }
+      : firstDiagnostic
+        ? {
+            category: 'EXECUTION',
+            target: firstDiagnostic.target,
+            message: firstDiagnostic.message,
+          }
+        : null,
+  };
+}
+
+function markTableEvidenceStale(
+  caseId: string,
+  setEvidence: (
+    update: (current: ScenarioTableEvidenceByCase) => ScenarioTableEvidenceByCase,
+  ) => void,
+): void {
+  setEvidence((current) => current[caseId]
+    ? {
+        ...current,
+        [caseId]: { ...current[caseId]!, freshness: 'STALE' },
+      }
+    : current);
 }
 
 function requireLoadedScenarioCoordinate(

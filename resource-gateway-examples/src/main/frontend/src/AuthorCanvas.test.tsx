@@ -723,7 +723,7 @@ describe('AuthorCanvas operator-library intake', () => {
       .toBe('96,72');
     expect(query('[data-testid="node-wrapper:response"]').getAttribute('data-position'))
       .toBe('384,72');
-    expect(reactFlowMocks.fitView).toHaveBeenCalled();
+    await waitFor(() => expect(reactFlowMocks.fitView).toHaveBeenCalled());
   });
 
   it('uses a larger overview and tighter fit padding for complex DSL projections', async () => {
@@ -1311,6 +1311,11 @@ describe('AuthorCanvas built-in canvas examples', () => {
     const firstCoordinate = query('[data-testid="scenario-evidence-coordinate"]').textContent;
 
     await click(query<HTMLButtonElement>('[data-testid="author-mode:scenarios"]'));
+    await click(Array.from(
+      query('[data-testid="contract-workspace"]').querySelectorAll<HTMLButtonElement>(
+        '.scenario-view-switch button',
+      ),
+    ).find((button) => button.textContent === 'Case') as HTMLButtonElement);
     await setControlValue(
       query<HTMLInputElement>(
         '[data-testid="contract-workspace"] input[aria-label="applicantId"]',
@@ -1659,6 +1664,11 @@ describe('AuthorCanvas built-in canvas examples', () => {
 
     await click(query<HTMLButtonElement>('[data-testid="author-mode:scenarios"]'));
     await waitFor(() => expect(query('[data-testid="author-surface:scenarios"]')).toBeDefined());
+    await click(Array.from(
+      query('[data-testid="contract-workspace"]').querySelectorAll<HTMLButtonElement>(
+        '.scenario-view-switch button',
+      ),
+    ).find((button) => button.textContent === 'Case') as HTMLButtonElement);
     await setControlValue(
       query<HTMLInputElement>('input[aria-label="decision"]'),
       'force-mismatch',
@@ -1932,6 +1942,11 @@ describe('AuthorCanvas built-in canvas examples', () => {
     );
     await click(Array.from(query('[role="tablist"]').querySelectorAll<HTMLButtonElement>('button'))
       .find((button) => button.textContent === 'Scenarios 2') as HTMLButtonElement);
+    await click(Array.from(
+      query('[data-testid="contract-workspace"]').querySelectorAll<HTMLButtonElement>(
+        '.scenario-view-switch button',
+      ),
+    ).find((button) => button.textContent === 'Case') as HTMLButtonElement);
 
     await waitFor(() =>
       expect(query('[data-testid="contract-workspace"]').textContent).toContain('Prime approval path'),
