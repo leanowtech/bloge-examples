@@ -9,6 +9,10 @@ import ContractScenarioWorkspace from './ContractScenarioWorkspace';
 import type { ScenarioEvidenceTrustContext } from './evidenceModel';
 import { scenarioDraftSetFromCanvas, type ScenarioComparison } from './scenarioAuthoring';
 import type { SimulationResponse } from '../types';
+import type {
+  TableSuiteRunBatch,
+  TableSuiteRunCommand,
+} from './table/tableSuiteRunModel';
 import {
   graphDraft,
   nodes,
@@ -35,6 +39,7 @@ describe('ContractScenarioWorkspace', () => {
       root = null;
     }
     host.remove();
+    sessionStorage.clear();
     vi.unstubAllGlobals();
   });
 
@@ -80,6 +85,21 @@ describe('ContractScenarioWorkspace', () => {
 
   it('runs an exact multi-row Matrix selection and preserves row-level verdicts', async () => {
     const onRun = vi.fn().mockResolvedValue(successfulResponse());
+    const submitted: { current: TableSuiteRunCommand | null } = { current: null };
+    vi.stubGlobal('fetch', vi.fn().mockImplementation(async (input: RequestInfo | URL, init?: RequestInit) => {
+      if (String(input) === '/api/visual/table-suite-runs' && init?.method === 'POST') {
+        submitted.current = JSON.parse(String(init.body)) as TableSuiteRunCommand;
+        return new Response(JSON.stringify(successfulTableBatch(submitted.current)), {
+          status: 200,
+          headers: { 'Content-Type': 'application/json' },
+        });
+      }
+      return new Response(JSON.stringify({ code: 'RG.SCENARIO.NOT_FOUND' }), {
+        status: 404,
+        statusText: 'Not Found',
+        headers: { 'Content-Type': 'application/json' },
+      });
+    }));
     await renderMultiScenarioWorkspace(onRun);
 
     expect(document.querySelector('[data-testid="scenario-matrix"]')).not.toBeNull();
@@ -94,11 +114,18 @@ describe('ContractScenarioWorkspace', () => {
     await settleAsyncWork();
     await settleAsyncWork();
 
-    expect(onRun).toHaveBeenCalledTimes(2);
-    expect(onRun.mock.calls.map((call) => call[0].context.applicantId))
-      .toEqual(['A-1', 'A-3']);
-    expect(onRun.mock.calls.map((call) => call[1]))
-      .toEqual([{ reviewMode: 'MATRIX' }, { reviewMode: 'MATRIX' }]);
+    expect(onRun).not.toHaveBeenCalled();
+    expect(submitted.current?.selection).toEqual({
+      mode: 'SELECTED',
+      caseIds: ['approved-1', 'approved-3'],
+    });
+    expect(submitted.current?.preflight).toMatchObject({
+      dependencyMode: 'SIMULATED',
+      effectProfile: 'SIDE_EFFECT_FREE',
+      maxConcurrency: 1,
+    });
+    expect(text()).toContain('Server batchSucceeded');
+    expect(text()).toContain('PromotionPartial only');
     expect(document.querySelector('[data-testid="scenario-matrix-row-approved-1"]')?.textContent)
       .toContain('Mock behavior matched');
     expect(document.querySelector('[data-testid="scenario-matrix-row-approved-3"]')?.textContent)
@@ -1050,4 +1077,71 @@ function queryRegion(label: string): HTMLElement {
 
 function fingerprint(seed: string): string {
   return `sha256:${seed.repeat(64).slice(0, 64)}`;
+}
+
+function successfulTableBatch(command: TableSuiteRunCommand): TableSuiteRunBatch {
+  const now = '2026-08-04T10:00:00Z';
+  const fingerprintValue = fingerprint('d');
+  const caseIds = command.selection.caseIds;
+  return {
+    schemaVersion: 'bloge.tableSuiteRunBatch.v1',
+    batchId: 'table-run-selected-1',
+    requestId: command.requestId,
+    requestFingerprint: fingerprintValue,
+    scope: command.draftSet.scope,
+    target: command.draftSet.target,
+    scenarioDraftSetId: command.draftSet.scenarioDraftSetId,
+    scenarioDraftSetRevision: command.draftSet.revision,
+    scenarioDraftSetFingerprint: fingerprintValue,
+    contractFingerprint: command.draftSet.contractFingerprint,
+    selection: {
+      mode: command.selection.mode,
+      caseIds,
+      fingerprint: fingerprintValue,
+      fullSuite: caseIds.length === command.draftSet.scenarios.length,
+    },
+    preflight: command.preflight,
+    baselineBatchId: command.baselineBatchId,
+    status: 'SUCCEEDED',
+    revision: 8,
+    cancelRequested: false,
+    rows: caseIds.map((caseId) => ({
+      caseId,
+      caseFingerprint: fingerprintValue,
+      status: 'SUCCESS',
+      attempts: [{
+        attempt: 1,
+        status: 'SUCCESS',
+        assertions: 'PASSED',
+        proofStrength: 'MOCK',
+        durationMs: 12,
+        runFingerprint: fingerprintValue,
+        firstFailure: null,
+        assertionEvidence: [],
+        startedAt: now,
+        completedAt: now,
+      }],
+      flaky: false,
+      baseline: { baselineBatchId: '', baselineStatus: null, outcome: 'NONE' },
+    })),
+    counts: {
+      total: caseIds.length,
+      queued: 0,
+      running: 0,
+      succeeded: caseIds.length,
+      failed: 0,
+      cancelled: 0,
+      budgetStopped: 0,
+    },
+    promotion: {
+      eligible: caseIds.length === command.draftSet.scenarios.length,
+      reason: caseIds.length === command.draftSet.scenarios.length
+        ? 'FULL_CURRENT_CLOSURE_SUCCEEDED'
+        : 'PARTIAL_SELECTION',
+    },
+    events: [],
+    createdAt: now,
+    startedAt: now,
+    completedAt: now,
+  };
 }

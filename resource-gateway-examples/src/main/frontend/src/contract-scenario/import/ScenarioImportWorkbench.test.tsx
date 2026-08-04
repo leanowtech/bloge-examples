@@ -72,7 +72,7 @@ describe('ScenarioImportWorkbench', () => {
     await click(button('Load sample'));
     await click(button('Inspect source'));
     await settle();
-    await click(button('Map columns'));
+    await click(await waitForButton('Map columns'));
     await click(button('Review plan'));
     expect(text()).toContain('6 bindings');
     await click(button('Materialize 5 cases'));
@@ -113,6 +113,17 @@ describe('ScenarioImportWorkbench', () => {
       .find((element) => element.textContent?.trim() === name);
     if (!candidate) throw new Error(`Missing button: ${name}`);
     return candidate;
+  }
+
+  async function waitForButton(name: string, timeoutMs = 2_000): Promise<HTMLButtonElement> {
+    const deadline = Date.now() + timeoutMs;
+    while (Date.now() < deadline) {
+      const candidate = Array.from(host.querySelectorAll<HTMLButtonElement>('button'))
+        .find((element) => element.textContent?.trim() === name);
+      if (candidate) return candidate;
+      await act(async () => new Promise((resolve) => setTimeout(resolve, 10)));
+    }
+    return button(name);
   }
 
   function textarea() {

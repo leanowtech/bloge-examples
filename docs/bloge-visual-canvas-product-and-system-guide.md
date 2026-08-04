@@ -2249,8 +2249,10 @@ POST /api/visual/connections/check
 
 1. Matrix 按 `CASE / GIVEN / DEPENDENCY / THEN / PROOF` 分组展示。搜索、类型/判定筛选、
    排序与列显示只改变视图，不改变测试资产或已选 case。
-2. 勾选任意行后使用 **Run selected**；**Run all** 始终按 canonical 顺序运行全部 case；
-   **Run failed** 只重跑上一轮 exact closure 中失败的 case，不会把当前筛选结果误当运行集合。
+2. 勾选任意行后使用 **Run selected**；**Run all** 始终按 canonical 顺序建立完整 baseline；
+   **Run failed (N) / Run changed (N) / Run affected (N)** 分别按完整 baseline 的失败、case
+   fingerprint 变化，以及失败/变化/Graph 或 Contract 影响选择。数量为 0 时按钮解释性禁用，
+   当前筛选结果永远不会被误当运行集合。
 3. Name、Case type、tags 和可标量编辑的 Given 单元格直接写回 canonical Scenario。点击
    **Open** 或聚焦行后按 Enter 进入同一个 case 的详情，不会维护第二份表格值。
 4. 每行 Proof 独立显示 Execution、Assertions、Freshness、Proof strength 和 Duration；
@@ -2259,10 +2261,19 @@ POST /api/visual/connections/check
 5. 500 case 只先渲染 50 行，再由 **Show next 50 cases** 显式推进。390px 视口保留表格
    局部横向滚动和完整批量操作，不让宽表撑宽页面。
 
-点击 Matrix 的 **Run selected / Run all / Run failed** 后仍留在 Matrix，逐行更新结果；全局
-Diagnostics 不会抢占表格空间。需要审阅一条 case 的完整 request/response 与断言证据时，
+点击任一 Matrix Run 后仍留在 Matrix。顶部 **Server batch** 显示 exact closure、Passed、Failed、
+Waiting 和 Promotion；运行中可 **Cancel**，终态失败可 **Retry failed**。retry 追加 attempt，失败后
+成功会显示 flaky；partial selection 永远显示 **Partial only**，不能冒充 full-suite promotion。
+刷新/导航恢复同一 Scenario coordinate 后，页面按 batch id 恢复 durable progress 并继续消费
+revision delta。全局 Diagnostics 不会抢占表格空间。需要审阅一条 case 的完整 request/response 与断言证据时，
 点击 **Open** 进入 Case，再执行 **Run & Compare**。单 case 运行完成后才自动进入
 **Run Evidence**。
+
+第一次建立 baseline 的完整操作顺序是：加载复杂示例 -> **Scenarios** -> **Save Graph** ->
+**Review compatibility** -> 勾选已审阅并 **Rebase local draft** -> 返回 **Scenarios / Matrix** ->
+**Run all**。只有所有行都有结论且通过，Server batch 才显示 **Promotion Eligible**；取消或达到
+failure budget 的残缺 full selection 不会成为后续差分基线。Matrix 和浏览器存储只保留
+payload-free fingerprints/status；Expected/Actual 业务值只在有权限的 Case Evidence 中读取。
 
 #### 从 CSV / JSON 导入表格测试数据
 

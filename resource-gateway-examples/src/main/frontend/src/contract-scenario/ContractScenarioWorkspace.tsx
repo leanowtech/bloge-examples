@@ -4,11 +4,16 @@ import useDialogFocusTrap from '../author/accessibility/useDialogFocusTrap';
 import { sampleFromSchemaEnvelope } from '../draftModel';
 import {
   BlogeApiRequestError,
+  cancelTableSuiteRun,
+  fetchTableSuiteRun,
+  fetchTableSuiteRunEvents,
   fetchScenarioCompatibility,
   fetchScenarioDraftSet,
   materializeScenarioImportOnServer,
   publishScenarioDraftSet,
+  retryFailedTableSuiteRun,
   saveScenarioDraftSet,
+  submitTableSuiteRun,
 } from '../api';
 import type { GraphDraft, SimulationRequest, SimulationResponse } from '../types';
 import type {
@@ -67,7 +72,6 @@ import type { ScenarioMaterializationResult } from './import/scenarioImportModel
 import {
   applyScenarioTableCellEdit,
   buildScenarioTableProjection,
-  resolveExactScenarioRunSelection,
   type ScenarioRunSelectionMode,
   type ScenarioTableColumn,
   type ScenarioTableEvidenceByCase,
@@ -75,6 +79,19 @@ import {
   type ScenarioTableSelection,
   type TableCaseEvidenceProjection,
 } from './table/scenarioTableModel';
+import {
+  applyTableSuiteRunDelta,
+  createTableSuiteBaselineSummary,
+  createTableSuiteRunCommand,
+  tableSuiteBatchStorageKey,
+  tableSuiteBatchIsCompleteBaseline,
+  tableSuiteBatchTerminal,
+  tableSuiteDifferentialCounts,
+  tableSuiteEvidenceByCase,
+  type TableSuiteBaselineSummary,
+  type TableSuiteDifferentialCounts,
+  type TableSuiteRunBatch,
+} from './table/tableSuiteRunModel';
 
 export type WorkspaceTab = 'interface' | 'scenarios' | 'compatibility' | 'evidence';
 export type ContractWorkspacePresentation = 'dialog' | 'surface';
@@ -162,6 +179,10 @@ export default function ContractScenarioWorkspace({
   const [tableEvidence, setTableEvidence] = useState<ScenarioTableEvidenceByCase>({});
   const [previousRunCaseIds, setPreviousRunCaseIds] = useState<string[]>([]);
   const [runningCaseIds, setRunningCaseIds] = useState<string[]>([]);
+  const [tableBatch, setTableBatch] = useState<TableSuiteRunBatch | null>(null);
+  const [tableRunError, setTableRunError] = useState('');
+  const [baselineBatchId, setBaselineBatchId] = useState('');
+  const [tableBaselineSummary, setTableBaselineSummary] = useState<TableSuiteBaselineSummary | null>(null);
   const [running, setRunning] = useState(false);
   const [runResponse, setRunResponse] = useState<SimulationResponse | null>(null);
   const [comparison, setComparison] = useState<ScenarioComparison | null>(null);
@@ -222,6 +243,36 @@ export default function ContractScenarioWorkspace({
   const tableProjection = useMemo(() => (
     scenarioDraftSet ? buildScenarioTableProjection(scenarioDraftSet, tableEvidence) : null
   ), [scenarioDraftSet, tableEvidence]);
+  const differentialCounts = useMemo(() => (
+    scenarioDraftSet ? tableSuiteDifferentialCounts(scenarioDraftSet, tableBaselineSummary) : null
+  ), [scenarioDraftSet, tableBaselineSummary]);
+  const tableRunStorageKey = scenarioDraftSet
+    ? tableSuiteBatchStorageKey(scenarioDraftSet)
+    : '';
+
+  const adoptTableBatch = (batch: TableSuiteRunBatch) => {
+    setTableBatch(batch);
+    setPreviousRunCaseIds(batch.selection.caseIds);
+    setRunningCaseIds(batch.rows
+      .filter((row) => row.status === 'QUEUED' || row.status === 'RUNNING')
+      .map((row) => row.caseId));
+    setTableEvidence((currentEvidence) => ({
+      ...currentEvidence,
+      ...tableSuiteEvidenceByCase(batch),
+    }));
+    setBaselineBatchId((currentBaseline) => {
+      const completeBaseline = tableSuiteBatchIsCompleteBaseline(batch);
+      const nextBaseline = completeBaseline
+        ? batch.batchId
+        : currentBaseline;
+      const nextSummary = completeBaseline && scenarioDraftSet
+        ? createTableSuiteBaselineSummary(batch, scenarioDraftSet)
+        : tableBaselineSummary;
+      if (completeBaseline) setTableBaselineSummary(nextSummary);
+      writeTableRunSession(tableRunStorageKey, batch.batchId, nextBaseline, nextSummary);
+      return nextBaseline;
+    });
+  };
 
   useDialogFocusTrap({
     open: open && presentation === 'dialog',
@@ -263,6 +314,72 @@ export default function ContractScenarioWorkspace({
     }));
     setPreviousRunCaseIds([lastRunScenarioId]);
   }, [lastComparison, lastRun, lastRunScenarioId]);
+
+  useEffect(() => {
+    if (!open || !scenarioDraftSet || !assetStored || !tableRunStorageKey) return undefined;
+    const retained = readTableRunSession(tableRunStorageKey);
+    if (!retained.activeBatchId && !retained.baselineBatchId) return undefined;
+    let cancelled = false;
+    setBaselineBatchId(retained.baselineBatchId);
+    setTableBaselineSummary(retained.baselineSummary);
+    if (!retained.activeBatchId) return undefined;
+    fetchTableSuiteRun(retained.activeBatchId)
+      .then((batch) => {
+        if (cancelled || batch.scenarioDraftSetId !== scenarioDraftSet.scenarioDraftSetId) return;
+        const exactCurrent = batch.scenarioDraftSetRevision === scenarioDraftSet.revision
+          && batch.contractFingerprint === scenarioDraftSet.contractFingerprint
+          && batch.target.fingerprint === scenarioDraftSet.target.fingerprint;
+        if (exactCurrent) adoptTableBatch(batch);
+        else if (tableSuiteBatchIsCompleteBaseline(batch)) {
+          const summary = createTableSuiteBaselineSummary(batch, scenarioDraftSet);
+          setBaselineBatchId(batch.batchId);
+          setTableBaselineSummary(summary);
+          writeTableRunSession(tableRunStorageKey, '', batch.batchId, summary);
+        }
+      })
+      .catch((cause: unknown) => {
+        if (cancelled) return;
+        if (cause instanceof BlogeApiRequestError && cause.status === 404) {
+          clearTableRunSession(tableRunStorageKey);
+          return;
+        }
+        setTableRunError(errorMessage(cause));
+      });
+    return () => { cancelled = true; };
+  }, [
+    assetStored,
+    open,
+    scenarioDraftSet?.contractFingerprint,
+    scenarioDraftSet?.revision,
+    scenarioDraftSet?.scenarioDraftSetId,
+    scenarioDraftSet?.target.fingerprint,
+    tableRunStorageKey,
+  ]);
+
+  useEffect(() => {
+    if (!tableBatch || tableSuiteBatchTerminal(tableBatch)) return undefined;
+    let cancelled = false;
+    const timer = window.setTimeout(() => {
+      fetchTableSuiteRunEvents(tableBatch.batchId, tableBatch.revision)
+        .then((delta) => {
+          if (cancelled) return;
+          if (delta.resetRequired) {
+            void fetchTableSuiteRun(tableBatch.batchId)
+              .then((batch) => { if (!cancelled) adoptTableBatch(batch); })
+              .catch((cause: unknown) => { if (!cancelled) setTableRunError(errorMessage(cause)); });
+            return;
+          }
+          adoptTableBatch(applyTableSuiteRunDelta(tableBatch, delta));
+        })
+        .catch((cause: unknown) => {
+          if (!cancelled) setTableRunError(errorMessage(cause));
+        });
+    }, 350);
+    return () => {
+      cancelled = true;
+      window.clearTimeout(timer);
+    };
+  }, [tableBatch?.batchId, tableBatch?.revision, tableBatch?.status]);
 
   useEffect(() => {
     if (!scenarioDraftSet) {
@@ -623,15 +740,49 @@ export default function ContractScenarioWorkspace({
     if (selectedScenario) void runScenarioClosure([selectedScenario.scenarioId], true);
   };
 
-  const runTableSelection = (mode: ScenarioRunSelectionMode) => {
-    if (!tableProjection) return;
-    const exact = resolveExactScenarioRunSelection(
-      tableProjection,
-      tableSelection,
-      mode,
-      previousRunCaseIds,
-    );
-    void runScenarioClosure(exact.caseIds, false);
+  const runTableSelection = async (mode: ScenarioRunSelectionMode) => {
+    if (!scenarioDraftSet || !contract || !assetStored || !current) return;
+    if (['FAILED', 'CHANGED', 'AFFECTED'].includes(mode) && !baselineBatchId) {
+      setTableRunError('Run all once to create the complete baseline required for differential selection.');
+      return;
+    }
+    setTableRunError('');
+    try {
+      const command = createTableSuiteRunCommand(
+        graphDraft,
+        contract,
+        scenarioDraftSet,
+        mode,
+        tableSelection.selectedCaseIds,
+        baselineBatchId,
+      );
+      adoptTableBatch(await submitTableSuiteRun(command));
+    } catch (cause: unknown) {
+      setTableRunError(cause instanceof BlogeApiRequestError
+        && cause.detail.includes('RG.TABLE_RUN.SELECTION_EMPTY')
+        ? 'No cases match this differential selection. The complete baseline is already current.'
+        : errorMessage(cause));
+    }
+  };
+
+  const cancelTableBatch = async () => {
+    if (!tableBatch || tableSuiteBatchTerminal(tableBatch)) return;
+    setTableRunError('');
+    try {
+      adoptTableBatch(await cancelTableSuiteRun(tableBatch.batchId));
+    } catch (cause: unknown) {
+      setTableRunError(errorMessage(cause));
+    }
+  };
+
+  const retryFailedTableBatch = async () => {
+    if (!tableBatch || tableBatch.counts.failed === 0) return;
+    setTableRunError('');
+    try {
+      adoptTableBatch(await retryFailedTableSuiteRun(tableBatch.batchId));
+    } catch (cause: unknown) {
+      setTableRunError(errorMessage(cause));
+    }
   };
 
   const applyAdvancedJson = () => {
@@ -1026,6 +1177,10 @@ export default function ContractScenarioWorkspace({
               tableSelection={tableSelection}
               previousRunCaseIds={previousRunCaseIds}
               runningCaseIds={runningCaseIds}
+              tableBatch={tableBatch}
+              tableRunError={tableRunError}
+              baselineAvailable={Boolean(baselineBatchId && tableBaselineSummary)}
+              differentialCounts={differentialCounts}
               importDisabled={!assetStored || !current}
               importDisabledReason={!assetStored
                 ? `Save ${targetLabel} before importing cases.`
@@ -1045,6 +1200,8 @@ export default function ContractScenarioWorkspace({
               onTableSelectionChange={setTableSelection}
               onTableCellEdit={updateScenarioFromMatrix}
               onRunTableSelection={runTableSelection}
+              onCancelTableRun={cancelTableBatch}
+              onRetryFailedTableRun={retryFailedTableBatch}
             />
             <ScenarioImportWorkbench
               open={scenarioImportOpen}
@@ -1165,6 +1322,10 @@ interface ScenarioTabProps {
   tableSelection: ScenarioTableSelection;
   previousRunCaseIds: string[];
   runningCaseIds: string[];
+  tableBatch: TableSuiteRunBatch | null;
+  tableRunError: string;
+  baselineAvailable: boolean;
+  differentialCounts: TableSuiteDifferentialCounts | null;
   importDisabled: boolean;
   importDisabledReason: string;
   compileMessages: string[];
@@ -1182,6 +1343,8 @@ interface ScenarioTabProps {
   onTableSelectionChange: (selection: ScenarioTableSelection) => void;
   onTableCellEdit: (caseId: string, column: ScenarioTableColumn, value: unknown) => void;
   onRunTableSelection: (mode: ScenarioRunSelectionMode) => void;
+  onCancelTableRun: () => void;
+  onRetryFailedTableRun: () => void;
 }
 
 function ScenarioTab({
@@ -1196,6 +1359,10 @@ function ScenarioTab({
   tableSelection,
   previousRunCaseIds,
   runningCaseIds,
+  tableBatch,
+  tableRunError,
+  baselineAvailable,
+  differentialCounts,
   importDisabled,
   importDisabledReason,
   compileMessages,
@@ -1213,6 +1380,8 @@ function ScenarioTab({
   onTableSelectionChange,
   onTableCellEdit,
   onRunTableSelection,
+  onCancelTableRun,
+  onRetryFailedTableRun,
 }: ScenarioTabProps) {
   return (
     <div className="scenario-table-workspace">
@@ -1246,7 +1415,11 @@ function ScenarioTab({
           selection={tableSelection}
           previousRunCaseIds={previousRunCaseIds}
           runningCaseIds={runningCaseIds}
-          disabled={running}
+          batch={tableBatch}
+          runError={tableRunError}
+          baselineAvailable={baselineAvailable}
+          differentialCounts={differentialCounts}
+          disabled={running || importDisabled || Boolean(tableBatch && !tableSuiteBatchTerminal(tableBatch))}
           importDisabled={importDisabled}
           importDisabledReason={importDisabledReason}
           onSelectionChange={onTableSelectionChange}
@@ -1261,6 +1434,8 @@ function ScenarioTab({
           }}
           onImportCases={onImportCases}
           onRunSelection={onRunTableSelection}
+          onCancelRun={onCancelTableRun}
+          onRetryFailed={onRetryFailedTableRun}
         />
       ) : (
       <div className="scenario-workbench">
@@ -2109,4 +2284,61 @@ function errorMessage(cause: unknown): string {
 
 function isScenarioNotFound(cause: unknown): boolean {
   return cause instanceof BlogeApiRequestError && cause.status === 404;
+}
+
+interface TableRunSession {
+  activeBatchId: string;
+  baselineBatchId: string;
+  baselineSummary: TableSuiteBaselineSummary | null;
+}
+
+function readTableRunSession(key: string): TableRunSession {
+  if (!key || typeof sessionStorage === 'undefined') {
+    return { activeBatchId: '', baselineBatchId: '', baselineSummary: null };
+  }
+  try {
+    const parsed = JSON.parse(sessionStorage.getItem(key) ?? '{}') as Partial<TableRunSession>;
+    return {
+      activeBatchId: parsed.activeBatchId ?? '',
+      baselineBatchId: parsed.baselineBatchId ?? '',
+      baselineSummary: validBaselineSummary(parsed.baselineSummary) ? parsed.baselineSummary : null,
+    };
+  } catch {
+    return { activeBatchId: '', baselineBatchId: '', baselineSummary: null };
+  }
+}
+
+function writeTableRunSession(
+  key: string,
+  activeBatchId: string,
+  baselineBatchId: string,
+  baselineSummary: TableSuiteBaselineSummary | null,
+): void {
+  if (!key || typeof sessionStorage === 'undefined') return;
+  try {
+    sessionStorage.setItem(key, JSON.stringify({ activeBatchId, baselineBatchId, baselineSummary }));
+  } catch {
+    // The durable batch remains recoverable by batchId even when browser storage is unavailable.
+  }
+}
+
+function validBaselineSummary(value: unknown): value is TableSuiteBaselineSummary {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return false;
+  const summary = value as Partial<TableSuiteBaselineSummary>;
+  return typeof summary.batchId === 'string'
+    && Boolean(summary.target && typeof summary.target === 'object')
+    && typeof summary.contractFingerprint === 'string'
+    && Boolean(summary.caseFingerprints && typeof summary.caseFingerprints === 'object')
+    && Object.values(summary.caseFingerprints ?? {}).every((entry) => typeof entry === 'string')
+    && Array.isArray(summary.failedCaseIds)
+    && summary.failedCaseIds.every((entry) => typeof entry === 'string');
+}
+
+function clearTableRunSession(key: string): void {
+  if (!key || typeof sessionStorage === 'undefined') return;
+  try {
+    sessionStorage.removeItem(key);
+  } catch {
+    // A blocked storage API must not block the authoring workspace.
+  }
 }

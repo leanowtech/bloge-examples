@@ -1,6 +1,6 @@
 # Resource Gateway 表格驱动测试产品基准、补强设计与实施计划
 
-> 状态：Implementing，Stage 0–2 complete，Stage 3 next
+> 状态：Implementing，Stage 0–3 complete，Stage 4 next
 >
 > 日期：2026-08-04
 >
@@ -808,6 +808,12 @@ author/scenarios/table/
 ### Stage 3：精确批量运行与行级 Evidence
 
 > 周期：2 周
+>
+> 实施状态（2026-08-04）：complete。Matrix 已切换到服务端权威 batch；浏览器只提交冻结的
+> Graph/Contract/Scenario/selection closure 并消费 payload-free delta。`all / selected / failed /
+> changed / affected`、preflight、hard timeout、failure budget、cancel、append-only retry、flaky、
+> complete-baseline compare、partial promotion 阻断与刷新恢复均已落地。真实浏览器验证还修复了
+> control-plane purpose 漂移、跨 JVM 数字类型误判相等、空差分请求暴露 400 三个系统性缺陷。
 
 工作项：
 

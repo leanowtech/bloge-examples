@@ -96,11 +96,18 @@ import com.leanowtech.bloge.gateway.authoring.scenario.DatabaseScenarioImportRec
 import com.leanowtech.bloge.gateway.authoring.scenario.ScenarioImportMaterializationService;
 import com.leanowtech.bloge.gateway.authoring.scenario.ScenarioImportReceiptRepository;
 import com.leanowtech.bloge.gateway.authoring.scenario.ScenarioDraftSetRepository;
+import com.leanowtech.bloge.gateway.authoring.scenario.DatabaseTableSuiteRunRepository;
+import com.leanowtech.bloge.gateway.authoring.scenario.ScenarioSimulationCompiler;
+import com.leanowtech.bloge.gateway.authoring.scenario.SimulationTableSuiteCaseRunner;
+import com.leanowtech.bloge.gateway.authoring.scenario.TableSuiteCaseRunner;
+import com.leanowtech.bloge.gateway.authoring.scenario.TableSuiteRunRepository;
+import com.leanowtech.bloge.gateway.authoring.scenario.TableSuiteRunService;
 import com.leanowtech.bloge.gateway.authoring.scenario.ScenarioPublicationRepository;
 import com.leanowtech.bloge.gateway.authoring.scenario.ScenarioPublicationService;
 import com.leanowtech.bloge.gateway.authoring.scenario.ScenarioValidationService;
 import com.leanowtech.bloge.gateway.authoring.scenario.TestingControlPlaneScenarioGovernedRegistryGateway;
 import com.leanowtech.bloge.gateway.visual.contract.ContractDraftProjectionService;
+import com.leanowtech.bloge.gateway.visual.simulation.VisualGraphSimulationService;
 import com.leanowtech.bloge.gateway.testing.api.TestExecutionApiService;
 import com.leanowtech.bloge.gateway.testing.api.TestSuiteRegistryService;
 import com.leanowtech.bloge.gateway.example.DatabaseDynamicRunControlRepository;
@@ -575,6 +582,41 @@ public class GatewayConfiguration {
             ScenarioImportReceiptRepository receipts) {
         return new ScenarioImportMaterializationService(
                 objectMapper, authoring, receipts, Clock.systemUTC());
+    }
+
+    /** Durable payload-free store for exact Scenario table batches. */
+    @Bean
+    @ConditionalOnMissingBean
+    public TableSuiteRunRepository tableSuiteRunRepository(
+            JdbcTemplate jdbc,
+            ObjectMapper objectMapper) {
+        return new DatabaseTableSuiteRunRepository(jdbc, objectMapper);
+    }
+
+    /** Exact compile-and-simulate adapter for one table row. */
+    @Bean
+    @ConditionalOnMissingBean
+    @Profile("!production & (test | staging)")
+    public TableSuiteCaseRunner tableSuiteCaseRunner(
+            ScenarioSimulationCompiler compiler,
+            VisualGraphSimulationService simulation,
+            ObjectMapper objectMapper) {
+        return new SimulationTableSuiteCaseRunner(
+                compiler, simulation, objectMapper, Clock.systemUTC());
+    }
+
+    /** Server-authoritative asynchronous table batch orchestrator. */
+    @Bean
+    @ConditionalOnMissingBean
+    @Profile("!production & (test | staging)")
+    public TableSuiteRunService tableSuiteRunService(
+            TableSuiteRunRepository repository,
+            TableSuiteCaseRunner runner,
+            ObjectMapper objectMapper) {
+        return new TableSuiteRunService(repository, runner, objectMapper, Clock.systemUTC(),
+                command -> Thread.ofVirtual()
+                        .name("resource-gateway-table-suite-run")
+                        .start(command));
     }
 
     /**

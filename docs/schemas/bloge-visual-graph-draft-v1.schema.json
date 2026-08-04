@@ -1,0 +1,151 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://leanowtech.com/schemas/bloge-visual-graph-draft-v1.schema.json",
+  "title": "BLOGE Visual Graph Draft v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schemaVersion", "draftId", "revision", "graphName", "nodes", "edges", "output"],
+  "properties": {
+    "schemaVersion": { "const": "bloge.visualGraphDraft.v1" },
+    "draftId": { "type": "string", "minLength": 1, "maxLength": 256 },
+    "revision": { "type": "integer", "minimum": 1 },
+    "graphName": { "type": "string", "minLength": 1, "maxLength": 256 },
+    "tenantId": { "type": "string", "maxLength": 256 },
+    "namespace": { "type": "string", "maxLength": 256 },
+    "environment": { "type": "string", "maxLength": 128 },
+    "status": { "type": "string", "maxLength": 64 },
+    "inputSchema": { "$ref": "#/$defs/schemaEnvelope" },
+    "outputSchema": { "$ref": "#/$defs/schemaEnvelope" },
+    "nodes": { "type": "array", "maxItems": 10000, "items": { "$ref": "#/$defs/node" } },
+    "edges": { "type": "array", "maxItems": 50000, "items": { "$ref": "#/$defs/edge" } },
+    "visualLayout": { "type": "object" },
+    "nodeFixtures": {
+      "type": "object",
+      "maxProperties": 10000,
+      "additionalProperties": { "$ref": "#/$defs/nodeFixture" }
+    },
+    "output": { "$ref": "#/$defs/output" },
+    "operatorFingerprints": {
+      "type": "object",
+      "maxProperties": 10000,
+      "additionalProperties": { "$ref": "#/$defs/fingerprint" }
+    },
+    "operatorSnapshots": { "type": "object", "maxProperties": 10000 },
+    "revisionMetadata": { "$ref": "#/$defs/revisionMetadata" }
+  },
+  "$defs": {
+    "fingerprint": { "type": "string", "pattern": "^sha256:[0-9a-f]{64}$" },
+    "schemaEnvelope": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["format", "version", "schema"],
+      "properties": {
+        "format": { "type": "string", "maxLength": 64 },
+        "version": { "type": "string", "maxLength": 64 },
+        "schema": { "type": "object" }
+      }
+    },
+    "node": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "operatorRef", "label", "inputs", "config", "position"],
+      "properties": {
+        "id": { "type": "string", "minLength": 1, "maxLength": 256 },
+        "operatorRef": { "type": "string", "minLength": 1, "maxLength": 512 },
+        "label": { "type": "string", "maxLength": 512 },
+        "inputs": {
+          "type": "object",
+          "maxProperties": 1000,
+          "additionalProperties": { "$ref": "#/$defs/binding" }
+        },
+        "config": { "type": "object" },
+        "position": { "$ref": "#/$defs/position" }
+      }
+    },
+    "binding": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["kind", "path", "nodeId", "sourcePort", "targetPort", "targetPath", "expr", "fields", "targetUnionBranch", "targetUnionBranches"],
+      "properties": {
+        "kind": { "enum": ["constant", "contextPath", "nodePath", "expression", "objectTemplate"] },
+        "value": true,
+        "path": { "type": "string", "maxLength": 4096 },
+        "nodeId": { "type": "string", "maxLength": 256 },
+        "sourcePort": { "type": "string", "maxLength": 256 },
+        "targetPort": { "type": "string", "maxLength": 256 },
+        "targetPath": { "type": "string", "maxLength": 4096 },
+        "expr": { "type": "string", "maxLength": 32768 },
+        "fields": { "type": "object", "additionalProperties": { "$ref": "#/$defs/binding" } },
+        "targetUnionBranch": { "$ref": "#/$defs/unionBranch" },
+        "targetUnionBranches": { "type": "object", "additionalProperties": { "$ref": "#/$defs/unionBranch" } }
+      }
+    },
+    "unionBranch": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["keyword", "index"],
+      "properties": {
+        "keyword": { "enum": ["", "oneOf", "anyOf"] },
+        "index": { "type": "integer", "minimum": -1 }
+      }
+    },
+    "position": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["x", "y"],
+      "properties": { "x": { "type": "number" }, "y": { "type": "number" } }
+    },
+    "edge": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "kind", "source", "target", "condition"],
+      "properties": {
+        "id": { "type": "string", "maxLength": 512 },
+        "kind": { "enum": ["data", "dependency", "route"] },
+        "source": { "$ref": "#/$defs/endpoint" },
+        "target": { "$ref": "#/$defs/endpoint" },
+        "condition": { "type": "string", "maxLength": 32768 }
+      }
+    },
+    "endpoint": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["nodeId", "port", "path"],
+      "properties": {
+        "nodeId": { "type": "string", "maxLength": 256 },
+        "port": { "type": "string", "maxLength": 256 },
+        "path": { "type": "string", "maxLength": 4096 }
+      }
+    },
+    "nodeFixture": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["output", "expectedInput"],
+      "properties": { "output": true, "expectedInput": true }
+    },
+    "output": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["nodeId", "path"],
+      "properties": {
+        "nodeId": { "type": "string", "maxLength": 256 },
+        "path": { "type": "string", "maxLength": 4096 }
+      }
+    },
+    "revisionMetadata": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["createdAt", "createdBy", "updatedAt", "updatedBy", "changeSource", "changeSummary", "changedPaths", "reason"],
+      "properties": {
+        "createdAt": { "type": "string", "maxLength": 64 },
+        "createdBy": { "type": "string", "maxLength": 256 },
+        "updatedAt": { "type": "string", "maxLength": 64 },
+        "updatedBy": { "type": "string", "maxLength": 256 },
+        "changeSource": { "type": "string", "maxLength": 256 },
+        "changeSummary": { "type": "string", "maxLength": 4096 },
+        "changedPaths": { "type": "array", "maxItems": 10000, "items": { "type": "string", "maxLength": 4096 } },
+        "reason": { "type": "string", "maxLength": 4096 }
+      }
+    }
+  }
+}

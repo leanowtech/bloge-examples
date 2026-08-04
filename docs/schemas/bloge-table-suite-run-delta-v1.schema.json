@@ -1,0 +1,22 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://leanowtech.com/schemas/bloge-table-suite-run-delta-v1.schema.json",
+  "title": "BLOGE Table Suite Run Delta v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schemaVersion", "batchId", "revision", "status", "counts", "promotion", "resetRequired", "events"],
+  "properties": {
+    "schemaVersion": { "const": "bloge.tableSuiteRunDelta.v1" },
+    "batchId": { "type": "string", "minLength": 1, "maxLength": 96 },
+    "revision": { "type": "integer", "minimum": 1 },
+    "status": { "$ref": "bloge-table-suite-run-batch-v1.schema.json#/$defs/batchStatus" },
+    "counts": { "$ref": "bloge-table-suite-run-batch-v1.schema.json#/$defs/counts" },
+    "promotion": { "$ref": "bloge-table-suite-run-batch-v1.schema.json#/$defs/promotion" },
+    "resetRequired": { "type": "boolean" },
+    "events": {
+      "type": "array",
+      "maxItems": 5000,
+      "items": { "$ref": "bloge-table-suite-run-batch-v1.schema.json#/$defs/event" }
+    }
+  }
+}

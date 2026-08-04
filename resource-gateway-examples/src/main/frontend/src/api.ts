@@ -81,6 +81,11 @@ import type {
   ScenarioImportExecutionRequest,
   ScenarioMaterializationResult,
 } from './contract-scenario/import/scenarioImportModel';
+import type {
+  TableSuiteRunBatch,
+  TableSuiteRunCommand,
+  TableSuiteRunDelta,
+} from './contract-scenario/table/tableSuiteRunModel';
 
 /** Structured transport failure that lets optional product surfaces distinguish capability absence. */
 export class BlogeApiRequestError extends Error {
@@ -803,6 +808,61 @@ export async function materializeScenarioImportOnServer(
       method: 'POST',
       headers: operatorTestingHeaders('TEST_SUITE_WRITE', true),
       body: JSON.stringify(request),
+    }),
+  );
+}
+
+/** Admits one exact server-authoritative Scenario Matrix selection. */
+export async function submitTableSuiteRun(
+  command: TableSuiteRunCommand,
+): Promise<TableSuiteRunBatch> {
+  return readTestingJson<TableSuiteRunBatch>(
+    await sendRequest('/api/visual/table-suite-runs', {
+      method: 'POST',
+      headers: operatorTestingHeaders('TEST_EXECUTION', true),
+      body: JSON.stringify(command),
+    }),
+  );
+}
+
+/** Restores a durable payload-free Matrix batch after refresh or navigation. */
+export async function fetchTableSuiteRun(batchId: string): Promise<TableSuiteRunBatch> {
+  return readTestingJson<TableSuiteRunBatch>(
+    await sendRequest(`/api/visual/table-suite-runs/${encodeURIComponent(batchId)}`, {
+      headers: operatorTestingHeaders('TEST_EXECUTION'),
+    }),
+  );
+}
+
+/** Polls only durable Matrix transitions newer than the observed revision. */
+export async function fetchTableSuiteRunEvents(
+  batchId: string,
+  afterRevision: number,
+): Promise<TableSuiteRunDelta> {
+  const query = new URLSearchParams({ afterRevision: String(afterRevision) });
+  return readTestingJson<TableSuiteRunDelta>(
+    await sendRequest(`/api/visual/table-suite-runs/${encodeURIComponent(batchId)}/events?${query}`, {
+      headers: operatorTestingHeaders('TEST_EXECUTION'),
+    }),
+  );
+}
+
+/** Requests cooperative cancellation without deleting completed row attempts. */
+export async function cancelTableSuiteRun(batchId: string): Promise<TableSuiteRunBatch> {
+  return readTestingJson<TableSuiteRunBatch>(
+    await sendRequest(`/api/visual/table-suite-runs/${encodeURIComponent(batchId)}/cancel`, {
+      method: 'POST',
+      headers: operatorTestingHeaders('TEST_EXECUTION'),
+    }),
+  );
+}
+
+/** Appends attempts for failed rows while preserving their first failure. */
+export async function retryFailedTableSuiteRun(batchId: string): Promise<TableSuiteRunBatch> {
+  return readTestingJson<TableSuiteRunBatch>(
+    await sendRequest(`/api/visual/table-suite-runs/${encodeURIComponent(batchId)}/retry-failed`, {
+      method: 'POST',
+      headers: operatorTestingHeaders('TEST_EXECUTION'),
     }),
   );
 }

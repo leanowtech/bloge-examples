@@ -72,6 +72,21 @@ describe('ScenarioMatrixSurface', () => {
     expect(button('Import cases').title).toBe('Save Graph before importing cases.');
   });
 
+  it('shows exact differential counts and prevents empty changed runs', async () => {
+    const onRunSelection = vi.fn();
+    await render(5, {
+      baselineAvailable: true,
+      differentialCounts: { failed: 1, changed: 0, affected: 1, targetChanged: false },
+      onRunSelection,
+    });
+
+    expect(button('Run changed (0)').disabled).toBe(true);
+    expect(button('Run changed (0)').title).toContain('No cases changed');
+    expect(button('Run affected (1)').disabled).toBe(false);
+    await click(button('Run affected (1)'));
+    expect(onRunSelection).toHaveBeenCalledWith('AFFECTED');
+  });
+
   async function render(size: 5 | 50 | 500, overrides: Partial<Parameters<typeof ScenarioMatrixSurface>[0]> = {}) {
     const projection = buildScenarioTableProjection(tableDrivenScenarioBaseline(size));
     const props: Parameters<typeof ScenarioMatrixSurface>[0] = {

@@ -2,6 +2,7 @@ import { Fragment, useEffect, useMemo, useState } from 'react';
 
 import type { ScenarioCaseType } from '../domain';
 import type { TableCaseVerdictPresentation } from '../tableDrivenTestStatus';
+import type { TableSuiteDifferentialCounts, TableSuiteRunBatch } from './tableSuiteRunModel';
 import {
   filterAndSortScenarioRows,
   selectVisibleScenarios,
@@ -18,6 +19,10 @@ interface ScenarioMatrixSurfaceProps {
   selection: ScenarioTableSelection;
   previousRunCaseIds: string[];
   runningCaseIds: string[];
+  batch?: TableSuiteRunBatch | null;
+  runError?: string;
+  baselineAvailable?: boolean;
+  differentialCounts?: TableSuiteDifferentialCounts | null;
   disabled?: boolean;
   importDisabled?: boolean;
   importDisabledReason?: string;
@@ -27,6 +32,8 @@ interface ScenarioMatrixSurfaceProps {
   onAddCase: () => void;
   onImportCases?: () => void;
   onRunSelection: (mode: ScenarioRunSelectionMode) => void;
+  onCancelRun?: () => void;
+  onRetryFailed?: () => void;
 }
 
 const CASE_TYPES: ScenarioCaseType[] = ['GOLDEN', 'NEGATIVE', 'BOUNDARY', 'REGRESSION', 'PROPERTY'];
@@ -40,6 +47,10 @@ export default function ScenarioMatrixSurface({
   selection,
   previousRunCaseIds,
   runningCaseIds,
+  batch = null,
+  runError = '',
+  baselineAvailable = false,
+  differentialCounts = null,
   disabled = false,
   importDisabled = false,
   importDisabledReason = '',
@@ -49,6 +60,8 @@ export default function ScenarioMatrixSurface({
   onAddCase,
   onImportCases,
   onRunSelection,
+  onCancelRun,
+  onRetryFailed,
 }: ScenarioMatrixSurfaceProps) {
   const [query, setQuery] = useState('');
   const [caseType, setCaseType] = useState<ScenarioCaseType | ''>('');
@@ -87,6 +100,9 @@ export default function ScenarioMatrixSurface({
   const failedFromPreviousRun = projection.rows.filter((row) => (
     previousRunCaseIds.includes(row.caseId) && row.presentation.tone === 'failed'
   )).length;
+  const failedCount = differentialCounts?.failed ?? failedFromPreviousRun;
+  const changedCount = differentialCounts?.changed ?? 0;
+  const affectedCount = differentialCounts?.affected ?? 0;
 
   return (
     <section className="scenario-matrix" aria-label="Scenario test matrix" data-testid="scenario-matrix">
@@ -182,6 +198,45 @@ export default function ScenarioMatrixSurface({
         <span><strong>{rows.length} / {filteredRows.length}</strong> shown</span>
         <span><strong>{selection.selectedCaseIds.length}</strong> selected</span>
         <code title={projection.projectionFingerprint}>{shortFingerprint(projection.projectionFingerprint)}</code>
+      </div>
+
+      <div className="scenario-matrix-run-stack">
+        {batch && (
+          <section className="scenario-matrix-run" data-status={batch.status} aria-label="Server batch status">
+          <header>
+            <div>
+              <span>Server batch</span>
+              <strong>{batchStatusLabel(batch.status)}</strong>
+              <code title={batch.batchId}>{shortBatchId(batch.batchId)}</code>
+            </div>
+            <div className="scenario-matrix-run-actions">
+              {!isTerminalBatch(batch) && onCancelRun && (
+                <button type="button" className="secondary compact" onClick={onCancelRun}>
+                  Cancel
+                </button>
+              )}
+              {isTerminalBatch(batch) && batch.counts.failed > 0 && onRetryFailed && (
+                <button type="button" className="secondary compact" onClick={onRetryFailed}>
+                  Retry failed
+                </button>
+              )}
+            </div>
+          </header>
+          <dl>
+            <div><dt>Closure</dt><dd>{batch.selection.caseIds.length} {batch.selection.mode.toLocaleLowerCase()}</dd></div>
+            <div><dt>Passed</dt><dd>{batch.counts.succeeded}</dd></div>
+            <div><dt>Failed</dt><dd>{batch.counts.failed}</dd></div>
+            <div><dt>Waiting</dt><dd>{batch.counts.queued + batch.counts.running}</dd></div>
+            <div>
+              <dt>Promotion</dt>
+              <dd data-eligible={batch.promotion.eligible} title={batch.promotion.reason}>
+                {batch.promotion.eligible ? 'Eligible' : promotionLabel(batch)}
+              </dd>
+            </div>
+          </dl>
+          </section>
+        )}
+        {runError && <div className="scenario-matrix-run-error" role="alert">{runError}</div>}
       </div>
 
       <div className="scenario-matrix-scroll" tabIndex={0} aria-label="Scrollable Scenario matrix">
@@ -318,10 +373,34 @@ export default function ScenarioMatrixSurface({
           <button
             type="button"
             className="secondary"
-            disabled={disabled || failedFromPreviousRun === 0}
+            disabled={disabled || !baselineAvailable || failedCount === 0}
             onClick={() => onRunSelection('FAILED')}
           >
-            Run failed ({failedFromPreviousRun})
+            Run failed ({failedCount})
+          </button>
+          <button
+            type="button"
+            className="secondary"
+            disabled={disabled || !baselineAvailable || changedCount === 0}
+            onClick={() => onRunSelection('CHANGED')}
+            title={!baselineAvailable
+              ? 'Run all once to create a complete baseline'
+              : changedCount === 0 ? 'No cases changed since the complete baseline'
+                : 'Run cases changed since the complete baseline'}
+          >
+            Run changed ({changedCount})
+          </button>
+          <button
+            type="button"
+            className="secondary"
+            disabled={disabled || !baselineAvailable || affectedCount === 0}
+            onClick={() => onRunSelection('AFFECTED')}
+            title={!baselineAvailable
+              ? 'Run all once to create a complete baseline'
+              : affectedCount === 0 ? 'No cases are affected relative to the complete baseline'
+                : 'Run changed, failed, or target-affected cases'}
+          >
+            Run affected ({affectedCount})
           </button>
           <button
             type="button"
@@ -441,4 +520,29 @@ function capitalize(value: string): string {
 
 function shortFingerprint(value: string): string {
   return value.length > 18 ? `${value.slice(0, 15)}...` : value;
+}
+
+function shortBatchId(value: string): string {
+  return value.length > 22 ? `${value.slice(0, 19)}...` : value;
+}
+
+function isTerminalBatch(batch: TableSuiteRunBatch): boolean {
+  return ['SUCCEEDED', 'FAILED', 'CANCELLED', 'BUDGET_STOPPED'].includes(batch.status);
+}
+
+function batchStatusLabel(status: TableSuiteRunBatch['status']): string {
+  switch (status) {
+    case 'QUEUED': return 'Queued';
+    case 'RUNNING': return 'Running';
+    case 'SUCCEEDED': return 'Succeeded';
+    case 'FAILED': return 'Failed';
+    case 'CANCELLED': return 'Cancelled';
+    case 'BUDGET_STOPPED': return 'Stopped by budget';
+  }
+}
+
+function promotionLabel(batch: TableSuiteRunBatch): string {
+  if (!isTerminalBatch(batch)) return 'Pending';
+  if (!batch.selection.fullSuite) return 'Partial only';
+  return 'Blocked';
 }

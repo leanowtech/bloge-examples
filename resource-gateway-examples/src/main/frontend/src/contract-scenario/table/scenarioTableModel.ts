@@ -25,7 +25,7 @@ export interface ScenarioTableColumn {
     | { kind: 'GIVEN'; path: string[] }
     | { kind: 'DEPENDENCY'; coordinate: string }
     | { kind: 'ASSERTION'; coordinate: string }
-    | { kind: 'EVIDENCE'; axis: 'VERDICT' | 'EXECUTION' | 'ASSERTIONS' | 'FRESHNESS' | 'PROOF' | 'DURATION' };
+    | { kind: 'EVIDENCE'; axis: 'VERDICT' | 'EXECUTION' | 'ASSERTIONS' | 'FRESHNESS' | 'PROOF' | 'DURATION' | 'ATTEMPTS' | 'BASELINE' };
 }
 
 export interface TableCaseEvidenceProjection extends TableCaseVerdict {
@@ -33,6 +33,8 @@ export interface TableCaseEvidenceProjection extends TableCaseVerdict {
   runId: string;
   attempt: number;
   durationMs: number | null;
+  flaky?: boolean;
+  baselineOutcome?: 'NONE' | 'SAME' | 'IMPROVED' | 'REGRESSED' | 'CHANGED_INPUT' | 'NEW';
   firstFailure: {
     category: string;
     target: string;
@@ -78,7 +80,7 @@ export interface ScenarioTableSelection {
   selectedCaseIds: string[];
 }
 
-export type ScenarioRunSelectionMode = 'ALL' | 'SELECTED' | 'FAILED';
+export type ScenarioRunSelectionMode = 'ALL' | 'SELECTED' | 'FAILED' | 'CHANGED' | 'AFFECTED';
 
 export interface ExactScenarioRunSelection {
   mode: ScenarioRunSelectionMode;
@@ -99,6 +101,8 @@ const PROOF_COLUMNS: ScenarioTableColumn[] = [
   evidenceColumn('proof:freshness', 'Freshness', 'FRESHNESS'),
   evidenceColumn('proof:strength', 'Proof', 'PROOF'),
   evidenceColumn('proof:duration', 'Duration', 'DURATION'),
+  evidenceColumn('proof:attempts', 'Attempts', 'ATTEMPTS'),
+  evidenceColumn('proof:baseline', 'Baseline', 'BASELINE'),
 ];
 
 export function buildScenarioTableProjection(
@@ -158,6 +162,11 @@ export function buildScenarioTableProjection(
     rows,
     projectionFingerprint: `fnv1a32:${fnv1a32(canonicalJson(fingerprintMaterial))}`,
   };
+}
+
+/** Payload-free browser coordinate used to compare a current case with its retained baseline. */
+export function scenarioTableCaseFingerprint(scenario: ScenarioDraft): string {
+  return `fnv1a32:${fnv1a32(canonicalJson(scenario))}`;
 }
 
 export function filterAndSortScenarioRows(
@@ -221,7 +230,8 @@ export function resolveExactScenarioRunSelection(
     .filter((row) => {
       if (mode === 'ALL') return true;
       if (mode === 'SELECTED') return selected.has(row.caseId);
-      return previous.has(row.caseId) && row.presentation.tone === 'failed';
+      if (mode === 'FAILED') return previous.has(row.caseId) && row.presentation.tone === 'failed';
+      return false;
     })
     .map((row) => row.caseId);
   return {
@@ -409,6 +419,12 @@ function evidenceValue(evidence: TableCaseEvidenceProjection, axis: Extract<Scen
     case 'FRESHNESS': return evidence.freshness;
     case 'PROOF': return evidence.proofStrength;
     case 'DURATION': return evidence.durationMs === null ? '' : `${evidence.durationMs} ms`;
+    case 'ATTEMPTS': return evidence.attempt || '';
+    case 'BASELINE': return evidence.flaky
+      ? 'FLAKY'
+      : evidence.baselineOutcome && evidence.baselineOutcome !== 'NONE'
+        ? evidence.baselineOutcome.replace('_', ' ')
+        : '';
   }
 }
 

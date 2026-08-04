@@ -289,6 +289,15 @@ public record IntegrationCapabilities(
                         .ScenarioImportMaterializationResult.SCHEMA_VERSION));
         objects.put("scenarioImportMaterializationReceipt", List.of(
                 "bloge.scenarioMaterializationReceipt.v1"));
+        objects.put("tableSuiteRunCommand", List.of(
+                com.leanowtech.bloge.gateway.authoring.scenario
+                        .TableSuiteRunCommand.SCHEMA_VERSION));
+        objects.put("tableSuiteRunBatch", List.of(
+                com.leanowtech.bloge.gateway.authoring.scenario
+                        .TableSuiteRunBatch.SCHEMA_VERSION));
+        objects.put("tableSuiteRunDelta", List.of(
+                com.leanowtech.bloge.gateway.authoring.scenario
+                        .TableSuiteRunBatch.Delta.SCHEMA_VERSION));
         objects.put("capabilitySnapshot", List.of(
                 com.leanowtech.bloge.gateway.integration.mirror.CapabilitySnapshot.SCHEMA_VERSION));
         objects.put("capabilityClosure", List.of(
@@ -862,6 +871,8 @@ public record IntegrationCapabilities(
         features.put("draftExportDependencyProfile", true);
         features.put("scenarioImportMaterializationProtocol", true);
         features.put("scenarioImportMaterializationApi", testExecutionEndpointEnabled);
+        features.put("tableSuiteRunProtocol", true);
+        features.put("tableSuiteRunApi", testExecutionEndpointEnabled);
         features.put("visualLibraryAuthoringProtocol", true);
         features.put("visualLibraryAuthoringStatelessPreview", true);
         features.put("functionOnlyLibrary", true);
@@ -1383,6 +1394,16 @@ public record IntegrationCapabilities(
         if (testExecutionEndpointEnabled) {
             endpoints.add(new Endpoint(
                     "POST", "/api/visual/scenario-imports/materialize"));
+            endpoints.add(new Endpoint(
+                    "POST", "/api/visual/table-suite-runs"));
+            endpoints.add(new Endpoint(
+                    "GET", "/api/visual/table-suite-runs/{batchId}"));
+            endpoints.add(new Endpoint(
+                    "GET", "/api/visual/table-suite-runs/{batchId}/events"));
+            endpoints.add(new Endpoint(
+                    "POST", "/api/visual/table-suite-runs/{batchId}/cancel"));
+            endpoints.add(new Endpoint(
+                    "POST", "/api/visual/table-suite-runs/{batchId}/retry-failed"));
             endpoints.add(new Endpoint(
                     "POST",
                     "/admin/visual-operator-library-authoring/drafts/{draftId}/fixtures"));

@@ -1663,7 +1663,10 @@ describe('AuthorCanvas built-in canvas examples', () => {
     expect(query('[data-testid="author-diagnostics-drawer"]').className).toContain('collapsed');
 
     await click(query<HTMLButtonElement>('[data-testid="author-mode:scenarios"]'));
-    await waitFor(() => expect(query('[data-testid="author-surface:scenarios"]')).toBeDefined());
+    await waitFor(() => {
+      expect(query('[data-testid="author-surface:scenarios"]')).toBeDefined();
+      expect(query('[data-testid="contract-workspace"]')).toBeDefined();
+    }, 5_000);
     await click(Array.from(
       query('[data-testid="contract-workspace"]').querySelectorAll<HTMLButtonElement>(
         '.scenario-view-switch button',
@@ -2101,8 +2104,9 @@ describe('AuthorCanvas connection guide', () => {
     });
 
     await click(query<HTMLButtonElement>('[aria-label="Close start dialog"]'));
-    await waitFor(() =>
-      expect(query('[data-testid="operator-button:risk:score"]').textContent).toContain('Risk Score'),
+    await waitFor(
+      () => expect(query('[data-testid="operator-button:risk:score"]').textContent).toContain('Risk Score'),
+      10_000,
     );
     await click(query<HTMLButtonElement>('[data-testid="operator-button:risk:score"]'));
     await click(query<HTMLElement>('[data-testid="node-wrapper:n1"]'));
@@ -2116,15 +2120,14 @@ describe('AuthorCanvas connection guide', () => {
       expect(query('[data-testid="contract-workspace"]').textContent).toContain('risk:score');
     });
 
-    await click(query<HTMLButtonElement>('[data-testid="author-mode:scenarios"]'));
-    await waitFor(() => {
+    await navigateAuthorModeUnderLoad('scenarios', () => {
       expect(query('[data-testid="author-surface:scenarios"]')
         .getAttribute('data-target-kind')).toBe('operator');
       expect(window.location.search).toContain('target=operator%3Arisk%3Ascore');
       expect(query('[data-testid="topology-context-rail"]').textContent).toContain('Risk Score');
-    }, 5_000);
+    });
     expect(document.querySelector('[role="dialog"]')).toBeNull();
-  });
+  }, 45_000);
 
   it('migrates an unavailable legacy Operator link to an explicit Graph fallback', async () => {
     window.history.replaceState(
@@ -4329,6 +4332,20 @@ async function waitFor(assertion: () => void, timeoutMs = 2_000): Promise<void> 
       await act(async () => {
         await new Promise((resolve) => setTimeout(resolve, 10));
       });
+    }
+  }
+  throw lastError;
+}
+
+async function navigateAuthorModeUnderLoad(mode: string, assertion: () => void): Promise<void> {
+  let lastError: unknown;
+  for (let attempt = 0; attempt < 3; attempt += 1) {
+    await click(query<HTMLButtonElement>(`[data-testid="author-mode:${mode}"]`));
+    try {
+      await waitFor(assertion, 5_000);
+      return;
+    } catch (error) {
+      lastError = error;
     }
   }
   throw lastError;

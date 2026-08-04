@@ -110,6 +110,15 @@ from that Case opens the bound Run Evidence with assertion comparison, terminal 
 mocked/real node boundary, and exploratory content fingerprint. A green execution is deliberately
 still `Evidence incomplete` until Contract and Governance are checked.
 
+For the server-authoritative batch path, save the example Graph, complete the explicit Contract
+compatibility review/rebase, then choose **Run all**. The Matrix shows one durable Server batch with
+its exact closure, row progress, cancellation, retry attempts, and promotion result. A conclusive
+full run becomes the baseline; **Run failed (N)**, **Run changed (N)**, and **Run affected (N)**
+preview their exact payload-free selection and are disabled at zero. Editing one Given cell updates
+the changed/affected counts immediately. Partial differential runs remain `Partial only`; cancelled
+or budget-stopped runs cannot become baselines. Batch endpoints are test/staging-only, use
+`X-Purpose: TEST_EXECUTION`, and are advertised by the integration capability probe.
+
 To import existing test data, save the example Graph first, rebase Scenarios to the returned
 server Contract, then open **Scenarios → Matrix → Import cases**. Choose CSV or JSON, or use
 **Load sample**, and proceed through **Inspect source → Map columns → Review plan → Materialize**.
@@ -4107,9 +4116,14 @@ remain untouched.
 8. To retain and govern the work, use **Save Graph**, review and rebase to the returned server
    Contract, then **Save Scenario**, and finally **Publish**. Load/Save/Publish remain disabled until
    their exact prerequisites exist.
-9. After the graph or Contract changes, review **Compatibility** and explicitly rebase the Scenario
+9. In **Matrix**, use **Run all** to create the complete server baseline. Read Execution and
+   Assertions separately in each row, watch the Server batch closure/progress, and use **Cancel** or
+   **Retry failed** when offered. After editing a case, use the counted **Run changed (N)** or
+   **Run affected (N)** action; zero-count actions are disabled and a partial run cannot satisfy the
+   full-suite promotion gate.
+10. After the graph or Contract changes, review **Compatibility** and explicitly rebase the Scenario
    set. Stale coordinates cannot run silently.
-10. Use **Export Workspace** to download one verified, secret-safe Graph + Contract + Scenario
+11. Use **Export Workspace** to download one verified, secret-safe Graph + Contract + Scenario
     bundle for offline or VS Code work. Use **Import Workspace** to restore it without re-layout;
     import rechecks the Contract fingerprint, Graph target fingerprint, enterprise scope, operator
     index, classification, nested protocol shape, and raw-secret policy before changing the canvas.

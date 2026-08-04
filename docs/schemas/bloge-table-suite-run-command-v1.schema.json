@@ -1,0 +1,48 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://leanowtech.com/schemas/bloge-table-suite-run-command-v1.schema.json",
+  "title": "BLOGE Table Suite Run Command v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schemaVersion", "requestId", "graphDraft", "contract", "draftSet", "selection", "preflight", "baselineBatchId"],
+  "properties": {
+    "schemaVersion": { "const": "bloge.tableSuiteRunCommand.v1" },
+    "requestId": { "type": "string", "minLength": 1, "maxLength": 128 },
+    "graphDraft": { "$ref": "bloge-visual-graph-draft-v1.schema.json" },
+    "contract": { "$ref": "bloge-contract-draft-v1.schema.json" },
+    "draftSet": { "$ref": "bloge-scenario-draft-set-v1.schema.json" },
+    "selection": { "$ref": "#/$defs/selection" },
+    "preflight": { "$ref": "#/$defs/preflight" },
+    "baselineBatchId": { "type": "string", "maxLength": 96 }
+  },
+  "$defs": {
+    "selection": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["mode", "caseIds"],
+      "properties": {
+        "mode": { "enum": ["ALL", "SELECTED", "FAILED", "CHANGED", "AFFECTED"] },
+        "caseIds": {
+          "type": "array",
+          "uniqueItems": true,
+          "maxItems": 500,
+          "items": { "type": "string", "minLength": 1, "maxLength": 256 }
+        }
+      }
+    },
+    "preflight": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["environment", "dependencyMode", "effectProfile", "maxCases", "maxFailures", "maxConcurrency", "caseTimeoutMs"],
+      "properties": {
+        "environment": { "type": "string", "minLength": 1, "maxLength": 128 },
+        "dependencyMode": { "const": "SIMULATED" },
+        "effectProfile": { "const": "SIDE_EFFECT_FREE" },
+        "maxCases": { "type": "integer", "minimum": 1, "maximum": 500 },
+        "maxFailures": { "type": "integer", "minimum": 0, "maximum": 500 },
+        "maxConcurrency": { "const": 1 },
+        "caseTimeoutMs": { "type": "integer", "minimum": 100, "maximum": 10000 }
+      }
+    }
+  }
+}
