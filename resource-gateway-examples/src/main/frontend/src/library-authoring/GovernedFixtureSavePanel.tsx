@@ -9,6 +9,7 @@ import {
   saveLibraryAuthoringFixture,
 } from '../api';
 import useDialogFocusTrap from '../author/accessibility/useDialogFocusTrap';
+import { useI18n } from '../i18n/I18nProvider';
 import type {
   VisualAuthoringFixtureAssetKind,
   VisualAuthoringFixtureClassification,
@@ -45,6 +46,7 @@ export default function GovernedFixtureSavePanel({
   onConflict,
   onClose,
 }: GovernedFixtureSavePanelProps) {
+  const { t } = useI18n();
   const dialogRef = useRef<HTMLDivElement>(null);
   const [fixtureId, setFixtureId] = useState(
     suggestedFixtureId?.trim() || defaultFixtureId(sourceKind, assetRef),
@@ -138,17 +140,17 @@ export default function GovernedFixtureSavePanel({
       >
         <header className="governed-fixture-heading">
           <div>
-            <span>Governed test data</span>
+            <span>{t('Governed test data')}</span>
             <h2 id="governed-fixture-title">
-              {receipt ? 'Fixture saved' : 'Save as fixture'}
+              {receipt ? t('Fixture saved') : t('Save as fixture')}
             </h2>
             <p>{assetRef}</p>
           </div>
           <button
             type="button"
             className="icon-button"
-            aria-label="Close fixture panel"
-            title="Close"
+            aria-label={t('Close fixture panel')}
+            title={t('Close')}
             onClick={onClose}
             disabled={busy}
           >
@@ -162,22 +164,22 @@ export default function GovernedFixtureSavePanel({
           <div className="governed-fixture-form">
             <section className="governed-fixture-coordinate">
               <div>
-                <span>Source</span>
-                <strong>{sourceLabel(sourceKind)}</strong>
+                <span>{t('Source')}</span>
+                <strong>{t(sourceLabel(sourceKind))}</strong>
               </div>
               <div>
-                <span>Asset</span>
-                <strong>{assetKind.toLowerCase()}</strong>
+                <span>{t('Asset')}</span>
+                <strong>{t(assetKind.toLowerCase())}</strong>
               </div>
               <div>
-                <span>Draft revision</span>
+                <span>{t('Draft revision')}</span>
                 <strong>{authoringRevision}</strong>
               </div>
             </section>
 
             <section className="governed-fixture-fields">
               <label className="governed-fixture-id">
-                <span>Fixture id</span>
+                <span>{t('Fixture id')}</span>
                 <input
                   value={fixtureId}
                   onChange={(event) => setFixtureId(event.target.value)}
@@ -186,33 +188,33 @@ export default function GovernedFixtureSavePanel({
                   data-testid="governed-fixture-id"
                 />
                 {!fixtureIdValid && (
-                  <small>Use 1-160 letters, numbers, dots, colons, underscores, or dashes.</small>
+                  <small>{t('Use 1-160 letters, numbers, dots, colons, underscores, or dashes.')}</small>
                 )}
               </label>
               <label>
-                <span>Data classification</span>
+                <span>{t('Data classification')}</span>
                 <select
                   value={classification}
                   onChange={(event) => setClassification(
                     event.target.value as VisualAuthoringFixtureClassification,
                   )}
                 >
-                  <option value="PUBLIC">Public</option>
-                  <option value="INTERNAL">Internal</option>
-                  <option value="CONFIDENTIAL">Confidential</option>
-                  <option value="RESTRICTED">Restricted</option>
+                  <option value="PUBLIC">{t('Public')}</option>
+                  <option value="INTERNAL">{t('Internal')}</option>
+                  <option value="CONFIDENTIAL">{t('Confidential')}</option>
+                  <option value="RESTRICTED">{t('Restricted')}</option>
                 </select>
               </label>
               <label>
-                <span>Retention</span>
+                <span>{t('Retention')}</span>
                 <select
                   value={retentionDays}
                   onChange={(event) => setRetentionDays(Number(event.target.value))}
                 >
-                  <option value={1}>1 day</option>
-                  <option value={7}>7 days</option>
-                  <option value={14}>14 days</option>
-                  <option value={30}>30 days</option>
+                  <option value={1}>{t('1 day')}</option>
+                  <option value={7}>{t('7 days')}</option>
+                  <option value={14}>{t('14 days')}</option>
+                  <option value={30}>{t('30 days')}</option>
                 </select>
               </label>
             </section>
@@ -220,8 +222,8 @@ export default function GovernedFixtureSavePanel({
             <section className="governed-fixture-redaction">
               <header>
                 <div>
-                  <h3>Redaction paths</h3>
-                  <span>One JSON Pointer per line</span>
+                  <h3>{t('Redaction paths')}</h3>
+                  <span>{t('One JSON Pointer per line')}</span>
                 </div>
                 <strong>{redaction.paths.length}/64</strong>
               </header>
@@ -230,30 +232,30 @@ export default function GovernedFixtureSavePanel({
                 onChange={(event) => setRedactionText(event.target.value)}
                 placeholder={redactionPlaceholder}
                 spellCheck={false}
-                aria-label="Fixture redaction paths"
+                aria-label={t('Fixture redaction paths')}
                 aria-invalid={Boolean(redaction.error)}
               />
               {redaction.error ? (
-                <p className="library-inline-error">{redaction.error}</p>
+                <p className="library-inline-error">{t(redaction.error)}</p>
               ) : (
-                <p>Sensitive key names are also redacted automatically before encryption.</p>
+                <p>{t('Sensitive key names are also redacted automatically before encryption.')}</p>
               )}
             </section>
 
             <section className="governed-fixture-preview">
               <header>
                 <div>
-                  <h3>Payload preview</h3>
-                  <span>Automatic and explicit redaction applied</span>
+                  <h3>{t('Payload preview')}</h3>
+                  <span>{t('Automatic and explicit redaction applied')}</span>
                 </div>
               </header>
               <pre data-testid="governed-fixture-preview">{payloadPreview}</pre>
             </section>
 
             <details className="governed-fixture-advanced">
-              <summary>Updating an existing fixture</summary>
+              <summary>{t('Updating an existing fixture')}</summary>
               <label>
-                <span>Last observed fixture revision</span>
+                <span>{t('Last observed fixture revision')}</span>
                 <input
                   type="number"
                   min={0}
@@ -263,7 +265,7 @@ export default function GovernedFixtureSavePanel({
                   )}
                 />
               </label>
-              <p>Leave this at 0 for a new fixture. Updates require the exact latest revision.</p>
+              <p>{t('Leave this at 0 for a new fixture. Updates require the exact latest revision.')}</p>
             </details>
 
             <label className="governed-fixture-confirmation">
@@ -273,21 +275,18 @@ export default function GovernedFixtureSavePanel({
                 onChange={(event) => setConfirmed(event.target.checked)}
                 data-testid="governed-fixture-confirm"
               />
-              <span>
-                I confirm this payload is test data and the selected classification,
-                retention, and redaction rules are appropriate.
-              </span>
+              <span>{t('I confirm this payload is test data and the selected classification, retention, and redaction rules are appropriate.')}</span>
             </label>
           </div>
         )}
 
-        {error && <p className="governed-fixture-error" role="alert">{error}</p>}
+        {error && <p className="governed-fixture-error" role="alert">{t(error)}</p>}
 
         <footer className="governed-fixture-footer">
           <p>
             {receipt
-              ? 'The encrypted payload was persisted but is intentionally absent from this receipt.'
-              : 'Available only in isolated test and staging deployments.'}
+              ? t('The encrypted payload was persisted but is intentionally absent from this receipt.')
+              : t('Available only in isolated test and staging deployments.')}
           </p>
           {receipt ? (
             <button
@@ -296,12 +295,12 @@ export default function GovernedFixtureSavePanel({
               onClick={onClose}
               data-dialog-initial-focus
             >
-              Done
+              {t('Done')}
             </button>
           ) : (
             <>
               <button type="button" className="secondary" onClick={onClose} disabled={busy}>
-                Cancel
+                {t('Cancel')}
               </button>
               <button
                 type="button"
@@ -310,7 +309,7 @@ export default function GovernedFixtureSavePanel({
                 disabled={!canSave}
                 data-testid="governed-fixture-save"
               >
-                {busy ? 'Encrypting...' : 'Encrypt and save'}
+                {busy ? t('Encrypting...') : t('Encrypt and save')}
               </button>
             </>
           )}
@@ -321,27 +320,28 @@ export default function GovernedFixtureSavePanel({
 }
 
 function FixtureReceipt({ receipt }: { receipt: VisualAuthoringFixtureReceipt }) {
+  const { locale, t } = useI18n();
   return (
     <div className="governed-fixture-receipt" data-testid="governed-fixture-receipt">
       <section>
-        <span>Fixture</span>
+        <span>{t('Fixture')}</span>
         <strong>{receipt.fixtureId}</strong>
-        <small>revision {receipt.revision}</small>
+        <small>{t('revision {revision}', { revision: receipt.revision })}</small>
       </section>
       <dl>
-        <div><dt>Classification</dt><dd>{receipt.classification}</dd></div>
-        <div><dt>Expires</dt><dd>{formatTimestamp(receipt.expiresAt)}</dd></div>
-        <div><dt>Redacted paths</dt><dd>{receipt.redactedPaths.length}</dd></div>
-        <div><dt>Payload returned</dt><dd>No</dd></div>
+        <div><dt>{t('Classification')}</dt><dd>{t(receipt.classification)}</dd></div>
+        <div><dt>{t('Expires')}</dt><dd>{formatTimestamp(receipt.expiresAt, locale)}</dd></div>
+        <div><dt>{t('Redacted paths')}</dt><dd>{receipt.redactedPaths.length}</dd></div>
+        <div><dt>{t('Payload returned')}</dt><dd>{t('No')}</dd></div>
       </dl>
       <div>
-        <span>Payload fingerprint</span>
+        <span>{t('Payload fingerprint')}</span>
         <code title={receipt.payloadFingerprint}>
           {shortFingerprint(receipt.payloadFingerprint)}
         </code>
       </div>
       <div>
-        <span>Artifact fingerprint</span>
+        <span>{t('Artifact fingerprint')}</span>
         <code title={receipt.artifactFingerprint}>
           {shortFingerprint(receipt.artifactFingerprint)}
         </code>
@@ -428,9 +428,9 @@ function shortFingerprint(fingerprint: string): string {
     : fingerprint;
 }
 
-function formatTimestamp(value: string): string {
+function formatTimestamp(value: string, locale: string): string {
   const timestamp = Date.parse(value);
-  return Number.isNaN(timestamp) ? value : new Date(timestamp).toLocaleString();
+  return Number.isNaN(timestamp) ? value : new Date(timestamp).toLocaleString(locale);
 }
 
 /** Produces a display-only fixture preview without mutating or returning raw sensitive values. */

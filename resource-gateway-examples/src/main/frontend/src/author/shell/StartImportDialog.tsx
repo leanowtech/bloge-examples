@@ -144,10 +144,10 @@ export default function StartImportDialog({
                   <div><dt>{t('Contract')}</dt><dd>{t('{inputs} in / {outputs} out', { inputs: example.inputFieldCount, outputs: example.outputFieldCount })}</dd></div>
                   <div><dt>{t('Tests')}</dt><dd>{t('{count} runnable / {types}', {
                     count: example.scenarioCount,
-                    types: example.caseTypes.join(' / '),
+                    types: example.caseTypes.map((type) => t(type)).join(' / '),
                   })}</dd></div>
                   <div><dt>{t('Runtime')}</dt><dd>{t('{mode} / {count} mocked operators', {
-                    mode: example.runtimeMode,
+                    mode: t(example.runtimeMode),
                     count: example.mockedOperatorCount,
                   })}</dd></div>
                   <div><dt>{t('Evidence')}</dt><dd>{t(example.proofStrength)}</dd></div>

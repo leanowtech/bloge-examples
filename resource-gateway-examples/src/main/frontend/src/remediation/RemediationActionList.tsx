@@ -1,4 +1,5 @@
 import type { RemediationAction } from './remediationAction';
+import { useI18n } from '../i18n/I18nProvider';
 
 export default function RemediationActionList({
   actions,
@@ -7,33 +8,34 @@ export default function RemediationActionList({
   actions: RemediationAction[];
   onInvoke: (action: RemediationAction) => void;
 }) {
+  const { t } = useI18n();
   if (actions.length === 0) {
     return null;
   }
   return (
-    <section className="remediation-action-list" aria-label="Recommended next actions">
+    <section className="remediation-action-list" aria-label={t('Recommended next actions')}>
       <header>
-        <span>Next actions</span>
-        <strong>{actions.length} path{actions.length === 1 ? '' : 's'} to a trusted result</strong>
+        <span>{t('Next actions')}</span>
+        <strong>{t('{count} paths to a trusted result', { count: actions.length })}</strong>
       </header>
       <div>
         {actions.map((action, index) => (
           <article key={action.id} data-severity={action.severity.toLowerCase()}>
             <div className="remediation-action-order">{index + 1}</div>
             <div className="remediation-action-copy">
-              <strong>{action.actionLabel}</strong>
-              <p>{action.rootCause}</p>
-              <small><b>Business impact</b> {action.businessImpact}</small>
-              <small><b>Responsible</b> {action.owner} · {action.requiredRole}</small>
+              <strong>{t(action.actionLabel)}</strong>
+              <p>{t(action.rootCause)}</p>
+              <small><b>{t('Business impact')}</b> {t(action.businessImpact)}</small>
+              <small><b>{t('Responsible')}</b> {action.owner} · {t(action.requiredRole)}</small>
               {!action.available && (
                 <small className="remediation-action-unavailable">
-                  {action.unavailableReason}
+                  {t(action.unavailableReason)}
                 </small>
               )}
               <details>
-                <summary>Audit and technical details</summary>
-                <span>{action.auditRequirement}</span>
-                {action.expiresAt && <span>Expires {action.expiresAt}</span>}
+                <summary>{t('Audit and technical details')}</summary>
+                <span>{t(action.auditRequirement)}</span>
+                {action.expiresAt && <span>{t('Expires {date}', { date: action.expiresAt })}</span>}
                 <code>{action.technicalCode}</code>
                 {action.technicalCoordinate && <code>{action.technicalCoordinate}</code>}
               </details>
@@ -43,7 +45,7 @@ export default function RemediationActionList({
                 className={index === 0 ? 'primary compact' : 'secondary compact'}
                 href={action.deepLink}
               >
-                {action.actionLabel}
+                {t(action.actionLabel)}
               </a>
             )}
             {action.available && action.navigation !== 'EXTERNAL' && action.navigation !== 'AUTHOR' && (
@@ -52,7 +54,7 @@ export default function RemediationActionList({
                 className={index === 0 ? 'primary compact' : 'secondary compact'}
                 onClick={() => onInvoke(action)}
               >
-                {action.actionLabel}
+                {t(action.actionLabel)}
               </button>
             )}
           </article>

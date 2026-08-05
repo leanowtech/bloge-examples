@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useI18n } from '../i18n/I18nProvider';
+import type { TranslationValues } from '../i18n/i18n';
 
 import useDialogFocusTrap from '../author/accessibility/useDialogFocusTrap';
 import type { AuthorCommandAvailability } from '../author/task/taskStateProjection';
@@ -256,28 +257,40 @@ export default function ContractScenarioWorkspace({
       ? {
           commandId: 'RUN_CURRENT_SCENARIO',
           state: 'RUNNING', enabled: false, label: 'Running...',
+          labelId: 'author.command.running',
           reasonCode: 'RG.AUTHOR.RUN.IN_PROGRESS',
           message: 'The current Scenario run is still in progress.',
+          messageId: 'author.blocker.runInProgress',
         }
       : !selectedScenario
         ? {
             commandId: 'RUN_CURRENT_SCENARIO',
             state: 'BLOCKED', enabled: false, label: 'Run & Compare',
+            labelId: 'author.command.run',
             reasonCode: 'RG.AUTHOR.RUN.SCENARIO_MISSING',
             message: 'Create a Scenario before running.',
+            messageId: 'author.blocker.scenarioMissing',
           }
         : !current
           ? {
               commandId: 'RUN_CURRENT_SCENARIO',
               state: 'BLOCKED', enabled: false, label: 'Run & Compare',
+              labelId: 'author.command.run',
               reasonCode: 'RG.AUTHOR.RUN.SCENARIO_STALE',
               message: 'This Scenario targets an older Graph or Contract.',
-              remediation: { label: 'Review compatibility', mode: 'contract' },
+              messageId: 'author.blocker.scenarioStale',
+              remediation: {
+                label: 'Review compatibility',
+                labelId: 'author.command.reviewCompatibility',
+                mode: 'contract',
+              },
             }
           : {
               commandId: 'RUN_CURRENT_SCENARIO',
               state: 'READY', enabled: true, label: 'Run & Compare',
+              labelId: 'author.command.run',
               reasonCode: '', message: 'Runs and compares the current Scenario.',
+              messageId: 'author.command.sandboxRunDetail',
             }
   );
   const remediateRun = () => {
@@ -1112,7 +1125,7 @@ export default function ContractScenarioWorkspace({
             <p>
               {t('Revision {revision} · {confidence} projection', {
                 revision: contract.target.revision,
-                confidence: contract.confidence.toLowerCase(),
+                confidence: t(contract.confidence.toLowerCase()),
               })}
             </p>
           </div>
@@ -1222,7 +1235,10 @@ export default function ContractScenarioWorkspace({
             <span>{t(assetNotice.message)}</span>
             {publication && (
               <code title={publication.report.publicationId}>
-                {publication.report.status} · attempt {publication.report.attempt}
+                {t('{status} · attempt {attempt}', {
+                  status: t(publication.report.status),
+                  attempt: publication.report.attempt,
+                })}
               </code>
             )}
           </div>
@@ -1230,13 +1246,10 @@ export default function ContractScenarioWorkspace({
 
         {projectionDiagnostics.length > 0 && (
           <div className="scenario-asset-notice error" role="alert" data-testid="scenario-projection-diagnostics">
-            <strong>{projectionDiagnostics.length} legacy case{projectionDiagnostics.length === 1 ? '' : 's'} need review</strong>
-            <span>
-              Valid rows were migrated to Scenarios. Unprojectable source is preserved below and is
-              never treated as passing evidence.
-            </span>
+            <strong>{t('{count} legacy cases need review', { count: projectionDiagnostics.length })}</strong>
+            <span>{t('Valid rows were migrated to Scenarios. Unprojectable source is preserved below and is never treated as passing evidence.')}</span>
             <details>
-              <summary>Advanced migration details</summary>
+              <summary>{t('Advanced migration details')}</summary>
               <pre>{JSON.stringify(projectionDiagnostics, null, 2)}</pre>
             </details>
           </div>
@@ -1370,39 +1383,40 @@ function InterfaceTab({
   onContractChange: (contract: ContractDraft) => void;
   contractEditable: boolean;
 }) {
+  const { t } = useI18n();
   return (
     <div className="contract-interface-tab">
       <div className="contract-interface-summary">
-        <span><small>Source</small><strong>{contract.source}</strong></span>
-        <span><small>Effect</small><strong>{contract.executionSemantics.effect}</strong></span>
-        <span><small>Compatibility</small><strong>{contract.compatibilityPolicy.mode}</strong></span>
-        <span><small>Fingerprint</small><code title={contractFingerprint}>{shortFingerprint(contractFingerprint)}</code></span>
+        <span><small>{t('Source')}</small><strong>{contract.source}</strong></span>
+        <span><small>{t('Effect')}</small><strong>{contract.executionSemantics.effect}</strong></span>
+        <span><small>{t('Compatibility')}</small><strong>{contract.compatibilityPolicy.mode}</strong></span>
+        <span><small>{t('Fingerprint')}</small><code title={contractFingerprint}>{shortFingerprint(contractFingerprint)}</code></span>
       </div>
       <div className="contract-schema-columns">
-        <SchemaFieldTree envelope={contract.inputSchema} label="Input" rootLabel="ctx" />
-        <SchemaFieldTree envelope={contract.outputSchema} label="Output" rootLabel="public result" />
+        <SchemaFieldTree envelope={contract.inputSchema} label={t('Input')} rootLabel="ctx" />
+        <SchemaFieldTree envelope={contract.outputSchema} label={t('Output')} rootLabel={t('public result')} />
       </div>
-      <section className="contract-lineage" aria-label="Contract lineage">
+      <section className="contract-lineage" aria-label={t('Contract lineage')}>
         <header>
           <div>
-            <span>Lineage</span>
-            <h3>Exact Contract coordinate</h3>
+            <span>{t('Lineage')}</span>
+            <h3>{t('Exact Contract coordinate')}</h3>
           </div>
           <strong>{contract.target.kind}</strong>
         </header>
         <dl>
-          <div><dt>Target ID</dt><dd title={contract.target.id}>{contract.target.id}</dd></div>
-          <div><dt>Revision</dt><dd>{contract.target.revision}</dd></div>
+          <div><dt>{t('Target ID')}</dt><dd title={contract.target.id}>{contract.target.id}</dd></div>
+          <div><dt>{t('Revision')}</dt><dd>{contract.target.revision}</dd></div>
           <div>
-            <dt>Target fingerprint</dt>
+            <dt>{t('Target fingerprint')}</dt>
             <dd><code title={contract.target.fingerprint}>{shortFingerprint(contract.target.fingerprint)}</code></dd>
           </div>
           <div>
-            <dt>Contract fingerprint</dt>
+            <dt>{t('Contract fingerprint')}</dt>
             <dd><code title={contractFingerprint}>{shortFingerprint(contractFingerprint)}</code></dd>
           </div>
-          <div><dt>Source</dt><dd>{contract.source}</dd></div>
-          <div><dt>Confidence</dt><dd>{contract.confidence}</dd></div>
+          <div><dt>{t('Source')}</dt><dd>{contract.source}</dd></div>
+          <div><dt>{t('Confidence')}</dt><dd>{contract.confidence}</dd></div>
         </dl>
       </section>
       {contractEditable ? (
@@ -1410,13 +1424,13 @@ function InterfaceTab({
       ) : (
         <div className="contract-stale-banner operator-contract-source" role="note">
           <div>
-            <strong>Operator Contract is projected from the catalog.</strong>
-            <span>Edit the operator library definition to change ports or runtime semantics.</span>
+            <strong>{t('Operator Contract is projected from the catalog.')}</strong>
+            <span>{t('Edit the operator library definition to change ports or runtime semantics.')}</span>
           </div>
         </div>
       )}
       <details className="contract-advanced-json">
-        <summary>Advanced Contract JSON</summary>
+        <summary>{t('Advanced Contract JSON')}</summary>
         <pre>{JSON.stringify(contract, null, 2)}</pre>
       </details>
     </div>
@@ -1511,7 +1525,7 @@ function ScenarioTab({
   onRetryFailedTableRun,
   onAcceptCoverageCandidate,
 }: ScenarioTabProps) {
-  const { t } = useI18n();
+  const { m, t } = useI18n();
   const selectedEvidence = selectedScenario ? tableEvidence[selectedScenario.scenarioId] : undefined;
   const caseAnchorPrefix = `graph-case-${selectedScenarioId.replace(/[^a-zA-Z0-9_-]/g, '-')}`;
   const reviewState = running
@@ -1608,7 +1622,7 @@ function ScenarioTab({
             key={scenario.scenarioId}
             onClick={() => onSelectScenario(scenario.scenarioId)}
           >
-            <span>{scenario.caseType}</span>
+            <span>{t(scenario.caseType)}</span>
             <strong>{scenario.name}</strong>
             <small>
               {scenario.dependencies.filter((entry) => entry.behavior.kind !== 'REAL').length}
@@ -1813,10 +1827,12 @@ function ScenarioTab({
                   })}</span>
                   {runCommand.state === 'BLOCKED' && (
                     <span className="scenario-command-explanation" id="scenario-run-blocker" role="status">
-                      {t(runCommand.message)}
+                      {runCommand.messageId ? m(runCommand.messageId) : t(runCommand.message)}
                       {runCommand.remediation && (
                         <button type="button" onClick={onRunRemediation}>
-                          {t(runCommand.remediation.label)}
+                          {runCommand.remediation.labelId
+                            ? m(runCommand.remediation.labelId)
+                            : t(runCommand.remediation.label)}
                         </button>
                       )}
                     </span>
@@ -1873,15 +1889,16 @@ function CompatibilityTab({
   onApplyMigrations: () => void;
   onResolve: () => void;
 }) {
+  const { t } = useI18n();
   const checks = [
     {
-      label: `${contract.target.kind === 'OPERATOR' ? 'Operator' : 'Graph'} target`,
+      label: t('{target} target', { target: t(contract.target.kind === 'OPERATOR' ? 'Operator' : 'Graph') }),
       current: scenarioDraftSet.target.fingerprint === contract.target.fingerprint,
       expected: contract.target.fingerprint,
       actual: scenarioDraftSet.target.fingerprint,
     },
     {
-      label: 'Contract',
+      label: t('Contract'),
       current: scenarioDraftSet.contractFingerprint === contractFingerprint,
       expected: contractFingerprint,
       actual: scenarioDraftSet.contractFingerprint,
@@ -1901,39 +1918,39 @@ function CompatibilityTab({
     <div className="compatibility-workbench">
       <header>
         <span className={`contract-current-badge ${current ? 'current' : 'stale'}`}>
-          {report?.classification ?? (current ? 'UNCHANGED' : 'REVIEW REQUIRED')}
+          {t(report?.classification ?? (current ? 'UNCHANGED' : 'REVIEW REQUIRED'))}
         </span>
-        <h3>{contract.compatibilityPolicy.mode} compatibility policy</h3>
-        <p>Unknown semantics block automatic migration; a rebase never claims a test pass.</p>
+        <h3>{t('{mode} compatibility policy', { mode: contract.compatibilityPolicy.mode })}</h3>
+        <p>{t('Unknown semantics block automatic migration; a rebase never claims a test pass.')}</p>
       </header>
       <div className="compatibility-table">
         {checks.map((check) => (
           <div className="compatibility-row" key={check.label}>
             <strong>{check.label}</strong>
             <span className={check.current ? 'current' : 'stale'}>
-              {check.current ? 'Current' : 'Stale'}
+              {t(check.current ? 'Current' : 'Stale')}
             </span>
-            <code title={check.actual}>Scenario {shortFingerprint(check.actual)}</code>
-            <code title={check.expected}>Current {shortFingerprint(check.expected)}</code>
+            <code title={check.actual}>{t('Scenario')} {shortFingerprint(check.actual)}</code>
+            <code title={check.expected}>{t('Current')} {shortFingerprint(check.expected)}</code>
           </div>
         ))}
       </div>
       {loading && (
         <div className="compatibility-report-state" role="status">
-          <strong>Analyzing retained Contract baseline...</strong>
+          <strong>{t('Analyzing retained Contract baseline...')}</strong>
         </div>
       )}
       {error && (
         <div className="compatibility-report-state error" role="alert">
-          <strong>Compatibility report unavailable</strong>
+          <strong>{t('Compatibility report unavailable')}</strong>
           <span>{error}</span>
         </div>
       )}
       {!loading && !error && scenarioDraftSet.revision < 1 && (
         <>
           <div className="compatibility-report-state">
-            <strong>Review this local draft before establishing its first baseline</strong>
-            <span>Semantic comparison starts after revision 1; the current draft has no retained Contract snapshot.</span>
+            <strong>{t('Review this local draft before establishing its first baseline')}</strong>
+            <span>{t('Semantic comparison starts after revision 1; the current draft has no retained Contract snapshot.')}</span>
           </div>
           {!current && (
             <section className="compatibility-resolution">
@@ -1943,7 +1960,7 @@ function CompatibilityTab({
                   checked={reviewed}
                   onChange={(event) => onReviewedChange(event.target.checked)}
                 />
-                <span>I reviewed the current Contract and this unsaved local Scenario.</span>
+                <span>{t('I reviewed the current Contract and this unsaved local Scenario.')}</span>
               </label>
               <button
                 type="button"
@@ -1951,9 +1968,9 @@ function CompatibilityTab({
                 disabled={!reviewed}
                 onClick={onResolve}
               >
-                Rebase local draft
+                {t('Rebase local draft')}
               </button>
-              <small>Saving the rebased draft creates revision 1 and its immutable Contract baseline.</small>
+              <small>{t('Saving the rebased draft creates revision 1 and its immutable Contract baseline.')}</small>
             </section>
           )}
         </>
@@ -1961,21 +1978,21 @@ function CompatibilityTab({
       {report && reportCurrent && (
         <>
           <div className="compatibility-summary">
-            <span><small>Findings</small><strong>{report.findings.length}</strong></span>
-            <span><small>Impacted Scenarios</small><strong>{report.impactedScenarios.length}</strong></span>
-            <span><small>Safe migrations</small><strong>{safeMigrations.length}</strong></span>
-            <span><small>Manual actions</small><strong>{manualMigrations.length}</strong></span>
+            <span><small>{t('Findings')}</small><strong>{report.findings.length}</strong></span>
+            <span><small>{t('Impacted Scenarios')}</small><strong>{report.impactedScenarios.length}</strong></span>
+            <span><small>{t('Safe migrations')}</small><strong>{safeMigrations.length}</strong></span>
+            <span><small>{t('Manual actions')}</small><strong>{manualMigrations.length}</strong></span>
           </div>
           {report.findings.length > 0 ? (
             <section className="compatibility-findings">
-              <h4>Contract findings</h4>
+              <h4>{t('Contract findings')}</h4>
               {report.findings.map((finding) => (
                 <article className="compatibility-finding" key={finding.findingId}>
                   <span className={`compatibility-severity ${finding.classification.toLowerCase()}`}>
-                    {finding.classification}
+                    {t(finding.classification)}
                   </span>
                   <div>
-                    <strong>{finding.message}</strong>
+                    <strong>{t(finding.message)}</strong>
                     <code>{finding.scope} {finding.previousPath && `${finding.previousPath} -> `}{finding.path || '/'}</code>
                   </div>
                   <small>{finding.findingId}</small>
@@ -1984,19 +2001,19 @@ function CompatibilityTab({
             </section>
           ) : (
             <div className="compatibility-report-state current">
-              <strong>No semantic Contract drift</strong>
-              <span>The retained baseline and current Contract are identical.</span>
+              <strong>{t('No semantic Contract drift')}</strong>
+              <span>{t('The retained baseline and current Contract are identical.')}</span>
             </div>
           )}
           {report.impactedScenarios.length > 0 && (
             <section className="compatibility-impacts">
-              <h4>Scenario impact</h4>
+              <h4>{t('Scenario impact')}</h4>
               {report.impactedScenarios.map((impact) => (
                 <div className="compatibility-impact-row" key={impact.scenarioId}>
                   <strong>{scenarioDraftSet.scenarios.find(
                     (scenario) => scenario.scenarioId === impact.scenarioId,
                   )?.name ?? impact.scenarioId}</strong>
-                  <span>{impact.status}</span>
+                  <span>{t(impact.status)}</span>
                   <code>{impact.paths.join(', ') || '/'}</code>
                 </div>
               ))}
@@ -2004,13 +2021,13 @@ function CompatibilityTab({
           )}
           {report.migrations.length > 0 && (
             <section className="compatibility-migrations">
-              <h4>Migration plan</h4>
+              <h4>{t('Migration plan')}</h4>
               {report.migrations.map((migration) => (
                 <div className="compatibility-migration-row" key={migration.actionId}>
-                  <span>{migration.automatic ? 'SAFE EDIT' : 'MANUAL'}</span>
+                  <span>{t(migration.automatic ? 'SAFE EDIT' : 'MANUAL')}</span>
                   <div>
-                    <strong>{migration.kind}</strong>
-                    <small>{migration.rationale}</small>
+                    <strong>{t(migration.kind)}</strong>
+                    <small>{t(migration.rationale)}</small>
                   </div>
                   <code>{migration.fromPath && `${migration.fromPath} -> `}{migration.toPath || '/'}</code>
                 </div>
@@ -2021,7 +2038,7 @@ function CompatibilityTab({
             <section className="compatibility-resolution">
               {safeMigrations.length > 0 && (
                 <button type="button" className="secondary" onClick={onApplyMigrations}>
-                  Apply {safeMigrations.length} safe migration{safeMigrations.length === 1 ? '' : 's'}
+                  {t('Apply {count} safe migrations', { count: safeMigrations.length })}
                 </button>
               )}
               {requiresAcknowledgement && (
@@ -2031,7 +2048,7 @@ function CompatibilityTab({
                     checked={reviewed}
                     onChange={(event) => onReviewedChange(event.target.checked)}
                   />
-                  <span>I reviewed unresolved Contract changes and updated affected Scenario values.</span>
+                  <span>{t('I reviewed unresolved Contract changes and updated affected Scenario values.')}</span>
                 </label>
               )}
               <button
@@ -2040,19 +2057,19 @@ function CompatibilityTab({
                 disabled={Boolean(requiresAcknowledgement && !reviewed)}
                 onClick={onResolve}
               >
-                Record review & rebase
+                {t('Record review & rebase')}
               </button>
-              <small>Save and rerun are still required before publication.</small>
+              <small>{t('Save and rerun are still required before publication.')}</small>
             </section>
           )}
         </>
       )}
       <div className="compatibility-unknowns">
-        <strong>Semantic facts still unknown</strong>
-        <span>Effect: {contract.executionSemantics.effect}</span>
-        <span>Idempotency: {contract.executionSemantics.idempotency}</span>
-        <span>Streaming: {String(contract.executionSemantics.streaming ?? 'UNKNOWN')}</span>
-        <span>Durable: {String(contract.executionSemantics.durable ?? 'UNKNOWN')}</span>
+        <strong>{t('Semantic facts still unknown')}</strong>
+        <span>{t('Effect:')} {contract.executionSemantics.effect}</span>
+        <span>{t('Idempotency:')} {contract.executionSemantics.idempotency}</span>
+        <span>{t('Streaming:')} {String(contract.executionSemantics.streaming ?? 'UNKNOWN')}</span>
+        <span>{t('Durable:')} {String(contract.executionSemantics.durable ?? 'UNKNOWN')}</span>
       </div>
     </div>
   );
@@ -2077,13 +2094,14 @@ function EvidenceTab({
   onOpenCompose: () => void;
   onSelectDiagnostic?: (diagnostic: ScenarioEvidenceDiagnostic) => void;
 }) {
+  const { t } = useI18n();
   if (!response) {
     return (
       <div className="scenario-empty-state">
-        <strong>No Scenario run yet</strong>
-        <span>Run the selected Scenario to compare actual and expected output.</span>
+        <strong>{t('No Scenario run yet')}</strong>
+        <span>{t('Run the selected Scenario to compare actual and expected output.')}</span>
         {compileMessages.map((message) => <p className="scenario-run-errors" key={message}>{message}</p>)}
-        <button type="button" className="primary" onClick={onBackToScenario}>Open Scenarios</button>
+        <button type="button" className="primary" onClick={onBackToScenario}>{t('Open Scenarios')}</button>
       </div>
     );
   }
@@ -2121,31 +2139,31 @@ function EvidenceTab({
     <div className="scenario-evidence" data-testid="scenario-evidence">
       <header className={`scenario-evidence-heading ${evidence.tone}`}>
         <span className={`contract-current-badge ${evidence.tone === 'success' ? 'current' : 'stale'}`}>
-          {evidence.headline}
+          {t(evidence.headline)}
         </span>
         <h3>{response.graphName}</h3>
-        <p>{evidence.summary}</p>
+        <p>{localizedEvidenceText(t, evidence.summary, evidence.summaryValues)}</p>
       </header>
 
       <RemediationActionList actions={actions} onInvoke={invokeRemediation} />
 
-      <div className="scenario-trust-dimensions" aria-label="Evidence trust dimensions">
+      <div className="scenario-trust-dimensions" aria-label={t('Evidence trust dimensions')}>
         {evidence.dimensions.map((dimension) => (
           <section
             key={dimension.key}
             data-state={dimension.state}
             data-testid={`scenario-trust:${dimension.key}`}
           >
-            <span>{dimension.label}</span>
-            <strong>{dimension.status}</strong>
-            <small>{dimension.detail}</small>
+            <span>{t(dimension.label)}</span>
+            <strong>{t(dimension.status)}</strong>
+            <small>{localizedEvidenceText(t, dimension.detail, dimension.detailValues)}</small>
           </section>
         ))}
       </div>
 
       {evidence.blockers.length > 0 && (
         <EvidenceIssueList
-          title={`Blocking findings (${evidence.blockers.length})`}
+          title={t('Blocking findings ({count})', { count: evidence.blockers.length })}
           issues={evidence.blockers}
           tone="danger"
           onSelectDiagnostic={onSelectDiagnostic}
@@ -2153,7 +2171,7 @@ function EvidenceTab({
       )}
       {evidence.warnings.length > 0 && (
         <EvidenceIssueList
-          title={`Warnings (${evidence.warnings.length})`}
+          title={t('Warnings ({count})', { count: evidence.warnings.length })}
           issues={evidence.warnings}
           tone="warning"
           onSelectDiagnostic={onSelectDiagnostic}
@@ -2162,21 +2180,21 @@ function EvidenceTab({
 
       {trustContext?.coordinate && (
         <details className="scenario-evidence-technical">
-          <summary>Technical coordinates</summary>
+          <summary>{t('Technical coordinates')}</summary>
           <dl className="scenario-evidence-coordinate" data-testid="scenario-evidence-coordinate">
             <div>
-              <dt>{trustContext.coordinate.targetKind === 'OPERATOR' ? 'Operator' : 'Graph'}</dt>
+              <dt>{t(trustContext.coordinate.targetKind === 'OPERATOR' ? 'Operator' : 'Graph')}</dt>
               <dd>
                 {trustContext.coordinate.targetId || trustContext.coordinate.draftId || 'exploratory'}
                 {' '}r{trustContext.coordinate.targetRevision ?? trustContext.coordinate.draftRevision}
               </dd>
             </div>
-            <div><dt>Draft fingerprint</dt><dd><code>{trustContext.coordinate.draftFingerprint || 'not saved'}</code></dd></div>
-            <div><dt>Contract</dt><dd><code>{trustContext.coordinate.contractFingerprint || 'not checked'}</code></dd></div>
-            <div><dt>Scenario</dt><dd>{trustContext.coordinate.scenarioId} r{trustContext.coordinate.scenarioRevision}</dd></div>
-            <div><dt>Scenario fingerprint</dt><dd><code>{trustContext.coordinate.scenarioFingerprint || 'not projected'}</code></dd></div>
-            <div><dt>Dependency closure</dt><dd><code>{trustContext.coordinate.closureFingerprint || 'not projected'}</code></dd></div>
-            <div><dt>Execution request</dt><dd><code>{trustContext.coordinate.requestFingerprint || 'not captured'}</code></dd></div>
+            <div><dt>{t('Draft fingerprint')}</dt><dd><code>{trustContext.coordinate.draftFingerprint || t('not saved')}</code></dd></div>
+            <div><dt>{t('Contract')}</dt><dd><code>{trustContext.coordinate.contractFingerprint || t('not checked')}</code></dd></div>
+            <div><dt>{t('Scenario')}</dt><dd>{trustContext.coordinate.scenarioId} r{trustContext.coordinate.scenarioRevision}</dd></div>
+            <div><dt>{t('Scenario fingerprint')}</dt><dd><code>{trustContext.coordinate.scenarioFingerprint || t('not projected')}</code></dd></div>
+            <div><dt>{t('Dependency closure')}</dt><dd><code>{trustContext.coordinate.closureFingerprint || t('not projected')}</code></dd></div>
+            <div><dt>{t('Execution request')}</dt><dd><code>{trustContext.coordinate.requestFingerprint || t('not captured')}</code></dd></div>
           </dl>
         </details>
       )}
@@ -2185,11 +2203,11 @@ function EvidenceTab({
         <section className="scenario-assertion-evidence failed" data-testid="failed-assertions">
           <header>
             <div>
-              <span>Failed assertions</span>
-              <strong>{evidence.failedAssertions.length} need repair</strong>
+              <span>{t('Failed assertions')}</span>
+              <strong>{t('{count} need repair', { count: evidence.failedAssertions.length })}</strong>
             </div>
             <button type="button" className="secondary compact" onClick={onBackToScenario}>
-              Edit assertions
+              {t('Edit assertions')}
             </button>
           </header>
           {evidence.failedAssertions.map((entry) => (
@@ -2200,7 +2218,7 @@ function EvidenceTab({
 
       {evidence.passedAssertions.length > 0 && (
         <details className="scenario-passed-evidence" data-testid="passed-assertions">
-          <summary>Passed assertions ({evidence.passedAssertions.length})</summary>
+          <summary>{t('Passed assertions ({count})', { count: evidence.passedAssertions.length })}</summary>
           <div>
             {evidence.passedAssertions.map((entry) => (
               <AssertionEvidence key={entry.assertionId} entry={entry} />
@@ -2211,21 +2229,21 @@ function EvidenceTab({
 
       {comparison && comparison.results.length === 0 && (
         <div className="scenario-no-assertions">
-          <strong>No business assertions configured</strong>
-          <span>A successful process run is not sufficient promotion evidence.</span>
+          <strong>{t('No business assertions configured')}</strong>
+          <span>{t('A successful process run is not sufficient promotion evidence.')}</span>
           <button type="button" className="secondary compact" onClick={onBackToScenario}>
-            Add assertion
+            {t('Add assertion')}
           </button>
         </div>
       )}
 
       <div className="scenario-evidence-grid">
         <section>
-          <strong>Terminal output</strong>
+          <strong>{t('Terminal output')}</strong>
           <pre>{JSON.stringify(response.output, null, 2)}</pre>
         </section>
         <section>
-          <strong>Node status</strong>
+          <strong>{t('Node status')}</strong>
           <div className="scenario-node-statuses">
             {Object.entries(response.statusMap).map(([nodeId, status]) => (
               <span key={nodeId}><code>{nodeId}</code><strong>{status}</strong></span>
@@ -2248,6 +2266,7 @@ function EvidenceIssueList({
   tone: 'danger' | 'warning';
   onSelectDiagnostic?: (diagnostic: ScenarioEvidenceDiagnostic) => void;
 }) {
+  const { t } = useI18n();
   return (
     <section className={`scenario-evidence-issues ${tone}`}>
       <strong>{title}</strong>
@@ -2255,14 +2274,16 @@ function EvidenceIssueList({
         {issues.map((issue) => (
           <li key={issue.id}>
             <span>
-              <b>{issue.message}</b>
+              <b>{localizedEvidenceText(t, issue.message, issue.messageValues)}</b>
               <small>
                 {issue.scope} · {issue.code}
-                {(issue.occurrences ?? 1) > 1 ? ` · ${issue.occurrences} occurrences` : ''}
+                {(issue.occurrences ?? 1) > 1
+                  ? ` · ${t('{count} occurrences', { count: issue.occurrences ?? 1 })}`
+                  : ''}
               </small>
               {issue.coordinate && (
                 <details>
-                  <summary>Technical target</summary>
+                  <summary>{t('Technical target')}</summary>
                   <code>{issue.coordinate}</code>
                 </details>
               )}
@@ -2273,7 +2294,7 @@ function EvidenceIssueList({
                 className="secondary compact"
                 onClick={() => onSelectDiagnostic(issue.diagnostic as ScenarioEvidenceDiagnostic)}
               >
-                Open source
+                {t('Open source')}
               </button>
             )}
           </li>
@@ -2288,26 +2309,27 @@ function AssertionEvidence({
 }: {
   entry: ScenarioComparison['results'][number];
 }) {
+  const { t } = useI18n();
   const diff = scenarioAssertionDiff(entry.expected, entry.actual, entry.path || '$');
   return (
     <article className={`scenario-assertion-result ${entry.passed ? 'passed' : 'failed'}`}>
       <header>
         <code>{entry.path || '$'}</code>
-        <strong>{entry.passed ? 'Pass' : 'Fail'}</strong>
+        <strong>{t(entry.passed ? 'Pass' : 'Fail')}</strong>
       </header>
       <div>
         <label>
-          <span>Expected</span>
+          <span>{t('Expected')}</span>
           <pre>{JSON.stringify(entry.expected, null, 2)}</pre>
         </label>
         <label>
-          <span>Actual</span>
+          <span>{t('Actual')}</span>
           <pre>{evidenceValue(entry.actual)}</pre>
         </label>
         <label className="scenario-assertion-diff">
-          <span>Diff</span>
+          <span>{t('Diff')}</span>
           {diff.length === 0
-            ? <strong>No difference</strong>
+            ? <strong>{t('No difference')}</strong>
             : (
               <div>
                 {diff.map((row) => (
@@ -2328,6 +2350,17 @@ function AssertionEvidence({
 function evidenceValue(value: unknown): string {
   const serialized = JSON.stringify(value, null, 2);
   return serialized === undefined ? String(value) : serialized;
+}
+
+function localizedEvidenceText(
+  t: (source: string, values?: TranslationValues) => string,
+  source: string,
+  values?: TranslationValues,
+): string {
+  if (!values || !Object.prototype.hasOwnProperty.call(values, 'label')) {
+    return t(source, values);
+  }
+  return t(source, { ...values, label: t(String(values.label)) });
 }
 
 function newOutputAssertion(sequence: number, contract: ContractDraft): AssertionDraft {

@@ -501,6 +501,7 @@ export default function LibraryWorkbench() {
                 setTestLaunch({ kind: selection.kind, assetRef: selection.key });
               }
             },
+            t,
           )}
         </section>
         <CanonicalContractPreview
@@ -549,6 +550,7 @@ function renderBuilder(
   remove: () => void,
   inferSamples: (direction: 'INPUT' | 'OUTPUT') => void,
   openTests: () => void,
+  t: (source: string, values?: Record<string, string | number>) => string,
 ) {
   if (selection.kind === 'operator') {
     const operator = document.operators?.[selection.key];
@@ -593,13 +595,13 @@ function renderBuilder(
       return (
         <div className="library-task-builder" data-testid="type-builder">
           <header className="library-builder-heading">
-            <div><span>Named Type</span><h2>{selection.key}</h2></div>
-            <button type="button" className="danger compact" onClick={remove}>Delete</button>
+            <div><span>{t('Named Type')}</span><h2>{selection.key}</h2></div>
+            <button type="button" className="danger compact" onClick={remove}>{t('Delete')}</button>
           </header>
           <section className="library-builder-section">
-            <header><h3>Identity</h3><span>Reusable schema</span></header>
+            <header><h3>{t('Identity')}</h3><span>{t('Reusable schema')}</span></header>
             <label className="library-single-field">
-              <span>Type name</span>
+              <span>{t('Type name')}</span>
               <input
                 defaultValue={selection.key}
                 onBlur={(event) => rename(event.target.value)}
@@ -609,7 +611,7 @@ function renderBuilder(
           </section>
           <section className="library-builder-section">
             <SchemaTreeEditor
-              title={`${selection.key} fields`}
+              title={t('{name} fields', { name: selection.key })}
               fields={typeFields(type)}
               basePath={`/types/${pointer(selection.key)}/fields`}
               onChange={(fields) => changeDocument((current) => ({
@@ -628,22 +630,22 @@ function renderBuilder(
   return (
     <div className="library-task-builder" data-testid="library-metadata-builder">
       <header className="library-builder-heading">
-        <div><span>Library</span><h2>{document.library.name || document.library.id}</h2></div>
+        <div><span>{t('Library')}</span><h2>{document.library.name || document.library.id}</h2></div>
       </header>
       <section className="library-builder-section">
-        <header><h3>Identity & Ownership</h3><span>Required for governance</span></header>
+        <header><h3>{t('Identity & Ownership')}</h3><span>{t('Required for governance')}</span></header>
         <div className="library-form-grid">
           <label>
-            <span>Library id</span>
+            <span>{t('Library id')}</span>
             <input
               value={document.library.id}
               readOnly
               data-authoring-path="/library/id"
-              title="Library id remains stable after draft creation"
+              title={t('Library id remains stable after draft creation')}
             />
           </label>
           <label>
-            <span>Version</span>
+            <span>{t('Version')}</span>
             <input
               value={document.library.version ?? ''}
               onChange={(event) => changeDocument((current) => ({
@@ -654,7 +656,7 @@ function renderBuilder(
             />
           </label>
           <label>
-            <span>Name</span>
+            <span>{t('Name')}</span>
             <input
               value={document.library.name ?? ''}
               onChange={(event) => changeDocument((current) => ({
@@ -665,7 +667,7 @@ function renderBuilder(
             />
           </label>
           <label>
-            <span>Owner</span>
+            <span>{t('Owner')}</span>
             <input
               value={document.library.owner ?? ''}
               onChange={(event) => changeDocument((current) => ({
@@ -678,11 +680,11 @@ function renderBuilder(
         </div>
       </section>
       <section className="library-builder-section library-summary">
-        <header><h3>Library Contents</h3><span>Current draft</span></header>
+        <header><h3>{t('Library Contents')}</h3><span>{t('Current draft')}</span></header>
         <dl>
-          <div><dt>Types</dt><dd>{Object.keys(document.types ?? {}).length}</dd></div>
-          <div><dt>Operators</dt><dd>{Object.keys(document.operators ?? {}).length}</dd></div>
-          <div><dt>Functions</dt><dd>{Object.keys(document.functions ?? {}).length}</dd></div>
+          <div><dt>{t('Types')}</dt><dd>{Object.keys(document.types ?? {}).length}</dd></div>
+          <div><dt>{t('Operators')}</dt><dd>{Object.keys(document.operators ?? {}).length}</dd></div>
+          <div><dt>{t('Functions')}</dt><dd>{Object.keys(document.functions ?? {}).length}</dd></div>
         </dl>
       </section>
     </div>

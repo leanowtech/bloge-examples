@@ -602,7 +602,9 @@ describe('ContractScenarioWorkspace', () => {
     await renderWorkspace({ stale: true, initialTab: 'scenarios', onRun });
 
     expect(button('Run & Compare').disabled).toBe(true);
-    expect(text()).toContain('This Scenario targets an older Graph or Contract.');
+    expect(text()).toContain(
+      'This Scenario targets an older Graph or Contract and cannot create current evidence.',
+    );
     expect(onRun).not.toHaveBeenCalled();
     await act(async () => button('Review compatibility').click());
     expect(text()).toContain('STRICT compatibility policy');

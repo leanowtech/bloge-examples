@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 
+import { useI18n } from '../i18n/I18nProvider';
 import type { VisualOperatorAuthoring } from '../types';
 import SchemaTreeEditor from './SchemaTreeEditor';
 
@@ -34,6 +35,7 @@ export default function OperatorBuilder({
   onInferSamples,
   onOpenTests,
 }: OperatorBuilderProps) {
+  const { t } = useI18n();
   const [keyDraft, setKeyDraft] = useState(operatorKey);
   useEffect(() => setKeyDraft(operatorKey), [operatorKey]);
   const archetype = operator.archetype ?? 'pure';
@@ -44,17 +46,17 @@ export default function OperatorBuilder({
     <div className="library-task-builder" data-testid="operator-builder">
       <header className="library-builder-heading">
         <div>
-          <span>Operator</span>
+          <span>{t('Operator')}</span>
           <h2>{operator.name || operatorKey}</h2>
         </div>
-        <button type="button" className="danger compact" onClick={onRemove}>Delete</button>
+        <button type="button" className="danger compact" onClick={onRemove}>{t('Delete')}</button>
       </header>
 
       <section className="library-builder-section">
-        <header><h3>Identity & Archetype</h3><span>Required</span></header>
+        <header><h3>{t('Identity & Archetype')}</h3><span>{t('Required')}</span></header>
         <div className="library-form-grid">
           <label>
-            <span>Operator ref</span>
+            <span>{t('Operator ref')}</span>
             <input
               value={keyDraft}
               onChange={(event) => setKeyDraft(event.target.value)}
@@ -63,7 +65,7 @@ export default function OperatorBuilder({
             />
           </label>
           <label>
-            <span>Display name</span>
+            <span>{t('Display name')}</span>
             <input
               value={operator.name ?? ''}
               onChange={(event) => patch({ name: event.target.value })}
@@ -71,7 +73,7 @@ export default function OperatorBuilder({
             />
           </label>
           <label className="library-form-wide">
-            <span>Description</span>
+            <span>{t('Description')}</span>
             <textarea
               value={operator.description ?? ''}
               onChange={(event) => patch({ description: event.target.value })}
@@ -80,7 +82,7 @@ export default function OperatorBuilder({
           </label>
         </div>
         <fieldset className="archetype-picker">
-          <legend>Execution archetype</legend>
+          <legend>{t('Execution archetype')}</legend>
           {ARCHETYPES.map(([value, label]) => (
             <label key={value} className={archetype === value ? 'selected' : ''}>
               <input
@@ -90,7 +92,7 @@ export default function OperatorBuilder({
                 checked={archetype === value}
                 onChange={() => patch({ archetype: value })}
               />
-              <span>{label}</span>
+              <span>{t(label)}</span>
               <small>{value}</small>
             </label>
           ))}
@@ -98,16 +100,16 @@ export default function OperatorBuilder({
       </section>
 
       <section className="library-builder-section">
-        <header><h3>Inputs / Outputs</h3><span>Compact schema</span></header>
+        <header><h3>{t('Inputs / Outputs')}</h3><span>{t('Compact schema')}</span></header>
         <SchemaTreeEditor
-          title="Inputs"
+          title={t('Inputs')}
           fields={operator.input ?? {}}
           basePath={`/operators/${pointer(operatorKey)}/input`}
           onChange={(input) => patch({ input })}
           onInferSamples={() => onInferSamples('INPUT')}
         />
         <SchemaTreeEditor
-          title="Outputs"
+          title={t('Outputs')}
           fields={operator.output ?? {}}
           basePath={`/operators/${pointer(operatorKey)}/output`}
           onChange={(output) => patch({ output })}
@@ -117,14 +119,14 @@ export default function OperatorBuilder({
 
       <section className="library-builder-section">
         <header>
-          <h3>Examples & Tests</h3>
+          <h3>{t('Examples & Tests')}</h3>
           <button
             type="button"
             className="primary compact"
             onClick={onOpenTests}
             data-testid="open-operator-test-table"
           >
-            Open test table
+            {t('Open test table')}
           </button>
         </header>
         <ReferenceEditor
@@ -135,23 +137,23 @@ export default function OperatorBuilder({
 
       {external && (
         <details className="library-builder-details">
-          <summary>Runtime Binding & Governance</summary>
+          <summary>{t('Runtime Binding & Governance')}</summary>
           <div className="library-form-grid">
             <label>
-              <span>Effect</span>
+              <span>{t('Effect')}</span>
               <select
                 value={operator.effect ?? ''}
                 onChange={(event) => patch({ effect: event.target.value })}
                 data-authoring-path={`/operators/${pointer(operatorKey)}/effect`}
               >
-                <option value="">Archetype default</option>
-                <option value="READ_EXTERNAL">Read external</option>
-                <option value="WRITE_EXTERNAL">Write external</option>
-                <option value="EXTERNAL">External</option>
+                <option value="">{t('Archetype default')}</option>
+                <option value="READ_EXTERNAL">{t('Read external')}</option>
+                <option value="WRITE_EXTERNAL">{t('Write external')}</option>
+                <option value="EXTERNAL">{t('External')}</option>
               </select>
             </label>
             <label>
-              <span>Secret posture</span>
+              <span>{t('Secret posture')}</span>
               <select
                 value={operator.requiresSecrets === undefined
                   ? '' : operator.requiresSecrets ? 'yes' : 'no'}
@@ -161,21 +163,21 @@ export default function OperatorBuilder({
                 })}
                 data-authoring-path={`/operators/${pointer(operatorKey)}/requiresSecrets`}
               >
-                <option value="">Confirm later</option>
-                <option value="no">No secrets</option>
-                <option value="yes">Requires secret refs</option>
+                <option value="">{t('Confirm later')}</option>
+                <option value="no">{t('No secrets')}</option>
+                <option value="yes">{t('Requires secret refs')}</option>
               </select>
             </label>
             <label>
-              <span>Idempotency</span>
+              <span>{t('Idempotency')}</span>
               <select
                 value={operator.idempotency ?? ''}
                 onChange={(event) => patch({ idempotency: event.target.value })}
               >
-                <option value="">Archetype default</option>
-                <option value="NOT_APPLICABLE">Not applicable</option>
-                <option value="SUPPORTED">Supported</option>
-                <option value="REQUIRED">Required</option>
+                <option value="">{t('Archetype default')}</option>
+                <option value="NOT_APPLICABLE">{t('Not applicable')}</option>
+                <option value="SUPPORTED">{t('Supported')}</option>
+                <option value="REQUIRED">{t('Required')}</option>
               </select>
             </label>
           </div>
@@ -191,12 +193,13 @@ interface ReferenceEditorProps {
 }
 
 export function ReferenceEditor({ values, onChange }: ReferenceEditorProps) {
+  const { t } = useI18n();
   return (
     <div className="reference-editor">
       {values.map((value, index) => (
         <div key={`${index}:${value}`}>
           <input
-            aria-label={`Test reference ${index + 1}`}
+            aria-label={t('Test reference {index}', { index: index + 1 })}
             value={value}
             onChange={(event) => onChange(
               values.map((item, itemIndex) => itemIndex === index ? event.target.value : item),
@@ -204,8 +207,8 @@ export function ReferenceEditor({ values, onChange }: ReferenceEditorProps) {
           />
           <button
             type="button"
-            aria-label={`Remove test reference ${index + 1}`}
-            title="Remove test reference"
+            aria-label={t('Remove test reference {index}', { index: index + 1 })}
+            title={t('Remove test reference')}
             onClick={() => onChange(values.filter((_, itemIndex) => itemIndex !== index))}
           >
             x
@@ -217,7 +220,7 @@ export function ReferenceEditor({ values, onChange }: ReferenceEditorProps) {
         className="secondary compact"
         onClick={() => onChange([...values, `fixtures/case-${values.length + 1}`])}
       >
-        + Add test reference
+        {t('+ Add test reference')}
       </button>
     </div>
   );

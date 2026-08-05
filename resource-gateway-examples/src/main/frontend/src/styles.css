@@ -12654,6 +12654,26 @@ button.primary:disabled {
   font-style: normal;
 }
 
+.author-diagnostic-technical-detail {
+  margin: -1px 8px 0;
+  padding: 6px 9px;
+  border: 1px solid #d8dde6;
+  border-top: 0;
+  background: #f8fafc;
+  color: var(--muted);
+  font-size: 10px;
+}
+
+.author-diagnostic-technical-detail summary {
+  cursor: pointer;
+  font-weight: 750;
+}
+
+.author-diagnostic-technical-detail p {
+  margin: 6px 0 0;
+  overflow-wrap: anywhere;
+}
+
 .workspace-v2.diagnostics-open > .canvas,
 .workspace-v2.diagnostics-open > .inspector {
   padding-bottom: 196px;

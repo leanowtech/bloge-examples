@@ -16,6 +16,7 @@ import {
 } from '../api';
 import useDialogFocusTrap from '../author/accessibility/useDialogFocusTrap';
 import SchemaValueEditor from '../author/shared/SchemaValueEditor';
+import { useI18n } from '../i18n/I18nProvider';
 import {
   functionArgsArray,
   functionArgsObject,
@@ -94,6 +95,7 @@ export default function AssetTestTable({
   onConflict,
   onClose,
 }: AssetTestTableProps) {
+  const { t } = useI18n();
   const dialogRef = useRef<HTMLDivElement>(null);
   const [exactDraft, setExactDraft] = useState<VisualLibraryAuthoringDraft | null>(null);
   const [operatorDraft, setOperatorDraft] = useState<VisualAuthoringOperatorTestDraft | null>(null);
@@ -179,7 +181,7 @@ export default function AssetTestTable({
     };
   }, [assetRef, kind, onConflict, prepareDraft]);
 
-  const title = kind === 'operator' ? 'Operator contract tests' : 'Function tests';
+  const title = kind === 'operator' ? t('Operator contract tests') : t('Function tests');
   const proof = kind === 'operator'
     ? 'SCHEMA CONTRACT'
     : functionDraft?.bindingStatus ?? 'CHECKING';
@@ -394,8 +396,8 @@ export default function AssetTestTable({
             <button
               type="button"
               className="icon-button"
-              aria-label="Close test table"
-              title="Close"
+              aria-label={t('Close test table')}
+              title={t('Close')}
               onClick={onClose}
             >
               x
@@ -404,11 +406,11 @@ export default function AssetTestTable({
         </header>
 
         <div className="library-test-meta">
-          <span>Draft revision <strong>{exactDraft?.revision ?? '-'}</strong></span>
-          <span>Cases <strong>{kind === 'operator' ? operatorRows.length : functionRows.length}</strong></span>
+          <span>{t('Draft revision')} <strong>{exactDraft?.revision ?? '-'}</strong></span>
+          <span>{t('Cases')} <strong>{kind === 'operator' ? operatorRows.length : functionRows.length}</strong></span>
           {(evidenceView || lastEvidence) && (
             <span title={evidenceView?.evidence.materialFingerprint ?? lastEvidence}>
-              Evidence <strong>{shortFingerprint(
+              {t('Evidence')} <strong>{shortFingerprint(
                 evidenceView?.evidence.materialFingerprint ?? lastEvidence,
               )}</strong>
             </span>
@@ -417,23 +419,23 @@ export default function AssetTestTable({
             <span
               className={`library-test-trust ${evidenceView.freshness.toLowerCase()}`}
               data-testid="library-test-evidence-trust"
-              title={`Signed by ${evidenceView.evidence.seal.keyId}`}
+              title={t('Signed by {keyId}', { keyId: evidenceView.evidence.seal.keyId })}
             >
-              <strong>SIGNED</strong> {evidenceView.freshness}
+              <strong>{t('SIGNED')}</strong> {t(evidenceView.freshness)}
             </span>
           )}
           {draftGate && (
             <span
               className={`library-test-gate ${draftGate.status.toLowerCase()}`}
               data-testid="library-test-draft-gate"
-              title="Conservative authoring-test baseline; not production readiness"
+              title={t('Conservative authoring-test baseline; not production readiness')}
             >
-              Draft gate <strong>{draftGate.satisfiedAssets}/{draftGate.requiredAssets}</strong>
+              {t('Draft gate')} <strong>{draftGate.satisfiedAssets}/{draftGate.requiredAssets}</strong>
             </span>
           )}
           {kind === 'function' && functionDraft?.executionProfile && (
             <span title={functionDraft.executionProfile}>
-              Runner <strong>{executionProfileLabel(functionDraft.executionProfile)}</strong>
+              {t('Runner')} <strong>{t(executionProfileLabel(functionDraft.executionProfile))}</strong>
             </span>
           )}
         </div>
@@ -442,29 +444,32 @@ export default function AssetTestTable({
           {diagnostic && <p className="library-test-notice">{diagnostic}</p>}
           {evidenceView?.freshness === 'STALE' && (
             <p className="library-test-notice warning">
-              This signed result no longer matches the current draft: {' '}
-              {evidenceView.staleReasons.map(reasonLabel).join(', ')}.
+              {t('This signed result no longer matches the current draft: {reasons}.', {
+                reasons: evidenceView.staleReasons.map((reason) => t(reasonLabel(reason))).join(', '),
+              })}
             </p>
           )}
           {assetGate?.status === 'BLOCKED' && assetGate.reasons.length > 0 && (
             <p className="library-test-notice warning" data-testid="library-test-gate-reasons">
-              This asset is not test-evidenced: {assetGate.reasons.map(reasonLabel).join(', ')}.
+              {t('This asset is not test-evidenced: {reasons}.', {
+                reasons: assetGate.reasons.map((reason) => t(reasonLabel(reason))).join(', '),
+              })}
             </p>
           )}
           {!fixtureAvailable && (
             <p className="library-test-notice">
-              Governed fixture persistence is not advertised by this deployment.
+              {t('Governed fixture persistence is not advertised by this deployment.')}
             </p>
           )}
           {error && <p className="library-inline-error" role="alert">{error}</p>}
         </div>
 
         <div className="library-test-viewbar">
-          <div className="scenario-view-switch" role="group" aria-label="Test table view">
-            <button type="button" aria-pressed={testView === 'matrix'} onClick={() => setTestView('matrix')}>Matrix</button>
-            <button type="button" aria-pressed={testView === 'case'} onClick={() => setTestView('case')}>Case</button>
+          <div className="scenario-view-switch" role="group" aria-label={t('Test table view')}>
+            <button type="button" aria-pressed={testView === 'matrix'} onClick={() => setTestView('matrix')}>{t('Matrix')}</button>
+            <button type="button" aria-pressed={testView === 'case'} onClick={() => setTestView('case')}>{t('Case')}</button>
           </div>
-          <span>{kind === 'operator' ? 'Schema contract proof' : 'Runtime behavior proof'}</span>
+          <span>{kind === 'operator' ? t('Schema contract proof') : t('Runtime behavior proof')}</span>
         </div>
 
         <div className="library-test-table-scroll">
@@ -556,10 +561,10 @@ export default function AssetTestTable({
             }}
             disabled={busy}
           >
-            + Add case
+            {t('Add case')}
           </button>
           <div>
-            <button type="button" className="secondary" onClick={onClose}>Done</button>
+            <button type="button" className="secondary" onClick={onClose}>{t('Done')}</button>
             <button
               type="button"
               className="primary"
@@ -576,7 +581,7 @@ export default function AssetTestTable({
               disabled={busy || (kind === 'operator' ? !operatorRows.length : !functionRows.length)}
               data-testid="library-test-run-all"
             >
-              {busy ? 'Running...' : 'Run all'}
+              {busy ? t('Running...') : t('Run all')}
             </button>
           </div>
         </footer>
@@ -618,6 +623,7 @@ function OperatorTable({
   onRun: (index: number) => void;
   onSaveFixture: (index: number) => void;
 }) {
+  const { t } = useI18n();
   const patch = (index: number, value: Partial<OperatorEditor>) => onRowsChange(
     rows.map((row, rowIndex) => rowIndex === index ? { ...row, ...value } : row),
   );
@@ -627,9 +633,9 @@ function OperatorTable({
   }
   return (
     <div className="asset-scenario-workspace" data-testid="asset-scenario-workspace">
-      <nav className="asset-scenario-cases" aria-label="Operator test cases">
+      <nav className="asset-scenario-cases" aria-label={t('Operator test cases')}>
         <header>
-          <span>Test cases</span>
+          <span>{t('Test cases')}</span>
           <strong>{rows.length}</strong>
         </header>
         {rows.map((row, index) => (
@@ -640,17 +646,17 @@ function OperatorTable({
             aria-current={selectedIndex === index ? 'true' : undefined}
             onClick={() => onSelect(index)}
           >
-            <span>{row.name || `Case ${index + 1}`}</span>
-            <CaseResultBadge result={results[index]} successLabel="Schema valid" />
+            <span>{row.name || t('Case {index}', { index: index + 1 })}</span>
+            <CaseResultBadge result={results[index]} successLabel={t('Schema valid')} />
           </button>
         ))}
       </nav>
-      <section className="asset-scenario-editor" aria-label="Selected operator test case">
+      <section className="asset-scenario-editor" aria-label={t('Selected operator test case')}>
         <header className="asset-scenario-editor-heading">
           <label>
-            <span>Case name</span>
+            <span>{t('Case name')}</span>
             <input
-              aria-label={`Operator case ${selectedIndex + 1} name`}
+              aria-label={t('Operator case {index} name', { index: selectedIndex + 1 })}
               value={row.name}
               onChange={(event) => patch(selectedIndex, { name: event.target.value })}
             />
@@ -666,21 +672,21 @@ function OperatorTable({
         />
 
         <section className="asset-scenario-stage" id={`operator-case-editor-${selectedIndex + 1}-given`}>
-          <StageHeading step="Given" title="Operator inputs" />
+          <StageHeading step={t('Given')} title={t('Operator inputs')} />
           <SchemaValueEditor
             envelope={operatorInputSchema(document, assetRef)}
             value={row.inputs}
             onChange={(value) => patch(selectedIndex, {
               inputs: objectValue(value),
             })}
-            label="Inputs"
+            label={t('Inputs')}
           />
         </section>
 
         <details className="asset-scenario-dependency" id={`operator-case-editor-${selectedIndex + 1}-dependencies`}>
           <summary>
-            <span>Dependencies</span>
-            <strong>Operator configuration</strong>
+            <span>{t('Dependencies')}</span>
+            <strong>{t('Operator configuration')}</strong>
           </summary>
           <SchemaValueEditor
             envelope={operatorConfigSchema(document, assetRef)}
@@ -688,22 +694,22 @@ function OperatorTable({
             onChange={(value) => patch(selectedIndex, {
               config: objectValue(value),
             })}
-            label="Configuration"
+            label={t('Configuration')}
           />
         </details>
 
         <section className="asset-scenario-stage" id={`operator-case-editor-${selectedIndex + 1}-then`}>
-          <StageHeading step="Then" title="Mocked outputs" />
+          <StageHeading step={t('Then')} title={t('Mocked outputs')} />
           <SchemaValueEditor
             envelope={operatorOutputSchema(document, assetRef)}
             value={row.outputs}
             onChange={(value) => patch(selectedIndex, {
               outputs: objectValue(value),
             })}
-            label="Outputs"
+            label={t('Outputs')}
           />
           <details className="asset-scenario-advanced">
-            <summary>Advanced output assertions</summary>
+            <summary>{t('Advanced output assertions')}</summary>
             <SchemaValueEditor
               value={row.source.outputAssertions}
               onChange={(value) => patch(selectedIndex, {
@@ -712,15 +718,15 @@ function OperatorTable({
                   outputAssertions: objectValue(value) as VisualOperatorContractTestCase['outputAssertions'],
                 },
               })}
-              label="Output assertions"
+              label={t('Output assertions')}
               advancedOnly
             />
           </details>
         </section>
 
         <section className="asset-scenario-stage asset-scenario-review" id={`operator-case-editor-${selectedIndex + 1}-review`}>
-          <StageHeading step="Review" title="Validate this case" />
-          <TestResult result={results[selectedIndex]} successLabel="Schema valid" />
+          <StageHeading step={t('Review')} title={t('Validate this case')} />
+          <TestResult result={results[selectedIndex]} successLabel={t('Schema valid')} />
           <CaseActions
             kind="operator"
             index={selectedIndex}
@@ -769,6 +775,7 @@ function FunctionTable({
   onRun: (index: number) => void;
   onSaveFixture: (index: number) => void;
 }) {
+  const { t } = useI18n();
   const patch = (index: number, value: Partial<FunctionEditor>) => onRowsChange(
     rows.map((row, rowIndex) => rowIndex === index ? { ...row, ...value } : row),
   );
@@ -779,9 +786,9 @@ function FunctionTable({
   }
   return (
     <div className="asset-scenario-workspace" data-testid="asset-scenario-workspace">
-      <nav className="asset-scenario-cases" aria-label="Function test cases">
+      <nav className="asset-scenario-cases" aria-label={t('Function test cases')}>
         <header>
-          <span>Test cases</span>
+          <span>{t('Test cases')}</span>
           <strong>{rows.length}</strong>
         </header>
         {rows.map((row, index) => (
@@ -792,35 +799,35 @@ function FunctionTable({
             aria-current={selectedIndex === index ? 'true' : undefined}
             onClick={() => onSelect(index)}
           >
-            <span>{row.id || `Case ${index + 1}`}</span>
-            <small>{caseKindLabel(row.kind)}</small>
-            <CaseResultBadge result={results[index]} successLabel="Runtime passed" />
+            <span>{row.id || t('Case {index}', { index: index + 1 })}</span>
+            <small>{t(caseKindLabel(row.kind))}</small>
+            <CaseResultBadge result={results[index]} successLabel={t('Runtime passed')} />
           </button>
         ))}
       </nav>
-      <section className="asset-scenario-editor" aria-label="Selected function test case">
+      <section className="asset-scenario-editor" aria-label={t('Selected function test case')}>
         <header className="asset-scenario-editor-heading">
           <label>
-            <span>Case name</span>
+            <span>{t('Case name')}</span>
             <input
-              aria-label={`Function case ${selectedIndex + 1} name`}
+              aria-label={t('Function case {index} name', { index: selectedIndex + 1 })}
               value={row.id}
               onChange={(event) => patch(selectedIndex, { id: event.target.value })}
             />
           </label>
           <label>
-            <span>Case type</span>
+            <span>{t('Case type')}</span>
             <select
-              aria-label={`Function case ${selectedIndex + 1} kind`}
+              aria-label={t('Function case {index} kind', { index: selectedIndex + 1 })}
               value={row.kind}
               onChange={(event) => patch(selectedIndex, {
                 kind: event.target.value as VisualFunctionTestKind,
               })}
             >
-              <option value="GOLDEN">Golden</option>
-              <option value="NEGATIVE">Negative</option>
-              <option value="BOUNDARY">Boundary</option>
-              <option value="REGRESSION">Regression</option>
+              <option value="GOLDEN">{t('Golden')}</option>
+              <option value="NEGATIVE">{t('Negative')}</option>
+              <option value="BOUNDARY">{t('Boundary')}</option>
+              <option value="REGRESSION">{t('Regression')}</option>
             </select>
           </label>
         </header>
@@ -834,80 +841,77 @@ function FunctionTable({
         />
 
         <section className="asset-scenario-stage" id={`function-case-editor-${selectedIndex + 1}-given`}>
-          <StageHeading step="Given" title="Function arguments" />
+          <StageHeading step={t('Given')} title={t('Function arguments')} />
           <SchemaValueEditor
             envelope={projection.inputSchema}
             value={functionArgsObject(row.args, projection)}
             onChange={(value) => patch(selectedIndex, {
               args: functionArgsArray(value, projection),
             })}
-            label="Arguments"
+            label={t('Arguments')}
           />
         </section>
 
         <details className="asset-scenario-dependency" id={`function-case-editor-${selectedIndex + 1}-dependencies`}>
           <summary>
-            <span>Dependencies</span>
-            <strong>Runtime binding</strong>
+            <span>{t('Dependencies')}</span>
+            <strong>{t('Runtime binding')}</strong>
           </summary>
           <dl className="asset-runtime-binding">
             <div>
-              <dt>Binding</dt>
+              <dt>{t('Binding')}</dt>
               <dd>{bindingStatus}</dd>
             </div>
             <div>
-              <dt>Execution profile</dt>
-              <dd>{executionProfileLabel(executionProfile || 'not advertised')}</dd>
+              <dt>{t('Execution profile')}</dt>
+              <dd>{t(executionProfileLabel(executionProfile || 'not advertised'))}</dd>
             </div>
           </dl>
-          <p>
-            Function cases invoke the exact advertised runtime binding; dependency overrides are
-            not inferred from a design-only signature.
-          </p>
+          <p>{t('Function cases invoke the exact advertised runtime binding; dependency overrides are not inferred from a design-only signature.')}</p>
         </details>
 
         <section className="asset-scenario-stage" id={`function-case-editor-${selectedIndex + 1}-then`}>
-          <StageHeading step="Then" title="Expected outcome" />
+          <StageHeading step={t('Then')} title={t('Expected outcome')} />
           <label className="asset-scenario-assertion">
-            <span>Assertion</span>
+            <span>{t('Assertion')}</span>
             <select
-              aria-label={`Function case ${selectedIndex + 1} assertion`}
+              aria-label={t('Function case {index} assertion', { index: selectedIndex + 1 })}
               value={row.assertion}
               onChange={(event) => patch(selectedIndex, {
                 assertion: event.target.value as VisualFunctionTestAssertion,
               })}
             >
-              <option value="EQUALS">Equals</option>
-              <option value="RETURN_TYPE">Matches declared return type</option>
-              <option value="EXPECT_ERROR">Returns an error</option>
+              <option value="EQUALS">{t('Equals')}</option>
+              <option value="RETURN_TYPE">{t('Matches declared return type')}</option>
+              <option value="EXPECT_ERROR">{t('Returns an error')}</option>
             </select>
           </label>
           {row.assertion === 'EXPECT_ERROR' ? (
             <label className="asset-scenario-assertion">
-              <span>Error code</span>
+              <span>{t('Error code')}</span>
               <input
-                aria-label={`Function case ${selectedIndex + 1} expected error`}
+                aria-label={t('Function case {index} expected error', { index: selectedIndex + 1 })}
                 value={row.errorCode}
                 onChange={(event) => patch(selectedIndex, { errorCode: event.target.value })}
               />
             </label>
           ) : row.assertion === 'RETURN_TYPE' ? (
-            <span className="library-test-derived">Declared return schema</span>
+            <span className="library-test-derived">{t('Declared return schema')}</span>
           ) : (
             <SchemaValueEditor
               envelope={projection.outputSchema}
               value={row.expected}
               onChange={(expected) => patch(selectedIndex, { expected })}
-              label="Expected value"
+              label={t('Expected value')}
             />
           )}
         </section>
 
         <section className="asset-scenario-stage asset-scenario-review" id={`function-case-editor-${selectedIndex + 1}-review`}>
-          <StageHeading step="Review" title="Validate this case" />
+          <StageHeading step={t('Review')} title={t('Validate this case')} />
           <TestResult
             result={results[selectedIndex]}
-            successLabel="Runtime passed"
+            successLabel={t('Runtime passed')}
             showActual
           />
           <CaseActions
@@ -975,6 +979,7 @@ function CaseActions({
   onSaveFixture: (index: number) => void;
   onRemove: (index: number) => void;
 }) {
+  const { t } = useI18n();
   return (
     <footer className="asset-scenario-actions">
       <button
@@ -982,9 +987,9 @@ function CaseActions({
         className="danger"
         onClick={() => onRemove(index)}
         disabled={busy}
-        aria-label={`Remove ${kind} case ${index + 1}`}
+        aria-label={t('Remove {kind} case {index}', { kind: t(kind), index: index + 1 })}
       >
-        Delete case
+        {t('Delete case')}
       </button>
       <div>
         <button
@@ -993,11 +998,11 @@ function CaseActions({
           onClick={() => onSaveFixture(index)}
           disabled={busy || !fixtureAvailable}
           title={fixtureAvailable
-            ? 'Save this test case as a governed fixture'
-            : 'Fixture persistence is unavailable in this deployment'}
+            ? t('Save this test case as a governed fixture')
+            : t('Fixture persistence is unavailable in this deployment')}
           data-testid={`${kind}-fixture-save-${index}`}
         >
-          Save fixture
+          {t('Save fixture')}
         </button>
         <button
           type="button"
@@ -1006,7 +1011,7 @@ function CaseActions({
           disabled={busy}
           data-testid={`${kind}-case-run-${index}`}
         >
-          Run case
+          {t('Run case')}
         </button>
       </div>
     </footer>
@@ -1020,18 +1025,20 @@ function CaseResultBadge({
   result?: { passed: boolean };
   successLabel: string;
 }) {
+  const { t } = useI18n();
   return (
     <strong className={`asset-case-status ${result ? result.passed ? 'passed' : 'failed' : 'idle'}`}>
-      {result ? result.passed ? successLabel : 'Failed' : 'Not run'}
+      {result ? result.passed ? successLabel : t('Failed') : t('Not run')}
     </strong>
   );
 }
 
 function EmptyCaseWorkspace() {
+  const { t } = useI18n();
   return (
     <div className="asset-scenario-empty">
-      <strong>No test cases yet</strong>
-      <span>Add a case to describe one meaningful business example.</span>
+      <strong>{t('No test cases yet')}</strong>
+      <span>{t('Add a case to describe one meaningful business example.')}</span>
     </div>
   );
 }
@@ -1050,12 +1057,13 @@ function TestResult({
   successLabel: string;
   showActual?: boolean;
 }) {
+  const { t } = useI18n();
   if (!result) {
-    return <span className="library-test-result idle">Not run</span>;
+    return <span className="library-test-result idle">{t('Not run')}</span>;
   }
   return (
     <div className={`library-test-result ${result.passed ? 'passed' : 'failed'}`}>
-      <strong>{result.passed ? successLabel : result.status ?? 'Failed'}</strong>
+      <strong>{result.passed ? successLabel : result.status ? t(result.status) : t('Failed')}</strong>
       {showActual && result.actual !== undefined && (
         <code title={pretty(result.actual)}>{compactValue(result.actual)}</code>
       )}

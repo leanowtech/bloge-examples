@@ -77,6 +77,64 @@ describe('AuthorCommandBar', () => {
     expect(remediate).toHaveBeenCalledOnce();
   });
 
+  it('uses stable message ids for Chinese command, blocker, remediation, and status text', async () => {
+    window.history.pushState({}, '', '/author/?lang=zh-CN');
+    await render('scenarios', true, {
+      commandId: 'RUN_CURRENT_SCENARIO',
+      state: 'BLOCKED',
+      enabled: false,
+      label: 'mutable English label',
+      labelId: 'author.command.run',
+      reasonCode: 'RG.AUTHOR.RUN.INPUT_INVALID',
+      message: 'mutable English explanation',
+      messageId: 'author.blocker.inputInvalid',
+      remediation: {
+        label: 'mutable English remediation',
+        labelId: 'author.command.fixRequiredInput',
+        mode: 'scenarios',
+      },
+    });
+
+    expect(text()).toContain('运行并比较');
+    expect(text()).toContain('请先修复已标出的输入值，再运行。');
+    expect(text()).toContain('修复必填输入');
+    expect(text()).toContain('已保存');
+    expect(text()).not.toContain('mutable English');
+  });
+
+  it('keeps command identity, state, and executability identical across locales', async () => {
+    const blocked: AuthorCommandAvailability = {
+      commandId: 'RUN_CURRENT_SCENARIO',
+      state: 'BLOCKED',
+      enabled: false,
+      label: 'Run & Compare',
+      labelId: 'author.command.run',
+      reasonCode: 'RG.AUTHOR.RUN.INPUT_INVALID',
+      message: 'Resolve the highlighted input values before running.',
+      messageId: 'author.blocker.inputInvalid',
+      remediation: {
+        label: 'Fix required input',
+        labelId: 'author.command.fixRequiredInput',
+        mode: 'scenarios',
+      },
+    };
+
+    window.history.replaceState({}, '', '/author/?lang=en');
+    await render('scenarios', true, blocked);
+    const english = localeInvariantState();
+
+    await act(async () => root?.unmount());
+    root = null;
+    host.replaceChildren();
+    window.history.replaceState({}, '', '/author/?lang=zh-CN');
+    await render('scenarios', true, blocked);
+    const chinese = localeInvariantState();
+
+    expect(chinese).toEqual(english);
+    expect(text()).toContain('运行并比较');
+    expect(text()).toContain('修复必填输入');
+  });
+
   async function render(
     mode: AuthorMode,
     localized = false,
@@ -133,5 +191,17 @@ describe('AuthorCommandBar', () => {
       .find((candidate) => candidate.textContent === label);
     if (!button) throw new Error(`Button not found: ${label}`);
     return button;
+  }
+
+  function localeInvariantState() {
+    return Array.from(host.querySelectorAll<HTMLElement>('[data-testid]'))
+      .filter((element) => element.matches('button, a, [data-state]'))
+      .map((element) => ({
+        id: element.dataset.testid,
+        disabled: element instanceof HTMLButtonElement ? element.disabled : undefined,
+        ariaDisabled: element.getAttribute('aria-disabled'),
+        ariaPressed: element.getAttribute('aria-pressed'),
+        state: element.dataset.state ?? null,
+      }));
   }
 });

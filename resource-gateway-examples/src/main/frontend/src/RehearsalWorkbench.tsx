@@ -983,7 +983,10 @@ export default function RehearsalWorkbench() {
                         >
                           <span className="entry-identity">
                             <strong>#{entry.index} {entry.planId}</strong>
-                            <small>revision {entry.planRevision} · {entry.attemptCount} attempt(s)</small>
+                            <small>{t('revision {revision} · {count} attempts', {
+                              revision: entry.planRevision,
+                              count: entry.attemptCount,
+                            })}</small>
                           </span>
                           <span>
                             <span className={`status-label ${statusTone(entry.status)}`}>{entry.status}</span>

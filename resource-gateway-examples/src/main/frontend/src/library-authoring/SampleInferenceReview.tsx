@@ -11,6 +11,7 @@ import {
   inferLibraryAuthoringSamples,
 } from '../api';
 import useDialogFocusTrap from '../author/accessibility/useDialogFocusTrap';
+import { useI18n } from '../i18n/I18nProvider';
 import type {
   VisualLibraryAuthoringDraft,
   VisualOperatorAuthoring,
@@ -69,6 +70,7 @@ export default function SampleInferenceReview({
   onConflict,
   onClose,
 }: SampleInferenceReviewProps) {
+  const { t } = useI18n();
   const [direction, setDirection] = useState<VisualSamplePortDirection>(initialDirection);
   const [portName, setPortName] = useState(
     initialPortName?.trim() || (initialDirection === 'INPUT' ? 'request' : 'response'),
@@ -213,15 +215,15 @@ export default function SampleInferenceReview({
       >
         <header className="sample-inference-heading">
           <div>
-            <span>Observed to declared</span>
-            <h2 id="sample-inference-title">Infer an operator port from samples</h2>
+            <span>{t('Observed to declared')}</span>
+            <h2 id="sample-inference-title">{t('Infer an operator port from samples')}</h2>
             <p>{operatorKey}</p>
           </div>
           <button
             type="button"
             className="sample-inference-close"
-            aria-label="Close sample inference"
-            title="Close"
+            aria-label={t('Close sample inference')}
+            title={t('Close')}
             onClick={onClose}
             disabled={busy !== null}
           >
@@ -233,12 +235,12 @@ export default function SampleInferenceReview({
           <div className="sample-inference-input">
             <section className="sample-inference-target">
               <header>
-                <h3>Target port</h3>
-                <span>Exact draft coordinate</span>
+                <h3>{t('Target port')}</h3>
+                <span>{t('Exact draft coordinate')}</span>
               </header>
               <div className="sample-inference-target-grid">
                 <fieldset>
-                  <legend>Direction</legend>
+                  <legend>{t('Direction')}</legend>
                   <div className="segmented-control">
                     {(['INPUT', 'OUTPUT'] as const).map((value) => (
                       <button
@@ -251,13 +253,13 @@ export default function SampleInferenceReview({
                           invalidateResult();
                         }}
                       >
-                        {value === 'INPUT' ? 'Input' : 'Output'}
+                        {value === 'INPUT' ? t('Input') : t('Output')}
                       </button>
                     ))}
                   </div>
                 </fieldset>
                 <label>
-                  <span>Port name</span>
+                  <span>{t('Port name')}</span>
                   <input
                     value={portName}
                     list="sample-inference-port-names"
@@ -281,7 +283,7 @@ export default function SampleInferenceReview({
                     checked={suggestEnums}
                     onChange={(event) => setSuggestEnums(event.target.checked)}
                   />
-                  <span>Suggest enums</span>
+                  <span>{t('Suggest enums')}</span>
                 </label>
                 <label>
                   <input
@@ -289,7 +291,7 @@ export default function SampleInferenceReview({
                     checked={suggestFormats}
                     onChange={(event) => setSuggestFormats(event.target.checked)}
                   />
-                  <span>Detect date formats</span>
+                  <span>{t('Detect date formats')}</span>
                 </label>
               </div>
             </section>
@@ -297,11 +299,11 @@ export default function SampleInferenceReview({
             <section className="sample-inference-source">
               <header>
                 <div>
-                  <h3>Representative JSON</h3>
-                  <span>JSON array, one object, or NDJSON</span>
+                  <h3>{t('Representative JSON')}</h3>
+                  <span>{t('JSON array, one object, or NDJSON')}</span>
                 </div>
                 <strong data-state={parsed.error ? 'invalid' : 'valid'}>
-                  {parsed.error ? 'Invalid JSON' : `${parsed.samples.length} samples ready`}
+                  {parsed.error ? t('Invalid JSON') : t('{count} samples ready', { count: parsed.samples.length })}
                 </strong>
               </header>
               <textarea
@@ -311,25 +313,24 @@ export default function SampleInferenceReview({
                   invalidateResult();
                 }}
                 spellCheck={false}
-                aria-label="Representative JSON samples"
+                aria-label={t('Representative JSON samples')}
                 data-dialog-initial-focus
                 data-testid="sample-inference-samples"
               />
-              {parsed.error && <p className="library-inline-error">{parsed.error}</p>}
+              {parsed.error && <p className="library-inline-error">{t(parsed.error)}</p>}
               <p className="sample-inference-privacy">
-                Raw JSON stays in this review session and is sent only for infer and apply.
-                Persisted drafts retain fingerprints, counts, decisions, and declared schema.
+                {t('Raw JSON stays in this review session and is sent only for infer and apply. Persisted drafts retain fingerprints, counts, decisions, and declared schema.')}
               </p>
             </section>
           </div>
         ) : (
           <div className="sample-inference-review">
-            <section className="sample-inference-summary" aria-label="Inference summary">
-              <div><span>Samples</span><strong>{result.sampleCount}</strong></div>
-              <div><span>Observed facts</span><strong>{result.observations.length}</strong></div>
-              <div><span>Decisions</span><strong>{resolvedCount}/{confirmations.length}</strong></div>
+            <section className="sample-inference-summary" aria-label={t('Inference summary')}>
+              <div><span>{t('Samples')}</span><strong>{result.sampleCount}</strong></div>
+              <div><span>{t('Observed facts')}</span><strong>{result.observations.length}</strong></div>
+              <div><span>{t('Decisions')}</span><strong>{resolvedCount}/{confirmations.length}</strong></div>
               <div>
-                <span>Evidence</span>
+                <span>{t('Evidence')}</span>
                 <strong title={result.evidenceFingerprint}>
                   {shortFingerprint(result.evidenceFingerprint)}
                 </strong>
@@ -340,30 +341,30 @@ export default function SampleInferenceReview({
               <section className="sample-inference-evidence">
                 <header>
                   <div>
-                    <h3>Candidate structure</h3>
-                    <span>{directionLabel(result.target.portDirection)} / {result.target.portName}</span>
+                    <h3>{t('Candidate structure')}</h3>
+                    <span>{t(directionLabel(result.target.portDirection))} / {result.target.portName}</span>
                   </div>
                   <button type="button" className="secondary compact" onClick={invalidateResult}>
-                    Edit samples
+                    {t('Edit samples')}
                   </button>
                 </header>
                 <div className="sample-inference-before-after">
                   <div>
-                    <span>Current</span>
-                    <strong>{existingPort === undefined ? 'New port' : schemaNodeLabel(existingPort)}</strong>
+                    <span>{t('Current')}</span>
+                    <strong>{existingPort === undefined ? t('New port') : t(schemaNodeLabel(existingPort))}</strong>
                   </div>
-                  <div aria-hidden="true">-&gt;</div>
+                  <div aria-hidden="true">{t('->')}</div>
                   <div>
-                    <span>Inferred</span>
-                    <strong>{schemaNodeLabel(result.candidate)}</strong>
+                    <span>{t('Inferred')}</span>
+                    <strong>{t(schemaNodeLabel(result.candidate))}</strong>
                   </div>
                 </div>
                 <CandidateTree name={result.target.portName} node={result.candidate} />
 
                 <header className="sample-inference-facts-heading">
                   <div>
-                    <h3>Observed facts</h3>
-                    <span>Values are not retained</span>
+                    <h3>{t('Observed facts')}</h3>
+                    <span>{t('Values are not retained')}</span>
                   </div>
                 </header>
                 <div className="sample-inference-facts">
@@ -376,7 +377,7 @@ export default function SampleInferenceReview({
                     {result.diagnostics.map((diagnostic) => (
                       <p key={`${diagnostic.code}:${diagnostic.authoringPath}`}>
                         <strong>{diagnostic.code}</strong>
-                        <span>{diagnostic.message}</span>
+                        <span>{t(diagnostic.message)}</span>
                       </p>
                     ))}
                   </div>
@@ -386,8 +387,8 @@ export default function SampleInferenceReview({
               <section className="sample-inference-confirmation-queue">
                 <header>
                   <div>
-                    <h3>Confirmation queue</h3>
-                    <span>Observed facts never become declared implicitly</span>
+                    <h3>{t('Confirmation queue')}</h3>
+                    <span>{t('Observed facts never become declared implicitly')}</span>
                   </div>
                   {confirmations.length > 0 && (
                     <button
@@ -396,14 +397,14 @@ export default function SampleInferenceReview({
                       onClick={useRecommendations}
                       data-testid="sample-inference-use-recommendations"
                     >
-                      Use {confirmations.length} recommendations
+                      {t('Use {count} recommendations', { count: confirmations.length })}
                     </button>
                   )}
                 </header>
                 {confirmations.length === 0 ? (
                   <div className="sample-inference-no-confirmations">
-                    <strong>No ambiguous facts</strong>
-                    <span>The conservative candidate can be applied as shown.</span>
+                    <strong>{t('No ambiguous facts')}</strong>
+                    <span>{t('The conservative candidate can be applied as shown.')}</span>
                   </div>
                 ) : (
                   <ol>
@@ -416,14 +417,14 @@ export default function SampleInferenceReview({
                         <div>
                           <span>{index + 1}</span>
                           <div>
-                            <strong>{confirmationLabel(confirmation.code)}</strong>
+                            <strong>{t(confirmationLabel(confirmation.code))}</strong>
                             <small>{relativeFactPath(confirmation.authoringPath, result.target)}</small>
                           </div>
-                          {confirmation.blocking && <em>Blocking</em>}
+                          {confirmation.blocking && <em>{t('Blocking')}</em>}
                         </div>
-                        <p>{confirmation.question}</p>
+                        <p>{t(confirmation.question)}</p>
                         <fieldset>
-                          <legend>Decision</legend>
+                          <legend>{t('Decision')}</legend>
                           <div className="sample-inference-decision-options">
                             {confirmation.allowedValues.map((value) => (
                               <label
@@ -441,8 +442,8 @@ export default function SampleInferenceReview({
                                     [confirmation.confirmationId]: value,
                                   }))}
                                 />
-                                <span>{decisionLabel(value)}</span>
-                                {value === confirmation.recommendedValue && <small>Recommended</small>}
+                                <span>{t(decisionLabel(value))}</span>
+                                {value === confirmation.recommendedValue && <small>{t('Recommended')}</small>}
                               </label>
                             ))}
                           </div>
@@ -458,21 +459,21 @@ export default function SampleInferenceReview({
 
         {error && (
           <p className="sample-inference-error" role="alert" data-testid="sample-inference-error">
-            {error}
+            {t(error)}
           </p>
         )}
 
         <footer className="sample-inference-footer">
           <div>
             {result && !allResolved && (
-              <span>{confirmations.length - resolvedCount} decisions remaining</span>
+              <span>{t('{count} decisions remaining', { count: confirmations.length - resolvedCount })}</span>
             )}
             {result && needsSampleReview && (
-              <span>Review samples or choose Keep unknown before apply.</span>
+              <span>{t('Review samples or choose Keep unknown before apply.')}</span>
             )}
           </div>
           <button type="button" className="secondary" onClick={onClose} disabled={busy !== null}>
-            Cancel
+            {t('Cancel')}
           </button>
           {result && request && (
             <button
@@ -480,8 +481,8 @@ export default function SampleInferenceReview({
               className="secondary"
               disabled={busy !== null || !fixtureAvailable}
               title={fixtureAvailable
-                ? 'Persist these samples as a classified, expiring fixture'
-                : 'Fixture persistence is unavailable in this deployment'}
+                ? t('Persist these samples as a classified, expiring fixture')
+                : t('Fixture persistence is unavailable in this deployment')}
               onClick={() => setFixtureLaunch({
                 draftId: result.draftId,
                 authoringRevision: result.authoringRevision,
@@ -497,7 +498,7 @@ export default function SampleInferenceReview({
               })}
               data-testid="sample-inference-save-fixture"
             >
-              Save samples as fixture
+              {t('Save samples as fixture')}
             </button>
           )}
           {!result ? (
@@ -508,7 +509,7 @@ export default function SampleInferenceReview({
               disabled={busy !== null || Boolean(parsed.error) || !portName.trim()}
               data-testid="sample-inference-analyze"
             >
-              {busy === 'infer' ? 'Analyzing...' : 'Analyze samples'}
+              {busy === 'infer' ? t('Analyzing...') : t('Analyze samples')}
             </button>
           ) : (
             <button
@@ -518,7 +519,7 @@ export default function SampleInferenceReview({
               disabled={applyDisabled}
               data-testid="sample-inference-apply"
             >
-              {busy === 'apply' ? 'Applying...' : 'Apply declared schema'}
+              {busy === 'apply' ? t('Applying...') : t('Apply declared schema')}
             </button>
           )}
         </footer>
@@ -570,6 +571,7 @@ function CandidateTree({ name, node }: { name: string; node: unknown }) {
 }
 
 function CandidateNode({ name, node, depth }: { name: string; node: unknown; depth: number }) {
+  const { t } = useI18n();
   const fields = schemaFields(node);
   return (
     <>
@@ -580,8 +582,8 @@ function CandidateNode({ name, node, depth }: { name: string; node: unknown; dep
       >
         <span aria-hidden="true">{fields ? (depth === 0 ? 'v' : '+') : '-'}</span>
         <strong>{name.replace(/\?$/, '')}</strong>
-        {name.endsWith('?') && <em>optional</em>}
-        <small>{schemaNodeLabel(node)}</small>
+        {name.endsWith('?') && <em>{t('optional')}</em>}
+        <small>{t(schemaNodeLabel(node))}</small>
       </div>
       {fields && Object.entries(fields).map(([fieldName, field]) => (
         <CandidateNode key={`${depth}:${fieldName}`} name={fieldName} node={field} depth={depth + 1} />
@@ -591,6 +593,7 @@ function CandidateNode({ name, node, depth }: { name: string; node: unknown; dep
 }
 
 function ObservationRow({ observation }: { observation: VisualSampleFieldObservation }) {
+  const { t } = useI18n();
   return (
     <div className="sample-inference-fact">
       <div>
@@ -598,19 +601,19 @@ function ObservationRow({ observation }: { observation: VisualSampleFieldObserva
         <span>{observation.suggestedType}</span>
       </div>
       <dl>
-        <div><dt>Present</dt><dd>{observation.presenceCount}/{observation.sampleCount}</dd></div>
-        <div><dt>Null</dt><dd>{observation.nullCount}</dd></div>
-        <div><dt>Distinct</dt><dd>{observation.distinctCount}</dd></div>
+        <div><dt>{t('Present')}</dt><dd>{observation.presenceCount}/{observation.sampleCount}</dd></div>
+        <div><dt>{t('Null')}</dt><dd>{observation.nullCount}</dd></div>
+        <div><dt>{t('Distinct')}</dt><dd>{observation.distinctCount}</dd></div>
       </dl>
       <div className="sample-inference-fact-badges">
-        {observation.requiredCandidate && <span>required</span>}
-        {observation.nullableCandidate && <span>nullable</span>}
+        {observation.requiredCandidate && <span>{t('required')}</span>}
+        {observation.nullableCandidate && <span>{t('nullable')}</span>}
         {observation.formatCandidate && <span>{observation.formatCandidate}</span>}
-        {observation.sensitive && <span data-alert="true">sensitive</span>}
-        {observation.conflictTypes.length > 0 && <span data-alert="true">type conflict</span>}
+        {observation.sensitive && <span data-alert="true">{t('sensitive')}</span>}
+        {observation.conflictTypes.length > 0 && <span data-alert="true">{t('type conflict')}</span>}
       </div>
       {observation.widenReasons.length > 0 && (
-        <p>{observation.widenReasons.join('; ')}</p>
+        <p>{observation.widenReasons.map((reason) => t(reason)).join('; ')}</p>
       )}
     </div>
   );

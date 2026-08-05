@@ -1,3 +1,4 @@
+import type { TranslationValues } from '../../i18n/i18n';
 import type { AuthorMode } from '../shell/authorWorkspaceState';
 
 export type DraftLifecycle = 'EPHEMERAL' | 'SAVED' | 'DIRTY' | 'CONFLICTED';
@@ -87,6 +88,7 @@ export interface AuthorReadinessVerdict {
   promotion: PromotionLifecycle;
   headline: string;
   summary: string;
+  summaryValues?: TranslationValues;
   reasons: AuthorReadinessReason[];
   nextAction: AuthorReadinessReason['action'];
   waiver: 'NOT_REQUIRED' | 'MISSING' | 'INVALID' | 'ACTIVE';
@@ -295,7 +297,7 @@ function promotionCopy(
   reasonCount: number,
   unresolvedWarning: boolean,
   waiver: AuthorReadinessVerdict['waiver'],
-): Pick<AuthorReadinessVerdict, 'headline' | 'summary'> {
+): Pick<AuthorReadinessVerdict, 'headline' | 'summary' | 'summaryValues'> {
   if (promotion === 'READY') {
     return {
       headline: 'Ready for promotion',
@@ -307,7 +309,8 @@ function promotionCopy(
   if (promotion === 'BLOCKED') {
     return {
       headline: 'Promotion blocked',
-      summary: `${reasonCount} lifecycle condition${reasonCount === 1 ? '' : 's'} requires repair.`,
+      summary: '{count} lifecycle conditions require repair.',
+      summaryValues: { count: reasonCount },
     };
   }
   if (promotion === 'REVIEW_REQUIRED' || unresolvedWarning) {

@@ -1,6 +1,6 @@
 # Resource Gateway UX 深度审阅与针对性演进计划
 
-> 状态：Executing / Stage 3 已通过 E2 验收，Stage 4 待实施
+> 状态：Executing / Stage 4 已通过 E2 验收，Stage 5 待实施
 >
 > 审阅日期：2026-08-05
 >
@@ -13,6 +13,8 @@
 > Stage 2 实施后复评分：`79 / 100`
 >
 > Stage 3 实施后复评分：`88 / 100`
+
+> Stage 4 实施后复评分：`92 / 100`
 >
 > 目标：P0/P1 清零，工程门禁达到 `>= 95 / 100`，随后以 E3/E4 证明真实成熟度
 >
@@ -28,6 +30,8 @@
 - [Author 任务式 UX 改善计划](resource-gateway-author-task-oriented-ux-improvement-plan.md)
 - [Stage 2 统一任务状态与 Evidence 信任](resource-gateway-ux-stage2-task-state-and-evidence-trust.md)
 - [Stage 3 表格驱动测试工作台](resource-gateway-ux-stage3-table-driven-testing-workbench.md)
+- [Stage 4 双语完整性与术语治理](resource-gateway-ux-stage4-localization-governance.md)
+- [Resource Gateway 双语术语与界面文案规范](resource-gateway-localization-glossary.md)
 
 ## 0. 最强结论
 
@@ -108,7 +112,8 @@
 | 当前事实 | Stage 2 后 Graph / Operator 目标分别绑定自己的 Scenario coordinate、run response 与 Evidence；同一运行命令共享 canonical availability |
 | 当前事实 | Stage 3 后 Matrix 默认只有 7 个业务判断列，1280px 下无需横向滚动，Graph / Operator / Function 共用四步 Case 模型 |
 | 当前事实 | 未保存示例可直接 Run all；三条贷款策略 Case 均生成 `SUCCESS / PASSED / CURRENT / MOCK` 证据及字段级 Expected/Actual/Diff |
-| 事实 | 中文模式的 Contract、Compatibility、Evidence、Library Detail、Operator Editor、Asset Test Table 和移动 Author 仍有大量英文 UI |
+| 历史事实 | Stage 3 时中文模式的 Contract、Evidence、Library Detail、Operator Editor 和 Asset Test Table 仍有大量英文 UI |
+| 当前事实 | Stage 4 后 typed message、strict inventory 与 diagnostic catalog 覆盖核心深层工作区；业务资产、字段路径和协议坐标有意保持原文 |
 | 事实 | `styles.css` 为 17,638 行，其中 `font-size: 10px` 出现 198 次，`11px` 出现 160 次 |
 | 事实 | 390px 下顶层导航存在嵌套横向滚动；移动 Author 的摘要、示例与画布命令大量回退为英文 |
 | 推断 | 前端存在多套任务状态和多套响应式/深层呈现树，导致状态、文案和主操作持续漂移 |
@@ -190,6 +195,25 @@
 
 当前与工程门禁目标仍有 `7%` 差距。Stage 4/5 必须消除静默英文回退、诊断术语漂移、移动任务
 断裂和 10/11px 视觉债务；在目标用户 E3 研究完成前，仍不得对外宣称 95 分体验成熟度。
+
+### 2.5 Stage 4 实施后复评
+
+| 维度 | 权重 | Stage 3 | Stage 4 | 变化依据 |
+|---|---:|---:|---:|---|
+| 信息架构与任务连续性 | 15 | 14 | 14 | 任务结构未变化，中英文共享同一 Task State |
+| 首次成功与核心任务效率 | 15 | 14 | 14 | 示例与运行链路维持稳定 |
+| 复杂图理解与操控 | 12 | 10 | 11 | 节点类型、契约方向、边聚合和控件标签不再混语 |
+| Contract / Schema 直观性 | 10 | 8 | 9 | 协议状态主视图改为用户语言，原值保留在技术追踪中 |
+| 测试创作、运行与正确性 | 18 | 16 | 16 | 测试模型不变，深层表面和错误表达完成双语治理 |
+| 反馈、恢复与 Evidence 信任 | 10 | 10 | 10 | diagnostic code 映射标题、解释、修复动作和技术详情 |
+| 视觉层级与可读性 | 8 | 7 | 7 | Stage 5 才统一字号、密度和命令层级 |
+| 多语言、可访问性与响应式 | 7 | 4 | 6 | strict locale CI、动态来源门禁、第三方 aria-label 和术语表完成；移动角色布局待做 |
+| 企业资产与治理生命周期 | 5 | 5 | 5 | 协议值、业务资产与本地化产品文案边界明确 |
+| **合计** | **100** | **88** | **92** | **UXA-101、UXA-102、UXA-209 关闭；剩余 P1 为移动与视觉系统** |
+
+当前距 `95 / 100` 工程门禁为 3 分，但不能提前结束：Stage 5 的 390px 角色布局、触摸目标、字号
+下限和单一主操作仍属于完成定义中的硬门槛。Stage 4 的实现与 E2 证据见
+[双语完整性与术语治理](resource-gateway-ux-stage4-localization-governance.md)。
 
 ## 3. P0 硬伤
 
@@ -585,6 +609,9 @@ Expected/Actual/Matched。Graph / Operator / Function 共用四步 Case rail；�
 > 周期：1.5 周，可与 Stage 3 后半并行
 >
 > 目标：修复 UXA-101、UXA-102、UXA-209
+>
+> 实施状态（2026-08-05）：已完成并通过 E2 验收。实现边界、术语和验证证据见
+> [Stage 4 双语完整性与术语治理](resource-gateway-ux-stage4-localization-governance.md)。
 
 | ID | 工作项 | 输出 |
 |---|---|---|
@@ -596,6 +623,16 @@ Expected/Actual/Matched。Graph / Operator / Function 共用四步 Case rail；�
 | UXA-S4-06 | Locale parity browser suite | 中英文相同任务、相同状态、相同可执行性 |
 
 退出门槛：固定任务中不存在非业务资产的英文 UI；中文任务成功率与英文差异 `<= 10%`。
+
+验收状态：typed message catalog 覆盖 Author command、blocker 和 status；strict inventory 扫描
+Author、Contract、Scenario、Evidence、Library、Tests、Rehearsal 与 Showcase，并补充 node editor、
+readiness state machine、operator metadata 和 effective-contract protocol token 的动态来源门禁。
+真实浏览器已验证 5 节点 Loan 示例、聚合边、Decision Table 五个 Tab、Effective Contract、右侧
+Inspector 及 ReactFlow controls 的中文表达；业务资产名、字段路径、DSL 与协议坐标保持原值。
+中文与英文均保持同一 Node Editor 任务结构。E3 的无协助成功率差异仍在 Stage 6 验证。
+工程回归结果为 `npm run check:i18n` 5 files / 28 tests、`npm test` 72 files / 541 tests、
+`npm run build` 生产构建成功，以及 Resource Gateway Maven `clean verify` 5,898 tests、0 failures、
+0 errors、13 skipped。
 
 ### Stage 5：视觉系统与响应式重构
 

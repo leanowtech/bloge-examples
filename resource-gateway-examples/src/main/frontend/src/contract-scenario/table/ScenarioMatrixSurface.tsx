@@ -70,7 +70,7 @@ export default function ScenarioMatrixSurface({
   onCancelRun,
   onRetryFailed,
 }: ScenarioMatrixSurfaceProps) {
-  const { t } = useI18n();
+  const { m, t } = useI18n();
   const [query, setQuery] = useState('');
   const [caseType, setCaseType] = useState<ScenarioCaseType | ''>('');
   const [tone, setTone] = useState<TableCaseVerdictPresentation['tone'] | ''>('');
@@ -412,9 +412,11 @@ export default function ScenarioMatrixSurface({
       <footer className="scenario-matrix-bulkbar">
         <div>
           <strong>{t('{count} selected', { count: selection.selectedCaseIds.length })}</strong>
-          <span>{t(runCommand?.state === 'BLOCKED'
-            ? runCommand.message
-            : 'Selection is independent from the current filter and sort.')}</span>
+          <span>{runCommand?.state === 'BLOCKED' && runCommand.messageId
+            ? m(runCommand.messageId)
+            : t(runCommand?.state === 'BLOCKED'
+              ? runCommand.message
+              : 'Selection is independent from the current filter and sort.')}</span>
         </div>
         <div>
           <button

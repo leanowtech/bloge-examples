@@ -1,6 +1,7 @@
 import type { AuthorMode } from './authorWorkspaceState';
 import type { AuthorCommandAvailability } from '../task/taskStateProjection';
 import { useI18n } from '../../i18n/I18nProvider';
+import { statusMessageId } from '../../i18n/messageCatalog';
 
 interface AuthorCommandBarProps {
   graphName: string;
@@ -63,7 +64,11 @@ export default function AuthorCommandBar({
   onAutoLayout,
   onValidate,
 }: AuthorCommandBarProps) {
-  const { t } = useI18n();
+  const { m, t } = useI18n();
+  const status = (value: string) => {
+    const id = statusMessageId(value);
+    return id ? m(id) : t(value);
+  };
   return (
     <header className="author-command-bar" data-testid="author-command-bar">
       <div className="author-draft-identity">
@@ -91,23 +96,23 @@ export default function AuthorCommandBar({
       <div className="author-truth-status" aria-label={t('Author readiness dimensions')}>
         <span data-state={draftStatus.toLowerCase()} data-testid="author-status:draft">
           <small>{t('Draft')}</small>
-          <strong>{t(draftStatus)}</strong>
+          <strong>{status(draftStatus)}</strong>
         </span>
         <span data-state={contractStatus.toLowerCase()} data-testid="author-status:contract">
           <small>{t('Contract')}</small>
-          <strong>{t(contractStatus)}</strong>
+          <strong>{status(contractStatus)}</strong>
         </span>
         <span data-state={runStatus.toLowerCase()} data-testid="author-status:runnable">
           <small>{t('Runnable')}</small>
-          <strong>{t(runStatus)}</strong>
+          <strong>{status(runStatus)}</strong>
         </span>
         <span
           data-state={evidenceStatus.toLowerCase()}
           data-testid="author-status:evidence"
-          title={t(proofStrength)}
+          title={status(proofStrength)}
         >
           <small>{t('Evidence')}</small>
-          <strong>{t(evidenceStatus)}</strong>
+          <strong>{status(evidenceStatus)}</strong>
         </span>
         <span
           data-state={promotionStatus.toLowerCase()}
@@ -115,7 +120,7 @@ export default function AuthorCommandBar({
           title={t(promotionSummary)}
         >
           <small>{t('Gate')}</small>
-          <strong>{t(promotionStatus)}</strong>
+          <strong>{status(promotionStatus)}</strong>
         </span>
       </div>
       <div className="author-secondary-actions">
@@ -166,14 +171,16 @@ export default function AuthorCommandBar({
           onClick={onPrimaryAction}
           disabled={!primaryCommand.enabled}
         >
-          {t(primaryCommand.label)}
+          {primaryCommand.labelId ? m(primaryCommand.labelId) : t(primaryCommand.label)}
         </button>
         {primaryCommand.state === 'BLOCKED' && (
           <div className="author-command-explanation" id="author-primary-blocker" role="status">
-            <span>{t(primaryCommand.message)}</span>
+            <span>{primaryCommand.messageId ? m(primaryCommand.messageId) : t(primaryCommand.message)}</span>
             {primaryCommand.remediation && (
               <button type="button" onClick={onPrimaryRemediation}>
-                {t(primaryCommand.remediation.label)}
+                {primaryCommand.remediation.labelId
+                  ? m(primaryCommand.remediation.labelId)
+                  : t(primaryCommand.remediation.label)}
               </button>
             )}
           </div>

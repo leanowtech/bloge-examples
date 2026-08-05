@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 
+import { useI18n } from '../i18n/I18nProvider';
 import type { VisualFunctionAuthoring } from '../types';
 import { ReferenceEditor } from './OperatorBuilder';
 
@@ -20,6 +21,7 @@ export default function FunctionBuilder({
   onRemove,
   onOpenTests,
 }: FunctionBuilderProps) {
+  const { t } = useI18n();
   const [keyDraft, setKeyDraft] = useState(functionKey);
   useEffect(() => setKeyDraft(functionKey), [functionKey]);
   const signatures = fn.signatures?.length
@@ -32,17 +34,17 @@ export default function FunctionBuilder({
     <div className="library-task-builder" data-testid="function-builder">
       <header className="library-builder-heading">
         <div>
-          <span>Built-in Function</span>
+          <span>{t('Built-in Function')}</span>
           <h2>{functionKey}</h2>
         </div>
-        <button type="button" className="danger compact" onClick={onRemove}>Delete</button>
+        <button type="button" className="danger compact" onClick={onRemove}>{t('Delete')}</button>
       </header>
 
       <section className="library-builder-section">
-        <header><h3>Identity</h3><span>Expression callable</span></header>
+        <header><h3>{t('Identity')}</h3><span>{t('Expression callable')}</span></header>
         <div className="library-form-grid">
           <label>
-            <span>Callable name</span>
+            <span>{t('Callable name')}</span>
             <input
               value={keyDraft}
               onChange={(event) => setKeyDraft(event.target.value)}
@@ -51,7 +53,7 @@ export default function FunctionBuilder({
             />
           </label>
           <label>
-            <span>Category</span>
+            <span>{t('Category')}</span>
             <input
               value={fn.category ?? ''}
               onChange={(event) => patch({ category: event.target.value })}
@@ -59,7 +61,7 @@ export default function FunctionBuilder({
             />
           </label>
           <label className="library-form-wide">
-            <span>Description</span>
+            <span>{t('Description')}</span>
             <textarea
               value={fn.description ?? ''}
               onChange={(event) => patch({ description: event.target.value })}
@@ -70,16 +72,16 @@ export default function FunctionBuilder({
       </section>
 
       <section className="library-builder-section">
-        <header><h3>Signatures</h3><span>{signatures.length} overloads</span></header>
+        <header><h3>{t('Signatures')}</h3><span>{t('{count} overloads', { count: signatures.length })}</span></header>
         <table className="function-signature-table">
-          <thead><tr><th>Overload</th><th>Signature</th><th aria-label="Actions" /></tr></thead>
+          <thead><tr><th>{t('Overload')}</th><th>{t('Signature')}</th><th aria-label={t('Actions')} /></tr></thead>
           <tbody>
             {signatures.map((signature, index) => (
               <tr key={`${index}:${signature}`}>
                 <td>{index + 1}</td>
                 <td>
                   <input
-                    aria-label={`Function signature ${index + 1}`}
+                    aria-label={t('Function signature {index}', { index: index + 1 })}
                     value={signature}
                     onChange={(event) => updateSignatures(
                       signatures.map((value, valueIndex) => (
@@ -92,8 +94,8 @@ export default function FunctionBuilder({
                 <td>
                   <button
                     type="button"
-                    aria-label={`Remove overload ${index + 1}`}
-                    title="Remove overload"
+                    aria-label={t('Remove overload {index}', { index: index + 1 })}
+                    title={t('Remove overload')}
                     onClick={() => updateSignatures(
                       signatures.filter((_, valueIndex) => valueIndex !== index),
                     )}
@@ -110,14 +112,14 @@ export default function FunctionBuilder({
           className="secondary compact"
           onClick={() => updateSignatures([...signatures, '(value: string) -> string'])}
         >
-          + Add overload
+          {t('+ Add overload')}
         </button>
       </section>
 
       <section className="library-builder-section">
-        <header><h3>Expression Examples</h3><span>{fn.examples?.length ?? 0}</span></header>
+        <header><h3>{t('Expression Examples')}</h3><span>{fn.examples?.length ?? 0}</span></header>
         <StringListEditor
-          label="Expression example"
+          label={t('Expression example')}
           values={fn.examples ?? []}
           initialValue={`${functionKey}(ctx.value)`}
           onChange={(examples) => patch({ examples })}
@@ -126,14 +128,14 @@ export default function FunctionBuilder({
 
       <section className="library-builder-section">
         <header>
-          <h3>Tests</h3>
+          <h3>{t('Tests')}</h3>
           <button
             type="button"
             className="primary compact"
             onClick={onOpenTests}
             data-testid="open-function-test-table"
           >
-            Open test table
+            {t('Open test table')}
           </button>
         </header>
         <ReferenceEditor
@@ -158,12 +160,13 @@ function StringListEditor({
   initialValue,
   onChange,
 }: StringListEditorProps) {
+  const { t } = useI18n();
   return (
     <div className="reference-editor">
       {values.map((value, index) => (
         <div key={`${index}:${value}`}>
           <input
-            aria-label={`${label} ${index + 1}`}
+            aria-label={t('{label} {index}', { label, index: index + 1 })}
             value={value}
             onChange={(event) => onChange(
               values.map((item, itemIndex) => itemIndex === index ? event.target.value : item),
@@ -171,8 +174,8 @@ function StringListEditor({
           />
           <button
             type="button"
-            aria-label={`Remove ${label.toLowerCase()} ${index + 1}`}
-            title={`Remove ${label.toLowerCase()}`}
+            aria-label={t('Remove {label} {index}', { label, index: index + 1 })}
+            title={t('Remove {label}', { label })}
             onClick={() => onChange(values.filter((_, itemIndex) => itemIndex !== index))}
           >
             x
@@ -184,7 +187,7 @@ function StringListEditor({
         className="secondary compact"
         onClick={() => onChange([...values, initialValue])}
       >
-        + Add {label.toLowerCase()}
+        {t('+ Add {label}', { label })}
       </button>
     </div>
   );

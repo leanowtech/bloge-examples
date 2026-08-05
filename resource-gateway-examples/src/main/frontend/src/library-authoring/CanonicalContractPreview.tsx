@@ -2,6 +2,7 @@ import type {
   VisualLibraryAuthoringCommitResult,
   VisualLibraryAuthoringCompileResult,
 } from '../types';
+import { useI18n } from '../i18n/I18nProvider';
 import {
   groupAuthoringDiagnostics,
   presentLibraryReadiness,
@@ -30,6 +31,7 @@ export default function CanonicalContractPreview({
   onCommit,
   onDiagnostic,
 }: CanonicalContractPreviewProps) {
+  const { t } = useI18n();
   const groupedDiagnostics = groupAuthoringDiagnostics(preview?.diagnostics ?? []);
   const errors = groupedDiagnostics.filter((diagnostic) => diagnostic.level === 'ERROR');
   const warnings = groupedDiagnostics.filter((diagnostic) => diagnostic.level === 'WARNING');
@@ -41,17 +43,17 @@ export default function CanonicalContractPreview({
   const readiness = presentLibraryReadiness(preview);
   const boundRuntimeCount = readiness.boundRuntimeCount;
   const runtimeLabel = preview?.readiness.productionReady
-    ? 'Ready'
+    ? t('Ready')
     : runtimeParity.length > 0
-      ? `${boundRuntimeCount}/${runtimeParity.length} bound`
-      : 'Not checked';
+      ? t('{bound}/{total} bound', { bound: boundRuntimeCount, total: runtimeParity.length })
+      : t('Not checked');
 
   return (
-    <aside className="library-contract-preview" aria-label="Canonical contract preview">
+    <aside className="library-contract-preview" aria-label={t('Canonical contract preview')}>
       <header>
         <div className="library-contract-heading">
-          <span>Server-authoritative</span>
-          <h2>Contract Preview</h2>
+          <span>{t('Server-authoritative')}</span>
+          <h2>{t('Contract Preview')}</h2>
         </div>
         <button
           type="button"
@@ -59,30 +61,30 @@ export default function CanonicalContractPreview({
           onClick={onValidate}
           disabled={previewBusy}
         >
-          {previewBusy ? 'Validating...' : 'Validate now'}
+          {previewBusy ? t('Validating...') : t('Validate now')}
         </button>
       </header>
 
       <section className="library-readiness" data-state={readiness.tone}>
         <div className="library-readiness-summary">
-          <span>Readiness</span>
-          <strong>{readiness.title}</strong>
-          <small>{readiness.summary}</small>
+          <span>{t('Readiness')}</span>
+          <strong>{t(readiness.title)}</strong>
+          <small>{t(readiness.summary)}</small>
           <code>{readiness.machineState}</code>
         </div>
         <dl>
-          <div><dt>Design import</dt><dd>{preview?.readiness.importable ? 'Ready' : 'Blocked'}</dd></div>
-          <div><dt>Strong schema</dt><dd>{preview?.readiness.strongSchemaReady ? 'Ready' : 'Review'}</dd></div>
-          <div><dt>Runtime</dt><dd>{runtimeLabel}</dd></div>
+          <div><dt>{t('Design import')}</dt><dd>{preview?.readiness.importable ? t('Ready') : t('Blocked')}</dd></div>
+          <div><dt>{t('Strong schema')}</dt><dd>{preview?.readiness.strongSchemaReady ? t('Ready') : t('Review')}</dd></div>
+          <div><dt>{t('Runtime')}</dt><dd>{runtimeLabel}</dd></div>
         </dl>
-        <p className="library-readiness-action"><strong>Next</strong>{readiness.nextAction}</p>
+        <p className="library-readiness-action"><strong>{t('Next')}</strong>{t(readiness.nextAction)}</p>
       </section>
 
       {runtimeParity.length > 0 && (
         <section className="library-preview-runtime" data-testid="library-preview-runtime">
           <header>
-            <h3>Runtime parity</h3>
-            <span>{boundRuntimeCount} bound / {runtimeParity.length} total</span>
+            <h3>{t('Runtime parity')}</h3>
+            <span>{t('{bound} bound / {total} total', { bound: boundRuntimeCount, total: runtimeParity.length })}</span>
           </header>
           <ol>
             {runtimeParity.map((parity, index) => (
@@ -94,8 +96,8 @@ export default function CanonicalContractPreview({
                   <span>{parity.assetKind}</span>
                   <strong>{parity.assetRef}</strong>
                 </div>
-                <b>{parity.state.replace(/_/g, ' ')}</b>
-                <small>{parity.message}</small>
+                <b>{t(parity.state.replace(/_/g, ' '))}</b>
+                <small>{t(parity.message)}</small>
               </li>
             ))}
           </ol>
@@ -104,11 +106,11 @@ export default function CanonicalContractPreview({
 
       <section className="library-preview-diagnostics">
         <header>
-          <h3>Diagnostics</h3>
+          <h3>{t('Diagnostics')}</h3>
           <span>
-            {errors.length} error groups / {warnings.length} warning groups
+            {t('{errors} error groups / {warnings} warning groups', { errors: errors.length, warnings: warnings.length })}
             {diagnosticOccurrences > groupedDiagnostics.length
-              ? ` · ${diagnosticOccurrences} occurrences`
+              ? t(' · {count} occurrences', { count: diagnosticOccurrences })
               : ''}
           </span>
         </header>
@@ -119,30 +121,30 @@ export default function CanonicalContractPreview({
                 <button type="button" onClick={() => onDiagnostic(diagnostic.authoringPath)}>
                   <span>{diagnostic.level}</span>
                   <strong>{diagnostic.code}</strong>
-                  <p>{diagnostic.message}</p>
+                  <p>{t(diagnostic.message)}</p>
                   <small>
                     {diagnostic.authoringPath}
-                    {diagnostic.occurrences > 1 ? ` · ${diagnostic.occurrences} occurrences` : ''}
+                    {diagnostic.occurrences > 1 ? t(' · {count} occurrences', { count: diagnostic.occurrences }) : ''}
                   </small>
                 </button>
               </li>
             ))}
           </ol>
         ) : (
-          <p>{preview ? 'No diagnostics.' : 'A preview appears after the first autosave.'}</p>
+          <p>{preview ? t('No diagnostics.') : t('A preview appears after the first autosave.')}</p>
         )}
       </section>
 
       {preview?.confirmationRequests.length ? (
         <section className="library-confirmations">
-          <header><h3>Confirm facts</h3><span>{preview.confirmationRequests.length}</span></header>
+          <header><h3>{t('Confirm facts')}</h3><span>{preview.confirmationRequests.length}</span></header>
           {preview.confirmationRequests.map((confirmation) => (
             <button
               type="button"
               key={`${confirmation.code}:${confirmation.authoringPath}`}
               onClick={() => onDiagnostic(confirmation.authoringPath)}
             >
-              <strong>{confirmation.question}</strong>
+              <strong>{t(confirmation.question)}</strong>
               <span>{confirmation.authoringPath}</span>
             </button>
           ))}
@@ -150,19 +152,19 @@ export default function CanonicalContractPreview({
       ) : null}
 
       <details className="library-canonical-json">
-        <summary>Generated canonical contract</summary>
+        <summary>{t('Generated canonical contract')}</summary>
         <pre>{preview?.canonicalLibrary
           ? JSON.stringify(preview.canonicalLibrary, null, 2)
-          : 'No canonical contract yet.'}</pre>
+          : t('No canonical contract yet.')}</pre>
       </details>
 
       <section className="library-commit">
         <label>
-          <span>Commit reason</span>
+          <span>{t('Commit reason')}</span>
           <input
             value={commitReason}
             onChange={(event) => onCommitReasonChange(event.target.value)}
-            placeholder="Why this design revision is ready"
+            placeholder={t('Why this design revision is ready')}
           />
         </label>
         <button
@@ -172,11 +174,14 @@ export default function CanonicalContractPreview({
           onClick={onCommit}
           data-testid="library-commit"
         >
-          {commitBusy ? 'Committing...' : commitResult ? 'Imported' : 'Import Design Catalog'}
+          {commitBusy ? t('Committing...') : commitResult ? t('Imported') : t('Import Design Catalog')}
         </button>
         {commitResult && (
           <p className="library-commit-receipt" data-testid="library-commit-receipt">
-            Imported {commitResult.library.libraryId} revision {commitResult.targetRevision}.
+            {t('Imported {libraryId} revision {revision}.', {
+              libraryId: commitResult.library.libraryId,
+              revision: commitResult.targetRevision,
+            })}
           </p>
         )}
       </section>

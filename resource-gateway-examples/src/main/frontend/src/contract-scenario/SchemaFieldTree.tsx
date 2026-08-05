@@ -1,5 +1,6 @@
 import { useMemo, useState } from 'react';
 
+import { useI18n } from '../i18n/I18nProvider';
 import type { SchemaEnvelope } from '../types';
 import { projectSchemaFields } from './schemaWorkbench';
 
@@ -15,6 +16,7 @@ export default function SchemaFieldTree({
   label,
   rootLabel,
 }: SchemaFieldTreeProps) {
+  const { t } = useI18n();
   const [query, setQuery] = useState('');
   const fields = useMemo(() => projectSchemaFields(envelope), [envelope]);
   const normalizedQuery = query.trim().toLowerCase();
@@ -28,28 +30,28 @@ export default function SchemaFieldTree({
     : fields;
 
   return (
-    <section className="contract-schema-tree" aria-label={`${label} schema`}>
+    <section className="contract-schema-tree" aria-label={t('{label} schema', { label })}>
       <div className="contract-schema-tree-head">
         <div>
           <span>{label}</span>
           <strong>{rootLabel}</strong>
         </div>
         <label>
-          <span className="sr-only">Search {label.toLowerCase()} fields</span>
+          <span className="sr-only">{t('Search {label} fields', { label })}</span>
           <input
             type="search"
             value={query}
-            placeholder="Search fields"
+            placeholder={t('Search fields')}
             onChange={(event) => setQuery(event.target.value)}
           />
         </label>
       </div>
       <div className="contract-schema-table" role="table">
         <div className="contract-schema-row heading" role="row">
-          <span role="columnheader">Field</span>
-          <span role="columnheader">Type</span>
-          <span role="columnheader">Rule</span>
-          <span role="columnheader">Details</span>
+          <span role="columnheader">{t('Field')}</span>
+          <span role="columnheader">{t('Type')}</span>
+          <span role="columnheader">{t('Rule')}</span>
+          <span role="columnheader">{t('Details')}</span>
         </div>
         {visibleFields.map((field) => (
           <div className="contract-schema-row" role="row" key={field.path}>
@@ -64,16 +66,16 @@ export default function SchemaFieldTree({
             </span>
             <code role="cell">{field.type}</code>
             <span role="cell" className={field.required ? 'required' : 'optional'}>
-              {field.required ? 'Required' : 'Optional'}
+              {t(field.required ? 'Required' : 'Optional')}
             </span>
             <span role="cell" title={field.description}>
-              {field.constraints.join(', ') || field.description || 'No extra constraint'}
+              {field.constraints.join(', ') || field.description || t('No extra constraint')}
             </span>
           </div>
         ))}
         {visibleFields.length === 0 && (
           <p className="contract-schema-empty">
-            {fields.length === 0 ? 'Open object: no named fields.' : 'No fields match this search.'}
+            {t(fields.length === 0 ? 'Open object: no named fields.' : 'No fields match this search.')}
           </p>
         )}
       </div>

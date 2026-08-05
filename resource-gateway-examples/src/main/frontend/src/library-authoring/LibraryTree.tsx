@@ -1,3 +1,4 @@
+import { useI18n } from '../i18n/I18nProvider';
 import type { VisualLibraryAuthoringDocument } from '../types';
 import type { LibraryAssetKind, LibraryAssetSelection } from './model';
 
@@ -14,6 +15,7 @@ export default function LibraryTree({
   onSelect,
   onAdd,
 }: LibraryTreeProps) {
+  const { t } = useI18n();
   const groups: Array<{
     kind: Exclude<LibraryAssetKind, 'library'>;
     label: string;
@@ -31,25 +33,25 @@ export default function LibraryTree({
   ), 0);
 
   return (
-    <aside className="library-tree" aria-label="Library assets">
+    <aside className="library-tree" aria-label={t('Library assets')}>
       <button
         type="button"
         className={`library-tree-root ${selection.kind === 'library' ? 'selected' : ''}`}
         onClick={() => onSelect({ kind: 'library', key: '' })}
         data-testid="library-tree:library"
       >
-        <span>Library</span>
+        <span>{t('Library')}</span>
         <strong>{document.library.name || document.library.id}</strong>
       </button>
       {groups.map((group) => (
         <section key={group.kind}>
           <header>
-            <span>{group.label}</span>
+            <span>{t(group.label)}</span>
             <span>{Object.keys(group.values).length}</span>
             <button
               type="button"
-              aria-label={`Add ${group.kind}`}
-              title={`Add ${group.kind}`}
+              aria-label={t('Add {kind}', { kind: t(group.kind) })}
+              title={t('Add {kind}', { kind: t(group.kind) })}
               onClick={() => onAdd(group.kind)}
             >
               +
@@ -70,12 +72,12 @@ export default function LibraryTree({
                 </button>
               </li>
             ))}
-            {Object.keys(group.values).length === 0 && <li className="library-tree-empty">None yet</li>}
+            {Object.keys(group.values).length === 0 && <li className="library-tree-empty">{t('None yet')}</li>}
           </ul>
         </section>
       ))}
       <footer>
-        <span>Test references</span>
+        <span>{t('Test references')}</span>
         <strong>{testCount}</strong>
       </footer>
     </aside>

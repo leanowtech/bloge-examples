@@ -1,4 +1,5 @@
 import { useI18n } from '../../i18n/I18nProvider';
+import { presentDiagnostic } from '../../i18n/diagnosticCatalog';
 import type { AuthorDiagnosticItem, AuthorDiagnosticSeverity } from './authorDiagnostics';
 
 interface AuthorDiagnosticsDrawerProps {
@@ -17,7 +18,7 @@ export default function AuthorDiagnosticsDrawer({
   onToggle,
   onSelect,
 }: AuthorDiagnosticsDrawerProps) {
-  const { t } = useI18n();
+  const { locale, t } = useI18n();
   const counts = Object.fromEntries(
     SEVERITY_LABELS.map((severity) => [
       severity,
@@ -61,13 +62,20 @@ export default function AuthorDiagnosticsDrawer({
           </div>
           {items.length > 0 ? (
             <ol>
-              {items.map((item) => (
+              {items.map((item) => {
+                const presentation = presentDiagnostic(
+                  locale,
+                  item.code,
+                  item.message,
+                  item.recommendedAction,
+                );
+                return (
                 <li key={item.id} data-severity={item.severity.toLowerCase()}>
                   <button type="button" onClick={() => onSelect(item)}>
                     <span>{t(item.severity)}</span>
-                    <strong>{item.code}</strong>
-                    <small>{item.scope} · {item.source}</small>
-                    <p>{item.message}</p>
+                    <strong>{presentation.title}</strong>
+                    <small>{t('Protocol code')}: {item.code} · {item.scope} · {item.source}</small>
+                    <p>{presentation.explanation}</p>
                     {item.occurrenceCount > 1 && (
                       <small className="author-diagnostic-occurrences">
                         {t('{count} occurrences', { count: item.occurrenceCount })}
@@ -77,10 +85,17 @@ export default function AuthorDiagnosticsDrawer({
                       </small>
                     )}
                     {item.coordinate && <code>{item.coordinate}</code>}
-                    {item.recommendedAction && <em>{item.recommendedAction}</em>}
+                    {presentation.remediation && <em>{presentation.remediation}</em>}
                   </button>
+                  {presentation.technicalDetail && (
+                    <details className="author-diagnostic-technical-detail">
+                      <summary>{t('Technical details')}</summary>
+                      <p>{presentation.technicalDetail}</p>
+                    </details>
+                  )}
                 </li>
-              ))}
+                );
+              })}
             </ol>
           ) : (
             <p className="muted">{t('Run or validate the graph to create review diagnostics.')}</p>

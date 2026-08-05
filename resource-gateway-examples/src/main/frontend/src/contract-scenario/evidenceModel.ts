@@ -1,4 +1,5 @@
 import type { SimulationResponse } from '../types';
+import type { TranslationValues } from '../i18n/i18n';
 import type { ScenarioComparison } from './scenarioAuthoring';
 
 export type EvidenceTone = 'success' | 'danger' | 'warning' | 'pending';
@@ -53,6 +54,7 @@ export interface EvidenceDimension {
   status: string;
   state: EvidenceDimensionState;
   detail: string;
+  detailValues?: TranslationValues;
 }
 
 export interface EvidenceIssue {
@@ -61,6 +63,7 @@ export interface EvidenceIssue {
   scope: string;
   code: string;
   message: string;
+  messageValues?: TranslationValues;
   coordinate: string;
   nodeId: string;
   occurrences?: number;
@@ -70,6 +73,7 @@ export interface EvidenceIssue {
 export interface ScenarioEvidenceView {
   headline: string;
   summary: string;
+  summaryValues?: TranslationValues;
   tone: EvidenceTone;
   dimensions: EvidenceDimension[];
   blockers: EvidenceIssue[];
@@ -145,13 +149,15 @@ export function scenarioEvidenceView(
   const outcome = blockers.length > 0
     ? {
         headline: 'Promotion blocked',
-        summary: `${blockers.length} blocking finding${blockers.length === 1 ? '' : 's'} must be resolved.`,
+        summary: '{count} blocking findings must be resolved.',
+        summaryValues: { count: blockers.length },
         tone: 'danger' as const,
       }
     : warnings.length > 0
       ? {
           headline: 'Review required',
-          summary: `${warnings.length} warning${warnings.length === 1 ? '' : 's'} needs an explicit decision.`,
+          summary: '{count} warnings need an explicit decision.',
+          summaryValues: { count: warnings.length },
           tone: 'warning' as const,
         }
       : incomplete || !allPassed
@@ -224,7 +230,8 @@ function withEvidenceFreshness(
     ...source,
     status: 'STALE',
     state: 'failed',
-    detail: `Retained ${source.label.toLowerCase()} evidence targets an older authoring snapshot.`,
+    detail: 'Retained {label} evidence targets an older authoring snapshot.',
+    detailValues: { label: source.label },
   };
 }
 
@@ -243,8 +250,9 @@ function executionDimension(response: SimulationResponse | null): EvidenceDimens
     passed ? 'PASSED' : 'FAILED',
     passed ? 'passed' : 'failed',
     passed
-      ? `${response.mockedNodeIds.length} mocked and ${response.realNodeIds.length} real nodes completed.`
+      ? '{mocked} mocked and {real} real nodes completed.'
       : response.errors[0] ?? 'Execution did not produce conforming terminal output.',
+    passed ? { mocked: response.mockedNodeIds.length, real: response.realNodeIds.length } : undefined,
   );
 }
 
@@ -268,8 +276,13 @@ function assertionDimension(comparison: ScenarioComparison | null): EvidenceDime
     failed === 0 && comparison.passed ? 'PASSED' : 'FAILED',
     failed === 0 && comparison.passed ? 'passed' : 'failed',
     failed === 0
-      ? `${comparison.results.length} assertion${comparison.results.length === 1 ? '' : 's'} passed.`
-      : `${failed}/${comparison.results.length} assertions failed.`,
+      ? comparison.results.length === 1
+        ? '{count} assertion passed.'
+        : '{count} assertions passed.'
+      : '{failed}/{total} assertions failed.',
+    failed === 0
+      ? { count: comparison.results.length }
+      : { failed, total: comparison.results.length },
   );
 }
 
@@ -282,15 +295,22 @@ function externalDimension(
   const normalized = status.trim().toUpperCase() || 'NOT CHECKED';
   const state = externalState(normalized);
   const detail = state === 'passed'
-    ? `${label} check passed for the current revision.`
+    ? '{label} check passed for the current revision.'
     : state === 'failed'
-      ? `${label} currently blocks promotion.`
+      ? '{label} currently blocks promotion.'
       : state === 'warning'
-        ? `${label} requires explicit review.`
+        ? '{label} requires explicit review.'
         : state === 'pending'
-          ? `${label} check is still running.`
+          ? '{label} check is still running.'
           : uncheckedDetail;
-  return dimension(key, label, normalized, state, detail);
+  return dimension(
+    key,
+    label,
+    normalized,
+    state,
+    detail,
+    state === 'not-checked' ? undefined : { label },
+  );
 }
 
 function externalState(status: string): EvidenceDimensionState {
@@ -309,8 +329,9 @@ function dimension(
   status: string,
   state: EvidenceDimensionState,
   detail: string,
+  detailValues?: TranslationValues,
 ): EvidenceDimension {
-  return { key, label, status, state, detail };
+  return { key, label, status, state, detail, detailValues };
 }
 
 function dimensionIssue(dimension: EvidenceDimension): EvidenceIssue {
@@ -320,6 +341,7 @@ function dimensionIssue(dimension: EvidenceDimension): EvidenceIssue {
     scope: dimension.key.toUpperCase(),
     code: `${dimension.key.toUpperCase()}_${dimension.status.replace(/\W+/g, '_')}`,
     message: dimension.detail,
+    messageValues: dimension.detailValues,
     coordinate: '',
     nodeId: '',
   };

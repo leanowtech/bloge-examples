@@ -1,5 +1,6 @@
 import type { AuthorMode, AuthorPrimaryAction } from '../shell/authorWorkspaceState';
 import { resolveAuthorPrimaryAction } from '../shell/authorWorkspaceState';
+import type { MessageId } from '../../i18n/messageCatalog';
 
 export type AuthorTaskCanonicalState =
   | 'EMPTY'
@@ -27,6 +28,7 @@ export interface AuthorTaskCoordinate {
 
 export interface AuthorCommandRemediation {
   label: string;
+  labelId?: MessageId;
   mode: AuthorMode;
 }
 
@@ -35,14 +37,17 @@ export interface AuthorCommandAvailability {
   state: 'READY' | 'RUNNING' | 'BLOCKED';
   enabled: boolean;
   label: string;
+  labelId?: MessageId;
   reasonCode: string;
   message: string;
+  messageId?: MessageId;
   remediation?: AuthorCommandRemediation;
 }
 
 export interface AuthorTaskBlocker {
   code: string;
   message: string;
+  messageId?: MessageId;
   remediation: AuthorCommandRemediation;
 }
 
@@ -116,7 +121,9 @@ function runBlockers(input: AuthorTaskStateInput): AuthorTaskBlocker[] {
     blockers.push(blocker(
       'RG.AUTHOR.RUN.GRAPH_EMPTY',
       'Add at least one operator before running a Scenario.',
+      'author.blocker.graphEmpty',
       'Add first operator',
+      'author.command.addFirstOperator',
       'compose',
     ));
   }
@@ -124,7 +131,9 @@ function runBlockers(input: AuthorTaskStateInput): AuthorTaskBlocker[] {
     blockers.push(blocker(
       'RG.AUTHOR.RUN.INPUT_INVALID',
       'Resolve the highlighted input values before running.',
+      'author.blocker.inputInvalid',
       'Fix required input',
+      'author.command.fixRequiredInput',
       'scenarios',
     ));
   }
@@ -135,7 +144,9 @@ function runBlockers(input: AuthorTaskStateInput): AuthorTaskBlocker[] {
     blockers.push(blocker(
       'RG.AUTHOR.RUN.SCENARIO_MISSING',
       'Create a Scenario with business input and at least one expected outcome.',
+      'author.blocker.scenarioMissing',
       'Create Scenario',
+      'author.command.createScenario',
       'scenarios',
     ));
   }
@@ -151,7 +162,11 @@ function runBlockers(input: AuthorTaskStateInput): AuthorTaskBlocker[] {
       coordinateIncomplete
         ? 'The canonical Scenario coordinate is still being prepared.'
         : 'This Scenario targets an older Graph or Contract and cannot create current evidence.',
+      coordinateIncomplete
+        ? 'author.blocker.coordinatePreparing'
+        : 'author.blocker.scenarioStale',
       coordinateIncomplete ? 'Open Scenarios' : 'Review compatibility',
+      coordinateIncomplete ? 'author.command.openScenarios' : 'author.command.reviewCompatibility',
       coordinateIncomplete ? 'scenarios' : 'contract',
     ));
   }
@@ -168,8 +183,10 @@ function runCommand(
       state: 'RUNNING',
       enabled: false,
       label: 'Running...',
+      labelId: 'author.command.running',
       reasonCode: 'RG.AUTHOR.RUN.IN_PROGRESS',
       message: 'The current Scenario run is still in progress.',
+      messageId: 'author.blocker.runInProgress',
     };
   }
   const first = blockers[0];
@@ -179,8 +196,10 @@ function runCommand(
       state: 'BLOCKED',
       enabled: false,
       label: input.evidenceStale ? 'Rerun & Compare' : 'Run & Compare',
+      labelId: input.evidenceStale ? 'author.command.rerun' : 'author.command.run',
       reasonCode: first.code,
       message: first.message,
+      messageId: first.messageId,
       remediation: first.remediation,
     };
   }
@@ -189,10 +208,14 @@ function runCommand(
     state: 'READY',
     enabled: true,
     label: input.evidenceStale ? 'Rerun & Compare' : 'Run & Compare',
+    labelId: input.evidenceStale ? 'author.command.rerun' : 'author.command.run',
     reasonCode: '',
     message: input.coordinate.targetId && input.coordinate.targetRevision > 0
       ? 'Runs the exact saved Scenario coordinate and records durable current evidence.'
       : 'Runs an immutable sandbox snapshot and records current exploratory evidence.',
+    messageId: input.coordinate.targetId && input.coordinate.targetRevision > 0
+      ? 'author.command.savedRunDetail'
+      : 'author.command.sandboxRunDetail',
   };
 }
 
@@ -205,8 +228,10 @@ function nonRunPrimaryCommand(
     state: busy ? 'RUNNING' : 'READY',
     enabled: !busy,
     label: primaryAction.label,
+    labelId: primaryActionMessageId(primaryAction),
     reasonCode: busy ? 'RG.AUTHOR.COMMAND.IN_PROGRESS' : '',
     message: busy ? 'Wait for the active authoring command to finish.' : '',
+    messageId: busy ? 'author.command.waitForActive' : undefined,
   };
 }
 
@@ -229,10 +254,22 @@ function canonicalState(
 function blocker(
   code: string,
   message: string,
+  messageId: MessageId,
   label: string,
+  labelId: MessageId,
   mode: AuthorMode,
 ): AuthorTaskBlocker {
-  return { code, message, remediation: { label, mode } };
+  return { code, message, messageId, remediation: { label, labelId, mode } };
+}
+
+function primaryActionMessageId(action: AuthorPrimaryAction): MessageId {
+  switch (action.kind) {
+    case 'focus-palette': return 'author.command.addFirstOperator';
+    case 'fix-input': return 'author.command.fixRequiredInput';
+    case 'review-failures': return 'author.command.reviewFailures';
+    case 'review-result': return 'author.command.reviewResult';
+    case 'run': return 'author.command.run';
+  }
 }
 
 function uniqueRemediations(blockers: AuthorTaskBlocker[]): AuthorCommandRemediation[] {

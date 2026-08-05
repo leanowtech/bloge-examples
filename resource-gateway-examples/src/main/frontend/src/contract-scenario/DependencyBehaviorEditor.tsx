@@ -259,7 +259,7 @@ export default function DependencyBehaviorEditor({
             <input
               aria-label={`Replay reference for ${dependency.dependencyId}`}
               value={behavior.replayRef ?? ''}
-              placeholder="replay-id@revision:fingerprint"
+                  placeholder={t('replay-id@revision:fingerprint')}
               onChange={(event) => updateBehavior({ replayRef: event.target.value })}
             />
           </Field>
@@ -299,7 +299,7 @@ export default function DependencyBehaviorEditor({
           <Field label={t('Graph path')}>
             <input
               value={dependency.selector.graphPath}
-              placeholder="/root"
+                  placeholder={t('/root')}
               onChange={(event) => onChange({
                 ...dependency,
                 selector: { ...dependency.selector, graphPath: event.target.value },
@@ -645,12 +645,12 @@ function JsonValueEditor({
         <option value="number">{t('Number')}</option>
         <option value="boolean">{t('Boolean')}</option>
         <option value="null">{t('Null')}</option>
-        <option value="json">JSON</option>
+        <option value="json">{t('JSON')}</option>
       </select>
       {kind === 'boolean' ? (
         <select value={String(value)} onChange={(event) => onChange(event.target.value === 'true')}>
-          <option value="true">true</option>
-          <option value="false">false</option>
+          <option value="true">{t('true')}</option>
+          <option value="false">{t('false')}</option>
         </select>
       ) : kind === 'null' ? (
         <input value="null" disabled />

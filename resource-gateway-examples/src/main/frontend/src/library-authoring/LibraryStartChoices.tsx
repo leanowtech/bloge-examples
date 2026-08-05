@@ -239,7 +239,7 @@ export default function LibraryStartChoices({
                   setAdvancedError('');
                 }}
                 spellCheck={false}
-                placeholder='{"schemaVersion":"bloge.visualLibraryAuthoring.v1",...}'
+                placeholder={t('{"schemaVersion":"bloge.visualLibraryAuthoring.v1",...}')}
                 data-testid="library-advanced-source"
               />
             </label>

@@ -4,6 +4,7 @@ import type {
   ContractInvariant,
   ErrorVariant,
 } from './domain';
+import { useI18n } from '../i18n/I18nProvider';
 
 interface ContractSemanticsEditorProps {
   contract: ContractDraft;
@@ -15,6 +16,7 @@ export default function ContractSemanticsEditor({
   contract,
   onChange,
 }: ContractSemanticsEditorProps) {
+  const { t } = useI18n();
   const updateExecution = (patch: Partial<ContractDraft['executionSemantics']>) => {
     onChange({
       ...contract,
@@ -39,11 +41,11 @@ export default function ContractSemanticsEditor({
   };
 
   return (
-    <section className="contract-semantics-editor" aria-label="Contract semantics">
+    <section className="contract-semantics-editor" aria-label={t('Contract semantics')}>
       <div className="contract-semantics-grid">
-        <Field label="Effect">
+        <Field label={t('Effect')}>
           <select
-            aria-label="Contract effect"
+            aria-label={t('Contract effect')}
             value={contract.executionSemantics.effect}
             onChange={(event) => {
               const effect = event.target.value as ContractEffect;
@@ -60,33 +62,33 @@ export default function ContractSemanticsEditor({
               });
             }}
           >
-            <option value="UNKNOWN">Not declared</option>
-            <option value="PURE">Pure</option>
-            <option value="READ">Read</option>
-            <option value="WRITE">Write</option>
+            <option value="UNKNOWN">{t('Not declared')}</option>
+            <option value="PURE">{t('Pure')}</option>
+            <option value="READ">{t('Read')}</option>
+            <option value="WRITE">{t('Write')}</option>
           </select>
         </Field>
-        <Field label="Idempotency">
+        <Field label={t('Idempotency')}>
           <input
-            aria-label="Contract idempotency"
+            aria-label={t('Contract idempotency')}
             value={contract.executionSemantics.idempotency}
-            placeholder="UNKNOWN or stable key policy"
+            placeholder={t('UNKNOWN or stable key policy')}
             onChange={(event) => updateExecution({ idempotency: event.target.value })}
           />
         </Field>
         <TriState
-          label="Streaming"
+          label={t('Streaming')}
           value={contract.executionSemantics.streaming}
           onChange={(streaming) => updateExecution({ streaming })}
         />
         <TriState
-          label="Durable"
+          label={t('Durable')}
           value={contract.executionSemantics.durable}
           onChange={(durable) => updateExecution({ durable })}
         />
-        <Field label="Compatibility">
+        <Field label={t('Compatibility')}>
           <select
-            aria-label="Contract compatibility mode"
+            aria-label={t('Contract compatibility mode')}
             value={contract.compatibilityPolicy.mode}
             onChange={(event) => onChange({
               ...contract,
@@ -96,10 +98,10 @@ export default function ContractSemanticsEditor({
               },
             })}
           >
-            <option value="STRICT">Strict</option>
-            <option value="BACKWARD">Backward</option>
-            <option value="FORWARD">Forward</option>
-            <option value="NONE">None</option>
+            <option value="STRICT">{t('Strict')}</option>
+            <option value="BACKWARD">{t('Backward')}</option>
+            <option value="FORWARD">{t('Forward')}</option>
+            <option value="NONE">{t('None')}</option>
           </select>
         </Field>
         <label className="scenario-check-field">
@@ -114,18 +116,18 @@ export default function ContractSemanticsEditor({
               },
             })}
           />
-          <span>Unknown changes block migration</span>
+          <span>{t('Unknown changes block migration')}</span>
         </label>
       </div>
 
       {contract.executionSemantics.effect === 'WRITE' && (
         <fieldset className="contract-side-effect-fields">
-          <legend>Write reconciliation</legend>
-          <Field label="Protocol">
+          <legend>{t('Write reconciliation')}</legend>
+          <Field label={t('Protocol')}>
             <input
-              aria-label="Side effect protocol"
+              aria-label={t('Side effect protocol')}
               value={contract.executionSemantics.sideEffectProtocol?.protocol ?? ''}
-              placeholder="bloge.sideEffectProtocol.v1"
+              placeholder={t('bloge.sideEffectProtocol.v1')}
               onChange={(event) => updateExecution({
                 sideEffectProtocol: {
                   ...contract.executionSemantics.sideEffectProtocol!,
@@ -134,11 +136,11 @@ export default function ContractSemanticsEditor({
               })}
             />
           </Field>
-          <Field label="Reconciler">
+          <Field label={t('Reconciler')}>
             <input
-              aria-label="Side effect reconciler"
+              aria-label={t('Side effect reconciler')}
               value={contract.executionSemantics.sideEffectProtocol?.reconcilerRef ?? ''}
-              placeholder="capability.reconcile"
+              placeholder={t('capability.reconcile')}
               onChange={(event) => updateExecution({
                 sideEffectProtocol: {
                   ...contract.executionSemantics.sideEffectProtocol!,
@@ -158,14 +160,14 @@ export default function ContractSemanticsEditor({
                 },
               })}
             />
-            <span>Compensation declared</span>
+            <span>{t('Compensation declared')}</span>
           </label>
         </fieldset>
       )}
 
       <SemanticTable
-        title="Stable errors"
-        empty="No stable error variants declared."
+        title={t('Stable errors')}
+        empty={t('No stable error variants declared.')}
         onAdd={() => onChange({
           ...contract,
           errorContract: [...contract.errorContract, {
@@ -178,20 +180,20 @@ export default function ContractSemanticsEditor({
       >
         {contract.errorContract.map((error, index) => (
           <div className="contract-semantic-row error" key={`${error.code}-${index}`}>
-            <Field label="Code">
+            <Field label={t('Code')}>
               <input
-                aria-label={`Error code ${index + 1}`}
+                aria-label={t('Error code {index}', { index: index + 1 })}
                 value={error.code}
                 onChange={(event) => updateError(index, { code: event.target.value })}
               />
             </Field>
-            <Field label="Type">
+            <Field label={t('Type')}>
               <input
                 value={error.type}
                 onChange={(event) => updateError(index, { type: event.target.value })}
               />
             </Field>
-            <Field label="Meaning">
+            <Field label={t('Meaning')}>
               <input
                 value={error.description}
                 onChange={(event) => updateError(index, { description: event.target.value })}
@@ -199,15 +201,15 @@ export default function ContractSemanticsEditor({
             </Field>
             <label className="scenario-check-field">
               <input
-                aria-label={`Error retryable ${index + 1}`}
+                aria-label={t('Error retryable {index}', { index: index + 1 })}
                 type="checkbox"
                 checked={error.retryable}
                 onChange={(event) => updateError(index, { retryable: event.target.checked })}
               />
-              <span>Retryable</span>
+              <span>{t('Retryable')}</span>
             </label>
             <RemoveButton
-              label={`Remove error ${index + 1}`}
+              label={t('Remove error {index}', { index: index + 1 })}
               onClick={() => onChange({
                 ...contract,
                 errorContract: contract.errorContract.filter((_, candidate) => candidate !== index),
@@ -218,8 +220,8 @@ export default function ContractSemanticsEditor({
       </SemanticTable>
 
       <SemanticTable
-        title="Contract invariants"
-        empty="No preconditions or postconditions declared."
+        title={t('Contract invariants')}
+        empty={t('No preconditions or postconditions declared.')}
         onAdd={() => onChange({
           ...contract,
           invariants: [...contract.invariants, {
@@ -233,51 +235,51 @@ export default function ContractSemanticsEditor({
       >
         {contract.invariants.map((invariant, index) => (
           <div className="contract-semantic-row invariant" key={`${invariant.invariantId}-${index}`}>
-            <Field label="Id">
+            <Field label={t('Id')}>
               <input
-                aria-label={`Invariant id ${index + 1}`}
+                aria-label={t('Invariant id {index}', { index: index + 1 })}
                 value={invariant.invariantId}
                 onChange={(event) => updateInvariant(index, { invariantId: event.target.value })}
               />
             </Field>
-            <Field label="Phase">
+            <Field label={t('Phase')}>
               <select
                 value={invariant.phase}
                 onChange={(event) => updateInvariant(index, {
                   phase: event.target.value as ContractInvariant['phase'],
                 })}
               >
-                <option value="PRECONDITION">Precondition</option>
-                <option value="POSTCONDITION">Postcondition</option>
+                <option value="PRECONDITION">{t('Precondition')}</option>
+                <option value="POSTCONDITION">{t('Postcondition')}</option>
               </select>
             </Field>
-            <Field label="Expression">
+            <Field label={t('Expression')}>
               <input
-                aria-label={`Invariant expression ${index + 1}`}
+                aria-label={t('Invariant expression {index}', { index: index + 1 })}
                 value={invariant.expression}
-                placeholder="exists(ctx.requestId)"
+                placeholder={t('exists(ctx.requestId)')}
                 onChange={(event) => updateInvariant(index, { expression: event.target.value })}
               />
             </Field>
-            <Field label="Severity">
+            <Field label={t('Severity')}>
               <select
                 value={invariant.severity}
                 onChange={(event) => updateInvariant(index, {
                   severity: event.target.value as ContractInvariant['severity'],
                 })}
               >
-                <option value="ERROR">Error</option>
-                <option value="WARNING">Warning</option>
+                <option value="ERROR">{t('Error')}</option>
+                <option value="WARNING">{t('Warning')}</option>
               </select>
             </Field>
-            <Field label="Meaning">
+            <Field label={t('Meaning')}>
               <input
                 value={invariant.description}
                 onChange={(event) => updateInvariant(index, { description: event.target.value })}
               />
             </Field>
             <RemoveButton
-              label={`Remove invariant ${index + 1}`}
+              label={t('Remove invariant {index}', { index: index + 1 })}
               onClick={() => onChange({
                 ...contract,
                 invariants: contract.invariants.filter((_, candidate) => candidate !== index),
@@ -303,18 +305,19 @@ function TriState({
   value: boolean | null;
   onChange: (value: boolean | null) => void;
 }) {
+  const { t } = useI18n();
   return (
     <Field label={label}>
       <select
-        aria-label={`Contract ${label.toLowerCase()}`}
+        aria-label={t('Contract {label}', { label })}
         value={value === null ? 'UNKNOWN' : String(value).toUpperCase()}
         onChange={(event) => onChange(
           event.target.value === 'UNKNOWN' ? null : event.target.value === 'TRUE',
         )}
       >
-        <option value="UNKNOWN">Not declared</option>
-        <option value="TRUE">Yes</option>
-        <option value="FALSE">No</option>
+        <option value="UNKNOWN">{t('Not declared')}</option>
+        <option value="TRUE">{t('Yes')}</option>
+        <option value="FALSE">{t('No')}</option>
       </select>
     </Field>
   );
@@ -331,12 +334,13 @@ function SemanticTable({
   onAdd: () => void;
   children: React.ReactNode;
 }) {
+  const { t } = useI18n();
   const hasChildren = Array.isArray(children) ? children.length > 0 : Boolean(children);
   return (
     <section className="contract-semantic-table">
       <header>
         <h3>{title}</h3>
-        <button type="button" className="secondary compact" onClick={onAdd}>Add</button>
+        <button type="button" className="secondary compact" onClick={onAdd}>{t('Add')}</button>
       </header>
       {!hasChildren && <p>{empty}</p>}
       {children}

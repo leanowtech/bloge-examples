@@ -782,7 +782,7 @@ export default function Showcase() {
                   <dd>{t(runState.message)}</dd>
                 </div>
                 <div>
-                  <dt>URL</dt>
+                  <dt>{t('URL')}</dt>
                   <dd>
                     <code>{runState.url || 'n/a'}</code>
                   </dd>
@@ -922,11 +922,11 @@ export default function Showcase() {
                           {decisionInputColumns.length ? (
                             decisionInputColumns.map((column) => (
                               <td key={`${row.id}:condition:${column.key}`} className="condition-cell">
-                                <code>{scalarValue(row.conditions?.[column.key]) || 'any'}</code>
+                                <code>{scalarValue(row.conditions?.[column.key]) || t('any')}</code>
                               </td>
                             ))
                           ) : (
-                            <td className="condition-cell"><code>any</code></td>
+                            <td className="condition-cell"><code>{t('any')}</code></td>
                           )}
                           {decisionOutputColumns.length ? (
                             decisionOutputColumns.map((column) => (

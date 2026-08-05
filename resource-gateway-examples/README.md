@@ -107,8 +107,17 @@ segmented control in the global header; the choice persists across workspace nav
 For deterministic demo links, append `?lang=en` or `?lang=zh-CN`, for example
 `http://localhost:8080/author/?lang=zh-CN`. Operator references, DSL, JSON Schema, fixture payloads,
 JSONPath expressions, fingerprints, and run identifiers are intentionally never translated.
-Implementation and extension rules are documented in
-[`docs/bloge-visual-canvas-localization.md`](../docs/bloge-visual-canvas-localization.md).
+Commands, lifecycle states, diagnostics, deep Contract/Scenario/Library surfaces, and ReactFlow
+accessibility labels are localized. Protocol diagnostics keep the original code and message under
+Technical details while the primary UI shows a localized title, explanation, and remediation.
+Run `npm run check:i18n` from the frontend directory to enforce typed-message completeness, deep
+surface coverage, dynamic registry/state-machine coverage, and locale parity. Implementation rules
+are documented in
+[`docs/bloge-visual-canvas-localization.md`](../docs/bloge-visual-canvas-localization.md), the shared
+product vocabulary is in
+[`docs/resource-gateway-localization-glossary.md`](../docs/resource-gateway-localization-glossary.md),
+and Stage 4 verification is recorded in
+[`docs/resource-gateway-ux-stage4-localization-governance.md`](../docs/resource-gateway-ux-stage4-localization-governance.md).
 
 For the shortest trustworthy Author demo, load **Loan policy fallback** from the start dialog. Its
 card previews Graph/Contract size, three runnable `GOLDEN`/`NEGATIVE`/`BOUNDARY` cases, mocked

@@ -1,5 +1,6 @@
 import { type CSSProperties, useMemo, useState } from 'react';
 
+import { useI18n } from '../i18n/I18nProvider';
 import {
   compactFieldRows,
   compactFieldsFromRows,
@@ -24,6 +25,7 @@ export default function SchemaTreeEditor({
   onChange,
   onInferSamples,
 }: SchemaTreeEditorProps) {
+  const { t } = useI18n();
   const [view, setView] = useState<SchemaView>('tree');
   const rows = useMemo(() => compactFieldRows(fields), [fields]);
 
@@ -47,7 +49,7 @@ export default function SchemaTreeEditor({
       <header>
         <div>
           <h4>{title}</h4>
-          <span>{rows.length} fields</span>
+          <span>{t('{count} fields', { count: rows.length })}</span>
         </div>
         <div className="schema-tree-actions">
           {onInferSamples && (
@@ -57,17 +59,17 @@ export default function SchemaTreeEditor({
               onClick={onInferSamples}
               data-testid={`infer-${title.toLowerCase()}-from-samples`}
             >
-              Infer from samples
+              {t('Infer from samples')}
             </button>
           )}
-          <div className="segmented-control" aria-label={`${title} view`}>
+          <div className="segmented-control" aria-label={t('{title} view', { title })}>
             <button
               type="button"
               className={view === 'tree' ? 'active' : ''}
               aria-pressed={view === 'tree'}
               onClick={() => setView('tree')}
             >
-              Tree
+              {t('Tree')}
             </button>
             <button
               type="button"
@@ -75,7 +77,7 @@ export default function SchemaTreeEditor({
               aria-pressed={view === 'table'}
               onClick={() => setView('table')}
             >
-              Table
+              {t('Table')}
             </button>
           </div>
         </div>
@@ -85,7 +87,7 @@ export default function SchemaTreeEditor({
           <div className="schema-tree-root" role="treeitem" aria-expanded="true">
             <span aria-hidden="true">v</span>
             <strong>{title}</strong>
-            <small>object</small>
+            <small>{t('object')}</small>
           </div>
           {rows.map((row, index) => {
             const nested = nestedCompactFields(row.sourceValue);
@@ -94,29 +96,29 @@ export default function SchemaTreeEditor({
                 <div className="schema-tree-field" role="treeitem" aria-expanded={nested.length ? true : undefined}>
                   <span className="schema-tree-branch" aria-hidden="true" />
                   <input
-                    aria-label={`${title} field ${index + 1} name`}
+                    aria-label={t('{title} field {index} name', { title, index: index + 1 })}
                     value={row.name}
                     onChange={(event) => patch(index, { name: event.target.value })}
                     data-authoring-path={fieldPath(basePath, row)}
                   />
                   <input
-                    aria-label={`${title} field ${row.name} type`}
+                    aria-label={t('{title} field {name} type', { title, name: row.name })}
                     value={row.type}
                     onChange={(event) => patch(index, { type: event.target.value })}
                     data-authoring-path={fieldPath(basePath, row)}
                   />
-                  <label title="Required field">
+                  <label title={t('Required field')}>
                     <input
                       type="checkbox"
                       checked={row.required}
                       onChange={(event) => patch(index, { required: event.target.checked })}
                     />
-                    <span>Required</span>
+                    <span>{t('Required')}</span>
                   </label>
                   <button
                     type="button"
-                    aria-label={`Remove ${row.name}`}
-                    title={`Remove ${row.name}`}
+                    aria-label={t('Remove {name}', { name: row.name })}
+                    title={t('Remove {name}', { name: row.name })}
                     onClick={() => remove(index)}
                   >
                     x
@@ -132,7 +134,7 @@ export default function SchemaTreeEditor({
                     <span className="schema-tree-branch" aria-hidden="true" />
                     <strong>{field.name}</strong>
                     <code>{field.type}</code>
-                    <small>{field.required ? 'required' : 'optional'}</small>
+                    <small>{field.required ? t('required') : t('optional')}</small>
                   </div>
                 ))}
               </div>
@@ -142,14 +144,14 @@ export default function SchemaTreeEditor({
       ) : (
         <table className="schema-field-table">
           <thead>
-            <tr><th>Field</th><th>Type</th><th>Required</th><th aria-label="Actions" /></tr>
+            <tr><th>{t('Field')}</th><th>{t('Type')}</th><th>{t('Required')}</th><th aria-label={t('Actions')} /></tr>
           </thead>
           <tbody>
             {rows.map((row, index) => (
               <tr key={row.id}>
                 <td>
                   <input
-                    aria-label={`${title} field ${index + 1} name`}
+                    aria-label={t('{title} field {index} name', { title, index: index + 1 })}
                     value={row.name}
                     onChange={(event) => patch(index, { name: event.target.value })}
                     data-authoring-path={fieldPath(basePath, row)}
@@ -157,7 +159,7 @@ export default function SchemaTreeEditor({
                 </td>
                 <td>
                   <input
-                    aria-label={`${title} field ${row.name} type`}
+                    aria-label={t('{title} field {name} type', { title, name: row.name })}
                     value={row.type}
                     onChange={(event) => patch(index, { type: event.target.value })}
                   />
@@ -165,7 +167,7 @@ export default function SchemaTreeEditor({
                 <td>
                   <input
                     type="checkbox"
-                    aria-label={`${row.name} required`}
+                    aria-label={t('{name} required', { name: row.name })}
                     checked={row.required}
                     onChange={(event) => patch(index, { required: event.target.checked })}
                   />
@@ -173,8 +175,8 @@ export default function SchemaTreeEditor({
                 <td>
                   <button
                     type="button"
-                    aria-label={`Remove ${row.name}`}
-                    title={`Remove ${row.name}`}
+                    aria-label={t('Remove {name}', { name: row.name })}
+                    title={t('Remove {name}', { name: row.name })}
                     onClick={() => remove(index)}
                   >
                     x
@@ -185,9 +187,9 @@ export default function SchemaTreeEditor({
           </tbody>
         </table>
       )}
-      {rows.length === 0 && <p className="schema-fields-empty">No fields declared.</p>}
+      {rows.length === 0 && <p className="schema-fields-empty">{t('No fields declared.')}</p>}
       <button type="button" className="secondary compact schema-add-field" onClick={add}>
-        + Add field
+        {t('+ Add field')}
       </button>
     </section>
   );

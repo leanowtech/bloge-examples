@@ -3,6 +3,7 @@ import { describe, expect, it } from 'vitest';
 import { successfulResponse } from './testFixtures';
 import { scenarioAssertionDiff, scenarioEvidenceView } from './evidenceModel';
 import type { ScenarioComparison } from './scenarioAuthoring';
+import { translate } from '../i18n/i18n';
 
 describe('scenarioEvidenceView', () => {
   it('does not claim success when assertions pass but trust checks are missing', () => {
@@ -17,6 +18,12 @@ describe('scenarioEvidenceView', () => {
       ['contract', 'not-checked'],
       ['governance', 'not-checked'],
     ]);
+    const assertions = view.dimensions.find((dimension) => dimension.key === 'assertions');
+    expect(assertions).toMatchObject({
+      detail: '{count} assertion passed.',
+      detailValues: { count: 1 },
+    });
+    expect(translate('zh-CN', assertions!.detail, assertions!.detailValues)).toBe('1 个断言已通过。');
   });
 
   it('prioritizes blockers over passing assertions and warnings', () => {
@@ -97,7 +104,9 @@ describe('scenarioEvidenceView', () => {
 
     expect(view.warnings).toHaveLength(1);
     expect(view.warnings[0].occurrences).toBe(3);
-    expect(view.summary).toBe('1 warning needs an explicit decision.');
+    expect(view.summary).toBe('{count} warnings need an explicit decision.');
+    expect(view.summaryValues).toEqual({ count: 1 });
+    expect(translate('zh-CN', view.summary, view.summaryValues)).toBe('有 1 个警告需要明确决策。');
   });
 
   it('blocks evidence when any canonical source fingerprint drifts', () => {

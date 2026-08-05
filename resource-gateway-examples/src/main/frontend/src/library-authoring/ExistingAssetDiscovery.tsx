@@ -5,6 +5,7 @@ import {
   type LibraryAuthoringDiscoveryMode,
 } from '../api';
 import { stageDslAuthorHandoff } from '../author/dslAuthorHandoff';
+import { useI18n } from '../i18n/I18nProvider';
 import type {
   VisualAuthoringFactProjection,
   VisualLibraryAuthoringDocument,
@@ -103,6 +104,7 @@ paths:
 };
 
 export default function ExistingAssetDiscovery({ onStart }: ExistingAssetDiscoveryProps) {
+  const { t } = useI18n();
   const [mode, setMode] = useState<LibraryAuthoringDiscoveryMode>('runtime');
   const [source, setSource] = useState('');
   const [projection, setProjection] = useState<VisualAuthoringFactProjection | null>(null);
@@ -124,7 +126,7 @@ export default function ExistingAssetDiscovery({ onStart }: ExistingAssetDiscove
       setProjection(await discoverLibraryAuthoringAssets(mode, request));
     } catch (failure) {
       setProjection(null);
-      setError(failure instanceof Error ? failure.message : 'Discovery failed.');
+      setError(t(failure instanceof Error ? failure.message : 'Discovery failed.'));
     } finally {
       setBusy(false);
     }
@@ -141,7 +143,7 @@ export default function ExistingAssetDiscovery({ onStart }: ExistingAssetDiscove
   const summary = projection?.summary;
   return (
     <div className="library-discovery" data-testid="library-discovery">
-      <div className="library-discovery-source-tabs" role="tablist" aria-label="Discovery source">
+      <div className="library-discovery-source-tabs" role="tablist" aria-label={t('Discovery source')}>
         {(Object.keys(SOURCE_LABELS) as LibraryAuthoringDiscoveryMode[]).map((candidate) => (
           <button
             key={candidate}
@@ -152,7 +154,7 @@ export default function ExistingAssetDiscovery({ onStart }: ExistingAssetDiscove
             onClick={() => chooseMode(candidate)}
             data-testid={`library-discovery-mode:${candidate}`}
           >
-            {SOURCE_LABELS[candidate]}
+            {t(SOURCE_LABELS[candidate])}
           </button>
         ))}
       </div>
@@ -160,12 +162,12 @@ export default function ExistingAssetDiscovery({ onStart }: ExistingAssetDiscove
       <div className="library-discovery-input">
         {mode === 'runtime' ? (
           <div className="library-discovery-runtime">
-            <strong>Process-local inventory</strong>
-            <span>Operators and expression functions visible to this Resource Gateway instance</span>
+            <strong>{t('Process-local inventory')}</strong>
+            <span>{t('Operators and expression functions visible to this Resource Gateway instance')}</span>
           </div>
         ) : (
           <label>
-            <span>{SOURCE_LABELS[mode]} source</span>
+            <span>{t('{source} source', { source: t(SOURCE_LABELS[mode]) })}</span>
             <textarea
               value={source}
               onChange={(event) => setSource(event.target.value)}
@@ -181,7 +183,7 @@ export default function ExistingAssetDiscovery({ onStart }: ExistingAssetDiscove
           disabled={busy || (mode !== 'runtime' && !source.trim())}
           data-testid="library-discovery-run"
         >
-          {busy ? 'Scanning...' : 'Scan source'}
+          {busy ? t('Scanning...') : t('Scan source')}
         </button>
       </div>
 
@@ -191,56 +193,56 @@ export default function ExistingAssetDiscovery({ onStart }: ExistingAssetDiscove
         <section className="library-discovery-result" data-testid="library-discovery-result">
           <header>
             <div>
-              <span>{projection.sourceKind.replace(/_/g, ' ')}</span>
-              <strong>{projection.sourceId || 'Unnamed source'}</strong>
+              <span>{t(projection.sourceKind.replace(/_/g, ' '))}</span>
+              <strong>{projection.sourceId || t('Unnamed source')}</strong>
             </div>
             <span
               className="library-discovery-status"
               data-state={summary.runtimeReady ? 'ready' : projection.accepted ? 'review' : 'blocked'}
             >
-              {summary.runtimeReady ? 'Runtime ready' : projection.accepted ? 'Review required' : 'Blocked'}
+              {summary.runtimeReady ? t('Runtime ready') : projection.accepted ? t('Review required') : t('Blocked')}
             </span>
           </header>
 
           <dl className="library-discovery-summary">
-            <div><dt>Operators</dt><dd>{summary.operatorFactCount}</dd></div>
-            <div><dt>Functions</dt><dd>{summary.functionFactCount}</dd></div>
-            <div><dt>Graphs</dt><dd>{summary.graphFactCount}</dd></div>
-            <div><dt>Bound</dt><dd>{summary.boundCount}</dd></div>
-            <div><dt>Drifted</dt><dd>{summary.driftedCount}</dd></div>
-            <div><dt>Unresolved</dt><dd>{summary.unresolvedCount}</dd></div>
+            <div><dt>{t('Operators')}</dt><dd>{summary.operatorFactCount}</dd></div>
+            <div><dt>{t('Functions')}</dt><dd>{summary.functionFactCount}</dd></div>
+            <div><dt>{t('Graphs')}</dt><dd>{summary.graphFactCount}</dd></div>
+            <div><dt>{t('Bound')}</dt><dd>{summary.boundCount}</dd></div>
+            <div><dt>{t('Drifted')}</dt><dd>{summary.driftedCount}</dd></div>
+            <div><dt>{t('Unresolved')}</dt><dd>{summary.unresolvedCount}</dd></div>
           </dl>
 
           <section className="library-discovery-facts">
-            <header><h3>Discovered assets</h3><span>{projection.facts.length}</span></header>
+            <header><h3>{t('Discovered assets')}</h3><span>{projection.facts.length}</span></header>
             <div className="library-discovery-fact-list">
               {projection.facts.slice(0, 12).map((fact) => (
                 <div key={fact.factId}>
-                  <span>{fact.assetKind}</span>
+                  <span>{t(fact.assetKind)}</span>
                   <strong>{fact.assetRef}</strong>
-                  <small>{fact.evidenceLevel} / {fact.factKind}</small>
+                  <small>{t(fact.evidenceLevel)} / {t(fact.factKind)}</small>
                 </div>
               ))}
             </div>
             {projection.facts.length > 12 && (
-              <p>{projection.facts.length - 12} additional assets are retained in the projection.</p>
+              <p>{t('{count} additional assets are retained in the projection.', { count: projection.facts.length - 12 })}</p>
             )}
           </section>
 
           {projection.runtimeParity.length > 0 && (
             <section className="library-discovery-parity">
-              <header><h3>Runtime parity</h3><span>{projection.runtimeParity.length}</span></header>
+              <header><h3>{t('Runtime parity')}</h3><span>{projection.runtimeParity.length}</span></header>
               <div className="library-discovery-table-wrap">
                 <table>
                   <thead>
-                    <tr><th>Asset</th><th>State</th><th>Runtime</th></tr>
+                    <tr><th>{t('Asset')}</th><th>{t('State')}</th><th>{t('Runtime')}</th></tr>
                   </thead>
                   <tbody>
                     {projection.runtimeParity.map((parity, index) => (
                       <tr key={`${parity.assetKind}:${parity.assetRef}:${parity.runtimeProfile}:${index}`}>
-                        <td><span>{parity.assetKind}</span><strong>{parity.assetRef}</strong></td>
-                        <td data-state={parity.state}>{parity.state.replace(/_/g, ' ')}</td>
-                        <td>{parity.runtimeProfile || parity.message}</td>
+                        <td><span>{t(parity.assetKind)}</span><strong>{parity.assetRef}</strong></td>
+                        <td data-state={parity.state}>{t(parity.state.replace(/_/g, ' '))}</td>
+                        <td>{parity.runtimeProfile || t(parity.message)}</td>
                       </tr>
                     ))}
                   </tbody>
@@ -251,13 +253,13 @@ export default function ExistingAssetDiscovery({ onStart }: ExistingAssetDiscove
 
           {projection.reviewItems.length > 0 && (
             <section className="library-discovery-review">
-              <header><h3>Review queue</h3><span>{projection.reviewItems.length}</span></header>
+              <header><h3>{t('Review queue')}</h3><span>{projection.reviewItems.length}</span></header>
               <ol>
                 {projection.reviewItems.slice(0, 8).map((item, index) => (
                   <li key={`${item.code}:${item.assetRef}:${index}`} data-level={item.level}>
                     <strong>{item.assetRef || item.assetKind}</strong>
-                    <p>{item.message}</p>
-                    <small>{item.action}</small>
+                    <p>{t(item.message)}</p>
+                    <small>{t(item.action)}</small>
                   </li>
                 ))}
               </ol>
@@ -275,7 +277,7 @@ export default function ExistingAssetDiscovery({ onStart }: ExistingAssetDiscove
                 )}
                 data-testid="library-discovery-open-draft"
               >
-                Open structured draft
+                {t('Open structured draft')}
               </button>
             )}
             {mode === 'dsl' && (
@@ -285,7 +287,7 @@ export default function ExistingAssetDiscovery({ onStart }: ExistingAssetDiscove
                 onClick={stageDslHandoff}
                 data-testid="library-discovery-open-author"
               >
-                Open Graph Author
+                {t('Open Graph Author')}
               </a>
             )}
             <code title={projection.projectionFingerprint}>

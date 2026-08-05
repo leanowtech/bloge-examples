@@ -176,7 +176,7 @@ export default function AssertionBuilder({
                 <input
                   aria-label={`Custom assertion path for ${assertion.assertionId}`}
                   value={assertion.path}
-                  placeholder="/decision/approved"
+                  placeholder={t('/decision/approved')}
                   onChange={(event) => changePath(event.target.value)}
                 />
               </Field>

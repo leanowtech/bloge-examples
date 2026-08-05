@@ -461,6 +461,7 @@ function CanvasDataEdge({
   selected,
   data,
 }: EdgeProps<CanvasEdgeData>) {
+  const { t } = useI18n();
   const [edgePath, labelX, labelY] = getSmoothStepPath({
     sourceX,
     sourceY,
@@ -475,6 +476,14 @@ function CanvasDataEdge({
   const labelText = data?.semanticLabel !== undefined
     ? data.semanticLabel
     : data?.pathFocus === 'dimmed' ? '' : rawLabelText;
+  const bundledLabelMatch = labelText.match(/^(\d+) fields \/ (\d+) targets? · (.+)$/);
+  const localizedLabelText = bundledLabelMatch
+    ? t('{fields} fields / {targets} targets · {paths}', {
+      fields: bundledLabelMatch[1],
+      targets: bundledLabelMatch[2],
+      paths: bundledLabelMatch[3],
+    })
+    : labelText;
   const labelLane = data?.labelLane ?? 0;
   const labelOffsetX = Math.abs(targetY - sourceY) > 60
     ? targetY > sourceY
@@ -495,19 +504,19 @@ function CanvasDataEdge({
         style={style}
         interactionWidth={interactionWidth}
       />
-      {labelText && (
+      {localizedLabelText && (
         <EdgeLabelRenderer>
           <div
             className={['flow-edge-label', selected ? 'selected' : ''].filter(Boolean).join(' ')}
             data-edge-id={id}
             data-testid="canvas-edge-label"
             data-field-count={data?.bundledFieldCount ?? 1}
-            title={data?.semanticLabelTitle || labelText}
+            title={data?.semanticLabelTitle || localizedLabelText}
             style={{
               transform: `translate(-50%, -50%) translate(${renderedLabelX}px, ${renderedLabelY}px)`,
             }}
           >
-            {labelText}
+            {localizedLabelText}
           </div>
         </EdgeLabelRenderer>
       )}
@@ -1317,6 +1326,7 @@ function NodeInputBindingsEditor({
   onKindChange: (bindingKey: string, kind: 'contextPath' | 'constant') => void;
   onDropContextPath: (path: string) => void;
 }) {
+  const { t } = useI18n();
   const inputPorts = node.data.summary.inputNames.length ? node.data.summary.inputNames : ['inputs'];
   const rows = Object.entries(node.data.inputs ?? {});
   const edgeRows = incomingEdges
@@ -1349,20 +1359,20 @@ function NodeInputBindingsEditor({
       }}
     >
       <div className="input-binding-header">
-        <strong>Node Inputs</strong>
+        <strong>{t('Node Inputs')}</strong>
         <button
           type="button"
           className="secondary compact"
           data-testid="node-input-add"
           onClick={onAdd}
         >
-          Add Binding
+          {t('Add Binding')}
         </button>
       </div>
       {edgeRows.length > 0 && (
         <details className="incoming-edge-bindings">
           <summary>
-            <strong>Connected sources</strong>
+            <strong>{t('Connected sources')}</strong>
             <span>{edgeRows.length}</span>
           </summary>
           <ul>
@@ -1388,34 +1398,34 @@ function NodeInputBindingsEditor({
               <li key={bindingKey} data-testid={`node-input-binding:${index}`}>
                 <div className="input-binding-row-header">
                   <label>
-                    <span>Key</span>
+                    <span>{t('Key')}</span>
                     <input
-                      aria-label={`Input binding key ${index + 1}`}
+                      aria-label={t('Input binding key {index}', { index: index + 1 })}
                       data-testid={`node-input-key:${index}`}
                       value={bindingKey}
                       onChange={(event) => onRename(bindingKey, event.target.value)}
                     />
                   </label>
                   <label>
-                    <span>Source</span>
+                    <span>{t('Source')}</span>
                     <select
-                      aria-label={`Input binding source ${index + 1}`}
+                      aria-label={t('Input binding source {index}', { index: index + 1 })}
                       data-testid={`node-input-kind:${index}`}
                       value={kind}
                       onChange={(event) =>
                         onKindChange(bindingKey, event.target.value === 'constant' ? 'constant' : 'contextPath')
                       }
                     >
-                      <option value="contextPath">ctx</option>
-                      <option value="constant">constant</option>
+                      <option value="contextPath">{t('ctx')}</option>
+                      <option value="constant">{t('constant')}</option>
                     </select>
                   </label>
                 </div>
                 <div className="input-binding-targets">
                   <label>
-                    <span>Target port</span>
+                    <span>{t('Target port')}</span>
                     <select
-                      aria-label={`Input target port ${index + 1}`}
+                      aria-label={t('Input target port {index}', { index: index + 1 })}
                       data-testid={`node-input-target-port:${index}`}
                       value={targetPort}
                       onChange={(event) => onChange(bindingKey, { targetPort: event.target.value })}
@@ -1428,9 +1438,9 @@ function NodeInputBindingsEditor({
                     </select>
                   </label>
                   <label>
-                    <span>Target path</span>
+                    <span>{t('Target path')}</span>
                     <input
-                      aria-label={`Input target path ${index + 1}`}
+                      aria-label={t('Input target path {index}', { index: index + 1 })}
                       data-testid={`node-input-target-path:${index}`}
                       placeholder={bindingKey}
                       value={binding.targetPath ?? ''}
@@ -1440,20 +1450,20 @@ function NodeInputBindingsEditor({
                 </div>
                 {kind === 'contextPath' ? (
                   <label className="input-binding-source">
-                    <span>Context path</span>
+                    <span>{t('Context path')}</span>
                     <input
-                      aria-label={`Context path ${index + 1}`}
+                      aria-label={t('Context path {index}', { index: index + 1 })}
                       data-testid={`node-input-context-path:${index}`}
-                      placeholder="user.id"
+                      placeholder={t('user.id')}
                       value={binding.path ?? ''}
                       onChange={(event) => onChange(bindingKey, { kind: 'contextPath', path: event.target.value })}
                     />
                   </label>
                 ) : (
                   <label className="input-binding-source">
-                    <span>Constant</span>
+                    <span>{t('Constant')}</span>
                     <textarea
-                      aria-label={`Constant input value ${index + 1}`}
+                      aria-label={t('Constant input value {index}', { index: index + 1 })}
                       data-testid={`node-input-constant:${index}`}
                       value={constantInputValueText(binding.value)}
                       onChange={(event) =>
@@ -1468,7 +1478,7 @@ function NodeInputBindingsEditor({
                   data-testid={`node-input-remove:${index}`}
                   onClick={() => onRemove(bindingKey)}
                 >
-                  Remove
+                  {t('Remove')}
                 </button>
               </li>
             );
@@ -1476,7 +1486,7 @@ function NodeInputBindingsEditor({
         </ol>
       ) : (
         <p className="muted">
-          {edgeRows.length > 0 ? 'No direct context or constant bindings.' : 'No input bindings.'}
+          {edgeRows.length > 0 ? t('No direct context or constant bindings.') : t('No input bindings.')}
         </p>
       )}
     </div>
@@ -1504,13 +1514,14 @@ function ContextVariablesEditor({
   onBind: (path: string) => void;
   onRawJsonChange: (value: string) => void;
 }) {
+  const { t } = useI18n();
   const contextPreview = JSON.stringify(compilation.value, null, 2);
   return (
     <div className="fixture-editor context-editor">
       <div className="fixture-header">
-        <strong>Context Variables</strong>
+        <strong>{t('Context Variables')}</strong>
         <span className={`badge ${compilation.error ? 'error' : 'fixture'}`}>
-          {compilation.error ? 'invalid' : 'ready'}
+          {compilation.error ? t('invalid') : t('ready')}
         </span>
       </div>
       {rows.length > 0 ? (
@@ -1533,39 +1544,39 @@ function ContextVariablesEditor({
                     event.dataTransfer.setData('text/plain', `ctx.${path}`);
                   }}
                 >
-                  ctx.{path || 'path'}
+                  {t('ctx')}.{path || t('path')}
                 </button>
                 <div className="context-variable-fields">
                   <label>
-                    <span>Path</span>
+                    <span>{t('Path')}</span>
                     <input
-                      aria-label={`Context variable path ${index + 1}`}
+                      aria-label={t('Context variable path {index}', { index: index + 1 })}
                       data-testid={`context-variable-path:${index}`}
-                      placeholder="applicant.score"
+                      placeholder={t('applicant.score')}
                       value={row.path}
                       onChange={(event) => onUpdate(row.id, { path: event.target.value })}
                     />
                   </label>
                   <label>
-                    <span>Type</span>
+                    <span>{t('Type')}</span>
                     <select
-                      aria-label={`Context variable type ${index + 1}`}
+                      aria-label={t('Context variable type {index}', { index: index + 1 })}
                       data-testid={`context-variable-type:${index}`}
                       value={row.valueType}
                       onChange={(event) =>
                         onUpdate(row.id, { valueType: event.target.value as ContextVariableType })
                       }
                     >
-                      <option value="string">string</option>
-                      <option value="number">number</option>
-                      <option value="boolean">boolean</option>
-                      <option value="json">json</option>
+                      <option value="string">{t('string')}</option>
+                      <option value="number">{t('number')}</option>
+                      <option value="boolean">{t('boolean')}</option>
+                      <option value="json">{t('json')}</option>
                     </select>
                   </label>
                   <label>
-                    <span>Sample</span>
+                    <span>{t('Sample')}</span>
                     <input
-                      aria-label={`Context variable sample ${index + 1}`}
+                      aria-label={t('Context variable sample {index}', { index: index + 1 })}
                       data-testid={`context-variable-value:${index}`}
                       placeholder={row.valueType === 'json' ? '{"tier":"gold"}' : 'value'}
                       value={row.sample}
@@ -1581,7 +1592,7 @@ function ContextVariablesEditor({
                     disabled={!selectedNodeId || !path}
                     onClick={() => onBind(path)}
                   >
-                    Bind
+                    {t('Bind')}
                   </button>
                   <button
                     type="button"
@@ -1589,7 +1600,7 @@ function ContextVariablesEditor({
                     data-testid={`context-variable-remove:${index}`}
                     onClick={() => onRemove(row.id)}
                   >
-                    Remove
+                    {t('Remove')}
                   </button>
                 </div>
               </li>
@@ -1597,7 +1608,7 @@ function ContextVariablesEditor({
           })}
         </ol>
       ) : (
-        <p className="muted">No context variables.</p>
+        <p className="muted">{t('No context variables.')}</p>
       )}
       <div className="context-variable-footer">
         <button
@@ -1606,16 +1617,16 @@ function ContextVariablesEditor({
           data-testid="context-variable-add"
           onClick={onAdd}
         >
-          Add Variable
+          {t('Add Variable')}
         </button>
       </div>
       <pre className="context-preview" data-testid="context-preview-json">{contextPreview}</pre>
       <details className="context-advanced">
-        <summary>Advanced JSON</summary>
+        <summary>{t('Advanced JSON')}</summary>
         <label className="fixture-field">
-          <span>JSON</span>
+          <span>{t('JSON')}</span>
           <textarea
-            aria-label="Simulation runtime context JSON"
+            aria-label={t('Simulation runtime context JSON')}
             data-testid="simulation-context-json"
             spellCheck={false}
             placeholder="{}"
@@ -1626,7 +1637,7 @@ function ContextVariablesEditor({
       </details>
       {compilation.error && (
         <p className="fixture-error" data-testid="simulation-context-error">
-          {compilation.error}
+          {t(compilation.error)}
         </p>
       )}
     </div>
@@ -1634,6 +1645,7 @@ function ContextVariablesEditor({
 }
 
 function OperatorNode({ id, data, selected }: NodeProps<NodeData>) {
+  const { t } = useI18n();
   const status = data.status ?? 'unknown';
   const inputPorts = data.summary.inputNames;
   const outputPorts = data.summary.outputNames.length ? data.summary.outputNames : [''];
@@ -1662,7 +1674,9 @@ function OperatorNode({ id, data, selected }: NodeProps<NodeData>) {
           id={handleIdForPort('in', port)}
           type="target"
           position={Position.Left}
-          title={data.candidatePorts?.[port] ? `Input: ${port} · ${data.candidatePorts[port]}` : `Input: ${port}`}
+          title={data.candidatePorts?.[port]
+            ? t('Input: {port} · {status}', { port, status: t(data.candidatePorts[port]) })
+            : t('Input: {port}', { port })}
           className={`port-handle target ${data.candidatePorts?.[port] ?? ''}`}
           style={handleOffset(index, inputPorts.length)}
         />
@@ -1670,44 +1684,44 @@ function OperatorNode({ id, data, selected }: NodeProps<NodeData>) {
       <div className="operator-node-title">
         <span>{data.label}</span>
         <span className="operator-node-pills">
-          <span className={`operator-kind-pill ${data.summary.visualKind}`}>{data.summary.visualLabel}</span>
+          <span className={`operator-kind-pill ${data.summary.visualKind}`}>{t(data.summary.visualLabel)}</span>
           {data.summary.externalWrite && (
             <span
               className={`operator-side-effect-pill ${data.summary.managedWrite ? 'managed' : 'unmanaged'}`}
-              title={data.summary.sideEffectNotice}
+              title={t(data.summary.sideEffectNotice)}
             >
-              {data.summary.managedWrite ? 'write ok' : 'write blocked'}
+              {data.summary.managedWrite ? t('write ok') : t('write blocked')}
             </span>
           )}
-          {data.isOutput && <span className="output-pill">output</span>}
-          {data.pinned && <span className="pin-pill" title="Pinned for Auto Layout">pinned</span>}
-          {status !== 'unknown' && <span className={`run-pill ${status}`}>{status}</span>}
+          {data.isOutput && <span className="output-pill">{t('output')}</span>}
+          {data.pinned && <span className="pin-pill" title={t('Pinned for Auto Layout')}>{t('pinned')}</span>}
+          {status !== 'unknown' && <span className={`run-pill ${status}`}>{t(status)}</span>}
         </span>
       </div>
       <div className="operator-node-ref">{data.operatorRef}</div>
-      <div className="operator-node-contract" title={data.summary.contractHint}>
-        <span>{data.summary.inputContractLabel}</span>
+      <div className="operator-node-contract" title={t(data.summary.contractHint)}>
+        <span>{t(data.summary.inputContractLabel)}</span>
         <strong>→</strong>
-        <span>{data.summary.outputContractLabel}</span>
+        <span>{t(data.summary.outputContractLabel)}</span>
       </div>
       <div className="operator-node-metrics">
         <span>
-          {metrics.requiredInputCount}/{metrics.inputCount} inputs
+          {t('{required}/{total} inputs', { required: metrics.requiredInputCount, total: metrics.inputCount })}
         </span>
-        <span>{metrics.outputCount} outputs</span>
+        <span>{t('{count} outputs', { count: metrics.outputCount })}</span>
       </div>
       <div className="operator-node-port-grid">
-        <span>In</span>
+        <span>{t('In')}</span>
         <strong>{inputPorts.join(', ') || 'none'}</strong>
-        <span>Out</span>
+        <span>{t('Out')}</span>
         <strong>{data.summary.outputNames.join(', ') || 'value'}</strong>
       </div>
       {data.summary.readinessNodeNotice && (
         <div
           className={`operator-node-warning ${data.summary.readinessLevel}`}
-          title={data.summary.readinessNotice || data.summary.readinessNodeNotice}
+          title={t(data.summary.readinessNotice || data.summary.readinessNodeNotice)}
         >
-          {data.summary.readinessBadgeLabel || data.summary.readinessState}: {data.summary.readinessNodeNotice}
+          {t(data.summary.readinessBadgeLabel || data.summary.readinessState)}: {t(data.summary.readinessNodeNotice)}
         </div>
       )}
       {outputPorts.map((port, index) => (
@@ -1716,7 +1730,7 @@ function OperatorNode({ id, data, selected }: NodeProps<NodeData>) {
           id={handleIdForPort('out', port)}
           type="source"
           position={Position.Right}
-          title={port ? `Output: ${port}` : 'Output'}
+          title={port ? t('Output: {port}', { port }) : t('Output')}
           className="port-handle source"
           style={handleOffset(index, outputPorts.length)}
         />
@@ -2126,6 +2140,7 @@ function OperatorFocusPanel({
   operator: OperatorDefinition | undefined;
   summary: OperatorSummary;
 }) {
+  const { t } = useI18n();
   const inputs = operator?.ports?.inputs ?? [];
   const outputs = operator?.ports?.outputs ?? [];
   const rows = operatorFocusRows(summary, inputs, outputs, operator);
@@ -2138,14 +2153,14 @@ function OperatorFocusPanel({
       data-testid={`operator-focus:${summary.visualKind}`}
     >
       <div className="operator-focus-heading">
-        <span>{summary.visualLabel}</span>
-        <strong>{operatorFocusTitle(summary.visualKind)}</strong>
+        <span>{t(summary.visualLabel)}</span>
+        <strong>{t(operatorFocusTitle(summary.visualKind))}</strong>
       </div>
       <dl className="operator-focus-grid">
         {rows.map((row) => (
           <div key={row.key}>
-            <dt>{row.label}</dt>
-            <dd>{row.value}</dd>
+            <dt>{t(row.label)}</dt>
+            <dd>{t(row.value)}</dd>
           </div>
         ))}
       </dl>
@@ -2166,6 +2181,7 @@ function DecisionTableRuleEditor({
   onChange: (editor: DecisionTableEditorModel) => void;
   embedded?: boolean;
 }) {
+  const { t } = useI18n();
   const editor = decisionTableEditorModel(node.data.config, incomingColumns);
   const updateEditor = (next: DecisionTableEditorModel) => onChange(next);
   const updateRow = (index: number, patch: Partial<DecisionTableRuleRow>) => {
@@ -2329,36 +2345,36 @@ function DecisionTableRuleEditor({
         data-testid="decision-table-editor"
       >
         <div className="rule-editor-heading">
-          <span>Decision table</span>
+          <span>{t('Decision table')}</span>
           <strong id="decision-rule-editor-title">{node.data.label}</strong>
           {!embedded && (
             <button
               type="button"
               className="secondary compact"
               onClick={onClose}
-              aria-label="Close decision table editor"
+              aria-label={t('Close decision table editor')}
             >
-              Done
+              {t('Done')}
             </button>
           )}
         </div>
         <div className="rule-editor-meta">
           <label>
-            <span>Hit policy</span>
+            <span>{t('Hit policy')}</span>
             <select
-              aria-label="Decision table hit policy"
+              aria-label={t('Decision table hit policy')}
               value={editor.hitPolicy}
               onChange={(event) => updateEditor({ ...editor, hitPolicy: event.target.value })}
             >
-              <option value="unique">unique</option>
-              <option value="first">first</option>
-              <option value="collect">collect</option>
+              <option value="unique">{t('unique')}</option>
+              <option value="first">{t('first')}</option>
+              <option value="collect">{t('collect')}</option>
             </select>
           </label>
           <label>
-            <span>Output type</span>
+            <span>{t('Output type')}</span>
             <input
-              aria-label="Decision table output type"
+              aria-label={t('Decision table output type')}
               value={editor.outputType}
               onChange={(event) => updateEditor({ ...editor, outputType: event.target.value })}
             />
@@ -2380,7 +2396,7 @@ function DecisionTableRuleEditor({
             onClick={addConditionColumn}
             data-testid="decision-add-condition-column"
           >
-            Add Condition Column
+            {t('Add Condition Column')}
           </button>
           <button
             type="button"
@@ -2388,20 +2404,20 @@ function DecisionTableRuleEditor({
             onClick={addOutputColumn}
             data-testid="decision-add-output-column"
           >
-            Add Output Column
+            {t('Add Output Column')}
           </button>
         </div>
         <div className="rule-editor-table-wrap">
           <table className="rule-editor-table">
             <thead>
               <tr>
-                <th className="rule-editor-row-index">Rule</th>
+                <th className="rule-editor-row-index">{t('Rule')}</th>
                 {editor.conditionColumns.map((column, index) => (
                   <th key={`condition:${column.id}`} className="rule-editor-column condition">
                     <div className="rule-editor-column-header">
-                      <span>Condition</span>
+                      <span>{t('Condition')}</span>
                       <input
-                        aria-label={`Condition column ${index + 1} name`}
+                        aria-label={t('Condition column {index} name', { index: index + 1 })}
                         data-testid={`decision-condition-column-name:${index}`}
                         value={column.label}
                         disabled={column.locked}
@@ -2413,9 +2429,9 @@ function DecisionTableRuleEditor({
                         className="secondary compact"
                         onClick={() => deleteConditionColumn(index)}
                         disabled={editor.conditionColumns.length <= 1 || column.locked}
-                        aria-label={`Delete condition column ${column.label}`}
+                        aria-label={t('Delete condition column {label}', { label: column.label })}
                       >
-                        Delete
+                        {t('Delete')}
                       </button>
                     </div>
                   </th>
@@ -2423,9 +2439,9 @@ function DecisionTableRuleEditor({
                 {editor.outputColumns.map((column, index) => (
                   <th key={`output:${column.id}`} className="rule-editor-column output">
                     <div className="rule-editor-column-header">
-                      <span>Output</span>
+                      <span>{t('Output')}</span>
                       <input
-                        aria-label={`Output column ${index + 1} name`}
+                        aria-label={t('Output column {index} name', { index: index + 1 })}
                         data-testid={`decision-output-column-name:${index}`}
                         value={column.label}
                         onChange={(event) => renameOutputColumn(index, event.target.value)}
@@ -2435,15 +2451,15 @@ function DecisionTableRuleEditor({
                         className="secondary compact"
                         onClick={() => deleteOutputColumn(index)}
                         disabled={editor.outputColumns.length <= 1}
-                        aria-label={`Delete output column ${column.label}`}
+                        aria-label={t('Delete output column {label}', { label: column.label })}
                       >
-                        Delete
+                        {t('Delete')}
                       </button>
                     </div>
                   </th>
                 ))}
-                <th>Otherwise</th>
-                <th aria-label="Rule actions" />
+                <th>{t('Otherwise')}</th>
+                <th aria-label={t('Rule actions')} />
               </tr>
             </thead>
             <tbody>
@@ -2453,7 +2469,7 @@ function DecisionTableRuleEditor({
                   {editor.conditionColumns.map((column) => (
                     <td key={`condition:${column.id}`} className="rule-editor-condition-cell">
                       <input
-                        aria-label={`Rule ${index + 1} ${column.label} condition`}
+                        aria-label={t('Rule {index} {label} condition', { index: index + 1, label: column.label })}
                         data-testid={`decision-rule-condition:${index}:${column.id}`}
                         value={row.conditions[column.id] ?? ''}
                         disabled={row.otherwise}
@@ -2464,7 +2480,7 @@ function DecisionTableRuleEditor({
                   {editor.outputColumns.map((column) => (
                     <td key={`output:${column.id}`} className="rule-editor-output-cell">
                       <input
-                        aria-label={`Rule ${index + 1} ${column.label} output`}
+                        aria-label={t('Rule {index} {label} output', { index: index + 1, label: column.label })}
                         data-testid={`decision-rule-output:${index}:${column.id}`}
                         value={row.outputs[column.id] ?? ''}
                         onChange={(event) => updateOutputCell(index, column.id, event.target.value)}
@@ -2474,7 +2490,7 @@ function DecisionTableRuleEditor({
                   <td>
                     <input
                       type="checkbox"
-                      aria-label={`Rule ${index + 1} otherwise`}
+                      aria-label={t('Rule {index} otherwise', { index: index + 1 })}
                       data-testid={`decision-rule-otherwise:${index}`}
                       checked={row.otherwise}
                       onChange={(event) => updateRow(index, {
@@ -2495,7 +2511,7 @@ function DecisionTableRuleEditor({
                       onClick={() => deleteRow(index)}
                       disabled={editor.rows.length <= 1}
                     >
-                      Delete
+                      {t('Delete')}
                     </button>
                   </td>
                 </tr>
@@ -2505,7 +2521,7 @@ function DecisionTableRuleEditor({
         </div>
         <div className="rule-editor-actions">
           <button type="button" className="secondary compact" onClick={addRow}>
-            Add Rule
+            {t('Add Rule')}
           </button>
         </div>
       </section>
@@ -2572,6 +2588,7 @@ function TransformAssignmentEditor({
   builtInFunctions: BuiltInFunctionDefinition[];
   embedded?: boolean;
 }) {
+  const { t } = useI18n();
   const editor = transformEditorModel(node.data.config);
   const updateEditor = (next: TransformEditorModel) => onChange(next);
   const updateAssignment = (index: number, patch: Partial<TransformAssignmentRow>) => {
@@ -2604,16 +2621,16 @@ function TransformAssignmentEditor({
         data-testid="transform-assignment-editor"
       >
         <div className="rule-editor-heading">
-          <span>Transform mapping</span>
+          <span>{t('Transform mapping')}</span>
           <strong id="transform-assignment-editor-title">{node.data.label}</strong>
           {!embedded && (
             <button
               type="button"
               className="secondary compact"
               onClick={onClose}
-              aria-label="Close transform mapping editor"
+              aria-label={t('Close transform mapping editor')}
             >
-              Done
+              {t('Done')}
             </button>
           )}
         </div>
@@ -2622,9 +2639,9 @@ function TransformAssignmentEditor({
             <thead>
               <tr>
                 <th className="rule-editor-row-index">#</th>
-                <th>Output Field</th>
-                <th>Expression</th>
-                <th aria-label="Assignment actions" />
+                <th>{t('Output Field')}</th>
+                <th>{t('Expression')}</th>
+                <th aria-label={t('Assignment actions')} />
               </tr>
             </thead>
             <tbody>
@@ -2635,7 +2652,7 @@ function TransformAssignmentEditor({
                     <td className="rule-editor-row-index">{index + 1}</td>
                     <td className="rule-editor-output-cell">
                       <input
-                        aria-label={`Assignment ${index + 1} output field`}
+                        aria-label={t('Assignment {index} output field', { index: index + 1 })}
                         data-testid={`transform-assignment-field:${index}`}
                         value={assignment.field}
                         onChange={(event) => updateAssignment(index, {
@@ -2645,7 +2662,7 @@ function TransformAssignmentEditor({
                     </td>
                     <td className="rule-editor-expression-cell">
                       <input
-                        aria-label={`Assignment ${index + 1} expression`}
+                        aria-label={t('Assignment {index} expression', { index: index + 1 })}
                         data-testid={`transform-assignment-expression:${index}`}
                         value={assignment.expression}
                         onChange={(event) => updateAssignment(index, { expression: event.target.value })}
@@ -2699,7 +2716,7 @@ function TransformAssignmentEditor({
                         onClick={() => deleteAssignment(index)}
                         disabled={editor.assignments.length <= 1}
                       >
-                        Delete
+                        {t('Delete')}
                       </button>
                     </td>
                   </tr>
@@ -2715,7 +2732,7 @@ function TransformAssignmentEditor({
             onClick={addAssignment}
             data-testid="transform-add-assignment"
           >
-            Add Assignment
+            {t('Add Assignment')}
           </button>
         </div>
       </section>
@@ -2989,15 +3006,16 @@ function OperatorKeyPropertiesEditor({
   onLabelChange: (value: string) => void;
   onConfigPatch: (patch: Record<string, unknown>) => void;
 }) {
+  const { t } = useI18n();
   const config = node.data.config ?? {};
   const resourceLike = node.data.summary.visualKind === 'resource' || node.data.summary.visualKind === 'http';
   return (
     <section className="operator-detail-section operator-key-properties">
-      <h3>Key properties</h3>
+      <h3>{t('Key properties')}</h3>
       <label className="operator-detail-field">
-        <span>Node label</span>
+        <span>{t('Node label')}</span>
         <input
-          aria-label="Operator node label"
+          aria-label={t('Operator node label')}
           data-testid="operator-detail-label"
           value={node.data.label}
           onChange={(event) => onLabelChange(event.target.value)}
@@ -3006,17 +3024,17 @@ function OperatorKeyPropertiesEditor({
       <dl className="operator-property-list">
         {operatorPropertyRows(node, operator).map((row) => (
           <div key={row.label}>
-            <dt>{row.label}</dt>
-            <dd>{row.value}</dd>
+            <dt>{t(row.label)}</dt>
+            <dd>{t(row.value)}</dd>
           </div>
         ))}
       </dl>
       {resourceLike && (
         <div className="resource-config-grid" data-testid="operator-detail-resource-config">
           <label className="operator-detail-field">
-            <span>Resource ID</span>
+            <span>{t('Resource ID')}</span>
             <input
-              aria-label="Resource ID"
+              aria-label={t('Resource ID')}
               data-testid="operator-detail-resource-id"
               placeholder={operatorDefaultResourceId(node, operator)}
               value={configTextValue(config, 'resourceId')}
@@ -3024,35 +3042,35 @@ function OperatorKeyPropertiesEditor({
             />
           </label>
           <label className="operator-detail-field">
-            <span>Method</span>
+            <span>{t('Method')}</span>
             <select
-              aria-label="HTTP method"
+              aria-label={t('HTTP method')}
               data-testid="operator-detail-http-method"
               value={configTextValue(config, 'method')}
               onChange={(event) => onConfigPatch({ method: configPatchValue(event.target.value) })}
             >
-              <option value="">default</option>
-              <option value="GET">GET</option>
-              <option value="POST">POST</option>
-              <option value="PUT">PUT</option>
-              <option value="PATCH">PATCH</option>
-              <option value="DELETE">DELETE</option>
+              <option value="">{t('default')}</option>
+              <option value="GET">{t('GET')}</option>
+              <option value="POST">{t('POST')}</option>
+              <option value="PUT">{t('PUT')}</option>
+              <option value="PATCH">{t('PATCH')}</option>
+              <option value="DELETE">{t('DELETE')}</option>
             </select>
           </label>
           <label className="operator-detail-field resource-url-field">
-            <span>URL / route</span>
+            <span>{t('URL / route')}</span>
             <input
-              aria-label="Resource URL"
+              aria-label={t('Resource URL')}
               data-testid="operator-detail-resource-url"
-              placeholder="/resource/path"
+              placeholder={t('/resource/path')}
               value={configTextValue(config, 'url')}
               onChange={(event) => onConfigPatch({ url: configPatchValue(event.target.value) })}
             />
           </label>
           <label className="operator-detail-field">
-            <span>Timeout ms</span>
+            <span>{t('Timeout ms')}</span>
             <input
-              aria-label="Resource timeout milliseconds"
+              aria-label={t('Resource timeout milliseconds')}
               data-testid="operator-detail-resource-timeout"
               inputMode="numeric"
               placeholder="3000"
@@ -3073,6 +3091,7 @@ function OperatorConfigEditor({
   config: Record<string, unknown> | undefined;
   onApply: (config: Record<string, unknown>) => void;
 }) {
+  const { t } = useI18n();
   const renderedConfig = operatorConfigPreview(config);
   const [draft, setDraft] = useState(renderedConfig);
   const [error, setError] = useState('');
@@ -3098,24 +3117,24 @@ function OperatorConfigEditor({
   return (
     <section className="operator-detail-section operator-config-editor">
       <div className="operator-detail-section-heading">
-        <h3>Advanced config</h3>
+        <h3>{t('Advanced config')}</h3>
         <button
           type="button"
           className="secondary compact"
           data-testid="operator-detail-config-apply"
           onClick={applyDraft}
         >
-          Apply
+          {t('Apply')}
         </button>
       </div>
       <textarea
-        aria-label="Operator node config JSON"
+        aria-label={t('Operator node config JSON')}
         data-testid="operator-detail-config-json"
         spellCheck={false}
         value={draft}
         onChange={(event) => setDraft(event.target.value)}
       />
-      {error && <p className="fixture-error" data-testid="operator-detail-config-error">{error}</p>}
+      {error && <p className="fixture-error" data-testid="operator-detail-config-error">{t(error)}</p>}
     </section>
   );
 }
@@ -3139,12 +3158,13 @@ function OperatorFixtureEditor({
   onUseSample: () => void;
   onClear: () => void;
 }) {
+  const { t } = useI18n();
   return (
     <div className="fixture-editor operator-detail-fixtures" data-testid="operator-detail-fixtures">
       <div className="fixture-header">
-        <strong>Input / Output samples</strong>
+        <strong>{t('Input / Output samples')}</strong>
         <span className={`badge ${hasFixtureDraft ? 'fixture' : ''}`}>
-          {hasFixtureDraft ? 'custom' : 'server sample'}
+          {hasFixtureDraft ? t('custom') : t('server sample')}
         </span>
       </div>
       <div className="fixture-actions">
@@ -3153,7 +3173,7 @@ function OperatorFixtureEditor({
           data-testid="operator-detail-use-sample"
           onClick={onUseSample}
         >
-          Use Sample
+          {t('Use Sample')}
         </button>
         <button
           className="secondary compact"
@@ -3161,24 +3181,24 @@ function OperatorFixtureEditor({
           onClick={onClear}
           disabled={!hasFixtureDraft}
         >
-          Clear
+          {t('Clear')}
         </button>
       </div>
       <label className="fixture-field">
-        <span>Output sample</span>
+        <span>{t('Output sample')}</span>
         <textarea
-          aria-label="Operator output sample JSON"
+          aria-label={t('Operator output sample JSON')}
           data-testid="operator-detail-output-fixture"
           spellCheck={false}
-          placeholder="null"
+          placeholder={t('null')}
           value={fixtureDraft}
           onChange={(event) => onOutputChange(event.target.value)}
         />
       </label>
       <label className="fixture-field">
-        <span>Expected input</span>
+        <span>{t('Expected input')}</span>
         <textarea
-          aria-label="Operator expected input JSON"
+          aria-label={t('Operator expected input JSON')}
           data-testid="operator-detail-expected-input"
           spellCheck={false}
           placeholder="{}"
@@ -3186,7 +3206,7 @@ function OperatorFixtureEditor({
           onChange={(event) => onExpectedInputChange(event.target.value)}
         />
       </label>
-      {fixtureError && <p className="fixture-error" data-testid="operator-detail-fixture-error">{fixtureError}</p>}
+      {fixtureError && <p className="fixture-error" data-testid="operator-detail-fixture-error">{t(fixtureError)}</p>}
     </div>
   );
 }
@@ -3222,6 +3242,7 @@ function OperatorTestSuiteEditor({
   onGovern: (row: OperatorTestSuiteDraftRow) => void;
   onGovernAll: () => void;
 }) {
+  const { t } = useI18n();
   const transportControlled = operatorUsesTransportFixture(operator);
   const invalidCount = rows
     .map(parseOperatorTestSuiteRow)
@@ -3231,17 +3252,17 @@ function OperatorTestSuiteEditor({
   const passedCount = resultValues.filter((result) => result.status === 'passed').length;
   const failedCount = resultValues.filter((result) => result.status === 'failed').length;
   const resultLabel = running
-    ? 'running'
+    ? t('running')
     : resultValues.length > 0
-      ? `${passedCount}/${rows.length} passed${failedCount > 0 ? ` · ${failedCount} failed` : ''}`
+      ? `${t('{passed}/{total} passed', { passed: passedCount, total: rows.length })}${failedCount > 0 ? t(' · {count} failed', { count: failedCount }) : ''}`
       : invalidCount > 0
-        ? `${invalidCount} invalid`
-        : `${rows.length} valid`;
+        ? t('{count} invalid', { count: invalidCount })
+        : t('{count} valid', { count: rows.length });
   const summaryStatus = running ? 'running' : failedCount > 0 || invalidCount > 0 ? 'failed' : passedCount > 0 ? 'passed' : 'pending';
   return (
     <section className="operator-detail-section operator-test-suite" data-testid="operator-test-suite">
       <div className="operator-detail-section-heading">
-        <h3>Executable Operator Suite</h3>
+        <h3>{t('Executable Operator Suite')}</h3>
         <div className="test-table-actions">
           <span className={`table-status ${summaryStatus}`} data-testid="operator-test-summary">
             {resultLabel}
@@ -3254,7 +3275,7 @@ function OperatorTestSuiteEditor({
             disabled={running || rows.length === 0 || invalidCount > 0 || Boolean(runDisabledReason)}
             title={runDisabledReason}
           >
-            {running ? 'Running' : 'Run Exploratory'}
+            {running ? t('Running') : t('Run Exploratory')}
           </button>
           <button
             type="button"
@@ -3264,7 +3285,7 @@ function OperatorTestSuiteEditor({
             disabled={running || rows.length === 0 || invalidCount > 0 || Boolean(runDisabledReason)}
             title={runDisabledReason}
           >
-            Publish Suite + Run
+            {t('Publish Suite + Run')}
           </button>
           <button
             type="button"
@@ -3273,7 +3294,7 @@ function OperatorTestSuiteEditor({
             onClick={onAdd}
             disabled={running}
           >
-            Add Case
+            {t('Add Case')}
           </button>
         </div>
       </div>
@@ -3282,10 +3303,10 @@ function OperatorTestSuiteEditor({
           className={`operator-suite-publication ${publication.status}`}
           data-testid="operator-suite-publication"
         >
-          <strong>{publication.detail}</strong>
+          <strong>{t(publication.detail)}</strong>
           {publication.suiteId && (
             <span>
-              {publication.suiteId}@{publication.revision} · run {publication.suiteRunId}
+              {publication.suiteId}@{publication.revision}{t(' · run')} {publication.suiteRunId}
             </span>
           )}
         </div>
@@ -3304,7 +3325,7 @@ function OperatorTestSuiteEditor({
               >
                 <div className="test-table-row-heading">
                   <input
-                    aria-label={`Operator test case name ${index + 1}`}
+                    aria-label={t('Operator test case name {index}', { index: index + 1 })}
                     data-testid={`operator-test-name:${index}`}
                     value={row.name}
                     onChange={(event) => onUpdate(row.id, { name: event.target.value })}
@@ -3314,12 +3335,12 @@ function OperatorTestSuiteEditor({
                     className={`table-status ${rowStatus}`}
                     data-testid={`operator-test-status:${index}`}
                   >
-                    {compilation.error ? 'invalid' : result?.status ?? 'valid'}
+                    {t(compilation.error ? 'invalid' : result?.status ?? 'valid')}
                   </span>
                   <label className="operator-test-case-type">
-                    <span>Intent</span>
+                    <span>{t('Intent')}</span>
                     <select
-                      aria-label={`Operator test case intent ${index + 1}`}
+                      aria-label={t('Operator test case intent {index}', { index: index + 1 })}
                       data-testid={`operator-test-case-type:${index}`}
                       value={row.caseType}
                       onChange={(event) => onUpdate(row.id, {
@@ -3327,10 +3348,10 @@ function OperatorTestSuiteEditor({
                       })}
                       disabled={running}
                     >
-                      <option value="GOLDEN">Golden</option>
-                      <option value="NEGATIVE">Negative</option>
-                      <option value="BOUNDARY">Boundary</option>
-                      <option value="REGRESSION">Regression</option>
+                      <option value="GOLDEN">{t('Golden')}</option>
+                      <option value="NEGATIVE">{t('Negative')}</option>
+                      <option value="BOUNDARY">{t('Boundary')}</option>
+                      <option value="REGRESSION">{t('Regression')}</option>
                     </select>
                   </label>
                   <button
@@ -3341,7 +3362,7 @@ function OperatorTestSuiteEditor({
                     disabled={running || Boolean(compilation.error) || Boolean(runDisabledReason)}
                     title={runDisabledReason}
                   >
-                    Run Case
+                    {t('Run Case')}
                   </button>
                   <button
                     type="button"
@@ -3351,7 +3372,7 @@ function OperatorTestSuiteEditor({
                     disabled={running || Boolean(compilation.error) || Boolean(runDisabledReason)}
                     title={runDisabledReason}
                   >
-                    Publish Case + Run
+                    {t('Publish Case + Run')}
                   </button>
                   <button
                     type="button"
@@ -3360,23 +3381,23 @@ function OperatorTestSuiteEditor({
                     onClick={() => onApplyFixture(row)}
                     disabled={running || Boolean(compilation.error)}
                   >
-                    Apply Fixture
+                    {t('Apply Fixture')}
                   </button>
                   <button
                     type="button"
                     className="secondary compact"
-                    aria-label={`Remove operator test case ${index + 1}`}
+                    aria-label={t('Remove operator test case {index}', { index: index + 1 })}
                     data-testid={`operator-test-remove:${index}`}
                     onClick={() => onRemove(row.id)}
                     disabled={running || rows.length <= 1}
                   >
-                    Remove
+                    {t('Remove')}
                   </button>
                 </div>
                 <label className="fixture-field">
-                  <span>Input case</span>
+                  <span>{t('Input case')}</span>
                   <textarea
-                    aria-label={`Operator test input case ${index + 1}`}
+                    aria-label={t('Operator test input case {index}', { index: index + 1 })}
                     data-testid={`operator-test-input:${index}`}
                     spellCheck={false}
                     value={row.inputText}
@@ -3385,9 +3406,9 @@ function OperatorTestSuiteEditor({
                   />
                 </label>
                 <label className="fixture-field">
-                  <span>Expected output</span>
+                  <span>{t('Expected output')}</span>
                   <textarea
-                    aria-label={`Operator test expected output ${index + 1}`}
+                    aria-label={t('Operator test expected output {index}', { index: index + 1 })}
                     data-testid={`operator-test-output:${index}`}
                     spellCheck={false}
                     value={row.outputText}
@@ -3408,9 +3429,9 @@ function OperatorTestSuiteEditor({
                 </label>
                 {transportControlled && (
                   <label className="fixture-field">
-                    <span>Transport response</span>
+                    <span>{t('Transport response')}</span>
                     <textarea
-                      aria-label={`Operator test transport response ${index + 1}`}
+                      aria-label={t('Operator test transport response {index}', { index: index + 1 })}
                       data-testid={`operator-test-transport:${index}`}
                       spellCheck={false}
                       value={row.transportResponseText}
@@ -3421,15 +3442,15 @@ function OperatorTestSuiteEditor({
                 )}
                 {compilation.error && (
                   <p className="fixture-error" data-testid={`operator-test-error:${index}`}>
-                    {compilation.error}
+                    {t(compilation.error)}
                   </p>
                 )}
                 {result && !compilation.error && (
                   <div className={`operator-test-result ${result.status}`}>
-                    <p data-testid={`operator-test-result:${index}`}>{result.detail}</p>
+                    <p data-testid={`operator-test-result:${index}`}>{t(result.detail)}</p>
                     {result.actualOutput !== undefined && (
                       <details>
-                        <summary>Actual output</summary>
+                        <summary>{t('Actual output')}</summary>
                         <pre data-testid={`operator-test-actual:${index}`}>
                           {JSON.stringify(result.actualOutput, null, 2)}
                         </pre>
@@ -3442,7 +3463,7 @@ function OperatorTestSuiteEditor({
           })}
         </ol>
       ) : (
-        <p className="muted">No executable operator cases.</p>
+        <p className="muted">{t('No executable operator cases.')}</p>
       )}
     </section>
   );
@@ -3457,6 +3478,7 @@ function SchemaPortCards({
   direction: 'input' | 'output';
   ports: OperatorPort[];
 }) {
+  const { t } = useI18n();
   return (
     <section className="operator-detail-section">
       <h3>{title}</h3>
@@ -3467,12 +3489,12 @@ function SchemaPortCards({
             return (
               <article className="operator-schema-card" key={`${direction}:${port.name || index}`}>
                 <div>
-                  <strong>{port.name || (direction === 'input' ? 'input' : 'output')}</strong>
-                  {port.required && <span className="schema-required">required</span>}
+                  <strong>{port.name || t(direction === 'input' ? 'input' : 'output')}</strong>
+                  {port.required && <span className="schema-required">{t('required')}</span>}
                 </div>
                 <div className="operator-schema-summary">
-                  <span>{schemaKindLabel(port.schema?.schema)}</span>
-                  <span>{fields.length} field{fields.length === 1 ? '' : 's'}</span>
+                  <span>{t(schemaKindLabel(port.schema?.schema))}</span>
+                  <span>{t('{count} fields', { count: fields.length })}</span>
                 </div>
                 {port.description && <p>{port.description}</p>}
                 {fields.length > 0 && (
@@ -3484,15 +3506,15 @@ function SchemaPortCards({
                       {fields.map((field) => (
                         <tr key={field.name}>
                           <th>{field.name}</th>
-                          <td>{field.type}</td>
-                          <td>{field.required ? 'required' : 'optional'}</td>
+                          <td>{t(field.type)}</td>
+                          <td>{field.required ? t('required') : t('optional')}</td>
                         </tr>
                       ))}
                     </tbody>
                   </table>
                 )}
                 <details>
-                  <summary>Raw schema</summary>
+                  <summary>{t('Raw schema')}</summary>
                   <pre data-testid={`operator-detail-schema:${direction}:${index}`}>
                     {schemaPreview(port.schema)}
                   </pre>
@@ -3502,7 +3524,7 @@ function SchemaPortCards({
           })}
         </div>
       ) : (
-        <p className="muted">No declared {direction} ports.</p>
+        <p className="muted">{t('No declared {direction} ports.', { direction: t(direction) })}</p>
       )}
     </section>
   );
@@ -3515,26 +3537,27 @@ function ForeachLoopGuide({
   inputs: OperatorPort[];
   outputs: OperatorPort[];
 }) {
+  const { t } = useI18n();
   const collection = inputs.find((port) => schemaKindLabel(port.schema?.schema) === 'array') ?? inputs[0];
   const result = outputs.find((port) => schemaKindLabel(port.schema?.schema) === 'array') ?? outputs[0];
   return (
     <section className="foreach-loop-guide" data-testid="foreach-loop-guide">
-      <h3>Loop guide</h3>
+      <h3>{t('Loop guide')}</h3>
       <div className="foreach-loop-steps">
         <div>
           <span>1</span>
-          <strong>Bind collection</strong>
-          <p>Connect an array into <code>{collection?.name || 'input'}</code>.</p>
+          <strong>{t('Bind collection')}</strong>
+          <p>{t('Connect an array into')} <code>{collection?.name || t('input')}</code>.</p>
         </div>
         <div>
           <span>2</span>
-          <strong>Run per item</strong>
-          <p>Each item becomes the item context: <code>{itemContextLabel(inputs)}</code>.</p>
+          <strong>{t('Run per item')}</strong>
+          <p>{t('Each item becomes the item context:')} <code>{itemContextLabel(inputs)}</code>.</p>
         </div>
         <div>
           <span>3</span>
-          <strong>Collect result list</strong>
-          <p>Downstream nodes consume <code>{result?.name || 'output'}</code> as an array.</p>
+          <strong>{t('Collect result list')}</strong>
+          <p>{t('Downstream nodes consume')} <code>{result?.name || t('output')}</code> {t('as an array.')}</p>
         </div>
       </div>
     </section>
@@ -3630,6 +3653,7 @@ function OperatorDetailDialog({
   onTransformChange: (editor: TransformEditorModel) => void;
   onAcceptInference?: () => void;
 }) {
+  const { t } = useI18n();
   const inputs = operator?.ports?.inputs ?? [];
   const outputs = operator?.ports?.outputs ?? [];
   const focusRows = operatorFocusRows(node.data.summary, inputs, outputs, operator);
@@ -3697,8 +3721,8 @@ function OperatorDetailDialog({
       >
         <div className="operator-detail-heading">
           <span>
-            {node.data.summary.visualLabel}
-            <small>{editorDefinition.primaryTask}</small>
+            {t(node.data.summary.visualLabel)}
+            <small>{t(editorDefinition.primaryTask)}</small>
           </span>
           <strong id="operator-detail-title">{node.data.label}</strong>
           <button
@@ -3707,16 +3731,16 @@ function OperatorDetailDialog({
             onClick={onOpenContract}
             disabled={!operator}
           >
-            Contract &amp; Scenarios
+            {t('Contract & Scenarios')}
           </button>
           <div className="operator-detail-heading-actions">
             <button
               type="button"
               className="secondary compact"
               onClick={onCancel}
-              aria-label="Close operator details"
+              aria-label={t('Close operator details')}
             >
-              Cancel
+              {t('Cancel')}
             </button>
             <button
               type="button"
@@ -3724,11 +3748,11 @@ function OperatorDetailDialog({
               onClick={onApply}
               data-testid="operator-detail-apply"
             >
-              Apply to draft
+              {t('Apply to draft')}
             </button>
           </div>
         </div>
-        <nav className="operator-editor-tabs" role="tablist" aria-label="Node editor sections">
+        <nav className="operator-editor-tabs" role="tablist" aria-label={t('Node editor sections')}>
           {visibleTabs.map((tab) => (
             <button
               type="button"
@@ -3738,7 +3762,7 @@ function OperatorDetailDialog({
               data-testid={`operator-editor-tab:${tab.id}`}
               onClick={() => setActiveTab(tab.id)}
             >
-              {tab.label}
+              {t(tab.label)}
             </button>
           ))}
         </nav>
@@ -3757,12 +3781,12 @@ function OperatorDetailDialog({
             />
 
             <section className="operator-detail-section">
-              <h3>{operatorFocusTitle(node.data.summary.visualKind)}</h3>
+              <h3>{t(operatorFocusTitle(node.data.summary.visualKind))}</h3>
               <div className="operator-detail-focus">
                 {focusRows.map((row) => (
                   <div key={row.key}>
-                    <span>{row.label}</span>
-                    <strong>{row.value}</strong>
+                    <span>{t(row.label)}</span>
+                    <strong>{t(row.value)}</strong>
                   </div>
                 ))}
               </div>
@@ -3819,8 +3843,8 @@ function OperatorDetailDialog({
               onAcceptInference={onAcceptInference}
               acceptInferenceLabel="Accept as Graph Output Contract"
             />
-            <SchemaPortCards title="Input schema" direction="input" ports={inputs} />
-            <SchemaPortCards title="Output schema" direction="output" ports={outputs} />
+            <SchemaPortCards title={t('Input schema')} direction="input" ports={inputs} />
+            <SchemaPortCards title={t('Output schema')} direction="output" ports={outputs} />
           </div>
 
           <div
@@ -3832,10 +3856,9 @@ function OperatorDetailDialog({
             <OperatorConfigEditor config={node.data.config} onApply={onConfigReplace} />
             {canonicalScenarios && (
               <details className="operator-legacy-test-tools">
-                <summary>Legacy operator table and fixture tools</summary>
+                <summary>{t('Legacy operator table and fixture tools')}</summary>
                 <p className="muted">
-                  Existing rows are projected into Contract &amp; Scenarios. Keep these controls for
-                  migration or low-level fixture troubleshooting.
+                  {t('Existing rows are projected into Contract & Scenarios. Keep these controls for migration or low-level fixture troubleshooting.')}
                 </p>
                 {legacyTestTools}
               </details>
@@ -4743,7 +4766,7 @@ export interface AuthorCanvasProps {
 }
 
 export default function AuthorCanvas({ workspaceVersion = 'v1' }: AuthorCanvasProps = {}) {
-  const { t } = useI18n();
+  const { locale, t } = useI18n();
   const isTaskWorkspace = workspaceVersion === 'v2';
   const initialWorkspaceLocation = parseAuthorWorkspaceLocation(window.location.search);
   const [initialDslHandoff] = useState(() => (
@@ -4889,6 +4912,27 @@ export default function AuthorCanvas({ workspaceVersion = 'v1' }: AuthorCanvasPr
   const [layoutNotice, setLayoutNotice] = useState('');
   const searchInputRef = useRef<HTMLInputElement>(null);
   const flowRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    const localizeControls = () => {
+      const labels = [
+        ['.react-flow__controls-zoomin', t('Zoom in')],
+        ['.react-flow__controls-zoomout', t('Zoom out')],
+        ['.react-flow__controls-fitview', t('Fit view')],
+        ['.react-flow__controls-interactive', t('Toggle interactivity')],
+      ] as const;
+      labels.forEach(([selector, label]) => {
+        const control = flowRef.current?.querySelector<HTMLButtonElement>(selector);
+        control?.setAttribute('aria-label', label);
+        control?.setAttribute('title', label);
+      });
+    };
+    localizeControls();
+    const observer = new MutationObserver(localizeControls);
+    if (flowRef.current) {
+      observer.observe(flowRef.current, { childList: true, subtree: true });
+    }
+    return () => observer.disconnect();
+  }, [locale, t]);
   const testSuiteDialogRef = useRef<HTMLElement>(null);
   const flowInstanceRef = useRef<ReactFlowInstance<NodeData, CanvasEdgeData> | null>(null);
   const authorSessionStartedAtRef = useRef(performance.now());
@@ -8765,9 +8809,12 @@ export default function AuthorCanvas({ workspaceVersion = 'v1' }: AuthorCanvasPr
     : authorReadiness.promotion.replace(/_/g, ' ');
   const taskPromotionSummary = operatorContractWorkspace
     ? taskPromotionStatus === 'BLOCKED'
-      ? 'Current Operator evidence is not eligible for governance review.'
-      : 'Operator governance is not evaluated in this workspace.'
-    : `${authorReadiness.headline}. ${authorReadiness.summary}`;
+      ? t('Current Operator evidence is not eligible for governance review.')
+      : t('Operator governance is not evaluated in this workspace.')
+    : t('{headline}. {summary}', {
+      headline: t(authorReadiness.headline),
+      summary: t(authorReadiness.summary, authorReadiness.summaryValues),
+    });
   const closeTestSuite = useCallback(() => {
     setTestSuiteOpen(false);
     if (isTaskWorkspace) {
@@ -8827,7 +8874,12 @@ export default function AuthorCanvas({ workspaceVersion = 'v1' }: AuthorCanvasPr
       interactionBlocker: {
         code: 'RG.AUTHOR.RUN.LAYOUT_PENDING',
         message: 'Accept or cancel the pending layout preview before running.',
-        remediation: { label: 'Review layout', mode: 'compose' },
+        messageId: 'author.blocker.layoutPending',
+        remediation: {
+          label: 'Review layout',
+          labelId: 'author.command.reviewLayout',
+          mode: 'compose',
+        },
       },
     } : {}),
   });
@@ -9292,7 +9344,7 @@ export default function AuthorCanvas({ workspaceVersion = 'v1' }: AuthorCanvasPr
               || hasFixtureErrors
             }
           >
-            {tableTestingBusy ? 'Running' : 'Run Table'}
+            {tableTestingBusy ? t('Running') : t('Run Table')}
           </button>
           <button
             type="button"
@@ -9300,7 +9352,7 @@ export default function AuthorCanvas({ workspaceVersion = 'v1' }: AuthorCanvasPr
             data-testid="test-table-add"
             onClick={addSimulationTableRow}
           >
-            Add Case
+            {t('Add Case')}
           </button>
           <button
             type="button"
@@ -9309,7 +9361,7 @@ export default function AuthorCanvas({ workspaceVersion = 'v1' }: AuthorCanvasPr
             onClick={clearSimulationTableResults}
             disabled={Object.keys(simulationTableResults).length === 0}
           >
-            Clear
+            {t('Clear')}
           </button>
         </div>
       </div>
@@ -9332,7 +9384,7 @@ export default function AuthorCanvas({ workspaceVersion = 'v1' }: AuthorCanvasPr
               >
                 <div className="test-table-row-heading">
                   <input
-                    aria-label={`Test case name ${index + 1}`}
+                    aria-label={t('Test case name {index}', { index: index + 1 })}
                     data-testid={`test-table-name:${index}`}
                     value={row.name}
                     onChange={(event) => updateSimulationTableRow(row.id, { name: event.target.value })}
@@ -9341,22 +9393,22 @@ export default function AuthorCanvas({ workspaceVersion = 'v1' }: AuthorCanvasPr
                     className={`table-status ${rowStatus}`}
                     data-testid={`test-table-status:${index}`}
                   >
-                    {rowStatus}
+                    {t(rowStatus)}
                   </span>
                   <button
                     type="button"
                     className="secondary compact"
-                    aria-label={`Remove test case ${index + 1}`}
+                    aria-label={t('Remove test case {index}', { index: index + 1 })}
                     data-testid={`test-table-remove:${index}`}
                     onClick={() => removeSimulationTableRow(row.id)}
                   >
-                    Remove
+                    {t('Remove')}
                   </button>
                 </div>
                 <label className="fixture-field">
-                  <span>Context</span>
+                  <span>{t('Context')}</span>
                   <textarea
-                    aria-label={`Test case context ${index + 1}`}
+                    aria-label={t('Test case context {index}', { index: index + 1 })}
                     data-testid={`test-table-context:${index}`}
                     spellCheck={false}
                     value={row.contextText}
@@ -9365,9 +9417,9 @@ export default function AuthorCanvas({ workspaceVersion = 'v1' }: AuthorCanvasPr
                   />
                 </label>
                 <label className="fixture-field">
-                  <span>Fixture Overrides</span>
+                  <span>{t('Fixture Overrides')}</span>
                   <textarea
-                    aria-label={`Test case fixture overrides ${index + 1}`}
+                    aria-label={t('Test case fixture overrides {index}', { index: index + 1 })}
                     data-testid={`test-table-fixtures:${index}`}
                     spellCheck={false}
                     value={row.fixturesText}
@@ -9376,9 +9428,9 @@ export default function AuthorCanvas({ workspaceVersion = 'v1' }: AuthorCanvasPr
                   />
                 </label>
                 <label className="fixture-field">
-                  <span>Expected Output</span>
+                  <span>{t('Expected Output')}</span>
                   <textarea
-                    aria-label={`Test case expected output ${index + 1}`}
+                    aria-label={t('Test case expected output {index}', { index: index + 1 })}
                     data-testid={`test-table-expected:${index}`}
                     spellCheck={false}
                     value={row.expectedOutputText}
@@ -9388,7 +9440,7 @@ export default function AuthorCanvas({ workspaceVersion = 'v1' }: AuthorCanvasPr
                 </label>
                 {(rowResult || rowError) && (
                   <div className="test-table-result">
-                    <strong>{rowResult?.detail ?? rowError}</strong>
+                    <strong>{t(rowResult?.detail ?? rowError ?? '')}</strong>
                     {rowResult?.actualOutput !== undefined && (
                       <pre data-testid={`test-table-actual:${index}`}>
                         {JSON.stringify(rowResult.actualOutput, null, 2)}
@@ -9406,7 +9458,7 @@ export default function AuthorCanvas({ workspaceVersion = 'v1' }: AuthorCanvasPr
           })}
         </ol>
       ) : (
-        <p className="muted">No test cases.</p>
+        <p className="muted">{t('No test cases.')}</p>
       )}
     </section>
   );
@@ -9604,7 +9656,7 @@ export default function AuthorCanvas({ workspaceVersion = 'v1' }: AuthorCanvasPr
             aria-label={t('Operator library JSON or YAML')}
             data-testid="operator-library-source"
             spellCheck={false}
-            placeholder="bloge.visualOperatorLibrary.v1 JSON/YAML, or bloge.capabilityCatalog.v1 for Adapt Catalog"
+            placeholder={t('bloge.visualOperatorLibrary.v1 JSON/YAML, or bloge.capabilityCatalog.v1 for Adapt Catalog')}
             value={librarySourceText}
             onChange={(event) => {
               setLibrarySourceText(event.target.value);
@@ -9735,7 +9787,7 @@ export default function AuthorCanvas({ workspaceVersion = 'v1' }: AuthorCanvasPr
             aria-label={t('BLOGE DSL source')}
             data-testid="legacy-dsl-source"
             spellCheck={false}
-            placeholder="graph migratedFlow { ... }"
+            placeholder={t('graph migratedFlow { ... }')}
             value={dslSourceText}
             onChange={(event) => {
               setDslSourceText(event.target.value);
@@ -9812,9 +9864,9 @@ export default function AuthorCanvas({ workspaceVersion = 'v1' }: AuthorCanvasPr
           )}
           {dslImportCoverage && (
             <div className="dsl-import-stats" data-testid="legacy-dsl-coverage">
-              <span>{dslImportCoverage.memberCount ?? 0} members</span>
-              <span>{dslImportCoverage.projectedNodeCount ?? 0} nodes</span>
-              <span>{dslImportCoverage.edgeCount ?? 0} edges</span>
+              <span>{t('{count} members', { count: dslImportCoverage.memberCount ?? 0 })}</span>
+              <span>{t('{count} nodes', { count: dslImportCoverage.projectedNodeCount ?? 0 })}</span>
+              <span>{t('{count} edges', { count: dslImportCoverage.edgeCount ?? 0 })}</span>
             </div>
           )}
           {dslImportRoundTrip && (
@@ -9823,16 +9875,16 @@ export default function AuthorCanvas({ workspaceVersion = 'v1' }: AuthorCanvasPr
               data-testid="legacy-dsl-round-trip"
             >
               <div className="dsl-round-trip-heading">
-                <strong>Round trip</strong>
-                <span>{dslImportRoundTrip.status || 'NOT_ASSESSED'}</span>
+                <strong>{t('Round trip')}</strong>
+                <span>{t(dslImportRoundTrip.status || 'NOT_ASSESSED')}</span>
               </div>
-              {dslImportRoundTrip.message && <p>{dslImportRoundTrip.message}</p>}
+              {dslImportRoundTrip.message && <p>{t(dslImportRoundTrip.message)}</p>}
               <div className="dsl-round-trip-evidence">
-                <span>{dslImportRoundTrip.generatedDsl ? 'Generated DSL' : 'No generated DSL'}</span>
-                {dslImportRoundTrip.sourceFingerprint && <span>Source semantics</span>}
-                {dslImportRoundTrip.generatedFingerprint && <span>Generated semantics</span>}
+                <span>{dslImportRoundTrip.generatedDsl ? t('Generated DSL') : t('No generated DSL')}</span>
+                {dslImportRoundTrip.sourceFingerprint && <span>{t('Source semantics')}</span>}
+                {dslImportRoundTrip.generatedFingerprint && <span>{t('Generated semantics')}</span>}
                 {(dslImportRoundTrip.diagnostics?.length ?? 0) > 0 && (
-                  <span>{dslImportRoundTrip.diagnostics?.length} diagnostics</span>
+                  <span>{t('{count} diagnostics', { count: dslImportRoundTrip.diagnostics?.length ?? 0 })}</span>
                 )}
               </div>
             </div>
@@ -9843,22 +9895,22 @@ export default function AuthorCanvas({ workspaceVersion = 'v1' }: AuthorCanvasPr
               data-testid="legacy-dsl-rewrite-gate-result"
             >
               <div className="dsl-rewrite-gate-heading">
-                <strong>Rewrite gate</strong>
-                <span>{dslRewriteGateResult.decision || 'BLOCK_NOT_ASSESSED'}</span>
+                <strong>{t('Rewrite gate')}</strong>
+                <span>{t(dslRewriteGateResult.decision || 'BLOCK_NOT_ASSESSED')}</span>
               </div>
-              {dslRewriteGateResult.message && <p>{dslRewriteGateResult.message}</p>}
+              {dslRewriteGateResult.message && <p>{t(dslRewriteGateResult.message)}</p>}
               <div className="dsl-round-trip-evidence">
-                <span>{dslRewriteGateResult.allowed ? 'Auto rewrite allowed' : 'Auto rewrite blocked'}</span>
-                {dslRewriteGateResult.generatedDsl && <span>Generated DSL ready</span>}
-                {dslRewriteGateResult.roundTrip?.status && <span>{dslRewriteGateResult.roundTrip.status}</span>}
+                <span>{dslRewriteGateResult.allowed ? t('Auto rewrite allowed') : t('Auto rewrite blocked')}</span>
+                {dslRewriteGateResult.generatedDsl && <span>{t('Generated DSL ready')}</span>}
+                {dslRewriteGateResult.roundTrip?.status && <span>{t(dslRewriteGateResult.roundTrip.status)}</span>}
               </div>
             </div>
           )}
           {dslImportSourceRows.length > 0 && (
             <div className="dsl-source-map" data-testid="legacy-dsl-source-map">
               <div className="dsl-source-map-heading">
-                <strong>Source map</strong>
-                <span>{dslImportSourceRows.length} refs</span>
+                <strong>{t('Source map')}</strong>
+                <span>{t('{count} refs', { count: dslImportSourceRows.length })}</span>
               </div>
               <ol>
                 {dslImportSourceRows.slice(0, 8).map((row) => (
@@ -10030,7 +10082,7 @@ export default function AuthorCanvas({ workspaceVersion = 'v1' }: AuthorCanvasPr
             <Suspense
               fallback={(
                 <div className="author-surface-loading" role="status">
-                  Opening {authorMode} surface...
+                  {t('Opening {mode} surface...', { mode: t(authorMode) })}
                 </div>
               )}
             >
@@ -10108,13 +10160,13 @@ export default function AuthorCanvas({ workspaceVersion = 'v1' }: AuthorCanvasPr
                 />
               ) : (
                 <div className="author-surface-loading" role="status">
-                  Preparing the canonical Contract...
+                  {t('Preparing the canonical Contract...')}
                 </div>
               )}
             </Suspense>
           </AuthorSurfaceRouter>
         )}
-        <div className="journey-bar" aria-label="Authoring workflow">
+        <div className="journey-bar" aria-label={t('Authoring workflow')}>
           <ol className="journey-steps">
             {journey.steps.map((step) => (
               <li
@@ -10125,8 +10177,8 @@ export default function AuthorCanvas({ workspaceVersion = 'v1' }: AuthorCanvasPr
                   step.key === activeJourneyStepKey ? 'active' : '',
                 ].filter(Boolean).join(' ')}
               >
-                <span>{step.label}</span>
-                <strong>{step.detail}</strong>
+                <span>{t(step.label)}</span>
+                <strong>{t(step.detail)}</strong>
               </li>
             ))}
           </ol>
@@ -10137,7 +10189,7 @@ export default function AuthorCanvas({ workspaceVersion = 'v1' }: AuthorCanvasPr
               onClick={runJourneyAction}
               disabled={busy}
             >
-              {journey.action.label}
+              {t(journey.action.label)}
             </button>
           )}
           <span className="journey-count">
@@ -10150,20 +10202,20 @@ export default function AuthorCanvas({ workspaceVersion = 'v1' }: AuthorCanvasPr
             data-testid="author-deep-link-notice"
             role={deepLinkNotice.level === 'error' ? 'alert' : 'status'}
           >
-            {deepLinkNotice.message}
+            {t(deepLinkNotice.message)}
           </div>
         )}
         {deepLinkRun && (
           <section className={`run-context-strip ${deepLinkRun.success ? 'ok' : 'error'}`} data-testid="run-context-strip">
             <div className="context-strip-heading">
-              <span>Run</span>
+              <span>{t('Run')}</span>
               <strong>{deepLinkRun.runId}</strong>
             </div>
             <dl className="context-strip-facts">
-              <div><dt>Outcome</dt><dd>{deepLinkRun.success ? 'SUCCESS' : 'FAILED'}</dd></div>
-              <div><dt>Source</dt><dd>{deepLinkRun.sourceKind || 'UNKNOWN'}</dd></div>
-              <div><dt>Revision</dt><dd>{deepLinkRun.draftRevision ?? 0}</dd></div>
-              <div><dt>Elapsed</dt><dd>{deepLinkRun.elapsedMs ?? 0} ms</dd></div>
+              <div><dt>{t('Outcome')}</dt><dd>{t(deepLinkRun.success ? 'SUCCESS' : 'FAILED')}</dd></div>
+              <div><dt>{t('Source')}</dt><dd>{t(deepLinkRun.sourceKind || 'UNKNOWN')}</dd></div>
+              <div><dt>{t('Revision')}</dt><dd>{deepLinkRun.draftRevision ?? 0}</dd></div>
+              <div><dt>{t('Elapsed')}</dt><dd>{deepLinkRun.elapsedMs ?? 0} {t('ms')}</dd></div>
             </dl>
             {deepLinkRun.errors?.[0] && <p>{deepLinkRun.errors[0]}</p>}
           </section>
@@ -10172,12 +10224,12 @@ export default function AuthorCanvas({ workspaceVersion = 'v1' }: AuthorCanvasPr
           <section
             className={`governance-gate-strip ${governanceGateView ? governanceGateLevel(governanceGateView) : 'pending'}`}
             data-testid="governance-gate-strip"
-            aria-label="Governance gate result"
+            aria-label={t('Governance gate result')}
           >
             <div className="context-strip-heading">
-              <span>ANEKE Gate</span>
-              <strong>{governanceGateBusy ? 'LOADING' : governanceGateView?.result?.status ?? 'NO RESULT'}</strong>
-              {governanceGateView && <em>{governanceGateView.freshness}</em>}
+              <span>{t('ANEKE Gate')}</span>
+              <strong>{t(governanceGateBusy ? 'LOADING' : governanceGateView?.result?.status ?? 'NO RESULT')}</strong>
+              {governanceGateView && <em>{t(governanceGateView.freshness)}</em>}
             </div>
             {governanceGateView?.result?.issues.length ? (
               <ul className="governance-issue-list">
@@ -10191,10 +10243,10 @@ export default function AuthorCanvas({ workspaceVersion = 'v1' }: AuthorCanvasPr
                         onClick={() => focusGovernanceIssue(issue)}
                         title={issue.targetPath || issue.deepLink || issue.issueId}
                       >
-                        <span>{issue.severity}</span>
+                        <span>{t(issue.severity)}</span>
                         <strong>{issue.code || issue.issueId}</strong>
-                        <p>{issue.message}</p>
-                        {issue.recommendedAction && <small>{issue.recommendedAction}</small>}
+                        <p>{t(issue.message)}</p>
+                        {issue.recommendedAction && <small>{t(issue.recommendedAction)}</small>}
                         {issueNodeId && <em>{issueNodeId}</em>}
                       </button>
                     </li>
@@ -10202,13 +10254,13 @@ export default function AuthorCanvas({ workspaceVersion = 'v1' }: AuthorCanvasPr
                 })}
               </ul>
             ) : (
-              !governanceGateBusy && <p className="governance-empty">No governance decision for this draft revision.</p>
+              !governanceGateBusy && <p className="governance-empty">{t('No governance decision for this draft revision.')}</p>
             )}
           </section>
         )}
-        <section className="canvas-examples" aria-label="Built-in canvas examples">
+        <section className="canvas-examples" aria-label={t('Built-in canvas examples')}>
           <div className="canvas-examples-heading">
-            <span>Examples</span>
+            <span>{t('Examples')}</span>
             <strong>{canvasExamples.length}</strong>
           </div>
           <div className="canvas-example-list">
@@ -10223,11 +10275,11 @@ export default function AuthorCanvas({ workspaceVersion = 'v1' }: AuthorCanvasPr
                     <p>{template.description}</p>
                   </div>
                   <div className="canvas-example-meta">
-                    <span>{template.nodes.length} nodes</span>
-                    <span>{template.edges.length} edges</span>
-                    <span>Input {graphSchemaSummary(template.inputSchema).fieldCount} fields</span>
-                    <span>Output {graphSchemaSummary(template.outputSchema).fieldCount} fields</span>
-                    {!available && <span>{missingOperatorRefs.length} missing</span>}
+                    <span>{t('{count} nodes', { count: template.nodes.length })}</span>
+                    <span>{t('{count} edges', { count: template.edges.length })}</span>
+                    <span>{t('Input {count} fields', { count: graphSchemaSummary(template.inputSchema).fieldCount })}</span>
+                    <span>{t('Output {count} fields', { count: graphSchemaSummary(template.outputSchema).fieldCount })}</span>
+                    {!available && <span>{t('{count} missing', { count: missingOperatorRefs.length })}</span>}
                   </div>
                   <button
                     type="button"
@@ -10237,7 +10289,7 @@ export default function AuthorCanvas({ workspaceVersion = 'v1' }: AuthorCanvasPr
                     disabled={!available}
                     title={available ? `Load ${template.label}` : `Missing ${missingOperatorRefs.join(', ')}`}
                   >
-                    Load
+                    {t('Load')}
                   </button>
                 </article>
               );
@@ -10257,10 +10309,10 @@ export default function AuthorCanvas({ workspaceVersion = 'v1' }: AuthorCanvasPr
                   : undefined
             }
           >
-            {busy ? 'Simulating…' : 'Simulate'}
+            {busy ? t('Simulating…') : t('Simulate')}
           </button>
           <button className="secondary" onClick={autoLayout} disabled={nodes.length < 2}>
-            Auto Layout
+            {t('Auto Layout')}
           </button>
           <button
             className="secondary"
@@ -10268,13 +10320,13 @@ export default function AuthorCanvas({ workspaceVersion = 'v1' }: AuthorCanvasPr
             aria-pressed={canvasFocusMode}
             onClick={() => setCanvasFocusMode((current) => !current)}
           >
-            {canvasFocusMode ? 'Exit Focus' : 'Canvas Focus'}
+            {canvasFocusMode ? t('Exit Focus') : t('Canvas Focus')}
           </button>
-          <div className="zoom-toolbar" aria-label="Canvas zoom controls">
+          <div className="zoom-toolbar" aria-label={t('Canvas zoom controls')}>
             <button
               type="button"
               className="secondary compact icon-button"
-              aria-label="Zoom out"
+              aria-label={t('Zoom out')}
               data-testid="author-zoom-out"
               onClick={() => zoomCanvasBy('out')}
               disabled={nodes.length === 0}
@@ -10284,7 +10336,7 @@ export default function AuthorCanvas({ workspaceVersion = 'v1' }: AuthorCanvasPr
             <button
               type="button"
               className="secondary compact zoom-level"
-              aria-label="Reset zoom"
+              aria-label={t('Reset zoom')}
               data-testid="author-zoom-reset"
               onClick={resetCanvasZoom}
               disabled={nodes.length === 0}
@@ -10294,7 +10346,7 @@ export default function AuthorCanvas({ workspaceVersion = 'v1' }: AuthorCanvasPr
             <button
               type="button"
               className="secondary compact icon-button"
-              aria-label="Zoom in"
+              aria-label={t('Zoom in')}
               data-testid="author-zoom-in"
               onClick={() => zoomCanvasBy('in')}
               disabled={nodes.length === 0}
@@ -10308,7 +10360,7 @@ export default function AuthorCanvas({ workspaceVersion = 'v1' }: AuthorCanvasPr
               onClick={() => fitCanvasToView()}
               disabled={nodes.length === 0}
             >
-              Fit All
+              {t('Fit All')}
             </button>
             <button
               type="button"
@@ -10318,7 +10370,7 @@ export default function AuthorCanvas({ workspaceVersion = 'v1' }: AuthorCanvasPr
               onClick={() => setOverviewVisible((current) => !current)}
               disabled={nodes.length === 0}
             >
-              {overviewVisible ? 'Map On' : 'Map Off'}
+              {overviewVisible ? t('Map On') : t('Map Off')}
             </button>
           </div>
           <button
@@ -10341,27 +10393,27 @@ export default function AuthorCanvas({ workspaceVersion = 'v1' }: AuthorCanvasPr
               }
             }}
           >
-            Export Draft
+            {t('Export Draft')}
           </a>
           {result && (
             <span className={isRunSuccessful(result) ? 'status ok' : 'status fail'}>
-              {isRunSuccessful(result) ? 'Success' : 'Blocked'}
+              {isRunSuccessful(result) ? t('Success') : t('Blocked')}
             </span>
           )}
-          <span className="canvas-chip">{canvasSummary.nodeCount} nodes</span>
-          <span className="canvas-chip">{canvasSummary.edgeCount} edges</span>
-          <span className="canvas-chip">Output {canvasSummary.outputNodeId || 'missing'}</span>
+          <span className="canvas-chip">{t('{count} nodes', { count: canvasSummary.nodeCount })}</span>
+          <span className="canvas-chip">{t('{count} edges', { count: canvasSummary.edgeCount })}</span>
+          <span className="canvas-chip">{t('Output')} {canvasSummary.outputNodeId || t('missing')}</span>
           {fixtureCount > 0 && (
             <span className="canvas-chip">
-              {fixtureCount} fixture{fixtureCount === 1 ? '' : 's'}
+              {t('{count} fixtures', { count: fixtureCount })}
             </span>
           )}
           {mockAttentionCount > 0 && (
-            <span className="canvas-chip">Mock setup {mockAttentionCount}</span>
+            <span className="canvas-chip">{t('Mock setup {count}', { count: mockAttentionCount })}</span>
           )}
           {hasFixtureErrors && (
             <span className="connection-notice error">
-              {fixtureErrorCount} fixture JSON error{fixtureErrorCount === 1 ? '' : 's'}
+              {t('{count} fixture JSON errors', { count: fixtureErrorCount })}
             </span>
           )}
           {connectionNotice && (
@@ -10370,8 +10422,8 @@ export default function AuthorCanvas({ workspaceVersion = 'v1' }: AuthorCanvasPr
             </span>
           )}
           <span className="legend">
-            <span className="swatch mocked" /> mocked
-            <span className="swatch real" /> real
+            <span className="swatch mocked" /> {t('mocked')}
+            <span className="swatch real" /> {t('real')}
           </span>
         </div>
         <ContractRail
@@ -10461,9 +10513,9 @@ export default function AuthorCanvas({ workspaceVersion = 'v1' }: AuthorCanvasPr
                 <span data-testid="canvas-zoom-readout">{viewportZoomPercent}</span>
               </div>
               <div className="canvas-navigator-stats">
-                <span>{canvasSummary.nodeCount} nodes</span>
-                <span>{canvasSummary.edgeCount} edges</span>
-                {focusPathNodeId && <span>{focusedCanvasPath.nodeIds.size} in path</span>}
+                <span>{t('{count} nodes', { count: canvasSummary.nodeCount })}</span>
+                <span>{t('{count} edges', { count: canvasSummary.edgeCount })}</span>
+                {focusPathNodeId && <span>{t('{count} in path', { count: focusedCanvasPath.nodeIds.size })}</span>}
                 {layoutNotice && (
                   <span data-testid="layout-notice" role="status" aria-live="polite">
                     {layoutNotice}
@@ -10477,7 +10529,7 @@ export default function AuthorCanvas({ workspaceVersion = 'v1' }: AuthorCanvasPr
                   data-testid="navigator-fit-all"
                   onClick={() => fitCanvasToView()}
                 >
-                  Fit All
+                  {t('Fit All')}
                 </button>
                 <button
                   type="button"
@@ -10498,9 +10550,9 @@ export default function AuthorCanvas({ workspaceVersion = 'v1' }: AuthorCanvasPr
                     className="secondary compact"
                     data-testid="navigator-undo-layout"
                     onClick={undoAutoLayout}
-                    title="Restore positions from before the last Auto Layout"
+                    title={t('Restore positions from before the last Auto Layout')}
                   >
-                    Undo layout
+                    {t('Undo layout')}
                   </button>
                 )}
                 <button
@@ -10516,7 +10568,7 @@ export default function AuthorCanvas({ workspaceVersion = 'v1' }: AuthorCanvasPr
             </div>
           )}
           {isTaskWorkspace && (
-            <div className="compact-canvas-launchers" aria-label="Compact workspace panels">
+            <div className="compact-canvas-launchers" aria-label={t('Compact workspace panels')}>
               <button
                 type="button"
                 data-testid="compact-open-palette"
@@ -10528,7 +10580,7 @@ export default function AuthorCanvas({ workspaceVersion = 'v1' }: AuthorCanvasPr
                   setPalettePreference('open');
                 }}
               >
-                Operators
+                {t('Operators')}
               </button>
               <button
                 type="button"
@@ -10542,7 +10594,7 @@ export default function AuthorCanvas({ workspaceVersion = 'v1' }: AuthorCanvasPr
                   setInspectorPreference('open');
                 }}
               >
-                Inspect
+                {t('Inspect')}
               </button>
             </div>
           )}
@@ -10596,7 +10648,7 @@ export default function AuthorCanvas({ workspaceVersion = 'v1' }: AuthorCanvasPr
                 pannable
                 zoomable
                 zoomStep={0.7}
-                ariaLabel="Canvas overview map"
+                ariaLabel={t('Canvas overview map')}
               />
             )}
           </ReactFlow>
@@ -10609,7 +10661,7 @@ export default function AuthorCanvas({ workspaceVersion = 'v1' }: AuthorCanvasPr
             <button
               type="button"
               className="author-panel-toggle inspector-panel-toggle"
-              aria-label={inspectorCollapsed ? 'Expand context inspector' : 'Collapse context inspector'}
+              aria-label={t(inspectorCollapsed ? 'Expand context inspector' : 'Collapse context inspector')}
               aria-expanded={!inspectorCollapsed}
               onClick={toggleInspectorPanel}
             >
@@ -10617,7 +10669,7 @@ export default function AuthorCanvas({ workspaceVersion = 'v1' }: AuthorCanvasPr
             </button>
             <label
               className="author-panel-pin inspector-panel-pin"
-              title="Keep this panel open during canvas fitting"
+              title={t('Keep this panel open during canvas fitting')}
             >
               <input
                 type="checkbox"
@@ -10627,7 +10679,7 @@ export default function AuthorCanvas({ workspaceVersion = 'v1' }: AuthorCanvasPr
                   if (event.target.checked) setInspectorCollapsed(false);
                 }}
               />
-              <span>Keep open</span>
+              <span>{t('Keep open')}</span>
             </label>
           </>
         )}
@@ -10669,7 +10721,7 @@ export default function AuthorCanvas({ workspaceVersion = 'v1' }: AuthorCanvasPr
                       acceptInferenceLabel="Accept as Graph Output Contract"
                     />
                     <details className="direct-binding-tools">
-                      <summary>Edit direct bindings</summary>
+                      <summary>{t('Edit direct bindings')}</summary>
                       <NodeInputBindingsEditor
                         node={selectedNode}
                         incomingEdges={edges}
@@ -10772,17 +10824,17 @@ export default function AuthorCanvas({ workspaceVersion = 'v1' }: AuthorCanvasPr
             }}
           />
         )}
-        <h2>Checklist</h2>
+        <h2>{t('Checklist')}</h2>
         <ol className="checklist">
           {checklist.map((item) => (
             <li key={item.key} className={item.state}>
-              <span>{item.label}</span>
-              <strong>{item.detail}</strong>
+              <span>{t(item.label)}</span>
+              <strong>{t(item.detail)}</strong>
             </li>
           ))}
         </ol>
 
-        <h2>Mock Setup</h2>
+        <h2>{t('Mock Setup')}</h2>
         {fixtureRows.length > 0 ? (
           <ol className="mock-setup-list">
             {fixtureRows.map((row) => (
@@ -10799,10 +10851,10 @@ export default function AuthorCanvas({ workspaceVersion = 'v1' }: AuthorCanvasPr
                   <span className="mock-setup-copy">
                     <strong>{row.label}</strong>
                     <span>{row.operatorRef}</span>
-                    <small>{row.detail}</small>
+                    <small>{t(row.detail)}</small>
                   </span>
                   <span className="mock-setup-status">
-                    <span className={`run-pill ${row.runMode}`}>{row.runMode}</span>
+                    <span className={`run-pill ${row.runMode}`}>{t(row.runMode)}</span>
                     <code>{row.fixtureLabel}</code>
                   </span>
                 </button>
@@ -10810,18 +10862,18 @@ export default function AuthorCanvas({ workspaceVersion = 'v1' }: AuthorCanvasPr
             ))}
           </ol>
         ) : (
-          <p className="muted">No nodes.</p>
+          <p className="muted">{t('No nodes.')}</p>
         )}
 
-        <h2>Test Suite</h2>
+        <h2>{t('Test Suite')}</h2>
         <section
           className={`test-suite-summary ${simulationTableRunSummary.state}`}
           data-testid="test-suite-summary"
         >
           <div>
-            <span>{simulationTableRows.length} case{simulationTableRows.length === 1 ? '' : 's'}</span>
-            <strong>{simulationTableRunSummary.label}</strong>
-            <small>{simulationTableRunSummary.detail}</small>
+            <span>{t('{count} cases', { count: simulationTableRows.length })}</span>
+            <strong>{t(simulationTableRunSummary.label)}</strong>
+            <small>{t(simulationTableRunSummary.detail)}</small>
           </div>
           <button
             type="button"
@@ -10829,11 +10881,11 @@ export default function AuthorCanvas({ workspaceVersion = 'v1' }: AuthorCanvasPr
             data-testid="test-suite-open"
             onClick={() => setTestSuiteOpen(true)}
           >
-            Test Suite
+            {t('Test Suite')}
           </button>
         </section>
 
-        <h2>Runtime Context</h2>
+        <h2>{t('Runtime Context')}</h2>
         <ContextVariablesEditor
           rows={contextVariables}
           compilation={contextCompilation}
@@ -10846,7 +10898,7 @@ export default function AuthorCanvas({ workspaceVersion = 'v1' }: AuthorCanvasPr
           onRawJsonChange={updateSimulationContextDraft}
         />
 
-        <h2>Selected Node</h2>
+        <h2>{t('Selected Node')}</h2>
         {selectedNode ? (
           <section className="node-detail">
             <h3>{selectedNode.data.label}</h3>
@@ -10856,11 +10908,11 @@ export default function AuthorCanvas({ workspaceVersion = 'v1' }: AuthorCanvasPr
             )}
             <OperatorFocusPanel operator={selectedOperator} summary={selectedNode.data.summary} />
             <div className="port-list">
-              <strong>Inputs</strong>
+              <strong>{t('Inputs')}</strong>
               <span>{selectedNode.data.summary.inputNames.join(', ') || 'none'}</span>
             </div>
             <div className="port-list">
-              <strong>Outputs</strong>
+              <strong>{t('Outputs')}</strong>
               <span>{selectedNode.data.summary.outputNames.join(', ') || 'none'}</span>
             </div>
             <NodeInputBindingsEditor
@@ -10876,7 +10928,7 @@ export default function AuthorCanvas({ workspaceVersion = 'v1' }: AuthorCanvasPr
             />
             <div className="connection-guide" data-testid="connection-guide">
               <div className="connection-guide-header">
-                <strong>Connect Next</strong>
+                <strong>{t('Connect Next')}</strong>
                 <button
                   type="button"
                   className="secondary compact"
@@ -10884,13 +10936,13 @@ export default function AuthorCanvas({ workspaceVersion = 'v1' }: AuthorCanvasPr
                   onClick={loadSelectedConnectionGuide}
                   disabled={connectionGuideBusy || nodes.length < 2}
                 >
-                  {connectionGuideBusy ? 'Finding' : 'Find Targets'}
+                  {connectionGuideBusy ? t('Finding') : t('Find Targets')}
                 </button>
               </div>
               <label className="connection-source">
-                <span>Source</span>
+                <span>{t('Source')}</span>
                 <select
-                  aria-label="Connection source output"
+                  aria-label={t('Connection source output')}
                   value={selectedConnectionSourcePort}
                   onChange={(event) => {
                     connectionGuideSequence.current += 1;
@@ -10910,7 +10962,7 @@ export default function AuthorCanvas({ workspaceVersion = 'v1' }: AuthorCanvasPr
               </label>
               {connectionGuideNotice && (
                 <p className={`connection-guide-notice ${connectionGuideNotice.level}`}>
-                  {connectionGuideNotice.message}
+                  {t(connectionGuideNotice.message)}
                 </p>
               )}
               {selectedGuideRows.length > 0 ? (
@@ -10932,13 +10984,13 @@ export default function AuthorCanvas({ workspaceVersion = 'v1' }: AuthorCanvasPr
                             <strong>{row.targetLabel}</strong>
                             <small>{row.targetOperatorRef || row.targetNodeId}</small>
                             <code>{endpointLabel(row.targetPort, row.targetPath, 'input')}</code>
-                            <small className="connection-guide-detail">{row.detail}</small>
-                            <small className="connection-guide-action">{row.actionHint}</small>
+                            <small className="connection-guide-detail">{t(row.detail)}</small>
+                            <small className="connection-guide-action">{t(row.actionHint)}</small>
                           </span>
-                          <em>{row.status}</em>
+                          <em>{t(row.status)}</em>
                         </button>
                         {row.fieldOptions.length > 1 && (
-                          <div className="connection-guide-fields" aria-label="Compatible field paths">
+                          <div className="connection-guide-fields" aria-label={t('Compatible field paths')}>
                             {row.fieldOptions.map((option) => (
                               <button
                                 key={option.key}
@@ -10961,13 +11013,13 @@ export default function AuthorCanvas({ workspaceVersion = 'v1' }: AuthorCanvasPr
                         onClick={() => connectGuideRow(row)}
                         disabled={row.status !== 'ready' || connectionGuideBusy}
                       >
-                        Connect
+                        {t('Connect')}
                       </button>
                     </li>
                   ))}
                 </ol>
               ) : (
-                <p className="muted">No targets loaded.</p>
+                <p className="muted">{t('No targets loaded.')}</p>
               )}
             </div>
             <div className="output-control">
@@ -10982,14 +11034,14 @@ export default function AuthorCanvas({ workspaceVersion = 'v1' }: AuthorCanvasPr
                 onClick={setSelectedAsOutput}
                 disabled={selectedNode.id === outputNodeId}
               >
-                Set Output
+                {t('Set Output')}
               </button>
             </div>
             <div className="fixture-editor">
               <div className="fixture-header">
-                <strong>Simulation</strong>
+                <strong>{t('Simulation')}</strong>
                 <span className={`badge ${selectedFixtureHasDraft ? 'fixture' : ''}`}>
-                  {selectedFixtureHasDraft ? 'custom' : 'server sample'}
+                  {selectedFixtureHasDraft ? t('custom') : t('server sample')}
                 </span>
               </div>
               <div className="fixture-actions">
@@ -10998,78 +11050,78 @@ export default function AuthorCanvas({ workspaceVersion = 'v1' }: AuthorCanvasPr
                   onClick={useSelectedFixtureSample}
                   disabled={!selectedOperator}
                 >
-                  Use Sample
+                  {t('Use Sample')}
                 </button>
                 <button
                   className="secondary compact"
                   onClick={clearSelectedFixture}
                   disabled={!selectedFixtureHasDraft}
                 >
-                  Clear
+                  {t('Clear')}
                 </button>
               </div>
               <label className="fixture-field">
-                <span>Output Pin</span>
+                <span>{t('Output Pin')}</span>
                 <textarea
-                  aria-label="Simulation output fixture JSON"
+                  aria-label={t('Simulation output fixture JSON')}
                   spellCheck={false}
-                  placeholder="null"
+                  placeholder={t('null')}
                   value={selectedFixtureDraft}
                   onChange={(event) => updateSelectedFixtureDraft(event.target.value)}
                 />
               </label>
               <label className="fixture-field">
-                <span>Expected Input</span>
+                <span>{t('Expected Input')}</span>
                 <textarea
-                  aria-label="Simulation expected input JSON"
+                  aria-label={t('Simulation expected input JSON')}
                   spellCheck={false}
                   placeholder="{}"
                   value={selectedExpectedInputDraft}
                   onChange={(event) => updateSelectedExpectedInputDraft(event.target.value)}
                 />
               </label>
-              {selectedFixtureError && <p className="fixture-error">{selectedFixtureError}</p>}
+              {selectedFixtureError && <p className="fixture-error">{t(selectedFixtureError)}</p>}
             </div>
           </section>
         ) : (
-          <p className="muted">No node selected.</p>
+          <p className="muted">{t('No node selected.')}</p>
         )}
 
-        <h2>Result</h2>
+        <h2>{t('Result')}</h2>
         {validationResult ? (
           <section
             className={`validation-summary ${validationResult.valid ? 'ok' : 'fail'}`}
             data-testid="draft-validation-summary"
           >
             <div className="validation-summary-heading">
-              <span>{validationResult.valid ? 'Validated' : 'Needs repair'}</span>
-              <strong>{validationResult.readiness?.title || (validationResult.valid ? 'Draft valid' : 'Draft invalid')}</strong>
+              <span>{validationResult.valid ? t('Validated') : t('Needs repair')}</span>
+              <strong>{t(validationResult.readiness?.title || (validationResult.valid ? 'Draft valid' : 'Draft invalid'))}</strong>
             </div>
             {validationResult.readiness?.summary && (
-              <p>{validationResult.readiness.summary}</p>
+              <p>{t(validationResult.readiness.summary)}</p>
             )}
             <div className="validation-summary-chips">
               <span data-testid="draft-validation-summary:state">
-                <span>Readiness</span>
-                <strong>{validationResult.readiness?.state || 'unknown'}</strong>
+                <span>{t('Readiness')}</span>
+                <strong>{t(validationResult.readiness?.state || 'unknown')}</strong>
               </span>
               <span data-testid="draft-validation-summary:actions">
-                <span>Actions</span>
-                <strong>{validationResult.actionReadiness?.state || 'unknown'}</strong>
+                <span>{t('Actions')}</span>
+                <strong>{t(validationResult.actionReadiness?.state || 'unknown')}</strong>
               </span>
               <span data-testid="draft-validation-summary:diagnostics">
-                <span>Diagnostics</span>
+                <span>{t('Diagnostics')}</span>
                 <strong>{validationResult.diagnostics?.length ?? 0}</strong>
               </span>
             </div>
           </section>
         ) : (
-          <p className="muted" data-testid="draft-validation-summary">Not validated.</p>
+          <p className="muted" data-testid="draft-validation-summary">{t('Not validated.')}</p>
         )}
         <section className={`run-summary ${runSummary.state}`} data-testid="simulation-run-summary">
           <div className="run-summary-heading">
-            <span>{runSummary.detail}</span>
-            <strong>{runSummary.title}</strong>
+            <span>{t(runSummary.detail)}</span>
+            <strong>{t(runSummary.title)}</strong>
           </div>
           <div className="run-summary-chips">
             {runSummary.chips.map((chip) => (
@@ -11078,25 +11130,25 @@ export default function AuthorCanvas({ workspaceVersion = 'v1' }: AuthorCanvasPr
                 className={`run-summary-chip ${chip.state}`}
                 data-testid={`simulation-run-summary:${chip.key}`}
               >
-                <span>{chip.label}</span>
-                <strong>{chip.value}</strong>
+                <span>{t(chip.label)}</span>
+                <strong>{t(chip.value)}</strong>
               </span>
             ))}
           </div>
         </section>
         {error && <pre className="error">{error}</pre>}
-        {!result && !error && <p className="muted">No simulation result.</p>}
+        {!result && !error && <p className="muted">{t('No simulation result.')}</p>}
         {result && (
           <>
             <p>
-              <strong>Mocked:</strong> {result.mockedNodeIds.join(', ') || '—'}
+              <strong>{t('Mocked:')}</strong> {result.mockedNodeIds.join(', ') || '-'}
             </p>
             <p>
-              <strong>Real:</strong> {result.realNodeIds.join(', ') || '—'}
+              <strong>{t('Real:')}</strong> {result.realNodeIds.join(', ') || '-'}
             </p>
             {traceRows.length > 0 && (
               <>
-                <h3>Trace</h3>
+                <h3>{t('Trace')}</h3>
                 <ol className="trace-list">
                   {traceRows.map((row) => (
                     <li key={row.nodeId}>
@@ -11109,28 +11161,28 @@ export default function AuthorCanvas({ workspaceVersion = 'v1' }: AuthorCanvasPr
                           <span>{row.operatorRef}</span>
                           <code>{row.outputPreview}</code>
                         </span>
-                        <span className={`run-pill ${row.status}`}>{row.status}</span>
+                        <span className={`run-pill ${row.status}`}>{t(row.status)}</span>
                       </button>
                     </li>
                   ))}
                 </ol>
               </>
             )}
-            <h3>Output</h3>
+            <h3>{t('Output')}</h3>
             <pre>{JSON.stringify(result.output, null, 2)}</pre>
             {result.diagnostics.length > 0 && (
               <>
-                <h3>Diagnostics</h3>
+                <h3>{t('Diagnostics')}</h3>
                 <ul>
                   {result.diagnostics.map((diagnostic, index) => (
                     <li key={index} className={`diag ${diagnostic.level ?? ''}`}>
-                      {diagnostic.code}: {diagnostic.message}
+                      {diagnostic.code}: {t(diagnostic.message ?? '')}
                     </li>
                   ))}
                 </ul>
               </>
             )}
-            <h3>Generated DSL</h3>
+            <h3>{t('Generated DSL')}</h3>
             <pre className="dsl">{result.generatedDsl}</pre>
           </>
         )}
@@ -11147,7 +11199,7 @@ export default function AuthorCanvas({ workspaceVersion = 'v1' }: AuthorCanvasPr
         <Suspense
           fallback={(
             <div className="canvas-loading-state" role="status">
-              Opening Operator Contract workspace...
+              {t('Opening Operator Contract workspace...')}
             </div>
           )}
         >
@@ -11202,7 +11254,7 @@ export default function AuthorCanvas({ workspaceVersion = 'v1' }: AuthorCanvasPr
         <Suspense
           fallback={(
             <div className="canvas-loading-state" role="status">
-              Opening Contract workspace...
+              {t('Opening Contract workspace...')}
             </div>
           )}
         >
@@ -11249,15 +11301,15 @@ export default function AuthorCanvas({ workspaceVersion = 'v1' }: AuthorCanvasPr
             data-testid="test-suite-dialog"
           >
             <div className="operator-detail-heading">
-              <span>Mock regression</span>
-              <strong id="test-suite-dialog-title">Test Suite</strong>
+              <span>{t('Mock regression')}</span>
+              <strong id="test-suite-dialog-title">{t('Test Suite')}</strong>
               <button
                 type="button"
                 className="secondary compact"
-                aria-label="Close test suite"
+                aria-label={t('Close test suite')}
                 onClick={closeTestSuite}
               >
-                Done
+                {t('Done')}
               </button>
             </div>
             {testTablePanel}
