@@ -1,4 +1,5 @@
 import type { RemediationAction } from './remediationAction';
+import { localizeRehearsalText } from '../i18n/generatedProductText';
 import { useI18n } from '../i18n/I18nProvider';
 
 export default function RemediationActionList({
@@ -24,9 +25,11 @@ export default function RemediationActionList({
             <div className="remediation-action-order">{index + 1}</div>
             <div className="remediation-action-copy">
               <strong>{t(action.actionLabel)}</strong>
-              <p>{t(action.rootCause)}</p>
+              <p>{localizeRehearsalText(t, action.rootCause)}</p>
               <small><b>{t('Business impact')}</b> {t(action.businessImpact)}</small>
-              <small><b>{t('Responsible')}</b> {action.owner} · {t(action.requiredRole)}</small>
+              <small>
+                <b>{t('Responsible')}</b> {localizeRehearsalText(t, action.owner)} · {t(action.requiredRole)}
+              </small>
               {!action.available && (
                 <small className="remediation-action-unavailable">
                   {t(action.unavailableReason)}

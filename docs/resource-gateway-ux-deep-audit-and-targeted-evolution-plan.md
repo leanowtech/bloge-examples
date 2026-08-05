@@ -1,6 +1,6 @@
 # Resource Gateway UX 深度审阅与针对性演进计划
 
-> 状态：Engineering Ready / Stage 5 已通过 E2 验收，Stage 6 E3/E4 待真实组织验证
+> 状态：Engineering Ready / Stage 6 工程收口已通过 E2，E3/E4 待真实用户与组织验证
 >
 > 审阅日期：2026-08-05
 >
@@ -18,7 +18,7 @@
 >
 > Stage 5 实施后复评分：`96 / 100`
 >
-> 目标：P0/P1 已清零，工程门禁已达到 `96 / 100`；随后以 E3/E4 证明真实成熟度
+> 目标：已验收核心任务的 P0/P1 已清零，工程门禁已达到 `96 / 100`；随后以 E3/E4 证明真实成熟度
 >
 > 适用范围：Author Workspace v2、Contract、Scenario、Evidence、Libraries、Rehearsals、
 > Showcase、中文界面与 390px 移动端审阅体验
@@ -34,6 +34,7 @@
 - [Stage 3 表格驱动测试工作台](resource-gateway-ux-stage3-table-driven-testing-workbench.md)
 - [Stage 4 双语完整性与术语治理](resource-gateway-ux-stage4-localization-governance.md)
 - [Stage 5 视觉系统与响应式任务布局](resource-gateway-ux-stage5-visual-responsive-system.md)
+- [Stage 6 工程验收与体验证明记录](resource-gateway-ux-stage6-engineering-verification.md)
 - [Resource Gateway 双语术语与界面文案规范](resource-gateway-localization-glossary.md)
 
 ## 0. 最强结论
@@ -694,8 +695,9 @@ Contract/Scenarios/Evidence 删除重复摘要；Matrix 首屏可见 3 条 Case 
 
 目标角色：Graph 作者、测试工程师、治理 reviewer、平台集成工程师，每类至少 3 人。
 
-当前状态：E2 工程矩阵已经具备进入研究的条件；E3 受试者招募、主持和数据采集尚未执行，E4
-必须在真实组织发布周期中完成。不得用内部浏览器验收替代这两级证据。
+当前状态：Stage 6 的 E2 工程收口已完成，桌面、平板和移动视口的固定任务已在真实
+Spring 服务和 Chromium 上通过。E3 受试者招募、主持和数据采集尚未执行，E4 必须在
+真实组织发布周期中完成。不得用内部浏览器验收替代这两级证据。
 
 | 任务 | 目标门槛 |
 |---|---|
@@ -709,6 +711,13 @@ Contract/Scenarios/Evidence 删除重复摘要；Matrix 首屏可见 3 条 Case 
 
 E4 需要两个真实团队连续两个发布周期满足：P0/P1 为 0、关键任务成功率不下降、没有因误解
 mock/schema evidence 导致的错误发布决策。
+
+Stage 6 工程收口另外发现并修复了一类真实的双语瑕疵：中文演练队列曾直接暴露
+`PARTIAL`、`FAILED`、`PASSED` 等 wire enum，运行时拼接的诊断、负责人角色、重试时间线和
+下一步操作也会绕过静态词条扫描。现已增动态产品文案 presenter，只将人机交互文案投影为中文，
+协议码、业务资产和导出值保持原样。组件级中文测试已封住状态、动态断言摘要与无障碍分组名的
+回归。完整的视口矩阵、自动化结果、复现步骤和剩余风险见
+[Stage 6 工程验收与体验证明记录](resource-gateway-ux-stage6-engineering-verification.md)。
 
 ## 9. 建议技术切入点
 
@@ -885,8 +894,9 @@ task_abandoned(surface, step)
 9. E2 固定任务和视觉门禁全部通过；
 10. E3 12 名用户达到任务门槛后，才正式宣称“体验成熟度 95 分”。
 
-当前 1 至 9 已完成，工程评分为 `96 / 100`，剩余工程差距为 `4%`。第 10 项是对外成熟度声明的
-证据门槛，并非继续堆叠界面功能的理由；在 E3/E4 中暴露的新问题按相同 P0/P1 纪律回流修复。
+当前 1 至 9 已完成，Stage 6 工程收口再次确认评分为 `96 / 100`，剩余差距为 `4%`。
+这 4% 不是已知的 P0/P1 界面缺口，而是第 10 项尚未取得的真实用户和组织证据。在 E3/E4
+中暴露的新问题按相同 P0/P1 纪律回流修复，不以继续堆叠界面功能代替可用性证明。
 
 ## 15. 自审结论
 

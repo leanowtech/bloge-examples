@@ -52,4 +52,24 @@ describe('i18n locale contract', () => {
   it('uses a stable preference key', () => {
     expect(LOCALE_STORAGE_KEY).toBe('bloge.visual.locale');
   });
+
+  it('presents rehearsal lifecycle states as product labels in Chinese', () => {
+    expect([
+      'RUNNING',
+      'SUCCEEDED',
+      'FAILED',
+      'CANCELLED',
+      'PARTIAL',
+      'INDETERMINATE',
+      'QUARANTINED',
+      'EXPIRED',
+      'PASSED',
+    ]
+      .every((status) => translate('zh-CN', status) !== status)).toBe(true);
+    expect(translate('zh-CN', '{failed} failed and {indeterminate} indeterminate blocker assertions', {
+      failed: 2,
+      indeterminate: 1,
+    })).toBe('2 个失败、1 个不确定的阻断断言');
+    expect(translate('zh-CN', 'All evaluated cases passed')).toBe('所有已评估用例均已通过');
+  });
 });

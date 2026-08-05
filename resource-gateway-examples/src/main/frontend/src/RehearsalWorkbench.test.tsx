@@ -12,6 +12,7 @@ import {
   fetchScenarioRehearsalWorkbook,
   getRehearsalRemediationCredentialStatus,
 } from './api';
+import I18nProvider from './i18n/I18nProvider';
 import RehearsalWorkbench from './RehearsalWorkbench';
 import type {
   ScenarioRehearsalBatchJob,
@@ -378,6 +379,22 @@ describe('RehearsalWorkbench', () => {
     expect(window.location.search).not.toContain('entry=');
   });
 
+  it('presents protocol lifecycle states as localized product labels', async () => {
+    window.history.replaceState({}, '', '/rehearsals/?lang=zh-CN');
+    mockJobs.mockResolvedValue(jobPage([batchJob('job-terminal', 'PARTIAL')]));
+    mockBatchWorkbook.mockResolvedValue(batchWorkbook());
+    mockChildWorkbook.mockResolvedValue(childWorkbook());
+
+    await render(true);
+    await waitFor(() => text().includes('部分完成'));
+
+    expect(text()).toContain('已失败');
+    expect(text()).toContain('已通过');
+    expect(text()).toContain('1 个失败、0 个不确定的阻断断言');
+    expect(text()).not.toContain('PARTIAL');
+    expect(document.querySelector('[aria-label="执行条目"]')).not.toBeNull();
+  });
+
   it('replaces aggregate retry placeholders with exact server lifecycle observations', async () => {
     mockJobs.mockResolvedValue(jobPage([batchJob('job-terminal', 'PARTIAL')]));
     mockBatchWorkbook.mockResolvedValue(batchWorkbook());
@@ -555,10 +572,12 @@ describe('RehearsalWorkbench', () => {
     expect(document.querySelector('[data-testid="batch-stale-job"]')).toBeNull();
   });
 
-  async function render() {
+  async function render(localized = false) {
     await act(async () => {
       root = createRoot(host);
-      root.render(<RehearsalWorkbench />);
+      root.render(localized
+        ? <I18nProvider><RehearsalWorkbench /></I18nProvider>
+        : <RehearsalWorkbench />);
     });
   }
 });
