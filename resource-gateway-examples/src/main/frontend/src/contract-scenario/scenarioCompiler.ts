@@ -19,6 +19,43 @@ export interface ScenarioCompilationProof {
   requestFingerprint: string;
 }
 
+export interface ScenarioCompilationProofVerification {
+  valid: boolean;
+  reasonCode: string;
+  message: string;
+}
+
+/** Verifies that editor, plan, request, and evidence all name one immutable source snapshot. */
+export function verifyScenarioCompilationProof(
+  proof: ScenarioCompilationProof,
+  visibleEditorFingerprint: string,
+  actualRequestFingerprint: string,
+): ScenarioCompilationProofVerification {
+  const sourceFingerprints = [
+    proof.editorSnapshotFingerprint,
+    proof.compiledPlanSourceFingerprint,
+    proof.requestSourceFingerprint,
+    proof.evidenceSourceFingerprint,
+  ];
+  if (!visibleEditorFingerprint || sourceFingerprints.some((value) => (
+    !value || value !== visibleEditorFingerprint
+  ))) {
+    return {
+      valid: false,
+      reasonCode: 'RG.AUTHOR.EVIDENCE.SOURCE_CHANGED',
+      message: 'The visible Scenario changed during execution. Rerun before recording current evidence.',
+    };
+  }
+  if (!actualRequestFingerprint || proof.requestFingerprint !== actualRequestFingerprint) {
+    return {
+      valid: false,
+      reasonCode: 'RG.AUTHOR.EVIDENCE.REQUEST_CHANGED',
+      message: 'The execution request no longer matches its compiled Scenario proof.',
+    };
+  }
+  return { valid: true, reasonCode: '', message: '' };
+}
+
 export interface ScenarioSimulationCompilation {
   compiled: boolean;
   scenarioId: string;

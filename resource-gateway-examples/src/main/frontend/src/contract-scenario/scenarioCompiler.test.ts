@@ -10,6 +10,7 @@ import {
 import {
   compileScenarioEditorSnapshotForSimulation,
   compileScenarioForSimulation,
+  verifyScenarioCompilationProof,
 } from './scenarioCompiler';
 import { captureScenarioEditorSnapshot } from './scenarioEditorModel';
 import { sha256Fingerprint } from './fingerprint';
@@ -94,6 +95,41 @@ describe('Scenario transient compiler', () => {
       result.proof?.evidenceSourceFingerprint,
     ]).size).toBe(1);
     expect(result.proof?.requestFingerprint).toBe(await sha256Fingerprint(result.request));
+  });
+
+  it('accepts evidence only while the visible editor and exact request retain fingerprint closure', async () => {
+    const graph = graphDraft();
+    const scenarios = draftSet([returnDependency()]);
+    const contract = contractDraftFromGraphDraft(graph, TARGET_FINGERPRINT);
+    const result = await compileScenarioEditorSnapshotForSimulation(
+      graph,
+      captureScenarioEditorSnapshot(scenarios, 'fallback', contract, scenarioNodes()),
+      TARGET_FINGERPRINT,
+      CONTRACT_FINGERPRINT,
+    );
+    const proof = result.proof!;
+
+    expect(verifyScenarioCompilationProof(
+      proof,
+      proof.editorSnapshotFingerprint,
+      await sha256Fingerprint(result.request),
+    )).toEqual({ valid: true, reasonCode: '', message: '' });
+    expect(verifyScenarioCompilationProof(
+      proof,
+      `sha256:${'c'.repeat(64)}`,
+      proof.requestFingerprint,
+    )).toMatchObject({
+      valid: false,
+      reasonCode: 'RG.AUTHOR.EVIDENCE.SOURCE_CHANGED',
+    });
+    expect(verifyScenarioCompilationProof(
+      proof,
+      proof.editorSnapshotFingerprint,
+      `sha256:${'d'.repeat(64)}`,
+    )).toMatchObject({
+      valid: false,
+      reasonCode: 'RG.AUTHOR.EVIDENCE.REQUEST_CHANGED',
+    });
   });
 
   it('blocks an empty required Return field instead of allowing runtime sample generation', async () => {

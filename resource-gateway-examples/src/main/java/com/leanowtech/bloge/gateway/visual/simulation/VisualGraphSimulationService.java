@@ -405,9 +405,35 @@ public class VisualGraphSimulationService {
                 .filter(node -> node.id().equals(outputNodeId))
                 .findFirst()
                 .flatMap(node -> catalog.find(node.operatorRef()))
-                .map(operator -> VisualSchemaValidator
-                        .validateValue(firstOutputSchema(operator), output, "/output").isEmpty())
+                .map(operator -> terminalOutputConforms(operator, output))
                 .orElse(true);
+    }
+
+    private static boolean terminalOutputConforms(OperatorDefinition operator, Object output) {
+        List<OperatorDefinition.Port> outputPorts = operator.ports().outputs();
+        if (outputPorts.isEmpty()) {
+            return true;
+        }
+        if (outputPorts.size() == 1) {
+            OperatorDefinition.Port port = outputPorts.get(0);
+            Object candidate = output instanceof Map<?, ?> outputMap && outputMap.containsKey(port.name())
+                    ? outputMap.get(port.name())
+                    : output;
+            return VisualSchemaValidator.validateValue(port.schema(), candidate, "/output").isEmpty();
+        }
+        if (!(output instanceof Map<?, ?> outputMap)) {
+            return false;
+        }
+        return outputPorts.stream().allMatch(port -> {
+            if (!outputMap.containsKey(port.name())) {
+                return !port.required();
+            }
+            return VisualSchemaValidator.validateValue(
+                    port.schema(),
+                    outputMap.get(port.name()),
+                    "/output/" + port.name()
+            ).isEmpty();
+        });
     }
 
     private static List<VisualDiagnostic> enforceResourceCaps(GraphDraft draft) {

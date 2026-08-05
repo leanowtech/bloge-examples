@@ -38,17 +38,20 @@ export function resolveAuthorPrimaryAction(
   if (context.hasInputErrors) {
     return { kind: 'fix-input', label: 'Fix required input', targetMode: 'scenarios' };
   }
+  if (context.busy) {
+    return { kind: 'run', label: 'Running scenario...', targetMode: 'scenarios' };
+  }
   if (context.runStale) {
     return {
       kind: 'run',
-      label: context.busy ? 'Running scenario...' : 'Rerun current scenario',
+      label: 'Rerun current scenario',
       targetMode: 'scenarios',
     };
   }
   if (!context.hasRunResult) {
     return {
       kind: 'run',
-      label: context.busy ? 'Running scenario...' : 'Run scenario',
+      label: 'Run scenario',
       targetMode: 'scenarios',
     };
   }

@@ -120,6 +120,17 @@ from that Case opens the bound Run Evidence with assertion comparison, terminal 
 mocked/real node boundary, and exploratory content fingerprint. A green execution is deliberately
 still `Evidence incomplete` until Contract and Governance are checked.
 
+Graph and Operator Scenario surfaces now consume one canonical task-state projection. A blocked Run
+always includes a stable reason, a human explanation, and a direct remediation action; no secondary
+single-Case Run can bypass it. Each target retains its own exact coordinate and simulation response,
+so Graph and Operator Evidence cannot overwrite or visually validate one another. For a focused
+Operator demonstration, double-click **Fetch applicant**, open **Contract -> Open Contract
+Workspace**, and run the default Case. The wrapped `params` input and `payload` output are validated
+at their real port boundaries. `CURRENT` means the result matches the visible target;
+`EXPLORATORY`, `DURABLE`, and `GOVERNED` separately state what that evidence may be used for. The
+engineering invariants and verification record are in
+[`docs/resource-gateway-ux-stage2-task-state-and-evidence-trust.md`](../docs/resource-gateway-ux-stage2-task-state-and-evidence-trust.md).
+
 Choose **Scenarios -> Coverage** to inspect six separate denominator inventories: Case intent,
 Contract boundaries, DAG paths, dependency behaviors, assertions, and current Evidence. The view
 never hides them behind one percentage. Select **Target gap** when useful, set the deterministic

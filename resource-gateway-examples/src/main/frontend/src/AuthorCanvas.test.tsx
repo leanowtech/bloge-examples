@@ -928,8 +928,42 @@ describe('AuthorCanvas built-in canvas examples', () => {
           governedTargetFingerprint,
         ));
       }
+      if (
+        url
+        === '/api/visual/scenario-draft-sets/targets/operators/resource%3Aloan-applicant-service.getProfile/contract'
+      ) {
+        return jsonResponse(wrappedLoanApplicantContractProjection());
+      }
+      if (url.startsWith(
+        '/api/visual/scenario-draft-sets/operator-resource-loan-applicant-service.getProfile-',
+      )) {
+        return jsonResponse(
+          { code: 'RG.SCENARIO.DRAFT_NOT_FOUND' },
+          { status: 404, statusText: 'Not Found' },
+        );
+      }
       if (url === '/api/visual/graphs/simulate') {
         const body = JSON.parse(String(init?.body));
+        if (String(body.draft?.graphName).startsWith('operator-resource-loan-applicant-service.getProfile')) {
+          expect(body.draft.nodes).toEqual([
+            expect.objectContaining({
+              id: 'operator',
+              inputs: {
+                params: { kind: 'contextPath', path: 'params', targetPort: 'params' },
+              },
+            }),
+          ]);
+          expect(body.context).toEqual({ params: { applicantId: 'applicant-1001' } });
+          const output = body.fixtures.operator.output;
+          return jsonResponse({
+            ...loanSimulationResponse(output),
+            graphName: body.draft.graphName,
+            outputNode: 'operator',
+            results: { operator: output },
+            mockedNodeIds: ['operator'],
+            realNodeIds: [],
+          });
+        }
         const applicantId = body.context?.applicantId;
         if (applicantId === 'applicant-2002') {
           expect(body.fixtures.n2.output.payload.score).toBe(650);
@@ -1272,16 +1306,25 @@ describe('AuthorCanvas built-in canvas examples', () => {
 
     await waitFor(() => {
       expect(document.querySelector('[data-testid="author-start-dialog"]')).toBeNull();
-      expect(query('[data-testid="author-primary-action"]').textContent).toBe('Run scenario');
+      expect(query('[data-testid="author-primary-action"]').textContent).toBe('Run & Compare');
       expect(query<HTMLButtonElement>('[data-testid="author-primary-action"]').disabled).toBe(false);
       expect(query('[data-testid="author-context-inspector"]').textContent).toContain('Decision response');
     });
+    await click(query<HTMLButtonElement>('[data-testid="author-mode:scenarios"]'));
+    await click(Array.from(
+      query('[data-testid="contract-workspace"]').querySelectorAll<HTMLButtonElement>(
+        '.scenario-view-switch button',
+      ),
+    ).find((button) => button.textContent === 'Case') as HTMLButtonElement);
+    expect(query<HTMLButtonElement>('[data-testid="scenario-run"]').textContent)
+      .toBe(query<HTMLButtonElement>('[data-testid="author-primary-action"]').textContent);
+    expect(query<HTMLButtonElement>('[data-testid="scenario-run"]').disabled).toBe(false);
     await click(query<HTMLButtonElement>('[data-testid="author-primary-action"]'));
 
     await waitFor(() => {
       expect(query('.workspace').getAttribute('data-author-mode')).toBe('evidence');
       expect(query('[data-testid="author-primary-action"]').textContent).toBe('Review result');
-      expect(query('[data-testid="author-command-bar"]').textContent).toContain('PASSED');
+      expect(query('[data-testid="author-command-bar"]').textContent).toContain('EvidenceCURRENT');
       expect(query('[data-testid="topology-context-rail"]').textContent).toContain(
         'Decision response',
       );
@@ -1313,7 +1356,7 @@ describe('AuthorCanvas built-in canvas examples', () => {
     );
     await click(query<HTMLButtonElement>('[data-testid="author-start-example:loan-policy-fallback"]'));
     await waitFor(() => {
-      expect(query('[data-testid="author-primary-action"]').textContent).toBe('Run scenario');
+      expect(query('[data-testid="author-primary-action"]').textContent).toBe('Run & Compare');
       expect(query<HTMLButtonElement>('[data-testid="author-primary-action"]').disabled)
         .toBe(false);
     });
@@ -1339,23 +1382,28 @@ describe('AuthorCanvas built-in canvas examples', () => {
       ),
       'applicant-1002',
     );
+    await waitFor(() => {
+      expect(query('[data-testid="author-primary-action"]').textContent).toBe('Rerun & Compare');
+      expect(query('[data-testid="scenario-run"]').textContent).toBe('Rerun & Compare');
+      expect(query<HTMLButtonElement>('[data-testid="scenario-run"]').disabled).toBe(false);
+    });
     await click(query<HTMLButtonElement>('[data-testid="author-mode:compose"]'));
 
     await waitFor(() => {
       expect(query('.workspace').getAttribute('data-author-mode')).toBe('compose');
       expect(query('.workspace').getAttribute('data-evidence-freshness')).toBe('stale');
       expect(query('.workspace').getAttribute('data-promotion-lifecycle')).toBe('blocked');
-      expect(query('[data-testid="author-command-bar"]').textContent).toContain('ExecutionSTALE');
-      expect(query('[data-testid="author-command-bar"]').textContent).toContain('AssertionsSTALE');
+      expect(query('[data-testid="author-command-bar"]').textContent).toContain('RunnableRUNNABLE');
+      expect(query('[data-testid="author-command-bar"]').textContent).toContain('EvidenceSTALE');
       expect(query('[data-testid="author-primary-action"]').textContent)
-        .toBe('Rerun current scenario');
+        .toBe('Rerun & Compare');
     });
 
     await click(query<HTMLButtonElement>('[data-testid="author-primary-action"]'));
     await waitFor(() => {
       expect(query('.workspace').getAttribute('data-author-mode')).toBe('evidence');
       expect(query('.workspace').getAttribute('data-evidence-freshness')).toBe('current');
-      expect(query('[data-testid="author-command-bar"]').textContent).toContain('ExecutionPASSED');
+      expect(query('[data-testid="author-command-bar"]').textContent).toContain('EvidenceCURRENT');
       expect(query('[data-testid="scenario-evidence-coordinate"]').textContent)
         .toContain('loan-prime-approval');
       expect(query('[data-testid="scenario-evidence-coordinate"]').textContent)
@@ -1989,6 +2037,40 @@ describe('AuthorCanvas built-in canvas examples', () => {
     expect(dependencyCards.every((card) => !card.open)).toBe(true);
   });
 
+  it('runs a wrapped-port Operator Scenario and keeps its response in the Operator evidence surface', async () => {
+    await act(async () => {
+      root = createRoot(host);
+      root.render(<AuthorCanvas workspaceVersion="v2" />);
+    });
+    await click(query<HTMLButtonElement>('[data-testid="author-start-choice:examples"]'));
+    await waitFor(() =>
+      expect(query<HTMLButtonElement>('[data-testid="author-start-example:loan-policy-fallback"]').disabled)
+        .toBe(false),
+    );
+    await click(query<HTMLButtonElement>('[data-testid="author-start-example:loan-policy-fallback"]'));
+    await click(query<HTMLElement>('[data-testid="node-wrapper:n1"]'));
+    await click(query<HTMLButtonElement>('[data-testid="inspector-tab:contract"]'));
+    await click(buttonByText('Open Contract Workspace'));
+
+    await waitFor(() =>
+      expect(query('[data-testid="author-surface:contract"]')
+        .getAttribute('data-target-kind')).toBe('operator'),
+    );
+    await click(query<HTMLButtonElement>('[data-testid="author-primary-action"]'));
+
+    await waitFor(() => {
+      expect(
+        query('[data-testid="author-primary-action"]').textContent,
+        host.textContent ?? 'Operator workspace did not render.',
+      ).toContain('Review result');
+      expect(query('[data-testid="author-status:evidence"]').textContent).toContain('CURRENT');
+      expect(query('[data-testid="author-surface:evidence"]')
+        .getAttribute('data-target-kind')).toBe('operator');
+      expect(query('[data-testid="contract-workspace"]').textContent).not.toContain('No Scenario run yet');
+    });
+    expect(query('[data-testid="author-promotion-verdict"]').textContent).toContain('NOT EVALUATED');
+  });
+
   it('focuses one complete business path without hiding its edge coordinates', async () => {
     await act(async () => {
       root = createRoot(host);
@@ -2139,6 +2221,10 @@ describe('AuthorCanvas connection guide', () => {
         .getAttribute('data-target-kind')).toBe('operator');
       expect(window.location.search).toContain('target=operator%3Arisk%3Ascore');
       expect(query('[data-testid="contract-workspace"]').textContent).toContain('risk:score');
+      expect(query('[data-testid="author-status:draft"]').textContent).toContain('SAVED');
+      expect(query('[data-testid="author-status:contract"]').textContent).toContain('VALID');
+      expect(query('[data-testid="author-promotion-verdict"]').textContent)
+        .toContain('NOT EVALUATED');
     });
 
     await navigateAuthorModeUnderLoad('scenarios', () => {
@@ -4242,6 +4328,59 @@ function operatorContractProjection() {
       confidence: 'EXACT',
     },
     contractFingerprint: `sha256:${'b'.repeat(64)}`,
+  };
+}
+
+function wrappedLoanApplicantContractProjection() {
+  const operator = loanApplicantResourceOperator();
+  const paramsSchema = operator.ports?.inputs[0]?.schema.schema ?? {};
+  const payloadSchema = operator.ports?.outputs[0]?.schema.schema ?? {};
+  return {
+    schemaVersion: 'bloge.scenarioContractProjection.v1',
+    scope: {
+      tenantId: 'tenant-a',
+      organizationId: 'knowledge-governance',
+      projectId: 'tool-studio',
+      environment: 'test',
+      region: 'local',
+    },
+    contract: {
+      schemaVersion: 'bloge.contractDraft.v1',
+      target: {
+        kind: 'OPERATOR',
+        id: operator.operatorRef,
+        revision: 0,
+        fingerprint: `sha256:${'c'.repeat(64)}`,
+      },
+      inputSchema: schema({
+        type: 'object',
+        properties: { params: paramsSchema },
+        required: ['params'],
+        additionalProperties: false,
+      }),
+      outputSchema: schema({
+        type: 'object',
+        properties: { payload: payloadSchema },
+        required: ['payload'],
+        additionalProperties: false,
+      }),
+      errorContract: [],
+      executionSemantics: {
+        effect: 'READ',
+        idempotency: 'REQUEST_KEY',
+        streaming: false,
+        durable: false,
+      },
+      invariants: [],
+      compatibilityPolicy: {
+        mode: 'STRICT',
+        unknownBlocksAutomaticMigration: true,
+      },
+      fieldMetadata: {},
+      source: 'AUTHORED',
+      confidence: 'EXACT',
+    },
+    contractFingerprint: `sha256:${'d'.repeat(64)}`,
   };
 }
 

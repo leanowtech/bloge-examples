@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { useI18n } from '../i18n/I18nProvider';
 
 import useDialogFocusTrap from '../author/accessibility/useDialogFocusTrap';
+import type { AuthorCommandAvailability } from '../author/task/taskStateProjection';
 import { sampleFromSchemaEnvelope } from '../draftModel';
 import {
   BlogeApiRequestError,
@@ -135,12 +136,15 @@ interface ContractScenarioWorkspaceProps {
     comparison: ScenarioComparison,
     request: SimulationRequest,
     proof: ScenarioCompilationProof,
-  ) => void;
+    response: SimulationResponse,
+  ) => boolean | Promise<boolean> | void;
   initialTab?: WorkspaceTab;
   initialScenarioId?: string;
   lastRunScenarioId?: string;
   lastComparison?: ScenarioComparison | null;
   presentation?: ContractWorkspacePresentation;
+  runCommand?: AuthorCommandAvailability;
+  onRunRemediation?: () => void;
 }
 
 /** Dedicated Contract → Scenario → Run Evidence authoring workspace. */
@@ -171,6 +175,8 @@ export default function ContractScenarioWorkspace({
   lastRunScenarioId = '',
   lastComparison = null,
   presentation = 'dialog',
+  runCommand,
+  onRunRemediation,
 }: ContractScenarioWorkspaceProps) {
   const { t } = useI18n();
   const [activeTab, setActiveTab] = useState<WorkspaceTab>(initialTab);
@@ -243,6 +249,46 @@ export default function ContractScenarioWorkspace({
   const assetStored = targetStored ?? graphStored;
   const targetKind = contract?.target.kind ?? 'GRAPH';
   const targetLabel = targetKind === 'OPERATOR' ? 'Operator' : 'Graph';
+  const effectiveRunCommand: AuthorCommandAvailability = runCommand ?? (
+    running
+      ? {
+          commandId: 'RUN_CURRENT_SCENARIO',
+          state: 'RUNNING', enabled: false, label: 'Running...',
+          reasonCode: 'RG.AUTHOR.RUN.IN_PROGRESS',
+          message: 'The current Scenario run is still in progress.',
+        }
+      : !selectedScenario
+        ? {
+            commandId: 'RUN_CURRENT_SCENARIO',
+            state: 'BLOCKED', enabled: false, label: 'Run & Compare',
+            reasonCode: 'RG.AUTHOR.RUN.SCENARIO_MISSING',
+            message: 'Create a Scenario before running.',
+          }
+        : !current
+          ? {
+              commandId: 'RUN_CURRENT_SCENARIO',
+              state: 'BLOCKED', enabled: false, label: 'Run & Compare',
+              reasonCode: 'RG.AUTHOR.RUN.SCENARIO_STALE',
+              message: 'This Scenario targets an older Graph or Contract.',
+              remediation: { label: 'Review compatibility', mode: 'contract' },
+            }
+          : {
+              commandId: 'RUN_CURRENT_SCENARIO',
+              state: 'READY', enabled: true, label: 'Run & Compare',
+              reasonCode: '', message: 'Runs and compares the current Scenario.',
+            }
+  );
+  const remediateRun = () => {
+    if (onRunRemediation) {
+      onRunRemediation();
+      return;
+    }
+    if (effectiveRunCommand.reasonCode === 'RG.AUTHOR.RUN.SCENARIO_STALE') {
+      navigateWorkspace('compatibility');
+    } else {
+      navigateWorkspace('scenarios');
+    }
+  };
   const projectionDiagnostics = Array.isArray(
     scenarioDraftSet?.metadata.provenance.projectionDiagnostics,
   )
@@ -727,12 +773,28 @@ export default function ContractScenarioWorkspace({
             durationMs,
           ),
         }));
-        onRunEvidence?.(
-          scenario.scenarioId,
-          nextComparison,
-          compilation.request,
-          compilation.proof,
-        );
+        const evidenceAccepted = onRunEvidence
+          ? await onRunEvidence(
+              scenario.scenarioId,
+              nextComparison,
+              compilation.request,
+              compilation.proof,
+              response,
+            )
+          : true;
+        if (evidenceAccepted === false) {
+          const message = 'The Scenario changed during execution. Rerun to create current evidence.';
+          messages.push(`${scenario.name}: ${message}`);
+          setTableEvidence((currentEvidence) => ({
+            ...currentEvidence,
+            [scenario.scenarioId]: {
+              ...(currentEvidence[scenario.scenarioId] ?? emptyQueuedEvidence(scenario.scenarioId)),
+              freshness: 'STALE',
+              firstFailure: { category: 'COORDINATE', target: '/scenario', message },
+            },
+          }));
+          continue;
+        }
         lastCompleted = { scenario, response, comparison: nextComparison };
       } catch (cause: unknown) {
         const message = cause instanceof Error ? cause.message : String(cause);
@@ -1201,6 +1263,7 @@ export default function ContractScenarioWorkspace({
               selectedScenarioId={selectedScenarioId}
               nodes={nodes}
               running={running}
+              runCommand={effectiveRunCommand}
               view={scenarioView}
               tableProjection={tableProjection}
               tableEvidence={tableEvidence}
@@ -1226,6 +1289,7 @@ export default function ContractScenarioWorkspace({
               onImportCases={() => setScenarioImportOpen(true)}
               onRemoveScenario={removeSelectedScenario}
               onRun={runSelectedScenario}
+              onRunRemediation={remediateRun}
               onViewChange={setScenarioView}
               onTableSelectionChange={setTableSelection}
               onTableCellEdit={updateScenarioFromMatrix}
@@ -1349,6 +1413,7 @@ interface ScenarioTabProps {
   selectedScenarioId: string;
   nodes: ScenarioNodeOption[];
   running: boolean;
+  runCommand: AuthorCommandAvailability;
   view: 'matrix' | 'case' | 'coverage';
   tableProjection: ScenarioTableProjection | null;
   tableEvidence: ScenarioTableEvidenceByCase;
@@ -1372,6 +1437,7 @@ interface ScenarioTabProps {
   onImportCases: () => void;
   onRemoveScenario: () => void;
   onRun: () => void;
+  onRunRemediation: () => void;
   onViewChange: (view: 'matrix' | 'case' | 'coverage') => void;
   onTableSelectionChange: (selection: ScenarioTableSelection) => void;
   onTableCellEdit: (caseId: string, column: ScenarioTableColumn, value: unknown) => void;
@@ -1393,6 +1459,7 @@ function ScenarioTab({
   selectedScenarioId,
   nodes,
   running,
+  runCommand,
   view,
   tableProjection,
   tableEvidence,
@@ -1416,6 +1483,7 @@ function ScenarioTab({
   onImportCases,
   onRemoveScenario,
   onRun,
+  onRunRemediation,
   onViewChange,
   onTableSelectionChange,
   onTableCellEdit,
@@ -1477,7 +1545,8 @@ function ScenarioTab({
           runError={tableRunError}
           baselineAvailable={baselineAvailable}
           differentialCounts={differentialCounts}
-          disabled={running || importDisabled || Boolean(tableBatch && !tableSuiteBatchTerminal(tableBatch))}
+          disabled={running || Boolean(tableBatch && !tableSuiteBatchTerminal(tableBatch))}
+          runCommand={runCommand}
           importDisabled={importDisabled}
           importDisabledReason={importDisabledReason}
           onSelectionChange={onTableSelectionChange}
@@ -1700,15 +1769,26 @@ function ScenarioTab({
                   dependencies: selectedScenario.dependencies.length,
                   assertions: selectedScenario.then.assertions.length,
                 })}</span>
+                {runCommand.state === 'BLOCKED' && (
+                  <span className="scenario-command-explanation" id="scenario-run-blocker" role="status">
+                    {t(runCommand.message)}
+                    {runCommand.remediation && (
+                      <button type="button" onClick={onRunRemediation}>
+                        {t(runCommand.remediation.label)}
+                      </button>
+                    )}
+                  </span>
+                )}
               </div>
               <button
                 type="button"
                 className="primary"
                 onClick={onRun}
-                disabled={running}
+                disabled={!runCommand.enabled}
                 data-testid="scenario-run"
+                aria-describedby={runCommand.state === 'BLOCKED' ? 'scenario-run-blocker' : undefined}
               >
-                {t(running ? 'Running...' : 'Run & Compare')}
+                {t(runCommand.label)}
               </button>
             </footer>
           </>
@@ -2041,7 +2121,13 @@ function EvidenceTab({
         <details className="scenario-evidence-technical">
           <summary>Technical coordinates</summary>
           <dl className="scenario-evidence-coordinate" data-testid="scenario-evidence-coordinate">
-            <div><dt>Draft</dt><dd>{trustContext.coordinate.draftId || 'exploratory'} r{trustContext.coordinate.draftRevision}</dd></div>
+            <div>
+              <dt>{trustContext.coordinate.targetKind === 'OPERATOR' ? 'Operator' : 'Graph'}</dt>
+              <dd>
+                {trustContext.coordinate.targetId || trustContext.coordinate.draftId || 'exploratory'}
+                {' '}r{trustContext.coordinate.targetRevision ?? trustContext.coordinate.draftRevision}
+              </dd>
+            </div>
             <div><dt>Draft fingerprint</dt><dd><code>{trustContext.coordinate.draftFingerprint || 'not saved'}</code></dd></div>
             <div><dt>Contract</dt><dd><code>{trustContext.coordinate.contractFingerprint || 'not checked'}</code></dd></div>
             <div><dt>Scenario</dt><dd>{trustContext.coordinate.scenarioId} r{trustContext.coordinate.scenarioRevision}</dd></div>

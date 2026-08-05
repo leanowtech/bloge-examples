@@ -5,6 +5,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import AuthorCommandBar from './AuthorCommandBar';
 import type { AuthorMode } from './authorWorkspaceState';
+import type { AuthorCommandAvailability } from '../task/taskStateProjection';
 import I18nProvider from '../../i18n/I18nProvider';
 
 describe('AuthorCommandBar', () => {
@@ -58,7 +59,37 @@ describe('AuthorCommandBar', () => {
     expect(text()).toContain('未运行');
   });
 
-  async function render(mode: AuthorMode, localized = false) {
+  it('explains a blocked command in place and exposes its exact remediation', async () => {
+    const remediate = vi.fn();
+    await render('scenarios', false, {
+      commandId: 'RUN_CURRENT_SCENARIO',
+      state: 'BLOCKED',
+      enabled: false,
+      label: 'Run & Compare',
+      reasonCode: 'RG.AUTHOR.RUN.INPUT_INVALID',
+      message: 'Resolve the highlighted input values before running.',
+      remediation: { label: 'Fix required input', mode: 'scenarios' },
+    }, remediate);
+
+    expect(queryButton('Run & Compare').disabled).toBe(true);
+    expect(text()).toContain('Resolve the highlighted input values before running.');
+    await act(async () => queryButton('Fix required input').click());
+    expect(remediate).toHaveBeenCalledOnce();
+  });
+
+  async function render(
+    mode: AuthorMode,
+    localized = false,
+    primaryCommand: AuthorCommandAvailability = {
+      commandId: 'RUN_CURRENT_SCENARIO',
+      state: 'READY',
+      enabled: true,
+      label: 'Run scenario',
+      reasonCode: '',
+      message: '',
+    },
+    onPrimaryRemediation = vi.fn(),
+  ) {
     const commandBar = (
       <AuthorCommandBar
         graphName="riskPolicy"
@@ -66,13 +97,12 @@ describe('AuthorCommandBar', () => {
         nodeCount={5}
         edgeCount={7}
         mode={mode}
-        primaryAction={{ kind: 'run', label: 'Run scenario', targetMode: 'scenarios' }}
-        primaryDisabled={false}
+        primaryCommand={primaryCommand}
         draftStatus="SAVED"
-        executionStatus="NOT RUN"
-        assertionStatus="NOT RUN"
         contractStatus="VALID"
-        governanceStatus="NOT CHECKED"
+        runStatus="RUNNABLE"
+        evidenceStatus="NOT RUN"
+        proofStrength="EXPLORATORY"
         promotionStatus="NOT EVALUATED"
         promotionSummary="Run the canonical Scenario."
         exportUrl="data:application/json,{}"
@@ -82,6 +112,7 @@ describe('AuthorCommandBar', () => {
         validationDisabled={false}
         onModeChange={vi.fn()}
         onPrimaryAction={vi.fn()}
+        onPrimaryRemediation={onPrimaryRemediation}
         onImport={vi.fn()}
         onAutoLayout={vi.fn()}
         onValidate={vi.fn()}
@@ -95,5 +126,12 @@ describe('AuthorCommandBar', () => {
 
   function text() {
     return host.textContent ?? '';
+  }
+
+  function queryButton(label: string): HTMLButtonElement {
+    const button = Array.from(host.querySelectorAll('button'))
+      .find((candidate) => candidate.textContent === label);
+    if (!button) throw new Error(`Button not found: ${label}`);
+    return button;
   }
 });

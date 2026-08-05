@@ -21,6 +21,7 @@ import {
   rehearsalEvidencePresentation,
   type RehearsalAuthorTarget,
 } from './remediation/rehearsalEvidenceModel';
+import { projectRehearsalOutcome } from './remediation/rehearsalOutcomeProjection';
 import {
   DEFAULT_REHEARSAL_DEMO_ID,
   findRehearsalDemoScenario,
@@ -723,9 +724,11 @@ export default function RehearsalWorkbench() {
   }
 
   const summary = workbook?.summary ?? selectedJob?.summary;
-  const completionPercent = summary && summary.totalItems > 0
-    ? Math.round(summary.completedItems / summary.totalItems * 100)
-    : 0;
+  const outcome = projectRehearsalOutcome(
+    summary,
+    terminal,
+    workbook ? workbook.gateReady : null,
+  );
 
   return (
     <main
@@ -881,18 +884,31 @@ export default function RehearsalWorkbench() {
                   </span>
                 </div>
               </div>
-              <div className="batch-progress" aria-label={`${completionPercent}% complete`}>
-                <span style={{ width: `${completionPercent}%` }} />
+              <div className="batch-progress" aria-label={t('{completed}/{total} complete', {
+                completed: outcome.completion.completed,
+                total: outcome.completion.total,
+              })}>
+                <span style={{ width: `${outcome.completion.percent}%` }} />
               </div>
-              <dl className="batch-metrics">
-                <div><dt>{t('Progress')}</dt><dd>{completionPercent}%</dd></div>
-                <div><dt>{t('Passed')}</dt><dd>{summary?.passedItems ?? 0}</dd></div>
+              <dl className="batch-metrics" data-testid="rehearsal-outcome-semantics">
+                <div>
+                  <dt>{t('Completion')}</dt>
+                  <dd>{outcome.completion.percent}% · {outcome.completion.completed}/{outcome.completion.total}</dd>
+                </div>
+                <div>
+                  <dt>{t('Pass rate')}</dt>
+                  <dd>{outcome.correctness.passRate === null
+                    ? t('Not evaluated')
+                    : outcome.correctness.label}</dd>
+                </div>
                 <div><dt>{t('Failed')}</dt><dd>{summary?.failedItems ?? 0}</dd></div>
                 <div><dt>{t('Indeterminate')}</dt><dd>{summary?.indeterminateItems ?? 0}</dd></div>
                 <div>
                   <dt>{t('Gate')}</dt>
-                  <dd className={workbook?.gateReady ? 'metric-success' : 'metric-danger'}>
-                    {t(terminal ? workbook?.gateReady ? 'Ready' : 'Blocked' : 'Pending')}
+                  <dd className={outcome.gate.tone === 'success'
+                    ? 'metric-success'
+                    : outcome.gate.tone === 'danger' ? 'metric-danger' : ''}>
+                    {t(outcome.gate.label)}
                   </dd>
                 </div>
               </dl>

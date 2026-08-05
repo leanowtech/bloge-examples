@@ -1,4 +1,5 @@
-import type { AuthorMode, AuthorPrimaryAction } from './authorWorkspaceState';
+import type { AuthorMode } from './authorWorkspaceState';
+import type { AuthorCommandAvailability } from '../task/taskStateProjection';
 import { useI18n } from '../../i18n/I18nProvider';
 
 interface AuthorCommandBarProps {
@@ -7,13 +8,12 @@ interface AuthorCommandBarProps {
   nodeCount: number;
   edgeCount: number;
   mode: AuthorMode;
-  primaryAction: AuthorPrimaryAction;
-  primaryDisabled: boolean;
+  primaryCommand: AuthorCommandAvailability;
   draftStatus: string;
-  executionStatus: string;
-  assertionStatus: string;
   contractStatus: string;
-  governanceStatus: string;
+  runStatus: string;
+  evidenceStatus: string;
+  proofStrength: string;
   promotionStatus: string;
   promotionSummary: string;
   exportUrl: string;
@@ -23,6 +23,7 @@ interface AuthorCommandBarProps {
   validationDisabled: boolean;
   onModeChange: (mode: AuthorMode) => void;
   onPrimaryAction: () => void;
+  onPrimaryRemediation: () => void;
   onImport: () => void;
   onAutoLayout: () => void;
   onValidate: () => void;
@@ -42,13 +43,12 @@ export default function AuthorCommandBar({
   nodeCount,
   edgeCount,
   mode,
-  primaryAction,
-  primaryDisabled,
+  primaryCommand,
   draftStatus,
-  executionStatus,
-  assertionStatus,
   contractStatus,
-  governanceStatus,
+  runStatus,
+  evidenceStatus,
+  proofStrength,
   promotionStatus,
   promotionSummary,
   exportUrl,
@@ -58,6 +58,7 @@ export default function AuthorCommandBar({
   validationDisabled,
   onModeChange,
   onPrimaryAction,
+  onPrimaryRemediation,
   onImport,
   onAutoLayout,
   onValidate,
@@ -88,32 +89,32 @@ export default function AuthorCommandBar({
         ))}
       </nav>
       <div className="author-truth-status" aria-label={t('Author readiness dimensions')}>
-        <span data-state={draftStatus.toLowerCase()}>
+        <span data-state={draftStatus.toLowerCase()} data-testid="author-status:draft">
           <small>{t('Draft')}</small>
           <strong>{t(draftStatus)}</strong>
         </span>
-        <span data-state={executionStatus.toLowerCase()}>
-          <small>{t('Execution')}</small>
-          <strong>{t(executionStatus)}</strong>
-        </span>
-        <span data-state={assertionStatus.toLowerCase()}>
-          <small>{t('Assertions')}</small>
-          <strong>{t(assertionStatus)}</strong>
-        </span>
-        <span data-state={contractStatus.toLowerCase()}>
+        <span data-state={contractStatus.toLowerCase()} data-testid="author-status:contract">
           <small>{t('Contract')}</small>
           <strong>{t(contractStatus)}</strong>
         </span>
-        <span data-state={governanceStatus.toLowerCase()}>
-          <small>{t('Governance')}</small>
-          <strong>{t(governanceStatus)}</strong>
+        <span data-state={runStatus.toLowerCase()} data-testid="author-status:runnable">
+          <small>{t('Runnable')}</small>
+          <strong>{t(runStatus)}</strong>
+        </span>
+        <span
+          data-state={evidenceStatus.toLowerCase()}
+          data-testid="author-status:evidence"
+          title={t(proofStrength)}
+        >
+          <small>{t('Evidence')}</small>
+          <strong>{t(evidenceStatus)}</strong>
         </span>
         <span
           data-state={promotionStatus.toLowerCase()}
           data-testid="author-promotion-verdict"
           title={t(promotionSummary)}
         >
-          <small>{t('Promotion')}</small>
+          <small>{t('Gate')}</small>
           <strong>{t(promotionStatus)}</strong>
         </span>
       </div>
@@ -156,15 +157,28 @@ export default function AuthorCommandBar({
           {t('Export draft')}
         </a>
       </div>
-      <button
-        type="button"
-        className="primary author-primary-action"
-        data-testid="author-primary-action"
-        onClick={onPrimaryAction}
-        disabled={primaryDisabled}
-      >
-        {t(primaryAction.label)}
-      </button>
+      <div className="author-primary-command" data-command-state={primaryCommand.state.toLowerCase()}>
+        <button
+          type="button"
+          className="primary author-primary-action"
+          data-testid="author-primary-action"
+          aria-describedby={primaryCommand.state === 'BLOCKED' ? 'author-primary-blocker' : undefined}
+          onClick={onPrimaryAction}
+          disabled={!primaryCommand.enabled}
+        >
+          {t(primaryCommand.label)}
+        </button>
+        {primaryCommand.state === 'BLOCKED' && (
+          <div className="author-command-explanation" id="author-primary-blocker" role="status">
+            <span>{t(primaryCommand.message)}</span>
+            {primaryCommand.remediation && (
+              <button type="button" onClick={onPrimaryRemediation}>
+                {t(primaryCommand.remediation.label)}
+              </button>
+            )}
+          </div>
+        )}
+      </div>
     </header>
   );
 }

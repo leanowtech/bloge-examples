@@ -167,6 +167,52 @@ class VisualGraphSimulationServiceTest {
     }
 
     @Test
+    void validatesWrappedSinglePortTerminalOutputAtThePortBoundary() {
+        DefaultVisualOperatorCatalog catalog = VisualCatalogTestSupport.catalogWithLoanApplicantResource();
+        VisualGraphSimulationService service = simulationService(catalog);
+        GraphDraft draft = new GraphDraft(
+                "", "", 0, "resourceOperatorScenario", "", "", "", "",
+                SchemaEnvelope.opaque(),
+                SchemaEnvelope.opaque(),
+                List.of(new GraphDraft.DraftNode(
+                        "operator",
+                        "resource:" + VisualCatalogTestSupport.RESOURCE_ID,
+                        "",
+                        Map.of("applicantId", GraphDraft.Binding.constant("applicant-1001")),
+                        Map.of(),
+                        null
+                )),
+                List.of(),
+                Map.of(),
+                Map.of(),
+                new GraphDraft.OutputSelection("operator", ""),
+                Map.of(),
+                Map.of(),
+                null
+        );
+
+        VisualGraphSimulationResponse valid = service.simulate(
+                draft,
+                Map.of(),
+                "",
+                Map.of("operator", new NodeFixture(Map.of(
+                        "payload", Map.of("score", 728, "segment", "prime")
+                )))
+        );
+        VisualGraphSimulationResponse invalid = service.simulate(
+                draft,
+                Map.of(),
+                "",
+                Map.of("operator", new NodeFixture(Map.of(
+                        "payload", Map.of("score", "not-an-integer", "segment", "prime")
+                )))
+        );
+
+        assertThat(valid.terminalOutputConforms()).isTrue();
+        assertThat(invalid.terminalOutputConforms()).isFalse();
+    }
+
+    @Test
     void fixturePinForcesMockOverRealPrimitive() {
         DefaultVisualOperatorCatalog catalog = VisualCatalogTestSupport.catalogWithLibrary(
                 VisualCatalogTestSupport.eligibilityLibrary("integer"));

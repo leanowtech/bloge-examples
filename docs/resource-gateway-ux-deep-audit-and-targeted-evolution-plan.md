@@ -1,6 +1,6 @@
 # Resource Gateway UX 深度审阅与针对性演进计划
 
-> 状态：Executing / Stage 1 已通过 E2 验收，Stage 2 待实施
+> 状态：Executing / Stage 2 已通过 E2 验收，Stage 3 待实施
 >
 > 审阅日期：2026-08-05
 >
@@ -9,6 +9,8 @@
 > Stage 0 基线评分：`66 / 100`
 >
 > Stage 1 实施后复评分：`74 / 100`
+>
+> Stage 2 实施后复评分：`79 / 100`
 >
 > 目标：P0/P1 清零，工程门禁达到 `>= 95 / 100`，随后以 E3/E4 证明真实成熟度
 >
@@ -22,6 +24,7 @@
 - [BLOGE 可视化画布多语言设计与扩展指南](bloge-visual-canvas-localization.md)
 - [表格驱动测试产品设计](resource-gateway-table-driven-testing-product-design.md)
 - [Author 任务式 UX 改善计划](resource-gateway-author-task-oriented-ux-improvement-plan.md)
+- [Stage 2 统一任务状态与 Evidence 信任](resource-gateway-ux-stage2-task-state-and-evidence-trust.md)
 
 ## 0. 最强结论
 
@@ -98,7 +101,8 @@
 | 当前事实 | Stage 1 后，贷款策略示例可原子保存 Graph、Contract 与 Scenario，并直接运行 golden / negative / boundary 三类用例 |
 | 历史事实 | Stage 0 时，保存示例 Graph 后产生新的不透明 UUID，Scenario 随即进入 stale / rebase 流程 |
 | 当前事实 | Stage 1 后，首次 Fork 在一个事务内完成 durable coordinate 分配、引用重绑与 Contract baseline，不再要求 rebase |
-| 事实 | Operator Scenario 顶部 Run 禁用，而底部 `运行并比较` 可执行；运行后 Evidence 为 stale / incomplete |
+| 历史事实 | Stage 1 时 Operator Scenario 顶部 Run 禁用，而底部 `运行并比较` 可执行；运行后 Evidence 为 stale / incomplete |
+| 当前事实 | Stage 2 后 Graph / Operator 目标分别绑定自己的 Scenario coordinate、run response 与 Evidence；同一运行命令共享 canonical availability |
 | 事实 | 中文模式的 Contract、Compatibility、Evidence、Library Detail、Operator Editor、Asset Test Table 和移动 Author 仍有大量英文 UI |
 | 事实 | `styles.css` 为 17,638 行，其中 `font-size: 10px` 出现 198 次，`11px` 出现 160 次 |
 | 事实 | 390px 下顶层导航存在嵌套横向滚动；移动 Author 的摘要、示例与画布命令大量回退为英文 |
@@ -145,6 +149,24 @@
 这 8 分提升只由 E2 证据支持，不代表已达到面向真实用户的 95 分成熟度。当前与目标仍有
 `21%` 差距，下一轮必须优先消除“同一 Run 两套状态”和“非 canonical 状态仍能产出证据”的
 可信度问题，而不是继续扩充功能入口。
+
+### 2.3 Stage 2 实施后复评
+
+| 维度 | 权重 | Stage 1 | Stage 2 | 变化依据 |
+|---|---:|---:|---:|---|
+| 信息架构与任务连续性 | 15 | 11 | 12 | Compose / Contract / Scenarios / Evidence 共享 canonical task projection 和主命令策略 |
+| 首次成功与核心任务效率 | 15 | 13 | 13 | 首次成功链路维持稳定，本阶段未缩短步骤 |
+| 复杂图理解与操控 | 12 | 10 | 10 | 维持现状，Stage 5 再处理视觉密度和响应式角色布局 |
+| Contract / Schema 直观性 | 10 | 8 | 8 | 增加 Contract gate，但字段级表达仍待后续简化 |
+| 测试创作、运行与正确性 | 18 | 11 | 12 | Operator 真实端口 fixture、编译 proof 和 terminal output 校验形成闭环 |
+| 反馈、恢复与 Evidence 信任 | 10 | 7 | 10 | Run 状态唯一化，Graph / Operator Evidence 不再串线，currentness 与 proof strength 分层 |
+| 视觉层级与可读性 | 8 | 5 | 5 | 本阶段只调整状态表达，不计视觉成熟度提升 |
+| 多语言、可访问性与响应式 | 7 | 4 | 4 | 新状态已双语，但深层翻译与移动任务仍待 Stage 4/5 |
+| 企业资产与治理生命周期 | 5 | 5 | 5 | durable / governed proof 边界保持显式 |
+| **合计** | **100** | **74** | **79** | **UXA-002、UXA-003 关闭；剩余 1 个 P0 与 10 个 P1** |
+
+当前工程体验与目标仍有 `16%` 差距。剩余唯一 P0 是 Matrix 的日常批量测试任务不可读、不可快速
+定位，Stage 3 必须先根治这个信息架构问题；不能把 Stage 2 的可信状态简单塞回 14 列协议表格。
 
 ## 3. P0 硬伤
 
@@ -203,6 +225,10 @@ WorkspaceForkCommand
 
 ### UXA-002：同一任务存在两套相互矛盾的 Run 状态
 
+> 状态：已在 Stage 2 根治。所有单 Case Run 入口消费同一 `TaskStateProjection`；真实浏览器已验证
+> Operator Scenario 可运行且顶部、工作区与 Evidence 状态一致。批量选择运行是不同任务，不复用
+> 单 Case 命令，但必须服从同一 target coordinate 和 currentness 规则。
+
 **现象**
 
 - Operator Scenario 顶部 `运行场景` 禁用；
@@ -237,6 +263,10 @@ currentness
 镜像，enabled、label、loading、result 和 blocker 必须完全一致。
 
 ### UXA-003：系统允许从非 canonical 状态生成 stale Evidence
+
+> 状态：已在 Stage 2 根治。Graph 与 Operator Evidence 各自保存确切 response；编译 proof、visible
+> fingerprint、Scenario coordinate 与 Evidence coordinate 不一致时 fail closed。Ephemeral run 仍可用，
+> 但明确标记为 `EXPLORATORY`，不得显示为治理可发布证据。
 
 **现象**
 
@@ -480,6 +510,9 @@ Stage 6 由目标用户研究验证“90 秒无协助完成”这一 E3 指标�
 > 周期：1.5 周
 >
 > 目标：彻底修复 UXA-002、UXA-003
+>
+> 实施状态（2026-08-05）：已完成并通过 E2 验收。详细设计、浏览器证据和回归范围见
+> [Stage 2 统一任务状态与 Evidence 信任](resource-gateway-ux-stage2-task-state-and-evidence-trust.md)。
 
 | ID | 工作项 | 输出 |
 |---|---|---|
@@ -491,6 +524,11 @@ Stage 6 由目标用户研究验证“90 秒无协助完成”这一 E3 指标�
 | UXA-S2-06 | Rehearsal completion semantics | completion、pass rate、gate verdict 分离 |
 
 退出门槛：任意页面的两个 Run 入口状态完全一致；任何禁用命令都在 3 秒内解释“为什么”和“怎么修”。
+
+验收状态：Graph / Operator 单 Case Run 共享 projection；blocked command 同时携带 reason code、用户
+说明和修复动作；Evidence 按目标隔离并显示 `EXPLORATORY` / `DURABLE` / `GOVERNED`；Rehearsals
+分开显示 completion、pass rate 与 gate verdict。真实服务验证 wrapped-port Operator fixture 能通过
+编译、执行、断言和 terminal Contract 校验；`390 x 844` 无页面横向溢出，浏览器控制台无错误。
 
 ### Stage 3：重做表格驱动测试的任务表面
 

@@ -27,6 +27,9 @@ export interface ScenarioEvidenceTrustContext {
   contractStatus: string;
   governanceStatus: string;
   coordinate?: {
+    targetKind?: 'GRAPH' | 'OPERATOR';
+    targetId?: string;
+    targetRevision?: number;
     draftId: string;
     draftRevision: number;
     draftFingerprint: string;

@@ -54,6 +54,17 @@ describe('author workspace primary action', () => {
       kind: 'run',
       label: 'Running scenario...',
     });
+
+    expect(resolveAuthorPrimaryAction({
+      nodeCount: 3,
+      busy: true,
+      hasInputErrors: false,
+      hasRunResult: true,
+      runSuccessful: true,
+    })).toMatchObject({
+      kind: 'run',
+      label: 'Running scenario...',
+    });
   });
 
   it('routes failed and successful runs into Evidence with honest labels', () => {

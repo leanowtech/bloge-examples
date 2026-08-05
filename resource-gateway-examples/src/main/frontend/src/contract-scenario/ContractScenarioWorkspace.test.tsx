@@ -342,6 +342,7 @@ describe('ContractScenarioWorkspace', () => {
         editorSnapshotFingerprint: expect.stringMatching(/^sha256:/),
         requestFingerprint: expect.stringMatching(/^sha256:/),
       }),
+      expect.objectContaining({ success: true, outputNode: 'decide' }),
     );
     expect(onCoordinateChange).toHaveBeenLastCalledWith('evidence', 'approved');
     expect(onCoordinateChange).toHaveBeenCalledTimes(2);
@@ -560,6 +561,34 @@ describe('ContractScenarioWorkspace', () => {
     await act(async () => (acknowledgement as HTMLInputElement).click());
     await act(async () => button('Rebase local draft').click());
     expect(onRebase).toHaveBeenCalledOnce();
+  });
+
+  it('explains one stale run blocker in place and routes its remediation to compatibility', async () => {
+    const onRun = vi.fn().mockResolvedValue(successfulResponse());
+    await renderWorkspace({ stale: true, initialTab: 'scenarios', onRun });
+
+    expect(button('Run & Compare').disabled).toBe(true);
+    expect(text()).toContain('This Scenario targets an older Graph or Contract.');
+    expect(onRun).not.toHaveBeenCalled();
+    await act(async () => button('Review compatibility').click());
+    expect(text()).toContain('STRICT compatibility policy');
+  });
+
+  it('keeps a completed run out of current Evidence when its coordinate closes as stale', async () => {
+    const onRunEvidence = vi.fn().mockResolvedValue(false);
+    const onCoordinateChange = vi.fn();
+    await renderWorkspace({
+      initialTab: 'scenarios',
+      onRunEvidence,
+      onCoordinateChange,
+    });
+
+    await act(async () => button('Run & Compare').click());
+    await settleAsyncWork();
+
+    expect(onRunEvidence).toHaveBeenCalledOnce();
+    expect(text()).toContain('The Scenario changed during execution. Rerun to create current evidence.');
+    expect(onCoordinateChange).not.toHaveBeenCalledWith('evidence', expect.any(String));
   });
 
   it('shows exact findings and requires acknowledgement before a breaking rebase', async () => {

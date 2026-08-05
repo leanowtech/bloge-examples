@@ -4373,6 +4373,24 @@ button.primary:disabled {
   font-size: 10px;
 }
 
+.scenario-run-bar .scenario-command-explanation {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  color: #8a341d;
+}
+
+.scenario-command-explanation button {
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: #174ea6;
+  cursor: pointer;
+  font: inherit;
+  font-weight: 750;
+  text-decoration: underline;
+}
+
 .scenario-empty-state {
   min-height: 320px;
   display: grid;
@@ -10610,7 +10628,7 @@ button.primary:disabled {
 .author-truth-status {
   grid-area: truth;
   display: grid;
-  grid-template-columns: repeat(6, minmax(72px, 1fr));
+  grid-template-columns: repeat(5, minmax(72px, 1fr));
   min-width: 0;
   border: 1px solid #d8dde6;
   border-radius: 6px;
@@ -10679,11 +10697,38 @@ button.primary:disabled {
   font-size: 12px;
 }
 
-.author-primary-action {
+.author-primary-command {
   grid-area: primary;
+  display: grid;
+  min-width: 134px;
+  gap: 3px;
+}
+
+.author-primary-action {
   min-width: 134px;
   min-height: 34px;
   white-space: nowrap;
+}
+
+.author-command-explanation {
+  display: grid;
+  max-width: 220px;
+  gap: 2px;
+  color: #8a341d;
+  font-size: 9px;
+  line-height: 1.25;
+}
+
+.author-command-explanation button {
+  justify-self: start;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: #174ea6;
+  cursor: pointer;
+  font: inherit;
+  font-weight: 750;
+  text-decoration: underline;
 }
 
 .workspace-v2 .journey-bar,
@@ -12215,7 +12260,7 @@ button.primary:disabled {
   }
 
   .author-truth-status {
-    grid-template-columns: repeat(6, minmax(64px, 1fr));
+    grid-template-columns: repeat(5, minmax(64px, 1fr));
   }
 
   .contract-schema-columns {
@@ -13159,6 +13204,12 @@ button.primary:disabled {
 
   .author-primary-action {
     width: 100%;
+  }
+
+  .author-primary-command,
+  .author-command-explanation {
+    width: 100%;
+    max-width: none;
   }
 
   .author-truth-status,

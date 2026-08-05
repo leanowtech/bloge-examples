@@ -1,5 +1,6 @@
 import { Fragment, useEffect, useMemo, useState } from 'react';
 import { useI18n } from '../../i18n/I18nProvider';
+import type { AuthorCommandAvailability } from '../../author/task/taskStateProjection';
 
 import type { ScenarioCaseType } from '../domain';
 import type { TableCaseVerdictPresentation } from '../tableDrivenTestStatus';
@@ -25,6 +26,7 @@ interface ScenarioMatrixSurfaceProps {
   baselineAvailable?: boolean;
   differentialCounts?: TableSuiteDifferentialCounts | null;
   disabled?: boolean;
+  runCommand?: AuthorCommandAvailability;
   importDisabled?: boolean;
   importDisabledReason?: string;
   onSelectionChange: (selection: ScenarioTableSelection) => void;
@@ -53,6 +55,7 @@ export default function ScenarioMatrixSurface({
   baselineAvailable = false,
   differentialCounts = null,
   disabled = false,
+  runCommand,
   importDisabled = false,
   importDisabledReason = '',
   onSelectionChange,
@@ -369,13 +372,15 @@ export default function ScenarioMatrixSurface({
       <footer className="scenario-matrix-bulkbar">
         <div>
           <strong>{t('{count} selected', { count: selection.selectedCaseIds.length })}</strong>
-          <span>{t('Selection is independent from the current filter and sort.')}</span>
+          <span>{t(runCommand?.state === 'BLOCKED'
+            ? runCommand.message
+            : 'Selection is independent from the current filter and sort.')}</span>
         </div>
         <div>
           <button
             type="button"
             className="secondary"
-            disabled={disabled || !baselineAvailable || failedCount === 0}
+            disabled={disabled || runCommand?.enabled === false || !baselineAvailable || failedCount === 0}
             onClick={() => onRunSelection('FAILED')}
           >
             {t('Run failed ({count})', { count: failedCount })}
@@ -383,7 +388,7 @@ export default function ScenarioMatrixSurface({
           <button
             type="button"
             className="secondary"
-            disabled={disabled || !baselineAvailable || changedCount === 0}
+            disabled={disabled || runCommand?.enabled === false || !baselineAvailable || changedCount === 0}
             onClick={() => onRunSelection('CHANGED')}
             title={!baselineAvailable
               ? t('Run all once to create a complete baseline')
@@ -395,7 +400,7 @@ export default function ScenarioMatrixSurface({
           <button
             type="button"
             className="secondary"
-            disabled={disabled || !baselineAvailable || affectedCount === 0}
+            disabled={disabled || runCommand?.enabled === false || !baselineAvailable || affectedCount === 0}
             onClick={() => onRunSelection('AFFECTED')}
             title={!baselineAvailable
               ? t('Run all once to create a complete baseline')
@@ -407,7 +412,7 @@ export default function ScenarioMatrixSurface({
           <button
             type="button"
             className="secondary"
-            disabled={disabled || projection.rows.length === 0}
+            disabled={disabled || runCommand?.enabled === false || projection.rows.length === 0}
             onClick={() => onRunSelection('ALL')}
           >
             {t('Run all')}
@@ -415,7 +420,7 @@ export default function ScenarioMatrixSurface({
           <button
             type="button"
             className="primary"
-            disabled={disabled || selection.selectedCaseIds.length === 0}
+            disabled={disabled || runCommand?.enabled === false || selection.selectedCaseIds.length === 0}
             onClick={() => onRunSelection('SELECTED')}
             data-testid="scenario-run-selected"
           >
