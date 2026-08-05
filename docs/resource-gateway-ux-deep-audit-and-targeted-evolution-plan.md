@@ -1,12 +1,14 @@
 # Resource Gateway UX 深度审阅与针对性演进计划
 
-> 状态：Proposed / 可直接进入产品与技术评审
+> 状态：Executing / Stage 1 已通过 E2 验收，Stage 2 待实施
 >
 > 审阅日期：2026-08-05
 >
 > 证据等级：E2，真实服务、真实浏览器、桌面与移动视口任务走查
 >
-> 当前任务体验复评分：`66 / 100`
+> Stage 0 基线评分：`66 / 100`
+>
+> Stage 1 实施后复评分：`74 / 100`
 >
 > 目标：P0/P1 清零，工程门禁达到 `>= 95 / 100`，随后以 E3/E4 证明真实成熟度
 >
@@ -92,8 +94,10 @@
 |---|---|
 | 事实 | 5 节点画布在 1280px 默认约 89%，节点和主干连线可读，Auto Layout 已不是当前首要矛盾 |
 | 事实 | Scenario Matrix 在 1280px 的表格宽度约 `2261px`，包含 14 列，页面同时存在 109 个可见按钮和 44 个表单控件 |
-| 事实 | 完整示例初始用例的“打开”“全部运行”等操作被禁用，多数禁用按钮没有可见原因 |
-| 事实 | 保存示例 Graph 后产生新的不透明 UUID，Scenario 随即进入 stale / rebase 流程 |
+| 历史事实 | Stage 0 时，完整示例初始用例的“打开”“全部运行”等操作被禁用，多数禁用按钮没有可见原因 |
+| 当前事实 | Stage 1 后，贷款策略示例可原子保存 Graph、Contract 与 Scenario，并直接运行 golden / negative / boundary 三类用例 |
+| 历史事实 | Stage 0 时，保存示例 Graph 后产生新的不透明 UUID，Scenario 随即进入 stale / rebase 流程 |
+| 当前事实 | Stage 1 后，首次 Fork 在一个事务内完成 durable coordinate 分配、引用重绑与 Contract baseline，不再要求 rebase |
 | 事实 | Operator Scenario 顶部 Run 禁用，而底部 `运行并比较` 可执行；运行后 Evidence 为 stale / incomplete |
 | 事实 | 中文模式的 Contract、Compatibility、Evidence、Library Detail、Operator Editor、Asset Test Table 和移动 Author 仍有大量英文 UI |
 | 事实 | `styles.css` 为 17,638 行，其中 `font-size: 10px` 出现 198 次，`11px` 出现 160 次 |
@@ -103,7 +107,9 @@
 | 推荐决策 | 移动端定位为“查看、审阅、轻量修复、批准/驳回”，不承诺完整复杂图创作 |
 | 待评审决策 | Demo sandbox 是否允许在未持久化状态运行；本计划推荐允许，但必须明确标记为非治理证据 |
 
-## 2. 当前体验评分
+## 2. 体验评分与迭代差距
+
+### 2.1 Stage 0 基线
 
 | 维度 | 权重 | 当前分 | 主要依据 |
 |---|---:|---:|---|
@@ -121,9 +127,31 @@
 这个分数不是否定上一轮工程成果。它说明评分对象从“计划项是否实现”切换成了“用户是否能
 在不理解内部协议的前提下完成业务任务”。
 
+### 2.2 Stage 1 实施后复评
+
+| 维度 | 权重 | Stage 0 | Stage 1 | 变化依据 |
+|---|---:|---:|---:|---|
+| 信息架构与任务连续性 | 15 | 10 | 11 | Start Dialog 已展示 Graph、Contract、Tests、Runtime、Evidence 的完整能力预告 |
+| 首次成功与核心任务效率 | 15 | 9 | 13 | 完整示例可一次原子保存并直接运行，不再手工 rebase |
+| 复杂图理解与操控 | 12 | 10 | 10 | 本阶段未改变画布操控，维持原分 |
+| Contract / Schema 直观性 | 10 | 7 | 8 | 示例入口已给出输入、输出数量，但字段级心智模型仍需重做 |
+| 测试创作、运行与正确性 | 18 | 10 | 11 | 三类有意义用例可运行；Matrix 信息架构与命令一致性尚未解决 |
+| 反馈、恢复与 Evidence 信任 | 10 | 6 | 7 | Fork 幂等重试与事务回滚已建立；统一 currentness 仍属 Stage 2 |
+| 视觉层级与可读性 | 8 | 5 | 5 | 本阶段未处理 10/11px 与表格拥挤 |
+| 多语言、可访问性与响应式 | 7 | 4 | 4 | 仅补齐新入口文案，深层双语和移动任务仍未闭环 |
+| 企业资产与治理生命周期 | 5 | 5 | 5 | 原子 Workspace receipt、schema 与 durable baseline 增强原有满分能力 |
+| **合计** | **100** | **66** | **74** | **UXA-001 关闭；剩余 3 个 P0 与 10 个 P1** |
+
+这 8 分提升只由 E2 证据支持，不代表已达到面向真实用户的 95 分成熟度。当前与目标仍有
+`21%` 差距，下一轮必须优先消除“同一 Run 两套状态”和“非 canonical 状态仍能产出证据”的
+可信度问题，而不是继续扩充功能入口。
+
 ## 3. P0 硬伤
 
 ### UXA-001：完整示例不是可运行 Workspace
+
+> 状态：已在 Stage 1 根治，并通过真实服务、真实浏览器桌面/390px 走查及协议测试验收。
+> 详细证据见 [Stage 1 原子 Workspace 与可运行示例](resource-gateway-ux-stage1-workspace-seed-and-fork.md)。
 
 **现象**
 
@@ -425,6 +453,11 @@ TaskStateProjection
 > 周期：2 周
 >
 > 目标：彻底修复 UXA-001
+>
+> 实施状态（2026-08-05）：协议、事务 Fork、durable rebind、Start capability preview、三个
+> Graph 和三个 Library 示例已落地；详见
+> `docs/resource-gateway-ux-stage1-workspace-seed-and-fork.md`。Sandbox Evidence 的统一 currentness
+> 语义随 Stage 2 的 Task State 一并收口。
 
 | ID | 工作项 | 输出 |
 |---|---|---|
@@ -435,7 +468,12 @@ TaskStateProjection
 | UXA-S1-05 | Start Dialog capability preview | 可运行范围、mock 范围、证明强度、缺失能力 |
 | UXA-S1-06 | 三个 Graph / 三个 Library 示例升级 | meaningful fixture、golden/negative/boundary cases |
 
-退出门槛：新用户点击“贷款策略与降级”后 90 秒内完成首次通过试跑；不保存、不 rebase、不手写 JSON。
+退出门槛：新用户点击“贷款策略与降级”后 90 秒内完成首次通过试跑；不 rebase、不手写 JSON。
+
+验收状态：已完成工程侧 E2 验收。真实浏览器中保存为 Workspace 后，三个用例均返回
+`SUCCESS / PASSED / CURRENT / MOCK`；首次保存无 stale、无 rebase、无手工资产重绑。尚需在
+Stage 6 由目标用户研究验证“90 秒无协助完成”这一 E3 指标。最终回归基线为后端 5,897 tests、
+前端 498 tests 全绿，前端生产构建通过。
 
 ### Stage 2：统一 Task State 与 Command Policy
 

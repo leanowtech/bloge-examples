@@ -20,6 +20,7 @@ integration something the business flow can see, reason about, test, and change.
 | Graph-level contracts | Every built-in resource graph exposes formal input/output JSON Schema for system integration |
 | Schema-aware canvas | Drag, connect, validate, simulate, and publish under server-side schema checks |
 | Contract and Scenario authoring protocol | Versioned Contract/Scenario drafts, exact target and contract fingerprints, strict schemas, deterministic transient compilation, and fail-closed routing of advanced dependency behavior to the governed testing control plane |
+| Atomic example workspaces | Complete Graph/Contract/Scenario/fixture seeds, one-click sandbox preview, idempotent test/staging Workspace fork, exact coordinate rebind, and payload-free receipts without first-save rebase |
 | Runtime-backed demos | Local upstreams, real gateway execution, mock simulation, SSE examples, and reusable publications |
 | Schema-gated table tests | Run 14 built-in cases across all seven resource graphs with F3 transport fixtures, bounded retry consumption, coverage gates, and fidelity evidence |
 | Isolated testing control plane | Test/staging-only graph/operator discovery, validator-proven boundary-case planning, reviewed plan-to-suite materialization, immutable fixture registry, caller-driven DAG and operator micro-graph execution, attempt/occurrence-specific doubles, sanitized evidence retention, batch runs, and production control-field guard |
@@ -109,9 +110,10 @@ JSONPath expressions, fingerprints, and run identifiers are intentionally never 
 Implementation and extension rules are documented in
 [`docs/bloge-visual-canvas-localization.md`](../docs/bloge-visual-canvas-localization.md).
 
-For the shortest trustworthy Author demo, load **Loan policy fallback** from the start dialog and
-open **Scenarios**. Its two canonical cases open in the shared Matrix. Select both rows and choose
-**Run selected**: selection stays exact across filter/sort changes, both rows retain independent
+For the shortest trustworthy Author demo, load **Loan policy fallback** from the start dialog. Its
+card previews Graph/Contract size, three runnable `GOLDEN`/`NEGATIVE`/`BOUNDARY` cases, mocked
+operators, and exploratory proof strength before loading. Open **Scenarios**, select rows and choose
+**Run selected**: selection stays exact across filter/sort changes, rows retain independent
 Execution/Assertions/Freshness/Proof verdicts, and the batch remains in Matrix. Use **Why** for the
 first row-level failure or **Open** to edit one case in Given/Dependencies/Then. **Run & Compare**
 from that Case opens the bound Run Evidence with assertion comparison, terminal output,
@@ -138,8 +140,9 @@ the changed/affected counts immediately. Partial differential runs remain `Parti
 or budget-stopped runs cannot become baselines. Batch endpoints are test/staging-only, use
 `X-Purpose: TEST_EXECUTION`, and are advertised by the integration capability probe.
 
-To import existing test data, save the example Graph first, rebase Scenarios to the returned
-server Contract, then open **Scenarios → Matrix → Import cases**. Choose CSV or JSON, or use
+To import existing test data, save the complete example Workspace once; Graph and Scenario are
+atomically persisted against the same server Contract, so first save no longer requires rebase.
+Then open **Scenarios → Matrix → Import cases**. Choose CSV or JSON, or use
 **Load sample**, and proceed through **Inspect source → Map columns → Review plan → Materialize**.
 The browser masks sensitive preview fields; the server independently re-parses the bounded source,
 checks the exact source/mapping/Contract/target closure, and returns a payload-free durable receipt.

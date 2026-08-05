@@ -1,0 +1,61 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://bloge.dev/schemas/bloge-workspace-fork-receipt-v1.schema.json",
+  "title": "BLOGE Workspace Fork Receipt v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion", "workspaceId", "graphCoordinate", "contractCoordinate",
+    "scenarioSuiteCoordinates", "fixtureCoordinates", "sourceTemplateFingerprint",
+    "forkedWorkspaceFingerprint", "runtimeProfile", "proofStrength", "warnings", "replayed"
+  ],
+  "properties": {
+    "schemaVersion": { "const": "bloge.workspaceForkReceipt.v1" },
+    "workspaceId": { "type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]*$", "maxLength": 255 },
+    "graphCoordinate": { "$ref": "#/$defs/graphCoordinate" },
+    "contractCoordinate": { "$ref": "#/$defs/contractCoordinate" },
+    "scenarioSuiteCoordinates": {
+      "type": "array", "minItems": 1, "maxItems": 1,
+      "items": { "$ref": "#/$defs/assetCoordinate" }
+    },
+    "fixtureCoordinates": {
+      "type": "array", "items": { "$ref": "#/$defs/assetCoordinate" }
+    },
+    "sourceTemplateFingerprint": { "$ref": "#/$defs/fingerprint" },
+    "forkedWorkspaceFingerprint": { "$ref": "#/$defs/fingerprint" },
+    "runtimeProfile": { "type": "string", "minLength": 1, "maxLength": 64 },
+    "proofStrength": { "enum": ["EXPLORATORY", "REPLAYABLE", "GOVERNED"] },
+    "warnings": { "type": "array", "items": { "type": "string", "maxLength": 1024 } },
+    "replayed": { "type": "boolean" }
+  },
+  "$defs": {
+    "fingerprint": { "type": "string", "pattern": "^sha256:[0-9a-f]{64}$" },
+    "graphCoordinate": {
+      "type": "object", "additionalProperties": false,
+      "required": ["draftId", "revision", "fingerprint"],
+      "properties": {
+        "draftId": { "type": "string", "minLength": 1, "maxLength": 255 },
+        "revision": { "type": "integer", "minimum": 1 },
+        "fingerprint": { "$ref": "#/$defs/fingerprint" }
+      }
+    },
+    "contractCoordinate": {
+      "type": "object", "additionalProperties": false,
+      "required": ["target", "fingerprint"],
+      "properties": {
+        "target": { "$ref": "bloge-contract-draft-v1.schema.json#/$defs/target" },
+        "fingerprint": { "$ref": "#/$defs/fingerprint" }
+      }
+    },
+    "assetCoordinate": {
+      "type": "object", "additionalProperties": false,
+      "required": ["kind", "id", "revision", "fingerprint"],
+      "properties": {
+        "kind": { "type": "string", "minLength": 1, "maxLength": 64 },
+        "id": { "type": "string", "minLength": 1, "maxLength": 512 },
+        "revision": { "type": "integer", "minimum": 0 },
+        "fingerprint": { "$ref": "#/$defs/fingerprint" }
+      }
+    }
+  }
+}

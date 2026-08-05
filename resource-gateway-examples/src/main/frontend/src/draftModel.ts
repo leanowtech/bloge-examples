@@ -307,6 +307,7 @@ export interface FixtureDraftCompilation {
 export interface SimulationTableTestDraftRow {
   id: string;
   name: string;
+  caseType?: 'GOLDEN' | 'NEGATIVE' | 'BOUNDARY' | 'REGRESSION';
   contextText: string;
   fixturesText: string;
   expectedOutputText: string;
@@ -316,6 +317,7 @@ export interface SimulationTableTestDraftRow {
 export interface SimulationTableTestCase {
   id: string;
   name: string;
+  caseType?: 'GOLDEN' | 'NEGATIVE' | 'BOUNDARY' | 'REGRESSION';
   context: Record<string, unknown>;
   fixtures: Record<string, NodeFixture>;
   hasExpectedOutput: boolean;
@@ -2271,6 +2273,7 @@ export function compileSimulationTableRows(rows: SimulationTableTestDraftRow[]):
     cases.push({
       id: row.id,
       name: row.name.trim() || row.id,
+      caseType: row.caseType,
       context,
       fixtures,
       hasExpectedOutput: Boolean(trimmedExpected),

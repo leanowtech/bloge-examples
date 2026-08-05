@@ -15,6 +15,11 @@ export interface StartExample {
   edgeCount: number;
   inputFieldCount: number;
   outputFieldCount: number;
+  scenarioCount: number;
+  caseTypes: string[];
+  mockedOperatorCount: number;
+  runtimeMode: string;
+  proofStrength: string;
   available: boolean;
   missingOperatorRefs: string[];
 }
@@ -137,6 +142,15 @@ export default function StartImportDialog({
                 <dl>
                   <div><dt>{t('Graph')}</dt><dd>{t('{nodes} nodes / {edges} edges', { nodes: example.nodeCount, edges: example.edgeCount })}</dd></div>
                   <div><dt>{t('Contract')}</dt><dd>{t('{inputs} in / {outputs} out', { inputs: example.inputFieldCount, outputs: example.outputFieldCount })}</dd></div>
+                  <div><dt>{t('Tests')}</dt><dd>{t('{count} runnable / {types}', {
+                    count: example.scenarioCount,
+                    types: example.caseTypes.join(' / '),
+                  })}</dd></div>
+                  <div><dt>{t('Runtime')}</dt><dd>{t('{mode} / {count} mocked operators', {
+                    mode: example.runtimeMode,
+                    count: example.mockedOperatorCount,
+                  })}</dd></div>
+                  <div><dt>{t('Evidence')}</dt><dd>{t(example.proofStrength)}</dd></div>
                 </dl>
                 <button
                   type="button"

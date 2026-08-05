@@ -145,7 +145,7 @@ public class DatabaseScenarioDraftSetRepository implements ScenarioDraftSetRepos
 
     /** Creates persistence tables without modifying existing graph-draft storage. */
     @PostConstruct
-    void init() {
+    public void init() {
         jdbc.execute(CREATE_CURRENT);
         jdbc.execute(CREATE_HISTORY);
         jdbc.execute(CREATE_CONTRACT_BASELINES);

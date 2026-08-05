@@ -1,0 +1,14 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://bloge.dev/schemas/bloge-workspace-fork-command-v1.schema.json",
+  "title": "BLOGE Workspace Fork Command v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schemaVersion", "seed", "workspaceName", "changeSource"],
+  "properties": {
+    "schemaVersion": { "const": "bloge.workspaceForkCommand.v1" },
+    "seed": { "$ref": "bloge-workspace-seed-bundle-v1.schema.json" },
+    "workspaceName": { "type": "string", "minLength": 1, "maxLength": 255 },
+    "changeSource": { "type": "string", "minLength": 1, "maxLength": 128 }
+  }
+}

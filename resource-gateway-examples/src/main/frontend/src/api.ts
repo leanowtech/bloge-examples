@@ -92,6 +92,10 @@ import type {
   ScenarioTablePage,
   ScenarioTablePageQuery,
 } from './contract-scenario/table/scenarioTableScaleModel';
+import type {
+  WorkspaceForkCommand,
+  WorkspaceForkReceipt,
+} from './author/workspace/workspaceSeed';
 
 /** Structured transport failure that lets optional product surfaces distinguish capability absence. */
 export class BlogeApiRequestError extends Error {
@@ -968,6 +972,23 @@ export async function saveGraphDraft(draft: GraphDraft): Promise<GraphDraft> {
       method: draft.draftId ? 'PUT' : 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(draft),
+    }),
+  );
+}
+
+/** Atomically materializes a complete example as one current durable authoring Workspace. */
+export async function forkWorkspace(
+  idempotencyKey: string,
+  command: WorkspaceForkCommand,
+): Promise<WorkspaceForkReceipt> {
+  return readTestingJson<WorkspaceForkReceipt>(
+    await sendRequest('/api/authoring/workspace-forks', {
+      method: 'POST',
+      headers: {
+        ...operatorTestingHeaders('TEST_SUITE_WRITE', true),
+        'Idempotency-Key': idempotencyKey,
+      },
+      body: JSON.stringify(command),
     }),
   );
 }

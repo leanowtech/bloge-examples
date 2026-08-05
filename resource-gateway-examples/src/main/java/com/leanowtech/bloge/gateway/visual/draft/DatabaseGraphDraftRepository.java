@@ -13,6 +13,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.support.TransactionSynchronizationManager;
 
 import java.util.ArrayList;
 import java.util.Collection;
@@ -48,6 +49,7 @@ public class DatabaseGraphDraftRepository implements GraphDraftRepository {
             """;
 
     private static final String SELECT_ALL = "SELECT draft_id, draft_json FROM visual_graph_drafts";
+    private static final String SELECT_BY_ID = "SELECT draft_json FROM visual_graph_drafts WHERE draft_id = ?";
     private static final String SELECT_REVISIONS = """
             SELECT draft_json
             FROM visual_graph_draft_revisions
@@ -100,11 +102,9 @@ public class DatabaseGraphDraftRepository implements GraphDraftRepository {
                 : changePublisher;
     }
 
-    /**
-     * Initializes table and cache.
-     */
+    /** Initializes tables and cache, including for lightweight explicit repository wiring. */
     @PostConstruct
-    void init() {
+    public void init() {
         jdbc.execute(CREATE_TABLE);
         jdbc.execute(CREATE_REVISION_TABLE);
         cache.clear();
@@ -132,6 +132,14 @@ public class DatabaseGraphDraftRepository implements GraphDraftRepository {
 
     @Override
     public Optional<GraphDraft> find(String draftId) {
+        // The committed cache cannot satisfy read-your-writes while an authoring transaction is open.
+        if (TransactionSynchronizationManager.isActualTransactionActive()) {
+            return jdbc.query(SELECT_BY_ID,
+                            (rs, rowNum) -> readDraft(rs.getString("draft_json"), draftId), draftId)
+                    .stream()
+                    .flatMap(Optional::stream)
+                    .findFirst();
+        }
         return Optional.ofNullable(cache.get(draftId));
     }
 

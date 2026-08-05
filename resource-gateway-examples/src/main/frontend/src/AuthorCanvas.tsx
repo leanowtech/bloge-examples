@@ -43,9 +43,11 @@ import {
   fetchGovernanceGateView,
   fetchGraphDraft,
   fetchOperatorCatalog,
+  fetchScenarioDraftSet,
   fetchScenarioGraphContract,
   fetchScenarioOperatorContract,
   fetchVisualGraphRun,
+  forkWorkspace,
   governOperatorTestSuite,
   importOperatorLibraryText,
   previewDslImport,
@@ -173,6 +175,7 @@ import {
   type ScenarioCompilationProof,
 } from './contract-scenario/scenarioCompiler';
 import { captureScenarioEditorSnapshot } from './contract-scenario/scenarioEditorModel';
+import { workspaceForkCommand } from './author/workspace/workspaceSeed';
 import {
   clearDslAuthorHandoff,
   peekDslAuthorHandoff,
@@ -932,6 +935,7 @@ function simulationTableRowsFromExample(cases: CanvasExampleTestCase[] | undefin
   return (cases ?? []).map((testCase) => ({
     id: testCase.id,
     name: testCase.name,
+    caseType: testCase.caseType,
     contextText: formatDraftJson(testCase.context),
     fixturesText: formatDraftJson(testCase.fixtureOverrides ?? {}),
     expectedOutputText: JSON.stringify(testCase.expectedOutput, null, 2),
@@ -4891,6 +4895,8 @@ export default function AuthorCanvas({ workspaceVersion = 'v1' }: AuthorCanvasPr
   const [contractDraft, setContractDraft] = useState<ContractDraft | null>(null);
   const [contractFingerprint, setContractFingerprint] = useState('');
   const [scenarioDraftSet, setScenarioDraftSet] = useState<ScenarioDraftSet | null>(null);
+  const [loadedExampleKey, setLoadedExampleKey] = useState('');
+  const workspaceForkIdempotencyKeyRef = useRef('');
   const [scenarioFingerprint, setScenarioFingerprint] = useState('');
   const [operatorClosureFingerprint, setOperatorClosureFingerprint] = useState('');
   const [lastScenarioReviewEvidence, setLastScenarioReviewEvidence] =
@@ -5953,6 +5959,10 @@ export default function AuthorCanvas({ workspaceVersion = 'v1' }: AuthorCanvasPr
     );
     scenarioGraphNameRef.current = '';
     setScenarioDraftSet(null);
+    setLoadedExampleKey(template.key);
+    workspaceForkIdempotencyKeyRef.current = `canvas:${template.key}:${
+      globalThis.crypto?.randomUUID?.() ?? `${Date.now()}-${Math.random().toString(16).slice(2)}`
+    }`;
     setGraphName(template.graphName);
     setGraphDraftId('');
     setGraphDraftRevision(0);
@@ -6399,7 +6409,32 @@ export default function AuthorCanvas({ workspaceVersion = 'v1' }: AuthorCanvasPr
 
   const saveGraphForScenario = useCallback(async () => {
     try {
-      const stored = await saveGraphDraft(exportableDraft);
+      let stored: GraphDraft;
+      let persistedScenarios: ScenarioDraftSet | null = null;
+      if (!exportableDraft.draftId && loadedExampleKey) {
+        if (!scenarioDraftSet) {
+          throw new Error('The complete example is still preparing its Scenario suite. Try Save again.');
+        }
+        const template = CANVAS_EXAMPLE_TEMPLATES.find(
+          (candidate) => candidate.key === loadedExampleKey,
+        ) ?? null;
+        const idempotencyKey = workspaceForkIdempotencyKeyRef.current;
+        if (!idempotencyKey) {
+          throw new Error('Workspace fork identity is missing. Reload the complete example.');
+        }
+        const receipt = await forkWorkspace(
+          idempotencyKey,
+          workspaceForkCommand(exportableDraft, scenarioDraftSet, template),
+        );
+        stored = await fetchGraphDraft(receipt.graphCoordinate.draftId);
+        const scenarioCoordinate = receipt.scenarioSuiteCoordinates[0];
+        if (!scenarioCoordinate) {
+          throw new Error('Workspace fork did not return a Scenario suite coordinate.');
+        }
+        persistedScenarios = (await fetchScenarioDraftSet(scenarioCoordinate.id)).draftSet;
+      } else {
+        stored = await saveGraphDraft(exportableDraft);
+      }
       if (!stored.draftId || !stored.revision) {
         throw new Error('Graph persistence did not return an exact draft revision.');
       }
@@ -6431,13 +6466,21 @@ export default function AuthorCanvas({ workspaceVersion = 'v1' }: AuthorCanvasPr
       setGraphOperatorSnapshots(savedCanvasDraft.operatorSnapshots ?? {});
       setContractDraft(projection.contract);
       setContractFingerprint(projection.contractFingerprint);
+      if (persistedScenarios) {
+        scenarioGraphNameRef.current = stored.graphName;
+        setScenarioDraftSet(persistedScenarios);
+        setConnectionNotice({
+          level: 'ok',
+          message: `Saved complete Workspace: Graph r${stored.revision} and Scenario r${persistedScenarios.revision} are current.`,
+        });
+      }
     } catch (cause: unknown) {
       if (/conflict|revision|409/i.test(String(cause))) {
         setDraftSaveConflict(true);
       }
       throw cause;
     }
-  }, [exportableDraft]);
+  }, [exportableDraft, loadedExampleKey, scenarioDraftSet]);
 
   const openOperatorContractWorkspace = useCallback(async (
     operator: OperatorDefinition,
@@ -9384,6 +9427,15 @@ export default function AuthorCanvas({ workspaceVersion = 'v1' }: AuthorCanvasPr
               edgeCount: template.edges.length,
               inputFieldCount: graphSchemaSummary(template.inputSchema).fieldCount,
               outputFieldCount: graphSchemaSummary(template.outputSchema).fieldCount,
+              scenarioCount: template.testCases?.length ?? 0,
+              caseTypes: Array.from(new Set(
+                (template.testCases ?? []).map((testCase) => testCase.caseType),
+              )),
+              mockedOperatorCount: template.nodes.filter(
+                (node) => hasOwnValue(node, 'fixtureOutput'),
+              ).length,
+              runtimeMode: 'Sandbox mock',
+              proofStrength: 'Exploratory evidence',
               available: missingOperatorRefs.length === 0,
               missingOperatorRefs,
             }))}

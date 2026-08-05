@@ -36,6 +36,7 @@ import {
   fetchScenarioDraftSet,
   fetchScenarioGraphContract,
   fetchVisualGraphRun,
+  forkWorkspace,
   governOperatorTestCase,
   governOperatorTestSuite,
   importOperatorLibraryText,
@@ -71,6 +72,53 @@ import type {
   VisualSampleInferenceRequest,
   VisualSampleInferenceResult,
 } from './types';
+import type { WorkspaceForkCommand } from './author/workspace/workspaceSeed';
+
+describe('Workspace fork API client', () => {
+  afterEach(() => {
+    resetBlogeApiTransport();
+    resetOperatorTestHeadersProvider();
+    vi.restoreAllMocks();
+  });
+
+  it('sends the complete seed with an authenticated idempotency key', async () => {
+    const receipt = {
+      schemaVersion: 'bloge.workspaceForkReceipt.v1',
+      workspaceId: 'workspace-1',
+      graphCoordinate: { draftId: 'graph-1', revision: 1, fingerprint: 'sha256:graph' },
+      contractCoordinate: {
+        target: { kind: 'GRAPH', id: 'graph-1', revision: 1, fingerprint: 'sha256:graph' },
+        fingerprint: 'sha256:contract',
+      },
+      scenarioSuiteCoordinates: [],
+      fixtureCoordinates: [],
+      sourceTemplateFingerprint: 'sha256:seed',
+      forkedWorkspaceFingerprint: 'sha256:workspace',
+      runtimeProfile: 'SANDBOX_MOCK',
+      proofStrength: 'EXPLORATORY',
+      warnings: [],
+      replayed: false,
+    };
+    const fetchMock = vi.spyOn(globalThis, 'fetch').mockResolvedValueOnce(jsonResponse(receipt));
+    const command = {
+      schemaVersion: 'bloge.workspaceForkCommand.v1',
+      seed: { schemaVersion: 'bloge.workspaceSeedBundle.v1' },
+      workspaceName: 'Loan policy',
+      changeSource: 'test',
+    } as WorkspaceForkCommand;
+
+    await expect(forkWorkspace('canvas:loan:123', command)).resolves.toEqual(receipt);
+    expect(fetchMock).toHaveBeenCalledWith('/api/authoring/workspace-forks', expect.objectContaining({
+      method: 'POST',
+      headers: expect.objectContaining({
+        Authorization: 'Bearer bloge-aneke-demo-token',
+        'X-Purpose': 'TEST_SUITE_WRITE',
+        'Idempotency-Key': 'canvas:loan:123',
+      }),
+      body: JSON.stringify(command),
+    }));
+  });
+});
 
 describe('operator library API client', () => {
   afterEach(() => {

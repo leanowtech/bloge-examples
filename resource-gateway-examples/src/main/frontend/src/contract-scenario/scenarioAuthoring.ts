@@ -241,8 +241,8 @@ function scenarioFromTableCase(
     scenarioId: testCase.id,
     name: testCase.name,
     description: 'Projected from the canvas test table.',
-    caseType: 'GOLDEN',
-    tags: ['canvas-example'],
+    caseType: testCase.caseType ?? 'GOLDEN',
+    tags: ['canvas-example', (testCase.caseType ?? 'GOLDEN').toLowerCase()],
     given: {
       input: { ...testCase.context },
       provenance: 'MIGRATED',

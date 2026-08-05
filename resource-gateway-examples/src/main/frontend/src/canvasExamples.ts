@@ -47,6 +47,7 @@ export interface CanvasExampleAvailability {
 export interface CanvasExampleTestCase {
   id: string;
   name: string;
+  caseType: 'GOLDEN' | 'NEGATIVE' | 'BOUNDARY' | 'REGRESSION';
   context: Record<string, unknown>;
   fixtureOverrides?: Record<string, NodeFixture>;
   expectedOutput: unknown;
@@ -338,6 +339,7 @@ export const CANVAS_EXAMPLE_TEMPLATES: CanvasExampleTemplate[] = [
       {
         id: 'loan-prime-approval',
         name: 'Prime approval path',
+        caseType: 'GOLDEN',
         context: { applicantId: 'applicant-1001' },
         expectedOutput: {
           applicantId: 'applicant-1001',
@@ -352,6 +354,7 @@ export const CANVAS_EXAMPLE_TEMPLATES: CanvasExampleTemplate[] = [
       {
         id: 'loan-policy-decline',
         name: 'Policy decline path',
+        caseType: 'NEGATIVE',
         context: { applicantId: 'applicant-2002' },
         fixtureOverrides: {
           n1: {
@@ -376,6 +379,36 @@ export const CANVAS_EXAMPLE_TEMPLATES: CanvasExampleTemplate[] = [
           decision: 'decline',
           tier: 'risk',
           reason: 'policy threshold not met',
+        },
+      },
+      {
+        id: 'loan-manual-review-boundary',
+        name: 'Score 680 manual-review boundary',
+        caseType: 'BOUNDARY',
+        context: { applicantId: 'applicant-6800' },
+        fixtureOverrides: {
+          n1: {
+            output: {
+              payload: {
+                applicantId: 'applicant-6800',
+                score: 680,
+                segment: 'standard',
+                income: 64000,
+                employmentYears: 2,
+              },
+            },
+          },
+          n2: { output: { payload: { score: 680, provider: 'primary', band: 'B' } } },
+          n3: { output: { payload: { score: 679, provider: 'secondary', band: 'C' } } },
+        },
+        expectedOutput: {
+          applicantId: 'applicant-6800',
+          segment: 'standard',
+          primaryScore: 680,
+          secondaryScore: 679,
+          decision: 'manual_review',
+          tier: 'standard',
+          reason: 'borderline credit',
         },
       },
     ],
@@ -641,6 +674,7 @@ export const CANVAS_EXAMPLE_TEMPLATES: CanvasExampleTemplate[] = [
       {
         id: 'order-expedite-lane',
         name: 'Multi-order fast lane',
+        caseType: 'GOLDEN',
         context: { userId: 'user-42' },
         expectedOutput: {
           orderCount: 2,
@@ -657,6 +691,7 @@ export const CANVAS_EXAMPLE_TEMPLATES: CanvasExampleTemplate[] = [
       {
         id: 'order-standard-lane',
         name: 'Single-order standard lane',
+        caseType: 'NEGATIVE',
         context: { userId: 'user-77' },
         fixtureOverrides: {
           n1: {
@@ -687,6 +722,23 @@ export const CANVAS_EXAMPLE_TEMPLATES: CanvasExampleTemplate[] = [
           lane: 'standard',
           promisedHours: 72,
           reason: 'normal delivery window',
+        },
+      },
+      {
+        id: 'order-expedite-boundary',
+        name: 'Two orders at two-day SLA boundary',
+        caseType: 'BOUNDARY',
+        context: { userId: 'user-boundary-2d' },
+        expectedOutput: {
+          orderCount: 2,
+          enrichedOrders: [
+            { orderId: 'order-1001', productId: 'prod-8', priority: 'expedite' },
+            { orderId: 'order-1002', productId: 'prod-11', priority: 'standard' },
+          ],
+          carrier: 'DHL',
+          lane: 'expedite',
+          promisedHours: 24,
+          reason: 'multi-order fast lane',
         },
       },
     ],
@@ -935,6 +987,7 @@ export const CANVAS_EXAMPLE_TEMPLATES: CanvasExampleTemplate[] = [
       {
         id: 'dashboard-high-value',
         name: 'High-value dashboard',
+        caseType: 'GOLDEN',
         context: { userId: 'user-42' },
         expectedOutput: {
           userId: 'user-42',
@@ -953,6 +1006,7 @@ export const CANVAS_EXAMPLE_TEMPLATES: CanvasExampleTemplate[] = [
       {
         id: 'dashboard-fallbacks',
         name: 'Fallback defaults',
+        caseType: 'NEGATIVE',
         context: { userId: 'user-99' },
         fixtureOverrides: {
           n1: {
@@ -976,6 +1030,38 @@ export const CANVAS_EXAMPLE_TEMPLATES: CanvasExampleTemplate[] = [
           tier: 'standard',
           segment: 'unknown',
           walletAmount: 99,
+          walletCurrency: 'USD',
+          recommendations: [],
+          unreadCount: 0,
+        },
+      },
+      {
+        id: 'dashboard-zero-state-boundary',
+        name: 'Zero balance and zero notification boundary',
+        caseType: 'BOUNDARY',
+        context: { userId: 'user-zero' },
+        fixtureOverrides: {
+          n1: {
+            output: {
+              payload: {
+                userId: 'user-zero',
+                name: 'New Customer',
+                tier: 'starter',
+                segment: 'new',
+                score: 500,
+              },
+            },
+          },
+          n2: { output: { payload: { amount: 0, currency: 'USD' } } },
+          n3: { output: { payload: { items: [] } } },
+          n4: { output: { payload: { count: 0, items: [] } } },
+        },
+        expectedOutput: {
+          userId: 'user-zero',
+          name: 'New Customer',
+          tier: 'starter',
+          segment: 'new',
+          walletAmount: 0,
           walletCurrency: 'USD',
           recommendations: [],
           unreadCount: 0,

@@ -943,6 +943,19 @@ describe('AuthorCanvas built-in canvas examples', () => {
             reason: 'policy threshold not met',
           }));
         }
+        if (applicantId === 'applicant-6800') {
+          expect(body.fixtures.n2.output.payload.score).toBe(680);
+          expect(body.fixtures.n3.output.payload.score).toBe(679);
+          return jsonResponse(loanSimulationResponse({
+            applicantId: 'applicant-6800',
+            segment: 'standard',
+            primaryScore: 680,
+            secondaryScore: 679,
+            decision: 'manual_review',
+            tier: 'standard',
+            reason: 'borderline credit',
+          }));
+        }
         return jsonResponse(loanSimulationResponse({
           applicantId: 'applicant-1001',
           segment: 'prime',
@@ -977,7 +990,11 @@ describe('AuthorCanvas built-in canvas examples', () => {
       expect(template.outputSchema.schema).toMatchObject({ type: 'object' });
       expect(Object.keys(template.inputSchema.schema.properties as Record<string, unknown>)).not.toHaveLength(0);
       expect(Object.keys(template.outputSchema.schema.properties as Record<string, unknown>)).not.toHaveLength(0);
-      expect(template.testCases).toHaveLength(2);
+      expect(template.testCases?.map((testCase) => testCase.caseType)).toEqual([
+        'GOLDEN',
+        'NEGATIVE',
+        'BOUNDARY',
+      ]);
     }
   });
 
@@ -1904,20 +1921,21 @@ describe('AuthorCanvas built-in canvas examples', () => {
     await click(query<HTMLButtonElement>('[data-testid="canvas-example-load:loan-policy-fallback"]'));
     await click(query<HTMLButtonElement>('[data-testid="test-suite-open"]'));
     await waitFor(() =>
-      expect(query('[data-testid="test-table-summary"]').textContent).toContain('0/2 passed'),
+      expect(query('[data-testid="test-table-summary"]').textContent).toContain('0/3 passed'),
     );
 
     await click(query<HTMLButtonElement>('[data-testid="test-table-run"]'));
 
     await waitFor(() =>
-      expect(query('[data-testid="test-table-summary"]').textContent).toContain('2/2 passed'),
+      expect(query('[data-testid="test-table-summary"]').textContent).toContain('3/3 passed'),
     );
     expect(query('[data-testid="test-table-status:0"]').textContent).toContain('passed');
     expect(query('[data-testid="test-table-status:1"]').textContent).toContain('passed');
+    expect(query('[data-testid="test-table-status:2"]').textContent).toContain('passed');
 
     const simulateCalls = fetchMock.mock.calls
       .filter(([input]) => String(input) === '/api/visual/graphs/simulate');
-    expect(simulateCalls).toHaveLength(2);
+    expect(simulateCalls).toHaveLength(3);
     const secondRequest = JSON.parse(String(simulateCalls[1][1]?.body));
     expect(secondRequest.context).toEqual({ applicantId: 'applicant-2002' });
     expect(secondRequest.fixtures.n1.output.payload).toMatchObject({
@@ -1943,8 +1961,11 @@ describe('AuthorCanvas built-in canvas examples', () => {
     await waitFor(() =>
       expect(query('[data-testid="contract-workspace"]').textContent).toContain('Graph Contract'),
     );
-    await click(Array.from(query('[role="tablist"]').querySelectorAll<HTMLButtonElement>('button'))
-      .find((button) => button.textContent === 'Scenarios 2') as HTMLButtonElement);
+    const scenariosTab = Array.from(
+      query('[role="tablist"]').querySelectorAll<HTMLButtonElement>('button'),
+    ).find((button) => button.textContent?.startsWith('Scenarios'));
+    expect(scenariosTab).toBeDefined();
+    await click(scenariosTab as HTMLButtonElement);
     await click(Array.from(
       query('[data-testid="contract-workspace"]').querySelectorAll<HTMLButtonElement>(
         '.scenario-view-switch button',

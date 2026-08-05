@@ -251,12 +251,12 @@ class DatabaseGraphDraftRepositoryTest {
     }
 
     @Test
-    void cacheMutationWaitsForDatabaseCommit() {
+    void transactionReadsItsWritesWhileCommittedCacheWaitsForCommit() {
         TransactionTemplate transaction = new TransactionTemplate(new DataSourceTransactionManager(dataSource));
 
         transaction.executeWithoutResult(status -> {
-            repository.save(simpleDraft("draft-rolled-back", 0));
-            assertThat(repository.find("draft-rolled-back")).isEmpty();
+            GraphDraft stored = repository.save(simpleDraft("draft-rolled-back", 0));
+            assertThat(repository.find("draft-rolled-back")).contains(stored);
             status.setRollbackOnly();
         });
 

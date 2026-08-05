@@ -96,6 +96,9 @@ import com.leanowtech.bloge.gateway.authoring.scenario.DatabaseScenarioImportRec
 import com.leanowtech.bloge.gateway.authoring.scenario.ScenarioImportMaterializationService;
 import com.leanowtech.bloge.gateway.authoring.scenario.ScenarioImportReceiptRepository;
 import com.leanowtech.bloge.gateway.authoring.scenario.ScenarioDraftSetRepository;
+import com.leanowtech.bloge.gateway.authoring.workspace.DatabaseWorkspaceForkReceiptRepository;
+import com.leanowtech.bloge.gateway.authoring.workspace.WorkspaceForkReceiptRepository;
+import com.leanowtech.bloge.gateway.authoring.workspace.WorkspaceForkService;
 import com.leanowtech.bloge.gateway.authoring.scenario.DatabaseTableSuiteRunRepository;
 import com.leanowtech.bloge.gateway.authoring.scenario.ScenarioSimulationCompiler;
 import com.leanowtech.bloge.gateway.authoring.scenario.SimulationTableSuiteCaseRunner;
@@ -107,6 +110,7 @@ import com.leanowtech.bloge.gateway.authoring.scenario.ScenarioPublicationServic
 import com.leanowtech.bloge.gateway.authoring.scenario.ScenarioValidationService;
 import com.leanowtech.bloge.gateway.authoring.scenario.TestingControlPlaneScenarioGovernedRegistryGateway;
 import com.leanowtech.bloge.gateway.visual.contract.ContractDraftProjectionService;
+import com.leanowtech.bloge.gateway.visual.validation.GraphDraftValidator;
 import com.leanowtech.bloge.gateway.visual.simulation.VisualGraphSimulationService;
 import com.leanowtech.bloge.gateway.testing.api.TestExecutionApiService;
 import com.leanowtech.bloge.gateway.testing.api.TestSuiteRegistryService;
@@ -562,6 +566,30 @@ public class GatewayConfiguration {
             ObjectMapper objectMapper) {
         return new ScenarioDraftSetAuthoringService(
                 repository, graphDrafts, operators, contracts, validation, objectMapper);
+    }
+
+    /** Durable, scope-isolated idempotency receipts for complete Workspace forks. */
+    @Bean
+    @ConditionalOnMissingBean
+    public WorkspaceForkReceiptRepository workspaceForkReceiptRepository(
+            JdbcTemplate jdbc,
+            ObjectMapper objectMapper) {
+        return new DatabaseWorkspaceForkReceiptRepository(jdbc, objectMapper);
+    }
+
+    /** Transactional aggregate boundary for one-click runnable Workspace materialization. */
+    @Bean
+    @ConditionalOnMissingBean
+    public WorkspaceForkService workspaceForkService(
+            GraphDraftRepository graphDrafts,
+            GraphDraftValidator graphValidator,
+            VisualOperatorCatalog operators,
+            ContractDraftProjectionService contracts,
+            ScenarioDraftSetAuthoringService scenarios,
+            WorkspaceForkReceiptRepository receipts,
+            ObjectMapper objectMapper) {
+        return new WorkspaceForkService(
+                graphDrafts, graphValidator, operators, contracts, scenarios, receipts, objectMapper);
     }
 
     /** Durable idempotency store for payload-free Scenario import receipts. */
