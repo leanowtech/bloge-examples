@@ -4,6 +4,7 @@ import {
   useRef,
   useState,
 } from 'react';
+import { X } from 'lucide-react';
 
 import {
   applyLibraryAuthoringSamples,
@@ -227,7 +228,7 @@ export default function SampleInferenceReview({
             onClick={onClose}
             disabled={busy !== null}
           >
-            x
+            <X size={14} aria-hidden="true" />
           </button>
         </header>
 

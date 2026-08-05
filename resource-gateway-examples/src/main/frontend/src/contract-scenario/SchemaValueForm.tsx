@@ -1,4 +1,5 @@
 import { useEffect, useState, type ReactNode } from 'react';
+import { X } from 'lucide-react';
 
 import type { SchemaEnvelope } from '../types';
 import { useI18n } from '../i18n/I18nProvider';
@@ -183,7 +184,7 @@ function SchemaValueControl(props: SchemaValueControlProps): ReactNode {
                 aria-label={t('Remove {title} {index}', { title, index: index + 1 })}
                 onClick={() => props.onChange(values.filter((_, candidate) => candidate !== index))}
               >
-                ×
+                <X size={14} aria-hidden="true" />
               </button>
             </div>
           ))}

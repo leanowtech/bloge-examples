@@ -32,6 +32,7 @@ import ReactFlow, {
   Position,
   getSmoothStepPath,
 } from 'reactflow';
+import { ChevronLeft, ChevronRight, Plus } from 'lucide-react';
 import 'reactflow/dist/style.css';
 
 import {
@@ -5080,7 +5081,8 @@ export default function AuthorCanvas({ workspaceVersion = 'v1' }: AuthorCanvasPr
         || graphSize.edgeCount >= COMPLEX_GRAPH_EDGE_THRESHOLD
       : isComplexGraph;
     const fitOptions = {
-      padding: complex ? 0.06 : 0.04,
+      // React Flow fits node bounds only; reserve enough semantic space for routed edge labels.
+      padding: complex ? 0.12 : 0.1,
       duration: 240,
       maxZoom: 1,
     };
@@ -9622,10 +9624,13 @@ export default function AuthorCanvas({ workspaceVersion = 'v1' }: AuthorCanvasPr
             type="button"
             className="author-panel-toggle palette-panel-toggle"
             aria-label={t(paletteCollapsed ? 'Expand operator palette' : 'Collapse operator palette')}
+            title={t(paletteCollapsed ? 'Expand operator palette' : 'Collapse operator palette')}
             aria-expanded={!paletteCollapsed}
             onClick={togglePalettePanel}
           >
-            <span aria-hidden="true">{paletteCollapsed ? '>' : '<'}</span>
+            {paletteCollapsed
+              ? <ChevronRight aria-hidden="true" size={18} />
+              : <ChevronLeft aria-hidden="true" size={18} />}
           </button>
         )}
         <div className="palette-heading">
@@ -10351,7 +10356,7 @@ export default function AuthorCanvas({ workspaceVersion = 'v1' }: AuthorCanvasPr
               onClick={() => zoomCanvasBy('in')}
               disabled={nodes.length === 0}
             >
-              +
+              <Plus size={14} aria-hidden="true" />
             </button>
             <button
               type="button"
@@ -10662,10 +10667,13 @@ export default function AuthorCanvas({ workspaceVersion = 'v1' }: AuthorCanvasPr
               type="button"
               className="author-panel-toggle inspector-panel-toggle"
               aria-label={t(inspectorCollapsed ? 'Expand context inspector' : 'Collapse context inspector')}
+              title={t(inspectorCollapsed ? 'Expand context inspector' : 'Collapse context inspector')}
               aria-expanded={!inspectorCollapsed}
               onClick={toggleInspectorPanel}
             >
-              <span aria-hidden="true">{inspectorCollapsed ? '<' : '>'}</span>
+              {inspectorCollapsed
+                ? <ChevronLeft aria-hidden="true" size={18} />
+                : <ChevronRight aria-hidden="true" size={18} />}
             </button>
             <label
               className="author-panel-pin inspector-panel-pin"

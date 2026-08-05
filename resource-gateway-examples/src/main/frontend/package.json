@@ -7,11 +7,13 @@
   "scripts": {
     "dev": "vite",
     "check:i18n": "vitest run src/i18n/messageCatalog.test.ts src/i18n/localeSurfaceInventory.test.ts src/author/shell/AuthorCommandBar.test.tsx src/author/review/AuthorDiagnosticsDrawer.test.tsx src/contract-scenario/evidenceModel.test.ts",
-    "build": "npm run check:i18n && tsc --noEmit && vite build",
+    "check:ux": "vitest run src/ux/density.test.ts src/ux/visualSystem.test.ts src/App.test.tsx",
+    "build": "npm run check:i18n && npm run check:ux && tsc --noEmit && vite build",
     "test": "vitest run",
     "preview": "vite preview"
   },
   "dependencies": {
+    "lucide-react": "^0.468.0",
     "papaparse": "^5.5.4",
     "react": "^18.3.1",
     "react-dom": "^18.3.1",

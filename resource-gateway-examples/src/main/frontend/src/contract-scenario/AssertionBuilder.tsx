@@ -1,4 +1,5 @@
 import { useMemo } from 'react';
+import { X } from 'lucide-react';
 
 import { sampleFromSchemaEnvelope } from '../draftModel';
 import { useI18n } from '../i18n/I18nProvider';
@@ -224,7 +225,7 @@ export default function AssertionBuilder({
           aria-label={t('Remove assertion')}
           onClick={onRemove}
         >
-          ×
+          <X size={14} aria-hidden="true" />
         </button>
       </div>
 

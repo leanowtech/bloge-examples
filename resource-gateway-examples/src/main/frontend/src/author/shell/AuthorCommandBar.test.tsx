@@ -77,6 +77,32 @@ describe('AuthorCommandBar', () => {
     expect(remediate).toHaveBeenCalledOnce();
   });
 
+  it('keeps the mobile readiness summary compact until the user asks for detail', async () => {
+    await render('compose');
+
+    const toggle = queryButton('ReadinessREADY');
+    expect(toggle.getAttribute('aria-expanded')).toBe('false');
+    expect(host.querySelector('.author-mobile-truth-detail')).toBeNull();
+
+    await act(async () => toggle.click());
+
+    expect(toggle.getAttribute('aria-expanded')).toBe('true');
+    expect(host.querySelectorAll('.author-mobile-truth-detail > span')).toHaveLength(5);
+  });
+
+  it('discloses secondary mobile commands without competing with the primary action', async () => {
+    await render('compose');
+
+    const toggle = queryButton('Tools4 commands');
+    expect(toggle.getAttribute('aria-expanded')).toBe('false');
+    expect(host.querySelector('.author-secondary-actions')?.classList.contains('mobile-open')).toBe(false);
+
+    await act(async () => toggle.click());
+
+    expect(toggle.getAttribute('aria-expanded')).toBe('true');
+    expect(host.querySelector('.author-secondary-actions')?.classList.contains('mobile-open')).toBe(true);
+  });
+
   it('uses stable message ids for Chinese command, blocker, remediation, and status text', async () => {
     window.history.pushState({}, '', '/author/?lang=zh-CN');
     await render('scenarios', true, {

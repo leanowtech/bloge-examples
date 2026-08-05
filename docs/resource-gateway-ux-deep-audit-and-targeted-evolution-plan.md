@@ -1,6 +1,6 @@
 # Resource Gateway UX 深度审阅与针对性演进计划
 
-> 状态：Executing / Stage 4 已通过 E2 验收，Stage 5 待实施
+> 状态：Engineering Ready / Stage 5 已通过 E2 验收，Stage 6 E3/E4 待真实组织验证
 >
 > 审阅日期：2026-08-05
 >
@@ -16,7 +16,9 @@
 
 > Stage 4 实施后复评分：`92 / 100`
 >
-> 目标：P0/P1 清零，工程门禁达到 `>= 95 / 100`，随后以 E3/E4 证明真实成熟度
+> Stage 5 实施后复评分：`96 / 100`
+>
+> 目标：P0/P1 已清零，工程门禁已达到 `96 / 100`；随后以 E3/E4 证明真实成熟度
 >
 > 适用范围：Author Workspace v2、Contract、Scenario、Evidence、Libraries、Rehearsals、
 > Showcase、中文界面与 390px 移动端审阅体验
@@ -31,6 +33,7 @@
 - [Stage 2 统一任务状态与 Evidence 信任](resource-gateway-ux-stage2-task-state-and-evidence-trust.md)
 - [Stage 3 表格驱动测试工作台](resource-gateway-ux-stage3-table-driven-testing-workbench.md)
 - [Stage 4 双语完整性与术语治理](resource-gateway-ux-stage4-localization-governance.md)
+- [Stage 5 视觉系统与响应式任务布局](resource-gateway-ux-stage5-visual-responsive-system.md)
 - [Resource Gateway 双语术语与界面文案规范](resource-gateway-localization-glossary.md)
 
 ## 0. 最强结论
@@ -114,8 +117,11 @@
 | 当前事实 | 未保存示例可直接 Run all；三条贷款策略 Case 均生成 `SUCCESS / PASSED / CURRENT / MOCK` 证据及字段级 Expected/Actual/Diff |
 | 历史事实 | Stage 3 时中文模式的 Contract、Evidence、Library Detail、Operator Editor 和 Asset Test Table 仍有大量英文 UI |
 | 当前事实 | Stage 4 后 typed message、strict inventory 与 diagnostic catalog 覆盖核心深层工作区；业务资产、字段路径和协议坐标有意保持原文 |
-| 事实 | `styles.css` 为 17,638 行，其中 `font-size: 10px` 出现 198 次，`11px` 出现 160 次 |
-| 事实 | 390px 下顶层导航存在嵌套横向滚动；移动 Author 的摘要、示例与画布命令大量回退为英文 |
+| 历史事实 | Stage 4 时 `styles.css` 中 `font-size: 10px` 出现 198 次，`11px` 出现 160 次 |
+| 当前事实 | Stage 5 后产品 CSS 中 8px 至 11px literal 字号归零；正文、辅助、移动正文下限分别为 13px、12px、14px |
+| 历史事实 | Stage 4 时 390px 顶层导航存在嵌套横向滚动，移动 Author 的命令层级过密 |
+| 当前事实 | Stage 5 后 840px 以下使用可展开两列导航；390px 按 Compose 与 review 任务投影命令条，页面无横向溢出 |
+| 当前事实 | Comfortable 为默认密度；Compact 只收紧空间，移动与 coarse pointer 仍保证 40px 触摸目标 |
 | 推断 | 前端存在多套任务状态和多套响应式/深层呈现树，导致状态、文案和主操作持续漂移 |
 | 推断 | 示例导入和持久化没有 Workspace aggregate，Graph、Suite 与 Contract 通过独立命令拼接 |
 | 推荐决策 | 移动端定位为“查看、审阅、轻量修复、批准/驳回”，不承诺完整复杂图创作 |
@@ -214,6 +220,25 @@
 当前距 `95 / 100` 工程门禁为 3 分，但不能提前结束：Stage 5 的 390px 角色布局、触摸目标、字号
 下限和单一主操作仍属于完成定义中的硬门槛。Stage 4 的实现与 E2 证据见
 [双语完整性与术语治理](resource-gateway-ux-stage4-localization-governance.md)。
+
+### 2.6 Stage 5 实施后复评
+
+| 维度 | 权重 | Stage 4 | Stage 5 | 变化依据 |
+|---|---:|---:|---:|---|
+| 信息架构与任务连续性 | 15 | 14 | 15 | 移动端按 Compose / review 任务删减重复状态与命令，顶层导航显式展开 |
+| 首次成功与核心任务效率 | 15 | 14 | 14 | 主链路稳定，Stage 5 不虚增首次成功分 |
+| 复杂图理解与操控 | 12 | 11 | 12 | Fit padding 为边 label 留出安全带，低复杂图隐藏重复搜索器 |
+| Contract / Schema 直观性 | 10 | 9 | 9 | 结构保持，横向 Schema 编辑获得 continuation shadow |
+| 测试创作、运行与正确性 | 18 | 16 | 17 | 390px Matrix 保留 sticky Case 与批跑主操作，3 条 Case 首屏可见 |
+| 反馈、恢复与 Evidence 信任 | 10 | 10 | 10 | canonical Task State 与 Evidence 语义未回归 |
+| 视觉层级与可读性 | 8 | 7 | 8 | 8px 至 11px literal 字号归零，双密度不缩小文字，字符按钮统一为 Lucide |
+| 多语言、可访问性与响应式 | 7 | 6 | 7 | 40px 触摸目标、两列移动导航、统一 focus ring 与本地化 tooltip |
+| 企业资产与治理生命周期 | 5 | 5 | 4 | 工程面完整；E4 真实组织运行证据尚未取得，不把计划当作证明 |
+| **合计** | **100** | **92** | **96** | **P0/P1 清零；工程剩余差距 4%，E3/E4 仍是外部证据门槛** |
+
+Stage 5 的实现、操作方式、浏览器几何证据和自动化门禁见
+[视觉系统与响应式任务布局](resource-gateway-ux-stage5-visual-responsive-system.md)。`96 / 100` 只表示
+工程任务表面已达到开测门槛；没有 12 名目标用户数据前，不对外宣称真实体验成熟度 95 分。
 
 ## 3. P0 硬伤
 
@@ -377,33 +402,33 @@ Matrix 改为分层投影：
 
 ## 4. P1 体验缺陷
 
-| ID | 问题 | 根因 | 定向修正 |
-|---|---|---|---|
-| UXA-101 | 中文模式深层页面大量英文 | 英文源文案 fallback 会静默掩盖缺失 key | typed message id + build-time coverage gate |
-| UXA-102 | 移动 Author 使用另一套英文摘要/命令 | compact projection 独立维护 | 同一 view model、同一 i18n key、仅改变布局 |
-| UXA-103 | Contract 首屏优先 SOURCE/EFFECT/FINGERPRINT | 机器状态优先于用户任务 | 先显示“可接什么、产出什么、能否运行、下一步” |
-| UXA-104 | Compatibility 要求理解 fingerprint / rebase | 协议语义直接暴露 | 变化摘要、影响 Case、推荐动作，技术坐标折叠 |
-| UXA-105 | Library 首屏有 `Validate now` 与 `Import Design Catalog` 两个主动作 | draft、validation、import 状态没有统一命令策略 | 当前状态只给一个 primary command |
-| UXA-106 | Operator 的测试入口埋在首屏以下 | 页面按数据模型顺序而非任务频率排序 | 把 Tests 作为一级资产标签并显示覆盖/最后结果 |
-| UXA-107 | Test case 默认值为 `string`、`0`、`{}` | Schema generator 只保证类型合法 | 业务化 sample generator + golden/negative/boundary presets |
-| UXA-108 | Operator test 默认 mock 与真实执行边界不直观 | target behavior、dependency mock 和 proof profile 混层 | 明确“被测对象”“被替代依赖”“执行环境”三栏 |
-| UXA-109 | Evidence 首屏英文且治理 blocker 压过业务结果 | 结果与发布含义没有分层 | Verdict、业务输出、断言 Diff、治理含义依次展示 |
-| UXA-110 | Rehearsal 显示“进度 100%”同时“门禁已阻断” | completion 与 success 使用同一视觉语义 | 改为“执行完成度 100%”，单独显示结果与 gate |
+| ID | 问题 | 根因 | 根治手段 | 当前状态 |
+|---|---|---|---|---|
+| UXA-101 | 中文模式深层页面大量英文 | 英文 fallback 静默掩盖缺失 key | typed message id + build-time coverage gate | Stage 4 关闭 |
+| UXA-102 | 移动 Author 使用另一套英文摘要/命令 | compact projection 独立维护 | 同一 view model、同一 i18n key、仅改变布局 | Stage 4/5 关闭 |
+| UXA-103 | Contract 首屏优先机器状态 | 机器状态优先于用户任务 | 先显示输入、输出、可运行性和下一步 | 已关闭并纳入 E2 |
+| UXA-104 | Compatibility 要求先理解 fingerprint / rebase | 协议语义直接暴露 | 变化摘要、受影响 Case、推荐动作，技术坐标折叠 | 已关闭并纳入 E2 |
+| UXA-105 | Library 首屏存在竞争主动作 | draft、validation、import 状态未统一 | 当前状态只投影一个 primary command | 已关闭并纳入 E2 |
+| UXA-106 | Operator 测试入口埋在首屏以下 | 页面按数据模型而非任务频率排序 | Tests 一级入口、覆盖率和最后结果 | Stage 3 关闭 |
+| UXA-107 | Test case 默认值缺乏业务含义 | generator 只保证类型合法 | 业务 sample + golden/negative/boundary presets | Stage 3 关闭 |
+| UXA-108 | Operator mock 与真实执行边界不直观 | target、dependency 和 proof 混层 | 被测对象、替代依赖、执行环境三栏 | Stage 3 关闭 |
+| UXA-109 | Evidence 中治理 blocker 压过业务结果 | 结果与发布含义没有分层 | Verdict、业务输出、Diff、治理含义依次展示 | Stage 2/4 关闭 |
+| UXA-110 | Rehearsal completion 与 success 混用 | 两种状态共用视觉语义 | 完成度、通过率和 gate verdict 分离 | Stage 2 关闭 |
 
 ## 5. P2 视觉与交互瑕疵
 
-| ID | 观察 | 修正方向 |
-|---|---|---|
-| UXA-201 | 大量 10px/11px 文案，密集屏中可读性依赖高分辨率 | 正文最小 13px；辅助文案 12px；移动正文 14px |
-| UXA-202 | 页面依赖细边框和浅底色建立层级，长页面趋于“表格套表格” | 用 spacing、标题层级和内容分组替代部分边框 |
-| UXA-203 | 同一屏存在多个蓝色或高权重动作 | 每个任务面一个 primary，其他进入 split/menu/secondary |
-| UXA-204 | `+`、`x`、`<` 等文字符号承担图标按钮 | 统一使用 Lucide 图标并提供 tooltip/aria-label |
-| UXA-205 | 资产树长名称在移动端被截断，触摸端没有 hover reveal | 双行 label、detail sheet 或按类型分段搜索 |
-| UXA-206 | 横向滚动容器没有阴影、末端提示或列冻结说明 | 增加 scroll affordance、sticky key columns 和“还有 N 列” |
-| UXA-207 | Library Home 单条数据时出现大面积空白 | 提供 selected asset summary、recent activity 或收紧工作区高度 |
-| UXA-208 | Rehearsal 示例使用已过期的绝对时间 | 使用稳定相对时钟生成样例并显式标注 sample clock |
-| UXA-209 | `quick 来源`、`opaque 投影` 等混合术语不自然 | 建立产品术语表并区分用户 label 与 wire value |
-| UXA-210 | Modal、中央工作面、右侧 Drawer 三种位置模型继续混用 | 为 create/edit/test/review 定义稳定的 surface policy |
+| ID | 观察 | 修正方向 | 当前状态 |
+|---|---|---|---|
+| UXA-201 | 大量 10px/11px 文案 | 正文 13px、辅助 12px、移动正文 14px | Stage 5 关闭并有 CI 门禁 |
+| UXA-202 | 长页面依赖细边框形成“表格套表格” | spacing、标题层级和内容分组 | 新表面已收敛；存量 CSS 渐进治理 |
+| UXA-203 | 同一屏存在多个高权重动作 | 每个任务面一个 primary | Stage 2/5 关闭 |
+| UXA-204 | 字符承担图标按钮 | Lucide + tooltip/aria-label | Stage 5 关闭，产品 TSX 字符按钮归零 |
+| UXA-205 | 资产树长名称在触摸端缺少 reveal | 双行 label、detail sheet、分段搜索 | 残余 P2，进入 surface 拆分批次 |
+| UXA-206 | 横向滚动没有继续提示 | shadow、sticky key columns | Stage 3/5 关闭 |
+| UXA-207 | Library Home 单条数据时空白偏大 | summary、activity 或自适应高度 | 残余 P2，不阻塞核心任务 |
+| UXA-208 | Rehearsal 示例绝对时间会过期 | injected sample clock | 已关闭 |
+| UXA-209 | 混合术语不自然 | 产品 label 与 wire value 分离 | Stage 4 关闭 |
+| UXA-210 | Modal、中央面、Drawer 位置模型混用 | create/edit/test/review surface policy | Stage 5 明确职责边界 |
 
 ## 6. 结构性病根
 
@@ -639,6 +664,9 @@ Inspector 及 ReactFlow controls 的中文表达；业务资产名、字段路�
 > 周期：2 周
 >
 > 目标：修复可读性、密度、移动端和交互一致性
+>
+> 实施状态（2026-08-05）：已完成并通过 E2 验收。实现、操作方式、响应式职责边界和验证证据见
+> [Stage 5 视觉系统与响应式任务布局](resource-gateway-ux-stage5-visual-responsive-system.md)。
 
 | ID | 工作项 | 输出 |
 |---|---|---|
@@ -653,11 +681,21 @@ Inspector 及 ReactFlow controls 的中文表达；业务资产名、字段路�
 
 退出门槛：390px 顶层导航无隐形横向滚动；核心操作触摸目标 >= 40px；10px 正文归零。
 
+验收状态：产品 CSS 中 8px 至 11px literal 字号为 0；Comfortable 默认、Compact 持久化且只改变
+空间 token；840px 以下导航改为两列 disclosure；390px Compose 将 Readiness 和 Tools 按需展开，
+Contract/Scenarios/Evidence 删除重复摘要；Matrix 首屏可见 3 条 Case 并保持 sticky Case 列。
+1280px Loan Graph 的 5 个节点、4 个聚合 edge label 与视口边界碰撞为 0。字符 `x`、`×`、`+`
+按钮已从产品 TSX 归零并统一为 Lucide。空算子库首次进入时 Start Choice 独占中央工作面，Home
+队列退出布局与可访问树。工程回归为 74 files / 558 tests，全量构建通过。
+
 ### Stage 6：E3/E4 体验证明
 
 > 周期：E3 1 周；E4 两个发布周期
 
 目标角色：Graph 作者、测试工程师、治理 reviewer、平台集成工程师，每类至少 3 人。
+
+当前状态：E2 工程矩阵已经具备进入研究的条件；E3 受试者招募、主持和数据采集尚未执行，E4
+必须在真实组织发布周期中完成。不得用内部浏览器验收替代这两级证据。
 
 | 任务 | 目标门槛 |
 |---|---|
@@ -846,6 +884,9 @@ task_abandoned(surface, step)
 8. 390px 没有无提示的关键导航/命令横向滚动；
 9. E2 固定任务和视觉门禁全部通过；
 10. E3 12 名用户达到任务门槛后，才正式宣称“体验成熟度 95 分”。
+
+当前 1 至 9 已完成，工程评分为 `96 / 100`，剩余工程差距为 `4%`。第 10 项是对外成熟度声明的
+证据门槛，并非继续堆叠界面功能的理由；在 E3/E4 中暴露的新问题按相同 P0/P1 纪律回流修复。
 
 ## 15. 自审结论
 

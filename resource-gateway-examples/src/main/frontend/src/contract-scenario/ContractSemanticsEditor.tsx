@@ -1,3 +1,5 @@
+import { X } from 'lucide-react';
+
 import type {
   ContractDraft,
   ContractEffect,
@@ -357,7 +359,7 @@ function RemoveButton({ label, onClick }: { label: string; onClick: () => void }
       title={label}
       onClick={onClick}
     >
-      ×
+      <X size={14} aria-hidden="true" />
     </button>
   );
 }

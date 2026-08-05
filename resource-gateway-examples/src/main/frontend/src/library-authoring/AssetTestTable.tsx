@@ -4,6 +4,7 @@ import {
   useRef,
   useState,
 } from 'react';
+import { X } from 'lucide-react';
 
 import {
   BlogeApiRequestError,
@@ -400,7 +401,7 @@ export default function AssetTestTable({
               title={t('Close')}
               onClick={onClose}
             >
-              x
+              <X size={14} aria-hidden="true" />
             </button>
           </div>
         </header>

@@ -133,6 +133,34 @@ describe('App route shell', () => {
     expect(window.location.search).toContain('lang=zh-CN');
   });
 
+  it('defaults to comfortable density and persists an expert compact choice', async () => {
+    await renderAt('/author/');
+
+    expect(document.documentElement.dataset.density).toBe('comfortable');
+    expect(query<HTMLButtonElement>('[data-testid="density-option:comfortable"]')
+      .getAttribute('aria-pressed')).toBe('true');
+
+    await act(async () => query<HTMLButtonElement>('[data-testid="density-option:compact"]').click());
+
+    expect(document.documentElement.dataset.density).toBe('compact');
+    expect(window.localStorage.getItem('bloge.visual.density')).toBe('compact');
+    expect(query<HTMLButtonElement>('[data-testid="density-option:compact"]')
+      .getAttribute('aria-pressed')).toBe('true');
+  });
+
+  it('opens the responsive workspace navigation through an explicit menu command', async () => {
+    await renderAt('/author/');
+
+    const toggle = query<HTMLButtonElement>('.topbar-nav-toggle');
+    expect(toggle.getAttribute('aria-expanded')).toBe('false');
+    expect(query('#workspace-navigation').getAttribute('data-open')).toBe('false');
+
+    await act(async () => toggle.click());
+
+    expect(toggle.getAttribute('aria-expanded')).toBe('true');
+    expect(query('#workspace-navigation').getAttribute('data-open')).toBe('true');
+  });
+
   async function renderAt(path: string) {
     window.history.pushState({}, '', path);
     await act(async () => {

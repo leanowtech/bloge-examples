@@ -1,5 +1,6 @@
 import type { ReactNode } from 'react';
 
+import { useI18n } from '../../i18n/I18nProvider';
 import type { AuthorMode } from './authorWorkspaceState';
 
 interface AuthorSurfaceRouterProps {
@@ -20,6 +21,7 @@ export default function AuthorSurfaceRouter({
   onOpenContextRail,
   children,
 }: AuthorSurfaceRouterProps) {
+  const { t } = useI18n();
   if (mode === 'compose') {
     return null;
   }
@@ -36,7 +38,7 @@ export default function AuthorSurfaceRouter({
         aria-expanded={contextRailExpanded}
         onClick={onOpenContextRail}
       >
-        Topology
+        {t('Topology')}
       </button>
       {children}
     </section>

@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { X } from 'lucide-react';
 
 import { useI18n } from '../i18n/I18nProvider';
 import type { VisualOperatorAuthoring } from '../types';
@@ -211,7 +212,7 @@ export function ReferenceEditor({ values, onChange }: ReferenceEditorProps) {
             title={t('Remove test reference')}
             onClick={() => onChange(values.filter((_, itemIndex) => itemIndex !== index))}
           >
-            x
+            <X size={14} aria-hidden="true" />
           </button>
         </div>
       ))}

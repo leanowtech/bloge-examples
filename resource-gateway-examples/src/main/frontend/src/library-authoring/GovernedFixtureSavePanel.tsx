@@ -3,6 +3,7 @@ import {
   useRef,
   useState,
 } from 'react';
+import { X } from 'lucide-react';
 
 import {
   BlogeApiRequestError,
@@ -154,7 +155,7 @@ export default function GovernedFixtureSavePanel({
             onClick={onClose}
             disabled={busy}
           >
-            x
+            <X size={14} aria-hidden="true" />
           </button>
         </header>
 

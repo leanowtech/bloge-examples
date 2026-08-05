@@ -36,5 +36,7 @@ export default defineConfig({
   test: {
     environment: 'node',
     include: ['src/**/*.test.ts', 'src/**/*.test.tsx'],
+    // Heavy React/JSDOM suites share timers and mocked transports; file-level serialism keeps CI deterministic.
+    maxWorkers: 1,
   },
 });

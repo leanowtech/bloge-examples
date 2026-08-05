@@ -119,6 +119,16 @@ product vocabulary is in
 and Stage 4 verification is recorded in
 [`docs/resource-gateway-ux-stage4-localization-governance.md`](../docs/resource-gateway-ux-stage4-localization-governance.md).
 
+The header also provides `Comfortable / Compact` density modes. Comfortable is the default;
+Compact persists across reloads and tightens spacing without reducing the text-size floor. At
+840px and below, workspace navigation is an explicit two-column disclosure instead of a hidden
+horizontal scroller. At 390px, Compose keeps the primary action plus collapsible Readiness and
+Tools, while Contract/Scenarios/Evidence remove duplicate command summaries. Touch and coarse
+pointer controls remain at least 40px in both density modes. Run `npm run check:ux` to enforce the
+typography, density, touch-target, mobile-navigation, task-layout, and scroll-affordance contracts.
+Implementation and browser evidence are recorded in
+[`docs/resource-gateway-ux-stage5-visual-responsive-system.md`](../docs/resource-gateway-ux-stage5-visual-responsive-system.md).
+
 For the shortest trustworthy Author demo, load **Loan policy fallback** from the start dialog. Its
 card previews Graph/Contract size, three runnable `GOLDEN`/`NEGATIVE`/`BOUNDARY` cases, mocked
 operators, and exploratory proof strength before loading. Open **Scenarios**, select rows and choose

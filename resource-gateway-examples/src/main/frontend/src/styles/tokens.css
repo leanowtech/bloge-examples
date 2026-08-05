@@ -1,0 +1,21 @@
+:root {
+  --rg-font-body: 13px;
+  --rg-font-aux: 12px;
+  --rg-font-mobile-body: 14px;
+  --rg-line-body: 1.45;
+  --rg-control-min: 36px;
+  --rg-touch-target: 40px;
+  --rg-space-1: 4px;
+  --rg-space-2: 8px;
+  --rg-space-3: 12px;
+  --rg-space-4: 16px;
+  --rg-panel-padding: 14px;
+  --rg-surface-gap: 10px;
+  --rg-focus-ring: 3px solid #1a56db;
+}
+
+html[data-density='compact'] {
+  --rg-control-min: 32px;
+  --rg-panel-padding: 10px;
+  --rg-surface-gap: 7px;
+}

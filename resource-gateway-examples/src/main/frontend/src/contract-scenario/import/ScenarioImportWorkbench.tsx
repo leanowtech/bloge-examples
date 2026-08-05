@@ -1,5 +1,7 @@
 import { useMemo, useRef, useState } from 'react';
+import { X } from 'lucide-react';
 
+import { useI18n } from '../../i18n/I18nProvider';
 import type { ScenarioDraftSet } from '../domain';
 import {
   createScenarioMaterializationPlan,
@@ -42,6 +44,7 @@ export default function ScenarioImportWorkbench({
   executeMaterialization,
   onClose,
 }: ScenarioImportWorkbenchProps) {
+  const { t } = useI18n();
   const [step, setStep] = useState<ImportStep>('SOURCE');
   const [kind, setKind] = useState<ScenarioImportKind>('CSV');
   const [sourceText, setSourceText] = useState('');
@@ -140,8 +143,8 @@ export default function ScenarioImportWorkbench({
           <h3>Import cases</h3>
           <p>{stepDescription(step)}</p>
         </div>
-        <button type="button" className="icon-button" aria-label="Close import cases" title="Close" onClick={onClose}>
-          x
+        <button type="button" className="icon-button" aria-label={t('Close import cases')} title={t('Close')} onClick={onClose}>
+          <X size={14} aria-hidden="true" />
         </button>
       </header>
 

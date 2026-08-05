@@ -1,3 +1,6 @@
+import { useState } from 'react';
+import { ChevronDown, ChevronUp, SlidersHorizontal } from 'lucide-react';
+
 import type { AuthorMode } from './authorWorkspaceState';
 import type { AuthorCommandAvailability } from '../task/taskStateProjection';
 import { useI18n } from '../../i18n/I18nProvider';
@@ -65,10 +68,19 @@ export default function AuthorCommandBar({
   onValidate,
 }: AuthorCommandBarProps) {
   const { m, t } = useI18n();
+  const [mobileTruthOpen, setMobileTruthOpen] = useState(false);
+  const [mobileToolsOpen, setMobileToolsOpen] = useState(false);
   const status = (value: string) => {
     const id = statusMessageId(value);
     return id ? m(id) : t(value);
   };
+  const truthDimensions = [
+    { key: 'draft', label: 'Draft', value: draftStatus },
+    { key: 'contract', label: 'Contract', value: contractStatus },
+    { key: 'runnable', label: 'Runnable', value: runStatus },
+    { key: 'evidence', label: 'Evidence', value: evidenceStatus, title: status(proofStrength) },
+    { key: 'gate', label: 'Gate', value: promotionStatus, title: t(promotionSummary) },
+  ];
   return (
     <header className="author-command-bar" data-testid="author-command-bar">
       <div className="author-draft-identity">
@@ -94,73 +106,102 @@ export default function AuthorCommandBar({
         ))}
       </nav>
       <div className="author-truth-status" aria-label={t('Author readiness dimensions')}>
-        <span data-state={draftStatus.toLowerCase()} data-testid="author-status:draft">
-          <small>{t('Draft')}</small>
-          <strong>{status(draftStatus)}</strong>
-        </span>
-        <span data-state={contractStatus.toLowerCase()} data-testid="author-status:contract">
-          <small>{t('Contract')}</small>
-          <strong>{status(contractStatus)}</strong>
-        </span>
-        <span data-state={runStatus.toLowerCase()} data-testid="author-status:runnable">
-          <small>{t('Runnable')}</small>
-          <strong>{status(runStatus)}</strong>
-        </span>
-        <span
-          data-state={evidenceStatus.toLowerCase()}
-          data-testid="author-status:evidence"
-          title={status(proofStrength)}
-        >
-          <small>{t('Evidence')}</small>
-          <strong>{status(evidenceStatus)}</strong>
-        </span>
-        <span
-          data-state={promotionStatus.toLowerCase()}
-          data-testid="author-promotion-verdict"
-          title={t(promotionSummary)}
-        >
-          <small>{t('Gate')}</small>
-          <strong>{status(promotionStatus)}</strong>
-        </span>
+        {truthDimensions.map((dimension) => (
+          <span
+            key={dimension.key}
+            data-state={dimension.value.toLowerCase()}
+            data-testid={dimension.key === 'gate'
+              ? 'author-promotion-verdict'
+              : `author-status:${dimension.key}`}
+            title={dimension.title}
+          >
+            <small>{t(dimension.label)}</small>
+            <strong>{status(dimension.value)}</strong>
+          </span>
+        ))}
       </div>
-      <div className="author-secondary-actions">
-        {mode === 'compose' && (
-          <>
-            <button type="button" className="secondary compact" onClick={onImport}>
-              {t('Import')}
-            </button>
-            <button
-              type="button"
-              className="secondary compact"
-              onClick={onAutoLayout}
-              disabled={layoutDisabled}
-            >
-              {t('Auto layout')}
-            </button>
-          </>
-        )}
+      <div className="author-mobile-truth">
         <button
           type="button"
-          className="secondary compact"
-          onClick={onValidate}
-          disabled={validationDisabled}
+          className="author-mobile-truth-toggle"
+          aria-expanded={mobileTruthOpen}
+          aria-controls="author-mobile-truth-detail"
+          onClick={() => setMobileTruthOpen((open) => !open)}
         >
-          {t('Validate graph')}
+          <span>{t('Readiness')}</span>
+          <strong>{status(primaryCommand.state)}</strong>
+          {mobileTruthOpen
+            ? <ChevronUp aria-hidden="true" size={16} />
+            : <ChevronDown aria-hidden="true" size={16} />}
         </button>
-        <a
-          className={`toolbar-link compact ${exportDisabled ? 'disabled' : ''}`}
-          data-testid="author-draft-export-v2"
-          href={exportUrl}
-          download={exportName}
-          aria-disabled={exportDisabled}
-          onClick={(event) => {
-            if (exportDisabled) {
-              event.preventDefault();
-            }
-          }}
+        {mobileTruthOpen && (
+          <div id="author-mobile-truth-detail" className="author-mobile-truth-detail">
+            {truthDimensions.map((dimension) => (
+              <span key={dimension.key} data-state={dimension.value.toLowerCase()}>
+                <small>{t(dimension.label)}</small>
+                <strong>{status(dimension.value)}</strong>
+              </span>
+            ))}
+          </div>
+        )}
+      </div>
+      <div className="author-secondary-command-group">
+        <button
+          type="button"
+          className="author-mobile-tools-toggle"
+          aria-expanded={mobileToolsOpen}
+          aria-controls="author-mobile-tools-detail"
+          onClick={() => setMobileToolsOpen((open) => !open)}
         >
-          {t('Export draft')}
-        </a>
+          <SlidersHorizontal aria-hidden="true" size={16} />
+          <span>{t('Tools')}</span>
+          <strong>{t('{count} commands', { count: mode === 'compose' ? 4 : 2 })}</strong>
+          {mobileToolsOpen
+            ? <ChevronUp aria-hidden="true" size={16} />
+            : <ChevronDown aria-hidden="true" size={16} />}
+        </button>
+        <div
+          id="author-mobile-tools-detail"
+          className={`author-secondary-actions ${mobileToolsOpen ? 'mobile-open' : ''}`}
+        >
+          {mode === 'compose' && (
+            <>
+              <button type="button" className="secondary compact" onClick={onImport}>
+                {t('Import')}
+              </button>
+              <button
+                type="button"
+                className="secondary compact"
+                onClick={onAutoLayout}
+                disabled={layoutDisabled}
+              >
+                {t('Auto layout')}
+              </button>
+            </>
+          )}
+          <button
+            type="button"
+            className="secondary compact"
+            onClick={onValidate}
+            disabled={validationDisabled}
+          >
+            {t('Validate graph')}
+          </button>
+          <a
+            className={`toolbar-link compact ${exportDisabled ? 'disabled' : ''}`}
+            data-testid="author-draft-export-v2"
+            href={exportUrl}
+            download={exportName}
+            aria-disabled={exportDisabled}
+            onClick={(event) => {
+              if (exportDisabled) {
+                event.preventDefault();
+              }
+            }}
+          >
+            {t('Export draft')}
+          </a>
+        </div>
       </div>
       <div className="author-primary-command" data-command-state={primaryCommand.state.toLowerCase()}>
         <button

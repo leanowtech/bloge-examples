@@ -1,3 +1,5 @@
+import { Plus } from 'lucide-react';
+
 import { useI18n } from '../i18n/I18nProvider';
 import type { VisualLibraryAuthoringDocument } from '../types';
 import type { LibraryAssetKind, LibraryAssetSelection } from './model';
@@ -54,7 +56,7 @@ export default function LibraryTree({
               title={t('Add {kind}', { kind: t(group.kind) })}
               onClick={() => onAdd(group.kind)}
             >
-              +
+              <Plus size={14} aria-hidden="true" />
             </button>
           </header>
           <ul>

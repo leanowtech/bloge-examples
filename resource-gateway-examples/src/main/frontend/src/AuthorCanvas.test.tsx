@@ -519,7 +519,7 @@ describe('AuthorCanvas operator-library intake', () => {
 
     await click(query<HTMLButtonElement>('[data-testid="author-fit-all"]'));
     expect(reactFlowMocks.fitView).toHaveBeenCalledWith({
-      padding: 0.04,
+      padding: 0.1,
       duration: 240,
       maxZoom: 1,
     });
@@ -760,7 +760,7 @@ describe('AuthorCanvas operator-library intake', () => {
     expect(query('[data-testid="canvas-zoom-readout"]').textContent).toBe('100%');
     await waitFor(() =>
       expect(reactFlowMocks.fitView).toHaveBeenCalledWith({
-        padding: 0.06,
+        padding: 0.12,
         duration: 240,
         maxZoom: 1,
       }),
@@ -2330,7 +2330,7 @@ describe('AuthorCanvas connection guide', () => {
     expect(query('[data-testid="node-wrapper:n2"]').getAttribute('data-position')).toBe('384,72');
     await waitFor(() =>
       expect(reactFlowMocks.fitView).toHaveBeenCalledWith({
-        padding: 0.04,
+        padding: 0.1,
         duration: 240,
         maxZoom: 1,
       }),

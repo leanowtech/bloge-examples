@@ -1,0 +1,57 @@
+import { readFileSync } from 'node:fs';
+import { describe, expect, it } from 'vitest';
+
+const legacyCss = readFileSync(new URL('../styles.css', import.meta.url), 'utf8');
+const tokensCss = readFileSync(new URL('../styles/tokens.css', import.meta.url), 'utf8');
+const responsiveCss = readFileSync(new URL('../styles/responsive.css', import.meta.url), 'utf8');
+
+describe('Stage 5 visual-system contract', () => {
+  it('keeps semantic hidden state authoritative across responsive overrides', () => {
+    expect(responsiveCss).toMatch(/\.app \[hidden\][\s\S]*display: none !important/);
+  });
+
+  it('eliminates unreadable literal text sizes from the product stylesheet', () => {
+    expect(legacyCss).not.toMatch(/font-size:\s*(?:8|9|10|11)px/);
+    expect(responsiveCss).not.toMatch(/font-size:\s*(?:8|9|10|11)px/);
+  });
+
+  it('defines the promised body, auxiliary, mobile, and touch-target floors', () => {
+    expect(tokensCss).toContain('--rg-font-body: 13px');
+    expect(tokensCss).toContain('--rg-font-aux: 12px');
+    expect(tokensCss).toContain('--rg-font-mobile-body: 14px');
+    expect(tokensCss).toContain('--rg-touch-target: 40px');
+  });
+
+  it('keeps comfortable as the default and scopes compact changes to spacing', () => {
+    expect(tokensCss).toContain('--rg-control-min: 36px');
+    expect(tokensCss).toMatch(/html\[data-density='compact'\][\s\S]*--rg-control-min: 32px/);
+    expect(tokensCss).not.toMatch(/html\[data-density='compact'\][\s\S]*--rg-font-(?:body|aux)/);
+  });
+
+  it('replaces mobile topbar scrolling with a bounded disclosed navigation', () => {
+    const mobileTopbar = responsiveCss.match(/@media \(max-width: 840px\) \{([\s\S]*?)\n\}/)?.[1] ?? '';
+    expect(responsiveCss).toContain(".topbar-nav[data-open='true']");
+    expect(responsiveCss).toContain('grid-template-columns: repeat(2, minmax(0, 1fr))');
+    expect(mobileTopbar).not.toContain('overflow-x: auto');
+  });
+
+  it('enforces 40px controls for compact viewports and coarse pointers', () => {
+    expect(responsiveCss).toMatch(/@media \(max-width: 840px\)[\s\S]*min-height: var\(--rg-touch-target\)/);
+    expect(responsiveCss).toMatch(/button\.icon-button[\s\S]*min-width: var\(--rg-touch-target\)/);
+    expect(responsiveCss).toMatch(/@media \(pointer: coarse\)[\s\S]*min-height: var\(--rg-touch-target\)/);
+    expect(responsiveCss).toMatch(/\.react-flow__controls-button[\s\S]*width: var\(--rg-touch-target\)/);
+  });
+
+  it('adds continuation shadows to the real horizontally scrollable work surfaces', () => {
+    expect(responsiveCss).toContain('.scenario-matrix-scroll');
+    expect(responsiveCss).toContain('.library-home-table');
+    expect(responsiveCss).toContain('no-repeat local');
+    expect(legacyCss).toMatch(/\.scenario-matrix tbody td:nth-child\(2\)[\s\S]*position: sticky/);
+  });
+
+  it('uses a task-first mobile shell outside graph composition', () => {
+    expect(responsiveCss).toContain(".workspace-v2:not([data-author-mode='compose']) > .author-command-bar");
+    expect(responsiveCss).toContain(':is(.author-draft-identity, .author-mobile-truth, .author-secondary-command-group)');
+    expect(responsiveCss).toMatch(/contract-workspace-header-actions[\s\S]*:disabled/);
+  });
+});

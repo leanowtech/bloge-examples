@@ -88,6 +88,7 @@ export default function CanvasTaskNavigator({
     <section
       className={`canvas-task-navigator mode-${mode}`}
       data-testid="canvas-navigator"
+      data-complex={nodeCount >= 9}
       aria-label={t('Canvas task navigator')}
     >
       <div className="canvas-task-modes" role="group" aria-label={t('Canvas reading mode')}>
@@ -233,7 +234,7 @@ export default function CanvasTaskNavigator({
               ? t('Computing layout preview...')
               : layoutQuality
                 ? `${layoutQuality.summary} · ${perceptualQuality.summary}`
-                : layoutNotice}
+                : t(layoutNotice)}
           </span>
           {layoutQuality?.edgeLabelCollisionDetails?.[0] && (
             <small>

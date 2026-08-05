@@ -42,7 +42,7 @@ describe('ScenarioImportWorkbench', () => {
     await render();
     await setTextarea('name,api_token,field01\nCase A,super-secret-value,12');
     await click(button('Inspect source'));
-    await settle();
+    await waitForText('[masked]');
 
     expect(text()).toContain('[masked]');
     expect(text()).not.toContain('super-secret-value');
@@ -124,6 +124,15 @@ describe('ScenarioImportWorkbench', () => {
       await act(async () => new Promise((resolve) => setTimeout(resolve, 10)));
     }
     return button(name);
+  }
+
+  async function waitForText(value: string, timeoutMs = 2_000): Promise<void> {
+    const deadline = Date.now() + timeoutMs;
+    while (Date.now() < deadline) {
+      if (text().includes(value)) return;
+      await act(async () => new Promise((resolve) => setTimeout(resolve, 10)));
+    }
+    expect(text()).toContain(value);
   }
 
   function textarea() {

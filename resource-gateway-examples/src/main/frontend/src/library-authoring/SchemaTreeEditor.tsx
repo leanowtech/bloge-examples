@@ -1,4 +1,5 @@
 import { type CSSProperties, useMemo, useState } from 'react';
+import { X } from 'lucide-react';
 
 import { useI18n } from '../i18n/I18nProvider';
 import {
@@ -121,7 +122,7 @@ export default function SchemaTreeEditor({
                     title={t('Remove {name}', { name: row.name })}
                     onClick={() => remove(index)}
                   >
-                    x
+                    <X size={14} aria-hidden="true" />
                   </button>
                 </div>
                 {nested.map((field) => (
@@ -179,7 +180,7 @@ export default function SchemaTreeEditor({
                     title={t('Remove {name}', { name: row.name })}
                     onClick={() => remove(index)}
                   >
-                    x
+                    <X size={14} aria-hidden="true" />
                   </button>
                 </td>
               </tr>

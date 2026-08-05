@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { X } from 'lucide-react';
 
 import { useI18n } from '../i18n/I18nProvider';
 import type {
@@ -500,7 +501,7 @@ function NumberListEditor({
               aria-label={`Remove ${label.toLowerCase()} value`}
               onClick={() => onChange(values.filter((_, candidate) => candidate !== index))}
             >
-              ×
+              <X size={14} aria-hidden="true" />
             </button>
           </span>
         ))}
@@ -603,7 +604,7 @@ function MapRows<T>({
               entries.filter((_, candidate) => candidate !== index),
             ))}
           >
-            ×
+            <X size={14} aria-hidden="true" />
           </button>
         </div>
       ))}

@@ -203,6 +203,16 @@ Evidence 继续是中央工作面，Topology Context Rail 变为按需抽屉。A
 中央内容独立滚动，底部 Run 与 Diagnostics 不会互相覆盖。这个模式定位为**查看、运行、
 轻量修改和故障回看**；大规模拖拽、密集字段连线和 100 节点结构调整仍建议使用桌面视口。
 
+顶栏还提供 **Comfortable / Compact** 密度切换。Comfortable 适合首次使用、审阅和触摸设备；
+Compact 适合熟练作者在桌面处理高信息密度任务。密度选择会跨刷新保持，但只改变 padding、gap
+和桌面控件高度，不缩小正文与辅助文案。840px 以下以及触摸设备中，两种模式的关键控件均不低于
+40px。窄屏顶层导航通过 Menu 明确展开为两列，不再依赖隐形横向滚动。
+
+390px Compose 中，**Readiness** 汇总五个状态，**Tools** 汇总辅助命令，点击后再展开；切换到
+Contract、Scenarios 或 Evidence 后，这两组重复摘要自动隐藏，让中央任务面优先占用高度。
+Scenario Matrix 保持 Case 列冻结，并用左右阴影提示还有横向内容。完整设计边界与验收证据见
+[Stage 5 视觉系统与响应式任务布局](resource-gateway-ux-stage5-visual-responsive-system.md)。
+
 Author Workspace v2 会在浏览器中派发 `bloge:author-task` `CustomEvent`。宿主应用或
 VS Code webview 可以选择监听它来计算任务漏斗，Resource Gateway 前端本身不会把事件
 主动发送到网络：

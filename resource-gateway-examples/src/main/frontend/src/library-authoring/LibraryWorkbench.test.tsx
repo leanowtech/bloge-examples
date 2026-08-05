@@ -125,6 +125,21 @@ describe('LibraryWorkbench', () => {
     vi.restoreAllMocks();
   });
 
+  it('makes the empty-library start choice the only active central task', async () => {
+    await renderWorkbench();
+    await settle();
+
+    expect(query('[data-testid="library-home"]').getAttribute('data-view')).toBe('start');
+    expect(query<HTMLElement>('.library-home-heading').hidden).toBe(true);
+    expect(query<HTMLElement>('.library-home-work-queue').hidden).toBe(true);
+    expect(query('[data-testid="library-home-create-panel"]')).toBeTruthy();
+
+    await click(buttonByText('Close'));
+    expect(query('[data-testid="library-home"]').getAttribute('data-view')).toBe('queue');
+    expect(query<HTMLElement>('.library-home-heading').hidden).toBe(false);
+    expect(query<HTMLElement>('.library-home-work-queue').hidden).toBe(false);
+  });
+
   it('starts on a durable asset home with readiness queues and exact revision links', async () => {
     const library = storedDraft('support-library', 7, {
       schemaVersion: 'bloge.visualLibraryAuthoring.v1',

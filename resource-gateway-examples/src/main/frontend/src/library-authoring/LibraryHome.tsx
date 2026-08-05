@@ -100,8 +100,12 @@ export default function LibraryHome({ routeError = '', onStart }: LibraryHomePro
   }, [page, visible.page]);
 
   return (
-    <main className="library-home" data-testid="library-home">
-      <header className="library-home-heading">
+    <main
+      className="library-home"
+      data-testid="library-home"
+      data-view={startChoice ? 'start' : 'queue'}
+    >
+      <header className="library-home-heading" hidden={Boolean(startChoice)}>
         <div>
           <p className="eyebrow">{t('Library assets')}</p>
           <h2>{t('Resume governed library work')}</h2>
@@ -131,7 +135,11 @@ export default function LibraryHome({ routeError = '', onStart }: LibraryHomePro
         <p className="library-route-error" role="alert">{routeError || loadError}</p>
       )}
 
-      <section className="library-home-work-queue" aria-label={t('Library work queue')}>
+      <section
+        className="library-home-work-queue"
+        aria-label={t('Library work queue')}
+        hidden={Boolean(startChoice)}
+      >
         <nav className="library-home-filters" aria-label={t('Library status filters')}>
           {LIBRARY_HOME_FILTERS.map((option) => (
             <button

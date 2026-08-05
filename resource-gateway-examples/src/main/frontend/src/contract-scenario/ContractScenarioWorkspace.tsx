@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
+import { Plus, X } from 'lucide-react';
 import { useI18n } from '../i18n/I18nProvider';
 import type { TranslationValues } from '../i18n/i18n';
 
@@ -1209,7 +1210,7 @@ export default function ContractScenarioWorkspace({
                 aria-label={t('Close Contract workspace')}
                 onClick={onClose}
               >
-                ×
+                <X size={14} aria-hidden="true" />
               </button>
             )}
           </div>
@@ -1612,7 +1613,7 @@ function ScenarioTab({
         <div className="scenario-list-head">
           <strong>{t('Scenarios')}</strong>
           <button type="button" className="icon-button" title={t('Add Scenario')} aria-label={t('Add Scenario')} onClick={() => onAddScenario()}>
-            +
+            <Plus size={14} aria-hidden="true" />
           </button>
         </div>
         {scenarios.map((scenario) => (

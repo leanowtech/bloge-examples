@@ -1,4 +1,5 @@
 import type { DragEvent } from 'react';
+import { X } from 'lucide-react';
 
 import SchemaValueForm from '../../contract-scenario/SchemaValueForm';
 import { useI18n } from '../../i18n/I18nProvider';
@@ -219,7 +220,7 @@ export function ContextExtrasPanel({
                   aria-label={t('Remove context extra {index}', { index: index + 1 })}
                   onClick={() => onRemove(row.id)}
                 >
-                  ×
+                  <X size={14} aria-hidden="true" />
                 </button>
               </div>
             </div>
