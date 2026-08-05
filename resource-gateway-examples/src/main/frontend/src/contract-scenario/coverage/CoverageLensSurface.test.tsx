@@ -6,6 +6,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { GraphDraft } from '../../types';
 import type { ContractDraft, ScenarioDraftSet } from '../domain';
 import CoverageLensSurface from './CoverageLensSurface';
+import I18nProvider from '../../i18n/I18nProvider';
 
 describe('CoverageLensSurface', () => {
   let host: HTMLDivElement;
@@ -16,6 +17,7 @@ describe('CoverageLensSurface', () => {
     host = document.createElement('div');
     document.body.appendChild(host);
     root = createRoot(host);
+    window.history.pushState({}, '', '/author/?lang=en');
   });
 
   afterEach(async () => {
@@ -101,20 +103,35 @@ describe('CoverageLensSurface', () => {
     expect(button('Accept').disabled).toBe(true);
   });
 
+  it('localizes coverage decisions while preserving technical coordinates', async () => {
+    window.history.replaceState({}, '', '/author/?lang=zh-CN');
+    await render(draftSet(), vi.fn(), true);
+
+    expect(text()).toContain('覆盖缺口');
+    expect(text()).toContain('尚未生成候选用例');
+    expect(button('生成候选用例')).toBeInstanceOf(HTMLButtonElement);
+    expect(input('生成种子').value).toBe('42');
+    expect(text()).toContain('$.customerId');
+  });
+
   async function render(
     scenarios = draftSet(),
     onAcceptCandidate = vi.fn(),
+    localized = false,
   ) {
-    await act(async () => root.render(
+    const surface = (
       <CoverageLensSurface
         graphDraft={graph()}
         contract={contract()}
         draftSet={scenarios}
         evidenceByCase={{}}
         onAcceptCandidate={onAcceptCandidate}
-      />,
+      />
+    );
+    await act(async () => root.render(
+      localized ? <I18nProvider>{surface}</I18nProvider> : surface,
     ));
-    await waitFor(() => text().includes('Coverage gaps'));
+    await waitFor(() => text().includes(localized ? '覆盖缺口' : 'Coverage gaps'));
   }
 
   function text() {

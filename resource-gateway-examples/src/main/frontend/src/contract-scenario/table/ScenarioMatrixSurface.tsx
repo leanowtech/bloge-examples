@@ -1,4 +1,5 @@
 import { Fragment, useEffect, useMemo, useState } from 'react';
+import { useI18n } from '../../i18n/I18nProvider';
 
 import type { ScenarioCaseType } from '../domain';
 import type { TableCaseVerdictPresentation } from '../tableDrivenTestStatus';
@@ -63,6 +64,7 @@ export default function ScenarioMatrixSurface({
   onCancelRun,
   onRetryFailed,
 }: ScenarioMatrixSurfaceProps) {
+  const { t } = useI18n();
   const [query, setQuery] = useState('');
   const [caseType, setCaseType] = useState<ScenarioCaseType | ''>('');
   const [tone, setTone] = useState<TableCaseVerdictPresentation['tone'] | ''>('');
@@ -105,59 +107,59 @@ export default function ScenarioMatrixSurface({
   const affectedCount = differentialCounts?.affected ?? 0;
 
   return (
-    <section className="scenario-matrix" aria-label="Scenario test matrix" data-testid="scenario-matrix">
+    <section className="scenario-matrix" aria-label={t('Scenario test matrix')} data-testid="scenario-matrix">
       <header className="scenario-matrix-toolbar">
         <label className="scenario-matrix-search">
-          <span className="visually-hidden">Search cases</span>
+          <span className="visually-hidden">{t('Search cases')}</span>
           <input
             type="search"
-            aria-label="Search cases"
-            placeholder="Search cases, ids, or tags"
+            aria-label={t('Search cases')}
+            placeholder={t('Search cases, ids, or tags')}
             value={query}
             onChange={(event) => setQuery(event.target.value)}
           />
         </label>
         <label>
-          <span className="visually-hidden">Case type filter</span>
+          <span className="visually-hidden">{t('Case type filter')}</span>
           <select
-            aria-label="Case type filter"
+            aria-label={t('Case type filter')}
             value={caseType}
             onChange={(event) => setCaseType(event.target.value as ScenarioCaseType | '')}
           >
-            <option value="">All types</option>
-            {CASE_TYPES.map((value) => <option value={value} key={value}>{caseTypeLabel(value)}</option>)}
+            <option value="">{t('All types')}</option>
+            {CASE_TYPES.map((value) => <option value={value} key={value}>{t(caseTypeLabel(value))}</option>)}
           </select>
         </label>
         <label>
-          <span className="visually-hidden">Verdict filter</span>
+          <span className="visually-hidden">{t('Verdict filter')}</span>
           <select
-            aria-label="Verdict filter"
+            aria-label={t('Verdict filter')}
             value={tone}
             onChange={(event) => setTone(event.target.value as TableCaseVerdictPresentation['tone'] | '')}
           >
-            <option value="">All verdicts</option>
-            {TONES.map((value) => <option value={value} key={value}>{capitalize(value)}</option>)}
+            <option value="">{t('All verdicts')}</option>
+            {TONES.map((value) => <option value={value} key={value}>{t(capitalize(value))}</option>)}
           </select>
         </label>
         <label>
-          <span className="visually-hidden">Sort cases</span>
+          <span className="visually-hidden">{t('Sort cases')}</span>
           <select
-            aria-label="Sort cases"
+            aria-label={t('Sort cases')}
             value={`${sort.key}:${sort.direction}`}
             onChange={(event) => {
               const [key, direction] = event.target.value.split(':') as [ScenarioTableSort['key'], ScenarioTableSort['direction']];
               setSort({ key, direction });
             }}
           >
-            <option value="CANONICAL:ASC">Canonical order</option>
-            <option value="NAME:ASC">Name A-Z</option>
-            <option value="NAME:DESC">Name Z-A</option>
-            <option value="TYPE:ASC">Type</option>
-            <option value="VERDICT:ASC">Verdict</option>
+            <option value="CANONICAL:ASC">{t('Canonical order')}</option>
+            <option value="NAME:ASC">{t('Name A-Z')}</option>
+            <option value="NAME:DESC">{t('Name Z-A')}</option>
+            <option value="TYPE:ASC">{t('Type')}</option>
+            <option value="VERDICT:ASC">{t('Verdict')}</option>
           </select>
         </label>
         <details className="scenario-column-menu">
-          <summary>Columns {columns.length}/{projection.columns.length}</summary>
+          <summary>{t('Columns {visible}/{total}', { visible: columns.length, total: projection.columns.length })}</summary>
           <div>
             {projection.columns.map((column) => (
               <label key={column.columnId}>
@@ -171,13 +173,13 @@ export default function ScenarioMatrixSurface({
                       : current.filter((columnId) => columnId !== column.columnId)
                   ))}
                 />
-                <span>{column.group} / {column.label}</span>
+                <span>{t(column.group)} / {t(column.label)}</span>
               </label>
             ))}
           </div>
         </details>
         <button type="button" className="secondary compact" onClick={onAddCase} disabled={disabled}>
-          Add case
+          {t('Add case')}
         </button>
         {onImportCases && (
           <button
@@ -185,52 +187,52 @@ export default function ScenarioMatrixSurface({
             className="secondary compact"
             onClick={onImportCases}
             disabled={disabled || importDisabled}
-            title={importDisabled ? importDisabledReason : 'Import CSV or JSON cases'}
+            title={importDisabled ? t(importDisabledReason) : t('Import CSV or JSON cases')}
           >
-            Import cases
+            {t('Import cases')}
           </button>
         )}
       </header>
 
       <div className="scenario-matrix-context" role="status">
-        <span><strong>{projection.rows.length}</strong> canonical cases</span>
-        <span><strong>{filteredRows.length}</strong> matching</span>
-        <span><strong>{rows.length} / {filteredRows.length}</strong> shown</span>
-        <span><strong>{selection.selectedCaseIds.length}</strong> selected</span>
+        <span>{t('{count} canonical cases', { count: projection.rows.length })}</span>
+        <span>{t('{count} matching', { count: filteredRows.length })}</span>
+        <span>{t('{shown} / {total} shown', { shown: rows.length, total: filteredRows.length })}</span>
+        <span>{t('{count} selected', { count: selection.selectedCaseIds.length })}</span>
         <code title={projection.projectionFingerprint}>{shortFingerprint(projection.projectionFingerprint)}</code>
       </div>
 
       <div className="scenario-matrix-run-stack">
         {batch && (
-          <section className="scenario-matrix-run" data-status={batch.status} aria-label="Server batch status">
+          <section className="scenario-matrix-run" data-status={batch.status} aria-label={t('Server batch status')}>
           <header>
             <div>
-              <span>Server batch</span>
-              <strong>{batchStatusLabel(batch.status)}</strong>
+              <span>{t('Server batch')}</span>
+              <strong>{t(batchStatusLabel(batch.status))}</strong>
               <code title={batch.batchId}>{shortBatchId(batch.batchId)}</code>
             </div>
             <div className="scenario-matrix-run-actions">
               {!isTerminalBatch(batch) && onCancelRun && (
                 <button type="button" className="secondary compact" onClick={onCancelRun}>
-                  Cancel
+                  {t('Cancel')}
                 </button>
               )}
               {isTerminalBatch(batch) && batch.counts.failed > 0 && onRetryFailed && (
                 <button type="button" className="secondary compact" onClick={onRetryFailed}>
-                  Retry failed
+                  {t('Retry failed')}
                 </button>
               )}
             </div>
           </header>
           <dl>
-            <div><dt>Closure</dt><dd>{batch.selection.caseIds.length} {batch.selection.mode.toLocaleLowerCase()}</dd></div>
-            <div><dt>Passed</dt><dd>{batch.counts.succeeded}</dd></div>
-            <div><dt>Failed</dt><dd>{batch.counts.failed}</dd></div>
-            <div><dt>Waiting</dt><dd>{batch.counts.queued + batch.counts.running}</dd></div>
+            <div><dt>{t('Closure')}</dt><dd>{batch.selection.caseIds.length} {batch.selection.mode.toLocaleLowerCase()}</dd></div>
+            <div><dt>{t('Passed')}</dt><dd>{batch.counts.succeeded}</dd></div>
+            <div><dt>{t('Failed')}</dt><dd>{batch.counts.failed}</dd></div>
+            <div><dt>{t('Waiting')}</dt><dd>{batch.counts.queued + batch.counts.running}</dd></div>
             <div>
-              <dt>Promotion</dt>
+              <dt>{t('Promotion')}</dt>
               <dd data-eligible={batch.promotion.eligible} title={batch.promotion.reason}>
-                {batch.promotion.eligible ? 'Eligible' : promotionLabel(batch)}
+                {t(batch.promotion.eligible ? 'Eligible' : promotionLabel(batch))}
               </dd>
             </div>
           </dl>
@@ -239,14 +241,14 @@ export default function ScenarioMatrixSurface({
         {runError && <div className="scenario-matrix-run-error" role="alert">{runError}</div>}
       </div>
 
-      <div className="scenario-matrix-scroll" tabIndex={0} aria-label="Scrollable Scenario matrix">
+      <div className="scenario-matrix-scroll" tabIndex={0} aria-label={t('Scrollable Scenario matrix')}>
         <table>
           <thead>
             <tr className="scenario-matrix-groups">
               <th rowSpan={2} className="scenario-matrix-select">
                 <input
                   type="checkbox"
-                  aria-label="Select visible cases"
+                  aria-label={t('Select visible cases')}
                   checked={allVisibleSelected}
                   onChange={(event) => onSelectionChange(selectVisibleScenarios(
                     selection,
@@ -256,13 +258,13 @@ export default function ScenarioMatrixSurface({
                 />
               </th>
               {groupSpans(columns).map((group) => (
-                <th colSpan={group.count} scope="colgroup" key={group.name}>{group.name}</th>
+                <th colSpan={group.count} scope="colgroup" key={group.name}>{t(group.name)}</th>
               ))}
-              <th rowSpan={2} className="scenario-matrix-actions">Actions</th>
+              <th rowSpan={2} className="scenario-matrix-actions">{t('Actions')}</th>
             </tr>
             <tr>
               {columns.map((column) => (
-                <th scope="col" key={column.columnId} title={column.path}>{column.label}</th>
+                <th scope="col" key={column.columnId} title={column.path}>{t(column.label)}</th>
               ))}
             </tr>
           </thead>
@@ -283,7 +285,7 @@ export default function ScenarioMatrixSurface({
                 <td className="scenario-matrix-select">
                   <input
                     type="checkbox"
-                    aria-label={`Select ${row.name}`}
+                    aria-label={t('Select {name}', { name: row.name })}
                     checked={selected.has(row.caseId)}
                     onChange={(event) => onSelectionChange(toggleScenarioSelection(
                       selection,
@@ -307,14 +309,14 @@ export default function ScenarioMatrixSurface({
                       type="button"
                       className="secondary compact"
                       aria-expanded={expandedFailures.includes(row.caseId)}
-                      aria-label={`Explain failure for ${row.name}`}
+                      aria-label={t('Explain failure for {name}', { name: row.name })}
                       onClick={() => setExpandedFailures((current) => (
                         current.includes(row.caseId)
                           ? current.filter((caseId) => caseId !== row.caseId)
                           : [...current, row.caseId]
                       ))}
                     >
-                      Why
+                      {t('Why')}
                     </button>
                   )}
                   <button
@@ -323,7 +325,7 @@ export default function ScenarioMatrixSurface({
                     onClick={() => onOpenCase(row.caseId)}
                     disabled={disabled}
                   >
-                    Open
+                    {t('Open')}
                   </button>
                 </td>
               </tr>
@@ -342,13 +344,13 @@ export default function ScenarioMatrixSurface({
         </table>
         {rows.length === 0 && (
           <div className="scenario-matrix-empty">
-            <strong>No cases match this view.</strong>
+            <strong>{t('No cases match this view.')}</strong>
             <button type="button" className="secondary compact" onClick={() => {
               setQuery('');
               setCaseType('');
               setTone('');
             }}>
-              Clear filters
+              {t('Clear filters')}
             </button>
           </div>
         )}
@@ -360,14 +362,14 @@ export default function ScenarioMatrixSurface({
           className="scenario-matrix-more"
           onClick={() => setVisibleLimit((limit) => limit + WINDOW_SIZE)}
         >
-          Show next {Math.min(WINDOW_SIZE, filteredRows.length - rows.length)} cases
+          {t('Show next {count} cases', { count: Math.min(WINDOW_SIZE, filteredRows.length - rows.length) })}
         </button>
       )}
 
       <footer className="scenario-matrix-bulkbar">
         <div>
-          <strong>{selection.selectedCaseIds.length} selected</strong>
-          <span>Selection is independent from the current filter and sort.</span>
+          <strong>{t('{count} selected', { count: selection.selectedCaseIds.length })}</strong>
+          <span>{t('Selection is independent from the current filter and sort.')}</span>
         </div>
         <div>
           <button
@@ -376,7 +378,7 @@ export default function ScenarioMatrixSurface({
             disabled={disabled || !baselineAvailable || failedCount === 0}
             onClick={() => onRunSelection('FAILED')}
           >
-            Run failed ({failedCount})
+            {t('Run failed ({count})', { count: failedCount })}
           </button>
           <button
             type="button"
@@ -384,11 +386,11 @@ export default function ScenarioMatrixSurface({
             disabled={disabled || !baselineAvailable || changedCount === 0}
             onClick={() => onRunSelection('CHANGED')}
             title={!baselineAvailable
-              ? 'Run all once to create a complete baseline'
-              : changedCount === 0 ? 'No cases changed since the complete baseline'
-                : 'Run cases changed since the complete baseline'}
+              ? t('Run all once to create a complete baseline')
+              : changedCount === 0 ? t('No cases changed since the complete baseline')
+                : t('Run cases changed since the complete baseline')}
           >
-            Run changed ({changedCount})
+            {t('Run changed ({count})', { count: changedCount })}
           </button>
           <button
             type="button"
@@ -396,11 +398,11 @@ export default function ScenarioMatrixSurface({
             disabled={disabled || !baselineAvailable || affectedCount === 0}
             onClick={() => onRunSelection('AFFECTED')}
             title={!baselineAvailable
-              ? 'Run all once to create a complete baseline'
-              : affectedCount === 0 ? 'No cases are affected relative to the complete baseline'
-                : 'Run changed, failed, or target-affected cases'}
+              ? t('Run all once to create a complete baseline')
+              : affectedCount === 0 ? t('No cases are affected relative to the complete baseline')
+                : t('Run changed, failed, or target-affected cases')}
           >
-            Run affected ({affectedCount})
+            {t('Run affected ({count})', { count: affectedCount })}
           </button>
           <button
             type="button"
@@ -408,7 +410,7 @@ export default function ScenarioMatrixSurface({
             disabled={disabled || projection.rows.length === 0}
             onClick={() => onRunSelection('ALL')}
           >
-            Run all
+            {t('Run all')}
           </button>
           <button
             type="button"
@@ -417,7 +419,7 @@ export default function ScenarioMatrixSurface({
             onClick={() => onRunSelection('SELECTED')}
             data-testid="scenario-run-selected"
           >
-            {runningCaseIds.length > 0 ? `Running ${runningCaseIds.length}...` : 'Run selected'}
+            {runningCaseIds.length > 0 ? t('Running {count}...', { count: runningCaseIds.length }) : t('Run selected')}
           </button>
         </div>
       </footer>
@@ -436,14 +438,15 @@ function ScenarioMatrixCell({
   tone?: TableCaseVerdictPresentation['tone'];
   onChange: (value: unknown) => void;
 }) {
+  const { t } = useI18n();
   if (!column.editable) {
     return <td data-tone={tone} title={displayValue(value)}><span>{displayValue(value)}</span></td>;
   }
   if (column.binding.kind === 'CASE_TYPE') {
     return (
       <td>
-        <select aria-label={`${column.label} value`} value={String(value)} onChange={(event) => onChange(event.target.value)}>
-          {CASE_TYPES.map((caseType) => <option value={caseType} key={caseType}>{caseTypeLabel(caseType)}</option>)}
+        <select aria-label={t('{label} value', { label: t(column.label) })} value={String(value)} onChange={(event) => onChange(event.target.value)}>
+          {CASE_TYPES.map((caseType) => <option value={caseType} key={caseType}>{t(caseTypeLabel(caseType))}</option>)}
         </select>
       </td>
     );
@@ -453,7 +456,7 @@ function ScenarioMatrixCell({
       <td>
         <input
           type="checkbox"
-          aria-label={`${column.label} value`}
+          aria-label={t('{label} value', { label: t(column.label) })}
           checked={value}
           onChange={(event) => onChange(event.target.checked)}
         />
@@ -463,7 +466,7 @@ function ScenarioMatrixCell({
   return (
     <td>
       <input
-        aria-label={`${column.label} value`}
+        aria-label={t('{label} value', { label: t(column.label) })}
         value={displayValue(value)}
         onChange={(event) => onChange(parseCellValue(event.target.value, value))}
       />

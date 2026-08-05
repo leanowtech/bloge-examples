@@ -178,6 +178,7 @@ import {
   peekDslAuthorHandoff,
 } from './author/dslAuthorHandoff';
 import AuthorCommandBar from './author/shell/AuthorCommandBar';
+import { useI18n } from './i18n/I18nProvider';
 import AuthorContextInspector from './author/shell/AuthorContextInspector';
 import AuthorSurfaceRouter from './author/shell/AuthorSurfaceRouter';
 import TopologyContextRail from './author/shell/TopologyContextRail';
@@ -4803,6 +4804,7 @@ export interface AuthorCanvasProps {
 }
 
 export default function AuthorCanvas({ workspaceVersion = 'v1' }: AuthorCanvasProps = {}) {
+  const { t } = useI18n();
   const isTaskWorkspace = workspaceVersion === 'v2';
   const initialWorkspaceLocation = parseAuthorWorkspaceLocation(window.location.search);
   const [initialDslHandoff] = useState(() => (
@@ -9421,7 +9423,7 @@ export default function AuthorCanvas({ workspaceVersion = 'v1' }: AuthorCanvasPr
         <button
           type="button"
           className="author-panel-resizer palette-resizer"
-          aria-label="Resize operator palette"
+          aria-label={t('Resize operator palette')}
           onPointerDown={(event) => beginPanelResize('palette', event)}
         />
       )}
@@ -9429,7 +9431,7 @@ export default function AuthorCanvas({ workspaceVersion = 'v1' }: AuthorCanvasPr
         <button
           type="button"
           className="author-panel-resizer inspector-resizer"
-          aria-label="Resize context inspector"
+          aria-label={t('Resize context inspector')}
           onPointerDown={(event) => beginPanelResize('inspector', event)}
         />
       )}
@@ -9438,7 +9440,7 @@ export default function AuthorCanvas({ workspaceVersion = 'v1' }: AuthorCanvasPr
           <button
             type="button"
             className="author-panel-toggle palette-panel-toggle"
-            aria-label={paletteCollapsed ? 'Expand operator palette' : 'Collapse operator palette'}
+            aria-label={t(paletteCollapsed ? 'Expand operator palette' : 'Collapse operator palette')}
             aria-expanded={!paletteCollapsed}
             onClick={togglePalettePanel}
           >
@@ -9446,12 +9448,12 @@ export default function AuthorCanvas({ workspaceVersion = 'v1' }: AuthorCanvasPr
           </button>
         )}
         <div className="palette-heading">
-          <h2>Operators</h2>
+          <h2>{t('Operators')}</h2>
           <span>
             {paletteView.matchingCount}/{paletteView.totalCount}
           </span>
           {isTaskWorkspace && (
-            <label className="author-panel-pin" title="Keep this panel open during canvas fitting">
+            <label className="author-panel-pin" title={t('Keep this panel open during canvas fitting')}>
               <input
                 type="checkbox"
                 checked={palettePreference === 'open'}
@@ -9460,17 +9462,17 @@ export default function AuthorCanvas({ workspaceVersion = 'v1' }: AuthorCanvasPr
                   if (event.target.checked) setPaletteCollapsed(false);
                 }}
               />
-              <span>Keep open</span>
+              <span>{t('Keep open')}</span>
             </label>
           )}
         </div>
-        <section className="library-intake" aria-label="Operator library intake" data-testid="library-intake">
+        <section className="library-intake" aria-label={t('Operator library intake')} data-testid="library-intake">
           <div className="library-intake-heading">
-            <h2>Library</h2>
-            {libraryBusy && <span>Working</span>}
+            <h2>{t('Library')}</h2>
+            {libraryBusy && <span>{t('Working')}</span>}
           </div>
           <textarea
-            aria-label="Operator library JSON or YAML"
+            aria-label={t('Operator library JSON or YAML')}
             data-testid="operator-library-source"
             spellCheck={false}
             placeholder="bloge.visualOperatorLibrary.v1 JSON/YAML, or bloge.capabilityCatalog.v1 for Adapt Catalog"
@@ -9484,8 +9486,8 @@ export default function AuthorCanvas({ workspaceVersion = 'v1' }: AuthorCanvasPr
               setDslRewriteGateResult(null);
             }}
           />
-          <div className="library-examples" aria-label="Operator library examples">
-            <span>Examples</span>
+          <div className="library-examples" aria-label={t('Operator library examples')}>
+            <span>{t('Examples')}</span>
             <div className="library-example-buttons">
               {OPERATOR_LIBRARY_EXAMPLES.map((example) => (
                 <button
@@ -9521,7 +9523,7 @@ export default function AuthorCanvas({ workspaceVersion = 'v1' }: AuthorCanvasPr
               onClick={adaptCapabilityCatalogSource}
               disabled={libraryBusy}
             >
-              Adapt Catalog
+              {t('Adapt Catalog')}
             </button>
             <button
               type="button"
@@ -9530,7 +9532,7 @@ export default function AuthorCanvas({ workspaceVersion = 'v1' }: AuthorCanvasPr
               onClick={validateLibrarySource}
               disabled={libraryBusy}
             >
-              Validate
+              {t('Validate')}
             </button>
             <button
               type="button"
@@ -9540,7 +9542,7 @@ export default function AuthorCanvas({ workspaceVersion = 'v1' }: AuthorCanvasPr
               disabled={libraryBusy || (libraryHasWarnings
                 && (!libraryWarningsAcknowledged || !libraryWarningReason.trim()))}
             >
-              Import
+              {t('Import')}
             </button>
           </div>
           {libraryHasWarnings && (
@@ -9552,15 +9554,15 @@ export default function AuthorCanvas({ workspaceVersion = 'v1' }: AuthorCanvasPr
                   onChange={(event) => setLibraryWarningsAcknowledged(event.target.checked)}
                   data-testid="operator-library-ack-warnings"
                 />
-                <span>I reviewed the warning diagnostics</span>
+                <span>{t('I reviewed the warning diagnostics')}</span>
               </label>
               <label>
-                <span>Audit reason</span>
+                <span>{t('Audit reason')}</span>
                 <input
                   type="text"
                   value={libraryWarningReason}
                   onChange={(event) => setLibraryWarningReason(event.target.value)}
-                  placeholder="Why this DESIGN-only import is acceptable"
+                  placeholder={t('Why this DESIGN-only import is acceptable')}
                   data-testid="operator-library-warning-reason"
                 />
               </label>
@@ -9568,7 +9570,7 @@ export default function AuthorCanvas({ workspaceVersion = 'v1' }: AuthorCanvasPr
           )}
           {libraryNotice && (
             <p className={`library-notice ${libraryNotice.level}`} data-testid="operator-library-notice">
-              {libraryNotice.message}
+              {t(libraryNotice.message)}
             </p>
           )}
           {libraryDiagnostics.length > 0 && (
@@ -9581,17 +9583,17 @@ export default function AuthorCanvas({ workspaceVersion = 'v1' }: AuthorCanvasPr
             </ol>
           )}
         </section>
-        <section className="library-intake dsl-import" aria-label="Legacy DSL import" data-testid="legacy-dsl-import">
+        <section className="library-intake dsl-import" aria-label={t('Legacy DSL import')} data-testid="legacy-dsl-import">
           <div className="library-intake-heading">
-            <h2>Legacy DSL</h2>
-            {dslImportBusy && <span>Rendering</span>}
-            {dslCommitBusy && <span>Saving</span>}
-            {dslRewriteGateBusy && <span>Checking</span>}
+            <h2>{t('Legacy DSL')}</h2>
+            {dslImportBusy && <span>{t('Rendering')}</span>}
+            {dslCommitBusy && <span>{t('Saving')}</span>}
+            {dslRewriteGateBusy && <span>{t('Checking')}</span>}
           </div>
           <label className="dsl-source-id">
-            <span>Source</span>
+            <span>{t('Source')}</span>
             <input
-              aria-label="DSL source id"
+              aria-label={t('DSL source id')}
               data-testid="legacy-dsl-source-id"
               value={dslSourceId}
               onChange={(event) => {
@@ -9601,7 +9603,7 @@ export default function AuthorCanvas({ workspaceVersion = 'v1' }: AuthorCanvasPr
             />
           </label>
           <textarea
-            aria-label="BLOGE DSL source"
+            aria-label={t('BLOGE DSL source')}
             data-testid="legacy-dsl-source"
             spellCheck={false}
             placeholder="graph migratedFlow { ... }"
@@ -9616,8 +9618,8 @@ export default function AuthorCanvas({ workspaceVersion = 'v1' }: AuthorCanvasPr
               setDslRewriteGateResult(null);
             }}
           />
-          <div className="library-examples" aria-label="Legacy DSL examples">
-            <span>Examples</span>
+          <div className="library-examples" aria-label={t('Legacy DSL examples')}>
+            <span>{t('Examples')}</span>
             <div className="library-example-buttons">
               {LEGACY_DSL_EXAMPLES.map((example) => (
                 <button
@@ -9653,7 +9655,7 @@ export default function AuthorCanvas({ workspaceVersion = 'v1' }: AuthorCanvasPr
               onClick={previewLegacyDsl}
               disabled={dslImportBusy || dslCommitBusy || dslRewriteGateBusy}
             >
-              Render DSL
+              {t('Render DSL')}
             </button>
             <button
               type="button"
@@ -9662,7 +9664,7 @@ export default function AuthorCanvas({ workspaceVersion = 'v1' }: AuthorCanvasPr
               onClick={checkLegacyDslRewriteGate}
               disabled={dslImportBusy || dslCommitBusy || dslRewriteGateBusy}
             >
-              Check Rewrite
+              {t('Check Rewrite')}
             </button>
             <button
               type="button"
@@ -9671,12 +9673,12 @@ export default function AuthorCanvas({ workspaceVersion = 'v1' }: AuthorCanvasPr
               onClick={commitLegacyDsl}
               disabled={dslImportBusy || dslCommitBusy || dslRewriteGateBusy}
             >
-              Commit Draft
+              {t('Commit Draft')}
             </button>
           </div>
           {dslImportNotice && (
             <p className={`library-notice ${dslImportNotice.level}`} data-testid="legacy-dsl-notice">
-              {dslImportNotice.message}
+              {t(dslImportNotice.message)}
             </p>
           )}
           {dslImportCoverage && (
@@ -9773,13 +9775,13 @@ export default function AuthorCanvas({ workspaceVersion = 'v1' }: AuthorCanvasPr
         <input
           id="operator-palette-search"
           ref={searchInputRef}
-          aria-label="Search operators"
+          aria-label={t('Search operators')}
           aria-keyshortcuts="Meta+K Control+K"
-          placeholder="Search…"
+          placeholder={t('Search…')}
           value={search}
           onChange={(event) => setSearch(event.target.value)}
         />
-        <div className="palette-facets" role="group" aria-label="Operator runtime facet">
+        <div className="palette-facets" role="group" aria-label={t('Operator runtime facet')}>
           {paletteView.runtimeFacets.map((facet) => (
             <button
               key={facet.key}
@@ -9788,18 +9790,18 @@ export default function AuthorCanvas({ workspaceVersion = 'v1' }: AuthorCanvasPr
               aria-pressed={paletteFacet === facet.key}
               onClick={() => setPaletteFacet(facet.key)}
             >
-              <span>{facet.label}</span>
+              <span>{t(facet.label)}</span>
               <strong>{facet.count}</strong>
             </button>
           ))}
         </div>
         <div className="palette-selects">
           <select
-            aria-label="Source kind filter"
+            aria-label={t('Source kind filter')}
             value={sourceFilter}
             onChange={(event) => setSourceFilter(event.target.value)}
           >
-            <option value="all">Any source</option>
+            <option value="all">{t('Any source')}</option>
             {paletteView.sourceKindFacets.map((facet) => (
               <option key={facet.key} value={facet.key}>
                 {facet.label} ({facet.count})
@@ -9807,12 +9809,12 @@ export default function AuthorCanvas({ workspaceVersion = 'v1' }: AuthorCanvasPr
             ))}
           </select>
           <select
-            aria-label="Tag filter"
+            aria-label={t('Tag filter')}
             value={tagFilter}
             onChange={(event) => setTagFilter(event.target.value)}
             disabled={paletteView.tagFacets.length === 0}
           >
-            <option value="all">Any tag</option>
+            <option value="all">{t('Any tag')}</option>
             {paletteView.tagFacets.map((facet) => (
               <option key={facet.key} value={facet.key}>
                 {facet.label} ({facet.count})
@@ -9845,12 +9847,15 @@ export default function AuthorCanvas({ workspaceVersion = 'v1' }: AuthorCanvasPr
                       title={operator.operatorRef}
                     >
                       <span className="op-copy">
-                        <span className={`op-kind ${summary.visualKind}`}>{summary.visualLabel}</span>
+                        <span className={`op-kind ${summary.visualKind}`}>{t(summary.visualLabel)}</span>
                         <span className="op-name">{summary.name}</span>
                         <span className="op-ref">{summary.operatorRef}</span>
                         <span className="op-meta">
-                          {summary.contractHint} · {summary.requiredInputCount}/{summary.inputCount} inputs ·{' '}
-                          {summary.outputCount} outputs
+                          {t(summary.contractHint)} · {t('{required}/{inputs} inputs · {outputs} outputs', {
+                            required: summary.requiredInputCount,
+                            inputs: summary.inputCount,
+                            outputs: summary.outputCount,
+                          })}
                         </span>
                       </span>
                       <span className="operator-badges">
@@ -9859,12 +9864,12 @@ export default function AuthorCanvas({ workspaceVersion = 'v1' }: AuthorCanvasPr
                             className={`badge side-effect ${summary.managedWrite ? 'managed' : 'unmanaged'}`}
                             title={summary.sideEffectNotice}
                           >
-                            {summary.sideEffectBadgeLabel}
+                            {t(summary.sideEffectBadgeLabel)}
                           </span>
                         )}
                         {summary.readinessBadgeLabel && (
                           <span className={`badge readiness ${summary.readinessLevel}`}>
-                            {summary.readinessBadgeLabel}
+                            {t(summary.readinessBadgeLabel)}
                           </span>
                         )}
                       </span>
@@ -9876,7 +9881,7 @@ export default function AuthorCanvas({ workspaceVersion = 'v1' }: AuthorCanvasPr
           ))}
           {paletteView.groups.length === 0 && (
             <p className="muted">
-              {operators.length === 0 ? 'No operators. Is the server running?' : 'No matching operators.'}
+              {t(operators.length === 0 ? 'No operators. Is the server running?' : 'No matching operators.')}
             </p>
           )}
         </div>

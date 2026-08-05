@@ -5,6 +5,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import AuthorCommandBar from './AuthorCommandBar';
 import type { AuthorMode } from './authorWorkspaceState';
+import I18nProvider from '../../i18n/I18nProvider';
 
 describe('AuthorCommandBar', () => {
   let root: Root | null = null;
@@ -46,37 +47,49 @@ describe('AuthorCommandBar', () => {
     },
   );
 
-  async function render(mode: AuthorMode) {
+  it('renders the command surface and dynamic readiness values in Chinese', async () => {
+    window.history.pushState({}, '', '/author/?lang=zh-CN');
+    await render('compose', true);
+
+    expect(text()).toContain('草稿 r2 · 5 个节点 · 7 条连线');
+    expect(text()).toContain('自动布局');
+    expect(text()).toContain('校验编排图');
+    expect(text()).toContain('运行场景');
+    expect(text()).toContain('未运行');
+  });
+
+  async function render(mode: AuthorMode, localized = false) {
+    const commandBar = (
+      <AuthorCommandBar
+        graphName="riskPolicy"
+        draftRevision={2}
+        nodeCount={5}
+        edgeCount={7}
+        mode={mode}
+        primaryAction={{ kind: 'run', label: 'Run scenario', targetMode: 'scenarios' }}
+        primaryDisabled={false}
+        draftStatus="SAVED"
+        executionStatus="NOT RUN"
+        assertionStatus="NOT RUN"
+        contractStatus="VALID"
+        governanceStatus="NOT CHECKED"
+        promotionStatus="NOT EVALUATED"
+        promotionSummary="Run the canonical Scenario."
+        exportUrl="data:application/json,{}"
+        exportName="risk-policy.json"
+        exportDisabled={false}
+        layoutDisabled={false}
+        validationDisabled={false}
+        onModeChange={vi.fn()}
+        onPrimaryAction={vi.fn()}
+        onImport={vi.fn()}
+        onAutoLayout={vi.fn()}
+        onValidate={vi.fn()}
+      />
+    );
     await act(async () => {
       root = createRoot(host);
-      root.render(
-        <AuthorCommandBar
-          graphName="riskPolicy"
-          draftRevision={2}
-          nodeCount={5}
-          edgeCount={7}
-          mode={mode}
-          primaryAction={{ kind: 'run', label: 'Run scenario', targetMode: 'scenarios' }}
-          primaryDisabled={false}
-          draftStatus="SAVED"
-          executionStatus="NOT RUN"
-          assertionStatus="NOT RUN"
-          contractStatus="VALID"
-          governanceStatus="NOT CHECKED"
-          promotionStatus="NOT EVALUATED"
-          promotionSummary="Run the canonical Scenario."
-          exportUrl="data:application/json,{}"
-          exportName="risk-policy.json"
-          exportDisabled={false}
-          layoutDisabled={false}
-          validationDisabled={false}
-          onModeChange={vi.fn()}
-          onPrimaryAction={vi.fn()}
-          onImport={vi.fn()}
-          onAutoLayout={vi.fn()}
-          onValidate={vi.fn()}
-        />,
-      );
+      root.render(localized ? <I18nProvider>{commandBar}</I18nProvider> : commandBar);
     });
   }
 

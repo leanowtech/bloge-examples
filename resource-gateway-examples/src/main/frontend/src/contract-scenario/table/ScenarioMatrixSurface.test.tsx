@@ -7,6 +7,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { tableDrivenScenarioBaseline } from '../tableDrivenTestingBaseline';
 import ScenarioMatrixSurface from './ScenarioMatrixSurface';
 import { buildScenarioTableProjection, type ScenarioTableSelection } from './scenarioTableModel';
+import I18nProvider from '../../i18n/I18nProvider';
 
 describe('ScenarioMatrixSurface', () => {
   let host: HTMLDivElement;
@@ -17,6 +18,7 @@ describe('ScenarioMatrixSurface', () => {
     host = document.createElement('div');
     document.body.appendChild(host);
     root = createRoot(host);
+    window.history.pushState({}, '', '/author/?lang=en');
   });
 
   afterEach(async () => {
@@ -87,7 +89,23 @@ describe('ScenarioMatrixSurface', () => {
     expect(onRunSelection).toHaveBeenCalledWith('AFFECTED');
   });
 
-  async function render(size: 5 | 50 | 500, overrides: Partial<Parameters<typeof ScenarioMatrixSurface>[0]> = {}) {
+  it('localizes matrix controls and counts without translating case payloads', async () => {
+    window.history.replaceState({}, '', '/author/?lang=zh-CN');
+    await render(5, {}, true);
+
+    expect(text()).toContain('5 个标准用例');
+    expect(text()).toContain('显示 5 / 5');
+    expect(button('运行所选项')).toBeInstanceOf(HTMLButtonElement);
+    expect(input('搜索用例').placeholder).toBe('搜索用例、ID 或标签');
+    expect(text()).toContain('case-1-expected-1-1');
+    expect(text()).toContain('$.result.field01');
+  });
+
+  async function render(
+    size: 5 | 50 | 500,
+    overrides: Partial<Parameters<typeof ScenarioMatrixSurface>[0]> = {},
+    localized = false,
+  ) {
     const projection = buildScenarioTableProjection(tableDrivenScenarioBaseline(size));
     const props: Parameters<typeof ScenarioMatrixSurface>[0] = {
       projection,
@@ -101,7 +119,8 @@ describe('ScenarioMatrixSurface', () => {
       onRunSelection: vi.fn(),
       ...overrides,
     };
-    await act(async () => root?.render(<StatefulMatrix {...props} />));
+    const matrix = <StatefulMatrix {...props} />;
+    await act(async () => root?.render(localized ? <I18nProvider>{matrix}</I18nProvider> : matrix));
   }
 
   function text() {

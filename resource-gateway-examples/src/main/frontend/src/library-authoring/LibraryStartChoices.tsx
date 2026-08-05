@@ -1,5 +1,6 @@
 import { useState } from 'react';
 
+import { useI18n } from '../i18n/I18nProvider';
 import type { VisualLibraryAuthoringDocument } from '../types';
 import ExistingAssetDiscovery from './ExistingAssetDiscovery';
 import { LIBRARY_AUTHORING_EXAMPLES } from './examples';
@@ -24,6 +25,7 @@ export default function LibraryStartChoices({
   initialChoice = 'quick',
   onStart,
 }: LibraryStartChoicesProps) {
+  const { t } = useI18n();
   const [choice, setChoice] = useState<LibraryStartChoice>(initialChoice);
   const [libraryId, setLibraryId] = useState('team-operator-library');
   const [owner, setOwner] = useState('team-owner');
@@ -76,14 +78,14 @@ export default function LibraryStartChoices({
     <section className="library-start" data-testid="library-start">
       <header className="library-start-heading">
         <div>
-          <p className="eyebrow">Library Workbench</p>
-          <h2>Create an operator and function library</h2>
-          <p>Choose the closest starting point. You can inspect the generated canonical contract before commit.</p>
+          <p className="eyebrow">{t('Library Workbench')}</p>
+          <h2>{t('Create an operator and function library')}</h2>
+          <p>{t('Choose the closest starting point. You can inspect the generated canonical contract before commit.')}</p>
         </div>
-        <a className="secondary compact" href="/author/">Back to graph authoring</a>
+        <a className="secondary compact" href="/author/">{t('Back to graph authoring')}</a>
       </header>
 
-      <nav className="library-start-choices" aria-label="Library creation methods">
+      <nav className="library-start-choices" aria-label={t('Library creation methods')}>
         <button
           type="button"
           className={choice === 'quick' ? 'active' : ''}
@@ -91,8 +93,8 @@ export default function LibraryStartChoices({
           onClick={() => setChoice('quick')}
           data-testid="library-start-choice:quick"
         >
-          <strong>Quick Create</strong>
-          <span>Start with a pure operator and structured fields.</span>
+          <strong>{t('Quick Create')}</strong>
+          <span>{t('Start with a pure operator and structured fields.')}</span>
         </button>
         <button
           type="button"
@@ -101,8 +103,8 @@ export default function LibraryStartChoices({
           onClick={() => setChoice('samples')}
           data-testid="library-start-choice:samples"
         >
-          <strong>Infer from Samples</strong>
-          <span>Derive observed fields from representative JSON.</span>
+          <strong>{t('Infer from Samples')}</strong>
+          <span>{t('Derive observed fields from representative JSON.')}</span>
         </button>
         <button
           type="button"
@@ -111,8 +113,8 @@ export default function LibraryStartChoices({
           onClick={() => setChoice('discover')}
           data-testid="library-start-choice:discover"
         >
-          <strong>Discover Existing Assets</strong>
-          <span>Start from DSL, API contracts, or runtime inventory.</span>
+          <strong>{t('Discover Existing Assets')}</strong>
+          <span>{t('Start from DSL, API contracts, or runtime inventory.')}</span>
         </button>
         <button
           type="button"
@@ -121,8 +123,8 @@ export default function LibraryStartChoices({
           onClick={() => setChoice('advanced')}
           data-testid="library-start-choice:advanced"
         >
-          <strong>Advanced Import</strong>
-          <span>Open an existing progressive authoring JSON document.</span>
+          <strong>{t('Advanced Import')}</strong>
+          <span>{t('Open an existing progressive authoring JSON document.')}</span>
         </button>
       </nav>
 
@@ -130,7 +132,7 @@ export default function LibraryStartChoices({
         {choice === 'quick' && (
           <div className="library-quick-form">
             <label>
-              <span>Library id</span>
+              <span>{t('Library id')}</span>
               <input
                 value={libraryId}
                 onChange={(event) => setLibraryId(event.target.value)}
@@ -138,7 +140,7 @@ export default function LibraryStartChoices({
               />
             </label>
             <label>
-              <span>Owner</span>
+              <span>{t('Owner')}</span>
               <input
                 value={owner}
                 onChange={(event) => setOwner(event.target.value)}
@@ -152,7 +154,7 @@ export default function LibraryStartChoices({
               disabled={!libraryId.trim()}
               data-testid="library-quick-create"
             >
-              Create draft
+              {t('Create draft')}
             </button>
           </div>
         )}
@@ -160,15 +162,15 @@ export default function LibraryStartChoices({
           <div className="library-samples-form" data-testid="library-samples-form">
             <div className="library-samples-fields">
               <label>
-                <span>Library id</span>
+                <span>{t('Library id')}</span>
                 <input value={libraryId} onChange={(event) => setLibraryId(event.target.value)} />
               </label>
               <label>
-                <span>Owner</span>
+                <span>{t('Owner')}</span>
                 <input value={owner} onChange={(event) => setOwner(event.target.value)} />
               </label>
               <label>
-                <span>Operator ref</span>
+                <span>{t('Operator ref')}</span>
                 <input
                   value={sampleOperatorRef}
                   onChange={(event) => setSampleOperatorRef(event.target.value)}
@@ -176,7 +178,7 @@ export default function LibraryStartChoices({
                 />
               </label>
               <label>
-                <span>Port name</span>
+                <span>{t('Port name')}</span>
                 <input
                   value={samplePortName}
                   onChange={(event) => setSamplePortName(event.target.value)}
@@ -184,7 +186,7 @@ export default function LibraryStartChoices({
                 />
               </label>
               <fieldset>
-                <legend>Port direction</legend>
+                <legend>{t('Port direction')}</legend>
                 <div className="segmented-control">
                   {(['INPUT', 'OUTPUT'] as const).map((direction) => (
                     <button
@@ -194,14 +196,14 @@ export default function LibraryStartChoices({
                       aria-pressed={sampleDirection === direction}
                       onClick={() => setSampleDirection(direction)}
                     >
-                      {direction === 'INPUT' ? 'Input' : 'Output'}
+                      {t(direction === 'INPUT' ? 'Input' : 'Output')}
                     </button>
                   ))}
                 </div>
               </fieldset>
             </div>
             <label className="library-samples-source">
-              <span>Representative JSON</span>
+              <span>{t('Representative JSON')}</span>
               <textarea
                 value={sampleText}
                 onChange={(event) => setSampleText(event.target.value)}
@@ -219,7 +221,7 @@ export default function LibraryStartChoices({
                 || !sampleText.trim()}
               data-testid="library-samples-create"
             >
-              Create and analyze
+              {t('Create and analyze')}
             </button>
           </div>
         )}
@@ -229,7 +231,7 @@ export default function LibraryStartChoices({
         {choice === 'advanced' && (
           <div className="library-advanced-import">
             <label>
-              <span>Authoring JSON</span>
+              <span>{t('Authoring JSON')}</span>
               <textarea
                 value={advancedSource}
                 onChange={(event) => {
@@ -249,34 +251,34 @@ export default function LibraryStartChoices({
               disabled={!advancedSource.trim()}
               data-testid="library-advanced-import"
             >
-              Open structured draft
+              {t('Open structured draft')}
             </button>
           </div>
         )}
       </section>
 
-      <section className="library-start-examples" aria-label="Complete library examples">
+      <section className="library-start-examples" aria-label={t('Complete library examples')}>
         <header>
-          <h3>Complete examples</h3>
-          <span>Types, operators, functions, and test references included</span>
+          <h3>{t('Complete examples')}</h3>
+          <span>{t('Types, operators, functions, and test references included')}</span>
         </header>
         <div>
           {LIBRARY_AUTHORING_EXAMPLES.map((example) => (
             <article key={example.key}>
-              <span>{example.domain} · Design-only</span>
+              <span>{example.domain} · {t('Design-only')}</span>
               <strong>{example.label}</strong>
               <p>{example.description}</p>
               <dl>
                 <div>
-                  <dt>Operators</dt>
+                  <dt>{t('Operators')}</dt>
                   <dd>{Object.keys(example.document.operators ?? {}).length}</dd>
                 </div>
                 <div>
-                  <dt>Functions</dt>
+                  <dt>{t('Functions')}</dt>
                   <dd>{Object.keys(example.document.functions ?? {}).length}</dd>
                 </div>
                 <div>
-                  <dt>Types</dt>
+                  <dt>{t('Types')}</dt>
                   <dd>{Object.keys(example.document.types ?? {}).length}</dd>
                 </div>
               </dl>
@@ -286,7 +288,7 @@ export default function LibraryStartChoices({
                 onClick={() => onStart(structuredClone(example.document), `example:${example.key}`)}
                 data-testid={`library-start-example:${example.key}`}
               >
-                Open example
+                {t('Open example')}
               </button>
             </article>
           ))}

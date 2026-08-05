@@ -1,6 +1,7 @@
 import { useEffect, useState, type ReactNode } from 'react';
 
 import type { SchemaEnvelope } from '../types';
+import { useI18n } from '../i18n/I18nProvider';
 import {
   isSensitiveSchema,
   normalizeSchema,
@@ -54,6 +55,7 @@ interface SchemaValueControlProps {
 }
 
 function SchemaValueControl(props: SchemaValueControlProps): ReactNode {
+  const { t } = useI18n();
   const nullable = nullableSchema(props.schema);
   if (nullable) {
     return (
@@ -68,7 +70,7 @@ function SchemaValueControl(props: SchemaValueControlProps): ReactNode {
               event.target.checked ? null : sampleForSchema(nullable),
             )}
           />
-          <span>Use null</span>
+          <span>{t('Use null')}</span>
         </label>
         {props.value !== null && (
           <SchemaValueControl
@@ -157,7 +159,7 @@ function SchemaValueControl(props: SchemaValueControlProps): ReactNode {
     const itemSchema = isRecord(schema.items) ? schema.items : {};
     return (
       <fieldset className="schema-value-array">
-        <legend>{title}<small>{values.length} items</small></legend>
+        <legend>{title}<small>{t('{count} items', { count: values.length })}</small></legend>
         <div className="schema-array-items">
           {values.map((entry, index) => (
             <div className="schema-array-item" key={`${props.path}-${index}`}>
@@ -177,8 +179,8 @@ function SchemaValueControl(props: SchemaValueControlProps): ReactNode {
               <button
                 type="button"
                 className="icon-button danger"
-                title={`Remove ${title} ${index + 1}`}
-                aria-label={`Remove ${title} ${index + 1}`}
+                title={t('Remove {title} {index}', { title, index: index + 1 })}
+                aria-label={t('Remove {title} {index}', { title, index: index + 1 })}
                 onClick={() => props.onChange(values.filter((_, candidate) => candidate !== index))}
               >
                 ×
@@ -190,7 +192,7 @@ function SchemaValueControl(props: SchemaValueControlProps): ReactNode {
             className="secondary compact schema-array-add"
             onClick={() => props.onChange([...values, sampleForSchema(itemSchema)])}
           >
-            + Add item
+            + {t('Add item')}
           </button>
         </div>
       </fieldset>
@@ -272,6 +274,7 @@ function UnionValueControl({
   branches,
   ...props
 }: SchemaValueControlProps & { branches: Record<string, unknown>[] }) {
+  const { t } = useI18n();
   const activeIndex = activeUnionBranch(branches, props.value);
   const active = branches[activeIndex] ?? branches[0];
   const title = schemaTitle(props.schema, props.label);
@@ -279,7 +282,7 @@ function UnionValueControl({
     <fieldset className="schema-value-union">
       <legend>{title}</legend>
       <label className="schema-union-selector">
-        <span>Value shape</span>
+        <span>{t('Value shape')}</span>
         <select
           aria-label={`${props.path} variant`}
           value={activeIndex}
@@ -314,10 +317,11 @@ function FieldLabel({
   required: boolean;
   description: string;
 }) {
+  const { t } = useI18n();
   return (
     <span className="schema-field-label">
       <strong>{title}</strong>
-      <small>{required ? 'Required' : 'Optional'}{description ? ` · ${description}` : ''}</small>
+      <small>{t(required ? 'Required' : 'Optional')}{description ? ` · ${description}` : ''}</small>
     </span>
   );
 }
@@ -333,6 +337,7 @@ function JsonFallback({
   title: string;
   description: string;
 }) {
+  const { t } = useI18n();
   const canonicalText = JSON.stringify(value ?? {}, null, 2);
   const [text, setText] = useState(canonicalText);
 
@@ -342,7 +347,7 @@ function JsonFallback({
 
   return (
     <label className="schema-value-field json">
-      <FieldLabel title={title} required={required} description={description || 'Open JSON value'} />
+      <FieldLabel title={title} required={required} description={description || t('Open JSON value')} />
       <textarea
         aria-label={path}
         data-schema-path={path}

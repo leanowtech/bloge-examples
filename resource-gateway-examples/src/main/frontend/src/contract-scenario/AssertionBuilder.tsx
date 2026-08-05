@@ -1,6 +1,7 @@
 import { useMemo } from 'react';
 
 import { sampleFromSchemaEnvelope } from '../draftModel';
+import { useI18n } from '../i18n/I18nProvider';
 import type {
   AssertionDraft,
   AssertionScope,
@@ -34,6 +35,7 @@ export default function AssertionBuilder({
   onChange,
   onRemove,
 }: AssertionBuilderProps) {
+  const { t } = useI18n();
   const operators = assertionOperators(assertion.scope);
   const selectedNode = nodes.find((node) => node.id === assertion.nodeId);
   const expectedEnvelope = assertion.scope === 'NODE_OUTPUT'
@@ -66,7 +68,7 @@ export default function AssertionBuilder({
   return (
     <article className="scenario-assertion-card">
       <div className="scenario-assertion-controls">
-        <Field label="Scope">
+        <Field label={t('Scope')}>
           <select
             aria-label={`Assertion scope for ${assertion.assertionId}`}
             value={assertion.scope}
@@ -78,16 +80,16 @@ export default function AssertionBuilder({
               dependencies,
             ))}
           >
-            <option value="OUTPUT_PATH">Graph output</option>
-            <option value="NODE_OUTPUT">Node output</option>
-            <option value="NODE_STATUS">Node status</option>
-            <option value="EDGE_TRANSFER">Edge transfer</option>
-            <option value="INVOCATION">Dependency use</option>
+            <option value="OUTPUT_PATH">{t('Graph output')}</option>
+            <option value="NODE_OUTPUT">{t('Node output')}</option>
+            <option value="NODE_STATUS">{t('Node status')}</option>
+            <option value="EDGE_TRANSFER">{t('Edge transfer')}</option>
+            <option value="INVOCATION">{t('Dependency use')}</option>
           </select>
         </Field>
 
         {(assertion.scope === 'NODE_OUTPUT' || assertion.scope === 'NODE_STATUS') && (
-          <Field label="Node">
+          <Field label={t('Node')}>
             <select
               aria-label={`Assertion node for ${assertion.assertionId}`}
               value={assertion.nodeId}
@@ -114,7 +116,7 @@ export default function AssertionBuilder({
 
         {assertion.scope === 'EDGE_TRANSFER' && (
           <>
-            <Field label="From node">
+            <Field label={t('From node')}>
               <select
                 value={assertion.fromNodeId}
                 onChange={(event) => onChange({ ...assertion, fromNodeId: event.target.value })}
@@ -122,7 +124,7 @@ export default function AssertionBuilder({
                 {nodes.map((node) => <option key={node.id} value={node.id}>{node.label}</option>)}
               </select>
             </Field>
-            <Field label="To node">
+            <Field label={t('To node')}>
               <select
                 value={assertion.toNodeId}
                 onChange={(event) => onChange({ ...assertion, toNodeId: event.target.value })}
@@ -134,7 +136,7 @@ export default function AssertionBuilder({
         )}
 
         {assertion.scope === 'INVOCATION' && (
-          <Field label="Dependency">
+          <Field label={t('Dependency')}>
             <select
               aria-label={`Assertion dependency for ${assertion.assertionId}`}
               value={assertion.nodeId}
@@ -151,7 +153,7 @@ export default function AssertionBuilder({
 
         {takesPath && (
           <>
-            <Field label={assertion.scope === 'NODE_OUTPUT' ? 'Node output field' : 'Result field'}>
+            <Field label={t(assertion.scope === 'NODE_OUTPUT' ? 'Node output field' : 'Result field')}>
               <select
                 aria-label={`Assertion path for ${assertion.assertionId}`}
                 data-testid={`assertion-path-picker:${assertion.assertionId}`}
@@ -166,11 +168,11 @@ export default function AssertionBuilder({
                     {option.label} · {option.type}
                   </option>
                 ))}
-                <option value="__custom__">Custom path...</option>
+                <option value="__custom__">{t('Custom path...')}</option>
               </select>
             </Field>
             {!knownPath && (
-              <Field label="Custom path">
+              <Field label={t('Custom path')}>
                 <input
                   aria-label={`Custom assertion path for ${assertion.assertionId}`}
                   value={assertion.path}
@@ -182,7 +184,7 @@ export default function AssertionBuilder({
           </>
         )}
 
-        <Field label="Check">
+        <Field label={t('Check')}>
           <select
             aria-label={`Assertion operator for ${assertion.assertionId}`}
             value={assertion.operator}
@@ -197,13 +199,13 @@ export default function AssertionBuilder({
             }}
           >
             {operators.map((operator) => (
-              <option key={operator} value={operator}>{operatorLabel(operator)}</option>
+              <option key={operator} value={operator}>{t(operatorLabel(operator))}</option>
             ))}
           </select>
         </Field>
 
         {assertion.scope === 'NODE_STATUS' && (
-          <Field label="Expected status">
+          <Field label={t('Expected status')}>
             <select
               value={String(assertion.expected ?? 'SUCCESS')}
               onChange={(event) => onChange({ ...assertion, expected: event.target.value })}
@@ -218,8 +220,8 @@ export default function AssertionBuilder({
         <button
           type="button"
           className="icon-button danger"
-          title="Remove assertion"
-          aria-label="Remove assertion"
+          title={t('Remove assertion')}
+          aria-label={t('Remove assertion')}
           onClick={onRemove}
         >
           ×
@@ -232,11 +234,11 @@ export default function AssertionBuilder({
             schema={expectedSchema}
             value={assertion.expected}
             onChange={(expected) => onChange({ ...assertion, expected })}
-            label={assertion.operator === 'MATCHES_SCHEMA' ? 'Schema expectation' : 'Expected value'}
+            label={t(assertion.operator === 'MATCHES_SCHEMA' ? 'Schema expectation' : 'Expected value')}
             compact
           />
           {assertion.operator === 'EQUALS' && typeof assertion.expected === 'number' && (
-            <Field label="Tolerance">
+            <Field label={t('Tolerance')}>
               <input
                 type="number"
                 min="0"

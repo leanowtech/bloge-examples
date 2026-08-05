@@ -1,5 +1,6 @@
 import { useMemo, useState } from 'react';
 
+import { useI18n } from '../../i18n/I18nProvider';
 import type {
   CanvasPerceptualQualityReport,
   CanvasSemanticMode,
@@ -68,6 +69,7 @@ export default function CanvasTaskNavigator({
   onCancelLayout,
   onUndoLayout,
 }: CanvasTaskNavigatorProps) {
+  const { t } = useI18n();
   const [query, setQuery] = useState('');
   const selected = nodes.find((node) => node.id === selectedNodeId) ?? null;
   const matches = useMemo(() => {
@@ -86,9 +88,9 @@ export default function CanvasTaskNavigator({
     <section
       className={`canvas-task-navigator mode-${mode}`}
       data-testid="canvas-navigator"
-      aria-label="Canvas task navigator"
+      aria-label={t('Canvas task navigator')}
     >
-      <div className="canvas-task-modes" role="group" aria-label="Canvas reading mode">
+      <div className="canvas-task-modes" role="group" aria-label={t('Canvas reading mode')}>
         {(['overview', 'focus', 'inspect'] as const).map((candidate) => (
           <button
             key={candidate}
@@ -97,19 +99,19 @@ export default function CanvasTaskNavigator({
             aria-pressed={mode === candidate}
             disabled={candidate !== 'overview' && !selected}
             title={candidate === 'overview'
-              ? 'Fit and read the complete graph shape'
+              ? t('Fit and read the complete graph shape')
               : candidate === 'focus'
-                ? 'Emphasize the selected node and its complete business path'
-                : 'Open the selected node context'}
+                ? t('Emphasize the selected node and its complete business path')
+                : t('Open the selected node context')}
             onClick={() => onModeChange(candidate)}
           >
-            {candidate[0].toUpperCase() + candidate.slice(1)}
+            {t(candidate[0].toUpperCase() + candidate.slice(1))}
           </button>
         ))}
       </div>
 
-      <nav className="canvas-focus-breadcrumb" aria-label="Canvas focus breadcrumb">
-        <button type="button" onClick={() => onModeChange('overview')}>All nodes</button>
+      <nav className="canvas-focus-breadcrumb" aria-label={t('Canvas focus breadcrumb')}>
+        <button type="button" onClick={() => onModeChange('overview')}>{t('All nodes')}</button>
         {selected && (
           <>
             <span aria-hidden="true">/</span>
@@ -119,24 +121,24 @@ export default function CanvasTaskNavigator({
         {mode === 'focus' && (
           <>
             <span aria-hidden="true">/</span>
-            <em>{pathNodeCount} in path</em>
+            <em>{t('{count} in path', { count: pathNodeCount })}</em>
           </>
         )}
       </nav>
 
       <div className="canvas-node-finder">
         <label>
-          <span className="visually-hidden">Find canvas node</span>
+          <span className="visually-hidden">{t('Find canvas node')}</span>
           <input
             type="search"
             value={query}
-            placeholder="Find node..."
-            aria-label="Find canvas node"
+            placeholder={t('Find node...')}
+            aria-label={t('Find canvas node')}
             onChange={(event) => setQuery(event.target.value)}
           />
         </label>
         {query.trim() && (
-          <div className="canvas-node-results" role="listbox" aria-label="Matching canvas nodes">
+          <div className="canvas-node-results" role="listbox" aria-label={t('Matching canvas nodes')}>
             {matches.map((node) => (
               <button
                 key={node.id}
@@ -153,36 +155,36 @@ export default function CanvasTaskNavigator({
                 <code>{node.operatorRef}</code>
               </button>
             ))}
-            {matches.length === 0 && <span>No matching nodes</span>}
+            {matches.length === 0 && <span>{t('No matching nodes')}</span>}
           </div>
         )}
       </div>
 
       <div className="canvas-task-facts">
-        <span>{nodeCount} nodes</span>
-        <span>{edgeCount} edges</span>
+        <span>{t('{count} nodes', { count: nodeCount })}</span>
+        <span>{t('{count} edges', { count: edgeCount })}</span>
         <strong data-testid="canvas-zoom-readout">{zoomPercent}</strong>
         <span
           className={`canvas-readability-verdict ${perceptualQuality.status.toLowerCase()}`}
           data-testid="canvas-readability-verdict"
           title={perceptualQuality.reasons.join(' ') || perceptualQuality.summary}
         >
-          Readability {perceptualQuality.status}
+          {t('Readability {status}', { status: t(perceptualQuality.status) })}
         </span>
       </div>
 
       <div className="canvas-task-actions">
-        <button type="button" data-testid="navigator-fit-all" onClick={onFitAll} title="Fit all nodes">
-          Fit
+        <button type="button" data-testid="navigator-fit-all" onClick={onFitAll} title={t('Fit all nodes')}>
+          {t('Fit')}
         </button>
         <button
           type="button"
           data-testid="navigator-map-toggle"
           aria-pressed={mapVisible}
           onClick={onToggleMap}
-          title={mapVisible ? 'Hide the overview navigator' : 'Show the overview navigator'}
+          title={t(mapVisible ? 'Hide the overview navigator' : 'Show the overview navigator')}
         >
-          {mapVisible ? 'Hide map' : 'Map'}
+          {t(mapVisible ? 'Hide map' : 'Map')}
         </button>
         <button
           type="button"
@@ -190,20 +192,20 @@ export default function CanvasTaskNavigator({
           aria-pressed={Boolean(selected?.pinned)}
           disabled={!selected}
           onClick={onTogglePin}
-          title="Keep the selected node fixed during Auto Layout"
+          title={t('Keep the selected node fixed during Auto Layout')}
         >
-          {selected?.pinned ? 'Unpin' : 'Pin'}
+          {t(selected?.pinned ? 'Unpin' : 'Pin')}
         </button>
         {canUndoLayout && !layoutPreview && (
           <button type="button" data-testid="navigator-undo-layout" onClick={onUndoLayout}>
-            Undo
+            {t('Undo')}
           </button>
         )}
       </div>
 
       {nodeCount >= 9 && topologyLanes.length > 0 && (
-        <nav className="canvas-topology-lanes" aria-label="Graph stage overview">
-          <span>Stages</span>
+        <nav className="canvas-topology-lanes" aria-label={t('Graph stage overview')}>
+          <span>{t('Stages')}</span>
           {topologyLanes.map((lane) => (
             <button
               key={lane.id}
@@ -228,7 +230,7 @@ export default function CanvasTaskNavigator({
         >
           <span data-testid="layout-notice">
             {layoutPlanning
-              ? 'Computing layout preview...'
+              ? t('Computing layout preview...')
               : layoutQuality
                 ? `${layoutQuality.summary} · ${perceptualQuality.summary}`
                 : layoutNotice}
@@ -243,11 +245,11 @@ export default function CanvasTaskNavigator({
             <div>
               {layoutPreview && (
                 <button type="button" data-testid="layout-apply" onClick={onApplyLayout}>
-                  Apply
+                  {t('Apply')}
                 </button>
               )}
               <button type="button" data-testid="layout-cancel" onClick={onCancelLayout}>
-                Cancel
+                {t('Cancel')}
               </button>
             </div>
           )}

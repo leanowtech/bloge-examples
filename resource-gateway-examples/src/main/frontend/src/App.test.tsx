@@ -29,6 +29,19 @@ describe('App route shell', () => {
 
   beforeEach(() => {
     (globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
+    const values = new Map<string, string>();
+    Object.defineProperty(window, 'localStorage', {
+      configurable: true,
+      value: {
+        clear: () => values.clear(),
+        getItem: (key: string) => values.get(key) ?? null,
+        setItem: (key: string, value: string) => values.set(key, value),
+        removeItem: (key: string) => values.delete(key),
+        key: (index: number) => [...values.keys()][index] ?? null,
+        get length() { return values.size; },
+      },
+    });
+    window.localStorage.clear();
     host = document.createElement('div');
     document.body.appendChild(host);
   });
@@ -38,7 +51,7 @@ describe('App route shell', () => {
       await act(async () => root?.unmount());
       root = null;
     }
-    host.remove();
+    host?.remove();
     vi.restoreAllMocks();
   });
 
@@ -105,6 +118,19 @@ describe('App route shell', () => {
     expect(document.title).toBe('BLOGE Visual Canvas - Showcase');
     expect(query('[data-testid="showcase-mock"]').textContent).toContain('Showcase catalog');
     expect(query<HTMLAnchorElement>('.topbar-link.active').getAttribute('href')).toBe('/showcase/');
+  });
+
+  it('switches the shell to Chinese and persists the preference without reloading', async () => {
+    await renderAt('/author/?lang=en');
+
+    const chineseButton = query<HTMLButtonElement>('[data-testid="locale-option:zh-CN"]');
+    await act(async () => chineseButton.click());
+
+    expect(document.documentElement.lang).toBe('zh-CN');
+    expect(window.localStorage.getItem('bloge.visual.locale')).toBe('zh-CN');
+    expect(document.title).toBe('BLOGE 可视化画布 - 编排');
+    expect(query('nav[aria-label="工作区视图"]').textContent).toContain('算子库');
+    expect(window.location.search).toContain('lang=zh-CN');
   });
 
   async function renderAt(path: string) {

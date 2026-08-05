@@ -1,3 +1,4 @@
+import { useI18n } from '../../i18n/I18nProvider';
 import type { AuthorDiagnosticItem, AuthorDiagnosticSeverity } from './authorDiagnostics';
 
 interface AuthorDiagnosticsDrawerProps {
@@ -16,6 +17,7 @@ export default function AuthorDiagnosticsDrawer({
   onToggle,
   onSelect,
 }: AuthorDiagnosticsDrawerProps) {
+  const { t } = useI18n();
   const counts = Object.fromEntries(
     SEVERITY_LABELS.map((severity) => [
       severity,
@@ -23,20 +25,20 @@ export default function AuthorDiagnosticsDrawer({
     ]),
   ) as Record<AuthorDiagnosticSeverity, number>;
   const summary = items.length === 0
-    ? 'No diagnostics'
+    ? t('No diagnostics')
     : counts.BLOCKING > 0
-      ? `${counts.BLOCKING} blocking`
+      ? t('{count} blocking', { count: counts.BLOCKING })
       : counts.ERROR > 0
-        ? `${counts.ERROR} errors`
+        ? t('{count} errors', { count: counts.ERROR })
         : counts.WARNING > 0
-          ? `${counts.WARNING} warnings`
-          : `${counts.INFO} info`;
+          ? t('{count} warnings', { count: counts.WARNING })
+          : t('{count} info', { count: counts.INFO });
 
   return (
     <section
       className={`author-diagnostics-drawer ${open ? 'open' : 'collapsed'}`}
       data-testid="author-diagnostics-drawer"
-      aria-label="Author diagnostics"
+      aria-label={t('Author diagnostics')}
     >
       <button
         type="button"
@@ -44,16 +46,16 @@ export default function AuthorDiagnosticsDrawer({
         aria-expanded={open}
         onClick={onToggle}
       >
-        <span>Diagnostics</span>
+        <span>{t('Diagnostics')}</span>
         <strong>{summary}</strong>
         <span aria-hidden="true">{open ? 'v' : '^'}</span>
       </button>
       {open && (
         <div className="author-diagnostics-body">
-          <div className="author-diagnostics-filters" aria-label="Diagnostic severity summary">
+          <div className="author-diagnostics-filters" aria-label={t('Diagnostic severity summary')}>
             {SEVERITY_LABELS.map((severity) => (
               <span key={severity} data-severity={severity.toLowerCase()}>
-                {severity} {counts[severity]}
+                {t(severity)} {counts[severity]}
               </span>
             ))}
           </div>
@@ -62,15 +64,15 @@ export default function AuthorDiagnosticsDrawer({
               {items.map((item) => (
                 <li key={item.id} data-severity={item.severity.toLowerCase()}>
                   <button type="button" onClick={() => onSelect(item)}>
-                    <span>{item.severity}</span>
+                    <span>{t(item.severity)}</span>
                     <strong>{item.code}</strong>
                     <small>{item.scope} · {item.source}</small>
                     <p>{item.message}</p>
                     {item.occurrenceCount > 1 && (
                       <small className="author-diagnostic-occurrences">
-                        {item.occurrenceCount} occurrences
+                        {t('{count} occurrences', { count: item.occurrenceCount })}
                         {item.coordinates.length > 1
-                          ? ` · ${item.coordinates.length} locations`
+                          ? t(' · {count} locations', { count: item.coordinates.length })
                           : ''}
                       </small>
                     )}
@@ -81,7 +83,7 @@ export default function AuthorDiagnosticsDrawer({
               ))}
             </ol>
           ) : (
-            <p className="muted">Run or validate the graph to create review diagnostics.</p>
+            <p className="muted">{t('Run or validate the graph to create review diagnostics.')}</p>
           )}
         </div>
       )}

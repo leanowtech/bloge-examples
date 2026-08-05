@@ -4,6 +4,7 @@ import {
   type ReactNode,
 } from 'react';
 
+import { useI18n } from '../../i18n/I18nProvider';
 import type { AuthorMode } from './authorWorkspaceState';
 
 type InspectorTab = 'config' | 'data' | 'test' | 'contract' | 'advanced';
@@ -64,6 +65,7 @@ export default function AuthorContextInspector({
   onOpenScenarios,
   onOpenGraphContract,
 }: AuthorContextInspectorProps) {
+  const { t } = useI18n();
   const [activeTab, setActiveTab] = useState<InspectorTab>(() => defaultTab(mode, selectedNode));
   const selectedNodeId = selectedNode?.id ?? '';
 
@@ -74,11 +76,11 @@ export default function AuthorContextInspector({
   return (
     <section className="author-context-inspector-v2" data-testid="author-context-inspector">
       <header>
-        <span>{mode}</span>
+        <span>{t(mode[0].toUpperCase() + mode.slice(1))}</span>
         <h2>{selectedNode ? selectedNode.label : graphName}</h2>
-        <p>{selectedNode ? selectedNode.operatorRef : 'Graph authoring context'}</p>
+        <p>{selectedNode ? selectedNode.operatorRef : t('Graph authoring context')}</p>
       </header>
-      <div className="author-inspector-tabs" role="tablist" aria-label="Inspector views">
+      <div className="author-inspector-tabs" role="tablist" aria-label={t('Inspector views')}>
         {TABS.map((tab) => (
           <button
             type="button"
@@ -90,7 +92,7 @@ export default function AuthorContextInspector({
             data-testid={`inspector-tab:${tab.key}`}
             onClick={() => setActiveTab(tab.key)}
           >
-            {tab.label}
+            {t(tab.label)}
           </button>
         ))}
       </div>
@@ -104,22 +106,22 @@ export default function AuthorContextInspector({
           selectedNode ? (
             <>
               <dl>
-                <div><dt>Type</dt><dd>{selectedNode.visualLabel}</dd></div>
-                <div><dt>Readiness</dt><dd>{selectedNode.readiness}</dd></div>
-                <div><dt>Node</dt><dd>{selectedNode.id}</dd></div>
+                <div><dt>{t('Type')}</dt><dd>{t(selectedNode.visualLabel)}</dd></div>
+                <div><dt>{t('Readiness')}</dt><dd>{t(selectedNode.readiness)}</dd></div>
+                <div><dt>{t('Node')}</dt><dd>{selectedNode.id}</dd></div>
               </dl>
               <div className="author-context-actions">
-                <button type="button" className="primary compact" onClick={onEditNode}>Edit node</button>
+                <button type="button" className="primary compact" onClick={onEditNode}>{t('Edit node')}</button>
               </div>
             </>
           ) : (
             <>
               <dl>
-                <div><dt>Graph</dt><dd>{graphName}</dd></div>
-                <div><dt>Input</dt><dd>{inputFieldCount} fields</dd></div>
-                <div><dt>Output</dt><dd>{outputFieldCount} fields</dd></div>
+                <div><dt>{t('Graph')}</dt><dd>{graphName}</dd></div>
+                <div><dt>{t('Input')}</dt><dd>{t('{count} fields', { count: inputFieldCount })}</dd></div>
+                <div><dt>{t('Output')}</dt><dd>{t('{count} fields', { count: outputFieldCount })}</dd></div>
               </dl>
-              <p className="author-inspector-note">Select a node to edit its configuration.</p>
+              <p className="author-inspector-note">{t('Select a node to edit its configuration.')}</p>
             </>
           )
         )}
@@ -128,18 +130,18 @@ export default function AuthorContextInspector({
           <>
             <div className="author-context-actions">
               <button type="button" className="primary compact" onClick={onOpenScenarios}>
-                Open Scenarios
+                {t('Open Scenarios')}
               </button>
             </div>
             <div className="author-review-summary">
-              <h3>Latest result</h3>
+              <h3>{t('Latest result')}</h3>
               <dl>
-                <div><dt>Execution</dt><dd>{executionStatus}</dd></div>
-                <div><dt>Assertions</dt><dd>{assertionStatus}</dd></div>
-                <div><dt>Contract</dt><dd>{contractStatus}</dd></div>
-                <div><dt>Governance</dt><dd>{governanceStatus}</dd></div>
+                <div><dt>{t('Execution')}</dt><dd>{t(executionStatus)}</dd></div>
+                <div><dt>{t('Assertions')}</dt><dd>{t(assertionStatus)}</dd></div>
+                <div><dt>{t('Contract')}</dt><dd>{t(contractStatus)}</dd></div>
+                <div><dt>{t('Governance')}</dt><dd>{t(governanceStatus)}</dd></div>
               </dl>
-              <p>{resultMessage || 'No Scenario result yet.'}</p>
+              <p>{resultMessage ? t(resultMessage) : t('No Scenario result yet.')}</p>
               {runProvenance && (
                 <small className="author-run-provenance" data-testid="author-run-provenance">
                   {runProvenance}
@@ -153,13 +155,16 @@ export default function AuthorContextInspector({
             <dl>
               {selectedNode ? (
                 <>
-                  <div><dt>Readiness</dt><dd>{selectedNode.readiness}</dd></div>
-                  <div><dt>Ports</dt><dd>{selectedNode.inputCount} in / {selectedNode.outputCount} out</dd></div>
+                  <div><dt>{t('Readiness')}</dt><dd>{t(selectedNode.readiness)}</dd></div>
+                  <div><dt>{t('Ports')}</dt><dd>{t('{inputs} in / {outputs} out', {
+                    inputs: selectedNode.inputCount,
+                    outputs: selectedNode.outputCount,
+                  })}</dd></div>
                 </>
               ) : (
                 <>
-                  <div><dt>Input Contract</dt><dd>{inputFieldCount} fields</dd></div>
-                  <div><dt>Output Contract</dt><dd>{outputFieldCount} fields</dd></div>
+                  <div><dt>{t('Input Contract')}</dt><dd>{t('{count} fields', { count: inputFieldCount })}</dd></div>
+                  <div><dt>{t('Output Contract')}</dt><dd>{t('{count} fields', { count: outputFieldCount })}</dd></div>
                 </>
               )}
             </dl>
@@ -169,7 +174,7 @@ export default function AuthorContextInspector({
                 className="primary compact"
                 onClick={selectedNode ? onOpenNodeContract : onOpenGraphContract}
               >
-                Open Contract Workspace
+                {t('Open Contract Workspace')}
               </button>
             </div>
           </>

@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 
 import { buildGatewayRunRequest, fetchGatewayDiagram, fetchGatewayScenarios, runGatewayScenario } from './api';
+import { useI18n } from './i18n/I18nProvider';
 import type {
   GatewayDiagramEdge,
   GatewayDiagramGroup,
@@ -260,6 +261,7 @@ function runRequestSummary(request: GatewayExampleRunRequest): ShowcaseRunReques
 
 /** Read-only scenario browser for the resource-gateway examples catalog. */
 export default function Showcase() {
+  const { t } = useI18n();
   const [scenarios, setScenarios] = useState<GatewayExampleScenario[]>([]);
   const [selectedGraphName, setSelectedGraphName] = useState('');
   const [status, setStatus] = useState<'loading' | 'ready' | 'error'>('loading');
@@ -479,13 +481,13 @@ export default function Showcase() {
 
   return (
     <main className="showcase" data-testid="react-showcase">
-      <aside className="showcase-sidebar" aria-label="Gateway scenarios">
+      <aside className="showcase-sidebar" aria-label={t('Gateway scenarios')}>
         <div className="showcase-sidebar-heading">
-          <span>Scenarios</span>
+          <span>{t('Scenarios')}</span>
           <strong>{scenarios.length}</strong>
         </div>
         {status === 'loading' && scenarios.length === 0 ? (
-          <p className="showcase-status">Loading catalog...</p>
+          <p className="showcase-status">{t('Loading catalog...')}</p>
         ) : null}
         {status === 'error' ? (
           <p className="showcase-status error">{errorMessage}</p>
@@ -518,15 +520,15 @@ export default function Showcase() {
             </div>
             <div className="showcase-actions">
               <a className="link" href={selectedScenario.diagramPath ?? '#'}>
-                Diagram JSON
+                {t('Diagram JSON')}
               </a>
               <a className="link" href="/examples/gateway">
-                Legacy runner
+                {t('Legacy runner')}
               </a>
             </div>
           </div>
 
-          <div className="showcase-tags" aria-label="Scenario concepts">
+          <div className="showcase-tags" aria-label={t('Scenario concepts')}>
             {conceptList(selectedScenario).map((concept) => (
               <span key={concept} className="showcase-chip">
                 {concept}
@@ -536,13 +538,16 @@ export default function Showcase() {
 
           <section className="showcase-diagram-panel" data-testid="showcase-diagram">
             <div className="showcase-panel-heading">
-              <h3>Diagram</h3>
+              <h3>{t('Diagram')}</h3>
               {diagram ? (
-                <span>{diagram.nodes.length} nodes · {diagram.edges.length} edges</span>
+                <span>{t('{nodes} nodes · {edges} edges', {
+                  nodes: diagram.nodes.length,
+                  edges: diagram.edges.length,
+                })}</span>
               ) : null}
             </div>
             {diagramStatus === 'loading' ? (
-              <p className="showcase-status">Loading diagram...</p>
+              <p className="showcase-status">{t('Loading diagram...')}</p>
             ) : null}
             {diagramStatus === 'error' ? (
               <p className="showcase-status error">{diagramErrorMessage}</p>
@@ -627,21 +632,21 @@ export default function Showcase() {
                       <h4>{selectedDiagramNode.label ?? selectedDiagramNode.id}</h4>
                       <dl>
                         <div>
-                          <dt>Node</dt>
+                          <dt>{t('Node')}</dt>
                           <dd>
                             <code>{selectedDiagramNode.id}</code>
                           </dd>
                         </div>
                         <div>
-                          <dt>Kind</dt>
+                          <dt>{t('Kind')}</dt>
                           <dd>{selectedDiagramNode.kind ?? 'node'}</dd>
                         </div>
                         <div>
-                          <dt>Operator</dt>
+                          <dt>{t('Operator')}</dt>
                           <dd>{selectedDiagramNode.operatorRef ?? 'n/a'}</dd>
                         </div>
                         <div>
-                          <dt>Group</dt>
+                          <dt>{t('Group')}</dt>
                           <dd>{selectedDiagramNode.group ?? 'none'}</dd>
                         </div>
                       </dl>
@@ -657,7 +662,7 @@ export default function Showcase() {
                       ) : null}
                     </>
                   ) : (
-                    <p className="muted">No node selected.</p>
+                    <p className="muted">{t('No node selected.')}</p>
                   )}
                 </aside>
               </div>
@@ -666,29 +671,29 @@ export default function Showcase() {
 
           <div className="showcase-grid">
             <section className="showcase-panel">
-              <h3>Run</h3>
+              <h3>{t('Run')}</h3>
               <dl className="showcase-run">
                 <div>
-                  <dt>Mode</dt>
+                  <dt>{t('Mode')}</dt>
                   <dd>{selectedScenario.run?.mode ?? 'request'}</dd>
                 </div>
                 <div>
-                  <dt>Method</dt>
+                  <dt>{t('Method')}</dt>
                   <dd>{selectedScenario.run?.method ?? 'GET'}</dd>
                 </div>
                 <div>
-                  <dt>Path</dt>
+                  <dt>{t('Path')}</dt>
                   <dd>
                     <code>{selectedScenario.run?.pathTemplate ?? '/'}</code>
                   </dd>
                 </div>
                 <div>
-                  <dt>Presets</dt>
+                  <dt>{t('Presets')}</dt>
                   <dd>{presets.length}</dd>
                 </div>
               </dl>
               {presets.length > 0 ? (
-                <div className="showcase-presets" aria-label="Sample presets">
+                <div className="showcase-presets" aria-label={t('Sample presets')}>
                   {presets.map((preset) => (
                     <button
                       key={preset.label ?? previewJson(preset.values)}
@@ -697,7 +702,7 @@ export default function Showcase() {
                       data-testid={`showcase-preset:${preset.label ?? 'preset'}`}
                       onClick={() => applyPreset(preset)}
                     >
-                      <strong>{preset.label ?? 'Preset'}</strong>
+                      <strong>{preset.label ?? t('Preset')}</strong>
                       <span>
                         {[preset.expected?.ruleId, preset.expected?.decision].filter(Boolean).join(' / ') || 'sample'}
                       </span>
@@ -728,7 +733,7 @@ export default function Showcase() {
                     data-testid="showcase-run-button"
                     disabled={runState.status === 'running'}
                   >
-                    {runState.status === 'running' ? 'Running...' : 'Run'}
+                    {runState.status === 'running' ? t('Running...') : t('Run')}
                   </button>
                 </form>
               ) : (
@@ -739,13 +744,13 @@ export default function Showcase() {
                   disabled={runState.status === 'running'}
                   onClick={() => void runSelectedScenario()}
                 >
-                  {runState.status === 'running' ? 'Running...' : 'Run'}
+                  {runState.status === 'running' ? t('Running...') : t('Run')}
                 </button>
               )}
             </section>
 
             <section className="showcase-panel">
-              <h3>Sample Input</h3>
+              <h3>{t('Sample Input')}</h3>
               <pre className="showcase-sample" data-testid="showcase-sample">
                 {previewJson(inputValues)}
               </pre>
@@ -756,9 +761,9 @@ export default function Showcase() {
               data-testid="showcase-run-result"
             >
               <div className="showcase-panel-heading">
-                <h3>Output</h3>
+                <h3>{t('Output')}</h3>
                 <div className="showcase-output-actions">
-                  <span>{runState.status}</span>
+                  <span>{t(runState.status)}</span>
                   {runState.status === 'streaming' ? (
                     <button
                       type="button"
@@ -766,15 +771,15 @@ export default function Showcase() {
                       data-testid="showcase-stop-stream"
                       onClick={stopStream}
                     >
-                      Stop
+                      {t('Stop')}
                     </button>
                   ) : null}
                 </div>
               </div>
               <dl className="showcase-run">
                 <div>
-                  <dt>Status</dt>
-                  <dd>{runState.message}</dd>
+                  <dt>{t('Status')}</dt>
+                  <dd>{t(runState.message)}</dd>
                 </div>
                 <div>
                   <dt>URL</dt>
@@ -786,20 +791,20 @@ export default function Showcase() {
               {runState.request ? (
                 <div className="showcase-run-receipt" data-testid="showcase-run-receipt">
                   <div>
-                    <span>Mode</span>
+                    <span>{t('Mode')}</span>
                     <strong>{runState.request.mode}</strong>
                   </div>
                   <div>
-                    <span>Method</span>
+                    <span>{t('Method')}</span>
                     <strong>{runState.request.method}</strong>
                   </div>
                   <div className="wide">
-                    <span>Endpoint</span>
+                    <span>{t('Endpoint')}</span>
                     <code>{runState.request.url}</code>
                   </div>
                   {runState.request.bodyPreview ? (
                     <div className="wide">
-                      <span>Body</span>
+                      <span>{t('Body')}</span>
                       <code>{runState.request.bodyPreview}</code>
                     </div>
                   ) : null}
@@ -822,7 +827,9 @@ export default function Showcase() {
               {runExpectationChecks.length > 0 ? (
                 <div className="showcase-expectations" data-testid="showcase-expectations">
                   <div className="showcase-expectations-heading">
-                    <span>{activePreset?.label ?? 'Preset'} expectations</span>
+                    <span>{t('{preset} expectations', {
+                      preset: activePreset?.label ?? t('Preset'),
+                    })}</span>
                     <strong>{matchedExpectationCount}/{runExpectationChecks.length}</strong>
                   </div>
                   <div className="showcase-expectation-list">
@@ -834,7 +841,7 @@ export default function Showcase() {
                       >
                         <span>{check.key}</span>
                         <strong>{scalarValue(check.expected)}</strong>
-                        <em>{check.state}</em>
+                        <em>{t(check.state)}</em>
                       </span>
                     ))}
                   </div>
@@ -849,42 +856,42 @@ export default function Showcase() {
           {decisionTable ? (
             <section className="showcase-decision-table" data-testid="showcase-decision-table">
               <div className="decision-table-heading">
-                <h3>{decisionTable.title ?? 'Decision Table'}</h3>
+                <h3>{decisionTable.title ?? t('Decision Table')}</h3>
               </div>
               <div className="showcase-metrics">
                 <span>
-                  Hit policy <strong>{decisionTable.hitPolicy ?? 'unknown'}</strong>
+                  {t('Hit policy')} <strong>{decisionTable.hitPolicy ?? t('unknown')}</strong>
                 </span>
                 <span>
-                  Rules (OR) <strong>{decisionRows.length}</strong>
+                  {t('Rules (OR)')} <strong>{decisionRows.length}</strong>
                 </span>
                 <span>
-                  Conditions (AND) <strong>{decisionInputColumns.length}</strong>
+                  {t('Conditions (AND)')} <strong>{decisionInputColumns.length}</strong>
                 </span>
                 <span>
-                  Actions <strong>{decisionOutputColumns.length}</strong>
+                  {t('Actions')} <strong>{decisionOutputColumns.length}</strong>
                 </span>
               </div>
               <div className="decision-table-scroll">
                 <table className="decision-rule-table">
                   <thead>
                     <tr>
-                      <th scope="col" rowSpan={2}>Rule</th>
+                      <th scope="col" rowSpan={2}>{t('Rule')}</th>
                       <th
                         scope="colgroup"
                         colSpan={Math.max(decisionInputColumns.length, 1)}
                         className="condition-band"
                       >
-                        Conditions (AND)
+                        {t('Conditions (AND)')}
                       </th>
                       <th
                         scope="colgroup"
                         colSpan={Math.max(decisionOutputColumns.length, 1)}
                         className="action-band"
                       >
-                        Decision actions
+                        {t('Decision actions')}
                       </th>
-                      <th scope="col" rowSpan={2}>Explanation</th>
+                      <th scope="col" rowSpan={2}>{t('Explanation')}</th>
                     </tr>
                     <tr>
                       {decisionInputColumns.length ? (
@@ -894,7 +901,7 @@ export default function Showcase() {
                           </th>
                         ))
                       ) : (
-                        <th scope="col" className="condition-column">Any input</th>
+                        <th scope="col" className="condition-column">{t('Any input')}</th>
                       )}
                       {decisionOutputColumns.length ? (
                         decisionOutputColumns.map((column) => (
@@ -903,7 +910,7 @@ export default function Showcase() {
                           </th>
                         ))
                       ) : (
-                        <th scope="col" className="action-column">No action</th>
+                        <th scope="col" className="action-column">{t('No action')}</th>
                       )}
                     </tr>
                   </thead>
@@ -936,7 +943,7 @@ export default function Showcase() {
                     ) : (
                       <tr>
                         <td colSpan={decisionTableColumnSpan} className="decision-table-empty">
-                          No decision rules supplied.
+                          {t('No decision rules supplied.')}
                         </td>
                       </tr>
                     )}
@@ -950,17 +957,17 @@ export default function Showcase() {
         <section className="showcase-empty" data-testid="showcase-detail" role="status">
           <h2>
             {status === 'loading'
-              ? 'Loading catalog'
+              ? t('Loading catalog')
               : status === 'error'
-                ? 'Catalog unavailable'
-                : 'No scenarios available'}
+                ? t('Catalog unavailable')
+                : t('No scenarios available')}
           </h2>
           <p>
             {status === 'loading'
-              ? 'Reading the resource-gateway scenario catalog.'
+              ? t('Reading the resource-gateway scenario catalog.')
               : status === 'error'
                 ? errorMessage
-                : 'The backend catalog returned an empty list.'}
+                : t('The backend catalog returned an empty list.')}
           </p>
         </section>
       )}

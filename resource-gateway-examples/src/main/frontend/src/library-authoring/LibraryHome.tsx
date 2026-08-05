@@ -10,6 +10,7 @@ import {
   fetchLibraryAuthoringTestGate,
   previewLibraryAuthoringDraft,
 } from '../api';
+import { useI18n } from '../i18n/I18nProvider';
 import type {
   VisualLibraryAuthoringDocument,
   VisualLibraryAuthoringDraft,
@@ -41,6 +42,7 @@ interface LibraryHomeProps {
 const PAGE_SIZE = 8;
 
 export default function LibraryHome({ routeError = '', onStart }: LibraryHomeProps) {
+  const { locale, t } = useI18n();
   const [drafts, setDrafts] = useState<VisualLibraryAuthoringDraft[]>([]);
   const [actorId, setActorId] = useState('');
   const [assessments, setAssessments] = useState<Record<string, LibraryHomeAssessment>>({});
@@ -101,9 +103,9 @@ export default function LibraryHome({ routeError = '', onStart }: LibraryHomePro
     <main className="library-home" data-testid="library-home">
       <header className="library-home-heading">
         <div>
-          <p className="eyebrow">Library assets</p>
-          <h2>Resume governed library work</h2>
-          <p>Find the exact draft revision, understand what blocks it, and continue in context.</p>
+          <p className="eyebrow">{t('Library assets')}</p>
+          <h2>{t('Resume governed library work')}</h2>
+          <p>{t('Find the exact draft revision, understand what blocks it, and continue in context.')}</p>
         </div>
         <div className="library-home-primary-actions">
           <button
@@ -112,7 +114,7 @@ export default function LibraryHome({ routeError = '', onStart }: LibraryHomePro
             onClick={() => setStartChoice('quick')}
             data-testid="library-home-create"
           >
-            Create library
+            {t('Create library')}
           </button>
           <button
             type="button"
@@ -120,7 +122,7 @@ export default function LibraryHome({ routeError = '', onStart }: LibraryHomePro
             onClick={() => setStartChoice('discover')}
             data-testid="library-home-discover"
           >
-            Discover existing
+            {t('Discover existing')}
           </button>
         </div>
       </header>
@@ -129,8 +131,8 @@ export default function LibraryHome({ routeError = '', onStart }: LibraryHomePro
         <p className="library-route-error" role="alert">{routeError || loadError}</p>
       )}
 
-      <section className="library-home-work-queue" aria-label="Library work queue">
-        <nav className="library-home-filters" aria-label="Library status filters">
+      <section className="library-home-work-queue" aria-label={t('Library work queue')}>
+        <nav className="library-home-filters" aria-label={t('Library status filters')}>
           {LIBRARY_HOME_FILTERS.map((option) => (
             <button
               type="button"
@@ -143,7 +145,7 @@ export default function LibraryHome({ routeError = '', onStart }: LibraryHomePro
               }}
               data-testid={`library-filter:${option.id}`}
             >
-              <span>{option.label}</span>
+              <span>{t(option.label)}</span>
               <strong>{countLibraryHomeFilter(items, option.id)}</strong>
             </button>
           ))}
@@ -151,7 +153,7 @@ export default function LibraryHome({ routeError = '', onStart }: LibraryHomePro
 
         <div className="library-home-toolbar">
           <label>
-            <span>Search libraries</span>
+            <span>{t('Search libraries')}</span>
             <input
               type="search"
               value={search}
@@ -159,31 +161,31 @@ export default function LibraryHome({ routeError = '', onStart }: LibraryHomePro
                 setSearch(event.target.value);
                 setPage(1);
               }}
-              placeholder="Name, id, owner, or draft"
+              placeholder={t('Name, id, owner, or draft')}
             />
           </label>
-          <span>{visible.total} matching asset{visible.total === 1 ? '' : 's'}</span>
+          <span>{t('{count} matching assets', { count: visible.total })}</span>
         </div>
 
-        {loading && <p className="library-home-empty">Loading durable library drafts...</p>}
+        {loading && <p className="library-home-empty">{t('Loading durable library drafts...')}</p>}
         {!loading && visible.items.length === 0 && (
           <div className="library-home-empty" data-testid="library-home-empty">
-            <strong>{drafts.length === 0 ? 'No durable drafts yet' : 'No assets match this view'}</strong>
+            <strong>{t(drafts.length === 0 ? 'No durable drafts yet' : 'No assets match this view')}</strong>
             <span>
               {drafts.length === 0
-                ? 'Create or discover a library; autosave will make it recoverable here.'
-                : 'Change the status filter or search terms.'}
+                ? t('Create or discover a library; autosave will make it recoverable here.')
+                : t('Change the status filter or search terms.')}
             </span>
           </div>
         )}
         {visible.items.length > 0 && (
-          <div className="library-home-table" role="table" aria-label="Durable library drafts">
+          <div className="library-home-table" role="table" aria-label={t('Durable library drafts')}>
             <div className="library-home-table-head" role="row">
-              <span role="columnheader">Library / exact draft</span>
-              <span role="columnheader">Owner</span>
-              <span role="columnheader">Readiness</span>
-              <span role="columnheader">Updated</span>
-              <span role="columnheader">Action</span>
+              <span role="columnheader">{t('Library / exact draft')}</span>
+              <span role="columnheader">{t('Owner')}</span>
+              <span role="columnheader">{t('Readiness')}</span>
+              <span role="columnheader">{t('Updated')}</span>
+              <span role="columnheader">{t('Action')}</span>
             </div>
             {visible.items.map((item) => (
               <div
@@ -194,30 +196,32 @@ export default function LibraryHome({ routeError = '', onStart }: LibraryHomePro
               >
                 <span className="library-home-identity" role="cell">
                   <strong>{item.name}</strong>
-                  <small>{item.draft.draftId} · revision {item.draft.revision}</small>
+                  <small>{item.draft.draftId} · {t('revision {revision}', { revision: item.draft.revision })}</small>
                   <code title={item.draft.fingerprint}>{shortFingerprint(item.draft.fingerprint)}</code>
                 </span>
                 <span className="library-home-owner" role="cell">
-                  <strong>{item.owner || 'Owner unresolved'}</strong>
-                  <small>{item.mine ? 'My work' : `Last saved by ${item.draft.savedBy || 'unknown'}`}</small>
+                  <strong>{item.owner || t('Owner unresolved')}</strong>
+                  <small>{item.mine
+                    ? t('My work')
+                    : t('Last saved by {actor}', { actor: item.draft.savedBy || t('unknown') })}</small>
                 </span>
                 <span className="library-home-statuses" role="cell">
-                  {item.assessmentPending && <em>Checking readiness...</em>}
+                  {item.assessmentPending && <em>{t('Checking readiness...')}</em>}
                   {!item.assessmentPending && item.statuses.length === 0 && (
-                    <b data-state="ready">No active blockers</b>
+                    <b data-state="ready">{t('No active blockers')}</b>
                   )}
                   {item.statuses.map((status) => (
-                    <b data-state={statusTone(status)} key={status}>{statusLabel(status)}</b>
+                    <b data-state={statusTone(status)} key={status}>{t(statusLabel(status))}</b>
                   ))}
-                  {item.assessmentError && <em title={item.assessmentError}>Readiness unavailable</em>}
+                  {item.assessmentError && <em title={item.assessmentError}>{t('Readiness unavailable')}</em>}
                 </span>
                 <span className="library-home-updated" role="cell">
-                  <strong>{formatDate(item.draft.updatedAt)}</strong>
-                  <small>{item.draft.sourceMode.toLowerCase()} source</small>
+                  <strong>{formatDate(item.draft.updatedAt, locale)}</strong>
+                  <small>{t('{mode} source', { mode: item.draft.sourceMode.toLowerCase() })}</small>
                 </span>
                 <span role="cell">
                   <a className="primary compact" href={item.resumeHref}>
-                    Resume r{item.draft.revision}
+                    {t('Resume r{revision}', { revision: item.draft.revision })}
                   </a>
                 </span>
               </div>
@@ -233,16 +237,16 @@ export default function LibraryHome({ routeError = '', onStart }: LibraryHomePro
               disabled={visible.page === 1}
               onClick={() => setPage((current) => current - 1)}
             >
-              Previous
+              {t('Previous')}
             </button>
-            <span>Page {visible.page} of {visible.pageCount}</span>
+            <span>{t('Page {page} of {pages}', { page: visible.page, pages: visible.pageCount })}</span>
             <button
               type="button"
               className="secondary compact"
               disabled={visible.page === visible.pageCount}
               onClick={() => setPage((current) => current + 1)}
             >
-              Next
+              {t('Next')}
             </button>
           </footer>
         )}
@@ -252,11 +256,11 @@ export default function LibraryHome({ routeError = '', onStart }: LibraryHomePro
         <section className="library-home-create-panel" data-testid="library-home-create-panel">
           <header>
             <div>
-              <span>New source</span>
-              <strong>{startChoice === 'discover' ? 'Discover existing assets' : 'Create a library'}</strong>
+              <span>{t('New source')}</span>
+              <strong>{t(startChoice === 'discover' ? 'Discover existing assets' : 'Create a library')}</strong>
             </div>
             <button type="button" className="secondary compact" onClick={() => setStartChoice(null)}>
-              Close
+              {t('Close')}
             </button>
           </header>
           <LibraryStartChoices
@@ -329,11 +333,11 @@ function statusTone(status: LibraryHomeStatus): string {
     : 'attention';
 }
 
-function formatDate(value: string): string {
+function formatDate(value: string, locale: string): string {
   const date = new Date(value);
   return Number.isNaN(date.getTime())
     ? value
-    : new Intl.DateTimeFormat(undefined, {
+    : new Intl.DateTimeFormat(locale, {
         dateStyle: 'medium',
         timeStyle: 'short',
       }).format(date);

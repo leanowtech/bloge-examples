@@ -101,6 +101,14 @@ silently consuming work.
 | `GET http://localhost:8080/api/mirror/outcome-observations/{observationId}/lifecycle?afterOrdinal=0&limit=100` | Read one bounded append-only lifecycle suffix for offline audit |
 | `POST http://localhost:8080/api/mirror/outcome-selected-populations/uploads` | Begin or exactly replay one resumable selected-population upload intent (`X-Purpose: MIRROR_OUTCOME_SELECTION`) |
 
+The React workspaces support English and Simplified Chinese. Use the `EN / 中文`
+segmented control in the global header; the choice persists across workspace navigation and reloads.
+For deterministic demo links, append `?lang=en` or `?lang=zh-CN`, for example
+`http://localhost:8080/author/?lang=zh-CN`. Operator references, DSL, JSON Schema, fixture payloads,
+JSONPath expressions, fingerprints, and run identifiers are intentionally never translated.
+Implementation and extension rules are documented in
+[`docs/bloge-visual-canvas-localization.md`](../docs/bloge-visual-canvas-localization.md).
+
 For the shortest trustworthy Author demo, load **Loan policy fallback** from the start dialog and
 open **Scenarios**. Its two canonical cases open in the shared Matrix. Select both rows and choose
 **Run selected**: selection stays exact across filter/sort changes, both rows retain independent

@@ -41,6 +41,27 @@ BLOGE 通用可视化编排画布是一套面向复杂业务编排的 topology-f
 | `/showcase/` | React 版 resource gateway 场景目录，按后端场景顺序展示案例、图、请求执行和 SSE 流 | 演示与验证 |
 | `/examples/gateway` | 旧版 Custom Composer/Showcase，保留兼容和功能回归价值 | 兼容入口 |
 
+#### 中英文界面切换
+
+新版 React 工作区顶部提供 `EN / 中文` 分段控件，支持 `/author/`、`/libraries/`、
+`/rehearsals/` 和 `/showcase/` 统一切换。切换后当前页面立即更新，选择会保存到浏览器，
+跨页面导航和刷新后继续生效；HTML 的 `lang` 属性也会同步更新，便于读屏软件采用正确语言。
+
+演示或 Deep Link 可以显式指定语言：
+
+```text
+http://localhost:8080/author/?lang=zh-CN
+http://localhost:8080/libraries/?lang=en
+```
+
+语言解析优先级为 URL `lang` 参数、已保存偏好、浏览器语言、英文默认值。URL 参数会覆盖
+旧偏好，并在用户再次切换时随当前路由更新，不会把用户带离正在编辑的 Graph、draft 或 run。
+
+界面文案、按钮、状态说明和无障碍标签会翻译；用户资产名称、算子/函数引用、DSL、JSON
+Schema、fixture payload、JSONPath、fingerprint、draft/run ID 和后端诊断原文保持不变。
+因此切换语言不会修改草稿、改变协议枚举值或使证据 fingerprint 漂移。扩展约束见
+[可视化画布多语言设计与扩展指南](bloge-visual-canvas-localization.md)。
+
 打开 `/author/` 后先按下面这张图定位页面：
 
 ![Author 工作台总览标注](assets/bloge-author-overview-annotated.svg)

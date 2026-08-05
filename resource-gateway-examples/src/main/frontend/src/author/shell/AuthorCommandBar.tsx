@@ -1,4 +1,5 @@
 import type { AuthorMode, AuthorPrimaryAction } from './authorWorkspaceState';
+import { useI18n } from '../../i18n/I18nProvider';
 
 interface AuthorCommandBarProps {
   graphName: string;
@@ -61,13 +62,18 @@ export default function AuthorCommandBar({
   onAutoLayout,
   onValidate,
 }: AuthorCommandBarProps) {
+  const { t } = useI18n();
   return (
     <header className="author-command-bar" data-testid="author-command-bar">
       <div className="author-draft-identity">
         <strong title={graphName}>{graphName}</strong>
-        <span>Draft r{draftRevision} · {nodeCount} nodes · {edgeCount} edges</span>
+        <span>{t('Draft r{revision} · {nodes} nodes · {edges} edges', {
+          revision: draftRevision,
+          nodes: nodeCount,
+          edges: edgeCount,
+        })}</span>
       </div>
-      <nav className="author-mode-tabs" aria-label="Author task mode">
+      <nav className="author-mode-tabs" aria-label={t('Author task mode')}>
         {MODES.map((candidate) => (
           <button
             key={candidate.key}
@@ -77,45 +83,45 @@ export default function AuthorCommandBar({
             data-testid={`author-mode:${candidate.key}`}
             onClick={() => onModeChange(candidate.key)}
           >
-            {candidate.label}
+            {t(candidate.label)}
           </button>
         ))}
       </nav>
-      <div className="author-truth-status" aria-label="Author readiness dimensions">
+      <div className="author-truth-status" aria-label={t('Author readiness dimensions')}>
         <span data-state={draftStatus.toLowerCase()}>
-          <small>Draft</small>
-          <strong>{draftStatus}</strong>
+          <small>{t('Draft')}</small>
+          <strong>{t(draftStatus)}</strong>
         </span>
         <span data-state={executionStatus.toLowerCase()}>
-          <small>Execution</small>
-          <strong>{executionStatus}</strong>
+          <small>{t('Execution')}</small>
+          <strong>{t(executionStatus)}</strong>
         </span>
         <span data-state={assertionStatus.toLowerCase()}>
-          <small>Assertions</small>
-          <strong>{assertionStatus}</strong>
+          <small>{t('Assertions')}</small>
+          <strong>{t(assertionStatus)}</strong>
         </span>
         <span data-state={contractStatus.toLowerCase()}>
-          <small>Contract</small>
-          <strong>{contractStatus}</strong>
+          <small>{t('Contract')}</small>
+          <strong>{t(contractStatus)}</strong>
         </span>
         <span data-state={governanceStatus.toLowerCase()}>
-          <small>Governance</small>
-          <strong>{governanceStatus}</strong>
+          <small>{t('Governance')}</small>
+          <strong>{t(governanceStatus)}</strong>
         </span>
         <span
           data-state={promotionStatus.toLowerCase()}
           data-testid="author-promotion-verdict"
-          title={promotionSummary}
+          title={t(promotionSummary)}
         >
-          <small>Promotion</small>
-          <strong>{promotionStatus}</strong>
+          <small>{t('Promotion')}</small>
+          <strong>{t(promotionStatus)}</strong>
         </span>
       </div>
       <div className="author-secondary-actions">
         {mode === 'compose' && (
           <>
             <button type="button" className="secondary compact" onClick={onImport}>
-              Import
+              {t('Import')}
             </button>
             <button
               type="button"
@@ -123,7 +129,7 @@ export default function AuthorCommandBar({
               onClick={onAutoLayout}
               disabled={layoutDisabled}
             >
-              Auto layout
+              {t('Auto layout')}
             </button>
           </>
         )}
@@ -133,7 +139,7 @@ export default function AuthorCommandBar({
           onClick={onValidate}
           disabled={validationDisabled}
         >
-          Validate graph
+          {t('Validate graph')}
         </button>
         <a
           className={`toolbar-link compact ${exportDisabled ? 'disabled' : ''}`}
@@ -147,7 +153,7 @@ export default function AuthorCommandBar({
             }
           }}
         >
-          Export draft
+          {t('Export draft')}
         </a>
       </div>
       <button
@@ -157,7 +163,7 @@ export default function AuthorCommandBar({
         onClick={onPrimaryAction}
         disabled={primaryDisabled}
       >
-        {primaryAction.label}
+        {t(primaryAction.label)}
       </button>
     </header>
   );

@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
+import { useI18n } from '../i18n/I18nProvider';
 
 import useDialogFocusTrap from '../author/accessibility/useDialogFocusTrap';
 import { sampleFromSchemaEnvelope } from '../draftModel';
@@ -171,6 +172,7 @@ export default function ContractScenarioWorkspace({
   lastComparison = null,
   presentation = 'dialog',
 }: ContractScenarioWorkspaceProps) {
+  const { t } = useI18n();
   const [activeTab, setActiveTab] = useState<WorkspaceTab>(initialTab);
   const [selectedScenarioId, setSelectedScenarioId] = useState(
     initialScenarioId || lastRunScenarioId,
@@ -973,7 +975,7 @@ export default function ContractScenarioWorkspace({
       : []
     : [
         ['interface', 'Interface'],
-        ['scenarios', `Scenarios ${scenarios.length}`],
+        ['scenarios', t('Scenarios {count}', { count: scenarios.length })],
         ['compatibility', 'Compatibility'],
         ['evidence', 'Run Evidence'],
       ];
@@ -986,19 +988,19 @@ export default function ContractScenarioWorkspace({
   const showPublish = !surfacePresentation || evidenceTask;
   const assetStateLabel = surfacePresentation && contractTask
     ? targetKind === 'OPERATOR'
-      ? 'Projected Contract'
+      ? t('Projected Contract')
       : !assetStored
-        ? 'Exploratory draft'
-        : `Graph r${contract.target.revision}`
+        ? t('Exploratory draft')
+        : t('Graph r{revision}', { revision: contract.target.revision })
     : !assetStored
-      ? 'Exploratory draft'
+      ? t('Exploratory draft')
       : dirty
         ? evidenceTask
-          ? 'Evidence from unsaved Scenario'
-          : 'Unsaved Scenario changes'
+          ? t('Evidence from unsaved Scenario')
+          : t('Unsaved Scenario changes')
         : current
-          ? `Scenario r${scenarioDraftSet.revision} saved`
-          : 'Contract changed';
+          ? t('Scenario r{revision} saved', { revision: scenarioDraftSet.revision })
+          : t('Contract changed');
 
   return (
     <div
@@ -1017,17 +1019,20 @@ export default function ContractScenarioWorkspace({
         className={`contract-workspace ${surfacePresentation ? 'surface' : 'dialog'}`}
         role={surfacePresentation ? 'region' : 'dialog'}
         {...(!surfacePresentation ? { 'aria-modal': true } : {})}
-        aria-label="Contract and Scenario workspace"
+        aria-label={t('Contract and Scenario workspace')}
         tabIndex={surfacePresentation ? undefined : -1}
         data-testid="contract-workspace"
         data-presentation={presentation}
       >
         <header className="contract-workspace-header">
           <div>
-            <span>{targetLabel} Contract</span>
+            <span>{t(`${targetLabel} Contract`)}</span>
             <h2 title={contract.target.id}>{contract.target.id}</h2>
             <p>
-              Revision {contract.target.revision} · {contract.confidence.toLowerCase()} projection
+              {t('Revision {revision} · {confidence} projection', {
+                revision: contract.target.revision,
+                confidence: contract.confidence.toLowerCase(),
+              })}
             </p>
           </div>
           <div className="contract-workspace-header-actions">
@@ -1041,7 +1046,7 @@ export default function ContractScenarioWorkspace({
                 onClick={() => void saveGraph()}
                 disabled={Boolean(assetBusy)}
               >
-                {assetBusy === 'graph' ? 'Saving Graph...' : 'Save Graph'}
+                {t(assetBusy === 'graph' ? 'Saving Graph...' : 'Save Graph')}
               </button>
             )}
             {showScenarioAssets && (
@@ -1052,7 +1057,7 @@ export default function ContractScenarioWorkspace({
                   onClick={() => void loadDraftSet()}
                   disabled={Boolean(assetBusy) || !assetStored}
                 >
-                  {assetBusy === 'load' ? 'Loading...' : 'Load Scenario'}
+                  {t(assetBusy === 'load' ? 'Loading...' : 'Load Scenario')}
                 </button>
                 <button
                   type="button"
@@ -1060,7 +1065,7 @@ export default function ContractScenarioWorkspace({
                   onClick={() => void saveDraftSet()}
                   disabled={Boolean(assetBusy) || !assetStored || !current || !dirty || scenarios.length === 0}
                 >
-                  {assetBusy === 'save' ? 'Saving...' : 'Save Scenario'}
+                  {t(assetBusy === 'save' ? 'Saving...' : 'Save Scenario')}
                 </button>
               </>
             )}
@@ -1071,7 +1076,7 @@ export default function ContractScenarioWorkspace({
                 onClick={() => void publishDraftSet()}
                 disabled={Boolean(assetBusy) || dirty || !current || scenarioDraftSet.revision < 1}
               >
-                {assetBusy === 'publish' ? 'Publishing...' : 'Publish'}
+                {t(assetBusy === 'publish' ? 'Publishing...' : 'Publish')}
               </button>
             )}
             {workspaceTransferEnabled && (
@@ -1082,7 +1087,7 @@ export default function ContractScenarioWorkspace({
                   onClick={() => void exportWorkspace()}
                   disabled={Boolean(assetBusy) || !current}
                 >
-                  {assetBusy === 'export' ? 'Exporting...' : 'Export Workspace'}
+                  {t(assetBusy === 'export' ? 'Exporting...' : 'Export Workspace')}
                 </button>
                 <button
                   type="button"
@@ -1090,14 +1095,14 @@ export default function ContractScenarioWorkspace({
                   onClick={() => workspaceInputRef.current?.click()}
                   disabled={Boolean(assetBusy)}
                 >
-                  {assetBusy === 'import' ? 'Importing...' : 'Import Workspace'}
+                  {t(assetBusy === 'import' ? 'Importing...' : 'Import Workspace')}
                 </button>
                 <input
                   ref={workspaceInputRef}
                   className="visually-hidden"
                   type="file"
                   accept="application/json,.json"
-                  aria-label="Workspace bundle file"
+                  aria-label={t('Workspace bundle file')}
                   onChange={(event) => void importWorkspace(event.target.files?.[0])}
                 />
               </>
@@ -1106,8 +1111,8 @@ export default function ContractScenarioWorkspace({
               <button
                 type="button"
                 className="icon-button"
-                title="Close Contract workspace"
-                aria-label="Close Contract workspace"
+                title={t('Close Contract workspace')}
+                aria-label={t('Close Contract workspace')}
                 onClick={onClose}
               >
                 ×
@@ -1119,21 +1124,21 @@ export default function ContractScenarioWorkspace({
         {!current && (
           <div className="contract-stale-banner" role="alert">
             <div>
-              <strong>Scenarios target an older {targetLabel.toLowerCase()} or Contract.</strong>
-              <span>Review the interface change, then explicitly rebase before running.</span>
+              <strong>{t('Scenarios target an older {target} or Contract.', { target: t(targetLabel).toLowerCase() })}</strong>
+              <span>{t('Review the interface change, then explicitly rebase before running.')}</span>
             </div>
             <button type="button" className="secondary compact" onClick={() => {
               navigateWorkspace('compatibility');
             }}>
-              Review compatibility
+              {t('Review compatibility')}
             </button>
           </div>
         )}
 
         {assetNotice && (
           <div className={`scenario-asset-notice ${assetNotice.level}`} role={assetNotice.level === 'error' ? 'alert' : 'status'}>
-            <strong>{assetNotice.level === 'ok' ? 'Asset state' : 'Action blocked'}</strong>
-            <span>{assetNotice.message}</span>
+            <strong>{t(assetNotice.level === 'ok' ? 'Asset state' : 'Action blocked')}</strong>
+            <span>{t(assetNotice.message)}</span>
             {publication && (
               <code title={publication.report.publicationId}>
                 {publication.report.status} · attempt {publication.report.attempt}
@@ -1157,7 +1162,7 @@ export default function ContractScenarioWorkspace({
         )}
 
         {workspaceTabs.length > 0 && (
-          <nav className="contract-tabs" role="tablist" aria-label="Contract workspace views">
+          <nav className="contract-tabs" role="tablist" aria-label={t('Contract workspace views')}>
             {workspaceTabs.map(([tab, label]) => (
               <button
                 type="button"
@@ -1170,7 +1175,7 @@ export default function ContractScenarioWorkspace({
                 key={tab}
                 onClick={() => navigateWorkspace(tab)}
               >
-                {label}
+                {t(label)}
               </button>
             ))}
           </nav>
@@ -1208,8 +1213,8 @@ export default function ContractScenarioWorkspace({
               differentialCounts={differentialCounts}
               importDisabled={!assetStored || !current}
               importDisabledReason={!assetStored
-                ? `Save ${targetLabel} before importing cases.`
-                : 'Rebase Scenarios to the current Contract before importing cases.'}
+                ? t('Save {target} before importing cases.', { target: t(targetLabel) })
+                : t('Rebase Scenarios to the current Contract before importing cases.')}
               compileMessages={compileMessages}
               advancedText={advancedText}
               advancedError={advancedError}
@@ -1419,30 +1424,31 @@ function ScenarioTab({
   onRetryFailedTableRun,
   onAcceptCoverageCandidate,
 }: ScenarioTabProps) {
+  const { t } = useI18n();
   return (
     <div className="scenario-table-workspace">
       <header className="scenario-viewbar">
-        <div className="scenario-view-switch" role="group" aria-label="Scenario view">
+        <div className="scenario-view-switch" role="group" aria-label={t('Scenario view')}>
           <button
             type="button"
             aria-pressed={view === 'matrix'}
             onClick={() => onViewChange('matrix')}
           >
-            Matrix
+            {t('Matrix')}
           </button>
           <button
             type="button"
             aria-pressed={view === 'case'}
             onClick={() => onViewChange('case')}
           >
-            Case
+            {t('Case')}
           </button>
           <button
             type="button"
             aria-pressed={view === 'coverage'}
             onClick={() => onViewChange('coverage')}
           >
-            Coverage
+            {t('Coverage')}
           </button>
         </div>
         <div className="scenario-view-coordinate">
@@ -1493,8 +1499,8 @@ function ScenarioTab({
       <div className="scenario-workbench">
       <aside className="scenario-list">
         <div className="scenario-list-head">
-          <strong>Scenarios</strong>
-          <button type="button" className="icon-button" title="Add Scenario" aria-label="Add Scenario" onClick={onAddScenario}>
+          <strong>{t('Scenarios')}</strong>
+          <button type="button" className="icon-button" title={t('Add Scenario')} aria-label={t('Add Scenario')} onClick={onAddScenario}>
             +
           </button>
         </div>
@@ -1509,11 +1515,11 @@ function ScenarioTab({
             <strong>{scenario.name}</strong>
             <small>
               {scenario.dependencies.filter((entry) => entry.behavior.kind !== 'REAL').length}
-              {' controlled dependencies'}
+              {' '}{t('controlled dependencies')}
             </small>
           </button>
         ))}
-        {scenarios.length === 0 && <p className="scenario-list-empty">No Scenarios yet.</p>}
+        {scenarios.length === 0 && <p className="scenario-list-empty">{t('No Scenarios yet.')}</p>}
       </aside>
 
       <div className="scenario-editor">
@@ -1521,7 +1527,7 @@ function ScenarioTab({
           <>
             <div className="scenario-editor-head">
               <label>
-                <span>Name</span>
+                <span>{t('Name')}</span>
                 <input
                   value={selectedScenario.name}
                   onChange={(event) => onUpdateScenario((scenario) => ({
@@ -1531,7 +1537,7 @@ function ScenarioTab({
                 />
               </label>
               <label>
-                <span>Case type</span>
+                <span>{t('Case type')}</span>
                 <select
                   value={selectedScenario.caseType}
                   onChange={(event) => onUpdateScenario((scenario) => ({
@@ -1539,22 +1545,22 @@ function ScenarioTab({
                     caseType: event.target.value as ScenarioDraft['caseType'],
                   }))}
                 >
-                  <option value="GOLDEN">Golden</option>
-                  <option value="NEGATIVE">Negative</option>
-                  <option value="BOUNDARY">Boundary</option>
-                  <option value="REGRESSION">Regression</option>
-                  <option value="PROPERTY">Property</option>
+                  <option value="GOLDEN">{t('Golden')}</option>
+                  <option value="NEGATIVE">{t('Negative')}</option>
+                  <option value="BOUNDARY">{t('Boundary')}</option>
+                  <option value="REGRESSION">{t('Regression')}</option>
+                  <option value="PROPERTY">{t('Property')}</option>
                 </select>
               </label>
               <button type="button" className="secondary compact danger" onClick={onRemoveScenario}>
-                Delete
+                {t('Delete')}
               </button>
             </div>
 
             <section className="scenario-stage">
               <div className="scenario-stage-title">
                 <span>1</span>
-                <div><strong>Given</strong><small>Target input from the Contract</small></div>
+                <div><strong>{t('Given')}</strong><small>{t('Target input from the Contract')}</small></div>
               </div>
               <SchemaValueForm
                 envelope={contract.inputSchema}
@@ -1563,7 +1569,7 @@ function ScenarioTab({
                   ...scenario,
                   given: { input, provenance: 'AUTHORED' },
                 }))}
-                label="Target input"
+                label={t('Target input')}
               />
             </section>
 
@@ -1571,8 +1577,8 @@ function ScenarioTab({
               <div className="scenario-stage-title">
                 <span>2</span>
                 <div>
-                  <strong>Dependencies</strong>
-                  <small>Override controlled calls; omitted nodes run normally</small>
+                  <strong>{t('Dependencies')}</strong>
+                  <small>{t('Override controlled calls; omitted nodes run normally')}</small>
                 </div>
                 <button
                   type="button"
@@ -1585,7 +1591,7 @@ function ScenarioTab({
                     ],
                   }))}
                 >
-                  + Dependency
+                  {t('+ Dependency')}
                 </button>
               </div>
               <div className="scenario-dependencies">
@@ -1618,7 +1624,7 @@ function ScenarioTab({
             <section className="scenario-stage">
               <div className="scenario-stage-title">
                 <span>3</span>
-                <div><strong>Then</strong><small>Compare public output by whole value or path</small></div>
+                <div><strong>{t('Then')}</strong><small>{t('Compare public output by whole value or path')}</small></div>
                 <button
                   type="button"
                   className="secondary compact"
@@ -1632,7 +1638,7 @@ function ScenarioTab({
                     },
                   }))}
                 >
-                  + Assertion
+                  {t('+ Assertion')}
                 </button>
               </div>
               <div className="scenario-assertions">
@@ -1660,7 +1666,7 @@ function ScenarioTab({
                   />
                 ))}
                 {selectedScenario.then.assertions.length === 0 && (
-                  <p className="scenario-assertion-empty">Run success is enough until an assertion is added.</p>
+                  <p className="scenario-assertion-empty">{t('Run success is enough until an assertion is added.')}</p>
                 )}
               </div>
             </section>
@@ -1674,23 +1680,26 @@ function ScenarioTab({
             )}
 
             <details className="contract-advanced-json">
-              <summary>Advanced Scenario JSON</summary>
+              <summary>{t('Advanced Scenario JSON')}</summary>
               <textarea
-                aria-label="Advanced Scenario JSON"
+                aria-label={t('Advanced Scenario JSON')}
                 value={advancedText}
                 onChange={(event) => onAdvancedTextChange(event.target.value)}
                 rows={18}
               />
               {advancedError && <p className="scenario-run-errors">{advancedError}</p>}
               <button type="button" className="secondary compact" onClick={onApplyAdvancedJson}>
-                Apply valid JSON
+                {t('Apply valid JSON')}
               </button>
             </details>
 
             <footer className="scenario-run-bar">
               <div>
                 <strong>{selectedScenario.name}</strong>
-                <span>{selectedScenario.dependencies.length} dependencies · {selectedScenario.then.assertions.length} assertions</span>
+                <span>{t('{dependencies} dependencies · {assertions} assertions', {
+                  dependencies: selectedScenario.dependencies.length,
+                  assertions: selectedScenario.then.assertions.length,
+                })}</span>
               </div>
               <button
                 type="button"
@@ -1699,14 +1708,14 @@ function ScenarioTab({
                 disabled={running}
                 data-testid="scenario-run"
               >
-                {running ? 'Running...' : 'Run & Compare'}
+                {t(running ? 'Running...' : 'Run & Compare')}
               </button>
             </footer>
           </>
         ) : (
           <div className="scenario-empty-state">
-            <strong>Create the first Scenario</strong>
-            <button type="button" className="primary" onClick={onAddScenario}>Add Scenario</button>
+            <strong>{t('Create the first Scenario')}</strong>
+            <button type="button" className="primary" onClick={onAddScenario}>{t('Add Scenario')}</button>
           </div>
         )}
       </div>

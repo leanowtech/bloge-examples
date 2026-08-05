@@ -1,3 +1,4 @@
+import { useI18n } from '../../i18n/I18nProvider';
 import type { AuthorMode } from './authorWorkspaceState';
 
 export interface TopologyContextNode {
@@ -35,6 +36,7 @@ export default function TopologyContextRail({
   onSelectNode,
   onRevealInCompose,
 }: TopologyContextRailProps) {
+  const { t } = useI18n();
   const selectedNode = nodes.find((node) => node.id === selectedNodeId) ?? null;
   const upstream = selectedNode
     ? relatedNodes(nodes, edges, selectedNode.id, 'upstream')
@@ -50,20 +52,20 @@ export default function TopologyContextRail({
       data-author-mode={mode}
     >
       <header>
-        <span>Topology</span>
+        <span>{t('Topology')}</span>
         <h2 title={graphName}>{graphName}</h2>
-        <p>{modeLabel(mode)}</p>
+        <p>{t(modeLabel(mode))}</p>
       </header>
 
       <dl className="topology-context-facts">
-        <div><dt>Nodes</dt><dd>{nodes.length}</dd></div>
-        <div><dt>Edges</dt><dd>{edges.length}</dd></div>
-        <div><dt>Target</dt><dd>{selectedNode ? 'Node' : 'Graph'}</dd></div>
+        <div><dt>{t('Nodes')}</dt><dd>{nodes.length}</dd></div>
+        <div><dt>{t('Edges')}</dt><dd>{edges.length}</dd></div>
+        <div><dt>{t('Target')}</dt><dd>{t(selectedNode ? 'Node' : 'Graph')}</dd></div>
       </dl>
 
       {selectedNode ? (
-        <section className="topology-context-target" aria-label="Selected topology target">
-          <span>Selected node</span>
+        <section className="topology-context-target" aria-label={t('Selected topology target')}>
+          <span>{t('Selected node')}</span>
           <strong title={selectedNode.label}>{selectedNode.label}</strong>
           <code title={selectedNode.operatorRef}>{selectedNode.operatorRef}</code>
           <div className="topology-context-neighbors">
@@ -80,22 +82,22 @@ export default function TopologyContextRail({
           </div>
         </section>
       ) : (
-        <section className="topology-context-target graph" aria-label="Selected topology target">
-          <span>Selected target</span>
-          <strong>Graph contract</strong>
+        <section className="topology-context-target graph" aria-label={t('Selected topology target')}>
+          <span>{t('Selected target')}</span>
+          <strong>{t('Graph contract')}</strong>
           <code>{graphName}</code>
         </section>
       )}
 
       {(scenarioId || runId) && (
         <dl className="topology-context-coordinates">
-          {scenarioId && <div><dt>Scenario</dt><dd title={scenarioId}>{scenarioId}</dd></div>}
-          {runId && <div><dt>Run</dt><dd title={runId}>{runId}</dd></div>}
+          {scenarioId && <div><dt>{t('Scenario')}</dt><dd title={scenarioId}>{scenarioId}</dd></div>}
+          {runId && <div><dt>{t('Run')}</dt><dd title={runId}>{runId}</dd></div>}
         </dl>
       )}
 
       <button type="button" className="secondary compact" onClick={onRevealInCompose}>
-        Reveal in Compose
+        {t('Reveal in Compose')}
       </button>
     </section>
   );
@@ -110,9 +112,10 @@ function NeighborList({
   nodes: TopologyContextNode[];
   onSelectNode: (nodeId: string) => void;
 }) {
+  const { t } = useI18n();
   return (
     <section>
-      <span>{label} · {nodes.length}</span>
+      <span>{t(label)} · {nodes.length}</span>
       {nodes.length > 0 ? (
         <ul>
           {nodes.map((node) => (
@@ -124,7 +127,7 @@ function NeighborList({
           ))}
         </ul>
       ) : (
-        <small>None</small>
+        <small>{t('None')}</small>
       )}
     </section>
   );

@@ -14,6 +14,7 @@ import {
   previewLibraryAuthoringDraft,
   saveLibraryAuthoringDraft,
 } from '../api';
+import { useI18n } from '../i18n/I18nProvider';
 import type {
   VisualLibraryAuthoringCommitResult,
   VisualLibraryAuthoringCompileResult,
@@ -46,6 +47,7 @@ import {
 type SaveState = 'idle' | 'dirty' | 'saving' | 'saved' | 'conflict' | 'error';
 
 export default function LibraryWorkbench() {
+  const { t } = useI18n();
   const [document, setDocument] = useState<VisualLibraryAuthoringDocument | null>(null);
   const [draftId, setDraftId] = useState('');
   const [revision, setRevision] = useState(0);
@@ -337,7 +339,7 @@ export default function LibraryWorkbench() {
   }, []);
 
   if (loading && !document) {
-    return <main className="library-workbench-loading">Loading library draft...</main>;
+    return <main className="library-workbench-loading">{t('Loading library draft...')}</main>;
   }
   if (!document) {
     return (
@@ -352,30 +354,31 @@ export default function LibraryWorkbench() {
       <main className="library-history-view" data-testid="library-history-view">
         <header>
           <div>
-            <p className="eyebrow">Immutable authoring history</p>
+            <p className="eyebrow">{t('Immutable authoring history')}</p>
             <h2>{document.library.name || document.library.id}</h2>
             <p>
-              Exact revision {historicalDraft.revision} is open read-only.
-              The mutable head is revision {latestDraft?.revision ?? 'unavailable'}.
+              {t('Exact revision {revision} is open read-only. The mutable head is revision {head}.', {
+                revision: historicalDraft.revision,
+                head: latestDraft?.revision ?? t('unavailable'),
+              })}
             </p>
           </div>
-          <a className="secondary compact" href="/libraries/">Library home</a>
+          <a className="secondary compact" href="/libraries/">{t('Library home')}</a>
         </header>
         <section className="library-history-verdict">
-          <span>Historical snapshot</span>
-          <strong>No edits can overwrite this revision</strong>
+          <span>{t('Historical snapshot')}</span>
+          <strong>{t('No edits can overwrite this revision')}</strong>
           <p>
-            Resume the current head to continue the same draft, or fork this snapshot into a new
-            independently autosaved draft.
+            {t('Resume the current head to continue the same draft, or fork this snapshot into a new independently autosaved draft.')}
           </p>
         </section>
         <dl className="library-history-summary">
-          <div><dt>Draft</dt><dd>{historicalDraft.draftId}</dd></div>
-          <div><dt>Revision</dt><dd>{historicalDraft.revision}</dd></div>
-          <div><dt>Owner</dt><dd>{document.library.owner || 'Unresolved'}</dd></div>
-          <div><dt>Operators</dt><dd>{Object.keys(document.operators ?? {}).length}</dd></div>
-          <div><dt>Functions</dt><dd>{Object.keys(document.functions ?? {}).length}</dd></div>
-          <div><dt>Saved by</dt><dd>{historicalDraft.savedBy || 'Unknown'}</dd></div>
+          <div><dt>{t('Draft')}</dt><dd>{historicalDraft.draftId}</dd></div>
+          <div><dt>{t('Revision')}</dt><dd>{historicalDraft.revision}</dd></div>
+          <div><dt>{t('Owner')}</dt><dd>{document.library.owner || t('Unresolved')}</dd></div>
+          <div><dt>{t('Operators')}</dt><dd>{Object.keys(document.operators ?? {}).length}</dd></div>
+          <div><dt>{t('Functions')}</dt><dd>{Object.keys(document.functions ?? {}).length}</dd></div>
+          <div><dt>{t('Saved by')}</dt><dd>{historicalDraft.savedBy || t('Unknown')}</dd></div>
         </dl>
         <div className="library-history-actions">
           {latestDraft && (
@@ -383,7 +386,7 @@ export default function LibraryWorkbench() {
               className="primary"
               href={`/libraries/?draftId=${encodeURIComponent(latestDraft.draftId)}&revision=${latestDraft.revision}`}
             >
-              Resume latest r{latestDraft.revision}
+              {t('Resume latest r{revision}', { revision: latestDraft.revision })}
             </a>
           )}
           <button
@@ -394,16 +397,16 @@ export default function LibraryWorkbench() {
               `fork:r${historicalDraft.revision}`,
             )}
           >
-            Fork this revision
+            {t('Fork this revision')}
           </button>
         </div>
         <details className="library-history-technical">
-          <summary>Technical coordinates</summary>
+          <summary>{t('Technical coordinates')}</summary>
           <dl>
-            <div><dt>Fingerprint</dt><dd><code>{historicalDraft.fingerprint}</code></dd></div>
-            <div><dt>Created</dt><dd>{historicalDraft.createdAt}</dd></div>
-            <div><dt>Updated</dt><dd>{historicalDraft.updatedAt}</dd></div>
-            <div><dt>Source mode</dt><dd>{historicalDraft.sourceMode}</dd></div>
+            <div><dt>{t('Fingerprint')}</dt><dd><code>{historicalDraft.fingerprint}</code></dd></div>
+            <div><dt>{t('Created')}</dt><dd>{historicalDraft.createdAt}</dd></div>
+            <div><dt>{t('Updated')}</dt><dd>{historicalDraft.updatedAt}</dd></div>
+            <div><dt>{t('Source mode')}</dt><dd>{historicalDraft.sourceMode}</dd></div>
           </dl>
         </details>
       </main>
@@ -442,34 +445,34 @@ export default function LibraryWorkbench() {
     <main className="library-workbench" data-testid="library-workbench">
       <header className="library-command-bar">
         <div>
-          <a href="/libraries/" aria-label="Open Library home" title="Open Library home">←</a>
+          <a href="/libraries/" aria-label={t('Open Library home')} title={t('Open Library home')}>←</a>
           <div>
             <strong>{document.library.name || document.library.id}</strong>
             <span>
-              {draftId} / revision {revision}
-              {startSource.startsWith('example:') ? ' · Design-only example' : ''}
+              {draftId} / {t('revision {revision}', { revision })}
+              {startSource.startsWith('example:') ? t(' · Design-only example') : ''}
             </span>
           </div>
         </div>
         <div className={`library-save-state ${saveState}`} role="status" data-testid="library-save-state">
           <span aria-hidden="true" />
-          <strong>{saveState === 'conflict' ? 'Conflict' : saveState}</strong>
-          <small>{saveMessage}</small>
+          <strong>{t(saveState === 'conflict' ? 'Conflict' : saveState)}</strong>
+          <small>{t(saveMessage)}</small>
           {saveState === 'conflict' && (
             <button type="button" className="secondary compact" onClick={() => void reload()}>
-              Reload
+              {t('Reload')}
             </button>
           )}
         </div>
         <nav>
-          <a className="secondary compact" href="/author/">Graph Author</a>
+          <a className="secondary compact" href="/author/">{t('Graph Author')}</a>
           <button
             type="button"
             className="secondary compact"
             onClick={validateNow}
             disabled={previewBusy || saveState === 'conflict'}
           >
-            Validate
+            {t('Validate')}
           </button>
         </nav>
       </header>

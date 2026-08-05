@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 
+import { useI18n } from '../i18n/I18nProvider';
 import type {
   DependencyBehaviorDraft,
   DependencyBehaviorKind,
@@ -45,6 +46,7 @@ export default function DependencyBehaviorEditor({
   defaultSelectorKind = 'NODE',
   defaultOpen = false,
 }: DependencyBehaviorEditorProps) {
+  const { t } = useI18n();
   const inferredSelectorKind = dependencySelectorKind(dependency);
   const [selectorKind, setSelectorKind] = useState<DependencySelectorKind>(
     hasSelector(dependency) ? inferredSelectorKind : defaultSelectorKind,
@@ -100,7 +102,7 @@ export default function DependencyBehaviorEditor({
           <code>{(node?.operatorRef ?? selectorValue) || 'unbound selector'}</code>
         </div>
         <span className={`scenario-dependency-summary-status ${needsAttention ? 'attention' : ''}`}>
-          {needsAttention ? 'Needs input' : behaviorLabel(behavior.kind)}
+          {needsAttention ? t('Needs input') : t(behaviorLabel(behavior.kind))}
         </span>
       </summary>
       <div className="scenario-dependency-content">
@@ -109,16 +111,16 @@ export default function DependencyBehaviorEditor({
             <button
               type="button"
               className="secondary compact danger"
-              aria-label={`Remove dependency ${dependency.dependencyId}`}
+              aria-label={t('Remove dependency {id}', { id: dependency.dependencyId })}
               onClick={onRemove}
             >
-              Remove dependency
+              {t('Remove dependency')}
             </button>
           </div>
         )}
       <div className="scenario-dependency-primary">
         <div className="scenario-dependency-target">
-          <Field label="Target type">
+          <Field label={t('Target type')}>
             <select
               aria-label={`Selector kind for ${dependency.dependencyId}`}
               data-testid={`dependency-selector-kind:${dependency.dependencyId}`}
@@ -127,13 +129,13 @@ export default function DependencyBehaviorEditor({
                 event.target.value as DependencySelectorKind,
               )}
             >
-              <option value="NODE">Canvas node</option>
-              <option value="OPERATOR">Operator</option>
-              <option value="RESOURCE">Resource</option>
-              <option value="FUNCTION">Built-in function</option>
+              <option value="NODE">{t('Canvas node')}</option>
+              <option value="OPERATOR">{t('Operator')}</option>
+              <option value="RESOURCE">{t('Resource')}</option>
+              <option value="FUNCTION">{t('Built-in function')}</option>
             </select>
           </Field>
-          <Field label={selectorLabel(selectorKind)}>
+          <Field label={t(selectorLabel(selectorKind))}>
             {selectorKind === 'NODE' ? (
               <select
                 aria-label={`Selector value for ${dependency.dependencyId}`}
@@ -147,7 +149,10 @@ export default function DependencyBehaviorEditor({
               </select>
             ) : (
               <input
-                aria-label={`${selectorLabel(selectorKind)} for ${dependency.dependencyId}`}
+                aria-label={t('{label} for {id}', {
+                  label: t(selectorLabel(selectorKind)),
+                  id: dependency.dependencyId,
+                })}
                 data-testid={`dependency-selector-value:${dependency.dependencyId}`}
                 value={selectorValue}
                 onChange={(event) => updateSelectorValue(event.target.value)}
@@ -162,13 +167,13 @@ export default function DependencyBehaviorEditor({
               key={kind}
               className={behavior.kind === kind ? 'active' : ''}
               aria-pressed={behavior.kind === kind}
-              title={behaviorTitle(kind)}
+              title={t(behaviorTitle(kind))}
               onClick={() => onChange({
                 ...dependency,
                 behavior: behaviorForKind(kind, node),
               })}
             >
-              {label}
+              {t(label)}
             </button>
           ))}
         </div>
@@ -176,7 +181,7 @@ export default function DependencyBehaviorEditor({
 
       <div className="scenario-behavior-fields">
         {behavior.kind !== 'REAL' && (
-          <Field label="Boundary">
+          <Field label={t('Boundary')}>
             <select
               aria-label={`Boundary for ${dependency.dependencyId}`}
               value={behavior.boundary}
@@ -192,8 +197,8 @@ export default function DependencyBehaviorEditor({
                 });
               }}
             >
-              <option value="NODE">Logical node</option>
-              <option value="TRANSPORT">Transport</option>
+              <option value="NODE">{t('Logical node')}</option>
+              <option value="TRANSPORT">{t('Transport')}</option>
             </select>
           </Field>
         )}
@@ -203,14 +208,14 @@ export default function DependencyBehaviorEditor({
             envelope={node?.outputSchema}
             value={behavior.output}
             onChange={(output) => updateBehavior({ output })}
-            label="Returned output"
+            label={t('Returned output')}
             path={`/dependencies/${pointerSegment(dependency.dependencyId)}/behavior/output`}
             compact
           />
         )}
 
         {(behavior.kind === 'DELAY' || behavior.kind === 'TIMEOUT') && (
-          <Field label="Duration (ms)">
+          <Field label={t('Duration (ms)')}>
             <input
               aria-label={`Duration for ${dependency.dependencyId}`}
               type="number"
@@ -225,7 +230,7 @@ export default function DependencyBehaviorEditor({
 
         {(behavior.kind === 'ERROR' || behavior.kind === 'TIMEOUT' || behavior.kind === 'MUST_NOT_CALL') && (
           <div className="scenario-field-grid">
-            <Field label="Error code">
+            <Field label={t('Error code')}>
               <input
                 aria-label={`Error code for ${dependency.dependencyId}`}
                 value={behavior.errorCode ?? ''}
@@ -233,14 +238,14 @@ export default function DependencyBehaviorEditor({
               />
             </Field>
             {behavior.kind === 'ERROR' && (
-              <Field label="Error type">
+              <Field label={t('Error type')}>
                 <input
                   value={behavior.errorType ?? ''}
                   onChange={(event) => updateBehavior({ errorType: event.target.value })}
                 />
               </Field>
             )}
-            <Field label="Error message">
+            <Field label={t('Error message')}>
               <input
                 value={behavior.errorMessage ?? ''}
                 onChange={(event) => updateBehavior({ errorMessage: event.target.value })}
@@ -250,7 +255,7 @@ export default function DependencyBehaviorEditor({
         )}
 
         {behavior.kind === 'REPLAY' && (
-          <Field label="Governed replay ref">
+          <Field label={t('Governed replay ref')}>
             <input
               aria-label={`Replay reference for ${dependency.dependencyId}`}
               value={behavior.replayRef ?? ''}
@@ -263,7 +268,7 @@ export default function DependencyBehaviorEditor({
         {behavior.boundary === 'TRANSPORT'
           && (behavior.kind === 'RETURN' || behavior.kind === 'DELAY') && (
           <div className="scenario-transport-fields">
-            <Field label="Status">
+            <Field label={t('Status')}>
               <input
                 type="number"
                 min="100"
@@ -272,7 +277,7 @@ export default function DependencyBehaviorEditor({
                 onChange={(event) => updateBehavior({ statusCode: Number(event.target.value) })}
               />
             </Field>
-            <Field label="Raw body">
+            <Field label={t('Raw body')}>
               <textarea
                 rows={3}
                 value={behavior.rawBody ?? ''}
@@ -280,7 +285,7 @@ export default function DependencyBehaviorEditor({
               />
             </Field>
             <StringMapEditor
-              label="Response headers"
+              label={t('Response headers')}
               value={behavior.headers ?? {}}
               onChange={(headers) => updateBehavior({ headers })}
             />
@@ -289,9 +294,9 @@ export default function DependencyBehaviorEditor({
       </div>
 
       <details className="scenario-dependency-advanced">
-        <summary>Selector, matching & consumption</summary>
+        <summary>{t('Selector, matching & consumption')}</summary>
         <div className="scenario-advanced-grid">
-          <Field label="Graph path">
+          <Field label={t('Graph path')}>
             <input
               value={dependency.selector.graphPath}
               placeholder="/root"
@@ -301,7 +306,7 @@ export default function DependencyBehaviorEditor({
               })}
             />
           </Field>
-          <Field label="Correlation key">
+          <Field label={t('Correlation key')}>
             <input
               value={dependency.selector.correlationKey}
               onChange={(event) => onChange({
@@ -311,7 +316,7 @@ export default function DependencyBehaviorEditor({
             />
           </Field>
           <NumberListEditor
-            label="Attempts"
+            label={t('Attempts')}
             values={dependency.selector.attempts}
             onChange={(attempts) => onChange({
               ...dependency,
@@ -319,7 +324,7 @@ export default function DependencyBehaviorEditor({
             })}
           />
           <NumberListEditor
-            label="Occurrences"
+            label={t('Occurrences')}
             values={dependency.selector.occurrences}
             onChange={(occurrences) => onChange({
               ...dependency,
@@ -329,7 +334,7 @@ export default function DependencyBehaviorEditor({
         </div>
 
         <JsonMapEditor
-          label="Input path matches"
+          label={t('Input path matches')}
           value={dependency.selector.pathEquals}
           onChange={(pathEquals) => onChange({
             ...dependency,
@@ -342,7 +347,7 @@ export default function DependencyBehaviorEditor({
             envelope={node?.inputSchema}
             value={behavior.expectedInput}
             onChange={(expectedInput) => updateBehavior({ expectedInput })}
-            label="Expected dependency input"
+            label={t('Expected dependency input')}
             path={`/dependencies/${pointerSegment(dependency.dependencyId)}/behavior/expectedInput`}
             compact
           />
@@ -358,9 +363,9 @@ export default function DependencyBehaviorEditor({
                 consumption: { ...dependency.consumption, required: event.target.checked },
               })}
             />
-            <span>Required use</span>
+            <span>{t('Required use')}</span>
           </label>
-          <Field label="Minimum uses">
+          <Field label={t('Minimum uses')}>
             <input
               type="number"
               min="0"
@@ -374,7 +379,7 @@ export default function DependencyBehaviorEditor({
               })}
             />
           </Field>
-          <Field label="Maximum uses (0 = unlimited)">
+          <Field label={t('Maximum uses (0 = unlimited)')}>
             <input
               type="number"
               min="0"
@@ -388,7 +393,7 @@ export default function DependencyBehaviorEditor({
               })}
             />
           </Field>
-          <Field label="On exhausted">
+          <Field label={t('On exhausted')}>
             <select
               value={dependency.consumption.onExhausted}
               onChange={(event) => onChange({
@@ -399,11 +404,11 @@ export default function DependencyBehaviorEditor({
                 },
               })}
             >
-              <option value="FAIL">Fail</option>
-              <option value="FALLBACK_TO_REAL">Fall back to real</option>
+              <option value="FAIL">{t('Fail')}</option>
+              <option value="FALLBACK_TO_REAL">{t('Fall back to real')}</option>
             </select>
           </Field>
-          <Field label="On unmatched">
+          <Field label={t('On unmatched')}>
             <select
               value={dependency.consumption.onUnmatched}
               onChange={(event) => onChange({
@@ -414,12 +419,12 @@ export default function DependencyBehaviorEditor({
                 },
               })}
             >
-              <option value="FAIL">Fail</option>
-              <option value="WARN">Warn</option>
-              <option value="ALLOW_REAL">Allow real</option>
+              <option value="FAIL">{t('Fail')}</option>
+              <option value="WARN">{t('Warn')}</option>
+              <option value="ALLOW_REAL">{t('Allow real')}</option>
             </select>
           </Field>
-          <Field label="Schema check">
+          <Field label={t('Schema check')}>
             <select
               value={dependency.schemaCheck.mode}
               onChange={(event) => onChange({
@@ -430,12 +435,12 @@ export default function DependencyBehaviorEditor({
                 },
               })}
             >
-              <option value="STRICT">Strict</option>
-              <option value="WAIVED">Waived</option>
+              <option value="STRICT">{t('Strict')}</option>
+              <option value="WAIVED">{t('Waived')}</option>
             </select>
           </Field>
           {dependency.schemaCheck.mode === 'WAIVED' && (
-            <Field label="Waiver reason">
+            <Field label={t('Waiver reason')}>
               <input
                 value={dependency.schemaCheck.waiverReason}
                 onChange={(event) => onChange({
@@ -472,6 +477,7 @@ function NumberListEditor({
   values: number[];
   onChange: (values: number[]) => void;
 }) {
+  const { t } = useI18n();
   return (
     <fieldset className="scenario-list-field">
       <legend>{label}</legend>
@@ -503,7 +509,7 @@ function NumberListEditor({
           className="secondary compact"
           onClick={() => onChange([...values, (values[values.length - 1] ?? 0) + 1])}
         >
-          Add
+          {t('Add')}
         </button>
       </div>
     </fieldset>
@@ -567,6 +573,7 @@ function MapRows<T>({
   renderValue: (value: T, update: (value: T) => void) => React.ReactNode;
   onChange: (value: Record<string, T>) => void;
 }) {
+  const { t } = useI18n();
   const entries = Object.entries(value);
   return (
     <fieldset className="scenario-map-field">
@@ -613,7 +620,7 @@ function MapRows<T>({
           onChange({ ...value, [key]: '' as T });
         }}
       >
-        Add row
+        {t('Add row')}
       </button>
     </fieldset>
   );
@@ -626,6 +633,7 @@ function JsonValueEditor({
   value: unknown;
   onChange: (value: unknown) => void;
 }) {
+  const { t } = useI18n();
   const kind = jsonValueKind(value);
   return (
     <span className="scenario-json-value">
@@ -633,10 +641,10 @@ function JsonValueEditor({
         value={kind}
         onChange={(event) => onChange(defaultJsonValue(event.target.value))}
       >
-        <option value="string">Text</option>
-        <option value="number">Number</option>
-        <option value="boolean">Boolean</option>
-        <option value="null">Null</option>
+        <option value="string">{t('Text')}</option>
+        <option value="number">{t('Number')}</option>
+        <option value="boolean">{t('Boolean')}</option>
+        <option value="null">{t('Null')}</option>
         <option value="json">JSON</option>
       </select>
       {kind === 'boolean' ? (

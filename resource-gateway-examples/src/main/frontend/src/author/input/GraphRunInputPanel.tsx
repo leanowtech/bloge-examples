@@ -1,6 +1,7 @@
 import type { DragEvent } from 'react';
 
 import SchemaValueForm from '../../contract-scenario/SchemaValueForm';
+import { useI18n } from '../../i18n/I18nProvider';
 import type { SchemaEnvelope } from '../../types';
 import {
   assessRunInput,
@@ -32,24 +33,28 @@ export default function GraphRunInputPanel({
   onBind,
   onOpenContract,
 }: GraphRunInputPanelProps) {
+  const { t } = useI18n();
   const fields = graphInputFields(inputSchema);
   const assessment = assessRunInput(inputSchema, assessmentValue ?? value);
   const missingCount = assessment.missingRequired.length;
   const statusLabel = assessment.ready
-    ? `${assessment.requiredFieldCount} required, complete`
+    ? t('{required} required, complete', { required: assessment.requiredFieldCount })
     : missingCount > 0
-      ? `${assessment.requiredFieldCount} required, ${missingCount} missing`
-      : `${assessment.issues.length} invalid value${assessment.issues.length === 1 ? '' : 's'}`;
+      ? t('{required} required, {missing} missing', {
+          required: assessment.requiredFieldCount,
+          missing: missingCount,
+        })
+      : t('{count} invalid values', { count: assessment.issues.length });
 
   return (
     <section className="graph-run-input-panel" data-testid="graph-run-input-panel">
       <header>
         <div>
-          <h3>Run Input Values</h3>
-          <p>Generated from the Graph Input Contract</p>
+          <h3>{t('Run Input Values')}</h3>
+          <p>{t('Generated from the Graph Input Contract')}</p>
         </div>
         <button type="button" className="secondary compact" onClick={onOpenContract}>
-          Contract
+          {t('Contract')}
         </button>
       </header>
       <div
@@ -58,31 +63,31 @@ export default function GraphRunInputPanel({
         role="status"
       >
         <strong>{statusLabel}</strong>
-        <span>{assessment.fieldCount} schema field{assessment.fieldCount === 1 ? '' : 's'}</span>
+        <span>{t('{count} schema fields', { count: assessment.fieldCount })}</span>
       </div>
       {fields.length > 0 ? (
         <>
-          {readOnly && <p className="run-input-raw-notice">Raw runtime context currently controls this run.</p>}
+          {readOnly && <p className="run-input-raw-notice">{t('Raw runtime context currently controls this run.')}</p>}
           <fieldset className="run-input-form" disabled={readOnly}>
             <SchemaValueForm
               envelope={inputSchema}
               value={value}
               onChange={(nextValue) => onChange(recordValue(nextValue))}
-              label="Graph input"
+              label={t('Graph input')}
               compact
             />
           </fieldset>
         </>
       ) : (
         <div className="run-input-empty">
-          <p>No Graph Input fields are declared.</p>
+          <p>{t('No Graph Input fields are declared.')}</p>
           <button type="button" className="secondary compact" onClick={onOpenContract}>
-            Define Input Contract
+            {t('Define Input Contract')}
           </button>
         </div>
       )}
       {assessment.issues.length > 0 && (
-        <ul className="run-input-issues" aria-label="Run input issues">
+        <ul className="run-input-issues" aria-label={t('Run input issues')}>
           {assessment.issues.slice(0, 4).map((issue) => (
             <li key={`${issue.path}:${issue.code}`}>{issue.message}</li>
           ))}
@@ -90,7 +95,7 @@ export default function GraphRunInputPanel({
       )}
       {fields.length > 0 && (
         <fieldset className="graph-input-bindings">
-          <legend>Graph Input fields</legend>
+          <legend>{t('Graph Input fields')}</legend>
           <ul>
             {fields.map((field) => (
               <li key={field.path}>
@@ -98,7 +103,7 @@ export default function GraphRunInputPanel({
                   type="button"
                   className="context-variable-chip"
                   draggable
-                  title={`Drag ctx.${field.path} to a node input`}
+                  title={t('Drag ctx.{path} to a node input', { path: field.path })}
                   onDragStart={(event: DragEvent<HTMLButtonElement>) => {
                     event.dataTransfer.effectAllowed = 'copy';
                     event.dataTransfer.setData(CONTEXT_VARIABLE_DRAG_TYPE, field.path);
@@ -106,7 +111,7 @@ export default function GraphRunInputPanel({
                   }}
                 >
                   <span>ctx.{field.path}</span>
-                  <small>{field.type}{field.required ? ' · required' : ''}{field.sensitive ? ' · sensitive' : ''}</small>
+                  <small>{field.type}{field.required ? t(' · required') : ''}{field.sensitive ? t(' · sensitive') : ''}</small>
                 </button>
                 <button
                   type="button"
@@ -114,16 +119,18 @@ export default function GraphRunInputPanel({
                   data-testid={`graph-input-bind:${field.path}`}
                   disabled={!selectedNodeLabel || readOnly}
                   title={selectedNodeLabel
-                    ? `Bind ctx.${field.path} to ${selectedNodeLabel}`
-                    : 'Select a node to bind this Graph Input field'}
+                    ? t('Bind ctx.{path} to {node}', { path: field.path, node: selectedNodeLabel })
+                    : t('Select a node to bind this Graph Input field')}
                   onClick={() => onBind(field.path)}
                 >
-                  Bind
+                  {t('Bind')}
                 </button>
               </li>
             ))}
           </ul>
-          <p>{selectedNodeLabel ? `Binding target: ${selectedNodeLabel}` : 'Select a node to enable Bind.'}</p>
+          <p>{selectedNodeLabel
+            ? t('Binding target: {node}', { node: selectedNodeLabel })
+            : t('Select a node to enable Bind.')}</p>
         </fieldset>
       )}
     </section>
@@ -157,27 +164,28 @@ export function ContextExtrasPanel({
   onRemove,
   onBind,
 }: ContextExtrasPanelProps) {
+  const { t } = useI18n();
   return (
     <details className="context-extras-panel" data-testid="context-extras-panel">
       <summary>
-        <span>Context Extras</span>
-        <small>{rows.length || 'Optional'}</small>
+        <span>{t('Context Extras')}</span>
+        <small>{rows.length || t('Optional')}</small>
       </summary>
       <div className="context-extras-body">
-        <p>Runtime-only values outside the caller contract.</p>
+        <p>{t('Runtime-only values outside the caller contract.')}</p>
         {rows.map((row, index) => {
           const path = normalizedPath(row.path);
           return (
             <div className="context-extra-row" key={row.id}>
               <div className="context-extra-path">
                 <input
-                  aria-label={`Context extra path ${index + 1}`}
+                  aria-label={t('Context extra path {index}', { index: index + 1 })}
                   placeholder="trace.correlationId"
                   value={row.path}
                   onChange={(event) => onUpdate(row.id, { path: event.target.value })}
                 />
                 <select
-                  aria-label={`Context extra type ${index + 1}`}
+                  aria-label={t('Context extra type {index}', { index: index + 1 })}
                   value={row.valueType}
                   onChange={(event) => onUpdate(row.id, {
                     valueType: event.target.value as ContextExtraRow['valueType'],
@@ -190,8 +198,8 @@ export function ContextExtrasPanel({
                 </select>
               </div>
               <input
-                aria-label={`Context extra value ${index + 1}`}
-                placeholder={row.valueType === 'json' ? '{"key":"value"}' : 'Sample value'}
+                aria-label={t('Context extra value {index}', { index: index + 1 })}
+                placeholder={row.valueType === 'json' ? '{"key":"value"}' : t('Sample value')}
                 value={row.sample}
                 onChange={(event) => onUpdate(row.id, { sample: event.target.value })}
               />
@@ -202,13 +210,13 @@ export function ContextExtrasPanel({
                   disabled={!selectedNodeLabel || !path}
                   onClick={() => onBind(path)}
                 >
-                  Bind
+                  {t('Bind')}
                 </button>
                 <button
                   type="button"
                   className="icon-button danger"
-                  title={`Remove context extra ${index + 1}`}
-                  aria-label={`Remove context extra ${index + 1}`}
+                  title={t('Remove context extra {index}', { index: index + 1 })}
+                  aria-label={t('Remove context extra {index}', { index: index + 1 })}
                   onClick={() => onRemove(row.id)}
                 >
                   ×
@@ -218,7 +226,7 @@ export function ContextExtrasPanel({
           );
         })}
         <button type="button" className="secondary compact" onClick={onAdd}>
-          Add Context Extra
+          {t('Add Context Extra')}
         </button>
         {compilation.error && <p className="fixture-error">{compilation.error}</p>}
       </div>
@@ -244,6 +252,7 @@ export function RawRunContextPanel({
   onRawModeChange,
   onRawTextChange,
 }: RawRunContextPanelProps) {
+  const { t } = useI18n();
   return (
     <section className="raw-run-context-panel" data-testid="raw-run-context-panel">
       <label className="raw-context-mode">
@@ -253,15 +262,15 @@ export function RawRunContextPanel({
           onChange={(event) => onRawModeChange(event.target.checked)}
         />
         <span>
-          <strong>Use raw runtime context</strong>
-          <small>Replaces structured Run Input and Context Extras for this run.</small>
+          <strong>{t('Use raw runtime context')}</strong>
+          <small>{t('Replaces structured Run Input and Context Extras for this run.')}</small>
         </span>
       </label>
       {rawMode ? (
         <label className="fixture-field">
-          <span>Raw context JSON</span>
+          <span>{t('Raw context JSON')}</span>
           <textarea
-            aria-label="Simulation runtime context JSON"
+            aria-label={t('Simulation runtime context JSON')}
             data-testid="simulation-context-json"
             spellCheck={false}
             value={rawText}
@@ -270,7 +279,7 @@ export function RawRunContextPanel({
         </label>
       ) : (
         <div className="effective-context-preview">
-          <strong>Effective structured context</strong>
+          <strong>{t('Effective structured context')}</strong>
           <pre>{JSON.stringify(effectiveValue, null, 2)}</pre>
         </div>
       )}

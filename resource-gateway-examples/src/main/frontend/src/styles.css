@@ -79,6 +79,40 @@ body {
   gap: 4px;
 }
 
+.topbar-actions {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-width: 0;
+}
+
+.locale-switcher {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(38px, auto));
+  flex: 0 0 auto;
+  padding: 2px;
+  border: 1px solid #cbd4e1;
+  border-radius: 5px;
+  background: #f4f6f9;
+}
+
+.locale-switcher button {
+  min-height: 28px;
+  padding: 3px 8px;
+  border: 0;
+  border-radius: 3px;
+  background: transparent;
+  color: #526077;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.locale-switcher button.active {
+  background: #fff;
+  color: #174ea6;
+  box-shadow: 0 1px 3px rgb(30 48 72 / 16%);
+}
+
 .topbar-link {
   min-width: 78px;
   padding: 7px 10px;
@@ -12370,6 +12404,13 @@ button.primary:disabled {
   .topbar-nav {
     width: 100%;
     overflow-x: auto;
+  }
+
+  .topbar-actions {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    gap: 8px;
+    width: 100%;
   }
 
   .topbar-link {

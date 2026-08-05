@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
+import { useI18n } from '../../i18n/I18nProvider';
 
 import type { GraphDraft } from '../../types';
 import type { ContractDraft, ScenarioDraftSet } from '../domain';
@@ -48,6 +49,7 @@ export default function CoverageLensSurface({
   disabled = false,
   onAcceptCandidate,
 }: CoverageLensSurfaceProps) {
+  const { t } = useI18n();
   const [projection, setProjection] = useState<CoverageProjection | null>(null);
   const [projectionError, setProjectionError] = useState('');
   const [activeDimension, setActiveDimension] = useState<CoverageDimensionId>('CONTRACT');
@@ -69,12 +71,12 @@ export default function CoverageLensSurface({
         if (!cancelled) setProjection(next);
       })
       .catch((error: unknown) => {
-        if (!cancelled) setProjectionError(error instanceof Error ? error.message : 'Coverage projection failed.');
+        if (!cancelled) setProjectionError(error instanceof Error ? error.message : t('Coverage projection failed.'));
       });
     return () => {
       cancelled = true;
     };
-  }, [contract, draftSet, evidenceByCase, graphDraft]);
+  }, [contract, draftSet, evidenceByCase, graphDraft, t]);
 
   const dimension = projection?.dimensions.find((entry) => entry.dimension === activeDimension) ?? null;
   const focusedFact = useMemo(() => projection?.dimensions
@@ -103,7 +105,7 @@ export default function CoverageLensSurface({
       setRejectedCandidateIds(new Set());
       setAcceptedCandidateIds(new Set());
     } catch (error) {
-      setGenerationError(error instanceof Error ? error.message : 'Candidate generation failed.');
+      setGenerationError(error instanceof Error ? error.message : t('Candidate generation failed.'));
     } finally {
       setGenerating(false);
     }
@@ -116,7 +118,7 @@ export default function CoverageLensSurface({
       onAcceptCandidate(candidate, projection);
       setAcceptedCandidateIds((current) => new Set(current).add(candidate.candidateId));
     } catch (error) {
-      setGenerationError(error instanceof Error ? error.message : 'Candidate acceptance failed.');
+      setGenerationError(error instanceof Error ? error.message : t('Candidate acceptance failed.'));
     }
   };
 
@@ -124,23 +126,23 @@ export default function CoverageLensSurface({
     return <div className="coverage-lens-error" role="alert">{projectionError}</div>;
   }
   if (!projection) {
-    return <div className="coverage-lens-loading">Building coverage inventory...</div>;
+    return <div className="coverage-lens-loading">{t('Building coverage inventory...')}</div>;
   }
 
   return (
     <div className="coverage-lens" data-testid="coverage-lens">
-      <div className="coverage-dimension-strip" aria-label="Coverage dimensions">
+      <div className="coverage-dimension-strip" aria-label={t('Coverage dimensions')}>
         {projection.dimensions.map((entry) => (
           <button
             type="button"
             key={entry.dimension}
-            aria-label={DIMENSION_LABELS[entry.dimension]}
+            aria-label={t(DIMENSION_LABELS[entry.dimension])}
             aria-pressed={activeDimension === entry.dimension}
             onClick={() => setActiveDimension(entry.dimension)}
           >
-            <span>{DIMENSION_LABELS[entry.dimension]}</span>
+            <span>{t(DIMENSION_LABELS[entry.dimension])}</span>
             <strong>{entry.covered} / {entry.total}</strong>
-            <small>{entry.gaps.length} gaps</small>
+            <small>{t('{count} gaps', { count: entry.gaps.length })}</small>
           </button>
         ))}
       </div>
@@ -149,10 +151,10 @@ export default function CoverageLensSurface({
         <section className="coverage-gap-region" aria-labelledby="coverage-gap-title">
           <header className="coverage-section-heading">
             <div>
-              <span>{DIMENSION_LABELS[activeDimension]}</span>
-              <h3 id="coverage-gap-title">Coverage gaps</h3>
+              <span>{t(DIMENSION_LABELS[activeDimension])}</span>
+              <h3 id="coverage-gap-title">{t('Coverage gaps')}</h3>
             </div>
-            <strong>{dimension?.gaps.length ?? 0} open</strong>
+            <strong>{t('{count} open', { count: dimension?.gaps.length ?? 0 })}</strong>
           </header>
 
           {dimension && dimension.gaps.length > 0 ? (
@@ -160,9 +162,9 @@ export default function CoverageLensSurface({
               <table className="coverage-gap-table">
                 <thead>
                   <tr>
-                    <th>Gap</th>
-                    <th>Coordinate</th>
-                    <th>Next action</th>
+                    <th>{t('Gap')}</th>
+                    <th>{t('Coordinate')}</th>
+                    <th>{t('Next action')}</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -181,10 +183,10 @@ export default function CoverageLensSurface({
                             aria-pressed={focusedFactId === gap.factId}
                             onClick={() => setFocusedFactId((current) => current === gap.factId ? '' : gap.factId)}
                           >
-                            {focusedFactId === gap.factId ? 'Targeted' : 'Target gap'}
+                            {t(focusedFactId === gap.factId ? 'Targeted' : 'Target gap')}
                           </button>
                         ) : (
-                          <span>{ACTION_LABELS[gap.action]}</span>
+                          <span>{t(ACTION_LABELS[gap.action])}</span>
                         )}
                       </td>
                     </tr>
@@ -194,8 +196,8 @@ export default function CoverageLensSurface({
             </div>
           ) : (
             <div className="coverage-empty-dimension">
-              <strong>No open {DIMENSION_LABELS[activeDimension].toLocaleLowerCase()} gaps</strong>
-              <span>Every denominator fact in this dimension has a named covering case.</span>
+              <strong>{t('No open {dimension} gaps', { dimension: t(DIMENSION_LABELS[activeDimension]) })}</strong>
+              <span>{t('Every denominator fact in this dimension has a named covering case.')}</span>
             </div>
           )}
         </section>
@@ -203,42 +205,42 @@ export default function CoverageLensSurface({
         <section className="coverage-generation-region" aria-labelledby="coverage-generation-title">
           <header className="coverage-section-heading">
             <div>
-              <span>Deterministic generators</span>
-              <h3 id="coverage-generation-title">Candidate review</h3>
+              <span>{t('Deterministic generators')}</span>
+              <h3 id="coverage-generation-title">{t('Candidate review')}</h3>
             </div>
-            <div className="coverage-generator-capability" title="Combination generation requires an audited generator adapter.">
-              Pairwise <strong>Not installed</strong>
+            <div className="coverage-generator-capability" title={t('Combination generation requires an audited generator adapter.')}>
+              {t('Pairwise')} <strong>{t('Not installed')}</strong>
             </div>
           </header>
 
           <div className="coverage-generation-controls">
             <label>
-              <span>Seed</span>
+              <span>{t('Seed')}</span>
               <input
                 type="number"
-                aria-label="Generation seed"
+                aria-label={t('Generation seed')}
                 value={seed}
                 onChange={(event) => setSeed(Number(event.target.value))}
               />
             </label>
             <label>
-              <span>Max cases</span>
+              <span>{t('Max cases')}</span>
               <input
                 type="number"
                 min="1"
                 max="500"
-                aria-label="Maximum generated cases"
+                aria-label={t('Maximum generated cases')}
                 value={maxCandidates}
                 onChange={(event) => setMaxCandidates(Number(event.target.value))}
               />
             </label>
             <label>
-              <span>Work units</span>
+              <span>{t('Work units')}</span>
               <input
                 type="number"
                 min="1"
                 max="10000"
-                aria-label="Maximum generation work units"
+                aria-label={t('Maximum generation work units')}
                 value={maxWorkUnits}
                 onChange={(event) => setMaxWorkUnits(Number(event.target.value))}
               />
@@ -249,16 +251,16 @@ export default function CoverageLensSurface({
               disabled={disabled || generating}
               onClick={() => void generate()}
             >
-              {generating ? 'Generating...' : 'Generate candidates'}
+              {t(generating ? 'Generating...' : 'Generate candidates')}
             </button>
           </div>
 
           <div className="coverage-generation-scope">
-            <span>{focusedFact ? `Target: ${focusedFact.label}` : 'Scope: all supported gaps'}</span>
-            <span>At most {maxCandidates} cases / {maxWorkUnits} work units</span>
+            <span>{focusedFact ? t('Target: {target}', { target: t(focusedFact.label) }) : t('Scope: all supported gaps')}</span>
+            <span>{t('At most {cases} cases / {units} work units', { cases: maxCandidates, units: maxWorkUnits })}</span>
             {focusedFact && (
               <button type="button" className="link-button" onClick={() => setFocusedFactId('')}>
-                Clear target
+                {t('Clear target')}
               </button>
             )}
           </div>
@@ -266,22 +268,22 @@ export default function CoverageLensSurface({
           {generationError && <div className="coverage-generation-error" role="alert">{generationError}</div>}
           {staleCandidates && (
             <div className="coverage-candidate-stale" role="status">
-              Source changed. Regenerate before accepting another candidate.
+              {t('Source changed. Regenerate before accepting another candidate.')}
             </div>
           )}
 
           {!candidateSet ? (
             <div className="coverage-candidate-empty">
-              <strong>No generated candidates</strong>
-              <span>Generation starts only from the explicit command above.</span>
+              <strong>{t('No generated candidates')}</strong>
+              <span>{t('Generation starts only from the explicit command above.')}</span>
             </div>
           ) : (
             <>
               <div className="coverage-candidate-summary">
-                <span>{candidateSet.emittedCandidateCount} generated</span>
-                <span>{candidateSet.supportedFactCount} supported gaps</span>
-                <span>{candidateSet.budget.consumedWorkUnits} work units</span>
-                {candidateSet.truncated && <strong>Budget limited</strong>}
+                <span>{t('{count} generated', { count: candidateSet.emittedCandidateCount })}</span>
+                <span>{t('{count} supported gaps', { count: candidateSet.supportedFactCount })}</span>
+                <span>{t('{count} work units', { count: candidateSet.budget.consumedWorkUnits })}</span>
+                {candidateSet.truncated && <strong>{t('Budget limited')}</strong>}
               </div>
               {visibleCandidates.length > 0 ? (
                 <div className="coverage-candidate-list">
@@ -292,15 +294,15 @@ export default function CoverageLensSurface({
                       <article className="coverage-candidate-row" key={candidate.candidateId}>
                         <div className="coverage-candidate-main">
                           <span>{candidate.proposal.caseType}</span>
-                          <strong>{candidate.proposal.name}</strong>
-                          <small>{candidate.rationale}</small>
+                          <strong>{t(candidate.proposal.name)}</strong>
+                          <small>{t(candidate.rationale)}</small>
                         </div>
                         <div className="coverage-candidate-proof">
-                          <span className="coverage-needs-oracle">Needs oracle</span>
+                          <span className="coverage-needs-oracle">{t('Needs oracle')}</span>
                           <code title={candidate.generatorVersion}>
                             {candidate.generatorId} v{candidate.generatorVersion}
                           </code>
-                          <small>{candidate.contributionFactIds.length} named contribution</small>
+                          <small>{t('{count} named contribution', { count: candidate.contributionFactIds.length })}</small>
                         </div>
                         <div className="coverage-candidate-actions">
                           <button
@@ -309,7 +311,7 @@ export default function CoverageLensSurface({
                             disabled={disabled || staleCandidates || !current || accepted}
                             onClick={() => accept(candidate)}
                           >
-                            {accepted ? 'Accepted' : 'Accept'}
+                            {t(accepted ? 'Accepted' : 'Accept')}
                           </button>
                           <button
                             type="button"
@@ -319,7 +321,7 @@ export default function CoverageLensSurface({
                               new Set(currentIds).add(candidate.candidateId)
                             ))}
                           >
-                            Reject
+                            {t('Reject')}
                           </button>
                         </div>
                       </article>
@@ -328,10 +330,10 @@ export default function CoverageLensSurface({
                 </div>
               ) : (
                 <div className="coverage-candidate-empty">
-                  <strong>No candidates in review</strong>
+                  <strong>{t('No candidates in review')}</strong>
                   <span>{candidateSet.emittedCandidateCount === 0
-                    ? 'The selected gap has no installed generator.'
-                    : `${rejectedCandidateIds.size} candidates rejected from this ephemeral set.`}</span>
+                    ? t('The selected gap has no installed generator.')
+                    : t('{count} candidates rejected from this ephemeral set.', { count: rejectedCandidateIds.size })}</span>
                 </div>
               )}
             </>
