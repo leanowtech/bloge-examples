@@ -32,11 +32,12 @@ describe('ScenarioMatrixSurface', () => {
 
     expect(host.querySelectorAll('tbody tr')).toHaveLength(50);
     expect(text()).toContain('500 canonical cases');
-    expect(text()).toContain('50 / 500 shown');
-    expect(button('Show next 50 cases')).toBeInstanceOf(HTMLButtonElement);
+    expect(text()).toContain('1-50 / 500 shown');
+    expect(button('Next 50')).toBeInstanceOf(HTMLButtonElement);
 
-    await click(button('Show next 50 cases'));
-    expect(host.querySelectorAll('tbody tr')).toHaveLength(100);
+    await click(button('Next 50'));
+    expect(host.querySelectorAll('tbody tr')).toHaveLength(50);
+    expect(text()).toContain('51-100 / 500 shown');
   });
 
   it('keeps selection while a filter hides the selected row and submits selected mode', async () => {
@@ -59,7 +60,7 @@ describe('ScenarioMatrixSurface', () => {
     const onOpenCase = vi.fn();
     await render(5, { onOpenCase });
 
-    await click(host.querySelector<HTMLButtonElement>('tbody button')!);
+    await click(button('Open'));
     expect(onOpenCase).toHaveBeenCalledWith('case-1');
   });
 
@@ -94,11 +95,62 @@ describe('ScenarioMatrixSurface', () => {
     await render(5, {}, true);
 
     expect(text()).toContain('5 个标准用例');
-    expect(text()).toContain('显示 5 / 5');
+    expect(text()).toContain('显示 1-5 / 5');
     expect(button('运行所选项')).toBeInstanceOf(HTMLButtonElement);
     expect(input('搜索用例').placeholder).toBe('搜索用例、ID 或标签');
+    await click(button('检查'));
     expect(text()).toContain('case-1-expected-1-1');
-    expect(text()).toContain('$.result.field01');
+    expect(text()).toContain('result.field01');
+  });
+
+  it('keeps seven decision columns and moves protocol fields into grouped details', async () => {
+    await render(5);
+
+    const headers = host.querySelectorAll('[data-testid="scenario-matrix-summary-columns"] th');
+    expect(headers).toHaveLength(9);
+    expect(Array.from(headers).slice(1, -1).map((header) => header.textContent))
+      .toEqual(['Case', 'Result', 'Given', 'Dependencies', 'Assertions', 'Duration', 'Currentness']);
+    expect(text()).not.toContain('OUTPUT_PATH:$.result.field01:EQUALS');
+
+    await click(button('Inspect'));
+    expect(text()).toContain('Expected / Actual / Diff');
+    expect(text()).toContain('result.field01');
+  });
+
+  it('filters failed cases from the result-first facet bar', async () => {
+    const draftSet = tableDrivenScenarioBaseline(5);
+    const projection = buildScenarioTableProjection(draftSet, {
+      [draftSet.scenarios[2].scenarioId]: {
+        caseId: draftSet.scenarios[2].scenarioId,
+        runId: 'run-failed',
+        attempt: 1,
+        execution: 'SUCCESS',
+        assertions: 'FAILED',
+        freshness: 'CURRENT',
+        proofStrength: 'RUNTIME',
+        subjectMode: 'REAL',
+        durationMs: 9,
+        assertionDiffs: [{
+          assertionId: 'decision',
+          path: '$.decision',
+          passed: false,
+          expected: 'APPROVED',
+          actual: 'REVIEW',
+          detail: 'Expected APPROVED.',
+        }],
+        firstFailure: { category: 'ASSERTION', target: '$.decision', message: 'Expected APPROVED.' },
+      },
+    });
+    await renderProjection(projection);
+
+    await click(button('Failed1'));
+    expect(host.querySelectorAll('tbody tr[data-testid]')).toHaveLength(1);
+    expect(text()).toContain('business case 3');
+    expect(text()).not.toContain('business case 1');
+    await click(button('Inspect'));
+    expect(text()).toContain('Subject under test: Real target execution');
+    expect(text()).toContain('APPROVED');
+    expect(text()).toContain('REVIEW');
   });
 
   async function render(
@@ -121,6 +173,20 @@ describe('ScenarioMatrixSurface', () => {
     };
     const matrix = <StatefulMatrix {...props} />;
     await act(async () => root?.render(localized ? <I18nProvider>{matrix}</I18nProvider> : matrix));
+  }
+
+  async function renderProjection(projection: ReturnType<typeof buildScenarioTableProjection>) {
+    await act(async () => root?.render(<StatefulMatrix
+      projection={projection}
+      selection={{ selectedCaseIds: [] }}
+      previousRunCaseIds={[]}
+      runningCaseIds={[]}
+      onSelectionChange={vi.fn()}
+      onOpenCase={vi.fn()}
+      onCellEdit={vi.fn()}
+      onAddCase={vi.fn()}
+      onRunSelection={vi.fn()}
+    />));
   }
 
   function text() {

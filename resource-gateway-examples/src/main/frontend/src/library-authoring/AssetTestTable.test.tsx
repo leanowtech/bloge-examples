@@ -80,6 +80,15 @@ describe('AssetTestTable', () => {
       .toContain('Given');
     expect(query('[data-testid="asset-scenario-workspace"]').textContent)
       .toContain('Then');
+    expect(Array.from(host.querySelectorAll('.scenario-case-step-rail a')).map((link) => (
+      link.getAttribute('href')
+    ))).toEqual([
+      '#operator-case-editor-1-given',
+      '#operator-case-editor-1-dependencies',
+      '#operator-case-editor-1-then',
+      '#operator-case-editor-1-review',
+    ]);
+    expect(query('#operator-case-editor-1-review').textContent).toContain('Validate this case');
 
     await changeValue(query<HTMLInputElement>('[aria-label="request"]'), 'edited');
 
@@ -124,6 +133,14 @@ describe('AssetTestTable', () => {
       .toContain('DependenciesRuntime binding');
     expect(query('[data-testid="asset-scenario-workspace"]').textContent)
       .toContain('UNBOUND');
+    expect(Array.from(host.querySelectorAll('.scenario-case-step-rail a')).map((link) => (
+      link.getAttribute('href')
+    ))).toEqual([
+      '#function-case-editor-1-given',
+      '#function-case-editor-1-dependencies',
+      '#function-case-editor-1-then',
+      '#function-case-editor-1-review',
+    ]);
 
     await click(query('[data-testid="library-test-run-all"]'));
     await settle();

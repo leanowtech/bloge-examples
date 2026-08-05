@@ -171,7 +171,7 @@ Operator Case 的 Given 应写完整端口对象：
 
 ## 4. 最短体验路径
 
-1. 运行 `./scripts/start-resource-gateway-demo.sh --scenario-batch`。
+1. 运行 `./scripts/start-visual-canvas-demo.sh --scenario-batch`。
 2. 打开 `http://localhost:8080/author/`。
 3. 选择 **Load example -> Loan policy fallback**。
 4. 双击 **Fetch applicant**，进入 **Contract -> Open Contract Workspace**。
@@ -182,7 +182,7 @@ Operator Case 的 Given 应写完整端口对象：
 8. 打开 `http://localhost:8080/rehearsals/`，选择 **Grounding policy regression**，对照 Completion、
    Pass rate、Indeterminate 和 Gate 四类信息。
 
-停止服务：`./scripts/stop-resource-gateway-demo.sh`。
+停止服务：`./scripts/stop-visual-canvas-demo.sh`。
 
 ## 5. 验证证据
 

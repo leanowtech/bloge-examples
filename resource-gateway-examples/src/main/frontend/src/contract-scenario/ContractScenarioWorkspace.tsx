@@ -22,6 +22,7 @@ import type {
   AssertionDraft,
   ContractCompatibilityReport,
   ContractDraft,
+  ScenarioCaseType,
   ScenarioDraft,
   ScenarioDraftSet,
   StoredScenarioPublication,
@@ -57,13 +58,14 @@ import {
 } from './scenarioEditorModel';
 import SchemaFieldTree from './SchemaFieldTree';
 import SchemaValueForm from './SchemaValueForm';
+import ScenarioCaseStepRail from './ScenarioCaseStepRail';
 import {
   compareScenarioRun,
-  newScenarioDraft,
   scenarioSetIsCurrent,
   type ScenarioComparison,
   type ScenarioNodeOption,
 } from './scenarioAuthoring';
+import { generateScenarioPreset } from './scenarioPresetGenerator';
 import {
   createWorkspaceBundle,
   parseWorkspaceBundle,
@@ -616,13 +618,19 @@ export default function ContractScenarioWorkspace({
     onCoordinateChange?.(activeTab, scenarioId);
   };
 
-  const addScenario = () => {
+  const addScenario = (caseType: ScenarioCaseType = 'GOLDEN') => {
     const usedIds = new Set(scenarios.map((scenario) => scenario.scenarioId));
     let sequence = scenarios.length + 1;
     while (usedIds.has(`scenario-${sequence}`)) {
       sequence += 1;
     }
-    const next = newScenarioDraft(sequence, graphDraft, nodes);
+    const next = generateScenarioPreset({
+      sequence,
+      caseType,
+      graphDraft,
+      contract,
+      nodes,
+    });
     onScenarioDraftSetChange({
       ...scenarioDraftSet,
       scenarios: [...scenarioDraftSet.scenarios, next],
@@ -828,7 +836,18 @@ export default function ContractScenarioWorkspace({
   };
 
   const runTableSelection = async (mode: ScenarioRunSelectionMode) => {
-    if (!scenarioDraftSet || !contract || !assetStored || !current) return;
+    if (!scenarioDraftSet || !contract || !current) return;
+    if (!assetStored) {
+      const localCaseIds = mode === 'SELECTED'
+        ? tableSelection.selectedCaseIds
+        : mode === 'ALL'
+          ? scenarios.map((scenario) => scenario.scenarioId)
+          : [];
+      if (localCaseIds.length > 0) {
+        await runScenarioClosure(localCaseIds, false);
+      }
+      return;
+    }
     if (['FAILED', 'CHANGED', 'AFFECTED'].includes(mode) && !baselineBatchId) {
       setTableRunError('Run all once to create the complete baseline required for differential selection.');
       return;
@@ -1433,7 +1452,7 @@ interface ScenarioTabProps {
   onApplyAdvancedJson: () => void;
   onSelectScenario: (scenarioId: string) => void;
   onUpdateScenario: (update: (scenario: ScenarioDraft) => ScenarioDraft) => void;
-  onAddScenario: () => void;
+  onAddScenario: (caseType?: ScenarioCaseType) => void;
   onImportCases: () => void;
   onRemoveScenario: () => void;
   onRun: () => void;
@@ -1493,6 +1512,15 @@ function ScenarioTab({
   onAcceptCoverageCandidate,
 }: ScenarioTabProps) {
   const { t } = useI18n();
+  const selectedEvidence = selectedScenario ? tableEvidence[selectedScenario.scenarioId] : undefined;
+  const caseAnchorPrefix = `graph-case-${selectedScenarioId.replace(/[^a-zA-Z0-9_-]/g, '-')}`;
+  const reviewState = running
+    ? 'RUNNING'
+    : runCommand.state === 'BLOCKED'
+      ? 'BLOCKED'
+      : selectedEvidence?.execution === 'SUCCESS' && selectedEvidence.assertions === 'PASSED'
+        ? 'PASSED'
+        : selectedEvidence ? 'FAILED' : 'NOT_RUN';
   return (
     <div className="scenario-table-workspace">
       <header className="scenario-viewbar">
@@ -1555,8 +1583,8 @@ function ScenarioTab({
             onViewChange('case');
           }}
           onCellEdit={onTableCellEdit}
-          onAddCase={() => {
-            onAddScenario();
+          onAddCase={(caseType) => {
+            onAddScenario(caseType);
             onViewChange('case');
           }}
           onImportCases={onImportCases}
@@ -1569,7 +1597,7 @@ function ScenarioTab({
       <aside className="scenario-list">
         <div className="scenario-list-head">
           <strong>{t('Scenarios')}</strong>
-          <button type="button" className="icon-button" title={t('Add Scenario')} aria-label={t('Add Scenario')} onClick={onAddScenario}>
+          <button type="button" className="icon-button" title={t('Add Scenario')} aria-label={t('Add Scenario')} onClick={() => onAddScenario()}>
             +
           </button>
         </div>
@@ -1626,7 +1654,15 @@ function ScenarioTab({
               </button>
             </div>
 
-            <section className="scenario-stage">
+            <ScenarioCaseStepRail
+              anchorPrefix={caseAnchorPrefix}
+              givenCount={scenarioInputFieldCount(selectedScenario.given.input)}
+              dependencyCount={selectedScenario.dependencies.filter((entry) => entry.behavior.kind !== 'REAL').length}
+              assertionCount={selectedScenario.then.assertions.length}
+              reviewState={reviewState}
+            />
+
+            <section className="scenario-stage" id={`${caseAnchorPrefix}-given`}>
               <div className="scenario-stage-title">
                 <span>1</span>
                 <div><strong>{t('Given')}</strong><small>{t('Target input from the Contract')}</small></div>
@@ -1642,7 +1678,7 @@ function ScenarioTab({
               />
             </section>
 
-            <section className="scenario-stage">
+            <section className="scenario-stage" id={`${caseAnchorPrefix}-dependencies`}>
               <div className="scenario-stage-title">
                 <span>2</span>
                 <div>
@@ -1690,7 +1726,7 @@ function ScenarioTab({
               </div>
             </section>
 
-            <section className="scenario-stage">
+            <section className="scenario-stage" id={`${caseAnchorPrefix}-then`}>
               <div className="scenario-stage-title">
                 <span>3</span>
                 <div><strong>{t('Then')}</strong><small>{t('Compare public output by whole value or path')}</small></div>
@@ -1740,62 +1776,69 @@ function ScenarioTab({
               </div>
             </section>
 
-            {compileMessages.length > 0 && (
-              <div className="scenario-run-errors" role="alert">
-                {compileMessages.map((message, index) => (
-                  <span key={`${index}:${message}`}>{message}</span>
-                ))}
+            <section className="scenario-stage scenario-review-stage" id={`${caseAnchorPrefix}-review`}>
+              <div className="scenario-stage-title">
+                <span>4</span>
+                <div><strong>{t('Review & run')}</strong><small>{t('Confirm the oracle, then validate this Case')}</small></div>
               </div>
-            )}
 
-            <details className="contract-advanced-json">
-              <summary>{t('Advanced Scenario JSON')}</summary>
-              <textarea
-                aria-label={t('Advanced Scenario JSON')}
-                value={advancedText}
-                onChange={(event) => onAdvancedTextChange(event.target.value)}
-                rows={18}
-              />
-              {advancedError && <p className="scenario-run-errors">{advancedError}</p>}
-              <button type="button" className="secondary compact" onClick={onApplyAdvancedJson}>
-                {t('Apply valid JSON')}
-              </button>
-            </details>
+              {compileMessages.length > 0 && (
+                <div className="scenario-run-errors" role="alert">
+                  {compileMessages.map((message, index) => (
+                    <span key={`${index}:${message}`}>{message}</span>
+                  ))}
+                </div>
+              )}
 
-            <footer className="scenario-run-bar">
-              <div>
-                <strong>{selectedScenario.name}</strong>
-                <span>{t('{dependencies} dependencies · {assertions} assertions', {
-                  dependencies: selectedScenario.dependencies.length,
-                  assertions: selectedScenario.then.assertions.length,
-                })}</span>
-                {runCommand.state === 'BLOCKED' && (
-                  <span className="scenario-command-explanation" id="scenario-run-blocker" role="status">
-                    {t(runCommand.message)}
-                    {runCommand.remediation && (
-                      <button type="button" onClick={onRunRemediation}>
-                        {t(runCommand.remediation.label)}
-                      </button>
-                    )}
-                  </span>
-                )}
-              </div>
-              <button
-                type="button"
-                className="primary"
-                onClick={onRun}
-                disabled={!runCommand.enabled}
-                data-testid="scenario-run"
-                aria-describedby={runCommand.state === 'BLOCKED' ? 'scenario-run-blocker' : undefined}
-              >
-                {t(runCommand.label)}
-              </button>
-            </footer>
+              <details className="contract-advanced-json">
+                <summary>{t('Advanced Scenario JSON')}</summary>
+                <textarea
+                  aria-label={t('Advanced Scenario JSON')}
+                  value={advancedText}
+                  onChange={(event) => onAdvancedTextChange(event.target.value)}
+                  rows={18}
+                />
+                {advancedError && <p className="scenario-run-errors">{advancedError}</p>}
+                <button type="button" className="secondary compact" onClick={onApplyAdvancedJson}>
+                  {t('Apply valid JSON')}
+                </button>
+              </details>
+
+              <footer className="scenario-run-bar">
+                <div>
+                  <strong>{selectedScenario.name}</strong>
+                  <span>{t('{dependencies} dependencies · {assertions} assertions', {
+                    dependencies: selectedScenario.dependencies.length,
+                    assertions: selectedScenario.then.assertions.length,
+                  })}</span>
+                  {runCommand.state === 'BLOCKED' && (
+                    <span className="scenario-command-explanation" id="scenario-run-blocker" role="status">
+                      {t(runCommand.message)}
+                      {runCommand.remediation && (
+                        <button type="button" onClick={onRunRemediation}>
+                          {t(runCommand.remediation.label)}
+                        </button>
+                      )}
+                    </span>
+                  )}
+                </div>
+                <button
+                  type="button"
+                  className="primary"
+                  onClick={onRun}
+                  disabled={!runCommand.enabled}
+                  data-testid="scenario-run"
+                  aria-describedby={runCommand.state === 'BLOCKED' ? 'scenario-run-blocker' : undefined}
+                >
+                  {t(runCommand.label)}
+                </button>
+              </footer>
+            </section>
           </>
         ) : (
           <div className="scenario-empty-state">
             <strong>{t('Create the first Scenario')}</strong>
-            <button type="button" className="primary" onClick={onAddScenario}>{t('Add Scenario')}</button>
+            <button type="button" className="primary" onClick={() => onAddScenario()}>{t('Add Scenario')}</button>
           </div>
         )}
       </div>
@@ -2344,6 +2387,7 @@ function emptyQueuedEvidence(caseId: string): TableCaseEvidenceProjection {
     assertions: 'NONE',
     freshness: 'CURRENT',
     proofStrength: 'SCHEMA',
+    subjectMode: 'REAL',
     durationMs: null,
     firstFailure: null,
   };
@@ -2369,7 +2413,16 @@ function evidenceFromRun(
       : comparison.passed ? 'PASSED' : 'FAILED',
     freshness: 'CURRENT',
     proofStrength: response.mockedNodeIds.length > 0 ? 'MOCK' : 'RUNTIME',
+    subjectMode: 'REAL',
     durationMs,
+    assertionDiffs: comparison.results.map((result) => ({
+      assertionId: result.assertionId,
+      path: result.path,
+      passed: result.passed,
+      expected: result.expected,
+      actual: result.actual,
+      detail: result.detail,
+    })),
     firstFailure: firstAssertionFailure
       ? {
           category: 'ASSERTION',
@@ -2413,6 +2466,17 @@ function requireLoadedScenarioCoordinate(
 
 function shortFingerprint(fingerprint: string): string {
   return fingerprint ? `${fingerprint.slice(0, 13)}…${fingerprint.slice(-6)}` : 'missing';
+}
+
+function scenarioInputFieldCount(value: unknown): number {
+  if (Array.isArray(value)) {
+    return value.reduce((count, entry) => count + scenarioInputFieldCount(entry), 0);
+  }
+  if (value !== null && typeof value === 'object') {
+    return Object.values(value as Record<string, unknown>)
+      .reduce<number>((count, entry) => count + scenarioInputFieldCount(entry), 0);
+  }
+  return value === undefined ? 0 : 1;
 }
 
 function focusSchemaPath(path: string | undefined): void {

@@ -6,6 +6,7 @@ import {
   buildScenarioTableProjection,
   filterAndSortScenarioRows,
   resolveExactScenarioRunSelection,
+  scenarioMatrixFacetCounts,
   selectVisibleScenarios,
   toggleScenarioSelection,
   type ScenarioTableEvidenceByCase,
@@ -96,6 +97,50 @@ describe('ScenarioTableProjection', () => {
 
     expect(projection.rows[0].values['proof:verdict']).toBe('Mock behavior matched');
     expect(Object.values(projection.rows[0].values)).not.toContain('Passed');
+  });
+
+  it('projects task summaries without flattening every protocol field into the default view', () => {
+    const projection = buildScenarioTableProjection(tableDrivenScenarioBaseline(5));
+
+    expect(projection.rows[0].summary).toMatchObject({
+      givenFieldCount: 20,
+      dependencyCount: 8,
+      controlledDependencyCount: 8,
+      assertionCount: 12,
+    });
+    expect(projection.rows[0].summary.givenFields[0]).toHaveProperty('path', '/field01');
+    expect(projection.rows[0].summary.assertionTargets[0]).toContain('$.result.field01');
+  });
+
+  it('filters result-first facets from honest evidence dimensions', () => {
+    const draftSet = tableDrivenScenarioBaseline(5);
+    const evidence: ScenarioTableEvidenceByCase = {
+      [draftSet.scenarios[0].scenarioId]: failedEvidence(draftSet.scenarios[0].scenarioId),
+      [draftSet.scenarios[1].scenarioId]: {
+        ...passedEvidence(draftSet.scenarios[1].scenarioId),
+        baselineOutcome: 'CHANGED_INPUT',
+      },
+      [draftSet.scenarios[2].scenarioId]: {
+        ...passedEvidence(draftSet.scenarios[2].scenarioId),
+        freshness: 'STALE',
+      },
+    };
+    const projection = buildScenarioTableProjection(draftSet, evidence);
+
+    expect(scenarioMatrixFacetCounts(projection)).toMatchObject({
+      ALL: 5,
+      FAILED: 1,
+      CHANGED: 1,
+      IMPACTED: 2,
+      STALE: 1,
+      UNPROVEN: 2,
+    });
+    expect(filterAndSortScenarioRows(
+      projection,
+      { query: '', caseTypes: [], tones: [], facets: ['FAILED'] },
+      { key: 'CANONICAL', direction: 'ASC' },
+    ).map((row) => row.caseId)).toEqual([draftSet.scenarios[0].scenarioId]);
+    expect(scenarioMatrixFacetCounts(projection, true).IMPACTED).toBe(5);
   });
 });
 

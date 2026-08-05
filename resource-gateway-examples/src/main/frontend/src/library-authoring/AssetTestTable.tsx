@@ -43,6 +43,7 @@ import type {
 import GovernedFixtureSavePanel, {
   type GovernedFixtureSaveLaunch,
 } from './GovernedFixtureSavePanel';
+import ScenarioCaseStepRail from '../contract-scenario/ScenarioCaseStepRail';
 import ScenarioMatrixSurface from '../contract-scenario/table/ScenarioMatrixSurface';
 import {
   functionTestScenarioTableProjection,
@@ -480,12 +481,15 @@ export default function AssetTestTable({
                 setTestView('case');
               }}
               onCellEdit={editMatrixCell}
-              onAddCase={() => {
+              onAddCase={(caseType) => {
                 if (kind === 'operator') {
                   setOperatorRows([...operatorRows, newOperatorRow(operatorRows.length)]);
                   setSelectedCaseIndex(operatorRows.length);
                 } else {
-                  setFunctionRows([...functionRows, newFunctionRow(functionRows.length)]);
+                  setFunctionRows([
+                    ...functionRows,
+                    newFunctionRow(functionRows.length, functionCaseType(caseType)),
+                  ]);
                   setSelectedCaseIndex(functionRows.length);
                 }
                 setTestView('case');
@@ -651,10 +655,17 @@ function OperatorTable({
               onChange={(event) => patch(selectedIndex, { name: event.target.value })}
             />
           </label>
-          <TestResult result={results[selectedIndex]} successLabel="Schema valid" />
         </header>
 
-        <section className="asset-scenario-stage">
+        <ScenarioCaseStepRail
+          anchorPrefix={`operator-case-editor-${selectedIndex + 1}`}
+          givenCount={structuredFieldCount(row.inputs)}
+          dependencyCount={structuredFieldCount(row.config) > 0 ? 1 : 0}
+          assertionCount={structuredFieldCount(row.outputs) + structuredFieldCount(row.source.outputAssertions)}
+          reviewState={assetReviewState(results[selectedIndex], busy)}
+        />
+
+        <section className="asset-scenario-stage" id={`operator-case-editor-${selectedIndex + 1}-given`}>
           <StageHeading step="Given" title="Operator inputs" />
           <SchemaValueEditor
             envelope={operatorInputSchema(document, assetRef)}
@@ -666,7 +677,7 @@ function OperatorTable({
           />
         </section>
 
-        <details className="asset-scenario-dependency">
+        <details className="asset-scenario-dependency" id={`operator-case-editor-${selectedIndex + 1}-dependencies`}>
           <summary>
             <span>Dependencies</span>
             <strong>Operator configuration</strong>
@@ -681,7 +692,7 @@ function OperatorTable({
           />
         </details>
 
-        <section className="asset-scenario-stage">
+        <section className="asset-scenario-stage" id={`operator-case-editor-${selectedIndex + 1}-then`}>
           <StageHeading step="Then" title="Mocked outputs" />
           <SchemaValueEditor
             envelope={operatorOutputSchema(document, assetRef)}
@@ -707,19 +718,23 @@ function OperatorTable({
           </details>
         </section>
 
-        <CaseActions
-          kind="operator"
-          index={selectedIndex}
-          busy={busy}
-          fixtureAvailable={fixtureAvailable}
-          onRun={onRun}
-          onSaveFixture={onSaveFixture}
-          onRemove={(index) => {
-            const next = rows.filter((_, rowIndex) => rowIndex !== index);
-            onRowsChange(next);
-            onSelect(Math.max(0, Math.min(index, next.length - 1)));
-          }}
-        />
+        <section className="asset-scenario-stage asset-scenario-review" id={`operator-case-editor-${selectedIndex + 1}-review`}>
+          <StageHeading step="Review" title="Validate this case" />
+          <TestResult result={results[selectedIndex]} successLabel="Schema valid" />
+          <CaseActions
+            kind="operator"
+            index={selectedIndex}
+            busy={busy}
+            fixtureAvailable={fixtureAvailable}
+            onRun={onRun}
+            onSaveFixture={onSaveFixture}
+            onRemove={(index) => {
+              const next = rows.filter((_, rowIndex) => rowIndex !== index);
+              onRowsChange(next);
+              onSelect(Math.max(0, Math.min(index, next.length - 1)));
+            }}
+          />
+        </section>
       </section>
     </div>
   );
@@ -808,14 +823,17 @@ function FunctionTable({
               <option value="REGRESSION">Regression</option>
             </select>
           </label>
-          <TestResult
-            result={results[selectedIndex]}
-            successLabel="Runtime passed"
-            showActual
-          />
         </header>
 
-        <section className="asset-scenario-stage">
+        <ScenarioCaseStepRail
+          anchorPrefix={`function-case-editor-${selectedIndex + 1}`}
+          givenCount={row.args.length}
+          dependencyCount={0}
+          assertionCount={1}
+          reviewState={assetReviewState(results[selectedIndex], busy)}
+        />
+
+        <section className="asset-scenario-stage" id={`function-case-editor-${selectedIndex + 1}-given`}>
           <StageHeading step="Given" title="Function arguments" />
           <SchemaValueEditor
             envelope={projection.inputSchema}
@@ -827,7 +845,7 @@ function FunctionTable({
           />
         </section>
 
-        <details className="asset-scenario-dependency">
+        <details className="asset-scenario-dependency" id={`function-case-editor-${selectedIndex + 1}-dependencies`}>
           <summary>
             <span>Dependencies</span>
             <strong>Runtime binding</strong>
@@ -848,7 +866,7 @@ function FunctionTable({
           </p>
         </details>
 
-        <section className="asset-scenario-stage">
+        <section className="asset-scenario-stage" id={`function-case-editor-${selectedIndex + 1}-then`}>
           <StageHeading step="Then" title="Expected outcome" />
           <label className="asset-scenario-assertion">
             <span>Assertion</span>
@@ -885,19 +903,27 @@ function FunctionTable({
           )}
         </section>
 
-        <CaseActions
-          kind="function"
-          index={selectedIndex}
-          busy={busy}
-          fixtureAvailable={fixtureAvailable}
-          onRun={onRun}
-          onSaveFixture={onSaveFixture}
-          onRemove={(index) => {
-            const next = rows.filter((_, rowIndex) => rowIndex !== index);
-            onRowsChange(next);
-            onSelect(Math.max(0, Math.min(index, next.length - 1)));
-          }}
-        />
+        <section className="asset-scenario-stage asset-scenario-review" id={`function-case-editor-${selectedIndex + 1}-review`}>
+          <StageHeading step="Review" title="Validate this case" />
+          <TestResult
+            result={results[selectedIndex]}
+            successLabel="Runtime passed"
+            showActual
+          />
+          <CaseActions
+            kind="function"
+            index={selectedIndex}
+            busy={busy}
+            fixtureAvailable={fixtureAvailable}
+            onRun={onRun}
+            onSaveFixture={onSaveFixture}
+            onRemove={(index) => {
+              const next = rows.filter((_, rowIndex) => rowIndex !== index);
+              onRowsChange(next);
+              onSelect(Math.max(0, Math.min(index, next.length - 1)));
+            }}
+          />
+        </section>
       </section>
     </div>
   );
@@ -910,6 +936,26 @@ function StageHeading({ step, title }: { step: string; title: string }) {
       <h3>{title}</h3>
     </header>
   );
+}
+
+function assetReviewState(
+  result: { passed: boolean } | undefined,
+  busy: boolean,
+): 'NOT_RUN' | 'RUNNING' | 'PASSED' | 'FAILED' {
+  if (busy) return 'RUNNING';
+  if (!result) return 'NOT_RUN';
+  return result.passed ? 'PASSED' : 'FAILED';
+}
+
+function structuredFieldCount(value: unknown): number {
+  if (Array.isArray(value)) {
+    return value.reduce((count, entry) => count + structuredFieldCount(entry), 0);
+  }
+  if (value !== null && typeof value === 'object') {
+    return Object.values(value as Record<string, unknown>)
+      .reduce<number>((count, entry) => count + structuredFieldCount(entry), 0);
+  }
+  return value === undefined ? 0 : 1;
 }
 
 function CaseActions({
@@ -1074,16 +1120,22 @@ function newOperatorRow(index: number): OperatorEditor {
   });
 }
 
-function newFunctionRow(index: number): FunctionEditor {
+function newFunctionRow(index: number, kind: VisualFunctionTestKind = 'GOLDEN'): FunctionEditor {
   return functionEditor({
     schemaVersion: 'bloge.visualAuthoringFunctionTestCase.v1',
     id: `case-${index + 1}`,
-    kind: 'GOLDEN',
+    kind,
     args: [],
     assertion: 'EQUALS',
     expect: null,
     expectError: null,
   });
+}
+
+function functionCaseType(value: string | undefined): VisualFunctionTestKind {
+  return ['GOLDEN', 'NEGATIVE', 'BOUNDARY', 'REGRESSION'].includes(value ?? '')
+    ? value as VisualFunctionTestKind
+    : 'GOLDEN';
 }
 
 function parseOperatorRow(row: OperatorEditor | undefined, index: number): VisualOperatorContractTestCase {

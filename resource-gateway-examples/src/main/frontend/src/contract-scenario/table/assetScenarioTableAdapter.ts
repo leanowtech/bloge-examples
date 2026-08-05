@@ -9,6 +9,8 @@ import type {
 } from '../domain';
 import {
   buildScenarioTableProjection,
+  notRunEvidence,
+  type ScenarioAssertionDiff,
   type ScenarioTableEvidenceByCase,
   type ScenarioTableProjection,
 } from './scenarioTableModel';
@@ -23,6 +25,7 @@ interface AssetProjectionCoordinate {
 export interface AssetCaseResultProjection {
   passed: boolean;
   status?: string;
+  actual?: unknown;
   message: string;
 }
 
@@ -34,7 +37,7 @@ export function operatorTestScenarioTableProjection(
 ): ScenarioTableProjection {
   return restrictAdapterEdits(buildScenarioTableProjection(
     assetDraftSet(coordinate, cases.map(operatorScenario), 'operator-contract-table'),
-    assetEvidence(cases.length, results, 'SCHEMA', freshness),
+    assetEvidence(cases.length, results, 'SCHEMA', freshness, 'SCHEMA_ONLY'),
   ), false);
 }
 
@@ -46,7 +49,14 @@ export function functionTestScenarioTableProjection(
 ): ScenarioTableProjection {
   return restrictAdapterEdits(buildScenarioTableProjection(
     assetDraftSet(coordinate, cases.map(functionScenario), 'function-test-table'),
-    assetEvidence(cases.length, results, 'RUNTIME', freshness),
+    assetEvidence(
+      cases.length,
+      results,
+      'RUNTIME',
+      freshness,
+      'REAL',
+      (index, result) => functionAssertionDiff(cases[index], index, result),
+    ),
   ), true);
 }
 
@@ -182,11 +192,13 @@ function assetEvidence(
   results: Record<number, AssetCaseResultProjection | undefined>,
   proofStrength: 'SCHEMA' | 'RUNTIME',
   freshness: 'CURRENT' | 'STALE',
+  subjectMode: 'REAL' | 'SCHEMA_ONLY',
+  assertionDiff?: (index: number, result: AssetCaseResultProjection) => ScenarioAssertionDiff[],
 ): ScenarioTableEvidenceByCase {
   return Object.fromEntries(Array.from({ length: caseCount }, (_, index) => {
     const result = results[index];
     const caseId = `${proofStrength === 'SCHEMA' ? 'operator' : 'function'}-case-${index + 1}`;
-    if (!result) return [caseId, undefined];
+    if (!result) return [caseId, { ...notRunEvidence(caseId), subjectMode }];
     const notRun = result.status === 'NOT_RUN';
     return [caseId, {
       caseId,
@@ -196,7 +208,9 @@ function assetEvidence(
       assertions: notRun ? 'NONE' : result.passed ? 'PASSED' : 'FAILED',
       freshness,
       proofStrength,
+      subjectMode,
       durationMs: null,
+      assertionDiffs: notRun ? [] : assertionDiff?.(index, result),
       firstFailure: result.passed ? null : {
         category: notRun ? 'BINDING' : 'ASSERTION',
         target: '/case',
@@ -204,4 +218,25 @@ function assetEvidence(
       },
     }];
   }));
+}
+
+function functionAssertionDiff(
+  testCase: VisualFunctionTestCase | undefined,
+  index: number,
+  result: AssetCaseResultProjection,
+): ScenarioAssertionDiff[] {
+  if (!testCase) return [];
+  const expected = testCase.assertion === 'EXPECT_ERROR'
+    ? { errorCode: testCase.expectError?.code ?? '' }
+    : testCase.assertion === 'RETURN_TYPE'
+      ? 'Declared return schema'
+      : testCase.expect;
+  return [{
+    assertionId: `function-case-${index + 1}-outcome`,
+    path: testCase.assertion === 'EXPECT_ERROR' ? '$.error' : '$',
+    passed: result.passed,
+    expected,
+    actual: result.actual,
+    detail: result.message,
+  }];
 }

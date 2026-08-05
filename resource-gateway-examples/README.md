@@ -131,6 +131,16 @@ at their real port boundaries. `CURRENT` means the result matches the visible ta
 engineering invariants and verification record are in
 [`docs/resource-gateway-ux-stage2-task-state-and-evidence-trust.md`](../docs/resource-gateway-ux-stage2-task-state-and-evidence-trust.md).
 
+The Scenario workbench now defaults to seven decision columns: **Case, Result, Given,
+Dependencies, Assertions, Duration, Currentness**. Use the Failed/Changed/Impacted/Stale/Unproven
+facets to narrow work, then **Inspect** for subject-under-test boundaries and field-level
+Expected/Actual/Diff. Unsaved built-in examples run locally, so **Load example -> Loan policy
+fallback -> Scenarios -> Run all** produces three current results without a save prerequisite.
+**Open** uses the same Given/Dependencies/Then/Review & run rail for Graph, Operator, and Function
+cases. Preset creation supplies schema-aware Golden, Negative, Boundary, and Regression starting
+data while keeping unknown negative oracles visibly unresolved. Design and verification details are
+in [`docs/resource-gateway-ux-stage3-table-driven-testing-workbench.md`](../docs/resource-gateway-ux-stage3-table-driven-testing-workbench.md).
+
 Choose **Scenarios -> Coverage** to inspect six separate denominator inventories: Case intent,
 Contract boundaries, DAG paths, dependency behaviors, assertions, and current Evidence. The view
 never hides them behind one percentage. Select **Target gap** when useful, set the deterministic

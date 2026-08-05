@@ -1,6 +1,6 @@
 # Resource Gateway UX 深度审阅与针对性演进计划
 
-> 状态：Executing / Stage 2 已通过 E2 验收，Stage 3 待实施
+> 状态：Executing / Stage 3 已通过 E2 验收，Stage 4 待实施
 >
 > 审阅日期：2026-08-05
 >
@@ -11,6 +11,8 @@
 > Stage 1 实施后复评分：`74 / 100`
 >
 > Stage 2 实施后复评分：`79 / 100`
+>
+> Stage 3 实施后复评分：`88 / 100`
 >
 > 目标：P0/P1 清零，工程门禁达到 `>= 95 / 100`，随后以 E3/E4 证明真实成熟度
 >
@@ -25,6 +27,7 @@
 - [表格驱动测试产品设计](resource-gateway-table-driven-testing-product-design.md)
 - [Author 任务式 UX 改善计划](resource-gateway-author-task-oriented-ux-improvement-plan.md)
 - [Stage 2 统一任务状态与 Evidence 信任](resource-gateway-ux-stage2-task-state-and-evidence-trust.md)
+- [Stage 3 表格驱动测试工作台](resource-gateway-ux-stage3-table-driven-testing-workbench.md)
 
 ## 0. 最强结论
 
@@ -103,6 +106,8 @@
 | 当前事实 | Stage 1 后，首次 Fork 在一个事务内完成 durable coordinate 分配、引用重绑与 Contract baseline，不再要求 rebase |
 | 历史事实 | Stage 1 时 Operator Scenario 顶部 Run 禁用，而底部 `运行并比较` 可执行；运行后 Evidence 为 stale / incomplete |
 | 当前事实 | Stage 2 后 Graph / Operator 目标分别绑定自己的 Scenario coordinate、run response 与 Evidence；同一运行命令共享 canonical availability |
+| 当前事实 | Stage 3 后 Matrix 默认只有 7 个业务判断列，1280px 下无需横向滚动，Graph / Operator / Function 共用四步 Case 模型 |
+| 当前事实 | 未保存示例可直接 Run all；三条贷款策略 Case 均生成 `SUCCESS / PASSED / CURRENT / MOCK` 证据及字段级 Expected/Actual/Diff |
 | 事实 | 中文模式的 Contract、Compatibility、Evidence、Library Detail、Operator Editor、Asset Test Table 和移动 Author 仍有大量英文 UI |
 | 事实 | `styles.css` 为 17,638 行，其中 `font-size: 10px` 出现 198 次，`11px` 出现 160 次 |
 | 事实 | 390px 下顶层导航存在嵌套横向滚动；移动 Author 的摘要、示例与画布命令大量回退为英文 |
@@ -167,6 +172,24 @@
 
 当前工程体验与目标仍有 `16%` 差距。剩余唯一 P0 是 Matrix 的日常批量测试任务不可读、不可快速
 定位，Stage 3 必须先根治这个信息架构问题；不能把 Stage 2 的可信状态简单塞回 14 列协议表格。
+
+### 2.4 Stage 3 实施后复评
+
+| 维度 | 权重 | Stage 2 | Stage 3 | 变化依据 |
+|---|---:|---:|---:|---|
+| 信息架构与任务连续性 | 15 | 12 | 14 | Matrix 摘要、Inspect 详情、四步 Case 形成稳定判断层级 |
+| 首次成功与核心任务效率 | 15 | 13 | 14 | 临时完整示例无需保存即可 Run all，消除假可用命令 |
+| 复杂图理解与操控 | 12 | 10 | 10 | 本阶段聚焦测试面，画布密度留给 Stage 5 |
+| Contract / Schema 直观性 | 10 | 8 | 8 | meaningful fixture 降低输入门槛，Contract 本身未重做 |
+| 测试创作、运行与正确性 | 18 | 12 | 16 | 7 列 Matrix、facets、presets、subject model 与字段级 diff 闭环 |
+| 反馈、恢复与 Evidence 信任 | 10 | 10 | 10 | 跨 Case 快照校验避免 UI 选择态污染证据，继续保持满分 |
+| 视觉层级与可读性 | 8 | 5 | 7 | 1280px 无横向裁切，协议详情后置，默认字号仍待 token 化 |
+| 多语言、可访问性与响应式 | 7 | 4 | 4 | 新表面已接入现有字典，但深层完整性门禁尚未建立 |
+| 企业资产与治理生命周期 | 5 | 5 | 5 | 本地 payload 与服务端脱敏 fingerprint evidence 边界明确 |
+| **合计** | **100** | **79** | **88** | **最后 1 个 P0 关闭；剩余 P1 集中在双语、移动与视觉系统** |
+
+当前与工程门禁目标仍有 `7%` 差距。Stage 4/5 必须消除静默英文回退、诊断术语漂移、移动任务
+断裂和 10/11px 视觉债务；在目标用户 E3 研究完成前，仍不得对外宣称 95 分体验成熟度。
 
 ## 3. P0 硬伤
 
@@ -535,6 +558,9 @@ Stage 6 由目标用户研究验证“90 秒无协助完成”这一 E3 指标�
 > 周期：2.5 周
 >
 > 目标：修复 UXA-004、UXA-106、UXA-107、UXA-108
+>
+> 实施状态（2026-08-05）：已完成并通过 E2 验收。设计、操作路径和验证证据见
+> [Stage 3 表格驱动测试工作台](resource-gateway-ux-stage3-table-driven-testing-workbench.md)。
 
 | ID | 工作项 | 输出 |
 |---|---|---|
@@ -548,6 +574,11 @@ Stage 6 由目标用户研究验证“90 秒无协助完成”这一 E3 指标�
 | UXA-S3-08 | Virtualized wide data | 1000 cases / 100 columns 下保持交互预算 |
 
 退出门槛：1280px 默认无需横向滚动即可判断 Case、结果、耗时和当前性；打开详情后可看字段级数据。
+
+验收状态：真实浏览器下 Matrix `scrollWidth == clientWidth == 1060px`，三条未保存示例 Case 可直接
+Run all 且全部为 `CURRENT`；Inspect 显示 Given、受控依赖、真实被测主体及业务 JSON 的
+Expected/Actual/Matched。Graph / Operator / Function 共用四步 Case rail；默认 50 行窗口已用
+500 Case 语料验证。服务端批量 evidence 以 expected/actual fingerprint 保持脱敏可审阅。
 
 ### Stage 4：双语完整性与术语治理
 

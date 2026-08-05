@@ -79,7 +79,14 @@ describe('tableSuiteRunModel', () => {
           target: '/approved',
           summary: 'Expected and actual values differ.',
         },
-        assertionEvidence: [],
+        assertionEvidence: [{
+          assertionId: 'approved-output',
+          path: '/approved',
+          passed: false,
+          expectedFingerprint: fingerprint('x'),
+          actualFingerprint: fingerprint('y'),
+          diagnosticCode: 'RG.TABLE_RUN.ASSERTION_MISMATCH',
+        }],
         startedAt: '2026-08-04T10:00:00Z',
         completedAt: '2026-08-04T10:00:00Z',
       }],
@@ -114,6 +121,14 @@ describe('tableSuiteRunModel', () => {
       proofStrength: 'MOCK',
       attempt: 1,
       baselineOutcome: 'REGRESSED',
+      subjectMode: 'REAL',
+      assertionDiffs: [expect.objectContaining({
+        assertionId: 'approved-output',
+        path: '/approved',
+        passed: false,
+        expected: fingerprint('x'),
+        actual: fingerprint('y'),
+      })],
     });
     expect(JSON.stringify(evidence)).not.toContain('expectedBusinessValue');
   });

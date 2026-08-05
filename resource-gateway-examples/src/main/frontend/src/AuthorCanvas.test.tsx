@@ -1754,6 +1754,35 @@ describe('AuthorCanvas built-in canvas examples', () => {
     expect(query('[data-testid="author-primary-action"]').textContent).toBe('Review failures');
   });
 
+  it('keeps every example Case current when Matrix Run all changes the selected evidence Case', async () => {
+    await act(async () => {
+      root = createRoot(host);
+      root.render(<AuthorCanvas workspaceVersion="v2" />);
+    });
+
+    await click(query<HTMLButtonElement>('[data-testid="author-start-choice:examples"]'));
+    await waitFor(() =>
+      expect(query<HTMLButtonElement>('[data-testid="author-start-example:loan-policy-fallback"]').disabled)
+        .toBe(false),
+    );
+    await click(query<HTMLButtonElement>('[data-testid="author-start-example:loan-policy-fallback"]'));
+    await click(query<HTMLButtonElement>('[data-testid="author-mode:scenarios"]'));
+    await waitFor(() => expect(query('[data-testid="scenario-matrix"]')).toBeDefined(), 5_000);
+
+    const runAll = Array.from(
+      query('[data-testid="scenario-matrix"]').querySelectorAll<HTMLButtonElement>('button'),
+    ).find((candidate) => candidate.textContent?.trim() === 'Run all');
+    expect(runAll).toBeInstanceOf(HTMLButtonElement);
+    await click(runAll as HTMLButtonElement);
+
+    await waitFor(() => {
+      const rows = Array.from(document.querySelectorAll('[data-testid^="scenario-matrix-row-"]'));
+      expect(rows).toHaveLength(3);
+      expect(rows.every((row) => row.textContent?.includes('Mock behavior matched'))).toBe(true);
+      expect(rows.every((row) => !row.textContent?.includes('Evidence stale'))).toBe(true);
+    }, 5_000);
+  });
+
   it('exports the same GraphDraft domain payload through v1 and v2 shells', async () => {
     await act(async () => {
       root = createRoot(host);

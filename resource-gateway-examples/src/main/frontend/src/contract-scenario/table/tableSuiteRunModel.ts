@@ -296,7 +296,18 @@ function rowProjection(
     assertions: latest?.assertions ?? 'NONE',
     freshness: 'CURRENT',
     proofStrength: latest?.proofStrength ?? 'SCHEMA',
+    subjectMode: 'REAL',
     durationMs: latest?.durationMs ?? null,
+    assertionDiffs: latest?.assertionEvidence.map((assertion) => ({
+      assertionId: assertion.assertionId,
+      path: assertion.path,
+      passed: assertion.passed,
+      expected: assertion.expectedFingerprint,
+      actual: assertion.actualFingerprint,
+      detail: assertion.passed
+        ? 'Expected and actual values have matching evidence fingerprints.'
+        : `Expected and actual evidence fingerprints differ (${assertion.diagnosticCode}).`,
+    })) ?? [],
     flaky: row.flaky,
     baselineOutcome: row.baseline.outcome,
     firstFailure: latest?.firstFailure ? {

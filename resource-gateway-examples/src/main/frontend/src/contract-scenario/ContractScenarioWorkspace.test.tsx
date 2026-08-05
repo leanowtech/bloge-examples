@@ -80,6 +80,15 @@ describe('ContractScenarioWorkspace', () => {
     expect(text()).toContain('Given');
     expect(text()).toContain('Dependencies');
     expect(text()).toContain('Then');
+    expect(text()).toContain('Review & run');
+    expect(Array.from(document.querySelectorAll('.scenario-case-step-rail a')).map((link) => (
+      link.getAttribute('href')
+    ))).toEqual([
+      '#graph-case-approved-given',
+      '#graph-case-approved-dependencies',
+      '#graph-case-approved-then',
+      '#graph-case-approved-review',
+    ]);
     expect(button('Run & Compare')).toBeInstanceOf(HTMLButtonElement);
   });
 
@@ -143,6 +152,31 @@ describe('ContractScenarioWorkspace', () => {
       .toContain('Mock behavior matched');
     expect(document.querySelector('[data-testid="scenario-matrix-row-approved-3"]')?.textContent)
       .toContain('Mock behavior matched');
+  });
+
+  it('runs an unsaved example Matrix locally instead of leaving Run all as a silent no-op', async () => {
+    const onRun = vi.fn().mockResolvedValue(successfulResponse());
+    await renderWorkspace({
+      unsaved: true,
+      initialTab: 'scenarios',
+      presentation: 'surface',
+      onRun,
+    });
+
+    await act(async () => button('Matrix').click());
+    await act(async () => button('Run all').click());
+    await settleAsyncWork();
+    await settleAsyncWork();
+
+    expect(onRun).toHaveBeenCalledTimes(1);
+    expect(document.querySelector('[data-testid="scenario-matrix-row-approved"]')?.textContent)
+      .toContain('Mock behavior matched');
+    const inspect = document.querySelector<HTMLButtonElement>('[aria-label="Inspect Approved applicant"]');
+    expect(inspect).not.toBeNull();
+    await act(async () => inspect?.click());
+    expect(text()).toContain('Expected / Actual / Diff');
+    expect(text()).toContain('Matched');
+    expect(text()).toContain('Real target execution');
   });
 
   it('limits central-surface asset commands to the active authoring task', async () => {

@@ -9042,10 +9042,22 @@ export default function AuthorCanvas({ workspaceVersion = 'v1' }: AuthorCanvasPr
     response: SimulationResponse,
   ): Promise<boolean> => {
     try {
+      const scenario = activeTaskScenarioSet?.scenarios.find((candidate) => (
+        candidate.scenarioId === scenarioId
+      ));
+      if (!activeTaskScenarioSet || !activeTaskContract || !scenario) {
+        throw new Error(`RG.SCENARIO.NOT_FOUND: Scenario ${scenarioId} is not in the active authoring snapshot.`);
+      }
+      const expectedScenarioFingerprint = await sha256Fingerprint(captureScenarioEditorSnapshot(
+        activeTaskScenarioSet,
+        scenario.scenarioId,
+        activeTaskContract,
+        activeTaskScenarioNodes,
+      ));
       const requestFingerprint = await sha256Fingerprint(request);
       const verification = verifyScenarioCompilationProof(
         proof,
-        scenarioFingerprintRef.current,
+        expectedScenarioFingerprint,
         requestFingerprint,
       );
       if (!verification.valid) throw new Error(`${verification.reasonCode}: ${verification.message}`);
@@ -9061,7 +9073,12 @@ export default function AuthorCanvas({ workspaceVersion = 'v1' }: AuthorCanvasPr
       setError(`Evidence request fingerprint failed: ${String(cause)}`);
       return false;
     }
-  }, [evidenceCoordinateForScenario]);
+  }, [
+    activeTaskContract,
+    activeTaskScenarioNodes,
+    activeTaskScenarioSet,
+    evidenceCoordinateForScenario,
+  ]);
 
   const runFirstCanonicalScenario = useCallback(async () => {
     const selectedScenario = activeTaskScenarioSet?.scenarios.find(

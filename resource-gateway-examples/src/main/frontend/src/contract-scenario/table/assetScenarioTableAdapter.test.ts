@@ -66,6 +66,33 @@ describe('asset table Scenario adapters', () => {
     expect(projection.rows[0].values).toMatchObject({ 'given:%2Farg1': '' });
     expect(Object.values(projection.rows[0].values)).not.toContain('Passed');
   });
+
+  it('projects the real function subject and an inspectable expected/actual diff', () => {
+    const testCase: VisualFunctionTestCase = {
+      schemaVersion: 'bloge.visualAuthoringFunctionTestCase.v1',
+      id: 'normalize team',
+      kind: 'GOLDEN',
+      args: [' platform '],
+      assertion: 'EQUALS',
+      expect: 'PLATFORM',
+      expectError: null,
+    };
+    const projection = functionTestScenarioTableProjection(
+      coordinate,
+      [testCase],
+      { 0: { passed: false, actual: 'platform', message: 'Values differ.' } },
+    );
+
+    expect(projection.rows[0].evidence).toMatchObject({
+      subjectMode: 'REAL',
+      assertionDiffs: [{
+        path: '$',
+        passed: false,
+        expected: 'PLATFORM',
+        actual: 'platform',
+      }],
+    });
+  });
 });
 
 function fingerprint(seed: string): string {

@@ -40,6 +40,26 @@ export interface TableCaseEvidenceProjection extends TableCaseVerdict {
     target: string;
     message: string;
   } | null;
+  subjectMode?: 'REAL' | 'SCHEMA_ONLY';
+  assertionDiffs?: ScenarioAssertionDiff[];
+}
+
+export interface ScenarioAssertionDiff {
+  assertionId: string;
+  path: string;
+  passed: boolean;
+  expected: unknown;
+  actual: unknown;
+  detail: string;
+}
+
+export interface ScenarioTableRowSummary {
+  givenFields: Array<{ path: string; value: unknown }>;
+  givenFieldCount: number;
+  dependencyCount: number;
+  controlledDependencyCount: number;
+  assertionCount: number;
+  assertionTargets: string[];
 }
 
 export interface ScenarioTableRow {
@@ -51,6 +71,7 @@ export interface ScenarioTableRow {
   values: Record<string, unknown>;
   evidence: TableCaseEvidenceProjection;
   presentation: TableCaseVerdictPresentation;
+  summary: ScenarioTableRowSummary;
 }
 
 export interface ScenarioTableProjection {
@@ -69,7 +90,17 @@ export interface ScenarioTableFilter {
   query: string;
   caseTypes: ScenarioCaseType[];
   tones: TableCaseVerdictPresentation['tone'][];
+  facets?: ScenarioMatrixResultFacet[];
+  targetChanged?: boolean;
 }
+
+export type ScenarioMatrixResultFacet =
+  | 'ALL'
+  | 'FAILED'
+  | 'CHANGED'
+  | 'IMPACTED'
+  | 'STALE'
+  | 'UNPROVEN';
 
 export interface ScenarioTableSort {
   key: 'CANONICAL' | 'NAME' | 'TYPE' | 'VERDICT';
@@ -136,6 +167,7 @@ export function buildScenarioTableProjection(
       values: rowValues(scenario, columns, evidence),
       evidence,
       presentation: presentTableCaseVerdict(evidence),
+      summary: rowSummary(scenario),
     };
   });
   const fingerprintMaterial = {
@@ -177,9 +209,13 @@ export function filterAndSortScenarioRows(
   const query = filter.query.trim().toLocaleLowerCase();
   const caseTypes = new Set(filter.caseTypes);
   const tones = new Set(filter.tones);
+  const facets = new Set(filter.facets ?? []);
   const rows = projection.rows.filter((row) => (
     (caseTypes.size === 0 || caseTypes.has(row.caseType))
       && (tones.size === 0 || tones.has(row.presentation.tone))
+      && (facets.size === 0 || facets.has('ALL') || [...facets].some((facet) => (
+        rowMatchesFacet(row, facet, filter.targetChanged ?? false)
+      )))
       && (!query || [row.caseId, row.name, row.caseType, ...row.tags]
         .some((value) => value.toLocaleLowerCase().includes(query)))
   ));
@@ -190,6 +226,20 @@ export function filterAndSortScenarioRows(
       ? (left.canonicalIndex - right.canonicalIndex) * factor
       : comparison * factor;
   });
+}
+
+export function scenarioMatrixFacetCounts(
+  projection: ScenarioTableProjection,
+  targetChanged = false,
+): Record<ScenarioMatrixResultFacet, number> {
+  return {
+    ALL: projection.rows.length,
+    FAILED: projection.rows.filter((row) => rowMatchesFacet(row, 'FAILED', targetChanged)).length,
+    CHANGED: projection.rows.filter((row) => rowMatchesFacet(row, 'CHANGED', targetChanged)).length,
+    IMPACTED: projection.rows.filter((row) => rowMatchesFacet(row, 'IMPACTED', targetChanged)).length,
+    STALE: projection.rows.filter((row) => rowMatchesFacet(row, 'STALE', targetChanged)).length,
+    UNPROVEN: projection.rows.filter((row) => rowMatchesFacet(row, 'UNPROVEN', targetChanged)).length,
+  };
 }
 
 export function toggleScenarioSelection(
@@ -292,6 +342,7 @@ export function notRunEvidence(caseId: string): TableCaseEvidenceProjection {
     assertions: 'NONE',
     freshness: 'CURRENT',
     proofStrength: 'SCHEMA',
+    subjectMode: 'REAL',
     durationMs: null,
     firstFailure: null,
   };
@@ -329,6 +380,47 @@ function rowValues(
     }
   }
   return values;
+}
+
+function rowSummary(scenario: ScenarioDraft): ScenarioTableRowSummary {
+  const givenFields = flattenValue(scenario.given.input).map((entry) => ({
+    path: entry.path || '/',
+    value: entry.value,
+  }));
+  return {
+    givenFields,
+    givenFieldCount: givenFields.length,
+    dependencyCount: scenario.dependencies.length,
+    controlledDependencyCount: scenario.dependencies.filter((dependency) => (
+      dependency.behavior.kind !== 'REAL'
+    )).length,
+    assertionCount: scenario.then.assertions.length,
+    assertionTargets: scenario.then.assertions.map((assertion) => (
+      assertion.path || assertion.nodeId
+        || [assertion.fromNodeId, assertion.toNodeId].filter(Boolean).join(' -> ')
+        || assertion.assertionId
+    )),
+  };
+}
+
+function rowMatchesFacet(
+  row: ScenarioTableRow,
+  facet: ScenarioMatrixResultFacet,
+  targetChanged: boolean,
+): boolean {
+  const changed = row.evidence.baselineOutcome === 'CHANGED_INPUT'
+    || row.evidence.baselineOutcome === 'NEW';
+  const failed = row.presentation.tone === 'failed';
+  switch (facet) {
+    case 'ALL': return true;
+    case 'FAILED': return failed;
+    case 'CHANGED': return changed;
+    case 'IMPACTED': return targetChanged || changed || failed;
+    case 'STALE': return row.evidence.freshness !== 'CURRENT';
+    case 'UNPROVEN': return row.evidence.execution === 'NOT_RUN'
+      || row.evidence.assertions === 'NONE'
+      || row.evidence.proofStrength === 'SCHEMA';
+  }
 }
 
 function givenColumn(path: string): ScenarioTableColumn {

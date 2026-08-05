@@ -7,11 +7,14 @@ import type { TableCaseVerdictPresentation } from '../tableDrivenTestStatus';
 import type { TableSuiteDifferentialCounts, TableSuiteRunBatch } from './tableSuiteRunModel';
 import {
   filterAndSortScenarioRows,
+  scenarioMatrixFacetCounts,
   selectVisibleScenarios,
   toggleScenarioSelection,
+  type ScenarioMatrixResultFacet,
   type ScenarioRunSelectionMode,
   type ScenarioTableColumn,
   type ScenarioTableProjection,
+  type ScenarioTableRow,
   type ScenarioTableSelection,
   type ScenarioTableSort,
 } from './scenarioTableModel';
@@ -32,7 +35,7 @@ interface ScenarioMatrixSurfaceProps {
   onSelectionChange: (selection: ScenarioTableSelection) => void;
   onOpenCase: (caseId: string) => void;
   onCellEdit: (caseId: string, column: ScenarioTableColumn, value: unknown) => void;
-  onAddCase: () => void;
+  onAddCase: (caseType?: ScenarioCaseType) => void;
   onImportCases?: () => void;
   onRunSelection: (mode: ScenarioRunSelectionMode) => void;
   onCancelRun?: () => void;
@@ -71,22 +74,12 @@ export default function ScenarioMatrixSurface({
   const [query, setQuery] = useState('');
   const [caseType, setCaseType] = useState<ScenarioCaseType | ''>('');
   const [tone, setTone] = useState<TableCaseVerdictPresentation['tone'] | ''>('');
+  const [facet, setFacet] = useState<ScenarioMatrixResultFacet>('ALL');
   const [sort, setSort] = useState<ScenarioTableSort>({ key: 'CANONICAL', direction: 'ASC' });
-  const [visibleLimit, setVisibleLimit] = useState(WINDOW_SIZE);
-  const [expandedFailures, setExpandedFailures] = useState<string[]>([]);
-  const [visibleColumnIds, setVisibleColumnIds] = useState<string[]>(() => (
-    defaultVisibleColumnIds(projection.columns)
-  ));
+  const [pageIndex, setPageIndex] = useState(0);
+  const [expandedRows, setExpandedRows] = useState<string[]>([]);
 
-  useEffect(() => {
-    setVisibleColumnIds((current) => {
-      const available = new Set(projection.columns.map((column) => column.columnId));
-      const retained = current.filter((columnId) => available.has(columnId));
-      return retained.length > 0 ? retained : defaultVisibleColumnIds(projection.columns);
-    });
-  }, [projection.columns]);
-
-  useEffect(() => setVisibleLimit(WINDOW_SIZE), [caseType, query, sort, tone]);
+  useEffect(() => setPageIndex(0), [caseType, facet, query, sort, tone]);
 
   const filteredRows = useMemo(() => filterAndSortScenarioRows(
     projection,
@@ -94,11 +87,17 @@ export default function ScenarioMatrixSurface({
       query,
       caseTypes: caseType ? [caseType] : [],
       tones: tone ? [tone] : [],
+      facets: [facet],
+      targetChanged: differentialCounts?.targetChanged ?? false,
     },
     sort,
-  ), [caseType, projection, query, sort, tone]);
-  const rows = filteredRows.slice(0, visibleLimit);
-  const columns = projection.columns.filter((column) => visibleColumnIds.includes(column.columnId));
+  ), [caseType, differentialCounts?.targetChanged, facet, projection, query, sort, tone]);
+  const pageStart = Math.min(pageIndex * WINDOW_SIZE, Math.max(0, filteredRows.length - 1));
+  const rows = filteredRows.slice(pageStart, pageStart + WINDOW_SIZE);
+  const facetCounts = useMemo(() => scenarioMatrixFacetCounts(
+    projection,
+    differentialCounts?.targetChanged ?? false,
+  ), [differentialCounts?.targetChanged, projection]);
   const selected = new Set(selection.selectedCaseIds);
   const visibleCaseIds = rows.map((row) => row.caseId);
   const allVisibleSelected = visibleCaseIds.length > 0 && visibleCaseIds.every((caseId) => selected.has(caseId));
@@ -122,68 +121,61 @@ export default function ScenarioMatrixSurface({
             onChange={(event) => setQuery(event.target.value)}
           />
         </label>
-        <label>
-          <span className="visually-hidden">{t('Case type filter')}</span>
-          <select
-            aria-label={t('Case type filter')}
-            value={caseType}
-            onChange={(event) => setCaseType(event.target.value as ScenarioCaseType | '')}
-          >
-            <option value="">{t('All types')}</option>
-            {CASE_TYPES.map((value) => <option value={value} key={value}>{t(caseTypeLabel(value))}</option>)}
-          </select>
-        </label>
-        <label>
-          <span className="visually-hidden">{t('Verdict filter')}</span>
-          <select
-            aria-label={t('Verdict filter')}
-            value={tone}
-            onChange={(event) => setTone(event.target.value as TableCaseVerdictPresentation['tone'] | '')}
-          >
-            <option value="">{t('All verdicts')}</option>
-            {TONES.map((value) => <option value={value} key={value}>{t(capitalize(value))}</option>)}
-          </select>
-        </label>
-        <label>
-          <span className="visually-hidden">{t('Sort cases')}</span>
-          <select
-            aria-label={t('Sort cases')}
-            value={`${sort.key}:${sort.direction}`}
-            onChange={(event) => {
-              const [key, direction] = event.target.value.split(':') as [ScenarioTableSort['key'], ScenarioTableSort['direction']];
-              setSort({ key, direction });
-            }}
-          >
-            <option value="CANONICAL:ASC">{t('Canonical order')}</option>
-            <option value="NAME:ASC">{t('Name A-Z')}</option>
-            <option value="NAME:DESC">{t('Name Z-A')}</option>
-            <option value="TYPE:ASC">{t('Type')}</option>
-            <option value="VERDICT:ASC">{t('Verdict')}</option>
-          </select>
-        </label>
-        <details className="scenario-column-menu">
-          <summary>{t('Columns {visible}/{total}', { visible: columns.length, total: projection.columns.length })}</summary>
+        <details className="scenario-matrix-more-filters">
+          <summary>{t('More filters')}</summary>
           <div>
-            {projection.columns.map((column) => (
-              <label key={column.columnId}>
-                <input
-                  type="checkbox"
-                  checked={visibleColumnIds.includes(column.columnId)}
-                  disabled={column.columnId === 'case:name'}
-                  onChange={(event) => setVisibleColumnIds((current) => (
-                    event.target.checked
-                      ? [...current, column.columnId]
-                      : current.filter((columnId) => columnId !== column.columnId)
-                  ))}
-                />
-                <span>{t(column.group)} / {t(column.label)}</span>
-              </label>
+            <label>
+              <span>{t('Case type')}</span>
+              <select
+                aria-label={t('Case type filter')}
+                value={caseType}
+                onChange={(event) => setCaseType(event.target.value as ScenarioCaseType | '')}
+              >
+                <option value="">{t('All types')}</option>
+                {CASE_TYPES.map((value) => <option value={value} key={value}>{t(caseTypeLabel(value))}</option>)}
+              </select>
+            </label>
+            <label>
+              <span>{t('Verdict')}</span>
+              <select
+                aria-label={t('Verdict filter')}
+                value={tone}
+                onChange={(event) => setTone(event.target.value as TableCaseVerdictPresentation['tone'] | '')}
+              >
+                <option value="">{t('All verdicts')}</option>
+                {TONES.map((value) => <option value={value} key={value}>{t(capitalize(value))}</option>)}
+              </select>
+            </label>
+            <label>
+              <span>{t('Sort')}</span>
+              <select
+                aria-label={t('Sort cases')}
+                value={`${sort.key}:${sort.direction}`}
+                onChange={(event) => {
+                  const [key, direction] = event.target.value.split(':') as [ScenarioTableSort['key'], ScenarioTableSort['direction']];
+                  setSort({ key, direction });
+                }}
+              >
+                <option value="CANONICAL:ASC">{t('Canonical order')}</option>
+                <option value="NAME:ASC">{t('Name A-Z')}</option>
+                <option value="NAME:DESC">{t('Name Z-A')}</option>
+                <option value="TYPE:ASC">{t('Type')}</option>
+                <option value="VERDICT:ASC">{t('Verdict')}</option>
+              </select>
+            </label>
+          </div>
+        </details>
+        <details className="scenario-preset-menu">
+          <summary className="secondary compact">{t('Add case')}</summary>
+          <div>
+            {(['GOLDEN', 'NEGATIVE', 'BOUNDARY', 'REGRESSION'] as const).map((value) => (
+              <button type="button" key={value} disabled={disabled} onClick={() => onAddCase(value)}>
+                <strong>{t(caseTypeLabel(value))}</strong>
+                <span>{t(presetDescription(value))}</span>
+              </button>
             ))}
           </div>
         </details>
-        <button type="button" className="secondary compact" onClick={onAddCase} disabled={disabled}>
-          {t('Add case')}
-        </button>
         {onImportCases && (
           <button
             type="button"
@@ -197,10 +189,30 @@ export default function ScenarioMatrixSurface({
         )}
       </header>
 
+      <div className="scenario-matrix-facets" role="group" aria-label={t('Result filters')}>
+        {(['ALL', 'FAILED', 'CHANGED', 'IMPACTED', 'STALE', 'UNPROVEN'] as const).map((value) => (
+          <button
+            type="button"
+            key={value}
+            aria-pressed={facet === value}
+            onClick={() => setFacet(value)}
+          >
+            <span>{t(facetLabel(value))}</span>
+            <strong>{facetCounts[value]}</strong>
+          </button>
+        ))}
+      </div>
+
       <div className="scenario-matrix-context" role="status">
         <span>{t('{count} canonical cases', { count: projection.rows.length })}</span>
         <span>{t('{count} matching', { count: filteredRows.length })}</span>
-        <span>{t('{shown} / {total} shown', { shown: rows.length, total: filteredRows.length })}</span>
+        <span>{filteredRows.length === 0
+          ? t('0 shown')
+          : t('{start}-{end} / {total} shown', {
+            start: pageStart + 1,
+            end: pageStart + rows.length,
+            total: filteredRows.length,
+          })}</span>
         <span>{t('{count} selected', { count: selection.selectedCaseIds.length })}</span>
         <code title={projection.projectionFingerprint}>{shortFingerprint(projection.projectionFingerprint)}</code>
       </div>
@@ -245,10 +257,10 @@ export default function ScenarioMatrixSurface({
       </div>
 
       <div className="scenario-matrix-scroll" tabIndex={0} aria-label={t('Scrollable Scenario matrix')}>
-        <table>
+        <table aria-label={t('Scenario result summary')}>
           <thead>
-            <tr className="scenario-matrix-groups">
-              <th rowSpan={2} className="scenario-matrix-select">
+            <tr data-testid="scenario-matrix-summary-columns">
+              <th className="scenario-matrix-select">
                 <input
                   type="checkbox"
                   aria-label={t('Select visible cases')}
@@ -260,15 +272,14 @@ export default function ScenarioMatrixSurface({
                   ))}
                 />
               </th>
-              {groupSpans(columns).map((group) => (
-                <th colSpan={group.count} scope="colgroup" key={group.name}>{t(group.name)}</th>
-              ))}
-              <th rowSpan={2} className="scenario-matrix-actions">{t('Actions')}</th>
-            </tr>
-            <tr>
-              {columns.map((column) => (
-                <th scope="col" key={column.columnId} title={column.path}>{t(column.label)}</th>
-              ))}
+              <th scope="col">{t('Case')}</th>
+              <th scope="col">{t('Result')}</th>
+              <th scope="col">{t('Given')}</th>
+              <th scope="col">{t('Dependencies')}</th>
+              <th scope="col">{t('Assertions')}</th>
+              <th scope="col">{t('Duration')}</th>
+              <th scope="col">{t('Currentness')}</th>
+              <th className="scenario-matrix-actions">{t('Actions')}</th>
             </tr>
           </thead>
           <tbody>
@@ -297,31 +308,41 @@ export default function ScenarioMatrixSurface({
                     ))}
                   />
                 </td>
-                {columns.map((column) => (
-                  <ScenarioMatrixCell
-                    column={column}
-                    value={row.values[column.columnId]}
-                    tone={column.columnId === 'proof:verdict' ? row.presentation.tone : undefined}
-                    key={column.columnId}
-                    onChange={(value) => onCellEdit(row.caseId, column, value)}
-                  />
-                ))}
+                <td className="scenario-matrix-case-cell">
+                  <strong>{row.name}</strong>
+                  <span><b>{t(caseTypeLabel(row.caseType))}</b>{row.tags.length > 0 ? ` · ${row.tags.slice(0, 2).join(', ')}` : ''}</span>
+                </td>
+                <td className="scenario-matrix-result-cell" data-tone={row.presentation.tone}>
+                  <strong>{t(row.presentation.label)}</strong>
+                  <span>{row.evidence.firstFailure?.message ?? t(row.presentation.detail)}</span>
+                </td>
+                <td title={summarizeGiven(row)}>{summarizeGiven(row)}</td>
+                <td>{t('{controlled}/{total} controlled', {
+                  controlled: row.summary.controlledDependencyCount,
+                  total: row.summary.dependencyCount,
+                })}</td>
+                <td>{row.summary.assertionCount === 0
+                  ? <strong className="scenario-matrix-needs-oracle">{t('Needs oracle')}</strong>
+                  : t('{count} checks', { count: row.summary.assertionCount })}</td>
+                <td>{row.evidence.durationMs === null ? '—' : `${row.evidence.durationMs} ms`}</td>
+                <td className="scenario-matrix-currentness">
+                  <strong data-freshness={row.evidence.freshness}>{t(freshnessLabel(row.evidence.freshness))}</strong>
+                  <span>{t(proofLabel(row.evidence.proofStrength))}</span>
+                </td>
                 <td className="scenario-matrix-actions">
-                  {row.evidence.firstFailure && (
-                    <button
-                      type="button"
-                      className="secondary compact"
-                      aria-expanded={expandedFailures.includes(row.caseId)}
-                      aria-label={t('Explain failure for {name}', { name: row.name })}
-                      onClick={() => setExpandedFailures((current) => (
-                        current.includes(row.caseId)
-                          ? current.filter((caseId) => caseId !== row.caseId)
-                          : [...current, row.caseId]
-                      ))}
-                    >
-                      {t('Why')}
-                    </button>
-                  )}
+                  <button
+                    type="button"
+                    className="secondary compact"
+                    aria-expanded={expandedRows.includes(row.caseId)}
+                    aria-label={t('Inspect {name}', { name: row.name })}
+                    onClick={() => setExpandedRows((current) => (
+                      current.includes(row.caseId)
+                        ? current.filter((caseId) => caseId !== row.caseId)
+                        : [...current, row.caseId]
+                    ))}
+                  >
+                    {t('Inspect')}
+                  </button>
                   <button
                     type="button"
                     className="secondary compact"
@@ -332,12 +353,16 @@ export default function ScenarioMatrixSurface({
                   </button>
                 </td>
               </tr>
-              {row.evidence.firstFailure && expandedFailures.includes(row.caseId) && (
-                <tr className="scenario-matrix-failure">
-                  <td colSpan={columns.length + 2}>
-                    <strong>{row.evidence.firstFailure.category}</strong>
-                    <code>{row.evidence.firstFailure.target}</code>
-                    <span>{row.evidence.firstFailure.message}</span>
+              {expandedRows.includes(row.caseId) && (
+                <tr className="scenario-matrix-detail-row">
+                  <td colSpan={9}>
+                    <ScenarioMatrixDetails
+                      row={row}
+                      columns={projection.columns}
+                      disabled={disabled}
+                      onCellEdit={onCellEdit}
+                      onOpenCase={onOpenCase}
+                    />
                   </td>
                 </tr>
               )}
@@ -359,15 +384,30 @@ export default function ScenarioMatrixSurface({
         )}
       </div>
 
-      {filteredRows.length > rows.length && (
+      <nav className="scenario-matrix-window" aria-label={t('Case result pages')}>
         <button
           type="button"
-          className="scenario-matrix-more"
-          onClick={() => setVisibleLimit((limit) => limit + WINDOW_SIZE)}
+          className="secondary compact"
+          disabled={pageStart === 0}
+          onClick={() => setPageIndex((index) => Math.max(0, index - 1))}
         >
-          {t('Show next {count} cases', { count: Math.min(WINDOW_SIZE, filteredRows.length - rows.length) })}
+          {t('Previous {count}', { count: WINDOW_SIZE })}
         </button>
-      )}
+        <span>{filteredRows.length === 0 ? t('No rows') : t('Page {current} of {total}', {
+          current: Math.floor(pageStart / WINDOW_SIZE) + 1,
+          total: Math.ceil(filteredRows.length / WINDOW_SIZE),
+        })}</span>
+        <button
+          type="button"
+          className="secondary compact"
+          disabled={pageStart + rows.length >= filteredRows.length}
+          onClick={() => setPageIndex((index) => index + 1)}
+        >
+          {t('Next {count}', {
+            count: Math.min(WINDOW_SIZE, Math.max(0, filteredRows.length - pageStart - rows.length)) || WINDOW_SIZE,
+          })}
+        </button>
+      </nav>
 
       <footer className="scenario-matrix-bulkbar">
         <div>
@@ -432,76 +472,142 @@ export default function ScenarioMatrixSurface({
   );
 }
 
-function ScenarioMatrixCell({
-  column,
-  value,
-  tone,
-  onChange,
+function ScenarioMatrixDetails({
+  row,
+  columns,
+  disabled,
+  onCellEdit,
+  onOpenCase,
 }: {
-  column: ScenarioTableColumn;
-  value: unknown;
-  tone?: TableCaseVerdictPresentation['tone'];
-  onChange: (value: unknown) => void;
+  row: ScenarioTableRow;
+  columns: ScenarioTableColumn[];
+  disabled: boolean;
+  onCellEdit: (caseId: string, column: ScenarioTableColumn, value: unknown) => void;
+  onOpenCase: (caseId: string) => void;
 }) {
   const { t } = useI18n();
-  if (!column.editable) {
-    return <td data-tone={tone} title={displayValue(value)}><span>{displayValue(value)}</span></td>;
-  }
-  if (column.binding.kind === 'CASE_TYPE') {
-    return (
-      <td>
-        <select aria-label={t('{label} value', { label: t(column.label) })} value={String(value)} onChange={(event) => onChange(event.target.value)}>
-          {CASE_TYPES.map((caseType) => <option value={caseType} key={caseType}>{t(caseTypeLabel(caseType))}</option>)}
-        </select>
-      </td>
-    );
-  }
-  if (typeof value === 'boolean') {
-    return (
-      <td>
-        <input
-          type="checkbox"
-          aria-label={t('{label} value', { label: t(column.label) })}
-          checked={value}
-          onChange={(event) => onChange(event.target.checked)}
-        />
-      </td>
-    );
-  }
+  const givenColumns = columns.filter((column) => column.group === 'GIVEN');
+  const dependencyColumns = columns.filter((column) => column.group === 'DEPENDENCY');
+  const assertionColumns = columns.filter((column) => column.group === 'THEN');
+  const diffs = row.evidence.assertionDiffs ?? [];
   return (
-    <td>
-      <input
-        aria-label={t('{label} value', { label: t(column.label) })}
-        value={displayValue(value)}
-        onChange={(event) => onChange(parseCellValue(event.target.value, value))}
-      />
-    </td>
+    <div className="scenario-matrix-detail" data-testid={`scenario-matrix-detail-${row.caseId}`}>
+      <section>
+        <header><strong>{t('Given')}</strong><span>{t('{count} fields', { count: row.summary.givenFieldCount })}</span></header>
+        <div className="scenario-matrix-detail-fields">
+          {givenColumns.map((column) => {
+            const value = row.values[column.columnId];
+            return (
+              <label key={column.columnId}>
+                <span>{column.label}</span>
+                {typeof value === 'boolean' ? (
+                  <input
+                    type="checkbox"
+                    checked={value}
+                    disabled={disabled}
+                    onChange={(event) => onCellEdit(row.caseId, column, event.target.checked)}
+                  />
+                ) : (
+                  <input
+                    aria-label={t('{label} value', { label: column.label })}
+                    value={displayValue(value)}
+                    disabled={disabled}
+                    onChange={(event) => onCellEdit(
+                      row.caseId,
+                      column,
+                      parseCellValue(event.target.value, value),
+                    )}
+                  />
+                )}
+              </label>
+            );
+          })}
+        </div>
+      </section>
+      <section>
+        <header><strong>{t('Dependencies')}</strong><span>{t('{count} controlled', { count: row.summary.controlledDependencyCount })}</span></header>
+        <p className="scenario-matrix-subject-mode">
+          <strong>{t('Subject under test')}: {t(subjectModeLabel(row.evidence.subjectMode))}</strong>
+          <span>{row.evidence.subjectMode === 'SCHEMA_ONLY'
+            ? t('Schema is the subject; no runtime implementation is invoked.')
+            : row.summary.controlledDependencyCount > 0
+              ? t('{count} dependencies controlled; the subject still executes normally.', {
+                count: row.summary.controlledDependencyCount,
+              })
+              : t('No dependency overrides; the target runs normally.')}</span>
+        </p>
+        <DetailValues
+          empty={t('No dependency overrides; the target runs normally.')}
+          values={dependencyColumns.map((column) => ({
+            label: column.label,
+            value: row.values[column.columnId],
+          }))}
+        />
+      </section>
+      <section className="scenario-matrix-diff">
+        <header><strong>{t('Expected / Actual / Diff')}</strong><span>{t('{count} checks', { count: row.summary.assertionCount })}</span></header>
+        {diffs.length > 0 ? diffs.map((diff) => (
+          <article key={diff.assertionId} data-passed={diff.passed}>
+            <header><code>{diff.path || '$'}</code><strong>{t(diff.passed ? 'Matched' : 'Different')}</strong></header>
+            <div><span>{t('Expected')}</span><pre>{prettyValue(diff.expected)}</pre></div>
+            <div><span>{t('Actual')}</span><pre>{prettyValue(diff.actual)}</pre></div>
+            <p>{diff.detail}</p>
+          </article>
+        )) : (
+          <DetailValues
+            empty={row.summary.assertionCount === 0
+              ? t('No business oracle yet. Open the Case and define the expected outcome.')
+              : t('Run this Case to compare expected and actual values.')}
+            values={assertionColumns.map((column) => ({
+              label: column.label,
+              value: row.values[column.columnId],
+            }))}
+          />
+        )}
+      </section>
+      <section>
+        <header><strong>{t('Proof')}</strong><span>{t(proofLabel(row.evidence.proofStrength))}</span></header>
+        <dl className="scenario-matrix-proof-details">
+          <div><dt>{t('Subject')}</dt><dd>{t(subjectModeLabel(row.evidence.subjectMode))}</dd></div>
+          <div><dt>{t('Execution')}</dt><dd>{t(row.evidence.execution)}</dd></div>
+          <div><dt>{t('Assertions')}</dt><dd>{t(row.evidence.assertions)}</dd></div>
+          <div><dt>{t('Freshness')}</dt><dd>{t(row.evidence.freshness)}</dd></div>
+          <div><dt>{t('Attempt')}</dt><dd>{row.evidence.attempt || '—'}</dd></div>
+        </dl>
+        {row.evidence.firstFailure && (
+          <p className="scenario-matrix-detail-failure">
+            <strong>{row.evidence.firstFailure.category}</strong>
+            <code>{row.evidence.firstFailure.target}</code>
+            <span>{row.evidence.firstFailure.message}</span>
+          </p>
+        )}
+        <button type="button" className="secondary compact" onClick={() => onOpenCase(row.caseId)}>
+          {t('Edit full Case')}
+        </button>
+      </section>
+    </div>
   );
 }
 
-function defaultVisibleColumnIds(columns: ScenarioTableColumn[]): string[] {
-  const limits: Record<ScenarioTableColumn['group'], number> = {
-    CASE: 2,
-    GIVEN: 3,
-    DEPENDENCY: 1,
-    THEN: 3,
-    PROOF: 6,
-  };
-  const counts: Partial<Record<ScenarioTableColumn['group'], number>> = {};
-  return columns.filter((column) => {
-    const count = counts[column.group] ?? 0;
-    counts[column.group] = count + 1;
-    return count < limits[column.group];
-  }).map((column) => column.columnId);
-}
-
-function groupSpans(columns: ScenarioTableColumn[]): Array<{ name: string; count: number }> {
-  return columns.reduce<Array<{ name: string; count: number }>>((groups, column) => {
-    const last = groups[groups.length - 1];
-    if (last?.name === column.group) last.count += 1;
-    else groups.push({ name: column.group, count: 1 });
-    return groups;
-  }, []);
+function DetailValues({
+  values,
+  empty,
+}: {
+  values: Array<{ label: string; value: unknown }>;
+  empty: string;
+}) {
+  const populated = values.filter((item) => displayValue(item.value) !== '');
+  if (populated.length === 0) return <p className="scenario-matrix-detail-empty">{empty}</p>;
+  return (
+    <dl className="scenario-matrix-detail-values">
+      {populated.map((item) => (
+        <div key={item.label}>
+          <dt title={item.label}>{businessLabel(item.label)}</dt>
+          <dd title={displayValue(item.value)}>{displayValue(item.value)}</dd>
+        </div>
+      ))}
+    </dl>
+  );
 }
 
 function parseCellValue(value: string, previous: unknown): unknown {
@@ -520,6 +626,83 @@ function displayValue(value: unknown): string {
 
 function caseTypeLabel(value: ScenarioCaseType): string {
   return value.charAt(0) + value.slice(1).toLocaleLowerCase();
+}
+
+function facetLabel(value: ScenarioMatrixResultFacet): string {
+  switch (value) {
+    case 'ALL': return 'All';
+    case 'FAILED': return 'Failed';
+    case 'CHANGED': return 'Changed';
+    case 'IMPACTED': return 'Impacted';
+    case 'STALE': return 'Stale';
+    case 'UNPROVEN': return 'Unproven';
+  }
+}
+
+function presetDescription(value: ScenarioCaseType): string {
+  switch (value) {
+    case 'GOLDEN': return 'Typical input with a reviewable expected result';
+    case 'NEGATIVE': return 'Adverse input marked as needing an error oracle';
+    case 'BOUNDARY': return 'Values derived from declared schema limits';
+    case 'REGRESSION': return 'Typical input ready to retain as a guard';
+    case 'PROPERTY': return 'Generated input awaiting a property oracle';
+  }
+}
+
+function summarizeGiven(row: ScenarioTableRow): string {
+  const visible = row.summary.givenFields.slice(0, 2).map((field) => (
+    `${businessLabel(field.path.split('/').filter(Boolean).pop() ?? 'input')}=${compactValue(field.value)}`
+  ));
+  const remaining = row.summary.givenFieldCount - visible.length;
+  return `${visible.join(' · ')}${remaining > 0 ? ` · +${remaining}` : ''}` || '—';
+}
+
+function compactValue(value: unknown): string {
+  const rendered = displayValue(value);
+  return rendered.length > 28 ? `${rendered.slice(0, 25)}...` : rendered;
+}
+
+function prettyValue(value: unknown): string {
+  if (value === undefined) return 'Not available';
+  return typeof value === 'string' ? value : JSON.stringify(value, null, 2);
+}
+
+function businessLabel(value: string): string {
+  let decoded = value;
+  try {
+    decoded = decodeURIComponent(value);
+  } catch {
+    decoded = value;
+  }
+  const assertionCoordinate = /^[A-Z_]+:(.*):(?:EQUALS|MATCHES_SCHEMA|EXISTS|ABSENT|STATUS|USED|NOT_USED)$/
+    .exec(decoded);
+  return (assertionCoordinate?.[1] ?? decoded)
+    .replace(/^\$\.?/, '')
+    .replace(/[_-]+/g, ' ')
+    .replace(/([a-z0-9])([A-Z])/g, '$1 $2')
+    .trim() || 'Value';
+}
+
+function freshnessLabel(value: ScenarioTableRow['evidence']['freshness']): string {
+  switch (value) {
+    case 'CURRENT': return 'Current';
+    case 'STALE': return 'Stale';
+    case 'SUPERSEDED': return 'Superseded';
+  }
+}
+
+function proofLabel(value: ScenarioTableRow['evidence']['proofStrength']): string {
+  switch (value) {
+    case 'SCHEMA': return 'Schema only';
+    case 'MOCK': return 'Mock proof';
+    case 'SANDBOX': return 'Sandbox proof';
+    case 'RUNTIME': return 'Runtime proof';
+    case 'CERTIFIABLE': return 'Certifiable proof';
+  }
+}
+
+function subjectModeLabel(value: ScenarioTableRow['evidence']['subjectMode']): string {
+  return value === 'SCHEMA_ONLY' ? 'Schema validation only' : 'Real target execution';
 }
 
 function capitalize(value: string): string {
