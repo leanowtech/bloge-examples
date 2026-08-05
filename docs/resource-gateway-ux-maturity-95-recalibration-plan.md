@@ -1,6 +1,10 @@
 # Resource Gateway 体验成熟度 95 分校准与修正计划
 
-> 状态：Engineering Complete（96 / 100）；Stage F 真实用户与企业试点验证待执行
+> 状态：Historical Plan / 2026-08-05 任务复评后进入新一轮校准
+>
+> 后续基线：本计划的工程实施记录仍然有效，但 `96 / 100` 不再作为当前端到端体验分数。
+> 最新真实任务审阅、P0/P1 与演进阶段见
+> [UX 深度审阅与针对性演进计划](resource-gateway-ux-deep-audit-and-targeted-evolution-plan.md)。
 >
 > 日期：2026-07-31
 >

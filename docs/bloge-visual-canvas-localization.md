@@ -1,5 +1,9 @@
 # BLOGE 可视化画布多语言设计与扩展指南
 
+> 当前状态：第一批顶层工作区已覆盖；Contract、Compatibility、Evidence、Library Detail、
+> Operator Test 和移动端 compact projection 仍存在英文 UI 回退。缺口与 strict locale gate
+> 计划见 [UX 深度审阅与针对性演进计划](resource-gateway-ux-deep-audit-and-targeted-evolution-plan.md)。
+
 ## 1. 能力范围
 
 Resource Gateway React 界面当前支持 `en` 与 `zh-CN`。全局语言选择器位于主导航右侧，

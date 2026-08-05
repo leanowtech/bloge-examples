@@ -1,6 +1,12 @@
 # Resource Gateway UX 95 分实施状态
 
-> 状态：Engineering Complete / External Validation Pending
+> 状态：Historical Engineering Completion Record / 已被 2026-08-05 任务复评重新校准
+>
+> 重要说明：本文件记录上一轮实施项的完成证据，不再代表当前端到端体验分数。真实浏览器
+> 复评发现示例 fork、Scenario command state、stale Evidence、测试矩阵和深层中文界面仍有
+> P0/P1 缺口。当前基线、问题与后续计划以
+> [UX 深度审阅与针对性演进计划](resource-gateway-ux-deep-audit-and-targeted-evolution-plan.md)
+> 为准。
 >
 > 基准计划：[Resource Gateway 体验成熟度 95 分校准与修正计划](resource-gateway-ux-maturity-95-recalibration-plan.md)
 >
