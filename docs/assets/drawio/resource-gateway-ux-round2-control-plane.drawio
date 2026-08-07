@@ -1,0 +1,91 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<mxfile host="drawio" version="30.0.4">
+  <diagram id="resource-gateway-ux-round2-control-plane" name="UX Round 2 Control Plane">
+    <mxGraphModel dx="1600" dy="900" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="1600" pageHeight="900" math="0" shadow="0">
+      <root>
+        <mxCell id="0" />
+        <mxCell id="1" parent="0" />
+
+        <mxCell id="title" value="Resource Gateway UX Round 2：把可见指标升级为可执行控制面" style="text;html=1;strokeColor=none;fillColor=none;align=left;verticalAlign=middle;fontFamily=Arial;fontSize=24;fontStyle=1;fontColor=#1f2937;" vertex="1" parent="1">
+          <mxGeometry x="40" y="20" width="1450" height="40" as="geometry" />
+        </mxCell>
+        <mxCell id="subtitle" value="最新 E2 反证：能力已经存在，但质量、命令、响应式、语言和修复仍是建议性投影，没有成为阻止体验回退的平台不变量" style="text;html=1;strokeColor=none;fillColor=none;align=left;verticalAlign=middle;fontFamily=Arial;fontSize=12;fontColor=#52606d;" vertex="1" parent="1">
+          <mxGeometry x="40" y="62" width="1500" height="24" as="geometry" />
+        </mxCell>
+
+        <mxCell id="observedLane" value="Observed Regression / 最新真实任务反证" style="swimlane;startSize=34;whiteSpace=wrap;html=1;fillColor=#fff8f7;strokeColor=#c62828;fontFamily=Arial;fontSize=13;fontStyle=1;container=1;pointerEvents=0;" vertex="1" parent="1">
+          <mxGeometry x="40" y="105" width="1520" height="180" as="geometry" />
+        </mxCell>
+        <mxCell id="obsLayout" value="Auto Layout 反向优化&#xa;85% PASS → 39% REVIEW&#xa;仍允许应用" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#ffebee;strokeColor=#c62828;fontFamily=Arial;fontSize=11;fontStyle=1;" vertex="1" parent="observedLane">
+          <mxGeometry x="25" y="58" width="250" height="92" as="geometry" />
+        </mxCell>
+        <mxCell id="obsCommand" value="Matrix 主命令作用域不可见&#xa;顶部运行单 Case&#xa;底部运行全部 / 所选" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#ffebee;strokeColor=#c62828;fontFamily=Arial;fontSize=11;fontStyle=1;" vertex="1" parent="observedLane">
+          <mxGeometry x="325" y="58" width="250" height="92" as="geometry" />
+        </mxCell>
+        <mxCell id="obsMobile" value="移动端只做线性堆叠&#xa;Case：64 buttons / 62 inputs&#xa;Operator：3359px 长页" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#ffebee;strokeColor=#c62828;fontFamily=Arial;fontSize=11;fontStyle=1;" vertex="1" parent="observedLane">
+          <mxGeometry x="625" y="58" width="250" height="92" as="geometry" />
+        </mxCell>
+        <mxCell id="obsLocale" value="中文界面动态文案回退英文&#xa;Readiness / Runtime parity&#xa;Showcase / Demo copy" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#ffebee;strokeColor=#c62828;fontFamily=Arial;fontSize=11;fontStyle=1;" vertex="1" parent="observedLane">
+          <mxGeometry x="925" y="58" width="250" height="92" as="geometry" />
+        </mxCell>
+        <mxCell id="obsRemediation" value="Next action 没有 Action&#xa;证据抽屉唯一可点击项&#xa;只有“关闭”" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#ffebee;strokeColor=#c62828;fontFamily=Arial;fontSize=11;fontStyle=1;" vertex="1" parent="observedLane">
+          <mxGeometry x="1225" y="58" width="250" height="92" as="geometry" />
+        </mxCell>
+
+        <mxCell id="causeLane" value="Root Cause / 病根" style="swimlane;startSize=34;whiteSpace=wrap;html=1;fillColor=#fffdf1;strokeColor=#f57c00;fontFamily=Arial;fontSize=13;fontStyle=1;container=1;pointerEvents=0;" vertex="1" parent="1">
+          <mxGeometry x="40" y="330" width="1520" height="180" as="geometry" />
+        </mxCell>
+        <mxCell id="causeLayout" value="质量指标与 Apply 命令脱钩&#xa;只报告候选质量&#xa;不比较 before / after" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#fff9c4;strokeColor=#f57c00;fontFamily=Arial;fontSize=11;fontStyle=1;" vertex="1" parent="causeLane">
+          <mxGeometry x="25" y="58" width="250" height="92" as="geometry" />
+        </mxCell>
+        <mxCell id="causeCommand" value="TaskState 只有“当前 Scenario”&#xa;没有 Surface / Selection&#xa;Command Scope" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#fff9c4;strokeColor=#f57c00;fontFamily=Arial;fontSize=11;fontStyle=1;" vertex="1" parent="causeLane">
+          <mxGeometry x="325" y="58" width="250" height="92" as="geometry" />
+        </mxCell>
+        <mxCell id="causeMobile" value="响应式按 viewport 写 CSS&#xa;没有按角色和任务&#xa;投影信息架构" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#fff9c4;strokeColor=#f57c00;fontFamily=Arial;fontSize=11;fontStyle=1;" vertex="1" parent="causeLane">
+          <mxGeometry x="625" y="58" width="250" height="92" as="geometry" />
+        </mxCell>
+        <mxCell id="causeLocale" value="领域层返回英文句子&#xa;UI 执行 t(rawString)&#xa;静态 inventory 无法枚举" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#fff9c4;strokeColor=#f57c00;fontFamily=Arial;fontSize=11;fontStyle=1;" vertex="1" parent="causeLane">
+          <mxGeometry x="925" y="58" width="250" height="92" as="geometry" />
+        </mxCell>
+        <mxCell id="causeRemediation" value="建议、跳转、命令混成一类&#xa;available=false 时&#xa;仍按下一步操作呈现" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#fff9c4;strokeColor=#f57c00;fontFamily=Arial;fontSize=11;fontStyle=1;" vertex="1" parent="causeLane">
+          <mxGeometry x="1225" y="58" width="250" height="92" as="geometry" />
+        </mxCell>
+
+        <mxCell id="controlLane" value="Target UX Control Plane / 必须平台化的根治机制" style="swimlane;startSize=34;whiteSpace=wrap;html=1;fillColor=#f7fbff;strokeColor=#1565c0;fontFamily=Arial;fontSize=13;fontStyle=1;container=1;pointerEvents=0;" vertex="1" parent="1">
+          <mxGeometry x="40" y="555" width="1520" height="190" as="geometry" />
+        </mxCell>
+        <mxCell id="controlLayout" value="LayoutAcceptanceGate&#xa;Pareto 非回退约束&#xa;失败则取消 / 换策略 / 高级覆盖" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#e3f2fd;strokeColor=#1565c0;fontFamily=Arial;fontSize=11;fontStyle=1;" vertex="1" parent="controlLane">
+          <mxGeometry x="25" y="62" width="250" height="96" as="geometry" />
+        </mxCell>
+        <mxCell id="controlCommand" value="ScopeAwareCommandPolicy&#xa;CURRENT / VISIBLE / SELECTED&#xa;身份与数量必须可见" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#e3f2fd;strokeColor=#1565c0;fontFamily=Arial;fontSize=11;fontStyle=1;" vertex="1" parent="controlLane">
+          <mxGeometry x="325" y="62" width="250" height="96" as="geometry" />
+        </mxCell>
+        <mxCell id="controlMobile" value="ResponsiveTaskProjection&#xa;Review / Edit / Approve 模式&#xa;抽屉、步骤与任务预算" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#e3f2fd;strokeColor=#1565c0;fontFamily=Arial;fontSize=11;fontStyle=1;" vertex="1" parent="controlLane">
+          <mxGeometry x="625" y="62" width="250" height="96" as="geometry" />
+        </mxCell>
+        <mxCell id="controlLocale" value="MessageDescriptor Catalog&#xa;messageId + params + rawCode&#xa;动态路径 strict fail" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#f3e5f5;strokeColor=#6a1b9a;fontFamily=Arial;fontSize=11;fontStyle=1;" vertex="1" parent="controlLane">
+          <mxGeometry x="925" y="62" width="250" height="96" as="geometry" />
+        </mxCell>
+        <mxCell id="controlRemediation" value="RemediationCapability&#xa;EXECUTE / HANDOFF / EXPLAIN&#xa;证据绑定 receipt 与权限" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#e8f5e9;strokeColor=#2e7d32;fontFamily=Arial;fontSize=11;fontStyle=1;" vertex="1" parent="controlLane">
+          <mxGeometry x="1225" y="62" width="250" height="96" as="geometry" />
+        </mxCell>
+
+        <mxCell id="edgeObsLayout" value="不可只提示" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;endArrow=classic;endFill=1;strokeColor=#c62828;labelBackgroundColor=#ffffff;fontFamily=Arial;fontSize=10;exitX=0.5;exitY=1;entryX=0.5;entryY=0;" edge="1" parent="1" source="obsLayout" target="causeLayout"><mxGeometry relative="1" as="geometry" /></mxCell>
+        <mxCell id="edgeObsCommand" value="作用域泄漏" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;endArrow=classic;endFill=1;strokeColor=#c62828;labelBackgroundColor=#ffffff;fontFamily=Arial;fontSize=10;exitX=0.5;exitY=1;entryX=0.5;entryY=0;" edge="1" parent="1" source="obsCommand" target="causeCommand"><mxGeometry relative="1" as="geometry" /></mxCell>
+        <mxCell id="edgeObsMobile" value="装得下 ≠ 做得完" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;endArrow=classic;endFill=1;strokeColor=#c62828;labelBackgroundColor=#ffffff;fontFamily=Arial;fontSize=10;exitX=0.5;exitY=1;entryX=0.5;entryY=0;" edge="1" parent="1" source="obsMobile" target="causeMobile"><mxGeometry relative="1" as="geometry" /></mxCell>
+        <mxCell id="edgeObsLocale" value="静默 fallback" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;endArrow=classic;endFill=1;strokeColor=#c62828;labelBackgroundColor=#ffffff;fontFamily=Arial;fontSize=10;exitX=0.5;exitY=1;entryX=0.5;entryY=0;" edge="1" parent="1" source="obsLocale" target="causeLocale"><mxGeometry relative="1" as="geometry" /></mxCell>
+        <mxCell id="edgeObsRemediation" value="建议冒充能力" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;endArrow=classic;endFill=1;strokeColor=#c62828;labelBackgroundColor=#ffffff;fontFamily=Arial;fontSize=10;exitX=0.5;exitY=1;entryX=0.5;entryY=0;" edge="1" parent="1" source="obsRemediation" target="causeRemediation"><mxGeometry relative="1" as="geometry" /></mxCell>
+
+        <mxCell id="edgeControlLayout" value="命令级约束" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;endArrow=classic;endFill=1;strokeColor=#1565c0;labelBackgroundColor=#ffffff;fontFamily=Arial;fontSize=10;exitX=0.5;exitY=1;entryX=0.5;entryY=0;" edge="1" parent="1" source="causeLayout" target="controlLayout"><mxGeometry relative="1" as="geometry" /></mxCell>
+        <mxCell id="edgeControlCommand" value="显式 scope" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;endArrow=classic;endFill=1;strokeColor=#1565c0;labelBackgroundColor=#ffffff;fontFamily=Arial;fontSize=10;exitX=0.5;exitY=1;entryX=0.5;entryY=0;" edge="1" parent="1" source="causeCommand" target="controlCommand"><mxGeometry relative="1" as="geometry" /></mxCell>
+        <mxCell id="edgeControlMobile" value="任务级投影" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;endArrow=classic;endFill=1;strokeColor=#1565c0;labelBackgroundColor=#ffffff;fontFamily=Arial;fontSize=10;exitX=0.5;exitY=1;entryX=0.5;entryY=0;" edge="1" parent="1" source="causeMobile" target="controlMobile"><mxGeometry relative="1" as="geometry" /></mxCell>
+        <mxCell id="edgeControlLocale" value="可枚举消息" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;endArrow=classic;endFill=1;strokeColor=#6a1b9a;labelBackgroundColor=#ffffff;fontFamily=Arial;fontSize=10;exitX=0.5;exitY=1;entryX=0.5;entryY=0;" edge="1" parent="1" source="causeLocale" target="controlLocale"><mxGeometry relative="1" as="geometry" /></mxCell>
+        <mxCell id="edgeControlRemediation" value="能力契约" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;endArrow=classic;endFill=1;strokeColor=#2e7d32;labelBackgroundColor=#ffffff;fontFamily=Arial;fontSize=10;exitX=0.5;exitY=1;entryX=0.5;entryY=0;" edge="1" parent="1" source="causeRemediation" target="controlRemediation"><mxGeometry relative="1" as="geometry" /></mxCell>
+
+        <mxCell id="acceptance" value="Round 2 退出门槛：P1 = 0；Auto Layout 不回退；命令作用域可见；移动端每屏只有一个任务；中文动态文案零静默回退；每条“下一步操作”都可执行、可交接或诚实标记为不可用" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#eceff1;strokeColor=#455a64;fontFamily=Arial;fontSize=12;fontStyle=1;align=left;spacingLeft=14;" vertex="1" parent="1">
+          <mxGeometry x="40" y="790" width="1520" height="66" as="geometry" />
+        </mxCell>
+      </root>
+    </mxGraphModel>
+  </diagram>
+</mxfile>

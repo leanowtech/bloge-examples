@@ -1,6 +1,11 @@
 # Resource Gateway UX 深度审阅与针对性演进计划
 
-> 状态：Engineering Ready / Stage 6 工程收口已通过 E2，E3/E4 待真实用户与组织验证
+> 状态：Historical Implementation Record / 2026-08-06 最新 E2 复评已进入 Round 2
+>
+> 当前权威入口：本文保留 Stage 0-6 的历史实施事实；最新真实任务反证、`84 / 100` 复评分、
+> 6 个 P1 与下一轮控制面演进计划，以
+> [Resource Gateway UX Round 2 资深体验审阅与演进计划](resource-gateway-ux-round2-expert-review-and-evolution-plan.md)
+> 为准。本文的 `96 / 100` 只代表上一轮验收时的工程清单完成度，不再代表当前端到端体验。
 >
 > 审阅日期：2026-08-05
 >
