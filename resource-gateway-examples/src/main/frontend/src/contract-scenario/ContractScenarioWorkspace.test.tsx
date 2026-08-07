@@ -151,11 +151,18 @@ describe('ContractScenarioWorkspace', () => {
       maxConcurrency: 1,
     });
     expect(text()).toContain('Server batchSucceeded');
+    const receipt = document.querySelector('[data-testid="scenario-matrix-command-receipt"]');
+    expect(receipt?.getAttribute('data-state')).toBe('TERMINAL');
+    expect(receipt?.querySelector(`code[title="${submitted.current?.requestId}"]`)).not.toBeNull();
+    expect(receipt?.querySelector(`code[title="${fingerprint('d')}"]`)).not.toBeNull();
     expect(text()).toContain('PromotionPartial only');
     expect(document.querySelector('[data-testid="scenario-matrix-row-approved-1"]')?.textContent)
       .toContain('Mock behavior matched');
     expect(document.querySelector('[data-testid="scenario-matrix-row-approved-3"]')?.textContent)
       .toContain('Mock behavior matched');
+    await act(async () => button('Inspect').click());
+    const rowProof = document.querySelector('[data-testid="scenario-matrix-detail-approved-1"]');
+    expect(rowProof?.querySelector(`code[title="${submitted.current?.requestId}"]`)).not.toBeNull();
   });
 
   it('runs an unsaved example Matrix locally instead of leaving Run all as a silent no-op', async () => {
@@ -346,9 +353,84 @@ describe('ContractScenarioWorkspace', () => {
     expect(text()).toContain('Evidence incomplete');
     expect(text()).not.toContain('Ready for promotion');
     expect(text()).toContain('Terminal output');
+    const receipt = document.querySelector('[data-testid="scenario-evidence-command-receipt"]');
+    expect(receipt?.getAttribute('data-state')).toBe('TERMINAL');
+    expect(receipt?.textContent).toContain('SELECTED · 1 cases');
     expect(text()).toContain('eligible');
     expect((document.querySelector('[data-testid="passed-assertions"]') as HTMLDetailsElement).open)
       .toBe(false);
+  });
+
+  it('preserves the command receipt when the author shell replays the latest run', async () => {
+    const draft = graphDraft();
+    const contractFingerprint = fingerprint('b');
+    const contract = contractDraftFromGraphDraft(draft, fingerprint('a'));
+    const draftSet = scenarioDraftSetFromCanvas(
+      contract.target,
+      contractFingerprint,
+      draft,
+      nodes(),
+      [{
+        id: 'approved',
+        name: 'Approved applicant',
+        context: { applicantId: '', profile: { age: 18, tags: [] } },
+        fixtures: {
+          score: { output: { score: 720 } },
+          decide: { output: successfulResponse().output },
+        },
+        hasExpectedOutput: true,
+        expectedOutput: successfulResponse().output,
+      }],
+    );
+
+    function RunReplayingWorkspace() {
+      const [lastRun, setLastRun] = useState<SimulationResponse | null>(null);
+      const [lastComparison, setLastComparison] = useState<ScenarioComparison | null>(null);
+      const [lastRunScenarioId, setLastRunScenarioId] = useState('');
+      return (
+        <ContractScenarioWorkspace
+          open
+          graphDraft={draft}
+          contract={contract}
+          contractFingerprint={contractFingerprint}
+          scenarioDraftSet={draftSet}
+          nodes={nodes()}
+          lastRun={lastRun}
+          lastRunScenarioId={lastRunScenarioId}
+          lastComparison={lastComparison}
+          initialTab="scenarios"
+          onScenarioDraftSetChange={vi.fn()}
+          onContractChange={vi.fn()}
+          onImportWorkspace={vi.fn().mockResolvedValue(undefined)}
+          onSaveGraphDraft={vi.fn().mockResolvedValue(undefined)}
+          onRebase={vi.fn()}
+          onRun={vi.fn().mockImplementation(async () => {
+            const response = successfulResponse();
+            setLastRun(response);
+            return response;
+          })}
+          onRunEvidence={(scenarioId, nextComparison) => {
+            setLastRunScenarioId(scenarioId);
+            setLastComparison(nextComparison);
+          }}
+          onClose={vi.fn()}
+        />
+      );
+    }
+
+    await act(async () => {
+      root = createRoot(host);
+      root.render(<RunReplayingWorkspace />);
+    });
+    await act(async () => button('Run current case').click());
+    await settleAsyncWork();
+    await clickTab('Scenarios 1');
+    await act(async () => button('Matrix').click());
+    await act(async () => button('Inspect').click());
+
+    const detail = document.querySelector('[data-testid="scenario-matrix-detail-approved"]');
+    expect(detail?.textContent).toContain('Correlation ID');
+    expect(detail?.querySelector('code[title^="scenario-"]')).not.toBeNull();
   });
 
   it('publishes only deliberate tab and evidence coordinates to the author shell', async () => {

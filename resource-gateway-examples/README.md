@@ -143,7 +143,11 @@ Contract, Scenarios, and Evidence own their visible commands: the global header 
 hidden current Case on those surfaces. Matrix buttons expose `SELECTION` or `SUITE`, the exact Case
 count, and a payload-free preview fingerprint; execution locks selection and the Server batch returns
 the authoritative ordered closure and canonical fingerprint. The preview fingerprint is a UI
-coordinate, not a substitute for the server receipt.
+coordinate, not a substitute for the server receipt. After submission, a visible payload-free Command
+receipt carries the same correlation id from UI intent through server admission to each Matrix row's
+Proof. It keeps preview and canonical fingerprints separate, so users can verify what they requested
+and what the server actually admitted without exposing Scenario, fixture, or output values. A local
+single-Case run projects the same receipt into Run Evidence.
 
 Graph and Operator Scenario surfaces now consume one canonical task-state projection. A blocked Run
 always includes a stable reason, a human explanation, and a direct remediation action; no secondary

@@ -2947,6 +2947,83 @@ button.primary:disabled {
   border: 0;
 }
 
+.scenario-command-receipt {
+  display: grid;
+  grid-template-columns: minmax(220px, 0.75fr) minmax(0, 2fr);
+  gap: 8px 20px;
+  align-items: center;
+  min-height: 52px;
+  padding: 8px 12px;
+  border-left: 4px solid #2563eb;
+  background: #f7faff;
+}
+
+.scenario-command-receipt[data-state="TERMINAL"] {
+  border-left-color: #15803d;
+  background: #f6fbf7;
+}
+
+.scenario-command-receipt > header {
+  min-width: 0;
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+}
+
+.scenario-command-receipt > header span,
+.scenario-command-receipt dt {
+  color: #64748b;
+  font-size: var(--rg-font-aux);
+  font-weight: 750;
+  text-transform: uppercase;
+}
+
+.scenario-command-receipt > header strong {
+  color: #1f2937;
+  font-size: var(--rg-font-aux);
+}
+
+.scenario-command-receipt code {
+  min-width: 0;
+  overflow: hidden;
+  color: #46566d;
+  font-size: var(--rg-font-aux);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.scenario-command-receipt > dl {
+  min-width: 0;
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 8px 16px;
+  margin: 0;
+}
+
+.scenario-command-receipt > dl > div {
+  min-width: 0;
+  display: flex;
+  align-items: baseline;
+  gap: 5px;
+}
+
+.scenario-command-receipt dd {
+  min-width: 0;
+  margin: 0;
+  overflow: hidden;
+  color: #334155;
+  font-size: var(--rg-font-aux);
+  font-weight: 800;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.scenario-evidence > .scenario-command-receipt {
+  border-top: 1px solid #dbe5f1;
+  border-right: 1px solid #dbe5f1;
+  border-bottom: 1px solid #dbe5f1;
+}
+
 .scenario-matrix-run {
   display: grid;
   grid-template-columns: minmax(220px, 1fr) auto;
@@ -18116,6 +18193,14 @@ button.primary:disabled {
 
   .scenario-matrix-run {
     grid-template-columns: 1fr;
+  }
+
+  .scenario-command-receipt {
+    grid-template-columns: 1fr;
+  }
+
+  .scenario-command-receipt > dl {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
   .scenario-matrix-run dl {

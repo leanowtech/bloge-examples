@@ -42,6 +42,19 @@ export interface TableCaseEvidenceProjection extends TableCaseVerdict {
   } | null;
   subjectMode?: 'REAL' | 'SCHEMA_ONLY';
   assertionDiffs?: ScenarioAssertionDiff[];
+  commandReceipt?: ScenarioCommandReceipt;
+}
+
+export interface ScenarioCommandReceipt {
+  correlationId: string;
+  source: 'LOCAL' | 'SERVER';
+  state: 'SUBMITTED' | 'ADMITTED' | 'TERMINAL';
+  mode: ScenarioRunSelectionMode;
+  caseIds: string[];
+  caseCount: number;
+  previewFingerprint: string;
+  canonicalFingerprint: string;
+  batchId: string;
 }
 
 export interface ScenarioAssertionDiff {

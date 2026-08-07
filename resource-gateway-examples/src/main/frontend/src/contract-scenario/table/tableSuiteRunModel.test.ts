@@ -9,6 +9,7 @@ import {
   createTableSuiteRunCommand,
   tableSuiteBatchIsCompleteBaseline,
   tableSuiteBatchTerminal,
+  tableSuiteCommandReceipt,
   tableSuiteDifferentialCounts,
   tableSuiteEvidenceByCase,
   type TableSuiteRunBatch,
@@ -113,6 +114,7 @@ describe('tableSuiteRunModel', () => {
       }],
     });
     const evidence = tableSuiteEvidenceByCase(next)['case-1'];
+    const receipt = tableSuiteCommandReceipt(next);
 
     expect(tableSuiteBatchTerminal(next)).toBe(true);
     expect(evidence).toMatchObject({
@@ -129,7 +131,20 @@ describe('tableSuiteRunModel', () => {
         expected: fingerprint('x'),
         actual: fingerprint('y'),
       })],
+      commandReceipt: expect.objectContaining({
+        correlationId: 'request-a',
+        canonicalFingerprint: fingerprint('c'),
+        batchId: 'batch-a',
+        state: 'TERMINAL',
+      }),
     });
+    expect(receipt).toEqual(expect.objectContaining({
+      correlationId: next.requestId,
+      caseIds: ['case-1'],
+      caseCount: 1,
+      canonicalFingerprint: next.selection.fingerprint,
+      state: 'TERMINAL',
+    }));
     expect(JSON.stringify(evidence)).not.toContain('expectedBusinessValue');
   });
 });

@@ -12,6 +12,7 @@ import {
   selectVisibleScenarios,
   toggleScenarioSelection,
   type ScenarioMatrixResultFacet,
+  type ScenarioCommandReceipt,
   type ScenarioRunSelectionMode,
   type ScenarioTableColumn,
   type ScenarioTableProjection,
@@ -26,6 +27,7 @@ interface ScenarioMatrixSurfaceProps {
   previousRunCaseIds: string[];
   runningCaseIds: string[];
   batch?: TableSuiteRunBatch | null;
+  commandReceipt?: ScenarioCommandReceipt | null;
   runError?: string;
   baselineAvailable?: boolean;
   differentialCounts?: TableSuiteDifferentialCounts | null;
@@ -55,6 +57,7 @@ export default function ScenarioMatrixSurface({
   previousRunCaseIds,
   runningCaseIds,
   batch = null,
+  commandReceipt = null,
   runError = '',
   baselineAvailable = false,
   differentialCounts = null,
@@ -231,6 +234,31 @@ export default function ScenarioMatrixSurface({
       </div>
 
       <div className="scenario-matrix-run-stack">
+        {commandReceipt && (
+          <section
+            className="scenario-command-receipt"
+            data-state={commandReceipt.state}
+            data-testid="scenario-matrix-command-receipt"
+          >
+            <header>
+              <span>{t('Command receipt')}</span>
+              <strong>{t(commandReceipt.state)}</strong>
+              <code title={commandReceipt.correlationId}>{shortBatchId(commandReceipt.correlationId)}</code>
+            </header>
+            <dl>
+              <div><dt>{t('Scope')}</dt><dd>{t(commandReceipt.mode)} · {t('{count} cases', { count: commandReceipt.caseCount })}</dd></div>
+              <div>
+                <dt>{t('Preview scope')}</dt>
+                <dd><code title={commandReceipt.previewFingerprint}>{shortFingerprint(commandReceipt.previewFingerprint) || '—'}</code></dd>
+              </div>
+              <div>
+                <dt>{t('Canonical')}</dt>
+                <dd><code title={commandReceipt.canonicalFingerprint}>{shortFingerprint(commandReceipt.canonicalFingerprint) || t('Awaiting admission')}</code></dd>
+              </div>
+              <div><dt>{t('Source')}</dt><dd>{t(commandReceipt.source)}</dd></div>
+            </dl>
+          </section>
+        )}
         {batch && (
           <section className="scenario-matrix-run" data-status={batch.status} aria-label={t('Server batch status')}>
           <header>
@@ -607,6 +635,24 @@ function ScenarioMatrixDetails({
           <div><dt>{t('Assertions')}</dt><dd>{t(row.evidence.assertions)}</dd></div>
           <div><dt>{t('Freshness')}</dt><dd>{t(row.evidence.freshness)}</dd></div>
           <div><dt>{t('Attempt')}</dt><dd>{row.evidence.attempt || '—'}</dd></div>
+          {row.evidence.commandReceipt && (
+            <>
+              <div>
+                <dt>{t('Correlation ID')}</dt>
+                <dd><code title={row.evidence.commandReceipt.correlationId}>{shortBatchId(row.evidence.commandReceipt.correlationId)}</code></dd>
+              </div>
+              <div>
+                <dt>{t('Command scope')}</dt>
+                <dd>{t(row.evidence.commandReceipt.mode)} · {t('{count} cases', { count: row.evidence.commandReceipt.caseCount })}</dd>
+              </div>
+              <div>
+                <dt>{t('Canonical fingerprint')}</dt>
+                <dd><code title={row.evidence.commandReceipt.canonicalFingerprint}>
+                  {shortFingerprint(row.evidence.commandReceipt.canonicalFingerprint) || t('Awaiting admission')}
+                </code></dd>
+              </div>
+            </>
+          )}
         </dl>
         {row.evidence.firstFailure && (
           <p className="scenario-matrix-detail-failure">

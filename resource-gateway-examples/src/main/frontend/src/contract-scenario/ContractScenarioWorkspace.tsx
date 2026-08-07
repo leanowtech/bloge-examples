@@ -84,6 +84,8 @@ import type { ScenarioMaterializationResult } from './import/scenarioImportModel
 import {
   applyScenarioTableCellEdit,
   buildScenarioTableProjection,
+  resolveExactScenarioRunSelection,
+  type ScenarioCommandReceipt,
   type ScenarioRunSelectionMode,
   type ScenarioTableColumn,
   type ScenarioTableEvidenceByCase,
@@ -98,6 +100,7 @@ import {
   tableSuiteBatchStorageKey,
   tableSuiteBatchIsCompleteBaseline,
   tableSuiteBatchTerminal,
+  tableSuiteCommandReceipt,
   tableSuiteDifferentialCounts,
   tableSuiteEvidenceByCase,
   type TableSuiteBaselineSummary,
@@ -198,6 +201,8 @@ export default function ContractScenarioWorkspace({
   const [previousRunCaseIds, setPreviousRunCaseIds] = useState<string[]>([]);
   const [runningCaseIds, setRunningCaseIds] = useState<string[]>([]);
   const [tableBatch, setTableBatch] = useState<TableSuiteRunBatch | null>(null);
+  const [tableCommandReceipt, setTableCommandReceipt] = useState<ScenarioCommandReceipt | null>(null);
+  const [evidenceCommandReceipt, setEvidenceCommandReceipt] = useState<ScenarioCommandReceipt | null>(null);
   const [tableRunError, setTableRunError] = useState('');
   const [baselineBatchId, setBaselineBatchId] = useState('');
   const [tableBaselineSummary, setTableBaselineSummary] = useState<TableSuiteBaselineSummary | null>(null);
@@ -320,15 +325,23 @@ export default function ContractScenarioWorkspace({
     ? tableSuiteBatchStorageKey(scenarioDraftSet)
     : '';
 
-  const adoptTableBatch = (batch: TableSuiteRunBatch) => {
+  const adoptTableBatch = (
+    batch: TableSuiteRunBatch,
+    priorReceipt: ScenarioCommandReceipt | null = tableCommandReceipt,
+  ) => {
+    const admittedReceipt = tableSuiteCommandReceipt(batch);
+    const receipt = priorReceipt?.correlationId === admittedReceipt.correlationId
+      ? { ...admittedReceipt, previewFingerprint: priorReceipt.previewFingerprint }
+      : admittedReceipt;
     setTableBatch(batch);
+    setTableCommandReceipt(receipt);
     setPreviousRunCaseIds(batch.selection.caseIds);
     setRunningCaseIds(batch.rows
       .filter((row) => row.status === 'QUEUED' || row.status === 'RUNNING')
       .map((row) => row.caseId));
     setTableEvidence((currentEvidence) => ({
       ...currentEvidence,
-      ...tableSuiteEvidenceByCase(batch),
+      ...tableSuiteEvidenceByCase(batch, receipt),
     }));
     setBaselineBatchId((currentBaseline) => {
       const completeBaseline = tableSuiteBatchIsCompleteBaseline(batch);
@@ -378,10 +391,20 @@ export default function ContractScenarioWorkspace({
 
   useEffect(() => {
     if (!lastRunScenarioId || !lastRun || !lastComparison) return;
-    setTableEvidence((currentEvidence) => ({
-      ...currentEvidence,
-      [lastRunScenarioId]: evidenceFromRun(lastRunScenarioId, lastRun, lastComparison, 1, 0),
-    }));
+    setTableEvidence((currentEvidence) => {
+      const existing = currentEvidence[lastRunScenarioId];
+      return {
+        ...currentEvidence,
+        [lastRunScenarioId]: evidenceFromRun(
+          lastRunScenarioId,
+          lastRun,
+          lastComparison,
+          existing?.attempt || 1,
+          existing?.durationMs ?? 0,
+          existing?.commandReceipt,
+        ),
+      };
+    });
     setPreviousRunCaseIds([lastRunScenarioId]);
   }, [lastComparison, lastRun, lastRunScenarioId]);
 
@@ -709,21 +732,33 @@ export default function ContractScenarioWorkspace({
     });
   };
 
-  const runScenarioClosure = async (caseIds: string[], openEvidenceAfterRun: boolean) => {
+  const runScenarioClosure = async (
+    caseIds: string[],
+    openEvidenceAfterRun: boolean,
+    commandReceipt?: ScenarioCommandReceipt,
+  ) => {
     const closure = scenarios.filter((scenario) => caseIds.includes(scenario.scenarioId));
     if (closure.length === 0) return;
+    const admittedReceipt = commandReceipt
+      ? { ...commandReceipt, state: 'ADMITTED' as const }
+      : undefined;
+    if (admittedReceipt) {
+      if (openEvidenceAfterRun) setEvidenceCommandReceipt(admittedReceipt);
+      else setTableCommandReceipt(admittedReceipt);
+    }
     setRunning(true);
     setPreviousRunCaseIds(closure.map((scenario) => scenario.scenarioId));
     setRunningCaseIds(closure.map((scenario) => scenario.scenarioId));
     setTableEvidence((currentEvidence) => ({
       ...currentEvidence,
       ...Object.fromEntries(closure.map((scenario) => [scenario.scenarioId, {
-        ...(currentEvidence[scenario.scenarioId] ?? emptyQueuedEvidence(scenario.scenarioId)),
+        ...(currentEvidence[scenario.scenarioId] ?? emptyQueuedEvidence(scenario.scenarioId, admittedReceipt)),
         caseId: scenario.scenarioId,
         execution: 'QUEUED' as const,
         assertions: 'NONE' as const,
         freshness: 'CURRENT' as const,
         firstFailure: null,
+        commandReceipt: admittedReceipt,
       }])),
     }));
     setCompileMessages([]);
@@ -737,8 +772,9 @@ export default function ContractScenarioWorkspace({
       setTableEvidence((currentEvidence) => ({
         ...currentEvidence,
         [scenario.scenarioId]: {
-          ...(currentEvidence[scenario.scenarioId] ?? emptyQueuedEvidence(scenario.scenarioId)),
+          ...(currentEvidence[scenario.scenarioId] ?? emptyQueuedEvidence(scenario.scenarioId, admittedReceipt)),
           execution: 'RUNNING',
+          commandReceipt: admittedReceipt,
         },
       }));
       try {
@@ -762,7 +798,7 @@ export default function ContractScenarioWorkspace({
           setTableEvidence((currentEvidence) => ({
             ...currentEvidence,
             [scenario.scenarioId]: {
-              ...emptyQueuedEvidence(scenario.scenarioId),
+              ...emptyQueuedEvidence(scenario.scenarioId, admittedReceipt),
               execution: 'ERROR',
               assertions: 'INCONCLUSIVE',
               durationMs: Math.round(performance.now() - startedAt),
@@ -793,6 +829,7 @@ export default function ContractScenarioWorkspace({
             nextComparison,
             (currentEvidence[scenario.scenarioId]?.attempt ?? 0) + 1,
             durationMs,
+            admittedReceipt,
           ),
         }));
         const evidenceAccepted = onRunEvidence
@@ -810,7 +847,7 @@ export default function ContractScenarioWorkspace({
           setTableEvidence((currentEvidence) => ({
             ...currentEvidence,
             [scenario.scenarioId]: {
-              ...(currentEvidence[scenario.scenarioId] ?? emptyQueuedEvidence(scenario.scenarioId)),
+              ...(currentEvidence[scenario.scenarioId] ?? emptyQueuedEvidence(scenario.scenarioId, admittedReceipt)),
               freshness: 'STALE',
               firstFailure: { category: 'COORDINATE', target: '/scenario', message },
             },
@@ -824,7 +861,7 @@ export default function ContractScenarioWorkspace({
         setTableEvidence((currentEvidence) => ({
           ...currentEvidence,
           [scenario.scenarioId]: {
-            ...emptyQueuedEvidence(scenario.scenarioId),
+            ...emptyQueuedEvidence(scenario.scenarioId, admittedReceipt),
             execution: 'ERROR',
             assertions: 'INCONCLUSIVE',
             durationMs: Math.round(performance.now() - startedAt),
@@ -836,6 +873,18 @@ export default function ContractScenarioWorkspace({
     setCompileMessages(messages);
     setRunningCaseIds([]);
     setRunning(false);
+    if (admittedReceipt) {
+      const terminalReceipt = { ...admittedReceipt, state: 'TERMINAL' as const };
+      if (openEvidenceAfterRun) setEvidenceCommandReceipt(terminalReceipt);
+      else setTableCommandReceipt(terminalReceipt);
+      setTableEvidence((currentEvidence) => ({
+        ...currentEvidence,
+        ...Object.fromEntries(closure.map((scenario) => [scenario.scenarioId, {
+          ...(currentEvidence[scenario.scenarioId] ?? emptyQueuedEvidence(scenario.scenarioId)),
+          commandReceipt: terminalReceipt,
+        }])),
+      }));
+    }
     if (focusTarget) {
       queueMicrotask(() => focusSchemaPath(focusTarget));
     }
@@ -846,11 +895,23 @@ export default function ContractScenarioWorkspace({
   };
 
   const runSelectedScenario = () => {
-    if (selectedScenario) void runScenarioClosure([selectedScenario.scenarioId], true);
+    if (!selectedScenario || !tableProjection) return;
+    const scope = resolveExactScenarioRunSelection(
+      tableProjection,
+      { selectedCaseIds: [selectedScenario.scenarioId] },
+      'SELECTED',
+      previousRunCaseIds,
+    );
+    const receipt = localCommandReceipt(scope, 'LOCAL');
+    setEvidenceCommandReceipt(receipt);
+    void runScenarioClosure([selectedScenario.scenarioId], true, receipt);
   };
 
   const runTableSelection = async (mode: ScenarioRunSelectionMode) => {
     if (!scenarioDraftSet || !contract || !current) return;
+    const scope = tableProjection
+      ? resolveExactScenarioRunSelection(tableProjection, tableSelection, mode, previousRunCaseIds)
+      : null;
     if (!assetStored) {
       const localCaseIds = mode === 'SELECTED'
         ? tableSelection.selectedCaseIds
@@ -858,7 +919,11 @@ export default function ContractScenarioWorkspace({
           ? scenarios.map((scenario) => scenario.scenarioId)
           : [];
       if (localCaseIds.length > 0) {
-        await runScenarioClosure(localCaseIds, false);
+        const receipt = scope
+          ? localCommandReceipt({ ...scope, caseIds: localCaseIds }, 'LOCAL')
+          : undefined;
+        if (receipt) setTableCommandReceipt(receipt);
+        await runScenarioClosure(localCaseIds, false, receipt);
       }
       return;
     }
@@ -876,7 +941,14 @@ export default function ContractScenarioWorkspace({
         tableSelection.selectedCaseIds,
         baselineBatchId,
       );
-      adoptTableBatch(await submitTableSuiteRun(command));
+      const submittedReceipt = serverSubmittedReceipt(
+        command.requestId,
+        mode,
+        scope,
+        differentialCount(mode, differentialCounts),
+      );
+      setTableCommandReceipt(submittedReceipt);
+      adoptTableBatch(await submitTableSuiteRun(command), submittedReceipt);
     } catch (cause: unknown) {
       setTableRunError(cause instanceof BlogeApiRequestError
         && cause.detail.includes('RG.TABLE_RUN.SELECTION_EMPTY')
@@ -1304,6 +1376,7 @@ export default function ContractScenarioWorkspace({
               previousRunCaseIds={previousRunCaseIds}
               runningCaseIds={runningCaseIds}
               tableBatch={tableBatch}
+              tableCommandReceipt={tableCommandReceipt}
               tableRunError={tableRunError}
               baselineAvailable={Boolean(baselineBatchId && tableBaselineSummary)}
               differentialCounts={differentialCounts}
@@ -1361,6 +1434,7 @@ export default function ContractScenarioWorkspace({
               comparison={visibleComparison}
               compileMessages={compileMessages}
               trustContext={trustContext}
+              commandReceipt={evidenceCommandReceipt}
               onBackToScenario={() => navigateWorkspace('scenarios')}
               onOpenTab={navigateWorkspace}
               onOpenCompose={onClose}
@@ -1455,6 +1529,7 @@ interface ScenarioTabProps {
   previousRunCaseIds: string[];
   runningCaseIds: string[];
   tableBatch: TableSuiteRunBatch | null;
+  tableCommandReceipt: ScenarioCommandReceipt | null;
   tableRunError: string;
   baselineAvailable: boolean;
   differentialCounts: TableSuiteDifferentialCounts | null;
@@ -1501,6 +1576,7 @@ function ScenarioTab({
   previousRunCaseIds,
   runningCaseIds,
   tableBatch,
+  tableCommandReceipt,
   tableRunError,
   baselineAvailable,
   differentialCounts,
@@ -1585,6 +1661,7 @@ function ScenarioTab({
           previousRunCaseIds={previousRunCaseIds}
           runningCaseIds={runningCaseIds}
           batch={tableBatch}
+          commandReceipt={tableCommandReceipt}
           runError={tableRunError}
           baselineAvailable={baselineAvailable}
           differentialCounts={differentialCounts}
@@ -2089,6 +2166,7 @@ function EvidenceTab({
   comparison,
   compileMessages,
   trustContext,
+  commandReceipt,
   onBackToScenario,
   onOpenTab,
   onOpenCompose,
@@ -2098,6 +2176,7 @@ function EvidenceTab({
   comparison: ScenarioComparison | null;
   compileMessages: string[];
   trustContext?: ScenarioEvidenceTrustContext;
+  commandReceipt?: ScenarioCommandReceipt | null;
   onBackToScenario: () => void;
   onOpenTab: (tab: WorkspaceTab) => void;
   onOpenCompose: () => void;
@@ -2109,6 +2188,7 @@ function EvidenceTab({
       <div className="scenario-empty-state">
         <strong>{t('No Scenario run yet')}</strong>
         <span>{t('Run the selected Scenario to compare actual and expected output.')}</span>
+        <EvidenceCommandReceiptPanel receipt={commandReceipt} />
         {compileMessages.map((message) => <p className="scenario-run-errors" key={message}>{message}</p>)}
         <button type="button" className="primary" onClick={onBackToScenario}>{t('Open Scenarios')}</button>
       </div>
@@ -2153,6 +2233,8 @@ function EvidenceTab({
         <h3>{response.graphName}</h3>
         <p>{localizedEvidenceText(t, evidence.summary, evidence.summaryValues)}</p>
       </header>
+
+      <EvidenceCommandReceiptPanel receipt={commandReceipt} />
 
       <RemediationActionList actions={actions} onInvoke={invokeRemediation} />
 
@@ -2261,6 +2343,33 @@ function EvidenceTab({
         </section>
       </div>
     </div>
+  );
+}
+
+function EvidenceCommandReceiptPanel({
+  receipt,
+}: {
+  receipt?: ScenarioCommandReceipt | null;
+}) {
+  const { t } = useI18n();
+  if (!receipt) return null;
+  return (
+    <section
+      className="scenario-command-receipt"
+      data-state={receipt.state}
+      data-testid="scenario-evidence-command-receipt"
+    >
+      <header>
+        <span>{t('Command receipt')}</span>
+        <strong>{t(receipt.state)}</strong>
+      </header>
+      <dl>
+        <div><dt>{t('Correlation ID')}</dt><dd><code>{receipt.correlationId}</code></dd></div>
+        <div><dt>{t('Scope')}</dt><dd>{t(receipt.mode)} · {t('{count} cases', { count: receipt.caseCount })}</dd></div>
+        <div><dt>{t('Intent fingerprint')}</dt><dd><code>{receipt.previewFingerprint || t('server resolved')}</code></dd></div>
+        <div><dt>{t('Canonical fingerprint')}</dt><dd><code>{receipt.canonicalFingerprint || t('local exact scope')}</code></dd></div>
+      </dl>
+    </section>
   );
 }
 
@@ -2420,7 +2529,65 @@ function newDependency(
   };
 }
 
-function emptyQueuedEvidence(caseId: string): TableCaseEvidenceProjection {
+function localCommandReceipt(
+  scope: { mode: ScenarioRunSelectionMode; caseIds: string[]; selectionFingerprint: string },
+  source: 'LOCAL',
+): ScenarioCommandReceipt {
+  return {
+    correlationId: commandCorrelationId(),
+    source,
+    state: 'SUBMITTED',
+    mode: scope.mode,
+    caseIds: [...scope.caseIds],
+    caseCount: scope.caseIds.length,
+    previewFingerprint: scope.selectionFingerprint,
+    canonicalFingerprint: scope.selectionFingerprint,
+    batchId: '',
+  };
+}
+
+function serverSubmittedReceipt(
+  requestId: string,
+  mode: ScenarioRunSelectionMode,
+  scope: { caseIds: string[]; selectionFingerprint: string } | null,
+  differentialCaseCount: number,
+): ScenarioCommandReceipt {
+  const caseIds = scope?.caseIds ?? [];
+  return {
+    correlationId: requestId,
+    source: 'SERVER',
+    state: 'SUBMITTED',
+    mode,
+    caseIds: [...caseIds],
+    caseCount: differentialCaseCount || caseIds.length,
+    previewFingerprint: scope?.selectionFingerprint ?? '',
+    canonicalFingerprint: '',
+    batchId: '',
+  };
+}
+
+function differentialCount(
+  mode: ScenarioRunSelectionMode,
+  counts: TableSuiteDifferentialCounts | null,
+): number {
+  if (!counts) return 0;
+  if (mode === 'FAILED') return counts.failed;
+  if (mode === 'CHANGED') return counts.changed;
+  if (mode === 'AFFECTED') return counts.affected;
+  return 0;
+}
+
+function commandCorrelationId(): string {
+  const randomUuid = globalThis.crypto?.randomUUID;
+  return randomUuid
+    ? `scenario-${randomUuid.call(globalThis.crypto)}`
+    : `scenario-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`;
+}
+
+function emptyQueuedEvidence(
+  caseId: string,
+  commandReceipt?: ScenarioCommandReceipt,
+): TableCaseEvidenceProjection {
   return {
     caseId,
     runId: '',
@@ -2432,6 +2599,7 @@ function emptyQueuedEvidence(caseId: string): TableCaseEvidenceProjection {
     subjectMode: 'REAL',
     durationMs: null,
     firstFailure: null,
+    commandReceipt,
   };
 }
 
@@ -2441,6 +2609,7 @@ function evidenceFromRun(
   comparison: ScenarioComparison,
   attempt: number,
   durationMs: number,
+  commandReceipt?: ScenarioCommandReceipt,
 ): TableCaseEvidenceProjection {
   const executionSucceeded = response.validated && response.compiled && response.success;
   const firstAssertionFailure = comparison.results.find((result) => !result.passed);
@@ -2457,6 +2626,7 @@ function evidenceFromRun(
     proofStrength: response.mockedNodeIds.length > 0 ? 'MOCK' : 'RUNTIME',
     subjectMode: 'REAL',
     durationMs,
+    commandReceipt,
     assertionDiffs: comparison.results.map((result) => ({
       assertionId: result.assertionId,
       path: result.path,

@@ -6,7 +6,12 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { tableDrivenScenarioBaseline } from '../tableDrivenTestingBaseline';
 import ScenarioMatrixSurface from './ScenarioMatrixSurface';
-import { buildScenarioTableProjection, type ScenarioTableSelection } from './scenarioTableModel';
+import {
+  buildScenarioTableProjection,
+  notRunEvidence,
+  type ScenarioCommandReceipt,
+  type ScenarioTableSelection,
+} from './scenarioTableModel';
 import I18nProvider from '../../i18n/I18nProvider';
 
 describe('ScenarioMatrixSurface', () => {
@@ -69,6 +74,32 @@ describe('ScenarioMatrixSurface', () => {
     expect(runAll.dataset.scopeFingerprint).toMatch(/^fnv1a32:/);
     expect(input('Select visible cases').disabled).toBe(true);
     expect(host.querySelector<HTMLInputElement>('tbody input[type="checkbox"]')?.disabled).toBe(true);
+  });
+
+  it('links the visible command receipt to the same identity in row proof', async () => {
+    const receipt: ScenarioCommandReceipt = {
+      correlationId: 'request-command-a',
+      source: 'SERVER',
+      state: 'TERMINAL',
+      mode: 'SELECTED',
+      caseIds: ['case-1'],
+      caseCount: 1,
+      previewFingerprint: 'fnv1a32:preview-a',
+      canonicalFingerprint: 'sha256:canonical-a',
+      batchId: 'batch-a',
+    };
+    const projection = buildScenarioTableProjection(tableDrivenScenarioBaseline(5), {
+      'case-1': { ...notRunEvidence('case-1'), commandReceipt: receipt },
+    });
+    await renderProjection(projection, { commandReceipt: receipt });
+
+    const summary = host.querySelector('[data-testid="scenario-matrix-command-receipt"]');
+    expect(summary?.textContent).toContain('request-command-a');
+    expect(summary?.querySelector('code[title="sha256:canonical-a"]')).not.toBeNull();
+    await click(button('Inspect'));
+    const detail = host.querySelector('[data-testid="scenario-matrix-detail-case-1"]');
+    expect(detail?.querySelector('code[title="request-command-a"]')).not.toBeNull();
+    expect(detail?.querySelector('code[title="sha256:canonical-a"]')).not.toBeNull();
   });
 
   it('opens one case without changing its canonical Matrix values', async () => {
@@ -190,7 +221,10 @@ describe('ScenarioMatrixSurface', () => {
     await act(async () => root?.render(localized ? <I18nProvider>{matrix}</I18nProvider> : matrix));
   }
 
-  async function renderProjection(projection: ReturnType<typeof buildScenarioTableProjection>) {
+  async function renderProjection(
+    projection: ReturnType<typeof buildScenarioTableProjection>,
+    overrides: Partial<Parameters<typeof ScenarioMatrixSurface>[0]> = {},
+  ) {
     await act(async () => root?.render(<StatefulMatrix
       projection={projection}
       selection={{ selectedCaseIds: [] }}
@@ -201,6 +235,7 @@ describe('ScenarioMatrixSurface', () => {
       onCellEdit={vi.fn()}
       onAddCase={vi.fn()}
       onRunSelection={vi.fn()}
+      {...overrides}
     />));
   }
 

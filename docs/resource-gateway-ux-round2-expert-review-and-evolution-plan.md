@@ -24,6 +24,41 @@
 
 ## 实施进度
 
+### 2026-08-07：UX-R2-002 Command Receipt 关联闭环
+
+已实现：
+
+- 新增 payload-free `ScenarioCommandReceipt` 投影，固定包含 `correlationId / source / state /
+  mode / caseIds / caseCount / previewFingerprint / canonicalFingerprint / batchId`；不保存 Scenario
+  input、fixture、actual output 或业务主键；
+- Case、本地未保存 Matrix 与服务端 Table Suite 都在点击时创建 `SUBMITTED` receipt，本地执行
+  升级为 `ADMITTED -> TERMINAL`，服务端批次使用原始 `requestId` 接续同一 identity；
+- 服务端返回的 canonical selection fingerprint 不覆盖 UI preview fingerprint：前者证明实际
+  接纳的有序 closure，后者证明用户点击时看到的意图，两者通过 correlation ID 并列关联；
+- Matrix 顶部展示 scope、Case 数量、source、preview/canonical fingerprint；展开任一结果行后，
+  Proof 继续显示同一个 correlation ID 与 canonical fingerprint，避免“总览看的是新批次、行证据
+  还是旧批次”的视觉误认；
+- 单 Case 运行进入 Evidence 后显示同一 receipt；即使编译未产生运行响应，Evidence 空态仍保留
+  命令回执和编译错误，不把“没有 terminal output”误写为“没有发生命令”；
+- 服务端适配器、Matrix、Workspace 和 locale inventory 新增关联一致性回归，聚焦测试
+  `49 / 49` 通过；完整前端回归 `76 files / 579 tests` 通过。
+
+真实浏览器验收（production frontend bundle，中文，`1280 x 720`）：
+
+- Loan policy fallback 选择 Prime approval 后，本地 receipt 为
+  `TERMINAL / SELECTED / 1 case / LOCAL`，总览高度 `52px`，receipt 与 document 均为
+  `0px` 横向 overflow；
+- Matrix 总览和 Prime approval 展开行 Proof 的 correlation ID 完全一致，展开行继续显示
+  canonical fingerprint；首次验收发现 Author shell 回灌 `lastRun` 会覆盖行 receipt，修复为合并
+  evidence coordinate 后重新验证通过，并增加父层 replay 回归测试；
+- Case 执行后 Evidence receipt 紧随结论标题，几何位置为 `top 366.7px / bottom 436.9px`，在
+  `720px` 首屏内完整可见；receipt 与 document 均无横向 overflow。
+
+完成判定：execution-bearing 的 Matrix / Case / Evidence 已满足
+`visible scope -> submitted identity -> admitted plan -> row/evidence receipt` 一致性。Coverage
+当前只生成或接受测试资产，不拥有 Run 命令，因此不伪造 receipt。UX-R2-002 的核心缺陷关闭；
+完整 Stage 2 仍需随 Stage 7 验收覆盖服务端长批次轮询、取消与 retry 的真实浏览器路径。
+
 ### 2026-08-07：UX-R2-002 显式命令作用域切片
 
 已实现：
@@ -56,8 +91,8 @@
 当前诚实边界：`ALL / SELECTED` 在提交前已经能完整回答对象与数量，`FAILED / CHANGED /
 AFFECTED` 仍由服务端基于完整 baseline 解析 exact ids，因此提交前显示可验证数量，提交后由
 Server batch 给出权威 closure。浏览器 preview fingerprint 与服务端 canonical fingerprint
-不是同一协议字段；后续 `CommandReceipt` 切片必须增加贯穿 preview -> admitted plan -> Evidence
-的 correlation identity，完成前 UX-R2-002 保持 `IN PROGRESS`。
+不是同一协议字段；随后完成的 `CommandReceipt` 切片以同一个 correlation identity 贯穿
+preview -> admitted plan -> Matrix row / Evidence，不通过伪造相同 fingerprint 掩盖协议差异。
 
 ### 2026-08-07：UX-R2-001 可读紧凑布局切片
 

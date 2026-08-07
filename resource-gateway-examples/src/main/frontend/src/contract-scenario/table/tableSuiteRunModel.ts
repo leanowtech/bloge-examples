@@ -2,6 +2,7 @@ import type { ContractDraft, ScenarioDraftSet } from '../domain';
 import type { GraphDraft } from '../../types';
 import type {
   ScenarioRunSelectionMode,
+  ScenarioCommandReceipt,
   ScenarioTableEvidenceByCase,
   TableCaseEvidenceProjection,
 } from './scenarioTableModel';
@@ -218,8 +219,24 @@ export function applyTableSuiteRunDelta(
 
 export function tableSuiteEvidenceByCase(
   batch: TableSuiteRunBatch,
+  receipt: ScenarioCommandReceipt = tableSuiteCommandReceipt(batch),
 ): ScenarioTableEvidenceByCase {
-  return Object.fromEntries(batch.rows.map((row) => [row.caseId, rowProjection(batch, row)]));
+  return Object.fromEntries(batch.rows.map((row) => [row.caseId, rowProjection(batch, row, receipt)]));
+}
+
+/** Projects protocol coordinates only; Scenario payloads never enter the UI receipt. */
+export function tableSuiteCommandReceipt(batch: TableSuiteRunBatch): ScenarioCommandReceipt {
+  return {
+    correlationId: batch.requestId,
+    source: 'SERVER',
+    state: tableSuiteBatchTerminal(batch) ? 'TERMINAL' : 'ADMITTED',
+    mode: batch.selection.mode,
+    caseIds: [...batch.selection.caseIds],
+    caseCount: batch.selection.caseIds.length,
+    previewFingerprint: '',
+    canonicalFingerprint: batch.selection.fingerprint,
+    batchId: batch.batchId,
+  };
 }
 
 export function tableSuiteBatchTerminal(batch: TableSuiteRunBatch | null): boolean {
@@ -286,6 +303,7 @@ export function tableSuiteBatchStorageKey(draftSet: ScenarioDraftSet): string {
 function rowProjection(
   batch: TableSuiteRunBatch,
   row: TableSuiteRowEvidence,
+  commandReceipt: ScenarioCommandReceipt,
 ): TableCaseEvidenceProjection {
   const latest = row.attempts[row.attempts.length - 1];
   return {
@@ -315,6 +333,7 @@ function rowProjection(
       target: latest.firstFailure.target,
       message: latest.firstFailure.summary,
     } : null,
+    commandReceipt,
   };
 }
 

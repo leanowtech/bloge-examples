@@ -2324,7 +2324,16 @@ revision delta。全局 Diagnostics 不会抢占表格空间。需要审阅一�
 运行前，Matrix 主按钮在 DOM 与可访问名称中同时携带 `SELECTION / SUITE`、精确 Case 数量和
 不含 payload 的 preview fingerprint；运行开始后选择框锁定，筛选变化也不会改写已提交计划。
 运行后以 Server batch 中的 exact case ids 与 canonical selection fingerprint 为权威回执。
-preview fingerprint 用于界面状态关联，不应冒充服务端 canonical fingerprint。
+preview fingerprint 用于界面状态关联，不应冒充服务端 canonical fingerprint。点击后 Matrix
+顶部会出现 **Command receipt / 命令回执**：`SUBMITTED` 表示请求已发出，`ADMITTED` 表示服务端
+已接纳或本地执行已开始，`TERMINAL` 表示该命令已到达终态。`Correlation ID` 从提交请求一直
+保留到 Server batch 与每一行的 **Inspect -> Proof**；展开行时可以用它确认当前结果确实属于
+刚才的批次。单 Case 的 **Run Evidence** 也显示同样的 scope、Case 数量和关联 ID。
+
+`Intent fingerprint` 是点击时的 UI 意图坐标，`Canonical fingerprint` 是服务端按 baseline 和
+canonical order 解析后的实际闭包坐标；两者可能不同但必须由同一 `Correlation ID` 关联。本地
+示例没有服务端 admission，因此二者相同并标为 `LOCAL`。receipt 只携带 ID、数量、状态和指纹，
+不会把 Scenario input、fixture 或 actual output 复制进 Matrix 或浏览器持久化。
 
 第一次建立 baseline 的完整操作顺序是：加载复杂示例 -> **Scenarios** -> **Save Graph** ->
 **Review compatibility** -> 勾选已审阅并 **Rebase local draft** -> 返回 **Scenarios / Matrix** ->
