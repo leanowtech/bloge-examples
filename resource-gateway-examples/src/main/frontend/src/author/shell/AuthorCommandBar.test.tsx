@@ -77,6 +77,29 @@ describe('AuthorCommandBar', () => {
     expect(remediate).toHaveBeenCalledOnce();
   });
 
+  it('does not expose a hidden current-Case run when the task surface owns the command', async () => {
+    await render('scenarios', false, {
+      commandId: 'RUN_CURRENT_SCENARIO',
+      state: 'READY',
+      enabled: true,
+      label: 'Run & Compare',
+      reasonCode: '',
+      message: '',
+      owner: 'TASK_SURFACE',
+      scope: {
+        kind: 'CASE',
+        count: 1,
+        targetIds: ['approved'],
+        fingerprint: 'sha256:approved',
+      },
+    });
+
+    expect(host.querySelector('[data-testid="author-primary-action"]')).toBeNull();
+    expect(host.querySelector('[data-testid="author-surface-command-handoff"]')).not.toBeNull();
+    expect(text()).toContain('Use Scenarios actions');
+    expect(text()).toContain('exact Case scope');
+  });
+
   it('keeps the mobile readiness summary compact until the user asks for detail', async () => {
     await render('compose');
 

@@ -52,8 +52,23 @@ describe('ScenarioMatrixSurface', () => {
     await type(input('Search cases'), projection.rows[0].name);
 
     expect(text()).toContain('1 selected');
-    await click(button('Run selected'));
+    const runSelected = button('Run selected (1)');
+    expect(runSelected.dataset.commandScope).toBe('SELECTION');
+    expect(runSelected.dataset.scopeCount).toBe('1');
+    expect(runSelected.dataset.scopeFingerprint).toMatch(/^fnv1a32:/);
+    await click(runSelected);
     expect(onRunSelection).toHaveBeenCalledWith('SELECTED');
+  });
+
+  it('publishes exact suite scope and locks selection while the submitted plan is running', async () => {
+    await render(5, { disabled: true, runningCaseIds: ['case-1', 'case-2'] });
+
+    const runAll = button('Run all (5)');
+    expect(runAll.dataset.commandScope).toBe('SUITE');
+    expect(runAll.dataset.scopeCount).toBe('5');
+    expect(runAll.dataset.scopeFingerprint).toMatch(/^fnv1a32:/);
+    expect(input('Select visible cases').disabled).toBe(true);
+    expect(host.querySelector<HTMLInputElement>('tbody input[type="checkbox"]')?.disabled).toBe(true);
   });
 
   it('opens one case without changing its canonical Matrix values', async () => {
@@ -96,7 +111,7 @@ describe('ScenarioMatrixSurface', () => {
 
     expect(text()).toContain('5 个标准用例');
     expect(text()).toContain('显示 1-5 / 5');
-    expect(button('运行所选项')).toBeInstanceOf(HTMLButtonElement);
+    expect(button('运行所选项（0）')).toBeInstanceOf(HTMLButtonElement);
     expect(input('搜索用例').placeholder).toBe('搜索用例、ID 或标签');
     await click(button('检查'));
     expect(text()).toContain('case-1-expected-1-1');

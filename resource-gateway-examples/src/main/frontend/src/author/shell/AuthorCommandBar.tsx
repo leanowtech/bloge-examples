@@ -81,6 +81,12 @@ export default function AuthorCommandBar({
     { key: 'evidence', label: 'Evidence', value: evidenceStatus, title: status(proofStrength) },
     { key: 'gate', label: 'Gate', value: promotionStatus, title: t(promotionSummary) },
   ];
+  const activeModeLabel = MODES.find((candidate) => candidate.key === mode)?.label ?? mode;
+  const surfaceHandoffDetail = mode === 'scenarios'
+    ? 'Run commands below show their exact Case scope before execution.'
+    : mode === 'contract'
+      ? 'Contract actions below apply to the visible target and revision.'
+      : 'Evidence actions below apply to the visible run and findings.';
   return (
     <header className="author-command-bar" data-testid="author-command-bar">
       <div className="author-draft-identity">
@@ -204,17 +210,29 @@ export default function AuthorCommandBar({
         </div>
       </div>
       <div className="author-primary-command" data-command-state={primaryCommand.state.toLowerCase()}>
-        <button
-          type="button"
-          className="primary author-primary-action"
-          data-testid="author-primary-action"
-          aria-describedby={primaryCommand.state === 'BLOCKED' ? 'author-primary-blocker' : undefined}
-          onClick={onPrimaryAction}
-          disabled={!primaryCommand.enabled}
-        >
-          {primaryCommand.labelId ? m(primaryCommand.labelId) : t(primaryCommand.label)}
-        </button>
-        {primaryCommand.state === 'BLOCKED' && (
+        {primaryCommand.owner === 'TASK_SURFACE' ? (
+          <div
+            className="author-surface-command-handoff"
+            data-testid="author-surface-command-handoff"
+            data-command-owner="task-surface"
+            role="status"
+          >
+            <strong>{t('Use {surface} actions', { surface: t(activeModeLabel) })}</strong>
+            <span>{t(surfaceHandoffDetail)}</span>
+          </div>
+        ) : (
+          <button
+            type="button"
+            className="primary author-primary-action"
+            data-testid="author-primary-action"
+            aria-describedby={primaryCommand.state === 'BLOCKED' ? 'author-primary-blocker' : undefined}
+            onClick={onPrimaryAction}
+            disabled={!primaryCommand.enabled}
+          >
+            {primaryCommand.labelId ? m(primaryCommand.labelId) : t(primaryCommand.label)}
+          </button>
+        )}
+        {primaryCommand.owner !== 'TASK_SURFACE' && primaryCommand.state === 'BLOCKED' && (
           <div className="author-command-explanation" id="author-primary-blocker" role="status">
             <span>{primaryCommand.messageId ? m(primaryCommand.messageId) : t(primaryCommand.message)}</span>
             {primaryCommand.remediation && (

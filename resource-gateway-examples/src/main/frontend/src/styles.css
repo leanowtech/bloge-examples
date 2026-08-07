@@ -11176,6 +11176,28 @@ button.primary:disabled {
   white-space: nowrap;
 }
 
+.author-surface-command-handoff {
+  min-width: 190px;
+  display: grid;
+  align-content: center;
+  gap: 2px;
+  padding: 5px 8px;
+  border-left: 3px solid #1a56db;
+  background: #f4f7fc;
+}
+
+.author-surface-command-handoff strong {
+  color: #17365d;
+  font-size: var(--rg-font-aux);
+}
+
+.author-surface-command-handoff span {
+  max-width: 250px;
+  color: #526175;
+  font-size: var(--rg-font-aux);
+  line-height: 1.25;
+}
+
 .author-command-explanation {
   display: grid;
   max-width: 220px;

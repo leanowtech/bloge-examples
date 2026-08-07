@@ -2302,6 +2302,9 @@ POST /api/visual/connections/check
    **Run failed (N) / Run changed (N) / Run affected (N)** 分别按完整 baseline 的失败、case
    fingerprint 变化，以及失败/变化/Graph 或 Contract 影响选择。数量为 0 时按钮解释性禁用，
    当前筛选结果永远不会被误当运行集合。
+   按钮会直接显示数量，例如 **Run selected (2)**、**Run all (3)**。顶部全局栏不会再从
+   Matrix 偷偷运行一个不可见的“当前 Case”；进入 Contract、Scenarios 或 Evidence 后，动作
+   由当前工作面所有。Case 详情的按钮则明确写成 **Run current case**。
 3. Name、Case type、tags 和可标量编辑的 Given 单元格直接写回 canonical Scenario。点击
    **Open** 或聚焦行后按 Enter 进入同一个 case 的详情，不会维护第二份表格值。
 4. 每行 Proof 独立显示 Execution、Assertions、Freshness、Proof strength 和 Duration；
@@ -2315,8 +2318,13 @@ Waiting 和 Promotion；运行中可 **Cancel**，终态失败可 **Retry failed
 成功会显示 flaky；partial selection 永远显示 **Partial only**，不能冒充 full-suite promotion。
 刷新/导航恢复同一 Scenario coordinate 后，页面按 batch id 恢复 durable progress 并继续消费
 revision delta。全局 Diagnostics 不会抢占表格空间。需要审阅一条 case 的完整 request/response 与断言证据时，
-点击 **Open** 进入 Case，再执行 **Run & Compare**。单 case 运行完成后才自动进入
+点击 **Open** 进入 Case，再执行 **Run current case**。单 case 运行完成后才自动进入
 **Run Evidence**。
+
+运行前，Matrix 主按钮在 DOM 与可访问名称中同时携带 `SELECTION / SUITE`、精确 Case 数量和
+不含 payload 的 preview fingerprint；运行开始后选择框锁定，筛选变化也不会改写已提交计划。
+运行后以 Server batch 中的 exact case ids 与 canonical selection fingerprint 为权威回执。
+preview fingerprint 用于界面状态关联，不应冒充服务端 canonical fingerprint。
 
 第一次建立 baseline 的完整操作顺序是：加载复杂示例 -> **Scenarios** -> **Save Graph** ->
 **Review compatibility** -> 勾选已审阅并 **Rebase local draft** -> 返回 **Scenarios / Matrix** ->

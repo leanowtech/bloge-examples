@@ -24,6 +24,41 @@
 
 ## 实施进度
 
+### 2026-08-07：UX-R2-002 显式命令作用域切片
+
+已实现：
+
+- `AuthorCommandAvailability` 增加 command owner 与 `CASE` scope，scope 固定包含 count、target ids
+  和不含业务 payload 的 preview fingerprint；任务坐标补齐精确 `scenarioId`；
+- Contract / Scenarios / Evidence 进入正式任务面后，Header 不再暴露跨 Surface 的隐藏单 Case
+  Run，而显示“当前工作面拥有动作”的交接说明；Compose 仍保留真正属于全局流程的主动作；
+- Case 的唯一运行按钮改为 `Run current case / Rerun current case`，并在 DOM 中公开
+  `CASE / count=1 / scenarioId / fingerprint`；
+- Matrix 的 `Run all` 与 `Run selected` 始终显示准确数量，分别公开 `SUITE` 与 `SELECTION`
+  scope、exact case count 和 preview fingerprint；筛选/排序仍不改变 selection；
+- 提交运行后 selection checkbox 锁定，避免已冻结计划执行期间 UI 看起来仍可改写作用域；
+- Matrix 明示“只运行已冻结选择”，并保留最近一次运行的 Case 数量；Server batch 继续显示
+  服务端权威 exact closure、mode、case ids 与 canonical selection fingerprint；
+- 新增/更新 task projection、Header handoff、Case scope、Matrix exact scope、运行期锁定和
+  中英文组件测试。
+
+真实浏览器验收（production frontend bundle，中文，`1280 x 720`）：
+
+- Scenarios Matrix 中 Header 的 `author-primary-action` 数量为 0，交接说明明确要求使用当前
+  测试场景工作面的动作；页面无 document-level 横向 overflow；
+- 空选择时显示 `运行全部（3）/ 运行所选项（0）`；选择 Prime approval 后变为
+  `SELECTION / count=1 / fnv1a32:*` 与 `运行所选项（1）`；
+- Case 详情显示 `运行当前用例`，scope 为
+  `CASE / count=1 / loan-prime-approval / sha256:*`，Header 仍无隐藏 Run；
+- 试跑所选项后只更新 Prime approval 行，其余两行保持未运行，并显示
+  `上次运行：1 个用例`；浏览器控制台无 error / warning。
+
+当前诚实边界：`ALL / SELECTED` 在提交前已经能完整回答对象与数量，`FAILED / CHANGED /
+AFFECTED` 仍由服务端基于完整 baseline 解析 exact ids，因此提交前显示可验证数量，提交后由
+Server batch 给出权威 closure。浏览器 preview fingerprint 与服务端 canonical fingerprint
+不是同一协议字段；后续 `CommandReceipt` 切片必须增加贯穿 preview -> admitted plan -> Evidence
+的 correlation identity，完成前 UX-R2-002 保持 `IN PROGRESS`。
+
 ### 2026-08-07：UX-R2-001 可读紧凑布局切片
 
 已实现：

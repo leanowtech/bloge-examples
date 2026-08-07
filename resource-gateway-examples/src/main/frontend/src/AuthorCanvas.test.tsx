@@ -1326,13 +1326,16 @@ describe('AuthorCanvas built-in canvas examples', () => {
       ),
     ).find((button) => button.textContent === 'Case') as HTMLButtonElement);
     expect(query<HTMLButtonElement>('[data-testid="scenario-run"]').textContent)
-      .toBe(query<HTMLButtonElement>('[data-testid="author-primary-action"]').textContent);
+      .toBe('Run current case');
     expect(query<HTMLButtonElement>('[data-testid="scenario-run"]').disabled).toBe(false);
-    await click(query<HTMLButtonElement>('[data-testid="author-primary-action"]'));
+    expect(document.querySelector('[data-testid="author-primary-action"]')).toBeNull();
+    expect(query('[data-testid="author-surface-command-handoff"]')).toBeDefined();
+    await click(query<HTMLButtonElement>('[data-testid="scenario-run"]'));
 
     await waitFor(() => {
       expect(query('.workspace').getAttribute('data-author-mode')).toBe('evidence');
-      expect(query('[data-testid="author-primary-action"]').textContent).toBe('Review result');
+      expect(document.querySelector('[data-testid="author-primary-action"]')).toBeNull();
+      expect(query('[data-testid="author-surface-command-handoff"]')).toBeDefined();
       expect(query('[data-testid="author-command-bar"]').textContent).toContain('EvidenceCURRENT');
       expect(query('[data-testid="topology-context-rail"]').textContent).toContain(
         'Decision response',
@@ -1392,8 +1395,8 @@ describe('AuthorCanvas built-in canvas examples', () => {
       'applicant-1002',
     );
     await waitFor(() => {
-      expect(query('[data-testid="author-primary-action"]').textContent).toBe('Rerun & Compare');
-      expect(query('[data-testid="scenario-run"]').textContent).toBe('Rerun & Compare');
+      expect(document.querySelector('[data-testid="author-primary-action"]')).toBeNull();
+      expect(query('[data-testid="scenario-run"]').textContent).toBe('Rerun current case');
       expect(query<HTMLButtonElement>('[data-testid="scenario-run"]').disabled).toBe(false);
     });
     await click(query<HTMLButtonElement>('[data-testid="author-mode:compose"]'));
@@ -1763,7 +1766,8 @@ describe('AuthorCanvas built-in canvas examples', () => {
       expect(drawer.textContent).toContain('Prime approval path');
     });
     expect(query('.workspace').getAttribute('data-author-mode')).toBe('evidence');
-    expect(query('[data-testid="author-primary-action"]').textContent).toBe('Review failures');
+    expect(document.querySelector('[data-testid="author-primary-action"]')).toBeNull();
+    expect(query('[data-testid="author-surface-command-handoff"]')).toBeDefined();
   });
 
   it('keeps every example Case current when Matrix Run all changes the selected evidence Case', async () => {
@@ -1783,7 +1787,7 @@ describe('AuthorCanvas built-in canvas examples', () => {
 
     const runAll = Array.from(
       query('[data-testid="scenario-matrix"]').querySelectorAll<HTMLButtonElement>('button'),
-    ).find((candidate) => candidate.textContent?.trim() === 'Run all');
+    ).find((candidate) => candidate.textContent?.trim() === 'Run all (3)');
     expect(runAll).toBeInstanceOf(HTMLButtonElement);
     await click(runAll as HTMLButtonElement);
 
@@ -2097,13 +2101,13 @@ describe('AuthorCanvas built-in canvas examples', () => {
       expect(query('[data-testid="author-surface:contract"]')
         .getAttribute('data-target-kind')).toBe('operator'),
     );
-    await click(query<HTMLButtonElement>('[data-testid="author-primary-action"]'));
+    await click(query<HTMLButtonElement>('[data-testid="author-mode:scenarios"]'));
+    await waitFor(() => expect(query('[data-testid="scenario-run"]')).toBeDefined());
+    await click(query<HTMLButtonElement>('[data-testid="scenario-run"]'));
 
     await waitFor(() => {
-      expect(
-        query('[data-testid="author-primary-action"]').textContent,
-        host.textContent ?? 'Operator workspace did not render.',
-      ).toContain('Review result');
+      expect(document.querySelector('[data-testid="author-primary-action"]')).toBeNull();
+      expect(query('[data-testid="author-surface-command-handoff"]')).toBeDefined();
       expect(query('[data-testid="author-status:evidence"]').textContent).toContain('CURRENT');
       expect(query('[data-testid="author-surface:evidence"]')
         .getAttribute('data-target-kind')).toBe('operator');

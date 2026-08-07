@@ -8950,6 +8950,7 @@ export default function AuthorCanvas({ workspaceVersion = 'v1' }: AuthorCanvasPr
   }, [busy, hasRunResult, isTaskWorkspace, runSuccessful, tableTestingBusy]);
 
   const authorTaskState = projectAuthorTaskState({
+    activeMode: authorMode,
     nodeCount: activeTaskGraphDraft.nodes.length,
     busy: busy || tableTestingBusy,
     hasInputErrors: operatorContractWorkspace === null && (
@@ -8970,6 +8971,7 @@ export default function AuthorCanvas({ workspaceVersion = 'v1' }: AuthorCanvasPr
       targetFingerprint: activeTaskContract?.target.fingerprint ?? '',
       contractFingerprint: activeTaskContractFingerprint,
       scenarioSetId: activeTaskScenarioSet?.scenarioDraftSetId ?? '',
+      scenarioId: workspaceScenarioId,
       scenarioRevision: activeTaskScenarioSet?.revision ?? 0,
       scenarioFingerprint: activeScenarioFingerprint,
       operatorClosureFingerprint,

@@ -132,12 +132,18 @@ Implementation and browser evidence are recorded in
 For the shortest trustworthy Author demo, load **Loan policy fallback** from the start dialog. Its
 card previews Graph/Contract size, three runnable `GOLDEN`/`NEGATIVE`/`BOUNDARY` cases, mocked
 operators, and exploratory proof strength before loading. Open **Scenarios**, select rows and choose
-**Run selected**: selection stays exact across filter/sort changes, rows retain independent
+**Run selected (N)**: selection stays exact across filter/sort changes, rows retain independent
 Execution/Assertions/Freshness/Proof verdicts, and the batch remains in Matrix. Use **Why** for the
-first row-level failure or **Open** to edit one case in Given/Dependencies/Then. **Run & Compare**
+first row-level failure or **Open** to edit one case in Given/Dependencies/Then. **Run current case**
 from that Case opens the bound Run Evidence with assertion comparison, terminal output,
 mocked/real node boundary, and exploratory content fingerprint. A green execution is deliberately
 still `Evidence incomplete` until Contract and Governance are checked.
+
+Contract, Scenarios, and Evidence own their visible commands: the global header no longer runs a
+hidden current Case on those surfaces. Matrix buttons expose `SELECTION` or `SUITE`, the exact Case
+count, and a payload-free preview fingerprint; execution locks selection and the Server batch returns
+the authoritative ordered closure and canonical fingerprint. The preview fingerprint is a UI
+coordinate, not a substitute for the server receipt.
 
 Graph and Operator Scenario surfaces now consume one canonical task-state projection. A blocked Run
 always includes a stable reason, a human explanation, and a direct remediation action; no secondary

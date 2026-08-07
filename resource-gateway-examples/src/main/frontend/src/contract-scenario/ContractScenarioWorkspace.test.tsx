@@ -89,7 +89,11 @@ describe('ContractScenarioWorkspace', () => {
       '#graph-case-approved-then',
       '#graph-case-approved-review',
     ]);
-    expect(button('Run & Compare')).toBeInstanceOf(HTMLButtonElement);
+    const runCase = button('Run current case');
+    expect(runCase).toBeInstanceOf(HTMLButtonElement);
+    expect(runCase.dataset.commandScope).toBe('CASE');
+    expect(runCase.dataset.scopeCount).toBe('1');
+    expect(runCase.dataset.scopeTarget).toBe('approved');
   });
 
   it('opens the Coverage projection beside Matrix and Case without changing Scenario truth', async () => {
@@ -132,7 +136,7 @@ describe('ContractScenarioWorkspace', () => {
     });
     expect(text()).toContain('2 selected');
 
-    await act(async () => button('Run selected').click());
+    await act(async () => button('Run selected (2)').click());
     await settleAsyncWork();
     await settleAsyncWork();
 
@@ -164,7 +168,7 @@ describe('ContractScenarioWorkspace', () => {
     });
 
     await act(async () => button('Matrix').click());
-    await act(async () => button('Run all').click());
+    await act(async () => button('Run all (1)').click());
     await settleAsyncWork();
     await settleAsyncWork();
 
@@ -312,7 +316,7 @@ describe('ContractScenarioWorkspace', () => {
       score?.dispatchEvent(new Event('input', { bubbles: true }));
     });
     await act(async () => {
-      button('Run & Compare').click();
+      button('Run current case').click();
       await Promise.resolve();
       await Promise.resolve();
     });
@@ -329,7 +333,7 @@ describe('ContractScenarioWorkspace', () => {
     await clickTab('Scenarios 1');
 
     await act(async () => {
-      button('Run & Compare').click();
+      button('Run current case').click();
       await Promise.resolve();
       await Promise.resolve();
     });
@@ -360,7 +364,7 @@ describe('ContractScenarioWorkspace', () => {
     expect(onCoordinateChange).toHaveBeenLastCalledWith('scenarios', 'approved');
 
     await act(async () => {
-      button('Run & Compare').click();
+      button('Run current case').click();
       await Promise.resolve();
       await Promise.resolve();
     });
@@ -406,7 +410,7 @@ describe('ContractScenarioWorkspace', () => {
     await clickTab('Scenarios 1');
 
     await act(async () => {
-      button('Run & Compare').click();
+      button('Run current case').click();
       await Promise.resolve();
       await Promise.resolve();
     });
@@ -488,7 +492,7 @@ describe('ContractScenarioWorkspace', () => {
     await clickTab('Scenarios 1');
 
     await act(async () => {
-      button('Run & Compare').click();
+      button('Run current case').click();
       await Promise.resolve();
       await Promise.resolve();
     });
@@ -522,7 +526,7 @@ describe('ContractScenarioWorkspace', () => {
     await clickTab('Scenarios 1');
 
     await act(async () => {
-      button('Run & Compare').click();
+      button('Run current case').click();
       await Promise.resolve();
       await Promise.resolve();
     });
@@ -601,7 +605,7 @@ describe('ContractScenarioWorkspace', () => {
     const onRun = vi.fn().mockResolvedValue(successfulResponse());
     await renderWorkspace({ stale: true, initialTab: 'scenarios', onRun });
 
-    expect(button('Run & Compare').disabled).toBe(true);
+    expect(button('Run current case').disabled).toBe(true);
     expect(text()).toContain(
       'This Scenario targets an older Graph or Contract and cannot create current evidence.',
     );
@@ -619,7 +623,7 @@ describe('ContractScenarioWorkspace', () => {
       onCoordinateChange,
     });
 
-    await act(async () => button('Run & Compare').click());
+    await act(async () => button('Run current case').click());
     await settleAsyncWork();
 
     expect(onRunEvidence).toHaveBeenCalledOnce();
@@ -787,7 +791,7 @@ describe('ContractScenarioWorkspace', () => {
     await clickTab('Scenarios 1');
     expect(text()).toContain('Happy path');
     await act(async () => {
-      button('Run & Compare').click();
+      button('Run current case').click();
       await Promise.resolve();
       await Promise.resolve();
     });

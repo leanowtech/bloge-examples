@@ -7,6 +7,7 @@ import type { TableCaseVerdictPresentation } from '../tableDrivenTestStatus';
 import type { TableSuiteDifferentialCounts, TableSuiteRunBatch } from './tableSuiteRunModel';
 import {
   filterAndSortScenarioRows,
+  resolveExactScenarioRunSelection,
   scenarioMatrixFacetCounts,
   selectVisibleScenarios,
   toggleScenarioSelection,
@@ -107,6 +108,18 @@ export default function ScenarioMatrixSurface({
   const failedCount = differentialCounts?.failed ?? failedFromPreviousRun;
   const changedCount = differentialCounts?.changed ?? 0;
   const affectedCount = differentialCounts?.affected ?? 0;
+  const allScope = useMemo(() => resolveExactScenarioRunSelection(
+    projection,
+    selection,
+    'ALL',
+    previousRunCaseIds,
+  ), [previousRunCaseIds, projection, selection]);
+  const selectedScope = useMemo(() => resolveExactScenarioRunSelection(
+    projection,
+    selection,
+    'SELECTED',
+    previousRunCaseIds,
+  ), [previousRunCaseIds, projection, selection]);
 
   return (
     <section className="scenario-matrix" aria-label={t('Scenario test matrix')} data-testid="scenario-matrix">
@@ -265,6 +278,7 @@ export default function ScenarioMatrixSurface({
                   type="checkbox"
                   aria-label={t('Select visible cases')}
                   checked={allVisibleSelected}
+                  disabled={disabled}
                   onChange={(event) => onSelectionChange(selectVisibleScenarios(
                     selection,
                     visibleCaseIds,
@@ -301,6 +315,7 @@ export default function ScenarioMatrixSurface({
                     type="checkbox"
                     aria-label={t('Select {name}', { name: row.name })}
                     checked={selected.has(row.caseId)}
+                    disabled={disabled}
                     onChange={(event) => onSelectionChange(toggleScenarioSelection(
                       selection,
                       row.caseId,
@@ -416,7 +431,16 @@ export default function ScenarioMatrixSurface({
             ? m(runCommand.messageId)
             : t(runCommand?.state === 'BLOCKED'
               ? runCommand.message
-              : 'Selection is independent from the current filter and sort.')}</span>
+              : selection.selectedCaseIds.length > 0
+                ? '{count} selected. The primary command runs exactly this frozen selection.'
+                : 'Select cases to make the primary Matrix command explicit.', {
+                  count: selection.selectedCaseIds.length,
+                })}</span>
+          {previousRunCaseIds.length > 0 && (
+            <span data-testid="scenario-last-run-scope">
+              {t('Last run: {count} cases', { count: previousRunCaseIds.length })}
+            </span>
+          )}
         </div>
         <div>
           <button
@@ -456,8 +480,11 @@ export default function ScenarioMatrixSurface({
             className="secondary"
             disabled={disabled || runCommand?.enabled === false || projection.rows.length === 0}
             onClick={() => onRunSelection('ALL')}
+            data-command-scope="SUITE"
+            data-scope-count={allScope.caseIds.length}
+            data-scope-fingerprint={allScope.selectionFingerprint}
           >
-            {t('Run all')}
+            {t('Run all ({count})', { count: allScope.caseIds.length })}
           </button>
           <button
             type="button"
@@ -465,8 +492,13 @@ export default function ScenarioMatrixSurface({
             disabled={disabled || runCommand?.enabled === false || selection.selectedCaseIds.length === 0}
             onClick={() => onRunSelection('SELECTED')}
             data-testid="scenario-run-selected"
+            data-command-scope="SELECTION"
+            data-scope-count={selectedScope.caseIds.length}
+            data-scope-fingerprint={selectedScope.selectionFingerprint}
           >
-            {runningCaseIds.length > 0 ? t('Running {count}...', { count: runningCaseIds.length }) : t('Run selected')}
+            {runningCaseIds.length > 0
+              ? t('Running {count}...', { count: runningCaseIds.length })
+              : t('Run selected ({count})', { count: selectedScope.caseIds.length })}
           </button>
         </div>
       </footer>

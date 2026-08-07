@@ -14,6 +14,24 @@ describe('projectAuthorTaskState', () => {
       primaryCommand: { state: 'READY', enabled: true },
     });
     expect(state.primaryCommand).toBe(state.commands.runCurrentScenario);
+    expect(state.primaryCommand).toMatchObject({
+      owner: 'GLOBAL',
+      scope: { kind: 'CASE', count: 1, targetIds: ['case-1'] },
+    });
+  });
+
+  it('hands formal task surfaces their scoped command instead of exposing a hidden header run', () => {
+    const state = projectAuthorTaskState(input({ activeMode: 'scenarios' }));
+
+    expect(state.primaryCommand).toMatchObject({
+      owner: 'TASK_SURFACE',
+      scope: {
+        kind: 'CASE',
+        count: 1,
+        targetIds: ['case-1'],
+        fingerprint: 'sha256:scenario',
+      },
+    });
   });
 
   it('blocks every run surface with one stale-coordinate reason and remediation', () => {
@@ -125,6 +143,7 @@ function coordinate() {
     targetFingerprint: 'sha256:draft',
     contractFingerprint: 'sha256:contract',
     scenarioSetId: 'suite-1',
+    scenarioId: 'case-1',
     scenarioRevision: 0,
     scenarioFingerprint: 'sha256:scenario',
     operatorClosureFingerprint: 'sha256:closure',

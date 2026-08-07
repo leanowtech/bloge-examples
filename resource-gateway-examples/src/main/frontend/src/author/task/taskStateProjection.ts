@@ -21,9 +21,17 @@ export interface AuthorTaskCoordinate {
   targetFingerprint: string;
   contractFingerprint: string;
   scenarioSetId: string;
+  scenarioId: string;
   scenarioRevision: number;
   scenarioFingerprint: string;
   operatorClosureFingerprint: string;
+}
+
+export interface AuthorCommandScope {
+  kind: 'CASE';
+  count: number;
+  targetIds: string[];
+  fingerprint: string;
 }
 
 export interface AuthorCommandRemediation {
@@ -42,6 +50,8 @@ export interface AuthorCommandAvailability {
   message: string;
   messageId?: MessageId;
   remediation?: AuthorCommandRemediation;
+  owner?: 'GLOBAL' | 'TASK_SURFACE';
+  scope?: AuthorCommandScope;
 }
 
 export interface AuthorTaskBlocker {
@@ -52,6 +62,7 @@ export interface AuthorTaskBlocker {
 }
 
 export interface AuthorTaskStateInput {
+  activeMode?: AuthorMode;
   nodeCount: number;
   busy: boolean;
   hasInputErrors: boolean;
@@ -100,7 +111,7 @@ export function projectAuthorTaskState(input: AuthorTaskStateInput): AuthorTaskS
     : 'EXPLORATORY';
   const primaryCommand = primaryAction.kind === 'run'
     ? runCurrentScenario
-    : nonRunPrimaryCommand(primaryAction, input.busy);
+    : nonRunPrimaryCommand(primaryAction, input.busy, input.activeMode);
 
   return {
     taskCoordinate: input.coordinate,
@@ -177,8 +188,20 @@ function runCommand(
   input: AuthorTaskStateInput,
   blockers: AuthorTaskBlocker[],
 ): AuthorCommandAvailability {
+  const commandContext = {
+    owner: input.activeMode && input.activeMode !== 'compose'
+      ? 'TASK_SURFACE' as const
+      : 'GLOBAL' as const,
+    scope: {
+      kind: 'CASE' as const,
+      count: input.coordinate.scenarioId ? 1 : 0,
+      targetIds: input.coordinate.scenarioId ? [input.coordinate.scenarioId] : [],
+      fingerprint: input.coordinate.scenarioFingerprint,
+    },
+  };
   if (input.busy) {
     return {
+      ...commandContext,
       commandId: 'RUN_CURRENT_SCENARIO',
       state: 'RUNNING',
       enabled: false,
@@ -192,6 +215,7 @@ function runCommand(
   const first = blockers[0];
   if (first) {
     return {
+      ...commandContext,
       commandId: 'RUN_CURRENT_SCENARIO',
       state: 'BLOCKED',
       enabled: false,
@@ -204,6 +228,7 @@ function runCommand(
     };
   }
   return {
+    ...commandContext,
     commandId: 'RUN_CURRENT_SCENARIO',
     state: 'READY',
     enabled: true,
@@ -222,6 +247,7 @@ function runCommand(
 function nonRunPrimaryCommand(
   primaryAction: AuthorPrimaryAction,
   busy: boolean,
+  activeMode: AuthorMode | undefined,
 ): AuthorCommandAvailability {
   return {
     commandId: 'PRIMARY_TASK_ACTION',
@@ -232,6 +258,7 @@ function nonRunPrimaryCommand(
     reasonCode: busy ? 'RG.AUTHOR.COMMAND.IN_PROGRESS' : '',
     message: busy ? 'Wait for the active authoring command to finish.' : '',
     messageId: busy ? 'author.command.waitForActive' : undefined,
+    owner: activeMode && activeMode !== 'compose' ? 'TASK_SURFACE' : 'GLOBAL',
   };
 }
 

@@ -1845,9 +1845,17 @@ function ScenarioTab({
                   onClick={onRun}
                   disabled={!runCommand.enabled}
                   data-testid="scenario-run"
+                  data-command-scope="CASE"
+                  data-scope-count="1"
+                  data-scope-target={selectedScenario.scenarioId}
+                  data-scope-fingerprint={runCommand.scope?.fingerprint ?? ''}
                   aria-describedby={runCommand.state === 'BLOCKED' ? 'scenario-run-blocker' : undefined}
                 >
-                  {t(runCommand.label)}
+                  {runCommand.state === 'RUNNING'
+                    ? t('Running current case...')
+                    : runCommand.labelId === 'author.command.rerun'
+                      ? t('Rerun current case')
+                      : t('Run current case')}
                 </button>
               </footer>
             </section>
