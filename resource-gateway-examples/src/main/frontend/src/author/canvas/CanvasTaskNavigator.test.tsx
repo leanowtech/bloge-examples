@@ -4,6 +4,7 @@ import { act } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
+import I18nProvider from '../../i18n/I18nProvider';
 import CanvasTaskNavigator from './CanvasTaskNavigator';
 import type { LayoutAcceptanceDecision } from './layoutAcceptance';
 
@@ -16,7 +17,6 @@ function layoutAcceptance(
     edgeLabelCollisionDetails: [],
     pinnedNodes: 1,
     status: 'PASS' as const,
-    summary: '0 node overlaps / 0 label collisions',
   };
   const perception = (status: 'PASS' | 'REVIEW', zoom: number) => ({
     status,
@@ -32,7 +32,6 @@ function layoutAcceptance(
     labelDensityPer100kPx: 1.2,
     graphScreenOccupancy: 0.4,
     reasons: [],
-    summary: `${status} at ${Math.round(zoom * 100)}%`,
   });
   return {
     decision,
@@ -72,6 +71,8 @@ describe('CanvasTaskNavigator', () => {
     await act(async () => root?.unmount());
     root = null;
     host.remove();
+    window.history.replaceState({}, '', '/');
+    window.localStorage?.clear();
   });
 
   it('searches, focuses, and exposes one explicit reading-mode control', async () => {
@@ -109,10 +110,9 @@ describe('CanvasTaskNavigator', () => {
             labelDensityPer100kPx: 0.4,
             graphScreenOccupancy: 0.2,
             reasons: [],
-            summary: 'PASS · 12.3px effective title · 0 edge labels · 0.4/100k px',
           }}
           topologyLanes={[]}
-          layoutNotice=""
+          layoutNotice={null}
           canUndoLayout={false}
           onModeChange={onModeChange}
           onSelectNode={onSelectNode}
@@ -173,7 +173,6 @@ describe('CanvasTaskNavigator', () => {
             edgeLabelCollisionDetails: [],
             pinnedNodes: 1,
             status: 'PASS',
-            summary: '0 node overlaps · 0 label collisions · 1 pinned',
           }}
           perceptualQuality={{
             status: 'PASS',
@@ -189,10 +188,9 @@ describe('CanvasTaskNavigator', () => {
             labelDensityPer100kPx: 0.2,
             graphScreenOccupancy: 0.1,
             reasons: [],
-            summary: 'PASS · 15px effective title · 0 edge labels · 0.2/100k px',
           }}
           topologyLanes={[]}
-          layoutNotice=""
+          layoutNotice={null}
           canUndoLayout={false}
           onModeChange={vi.fn()}
           onSelectNode={vi.fn()}
@@ -255,7 +253,6 @@ describe('CanvasTaskNavigator', () => {
             labelDensityPer100kPx: 3.4,
             graphScreenOccupancy: 0.8,
             reasons: [],
-            summary: 'PASS · topology overview',
           }}
           topologyLanes={[
             {
@@ -273,7 +270,7 @@ describe('CanvasTaskNavigator', () => {
               representativeNodeId: 'n24',
             },
           ]}
-          layoutNotice=""
+          layoutNotice={null}
           canUndoLayout={false}
           onModeChange={vi.fn()}
           onSelectNode={onSelectNode}
@@ -318,12 +315,11 @@ describe('CanvasTaskNavigator', () => {
             edgeLabelCollisionDetails: [],
             pinnedNodes: 0,
             status: 'PASS',
-            summary: '0 node overlaps / 0 label collisions',
           }}
           layoutAcceptance={layoutAcceptance('ALTERNATIVE_REQUIRED')}
           perceptualQuality={layoutAcceptance('ALTERNATIVE_REQUIRED').candidate.perception}
           topologyLanes={[]}
-          layoutNotice=""
+          layoutNotice={null}
           canUndoLayout={false}
           onModeChange={vi.fn()}
           onSelectNode={vi.fn()}
@@ -351,5 +347,60 @@ describe('CanvasTaskNavigator', () => {
     });
     expect(onApplyLayout).not.toHaveBeenCalled();
     expect(onOverrideLayout).toHaveBeenCalledOnce();
+  });
+
+  it('renders candidate quality evidence in Chinese without leaking English runtime prose', async () => {
+    window.history.replaceState({}, '', '/?lang=zh-CN');
+    const acceptance = layoutAcceptance('ALTERNATIVE_REQUIRED');
+    acceptance.candidate.perception.reasons = [
+      { code: 'NODE_OVERLAPS', count: 1 },
+      { code: 'SMALL_GRAPH_ZOOM_FLOOR' },
+    ];
+    acceptance.candidate.geometry = {
+      ...acceptance.candidate.geometry,
+      nodeOverlaps: 1,
+      status: 'REVIEW',
+    };
+    await act(async () => {
+      root!.render(
+        <I18nProvider>
+          <CanvasTaskNavigator
+            mode="overview"
+            nodes={[]}
+            selectedNodeId=""
+            nodeCount={5}
+            edgeCount={12}
+            pathNodeCount={0}
+            zoomPercent="39%"
+            mapVisible={false}
+            layoutPlanning={false}
+            layoutPreview
+            layoutQuality={acceptance.candidate.geometry}
+            layoutAcceptance={acceptance}
+            perceptualQuality={acceptance.before.perception}
+            topologyLanes={[]}
+            layoutNotice={null}
+            canUndoLayout={false}
+            onModeChange={vi.fn()}
+            onSelectNode={vi.fn()}
+            onFitAll={vi.fn()}
+            onToggleMap={vi.fn()}
+            onTogglePin={vi.fn()}
+            onApplyLayout={vi.fn()}
+            onOverrideLayout={vi.fn()}
+            onCancelLayout={vi.fn()}
+            onUndoLayout={vi.fn()}
+          />
+        </I18nProvider>,
+      );
+    });
+
+    expect(host.textContent).toContain('候选布局会降低当前可读性。');
+    expect(host.textContent).toContain('候选 39%');
+    expect(host.textContent).toContain('1 个节点重叠');
+    expect(host.textContent).toContain('标题 5.9px');
+    expect(host.textContent).toContain('需检查');
+    expect(host.textContent).not.toContain('Geometry');
+    expect(host.textContent).not.toContain('Perception');
   });
 });

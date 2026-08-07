@@ -11,6 +11,7 @@ import { hasChineseTranslation } from './i18n';
 
 const DEEP_SURFACES = [
   '../AuthorCanvas.tsx',
+  '../author/canvas/CanvasTaskNavigator.tsx',
   '../author/shell/AuthorCommandBar.tsx',
   '../author/review/AuthorDiagnosticsDrawer.tsx',
   '../contract-scenario/ContractScenarioWorkspace.tsx',

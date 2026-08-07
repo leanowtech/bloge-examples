@@ -18,7 +18,6 @@ export interface CanvasLayoutQualityReport {
   edgeLabelCollisionDetails: CanvasLayoutCollision[];
   pinnedNodes: number;
   status: 'PASS' | 'REVIEW';
-  summary: string;
 }
 
 export interface CanvasLayoutCollision {
@@ -111,9 +110,6 @@ export function assessCanvasLayout(
     edgeLabelCollisionDetails,
     pinnedNodes,
     status,
-    summary: `${nodeOverlaps} node overlaps · ${edgeLabelCollisions} label collisions · ${
-      pinnedNodes
-    } pinned`,
   };
 }
 

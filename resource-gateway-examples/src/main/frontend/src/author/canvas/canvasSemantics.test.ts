@@ -191,7 +191,7 @@ describe('canvas perceptual quality and adaptive chrome', () => {
       effectiveTitleFontPx: 9.6,
       visibleNodeLabels: 4,
     });
-    expect(report.reasons).toContain('Small graph fit is below the 80% readability floor.');
+    expect(report.reasons).toContainEqual({ code: 'SMALL_GRAPH_ZOOM_FLOOR' });
   });
 
   it('passes a topology-only Overview and protects explicit panel preferences', () => {
@@ -218,7 +218,7 @@ describe('canvas perceptual quality and adaptive chrome', () => {
     })).toEqual({
       collapsePalette: true,
       collapseInspector: false,
-      reason: 'Panels were reclaimed to keep the graph above its readability floor.',
+      reason: 'READABILITY_FLOOR',
     });
   });
 
@@ -234,7 +234,7 @@ describe('canvas perceptual quality and adaptive chrome', () => {
     })).toEqual({
       collapsePalette: true,
       collapseInspector: true,
-      reason: 'The active task surface owns the workspace width.',
+      reason: 'TASK_SURFACE',
     });
 
     expect(adaptiveCanvasChromePolicy({

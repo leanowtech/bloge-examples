@@ -1,12 +1,18 @@
 import { useMemo, useState } from 'react';
 
 import { useI18n } from '../../i18n/I18nProvider';
+import type { MessageDescriptor } from '../../i18n/messageCatalog';
 import type {
   CanvasPerceptualQualityReport,
   CanvasSemanticMode,
   CanvasTopologyLane,
 } from './canvasSemantics';
 import type { CanvasLayoutQualityReport } from './layoutQuality';
+import {
+  presentCanvasPerceptualQuality,
+  presentCanvasQuality,
+  presentLayoutCollision,
+} from './layoutQualityPresentation';
 import type {
   LayoutAcceptanceDecision,
   LayoutRegression,
@@ -36,7 +42,7 @@ interface CanvasTaskNavigatorProps {
   layoutAcceptance: LayoutAcceptanceDecision | null;
   perceptualQuality: CanvasPerceptualQualityReport;
   topologyLanes: CanvasTopologyLane[];
-  layoutNotice: string;
+  layoutNotice: MessageDescriptor | null;
   canUndoLayout: boolean;
   onModeChange: (mode: CanvasTaskMode) => void;
   onSelectNode: (nodeId: string) => void;
@@ -77,9 +83,22 @@ export default function CanvasTaskNavigator({
   onCancelLayout,
   onUndoLayout,
 }: CanvasTaskNavigatorProps) {
-  const { t } = useI18n();
+  const { t, m } = useI18n();
   const [query, setQuery] = useState('');
   const selected = nodes.find((node) => node.id === selectedNodeId) ?? null;
+  const perceptualPresentation = presentCanvasPerceptualQuality(perceptualQuality);
+  const candidatePerception = layoutAcceptance?.candidate.perception ?? perceptualQuality;
+  const candidatePresentation = layoutQuality
+    ? presentCanvasQuality(layoutQuality, candidatePerception)
+    : null;
+  const collisionPresentation = layoutQuality?.edgeLabelCollisionDetails?.[0]
+    ? presentLayoutCollision(layoutQuality.edgeLabelCollisionDetails[0])
+    : null;
+  const perceptualTitle = perceptualPresentation.reasons.length > 0
+    ? perceptualPresentation.reasons
+      .map((reason) => m(reason.messageId, reason.params))
+      .join(' ')
+    : m(perceptualPresentation.perception.messageId, perceptualPresentation.perception.params);
   const matches = useMemo(() => {
     const normalized = query.trim().toLowerCase();
     if (!normalized) return [];
@@ -176,7 +195,7 @@ export default function CanvasTaskNavigator({
         <span
           className={`canvas-readability-verdict ${perceptualQuality.status.toLowerCase()}`}
           data-testid="canvas-readability-verdict"
-          title={perceptualQuality.reasons.join(' ') || perceptualQuality.summary}
+          title={perceptualTitle}
         >
           {t('Readability {status}', { status: t(perceptualQuality.status) })}
         </span>
@@ -248,24 +267,39 @@ export default function CanvasTaskNavigator({
                 ? t(layoutAcceptance.decision === 'ACCEPTABLE'
                   ? 'Layout candidate preserves readability.'
                   : 'Layout candidate would reduce readability.')
-              : layoutQuality
-                ? `${layoutQuality.summary} · ${perceptualQuality.summary}`
-                : t(layoutNotice)}
+              : candidatePresentation
+                ? `${m(candidatePresentation.geometry.messageId, candidatePresentation.geometry.params)} · ${
+                    m(candidatePresentation.perception.messageId, candidatePresentation.perception.params)
+                  }`
+                : layoutNotice
+                  ? m(layoutNotice.messageId, layoutNotice.params)
+                  : ''}
           </span>
           {layoutAcceptance && (
             <div className="canvas-layout-comparison" data-testid="layout-quality-comparison">
               <span>
                 {t('Before')} <strong>{Math.round(layoutAcceptance.before.zoom * 100)}%</strong>
                 {' · '}{t(layoutAcceptance.before.perception.status)}
-                {' · '}{layoutAcceptance.before.perception.effectiveTitleFontPx.toFixed(1)}px
+                {' · '}{t('{size}px', {
+                  size: layoutAcceptance.before.perception.effectiveTitleFontPx.toFixed(1),
+                })}
               </span>
               <span aria-hidden="true">→</span>
               <span>
                 {t('Candidate')} <strong>{Math.round(layoutAcceptance.candidate.zoom * 100)}%</strong>
                 {' · '}{t(layoutAcceptance.candidate.perception.status)}
-                {' · '}{layoutAcceptance.candidate.perception.effectiveTitleFontPx.toFixed(1)}px
+                {' · '}{t('{size}px', {
+                  size: layoutAcceptance.candidate.perception.effectiveTitleFontPx.toFixed(1),
+                })}
               </span>
             </div>
+          )}
+          {layoutAcceptance && candidatePresentation && (
+            <small data-testid="layout-candidate-quality">
+              {m(candidatePresentation.geometry.messageId, candidatePresentation.geometry.params)}
+              {' · '}
+              {m(candidatePresentation.perception.messageId, candidatePresentation.perception.params)}
+            </small>
           )}
           {layoutAcceptance?.regressions.length ? (
             <ul className="canvas-layout-regressions" data-testid="layout-regressions">
@@ -274,10 +308,9 @@ export default function CanvasTaskNavigator({
               ))}
             </ul>
           ) : null}
-          {layoutQuality?.edgeLabelCollisionDetails?.[0] && (
+          {collisionPresentation && (
             <small>
-              {layoutQuality.edgeLabelCollisionDetails[0].edgeId} label intersects{' '}
-              {layoutQuality.edgeLabelCollisionDetails[0].nodeId}
+              {m(collisionPresentation.messageId, collisionPresentation.params)}
             </small>
           )}
           {(layoutPlanning || layoutPreview) && (
@@ -332,8 +365,8 @@ function layoutRegressionMessage(
       });
     case 'PERCEPTION_REGRESSION':
       return t('Perceptual quality changes from {before} to {candidate}.', {
-        before: regression.before,
-        candidate: regression.candidate,
+        before: t(String(regression.before)),
+        candidate: t(String(regression.candidate)),
       });
     case 'SMALL_GRAPH_ZOOM_FLOOR':
       return t('Small graph zoom would fall below 80%.');

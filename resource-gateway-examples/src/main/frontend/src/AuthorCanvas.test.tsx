@@ -1652,7 +1652,7 @@ describe('AuthorCanvas built-in canvas examples', () => {
     );
     await click(query<HTMLButtonElement>('[data-testid="layout-override"]'));
     expect(query('.workspace').getAttribute('data-layout-preview')).toBe('inactive');
-    expect(query('[data-testid="layout-notice"]').textContent).toContain('Applied');
+    expect(query('[data-testid="layout-notice"]').textContent).toContain('Advanced override applied');
     expect(document.querySelector('[data-testid="navigator-undo-layout"]')).not.toBeNull();
     await click(query<HTMLButtonElement>('[data-testid="navigator-undo-layout"]'));
     expect(query('[data-testid="layout-notice"]').textContent).toContain('Restored');
@@ -2373,7 +2373,7 @@ describe('AuthorCanvas connection guide', () => {
 
     await click(buttonByText('Auto Layout'));
 
-    expect(query('[data-testid="layout-notice"]').textContent).toMatch(/Moved \d+ nodes?\./);
+    expect(query('[data-testid="layout-notice"]').textContent).toMatch(/Node positions moved: \d+\./);
     expect(document.querySelector('[data-testid="navigator-undo-layout"]')).not.toBeNull();
     await click(query<HTMLButtonElement>('[data-testid="navigator-undo-layout"]'));
     const restored = authorDraftExport(query<HTMLAnchorElement>('[data-testid="author-draft-export"]'))

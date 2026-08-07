@@ -331,6 +331,116 @@ export const MESSAGE_CATALOG = {
     'zh-CN': '运行时比较需要声明函数签名。',
   },
   'library.runtime.technicalDetails': { en: 'Technical details', 'zh-CN': '技术详情' },
+  'layout.quality.geometrySummary': {
+    en: 'Node overlaps {overlaps} · label collisions {collisions} · pinned nodes {pinned}',
+    'zh-CN': '{overlaps} 个节点重叠 · {collisions} 个标签碰撞 · {pinned} 个固定节点',
+  },
+  'layout.quality.perception.passPass': {
+    en: 'Geometry passes · readability passes · {titlePx}px title · {edgeLabels} edge labels · {density}/100k px',
+    'zh-CN': '几何通过 · 可读性通过 · 标题 {titlePx}px · {edgeLabels} 个连线标签 · 密度 {density}/10万 px',
+  },
+  'layout.quality.perception.passReview': {
+    en: 'Geometry passes · readability needs review · {titlePx}px title · {edgeLabels} edge labels · {density}/100k px',
+    'zh-CN': '几何通过 · 可读性需检查 · 标题 {titlePx}px · {edgeLabels} 个连线标签 · 密度 {density}/10万 px',
+  },
+  'layout.quality.perception.reviewPass': {
+    en: 'Geometry needs review · readability passes · {titlePx}px title · {edgeLabels} edge labels · {density}/100k px',
+    'zh-CN': '几何需检查 · 可读性通过 · 标题 {titlePx}px · {edgeLabels} 个连线标签 · 密度 {density}/10万 px',
+  },
+  'layout.quality.perception.reviewReview': {
+    en: 'Geometry needs review · readability needs review · {titlePx}px title · {edgeLabels} edge labels · {density}/100k px',
+    'zh-CN': '几何需检查 · 可读性需检查 · 标题 {titlePx}px · {edgeLabels} 个连线标签 · 密度 {density}/10万 px',
+  },
+  'layout.quality.reason.nodeOverlaps': {
+    en: 'Remaining node overlaps: {count}.',
+    'zh-CN': '仍有 {count} 个节点重叠。',
+  },
+  'layout.quality.reason.nodeLabelCollisions': {
+    en: 'Field labels suppressed by nodes: {count}.',
+    'zh-CN': '{count} 个字段标签因节点遮挡而隐藏。',
+  },
+  'layout.quality.reason.labelLabelCollisions': {
+    en: 'Field labels suppressed by other labels: {count}.',
+    'zh-CN': '{count} 个字段标签因其他标签遮挡而隐藏。',
+  },
+  'layout.quality.reason.smallGraphZoom': {
+    en: 'Small graph fit is below the 80% readability floor.',
+    'zh-CN': '小型编排图的适配缩放低于 80% 可读性下限。',
+  },
+  'layout.quality.reason.titleSize': {
+    en: 'Effective node title size is below 12px.',
+    'zh-CN': '节点标题的有效字号低于 12px。',
+  },
+  'layout.quality.reason.overviewFields': {
+    en: 'Overview exposes {count} field-level labels.',
+    'zh-CN': '总览模式显示了 {count} 个字段级标签。',
+  },
+  'layout.quality.reason.labelDensity': {
+    en: 'Visible label density is too high for reliable scanning.',
+    'zh-CN': '可见标签密度过高，难以可靠浏览。',
+  },
+  'layout.quality.edgeCollision': {
+    en: 'Edge {edgeId} label intersects node {nodeId}.',
+    'zh-CN': '连线 {edgeId} 的标签与节点 {nodeId} 相交。',
+  },
+  'layout.notice.computing': { en: 'Computing layout preview...', 'zh-CN': '正在计算布局预览...' },
+  'layout.notice.alreadyOptimal': {
+    en: 'Layout is already optimal.',
+    'zh-CN': '当前布局已是最优状态。',
+  },
+  'layout.notice.alreadyOptimalWithQuality': {
+    en: 'Layout is already optimal · {overlaps} overlaps · {collisions} label collisions · {pinned} pinned.',
+    'zh-CN': '当前布局已是最优状态 · {overlaps} 个重叠 · {collisions} 个标签碰撞 · {pinned} 个固定节点。',
+  },
+  'layout.notice.previewMoves': {
+    en: 'Preview node moves: {count}.',
+    'zh-CN': '预览将移动 {count} 个节点。',
+  },
+  'layout.notice.moved': { en: 'Node positions moved: {count}.', 'zh-CN': '已移动 {count} 个节点。' },
+  'layout.notice.applied': {
+    en: 'Moved node positions applied: {count} · overlaps {overlaps} · label collisions {collisions}.',
+    'zh-CN': '已应用 {count} 个节点移动 · {overlaps} 个重叠 · {collisions} 个标签碰撞。',
+  },
+  'layout.notice.overrideApplied': {
+    en: 'Advanced override applied · moved positions {count} · overlaps {overlaps} · label collisions {collisions}.',
+    'zh-CN': '已对 {count} 个节点移动应用高级覆盖 · {overlaps} 个重叠 · {collisions} 个标签碰撞。',
+  },
+  'layout.notice.previewCanceled': {
+    en: 'Layout preview canceled; original positions restored.',
+    'zh-CN': '已取消布局预览并恢复原始位置。',
+  },
+  'layout.notice.computationCanceled': {
+    en: 'Layout computation canceled.',
+    'zh-CN': '已取消布局计算。',
+  },
+  'layout.notice.restored': {
+    en: 'Restored node positions: {count}.',
+    'zh-CN': '已恢复 {count} 个节点的位置。',
+  },
+  'layout.notice.nodeMovable': {
+    en: 'Selected node will move with Auto Layout.',
+    'zh-CN': '所选节点将随自动布局移动。',
+  },
+  'layout.notice.nodePinned': {
+    en: 'Selected node is pinned to its current position.',
+    'zh-CN': '所选节点已固定在当前位置。',
+  },
+  'layout.chrome.taskSurface': {
+    en: 'The active task surface owns the workspace width.',
+    'zh-CN': '当前任务工作区占用完整宽度。',
+  },
+  'layout.chrome.compactWorkspace': {
+    en: 'Compact workspace keeps panels available as drawers.',
+    'zh-CN': '紧凑工作区将面板保留为按需抽屉。',
+  },
+  'layout.chrome.graphOverview': {
+    en: 'Panels were reclaimed for the graph overview.',
+    'zh-CN': '已收起面板，为编排图总览释放空间。',
+  },
+  'layout.chrome.readabilityFloor': {
+    en: 'Panels were reclaimed to keep the graph above its readability floor.',
+    'zh-CN': '已收起面板，确保编排图达到可读性下限。',
+  },
 } as const satisfies Record<string, LocalizedMessage>;
 
 export type MessageId = keyof typeof MESSAGE_CATALOG;

@@ -52,16 +52,35 @@ export interface CanvasPerceptualQualityReport {
   visibleFieldLabels: number;
   labelDensityPer100kPx: number;
   graphScreenOccupancy: number;
-  reasons: string[];
-  summary: string;
+  reasons: CanvasPerceptualQualityReason[];
+}
+
+export type CanvasPerceptualQualityReasonCode =
+  | 'NODE_OVERLAPS'
+  | 'NODE_LABEL_COLLISIONS'
+  | 'LABEL_LABEL_COLLISIONS'
+  | 'SMALL_GRAPH_ZOOM_FLOOR'
+  | 'TITLE_SIZE_FLOOR'
+  | 'OVERVIEW_FIELD_LABELS'
+  | 'LABEL_DENSITY_HIGH';
+
+export interface CanvasPerceptualQualityReason {
+  code: CanvasPerceptualQualityReasonCode;
+  count?: number;
 }
 
 export type CanvasPanelPreference = 'auto' | 'open' | 'closed';
 
+export type AdaptiveCanvasChromeReason =
+  | 'TASK_SURFACE'
+  | 'COMPACT_WORKSPACE'
+  | 'GRAPH_OVERVIEW'
+  | 'READABILITY_FLOOR';
+
 export interface AdaptiveCanvasChromePolicy {
   collapsePalette: boolean;
   collapseInspector: boolean;
-  reason: string;
+  reason: AdaptiveCanvasChromeReason | null;
 }
 
 interface SemanticProjectionOptions {
@@ -294,32 +313,32 @@ export function assessCanvasPerceptualQuality(
     1,
   );
   const graphScreenOccupancy = round(graphOccupancy(nodes, viewportWidth, viewportHeight, zoom), 2);
-  const reasons: string[] = [];
+  const reasons: CanvasPerceptualQualityReason[] = [];
   const geometryStatus = options.nodeOverlaps === 0
     && options.nodeLabelCollisions === 0
     && options.labelLabelCollisions === 0
     ? 'PASS'
     : 'REVIEW';
   if (options.nodeOverlaps > 0) {
-    reasons.push(`${options.nodeOverlaps} node overlap${options.nodeOverlaps === 1 ? '' : 's'} remain.`);
+    reasons.push({ code: 'NODE_OVERLAPS', count: options.nodeOverlaps });
   }
   if (options.nodeLabelCollisions > 0) {
-    reasons.push(`${options.nodeLabelCollisions} field label${options.nodeLabelCollisions === 1 ? '' : 's'} were suppressed by nodes.`);
+    reasons.push({ code: 'NODE_LABEL_COLLISIONS', count: options.nodeLabelCollisions });
   }
   if (options.labelLabelCollisions > 0) {
-    reasons.push(`${options.labelLabelCollisions} field label${options.labelLabelCollisions === 1 ? '' : 's'} were suppressed by other labels.`);
+    reasons.push({ code: 'LABEL_LABEL_COLLISIONS', count: options.labelLabelCollisions });
   }
   if (nodes.length <= 8 && zoom < 0.8) {
-    reasons.push('Small graph fit is below the 80% readability floor.');
+    reasons.push({ code: 'SMALL_GRAPH_ZOOM_FLOOR' });
   }
   if (nodes.length <= 8 && effectiveTitleFontPx < 12) {
-    reasons.push('Effective node title size is below 12px.');
+    reasons.push({ code: 'TITLE_SIZE_FLOOR' });
   }
   if (options.mode === 'overview' && options.visibleFieldLabels > 0) {
-    reasons.push('Overview exposes field-level labels.');
+    reasons.push({ code: 'OVERVIEW_FIELD_LABELS', count: options.visibleFieldLabels });
   }
   if (labelDensityPer100kPx > 7) {
-    reasons.push('Visible label density is too high for reliable scanning.');
+    reasons.push({ code: 'LABEL_DENSITY_HIGH' });
   }
   const status = reasons.length === 0 ? 'PASS' : 'REVIEW';
   return {
@@ -336,9 +355,6 @@ export function assessCanvasPerceptualQuality(
     labelDensityPer100kPx,
     graphScreenOccupancy,
     reasons,
-    summary: `Geometry ${geometryStatus} · Perception ${status} · ${effectiveTitleFontPx}px title · ${
-      options.visibleEdgeLabels
-    } edge labels · ${labelDensityPer100kPx}/100k px`,
   };
 }
 
@@ -355,14 +371,14 @@ export function adaptiveCanvasChromePolicy(
     return {
       collapsePalette: !paletteForcedOpen,
       collapseInspector: !inspectorForcedOpen,
-      reason: 'The active task surface owns the workspace width.',
+      reason: 'TASK_SURFACE',
     };
   }
   if (options.compactWorkspace) {
     return {
       collapsePalette: !paletteForcedOpen,
       collapseInspector: !inspectorForcedOpen,
-      reason: 'Compact workspace keeps panels available as drawers.',
+      reason: 'COMPACT_WORKSPACE',
     };
   }
   const readabilityPressure = options.nodeCount > 0
@@ -373,14 +389,14 @@ export function adaptiveCanvasChromePolicy(
       collapseInspector: inspectorForcedClosed
         || (!inspectorForcedOpen && (!options.selectedNodeId || options.fitZoom < 0.72)),
       reason: options.nodeCount > 8
-        ? 'Panels were reclaimed for the graph overview.'
-        : 'Panels were reclaimed to keep the graph above its readability floor.',
+        ? 'GRAPH_OVERVIEW'
+        : 'READABILITY_FLOOR',
     };
   }
   return {
     collapsePalette: paletteForcedClosed,
     collapseInspector: inspectorForcedClosed,
-    reason: '',
+    reason: null,
   };
 }
 

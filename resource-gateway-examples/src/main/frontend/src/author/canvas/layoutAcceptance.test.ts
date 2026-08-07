@@ -16,7 +16,6 @@ const passGeometry: CanvasLayoutQualityReport = {
   edgeLabelCollisionDetails: [],
   pinnedNodes: 0,
   status: 'PASS',
-  summary: '0 node overlaps / 0 label collisions',
 };
 
 function perception(
@@ -38,7 +37,6 @@ function perception(
     labelDensityPer100kPx: 1.2,
     graphScreenOccupancy: 0.42,
     reasons: [],
-    summary: `${status} at ${Math.round(zoom * 100)}%`,
     ...overrides,
   };
 }

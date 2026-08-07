@@ -24,6 +24,29 @@
 
 ## 实施进度
 
+### 2026-08-07：UX-R2-005B Layout Quality 动态消息协议
+
+已实现：
+
+- `CanvasLayoutQualityReport` 与 `CanvasPerceptualQualityReport` 不再携带预先拼接的英文
+  `summary`；算法层只输出几何指标、感知指标和稳定 reason code，展示句子的所有权收回到
+  `layoutQualityPresentation` 与类型化 message catalog；
+- 节点重叠、节点遮挡字段标签、标签互相遮挡、小图缩放下限、标题字号下限、总览字段标签和
+  高标签密度共 7 类原因均以 `messageId + params` 投影；边标签碰撞只携带 edge/node 坐标；
+- Auto Layout 的 computing、optimal、preview、apply、advanced override、cancel、restore、pin 和
+  adaptive chrome notice 全部 descriptor 化，语言切换不再重算布局，也不会显示冻结的英文 state；
+- 候选布局面板同时呈现候选几何和候选感知证据，不再误用当前画布的感知报告；状态、回归原因、
+  数量与小数均在 presenter 边界本地化和格式化，避免 `REVIEW` 与浮点长尾泄露到中文产品面；
+- 新增中英文 presenter 回归、单数量英文稳定句式、中文组件级候选证据回归，并把
+  `CanvasTaskNavigator` 纳入 deep-surface locale inventory。
+
+工程证据：TypeScript 类型检查通过；Layout/i18n 聚焦回归 `18 / 18`、完整前端回归
+`78` 个 test files、`595 / 595` tests 通过；i18n/UX production build 门禁通过，Vite production
+bundle 构建成功。真实浏览器证据在完成 005C/005D 后按中英文桌面/移动矩阵统一补录。
+
+本切片完成 UX-R2-005 的 Layout quality 控制面。Showcase/Rehearsal metadata、relative clock 与
+严格动态调用 inventory 继续由 005C/005D 收口。
+
 ### 2026-08-07：UX-R2-005A Library 动态消息协议
 
 已实现：

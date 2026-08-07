@@ -184,6 +184,7 @@ import {
 } from './author/dslAuthorHandoff';
 import AuthorCommandBar from './author/shell/AuthorCommandBar';
 import { useI18n } from './i18n/I18nProvider';
+import type { MessageDescriptor } from './i18n/messageCatalog';
 import AuthorContextInspector from './author/shell/AuthorContextInspector';
 import AuthorSurfaceRouter from './author/shell/AuthorSurfaceRouter';
 import TopologyContextRail from './author/shell/TopologyContextRail';
@@ -236,6 +237,7 @@ import {
   adaptiveCanvasChromePolicy,
   assessCanvasPerceptualQuality,
   projectCanvasSemantics,
+  type AdaptiveCanvasChromeReason,
   type CanvasPanelPreference,
   type CanvasSemanticProjection,
 } from './author/canvas/canvasSemantics';
@@ -532,6 +534,19 @@ function CanvasDataEdge({
       )}
     </>
   );
+}
+
+function adaptiveChromeReasonMessage(reason: AdaptiveCanvasChromeReason): MessageDescriptor {
+  switch (reason) {
+    case 'TASK_SURFACE':
+      return { messageId: 'layout.chrome.taskSurface' };
+    case 'COMPACT_WORKSPACE':
+      return { messageId: 'layout.chrome.compactWorkspace' };
+    case 'GRAPH_OVERVIEW':
+      return { messageId: 'layout.chrome.graphOverview' };
+    case 'READABILITY_FLOOR':
+      return { messageId: 'layout.chrome.readabilityFloor' };
+  }
 }
 
 function minimapNodeColor(node: Node<NodeData>): string {
@@ -4776,7 +4791,7 @@ export interface AuthorCanvasProps {
 }
 
 export default function AuthorCanvas({ workspaceVersion = 'v1' }: AuthorCanvasProps = {}) {
-  const { locale, t } = useI18n();
+  const { locale, t, m } = useI18n();
   const isTaskWorkspace = workspaceVersion === 'v2';
   const initialWorkspaceLocation = parseAuthorWorkspaceLocation(window.location.search);
   const [initialDslHandoff] = useState(() => (
@@ -4799,7 +4814,7 @@ export default function AuthorCanvas({ workspaceVersion = 'v1' }: AuthorCanvasPr
   const [inspectorPreference, setInspectorPreference] = useState<CanvasPanelPreference>(
     () => initialCanvasPanelPreference('inspector'),
   );
-  const [adaptiveChromeNotice, setAdaptiveChromeNotice] = useState('');
+  const [adaptiveChromeNotice, setAdaptiveChromeNotice] = useState<MessageDescriptor | null>(null);
   const [compactWorkspace, setCompactWorkspace] = useState(() => (
     isTaskWorkspace
     && typeof window.matchMedia === 'function'
@@ -4920,7 +4935,7 @@ export default function AuthorCanvas({ workspaceVersion = 'v1' }: AuthorCanvasPr
   const [layoutPlanning, setLayoutPlanning] = useState(false);
   const [layoutPreview, setLayoutPreview] = useState<LayoutPreviewSnapshot | null>(null);
   const [layoutUndo, setLayoutUndo] = useState<LayoutUndoSnapshot | null>(null);
-  const [layoutNotice, setLayoutNotice] = useState('');
+  const [layoutNotice, setLayoutNotice] = useState<MessageDescriptor | null>(null);
   const searchInputRef = useRef<HTMLInputElement>(null);
   const flowRef = useRef<HTMLDivElement>(null);
   useEffect(() => {
@@ -5213,11 +5228,11 @@ export default function AuthorCanvas({ workspaceVersion = 'v1' }: AuthorCanvasPr
         clearRunResult();
         setConnectionGuide(null);
         setLayoutUndo(null);
-        setLayoutNotice('');
+        setLayoutNotice(null);
       }
       if (changes.some((change) => change.type === 'position')) {
         setLayoutUndo(null);
-        setLayoutNotice('');
+        setLayoutNotice(null);
       }
       if (removedNodeIds.length > 0) {
         setFixtureDrafts((current) => {
@@ -5288,7 +5303,7 @@ export default function AuthorCanvas({ workspaceVersion = 'v1' }: AuthorCanvasPr
     clearRunResult();
     setConnectionGuide(null);
     setLayoutUndo(null);
-    setLayoutNotice('');
+    setLayoutNotice(null);
     const nextIndex = counter.current + 1;
     counter.current = nextIndex;
     const id = `n${nextIndex}`;
@@ -5777,9 +5792,11 @@ export default function AuthorCanvas({ workspaceVersion = 'v1' }: AuthorCanvasPr
     }
     const notice = adaptiveChrome.reason
       && (adaptiveChrome.collapsePalette || adaptiveChrome.collapseInspector)
-      ? adaptiveChrome.reason
-      : '';
-    setAdaptiveChromeNotice((current) => current === notice ? current : notice);
+      ? adaptiveChromeReasonMessage(adaptiveChrome.reason)
+      : null;
+    setAdaptiveChromeNotice((current) => (
+      current?.messageId === notice?.messageId ? current : notice
+    ));
     if (!changed || authorMode !== 'compose' || canvasNodes.length === 0) {
       return undefined;
     }
@@ -5954,7 +5971,7 @@ export default function AuthorCanvas({ workspaceVersion = 'v1' }: AuthorCanvasPr
     setLayoutPlanning(false);
     setLayoutPreview(null);
     setLayoutUndo(null);
-    setLayoutNotice('');
+    setLayoutNotice(null);
     setFocusPathNodeId('');
     setOverviewVisible(
       nextNodes.length >= COMPLEX_GRAPH_NODE_THRESHOLD
@@ -7001,7 +7018,7 @@ export default function AuthorCanvas({ workspaceVersion = 'v1' }: AuthorCanvasPr
     setLayoutPlanning(false);
     setLayoutPreview(null);
     setLayoutUndo(null);
-    setLayoutNotice('');
+    setLayoutNotice(null);
     setFocusPathNodeId('');
     setOverviewVisible(
       nextNodes.length >= COMPLEX_GRAPH_NODE_THRESHOLD
@@ -8334,7 +8351,7 @@ export default function AuthorCanvas({ workspaceVersion = 'v1' }: AuthorCanvasPr
       }
       setLayoutPlanning(true);
       setLayoutPreview(null);
-      setLayoutNotice('Computing layout preview...');
+      setLayoutNotice({ messageId: 'layout.notice.computing' });
       if (compactWorkspace) {
         setPaletteCollapsed(true);
         setInspectorCollapsed(true);
@@ -8358,7 +8375,14 @@ export default function AuthorCanvas({ workspaceVersion = 'v1' }: AuthorCanvasPr
         layoutPlanTimerRef.current = null;
         if (movedNodeCount === 0) {
           setLayoutPreview(null);
-          setLayoutNotice(`Layout already optimal · ${quality.summary}.`);
+          setLayoutNotice({
+            messageId: 'layout.notice.alreadyOptimalWithQuality',
+            params: {
+              overlaps: quality.nodeOverlaps,
+              collisions: quality.edgeLabelCollisions,
+              pinned: quality.pinnedNodes,
+            },
+          });
           recordAuthorTaskEvent('AUTO_LAYOUT_COMPLETED', {
             nodeCount: nodes.length,
             edgeCount: edges.length,
@@ -8422,7 +8446,10 @@ export default function AuthorCanvas({ workspaceVersion = 'v1' }: AuthorCanvasPr
             candidateZoomPercent: Math.round(acceptance.candidate.zoom * 100),
           });
         }
-        setLayoutNotice(`Preview moves ${movedNodeCount} node${movedNodeCount === 1 ? '' : 's'}.`);
+        setLayoutNotice({
+          messageId: 'layout.notice.previewMoves',
+          params: { count: movedNodeCount },
+        });
       }, 0);
       return;
     }
@@ -8439,11 +8466,14 @@ export default function AuthorCanvas({ workspaceVersion = 'v1' }: AuthorCanvasPr
         positions: Object.fromEntries(nodes.map((node) => [node.id, { ...node.position }])),
         movedNodeCount,
       });
-      setLayoutNotice(`Moved ${movedNodeCount} node${movedNodeCount === 1 ? '' : 's'}.`);
+      setLayoutNotice({
+        messageId: 'layout.notice.moved',
+        params: { count: movedNodeCount },
+      });
       setNodes(nextNodes);
     } else {
       setLayoutUndo(null);
-      setLayoutNotice('Layout already optimal.');
+      setLayoutNotice({ messageId: 'layout.notice.alreadyOptimal' });
     }
     if (typeof window.requestAnimationFrame === 'function') {
       window.requestAnimationFrame(() => fitCanvasToView());
@@ -8482,11 +8512,14 @@ export default function AuthorCanvas({ workspaceVersion = 'v1' }: AuthorCanvasPr
       positions: layoutPreview.positions,
       movedNodeCount: layoutPreview.movedNodeCount,
     });
-    setLayoutNotice(
-      `Applied ${layoutPreview.movedNodeCount} moved node${
-        layoutPreview.movedNodeCount === 1 ? '' : 's'
-      } · ${layoutPreview.quality.summary}.`,
-    );
+    setLayoutNotice({
+      messageId: 'layout.notice.applied',
+      params: {
+        count: layoutPreview.movedNodeCount,
+        overlaps: layoutPreview.quality.nodeOverlaps,
+        collisions: layoutPreview.quality.edgeLabelCollisions,
+      },
+    });
     recordAuthorTaskEvent('AUTO_LAYOUT_COMPLETED', {
       nodeCount: nodes.length,
       edgeCount: edges.length,
@@ -8510,11 +8543,14 @@ export default function AuthorCanvas({ workspaceVersion = 'v1' }: AuthorCanvasPr
       positions: layoutPreview.positions,
       movedNodeCount: layoutPreview.movedNodeCount,
     });
-    setLayoutNotice(
-      `Applied advanced override for ${layoutPreview.movedNodeCount} moved node${
-        layoutPreview.movedNodeCount === 1 ? '' : 's'
-      } · ${layoutPreview.quality.summary}.`,
-    );
+    setLayoutNotice({
+      messageId: 'layout.notice.overrideApplied',
+      params: {
+        count: layoutPreview.movedNodeCount,
+        overlaps: layoutPreview.quality.nodeOverlaps,
+        collisions: layoutPreview.quality.edgeLabelCollisions,
+      },
+    });
     recordAuthorTaskEvent('AUTO_LAYOUT_COMPLETED', {
       nodeCount: nodes.length,
       edgeCount: edges.length,
@@ -8536,10 +8572,10 @@ export default function AuthorCanvas({ workspaceVersion = 'v1' }: AuthorCanvasPr
         ...node,
         position: layoutPreview.positions[node.id] ?? node.position,
       })));
-      setLayoutNotice('Layout preview canceled; original positions restored.');
+      setLayoutNotice({ messageId: 'layout.notice.previewCanceled' });
       window.requestAnimationFrame?.(() => fitCanvasToView());
     } else {
-      setLayoutNotice('Layout computation canceled.');
+      setLayoutNotice({ messageId: 'layout.notice.computationCanceled' });
     }
     setLayoutPreview(null);
   }, [fitCanvasToView, layoutPreview]);
@@ -8550,9 +8586,10 @@ export default function AuthorCanvas({ workspaceVersion = 'v1' }: AuthorCanvasPr
       ...node,
       position: layoutUndo.positions[node.id] ?? node.position,
     })));
-    setLayoutNotice(`Restored ${layoutUndo.movedNodeCount} node position${
-      layoutUndo.movedNodeCount === 1 ? '' : 's'
-    }.`);
+    setLayoutNotice({
+      messageId: 'layout.notice.restored',
+      params: { count: layoutUndo.movedNodeCount },
+    });
     if (isTaskWorkspace) {
       recordAuthorTaskEvent('AUTO_LAYOUT_UNDONE', {
         movedNodeCount: layoutUndo.movedNodeCount,
@@ -8572,10 +8609,10 @@ export default function AuthorCanvas({ workspaceVersion = 'v1' }: AuthorCanvasPr
       const next = new Set(current);
       if (next.has(selectedNodeId)) {
         next.delete(selectedNodeId);
-        setLayoutNotice('Selected node will move with Auto Layout.');
+        setLayoutNotice({ messageId: 'layout.notice.nodeMovable' });
       } else {
         next.add(selectedNodeId);
-        setLayoutNotice('Selected node pinned to its current position.');
+        setLayoutNotice({ messageId: 'layout.notice.nodePinned' });
       }
       return next;
     });
@@ -10581,7 +10618,7 @@ export default function AuthorCanvas({ workspaceVersion = 'v1' }: AuthorCanvasPr
             layoutAcceptance={layoutPreview?.acceptance ?? null}
             perceptualQuality={canvasPerceptualQuality}
             topologyLanes={canvasSemantics.lanes}
-            layoutNotice={layoutNotice || adaptiveChromeNotice}
+            layoutNotice={layoutNotice ?? adaptiveChromeNotice}
             canUndoLayout={Boolean(layoutUndo)}
             onModeChange={activateCanvasTaskMode}
             onSelectNode={focusNodeFromNavigator}
@@ -10644,7 +10681,7 @@ export default function AuthorCanvas({ workspaceVersion = 'v1' }: AuthorCanvasPr
                 {focusPathNodeId && <span>{t('{count} in path', { count: focusedCanvasPath.nodeIds.size })}</span>}
                 {layoutNotice && (
                   <span data-testid="layout-notice" role="status" aria-live="polite">
-                    {layoutNotice}
+                    {m(layoutNotice.messageId, layoutNotice.params)}
                   </span>
                 )}
               </div>

@@ -139,6 +139,10 @@ Library save/readiness/runtime messages use stable `messageId + params` descript
 codes map to localized product conclusions; the original protocol message is available only in the
 collapsed Technical details area, so dynamic counts and new server messages cannot silently fall
 back to English in the Chinese workspace.
+Auto Layout uses the same descriptor boundary: geometry and perception engines return metrics and
+stable reason codes, while the presenter owns localized summaries, notices, numeric formatting, and
+collision coordinates. Candidate review always describes the candidate's own perceptual report;
+changing the locale does not recompute or mutate pending node positions.
 Implementation and browser evidence are recorded in
 [`docs/resource-gateway-ux-stage5-visual-responsive-system.md`](../docs/resource-gateway-ux-stage5-visual-responsive-system.md).
 
