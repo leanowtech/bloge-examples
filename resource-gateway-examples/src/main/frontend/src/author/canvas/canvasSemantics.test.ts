@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
+import { CANVAS_EXAMPLE_TEMPLATES } from '../../canvasExamples';
 import type { CanvasEdge, CanvasNode } from '../../draftModel';
 import {
   adaptiveCanvasChromePolicy,
@@ -113,6 +114,39 @@ describe('canvas semantic projection', () => {
     expect(primaryLabel?.y).toBeGreaterThan(472);
     expect(inspect.nodeLabelCollisionCount).toBe(0);
     expect(inspect.labelLabelCollisionCount).toBe(0);
+  });
+
+  it('keeps every visible label in the complete loan example outside an 8px safety band', () => {
+    const loanExample = CANVAS_EXAMPLE_TEMPLATES.find((example) => (
+      example.key === 'loan-policy-fallback'
+    ));
+    expect(loanExample).toBeDefined();
+
+    const inspect = projectCanvasSemantics(
+      loanExample!.nodes,
+      loanExample!.edges,
+      { mode: 'inspect' },
+    );
+    const labelBoxes = [...inspect.edgeLabels.values()].map((label) => {
+      const width = Math.min(320, Math.max(104, label.text.length * 6.2 + 24));
+      return {
+        left: label.x - width / 2 - 8,
+        top: label.y - 15 - 8,
+        right: label.x + width / 2 + 8,
+        bottom: label.y + 15 + 8,
+      };
+    });
+
+    for (let left = 0; left < labelBoxes.length; left += 1) {
+      for (let right = left + 1; right < labelBoxes.length; right += 1) {
+        expect(
+          labelBoxes[left].left < labelBoxes[right].right
+          && labelBoxes[left].right > labelBoxes[right].left
+          && labelBoxes[left].top < labelBoxes[right].bottom
+          && labelBoxes[left].bottom > labelBoxes[right].top,
+        ).toBe(false);
+      }
+    }
   });
 
   it('builds topological lanes for 100 nodes in linear time and keeps cyclic nodes bounded', () => {

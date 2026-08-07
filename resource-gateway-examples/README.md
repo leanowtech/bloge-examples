@@ -4144,6 +4144,11 @@ enlarges beyond 100%. Auto Layout now compares the current and candidate geometr
 fit zoom, title size, perceptual verdict, and graph area before enabling **Apply**.
 A regressive candidate keeps Apply disabled and recommends retaining the current
 layout; **Advanced > Apply anyway** is an explicit, payload-free audited override.
+For compact layered graphs, generation and acceptance now share the same 24 px
+two-sided node clearance, long edges use the semantic bus lane, and visible edge
+labels keep an additional 8 px model-space safety band for localized wrapping and
+fractional zoom. The bundled Loan example is browser-verified at 80% fit, a 12 px
+effective title, and zero node overlap, label overlap, or viewport clipping.
 On compact viewports, start in Overview and select a node before entering Inspect.
 **Undo layout** restores the exact pre-layout positions until a node is added,
 removed, or manually moved.

@@ -3,13 +3,14 @@ import type { CanvasEdge, CanvasNode } from '../../draftModel';
 const NODE_WIDTH = 260;
 const NODE_HEIGHT = 164;
 const NODE_CLEARANCE = 24;
-const ROW_PITCH = 236;
+const ROW_PITCH = NODE_HEIGHT + NODE_CLEARANCE * 2;
 const LABEL_HEIGHT = 30;
 const LABEL_MIN_WIDTH = 104;
 const LABEL_MAX_WIDTH = 320;
 const LABEL_CHAR_WIDTH = 6.2;
 const LABEL_DIAGONAL_OFFSET = 48;
 const LABEL_LANE_STEP = 42;
+const LONG_EDGE_BUS_MIN_SPAN = NODE_WIDTH * 2;
 
 export interface CanvasLayoutQualityReport {
   nodeOverlaps: number;
@@ -169,7 +170,8 @@ function findEdgeLabelCollisions(
     const target = byId.get(edge.target);
     if (!source || !target) continue;
     const horizontalSpan = Math.abs(target.position.x - source.position.x);
-    if (horizontalSpan > 760) continue;
+    // Two-column edges are routed through the canvas bus lane, not through this midpoint box.
+    if (horizontalSpan >= LONG_EDGE_BUS_MIN_SPAN) continue;
     const label = edgeLabel(edge);
     const width = Math.min(
       LABEL_MAX_WIDTH,

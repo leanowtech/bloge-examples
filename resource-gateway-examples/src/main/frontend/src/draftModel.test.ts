@@ -1189,10 +1189,10 @@ describe('autoLayoutCanvas', () => {
       .map((id) => byId.get(id)?.y ?? 0)
       .sort((left, right) => left - right);
     for (let index = 1; index < middleLayer.length; index += 1) {
-      expect(middleLayer[index] - middleLayer[index - 1]).toBeGreaterThanOrEqual(236);
+      expect(middleLayer[index] - middleLayer[index - 1]).toBeGreaterThanOrEqual(212);
     }
-    expect((byId.get('profile')?.x ?? 0) - (byId.get('root')?.x ?? 0)).toBe(288);
-    expect((byId.get('join')?.x ?? 0) - (byId.get('profile')?.x ?? 0)).toBe(288);
+    expect((byId.get('profile')?.x ?? 0) - (byId.get('root')?.x ?? 0)).toBe(308);
+    expect((byId.get('join')?.x ?? 0) - (byId.get('profile')?.x ?? 0)).toBe(308);
   });
 
   it('keeps small long-span graphs centered without reserving a permanent bus row', () => {
@@ -1221,7 +1221,7 @@ describe('autoLayoutCanvas', () => {
     expect(byId.get('response')?.y).toBe(endpointY);
     expect(byId.get('wallet')?.y).toBe(72);
     expect(byId.get('recommendations')?.y).toBe(endpointY);
-    expect(byId.get('notifications')?.y).toBe(endpointY + 236);
+    expect(byId.get('notifications')?.y).toBe(endpointY + 212);
   });
 
   it('does not let one long field label destroy the fit zoom of a small graph', () => {
@@ -1243,7 +1243,7 @@ describe('autoLayoutCanvas', () => {
       ],
     );
 
-    expect(layout[1].position.x - layout[0].position.x).toBe(288);
+    expect(layout[1].position.x - layout[0].position.x).toBe(308);
   });
 
   it.each([

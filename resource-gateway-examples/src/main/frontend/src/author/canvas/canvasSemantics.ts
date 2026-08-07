@@ -131,6 +131,7 @@ const LABEL_LANES = [
   -12, 12,
 ];
 const LABEL_NODE_CLEARANCE = 8;
+const LABEL_LABEL_CLEARANCE = 8;
 const FOCUS_LABEL_BUDGET = 12;
 
 /**
@@ -426,7 +427,11 @@ function firstCollisionFreeLane(
     const box = edgeLabelBox(candidate, nodeById, lane);
     if (!box) return { lane: null, blockedByNodes, blockedByLabels };
     const hitsNode = collisionNodes.some((node) => boxesOverlap(box, nodeBox(node)));
-    const hitsLabel = occupiedLabels.some((occupied) => boxesOverlap(box, occupied));
+    // CSS borders, localized wrapping and fractional zoom can make two theoretically adjacent
+    // boxes touch in the browser. Keep an explicit visual safety band between accepted labels.
+    const hitsLabel = occupiedLabels.some((occupied) => (
+      boxesOverlap(box, expandBox(occupied, LABEL_LABEL_CLEARANCE))
+    ));
     blockedByNodes ||= hitsNode;
     blockedByLabels ||= hitsLabel;
     if (hitsNode || hitsLabel) continue;
@@ -448,6 +453,15 @@ function firstCollisionFreeLane(
     }
   }
   return { lane: bestLane, blockedByNodes, blockedByLabels };
+}
+
+function expandBox(box: Box, clearance: number): Box {
+  return {
+    left: box.left - clearance,
+    top: box.top - clearance,
+    right: box.right + clearance,
+    bottom: box.bottom + clearance,
+  };
 }
 
 function labelBoxSide(box: Box, graphTop: number, graphBottom: number): -1 | 0 | 1 {

@@ -163,6 +163,8 @@ GET /admin/visual-operator-library-authoring/drafts/{draftId}/revisions/{revisio
    标题字号。候选不退化时才能点击 **Apply**；如果小图低于 80%、标题低于 12px、碰撞增加
    或图面积异常膨胀，系统会建议 **Keep current layout** 并禁用默认 Apply。确有需要时只能从
    **Advanced** 显式选择 **Apply anyway**，该决定会留下不含业务 payload 的审计事件。
+   对小型分层图，生成器使用与质量门禁一致的 `24px` 双侧节点安全带，并为边标签保留额外
+   `8px` 安全带；因此中文换行、边框和缩放取整不会让两张标签在浏览器里悄悄相贴。
 2. 点击 **Overview** 或使用 Map 判断全图形状。这个阶段字段 label 固定隐藏。
 3. 选中关键节点，再点击 **Focus**。画布只显示该节点完整上游/下游闭包的语义 label，
    旁路节点与边会降噪。
@@ -172,10 +174,10 @@ GET /admin/visual-operator-library-authoring/drafts/{draftId}/revisions/{revisio
 6. 在 Inspect 中检查端口、contract 和字段映射。竞争的长标签会在上下安全带间分流；
    `Fit` 最多恢复到 100%，不会意外放大后把标签挤出视口。
 
-常用桌面断点下，内置 Loan 示例的 12 条字段依赖显示为 4 个语义 bundle。1024px 的
-Inspect 默认约 89%，Focus 约 86%，等效标题均不低于 12px，真实浏览器门禁要求节点、
-标签之间和视口边界的碰撞为 0。820px 若完整 Inspect 低于可读性地板会诚实显示 Review；
-先用 Overview 看形状，再选节点进入 Inspect。
+常用桌面断点下，内置 Loan 示例的 12 条字段依赖显示为 4 个语义 bundle。在
+`1472 x 920` 页面、实际 `1024 x 434` 画布区域中，Auto Layout 实测为 `80% / PASS / 12px`
+有效标题，节点覆盖、标签覆盖和视口裁切均为 0。窄视口若完整 Inspect 低于可读性地板会
+诚实显示 Review；先用 Overview 看形状，再选节点进入 Inspect。
 
 `Canvas Focus` 与 `Focus Path` 不是同一能力：前者扩大可用画布面积，后者从业务语义上
 筛选当前要读的依赖路径。复杂图通常先进入 Canvas Focus，再使用 Auto Layout、Overview
@@ -2157,6 +2159,11 @@ selection。坐标、source map、fixtures、描述文本和 `visualLayout.graph
 当前与候选的可读性差异。同一依赖层内按上游/下游重心排序，列间距会为边标签预留空间，
 行间距会按节点卡片高度和必要空白展开。它的目标不是把所有节点压到最小面积，而是在保持
 信息密度的同时避免算子挤在一起、边上的 `source.path -> target.path` 被遮挡。
+
+小型分层图的节点安全带和生成间距使用同一组几何常量：列间保留两侧各 `24px`，同列节点
+按卡片高度加两侧安全带排布；跨两列以上的长边走 bus lane。标签之间另有 `8px` 模型安全带，
+用于抵消多语言换行、边框和小数缩放。内置贷款示例在生产包真实浏览器中达到
+`80% / PASS / 12px title`，且节点覆盖、标签覆盖和视口裁切均为 0。
 
 Auto Layout 不再把“没有节点重叠”当成唯一成功标准。候选如果降低小图缩放比例、让标题
 小于 12px、增加标签碰撞或显著扩大图边界，默认 **Apply** 会被禁用，并建议保留当前布局。

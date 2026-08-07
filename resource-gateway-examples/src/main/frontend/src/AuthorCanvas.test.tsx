@@ -617,7 +617,7 @@ describe('AuthorCanvas operator-library intake', () => {
     expect(query('[data-testid="canvas-node:response"][data-operator-ref="bloge:transform"]').textContent)
       .toContain('response');
     expect(query('[data-testid="node-wrapper:eligibility"]').getAttribute('data-position')).toBe('96,72');
-    expect(query('[data-testid="node-wrapper:response"]').getAttribute('data-position')).toBe('384,72');
+    expect(query('[data-testid="node-wrapper:response"]').getAttribute('data-position')).toBe('404,72');
 
     const exported = authorDraftExport(query<HTMLAnchorElement>('[data-testid="author-draft-export"]'));
     expect(exported).toMatchObject({
@@ -656,7 +656,7 @@ describe('AuthorCanvas operator-library intake', () => {
       },
     });
     expect(exported.nodes.find((node: { id: string }) => node.id === 'eligibility')?.position).toEqual({ x: 96, y: 72 });
-    expect(exported.nodes.find((node: { id: string }) => node.id === 'response')?.position).toEqual({ x: 384, y: 72 });
+    expect(exported.nodes.find((node: { id: string }) => node.id === 'response')?.position).toEqual({ x: 404, y: 72 });
     expect(exported.edges[0]).toMatchObject({
       kind: 'data',
       source: { nodeId: 'eligibility', port: 'output', path: 'eligible' },
@@ -699,7 +699,7 @@ describe('AuthorCanvas operator-library intake', () => {
     expect(storedExport.nodes.find((node: { id: string }) => node.id === 'eligibility')?.position)
       .toEqual({ x: 96, y: 72 });
     expect(storedExport.nodes.find((node: { id: string }) => node.id === 'response')?.position)
-      .toEqual({ x: 384, y: 72 });
+      .toEqual({ x: 404, y: 72 });
   });
 
   it('consumes a Library Workbench DSL handoff and renders an auto-laid-out graph', async () => {
@@ -722,7 +722,7 @@ describe('AuthorCanvas operator-library intake', () => {
     expect(query('[data-testid="node-wrapper:eligibility"]').getAttribute('data-position'))
       .toBe('96,72');
     expect(query('[data-testid="node-wrapper:response"]').getAttribute('data-position'))
-      .toBe('384,72');
+      .toBe('404,72');
     await waitFor(() => expect(reactFlowMocks.fitView).toHaveBeenCalled());
   });
 
@@ -1232,12 +1232,14 @@ describe('AuthorCanvas built-in canvas examples', () => {
         'WORKSPACE_OPENED',
         'START_CHOICE_SELECTED',
         'EXAMPLE_LOADED',
-        'AUTO_LAYOUT_CANDIDATE_REJECTED',
-        'AUTO_LAYOUT_OVERRIDE_APPLIED',
         'AUTO_LAYOUT_COMPLETED',
         'RUN_STARTED',
         'RUN_COMPLETED',
         'FIRST_SUCCESS',
+      ]));
+      expect(events.map((event) => event.name)).not.toEqual(expect.arrayContaining([
+        'AUTO_LAYOUT_CANDIDATE_REJECTED',
+        'AUTO_LAYOUT_OVERRIDE_APPLIED',
       ]));
       expect(events.every((event) =>
         Object.keys(event.metadata).every((key) =>
@@ -2337,7 +2339,7 @@ describe('AuthorCanvas connection guide', () => {
     await waitFor(() =>
       expect(query('[data-testid="node-wrapper:n1"]').getAttribute('data-position')).toBe('96,72'),
     );
-    expect(query('[data-testid="node-wrapper:n2"]').getAttribute('data-position')).toBe('384,72');
+    expect(query('[data-testid="node-wrapper:n2"]').getAttribute('data-position')).toBe('404,72');
     await waitFor(() =>
       expect(reactFlowMocks.fitView).toHaveBeenCalledWith({
         padding: 0.1,

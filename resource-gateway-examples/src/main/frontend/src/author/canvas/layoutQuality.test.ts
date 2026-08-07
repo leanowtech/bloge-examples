@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
-import type { CanvasEdge, CanvasNode } from '../../draftModel';
+import { CANVAS_EXAMPLE_TEMPLATES } from '../../canvasExamples';
+import { autoLayoutCanvas, type CanvasEdge, type CanvasNode } from '../../draftModel';
 import { assessCanvasLayout, constrainCanvasLayout } from './layoutQuality';
 
 const nodes: CanvasNode[] = [
@@ -93,5 +94,56 @@ describe('canvas layout constraints and quality', () => {
     expect(first).toEqual(second);
     expect(first).not.toBe(candidate);
     expect(first[0]).not.toBe(candidate[0]);
+  });
+
+  it('does not stretch a compact small-graph layout to reconcile its own clearance rule', () => {
+    const compactNodes: CanvasNode[] = [
+      { id: 'profile', operatorRef: 'profile', position: { x: 0, y: 0 } },
+      { id: 'primary', operatorRef: 'primary', position: { x: 0, y: 0 } },
+      { id: 'secondary', operatorRef: 'secondary', position: { x: 0, y: 0 } },
+      { id: 'decision', operatorRef: 'decision', position: { x: 0, y: 0 } },
+      { id: 'response', operatorRef: 'response', position: { x: 0, y: 0 } },
+    ];
+    const compactEdges: CanvasEdge[] = [
+      { id: 'profile-primary', source: 'profile', target: 'primary' },
+      { id: 'profile-secondary', source: 'profile', target: 'secondary' },
+      { id: 'primary-decision', source: 'primary', target: 'decision' },
+      { id: 'profile-decision', source: 'profile', target: 'decision' },
+      { id: 'decision-response', source: 'decision', target: 'response' },
+    ];
+    const generated = autoLayoutCanvas(compactNodes, compactEdges);
+    const constrained = constrainCanvasLayout(generated, generated, new Set(), compactEdges);
+
+    expect(constrained.map(({ position }) => position)).toEqual(
+      generated.map(({ position }) => position),
+    );
+    expect(assessCanvasLayout(constrained, compactEdges)).toMatchObject({
+      nodeOverlaps: 0,
+      edgeLabelCollisions: 0,
+      status: 'PASS',
+    });
+  });
+
+  it('keeps the complete loan demo compact after card and edge-label reconciliation', () => {
+    const template = CANVAS_EXAMPLE_TEMPLATES.find(({ key }) => key === 'loan-policy-fallback');
+    expect(template).toBeDefined();
+    const demoNodes = template!.nodes.map<CanvasNode>(({ id, operatorRef, position }) => ({
+      id,
+      operatorRef,
+      position,
+    }));
+    const demoEdges = template!.edges.map<CanvasEdge>((edge) => ({ ...edge }));
+    const generated = autoLayoutCanvas(demoNodes, demoEdges);
+    const constrained = constrainCanvasLayout(generated, generated, new Set(), demoEdges);
+
+    expect(assessCanvasLayout(generated, demoEdges).edgeLabelCollisionDetails).toEqual([]);
+    expect(constrained.map(({ position }) => position)).toEqual(
+      generated.map(({ position }) => position),
+    );
+    expect(assessCanvasLayout(constrained, demoEdges)).toMatchObject({
+      nodeOverlaps: 0,
+      edgeLabelCollisions: 0,
+      status: 'PASS',
+    });
   });
 });
