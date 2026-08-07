@@ -15,6 +15,7 @@ import {
   saveLibraryAuthoringDraft,
 } from '../api';
 import { useI18n } from '../i18n/I18nProvider';
+import type { MessageDescriptor, MessageId } from '../i18n/messageCatalog';
 import type {
   VisualLibraryAuthoringCommitResult,
   VisualLibraryAuthoringCompileResult,
@@ -54,13 +55,13 @@ import { useCompactTaskViewport } from '../ux/useCompactTaskViewport';
 type SaveState = 'idle' | 'dirty' | 'saving' | 'saved' | 'conflict' | 'error';
 
 export default function LibraryWorkbench() {
-  const { t } = useI18n();
+  const { t, m } = useI18n();
   const [document, setDocument] = useState<VisualLibraryAuthoringDocument | null>(null);
   const [draftId, setDraftId] = useState('');
   const [revision, setRevision] = useState(0);
   const [selection, setSelection] = useState<LibraryAssetSelection>({ kind: 'library', key: '' });
   const [saveState, setSaveState] = useState<SaveState>('idle');
-  const [saveMessage, setSaveMessage] = useState('');
+  const [saveNotice, setSaveNotice] = useState<MessageDescriptor | null>(null);
   const [preview, setPreview] = useState<VisualLibraryAuthoringCompileResult | null>(null);
   const [previewBusy, setPreviewBusy] = useState(false);
   const [commitBusy, setCommitBusy] = useState(false);
@@ -93,7 +94,10 @@ export default function LibraryWorkbench() {
     setDocument(draft.document);
     setSelection(nextSelection);
     setSaveState('saved');
-    setSaveMessage(`Saved revision ${draft.revision}`);
+    setSaveNotice({
+      messageId: 'library.save.savedRevision',
+      params: { revision: draft.revision },
+    });
     setPreview(null);
     setCommitResult(null);
     setStartSource('');
@@ -148,7 +152,10 @@ export default function LibraryWorkbench() {
       .catch((error) => {
         if (active) {
           setSaveState('error');
-          setSaveMessage(error instanceof Error ? error.message : 'Failed to load draft.');
+          setSaveNotice({
+            messageId: 'library.save.loadFailed',
+            rawDetail: error instanceof Error ? error.message : undefined,
+          });
         }
       })
       .finally(() => {
@@ -179,7 +186,7 @@ export default function LibraryWorkbench() {
         return currentDraftRef.current;
       }
       setSaveState('saving');
-      setSaveMessage('Saving...');
+      setSaveNotice({ messageId: 'library.save.saving' });
       const stored = await saveLibraryAuthoringDraft(
         draftId,
         revisionRef.current,
@@ -194,7 +201,10 @@ export default function LibraryWorkbench() {
       replaceLibraryDraftLocation(stored.draftId, stored.revision);
       if (epoch === editEpochRef.current) {
         setSaveState('saved');
-        setSaveMessage(`Saved revision ${stored.revision}`);
+        setSaveNotice({
+          messageId: 'library.save.savedRevision',
+          params: { revision: stored.revision },
+        });
       }
       return stored;
     });
@@ -203,10 +213,17 @@ export default function LibraryWorkbench() {
       (error) => {
         if (error instanceof BlogeApiRequestError && error.status === 412) {
           setSaveState('conflict');
-          setSaveMessage('A newer revision exists. Reload before continuing.');
+          setSaveNotice({
+            messageId: 'library.save.revisionConflict',
+            rawCode: `HTTP_${error.status}`,
+            rawDetail: error.message,
+          });
         } else {
           setSaveState('error');
-          setSaveMessage(error instanceof Error ? error.message : 'Autosave failed.');
+          setSaveNotice({
+            messageId: 'library.save.autosaveFailed',
+            rawDetail: error instanceof Error ? error.message : undefined,
+          });
         }
       },
     );
@@ -251,7 +268,7 @@ export default function LibraryWorkbench() {
     editEpochRef.current += 1;
     setDocument((current) => current ? update(current) : current);
     setSaveState('dirty');
-    setSaveMessage('Unsaved changes');
+    setSaveNotice({ messageId: 'library.save.unsavedChanges' });
     setPreview(null);
     setCommitResult(null);
   }, []);
@@ -273,7 +290,7 @@ export default function LibraryWorkbench() {
       ? { kind: 'operator', key: inference.operatorKey }
       : { kind: 'library', key: '' });
     setSaveState('dirty');
-    setSaveMessage(`New ${source} draft`);
+    setSaveNotice({ messageId: newDraftMessageId(source) });
     setPreview(null);
     setCommitResult(null);
     setInferenceLaunch(inference ?? null);
@@ -318,11 +335,20 @@ export default function LibraryWorkbench() {
         commitReason,
       );
       setCommitResult(result);
-      setSaveMessage(`Design Catalog revision ${result.targetRevision} imported`);
+      setSaveNotice({
+        messageId: 'library.save.importedRevision',
+        params: { revision: result.targetRevision },
+      });
     } catch (error) {
       setSaveState(error instanceof BlogeApiRequestError && error.status === 412
         ? 'conflict' : 'error');
-      setSaveMessage(error instanceof Error ? error.message : 'Commit failed.');
+      setSaveNotice({
+        messageId: error instanceof BlogeApiRequestError && error.status === 412
+          ? 'library.save.revisionConflict'
+          : 'library.save.commitFailed',
+        rawCode: error instanceof BlogeApiRequestError ? `HTTP_${error.status}` : undefined,
+        rawDetail: error instanceof Error ? error.message : undefined,
+      });
     } finally {
       setCommitBusy(false);
     }
@@ -349,7 +375,7 @@ export default function LibraryWorkbench() {
   }, [document, persist]);
   const markRevisionConflict = useCallback(() => {
     setSaveState('conflict');
-    setSaveMessage('A newer revision exists. Reload before continuing.');
+    setSaveNotice({ messageId: 'library.save.revisionConflict' });
   }, []);
 
   if (loading && !document) {
@@ -358,7 +384,9 @@ export default function LibraryWorkbench() {
   if (!document) {
     return (
       <LibraryHome
-        routeError={saveState === 'error' ? saveMessage : ''}
+        routeError={saveState === 'error' && saveNotice
+          ? m(saveNotice.messageId, saveNotice.params)
+          : ''}
         onStart={start}
       />
     );
@@ -433,7 +461,7 @@ export default function LibraryWorkbench() {
     setDocument(result.document);
     setSelection(result.selection);
     setSaveState('dirty');
-    setSaveMessage('Unsaved changes');
+    setSaveNotice({ messageId: 'library.save.unsavedChanges' });
     setPreview(null);
     setCommitResult(null);
   };
@@ -488,8 +516,17 @@ export default function LibraryWorkbench() {
         </div>
         <div className={`library-save-state ${saveState}`} role="status" data-testid="library-save-state">
           <span aria-hidden="true" />
-          <strong>{t(saveState === 'conflict' ? 'Conflict' : saveState)}</strong>
-          <small>{t(saveMessage)}</small>
+          <strong>{m(saveStateMessageId(saveState))}</strong>
+          {saveNotice && (
+            <small>{m(saveNotice.messageId, saveNotice.params)}</small>
+          )}
+          {(saveNotice?.rawCode || saveNotice?.rawDetail) && (
+            <details className="library-save-technical">
+              <summary>{m('library.runtime.technicalDetails')}</summary>
+              {saveNotice.rawCode && <code>{saveNotice.rawCode}</code>}
+              {saveNotice.rawDetail && <p lang="en">{saveNotice.rawDetail}</p>}
+            </details>
+          )}
           {saveState === 'conflict' && (
             <button type="button" className="secondary compact" onClick={() => void reload()}>
               {t('Reload')}
@@ -758,6 +795,27 @@ function documentQueryAll<TElement extends Element>(selector: string): NodeListO
 
 function pointer(value: string): string {
   return value.replace(/~/g, '~0').replace(/\//g, '~1');
+}
+
+function saveStateMessageId(state: SaveState): MessageId {
+  const messageIds: Record<SaveState, MessageId> = {
+    idle: 'library.saveState.idle',
+    dirty: 'library.saveState.dirty',
+    saving: 'library.saveState.saving',
+    saved: 'library.saveState.saved',
+    conflict: 'library.saveState.conflict',
+    error: 'library.saveState.error',
+  };
+  return messageIds[state];
+}
+
+function newDraftMessageId(source: string): MessageId {
+  if (source === 'quick') return 'library.save.newQuickDraft';
+  if (source === 'samples') return 'library.save.newSampleDraft';
+  if (source === 'advanced-json') return 'library.save.newJsonDraft';
+  if (source.startsWith('example:')) return 'library.save.newExampleDraft';
+  if (source.startsWith('discovery:')) return 'library.save.newDiscoveryDraft';
+  return 'library.save.newDraft';
 }
 
 function positiveRevision(value: string | null): number {

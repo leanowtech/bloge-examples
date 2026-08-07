@@ -15142,6 +15142,30 @@ button.primary:disabled {
   text-transform: capitalize;
 }
 
+.library-save-technical {
+  grid-column: 2 / -1;
+  max-width: 460px;
+}
+
+.library-save-technical summary,
+.library-runtime-technical summary {
+  width: fit-content;
+  cursor: pointer;
+  color: #64748b;
+  font-size: var(--rg-font-aux);
+  font-weight: 700;
+}
+
+.library-save-technical :is(code, p),
+.library-runtime-technical :is(code, p) {
+  margin: 5px 0 0;
+  overflow-wrap: anywhere;
+  color: #475569;
+  font-size: var(--rg-font-aux);
+  line-height: 1.4;
+  white-space: normal;
+}
+
 .library-save-state.saving > span:first-child,
 .library-save-state.dirty > span:first-child {
   background: #c27600;
@@ -16500,6 +16524,10 @@ button.primary:disabled {
   color: #6c7889;
   font-size: var(--rg-font-aux);
   line-height: 1.35;
+}
+
+.library-runtime-technical {
+  grid-column: 1 / -1;
 }
 
 .library-preview-diagnostics > p {

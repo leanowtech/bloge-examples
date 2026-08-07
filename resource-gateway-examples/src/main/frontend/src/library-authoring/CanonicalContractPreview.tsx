@@ -6,6 +6,7 @@ import { useI18n } from '../i18n/I18nProvider';
 import {
   groupAuthoringDiagnostics,
   presentLibraryReadiness,
+  presentRuntimeParity,
 } from './readinessPresentation';
 
 interface CanonicalContractPreviewProps {
@@ -31,7 +32,7 @@ export default function CanonicalContractPreview({
   onCommit,
   onDiagnostic,
 }: CanonicalContractPreviewProps) {
-  const { t } = useI18n();
+  const { t, m } = useI18n();
   const groupedDiagnostics = groupAuthoringDiagnostics(preview?.diagnostics ?? []);
   const errors = groupedDiagnostics.filter((diagnostic) => diagnostic.level === 'ERROR');
   const warnings = groupedDiagnostics.filter((diagnostic) => diagnostic.level === 'WARNING');
@@ -68,8 +69,8 @@ export default function CanonicalContractPreview({
       <section className="library-readiness" data-state={readiness.tone}>
         <div className="library-readiness-summary">
           <span>{t('Readiness')}</span>
-          <strong>{t(readiness.title)}</strong>
-          <small>{t(readiness.summary)}</small>
+          <strong>{m(readiness.title.messageId, readiness.title.params)}</strong>
+          <small>{m(readiness.summary.messageId, readiness.summary.params)}</small>
           <code>{readiness.machineState}</code>
         </div>
         <dl>
@@ -77,7 +78,10 @@ export default function CanonicalContractPreview({
           <div><dt>{t('Strong schema')}</dt><dd>{preview?.readiness.strongSchemaReady ? t('Ready') : t('Review')}</dd></div>
           <div><dt>{t('Runtime')}</dt><dd>{runtimeLabel}</dd></div>
         </dl>
-        <p className="library-readiness-action"><strong>{t('Next')}</strong>{t(readiness.nextAction)}</p>
+        <p className="library-readiness-action">
+          <strong>{t('Next')}</strong>
+          {m(readiness.nextAction.messageId, readiness.nextAction.params)}
+        </p>
       </section>
 
       {runtimeParity.length > 0 && (
@@ -87,19 +91,29 @@ export default function CanonicalContractPreview({
             <span>{t('{bound} bound / {total} total', { bound: boundRuntimeCount, total: runtimeParity.length })}</span>
           </header>
           <ol>
-            {runtimeParity.map((parity, index) => (
-              <li
-                key={`${parity.assetKind}:${parity.assetRef}:${parity.runtimeProfile}:${index}`}
-                data-state={parity.state}
-              >
-                <div>
-                  <span>{parity.assetKind}</span>
-                  <strong>{parity.assetRef}</strong>
-                </div>
-                <b>{t(parity.state.replace(/_/g, ' '))}</b>
-                <small>{t(parity.message)}</small>
-              </li>
-            ))}
+            {runtimeParity.map((parity, index) => {
+              const presentation = presentRuntimeParity(parity);
+              return (
+                <li
+                  key={`${parity.assetKind}:${parity.assetRef}:${parity.runtimeProfile}:${index}`}
+                  data-state={parity.state}
+                >
+                  <div>
+                    <span>{parity.assetKind}</span>
+                    <strong>{parity.assetRef}</strong>
+                  </div>
+                  <b>{m(presentation.state.messageId, presentation.state.params)}</b>
+                  <small>{m(presentation.detail.messageId, presentation.detail.params)}</small>
+                  {(presentation.rawCode || presentation.rawDetail) && (
+                    <details className="library-runtime-technical">
+                      <summary>{m('library.runtime.technicalDetails')}</summary>
+                      {presentation.rawCode && <code>{presentation.rawCode}</code>}
+                      {presentation.rawDetail && <p lang="en">{presentation.rawDetail}</p>}
+                    </details>
+                  )}
+                </li>
+              );
+            })}
           </ol>
         </section>
       )}

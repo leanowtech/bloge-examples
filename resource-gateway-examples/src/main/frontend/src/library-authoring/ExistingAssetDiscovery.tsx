@@ -10,6 +10,7 @@ import type {
   VisualAuthoringFactProjection,
   VisualLibraryAuthoringDocument,
 } from '../types';
+import { presentRuntimeParity } from './readinessPresentation';
 
 interface ExistingAssetDiscoveryProps {
   onStart: (document: VisualLibraryAuthoringDocument, source: string) => void;
@@ -104,7 +105,7 @@ paths:
 };
 
 export default function ExistingAssetDiscovery({ onStart }: ExistingAssetDiscoveryProps) {
-  const { t } = useI18n();
+  const { t, m } = useI18n();
   const [mode, setMode] = useState<LibraryAuthoringDiscoveryMode>('runtime');
   const [source, setSource] = useState('');
   const [projection, setProjection] = useState<VisualAuthoringFactProjection | null>(null);
@@ -238,13 +239,21 @@ export default function ExistingAssetDiscovery({ onStart }: ExistingAssetDiscove
                     <tr><th>{t('Asset')}</th><th>{t('State')}</th><th>{t('Runtime')}</th></tr>
                   </thead>
                   <tbody>
-                    {projection.runtimeParity.map((parity, index) => (
-                      <tr key={`${parity.assetKind}:${parity.assetRef}:${parity.runtimeProfile}:${index}`}>
-                        <td><span>{t(parity.assetKind)}</span><strong>{parity.assetRef}</strong></td>
-                        <td data-state={parity.state}>{t(parity.state.replace(/_/g, ' '))}</td>
-                        <td>{parity.runtimeProfile || t(parity.message)}</td>
-                      </tr>
-                    ))}
+                    {projection.runtimeParity.map((parity, index) => {
+                      const presentation = presentRuntimeParity(parity);
+                      return (
+                        <tr key={`${parity.assetKind}:${parity.assetRef}:${parity.runtimeProfile}:${index}`}>
+                          <td><span>{t(parity.assetKind)}</span><strong>{parity.assetRef}</strong></td>
+                          <td data-state={parity.state}>
+                            {m(presentation.state.messageId, presentation.state.params)}
+                          </td>
+                          <td>
+                            {parity.runtimeProfile
+                              || m(presentation.detail.messageId, presentation.detail.params)}
+                          </td>
+                        </tr>
+                      );
+                    })}
                   </tbody>
                 </table>
               </div>

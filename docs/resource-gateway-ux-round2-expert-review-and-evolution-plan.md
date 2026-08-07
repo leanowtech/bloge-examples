@@ -24,6 +24,34 @@
 
 ## 实施进度
 
+### 2026-08-07：UX-R2-005A Library 动态消息协议
+
+已实现：
+
+- 新增类型化 `MessageDescriptor(messageId + params + rawCode/rawDetail)`；Library readiness 投影
+  不再生成英文句子，等待校验、设计阻断、可执行、runtime 未知/未绑定/部分绑定和 Schema review
+  都只返回稳定 message id；
+- runtime parity 的 `BOUND / DOCUMENTED_ONLY / RUNTIME_DISCOVERED / DRIFTED /
+  BLOCKED_BY_POLICY` 状态和 13 个稳定 reason code 进入本地 message catalog；未知协议状态使用保守的
+  本地化结论，服务端原始 message 只出现在默认收起的 **Technical details**；
+- Library save state、saved revision、dirty、saving、ETag conflict、load/autosave/commit failure、
+  new draft source 和 imported revision 全部 descriptor 化；语言切换后立即按当前 locale 呈现，不再把
+  已经拼好的英文字符串冻结在 state 中；
+- 移动 Review、桌面 Canonical Preview 和 Existing Asset Discovery 共用同一 runtime presenter；
+  `Fields / Archetype / pure / business` 等移动资产事实和动作语境中的 `Next` 翻译同步校正；
+- 新增 descriptor 结构、runtime raw-detail 隔离和 `zh-CN` 动态组件回归。
+
+真实浏览器 E2 证据（production bundle、`390 x 844`、中文）：
+
+- `clientWidth = scrollWidth = 390`；save state 显示“已保存修订版 2”，readiness 显示“设计有效，
+  运行时未绑定”和“当前部署可执行 0/5 个已声明资产”；
+- picker 切换到 `support:classify-ticket` 后 runtime 显示“仅有文档”，不再显示
+  `DOCUMENTED ONLY`；raw English 协议 message 未进入默认产品面；
+- Library 动态消息聚焦回归 `27 / 27` 通过，production bundle 构建成功。
+
+本切片根治了 UX-R2-005 在 Library 控制面的静默英文回退。Layout quality、Showcase、Rehearsal
+metadata/date 和严格动态调用 inventory 继续由后续 005B/005C 收口。
+
 ### 2026-08-07：UX-R2-004 移动 Library Review / Light Edit
 
 已实现：

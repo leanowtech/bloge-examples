@@ -4,6 +4,7 @@ import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { BlogeApiRequestError } from '../api';
+import I18nProvider from '../i18n/I18nProvider';
 import type {
   VisualLibraryAuthoringCommitResult,
   VisualLibraryAuthoringCompileResult,
@@ -379,6 +380,63 @@ describe('LibraryWorkbench', () => {
     expect(desktopLink.href).toContain('task=complex-edit');
   });
 
+  it('renders dynamic mobile readiness, runtime, and save notices in Chinese', async () => {
+    window.history.replaceState({}, '', '/libraries/?lang=zh-CN');
+    vi.stubGlobal('matchMedia', vi.fn().mockImplementation(() => ({
+      matches: true,
+      media: '(max-width: 520px)',
+      onchange: null,
+      addEventListener: vi.fn(),
+      removeEventListener: vi.fn(),
+      addListener: vi.fn(),
+      removeListener: vi.fn(),
+      dispatchEvent: vi.fn(),
+    })));
+    apiMocks.save.mockImplementation(async (
+      draftId: string,
+      _revision: number,
+      document: VisualLibraryAuthoringDocument,
+    ) => storedDraft(draftId, 1, document));
+    apiMocks.preview.mockImplementation(async (draftId: string) => ({
+      ...readyPreview(draftId, 1),
+      runtimeParity: [{
+        assetKind: 'OPERATOR',
+        assetRef: 'support:classify-ticket',
+        runtimeProfile: 'demo',
+        state: 'DOCUMENTED_ONLY',
+        executableReady: false,
+        declaredFingerprint: 'sha256:declared',
+        runtimeFingerprint: '',
+        reasonCode: 'RG.AUTHORING.RUNTIME_OPERATOR_MISSING',
+        message: 'No exact operator was found in the target runtime inventory.',
+      }],
+    }));
+
+    await renderWorkbench(true);
+    await click(query('[data-testid="library-start-example:customer-support"]'));
+    await flushAutosave();
+
+    const surfaceText = query('[data-testid="library-workbench"]').textContent ?? '';
+    expect(surfaceText).toContain('已保存修订版 1');
+    expect(surfaceText).toContain('设计有效，运行时未绑定');
+    expect(surfaceText).toContain('当前部署可执行 0/1 个已声明资产');
+    expect(surfaceText).not.toContain('Saved revision');
+    expect(surfaceText).not.toContain('Design valid; runtime unbound');
+    expect(surfaceText).not.toContain('declared assets can execute');
+    expect(surfaceText).toContain('下一步');
+    expect(surfaceText).not.toContain('下一页');
+
+    const picker = query<HTMLSelectElement>('[aria-label="当前资产"]');
+    await act(async () => {
+      picker.value = 'operator|support%3Aclassify-ticket';
+      picker.dispatchEvent(new Event('change', { bubbles: true }));
+    });
+    const operatorText = query('[data-testid="mobile-library-review"]').textContent ?? '';
+    expect(operatorText).toContain('执行类型纯计算');
+    expect(operatorText).toContain('运行时仅有文档');
+    expect(operatorText).not.toContain('DOCUMENTED ONLY');
+  });
+
   it('blocks editing on an ETag conflict and reloads the authoritative revision', async () => {
     apiMocks.save.mockRejectedValueOnce(new BlogeApiRequestError(412, 'revision mismatch'));
     apiMocks.fetchDraft.mockImplementation(async (draftId: string) => storedDraft(
@@ -547,10 +605,12 @@ describe('LibraryWorkbench', () => {
     expect(query('[data-testid="library-save-state"]').textContent).toContain('Saved revision 2');
   });
 
-  async function renderWorkbench() {
+  async function renderWorkbench(withI18n = false) {
     await act(async () => {
       root = createRoot(host);
-      root.render(<LibraryWorkbench />);
+      root.render(withI18n
+        ? <I18nProvider><LibraryWorkbench /></I18nProvider>
+        : <LibraryWorkbench />);
     });
     await settle();
   }

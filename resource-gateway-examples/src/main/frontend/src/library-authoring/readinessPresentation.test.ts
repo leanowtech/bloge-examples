@@ -4,6 +4,7 @@ import type { VisualLibraryAuthoringCompileResult } from '../types';
 import {
   groupAuthoringDiagnostics,
   presentLibraryReadiness,
+  presentRuntimeParity,
 } from './readinessPresentation';
 
 describe('library readiness presentation', () => {
@@ -20,8 +21,11 @@ describe('library readiness presentation', () => {
 
     expect(view).toMatchObject({
       tone: 'review',
-      title: 'Design valid; runtime unbound',
-      summary: '0/2 declared assets can execute in this deployment.',
+      title: { messageId: 'library.readiness.runtimeUnbound.title' },
+      summary: {
+        messageId: 'library.readiness.runtimeUnbound.summary',
+        params: { bound: 0, total: 2 },
+      },
       boundRuntimeCount: 0,
       runtimeAssetCount: 2,
     });
@@ -39,7 +43,7 @@ describe('library readiness presentation', () => {
       }],
     }));
 
-    expect(view.title).toBe('Ready to execute');
+    expect(view.title.messageId).toBe('library.readiness.ready.title');
     expect(view.tone).toBe('ready');
   });
 
@@ -52,9 +56,25 @@ describe('library readiness presentation', () => {
     });
     result.readiness.importable = false;
 
-    expect(presentLibraryReadiness(result).summary).toBe(
-      '1 blocking Contract problem must be resolved.',
-    );
+    expect(presentLibraryReadiness(result).summary).toEqual({
+      messageId: 'library.readiness.designBlocked.summary',
+      params: { count: 1 },
+    });
+  });
+
+  it('projects runtime wire states to stable messages and retains protocol detail separately', () => {
+    const runtime = parity('OPERATOR', 'support:lookup');
+
+    expect(presentRuntimeParity(runtime)).toEqual({
+      state: { messageId: 'library.runtime.state.documentedOnly' },
+      detail: {
+        messageId: 'library.runtime.detail.documentedOnly',
+        rawCode: 'RUNTIME_BINDING_MISSING',
+        rawDetail: 'No exact runtime binding was discovered.',
+      },
+      rawCode: 'RUNTIME_BINDING_MISSING',
+      rawDetail: 'No exact runtime binding was discovered.',
+    });
   });
 
   it('groups repeated diagnostics by code, target, and root cause', () => {

@@ -9,7 +9,7 @@ import type {
 } from '../../ux/responsiveTaskProjection';
 import type { LibraryAssetSelection } from '../model';
 import { typeFields } from '../model';
-import { presentLibraryReadiness } from '../readinessPresentation';
+import { presentLibraryReadiness, presentRuntimeParity } from '../readinessPresentation';
 
 interface MobileLibraryTaskSurfaceProps {
   document: VisualLibraryAuthoringDocument;
@@ -42,7 +42,7 @@ export default function MobileLibraryTaskSurface({
   onValidate,
   onOpenTests,
 }: MobileLibraryTaskSurfaceProps) {
-  const { t } = useI18n();
+  const { t, m } = useI18n();
   const selected = selectedAsset(document, selection);
   const readiness = presentLibraryReadiness(preview);
   const testable = selection.kind === 'operator' || selection.kind === 'function';
@@ -111,7 +111,9 @@ export default function MobileLibraryTaskSurface({
               <span>{t(assetKindLabel(selection.kind))}</span>
               <h2>{selected.title}</h2>
             </div>
-            <strong data-tone={readiness.tone}>{t(readiness.title)}</strong>
+            <strong data-tone={readiness.tone}>
+              {m(readiness.title.messageId, readiness.title.params)}
+            </strong>
           </header>
           <dl>
             {selected.facts.map((fact) => (
@@ -124,13 +126,21 @@ export default function MobileLibraryTaskSurface({
           <section className="mobile-library-readiness" data-tone={readiness.tone}>
             <div>
               <span>{t('Contract status')}</span>
-              <strong>{t(readiness.summary)}</strong>
+              <strong>{m(readiness.summary.messageId, readiness.summary.params)}</strong>
             </div>
             <dl>
               <div><dt>{t('Diagnostics')}</dt><dd>{diagnostics.length}</dd></div>
-              <div><dt>{t('Runtime')}</dt><dd>{runtime ? t(runtime.state.replace(/_/g, ' ')) : t('Not checked')}</dd></div>
+              <div>
+                <dt>{t('Runtime')}</dt>
+                <dd>{runtime
+                  ? m(presentRuntimeParity(runtime).state.messageId)
+                  : t('Not checked')}</dd>
+              </div>
             </dl>
-            <p><strong>{t('Next')}</strong>{t(readiness.nextAction)}</p>
+            <p>
+              <strong>{t('Next')}</strong>
+              {m(readiness.nextAction.messageId, readiness.nextAction.params)}
+            </p>
           </section>
           <div className="mobile-library-review-actions">
             {projection.lightEditingSupported ? (

@@ -132,9 +132,215 @@ export const MESSAGE_CATALOG = {
     en: 'Use the protocol code and technical details to continue investigation.',
     'zh-CN': '请结合协议代码和技术详情继续排查。',
   },
+  'library.saveState.idle': { en: 'IDLE', 'zh-CN': '空闲' },
+  'library.saveState.dirty': { en: 'UNSAVED', 'zh-CN': '未保存' },
+  'library.saveState.saving': { en: 'SAVING', 'zh-CN': '保存中' },
+  'library.saveState.saved': { en: 'SAVED', 'zh-CN': '已保存' },
+  'library.saveState.conflict': { en: 'Conflict', 'zh-CN': '存在冲突' },
+  'library.saveState.error': { en: 'ERROR', 'zh-CN': '发生错误' },
+  'library.save.savedRevision': {
+    en: 'Saved revision {revision}',
+    'zh-CN': '已保存修订版 {revision}',
+  },
+  'library.save.saving': { en: 'Saving...', 'zh-CN': '正在保存...' },
+  'library.save.unsavedChanges': { en: 'Unsaved changes', 'zh-CN': '存在未保存的更改' },
+  'library.save.revisionConflict': {
+    en: 'A newer revision exists. Reload before continuing.',
+    'zh-CN': '存在更新的修订版，请重新加载后继续。',
+  },
+  'library.save.loadFailed': {
+    en: 'The library draft could not be loaded.',
+    'zh-CN': '无法加载算子库草稿。',
+  },
+  'library.save.autosaveFailed': {
+    en: 'Autosave did not complete. Review the technical details and retry.',
+    'zh-CN': '自动保存未完成，请检查技术详情后重试。',
+  },
+  'library.save.commitFailed': {
+    en: 'The Design Catalog could not be imported.',
+    'zh-CN': '无法导入设计目录。',
+  },
+  'library.save.importedRevision': {
+    en: 'Design Catalog revision {revision} imported',
+    'zh-CN': '设计目录修订版 {revision} 已导入',
+  },
+  'library.save.newQuickDraft': { en: 'New guided draft', 'zh-CN': '新的引导式草稿' },
+  'library.save.newSampleDraft': { en: 'New sample-driven draft', 'zh-CN': '新的样例驱动草稿' },
+  'library.save.newJsonDraft': { en: 'New JSON draft', 'zh-CN': '新的 JSON 草稿' },
+  'library.save.newExampleDraft': { en: 'New example draft', 'zh-CN': '新的示例草稿' },
+  'library.save.newDiscoveryDraft': { en: 'New discovered-asset draft', 'zh-CN': '新的存量资产草稿' },
+  'library.save.newDraft': { en: 'New library draft', 'zh-CN': '新的算子库草稿' },
+  'library.readiness.awaitingValidation.title': {
+    en: 'Awaiting validation',
+    'zh-CN': '等待校验',
+  },
+  'library.readiness.awaitingValidation.summary': {
+    en: 'No server-authoritative Contract preview is available yet.',
+    'zh-CN': '尚无服务端权威的契约预览。',
+  },
+  'library.readiness.awaitingValidation.action': {
+    en: 'Validate the current draft.',
+    'zh-CN': '校验当前草稿。',
+  },
+  'library.readiness.designBlocked.title': { en: 'Design blocked', 'zh-CN': '设计被阻断' },
+  'library.readiness.designBlocked.summary': {
+    en: '{count} blocking Contract problems must be resolved.',
+    'zh-CN': '需要解决 {count} 个契约阻断问题。',
+  },
+  'library.readiness.designBlocked.action': {
+    en: 'Open the first blocking diagnostic.',
+    'zh-CN': '打开第一个阻断诊断。',
+  },
+  'library.readiness.ready.title': { en: 'Ready to execute', 'zh-CN': '已可执行' },
+  'library.readiness.ready.summary': {
+    en: 'All {count} runtime assets are bound to this exact Contract.',
+    'zh-CN': '全部 {count} 个运行时资产均已绑定到此精确契约。',
+  },
+  'library.readiness.ready.action': {
+    en: 'Run the Contract test suite before promotion.',
+    'zh-CN': '发布前运行契约测试套件。',
+  },
+  'library.readiness.runtimeUnknown.title': {
+    en: 'Design valid; runtime not verified',
+    'zh-CN': '设计有效，运行时尚未验证',
+  },
+  'library.readiness.runtimeUnknown.summary': {
+    en: 'The Contract can be imported, but this deployment did not provide runtime inventory evidence.',
+    'zh-CN': '契约可以导入，但当前部署未提供运行时清单证据。',
+  },
+  'library.readiness.runtimeUnknown.action': {
+    en: 'Connect or discover runtime inventory.',
+    'zh-CN': '连接或发现运行时清单。',
+  },
+  'library.readiness.runtimeUnbound.title': {
+    en: 'Design valid; runtime unbound',
+    'zh-CN': '设计有效，运行时未绑定',
+  },
+  'library.readiness.runtimeUnbound.summary': {
+    en: '{bound}/{total} declared assets can execute in this deployment.',
+    'zh-CN': '当前部署可执行 {bound}/{total} 个已声明资产。',
+  },
+  'library.readiness.runtimeUnbound.action': {
+    en: 'Bind an exact runtime implementation or keep this catalog design-only.',
+    'zh-CN': '绑定精确的运行时实现，或将此目录保持为仅设计状态。',
+  },
+  'library.readiness.runtimePartial.title': {
+    en: 'Design valid; runtime partially bound',
+    'zh-CN': '设计有效，运行时部分绑定',
+  },
+  'library.readiness.runtimePartial.summary': {
+    en: '{bound}/{total} declared assets can execute in this deployment.',
+    'zh-CN': '当前部署可执行 {bound}/{total} 个已声明资产。',
+  },
+  'library.readiness.runtimePartial.action': {
+    en: 'Resolve the remaining runtime bindings.',
+    'zh-CN': '解决其余运行时绑定。',
+  },
+  'library.readiness.schemaReview.title': {
+    en: 'Schema review required',
+    'zh-CN': '需要检查 Schema',
+  },
+  'library.readiness.schemaReview.summary': {
+    en: 'The catalog can be documented, but unresolved types prevent a strong Contract.',
+    'zh-CN': '目录可以形成文档，但未解析的类型阻止生成强契约。',
+  },
+  'library.readiness.schemaReview.action': {
+    en: 'Replace unresolved types or explicitly accept an open schema.',
+    'zh-CN': '替换未解析类型，或明确接受开放 Schema。',
+  },
+  'library.runtime.state.bound': { en: 'BOUND', 'zh-CN': '已绑定' },
+  'library.runtime.state.drifted': { en: 'DRIFTED', 'zh-CN': '存在漂移' },
+  'library.runtime.state.documentedOnly': { en: 'DOCUMENTED ONLY', 'zh-CN': '仅有文档' },
+  'library.runtime.state.discovered': { en: 'RUNTIME DISCOVERED', 'zh-CN': '已发现运行时' },
+  'library.runtime.state.blockedByPolicy': { en: 'BLOCKED BY POLICY', 'zh-CN': '被策略阻断' },
+  'library.runtime.state.unknown': { en: 'UNKNOWN', 'zh-CN': '未知' },
+  'library.runtime.detail.bound': {
+    en: 'The declared asset Contract matches its bound runtime.',
+    'zh-CN': '已声明的资产契约与绑定的运行时一致。',
+  },
+  'library.runtime.detail.documentedOnly': {
+    en: 'No exact executable runtime binding is available for this asset.',
+    'zh-CN': '此资产没有可用的精确可执行运行时绑定。',
+  },
+  'library.runtime.detail.discovered': {
+    en: 'A runtime implementation exists, but its exact Contract is not proven.',
+    'zh-CN': '已发现运行时实现，但尚未证明其精确契约。',
+  },
+  'library.runtime.detail.drifted': {
+    en: 'The declared Contract differs from runtime inventory evidence.',
+    'zh-CN': '已声明契约与运行时清单证据不一致。',
+  },
+  'library.runtime.detail.blockedByPolicy': {
+    en: 'Runtime policy prevents this asset from executing here.',
+    'zh-CN': '运行时策略阻止此资产在当前环境执行。',
+  },
+  'library.runtime.detail.unknown': {
+    en: 'The runtime reported an unrecognized parity state.',
+    'zh-CN': '运行时返回了无法识别的一致性状态。',
+  },
+  'library.runtime.reason.operatorMissing': {
+    en: 'No exact operator exists in the target runtime inventory.',
+    'zh-CN': '目标运行时清单中不存在精确匹配的算子。',
+  },
+  'library.runtime.reason.functionMissing': {
+    en: 'No exact callable exists in the target runtime inventory.',
+    'zh-CN': '目标运行时清单中不存在精确匹配的可调用函数。',
+  },
+  'library.runtime.reason.operatorBindingMissing': {
+    en: 'The operator Contract does not declare an executable runtime binding.',
+    'zh-CN': '算子契约尚未声明可执行的运行时绑定。',
+  },
+  'library.runtime.reason.operatorContractUnknown': {
+    en: 'The operator exists at runtime, but no exact Contract is available for comparison.',
+    'zh-CN': '运行时中存在该算子，但没有可用于比较的精确契约。',
+  },
+  'library.runtime.reason.functionContractUnknown': {
+    en: 'The callable exists at runtime, but no exact signature is available for comparison.',
+    'zh-CN': '运行时中存在该函数，但没有可用于比较的精确签名。',
+  },
+  'library.runtime.reason.operatorLoweringUnverified': {
+    en: 'The lowering target exists, but its adapter Contract is not proven.',
+    'zh-CN': '运行时映射目标已存在，但适配器契约尚未得到证明。',
+  },
+  'library.runtime.reason.operatorDrift': {
+    en: 'The declared operator Contract differs from runtime inventory evidence.',
+    'zh-CN': '已声明的算子契约与运行时清单证据不一致。',
+  },
+  'library.runtime.reason.functionAmbiguous': {
+    en: 'Multiple non-identical runtime implementations claim this callable.',
+    'zh-CN': '多个不一致的运行时实现声明了同一个可调用函数。',
+  },
+  'library.runtime.reason.functionPolicyBlocked': {
+    en: 'Runtime policy prevents this function from executing here.',
+    'zh-CN': '运行时策略阻止此函数在当前环境执行。',
+  },
+  'library.runtime.reason.functionSignatureUnknown': {
+    en: 'The runtime function has no authoritative signature metadata.',
+    'zh-CN': '运行时函数没有权威签名元数据。',
+  },
+  'library.runtime.reason.functionSignatureDrift': {
+    en: 'The declared function signature differs from runtime inventory evidence.',
+    'zh-CN': '已声明的函数签名与运行时清单证据不一致。',
+  },
+  'library.runtime.reason.confirmationRequired': {
+    en: 'Runtime binding requires explicit author confirmation.',
+    'zh-CN': '运行时绑定需要作者明确确认。',
+  },
+  'library.runtime.reason.signaturesRequired': {
+    en: 'Runtime comparison requires declared function signatures.',
+    'zh-CN': '运行时比较需要声明函数签名。',
+  },
+  'library.runtime.technicalDetails': { en: 'Technical details', 'zh-CN': '技术详情' },
 } as const satisfies Record<string, LocalizedMessage>;
 
 export type MessageId = keyof typeof MESSAGE_CATALOG;
+
+export interface MessageDescriptor {
+  messageId: MessageId;
+  params?: TranslationValues;
+  rawCode?: string;
+  rawDetail?: string;
+}
 
 const STATUS_IDS: Record<string, MessageId> = {
   SAVED: 'status.saved',

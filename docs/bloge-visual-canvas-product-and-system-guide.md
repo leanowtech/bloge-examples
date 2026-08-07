@@ -232,6 +232,12 @@ basics** 只编辑名称、描述、类别、版本或负责人，并继续自�
 嵌套字段、签名重载和 runtime governance 不会在窄屏降级呈现；Named Type 会禁用轻编辑并提供
 精确到 draft revision 和 asset ref 的 **Open desktop editor** 链接。
 
+Library 的保存、校验与 runtime 结论使用稳定的双语消息协议。中文界面会直接显示“已保存修订版
+N”“设计有效，运行时未绑定”“仅有文档”等产品结论；服务端原始英文 message 不再作为翻译 key，
+只保留在默认收起的 **技术详情** 中，便于排障时结合 reason code 查看。切换语言会重新渲染当前
+动态状态，不需要重新校验或重新打开草稿。算子名、字段名、operatorRef、Schema path 和协议 code
+属于用户资产或机器坐标，按原文保留。
+
 Author Workspace v2 会在浏览器中派发 `bloge:author-task` `CustomEvent`。宿主应用或
 VS Code webview 可以选择监听它来计算任务漏斗，Resource Gateway 前端本身不会把事件
 主动发送到网络：

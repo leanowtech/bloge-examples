@@ -135,6 +135,10 @@ Library Workbench uses the same task policy at 390px: **Review** replaces the tr
 picker and one readiness summary; **Edit basics** autosaves only bounded metadata. Nested schemas,
 signatures, test definitions, and runtime governance remain unchanged and expose an exact
 draft/revision/asset desktop deep link instead of a compressed pseudo-editor.
+Library save/readiness/runtime messages use stable `messageId + params` descriptors. Runtime reason
+codes map to localized product conclusions; the original protocol message is available only in the
+collapsed Technical details area, so dynamic counts and new server messages cannot silently fall
+back to English in the Chinese workspace.
 Implementation and browser evidence are recorded in
 [`docs/resource-gateway-ux-stage5-visual-responsive-system.md`](../docs/resource-gateway-ux-stage5-visual-responsive-system.md).
 
