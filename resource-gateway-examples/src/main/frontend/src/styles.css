@@ -5836,10 +5836,10 @@ button.primary:disabled {
 
 .canvas-layout-review {
   grid-column: 1 / -1;
-  display: flex;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
   align-items: center;
-  justify-content: space-between;
-  gap: 8px;
+  gap: 6px 10px;
   min-width: 0;
   padding-top: 5px;
   border-top: 1px solid #e2e8f0;
@@ -5857,6 +5857,7 @@ button.primary:disabled {
 }
 
 .canvas-layout-review > span {
+  grid-column: 1;
   min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -5873,7 +5874,9 @@ button.primary:disabled {
   white-space: nowrap;
 }
 
-.canvas-layout-review > div {
+.canvas-layout-review > .canvas-layout-actions {
+  grid-column: 2;
+  grid-row: 1;
   flex: none;
   display: flex;
   overflow: hidden;
@@ -5884,6 +5887,60 @@ button.primary:disabled {
 
 .canvas-layout-review button + button {
   border-left: 1px solid #e2e8f0;
+}
+
+.canvas-layout-comparison {
+  grid-column: 1 / -1;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  color: #475569;
+  font-variant-numeric: tabular-nums;
+  font-weight: 650;
+}
+
+.canvas-layout-comparison strong {
+  color: #172033;
+}
+
+.canvas-layout-regressions {
+  grid-column: 1 / -1;
+  display: grid;
+  gap: 2px;
+  margin: 0;
+  padding-left: 18px;
+  color: #8a3e00;
+  font-weight: 650;
+}
+
+.canvas-layout-recommendation {
+  grid-column: 1 / -1;
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 6px 10px;
+  padding-top: 4px;
+  border-top: 1px solid #f1d5b8;
+}
+
+.canvas-layout-recommendation > span {
+  color: #6f4b2c;
+  font-weight: 600;
+}
+
+.canvas-layout-recommendation details {
+  justify-self: end;
+}
+
+.canvas-layout-recommendation summary {
+  cursor: pointer;
+}
+
+.canvas-layout-recommendation details[open] {
+  display: flex;
+  align-items: center;
+  gap: 6px;
 }
 
 .compact-canvas-launchers {
@@ -13702,6 +13759,23 @@ button.primary:disabled {
 
   .canvas-layout-review > span {
     white-space: normal;
+  }
+
+  .canvas-layout-review {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .canvas-layout-review > .canvas-layout-actions {
+    grid-column: 1;
+    grid-row: auto;
+  }
+
+  .canvas-layout-recommendation {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .canvas-layout-recommendation details {
+    justify-self: start;
   }
 
   .workspace-v2 > .palette,

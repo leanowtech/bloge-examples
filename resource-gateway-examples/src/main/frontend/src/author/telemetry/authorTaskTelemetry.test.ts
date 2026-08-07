@@ -58,4 +58,27 @@ describe('author task telemetry', () => {
     expect(authorTaskElapsedMs(100.4, 124.8)).toBe(24);
     expect(authorTaskElapsedMs(200, 100)).toBe(0);
   });
+
+  it('records layout rejection and override decisions without graph payloads', () => {
+    expect(createAuthorTaskEvent('AUTO_LAYOUT_CANDIDATE_REJECTED', {
+      beforeQuality: 'PASS',
+      candidateQuality: 'REVIEW',
+      regressionCount: 4,
+      beforeZoomPercent: 85,
+      candidateZoomPercent: 39,
+    }).metadata).toEqual({
+      beforeQuality: 'PASS',
+      candidateQuality: 'REVIEW',
+      regressionCount: 4,
+      beforeZoomPercent: 85,
+      candidateZoomPercent: 39,
+    });
+    expect(createAuthorTaskEvent('AUTO_LAYOUT_OVERRIDE_APPLIED', {
+      overrideReason: 'USER_ACCEPTED_READABILITY_REGRESSION',
+      regressionCount: 4,
+    }).metadata).toEqual({
+      overrideReason: 'USER_ACCEPTED_READABILITY_REGRESSION',
+      regressionCount: 4,
+    });
+  });
 });

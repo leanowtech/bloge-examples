@@ -5,6 +5,56 @@ import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import CanvasTaskNavigator from './CanvasTaskNavigator';
+import type { LayoutAcceptanceDecision } from './layoutAcceptance';
+
+function layoutAcceptance(
+  decision: LayoutAcceptanceDecision['decision'],
+): LayoutAcceptanceDecision {
+  const geometry = {
+    nodeOverlaps: 0,
+    edgeLabelCollisions: 0,
+    edgeLabelCollisionDetails: [],
+    pinnedNodes: 1,
+    status: 'PASS' as const,
+    summary: '0 node overlaps / 0 label collisions',
+  };
+  const perception = (status: 'PASS' | 'REVIEW', zoom: number) => ({
+    status,
+    geometryStatus: 'PASS' as const,
+    mode: 'inspect' as const,
+    nodeOverlaps: 0,
+    nodeLabelCollisions: 0,
+    labelLabelCollisions: 0,
+    effectiveTitleFontPx: 15 * zoom,
+    visibleNodeLabels: 5,
+    visibleEdgeLabels: 4,
+    visibleFieldLabels: 0,
+    labelDensityPer100kPx: 1.2,
+    graphScreenOccupancy: 0.4,
+    reasons: [],
+    summary: `${status} at ${Math.round(zoom * 100)}%`,
+  });
+  return {
+    decision,
+    before: {
+      geometry,
+      perception: perception('PASS', 0.85),
+      zoom: 0.85,
+      graphArea: 100_000,
+    },
+    candidate: {
+      geometry,
+      perception: perception(decision === 'ACCEPTABLE' ? 'PASS' : 'REVIEW', decision === 'ACCEPTABLE' ? 0.9 : 0.39),
+      zoom: decision === 'ACCEPTABLE' ? 0.9 : 0.39,
+      graphArea: decision === 'ACCEPTABLE' ? 110_000 : 270_000,
+    },
+    regressions: decision === 'ACCEPTABLE' ? [] : [
+      { code: 'PERCEPTION_REGRESSION', before: 'PASS', candidate: 'REVIEW' },
+      { code: 'SMALL_GRAPH_ZOOM_FLOOR', before: 0.85, candidate: 0.39 },
+    ],
+    recommendedStrategy: decision === 'ACCEPTABLE' ? 'COMPACT_LANES' : 'KEEP_CURRENT',
+  };
+}
 
 describe('CanvasTaskNavigator', () => {
   let root: Root | null;
@@ -44,6 +94,7 @@ describe('CanvasTaskNavigator', () => {
           layoutPlanning={false}
           layoutPreview={false}
           layoutQuality={null}
+          layoutAcceptance={null}
           perceptualQuality={{
             status: 'PASS',
             geometryStatus: 'PASS',
@@ -69,6 +120,7 @@ describe('CanvasTaskNavigator', () => {
           onToggleMap={vi.fn()}
           onTogglePin={vi.fn()}
           onApplyLayout={vi.fn()}
+          onOverrideLayout={vi.fn()}
           onCancelLayout={vi.fn()}
           onUndoLayout={vi.fn()}
         />,
@@ -114,6 +166,7 @@ describe('CanvasTaskNavigator', () => {
           mapVisible={false}
           layoutPlanning={false}
           layoutPreview
+          layoutAcceptance={layoutAcceptance('ACCEPTABLE')}
           layoutQuality={{
             nodeOverlaps: 0,
             edgeLabelCollisions: 0,
@@ -147,13 +200,16 @@ describe('CanvasTaskNavigator', () => {
           onToggleMap={vi.fn()}
           onTogglePin={vi.fn()}
           onApplyLayout={onApplyLayout}
+          onOverrideLayout={vi.fn()}
           onCancelLayout={onCancelLayout}
           onUndoLayout={vi.fn()}
         />,
       );
     });
 
-    expect(host.textContent).toContain('0 node overlaps · 0 label collisions · 1 pinned');
+    expect(host.textContent).toContain('Layout candidate preserves readability.');
+    expect(host.textContent).toContain('Before 85%');
+    expect(host.textContent).toContain('Candidate 90%');
     await act(async () => {
       host.querySelector<HTMLButtonElement>('[data-testid="layout-apply"]')?.click();
       host.querySelector<HTMLButtonElement>('[data-testid="layout-cancel"]')?.click();
@@ -184,6 +240,7 @@ describe('CanvasTaskNavigator', () => {
           layoutPlanning={false}
           layoutPreview={false}
           layoutQuality={null}
+          layoutAcceptance={null}
           perceptualQuality={{
             status: 'PASS',
             geometryStatus: 'PASS',
@@ -224,6 +281,7 @@ describe('CanvasTaskNavigator', () => {
           onToggleMap={vi.fn()}
           onTogglePin={vi.fn()}
           onApplyLayout={vi.fn()}
+          onOverrideLayout={vi.fn()}
           onCancelLayout={vi.fn()}
           onUndoLayout={vi.fn()}
         />,
@@ -236,5 +294,62 @@ describe('CanvasTaskNavigator', () => {
       host.querySelector<HTMLButtonElement>('[data-testid="canvas-topology-lane:lane-1"]')?.click();
     });
     expect(onSelectNode).toHaveBeenCalledWith('n24');
+  });
+
+  it('blocks a regressive candidate and isolates explicit override behind advanced review', async () => {
+    const onApplyLayout = vi.fn();
+    const onOverrideLayout = vi.fn();
+    await act(async () => {
+      root!.render(
+        <CanvasTaskNavigator
+          mode="overview"
+          nodes={[]}
+          selectedNodeId=""
+          nodeCount={5}
+          edgeCount={12}
+          pathNodeCount={0}
+          zoomPercent="39%"
+          mapVisible={false}
+          layoutPlanning={false}
+          layoutPreview
+          layoutQuality={{
+            nodeOverlaps: 0,
+            edgeLabelCollisions: 0,
+            edgeLabelCollisionDetails: [],
+            pinnedNodes: 0,
+            status: 'PASS',
+            summary: '0 node overlaps / 0 label collisions',
+          }}
+          layoutAcceptance={layoutAcceptance('ALTERNATIVE_REQUIRED')}
+          perceptualQuality={layoutAcceptance('ALTERNATIVE_REQUIRED').candidate.perception}
+          topologyLanes={[]}
+          layoutNotice=""
+          canUndoLayout={false}
+          onModeChange={vi.fn()}
+          onSelectNode={vi.fn()}
+          onFitAll={vi.fn()}
+          onToggleMap={vi.fn()}
+          onTogglePin={vi.fn()}
+          onApplyLayout={onApplyLayout}
+          onOverrideLayout={onOverrideLayout}
+          onCancelLayout={vi.fn()}
+          onUndoLayout={vi.fn()}
+        />,
+      );
+    });
+
+    const apply = host.querySelector<HTMLButtonElement>('[data-testid="layout-apply"]');
+    expect(apply?.disabled).toBe(true);
+    expect(host.textContent).toContain('85%');
+    expect(host.textContent).toContain('39%');
+    expect(host.textContent).toContain('Keep current layout');
+
+    const advanced = host.querySelector<HTMLDetailsElement>('[data-testid="layout-override-review"]');
+    advanced!.open = true;
+    await act(async () => {
+      host.querySelector<HTMLButtonElement>('[data-testid="layout-override"]')?.click();
+    });
+    expect(onApplyLayout).not.toHaveBeenCalled();
+    expect(onOverrideLayout).toHaveBeenCalledOnce();
   });
 });

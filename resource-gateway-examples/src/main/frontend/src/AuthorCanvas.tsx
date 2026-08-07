@@ -244,6 +244,14 @@ import {
   constrainCanvasLayout,
   type CanvasLayoutQualityReport,
 } from './author/canvas/layoutQuality';
+import {
+  canvasGraphArea,
+  decideLayoutAcceptance,
+  estimateCanvasFitZoom,
+  overrideLayoutAcceptance,
+  projectLayoutQualitySnapshot,
+  type LayoutAcceptanceDecision,
+} from './author/canvas/layoutAcceptance';
 
 const ContractScenarioWorkspace = lazy(
   () => import('./contract-scenario/ContractScenarioWorkspace'),
@@ -271,6 +279,7 @@ interface LayoutUndoSnapshot {
 
 interface LayoutPreviewSnapshot extends LayoutUndoSnapshot {
   quality: CanvasLayoutQualityReport;
+  acceptance: LayoutAcceptanceDecision;
   durationMs: number;
 }
 
@@ -8322,6 +8331,7 @@ export default function AuthorCanvas({ workspaceVersion = 'v1' }: AuthorCanvasPr
       layoutPlanTimerRef.current = window.setTimeout(() => {
         if (layoutPlanSequenceRef.current !== sequence) return;
         const nextNodes = constrainedAutoLayoutFlowNodes(nodes, edges, pinnedNodeIds);
+        const nextCanvasNodes = nextNodes.map(canvasNodeFromFlowNode);
         const movedNodeCount = nextNodes.filter((node, index) => {
           const current = nodes[index];
           return !current
@@ -8329,8 +8339,8 @@ export default function AuthorCanvas({ workspaceVersion = 'v1' }: AuthorCanvasPr
             || current.position.y !== node.position.y;
         }).length;
         const quality = assessCanvasLayout(
-          nextNodes.map(canvasNodeFromFlowNode),
-          edges.map(canvasEdgeFromFlowEdge),
+          nextCanvasNodes,
+          canvasEdges,
           pinnedNodeIds,
         );
         setLayoutPlanning(false);
@@ -8346,13 +8356,61 @@ export default function AuthorCanvas({ workspaceVersion = 'v1' }: AuthorCanvasPr
           });
           return;
         }
+        const candidateSemantics = projectCanvasSemantics(nextCanvasNodes, canvasEdges, {
+          mode: canvasTaskMode,
+          anchorNodeId: focusPathNodeId,
+          selectedNodeId,
+        });
+        const candidateZoom = estimateCanvasFitZoom(nextCanvasNodes, {
+          viewportWidth: flowRef.current?.clientWidth || window.innerWidth,
+          viewportHeight: flowRef.current?.clientHeight || window.innerHeight,
+          padding: isComplexGraph ? 0.12 : 0.1,
+          minZoom: CANVAS_MIN_ZOOM,
+          maxZoom: 1,
+        });
+        const candidatePerception = assessCanvasPerceptualQuality(nextCanvasNodes, {
+          mode: canvasTaskMode,
+          viewportWidth: flowRef.current?.clientWidth || window.innerWidth,
+          viewportHeight: flowRef.current?.clientHeight || window.innerHeight,
+          zoom: candidateZoom,
+          visibleEdgeLabels: candidateSemantics.visibleEdgeLabelCount,
+          visibleFieldLabels: candidateSemantics.visibleFieldCount,
+          nodeOverlaps: quality.nodeOverlaps,
+          nodeLabelCollisions: candidateSemantics.nodeLabelCollisionCount,
+          labelLabelCollisions: candidateSemantics.labelLabelCollisionCount,
+        });
+        const acceptance = decideLayoutAcceptance(
+          projectLayoutQualitySnapshot(
+            currentCanvasGeometry,
+            canvasPerceptualQuality,
+            viewportZoom,
+            canvasGraphArea(canvasNodes),
+          ),
+          projectLayoutQualitySnapshot(
+            quality,
+            candidatePerception,
+            candidateZoom,
+            canvasGraphArea(nextCanvasNodes),
+          ),
+          nextCanvasNodes.length,
+        );
         setNodes(nextNodes);
         setLayoutPreview({
           positions: Object.fromEntries(nodes.map((node) => [node.id, { ...node.position }])),
           movedNodeCount,
           quality,
+          acceptance,
           durationMs: authorTaskElapsedMs(startedAt),
         });
+        if (acceptance.decision === 'ALTERNATIVE_REQUIRED') {
+          recordAuthorTaskEvent('AUTO_LAYOUT_CANDIDATE_REJECTED', {
+            beforeQuality: acceptance.before.perception.status,
+            candidateQuality: acceptance.candidate.perception.status,
+            regressionCount: acceptance.regressions.length,
+            beforeZoomPercent: Math.round(acceptance.before.zoom * 100),
+            candidateZoomPercent: Math.round(acceptance.candidate.zoom * 100),
+          });
+        }
         setLayoutNotice(`Preview moves ${movedNodeCount} node${movedNodeCount === 1 ? '' : 's'}.`);
       }, 0);
       return;
@@ -8389,16 +8447,60 @@ export default function AuthorCanvas({ workspaceVersion = 'v1' }: AuthorCanvasPr
         durationMs: authorTaskElapsedMs(startedAt),
       });
     }
-  }, [compactWorkspace, edges, fitCanvasToView, isTaskWorkspace, nodes, pinnedNodeIds]);
+  }, [
+    canvasEdges,
+    canvasNodes,
+    canvasPerceptualQuality,
+    canvasTaskMode,
+    compactWorkspace,
+    currentCanvasGeometry,
+    edges,
+    fitCanvasToView,
+    focusPathNodeId,
+    isComplexGraph,
+    isTaskWorkspace,
+    nodes,
+    pinnedNodeIds,
+    selectedNodeId,
+    viewportZoom,
+  ]);
 
   const applyLayoutPreview = useCallback(() => {
-    if (!layoutPreview) return;
+    if (!layoutPreview || layoutPreview.acceptance.decision !== 'ACCEPTABLE') return;
     setLayoutUndo({
       positions: layoutPreview.positions,
       movedNodeCount: layoutPreview.movedNodeCount,
     });
     setLayoutNotice(
       `Applied ${layoutPreview.movedNodeCount} moved node${
+        layoutPreview.movedNodeCount === 1 ? '' : 's'
+      } · ${layoutPreview.quality.summary}.`,
+    );
+    recordAuthorTaskEvent('AUTO_LAYOUT_COMPLETED', {
+      nodeCount: nodes.length,
+      edgeCount: edges.length,
+      movedNodeCount: layoutPreview.movedNodeCount,
+      durationMs: layoutPreview.durationMs,
+    });
+    setLayoutPreview(null);
+  }, [edges.length, layoutPreview, nodes.length]);
+
+  const overrideLayoutPreview = useCallback(() => {
+    if (!layoutPreview || layoutPreview.acceptance.decision !== 'ALTERNATIVE_REQUIRED') return;
+    const acceptance = overrideLayoutAcceptance(
+      layoutPreview.acceptance,
+      'USER_ACCEPTED_READABILITY_REGRESSION',
+    );
+    recordAuthorTaskEvent('AUTO_LAYOUT_OVERRIDE_APPLIED', {
+      overrideReason: acceptance.overrideReason,
+      regressionCount: acceptance.regressions.length,
+    });
+    setLayoutUndo({
+      positions: layoutPreview.positions,
+      movedNodeCount: layoutPreview.movedNodeCount,
+    });
+    setLayoutNotice(
+      `Applied advanced override for ${layoutPreview.movedNodeCount} moved node${
         layoutPreview.movedNodeCount === 1 ? '' : 's'
       } · ${layoutPreview.quality.summary}.`,
     );
@@ -10459,6 +10561,7 @@ export default function AuthorCanvas({ workspaceVersion = 'v1' }: AuthorCanvasPr
             layoutPlanning={layoutPlanning}
             layoutPreview={Boolean(layoutPreview)}
             layoutQuality={layoutPreview?.quality ?? null}
+            layoutAcceptance={layoutPreview?.acceptance ?? null}
             perceptualQuality={canvasPerceptualQuality}
             topologyLanes={canvasSemantics.lanes}
             layoutNotice={layoutNotice || adaptiveChromeNotice}
@@ -10469,6 +10572,7 @@ export default function AuthorCanvas({ workspaceVersion = 'v1' }: AuthorCanvasPr
             onToggleMap={() => setOverviewVisible((current) => !current)}
             onTogglePin={toggleSelectedNodePin}
             onApplyLayout={applyLayoutPreview}
+            onOverrideLayout={overrideLayoutPreview}
             onCancelLayout={cancelLayoutPreview}
             onUndoLayout={undoAutoLayout}
           />

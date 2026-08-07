@@ -6,6 +6,8 @@ export type AuthorTaskEventName =
   | 'EXAMPLE_LOADED'
   | 'MODE_CHANGED'
   | 'AUTO_LAYOUT_COMPLETED'
+  | 'AUTO_LAYOUT_CANDIDATE_REJECTED'
+  | 'AUTO_LAYOUT_OVERRIDE_APPLIED'
   | 'AUTO_LAYOUT_UNDONE'
   | 'RUN_STARTED'
   | 'RUN_COMPLETED'
@@ -27,6 +29,14 @@ const ALLOWED_METADATA: Record<AuthorTaskEventName, ReadonlySet<string>> = {
   EXAMPLE_LOADED: new Set(['source', 'nodeCount', 'edgeCount', 'scenarioCount']),
   MODE_CHANGED: new Set(['previousMode', 'nextMode']),
   AUTO_LAYOUT_COMPLETED: new Set(['nodeCount', 'edgeCount', 'movedNodeCount', 'durationMs']),
+  AUTO_LAYOUT_CANDIDATE_REJECTED: new Set([
+    'beforeQuality',
+    'candidateQuality',
+    'regressionCount',
+    'beforeZoomPercent',
+    'candidateZoomPercent',
+  ]),
+  AUTO_LAYOUT_OVERRIDE_APPLIED: new Set(['overrideReason', 'regressionCount']),
   AUTO_LAYOUT_UNDONE: new Set(['movedNodeCount']),
   RUN_STARTED: new Set(['runKind', 'nodeCount', 'caseCount']),
   RUN_COMPLETED: new Set(['runKind', 'status', 'caseCount', 'durationMs']),
@@ -41,6 +51,9 @@ const ALLOWED_STRING_VALUES: Record<string, ReadonlySet<string>> = {
   nextMode: new Set(['compose', 'contract', 'test', 'review']),
   runKind: new Set(['graph', 'table', 'scenario', 'operator']),
   status: new Set(['PASSED', 'FAILED', 'CANCELLED']),
+  beforeQuality: new Set(['PASS', 'REVIEW']),
+  candidateQuality: new Set(['PASS', 'REVIEW']),
+  overrideReason: new Set(['USER_ACCEPTED_READABILITY_REGRESSION']),
 };
 
 const FORBIDDEN_KEY = /(context|fixture|payload|schema|dsl|config|input|output|secret|token|credential)/i;

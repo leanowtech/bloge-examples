@@ -22,6 +22,35 @@
 - [双语完整性与术语治理](resource-gateway-ux-stage4-localization-governance.md)
 - [表格驱动测试产品设计](resource-gateway-table-driven-testing-product-design.md)
 
+## 实施进度
+
+### 2026-08-07：UX-R2-001 非回退门禁切片
+
+已实现：
+
+- 新增纯策略模块 `LayoutAcceptanceGate`，比较布局前后的几何质量、感知状态、fit zoom、
+  有效标题字号和图边界面积；
+- 小型图候选低于 `80%`、标题低于 `12px`、新增节点/标签碰撞、PASS 降为 REVIEW，或图面积
+  无理由扩大超过 `25%` 时，默认 Apply 被禁用；
+- 预览条直接显示 Before / Candidate，不再要求用户从两段工程摘要中自行推断；
+- 高级覆盖与默认 Apply 隔离，覆盖动作记录固定 reason、回归数量和无 payload telemetry；
+- 新增 13 个门禁、交互和遥测测试，并将 Author 端到端组件测试改为验证真实退化候选；
+- 中英文补齐候选结论、回退原因、保留当前布局和显式覆盖文案。
+
+真实浏览器验收（production frontend bundle，`1472 x 920` 与 `390 x 844`）：
+
+- 贷款示例当前布局为 `85% / PASS / 12.7px`；自动布局候选降为
+  `36% / REVIEW / 5.3px` 时，默认 Apply 已被禁用；
+- 回退原因完整显示为 PASS -> REVIEW、小图 fit zoom 低于 `80%`、标题低于 `12px`、
+  图面积增加超过 `25%`；
+- Advanced override 可显式应用，随后 Undo 可恢复原始位置；浏览器控制台无 error / warning；
+- 移动端确认门禁逻辑仍生效，但检查器遮挡布局复核区，完成消息仍有英文泄漏。这两项分别进入
+  UX-R2-007 与 UX-R2-010，不把“逻辑可用”误写成“移动体验完成”。
+
+当前诚实边界：Stage 0 非回退门禁已经完成，解决的是“已知退化仍可默认提交”；尚未让算法为
+贷款示例生成 `zoom >= 80% / title >= 12px` 的更优候选。多候选与紧凑分层仍属于 Stage 1
+后续工作，因此 UX-R2-001 总体继续保持 `IN PROGRESS`。
+
 ## 0. 最强结论
 
 上一轮的主要方向是正确的：原子 Workspace、统一 Scenario、字段级 Diff、Evidence trust、

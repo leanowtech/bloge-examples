@@ -7,6 +7,10 @@ import type {
   CanvasTopologyLane,
 } from './canvasSemantics';
 import type { CanvasLayoutQualityReport } from './layoutQuality';
+import type {
+  LayoutAcceptanceDecision,
+  LayoutRegression,
+} from './layoutAcceptance';
 
 export type CanvasTaskMode = CanvasSemanticMode;
 
@@ -29,6 +33,7 @@ interface CanvasTaskNavigatorProps {
   layoutPlanning: boolean;
   layoutPreview: boolean;
   layoutQuality: CanvasLayoutQualityReport | null;
+  layoutAcceptance: LayoutAcceptanceDecision | null;
   perceptualQuality: CanvasPerceptualQualityReport;
   topologyLanes: CanvasTopologyLane[];
   layoutNotice: string;
@@ -39,6 +44,7 @@ interface CanvasTaskNavigatorProps {
   onToggleMap: () => void;
   onTogglePin: () => void;
   onApplyLayout: () => void;
+  onOverrideLayout: () => void;
   onCancelLayout: () => void;
   onUndoLayout: () => void;
 }
@@ -56,6 +62,7 @@ export default function CanvasTaskNavigator({
   layoutPlanning,
   layoutPreview,
   layoutQuality,
+  layoutAcceptance,
   perceptualQuality,
   topologyLanes,
   layoutNotice,
@@ -66,6 +73,7 @@ export default function CanvasTaskNavigator({
   onToggleMap,
   onTogglePin,
   onApplyLayout,
+  onOverrideLayout,
   onCancelLayout,
   onUndoLayout,
 }: CanvasTaskNavigatorProps) {
@@ -224,7 +232,11 @@ export default function CanvasTaskNavigator({
 
       {(layoutPlanning || layoutPreview || layoutNotice) && (
         <div
-          className={`canvas-layout-review ${layoutQuality?.status.toLowerCase() ?? 'pending'}`}
+          className={`canvas-layout-review ${
+            layoutAcceptance?.decision === 'ALTERNATIVE_REQUIRED'
+              ? 'review'
+              : layoutQuality?.status.toLowerCase() ?? 'pending'
+          }`}
           data-testid="canvas-layout-review"
           role="status"
           aria-live="polite"
@@ -232,10 +244,36 @@ export default function CanvasTaskNavigator({
           <span data-testid="layout-notice">
             {layoutPlanning
               ? t('Computing layout preview...')
+              : layoutAcceptance
+                ? t(layoutAcceptance.decision === 'ACCEPTABLE'
+                  ? 'Layout candidate preserves readability.'
+                  : 'Layout candidate would reduce readability.')
               : layoutQuality
                 ? `${layoutQuality.summary} · ${perceptualQuality.summary}`
                 : t(layoutNotice)}
           </span>
+          {layoutAcceptance && (
+            <div className="canvas-layout-comparison" data-testid="layout-quality-comparison">
+              <span>
+                {t('Before')} <strong>{Math.round(layoutAcceptance.before.zoom * 100)}%</strong>
+                {' · '}{t(layoutAcceptance.before.perception.status)}
+                {' · '}{layoutAcceptance.before.perception.effectiveTitleFontPx.toFixed(1)}px
+              </span>
+              <span aria-hidden="true">→</span>
+              <span>
+                {t('Candidate')} <strong>{Math.round(layoutAcceptance.candidate.zoom * 100)}%</strong>
+                {' · '}{t(layoutAcceptance.candidate.perception.status)}
+                {' · '}{layoutAcceptance.candidate.perception.effectiveTitleFontPx.toFixed(1)}px
+              </span>
+            </div>
+          )}
+          {layoutAcceptance?.regressions.length ? (
+            <ul className="canvas-layout-regressions" data-testid="layout-regressions">
+              {layoutAcceptance.regressions.map((regression) => (
+                <li key={regression.code}>{layoutRegressionMessage(regression, t)}</li>
+              ))}
+            </ul>
+          ) : null}
           {layoutQuality?.edgeLabelCollisionDetails?.[0] && (
             <small>
               {layoutQuality.edgeLabelCollisionDetails[0].edgeId} label intersects{' '}
@@ -243,9 +281,14 @@ export default function CanvasTaskNavigator({
             </small>
           )}
           {(layoutPlanning || layoutPreview) && (
-            <div>
+            <div className="canvas-layout-actions">
               {layoutPreview && (
-                <button type="button" data-testid="layout-apply" onClick={onApplyLayout}>
+                <button
+                  type="button"
+                  data-testid="layout-apply"
+                  disabled={layoutAcceptance?.decision === 'ALTERNATIVE_REQUIRED'}
+                  onClick={onApplyLayout}
+                >
                   {t('Apply')}
                 </button>
               )}
@@ -254,8 +297,49 @@ export default function CanvasTaskNavigator({
               </button>
             </div>
           )}
+          {layoutPreview && layoutAcceptance?.decision === 'ALTERNATIVE_REQUIRED' && (
+            <div className="canvas-layout-recommendation">
+              <strong>{t('Keep current layout')}</strong>
+              <span>{t('The candidate is available only as an advanced override.')}</span>
+              <details data-testid="layout-override-review">
+                <summary>{t('Advanced')}</summary>
+                <button type="button" data-testid="layout-override" onClick={onOverrideLayout}>
+                  {t('Apply anyway')}
+                </button>
+              </details>
+            </div>
+          )}
         </div>
       )}
     </section>
   );
+}
+
+function layoutRegressionMessage(
+  regression: LayoutRegression,
+  t: (message: string, params?: Record<string, string | number>) => string,
+): string {
+  switch (regression.code) {
+    case 'NODE_OVERLAP_REGRESSION':
+      return t('Node overlaps increase from {before} to {candidate}.', {
+        before: regression.before,
+        candidate: regression.candidate,
+      });
+    case 'EDGE_LABEL_COLLISION_REGRESSION':
+      return t('Edge label collisions increase from {before} to {candidate}.', {
+        before: regression.before,
+        candidate: regression.candidate,
+      });
+    case 'PERCEPTION_REGRESSION':
+      return t('Perceptual quality changes from {before} to {candidate}.', {
+        before: regression.before,
+        candidate: regression.candidate,
+      });
+    case 'SMALL_GRAPH_ZOOM_FLOOR':
+      return t('Small graph zoom would fall below 80%.');
+    case 'TITLE_SIZE_FLOOR':
+      return t('Effective node title size would fall below 12px.');
+    case 'GRAPH_AREA_EXPANSION':
+      return t('Graph area would expand by more than 25%.');
+  }
 }

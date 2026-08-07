@@ -4140,9 +4140,13 @@ reading tasks: **Overview** hides field labels and shows the whole stage shape,
 **Inspect** restores exact field semantics. Parallel data edges are bundled by
 source without losing their exact coordinates. The Readability verdict includes
 effective text size, density, collision, and viewport bounds; **Fit** never
-enlarges beyond 100%. On compact viewports, start in Overview and select a node
-before entering Inspect. **Undo layout** restores the exact pre-layout positions
-until a node is added, removed, or manually moved.
+enlarges beyond 100%. Auto Layout now compares the current and candidate geometry,
+fit zoom, title size, perceptual verdict, and graph area before enabling **Apply**.
+A regressive candidate keeps Apply disabled and recommends retaining the current
+layout; **Advanced > Apply anyway** is an explicit, payload-free audited override.
+On compact viewports, start in Overview and select a node before entering Inspect.
+**Undo layout** restores the exact pre-layout positions until a node is added,
+removed, or manually moved.
 
 The temporary Start and Operator dialogs share one keyboard contract: focus
 enters the current task, Tab stays inside the modal, Escape closes it, and focus

@@ -159,7 +159,10 @@ GET /admin/visual-operator-library-authoring/drafts/{draftId}/revisions/{revisio
 
 推荐按下面的顺序审阅复杂图：
 
-1. 点击 **Auto Layout**。画布会在保留信息密度的前提下重新分层，并报告移动了多少节点。
+1. 点击 **Auto Layout**。画布先生成预览，并对比当前布局与候选布局的 zoom、可读状态和有效
+   标题字号。候选不退化时才能点击 **Apply**；如果小图低于 80%、标题低于 12px、碰撞增加
+   或图面积异常膨胀，系统会建议 **Keep current layout** 并禁用默认 Apply。确有需要时只能从
+   **Advanced** 显式选择 **Apply anyway**，该决定会留下不含业务 payload 的审计事件。
 2. 点击 **Overview** 或使用 Map 判断全图形状。这个阶段字段 label 固定隐藏。
 3. 选中关键节点，再点击 **Focus**。画布只显示该节点完整上游/下游闭包的语义 label，
    旁路节点与边会降噪。
@@ -2150,7 +2153,15 @@ selection。坐标、source map、fixtures、描述文本和 `visualLayout.graph
 - design-only/runtime-blocked/ready 等状态。
 - typed handles：输出端口在一侧，输入端口在另一侧。
 
-当画布变乱时，点击 Auto Layout。新版画布会用确定性布局把 DAG 拉开，让节点和边更容易读：同一依赖层内按上游/下游重心排序，列间距会为边标签预留空间，行间距会按节点卡片高度和必要空白展开。它的目标不是把所有节点压到最小面积，而是在保持信息密度的同时避免算子挤在一起、边上的 `source.path -> target.path` 被遮挡。
+当画布变乱时，点击 Auto Layout。新版画布会用确定性布局生成候选，并在真正应用前展示
+当前与候选的可读性差异。同一依赖层内按上游/下游重心排序，列间距会为边标签预留空间，
+行间距会按节点卡片高度和必要空白展开。它的目标不是把所有节点压到最小面积，而是在保持
+信息密度的同时避免算子挤在一起、边上的 `source.path -> target.path` 被遮挡。
+
+Auto Layout 不再把“没有节点重叠”当成唯一成功标准。候选如果降低小图缩放比例、让标题
+小于 12px、增加标签碰撞或显著扩大图边界，默认 **Apply** 会被禁用，并建议保留当前布局。
+高级覆盖仍然存在，但需要通过 **Advanced > Apply anyway** 明确触发；应用后仍可用
+**Undo layout** 恢复精确坐标。
 
 如果 Auto Layout 后仍需要更大视野审阅拓扑，点击工具条里的 `Canvas Focus`。Focus 模式会收起左右辅助栏、顶部 workflow 和示例卡，保留 toolbar、Graph Contract 与主画布；退出时点击 `Exit Focus`。这个模式适合检查跨层依赖、边标签、复杂 decision table 上下游，以及给业务方演示图结构。
 

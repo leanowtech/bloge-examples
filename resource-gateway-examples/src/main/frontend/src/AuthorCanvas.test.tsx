@@ -1208,7 +1208,12 @@ describe('AuthorCanvas built-in canvas examples', () => {
       });
       const applyLayout = document.querySelector<HTMLButtonElement>('[data-testid="layout-apply"]');
       if (applyLayout) {
-        await click(applyLayout);
+        if (applyLayout.disabled) {
+          expect(events.some((event) => event.name === 'AUTO_LAYOUT_CANDIDATE_REJECTED')).toBe(true);
+          await click(query<HTMLButtonElement>('[data-testid="layout-override"]'));
+        } else {
+          await click(applyLayout);
+        }
       }
       await waitFor(() =>
         expect(events.some((event) => event.name === 'AUTO_LAYOUT_COMPLETED')).toBe(true),
@@ -1227,6 +1232,8 @@ describe('AuthorCanvas built-in canvas examples', () => {
         'WORKSPACE_OPENED',
         'START_CHOICE_SELECTED',
         'EXAMPLE_LOADED',
+        'AUTO_LAYOUT_CANDIDATE_REJECTED',
+        'AUTO_LAYOUT_OVERRIDE_APPLIED',
         'AUTO_LAYOUT_COMPLETED',
         'RUN_STARTED',
         'RUN_COMPLETED',
@@ -1581,7 +1588,7 @@ describe('AuthorCanvas built-in canvas examples', () => {
     });
   });
 
-  it('searches, pins, previews, cancels, applies, and undoes layout from one canvas task strip', async () => {
+  it('searches, pins, previews, cancels, explicitly overrides, and undoes a regressive layout', async () => {
     await act(async () => {
       root = createRoot(host);
       root.render(<AuthorCanvas workspaceVersion="v2" />);
@@ -1614,7 +1621,10 @@ describe('AuthorCanvas built-in canvas examples', () => {
       expect(query('.workspace').getAttribute('data-layout-preview')).toBe('active'),
     );
     expect(query('[data-testid="canvas-layout-review"]').textContent)
-      .toContain('0 node overlaps · 0 label collisions · 1 pinned');
+      .toContain('Layout candidate would reduce readability.');
+    expect(query<HTMLButtonElement>('[data-testid="layout-apply"]').disabled).toBe(true);
+    expect(query('[data-testid="canvas-layout-review"]').textContent)
+      .toContain('Keep current layout');
     expect(query('[data-testid="node-wrapper:n2"]').getAttribute('data-position'))
       .toBe(pinnedPosition);
     expect(query<HTMLButtonElement>('[data-testid="operator-button:bloge:transform"]').disabled)
@@ -1635,7 +1645,7 @@ describe('AuthorCanvas built-in canvas examples', () => {
     await waitFor(() =>
       expect(query('.workspace').getAttribute('data-layout-preview')).toBe('active'),
     );
-    await click(query<HTMLButtonElement>('[data-testid="layout-apply"]'));
+    await click(query<HTMLButtonElement>('[data-testid="layout-override"]'));
     expect(query('.workspace').getAttribute('data-layout-preview')).toBe('inactive');
     expect(query('[data-testid="layout-notice"]').textContent).toContain('Applied');
     expect(document.querySelector('[data-testid="navigator-undo-layout"]')).not.toBeNull();
