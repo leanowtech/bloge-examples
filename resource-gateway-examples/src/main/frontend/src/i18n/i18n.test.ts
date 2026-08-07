@@ -6,6 +6,7 @@ import {
   normalizeLocale,
   resolveInitialLocale,
   translate,
+  translateRegisteredDynamic,
 } from './i18n';
 
 describe('i18n locale contract', () => {
@@ -53,6 +54,15 @@ describe('i18n locale contract', () => {
     expect(LOCALE_STORAGE_KEY).toBe('bloge.visual.locale');
   });
 
+  it('blocks unregistered dynamic product text instead of leaking raw English', () => {
+    expect(translateRegisteredDynamic('zh-CN', 'RUNNING')).toBe('运行中');
+    expect(translateRegisteredDynamic('en', 'RUNNING')).toBe('RUNNING');
+    expect(translateRegisteredDynamic('zh-CN', 'A new server sentence.'))
+      .toBe('未识别的产品状态，请查看技术详情。');
+    expect(translateRegisteredDynamic('en', 'A new server sentence.'))
+      .toBe('Unrecognized product status. Review technical details.');
+  });
+
   it('presents rehearsal lifecycle states as product labels in Chinese', () => {
     expect([
       'RUNNING',
@@ -71,5 +81,7 @@ describe('i18n locale contract', () => {
       indeterminate: 1,
     })).toBe('2 个失败、1 个不确定的阻断断言');
     expect(translate('zh-CN', 'All evaluated cases passed')).toBe('所有已评估用例均已通过');
+    expect(translateRegisteredDynamic('zh-CN', 'DEPENDENCY_TIMEOUT')).toBe('依赖调用超时');
+    expect(translateRegisteredDynamic('zh-CN', 'OWNER_APPROVAL_REQUIRED')).toBe('需要负责人批准');
   });
 });

@@ -44,7 +44,7 @@ function AppShell() {
     ? 'Libraries'
     : route === 'rehearsals'
     ? 'Rehearsals'
-    : route === 'showcase' ? 'Showcase' : 'Author';
+    : route === 'showcase' ? 'Run examples' : 'Author';
   const title = t(titleSource);
   const authorWorkspaceVersion = resolveAuthorWorkspaceVersion(window.location.search);
   const authorHref = route === 'author'
@@ -109,7 +109,7 @@ function AppShell() {
               {t('Rehearsals')}
             </a>
             <a className={`topbar-link ${route === 'showcase' ? 'active' : ''}`} href="/showcase/" aria-current={route === 'showcase' ? 'page' : undefined}>
-              {t('Showcase')}
+              {t('Run examples')}
             </a>
           </nav>
           <div className="topbar-preferences">

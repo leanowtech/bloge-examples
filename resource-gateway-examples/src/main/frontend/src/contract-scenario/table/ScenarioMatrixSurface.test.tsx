@@ -95,8 +95,10 @@ describe('ScenarioMatrixSurface', () => {
 
     const summary = host.querySelector('[data-testid="scenario-matrix-command-receipt"]');
     expect(summary?.textContent).toContain('request-command-a');
+    expect(summary?.getAttribute('aria-label'))
+      .toBe('Command receipt: TERMINAL, SELECTED, 1 cases');
     expect(summary?.querySelector('code[title="sha256:canonical-a"]')).not.toBeNull();
-    await click(button('Inspect'));
+    await click(buttonByLabel('Inspect '));
     const detail = host.querySelector('[data-testid="scenario-matrix-detail-case-1"]');
     expect(detail?.querySelector('code[title="request-command-a"]')).not.toBeNull();
     expect(detail?.querySelector('code[title="sha256:canonical-a"]')).not.toBeNull();
@@ -136,6 +138,18 @@ describe('ScenarioMatrixSurface', () => {
     expect(onRunSelection).toHaveBeenCalledWith('AFFECTED');
   });
 
+  it('projects only two direct run commands and one scope menu for mobile tasks', async () => {
+    await render(5, { compactCommands: true });
+
+    const matrix = host.querySelector('[data-testid="scenario-matrix"]');
+    expect(matrix?.getAttribute('data-command-density')).toBe('compact');
+    expect(matrix?.querySelector('.scenario-preset-menu')).toBeNull();
+    expect(matrix?.querySelector('.scenario-run-scope-menu summary')?.getAttribute('aria-label'))
+      .toBe('More run scopes');
+    expect(matrix?.querySelectorAll('.scenario-run-scope-menu button')).toHaveLength(3);
+    expect(matrix?.querySelectorAll('.scenario-matrix-bulk-actions > button')).toHaveLength(2);
+  });
+
   it('localizes matrix controls and counts without translating case payloads', async () => {
     window.history.replaceState({}, '', '/author/?lang=zh-CN');
     await render(5, {}, true);
@@ -144,7 +158,7 @@ describe('ScenarioMatrixSurface', () => {
     expect(text()).toContain('显示 1-5 / 5');
     expect(button('运行所选项（0）')).toBeInstanceOf(HTMLButtonElement);
     expect(input('搜索用例').placeholder).toBe('搜索用例、ID 或标签');
-    await click(button('检查'));
+    await click(buttonByLabel('检查 '));
     expect(text()).toContain('case-1-expected-1-1');
     expect(text()).toContain('result.field01');
   });
@@ -158,7 +172,7 @@ describe('ScenarioMatrixSurface', () => {
       .toEqual(['Case', 'Result', 'Given', 'Dependencies', 'Assertions', 'Duration', 'Currentness']);
     expect(text()).not.toContain('OUTPUT_PATH:$.result.field01:EQUALS');
 
-    await click(button('Inspect'));
+    await click(buttonByLabel('Inspect '));
     expect(text()).toContain('Expected / Actual / Diff');
     expect(text()).toContain('result.field01');
   });
@@ -193,7 +207,7 @@ describe('ScenarioMatrixSurface', () => {
     expect(host.querySelectorAll('tbody tr[data-testid]')).toHaveLength(1);
     expect(text()).toContain('business case 3');
     expect(text()).not.toContain('business case 1');
-    await click(button('Inspect'));
+    await click(buttonByLabel('Inspect '));
     expect(text()).toContain('Subject under test: Real target execution');
     expect(text()).toContain('APPROVED');
     expect(text()).toContain('REVIEW');
@@ -247,6 +261,13 @@ describe('ScenarioMatrixSurface', () => {
     const match = Array.from(host.querySelectorAll<HTMLButtonElement>('button'))
       .find((candidate) => candidate.textContent?.trim() === name);
     if (!match) throw new Error(`Missing button: ${name}`);
+    return match;
+  }
+
+  function buttonByLabel(prefix: string) {
+    const match = Array.from(host.querySelectorAll<HTMLButtonElement>('button[aria-label]'))
+      .find((candidate) => candidate.getAttribute('aria-label')?.startsWith(prefix));
+    if (!match) throw new Error(`Missing button label prefix: ${prefix}`);
     return match;
   }
 

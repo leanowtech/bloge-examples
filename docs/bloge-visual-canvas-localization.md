@@ -8,11 +8,11 @@
 ## 1. 能力范围
 
 Resource Gateway React 界面当前支持 `en` 与 `zh-CN`。全局语言选择器位于主导航右侧，
-覆盖 Author、Libraries、Rehearsals 和 Showcase；旧版静态 Custom Composer 作为 legacy
+覆盖 Author、Libraries、Rehearsals 和 Run examples；旧版静态 Custom Composer 作为 legacy
 入口，不纳入本轮 React 国际化边界。
 
 覆盖范围包括全局导航、Author 命令与开始对话框、画布节点/边/控件、Graph Run Input、
-Contract/Scenario Matrix/Case/Coverage、Library 创建与深层编辑、Rehearsal、Showcase、Decision
+Contract/Scenario Matrix/Case/Coverage、Library 创建与深层编辑、Rehearsal、Run examples、Decision
 Table 和诊断抽屉。业务资产、字段路径、代码和技术坐标按原文展示。
 
 ## 2. 用户操作
@@ -35,7 +35,7 @@ URL lang -> localStorage bloge.visual.locale -> navigator.languages -> en
 
 | 模块 | 职责 |
 | --- | --- |
-| `src/i18n/i18n.ts` | Locale 类型、中文目录、参数插值、语言解析和持久化 |
+| `src/i18n/i18n.ts` | Locale 类型、静态目录、注册动态翻译、参数插值、语言解析和持久化 |
 | `src/i18n/messageCatalog.ts` | typed command、blocker 与 lifecycle message ID |
 | `src/i18n/diagnosticCatalog.ts` | diagnostic code 到标题、解释和修复动作的投影 |
 | `src/i18n/I18nProvider.tsx` | React Context、即时切换、`html lang` 与 URL 同步 |
@@ -43,15 +43,20 @@ URL lang -> localStorage bloge.visual.locale -> navigator.languages -> en
 | `src/App.tsx` | 在路由和工作区之外安装唯一 Provider |
 
 新命令、状态和 blocker 使用 typed ID；迁移中的稳定界面文案仍可使用“英文源文案即 key”。
-运行时保留英文 fallback 以避免空白，但 strict inventory 会在 audited surface 缺少中文时让 CI
-失败，因此 fallback 不能再静默进入发布。动态值使用命名参数：
+未知动态值不再回退为英文句子，而是显示本地化保守结论；协议原文只保留在技术详情。三条 API
+不能混用：
 
 ```tsx
-const { t } = useI18n();
+const { t, d, m } = useI18n();
+
+// 编译期可见的稳定字面量。
 t('Draft r{revision} · {nodes} nodes', { revision, nodes });
 
-const { m } = useI18n();
+// 类型化产品协议，domain projection 只返回 messageId + params。
 m('author.command.run');
+
+// 状态机或协议投影的动态值；未登记值显示保守结论。
+d(run.status);
 ```
 
 ## 4. 翻译边界
@@ -70,14 +75,20 @@ m('author.command.run');
 组件显示协议状态时可以翻译 label，但提交给 API 的 `value` 必须保持协议常量。例如
 下拉框可显示“超时”，其值仍为 `TIMEOUT`。
 
+稳定 blocker code 也遵循这条边界。根摘要必须投影为用户能行动的业务原因，例如
+`DEPENDENCY_TIMEOUT -> 依赖调用超时`；code 本身与服务端 raw message 只在默认收起的
+Technical details 中显示。未知 code 使用本地化保守结论，绝不能把英文原文提升成首屏标题。
+
 ## 5. 新增文案
 
 1. 新命令、状态、blocker 或 diagnostic 优先增加 typed message ID/code catalog。
-2. 迁移期稳定文案可写成 `t('English source')`，并在 `ZH_CN_MESSAGES` 添加同 key 中文。
+2. 迁移期稳定文案可写成 `t('English source')`，并在 `ZH_CN_MESSAGES` 添加同 key 中文；禁止
+   `t(variable)`。
 3. 同步翻译可访问名称和 tooltip，避免视觉用户与读屏用户得到不同语言。
 4. 日期使用当前 `locale` 创建 `Intl.DateTimeFormat`；数字优先使用结构化参数。
 5. 保留业务数据原值，避免对整个 DOM 或 API response 做文本替换。
-6. 动态 registry、状态机和 wire union 增加显式 inventory，不能依赖 JSX 扫描发现。
+6. 动态 registry、状态机和 wire union 使用 `d(value)` 并增加显式 inventory；未知产品值不得把
+   raw sentence 当作翻译 key，raw code/detail 进入技术详情。
 7. 运行 `npm run check:i18n`，并确认中英文命令状态和任务结构不回归。
 
 ## 6. 验证清单
@@ -90,3 +101,4 @@ m('author.command.run');
 - 键盘可以聚焦并操作两个语言选项，选中态由 `aria-pressed` 表达；
 - 无存储权限时仍可在当前会话切换，不因 `localStorage` 异常阻断页面。
 - `npm run check:i18n` 通过，浏览器固定任务不存在非业务资产英文 UI。
+- critical product surfaces 不存在未登记 `t(variable)`；新增调用会被 AST inventory 直接拒绝。

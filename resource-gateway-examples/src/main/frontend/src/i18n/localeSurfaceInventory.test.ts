@@ -39,6 +39,16 @@ const DEEP_SURFACES = [
   '../Showcase.tsx',
 ] as const;
 
+const STRICT_DYNAMIC_SURFACES = [
+  '../Showcase.tsx',
+  '../RehearsalWorkbench.tsx',
+  '../author/canvas/CanvasTaskNavigator.tsx',
+  '../author/shell/AuthorCommandBar.tsx',
+  '../library-authoring/mobile/MobileLibraryTaskSurface.tsx',
+  '../library-authoring/CanonicalContractPreview.tsx',
+  '../remediation/RemediationActionList.tsx',
+] as const;
+
 describe('deep-surface locale inventory', () => {
   it('requires every literal legacy t() key on audited surfaces to have Chinese text', () => {
     const missing = DEEP_SURFACES.flatMap((relativePath) => {
@@ -51,6 +61,36 @@ describe('deep-surface locale inventory', () => {
     });
 
     expect(missing).toEqual([]);
+  });
+
+  it('forbids unregistered dynamic t(variable) calls on critical product surfaces', () => {
+    const findings = STRICT_DYNAMIC_SURFACES.flatMap((relativePath) => {
+      const source = readFileSync(new URL(relativePath, import.meta.url), 'utf8');
+      const file = ts.createSourceFile(relativePath, source, ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX);
+      const failures: string[] = [];
+      const visit = (node: ts.Node) => {
+        if (ts.isCallExpression(node)
+          && node.expression.getText(file) === 't'
+          && node.arguments[0]) {
+          const literalChoices = translationLiteralChoices(node.arguments[0]);
+          if (literalChoices === null) {
+            const line = file.getLineAndCharacterOfPosition(node.getStart(file)).line + 1;
+            failures.push(`${relativePath}:${line}: ${node.arguments[0].getText(file)}`);
+          } else {
+            for (const choice of literalChoices) {
+              if (!hasChineseTranslation(choice)) {
+                failures.push(`${relativePath}: unregistered literal choice ${choice}`);
+              }
+            }
+          }
+        }
+        ts.forEachChild(node, visit);
+      };
+      visit(file);
+      return failures;
+    });
+
+    expect(findings).toEqual([]);
   });
 
   it('rejects visible English JSX text and accessibility attributes that bypass localization', () => {
@@ -191,3 +231,14 @@ describe('deep-surface locale inventory', () => {
     expect(tokens.filter((token) => !hasChineseTranslation(token))).toEqual([]);
   });
 });
+
+function translationLiteralChoices(node: ts.Expression): string[] | null {
+  if (ts.isStringLiteral(node) || ts.isNoSubstitutionTemplateLiteral(node)) return [node.text];
+  if (ts.isParenthesizedExpression(node)) return translationLiteralChoices(node.expression);
+  if (ts.isConditionalExpression(node)) {
+    const whenTrue = translationLiteralChoices(node.whenTrue);
+    const whenFalse = translationLiteralChoices(node.whenFalse);
+    return whenTrue && whenFalse ? [...whenTrue, ...whenFalse] : null;
+  }
+  return null;
+}

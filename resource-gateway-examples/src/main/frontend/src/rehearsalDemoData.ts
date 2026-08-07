@@ -323,6 +323,7 @@ const quarantineWorkbook = batchWorkbook(
 );
 
 export const DEFAULT_REHEARSAL_DEMO_ID = blockedJob.jobId;
+export const RECOVERED_REHEARSAL_DEMO_ID = readyJob.jobId;
 
 export const REHEARSAL_DEMO_SCENARIOS: RehearsalDemoScenario[] = [
   {

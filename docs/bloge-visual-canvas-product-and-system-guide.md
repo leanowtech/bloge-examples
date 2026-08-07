@@ -244,12 +244,17 @@ Auto Layout 的质量结论也遵循同一协议。布局算法只返回节点�
 中文界面会显示“几何通过”“可读性需检查”等结论，数量和字号会格式化为可读值；`PASS / REVIEW`
 仅作为内部状态，不会混入中文句子。切换语言不触发布局重算，也不改变待接受的候选坐标。
 
-**Showcase** 和 **Rehearsals > Samples** 的内置演示内容也会随界面语言切换。Showcase 的标题、
+**运行示例（Run examples）** 和 **Rehearsals > Samples** 的内置演示内容也会随界面语言切换。运行示例的标题、
 架构模式、说明和概念标签来自 `graphName` 对应的双语 presentation；`graphName`、算子引用和字段路径
 仍按原文显示。客户或服务端新增但前端尚不认识的场景不会被错误翻译，而是忠实呈现其元数据。
 Rehearsal 样例的标题、业务情境和学习重点同样使用稳定 descriptor。样例中的 Deadline、Attempt、
 Started、Completed 按批次开始时间显示相对关系，例如“4分钟后”，避免固定演示日期逐渐显得陈旧；
 Live 模式中的真实运行证据仍显示完整的本地化绝对时间。
+
+对开发者而言，多语言接口分为三类：静态字面量用 `t()`，类型化产品消息用 `m(messageId,
+params)`，状态机或协议投影的动态值用 `d(value)`。关键产品面禁止 `t(variable)`；未登记动态值会
+显示“未识别的产品状态，请查看技术详情”，不会把新服务端英文句子直接暴露给中文用户。
+排障信息并未丢失：failure code 以机器坐标显示，raw message 放在默认收起的 **技术详情**。
 
 Author Workspace v2 会在浏览器中派发 `bloge:author-task` `CustomEvent`。宿主应用或
 VS Code webview 可以选择监听它来计算任务漏斗，Resource Gateway 前端本身不会把事件
@@ -1434,7 +1439,7 @@ Scenario evidence 与 operation/lifecycle audit。完整命令示例和 Test Kit
 ```text
 Author canvas:   http://localhost:8080/author/
 Rehearsals:      http://localhost:8080/rehearsals/
-Showcase:        http://localhost:8080/showcase/
+Run examples:    http://localhost:8080/showcase/
 Legacy composer: http://localhost:8080/examples/gateway
   Capability probe: http://localhost:8080/api/integration/capabilities
   Active profile:   test
@@ -1489,7 +1494,7 @@ curl -fsS http://localhost:8080/api/integration/capabilities
 ./scripts/start-visual-canvas-demo.sh --scenario-batch
 ```
 
-页面顶部可在 `Author / Rehearsals / Showcase` 三个工作面间切换。Rehearsals
+页面顶部可在 `Author / Rehearsals / 运行示例` 三个工作面间切换。Rehearsals
 不是另一套治理系统，而是 Resource Gateway 对受保护 Scenario 运行与签名证据的
 证据优先任务投影：
 
@@ -1514,6 +1519,16 @@ curl -fsS http://localhost:8080/api/integration/capabilities
 样例也支持可分享定位：
 `/rehearsals/?sample=sample-release-ready&entry=1` 会直接恢复指定样例和证据抽屉。
 这个链接只用于产品讲解；真实治理协作仍使用 `jobId` deep link。
+
+最快的“失败 -> 恢复 -> 重置”演示路径：
+
+1. 保持 `Samples`，选择 **Grounding policy regression**；
+2. 点击 Execution 分组中的 `#0` 超时条目，先读业务化阻断原因；原始协议 code 在默认收起的
+   **技术详情** 中；
+3. 点击 **运行样例重试**。工作台会切换到确定性的 **Release candidate ready** 后继，并显示
+   前序/后继坐标回执；
+4. 回执会明确说明这是浏览器本地演示，不调用治理接口、不产生签名证据；
+5. 点击 **重置样例** 恢复原始失败，可重复讲解。
 
 1. 左侧选择当前认证 tenant/organization/project/environment/region 中的批次；
    `Load older batches` 使用稳定 keyset，不会因运行进度变化而重复或漏项。
@@ -2845,9 +2860,11 @@ POST /api/visual/graphs/simulate
 | Publication export/import | `GET /api/visual/publications/{publicationId}/export`, `POST /api/visual/publications/import-bundle` |
 | Golden case | `/api/visual/golden-cases/*` |
 
-## 6. `/showcase/` 怎么用
+## 6. `/showcase/` 运行示例怎么用
 
-`/showcase/` 是面向 resource gateway 示例的 React 场景目录，不是通用 authoring 工作台。它用于证明后端 resource gateway 场景、图、请求和 SSE 行为仍然可用。
+`/showcase/` 在顶层导航中显示为 **运行示例**，是面向 Resource Gateway 的真实运行场景目录，
+不是通用 authoring 工作台。Author 的完整示例用于载入后编辑；这里用于证明后端场景、图、请求
+和 SSE 行为仍然可用。Diagram JSON 与 Legacy runner 默认收进 **Advanced**，避免干扰主运行任务。
 
 页面重点如下：
 

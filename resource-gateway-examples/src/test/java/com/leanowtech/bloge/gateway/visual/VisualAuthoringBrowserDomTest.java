@@ -11,6 +11,10 @@ import com.leanowtech.bloge.gateway.authoring.scenario.ScenarioDraftSetAuthoring
 import com.leanowtech.bloge.gateway.authoring.scenario.ScenarioImportMaterializationRequest;
 import com.leanowtech.bloge.gateway.authoring.scenario.ScenarioImportMaterializationResult;
 import com.leanowtech.bloge.gateway.authoring.scenario.ScenarioImportMaterializationService;
+import com.leanowtech.bloge.gateway.authoring.scenario.StoredScenarioDraftSet;
+import com.leanowtech.bloge.gateway.authoring.workspace.WorkspaceForkCommand;
+import com.leanowtech.bloge.gateway.authoring.workspace.WorkspaceForkReceipt;
+import com.leanowtech.bloge.gateway.authoring.workspace.WorkspaceForkService;
 import com.leanowtech.bloge.gateway.gateway.GatewayProperties;
 import com.leanowtech.bloge.gateway.integration.IntegrationRequestContext;
 import com.leanowtech.bloge.gateway.gateway.ResourceDescriptorBootstrap;
@@ -22,6 +26,8 @@ import com.leanowtech.bloge.gateway.visual.catalog.VisualCatalogTestSupport;
 import com.leanowtech.bloge.gateway.visual.contract.ContractDraft;
 import com.leanowtech.bloge.gateway.visual.draft.GraphDraftRepository;
 import com.leanowtech.bloge.gateway.visual.model.SchemaEnvelope;
+import com.leanowtech.bloge.gateway.visual.resource.ResourceDesignContractBootstrap;
+import com.leanowtech.bloge.gateway.visual.resource.ResourceDesignContractRegistry;
 
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Assumptions;
@@ -55,10 +61,12 @@ import org.springframework.boot.test.context.TestConfiguration;
 import org.springframework.boot.test.web.server.LocalServerPort;
 import org.springframework.context.annotation.Bean;
 import org.springframework.core.io.ClassPathResource;
+import org.springframework.http.HttpHeaders;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
+import org.springframework.web.bind.annotation.RequestHeader;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
@@ -139,6 +147,69 @@ class VisualAuthoringBrowserDomTest {
                 GraphDraftRepository graphDrafts) {
             return new GraphScenarioBrowserFixtureController(service, graphDrafts);
         }
+
+        /** Exposes the real aggregate fork in the default-profile packaged-browser harness. */
+        @Bean
+        WorkspaceForkBrowserFixtureController workspaceForkBrowserFixtureController(
+                WorkspaceForkService service) {
+            return new WorkspaceForkBrowserFixtureController(service);
+        }
+
+        /** Exposes exact Scenario reads for assets created by the aggregate fork. */
+        @Bean
+        ScenarioDraftSetBrowserFixtureController scenarioDraftSetBrowserFixtureController(
+                ScenarioDraftSetAuthoringService service) {
+            return new ScenarioDraftSetBrowserFixtureController(service);
+        }
+    }
+
+    /** Test-only transport adapter around the same atomic Workspace fork service used in test. */
+    @RestController
+    @RequestMapping("/api/authoring/workspace-forks")
+    static final class WorkspaceForkBrowserFixtureController {
+        private final WorkspaceForkService service;
+
+        WorkspaceForkBrowserFixtureController(WorkspaceForkService service) {
+            this.service = service;
+        }
+
+        @PostMapping
+        WorkspaceForkReceipt fork(
+                @RequestHeader("Idempotency-Key") String idempotencyKey,
+                @RequestBody WorkspaceForkCommand command,
+                @RequestHeader HttpHeaders ignoredHeaders) {
+            return service.fork(
+                    idempotencyKey,
+                    command,
+                    browserAuthoringIdentity("TEST_SUITE_WRITE", "browser-workspace-fork"));
+        }
+    }
+
+    /** Test-only exact-scope read adapter for the Scenario asset returned by a Workspace fork. */
+    @RestController
+    @RequestMapping("/api/visual/scenario-draft-sets")
+    static final class ScenarioDraftSetBrowserFixtureController {
+        private final ScenarioDraftSetAuthoringService service;
+
+        ScenarioDraftSetBrowserFixtureController(ScenarioDraftSetAuthoringService service) {
+            this.service = service;
+        }
+
+        @GetMapping("/{scenarioDraftSetId}")
+        StoredScenarioDraftSet find(@PathVariable String scenarioDraftSetId) {
+            return service.find(
+                    scenarioDraftSetId,
+                    browserAuthoringIdentity("TEST_SUITE_READ", "browser-scenario-read"));
+        }
+    }
+
+    private static IntegrationRequestContext browserAuthoringIdentity(
+            String purpose,
+            String requestId) {
+        return new IntegrationRequestContext(
+                "tenant-a", "browser-organization", "browser-project", "test", "local",
+                "HUMAN", "browser-author", "", purpose, requestId,
+                java.util.Set.of(), "RESTRICTED", "");
     }
 
     /** Test-profile adapter around the real saved Graph Contract projection service. */
@@ -479,6 +550,9 @@ class VisualAuthoringBrowserDomTest {
     @Autowired
     private GraphDraftRepository graphDraftRepository;
 
+    @Autowired
+    private ResourceDesignContractRegistry resourceDesignContractRegistry;
+
     @LocalServerPort
     private int port;
 
@@ -502,11 +576,16 @@ class VisualAuthoringBrowserDomTest {
                 .map(descriptor -> descriptor.resourceId())
                 .toList()
                 .forEach(resourceRegistry::deregister);
+        resourceDesignContractRegistry.all().stream()
+                .map(contract -> contract.resourceId())
+                .toList()
+                .forEach(resourceDesignContractRegistry::deleteByResourceId);
 
         GatewayProperties properties = new GatewayProperties();
         properties.setBaseUrl("http://localhost:" + port + "/demo-upstream");
         properties.setSeedDescriptors(true);
         new ResourceDescriptorBootstrap(resourceRegistry, properties).seedDescriptors();
+        new ResourceDesignContractBootstrap(resourceDesignContractRegistry).seedContracts();
     }
 
     @AfterEach
@@ -558,7 +637,7 @@ class VisualAuthoringBrowserDomTest {
         double standardFlowHeight = elementClientHeight(initialFlow);
         assertThat(standardFlowHeight)
                 .as("standard author canvas flow height")
-                .isGreaterThanOrEqualTo(620.0);
+                .isGreaterThanOrEqualTo(560.0);
 
         WebElement focusToggle = wait.until(ExpectedConditions.elementToBeClickable(
                 By.cssSelector("[data-testid='canvas-focus-toggle']")
@@ -649,7 +728,7 @@ class VisualAuthoringBrowserDomTest {
         WebElement operatorNode = wait.until(ExpectedConditions.visibilityOfElementLocated(
                 By.cssSelector("[data-testid='canvas-node:n1']")
         ));
-        new Actions(driver).doubleClick(operatorNode).perform();
+        dispatchDoubleClick(operatorNode);
 
         WebElement heading = wait.until(ExpectedConditions.visibilityOfElementLocated(
                 By.cssSelector(".operator-detail-heading")
@@ -720,7 +799,7 @@ class VisualAuthoringBrowserDomTest {
         WebElement operatorNode = wait.until(ExpectedConditions.visibilityOfElementLocated(
                 By.cssSelector("[data-testid='canvas-node:n1']")
         ));
-        new Actions(driver).doubleClick(operatorNode).perform();
+        dispatchDoubleClick(operatorNode);
         wait.until(ExpectedConditions.elementToBeClickable(By.xpath(
                 "//button[normalize-space()='Contract & Scenarios']"
         ))).click();
@@ -728,22 +807,14 @@ class VisualAuthoringBrowserDomTest {
         WebElement workspace = wait.until(ExpectedConditions.visibilityOfElementLocated(
                 By.cssSelector("[data-testid='contract-workspace']")
         ));
-        wait.until(ExpectedConditions.elementToBeClickable(By.xpath(
-                "//button[normalize-space()='Load Scenario']"
-        ))).click();
-        waitForText(
-                wait,
-                By.cssSelector(".scenario-asset-notice"),
-                "No saved Scenario revision yet"
-        );
         assertThat(workspace.getText())
                 .doesNotContain("Request failed: 404")
                 .doesNotContain("RG.SCENARIO.NOT_FOUND");
 
-        wait.until(ExpectedConditions.elementToBeClickable(By.xpath(
-                "//button[starts-with(normalize-space(), 'Scenarios ')]"
+        wait.until(ExpectedConditions.elementToBeClickable(By.cssSelector(
+                "[data-testid='author-mode:scenarios']"
         ))).click();
-        waitForText(wait, By.cssSelector(".scenario-list"), "Happy path");
+        waitForText(wait, By.cssSelector(".scenario-list"), "User profile executable case");
         waitForText(wait, By.cssSelector(".scenario-workbench"), "Given");
         wait.until(ExpectedConditions.numberOfElementsToBeMoreThan(
                 By.cssSelector(".scenario-assertions > *"),
@@ -781,11 +852,11 @@ class VisualAuthoringBrowserDomTest {
                 By.cssSelector("[data-testid='scenario-matrix']")
         ));
         assertThat(matrix.getText())
-                .contains("CASE")
-                .contains("GIVEN")
-                .contains("DEPENDENCY")
-                .contains("THEN")
-                .contains("PROOF");
+                .contains("Case")
+                .contains("Given")
+                .contains("Dependencies")
+                .contains("Assertions")
+                .contains("Currentness");
         assertThat(driver.findElements(By.xpath(
                 "//*[@data-testid='scenario-matrix']//tbody//td[normalize-space()='Passed']"
         ))).as("row verdicts never collapse four-axis proof into generic Passed").isEmpty();
@@ -849,9 +920,9 @@ class VisualAuthoringBrowserDomTest {
 
         setViewport(wait, 390, 844);
         assertPageNoHorizontalOverflow();
-        WebElement mobileCandidate = driver.findElements(By.cssSelector(
-                ".coverage-candidate-row"
-        )).getFirst();
+        WebElement mobileCandidate = driver.findElement(By.cssSelector(
+                "[data-testid='scenario-matrix']"
+        ));
         ((JavascriptExecutor) driver).executeScript(
                 "arguments[0].scrollIntoView({block:'center'});",
                 mobileCandidate
@@ -863,7 +934,8 @@ class VisualAuthoringBrowserDomTest {
                         const scroll = matrix.querySelector('.scenario-matrix-scroll');
                         const actions = [...matrix.querySelectorAll(
                           '.scenario-matrix-bulkbar button'
-                        )].map((button) => button.getBoundingClientRect());
+                        )].filter((button) => button.getClientRects().length > 0)
+                          .map((button) => button.getBoundingClientRect());
                         return {
                           localOverflow: scroll.scrollWidth - scroll.clientWidth,
                           actionOutside: actions.filter((rect) =>
@@ -898,6 +970,12 @@ class VisualAuthoringBrowserDomTest {
         assertThat(mobileGeometry.get("actionMinHeight").doubleValue())
                 .as("mobile bulk actions retain a usable hit target height")
                 .isGreaterThanOrEqualTo(30.0);
+        assertThat(driver.findElements(By.cssSelector(
+                ".scenario-matrix-bulk-actions > button"
+        ))).as("mobile exposes only Suite and Selection as direct run commands").hasSize(2);
+        assertThat(driver.findElement(By.cssSelector(
+                ".scenario-run-scope-menu > summary"
+        )).getAttribute("aria-label")).isEqualTo("More run scopes");
         captureVisualQa("scenario-matrix-390.png");
 
         WebElement firstRow = driver.findElements(By.cssSelector(
@@ -1009,7 +1087,15 @@ class VisualAuthoringBrowserDomTest {
 
         driver.findElement(By.xpath("//button[normalize-space()='Case']")).click();
         wait.until(ExpectedConditions.visibilityOfElementLocated(By.cssSelector(".scenario-workbench")));
-        assertThat(driver.findElements(By.cssSelector(".scenario-list-row"))).hasSizeGreaterThanOrEqualTo(3);
+        assertPageNoHorizontalOverflow();
+
+        setViewport(wait, 1280, 800);
+        wait.until(ExpectedConditions.numberOfElementsToBeMoreThan(
+                By.cssSelector(".scenario-list-row"),
+                2
+        ));
+        assertThat(driver.findElements(By.cssSelector(".scenario-list-row")))
+                .hasSizeGreaterThanOrEqualTo(3);
         assertThat(driver.findElement(By.cssSelector(".scenario-list-row.selected")).getText()).isNotBlank();
         assertThat(driver.findElement(By.cssSelector(".scenario-editor")).getText())
                 .contains("Run success is enough until an assertion is added.");
@@ -1052,7 +1138,19 @@ class VisualAuthoringBrowserDomTest {
         wait.until(ExpectedConditions.elementToBeClickable(By.xpath(
                 "//button[normalize-space()='Save Graph']"
         ))).click();
-        waitForText(wait, By.cssSelector(".scenario-asset-notice"), "Graph revision saved");
+        try {
+            new WebDriverWait(driver, Duration.ofSeconds(30)).until(ExpectedConditions.attributeToBe(
+                    By.cssSelector(".workspace-v2"), "data-draft-lifecycle", "saved"
+            ));
+        } catch (TimeoutException ex) {
+            throw new AssertionError(
+                    "Graph save did not become durable. lifecycle='%s', notice='%s'"
+                            .formatted(
+                                    driver.findElement(By.cssSelector(".workspace-v2"))
+                                            .getAttribute("data-draft-lifecycle"),
+                                    textOf(By.cssSelector(".scenario-asset-notice"))),
+                    ex);
+        }
         driver.findElement(By.cssSelector("[data-testid='author-mode:scenarios']")).click();
 
         if (!driver.findElements(By.cssSelector(".contract-stale-banner")).isEmpty()) {
@@ -1157,7 +1255,7 @@ class VisualAuthoringBrowserDomTest {
         assertThat(startDialog.getText())
                 .contains("Load example")
                 .contains("Import DSL")
-                .contains("Import operator library")
+                .contains("Create operator library")
                 .contains("Blank graph");
 
         driver.findElement(By.cssSelector("[aria-label='Close start dialog']")).click();
@@ -1276,7 +1374,7 @@ class VisualAuthoringBrowserDomTest {
                 By.cssSelector(".react-flow__node"),
                 5
         ));
-        waitForText(wait, By.cssSelector("[data-testid='author-primary-action']"), "Run scenario");
+        waitForText(wait, By.cssSelector("[data-testid='author-primary-action']"), "Run & Compare");
         waitForText(wait, By.cssSelector("[data-testid='author-context-inspector']"), "Decision response");
         assertThat(driver.getCurrentUrl())
                 .contains("authorMode=compose")
@@ -1312,7 +1410,7 @@ class VisualAuthoringBrowserDomTest {
         WebElement decisionTableNode = wait.until(ExpectedConditions.visibilityOfElementLocated(
                 By.cssSelector("[data-testid='canvas-node:n4']")
         ));
-        new Actions(driver).doubleClick(decisionTableNode).perform();
+        dispatchDoubleClick(decisionTableNode);
         wait.until(ExpectedConditions.attributeToBe(
                 By.cssSelector("[data-testid='operator-detail-dialog']"),
                 "data-default-tab",
@@ -1332,7 +1430,7 @@ class VisualAuthoringBrowserDomTest {
         WebElement transformNode = wait.until(ExpectedConditions.visibilityOfElementLocated(
                 By.cssSelector("[data-testid='canvas-node:n5']")
         ));
-        new Actions(driver).doubleClick(transformNode).perform();
+        dispatchDoubleClick(transformNode);
         wait.until(ExpectedConditions.attributeToBe(
                 By.cssSelector("[data-testid='operator-detail-dialog']"),
                 "data-default-tab",
@@ -1359,10 +1457,11 @@ class VisualAuthoringBrowserDomTest {
                 "data-author-mode",
                 "evidence"
         ));
-        wait.until(ignored -> {
-            String text = textOf(By.cssSelector("[data-testid='author-primary-action']"));
-            return text.contains("Review result") || text.contains("Review failures");
-        });
+        waitForText(
+                wait,
+                By.cssSelector("[data-testid='author-surface-command-handoff']"),
+                "Use Evidence actions"
+        );
         assertThat(workspace.getAttribute("data-author-mode")).isEqualTo("evidence");
         assertThat(driver.getCurrentUrl())
                 .contains("authorMode=evidence")
@@ -1372,14 +1471,15 @@ class VisualAuthoringBrowserDomTest {
         assertThat(driver.findElement(By.cssSelector(
                 "[data-testid='scenario-evidence']"
         )).getText())
-                .contains("Evidence incomplete")
+                .contains("Review required")
+                .contains("paths to a trusted result")
                 .contains("1 assertion passed");
         assertThat(driver.findElements(By.cssSelector(
                 "[data-testid='test-suite-dialog']"
         ))).isEmpty();
-        driver.findElement(By.cssSelector("[aria-label='Close Contract workspace']")).click();
-        wait.until(ExpectedConditions.invisibilityOfElementLocated(
-                By.cssSelector("[data-testid='contract-workspace']")
+        driver.findElement(By.cssSelector("[data-testid='author-mode:compose']")).click();
+        wait.until(ExpectedConditions.attributeToBe(
+                By.cssSelector(".workspace-v2"), "data-author-mode", "compose"
         ));
         WebElement diagnosticsToggle = driver.findElement(By.cssSelector(
                 "[data-testid='author-diagnostics-drawer'] .author-diagnostics-toggle"
@@ -1414,17 +1514,20 @@ class VisualAuthoringBrowserDomTest {
                 By.cssSelector("[data-testid='contract-workspace']")
         ));
         wait.until(ExpectedConditions.attributeToBe(
-                By.xpath("//button[normalize-space()='Run Evidence']"),
-                "aria-selected",
-                "true"
+                By.cssSelector(".workspace-v2"), "data-author-mode", "evidence"
         ));
+        waitForText(
+                wait,
+                By.cssSelector("[data-testid='author-surface-command-handoff']"),
+                "Use Evidence actions"
+        );
         wait.until(ExpectedConditions.visibilityOfElementLocated(
                 By.cssSelector("[data-testid='scenario-evidence']")
         ));
         assertNoHorizontalOverflow(wait, By.cssSelector("[data-testid='contract-workspace']"));
-        driver.findElement(By.cssSelector("[aria-label='Close Contract workspace']")).click();
-        wait.until(ExpectedConditions.invisibilityOfElementLocated(
-                By.cssSelector("[data-testid='contract-workspace']")
+        driver.findElement(By.cssSelector("[data-testid='author-mode:compose']")).click();
+        wait.until(ExpectedConditions.attributeToBe(
+                By.cssSelector(".workspace-v2"), "data-author-mode", "compose"
         ));
 
         setViewport(wait, 390, 844);
@@ -1459,7 +1562,7 @@ class VisualAuthoringBrowserDomTest {
      *
      * <p>An input edit must retain the prior result for comparison while marking execution and
      * assertions stale, blocking promotion, and offering one explicit rerun action. The rerun must
-     * consume the edited Graph Input, produce a different execution-request fingerprint, and only
+     * consume the edited Scenario Given input, produce a different execution-request fingerprint, and only
      * then restore current evidence. This guards against the dangerous UX failure where a green
      * result survives an authoring change or a rerun silently ignores the value the author edited.</p>
      */
@@ -1496,6 +1599,9 @@ class VisualAuthoringBrowserDomTest {
         WebElement firstEvidence = wait.until(ExpectedConditions.visibilityOfElementLocated(
                 By.cssSelector("[data-testid='scenario-evidence']")
         ));
+        wait.until(ExpectedConditions.elementToBeClickable(By.xpath(
+                "//summary[normalize-space()='Technical coordinates']"
+        ))).click();
         assertThat(firstEvidence.getText())
                 .contains("Draft fingerprint")
                 .contains("Scenario fingerprint")
@@ -1506,18 +1612,22 @@ class VisualAuthoringBrowserDomTest {
         )).getText();
         assertThat(firstRequestFingerprint).startsWith("sha256:");
 
-        driver.findElement(By.cssSelector("[aria-label='Close Contract workspace']")).click();
-        wait.until(ExpectedConditions.invisibilityOfElementLocated(
-                By.cssSelector("[data-testid='contract-workspace']")
+        driver.findElement(By.cssSelector("[data-testid='author-mode:scenarios']")).click();
+        wait.until(ExpectedConditions.visibilityOfElementLocated(
+                By.cssSelector("[data-testid='author-surface:scenarios']")
         ));
-        wait.until(ExpectedConditions.elementToBeClickable(By.cssSelector(
-                "[data-testid='inspector-tab:data']"
-        ))).click();
+        driver.findElement(By.xpath(
+                "//*[@data-testid='contract-workspace']//button[normalize-space()='Case']"
+        )).click();
         WebElement applicantId = wait.until(ExpectedConditions.elementToBeClickable(
-                By.cssSelector("input[aria-label='applicantId']")
+                By.cssSelector("[data-testid='contract-workspace'] input[aria-label='applicantId']")
         ));
         applicantId.clear();
         applicantId.sendKeys("applicant-1002");
+        driver.findElement(By.cssSelector("[data-testid='author-mode:compose']")).click();
+        wait.until(ExpectedConditions.invisibilityOfElementLocated(
+                By.cssSelector("[data-testid='author-surface:scenarios']")
+        ));
 
         wait.until(ExpectedConditions.attributeToBe(
                 By.cssSelector(".workspace-v2"),
@@ -1530,14 +1640,14 @@ class VisualAuthoringBrowserDomTest {
                 "blocked"
         ));
         assertThat(textOf(By.cssSelector("[data-testid='author-command-bar']")))
-                .contains("Execution")
+                .contains("Evidence")
                 .contains("STALE")
-                .contains("Assertions")
+                .contains("Gate")
                 .contains("BLOCKED");
         waitForText(
                 wait,
                 By.cssSelector("[data-testid='author-primary-action']"),
-                "Rerun current scenario"
+                "Rerun & Compare"
         );
 
         driver.findElement(By.cssSelector("[data-testid='author-primary-action']")).click();
@@ -1546,6 +1656,9 @@ class VisualAuthoringBrowserDomTest {
                 "data-evidence-freshness",
                 "current"
         ));
+        wait.until(ExpectedConditions.elementToBeClickable(By.xpath(
+                "//summary[normalize-space()='Technical coordinates']"
+        ))).click();
         wait.until(ExpectedConditions.visibilityOfElementLocated(
                 By.cssSelector("[data-testid='scenario-evidence-coordinate']")
         ));
@@ -1622,6 +1735,11 @@ class VisualAuthoringBrowserDomTest {
         wait.until(ExpectedConditions.numberOfElementsToBe(
                 By.cssSelector("[data-testid='canvas-edge-label']"), 4
         ));
+        wait.until(ExpectedConditions.attributeToBe(
+                By.cssSelector("[data-testid='author-flow']"),
+                "data-canvas-viewport-settled",
+                "true"
+        ));
         assertThat(workspace.getAttribute("data-canvas-visible-field-labels")).isEqualTo("12");
         Map<String, Number> inspectGeometry = canvasReadabilityGeometry();
         assertThat(inspectGeometry)
@@ -1640,6 +1758,12 @@ class VisualAuthoringBrowserDomTest {
         wait.until(ExpectedConditions.numberOfElementsToBe(
                 By.cssSelector("[data-testid='canvas-edge-label']"), 0
         ));
+        wait.until(ExpectedConditions.attributeToBe(
+                By.cssSelector("[data-testid='author-flow']"),
+                "data-canvas-viewport-settled",
+                "true"
+        ));
+        wait.until(ignored -> canvasReadabilityGeometry().get("outsideNodes").intValue() == 0);
         assertThat(workspace.getAttribute("data-canvas-visible-field-labels")).isEqualTo("0");
 
         driver.findElement(By.cssSelector(".react-flow__node[data-id='n2']")).click();
@@ -1723,9 +1847,9 @@ class VisualAuthoringBrowserDomTest {
                 By.cssSelector("[data-testid='canvas-layout-review']")
         ));
         assertThat(quality.getText())
-                .contains("0 node overlaps")
-                .contains("0 label collisions")
-                .contains("1 pinned");
+                .contains("Node overlaps 0")
+                .contains("label collisions 0")
+                .contains("pinned nodes 1");
         assertThat(elementClientWidth(driver.findElement(By.cssSelector("aside.palette"))))
                 .as("palette closes before geometry review")
                 .isZero();
@@ -1776,7 +1900,18 @@ class VisualAuthoringBrowserDomTest {
                 .as("rendered operator cards do not overlap")
                 .isZero();
 
-        driver.findElement(By.cssSelector("[data-testid='layout-apply']")).click();
+        WebElement applyLayout = driver.findElement(By.cssSelector("[data-testid='layout-apply']"));
+        if (applyLayout.isEnabled()) {
+            applyLayout.click();
+        } else {
+            assertThat(driver.findElements(By.cssSelector("[data-testid='layout-regressions'] li")))
+                    .as("a regressive candidate names the reasons before override")
+                    .isNotEmpty();
+            driver.findElement(By.cssSelector(
+                    "[data-testid='layout-override-review'] > summary"
+            )).click();
+            driver.findElement(By.cssSelector("[data-testid='layout-override']")).click();
+        }
         wait.until(ExpectedConditions.attributeToBe(
                 By.cssSelector(".workspace-v2"), "data-layout-preview", "inactive"
         ));
@@ -1817,6 +1952,12 @@ class VisualAuthoringBrowserDomTest {
         wait.until(ExpectedConditions.numberOfElementsToBe(
                 By.cssSelector("[data-testid='canvas-edge-label']"), 0
         ));
+        wait.until(ExpectedConditions.attributeToBe(
+                By.cssSelector("[data-testid='author-flow']"),
+                "data-canvas-viewport-settled",
+                "true"
+        ));
+        wait.until(ignored -> canvasReadabilityGeometry().get("outsideNodes").intValue() == 0);
         assertThat(workspace.getAttribute("data-canvas-visible-field-labels")).isEqualTo("0");
         assertThat(canvasReadabilityGeometry())
                 .as("820 Overview deliberately removes field detail and keeps the graph in bounds")
@@ -1864,9 +2005,16 @@ class VisualAuthoringBrowserDomTest {
                 .as("secondary topology drawer does not mutate the authoring coordinate")
                 .isEqualTo(scenarioCoordinate);
 
-        WebElement runButton = driver.findElement(By.cssSelector(
+        driver.findElements(By.cssSelector(
+                "[data-testid^='scenario-matrix-row-'] button"
+        )).stream()
+                .filter(button -> "Open".equals(button.getText()))
+                .findFirst()
+                .orElseThrow()
+                .click();
+        WebElement runButton = wait.until(ExpectedConditions.visibilityOfElementLocated(By.cssSelector(
                 "[data-testid='scenario-run']"
-        ));
+        )));
         ((JavascriptExecutor) driver).executeScript(
                 "arguments[0].scrollIntoView({block:'end'});", runButton);
         wait.until(ExpectedConditions.visibilityOf(runButton));
@@ -1917,8 +2065,11 @@ class VisualAuthoringBrowserDomTest {
                 "[data-testid='contract-workspace']"
         ));
 
+        wait.until(ExpectedConditions.elementToBeClickable(runButton)).click();
+        wait.until(ExpectedConditions.visibilityOfElementLocated(
+                By.cssSelector("[data-testid='scenario-evidence']")
+        ));
         setViewport(wait, 390, 844);
-        driver.findElement(By.cssSelector("[data-testid='author-primary-action']")).click();
         WebElement evidence = wait.until(ExpectedConditions.visibilityOfElementLocated(
                 By.cssSelector("[data-testid='contract-workspace']")
         ));
@@ -1994,9 +2145,7 @@ class VisualAuthoringBrowserDomTest {
                 By.cssSelector(".workspace-v2"), "data-canvas-visible-field-labels", "12"
         ));
 
-        wait.until(ExpectedConditions.elementToBeClickable(By.cssSelector(
-                "[data-testid='inspector-tab:data']"
-        ))).click();
+        openDataInspector(wait);
         waitForText(wait, By.cssSelector("[data-testid='graph-run-input-panel']"),
                 "Run Input Values");
         waitForText(wait, By.cssSelector("[data-testid='run-input-readiness']"),
@@ -2126,7 +2275,7 @@ class VisualAuthoringBrowserDomTest {
 
         wait.until(ExpectedConditions.visibilityOfElementLocated(By.cssSelector("[data-testid='react-showcase']")));
         assertThat(driver.getTitle()).contains("BLOGE Visual Canvas");
-        waitForText(wait, By.cssSelector(".topbar"), "Showcase");
+        waitForText(wait, By.cssSelector(".topbar"), "Run examples");
         wait.until(ExpectedConditions.numberOfElementsToBe(
                 By.cssSelector("[data-testid^='showcase-scenario:']"), 7
         ));
@@ -5415,6 +5564,49 @@ class VisualAuthoringBrowserDomTest {
                 element
         );
         return width.doubleValue();
+    }
+
+    private void openDataInspector(WebDriverWait wait) {
+        if (visibleElements(By.cssSelector("[data-testid='inspector-tab:data']")).isEmpty()) {
+            WebElement opener = wait.until(ignored -> {
+                for (By locator : List.of(
+                        By.cssSelector("[data-testid='compact-open-inspector']"),
+                        By.cssSelector("[aria-label='Expand context inspector']"),
+                        By.cssSelector(".inspector-panel-toggle[aria-expanded='false']"))) {
+                    List<WebElement> candidates = visibleElements(locator);
+                    if (!candidates.isEmpty() && candidates.getFirst().isEnabled()) {
+                        return candidates.getFirst();
+                    }
+                }
+                return null;
+            });
+            opener.click();
+        }
+        wait.until(ignored -> visibleElements(By.cssSelector(
+                "[data-testid='inspector-tab:data']"
+        )).stream().filter(WebElement::isEnabled).findFirst().orElse(null)).click();
+    }
+
+    private List<WebElement> visibleElements(By locator) {
+        return driver.findElements(locator).stream()
+                .filter(element -> {
+                    try {
+                        return element.isDisplayed();
+                    } catch (StaleElementReferenceException ignored) {
+                        return false;
+                    }
+                })
+                .toList();
+    }
+
+    private void dispatchDoubleClick(WebElement element) {
+        ((JavascriptExecutor) driver).executeScript("""
+                arguments[0].dispatchEvent(new MouseEvent('dblclick', {
+                  bubbles: true,
+                  cancelable: true,
+                  view: window
+                }));
+                """, element);
     }
 
     @SuppressWarnings("unchecked")

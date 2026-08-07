@@ -22,6 +22,7 @@ export interface StartExample {
   proofStrength: string;
   available: boolean;
   missingOperatorRefs: string[];
+  incompatibleContractPaths: string[];
 }
 
 interface StartImportDialogProps {
@@ -131,8 +132,15 @@ export default function StartImportDialog({
         )}
         {section === 'examples' && (
           <div className="author-start-examples">
-            {examples.map((example) => (
-              <article key={example.key} data-available={example.available}>
+            {examples.map((example) => {
+              const blockerId = `author-start-example-blocker:${example.key}`;
+              const unavailableReason = example.missingOperatorRefs.length > 0
+                ? t('Missing {operators}', { operators: example.missingOperatorRefs.join(', ') })
+                : t('Current Contracts do not expose {paths}', {
+                  paths: example.incompatibleContractPaths.join(', '),
+                });
+              return (
+                <article key={example.key} data-available={example.available}>
                 <div>
                   <span>{t(example.domain)}</span>
                   <strong>{t(example.label)}</strong>
@@ -152,21 +160,34 @@ export default function StartImportDialog({
                   })}</dd></div>
                   <div><dt>{t('Evidence')}</dt><dd>{t(example.proofStrength)}</dd></div>
                 </dl>
-                <button
-                  type="button"
-                  className="primary compact"
-                  {...(example === examples[0] ? { 'data-dialog-initial-focus': true } : {})}
-                  data-testid={`author-start-example:${example.key}`}
-                  disabled={!example.available}
-                  title={example.available
-                    ? `${t('Load example')}: ${t(example.label)}`
-                    : t('Missing {operators}', { operators: example.missingOperatorRefs.join(', ') })}
-                  onClick={() => onLoadExample(example.key)}
-                >
-                  {example.available ? t('Load example') : t('{count} missing', { count: example.missingOperatorRefs.length })}
-                </button>
+                <div className="author-start-example-action">
+                  {!example.available && (
+                    <small id={blockerId} className="author-start-example-blocker" role="status">
+                      {unavailableReason}
+                    </small>
+                  )}
+                  <button
+                    type="button"
+                    className="primary compact"
+                    {...(example === examples[0] ? { 'data-dialog-initial-focus': true } : {})}
+                    data-testid={`author-start-example:${example.key}`}
+                    disabled={!example.available}
+                    aria-describedby={example.available ? undefined : blockerId}
+                    title={example.available
+                      ? `${t('Load example')}: ${t(example.label)}`
+                      : unavailableReason}
+                    onClick={() => onLoadExample(example.key)}
+                  >
+                    {example.available
+                      ? t('Load example')
+                      : example.missingOperatorRefs.length > 0
+                        ? t('{count} missing', { count: example.missingOperatorRefs.length })
+                        : t('{count} incompatible', { count: example.incompatibleContractPaths.length })}
+                  </button>
+                </div>
               </article>
-            ))}
+              );
+            })}
           </div>
         )}
         {(section === 'library' || section === 'dsl') && (

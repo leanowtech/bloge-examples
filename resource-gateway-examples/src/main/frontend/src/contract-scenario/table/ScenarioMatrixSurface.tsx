@@ -1,4 +1,5 @@
 import { Fragment, useEffect, useMemo, useState } from 'react';
+import { ChevronDown, ChevronUp, Ellipsis } from 'lucide-react';
 import { useI18n } from '../../i18n/I18nProvider';
 import type { AuthorCommandAvailability } from '../../author/task/taskStateProjection';
 
@@ -35,6 +36,7 @@ interface ScenarioMatrixSurfaceProps {
   runCommand?: AuthorCommandAvailability;
   importDisabled?: boolean;
   importDisabledReason?: string;
+  compactCommands?: boolean;
   onSelectionChange: (selection: ScenarioTableSelection) => void;
   onOpenCase: (caseId: string) => void;
   onCellEdit: (caseId: string, column: ScenarioTableColumn, value: unknown) => void;
@@ -65,6 +67,7 @@ export default function ScenarioMatrixSurface({
   runCommand,
   importDisabled = false,
   importDisabledReason = '',
+  compactCommands = false,
   onSelectionChange,
   onOpenCase,
   onCellEdit,
@@ -123,9 +126,50 @@ export default function ScenarioMatrixSurface({
     'SELECTED',
     previousRunCaseIds,
   ), [previousRunCaseIds, projection, selection]);
+  const differentialRunCommands = (
+    <>
+      <button
+        type="button"
+        className="secondary"
+        disabled={disabled || runCommand?.enabled === false || !baselineAvailable || failedCount === 0}
+        onClick={() => onRunSelection('FAILED')}
+      >
+        {t('Run failed ({count})', { count: failedCount })}
+      </button>
+      <button
+        type="button"
+        className="secondary"
+        disabled={disabled || runCommand?.enabled === false || !baselineAvailable || changedCount === 0}
+        onClick={() => onRunSelection('CHANGED')}
+        title={!baselineAvailable
+          ? t('Run all once to create a complete baseline')
+          : changedCount === 0 ? t('No cases changed since the complete baseline')
+            : t('Run cases changed since the complete baseline')}
+      >
+        {t('Run changed ({count})', { count: changedCount })}
+      </button>
+      <button
+        type="button"
+        className="secondary"
+        disabled={disabled || runCommand?.enabled === false || !baselineAvailable || affectedCount === 0}
+        onClick={() => onRunSelection('AFFECTED')}
+        title={!baselineAvailable
+          ? t('Run all once to create a complete baseline')
+          : affectedCount === 0 ? t('No cases are affected relative to the complete baseline')
+            : t('Run changed, failed, or target-affected cases')}
+      >
+        {t('Run affected ({count})', { count: affectedCount })}
+      </button>
+    </>
+  );
 
   return (
-    <section className="scenario-matrix" aria-label={t('Scenario test matrix')} data-testid="scenario-matrix">
+    <section
+      className="scenario-matrix"
+      aria-label={t('Scenario test matrix')}
+      data-testid="scenario-matrix"
+      data-command-density={compactCommands ? 'compact' : 'full'}
+    >
       <header className="scenario-matrix-toolbar">
         <label className="scenario-matrix-search">
           <span className="visually-hidden">{t('Search cases')}</span>
@@ -181,7 +225,7 @@ export default function ScenarioMatrixSurface({
             </label>
           </div>
         </details>
-        <details className="scenario-preset-menu">
+        {!compactCommands && <details className="scenario-preset-menu">
           <summary className="secondary compact">{t('Add case')}</summary>
           <div>
             {(['GOLDEN', 'NEGATIVE', 'BOUNDARY', 'REGRESSION'] as const).map((value) => (
@@ -191,8 +235,8 @@ export default function ScenarioMatrixSurface({
               </button>
             ))}
           </div>
-        </details>
-        {onImportCases && (
+        </details>}
+        {!compactCommands && onImportCases && (
           <button
             type="button"
             className="secondary compact"
@@ -239,6 +283,7 @@ export default function ScenarioMatrixSurface({
             className="scenario-command-receipt"
             data-state={commandReceipt.state}
             data-testid="scenario-matrix-command-receipt"
+            aria-label={`${t('Command receipt')}: ${t(commandReceipt.state)}, ${t(commandReceipt.mode)}, ${t('{count} cases', { count: commandReceipt.caseCount })}`}
           >
             <header>
               <span>{t('Command receipt')}</span>
@@ -375,16 +420,19 @@ export default function ScenarioMatrixSurface({
                 <td className="scenario-matrix-actions">
                   <button
                     type="button"
-                    className="secondary compact"
+                    className="icon-button"
                     aria-expanded={expandedRows.includes(row.caseId)}
                     aria-label={t('Inspect {name}', { name: row.name })}
+                    title={t('Inspect')}
                     onClick={() => setExpandedRows((current) => (
                       current.includes(row.caseId)
                         ? current.filter((caseId) => caseId !== row.caseId)
                         : [...current, row.caseId]
                     ))}
                   >
-                    {t('Inspect')}
+                    {expandedRows.includes(row.caseId)
+                      ? <ChevronUp aria-hidden="true" size={16} />
+                      : <ChevronDown aria-hidden="true" size={16} />}
                   </button>
                   <button
                     type="button"
@@ -470,39 +518,19 @@ export default function ScenarioMatrixSurface({
             </span>
           )}
         </div>
-        <div>
-          <button
-            type="button"
-            className="secondary"
-            disabled={disabled || runCommand?.enabled === false || !baselineAvailable || failedCount === 0}
-            onClick={() => onRunSelection('FAILED')}
-          >
-            {t('Run failed ({count})', { count: failedCount })}
-          </button>
-          <button
-            type="button"
-            className="secondary"
-            disabled={disabled || runCommand?.enabled === false || !baselineAvailable || changedCount === 0}
-            onClick={() => onRunSelection('CHANGED')}
-            title={!baselineAvailable
-              ? t('Run all once to create a complete baseline')
-              : changedCount === 0 ? t('No cases changed since the complete baseline')
-                : t('Run cases changed since the complete baseline')}
-          >
-            {t('Run changed ({count})', { count: changedCount })}
-          </button>
-          <button
-            type="button"
-            className="secondary"
-            disabled={disabled || runCommand?.enabled === false || !baselineAvailable || affectedCount === 0}
-            onClick={() => onRunSelection('AFFECTED')}
-            title={!baselineAvailable
-              ? t('Run all once to create a complete baseline')
-              : affectedCount === 0 ? t('No cases are affected relative to the complete baseline')
-                : t('Run changed, failed, or target-affected cases')}
-          >
-            {t('Run affected ({count})', { count: affectedCount })}
-          </button>
+        <div className="scenario-matrix-bulk-actions">
+          {compactCommands ? (
+            <details className="scenario-run-scope-menu">
+              <summary
+                className="icon-button"
+                title={t('More run scopes')}
+                aria-label={t('More run scopes')}
+              >
+                <Ellipsis aria-hidden="true" size={18} />
+              </summary>
+              <div>{differentialRunCommands}</div>
+            </details>
+          ) : differentialRunCommands}
           <button
             type="button"
             className="secondary"

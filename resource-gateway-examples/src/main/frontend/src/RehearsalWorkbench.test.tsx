@@ -150,6 +150,9 @@ describe('RehearsalWorkbench', () => {
     await waitFor(() => document.querySelector('[data-testid="sample-workbook-banner"]') !== null);
 
     expect(query('[role="alert"]').textContent).toContain('Request failed: 503 Service Unavailable');
+    expect(query('[role="alert"] span').textContent)
+      .toBe('Unrecognized product status. Review technical details.');
+    expect(query<HTMLDetailsElement>('[role="alert"] details').open).toBe(false);
     expect(document.querySelector('[data-testid="rehearsal-api-unavailable"]')).toBeNull();
     expect(query('[data-testid="sample-data-notice"]').textContent)
       .toContain('Live data is unavailable');
@@ -198,7 +201,7 @@ describe('RehearsalWorkbench', () => {
     expect(mockChildWorkbook).not.toHaveBeenCalled();
   });
 
-  it('explains timeout attempts, budget, fallback, and unavailable sample actions honestly', async () => {
+  it('runs a deterministic sample retry with a predecessor-bound demo receipt and reset', async () => {
     mockJobs.mockResolvedValue(jobPage([]));
 
     await render();
@@ -218,12 +221,27 @@ describe('RehearsalWorkbench', () => {
       .toContain('Aggregate projection');
     expect(query('[data-testid="rehearsal-attempts"]').textContent)
       .toContain('projection limit, not inferred');
-    expect(text()).toContain('Illustrative samples do not have a server-side Author target.');
+    expect(text()).not.toContain('Illustrative samples do not have a server-side Author target.');
     expect(Array.from(document.querySelectorAll('a')).some(
       (link) => link.textContent?.includes('Open exact Author target'),
     )).toBe(false);
     expect(document.querySelector<HTMLDetailsElement>('.rehearsal-technical-details')?.open)
       .toBe(false);
+
+    await clickText('Run sample retry');
+    await waitFor(() => document.querySelector('[data-testid="demo-remediation-receipt"]') !== null);
+
+    expect(text()).toContain('Demo retry completed');
+    expect(text()).toContain('sample-governance-blocked');
+    expect(text()).toContain('sample-release-ready');
+    expect(text()).toContain('Local demo only; no governance evidence was created.');
+    expect(text()).toContain('Release candidate ready');
+    expect(window.location.search).toContain('sample=sample-release-ready');
+
+    await clickText('Reset sample');
+    await waitFor(() => text().includes('Grounding policy regression'));
+    expect(document.querySelector('[data-testid="demo-remediation-receipt"]')).toBeNull();
+    expect(window.location.search).toContain('sample=sample-governance-blocked');
   });
 
   it('does not let a stale live discovery override an explicit Samples choice', async () => {
@@ -409,6 +427,32 @@ describe('RehearsalWorkbench', () => {
     expect(text()).toContain('1 个失败、0 个不确定的阻断断言');
     expect(text()).not.toContain('PARTIAL');
     expect(document.querySelector('[aria-label="执行条目"]')).not.toBeNull();
+  });
+
+  it('keeps known blocker codes out of the default Chinese product summary', async () => {
+    window.history.replaceState({}, '', '/rehearsals/?lang=zh-CN');
+    mockJobs.mockResolvedValue(jobPage([batchJob('job-terminal', 'PARTIAL')]));
+    mockBatchWorkbook.mockResolvedValue({
+      ...batchWorkbook(),
+      blockers: [
+        'DEPENDENCY_TIMEOUT',
+        'BLOCKER_ASSERTION_FAILED',
+        'OWNER_APPROVAL_REQUIRED',
+        'EVIDENCE_INCOMPLETE',
+      ],
+    });
+    mockChildWorkbook.mockResolvedValue(childWorkbook());
+
+    await render(true);
+    await waitFor(() => text().includes('依赖调用超时'));
+
+    const blockers = query('[data-testid="root-blockers"]');
+    expect(blockers.textContent).toContain('阻断断言失败');
+    expect(blockers.textContent).toContain('需要负责人批准');
+    expect(blockers.textContent).toContain('证据不完整');
+    expect(blockers.textContent).not.toContain('未识别的产品状态');
+    expect(blockers.querySelector<HTMLDetailsElement>('details')?.open).toBe(false);
+    expect(blockers.querySelector('code')?.textContent).toContain('DEPENDENCY_TIMEOUT');
   });
 
   it('replaces aggregate retry placeholders with exact server lifecycle observations', async () => {

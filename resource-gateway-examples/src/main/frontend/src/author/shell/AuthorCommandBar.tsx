@@ -67,19 +67,19 @@ export default function AuthorCommandBar({
   onAutoLayout,
   onValidate,
 }: AuthorCommandBarProps) {
-  const { m, t } = useI18n();
+  const { d, m, t } = useI18n();
   const [mobileTruthOpen, setMobileTruthOpen] = useState(false);
   const [mobileToolsOpen, setMobileToolsOpen] = useState(false);
   const status = (value: string) => {
     const id = statusMessageId(value);
-    return id ? m(id) : t(value);
+    return id ? m(id) : d(value);
   };
   const truthDimensions = [
     { key: 'draft', label: 'Draft', value: draftStatus },
     { key: 'contract', label: 'Contract', value: contractStatus },
     { key: 'runnable', label: 'Runnable', value: runStatus },
     { key: 'evidence', label: 'Evidence', value: evidenceStatus, title: status(proofStrength) },
-    { key: 'gate', label: 'Gate', value: promotionStatus, title: t(promotionSummary) },
+    { key: 'gate', label: 'Gate', value: promotionStatus, title: promotionSummary },
   ];
   const activeModeLabel = MODES.find((candidate) => candidate.key === mode)?.label ?? mode;
   const surfaceHandoffDetail = mode === 'scenarios'
@@ -107,7 +107,7 @@ export default function AuthorCommandBar({
             data-testid={`author-mode:${candidate.key}`}
             onClick={() => onModeChange(candidate.key)}
           >
-            {t(candidate.label)}
+            {d(candidate.label)}
           </button>
         ))}
       </nav>
@@ -121,7 +121,7 @@ export default function AuthorCommandBar({
               : `author-status:${dimension.key}`}
             title={dimension.title}
           >
-            <small>{t(dimension.label)}</small>
+            <small>{d(dimension.label)}</small>
             <strong>{status(dimension.value)}</strong>
           </span>
         ))}
@@ -144,7 +144,7 @@ export default function AuthorCommandBar({
           <div id="author-mobile-truth-detail" className="author-mobile-truth-detail">
             {truthDimensions.map((dimension) => (
               <span key={dimension.key} data-state={dimension.value.toLowerCase()}>
-                <small>{t(dimension.label)}</small>
+                <small>{d(dimension.label)}</small>
                 <strong>{status(dimension.value)}</strong>
               </span>
             ))}
@@ -217,8 +217,8 @@ export default function AuthorCommandBar({
             data-command-owner="task-surface"
             role="status"
           >
-            <strong>{t('Use {surface} actions', { surface: t(activeModeLabel) })}</strong>
-            <span>{t(surfaceHandoffDetail)}</span>
+            <strong>{t('Use {surface} actions', { surface: d(activeModeLabel) })}</strong>
+            <span>{d(surfaceHandoffDetail)}</span>
           </div>
         ) : (
           <button
@@ -229,17 +229,17 @@ export default function AuthorCommandBar({
             onClick={onPrimaryAction}
             disabled={!primaryCommand.enabled}
           >
-            {primaryCommand.labelId ? m(primaryCommand.labelId) : t(primaryCommand.label)}
+            {primaryCommand.labelId ? m(primaryCommand.labelId) : d(primaryCommand.label)}
           </button>
         )}
         {primaryCommand.owner !== 'TASK_SURFACE' && primaryCommand.state === 'BLOCKED' && (
           <div className="author-command-explanation" id="author-primary-blocker" role="status">
-            <span>{primaryCommand.messageId ? m(primaryCommand.messageId) : t(primaryCommand.message)}</span>
+            <span>{primaryCommand.messageId ? m(primaryCommand.messageId) : d(primaryCommand.message)}</span>
             {primaryCommand.remediation && (
               <button type="button" onClick={onPrimaryRemediation}>
                 {primaryCommand.remediation.labelId
                   ? m(primaryCommand.remediation.labelId)
-                  : t(primaryCommand.remediation.label)}
+                  : d(primaryCommand.remediation.label)}
               </button>
             )}
           </div>

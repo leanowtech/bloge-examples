@@ -1,4 +1,10 @@
-import type { DraftNodeBinding, NodeFixture, SchemaEnvelope } from './types';
+import type {
+  DraftNodeBinding,
+  NodeFixture,
+  OperatorDefinition,
+  OperatorPort,
+  SchemaEnvelope,
+} from './types';
 
 export interface CanvasExampleNode {
   id: string;
@@ -42,6 +48,7 @@ export interface CanvasExampleTemplate {
 export interface CanvasExampleAvailability {
   template: CanvasExampleTemplate;
   missingOperatorRefs: string[];
+  incompatibleContractPaths: string[];
 }
 
 export interface CanvasExampleTestCase {
@@ -1073,6 +1080,123 @@ export const CANVAS_EXAMPLE_TEMPLATES: CanvasExampleTemplate[] = [
 
 export function exampleRequiredOperatorRefs(template: CanvasExampleTemplate): string[] {
   return Array.from(new Set(template.nodes.map((node) => node.operatorRef)));
+}
+
+function pathSegments(path: string): string[] {
+  return path
+    .replace(/^\$\.?/, '')
+    .replace(/\[(\d+)]/g, '.$1')
+    .split(/[./]/)
+    .map((segment) => segment.trim())
+    .filter(Boolean);
+}
+
+function schemaBranches(schema: Record<string, unknown>): Record<string, unknown>[] {
+  return ['oneOf', 'anyOf', 'allOf'].flatMap((key) => {
+    const value = schema[key];
+    return Array.isArray(value)
+      ? value.filter((candidate): candidate is Record<string, unknown> => (
+        typeof candidate === 'object' && candidate !== null && !Array.isArray(candidate)
+      ))
+      : [];
+  });
+}
+
+function schemaExposesSegments(schema: Record<string, unknown>, segments: string[]): boolean {
+  if (segments.length === 0) {
+    return true;
+  }
+
+  const branches = schemaBranches(schema);
+  if (branches.length > 0 && branches.some((branch) => schemaExposesSegments(branch, segments))) {
+    return true;
+  }
+
+  const [segment, ...rest] = segments;
+  if (schema.type === 'array' || schema.items) {
+    const items = schema.items;
+    if (typeof items !== 'object' || items === null || Array.isArray(items)) {
+      return true;
+    }
+    return schemaExposesSegments(
+      items as Record<string, unknown>,
+      /^\d+$/.test(segment) ? rest : segments,
+    );
+  }
+
+  const properties = schema.properties;
+  if (typeof properties === 'object' && properties !== null && !Array.isArray(properties)) {
+    const propertySchema = (properties as Record<string, unknown>)[segment];
+    if (typeof propertySchema === 'object' && propertySchema !== null && !Array.isArray(propertySchema)) {
+      return schemaExposesSegments(propertySchema as Record<string, unknown>, rest);
+    }
+    const additionalProperties = schema.additionalProperties;
+    if (additionalProperties === true) {
+      return true;
+    }
+    if (
+      typeof additionalProperties === 'object'
+      && additionalProperties !== null
+      && !Array.isArray(additionalProperties)
+    ) {
+      return schemaExposesSegments(additionalProperties as Record<string, unknown>, rest);
+    }
+    return false;
+  }
+
+  if (schema.additionalProperties === false) {
+    return false;
+  }
+  return true;
+}
+
+function portExposesPath(port: OperatorPort | undefined, path: string | undefined): boolean {
+  if (!port || !path?.trim()) {
+    return Boolean(port);
+  }
+  return schemaExposesSegments(port.schema.schema, pathSegments(path));
+}
+
+function contractPathLabel(
+  node: CanvasExampleNode,
+  port: string,
+  path: string | undefined,
+): string {
+  return `${node.label}.${port}${path?.trim() ? `.${path.trim()}` : ''}`;
+}
+
+/**
+ * Finds example endpoints that the currently loaded operator contracts no longer expose.
+ * Missing operators are reported separately so an incomplete catalog does not create duplicate noise.
+ */
+export function exampleIncompatibleContractPaths(
+  template: CanvasExampleTemplate,
+  operators: ReadonlyMap<string, OperatorDefinition>,
+): string[] {
+  const nodes = new Map(template.nodes.map((node) => [node.id, node]));
+  const incompatible = new Set<string>();
+
+  for (const edge of template.edges) {
+    const sourceNode = nodes.get(edge.source);
+    const targetNode = nodes.get(edge.target);
+    const sourceOperator = sourceNode ? operators.get(sourceNode.operatorRef) : undefined;
+    const targetOperator = targetNode ? operators.get(targetNode.operatorRef) : undefined;
+
+    if (sourceNode && sourceOperator) {
+      const sourcePort = sourceOperator.ports?.outputs.find((port) => port.name === edge.sourcePort);
+      if (!portExposesPath(sourcePort, edge.sourcePath)) {
+        incompatible.add(contractPathLabel(sourceNode, edge.sourcePort, edge.sourcePath));
+      }
+    }
+    if (targetNode && targetOperator) {
+      const targetPort = targetOperator.ports?.inputs.find((port) => port.name === edge.targetPort);
+      if (!portExposesPath(targetPort, edge.targetPath)) {
+        incompatible.add(contractPathLabel(targetNode, edge.targetPort, edge.targetPath));
+      }
+    }
+  }
+
+  return Array.from(incompatible);
 }
 
 export function maxNumericNodeId(nodes: CanvasExampleNode[]): number {

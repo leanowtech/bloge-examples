@@ -138,6 +138,7 @@ import type {
 import type { ConnectionCandidate } from './types';
 import {
   CANVAS_EXAMPLE_TEMPLATES,
+  exampleIncompatibleContractPaths,
   exampleEdgeLabel,
   exampleRequiredOperatorRefs,
   hasOwnValue,
@@ -241,6 +242,7 @@ import {
   type CanvasPanelPreference,
   type CanvasSemanticProjection,
 } from './author/canvas/canvasSemantics';
+import { containedViewportTransform } from './author/canvas/viewportContainment';
 import {
   assessCanvasLayout,
   constrainCanvasLayout,
@@ -762,6 +764,7 @@ interface OperatorNodeMetrics {
   requiredInputCount: number;
   inputCount: number;
   outputCount: number;
+  inputMetricKind: 'ports' | 'mappings';
 }
 
 interface JsonObjectCompilation {
@@ -836,11 +839,21 @@ function acceptedFieldCandidateLabels(
 }
 
 function operatorNodeMetrics(summary: OperatorSummary, config: Record<string, unknown> | undefined): OperatorNodeMetrics {
+  if (summary.visualKind === 'transform' && config) {
+    const assignmentCount = isRecord(config.assignments) ? Object.keys(config.assignments).length : 0;
+    return {
+      requiredInputCount: assignmentCount,
+      inputCount: assignmentCount,
+      outputCount: summary.outputCount,
+      inputMetricKind: 'mappings',
+    };
+  }
   if (summary.visualKind !== 'decision-table' || !config) {
     return {
       requiredInputCount: summary.requiredInputCount,
       inputCount: summary.inputCount,
       outputCount: summary.outputCount,
+      inputMetricKind: 'ports',
     };
   }
   const editor = decisionTableEditorModel(config);
@@ -849,6 +862,7 @@ function operatorNodeMetrics(summary: OperatorSummary, config: Record<string, un
     requiredInputCount: inputCount,
     inputCount,
     outputCount: editor.outputColumns.length || summary.outputCount,
+    inputMetricKind: 'ports',
   };
 }
 
@@ -1731,7 +1745,9 @@ function OperatorNode({ id, data, selected }: NodeProps<NodeData>) {
       </div>
       <div className="operator-node-metrics">
         <span>
-          {t('{required}/{total} inputs', { required: metrics.requiredInputCount, total: metrics.inputCount })}
+          {metrics.inputMetricKind === 'mappings'
+            ? t('{count} mappings', { count: metrics.inputCount })
+            : t('{required}/{total} inputs', { required: metrics.requiredInputCount, total: metrics.inputCount })}
         </span>
         <span>{t('{count} outputs', { count: metrics.outputCount })}</span>
       </div>
@@ -5110,18 +5126,69 @@ export default function AuthorCanvas({ workspaceVersion = 'v1' }: AuthorCanvasPr
         || graphSize.edgeCount >= COMPLEX_GRAPH_EDGE_THRESHOLD
       : isComplexGraph;
     const fitOptions = {
-      // React Flow fits node bounds only; reserve enough semantic space for routed edge labels.
-      padding: complex ? 0.12 : 0.1,
+      // Preserve readable type; a post-fit pan below contains labels outside the node bounds.
+      padding: complex ? 0.14 : 0.1,
       duration: 240,
       maxZoom: 1,
     };
+    const containSemanticLabels = () => {
+      const instance = flowInstanceRef.current;
+      const flow = flowRef.current;
+      if (!instance?.getViewport || !instance?.setViewport || !flow) return;
+      const visible = [...flow.querySelectorAll<HTMLElement>(
+        '.react-flow__node, [data-testid="canvas-edge-label"]',
+      )].filter((element) => {
+        const rect = element.getBoundingClientRect();
+        return getComputedStyle(element).display !== 'none' && rect.width > 0 && rect.height > 0;
+      });
+      if (visible.length === 0) {
+        flow.dataset.canvasViewportSettled = 'true';
+        return;
+      }
+      const rects = visible.map((element) => element.getBoundingClientRect());
+      const content = {
+        left: Math.min(...rects.map((rect) => rect.left)),
+        right: Math.max(...rects.map((rect) => rect.right)),
+        top: Math.min(...rects.map((rect) => rect.top)),
+        bottom: Math.max(...rects.map((rect) => rect.bottom)),
+      };
+      const viewport = instance.getViewport();
+      const contained = containedViewportTransform(
+        flow.getBoundingClientRect(),
+        content,
+        viewport,
+        CANVAS_MIN_ZOOM,
+        2,
+      );
+      const changed = Math.abs(contained.x - viewport.x) >= 1
+        || Math.abs(contained.y - viewport.y) >= 1
+        || Math.abs(contained.zoom - viewport.zoom) >= 0.001;
+      if (!changed) {
+        flow.dataset.canvasViewportSettled = 'true';
+        return;
+      }
+      instance.setViewport(contained);
+      const markSettled = () => {
+        flow.dataset.canvasViewportSettled = 'true';
+        refreshViewportZoom();
+      };
+      if (typeof window.requestAnimationFrame === 'function') {
+        window.requestAnimationFrame(markSettled);
+      } else {
+        markSettled();
+      }
+    };
+    if (flowRef.current) flowRef.current.dataset.canvasViewportSettled = 'pending';
     flowInstanceRef.current?.fitView(fitOptions);
     if (fitCanvasTimerRef.current !== null) {
       window.clearTimeout(fitCanvasTimerRef.current);
     }
     fitCanvasTimerRef.current = window.setTimeout(() => {
-      fitCanvasTimerRef.current = null;
       flowInstanceRef.current?.fitView(fitOptions);
+      fitCanvasTimerRef.current = window.setTimeout(() => {
+        fitCanvasTimerRef.current = null;
+        containSemanticLabels();
+      }, fitOptions.duration + 24);
     }, 80);
     const updateZoom = () => refreshViewportZoom();
     if (typeof window.requestAnimationFrame === 'function') {
@@ -5860,6 +5927,7 @@ export default function AuthorCanvas({ workspaceVersion = 'v1' }: AuthorCanvasPr
         template,
         missingOperatorRefs: exampleRequiredOperatorRefs(template)
           .filter((operatorRef) => !operatorByRef.has(operatorRef)),
+        incompatibleContractPaths: exampleIncompatibleContractPaths(template, operatorByRef),
       })),
     [operatorByRef],
   );
@@ -5870,6 +5938,16 @@ export default function AuthorCanvas({ workspaceVersion = 'v1' }: AuthorCanvasPr
       setConnectionNotice({
         level: 'warning',
         message: `Example needs ${missingOperatorRefs.length} missing operator${missingOperatorRefs.length === 1 ? '' : 's'}.`,
+      });
+      return;
+    }
+    const incompatibleContractPaths = exampleIncompatibleContractPaths(template, operatorByRef);
+    if (incompatibleContractPaths.length > 0) {
+      setConnectionNotice({
+        level: 'warning',
+        message: t('Example Contract changed. Review incompatible paths: {paths}', {
+          paths: incompatibleContractPaths.join(', '),
+        }),
       });
       return;
     }
@@ -6036,7 +6114,7 @@ export default function AuthorCanvas({ workspaceVersion = 'v1' }: AuthorCanvasPr
     } else {
       fitCanvasToView(graphSize);
     }
-  }, [fitCanvasToView, isTaskWorkspace, operatorByRef, resetRunResult]);
+  }, [fitCanvasToView, isTaskWorkspace, operatorByRef, resetRunResult, t]);
   const selectedNode = nodes.find((node) => node.id === selectedNodeId);
   const selectedOperator = selectedNode ? operatorByRef.get(selectedNode.data.operatorRef) : undefined;
   const operatorDetailNode = nodes.find((node) => node.id === operatorDetailNodeId);
@@ -7862,7 +7940,9 @@ export default function AuthorCanvas({ workspaceVersion = 'v1' }: AuthorCanvasPr
 
   const showSimulationResponse = useCallback((response: SimulationResponse) => {
     setResult(response);
-    setEvidenceContentEpoch(authorContentEpoch);
+    if (!isTaskWorkspace) {
+      setEvidenceContentEpoch(authorContentEpoch);
+    }
 
     const statuses = nodeStatuses(response);
     setNodes((current) =>
@@ -7874,7 +7954,7 @@ export default function AuthorCanvas({ workspaceVersion = 'v1' }: AuthorCanvasPr
       };
       }),
     );
-  }, [authorContentEpoch]);
+  }, [authorContentEpoch, isTaskWorkspace]);
 
   const runScenarioSimulation = useCallback(async (
     request: Parameters<typeof simulate>[0],
@@ -7896,11 +7976,11 @@ export default function AuthorCanvas({ workspaceVersion = 'v1' }: AuthorCanvasPr
     let status = 'FAILED';
     setBusy(true);
     setError('');
-    setLastScenarioReviewEvidence(null);
     try {
       const response = await simulate(request);
       showSimulationResponse(response);
       if (isTaskWorkspace && !matrixRun) {
+        setContractWorkspaceInitialTab('evidence');
         setAuthorMode('evidence');
       }
       status = isRunSuccessful(response) ? 'PASSED' : 'FAILED';
@@ -8873,10 +8953,11 @@ export default function AuthorCanvas({ workspaceVersion = 'v1' }: AuthorCanvasPr
     && Object.values(simulationTableResults).every((row) => row.status === 'passed'),
   );
   const evidenceStale = hasRunResult && (
-    activeScenarioEvidence?.coordinate.editorSnapshotFingerprint
-      ? !activeScenarioFingerprint
-        || activeScenarioEvidence.coordinate.editorSnapshotFingerprint !== activeScenarioFingerprint
-      : evidenceContentEpoch !== authorContentEpoch
+    evidenceContentEpoch !== authorContentEpoch
+    || Boolean(activeScenarioEvidence?.coordinate.editorSnapshotFingerprint && (
+      !activeScenarioFingerprint
+      || activeScenarioEvidence.coordinate.editorSnapshotFingerprint !== activeScenarioFingerprint
+    ))
   );
   const assertionsEvaluated = Boolean(
     activeScenarioEvidence || Object.keys(simulationTableResults).length > 0,
@@ -9273,6 +9354,7 @@ export default function AuthorCanvas({ workspaceVersion = 'v1' }: AuthorCanvasPr
         response,
         coordinate: evidenceCoordinateForScenario(scenarioId, requestFingerprint, proof),
       });
+      setEvidenceContentEpoch(authorContentEpoch);
       setWorkspaceScenarioId(scenarioId);
       return true;
     } catch (cause: unknown) {
@@ -9283,6 +9365,7 @@ export default function AuthorCanvas({ workspaceVersion = 'v1' }: AuthorCanvasPr
     activeTaskContract,
     activeTaskScenarioNodes,
     activeTaskScenarioSet,
+    authorContentEpoch,
     evidenceCoordinateForScenario,
   ]);
 
@@ -9346,6 +9429,7 @@ export default function AuthorCanvas({ workspaceVersion = 'v1' }: AuthorCanvasPr
         compilation.proof,
       ),
     });
+    setEvidenceContentEpoch(authorContentEpoch);
     setWorkspaceScenarioId(selectedScenario.scenarioId);
     setContractWorkspaceInitialTab('evidence');
     setContractWorkspaceOpen(true);
@@ -9355,6 +9439,7 @@ export default function AuthorCanvas({ workspaceVersion = 'v1' }: AuthorCanvasPr
     activeTaskGraphDraft,
     activeTaskScenarioNodes,
     activeTaskScenarioSet,
+    authorContentEpoch,
     canonicalScenarioReady,
     evidenceCoordinateForScenario,
     runScenarioSimulation,
@@ -9700,7 +9785,11 @@ export default function AuthorCanvas({ workspaceVersion = 'v1' }: AuthorCanvasPr
           <StartImportDialog
             open={startOpen}
             section={startSection}
-            examples={canvasExamples.map(({ template, missingOperatorRefs }) => ({
+            examples={canvasExamples.map(({
+              template,
+              missingOperatorRefs,
+              incompatibleContractPaths,
+            }) => ({
               key: template.key,
               label: template.label,
               domain: template.domain,
@@ -9719,8 +9808,9 @@ export default function AuthorCanvas({ workspaceVersion = 'v1' }: AuthorCanvasPr
               ).length,
               runtimeMode: 'Sandbox mock',
               proofStrength: 'Exploratory evidence',
-              available: missingOperatorRefs.length === 0,
+              available: missingOperatorRefs.length === 0 && incompatibleContractPaths.length === 0,
               missingOperatorRefs,
+              incompatibleContractPaths,
             }))}
             onSectionChange={(section) => {
               if (section !== 'menu') {
@@ -10425,8 +10515,8 @@ export default function AuthorCanvas({ workspaceVersion = 'v1' }: AuthorCanvasPr
             <strong>{canvasExamples.length}</strong>
           </div>
           <div className="canvas-example-list">
-            {canvasExamples.map(({ template, missingOperatorRefs }) => {
-              const available = missingOperatorRefs.length === 0;
+            {canvasExamples.map(({ template, missingOperatorRefs, incompatibleContractPaths }) => {
+              const available = missingOperatorRefs.length === 0 && incompatibleContractPaths.length === 0;
               return (
                 <article className={`canvas-example ${available ? '' : 'missing'}`} key={template.key}>
                   <div className="canvas-example-copy">
@@ -10440,7 +10530,14 @@ export default function AuthorCanvas({ workspaceVersion = 'v1' }: AuthorCanvasPr
                     <span>{t('{count} edges', { count: template.edges.length })}</span>
                     <span>{t('Input {count} fields', { count: graphSchemaSummary(template.inputSchema).fieldCount })}</span>
                     <span>{t('Output {count} fields', { count: graphSchemaSummary(template.outputSchema).fieldCount })}</span>
-                    {!available && <span>{t('{count} missing', { count: missingOperatorRefs.length })}</span>}
+                    {missingOperatorRefs.length > 0 && (
+                      <span>{t('{count} missing', { count: missingOperatorRefs.length })}</span>
+                    )}
+                    {missingOperatorRefs.length === 0 && incompatibleContractPaths.length > 0 && (
+                      <span title={incompatibleContractPaths.join(', ')}>
+                        {t('Contract changed')}: {incompatibleContractPaths[0]}
+                      </span>
+                    )}
                   </div>
                   <button
                     type="button"
@@ -10448,7 +10545,13 @@ export default function AuthorCanvas({ workspaceVersion = 'v1' }: AuthorCanvasPr
                     data-testid={`canvas-example-load:${template.key}`}
                     onClick={() => loadCanvasExample(template)}
                     disabled={!available}
-                    title={available ? `Load ${template.label}` : `Missing ${missingOperatorRefs.join(', ')}`}
+                    title={available
+                      ? `${t('Load example')}: ${t(template.label)}`
+                      : missingOperatorRefs.length > 0
+                        ? t('Missing {operators}', { operators: missingOperatorRefs.join(', ') })
+                        : t('Current Contracts do not expose {paths}', {
+                          paths: incompatibleContractPaths.join(', '),
+                        })}
                   >
                     {t('Load')}
                   </button>
@@ -10792,7 +10895,7 @@ export default function AuthorCanvas({ workspaceVersion = 'v1' }: AuthorCanvasPr
               setFocusPathNodeId('');
             }}
             fitView
-            fitViewOptions={{ padding: 0.04, minZoom: CANVAS_MIN_ZOOM, maxZoom: 1 }}
+            fitViewOptions={{ padding: 0.08, minZoom: CANVAS_MIN_ZOOM, maxZoom: 1 }}
             minZoom={CANVAS_MIN_ZOOM}
             maxZoom={CANVAS_MAX_ZOOM}
           >

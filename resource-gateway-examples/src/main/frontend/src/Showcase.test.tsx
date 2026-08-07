@@ -87,6 +87,11 @@ describe('Showcase', () => {
       .toContain('fetchProfile');
     expect(query('[data-testid="showcase-node-inspector"]').textContent)
       .toContain('user-service.getProfile');
+    const advanced = query<HTMLDetailsElement>('details.showcase-actions');
+    expect(advanced.open).toBe(false);
+    expect(advanced.querySelector('a[href="/examples/gateway"]')).not.toBeNull();
+    await click(advanced.querySelector<HTMLButtonElement>('summary')!);
+    expect(advanced.open).toBe(true);
   });
 
   it('renders built-in scenario metadata in Chinese while preserving graph coordinates', async () => {
@@ -159,6 +164,20 @@ describe('Showcase', () => {
     expect(query('[data-testid="showcase-run-receipt"]').textContent).toContain('GET');
     expect(query('[data-testid="showcase-run-receipt"]').textContent)
       .toContain('/api/gateway/dashboard/u42');
+  });
+
+  it('keeps an unexpected run error behind a localized product conclusion', async () => {
+    await renderShowcase();
+    await waitFor(() => query('[data-testid="showcase-input:userId"]'));
+
+    await setControlValue(query<HTMLInputElement>('[data-testid="showcase-input:userId"]'), 'unknown');
+    await click(query<HTMLButtonElement>('[data-testid="showcase-run-button"]'));
+
+    await waitFor(() => expect(query('[data-testid="showcase-run-result"]').textContent)
+      .toContain('Gateway run failed. Review technical details.'));
+    const technical = query<HTMLDetailsElement>('[data-testid="showcase-run-technical"]');
+    expect(technical.open).toBe(false);
+    expect(technical.textContent).toContain('Unexpected fetch');
   });
 
   it('applies a preset and immediately runs the scenario', async () => {

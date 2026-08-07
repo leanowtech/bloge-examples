@@ -126,6 +126,26 @@ html[data-density='comfortable'] .library-command-bar :is(button, a) {
     font-size: var(--rg-font-mobile-body);
   }
 
+  .demo-remediation-receipt {
+    grid-template-columns: minmax(0, 1fr);
+    margin-inline: 10px;
+  }
+
+  .demo-remediation-receipt > button {
+    width: 100%;
+    min-height: var(--rg-touch-target);
+  }
+
+  .workspace-v2 > .canvas,
+  .workspace-v2:not([data-author-mode='compose']) > .canvas {
+    padding-bottom: calc(var(--rg-touch-target) + 1px);
+  }
+
+  .workspace-v2 > .inspector {
+    padding-bottom: calc(var(--rg-touch-target) + 1px);
+    scroll-padding-bottom: calc(var(--rg-touch-target) + 1px);
+  }
+
   .topbar {
     grid-template-columns: minmax(0, 1fr) auto;
     grid-template-rows: auto auto auto;
@@ -734,6 +754,80 @@ html[data-density='comfortable'] .library-command-bar :is(button, a) {
 
   .scenario-table-workspace[data-responsive-layout='MOBILE_TASK'] {
     grid-template-rows: auto auto minmax(0, 1fr);
+  }
+
+  .scenario-matrix[data-command-density='compact'] .scenario-matrix-toolbar {
+    grid-template-columns: minmax(0, 1fr) auto;
+  }
+
+  .scenario-matrix[data-command-density='compact'] .scenario-matrix-search {
+    grid-column: auto;
+  }
+
+  .scenario-matrix[data-command-density='compact'] .scenario-matrix-context code {
+    display: none;
+  }
+
+  .scenario-matrix[data-command-density='compact'] .scenario-matrix-bulk-actions {
+    grid-template-columns: var(--rg-touch-target) repeat(2, minmax(0, 1fr));
+  }
+
+  .scenario-matrix[data-command-density='compact'] .scenario-matrix-bulkbar {
+    min-height: 52px;
+    flex-wrap: nowrap;
+    padding-block: 5px;
+  }
+
+  .scenario-matrix[data-command-density='compact'] .scenario-matrix-bulkbar > div:first-child {
+    display: none;
+  }
+
+  .scenario-matrix[data-command-density='compact'] .scenario-matrix-run-stack > .scenario-command-receipt {
+    min-height: 34px;
+    grid-template-columns: minmax(0, 1fr);
+    padding: 5px 8px;
+  }
+
+  .scenario-matrix[data-command-density='compact'] .scenario-matrix-run-stack > .scenario-command-receipt > dl {
+    display: none;
+  }
+
+  .scenario-run-scope-menu {
+    position: relative;
+  }
+
+  .scenario-run-scope-menu > summary {
+    width: var(--rg-touch-target);
+    height: var(--rg-touch-target);
+    list-style: none;
+  }
+
+  .scenario-run-scope-menu > summary::-webkit-details-marker {
+    display: none;
+  }
+
+  .scenario-run-scope-menu > div {
+    position: absolute;
+    z-index: 12;
+    right: 0;
+    bottom: calc(100% + 7px);
+    width: min(270px, calc(100vw - 24px));
+    display: grid;
+    gap: 6px;
+    padding: 8px;
+    border: 1px solid #aebaca;
+    border-radius: 6px;
+    background: #fff;
+    box-shadow: 0 12px 30px rgb(15 23 42 / 18%);
+  }
+
+  .scenario-run-scope-menu:not([open]) > div {
+    display: none;
+  }
+
+  .scenario-run-scope-menu > div button {
+    width: 100%;
+    justify-content: flex-start;
   }
 
   .scenario-mobile-taskbar {

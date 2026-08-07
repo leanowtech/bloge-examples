@@ -114,8 +114,8 @@ describe('App route shell', () => {
   it('renders the showcase catalog for /showcase/', async () => {
     await renderAt('/showcase/');
 
-    expect(document.body.textContent).toContain('Showcase');
-    expect(document.title).toBe('BLOGE Visual Canvas - Showcase');
+    expect(document.body.textContent).toContain('Run examples');
+    expect(document.title).toBe('BLOGE Visual Canvas - Run examples');
     expect(query('[data-testid="showcase-mock"]').textContent).toContain('Showcase catalog');
     expect(query<HTMLAnchorElement>('.topbar-link.active').getAttribute('href')).toBe('/showcase/');
   });

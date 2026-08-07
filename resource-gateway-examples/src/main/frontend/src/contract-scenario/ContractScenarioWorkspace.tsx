@@ -1717,6 +1717,7 @@ function ScenarioTab({
           runCommand={runCommand}
           importDisabled={importDisabled}
           importDisabledReason={importDisabledReason}
+          compactCommands={mobileTask}
           onSelectionChange={onTableSelectionChange}
           onOpenCase={(caseId) => {
             onSelectScenario(caseId);

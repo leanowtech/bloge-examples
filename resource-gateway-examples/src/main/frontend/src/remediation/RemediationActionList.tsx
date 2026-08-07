@@ -9,35 +9,46 @@ export default function RemediationActionList({
   actions: RemediationAction[];
   onInvoke: (action: RemediationAction) => void;
 }) {
-  const { t } = useI18n();
+  const { t, d, m } = useI18n();
   if (actions.length === 0) {
     return null;
   }
+  const actionableCount = actions.filter((action) => action.available).length;
   return (
     <section className="remediation-action-list" aria-label={t('Recommended next actions')}>
       <header>
-        <span>{t('Next actions')}</span>
-        <strong>{t('{count} paths to a trusted result', { count: actions.length })}</strong>
+        <span>{t(actionableCount > 0 ? 'Next actions' : 'Recommendations')}</span>
+        <strong>{actionableCount > 0
+          ? actionableCount === 1
+            ? t('1 path to a trusted result')
+            : t('{count} paths to a trusted result', { count: actionableCount })
+          : t('No direct action is available in this deployment.')}</strong>
       </header>
       <div>
         {actions.map((action, index) => (
-          <article key={action.id} data-severity={action.severity.toLowerCase()}>
+          <article
+            key={action.id}
+            data-severity={action.severity.toLowerCase()}
+            data-capability={action.available
+              ? action.navigation === 'EXTERNAL' || action.navigation === 'AUTHOR' ? 'handoff' : 'execute'
+              : 'explain'}
+          >
             <div className="remediation-action-order">{index + 1}</div>
             <div className="remediation-action-copy">
-              <strong>{t(action.actionLabel)}</strong>
-              <p>{localizeRehearsalText(t, action.rootCause)}</p>
-              <small><b>{t('Business impact')}</b> {t(action.businessImpact)}</small>
+              <strong>{d(action.actionLabel)}</strong>
+              <p>{localizeRehearsalText(d, m, action.rootCause)}</p>
+              <small><b>{t('Business impact')}</b> {d(action.businessImpact)}</small>
               <small>
-                <b>{t('Responsible')}</b> {localizeRehearsalText(t, action.owner)} · {t(action.requiredRole)}
+                <b>{t('Responsible')}</b> {localizeRehearsalText(d, m, action.owner)} · {d(action.requiredRole)}
               </small>
               {!action.available && (
                 <small className="remediation-action-unavailable">
-                  {t(action.unavailableReason)}
+                  {localizeRehearsalText(d, m, action.unavailableReason)}
                 </small>
               )}
               <details>
                 <summary>{t('Audit and technical details')}</summary>
-                <span>{t(action.auditRequirement)}</span>
+                <span>{d(action.auditRequirement)}</span>
                 {action.expiresAt && <span>{t('Expires {date}', { date: action.expiresAt })}</span>}
                 <code>{action.technicalCode}</code>
                 {action.technicalCoordinate && <code>{action.technicalCoordinate}</code>}
@@ -48,7 +59,7 @@ export default function RemediationActionList({
                 className={index === 0 ? 'primary compact' : 'secondary compact'}
                 href={action.deepLink}
               >
-                {t(action.actionLabel)}
+                {d(action.actionLabel)}
               </a>
             )}
             {action.available && action.navigation !== 'EXTERNAL' && action.navigation !== 'AUTHOR' && (
@@ -57,7 +68,7 @@ export default function RemediationActionList({
                 className={index === 0 ? 'primary compact' : 'secondary compact'}
                 onClick={() => onInvoke(action)}
               >
-                {t(action.actionLabel)}
+                {d(action.actionLabel)}
               </button>
             )}
           </article>

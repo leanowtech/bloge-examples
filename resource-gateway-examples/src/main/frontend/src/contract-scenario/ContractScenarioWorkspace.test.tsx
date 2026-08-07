@@ -199,7 +199,11 @@ describe('ContractScenarioWorkspace', () => {
       .toContain('Mock behavior matched');
     expect(document.querySelector('[data-testid="scenario-matrix-row-approved-3"]')?.textContent)
       .toContain('Mock behavior matched');
-    await act(async () => button('Inspect').click());
+    const inspect = document.querySelector<HTMLButtonElement>(
+      '[aria-label="Inspect Approved applicant 1"]',
+    );
+    expect(inspect).not.toBeNull();
+    await act(async () => inspect?.click());
     const rowProof = document.querySelector('[data-testid="scenario-matrix-detail-approved-1"]');
     expect(rowProof?.querySelector(`code[title="${submitted.current?.requestId}"]`)).not.toBeNull();
   });
@@ -465,7 +469,11 @@ describe('ContractScenarioWorkspace', () => {
     await settleAsyncWork();
     await clickTab('Scenarios 1');
     await act(async () => button('Matrix').click());
-    await act(async () => button('Inspect').click());
+    const inspect = document.querySelector<HTMLButtonElement>(
+      '[aria-label="Inspect Approved applicant"]',
+    );
+    expect(inspect).not.toBeNull();
+    await act(async () => inspect?.click());
 
     const detail = document.querySelector('[data-testid="scenario-matrix-detail-approved"]');
     expect(detail?.textContent).toContain('Correlation ID');

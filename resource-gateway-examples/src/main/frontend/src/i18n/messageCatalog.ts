@@ -441,6 +441,46 @@ export const MESSAGE_CATALOG = {
     en: 'Diagnose evidence-plane failures',
     'zh-CN': '诊断证据平面故障',
   },
+  'showcase.run.notRun': { en: 'Not run yet.', 'zh-CN': '尚未运行。' },
+  'showcase.run.streamStopped': { en: 'Stream stopped.', 'zh-CN': '流已停止。' },
+  'showcase.run.recipeMissing': {
+    en: 'Selected scenario has no run recipe.',
+    'zh-CN': '所选场景没有可用的运行配置。',
+  },
+  'showcase.run.openingStream': { en: 'Opening stream...', 'zh-CN': '正在打开流...' },
+  'showcase.run.running': { en: 'Running...', 'zh-CN': '正在运行...' },
+  'showcase.run.eventSourceUnavailable': {
+    en: 'Streaming is not available in this browser.',
+    'zh-CN': '当前浏览器不支持流式连接。',
+  },
+  'showcase.run.streaming': { en: 'Streaming...', 'zh-CN': '正在流式运行...' },
+  'showcase.run.streamClosed': { en: 'Stream closed.', 'zh-CN': '流已关闭。' },
+  'showcase.run.httpStatus': { en: 'HTTP {status}', 'zh-CN': 'HTTP {status}' },
+  'showcase.run.failed': {
+    en: 'Gateway run failed. Review technical details.',
+    'zh-CN': '资源网关运行失败，请查看技术详情。',
+  },
+  'rehearsal.generated.blockerSummary': {
+    en: '{failed} failed and {indeterminate} indeterminate blocker assertions',
+    'zh-CN': '{failed} 个失败、{indeterminate} 个不确定的阻断断言',
+  },
+  'rehearsal.generated.warningSummary': {
+    en: '{failed} failed and {indeterminate} indeterminate warnings',
+    'zh-CN': '{failed} 个失败、{indeterminate} 个不确定警告',
+  },
+  'rehearsal.generated.mutableProjection': {
+    en: 'Mutable {status} projection',
+    'zh-CN': '可变的{status}投影',
+  },
+  'rehearsal.generated.rehearsalOwner': {
+    en: '{project} rehearsal owner',
+    'zh-CN': '{project} 演练负责人',
+  },
+  'rehearsal.generated.projectOwner': { en: '{project} owner', 'zh-CN': '{project} 负责人' },
+  'rehearsal.generated.missingAuthorSource': {
+    en: 'This plan does not advertise an Author source. Contact {owner}.',
+    'zh-CN': '该计划未声明编排来源，请联系 {owner}。',
+  },
   'layout.quality.geometrySummary': {
     en: 'Node overlaps {overlaps} · label collisions {collisions} · pinned nodes {pinned}',
     'zh-CN': '{overlaps} 个节点重叠 · {collisions} 个标签碰撞 · {pinned} 个固定节点',

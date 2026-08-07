@@ -142,7 +142,8 @@ function remediationFor(
       : 'RUN_FAILURE';
   const target = entry.authorTarget;
   const sampleUnavailable = options.sampleMode === true;
-  const available = Boolean(target) && !sampleUnavailable;
+  const sampleRetry = sampleUnavailable && timeout;
+  const available = sampleRetry || (Boolean(target) && !sampleUnavailable);
   return {
     id: `rehearsal:${job.jobId}:${entry.index}`,
     source,
@@ -165,10 +166,12 @@ function remediationFor(
     },
     rootCause,
     businessImpact,
-    actionKind: target ? 'OPEN_AUTHOR_TARGET' : timeout ? 'RETRY_REHEARSAL' : 'OPEN_DIAGNOSTIC',
-    actionLabel: target ? 'Open exact Author target' : timeout ? 'Request controlled retry' : 'Request owner review',
+    actionKind: sampleRetry ? 'RETRY_REHEARSAL'
+      : target ? 'OPEN_AUTHOR_TARGET' : timeout ? 'RETRY_REHEARSAL' : 'OPEN_DIAGNOSTIC',
+    actionLabel: sampleRetry ? 'Run sample retry'
+      : target ? 'Open exact Author target' : timeout ? 'Request controlled retry' : 'Request owner review',
     deepLink: target ? authorTargetLink(target, options.currentHref) : '',
-    navigation: target ? 'AUTHOR' : 'UNAVAILABLE',
+    navigation: sampleRetry ? 'DIAGNOSTIC' : target ? 'AUTHOR' : 'UNAVAILABLE',
     requiredRole,
     owner,
     auditRequirement: timeout
@@ -176,7 +179,9 @@ function remediationFor(
       : 'The decision must remain bound to this plan revision and batch item.',
     expiresAt: job.deadlineAt,
     available,
-    unavailableReason: sampleUnavailable
+    unavailableReason: sampleRetry
+      ? ''
+      : sampleUnavailable
       ? 'Illustrative samples do not have a server-side Author target.'
       : target
         ? ''

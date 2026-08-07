@@ -13,6 +13,7 @@ import {
   replaceLocaleQuery,
   resolveInitialLocale,
   translate,
+  translateRegisteredDynamic,
   writeStoredLocale,
   type Locale,
   type TranslationValues,
@@ -23,6 +24,7 @@ interface I18nContextValue {
   locale: Locale;
   setLocale: (locale: Locale) => void;
   t: (source: string, values?: TranslationValues) => string;
+  d: (source: string, values?: TranslationValues) => string;
   m: (id: MessageId, values?: TranslationValues) => string;
 }
 
@@ -30,6 +32,7 @@ const DEFAULT_CONTEXT: I18nContextValue = {
   locale: 'en',
   setLocale: () => undefined,
   t: (source, values) => translate('en', source, values),
+  d: (source, values) => translateRegisteredDynamic('en', source, values),
   m: (id, values) => translateMessage('en', id, values),
 };
 
@@ -58,6 +61,7 @@ export default function I18nProvider({ children }: { children: ReactNode }) {
     locale,
     setLocale,
     t: (source, values) => translate(locale, source, values),
+    d: (source, values) => translateRegisteredDynamic(locale, source, values),
     m: (id, values) => translateMessage(locale, id, values),
   }), [locale, setLocale]);
 

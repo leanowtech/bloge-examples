@@ -16,8 +16,10 @@ import {
 } from './api';
 import { localizeRehearsalText } from './i18n/generatedProductText';
 import { useI18n } from './i18n/I18nProvider';
+import { hasChineseTranslation } from './i18n/i18n';
 import RehearsalRemediationPanel from './RehearsalRemediationPanel';
 import RemediationActionList from './remediation/RemediationActionList';
+import type { RemediationAction } from './remediation/remediationAction';
 import {
   rehearsalEvidencePresentation,
   type RehearsalAuthorTarget,
@@ -26,6 +28,7 @@ import { projectRehearsalOutcome } from './remediation/rehearsalOutcomeProjectio
 import {
   DEFAULT_REHEARSAL_DEMO_ID,
   findRehearsalDemoScenario,
+  RECOVERED_REHEARSAL_DEMO_ID,
   REHEARSAL_DEMO_SCENARIOS,
 } from './rehearsalDemoData';
 import { formatRehearsalDemoTime } from './rehearsalDemoClock';
@@ -203,6 +206,7 @@ function formatEntryDate(
   value: string | null,
   terminal: boolean,
   liveFallback: string,
+  terminalFallback: string,
   locale: string,
   demoAnchor?: string,
 ): string {
@@ -210,7 +214,7 @@ function formatEntryDate(
     ? demoAnchor
       ? formatRehearsalDemoTime(value, demoAnchor, locale)
       : formatDate(value, locale)
-    : terminal ? 'Not included in workbook' : liveFallback;
+    : terminal ? terminalFallback : liveFallback;
 }
 
 function statusTone(status: string): string {
@@ -278,7 +282,7 @@ function updateDeepLink(
  * root-sealed workbooks expose gate readiness and support lazy case/assertion inspection.
  */
 export default function RehearsalWorkbench() {
-  const { locale, t, m } = useI18n();
+  const { locale, t, d, m } = useI18n();
   const initialSelection = useMemo(querySelection, []);
   const initialSample = findRehearsalDemoScenario(initialSelection.sampleId);
   const [mode, setMode] = useState<WorkbenchMode>(initialSample ? 'SAMPLES' : 'LIVE');
@@ -305,6 +309,11 @@ export default function RehearsalWorkbench() {
   const [batchApiAvailable, setBatchApiAvailable] = useState(true);
   const [error, setError] = useState('');
   const [detailError, setDetailError] = useState('');
+  const [demoRemediationReceipt, setDemoRemediationReceipt] = useState<{
+    actionId: string;
+    predecessorJobId: string;
+    successorJobId: string;
+  } | null>(null);
   const discoveryGeneration = useRef(0);
   const jobPageGeneration = useRef(0);
   const itemPageGeneration = useRef(0);
@@ -708,7 +717,25 @@ export default function RehearsalWorkbench() {
     setSelectedRemediationId('');
     setFilter('ALL');
     setError('');
+    setDemoRemediationReceipt(null);
     updateDeepLink(DEFAULT_REHEARSAL_DEMO_ID, null, '', 'SAMPLES');
+  }
+
+  function invokeEvidenceAction(action: RemediationAction) {
+    if (!sampleMode || action.actionKind !== 'RETRY_REHEARSAL') {
+      return;
+    }
+    const predecessorJobId = selectedJobId;
+    setDemoRemediationReceipt({
+      actionId: action.id,
+      predecessorJobId,
+      successorJobId: RECOVERED_REHEARSAL_DEMO_ID,
+    });
+    setSelectedJobId(RECOVERED_REHEARSAL_DEMO_ID);
+    setSelectedEntryIndex(null);
+    setSelectedRemediationId('');
+    setFilter('ALL');
+    updateDeepLink(RECOVERED_REHEARSAL_DEMO_ID, null, '', 'SAMPLES');
   }
 
   function showLiveData() {
@@ -815,7 +842,7 @@ export default function RehearsalWorkbench() {
               >
                 <span className="batch-queue-row-top">
                   <strong>{demo ? m(demo.title.messageId, demo.title.params) : job.jobId}</strong>
-                  <span className={`status-label ${statusTone(job.status)}`}>{t(job.status)}</span>
+                  <span className={`status-label ${statusTone(job.status)}`}>{d(job.status)}</span>
                 </span>
                 {demo && (
                   <span className="sample-row-focus">{m(demo.focus.messageId, demo.focus.params)}</span>
@@ -855,9 +882,37 @@ export default function RehearsalWorkbench() {
       </aside>
 
       <section className="rehearsal-results" aria-label={t('Selected batch')}>
-        {error && <div className="workbench-alert danger" role="alert">{error}</div>}
+        {error && (
+          <div className="workbench-alert danger" role="alert">
+            <span>{d(error)}</span>
+            {!hasChineseTranslation(error) && (
+              <details className="rehearsal-technical-details">
+                <summary>{t('Technical details')}</summary>
+                <p lang="en">{error}</p>
+              </details>
+            )}
+          </div>
+        )}
         {selectedJob ? (
           <>
+            {sampleMode
+              && demoRemediationReceipt
+              && selectedJobId === demoRemediationReceipt.successorJobId && (
+              <section className="demo-remediation-receipt" role="status" data-testid="demo-remediation-receipt">
+                <div>
+                  <strong>{t('Demo retry completed')}</strong>
+                  <span>{t('The sample successor passed and the predecessor coordinate was retained.')}</span>
+                </div>
+                <dl>
+                  <div><dt>{t('Predecessor')}</dt><dd>{demoRemediationReceipt.predecessorJobId}</dd></div>
+                  <div><dt>{t('Successor')}</dt><dd>{demoRemediationReceipt.successorJobId}</dd></div>
+                </dl>
+                <span>{t('Local demo only; no governance evidence was created.')}</span>
+                <button type="button" className="secondary compact" onClick={showSamples}>
+                  {t('Reset sample')}
+                </button>
+              </section>
+            )}
             <header className="batch-overview">
               {sampleMode && (
                 <div className="sample-workbook-banner" data-testid="sample-workbook-banner">
@@ -922,14 +977,28 @@ export default function RehearsalWorkbench() {
                   <dd className={outcome.gate.tone === 'success'
                     ? 'metric-success'
                     : outcome.gate.tone === 'danger' ? 'metric-danger' : ''}>
-                    {t(outcome.gate.label)}
+                    {d(outcome.gate.label)}
                   </dd>
                 </div>
               </dl>
               {terminal && workbook && !workbook.gateReady && (
                 <div className="workbench-alert warning" data-testid="root-blockers">
                   <strong>{t('Publish gate blocked')}</strong>
-                  <span>{workbook.blockers.join(' | ') || t('Terminal workbook is not gate-ready.')}</span>
+                  {workbook.blockers.length > 0 ? (
+                    <div className="rehearsal-root-blocker-summary">
+                      <ul aria-label={t('Blocking reasons')}>
+                        {workbook.blockers.map((blocker) => (
+                          <li key={blocker}>{d(blocker)}</li>
+                        ))}
+                      </ul>
+                      <details className="rehearsal-technical-details">
+                        <summary>{t('Technical details')}</summary>
+                        <code>{workbook.blockers.join(' | ')}</code>
+                      </details>
+                    </div>
+                  ) : (
+                    <span>{t('Terminal workbook is not gate-ready.')}</span>
+                  )}
                 </div>
               )}
             </header>
@@ -959,7 +1028,7 @@ export default function RehearsalWorkbench() {
                     className={filter === category ? 'active' : ''}
                     onClick={() => setFilter(category)}
                   >
-                    {t(categoryLabel(category))} <strong>{categoryCounts[category]}</strong>
+                    {d(categoryLabel(category))} <strong>{categoryCounts[category]}</strong>
                   </button>
                 ))}
               </div>
@@ -975,11 +1044,11 @@ export default function RehearsalWorkbench() {
               {groupedEntries.map((group) => (
                 <section className="entry-group" key={group.category}>
                   <header>
-                    <h3>{t(categoryLabel(group.category))}</h3>
+                    <h3>{d(categoryLabel(group.category))}</h3>
                     <span>{group.entries.length}</span>
                   </header>
                   <div className="entry-table" aria-label={t('{category} entries', {
-                    category: t(categoryLabel(group.category)),
+                    category: d(categoryLabel(group.category)),
                   })}>
                     <div className="entry-table-head">
                       <span>{t('Item / compiled plan')}</span>
@@ -1005,10 +1074,11 @@ export default function RehearsalWorkbench() {
                             })}</small>
                           </span>
                           <span>
-                            <span className={`status-label ${statusTone(entry.status)}`}>{t(entry.status)}</span>
+                            <span className={`status-label ${statusTone(entry.status)}`}>{d(entry.status)}</span>
                           </span>
                           <span className="entry-diagnosis">
-                            {diagnosis ? localizeRehearsalText(t, diagnosis.reason) : ''}
+                            {diagnosis ? localizeRehearsalText(d, m, diagnosis.reason) : ''}
+                            {entry.failureCode && <code>{entry.failureCode}</code>}
                           </span>
                           <span className="entry-evidence-state">
                             <span>
@@ -1073,24 +1143,24 @@ export default function RehearsalWorkbench() {
               <>
                 <section className="rehearsal-entry-verdict" data-testid="rehearsal-entry-verdict">
                   <span className={`status-label ${selectedEvidence.verdictTone}`}>
-                    {t(selectedEvidence.verdictLabel)}
+                    {d(selectedEvidence.verdictLabel)}
                   </span>
-                  <h3>{t(selectedEvidence.headline)}</h3>
-                  <p>{localizeRehearsalText(t, selectedEvidence.rootCause)}</p>
+                  <h3>{d(selectedEvidence.headline)}</h3>
+                  <p>{localizeRehearsalText(d, m, selectedEvidence.rootCause)}</p>
                   <dl>
                     <div>
                       <dt>{t('Business impact')}</dt>
-                      <dd>{t(selectedEvidence.businessImpact)}</dd>
+                      <dd>{d(selectedEvidence.businessImpact)}</dd>
                     </div>
                     <div>
                       <dt>{t('Responsible')}</dt>
-                      <dd>{localizeRehearsalText(t, selectedEvidence.owner)} · {t(selectedEvidence.requiredRole)}</dd>
+                      <dd>{localizeRehearsalText(d, m, selectedEvidence.owner)} · {d(selectedEvidence.requiredRole)}</dd>
                     </div>
                   </dl>
                 </section>
                 <RemediationActionList
                   actions={selectedEvidence.action ? [selectedEvidence.action] : []}
-                  onInvoke={() => undefined}
+                  onInvoke={invokeEvidenceAction}
                 />
                 <section className="evidence-section rehearsal-attempts" data-testid="rehearsal-attempts">
                   <div className="evidence-section-heading">
@@ -1114,8 +1184,8 @@ export default function RehearsalWorkbench() {
                     <div><dt>{t('Deadline')}</dt><dd>{sampleMode && selectedJob
                       ? formatRehearsalDemoTime(selectedEvidence.deadlineAt, selectedJob.createdAt, locale)
                       : formatDate(selectedEvidence.deadlineAt, locale)}</dd></div>
-                    <div><dt>{t('Batch policy')}</dt><dd>{t(selectedEvidence.batchFallback)}</dd></div>
-                    <div><dt>{t('Item fallback')}</dt><dd>{t(selectedEvidence.itemFallback)}</dd></div>
+                    <div><dt>{t('Batch policy')}</dt><dd>{d(selectedEvidence.batchFallback)}</dd></div>
+                    <div><dt>{t('Item fallback')}</dt><dd>{d(selectedEvidence.itemFallback)}</dd></div>
                   </dl>
                   {selectedEvidence.timeline.length > 0 ? (
                     <ol>
@@ -1126,10 +1196,10 @@ export default function RehearsalWorkbench() {
                             <strong>
                               {t('Attempt {attempt} · {state}', {
                                 attempt: attempt.attempt,
-                                state: t(attemptStateLabel(attempt.state)),
+                                state: d(attemptStateLabel(attempt.state)),
                               })}
                             </strong>
-                            <p>{t(attempt.observation)}</p>
+                            <p>{d(attempt.observation)}</p>
                             <small>
                               {attempt.observedAt
                                 ? sampleMode && selectedJob
@@ -1147,7 +1217,7 @@ export default function RehearsalWorkbench() {
                   )}
                   <div className="rehearsal-last-observation">
                     <strong>{t('Last observation')}</strong>
-                    <span>{t(selectedEvidence.lastObservation)}</span>
+                    <span>{d(selectedEvidence.lastObservation)}</span>
                   </div>
                 </section>
               </>
@@ -1160,7 +1230,17 @@ export default function RehearsalWorkbench() {
             {terminal && loadingChild && (
               <p className="empty-workbench">{t('Verifying and loading signed child evidence...')}</p>
             )}
-            {detailError && <div className="workbench-alert danger" role="alert">{t(detailError)}</div>}
+            {detailError && (
+              <div className="workbench-alert danger" role="alert">
+                <span>{d(detailError)}</span>
+                {!hasChineseTranslation(detailError) && (
+                  <details className="rehearsal-technical-details">
+                    <summary>{t('Technical details')}</summary>
+                    <p lang="en">{detailError}</p>
+                  </details>
+                )}
+              </div>
+            )}
             {terminal && !loadingChild && !detailError && !selectedEntry.runId && (
               <div className="workbench-alert danger">{t('No child run is available for evidence drill-down.')}</div>
             )}
@@ -1222,26 +1302,28 @@ export default function RehearsalWorkbench() {
                 <dl className="evidence-fields">
                   <div><dt>{t('Compiled plan')}</dt><dd>{selectedEntry.planId}@{selectedEntry.planRevision}</dd></div>
                   <div><dt>{t('Run')}</dt><dd>{selectedEntry.runId || t('Not assigned')}</dd></div>
-                  <div><dt>{t('Outcome')}</dt><dd>{selectedEntry.status}</dd></div>
+                  <div><dt>{t('Outcome')}</dt><dd>{d(selectedEntry.status)}</dd></div>
                   <div>
                     <dt>{t('Started')}</dt>
-                    <dd>{t(formatEntryDate(
+                    <dd>{formatEntryDate(
                       selectedEntry.startedAt,
                       terminal,
-                      'Not started',
+                      t('Not started'),
+                      t('Not included in workbook'),
                       locale,
                       sampleMode ? selectedJob?.createdAt : undefined,
-                    ))}</dd>
+                    )}</dd>
                   </div>
                   <div>
                     <dt>{t('Completed')}</dt>
-                    <dd>{t(formatEntryDate(
+                    <dd>{formatEntryDate(
                       selectedEntry.completedAt,
                       terminal,
-                      'Not complete',
+                      t('Not complete'),
+                      t('Not included in workbook'),
                       locale,
                       sampleMode ? selectedJob?.createdAt : undefined,
-                    ))}</dd>
+                    )}</dd>
                   </div>
                 </dl>
               </section>

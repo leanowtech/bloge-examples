@@ -83,7 +83,7 @@ export default function CanvasTaskNavigator({
   onCancelLayout,
   onUndoLayout,
 }: CanvasTaskNavigatorProps) {
-  const { t, m } = useI18n();
+  const { t, d, m } = useI18n();
   const [query, setQuery] = useState('');
   const selected = nodes.find((node) => node.id === selectedNodeId) ?? null;
   const perceptualPresentation = presentCanvasPerceptualQuality(perceptualQuality);
@@ -133,7 +133,7 @@ export default function CanvasTaskNavigator({
                 : t('Open the selected node context')}
             onClick={() => onModeChange(candidate)}
           >
-            {t(candidate[0].toUpperCase() + candidate.slice(1))}
+            {d(candidate[0].toUpperCase() + candidate.slice(1))}
           </button>
         ))}
       </div>
@@ -197,7 +197,7 @@ export default function CanvasTaskNavigator({
           data-testid="canvas-readability-verdict"
           title={perceptualTitle}
         >
-          {t('Readability {status}', { status: t(perceptualQuality.status) })}
+          {t('Readability {status}', { status: d(perceptualQuality.status) })}
         </span>
       </div>
 
@@ -279,7 +279,7 @@ export default function CanvasTaskNavigator({
             <div className="canvas-layout-comparison" data-testid="layout-quality-comparison">
               <span>
                 {t('Before')} <strong>{Math.round(layoutAcceptance.before.zoom * 100)}%</strong>
-                {' · '}{t(layoutAcceptance.before.perception.status)}
+                {' · '}{d(layoutAcceptance.before.perception.status)}
                 {' · '}{t('{size}px', {
                   size: layoutAcceptance.before.perception.effectiveTitleFontPx.toFixed(1),
                 })}
@@ -287,7 +287,7 @@ export default function CanvasTaskNavigator({
               <span aria-hidden="true">→</span>
               <span>
                 {t('Candidate')} <strong>{Math.round(layoutAcceptance.candidate.zoom * 100)}%</strong>
-                {' · '}{t(layoutAcceptance.candidate.perception.status)}
+                {' · '}{d(layoutAcceptance.candidate.perception.status)}
                 {' · '}{t('{size}px', {
                   size: layoutAcceptance.candidate.perception.effectiveTitleFontPx.toFixed(1),
                 })}
@@ -304,7 +304,7 @@ export default function CanvasTaskNavigator({
           {layoutAcceptance?.regressions.length ? (
             <ul className="canvas-layout-regressions" data-testid="layout-regressions">
               {layoutAcceptance.regressions.map((regression) => (
-                <li key={regression.code}>{layoutRegressionMessage(regression, t)}</li>
+                <li key={regression.code}>{layoutRegressionMessage(regression, t, d)}</li>
               ))}
             </ul>
           ) : null}
@@ -351,6 +351,7 @@ export default function CanvasTaskNavigator({
 function layoutRegressionMessage(
   regression: LayoutRegression,
   t: (message: string, params?: Record<string, string | number>) => string,
+  d: (message: string) => string,
 ): string {
   switch (regression.code) {
     case 'NODE_OVERLAP_REGRESSION':
@@ -365,8 +366,8 @@ function layoutRegressionMessage(
       });
     case 'PERCEPTION_REGRESSION':
       return t('Perceptual quality changes from {before} to {candidate}.', {
-        before: t(String(regression.before)),
-        candidate: t(String(regression.candidate)),
+        before: d(String(regression.before)),
+        candidate: d(String(regression.candidate)),
       });
     case 'SMALL_GRAPH_ZOOM_FLOOR':
       return t('Small graph zoom would fall below 80%.');

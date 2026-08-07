@@ -32,7 +32,7 @@ export default function CanonicalContractPreview({
   onCommit,
   onDiagnostic,
 }: CanonicalContractPreviewProps) {
-  const { t, m } = useI18n();
+  const { t, d, m } = useI18n();
   const groupedDiagnostics = groupAuthoringDiagnostics(preview?.diagnostics ?? []);
   const errors = groupedDiagnostics.filter((diagnostic) => diagnostic.level === 'ERROR');
   const warnings = groupedDiagnostics.filter((diagnostic) => diagnostic.level === 'WARNING');
@@ -135,7 +135,7 @@ export default function CanonicalContractPreview({
                 <button type="button" onClick={() => onDiagnostic(diagnostic.authoringPath)}>
                   <span>{diagnostic.level}</span>
                   <strong>{diagnostic.code}</strong>
-                  <p>{t(diagnostic.message)}</p>
+                  <p>{d(diagnostic.message)}</p>
                   <small>
                     {diagnostic.authoringPath}
                     {diagnostic.occurrences > 1 ? t(' · {count} occurrences', { count: diagnostic.occurrences }) : ''}
@@ -158,7 +158,7 @@ export default function CanonicalContractPreview({
               key={`${confirmation.code}:${confirmation.authoringPath}`}
               onClick={() => onDiagnostic(confirmation.authoringPath)}
             >
-              <strong>{t(confirmation.question)}</strong>
+              <strong>{d(confirmation.question)}</strong>
               <span>{confirmation.authoringPath}</span>
             </button>
           ))}

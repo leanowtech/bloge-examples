@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 
 import { buildGatewayRunRequest, fetchGatewayDiagram, fetchGatewayScenarios, runGatewayScenario } from './api';
 import { useI18n } from './i18n/I18nProvider';
+import type { MessageDescriptor } from './i18n/messageCatalog';
 import { presentShowcaseScenario } from './showcasePresentation';
 import type {
   GatewayDiagramEdge,
@@ -25,7 +26,7 @@ type ShowcaseRunStatus = 'idle' | 'running' | 'success' | 'error' | 'streaming';
 interface ShowcaseRunState {
   status: ShowcaseRunStatus;
   url: string;
-  message: string;
+  message: MessageDescriptor;
   payload: unknown;
   request: ShowcaseRunRequestSummary | null;
 }
@@ -73,7 +74,7 @@ function scenarioInputValues(
 }
 
 function emptyRunState(): ShowcaseRunState {
-  return { status: 'idle', url: '', message: 'Not run yet.', payload: null, request: null };
+  return { status: 'idle', url: '', message: { messageId: 'showcase.run.notRun' }, payload: null, request: null };
 }
 
 function streamFrames(payload: unknown): Record<StreamEventName, unknown[]> {
@@ -262,7 +263,7 @@ function runRequestSummary(request: GatewayExampleRunRequest): ShowcaseRunReques
 
 /** Read-only scenario browser for the resource-gateway examples catalog. */
 export default function Showcase() {
-  const { t, m } = useI18n();
+  const { t, d, m } = useI18n();
   const [scenarios, setScenarios] = useState<GatewayExampleScenario[]>([]);
   const [selectedGraphName, setSelectedGraphName] = useState('');
   const [status, setStatus] = useState<'loading' | 'ready' | 'error'>('loading');
@@ -346,7 +347,7 @@ export default function Showcase() {
     setRunState((current) => ({
       ...current,
       status: current.status === 'streaming' ? 'success' : current.status,
-      message: 'Stream stopped.',
+      message: { messageId: 'showcase.run.streamStopped' },
     }));
   }
 
@@ -360,7 +361,7 @@ export default function Showcase() {
       setRunState({
         status: 'error',
         url: '',
-        message: 'Selected scenario has no run recipe.',
+        message: { messageId: 'showcase.run.recipeMissing' },
         payload: null,
         request: null,
       });
@@ -372,7 +373,9 @@ export default function Showcase() {
     setRunState({
       status: request.mode === 'stream' ? 'streaming' : 'running',
       url: request.url,
-      message: request.mode === 'stream' ? 'Opening stream...' : 'Running...',
+      message: { messageId: request.mode === 'stream'
+        ? 'showcase.run.openingStream'
+        : 'showcase.run.running' },
       payload: request.mode === 'stream' ? { meta: [], token: [], citation: [] } : null,
       request: requestSummary,
     });
@@ -381,7 +384,7 @@ export default function Showcase() {
         setRunState({
           status: 'error',
           url: request.url,
-          message: 'EventSource is not available in this browser.',
+          message: { messageId: 'showcase.run.eventSourceUnavailable' },
           payload: null,
           request: requestSummary,
         });
@@ -401,7 +404,7 @@ export default function Showcase() {
           setRunState({
             status: 'streaming',
             url: request.url,
-            message: 'Streaming...',
+            message: { messageId: 'showcase.run.streaming' },
             payload: { ...frames },
             request: requestSummary,
           });
@@ -412,7 +415,7 @@ export default function Showcase() {
         setRunState((current) => ({
           ...current,
           status: current.status === 'streaming' ? 'success' : current.status,
-          message: 'Stream closed.',
+          message: { messageId: 'showcase.run.streamClosed' },
         }));
       };
       return;
@@ -422,7 +425,7 @@ export default function Showcase() {
       setRunState({
         status: 'success',
         url: result.url,
-        message: `HTTP ${result.status}`,
+        message: { messageId: 'showcase.run.httpStatus', params: { status: result.status } },
         payload: result.payload,
         request: requestSummary,
       });
@@ -430,7 +433,10 @@ export default function Showcase() {
       setRunState({
         status: 'error',
         url: request.url,
-        message: error instanceof Error ? error.message : 'Gateway run failed.',
+        message: {
+          messageId: 'showcase.run.failed',
+          rawDetail: error instanceof Error ? error.message : 'Gateway run failed.',
+        },
         payload: null,
         request: requestSummary,
       });
@@ -536,14 +542,17 @@ export default function Showcase() {
                 ? m(selectedPresentation.description.messageId, selectedPresentation.description.params)
                 : selectedScenario.description}</p>
             </div>
-            <div className="showcase-actions">
-              <a className="link" href={selectedScenario.diagramPath ?? '#'}>
-                {t('Diagram JSON')}
-              </a>
-              <a className="link" href="/examples/gateway">
-                {t('Legacy runner')}
-              </a>
-            </div>
+            <details className="showcase-actions">
+              <summary>{t('Advanced')}</summary>
+              <div>
+                <a className="link" href={selectedScenario.diagramPath ?? '#'}>
+                  {t('Diagram JSON')}
+                </a>
+                <a className="link" href="/examples/gateway">
+                  {t('Legacy runner')}
+                </a>
+              </div>
+            </details>
           </div>
 
           <div className="showcase-tags" aria-label={t('Scenario concepts')}>
@@ -784,7 +793,7 @@ export default function Showcase() {
               <div className="showcase-panel-heading">
                 <h3>{t('Output')}</h3>
                 <div className="showcase-output-actions">
-                  <span>{t(runState.status)}</span>
+                  <span>{d(runState.status)}</span>
                   {runState.status === 'streaming' ? (
                     <button
                       type="button"
@@ -800,7 +809,7 @@ export default function Showcase() {
               <dl className="showcase-run">
                 <div>
                   <dt>{t('Status')}</dt>
-                  <dd>{t(runState.message)}</dd>
+                  <dd>{m(runState.message.messageId, runState.message.params)}</dd>
                 </div>
                 <div>
                   <dt>{t('URL')}</dt>
@@ -809,6 +818,12 @@ export default function Showcase() {
                   </dd>
                 </div>
               </dl>
+              {runState.message.rawDetail && (
+                <details className="showcase-run-technical" data-testid="showcase-run-technical">
+                  <summary>{t('Technical details')}</summary>
+                  <p lang="en">{runState.message.rawDetail}</p>
+                </details>
+              )}
               {runState.request ? (
                 <div className="showcase-run-receipt" data-testid="showcase-run-receipt">
                   <div>
@@ -862,7 +877,7 @@ export default function Showcase() {
                       >
                         <span>{check.key}</span>
                         <strong>{scalarValue(check.expected)}</strong>
-                        <em>{t(check.state)}</em>
+                        <em>{d(check.state)}</em>
                       </span>
                     ))}
                   </div>

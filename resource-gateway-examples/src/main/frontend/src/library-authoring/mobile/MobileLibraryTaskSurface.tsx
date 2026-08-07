@@ -42,7 +42,7 @@ export default function MobileLibraryTaskSurface({
   onValidate,
   onOpenTests,
 }: MobileLibraryTaskSurfaceProps) {
-  const { t, m } = useI18n();
+  const { t, d, m } = useI18n();
   const selected = selectedAsset(document, selection);
   const readiness = presentLibraryReadiness(preview);
   const testable = selection.kind === 'operator' || selection.kind === 'function';
@@ -98,9 +98,9 @@ export default function MobileLibraryTaskSurface({
           <option value={selectionValue({ kind: 'library', key: '' })}>
             {t('Library')} · {document.library.name || document.library.id}
           </option>
-          {assetOptions('type', document.types ?? {}, t)}
-          {assetOptions('operator', document.operators ?? {}, t)}
-          {assetOptions('function', document.functions ?? {}, t)}
+          {assetOptions('type', document.types ?? {}, d)}
+          {assetOptions('operator', document.operators ?? {}, d)}
+          {assetOptions('function', document.functions ?? {}, d)}
         </select>
       </label>
 
@@ -108,7 +108,7 @@ export default function MobileLibraryTaskSurface({
         <section className="mobile-library-review" data-testid="mobile-library-review">
           <header>
             <div>
-              <span>{t(assetKindLabel(selection.kind))}</span>
+              <span>{d(assetKindLabel(selection.kind))}</span>
               <h2>{selected.title}</h2>
             </div>
             <strong data-tone={readiness.tone}>
@@ -118,8 +118,8 @@ export default function MobileLibraryTaskSurface({
           <dl>
             {selected.facts.map((fact) => (
               <div key={fact.label}>
-                <dt>{t(fact.label)}</dt>
-                <dd>{typeof fact.value === 'string' ? t(fact.value) : fact.value}</dd>
+                <dt>{d(fact.label)}</dt>
+                <dd>{fact.translateValue && typeof fact.value === 'string' ? d(fact.value) : fact.value}</dd>
               </div>
             ))}
           </dl>
@@ -203,7 +203,7 @@ function MobileLibraryLightEditor({
   ) => void;
   onDone: () => void;
 }) {
-  const { t } = useI18n();
+  const { t, d } = useI18n();
   const patchLibrary = (value: Record<string, unknown>) => onDocumentChange((current) => ({
     ...current,
     library: { ...current.library, ...value },
@@ -228,7 +228,7 @@ function MobileLibraryLightEditor({
   return (
     <section className="mobile-library-light-editor" data-testid="mobile-library-light-editor">
       <header>
-        <span>{t(assetKindLabel(selection.kind))}</span>
+        <span>{d(assetKindLabel(selection.kind))}</span>
         <h2>{selectedAsset(document, selection).title}</h2>
         <p>{t('Only basic metadata is editable on mobile. Schema structure remains unchanged.')}</p>
       </header>
@@ -268,7 +268,7 @@ function MobileLibraryLightEditor({
 function selectedAsset(
   document: VisualLibraryAuthoringDocument,
   selection: LibraryAssetSelection,
-): { title: string; facts: Array<{ label: string; value: string | number }> } {
+): { title: string; facts: Array<{ label: string; value: string | number; translateValue?: boolean }> } {
   if (selection.kind === 'operator') {
     const operator = document.operators?.[selection.key];
     return {
@@ -277,7 +277,7 @@ function selectedAsset(
         { label: 'Inputs', value: Object.keys(operator?.input ?? {}).length },
         { label: 'Outputs', value: Object.keys(operator?.output ?? {}).length },
         { label: 'Tests', value: operator?.tests?.length ?? 0 },
-        { label: 'Archetype', value: operator?.archetype ?? 'pure' },
+        { label: 'Archetype', value: operator?.archetype ?? 'pure', translateValue: true },
       ],
     };
   }
@@ -290,7 +290,7 @@ function selectedAsset(
         { label: 'Signatures', value: signatures.length },
         { label: 'Examples', value: fn?.examples?.length ?? 0 },
         { label: 'Tests', value: fn?.tests?.length ?? 0 },
-        { label: 'Category', value: fn?.category ?? 'business' },
+        { label: 'Category', value: fn?.category ?? 'business', translateValue: true },
       ],
     };
   }
@@ -299,9 +299,9 @@ function selectedAsset(
       title: selection.key,
       facts: [
         { label: 'Fields', value: Object.keys(typeFields(document.types?.[selection.key])).length },
-        { label: 'Edit mode', value: 'Desktop required' },
+        { label: 'Edit mode', value: 'Desktop required', translateValue: true },
         { label: 'Tests', value: 0 },
-        { label: 'Runtime', value: 'Not applicable' },
+        { label: 'Runtime', value: 'Not applicable', translateValue: true },
       ],
     };
   }
@@ -319,12 +319,12 @@ function selectedAsset(
 function assetOptions(
   kind: Exclude<LibraryAssetSelection['kind'], 'library'>,
   values: Record<string, unknown>,
-  t: (source: string) => string,
+  d: (source: string) => string,
 ) {
   const keys = Object.keys(values);
   if (keys.length === 0) return null;
   return (
-    <optgroup label={t(assetKindPluralLabel(kind))}>
+    <optgroup label={d(assetKindPluralLabel(kind))}>
       {keys.map((key) => <option value={selectionValue({ kind, key })} key={key}>{key}</option>)}
     </optgroup>
   );

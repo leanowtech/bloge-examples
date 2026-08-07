@@ -726,7 +726,7 @@ describe('AuthorCanvas operator-library intake', () => {
     await waitFor(() => expect(reactFlowMocks.fitView).toHaveBeenCalled());
   });
 
-  it('uses a larger overview and tighter fit padding for complex DSL projections', async () => {
+  it('uses a larger overview and edge-label-safe fit padding for complex DSL projections', async () => {
     fetchMock.mockImplementation(async (input: RequestInfo | URL, init?: RequestInit) => {
       const url = String(input);
       if (url === '/api/visual/operators') {
@@ -760,7 +760,7 @@ describe('AuthorCanvas operator-library intake', () => {
     expect(query('[data-testid="canvas-zoom-readout"]').textContent).toBe('100%');
     await waitFor(() =>
       expect(reactFlowMocks.fitView).toHaveBeenCalledWith({
-        padding: 0.12,
+        padding: 0.14,
         duration: 240,
         maxZoom: 1,
       }),
@@ -1836,6 +1836,43 @@ describe('AuthorCanvas built-in canvas examples', () => {
     expect(v2Draft).toEqual(v1Draft);
   });
 
+  it('explains Contract drift and blocks an incompatible built-in example before load', async () => {
+    const incompatibleLoanOperator = loanApplicantResourceOperator();
+    const loanOutputSchema = incompatibleLoanOperator.ports?.outputs[0]?.schema.schema;
+    if (loanOutputSchema?.properties && typeof loanOutputSchema.properties === 'object') {
+      delete (loanOutputSchema.properties as Record<string, unknown>).segment;
+    }
+    fetchMock.mockImplementation(async (input: RequestInfo | URL) => {
+      if (String(input) === '/api/visual/operators') {
+        return jsonResponse({
+          operators: [
+            incompatibleLoanOperator,
+            primaryCreditResourceOperator(),
+            secondaryCreditResourceOperator(),
+            decisionTableOperator(),
+            transformOperator(),
+          ],
+        });
+      }
+      throw new Error(`Unexpected fetch: ${String(input)}`);
+    });
+
+    await act(async () => {
+      root = createRoot(host);
+      root.render(<AuthorCanvas workspaceVersion="v2" />);
+    });
+    await click(query<HTMLButtonElement>('[data-testid="author-start-choice:examples"]'));
+
+    const exampleButton = query<HTMLButtonElement>(
+      '[data-testid="author-start-example:loan-policy-fallback"]',
+    );
+    await waitFor(() => expect(exampleButton.disabled).toBe(true));
+    expect(exampleButton.textContent).toContain('1 incompatible');
+    expect(exampleButton.title).toContain('Fetch applicant.payload.segment');
+    expect(document.getElementById(exampleButton.getAttribute('aria-describedby') ?? '')?.textContent)
+      .toContain('Fetch applicant.payload.segment');
+  });
+
   it('loads a complex built-in example into the editable canvas draft', async () => {
     await act(async () => {
       root = createRoot(host);
@@ -1867,6 +1904,10 @@ describe('AuthorCanvas built-in canvas examples', () => {
       .toContain('Fetch applicant');
     expect(query('[data-testid="canvas-node:n5"][data-operator-ref="bloge:transform"]').textContent)
       .toContain('Decision response');
+    expect(query('[data-testid="canvas-node:n5"][data-operator-ref="bloge:transform"]').textContent)
+      .toContain('7 mappings');
+    expect(query('[data-testid="canvas-node:n5"][data-operator-ref="bloge:transform"]').textContent)
+      .not.toContain('0/1 inputs');
 
     const exported = authorDraftExport(query<HTMLAnchorElement>('[data-testid="author-draft-export"]'));
     expect(exported.graphName).toBe('loanPolicyFallbackExample');

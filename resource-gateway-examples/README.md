@@ -69,8 +69,8 @@ silently consuming work.
 | --- | --- |
 | `http://localhost:8080/author/` | Build a schema-constrained graph on the visual canvas |
 | `http://localhost:8080/libraries/` | Resume durable exact revisions from status queues, discover existing DSL/API/runtime assets, create libraries, infer schemas, run exact-draft tests, and commit |
-| `http://localhost:8080/rehearsals/` | Triage exact-scope Scenario batches and inspect signed evidence; without `--scenario-batch`, the page shows a capability-aware unavailable state |
-| `http://localhost:8080/showcase/` | Explore guided product scenarios and sample outputs |
+| `http://localhost:8080/rehearsals/` | Triage exact-scope Scenario batches, or use automatic Samples fallback without `--scenario-batch` |
+| `http://localhost:8080/showcase/` | Run real Gateway examples and inspect sample outputs; diagram JSON and the legacy runner stay under Advanced |
 | `http://localhost:8080/examples/gateway` | Use the legacy Custom Composer regression surface |
 | `http://localhost:8080/api/integration/capabilities` | Verify protocol versions, endpoints, feature flags, identity provider, payload policy, and signer readiness |
 | `POST http://localhost:8080/api/mirror/sessions` | Create an encrypted stateful simulation Session after starting with `--stateful` (test/staging only) |
@@ -143,9 +143,17 @@ Auto Layout uses the same descriptor boundary: geometry and perception engines r
 stable reason codes, while the presenter owns localized summaries, notices, numeric formatting, and
 collision coordinates. Candidate review always describes the candidate's own perceptual report;
 changing the locale does not recompute or mutate pending node positions.
-The seven built-in Showcase graphs and four Rehearsal samples also use typed bilingual metadata.
+The seven built-in Run examples graphs and four Rehearsal samples also use typed bilingual metadata.
 Unknown server-owned scenarios remain verbatim. Sample-only evidence times are relative to the batch
 anchor, so a demo remains temporally coherent; live server evidence keeps localized absolute time.
+Known Rehearsal blocker codes project to localized business reasons in the root summary; raw codes remain
+available only in collapsed Technical details. In **Samples**, open **Grounding policy regression**, select
+execution `#0`, then choose **Run sample retry** to replace the blocked illustrative predecessor with the
+deterministic **Release candidate ready** successor. The receipt explicitly states that this browser-local
+recovery produces no governance evidence; **Reset sample** restores the original failure for another demo.
+Static `t()`, typed `m(messageId, params)`, and registered dynamic `d(value)` calls have separate
+contracts. Critical surfaces reject new `t(variable)` calls in CI. Unknown dynamic product text is
+replaced by a localized conservative conclusion while raw protocol detail stays collapsed.
 Implementation and browser evidence are recorded in
 [`docs/resource-gateway-ux-stage5-visual-responsive-system.md`](../docs/resource-gateway-ux-stage5-visual-responsive-system.md).
 

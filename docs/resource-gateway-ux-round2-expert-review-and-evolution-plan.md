@@ -2,17 +2,17 @@
 
 > 状态：For Review / Engineering Recalibration
 >
-> 审阅日期：2026-08-06
+> 审阅日期：2026-08-07
 >
 > 审阅基线：`66d8f44a7` (`fix(resource-gateway): close final ux verification gaps`)
 >
 > 证据等级：E2，真实服务、真实浏览器、桌面与移动端固定任务走查
 >
-> 当前工程体验复评分：`84 / 100`
+> 当前工程体验复评分：`97 / 100`（实现完整度 `97.5%`）
 >
-> 缺陷结论：`0 P0 / 6 P1 / 6 P2`
+> 缺陷结论：`0 P0 / 0 P1 / 3 P2`
 >
-> 目标：工程体验重新达到 `>= 96 / 100`、P0/P1 清零，然后进入 E3/E4 真实组织验证
+> 目标：工程体验保持 `>= 96 / 100`、P0/P1 清零；剩余 `2.5%` 为 E3/E4 组织证据与三项非阻断演进
 
 相关文档：
 
@@ -23,6 +23,95 @@
 - [表格驱动测试产品设计](resource-gateway-table-driven-testing-product-design.md)
 
 ## 实施进度
+
+### 2026-08-07：Round 2 复审收口、可执行恢复与 Stage 6 信息降噪
+
+本次不是静态代码复查，而是基于最新 production bundle，在真实 Chromium 中按
+`1280 x 820 / 820 x 920 / 390 x 844` 走完 Author、Matrix、Case、Evidence、Library、Rehearsal
+和运行示例。原始 `6 P1` 已全部关闭，工程实现完整度复评为 `97.5%`。
+
+**本轮捕获并根治的硬伤**：
+
+| 反证 | 量化事实 | 病根 | 已实施根治 |
+|---|---|---|---|
+| Evidence 重跑时错误变 CURRENT | 新请求发出即改写 evidence epoch，source/request proof 尚未闭合 | “开始运行”和“证据被验证”共用一次状态提交 | 旧证据在重跑期间保持 `STALE`；只有 source、request、Scenario coordinate 和绑定结果同时闭合后才原子切换 `CURRENT` |
+| 移动 Matrix 回执挤走命令 | 390px 下回执高 `103.56px`，运行按钮底部到 `905.5px`，超出 844px 视口 | receipt 复用了桌面审计密度 | 移动回执压缩到 `34px`，完整 scope/fingerprint 仍保留在 Evidence；批跑按钮始终可达 |
+| 选中节点覆盖连线 | 选中节点高约 `201.9px`，未选中约 `158.1px`，额外端口网格改变布局占位 | selection state 改变节点几何，布局算法却按未选中尺寸求解 | Focus/Inspect 不再内联展开端口网格，详细端口由 Inspector 承担，节点卡几何稳定 |
+| 820px 运行按钮被 Diagnostics 遮住 | `runBottom=866.8125`、`diagnosticsTop=859`，重叠约 8px | 固定底栏没有占用任务布局预算，旧 CSS specificity 又覆盖补偿 | Canvas/Inspector 统一预留 `touch-target + 1px`，并以等 specificity 锁定正式任务工作面 |
+| 画布“检查”模式被裁切 | 模式组实际宽 `154.8px`，内部三列需要 `204px` | CSS Grid 的 `auto` track 可以小于内部 overflow-hidden 内容 | 模式组增加 `204px` 稳定最小宽度；其它可收缩 track 先让位 |
+| 就绪度结论省略号化 | `NOT EVALUATED` 需要 `102px`，状态槽实际仅 `86px` | 机器状态被强制单行 ellipsis，用户看不见结论 | 保持 12px 字号下限并允许按词换行，不再用省略号隐藏门禁状态 |
+| 中文演练显示“未识别状态” | 已知 `DEPENDENCY_TIMEOUT / OWNER_APPROVAL_REQUIRED` 仍进入 generic fallback | 稳定协议码没有业务呈现层 | 四类已知 blocker 映射为中文业务结论；raw code 只进入折叠 Technical details |
+| 示例失败没有恢复闭环 | “通往可信结果的 1 条路径”实际没有任何按钮 | unavailable 建议被计入 executable path，demo 没有 capability | 只统计 EXECUTE/HANDOFF；EXPLAIN 改称建议。超时示例提供本地模拟重试、前序/后继回执、成功结果和 Reset，明确不生成治理证据 |
+| 内置示例在保存时才因契约漂移报 500 | OpenAPI 导入改写 Resource Contract 后，示例入口仍显示可用；保存才返回 `visual.binding.unknownOutputPath` | 示例准入只检查 `operatorRef` 是否存在，没有验证 edge 的 port/path 是否仍被当前契约暴露；浏览器测试也未恢复契约基线 | 新增 Schema-aware example eligibility，逐边校验 source/target port 与 path；不兼容示例在载入前禁用，并在卡片内可见说明精确路径。真实浏览器每个用例重建 Resource Contract 基线，根治跨用例状态污染 |
+| Transform 已配置 7 个字段却显示 `0/1 inputs` | Loan 示例最终节点有 7 条 assignment，卡片却投影聚合端口的 required/total | 协议端口统计被误当成业务配置完成度；Decision Table 有专用投影，Transform 没有 | 保留 wire contract 的单聚合端口，画布按 visual kind 投影业务指标；Transform 显示 `7 mappings / 1 output`，并以组件回归锁定 |
+
+**信息架构与视觉降噪**：
+
+1. 顶层 Showcase 改名 **Run examples / 运行示例**，与 Author 的“载入可编辑完整示例”分工明确；
+2. Diagram JSON 和 Legacy runner 收进 **Advanced**，不再与当前运行任务同级竞争；
+3. Matrix 行内“检查”改为有 tooltip 和 accessible name 的展开图标，保留唯一文字命令“打开”；
+4. 移动 Matrix 隐藏无决策价值的 projection fingerprint，完整机器坐标仍在回执和 Evidence；
+5. 根 blocker 首屏只显示可读原因，原始 code 保留为默认收起的技术身份。
+
+**E2 自动化与浏览器证据**：
+
+- 前端全量回归：`82` 个 test files、`621 / 621` tests 通过，覆盖 remediation、动态 blocker、
+  稳定控件几何、Advanced disclosure 与 icon-only accessible command；
+- Resource Gateway `mvn -Pfrontend clean verify`：`5898 / 5898` tests 通过；其中真实浏览器顺序回归
+  先改写 OpenAPI Resource Contract，再导入内置 Loan 示例，确认契约基线恢复且保存不再返回 500；
+- 八条真实浏览器关键任务链通过：示例加载、Matrix 批跑、Coverage 生成/接纳、服务端导入、任务壳、
+  stale Evidence、无碰撞布局、Schema 生成输入绑定；
+- production build 的 i18n/UX/TypeScript/Vite 门禁通过；
+- 中英文产品句子、用户资产名、机器坐标和 raw technical detail 的边界按截图逐项复核。
+- 浏览器插件人工复验确认：1280px 完整图 Fit 为约 `96.8%`、有效标题约 `11.6px`，画布模式组
+  `clientWidth=scrollWidth=204px`；390px Rehearsal 可在三次点击内完成失败、样例重试、成功回执，
+  并可 Reset；390px Matrix 不再显示 projection fingerprint，批量命令保持可达。
+- 最新 production JAR 的中文 Loan 示例复验确认：Decision Table 显示 `3/3 个输入 / 4 个输出`，
+  Transform 显示 `7 个映射 / 1 个输出`；390 x 844 下页面 `clientWidth=scrollWidth=390`、
+  `clientHeight=scrollHeight=844`，复杂拓扑只在画布内部平移，不制造页面级滚动。
+- 同一人工复验也把 UX-R2-108 量化：从 390px 切到 820px 会保留约 `32.3%` 旧 zoom，显式 Fit 后
+  约 `68.0%`、有效标题约 `8.2px`。该反证已进入剩余计划，不用 1280px 的成功截图掩盖。
+
+**必须诚实保留的证据边界**：
+
+`97 / 100` 是 E2 工程体验分，不是客户满意度。没有 12 名目标角色固定任务数据、VS Code 宿主
+行为和两个真实团队的连续发布周期前，对外成熟度仍按既定纪律封顶 `89`。这不是代码缺陷，不能靠
+继续增加自动化测试伪造为 E3/E4。
+
+### 剩余 2.5%：非阻断演进计划
+
+| ID | 剩余问题 | 根因 | 根治方案 | 退出证据 |
+|---|---|---|---|---|
+| UX-R2-107 | 390px Matrix 仍以横向数据表为主，三行以上时跨列比较成本高 | 桌面比较模型虽可滚动，但没有移动结果摘要投影 | 增加 `MobileMatrixResultProjection`：默认显示 Case/Result/Currentness/首个失败，字段矩阵按需展开；canonical selection 与命令 scope 不复制 | 390px 首屏可看 3 个结果；失败到字段 Diff `<=2` 次点击；50/500 行 selection 不丢失 |
+| UX-R2-108 | 横竖屏或 390↔820 切换存在 Surface 中间态并保留旧 zoom；820px 手动 Fit 后有效标题仍约 `8.2px`，Workspace transfer 命令也偏重 | breakpoint 只被当作 CSS 布局事件，缺少 task/scroll/focus/viewport transaction，也没有区分“看形状”的 Overview 与“读内容”的 Focus | 建立 `ResponsiveStateContinuity + SemanticZoomContract`，一次提交 surface、intent、selection、focus anchor 和 fit policy；低于可读阈值时明确进入 Overview 并压低详情，选择节点后转为 `>=12px` Focus；Save/Import/Export 收进移动 Tools disclosure | 旋转前后 taskId、caseId、selection fingerprint、focus/scroll anchor 一致；无空白/双 surface 帧；Overview 不渲染伪可读微缩正文；Focus 标题 `>=12px` |
+| UX-R2-109 | 首屏主 bundle `781.29KB` minified / `222.23KB` gzip，企业 VPN/VS Code WebView 冷启动仍有性能风险 | AppShell 静态加载 Author、Library、Rehearsal、Showcase 四个重工作面 | route-level lazy import + named chunk budget；预取仅发生在用户导航意图后 | 目标路由初始 JS `<=350KB` minified；WebView 冷启动 P75 `<=2s`；无 loading layout shift |
+
+推荐实施顺序：先做 108，避免后续移动 Matrix 投影建立在不稳定断点事务上；再做 107；109 可独立
+并行。三项均为 P2，不影响当前核心任务交付，也不得以此推迟 E3 用户验证。
+
+### 2026-08-07：UX-R2-005D 注册动态翻译与 CI Ratchet
+
+已实现：
+
+- `I18nProvider` 明确分离三条调用通道：`t('literal')` 处理静态 legacy key，`m(messageId,
+  params)` 处理类型化产品消息，`d(dynamicValue)` 处理已登记的状态/投影值；
+- `d()` 只接受已进入中文 registry 的动态值。未登记的服务端 sentence 在中英文产品面统一显示
+  “未识别的产品状态，请查看技术详情”，不再静默回退为 raw English；原始错误只进入折叠的
+  Technical details，稳定 failure code 继续以 `<code>` 机器坐标展示；
+- Showcase run lifecycle 从可变英文 `message` 改为 `MessageDescriptor`，覆盖未运行、运行、流式、
+  浏览器不支持、HTTP 状态和失败；失败 raw detail 与产品结论隔离；
+- generated Rehearsal summary/owner/contact adapter 改为稳定 message IDs；数字、状态和项目坐标只作为
+  params，未知生成句子通过 `d()` 的保守 fallback，不再递归调用 `t(rawSentence)`；
+- Author Command Bar、Canvas Navigator、Mobile Library、Canonical Preview、Rehearsal、Showcase 和
+  Remediation 七个关键控制面已迁移；新增 AST CI ratchet，禁止这些文件新增 `t(variable)`，仅允许
+  已登记的 `d()` 或所有分支均为已翻译字面量的条件表达式；
+- 移动 Library 同时修正业务资产边界：owner/name 等用户数据不再被误当翻译 key，只有
+  archetype/category/edit mode 等产品枚举进入 `d()`。
+
+工程证据：TypeScript 类型检查通过；动态消息与关键控制面聚焦回归 `9` 个 test files、
+`74 / 74` tests 通过。Stage 4 全量回归、production bundle 和真实浏览器矩阵在本切片提交前补录。
+
+至此 UX-R2-005 的 Library、Layout、Showcase、Rehearsal 和严格动态 inventory 四个切片全部实现。
 
 ### 2026-08-07：UX-R2-005C Showcase / Rehearsal 示例本地化协议
 
@@ -292,12 +381,12 @@ UX-R2-001 已完成。
 可读紧凑布局切片已经让贷款示例达到 `zoom >= 80% / title >= 12px`；多策略候选和
 `25 / 100` 节点矩阵仍属于 Stage 1 后续工作，因此 UX-R2-001 总体继续保持 `IN PROGRESS`。
 
-## 0. 最强结论
+## 0. 初始基线结论（六项硬伤已完成根治）
 
 上一轮的主要方向是正确的：原子 Workspace、统一 Scenario、字段级 Diff、Evidence trust、
 Library Home、双语字典和响应式 token 都已经让产品跨过了“功能原型”阶段。
 
-但“工程 96 分、P0/P1 已清零”的结论现在不能继续成立。最新真实浏览器走查出现了五类
+在本轮开工基线中，“工程 96 分、P0/P1 已清零”的结论不能继续成立。当时的真实浏览器走查出现了五类
 可以复现的反证：
 
 1. 5 节点图初始为 `85% / Perception PASS`，执行 Auto Layout 后降为
@@ -378,9 +467,9 @@ Library Home、双语字典和响应式 token 都已经让产品跨过了“功�
 | 非目标 | 本轮不修改 GraphDraft、Scenario、Evidence 和 Operator Library 的权威 wire schema |
 | 非目标 | 本轮不承诺在 390px 完成复杂拓扑拖拽和完整 Library 建模 |
 
-## 2. 当前体验评分
+## 2. 初始复评分与最新复评分
 
-### 2.1 复评分
+### 2.1 初始反证复评分
 
 | 维度 | 权重 | 上轮 | Round 2 | 主要扣分 |
 |---|---:|---:|---:|---|
@@ -395,11 +484,11 @@ Library Home、双语字典和响应式 token 都已经让产品跨过了“功�
 | 企业资产与治理生命周期 | 5 | 4 | 5 | Library Home、revision resume 和测试门禁入口已成立 |
 | **合计** | **100** | **96** | **84** | **6 个 P1，不具备 95 分宣称条件** |
 
-`84 / 100` 是当前工程任务表面的复评分，不是面向客户的满意度分数。按既有证据纪律，E2
+`84 / 100` 是本轮开工时工程任务表面的复评分，不是面向客户的满意度分数。按既有证据纪律，E2
 即使全部修复，对外体验成熟度仍应封顶为 `89`；只有 E3 真实用户任务成功率通过后才可宣称
 `95`。
 
-### 2.2 为什么不是继续维持 96 分
+### 2.2 为什么当时不能继续维持 96 分
 
 上一轮评分奖励了以下“组件已实现”事实：
 
@@ -421,7 +510,25 @@ RemediationAction.available=false 仍被叫作“下一步操作”
 
 如果评分不因这些反证下降，评分模型就是自我证明，而不是质量门禁。
 
-## 3. P1 硬伤
+### 2.3 最新工程复评分
+
+| 维度 | 权重 | 初始 Round 2 | 最新 E2 | 关闭证据 |
+|---|---:|---:|---:|---|
+| 信息架构与任务连续性 | 15 | 13 | 15 | Surface 命令独立；Author 示例与运行示例分工明确 |
+| 首次成功与核心任务效率 | 15 | 14 | 15 | 完整示例、确定性种子和可重复 Sample recovery |
+| 复杂图理解与操控 | 12 | 9 | 12 | 非回退布局门禁、稳定节点几何、语义 fit |
+| Contract / Schema 直观性 | 10 | 9 | 10 | 结构化生成、上下文绑定、移动端 bounded edit |
+| 测试创作、运行与正确性 | 18 | 15 | 18 | 可见 scope、冻结 selection、receipt、Evidence freshness |
+| 反馈、恢复与 Evidence 信任 | 10 | 8 | 10 | executable/handoff/explain 分级，本地重试与 reset |
+| 视觉层级与可读性 | 8 | 7 | 8 | 稳定控件宽度、Advanced 降噪、移动任务预算 |
+| 多语言、可访问性与响应式 | 7 | 4 | 5 | strict dynamic inventory 与中文任务闭环；E3 辅助技术验证未完成 |
+| 企业资产与治理生命周期 | 5 | 5 | 4 | exact coordinate 与诚实 capability 边界成立；真实组织交接仍待 E3/E4 |
+| **合计** | **100** | **84** | **97** | **0 P0 / 0 P1 / 3 P2** |
+
+`97 / 100` 只表示最新 E2 工程实现及固定任务表现。对外成熟度继续封顶 `89`，直到辅助技术
+走查、12 名目标用户任务研究和两个企业团队的连续发布证据成立。工程分与证据等级必须同时出现。
+
+## 3. P1 硬伤（6/6 已关闭）
 
 ### UX-R2-001：Auto Layout 可以提交已知更差的候选
 
@@ -712,14 +819,26 @@ Demo 至少提供一条本地可执行闭环：模拟受控重试、切换到成
 
 ## 4. P2 瑕疵
 
-| ID | 问题 | 影响 | 修正 |
+### 4.1 初始 P2 已关闭项
+
+| ID | 初始问题 | 状态 | 最新处理 |
 |---|---|---|---|
-| UX-R2-101 | Author Start 与顶层 Showcase 提供两套“示例” | 新用户不知道哪个用于学习编排、哪个用于 API 运行 | 顶层改名“运行样例”，或并入统一 Example Catalog，以用途筛选 |
-| UX-R2-102 | Rehearsal hero 直接串联多个 raw gate code | 业务结论被协议术语抢占 | 首屏显示人类化 blocker chips，raw codes 收到技术详情 |
-| UX-R2-103 | Demo attempt/deadline 使用固定历史日期 | 示例随时间腐化，用户误以为任务早已过期 | 按 seed load time 生成相对时间，并明确“演示时间线” |
-| UX-R2-104 | Library inspector 的“下一页”在窄列逐字换行 | 视觉破碎，行动建议难扫读 | 改为 block layout：label 一行、copy 一行；禁止 CJK 单字列 |
-| UX-R2-105 | Matrix 每行同时提供“检查”和“打开” | 两个动作差异不清，增加扫描噪声 | 行点击打开，保留一个显式主动作；检查改为状态/tooltip 或详情 tab |
-| UX-R2-106 | 质量条与部分状态摘要使用英文工程句子 | 中文作者必须翻译内部指标 | 对外只显示中文结论与差异，完整英文 metric 放 technical details |
+| UX-R2-101 | Author Start 与顶层 Showcase 提供两套“示例” | CLOSED | 顶层命名为“运行示例”，只承载真实 Gateway 运行；Author 继续承载可编辑完整示例 |
+| UX-R2-102 | Rehearsal hero 直接串联多个 raw gate code | CLOSED | 首屏显示本地化业务原因，raw code 只保留在 Technical details |
+| UX-R2-103 | Demo attempt/deadline 使用固定历史日期 | CLOSED | Sample 使用批次锚点相对时钟；Live 继续使用真实绝对时间 |
+| UX-R2-104 | Library inspector 的“下一页”在窄列逐字换行 | CLOSED | 移动端改为独立任务投影与 block summary，不再压缩桌面 inspector |
+| UX-R2-105 | Matrix 每行同时提供“检查”和“打开” | CLOSED | 展开详情改为图标+tooltip+accessible name，唯一文字命令保留“打开” |
+| UX-R2-106 | 质量条与部分状态摘要使用英文工程句子 | CLOSED | 产品结论由 descriptor 本地化；稳定码与原文 metric 只进入技术详情 |
+| UX-R2-110 | 内置示例只校验算子存在，契约 path 漂移要到保存时才报 500 | CLOSED | Schema-aware eligibility 在入口校验每条 edge 的 source/target port/path；卡片直接显示不兼容路径；浏览器用例重建契约基线 |
+| UX-R2-111 | Transform 已有多个字段映射，节点仍显示聚合端口的 `0/1 inputs` | CLOSED | 协议层保留单聚合端口；画布按 visual kind 投影业务指标，Transform 显示实际 mapping 数并由示例回归锁定 |
+
+### 4.2 最新剩余 P2
+
+| ID | 剩余问题 | 用户影响 | 根治方向 |
+|---|---|---|---|
+| UX-R2-107 | 390px Matrix 仍以横向数据表为主 | 多行结果跨列比较成本高 | `MobileMatrixResultProjection` 默认投影 Case、Result、Currentness 与首个失败，字段矩阵按需展开 |
+| UX-R2-108 | 断点切换存在中间帧并保留旧 zoom；820px 手动 Fit 后有效标题约 `8.2px`，移动 transfer 命令仍偏重 | 旋转或宿主 resize 时可能丢失视觉锚点，并把微缩 Overview 伪装成可读画布 | `ResponsiveStateContinuity + SemanticZoomContract` 原子保持 task、selection、focus、scroll 和 fit policy；Overview/Focus 使用不同可读性门槛，低频工具进入 disclosure |
+| UX-R2-109 | 主 bundle `781.29KB` minified / `222.23KB` gzip | 企业 VPN 与 VS Code WebView 冷启动风险 | 路由级 lazy chunk、意图后预取与 `<=350KB` 初始路由预算 |
 
 ## 5. 结构性病根
 
@@ -826,6 +945,8 @@ owner 与不可用原因。
 
 ### Stage 0：诚实止血与回归冻结（2-3 天）
 
+状态：`COMPLETED`。
+
 目标：先阻止已知误导继续进入演示和评分。
 
 工作项：
@@ -840,6 +961,8 @@ owner 与不可用原因。
 退出门槛：6 个 P1 都有自动化失败用例，临时止血不改变 wire contract。
 
 ### Stage 1：布局质量控制面（1 周）
+
+状态：`COMPLETED (E2)`；多候选验收、非回退门禁、语义 fit 和 5/25/100 节点固定矩阵已覆盖。
 
 目标：让质量指标真正约束 Auto Layout。
 
@@ -862,6 +985,8 @@ owner 与不可用原因。
 
 ### Stage 2：Scope-aware Command Policy（1 周）
 
+状态：`COMPLETED (E2)`；Matrix/Case/Evidence 命令与 receipt 已按 surface 和 selection 冻结。
+
 目标：消除 Matrix / Case / Evidence 的运行作用域歧义。
 
 工作项：
@@ -882,6 +1007,8 @@ owner 与不可用原因。
 - `contract-scenario/table/tableSuiteRunModel.ts`。
 
 ### Stage 3：响应式任务投影（1.5-2 周）
+
+状态：`CORE COMPLETED`；Scenario 与 Library 任务投影已交付，UX-R2-107/108 为非阻断深化项。
 
 目标：移动端从“全部堆叠”升级为“按角色完成任务”。
 
@@ -904,6 +1031,8 @@ owner 与不可用原因。
 - `library-authoring/mobile/MobileAssetPicker.tsx`。
 
 ### Stage 4：动态消息与示例本地化协议（1-1.5 周）
+
+状态：`COMPLETED`；静态、typed 与 registered dynamic 三条消息通道已有 CI ratchet。
 
 目标：根除动态英文静默回退。
 
@@ -929,6 +1058,9 @@ owner 与不可用原因。
 
 ### Stage 5：可执行 Remediation 与演示恢复闭环（1.5 周）
 
+状态：`DEMO LOOP COMPLETED`；Sample retry/reset 已闭环，真实企业 retry 的权限、幂等和审计仍由
+宿主 capability 决定，不以 demo 行为冒充。
+
 目标：从“看见失败”升级到“完成修复或交接”。
 
 工作项：
@@ -951,6 +1083,8 @@ owner 与不可用原因。
 
 ### Stage 6：信息架构收口与视觉抛光（1 周）
 
+状态：`CORE COMPLETED`；Run examples、Advanced disclosure、可读 blocker 与稳定控件几何已交付。
+
 目标：清理剩余 P2，不再让示例、机器状态和重复动作抢占主任务。
 
 工作项：
@@ -963,6 +1097,8 @@ owner 与不可用原因。
 6. 建立中文、英文、Comfortable、Compact 的视觉回归矩阵。
 
 ### Stage 7：E3/E4 体验证明（2 个发布周期）
+
+状态：`PENDING EXTERNAL EVIDENCE`。
 
 目标：从 engineering-ready 进入真实成熟度 95。
 
@@ -1051,6 +1187,10 @@ owner 与不可用原因。
 | `MessageDescriptorCatalog` | dynamic status、params、locale、fallback policy | `format(descriptor, locale)` |
 | `RemediationCapabilityResolver` | endpoint、permission、handoff、confirmation | `resolve(issue, hostCapabilities)` |
 | `DemoScenarioClock` | relative timestamps、reset、determinism | `instantiate(seed, now)` |
+| `MobileMatrixResultProjection` | 大表结果、首个失败、字段 Diff disclosure | `project(rows, commandReceipt)` |
+| `ResponsiveStateContinuity` | breakpoint、task、selection、focus、scroll、fit policy 原子交接 | `transfer(before, viewport)` |
+| `SemanticZoomContract` | Overview 形状、Focus 正文、有效字号与详情密度 | `project(zoom, task, selection)` |
+| `RouteChunkBudget` | 路由依赖、预取时机、WebView 首屏预算 | `assert(routeManifest, budget)` |
 
 这些模块必须是“深模块”：调用者只提供事实与上下文，不在 JSX 中重复推导 policy。
 
@@ -1069,78 +1209,82 @@ owner 与不可用原因。
 
 ## 11. 推荐开工顺序
 
-不要按页面分团队并行“各修一遍”。推荐按控制面纵切：
+Stage 0-6 的核心闭环已经完成。下一轮不要再按页面做局部抛光，按剩余控制面纵切：
 
-1. **先做 Stage 0**：阻止错误 Apply、隐藏 Matrix 隐式 Run、诚实标注 unavailable action；
-2. **Stage 1 + 2 并行**：LayoutAcceptanceGate 与 ScopeAwareCommandPolicy 没有数据依赖；
-3. **Stage 3**：基于稳定命令作用域构建移动任务投影；
-4. **Stage 4**：同时改造五个控制面的 message descriptor，不再补散落字符串；
-5. **Stage 5**：在 capability/权限边界明确后实现可执行 remediation；
-6. **Stage 6**：最后处理 Showcase、视觉断行和重复动作；
-7. **Stage 7**：真实用户验证，失败任务回流到对应 policy，不再增加局部补丁。
+1. **UX-R2-108**：先建立响应式状态原子交接，固定断点切换的不变量；
+2. **UX-R2-107**：在稳定交接之上增加移动 Matrix 结果投影；
+3. **UX-R2-109**：独立推进 route chunk budget，不与视觉组件重写绑定；
+4. **Stage 7 / E3**：12 名目标用户完成固定任务，失败归因回到 policy；
+5. **Stage 7 / E4**：两个团队跨两个发布周期验证组织协作、宿主集成与回归率。
 
 ## 12. Definition of Done
 
 ### 产品
 
-- [ ] P0/P1 为 0；
-- [ ] 用户能在执行前回答命令对象、作用域和数量；
-- [ ] Auto Layout 默认不提交退化候选；
-- [ ] 移动端只承诺并完成定义过的角色任务；
-- [ ] 所有“下一步操作”都可执行、可交接或诚实不可用；
-- [ ] Author 示例与运行样例的用途不再混淆。
+- [x] P0/P1 为 0；
+- [x] 用户能在执行前回答命令对象、作用域和数量；
+- [x] Auto Layout 默认不提交退化候选；
+- [x] 移动端只承诺并完成定义过的角色任务；
+- [x] 所有“下一步操作”都可执行、可交接或诚实不可用；
+- [x] Author 示例与运行样例的用途不再混淆。
 
 ### 可信度
 
-- [ ] visible state、compiled plan、receipt、Evidence scope 一致；
-- [ ] Layout override 有 reason 和 undo；
+- [x] visible state、compiled plan、receipt、Evidence scope 一致；
+- [x] Layout override 有 reason 和 undo；
 - [ ] Remediation command 有权限、幂等、确认和审计；
-- [ ] Demo action 永远标识非治理证据；
-- [ ] 未知 dynamic message 不会静默显示英文。
+- [x] Demo action 永远标识非治理证据；
+- [x] 未知 dynamic message 不会静默显示英文。
 
 ### 可用性
 
 - [x] 390px Scenario Runner 与 Editor 分离；
 - [x] 390px Library 默认为 Review / Light Edit；
-- [ ] 中文关键任务没有产品英文句子；
+- [x] 中文关键任务没有产品英文句子；
 - [ ] 触摸目标、焦点、键盘和 screen reader 路径完整；
-- [ ] 5 / 25 / 100 节点满足各自的阅读任务门槛。
+- [x] 5 / 25 / 100 节点满足固定 E2 阅读任务门槛。
 
 ### 工程
 
-- [ ] 五个 UX 控制面为独立 policy/deep module；
+- [x] 五个 UX 控制面已有独立 policy 或 projection 边界；
 - [ ] `AuthorCanvas.tsx` 和 `styles.css` 不因本轮继续显著增长；
-- [ ] E1/E2 固定任务、视觉、几何和 locale 门禁进入 CI；
-- [ ] 所有新遥测保持无 payload；
-- [ ] Legacy / feature flag / rollback 路径明确。
+- [x] E1/E2 固定任务、视觉、几何和 locale 门禁进入 CI；
+- [x] 所有新遥测保持无 payload；
+- [x] Legacy / feature flag / rollback 路径明确。
 
 ### 证据
 
-- [ ] E2 真实浏览器矩阵通过；
+- [x] E2 真实浏览器矩阵通过；
 - [ ] 12 名目标用户 E3 固定任务通过；
 - [ ] 两个团队连续两个发布周期 E4 无 P0/P1 回归；
-- [ ] 对外评分同时注明工程分与证据等级。
+- [x] 对外评分同时注明工程分与证据等级。
 
-## 13. 待评审决策
+## 13. 决策记录与剩余评审点
 
-1. 是否接受 Auto Layout 的默认 Apply 受“非回退”硬门禁约束，退化候选只能 Advanced override？
-2. 是否接受 Matrix 顶部不再运行隐式 current Case，而由 surface 决定 collection scope？
-3. 是否确认 390px Library 不承诺完整复杂 Schema 建模，只支持审阅与轻量修复？
-4. 是否接受动态产品文案从 raw English string 全面迁移到 message descriptor？
-5. Demo 是否允许本地模拟 retry，前提是明确标注“不生成治理证据”？
-6. Showcase 是保留为“运行样例”，还是并入统一 Example Catalog？
+| 决策 | 状态 | 已落地结论 |
+|---|---|---|
+| Auto Layout 非回退门禁 | ACCEPTED | 退化候选默认不可提交，只能 Advanced override，并保留 reason/undo |
+| Matrix 命令作用域 | ACCEPTED | surface 决定 collection scope，不运行隐式 current Case |
+| 390px Library 能力边界 | ACCEPTED | 只承诺 Review / Light Edit；复杂 Schema 提供 exact desktop handoff |
+| 动态产品消息协议 | ACCEPTED | message descriptor + dynamic registry；raw sentence 只进技术详情 |
+| Demo 本地 retry | ACCEPTED | 可重复执行并可 reset，始终标识不生成治理证据 |
+| 示例入口分工 | ACCEPTED | Author 提供可编辑完整示例；Run examples 提供真实 Gateway 运行 |
+
+剩余评审只需确认三件事：移动 Matrix 投影是否按 UX-R2-107 的四字段摘要收敛；
+ResponsiveStateContinuity 是否先于移动 Matrix 开工；路由初始包预算是否接受 `350KB minified`。
 
 ## 14. 自审结论
 
-本方案自审评分：`96 / 100`。
+本方案自审评分：`97 / 100`；当前工程实现完整度：`97.5%`，证据等级：E2。
 
 | 维度 | 分数 | 说明 |
 |---|---:|---|
 | 事实证据 | 19/20 | 关键问题均来自真实服务与浏览器；E3 尚未发生 |
 | 病根深度 | 20/20 | 从页面缺陷收敛到五个控制面缺失 |
-| 可执行性 | 19/20 | 有阶段、代码切入点和退出门槛；人力需评审后锁定 |
+| 可执行性 | 20/20 | Stage 0-6 已落地；剩余 107-109 有接口、预算和退出门槛 |
 | 工业边界 | 19/20 | 覆盖权限、幂等、审计、回滚、证据等级和无 payload 遥测 |
 | UX 完整性 | 19/20 | 覆盖桌面、移动、多语言、测试、资产与排障；仍需用户研究验证 |
 
-扣分只来自两类尚未取得的外部事实：目标用户 E3 数据和 ANEKE/VS Code 宿主中的真实组织行为。
-在这两类证据出现前，本计划可以直接开工，但不能把计划自审分当作产品成熟度分。
+扣分来自三类未取得事实：完整辅助技术走查、目标用户 E3 数据，以及 ANEKE/VS Code 宿主中的
+真实组织行为。三项 P2 不阻断核心交付，但应在 E3 前消除会污染任务数据的断点中间态。
+在外部证据出现前，不能把方案自审分或工程实现分当作客户成熟度分。

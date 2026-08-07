@@ -201,6 +201,36 @@ describe('rehearsalEvidencePresentation', () => {
       unavailableReason: expect.stringContaining('Illustrative samples'),
     }));
   });
+
+  it('exposes only a local executable retry for illustrative timeout samples', () => {
+    const view = rehearsalEvidencePresentation({
+      index: 0,
+      id: 'sample-timeout',
+      status: 'FAILED',
+      attemptCount: 2,
+      runId: 'sample-run',
+      failureCode: 'DEPENDENCY_TIMEOUT',
+      planId: 'sample-plan',
+      planRevision: 1,
+      childWorkbook: null,
+      startedAt: null,
+      completedAt: null,
+    }, job(), {
+      category: 'EXECUTION',
+      reason: 'DEPENDENCY_TIMEOUT',
+    }, {
+      sampleMode: true,
+    });
+
+    expect(view.action).toEqual(expect.objectContaining({
+      actionKind: 'RETRY_REHEARSAL',
+      actionLabel: 'Run sample retry',
+      navigation: 'DIAGNOSTIC',
+      available: true,
+      deepLink: '',
+      unavailableReason: '',
+    }));
+  });
 });
 
 function job(): ScenarioRehearsalBatchJob {
