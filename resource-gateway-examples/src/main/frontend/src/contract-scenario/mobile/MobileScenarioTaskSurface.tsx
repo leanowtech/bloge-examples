@@ -1,37 +1,14 @@
-import { useEffect, useState } from 'react';
 import { Plus } from 'lucide-react';
 
 import type { AuthorCommandAvailability } from '../../author/task/taskStateProjection';
 import { useI18n } from '../../i18n/I18nProvider';
 import {
-  MOBILE_TASK_BREAKPOINT,
   type ResponsiveTaskProjection,
   type ScenarioEditorStep,
   type ScenarioTaskIntent,
 } from '../../ux/responsiveTaskProjection';
 import type { ScenarioDraft } from '../domain';
 import type { TableCaseEvidenceProjection } from '../table/scenarioTableModel';
-
-const MOBILE_TASK_MEDIA = `(max-width: ${MOBILE_TASK_BREAKPOINT}px)`;
-
-export function useCompactTaskViewport(): boolean {
-  const [compact, setCompact] = useState(() => (
-    typeof window !== 'undefined'
-      && typeof window.matchMedia === 'function'
-      && window.matchMedia(MOBILE_TASK_MEDIA).matches
-  ));
-
-  useEffect(() => {
-    if (typeof window.matchMedia !== 'function') return undefined;
-    const media = window.matchMedia(MOBILE_TASK_MEDIA);
-    const update = () => setCompact(media.matches);
-    update();
-    media.addEventListener?.('change', update);
-    return () => media.removeEventListener?.('change', update);
-  }, []);
-
-  return compact;
-}
 
 export function MobileScenarioTaskBar({
   projection,

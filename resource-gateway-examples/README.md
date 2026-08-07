@@ -131,6 +131,10 @@ facts, targeted edit links, and one run command; **Build** mounts only the activ
 Expected, or Run step, so inactive complex editors leave the tab order. Formal mobile tasks hide the
 duplicate shell handoff and keep the run command above the fold. **Topology** opens as a temporary
 304px overlay, so the 390px task surface never collapses into a narrow residual column.
+Library Workbench uses the same task policy at 390px: **Review** replaces the tree with an asset
+picker and one readiness summary; **Edit basics** autosaves only bounded metadata. Nested schemas,
+signatures, test definitions, and runtime governance remain unchanged and expose an exact
+draft/revision/asset desktop deep link instead of a compressed pseudo-editor.
 Implementation and browser evidence are recorded in
 [`docs/resource-gateway-ux-stage5-visual-responsive-system.md`](../docs/resource-gateway-ux-stage5-visual-responsive-system.md).
 

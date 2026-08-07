@@ -69,4 +69,13 @@ describe('Stage 5 visual-system contract', () => {
     expect(responsiveCss).toMatch(/workspace\.workspace-v2\.compact-workspace:not[\s\S]*grid-template-columns: minmax\(0, 1fr\)/);
     expect(responsiveCss).toMatch(/compact-workspace:not[\s\S]*> \.inspector[\s\S]*grid-column: 1[\s\S]*width: min\(304px, calc\(100% - 48px\)\)/);
   });
+
+  it('projects mobile Library review and light edit as one bounded task', () => {
+    expect(responsiveCss).toContain(".library-workbench[data-responsive-layout='MOBILE_TASK']");
+    expect(responsiveCss).toContain('.mobile-library-taskbar');
+    expect(responsiveCss).toContain('.mobile-library-asset-picker');
+    expect(responsiveCss).toContain('.mobile-library-review');
+    expect(responsiveCss).toContain('.mobile-library-light-editor');
+    expect(responsiveCss).toMatch(/mobile-library-review-actions[\s\S]*\.primary[\s\S]*grid-column: 1 \/ -1/);
+  });
 });

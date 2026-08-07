@@ -86,7 +86,6 @@ import {
   MobileScenarioRunSummary,
   MobileScenarioStepNav,
   MobileScenarioTaskBar,
-  useCompactTaskViewport,
 } from './mobile/MobileScenarioTaskSurface';
 import {
   MOBILE_TASK_BREAKPOINT,
@@ -95,6 +94,7 @@ import {
   type ScenarioEditorStep,
   type ScenarioTaskIntent,
 } from '../ux/responsiveTaskProjection';
+import { useCompactTaskViewport } from '../ux/useCompactTaskViewport';
 import {
   applyScenarioTableCellEdit,
   buildScenarioTableProjection,

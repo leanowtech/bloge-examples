@@ -3,6 +3,8 @@ export const MOBILE_TASK_BREAKPOINT = 520;
 export type ResponsiveTaskSurface = 'SCENARIO_MATRIX' | 'SCENARIO_CASE' | 'SCENARIO_COVERAGE';
 export type ScenarioTaskIntent = 'RUNNER' | 'EDITOR';
 export type ScenarioEditorStep = 'GIVEN' | 'DEPENDENCIES' | 'THEN' | 'REVIEW';
+export type LibraryTaskIntent = 'REVIEW' | 'LIGHT_EDIT';
+export type LibraryTaskAssetKind = 'library' | 'type' | 'operator' | 'function';
 
 export type ResponsiveTaskRegion =
   | 'TASK_SWITCH'
@@ -33,6 +35,23 @@ export interface ResponsiveTaskProjection {
   activeStep: ScenarioEditorStep;
   regions: ResponsiveTaskRegion[];
   maxPrimaryActions: number;
+  complexEditingSupported: boolean;
+}
+
+export interface LibraryResponsiveTaskContext {
+  viewportWidth: number;
+  pointer: 'FINE' | 'COARSE';
+  intent: LibraryTaskIntent;
+  assetKind: LibraryTaskAssetKind;
+}
+
+export interface LibraryResponsiveTaskProjection {
+  layout: 'DESKTOP' | 'MOBILE_TASK';
+  taskId: 'LIBRARY_REVIEW' | 'LIBRARY_LIGHT_EDIT' | 'LIBRARY_COMPLEX_HANDOFF' | 'DESKTOP_FULL';
+  intent: LibraryTaskIntent;
+  regions: Array<'TASK_SWITCH' | 'ASSET_PICKER' | 'ASSET_SUMMARY' | 'LIGHT_EDITOR' | 'DESKTOP_HANDOFF'>;
+  maxPrimaryActions: number;
+  lightEditingSupported: boolean;
   complexEditingSupported: boolean;
 }
 
@@ -98,6 +117,57 @@ export function projectResponsiveTask(context: ResponsiveTaskContext): Responsiv
     regions: ['TASK_SWITCH', 'CASE_PICKER', 'STEP_NAV', editorRegion(context.activeStep)],
     maxPrimaryActions: 1,
     complexEditingSupported: true,
+  };
+}
+
+/** Projects the Library Workbench into bounded mobile review or basic metadata editing. */
+export function projectLibraryResponsiveTask(
+  context: LibraryResponsiveTaskContext,
+): LibraryResponsiveTaskProjection {
+  if (context.viewportWidth > MOBILE_TASK_BREAKPOINT) {
+    return {
+      layout: 'DESKTOP',
+      taskId: 'DESKTOP_FULL',
+      intent: context.intent,
+      regions: ['ASSET_PICKER', 'ASSET_SUMMARY', 'LIGHT_EDITOR'],
+      maxPrimaryActions: 3,
+      lightEditingSupported: true,
+      complexEditingSupported: true,
+    };
+  }
+
+  if (context.intent === 'REVIEW') {
+    return {
+      layout: 'MOBILE_TASK',
+      taskId: 'LIBRARY_REVIEW',
+      intent: context.intent,
+      regions: ['TASK_SWITCH', 'ASSET_PICKER', 'ASSET_SUMMARY', 'DESKTOP_HANDOFF'],
+      maxPrimaryActions: 1,
+      lightEditingSupported: context.assetKind !== 'type',
+      complexEditingSupported: false,
+    };
+  }
+
+  if (context.assetKind === 'type') {
+    return {
+      layout: 'MOBILE_TASK',
+      taskId: 'LIBRARY_COMPLEX_HANDOFF',
+      intent: context.intent,
+      regions: ['TASK_SWITCH', 'ASSET_PICKER', 'ASSET_SUMMARY', 'DESKTOP_HANDOFF'],
+      maxPrimaryActions: 1,
+      lightEditingSupported: false,
+      complexEditingSupported: false,
+    };
+  }
+
+  return {
+    layout: 'MOBILE_TASK',
+    taskId: 'LIBRARY_LIGHT_EDIT',
+    intent: context.intent,
+    regions: ['TASK_SWITCH', 'ASSET_PICKER', 'LIGHT_EDITOR', 'DESKTOP_HANDOFF'],
+    maxPrimaryActions: 1,
+    lightEditingSupported: true,
+    complexEditingSupported: false,
   };
 }
 

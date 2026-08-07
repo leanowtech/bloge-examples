@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
 import {
+  projectLibraryResponsiveTask,
   projectResponsiveTask,
   projectionIncludes,
   type ResponsiveTaskContext,
@@ -61,5 +62,40 @@ describe('responsiveTaskProjection', () => {
     expect(projection.complexEditingSupported).toBe(true);
     expect(projectionIncludes(projection, 'GIVEN_EDITOR')).toBe(true);
     expect(projectionIncludes(projection, 'REVIEW_EDITOR')).toBe(true);
+  });
+
+  it('projects Library assets into review or bounded metadata editing', () => {
+    expect(projectLibraryResponsiveTask({
+      viewportWidth: 390,
+      pointer: 'COARSE',
+      intent: 'REVIEW',
+      assetKind: 'operator',
+    })).toMatchObject({
+      taskId: 'LIBRARY_REVIEW',
+      maxPrimaryActions: 1,
+      lightEditingSupported: true,
+      complexEditingSupported: false,
+    });
+
+    expect(projectLibraryResponsiveTask({
+      viewportWidth: 390,
+      pointer: 'COARSE',
+      intent: 'LIGHT_EDIT',
+      assetKind: 'operator',
+    })).toMatchObject({ taskId: 'LIBRARY_LIGHT_EDIT', lightEditingSupported: true });
+  });
+
+  it('hands complex named-type editing to an exact desktop task', () => {
+    const projection = projectLibraryResponsiveTask({
+      viewportWidth: 390,
+      pointer: 'COARSE',
+      intent: 'LIGHT_EDIT',
+      assetKind: 'type',
+    });
+
+    expect(projection.taskId).toBe('LIBRARY_COMPLEX_HANDOFF');
+    expect(projection.lightEditingSupported).toBe(false);
+    expect(projection.regions).not.toContain('LIGHT_EDITOR');
+    expect(projection.regions).toContain('DESKTOP_HANDOFF');
   });
 });

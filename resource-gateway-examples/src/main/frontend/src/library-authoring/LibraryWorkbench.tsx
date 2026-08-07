@@ -33,6 +33,7 @@ import SampleInferenceReview, {
   type SampleInferenceLaunch,
 } from './SampleInferenceReview';
 import SchemaTreeEditor from './SchemaTreeEditor';
+import MobileLibraryTaskSurface from './mobile/MobileLibraryTaskSurface';
 import {
   addAsset,
   assetSelectionFromPath,
@@ -43,6 +44,12 @@ import {
   type LibraryAssetKind,
   type LibraryAssetSelection,
 } from './model';
+import {
+  MOBILE_TASK_BREAKPOINT,
+  projectLibraryResponsiveTask,
+  type LibraryTaskIntent,
+} from '../ux/responsiveTaskProjection';
+import { useCompactTaskViewport } from '../ux/useCompactTaskViewport';
 
 type SaveState = 'idle' | 'dirty' | 'saving' | 'saved' | 'conflict' | 'error';
 
@@ -66,6 +73,8 @@ export default function LibraryWorkbench() {
   const [startSource, setStartSource] = useState('');
   const [historicalDraft, setHistoricalDraft] = useState<VisualLibraryAuthoringDraft | null>(null);
   const [latestDraft, setLatestDraft] = useState<VisualLibraryAuthoringDraft | null>(null);
+  const compactTaskViewport = useCompactTaskViewport();
+  const [mobileIntent, setMobileIntent] = useState<LibraryTaskIntent>('REVIEW');
   const revisionRef = useRef(0);
   const currentDraftRef = useRef<VisualLibraryAuthoringDraft | null>(null);
   const lastSavedJsonRef = useRef('');
@@ -130,11 +139,11 @@ export default function LibraryWorkbench() {
           );
           if (!active) return;
           setHistoricalDraft(exact);
-          installDraft(exact);
+          installDraft(exact, selectionFromLocation(exact.document, query));
           return;
         }
         setHistoricalDraft(null);
-        installDraft(current);
+        installDraft(current, selectionFromLocation(current.document, query));
       })
       .catch((error) => {
         if (active) {
@@ -152,6 +161,11 @@ export default function LibraryWorkbench() {
     };
   }, [installDraft]);
 
+  useEffect(() => {
+    if (!document || !draftId) return;
+    replaceLibraryAssetLocation(draftId, revision, selection);
+  }, [document, draftId, revision, selection]);
+
   const persist = useCallback((
     snapshot: VisualLibraryAuthoringDocument,
     epoch: number,
@@ -161,29 +175,29 @@ export default function LibraryWorkbench() {
       return Promise.resolve(currentDraftRef.current);
     }
     const task = saveQueueRef.current.then(async () => {
-        if (serialized === lastSavedJsonRef.current && currentDraftRef.current) {
-          return currentDraftRef.current;
-        }
-        setSaveState('saving');
-        setSaveMessage('Saving...');
-        const stored = await saveLibraryAuthoringDraft(
-          draftId,
-          revisionRef.current,
-          snapshot,
-          'QUICK',
-        );
-        currentDraftRef.current = stored;
-        revisionRef.current = stored.revision;
-        lastSavedJsonRef.current = serialized;
-        setRevision(stored.revision);
-        setLatestDraft(stored);
-        replaceLibraryDraftLocation(stored.draftId, stored.revision);
-        if (epoch === editEpochRef.current) {
-          setSaveState('saved');
-          setSaveMessage(`Saved revision ${stored.revision}`);
-        }
-        return stored;
-      });
+      if (serialized === lastSavedJsonRef.current && currentDraftRef.current) {
+        return currentDraftRef.current;
+      }
+      setSaveState('saving');
+      setSaveMessage('Saving...');
+      const stored = await saveLibraryAuthoringDraft(
+        draftId,
+        revisionRef.current,
+        snapshot,
+        'QUICK',
+      );
+      currentDraftRef.current = stored;
+      revisionRef.current = stored.revision;
+      lastSavedJsonRef.current = serialized;
+      setRevision(stored.revision);
+      setLatestDraft(stored);
+      replaceLibraryDraftLocation(stored.draftId, stored.revision);
+      if (epoch === editEpochRef.current) {
+        setSaveState('saved');
+        setSaveMessage(`Saved revision ${stored.revision}`);
+      }
+      return stored;
+    });
     saveQueueRef.current = task.then(
       () => undefined,
       (error) => {
@@ -440,9 +454,27 @@ export default function LibraryWorkbench() {
     installDraft(draft, { kind: 'operator', key: operatorKey });
     setInferenceLaunch(null);
   };
+  const mobileProjection = projectLibraryResponsiveTask({
+    viewportWidth: compactTaskViewport ? MOBILE_TASK_BREAKPOINT : MOBILE_TASK_BREAKPOINT + 1,
+    pointer: 'FINE',
+    intent: mobileIntent,
+    assetKind: selection.kind,
+  });
+  const mobileTask = mobileProjection.layout === 'MOBILE_TASK';
+  const openSelectedTests = () => {
+    if (selection.kind === 'operator' || selection.kind === 'function') {
+      setTestLaunch({ kind: selection.kind, assetRef: selection.key });
+    }
+  };
+  const desktopHref = libraryDesktopTaskHref(draftId, revision, selection);
 
   return (
-    <main className="library-workbench" data-testid="library-workbench">
+    <main
+      className="library-workbench"
+      data-testid="library-workbench"
+      data-responsive-layout={mobileProjection.layout}
+      data-responsive-task={mobileProjection.taskId}
+    >
       <header className="library-command-bar">
         <div>
           <a href="/libraries/" aria-label={t('Open Library home')} title={t('Open Library home')}>←</a>
@@ -478,43 +510,65 @@ export default function LibraryWorkbench() {
       </header>
 
       <div className="library-workbench-grid">
-        <LibraryTree
-          document={document}
-          selection={selection}
-          onSelect={setSelection}
-          onAdd={add}
-        />
-        <section className="library-builder-scroll">
-          {renderBuilder(
-            document,
-            selection,
-            changeDocument,
-            rename,
-            remove,
-            (direction) => {
-              if (selection.kind === 'operator') {
-                setInferenceLaunch({ operatorKey: selection.key, direction });
-              }
-            },
-            () => {
-              if (selection.kind === 'operator' || selection.kind === 'function') {
-                setTestLaunch({ kind: selection.kind, assetRef: selection.key });
-              }
-            },
-            t,
-          )}
-        </section>
-        <CanonicalContractPreview
-          preview={preview}
-          previewBusy={previewBusy}
-          commitBusy={commitBusy}
-          commitReason={commitReason}
-          commitResult={commitResult}
-          onCommitReasonChange={setCommitReason}
-          onValidate={validateNow}
-          onCommit={() => void commit()}
-          onDiagnostic={focusDiagnostic}
-        />
+        {mobileTask ? (
+          <MobileLibraryTaskSurface
+            document={document}
+            selection={selection}
+            intent={mobileIntent}
+            projection={mobileProjection}
+            preview={preview}
+            previewBusy={previewBusy}
+            desktopHref={desktopHref}
+            onSelectionChange={(nextSelection) => {
+              setSelection(nextSelection);
+              setMobileIntent('REVIEW');
+            }}
+            onIntentChange={setMobileIntent}
+            onDocumentChange={changeDocument}
+            onValidate={validateNow}
+            onOpenTests={openSelectedTests}
+          />
+        ) : (
+          <>
+            <LibraryTree
+              document={document}
+              selection={selection}
+              onSelect={setSelection}
+              onAdd={add}
+            />
+            <section className="library-builder-scroll">
+              {renderBuilder(
+                document,
+                selection,
+                changeDocument,
+                rename,
+                remove,
+                (direction) => {
+                  if (selection.kind === 'operator') {
+                    setInferenceLaunch({ operatorKey: selection.key, direction });
+                  }
+                },
+                () => {
+                  if (selection.kind === 'operator' || selection.kind === 'function') {
+                    setTestLaunch({ kind: selection.kind, assetRef: selection.key });
+                  }
+                },
+                t,
+              )}
+            </section>
+            <CanonicalContractPreview
+              preview={preview}
+              previewBusy={previewBusy}
+              commitBusy={commitBusy}
+              commitReason={commitReason}
+              commitResult={commitResult}
+              onCommitReasonChange={setCommitReason}
+              onValidate={validateNow}
+              onCommit={() => void commit()}
+              onDiagnostic={focusDiagnostic}
+            />
+          </>
+        )}
       </div>
       {inferenceLaunch && document.operators?.[inferenceLaunch.operatorKey] && (
         <SampleInferenceReview
@@ -712,7 +766,51 @@ function positiveRevision(value: string | null): number {
 }
 
 function replaceLibraryDraftLocation(draftId: string, revision: number): void {
-  const query = new URLSearchParams({ draftId });
+  const query = new URLSearchParams(window.location.search);
+  query.set('draftId', draftId);
   if (revision > 0) query.set('revision', String(revision));
+  else query.delete('revision');
   window.history.replaceState({}, '', `/libraries/?${query.toString()}`);
+}
+
+function replaceLibraryAssetLocation(
+  draftId: string,
+  revision: number,
+  selection: LibraryAssetSelection,
+): void {
+  const query = new URLSearchParams(window.location.search);
+  query.set('draftId', draftId);
+  if (revision > 0) query.set('revision', String(revision));
+  else query.delete('revision');
+  query.set('assetKind', selection.kind);
+  if (selection.key) query.set('assetRef', selection.key);
+  else query.delete('assetRef');
+  window.history.replaceState({}, '', `/libraries/?${query.toString()}`);
+}
+
+function selectionFromLocation(
+  document: VisualLibraryAuthoringDocument,
+  query: URLSearchParams,
+): LibraryAssetSelection {
+  const kind = query.get('assetKind');
+  const key = query.get('assetRef')?.trim() ?? '';
+  if (kind === 'operator' && key && document.operators?.[key]) return { kind, key };
+  if (kind === 'function' && key && document.functions?.[key]) return { kind, key };
+  if (kind === 'type' && key && document.types?.[key]) return { kind, key };
+  return { kind: 'library', key: '' };
+}
+
+function libraryDesktopTaskHref(
+  draftId: string,
+  revision: number,
+  selection: LibraryAssetSelection,
+): string {
+  const query = new URLSearchParams(window.location.search);
+  query.set('draftId', draftId);
+  query.set('revision', String(revision));
+  query.set('assetKind', selection.kind);
+  if (selection.key) query.set('assetRef', selection.key);
+  else query.delete('assetRef');
+  query.set('task', 'complex-edit');
+  return `/libraries/?${query.toString()}`;
 }

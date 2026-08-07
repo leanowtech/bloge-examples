@@ -24,6 +24,41 @@
 
 ## 实施进度
 
+### 2026-08-07：UX-R2-004 移动 Library Review / Light Edit
+
+已实现：
+
+- `ResponsiveTaskProjection` 增加独立的 Library policy，按 viewport、intent 和 asset kind 投影
+  `LIBRARY_REVIEW / LIBRARY_LIGHT_EDIT / LIBRARY_COMPLEX_HANDOFF`；移动端最多 1 个 primary，
+  complex edit 一律标记不支持；
+- `<= 520px` 不再把 Library Tree、完整 Builder 和 Canonical Preview 纵向堆成 3359px 页面；改为
+  原生资产 picker + 单任务面，默认 Review 显示资产规模、readiness、diagnostic、runtime 状态、
+  Validate 和可用的测试表入口；
+- Operator、Function 和 Library 支持 Light Edit，只开放 name/description/category/version/owner 等
+  基础信息，继续复用 canonical `changeDocument -> autosave -> server preview` 管道；Input/Output
+  Schema、嵌套字段、函数签名、测试定义和 runtime governance 不被复制或降级；
+- Named Type 明确禁用 Light Edit，只提供携带 `draftId / revision / assetKind / assetRef / task` 的
+  唯一桌面深链；Operator/Function Review 也保留精确桌面交接；
+- viewport hook 从 Scenario 组件抽到共享 UX module；移动 Library 新文案纳入 deep-surface locale
+  inventory，CSS contract 固定单任务、40px touch floor 和唯一 primary。
+
+真实浏览器 E2 证据（production bundle、`390 x 844`）：
+
+- Customer Support 示例默认 Review 首屏完整展示 2 Operators / 3 Functions / 3 Types 和 readiness；
+  `clientWidth = scrollWidth = 390`，Tree、Schema editor、Canonical Preview 均未挂载；
+- picker 切到 `support:classify-ticket` 后准确显示 2 inputs / 1 output / 1 test，并可打开现有
+  Operator test table；
+- Light Edit 将 display name 修改为 `Classify Priority Ticket` 后自动从 revision 1 保存到 revision
+  2，返回 Review 后立即显示新名称；
+- 精确 URL 重新打开 revision 2 的 `Ticket` 时直接恢复该资产，Edit Basics 禁用，只出现 1 条
+  `/libraries/?...assetKind=type&assetRef=Ticket&task=complex-edit` 主交接；浏览器 error log 为 `0`。
+- 前端全量回归 `77` 个 test files、`590 / 590` tests 通过；最新 `-Pfrontend` production
+  bundle 打包成功。
+
+至此 Stage 3 的 Scenario Runner/Editor 与 Library Review/Light Edit 均完成。真实浏览器同时确认
+readiness title、计数型 summary、save state 仍会出现动态英文，这是 Stage 4 message descriptor 的
+输入证据，不再用散落字典键掩盖。
+
 ### 2026-08-07：UX-R2-003 移动 Case 任务投影切片
 
 已实现：
@@ -60,8 +95,8 @@
 - 前端全量回归 `77` 个 test files、`586 / 586` tests 通过；`-Pfrontend` production bundle
   打包成功。
 
-当前诚实边界：本切片根治的是单 Case 的移动任务预算；Matrix 仍使用可横向滚动的桌面信息表，
-Library 的 Review / Light Edit 投影也尚未实现，因此 Stage 3 继续保持 `IN PROGRESS`。
+当前诚实边界：Matrix 仍使用带冻结 Case 列与 continuation shadow 的横向结果表；它承诺的是
+collection run 与失败定位，不承诺在移动端完成大规模批量编辑。
 
 ### 2026-08-07：UX-R2-002 Command Receipt 关联闭环
 
@@ -994,8 +1029,8 @@ owner 与不可用原因。
 
 ### 可用性
 
-- [ ] 390px Scenario Runner 与 Editor 分离；
-- [ ] 390px Library 默认为 Review / Light Edit；
+- [x] 390px Scenario Runner 与 Editor 分离；
+- [x] 390px Library 默认为 Review / Light Edit；
 - [ ] 中文关键任务没有产品英文句子；
 - [ ] 触摸目标、焦点、键盘和 screen reader 路径完整；
 - [ ] 5 / 25 / 100 节点满足各自的阅读任务门槛。

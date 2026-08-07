@@ -20,6 +20,7 @@ const DEEP_SURFACES = [
   '../contract-scenario/DependencyBehaviorEditor.tsx',
   '../contract-scenario/table/ScenarioMatrixSurface.tsx',
   '../contract-scenario/mobile/MobileScenarioTaskSurface.tsx',
+  '../library-authoring/mobile/MobileLibraryTaskSurface.tsx',
   '../remediation/RemediationActionList.tsx',
   '../library-authoring/AssetTestTable.tsx',
   '../library-authoring/LibraryWorkbench.tsx',

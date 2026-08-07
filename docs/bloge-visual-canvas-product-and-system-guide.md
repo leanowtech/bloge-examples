@@ -225,6 +225,13 @@ Contract、Scenarios 或 Evidence 后，这两组重复摘要自动隐藏，让�
 Scenario Matrix 保持 Case 列冻结，并用左右阴影提示还有横向内容。完整设计边界与验收证据见
 [Stage 5 视觉系统与响应式任务布局](resource-gateway-ux-stage5-visual-responsive-system.md)。
 
+在 390px 打开 **Operator Libraries** 后，完整草稿默认进入 **Review**：使用 **Current asset**
+picker 在 Library、Named Type、Operator 和 Built-in Function 间切换，中央只显示该资产的规模、
+契约 readiness、诊断和 runtime 状态。Operator/Function 可直接 **Open test table**；点击 **Edit
+basics** 只编辑名称、描述、类别、版本或负责人，并继续自动保存与服务端校验。输入输出 Schema、
+嵌套字段、签名重载和 runtime governance 不会在窄屏降级呈现；Named Type 会禁用轻编辑并提供
+精确到 draft revision 和 asset ref 的 **Open desktop editor** 链接。
+
 Author Workspace v2 会在浏览器中派发 `bloge:author-task` `CustomEvent`。宿主应用或
 VS Code webview 可以选择监听它来计算任务漏斗，Resource Gateway 前端本身不会把事件
 主动发送到网络：

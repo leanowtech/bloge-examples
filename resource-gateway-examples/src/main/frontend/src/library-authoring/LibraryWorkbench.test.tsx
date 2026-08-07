@@ -123,6 +123,7 @@ describe('LibraryWorkbench', () => {
     host.remove();
     vi.useRealTimers();
     vi.restoreAllMocks();
+    vi.unstubAllGlobals();
   });
 
   it('makes the empty-library start choice the only active central task', async () => {
@@ -298,6 +299,84 @@ describe('LibraryWorkbench', () => {
     );
     expect(query('[data-testid="library-commit-receipt"]').textContent)
       .toContain('Imported customer-support-authoring revision 8');
+  });
+
+  it('projects mobile Library work into review and basic metadata editing', async () => {
+    vi.stubGlobal('matchMedia', vi.fn().mockImplementation(() => ({
+      matches: true,
+      media: '(max-width: 520px)',
+      onchange: null,
+      addEventListener: vi.fn(),
+      removeEventListener: vi.fn(),
+      addListener: vi.fn(),
+      removeListener: vi.fn(),
+      dispatchEvent: vi.fn(),
+    })));
+    apiMocks.save.mockImplementation(async (
+      draftId: string,
+      _revision: number,
+      document: VisualLibraryAuthoringDocument,
+    ) => storedDraft(draftId, 1, document));
+    apiMocks.preview.mockImplementation(async (draftId: string) => readyPreview(draftId, 1));
+
+    await renderWorkbench();
+    await click(query('[data-testid="library-start-example:customer-support"]'));
+
+    expect(query('[data-testid="library-workbench"]').getAttribute('data-responsive-task'))
+      .toBe('LIBRARY_REVIEW');
+    expect(query('[data-testid="mobile-library-review"]')).toBeTruthy();
+    expect(document.querySelector('.library-tree')).toBeNull();
+    expect(document.querySelector('.library-contract-preview')).toBeNull();
+    expect(document.querySelector('.schema-tree-editor')).toBeNull();
+    expect(query('[data-testid="mobile-library-task"]')
+      .getAttribute('data-max-primary-actions')).toBe('1');
+
+    const picker = query<HTMLSelectElement>('[aria-label="Current asset"]');
+    await act(async () => {
+      picker.value = 'operator|support%3Aclassify-ticket';
+      picker.dispatchEvent(new Event('change', { bubbles: true }));
+    });
+    expect(query('[data-testid="mobile-library-review"]').textContent).toContain('Classify Ticket');
+    expect(query('[data-testid="mobile-library-review"]').textContent).toContain('Inputs2');
+    expect(query('[data-testid="mobile-library-review"]').textContent).toContain('Outputs1');
+    expect(window.location.search).toContain('assetKind=operator');
+    expect(window.location.search).toContain('assetRef=support%3Aclassify-ticket');
+
+    await click(query<HTMLButtonElement>('.mobile-library-review-actions .primary'));
+    expect(query('[data-testid="library-workbench"]').getAttribute('data-responsive-task'))
+      .toBe('LIBRARY_LIGHT_EDIT');
+    expect(query('[data-testid="mobile-library-light-editor"]')).toBeTruthy();
+    expect(document.querySelector('[data-testid="operator-builder"]')).toBeNull();
+    expect(document.querySelector('.schema-tree-editor')).toBeNull();
+
+    const nameInput = inputForLabel('Display name');
+    await act(async () => {
+      Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')?.set
+        ?.call(nameInput, 'Classify Priority Ticket');
+      nameInput.dispatchEvent(new Event('input', { bubbles: true }));
+      nameInput.dispatchEvent(new Event('change', { bubbles: true }));
+    });
+    await flushAutosave();
+    expect(window.location.search).toContain('revision=1');
+    expect(window.location.search).toContain('assetRef=support%3Aclassify-ticket');
+    expect(apiMocks.save).toHaveBeenCalledWith(
+      expect.stringMatching(/^customer-support-authoring-/),
+      0,
+      expect.objectContaining({
+        operators: expect.objectContaining({
+          'support:classify-ticket': expect.objectContaining({ name: 'Classify Priority Ticket' }),
+        }),
+      }),
+      'QUICK',
+    );
+
+    await click(buttonByText('Review changes'));
+    expect(query('[data-testid="mobile-library-review"]').textContent)
+      .toContain('Classify Priority Ticket');
+    const desktopLink = query<HTMLAnchorElement>('.mobile-library-desktop-link');
+    expect(desktopLink.href).toContain('assetKind=operator');
+    expect(desktopLink.href).toContain('assetRef=support%3Aclassify-ticket');
+    expect(desktopLink.href).toContain('task=complex-edit');
   });
 
   it('blocks editing on an ETag conflict and reloads the authoritative revision', async () => {
@@ -493,6 +572,14 @@ function storedDraft(
     updatedAt: '2026-07-30T00:00:01Z',
     savedBy: 'visual-library-workbench',
   };
+}
+
+function inputForLabel(label: string): HTMLInputElement {
+  const candidate = Array.from(document.querySelectorAll<HTMLLabelElement>('label'))
+    .find((element) => element.querySelector('span')?.textContent === label)
+    ?.querySelector('input');
+  expect(candidate, `Expected input for label ${label}`).not.toBeNull();
+  return candidate as HTMLInputElement;
 }
 
 function readyPreview(draftId: string, revision: number): VisualLibraryAuthoringCompileResult {
