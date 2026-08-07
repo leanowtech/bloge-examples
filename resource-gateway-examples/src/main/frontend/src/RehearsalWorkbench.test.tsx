@@ -104,6 +104,22 @@ describe('RehearsalWorkbench', () => {
     expect(mockJobs).toHaveBeenCalledOnce();
   });
 
+  it('renders sample learning metadata and the relative evidence clock in Chinese', async () => {
+    window.history.replaceState({}, '', '/rehearsals/?lang=zh-CN');
+    mockJobs.mockRejectedValue(new BlogeApiRequestError(404, 'Not Found'));
+
+    await render(true);
+    await waitFor(() => text().includes('溯源策略回归'));
+
+    expect(text()).toContain('分诊每一类失败');
+    expect(text()).toContain('同时包含执行、证据、断言');
+    expect(text()).not.toContain('Grounding policy regression');
+    await click('[data-testid="entry-0"]');
+    await waitFor(() => document.querySelector('[data-testid="rehearsal-attempts"]') !== null);
+    expect(text()).toContain('1小时后');
+    expect(text()).not.toContain('2026年7月27日');
+  });
+
   it('returns from samples to live data when an explicit retry succeeds', async () => {
     mockJobs
       .mockRejectedValueOnce(new BlogeApiRequestError(404, 'Not Found'))

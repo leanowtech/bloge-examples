@@ -15,11 +15,12 @@ import type {
   LiveRehearsalJobStatus,
   TerminalRehearsalJobStatus,
 } from './rehearsalStatus';
+import type { MessageDescriptor, MessageId } from './i18n/messageCatalog';
 
 interface RehearsalDemoScenarioBase {
-  title: string;
-  situation: string;
-  focus: string;
+  title: MessageDescriptor;
+  situation: MessageDescriptor;
+  focus: MessageDescriptor;
   childWorkbooks: Record<string, ScenarioRehearsalWorkbookSeed>;
 }
 
@@ -326,27 +327,27 @@ export const DEFAULT_REHEARSAL_DEMO_ID = blockedJob.jobId;
 export const REHEARSAL_DEMO_SCENARIOS: RehearsalDemoScenario[] = [
   {
     kind: 'TERMINAL',
-    title: 'Grounding policy regression',
-    situation: 'Mixed execution, evidence, assertion, governance, warning, and passing results.',
-    focus: 'Triage every failure category',
+    title: demoMessage('rehearsal.demo.governanceBlocked.title'),
+    situation: demoMessage('rehearsal.demo.governanceBlocked.situation'),
+    focus: demoMessage('rehearsal.demo.governanceBlocked.focus'),
     job: blockedJob,
     workbook: blockedWorkbook,
     childWorkbooks: childIndex(blockedChildren),
   },
   {
     kind: 'TERMINAL',
-    title: 'Release candidate ready',
-    situation: 'All blocker assertions pass; one non-blocking freshness warning remains visible.',
-    focus: 'Review gate-ready evidence',
+    title: demoMessage('rehearsal.demo.releaseReady.title'),
+    situation: demoMessage('rehearsal.demo.releaseReady.situation'),
+    focus: demoMessage('rehearsal.demo.releaseReady.focus'),
     job: readyJob,
     workbook: readyWorkbook,
     childWorkbooks: childIndex(readyChildren),
   },
   {
     kind: 'LIVE',
-    title: 'Live dependency degradation',
-    situation: 'A regional batch is still running while CRM throttling affects one branch.',
-    focus: 'Separate live state from evidence',
+    title: demoMessage('rehearsal.demo.liveDegradation.title'),
+    situation: demoMessage('rehearsal.demo.liveDegradation.situation'),
+    focus: demoMessage('rehearsal.demo.liveDegradation.focus'),
     job: liveJob,
     itemPage: {
       schemaVersion: 'resourceGateway.scenarioRehearsalBatchItemPage.v1',
@@ -359,9 +360,9 @@ export const REHEARSAL_DEMO_SCENARIOS: RehearsalDemoScenario[] = [
   },
   {
     kind: 'TERMINAL',
-    title: 'Evidence finalization quarantine',
-    situation: 'Business execution partly succeeds, but signing and retention closure are incomplete.',
-    focus: 'Diagnose evidence-plane failures',
+    title: demoMessage('rehearsal.demo.evidenceQuarantine.title'),
+    situation: demoMessage('rehearsal.demo.evidenceQuarantine.situation'),
+    focus: demoMessage('rehearsal.demo.evidenceQuarantine.focus'),
     job: quarantineJob,
     workbook: quarantineWorkbook,
     childWorkbooks: childIndex([quarantineChild]),
@@ -372,6 +373,10 @@ export function findRehearsalDemoScenario(
   id: string,
 ): RehearsalDemoScenario | undefined {
   return REHEARSAL_DEMO_SCENARIOS.find((scenario) => scenario.job.jobId === id);
+}
+
+function demoMessage(messageId: MessageId): MessageDescriptor {
+  return { messageId };
 }
 
 function job<Status extends RehearsalJobStatus>(

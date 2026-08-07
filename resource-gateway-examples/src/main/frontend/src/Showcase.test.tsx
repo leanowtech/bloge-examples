@@ -3,6 +3,7 @@ import { act } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
+import I18nProvider from './i18n/I18nProvider';
 import Showcase from './Showcase';
 import type { GatewayExampleDiagram, GatewayExampleScenario } from './types';
 
@@ -54,6 +55,8 @@ describe('Showcase', () => {
       root = null;
     }
     host.remove();
+    window.history.replaceState({}, '', '/showcase/');
+    window.localStorage?.clear();
     vi.unstubAllGlobals();
     vi.restoreAllMocks();
   });
@@ -84,6 +87,19 @@ describe('Showcase', () => {
       .toContain('fetchProfile');
     expect(query('[data-testid="showcase-node-inspector"]').textContent)
       .toContain('user-service.getProfile');
+  });
+
+  it('renders built-in scenario metadata in Chinese while preserving graph coordinates', async () => {
+    window.history.replaceState({}, '', '/showcase/?lang=zh-CN');
+    await renderShowcase(true);
+
+    await waitFor(() => expect(query('[data-testid="showcase-detail"]').textContent)
+      .toContain('用户仪表盘'));
+    expect(query('[data-testid="showcase-detail"]').textContent).toContain('并行扇出聚合');
+    expect(query('[data-testid="showcase-detail"]').textContent).toContain('并发获取五项');
+    expect(query('[data-testid="showcase-detail"]').textContent).toContain('并行扇出');
+    expect(host.textContent).toContain('userDashboard');
+    expect(query('[data-testid="showcase-detail"]').textContent).not.toContain('User Dashboard');
   });
 
   it('switches to decision-table metadata and interactive diagram nodes', async () => {
@@ -231,10 +247,10 @@ describe('Showcase', () => {
     expect(query('[data-testid="showcase-run-result"]').textContent).toContain('Stream stopped.');
   });
 
-  async function renderShowcase() {
+  async function renderShowcase(localized = false) {
     await act(async () => {
       root = createRoot(host);
-      root.render(<Showcase />);
+      root.render(localized ? <I18nProvider><Showcase /></I18nProvider> : <Showcase />);
     });
   }
 });

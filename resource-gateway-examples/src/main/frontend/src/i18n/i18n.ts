@@ -880,6 +880,7 @@ const ZH_CN_MESSAGES: Record<string, string> = {
   'Optional': '可选',
   'Open JSON value': '开放 JSON 值',
   'Gateway scenarios': '资源网关示例场景',
+  '{title} graph diagram': '{title} 编排图',
   'Loading catalog...': '正在加载示例目录...',
   'Diagram JSON': '编排图 JSON',
   'Legacy runner': '旧版运行器',

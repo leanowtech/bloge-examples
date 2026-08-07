@@ -143,6 +143,9 @@ Auto Layout uses the same descriptor boundary: geometry and perception engines r
 stable reason codes, while the presenter owns localized summaries, notices, numeric formatting, and
 collision coordinates. Candidate review always describes the candidate's own perceptual report;
 changing the locale does not recompute or mutate pending node positions.
+The seven built-in Showcase graphs and four Rehearsal samples also use typed bilingual metadata.
+Unknown server-owned scenarios remain verbatim. Sample-only evidence times are relative to the batch
+anchor, so a demo remains temporally coherent; live server evidence keeps localized absolute time.
 Implementation and browser evidence are recorded in
 [`docs/resource-gateway-ux-stage5-visual-responsive-system.md`](../docs/resource-gateway-ux-stage5-visual-responsive-system.md).
 

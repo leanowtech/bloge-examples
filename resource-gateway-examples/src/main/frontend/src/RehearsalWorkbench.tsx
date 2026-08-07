@@ -28,6 +28,7 @@ import {
   findRehearsalDemoScenario,
   REHEARSAL_DEMO_SCENARIOS,
 } from './rehearsalDemoData';
+import { formatRehearsalDemoTime } from './rehearsalDemoClock';
 import { isTerminalRehearsalStatus } from './rehearsalStatus';
 import type {
   ScenarioRehearsalBatchItem,
@@ -203,9 +204,12 @@ function formatEntryDate(
   terminal: boolean,
   liveFallback: string,
   locale: string,
+  demoAnchor?: string,
 ): string {
   return value
-    ? formatDate(value, locale)
+    ? demoAnchor
+      ? formatRehearsalDemoTime(value, demoAnchor, locale)
+      : formatDate(value, locale)
     : terminal ? 'Not included in workbook' : liveFallback;
 }
 
@@ -274,7 +278,7 @@ function updateDeepLink(
  * root-sealed workbooks expose gate readiness and support lazy case/assertion inspection.
  */
 export default function RehearsalWorkbench() {
-  const { locale, t } = useI18n();
+  const { locale, t, m } = useI18n();
   const initialSelection = useMemo(querySelection, []);
   const initialSample = findRehearsalDemoScenario(initialSelection.sampleId);
   const [mode, setMode] = useState<WorkbenchMode>(initialSample ? 'SAMPLES' : 'LIVE');
@@ -810,10 +814,12 @@ export default function RehearsalWorkbench() {
                 data-testid={`batch-${job.jobId}`}
               >
                 <span className="batch-queue-row-top">
-                  <strong>{demo?.title ?? job.jobId}</strong>
+                  <strong>{demo ? m(demo.title.messageId, demo.title.params) : job.jobId}</strong>
                   <span className={`status-label ${statusTone(job.status)}`}>{t(job.status)}</span>
                 </span>
-                {demo && <span className="sample-row-focus">{demo.focus}</span>}
+                {demo && (
+                  <span className="sample-row-focus">{m(demo.focus.messageId, demo.focus.params)}</span>
+                )}
                 <span>{t('{complete} / {total} complete', {
                   complete: job.summary.completedItems,
                   total: job.summary.totalItems,
@@ -863,12 +869,18 @@ export default function RehearsalWorkbench() {
                 <div>
                   <p className="workbench-kicker">
                     {sampleMode
-                      ? selectedDemoScenario?.focus
+                      ? selectedDemoScenario
+                        ? m(selectedDemoScenario.focus.messageId, selectedDemoScenario.focus.params)
+                        : ''
                       : t(terminal ? 'Root-sealed terminal evidence' : 'Integrity-protected live state')}
                   </p>
-                  <h2>{selectedDemoScenario?.title ?? selectedJob.jobId}</h2>
+                  <h2>{selectedDemoScenario
+                    ? m(selectedDemoScenario.title.messageId, selectedDemoScenario.title.params)
+                    : selectedJob.jobId}</h2>
                   {selectedDemoScenario && (
-                    <p className="sample-situation">{selectedDemoScenario.situation}</p>
+                    <p className="sample-situation">
+                      {m(selectedDemoScenario.situation.messageId, selectedDemoScenario.situation.params)}
+                    </p>
                   )}
                 </div>
                 <div className="evidence-mode" data-testid="evidence-mode">
@@ -1099,7 +1111,9 @@ export default function RehearsalWorkbench() {
                   </div>
                   <dl className="rehearsal-attempt-budget">
                     <div><dt>{t('Remaining')}</dt><dd>{selectedEvidence.attemptsRemaining}</dd></div>
-                    <div><dt>{t('Deadline')}</dt><dd>{formatDate(selectedEvidence.deadlineAt, locale)}</dd></div>
+                    <div><dt>{t('Deadline')}</dt><dd>{sampleMode && selectedJob
+                      ? formatRehearsalDemoTime(selectedEvidence.deadlineAt, selectedJob.createdAt, locale)
+                      : formatDate(selectedEvidence.deadlineAt, locale)}</dd></div>
                     <div><dt>{t('Batch policy')}</dt><dd>{t(selectedEvidence.batchFallback)}</dd></div>
                     <div><dt>{t('Item fallback')}</dt><dd>{t(selectedEvidence.itemFallback)}</dd></div>
                   </dl>
@@ -1117,7 +1131,11 @@ export default function RehearsalWorkbench() {
                             </strong>
                             <p>{t(attempt.observation)}</p>
                             <small>
-                              {attempt.observedAt ? formatDate(attempt.observedAt, locale) : t('Timestamp not retained')}
+                              {attempt.observedAt
+                                ? sampleMode && selectedJob
+                                  ? formatRehearsalDemoTime(attempt.observedAt, selectedJob.createdAt, locale)
+                                  : formatDate(attempt.observedAt, locale)
+                                : t('Timestamp not retained')}
                               {!attempt.exact ? t(' · projection limit, not inferred') : ''}
                             </small>
                           </div>
@@ -1207,11 +1225,23 @@ export default function RehearsalWorkbench() {
                   <div><dt>{t('Outcome')}</dt><dd>{selectedEntry.status}</dd></div>
                   <div>
                     <dt>{t('Started')}</dt>
-                    <dd>{t(formatEntryDate(selectedEntry.startedAt, terminal, 'Not started', locale))}</dd>
+                    <dd>{t(formatEntryDate(
+                      selectedEntry.startedAt,
+                      terminal,
+                      'Not started',
+                      locale,
+                      sampleMode ? selectedJob?.createdAt : undefined,
+                    ))}</dd>
                   </div>
                   <div>
                     <dt>{t('Completed')}</dt>
-                    <dd>{t(formatEntryDate(selectedEntry.completedAt, terminal, 'Not complete', locale))}</dd>
+                    <dd>{t(formatEntryDate(
+                      selectedEntry.completedAt,
+                      terminal,
+                      'Not complete',
+                      locale,
+                      sampleMode ? selectedJob?.createdAt : undefined,
+                    ))}</dd>
                   </div>
                 </dl>
               </section>

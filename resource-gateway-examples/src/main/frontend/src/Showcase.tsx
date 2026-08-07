@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 
 import { buildGatewayRunRequest, fetchGatewayDiagram, fetchGatewayScenarios, runGatewayScenario } from './api';
 import { useI18n } from './i18n/I18nProvider';
+import { presentShowcaseScenario } from './showcasePresentation';
 import type {
   GatewayDiagramEdge,
   GatewayDiagramGroup,
@@ -261,7 +262,7 @@ function runRequestSummary(request: GatewayExampleRunRequest): ShowcaseRunReques
 
 /** Read-only scenario browser for the resource-gateway examples catalog. */
 export default function Showcase() {
-  const { t } = useI18n();
+  const { t, m } = useI18n();
   const [scenarios, setScenarios] = useState<GatewayExampleScenario[]>([]);
   const [selectedGraphName, setSelectedGraphName] = useState('');
   const [status, setStatus] = useState<'loading' | 'ready' | 'error'>('loading');
@@ -306,6 +307,12 @@ export default function Showcase() {
     () => scenarios.find((scenario) => scenario.graphName === selectedGraphName) ?? scenarios[0],
     [scenarios, selectedGraphName],
   );
+  const selectedPresentation = selectedScenario
+    ? presentShowcaseScenario(selectedScenario)
+    : null;
+  const selectedTitle = selectedPresentation
+    ? m(selectedPresentation.title.messageId, selectedPresentation.title.params)
+    : selectedScenario?.title ?? '';
   const presets = selectedScenario?.samplePresets ?? [];
   const decisionTable = selectedScenario?.decisionTable ?? null;
   const decisionRows = decisionTable?.rows ?? [];
@@ -493,20 +500,27 @@ export default function Showcase() {
           <p className="showcase-status error">{errorMessage}</p>
         ) : null}
         <div className="showcase-list">
-          {scenarios.map((scenario) => (
-            <button
-              key={scenario.graphName}
-              type="button"
-              className="showcase-scenario-button"
-              data-testid={`showcase-scenario:${scenario.graphName}`}
-              aria-current={scenario.graphName === selectedScenario?.graphName ? 'true' : undefined}
-              onClick={() => setSelectedGraphName(scenario.graphName)}
-            >
-              <strong>{scenario.title}</strong>
-              <span>{scenario.pattern}</span>
-              <code>{scenario.graphName}</code>
-            </button>
-          ))}
+          {scenarios.map((scenario) => {
+            const presentation = presentShowcaseScenario(scenario);
+            return (
+              <button
+                key={scenario.graphName}
+                type="button"
+                className="showcase-scenario-button"
+                data-testid={`showcase-scenario:${scenario.graphName}`}
+                aria-current={scenario.graphName === selectedScenario?.graphName ? 'true' : undefined}
+                onClick={() => setSelectedGraphName(scenario.graphName)}
+              >
+                <strong>{presentation
+                  ? m(presentation.title.messageId, presentation.title.params)
+                  : scenario.title}</strong>
+                <span>{presentation
+                  ? m(presentation.pattern.messageId, presentation.pattern.params)
+                  : scenario.pattern}</span>
+                <code>{scenario.graphName}</code>
+              </button>
+            );
+          })}
         </div>
       </aside>
 
@@ -514,9 +528,13 @@ export default function Showcase() {
         <section className="showcase-detail" data-testid="showcase-detail">
           <div className="showcase-header">
             <div>
-              <p className="eyebrow">{selectedScenario.pattern}</p>
-              <h2>{selectedScenario.title}</h2>
-              <p>{selectedScenario.description}</p>
+              <p className="eyebrow">{selectedPresentation
+                ? m(selectedPresentation.pattern.messageId, selectedPresentation.pattern.params)
+                : selectedScenario.pattern}</p>
+              <h2>{selectedTitle}</h2>
+              <p>{selectedPresentation
+                ? m(selectedPresentation.description.messageId, selectedPresentation.description.params)
+                : selectedScenario.description}</p>
             </div>
             <div className="showcase-actions">
               <a className="link" href={selectedScenario.diagramPath ?? '#'}>
@@ -529,11 +547,14 @@ export default function Showcase() {
           </div>
 
           <div className="showcase-tags" aria-label={t('Scenario concepts')}>
-            {conceptList(selectedScenario).map((concept) => (
-              <span key={concept} className="showcase-chip">
-                {concept}
-              </span>
-            ))}
+            {(selectedPresentation?.concepts ?? conceptList(selectedScenario)).map((concept) => {
+              const key = typeof concept === 'string' ? concept : concept.messageId;
+              return (
+                <span key={key} className="showcase-chip">
+                  {typeof concept === 'string' ? concept : m(concept.messageId, concept.params)}
+                </span>
+              );
+            })}
           </div>
 
           <section className="showcase-diagram-panel" data-testid="showcase-diagram">
@@ -558,7 +579,7 @@ export default function Showcase() {
                   className="showcase-diagram-svg"
                   viewBox={diagramViewBox(diagram)}
                   role="img"
-                  aria-label={`${selectedScenario.title} graph diagram`}
+                  aria-label={t('{title} graph diagram', { title: selectedTitle })}
                 >
                   {(diagram.groups ?? []).map((group) => {
                     const bounds = groupBounds(group, diagram.nodes);

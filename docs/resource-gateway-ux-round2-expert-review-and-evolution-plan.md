@@ -24,6 +24,26 @@
 
 ## 实施进度
 
+### 2026-08-07：UX-R2-005C Showcase / Rehearsal 示例本地化协议
+
+已实现：
+
+- Showcase 以稳定 `graphName` 为坐标，为 7 个内置 Gateway 场景提供类型化 title、pattern、
+  description 和 concept descriptors；中文可读元数据与 `graphName / operatorRef / field path`
+  等机器坐标分离，未知的客户自定义场景继续忠实显示服务端原文；
+- Rehearsal 四个内置样例的标题、业务情境和学习重点不再保存英文产品句子，改为 12 个类型化
+  message descriptors；侧边列表、批次总览和样例说明共用同一 presentation；
+- 新增相对样例时钟：deadline、attempt observation、entry started/completed 按批次 `createdAt`
+  展示“4 minutes later / 4分钟后”等关系，不再让固定 `2026-07-27` 日期随演示时间推移而腐化；
+- 相对时钟只作用于明确标记的 sample mode；真实服务端 Run/Evidence 仍使用绝对本地化时间，
+  非法协议时间坐标继续按原文显示以便诊断；
+- 新增 7 个内置 Showcase 覆盖、未知场景回退、相对时钟中英文及 Showcase/Rehearsal 中文
+  组件级回归。
+
+工程证据：TypeScript 类型检查通过；本切片聚焦回归 `6` 个 test files、`42 / 42` tests 通过；
+完整前端回归 `80` 个 test files、`601 / 601` tests 通过，i18n/UX 门禁与 Vite production bundle
+构建成功。
+
 ### 2026-08-07：UX-R2-005B Layout Quality 动态消息协议
 
 已实现：

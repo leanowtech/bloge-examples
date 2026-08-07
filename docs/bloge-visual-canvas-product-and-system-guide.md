@@ -244,6 +244,13 @@ Auto Layout 的质量结论也遵循同一协议。布局算法只返回节点�
 中文界面会显示“几何通过”“可读性需检查”等结论，数量和字号会格式化为可读值；`PASS / REVIEW`
 仅作为内部状态，不会混入中文句子。切换语言不触发布局重算，也不改变待接受的候选坐标。
 
+**Showcase** 和 **Rehearsals > Samples** 的内置演示内容也会随界面语言切换。Showcase 的标题、
+架构模式、说明和概念标签来自 `graphName` 对应的双语 presentation；`graphName`、算子引用和字段路径
+仍按原文显示。客户或服务端新增但前端尚不认识的场景不会被错误翻译，而是忠实呈现其元数据。
+Rehearsal 样例的标题、业务情境和学习重点同样使用稳定 descriptor。样例中的 Deadline、Attempt、
+Started、Completed 按批次开始时间显示相对关系，例如“4分钟后”，避免固定演示日期逐渐显得陈旧；
+Live 模式中的真实运行证据仍显示完整的本地化绝对时间。
+
 Author Workspace v2 会在浏览器中派发 `bloge:author-task` `CustomEvent`。宿主应用或
 VS Code webview 可以选择监听它来计算任务漏斗，Resource Gateway 前端本身不会把事件
 主动发送到网络：
