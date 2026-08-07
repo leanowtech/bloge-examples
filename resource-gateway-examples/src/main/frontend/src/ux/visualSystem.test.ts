@@ -52,6 +52,21 @@ describe('Stage 5 visual-system contract', () => {
   it('uses a task-first mobile shell outside graph composition', () => {
     expect(responsiveCss).toContain(".workspace-v2:not([data-author-mode='compose']) > .author-command-bar");
     expect(responsiveCss).toContain(':is(.author-draft-identity, .author-mobile-truth, .author-secondary-command-group)');
+    expect(responsiveCss).toMatch(/not\(\[data-author-mode='compose'\]\)[\s\S]*\.author-primary-command[\s\S]*display: none/);
     expect(responsiveCss).toMatch(/contract-workspace-header-actions[\s\S]*:disabled/);
+  });
+
+  it('gives mobile Scenario work an explicit intent, picker, step scope, and run summary', () => {
+    expect(responsiveCss).toContain('.scenario-mobile-taskbar');
+    expect(responsiveCss).toContain('.scenario-mobile-intent-switch');
+    expect(responsiveCss).toContain('.scenario-mobile-case-picker');
+    expect(responsiveCss).toContain('.scenario-mobile-step-nav');
+    expect(responsiveCss).toContain('.scenario-mobile-run-summary');
+    expect(responsiveCss).toMatch(/scenario-mobile-step-nav button[\s\S]*min-height: 48px/);
+  });
+
+  it('opens formal mobile context as an overlay without shrinking the task surface', () => {
+    expect(responsiveCss).toMatch(/workspace\.workspace-v2\.compact-workspace:not[\s\S]*grid-template-columns: minmax\(0, 1fr\)/);
+    expect(responsiveCss).toMatch(/compact-workspace:not[\s\S]*> \.inspector[\s\S]*grid-column: 1[\s\S]*width: min\(304px, calc\(100% - 48px\)\)/);
   });
 });

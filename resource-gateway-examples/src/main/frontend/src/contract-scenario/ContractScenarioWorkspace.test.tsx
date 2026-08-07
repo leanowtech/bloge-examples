@@ -96,6 +96,45 @@ describe('ContractScenarioWorkspace', () => {
     expect(runCase.dataset.scopeTarget).toBe('approved');
   });
 
+  it('projects a mobile Case into one runner task or one editable step at a time', async () => {
+    vi.stubGlobal('matchMedia', vi.fn().mockImplementation(() => ({
+      matches: true,
+      media: '(max-width: 520px)',
+      onchange: null,
+      addEventListener: vi.fn(),
+      removeEventListener: vi.fn(),
+      addListener: vi.fn(),
+      removeListener: vi.fn(),
+      dispatchEvent: vi.fn(),
+    })));
+    await renderWorkspace({ presentation: 'surface', initialTab: 'scenarios' });
+
+    const workspace = document.querySelector('.scenario-table-workspace');
+    expect(workspace?.getAttribute('data-responsive-task')).toBe('CASE_RUN');
+    expect(document.querySelector('[data-testid="scenario-mobile-case-picker"]')).not.toBeNull();
+    expect(document.querySelector('[data-testid="scenario-mobile-run-summary"]')).not.toBeNull();
+    expect(document.querySelector('.scenario-case-step-rail')).toBeNull();
+    expect(document.querySelectorAll('.scenario-stage')).toHaveLength(0);
+    expect(document.querySelector('[data-testid="scenario-mobile-taskbar"]')
+      ?.getAttribute('data-max-primary-actions')).toBe('1');
+
+    await act(async () => button('Build').click());
+
+    expect(workspace?.getAttribute('data-responsive-task')).toBe('CASE_EDIT');
+    expect(document.querySelector('[data-testid="scenario-mobile-run-summary"]')).toBeNull();
+    expect(document.querySelectorAll('.scenario-stage')).toHaveLength(4);
+    expect(document.querySelector<HTMLElement>('[aria-label="Input"]')?.hidden).toBe(false);
+    expect(document.querySelector<HTMLElement>('[aria-label="Fixtures"]')?.hidden).toBe(true);
+    const fixturesTab = Array.from(document.querySelectorAll<HTMLButtonElement>(
+      '.scenario-mobile-step-nav button',
+    )).find((candidate) => candidate.textContent?.startsWith('2Fixtures'));
+    expect(fixturesTab).not.toBeNull();
+    await act(async () => fixturesTab?.click());
+    expect(document.querySelector<HTMLElement>('[aria-label="Input"]')?.hidden).toBe(true);
+    expect(document.querySelector<HTMLElement>('[aria-label="Fixtures"]')?.hidden).toBe(false);
+    expect(document.querySelector<HTMLElement>('[aria-label="Expected"]')?.hidden).toBe(true);
+  });
+
   it('opens the Coverage projection beside Matrix and Case without changing Scenario truth', async () => {
     await renderWorkspace({ presentation: 'surface', initialTab: 'scenarios' });
 

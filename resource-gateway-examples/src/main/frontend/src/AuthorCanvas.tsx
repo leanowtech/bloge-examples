@@ -4805,6 +4805,7 @@ export default function AuthorCanvas({ workspaceVersion = 'v1' }: AuthorCanvasPr
     && typeof window.matchMedia === 'function'
     && window.matchMedia(COMPACT_AUTHOR_MEDIA).matches
   ));
+  const [formalContextRailOpen, setFormalContextRailOpen] = useState(false);
   const [diagnosticsOpen, setDiagnosticsOpen] = useState(false);
   const [operators, setOperators] = useState<OperatorDefinition[]>([]);
   const [builtInFunctions, setBuiltInFunctions] = useState<BuiltInFunctionDefinition[]>([]);
@@ -4991,6 +4992,10 @@ export default function AuthorCanvas({ workspaceVersion = 'v1' }: AuthorCanvasPr
     media.addEventListener?.('change', onChange);
     return () => media.removeEventListener?.('change', onChange);
   }, [isTaskWorkspace]);
+
+  useEffect(() => {
+    setFormalContextRailOpen(false);
+  }, [authorMode, compactWorkspace]);
 
   useEffect(() => {
     try {
@@ -5751,12 +5756,17 @@ export default function AuthorCanvas({ workspaceVersion = 'v1' }: AuthorCanvasPr
 
   useEffect(() => {
     if (!isTaskWorkspace) return undefined;
-    const nextPaletteCollapsed = palettePreference === 'open'
-      ? false
-      : adaptiveChrome.collapsePalette || paletteCollapsed;
-    const nextInspectorCollapsed = inspectorPreference === 'open'
-      ? false
-      : adaptiveChrome.collapseInspector || inspectorCollapsed;
+    const formalMobileTask = compactWorkspace && authorMode !== 'compose';
+    const nextPaletteCollapsed = formalMobileTask
+      ? true
+      : palettePreference === 'open'
+        ? false
+        : adaptiveChrome.collapsePalette || paletteCollapsed;
+    const nextInspectorCollapsed = formalMobileTask
+      ? !formalContextRailOpen
+      : inspectorPreference === 'open'
+        ? false
+        : adaptiveChrome.collapseInspector || inspectorCollapsed;
     const changed = nextPaletteCollapsed !== paletteCollapsed
       || nextInspectorCollapsed !== inspectorCollapsed;
     if (nextPaletteCollapsed !== paletteCollapsed) {
@@ -5780,6 +5790,7 @@ export default function AuthorCanvas({ workspaceVersion = 'v1' }: AuthorCanvasPr
     authorMode,
     canvasNodes.length,
     fitCanvasToView,
+    formalContextRailOpen,
     inspectorCollapsed,
     inspectorPreference,
     isTaskWorkspace,
@@ -10184,7 +10195,11 @@ export default function AuthorCanvas({ workspaceVersion = 'v1' }: AuthorCanvasPr
             targetKind={operatorContractWorkspace ? 'operator' : 'graph'}
             contextRailExpanded={!inspectorCollapsed}
             onOpenContextRail={() => {
-              setInspectorPreference('open');
+              if (compactWorkspace && authorMode !== 'compose') {
+                setFormalContextRailOpen(true);
+              } else {
+                setInspectorPreference('open');
+              }
               setInspectorCollapsed(false);
             }}
           >
@@ -10775,7 +10790,14 @@ export default function AuthorCanvas({ workspaceVersion = 'v1' }: AuthorCanvasPr
               aria-label={t(inspectorCollapsed ? 'Expand context inspector' : 'Collapse context inspector')}
               title={t(inspectorCollapsed ? 'Expand context inspector' : 'Collapse context inspector')}
               aria-expanded={!inspectorCollapsed}
-              onClick={toggleInspectorPanel}
+              onClick={compactWorkspace && authorMode !== 'compose'
+                ? () => {
+                    setFormalContextRailOpen((open) => {
+                      setInspectorCollapsed(open);
+                      return !open;
+                    });
+                  }
+                : toggleInspectorPanel}
             >
               {inspectorCollapsed
                 ? <ChevronLeft aria-hidden="true" size={18} />
@@ -10935,6 +10957,7 @@ export default function AuthorCanvas({ workspaceVersion = 'v1' }: AuthorCanvasPr
               setContractWorkspaceOpen(false);
               setOperatorContractWorkspace(null);
               setInspectorCollapsed(false);
+              setFormalContextRailOpen(false);
             }}
           />
         )}

@@ -82,6 +82,20 @@ import ScenarioMatrixSurface from './table/ScenarioMatrixSurface';
 import ScenarioImportWorkbench from './import/ScenarioImportWorkbench';
 import type { ScenarioMaterializationResult } from './import/scenarioImportModel';
 import {
+  MobileScenarioCasePicker,
+  MobileScenarioRunSummary,
+  MobileScenarioStepNav,
+  MobileScenarioTaskBar,
+  useCompactTaskViewport,
+} from './mobile/MobileScenarioTaskSurface';
+import {
+  MOBILE_TASK_BREAKPOINT,
+  projectResponsiveTask,
+  projectionIncludes,
+  type ScenarioEditorStep,
+  type ScenarioTaskIntent,
+} from '../ux/responsiveTaskProjection';
+import {
   applyScenarioTableCellEdit,
   buildScenarioTableProjection,
   resolveExactScenarioRunSelection,
@@ -1603,6 +1617,9 @@ function ScenarioTab({
   onAcceptCoverageCandidate,
 }: ScenarioTabProps) {
   const { m, t } = useI18n();
+  const compactTaskViewport = useCompactTaskViewport();
+  const [mobileIntent, setMobileIntent] = useState<ScenarioTaskIntent>('RUNNER');
+  const [mobileStep, setMobileStep] = useState<ScenarioEditorStep>('GIVEN');
   const selectedEvidence = selectedScenario ? tableEvidence[selectedScenario.scenarioId] : undefined;
   const caseAnchorPrefix = `graph-case-${selectedScenarioId.replace(/[^a-zA-Z0-9_-]/g, '-')}`;
   const reviewState = running
@@ -1612,8 +1629,31 @@ function ScenarioTab({
       : selectedEvidence?.execution === 'SUCCESS' && selectedEvidence.assertions === 'PASSED'
         ? 'PASSED'
         : selectedEvidence ? 'FAILED' : 'NOT_RUN';
+  const responsiveProjection = projectResponsiveTask({
+    viewportWidth: compactTaskViewport ? MOBILE_TASK_BREAKPOINT : MOBILE_TASK_BREAKPOINT + 1,
+    pointer: 'FINE',
+    surface: view === 'matrix'
+      ? 'SCENARIO_MATRIX'
+      : view === 'coverage' ? 'SCENARIO_COVERAGE' : 'SCENARIO_CASE',
+    intent: mobileIntent,
+    activeStep: mobileStep,
+  });
+  const mobileTask = responsiveProjection.layout === 'MOBILE_TASK';
+  const changeMobileIntent = (intent: ScenarioTaskIntent) => {
+    setMobileIntent(intent);
+    if (intent === 'EDITOR' && view !== 'case') onViewChange('case');
+  };
+  const openMobileEditor = (step: ScenarioEditorStep) => {
+    setMobileIntent('EDITOR');
+    setMobileStep(step);
+    if (view !== 'case') onViewChange('case');
+  };
   return (
-    <div className="scenario-table-workspace">
+    <div
+      className="scenario-table-workspace"
+      data-responsive-task={responsiveProjection.taskId}
+      data-responsive-layout={responsiveProjection.layout}
+    >
       <header className="scenario-viewbar">
         <div className="scenario-view-switch" role="group" aria-label={t('Scenario view')}>
           <button
@@ -1644,6 +1684,14 @@ function ScenarioTab({
           <code>r{contract.target.revision}</code>
         </div>
       </header>
+
+      {mobileTask && (
+        <MobileScenarioTaskBar
+          projection={responsiveProjection}
+          intent={mobileIntent}
+          onIntentChange={changeMobileIntent}
+        />
+      )}
 
       {view === 'coverage' ? (
         <CoverageLensSurface
@@ -1686,6 +1734,14 @@ function ScenarioTab({
         />
       ) : (
       <div className="scenario-workbench">
+      {mobileTask ? (
+        <MobileScenarioCasePicker
+          scenarios={scenarios}
+          selectedScenarioId={selectedScenarioId}
+          onSelectScenario={onSelectScenario}
+          onAddScenario={() => onAddScenario()}
+        />
+      ) : (
       <aside className="scenario-list">
         <div className="scenario-list-head">
           <strong>{t('Scenarios')}</strong>
@@ -1710,9 +1766,23 @@ function ScenarioTab({
         ))}
         {scenarios.length === 0 && <p className="scenario-list-empty">{t('No Scenarios yet.')}</p>}
       </aside>
+      )}
 
       <div className="scenario-editor">
         {selectedScenario ? (
+          mobileTask && responsiveProjection.taskId === 'CASE_RUN' ? (
+            <MobileScenarioRunSummary
+              scenario={selectedScenario}
+              inputCount={scenarioInputFieldCount(selectedScenario.given.input)}
+              controlledDependencyCount={selectedScenario.dependencies.filter((entry) => entry.behavior.kind !== 'REAL').length}
+              assertionCount={selectedScenario.then.assertions.length}
+              evidence={selectedEvidence}
+              runCommand={runCommand}
+              onRun={onRun}
+              onRunRemediation={onRunRemediation}
+              onEditStep={openMobileEditor}
+            />
+          ) : (
           <>
             <div className="scenario-editor-head">
               <label>
@@ -1746,15 +1816,31 @@ function ScenarioTab({
               </button>
             </div>
 
-            <ScenarioCaseStepRail
-              anchorPrefix={caseAnchorPrefix}
-              givenCount={scenarioInputFieldCount(selectedScenario.given.input)}
-              dependencyCount={selectedScenario.dependencies.filter((entry) => entry.behavior.kind !== 'REAL').length}
-              assertionCount={selectedScenario.then.assertions.length}
-              reviewState={reviewState}
-            />
+            {mobileTask ? (
+              <MobileScenarioStepNav
+                activeStep={mobileStep}
+                inputCount={scenarioInputFieldCount(selectedScenario.given.input)}
+                dependencyCount={selectedScenario.dependencies.filter((entry) => entry.behavior.kind !== 'REAL').length}
+                assertionCount={selectedScenario.then.assertions.length}
+                onStepChange={setMobileStep}
+              />
+            ) : (
+              <ScenarioCaseStepRail
+                anchorPrefix={caseAnchorPrefix}
+                givenCount={scenarioInputFieldCount(selectedScenario.given.input)}
+                dependencyCount={selectedScenario.dependencies.filter((entry) => entry.behavior.kind !== 'REAL').length}
+                assertionCount={selectedScenario.then.assertions.length}
+                reviewState={reviewState}
+              />
+            )}
 
-            <section className="scenario-stage" id={`${caseAnchorPrefix}-given`}>
+            <section
+              className="scenario-stage"
+              id={`${caseAnchorPrefix}-given`}
+              hidden={!projectionIncludes(responsiveProjection, 'GIVEN_EDITOR')}
+              role={mobileTask ? 'tabpanel' : undefined}
+              aria-label={mobileTask ? t('Input') : undefined}
+            >
               <div className="scenario-stage-title">
                 <span>1</span>
                 <div><strong>{t('Given')}</strong><small>{t('Target input from the Contract')}</small></div>
@@ -1770,7 +1856,13 @@ function ScenarioTab({
               />
             </section>
 
-            <section className="scenario-stage" id={`${caseAnchorPrefix}-dependencies`}>
+            <section
+              className="scenario-stage"
+              id={`${caseAnchorPrefix}-dependencies`}
+              hidden={!projectionIncludes(responsiveProjection, 'DEPENDENCY_EDITOR')}
+              role={mobileTask ? 'tabpanel' : undefined}
+              aria-label={mobileTask ? t('Fixtures') : undefined}
+            >
               <div className="scenario-stage-title">
                 <span>2</span>
                 <div>
@@ -1818,7 +1910,13 @@ function ScenarioTab({
               </div>
             </section>
 
-            <section className="scenario-stage" id={`${caseAnchorPrefix}-then`}>
+            <section
+              className="scenario-stage"
+              id={`${caseAnchorPrefix}-then`}
+              hidden={!projectionIncludes(responsiveProjection, 'ASSERTION_EDITOR')}
+              role={mobileTask ? 'tabpanel' : undefined}
+              aria-label={mobileTask ? t('Expected') : undefined}
+            >
               <div className="scenario-stage-title">
                 <span>3</span>
                 <div><strong>{t('Then')}</strong><small>{t('Compare public output by whole value or path')}</small></div>
@@ -1868,7 +1966,13 @@ function ScenarioTab({
               </div>
             </section>
 
-            <section className="scenario-stage scenario-review-stage" id={`${caseAnchorPrefix}-review`}>
+            <section
+              className="scenario-stage scenario-review-stage"
+              id={`${caseAnchorPrefix}-review`}
+              hidden={!projectionIncludes(responsiveProjection, 'REVIEW_EDITOR')}
+              role={mobileTask ? 'tabpanel' : undefined}
+              aria-label={mobileTask ? t('Run') : undefined}
+            >
               <div className="scenario-stage-title">
                 <span>4</span>
                 <div><strong>{t('Review & run')}</strong><small>{t('Confirm the oracle, then validate this Case')}</small></div>
@@ -1937,6 +2041,7 @@ function ScenarioTab({
               </footer>
             </section>
           </>
+          )
         ) : (
           <div className="scenario-empty-state">
             <strong>{t('Create the first Scenario')}</strong>

@@ -126,6 +126,11 @@ horizontal scroller. At 390px, Compose keeps the primary action plus collapsible
 Tools, while Contract/Scenarios/Evidence remove duplicate command summaries. Touch and coarse
 pointer controls remain at least 40px in both density modes. Run `npm run check:ux` to enforce the
 typography, density, touch-target, mobile-navigation, task-layout, and scroll-affordance contracts.
+Scenario Case uses an explicit mobile task projection: **Run** shows a Case picker, four readiness
+facts, targeted edit links, and one run command; **Build** mounts only the active Input, Fixtures,
+Expected, or Run step, so inactive complex editors leave the tab order. Formal mobile tasks hide the
+duplicate shell handoff and keep the run command above the fold. **Topology** opens as a temporary
+304px overlay, so the 390px task surface never collapses into a narrow residual column.
 Implementation and browser evidence are recorded in
 [`docs/resource-gateway-ux-stage5-visual-responsive-system.md`](../docs/resource-gateway-ux-stage5-visual-responsive-system.md).
 

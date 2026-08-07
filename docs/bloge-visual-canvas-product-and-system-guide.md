@@ -215,6 +215,13 @@ Compact 适合熟练作者在桌面处理高信息密度任务。密度选择会
 
 390px Compose 中，**Readiness** 汇总五个状态，**Tools** 汇总辅助命令，点击后再展开；切换到
 Contract、Scenarios 或 Evidence 后，这两组重复摘要自动隐藏，让中央任务面优先占用高度。
+这些正式任务默认收起 **Topology**；点击后它从右侧覆盖打开，不会把中央任务挤窄，点击抽屉
+顶部的收起按钮即可回到原任务位置。
+进入 Scenarios / Case 后默认选择 **Run** 移动任务：顶部 picker 切换 Case，摘要显示输入字段、
+受控依赖、检查项和最近结果，底部只有一个 **Run current case** 主命令。需要修改时点击
+**Build**，再在 **Input / Fixtures / Expected / Run** 四步中一次编辑一步；点击摘要中的
+**Edit input / Edit fixtures / Edit expected** 会直接进入对应步骤。未选步骤不会进入键盘 tab
+顺序；**Run current case** 固定在首屏任务预算内，执行成功后直接进入该 Case 的 Evidence。
 Scenario Matrix 保持 Case 列冻结，并用左右阴影提示还有横向内容。完整设计边界与验收证据见
 [Stage 5 视觉系统与响应式任务布局](resource-gateway-ux-stage5-visual-responsive-system.md)。
 

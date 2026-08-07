@@ -1705,13 +1705,12 @@ describe('AuthorCanvas built-in canvas examples', () => {
       expect(query('.workspace').classList.contains('inspector-collapsed')).toBe(false);
 
       await click(query<HTMLButtonElement>('[data-testid="author-mode:scenarios"]'));
-      await waitFor(() =>
-        expect(query('[data-testid="author-surface:scenarios"]')).toBeDefined(),
-      );
+      await waitFor(() => {
+        expect(query('[data-testid="author-surface:scenarios"]')).toBeDefined();
+        expect(query('.workspace').classList.contains('inspector-collapsed')).toBe(true);
+      });
       expect(document.querySelector('[role="dialog"]')).toBeNull();
       const taskCoordinate = window.location.search;
-      await click(query<HTMLButtonElement>('[aria-label="Collapse context inspector"]'));
-      expect(query('.workspace').classList.contains('inspector-collapsed')).toBe(true);
       expect(query('[data-testid="author-context-rail-launcher"]')
         .getAttribute('aria-expanded')).toBe('false');
       expect(window.location.search).toBe(taskCoordinate);
@@ -1719,6 +1718,9 @@ describe('AuthorCanvas built-in canvas examples', () => {
       expect(query('.workspace').classList.contains('inspector-collapsed')).toBe(false);
       expect(query('[data-testid="author-context-rail-launcher"]')
         .getAttribute('aria-expanded')).toBe('true');
+      expect(document.querySelector('.inspector-panel-pin')).not.toBeNull();
+      await click(query<HTMLButtonElement>('[aria-label="Collapse context inspector"]'));
+      expect(query('.workspace').classList.contains('inspector-collapsed')).toBe(true);
       expect(window.location.search).toBe(taskCoordinate);
     } finally {
       Object.defineProperty(window, 'matchMedia', {

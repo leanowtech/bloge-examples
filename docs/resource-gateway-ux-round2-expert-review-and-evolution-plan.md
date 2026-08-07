@@ -24,6 +24,45 @@
 
 ## 实施进度
 
+### 2026-08-07：UX-R2-003 移动 Case 任务投影切片
+
+已实现：
+
+- 新增纯策略 `ResponsiveTaskProjection`，以 viewport、surface、intent 和 active step 推导
+  `taskId / regions / maxPrimaryActions / complexEditingSupported`，不再让 JSX 和 CSS 各自猜测
+  哪些区域应该出现；
+- `<= 520px` 的单 Case 默认进入 `CASE_RUN`：Scenario 列表投影为原生 picker，中央只挂载
+  Case identity、input/controlled dependency/assertion/last result 摘要、三个定向编辑入口和唯一
+  `Run current case`；四个复杂编辑器此时不挂载；
+- 切换 **Build** 后进入 `CASE_EDIT`，Input / Fixtures / Expected / Run 使用显式 tab scope，DOM
+  同时保留 canonical 编辑结构但只有当前 step 可见，其他 step 通过语义 `hidden` 退出渲染与
+  tab order；切回 **Run** 恢复单任务摘要；
+- 移动 Matrix 固定为 `MATRIX_RUN` collection scope；点击 Build 会明确进入当前 Case，而不是
+  在 Matrix 上暴露一个不可见的 single-case editor；Coverage 投影为 review-only；
+- 正式任务模式默认收起 Topology Context Rail，忽略 Compose 中持久化的 `Keep open` 偏好；用户
+  点击 **Topology** 时以 304px overlay 临时打开，中央任务仍保持 390px 几何宽度，关闭后任务
+  坐标和 URL 不变化；
+- 移动正式任务隐藏与任务条语义重复的 shell handoff 提示，使 command bar 从 130px 降至 71px，
+  `Run current case` 在 390 x 844 首屏落于 `y=760..800`，不再被底部 Diagnostics 遮挡；
+- 所有移动控件继续遵守 `40px` touch floor，step tab 为 `48px`；中文词条和 deep-surface locale
+  inventory 已覆盖新组件。
+
+真实浏览器 E2 证据（production bundle、Spring Boot `test` profile、`390 x 844`）：
+
+- Matrix、Case Builder、Case Runner、Evidence 四段均无 document 横向溢出，`clientWidth =
+  scrollWidth = 390`；
+- Case Builder 仅 1 个 step 可见，另 3 个 step 为语义 `hidden`；Case Runner 仅 1 个 primary
+  command；
+- Context Rail 关闭时 inspector 不参与布局；打开后 `surface.width = 390`、`inspector.width =
+  304`、workspace 单列仍为 `390px`，证明它是 overlay 而非 86px 挤压式侧栏；
+- 实际点击 **Run current case** 后自动进入 Evidence，5 个节点全部 `COMPLETED`，执行和 1 条
+  assertion 均通过；浏览器 error log 为 `0`。
+- 前端全量回归 `77` 个 test files、`586 / 586` tests 通过；`-Pfrontend` production bundle
+  打包成功。
+
+当前诚实边界：本切片根治的是单 Case 的移动任务预算；Matrix 仍使用可横向滚动的桌面信息表，
+Library 的 Review / Light Edit 投影也尚未实现，因此 Stage 3 继续保持 `IN PROGRESS`。
+
 ### 2026-08-07：UX-R2-002 Command Receipt 关联闭环
 
 已实现：
