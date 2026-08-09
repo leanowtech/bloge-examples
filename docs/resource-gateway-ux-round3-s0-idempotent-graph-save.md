@@ -104,8 +104,9 @@ graph-save:sha256-<content fingerprint>
 
 定向结果：Java `79/79`，前端 `121/121`。完整工程门禁在 Round 3 最终复审时统一执行。
 
-## 6. 仍未关闭
+## 6. 后续闭环
 
-持久幂等消除了“其实已保存却显示冲突”的一类伪冲突，但真实的多人 revision 冲突仍必须由用户决策。当前
-Author 只有阻断标记，Library 只有 Reload；下一切片必须提供 Compare / Fork local / Reload authoritative，
-并证明 Fork 保留本地 Graph、Scenario、fixture 和测试资产。
+持久幂等消除了“其实已保存却显示冲突”的一类伪冲突；真实的多人 revision 冲突现已通过共享 Compare /
+Fork local / Reload authoritative 决策面关闭。Graph Fork 原子保留 Graph、Scenario 与 fixture，Library Fork
+固定分支坐标并能回收模糊成功；两者都使旧 evidence 失效。详见
+[多人保存冲突决策](resource-gateway-ux-round3-s0-conflict-resolution.md)。

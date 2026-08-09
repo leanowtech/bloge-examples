@@ -322,8 +322,10 @@ then **Customer Support Triage** under **Complete examples**; select an operator
 function in the left tree and edit its structured fields. The right side is a
 server-authoritative canonical preview: autosave updates the exact revision in the URL,
 diagnostics jump back to their source field, and **Import Design Catalog** is enabled only while
-that exact preview remains importable. An ETag conflict blocks further commit until **Reload**
-restores the latest stored revision.
+that exact preview remains importable. An ETag conflict opens a side-by-side fact comparison.
+**Fork local work** creates a new saved draft without overwriting the head; **Reload latest** only
+discards local edits after a second explicit confirmation. A response-lost fork retry reuses the
+same reserved coordinate and adopts it only when the stored document is identical.
 
 Library edits share the Author continuity kernel: a recovery checkpoint is captured before the
 700ms authoritative autosave, route/page/VS Code disposal uses the same leave guard, and the

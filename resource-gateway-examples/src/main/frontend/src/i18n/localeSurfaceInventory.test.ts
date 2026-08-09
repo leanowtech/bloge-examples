@@ -14,6 +14,7 @@ const DEEP_SURFACES = [
   '../author/canvas/CanvasTaskNavigator.tsx',
   '../author/shell/AuthorCommandBar.tsx',
   '../author/review/AuthorDiagnosticsDrawer.tsx',
+  '../author/continuity/SaveConflictResolutionDialog.tsx',
   '../contract-scenario/ContractScenarioWorkspace.tsx',
   '../contract-scenario/ContractSemanticsEditor.tsx',
   '../contract-scenario/SchemaFieldTree.tsx',

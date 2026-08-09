@@ -491,7 +491,7 @@ describe('LibraryWorkbench', () => {
     expect(operatorText).not.toContain('DOCUMENTED ONLY');
   });
 
-  it('blocks editing on an ETag conflict and reloads the authoritative revision', async () => {
+  it('compares an ETag conflict and requires explicit confirmation before reloading', async () => {
     apiMocks.save.mockRejectedValueOnce(new BlogeApiRequestError(412, 'revision mismatch'));
     apiMocks.fetchDraft.mockImplementation(async (draftId: string) => storedDraft(
       draftId,
@@ -519,14 +519,119 @@ describe('LibraryWorkbench', () => {
     expect(query('[data-testid="library-save-state"]').textContent).toContain('Conflict');
     expect(query('[data-testid="library-save-state"]').textContent)
       .toContain('newer revision exists');
+    expect(query('[data-testid="save-conflict-comparison"]').textContent)
+      .toContain('Server Library');
+    expect(query('[data-conflict-fact="operators"]').textContent).toContain('1');
+    expect(query('[data-conflict-fact="operators"]').textContent).toContain('0');
 
-    await click(buttonByText('Reload'));
+    await click(query('[data-testid="save-conflict-reload"]'));
+
+    expect(query('[data-testid="library-metadata-builder"]').textContent)
+      .not.toContain('Server Library');
+    expect(query('[data-testid="save-conflict-dialog"]').textContent)
+      .toContain('cannot be undone');
+
+    await click(query('[data-testid="save-conflict-confirm-reload"]'));
 
     expect(apiMocks.fetchDraft).toHaveBeenCalledTimes(1);
     expect(query('[data-testid="library-metadata-builder"]').textContent)
       .toContain('Server Library');
     expect(query('[data-testid="library-save-state"]').textContent)
       .toContain('Saved revision 4');
+  });
+
+  it('forks conflicted local work into a new autosaved draft without overwriting the head', async () => {
+    apiMocks.save
+      .mockRejectedValueOnce(new BlogeApiRequestError(412, 'revision mismatch'))
+      .mockImplementation(async (
+        draftId: string,
+        _revision: number,
+        nextDocument: VisualLibraryAuthoringDocument,
+      ) => storedDraft(draftId, 1, nextDocument));
+    apiMocks.fetchDraft.mockImplementation(async (draftId: string) => storedDraft(
+      draftId,
+      3,
+      {
+        schemaVersion: 'bloge.visualLibraryAuthoring.v1',
+        library: { id: 'server-library', name: 'Server Library', owner: 'platform-team' },
+        types: {},
+        operators: {},
+        functions: {},
+      },
+    ));
+    apiMocks.preview.mockImplementation(async (draftId: string, revision: number) => (
+      readyPreview(draftId, revision)
+    ));
+
+    await renderWorkbench();
+    await click(query('[data-testid="library-quick-create"]'));
+    await flushAutosave();
+    const conflictedDraftId = String(apiMocks.save.mock.calls[0][0]);
+
+    await click(query('[data-testid="save-conflict-fork"]'));
+    await settle();
+    expect(document.querySelector('[data-testid="save-conflict-dialog"]')).toBeNull();
+    expect(query('[data-testid="library-metadata-builder"]').textContent)
+      .toContain('Team Operator Library');
+
+    expect(apiMocks.save).toHaveBeenCalledTimes(2);
+    expect(apiMocks.save.mock.calls[1][0]).not.toBe(conflictedDraftId);
+    expect(apiMocks.save.mock.calls[1][1]).toBe(0);
+    expect(Object.keys(apiMocks.save.mock.calls[1][2].operators ?? {})).toHaveLength(1);
+    expect(query('[data-testid="library-save-state"]').textContent)
+      .toContain('preserved as revision 1');
+  });
+
+  it('reclaims the same conflict fork after an ambiguous successful response', async () => {
+    let originalDraftId = '';
+    let reservedForkId = '';
+    let forkDocument: VisualLibraryAuthoringDocument | null = null;
+    let saveCall = 0;
+    apiMocks.save.mockImplementation(async (
+      draftId: string,
+      _revision: number,
+      nextDocument: VisualLibraryAuthoringDocument,
+    ) => {
+      saveCall += 1;
+      if (saveCall === 1) {
+        originalDraftId = draftId;
+        throw new BlogeApiRequestError(412, 'revision mismatch');
+      }
+      if (saveCall === 2) {
+        reservedForkId = draftId;
+        forkDocument = structuredClone(nextDocument);
+        throw new Error('network response lost after commit');
+      }
+      expect(draftId).toBe(reservedForkId);
+      throw new BlogeApiRequestError(412, 'revision already exists');
+    });
+    apiMocks.fetchDraft.mockImplementation(async (draftId: string) => {
+      if (draftId === originalDraftId) {
+        return storedDraft(draftId, 4, {
+          schemaVersion: 'bloge.visualLibraryAuthoring.v1',
+          library: { id: 'server-library', name: 'Server Library', owner: 'platform-team' },
+          types: {}, operators: {}, functions: {},
+        });
+      }
+      return storedDraft(draftId, 1, forkDocument as VisualLibraryAuthoringDocument);
+    });
+
+    await renderWorkbench();
+    await click(query('[data-testid="library-quick-create"]'));
+    await flushAutosave();
+    await click(query('[data-testid="save-conflict-fork"]'));
+    await settle();
+
+    expect(query('[data-testid="save-conflict-dialog"]').textContent)
+      .toContain('network response lost');
+    await click(query('[data-testid="save-conflict-fork"]'));
+    await settle();
+
+    expect(document.querySelector('[data-testid="save-conflict-dialog"]')).toBeNull();
+    expect(apiMocks.save).toHaveBeenCalledTimes(3);
+    expect(apiMocks.save.mock.calls[1][0]).toBe(apiMocks.save.mock.calls[2][0]);
+    expect(query('[data-testid="library-save-state"]').textContent)
+      .toContain('preserved as revision 1');
   });
 
   it('turns representative samples into an explicitly confirmed operator port', async () => {

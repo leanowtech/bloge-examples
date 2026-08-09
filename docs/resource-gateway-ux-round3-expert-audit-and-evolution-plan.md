@@ -1,6 +1,6 @@
 # Resource Gateway UX Round 3 资深体验审阅与演进计划
 
-> 状态：S0-S5 feature implementation present / completion evidence audit in progress
+> 状态：S0-S5 E2 engineering closure complete / E3-E4 field evidence pending
 >
 > 审阅日期：2026-08-09
 >
@@ -10,9 +10,9 @@
 >
 > 当前视觉完成度：`95 / 100`
 >
-> 当前工业任务成熟度：`95 / 100`（持久 Graph save receipt 已关闭；1 个 E2 P1 尚存；缺少 E3/E4 时对外成熟度仍封顶 `89`）
+> 当前工业任务成熟度：`97 / 100`（已知 E2 P0/P1/P2 清零；缺少 E3/E4 时对外成熟度仍封顶 `89`）
 >
-> E2 缺陷结论：`0 P0 / 1 P1 / 0 P2`；Compare/Fork/Reload conflict resolution 尚未关闭
+> E2 缺陷结论：`0 P0 / 0 P1 / 0 P2`；Compare/Fork/Reload conflict resolution 已关闭
 >
 > 目标：先将 P0 清零，再恢复 `>=95 / 100` 的 E2 工程体验；没有 E3/E4 证据前，对外成熟度仍封顶 `89`
 
@@ -27,6 +27,7 @@
 - [S1 可逆编辑与删除影响控制实现说明](resource-gateway-ux-round3-s1-reversible-mutations-implementation.md)
 - [S0/S1 连续性与压力门禁补强](resource-gateway-ux-round3-s0-s1-resilience-closure.md)
 - [Graph 保存幂等协议](resource-gateway-ux-round3-s0-idempotent-graph-save.md)
+- [多人保存冲突决策](resource-gateway-ux-round3-s0-conflict-resolution.md)
 - [S2 企业任务坐标实现说明](resource-gateway-ux-round3-s2-enterprise-task-coordinate-implementation.md)
 - [S3 证明语义与本地化实现说明](resource-gateway-ux-round3-s3-proof-semantics-localization-implementation.md)
 - [S4 响应式任务投影实现说明](resource-gateway-ux-round3-s4-responsive-projection-implementation.md)
@@ -39,12 +40,12 @@
 
 | 阶段 | 状态 | 最新结论 |
 |---|---|---|
-| S0 工作区连续性 | 核心已实现，P1 收口中 | Author/Library 共享恢复、离页、宿主协议与持久 Graph save receipt 已闭合；Compare/Fork/Reload 待关闭 |
+| S0 工作区连续性 | E2 已实现 | Author/Library 共享恢复、离页、宿主协议、持久 Graph save receipt 与 Compare/Fork/Reload 已闭合 |
 | S1 可逆编辑 | 已实现 | 20 类 mutation、删除影响预览、原子 Undo/Redo 关闭第二个 P0 |
 | S2 企业任务坐标 | 已实现 | 统一 TaskCoordinate、command authority、production safeguard、单一 primary Run 与 return coordinate |
 | S3 证明语义与 i18n | 已实现 | 类型化产品消息、deep-surface inventory、四维 proof authority、raw detail 隔离与双语状态连续性已闭合 |
 | S4 响应式任务投影 | 已实现 | 390/820 结果摘要、断点状态连续、Semantic Zoom、根因聚合与五档真实浏览器矩阵闭合 |
-| S5 性能与宿主门禁 | E2 已实现 | 同步主包 867.23 -> 153.09 kB；Author 启动闭包 321.75 KiB gzip；参考扩展、加密恢复、唯一面板、WebView disposal receipt 与现场证据评分器已落地，真实 E3/E4 待执行 |
+| S5 性能与宿主门禁 | E2 已实现 | 同步主包 867.23 -> 153.09 kB；Author 启动闭包 326.45 KiB gzip；参考扩展、加密恢复、唯一面板、WebView disposal receipt 与现场证据评分器已落地，真实 E3/E4 待执行 |
 
 ## 1. 最强结论
 
@@ -297,9 +298,9 @@ Round 2 已记录主 bundle `781.29KB` minified / `222.23KB` gzip。Library、Re
 
 上表是 Round 3 立项时的真实基线，不应被后来的实现结果覆盖。S0-S5 工程实现完成后，E2 范围内重新评分如下：
 
-| 维度 | 权重 | S4 后得分 | 证据或剩余扣分 |
+| 维度 | 权重 | 当前 E2 得分 | 证据或剩余扣分 |
 |---|---:|---:|---|
-| 任务完成与心智模型 | 15 | 13 | 单一 primary command、任务坐标与移动结果投影已闭合；save conflict 尚缺 Compare/Fork/Reload 完整决策面 |
+| 任务完成与心智模型 | 15 | 15 | 单一 primary command、任务坐标、移动结果投影和双版本冲突决策面已闭合；首次理解率待 E3 |
 | 资产安全与会话连续性 | 20 | 19 | Author/Library recovery、冲突防覆盖、真实 VS Code 5/12 恢复与跨副本持久 save receipt 已通过；直接 X/kill 矩阵待 E3 |
 | 可逆编辑与效率 | 12 | 12 | 20 类 mutation、影响预览和统一 Undo/Redo 已通过自动化与浏览器验收 |
 | 测试与证据信任 | 15 | 15 | behavior/proof/freshness/governance 正交，raw protocol 默认隔离 |
@@ -309,12 +310,13 @@ Round 2 已记录主 bundle `781.29KB` minified / `222.23KB` gzip。Library、Re
 | 视觉层级与密度 | 6 | 5 | semantic token 与 chrome budget 已建立；仍需 E3 验证长时高密度使用疲劳 |
 | 无障碍与键盘安全 | 3 | 3 | focus restore、dialog trap、keyboard history 与危险键边界已覆盖 |
 | 性能与宿主适配 | 3 | 3 | 同步壳 153.09 kB、最大应用块 319.47 kB；真实宿主单次约 580 ms，P75 待 E3 |
-| **合计** | **100** | **95** | **持久 save receipt 已关闭；Compare/Fork/Reload 仍是 1 个 E2 P1** |
+| **合计** | **100** | **97** | **已知 E2 P0/P1/P2 清零；真实角色与组织证据仍未解锁** |
 
-完成度复核进一步区分三件事：`95` 是当前 production build、自动化和真实宿主支持的工程体验分；`89`
-是缺少真实角色和连续组织运行时可对外宣称的上限；`97` 是此前过早给出的分数，不能在 conflict
-resolution 未闭合时继续沿用。详见
-[Graph 保存幂等协议](resource-gateway-ux-round3-s0-idempotent-graph-save.md)。
+完成度复核进一步区分三件事：`97` 是当前 production build、自动化、真实宿主和完整冲突决策支持的 E2
+工程体验分；`89` 是缺少真实角色和连续组织运行时可对外宣称的上限；此前的 `95` 是持久 save receipt
+完成但 conflict resolution 尚未闭合时的中间分。详见
+[Graph 保存幂等协议](resource-gateway-ux-round3-s0-idempotent-graph-save.md)与
+[多人保存冲突决策](resource-gateway-ux-round3-s0-conflict-resolution.md)。
 
 ### 4.2 真实 VS Code 宿主复审
 
@@ -662,7 +664,7 @@ interface ProofPresentation {
 | 性能 | autosave P95、history memory、route chunk、WebView cold start |
 | E3/E4 | 固定任务、真实角色、连续发布周期、incident-to-regression 闭环 |
 
-必须先补“会失败的真实浏览器测试”，再实现修复。现有 `5898 / 5898` 全绿只能证明当前契约被稳定实现，
+必须先补“会失败的真实浏览器测试”，再实现修复。当前 `5905 / 5905` 全绿只能证明当前契约被稳定实现，
 不能证明契约本身覆盖了数据安全。尤其要新增：
 
 ```text
@@ -755,8 +757,8 @@ ux.route-chunk-budget
 
 推荐 tracer-bullet 顺序 `WP-01 -> WP-02 -> WP-03 -> WP-04 -> WP-05` 已具备主路径实现；完成度复核已补
 Library continuity、时限、压力门禁和持久 idempotent save receipt。WP-06 至 WP-12 也已进入 E2 门禁。
-当前只剩 `WP-03` 的 Compare/Fork/Reload conflict resolution；完成后才进入只能由真实参与者和组织执行的
-WP-13。
+`WP-03` 的 Compare/Fork/Reload conflict resolution 已关闭。当前剩余工作进入只能由真实参与者和组织执行的
+WP-13，不再把 E3/E4 缺口伪装成页面开发任务。
 
 ## 11. 验收门禁
 
@@ -766,6 +768,7 @@ WP-13。
 - [ ] route、reload、close、host dispose 无 silent data loss（浏览器、参考扩展与 5/12 实机恢复 E2 已通过；直接 X/kill 故障矩阵待 E3）；
 - [x] destructive mutation 可预见、可撤销、可审计；
 - [x] save conflict 不覆盖任一用户版本；
+- [x] save conflict 可比较业务事实、Fork 本地完整资产或经二次确认 Reload 权威版本；
 - [ ] 真实浏览器与 VS Code 宿主故障注入全绿（Chromium、bridge false/reject/timeout、干净 profile 重启已通过；多设备 X/kill/timeout 矩阵待 E3）。
 
 ### 11.2 P1 Gate
@@ -780,7 +783,7 @@ WP-13。
 
 ### 11.3 95 分 Gate
 
-- [ ] P0/P1 = 0；
+- [x] E2 P0/P1 = 0；
 - [x] E2 全量自动化、production build、真实浏览器矩阵全绿；
 - [x] application chunk `<=350KiB`、同步 shell `<=180KiB`、路由启动闭包 `<=350KiB` gzip；
 - [ ] 关键任务成功率 `>=95%`；

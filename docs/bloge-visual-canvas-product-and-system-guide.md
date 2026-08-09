@@ -268,6 +268,16 @@ Author v2 的草稿身份旁会直接显示工作区生命周期：
 算子测试套件和运行输入会回到离开前状态。草稿身份旁的 Save 图标用于创建或更新服务端权威 revision。
 跨工作区导航会先 flush 最新快照，只有存储失败时才弹出保存、导出、放弃或留在此处的决策。
 
+多人同时编辑时，Save 收到 409/412 会自动打开双版本比较，而不是只显示错误：左侧是本地工作，右侧是
+最新服务端 revision，黄色行标出名称、节点、连线、Fixture、Scenario、类型、算子或函数数量差异。
+**Fork local work / 将本地工作派生为新分支** 是默认安全动作；Graph 会连同 Scenario 与 Fixture 创建新
+Workspace，Library 会创建固定坐标的新 draft。旧运行结果和治理证据不会继承，Fork 后需要重新运行。
+
+**Reload latest / 加载最新版本** 第一次点击只展示损失说明；只有第二次点击
+**Discard local and reload / 丢弃本地内容并加载** 才会移除本地编辑。按 Escape 会返回比较，不会绕过冲突。
+读取权威版本失败时使用 **Retry comparison / 重试比较**，恢复包和 Fork 身份会继续保留。实现边界见
+[多人保存冲突决策](resource-gateway-ux-round3-s0-conflict-resolution.md)。
+
 浏览器演示使用当前标签页 `sessionStorage`，按 tenant/namespace/environment 分区并设置 8 小时 TTL；它不是
 企业加密存储。VS Code 或企业宿主应通过 `setWorkspaceRecoveryStore` 注入 `HOST_ENCRYPTED` 实现。详细协议、
 不变量和测试方式见

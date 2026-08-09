@@ -11971,6 +11971,241 @@ button.primary:disabled {
   padding-top: 6px;
 }
 
+.save-conflict-backdrop {
+  z-index: 1400;
+  background: rgb(15 23 42 / 55%);
+}
+
+.save-conflict-dialog {
+  width: min(840px, 100%);
+  max-height: min(760px, calc(100vh - 36px));
+  display: grid;
+  gap: 14px;
+  overflow: auto;
+  padding: 18px;
+  border: 1px solid #d2a44e;
+  border-radius: 8px;
+  background: #fff;
+  box-shadow: 0 24px 68px rgb(15 23 42 / 32%);
+}
+
+.save-conflict-heading {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: start;
+  gap: 10px;
+}
+
+.save-conflict-heading > span {
+  width: 34px;
+  height: 34px;
+  display: grid;
+  place-items: center;
+  border: 1px solid #e1bd76;
+  border-radius: 6px;
+  background: #fff7e3;
+  color: #7f5607;
+}
+
+.save-conflict-heading :is(p, h2, small) {
+  margin: 0;
+}
+
+.save-conflict-heading p {
+  color: #795109;
+  font-size: var(--rg-font-aux);
+  font-weight: 850;
+  text-transform: uppercase;
+}
+
+.save-conflict-heading h2 {
+  margin-top: 2px;
+  color: #253247;
+  font-size: 18px;
+}
+
+.save-conflict-heading small {
+  display: block;
+  margin-top: 4px;
+  color: #5b687a;
+  font-size: 12px;
+  line-height: 1.45;
+}
+
+.save-conflict-loading,
+.save-conflict-error,
+.save-conflict-verdict,
+.save-conflict-discard-confirmation {
+  margin: 0;
+  padding: 9px 11px;
+  border-left: 3px solid #d1a347;
+  background: #fff8e8;
+  color: #644810;
+  font-size: 12px;
+}
+
+.save-conflict-error {
+  border-left-color: #b6413c;
+  background: #fff2f1;
+  color: #812b27;
+}
+
+.save-conflict-authority-error {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.save-conflict-authority-error .save-conflict-error {
+  flex: 1;
+}
+
+.save-conflict-authority-error button {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.save-conflict-verdict,
+.save-conflict-discard-confirmation {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: 10px;
+}
+
+.save-conflict-comparison {
+  min-width: 0;
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  overflow: hidden;
+  border: 1px solid #cfd7e2;
+  border-radius: 7px;
+  background: #fff;
+}
+
+.save-conflict-column-heading {
+  min-width: 0;
+  display: grid;
+  gap: 3px;
+  padding: 10px 12px;
+  background: #f4f7fb;
+}
+
+.save-conflict-column-heading.authoritative {
+  border-left: 1px solid #cfd7e2;
+  background: #eef7f3;
+}
+
+.save-conflict-column-heading span {
+  color: #657287;
+  font-size: var(--rg-font-aux);
+  font-weight: 800;
+  text-transform: uppercase;
+}
+
+.save-conflict-column-heading strong {
+  color: #253247;
+  font-size: 13px;
+}
+
+.save-conflict-column-heading code {
+  min-width: 0;
+  overflow: hidden;
+  color: #667387;
+  font-size: var(--rg-font-aux);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.save-conflict-row {
+  grid-column: 1 / -1;
+  display: grid;
+  grid-template-columns: minmax(110px, 0.7fr) repeat(2, minmax(0, 1fr));
+  border-top: 1px solid #dce2ea;
+  font-size: 12px;
+}
+
+.save-conflict-row > * {
+  min-width: 0;
+  padding: 8px 10px;
+  overflow-wrap: anywhere;
+}
+
+.save-conflict-row > span {
+  background: #f8fafc;
+  color: #667387;
+}
+
+.save-conflict-row > strong:last-child {
+  border-left: 1px solid #e0e5ec;
+}
+
+.save-conflict-row.changed > strong {
+  background: #fff9e9;
+  color: #6e4c0c;
+}
+
+.save-conflict-discard-confirmation {
+  border-left-color: #b6413c;
+  background: #fff2f1;
+  color: #812b27;
+}
+
+.save-conflict-actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+.save-conflict-actions button {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+@media (max-width: 560px) {
+  .save-conflict-backdrop {
+    align-items: end;
+    padding: 0;
+  }
+
+  .save-conflict-dialog {
+    width: 100%;
+    max-height: min(88vh, 760px);
+    padding: 14px;
+    border-right: 0;
+    border-bottom: 0;
+    border-left: 0;
+    border-radius: 8px 8px 0 0;
+  }
+
+  .save-conflict-verdict,
+  .save-conflict-discard-confirmation {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 3px;
+  }
+
+  .save-conflict-row {
+    grid-template-columns: 92px repeat(2, minmax(0, 1fr));
+  }
+
+  .save-conflict-actions {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .save-conflict-authority-error {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .save-conflict-actions button {
+    width: 100%;
+    justify-content: center;
+  }
+}
+
 .author-mode-tabs {
   grid-area: modes;
   display: inline-flex;

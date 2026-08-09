@@ -128,15 +128,16 @@ UX、host、production build 与 route bundle gate 通过。`VisualAuthoringAppJ
 4. 同时触发 Save、离页和宿主关闭不会创建并发保存风暴；
 5. 损坏的本地恢复包不会把编辑器带入半恢复状态。
 
-## 6. 仍未关闭的工程差距
+## 6. 后续闭环状态
 
-| 差距 | 风险 | 下一切片 |
+| 项目 | 状态 | 证据或下一步 |
 |---|---|---|
-| Author save conflict 没有 Compare/Fork/Reload 决策面 | 不会覆盖版本，但用户只能看到阻断，无法在上下文内完成保全 | 增加三路 resolution，Fork 必须继承恢复包和测试资产 |
-| Library conflict 只有 Reload | 用户可避免覆盖，但本地分支需要先手工导出 | 复用同一 conflict resolution model |
+| Author Compare/Fork/Reload | 已关闭 | Workspace Fork 保留 Graph、Scenario、Fixture 与 authored tests，旧证据失效 |
+| Library Compare/Fork/Reload | 已关闭 | 固定 Fork 坐标、模糊成功回收、二次确认 Reload |
 | 真实 autosave P95 未采样 | 调度 1500ms 不等于网络端到端 1500ms | E3 记录 edit-to-receipt histogram |
 | 真实 X/kill 多设备矩阵未完成 | 自动化与单机实测不能代表企业宿主矩阵 | 按 E3/E4 手册执行并归档 evidence |
 
-Graph create/update 的持久幂等收据已在后续
-[Graph 保存幂等协议](resource-gateway-ux-round3-s0-idempotent-graph-save.md)中关闭。因此当前只剩
-Compare/Fork/Reload 冲突决策这一项 E2 P1；关闭后才能重新评估 E2 P1 是否归零。
+Graph create/update 的持久幂等收据已在
+[Graph 保存幂等协议](resource-gateway-ux-round3-s0-idempotent-graph-save.md)中关闭；真实并发冲突已在
+[多人保存冲突决策](resource-gateway-ux-round3-s0-conflict-resolution.md)中关闭。已知 E2 P1 归零，剩余两项
+需要真实参与者和设备矩阵，不能由组件测试替代。

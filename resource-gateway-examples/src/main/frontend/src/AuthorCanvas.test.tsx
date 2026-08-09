@@ -345,6 +345,145 @@ describe('AuthorCanvas operator-library intake', () => {
     });
   });
 
+  it('compares a concurrent Graph save and forks the complete local Workspace', async () => {
+    const projected = dslProjection() as { draft: Record<string, any> };
+    const baseDraft: any = { ...projected.draft, draftId: 'draft-conflict', revision: 2 };
+    const authoritativeDraft = {
+      ...baseDraft,
+      revision: 3,
+      nodes: baseDraft.nodes.slice(0, 1),
+      edges: [],
+      output: { nodeId: 'eligibility', path: '' },
+    };
+    let saveAttempted = false;
+    let forkedDraft: Record<string, any> | null = null;
+    let forkedScenario: Record<string, any> | null = null;
+    let forkCommand: any = null;
+    window.history.replaceState({}, '', '/author/?authorWorkspace=v2&draftId=draft-conflict');
+    fetchMock.mockImplementation(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input);
+      if (url === '/api/visual/operators') {
+        return jsonResponse({ operators: [eligibilityOperator(), transformOperator()] });
+      }
+      if (url === '/api/visual/drafts/draft-conflict' && !saveAttempted) {
+        return jsonResponse(baseDraft);
+      }
+      if (url.startsWith('/api/visual/drafts/draft-conflict?') && init?.method === 'PUT') {
+        saveAttempted = true;
+        return jsonResponse({ code: 'visual.draft.revisionConflict', message: 'revision conflict' }, {
+          status: 409,
+        });
+      }
+      if (url === '/api/visual/drafts/draft-conflict' && saveAttempted) {
+        return jsonResponse(authoritativeDraft);
+      }
+      if (url === '/api/authoring/workspace-forks') {
+        forkCommand = JSON.parse(String(init?.body ?? '{}'));
+        forkedDraft = {
+          ...forkCommand?.seed.graphDraft,
+          draftId: 'draft-local-fork',
+          revision: 1,
+        };
+        const sourceScenario = forkCommand?.seed.scenarioDraftSets[0];
+        forkedScenario = {
+          ...sourceScenario,
+          scenarioDraftSetId: 'draft-local-fork-scenarios',
+          revision: 1,
+          target: {
+            kind: 'GRAPH',
+            id: 'draft-local-fork',
+            revision: 1,
+            fingerprint: `sha256:${'f'.repeat(64)}`,
+          },
+          contractFingerprint: `sha256:${'e'.repeat(64)}`,
+        };
+        return jsonResponse({
+          schemaVersion: 'bloge.workspaceForkReceipt.v1',
+          workspaceId: 'workspace-local-fork',
+          graphCoordinate: {
+            draftId: 'draft-local-fork', revision: 1, fingerprint: `sha256:${'f'.repeat(64)}`,
+          },
+          contractCoordinate: {
+            target: forkedScenario?.target,
+            fingerprint: `sha256:${'e'.repeat(64)}`,
+          },
+          scenarioSuiteCoordinates: [{
+            kind: 'SCENARIO_SUITE',
+            id: 'draft-local-fork-scenarios',
+            revision: 1,
+            fingerprint: `sha256:${'d'.repeat(64)}`,
+          }],
+          fixtureCoordinates: [],
+          sourceTemplateFingerprint: `sha256:${'c'.repeat(64)}`,
+          forkedWorkspaceFingerprint: `sha256:${'b'.repeat(64)}`,
+          runtimeProfile: 'SANDBOX_MOCK',
+          proofStrength: 'EXPLORATORY',
+          warnings: [],
+          replayed: false,
+        });
+      }
+      if (url === '/api/visual/drafts/draft-local-fork') {
+        return jsonResponse(forkedDraft);
+      }
+      if (url === '/api/visual/scenario-draft-sets/draft-local-fork-scenarios') {
+        return jsonResponse({
+          schemaVersion: 'bloge.storedScenarioDraftSet.v1',
+          scenarioDraftSetId: 'draft-local-fork-scenarios',
+          revision: 1,
+          fingerprint: `sha256:${'d'.repeat(64)}`,
+          draftSet: forkedScenario,
+          savedAt: '2026-08-09T00:00:00Z',
+          savedBy: 'author-canvas',
+        });
+      }
+      if (url === '/api/visual/scenario-draft-sets/targets/graphs/draft-local-fork/contract') {
+        return jsonResponse(graphContractProjection(
+          'draft-local-fork',
+          1,
+          forkedDraft as Record<string, any>,
+        ));
+      }
+      if (url.startsWith('/api/visual/governance-gates/drafts/')) {
+        return jsonResponse({ code: 'RG.GATE.NOT_FOUND' }, { status: 404 });
+      }
+      throw new Error(`Unexpected fetch: ${url}`);
+    });
+
+    await act(async () => {
+      root = createRoot(host);
+      root.render(<AuthorCanvas workspaceVersion="v2" />);
+    });
+    await waitFor(() => {
+      expect(query('[data-testid="canvas-node:eligibility"]')).toBeDefined();
+      expect(query<HTMLButtonElement>('[data-testid="author-save-workspace"]').disabled).toBe(false);
+    });
+
+    await click(query<HTMLButtonElement>('[data-testid="operator-button:risk:eligibility"]'));
+    await waitFor(() => {
+      expect(document.querySelectorAll('[data-testid^="node-wrapper:"]')).toHaveLength(3);
+    });
+    await click(query<HTMLButtonElement>('[data-testid="author-save-workspace"]'));
+
+    await waitFor(() => {
+      expect(query('[data-testid="save-conflict-dialog"]').textContent)
+        .toContain('Choose how to preserve your work');
+      expect(query('[data-conflict-fact="nodes"]').textContent).toContain('3');
+      expect(query('[data-conflict-fact="nodes"]').textContent).toContain('1');
+    });
+    await click(query<HTMLButtonElement>('[data-testid="save-conflict-fork"]'));
+
+    await waitFor(() => {
+      expect(document.querySelector('[data-testid="save-conflict-dialog"]')).toBeNull();
+      expect(document.querySelectorAll('[data-testid^="node-wrapper:"]')).toHaveLength(3);
+    });
+    expect(forkCommand?.changeSource).toBe('author-canvas-conflict-resolution');
+    expect(forkCommand?.seed.graphDraft.nodes).toHaveLength(3);
+    expect(forkCommand?.seed.scenarioDraftSets[0].scenarios.length).toBeGreaterThan(0);
+    expect(fetchMock.mock.calls.filter(([url]) => String(url).startsWith(
+      '/api/visual/drafts/draft-conflict?',
+    ))).toHaveLength(1);
+  });
+
   it('resolves an operator deep link and marks stale governance feedback explicitly', async () => {
     const projection = dslProjection() as { draft: Record<string, unknown> };
     const draft = { ...projection.draft, draftId: 'draft-stale', revision: 9 };
@@ -4702,6 +4841,44 @@ function wrappedLoanApplicantContractProjection() {
       confidence: 'EXACT',
     },
     contractFingerprint: `sha256:${'d'.repeat(64)}`,
+  };
+}
+
+function graphContractProjection(
+  draftId: string,
+  revision: number,
+  draft: Record<string, any>,
+) {
+  return {
+    schemaVersion: 'bloge.scenarioContractProjection.v1',
+    scope: {
+      tenantId: 'tenant-a',
+      organizationId: 'knowledge-governance',
+      projectId: 'tool-studio',
+      environment: 'test',
+      region: 'local',
+    },
+    contract: {
+      schemaVersion: 'bloge.contractDraft.v1',
+      target: {
+        kind: 'GRAPH',
+        id: draftId,
+        revision,
+        fingerprint: `sha256:${'f'.repeat(64)}`,
+      },
+      inputSchema: draft.inputSchema ?? schema({ type: 'object' }),
+      outputSchema: draft.outputSchema ?? schema({ type: 'object' }),
+      errorContract: [],
+      executionSemantics: {
+        effect: 'READ', idempotency: 'REQUEST_KEY', streaming: false, durable: false,
+      },
+      invariants: [],
+      compatibilityPolicy: { mode: 'STRICT', unknownBlocksAutomaticMigration: true },
+      fieldMetadata: {},
+      source: 'AUTHORED',
+      confidence: 'EXACT',
+    },
+    contractFingerprint: `sha256:${'e'.repeat(64)}`,
   };
 }
 

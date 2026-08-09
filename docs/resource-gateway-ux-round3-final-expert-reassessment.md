@@ -4,17 +4,17 @@
 >
 > 工程基线：S0-S5 E2 implementation + completion evidence audit
 >
-> 结论：本文件原 `97 / 100` 结论经完成度复核与 save receipt 实施校正为 `95 / 100`；1 个 E2 P1 与 E3/E4 尚未关闭
+> 结论：持久 save receipt 与 Compare/Fork/Reload 均已闭合，E2 工程成熟度恢复为 `97 / 100`；E3/E4 尚未关闭
 >
-> 校正证据：[Graph 保存幂等协议](resource-gateway-ux-round3-s0-idempotent-graph-save.md)
+> 校正证据：[Graph 保存幂等协议](resource-gateway-ux-round3-s0-idempotent-graph-save.md)、[多人保存冲突决策](resource-gateway-ux-round3-s0-conflict-resolution.md)
 
 ## 1. 最强判断
 
 当前版本已经没有 E2 P0；Round 3 最初发现的静默草稿丢失、不可逆级联删除、企业坐标缺失、Mock 证明
 误导、移动 Matrix 无法比较、断点伪可读、Library 告警墙和同步大包，都已从页面补丁下沉为 lifecycle、
 mutation、coordinate、proof、projection、zoom、readiness 与 bundle 协议。Graph Save 现在以数据库命令锁、
-canonical command fingerprint 和持久 receipt 关闭网络不确定结果；仍有一个不能归入外部研究的 E2 P1：
-Author/Library 冲突决策尚未完整提供 Compare/Fork/Reload。
+canonical command fingerprint 和持久 receipt 关闭网络不确定结果；Author/Library 进一步以业务事实比较、
+稳定 Fork 与二次确认 Reload 关闭真实多人 revision 冲突。当前没有剩余已知 E2 P0/P1/P2。
 
 但“工程上没有已知硬伤”不等于“复杂企业组织已经验证可用”。参考 VS Code 扩展已经真实跑通，并在
 实机走查中进一步关闭 CSP、画布裁切/覆盖、相机竞争、minimap 状态泄漏和重复面板；12 名目标角色和两个
@@ -32,22 +32,24 @@ Author/Library 冲突决策尚未完整提供 Compare/Fork/Reload。
 | Overview 不伪装可读，Focus/Inspect 保持标题下限 | SemanticZoomContract、S4 画布测量 |
 | Library 同源问题按根因聚合 | 5 个资产 -> 3 个根因，当前资产 1 个 blocker |
 | 同步主包不再装入四个工作面 | 867.23 -> 153.09 kB；route lazy + intent prefetch |
-| 最大路由启动闭包低于预算 | Author `321.75 KiB` gzip，门禁 `350 KiB` |
+| 最大路由启动闭包低于预算 | Author `326.45 KiB` gzip，门禁 `350 KiB` |
 | WebView dispose 可以等待 recovery | versioned bridge、false/reject/timeout fail-closed tests |
 | 参考 VS Code 宿主可独立运行 | 离线 catalog、AES-GCM recovery、SecretStorage、CSP 与受限 fetch |
 | Graph Save 可跨响应丢失、重启和副本精确重放 | versioned command、数据库行锁、事务 receipt、same-key drift 409 |
+| 多人冲突不再迫使用户丢弃一方 | 业务事实 Compare、完整 Workspace/Library Fork、二次确认 Reload、模糊成功回收；production JAR 真实冲突路径通过 |
 | 真实宿主恢复与画布可读 | 干净 profile 重启 1 个面板、5/12 exact recovery；标准/聚焦零目标碰撞 |
 | E3/E4 不能被空样本误判通过 | 版本化证据合同、反例测试、空模板 `NOT READY` |
 
-完成度补强后前端 `96` 个文件、`744` 项测试与扩展 `16` 项测试全绿；production build、TypeScript、i18n、UX、host
-和 bundle gate 全部通过。S4 同基线 Maven `5,898` 项全绿；S5 变更对应的
-`VisualAuthoringAppJsTest` 29 项通过。
+完成度补强后前端 `98` 个文件、`750` 项测试与扩展 `16` 项测试全绿；production build、TypeScript、i18n、UX、host
+和 bundle gate 全部通过。当前 Maven 全量 `5,905` 项全绿；S5 变更对应的
+`VisualAuthoringAppJsTest` 29 项通过。production JAR 的真实 Chromium 冲突路径进一步验证了首焦点、两阶段 Reload、
+Escape、Fork 内容保全和 390px 零横向溢出，并据此修复了 dialog 容器抢先聚焦的时序缺陷。
 
 ## 3. 体验成熟度评分
 
 | 维度 | 权重 | E2 得分 | 判断 |
 |---|---:|---:|---|
-| 任务完成与心智模型 | 15 | 13 | 表面按任务组织；save conflict 尚缺完整保全决策，首次学习成本需 E3 |
+| 任务完成与心智模型 | 15 | 15 | 表面按任务组织，save conflict 有完整保全决策；首次理解率仍需 E3 |
 | 资产安全与连续性 | 20 | 19 | Author/Library、extension recovery 与 Graph Save 持久幂等闭环；直接 X 矩阵待 E3 |
 | 可逆编辑与效率 | 12 | 12 | 高风险与高频 mutation 已统一 |
 | 测试与证据信任 | 15 | 15 | 四维证明模型和技术详情边界完整 |
@@ -57,7 +59,7 @@ Author/Library 冲突决策尚未完整提供 Compare/Fork/Reload。
 | 视觉层级与密度 | 6 | 5 | 视觉预算稳定；长时高密度疲劳待真人观察 |
 | 无障碍与键盘安全 | 3 | 3 | 自动化通过；真实读屏与低视力使用仍属 E3 |
 | 性能与宿主适配 | 3 | 3 | 构建门禁、参考宿主和单次实测完成；多用户 P75 待测 |
-| **合计** | **100** | **95** | **0 P0，但 1 个 E2 P1 与组织证据均未解锁** |
+| **合计** | **100** | **97** | **已知 E2 P0/P1/P2 清零；组织证据仍未解锁** |
 
 ## 4. 仍存在的问题
 
@@ -97,9 +99,9 @@ WebView P75 失败、代码 ownership 冲突持续上升或 disposal evidence �
 
 ## 6. 最终审计结论
 
-Round 3 的 E2 工程演进还不能收口。真实宿主复审发现的硬伤已经根治，Library continuity、压力门禁和
-持久 idempotent save receipt 已补齐；下一轮实现 Compare/Fork/Reload，再执行固定任务。完成该工程项后，
-剩余工作才主要是不能由设计者自测替代的真实用户与组织验证。
+Round 3 的 E2 工程演进现在可以收口。真实宿主复审发现的硬伤、Library continuity、压力门禁、持久
+idempotent save receipt 和 Compare/Fork/Reload 均已补齐。剩余工作是不能由设计者自测替代的真实用户与
+组织验证，不应再以继续堆页面功能来掩盖证据缺口。
 
 这套机制具备负熵能力：事故和误判会进入结构化 evidence，失败 gate 会生成明确修复对象，修复再回到
-自动化与现场任务，而不是沉淀为口头经验。当前工程完成度校正为 95；组织成熟度仍诚实保持 89。
+自动化与现场任务，而不是沉淀为口头经验。当前 E2 工程完成度为 97；组织成熟度仍诚实保持 89。

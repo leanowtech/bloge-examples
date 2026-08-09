@@ -58,6 +58,8 @@ import {
 } from '../ux/responsiveTaskProjection';
 import { useCompactTaskViewport } from '../ux/useCompactTaskViewport';
 import { useWorkspaceContinuity } from '../author/continuity/useWorkspaceContinuity';
+import SaveConflictResolutionDialog from '../author/continuity/SaveConflictResolutionDialog';
+import type { SaveConflictSnapshot } from '../author/continuity/saveConflictModel';
 
 type SaveState = 'idle' | 'dirty' | 'saving' | 'saved' | 'conflict' | 'error';
 
@@ -69,6 +71,19 @@ interface LibraryRecoveryPayload {
   selection: LibraryAssetSelection;
   startSource: string;
   authoritativeDraft: VisualLibraryAuthoringDraft | null;
+}
+
+interface LibrarySaveConflict {
+  localDraftId: string;
+  localRevision: number;
+  localFingerprint: string;
+  localDocument: VisualLibraryAuthoringDocument;
+  localSelection: LibraryAssetSelection;
+  forkDraftId: string;
+  authoritative: VisualLibraryAuthoringDraft | null;
+  loading: boolean;
+  busyAction: 'fork' | 'reload' | '';
+  error: string;
 }
 
 export default function LibraryWorkbench() {
@@ -93,6 +108,7 @@ export default function LibraryWorkbench() {
   const [startSource, setStartSource] = useState('');
   const [historicalDraft, setHistoricalDraft] = useState<VisualLibraryAuthoringDraft | null>(null);
   const [latestDraft, setLatestDraft] = useState<VisualLibraryAuthoringDraft | null>(null);
+  const [saveConflict, setSaveConflict] = useState<LibrarySaveConflict | null>(null);
   const compactTaskViewport = useCompactTaskViewport();
   const [mobileIntent, setMobileIntent] = useState<LibraryTaskIntent>('REVIEW');
   const revisionRef = useRef(0);
@@ -181,6 +197,51 @@ export default function LibraryWorkbench() {
       active = false;
     };
   }, []);
+
+  const openSaveConflict = useCallback(async (
+    localDocument: VisualLibraryAuthoringDocument,
+    localRevision: number,
+    localSelection: LibraryAssetSelection,
+    detail = '',
+    retainedForkDraftId = '',
+  ) => {
+    if (!draftId) return;
+    const localDraftId = draftId;
+    const localFingerprint = currentDraftRef.current?.fingerprint ?? '';
+    setSaveState('conflict');
+    setSaveNotice({
+      messageId: 'library.save.revisionConflict',
+      rawCode: 'HTTP_412',
+      rawDetail: detail,
+    });
+    setSaveConflict({
+      localDraftId,
+      localRevision,
+      localFingerprint,
+      localDocument: structuredClone(localDocument),
+      localSelection,
+      forkDraftId: retainedForkDraftId
+        || `${localDocument.library.id}-${draftSuffix()}`,
+      authoritative: null,
+      loading: true,
+      busyAction: '',
+      error: '',
+    });
+    try {
+      const authoritative = await fetchLibraryAuthoringDraft(localDraftId);
+      setSaveConflict((current) => current?.localDraftId === localDraftId
+        ? { ...current, authoritative, loading: false }
+        : current);
+    } catch (cause: unknown) {
+      setSaveConflict((current) => current?.localDraftId === localDraftId
+        ? {
+            ...current,
+            loading: false,
+            error: cause instanceof Error ? cause.message : String(cause),
+          }
+        : current);
+    }
+  }, [draftId]);
 
   useEffect(() => {
     const query = new URLSearchParams(window.location.search);
@@ -277,12 +338,7 @@ export default function LibraryWorkbench() {
       () => undefined,
       (error) => {
         if (error instanceof BlogeApiRequestError && error.status === 412) {
-          setSaveState('conflict');
-          setSaveNotice({
-            messageId: 'library.save.revisionConflict',
-            rawCode: `HTTP_${error.status}`,
-            rawDetail: error.message,
-          });
+          void openSaveConflict(snapshot, revisionRef.current, selection, error.message);
         } else {
           setSaveState('error');
           setSaveNotice({
@@ -293,7 +349,7 @@ export default function LibraryWorkbench() {
       },
     );
     return task;
-  }, [draftId]);
+  }, [draftId, openSaveConflict, selection]);
 
   const runPreview = useCallback(async (
     snapshot: VisualLibraryAuthoringDocument,
@@ -438,23 +494,60 @@ export default function LibraryWorkbench() {
     setStartSource(source);
     setHistoricalDraft(null);
     setLatestDraft(null);
+    setSaveConflict(null);
     replaceLibraryDraftLocation(id, 0);
   };
 
-  const reload = async () => {
-    if (!draftId) {
-      return;
-    }
-    setLoading(true);
+  const forkConflictedLibrary = async () => {
+    if (!saveConflict?.authoritative) return;
+    setSaveConflict((current) => current ? { ...current, busyAction: 'fork', error: '' } : current);
     try {
-      const current = await fetchLibraryAuthoringDraft(draftId);
-      setHistoricalDraft(null);
-      setLatestDraft(current);
-      installDraft(current);
-      replaceLibraryDraftLocation(current.draftId, current.revision);
-    } finally {
-      setLoading(false);
+      let stored: VisualLibraryAuthoringDraft;
+      try {
+        stored = await saveLibraryAuthoringDraft(
+          saveConflict.forkDraftId,
+          0,
+          structuredClone(saveConflict.localDocument),
+          'QUICK',
+        );
+      } catch (cause: unknown) {
+        if (!(cause instanceof BlogeApiRequestError && cause.status === 412)) throw cause;
+        const recovered = await fetchLibraryAuthoringDraft(saveConflict.forkDraftId);
+        if (JSON.stringify(recovered.document) !== JSON.stringify(saveConflict.localDocument)) {
+          throw new Error('The reserved conflict-fork coordinate contains different content.');
+        }
+        stored = recovered;
+      }
+      editEpochRef.current += 1;
+      installDraft(stored, saveConflict.localSelection);
+      setLatestDraft(stored);
+      setStartSource(`conflict-fork:${saveConflict.localDraftId}@${saveConflict.localRevision}`);
+      setSaveNotice({
+        messageId: 'library.save.conflictForked',
+        params: { revision: stored.revision },
+      });
+      setSaveConflict(null);
+      replaceLibraryAssetLocation(stored.draftId, stored.revision, saveConflict.localSelection);
+    } catch (cause: unknown) {
+      setSaveConflict((current) => current ? {
+        ...current,
+        busyAction: '',
+        error: cause instanceof Error ? cause.message : String(cause),
+      } : current);
     }
+  };
+
+  const reloadConflictedLibrary = () => {
+    if (!saveConflict?.authoritative) return;
+    setSaveConflict((current) => current ? { ...current, busyAction: 'reload', error: '' } : current);
+    const authoritative = saveConflict.authoritative;
+    setTestLaunch(null);
+    setInferenceLaunch(null);
+    setHistoricalDraft(null);
+    setLatestDraft(authoritative);
+    installDraft(authoritative);
+    replaceLibraryDraftLocation(authoritative.draftId, authoritative.revision);
+    setSaveConflict(null);
   };
 
   const validateNow = () => {
@@ -481,15 +574,18 @@ export default function LibraryWorkbench() {
         params: { revision: result.targetRevision },
       });
     } catch (error) {
-      setSaveState(error instanceof BlogeApiRequestError && error.status === 412
-        ? 'conflict' : 'error');
+      const revisionConflict = error instanceof BlogeApiRequestError && error.status === 412;
+      setSaveState(revisionConflict ? 'conflict' : 'error');
       setSaveNotice({
-        messageId: error instanceof BlogeApiRequestError && error.status === 412
+        messageId: revisionConflict
           ? 'library.save.revisionConflict'
           : 'library.save.commitFailed',
         rawCode: error instanceof BlogeApiRequestError ? `HTTP_${error.status}` : undefined,
         rawDetail: error instanceof Error ? error.message : undefined,
       });
+      if (revisionConflict && document) {
+        void openSaveConflict(document, revisionRef.current, selection, error.message);
+      }
     } finally {
       setCommitBusy(false);
     }
@@ -515,9 +611,8 @@ export default function LibraryWorkbench() {
     return persist(document, editEpochRef.current);
   }, [document, persist]);
   const markRevisionConflict = useCallback(() => {
-    setSaveState('conflict');
-    setSaveNotice({ messageId: 'library.save.revisionConflict' });
-  }, []);
+    if (document) void openSaveConflict(document, revisionRef.current, selection);
+  }, [document, openSaveConflict, selection]);
 
   if (loading && !document) {
     return <main className="library-workbench-loading">{t('Loading library draft...')}</main>;
@@ -689,11 +784,6 @@ export default function LibraryWorkbench() {
               {saveNotice.rawDetail && <p lang="en">{saveNotice.rawDetail}</p>}
             </details>
           )}
-          {saveState === 'conflict' && (
-            <button type="button" className="secondary compact" onClick={() => void reload()}>
-              {t('Reload')}
-            </button>
-          )}
         </div>
         <nav>
           <a className="secondary compact" href="/author/">{t('Graph Author')}</a>
@@ -789,8 +879,55 @@ export default function LibraryWorkbench() {
           onClose={() => setTestLaunch(null)}
         />
       )}
+      {saveConflict && (
+        <SaveConflictResolutionDialog
+          open
+          subjectLabel={t('Operator library draft')}
+          local={libraryConflictSnapshot(
+            saveConflict.localDocument,
+            saveConflict.localRevision,
+            saveConflict.localFingerprint,
+          )}
+          authoritative={saveConflict.authoritative
+            ? libraryConflictSnapshot(
+                saveConflict.authoritative.document,
+                saveConflict.authoritative.revision,
+                saveConflict.authoritative.fingerprint,
+              )
+            : null}
+          authorityLoading={saveConflict.loading}
+          busyAction={saveConflict.busyAction}
+          error={saveConflict.error}
+          onFork={() => void forkConflictedLibrary()}
+          onReload={reloadConflictedLibrary}
+          onRetryAuthority={() => void openSaveConflict(
+            saveConflict.localDocument,
+            saveConflict.localRevision,
+            saveConflict.localSelection,
+            '',
+            saveConflict.forkDraftId,
+          )}
+        />
+      )}
     </main>
   );
+}
+
+function libraryConflictSnapshot(
+  document: VisualLibraryAuthoringDocument,
+  revision: number,
+  fingerprint: string,
+): SaveConflictSnapshot {
+  return {
+    revision,
+    fingerprint,
+    facts: [
+      { id: 'name', label: 'Library name', value: document.library.name || document.library.id },
+      { id: 'types', label: 'Types', value: Object.keys(document.types ?? {}).length },
+      { id: 'operators', label: 'Operators', value: Object.keys(document.operators ?? {}).length },
+      { id: 'functions', label: 'Functions', value: Object.keys(document.functions ?? {}).length },
+    ],
+  };
 }
 
 function renderBuilder(

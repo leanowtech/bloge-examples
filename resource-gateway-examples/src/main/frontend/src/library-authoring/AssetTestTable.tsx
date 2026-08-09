@@ -98,6 +98,7 @@ export default function AssetTestTable({
 }: AssetTestTableProps) {
   const { t, d } = useI18n();
   const dialogRef = useRef<HTMLDivElement>(null);
+  const loadedAssetRef = useRef('');
   const [exactDraft, setExactDraft] = useState<VisualLibraryAuthoringDraft | null>(null);
   const [operatorDraft, setOperatorDraft] = useState<VisualAuthoringOperatorTestDraft | null>(null);
   const [functionDraft, setFunctionDraft] = useState<VisualAuthoringFunctionTestDraft | null>(null);
@@ -137,6 +138,7 @@ export default function AssetTestTable({
     let active = true;
     setBusy(true);
     setError('');
+    const assetKey = `${kind}:${assetRef}`;
     prepareDraft()
       .then(async (draft) => {
         if (kind === 'operator') {
@@ -146,11 +148,19 @@ export default function AssetTestTable({
             assetRef,
           );
           if (active) {
+            const preserveAuthoredRows = loadedAssetRef.current === assetKey;
+            loadedAssetRef.current = assetKey;
             setExactDraft(draft);
             setOperatorDraft(generated);
-            setOperatorRows(generated.suite.cases.map(operatorEditor));
-            setSelectedCaseIndex(0);
-            setTestView(generated.suite.cases.length > 1 ? 'matrix' : 'case');
+            if (!preserveAuthoredRows) {
+              setOperatorRows(generated.suite.cases.map(operatorEditor));
+              setSelectedCaseIndex(0);
+              setTestView(generated.suite.cases.length > 1 ? 'matrix' : 'case');
+            }
+            setOperatorResults({});
+            setLastEvidence('');
+            setEvidenceView(null);
+            setDraftGate(null);
           }
         } else {
           const generated = await draftLibraryAuthoringFunctionTest(
@@ -159,11 +169,19 @@ export default function AssetTestTable({
             assetRef,
           );
           if (active) {
+            const preserveAuthoredRows = loadedAssetRef.current === assetKey;
+            loadedAssetRef.current = assetKey;
             setExactDraft(draft);
             setFunctionDraft(generated);
-            setFunctionRows(generated.suite.cases.map(functionEditor));
-            setSelectedCaseIndex(0);
-            setTestView(generated.suite.cases.length > 1 ? 'matrix' : 'case');
+            if (!preserveAuthoredRows) {
+              setFunctionRows(generated.suite.cases.map(functionEditor));
+              setSelectedCaseIndex(0);
+              setTestView(generated.suite.cases.length > 1 ? 'matrix' : 'case');
+            }
+            setFunctionResults({});
+            setLastEvidence('');
+            setEvidenceView(null);
+            setDraftGate(null);
           }
         }
       })

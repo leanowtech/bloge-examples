@@ -238,6 +238,8 @@ import {
   useWorkspaceContinuity,
   type WorkspaceSaveAttempt,
 } from './author/continuity/useWorkspaceContinuity';
+import SaveConflictResolutionDialog from './author/continuity/SaveConflictResolutionDialog';
+import type { SaveConflictSnapshot } from './author/continuity/saveConflictModel';
 import EffectiveContractPanel from './author/contract/EffectiveContractPanel';
 import NodeDeletionImpactDialog, {
   MutationNotice,
@@ -310,6 +312,26 @@ interface NodeData {
   focusState?: CanvasNodeFocusState;
   pathFocus?: 'active' | 'dimmed';
   pinned?: boolean;
+}
+
+function graphConflictSnapshot(
+  draft: GraphDraft,
+  fingerprint: string,
+  scenarioDraftSet: ScenarioDraftSet | null | undefined,
+): SaveConflictSnapshot {
+  return {
+    revision: draft.revision ?? 0,
+    fingerprint,
+    facts: [
+      { id: 'name', label: 'Graph name', value: draft.graphName },
+      { id: 'nodes', label: 'Nodes', value: draft.nodes.length },
+      { id: 'edges', label: 'Edges', value: draft.edges.length },
+      { id: 'fixtures', label: 'Fixtures', value: Object.keys(draft.nodeFixtures ?? {}).length },
+      ...(scenarioDraftSet === undefined
+        ? []
+        : [{ id: 'scenarios', label: 'Scenarios', value: scenarioDraftSet?.scenarios.length ?? 0 }]),
+    ],
+  };
 }
 
 interface LayoutUndoSnapshot {
@@ -834,6 +856,18 @@ interface AuthoringRecoveryPayload {
   loadedExampleKey: string;
   workspaceForkIdempotencyKey: string;
   mutationJournal?: MutationJournalState<AuthoringMutationSnapshot>;
+}
+
+interface AuthorGraphSaveConflict {
+  localDraft: GraphDraft;
+  localScenarioDraftSet: ScenarioDraftSet | null;
+  localFingerprint: string;
+  authoritative: GraphDraft | null;
+  authoritativeFingerprint: string;
+  loading: boolean;
+  busyAction: 'fork' | 'reload' | '';
+  error: string;
+  forkIdempotencyKey: string;
 }
 
 function authoringRecoveryFingerprintValue(payload: AuthoringRecoveryPayload): unknown {
@@ -5254,7 +5288,7 @@ export default function AuthorCanvas({ workspaceVersion = 'v1' }: AuthorCanvasPr
   const [evidenceContentEpoch, setEvidenceContentEpoch] = useState(-1);
   const [matrixDiagnosticsSuppressed, setMatrixDiagnosticsSuppressed] = useState(false);
   const [validationContentEpoch, setValidationContentEpoch] = useState(-1);
-  const [draftSaveConflict, setDraftSaveConflict] = useState(false);
+  const [draftSaveConflict, setDraftSaveConflict] = useState<AuthorGraphSaveConflict | null>(null);
   const [error, setError] = useState<string>('');
   const [busy, setBusy] = useState(false);
   const [validatingDraft, setValidatingDraft] = useState(false);
@@ -6089,7 +6123,6 @@ export default function AuthorCanvas({ workspaceVersion = 'v1' }: AuthorCanvasPr
     setValidationResult(null);
     setSimulationTableResults({});
     setLastScenarioReviewEvidence(null);
-    setDraftSaveConflict(false);
     setError('');
   }, []);
 
@@ -7524,6 +7557,59 @@ export default function AuthorCanvas({ workspaceVersion = 'v1' }: AuthorCanvasPr
     activeScenarioFingerprint,
   ]);
 
+  const openGraphSaveConflict = useCallback(async (
+    localDraft: GraphDraft,
+    localScenarioDraftSet: ScenarioDraftSet | null,
+    _detail = '',
+    retainedForkIdempotencyKey = '',
+  ) => {
+    const localDraftId = localDraft.draftId?.trim() ?? '';
+    if (!localDraftId) return;
+    const forkIdempotencyKey = retainedForkIdempotencyKey || `graph-conflict-fork:${
+      globalThis.crypto?.randomUUID?.() ?? `${Date.now()}-${Math.random().toString(16).slice(2)}`
+    }`;
+    const localSnapshot = structuredClone(localDraft);
+    const scenarioSnapshot = localScenarioDraftSet
+      ? structuredClone(localScenarioDraftSet)
+      : null;
+    setDraftSaveConflict({
+      localDraft: localSnapshot,
+      localScenarioDraftSet: scenarioSnapshot,
+      localFingerprint: '',
+      authoritative: null,
+      authoritativeFingerprint: '',
+      loading: true,
+      busyAction: '',
+      error: '',
+      forkIdempotencyKey,
+    });
+    try {
+      const [authoritative, localFingerprint] = await Promise.all([
+        fetchGraphDraft(localDraftId),
+        sha256Fingerprint(localSnapshot),
+      ]);
+      const authoritativeFingerprint = await sha256Fingerprint(authoritative);
+      setDraftSaveConflict((current) => current?.forkIdempotencyKey === forkIdempotencyKey
+        ? {
+            ...current,
+            authoritative,
+            authoritativeFingerprint,
+            localFingerprint,
+            loading: false,
+            error: '',
+          }
+        : current);
+    } catch (cause: unknown) {
+      setDraftSaveConflict((current) => current?.forkIdempotencyKey === forkIdempotencyKey
+        ? {
+            ...current,
+            loading: false,
+            error: cause instanceof Error ? cause.message : String(cause),
+          }
+        : current);
+    }
+  }, []);
+
   const saveGraphForScenario = useCallback(async (saveAttempt?: WorkspaceSaveAttempt) => {
     try {
       let stored: GraphDraft;
@@ -7573,7 +7659,7 @@ export default function AuthorCanvas({ workspaceVersion = 'v1' }: AuthorCanvasPr
         contract: projection.contract,
         contractFingerprint: projection.contractFingerprint,
       };
-      setDraftSaveConflict(false);
+      setDraftSaveConflict(null);
       setGraphDraftId(stored.draftId);
       setGraphDraftRevision(stored.revision);
       setGraphTenantId(savedCanvasDraft.tenantId || 'tenant-a');
@@ -7593,11 +7679,98 @@ export default function AuthorCanvas({ workspaceVersion = 'v1' }: AuthorCanvasPr
       }
     } catch (cause: unknown) {
       if (/conflict|revision|409/i.test(String(cause))) {
-        setDraftSaveConflict(true);
+        void openGraphSaveConflict(exportableDraft, scenarioDraftSet, String(cause));
       }
       throw cause;
     }
-  }, [exportableDraft, loadedExampleKey, scenarioDraftSet]);
+  }, [exportableDraft, loadedExampleKey, openGraphSaveConflict, scenarioDraftSet]);
+
+  const forkConflictedGraph = useCallback(async () => {
+    const conflict = draftSaveConflict;
+    if (!conflict?.authoritative) return;
+    setDraftSaveConflict((current) => current
+      ? { ...current, busyAction: 'fork', error: '' }
+      : current);
+    try {
+      let stored: GraphDraft;
+      let persistedScenarios: ScenarioDraftSet | null = null;
+      if (conflict.localScenarioDraftSet) {
+        const command = workspaceForkCommand(
+          conflict.localDraft,
+          conflict.localScenarioDraftSet,
+          null,
+        );
+        command.changeSource = 'author-canvas-conflict-resolution';
+        command.workspaceName = `${conflict.localDraft.graphName} local fork`;
+        const receipt = await forkWorkspace(conflict.forkIdempotencyKey, command);
+        stored = await fetchGraphDraft(receipt.graphCoordinate.draftId);
+        const scenarioCoordinate = receipt.scenarioSuiteCoordinates[0];
+        if (!scenarioCoordinate) {
+          throw new Error('The conflict fork did not return a Scenario suite coordinate.');
+        }
+        persistedScenarios = (await fetchScenarioDraftSet(scenarioCoordinate.id)).draftSet;
+      } else {
+        stored = await saveGraphDraft({
+          ...conflict.localDraft,
+          draftId: '',
+          revision: 0,
+        }, conflict.forkIdempotencyKey);
+      }
+      if (!stored.draftId || !stored.revision) {
+        throw new Error('The conflict fork did not return an exact Graph revision.');
+      }
+      const projection = await fetchScenarioGraphContract(stored.draftId);
+      const savedCanvasDraft: GraphDraft = {
+        ...conflict.localDraft,
+        draftId: stored.draftId,
+        revision: stored.revision,
+        tenantId: stored.tenantId ?? conflict.localDraft.tenantId,
+        namespace: stored.namespace ?? conflict.localDraft.namespace,
+        environment: stored.environment ?? conflict.localDraft.environment,
+        operatorFingerprints: stored.operatorFingerprints
+          ?? conflict.localDraft.operatorFingerprints,
+        operatorSnapshots: stored.operatorSnapshots ?? conflict.localDraft.operatorSnapshots,
+      };
+      authoritativeContractRef.current = {
+        canvasSnapshot: canonicalJson(savedCanvasDraft),
+        executionSnapshot: canonicalExecutionGraphDraft(savedCanvasDraft),
+        graphDraft: stored,
+        contract: projection.contract,
+        contractFingerprint: projection.contractFingerprint,
+      };
+      resetRunResult();
+      setOperatorTestResults({});
+      setOperatorTestPublications({});
+      setGraphDraftId(stored.draftId);
+      setGraphDraftRevision(stored.revision);
+      setGraphTenantId(savedCanvasDraft.tenantId || 'tenant-a');
+      setGraphNamespace(savedCanvasDraft.namespace || 'local');
+      setGraphEnvironment(savedCanvasDraft.environment || 'test');
+      setGraphOperatorFingerprints(savedCanvasDraft.operatorFingerprints ?? {});
+      setGraphOperatorSnapshots(savedCanvasDraft.operatorSnapshots ?? {});
+      setContractDraft(projection.contract);
+      setContractFingerprint(projection.contractFingerprint);
+      setLoadedExampleKey('');
+      workspaceForkIdempotencyKeyRef.current = '';
+      if (persistedScenarios) {
+        scenarioGraphNameRef.current = stored.graphName;
+        setScenarioDraftSet(persistedScenarios);
+      }
+      setDraftSaveConflict(null);
+      setConnectionNotice({
+        level: 'ok',
+        message: t('Local work was preserved as Graph revision {revision} in a new Workspace.', {
+          revision: stored.revision,
+        }),
+      });
+    } catch (cause: unknown) {
+      setDraftSaveConflict((current) => current ? {
+        ...current,
+        busyAction: '',
+        error: cause instanceof Error ? cause.message : String(cause),
+      } : current);
+    }
+  }, [draftSaveConflict, resetRunResult, t]);
 
   const openOperatorContractWorkspace = useCallback(async (
     operator: OperatorDefinition,
@@ -8082,7 +8255,9 @@ export default function AuthorCanvas({ workspaceVersion = 'v1' }: AuthorCanvasPr
     contextVariableCounter.current = isTaskWorkspace ? 0 : nextContextVariables.length;
     tableTestCounter.current = nextSimulationTableRows.length;
     operatorTestCounter.current = 0;
-    setNodes(workspaceBundle ? nextNodes : autoLayoutFlowNodes(nextNodes, nextEdges));
+    const preserveStoredLayout = Boolean(workspaceBundle)
+      || projection.sourceId.startsWith('draft:');
+    setNodes(preserveStoredLayout ? nextNodes : autoLayoutFlowNodes(nextNodes, nextEdges));
     setPinnedNodeIds(new Set());
     setLayoutPlanning(false);
     setLayoutPreview(null);
@@ -8195,6 +8370,51 @@ export default function AuthorCanvas({ workspaceVersion = 'v1' }: AuthorCanvasPr
   useEffect(() => {
     applyDslProjectionRef.current = applyDslProjection;
   }, [applyDslProjection]);
+
+  const reloadAuthoritativeGraph = useCallback(async () => {
+    const conflict = draftSaveConflict;
+    if (!conflict?.authoritative?.draftId) return;
+    setDraftSaveConflict((current) => current
+      ? { ...current, busyAction: 'reload', error: '' }
+      : current);
+    try {
+      const projection = await fetchScenarioGraphContract(conflict.authoritative.draftId);
+      mutationObservationModeRef.current = 'reset';
+      replaceMutationJournal(initialMutationJournal<AuthoringMutationSnapshot>());
+      applyDslProjection({
+        schemaVersion: 'bloge.dslVisualProjection.v1',
+        sourceId: `draft:${conflict.authoritative.draftId}`,
+        draft: conflict.authoritative,
+        diagnostics: [],
+      }, `Stored draft ${conflict.authoritative.draftId}@${conflict.authoritative.revision ?? 0}`);
+      scenarioGraphNameRef.current = '';
+      setScenarioDraftSet(null);
+      setContractDraft(projection.contract);
+      setContractFingerprint(projection.contractFingerprint);
+      setLoadedExampleKey('');
+      workspaceForkIdempotencyKeyRef.current = '';
+      authoritativeContractRef.current = {
+        canvasSnapshot: canonicalJson(conflict.authoritative),
+        executionSnapshot: canonicalExecutionGraphDraft(conflict.authoritative),
+        graphDraft: conflict.authoritative,
+        contract: projection.contract,
+        contractFingerprint: projection.contractFingerprint,
+      };
+      setDraftSaveConflict(null);
+      setConnectionNotice({
+        level: 'ok',
+        message: t('Loaded authoritative Graph revision {revision}. Local edits were discarded.', {
+          revision: conflict.authoritative.revision ?? 0,
+        }),
+      });
+    } catch (cause: unknown) {
+      setDraftSaveConflict((current) => current ? {
+        ...current,
+        busyAction: '',
+        error: cause instanceof Error ? cause.message : String(cause),
+      } : current);
+    }
+  }, [applyDslProjection, draftSaveConflict, replaceMutationJournal, t]);
 
   useEffect(() => {
     if (!isTaskWorkspace || !initialDslHandoff || dslHandoffStartedRef.current) {
@@ -10184,7 +10404,7 @@ export default function AuthorCanvas({ workspaceVersion = 'v1' }: AuthorCanvasPr
     draft: {
       durable: Boolean(graphDraftId && graphDraftRevision > 0),
       current: exactSavedDraft,
-      conflicted: draftSaveConflict,
+      conflicted: Boolean(draftSaveConflict),
     },
     execution: {
       busy: busy || tableTestingBusy,
@@ -12867,6 +13087,35 @@ export default function AuthorCanvas({ workspaceVersion = 'v1' }: AuthorCanvasPr
           onConfirm={() => deleteNodesAtomically(
             pendingNodeDeletion.nodeIds,
             pendingNodeDeletion.impact,
+          )}
+        />
+      )}
+      {draftSaveConflict && (
+        <SaveConflictResolutionDialog
+          open
+          subjectLabel={t('Graph draft')}
+          local={graphConflictSnapshot(
+            draftSaveConflict.localDraft,
+            draftSaveConflict.localFingerprint,
+            draftSaveConflict.localScenarioDraftSet,
+          )}
+          authoritative={draftSaveConflict.authoritative
+            ? graphConflictSnapshot(
+                draftSaveConflict.authoritative,
+                draftSaveConflict.authoritativeFingerprint,
+                undefined,
+              )
+            : null}
+          authorityLoading={draftSaveConflict.loading}
+          busyAction={draftSaveConflict.busyAction}
+          error={draftSaveConflict.error}
+          onFork={() => void forkConflictedGraph()}
+          onReload={() => void reloadAuthoritativeGraph()}
+          onRetryAuthority={() => void openGraphSaveConflict(
+            draftSaveConflict.localDraft,
+            draftSaveConflict.localScenarioDraftSet,
+            '',
+            draftSaveConflict.forkIdempotencyKey,
           )}
         />
       )}

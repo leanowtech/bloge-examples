@@ -149,8 +149,12 @@ export const MESSAGE_CATALOG = {
     'zh-CN': '当前角色或租户范围不能编辑算子库。',
   },
   'library.save.revisionConflict': {
-    en: 'A newer revision exists. Reload before continuing.',
-    'zh-CN': '存在更新的修订版，请重新加载后继续。',
+    en: 'A newer revision exists. Compare both versions before choosing how to continue.',
+    'zh-CN': '存在更新的修订版，请比较双方内容后选择如何继续。',
+  },
+  'library.save.conflictForked': {
+    en: 'Local work was preserved as revision {revision} of a new draft.',
+    'zh-CN': '本地工作已保留为新草稿的修订版 {revision}。',
   },
   'library.save.loadFailed': {
     en: 'The library draft could not be loaded.',
