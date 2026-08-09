@@ -30,6 +30,8 @@ import com.leanowtech.bloge.gateway.testing.api.TestSuiteStabilityPhysicalAttemp
 import com.leanowtech.bloge.gateway.testing.api.WorkerQuarantineChangeAuthorizationTrustStore;
 import com.leanowtech.bloge.gateway.testing.domain.WorkerQuarantineRequestIndexMode;
 import com.leanowtech.bloge.gateway.visual.draft.GraphDraft;
+import com.leanowtech.bloge.gateway.visual.draft.GraphDraftSaveCommand;
+import com.leanowtech.bloge.gateway.visual.draft.StoredGraphDraftSaveReceipt;
 import com.leanowtech.bloge.gateway.visual.authoring.testing.AuthoringFunctionWorkerProtocol;
 import com.leanowtech.bloge.gateway.visual.authoring.testing.AuthoringTestEvidenceProtocol;
 import com.leanowtech.bloge.gateway.visual.runtime.VisualEvidenceSigner;
@@ -279,6 +281,8 @@ public record IntegrationCapabilities(
                         ? Objects.requireNonNull(requestIndexMode, "requestIndexMode") : null;
         Map<String, List<String>> objects = new LinkedHashMap<>();
         objects.put("graphDraft", List.of(GraphDraft.SCHEMA_VERSION));
+        objects.put("graphDraftSaveCommand", List.of(GraphDraftSaveCommand.SCHEMA_VERSION));
+        objects.put("graphDraftSaveReceipt", List.of(StoredGraphDraftSaveReceipt.SCHEMA_VERSION));
         objects.put("scenarioImportMaterializationRequest", List.of(
                 com.leanowtech.bloge.gateway.authoring.scenario
                         .ScenarioImportMaterializationRequest.SCHEMA_VERSION));
@@ -881,6 +885,9 @@ public record IntegrationCapabilities(
 
         Map<String, Boolean> features = new LinkedHashMap<>();
         features.put("draftExportDependencyProfile", true);
+        features.put("graphDraftIdempotentSave", true);
+        features.put("graphDraftDurableSaveReceipt", true);
+        features.put("graphDraftCrossReplicaSaveSerialization", true);
         features.put("scenarioImportMaterializationProtocol", true);
         features.put("scenarioImportMaterializationApi", testExecutionEndpointEnabled);
         features.put("scenarioTableScaleProtocol", true);
@@ -1378,6 +1385,8 @@ public record IntegrationCapabilities(
                 new Endpoint("GET", "/api/integration/reconciliation"),
                 new Endpoint("GET", "/api/integration/operator-libraries/{libraryId}"),
                 new Endpoint("GET", "/api/integration/operator-test-suites/{suiteId}"),
+                new Endpoint("POST", "/api/visual/drafts"),
+                new Endpoint("PUT", "/api/visual/drafts/{draftId}"),
                 new Endpoint("POST", "/admin/visual-operator-library-authoring/preview"),
                 new Endpoint("POST", "/admin/visual-operator-library-authoring/signature/parse"),
                 new Endpoint("GET", "/admin/visual-operator-library-authoring/catalogs"),

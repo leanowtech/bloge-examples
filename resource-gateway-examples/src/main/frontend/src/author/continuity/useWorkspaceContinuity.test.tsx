@@ -8,7 +8,10 @@ import {
   type RecoveryCoordinate,
   type WorkspaceRecoveryStore,
 } from './workspaceContinuity';
-import { useWorkspaceContinuity } from './useWorkspaceContinuity';
+import {
+  useWorkspaceContinuity,
+  type WorkspaceSaveAttempt,
+} from './useWorkspaceContinuity';
 import { prepareHostDisposal } from '../../host/hostLifecycle';
 import { sha256Fingerprint } from '../../contract-scenario/fingerprint';
 
@@ -132,7 +135,7 @@ describe('useWorkspaceContinuity', () => {
 
   it('marks an unavailable server as offline-recoverable and retries once on reconnection', async () => {
     const store = new MemoryRecoveryStore();
-    const onSave = vi.fn()
+    const onSave = vi.fn<(attempt: WorkspaceSaveAttempt) => Promise<void>>()
       .mockRejectedValueOnce(new Error('Failed to fetch'))
       .mockResolvedValueOnce(undefined);
     await render({ draftId: 'draft-a', revision: 2 }, false, 1, store, {
@@ -157,6 +160,12 @@ describe('useWorkspaceContinuity', () => {
     });
     await waitFor(() => onSave.mock.calls.length === 2);
     expect(onSave).toHaveBeenCalledTimes(2);
+    expect(onSave.mock.calls[0]?.[0]).toMatchObject({
+      contentEpoch: expect.any(Number),
+      contentFingerprint: expect.stringMatching(/^sha256:/),
+      idempotencyKey: expect.stringMatching(/^graph-save:sha256-/),
+    });
+    expect(onSave.mock.calls[1]?.[0]).toEqual(onSave.mock.calls[0]?.[0]);
   });
 
   it('rejects a recovery payload whose stored fingerprint does not match its content', async () => {
@@ -245,7 +254,7 @@ interface HarnessOptions {
   maxWaitMs?: number;
   autosaveMs?: number;
   onRestore?: (payload: { draftId: string; revision: number }, capturedAt: string) => void;
-  onSave?: () => Promise<void>;
+  onSave?: (attempt: WorkspaceSaveAttempt) => Promise<void>;
   recoveryPayloadGuard?: (payload: unknown) => payload is { draftId: string; revision: number };
 }
 

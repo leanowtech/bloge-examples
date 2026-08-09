@@ -17,7 +17,10 @@ import com.leanowtech.bloge.gateway.visual.draft.GraphDraftPatchResult;
 import com.leanowtech.bloge.gateway.visual.draft.GraphDraftPatchService;
 import com.leanowtech.bloge.gateway.visual.draft.GraphDraftRepository;
 import com.leanowtech.bloge.gateway.visual.draft.GraphDraftRevisionRestoreRequest;
+import com.leanowtech.bloge.gateway.visual.draft.GraphDraftSaveCommand;
+import com.leanowtech.bloge.gateway.visual.draft.GraphDraftSaveCoordinator;
 import com.leanowtech.bloge.gateway.visual.draft.GraphDraftSummary;
+import com.leanowtech.bloge.gateway.visual.model.VisualBundleFingerprint;
 import com.leanowtech.bloge.gateway.visual.publication.VisualGraphPublication;
 import com.leanowtech.bloge.gateway.visual.publication.VisualGraphPublicationRepository;
 import com.leanowtech.bloge.gateway.visual.publication.VisualGraphPublicationResult;
@@ -43,6 +46,7 @@ import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
+import org.springframework.web.bind.annotation.RequestHeader;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
@@ -69,6 +73,7 @@ public class VisualGraphDraftController {
     private final GraphDraftPatchService patchService;
     private final VisualGraphRunRepository runRepository;
     private final VisualRunEvidenceRecoveryService runRecovery;
+    private final GraphDraftSaveCoordinator saveCoordinator;
 
     /**
      * @param repository draft repository
@@ -83,7 +88,8 @@ public class VisualGraphDraftController {
                                       VisualGraphPublicationRepository publicationRepository,
                                       GraphDraftPatchService patchService,
                                       VisualGraphRunRepository runRepository,
-                                      VisualRunEvidenceRecoveryService runRecovery) {
+                                      VisualRunEvidenceRecoveryService runRecovery,
+                                      GraphDraftSaveCoordinator saveCoordinator) {
         this.repository = repository;
         this.validator = validator;
         this.runner = runner;
@@ -92,6 +98,20 @@ public class VisualGraphDraftController {
         this.patchService = patchService;
         this.runRepository = runRepository;
         this.runRecovery = runRecovery;
+        this.saveCoordinator = saveCoordinator;
+    }
+
+    /** Backward-compatible constructor for direct tests with explicit recovery wiring. */
+    public VisualGraphDraftController(GraphDraftRepository repository,
+                                      GraphDraftValidator validator,
+                                      VisualGraphRunService runner,
+                                      VisualOperatorCatalog catalog,
+                                      VisualGraphPublicationRepository publicationRepository,
+                                      GraphDraftPatchService patchService,
+                                      VisualGraphRunRepository runRepository,
+                                      VisualRunEvidenceRecoveryService runRecovery) {
+        this(repository, validator, runner, catalog, publicationRepository, patchService, runRepository,
+                runRecovery, GraphDraftSaveCoordinator.lightweight());
     }
 
     /** Backward-compatible constructor for direct tests without durable recovery wiring. */
@@ -103,7 +123,8 @@ public class VisualGraphDraftController {
                                       GraphDraftPatchService patchService,
                                       VisualGraphRunRepository runRepository) {
         this(repository, validator, runner, catalog, publicationRepository, patchService, runRepository,
-                VisualRunEvidenceRecoveryService.passThrough(runRepository));
+                VisualRunEvidenceRecoveryService.passThrough(runRepository),
+                GraphDraftSaveCoordinator.lightweight());
     }
 
     /**
@@ -192,17 +213,36 @@ public class VisualGraphDraftController {
                                               @RequestParam(defaultValue = "") String actor,
                                               @RequestParam(defaultValue = "") String changeSource,
                                               @RequestParam(defaultValue = "") String changeSummary,
-                                              @RequestParam(defaultValue = "") String reason) {
+                                              @RequestParam(defaultValue = "") String reason,
+                                              @RequestHeader(name = "Idempotency-Key", defaultValue = "")
+                                              String idempotencyKey) {
         requireSupportedDraftContract(draft);
         GraphDraft candidate = createDraftCandidate(draft, actor, changeSource, changeSummary, reason);
         VisualValidationResult validation = validator.validate(candidate);
         try {
-            return ResponseEntity.ok(repository.save(candidate));
+            GraphDraftSaveCoordinator.GraphDraftSaveOutcome outcome = saveCoordinator.execute(
+                    idempotencyKey,
+                    GraphDraftSaveCommand.create(draft, actor, changeSource, changeSummary, reason),
+                    () -> repository.save(candidate));
+            return saveResponse(outcome);
+        } catch (GraphDraftSaveCoordinator.GraphDraftSaveIdempotencyConflictException e) {
+            return idempotencyConflictResponse(idempotencyKey);
+        } catch (GraphDraftSaveCoordinator.GraphDraftSaveInvalidIdempotencyKeyException e) {
+            return invalidIdempotencyKeyResponse(e.getMessage());
         } catch (RuntimeException e) {
             return ResponseEntity.status(HttpStatus.CONFLICT)
                     .body(validationWithPersistenceFailure(validation,
                             draftCreatePersistenceFailureDiagnostic(candidate, e)));
         }
+    }
+
+    /** Backward-compatible direct-call helper retaining the pre-idempotency signature. */
+    public ResponseEntity<Object> createDraft(GraphDraft draft,
+                                              String actor,
+                                              String changeSource,
+                                              String changeSummary,
+                                              String reason) {
+        return createDraft(draft, actor, changeSource, changeSummary, reason, "");
     }
 
     /**
@@ -616,19 +656,69 @@ public class VisualGraphDraftController {
                                          @RequestParam(defaultValue = "") String actor,
                                          @RequestParam(defaultValue = "") String changeSource,
                                          @RequestParam(defaultValue = "") String changeSummary,
-                                         @RequestParam(defaultValue = "") String reason) {
+                                         @RequestParam(defaultValue = "") String reason,
+                                         @RequestHeader(name = "Idempotency-Key", defaultValue = "")
+                                         String idempotencyKey) {
+        try {
+            GraphDraftSaveCoordinator.GraphDraftSaveOutcome outcome = saveCoordinator.execute(
+                    idempotencyKey,
+                    GraphDraftSaveCommand.update(
+                            draftId, draft, actor, changeSource, changeSummary, reason),
+                    () -> updateOnce(draftId, draft, actor, changeSource, changeSummary, reason));
+            return saveResponse(outcome);
+        } catch (DraftUpdateNotFoundException e) {
+            return ResponseEntity.notFound().build();
+        } catch (DraftUpdateConflictException e) {
+            return updateConflictResponse(draftId, e.expectedRevision(), e.current());
+        } catch (DraftUpdateContractException e) {
+            return ResponseEntity.badRequest()
+                    .body(new VisualValidationResult(false, e.diagnostics()));
+        } catch (DraftUpdatePersistenceException e) {
+            return ResponseEntity.status(HttpStatus.CONFLICT)
+                    .body(GraphDraftPatchResult.rejected(e.current(),
+                            List.of(draftUpdatePersistenceFailureDiagnostic(
+                                    draftId, e.expectedRevision(), e.current(), e.candidate(), e.failure()))));
+        } catch (GraphDraftSaveCoordinator.GraphDraftSaveIdempotencyConflictException e) {
+            return idempotencyConflictResponse(idempotencyKey);
+        } catch (GraphDraftSaveCoordinator.GraphDraftSaveInvalidIdempotencyKeyException e) {
+            return invalidIdempotencyKeyResponse(e.getMessage());
+        }
+    }
+
+    /** Backward-compatible direct-call helper retaining the pre-idempotency signature. */
+    public ResponseEntity<Object> update(String draftId,
+                                         GraphDraft draft,
+                                         String actor,
+                                         String changeSource,
+                                         String changeSummary,
+                                         String reason) {
+        return update(draftId, draft, actor, changeSource, changeSummary, reason, "");
+    }
+
+    /**
+     * Backward-compatible direct-call helper for tests and non-Spring callers.
+     */
+    public ResponseEntity<Object> update(String draftId, GraphDraft draft) {
+        return update(draftId, draft, "", "", "", "", "");
+    }
+
+    private GraphDraft updateOnce(String draftId,
+                                  GraphDraft draft,
+                                  String actor,
+                                  String changeSource,
+                                  String changeSummary,
+                                  String reason) {
         Optional<GraphDraft> current = repository.find(draftId);
         if (current.isEmpty()) {
-            return ResponseEntity.notFound().build();
+            throw new DraftUpdateNotFoundException();
         }
         long expectedRevision = draft.revision();
         if (expectedRevision != current.get().revision()) {
-            return updateConflictResponse(draftId, expectedRevision, current.get());
+            throw new DraftUpdateConflictException(expectedRevision, current.get());
         }
         List<VisualDiagnostic> contractDiagnostics = draftContractDiagnostics(draft);
         if (!contractDiagnostics.isEmpty()) {
-            return ResponseEntity.badRequest()
-                    .body(new VisualValidationResult(false, contractDiagnostics));
+            throw new DraftUpdateContractException(contractDiagnostics);
         }
         GraphDraft candidate = withExistingOrCurrentOperatorSnapshotState(current.get(),
                 draft.withIdentity(draftId, expectedRevision).withRevisionMetadata(GraphDraft.RevisionMetadata.patch(
@@ -640,21 +730,111 @@ public class VisualGraphDraftController {
                 )));
         try {
             return repository.saveIfRevision(draftId, expectedRevision, candidate)
-                    .<ResponseEntity<Object>>map(ResponseEntity::ok)
-                    .orElseGet(() -> updateConflictResponse(draftId, expectedRevision, current.get()));
+                    .orElseThrow(() -> new DraftUpdateConflictException(expectedRevision, current.get()));
+        } catch (DraftUpdateConflictException e) {
+            throw e;
         } catch (RuntimeException e) {
-            return ResponseEntity.status(HttpStatus.CONFLICT)
-                    .body(GraphDraftPatchResult.rejected(current.get(),
-                            List.of(draftUpdatePersistenceFailureDiagnostic(
-                                    draftId, expectedRevision, current.get(), candidate, e))));
+            throw new DraftUpdatePersistenceException(
+                    expectedRevision, current.get(), candidate, e);
         }
     }
 
-    /**
-     * Backward-compatible direct-call helper for tests and non-Spring callers.
-     */
-    public ResponseEntity<Object> update(String draftId, GraphDraft draft) {
-        return update(draftId, draft, "", "", "", "");
+    private static ResponseEntity<Object> saveResponse(
+            GraphDraftSaveCoordinator.GraphDraftSaveOutcome outcome) {
+        ResponseEntity.BodyBuilder response = ResponseEntity.ok()
+                .header("Idempotency-Replayed", Boolean.toString(outcome.replayed()));
+        if (!outcome.requestFingerprint().isBlank()) {
+            response.header("Graph-Draft-Request-Fingerprint", outcome.requestFingerprint());
+        }
+        return response.body(outcome.draft());
+    }
+
+    private static ResponseEntity<Object> idempotencyConflictResponse(String idempotencyKey) {
+        return ResponseEntity.status(HttpStatus.CONFLICT).body(new VisualValidationResult(false, List.of(
+                VisualDiagnostic.error(
+                        "visual.draft.idempotencyKeyReuse",
+                        "Idempotency-Key was already used for a different Graph draft save command.",
+                        "/headers/Idempotency-Key",
+                        Map.of("idempotencyKeyFingerprint", VisualBundleFingerprint.fromMaterial(
+                                Map.of("idempotencyKey", idempotencyKey == null ? "" : idempotencyKey))))
+        )));
+    }
+
+    private static ResponseEntity<Object> invalidIdempotencyKeyResponse(String message) {
+        return ResponseEntity.badRequest().body(new VisualValidationResult(false, List.of(
+                VisualDiagnostic.error(
+                        "visual.draft.idempotencyKeyInvalid",
+                        message,
+                        "/headers/Idempotency-Key")
+        )));
+    }
+
+    private static final class DraftUpdateNotFoundException extends RuntimeException {
+    }
+
+    private static final class DraftUpdateConflictException extends RuntimeException {
+        private final long expectedRevision;
+        private final GraphDraft current;
+
+        private DraftUpdateConflictException(long expectedRevision, GraphDraft current) {
+            this.expectedRevision = expectedRevision;
+            this.current = current;
+        }
+
+        private long expectedRevision() {
+            return expectedRevision;
+        }
+
+        private GraphDraft current() {
+            return current;
+        }
+    }
+
+    private static final class DraftUpdateContractException extends RuntimeException {
+        private final List<VisualDiagnostic> diagnostics;
+
+        private DraftUpdateContractException(List<VisualDiagnostic> diagnostics) {
+            this.diagnostics = List.copyOf(diagnostics);
+        }
+
+        private List<VisualDiagnostic> diagnostics() {
+            return diagnostics;
+        }
+    }
+
+    private static final class DraftUpdatePersistenceException extends RuntimeException {
+        private final long expectedRevision;
+        private final GraphDraft current;
+        private final GraphDraft candidate;
+        private final RuntimeException failure;
+
+        private DraftUpdatePersistenceException(
+                long expectedRevision,
+                GraphDraft current,
+                GraphDraft candidate,
+                RuntimeException cause) {
+            super(cause);
+            this.expectedRevision = expectedRevision;
+            this.current = current;
+            this.candidate = candidate;
+            this.failure = cause;
+        }
+
+        private long expectedRevision() {
+            return expectedRevision;
+        }
+
+        private GraphDraft current() {
+            return current;
+        }
+
+        private GraphDraft candidate() {
+            return candidate;
+        }
+
+        private RuntimeException failure() {
+            return failure;
+        }
     }
 
     /**

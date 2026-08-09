@@ -224,6 +224,9 @@ class ToolStudioIntegrationServiceTest {
                 .containsEntry("transactionalOutbox", true)
                 .containsEntry("eventCursor", true)
                 .containsEntry("reconciliationSnapshot", true)
+                .containsEntry("graphDraftIdempotentSave", true)
+                .containsEntry("graphDraftDurableSaveReceipt", true)
+                .containsEntry("graphDraftCrossReplicaSaveSerialization", true)
                 .containsEntry("trustedWorkloadIdentity", false)
                 .containsEntry("demoIdentityMode", false)
                 .containsEntry("externalTestSecretAuthority", false)
@@ -245,6 +248,7 @@ class ToolStudioIntegrationServiceTest {
                 .containsEntry("webhook", false);
         assertThat(envelope.payload().supportedObjects())
                 .containsKeys("capabilitySnapshot", "capabilityClosure", "mirrorPlan",
+                        "graphDraftSaveCommand", "graphDraftSaveReceipt",
                         "mirrorServingGenerationToken",
                         "boundedStateExpression", "stateModel",
                         "writeEffectSpec", "sessionStateSpace",
@@ -300,8 +304,10 @@ class ToolStudioIntegrationServiceTest {
                         "GET /api/integration/drafts/{draftId}/gate-result",
                         "GET /api/integration/events",
                         "GET /api/integration/reconciliation",
-                        "GET /api/integration/operator-libraries/{libraryId}",
-                        "GET /api/integration/operator-test-suites/{suiteId}",
+                "GET /api/integration/operator-libraries/{libraryId}",
+                "GET /api/integration/operator-test-suites/{suiteId}",
+                "POST /api/visual/drafts",
+                "PUT /api/visual/drafts/{draftId}",
                         "POST /admin/visual-operator-library-authoring/preview",
                         "POST /admin/visual-operator-library-authoring/signature/parse",
                         "GET /admin/visual-operator-library-authoring/catalogs",

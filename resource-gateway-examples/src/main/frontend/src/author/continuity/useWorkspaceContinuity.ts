@@ -33,13 +33,21 @@ export interface WorkspaceContinuityOptions<TPayload> {
   savedRevision: number;
   canAutosave: boolean;
   onRestore: (payload: TPayload, capturedAt: string) => void;
-  onSave: () => Promise<void>;
+  onSave: (attempt: WorkspaceSaveAttempt) => Promise<void>;
   recoveryPayloadGuard?: (payload: unknown) => payload is TPayload;
   recoveryFingerprintValue?: (payload: TPayload) => unknown;
   recoveryStore?: WorkspaceRecoveryStore;
   debounceMs?: number;
   maxWaitMs?: number;
   autosaveMs?: number;
+}
+
+/** Stable command identity retained across ambiguous retries for one content epoch. */
+export interface WorkspaceSaveAttempt {
+  sessionId: string;
+  contentEpoch: number;
+  contentFingerprint: string;
+  idempotencyKey: string;
 }
 
 export interface WorkspaceContinuityHandle {
@@ -235,7 +243,12 @@ export function useWorkspaceContinuity<TPayload>({
       const fingerprint = fingerprintRef.current || await sha256Fingerprint(fingerprintValueRef.current);
       dispatch({ type: 'SAVE_STARTED', epoch });
       try {
-        await onSaveRef.current();
+        await onSaveRef.current({
+          sessionId: sessionIdRef.current,
+          contentEpoch: epoch,
+          contentFingerprint: fingerprint,
+          idempotencyKey: `graph-save:${fingerprint.replace(':', '-')}`,
+        });
         dispatch({
           type: 'SAVE_SUCCEEDED',
           epoch,

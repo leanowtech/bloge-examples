@@ -1,0 +1,27 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://bloge.dev/schemas/bloge-graph-draft-save-command-v1.schema.json",
+  "title": "BLOGE Graph Draft Save Command v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion", "operation", "routeDraftId", "draft",
+    "actor", "changeSource", "changeSummary", "reason"
+  ],
+  "properties": {
+    "schemaVersion": { "const": "bloge.graphDraftSaveCommand.v1" },
+    "operation": { "enum": ["CREATE", "UPDATE"] },
+    "routeDraftId": { "type": "string", "maxLength": 256 },
+    "draft": { "$ref": "bloge-visual-graph-draft-v1.schema.json" },
+    "actor": { "type": "string", "maxLength": 256 },
+    "changeSource": { "type": "string", "maxLength": 128 },
+    "changeSummary": { "type": "string", "maxLength": 1024 },
+    "reason": { "type": "string", "maxLength": 2048 }
+  },
+  "allOf": [
+    {
+      "if": { "properties": { "operation": { "const": "UPDATE" } } },
+      "then": { "properties": { "routeDraftId": { "minLength": 1 } } }
+    }
+  ]
+}

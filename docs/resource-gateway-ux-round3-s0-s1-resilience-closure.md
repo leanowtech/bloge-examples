@@ -132,11 +132,11 @@ UX、host、production build 与 route bundle gate 通过。`VisualAuthoringAppJ
 
 | 差距 | 风险 | 下一切片 |
 |---|---|---|
-| Graph create/update 缺少跨网络不确定结果的持久 idempotency receipt | 服务端已提交但响应丢失时，新草稿重试可能重复创建；更新会进入冲突但不能自动识别同内容成功 | 增加 content-addressed save command、持久 receipt 与 same-request replay |
 | Author save conflict 没有 Compare/Fork/Reload 决策面 | 不会覆盖版本，但用户只能看到阻断，无法在上下文内完成保全 | 增加三路 resolution，Fork 必须继承恢复包和测试资产 |
 | Library conflict 只有 Reload | 用户可避免覆盖，但本地分支需要先手工导出 | 复用同一 conflict resolution model |
 | 真实 autosave P95 未采样 | 调度 1500ms 不等于网络端到端 1500ms | E3 记录 edit-to-receipt histogram |
 | 真实 X/kill 多设备矩阵未完成 | 自动化与单机实测不能代表企业宿主矩阵 | 按 E3/E4 手册执行并归档 evidence |
 
-因此，本轮关闭的是先前遗漏的 Library 数据连续性 P0 和自动化证据缺口；不能据此继续宣称“只剩 E3/E4”。
-下一工程步骤必须先关闭 save idempotency 与 conflict resolution，之后才能重新评估 E2 P1 是否归零。
+Graph create/update 的持久幂等收据已在后续
+[Graph 保存幂等协议](resource-gateway-ux-round3-s0-idempotent-graph-save.md)中关闭。因此当前只剩
+Compare/Fork/Reload 冲突决策这一项 E2 P1；关闭后才能重新评估 E2 P1 是否归零。

@@ -59,7 +59,10 @@ import com.leanowtech.bloge.gateway.visual.catalog.DatabaseOperatorLibraryRegist
 import com.leanowtech.bloge.gateway.visual.catalog.OperatorLibraryRegistry;
 import com.leanowtech.bloge.gateway.visual.catalog.VisualOperatorCatalog;
 import com.leanowtech.bloge.gateway.visual.draft.DatabaseGraphDraftRepository;
+import com.leanowtech.bloge.gateway.visual.draft.DatabaseGraphDraftSaveReceiptRepository;
 import com.leanowtech.bloge.gateway.visual.draft.GraphDraftRepository;
+import com.leanowtech.bloge.gateway.visual.draft.GraphDraftSaveCoordinator;
+import com.leanowtech.bloge.gateway.visual.draft.GraphDraftSaveReceiptRepository;
 import com.leanowtech.bloge.gateway.visual.golden.DatabaseVisualGraphGoldenCertificationRepository;
 import com.leanowtech.bloge.gateway.visual.golden.DatabaseVisualGraphGoldenCaseRepository;
 import com.leanowtech.bloge.gateway.visual.golden.VisualGraphGoldenCertificationRepository;
@@ -480,6 +483,24 @@ public class GatewayConfiguration {
                                                      ObjectMapper objectMapper,
                                                      IntegrationChangeEventOutbox outbox) {
         return new DatabaseGraphDraftRepository(jdbc, objectMapper, outbox);
+    }
+
+    /** Database-serialized, restart-safe receipts for Graph draft create and update commands. */
+    @Bean
+    @ConditionalOnMissingBean
+    public GraphDraftSaveReceiptRepository graphDraftSaveReceiptRepository(
+            JdbcTemplate jdbc,
+            GraphDraftRepository graphDrafts) {
+        return new DatabaseGraphDraftSaveReceiptRepository(jdbc, graphDrafts);
+    }
+
+    /** Transactional idempotency boundary for ambiguous Graph draft save retries. */
+    @Bean
+    @ConditionalOnMissingBean
+    public GraphDraftSaveCoordinator graphDraftSaveCoordinator(
+            GraphDraftSaveReceiptRepository receipts,
+            ObjectMapper objectMapper) {
+        return new GraphDraftSaveCoordinator(receipts, objectMapper);
     }
 
     /**

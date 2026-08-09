@@ -6,6 +6,7 @@ import com.leanowtech.bloge.gateway.visual.catalog.OperatorLibrary;
 import com.leanowtech.bloge.gateway.visual.catalog.VisualCatalogTestSupport;
 import com.leanowtech.bloge.gateway.visual.codegen.DslGenerationResult;
 import com.leanowtech.bloge.gateway.visual.codegen.GraphDraftDslGenerator;
+import com.leanowtech.bloge.gateway.visual.diagnostic.VisualDiagnostic;
 import com.leanowtech.bloge.gateway.visual.draft.GraphDraft;
 import com.leanowtech.bloge.gateway.visual.draft.GraphDraftDependencyReport;
 import com.leanowtech.bloge.gateway.visual.draft.GraphDraftDiff;
@@ -701,6 +702,73 @@ class VisualGraphDraftControllerTest {
                             .containsEntry("exceptionMessage", "draft store unavailable");
                 });
         assertThat(repository.all()).isEmpty();
+    }
+
+    @Test
+    void createDraftReplaysTheExactReceiptForAnIdenticalIdempotentRetry() {
+        InMemoryGraphDraftRepository repository = new InMemoryGraphDraftRepository();
+        VisualGraphDraftController controller = controllerWithCatalog(eligibilityCatalog(), repository);
+        GraphDraft request = eligibilityDraft(graphInputSchema(Map.of(
+                "score", Map.of("type", "integer"),
+                "amount", Map.of("type", "number"))));
+
+        ResponseEntity<Object> first = controller.createDraft(
+                request, "alice", "canvas", "Create graph", "test", "graph-save:create-1");
+        ResponseEntity<Object> replay = controller.createDraft(
+                request, "alice", "canvas", "Create graph", "test", "graph-save:create-1");
+
+        GraphDraft stored = (GraphDraft) first.getBody();
+        assertThat(stored).isNotNull();
+        assertThat(replay.getBody()).isEqualTo(stored);
+        assertThat(first.getHeaders().getFirst("Idempotency-Replayed")).isEqualTo("false");
+        assertThat(replay.getHeaders().getFirst("Idempotency-Replayed")).isEqualTo("true");
+        assertThat(first.getHeaders().getFirst("Graph-Draft-Request-Fingerprint"))
+                .matches("sha256:[0-9a-f]{64}");
+        assertThat(repository.all()).hasSize(1);
+        assertThat(repository.revisions(stored.draftId())).hasSize(1);
+    }
+
+    @Test
+    void createDraftRejectsIdempotencyKeyReuseWithDifferentCommandMaterial() {
+        InMemoryGraphDraftRepository repository = new InMemoryGraphDraftRepository();
+        VisualGraphDraftController controller = controllerWithCatalog(eligibilityCatalog(), repository);
+        GraphDraft request = eligibilityDraft(graphInputSchema(Map.of(
+                "score", Map.of("type", "integer"),
+                "amount", Map.of("type", "number"))));
+        controller.createDraft(request, "alice", "canvas", "Create graph", "test", "graph-save:create-2");
+
+        ResponseEntity<Object> conflict = controller.createDraft(
+                renameDraft(request, "differentGraph"),
+                "alice", "canvas", "Create graph", "test", "graph-save:create-2");
+
+        assertThat(conflict.getStatusCode()).isEqualTo(HttpStatus.CONFLICT);
+        assertThat(conflict.getBody()).isInstanceOf(VisualValidationResult.class);
+        assertThat(((VisualValidationResult) conflict.getBody()).diagnostics())
+                .extracting(VisualDiagnostic::code)
+                .containsExactly("visual.draft.idempotencyKeyReuse");
+        assertThat(repository.all()).hasSize(1);
+    }
+
+    @Test
+    void updateDraftReplaysSuccessfulRevisionAfterAnAmbiguousResponse() {
+        InMemoryGraphDraftRepository repository = new InMemoryGraphDraftRepository();
+        VisualGraphDraftController controller = controllerWithCatalog(eligibilityCatalog(), repository);
+        GraphDraft stored = controller.create(eligibilityDraft(graphInputSchema(Map.of(
+                "score", Map.of("type", "integer"),
+                "amount", Map.of("type", "number")))));
+        GraphDraft request = renameDraft(stored, "reviewedPolicy");
+
+        ResponseEntity<Object> first = controller.update(
+                stored.draftId(), request, "alice", "canvas", "Rename", "review", "graph-save:update-1");
+        ResponseEntity<Object> replay = controller.update(
+                stored.draftId(), request, "alice", "canvas", "Rename", "review", "graph-save:update-1");
+
+        GraphDraft updated = (GraphDraft) first.getBody();
+        assertThat(updated).isNotNull();
+        assertThat(updated.revision()).isEqualTo(stored.revision() + 1);
+        assertThat(replay.getBody()).isEqualTo(updated);
+        assertThat(replay.getHeaders().getFirst("Idempotency-Replayed")).isEqualTo("true");
+        assertThat(repository.revisions(stored.draftId())).hasSize(2);
     }
 
     @Test

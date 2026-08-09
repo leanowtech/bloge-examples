@@ -4,17 +4,17 @@
 >
 > 工程基线：S0-S5 E2 implementation + completion evidence audit
 >
-> 结论：本文件原 `97 / 100` 结论已被完成度复核校正为 `94 / 100`；2 个 E2 P1 与 E3/E4 尚未关闭
+> 结论：本文件原 `97 / 100` 结论经完成度复核与 save receipt 实施校正为 `95 / 100`；1 个 E2 P1 与 E3/E4 尚未关闭
 >
-> 校正证据：[S0/S1 连续性与压力门禁补强](resource-gateway-ux-round3-s0-s1-resilience-closure.md)
+> 校正证据：[Graph 保存幂等协议](resource-gateway-ux-round3-s0-idempotent-graph-save.md)
 
 ## 1. 最强判断
 
 当前版本已经没有 E2 P0；Round 3 最初发现的静默草稿丢失、不可逆级联删除、企业坐标缺失、Mock 证明
 误导、移动 Matrix 无法比较、断点伪可读、Library 告警墙和同步大包，都已从页面补丁下沉为 lifecycle、
-mutation、coordinate、proof、projection、zoom、readiness 与 bundle 协议。完成度复核同时发现两个不能
-归入外部研究的 E2 P1：Graph Save 缺少网络不确定结果的持久幂等回执，Author/Library 冲突决策尚未完整
-提供 Compare/Fork/Reload。
+mutation、coordinate、proof、projection、zoom、readiness 与 bundle 协议。Graph Save 现在以数据库命令锁、
+canonical command fingerprint 和持久 receipt 关闭网络不确定结果；仍有一个不能归入外部研究的 E2 P1：
+Author/Library 冲突决策尚未完整提供 Compare/Fork/Reload。
 
 但“工程上没有已知硬伤”不等于“复杂企业组织已经验证可用”。参考 VS Code 扩展已经真实跑通，并在
 实机走查中进一步关闭 CSP、画布裁切/覆盖、相机竞争、minimap 状态泄漏和重复面板；12 名目标角色和两个
@@ -35,6 +35,7 @@ mutation、coordinate、proof、projection、zoom、readiness 与 bundle 协议�
 | 最大路由启动闭包低于预算 | Author `321.75 KiB` gzip，门禁 `350 KiB` |
 | WebView dispose 可以等待 recovery | versioned bridge、false/reject/timeout fail-closed tests |
 | 参考 VS Code 宿主可独立运行 | 离线 catalog、AES-GCM recovery、SecretStorage、CSP 与受限 fetch |
+| Graph Save 可跨响应丢失、重启和副本精确重放 | versioned command、数据库行锁、事务 receipt、same-key drift 409 |
 | 真实宿主恢复与画布可读 | 干净 profile 重启 1 个面板、5/12 exact recovery；标准/聚焦零目标碰撞 |
 | E3/E4 不能被空样本误判通过 | 版本化证据合同、反例测试、空模板 `NOT READY` |
 
@@ -47,7 +48,7 @@ mutation、coordinate、proof、projection、zoom、readiness 与 bundle 协议�
 | 维度 | 权重 | E2 得分 | 判断 |
 |---|---:|---:|---|
 | 任务完成与心智模型 | 15 | 13 | 表面按任务组织；save conflict 尚缺完整保全决策，首次学习成本需 E3 |
-| 资产安全与连续性 | 20 | 18 | Author/Library 与 extension recovery 闭环；Graph Save 不确定结果幂等和直接 X 矩阵待完成 |
+| 资产安全与连续性 | 20 | 19 | Author/Library、extension recovery 与 Graph Save 持久幂等闭环；直接 X 矩阵待 E3 |
 | 可逆编辑与效率 | 12 | 12 | 高风险与高频 mutation 已统一 |
 | 测试与证据信任 | 15 | 15 | 四维证明模型和技术详情边界完整 |
 | 企业上下文与控制 | 10 | 10 | 坐标、权限、scope 与生产保护统一 |
@@ -56,7 +57,7 @@ mutation、coordinate、proof、projection、zoom、readiness 与 bundle 协议�
 | 视觉层级与密度 | 6 | 5 | 视觉预算稳定；长时高密度疲劳待真人观察 |
 | 无障碍与键盘安全 | 3 | 3 | 自动化通过；真实读屏与低视力使用仍属 E3 |
 | 性能与宿主适配 | 3 | 3 | 构建门禁、参考宿主和单次实测完成；多用户 P75 待测 |
-| **合计** | **100** | **94** | **0 P0，但 2 个 E2 P1 与组织证据均未解锁** |
+| **合计** | **100** | **95** | **0 P0，但 1 个 E2 P1 与组织证据均未解锁** |
 
 ## 4. 仍存在的问题
 
@@ -96,9 +97,9 @@ WebView P75 失败、代码 ownership 冲突持续上升或 disposal evidence �
 
 ## 6. 最终审计结论
 
-Round 3 的 E2 工程演进还不能收口。真实宿主复审发现的硬伤已经根治，Library continuity 与压力门禁也已
-补齐；下一轮先实现持久 idempotent save receipt 和 Compare/Fork/Reload，再执行固定任务。完成这两个
-工程项后，剩余工作才主要是不能由设计者自测替代的真实用户与组织验证。
+Round 3 的 E2 工程演进还不能收口。真实宿主复审发现的硬伤已经根治，Library continuity、压力门禁和
+持久 idempotent save receipt 已补齐；下一轮实现 Compare/Fork/Reload，再执行固定任务。完成该工程项后，
+剩余工作才主要是不能由设计者自测替代的真实用户与组织验证。
 
 这套机制具备负熵能力：事故和误判会进入结构化 evidence，失败 gate 会生成明确修复对象，修复再回到
-自动化与现场任务，而不是沉淀为口头经验。当前工程完成度校正为 94；组织成熟度仍诚实保持 89。
+自动化与现场任务，而不是沉淀为口头经验。当前工程完成度校正为 95；组织成熟度仍诚实保持 89。

@@ -1,0 +1,14 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://bloge.dev/schemas/bloge-graph-draft-save-receipt-v1.schema.json",
+  "title": "BLOGE Graph Draft Save Receipt v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schemaVersion", "requestFingerprint", "draft", "completedAt"],
+  "properties": {
+    "schemaVersion": { "const": "bloge.graphDraftSaveReceipt.v1" },
+    "requestFingerprint": { "type": "string", "pattern": "^sha256:[0-9a-f]{64}$" },
+    "draft": { "$ref": "bloge-visual-graph-draft-v1.schema.json" },
+    "completedAt": { "type": "string", "format": "date-time" }
+  }
+}

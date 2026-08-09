@@ -20,6 +20,7 @@ integration something the business flow can see, reason about, test, and change.
 | Graph-level contracts | Every built-in resource graph exposes formal input/output JSON Schema for system integration |
 | Schema-aware canvas | Drag, connect, validate, simulate, and publish under server-side schema checks |
 | Recoverable authoring sessions | SHA-256 coordinated recovery snapshots, tenant/environment partitioning, safe cross-workspace navigation, explicit Save, stale-receipt fencing, and an injectable encrypted host store |
+| Idempotent Graph saves | Content-addressed client attempts, versioned canonical commands, database-serialized cross-replica create/update, exact restart-safe receipts, and explicit same-key drift rejection |
 | Contract and Scenario authoring protocol | Versioned Contract/Scenario drafts, exact target and contract fingerprints, strict schemas, deterministic transient compilation, and fail-closed routing of advanced dependency behavior to the governed testing control plane |
 | Atomic example workspaces | Complete Graph/Contract/Scenario/fixture seeds, one-click sandbox preview, idempotent test/staging Workspace fork, exact coordinate rebind, and payload-free receipts without first-save rebase |
 | Runtime-backed demos | Local upstreams, real gateway execution, mock simulation, SSE examples, and reusable publications |

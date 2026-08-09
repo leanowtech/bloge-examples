@@ -752,6 +752,7 @@ describe('operator library API client', () => {
       const url = String(input);
       if (url.startsWith('/api/visual/drafts?')) {
         expect(init?.method).toBe('POST');
+        expect(new Headers(init?.headers).get('Idempotency-Key')).toBe('graph-save:sha256-command');
         expect(JSON.parse(String(init?.body))).toEqual(draft);
         return new Response(JSON.stringify(stored));
       }
@@ -762,7 +763,7 @@ describe('operator library API client', () => {
       throw new Error(`Unexpected fetch: ${url}`);
     });
 
-    await expect(saveGraphDraft(draft)).resolves.toEqual(stored);
+    await expect(saveGraphDraft(draft, 'graph-save:sha256-command')).resolves.toEqual(stored);
     await expect(fetchScenarioGraphContract('loan-graph')).resolves.toEqual(projection);
     expect(fetchMock).toHaveBeenCalledTimes(2);
   });

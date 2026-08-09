@@ -7,8 +7,8 @@
   "required": ["schemaVersion", "draftId", "revision", "graphName", "nodes", "edges", "output"],
   "properties": {
     "schemaVersion": { "const": "bloge.visualGraphDraft.v1" },
-    "draftId": { "type": "string", "minLength": 1, "maxLength": 256 },
-    "revision": { "type": "integer", "minimum": 1 },
+    "draftId": { "type": "string", "maxLength": 256 },
+    "revision": { "type": "integer", "minimum": 0 },
     "graphName": { "type": "string", "minLength": 1, "maxLength": 256 },
     "tenantId": { "type": "string", "maxLength": 256 },
     "namespace": { "type": "string", "maxLength": 256 },

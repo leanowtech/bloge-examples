@@ -234,7 +234,10 @@ import {
   authorTaskElapsedMs,
   recordAuthorTaskEvent,
 } from './author/telemetry/authorTaskTelemetry';
-import { useWorkspaceContinuity } from './author/continuity/useWorkspaceContinuity';
+import {
+  useWorkspaceContinuity,
+  type WorkspaceSaveAttempt,
+} from './author/continuity/useWorkspaceContinuity';
 import EffectiveContractPanel from './author/contract/EffectiveContractPanel';
 import NodeDeletionImpactDialog, {
   MutationNotice,
@@ -7521,7 +7524,7 @@ export default function AuthorCanvas({ workspaceVersion = 'v1' }: AuthorCanvasPr
     activeScenarioFingerprint,
   ]);
 
-  const saveGraphForScenario = useCallback(async () => {
+  const saveGraphForScenario = useCallback(async (saveAttempt?: WorkspaceSaveAttempt) => {
     try {
       let stored: GraphDraft;
       let persistedScenarios: ScenarioDraftSet | null = null;
@@ -7547,7 +7550,7 @@ export default function AuthorCanvas({ workspaceVersion = 'v1' }: AuthorCanvasPr
         }
         persistedScenarios = (await fetchScenarioDraftSet(scenarioCoordinate.id)).draftSet;
       } else {
-        stored = await saveGraphDraft(exportableDraft);
+        stored = await saveGraphDraft(exportableDraft, saveAttempt?.idempotencyKey);
       }
       if (!stored.draftId || !stored.revision) {
         throw new Error('Graph persistence did not return an exact draft revision.');
@@ -10171,6 +10174,12 @@ export default function AuthorCanvas({ workspaceVersion = 'v1' }: AuthorCanvasPr
     recoveryPayloadGuard: isAuthoringRecoveryPayload,
     recoveryFingerprintValue: authoringRecoveryFingerprintValue,
   });
+  const saveAuthoritativeGraph = useCallback(async () => {
+    const saved = await authoringContinuity.save();
+    if (!saved) {
+      throw new Error('Graph save did not reach an authoritative revision.');
+    }
+  }, [authoringContinuity.save]);
   const authorReadiness = projectAuthorReadiness({
     draft: {
       durable: Boolean(graphDraftId && graphDraftRevision > 0),
@@ -11649,7 +11658,7 @@ export default function AuthorCanvas({ workspaceVersion = 'v1' }: AuthorCanvasPr
                   onContractChange={updateContractSemantics}
                   onImportWorkspace={importScenarioWorkspace}
                   onScenarioDraftSetChange={setScenarioDraftSet}
-                  onSaveGraphDraft={saveGraphForScenario}
+                  onSaveGraphDraft={saveAuthoritativeGraph}
                   onRebase={rebaseScenariosToCurrentContract}
                   onRun={runScenarioSimulation}
                   runCommand={authorizedRunCommand}
@@ -12805,7 +12814,7 @@ export default function AuthorCanvas({ workspaceVersion = 'v1' }: AuthorCanvasPr
             onContractChange={updateContractSemantics}
             onImportWorkspace={importScenarioWorkspace}
             onScenarioDraftSetChange={setScenarioDraftSet}
-            onSaveGraphDraft={saveGraphForScenario}
+            onSaveGraphDraft={saveAuthoritativeGraph}
             onRebase={rebaseScenariosToCurrentContract}
             onRun={runScenarioSimulation}
             onRunEvidence={recordScenarioEvidence}

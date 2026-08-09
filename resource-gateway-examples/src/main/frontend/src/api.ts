@@ -955,7 +955,10 @@ export async function publishScenarioDraftSet(
 }
 
 /** Creates or updates the retained Graph revision that Scenario assets address. */
-export async function saveGraphDraft(draft: GraphDraft): Promise<GraphDraft> {
+export async function saveGraphDraft(
+  draft: GraphDraft,
+  idempotencyKey = '',
+): Promise<GraphDraft> {
   const query = new URLSearchParams({
     actor: 'author-canvas',
     changeSource: 'contract-scenario-workspace',
@@ -970,7 +973,10 @@ export async function saveGraphDraft(draft: GraphDraft): Promise<GraphDraft> {
   return readJsonMutation<GraphDraft>(
     await sendRequest(`${path}?${query.toString()}`, {
       method: draft.draftId ? 'PUT' : 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: {
+        'Content-Type': 'application/json',
+        ...(idempotencyKey ? { 'Idempotency-Key': idempotencyKey } : {}),
+      },
       body: JSON.stringify(draft),
     }),
   );

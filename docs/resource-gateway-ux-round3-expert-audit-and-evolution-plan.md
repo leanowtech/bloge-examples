@@ -10,9 +10,9 @@
 >
 > 当前视觉完成度：`95 / 100`
 >
-> 当前工业任务成熟度：`94 / 100`（完成度复核发现 2 个 E2 P1；缺少 E3/E4 时对外成熟度仍封顶 `89`）
+> 当前工业任务成熟度：`95 / 100`（持久 Graph save receipt 已关闭；1 个 E2 P1 尚存；缺少 E3/E4 时对外成熟度仍封顶 `89`）
 >
-> E2 缺陷结论：`0 P0 / 2 P1 / 0 P2`；save idempotency 与 conflict resolution 尚未关闭
+> E2 缺陷结论：`0 P0 / 1 P1 / 0 P2`；Compare/Fork/Reload conflict resolution 尚未关闭
 >
 > 目标：先将 P0 清零，再恢复 `>=95 / 100` 的 E2 工程体验；没有 E3/E4 证据前，对外成熟度仍封顶 `89`
 
@@ -26,6 +26,7 @@
 - [S0 工作区连续性实现说明](resource-gateway-ux-round3-s0-workspace-continuity-implementation.md)
 - [S1 可逆编辑与删除影响控制实现说明](resource-gateway-ux-round3-s1-reversible-mutations-implementation.md)
 - [S0/S1 连续性与压力门禁补强](resource-gateway-ux-round3-s0-s1-resilience-closure.md)
+- [Graph 保存幂等协议](resource-gateway-ux-round3-s0-idempotent-graph-save.md)
 - [S2 企业任务坐标实现说明](resource-gateway-ux-round3-s2-enterprise-task-coordinate-implementation.md)
 - [S3 证明语义与本地化实现说明](resource-gateway-ux-round3-s3-proof-semantics-localization-implementation.md)
 - [S4 响应式任务投影实现说明](resource-gateway-ux-round3-s4-responsive-projection-implementation.md)
@@ -38,7 +39,7 @@
 
 | 阶段 | 状态 | 最新结论 |
 |---|---|---|
-| S0 工作区连续性 | 核心已实现，P1 收口中 | Author/Library 共享恢复、离页与宿主协议；网络不确定结果幂等和 Compare/Fork/Reload 待关闭 |
+| S0 工作区连续性 | 核心已实现，P1 收口中 | Author/Library 共享恢复、离页、宿主协议与持久 Graph save receipt 已闭合；Compare/Fork/Reload 待关闭 |
 | S1 可逆编辑 | 已实现 | 20 类 mutation、删除影响预览、原子 Undo/Redo 关闭第二个 P0 |
 | S2 企业任务坐标 | 已实现 | 统一 TaskCoordinate、command authority、production safeguard、单一 primary Run 与 return coordinate |
 | S3 证明语义与 i18n | 已实现 | 类型化产品消息、deep-surface inventory、四维 proof authority、raw detail 隔离与双语状态连续性已闭合 |
@@ -299,7 +300,7 @@ Round 2 已记录主 bundle `781.29KB` minified / `222.23KB` gzip。Library、Re
 | 维度 | 权重 | S4 后得分 | 证据或剩余扣分 |
 |---|---:|---:|---|
 | 任务完成与心智模型 | 15 | 13 | 单一 primary command、任务坐标与移动结果投影已闭合；save conflict 尚缺 Compare/Fork/Reload 完整决策面 |
-| 资产安全与会话连续性 | 20 | 18 | Author/Library recovery、冲突防覆盖与真实 VS Code 5/12 恢复已通过；Graph save 的网络不确定结果幂等仍待关闭 |
+| 资产安全与会话连续性 | 20 | 19 | Author/Library recovery、冲突防覆盖、真实 VS Code 5/12 恢复与跨副本持久 save receipt 已通过；直接 X/kill 矩阵待 E3 |
 | 可逆编辑与效率 | 12 | 12 | 20 类 mutation、影响预览和统一 Undo/Redo 已通过自动化与浏览器验收 |
 | 测试与证据信任 | 15 | 15 | behavior/proof/freshness/governance 正交，raw protocol 默认隔离 |
 | 企业上下文与控制 | 10 | 10 | TaskCoordinate、role、environment、scope 与 production safeguard 已落地 |
@@ -308,12 +309,12 @@ Round 2 已记录主 bundle `781.29KB` minified / `222.23KB` gzip。Library、Re
 | 视觉层级与密度 | 6 | 5 | semantic token 与 chrome budget 已建立；仍需 E3 验证长时高密度使用疲劳 |
 | 无障碍与键盘安全 | 3 | 3 | focus restore、dialog trap、keyboard history 与危险键边界已覆盖 |
 | 性能与宿主适配 | 3 | 3 | 同步壳 153.09 kB、最大应用块 319.47 kB；真实宿主单次约 580 ms，P75 待 E3 |
-| **合计** | **100** | **94** | **完成度复核纠正了“只剩外部证据”的过早结论；2 个 E2 P1 仍需实施** |
+| **合计** | **100** | **95** | **持久 save receipt 已关闭；Compare/Fork/Reload 仍是 1 个 E2 P1** |
 
-完成度复核进一步区分三件事：`94` 是当前 production build、自动化和真实宿主支持的工程体验分；`89`
-是缺少真实角色和连续组织运行时可对外宣称的上限；`97` 是此前过早给出的分数，不能在 save idempotency
-与 conflict resolution 未闭合时继续沿用。详见
-[S0/S1 连续性与压力门禁补强](resource-gateway-ux-round3-s0-s1-resilience-closure.md)。
+完成度复核进一步区分三件事：`95` 是当前 production build、自动化和真实宿主支持的工程体验分；`89`
+是缺少真实角色和连续组织运行时可对外宣称的上限；`97` 是此前过早给出的分数，不能在 conflict
+resolution 未闭合时继续沿用。详见
+[Graph 保存幂等协议](resource-gateway-ux-round3-s0-idempotent-graph-save.md)。
 
 ### 4.2 真实 VS Code 宿主复审
 
@@ -753,9 +754,9 @@ ux.route-chunk-budget
 | WP-13 E3/E4 Evidence Program | 固定任务、组织试点、incident feedback | WP-02 至 WP-11 | 否 |
 
 推荐 tracer-bullet 顺序 `WP-01 -> WP-02 -> WP-03 -> WP-04 -> WP-05` 已具备主路径实现；完成度复核已补
-Library continuity、时限与压力门禁。WP-06 至 WP-12 也已进入 E2 门禁。当前仍有两个工程收口项：
-`WP-02` 的持久 idempotent save receipt，以及 `WP-03` 的 Compare/Fork/Reload conflict resolution；完成后
-才进入只能由真实参与者和组织执行的 WP-13。
+Library continuity、时限、压力门禁和持久 idempotent save receipt。WP-06 至 WP-12 也已进入 E2 门禁。
+当前只剩 `WP-03` 的 Compare/Fork/Reload conflict resolution；完成后才进入只能由真实参与者和组织执行的
+WP-13。
 
 ## 11. 验收门禁
 
