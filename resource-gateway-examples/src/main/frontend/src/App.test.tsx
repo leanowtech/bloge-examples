@@ -66,6 +66,7 @@ describe('App route shell', () => {
       root = null;
     }
     host?.remove();
+    delete (globalThis as typeof globalThis & { acquireVsCodeApi?: unknown }).acquireVsCodeApi;
     vi.restoreAllMocks();
   });
 
@@ -132,6 +133,18 @@ describe('App route shell', () => {
     expect(document.title).toBe('BLOGE Visual Canvas - Run examples');
     expect(query('[data-testid="showcase-mock"]').textContent).toContain('Showcase catalog');
     expect(query<HTMLAnchorElement>('.topbar-link.active').getAttribute('href')).toBe('/showcase/');
+  });
+
+  it('uses query-backed routes inside a VS Code WebView so packaged navigation stays local', async () => {
+    (globalThis as typeof globalThis & { acquireVsCodeApi?: () => { postMessage(): void } })
+      .acquireVsCodeApi = () => ({ postMessage() {} });
+    await renderAt('/index.html?workspaceRoute=libraries&draftId=library-1');
+
+    expect(query('[data-testid="libraries-mock"]').textContent).toContain('Library workbench');
+    expect(query<HTMLAnchorElement>('.topbar-link.active').getAttribute('href'))
+      .toBe('?workspaceRoute=libraries&draftId=library-1');
+    expect(query<HTMLAnchorElement>('.topbar-link:not(.active)').getAttribute('href'))
+      .toBe('?workspaceRoute=author&draftId=library-1');
   });
 
   it('switches the shell to Chinese and persists the preference without reloading', async () => {

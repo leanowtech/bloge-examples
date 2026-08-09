@@ -11307,6 +11307,20 @@ button.primary:disabled {
   grid-row: 2;
 }
 
+.workspace.workspace-v2.canvas-focus {
+  grid-template-columns: minmax(0, 1fr);
+  grid-template-rows: minmax(0, 1fr);
+}
+
+.workspace.workspace-v2.canvas-focus > .author-command-bar {
+  display: none;
+}
+
+.workspace.workspace-v2.canvas-focus > .canvas {
+  grid-column: 1;
+  grid-row: 1;
+}
+
 .workspace-v2:not([data-author-mode="compose"]) {
   grid-template-columns:
     minmax(0, 1fr)

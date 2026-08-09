@@ -1,0 +1,5 @@
+.gitignore
+test/**
+scripts/**
+media/webview/.gitkeep
+*.vsix

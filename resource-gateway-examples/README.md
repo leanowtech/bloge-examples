@@ -41,6 +41,24 @@ integration something the business flow can see, reason about, test, and change.
 | Workbook and gate evidence loop | Deterministic sanitized workbook seeds, exact suite/run evidence refs, versioned gate decision basis, stale detection, and transactional gate events |
 | Operational controls | Cache, tenant rate limit, circuit breaker, run history, golden cases, and publication history |
 
+## Try It In VS Code, No Server Required
+
+The reference extension packages the real Author Workspace v2 with an offline operator and built-in
+function catalog. It opens no port and needs no Spring Boot process:
+
+```bash
+cd resource-gateway-examples/vscode-extension
+npm run prepare:webview
+code --new-window --extensionDevelopmentPath="$PWD"
+```
+
+Run **Resource Gateway: Open Authoring Workspace**, load a complete example, edit it, then use
+**Resource Gateway: Save Recovery and Close**. Reopening restores the exact workspace from
+host-encrypted recovery. A remote runtime is optional and remains behind workspace trust, HTTPS,
+SecretStorage credentials, and path restrictions. See the
+[extension guide](vscode-extension/README.md) and
+[real-host UX evidence](../docs/resource-gateway-ux-round3-s5-vscode-host-integration.md).
+
 ## Start The Demo
 
 From the repository root:
@@ -195,13 +213,16 @@ verification record are in
 Top-level workspaces are route-lazy and are prefetched only after pointer or keyboard navigation
 intent. The production build enforces a `180 KiB` application-shell budget and a `350 KiB` maximum
 for every application chunk, plus a `350 KiB` gzip budget for each route's complete static JS/CSS
-startup closure. The current shell is `147.89 KiB`, the largest Author interaction chunk is
-`307.77 KiB`, and the complete Author startup closure is `320.40 KiB` gzip. In a VS Code WebView,
+startup closure. The current shell is `149.50 KiB`, the largest Author interaction chunk is
+`311.98 KiB`, and the complete Author startup closure is `321.75 KiB` gzip. In a VS Code WebView,
 a versioned bridge replaces fetch and browser recovery
 with correlated host requests and a `HOST_ENCRYPTED` store. The extension host requests disposal,
 waits for every authoring surface to flush, and destroys the panel only after a ready receipt.
 Implementation details and the honest E2/E3 boundary are documented in
 [`docs/resource-gateway-ux-round3-s5-performance-host-evidence-implementation.md`](../docs/resource-gateway-ux-round3-s5-performance-host-evidence-implementation.md).
+The runnable reference host, security boundary, real VS Code findings, geometry measurements, and
+screenshots are in
+[`docs/resource-gateway-ux-round3-s5-vscode-host-integration.md`](../docs/resource-gateway-ux-round3-s5-vscode-host-integration.md).
 The fixed-task study, evidence schema, empty template, and evaluator for twelve target users plus two
 teams over two release cycles are in
 [`docs/resource-gateway-ux-round3-e3-e4-field-study-runbook.md`](../docs/resource-gateway-ux-round3-e3-e4-field-study-runbook.md).

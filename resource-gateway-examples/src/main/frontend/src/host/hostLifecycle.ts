@@ -1,4 +1,5 @@
 export const HOST_WILL_DISPOSE_EVENT = 'bloge:host-will-dispose';
+export const HOST_WORKSPACE_READY_EVENT = 'bloge:host-workspace-ready';
 
 export interface HostDisposalPreparation {
   ready: boolean;
@@ -9,6 +10,24 @@ export interface HostDisposalPreparation {
 
 interface HostWillDisposeDetail {
   waitUntil(work: Promise<unknown>): void;
+}
+
+export interface HostWorkspaceReadyDetail {
+  route: string;
+  measuredAt: number;
+}
+
+/** Announces that the lazy route has committed, so a host can measure cold-start readiness. */
+export function signalHostWorkspaceReady(
+  route: string,
+  target: Window = window,
+): void {
+  target.dispatchEvent(new CustomEvent<HostWorkspaceReadyDetail>(HOST_WORKSPACE_READY_EVENT, {
+    detail: {
+      route,
+      measuredAt: target.performance.now(),
+    },
+  }));
 }
 
 /** Lets every mounted authoring surface join one host-controlled disposal barrier. */

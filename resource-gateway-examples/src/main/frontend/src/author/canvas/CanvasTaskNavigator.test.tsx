@@ -78,6 +78,9 @@ describe('CanvasTaskNavigator', () => {
   it('searches, focuses, and exposes one explicit reading-mode control', async () => {
     const onModeChange = vi.fn();
     const onSelectNode = vi.fn();
+    const onToggleCanvasExpanded = vi.fn();
+    const onZoomIn = vi.fn();
+    const onZoomOut = vi.fn();
     await act(async () => {
       root!.render(
         <CanvasTaskNavigator
@@ -92,6 +95,7 @@ describe('CanvasTaskNavigator', () => {
           pathNodeCount={0}
           zoomPercent="72%"
           mapVisible={false}
+          canvasExpanded={false}
           layoutPlanning={false}
           layoutPreview={false}
           layoutQuality={null}
@@ -116,6 +120,9 @@ describe('CanvasTaskNavigator', () => {
           canUndoLayout={false}
           onModeChange={onModeChange}
           onSelectNode={onSelectNode}
+          onToggleCanvasExpanded={onToggleCanvasExpanded}
+          onZoomIn={onZoomIn}
+          onZoomOut={onZoomOut}
           onFitAll={vi.fn()}
           onToggleMap={vi.fn()}
           onTogglePin={vi.fn()}
@@ -138,6 +145,15 @@ describe('CanvasTaskNavigator', () => {
     expect(result?.textContent).toContain('Policy decision');
     await act(async () => result?.click());
     expect(onSelectNode).toHaveBeenCalledWith('n2');
+
+    await act(async () => {
+      host.querySelector<HTMLButtonElement>('[data-testid="navigator-expand-canvas"]')?.click();
+      host.querySelector<HTMLButtonElement>('[data-testid="navigator-zoom-out"]')?.click();
+      host.querySelector<HTMLButtonElement>('[data-testid="navigator-zoom-in"]')?.click();
+    });
+    expect(onToggleCanvasExpanded).toHaveBeenCalledOnce();
+    expect(onZoomOut).toHaveBeenCalledOnce();
+    expect(onZoomIn).toHaveBeenCalledOnce();
 
     const focus = host.querySelector<HTMLButtonElement>('[data-testid="canvas-task-mode:focus"]');
     expect(focus?.disabled).toBe(true);
@@ -164,6 +180,7 @@ describe('CanvasTaskNavigator', () => {
           pathNodeCount={1}
           zoomPercent="100%"
           mapVisible={false}
+          canvasExpanded={false}
           layoutPlanning={false}
           layoutPreview
           layoutAcceptance={layoutAcceptance('ACCEPTABLE')}
@@ -194,6 +211,9 @@ describe('CanvasTaskNavigator', () => {
           canUndoLayout={false}
           onModeChange={vi.fn()}
           onSelectNode={vi.fn()}
+          onToggleCanvasExpanded={vi.fn()}
+          onZoomIn={vi.fn()}
+          onZoomOut={vi.fn()}
           onFitAll={vi.fn()}
           onToggleMap={vi.fn()}
           onTogglePin={vi.fn()}
@@ -235,6 +255,7 @@ describe('CanvasTaskNavigator', () => {
           pathNodeCount={0}
           zoomPercent="24%"
           mapVisible
+          canvasExpanded={false}
           layoutPlanning={false}
           layoutPreview={false}
           layoutQuality={null}
@@ -274,6 +295,9 @@ describe('CanvasTaskNavigator', () => {
           canUndoLayout={false}
           onModeChange={vi.fn()}
           onSelectNode={onSelectNode}
+          onToggleCanvasExpanded={vi.fn()}
+          onZoomIn={vi.fn()}
+          onZoomOut={vi.fn()}
           onFitAll={vi.fn()}
           onToggleMap={vi.fn()}
           onTogglePin={vi.fn()}
@@ -307,6 +331,7 @@ describe('CanvasTaskNavigator', () => {
           pathNodeCount={0}
           zoomPercent="39%"
           mapVisible={false}
+          canvasExpanded={false}
           layoutPlanning={false}
           layoutPreview
           layoutQuality={{
@@ -323,6 +348,9 @@ describe('CanvasTaskNavigator', () => {
           canUndoLayout={false}
           onModeChange={vi.fn()}
           onSelectNode={vi.fn()}
+          onToggleCanvasExpanded={vi.fn()}
+          onZoomIn={vi.fn()}
+          onZoomOut={vi.fn()}
           onFitAll={vi.fn()}
           onToggleMap={vi.fn()}
           onTogglePin={vi.fn()}
@@ -373,6 +401,7 @@ describe('CanvasTaskNavigator', () => {
             pathNodeCount={0}
             zoomPercent="39%"
             mapVisible={false}
+            canvasExpanded
             layoutPlanning={false}
             layoutPreview
             layoutQuality={acceptance.candidate.geometry}
@@ -383,6 +412,9 @@ describe('CanvasTaskNavigator', () => {
             canUndoLayout={false}
             onModeChange={vi.fn()}
             onSelectNode={vi.fn()}
+            onToggleCanvasExpanded={vi.fn()}
+            onZoomIn={vi.fn()}
+            onZoomOut={vi.fn()}
             onFitAll={vi.fn()}
             onToggleMap={vi.fn()}
             onTogglePin={vi.fn()}

@@ -9,12 +9,17 @@ import {
   type RecoveryCoordinate,
   type WorkspaceRecoveryStore,
 } from '../author/continuity/workspaceContinuity';
-import { prepareHostDisposal } from './hostLifecycle';
+import {
+  HOST_WORKSPACE_READY_EVENT,
+  prepareHostDisposal,
+  type HostWorkspaceReadyDetail,
+} from './hostLifecycle';
 
 const REQUEST_SCHEMA = 'bloge.vscodeWebviewRequest.v1';
 const RESPONSE_SCHEMA = 'bloge.vscodeWebviewResponse.v1';
 const DISPOSE_SCHEMA = 'bloge.vscodeHostWillDispose.v1';
 const DISPOSE_RECEIPT_SCHEMA = 'bloge.vscodeHostDisposalReceipt.v1';
+const READY_SCHEMA = 'bloge.vscodeWebviewReady.v1';
 
 type HostOperation = 'FETCH' | 'RECOVERY_LOAD' | 'RECOVERY_SAVE' | 'RECOVERY_REMOVE';
 
@@ -64,6 +69,7 @@ export class VsCodeWebviewBridge {
   readonly transport: BlogeApiTransport;
   private readonly pending = new Map<string, PendingRequest>();
   private readonly onMessage: (event: MessageEvent<unknown>) => void;
+  private readonly onWorkspaceReady: (event: Event) => void;
 
   constructor(
     private readonly vscode: VsCodeApi,
@@ -85,11 +91,22 @@ export class VsCodeWebviewBridge {
       },
     };
     this.onMessage = (event) => this.receive(event.data);
+    this.onWorkspaceReady = (event) => {
+      const detail = (event as CustomEvent<HostWorkspaceReadyDetail>).detail;
+      if (!detail || typeof detail.route !== 'string' || !Number.isFinite(detail.measuredAt)) return;
+      this.vscode.postMessage({
+        schemaVersion: READY_SCHEMA,
+        route: detail.route,
+        measuredAt: detail.measuredAt,
+      });
+    };
     this.target.addEventListener('message', this.onMessage);
+    this.target.addEventListener(HOST_WORKSPACE_READY_EVENT, this.onWorkspaceReady);
   }
 
   dispose(): void {
     this.target.removeEventListener('message', this.onMessage);
+    this.target.removeEventListener(HOST_WORKSPACE_READY_EVENT, this.onWorkspaceReady);
     for (const pending of this.pending.values()) {
       this.target.clearTimeout(pending.timeout);
       pending.reject(new Error('RG.HOST.BRIDGE.DISPOSED'));

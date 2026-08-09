@@ -10,6 +10,7 @@ import {
   authorWorkspaceEntryHref,
   resolveAuthorWorkspaceVersion,
 } from './author/authorWorkspaceVersion';
+import { signalHostWorkspaceReady } from './host/hostLifecycle';
 import './styles/tokens.css';
 import './styles.css';
 import './styles/responsive.css';
@@ -49,13 +50,8 @@ export default function App() {
 function AppShell() {
   const { t } = useI18n();
   const [navigationOpen, setNavigationOpen] = useState(false);
-  const route: WorkspaceRoute = window.location.pathname.startsWith('/libraries')
-    ? 'libraries'
-    : window.location.pathname.startsWith('/showcase')
-    ? 'showcase'
-    : window.location.pathname.startsWith('/rehearsals')
-      ? 'rehearsals'
-      : 'author';
+  const vscodeHost = typeof globalThis.acquireVsCodeApi === 'function';
+  const route = resolveWorkspaceRoute(window.location.pathname, window.location.search, vscodeHost);
   const titleSource = route === 'libraries'
     ? 'Libraries'
     : route === 'rehearsals'
@@ -63,10 +59,10 @@ function AppShell() {
     : route === 'showcase' ? 'Run examples' : 'Author';
   const title = t(titleSource);
   const authorWorkspaceVersion = resolveAuthorWorkspaceVersion(window.location.search);
-  const authorHref = route === 'author'
-    ? authorWorkspaceEntryHref(window.location.search, 'v2')
-    : '/author/';
-  const legacyAuthorHref = authorWorkspaceEntryHref(window.location.search, 'v1');
+  const authorHref = !vscodeHost && route !== 'author'
+    ? '/author/'
+    : workspaceEntryHref('author', window.location.search, vscodeHost, 'v2');
+  const legacyAuthorHref = workspaceEntryHref('author', window.location.search, vscodeHost, 'v1');
   const authorIsCurrent = route === 'author' && authorWorkspaceVersion === 'v2';
   const legacyAuthorIsCurrent = route === 'author' && authorWorkspaceVersion === 'v1';
   const prefetch = (target: WorkspaceRoute) => () => {
@@ -127,7 +123,7 @@ function AppShell() {
             )}
             <a
               className={`topbar-link ${route === 'libraries' ? 'active' : ''}`}
-              href="/libraries/"
+              href={workspaceEntryHref('libraries', window.location.search, vscodeHost)}
               aria-current={route === 'libraries' ? 'page' : undefined}
               onPointerEnter={prefetch('libraries')}
               onFocus={prefetch('libraries')}
@@ -136,7 +132,7 @@ function AppShell() {
             </a>
             <a
               className={`topbar-link ${route === 'rehearsals' ? 'active' : ''}`}
-              href="/rehearsals/"
+              href={workspaceEntryHref('rehearsals', window.location.search, vscodeHost)}
               aria-current={route === 'rehearsals' ? 'page' : undefined}
               onPointerEnter={prefetch('rehearsals')}
               onFocus={prefetch('rehearsals')}
@@ -145,7 +141,7 @@ function AppShell() {
             </a>
             <a
               className={`topbar-link ${route === 'showcase' ? 'active' : ''}`}
-              href="/showcase/"
+              href={workspaceEntryHref('showcase', window.location.search, vscodeHost)}
               aria-current={route === 'showcase' ? 'page' : undefined}
               onPointerEnter={prefetch('showcase')}
               onFocus={prefetch('showcase')}
@@ -160,6 +156,7 @@ function AppShell() {
         </div>
       </header>
       <Suspense fallback={<WorkspaceLoading />}>
+        <HostReadySignal route={route} />
         {route === 'libraries'
           ? <LibraryWorkbench />
           : route === 'showcase'
@@ -170,6 +167,54 @@ function AppShell() {
       </Suspense>
     </div>
   );
+}
+
+function resolveWorkspaceRoute(pathname: string, search: string, vscodeHost: boolean): WorkspaceRoute {
+  if (vscodeHost) {
+    const requested = new URLSearchParams(search).get('workspaceRoute');
+    if (requested === 'libraries' || requested === 'rehearsals' || requested === 'showcase') {
+      return requested;
+    }
+    return 'author';
+  }
+  return pathname.startsWith('/libraries')
+    ? 'libraries'
+    : pathname.startsWith('/showcase')
+    ? 'showcase'
+    : pathname.startsWith('/rehearsals')
+      ? 'rehearsals'
+      : 'author';
+}
+
+function workspaceEntryHref(
+  route: WorkspaceRoute,
+  search: string,
+  vscodeHost: boolean,
+  authorVersion: 'v1' | 'v2' = 'v2',
+): string {
+  if (!vscodeHost) {
+    if (route === 'author') return authorWorkspaceEntryHref(search, authorVersion);
+    return `/${route}/`;
+  }
+  const params = new URLSearchParams(search);
+  params.set('workspaceRoute', route);
+  if (route === 'author' && authorVersion === 'v1') params.set('authorWorkspace', 'legacy');
+  else params.delete('authorWorkspace');
+  return `?${params.toString()}`;
+}
+
+function HostReadySignal({ route }: { route: WorkspaceRoute }) {
+  useEffect(() => {
+    let secondFrame = 0;
+    const firstFrame = window.requestAnimationFrame(() => {
+      secondFrame = window.requestAnimationFrame(() => signalHostWorkspaceReady(route));
+    });
+    return () => {
+      window.cancelAnimationFrame(firstFrame);
+      if (secondFrame) window.cancelAnimationFrame(secondFrame);
+    };
+  }, [route]);
+  return null;
 }
 
 function WorkspaceLoading() {

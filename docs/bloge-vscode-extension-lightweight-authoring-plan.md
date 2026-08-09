@@ -495,8 +495,11 @@ IDE 插件不应该拥有业务系统运行时的权限、网络、密钥和隔�
 
 | 差距 | 当前状态 | 推荐补齐 |
 | --- | --- | --- |
-| API transport 可替换 | 已补 `BlogeApiTransport` | 后续接 VSCode postMessage transport |
-| Webview 打包为插件资产 | 未落地 | 将 Vite build 产物复制到插件 `webview/dist` |
+| API transport 可替换 | 已补 `BlogeApiTransport` 与版本化 VS Code request/response bridge | 后续只扩充离线路由，不复制 UI |
+| Webview 打包为插件资产 | 已落地 `vscode-extension/scripts/prepare-webview.mjs` | 发布前增加 VSIX 签名与供应链清单 |
+| Reference extension host | 已落地唯一面板、CSP、deep link、受限 fetch 与命令 | 补 Windows/Linux/Remote 宿主矩阵 |
+| 加密 recovery | 已落地 AES-256-GCM、SecretStorage key、scope/AAD 与篡改拒绝 | 用真实用户执行 X/kill/timeout 故障矩阵 |
+| 离线示例 catalog | 已内置三套示例所需 operator 与 built-in function | 从工作区 schema index 动态合并，不覆盖用户定义 |
 | 本地 topology scanner | 未落地 | TypeScript best-effort scanner |
 | 本地 schema index | 未落地 | workspace glob + JSON/YAML parser |
 | 本地 mock simulator | 未落地 | 从现有 simulation contract 反推 TS mock engine |
@@ -506,16 +509,18 @@ IDE 插件不应该拥有业务系统运行时的权限、网络、密钥和隔�
 
 ## 13. 推荐下一步
 
-优先做一条垂直切片：
+第一条垂直切片已经完成：当前 React 画布以 production 资源进入真实 VS Code WebView，postMessage transport、
+离线 catalog、加密恢复、唯一面板和可选远端代理均可运行；干净 profile 重启可恢复 5 节点 / 12 边，
+不需要 Spring Boot。实现与截图见
+[VS Code 宿主集成与实机体验审阅](resource-gateway-ux-round3-s5-vscode-host-integration.md)。
 
-1. 创建 `tooling/bloge-vscode-authoring` 插件骨架。
-2. 把当前 React author canvas build 作为 webview 资源加载。
-3. 实现 `createVsCodeApiTransport()`，把 `api.ts` 请求转成 webview `postMessage`。
-4. extension host 实现 3 个本地路由：
-   - `GET /api/visual/operators`
-   - `POST /api/visual/dsl-imports/preview`
-   - `POST /api/visual/graphs/simulate`
-5. 先不做源码回写，只支持导出 draft 和打开 source map。
-6. 用一个真实 `.bloge` 文件验证：不开 Spring Boot、不起端口、能看图、能本地 mock run。
+下一条垂直切片应集中关闭“离线可视化存量 DSL”而不是继续搭宿主骨架：
 
-这样可以最快验证“轻量插件形态”的产品价值，同时不会破坏现有服务端 authoring 闭环。
+1. 用 workspace glob 建立 JSON/YAML operator 与 built-in function schema index；
+2. 实现 TypeScript best-effort DSL scanner 和 `POST /api/visual/dsl-imports/preview` 离线路由；
+3. 实现受限表达式/fixture mock simulator 和 `POST /api/visual/graphs/simulate` 离线路由；
+4. 通过 VS Code `showTextDocument` 打开 source map，使用 diff editor 展示 DSL patch；
+5. 用存量业务 `.bloge` 文件验证：不开 Spring Boot、不起端口、能看图、能 mock run、能回到源码；
+6. 对需要真实 operator、secret、网络或治理证据的路径继续 fail closed，并引导配置受控远端 runtime。
+
+这条切片才会把“示例离线可用”提升为“存量业务离线可迁移”，同时不把生产执行权限塞进 IDE。

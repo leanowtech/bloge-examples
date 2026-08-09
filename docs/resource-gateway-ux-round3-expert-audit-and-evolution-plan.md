@@ -6,7 +6,7 @@
 >
 > 审阅基线：`904f7178f` (`feat(resource-gateway): close round-two ux control loops`)
 >
-> 证据等级：E2，最新 production JAR、真实 Chromium、代码路径与自动化覆盖交叉验证
+> 证据等级：E2，最新 production JAR、真实 Chromium、真实 VS Code Extension Host、代码路径与自动化覆盖交叉验证
 >
 > 当前视觉完成度：`95 / 100`
 >
@@ -29,6 +29,7 @@
 - [S3 证明语义与本地化实现说明](resource-gateway-ux-round3-s3-proof-semantics-localization-implementation.md)
 - [S4 响应式任务投影实现说明](resource-gateway-ux-round3-s4-responsive-projection-implementation.md)
 - [S5 性能、宿主与现场证据实现说明](resource-gateway-ux-round3-s5-performance-host-evidence-implementation.md)
+- [VS Code 宿主集成与实机体验审阅](resource-gateway-ux-round3-s5-vscode-host-integration.md)
 - [E3/E4 现场验证手册](resource-gateway-ux-round3-e3-e4-field-study-runbook.md)
 - [Round 3 最终资深体验复评](resource-gateway-ux-round3-final-expert-reassessment.md)
 
@@ -41,7 +42,7 @@
 | S2 企业任务坐标 | 已实现 | 统一 TaskCoordinate、command authority、production safeguard、单一 primary Run 与 return coordinate |
 | S3 证明语义与 i18n | 已实现 | 类型化产品消息、deep-surface inventory、四维 proof authority、raw detail 隔离与双语状态连续性已闭合 |
 | S4 响应式任务投影 | 已实现 | 390/820 结果摘要、断点状态连续、Semantic Zoom、根因聚合与五档真实浏览器矩阵闭合 |
-| S5 性能与宿主门禁 | E2 已实现 | 同步主包 867.23 -> 151.44 kB；Author 启动闭包 320.40 KiB gzip；WebView disposal receipt 与现场证据评分器已落地，真实 E3/E4 待执行 |
+| S5 性能与宿主门禁 | E2 已实现 | 同步主包 867.23 -> 153.09 kB；Author 启动闭包 321.75 KiB gzip；参考扩展、加密恢复、唯一面板、WebView disposal receipt 与现场证据评分器已落地，真实 E3/E4 待执行 |
 
 ## 1. 最强结论
 
@@ -297,7 +298,7 @@ Round 2 已记录主 bundle `781.29KB` minified / `222.23KB` gzip。Library、Re
 | 维度 | 权重 | S4 后得分 | 证据或剩余扣分 |
 |---|---:|---:|---|
 | 任务完成与心智模型 | 15 | 14 | 单一 primary command、任务坐标与移动结果投影已闭合；真实角色学习成本待 E3 |
-| 资产安全与会话连续性 | 20 | 19 | recovery/save/冲突防覆盖已实现；真实 VS Code dispose/recover 与 P75 时延待 E3 验证 |
+| 资产安全与会话连续性 | 20 | 19 | recovery/save/冲突防覆盖已实现；真实 VS Code 5/12 恢复已通过，直接 X 故障矩阵与多用户 P75 待 E3 |
 | 可逆编辑与效率 | 12 | 12 | 20 类 mutation、影响预览和统一 Undo/Redo 已通过自动化与浏览器验收 |
 | 测试与证据信任 | 15 | 15 | behavior/proof/freshness/governance 正交，raw protocol 默认隔离 |
 | 企业上下文与控制 | 10 | 10 | TaskCoordinate、role、environment、scope 与 production safeguard 已落地 |
@@ -305,12 +306,30 @@ Round 2 已记录主 bundle `781.29KB` minified / `222.23KB` gzip。Library、Re
 | 本地化与语义所有权 | 6 | 6 | typed message、dynamic inventory、pseudo-locale 与双语状态连续 |
 | 视觉层级与密度 | 6 | 5 | semantic token 与 chrome budget 已建立；仍需 E3 验证长时高密度使用疲劳 |
 | 无障碍与键盘安全 | 3 | 3 | focus restore、dialog trap、keyboard history 与危险键边界已覆盖 |
-| 性能与宿主适配 | 3 | 3 | 同步壳 151.44 kB、最大应用块 315.15 kB；WebView disposal 协议已测试，真实宿主 P75 待 E3 |
+| 性能与宿主适配 | 3 | 3 | 同步壳 153.09 kB、最大应用块 319.47 kB；真实宿主单次约 580 ms，P75 待 E3 |
 | **合计** | **100** | **97** | **E2 工程完成度达到 97；外部成熟度仍受 E3/E4 上限约束** |
 
 这次复评明确区分三件事：`97` 是 production build、自动化和真实 Chromium 支持的工程体验分；`89` 是
 缺少真实角色和连续组织运行时可对外宣称的上限；S5 的 bundle/WebView/E3/E4 不是“再美化一点”，而是
 将工程正确性升级为组织可用性的必要证据。
+
+### 4.2 真实 VS Code 宿主复审
+
+把 WebView 协议接入真实扩展后，本轮没有直接接受“组件测试全绿”的结论，而是在隔离 VS Code profile 中
+执行了加载、加密 checkpoint、进程退出、serializer 恢复、画布展开和截图复核。实机先后发现并关闭：
+
+1. CSP 未允许 WebView script source 导致空白页；
+2. React Flow Controls 在紧凑画布覆盖节点；
+3. Fit 使用外层容器导致边标签越界；
+4. 两段相机动画竞争，Inspect 仍裁掉选中节点；
+5. 字段级高入度让“一跳邻域”退化成全图；
+6. minimap 从聚焦状态泄漏回标准状态并覆盖输出节点；
+7. serializer restore 与开发期 auto-open 竞态产生两个同名 Author 标签；
+8. VS Code onboarding 遮罩让截图成为无效证据，但 WebView 内部几何检查未发现。
+
+最终干净 profile 的首次和重启都只有 1 个 Author 面板；恢复保持 5 节点 / 12 边。标准模式在 `55%`
+显示全部 5 个节点和 4 个聚合标签且零裁切/碰撞；聚焦 Inspect 在 `100%` 完整显示 `n4+n5`、字段束和
+`12px` 标题，minimap 保留全局形状。该结果关闭的是 E2 宿主工程缺口，不等于已经取得 E3 用户证据。
 
 ## 5. 目标体验控制面
 
@@ -598,12 +617,14 @@ interface ProofPresentation {
 目标：把工程正确性转为真实组织环境中的可用性证据。
 
 > 实施复评：E2 工程部分已完成，E3/E4 等待真实组织执行。App 四个重工作面改为 route-level lazy，
-> 仅在 pointer/focus 导航意图后预取；同步主包从 `867.23 kB` 降至 `151.44 kB`，Author 交互块
-> `315.15 kB`，所有应用块低于 `350 KiB` 且 production build 会执行硬门禁。VS Code WebView 增加
+> 仅在 pointer/focus 导航意图后预取；同步主包从 `867.23 kB` 降至 `153.09 kB`，Author 交互块
+> `319.47 kB`，所有应用块低于 `350 KiB` 且 production build 会执行硬门禁。VS Code WebView 增加
 > 版本化 fetch/recovery bridge 与可等待的 disposal receipt，authoring surface 会在宿主销毁前加入
-> recovery barrier。`resourceGateway.uxEvidence.v1`、固定任务手册和自动评分器已经落地，空模板会明确
-> 返回 `NOT READY`。真实 12 人研究、cold start P75 和两团队两周期不能由代码替代，仍未取得。
+> recovery barrier；可运行参考扩展已在真实 VS Code 完成唯一面板、5/12 加密恢复和标准/聚焦视觉验收。
+> `resourceGateway.uxEvidence.v1`、固定任务手册和自动评分器已经落地，空模板会明确返回 `NOT READY`。
+> 真实 12 人研究、多用户 cold start P75 和两团队两周期不能由代码替代，仍未取得。
 > 详见 [S5 实现说明](resource-gateway-ux-round3-s5-performance-host-evidence-implementation.md)与
+> [VS Code 实机审阅](resource-gateway-ux-round3-s5-vscode-host-integration.md)、
 > [E3/E4 现场验证手册](resource-gateway-ux-round3-e3-e4-field-study-runbook.md)。
 
 实施切片：
@@ -737,10 +758,10 @@ WP-12 也已进入 E2 门禁。当前只剩 WP-13 必须由真实参与者和组
 ### 11.1 P0 Gate
 
 - [x] 所有 Author / Library / Scenario authoring surface 都有正式 lifecycle state；
-- [ ] route、reload、close、host dispose 无 silent data loss（浏览器与 WebView 协议 E2 已通过；真实 extension 接线待 E3）；
+- [ ] route、reload、close、host dispose 无 silent data loss（浏览器、参考扩展与 5/12 实机恢复 E2 已通过；直接 X/kill 故障矩阵待 E3）；
 - [x] destructive mutation 可预见、可撤销、可审计；
 - [x] save conflict 不覆盖任一用户版本；
-- [ ] 真实浏览器与 VS Code 宿主故障注入全绿（Chromium、bridge false/reject/timeout 已通过；真实 WebView 故障矩阵待 E3）。
+- [ ] 真实浏览器与 VS Code 宿主故障注入全绿（Chromium、bridge false/reject/timeout、干净 profile 重启已通过；多设备 X/kill/timeout 矩阵待 E3）。
 
 ### 11.2 P1 Gate
 
@@ -790,7 +811,7 @@ WP-12 也已进入 E2 门禁。当前只剩 WP-13 必须由真实参与者和组
 
 当前仍有三个必须由现场阶段确认的开放参数：
 
-1. 客户 VS Code extension host 对版本化 bridge、加密 recovery store 和 disposal receipt 的实际接线；
+1. 客户设备、企业扩展负载与安全策略下的 VS Code cold start P75 和直接 X 风险窗口；
 2. history 的 100 steps / 20MB 默认预算是否满足大型图；
 3. production 环境 destructive confirmation 的组织策略是否需要双人审批。
 

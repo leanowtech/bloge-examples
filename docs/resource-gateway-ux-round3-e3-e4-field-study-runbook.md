@@ -64,6 +64,10 @@
 
 ## 5. VS Code 宿主任务
 
+参考扩展位于 `resource-gateway-examples/vscode-extension`。执行前必须运行 `npm run verify` 与
+`npm run prepare:webview`，并使用独立 VS Code user-data profile，避免已有扩展、缓存或 onboarding 状态
+污染 cold start 和截图。
+
 真实扩展必须验证以下顺序：
 
 1. 新建 WebView，记录 cold start；
@@ -73,9 +77,25 @@
 5. 重开 WebView，确认 `HOST_ENCRYPTED` recovery 恢复 exact fingerprint；
 6. 在 390、820、1024 等效宽度 resize，确认 task、selection、focus 不丢失；
 7. 再次进入同一路由，记录 warm start。
+8. 重启 VS Code，确认只出现一个 Author 标签；serializer restore 与 startup activation 不得创建竞争面板。
+9. 标准画布确认 minimap 不覆盖节点；展开 Inspect 后确认选中节点、最近结构上下文和字段束完整可见。
+10. 截图前确认 VS Code onboarding、登录、主题选择、命令面板和通知没有覆盖 WebView。
 
 宿主不得在未收到 receipt 时把超时当作成功；`ready=false` 或 `timedOut=true` 时应保留面板并显示可重试错误。WebView 请求/响应协议的代码
-实现位于 `src/host/vscodeWebviewBridge.ts`。
+实现位于 `src/host/vscodeWebviewBridge.ts`，可运行宿主与实机 E2 基线见
+[VS Code 宿主集成与实机体验审阅](resource-gateway-ux-round3-s5-vscode-host-integration.md)。
+
+必须单独记录以下故障矩阵；“最终恢复到了某个版本”不能替代 exact fingerprint 比较：
+
+| 故障 | 注入时点 | 通过标准 |
+|---|---|---|
+| 扩展命令关闭 | dirty 后 checkpoint 前/后 | receipt ready 才关闭；重开 exact |
+| 直接点击标签 X | 连续输入后 `0/100/350/1000/5000 ms` | 明确最大增量窗口；无静默回到更旧权威版本 |
+| Extension Host kill | recovery save 写入前/临时文件后/rename 后 | 只恢复完整旧版或完整新版，不读半文件 |
+| WebView reload | DIRTY、SAVING、RECOVERABLE | 生命周期不伪装为 SAVED；exact recovery |
+| SecretStorage unavailable/tamper | load/save | fail closed、显示稳定错误、不输出明文 |
+| serializer + startup race | VS Code restart | 始终一个权威 Author 面板 |
+| 宿主顶层遮罩 | 首次 profile/onboarding/notification | 视觉证据判无效并重拍，不计通过 |
 
 ## 6. E4 连续运行
 

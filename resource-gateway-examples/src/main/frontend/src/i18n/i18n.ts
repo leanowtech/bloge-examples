@@ -1265,6 +1265,8 @@ const ZH_CN_MESSAGES: Record<string, string> = {
   'Focus': '聚焦',
   'Inspect': '检查',
   'Canvas focus breadcrumb': '画布聚焦路径',
+  'Expand canvas': '展开画布',
+  'Restore workspace chrome': '还原工作区控件',
   'All nodes': '全部节点',
   '{count} in path': '路径中 {count} 个节点',
   'Find canvas node': '查找画布节点',

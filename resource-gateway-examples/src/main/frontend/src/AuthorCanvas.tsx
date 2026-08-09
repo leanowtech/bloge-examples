@@ -32,7 +32,7 @@ import ReactFlow, {
   Position,
   getSmoothStepPath,
 } from 'reactflow';
-import { ChevronLeft, ChevronRight, Plus } from 'lucide-react';
+import { ChevronLeft, ChevronRight, Minus, Plus } from 'lucide-react';
 import 'reactflow/dist/style.css';
 
 import {
@@ -5299,7 +5299,7 @@ export default function AuthorCanvas({ workspaceVersion = 'v1' }: AuthorCanvasPr
   const [connectionGuideBusy, setConnectionGuideBusy] = useState(false);
   const [pendingConnectionGuideNodeId, setPendingConnectionGuideNodeId] = useState('');
   const [canvasFocusMode, setCanvasFocusMode] = useState(false);
-  const [overviewVisible, setOverviewVisible] = useState(true);
+  const [overviewVisible, setOverviewVisible] = useState(!isTaskWorkspace);
   const [viewportZoom, setViewportZoom] = useState(1);
   const [focusPathNodeId, setFocusPathNodeId] = useState('');
   const [pinnedNodeIds, setPinnedNodeIds] = useState<Set<string>>(new Set());
@@ -5316,6 +5316,7 @@ export default function AuthorCanvas({ workspaceVersion = 'v1' }: AuthorCanvasPr
   const [mutationNotice, setMutationNotice] = useState<AuthorMutationNotice | null>(null);
   const searchInputRef = useRef<HTMLInputElement>(null);
   const flowRef = useRef<HTMLDivElement>(null);
+  const overviewBeforeFocusRef = useRef(!isTaskWorkspace);
   useEffect(() => {
     const localizeControls = () => {
       const labels = [
@@ -5844,8 +5845,9 @@ export default function AuthorCanvas({ workspaceVersion = 'v1' }: AuthorCanvasPr
         bottom: Math.max(...rects.map((rect) => rect.bottom)),
       };
       const viewport = instance.getViewport();
+      const renderingViewport = flow.querySelector<HTMLElement>('.react-flow') ?? flow;
       const contained = containedViewportTransform(
-        flow.getBoundingClientRect(),
+        renderingViewport.getBoundingClientRect(),
         content,
         viewport,
         CANVAS_MIN_ZOOM,
@@ -5924,10 +5926,76 @@ export default function AuthorCanvas({ workspaceVersion = 'v1' }: AuthorCanvasPr
       return undefined;
     }
     const handle = window.setTimeout(() => {
-      fitCanvasToView();
+      if (fitCanvasTimerRef.current !== null) {
+        window.clearTimeout(fitCanvasTimerRef.current);
+        fitCanvasTimerRef.current = null;
+      }
+      const selected = isTaskWorkspace
+        ? nodes.find((node) => node.id === selectedNodeId)
+        : undefined;
+      if (selected) {
+        const adjacentIds = new Set<string>();
+        edges.forEach((edge) => {
+          if (edge.source === selected.id) adjacentIds.add(edge.target);
+          if (edge.target === selected.id) adjacentIds.add(edge.source);
+        });
+        const nearestAdjacent = nodes
+          .filter((node) => adjacentIds.has(node.id))
+          .sort((left, right) => {
+            const leftDistance = ((left.position.x - selected.position.x) ** 2)
+              + ((left.position.y - selected.position.y) ** 2);
+            const rightDistance = ((right.position.x - selected.position.x) ** 2)
+              + ((right.position.y - selected.position.y) ** 2);
+            return leftDistance - rightDistance || left.id.localeCompare(right.id);
+          })
+          .slice(0, 1);
+        const neighborhood = [selected, ...nearestAdjacent];
+        const minimumZoom = semanticZoomContract('inspect').minimumZoom;
+        const bounds = neighborhood.reduce((current, node) => ({
+          left: Math.min(current.left, node.position.x),
+          right: Math.max(current.right, node.position.x + (node.width ?? 240)),
+          top: Math.min(current.top, node.position.y),
+          bottom: Math.max(current.bottom, node.position.y + (node.height ?? 164)),
+        }), {
+          left: Number.POSITIVE_INFINITY,
+          right: Number.NEGATIVE_INFINITY,
+          top: Number.POSITIVE_INFINITY,
+          bottom: Number.NEGATIVE_INFINITY,
+        });
+        const instance = flowInstanceRef.current;
+        if (!instance) return;
+        const renderingViewport = flowRef.current
+          ?.querySelector<HTMLElement>('.react-flow')
+          ?.getBoundingClientRect();
+        const neighborhoodWidth = Math.max(1, bounds.right - bounds.left);
+        const neighborhoodHeight = Math.max(1, bounds.bottom - bounds.top);
+        const widthFit = renderingViewport && renderingViewport.width > 0
+          ? (renderingViewport.width * 0.76) / neighborhoodWidth
+          : minimumZoom;
+        const heightFit = renderingViewport && renderingViewport.height > 0
+          ? (renderingViewport.height * 0.76) / neighborhoodHeight
+          : minimumZoom;
+        const targetZoom = Math.max(minimumZoom, Math.min(1, widthFit, heightFit));
+        void instance.setCenter(
+          (bounds.left + bounds.right) / 2,
+          (bounds.top + bounds.bottom) / 2,
+          { zoom: targetZoom, duration: 240 },
+        );
+        window.setTimeout(refreshViewportZoom, 256);
+      } else {
+        fitCanvasToView();
+      }
     }, 80);
     return () => window.clearTimeout(handle);
-  }, [canvasFocusMode, edges.length, fitCanvasToView, nodes.length]);
+  }, [
+    canvasFocusMode,
+    edges,
+    fitCanvasToView,
+    isTaskWorkspace,
+    nodes,
+    refreshViewportZoom,
+    selectedNodeId,
+  ]);
 
   useEffect(() => {
     if (!layoutPreview) {
@@ -6908,10 +6976,10 @@ export default function AuthorCanvas({ workspaceVersion = 'v1' }: AuthorCanvasPr
     setLayoutUndo(null);
     setLayoutNotice(null);
     setFocusPathNodeId('');
-    setOverviewVisible(
+    setOverviewVisible(!isTaskWorkspace && (
       nextNodes.length >= COMPLEX_GRAPH_NODE_THRESHOLD
-      || nextEdges.length >= COMPLEX_GRAPH_EDGE_THRESHOLD,
-    );
+      || nextEdges.length >= COMPLEX_GRAPH_EDGE_THRESHOLD
+    ));
     scenarioGraphNameRef.current = '';
     setScenarioDraftSet(null);
     setLoadedExampleKey(template.key);
@@ -7970,10 +8038,10 @@ export default function AuthorCanvas({ workspaceVersion = 'v1' }: AuthorCanvasPr
     setLayoutUndo(null);
     setLayoutNotice(null);
     setFocusPathNodeId('');
-    setOverviewVisible(
+    setOverviewVisible(!isTaskWorkspace && (
       nextNodes.length >= COMPLEX_GRAPH_NODE_THRESHOLD
-      || nextEdges.length >= COMPLEX_GRAPH_EDGE_THRESHOLD,
-    );
+      || nextEdges.length >= COMPLEX_GRAPH_EDGE_THRESHOLD
+    ));
     setEdges(nextEdges);
     setFixtureDrafts(nextFixtureDrafts);
     setFixtureInputDrafts(nextFixtureInputDrafts);
@@ -9693,6 +9761,27 @@ export default function AuthorCanvas({ workspaceVersion = 'v1' }: AuthorCanvasPr
     nodes,
     selectedNodeId,
   ]);
+
+  const toggleCanvasExpanded = useCallback(() => {
+    const expanding = !canvasFocusMode;
+    const selected = nodes.find((node) => node.id === selectedNodeId);
+    setCanvasFocusMode(expanding);
+    if (expanding) {
+      overviewBeforeFocusRef.current = overviewVisible;
+      if (selected) {
+        setOverviewVisible(true);
+      }
+    }
+    if (!expanding) {
+      setOverviewVisible(overviewBeforeFocusRef.current);
+      const settleCamera = () => fitCanvasToView();
+      if (typeof window.requestAnimationFrame === 'function') {
+        window.requestAnimationFrame(() => window.requestAnimationFrame(settleCamera));
+      } else {
+        window.setTimeout(settleCamera, 0);
+      }
+    }
+  }, [canvasFocusMode, fitCanvasToView, nodes, overviewVisible, selectedNodeId]);
 
   const togglePalettePanel = useCallback(() => {
     setPaletteCollapsed((current) => {
@@ -11707,7 +11796,7 @@ export default function AuthorCanvas({ workspaceVersion = 'v1' }: AuthorCanvasPr
               onClick={() => zoomCanvasBy('out')}
               disabled={nodes.length === 0}
             >
-              -
+              <Minus size={14} aria-hidden="true" />
             </button>
             <button
               type="button"
@@ -11834,6 +11923,7 @@ export default function AuthorCanvas({ workspaceVersion = 'v1' }: AuthorCanvasPr
               pathNodeCount={focusedCanvasPath.nodeIds.size}
               zoomPercent={viewportZoomPercent}
               mapVisible={overviewVisible}
+              canvasExpanded={canvasFocusMode}
               layoutPlanning={layoutPlanning}
               layoutPreview={Boolean(layoutPreview)}
               layoutQuality={layoutPreview?.quality ?? null}
@@ -11844,6 +11934,9 @@ export default function AuthorCanvas({ workspaceVersion = 'v1' }: AuthorCanvasPr
               canUndoLayout={Boolean(layoutUndo)}
               onModeChange={activateCanvasTaskMode}
               onSelectNode={focusNodeFromNavigator}
+              onToggleCanvasExpanded={toggleCanvasExpanded}
+              onZoomIn={() => zoomCanvasBy('in')}
+              onZoomOut={() => zoomCanvasBy('out')}
               onFitAll={() => fitCanvasToView()}
               onToggleMap={() => setOverviewVisible((current) => !current)}
               onTogglePin={toggleSelectedNodePin}
@@ -12012,7 +12105,7 @@ export default function AuthorCanvas({ workspaceVersion = 'v1' }: AuthorCanvasPr
             maxZoom={CANVAS_MAX_ZOOM}
           >
             <Background />
-            <Controls />
+            {!isTaskWorkspace && <Controls />}
             {overviewVisible && (
               <MiniMap
                 className={`canvas-minimap ${isComplexGraph ? 'large' : 'compact'}`}

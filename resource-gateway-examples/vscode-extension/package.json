@@ -1,0 +1,74 @@
+{
+  "name": "bloge-resource-gateway-authoring",
+  "displayName": "BLOGE Resource Gateway Authoring",
+  "description": "Open the Resource Gateway visual authoring workspace inside VS Code with encrypted crash recovery.",
+  "version": "0.1.0",
+  "publisher": "bloge",
+  "private": true,
+  "engines": {
+    "vscode": "^1.85.0"
+  },
+  "categories": [
+    "Other",
+    "Visualization"
+  ],
+  "activationEvents": [
+    "onCommand:resourceGatewayAuthoring.open",
+    "onCommand:resourceGatewayAuthoring.closeSafely",
+    "onCommand:resourceGatewayAuthoring.setRemoteToken",
+    "onCommand:resourceGatewayAuthoring.clearRemoteToken",
+    "onUri",
+    "onStartupFinished",
+    "onWebviewPanel:resourceGateway.authoring"
+  ],
+  "main": "./src/extension.js",
+  "contributes": {
+    "commands": [
+      {
+        "command": "resourceGatewayAuthoring.open",
+        "title": "Resource Gateway: Open Authoring Workspace"
+      },
+      {
+        "command": "resourceGatewayAuthoring.closeSafely",
+        "title": "Resource Gateway: Save Recovery and Close"
+      },
+      {
+        "command": "resourceGatewayAuthoring.setRemoteToken",
+        "title": "Resource Gateway: Set Remote Token"
+      },
+      {
+        "command": "resourceGatewayAuthoring.clearRemoteToken",
+        "title": "Resource Gateway: Clear Remote Token"
+      }
+    ],
+    "configuration": {
+      "title": "BLOGE Resource Gateway Authoring",
+      "properties": {
+        "resourceGatewayAuthoring.remoteBaseUrl": {
+          "type": "string",
+          "default": "",
+          "description": "Optional HTTPS Resource Gateway base URL. HTTP is accepted only for loopback development. Empty uses the offline demo catalog."
+        },
+        "resourceGatewayAuthoring.allowAdminProxy": {
+          "type": "boolean",
+          "default": false,
+          "description": "Allow the WebView to call /admin endpoints through the host. Keep disabled unless the workspace is trusted and the server is explicitly governed."
+        },
+        "resourceGatewayAuthoring.requestTimeoutMs": {
+          "type": "number",
+          "default": 10000,
+          "minimum": 1000,
+          "maximum": 60000,
+          "description": "Host-side timeout for proxied Resource Gateway requests."
+        }
+      }
+    }
+  },
+  "scripts": {
+    "prepare:webview": "node scripts/prepare-webview.mjs",
+    "check:webview": "node scripts/prepare-webview.mjs --check",
+    "test": "node --test",
+    "verify": "npm test && npm run prepare:webview && npm run check:webview",
+    "vscode:prepublish": "npm run verify"
+  }
+}

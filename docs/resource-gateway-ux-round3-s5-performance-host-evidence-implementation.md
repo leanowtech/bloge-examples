@@ -29,8 +29,8 @@ UxEvidenceContract     12 人固定任务、VS Code P75、两团队两周期自�
 
 | 单元 | S4 | S5 |
 |---|---:|---:|
-| 同步应用主包 | `867.23 kB` | `151.44 kB` |
-| Author 交互块 | 混在主包 | `315.15 kB` |
+| 同步应用主包 | `867.23 kB` | `153.09 kB` |
+| Author 交互块 | 混在主包 | `319.47 kB` |
 | Author domain | 混在主包 | `73.28 kB` |
 | Library | 混在主包 | `138.73 kB` |
 | Rehearsal | 混在主包 | `69.13 kB` |
@@ -38,7 +38,7 @@ UxEvidenceContract     12 人固定任务、VS Code P75、两团队两周期自�
 
 构建后的 `check-route-chunk-budget.mjs` 会检查：应用壳 `<=180 KiB`、每个应用 chunk `<=350 KiB`、五个
 命名工作单元必须存在。它还会读取 Vite manifest，递归汇总“壳 + 当前路由 + 所有静态 JS/CSS 依赖”的
-gzip 闭包；最重的 Author 首次传输为 `320.40 KiB`，低于 `350 KiB`。这样既不把 vendor 归咎于某个
+gzip 闭包；最重的 Author 首次传输为 `321.75 KiB`，低于 `350 KiB`。这样既不把 vendor 归咎于某个
 业务 chunk，也不靠拆小文件掩盖总传输量。`npm run build` 已串入两层门禁。
 
 ## 3. VS Code WebView 宿主协议
@@ -61,6 +61,17 @@ Recovery store 在 WebView 中明确标记为 `HOST_ENCRYPTED`。请求超时、
 面板；flush 返回 `false`、抛错或超过宿主 deadline 时都返回 `ready=false`，receipt 带 failure count 与
 `timedOut`，extension 必须保留面板并允许重试。
 
+### 3.1 可运行参考扩展
+
+协议已经接入 [`resource-gateway-examples/vscode-extension`](../resource-gateway-examples/vscode-extension/README.md)，
+不再只是等待外部宿主团队实现的前端 adapter。扩展提供生产 WebView 打包、离线 catalog、受限远端代理、
+SecretStorage credential、AES-256-GCM recovery、URI deep link、唯一面板恢复和安全关闭命令。
+
+真实 VS Code 走查还修复了协议单测无法发现的 CSP 空白页、React Flow 控件遮挡、边标签裁切、聚焦相机
+竞争、字段级高入度导致 Inspect 退化、minimap 状态泄漏与 serializer/auto-open 重复标签页。完整边界、
+截图与几何证据见
+[VS Code 宿主集成与实机体验审阅](resource-gateway-ux-round3-s5-vscode-host-integration.md)。
+
 ## 4. E3/E4 可执行证据计划
 
 新增版本化、无业务 payload 的 `resourceGateway.uxEvidence.v1`。评分器不接受“页面看起来不错”或空样本：
@@ -80,20 +91,23 @@ Recovery store 在 WebView 中明确标记为 `HOST_ENCRYPTED`。请求超时、
 | 门禁 | 当前结果 |
 |---|---|
 | 路由 lazy 与意图后预取 | 自动化通过；四个重工作面无同步 App import |
-| production chunk budget | 通过；壳 `147.89 KiB`，最大应用块 Author `307.77 KiB`，Author 启动 gzip 闭包 `320.40 KiB` |
+| production chunk budget | 通过；壳 `149.50 KiB`，最大应用块 Author `311.98 KiB`，Author 启动 gzip 闭包 `321.75 KiB` |
 | host request/recovery correlation | 组件协议测试通过 |
 | disposal barrier | receipt 在 recovery flush 完成后才发出；`false/reject/timeout` fail closed；hook 集成测试通过 |
+| reference extension | `16 / 16` Node 测试通过；真实 VS Code 干净 profile 首次/重启均只有 1 个面板，精确恢复 5/12 |
 | evidence evaluator | 正向/反向 Node 测试通过；空模板返回 `NOT READY` |
-| 前端全量测试与 production build | `96` 个文件、`728` 项测试全绿；TypeScript、Vite 与 chunk gate 通过 |
+| 前端全量测试与 production build | `96` 个文件、`732` 项测试全绿；TypeScript、Vite 与 chunk gate 通过 |
 | Java / Maven | S5 无 Java wire contract 修改；`VisualAuthoringAppJsTest` 29 项通过；S4 同基线全量 `5,898` 项已通过 |
-| 真实 VS Code E3 | 未执行，不能宣称通过 |
+| 真实 VS Code E2 | 单次 ready 约 `580 ms`（不是 P75）；5/12 加密恢复、标准/聚焦几何与唯一面板通过 |
+| 真实 VS Code E3 | 尚未由至少 2 名目标用户执行，不能宣称 P75 或任务成功率通过 |
 | 两团队两周期 E4 | 未执行，不能宣称通过 |
 
 ## 6. 阶段复评
 
-S5 的 E2 工程目标已经具备实现和门禁：同步主包下降约 82.5%，所有应用 chunk 低于预算；宿主 disposal
-从单向通知升级为等待 recovery 的协议；E3/E4 从文字愿望升级成可机器判定的证据合同。
+S5 的 E2 工程目标已经具备实现和门禁：同步主包下降约 82.3%，所有应用 chunk 低于预算；宿主 disposal
+从单向通知升级为等待 recovery 的协议，并有可运行参考扩展与真实 VS Code 实机证据；E3/E4 从文字愿望
+升级成可机器判定的证据合同。
 
-仍不能关闭的差距只有外部事实：真实 VS Code cold start P75、12 名目标角色任务数据、两个团队连续两个
+仍不能关闭的差距只有外部事实：真实 VS Code 多用户 cold start P75、12 名目标角色任务数据、两个团队连续两个
 发布周期。这些不能由更多单元测试生成。当前应把工程阶段标记为完成、现场证据阶段标记为待执行，并继续
 保持对外成熟度上限 89，直到评分器对真实证据返回 `PASS`。

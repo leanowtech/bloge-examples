@@ -26,6 +26,9 @@ const reactFlowMocks = vi.hoisted(() => ({
   zoomIn: vi.fn(),
   zoomOut: vi.fn(),
   zoomTo: vi.fn(),
+  getViewport: vi.fn(() => ({ x: 0, y: 0, zoom: 1 })),
+  setViewport: vi.fn(),
+  setCenter: vi.fn(),
   onMove: null as null | ((event: unknown, viewport: { zoom: number }) => void),
 }));
 
@@ -51,6 +54,9 @@ vi.mock('reactflow', async () => {
           zoomIn: reactFlowMocks.zoomIn,
           zoomOut: reactFlowMocks.zoomOut,
           zoomTo: reactFlowMocks.zoomTo,
+          getViewport: reactFlowMocks.getViewport,
+          setViewport: reactFlowMocks.setViewport,
+          setCenter: reactFlowMocks.setCenter,
         });
         return () => {
           reactFlowMocks.onMove = null;
@@ -58,7 +64,7 @@ vi.mock('reactflow', async () => {
       }, []);
       return React.createElement(
         'div',
-        { 'data-testid': 'react-flow' },
+        { className: 'react-flow', 'data-testid': 'react-flow' },
         nodes.map((node: any) => {
           const Component = nodeTypes?.[node.type] ?? (() => React.createElement('div', null, node.id));
           return React.createElement(
@@ -95,7 +101,7 @@ vi.mock('reactflow', async () => {
         title,
       }),
     Background: () => null,
-    Controls: () => null,
+    Controls: () => React.createElement('div', { 'data-testid': 'react-flow-controls' }),
     MiniMap: () => null,
     Position: { Left: 'left', Right: 'right' },
     addEdge: (edge: unknown, edges: unknown[]) => [...edges, edge],
@@ -120,6 +126,10 @@ describe('AuthorCanvas operator-library intake', () => {
     reactFlowMocks.zoomIn.mockReset();
     reactFlowMocks.zoomOut.mockReset();
     reactFlowMocks.zoomTo.mockReset();
+    reactFlowMocks.getViewport.mockReset();
+    reactFlowMocks.getViewport.mockReturnValue({ x: 0, y: 0, zoom: 1 });
+    reactFlowMocks.setViewport.mockReset();
+    reactFlowMocks.setCenter.mockReset();
     reactFlowMocks.onMove = null;
     imported = false;
     host = document.createElement('div');
@@ -507,6 +517,7 @@ describe('AuthorCanvas operator-library intake', () => {
     await click(query<HTMLButtonElement>('[data-testid="operator-button:risk:eligibility"]'));
 
     await waitFor(() => expect(document.body.textContent).toContain('1 nodes'));
+    expect(query('[data-testid="react-flow-controls"]')).toBeTruthy();
     expect(query('[data-testid="canvas-navigator"]').textContent).toContain('Map');
     expect(query('[data-testid="canvas-zoom-readout"]').textContent).toBe('100%');
     expect(query('.workspace').getAttribute('data-canvas-zoom-tier')).toBe('detail');
@@ -538,6 +549,66 @@ describe('AuthorCanvas operator-library intake', () => {
     await click(overviewToggle);
     expect(overviewToggle.getAttribute('aria-pressed')).toBe('false');
     expect(query('[data-testid="canvas-navigator"]').classList.contains('collapsed')).toBe(true);
+  });
+
+  it('keeps v2 zoom controls outside the graph surface so they cannot cover nodes', async () => {
+    imported = true;
+    await act(async () => {
+      root = createRoot(host);
+      root.render(<AuthorCanvas workspaceVersion="v2" />);
+    });
+
+    await waitFor(() =>
+      expect(query('[data-testid="operator-button:risk:eligibility"]').textContent).toContain('Eligibility'),
+    );
+    await click(query<HTMLButtonElement>('[data-testid="operator-button:risk:eligibility"]'));
+    await waitFor(() => expect(document.body.textContent).toContain('1 nodes'));
+
+    expect(document.querySelector('[data-testid="react-flow-controls"]')).toBeNull();
+
+    const workspace = query<HTMLElement>('.workspace');
+    const expandCanvas = query<HTMLButtonElement>('[data-testid="navigator-expand-canvas"]');
+    const mapToggle = query<HTMLButtonElement>('[data-testid="navigator-map-toggle"]');
+    expect(mapToggle.getAttribute('aria-pressed')).toBe('false');
+    reactFlowMocks.getZoom.mockReturnValue(0.6);
+    await click(expandCanvas);
+    expect(workspace.dataset.layoutMode).toBe('focus');
+    expect(expandCanvas.getAttribute('aria-pressed')).toBe('true');
+    expect(mapToggle.getAttribute('aria-pressed')).toBe('true');
+    await waitFor(() => expect(reactFlowMocks.setCenter).toHaveBeenCalledWith(
+      expect.any(Number),
+      expect.any(Number),
+      { zoom: 0.8, duration: 240 },
+    ));
+    reactFlowMocks.getZoom.mockReturnValue(1);
+    await click(expandCanvas);
+    expect(workspace.dataset.layoutMode).toBe('standard');
+    expect(mapToggle.getAttribute('aria-pressed')).toBe('false');
+
+    const flowShell = query<HTMLElement>('[data-testid="author-flow"]');
+    const renderingViewport = query<HTMLElement>('[data-testid="react-flow"]');
+    const semanticNode = document.createElement('span');
+    semanticNode.className = 'react-flow__node';
+    const edgeLabel = document.createElement('span');
+    edgeLabel.dataset.testid = 'canvas-edge-label';
+    renderingViewport.append(semanticNode, edgeLabel);
+    setElementRect(flowShell, { left: 0, right: 400, top: 0, bottom: 300 });
+    setElementRect(renderingViewport, { left: 0, right: 400, top: 100, bottom: 300 });
+    setElementRect(semanticNode, { left: 100, right: 200, top: 120, bottom: 180 });
+    setElementRect(edgeLabel, { left: 100, right: 200, top: 90, bottom: 110 });
+    reactFlowMocks.setViewport.mockReset();
+
+    await click(query<HTMLButtonElement>('[data-testid="navigator-fit-all"]'));
+    await waitFor(() => expect(reactFlowMocks.setViewport).toHaveBeenCalledWith({
+      x: 0,
+      y: 12,
+      zoom: 1,
+    }));
+
+    await click(query<HTMLButtonElement>('[data-testid="navigator-zoom-out"]'));
+    await click(query<HTMLButtonElement>('[data-testid="navigator-zoom-in"]'));
+    expect(reactFlowMocks.zoomOut).toHaveBeenCalledWith({ duration: 160 });
+    expect(reactFlowMocks.zoomIn).toHaveBeenCalledWith({ duration: 160 });
   });
 
   it('adapts a framework capability catalog into the standard visual library draft', async () => {
@@ -1355,6 +1426,19 @@ describe('AuthorCanvas built-in canvas examples', () => {
       expect(query<HTMLButtonElement>('[data-testid="author-primary-action"]').disabled).toBe(false);
       expect(query('[data-testid="author-context-inspector"]').textContent).toContain('Decision response');
     });
+    reactFlowMocks.setCenter.mockClear();
+    await click(query<HTMLButtonElement>('[data-testid="navigator-expand-canvas"]'));
+    await waitFor(() => expect(reactFlowMocks.setCenter).toHaveBeenCalledWith(
+      expect.any(Number),
+      expect.any(Number),
+      { zoom: 0.8, duration: 240 },
+    ));
+    const lastSetCenterCall = reactFlowMocks.setCenter.mock.calls[
+      reactFlowMocks.setCenter.mock.calls.length - 1
+    ];
+    expect(lastSetCenterCall?.[0]).toBeGreaterThan(900);
+    expect(lastSetCenterCall?.[0]).toBeLessThan(1_100);
+    await click(query<HTMLButtonElement>('[data-testid="navigator-expand-canvas"]'));
     await click(query<HTMLButtonElement>('[data-testid="author-mode:scenarios"]'));
     await waitFor(() =>
       expect(document.querySelector('[data-testid="contract-workspace"]')).not.toBeNull(),
@@ -4633,6 +4717,25 @@ function query<TElement extends Element = Element>(selector: string): TElement {
   const element = document.querySelector<TElement>(selector);
   expect(element, `Expected selector ${selector}`).not.toBeNull();
   return element as TElement;
+}
+
+function setElementRect(
+  element: Element,
+  rect: { left: number; right: number; top: number; bottom: number },
+): void {
+  const width = rect.right - rect.left;
+  const height = rect.bottom - rect.top;
+  Object.defineProperty(element, 'getBoundingClientRect', {
+    configurable: true,
+    value: () => ({
+      ...rect,
+      width,
+      height,
+      x: rect.left,
+      y: rect.top,
+      toJSON: () => ({ ...rect, width, height }),
+    } as DOMRect),
+  });
 }
 
 function authorDraftExport(link: HTMLAnchorElement): any {

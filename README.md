@@ -110,6 +110,20 @@ worker/serving readiness false until a trusted data-plane connector is installed
 Runtime logs and PID files remain under `target/example-logs/` and
 `target/example-pids/`.
 
+To try the same Author Workspace v2 inside VS Code without starting a server or
+opening a port:
+
+```bash
+cd resource-gateway-examples/vscode-extension
+npm run prepare:webview
+code --new-window --extensionDevelopmentPath="$PWD"
+```
+
+Run **Resource Gateway: Open Authoring Workspace** in the Extension Development
+Host. The reference extension includes an offline catalog and host-encrypted
+recovery; a Resource Gateway server is optional. See the
+[extension guide](resource-gateway-examples/vscode-extension/README.md).
+
 ### Graph Engine Server
 
 ```bash

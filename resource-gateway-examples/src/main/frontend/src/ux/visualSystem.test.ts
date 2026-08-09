@@ -101,6 +101,12 @@ describe('Stage 5 visual-system contract', () => {
     expect(legacyCss).toMatch(/data-canvas-task-mode="inspect"[\s\S]*\.operator-node \.operator-node-port-grid[\s\S]*display: none/);
   });
 
+  it('lets expanded v2 canvas override later responsive grid rows', () => {
+    expect(legacyCss).toMatch(/\.workspace\.workspace-v2\.canvas-focus\s*\{[\s\S]*grid-template-rows: minmax\(0, 1fr\)/);
+    expect(legacyCss).toMatch(/\.workspace\.workspace-v2\.canvas-focus > \.author-command-bar\s*\{[\s\S]*display: none/);
+    expect(legacyCss).toMatch(/\.workspace\.workspace-v2\.canvas-focus > \.canvas\s*\{[\s\S]*grid-row: 1/);
+  });
+
   it('keeps desktop task controls and readiness conclusions fully legible', () => {
     expect(legacyCss).toMatch(/\.canvas-task-modes[\s\S]*min-width: 204px/);
     expect(legacyCss).toMatch(/\.author-truth-status strong[\s\S]*overflow-wrap: normal[\s\S]*white-space: normal/);

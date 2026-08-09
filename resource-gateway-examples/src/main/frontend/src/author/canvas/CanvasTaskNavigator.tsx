@@ -1,4 +1,5 @@
 import { useMemo, useState } from 'react';
+import { Maximize2, Minimize2, ZoomIn, ZoomOut } from 'lucide-react';
 
 import { useI18n } from '../../i18n/I18nProvider';
 import type { MessageDescriptor } from '../../i18n/messageCatalog';
@@ -36,6 +37,7 @@ interface CanvasTaskNavigatorProps {
   pathNodeCount: number;
   zoomPercent: string;
   mapVisible: boolean;
+  canvasExpanded: boolean;
   layoutPlanning: boolean;
   layoutPreview: boolean;
   layoutQuality: CanvasLayoutQualityReport | null;
@@ -46,6 +48,9 @@ interface CanvasTaskNavigatorProps {
   canUndoLayout: boolean;
   onModeChange: (mode: CanvasTaskMode) => void;
   onSelectNode: (nodeId: string) => void;
+  onToggleCanvasExpanded: () => void;
+  onZoomIn: () => void;
+  onZoomOut: () => void;
   onFitAll: () => void;
   onToggleMap: () => void;
   onTogglePin: () => void;
@@ -65,6 +70,7 @@ export default function CanvasTaskNavigator({
   pathNodeCount,
   zoomPercent,
   mapVisible,
+  canvasExpanded,
   layoutPlanning,
   layoutPreview,
   layoutQuality,
@@ -75,6 +81,9 @@ export default function CanvasTaskNavigator({
   canUndoLayout,
   onModeChange,
   onSelectNode,
+  onToggleCanvasExpanded,
+  onZoomIn,
+  onZoomOut,
   onFitAll,
   onToggleMap,
   onTogglePin,
@@ -202,6 +211,39 @@ export default function CanvasTaskNavigator({
       </div>
 
       <div className="canvas-task-actions">
+        <button
+          type="button"
+          className="icon-button"
+          data-testid="navigator-expand-canvas"
+          aria-pressed={canvasExpanded}
+          onClick={onToggleCanvasExpanded}
+          title={t(canvasExpanded ? 'Restore workspace chrome' : 'Expand canvas')}
+          aria-label={t(canvasExpanded ? 'Restore workspace chrome' : 'Expand canvas')}
+        >
+          {canvasExpanded
+            ? <Minimize2 size={14} aria-hidden="true" />
+            : <Maximize2 size={14} aria-hidden="true" />}
+        </button>
+        <button
+          type="button"
+          className="icon-button"
+          data-testid="navigator-zoom-out"
+          onClick={onZoomOut}
+          title={t('Zoom out')}
+          aria-label={t('Zoom out')}
+        >
+          <ZoomOut size={14} aria-hidden="true" />
+        </button>
+        <button
+          type="button"
+          className="icon-button"
+          data-testid="navigator-zoom-in"
+          onClick={onZoomIn}
+          title={t('Zoom in')}
+          aria-label={t('Zoom in')}
+        >
+          <ZoomIn size={14} aria-hidden="true" />
+        </button>
         <button type="button" data-testid="navigator-fit-all" onClick={onFitAll} title={t('Fit all nodes')}>
           {t('Fit')}
         </button>

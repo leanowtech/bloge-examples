@@ -1,7 +1,11 @@
 // @vitest-environment jsdom
 import { afterEach, describe, expect, it } from 'vitest';
 
-import { HOST_WILL_DISPOSE_EVENT, joinHostDisposal } from './hostLifecycle';
+import {
+  HOST_WILL_DISPOSE_EVENT,
+  joinHostDisposal,
+  signalHostWorkspaceReady,
+} from './hostLifecycle';
 import { VsCodeWebviewBridge, type HostRequest } from './vscodeWebviewBridge';
 
 describe('VsCodeWebviewBridge', () => {
@@ -63,6 +67,20 @@ describe('VsCodeWebviewBridge', () => {
     respond(removeRequest, {});
     await removePromise;
     expect(bridge.recoveryStore.security).toBe('HOST_ENCRYPTED');
+  });
+
+  it('reports route readiness without sending authoring payloads', () => {
+    const messages: unknown[] = [];
+    track(new VsCodeWebviewBridge({ postMessage: (message) => messages.push(message) }));
+
+    signalHostWorkspaceReady('author');
+
+    expect(messages).toHaveLength(1);
+    expect(messages[0]).toMatchObject({
+      schemaVersion: 'bloge.vscodeWebviewReady.v1',
+      route: 'author',
+    });
+    expect(messages[0]).not.toHaveProperty('payload');
   });
 
   it('acknowledges host disposal only after every authoring surface has flushed', async () => {
