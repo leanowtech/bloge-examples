@@ -1,16 +1,20 @@
 import { useState } from 'react';
-import { ChevronDown, ChevronUp, Redo2, Save, SlidersHorizontal, Undo2 } from 'lucide-react';
+import { ArrowLeft, ChevronDown, ChevronUp, Redo2, Save, SlidersHorizontal, Undo2 } from 'lucide-react';
 
 import type { AuthorMode } from './authorWorkspaceState';
 import type { AuthorCommandAvailability } from '../task/taskStateProjection';
+import type { TaskCommandPolicy } from '../task/commandAuthority';
+import type { TaskCoordinate } from '../task/taskCoordinate';
 import { useI18n } from '../../i18n/I18nProvider';
 import { statusMessageId } from '../../i18n/messageCatalog';
+import WorkspaceContextBar from './WorkspaceContextBar';
 
 interface AuthorCommandBarProps {
   graphName: string;
-  draftRevision: number;
   nodeCount: number;
   edgeCount: number;
+  taskCoordinate: TaskCoordinate;
+  commandPolicy: TaskCommandPolicy;
   mode: AuthorMode;
   primaryCommand: AuthorCommandAvailability;
   draftStatus: string;
@@ -29,6 +33,7 @@ interface AuthorCommandBarProps {
   layoutDisabled: boolean;
   validationDisabled: boolean;
   saveDisabled: boolean;
+  returnHref?: string;
   canUndo: boolean;
   canRedo: boolean;
   undoLabel: string;
@@ -54,9 +59,10 @@ const MODES: Array<{ key: AuthorMode; label: string }> = [
 /** Compact command surface for the task-oriented Author Workspace v2. */
 export default function AuthorCommandBar({
   graphName,
-  draftRevision,
   nodeCount,
   edgeCount,
+  taskCoordinate,
+  commandPolicy,
   mode,
   primaryCommand,
   draftStatus,
@@ -75,6 +81,7 @@ export default function AuthorCommandBar({
   layoutDisabled,
   validationDisabled,
   saveDisabled,
+  returnHref = '',
   canUndo,
   canRedo,
   undoLabel,
@@ -111,29 +118,37 @@ export default function AuthorCommandBar({
       : 'Evidence actions below apply to the visible run and findings.';
   return (
     <header className="author-command-bar" data-testid="author-command-bar">
-      <div className="author-draft-identity">
-        <strong title={graphName}>{graphName}</strong>
-        <div className="author-draft-meta">
-          <span>{t('Draft r{revision} · {nodes} nodes · {edges} edges', {
-            revision: draftRevision,
-            nodes: nodeCount,
-            edges: edgeCount,
-          })}</span>
-          <span
-            className="author-continuity-status"
-            data-state={continuityStatus.toLowerCase()}
-            data-testid="author-continuity-status"
-            title={recoveryCapturedAt
-              ? t('Recovery captured at {capturedAt} via {security}.', {
-                  capturedAt: new Date(recoveryCapturedAt).toLocaleTimeString(),
-                  security: d(recoverySecurity),
-                })
-              : t('No recovery snapshot has been captured yet.')}
-          >
-            {d(continuityStatus)}
-          </span>
-        </div>
-        <div className="author-draft-actions" aria-label={t('Workspace file and edit commands')}>
+      <WorkspaceContextBar
+        className="author-workspace-context"
+        coordinate={taskCoordinate}
+        objectLabel={graphName}
+        objectMeta={t('{nodes} nodes · {edges} edges', { nodes: nodeCount, edges: edgeCount })}
+        lifecycle={{
+          label: continuityStatus,
+          state: continuityStatus,
+          title: recoveryCapturedAt
+            ? t('Recovery captured at {capturedAt} via {security}.', {
+                capturedAt: new Date(recoveryCapturedAt).toLocaleTimeString(),
+                security: d(recoverySecurity),
+              })
+            : t('No recovery snapshot has been captured yet.'),
+        }}
+        lifecycleTestId="author-continuity-status"
+        commandScope={primaryCommand.scope}
+        commandPolicy={commandPolicy}
+        actions={(
+          <div className="author-draft-actions" aria-label={t('Workspace file and edit commands')}>
+          {returnHref && (
+            <a
+              className="secondary compact icon-button"
+              href={returnHref}
+              aria-label={t('Return to previous task')}
+              title={t('Return to previous task')}
+              data-testid="author-return-task"
+            >
+              <ArrowLeft size={15} aria-hidden="true" />
+            </a>
+          )}
           <button
             type="button"
             className="secondary compact icon-button author-save-command"
@@ -155,7 +170,7 @@ export default function AuthorCommandBar({
               shortcut: 'Ctrl/⌘+Z',
             })}
             data-testid="author-undo"
-            disabled={!canUndo}
+            disabled={!canUndo || !commandPolicy.enabled}
             onClick={onUndo}
           >
             <Undo2 size={15} aria-hidden="true" />
@@ -169,14 +184,15 @@ export default function AuthorCommandBar({
               shortcut: 'Ctrl/⌘+Shift+Z',
             })}
             data-testid="author-redo"
-            disabled={!canRedo}
+            disabled={!canRedo || !commandPolicy.enabled}
             onClick={onRedo}
           >
             <Redo2 size={15} aria-hidden="true" />
           </button>
           </div>
-        </div>
-      </div>
+          </div>
+        )}
+      />
       <nav className="author-mode-tabs" aria-label={t('Author task mode')}>
         {MODES.map((candidate) => (
           <button
@@ -252,14 +268,19 @@ export default function AuthorCommandBar({
         >
           {mode === 'compose' && (
             <>
-              <button type="button" className="secondary compact" onClick={onImport}>
+              <button
+                type="button"
+                className="secondary compact"
+                onClick={onImport}
+                disabled={!commandPolicy.enabled}
+              >
                 {t('Import')}
               </button>
               <button
                 type="button"
                 className="secondary compact"
                 onClick={onAutoLayout}
-                disabled={layoutDisabled}
+                disabled={layoutDisabled || !commandPolicy.enabled}
               >
                 {t('Auto layout')}
               </button>
@@ -308,6 +329,10 @@ export default function AuthorCommandBar({
             aria-describedby={primaryCommand.state === 'BLOCKED' ? 'author-primary-blocker' : undefined}
             onClick={onPrimaryAction}
             disabled={!primaryCommand.enabled}
+            data-command-scope={primaryCommand.scope?.kind ?? taskCoordinate.subjectKind}
+            data-scope-count={primaryCommand.scope?.count ?? (taskCoordinate.subjectRef ? 1 : 0)}
+            data-environment={taskCoordinate.environment}
+            data-role={taskCoordinate.role}
           >
             {primaryCommand.labelId ? m(primaryCommand.labelId) : d(primaryCommand.label)}
           </button>

@@ -1,6 +1,7 @@
 import {
   useCallback,
   useEffect,
+  useMemo,
   useRef,
   useState,
 } from 'react';
@@ -9,6 +10,7 @@ import {
   BlogeApiRequestError,
   commitLibraryAuthoringDraft,
   fetchLibraryAuthoringCatalogs,
+  fetchLibraryAuthoringContext,
   fetchLibraryAuthoringDraft,
   fetchLibraryAuthoringDraftRevision,
   previewLibraryAuthoringDraft,
@@ -21,7 +23,11 @@ import type {
   VisualLibraryAuthoringCompileResult,
   VisualLibraryAuthoringDocument,
   VisualLibraryAuthoringDraft,
+  VisualLibraryAuthoringHomeContext,
 } from '../types';
+import WorkspaceContextBar from '../author/shell/WorkspaceContextBar';
+import { evaluateTaskCommandAuthority } from '../author/task/commandAuthority';
+import { parseTaskCoordinate, taskCoordinateUrl } from '../author/task/taskCoordinate';
 import AssetTestTable, {
   type AssetTestLaunch,
 } from './AssetTestTable';
@@ -71,6 +77,7 @@ export default function LibraryWorkbench() {
   const [inferenceLaunch, setInferenceLaunch] = useState<SampleInferenceLaunch | null>(null);
   const [testLaunch, setTestLaunch] = useState<AssetTestLaunch | null>(null);
   const [fixtureAvailable, setFixtureAvailable] = useState(false);
+  const [homeContext, setHomeContext] = useState<VisualLibraryAuthoringHomeContext | null>(null);
   const [startSource, setStartSource] = useState('');
   const [historicalDraft, setHistoricalDraft] = useState<VisualLibraryAuthoringDraft | null>(null);
   const [latestDraft, setLatestDraft] = useState<VisualLibraryAuthoringDraft | null>(null);
@@ -81,6 +88,36 @@ export default function LibraryWorkbench() {
   const lastSavedJsonRef = useRef('');
   const editEpochRef = useRef(0);
   const saveQueueRef = useRef<Promise<void>>(Promise.resolve());
+  const initialTaskCoordinate = useMemo(() => parseTaskCoordinate(window.location.href, {
+    surface: 'LIBRARY',
+    subjectKind: 'LIBRARY',
+  }), []);
+  const taskCoordinate = useMemo(() => {
+    const subjectKind = selection.kind === 'operator'
+      ? 'OPERATOR' as const
+      : selection.kind === 'function' ? 'FUNCTION' as const : 'LIBRARY' as const;
+    return {
+      ...initialTaskCoordinate,
+      tenantId: homeContext?.tenantId ?? initialTaskCoordinate.tenantId,
+      namespace: document?.defaults?.namespace ?? homeContext?.projectId ?? initialTaskCoordinate.namespace,
+      environment: homeContext?.environmentId ?? initialTaskCoordinate.environment,
+      draftId,
+      revision,
+      surface: 'LIBRARY' as const,
+      subjectKind,
+      subjectRef: selection.key || document?.library.id || draftId,
+      selectionFingerprint: latestDraft?.fingerprint ?? '',
+    };
+  }, [document, draftId, homeContext, initialTaskCoordinate, latestDraft?.fingerprint, revision, selection]);
+  const sessionTenantId = new URLSearchParams(window.location.search).get('sessionTenantId')
+    ?? homeContext?.tenantId
+    ?? initialTaskCoordinate.tenantId;
+  const mutationPolicy = useMemo(() => evaluateTaskCommandAuthority({
+    commandId: 'MUTATE_OPERATOR_LIBRARY',
+    risk: 'MUTATE',
+    coordinate: taskCoordinate,
+    sessionTenantId,
+  }), [sessionTenantId, taskCoordinate]);
 
   const installDraft = useCallback((
     draft: VisualLibraryAuthoringDraft,
@@ -117,6 +154,13 @@ export default function LibraryWorkbench() {
         if (active) {
           setFixtureAvailable(false);
         }
+      });
+    fetchLibraryAuthoringContext()
+      .then((context) => {
+        if (active) setHomeContext(context);
+      })
+      .catch(() => {
+        if (active) setHomeContext(null);
       });
     return () => {
       active = false;
@@ -172,6 +216,12 @@ export default function LibraryWorkbench() {
     if (!document || !draftId) return;
     replaceLibraryAssetLocation(draftId, revision, selection);
   }, [document, draftId, revision, selection]);
+
+  useEffect(() => {
+    if (!document) return;
+    const nextHref = taskCoordinateUrl(window.location.href, taskCoordinate);
+    window.history.replaceState(window.history.state, '', nextHref);
+  }, [document, taskCoordinate]);
 
   const persist = useCallback((
     snapshot: VisualLibraryAuthoringDocument,
@@ -265,19 +315,27 @@ export default function LibraryWorkbench() {
   const changeDocument = useCallback((
     update: (current: VisualLibraryAuthoringDocument) => VisualLibraryAuthoringDocument,
   ) => {
+    if (!mutationPolicy.enabled) {
+      setSaveNotice({ messageId: 'library.save.readOnlyPolicy' });
+      return;
+    }
     editEpochRef.current += 1;
     setDocument((current) => current ? update(current) : current);
     setSaveState('dirty');
     setSaveNotice({ messageId: 'library.save.unsavedChanges' });
     setPreview(null);
     setCommitResult(null);
-  }, []);
+  }, [mutationPolicy.enabled]);
 
   const start = (
     nextDocument: VisualLibraryAuthoringDocument,
     source: string,
     inference?: SampleInferenceLaunch,
   ) => {
+    if (!mutationPolicy.enabled) {
+      setSaveNotice({ messageId: 'library.save.readOnlyPolicy' });
+      return;
+    }
     const id = `${nextDocument.library.id}-${draftSuffix()}`;
     editEpochRef.current += 1;
     revisionRef.current = 0;
@@ -456,6 +514,10 @@ export default function LibraryWorkbench() {
   }
 
   const add = (kind: Exclude<LibraryAssetKind, 'library'>) => {
+    if (!mutationPolicy.enabled) {
+      setSaveNotice({ messageId: 'library.save.readOnlyPolicy' });
+      return;
+    }
     const result = addAsset(document, kind);
     editEpochRef.current += 1;
     setDocument(result.document);
@@ -502,18 +564,24 @@ export default function LibraryWorkbench() {
       data-testid="library-workbench"
       data-responsive-layout={mobileProjection.layout}
       data-responsive-task={mobileProjection.taskId}
+      data-command-policy={mutationPolicy.decision.toLowerCase()}
     >
       <header className="library-command-bar">
-        <div>
-          <a href="/libraries/" aria-label={t('Open Library home')} title={t('Open Library home')}>←</a>
-          <div>
-            <strong>{document.library.name || document.library.id}</strong>
-            <span>
-              {draftId} / {t('revision {revision}', { revision })}
-              {startSource.startsWith('example:') ? t(' · Design-only example') : ''}
-            </span>
-          </div>
-        </div>
+        <WorkspaceContextBar
+          className="library-workspace-context"
+          coordinate={taskCoordinate}
+          objectLabel={document.library.name || document.library.id}
+          objectMeta={startSource.startsWith('example:') ? t('Design-only example') : draftId}
+          owner={document.library.owner || homeContext?.actorId || ''}
+          lifecycle={{ label: m(saveStateMessageId(saveState)), state: saveState }}
+          commandScope={{ kind: taskCoordinate.subjectKind, count: taskCoordinate.subjectRef ? 1 : 0 }}
+          commandPolicy={mutationPolicy}
+          actions={(
+            <a href="/libraries/" className="secondary compact" aria-label={t('Open Library home')}>
+              {t('Library home')}
+            </a>
+          )}
+        />
         <div className={`library-save-state ${saveState}`} role="status" data-testid="library-save-state">
           <span aria-hidden="true" />
           <strong>{m(saveStateMessageId(saveState))}</strong>

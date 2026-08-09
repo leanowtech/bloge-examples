@@ -13,6 +13,7 @@ interface NodeDeletionImpactDialogProps {
   open: boolean;
   nodeLabels: string[];
   impact: NodeDeletionImpact;
+  productionSafeguard?: boolean;
   onCancel: () => void;
   onConfirm: () => void;
 }
@@ -39,6 +40,7 @@ export default function NodeDeletionImpactDialog({
   open,
   nodeLabels,
   impact,
+  productionSafeguard = false,
   onCancel,
   onConfirm,
 }: NodeDeletionImpactDialogProps) {
@@ -68,6 +70,11 @@ export default function NodeDeletionImpactDialog({
           <span>{t('Deleting')}</span>
           <strong>{nodeLabels.join(', ')}</strong>
         </div>
+        {productionSafeguard && (
+          <p className="node-delete-production-safeguard" role="status">
+            {t('Production safeguard: confirm the exact target before deleting.')}
+          </p>
+        )}
         <ul className="node-delete-impact-list" aria-label={t('Affected assets')}>
           {impact.items.map((item) => (
             <ImpactRow key={item.kind} item={item} />

@@ -4169,6 +4169,19 @@ working context. Old `authorMode=test|review` bookmarks remain readable and map
 to `scenarios|evidence`; legacy `operatorRef` links migrate to the canonical
 `target=operator:<ref>` coordinate.
 
+Author, Libraries, and Rehearsals now share a versioned enterprise task coordinate.
+Their compact context bar shows the exact asset/revision, tenant, namespace,
+environment, role, command scope, and owner before a command runs. Read-only roles
+and cross-tenant mutations fail closed. Destructive commands in `production` require
+an explicit dialog that names the environment and target and stays disabled until
+the author types `PRODUCTION`; this authoring safeguard is not a substitute for a
+server publish gate or two-person approval. Scenario Matrix exposes exactly one
+direct primary run action: `Run all` with no selection or `Run selected` with a
+selection; failed/changed/affected scopes live in one menu. Evidence deep links use
+a bounded same-origin return coordinate and restore the originating scroll/focus
+once. See the
+[S2 implementation note](../docs/resource-gateway-ux-round3-s2-enterprise-task-coordinate-implementation.md).
+
 The right inspector has stable `Config / Data / Scenarios / Contract / Advanced`
 tabs. Edit the graph input/output interface in **Contract**. In **Data**, the
 **Effective data contract** keeps declared, inferred, bound, and observed facts

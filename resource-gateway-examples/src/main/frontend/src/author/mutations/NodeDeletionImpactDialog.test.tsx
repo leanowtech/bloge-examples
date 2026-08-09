@@ -47,6 +47,7 @@ describe('NodeDeletionImpactDialog', () => {
             { kind: 'OUTPUT_BINDING', count: 1, refs: ['profile'], severity: 'DESTRUCTIVE' },
           ],
         }}
+        productionSafeguard
         onCancel={vi.fn()}
         onConfirm={confirm}
       />,
@@ -58,6 +59,7 @@ describe('NodeDeletionImpactDialog', () => {
     expect(host.textContent).toContain('1 fixture output');
     expect(host.textContent).toContain('2 operator test cases');
     expect(host.textContent).toContain('Graph output binding');
+    expect(host.textContent).toContain('Production safeguard');
 
     await act(async () => queryButton('Delete node and assets').click());
     expect(confirm).toHaveBeenCalledOnce();

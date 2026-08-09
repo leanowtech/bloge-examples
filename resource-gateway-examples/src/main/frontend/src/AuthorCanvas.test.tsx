@@ -1150,6 +1150,41 @@ describe('AuthorCanvas built-in canvas examples', () => {
     expect(query('[data-testid="author-start-dialog"]').textContent).toContain('1 in / 7 out');
   });
 
+  it('takes enterprise context from the task coordinate and confirms destructive production loads', async () => {
+    window.history.replaceState(
+      {},
+      '',
+      '/author/?authorWorkspace=v2&tenantId=tenant-prod&namespace=risk&environment=production&role=OWNER',
+    );
+    await act(async () => {
+      root = createRoot(host);
+      root.render(<AuthorCanvas workspaceVersion="v2" />);
+    });
+
+    const context = query('[data-testid="workspace-context-bar"]');
+    expect(context.textContent).toContain('tenant-prod');
+    expect(context.textContent).toContain('PRODUCTION');
+    expect(context.getAttribute('data-environment-tone')).toBe('danger');
+    await click(query<HTMLButtonElement>('[data-testid="author-start-choice:examples"]'));
+    await waitFor(() =>
+      expect(query<HTMLButtonElement>('[data-testid="author-start-example:loan-policy-fallback"]').disabled)
+        .toBe(false),
+    );
+    await click(query<HTMLButtonElement>('[data-testid="author-start-example:loan-policy-fallback"]'));
+
+    expect(query('[data-testid="production-command-backdrop"]').textContent)
+      .toContain('PRODUCTION');
+    const confirmation = query<HTMLInputElement>('[aria-label="Production confirmation"]');
+    await act(async () => {
+      Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')
+        ?.set?.call(confirmation, 'PRODUCTION');
+      confirmation.dispatchEvent(new Event('input', { bubbles: true }));
+    });
+    await click(buttonByText('Confirm command'));
+    await waitFor(() => expect(document.querySelector('[data-testid="production-command-backdrop"]')).toBeNull());
+    expect(query('[data-testid="author-command-bar"]').textContent).toContain('loanPolicyFallbackExample');
+  });
+
   it('contains keyboard focus in the start dialog and restores the Import trigger on Escape', async () => {
     await act(async () => {
       root = createRoot(host);

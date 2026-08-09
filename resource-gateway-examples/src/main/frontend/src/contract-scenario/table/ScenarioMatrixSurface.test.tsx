@@ -68,7 +68,7 @@ describe('ScenarioMatrixSurface', () => {
   it('publishes exact suite scope and locks selection while the submitted plan is running', async () => {
     await render(5, { disabled: true, runningCaseIds: ['case-1', 'case-2'] });
 
-    const runAll = button('Run all (5)');
+    const runAll = button('Running 2...');
     expect(runAll.dataset.commandScope).toBe('SUITE');
     expect(runAll.dataset.scopeCount).toBe('5');
     expect(runAll.dataset.scopeFingerprint).toMatch(/^fnv1a32:/);
@@ -138,7 +138,7 @@ describe('ScenarioMatrixSurface', () => {
     expect(onRunSelection).toHaveBeenCalledWith('AFFECTED');
   });
 
-  it('projects only two direct run commands and one scope menu for mobile tasks', async () => {
+  it('projects exactly one primary run command and one alternative-scope menu', async () => {
     await render(5, { compactCommands: true });
 
     const matrix = host.querySelector('[data-testid="scenario-matrix"]');
@@ -147,7 +147,8 @@ describe('ScenarioMatrixSurface', () => {
     expect(matrix?.querySelector('.scenario-run-scope-menu summary')?.getAttribute('aria-label'))
       .toBe('More run scopes');
     expect(matrix?.querySelectorAll('.scenario-run-scope-menu button')).toHaveLength(3);
-    expect(matrix?.querySelectorAll('.scenario-matrix-bulk-actions > button')).toHaveLength(2);
+    expect(matrix?.querySelectorAll('.scenario-matrix-bulk-actions > button')).toHaveLength(1);
+    expect(button('Run all (5)').classList.contains('primary')).toBe(true);
   });
 
   it('localizes matrix controls and counts without translating case payloads', async () => {
@@ -156,7 +157,7 @@ describe('ScenarioMatrixSurface', () => {
 
     expect(text()).toContain('5 个标准用例');
     expect(text()).toContain('显示 1-5 / 5');
-    expect(button('运行所选项（0）')).toBeInstanceOf(HTMLButtonElement);
+    expect(button('运行全部（5）')).toBeInstanceOf(HTMLButtonElement);
     expect(input('搜索用例').placeholder).toBe('搜索用例、ID 或标签');
     await click(buttonByLabel('检查 '));
     expect(text()).toContain('case-1-expected-1-1');

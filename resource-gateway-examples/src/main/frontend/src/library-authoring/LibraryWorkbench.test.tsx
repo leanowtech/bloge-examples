@@ -258,6 +258,12 @@ describe('LibraryWorkbench', () => {
       .toContain('Customer Support Authoring');
     expect(query('[data-testid="library-workbench"]').textContent)
       .toContain('Design-only example');
+    expect(query('[data-testid="workspace-context-bar"]').textContent)
+      .toContain('tenant-a');
+    expect(query('[data-testid="workspace-context-bar"]').textContent)
+      .toContain('TEST');
+    expect(query('[data-testid="workspace-context-bar"]').getAttribute('data-role'))
+      .toBe('editor');
     expect(query('[data-testid="library-tree:operator:support:classify-ticket"]'))
       .toBeTruthy();
     expect(query('[data-testid="library-tree:function:support.firstPresent"]'))

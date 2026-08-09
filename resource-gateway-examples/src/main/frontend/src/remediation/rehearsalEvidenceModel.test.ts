@@ -168,6 +168,7 @@ describe('rehearsalEvidencePresentation', () => {
     expect(view.action?.deepLink).toContain('nodeId=grounding');
     expect(view.action?.deepLink).toContain('scenarioId=golden-answer');
     expect(view.action?.deepLink).toContain('runId=visual-run-44');
+    expect(view.action?.deepLink).toContain('returnCoordinate=');
   });
 
   it('disables an otherwise exact handoff for illustrative samples', () => {

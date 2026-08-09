@@ -1,6 +1,6 @@
 # Resource Gateway UX Round 3 资深体验审阅与演进计划
 
-> 状态：In Progress / S0-S1 Implemented
+> 状态：In Progress / S0-S2 Implemented
 >
 > 审阅日期：2026-08-09
 >
@@ -8,11 +8,11 @@
 >
 > 证据等级：E2，最新 production JAR、真实 Chromium、代码路径与自动化覆盖交叉验证
 >
-> 当前视觉完成度：`88 / 100`
+> 当前视觉完成度：`91 / 100`
 >
-> 当前工业任务成熟度：`88 / 100`（S1 E2 实施复评）
+> 当前工业任务成熟度：`91 / 100`（S2 E2 实施复评；缺少 E3/E4 时对外成熟度仍封顶 `89`）
 >
-> 缺陷结论：`2 P0 / 7 P1 / 2 P2`
+> 缺陷结论：`0 P0 / 5 P1 / 2 P2`
 >
 > 目标：先将 P0 清零，再恢复 `>=95 / 100` 的 E2 工程体验；没有 E3/E4 证据前，对外成熟度仍封顶 `89`
 
@@ -25,6 +25,7 @@
 - [双语完整性与术语治理](resource-gateway-ux-stage4-localization-governance.md)
 - [S0 工作区连续性实现说明](resource-gateway-ux-round3-s0-workspace-continuity-implementation.md)
 - [S1 可逆编辑与删除影响控制实现说明](resource-gateway-ux-round3-s1-reversible-mutations-implementation.md)
+- [S2 企业任务坐标实现说明](resource-gateway-ux-round3-s2-enterprise-task-coordinate-implementation.md)
 
 实施进度：
 
@@ -32,7 +33,7 @@
 |---|---|---|
 | S0 工作区连续性 | 已实现 | 跨工作区恢复、权威 Save、recovery lifecycle 关闭首个 P0 |
 | S1 可逆编辑 | 已实现 | 20 类 mutation、删除影响预览、原子 Undo/Redo 关闭第二个 P0 |
-| S2 企业任务坐标 | 待实施 | tenant/environment/role/scope 仍不够可见 |
+| S2 企业任务坐标 | 已实现 | 统一 TaskCoordinate、command authority、production safeguard、单一 primary Run 与 return coordinate |
 | S3 证明语义与 i18n | 待实施 | 动态产品文案和 proof authority 仍需收口 |
 | S4 响应式任务投影 | 待实施 | 390px Matrix 与 chrome 预算仍需治理 |
 | S5 性能与宿主门禁 | 待实施 | initial route bundle 与 host disposal 仍未达门禁 |
@@ -480,6 +481,12 @@ interface ProofPresentation {
 
 目标：用户始终知道“在哪、改什么、以什么身份、命令作用于谁”。
 
+> 实施复评：已完成。Author/Library/Rehearsal 使用同一 `TaskCoordinate` 与 Workspace Context Bar；
+> production destructive mutation 需要键入 `PRODUCTION`，read-only/cross-tenant fail closed；Matrix
+> 保留一个 direct primary Run；Canvas navigator 下沉。真实 Chromium 中任务内容约在 `158px` 开始。
+> 前端 `91` 个文件、`691` 项测试与 Maven `5,898` 项测试全绿；12 名目标角色识别率属于 E3，尚未
+> 取得，因此本阶段 E2 通过但不能替代组织验证。初始 JS `844.69 kB` minified，仍是 S5 阻断项。
+
 实施切片：
 
 1. 建立 `TaskCoordinate` 与 URL/deep-link serializer；
@@ -683,8 +690,8 @@ ux.route-chunk-budget
 
 ### 11.2 P1 Gate
 
-- [ ] tenant/environment/role/subject/scope 在执行命令前可见；
-- [ ] 一个 task surface 只有一个 primary command；
+- [x] tenant/environment/role/subject/scope 在执行命令前可见；
+- [x] 一个 task surface 只有一个 primary command；
 - [ ] 中文产品面没有产品英文和默认 raw code；
 - [ ] Mock / Runtime / Certifiable 证明权威不会被误判；
 - [ ] 390px Matrix 可比较 3 个结果；

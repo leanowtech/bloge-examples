@@ -3,6 +3,12 @@ import type {
   ScenarioRehearsalBatchJob,
   ScenarioRehearsalChildWorkbook,
 } from '../types';
+import {
+  createTaskReturnCoordinate,
+  parseTaskCoordinate,
+  taskCoordinateUrl,
+  withTaskReturnCoordinate,
+} from '../author/task/taskCoordinate';
 import type {
   RemediationAction,
   RemediationSource,
@@ -253,7 +259,31 @@ function authorTargetLink(target: RehearsalAuthorTarget, currentHref = 'http://l
   if (target.nodeId) url.searchParams.set('nodeId', target.nodeId);
   if (target.scenarioId) url.searchParams.set('scenarioId', target.scenarioId);
   if (target.runId) url.searchParams.set('runId', target.runId);
-  return `${url.pathname}${url.search}`;
+  const subjectKind = target.kind === 'OPERATOR'
+    ? 'OPERATOR' as const
+    : target.kind === 'FUNCTION' ? 'FUNCTION' as const : 'GRAPH' as const;
+  const currentCoordinate = parseTaskCoordinate(currentHref, {
+    surface: 'EVIDENCE',
+    subjectKind: target.runId ? 'RUN' : 'CASE',
+    subjectRef: target.runId || target.scenarioId || '',
+  });
+  const targetHref = taskCoordinateUrl(`${url.pathname}${url.search}`, {
+    ...currentCoordinate,
+    draftId: target.draftId ?? '',
+    revision: target.revision ?? 0,
+    surface: 'EVIDENCE',
+    subjectKind,
+    subjectRef: target.id,
+    selection: {
+      nodeId: target.nodeId ?? '',
+      caseId: target.scenarioId ?? '',
+      runId: target.runId ?? '',
+    },
+  });
+  return withTaskReturnCoordinate(
+    targetHref,
+    createTaskReturnCoordinate(currentHref, currentCoordinate),
+  );
 }
 
 function headlineFor(category: string, status: string, failureCode: string): string {

@@ -121,6 +121,11 @@ html[data-density='comfortable'] .library-command-bar :is(button, a) {
   min-height: var(--rg-control-min);
 }
 
+html[data-density='comfortable'] .author-command-bar .author-mode-tabs button,
+html[data-density='comfortable'] .author-command-bar .author-secondary-actions :is(button, a) {
+  min-height: 30px;
+}
+
 @media (max-width: 840px) {
   body {
     font-size: var(--rg-font-mobile-body);
@@ -303,7 +308,7 @@ html[data-density='comfortable'] .library-command-bar :is(button, a) {
   }
 
   .workspace-v2:not([data-author-mode='compose']) > .author-command-bar
-    :is(.author-draft-identity, .author-mobile-truth, .author-secondary-command-group) {
+    :is(.author-workspace-context, .author-mobile-truth, .author-secondary-command-group) {
     display: none;
   }
 

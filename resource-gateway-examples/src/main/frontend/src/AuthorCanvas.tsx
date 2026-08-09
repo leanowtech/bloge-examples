@@ -193,7 +193,19 @@ import StartImportDialog, {
   type StartImportSection,
 } from './author/shell/StartImportDialog';
 import type { AuthorMode } from './author/shell/authorWorkspaceState';
-import { projectAuthorTaskState } from './author/task/taskStateProjection';
+import {
+  projectAuthorTaskState,
+  type AuthorCommandAvailability,
+} from './author/task/taskStateProjection';
+import { evaluateTaskCommandAuthority } from './author/task/commandAuthority';
+import ProductionCommandDialog from './author/task/ProductionCommandDialog';
+import {
+  parseTaskCoordinate,
+  parseTaskReturnCoordinate,
+  taskCoordinateUrl,
+  taskReturnHref,
+  type TaskCoordinate,
+} from './author/task/taskCoordinate';
 import {
   authorWorkspaceUrl,
   parseAuthorWorkspaceLocation,
@@ -862,6 +874,13 @@ interface PendingNodeDeletion {
   nodeIds: string[];
   nodeLabels: string[];
   impact: NodeDeletionImpact;
+  productionSafeguard: boolean;
+}
+
+interface PendingProductionCommand {
+  commandLabel: string;
+  targetLabel: string;
+  execute: () => void;
 }
 
 interface AuthorMutationNotice {
@@ -5141,6 +5160,10 @@ export default function AuthorCanvas({ workspaceVersion = 'v1' }: AuthorCanvasPr
   const { locale, t, m } = useI18n();
   const isTaskWorkspace = workspaceVersion === 'v2';
   const initialWorkspaceLocation = parseAuthorWorkspaceLocation(window.location.search);
+  const initialTaskCoordinate = parseTaskCoordinate(window.location.href);
+  const returnTaskCoordinate = parseTaskReturnCoordinate(window.location.href);
+  const sessionTenantId = new URLSearchParams(window.location.search).get('sessionTenantId')?.trim()
+    || initialTaskCoordinate.tenantId;
   const [initialDslHandoff] = useState(() => (
     isTaskWorkspace ? peekDslAuthorHandoff() : null
   ));
@@ -5254,9 +5277,9 @@ export default function AuthorCanvas({ workspaceVersion = 'v1' }: AuthorCanvasPr
   const [graphName, setGraphName] = useState('visualGraph');
   const [graphDraftId, setGraphDraftId] = useState('');
   const [graphDraftRevision, setGraphDraftRevision] = useState(0);
-  const [graphTenantId, setGraphTenantId] = useState('tenant-a');
-  const [graphNamespace, setGraphNamespace] = useState('local');
-  const [graphEnvironment, setGraphEnvironment] = useState('test');
+  const [graphTenantId, setGraphTenantId] = useState(initialTaskCoordinate.tenantId);
+  const [graphNamespace, setGraphNamespace] = useState(initialTaskCoordinate.namespace);
+  const [graphEnvironment, setGraphEnvironment] = useState(initialTaskCoordinate.environment);
   const [graphInputSchema, setGraphInputSchema] = useState<SchemaEnvelope>(EMPTY_GRAPH_INPUT_SCHEMA);
   const [graphOutputSchema, setGraphOutputSchema] = useState<SchemaEnvelope | null>(null);
   const [graphContractSource, setGraphContractSource] = useState('Current draft');
@@ -5287,6 +5310,8 @@ export default function AuthorCanvas({ workspaceVersion = 'v1' }: AuthorCanvasPr
     () => initialMutationJournal<AuthoringMutationSnapshot>(),
   );
   const [pendingNodeDeletion, setPendingNodeDeletion] = useState<PendingNodeDeletion | null>(null);
+  const [pendingProductionCommand, setPendingProductionCommand] =
+    useState<PendingProductionCommand | null>(null);
   const [mutationNotice, setMutationNotice] = useState<AuthorMutationNotice | null>(null);
   const searchInputRef = useRef<HTMLInputElement>(null);
   const flowRef = useRef<HTMLDivElement>(null);
@@ -5414,6 +5439,85 @@ export default function AuthorCanvas({ workspaceVersion = 'v1' }: AuthorCanvasPr
     () => authoringMutationFingerprint(authoringMutationSnapshot),
     [authoringMutationSnapshot],
   );
+  const workspaceTaskCoordinate = useMemo<TaskCoordinate>(() => {
+    const surface = authorMode === 'contract'
+      ? 'CONTRACT' as const
+      : authorMode === 'scenarios'
+        ? 'SCENARIO' as const
+        : authorMode === 'evidence' ? 'EVIDENCE' as const : 'COMPOSE' as const;
+    const selectedRunId = deepLinkRun?.runId || initialWorkspaceLocation.runId;
+    const operatorRef = operatorContractWorkspace?.contract.target.id ?? '';
+    const subject = surface === 'EVIDENCE' && selectedRunId
+      ? { kind: 'RUN' as const, ref: selectedRunId }
+      : (surface === 'SCENARIO' || surface === 'EVIDENCE') && workspaceScenarioId
+        ? { kind: 'CASE' as const, ref: workspaceScenarioId }
+        : operatorRef
+          ? { kind: 'OPERATOR' as const, ref: operatorRef }
+          : surface === 'COMPOSE' && selectedNodeId
+            ? { kind: 'NODE' as const, ref: selectedNodeId }
+            : { kind: 'GRAPH' as const, ref: graphDraftId || graphName };
+    return {
+      tenantId: graphTenantId,
+      namespace: graphNamespace,
+      environment: graphEnvironment,
+      draftId: graphDraftId,
+      revision: graphDraftRevision,
+      surface,
+      subjectKind: subject.kind,
+      subjectRef: subject.ref,
+      selectionFingerprint: currentMutationFingerprint,
+      role: initialTaskCoordinate.role,
+      capabilityFingerprint: initialTaskCoordinate.capabilityFingerprint,
+      selection: {
+        nodeId: selectedNodeId,
+        caseId: workspaceScenarioId,
+        runId: selectedRunId,
+      },
+    };
+  }, [
+    authorMode,
+    currentMutationFingerprint,
+    deepLinkRun?.runId,
+    graphDraftId,
+    graphDraftRevision,
+    graphEnvironment,
+    graphName,
+    graphNamespace,
+    graphTenantId,
+    initialTaskCoordinate.capabilityFingerprint,
+    initialTaskCoordinate.role,
+    initialWorkspaceLocation.runId,
+    operatorContractWorkspace,
+    selectedNodeId,
+    workspaceScenarioId,
+  ]);
+  const mutationCommandPolicy = useMemo(() => evaluateTaskCommandAuthority({
+    commandId: 'MUTATE_AUTHORING_WORKSPACE',
+    risk: 'MUTATE',
+    coordinate: workspaceTaskCoordinate,
+    sessionTenantId,
+  }), [sessionTenantId, workspaceTaskCoordinate]);
+  const destructiveCommandPolicy = useMemo(() => evaluateTaskCommandAuthority({
+    commandId: 'DELETE_AUTHORING_ASSET',
+    risk: 'DESTRUCTIVE',
+    coordinate: workspaceTaskCoordinate,
+    sessionTenantId,
+  }), [sessionTenantId, workspaceTaskCoordinate]);
+  const requestDestructiveCommand = useCallback((
+    commandLabel: string,
+    targetLabel: string,
+    execute: () => void,
+  ) => {
+    if (!destructiveCommandPolicy.enabled) {
+      setError(t('This role or tenant scope cannot change authoring assets.'));
+      return;
+    }
+    if (destructiveCommandPolicy.requiresExplicitConfirmation) {
+      setPendingProductionCommand({ commandLabel, targetLabel, execute });
+      return;
+    }
+    execute();
+  }, [destructiveCommandPolicy.enabled, destructiveCommandPolicy.requiresExplicitConfirmation, t]);
 
   const replaceMutationJournal = useCallback((next: MutationJournalState<AuthoringMutationSnapshot>) => {
     mutationJournalRef.current = next;
@@ -5915,6 +6019,10 @@ export default function AuthorCanvas({ workspaceVersion = 'v1' }: AuthorCanvasPr
   }, [clearRunResult, nodes, t]);
 
   const requestNodeDeletion = useCallback((nodeIds: string[]) => {
+    if (!destructiveCommandPolicy.enabled) {
+      setError(t('This role or tenant scope cannot delete authoring assets.'));
+      return;
+    }
     const existingNodeIds = nodeIds.filter((nodeId) => nodes.some((node) => node.id === nodeId));
     if (existingNodeIds.length === 0) return;
     const impact = projectNodeDeletionImpact(existingNodeIds, {
@@ -5929,13 +6037,20 @@ export default function AuthorCanvas({ workspaceVersion = 'v1' }: AuthorCanvasPr
     const nodeLabels = nodes
       .filter((node) => existingNodeIds.includes(node.id))
       .map((node) => node.data.label);
-    if (impact.requiresConfirmation) {
-      setPendingNodeDeletion({ nodeIds: existingNodeIds, nodeLabels, impact });
+    if (impact.requiresConfirmation || destructiveCommandPolicy.requiresExplicitConfirmation) {
+      setPendingNodeDeletion({
+        nodeIds: existingNodeIds,
+        nodeLabels,
+        impact,
+        productionSafeguard: destructiveCommandPolicy.requiresExplicitConfirmation,
+      });
       return;
     }
     deleteNodesAtomically(existingNodeIds, impact);
   }, [
     deleteNodesAtomically,
+    destructiveCommandPolicy.enabled,
+    destructiveCommandPolicy.requiresExplicitConfirmation,
     edges,
     explicitOutputNodeId,
     fixtureDrafts,
@@ -5944,6 +6059,7 @@ export default function AuthorCanvas({ workspaceVersion = 'v1' }: AuthorCanvasPr
     operatorTestPublications,
     operatorTestResults,
     operatorTestSuites,
+    t,
   ]);
 
   const deleteEdgesAtomically = useCallback((edgeIds: string[]) => {
@@ -5964,6 +6080,15 @@ export default function AuthorCanvas({ workspaceVersion = 'v1' }: AuthorCanvasPr
       action: 'undo',
     });
   }, [clearRunResult, t]);
+
+  const requestEdgeDeletion = useCallback((edgeIds: string[]) => {
+    if (edgeIds.length === 0) return;
+    requestDestructiveCommand(
+      t(edgeIds.length === 1 ? 'Delete connection' : 'Delete connections'),
+      edgeIds.join(', '),
+      () => deleteEdgesAtomically(edgeIds),
+    );
+  }, [deleteEdgesAtomically, requestDestructiveCommand, t]);
 
   const onNodesChange = useCallback(
     (changes: NodeChange[]) => {
@@ -5999,13 +6124,13 @@ export default function AuthorCanvas({ workspaceVersion = 'v1' }: AuthorCanvasPr
       const removedEdgeIds = changes
         .filter((change): change is EdgeChange & { type: 'remove'; id: string } => change.type === 'remove')
         .map((change) => change.id);
-      if (removedEdgeIds.length > 0) deleteEdgesAtomically(removedEdgeIds);
+      if (removedEdgeIds.length > 0) requestEdgeDeletion(removedEdgeIds);
       const retainedChanges = changes.filter((change) => change.type !== 'remove');
       if (retainedChanges.length > 0) {
         setEdges((current) => applyEdgeChanges(retainedChanges, current) as Edge<CanvasEdgeData>[]);
       }
     },
-    [clearRunResult, deleteEdgesAtomically],
+    [clearRunResult, requestEdgeDeletion],
   );
 
   useEffect(() => {
@@ -6044,7 +6169,7 @@ export default function AuthorCanvas({ workspaceVersion = 'v1' }: AuthorCanvasPr
         const selectedEdgeIds = edges.filter((edge) => edge.selected).map((edge) => edge.id);
         if (selectedEdgeIds.length > 0) {
           event.preventDefault();
-          deleteEdgesAtomically(selectedEdgeIds);
+          requestEdgeDeletion(selectedEdgeIds);
         }
       }
     };
@@ -6052,7 +6177,7 @@ export default function AuthorCanvas({ workspaceVersion = 'v1' }: AuthorCanvasPr
     return () => window.removeEventListener('keydown', onKeyDown);
   }, [
     authorMode,
-    deleteEdgesAtomically,
+    requestEdgeDeletion,
     edges,
     isTaskWorkspace,
     layoutPlanning,
@@ -6842,6 +6967,13 @@ export default function AuthorCanvas({ workspaceVersion = 'v1' }: AuthorCanvasPr
       fitCanvasToView(graphSize);
     }
   }, [fitCanvasToView, isTaskWorkspace, operatorByRef, resetRunResult, t]);
+  const requestLoadCanvasExample = useCallback((template: CanvasExampleTemplate) => {
+    requestDestructiveCommand(
+      t('Load example {subject}', { subject: template.label }),
+      graphName,
+      () => loadCanvasExample(template),
+    );
+  }, [graphName, loadCanvasExample, requestDestructiveCommand, t]);
   const selectedNode = nodes.find((node) => node.id === selectedNodeId);
   const selectedOperator = selectedNode ? operatorByRef.get(selectedNode.data.operatorRef) : undefined;
   const operatorDetailNode = nodes.find((node) => node.id === operatorDetailNodeId);
@@ -9612,7 +9744,7 @@ export default function AuthorCanvas({ workspaceVersion = 'v1' }: AuthorCanvasPr
       return;
     }
     const workspaceOpen = contractWorkspaceOpen || operatorContractWorkspace !== null;
-    const nextUrl = authorWorkspaceUrl(window.location.href, authorMode, selectedNodeId, {
+    const authorUrl = authorWorkspaceUrl(window.location.href, authorMode, selectedNodeId, {
       target: operatorContractWorkspace
         ? `operator:${operatorContractWorkspace.contract.target.id}`
         : authorMode === 'compose'
@@ -9626,6 +9758,7 @@ export default function AuthorCanvas({ workspaceVersion = 'v1' }: AuthorCanvasPr
         : authorMode === 'compose' ? '' : workspaceTabForMode(authorMode),
       scenarioId: workspaceOpen ? workspaceScenarioId : '',
     });
+    const nextUrl = taskCoordinateUrl(authorUrl, workspaceTaskCoordinate);
     const currentUrl = `${window.location.pathname}${window.location.search}${window.location.hash}`;
     if (nextUrl !== currentUrl) {
       window.history.replaceState(window.history.state, '', nextUrl);
@@ -9637,6 +9770,7 @@ export default function AuthorCanvas({ workspaceVersion = 'v1' }: AuthorCanvasPr
     isTaskWorkspace,
     operatorContractWorkspace,
     selectedNodeId,
+    workspaceTaskCoordinate,
     workspaceScenarioId,
   ]);
 
@@ -10030,6 +10164,26 @@ export default function AuthorCanvas({ workspaceVersion = 'v1' }: AuthorCanvasPr
       },
     } : {}),
   });
+  const executeCommandPolicy = evaluateTaskCommandAuthority({
+    commandId: 'RUN_CURRENT_SCENARIO',
+    risk: 'EXECUTE',
+    coordinate: workspaceTaskCoordinate,
+    sessionTenantId,
+  });
+  const authorizedRunCommand: AuthorCommandAvailability = executeCommandPolicy.enabled
+    ? authorTaskState.commands.runCurrentScenario
+    : {
+        ...authorTaskState.commands.runCurrentScenario,
+        state: 'BLOCKED',
+        enabled: false,
+        reasonCode: executeCommandPolicy.reasonCode,
+        message: 'This role or tenant scope cannot execute Scenarios.',
+        messageId: undefined,
+        remediation: undefined,
+      };
+  const authorizedPrimaryCommand = authorTaskState.primaryAction.kind === 'run'
+    ? authorizedRunCommand
+    : authorTaskState.primaryCommand;
   const primaryAction = authorTaskState.primaryAction;
   const authorScenarioResults = useMemo<Record<string, SimulationTableCaseResult>>(() => {
     if (!activeScenarioEvidence) {
@@ -10658,21 +10812,25 @@ export default function AuthorCanvas({ workspaceVersion = 'v1' }: AuthorCanvasPr
       data-start-section={startOpen ? startSection : 'closed'}
       data-history-undo-depth={mutationJournal.past.length}
       data-history-redo-depth={mutationJournal.future.length}
+      data-command-policy={mutationCommandPolicy.decision.toLowerCase()}
+      data-task-environment={workspaceTaskCoordinate.environment}
+      data-task-role={workspaceTaskCoordinate.role.toLowerCase()}
     >
       {isTaskWorkspace && (
         <>
           <AuthorCommandBar
             graphName={graphName}
-            draftRevision={graphDraftRevision}
             nodeCount={canvasSummary.nodeCount}
             edgeCount={canvasSummary.edgeCount}
             mode={authorMode}
-            primaryCommand={authorTaskState.primaryCommand}
+            taskCoordinate={workspaceTaskCoordinate}
+            commandPolicy={mutationCommandPolicy}
+            primaryCommand={authorizedPrimaryCommand}
             draftStatus={taskDraftStatus}
             contractStatus={taskContractStatus}
-            runStatus={authorTaskState.commands.runCurrentScenario.state === 'READY'
+            runStatus={authorizedRunCommand.state === 'READY'
               ? 'RUNNABLE'
-              : authorTaskState.commands.runCurrentScenario.state}
+              : authorizedRunCommand.state}
             evidenceStatus={authorTaskState.currentness.replace(/_/g, ' ')}
             proofStrength={authorTaskState.proofStrength}
             promotionStatus={taskPromotionStatus}
@@ -10695,7 +10853,9 @@ export default function AuthorCanvas({ workspaceVersion = 'v1' }: AuthorCanvasPr
               || hasFixtureErrors
               || authoringContinuity.state.lifecycle === 'SAVING'
               || busy
+              || !mutationCommandPolicy.enabled
             }
+            returnHref={returnTaskCoordinate ? taskReturnHref(returnTaskCoordinate) : ''}
             canUndo={mutationJournal.past.length > 0}
             canRedo={mutationJournal.future.length > 0}
             undoLabel={mutationJournal.past[mutationJournal.past.length - 1]?.label ?? ''}
@@ -10758,7 +10918,7 @@ export default function AuthorCanvas({ workspaceVersion = 'v1' }: AuthorCanvasPr
                   edgeCount: template.edges.length,
                   scenarioCount: template.testCases?.length ?? 0,
                 });
-                loadCanvasExample(template);
+                requestLoadCanvasExample(template);
               }
             }}
             onBlankGraph={() => {
@@ -10897,7 +11057,11 @@ export default function AuthorCanvas({ workspaceVersion = 'v1' }: AuthorCanvasPr
               type="button"
               className="primary compact"
               data-testid="operator-library-import"
-              onClick={importLibrarySource}
+              onClick={() => requestDestructiveCommand(
+                t('Import operator library'),
+                graphName,
+                () => void importLibrarySource(),
+              )}
               disabled={libraryBusy || (libraryHasWarnings
                 && (!libraryWarningsAcknowledged || !libraryWarningReason.trim()))}
             >
@@ -11011,7 +11175,11 @@ export default function AuthorCanvas({ workspaceVersion = 'v1' }: AuthorCanvasPr
               type="button"
               className="primary compact"
               data-testid="legacy-dsl-preview"
-              onClick={previewLegacyDsl}
+              onClick={() => requestDestructiveCommand(
+                t('Render DSL'),
+                graphName,
+                () => void previewLegacyDsl(),
+              )}
               disabled={dslImportBusy || dslCommitBusy || dslRewriteGateBusy}
             >
               {t('Render DSL')}
@@ -11029,7 +11197,11 @@ export default function AuthorCanvas({ workspaceVersion = 'v1' }: AuthorCanvasPr
               type="button"
               className="secondary compact"
               data-testid="legacy-dsl-commit"
-              onClick={commitLegacyDsl}
+              onClick={() => requestDestructiveCommand(
+                t('Commit DSL draft'),
+                graphName,
+                () => void commitLegacyDsl(),
+              )}
               disabled={dslImportBusy || dslCommitBusy || dslRewriteGateBusy}
             >
               {t('Commit Draft')}
@@ -11304,7 +11476,7 @@ export default function AuthorCanvas({ workspaceVersion = 'v1' }: AuthorCanvasPr
                       : current
                   ))}
                   onRun={runScenarioSimulation}
-                  runCommand={authorTaskState.commands.runCurrentScenario}
+                  runCommand={authorizedRunCommand}
                   onRunRemediation={remediatePrimaryCommand}
                   onRunEvidence={recordScenarioEvidence}
                   onCoordinateChange={updateWorkspaceCoordinate}
@@ -11332,7 +11504,7 @@ export default function AuthorCanvas({ workspaceVersion = 'v1' }: AuthorCanvasPr
                   onSaveGraphDraft={saveGraphForScenario}
                   onRebase={rebaseScenariosToCurrentContract}
                   onRun={runScenarioSimulation}
-                  runCommand={authorTaskState.commands.runCurrentScenario}
+                  runCommand={authorizedRunCommand}
                   onRunRemediation={remediatePrimaryCommand}
                   onRunEvidence={recordScenarioEvidence}
                   onCoordinateChange={updateWorkspaceCoordinate}
@@ -11474,7 +11646,7 @@ export default function AuthorCanvas({ workspaceVersion = 'v1' }: AuthorCanvasPr
                     type="button"
                     className="secondary compact"
                     data-testid={`canvas-example-load:${template.key}`}
-                    onClick={() => loadCanvasExample(template)}
+                    onClick={() => requestLoadCanvasExample(template)}
                     disabled={!available}
                     title={available
                       ? `${t('Load example')}: ${t(template.label)}`
@@ -11636,35 +11808,6 @@ export default function AuthorCanvas({ workspaceVersion = 'v1' }: AuthorCanvasPr
             setContractWorkspaceOpen(true);
           }}
         />
-        {isTaskWorkspace && nodes.length > 0 && (
-          <CanvasTaskNavigator
-            mode={canvasTaskMode}
-            nodes={canvasTaskNodes}
-            selectedNodeId={selectedNodeId}
-            nodeCount={canvasSummary.nodeCount}
-            edgeCount={canvasSummary.edgeCount}
-            pathNodeCount={focusedCanvasPath.nodeIds.size}
-            zoomPercent={viewportZoomPercent}
-            mapVisible={overviewVisible}
-            layoutPlanning={layoutPlanning}
-            layoutPreview={Boolean(layoutPreview)}
-            layoutQuality={layoutPreview?.quality ?? null}
-            layoutAcceptance={layoutPreview?.acceptance ?? null}
-            perceptualQuality={canvasPerceptualQuality}
-            topologyLanes={canvasSemantics.lanes}
-            layoutNotice={layoutNotice ?? adaptiveChromeNotice}
-            canUndoLayout={Boolean(layoutUndo)}
-            onModeChange={activateCanvasTaskMode}
-            onSelectNode={focusNodeFromNavigator}
-            onFitAll={() => fitCanvasToView()}
-            onToggleMap={() => setOverviewVisible((current) => !current)}
-            onTogglePin={toggleSelectedNodePin}
-            onApplyLayout={applyLayoutPreview}
-            onOverrideLayout={overrideLayoutPreview}
-            onCancelLayout={cancelLayoutPreview}
-            onUndoLayout={undoAutoLayout}
-          />
-        )}
         <div
           ref={flowRef}
           className="flow"
@@ -11672,6 +11815,35 @@ export default function AuthorCanvas({ workspaceVersion = 'v1' }: AuthorCanvasPr
           onDragOver={allowOperatorDrop}
           onDrop={dropOperatorOnFlow}
         >
+          {isTaskWorkspace && nodes.length > 0 && (
+            <CanvasTaskNavigator
+              mode={canvasTaskMode}
+              nodes={canvasTaskNodes}
+              selectedNodeId={selectedNodeId}
+              nodeCount={canvasSummary.nodeCount}
+              edgeCount={canvasSummary.edgeCount}
+              pathNodeCount={focusedCanvasPath.nodeIds.size}
+              zoomPercent={viewportZoomPercent}
+              mapVisible={overviewVisible}
+              layoutPlanning={layoutPlanning}
+              layoutPreview={Boolean(layoutPreview)}
+              layoutQuality={layoutPreview?.quality ?? null}
+              layoutAcceptance={layoutPreview?.acceptance ?? null}
+              perceptualQuality={canvasPerceptualQuality}
+              topologyLanes={canvasSemantics.lanes}
+              layoutNotice={layoutNotice ?? adaptiveChromeNotice}
+              canUndoLayout={Boolean(layoutUndo)}
+              onModeChange={activateCanvasTaskMode}
+              onSelectNode={focusNodeFromNavigator}
+              onFitAll={() => fitCanvasToView()}
+              onToggleMap={() => setOverviewVisible((current) => !current)}
+              onTogglePin={toggleSelectedNodePin}
+              onApplyLayout={applyLayoutPreview}
+              onOverrideLayout={overrideLayoutPreview}
+              onCancelLayout={cancelLayoutPreview}
+              onUndoLayout={undoAutoLayout}
+            />
+          )}
           {coachPrompt && (
             <div
               className={[
@@ -12529,11 +12701,25 @@ export default function AuthorCanvas({ workspaceVersion = 'v1' }: AuthorCanvasPr
           open
           nodeLabels={pendingNodeDeletion.nodeLabels}
           impact={pendingNodeDeletion.impact}
+          productionSafeguard={pendingNodeDeletion.productionSafeguard}
           onCancel={() => setPendingNodeDeletion(null)}
           onConfirm={() => deleteNodesAtomically(
             pendingNodeDeletion.nodeIds,
             pendingNodeDeletion.impact,
           )}
+        />
+      )}
+      {pendingProductionCommand && (
+        <ProductionCommandDialog
+          open
+          commandLabel={pendingProductionCommand.commandLabel}
+          targetLabel={pendingProductionCommand.targetLabel}
+          onCancel={() => setPendingProductionCommand(null)}
+          onConfirm={() => {
+            const command = pendingProductionCommand;
+            setPendingProductionCommand(null);
+            command.execute();
+          }}
         />
       )}
       {mutationNotice && (

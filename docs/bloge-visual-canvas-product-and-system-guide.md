@@ -242,6 +242,35 @@ Cancel 不会制造无意义历史。
 完整 mutation 范围、恢复预算和安全边界见
 [S1 可逆编辑与删除影响控制实现说明](resource-gateway-ux-round3-s1-reversible-mutations-implementation.md)。
 
+#### 企业任务坐标、权限与生产保护
+
+Author、Libraries 和 Rehearsals 顶部现在使用同一条 Workspace Context Bar。执行命令前先核对当前资产、
+tenant、namespace、environment、role、scope/target 数量和 owner；这些值同时来自当前 `TaskCoordinate`，
+不是与实际命令分离的装饰标签。
+
+![Author 的企业任务坐标与单一命令条](assets/resource-gateway-ux-round3-s2-author-context.png)
+
+常用策略如下：
+
+| 当前上下文 | 页面行为 |
+| --- | --- |
+| `VIEWER` / `REVIEWER` | 查看和导航保留；导入、编辑、删除等 mutation 禁用并说明原因 |
+| session tenant 与任务 tenant 不一致 | mutation fail closed，先返回所属 tenant |
+| production destructive mutation | 显示 environment/target，必须键入 `PRODUCTION` 后才能确认 |
+| test/staging 且角色允许 | 按当前可见 scope 直接执行 |
+
+![生产环境载入示例的显式确认](assets/resource-gateway-ux-round3-s2-production-safeguard.png)
+
+Scenario Matrix 不再同时陈列多个主运行按钮：没有选中 Case 时唯一主命令是 **Run all**；选中 Case 后
+变为 **Run selected**。Run failed/changed/affected 等范围进入同一个菜单。Rehearsal evidence 返回 Author
+时会恢复 draft、node、Scenario 与 run；返回原页面后继续恢复条目焦点和滚动位置。`returnTo` 只接受同源
+应用路径，不能借 deep link 绕过 tenant/role policy。
+
+![Library exact revision 使用相同企业坐标](assets/resource-gateway-ux-round3-s2-library-context.png)
+
+实现边界、URL 字段和测试证据见
+[S2 企业任务坐标实现说明](resource-gateway-ux-round3-s2-enterprise-task-coordinate-implementation.md)。
+
 在 `390 x 844` 视口，命令条改为单列、状态与辅助动作改为两列；Contract、Scenarios 和
 Evidence 继续是中央工作面，Topology Context Rail 变为按需抽屉。Author 使用全高应用壳，
 中央内容独立滚动，底部 Run 与 Diagnostics 不会互相覆盖。这个模式定位为**查看、运行、

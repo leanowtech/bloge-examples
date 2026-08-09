@@ -144,6 +144,10 @@ export const MESSAGE_CATALOG = {
   },
   'library.save.saving': { en: 'Saving...', 'zh-CN': '正在保存...' },
   'library.save.unsavedChanges': { en: 'Unsaved changes', 'zh-CN': '存在未保存的更改' },
+  'library.save.readOnlyPolicy': {
+    en: 'This role or tenant scope cannot edit the library.',
+    'zh-CN': '当前角色或租户范围不能编辑算子库。',
+  },
   'library.save.revisionConflict': {
     en: 'A newer revision exists. Reload before continuing.',
     'zh-CN': '存在更新的修订版，请重新加载后继续。',

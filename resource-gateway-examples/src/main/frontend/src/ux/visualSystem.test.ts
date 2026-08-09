@@ -56,7 +56,7 @@ describe('Stage 5 visual-system contract', () => {
 
   it('uses a task-first mobile shell outside graph composition', () => {
     expect(responsiveCss).toContain(".workspace-v2:not([data-author-mode='compose']) > .author-command-bar");
-    expect(responsiveCss).toContain(':is(.author-draft-identity, .author-mobile-truth, .author-secondary-command-group)');
+    expect(responsiveCss).toContain(':is(.author-workspace-context, .author-mobile-truth, .author-secondary-command-group)');
     expect(responsiveCss).toMatch(/not\(\[data-author-mode='compose'\]\)[\s\S]*\.author-primary-command[\s\S]*display: none/);
     expect(responsiveCss).toMatch(/contract-workspace-header-actions[\s\S]*:disabled/);
   });
@@ -85,6 +85,7 @@ describe('Stage 5 visual-system contract', () => {
   it('keeps desktop task controls and readiness conclusions fully legible', () => {
     expect(legacyCss).toMatch(/\.canvas-task-modes[\s\S]*min-width: 204px/);
     expect(legacyCss).toMatch(/\.author-truth-status strong[\s\S]*overflow-wrap: normal[\s\S]*white-space: normal/);
+    expect(legacyCss).toMatch(/not\(\[data-author-mode='compose'\]\)[\s\S]*\.author-primary-command[\s\S]*display: none/);
     expect(responsiveCss).toMatch(/data-command-density='compact'[\s\S]*scenario-matrix-context code[\s\S]*display: none/);
   });
 

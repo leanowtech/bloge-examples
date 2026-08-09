@@ -17,6 +17,13 @@ import {
 import { localizeRehearsalText } from './i18n/generatedProductText';
 import { useI18n } from './i18n/I18nProvider';
 import { hasChineseTranslation } from './i18n/i18n';
+import WorkspaceContextBar from './author/shell/WorkspaceContextBar';
+import { evaluateTaskCommandAuthority } from './author/task/commandAuthority';
+import {
+  parseTaskCoordinate,
+  parseTaskViewportRestore,
+  taskCoordinateUrl,
+} from './author/task/taskCoordinate';
 import RehearsalRemediationPanel from './RehearsalRemediationPanel';
 import RemediationActionList from './remediation/RemediationActionList';
 import type { RemediationAction } from './remediation/remediationAction';
@@ -317,6 +324,12 @@ export default function RehearsalWorkbench() {
   const discoveryGeneration = useRef(0);
   const jobPageGeneration = useRef(0);
   const itemPageGeneration = useRef(0);
+  const viewportRestoreRef = useRef(parseTaskViewportRestore(window.location.href));
+  const initialTaskCoordinate = useMemo(() => parseTaskCoordinate(window.location.href, {
+    surface: 'EVIDENCE',
+    subjectKind: 'CASE',
+    role: 'REVIEWER',
+  }), []);
 
   const sampleMode = mode === 'SAMPLES';
   const jobs = sampleMode
@@ -362,6 +375,47 @@ export default function RehearsalWorkbench() {
       },
     );
   }, [attemptTimeline, diagnoses, sampleMode, selectedEntry, selectedJob]);
+  const taskCoordinate = useMemo(() => ({
+    ...initialTaskCoordinate,
+    tenantId: selectedJob?.scope.tenantId ?? initialTaskCoordinate.tenantId,
+    namespace: selectedJob?.scope.projectId ?? initialTaskCoordinate.namespace,
+    environment: selectedJob?.scope.environmentId ?? initialTaskCoordinate.environment,
+    draftId: selectedEntry?.authorTarget?.draftId ?? selectedJob?.jobId ?? '',
+    revision: selectedEntry?.authorTarget?.revision ?? selectedEntry?.planRevision ?? 0,
+    surface: 'EVIDENCE' as const,
+    subjectKind: selectedEntry?.runId ? 'RUN' as const : 'CASE' as const,
+    subjectRef: selectedEntry?.runId || selectedJob?.jobId || '',
+    selectionFingerprint: selectedEntry?.evidenceFingerprint || selectedJob?.recordFingerprint || '',
+    selection: {
+      nodeId: selectedEntry?.authorTarget?.nodeId ?? '',
+      caseId: selectedEntry?.authorTarget?.scenarioId ?? selectedEntry?.id ?? '',
+      runId: selectedEntry?.runId ?? '',
+    },
+  }), [initialTaskCoordinate, selectedEntry, selectedJob]);
+  const readPolicy = useMemo(() => evaluateTaskCommandAuthority({
+    commandId: 'READ_REHEARSAL_EVIDENCE',
+    risk: 'READ',
+    coordinate: taskCoordinate,
+    sessionTenantId: new URLSearchParams(window.location.search).get('sessionTenantId')
+      ?? taskCoordinate.tenantId,
+  }), [taskCoordinate]);
+
+  useEffect(() => {
+    const href = taskCoordinateUrl(window.location.href, taskCoordinate);
+    window.history.replaceState(window.history.state, '', href);
+  }, [taskCoordinate]);
+
+  useEffect(() => {
+    const restore = viewportRestoreRef.current;
+    if (!restore) return;
+    if (restore.focusId && !document.getElementById(restore.focusId) && entries.length === 0) return;
+    viewportRestoreRef.current = null;
+    window.requestAnimationFrame(() => {
+      window.scrollTo({ left: restore.scrollX, top: restore.scrollY, behavior: 'auto' });
+      document.getElementById(restore.focusId)?.focus({ preventScroll: true });
+      window.history.replaceState(window.history.state, '', restore.cleanHref);
+    });
+  }, [entries.length]);
   const categoryCounts = useMemo(
     () => Object.fromEntries(
       CATEGORY_ORDER.map((category) => [
@@ -767,7 +821,21 @@ export default function RehearsalWorkbench() {
     <main
       className={`rehearsal-workbench ${selectedEntry ? 'drawer-open' : ''}`}
       data-testid="rehearsal-workbench"
+      data-command-policy={readPolicy.decision.toLowerCase()}
     >
+      <WorkspaceContextBar
+        className="rehearsal-workspace-context"
+        coordinate={taskCoordinate}
+        objectLabel={selectedJob?.jobId || t('Rehearsal batches')}
+        objectMeta={t(sampleMode ? 'Guided sample data' : 'Live evidence')}
+        owner={selectedEvidence?.owner || selectedJob?.scope.organizationId || ''}
+        lifecycle={selectedJob ? { label: d(selectedJob.status), state: selectedJob.status } : undefined}
+        commandScope={{
+          kind: selectedEntry ? 'RUN' : 'CASE',
+          count: selectedEntry ? 1 : entries.length,
+        }}
+        commandPolicy={readPolicy}
+      />
       <aside className="rehearsal-queue" aria-label={t('Rehearsal batch queue')}>
         <div className="workbench-pane-heading">
           <div>
@@ -1065,6 +1133,7 @@ export default function RehearsalWorkbench() {
                           key={entry.id}
                           onClick={() => selectEntry(entry.index)}
                           data-testid={`entry-${entry.index}`}
+                          id={`rehearsal-entry-${entry.index}`}
                         >
                           <span className="entry-identity">
                             <strong>#{entry.index} {entry.planId}</strong>

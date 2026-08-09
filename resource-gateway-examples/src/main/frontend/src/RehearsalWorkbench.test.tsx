@@ -377,6 +377,10 @@ describe('RehearsalWorkbench', () => {
 
     expect(text()).toContain('Mutable and not publish-gate evidence');
     expect(text()).toContain('Mutable running projection');
+    expect(query('[data-testid="workspace-context-bar"]').textContent).toContain('tenant-a');
+    expect(query('[data-testid="workspace-context-bar"]').textContent).toContain('TEST');
+    expect(query('[data-testid="workspace-command-scope"]').getAttribute('data-scope-kind'))
+      .toBe('case');
     expect(mockItems).toHaveBeenCalledWith('job-live', 0, 100);
     expect(mockBatchWorkbook).not.toHaveBeenCalled();
     expect(mockChildWorkbook).not.toHaveBeenCalled();

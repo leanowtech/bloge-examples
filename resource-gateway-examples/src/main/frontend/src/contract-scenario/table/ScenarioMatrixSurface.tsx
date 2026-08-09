@@ -126,6 +126,10 @@ export default function ScenarioMatrixSurface({
     'SELECTED',
     previousRunCaseIds,
   ), [previousRunCaseIds, projection, selection]);
+  const primaryRunMode: ScenarioRunSelectionMode = selection.selectedCaseIds.length > 0
+    ? 'SELECTED'
+    : 'ALL';
+  const primaryRunScope = primaryRunMode === 'SELECTED' ? selectedScope : allScope;
   const differentialRunCommands = (
     <>
       <button
@@ -519,42 +523,46 @@ export default function ScenarioMatrixSurface({
           )}
         </div>
         <div className="scenario-matrix-bulk-actions">
-          {compactCommands ? (
-            <details className="scenario-run-scope-menu">
-              <summary
-                className="icon-button"
-                title={t('More run scopes')}
-                aria-label={t('More run scopes')}
-              >
-                <Ellipsis aria-hidden="true" size={18} />
-              </summary>
-              <div>{differentialRunCommands}</div>
-            </details>
-          ) : differentialRunCommands}
-          <button
-            type="button"
-            className="secondary"
-            disabled={disabled || runCommand?.enabled === false || projection.rows.length === 0}
-            onClick={() => onRunSelection('ALL')}
-            data-command-scope="SUITE"
-            data-scope-count={allScope.caseIds.length}
-            data-scope-fingerprint={allScope.selectionFingerprint}
-          >
-            {t('Run all ({count})', { count: allScope.caseIds.length })}
-          </button>
+          <details className="scenario-run-scope-menu">
+            <summary
+              className="icon-button"
+              title={t('More run scopes')}
+              aria-label={t('More run scopes')}
+            >
+              <Ellipsis aria-hidden="true" size={18} />
+            </summary>
+            <div>
+              {primaryRunMode !== 'ALL' && (
+                <button
+                  type="button"
+                  className="secondary"
+                  disabled={disabled || runCommand?.enabled === false || projection.rows.length === 0}
+                  onClick={() => onRunSelection('ALL')}
+                  data-command-scope="SUITE"
+                  data-scope-count={allScope.caseIds.length}
+                  data-scope-fingerprint={allScope.selectionFingerprint}
+                >
+                  {t('Run all ({count})', { count: allScope.caseIds.length })}
+                </button>
+              )}
+              {differentialRunCommands}
+            </div>
+          </details>
           <button
             type="button"
             className="primary"
-            disabled={disabled || runCommand?.enabled === false || selection.selectedCaseIds.length === 0}
-            onClick={() => onRunSelection('SELECTED')}
-            data-testid="scenario-run-selected"
-            data-command-scope="SELECTION"
-            data-scope-count={selectedScope.caseIds.length}
-            data-scope-fingerprint={selectedScope.selectionFingerprint}
+            disabled={disabled || runCommand?.enabled === false || primaryRunScope.caseIds.length === 0}
+            onClick={() => onRunSelection(primaryRunMode)}
+            data-testid={primaryRunMode === 'SELECTED' ? 'scenario-run-selected' : 'scenario-run-primary'}
+            data-command-scope={primaryRunMode === 'SELECTED' ? 'SELECTION' : 'SUITE'}
+            data-scope-count={primaryRunScope.caseIds.length}
+            data-scope-fingerprint={primaryRunScope.selectionFingerprint}
           >
             {runningCaseIds.length > 0
               ? t('Running {count}...', { count: runningCaseIds.length })
-              : t('Run selected ({count})', { count: selectedScope.caseIds.length })}
+              : primaryRunMode === 'SELECTED'
+                ? t('Run selected ({count})', { count: selectedScope.caseIds.length })
+                : t('Run all ({count})', { count: allScope.caseIds.length })}
           </button>
         </div>
       </footer>

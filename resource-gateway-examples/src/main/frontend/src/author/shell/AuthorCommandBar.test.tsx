@@ -75,7 +75,10 @@ describe('AuthorCommandBar', () => {
     window.history.pushState({}, '', '/author/?lang=zh-CN');
     await render('compose', true);
 
-    expect(text()).toContain('草稿 r2 · 5 个节点 · 7 条连线');
+    expect(text()).toContain('修订版 2 · 5 个节点 · 7 条连线');
+    expect(text()).toContain('租户');
+    expect(text()).toContain('环境');
+    expect(text()).toContain('角色');
     expect(text()).toContain('自动布局');
     expect(text()).toContain('校验编排图');
     expect(text()).toContain('运行场景');
@@ -239,9 +242,31 @@ describe('AuthorCommandBar', () => {
     const commandBar = (
       <AuthorCommandBar
         graphName="riskPolicy"
-        draftRevision={2}
         nodeCount={5}
         edgeCount={7}
+        taskCoordinate={{
+          tenantId: 'tenant-a',
+          namespace: 'risk',
+          environment: 'test',
+          draftId: 'draft-2',
+          revision: 2,
+          surface: mode === 'compose' ? 'COMPOSE' : mode === 'contract'
+            ? 'CONTRACT' : mode === 'scenarios' ? 'SCENARIO' : 'EVIDENCE',
+          subjectKind: mode === 'scenarios' ? 'CASE' : 'GRAPH',
+          subjectRef: mode === 'scenarios' ? 'approved' : 'riskPolicy',
+          selectionFingerprint: 'selection:1',
+          role: 'EDITOR',
+          capabilityFingerprint: 'cap:demo',
+          selection: { nodeId: '', caseId: mode === 'scenarios' ? 'approved' : '', runId: '' },
+        }}
+        commandPolicy={{
+          commandId: 'MUTATE_AUTHORING_WORKSPACE',
+          decision: 'ALLOW',
+          enabled: true,
+          reasonCode: '',
+          environmentTone: 'NEUTRAL',
+          requiresExplicitConfirmation: false,
+        }}
         mode={mode}
         primaryCommand={resolvedPrimaryCommand}
         draftStatus="SAVED"
