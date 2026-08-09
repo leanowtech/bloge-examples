@@ -222,6 +222,7 @@ import {
   authorTaskElapsedMs,
   recordAuthorTaskEvent,
 } from './author/telemetry/authorTaskTelemetry';
+import { useWorkspaceContinuity } from './author/continuity/useWorkspaceContinuity';
 import EffectiveContractPanel from './author/contract/EffectiveContractPanel';
 import {
   projectEffectiveContract,
@@ -779,6 +780,24 @@ interface ContextVariableRow {
   path: string;
   valueType: ContextVariableType;
   sample: string;
+}
+
+interface AuthoringRecoveryPayload {
+  graphDraft: GraphDraft;
+  scenarioDraftSet: ScenarioDraftSet | null;
+  fixtureDrafts: Record<string, string>;
+  fixtureInputDrafts: Record<string, string>;
+  operatorTestSuites: Record<string, OperatorTestSuiteDraftRow[]>;
+  simulationTableRows: SimulationTableTestDraftRow[];
+  runInputValue: Record<string, unknown>;
+  simulationContextDraft: string;
+  rawContextMode: boolean;
+  contextVariables: ContextVariableRow[];
+  selectedNodeId: string;
+  explicitOutputNodeId: string;
+  authorMode: AuthorMode;
+  loadedExampleKey: string;
+  workspaceForkIdempotencyKey: string;
 }
 
 const CONTEXT_VARIABLE_DRAG_TYPE = 'application/bloge-context-path';
@@ -8979,6 +8998,127 @@ export default function AuthorCanvas({ workspaceVersion = 'v1' }: AuthorCanvasPr
     && graphDraftRevision > 0
     && authoritativeContractRef.current?.canvasSnapshot === canonicalJson(exportableDraft),
   );
+  const authoringRecoveryPayload = useMemo<AuthoringRecoveryPayload>(() => ({
+    graphDraft: exportableDraft,
+    scenarioDraftSet,
+    fixtureDrafts,
+    fixtureInputDrafts,
+    operatorTestSuites,
+    simulationTableRows,
+    runInputValue,
+    simulationContextDraft,
+    rawContextMode,
+    contextVariables,
+    selectedNodeId,
+    explicitOutputNodeId,
+    authorMode,
+    loadedExampleKey,
+    workspaceForkIdempotencyKey: workspaceForkIdempotencyKeyRef.current,
+  }), [
+    authorMode,
+    contextVariables,
+    explicitOutputNodeId,
+    exportableDraft,
+    fixtureDrafts,
+    fixtureInputDrafts,
+    loadedExampleKey,
+    operatorTestSuites,
+    rawContextMode,
+    runInputValue,
+    scenarioDraftSet,
+    selectedNodeId,
+    simulationContextDraft,
+    simulationTableRows,
+  ]);
+  const authoringRecoveryContent = useMemo(() => ({
+    graphDraft: exportableDraft,
+    scenarioDraftSet,
+    fixtureDrafts,
+    fixtureInputDrafts,
+    operatorTestSuites,
+    simulationTableRows,
+    runInputValue,
+    simulationContextDraft,
+    rawContextMode,
+    contextVariables,
+  }), [
+    contextVariables,
+    exportableDraft,
+    fixtureDrafts,
+    fixtureInputDrafts,
+    operatorTestSuites,
+    rawContextMode,
+    runInputValue,
+    scenarioDraftSet,
+    simulationContextDraft,
+    simulationTableRows,
+  ]);
+  const restoreAuthoringWorkspace = useCallback((
+    recovered: AuthoringRecoveryPayload,
+    capturedAt: string,
+  ) => {
+    applyDslProjection({
+      schemaVersion: 'bloge.dslVisualProjection.v1',
+      sourceId: `recovery:${recovered.graphDraft.graphName}`,
+      draft: recovered.graphDraft,
+      diagnostics: [],
+    }, `Recovered session ${capturedAt}`);
+    setScenarioDraftSet(recovered.scenarioDraftSet);
+    setFixtureDrafts(recovered.fixtureDrafts);
+    setFixtureInputDrafts(recovered.fixtureInputDrafts);
+    setOperatorTestSuites(recovered.operatorTestSuites);
+    setOperatorTestResults({});
+    setOperatorTestPublications({});
+    setSimulationTableRows(recovered.simulationTableRows);
+    setSimulationTableResults({});
+    setRunInputValue(recovered.runInputValue);
+    setSimulationContextDraft(recovered.simulationContextDraft);
+    setRawContextMode(recovered.rawContextMode);
+    setContextVariables(recovered.contextVariables);
+    setSelectedNodeId(recovered.selectedNodeId);
+    setExplicitOutputNodeId(recovered.explicitOutputNodeId);
+    setAuthorMode(recovered.authorMode);
+    setLoadedExampleKey(recovered.loadedExampleKey);
+    workspaceForkIdempotencyKeyRef.current = recovered.workspaceForkIdempotencyKey
+      || `recovery:${Date.now()}`;
+    tableTestCounter.current = recovered.simulationTableRows.length;
+    operatorTestCounter.current = Object.values(recovered.operatorTestSuites)
+      .reduce((total, rows) => total + rows.length, 0);
+    setStartOpen(false);
+    setConnectionNotice({
+      level: 'ok',
+      message: t('Recovered {graph} from {capturedAt}. Save it to create an authoritative revision.', {
+        graph: recovered.graphDraft.graphName,
+        capturedAt: new Date(capturedAt).toLocaleString(locale),
+      }),
+    });
+  }, [applyDslProjection, locale, t]);
+  const authoringContinuity = useWorkspaceContinuity({
+    enabled: isTaskWorkspace,
+    ready: operators.length > 0,
+    allowRecovery: !initialWorkspaceLocation.hasDeepLinkTarget && !initialDslHandoff,
+    hasContent: nodes.length > 0,
+    coordinate: {
+      tenantId: graphTenantId,
+      namespace: graphNamespace,
+      environment: graphEnvironment,
+      ...(graphDraftId ? { draftId: graphDraftId } : {}),
+    },
+    payload: authoringRecoveryPayload,
+    fingerprintValue: authoringRecoveryContent,
+    authoritativelySaved: exactSavedDraft,
+    savedRevision: graphDraftRevision,
+    canAutosave: Boolean(
+      graphDraftId
+      && graphDraftRevision > 0
+      && !exactSavedDraft
+      && !busy
+      && !hasFixtureErrors
+      && !draftSaveConflict
+    ),
+    onRestore: restoreAuthoringWorkspace,
+    onSave: saveGraphForScenario,
+  });
   const authorReadiness = projectAuthorReadiness({
     draft: {
       durable: Boolean(graphDraftId && graphDraftRevision > 0),
@@ -9737,6 +9877,7 @@ export default function AuthorCanvas({ workspaceVersion = 'v1' }: AuthorCanvasPr
       data-author-workspace-version={workspaceVersion}
       data-author-mode={authorMode}
       data-draft-lifecycle={authorReadiness.draft.toLowerCase()}
+      data-workspace-continuity={authoringContinuity.state.lifecycle.toLowerCase()}
       data-evidence-freshness={evidenceStale ? 'stale' : 'current'}
       data-promotion-lifecycle={authorReadiness.promotion.toLowerCase()}
       data-task-canonical-state={authorTaskState.canonicalState.toLowerCase()}
@@ -9762,6 +9903,9 @@ export default function AuthorCanvas({ workspaceVersion = 'v1' }: AuthorCanvasPr
             proofStrength={authorTaskState.proofStrength}
             promotionStatus={taskPromotionStatus}
             promotionSummary={taskPromotionSummary}
+            continuityStatus={authoringContinuity.state.lifecycle}
+            recoveryCapturedAt={authoringContinuity.state.recoveryCapturedAt}
+            recoverySecurity={authoringContinuity.recoverySecurity}
             exportUrl={draftExportUrl}
             exportName={`${graphName}-draft.json`}
             exportDisabled={
@@ -9772,6 +9916,12 @@ export default function AuthorCanvas({ workspaceVersion = 'v1' }: AuthorCanvasPr
             }
             layoutDisabled={nodes.length < 2 || layoutPlanning || Boolean(layoutPreview)}
             validationDisabled={validatingDraft || nodes.length === 0}
+            saveDisabled={
+              nodes.length === 0
+              || hasFixtureErrors
+              || authoringContinuity.state.lifecycle === 'SAVING'
+              || busy
+            }
             onModeChange={changeAuthorMode}
             onPrimaryAction={runPrimaryAuthorAction}
             onPrimaryRemediation={remediatePrimaryCommand}
@@ -9781,6 +9931,7 @@ export default function AuthorCanvas({ workspaceVersion = 'v1' }: AuthorCanvasPr
             }}
             onAutoLayout={autoLayout}
             onValidate={() => void runDraftValidation()}
+            onSave={() => void authoringContinuity.save()}
           />
           <StartImportDialog
             open={startOpen}

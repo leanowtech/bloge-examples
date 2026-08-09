@@ -285,6 +285,16 @@ html[data-density='comfortable'] .library-command-bar :is(button, a) {
       "secondary";
   }
 
+  .workspace-leave-actions {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .workspace-leave-actions button {
+    width: 100%;
+    min-height: var(--rg-touch-target);
+  }
+
   .workspace-v2:not([data-author-mode='compose']) > .author-command-bar {
     grid-template-areas:
       "primary"

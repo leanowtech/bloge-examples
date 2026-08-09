@@ -11262,11 +11262,13 @@ button.primary:disabled {
 .author-draft-identity {
   grid-area: identity;
   display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
   min-width: 0;
   gap: 2px;
 }
 
 .author-draft-identity strong {
+  grid-column: 1 / -1;
   overflow: hidden;
   font-size: 13px;
   text-overflow: ellipsis;
@@ -11278,6 +11280,69 @@ button.primary:disabled {
   font-size: var(--rg-font-aux);
   font-variant-numeric: tabular-nums;
   white-space: nowrap;
+}
+
+.author-draft-identity > span:not(.author-continuity-status) {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.author-draft-identity .author-continuity-status {
+  align-self: center;
+  justify-self: start;
+  padding: 2px 5px;
+  border: 1px solid #b9c7d8;
+  border-radius: 4px;
+  background: #f5f8fb;
+  color: #41536b;
+  font-size: var(--rg-font-aux);
+  font-weight: 800;
+  line-height: 1.2;
+}
+
+.author-draft-identity .author-continuity-status[data-state='saved'] {
+  border-color: #98c6b2;
+  background: #eef9f3;
+  color: #1f6a49;
+}
+
+.author-draft-identity .author-continuity-status[data-state='conflicted'],
+.author-draft-identity .author-continuity-status[data-state='recoverable_offline'] {
+  border-color: #d8ad58;
+  background: #fff8e8;
+  color: #7a5411;
+}
+
+.author-draft-identity .author-save-command {
+  width: 28px;
+  min-width: 28px;
+  min-height: 26px;
+  padding: 3px;
+}
+
+.workspace-leave-dialog {
+  width: min(560px, 100%);
+  display: grid;
+  gap: 10px;
+  padding: 18px;
+  border: 1px solid #9ba9bb;
+  border-radius: 8px;
+  background: #fff;
+  box-shadow: 0 24px 64px rgb(15 23 42 / 28%);
+}
+
+.workspace-leave-dialog h2,
+.workspace-leave-dialog p {
+  margin: 0;
+}
+
+.workspace-leave-actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 8px;
+  padding-top: 6px;
 }
 
 .author-mode-tabs {

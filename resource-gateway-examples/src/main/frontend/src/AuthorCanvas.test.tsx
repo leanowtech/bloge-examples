@@ -779,6 +779,7 @@ describe('AuthorCanvas built-in canvas examples', () => {
   beforeEach(() => {
     (globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
     window.history.replaceState({}, '', '/author/?authorWorkspace=v2');
+    window.sessionStorage.clear();
     host = document.createElement('div');
     document.body.appendChild(host);
     const governedTargetFingerprint = `sha256:${'a'.repeat(64)}`;
@@ -1353,6 +1354,55 @@ describe('AuthorCanvas built-in canvas examples', () => {
     });
     expect(fetchMock.mock.calls.filter(([input]) => String(input) === '/api/visual/graphs/simulate'))
       .toHaveLength(1);
+  });
+
+  it('restores the complete graph, fixtures, and operator suites after the Author surface remounts', async () => {
+    await act(async () => {
+      root = createRoot(host);
+      root.render(<AuthorCanvas workspaceVersion="v2" />);
+    });
+    await click(query<HTMLButtonElement>('[data-testid="author-start-choice:examples"]'));
+    await waitFor(() =>
+      expect(query<HTMLButtonElement>('[data-testid="author-start-example:loan-policy-fallback"]').disabled)
+        .toBe(false),
+    );
+    await click(query<HTMLButtonElement>('[data-testid="author-start-example:loan-policy-fallback"]'));
+    await waitFor(() => {
+      expect(query('[data-testid="author-continuity-status"]').textContent).toBe('RECOVERABLE');
+      expect(window.sessionStorage.length).toBeGreaterThan(0);
+    });
+    const before = authorDraftExport(
+      query<HTMLAnchorElement>('[data-testid="author-draft-export-v2"]'),
+    );
+
+    await act(async () => root?.unmount());
+    root = null;
+    host.replaceChildren();
+    window.history.replaceState({}, '', '/author/?authorWorkspace=v2');
+    await act(async () => {
+      root = createRoot(host);
+      root.render(<AuthorCanvas workspaceVersion="v2" />);
+    });
+
+    await waitFor(() => {
+      expect(document.querySelector('[data-testid="author-start-dialog"]')).toBeNull();
+      expect(['RECOVERED', 'RECOVERABLE'])
+        .toContain(query('[data-testid="author-continuity-status"]').textContent);
+      expect(query('[data-testid="author-command-bar"]').textContent)
+        .toContain('5 nodes · 12 edges');
+      expect(document.body.textContent).toContain('Recovered loanPolicyFallbackExample from');
+    });
+    const after = authorDraftExport(
+      query<HTMLAnchorElement>('[data-testid="author-draft-export-v2"]'),
+    );
+    expect(after).toEqual(before);
+    expect(after.nodeFixtures).toMatchObject({ n1: expect.any(Object), n2: expect.any(Object), n3: expect.any(Object) });
+
+    await doubleClick(query<HTMLElement>('[data-testid="node-wrapper:n1"]'));
+    await waitFor(() =>
+      expect(query<HTMLTextAreaElement>('[data-testid="operator-test-input:0"]').value)
+        .toContain('applicant-1001'),
+    );
   });
 
   it('retains prior evidence as stale after an edit and reruns the exact current scenario', async () => {

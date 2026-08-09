@@ -9,6 +9,7 @@ import I18nProvider, { useI18n } from './i18n/I18nProvider';
 import LanguageSwitcher from './i18n/LanguageSwitcher';
 import DensityProvider from './ux/DensityProvider';
 import DensitySwitcher from './ux/DensitySwitcher';
+import { SafeWorkspaceNavigationProvider } from './author/continuity/SafeWorkspaceNavigation';
 import {
   authorWorkspaceEntryHref,
   resolveAuthorWorkspaceVersion,
@@ -24,7 +25,9 @@ export default function App() {
   return (
     <I18nProvider>
       <DensityProvider>
-        <AppShell />
+        <SafeWorkspaceNavigationProvider>
+          <AppShell />
+        </SafeWorkspaceNavigationProvider>
       </DensityProvider>
     </I18nProvider>
   );

@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { ChevronDown, ChevronUp, SlidersHorizontal } from 'lucide-react';
+import { ChevronDown, ChevronUp, Save, SlidersHorizontal } from 'lucide-react';
 
 import type { AuthorMode } from './authorWorkspaceState';
 import type { AuthorCommandAvailability } from '../task/taskStateProjection';
@@ -20,17 +20,22 @@ interface AuthorCommandBarProps {
   proofStrength: string;
   promotionStatus: string;
   promotionSummary: string;
+  continuityStatus: string;
+  recoveryCapturedAt: string;
+  recoverySecurity: string;
   exportUrl: string;
   exportName: string;
   exportDisabled: boolean;
   layoutDisabled: boolean;
   validationDisabled: boolean;
+  saveDisabled: boolean;
   onModeChange: (mode: AuthorMode) => void;
   onPrimaryAction: () => void;
   onPrimaryRemediation: () => void;
   onImport: () => void;
   onAutoLayout: () => void;
   onValidate: () => void;
+  onSave: () => void;
 }
 
 const MODES: Array<{ key: AuthorMode; label: string }> = [
@@ -55,17 +60,22 @@ export default function AuthorCommandBar({
   proofStrength,
   promotionStatus,
   promotionSummary,
+  continuityStatus,
+  recoveryCapturedAt,
+  recoverySecurity,
   exportUrl,
   exportName,
   exportDisabled,
   layoutDisabled,
   validationDisabled,
+  saveDisabled,
   onModeChange,
   onPrimaryAction,
   onPrimaryRemediation,
   onImport,
   onAutoLayout,
   onValidate,
+  onSave,
 }: AuthorCommandBarProps) {
   const { d, m, t } = useI18n();
   const [mobileTruthOpen, setMobileTruthOpen] = useState(false);
@@ -96,6 +106,30 @@ export default function AuthorCommandBar({
           nodes: nodeCount,
           edges: edgeCount,
         })}</span>
+        <span
+          className="author-continuity-status"
+          data-state={continuityStatus.toLowerCase()}
+          data-testid="author-continuity-status"
+          title={recoveryCapturedAt
+            ? t('Recovery captured at {capturedAt} via {security}.', {
+                capturedAt: new Date(recoveryCapturedAt).toLocaleTimeString(),
+                security: d(recoverySecurity),
+              })
+            : t('No recovery snapshot has been captured yet.')}
+        >
+          {d(continuityStatus)}
+        </span>
+        <button
+          type="button"
+          className="secondary compact icon-button author-save-command"
+          aria-label={t('Save workspace')}
+          title={t('Save workspace')}
+          data-testid="author-save-workspace"
+          disabled={saveDisabled}
+          onClick={onSave}
+        >
+          <Save size={15} aria-hidden="true" />
+        </button>
       </div>
       <nav className="author-mode-tabs" aria-label={t('Author task mode')}>
         {MODES.map((candidate) => (

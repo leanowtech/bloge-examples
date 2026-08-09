@@ -19,6 +19,7 @@ integration something the business flow can see, reason about, test, and change.
 | Descriptor-first resources | Add most APIs by changing contracts, not cloning Java operators |
 | Graph-level contracts | Every built-in resource graph exposes formal input/output JSON Schema for system integration |
 | Schema-aware canvas | Drag, connect, validate, simulate, and publish under server-side schema checks |
+| Recoverable authoring sessions | SHA-256 coordinated recovery snapshots, tenant/environment partitioning, safe cross-workspace navigation, explicit Save, stale-receipt fencing, and an injectable encrypted host store |
 | Contract and Scenario authoring protocol | Versioned Contract/Scenario drafts, exact target and contract fingerprints, strict schemas, deterministic transient compilation, and fail-closed routing of advanced dependency behavior to the governed testing control plane |
 | Atomic example workspaces | Complete Graph/Contract/Scenario/fixture seeds, one-click sandbox preview, idempotent test/staging Workspace fork, exact coordinate rebind, and payload-free receipts without first-save rebase |
 | Runtime-backed demos | Local upstreams, real gateway execution, mock simulation, SSE examples, and reusable publications |
@@ -118,6 +119,16 @@ product vocabulary is in
 [`docs/resource-gateway-localization-glossary.md`](../docs/resource-gateway-localization-glossary.md),
 and Stage 4 verification is recorded in
 [`docs/resource-gateway-ux-stage4-localization-governance.md`](../docs/resource-gateway-ux-stage4-localization-governance.md).
+
+Author Workspace v2 now distinguishes **recoverable** from **saved**. After an edit, the lifecycle
+beside the draft identity advances from `DIRTY` to `RECOVERABLE` when the current tab has captured a
+TTL-bound recovery snapshot. The Save icon creates or updates the authoritative server revision.
+Cross-workspace links flush the newest graph, fixture, Scenario, and operator-suite authoring state
+before navigation; a decision dialog appears only when that flush fails. Returning to `/author/`
+restores the same session automatically. Browser demo storage is session-ephemeral, while VS Code
+and enterprise hosts can inject a `HOST_ENCRYPTED` recovery store. The behavior, security boundary,
+and verification commands are documented in
+[`docs/resource-gateway-ux-round3-s0-workspace-continuity-implementation.md`](../docs/resource-gateway-ux-round3-s0-workspace-continuity-implementation.md).
 
 The header also provides `Comfortable / Compact` density modes. Comfortable is the default;
 Compact persists across reloads and tightens spacing without reducing the text-size floor. At

@@ -203,6 +203,26 @@ Start/Import 与 Operator details 两类临时浮层遵循同一个键盘协议�
 Contract、Scenarios 和 Evidence 不属于临时浮层：它们由顶部任务模式直接占用中央工作面，
 浏览器 Back / Forward 会恢复准确 mode、target、Scenario 和 run。
 
+#### 工作区恢复与权威保存
+
+Author v2 的草稿身份旁会直接显示工作区生命周期：
+
+- **DIRTY / 有未保存修改**：当前内容尚未形成恢复快照；
+- **RECOVERABLE / 可恢复**：当前标签页已经保存 TTL 恢复包，但尚不等于服务端 revision；
+- **SAVING / 保存中**：Save 或 autosave 正在提交权威 revision；
+- **SAVED / 已保存**：当前内容指纹与服务端 revision 一致；
+- **CONFLICTED / 冲突**：服务端 revision 已前进，禁止旧响应覆盖新编辑；
+- **RECOVERABLE_OFFLINE / 离线可恢复**：服务端不可达，但本地恢复包仍有效。
+
+加载完整示例后等待 **可恢复**，可以直接切到 **算子库** 再返回 **编排**；Graph、fixture、Scenario set、
+算子测试套件和运行输入会回到离开前状态。草稿身份旁的 Save 图标用于创建或更新服务端权威 revision。
+跨工作区导航会先 flush 最新快照，只有存储失败时才弹出保存、导出、放弃或留在此处的决策。
+
+浏览器演示使用当前标签页 `sessionStorage`，按 tenant/namespace/environment 分区并设置 8 小时 TTL；它不是
+企业加密存储。VS Code 或企业宿主应通过 `setWorkspaceRecoveryStore` 注入 `HOST_ENCRYPTED` 实现。详细协议、
+不变量和测试方式见
+[S0 工作区连续性实现说明](resource-gateway-ux-round3-s0-workspace-continuity-implementation.md)。
+
 在 `390 x 844` 视口，命令条改为单列、状态与辅助动作改为两列；Contract、Scenarios 和
 Evidence 继续是中央工作面，Topology Context Rail 变为按需抽屉。Author 使用全高应用壳，
 中央内容独立滚动，底部 Run 与 Diagnostics 不会互相覆盖。这个模式定位为**查看、运行、

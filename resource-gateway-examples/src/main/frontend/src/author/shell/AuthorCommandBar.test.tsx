@@ -212,17 +212,22 @@ describe('AuthorCommandBar', () => {
         proofStrength="EXPLORATORY"
         promotionStatus="NOT EVALUATED"
         promotionSummary="Run the canonical Scenario."
+        continuityStatus="RECOVERABLE"
+        recoveryCapturedAt="2026-08-09T08:00:00.000Z"
+        recoverySecurity="SESSION_EPHEMERAL"
         exportUrl="data:application/json,{}"
         exportName="risk-policy.json"
         exportDisabled={false}
         layoutDisabled={false}
         validationDisabled={false}
+        saveDisabled={false}
         onModeChange={vi.fn()}
         onPrimaryAction={vi.fn()}
         onPrimaryRemediation={onPrimaryRemediation}
         onImport={vi.fn()}
         onAutoLayout={vi.fn()}
         onValidate={vi.fn()}
+        onSave={vi.fn()}
       />
     );
     await act(async () => {
