@@ -1,0 +1,70 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://bloge.dev/schemas/resource-gateway-ux-evidence-v1.schema.json",
+  "title": "Resource Gateway UX Evidence",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schemaVersion", "studyId", "sessions", "releaseCycles"],
+  "properties": {
+    "schemaVersion": { "const": "resourceGateway.uxEvidence.v1" },
+    "studyId": { "type": "string", "minLength": 1 },
+    "sessions": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["sessionId", "participantRef", "role", "host", "coldStartMs", "warmStartMs", "tasks"],
+        "properties": {
+          "sessionId": { "type": "string", "minLength": 1 },
+          "participantRef": { "type": "string", "minLength": 1, "description": "Pseudonymous study coordinate; never a name or account id." },
+          "role": { "enum": ["AUTHOR", "TEST_ENGINEER", "GOVERNANCE_REVIEWER", "INCIDENT_RESPONDER"] },
+          "host": { "enum": ["WEB", "VSCODE_WEBVIEW"] },
+          "coldStartMs": { "type": "integer", "minimum": 0 },
+          "warmStartMs": { "type": "integer", "minimum": 0 },
+          "tasks": {
+            "type": "array",
+            "minItems": 1,
+            "items": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["taskId", "completed", "durationMs", "contextCorrect", "proofClassificationCorrect", "scopeCorrectionCount", "abandoned", "findings"],
+              "properties": {
+                "taskId": { "enum": ["RECOVER_EDIT", "UNDO_DESTRUCTIVE_CHANGE", "MATRIX_DIFF", "PROOF_CLASSIFICATION", "SCOPE_CONFIRMATION", "INCIDENT_RETURN_COORDINATE"] },
+                "completed": { "type": "boolean" },
+                "durationMs": { "type": "integer", "minimum": 0 },
+                "contextCorrect": { "type": "boolean" },
+                "proofClassificationCorrect": { "type": ["boolean", "null"] },
+                "scopeCorrectionCount": { "type": "integer", "minimum": 0 },
+                "abandoned": { "type": "boolean" },
+                "findings": { "type": "array", "items": { "enum": ["P0", "P1", "P2", "P3"] } }
+              }
+            }
+          }
+        }
+      }
+    },
+    "releaseCycles": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["teamRef", "cycleRef", "releases", "incidents"],
+        "properties": {
+          "teamRef": { "type": "string", "minLength": 1 },
+          "cycleRef": { "type": "string", "minLength": 1 },
+          "releases": { "type": "integer", "minimum": 0 },
+          "incidents": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["SILENT_DATA_LOSS", "CROSS_ENVIRONMENT_MISOPERATION", "MOCK_EVIDENCE_PUBLISHED"],
+            "properties": {
+              "SILENT_DATA_LOSS": { "type": "integer", "minimum": 0 },
+              "CROSS_ENVIRONMENT_MISOPERATION": { "type": "integer", "minimum": 0 },
+              "MOCK_EVIDENCE_PUBLISHED": { "type": "integer", "minimum": 0 }
+            }
+          }
+        }
+      }
+    }
+  }
+}

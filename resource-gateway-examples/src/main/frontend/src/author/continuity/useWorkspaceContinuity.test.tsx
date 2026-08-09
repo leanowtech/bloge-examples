@@ -5,6 +5,7 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
 import type { RecoveryCoordinate, WorkspaceRecoveryStore } from './workspaceContinuity';
 import { useWorkspaceContinuity } from './useWorkspaceContinuity';
+import { prepareHostDisposal } from '../../host/hostLifecycle';
 
 describe('useWorkspaceContinuity', () => {
   let root: Root | null = null;
@@ -36,6 +37,22 @@ describe('useWorkspaceContinuity', () => {
     };
     expect(envelope.payload).toEqual({ draftId: 'draft-a', revision: 1 });
     expect(host.querySelector('[data-lifecycle]')?.getAttribute('data-lifecycle')).toBe('SAVED');
+  });
+
+  it('joins the host disposal barrier with an exact latest-payload recovery flush', async () => {
+    const store = new MemoryRecoveryStore();
+    await render({ draftId: 'draft-a', revision: 1 }, false, 0, store);
+    await waitFor(() => store.serialized.includes('"draftId":"draft-a"'));
+
+    await render({ draftId: 'draft-a', revision: 2 }, false, 0, store);
+    store.serialized = '';
+    let preparation: Awaited<ReturnType<typeof prepareHostDisposal>> | undefined;
+    await act(async () => {
+      preparation = await prepareHostDisposal(window);
+    });
+
+    expect(preparation).toEqual({ ready: true, handlerCount: 1, failureCount: 0, timedOut: false });
+    expect(store.serialized).toContain('"revision":2');
   });
 
   async function render(

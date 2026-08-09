@@ -130,7 +130,7 @@ build 全部通过。服务端 `clean verify` 共执行 `5,898` 条测试，`0` 
 | 破坏性 mutation 可预见 | 已实现 | 删除影响投影 + 中英文真实浏览器浮层 | 组织级 production 审批策略在 S2 |
 | 高频编辑可逆 | 已实现 | 20 类 mutation + toolbar/keyboard Undo/Redo | 多人协同分支历史不在当前单人 journal 范围 |
 | 验证资产原子恢复 | 已实现 | exact GraphDraft 与 fixture/test integration test | 服务端审计 receipt 在协议产品化阶段 |
-| 历史可恢复且有界 | 已实现 | 双预算 + untrusted restore 校验 | 大型客户图的真实内存分布待 S5 采样 |
+| 历史可恢复且有界 | 已实现 | 双预算 + untrusted restore 校验 | 大型客户图的真实内存分布待 E3/E4 客户环境采样 |
 | 任务坐标与命令权威 | 未实现 | 顶栏仍缺 tenant/env/role/scope | S2 首要工作 |
 
 S1 关闭了 Round 3 的第二个原始 P0。基于 E1 自动化与 E2 桌面浏览器证据，工业任务成熟度从 S0 的

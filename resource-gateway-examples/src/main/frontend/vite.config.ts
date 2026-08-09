@@ -9,6 +9,7 @@ export default defineConfig({
   build: {
     outDir: 'dist',
     emptyOutDir: true,
+    manifest: true,
     rollupOptions: {
       output: {
         manualChunks(id) {
@@ -20,6 +21,12 @@ export default defineConfig({
               || id.includes('/node_modules/react-dom/')
               || id.includes('/node_modules/scheduler/')) {
             return 'react-runtime';
+          }
+          if (id.endsWith('/src/draftModel.ts')
+              || id.endsWith('/src/canvasExamples.ts')
+              || id.endsWith('/src/author/canvas/canvasSemantics.ts')
+              || id.endsWith('/src/author/contract/effectiveContractProjection.ts')) {
+            return 'author-domain';
           }
           return undefined;
         },

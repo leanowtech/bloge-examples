@@ -192,6 +192,20 @@ blocker for the selected asset. The responsive contract, viewport measurements, 
 verification record are in
 [`docs/resource-gateway-ux-round3-s4-responsive-projection-implementation.md`](../docs/resource-gateway-ux-round3-s4-responsive-projection-implementation.md).
 
+Top-level workspaces are route-lazy and are prefetched only after pointer or keyboard navigation
+intent. The production build enforces a `180 KiB` application-shell budget and a `350 KiB` maximum
+for every application chunk, plus a `350 KiB` gzip budget for each route's complete static JS/CSS
+startup closure. The current shell is `147.89 KiB`, the largest Author interaction chunk is
+`307.77 KiB`, and the complete Author startup closure is `320.40 KiB` gzip. In a VS Code WebView,
+a versioned bridge replaces fetch and browser recovery
+with correlated host requests and a `HOST_ENCRYPTED` store. The extension host requests disposal,
+waits for every authoring surface to flush, and destroys the panel only after a ready receipt.
+Implementation details and the honest E2/E3 boundary are documented in
+[`docs/resource-gateway-ux-round3-s5-performance-host-evidence-implementation.md`](../docs/resource-gateway-ux-round3-s5-performance-host-evidence-implementation.md).
+The fixed-task study, evidence schema, empty template, and evaluator for twelve target users plus two
+teams over two release cycles are in
+[`docs/resource-gateway-ux-round3-e3-e4-field-study-runbook.md`](../docs/resource-gateway-ux-round3-e3-e4-field-study-runbook.md).
+
 For the shortest trustworthy Author demo, load **Loan policy fallback** from the start dialog. Its
 card previews Graph/Contract size, three runnable `GOLDEN`/`NEGATIVE`/`BOUNDARY` cases, mocked
 operators, and exploratory proof strength before loading. Open **Scenarios**, select rows and choose

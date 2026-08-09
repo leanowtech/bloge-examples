@@ -273,6 +273,26 @@ Author v2 的草稿身份旁会直接显示工作区生命周期：
 不变量和测试方式见
 [S0 工作区连续性实现说明](resource-gateway-ux-round3-s0-workspace-continuity-implementation.md)。
 
+VS Code WebView 检测到 `acquireVsCodeApi` 后会自动切换到版本化宿主桥接：API 请求与加密 recovery 通过
+`requestId` 关联，extension host 关闭面板前先发送 `bloge.vscodeHostWillDispose.v1`。WebView 会等待
+当前工作区完成 recovery flush，再返回 `bloge.vscodeHostDisposalReceipt.v1`；只有 `ready=true` 时宿主
+才应销毁。浏览器页面不会加载这段桥接代码，继续使用 fetch 和当前标签页 session recovery。
+
+四个顶层工作面也已经改为按路由加载。访问 Author 不再同步加载 Library、Rehearsal 和 Showcase；只有
+把鼠标移到或用键盘聚焦导航项时才预取目标工作面。production build 会检查同步壳不超过 `180 KiB`、
+每个应用 chunk 不超过 `350 KiB`，并保证任一路由的壳、静态 JS/CSS 依赖 gzip 闭包不超过 `350 KiB`。
+当前最重的 Author 闭包为 `320.40 KiB`。实现、协议和当前证据边界见
+[S5 性能、宿主与现场证据实现说明](resource-gateway-ux-round3-s5-performance-host-evidence-implementation.md)。
+
+要验证“真实组织已经达到 95 分”，使用
+[E3/E4 现场验证手册](resource-gateway-ux-round3-e3-e4-field-study-runbook.md)收集匿名任务证据，再运行：
+
+```bash
+node scripts/evaluate-resource-gateway-ux-evidence.mjs /path/to/evidence.json
+```
+
+模板没有真实数据时会返回 `NOT READY`，不会把工程测试自动升级成用户与组织证据。
+
 #### 删除影响预览与通用 Undo / Redo
 
 Author v2 会把 Graph、binding、fixture、算子测试和契约编辑统一记录为可逆事务。选择画布节点后按

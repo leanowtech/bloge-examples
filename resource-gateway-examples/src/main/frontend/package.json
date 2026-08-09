@@ -7,8 +7,10 @@
   "scripts": {
     "dev": "vite",
     "check:i18n": "vitest run src/i18n/messageCatalog.test.ts src/i18n/localeSurfaceInventory.test.ts src/author/shell/AuthorCommandBar.test.tsx src/author/review/AuthorDiagnosticsDrawer.test.tsx src/contract-scenario/evidenceModel.test.ts",
-    "check:ux": "vitest run src/ux/density.test.ts src/ux/visualSystem.test.ts src/App.test.tsx",
-    "build": "npm run check:i18n && npm run check:ux && tsc --noEmit && vite build",
+    "check:ux": "vitest run src/ux/density.test.ts src/ux/visualSystem.test.ts src/ux/routeChunkContract.test.ts src/App.test.tsx",
+    "check:host": "vitest run src/host/vscodeWebviewBridge.test.ts src/author/continuity/useWorkspaceContinuity.test.tsx",
+    "check:bundle": "node scripts/check-route-chunk-budget.mjs",
+    "build": "npm run check:i18n && npm run check:ux && npm run check:host && tsc --noEmit && vite build && npm run check:bundle",
     "test": "vitest run",
     "preview": "vite preview"
   },

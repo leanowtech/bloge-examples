@@ -1,6 +1,6 @@
 # Resource Gateway UX Round 3 资深体验审阅与演进计划
 
-> 状态：In Progress / S0-S4 Implemented
+> 状态：S0-S5 E2 Engineering Implemented / E3-E4 Field Evidence Pending
 >
 > 审阅日期：2026-08-09
 >
@@ -10,9 +10,9 @@
 >
 > 当前视觉完成度：`95 / 100`
 >
-> 当前工业任务成熟度：`95 / 100`（S4 E2 实施复评；缺少 E3/E4 时对外成熟度仍封顶 `89`）
+> 当前工业任务成熟度：`97 / 100`（S5 E2 实施复评；缺少 E3/E4 时对外成熟度仍封顶 `89`）
 >
-> E2 缺陷结论：`0 P0 / 0 P1 / 1 P2`；E3/E4 证据缺口不伪装成已验证能力
+> E2 缺陷结论：`0 P0 / 0 P1 / 0 P2`；E3/E4 证据缺口不伪装成已验证能力
 >
 > 目标：先将 P0 清零，再恢复 `>=95 / 100` 的 E2 工程体验；没有 E3/E4 证据前，对外成熟度仍封顶 `89`
 
@@ -28,6 +28,9 @@
 - [S2 企业任务坐标实现说明](resource-gateway-ux-round3-s2-enterprise-task-coordinate-implementation.md)
 - [S3 证明语义与本地化实现说明](resource-gateway-ux-round3-s3-proof-semantics-localization-implementation.md)
 - [S4 响应式任务投影实现说明](resource-gateway-ux-round3-s4-responsive-projection-implementation.md)
+- [S5 性能、宿主与现场证据实现说明](resource-gateway-ux-round3-s5-performance-host-evidence-implementation.md)
+- [E3/E4 现场验证手册](resource-gateway-ux-round3-e3-e4-field-study-runbook.md)
+- [Round 3 最终资深体验复评](resource-gateway-ux-round3-final-expert-reassessment.md)
 
 实施进度：
 
@@ -38,11 +41,12 @@
 | S2 企业任务坐标 | 已实现 | 统一 TaskCoordinate、command authority、production safeguard、单一 primary Run 与 return coordinate |
 | S3 证明语义与 i18n | 已实现 | 类型化产品消息、deep-surface inventory、四维 proof authority、raw detail 隔离与双语状态连续性已闭合 |
 | S4 响应式任务投影 | 已实现 | 390/820 结果摘要、断点状态连续、Semantic Zoom、根因聚合与五档真实浏览器矩阵闭合 |
-| S5 性能与宿主门禁 | 待实施 | initial route bundle 与 host disposal 仍未达门禁 |
+| S5 性能与宿主门禁 | E2 已实现 | 同步主包 867.23 -> 151.44 kB；Author 启动闭包 320.40 KiB gzip；WebView disposal receipt 与现场证据评分器已落地，真实 E3/E4 待执行 |
 
 ## 1. 最强结论
 
-上一轮的 `97 / 100` 不能继续成立。
+以下是 Round 3 立项时推翻上一轮分数的判断；S0-S5 实施后的当前复评见 4.1 节。立项当时，上一轮的
+`97 / 100` 不能继续成立。
 
 问题不是新版本突然退化，而是上一轮评分把“页面能显示、任务能走通、自动化测试全绿”过度等同于
 “工业级作者工具可安全使用”。最新真实浏览器走查证明：用户载入一张 5 节点、12 连线、包含契约、
@@ -286,14 +290,14 @@ Round 2 已记录主 bundle `781.29KB` minified / `222.23KB` gzip。Library、Re
 `88 / 100` 的视觉完成度仍然成立：颜色、对齐、边框、控件稳定性和桌面 Matrix 都已达到成熟原型水平。
 但工业任务成熟度必须让“资产不会丢、编辑可恢复、上下文明确、证明不误导”拥有更高权重。
 
-### 4.1 S4 后实施复评
+### 4.1 S5 E2 实施复评
 
-上表是 Round 3 立项时的真实基线，不应被后来的实现结果覆盖。S0-S4 完成后，E2 工程范围内重新评分如下：
+上表是 Round 3 立项时的真实基线，不应被后来的实现结果覆盖。S0-S5 工程实现完成后，E2 范围内重新评分如下：
 
 | 维度 | 权重 | S4 后得分 | 证据或剩余扣分 |
 |---|---:|---:|---|
 | 任务完成与心智模型 | 15 | 14 | 单一 primary command、任务坐标与移动结果投影已闭合；真实角色学习成本待 E3 |
-| 资产安全与会话连续性 | 20 | 19 | recovery/save/冲突防覆盖已实现；真实 VS Code dispose/recover 待 S5 |
+| 资产安全与会话连续性 | 20 | 19 | recovery/save/冲突防覆盖已实现；真实 VS Code dispose/recover 与 P75 时延待 E3 验证 |
 | 可逆编辑与效率 | 12 | 12 | 20 类 mutation、影响预览和统一 Undo/Redo 已通过自动化与浏览器验收 |
 | 测试与证据信任 | 15 | 15 | behavior/proof/freshness/governance 正交，raw protocol 默认隔离 |
 | 企业上下文与控制 | 10 | 10 | TaskCoordinate、role、environment、scope 与 production safeguard 已落地 |
@@ -301,10 +305,10 @@ Round 2 已记录主 bundle `781.29KB` minified / `222.23KB` gzip。Library、Re
 | 本地化与语义所有权 | 6 | 6 | typed message、dynamic inventory、pseudo-locale 与双语状态连续 |
 | 视觉层级与密度 | 6 | 5 | semantic token 与 chrome budget 已建立；仍需 E3 验证长时高密度使用疲劳 |
 | 无障碍与键盘安全 | 3 | 3 | focus restore、dialog trap、keyboard history 与危险键边界已覆盖 |
-| 性能与宿主适配 | 3 | 1 | initial JS `867.23 kB`，VS Code cold/warm start 与宿主恢复尚未验收 |
-| **合计** | **100** | **95** | **E2 工程完成度达到 95；外部成熟度仍受 E3/E4 上限约束** |
+| 性能与宿主适配 | 3 | 3 | 同步壳 151.44 kB、最大应用块 315.15 kB；WebView disposal 协议已测试，真实宿主 P75 待 E3 |
+| **合计** | **100** | **97** | **E2 工程完成度达到 97；外部成熟度仍受 E3/E4 上限约束** |
 
-这次复评明确区分三件事：`95` 是 production build、自动化和真实 Chromium 支持的工程体验分；`89` 是
+这次复评明确区分三件事：`97` 是 production build、自动化和真实 Chromium 支持的工程体验分；`89` 是
 缺少真实角色和连续组织运行时可对外宣称的上限；S5 的 bundle/WebView/E3/E4 不是“再美化一点”，而是
 将工程正确性升级为组织可用性的必要证据。
 
@@ -593,6 +597,15 @@ interface ProofPresentation {
 
 目标：把工程正确性转为真实组织环境中的可用性证据。
 
+> 实施复评：E2 工程部分已完成，E3/E4 等待真实组织执行。App 四个重工作面改为 route-level lazy，
+> 仅在 pointer/focus 导航意图后预取；同步主包从 `867.23 kB` 降至 `151.44 kB`，Author 交互块
+> `315.15 kB`，所有应用块低于 `350 KiB` 且 production build 会执行硬门禁。VS Code WebView 增加
+> 版本化 fetch/recovery bridge 与可等待的 disposal receipt，authoring surface 会在宿主销毁前加入
+> recovery barrier。`resourceGateway.uxEvidence.v1`、固定任务手册和自动评分器已经落地，空模板会明确
+> 返回 `NOT READY`。真实 12 人研究、cold start P75 和两团队两周期不能由代码替代，仍未取得。
+> 详见 [S5 实现说明](resource-gateway-ux-round3-s5-performance-host-evidence-implementation.md)与
+> [E3/E4 现场验证手册](resource-gateway-ux-round3-e3-e4-field-study-runbook.md)。
+
 实施切片：
 
 1. route-level lazy import + named chunk budget；
@@ -604,7 +617,7 @@ interface ProofPresentation {
 
 退出证据：
 
-- 目标路由初始 JS `<=350KB` minified；
+- 单个应用 chunk `<=350KiB` minified，完整路由启动 JS/CSS 闭包 `<=350KiB` gzip；
 - WebView cold start P75 `<=2s`；
 - 核心任务成功率 `>=95%`；
 - P0/P1 体验缺陷为 0；
@@ -716,18 +729,18 @@ ux.route-chunk-budget
 | WP-12 RouteChunkBudget | lazy route、manifest gate | 无 | 是 |
 | WP-13 E3/E4 Evidence Program | 固定任务、组织试点、incident feedback | WP-02 至 WP-11 | 否 |
 
-推荐 tracer-bullet 顺序：`WP-01 -> WP-02 -> WP-03 -> WP-04 -> WP-05`。这条链完成前，不应宣称
-“工业级作者体验已达到 95 分”。
+推荐 tracer-bullet 顺序 `WP-01 -> WP-02 -> WP-03 -> WP-04 -> WP-05` 已在 S0/S1 完成；WP-06 至
+WP-12 也已进入 E2 门禁。当前只剩 WP-13 必须由真实参与者和组织执行，不能由研发自行勾选。
 
 ## 11. 验收门禁
 
 ### 11.1 P0 Gate
 
 - [x] 所有 Author / Library / Scenario authoring surface 都有正式 lifecycle state；
-- [ ] route、reload、close、host dispose 无 silent data loss（浏览器 E2 已通过；真实 VS Code host dispose 待 S5）；
+- [ ] route、reload、close、host dispose 无 silent data loss（浏览器与 WebView 协议 E2 已通过；真实 extension 接线待 E3）；
 - [x] destructive mutation 可预见、可撤销、可审计；
 - [x] save conflict 不覆盖任一用户版本；
-- [ ] 真实浏览器与 VS Code 宿主故障注入全绿（Chromium 已通过，WebView 故障矩阵待 S5）。
+- [ ] 真实浏览器与 VS Code 宿主故障注入全绿（Chromium、bridge false/reject/timeout 已通过；真实 WebView 故障矩阵待 E3）。
 
 ### 11.2 P1 Gate
 
@@ -743,7 +756,7 @@ ux.route-chunk-budget
 
 - [ ] P0/P1 = 0；
 - [x] E2 全量自动化、production build、真实浏览器矩阵全绿；
-- [ ] route initial JS `<=350KB`；
+- [x] application chunk `<=350KiB`、同步 shell `<=180KiB`、路由启动闭包 `<=350KiB` gzip；
 - [ ] 关键任务成功率 `>=95%`；
 - [ ] 12 名目标角色完成 E3 固定任务；
 - [ ] 两个团队连续两个周期完成 E4；
@@ -775,10 +788,10 @@ ux.route-chunk-budget
 | 负熵能力 | 10/10 | incident -> regression、typed catalog、policy gate 与 recovery receipt 闭环 |
 | **合计** | **97/100** | **达到可直接拆解开工的审阅标准** |
 
-当前仍有三个必须由实施阶段确认的开放参数：
+当前仍有三个必须由现场阶段确认的开放参数：
 
-1. host-backed recovery store 在 VS Code 与浏览器两种宿主中的具体实现；
+1. 客户 VS Code extension host 对版本化 bridge、加密 recovery store 和 disposal receipt 的实际接线；
 2. history 的 100 steps / 20MB 默认预算是否满足大型图；
 3. production 环境 destructive confirmation 的组织策略是否需要双人审批。
 
-这些参数不影响 S0 开工，也不应成为继续容忍 silent data loss 的理由。
+这些参数已有 fail-closed 工程边界，不影响 E3/E4 开始执行，也不应被当作跳过现场验证的理由。

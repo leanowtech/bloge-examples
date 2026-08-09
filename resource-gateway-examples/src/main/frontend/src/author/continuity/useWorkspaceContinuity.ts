@@ -9,6 +9,7 @@ import {
 
 import { canonicalJson, sha256Fingerprint } from '../../contract-scenario/fingerprint';
 import { useWorkspaceNavigationGuard } from './SafeWorkspaceNavigation';
+import { HOST_WILL_DISPOSE_EVENT, joinHostDisposal } from '../../host/hostLifecycle';
 import {
   createRecoveryEnvelope,
   initialContinuityState,
@@ -274,11 +275,14 @@ export function useWorkspaceContinuity<TPayload>({
       if (document.visibilityState === 'hidden') void flushRecovery();
     };
     const flushOnPageHide = () => void flushRecovery();
+    const flushOnHostDispose = (event: Event) => joinHostDisposal(event, flushRecovery());
     document.addEventListener('visibilitychange', flushWhenHidden);
     window.addEventListener('pagehide', flushOnPageHide);
+    window.addEventListener(HOST_WILL_DISPOSE_EVENT, flushOnHostDispose);
     return () => {
       document.removeEventListener('visibilitychange', flushWhenHidden);
       window.removeEventListener('pagehide', flushOnPageHide);
+      window.removeEventListener(HOST_WILL_DISPOSE_EVENT, flushOnHostDispose);
       clearRecoveryTimers();
       if (autosaveTimerRef.current !== null) window.clearTimeout(autosaveTimerRef.current);
     };

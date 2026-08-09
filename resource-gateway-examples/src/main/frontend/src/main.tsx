@@ -8,8 +8,17 @@ if (!container) {
   throw new Error('Root container #root not found');
 }
 
-createRoot(container).render(
+const render = () => createRoot(container).render(
   <StrictMode>
     <App />
   </StrictMode>,
 );
+
+if (typeof globalThis.acquireVsCodeApi === 'function') {
+  void import('./host/vscodeWebviewBridge').then(({ installVsCodeWebviewBridge }) => {
+    installVsCodeWebviewBridge();
+    render();
+  });
+} else {
+  render();
+}

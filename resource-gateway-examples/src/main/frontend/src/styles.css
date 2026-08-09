@@ -45,6 +45,17 @@ body {
   height: 100vh;
 }
 
+.workspace-loading {
+  display: flex;
+  flex: 1 1 auto;
+  align-items: center;
+  justify-content: center;
+  gap: var(--rg-space-2);
+  min-height: 240px;
+  color: var(--muted);
+  font-size: var(--rg-font-body);
+}
+
 .topbar {
   display: flex;
   align-items: center;

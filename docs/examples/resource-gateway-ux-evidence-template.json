@@ -1,0 +1,27 @@
+{
+  "schemaVersion": "resourceGateway.uxEvidence.v1",
+  "studyId": "replace-with-study-id",
+  "sessions": [
+    {
+      "sessionId": "session-001",
+      "participantRef": "participant-001",
+      "role": "AUTHOR",
+      "host": "VSCODE_WEBVIEW",
+      "coldStartMs": 0,
+      "warmStartMs": 0,
+      "tasks": [
+        {
+          "taskId": "RECOVER_EDIT",
+          "completed": false,
+          "durationMs": 0,
+          "contextCorrect": false,
+          "proofClassificationCorrect": null,
+          "scopeCorrectionCount": 0,
+          "abandoned": false,
+          "findings": []
+        }
+      ]
+    }
+  ],
+  "releaseCycles": []
+}

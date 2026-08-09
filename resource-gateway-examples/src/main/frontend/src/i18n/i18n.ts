@@ -26,6 +26,7 @@ const ZH_CN_MESSAGES: Record<string, string> = {
   'Showcase': '示例',
   'Run examples': '运行示例',
   'Workspace views': '工作区视图',
+  'Loading workspace...': '正在加载工作区...',
   'Workspace safety': '工作区安全',
   'Save workspace': '保存工作区',
   'Redo': '重做',
