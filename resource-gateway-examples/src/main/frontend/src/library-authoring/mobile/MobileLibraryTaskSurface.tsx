@@ -11,7 +11,11 @@ import type {
 import type { LibraryAssetSelection } from '../model';
 import { typeFields } from '../model';
 import { presentOperatorArchetype } from '../archetypePresentation';
-import { presentLibraryReadiness, presentRuntimeParity } from '../readinessPresentation';
+import {
+  presentLibraryReadiness,
+  presentRuntimeParity,
+  selectedAssetRootBlocker,
+} from '../readinessPresentation';
 
 interface MobileLibraryTaskSurfaceProps {
   document: VisualLibraryAuthoringDocument;
@@ -47,6 +51,7 @@ export default function MobileLibraryTaskSurface({
   const { t, d, m } = useI18n();
   const selected = selectedAsset(document, selection);
   const readiness = presentLibraryReadiness(preview);
+  const rootBlocker = selectedAssetRootBlocker(preview, selection.kind, selection.key);
   const testable = selection.kind === 'operator' || selection.kind === 'function';
   const runtime = preview?.runtimeParity?.find((entry) => (
     entry.assetRef === selection.key
@@ -132,6 +137,25 @@ export default function MobileLibraryTaskSurface({
               <span>{t('Contract status')}</span>
               <strong>{m(readiness.summary.messageId, readiness.summary.params)}</strong>
             </div>
+            {rootBlocker && (
+              <section
+                className="mobile-library-root-blocker"
+                data-testid="mobile-library-root-blocker"
+                data-tone={rootBlocker.tone}
+                data-source={rootBlocker.source.toLowerCase()}
+              >
+                <span>{t('Primary blocker')}</span>
+                <strong>{m(rootBlocker.title.messageId, rootBlocker.title.params)}</strong>
+                <p>{m(rootBlocker.detail.messageId, rootBlocker.detail.params)}</p>
+                {(rootBlocker.rawCode || rootBlocker.rawDetail) && (
+                  <details>
+                    <summary>{m('library.runtime.technicalDetails')}</summary>
+                    {rootBlocker.rawCode && <code>{rootBlocker.rawCode}</code>}
+                    {rootBlocker.rawDetail && <p lang="en">{rootBlocker.rawDetail}</p>}
+                  </details>
+                )}
+              </section>
+            )}
             <dl>
               <div><dt>{t('Diagnostics')}</dt><dd>{diagnostics.length}</dd></div>
               <div>

@@ -5,6 +5,7 @@ import type {
 import { useI18n } from '../i18n/I18nProvider';
 import {
   groupAuthoringDiagnostics,
+  groupRuntimeParity,
   presentLibraryReadiness,
   presentRuntimeParity,
 } from './readinessPresentation';
@@ -41,6 +42,7 @@ export default function CanonicalContractPreview({
     0,
   );
   const runtimeParity = preview?.runtimeParity ?? [];
+  const groupedRuntimeParity = groupRuntimeParity(runtimeParity);
   const readiness = presentLibraryReadiness(preview);
   const boundRuntimeCount = readiness.boundRuntimeCount;
   const runtimeLabel = preview?.readiness.productionReady
@@ -88,19 +90,24 @@ export default function CanonicalContractPreview({
         <section className="library-preview-runtime" data-testid="library-preview-runtime">
           <header>
             <h3>{t('Runtime parity')}</h3>
-            <span>{t('{bound} bound / {total} total', { bound: boundRuntimeCount, total: runtimeParity.length })}</span>
+            <span>{t('{count} root causes across {total} assets', {
+              count: groupedRuntimeParity.length,
+              total: runtimeParity.length,
+            })}</span>
           </header>
           <ol>
-            {runtimeParity.map((parity, index) => {
+            {groupedRuntimeParity.map((group) => {
+              const parity = group.items[0];
               const presentation = presentRuntimeParity(parity);
               return (
                 <li
-                  key={`${parity.assetKind}:${parity.assetRef}:${parity.runtimeProfile}:${index}`}
+                  key={`${group.state}:${group.reasonCode}`}
                   data-state={parity.state}
+                  data-root-reason={group.reasonCode}
                 >
                   <div>
-                    <span>{parity.assetKind}</span>
-                    <strong>{parity.assetRef}</strong>
+                    <span>{t('Root cause')}</span>
+                    <strong>{t('{count} affected assets', { count: group.occurrences })}</strong>
                   </div>
                   <b>{m(presentation.state.messageId, presentation.state.params)}</b>
                   <small>{m(presentation.detail.messageId, presentation.detail.params)}</small>
@@ -109,6 +116,13 @@ export default function CanonicalContractPreview({
                       <summary>{m('library.runtime.technicalDetails')}</summary>
                       {presentation.rawCode && <code>{presentation.rawCode}</code>}
                       {presentation.rawDetail && <p lang="en">{presentation.rawDetail}</p>}
+                      <ul>
+                        {group.items.map((item) => (
+                          <li key={`${item.assetKind}:${item.assetRef}:${item.runtimeProfile}`}>
+                            <code>{item.assetKind}:{item.assetRef}</code>
+                          </li>
+                        ))}
+                      </ul>
                     </details>
                   )}
                 </li>

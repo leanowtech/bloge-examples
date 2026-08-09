@@ -7,6 +7,7 @@ import {
   assessCanvasPerceptualQuality,
   deriveCanvasTopologyLanes,
   projectCanvasSemantics,
+  semanticZoomContract,
 } from './canvasSemantics';
 
 const nodes: CanvasNode[] = [
@@ -220,6 +221,37 @@ describe('canvas perceptual quality and adaptive chrome', () => {
       collapseInspector: false,
       reason: 'READABILITY_FLOOR',
     });
+  });
+
+  it('keeps Focus titles at 12px while Overview remains topology-only', () => {
+    expect(semanticZoomContract('overview')).toMatchObject({
+      minimumZoom: 0.04,
+      minimumEffectiveTitlePx: 0,
+      nodeBody: 'HIDDEN',
+      edgeLabels: 'HIDDEN',
+    });
+    expect(semanticZoomContract('focus')).toMatchObject({
+      minimumZoom: 0.8,
+      minimumEffectiveTitlePx: 12,
+      nodeBody: 'SELECTED_ONLY',
+      edgeLabels: 'BUDGETED',
+    });
+    const largeFocus = Array.from({ length: 20 }, (_, index) => ({
+      id: `n${index}`,
+      operatorRef: `operator:${index}`,
+      position: { x: index * 300, y: 0 },
+    }));
+    expect(assessCanvasPerceptualQuality(largeFocus, {
+      mode: 'focus',
+      viewportWidth: 820,
+      viewportHeight: 620,
+      zoom: 0.79,
+      visibleEdgeLabels: 0,
+      visibleFieldLabels: 0,
+      nodeOverlaps: 0,
+      nodeLabelCollisions: 0,
+      labelLabelCollisions: 0,
+    }).reasons).toContainEqual({ code: 'TITLE_SIZE_FLOOR' });
   });
 
   it('gives formal task surfaces the full workspace unless context was explicitly pinned', () => {

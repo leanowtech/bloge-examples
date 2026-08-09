@@ -3333,7 +3333,7 @@ button.primary:disabled {
 
 .scenario-matrix-detail {
   display: grid;
-  grid-template-columns: minmax(200px, 1fr) minmax(180px, .8fr) minmax(320px, 1.4fr) minmax(180px, .8fr);
+  grid-template-columns: minmax(320px, 1.4fr) minmax(200px, 1fr) minmax(180px, .8fr) minmax(180px, .8fr);
   border-top: 2px solid #91a7c2;
   border-bottom: 1px solid #bac6d5;
   background: #f8fafc;

@@ -1,6 +1,6 @@
 # Resource Gateway UX Round 3 资深体验审阅与演进计划
 
-> 状态：In Progress / S0-S3 Implemented
+> 状态：In Progress / S0-S4 Implemented
 >
 > 审阅日期：2026-08-09
 >
@@ -8,11 +8,11 @@
 >
 > 证据等级：E2，最新 production JAR、真实 Chromium、代码路径与自动化覆盖交叉验证
 >
-> 当前视觉完成度：`93 / 100`
+> 当前视觉完成度：`95 / 100`
 >
-> 当前工业任务成熟度：`93 / 100`（S3 E2 实施复评；缺少 E3/E4 时对外成熟度仍封顶 `89`）
+> 当前工业任务成熟度：`95 / 100`（S4 E2 实施复评；缺少 E3/E4 时对外成熟度仍封顶 `89`）
 >
-> 缺陷结论：`0 P0 / 3 P1 / 2 P2`
+> E2 缺陷结论：`0 P0 / 0 P1 / 1 P2`；E3/E4 证据缺口不伪装成已验证能力
 >
 > 目标：先将 P0 清零，再恢复 `>=95 / 100` 的 E2 工程体验；没有 E3/E4 证据前，对外成熟度仍封顶 `89`
 
@@ -27,6 +27,7 @@
 - [S1 可逆编辑与删除影响控制实现说明](resource-gateway-ux-round3-s1-reversible-mutations-implementation.md)
 - [S2 企业任务坐标实现说明](resource-gateway-ux-round3-s2-enterprise-task-coordinate-implementation.md)
 - [S3 证明语义与本地化实现说明](resource-gateway-ux-round3-s3-proof-semantics-localization-implementation.md)
+- [S4 响应式任务投影实现说明](resource-gateway-ux-round3-s4-responsive-projection-implementation.md)
 
 实施进度：
 
@@ -36,7 +37,7 @@
 | S1 可逆编辑 | 已实现 | 20 类 mutation、删除影响预览、原子 Undo/Redo 关闭第二个 P0 |
 | S2 企业任务坐标 | 已实现 | 统一 TaskCoordinate、command authority、production safeguard、单一 primary Run 与 return coordinate |
 | S3 证明语义与 i18n | 已实现 | 类型化产品消息、deep-surface inventory、四维 proof authority、raw detail 隔离与双语状态连续性已闭合 |
-| S4 响应式任务投影 | 待实施 | 390px Matrix 与 chrome 预算仍需治理 |
+| S4 响应式任务投影 | 已实现 | 390/820 结果摘要、断点状态连续、Semantic Zoom、根因聚合与五档真实浏览器矩阵闭合 |
 | S5 性能与宿主门禁 | 待实施 | initial route bundle 与 host disposal 仍未达门禁 |
 
 ## 1. 最强结论
@@ -284,6 +285,28 @@ Round 2 已记录主 bundle `781.29KB` minified / `222.23KB` gzip。Library、Re
 
 `88 / 100` 的视觉完成度仍然成立：颜色、对齐、边框、控件稳定性和桌面 Matrix 都已达到成熟原型水平。
 但工业任务成熟度必须让“资产不会丢、编辑可恢复、上下文明确、证明不误导”拥有更高权重。
+
+### 4.1 S4 后实施复评
+
+上表是 Round 3 立项时的真实基线，不应被后来的实现结果覆盖。S0-S4 完成后，E2 工程范围内重新评分如下：
+
+| 维度 | 权重 | S4 后得分 | 证据或剩余扣分 |
+|---|---:|---:|---|
+| 任务完成与心智模型 | 15 | 14 | 单一 primary command、任务坐标与移动结果投影已闭合；真实角色学习成本待 E3 |
+| 资产安全与会话连续性 | 20 | 19 | recovery/save/冲突防覆盖已实现；真实 VS Code dispose/recover 待 S5 |
+| 可逆编辑与效率 | 12 | 12 | 20 类 mutation、影响预览和统一 Undo/Redo 已通过自动化与浏览器验收 |
+| 测试与证据信任 | 15 | 15 | behavior/proof/freshness/governance 正交，raw protocol 默认隔离 |
+| 企业上下文与控制 | 10 | 10 | TaskCoordinate、role、environment、scope 与 production safeguard 已落地 |
+| 响应式任务完成 | 10 | 10 | 390/820 compact projection、1024+ canonical table、断点状态连续 |
+| 本地化与语义所有权 | 6 | 6 | typed message、dynamic inventory、pseudo-locale 与双语状态连续 |
+| 视觉层级与密度 | 6 | 5 | semantic token 与 chrome budget 已建立；仍需 E3 验证长时高密度使用疲劳 |
+| 无障碍与键盘安全 | 3 | 3 | focus restore、dialog trap、keyboard history 与危险键边界已覆盖 |
+| 性能与宿主适配 | 3 | 1 | initial JS `867.23 kB`，VS Code cold/warm start 与宿主恢复尚未验收 |
+| **合计** | **100** | **95** | **E2 工程完成度达到 95；外部成熟度仍受 E3/E4 上限约束** |
+
+这次复评明确区分三件事：`95` 是 production build、自动化和真实 Chromium 支持的工程体验分；`89` 是
+缺少真实角色和连续组织运行时可对外宣称的上限；S5 的 bundle/WebView/E3/E4 不是“再美化一点”，而是
+将工程正确性升级为组织可用性的必要证据。
 
 ## 5. 目标体验控制面
 
@@ -539,6 +562,15 @@ interface ProofPresentation {
 
 目标：移动端能完成结果理解，不只是能够滚动；桌面密度不再依赖全局 12px。
 
+> 实施复评：已完成。`MobileMatrixResultProjection` 在 840px 及以下用三张纵向摘要替代横向表格，
+> 一次点击即进入 diff-first 详情；1024px 恢复 canonical table，选择、展开和焦点跨断点保持。
+> `SemanticZoomContract` 让 Overview 隐藏伪可读正文，Focus/Inspect 标题下限为 12px；Library 将
+> 5 个受影响资产聚合成 3 个根因，移动端当前资产只显示一个最高优先级 blocker。真实 Chromium 已覆盖
+> 390/820/1024/1280/1440，页面级溢出为 0。前端 `94` 个文件、`719` 项测试与 production build
+> 全绿。详细截图、几何测量和操作步骤见
+> [S4 响应式任务投影实现说明](resource-gateway-ux-round3-s4-responsive-projection-implementation.md)。
+> 主 initial chunk `867.23 kB` minified 仍为 S5 阻断项；E3/E4 尚未取得。
+
 实施切片：
 
 1. 落实 `MobileMatrixResultProjection`；
@@ -691,11 +723,11 @@ ux.route-chunk-budget
 
 ### 11.1 P0 Gate
 
-- [ ] 所有 Author / Library / Scenario authoring surface 都有正式 lifecycle state；
-- [ ] route、reload、close、host dispose 无 silent data loss；
-- [ ] destructive mutation 可预见、可撤销、可审计；
-- [ ] save conflict 不覆盖任一用户版本；
-- [ ] 真实浏览器故障注入全绿。
+- [x] 所有 Author / Library / Scenario authoring surface 都有正式 lifecycle state；
+- [ ] route、reload、close、host dispose 无 silent data loss（浏览器 E2 已通过；真实 VS Code host dispose 待 S5）；
+- [x] destructive mutation 可预见、可撤销、可审计；
+- [x] save conflict 不覆盖任一用户版本；
+- [ ] 真实浏览器与 VS Code 宿主故障注入全绿（Chromium 已通过，WebView 故障矩阵待 S5）。
 
 ### 11.2 P1 Gate
 
@@ -703,19 +735,19 @@ ux.route-chunk-budget
 - [x] 一个 task surface 只有一个 primary command；
 - [x] 中文产品面没有产品英文和默认 raw code（E2 inventory + Chromium；E3 识别率仍待验证）；
 - [x] Mock / Runtime / Certifiable 证明权威不会被 UI 模型误判（E2；E3 用户判断仍待验证）；
-- [ ] 390px Matrix 可比较 3 个结果；
-- [ ] 820px 画布 Focus 保持可读；
-- [ ] chrome、readiness 与警告密度达到预算。
+- [x] 390px Matrix 可比较 3 个结果；
+- [x] 820px 画布 Focus 保持可读；
+- [x] chrome、readiness 与警告密度达到预算。
 
 ### 11.3 95 分 Gate
 
 - [ ] P0/P1 = 0；
-- [ ] E2 全量自动化、production build、真实浏览器矩阵全绿；
+- [x] E2 全量自动化、production build、真实浏览器矩阵全绿；
 - [ ] route initial JS `<=350KB`；
 - [ ] 关键任务成功率 `>=95%`；
 - [ ] 12 名目标角色完成 E3 固定任务；
 - [ ] 两个团队连续两个周期完成 E4；
-- [ ] 文档、操作手册、截图与 capability probe 同步。
+- [x] 文档、操作手册、截图与 capability probe 同步。
 
 ## 12. 明确拒绝的低水平方案
 

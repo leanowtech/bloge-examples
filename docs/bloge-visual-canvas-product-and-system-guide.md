@@ -82,6 +82,36 @@ Mock 用例可以显示业务断言通过，但仍明确标为“Mock 模拟 / �
 时展开 **技术详情**。完整设计与验证证据见
 [S3 证明语义与本地化实现说明](resource-gateway-ux-round3-s3-proof-semantics-localization-implementation.md)。
 
+#### 在窄屏和复杂图中怎么读结果
+
+当窗口宽度为 `840px` 或更窄时，测试矩阵不会把桌面表格压成横向滚动条，而是直接展示纵向结果摘要。
+每张摘要同时给出 Case、类型、行为结论、证明、新鲜度和门禁资格；`390px` 结果区域首屏可以比较三个
+用例。点击摘要后，最先出现的是 **预期 / 实际 / 差异**，再往下才是 Given、依赖和技术证明。
+
+![390px 测试矩阵结果摘要](assets/resource-gateway-ux-round3-s4-mobile-matrix-summary-zh.png)
+
+把窗口从 390px 放大到 820px，仍使用紧凑任务视图，但当前选择、展开结果和键盘焦点不会丢失：
+
+![820px 测试矩阵保持任务连续](assets/resource-gateway-ux-round3-s4-matrix-continuity-820-zh.png)
+
+达到 1024px 后恢复完整 canonical table，仍是同一 Case 和同一结果，而不是重新创建一份移动状态：
+
+![1024px 测试矩阵恢复完整表格](assets/resource-gateway-ux-round3-s4-matrix-desktop-1024-zh.png)
+
+复杂图使用三个阅读模式：**Overview** 只看拓扑形状、状态和异常密度，会主动隐藏不可读的节点正文与
+边标签；**Focus** 围绕当前节点保持标题不低于 12px，并展示预算内的相关边；**Inspect** 用于检查当前
+节点、端口和直接依赖。跨断点时系统保留选中对象和阅读意图，不机械继承已经不可读的旧缩放比例。
+
+![Canvas Focus 中的可读节点和边标签](assets/resource-gateway-ux-round3-s4-canvas-focus-zh.png)
+
+Library 的 runtime readiness 也按根因阅读：桌面全库摘要将同一 reason code 的资产聚合，当前资产在
+窄屏只显示一个最高优先级 blocker；具体 reason code 和受影响资产在默认收起的 **技术详情** 中。
+
+![移动 Library 的唯一根 blocker](assets/resource-gateway-ux-round3-s4-library-root-blocker-zh.png)
+
+完整断点合同、浏览器实测和剩余性能门禁见
+[S4 响应式任务投影实现说明](resource-gateway-ux-round3-s4-responsive-projection-implementation.md)。
+
 打开 `/author/` 后先按下面这张图定位页面：
 
 ![Author 工作台总览标注](assets/bloge-author-overview-annotated.svg)
@@ -310,8 +340,10 @@ Contract、Scenarios 或 Evidence 后，这两组重复摘要自动隐藏，让�
 **Build**，再在 **Input / Fixtures / Expected / Run** 四步中一次编辑一步；点击摘要中的
 **Edit input / Edit fixtures / Edit expected** 会直接进入对应步骤。未选步骤不会进入键盘 tab
 顺序；**Run current case** 固定在首屏任务预算内，执行成功后直接进入该 Case 的 Evidence。
-Scenario Matrix 保持 Case 列冻结，并用左右阴影提示还有横向内容。完整设计边界与验收证据见
-[Stage 5 视觉系统与响应式任务布局](resource-gateway-ux-stage5-visual-responsive-system.md)。
+Scenario Matrix 在 840px 及以下改为纵向结果摘要，1024px 及以上使用完整表格；断点切换保持
+Case selection、展开详情和焦点。完整设计边界与验收证据见
+[Stage 5 视觉系统与响应式任务布局](resource-gateway-ux-stage5-visual-responsive-system.md)与
+[S4 响应式任务投影实现说明](resource-gateway-ux-round3-s4-responsive-projection-implementation.md)。
 
 在 390px 打开 **Operator Libraries** 后，完整草稿默认进入 **Review**：使用 **Current asset**
 picker 在 Library、Named Type、Operator 和 Built-in Function 间切换，中央只显示该资产的规模、

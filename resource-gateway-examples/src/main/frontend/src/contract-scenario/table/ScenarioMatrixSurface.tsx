@@ -1,4 +1,4 @@
-import { Fragment, useEffect, useMemo, useState } from 'react';
+import { Fragment, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { ChevronDown, ChevronUp, Ellipsis } from 'lucide-react';
 import { useI18n } from '../../i18n/I18nProvider';
 import type { AuthorCommandAvailability } from '../../author/task/taskStateProjection';
@@ -24,6 +24,7 @@ import {
   type ScenarioTableSelection,
   type ScenarioTableSort,
 } from './scenarioTableModel';
+import { projectMobileMatrixResults } from './mobileMatrixResultProjection';
 
 interface ScenarioMatrixSurfaceProps {
   projection: ScenarioTableProjection;
@@ -88,6 +89,8 @@ export default function ScenarioMatrixSurface({
   const [sort, setSort] = useState<ScenarioTableSort>({ key: 'CANONICAL', direction: 'ASC' });
   const [pageIndex, setPageIndex] = useState(0);
   const [expandedRows, setExpandedRows] = useState<string[]>([]);
+  const previousCompactCommands = useRef(compactCommands);
+  const resultFocusCoordinate = useRef<{ caseId: string; action: string } | null>(null);
 
   useEffect(() => setPageIndex(0), [caseType, facet, query, sort, tone]);
 
@@ -104,6 +107,7 @@ export default function ScenarioMatrixSurface({
   ), [caseType, differentialCounts?.targetChanged, facet, projection, query, sort, tone]);
   const pageStart = Math.min(pageIndex * WINDOW_SIZE, Math.max(0, filteredRows.length - 1));
   const rows = filteredRows.slice(pageStart, pageStart + WINDOW_SIZE);
+  const mobileResults = useMemo(() => projectMobileMatrixResults(rows), [rows]);
   const facetCounts = useMemo(() => scenarioMatrixFacetCounts(
     projection,
     differentialCounts?.targetChanged ?? false,
@@ -170,12 +174,34 @@ export default function ScenarioMatrixSurface({
     </>
   );
 
+  useLayoutEffect(() => {
+    if (previousCompactCommands.current === compactCommands) return;
+    previousCompactCommands.current = compactCommands;
+    const coordinate = resultFocusCoordinate.current;
+    if (!coordinate) return;
+    const caseSelector = `[data-case-coordinate="${cssAttributeValue(coordinate.caseId)}"]`;
+    const actionSelector = `[data-focus-action="${cssAttributeValue(coordinate.action)}"]`;
+    const target = document.querySelector<HTMLElement>(`${caseSelector} ${actionSelector}`)
+      ?? document.querySelector<HTMLElement>(caseSelector);
+    target?.focus();
+  }, [compactCommands]);
+
   return (
     <section
       className="scenario-matrix"
       aria-label={t('Scenario test matrix')}
       data-testid="scenario-matrix"
       data-command-density={compactCommands ? 'compact' : 'full'}
+      data-result-projection={compactCommands ? 'mobile-summary' : 'canonical-table'}
+      onFocusCapture={(event) => {
+        const element = event.target as HTMLElement;
+        const coordinate = element.closest<HTMLElement>('[data-case-coordinate]');
+        if (!coordinate?.dataset.caseCoordinate) return;
+        resultFocusCoordinate.current = {
+          caseId: coordinate.dataset.caseCoordinate,
+          action: element.closest<HTMLElement>('[data-focus-action]')?.dataset.focusAction ?? 'row',
+        };
+      }}
     >
       <header className="scenario-matrix-toolbar">
         <label className="scenario-matrix-search">
@@ -349,6 +375,27 @@ export default function ScenarioMatrixSurface({
         {runError && <div className="scenario-matrix-run-error" role="alert">{runError}</div>}
       </div>
 
+      {compactCommands ? (
+        <MobileMatrixResults
+          projection={mobileResults}
+          selected={selected}
+          expandedRows={expandedRows}
+          disabled={disabled}
+          columns={projection.columns}
+          onSelectionChange={(caseId, checked) => onSelectionChange(toggleScenarioSelection(
+            selection,
+            caseId,
+            checked,
+          ))}
+          onToggle={(caseId) => setExpandedRows((current) => (
+            current.includes(caseId)
+              ? current.filter((expandedCaseId) => expandedCaseId !== caseId)
+              : [...current, caseId]
+          ))}
+          onCellEdit={onCellEdit}
+          onOpenCase={onOpenCase}
+        />
+      ) : (
       <div className="scenario-matrix-scroll" tabIndex={0} aria-label={t('Scrollable Scenario matrix')}>
         <table aria-label={t('Scenario result summary')}>
           <thead>
@@ -382,6 +429,8 @@ export default function ScenarioMatrixSurface({
               <tr
                 data-verdict={row.presentation.tone}
                 data-testid={`scenario-matrix-row-${row.caseId}`}
+                data-case-coordinate={row.caseId}
+                data-focus-action="row"
                 tabIndex={0}
                 onKeyDown={(event) => {
                   if (event.key === 'Enter' && event.target === event.currentTarget) {
@@ -427,6 +476,7 @@ export default function ScenarioMatrixSurface({
                   <button
                     type="button"
                     className="icon-button"
+                    data-focus-action="inspect"
                     aria-expanded={expandedRows.includes(row.caseId)}
                     aria-label={t('Inspect {name}', { name: row.name })}
                     title={t('Inspect')}
@@ -443,6 +493,7 @@ export default function ScenarioMatrixSurface({
                   <button
                     type="button"
                     className="secondary compact"
+                    data-focus-action="open"
                     onClick={() => onOpenCase(row.caseId)}
                     disabled={disabled}
                   >
@@ -480,6 +531,7 @@ export default function ScenarioMatrixSurface({
           </div>
         )}
       </div>
+      )}
 
       <nav className="scenario-matrix-window" aria-label={t('Case result pages')}>
         <button
@@ -572,6 +624,99 @@ export default function ScenarioMatrixSurface({
   );
 }
 
+function MobileMatrixResults({
+  projection,
+  selected,
+  expandedRows,
+  disabled,
+  columns,
+  onSelectionChange,
+  onToggle,
+  onCellEdit,
+  onOpenCase,
+}: {
+  projection: ReturnType<typeof projectMobileMatrixResults>;
+  selected: Set<string>;
+  expandedRows: string[];
+  disabled: boolean;
+  columns: ScenarioTableColumn[];
+  onSelectionChange: (caseId: string, checked: boolean) => void;
+  onToggle: (caseId: string) => void;
+  onCellEdit: (caseId: string, column: ScenarioTableColumn, value: unknown) => void;
+  onOpenCase: (caseId: string) => void;
+}) {
+  const { m, t, d } = useI18n();
+  return (
+    <div
+      className="scenario-mobile-results"
+      data-testid="scenario-mobile-results"
+      data-first-viewport-count={projection.firstViewportCaseIds.length}
+      aria-label={t('Scenario result summary')}
+    >
+      {projection.items.map((item) => {
+        const { row, authority } = item;
+        const expanded = expandedRows.includes(row.caseId);
+        return (
+          <article
+            key={row.caseId}
+            className="scenario-mobile-result"
+            data-case-coordinate={row.caseId}
+            data-verdict={row.presentation.tone}
+            data-governance={authority.governanceEligibility.toLowerCase()}
+            data-first-viewport={projection.firstViewportCaseIds.includes(row.caseId)}
+          >
+            <input
+              type="checkbox"
+              data-focus-action="select"
+              aria-label={t('Select {name}', { name: row.name })}
+              checked={selected.has(row.caseId)}
+              disabled={disabled}
+              onChange={(event) => onSelectionChange(row.caseId, event.target.checked)}
+            />
+            <button
+              type="button"
+              className="scenario-mobile-result-main"
+              data-focus-action="inspect"
+              aria-expanded={expanded}
+              aria-label={t('Inspect {name}', { name: row.name })}
+              onClick={() => onToggle(row.caseId)}
+            >
+              <span className="scenario-mobile-result-title">
+                <strong>{row.name}</strong>
+                <small>{d(caseTypeLabel(row.caseType))}</small>
+              </span>
+              <span className="scenario-mobile-result-verdict" data-tone={row.presentation.tone}>
+                <strong>{m(row.presentation.label.messageId, row.presentation.label.params)}</strong>
+                {item.hasFieldDiff && <code title={item.firstDiffPath}>{item.firstDiffPath}</code>}
+              </span>
+              <span className="scenario-mobile-result-authority">
+                <b>{m(authority.proof.messageId, authority.proof.params)}</b>
+                <b>{m(authority.freshness.messageId, authority.freshness.params)}</b>
+                <strong>{m(authority.governance.messageId, authority.governance.params)}</strong>
+              </span>
+              {expanded ? <ChevronUp aria-hidden="true" size={18} /> : <ChevronDown aria-hidden="true" size={18} />}
+            </button>
+            {expanded && (
+              <div className="scenario-mobile-result-detail">
+                <ScenarioMatrixDetails
+                  row={row}
+                  columns={columns}
+                  disabled={disabled}
+                  onCellEdit={onCellEdit}
+                  onOpenCase={onOpenCase}
+                />
+              </div>
+            )}
+          </article>
+        );
+      })}
+      {projection.totalCount === 0 && (
+        <p className="scenario-mobile-results-empty">{t('No cases match this view.')}</p>
+      )}
+    </div>
+  );
+}
+
 function ScenarioMatrixDetails({
   row,
   columns,
@@ -593,6 +738,27 @@ function ScenarioMatrixDetails({
   const diffs = row.evidence.assertionDiffs ?? [];
   return (
     <div className="scenario-matrix-detail" data-testid={`scenario-matrix-detail-${row.caseId}`}>
+      <section className="scenario-matrix-diff">
+        <header><strong>{t('Expected / Actual / Diff')}</strong><span>{t('{count} checks', { count: row.summary.assertionCount })}</span></header>
+        {diffs.length > 0 ? diffs.map((diff) => (
+          <article key={diff.assertionId} data-passed={diff.passed}>
+            <header><code>{diff.path || '$'}</code><strong>{t(diff.passed ? 'Matched' : 'Different')}</strong></header>
+            <div><span>{t('Expected')}</span><pre>{prettyValue(diff.expected)}</pre></div>
+            <div><span>{t('Actual')}</span><pre>{prettyValue(diff.actual)}</pre></div>
+            <p>{diff.detail}</p>
+          </article>
+        )) : (
+          <DetailValues
+            empty={row.summary.assertionCount === 0
+              ? t('No business oracle yet. Open the Case and define the expected outcome.')
+              : t('Run this Case to compare expected and actual values.')}
+            values={assertionColumns.map((column) => ({
+              label: column.label,
+              value: row.values[column.columnId],
+            }))}
+          />
+        )}
+      </section>
       <section>
         <header><strong>{t('Given')}</strong><span>{t('{count} fields', { count: row.summary.givenFieldCount })}</span></header>
         <div className="scenario-matrix-detail-fields">
@@ -644,27 +810,6 @@ function ScenarioMatrixDetails({
             value: row.values[column.columnId],
           }))}
         />
-      </section>
-      <section className="scenario-matrix-diff">
-        <header><strong>{t('Expected / Actual / Diff')}</strong><span>{t('{count} checks', { count: row.summary.assertionCount })}</span></header>
-        {diffs.length > 0 ? diffs.map((diff) => (
-          <article key={diff.assertionId} data-passed={diff.passed}>
-            <header><code>{diff.path || '$'}</code><strong>{t(diff.passed ? 'Matched' : 'Different')}</strong></header>
-            <div><span>{t('Expected')}</span><pre>{prettyValue(diff.expected)}</pre></div>
-            <div><span>{t('Actual')}</span><pre>{prettyValue(diff.actual)}</pre></div>
-            <p>{diff.detail}</p>
-          </article>
-        )) : (
-          <DetailValues
-            empty={row.summary.assertionCount === 0
-              ? t('No business oracle yet. Open the Case and define the expected outcome.')
-              : t('Run this Case to compare expected and actual values.')}
-            values={assertionColumns.map((column) => ({
-              label: column.label,
-              value: row.values[column.columnId],
-            }))}
-          />
-        )}
       </section>
       <section>
         <header>
@@ -869,6 +1014,10 @@ function shortFingerprint(value: string): string {
 
 function shortBatchId(value: string): string {
   return value.length > 22 ? `${value.slice(0, 19)}...` : value;
+}
+
+function cssAttributeValue(value: string): string {
+  return value.replace(/\\/g, '\\\\').replace(/"/g, '\\"');
 }
 
 function isTerminalBatch(batch: TableSuiteRunBatch): boolean {

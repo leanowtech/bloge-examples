@@ -2,6 +2,9 @@
   --rg-font-body: 13px;
   --rg-font-aux: 12px;
   --rg-font-mobile-body: 14px;
+  --rg-font-decision: 13px;
+  --rg-font-heading: 15px;
+  --rg-font-machine: 12px;
   --rg-line-body: 1.45;
   --rg-control-min: 36px;
   --rg-touch-target: 40px;
@@ -12,6 +15,13 @@
   --rg-panel-padding: 14px;
   --rg-surface-gap: 10px;
   --rg-focus-ring: 3px solid #1a56db;
+  --rg-color-decision: #26364b;
+  --rg-color-auxiliary: #64748b;
+  --rg-color-machine: #526174;
+  --rg-color-positive: #176b36;
+  --rg-color-negative: #b42318;
+  --rg-chrome-command-max: 112px;
+  --rg-chrome-context-max: 96px;
 }
 
 html[data-density='compact'] {

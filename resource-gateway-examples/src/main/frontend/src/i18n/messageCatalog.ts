@@ -335,6 +335,26 @@ export const MESSAGE_CATALOG = {
     'zh-CN': '运行时比较需要声明函数签名。',
   },
   'library.runtime.technicalDetails': { en: 'Technical details', 'zh-CN': '技术详情' },
+  'library.blocker.designError.title': {
+    en: 'Design Contract blocks this asset',
+    'zh-CN': '此资产被设计契约阻断',
+  },
+  'library.blocker.designError.detail': {
+    en: 'Fix the highest-severity design issue before reviewing runtime readiness.',
+    'zh-CN': '请先修复最高严重级别的设计问题，再检查运行时就绪度。',
+  },
+  'library.blocker.designWarning.title': {
+    en: 'Design review is required for this asset',
+    'zh-CN': '此资产需要设计复核',
+  },
+  'library.blocker.designWarning.detail': {
+    en: 'Resolve or explicitly accept the leading design warning.',
+    'zh-CN': '请解决或明确接受首要设计警告。',
+  },
+  'library.blocker.runtime.title': {
+    en: 'Runtime readiness blocks this asset',
+    'zh-CN': '此资产被运行时就绪度阻断',
+  },
   'library.archetype.pure.label': { en: 'Pure transformation', 'zh-CN': '纯数据转换' },
   'library.archetype.pure.summary': {
     en: 'Deterministic input-to-output mapping without external effects.',

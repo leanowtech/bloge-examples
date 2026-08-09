@@ -3,8 +3,10 @@ import { describe, expect, it } from 'vitest';
 import type { VisualLibraryAuthoringCompileResult } from '../types';
 import {
   groupAuthoringDiagnostics,
+  groupRuntimeParity,
   presentLibraryReadiness,
   presentRuntimeParity,
+  selectedAssetRootBlocker,
 } from './readinessPresentation';
 
 describe('library readiness presentation', () => {
@@ -92,6 +94,66 @@ describe('library readiness presentation', () => {
         occurrences: 3,
       }),
     ]);
+  });
+
+  it('aggregates repeated runtime warnings by root reason', () => {
+    const groups = groupRuntimeParity([
+      parity('OPERATOR', 'support:lookup'),
+      parity('OPERATOR', 'support:search'),
+      { ...parity('FUNCTION', 'support.normalize'), reasonCode: 'FUNCTION_SIGNATURE_UNKNOWN' },
+    ]);
+
+    expect(groups).toHaveLength(2);
+    const bindingGroup = groups.find((group) => group.reasonCode === 'RUNTIME_BINDING_MISSING');
+    expect(bindingGroup).toMatchObject({
+      reasonCode: 'RUNTIME_BINDING_MISSING',
+      occurrences: 2,
+    });
+    expect(bindingGroup?.items.map((item) => item.assetRef)).toEqual(['support:lookup', 'support:search']);
+  });
+
+  it('selects one design root blocker before runtime symptoms for the current asset', () => {
+    const result = preview({
+      state: 'INVALID',
+      designReady: false,
+      productionReady: false,
+      runtimeParity: [parity('OPERATOR', 'support:lookup')],
+    });
+    result.diagnostics = [{
+      level: 'ERROR',
+      code: 'RG.AUTHORING.INPUT_REQUIRED',
+      message: 'Input Contract is missing.',
+      authoringPath: '/operators/support:lookup/input',
+      metadata: {},
+    }, {
+      level: 'WARNING',
+      code: 'RG.AUTHORING.DESCRIPTION_MISSING',
+      message: 'Description is missing.',
+      authoringPath: '/operators/support:lookup/description',
+      metadata: {},
+    }];
+
+    expect(selectedAssetRootBlocker(result, 'operator', 'support:lookup')).toMatchObject({
+      source: 'DESIGN',
+      tone: 'blocked',
+      title: { messageId: 'library.blocker.designError.title' },
+      rawCode: 'RG.AUTHORING.INPUT_REQUIRED',
+    });
+  });
+
+  it('uses the leading runtime reason when the selected asset has no design blocker', () => {
+    const result = preview({
+      state: 'DESIGN_READY',
+      designReady: true,
+      productionReady: false,
+      runtimeParity: [parity('FUNCTION', 'support.normalize')],
+    });
+
+    expect(selectedAssetRootBlocker(result, 'function', 'support.normalize')).toMatchObject({
+      source: 'RUNTIME',
+      title: { messageId: 'library.blocker.runtime.title' },
+      rawCode: 'RUNTIME_BINDING_MISSING',
+    });
   });
 });
 

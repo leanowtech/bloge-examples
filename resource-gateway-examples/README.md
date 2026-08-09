@@ -152,7 +152,7 @@ facts, targeted edit links, and one run command; **Build** mounts only the activ
 Expected, or Run step, so inactive complex editors leave the tab order. Formal mobile tasks hide the
 duplicate shell handoff and keep the run command above the fold. **Topology** opens as a temporary
 304px overlay, so the 390px task surface never collapses into a narrow residual column.
-Library Workbench uses the same task policy at 390px: **Review** replaces the tree with an asset
+Library Workbench uses the same task policy at 840px and below: **Review** replaces the tree with an asset
 picker and one readiness summary; **Edit basics** autosaves only bounded metadata. Nested schemas,
 signatures, test definitions, and runtime governance remain unchanged and expose an exact
 draft/revision/asset desktop deep link instead of a compressed pseudo-editor.
@@ -181,6 +181,16 @@ proof strength is `CERTIFIABLE`; a Mock pass remains useful authoring feedback b
 publish credential. Not-run rows show Freshness as **Not evaluated**, not **Current evidence**.
 Implementation and browser evidence are recorded in
 [`docs/resource-gateway-ux-round3-s3-proof-semantics-localization-implementation.md`](../docs/resource-gateway-ux-round3-s3-proof-semantics-localization-implementation.md).
+
+At 840px and below, Scenario Matrix now projects canonical rows into vertical result summaries instead
+of compressing the desktop table. Three cases remain comparable at 390px, and one click opens a
+diff-first Expected/Actual/Diff view. Selection, expansion, focus, and task mode survive transitions
+between compact and desktop layouts; the full table returns at 1024px. Canvas Overview intentionally
+hides unreadable body text and edge labels, while Focus/Inspect enforce a 12px effective title floor.
+Library runtime readiness groups affected assets by root reason and shows only one highest-priority
+blocker for the selected asset. The responsive contract, viewport measurements, screenshots, and
+verification record are in
+[`docs/resource-gateway-ux-round3-s4-responsive-projection-implementation.md`](../docs/resource-gateway-ux-round3-s4-responsive-projection-implementation.md).
 
 For the shortest trustworthy Author demo, load **Loan policy fallback** from the start dialog. Its
 card previews Graph/Contract size, three runnable `GOLDEN`/`NEGATIVE`/`BOUNDARY` cases, mocked

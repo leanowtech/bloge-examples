@@ -28,6 +28,23 @@ export interface GroupedAuthoringDiagnostic extends VisualAuthoringDiagnostic {
   occurrences: number;
 }
 
+export interface GroupedRuntimeParity {
+  state: VisualAuthoringRuntimeParity['state'];
+  reasonCode: string;
+  items: VisualAuthoringRuntimeParity[];
+  occurrences: number;
+}
+
+export interface SelectedAssetRootBlocker {
+  source: 'DESIGN' | 'RUNTIME';
+  tone: 'blocked' | 'review';
+  title: MessageDescriptor;
+  detail: MessageDescriptor;
+  authoringPath: string;
+  rawCode: string;
+  rawDetail: string;
+}
+
 const RUNTIME_REASON_MESSAGE_IDS: Record<string, MessageId> = {
   'RG.AUTHORING.RUNTIME_OPERATOR_MISSING': 'library.runtime.reason.operatorMissing',
   'RG.AUTHORING.RUNTIME_FUNCTION_MISSING': 'library.runtime.reason.functionMissing',
@@ -193,6 +210,100 @@ export function groupAuthoringDiagnostics(
     grouped.set(key, { ...diagnostic, occurrences: 1 });
   });
   return Array.from(grouped.values());
+}
+
+/** Aggregates runtime readiness by root reason so repeated assets do not become repeated warnings. */
+export function groupRuntimeParity(
+  runtimeParity: VisualAuthoringRuntimeParity[],
+): GroupedRuntimeParity[] {
+  const grouped = new Map<string, GroupedRuntimeParity>();
+  runtimeParity.forEach((parity) => {
+    const key = `${parity.state}:${parity.reasonCode || 'UNSPECIFIED'}`;
+    const existing = grouped.get(key);
+    if (existing) {
+      existing.items.push(parity);
+      existing.occurrences += 1;
+      return;
+    }
+    grouped.set(key, {
+      state: parity.state,
+      reasonCode: parity.reasonCode,
+      items: [parity],
+      occurrences: 1,
+    });
+  });
+  return Array.from(grouped.values()).sort((left, right) => (
+    runtimeParityPriority(left.items[0]) - runtimeParityPriority(right.items[0])
+      || left.reasonCode.localeCompare(right.reasonCode)
+  ));
+}
+
+/** Selects one causal blocker for the current asset instead of echoing every downstream symptom. */
+export function selectedAssetRootBlocker(
+  preview: VisualLibraryAuthoringCompileResult | null,
+  kind: 'library' | 'type' | 'operator' | 'function',
+  key: string,
+): SelectedAssetRootBlocker | null {
+  if (!preview) return null;
+  const assetPath = kind === 'library' ? '' : `/${kind}s/${pointer(key)}`;
+  const diagnostics = preview.diagnostics
+    .filter((diagnostic) => !assetPath || diagnostic.authoringPath.startsWith(assetPath))
+    .sort((left, right) => diagnosticPriority(left.level) - diagnosticPriority(right.level));
+  const designBlocker = diagnostics.find((diagnostic) => diagnostic.level === 'ERROR');
+  if (designBlocker) return diagnosticBlocker(designBlocker, 'blocked');
+
+  const runtime = preview.runtimeParity?.find((parity) => (
+    (kind === 'library' || parity.assetRef === key)
+    && (kind === 'library' || parity.assetKind.toLocaleLowerCase() === kind)
+    && !parity.executableReady
+  ));
+  if (runtime) {
+    const presentation = presentRuntimeParity(runtime);
+    return {
+      source: 'RUNTIME',
+      tone: runtime.state === 'BLOCKED_BY_POLICY' || runtime.state === 'DRIFTED' ? 'blocked' : 'review',
+      title: { messageId: 'library.blocker.runtime.title' },
+      detail: presentation.detail,
+      authoringPath: assetPath,
+      rawCode: presentation.rawCode,
+      rawDetail: presentation.rawDetail,
+    };
+  }
+
+  const warning = diagnostics.find((diagnostic) => diagnostic.level === 'WARNING');
+  return warning ? diagnosticBlocker(warning, 'review') : null;
+}
+
+function diagnosticBlocker(
+  diagnostic: VisualAuthoringDiagnostic,
+  tone: SelectedAssetRootBlocker['tone'],
+): SelectedAssetRootBlocker {
+  const error = diagnostic.level === 'ERROR';
+  return {
+    source: 'DESIGN',
+    tone,
+    title: { messageId: error ? 'library.blocker.designError.title' : 'library.blocker.designWarning.title' },
+    detail: { messageId: error ? 'library.blocker.designError.detail' : 'library.blocker.designWarning.detail' },
+    authoringPath: diagnostic.authoringPath,
+    rawCode: diagnostic.code,
+    rawDetail: diagnostic.message,
+  };
+}
+
+function diagnosticPriority(level: string): number {
+  if (level === 'ERROR') return 0;
+  if (level === 'WARNING') return 2;
+  return 3;
+}
+
+function runtimeParityPriority(parity: VisualAuthoringRuntimeParity): number {
+  if (parity.state === 'BLOCKED_BY_POLICY' || parity.state === 'DRIFTED') return 0;
+  if (!parity.executableReady) return 1;
+  return 2;
+}
+
+function pointer(value: string): string {
+  return value.replace(/~/g, '~0').replace(/\//g, '~1');
 }
 
 function presentation(

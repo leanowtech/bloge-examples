@@ -564,6 +564,7 @@ export default function LibraryWorkbench() {
       data-testid="library-workbench"
       data-responsive-layout={mobileProjection.layout}
       data-responsive-task={mobileProjection.taskId}
+      data-responsive-continuity={mobileProjection.continuityKey}
       data-command-policy={mutationPolicy.decision.toLowerCase()}
     >
       <header className="library-command-bar">

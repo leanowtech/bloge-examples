@@ -1,4 +1,7 @@
-export const MOBILE_TASK_BREAKPOINT = 520;
+// At tablet widths the desktop workbench still fragments its command bar and
+// forces the evidence matrix into a narrow horizontal viewport. Keep the
+// task-focused projection through the same 840px boundary used by the shell.
+export const MOBILE_TASK_BREAKPOINT = 840;
 
 export type ResponsiveTaskSurface = 'SCENARIO_MATRIX' | 'SCENARIO_CASE' | 'SCENARIO_COVERAGE';
 export type ScenarioTaskIntent = 'RUNNER' | 'EDITOR';
@@ -31,6 +34,9 @@ export interface ResponsiveTaskContext {
 export interface ResponsiveTaskProjection {
   layout: 'DESKTOP' | 'MOBILE_TASK';
   taskId: 'MATRIX_RUN' | 'CASE_RUN' | 'CASE_EDIT' | 'COVERAGE_REVIEW' | 'DESKTOP_FULL';
+  continuityKey: 'SCENARIO_MATRIX' | 'SCENARIO_CASE' | 'SCENARIO_COVERAGE';
+  resultProjection: 'CANONICAL_TABLE' | 'MOBILE_SUMMARY' | 'NONE';
+  focusStrategy: 'CASE_COORDINATE';
   intent: ScenarioTaskIntent;
   activeStep: ScenarioEditorStep;
   regions: ResponsiveTaskRegion[];
@@ -48,6 +54,8 @@ export interface LibraryResponsiveTaskContext {
 export interface LibraryResponsiveTaskProjection {
   layout: 'DESKTOP' | 'MOBILE_TASK';
   taskId: 'LIBRARY_REVIEW' | 'LIBRARY_LIGHT_EDIT' | 'LIBRARY_COMPLEX_HANDOFF' | 'DESKTOP_FULL';
+  continuityKey: 'LIBRARY_ASSET';
+  focusStrategy: 'ASSET_COORDINATE';
   intent: LibraryTaskIntent;
   regions: Array<'TASK_SWITCH' | 'ASSET_PICKER' | 'ASSET_SUMMARY' | 'LIGHT_EDITOR' | 'DESKTOP_HANDOFF'>;
   maxPrimaryActions: number;
@@ -61,6 +69,9 @@ export function projectResponsiveTask(context: ResponsiveTaskContext): Responsiv
     return {
       layout: 'DESKTOP',
       taskId: 'DESKTOP_FULL',
+      continuityKey: scenarioContinuityKey(context.surface),
+      resultProjection: context.surface === 'SCENARIO_MATRIX' ? 'CANONICAL_TABLE' : 'NONE',
+      focusStrategy: 'CASE_COORDINATE',
       intent: context.intent,
       activeStep: context.activeStep,
       regions: [
@@ -77,6 +88,9 @@ export function projectResponsiveTask(context: ResponsiveTaskContext): Responsiv
     return {
       layout: 'MOBILE_TASK',
       taskId: 'MATRIX_RUN',
+      continuityKey: 'SCENARIO_MATRIX',
+      resultProjection: 'MOBILE_SUMMARY',
+      focusStrategy: 'CASE_COORDINATE',
       intent: 'RUNNER',
       activeStep: context.activeStep,
       regions: ['TASK_SWITCH', 'MATRIX_FILTERS', 'MATRIX_RESULTS', 'MATRIX_RUN_BAR'],
@@ -89,6 +103,9 @@ export function projectResponsiveTask(context: ResponsiveTaskContext): Responsiv
     return {
       layout: 'MOBILE_TASK',
       taskId: 'COVERAGE_REVIEW',
+      continuityKey: 'SCENARIO_COVERAGE',
+      resultProjection: 'NONE',
+      focusStrategy: 'CASE_COORDINATE',
       intent: 'RUNNER',
       activeStep: context.activeStep,
       regions: ['TASK_SWITCH', 'COVERAGE_SUMMARY'],
@@ -101,6 +118,9 @@ export function projectResponsiveTask(context: ResponsiveTaskContext): Responsiv
     return {
       layout: 'MOBILE_TASK',
       taskId: 'CASE_RUN',
+      continuityKey: 'SCENARIO_CASE',
+      resultProjection: 'NONE',
+      focusStrategy: 'CASE_COORDINATE',
       intent: context.intent,
       activeStep: context.activeStep,
       regions: ['TASK_SWITCH', 'CASE_PICKER', 'RUN_SUMMARY'],
@@ -112,6 +132,9 @@ export function projectResponsiveTask(context: ResponsiveTaskContext): Responsiv
   return {
     layout: 'MOBILE_TASK',
     taskId: 'CASE_EDIT',
+    continuityKey: 'SCENARIO_CASE',
+    resultProjection: 'NONE',
+    focusStrategy: 'CASE_COORDINATE',
     intent: context.intent,
     activeStep: context.activeStep,
     regions: ['TASK_SWITCH', 'CASE_PICKER', 'STEP_NAV', editorRegion(context.activeStep)],
@@ -128,6 +151,8 @@ export function projectLibraryResponsiveTask(
     return {
       layout: 'DESKTOP',
       taskId: 'DESKTOP_FULL',
+      continuityKey: 'LIBRARY_ASSET',
+      focusStrategy: 'ASSET_COORDINATE',
       intent: context.intent,
       regions: ['ASSET_PICKER', 'ASSET_SUMMARY', 'LIGHT_EDITOR'],
       maxPrimaryActions: 3,
@@ -140,6 +165,8 @@ export function projectLibraryResponsiveTask(
     return {
       layout: 'MOBILE_TASK',
       taskId: 'LIBRARY_REVIEW',
+      continuityKey: 'LIBRARY_ASSET',
+      focusStrategy: 'ASSET_COORDINATE',
       intent: context.intent,
       regions: ['TASK_SWITCH', 'ASSET_PICKER', 'ASSET_SUMMARY', 'DESKTOP_HANDOFF'],
       maxPrimaryActions: 1,
@@ -152,6 +179,8 @@ export function projectLibraryResponsiveTask(
     return {
       layout: 'MOBILE_TASK',
       taskId: 'LIBRARY_COMPLEX_HANDOFF',
+      continuityKey: 'LIBRARY_ASSET',
+      focusStrategy: 'ASSET_COORDINATE',
       intent: context.intent,
       regions: ['TASK_SWITCH', 'ASSET_PICKER', 'ASSET_SUMMARY', 'DESKTOP_HANDOFF'],
       maxPrimaryActions: 1,
@@ -163,12 +192,22 @@ export function projectLibraryResponsiveTask(
   return {
     layout: 'MOBILE_TASK',
     taskId: 'LIBRARY_LIGHT_EDIT',
+    continuityKey: 'LIBRARY_ASSET',
+    focusStrategy: 'ASSET_COORDINATE',
     intent: context.intent,
     regions: ['TASK_SWITCH', 'ASSET_PICKER', 'LIGHT_EDITOR', 'DESKTOP_HANDOFF'],
     maxPrimaryActions: 1,
     lightEditingSupported: true,
     complexEditingSupported: false,
   };
+}
+
+function scenarioContinuityKey(
+  surface: ResponsiveTaskSurface,
+): ResponsiveTaskProjection['continuityKey'] {
+  if (surface === 'SCENARIO_MATRIX') return 'SCENARIO_MATRIX';
+  if (surface === 'SCENARIO_COVERAGE') return 'SCENARIO_COVERAGE';
+  return 'SCENARIO_CASE';
 }
 
 export function projectionIncludes(

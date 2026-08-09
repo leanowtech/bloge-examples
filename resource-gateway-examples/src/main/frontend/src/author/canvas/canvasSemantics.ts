@@ -83,6 +83,13 @@ export interface AdaptiveCanvasChromePolicy {
   reason: AdaptiveCanvasChromeReason | null;
 }
 
+export interface SemanticZoomContract {
+  minimumZoom: number;
+  minimumEffectiveTitlePx: number;
+  nodeBody: 'HIDDEN' | 'SELECTED_ONLY';
+  edgeLabels: 'HIDDEN' | 'BUDGETED';
+}
+
 interface SemanticProjectionOptions {
   mode: CanvasSemanticMode;
   anchorNodeId?: string;
@@ -331,7 +338,7 @@ export function assessCanvasPerceptualQuality(
   if (nodes.length <= 8 && zoom < 0.8) {
     reasons.push({ code: 'SMALL_GRAPH_ZOOM_FLOOR' });
   }
-  if (nodes.length <= 8 && effectiveTitleFontPx < 12) {
+  if ((options.mode === 'focus' || nodes.length <= 8) && effectiveTitleFontPx < 12) {
     reasons.push({ code: 'TITLE_SIZE_FLOOR' });
   }
   if (options.mode === 'overview' && options.visibleFieldLabels > 0) {
@@ -355,6 +362,24 @@ export function assessCanvasPerceptualQuality(
     labelDensityPer100kPx,
     graphScreenOccupancy,
     reasons,
+  };
+}
+
+/** Defines what remains readable in each task mode independently from one numeric zoom value. */
+export function semanticZoomContract(mode: CanvasSemanticMode): SemanticZoomContract {
+  if (mode === 'overview') {
+    return {
+      minimumZoom: 0.04,
+      minimumEffectiveTitlePx: 0,
+      nodeBody: 'HIDDEN',
+      edgeLabels: 'HIDDEN',
+    };
+  }
+  return {
+    minimumZoom: 0.8,
+    minimumEffectiveTitlePx: 12,
+    nodeBody: 'SELECTED_ONLY',
+    edgeLabels: 'BUDGETED',
   };
 }
 

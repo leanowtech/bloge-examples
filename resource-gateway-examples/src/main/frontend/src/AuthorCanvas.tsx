@@ -270,6 +270,7 @@ import {
   adaptiveCanvasChromePolicy,
   assessCanvasPerceptualQuality,
   projectCanvasSemantics,
+  semanticZoomContract,
   type AdaptiveCanvasChromeReason,
   type CanvasPanelPreference,
   type CanvasSemanticProjection,
@@ -6623,6 +6624,10 @@ export default function AuthorCanvas({ workspaceVersion = 'v1' }: AuthorCanvasPr
     : selectedNodeId
       ? 'inspect'
       : 'overview';
+  const canvasSemanticZoom = useMemo(
+    () => semanticZoomContract(canvasTaskMode),
+    [canvasTaskMode],
+  );
   const canvasSemantics = useMemo(
     () => projectCanvasSemantics(canvasNodes, canvasEdges, {
       mode: canvasTaskMode,
@@ -9621,6 +9626,7 @@ export default function AuthorCanvas({ workspaceVersion = 'v1' }: AuthorCanvasPr
       nodes: pathNodes,
       padding: 0.08,
       duration: 240,
+      minZoom: semanticZoomContract('focus').minimumZoom,
     });
   }, [
     canvasEdges,
@@ -9670,6 +9676,7 @@ export default function AuthorCanvas({ workspaceVersion = 'v1' }: AuthorCanvasPr
         nodes: nodes.filter((node) => path.nodeIds.has(node.id)),
         padding: 0.08,
         duration: 240,
+        minZoom: semanticZoomContract('focus').minimumZoom,
       });
       return;
     }
@@ -10794,6 +10801,8 @@ export default function AuthorCanvas({ workspaceVersion = 'v1' }: AuthorCanvasPr
       data-canvas-zoom-tier={zoomPresentation.tier}
       data-focus-path={focusPathNodeId ? 'active' : 'inactive'}
       data-canvas-task-mode={canvasTaskMode}
+      data-canvas-node-body={canvasSemanticZoom.nodeBody.toLowerCase()}
+      data-canvas-minimum-title-px={canvasSemanticZoom.minimumEffectiveTitlePx}
       data-canvas-readability={canvasPerceptualQuality.status.toLowerCase()}
       data-canvas-effective-title-px={canvasPerceptualQuality.effectiveTitleFontPx}
       data-canvas-visible-field-labels={canvasPerceptualQuality.visibleFieldLabels}
@@ -11998,8 +12007,8 @@ export default function AuthorCanvas({ workspaceVersion = 'v1' }: AuthorCanvasPr
               setFocusPathNodeId('');
             }}
             fitView
-            fitViewOptions={{ padding: 0.08, minZoom: CANVAS_MIN_ZOOM, maxZoom: 1 }}
-            minZoom={CANVAS_MIN_ZOOM}
+            fitViewOptions={{ padding: 0.08, minZoom: canvasSemanticZoom.minimumZoom, maxZoom: 1 }}
+            minZoom={canvasSemanticZoom.minimumZoom}
             maxZoom={CANVAS_MAX_ZOOM}
           >
             <Background />

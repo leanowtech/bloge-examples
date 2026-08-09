@@ -151,6 +151,73 @@ describe('ScenarioMatrixSurface', () => {
     expect(button('Run all (5)').classList.contains('primary')).toBe(true);
   });
 
+  it('shows three comparable mobile summaries without mounting the desktop table', async () => {
+    await render(5, { compactCommands: true });
+
+    const results = host.querySelector('[data-testid="scenario-mobile-results"]');
+    expect(results?.getAttribute('data-first-viewport-count')).toBe('3');
+    expect(results?.querySelectorAll('[data-first-viewport="true"]')).toHaveLength(3);
+    expect(results?.querySelectorAll('.scenario-mobile-result')).toHaveLength(5);
+    expect(host.querySelector('.scenario-matrix-scroll')).toBeNull();
+    expect(host.querySelector('[data-testid="scenario-matrix"]')?.getAttribute('data-result-projection'))
+      .toBe('mobile-summary');
+  });
+
+  it('opens a failed mobile result directly onto its field diff', async () => {
+    const draftSet = tableDrivenScenarioBaseline(5);
+    const caseId = draftSet.scenarios[0].scenarioId;
+    const projection = buildScenarioTableProjection(draftSet, {
+      [caseId]: {
+        caseId,
+        runId: 'run-mobile-failure',
+        attempt: 1,
+        execution: 'SUCCESS',
+        assertions: 'FAILED',
+        freshness: 'CURRENT',
+        proofStrength: 'RUNTIME',
+        subjectMode: 'REAL',
+        durationMs: 11,
+        firstFailure: null,
+        assertionDiffs: [{
+          assertionId: 'decision',
+          path: '$.decision',
+          passed: false,
+          expected: 'APPROVED',
+          actual: 'REVIEW',
+          detail: 'Expected APPROVED.',
+        }],
+      },
+    });
+    await renderProjection(projection, { compactCommands: true });
+
+    const result = host.querySelector(`[data-case-coordinate="${caseId}"]`);
+    expect(result?.textContent).toContain('$.decision');
+    await click(buttonByLabel('Inspect '));
+    const detail = host.querySelector(`[data-testid="scenario-matrix-detail-${caseId}"]`);
+    expect(detail?.firstElementChild?.textContent).toContain('Expected / Actual / Diff');
+    expect(detail?.textContent).toContain('APPROVED');
+    expect(detail?.textContent).toContain('REVIEW');
+  });
+
+  it('preserves selection, expansion, and focused case while switching mobile and desktop projections', async () => {
+    await render(5, { compactCommands: true });
+    const firstInspect = buttonByLabel('Inspect ');
+    firstInspect.focus();
+    await click(firstInspect);
+    const firstSelect = host.querySelector<HTMLInputElement>('.scenario-mobile-result input[type="checkbox"]');
+    expect(firstSelect).not.toBeNull();
+    await click(firstSelect as HTMLInputElement);
+
+    await render(5, { compactCommands: false });
+
+    expect(button('Run selected (1)')).toBeInstanceOf(HTMLButtonElement);
+    expect(host.querySelector('[data-testid="scenario-matrix-detail-case-1"]')).not.toBeNull();
+    expect(host.querySelector('[data-testid="scenario-mobile-results"]')).toBeNull();
+    expect((document.activeElement as HTMLElement | null)?.dataset.focusAction).toBe('inspect');
+    expect((document.activeElement as HTMLElement | null)?.closest('[data-case-coordinate]')
+      ?.getAttribute('data-case-coordinate')).toBe('case-1');
+  });
+
   it('localizes matrix controls and counts without translating case payloads', async () => {
     window.history.replaceState({}, '', '/author/?lang=zh-CN');
     await render(5, {}, true);

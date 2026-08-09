@@ -440,6 +440,10 @@ describe('LibraryWorkbench', () => {
     const operatorText = query('[data-testid="mobile-library-review"]').textContent ?? '';
     expect(operatorText).toContain('执行类型纯数据转换');
     expect(operatorText).toContain('运行时仅有文档');
+    expect(query('[data-testid="mobile-library-root-blocker"]').textContent)
+      .toContain('此资产被运行时就绪度阻断');
+    expect(query('[data-testid="mobile-library-root-blocker"]').textContent)
+      .toContain('目标运行时清单中不存在精确匹配的算子');
     expect(operatorText).not.toContain('DOCUMENTED ONLY');
   });
 

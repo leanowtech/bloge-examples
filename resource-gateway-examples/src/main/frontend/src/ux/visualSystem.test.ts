@@ -20,6 +20,11 @@ describe('Stage 5 visual-system contract', () => {
     expect(tokensCss).toContain('--rg-font-aux: 12px');
     expect(tokensCss).toContain('--rg-font-mobile-body: 14px');
     expect(tokensCss).toContain('--rg-touch-target: 40px');
+    expect(tokensCss).toContain('--rg-font-decision: 13px');
+    expect(tokensCss).toContain('--rg-font-heading: 15px');
+    expect(tokensCss).toContain('--rg-font-machine: 12px');
+    expect(tokensCss).toContain('--rg-color-decision: #26364b');
+    expect(tokensCss).toContain('--rg-chrome-command-max: 112px');
   });
 
   it('keeps comfortable as the default and scopes compact changes to spacing', () => {
@@ -77,6 +82,20 @@ describe('Stage 5 visual-system contract', () => {
     expect(responsiveCss).toMatch(/scenario-command-receipt > dl[\s\S]*display: none/);
   });
 
+  it('projects mobile Matrix results as three bounded summaries with diff-first expansion', () => {
+    expect(responsiveCss).toMatch(/\.scenario-mobile-results[\s\S]*min-height: 186px/);
+    expect(responsiveCss).toMatch(/scenario-mobile-result-main[\s\S]*min-height: 62px/);
+    expect(responsiveCss).toMatch(/scenario-mobile-result-detail[\s\S]*section:first-child[\s\S]*background: #fff/);
+  });
+
+  it('uses semantic decision and machine tokens on the mobile result task', () => {
+    const mobileResults = responsiveCss.match(/\.scenario-mobile-results[\s\S]*?\.scenario-mobile-results-empty[\s\S]*?\}/)?.[0] ?? '';
+    expect(mobileResults).toContain('var(--rg-color-decision)');
+    expect(mobileResults).toContain('var(--rg-color-auxiliary)');
+    expect(mobileResults).toContain('var(--rg-font-mobile-body)');
+    expect(mobileResults).not.toMatch(/font-size:\s*(?:8|9|10|11)px/);
+  });
+
   it('keeps canvas card geometry stable when an operator is selected', () => {
     expect(legacyCss).toMatch(/data-canvas-task-mode="focus"[\s\S]*\.operator-node \.operator-node-port-grid[\s\S]*display: none/);
     expect(legacyCss).toMatch(/data-canvas-task-mode="inspect"[\s\S]*\.operator-node \.operator-node-port-grid[\s\S]*display: none/);
@@ -96,6 +115,7 @@ describe('Stage 5 visual-system contract', () => {
 
   it('projects mobile Library review and light edit as one bounded task', () => {
     expect(responsiveCss).toContain(".library-workbench[data-responsive-layout='MOBILE_TASK']");
+    expect(responsiveCss).toMatch(/data-responsive-layout='MOBILE_TASK'[\s\S]*workspace-context-facts[\s\S]*display: none/);
     expect(responsiveCss).toContain('.mobile-library-taskbar');
     expect(responsiveCss).toContain('.mobile-library-asset-picker');
     expect(responsiveCss).toContain('.mobile-library-review');

@@ -1653,6 +1653,8 @@ function ScenarioTab({
       className="scenario-table-workspace"
       data-responsive-task={responsiveProjection.taskId}
       data-responsive-layout={responsiveProjection.layout}
+      data-responsive-continuity={responsiveProjection.continuityKey}
+      data-result-projection={responsiveProjection.resultProjection}
     >
       <header className="scenario-viewbar">
         <div className="scenario-view-switch" role="group" aria-label={t('Scenario view')}>
