@@ -47,7 +47,7 @@ Usage:
 Options:
   --port PORT       Start or look for the demo service on PORT (default: 8080).
   --profile NAME    Spring profile for the demo (default: test).
-  --no-build        Reuse the existing resource-gateway jar.
+  --no-build        Reuse an existing jar after validating the requested frontend mode.
   --api-only        Build without the React frontend profile.
   --run-tests       Run Maven tests during the package step.
   --stateful        Enable the encrypted stateful-mirror Session API for test/staging.
@@ -2095,6 +2095,40 @@ process_matches_service() {
         [[ "${command}" == *"resource-gateway-examples/pom.xml"* ]]
 }
 
+artifact_has_visual_frontend() {
+    local artifact
+    artifact="$(jar_path)"
+    if [ ! -f "${artifact}" ] || ! command -v jar >/dev/null 2>&1; then
+        return 1
+    fi
+
+    jar tf "${artifact}" 2>/dev/null | awk '
+        $0 == "BOOT-INF/classes/static/author/index.html" ||
+        $0 == "BOOT-INF/classes/static/libraries/index.html" ||
+        $0 == "BOOT-INF/classes/static/rehearsals/index.html" ||
+        $0 == "BOOT-INF/classes/static/showcase/index.html" {
+            if (!seen[$0]++) {
+                found++
+            }
+        }
+        END { exit found == 4 ? 0 : 1 }
+    '
+}
+
+validate_packaged_artifact() {
+    local artifact
+    artifact="$(jar_path)"
+    if [ ! -f "${artifact}" ]; then
+        echo "Resource Gateway jar does not exist: ${artifact}" >&2
+        return 1
+    fi
+    if truthy "${BUILD_FRONTEND}" && ! artifact_has_visual_frontend; then
+        echo "Resource Gateway jar does not contain the complete visual frontend." >&2
+        echo "Run again without --no-build, or pass --api-only for an API-only service." >&2
+        return 1
+    fi
+}
+
 listener_pid() {
     local port
     port="$(configured_port)"
@@ -2143,13 +2177,19 @@ assert_port_available() {
 }
 
 print_urls() {
-    cat <<EOF
-Demo URLs:
+    echo "Demo URLs:"
+    if truthy "${BUILD_FRONTEND}" && artifact_has_visual_frontend; then
+        cat <<EOF
   Author canvas:   $(author_url)
   Library author:  $(libraries_url)
   Rehearsals:      $(rehearsals_url)
   Showcase:        $(showcase_url)
   Legacy composer: $(legacy_url)
+EOF
+    else
+        echo "  Visual routes:   not advertised (--api-only or not packaged)"
+    fi
+    cat <<EOF
   Capability probe: $(capabilities_url)
   Active profile:   ${SPRING_PROFILE}
 
@@ -2175,10 +2215,7 @@ EOF
 
 build_app() {
     if truthy "${SKIP_BUILD}"; then
-        if [ ! -f "$(jar_path)" ]; then
-            echo "Cannot skip build: $(jar_path) does not exist." >&2
-            return 1
-        fi
+        validate_packaged_artifact
         echo "Skipping build; reusing $(jar_path)."
         return 0
     fi
@@ -2196,10 +2233,20 @@ build_app() {
     printf 'Command:'
     printf ' %q' "${command[@]}"
     printf '\n'
-    (
+    if ! (
         cd "${ROOT_DIR}"
         "${command[@]}"
-    )
+    ); then
+        return 1
+    fi
+    validate_packaged_artifact
+}
+
+visual_routes_ready() {
+    curl -fsS "$(author_url)" >/dev/null 2>&1 &&
+        curl -fsS "$(libraries_url)" >/dev/null 2>&1 &&
+        curl -fsS "$(rehearsals_url)" >/dev/null 2>&1 &&
+        curl -fsS "$(showcase_url)" >/dev/null 2>&1
 }
 
 wait_for_ready() {
@@ -2211,6 +2258,7 @@ wait_for_ready() {
     local deadline
     local url
     local response
+    local visual_readiness
     deadline=$((SECONDS + STARTUP_TIMEOUT))
     url="$(capabilities_url)"
     while [ "${SECONDS}" -lt "${deadline}" ]; do
@@ -2219,6 +2267,14 @@ wait_for_ready() {
             return 1
         fi
         if response="$(curl -fsS "${url}" 2>/dev/null)"; then
+            visual_readiness=""
+            if truthy "${BUILD_FRONTEND}" && ! visual_routes_ready; then
+                sleep 2
+                continue
+            fi
+            if truthy "${BUILD_FRONTEND}"; then
+                visual_readiness=", and visual route probes passed"
+            fi
             if truthy "${SHADOW_JOBS}"; then
                 if command -v jq >/dev/null 2>&1; then
                     if ! printf '%s' "${response}" | jq -e \
@@ -2345,25 +2401,25 @@ wait_for_ready() {
                     continue
                 fi
                 if truthy "${RG_MIRROR_SCENARIO_BATCH_SCHEDULER_ENABLED:-false}"; then
-                    echo "Demo service ready; stateful and Scenario batch scheduler probes passed: ${url}"
+                    echo "Demo service ready; stateful and Scenario batch scheduler probes passed${visual_readiness}: ${url}"
                 else
-                    echo "Demo service ready; stateful Session, state store, and write-attempt reconciliation probes passed: ${url}"
+                    echo "Demo service ready; stateful Session, state store, and write-attempt reconciliation probes passed${visual_readiness}: ${url}"
                 fi
                 return 0
             fi
             if truthy "${RG_MIRROR_SCENARIO_BATCH_SCHEDULER_ENABLED:-false}"; then
-                echo "Demo service ready; Scenario batch API and scheduler probes passed: ${url}"
+                echo "Demo service ready; Scenario batch API and scheduler probes passed${visual_readiness}: ${url}"
                 return 0
             fi
             if truthy "${RG_MIRROR_OUTCOME_CONTINUOUS_ASSESSMENT_SCHEDULER_ENABLED:-false}"; then
-                echo "Demo service ready; continuous outcome assessment API, worker, authority, and scheduler probes passed: ${url}"
+                echo "Demo service ready; continuous outcome assessment API, worker, authority, and scheduler probes passed${visual_readiness}: ${url}"
                 return 0
             fi
             if truthy "${SHADOW_JOBS}"; then
-                echo "Demo service ready; Shadow job, lifecycle, and source-resolution API probes passed: ${url}"
+                echo "Demo service ready; Shadow job, lifecycle, and source-resolution API probes passed${visual_readiness}: ${url}"
                 return 0
             fi
-            echo "Demo service ready; integration capability probe passed: ${url}"
+            echo "Demo service ready; integration capability probe passed${visual_readiness}: ${url}"
             return 0
         fi
         sleep 2
@@ -2377,6 +2433,10 @@ wait_for_ready() {
 
 open_author_if_requested() {
     if ! truthy "${OPEN_BROWSER}"; then
+        return 0
+    fi
+    if ! truthy "${BUILD_FRONTEND}" || ! artifact_has_visual_frontend; then
+        echo "Browser open skipped because visual routes are not available in this mode."
         return 0
     fi
     if command -v open >/dev/null 2>&1; then

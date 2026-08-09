@@ -664,7 +664,7 @@ interface ProofPresentation {
 | 性能 | autosave P95、history memory、route chunk、WebView cold start |
 | E3/E4 | 固定任务、真实角色、连续发布周期、incident-to-regression 闭环 |
 
-必须先补“会失败的真实浏览器测试”，再实现修复。当前 `5905 / 5905` 全绿只能证明当前契约被稳定实现，
+必须先补“会失败的真实浏览器测试”，再实现修复。当前 `5907 / 5907` 全绿只能证明当前契约被稳定实现，
 不能证明契约本身覆盖了数据安全。尤其要新增：
 
 ```text
@@ -786,6 +786,7 @@ WP-13，不再把 E3/E4 缺口伪装成页面开发任务。
 - [x] E2 P0/P1 = 0；
 - [x] E2 全量自动化、production build、真实浏览器矩阵全绿；
 - [x] application chunk `<=350KiB`、同步 shell `<=180KiB`、路由启动闭包 `<=350KiB` gzip；
+- [x] 默认演示启动校验可视化 JAR 内容，并以 capability + 四个页面共同定义 ready；
 - [ ] 关键任务成功率 `>=95%`；
 - [ ] 12 名目标角色完成 E3 固定任务；
 - [ ] 两个团队连续两个周期完成 E4；

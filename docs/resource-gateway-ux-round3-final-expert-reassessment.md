@@ -37,11 +37,12 @@ canonical command fingerprint 和持久 receipt 关闭网络不确定结果；Au
 | 参考 VS Code 宿主可独立运行 | 离线 catalog、AES-GCM recovery、SecretStorage、CSP 与受限 fetch |
 | Graph Save 可跨响应丢失、重启和副本精确重放 | versioned command、数据库行锁、事务 receipt、same-key drift 409 |
 | 多人冲突不再迫使用户丢弃一方 | 业务事实 Compare、完整 Workspace/Library Fork、二次确认 Reload、模糊成功回收；production JAR 真实冲突路径通过 |
+| 演示入口不再把 API 存活误报成页面可用 | `--no-build` 校验四个前端入口；ready 同时探测 capability 与四个页面；API-only 不展示无效链接 |
 | 真实宿主恢复与画布可读 | 干净 profile 重启 1 个面板、5/12 exact recovery；标准/聚焦零目标碰撞 |
 | E3/E4 不能被空样本误判通过 | 版本化证据合同、反例测试、空模板 `NOT READY` |
 
 完成度补强后前端 `98` 个文件、`750` 项测试与扩展 `16` 项测试全绿；production build、TypeScript、i18n、UX、host
-和 bundle gate 全部通过。当前 Maven 全量 `5,905` 项全绿；S5 变更对应的
+和 bundle gate 全部通过。当前 Maven 全量 `5,907` 项全绿；S5 变更对应的
 `VisualAuthoringAppJsTest` 29 项通过。production JAR 的真实 Chromium 冲突路径进一步验证了首焦点、两阶段 Reload、
 Escape、Fork 内容保全和 390px 零横向溢出，并据此修复了 dialog 容器抢先聚焦的时序缺陷。
 
@@ -76,7 +77,7 @@ Escape、Fork 内容保全和 390px 零横向溢出，并据此修复了 dialog 
 
 1. `AuthorCanvas.tsx` 仍是大型编排器。chunk 已达预算，但源码责任密度高；后续只在真实回归或并行开发
    冲突出现时，按 command/surface 边界继续抽取，不能为追求行数重写。
-2. 全局 CSS minified `316.13 kB`。gzip 只有 `50.63 kB`，当前启动闭包已达标；若 WebView style/layout
+2. 全局 CSS minified `319.86 kB`。gzip 只有 `51.25 kB`，当前启动闭包已达标；若 WebView style/layout
    trace 证明主线程受压，再按路由抽 CSS。没有测量前不做高风险样式拆分。
 3. 参考 VS Code 宿主已经实现加密、唯一面板、超时与安全代理，但 Windows/Linux、Remote/SSH、企业代理
    和客户安全策略矩阵仍未执行。当前证据只支持参考实现，不支持宣称所有宿主环境兼容。

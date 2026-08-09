@@ -1736,8 +1736,8 @@ legal hold、purge、通用 JSON/DSL 或 raw payload 按钮。当前版本闭合
 | `--open` | 启动后自动打开 `/author/` |
 | `--port 18080` | 改用指定端口 |
 | `--profile test\|staging\|production` | 选择 Spring profile；默认 `test`，`production` 不装配 testing API |
-| `--no-build` | 跳过打包，复用已有 jar |
-| `--api-only` | 不启用 `-Pfrontend`，只打包后端 API |
+| `--no-build` | 跳过打包并复用已有 jar；默认可视化模式会先校验四个前端入口齐全，否则在启动 Java 前失败 |
+| `--api-only` | 不启用 `-Pfrontend`，只打包后端 API；状态页只展示 API，不承诺可视化路由 |
 | `--run-tests` | 打包时不跳过 Maven 测试 |
 | `--scenario-batch` | 启用单地域分区、固定并发度的 Scenario batch worker（仅 test/staging） |
 | `-- --gateway.base-url=http://localhost:9091` | `--` 后面的参数透传给 Spring Boot 应用 |
@@ -1792,8 +1792,10 @@ fleet 的 `ready` 当作可发布证据。变量全集及剩余 mTLS、external 
 测试控制面的 target fingerprint 获取、fixture 注册、执行、批量、证据查询、脱敏和生产隔离操作见
 [Resource Gateway Testing Control Plane API](resource-gateway-testing-control-plane-api.md)。
 
-脚本使用 `target/example-pids/visual-canvas-demo.pid` 记录进程，使用 `target/example-logs/visual-canvas-demo.log` 记录日志；
-`status` 会同时报告 capability probe 是否健康。停止时会校验 PID/端口上的进程确实像 Resource Gateway demo，避免
+脚本使用 `target/example-pids/visual-canvas-demo.pid` 记录进程，使用 `target/example-logs/visual-canvas-demo.log` 记录日志。
+默认可视化模式只有在 capability probe 以及 `/author/`、`/libraries/`、`/rehearsals/`、`/showcase/` 四个页面都成功
+后才报告 ready；这避免 API-only JAR 被误报成可演示版本。`status` 会同时报告 capability probe 是否健康。停止时会
+校验 PID/端口上的进程确实像 Resource Gateway demo，避免
 误停其它服务。演示新的 payload 保留策略时，可直接透传 Spring 参数，例如：
 
 ```bash

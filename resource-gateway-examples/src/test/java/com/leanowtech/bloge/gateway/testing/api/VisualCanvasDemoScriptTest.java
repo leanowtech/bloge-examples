@@ -9,6 +9,8 @@ import java.nio.file.Path;
 import java.time.Duration;
 import java.util.HashMap;
 import java.util.Map;
+import java.util.zip.ZipEntry;
+import java.util.zip.ZipOutputStream;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
@@ -28,6 +30,52 @@ class VisualCanvasDemoScriptTest {
 
         assertThat(process.waitFor()).isZero();
         assertThat(process.getInputStream().readAllBytes()).isEmpty();
+    }
+
+    @Test
+    void noBuildRejectsAnApiOnlyJarBeforeStartingTheVisualDemo() throws Exception {
+        Path root = temporaryDirectory.resolve("demo-root");
+        Path script = root.resolve("scripts/visual-canvas-demo.sh");
+        Path jar = root.resolve(
+                "resource-gateway-examples/target/bloge-examples-resource-gateway-1.0.0.jar");
+        Files.createDirectories(script.getParent());
+        Files.createDirectories(jar.getParent());
+        Files.copy(SCRIPT, script);
+        try (ZipOutputStream output = new ZipOutputStream(Files.newOutputStream(jar))) {
+            output.putNextEntry(new ZipEntry("BOOT-INF/classes/application.properties"));
+            output.write("spring.application.name=resource-gateway".getBytes(StandardCharsets.UTF_8));
+            output.closeEntry();
+        }
+
+        Process process = new ProcessBuilder(
+                "bash", script.toString(), "start", "--no-build")
+                .redirectErrorStream(true)
+                .start();
+
+        assertThat(process.waitFor(Duration.ofSeconds(5))).isTrue();
+        String output = new String(
+                process.getInputStream().readAllBytes(), StandardCharsets.UTF_8);
+        assertThat(process.exitValue()).isEqualTo(1);
+        assertThat(output).contains(
+                "Resource Gateway jar does not contain the complete visual frontend.",
+                "Run again without --no-build, or pass --api-only for an API-only service.");
+        assertThat(output).doesNotContain(
+                "Skipping build", "Starting Visual Canvas demo", "Demo service ready");
+    }
+
+    @Test
+    void readinessChecksEveryAdvertisedVisualRoute() throws Exception {
+        String source = Files.readString(SCRIPT, StandardCharsets.UTF_8);
+
+        assertThat(source).contains(
+                "BOOT-INF/classes/static/author/index.html",
+                "BOOT-INF/classes/static/libraries/index.html",
+                "BOOT-INF/classes/static/rehearsals/index.html",
+                "BOOT-INF/classes/static/showcase/index.html",
+                "curl -fsS \"$(author_url)\"",
+                "curl -fsS \"$(libraries_url)\"",
+                "curl -fsS \"$(rehearsals_url)\"",
+                "curl -fsS \"$(showcase_url)\"");
     }
 
     @Test

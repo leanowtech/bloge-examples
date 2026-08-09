@@ -214,8 +214,8 @@ verification record are in
 Top-level workspaces are route-lazy and are prefetched only after pointer or keyboard navigation
 intent. The production build enforces a `180 KiB` application-shell budget and a `350 KiB` maximum
 for every application chunk, plus a `350 KiB` gzip budget for each route's complete static JS/CSS
-startup closure. The current shell is `149.50 KiB`, the largest Author interaction chunk is
-`311.98 KiB`, and the complete Author startup closure is `321.75 KiB` gzip. In a VS Code WebView,
+startup closure. The current shell is `151.74 KiB`, the largest Author interaction chunk is
+`313.30 KiB`, and the complete Author startup closure is `326.45 KiB` gzip. In a VS Code WebView,
 a versioned bridge replaces fetch and browser recovery
 with correlated host requests and a `HOST_ENCRYPTED` store. The extension host requests disposal,
 waits for every authoring surface to flush, and destroys the panel only after a ready receipt.
@@ -2364,6 +2364,7 @@ Useful variants:
 ```bash
 ./scripts/start-visual-canvas-demo.sh --port 18080
 ./scripts/start-visual-canvas-demo.sh --no-build
+./scripts/start-visual-canvas-demo.sh --api-only
 ./scripts/start-visual-canvas-demo.sh --run-tests
 ./scripts/start-visual-canvas-demo.sh --stateful
 ./scripts/start-visual-canvas-demo.sh --profile production
@@ -2462,8 +2463,13 @@ non-null fingerprints; perform that upgrade with all replicas stopped because it
 production migration protocol. These local unkeyed seals expose drift but do not replace database
 access/audit controls or an externally witnessed integrity commitment.
 
-The start command becomes ready only after the integration capability probe
-succeeds. Process output is written to `target/example-logs/visual-canvas-demo.log`;
+`--no-build` validates that a visual-demo jar contains `/author/`, `/libraries/`,
+`/rehearsals/`, and `/showcase/` before starting Java. Reusing an API-only jar in
+the default visual mode fails with a rebuild instruction; pass `--api-only` when
+only the API surface is intended. The start command becomes ready only after the
+integration capability probe and every packaged visual route succeed. API-only
+status output does not advertise unavailable visual URLs. Process output is
+written to `target/example-logs/visual-canvas-demo.log`;
 the PID and selected port are kept under `target/example-pids/`.
 
 The testing API requires `Authorization: Bearer bloge-aneke-demo-token` and a

@@ -96,14 +96,19 @@ Common demo options:
 ./scripts/start-visual-canvas-demo.sh --open
 ./scripts/start-visual-canvas-demo.sh --port 18080
 ./scripts/start-visual-canvas-demo.sh --no-build
+./scripts/start-visual-canvas-demo.sh --api-only
 ./scripts/start-visual-canvas-demo.sh --profile staging
 ./scripts/start-visual-canvas-demo.sh --profile production
 ./scripts/start-visual-canvas-demo.sh --shadow-jobs
 ./scripts/start-visual-canvas-demo.sh --shadow-scheduler
 ```
 
-Startup waits for `GET /api/integration/capabilities`, then prints the canvas,
-showcase, capability probe, correctness-workbook, and gate-feedback entry points.
+`--no-build` first verifies that the reused jar contains all four visual entry
+points; an API-only jar fails before Java starts and explains how to rebuild or
+use `--api-only`. Startup becomes ready only after both
+`GET /api/integration/capabilities` and the Author, Library, Rehearsal, and
+Showcase pages respond successfully. API-only mode prints API entry points and
+does not advertise visual URLs.
 `--shadow-jobs` enables the protected durable Shadow queue/lifecycle API;
 `--shadow-scheduler` additionally starts bounded pollers while honestly leaving
 worker/serving readiness false until a trusted data-plane connector is installed.
