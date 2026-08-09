@@ -96,7 +96,7 @@ export default function AssetTestTable({
   onConflict,
   onClose,
 }: AssetTestTableProps) {
-  const { t } = useI18n();
+  const { t, d } = useI18n();
   const dialogRef = useRef<HTMLDivElement>(null);
   const [exactDraft, setExactDraft] = useState<VisualLibraryAuthoringDraft | null>(null);
   const [operatorDraft, setOperatorDraft] = useState<VisualAuthoringOperatorTestDraft | null>(null);
@@ -422,7 +422,7 @@ export default function AssetTestTable({
               data-testid="library-test-evidence-trust"
               title={t('Signed by {keyId}', { keyId: evidenceView.evidence.seal.keyId })}
             >
-              <strong>{t('SIGNED')}</strong> {t(evidenceView.freshness)}
+              <strong>{t('SIGNED')}</strong> {d(evidenceView.freshness)}
             </span>
           )}
           {draftGate && (
@@ -436,7 +436,7 @@ export default function AssetTestTable({
           )}
           {kind === 'function' && functionDraft?.executionProfile && (
             <span title={functionDraft.executionProfile}>
-              {t('Runner')} <strong>{t(executionProfileLabel(functionDraft.executionProfile))}</strong>
+              {t('Runner')} <strong>{d(executionProfileLabel(functionDraft.executionProfile))}</strong>
             </span>
           )}
         </div>
@@ -446,14 +446,14 @@ export default function AssetTestTable({
           {evidenceView?.freshness === 'STALE' && (
             <p className="library-test-notice warning">
               {t('This signed result no longer matches the current draft: {reasons}.', {
-                reasons: evidenceView.staleReasons.map((reason) => t(reasonLabel(reason))).join(', '),
+                reasons: evidenceView.staleReasons.map((reason) => d(reasonLabel(reason))).join(', '),
               })}
             </p>
           )}
           {assetGate?.status === 'BLOCKED' && assetGate.reasons.length > 0 && (
             <p className="library-test-notice warning" data-testid="library-test-gate-reasons">
               {t('This asset is not test-evidenced: {reasons}.', {
-                reasons: assetGate.reasons.map((reason) => t(reasonLabel(reason))).join(', '),
+                reasons: assetGate.reasons.map((reason) => d(reasonLabel(reason))).join(', '),
               })}
             </p>
           )}
@@ -776,7 +776,7 @@ function FunctionTable({
   onRun: (index: number) => void;
   onSaveFixture: (index: number) => void;
 }) {
-  const { t } = useI18n();
+  const { t, d } = useI18n();
   const patch = (index: number, value: Partial<FunctionEditor>) => onRowsChange(
     rows.map((row, rowIndex) => rowIndex === index ? { ...row, ...value } : row),
   );
@@ -801,7 +801,7 @@ function FunctionTable({
             onClick={() => onSelect(index)}
           >
             <span>{row.id || t('Case {index}', { index: index + 1 })}</span>
-            <small>{t(caseKindLabel(row.kind))}</small>
+            <small>{d(caseKindLabel(row.kind))}</small>
             <CaseResultBadge result={results[index]} successLabel={t('Runtime passed')} />
           </button>
         ))}
@@ -865,7 +865,7 @@ function FunctionTable({
             </div>
             <div>
               <dt>{t('Execution profile')}</dt>
-              <dd>{t(executionProfileLabel(executionProfile || 'not advertised'))}</dd>
+              <dd>{d(executionProfileLabel(executionProfile || 'not advertised'))}</dd>
             </div>
           </dl>
           <p>{t('Function cases invoke the exact advertised runtime binding; dependency overrides are not inferred from a design-only signature.')}</p>
@@ -980,7 +980,7 @@ function CaseActions({
   onSaveFixture: (index: number) => void;
   onRemove: (index: number) => void;
 }) {
-  const { t } = useI18n();
+  const { t, d } = useI18n();
   return (
     <footer className="asset-scenario-actions">
       <button
@@ -988,7 +988,7 @@ function CaseActions({
         className="danger"
         onClick={() => onRemove(index)}
         disabled={busy}
-        aria-label={t('Remove {kind} case {index}', { kind: t(kind), index: index + 1 })}
+        aria-label={t('Remove {kind} case {index}', { kind: d(kind), index: index + 1 })}
       >
         {t('Delete case')}
       </button>
@@ -1058,13 +1058,13 @@ function TestResult({
   successLabel: string;
   showActual?: boolean;
 }) {
-  const { t } = useI18n();
+  const { t, d } = useI18n();
   if (!result) {
     return <span className="library-test-result idle">{t('Not run')}</span>;
   }
   return (
     <div className={`library-test-result ${result.passed ? 'passed' : 'failed'}`}>
-      <strong>{result.passed ? successLabel : result.status ? t(result.status) : t('Failed')}</strong>
+      <strong>{result.passed ? successLabel : result.status ? d(result.status) : t('Failed')}</strong>
       {showActual && result.actual !== undefined && (
         <code title={pretty(result.actual)}>{compactValue(result.actual)}</code>
       )}

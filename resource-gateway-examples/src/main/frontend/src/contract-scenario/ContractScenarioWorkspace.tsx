@@ -199,7 +199,7 @@ export default function ContractScenarioWorkspace({
   runCommand,
   onRunRemediation,
 }: ContractScenarioWorkspaceProps) {
-  const { t } = useI18n();
+  const { t, d } = useI18n();
   const [activeTab, setActiveTab] = useState<WorkspaceTab>(initialTab);
   const [selectedScenarioId, setSelectedScenarioId] = useState(
     initialScenarioId || lastRunScenarioId,
@@ -1207,12 +1207,12 @@ export default function ContractScenarioWorkspace({
       >
         <header className="contract-workspace-header">
           <div>
-            <span>{t(`${targetLabel} Contract`)}</span>
+            <span>{d(`${targetLabel} Contract`)}</span>
             <h2 title={contract.target.id}>{contract.target.id}</h2>
             <p>
               {t('Revision {revision} · {confidence} projection', {
                 revision: contract.target.revision,
-                confidence: t(contract.confidence.toLowerCase()),
+                confidence: d(contract.confidence.toLowerCase()),
               })}
             </p>
           </div>
@@ -1305,7 +1305,7 @@ export default function ContractScenarioWorkspace({
         {!current && (
           <div className="contract-stale-banner" role="alert">
             <div>
-              <strong>{t('Scenarios target an older {target} or Contract.', { target: t(targetLabel).toLowerCase() })}</strong>
+              <strong>{t('Scenarios target an older {target} or Contract.', { target: d(targetLabel).toLowerCase() })}</strong>
               <span>{t('Review the interface change, then explicitly rebase before running.')}</span>
             </div>
             <button type="button" className="secondary compact" onClick={() => {
@@ -1319,11 +1319,11 @@ export default function ContractScenarioWorkspace({
         {assetNotice && (
           <div className={`scenario-asset-notice ${assetNotice.level}`} role={assetNotice.level === 'error' ? 'alert' : 'status'}>
             <strong>{t(assetNotice.level === 'ok' ? 'Asset state' : 'Action blocked')}</strong>
-            <span>{t(assetNotice.message)}</span>
+            <span>{d(assetNotice.message)}</span>
             {publication && (
               <code title={publication.report.publicationId}>
                 {t('{status} · attempt {attempt}', {
-                  status: t(publication.report.status),
+                  status: d(publication.report.status),
                   attempt: publication.report.attempt,
                 })}
               </code>
@@ -1356,7 +1356,7 @@ export default function ContractScenarioWorkspace({
                 key={tab}
                 onClick={() => navigateWorkspace(tab)}
               >
-                {t(label)}
+                {d(label)}
               </button>
             ))}
           </nav>
@@ -1396,7 +1396,7 @@ export default function ContractScenarioWorkspace({
               differentialCounts={differentialCounts}
               importDisabled={!assetStored || !current}
               importDisabledReason={!assetStored
-                ? t('Save {target} before importing cases.', { target: t(targetLabel) })
+                ? t('Save {target} before importing cases.', { target: d(targetLabel) })
                 : t('Rebase Scenarios to the current Contract before importing cases.')}
               compileMessages={compileMessages}
               advancedText={advancedText}
@@ -1616,7 +1616,7 @@ function ScenarioTab({
   onRetryFailedTableRun,
   onAcceptCoverageCandidate,
 }: ScenarioTabProps) {
-  const { m, t } = useI18n();
+  const { m, t, d } = useI18n();
   const compactTaskViewport = useCompactTaskViewport();
   const [mobileIntent, setMobileIntent] = useState<ScenarioTaskIntent>('RUNNER');
   const [mobileStep, setMobileStep] = useState<ScenarioEditorStep>('GIVEN');
@@ -1757,7 +1757,7 @@ function ScenarioTab({
             key={scenario.scenarioId}
             onClick={() => onSelectScenario(scenario.scenarioId)}
           >
-            <span>{t(scenario.caseType)}</span>
+            <span>{d(scenario.caseType)}</span>
             <strong>{scenario.name}</strong>
             <small>
               {scenario.dependencies.filter((entry) => entry.behavior.kind !== 'REAL').length}
@@ -2010,12 +2010,12 @@ function ScenarioTab({
                   })}</span>
                   {runCommand.state === 'BLOCKED' && (
                     <span className="scenario-command-explanation" id="scenario-run-blocker" role="status">
-                      {runCommand.messageId ? m(runCommand.messageId) : t(runCommand.message)}
+                      {runCommand.messageId ? m(runCommand.messageId) : d(runCommand.message)}
                       {runCommand.remediation && (
                         <button type="button" onClick={onRunRemediation}>
                           {runCommand.remediation.labelId
                             ? m(runCommand.remediation.labelId)
-                            : t(runCommand.remediation.label)}
+                            : d(runCommand.remediation.label)}
                         </button>
                       )}
                     </span>
@@ -2081,7 +2081,7 @@ function CompatibilityTab({
   onApplyMigrations: () => void;
   onResolve: () => void;
 }) {
-  const { t } = useI18n();
+  const { t, d } = useI18n();
   const checks = [
     {
       label: t('{target} target', { target: t(contract.target.kind === 'OPERATOR' ? 'Operator' : 'Graph') }),
@@ -2110,7 +2110,7 @@ function CompatibilityTab({
     <div className="compatibility-workbench">
       <header>
         <span className={`contract-current-badge ${current ? 'current' : 'stale'}`}>
-          {t(report?.classification ?? (current ? 'UNCHANGED' : 'REVIEW REQUIRED'))}
+          {d(report?.classification ?? (current ? 'UNCHANGED' : 'REVIEW REQUIRED'))}
         </span>
         <h3>{t('{mode} compatibility policy', { mode: contract.compatibilityPolicy.mode })}</h3>
         <p>{t('Unknown semantics block automatic migration; a rebase never claims a test pass.')}</p>
@@ -2181,10 +2181,10 @@ function CompatibilityTab({
               {report.findings.map((finding) => (
                 <article className="compatibility-finding" key={finding.findingId}>
                   <span className={`compatibility-severity ${finding.classification.toLowerCase()}`}>
-                    {t(finding.classification)}
+                    {d(finding.classification)}
                   </span>
                   <div>
-                    <strong>{t(finding.message)}</strong>
+                    <strong>{d(finding.message)}</strong>
                     <code>{finding.scope} {finding.previousPath && `${finding.previousPath} -> `}{finding.path || '/'}</code>
                   </div>
                   <small>{finding.findingId}</small>
@@ -2205,7 +2205,7 @@ function CompatibilityTab({
                   <strong>{scenarioDraftSet.scenarios.find(
                     (scenario) => scenario.scenarioId === impact.scenarioId,
                   )?.name ?? impact.scenarioId}</strong>
-                  <span>{t(impact.status)}</span>
+                  <span>{d(impact.status)}</span>
                   <code>{impact.paths.join(', ') || '/'}</code>
                 </div>
               ))}
@@ -2218,8 +2218,8 @@ function CompatibilityTab({
                 <div className="compatibility-migration-row" key={migration.actionId}>
                   <span>{t(migration.automatic ? 'SAFE EDIT' : 'MANUAL')}</span>
                   <div>
-                    <strong>{t(migration.kind)}</strong>
-                    <small>{t(migration.rationale)}</small>
+                    <strong>{d(migration.kind)}</strong>
+                    <small>{d(migration.rationale)}</small>
                   </div>
                   <code>{migration.fromPath && `${migration.fromPath} -> `}{migration.toPath || '/'}</code>
                 </div>
@@ -2288,7 +2288,7 @@ function EvidenceTab({
   onOpenCompose: () => void;
   onSelectDiagnostic?: (diagnostic: ScenarioEvidenceDiagnostic) => void;
 }) {
-  const { t } = useI18n();
+  const { t, d } = useI18n();
   if (!response) {
     return (
       <div className="scenario-empty-state">
@@ -2334,10 +2334,10 @@ function EvidenceTab({
     <div className="scenario-evidence" data-testid="scenario-evidence">
       <header className={`scenario-evidence-heading ${evidence.tone}`}>
         <span className={`contract-current-badge ${evidence.tone === 'success' ? 'current' : 'stale'}`}>
-          {t(evidence.headline)}
+          {d(evidence.headline)}
         </span>
         <h3>{response.graphName}</h3>
-        <p>{localizedEvidenceText(t, evidence.summary, evidence.summaryValues)}</p>
+        <p>{localizedEvidenceText(d, evidence.summary, evidence.summaryValues)}</p>
       </header>
 
       <EvidenceCommandReceiptPanel receipt={commandReceipt} />
@@ -2351,9 +2351,9 @@ function EvidenceTab({
             data-state={dimension.state}
             data-testid={`scenario-trust:${dimension.key}`}
           >
-            <span>{t(dimension.label)}</span>
-            <strong>{t(dimension.status)}</strong>
-            <small>{localizedEvidenceText(t, dimension.detail, dimension.detailValues)}</small>
+            <span>{d(dimension.label)}</span>
+            <strong>{d(dimension.status)}</strong>
+            <small>{localizedEvidenceText(d, dimension.detail, dimension.detailValues)}</small>
           </section>
         ))}
       </div>
@@ -2457,7 +2457,7 @@ function EvidenceCommandReceiptPanel({
 }: {
   receipt?: ScenarioCommandReceipt | null;
 }) {
-  const { t } = useI18n();
+  const { t, d } = useI18n();
   if (!receipt) return null;
   return (
     <section
@@ -2467,11 +2467,11 @@ function EvidenceCommandReceiptPanel({
     >
       <header>
         <span>{t('Command receipt')}</span>
-        <strong>{t(receipt.state)}</strong>
+        <strong>{d(receipt.state)}</strong>
       </header>
       <dl>
         <div><dt>{t('Correlation ID')}</dt><dd><code>{receipt.correlationId}</code></dd></div>
-        <div><dt>{t('Scope')}</dt><dd>{t(receipt.mode)} · {t('{count} cases', { count: receipt.caseCount })}</dd></div>
+        <div><dt>{t('Scope')}</dt><dd>{d(receipt.mode)} · {t('{count} cases', { count: receipt.caseCount })}</dd></div>
         <div><dt>{t('Intent fingerprint')}</dt><dd><code>{receipt.previewFingerprint || t('server resolved')}</code></dd></div>
         <div><dt>{t('Canonical fingerprint')}</dt><dd><code>{receipt.canonicalFingerprint || t('local exact scope')}</code></dd></div>
       </dl>
@@ -2490,7 +2490,7 @@ function EvidenceIssueList({
   tone: 'danger' | 'warning';
   onSelectDiagnostic?: (diagnostic: ScenarioEvidenceDiagnostic) => void;
 }) {
-  const { t } = useI18n();
+  const { t, d } = useI18n();
   return (
     <section className={`scenario-evidence-issues ${tone}`}>
       <strong>{title}</strong>
@@ -2498,19 +2498,15 @@ function EvidenceIssueList({
         {issues.map((issue) => (
           <li key={issue.id}>
             <span>
-              <b>{localizedEvidenceText(t, issue.message, issue.messageValues)}</b>
-              <small>
-                {issue.scope} · {issue.code}
-                {(issue.occurrences ?? 1) > 1
-                  ? ` · ${t('{count} occurrences', { count: issue.occurrences ?? 1 })}`
-                  : ''}
-              </small>
-              {issue.coordinate && (
-                <details>
-                  <summary>{t('Technical target')}</summary>
-                  <code>{issue.coordinate}</code>
-                </details>
+              <b>{localizedEvidenceText(d, issue.message, issue.messageValues)}</b>
+              {(issue.occurrences ?? 1) > 1 && (
+                <small>{t('{count} occurrences', { count: issue.occurrences ?? 1 })}</small>
               )}
+              <details>
+                <summary>{t('Technical details')}</summary>
+                <code>{issue.scope} · {issue.code}</code>
+                {issue.coordinate && <code>{issue.coordinate}</code>}
+              </details>
             </span>
             {issue.diagnostic && onSelectDiagnostic && (
               <button
@@ -2577,14 +2573,14 @@ function evidenceValue(value: unknown): string {
 }
 
 function localizedEvidenceText(
-  t: (source: string, values?: TranslationValues) => string,
+  d: (source: string, values?: TranslationValues) => string,
   source: string,
   values?: TranslationValues,
 ): string {
   if (!values || !Object.prototype.hasOwnProperty.call(values, 'label')) {
-    return t(source, values);
+    return d(source, values);
   }
-  return t(source, { ...values, label: t(String(values.label)) });
+  return d(source, { ...values, label: d(String(values.label)) });
 }
 
 function newOutputAssertion(sequence: number, contract: ContractDraft): AssertionDraft {

@@ -3293,6 +3293,39 @@ button.primary:disabled {
   color: #b42318;
 }
 
+.scenario-matrix-authority {
+  min-width: 150px;
+  display: grid;
+  gap: 3px;
+}
+
+.scenario-matrix-authority > span {
+  display: flex;
+  gap: 4px;
+  align-items: baseline;
+  white-space: nowrap;
+}
+
+.scenario-matrix-authority > span b {
+  color: #475569;
+  font-size: var(--rg-font-aux);
+  font-weight: 800;
+  text-transform: uppercase;
+}
+
+.scenario-matrix-authority > strong {
+  color: #9a3412;
+  font-size: var(--rg-font-aux);
+}
+
+.scenario-matrix-authority[data-governance="eligible"] > strong {
+  color: #176b36;
+}
+
+.scenario-matrix-authority[data-governance="not_evaluated"] > strong {
+  color: #64748b;
+}
+
 .scenario-matrix-needs-oracle {
   color: #9a5d00;
   font-size: var(--rg-font-aux);
@@ -3391,6 +3424,47 @@ button.primary:disabled {
   font-size: var(--rg-font-aux);
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.scenario-matrix-proof-details dd :is(strong, small) {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.scenario-matrix-proof-details dd small {
+  margin-top: 2px;
+  color: #64748b;
+  white-space: normal;
+}
+
+.scenario-matrix-technical-details {
+  margin-top: 10px;
+  border-top: 1px solid #d7dee8;
+  padding-top: 8px;
+  color: #475569;
+  font-size: var(--rg-font-aux);
+}
+
+.scenario-matrix-technical-details > summary {
+  cursor: pointer;
+  font-weight: 750;
+}
+
+.scenario-matrix-technical-details dl {
+  display: grid;
+  gap: 4px;
+  margin: 8px 0;
+}
+
+.scenario-matrix-technical-details dl > div {
+  display: grid;
+  grid-template-columns: 88px minmax(0, 1fr);
+  gap: 6px;
+}
+
+.scenario-matrix-technical-details :is(dt, dd) {
+  margin: 0;
 }
 
 .scenario-matrix-detail-empty {
@@ -11172,6 +11246,24 @@ button.primary:disabled {
 .assertion-row span {
   color: var(--muted);
   font-size: var(--rg-font-aux);
+  overflow-wrap: anywhere;
+}
+
+.rehearsal-case-technical-detail {
+  color: var(--muted);
+  font-size: var(--rg-font-aux);
+}
+
+.rehearsal-case-technical-detail summary {
+  width: max-content;
+  cursor: pointer;
+  font-weight: 750;
+}
+
+.rehearsal-case-technical-detail code,
+.rehearsal-case-technical-detail p {
+  display: block;
+  margin: 4px 0 0;
   overflow-wrap: anywhere;
 }
 

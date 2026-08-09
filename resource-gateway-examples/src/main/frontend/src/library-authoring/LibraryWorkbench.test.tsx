@@ -438,7 +438,7 @@ describe('LibraryWorkbench', () => {
       picker.dispatchEvent(new Event('change', { bubbles: true }));
     });
     const operatorText = query('[data-testid="mobile-library-review"]').textContent ?? '';
-    expect(operatorText).toContain('执行类型纯计算');
+    expect(operatorText).toContain('执行类型纯数据转换');
     expect(operatorText).toContain('运行时仅有文档');
     expect(operatorText).not.toContain('DOCUMENTED ONLY');
   });

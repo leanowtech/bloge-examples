@@ -105,7 +105,7 @@ paths:
 };
 
 export default function ExistingAssetDiscovery({ onStart }: ExistingAssetDiscoveryProps) {
-  const { t, m } = useI18n();
+  const { t, m , d } = useI18n();
   const [mode, setMode] = useState<LibraryAuthoringDiscoveryMode>('runtime');
   const [source, setSource] = useState('');
   const [projection, setProjection] = useState<VisualAuthoringFactProjection | null>(null);
@@ -127,7 +127,7 @@ export default function ExistingAssetDiscovery({ onStart }: ExistingAssetDiscove
       setProjection(await discoverLibraryAuthoringAssets(mode, request));
     } catch (failure) {
       setProjection(null);
-      setError(t(failure instanceof Error ? failure.message : 'Discovery failed.'));
+      setError(d(failure instanceof Error ? failure.message : 'Discovery failed.'));
     } finally {
       setBusy(false);
     }
@@ -155,7 +155,7 @@ export default function ExistingAssetDiscovery({ onStart }: ExistingAssetDiscove
             onClick={() => chooseMode(candidate)}
             data-testid={`library-discovery-mode:${candidate}`}
           >
-            {t(SOURCE_LABELS[candidate])}
+            {d(SOURCE_LABELS[candidate])}
           </button>
         ))}
       </div>
@@ -168,7 +168,7 @@ export default function ExistingAssetDiscovery({ onStart }: ExistingAssetDiscove
           </div>
         ) : (
           <label>
-            <span>{t('{source} source', { source: t(SOURCE_LABELS[mode]) })}</span>
+            <span>{t('{source} source', { source: d(SOURCE_LABELS[mode]) })}</span>
             <textarea
               value={source}
               onChange={(event) => setSource(event.target.value)}
@@ -194,7 +194,7 @@ export default function ExistingAssetDiscovery({ onStart }: ExistingAssetDiscove
         <section className="library-discovery-result" data-testid="library-discovery-result">
           <header>
             <div>
-              <span>{t(projection.sourceKind.replace(/_/g, ' '))}</span>
+              <span>{d(projection.sourceKind.replace(/_/g, ' '))}</span>
               <strong>{projection.sourceId || t('Unnamed source')}</strong>
             </div>
             <span
@@ -219,9 +219,9 @@ export default function ExistingAssetDiscovery({ onStart }: ExistingAssetDiscove
             <div className="library-discovery-fact-list">
               {projection.facts.slice(0, 12).map((fact) => (
                 <div key={fact.factId}>
-                  <span>{t(fact.assetKind)}</span>
+                  <span>{d(fact.assetKind)}</span>
                   <strong>{fact.assetRef}</strong>
-                  <small>{t(fact.evidenceLevel)} / {t(fact.factKind)}</small>
+                  <small>{d(fact.evidenceLevel)} / {d(fact.factKind)}</small>
                 </div>
               ))}
             </div>
@@ -243,7 +243,7 @@ export default function ExistingAssetDiscovery({ onStart }: ExistingAssetDiscove
                       const presentation = presentRuntimeParity(parity);
                       return (
                         <tr key={`${parity.assetKind}:${parity.assetRef}:${parity.runtimeProfile}:${index}`}>
-                          <td><span>{t(parity.assetKind)}</span><strong>{parity.assetRef}</strong></td>
+                          <td><span>{d(parity.assetKind)}</span><strong>{parity.assetRef}</strong></td>
                           <td data-state={parity.state}>
                             {m(presentation.state.messageId, presentation.state.params)}
                           </td>
@@ -267,8 +267,8 @@ export default function ExistingAssetDiscovery({ onStart }: ExistingAssetDiscove
                 {projection.reviewItems.slice(0, 8).map((item, index) => (
                   <li key={`${item.code}:${item.assetRef}:${index}`} data-level={item.level}>
                     <strong>{item.assetRef || item.assetKind}</strong>
-                    <p>{t(item.message)}</p>
-                    <small>{t(item.action)}</small>
+                    <p>{d(item.message)}</p>
+                    <small>{d(item.action)}</small>
                   </li>
                 ))}
               </ol>

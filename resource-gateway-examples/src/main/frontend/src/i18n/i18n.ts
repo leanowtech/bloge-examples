@@ -127,7 +127,11 @@ const ZH_CN_MESSAGES: Record<string, string> = {
   'RUNNING': '运行中',
   'PENDING': '待处理',
   'SUCCEEDED': '已成功',
+  'SUCCESS': '成功',
   'FAILED': '已失败',
+  'SAFE EDIT': '安全编辑',
+  'MANUAL': '需手动处理',
+  'Pass': '通过',
   'CANCELLED': '已取消',
   'PARTIAL': '部分完成',
   'INDETERMINATE': '结果不确定',
@@ -424,6 +428,10 @@ const ZH_CN_MESSAGES: Record<string, string> = {
   'Duration': '耗时',
   'Currentness': '当前性',
   'Freshness': '新鲜度',
+  'Behavior': '行为结论',
+  'Proof authority': '证明效力',
+  'Proof strength': '证明强度',
+  'Governance eligibility': '治理资格',
   '{controlled}/{total} controlled': '{controlled}/{total} 个受控依赖',
   '{count} checks': '{count} 项检查',
   'Current': '当前',
@@ -835,6 +843,7 @@ const ZH_CN_MESSAGES: Record<string, string> = {
   'Remove {kind} case {index}': '删除{kind}用例 {index}',
   'operator': '算子',
   'function': '函数',
+  'type': '类型',
   'Delete case': '删除用例',
   'Save this test case as a governed fixture': '将此测试用例保存为受治理的 fixture',
   'Fixture persistence is unavailable in this deployment': '当前部署不支持 fixture 持久化',
@@ -1956,6 +1965,7 @@ const ZH_CN_MESSAGES: Record<string, string> = {
   'Runtime blocked in this visual runtime.': '当前可视化运行时无法执行此算子。',
   'Governance review': '需要治理复核',
   'Executable, but promotion should review governance risks.': '当前可执行，但发布前需要复核治理风险。',
+  'Executable metadata is present; promotion should review runtime governance risks.': '可执行元数据已齐备；发布前仍需复核运行时治理风险。',
   'Executable with governance review': '可执行，需治理复核',
   'design': '仅设计',
   'Design-only operator; executable lowering is not bound yet.': '仅设计算子：尚未绑定可执行的运行时映射。',
@@ -2090,6 +2100,9 @@ export function translateRegisteredDynamic(
   source: string,
   values: TranslationValues = {},
 ): string {
+  if (locale === 'en') {
+    return translate(locale, source, values);
+  }
   if (!hasChineseTranslation(source)) {
     return translate(locale, 'Unrecognized product status. Review technical details.');
   }

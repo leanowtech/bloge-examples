@@ -36,7 +36,7 @@ export default function AssertionBuilder({
   onChange,
   onRemove,
 }: AssertionBuilderProps) {
-  const { t } = useI18n();
+  const { t , d } = useI18n();
   const operators = assertionOperators(assertion.scope);
   const selectedNode = nodes.find((node) => node.id === assertion.nodeId);
   const expectedEnvelope = assertion.scope === 'NODE_OUTPUT'
@@ -200,7 +200,7 @@ export default function AssertionBuilder({
             }}
           >
             {operators.map((operator) => (
-              <option key={operator} value={operator}>{t(operatorLabel(operator))}</option>
+              <option key={operator} value={operator}>{d(operatorLabel(operator))}</option>
             ))}
           </select>
         </Field>

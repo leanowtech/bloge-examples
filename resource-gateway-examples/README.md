@@ -175,8 +175,12 @@ recovery produces no governance evidence; **Reset sample** restores the original
 Static `t()`, typed `m(messageId, params)`, and registered dynamic `d(value)` calls have separate
 contracts. Critical surfaces reject new `t(variable)` calls in CI. Unknown dynamic product text is
 replaced by a localized conservative conclusion while raw protocol detail stays collapsed.
+Matrix keeps Behavior, Proof strength, Freshness, and Governance eligibility independent. A row is
+publish-eligible only when execution succeeds, authored assertions pass, evidence is current, and
+proof strength is `CERTIFIABLE`; a Mock pass remains useful authoring feedback but never becomes a
+publish credential. Not-run rows show Freshness as **Not evaluated**, not **Current evidence**.
 Implementation and browser evidence are recorded in
-[`docs/resource-gateway-ux-stage5-visual-responsive-system.md`](../docs/resource-gateway-ux-stage5-visual-responsive-system.md).
+[`docs/resource-gateway-ux-round3-s3-proof-semantics-localization-implementation.md`](../docs/resource-gateway-ux-round3-s3-proof-semantics-localization-implementation.md).
 
 For the shortest trustworthy Author demo, load **Loan policy fallback** from the start dialog. Its
 card previews Graph/Contract size, three runnable `GOLDEN`/`NEGATIVE`/`BOUNDARY` cases, mocked

@@ -14,7 +14,10 @@ import {
   fetchScenarioRehearsalBatchWorkbook,
   fetchScenarioRehearsalWorkbook,
 } from './api';
-import { localizeRehearsalText } from './i18n/generatedProductText';
+import {
+  localizeRehearsalBlocker,
+  localizeRehearsalText,
+} from './i18n/generatedProductText';
 import { useI18n } from './i18n/I18nProvider';
 import { hasChineseTranslation } from './i18n/i18n';
 import WorkspaceContextBar from './author/shell/WorkspaceContextBar';
@@ -1056,7 +1059,7 @@ export default function RehearsalWorkbench() {
                     <div className="rehearsal-root-blocker-summary">
                       <ul aria-label={t('Blocking reasons')}>
                         {workbook.blockers.map((blocker) => (
-                          <li key={blocker}>{d(blocker)}</li>
+                          <li key={blocker}>{localizeRehearsalBlocker(m, blocker)}</li>
                         ))}
                       </ul>
                       <details className="rehearsal-technical-details">
@@ -1146,8 +1149,13 @@ export default function RehearsalWorkbench() {
                             <span className={`status-label ${statusTone(entry.status)}`}>{d(entry.status)}</span>
                           </span>
                           <span className="entry-diagnosis">
-                            {diagnosis ? localizeRehearsalText(d, m, diagnosis.reason) : ''}
-                            {entry.failureCode && <code>{entry.failureCode}</code>}
+                            {diagnosis
+                              ? diagnosis.category === 'PASSED'
+                                || (!entry.failureCode
+                                  && (entry.status === 'RUNNING' || entry.status === 'PENDING'))
+                                ? localizeRehearsalText(d, m, diagnosis.reason)
+                                : localizeRehearsalBlocker(m, entry.failureCode || diagnosis.reason)
+                              : ''}
                           </span>
                           <span className="entry-evidence-state">
                             <span>
@@ -1215,7 +1223,10 @@ export default function RehearsalWorkbench() {
                     {d(selectedEvidence.verdictLabel)}
                   </span>
                   <h3>{d(selectedEvidence.headline)}</h3>
-                  <p>{localizeRehearsalText(d, m, selectedEvidence.rootCause)}</p>
+                  <p>{localizeRehearsalBlocker(
+                    m,
+                    selectedEntry.failureCode || selectedEvidence.rootCause,
+                  )}</p>
                   <dl>
                     <div>
                       <dt>{t('Business impact')}</dt>
@@ -1330,7 +1341,9 @@ export default function RehearsalWorkbench() {
                   </dl>
                   {childWorkbook.blockers.length > 0 && (
                     <ul className="evidence-blockers">
-                      {childWorkbook.blockers.map((blocker) => <li key={blocker}>{blocker}</li>)}
+                      {childWorkbook.blockers.map((blocker) => (
+                        <li key={blocker}>{localizeRehearsalBlocker(m, blocker)}</li>
+                      ))}
                     </ul>
                   )}
                 </section>
@@ -1346,14 +1359,33 @@ export default function RehearsalWorkbench() {
                           </span>
                         </header>
                         <strong>{scenarioCase.testCaseId}</strong>
-                        {scenarioCase.diagnosticCode && <p>{scenarioCase.diagnosticCode}</p>}
+                        {scenarioCase.diagnosticCode && (
+                          <p>{localizeRehearsalBlocker(m, scenarioCase.diagnosticCode)}</p>
+                        )}
+                        {scenarioCase.diagnosticCode && (
+                          <details className="rehearsal-case-technical-detail">
+                            <summary>{t('Technical details')}</summary>
+                            <code>{scenarioCase.diagnosticCode}</code>
+                          </details>
+                        )}
                         <div className="assertion-list">
                           {scenarioCase.assertionResults.map((assertion) => (
                             <div className="assertion-row" key={assertion.resultFingerprint}>
                               <span className={`assertion-mark ${statusTone(assertion.outcome)}`} aria-hidden="true" />
                               <div>
                                 <strong>{assertion.assertionRef.id}</strong>
-                                <span>{assertion.governanceCode || assertion.reasonCode || assertion.observation}</span>
+                                <span>{assertion.governanceCode || assertion.reasonCode
+                                  ? localizeRehearsalBlocker(
+                                    m,
+                                    assertion.governanceCode || assertion.reasonCode,
+                                  )
+                                  : assertion.observation}</span>
+                                <details className="rehearsal-case-technical-detail">
+                                  <summary>{t('Technical details')}</summary>
+                                  {assertion.governanceCode && <code>{assertion.governanceCode}</code>}
+                                  {assertion.reasonCode && <code>{assertion.reasonCode}</code>}
+                                  {assertion.observation && <p>{assertion.observation}</p>}
+                                </details>
                               </div>
                             </div>
                           ))}
@@ -1372,6 +1404,9 @@ export default function RehearsalWorkbench() {
                   <div><dt>{t('Compiled plan')}</dt><dd>{selectedEntry.planId}@{selectedEntry.planRevision}</dd></div>
                   <div><dt>{t('Run')}</dt><dd>{selectedEntry.runId || t('Not assigned')}</dd></div>
                   <div><dt>{t('Outcome')}</dt><dd>{d(selectedEntry.status)}</dd></div>
+                  {selectedEntry.failureCode && (
+                    <div><dt>{t('Protocol code')}</dt><dd><code>{selectedEntry.failureCode}</code></dd></div>
+                  )}
                   <div>
                     <dt>{t('Started')}</dt>
                     <dd>{formatEntryDate(

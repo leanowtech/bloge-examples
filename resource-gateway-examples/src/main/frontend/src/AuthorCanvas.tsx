@@ -1660,7 +1660,7 @@ function ContextVariablesEditor({
   onBind: (path: string) => void;
   onRawJsonChange: (value: string) => void;
 }) {
-  const { t } = useI18n();
+  const { d, t } = useI18n();
   const contextPreview = JSON.stringify(compilation.value, null, 2);
   return (
     <div className="fixture-editor context-editor">
@@ -1783,7 +1783,7 @@ function ContextVariablesEditor({
       </details>
       {compilation.error && (
         <p className="fixture-error" data-testid="simulation-context-error">
-          {t(compilation.error)}
+          {d(compilation.error)}
         </p>
       )}
     </div>
@@ -1791,7 +1791,7 @@ function ContextVariablesEditor({
 }
 
 function OperatorNode({ id, data, selected }: NodeProps<NodeData>) {
-  const { t } = useI18n();
+  const { t, d } = useI18n();
   const status = data.status ?? 'unknown';
   const inputPorts = data.summary.inputNames;
   const outputPorts = data.summary.outputNames.length ? data.summary.outputNames : [''];
@@ -1821,7 +1821,7 @@ function OperatorNode({ id, data, selected }: NodeProps<NodeData>) {
           type="target"
           position={Position.Left}
           title={data.candidatePorts?.[port]
-            ? t('Input: {port} · {status}', { port, status: t(data.candidatePorts[port]) })
+            ? t('Input: {port} · {status}', { port, status: d(data.candidatePorts[port]) })
             : t('Input: {port}', { port })}
           className={`port-handle target ${data.candidatePorts?.[port] ?? ''}`}
           style={handleOffset(index, inputPorts.length)}
@@ -1830,25 +1830,25 @@ function OperatorNode({ id, data, selected }: NodeProps<NodeData>) {
       <div className="operator-node-title">
         <span>{data.label}</span>
         <span className="operator-node-pills">
-          <span className={`operator-kind-pill ${data.summary.visualKind}`}>{t(data.summary.visualLabel)}</span>
+          <span className={`operator-kind-pill ${data.summary.visualKind}`}>{d(data.summary.visualLabel)}</span>
           {data.summary.externalWrite && (
             <span
               className={`operator-side-effect-pill ${data.summary.managedWrite ? 'managed' : 'unmanaged'}`}
-              title={t(data.summary.sideEffectNotice)}
+              title={d(data.summary.sideEffectNotice)}
             >
               {data.summary.managedWrite ? t('write ok') : t('write blocked')}
             </span>
           )}
           {data.isOutput && <span className="output-pill">{t('output')}</span>}
           {data.pinned && <span className="pin-pill" title={t('Pinned for Auto Layout')}>{t('pinned')}</span>}
-          {status !== 'unknown' && <span className={`run-pill ${status}`}>{t(status)}</span>}
+          {status !== 'unknown' && <span className={`run-pill ${status}`}>{d(status)}</span>}
         </span>
       </div>
       <div className="operator-node-ref">{data.operatorRef}</div>
-      <div className="operator-node-contract" title={t(data.summary.contractHint)}>
-        <span>{t(data.summary.inputContractLabel)}</span>
+      <div className="operator-node-contract" title={d(data.summary.contractHint)}>
+        <span>{d(data.summary.inputContractLabel)}</span>
         <strong>→</strong>
-        <span>{t(data.summary.outputContractLabel)}</span>
+        <span>{d(data.summary.outputContractLabel)}</span>
       </div>
       <div className="operator-node-metrics">
         <span>
@@ -1867,9 +1867,9 @@ function OperatorNode({ id, data, selected }: NodeProps<NodeData>) {
       {data.summary.readinessNodeNotice && (
         <div
           className={`operator-node-warning ${data.summary.readinessLevel}`}
-          title={t(data.summary.readinessNotice || data.summary.readinessNodeNotice)}
+          title={d(data.summary.readinessNotice || data.summary.readinessNodeNotice)}
         >
-          {t(data.summary.readinessBadgeLabel || data.summary.readinessState)}: {t(data.summary.readinessNodeNotice)}
+          {d(data.summary.readinessBadgeLabel || data.summary.readinessState)}: {d(data.summary.readinessNodeNotice)}
         </div>
       )}
       {outputPorts.map((port, index) => (
@@ -2288,7 +2288,7 @@ function OperatorFocusPanel({
   operator: OperatorDefinition | undefined;
   summary: OperatorSummary;
 }) {
-  const { t } = useI18n();
+  const { d } = useI18n();
   const inputs = operator?.ports?.inputs ?? [];
   const outputs = operator?.ports?.outputs ?? [];
   const rows = operatorFocusRows(summary, inputs, outputs, operator);
@@ -2301,14 +2301,14 @@ function OperatorFocusPanel({
       data-testid={`operator-focus:${summary.visualKind}`}
     >
       <div className="operator-focus-heading">
-        <span>{t(summary.visualLabel)}</span>
-        <strong>{t(operatorFocusTitle(summary.visualKind))}</strong>
+        <span>{d(summary.visualLabel)}</span>
+        <strong>{d(operatorFocusTitle(summary.visualKind))}</strong>
       </div>
       <dl className="operator-focus-grid">
         {rows.map((row) => (
           <div key={row.key}>
-            <dt>{t(row.label)}</dt>
-            <dd>{t(row.value)}</dd>
+            <dt>{d(row.label)}</dt>
+            <dd>{d(row.value)}</dd>
           </div>
         ))}
       </dl>
@@ -3154,7 +3154,7 @@ function OperatorKeyPropertiesEditor({
   onLabelChange: (value: string) => void;
   onConfigPatch: (patch: Record<string, unknown>) => void;
 }) {
-  const { t } = useI18n();
+  const { t, d } = useI18n();
   const config = node.data.config ?? {};
   const resourceLike = node.data.summary.visualKind === 'resource' || node.data.summary.visualKind === 'http';
   return (
@@ -3172,8 +3172,8 @@ function OperatorKeyPropertiesEditor({
       <dl className="operator-property-list">
         {operatorPropertyRows(node, operator).map((row) => (
           <div key={row.label}>
-            <dt>{t(row.label)}</dt>
-            <dd>{t(row.value)}</dd>
+            <dt>{d(row.label)}</dt>
+            <dd>{d(row.value)}</dd>
           </div>
         ))}
       </dl>
@@ -3239,7 +3239,7 @@ function OperatorConfigEditor({
   config: Record<string, unknown> | undefined;
   onApply: (config: Record<string, unknown>) => void;
 }) {
-  const { t } = useI18n();
+  const { t, d } = useI18n();
   const renderedConfig = operatorConfigPreview(config);
   const [draft, setDraft] = useState(renderedConfig);
   const [error, setError] = useState('');
@@ -3282,7 +3282,7 @@ function OperatorConfigEditor({
         value={draft}
         onChange={(event) => setDraft(event.target.value)}
       />
-      {error && <p className="fixture-error" data-testid="operator-detail-config-error">{t(error)}</p>}
+      {error && <p className="fixture-error" data-testid="operator-detail-config-error">{d(error)}</p>}
     </section>
   );
 }
@@ -3306,7 +3306,7 @@ function OperatorFixtureEditor({
   onUseSample: () => void;
   onClear: () => void;
 }) {
-  const { t } = useI18n();
+  const { t, d } = useI18n();
   return (
     <div className="fixture-editor operator-detail-fixtures" data-testid="operator-detail-fixtures">
       <div className="fixture-header">
@@ -3354,7 +3354,7 @@ function OperatorFixtureEditor({
           onChange={(event) => onExpectedInputChange(event.target.value)}
         />
       </label>
-      {fixtureError && <p className="fixture-error" data-testid="operator-detail-fixture-error">{t(fixtureError)}</p>}
+      {fixtureError && <p className="fixture-error" data-testid="operator-detail-fixture-error">{d(fixtureError)}</p>}
     </div>
   );
 }
@@ -3390,7 +3390,7 @@ function OperatorTestSuiteEditor({
   onGovern: (row: OperatorTestSuiteDraftRow) => void;
   onGovernAll: () => void;
 }) {
-  const { t } = useI18n();
+  const { t, d } = useI18n();
   const transportControlled = operatorUsesTransportFixture(operator);
   const invalidCount = rows
     .map(parseOperatorTestSuiteRow)
@@ -3451,7 +3451,7 @@ function OperatorTestSuiteEditor({
           className={`operator-suite-publication ${publication.status}`}
           data-testid="operator-suite-publication"
         >
-          <strong>{t(publication.detail)}</strong>
+          <strong>{d(publication.detail)}</strong>
           {publication.suiteId && (
             <span>
               {publication.suiteId}@{publication.revision}{t(' · run')} {publication.suiteRunId}
@@ -3483,7 +3483,7 @@ function OperatorTestSuiteEditor({
                     className={`table-status ${rowStatus}`}
                     data-testid={`operator-test-status:${index}`}
                   >
-                    {t(compilation.error ? 'invalid' : result?.status ?? 'valid')}
+                    {d(compilation.error ? 'invalid' : result?.status ?? 'valid')}
                   </span>
                   <label className="operator-test-case-type">
                     <span>{t('Intent')}</span>
@@ -3590,12 +3590,12 @@ function OperatorTestSuiteEditor({
                 )}
                 {compilation.error && (
                   <p className="fixture-error" data-testid={`operator-test-error:${index}`}>
-                    {t(compilation.error)}
+                    {d(compilation.error)}
                   </p>
                 )}
                 {result && !compilation.error && (
                   <div className={`operator-test-result ${result.status}`}>
-                    <p data-testid={`operator-test-result:${index}`}>{t(result.detail)}</p>
+                    <p data-testid={`operator-test-result:${index}`}>{d(result.detail)}</p>
                     {result.actualOutput !== undefined && (
                       <details>
                         <summary>{t('Actual output')}</summary>
@@ -3626,7 +3626,7 @@ function SchemaPortCards({
   direction: 'input' | 'output';
   ports: OperatorPort[];
 }) {
-  const { t } = useI18n();
+  const { t, d } = useI18n();
   return (
     <section className="operator-detail-section">
       <h3>{title}</h3>
@@ -3641,7 +3641,7 @@ function SchemaPortCards({
                   {port.required && <span className="schema-required">{t('required')}</span>}
                 </div>
                 <div className="operator-schema-summary">
-                  <span>{t(schemaKindLabel(port.schema?.schema))}</span>
+                  <span>{d(schemaKindLabel(port.schema?.schema))}</span>
                   <span>{t('{count} fields', { count: fields.length })}</span>
                 </div>
                 {port.description && <p>{port.description}</p>}
@@ -3654,7 +3654,7 @@ function SchemaPortCards({
                       {fields.map((field) => (
                         <tr key={field.name}>
                           <th>{field.name}</th>
-                          <td>{t(field.type)}</td>
+                          <td>{d(field.type)}</td>
                           <td>{field.required ? t('required') : t('optional')}</td>
                         </tr>
                       ))}
@@ -3672,7 +3672,7 @@ function SchemaPortCards({
           })}
         </div>
       ) : (
-        <p className="muted">{t('No declared {direction} ports.', { direction: t(direction) })}</p>
+        <p className="muted">{t('No declared {direction} ports.', { direction: d(direction) })}</p>
       )}
     </section>
   );
@@ -3801,7 +3801,7 @@ function OperatorDetailDialog({
   onTransformChange: (editor: TransformEditorModel) => void;
   onAcceptInference?: () => void;
 }) {
-  const { t } = useI18n();
+  const { t, d } = useI18n();
   const inputs = operator?.ports?.inputs ?? [];
   const outputs = operator?.ports?.outputs ?? [];
   const focusRows = operatorFocusRows(node.data.summary, inputs, outputs, operator);
@@ -3869,8 +3869,8 @@ function OperatorDetailDialog({
       >
         <div className="operator-detail-heading">
           <span>
-            {t(node.data.summary.visualLabel)}
-            <small>{t(editorDefinition.primaryTask)}</small>
+            {d(node.data.summary.visualLabel)}
+            <small>{d(editorDefinition.primaryTask)}</small>
           </span>
           <strong id="operator-detail-title">{node.data.label}</strong>
           <button
@@ -3910,7 +3910,7 @@ function OperatorDetailDialog({
               data-testid={`operator-editor-tab:${tab.id}`}
               onClick={() => setActiveTab(tab.id)}
             >
-              {t(tab.label)}
+              {d(tab.label)}
             </button>
           ))}
         </nav>
@@ -3929,12 +3929,12 @@ function OperatorDetailDialog({
             />
 
             <section className="operator-detail-section">
-              <h3>{t(operatorFocusTitle(node.data.summary.visualKind))}</h3>
+              <h3>{d(operatorFocusTitle(node.data.summary.visualKind))}</h3>
               <div className="operator-detail-focus">
                 {focusRows.map((row) => (
                   <div key={row.key}>
-                    <span>{t(row.label)}</span>
-                    <strong>{t(row.value)}</strong>
+                    <span>{d(row.label)}</span>
+                    <strong>{d(row.value)}</strong>
                   </div>
                 ))}
               </div>
@@ -5157,7 +5157,7 @@ export interface AuthorCanvasProps {
 }
 
 export default function AuthorCanvas({ workspaceVersion = 'v1' }: AuthorCanvasProps = {}) {
-  const { locale, t, m } = useI18n();
+  const { locale, t, m, d } = useI18n();
   const isTaskWorkspace = workspaceVersion === 'v2';
   const initialWorkspaceLocation = parseAuthorWorkspaceLocation(window.location.search);
   const initialTaskCoordinate = parseTaskCoordinate(window.location.href);
@@ -10091,8 +10091,8 @@ export default function AuthorCanvas({ workspaceVersion = 'v1' }: AuthorCanvasPr
       ? t('Current Operator evidence is not eligible for governance review.')
       : t('Operator governance is not evaluated in this workspace.')
     : t('{headline}. {summary}', {
-      headline: t(authorReadiness.headline),
-      summary: t(authorReadiness.summary, authorReadiness.summaryValues),
+      headline: d(authorReadiness.headline),
+      summary: d(authorReadiness.summary, authorReadiness.summaryValues),
     });
   const closeTestSuite = useCallback(() => {
     setTestSuiteOpen(false);
@@ -10698,7 +10698,7 @@ export default function AuthorCanvas({ workspaceVersion = 'v1' }: AuthorCanvasPr
                     className={`table-status ${rowStatus}`}
                     data-testid={`test-table-status:${index}`}
                   >
-                    {t(rowStatus)}
+                    {d(rowStatus)}
                   </span>
                   <button
                     type="button"
@@ -10745,7 +10745,7 @@ export default function AuthorCanvas({ workspaceVersion = 'v1' }: AuthorCanvasPr
                 </label>
                 {(rowResult || rowError) && (
                   <div className="test-table-result">
-                    <strong>{t(rowResult?.detail ?? rowError ?? '')}</strong>
+                    <strong>{d(rowResult?.detail ?? rowError ?? '')}</strong>
                     {rowResult?.actualOutput !== undefined && (
                       <pre data-testid={`test-table-actual:${index}`}>
                         {JSON.stringify(rowResult.actualOutput, null, 2)}
@@ -11093,7 +11093,7 @@ export default function AuthorCanvas({ workspaceVersion = 'v1' }: AuthorCanvasPr
           )}
           {libraryNotice && (
             <p className={`library-notice ${libraryNotice.level}`} data-testid="operator-library-notice">
-              {t(libraryNotice.message)}
+              {d(libraryNotice.message)}
             </p>
           )}
           {libraryDiagnostics.length > 0 && (
@@ -11209,7 +11209,7 @@ export default function AuthorCanvas({ workspaceVersion = 'v1' }: AuthorCanvasPr
           </div>
           {dslImportNotice && (
             <p className={`library-notice ${dslImportNotice.level}`} data-testid="legacy-dsl-notice">
-              {t(dslImportNotice.message)}
+              {d(dslImportNotice.message)}
             </p>
           )}
           {dslImportCoverage && (
@@ -11226,9 +11226,9 @@ export default function AuthorCanvas({ workspaceVersion = 'v1' }: AuthorCanvasPr
             >
               <div className="dsl-round-trip-heading">
                 <strong>{t('Round trip')}</strong>
-                <span>{t(dslImportRoundTrip.status || 'NOT_ASSESSED')}</span>
+                <span>{d(dslImportRoundTrip.status || 'NOT_ASSESSED')}</span>
               </div>
-              {dslImportRoundTrip.message && <p>{t(dslImportRoundTrip.message)}</p>}
+              {dslImportRoundTrip.message && <p>{d(dslImportRoundTrip.message)}</p>}
               <div className="dsl-round-trip-evidence">
                 <span>{dslImportRoundTrip.generatedDsl ? t('Generated DSL') : t('No generated DSL')}</span>
                 {dslImportRoundTrip.sourceFingerprint && <span>{t('Source semantics')}</span>}
@@ -11246,13 +11246,13 @@ export default function AuthorCanvas({ workspaceVersion = 'v1' }: AuthorCanvasPr
             >
               <div className="dsl-rewrite-gate-heading">
                 <strong>{t('Rewrite gate')}</strong>
-                <span>{t(dslRewriteGateResult.decision || 'BLOCK_NOT_ASSESSED')}</span>
+                <span>{d(dslRewriteGateResult.decision || 'BLOCK_NOT_ASSESSED')}</span>
               </div>
-              {dslRewriteGateResult.message && <p>{t(dslRewriteGateResult.message)}</p>}
+              {dslRewriteGateResult.message && <p>{d(dslRewriteGateResult.message)}</p>}
               <div className="dsl-round-trip-evidence">
                 <span>{dslRewriteGateResult.allowed ? t('Auto rewrite allowed') : t('Auto rewrite blocked')}</span>
                 {dslRewriteGateResult.generatedDsl && <span>{t('Generated DSL ready')}</span>}
-                {dslRewriteGateResult.roundTrip?.status && <span>{t(dslRewriteGateResult.roundTrip.status)}</span>}
+                {dslRewriteGateResult.roundTrip?.status && <span>{d(dslRewriteGateResult.roundTrip.status)}</span>}
               </div>
             </div>
           )}
@@ -11321,7 +11321,7 @@ export default function AuthorCanvas({ workspaceVersion = 'v1' }: AuthorCanvasPr
               aria-pressed={paletteFacet === facet.key}
               onClick={() => setPaletteFacet(facet.key)}
             >
-              <span>{t(facet.label)}</span>
+              <span>{d(facet.label)}</span>
               <strong>{facet.count}</strong>
             </button>
           ))}
@@ -11378,11 +11378,11 @@ export default function AuthorCanvas({ workspaceVersion = 'v1' }: AuthorCanvasPr
                       title={operator.operatorRef}
                     >
                       <span className="op-copy">
-                        <span className={`op-kind ${summary.visualKind}`}>{t(summary.visualLabel)}</span>
+                        <span className={`op-kind ${summary.visualKind}`}>{d(summary.visualLabel)}</span>
                         <span className="op-name">{summary.name}</span>
                         <span className="op-ref">{summary.operatorRef}</span>
                         <span className="op-meta">
-                          {t(summary.contractHint)} · {t('{required}/{inputs} inputs · {outputs} outputs', {
+                          {d(summary.contractHint)} · {t('{required}/{inputs} inputs · {outputs} outputs', {
                             required: summary.requiredInputCount,
                             inputs: summary.inputCount,
                             outputs: summary.outputCount,
@@ -11395,12 +11395,12 @@ export default function AuthorCanvas({ workspaceVersion = 'v1' }: AuthorCanvasPr
                             className={`badge side-effect ${summary.managedWrite ? 'managed' : 'unmanaged'}`}
                             title={summary.sideEffectNotice}
                           >
-                            {t(summary.sideEffectBadgeLabel)}
+                            {d(summary.sideEffectBadgeLabel)}
                           </span>
                         )}
                         {summary.readinessBadgeLabel && (
                           <span className={`badge readiness ${summary.readinessLevel}`}>
-                            {t(summary.readinessBadgeLabel)}
+                            {d(summary.readinessBadgeLabel)}
                           </span>
                         )}
                       </span>
@@ -11436,7 +11436,7 @@ export default function AuthorCanvas({ workspaceVersion = 'v1' }: AuthorCanvasPr
             <Suspense
               fallback={(
                 <div className="author-surface-loading" role="status">
-                  {t('Opening {mode} surface...', { mode: t(authorMode) })}
+                  {t('Opening {mode} surface...', { mode: d(authorMode) })}
                 </div>
               )}
             >
@@ -11531,8 +11531,8 @@ export default function AuthorCanvas({ workspaceVersion = 'v1' }: AuthorCanvasPr
                   step.key === activeJourneyStepKey ? 'active' : '',
                 ].filter(Boolean).join(' ')}
               >
-                <span>{t(step.label)}</span>
-                <strong>{t(step.detail)}</strong>
+                <span>{d(step.label)}</span>
+                <strong>{d(step.detail)}</strong>
               </li>
             ))}
           </ol>
@@ -11543,7 +11543,7 @@ export default function AuthorCanvas({ workspaceVersion = 'v1' }: AuthorCanvasPr
               onClick={runJourneyAction}
               disabled={busy}
             >
-              {t(journey.action.label)}
+              {d(journey.action.label)}
             </button>
           )}
           <span className="journey-count">
@@ -11556,7 +11556,7 @@ export default function AuthorCanvas({ workspaceVersion = 'v1' }: AuthorCanvasPr
             data-testid="author-deep-link-notice"
             role={deepLinkNotice.level === 'error' ? 'alert' : 'status'}
           >
-            {t(deepLinkNotice.message)}
+            {d(deepLinkNotice.message)}
           </div>
         )}
         {deepLinkRun && (
@@ -11567,7 +11567,7 @@ export default function AuthorCanvas({ workspaceVersion = 'v1' }: AuthorCanvasPr
             </div>
             <dl className="context-strip-facts">
               <div><dt>{t('Outcome')}</dt><dd>{t(deepLinkRun.success ? 'SUCCESS' : 'FAILED')}</dd></div>
-              <div><dt>{t('Source')}</dt><dd>{t(deepLinkRun.sourceKind || 'UNKNOWN')}</dd></div>
+              <div><dt>{t('Source')}</dt><dd>{d(deepLinkRun.sourceKind || 'UNKNOWN')}</dd></div>
               <div><dt>{t('Revision')}</dt><dd>{deepLinkRun.draftRevision ?? 0}</dd></div>
               <div><dt>{t('Elapsed')}</dt><dd>{deepLinkRun.elapsedMs ?? 0} {t('ms')}</dd></div>
             </dl>
@@ -11582,8 +11582,8 @@ export default function AuthorCanvas({ workspaceVersion = 'v1' }: AuthorCanvasPr
           >
             <div className="context-strip-heading">
               <span>{t('ANEKE Gate')}</span>
-              <strong>{t(governanceGateBusy ? 'LOADING' : governanceGateView?.result?.status ?? 'NO RESULT')}</strong>
-              {governanceGateView && <em>{t(governanceGateView.freshness)}</em>}
+              <strong>{d(governanceGateBusy ? 'LOADING' : governanceGateView?.result?.status ?? 'NO RESULT')}</strong>
+              {governanceGateView && <em>{d(governanceGateView.freshness)}</em>}
             </div>
             {governanceGateView?.result?.issues.length ? (
               <ul className="governance-issue-list">
@@ -11597,10 +11597,10 @@ export default function AuthorCanvas({ workspaceVersion = 'v1' }: AuthorCanvasPr
                         onClick={() => focusGovernanceIssue(issue)}
                         title={issue.targetPath || issue.deepLink || issue.issueId}
                       >
-                        <span>{t(issue.severity)}</span>
+                        <span>{d(issue.severity)}</span>
                         <strong>{issue.code || issue.issueId}</strong>
-                        <p>{t(issue.message)}</p>
-                        {issue.recommendedAction && <small>{t(issue.recommendedAction)}</small>}
+                        <p>{d(issue.message)}</p>
+                        {issue.recommendedAction && <small>{d(issue.recommendedAction)}</small>}
                         {issueNodeId && <em>{issueNodeId}</em>}
                       </button>
                     </li>
@@ -11649,7 +11649,7 @@ export default function AuthorCanvas({ workspaceVersion = 'v1' }: AuthorCanvasPr
                     onClick={() => requestLoadCanvasExample(template)}
                     disabled={!available}
                     title={available
-                      ? `${t('Load example')}: ${t(template.label)}`
+                      ? `${t('Load example')}: ${d(template.label)}`
                       : missingOperatorRefs.length > 0
                         ? t('Missing {operators}', { operators: missingOperatorRefs.join(', ') })
                         : t('Current Contracts do not expose {paths}', {
@@ -12208,8 +12208,8 @@ export default function AuthorCanvas({ workspaceVersion = 'v1' }: AuthorCanvasPr
         <ol className="checklist">
           {checklist.map((item) => (
             <li key={item.key} className={item.state}>
-              <span>{t(item.label)}</span>
-              <strong>{t(item.detail)}</strong>
+              <span>{d(item.label)}</span>
+              <strong>{d(item.detail)}</strong>
             </li>
           ))}
         </ol>
@@ -12231,10 +12231,10 @@ export default function AuthorCanvas({ workspaceVersion = 'v1' }: AuthorCanvasPr
                   <span className="mock-setup-copy">
                     <strong>{row.label}</strong>
                     <span>{row.operatorRef}</span>
-                    <small>{t(row.detail)}</small>
+                    <small>{d(row.detail)}</small>
                   </span>
                   <span className="mock-setup-status">
-                    <span className={`run-pill ${row.runMode}`}>{t(row.runMode)}</span>
+                    <span className={`run-pill ${row.runMode}`}>{d(row.runMode)}</span>
                     <code>{row.fixtureLabel}</code>
                   </span>
                 </button>
@@ -12252,8 +12252,8 @@ export default function AuthorCanvas({ workspaceVersion = 'v1' }: AuthorCanvasPr
         >
           <div>
             <span>{t('{count} cases', { count: simulationTableRows.length })}</span>
-            <strong>{t(simulationTableRunSummary.label)}</strong>
-            <small>{t(simulationTableRunSummary.detail)}</small>
+            <strong>{d(simulationTableRunSummary.label)}</strong>
+            <small>{d(simulationTableRunSummary.detail)}</small>
           </div>
           <button
             type="button"
@@ -12342,7 +12342,7 @@ export default function AuthorCanvas({ workspaceVersion = 'v1' }: AuthorCanvasPr
               </label>
               {connectionGuideNotice && (
                 <p className={`connection-guide-notice ${connectionGuideNotice.level}`}>
-                  {t(connectionGuideNotice.message)}
+                  {d(connectionGuideNotice.message)}
                 </p>
               )}
               {selectedGuideRows.length > 0 ? (
@@ -12364,10 +12364,10 @@ export default function AuthorCanvas({ workspaceVersion = 'v1' }: AuthorCanvasPr
                             <strong>{row.targetLabel}</strong>
                             <small>{row.targetOperatorRef || row.targetNodeId}</small>
                             <code>{endpointLabel(row.targetPort, row.targetPath, 'input')}</code>
-                            <small className="connection-guide-detail">{t(row.detail)}</small>
-                            <small className="connection-guide-action">{t(row.actionHint)}</small>
+                            <small className="connection-guide-detail">{d(row.detail)}</small>
+                            <small className="connection-guide-action">{d(row.actionHint)}</small>
                           </span>
-                          <em>{t(row.status)}</em>
+                          <em>{d(row.status)}</em>
                         </button>
                         {row.fieldOptions.length > 1 && (
                           <div className="connection-guide-fields" aria-label={t('Compatible field paths')}>
@@ -12460,7 +12460,7 @@ export default function AuthorCanvas({ workspaceVersion = 'v1' }: AuthorCanvasPr
                   onChange={(event) => updateSelectedExpectedInputDraft(event.target.value)}
                 />
               </label>
-              {selectedFixtureError && <p className="fixture-error">{t(selectedFixtureError)}</p>}
+              {selectedFixtureError && <p className="fixture-error">{d(selectedFixtureError)}</p>}
             </div>
           </section>
         ) : (
@@ -12475,19 +12475,19 @@ export default function AuthorCanvas({ workspaceVersion = 'v1' }: AuthorCanvasPr
           >
             <div className="validation-summary-heading">
               <span>{validationResult.valid ? t('Validated') : t('Needs repair')}</span>
-              <strong>{t(validationResult.readiness?.title || (validationResult.valid ? 'Draft valid' : 'Draft invalid'))}</strong>
+              <strong>{d(validationResult.readiness?.title || (validationResult.valid ? 'Draft valid' : 'Draft invalid'))}</strong>
             </div>
             {validationResult.readiness?.summary && (
-              <p>{t(validationResult.readiness.summary)}</p>
+              <p>{d(validationResult.readiness.summary)}</p>
             )}
             <div className="validation-summary-chips">
               <span data-testid="draft-validation-summary:state">
                 <span>{t('Readiness')}</span>
-                <strong>{t(validationResult.readiness?.state || 'unknown')}</strong>
+                <strong>{d(validationResult.readiness?.state || 'unknown')}</strong>
               </span>
               <span data-testid="draft-validation-summary:actions">
                 <span>{t('Actions')}</span>
-                <strong>{t(validationResult.actionReadiness?.state || 'unknown')}</strong>
+                <strong>{d(validationResult.actionReadiness?.state || 'unknown')}</strong>
               </span>
               <span data-testid="draft-validation-summary:diagnostics">
                 <span>{t('Diagnostics')}</span>
@@ -12500,8 +12500,8 @@ export default function AuthorCanvas({ workspaceVersion = 'v1' }: AuthorCanvasPr
         )}
         <section className={`run-summary ${runSummary.state}`} data-testid="simulation-run-summary">
           <div className="run-summary-heading">
-            <span>{t(runSummary.detail)}</span>
-            <strong>{t(runSummary.title)}</strong>
+            <span>{d(runSummary.detail)}</span>
+            <strong>{d(runSummary.title)}</strong>
           </div>
           <div className="run-summary-chips">
             {runSummary.chips.map((chip) => (
@@ -12510,8 +12510,8 @@ export default function AuthorCanvas({ workspaceVersion = 'v1' }: AuthorCanvasPr
                 className={`run-summary-chip ${chip.state}`}
                 data-testid={`simulation-run-summary:${chip.key}`}
               >
-                <span>{t(chip.label)}</span>
-                <strong>{t(chip.value)}</strong>
+                <span>{d(chip.label)}</span>
+                <strong>{d(chip.value)}</strong>
               </span>
             ))}
           </div>
@@ -12541,7 +12541,7 @@ export default function AuthorCanvas({ workspaceVersion = 'v1' }: AuthorCanvasPr
                           <span>{row.operatorRef}</span>
                           <code>{row.outputPreview}</code>
                         </span>
-                        <span className={`run-pill ${row.status}`}>{t(row.status)}</span>
+                        <span className={`run-pill ${row.status}`}>{d(row.status)}</span>
                       </button>
                     </li>
                   ))}
@@ -12556,7 +12556,7 @@ export default function AuthorCanvas({ workspaceVersion = 'v1' }: AuthorCanvasPr
                 <ul>
                   {result.diagnostics.map((diagnostic, index) => (
                     <li key={index} className={`diag ${diagnostic.level ?? ''}`}>
-                      {diagnostic.code}: {t(diagnostic.message ?? '')}
+                      {diagnostic.code}: {d(diagnostic.message ?? '')}
                     </li>
                   ))}
                 </ul>

@@ -124,7 +124,7 @@ export default function AuthorCommandBar({
         objectLabel={graphName}
         objectMeta={t('{nodes} nodes · {edges} edges', { nodes: nodeCount, edges: edgeCount })}
         lifecycle={{
-          label: continuityStatus,
+          label: d(continuityStatus),
           state: continuityStatus,
           title: recoveryCapturedAt
             ? t('Recovery captured at {capturedAt} via {security}.', {

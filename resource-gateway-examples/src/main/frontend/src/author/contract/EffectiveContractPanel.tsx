@@ -26,7 +26,7 @@ export default function EffectiveContractPanel({
   onTraceField,
   onAcceptInference,
 }: EffectiveContractPanelProps) {
-  const { t } = useI18n();
+  const { t , d } = useI18n();
   const outputFields = [
     ...projection.declaredOutputs,
     ...projection.inferredOutputs,
@@ -46,7 +46,7 @@ export default function EffectiveContractPanel({
           className={`effective-confidence ${projection.confidence.toLowerCase()}`}
           data-testid="effective-contract-confidence"
         >
-          {t(projection.confidence)}
+          {d(projection.confidence)}
         </span>
       </header>
 
@@ -85,10 +85,10 @@ export default function EffectiveContractPanel({
                     </span>
                   </div>
                   <div className="effective-binding-meta">
-                    <span>{t(binding.kind)}</span>
-                    <span>{t(binding.type)}</span>
-                    <span>{t(binding.confidence)}</span>
-                    <strong>{t(binding.status)}</strong>
+                    <span>{d(binding.kind)}</span>
+                    <span>{d(binding.type)}</span>
+                    <span>{d(binding.confidence)}</span>
+                    <strong>{d(binding.status)}</strong>
                     {onTraceBinding && (binding.sourceNodeId || binding.edgeId) && (
                       <button
                         type="button"
@@ -130,10 +130,10 @@ export default function EffectiveContractPanel({
                           {binding.status === 'UNBOUND' ? t('No source') : binding.sourcePath}
                         </code>
                       </td>
-                      <td>{t(binding.kind)}</td>
-                      <td>{t(binding.type)}</td>
-                      <td>{t(binding.confidence)}</td>
-                      <td><strong>{t(binding.status)}</strong></td>
+                      <td>{d(binding.kind)}</td>
+                      <td>{d(binding.type)}</td>
+                      <td>{d(binding.confidence)}</td>
+                      <td><strong>{d(binding.status)}</strong></td>
                       {onTraceBinding && (
                         <td>
                           {binding.sourceNodeId || binding.edgeId ? (
@@ -180,10 +180,10 @@ export default function EffectiveContractPanel({
                 {outputFields.map((field) => (
                   <tr key={`${field.source}:${field.path}:${field.trace.coordinate}`}>
                     <th><code>{field.path}</code></th>
-                    <td>{t(field.type)}</td>
-                    <td>{t(field.source)}</td>
-                    <td>{t(field.confidence)}</td>
-                    <td title={`${field.trace.kind}: ${field.trace.detail}`}><code>{t(field.trace.kind)}</code></td>
+                    <td>{d(field.type)}</td>
+                    <td>{d(field.source)}</td>
+                    <td>{d(field.confidence)}</td>
+                    <td title={`${field.trace.kind}: ${field.trace.detail}`}><code>{d(field.trace.kind)}</code></td>
                     {onTraceField && (
                       <td>
                         <button
@@ -206,7 +206,7 @@ export default function EffectiveContractPanel({
         {onAcceptInference && projection.inferredOutputs.length > 0 && (
           <div className="effective-contract-actions">
             <button type="button" className="secondary compact" onClick={onAcceptInference}>
-              {t(acceptInferenceLabel)}
+              {d(acceptInferenceLabel)}
             </button>
             <span>{t('Creates an open authored schema; requiredness is never inferred.')}</span>
           </div>
@@ -218,7 +218,7 @@ export default function EffectiveContractPanel({
           <strong>{t('{count} Contract conflicts', { count: projection.conflicts.length })}</strong>
           {projection.conflicts.map((conflict) => (
             <span key={`${conflict.code}:${conflict.path}`}>
-              <code>{conflict.path}</code> {t(conflict.message)}
+              <code>{conflict.path}</code> {d(conflict.message)}
             </span>
           ))}
         </section>

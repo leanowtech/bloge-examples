@@ -71,7 +71,7 @@ export default function SampleInferenceReview({
   onConflict,
   onClose,
 }: SampleInferenceReviewProps) {
-  const { t } = useI18n();
+  const { t , d } = useI18n();
   const [direction, setDirection] = useState<VisualSamplePortDirection>(initialDirection);
   const [portName, setPortName] = useState(
     initialPortName?.trim() || (initialDirection === 'INPUT' ? 'request' : 'response'),
@@ -318,7 +318,7 @@ export default function SampleInferenceReview({
                 data-dialog-initial-focus
                 data-testid="sample-inference-samples"
               />
-              {parsed.error && <p className="library-inline-error">{t(parsed.error)}</p>}
+              {parsed.error && <p className="library-inline-error">{d(parsed.error)}</p>}
               <p className="sample-inference-privacy">
                 {t('Raw JSON stays in this review session and is sent only for infer and apply. Persisted drafts retain fingerprints, counts, decisions, and declared schema.')}
               </p>
@@ -343,7 +343,7 @@ export default function SampleInferenceReview({
                 <header>
                   <div>
                     <h3>{t('Candidate structure')}</h3>
-                    <span>{t(directionLabel(result.target.portDirection))} / {result.target.portName}</span>
+                    <span>{d(directionLabel(result.target.portDirection))} / {result.target.portName}</span>
                   </div>
                   <button type="button" className="secondary compact" onClick={invalidateResult}>
                     {t('Edit samples')}
@@ -352,12 +352,12 @@ export default function SampleInferenceReview({
                 <div className="sample-inference-before-after">
                   <div>
                     <span>{t('Current')}</span>
-                    <strong>{existingPort === undefined ? t('New port') : t(schemaNodeLabel(existingPort))}</strong>
+                    <strong>{existingPort === undefined ? t('New port') : d(schemaNodeLabel(existingPort))}</strong>
                   </div>
                   <div aria-hidden="true">{t('->')}</div>
                   <div>
                     <span>{t('Inferred')}</span>
-                    <strong>{t(schemaNodeLabel(result.candidate))}</strong>
+                    <strong>{d(schemaNodeLabel(result.candidate))}</strong>
                   </div>
                 </div>
                 <CandidateTree name={result.target.portName} node={result.candidate} />
@@ -378,7 +378,7 @@ export default function SampleInferenceReview({
                     {result.diagnostics.map((diagnostic) => (
                       <p key={`${diagnostic.code}:${diagnostic.authoringPath}`}>
                         <strong>{diagnostic.code}</strong>
-                        <span>{t(diagnostic.message)}</span>
+                        <span>{d(diagnostic.message)}</span>
                       </p>
                     ))}
                   </div>
@@ -418,12 +418,12 @@ export default function SampleInferenceReview({
                         <div>
                           <span>{index + 1}</span>
                           <div>
-                            <strong>{t(confirmationLabel(confirmation.code))}</strong>
+                            <strong>{d(confirmationLabel(confirmation.code))}</strong>
                             <small>{relativeFactPath(confirmation.authoringPath, result.target)}</small>
                           </div>
                           {confirmation.blocking && <em>{t('Blocking')}</em>}
                         </div>
-                        <p>{t(confirmation.question)}</p>
+                        <p>{d(confirmation.question)}</p>
                         <fieldset>
                           <legend>{t('Decision')}</legend>
                           <div className="sample-inference-decision-options">
@@ -443,7 +443,7 @@ export default function SampleInferenceReview({
                                     [confirmation.confirmationId]: value,
                                   }))}
                                 />
-                                <span>{t(decisionLabel(value))}</span>
+                                <span>{d(decisionLabel(value))}</span>
                                 {value === confirmation.recommendedValue && <small>{t('Recommended')}</small>}
                               </label>
                             ))}
@@ -460,7 +460,7 @@ export default function SampleInferenceReview({
 
         {error && (
           <p className="sample-inference-error" role="alert" data-testid="sample-inference-error">
-            {t(error)}
+            {d(error)}
           </p>
         )}
 
@@ -572,7 +572,7 @@ function CandidateTree({ name, node }: { name: string; node: unknown }) {
 }
 
 function CandidateNode({ name, node, depth }: { name: string; node: unknown; depth: number }) {
-  const { t } = useI18n();
+  const { t , d } = useI18n();
   const fields = schemaFields(node);
   return (
     <>
@@ -584,7 +584,7 @@ function CandidateNode({ name, node, depth }: { name: string; node: unknown; dep
         <span aria-hidden="true">{fields ? (depth === 0 ? 'v' : '+') : '-'}</span>
         <strong>{name.replace(/\?$/, '')}</strong>
         {name.endsWith('?') && <em>{t('optional')}</em>}
-        <small>{t(schemaNodeLabel(node))}</small>
+        <small>{d(schemaNodeLabel(node))}</small>
       </div>
       {fields && Object.entries(fields).map(([fieldName, field]) => (
         <CandidateNode key={`${depth}:${fieldName}`} name={fieldName} node={field} depth={depth + 1} />
@@ -594,7 +594,7 @@ function CandidateNode({ name, node, depth }: { name: string; node: unknown; dep
 }
 
 function ObservationRow({ observation }: { observation: VisualSampleFieldObservation }) {
-  const { t } = useI18n();
+  const { t , d } = useI18n();
   return (
     <div className="sample-inference-fact">
       <div>
@@ -614,7 +614,7 @@ function ObservationRow({ observation }: { observation: VisualSampleFieldObserva
         {observation.conflictTypes.length > 0 && <span data-alert="true">{t('type conflict')}</span>}
       </div>
       {observation.widenReasons.length > 0 && (
-        <p>{observation.widenReasons.map((reason) => t(reason)).join('; ')}</p>
+        <p>{observation.widenReasons.map((reason) => d(reason)).join('; ')}</p>
       )}
     </div>
   );

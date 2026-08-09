@@ -4,7 +4,10 @@ import { useI18n } from '../../i18n/I18nProvider';
 import type { AuthorCommandAvailability } from '../../author/task/taskStateProjection';
 
 import type { ScenarioCaseType } from '../domain';
-import type { TableCaseVerdictPresentation } from '../tableDrivenTestStatus';
+import {
+  presentTableCaseAuthority,
+  type TableCaseVerdictPresentation,
+} from '../tableDrivenTestStatus';
 import type { TableSuiteDifferentialCounts, TableSuiteRunBatch } from './tableSuiteRunModel';
 import {
   filterAndSortScenarioRows,
@@ -77,7 +80,7 @@ export default function ScenarioMatrixSurface({
   onCancelRun,
   onRetryFailed,
 }: ScenarioMatrixSurfaceProps) {
-  const { m, t } = useI18n();
+  const { m, t, d } = useI18n();
   const [query, setQuery] = useState('');
   const [caseType, setCaseType] = useState<ScenarioCaseType | ''>('');
   const [tone, setTone] = useState<TableCaseVerdictPresentation['tone'] | ''>('');
@@ -196,7 +199,7 @@ export default function ScenarioMatrixSurface({
                 onChange={(event) => setCaseType(event.target.value as ScenarioCaseType | '')}
               >
                 <option value="">{t('All types')}</option>
-                {CASE_TYPES.map((value) => <option value={value} key={value}>{t(caseTypeLabel(value))}</option>)}
+                {CASE_TYPES.map((value) => <option value={value} key={value}>{d(caseTypeLabel(value))}</option>)}
               </select>
             </label>
             <label>
@@ -207,7 +210,7 @@ export default function ScenarioMatrixSurface({
                 onChange={(event) => setTone(event.target.value as TableCaseVerdictPresentation['tone'] | '')}
               >
                 <option value="">{t('All verdicts')}</option>
-                {TONES.map((value) => <option value={value} key={value}>{t(capitalize(value))}</option>)}
+                {TONES.map((value) => <option value={value} key={value}>{d(capitalize(value))}</option>)}
               </select>
             </label>
             <label>
@@ -234,8 +237,8 @@ export default function ScenarioMatrixSurface({
           <div>
             {(['GOLDEN', 'NEGATIVE', 'BOUNDARY', 'REGRESSION'] as const).map((value) => (
               <button type="button" key={value} disabled={disabled} onClick={() => onAddCase(value)}>
-                <strong>{t(caseTypeLabel(value))}</strong>
-                <span>{t(presetDescription(value))}</span>
+                <strong>{d(caseTypeLabel(value))}</strong>
+                <span>{d(presetDescription(value))}</span>
               </button>
             ))}
           </div>
@@ -246,7 +249,7 @@ export default function ScenarioMatrixSurface({
             className="secondary compact"
             onClick={onImportCases}
             disabled={disabled || importDisabled}
-            title={importDisabled ? t(importDisabledReason) : t('Import CSV or JSON cases')}
+            title={importDisabled ? importDisabledReason : t('Import CSV or JSON cases')}
           >
             {t('Import cases')}
           </button>
@@ -261,7 +264,7 @@ export default function ScenarioMatrixSurface({
             aria-pressed={facet === value}
             onClick={() => setFacet(value)}
           >
-            <span>{t(facetLabel(value))}</span>
+            <span>{d(facetLabel(value))}</span>
             <strong>{facetCounts[value]}</strong>
           </button>
         ))}
@@ -287,15 +290,15 @@ export default function ScenarioMatrixSurface({
             className="scenario-command-receipt"
             data-state={commandReceipt.state}
             data-testid="scenario-matrix-command-receipt"
-            aria-label={`${t('Command receipt')}: ${t(commandReceipt.state)}, ${t(commandReceipt.mode)}, ${t('{count} cases', { count: commandReceipt.caseCount })}`}
+            aria-label={`${t('Command receipt')}: ${d(commandReceipt.state)}, ${d(commandReceipt.mode)}, ${t('{count} cases', { count: commandReceipt.caseCount })}`}
           >
             <header>
               <span>{t('Command receipt')}</span>
-              <strong>{t(commandReceipt.state)}</strong>
+              <strong>{d(commandReceipt.state)}</strong>
               <code title={commandReceipt.correlationId}>{shortBatchId(commandReceipt.correlationId)}</code>
             </header>
             <dl>
-              <div><dt>{t('Scope')}</dt><dd>{t(commandReceipt.mode)} · {t('{count} cases', { count: commandReceipt.caseCount })}</dd></div>
+              <div><dt>{t('Scope')}</dt><dd>{d(commandReceipt.mode)} · {t('{count} cases', { count: commandReceipt.caseCount })}</dd></div>
               <div>
                 <dt>{t('Preview scope')}</dt>
                 <dd><code title={commandReceipt.previewFingerprint}>{shortFingerprint(commandReceipt.previewFingerprint) || '—'}</code></dd>
@@ -304,7 +307,7 @@ export default function ScenarioMatrixSurface({
                 <dt>{t('Canonical')}</dt>
                 <dd><code title={commandReceipt.canonicalFingerprint}>{shortFingerprint(commandReceipt.canonicalFingerprint) || t('Awaiting admission')}</code></dd>
               </div>
-              <div><dt>{t('Source')}</dt><dd>{t(commandReceipt.source)}</dd></div>
+              <div><dt>{t('Source')}</dt><dd>{d(commandReceipt.source)}</dd></div>
             </dl>
           </section>
         )}
@@ -313,7 +316,7 @@ export default function ScenarioMatrixSurface({
           <header>
             <div>
               <span>{t('Server batch')}</span>
-              <strong>{t(batchStatusLabel(batch.status))}</strong>
+              <strong>{d(batchStatusLabel(batch.status))}</strong>
               <code title={batch.batchId}>{shortBatchId(batch.batchId)}</code>
             </div>
             <div className="scenario-matrix-run-actions">
@@ -337,7 +340,7 @@ export default function ScenarioMatrixSurface({
             <div>
               <dt>{t('Promotion')}</dt>
               <dd data-eligible={batch.promotion.eligible} title={batch.promotion.reason}>
-                {t(batch.promotion.eligible ? 'Eligible' : promotionLabel(batch))}
+                {d(batch.promotion.eligible ? 'Eligible' : promotionLabel(batch))}
               </dd>
             </div>
           </dl>
@@ -364,12 +367,12 @@ export default function ScenarioMatrixSurface({
                 />
               </th>
               <th scope="col">{t('Case')}</th>
-              <th scope="col">{t('Result')}</th>
+              <th scope="col">{t('Behavior')}</th>
               <th scope="col">{t('Given')}</th>
               <th scope="col">{t('Dependencies')}</th>
               <th scope="col">{t('Assertions')}</th>
               <th scope="col">{t('Duration')}</th>
-              <th scope="col">{t('Currentness')}</th>
+              <th scope="col">{t('Proof authority')}</th>
               <th className="scenario-matrix-actions">{t('Actions')}</th>
             </tr>
           </thead>
@@ -402,11 +405,11 @@ export default function ScenarioMatrixSurface({
                 </td>
                 <td className="scenario-matrix-case-cell">
                   <strong>{row.name}</strong>
-                  <span><b>{t(caseTypeLabel(row.caseType))}</b>{row.tags.length > 0 ? ` · ${row.tags.slice(0, 2).join(', ')}` : ''}</span>
+                  <span><b>{d(caseTypeLabel(row.caseType))}</b>{row.tags.length > 0 ? ` · ${row.tags.slice(0, 2).join(', ')}` : ''}</span>
                 </td>
                 <td className="scenario-matrix-result-cell" data-tone={row.presentation.tone}>
-                  <strong>{t(row.presentation.label)}</strong>
-                  <span>{row.evidence.firstFailure?.message ?? t(row.presentation.detail)}</span>
+                  <strong>{m(row.presentation.label.messageId, row.presentation.label.params)}</strong>
+                  <span>{m(row.presentation.detail.messageId, row.presentation.detail.params)}</span>
                 </td>
                 <td title={summarizeGiven(row)}>{summarizeGiven(row)}</td>
                 <td>{t('{controlled}/{total} controlled', {
@@ -418,8 +421,7 @@ export default function ScenarioMatrixSurface({
                   : t('{count} checks', { count: row.summary.assertionCount })}</td>
                 <td>{row.evidence.durationMs === null ? '—' : `${row.evidence.durationMs} ms`}</td>
                 <td className="scenario-matrix-currentness">
-                  <strong data-freshness={row.evidence.freshness}>{t(freshnessLabel(row.evidence.freshness))}</strong>
-                  <span>{t(proofLabel(row.evidence.proofStrength))}</span>
+                  <ScenarioMatrixAuthority row={row} compact />
                 </td>
                 <td className="scenario-matrix-actions">
                   <button
@@ -509,7 +511,7 @@ export default function ScenarioMatrixSurface({
           <strong>{t('{count} selected', { count: selection.selectedCaseIds.length })}</strong>
           <span>{runCommand?.state === 'BLOCKED' && runCommand.messageId
             ? m(runCommand.messageId)
-            : t(runCommand?.state === 'BLOCKED'
+            : d(runCommand?.state === 'BLOCKED'
               ? runCommand.message
               : selection.selectedCaseIds.length > 0
                 ? '{count} selected. The primary command runs exactly this frozen selection.'
@@ -583,7 +585,8 @@ function ScenarioMatrixDetails({
   onCellEdit: (caseId: string, column: ScenarioTableColumn, value: unknown) => void;
   onOpenCase: (caseId: string) => void;
 }) {
-  const { t } = useI18n();
+  const { m, t, d } = useI18n();
+  const authority = presentTableCaseAuthority(row.evidence);
   const givenColumns = columns.filter((column) => column.group === 'GIVEN');
   const dependencyColumns = columns.filter((column) => column.group === 'DEPENDENCY');
   const assertionColumns = columns.filter((column) => column.group === 'THEN');
@@ -625,7 +628,7 @@ function ScenarioMatrixDetails({
       <section>
         <header><strong>{t('Dependencies')}</strong><span>{t('{count} controlled', { count: row.summary.controlledDependencyCount })}</span></header>
         <p className="scenario-matrix-subject-mode">
-          <strong>{t('Subject under test')}: {t(subjectModeLabel(row.evidence.subjectMode))}</strong>
+          <strong>{t('Subject under test')}: {d(subjectModeLabel(row.evidence.subjectMode))}</strong>
           <span>{row.evidence.subjectMode === 'SCHEMA_ONLY'
             ? t('Schema is the subject; no runtime implementation is invoked.')
             : row.summary.controlledDependencyCount > 0
@@ -664,12 +667,29 @@ function ScenarioMatrixDetails({
         )}
       </section>
       <section>
-        <header><strong>{t('Proof')}</strong><span>{t(proofLabel(row.evidence.proofStrength))}</span></header>
+        <header>
+          <strong>{t('Proof authority')}</strong>
+          <span data-governance={authority.governanceEligibility.toLowerCase()}>
+            {m(authority.governance.messageId, authority.governance.params)}
+          </span>
+        </header>
         <dl className="scenario-matrix-proof-details">
-          <div><dt>{t('Subject')}</dt><dd>{t(subjectModeLabel(row.evidence.subjectMode))}</dd></div>
-          <div><dt>{t('Execution')}</dt><dd>{t(row.evidence.execution)}</dd></div>
-          <div><dt>{t('Assertions')}</dt><dd>{t(row.evidence.assertions)}</dd></div>
-          <div><dt>{t('Freshness')}</dt><dd>{t(row.evidence.freshness)}</dd></div>
+          <div><dt>{t('Behavior')}</dt><dd>{m(authority.behavior.messageId, authority.behavior.params)}</dd></div>
+          <div>
+            <dt>{t('Proof')}</dt>
+            <dd>
+              <strong>{m(authority.proof.messageId, authority.proof.params)}</strong>
+              <small>{m(authority.proofDetail.messageId, authority.proofDetail.params)}</small>
+            </dd>
+          </div>
+          <div><dt>{t('Freshness')}</dt><dd>{m(authority.freshness.messageId, authority.freshness.params)}</dd></div>
+          <div>
+            <dt>{t('Governance eligibility')}</dt>
+            <dd>
+              <strong>{m(authority.governance.messageId, authority.governance.params)}</strong>
+              <small>{m(authority.governanceDetail.messageId, authority.governanceDetail.params)}</small>
+            </dd>
+          </div>
           <div><dt>{t('Attempt')}</dt><dd>{row.evidence.attempt || '—'}</dd></div>
           {row.evidence.commandReceipt && (
             <>
@@ -679,7 +699,7 @@ function ScenarioMatrixDetails({
               </div>
               <div>
                 <dt>{t('Command scope')}</dt>
-                <dd>{t(row.evidence.commandReceipt.mode)} · {t('{count} cases', { count: row.evidence.commandReceipt.caseCount })}</dd>
+                <dd>{d(row.evidence.commandReceipt.mode)} · {t('{count} cases', { count: row.evidence.commandReceipt.caseCount })}</dd>
               </div>
               <div>
                 <dt>{t('Canonical fingerprint')}</dt>
@@ -690,17 +710,53 @@ function ScenarioMatrixDetails({
             </>
           )}
         </dl>
-        {row.evidence.firstFailure && (
-          <p className="scenario-matrix-detail-failure">
-            <strong>{row.evidence.firstFailure.category}</strong>
-            <code>{row.evidence.firstFailure.target}</code>
-            <span>{row.evidence.firstFailure.message}</span>
-          </p>
-        )}
+        <details className="scenario-matrix-technical-details">
+          <summary>{t('Technical details')}</summary>
+          <dl>
+            <div><dt>{t('Subject')}</dt><dd><code>{row.evidence.subjectMode}</code></dd></div>
+            <div><dt>{t('Execution')}</dt><dd><code>{row.evidence.execution}</code></dd></div>
+            <div><dt>{t('Assertions')}</dt><dd><code>{row.evidence.assertions}</code></dd></div>
+            <div><dt>{t('Freshness')}</dt><dd><code>{row.evidence.freshness}</code></dd></div>
+            <div><dt>{t('Proof')}</dt><dd><code>{row.evidence.proofStrength}</code></dd></div>
+          </dl>
+          {row.evidence.firstFailure && (
+            <p className="scenario-matrix-detail-failure">
+              <strong>{row.evidence.firstFailure.category}</strong>
+              <code>{row.evidence.firstFailure.target}</code>
+              <span>{row.evidence.firstFailure.message}</span>
+            </p>
+          )}
+        </details>
         <button type="button" className="secondary compact" onClick={() => onOpenCase(row.caseId)}>
           {t('Edit full Case')}
         </button>
       </section>
+    </div>
+  );
+}
+
+function ScenarioMatrixAuthority({ row, compact = false }: {
+  row: ScenarioTableRow;
+  compact?: boolean;
+}) {
+  const { m, t } = useI18n();
+  const authority = presentTableCaseAuthority(row.evidence);
+  return (
+    <div
+      className="scenario-matrix-authority"
+      data-testid={`scenario-matrix-authority-${row.caseId}`}
+      data-governance={authority.governanceEligibility.toLowerCase()}
+      data-proof={row.evidence.proofStrength.toLowerCase()}
+    >
+      <span>
+        <b>{compact ? t('Proof') : t('Proof strength')}</b>
+        {m(authority.proof.messageId, authority.proof.params)}
+      </span>
+      <span>
+        <b>{t('Freshness')}</b>
+        {m(authority.freshness.messageId, authority.freshness.params)}
+      </span>
+      <strong>{m(authority.governance.messageId, authority.governance.params)}</strong>
     </div>
   );
 }
@@ -797,24 +853,6 @@ function businessLabel(value: string): string {
     .replace(/[_-]+/g, ' ')
     .replace(/([a-z0-9])([A-Z])/g, '$1 $2')
     .trim() || 'Value';
-}
-
-function freshnessLabel(value: ScenarioTableRow['evidence']['freshness']): string {
-  switch (value) {
-    case 'CURRENT': return 'Current';
-    case 'STALE': return 'Stale';
-    case 'SUPERSEDED': return 'Superseded';
-  }
-}
-
-function proofLabel(value: ScenarioTableRow['evidence']['proofStrength']): string {
-  switch (value) {
-    case 'SCHEMA': return 'Schema only';
-    case 'MOCK': return 'Mock proof';
-    case 'SANDBOX': return 'Sandbox proof';
-    case 'RUNTIME': return 'Runtime proof';
-    case 'CERTIFIABLE': return 'Certifiable proof';
-  }
 }
 
 function subjectModeLabel(value: ScenarioTableRow['evidence']['subjectMode']): string {

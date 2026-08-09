@@ -1,4 +1,4 @@
-import type { MessageId } from './messageCatalog';
+import type { MessageId, ProductMessageDescriptor } from './messageCatalog';
 
 export type DynamicProductTextTranslator = (
   source: string,
@@ -9,6 +9,32 @@ export type CatalogMessageTranslator = (
   messageId: MessageId,
   values?: Record<string, string | number>,
 ) => string;
+
+export function rehearsalBlockerDescriptor(source: string): ProductMessageDescriptor {
+  const normalized = source.toUpperCase().replace(/[\s.-]+/g, '_');
+  const messageId = /TIMEOUT|DEADLINE/.test(normalized)
+    ? 'rehearsal.blocker.dependencyTimeout'
+    : /ASSERTION|GROUNDING|NOT_GROUNDED/.test(normalized)
+      ? 'rehearsal.blocker.assertionFailed'
+      : /OWNER.*APPROVAL|APPROVAL.*REQUIRED/.test(normalized)
+        ? 'rehearsal.blocker.ownerApproval'
+        : /EVIDENCE|ATTESTATION|KMS|RETENTION|SEAL|SIGNER|WORKBOOK/.test(normalized)
+          ? 'rehearsal.blocker.evidenceIncomplete'
+          : 'rehearsal.blocker.generic';
+  return {
+    messageId,
+    rawCode: /^[A-Z][A-Z0-9_.-]+$/.test(source) ? source : undefined,
+    rawDetail: source,
+  };
+}
+
+export function localizeRehearsalBlocker(
+  m: CatalogMessageTranslator,
+  source: string,
+): string {
+  const descriptor = rehearsalBlockerDescriptor(source);
+  return m(descriptor.messageId, descriptor.params);
+}
 
 export function localizeRehearsalText(
   d: DynamicProductTextTranslator,

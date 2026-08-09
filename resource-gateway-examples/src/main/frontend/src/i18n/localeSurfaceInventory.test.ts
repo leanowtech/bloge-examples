@@ -39,15 +39,7 @@ const DEEP_SURFACES = [
   '../Showcase.tsx',
 ] as const;
 
-const STRICT_DYNAMIC_SURFACES = [
-  '../Showcase.tsx',
-  '../RehearsalWorkbench.tsx',
-  '../author/canvas/CanvasTaskNavigator.tsx',
-  '../author/shell/AuthorCommandBar.tsx',
-  '../library-authoring/mobile/MobileLibraryTaskSurface.tsx',
-  '../library-authoring/CanonicalContractPreview.tsx',
-  '../remediation/RemediationActionList.tsx',
-] as const;
+const STRICT_DYNAMIC_SURFACES = DEEP_SURFACES;
 
 describe('deep-surface locale inventory', () => {
   it('requires every literal legacy t() key on audited surfaces to have Chinese text', () => {

@@ -1,6 +1,6 @@
 # Resource Gateway UX Round 3 资深体验审阅与演进计划
 
-> 状态：In Progress / S0-S2 Implemented
+> 状态：In Progress / S0-S3 Implemented
 >
 > 审阅日期：2026-08-09
 >
@@ -8,11 +8,11 @@
 >
 > 证据等级：E2，最新 production JAR、真实 Chromium、代码路径与自动化覆盖交叉验证
 >
-> 当前视觉完成度：`91 / 100`
+> 当前视觉完成度：`93 / 100`
 >
-> 当前工业任务成熟度：`91 / 100`（S2 E2 实施复评；缺少 E3/E4 时对外成熟度仍封顶 `89`）
+> 当前工业任务成熟度：`93 / 100`（S3 E2 实施复评；缺少 E3/E4 时对外成熟度仍封顶 `89`）
 >
-> 缺陷结论：`0 P0 / 5 P1 / 2 P2`
+> 缺陷结论：`0 P0 / 3 P1 / 2 P2`
 >
 > 目标：先将 P0 清零，再恢复 `>=95 / 100` 的 E2 工程体验；没有 E3/E4 证据前，对外成熟度仍封顶 `89`
 
@@ -26,6 +26,7 @@
 - [S0 工作区连续性实现说明](resource-gateway-ux-round3-s0-workspace-continuity-implementation.md)
 - [S1 可逆编辑与删除影响控制实现说明](resource-gateway-ux-round3-s1-reversible-mutations-implementation.md)
 - [S2 企业任务坐标实现说明](resource-gateway-ux-round3-s2-enterprise-task-coordinate-implementation.md)
+- [S3 证明语义与本地化实现说明](resource-gateway-ux-round3-s3-proof-semantics-localization-implementation.md)
 
 实施进度：
 
@@ -34,7 +35,7 @@
 | S0 工作区连续性 | 已实现 | 跨工作区恢复、权威 Save、recovery lifecycle 关闭首个 P0 |
 | S1 可逆编辑 | 已实现 | 20 类 mutation、删除影响预览、原子 Undo/Redo 关闭第二个 P0 |
 | S2 企业任务坐标 | 已实现 | 统一 TaskCoordinate、command authority、production safeguard、单一 primary Run 与 return coordinate |
-| S3 证明语义与 i18n | 待实施 | 动态产品文案和 proof authority 仍需收口 |
+| S3 证明语义与 i18n | 已实现 | 类型化产品消息、deep-surface inventory、四维 proof authority、raw detail 隔离与双语状态连续性已闭合 |
 | S4 响应式任务投影 | 待实施 | 390px Matrix 与 chrome 预算仍需治理 |
 | S5 性能与宿主门禁 | 待实施 | initial route bundle 与 host disposal 仍未达门禁 |
 
@@ -509,6 +510,14 @@ interface ProofPresentation {
 
 目标：中文产品面没有产品英文；Mock 不被误读为治理证明。
 
+> 实施复评：已完成。Library archetype、Matrix verdict/proof/freshness/governance 和 Rehearsal blocker
+> 使用受控 descriptor；所有 deep surfaces 拒绝新增 `t(variable)`；中文未知动态值 fail closed，英文
+> 保留原始服务端错误；raw code/detail 默认进入技术详情。Matrix 只有 `SUCCESS + PASSED + CURRENT +
+> CERTIFIABLE` 才显示可用于发布门禁，未运行用例的新鲜度显示“未评估”。真实 Chromium 已验证
+> `1280 x 820` 中英文状态连续及 `390 x 844` 中文无页面级溢出。前端 `92` 个文件、`703` 项测试
+> 全绿，Java/Maven `5,898` 项测试零失败、零错误（`13` 项跳过）且 `BUILD SUCCESS`。主 bundle
+> `858.96 kB` minified 仍为 S5 阻断。Mock/Certifiable 识别率属于 E3，尚未取得。
+
 实施切片：
 
 1. 把 archetype、table verdict、proof strength 和 rehearsal blocker 改为 descriptor；
@@ -692,8 +701,8 @@ ux.route-chunk-budget
 
 - [x] tenant/environment/role/subject/scope 在执行命令前可见；
 - [x] 一个 task surface 只有一个 primary command；
-- [ ] 中文产品面没有产品英文和默认 raw code；
-- [ ] Mock / Runtime / Certifiable 证明权威不会被误判；
+- [x] 中文产品面没有产品英文和默认 raw code（E2 inventory + Chromium；E3 识别率仍待验证）；
+- [x] Mock / Runtime / Certifiable 证明权威不会被 UI 模型误判（E2；E3 用户判断仍待验证）；
 - [ ] 390px Matrix 可比较 3 个结果；
 - [ ] 820px 画布 Focus 保持可读；
 - [ ] chrome、readiness 与警告密度达到预算。

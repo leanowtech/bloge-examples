@@ -4,6 +4,7 @@ import { catalogedDiagnosticCodes, presentDiagnostic } from './diagnosticCatalog
 import {
   MESSAGE_CATALOG,
   messageCatalogErrors,
+  pseudoTranslateMessage,
   statusMessageId,
   translateMessage,
 } from './messageCatalog';
@@ -47,5 +48,17 @@ describe('typed product message catalog', () => {
       title: '系统诊断',
       remediation: '请结合协议代码和技术详情继续排查。',
     });
+  });
+
+  it('expands every controlled product message for overflow regression tests', () => {
+    const insufficientExpansion = Object.keys(MESSAGE_CATALOG).filter((id) => {
+      const messageId = id as keyof typeof MESSAGE_CATALOG;
+      const source = MESSAGE_CATALOG[messageId].en;
+      return pseudoTranslateMessage(messageId).length < source.length * 1.3;
+    });
+
+    expect(insufficientExpansion).toEqual([]);
+    expect(pseudoTranslateMessage('library.save.savedRevision', { revision: 42 }))
+      .toContain('42');
   });
 });

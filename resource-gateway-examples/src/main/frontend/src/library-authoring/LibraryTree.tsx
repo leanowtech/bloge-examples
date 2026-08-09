@@ -17,7 +17,7 @@ export default function LibraryTree({
   onSelect,
   onAdd,
 }: LibraryTreeProps) {
-  const { t } = useI18n();
+  const { t , d } = useI18n();
   const groups: Array<{
     kind: Exclude<LibraryAssetKind, 'library'>;
     label: string;
@@ -48,12 +48,12 @@ export default function LibraryTree({
       {groups.map((group) => (
         <section key={group.kind}>
           <header>
-            <span>{t(group.label)}</span>
+            <span>{d(group.label)}</span>
             <span>{Object.keys(group.values).length}</span>
             <button
               type="button"
-              aria-label={t('Add {kind}', { kind: t(group.kind) })}
-              title={t('Add {kind}', { kind: t(group.kind) })}
+              aria-label={t('Add {kind}', { kind: d(group.kind) })}
+              title={t('Add {kind}', { kind: d(group.kind) })}
               onClick={() => onAdd(group.kind)}
             >
               <Plus size={14} aria-hidden="true" />

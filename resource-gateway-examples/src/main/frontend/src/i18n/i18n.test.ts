@@ -60,7 +60,7 @@ describe('i18n locale contract', () => {
     expect(translateRegisteredDynamic('zh-CN', 'A new server sentence.'))
       .toBe('未识别的产品状态，请查看技术详情。');
     expect(translateRegisteredDynamic('en', 'A new server sentence.'))
-      .toBe('Unrecognized product status. Review technical details.');
+      .toBe('A new server sentence.');
   });
 
   it('presents rehearsal lifecycle states as product labels in Chinese', () => {

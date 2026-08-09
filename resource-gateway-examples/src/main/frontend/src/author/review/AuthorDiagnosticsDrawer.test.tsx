@@ -57,8 +57,10 @@ describe('AuthorDiagnosticsDrawer localization', () => {
     expect(host.textContent).toContain('业务断言失败');
     expect(host.textContent).toContain('实际结果与已定义的业务预期不一致。');
     expect(host.textContent).toContain('打开用例并比较预期值与实际值。');
-    expect(host.textContent).toContain('协议代码: ASSERTION_FAILED');
-    expect(host.querySelector('details')?.open).toBe(false);
-    expect(host.querySelector('details')?.textContent).toContain('Expected approve but actual was decline.');
+    expect(host.querySelector('li > button')?.textContent).not.toContain('ASSERTION_FAILED');
+    const technicalDetails = host.querySelector('details');
+    expect(technicalDetails?.open).toBe(false);
+    expect(technicalDetails?.textContent).toContain('协议代码ASSERTION_FAILED');
+    expect(technicalDetails?.textContent).toContain('Expected approve but actual was decline.');
   });
 });

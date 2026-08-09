@@ -335,6 +335,163 @@ export const MESSAGE_CATALOG = {
     'zh-CN': '运行时比较需要声明函数签名。',
   },
   'library.runtime.technicalDetails': { en: 'Technical details', 'zh-CN': '技术详情' },
+  'library.archetype.pure.label': { en: 'Pure transformation', 'zh-CN': '纯数据转换' },
+  'library.archetype.pure.summary': {
+    en: 'Deterministic input-to-output mapping without external effects.',
+    'zh-CN': '确定性地将输入映射为输出，不产生外部副作用。',
+  },
+  'library.archetype.decision.label': { en: 'Decision or policy', 'zh-CN': '决策或策略' },
+  'library.archetype.decision.summary': {
+    en: 'Evaluates business rules and returns an explainable decision.',
+    'zh-CN': '评估业务规则并返回可解释的决策。',
+  },
+  'library.archetype.resourceRead.label': { en: 'External read', 'zh-CN': '外部读取' },
+  'library.archetype.resourceRead.summary': {
+    en: 'Reads an external resource without changing its state.',
+    'zh-CN': '读取外部资源，但不改变其状态。',
+  },
+  'library.archetype.externalWrite.label': { en: 'External write', 'zh-CN': '外部写入' },
+  'library.archetype.externalWrite.summary': {
+    en: 'Changes external state and requires governed write semantics.',
+    'zh-CN': '改变外部状态，需要受治理的写入语义。',
+  },
+  'library.archetype.remoteWorker.label': { en: 'Remote worker', 'zh-CN': '远程工作节点' },
+  'library.archetype.remoteWorker.summary': {
+    en: 'Delegates work to a separately deployed runtime worker.',
+    'zh-CN': '将任务委托给独立部署的运行时工作节点。',
+  },
+  'library.archetype.aiTool.label': { en: 'AI tool', 'zh-CN': 'AI 工具' },
+  'library.archetype.aiTool.summary': {
+    en: 'Invokes a model-backed capability with explicit tool boundaries.',
+    'zh-CN': '在明确的工具边界内调用模型能力。',
+  },
+  'library.archetype.eventSource.label': { en: 'Event source', 'zh-CN': '事件源' },
+  'library.archetype.eventSource.summary': {
+    en: 'Produces a stream of events for downstream processing.',
+    'zh-CN': '产生事件流供下游持续处理。',
+  },
+  'library.archetype.messageHandler.label': { en: 'Message handler', 'zh-CN': '消息处理器' },
+  'library.archetype.messageHandler.summary': {
+    en: 'Consumes a message and records its processing outcome.',
+    'zh-CN': '消费消息并记录处理结果。',
+  },
+  'library.archetype.webhook.label': { en: 'Webhook', 'zh-CN': 'Webhook 回调' },
+  'library.archetype.webhook.summary': {
+    en: 'Receives an inbound callback through a governed HTTP boundary.',
+    'zh-CN': '通过受治理的 HTTP 边界接收外部回调。',
+  },
+  'library.archetype.unknown.label': { en: 'Custom archetype', 'zh-CN': '自定义执行原型' },
+  'library.archetype.unknown.summary': {
+    en: 'This archetype is not yet registered in the product catalog.',
+    'zh-CN': '此执行原型尚未登记到产品目录。',
+  },
+  'table.verdict.evidenceStale': { en: 'Evidence stale', 'zh-CN': '证据已过期' },
+  'table.verdict.evidenceSuperseded': { en: 'Evidence superseded', 'zh-CN': '证据已被取代' },
+  'table.verdict.notRun': { en: 'Not run', 'zh-CN': '尚未运行' },
+  'table.verdict.queued': { en: 'Queued', 'zh-CN': '已排队' },
+  'table.verdict.running': { en: 'Running', 'zh-CN': '运行中' },
+  'table.verdict.executionError': { en: 'Execution error', 'zh-CN': '执行出错' },
+  'table.verdict.executionTimeout': { en: 'Execution timed out', 'zh-CN': '执行超时' },
+  'table.verdict.skipped': { en: 'Skipped', 'zh-CN': '已跳过' },
+  'table.verdict.cancelled': { en: 'Cancelled', 'zh-CN': '已取消' },
+  'table.verdict.budgetStopped': { en: 'Stopped by budget', 'zh-CN': '因预算限制停止' },
+  'table.verdict.assertionsFailed': { en: 'Assertions failed', 'zh-CN': '业务断言失败' },
+  'table.verdict.assertionsInconclusive': { en: 'Assertions inconclusive', 'zh-CN': '业务断言无法确定' },
+  'table.verdict.schemaSucceeded': { en: 'Schema execution succeeded', 'zh-CN': 'Schema 校验完成' },
+  'table.verdict.mockSucceeded': { en: 'Mock execution succeeded', 'zh-CN': 'Mock 模拟完成' },
+  'table.verdict.sandboxSucceeded': { en: 'Sandbox execution succeeded', 'zh-CN': '沙盒执行完成' },
+  'table.verdict.runtimeSucceeded': { en: 'Runtime execution succeeded', 'zh-CN': '真实运行完成' },
+  'table.verdict.certifiableSucceeded': { en: 'Certifiable execution succeeded', 'zh-CN': '可认证执行完成' },
+  'table.verdict.schemaMatched': { en: 'Schema contract valid', 'zh-CN': 'Schema 契约有效' },
+  'table.verdict.mockMatched': { en: 'Mock behavior matched', 'zh-CN': 'Mock 行为符合预期' },
+  'table.verdict.sandboxMatched': { en: 'Sandbox behavior matched', 'zh-CN': '沙盒行为符合预期' },
+  'table.verdict.runtimeMatched': { en: 'Runtime behavior matched', 'zh-CN': '真实运行行为符合预期' },
+  'table.verdict.certifiableMatched': { en: 'Certifiable behavior matched', 'zh-CN': '可认证行为符合预期' },
+  'table.detail.rerunCurrent': {
+    en: 'Run this case again against the current Scenario, Fixture, Contract, and target.',
+    'zh-CN': '请针对当前测试场景、Fixture、契约和目标重新运行此用例。',
+  },
+  'table.detail.noEvidence': {
+    en: 'No execution evidence exists for this case.',
+    'zh-CN': '此用例尚无执行证据。',
+  },
+  'table.detail.inProgress': {
+    en: 'Execution is in progress; no final business verdict is available.',
+    'zh-CN': '执行仍在进行，尚无最终业务结论。',
+  },
+  'table.detail.executionFailed': {
+    en: 'Execution did not produce a successful result for business assertions.',
+    'zh-CN': '执行未生成可供业务断言使用的成功结果。',
+  },
+  'table.detail.assertionsFailed': {
+    en: 'Runtime execution completed, but at least one expected business outcome did not match.',
+    'zh-CN': '运行已完成，但至少一项业务预期不匹配。',
+  },
+  'table.detail.assertionsInconclusive': {
+    en: 'Runtime execution completed, but the business oracle could not be evaluated completely.',
+    'zh-CN': '运行已完成，但业务判定条件未能完整评估。',
+  },
+  'table.detail.noAssertions': {
+    en: 'No business assertion was evaluated; this is not correctness evidence.',
+    'zh-CN': '未评估业务断言；此结果不能作为正确性证据。',
+  },
+  'table.detail.assertionsPassed': {
+    en: 'Execution completed and every authored business assertion passed.',
+    'zh-CN': '执行已完成，且所有已定义的业务断言均通过。',
+  },
+  'table.proof.schema.label': { en: 'Schema only', 'zh-CN': '仅 Schema' },
+  'table.proof.schema.detail': {
+    en: 'Validates structure without executing the business target.',
+    'zh-CN': '只校验结构，不执行真实业务目标。',
+  },
+  'table.proof.mock.label': { en: 'Mock simulation', 'zh-CN': 'Mock 模拟' },
+  'table.proof.mock.detail': {
+    en: 'Uses controlled substitutes; it does not prove production behavior.',
+    'zh-CN': '使用可控替身，不能证明生产行为。',
+  },
+  'table.proof.sandbox.label': { en: 'Sandbox execution', 'zh-CN': '沙盒执行' },
+  'table.proof.sandbox.detail': {
+    en: 'Executes in an isolated environment without production authority.',
+    'zh-CN': '在隔离环境中执行，不具备生产证明效力。',
+  },
+  'table.proof.runtime.label': { en: 'Runtime observation', 'zh-CN': '真实运行观测' },
+  'table.proof.runtime.detail': {
+    en: 'Observes the real target, but is not yet a certifiable evidence bundle.',
+    'zh-CN': '观测真实目标，但尚未形成可认证证据包。',
+  },
+  'table.proof.certifiable.label': { en: 'Certifiable evidence', 'zh-CN': '可认证证据' },
+  'table.proof.certifiable.detail': {
+    en: 'Binds execution, assertions, identity, and integrity to this exact revision.',
+    'zh-CN': '将执行、断言、身份和完整性绑定到当前精确修订版。',
+  },
+  'table.freshness.current.label': { en: 'Current evidence', 'zh-CN': '当前证据' },
+  'table.freshness.notEvaluated.label': { en: 'Not evaluated', 'zh-CN': '未评估' },
+  'table.freshness.stale.label': { en: 'Stale evidence', 'zh-CN': '过期证据' },
+  'table.freshness.superseded.label': { en: 'Superseded evidence', 'zh-CN': '已被取代的证据' },
+  'table.governance.eligible.label': { en: 'Publish eligible', 'zh-CN': '可用于发布门禁' },
+  'table.governance.eligible.detail': {
+    en: 'Current certifiable evidence passed every business assertion.',
+    'zh-CN': '当前可认证证据已通过全部业务断言。',
+  },
+  'table.governance.ineligible.label': { en: 'Not publish eligible', 'zh-CN': '不可用于发布门禁' },
+  'table.governance.ineligible.detail': {
+    en: 'This result is useful for authoring, but cannot satisfy a publish gate.',
+    'zh-CN': '此结果可辅助编排，但不能满足发布门禁。',
+  },
+  'table.governance.notEvaluated.label': { en: 'Eligibility not evaluated', 'zh-CN': '尚未评估门禁资格' },
+  'table.governance.notEvaluated.detail': {
+    en: 'A terminal result with business assertions is required before eligibility can be evaluated.',
+    'zh-CN': '需要先产生包含业务断言的终态结果，才能评估门禁资格。',
+  },
+  'table.failure.summary': {
+    en: 'The execution reported a failure. Open details for the exact protocol reason.',
+    'zh-CN': '执行报告失败；请展开详情查看精确协议原因。',
+  },
+  'rehearsal.blocker.dependencyTimeout': { en: 'A dependent service did not respond in time.', 'zh-CN': '依赖服务未在规定时间内响应。' },
+  'rehearsal.blocker.assertionFailed': { en: 'A governed business expectation did not match.', 'zh-CN': '受治理的业务预期未能匹配。' },
+  'rehearsal.blocker.ownerApproval': { en: 'An accountable owner decision is still required.', 'zh-CN': '仍需要责任人作出审批决定。' },
+  'rehearsal.blocker.evidenceIncomplete': { en: 'The retained evidence is incomplete for this decision.', 'zh-CN': '当前决策所需的留存证据不完整。' },
+  'rehearsal.blocker.generic': { en: 'The item needs review before it can contribute trusted evidence.', 'zh-CN': '此条目需要审阅后才能贡献可信证据。' },
   'showcase.userDashboard.title': { en: 'User Dashboard', 'zh-CN': '用户仪表盘' },
   'showcase.userDashboard.pattern': { en: 'Parallel fan-out aggregation', 'zh-CN': '并行扇出聚合' },
   'showcase.userDashboard.description': {
@@ -597,14 +754,17 @@ export const MESSAGE_CATALOG = {
   },
 } as const satisfies Record<string, LocalizedMessage>;
 
-export type MessageId = keyof typeof MESSAGE_CATALOG;
+export type ProductMessageId = keyof typeof MESSAGE_CATALOG;
+export type MessageId = ProductMessageId;
 
-export interface MessageDescriptor {
-  messageId: MessageId;
+export interface ProductMessageDescriptor {
+  messageId: ProductMessageId;
   params?: TranslationValues;
   rawCode?: string;
   rawDetail?: string;
 }
+
+export type MessageDescriptor = ProductMessageDescriptor;
 
 const STATUS_IDS: Record<string, MessageId> = {
   SAVED: 'status.saved',
@@ -633,6 +793,17 @@ export function translateMessage(
   values: TranslationValues = {},
 ): string {
   return interpolate(MESSAGE_CATALOG[id][locale], values);
+}
+
+/** Expands product copy for overflow tests without adding a user-selectable locale. */
+export function pseudoTranslateMessage(
+  id: ProductMessageId,
+  values: TranslationValues = {},
+): string {
+  const translated = interpolate(MESSAGE_CATALOG[id].en, values);
+  const accented = translated.replace(/[A-Za-z]/g, (character) => PSEUDO_ACCENTS[character] ?? character);
+  const padding = '~'.repeat(Math.max(4, Math.ceil(translated.length * 0.35)));
+  return `[${accented} ${padding}]`;
 }
 
 export function statusMessageId(value: string): MessageId | null {
@@ -666,3 +837,12 @@ function interpolate(template: string, values: TranslationValues): string {
     Object.prototype.hasOwnProperty.call(values, key) ? String(values[key]) : match
   ));
 }
+
+const PSEUDO_ACCENTS: Record<string, string> = {
+  A: 'Å', B: 'Ɓ', C: 'Ç', D: 'Ð', E: 'Ë', F: 'Ƒ', G: 'Ĝ', H: 'Ħ', I: 'Ï',
+  J: 'Ĵ', K: 'Ķ', L: 'Ŀ', M: 'Ṁ', N: 'Ñ', O: 'Ø', P: 'Þ', Q: 'Ǫ', R: 'Ŕ',
+  S: 'Š', T: 'Ŧ', U: 'Ü', V: 'Ṽ', W: 'Ŵ', X: 'Ẍ', Y: 'Ÿ', Z: 'Ž',
+  a: 'å', b: 'ƀ', c: 'ç', d: 'ð', e: 'ë', f: 'ƒ', g: 'ĝ', h: 'ħ', i: 'ï',
+  j: 'ĵ', k: 'ķ', l: 'ŀ', m: 'ṁ', n: 'ñ', o: 'ø', p: 'þ', q: 'ǫ', r: 'ŕ',
+  s: 'š', t: 'ŧ', u: 'ü', v: 'ṽ', w: 'ŵ', x: 'ẍ', y: 'ÿ', z: 'ž',
+};

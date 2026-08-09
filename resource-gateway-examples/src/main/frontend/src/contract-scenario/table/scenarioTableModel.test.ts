@@ -95,7 +95,7 @@ describe('ScenarioTableProjection', () => {
       [draftSet.scenarios[0].scenarioId]: passedEvidence(draftSet.scenarios[0].scenarioId),
     });
 
-    expect(projection.rows[0].values['proof:verdict']).toBe('Mock behavior matched');
+    expect(projection.rows[0].values['proof:verdict']).toBe('table.verdict.mockMatched');
     expect(Object.values(projection.rows[0].values)).not.toContain('Passed');
   });
 

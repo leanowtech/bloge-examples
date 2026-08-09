@@ -2,7 +2,11 @@ import { describe, expect, it } from 'vitest';
 
 import { scenarioDraftSetFromOperatorTableCases } from './scenarioAuthoring';
 import { tableDrivenScenarioBaseline } from './tableDrivenTestingBaseline';
-import { presentTableCaseVerdict, type TableCaseVerdict } from './tableDrivenTestStatus';
+import {
+  presentTableCaseAuthority,
+  presentTableCaseVerdict,
+  type TableCaseVerdict,
+} from './tableDrivenTestStatus';
 
 describe('table-driven testing baselines', () => {
   it.each([5, 50, 500] as const)(
@@ -71,47 +75,81 @@ describe('table-driven testing baselines', () => {
 describe('table-driven verdict vocabulary', () => {
   it.each<{
     verdict: TableCaseVerdict;
-    label: string;
+    labelId: string;
     tone: string;
   }>([
     {
       verdict: verdict('NOT_RUN', 'NONE', 'CURRENT', 'SCHEMA'),
-      label: 'Not run',
+      labelId: 'table.verdict.notRun',
       tone: 'neutral',
     },
     {
       verdict: verdict('SUCCESS', 'NONE', 'CURRENT', 'MOCK'),
-      label: 'Mock execution succeeded',
+      labelId: 'table.verdict.mockSucceeded',
       tone: 'warning',
     },
     {
       verdict: verdict('SUCCESS', 'PASSED', 'CURRENT', 'MOCK'),
-      label: 'Mock behavior matched',
+      labelId: 'table.verdict.mockMatched',
       tone: 'passed',
     },
     {
       verdict: verdict('SUCCESS', 'FAILED', 'CURRENT', 'RUNTIME'),
-      label: 'Assertions failed',
+      labelId: 'table.verdict.assertionsFailed',
       tone: 'failed',
     },
     {
       verdict: verdict('TIMEOUT', 'NONE', 'CURRENT', 'SANDBOX'),
-      label: 'Execution timed out',
+      labelId: 'table.verdict.executionTimeout',
       tone: 'failed',
     },
     {
       verdict: verdict('SUCCESS', 'PASSED', 'STALE', 'CERTIFIABLE'),
-      label: 'Evidence stale',
+      labelId: 'table.verdict.evidenceStale',
       tone: 'stale',
     },
     {
       verdict: verdict('BUDGET_STOPPED', 'NONE', 'CURRENT', 'MOCK'),
-      label: 'Stopped by budget',
+      labelId: 'table.verdict.budgetStopped',
       tone: 'warning',
     },
-  ])('presents $label without collapsing independent status axes', ({ verdict, label, tone }) => {
-    expect(presentTableCaseVerdict(verdict)).toMatchObject({ label, tone });
-    expect(presentTableCaseVerdict(verdict).label).not.toBe('Passed');
+  ])('presents $labelId without collapsing independent status axes', ({ verdict, labelId, tone }) => {
+    expect(presentTableCaseVerdict(verdict)).toMatchObject({
+      label: { messageId: labelId },
+      tone,
+    });
+    expect(presentTableCaseVerdict(verdict).label.messageId).not.toBe('status.pass');
+  });
+
+  it.each([
+    {
+      name: 'mock pass',
+      verdict: verdict('SUCCESS', 'PASSED', 'CURRENT', 'MOCK'),
+      eligibility: 'INELIGIBLE',
+    },
+    {
+      name: 'stale certifiable pass',
+      verdict: verdict('SUCCESS', 'PASSED', 'STALE', 'CERTIFIABLE'),
+      eligibility: 'INELIGIBLE',
+    },
+    {
+      name: 'current certifiable pass',
+      verdict: verdict('SUCCESS', 'PASSED', 'CURRENT', 'CERTIFIABLE'),
+      eligibility: 'ELIGIBLE',
+    },
+    {
+      name: 'not run',
+      verdict: verdict('NOT_RUN', 'NONE', 'CURRENT', 'SCHEMA'),
+      eligibility: 'NOT_EVALUATED',
+    },
+  ])('keeps governance eligibility independent for $name', ({ verdict, eligibility }) => {
+    expect(presentTableCaseAuthority(verdict).governanceEligibility).toBe(eligibility);
+  });
+
+  it('does not call evidence current before a run has produced evidence', () => {
+    const authority = presentTableCaseAuthority(verdict('NOT_RUN', 'NONE', 'CURRENT', 'SCHEMA'));
+
+    expect(authority.freshness.messageId).toBe('table.freshness.notEvaluated.label');
   });
 });
 

@@ -159,6 +159,8 @@ describe('ScenarioMatrixSurface', () => {
     expect(text()).toContain('显示 1-5 / 5');
     expect(button('运行全部（5）')).toBeInstanceOf(HTMLButtonElement);
     expect(input('搜索用例').placeholder).toBe('搜索用例、ID 或标签');
+    expect(text()).toContain('未评估');
+    expect(text()).not.toContain('当前证据');
     await click(buttonByLabel('检查 '));
     expect(text()).toContain('case-1-expected-1-1');
     expect(text()).toContain('result.field01');
@@ -170,7 +172,7 @@ describe('ScenarioMatrixSurface', () => {
     const headers = host.querySelectorAll('[data-testid="scenario-matrix-summary-columns"] th');
     expect(headers).toHaveLength(9);
     expect(Array.from(headers).slice(1, -1).map((header) => header.textContent))
-      .toEqual(['Case', 'Result', 'Given', 'Dependencies', 'Assertions', 'Duration', 'Currentness']);
+      .toEqual(['Case', 'Behavior', 'Given', 'Dependencies', 'Assertions', 'Duration', 'Proof authority']);
     expect(text()).not.toContain('OUTPUT_PATH:$.result.field01:EQUALS');
 
     await click(buttonByLabel('Inspect '));
@@ -212,6 +214,67 @@ describe('ScenarioMatrixSurface', () => {
     expect(text()).toContain('Subject under test: Real target execution');
     expect(text()).toContain('APPROVED');
     expect(text()).toContain('REVIEW');
+  });
+
+  it('shows behavior, proof, freshness, and governance without promoting Mock evidence', async () => {
+    const draftSet = tableDrivenScenarioBaseline(5);
+    const caseId = draftSet.scenarios[0].scenarioId;
+    const projection = buildScenarioTableProjection(draftSet, {
+      [caseId]: {
+        caseId,
+        runId: 'run-mock',
+        attempt: 1,
+        execution: 'SUCCESS',
+        assertions: 'PASSED',
+        freshness: 'CURRENT',
+        proofStrength: 'MOCK',
+        subjectMode: 'REAL',
+        durationMs: 7,
+        firstFailure: null,
+      },
+    });
+    await renderProjection(projection);
+
+    const authority = host.querySelector(`[data-testid="scenario-matrix-authority-${caseId}"]`);
+    expect(authority?.textContent).toContain('Mock simulation');
+    expect(authority?.textContent).toContain('Current evidence');
+    expect(authority?.textContent).toContain('Not publish eligible');
+    expect(authority?.getAttribute('data-governance')).toBe('ineligible');
+  });
+
+  it('keeps raw failure protocol fields inside closed technical details', async () => {
+    const draftSet = tableDrivenScenarioBaseline(5);
+    const caseId = draftSet.scenarios[0].scenarioId;
+    const projection = buildScenarioTableProjection(draftSet, {
+      [caseId]: {
+        caseId,
+        runId: 'run-timeout',
+        attempt: 1,
+        execution: 'TIMEOUT',
+        assertions: 'NONE',
+        freshness: 'CURRENT',
+        proofStrength: 'RUNTIME',
+        subjectMode: 'REAL',
+        durationMs: 10_000,
+        firstFailure: {
+          category: 'DEPENDENCY_TIMEOUT',
+          target: 'risk-service',
+          message: 'Socket deadline exceeded.',
+        },
+      },
+    });
+    await renderProjection(projection);
+
+    const row = host.querySelector(`[data-testid="scenario-matrix-row-${caseId}"]`);
+    expect(row?.textContent).toContain('Execution timed out');
+    expect(row?.textContent).not.toContain('DEPENDENCY_TIMEOUT');
+    expect(row?.textContent).not.toContain('Socket deadline exceeded');
+
+    await click(buttonByLabel('Inspect '));
+    const technical = host.querySelector<HTMLDetailsElement>('.scenario-matrix-technical-details');
+    expect(technical?.open).toBe(false);
+    expect(technical?.textContent).toContain('DEPENDENCY_TIMEOUT');
+    expect(technical?.textContent).toContain('Socket deadline exceeded');
   });
 
   async function render(

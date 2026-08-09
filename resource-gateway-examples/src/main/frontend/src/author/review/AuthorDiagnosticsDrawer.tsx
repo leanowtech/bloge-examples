@@ -18,7 +18,7 @@ export default function AuthorDiagnosticsDrawer({
   onToggle,
   onSelect,
 }: AuthorDiagnosticsDrawerProps) {
-  const { locale, t } = useI18n();
+  const { locale, t , d } = useI18n();
   const counts = Object.fromEntries(
     SEVERITY_LABELS.map((severity) => [
       severity,
@@ -56,7 +56,7 @@ export default function AuthorDiagnosticsDrawer({
           <div className="author-diagnostics-filters" aria-label={t('Diagnostic severity summary')}>
             {SEVERITY_LABELS.map((severity) => (
               <span key={severity} data-severity={severity.toLowerCase()}>
-                {t(severity)} {counts[severity]}
+                {d(severity)} {counts[severity]}
               </span>
             ))}
           </div>
@@ -72,9 +72,8 @@ export default function AuthorDiagnosticsDrawer({
                 return (
                 <li key={item.id} data-severity={item.severity.toLowerCase()}>
                   <button type="button" onClick={() => onSelect(item)}>
-                    <span>{t(item.severity)}</span>
+                    <span>{d(item.severity)}</span>
                     <strong>{presentation.title}</strong>
-                    <small>{t('Protocol code')}: {item.code} · {item.scope} · {item.source}</small>
                     <p>{presentation.explanation}</p>
                     {item.occurrenceCount > 1 && (
                       <small className="author-diagnostic-occurrences">
@@ -84,15 +83,22 @@ export default function AuthorDiagnosticsDrawer({
                           : ''}
                       </small>
                     )}
-                    {item.coordinate && <code>{item.coordinate}</code>}
                     {presentation.remediation && <em>{presentation.remediation}</em>}
                   </button>
-                  {presentation.technicalDetail && (
-                    <details className="author-diagnostic-technical-detail">
-                      <summary>{t('Technical details')}</summary>
+                  <details className="author-diagnostic-technical-detail">
+                    <summary>{t('Technical details')}</summary>
+                    <dl>
+                      <div><dt>{t('Protocol code')}</dt><dd><code>{item.code}</code></dd></div>
+                      <div><dt>{t('Scope')}</dt><dd><code>{item.scope}</code></dd></div>
+                      <div><dt>{t('Source')}</dt><dd><code>{item.source}</code></dd></div>
+                      {item.coordinate && (
+                        <div><dt>{t('Coordinate')}</dt><dd><code>{item.coordinate}</code></dd></div>
+                      )}
+                    </dl>
+                    {presentation.technicalDetail && (
                       <p>{presentation.technicalDetail}</p>
-                    </details>
-                  )}
+                    )}
+                  </details>
                 </li>
                 );
               })}

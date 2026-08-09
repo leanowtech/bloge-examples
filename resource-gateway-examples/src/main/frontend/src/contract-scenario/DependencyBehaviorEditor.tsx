@@ -47,7 +47,7 @@ export default function DependencyBehaviorEditor({
   defaultSelectorKind = 'NODE',
   defaultOpen = false,
 }: DependencyBehaviorEditorProps) {
-  const { t } = useI18n();
+  const { t, d } = useI18n();
   const inferredSelectorKind = dependencySelectorKind(dependency);
   const [selectorKind, setSelectorKind] = useState<DependencySelectorKind>(
     hasSelector(dependency) ? inferredSelectorKind : defaultSelectorKind,
@@ -103,7 +103,7 @@ export default function DependencyBehaviorEditor({
           <code>{(node?.operatorRef ?? selectorValue) || 'unbound selector'}</code>
         </div>
         <span className={`scenario-dependency-summary-status ${needsAttention ? 'attention' : ''}`}>
-          {needsAttention ? t('Needs input') : t(behaviorLabel(behavior.kind))}
+          {needsAttention ? t('Needs input') : d(behaviorLabel(behavior.kind))}
         </span>
       </summary>
       <div className="scenario-dependency-content">
@@ -136,7 +136,7 @@ export default function DependencyBehaviorEditor({
               <option value="FUNCTION">{t('Built-in function')}</option>
             </select>
           </Field>
-          <Field label={t(selectorLabel(selectorKind))}>
+          <Field label={d(selectorLabel(selectorKind))}>
             {selectorKind === 'NODE' ? (
               <select
                 aria-label={`Selector value for ${dependency.dependencyId}`}
@@ -151,7 +151,7 @@ export default function DependencyBehaviorEditor({
             ) : (
               <input
                 aria-label={t('{label} for {id}', {
-                  label: t(selectorLabel(selectorKind)),
+                  label: d(selectorLabel(selectorKind)),
                   id: dependency.dependencyId,
                 })}
                 data-testid={`dependency-selector-value:${dependency.dependencyId}`}
@@ -168,13 +168,13 @@ export default function DependencyBehaviorEditor({
               key={kind}
               className={behavior.kind === kind ? 'active' : ''}
               aria-pressed={behavior.kind === kind}
-              title={t(behaviorTitle(kind))}
+              title={d(behaviorTitle(kind))}
               onClick={() => onChange({
                 ...dependency,
                 behavior: behaviorForKind(kind, node),
               })}
             >
-              {t(label)}
+              {d(label)}
             </button>
           ))}
         </div>

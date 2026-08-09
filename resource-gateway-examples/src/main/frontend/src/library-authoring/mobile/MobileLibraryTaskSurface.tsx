@@ -3,12 +3,14 @@ import type {
   VisualLibraryAuthoringDocument,
 } from '../../types';
 import { useI18n } from '../../i18n/I18nProvider';
+import type { ProductMessageDescriptor } from '../../i18n/messageCatalog';
 import type {
   LibraryResponsiveTaskProjection,
   LibraryTaskIntent,
 } from '../../ux/responsiveTaskProjection';
 import type { LibraryAssetSelection } from '../model';
 import { typeFields } from '../model';
+import { presentOperatorArchetype } from '../archetypePresentation';
 import { presentLibraryReadiness, presentRuntimeParity } from '../readinessPresentation';
 
 interface MobileLibraryTaskSurfaceProps {
@@ -119,7 +121,9 @@ export default function MobileLibraryTaskSurface({
             {selected.facts.map((fact) => (
               <div key={fact.label}>
                 <dt>{d(fact.label)}</dt>
-                <dd>{fact.translateValue && typeof fact.value === 'string' ? d(fact.value) : fact.value}</dd>
+                <dd>{fact.valueMessage
+                  ? m(fact.valueMessage.messageId, fact.valueMessage.params)
+                  : fact.translateValue && typeof fact.value === 'string' ? d(fact.value) : fact.value}</dd>
               </div>
             ))}
           </dl>
@@ -268,7 +272,12 @@ function MobileLibraryLightEditor({
 function selectedAsset(
   document: VisualLibraryAuthoringDocument,
   selection: LibraryAssetSelection,
-): { title: string; facts: Array<{ label: string; value: string | number; translateValue?: boolean }> } {
+): { title: string; facts: Array<{
+  label: string;
+  value: string | number;
+  valueMessage?: ProductMessageDescriptor;
+  translateValue?: boolean;
+}> } {
   if (selection.kind === 'operator') {
     const operator = document.operators?.[selection.key];
     return {
@@ -277,7 +286,11 @@ function selectedAsset(
         { label: 'Inputs', value: Object.keys(operator?.input ?? {}).length },
         { label: 'Outputs', value: Object.keys(operator?.output ?? {}).length },
         { label: 'Tests', value: operator?.tests?.length ?? 0 },
-        { label: 'Archetype', value: operator?.archetype ?? 'pure', translateValue: true },
+        {
+          label: 'Archetype',
+          value: operator?.archetype ?? 'pure',
+          valueMessage: presentOperatorArchetype(operator?.archetype).label,
+        },
       ],
     };
   }

@@ -47,7 +47,7 @@ export default function GovernedFixtureSavePanel({
   onConflict,
   onClose,
 }: GovernedFixtureSavePanelProps) {
-  const { t } = useI18n();
+  const { t , d } = useI18n();
   const dialogRef = useRef<HTMLDivElement>(null);
   const [fixtureId, setFixtureId] = useState(
     suggestedFixtureId?.trim() || defaultFixtureId(sourceKind, assetRef),
@@ -166,11 +166,11 @@ export default function GovernedFixtureSavePanel({
             <section className="governed-fixture-coordinate">
               <div>
                 <span>{t('Source')}</span>
-                <strong>{t(sourceLabel(sourceKind))}</strong>
+                <strong>{d(sourceLabel(sourceKind))}</strong>
               </div>
               <div>
                 <span>{t('Asset')}</span>
-                <strong>{t(assetKind.toLowerCase())}</strong>
+                <strong>{d(assetKind.toLowerCase())}</strong>
               </div>
               <div>
                 <span>{t('Draft revision')}</span>
@@ -237,7 +237,7 @@ export default function GovernedFixtureSavePanel({
                 aria-invalid={Boolean(redaction.error)}
               />
               {redaction.error ? (
-                <p className="library-inline-error">{t(redaction.error)}</p>
+                <p className="library-inline-error">{d(redaction.error)}</p>
               ) : (
                 <p>{t('Sensitive key names are also redacted automatically before encryption.')}</p>
               )}
@@ -281,7 +281,7 @@ export default function GovernedFixtureSavePanel({
           </div>
         )}
 
-        {error && <p className="governed-fixture-error" role="alert">{t(error)}</p>}
+        {error && <p className="governed-fixture-error" role="alert">{d(error)}</p>}
 
         <footer className="governed-fixture-footer">
           <p>
@@ -321,7 +321,7 @@ export default function GovernedFixtureSavePanel({
 }
 
 function FixtureReceipt({ receipt }: { receipt: VisualAuthoringFixtureReceipt }) {
-  const { locale, t } = useI18n();
+  const { locale, t , d } = useI18n();
   return (
     <div className="governed-fixture-receipt" data-testid="governed-fixture-receipt">
       <section>
@@ -330,7 +330,7 @@ function FixtureReceipt({ receipt }: { receipt: VisualAuthoringFixtureReceipt })
         <small>{t('revision {revision}', { revision: receipt.revision })}</small>
       </section>
       <dl>
-        <div><dt>{t('Classification')}</dt><dd>{t(receipt.classification)}</dd></div>
+        <div><dt>{t('Classification')}</dt><dd>{d(receipt.classification)}</dd></div>
         <div><dt>{t('Expires')}</dt><dd>{formatTimestamp(receipt.expiresAt, locale)}</dd></div>
         <div><dt>{t('Redacted paths')}</dt><dd>{receipt.redactedPaths.length}</dd></div>
         <div><dt>{t('Payload returned')}</dt><dd>{t('No')}</dd></div>

@@ -19,7 +19,7 @@ export function MobileScenarioTaskBar({
   intent: ScenarioTaskIntent;
   onIntentChange: (intent: ScenarioTaskIntent) => void;
 }) {
-  const { t } = useI18n();
+  const { t , d } = useI18n();
   return (
     <section
       className="scenario-mobile-taskbar"
@@ -29,7 +29,7 @@ export function MobileScenarioTaskBar({
     >
       <div>
         <span>{t('Mobile task')}</span>
-        <strong>{t(taskLabel(projection.taskId))}</strong>
+        <strong>{d(taskLabel(projection.taskId))}</strong>
       </div>
       <div className="scenario-mobile-intent-switch" role="tablist" aria-label={t('Scenario task intent')}>
         <button
@@ -64,7 +64,7 @@ export function MobileScenarioCasePicker({
   onSelectScenario: (scenarioId: string) => void;
   onAddScenario: () => void;
 }) {
-  const { t } = useI18n();
+  const { t , d } = useI18n();
   return (
     <div className="scenario-mobile-case-picker" data-testid="scenario-mobile-case-picker">
       <label>
@@ -76,7 +76,7 @@ export function MobileScenarioCasePicker({
         >
           {scenarios.map((scenario) => (
             <option value={scenario.scenarioId} key={scenario.scenarioId}>
-              {scenario.name} · {t(scenario.caseType)}
+              {scenario.name} · {d(scenario.caseType)}
             </option>
           ))}
         </select>
@@ -101,7 +101,7 @@ export function MobileScenarioStepNav({
   assertionCount: number;
   onStepChange: (step: ScenarioEditorStep) => void;
 }) {
-  const { t } = useI18n();
+  const { t , d } = useI18n();
   const steps: Array<{ step: ScenarioEditorStep; label: string; count: number | null }> = [
     { step: 'GIVEN', label: 'Input', count: inputCount },
     { step: 'DEPENDENCIES', label: 'Fixtures', count: dependencyCount },
@@ -120,7 +120,7 @@ export function MobileScenarioStepNav({
           onClick={() => onStepChange(entry.step)}
         >
           <b>{index + 1}</b>
-          <span>{t(entry.label)}{entry.count === null ? '' : ` · ${entry.count}`}</span>
+          <span>{d(entry.label)}{entry.count === null ? '' : ` · ${entry.count}`}</span>
         </button>
       ))}
     </div>
@@ -148,21 +148,21 @@ export function MobileScenarioRunSummary({
   onRunRemediation: () => void;
   onEditStep: (step: ScenarioEditorStep) => void;
 }) {
-  const { m, t } = useI18n();
+  const { m, t , d } = useI18n();
   return (
     <section className="scenario-mobile-run-summary" data-testid="scenario-mobile-run-summary">
       <header>
         <div>
-          <span>{t(scenario.caseType)}</span>
+          <span>{d(scenario.caseType)}</span>
           <h3>{scenario.name}</h3>
         </div>
-        <strong data-state={runCommand.state}>{t(runCommand.state)}</strong>
+        <strong data-state={runCommand.state}>{d(runCommand.state)}</strong>
       </header>
       <dl>
         <div><dt>{t('Input fields')}</dt><dd>{inputCount}</dd></div>
         <div><dt>{t('Controlled')}</dt><dd>{controlledDependencyCount}</dd></div>
         <div><dt>{t('Checks')}</dt><dd>{assertionCount}</dd></div>
-        <div><dt>{t('Last result')}</dt><dd>{t(mobileEvidenceLabel(evidence))}</dd></div>
+        <div><dt>{t('Last result')}</dt><dd>{d(mobileEvidenceLabel(evidence))}</dd></div>
       </dl>
       <div className="scenario-mobile-run-edits">
         <button type="button" className="secondary" onClick={() => onEditStep('GIVEN')}>{t('Edit input')}</button>
@@ -171,12 +171,12 @@ export function MobileScenarioRunSummary({
       </div>
       {runCommand.state === 'BLOCKED' && (
         <div className="scenario-command-explanation" id="scenario-mobile-run-blocker" role="status">
-          <span>{runCommand.messageId ? m(runCommand.messageId) : t(runCommand.message)}</span>
+          <span>{runCommand.messageId ? m(runCommand.messageId) : d(runCommand.message)}</span>
           {runCommand.remediation && (
             <button type="button" onClick={onRunRemediation}>
               {runCommand.remediation.labelId
                 ? m(runCommand.remediation.labelId)
-                : t(runCommand.remediation.label)}
+                : d(runCommand.remediation.label)}
             </button>
           )}
         </div>

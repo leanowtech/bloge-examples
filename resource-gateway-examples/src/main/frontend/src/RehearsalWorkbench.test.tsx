@@ -151,12 +151,25 @@ describe('RehearsalWorkbench', () => {
 
     expect(query('[role="alert"]').textContent).toContain('Request failed: 503 Service Unavailable');
     expect(query('[role="alert"] span').textContent)
-      .toBe('Unrecognized product status. Review technical details.');
+      .toBe('Request failed: 503 Service Unavailable');
     expect(query<HTMLDetailsElement>('[role="alert"] details').open).toBe(false);
     expect(document.querySelector('[data-testid="rehearsal-api-unavailable"]')).toBeNull();
     expect(query('[data-testid="sample-data-notice"]').textContent)
       .toContain('Live data is unavailable');
     expect(text()).toContain('Grounding policy regression');
+  });
+
+  it('fails closed for an unregistered live-data error in the Chinese product surface', async () => {
+    window.history.replaceState({}, '', '/rehearsals/?lang=zh-CN');
+    mockJobs.mockRejectedValue(new BlogeApiRequestError(503, 'Service Unavailable'));
+
+    await render(true);
+    await waitFor(() => document.querySelector('[data-testid="sample-workbook-banner"]') !== null);
+
+    expect(query('[role="alert"] span').textContent)
+      .toBe('未识别的产品状态，请查看技术详情。');
+    expect(query('[role="alert"] details').textContent)
+      .toContain('Request failed: 503 Service Unavailable');
   });
 
   it('uses samples when the live scope is empty and drills into local child evidence', async () => {
@@ -343,7 +356,9 @@ describe('RehearsalWorkbench', () => {
     await click('[data-testid="batch-sample-live-dependency-degradation"]');
     await waitFor(() => text().includes('Sample live projection'));
 
-    expect(text()).toContain('CRM_RATE_LIMITED');
+    expect(query('[data-testid="entry-2"]').textContent).not.toContain('CRM_RATE_LIMITED');
+    expect(query('[data-testid="entry-2"]').textContent)
+      .toContain('The item needs review before it can contribute trusted evidence.');
     expect(text()).toContain('Mutable running projection');
     expect(text()).toContain('GatePending');
     expect(mockItems).not.toHaveBeenCalled();
@@ -428,7 +443,7 @@ describe('RehearsalWorkbench', () => {
 
     expect(text()).toContain('已失败');
     expect(text()).toContain('已通过');
-    expect(text()).toContain('1 个失败、0 个不确定的阻断断言');
+    expect(text()).toContain('受治理的业务预期未能匹配。');
     expect(text()).not.toContain('PARTIAL');
     expect(document.querySelector('[aria-label="执行条目"]')).not.toBeNull();
   });
@@ -448,12 +463,12 @@ describe('RehearsalWorkbench', () => {
     mockChildWorkbook.mockResolvedValue(childWorkbook());
 
     await render(true);
-    await waitFor(() => text().includes('依赖调用超时'));
+    await waitFor(() => text().includes('依赖服务未在规定时间内响应。'));
 
     const blockers = query('[data-testid="root-blockers"]');
-    expect(blockers.textContent).toContain('阻断断言失败');
-    expect(blockers.textContent).toContain('需要负责人批准');
-    expect(blockers.textContent).toContain('证据不完整');
+    expect(blockers.textContent).toContain('受治理的业务预期未能匹配。');
+    expect(blockers.textContent).toContain('仍需要责任人作出审批决定。');
+    expect(blockers.textContent).toContain('当前决策所需的留存证据不完整。');
     expect(blockers.textContent).not.toContain('未识别的产品状态');
     expect(blockers.querySelector<HTMLDetailsElement>('details')?.open).toBe(false);
     expect(blockers.querySelector('code')?.textContent).toContain('DEPENDENCY_TIMEOUT');

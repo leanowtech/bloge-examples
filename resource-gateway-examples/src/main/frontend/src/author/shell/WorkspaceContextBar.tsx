@@ -72,7 +72,7 @@ export default function WorkspaceContextBar({
             data-testid={lifecycleTestId}
             title={lifecycle.title}
           >
-            {d(lifecycle.label)}
+            {lifecycle.label}
           </span>
         )}
       </div>

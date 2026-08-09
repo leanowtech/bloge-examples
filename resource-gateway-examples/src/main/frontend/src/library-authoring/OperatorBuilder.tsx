@@ -3,19 +3,8 @@ import { X } from 'lucide-react';
 
 import { useI18n } from '../i18n/I18nProvider';
 import type { VisualOperatorAuthoring } from '../types';
+import { OPERATOR_ARCHETYPES, presentOperatorArchetype } from './archetypePresentation';
 import SchemaTreeEditor from './SchemaTreeEditor';
-
-const ARCHETYPES = [
-  ['pure', 'Pure transformation'],
-  ['decision', 'Decision or policy'],
-  ['resource-read', 'External read'],
-  ['external-write', 'External write'],
-  ['remote-worker', 'Remote worker'],
-  ['ai-tool', 'AI tool'],
-  ['event-source', 'Event source'],
-  ['message-handler', 'Message handler'],
-  ['webhook', 'Webhook'],
-] as const;
 
 interface OperatorBuilderProps {
   operatorKey: string;
@@ -36,11 +25,11 @@ export default function OperatorBuilder({
   onInferSamples,
   onOpenTests,
 }: OperatorBuilderProps) {
-  const { t } = useI18n();
+  const { m, t } = useI18n();
   const [keyDraft, setKeyDraft] = useState(operatorKey);
   useEffect(() => setKeyDraft(operatorKey), [operatorKey]);
   const archetype = operator.archetype ?? 'pure';
-  const external = !['pure', 'decision'].includes(archetype);
+  const external = presentOperatorArchetype(archetype).external;
   const patch = (value: Partial<VisualOperatorAuthoring>) => onChange({ ...operator, ...value });
 
   return (
@@ -84,7 +73,9 @@ export default function OperatorBuilder({
         </div>
         <fieldset className="archetype-picker">
           <legend>{t('Execution archetype')}</legend>
-          {ARCHETYPES.map(([value, label]) => (
+          {OPERATOR_ARCHETYPES.map((value) => {
+            const presentation = presentOperatorArchetype(value);
+            return (
             <label key={value} className={archetype === value ? 'selected' : ''}>
               <input
                 type="radio"
@@ -93,10 +84,11 @@ export default function OperatorBuilder({
                 checked={archetype === value}
                 onChange={() => patch({ archetype: value })}
               />
-              <span>{t(label)}</span>
-              <small>{value}</small>
+              <span>{m(presentation.label.messageId)}</span>
+              <small>{m(presentation.summary.messageId)}</small>
             </label>
-          ))}
+            );
+          })}
         </fieldset>
       </section>
 

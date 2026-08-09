@@ -518,7 +518,7 @@ function assertionCoordinate(assertion: ScenarioDraft['then']['assertions'][numb
 
 function evidenceValue(evidence: TableCaseEvidenceProjection, axis: Extract<ScenarioTableColumn['binding'], { kind: 'EVIDENCE' }>['axis']): unknown {
   switch (axis) {
-    case 'VERDICT': return presentTableCaseVerdict(evidence).label;
+    case 'VERDICT': return presentTableCaseVerdict(evidence).label.messageId;
     case 'EXECUTION': return evidence.execution;
     case 'ASSERTIONS': return evidence.assertions;
     case 'FRESHNESS': return evidence.freshness;
@@ -538,7 +538,7 @@ function sortValue(row: ScenarioTableRow, key: ScenarioTableSort['key']): string
     case 'CANONICAL': return String(row.canonicalIndex).padStart(9, '0');
     case 'NAME': return row.name;
     case 'TYPE': return row.caseType;
-    case 'VERDICT': return row.presentation.label;
+    case 'VERDICT': return row.presentation.label.messageId;
   }
 }
 

@@ -62,6 +62,26 @@ Schema、fixture payload、JSONPath、fingerprint、draft/run ID 和后端诊断
 因此切换语言不会修改草稿、改变协议枚举值或使证据 fingerprint 漂移。扩展约束见
 [可视化画布多语言设计与扩展指南](bloge-visual-canvas-localization.md)。
 
+#### 测试矩阵里的证明权威怎么看
+
+载入 **贷款策略与降级**，进入 **测试场景 -> 矩阵**，每一行需要分四步阅读：
+
+1. **行为结论**：运行是否完成、业务断言是否通过；
+2. **证明**：只做了 Schema 检查、Mock 模拟、沙盒/真实运行，还是形成了可认证证据；
+3. **新鲜度**：证据是否仍对应当前 Graph/Contract；没有执行证据时显示“未评估”，不会显示“当前”；
+4. **门禁资格**：只有当前、可认证、执行成功且业务断言全部通过的证据才可用于发布门禁。
+
+![中文测试矩阵的行为与证明权威](assets/resource-gateway-ux-round3-s3-matrix-authority-zh.png)
+
+Mock 用例可以显示业务断言通过，但仍明确标为“Mock 模拟 / 不可用于发布门禁”。选择一行后切换
+`EN / 中文`，同一 Graph、case selection、Matrix 视图和运行作用域保持不变：
+
+![英文测试矩阵保持同一选择](assets/resource-gateway-ux-round3-s3-matrix-authority-en.png)
+
+失败协议 code、原始服务端 message 和 assertion technical observation 默认不占据业务列表；需要排障
+时展开 **技术详情**。完整设计与验证证据见
+[S3 证明语义与本地化实现说明](resource-gateway-ux-round3-s3-proof-semantics-localization-implementation.md)。
+
 打开 `/author/` 后先按下面这张图定位页面：
 
 ![Author 工作台总览标注](assets/bloge-author-overview-annotated.svg)

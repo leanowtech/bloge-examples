@@ -1,6 +1,10 @@
 import { describe, expect, it } from 'vitest';
 
-import { localizeRehearsalText } from './generatedProductText';
+import {
+  localizeRehearsalBlocker,
+  localizeRehearsalText,
+  rehearsalBlockerDescriptor,
+} from './generatedProductText';
 import { translateRegisteredDynamic } from './i18n';
 import { translateMessage } from './messageCatalog';
 
@@ -42,5 +46,18 @@ describe('generated rehearsal product text', () => {
   it('blocks an unregistered generated sentence', () => {
     expect(localizeRehearsalText(zhDynamic, zhMessage, 'A server-added sentence.'))
       .toBe('未识别的产品状态，请查看技术详情。');
+  });
+
+  it('maps rehearsal protocol blockers to controlled product descriptions', () => {
+    expect(rehearsalBlockerDescriptor('TARGET_TIMEOUT')).toMatchObject({
+      messageId: 'rehearsal.blocker.dependencyTimeout',
+      rawCode: 'TARGET_TIMEOUT',
+    });
+    expect(rehearsalBlockerDescriptor('GROUNDING_BELOW_THRESHOLD').messageId)
+      .toBe('rehearsal.blocker.assertionFailed');
+    expect(localizeRehearsalBlocker(zhMessage, 'OWNER_APPROVAL_REQUIRED'))
+      .toBe('仍需要责任人作出审批决定。');
+    expect(localizeRehearsalBlocker(zhMessage, 'SERVER_EXTENSION_CODE'))
+      .toBe('此条目需要审阅后才能贡献可信证据。');
   });
 });

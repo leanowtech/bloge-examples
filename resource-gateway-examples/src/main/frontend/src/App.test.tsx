@@ -1,14 +1,28 @@
 // @vitest-environment jsdom
-import { act } from 'react';
+import { act, useState } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import App from './App';
 
 vi.mock('./AuthorCanvas', () => ({
-  default: ({ workspaceVersion }: { workspaceVersion: string }) => (
-    <div data-testid="author-mock" data-workspace-version={workspaceVersion}>Author canvas</div>
-  ),
+  default: ({ workspaceVersion }: { workspaceVersion: string }) => {
+    const [selectedNode, setSelectedNode] = useState('decision');
+    return (
+      <div
+        data-testid="author-mock"
+        data-workspace-version={workspaceVersion}
+        data-selected-node={selectedNode}
+        data-layout-fingerprint="layout:demo-v2"
+        data-run-state="SUCCEEDED"
+      >
+        Author canvas
+        <button type="button" data-testid="select-author-node" onClick={() => setSelectedNode('enrich')}>
+          Select node
+        </button>
+      </div>
+    );
+  },
 }));
 
 vi.mock('./Showcase', () => ({
@@ -123,6 +137,14 @@ describe('App route shell', () => {
   it('switches the shell to Chinese and persists the preference without reloading', async () => {
     await renderAt('/author/?lang=en');
 
+    await act(async () => query<HTMLButtonElement>('[data-testid="select-author-node"]').click());
+    const authorBeforeSwitch = query('[data-testid="author-mock"]');
+    const invariantState = {
+      selection: authorBeforeSwitch.getAttribute('data-selected-node'),
+      layout: authorBeforeSwitch.getAttribute('data-layout-fingerprint'),
+      run: authorBeforeSwitch.getAttribute('data-run-state'),
+    };
+
     const chineseButton = query<HTMLButtonElement>('[data-testid="locale-option:zh-CN"]');
     await act(async () => chineseButton.click());
 
@@ -131,6 +153,11 @@ describe('App route shell', () => {
     expect(document.title).toBe('BLOGE 可视化画布 - 编排');
     expect(query('nav[aria-label="工作区视图"]').textContent).toContain('算子库');
     expect(window.location.search).toContain('lang=zh-CN');
+    expect({
+      selection: authorBeforeSwitch.getAttribute('data-selected-node'),
+      layout: authorBeforeSwitch.getAttribute('data-layout-fingerprint'),
+      run: authorBeforeSwitch.getAttribute('data-run-state'),
+    }).toEqual(invariantState);
   });
 
   it('defaults to comfortable density and persists an expert compact choice', async () => {
