@@ -11263,26 +11263,29 @@ button.primary:disabled {
   grid-area: identity;
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto;
+  grid-template-areas:
+    "name actions"
+    "meta actions";
   min-width: 0;
   gap: 2px;
 }
 
 .author-draft-identity strong {
-  grid-column: 1 / -1;
+  grid-area: name;
   overflow: hidden;
   font-size: 13px;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
-.author-draft-identity span {
+.author-draft-meta span {
   color: var(--muted);
   font-size: var(--rg-font-aux);
   font-variant-numeric: tabular-nums;
   white-space: nowrap;
 }
 
-.author-draft-identity > span:not(.author-continuity-status) {
+.author-draft-meta > span:not(.author-continuity-status) {
   min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -11319,6 +11322,204 @@ button.primary:disabled {
   min-width: 28px;
   min-height: 26px;
   padding: 3px;
+}
+
+.author-draft-meta {
+  grid-area: meta;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 5px;
+}
+
+.author-draft-actions,
+.author-history-commands {
+  display: flex;
+  align-items: center;
+  gap: 3px;
+}
+
+.author-draft-actions {
+  grid-area: actions;
+  align-self: center;
+  padding-left: 5px;
+  border-left: 1px solid #dbe2ea;
+}
+
+.author-history-commands .icon-button {
+  width: 28px;
+  min-width: 28px;
+  height: 26px;
+  min-height: 26px;
+}
+
+.node-delete-impact-dialog {
+  width: min(560px, 100%);
+  display: grid;
+  gap: 14px;
+  padding: 18px;
+  border: 1px solid #d4a1a1;
+  border-radius: 8px;
+  background: #fff;
+  box-shadow: 0 24px 64px rgb(15 23 42 / 28%);
+}
+
+.node-delete-impact-heading {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: start;
+  gap: 10px;
+}
+
+.node-delete-impact-heading h2,
+.node-delete-impact-heading p {
+  margin: 0;
+}
+
+.node-delete-impact-heading h2 {
+  color: #812828;
+  font-size: 17px;
+}
+
+.node-delete-impact-heading p {
+  margin-top: 3px;
+  color: #526174;
+  font-size: 12px;
+  line-height: 1.4;
+}
+
+.node-delete-impact-icon {
+  width: 32px;
+  height: 32px;
+  display: grid;
+  place-items: center;
+  border: 1px solid #e3b3b3;
+  border-radius: 6px;
+  background: #fff3f3;
+  color: #a22929;
+}
+
+.node-delete-targets {
+  min-width: 0;
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: 8px;
+  padding: 9px 10px;
+  border: 1px solid #d8dee7;
+  border-radius: 6px;
+  background: #f7f9fc;
+  font-size: 12px;
+}
+
+.node-delete-targets span {
+  color: #687589;
+}
+
+.node-delete-targets strong {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.node-delete-impact-list {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 6px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.node-delete-impact-list li {
+  display: flex;
+  align-items: baseline;
+  gap: 4px;
+  min-width: 0;
+  padding: 8px 9px;
+  border-left: 3px solid #d39b3f;
+  background: #fff8e8;
+  color: #61430f;
+  font-size: 12px;
+}
+
+.node-delete-impact-list li[data-severity='destructive'] {
+  border-left-color: #c65b5b;
+  background: #fff3f3;
+  color: #782929;
+}
+
+.node-delete-impact-list li strong {
+  font-size: 14px;
+  font-variant-numeric: tabular-nums;
+}
+
+.node-delete-impact-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+.node-delete-impact-actions .danger {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  border-color: #a83a3a;
+  background: #a83a3a;
+  color: #fff;
+}
+
+.author-mutation-notice {
+  position: fixed;
+  right: 18px;
+  bottom: 18px;
+  z-index: 70;
+  width: min(440px, calc(100vw - 36px));
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto auto;
+  align-items: center;
+  gap: 8px;
+  padding: 9px 10px 9px 12px;
+  border: 1px solid #9eacbd;
+  border-radius: 7px;
+  background: #172033;
+  color: #fff;
+  box-shadow: 0 14px 36px rgb(15 23 42 / 24%);
+}
+
+.author-mutation-notice span {
+  min-width: 0;
+  overflow-wrap: anywhere;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.author-mutation-notice button {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  border-color: #71829b;
+  background: #fff;
+  color: #172033;
+}
+
+@media (max-width: 560px) {
+  .author-mutation-notice {
+    right: 10px;
+    bottom: 10px;
+    width: calc(100vw - 20px);
+    grid-template-columns: minmax(0, 1fr) auto;
+  }
+
+  .author-mutation-notice span {
+    grid-column: 1 / -1;
+  }
+
+  .author-mutation-notice button:first-of-type {
+    justify-self: start;
+  }
+
+  .author-mutation-notice .icon-button {
+    justify-self: end;
+  }
 }
 
 .workspace-leave-dialog {

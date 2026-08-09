@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { ChevronDown, ChevronUp, Save, SlidersHorizontal } from 'lucide-react';
+import { ChevronDown, ChevronUp, Redo2, Save, SlidersHorizontal, Undo2 } from 'lucide-react';
 
 import type { AuthorMode } from './authorWorkspaceState';
 import type { AuthorCommandAvailability } from '../task/taskStateProjection';
@@ -29,6 +29,10 @@ interface AuthorCommandBarProps {
   layoutDisabled: boolean;
   validationDisabled: boolean;
   saveDisabled: boolean;
+  canUndo: boolean;
+  canRedo: boolean;
+  undoLabel: string;
+  redoLabel: string;
   onModeChange: (mode: AuthorMode) => void;
   onPrimaryAction: () => void;
   onPrimaryRemediation: () => void;
@@ -36,6 +40,8 @@ interface AuthorCommandBarProps {
   onAutoLayout: () => void;
   onValidate: () => void;
   onSave: () => void;
+  onUndo: () => void;
+  onRedo: () => void;
 }
 
 const MODES: Array<{ key: AuthorMode; label: string }> = [
@@ -69,6 +75,10 @@ export default function AuthorCommandBar({
   layoutDisabled,
   validationDisabled,
   saveDisabled,
+  canUndo,
+  canRedo,
+  undoLabel,
+  redoLabel,
   onModeChange,
   onPrimaryAction,
   onPrimaryRemediation,
@@ -76,6 +86,8 @@ export default function AuthorCommandBar({
   onAutoLayout,
   onValidate,
   onSave,
+  onUndo,
+  onRedo,
 }: AuthorCommandBarProps) {
   const { d, m, t } = useI18n();
   const [mobileTruthOpen, setMobileTruthOpen] = useState(false);
@@ -101,35 +113,69 @@ export default function AuthorCommandBar({
     <header className="author-command-bar" data-testid="author-command-bar">
       <div className="author-draft-identity">
         <strong title={graphName}>{graphName}</strong>
-        <span>{t('Draft r{revision} · {nodes} nodes · {edges} edges', {
-          revision: draftRevision,
-          nodes: nodeCount,
-          edges: edgeCount,
-        })}</span>
-        <span
-          className="author-continuity-status"
-          data-state={continuityStatus.toLowerCase()}
-          data-testid="author-continuity-status"
-          title={recoveryCapturedAt
-            ? t('Recovery captured at {capturedAt} via {security}.', {
-                capturedAt: new Date(recoveryCapturedAt).toLocaleTimeString(),
-                security: d(recoverySecurity),
-              })
-            : t('No recovery snapshot has been captured yet.')}
-        >
-          {d(continuityStatus)}
-        </span>
-        <button
-          type="button"
-          className="secondary compact icon-button author-save-command"
-          aria-label={t('Save workspace')}
-          title={t('Save workspace')}
-          data-testid="author-save-workspace"
-          disabled={saveDisabled}
-          onClick={onSave}
-        >
-          <Save size={15} aria-hidden="true" />
-        </button>
+        <div className="author-draft-meta">
+          <span>{t('Draft r{revision} · {nodes} nodes · {edges} edges', {
+            revision: draftRevision,
+            nodes: nodeCount,
+            edges: edgeCount,
+          })}</span>
+          <span
+            className="author-continuity-status"
+            data-state={continuityStatus.toLowerCase()}
+            data-testid="author-continuity-status"
+            title={recoveryCapturedAt
+              ? t('Recovery captured at {capturedAt} via {security}.', {
+                  capturedAt: new Date(recoveryCapturedAt).toLocaleTimeString(),
+                  security: d(recoverySecurity),
+                })
+              : t('No recovery snapshot has been captured yet.')}
+          >
+            {d(continuityStatus)}
+          </span>
+        </div>
+        <div className="author-draft-actions" aria-label={t('Workspace file and edit commands')}>
+          <button
+            type="button"
+            className="secondary compact icon-button author-save-command"
+            aria-label={t('Save workspace')}
+            title={t('Save workspace')}
+            data-testid="author-save-workspace"
+            disabled={saveDisabled}
+            onClick={onSave}
+          >
+            <Save size={15} aria-hidden="true" />
+          </button>
+          <div className="author-history-commands" aria-label={t('Edit history')}>
+          <button
+            type="button"
+            className="secondary compact icon-button"
+            aria-label={t('Undo')}
+            title={t('Undo {label} ({shortcut})', {
+              label: undoLabel || t('last change'),
+              shortcut: 'Ctrl/⌘+Z',
+            })}
+            data-testid="author-undo"
+            disabled={!canUndo}
+            onClick={onUndo}
+          >
+            <Undo2 size={15} aria-hidden="true" />
+          </button>
+          <button
+            type="button"
+            className="secondary compact icon-button"
+            aria-label={t('Redo')}
+            title={t('Redo {label} ({shortcut})', {
+              label: redoLabel || t('last change'),
+              shortcut: 'Ctrl/⌘+Shift+Z',
+            })}
+            data-testid="author-redo"
+            disabled={!canRedo}
+            onClick={onRedo}
+          >
+            <Redo2 size={15} aria-hidden="true" />
+          </button>
+          </div>
+        </div>
       </div>
       <nav className="author-mode-tabs" aria-label={t('Author task mode')}>
         {MODES.map((candidate) => (

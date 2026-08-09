@@ -130,6 +130,16 @@ and enterprise hosts can inject a `HOST_ENCRYPTED` recovery store. The behavior,
 and verification commands are documented in
 [`docs/resource-gateway-ux-round3-s0-workspace-continuity-implementation.md`](../docs/resource-gateway-ux-round3-s0-workspace-continuity-implementation.md).
 
+Author edits are also reversible. Save, Undo, and Redo live beside the draft identity and expose
+platform keyboard shortcuts. Deleting a node with fixtures, operator tests, publications, or an
+output binding first shows an exact impact inventory; confirmation commits the node, connected
+edges, and validation assets as one transaction, so one Undo restores all of them. Example/DSL
+imports, bindings, contracts, Scenarios, Decision Tables, Transform mappings, and applied layouts
+share the same bounded mutation journal. Runtime history is capped at 100 entries/20MB and the
+copy embedded in recovery storage is capped at the nearest 24 entries/1.5MB. Details and browser
+evidence are in
+[`docs/resource-gateway-ux-round3-s1-reversible-mutations-implementation.md`](../docs/resource-gateway-ux-round3-s1-reversible-mutations-implementation.md).
+
 The header also provides `Comfortable / Compact` density modes. Comfortable is the default;
 Compact persists across reloads and tightens spacing without reducing the text-size floor. At
 840px and below, workspace navigation is an explicit two-column disclosure instead of a hidden

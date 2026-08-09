@@ -1321,6 +1321,9 @@ describe('AuthorCanvas built-in canvas examples', () => {
       expect(query('[data-testid="author-context-inspector"]').textContent).toContain('Decision response');
     });
     await click(query<HTMLButtonElement>('[data-testid="author-mode:scenarios"]'));
+    await waitFor(() =>
+      expect(document.querySelector('[data-testid="contract-workspace"]')).not.toBeNull(),
+    );
     await click(Array.from(
       query('[data-testid="contract-workspace"]').querySelectorAll<HTMLButtonElement>(
         '.scenario-view-switch button',
@@ -1354,6 +1357,67 @@ describe('AuthorCanvas built-in canvas examples', () => {
     });
     expect(fetchMock.mock.calls.filter(([input]) => String(input) === '/api/visual/graphs/simulate'))
       .toHaveLength(1);
+  });
+
+  it('previews destructive node impact and restores every authored asset with one Undo', async () => {
+    await act(async () => {
+      root = createRoot(host);
+      root.render(<AuthorCanvas workspaceVersion="v2" />);
+    });
+    await click(query<HTMLButtonElement>('[data-testid="author-start-choice:examples"]'));
+    await waitFor(() =>
+      expect(query<HTMLButtonElement>('[data-testid="author-start-example:loan-policy-fallback"]').disabled)
+        .toBe(false),
+    );
+    await click(query<HTMLButtonElement>('[data-testid="author-start-example:loan-policy-fallback"]'));
+    await waitFor(() => {
+      expect(document.querySelector('[data-testid="author-start-dialog"]')).toBeNull();
+      expect(query<HTMLButtonElement>('[data-testid="author-undo"]').disabled).toBe(false);
+    });
+    const before = authorDraftExport(
+      query<HTMLAnchorElement>('[data-testid="author-draft-export-v2"]'),
+    );
+
+    await click(query<HTMLElement>('[data-testid="node-wrapper:n1"]'));
+    await act(async () => {
+      window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Delete', bubbles: true }));
+    });
+
+    const impactDialog = query<HTMLElement>('[role="dialog"][aria-labelledby="node-delete-impact-title"]');
+    expect(impactDialog.textContent).toContain('Fetch applicant');
+    expect(impactDialog.textContent).toContain('fixture output');
+    expect(impactDialog.textContent).toContain('operator test case');
+    expect(document.querySelector('[data-testid="node-wrapper:n1"]')).not.toBeNull();
+
+    await click(buttonByText('Delete node and assets'));
+    await waitFor(() => {
+      expect(document.querySelector('[data-testid="node-wrapper:n1"]')).toBeNull();
+      expect(Number(query('.workspace').getAttribute('data-history-undo-depth'))).toBeGreaterThan(1);
+    });
+    expect(query('[data-testid="author-mutation-notice"]').textContent).toContain('Undo');
+    expect(query<HTMLButtonElement>('[data-testid="author-undo"]').title).toContain('Delete Fetch applicant');
+
+    await click(query<HTMLButtonElement>('[data-testid="author-undo"]'));
+    await waitFor(() => expect(document.querySelector('[data-testid="node-wrapper:n1"]')).not.toBeNull());
+    expect(query('[data-testid="author-mutation-notice"]').textContent).toContain('Redo');
+    expect(authorDraftExport(
+      query<HTMLAnchorElement>('[data-testid="author-draft-export-v2"]'),
+    )).toEqual(before);
+
+    await doubleClick(query<HTMLElement>('[data-testid="node-wrapper:n1"]'));
+    const testInput = query<HTMLTextAreaElement>('[data-testid="operator-test-input:0"]');
+    expect(testInput.value).toContain('applicant-1001');
+    testInput.focus();
+    await act(async () => {
+      testInput.dispatchEvent(new KeyboardEvent('keydown', { key: 'Delete', bubbles: true }));
+    });
+    expect(document.querySelector('[aria-labelledby="node-delete-impact-title"]')).toBeNull();
+    expect(document.querySelector('[data-testid="node-wrapper:n1"]')).not.toBeNull();
+    await click(buttonByText('Cancel'));
+
+    expect(query<HTMLButtonElement>('[data-testid="author-redo"]').title).toContain('Delete Fetch applicant');
+    await click(query<HTMLButtonElement>('[data-testid="author-redo"]'));
+    await waitFor(() => expect(document.querySelector('[data-testid="node-wrapper:n1"]')).toBeNull());
   });
 
   it('restores the complete graph, fixtures, and operator suites after the Author surface remounts', async () => {

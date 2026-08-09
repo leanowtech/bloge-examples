@@ -1,6 +1,6 @@
 # Resource Gateway UX Round 3 资深体验审阅与演进计划
 
-> 状态：For Review / P0 Safety Recalibration
+> 状态：In Progress / S0-S1 Implemented
 >
 > 审阅日期：2026-08-09
 >
@@ -10,7 +10,7 @@
 >
 > 当前视觉完成度：`88 / 100`
 >
-> 当前工业任务成熟度：`72 / 100`
+> 当前工业任务成熟度：`88 / 100`（S1 E2 实施复评）
 >
 > 缺陷结论：`2 P0 / 7 P1 / 2 P2`
 >
@@ -23,6 +23,19 @@
 - [Stage 6 工程验收与体验证明记录](resource-gateway-ux-stage6-engineering-verification.md)
 - [表格驱动测试产品设计](resource-gateway-table-driven-testing-product-design.md)
 - [双语完整性与术语治理](resource-gateway-ux-stage4-localization-governance.md)
+- [S0 工作区连续性实现说明](resource-gateway-ux-round3-s0-workspace-continuity-implementation.md)
+- [S1 可逆编辑与删除影响控制实现说明](resource-gateway-ux-round3-s1-reversible-mutations-implementation.md)
+
+实施进度：
+
+| 阶段 | 状态 | 最新结论 |
+|---|---|---|
+| S0 工作区连续性 | 已实现 | 跨工作区恢复、权威 Save、recovery lifecycle 关闭首个 P0 |
+| S1 可逆编辑 | 已实现 | 20 类 mutation、删除影响预览、原子 Undo/Redo 关闭第二个 P0 |
+| S2 企业任务坐标 | 待实施 | tenant/environment/role/scope 仍不够可见 |
+| S3 证明语义与 i18n | 待实施 | 动态产品文案和 proof authority 仍需收口 |
+| S4 响应式任务投影 | 待实施 | 390px Matrix 与 chrome 预算仍需治理 |
+| S5 性能与宿主门禁 | 待实施 | initial route bundle 与 host disposal 仍未达门禁 |
 
 ## 1. 最强结论
 

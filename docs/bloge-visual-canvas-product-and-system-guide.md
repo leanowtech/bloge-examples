@@ -223,6 +223,25 @@ Author v2 的草稿身份旁会直接显示工作区生命周期：
 不变量和测试方式见
 [S0 工作区连续性实现说明](resource-gateway-ux-round3-s0-workspace-continuity-implementation.md)。
 
+#### 删除影响预览与通用 Undo / Redo
+
+Author v2 会把 Graph、binding、fixture、算子测试和契约编辑统一记录为可逆事务。选择画布节点后按
+Delete / Backspace；如果该节点带有 fixture、test suite、test result、publication 或 Graph output
+binding，系统会先列出每类受影响资产和关联连线数量。选择 **保留节点** 不改变任何数据；选择
+**删除节点及关联资产** 才原子提交删除。
+
+![中文删除影响预览](assets/resource-gateway-ux-round3-s1-delete-impact-zh.png)
+
+删除后可以点击草稿身份旁的 Undo 图标、右下角 Undo，或按 `Cmd/Ctrl+Z`。节点、连线、fixture 与
+测试资产会一次恢复；随后提示条动作变为 Redo，也可按 `Cmd/Ctrl+Shift+Z` 重做。Save 建立权威
+checkpoint，但不清空本地 Undo 历史。算子详情和布局预览只有在点击 **Apply** 后才成为一个事务，
+Cancel 不会制造无意义历史。
+
+![一次撤销后的完整恢复](assets/resource-gateway-ux-round3-s1-undo-restored.png)
+
+完整 mutation 范围、恢复预算和安全边界见
+[S1 可逆编辑与删除影响控制实现说明](resource-gateway-ux-round3-s1-reversible-mutations-implementation.md)。
+
 在 `390 x 844` 视口，命令条改为单列、状态与辅助动作改为两列；Contract、Scenarios 和
 Evidence 继续是中央工作面，Topology Context Rail 变为按需抽屉。Author 使用全高应用壳，
 中央内容独立滚动，底部 Run 与 Diagnostics 不会互相覆盖。这个模式定位为**查看、运行、

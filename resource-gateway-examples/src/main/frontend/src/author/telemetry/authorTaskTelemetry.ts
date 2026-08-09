@@ -9,6 +9,9 @@ export type AuthorTaskEventName =
   | 'AUTO_LAYOUT_CANDIDATE_REJECTED'
   | 'AUTO_LAYOUT_OVERRIDE_APPLIED'
   | 'AUTO_LAYOUT_UNDONE'
+  | 'AUTHOR_MUTATION_RECORDED'
+  | 'AUTHOR_MUTATION_UNDONE'
+  | 'AUTHOR_MUTATION_REDONE'
   | 'RUN_STARTED'
   | 'RUN_COMPLETED'
   | 'FIRST_SUCCESS';
@@ -38,6 +41,9 @@ const ALLOWED_METADATA: Record<AuthorTaskEventName, ReadonlySet<string>> = {
   ]),
   AUTO_LAYOUT_OVERRIDE_APPLIED: new Set(['overrideReason', 'regressionCount']),
   AUTO_LAYOUT_UNDONE: new Set(['movedNodeCount']),
+  AUTHOR_MUTATION_RECORDED: new Set(['mutationKind', 'impactCount', 'historyDepth']),
+  AUTHOR_MUTATION_UNDONE: new Set(['mutationKind']),
+  AUTHOR_MUTATION_REDONE: new Set(['mutationKind']),
   RUN_STARTED: new Set(['runKind', 'nodeCount', 'caseCount']),
   RUN_COMPLETED: new Set(['runKind', 'status', 'caseCount', 'durationMs']),
   FIRST_SUCCESS: new Set(['elapsedMs', 'runKind']),
@@ -54,6 +60,28 @@ const ALLOWED_STRING_VALUES: Record<string, ReadonlySet<string>> = {
   beforeQuality: new Set(['PASS', 'REVIEW']),
   candidateQuality: new Set(['PASS', 'REVIEW']),
   overrideReason: new Set(['USER_ACCEPTED_READABILITY_REGRESSION']),
+  mutationKind: new Set([
+    'ADD_NODE',
+    'REMOVE_NODE',
+    'MOVE_NODE',
+    'ADD_EDGE',
+    'REMOVE_EDGE',
+    'INPUT_BINDING',
+    'NODE_CONFIG',
+    'FIXTURE',
+    'DECISION_TABLE',
+    'TRANSFORM',
+    'TEST_SUITE',
+    'CONTEXT',
+    'GRAPH_CONTRACT',
+    'GRAPH_METADATA',
+    'RUNTIME_BINDING',
+    'IMPORT',
+    'AUTO_LAYOUT',
+    'OUTPUT_BINDING',
+    'SCENARIO',
+    'OTHER',
+  ]),
 };
 
 const FORBIDDEN_KEY = /(context|fixture|payload|schema|dsl|config|input|output|secret|token|credential)/i;

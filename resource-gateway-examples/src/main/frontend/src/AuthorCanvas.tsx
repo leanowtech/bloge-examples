@@ -224,6 +224,25 @@ import {
 } from './author/telemetry/authorTaskTelemetry';
 import { useWorkspaceContinuity } from './author/continuity/useWorkspaceContinuity';
 import EffectiveContractPanel from './author/contract/EffectiveContractPanel';
+import NodeDeletionImpactDialog, {
+  MutationNotice,
+} from './author/mutations/NodeDeletionImpactDialog';
+import {
+  createMutation,
+  initialMutationJournal,
+  markSavedCheckpoint,
+  mutationFingerprint,
+  mutationJournalForRecovery,
+  projectNodeDeletionImpact,
+  recordMutation,
+  redoMutation,
+  restoreMutationJournal,
+  undoMutation,
+  type AssetImpact,
+  type MutationJournalState,
+  type MutationKind,
+  type NodeDeletionImpact,
+} from './author/mutations/reversibleMutationJournal';
 import {
   projectEffectiveContract,
   schemaFromAcceptedInference,
@@ -798,6 +817,56 @@ interface AuthoringRecoveryPayload {
   authorMode: AuthorMode;
   loadedExampleKey: string;
   workspaceForkIdempotencyKey: string;
+  mutationJournal?: MutationJournalState<AuthoringMutationSnapshot>;
+}
+
+interface AuthoringMutationSnapshot {
+  nodes: Node<NodeData>[];
+  edges: Edge<CanvasEdgeData>[];
+  fixtureDrafts: Record<string, string>;
+  fixtureInputDrafts: Record<string, string>;
+  operatorTestSuites: Record<string, OperatorTestSuiteDraftRow[]>;
+  operatorTestResults: Record<string, Record<string, OperatorTestCaseResult>>;
+  operatorTestPublications: Record<string, OperatorTestSuitePublicationResult>;
+  simulationTableRows: SimulationTableTestDraftRow[];
+  simulationTableResults: Record<string, SimulationTableCaseResult>;
+  runInputValue: Record<string, unknown>;
+  simulationContextDraft: string;
+  rawContextMode: boolean;
+  contextVariables: ContextVariableRow[];
+  scenarioDraftSet: ScenarioDraftSet | null;
+  contractDraft: ContractDraft | null;
+  contractFingerprint: string;
+  explicitOutputNodeId: string;
+  selectedNodeId: string;
+  pinnedNodeIds: string[];
+  graphName: string;
+  graphInputSchema: SchemaEnvelope;
+  graphOutputSchema: SchemaEnvelope | null;
+  graphContractSource: string;
+  graphVisualLayout: Record<string, unknown>;
+  graphOperatorFingerprints: Record<string, string>;
+  graphOperatorSnapshots: Record<string, OperatorDefinition>;
+  loadedExampleKey: string;
+}
+
+interface PendingMutationDescriptor {
+  kind: MutationKind;
+  label: string;
+  subjectRef: string;
+  impact?: AssetImpact[];
+  coalesceKey?: string;
+}
+
+interface PendingNodeDeletion {
+  nodeIds: string[];
+  nodeLabels: string[];
+  impact: NodeDeletionImpact;
+}
+
+interface AuthorMutationNotice {
+  message: string;
+  action: 'undo' | 'redo';
 }
 
 const CONTEXT_VARIABLE_DRAG_TYPE = 'application/bloge-context-path';
@@ -4809,11 +4878,254 @@ function pickRecordByKeys<TValue>(
   );
 }
 
+function omitRecordKeys<TValue>(
+  source: Record<string, TValue>,
+  keys: Iterable<string>,
+): Record<string, TValue> {
+  const omitted = new Set(keys);
+  return Object.fromEntries(
+    Object.entries(source).filter(([key]) => !omitted.has(key)),
+  );
+}
+
 function maxCanvasNodeSequence(nodes: CanvasNode[]): number {
   return nodes.reduce((max, node, index) => {
     const match = node.id.match(/^n(\d+)$/);
     return Math.max(max, match ? Number(match[1]) : index + 1);
   }, 0);
+}
+
+function authoringMutationContent(snapshot: AuthoringMutationSnapshot): unknown {
+  return {
+    nodes: snapshot.nodes.map((node) => ({
+      id: node.id,
+      type: node.type,
+      position: node.position,
+      data: authoredMutationNodeData(node.data),
+    })),
+    edges: snapshot.edges.map((edge) => ({
+      id: edge.id,
+      source: edge.source,
+      target: edge.target,
+      sourceHandle: edge.sourceHandle,
+      targetHandle: edge.targetHandle,
+      label: edge.label,
+      data: edge.data,
+    })),
+    fixtureDrafts: snapshot.fixtureDrafts,
+    fixtureInputDrafts: snapshot.fixtureInputDrafts,
+    operatorTestSuites: snapshot.operatorTestSuites,
+    simulationTableRows: snapshot.simulationTableRows,
+    runInputValue: snapshot.runInputValue,
+    simulationContextDraft: snapshot.simulationContextDraft,
+    rawContextMode: snapshot.rawContextMode,
+    contextVariables: snapshot.contextVariables,
+    scenarioDraftSet: snapshot.scenarioDraftSet,
+    explicitOutputNodeId: snapshot.explicitOutputNodeId,
+    pinnedNodeIds: snapshot.pinnedNodeIds,
+    graphName: snapshot.graphName,
+    graphInputSchema: snapshot.graphInputSchema,
+    graphOutputSchema: snapshot.graphOutputSchema,
+    graphContractSource: snapshot.graphContractSource,
+    graphVisualLayout: snapshot.graphVisualLayout,
+    graphOperatorFingerprints: snapshot.graphOperatorFingerprints,
+    graphOperatorSnapshots: snapshot.graphOperatorSnapshots,
+    loadedExampleKey: snapshot.loadedExampleKey,
+  };
+}
+
+function authoredMutationNodeData(data: NodeData): Omit<
+  NodeData,
+  'status' | 'candidateStatus' | 'candidatePorts' | 'focusState' | 'pathFocus' | 'isOutput' | 'pinned'
+> {
+  const {
+    status: _status,
+    candidateStatus: _candidateStatus,
+    candidatePorts: _candidatePorts,
+    focusState: _focusState,
+    pathFocus: _pathFocus,
+    isOutput: _isOutput,
+    pinned: _pinned,
+    ...authored
+  } = data;
+  return authored;
+}
+
+function authoringMutationFingerprint(snapshot: AuthoringMutationSnapshot): string {
+  return mutationFingerprint(authoringMutationContent(snapshot));
+}
+
+function isAuthoringMutationSnapshot(value: unknown): value is AuthoringMutationSnapshot {
+  if (!isObjectRecord(value)) return false;
+  const nodeShape = (node: unknown) => isObjectRecord(node)
+    && typeof node.id === 'string'
+    && isObjectRecord(node.position)
+    && typeof node.position.x === 'number'
+    && typeof node.position.y === 'number'
+    && isObjectRecord(node.data);
+  const edgeShape = (edge: unknown) => isObjectRecord(edge)
+    && typeof edge.id === 'string'
+    && typeof edge.source === 'string'
+    && typeof edge.target === 'string';
+  return Array.isArray(value.nodes)
+    && value.nodes.every(nodeShape)
+    && Array.isArray(value.edges)
+    && value.edges.every(edgeShape)
+    && isStringRecord(value.fixtureDrafts)
+    && isStringRecord(value.fixtureInputDrafts)
+    && isRecordOf(value.operatorTestSuites, Array.isArray)
+    && isRecordOf(value.operatorTestResults, isObjectRecord)
+    && isRecordOf(value.operatorTestPublications, isObjectRecord)
+    && Array.isArray(value.simulationTableRows)
+    && isObjectRecord(value.simulationTableResults)
+    && isObjectRecord(value.runInputValue)
+    && typeof value.simulationContextDraft === 'string'
+    && typeof value.rawContextMode === 'boolean'
+    && Array.isArray(value.contextVariables)
+    && (value.scenarioDraftSet === null || isObjectRecord(value.scenarioDraftSet))
+    && (value.contractDraft === null || isObjectRecord(value.contractDraft))
+    && typeof value.contractFingerprint === 'string'
+    && typeof value.explicitOutputNodeId === 'string'
+    && typeof value.selectedNodeId === 'string'
+    && Array.isArray(value.pinnedNodeIds)
+    && value.pinnedNodeIds.every((nodeId) => typeof nodeId === 'string')
+    && typeof value.graphName === 'string'
+    && isObjectRecord(value.graphInputSchema)
+    && (value.graphOutputSchema === null || isObjectRecord(value.graphOutputSchema))
+    && typeof value.graphContractSource === 'string'
+    && isObjectRecord(value.graphVisualLayout)
+    && isStringRecord(value.graphOperatorFingerprints)
+    && isRecordOf(value.graphOperatorSnapshots, isObjectRecord)
+    && typeof value.loadedExampleKey === 'string';
+}
+
+function isObjectRecord(value: unknown): value is Record<string, unknown> {
+  return Boolean(value) && typeof value === 'object' && !Array.isArray(value);
+}
+
+function isRecordOf(
+  value: unknown,
+  valueGuard: (candidate: unknown) => boolean,
+): value is Record<string, unknown> {
+  return isObjectRecord(value) && Object.values(value).every(valueGuard);
+}
+
+function isStringRecord(value: unknown): value is Record<string, string> {
+  return isRecordOf(value, (candidate) => typeof candidate === 'string');
+}
+
+function inferMutationDescriptor(
+  before: AuthoringMutationSnapshot,
+  after: AuthoringMutationSnapshot,
+  translate: (source: string, values?: Record<string, string | number>) => string,
+): PendingMutationDescriptor {
+  const beforeNodeIds = new Set(before.nodes.map((node) => node.id));
+  const afterNodeIds = new Set(after.nodes.map((node) => node.id));
+  const addedNodes = after.nodes.filter((node) => !beforeNodeIds.has(node.id));
+  const removedNodes = before.nodes.filter((node) => !afterNodeIds.has(node.id));
+  if (addedNodes.length > 0 || removedNodes.length > 0) {
+    const candidates = addedNodes.length > 0 ? addedNodes : removedNodes;
+    const action = addedNodes.length > 0 ? 'Add' : 'Delete';
+    return {
+      kind: addedNodes.length > 0 ? 'ADD_NODE' : 'REMOVE_NODE',
+      label: translate('{action} {subject}', {
+        action: translate(action),
+        subject: candidates.map((node) => node.data.label).join(', '),
+      }),
+      subjectRef: candidates.map((node) => node.id).join(','),
+    };
+  }
+  const beforeEdgeIds = new Set(before.edges.map((edge) => edge.id));
+  const afterEdgeIds = new Set(after.edges.map((edge) => edge.id));
+  const addedEdges = after.edges.filter((edge) => !beforeEdgeIds.has(edge.id));
+  const removedEdges = before.edges.filter((edge) => !afterEdgeIds.has(edge.id));
+  if (addedEdges.length > 0 || removedEdges.length > 0) {
+    const candidates = addedEdges.length > 0 ? addedEdges : removedEdges;
+    return {
+      kind: addedEdges.length > 0 ? 'ADD_EDGE' : 'REMOVE_EDGE',
+      label: translate(addedEdges.length > 0 ? 'Connect nodes' : 'Delete connection'),
+      subjectRef: candidates.map((edge) => edge.id).join(','),
+    };
+  }
+  const changedNodes = after.nodes.filter((node) => {
+    const previous = before.nodes.find((candidate) => candidate.id === node.id);
+    return previous && canonicalJson(previous) !== canonicalJson(node);
+  });
+  if (changedNodes.length > 0) {
+    const positionsChanged = changedNodes.every((node) => {
+      const previous = before.nodes.find((candidate) => candidate.id === node.id);
+      return previous
+        && canonicalJson(previous.data) === canonicalJson(node.data)
+        && canonicalJson(previous.position) !== canonicalJson(node.position);
+    });
+    const node = changedNodes[0];
+    const visualKind = node.data.summary.visualKind;
+    return {
+      kind: positionsChanged
+        ? 'MOVE_NODE'
+        : visualKind === 'decision-table'
+          ? 'DECISION_TABLE'
+          : visualKind === 'transform' ? 'TRANSFORM' : 'NODE_CONFIG',
+      label: translate(positionsChanged ? 'Move {subject}' : 'Edit {subject}', {
+        subject: changedNodes.map((candidate) => candidate.data.label).join(', '),
+      }),
+      subjectRef: changedNodes.map((candidate) => candidate.id).join(','),
+      coalesceKey: positionsChanged
+        ? ''
+        : `node:${changedNodes.map((candidate) => candidate.id).join(',')}`,
+    };
+  }
+  if (
+    canonicalJson(before.fixtureDrafts) !== canonicalJson(after.fixtureDrafts)
+    || canonicalJson(before.fixtureInputDrafts) !== canonicalJson(after.fixtureInputDrafts)
+  ) {
+    return {
+      kind: 'FIXTURE',
+      label: translate('Edit fixture data'),
+      subjectRef: 'fixtures',
+      coalesceKey: 'fixtures',
+    };
+  }
+  if (canonicalJson(before.operatorTestSuites) !== canonicalJson(after.operatorTestSuites)) {
+    return {
+      kind: 'TEST_SUITE',
+      label: translate('Edit operator test suite'),
+      subjectRef: 'operator-tests',
+      coalesceKey: 'operator-tests',
+    };
+  }
+  if (canonicalJson(before.scenarioDraftSet) !== canonicalJson(after.scenarioDraftSet)) {
+    return { kind: 'SCENARIO', label: translate('Edit Scenarios'), subjectRef: 'scenarios' };
+  }
+  if (
+    canonicalJson(before.graphInputSchema) !== canonicalJson(after.graphInputSchema)
+    || canonicalJson(before.graphOutputSchema) !== canonicalJson(after.graphOutputSchema)
+    || canonicalJson(before.contractDraft) !== canonicalJson(after.contractDraft)
+  ) {
+    return { kind: 'GRAPH_CONTRACT', label: translate('Edit Graph Contract'), subjectRef: 'contract' };
+  }
+  if (
+    canonicalJson(before.runInputValue) !== canonicalJson(after.runInputValue)
+    || canonicalJson(before.contextVariables) !== canonicalJson(after.contextVariables)
+    || before.simulationContextDraft !== after.simulationContextDraft
+  ) {
+    return {
+      kind: 'CONTEXT',
+      label: translate('Edit run input'),
+      subjectRef: 'run-input',
+      coalesceKey: 'run-input',
+    };
+  }
+  if (before.loadedExampleKey !== after.loadedExampleKey || before.graphName !== after.graphName) {
+    return { kind: 'IMPORT', label: translate('Import {subject}', { subject: after.graphName }), subjectRef: after.graphName };
+  }
+  return { kind: 'OTHER', label: translate('Edit graph'), subjectRef: 'graph', coalesceKey: 'graph' };
+}
+
+function isEditableKeyboardTarget(target: EventTarget | null): boolean {
+  return target instanceof HTMLElement && Boolean(
+    target.closest('input, textarea, select, [contenteditable="true"], [role="dialog"]'),
+  );
 }
 
 /**
@@ -4971,6 +5283,11 @@ export default function AuthorCanvas({ workspaceVersion = 'v1' }: AuthorCanvasPr
   const [layoutPreview, setLayoutPreview] = useState<LayoutPreviewSnapshot | null>(null);
   const [layoutUndo, setLayoutUndo] = useState<LayoutUndoSnapshot | null>(null);
   const [layoutNotice, setLayoutNotice] = useState<MessageDescriptor | null>(null);
+  const [mutationJournal, setMutationJournal] = useState<MutationJournalState<AuthoringMutationSnapshot>>(
+    () => initialMutationJournal<AuthoringMutationSnapshot>(),
+  );
+  const [pendingNodeDeletion, setPendingNodeDeletion] = useState<PendingNodeDeletion | null>(null);
+  const [mutationNotice, setMutationNotice] = useState<AuthorMutationNotice | null>(null);
   const searchInputRef = useRef<HTMLInputElement>(null);
   const flowRef = useRef<HTMLDivElement>(null);
   useEffect(() => {
@@ -5015,6 +5332,19 @@ export default function AuthorCanvas({ workspaceVersion = 'v1' }: AuthorCanvasPr
   const scenarioGraphNameRef = useRef('');
   const dslHandoffStartedRef = useRef(false);
   const initialOperatorTargetRestoredRef = useRef(false);
+  const mutationJournalRef = useRef(mutationJournal);
+  const mutationBaselineRef = useRef<{
+    snapshot: AuthoringMutationSnapshot;
+    fingerprint: string;
+  } | null>(null);
+  const mutationSequenceRef = useRef(0);
+  const pendingMutationDescriptorRef = useRef<PendingMutationDescriptor | null>(null);
+  const recentMutationDescriptorRef = useRef<{
+    descriptor: PendingMutationDescriptor;
+    recordedAt: number;
+  } | null>(null);
+  const suppressDerivedMutationUntilRef = useRef(0);
+  const mutationObservationModeRef = useRef<'observe' | 'reset' | 'hold'>('observe');
   const authoritativeContractRef = useRef<{
     canvasSnapshot: string;
     executionSnapshot: string;
@@ -5022,6 +5352,243 @@ export default function AuthorCanvas({ workspaceVersion = 'v1' }: AuthorCanvasPr
     contract: ContractDraft;
     contractFingerprint: string;
   } | null>(null);
+
+  const authoringMutationSnapshot = useMemo<AuthoringMutationSnapshot>(() => ({
+    nodes,
+    edges,
+    fixtureDrafts,
+    fixtureInputDrafts,
+    operatorTestSuites,
+    operatorTestResults,
+    operatorTestPublications,
+    simulationTableRows,
+    simulationTableResults,
+    runInputValue,
+    simulationContextDraft,
+    rawContextMode,
+    contextVariables,
+    scenarioDraftSet,
+    contractDraft,
+    contractFingerprint,
+    explicitOutputNodeId,
+    selectedNodeId,
+    pinnedNodeIds: Array.from(pinnedNodeIds).sort(),
+    graphName,
+    graphInputSchema,
+    graphOutputSchema,
+    graphContractSource,
+    graphVisualLayout,
+    graphOperatorFingerprints,
+    graphOperatorSnapshots,
+    loadedExampleKey,
+  }), [
+    contextVariables,
+    contractDraft,
+    contractFingerprint,
+    edges,
+    explicitOutputNodeId,
+    fixtureDrafts,
+    fixtureInputDrafts,
+    graphContractSource,
+    graphInputSchema,
+    graphName,
+    graphOperatorFingerprints,
+    graphOperatorSnapshots,
+    graphOutputSchema,
+    graphVisualLayout,
+    loadedExampleKey,
+    nodes,
+    operatorTestPublications,
+    operatorTestResults,
+    operatorTestSuites,
+    pinnedNodeIds,
+    rawContextMode,
+    runInputValue,
+    scenarioDraftSet,
+    selectedNodeId,
+    simulationContextDraft,
+    simulationTableResults,
+    simulationTableRows,
+  ]);
+  const currentMutationFingerprint = useMemo(
+    () => authoringMutationFingerprint(authoringMutationSnapshot),
+    [authoringMutationSnapshot],
+  );
+
+  const replaceMutationJournal = useCallback((next: MutationJournalState<AuthoringMutationSnapshot>) => {
+    mutationJournalRef.current = next;
+    setMutationJournal(next);
+  }, []);
+
+  const restoreMutationSnapshot = useCallback((snapshot: AuthoringMutationSnapshot) => {
+    mutationObservationModeRef.current = 'reset';
+    mutationBaselineRef.current = {
+      snapshot: structuredClone(snapshot),
+      fingerprint: authoringMutationFingerprint(snapshot),
+    };
+    recentMutationDescriptorRef.current = null;
+    suppressDerivedMutationUntilRef.current = Date.now() + 1_000;
+    setNodes(structuredClone(snapshot.nodes));
+    setEdges(structuredClone(snapshot.edges));
+    setFixtureDrafts(structuredClone(snapshot.fixtureDrafts));
+    setFixtureInputDrafts(structuredClone(snapshot.fixtureInputDrafts));
+    setOperatorTestSuites(structuredClone(snapshot.operatorTestSuites));
+    setOperatorTestResults(structuredClone(snapshot.operatorTestResults));
+    setOperatorTestPublications(structuredClone(snapshot.operatorTestPublications));
+    setSimulationTableRows(structuredClone(snapshot.simulationTableRows));
+    setSimulationTableResults(structuredClone(snapshot.simulationTableResults));
+    setRunInputValue(structuredClone(snapshot.runInputValue));
+    setSimulationContextDraft(snapshot.simulationContextDraft);
+    setRawContextMode(snapshot.rawContextMode);
+    setContextVariables(structuredClone(snapshot.contextVariables));
+    setScenarioDraftSet(structuredClone(snapshot.scenarioDraftSet));
+    setContractDraft(structuredClone(snapshot.contractDraft));
+    setContractFingerprint(snapshot.contractFingerprint);
+    setExplicitOutputNodeId(snapshot.explicitOutputNodeId);
+    setSelectedNodeId(snapshot.selectedNodeId);
+    setPinnedNodeIds(new Set(snapshot.pinnedNodeIds));
+    setGraphName(snapshot.graphName);
+    setGraphInputSchema(structuredClone(snapshot.graphInputSchema));
+    setGraphOutputSchema(structuredClone(snapshot.graphOutputSchema));
+    setGraphContractSource(snapshot.graphContractSource);
+    setGraphVisualLayout(structuredClone(snapshot.graphVisualLayout));
+    setGraphOperatorFingerprints(structuredClone(snapshot.graphOperatorFingerprints));
+    setGraphOperatorSnapshots(structuredClone(snapshot.graphOperatorSnapshots));
+    setLoadedExampleKey(snapshot.loadedExampleKey);
+    counter.current = maxCanvasNodeSequence(snapshot.nodes.map(canvasNodeFromFlowNode));
+    tableTestCounter.current = snapshot.simulationTableRows.length;
+    operatorTestCounter.current = Object.values(snapshot.operatorTestSuites)
+      .reduce((total, rows) => total + rows.length, 0);
+    setOperatorDetailNodeId('');
+    setOperatorDetailBaseline(null);
+    setPendingNodeDeletion(null);
+    setConnectionGuide(null);
+    setLayoutPlanning(false);
+    setLayoutPreview(null);
+    setLayoutUndo(null);
+    setValidationContentEpoch(-1);
+    setAuthorContentEpoch((current) => current + 1);
+    setError('');
+  }, []);
+
+  const undoAuthoringMutation = useCallback(() => {
+    const transition = undoMutation(mutationJournalRef.current);
+    if (!transition) return;
+    replaceMutationJournal(transition.journal);
+    restoreMutationSnapshot(transition.snapshot);
+    setMutationNotice({
+      message: t('Undid {change}.', { change: transition.mutation.label }),
+      action: 'redo',
+    });
+    recordAuthorTaskEvent('AUTHOR_MUTATION_UNDONE', {
+      mutationKind: transition.mutation.kind,
+    });
+  }, [replaceMutationJournal, restoreMutationSnapshot, t]);
+
+  const redoAuthoringMutation = useCallback(() => {
+    const transition = redoMutation(mutationJournalRef.current);
+    if (!transition) return;
+    replaceMutationJournal(transition.journal);
+    restoreMutationSnapshot(transition.snapshot);
+    setMutationNotice({
+      message: t('Redid {change}.', { change: transition.mutation.label }),
+      action: 'undo',
+    });
+    recordAuthorTaskEvent('AUTHOR_MUTATION_REDONE', {
+      mutationKind: transition.mutation.kind,
+    });
+  }, [replaceMutationJournal, restoreMutationSnapshot, t]);
+
+  useEffect(() => {
+    if (!isTaskWorkspace) return;
+    const current = {
+      snapshot: structuredClone(authoringMutationSnapshot),
+      fingerprint: currentMutationFingerprint,
+    };
+    const previous = mutationBaselineRef.current;
+    if (!previous) {
+      mutationBaselineRef.current = current;
+      mutationObservationModeRef.current = 'observe';
+      return;
+    }
+    if (mutationObservationModeRef.current === 'reset') {
+      mutationObservationModeRef.current = 'observe';
+      mutationBaselineRef.current = current;
+      pendingMutationDescriptorRef.current = null;
+      return;
+    }
+    if (mutationObservationModeRef.current === 'hold') return;
+    if (previous.fingerprint === current.fingerprint) {
+      mutationBaselineRef.current = current;
+      return;
+    }
+    const inferred = inferMutationDescriptor(previous.snapshot, current.snapshot, t);
+    if (
+      Date.now() <= suppressDerivedMutationUntilRef.current
+      && (inferred.kind === 'GRAPH_CONTRACT' || inferred.kind === 'SCENARIO')
+    ) {
+      mutationBaselineRef.current = current;
+      pendingMutationDescriptorRef.current = null;
+      return;
+    }
+    const recent = recentMutationDescriptorRef.current;
+    const derivedContinuation = !pendingMutationDescriptorRef.current
+      && recent
+      && Date.now() - recent.recordedAt <= 750
+      && (inferred.kind === 'GRAPH_CONTRACT' || inferred.kind === 'SCENARIO');
+    const descriptor = pendingMutationDescriptorRef.current
+      ?? (derivedContinuation ? recent.descriptor : inferred);
+    pendingMutationDescriptorRef.current = null;
+    mutationSequenceRef.current += 1;
+    const mutation = createMutation({
+      mutationId: `author-mutation-${mutationSequenceRef.current}`,
+      ...descriptor,
+      before: previous.snapshot,
+      after: current.snapshot,
+    });
+    replaceMutationJournal(recordMutation(mutationJournalRef.current, mutation));
+    recentMutationDescriptorRef.current = { descriptor, recordedAt: mutation.occurredAt };
+    mutationBaselineRef.current = current;
+    if (!derivedContinuation) {
+      setValidationContentEpoch(-1);
+      setAuthorContentEpoch((epoch) => epoch + 1);
+    }
+    recordAuthorTaskEvent('AUTHOR_MUTATION_RECORDED', {
+      mutationKind: mutation.kind,
+      impactCount: mutation.impact.reduce((total, item) => total + item.count, 0),
+      historyDepth: mutationJournalRef.current.past.length,
+    });
+  }, [authoringMutationSnapshot, currentMutationFingerprint, isTaskWorkspace, replaceMutationJournal, t]);
+
+  const commitHeldMutation = useCallback((descriptor: PendingMutationDescriptor) => {
+    const previous = mutationBaselineRef.current;
+    if (!previous || previous.fingerprint === currentMutationFingerprint) {
+      mutationObservationModeRef.current = 'observe';
+      return;
+    }
+    mutationSequenceRef.current += 1;
+    const current = {
+      snapshot: structuredClone(authoringMutationSnapshot),
+      fingerprint: currentMutationFingerprint,
+    };
+    const mutation = createMutation({
+      mutationId: `author-mutation-${mutationSequenceRef.current}`,
+      ...descriptor,
+      before: previous.snapshot,
+      after: current.snapshot,
+    });
+    replaceMutationJournal(recordMutation(mutationJournalRef.current, mutation));
+    recentMutationDescriptorRef.current = { descriptor, recordedAt: mutation.occurredAt };
+    mutationBaselineRef.current = current;
+    mutationObservationModeRef.current = 'observe';
+    setValidationContentEpoch(-1);
+    setAuthorContentEpoch((epoch) => epoch + 1);
+    recordAuthorTaskEvent('AUTHOR_MUTATION_RECORDED', {
+      mutationKind: mutation.kind,
+      impactCount: mutation.impact.reduce((total, item) => total + item.count, 0),
+      historyDepth: mutationJournalRef.current.past.length,
+    });
+  }, [authoringMutationSnapshot, currentMutationFingerprint, replaceMutationJournal]);
 
   const reloadOperators = useCallback(async () => {
     const catalog = await fetchOperatorCatalog();
@@ -5302,15 +5869,108 @@ export default function AuthorCanvas({ workspaceVersion = 'v1' }: AuthorCanvasPr
     setError('');
   }, []);
 
+  const deleteNodesAtomically = useCallback((
+    nodeIds: string[],
+    impact: NodeDeletionImpact,
+  ) => {
+    const selected = new Set(nodeIds);
+    const nodeLabels = nodes
+      .filter((node) => selected.has(node.id))
+      .map((node) => node.data.label);
+    pendingMutationDescriptorRef.current = {
+      kind: 'REMOVE_NODE',
+      label: t('Delete {subject}', { subject: nodeLabels.join(', ') || nodeIds.join(', ') }),
+      subjectRef: nodeIds.join(','),
+      impact: impact.items,
+      coalesceKey: `delete-nodes:${nodeIds.join(',')}`,
+    };
+    clearRunResult();
+    setConnectionGuide(null);
+    setLayoutUndo(null);
+    setLayoutNotice(null);
+    setEdges((current) => current.filter((edge) => (
+      !selected.has(edge.source) && !selected.has(edge.target)
+    )));
+    setNodes((current) => current.filter((node) => !selected.has(node.id)));
+    setFixtureDrafts((current) => omitRecordKeys(current, nodeIds));
+    setFixtureInputDrafts((current) => omitRecordKeys(current, nodeIds));
+    setOperatorTestSuites((current) => omitRecordKeys(current, nodeIds));
+    setOperatorTestResults((current) => omitRecordKeys(current, nodeIds));
+    setOperatorTestPublications((current) => omitRecordKeys(current, nodeIds));
+    setSelectedNodeId((current) => (selected.has(current) ? '' : current));
+    setFocusPathNodeId((current) => (selected.has(current) ? '' : current));
+    setPinnedNodeIds((current) => {
+      const next = new Set(current);
+      nodeIds.forEach((nodeId) => next.delete(nodeId));
+      return next;
+    });
+    setOperatorDetailNodeId((current) => (selected.has(current) ? '' : current));
+    setOperatorDetailBaseline((current) => current && selected.has(current.nodeId) ? null : current);
+    setExplicitOutputNodeId((current) => (selected.has(current) ? '' : current));
+    setPendingNodeDeletion(null);
+    setMutationNotice({
+      message: t('Deleted {node}.', { node: nodeLabels.join(', ') || nodeIds.join(', ') }),
+      action: 'undo',
+    });
+  }, [clearRunResult, nodes, t]);
+
+  const requestNodeDeletion = useCallback((nodeIds: string[]) => {
+    const existingNodeIds = nodeIds.filter((nodeId) => nodes.some((node) => node.id === nodeId));
+    if (existingNodeIds.length === 0) return;
+    const impact = projectNodeDeletionImpact(existingNodeIds, {
+      edges,
+      fixtureDrafts,
+      fixtureInputDrafts,
+      operatorTestSuites,
+      operatorTestResults,
+      operatorTestPublications,
+      explicitOutputNodeId,
+    });
+    const nodeLabels = nodes
+      .filter((node) => existingNodeIds.includes(node.id))
+      .map((node) => node.data.label);
+    if (impact.requiresConfirmation) {
+      setPendingNodeDeletion({ nodeIds: existingNodeIds, nodeLabels, impact });
+      return;
+    }
+    deleteNodesAtomically(existingNodeIds, impact);
+  }, [
+    deleteNodesAtomically,
+    edges,
+    explicitOutputNodeId,
+    fixtureDrafts,
+    fixtureInputDrafts,
+    nodes,
+    operatorTestPublications,
+    operatorTestResults,
+    operatorTestSuites,
+  ]);
+
+  const deleteEdgesAtomically = useCallback((edgeIds: string[]) => {
+    if (edgeIds.length === 0) return;
+    pendingMutationDescriptorRef.current = {
+      kind: 'REMOVE_EDGE',
+      label: t(edgeIds.length === 1 ? 'Delete connection' : 'Delete connections'),
+      subjectRef: edgeIds.join(','),
+      impact: [{ kind: 'EDGE', count: edgeIds.length, refs: edgeIds, severity: 'WARNING' }],
+      coalesceKey: `delete-edges:${edgeIds.join(',')}`,
+    };
+    clearRunResult();
+    setConnectionGuide(null);
+    const selected = new Set(edgeIds);
+    setEdges((current) => current.filter((edge) => !selected.has(edge.id)));
+    setMutationNotice({
+      message: t('Deleted {count} connection(s).', { count: edgeIds.length }),
+      action: 'undo',
+    });
+  }, [clearRunResult, t]);
+
   const onNodesChange = useCallback(
     (changes: NodeChange[]) => {
-      const removedNodeIds: string[] = [];
-      for (const change of changes) {
-        if (change.type === 'remove') {
-          removedNodeIds.push(change.id);
-        }
-      }
-      if (changes.some((change) => change.type === 'remove' || change.type === 'add')) {
+      const removedNodeIds = changes
+        .filter((change): change is NodeChange & { type: 'remove'; id: string } => change.type === 'remove')
+        .map((change) => change.id);
+      if (changes.some((change) => change.type === 'add')) {
         clearRunResult();
         setConnectionGuide(null);
         setLayoutUndo(null);
@@ -5321,67 +5981,88 @@ export default function AuthorCanvas({ workspaceVersion = 'v1' }: AuthorCanvasPr
         setLayoutNotice(null);
       }
       if (removedNodeIds.length > 0) {
-        setFixtureDrafts((current) => {
-          const next = { ...current };
-          for (const id of removedNodeIds) {
-            delete next[id];
-          }
-          return next;
-        });
-        setFixtureInputDrafts((current) => {
-          const next = { ...current };
-          for (const id of removedNodeIds) {
-            delete next[id];
-          }
-          return next;
-        });
-        setOperatorTestSuites((current) => {
-          const next = { ...current };
-          for (const id of removedNodeIds) {
-            delete next[id];
-          }
-          return next;
-        });
-        setOperatorTestResults((current) => {
-          const next = { ...current };
-          for (const id of removedNodeIds) {
-            delete next[id];
-          }
-          return next;
-        });
-        setOperatorTestPublications((current) => {
-          const next = { ...current };
-          for (const id of removedNodeIds) {
-            delete next[id];
-          }
-          return next;
-        });
-        setSelectedNodeId((current) => (removedNodeIds.includes(current) ? '' : current));
-        setFocusPathNodeId((current) => (removedNodeIds.includes(current) ? '' : current));
-        setPinnedNodeIds((current) => {
-          const next = new Set(current);
-          removedNodeIds.forEach((id) => next.delete(id));
-          return next;
-        });
-        setOperatorDetailNodeId((current) => (removedNodeIds.includes(current) ? '' : current));
-        setOperatorDetailBaseline((current) =>
-          current && removedNodeIds.includes(current.nodeId) ? null : current);
-        setExplicitOutputNodeId((current) => (removedNodeIds.includes(current) ? '' : current));
+        requestNodeDeletion(removedNodeIds);
       }
-      setNodes((current) => applyNodeChanges(changes, current) as Node<NodeData>[]);
+      const retainedChanges = changes.filter((change) => change.type !== 'remove');
+      if (retainedChanges.length > 0) {
+        setNodes((current) => applyNodeChanges(retainedChanges, current) as Node<NodeData>[]);
+      }
     },
-    [clearRunResult],
+    [clearRunResult, requestNodeDeletion],
   );
   const onEdgesChange = useCallback(
     (changes: EdgeChange[]) => {
-      if (changes.some((change) => change.type === 'remove' || change.type === 'add')) {
+      if (changes.some((change) => change.type === 'add')) {
         clearRunResult();
         setConnectionGuide(null);
       }
-      setEdges((current) => applyEdgeChanges(changes, current) as Edge<CanvasEdgeData>[]);
+      const removedEdgeIds = changes
+        .filter((change): change is EdgeChange & { type: 'remove'; id: string } => change.type === 'remove')
+        .map((change) => change.id);
+      if (removedEdgeIds.length > 0) deleteEdgesAtomically(removedEdgeIds);
+      const retainedChanges = changes.filter((change) => change.type !== 'remove');
+      if (retainedChanges.length > 0) {
+        setEdges((current) => applyEdgeChanges(retainedChanges, current) as Edge<CanvasEdgeData>[]);
+      }
     },
-    [clearRunResult],
+    [clearRunResult, deleteEdgesAtomically],
   );
+
+  useEffect(() => {
+    if (!isTaskWorkspace) return undefined;
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (isEditableKeyboardTarget(event.target)) return;
+      const commandModifier = event.metaKey || event.ctrlKey;
+      const key = event.key.toLowerCase();
+      if (commandModifier && key === 'z') {
+        event.preventDefault();
+        if (event.shiftKey) {
+          redoAuthoringMutation();
+        } else {
+          undoAuthoringMutation();
+        }
+        return;
+      }
+      if (event.ctrlKey && key === 'y') {
+        event.preventDefault();
+        redoAuthoringMutation();
+        return;
+      }
+      if (
+        (event.key === 'Backspace' || event.key === 'Delete')
+        && authorMode === 'compose'
+        && !layoutPlanning
+        && !layoutPreview
+        && !pendingNodeDeletion
+        && !document.querySelector('[role="dialog"][aria-modal="true"]')
+      ) {
+        if (selectedNodeId) {
+          event.preventDefault();
+          requestNodeDeletion([selectedNodeId]);
+          return;
+        }
+        const selectedEdgeIds = edges.filter((edge) => edge.selected).map((edge) => edge.id);
+        if (selectedEdgeIds.length > 0) {
+          event.preventDefault();
+          deleteEdgesAtomically(selectedEdgeIds);
+        }
+      }
+    };
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+  }, [
+    authorMode,
+    deleteEdgesAtomically,
+    edges,
+    isTaskWorkspace,
+    layoutPlanning,
+    layoutPreview,
+    pendingNodeDeletion,
+    redoAuthoringMutation,
+    requestNodeDeletion,
+    selectedNodeId,
+    undoAuthoringMutation,
+  ]);
   const addOperator = useCallback((operator: OperatorDefinition, position?: { x: number; y: number }) => {
     if (layoutPlanning || layoutPreview) {
       return;
@@ -5396,6 +6077,12 @@ export default function AuthorCanvas({ workspaceVersion = 'v1' }: AuthorCanvasPr
     const placementIndex = nextIndex - 1;
     const canvasWidth = flowRef.current?.clientWidth ?? 0;
     const summary = summarizeOperator(operator);
+    pendingMutationDescriptorRef.current = {
+      kind: 'ADD_NODE',
+      label: t('{action} {subject}', { action: t('Add'), subject: summary.name }),
+      subjectRef: id,
+      coalesceKey: `add-node:${id}`,
+    };
     const node: Node<NodeData> = {
       id,
       type: 'operator',
@@ -5408,13 +6095,15 @@ export default function AuthorCanvas({ workspaceVersion = 'v1' }: AuthorCanvasPr
       [id]: defaultOperatorTestSuiteRows(node, operator),
     }));
     setSelectedNodeId(id);
-  }, [clearRunResult, layoutPlanning, layoutPreview]);
+  }, [clearRunResult, layoutPlanning, layoutPreview, t]);
 
   const openNodeEditor = useCallback((node: Node<NodeData>) => {
+    if (isTaskWorkspace) mutationObservationModeRef.current = 'hold';
+    const authoredNode = nodes.find((candidate) => candidate.id === node.id) ?? node;
     setSelectedNodeId(node.id);
     setOperatorDetailBaseline({
       nodeId: node.id,
-      nodeData: structuredClone(node.data),
+      nodeData: structuredClone(authoredNode.data),
       fixtureDraft: fixtureDrafts[node.id],
       fixtureInputDraft: fixtureInputDrafts[node.id],
       testRows: operatorTestSuites[node.id]
@@ -5422,14 +6111,27 @@ export default function AuthorCanvas({ workspaceVersion = 'v1' }: AuthorCanvasPr
         : undefined,
     });
     setOperatorDetailNodeId(node.id);
-  }, [fixtureDrafts, fixtureInputDrafts, operatorTestSuites]);
+  }, [fixtureDrafts, fixtureInputDrafts, isTaskWorkspace, nodes, operatorTestSuites]);
 
   const applyOperatorDetail = useCallback(() => {
+    if (operatorDetailNodeId) {
+      const node = nodes.find((candidate) => candidate.id === operatorDetailNodeId);
+      commitHeldMutation({
+        kind: node?.data.summary.visualKind === 'decision-table'
+          ? 'DECISION_TABLE'
+          : node?.data.summary.visualKind === 'transform' ? 'TRANSFORM' : 'NODE_CONFIG',
+        label: t('Edit {subject}', { subject: node?.data.label ?? operatorDetailNodeId }),
+        subjectRef: operatorDetailNodeId,
+      });
+    } else {
+      mutationObservationModeRef.current = 'observe';
+    }
     setOperatorDetailNodeId('');
     setOperatorDetailBaseline(null);
-  }, []);
+  }, [commitHeldMutation, nodes, operatorDetailNodeId, t]);
 
   const cancelOperatorDetail = useCallback(() => {
+    mutationObservationModeRef.current = 'observe';
     if (operatorDetailBaseline) {
       setNodes((current) => current.map((node) => (
         node.id === operatorDetailBaseline.nodeId
@@ -5970,6 +6672,12 @@ export default function AuthorCanvas({ workspaceVersion = 'v1' }: AuthorCanvasPr
       });
       return;
     }
+    pendingMutationDescriptorRef.current = {
+      kind: 'IMPORT',
+      label: t('Load example {subject}', { subject: template.label }),
+      subjectRef: template.key,
+      coalesceKey: `load-example:${template.key}`,
+    };
 
     const nextNodes: Node<NodeData>[] = [];
     const nextOperatorTestSuites: Record<string, OperatorTestSuiteDraftRow[]> = {};
@@ -7024,6 +7732,14 @@ export default function AuthorCanvas({ workspaceVersion = 'v1' }: AuthorCanvasPr
     contractSource?: string,
     workspaceBundle?: VisualAuthoringWorkspaceBundle,
   ) => {
+    if (isTaskWorkspace && mutationObservationModeRef.current === 'observe') {
+      pendingMutationDescriptorRef.current = {
+        kind: 'IMPORT',
+        label: t('Import {subject}', { subject: projection.draft.graphName }),
+        subjectRef: projection.sourceId,
+        coalesceKey: `import-dsl:${projection.sourceId}`,
+      };
+    }
     const imported = fromGraphDraft(projection.draft);
     const nextNodes: Node<NodeData>[] = [];
     const nextOperatorTestSuites: Record<string, OperatorTestSuiteDraftRow[]> = {};
@@ -7201,7 +7917,7 @@ export default function AuthorCanvas({ workspaceVersion = 'v1' }: AuthorCanvasPr
     } else {
       fitCanvasToView(graphSize);
     }
-  }, [fitCanvasToView, isTaskWorkspace, operatorByRef, resetRunResult]);
+  }, [fitCanvasToView, isTaskWorkspace, operatorByRef, resetRunResult, t]);
 
   const importScenarioWorkspace = useCallback(async (
     bundle: VisualAuthoringWorkspaceBundle,
@@ -7792,6 +8508,12 @@ export default function AuthorCanvas({ workspaceVersion = 'v1' }: AuthorCanvasPr
         return;
       }
 
+      pendingMutationDescriptorRef.current = {
+        kind: 'ADD_EDGE',
+        label: t('Connect nodes'),
+        subjectRef: `${params.sourceNodeId}:${params.targetNodeId}`,
+        coalesceKey: `add-edge:${params.sourceNodeId}:${params.targetNodeId}`,
+      };
       clearRunResult();
       sourcePath = check.edge?.source?.path ?? sourcePath;
       targetPath = check.edge?.target?.path ?? targetPath;
@@ -7825,7 +8547,7 @@ export default function AuthorCanvas({ workspaceVersion = 'v1' }: AuthorCanvasPr
     } finally {
       setCheckingConnection(false);
     }
-  }, [canvasEdges, canvasNodes, clearRunResult, graphName, outputNodeId]);
+  }, [canvasEdges, canvasNodes, clearRunResult, graphName, outputNodeId, t]);
 
   const onConnect = useCallback(async (connection: Connection) => {
     await applyCheckedConnection({
@@ -8528,6 +9250,7 @@ export default function AuthorCanvas({ workspaceVersion = 'v1' }: AuthorCanvasPr
           ),
           nextCanvasNodes.length,
         );
+        mutationObservationModeRef.current = 'hold';
         setNodes(nextNodes);
         setLayoutPreview({
           positions: Object.fromEntries(nodes.map((node) => [node.id, { ...node.position }])),
@@ -8607,6 +9330,17 @@ export default function AuthorCanvas({ workspaceVersion = 'v1' }: AuthorCanvasPr
 
   const applyLayoutPreview = useCallback(() => {
     if (!layoutPreview || layoutPreview.acceptance.decision !== 'ACCEPTABLE') return;
+    commitHeldMutation({
+      kind: 'AUTO_LAYOUT',
+      label: t('Apply auto layout'),
+      subjectRef: 'graph-layout',
+      impact: [{
+        kind: 'NODE',
+        count: layoutPreview.movedNodeCount,
+        refs: nodes.map((node) => node.id),
+        severity: 'INFO',
+      }],
+    });
     setLayoutUndo({
       positions: layoutPreview.positions,
       movedNodeCount: layoutPreview.movedNodeCount,
@@ -8626,7 +9360,7 @@ export default function AuthorCanvas({ workspaceVersion = 'v1' }: AuthorCanvasPr
       durationMs: layoutPreview.durationMs,
     });
     setLayoutPreview(null);
-  }, [edges.length, layoutPreview, nodes.length]);
+  }, [commitHeldMutation, edges.length, layoutPreview, nodes, t]);
 
   const overrideLayoutPreview = useCallback(() => {
     if (!layoutPreview || layoutPreview.acceptance.decision !== 'ALTERNATIVE_REQUIRED') return;
@@ -8637,6 +9371,17 @@ export default function AuthorCanvas({ workspaceVersion = 'v1' }: AuthorCanvasPr
     recordAuthorTaskEvent('AUTO_LAYOUT_OVERRIDE_APPLIED', {
       overrideReason: acceptance.overrideReason,
       regressionCount: acceptance.regressions.length,
+    });
+    commitHeldMutation({
+      kind: 'AUTO_LAYOUT',
+      label: t('Apply auto layout'),
+      subjectRef: 'graph-layout',
+      impact: [{
+        kind: 'NODE',
+        count: layoutPreview.movedNodeCount,
+        refs: nodes.map((node) => node.id),
+        severity: 'INFO',
+      }],
     });
     setLayoutUndo({
       positions: layoutPreview.positions,
@@ -8657,7 +9402,7 @@ export default function AuthorCanvas({ workspaceVersion = 'v1' }: AuthorCanvasPr
       durationMs: layoutPreview.durationMs,
     });
     setLayoutPreview(null);
-  }, [edges.length, layoutPreview, nodes.length]);
+  }, [commitHeldMutation, edges.length, layoutPreview, nodes, t]);
 
   const cancelLayoutPreview = useCallback(() => {
     layoutPlanSequenceRef.current += 1;
@@ -8667,6 +9412,7 @@ export default function AuthorCanvas({ workspaceVersion = 'v1' }: AuthorCanvasPr
     }
     setLayoutPlanning(false);
     if (layoutPreview) {
+      mutationObservationModeRef.current = 'reset';
       setNodes((current) => current.map((node) => ({
         ...node,
         position: layoutPreview.positions[node.id] ?? node.position,
@@ -8681,6 +9427,18 @@ export default function AuthorCanvas({ workspaceVersion = 'v1' }: AuthorCanvasPr
 
   const undoAutoLayout = useCallback(() => {
     if (!layoutUndo) return;
+    if (isTaskWorkspace) {
+      undoAuthoringMutation();
+      setLayoutNotice({
+        messageId: 'layout.notice.restored',
+        params: { count: layoutUndo.movedNodeCount },
+      });
+      recordAuthorTaskEvent('AUTO_LAYOUT_UNDONE', {
+        movedNodeCount: layoutUndo.movedNodeCount,
+      });
+      setLayoutUndo(null);
+      return;
+    }
     setNodes((current) => current.map((node) => ({
       ...node,
       position: layoutUndo.positions[node.id] ?? node.position,
@@ -8700,7 +9458,7 @@ export default function AuthorCanvas({ workspaceVersion = 'v1' }: AuthorCanvasPr
     } else {
       fitCanvasToView();
     }
-  }, [fitCanvasToView, isTaskWorkspace, layoutUndo]);
+  }, [fitCanvasToView, isTaskWorkspace, layoutUndo, undoAuthoringMutation]);
 
   const toggleSelectedNodePin = useCallback(() => {
     if (!selectedNodeId) return;
@@ -8998,6 +9756,11 @@ export default function AuthorCanvas({ workspaceVersion = 'v1' }: AuthorCanvasPr
     && graphDraftRevision > 0
     && authoritativeContractRef.current?.canvasSnapshot === canonicalJson(exportableDraft),
   );
+  useEffect(() => {
+    if (!isTaskWorkspace || !exactSavedDraft) return;
+    const next = markSavedCheckpoint(mutationJournalRef.current, currentMutationFingerprint);
+    if (next !== mutationJournalRef.current) replaceMutationJournal(next);
+  }, [currentMutationFingerprint, exactSavedDraft, isTaskWorkspace, replaceMutationJournal]);
   const authoringRecoveryPayload = useMemo<AuthoringRecoveryPayload>(() => ({
     graphDraft: exportableDraft,
     scenarioDraftSet,
@@ -9014,6 +9777,7 @@ export default function AuthorCanvas({ workspaceVersion = 'v1' }: AuthorCanvasPr
     authorMode,
     loadedExampleKey,
     workspaceForkIdempotencyKey: workspaceForkIdempotencyKeyRef.current,
+    mutationJournal: mutationJournalForRecovery(mutationJournal),
   }), [
     authorMode,
     contextVariables,
@@ -9022,6 +9786,7 @@ export default function AuthorCanvas({ workspaceVersion = 'v1' }: AuthorCanvasPr
     fixtureDrafts,
     fixtureInputDrafts,
     loadedExampleKey,
+    mutationJournal,
     operatorTestSuites,
     rawContextMode,
     runInputValue,
@@ -9057,6 +9822,13 @@ export default function AuthorCanvas({ workspaceVersion = 'v1' }: AuthorCanvasPr
     recovered: AuthoringRecoveryPayload,
     capturedAt: string,
   ) => {
+    mutationObservationModeRef.current = 'reset';
+    const recoveredJournal = restoreMutationJournal<AuthoringMutationSnapshot>(
+      recovered.mutationJournal,
+      isAuthoringMutationSnapshot,
+    );
+    replaceMutationJournal(recoveredJournal);
+    mutationSequenceRef.current = recoveredJournal.past.length + recoveredJournal.future.length;
     applyDslProjection({
       schemaVersion: 'bloge.dslVisualProjection.v1',
       sourceId: `recovery:${recovered.graphDraft.graphName}`,
@@ -9092,7 +9864,7 @@ export default function AuthorCanvas({ workspaceVersion = 'v1' }: AuthorCanvasPr
         capturedAt: new Date(capturedAt).toLocaleString(locale),
       }),
     });
-  }, [applyDslProjection, locale, t]);
+  }, [applyDslProjection, locale, replaceMutationJournal, t]);
   const authoringContinuity = useWorkspaceContinuity({
     enabled: isTaskWorkspace,
     ready: operators.length > 0,
@@ -9884,6 +10656,8 @@ export default function AuthorCanvas({ workspaceVersion = 'v1' }: AuthorCanvasPr
       data-task-currentness={authorTaskState.currentness.toLowerCase()}
       data-task-proof-strength={authorTaskState.proofStrength.toLowerCase()}
       data-start-section={startOpen ? startSection : 'closed'}
+      data-history-undo-depth={mutationJournal.past.length}
+      data-history-redo-depth={mutationJournal.future.length}
     >
       {isTaskWorkspace && (
         <>
@@ -9922,6 +10696,10 @@ export default function AuthorCanvas({ workspaceVersion = 'v1' }: AuthorCanvasPr
               || authoringContinuity.state.lifecycle === 'SAVING'
               || busy
             }
+            canUndo={mutationJournal.past.length > 0}
+            canRedo={mutationJournal.future.length > 0}
+            undoLabel={mutationJournal.past[mutationJournal.past.length - 1]?.label ?? ''}
+            redoLabel={mutationJournal.future[mutationJournal.future.length - 1]?.label ?? ''}
             onModeChange={changeAuthorMode}
             onPrimaryAction={runPrimaryAuthorAction}
             onPrimaryRemediation={remediatePrimaryCommand}
@@ -9932,6 +10710,8 @@ export default function AuthorCanvas({ workspaceVersion = 'v1' }: AuthorCanvasPr
             onAutoLayout={autoLayout}
             onValidate={() => void runDraftValidation()}
             onSave={() => void authoringContinuity.save()}
+            onUndo={undoAuthoringMutation}
+            onRedo={redoAuthoringMutation}
           />
           <StartImportDialog
             open={startOpen}
@@ -11027,7 +11807,7 @@ export default function AuthorCanvas({ workspaceVersion = 'v1' }: AuthorCanvasPr
             onConnectEnd={onConnectEnd}
             nodesDraggable={!layoutPlanning && !layoutPreview}
             nodesConnectable={!layoutPlanning && !layoutPreview}
-            deleteKeyCode={layoutPlanning || layoutPreview ? null : ['Backspace', 'Delete']}
+            deleteKeyCode={null}
             elementsSelectable={!layoutPlanning && !layoutPreview}
             onInit={(instance) => {
               flowInstanceRef.current = instance;
@@ -11743,6 +12523,26 @@ export default function AuthorCanvas({ workspaceVersion = 'v1' }: AuthorCanvasPr
             {testTablePanel}
           </section>
         </div>
+      )}
+      {pendingNodeDeletion && (
+        <NodeDeletionImpactDialog
+          open
+          nodeLabels={pendingNodeDeletion.nodeLabels}
+          impact={pendingNodeDeletion.impact}
+          onCancel={() => setPendingNodeDeletion(null)}
+          onConfirm={() => deleteNodesAtomically(
+            pendingNodeDeletion.nodeIds,
+            pendingNodeDeletion.impact,
+          )}
+        />
+      )}
+      {mutationNotice && (
+        <MutationNotice
+          message={mutationNotice.message}
+          action={mutationNotice.action}
+          onAction={mutationNotice.action === 'undo' ? undoAuthoringMutation : redoAuthoringMutation}
+          onDismiss={() => setMutationNotice(null)}
+        />
       )}
       {operatorDetailNode && (
         <OperatorDetailDialog

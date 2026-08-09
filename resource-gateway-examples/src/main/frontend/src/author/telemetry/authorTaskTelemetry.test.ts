@@ -81,4 +81,24 @@ describe('author task telemetry', () => {
       regressionCount: 4,
     });
   });
+
+  it('records mutation history health without leaking authored content', () => {
+    expect(createAuthorTaskEvent('AUTHOR_MUTATION_RECORDED', {
+      mutationKind: 'REMOVE_NODE',
+      impactCount: 7,
+      historyDepth: 12,
+    }).metadata).toEqual({
+      mutationKind: 'REMOVE_NODE',
+      impactCount: 7,
+      historyDepth: 12,
+    });
+    expect(createAuthorTaskEvent('AUTHOR_MUTATION_UNDONE', {
+      mutationKind: 'TEST_SUITE',
+    }).metadata).toEqual({ mutationKind: 'TEST_SUITE' });
+    expect(() => createAuthorTaskEvent('AUTHOR_MUTATION_RECORDED', {
+      mutationKind: 'customer-specific-change',
+      impactCount: 1,
+      historyDepth: 1,
+    })).toThrow(/unsupported enum/);
+  });
 });

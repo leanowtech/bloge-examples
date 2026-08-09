@@ -36,6 +36,29 @@ describe('AuthorCommandBar', () => {
     expect(text()).toContain('Export draft');
   });
 
+  it('exposes reversible history as stable icon commands with exact labels', async () => {
+    const undo = vi.fn();
+    const redo = vi.fn();
+    await render('compose', false, undefined, undefined, {
+      canUndo: true,
+      canRedo: true,
+      undoLabel: 'Delete Applicant profile',
+      redoLabel: 'Move Decision',
+      onUndo: undo,
+      onRedo: redo,
+    });
+
+    const undoButton = host.querySelector<HTMLButtonElement>('[data-testid="author-undo"]');
+    const redoButton = host.querySelector<HTMLButtonElement>('[data-testid="author-redo"]');
+    expect(undoButton?.title).toBe('Undo Delete Applicant profile (Ctrl/⌘+Z)');
+    expect(redoButton?.title).toBe('Redo Move Decision (Ctrl/⌘+Shift+Z)');
+
+    await act(async () => undoButton?.click());
+    await act(async () => redoButton?.click());
+    expect(undo).toHaveBeenCalledOnce();
+    expect(redo).toHaveBeenCalledOnce();
+  });
+
   it.each<AuthorMode>(['contract', 'scenarios', 'evidence'])(
     'removes canvas-only commands from %s',
     async (mode) => {
@@ -187,7 +210,7 @@ describe('AuthorCommandBar', () => {
   async function render(
     mode: AuthorMode,
     localized = false,
-    primaryCommand: AuthorCommandAvailability = {
+    primaryCommand: AuthorCommandAvailability | undefined = {
       commandId: 'RUN_CURRENT_SCENARIO',
       state: 'READY',
       enabled: true,
@@ -196,7 +219,23 @@ describe('AuthorCommandBar', () => {
       message: '',
     },
     onPrimaryRemediation = vi.fn(),
+    history: Partial<{
+      canUndo: boolean;
+      canRedo: boolean;
+      undoLabel: string;
+      redoLabel: string;
+      onUndo: () => void;
+      onRedo: () => void;
+    }> = {},
   ) {
+    const resolvedPrimaryCommand = primaryCommand ?? {
+      commandId: 'RUN_CURRENT_SCENARIO',
+      state: 'READY' as const,
+      enabled: true,
+      label: 'Run scenario',
+      reasonCode: '',
+      message: '',
+    };
     const commandBar = (
       <AuthorCommandBar
         graphName="riskPolicy"
@@ -204,7 +243,7 @@ describe('AuthorCommandBar', () => {
         nodeCount={5}
         edgeCount={7}
         mode={mode}
-        primaryCommand={primaryCommand}
+        primaryCommand={resolvedPrimaryCommand}
         draftStatus="SAVED"
         contractStatus="VALID"
         runStatus="RUNNABLE"
@@ -221,6 +260,10 @@ describe('AuthorCommandBar', () => {
         layoutDisabled={false}
         validationDisabled={false}
         saveDisabled={false}
+        canUndo={history.canUndo ?? false}
+        canRedo={history.canRedo ?? false}
+        undoLabel={history.undoLabel ?? ''}
+        redoLabel={history.redoLabel ?? ''}
         onModeChange={vi.fn()}
         onPrimaryAction={vi.fn()}
         onPrimaryRemediation={onPrimaryRemediation}
@@ -228,6 +271,8 @@ describe('AuthorCommandBar', () => {
         onAutoLayout={vi.fn()}
         onValidate={vi.fn()}
         onSave={vi.fn()}
+        onUndo={history.onUndo ?? vi.fn()}
+        onRedo={history.onRedo ?? vi.fn()}
       />
     );
     await act(async () => {
